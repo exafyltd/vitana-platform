@@ -54,7 +54,7 @@ async function supabaseQuery(
 router.get('/', async (_req: Request, res: Response) => {
   try {
     const { count, error } = await supabaseQuery('news_items', { select: 'id', limit: '0' });
-    res.json({ ok: true, vtid: VTID, service: 'longevity-news', total_items: count ?? 0, feeds_configured: 27, error: error || undefined });
+    res.json({ ok: true, vtid: VTID, service: 'longevity-news', total_items: count ?? 0, feeds_configured: 25, error: error || undefined });
   } catch (err: any) {
     res.status(500).json({ ok: false, error: err.message });
   }

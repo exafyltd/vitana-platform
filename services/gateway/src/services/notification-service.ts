@@ -149,6 +149,15 @@ export const TYPE_META: Record<string, TypeMeta> = {
   onboarding_step_completed:   { channel: 'inapp',          priority: 'p3', category: 'system' },
   weekly_activity_summary:     { channel: 'push_and_inapp', priority: 'p2', category: 'system' },
   feature_announcement:        { channel: 'push_and_inapp', priority: 'p2', category: 'system' },
+  // BOOTSTRAP-COMMUNITY-MARKETPLACE: seller-facing moderation outcomes
+  marketplace_listing_approved: { channel: 'push_and_inapp', priority: 'p2', category: 'system' },
+  marketplace_listing_rejected: { channel: 'push_and_inapp', priority: 'p1', category: 'system' },
+  marketplace_listing_removed:  { channel: 'push_and_inapp', priority: 'p1', category: 'system' },
+  // BOOTSTRAP-COMMUNITY-MARKETPLACE (Chunk 5): buyer's first contact message
+  // on a listing — category 'chat' (not 'system') so it respects the same
+  // chat notification preference as new_chat_message, since it IS a chat
+  // message, just with listing-specific copy instead of the generic sender-name title.
+  listing_interest:            { channel: 'push_and_inapp', priority: 'p1', category: 'chat' },
   // Admin Companion (BOOTSTRAP-ADMIN-EE)
   admin_insight_urgent:        { channel: 'push_and_inapp', priority: 'p0', category: 'system' },
   admin_insight_action_needed: { channel: 'inapp',          priority: 'p1', category: 'system' },
@@ -249,11 +258,12 @@ export async function sendPushToUser(
   userId: string,
   tenantId: string,
   payload: NotificationPayload,
-  supabase: SupabaseClient<any, any, any>
+  supabase: SupabaseClient<any, any, any>,
+  opts?: { excludeAppilixTagged?: boolean }
 ): Promise<number> {
   const { data: tokens } = await supabase
     .from('user_device_tokens')
-    .select('fcm_token')
+    .select('fcm_token, device_label')
     .eq('user_id', userId)
     .eq('tenant_id', tenantId)
     // Only devices this user still OWNS (VTID-03481). A revoked row means the
@@ -265,8 +275,21 @@ export async function sendPushToUser(
 
   if (!tokens?.length) return 0;
 
+  // Tokens registered from inside the Appilix WebView (tagged "Appilix " by
+  // registerAppilixDevice()) can only be tapped safely via an Appilix-native
+  // push — a raw FCM push to that same device is what crashes the WebView
+  // (see the comment in notifyUser()). Callers that already tried Appilix
+  // and got no device pass excludeAppilixTagged so we don't repeat the
+  // crash-causing delivery on the very token Appilix just told us it can't
+  // reach.
+  const targets = opts?.excludeAppilixTagged
+    ? tokens.filter((t) => !t.device_label?.startsWith('Appilix '))
+    : tokens;
+
+  if (!targets.length) return 0;
+
   let sent = 0;
-  for (const { fcm_token } of tokens) {
+  for (const { fcm_token } of targets) {
     const ok = await sendPushNotification(fcm_token, payload);
     if (ok) {
       sent++;
@@ -691,7 +714,14 @@ export async function notifyUser(
       // doesn't pass the URL to Appilix's native tap handler.
       appilixSent = appilixSuppressed ? false : await sendAppilixPush(userId, payload);
       if (!appilixSent) {
-        pushed = await sendPushToUser(userId, tenantId, payload, supabase);
+        // Appilix reported no device for this user (e.g. its client-side
+        // identity registration never took) — do NOT retry via raw FCM on
+        // an Appilix-tagged token, since that's the exact delivery path
+        // that crashes the WebView on tap. Only non-Appilix tokens (real
+        // browser web-push) are safe to fall back to here.
+        pushed = await sendPushToUser(userId, tenantId, payload, supabase, {
+          excludeAppilixTagged: true,
+        });
       }
     } else {
       pushed = await sendPushToUser(userId, tenantId, payload, supabase);

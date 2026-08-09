@@ -250,6 +250,9 @@ describe('buildNovaSonicHealthPayload', () => {
       supported_languages: ['en', 'de', 'fr', 'es'],
       canary_user_count: 0,
       canary_tenant_count: 0,
+      // VTID-03501: global promotion flag. Additive; false by default, so a
+      // clean disabled config still reports "nobody is on Nova".
+      global_enabled: false,
       issues: [],
     });
   });

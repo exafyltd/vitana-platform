@@ -43,6 +43,7 @@ function makeSupa(handlers: Record<string, TableHandler>) {
     const filters: Record<string, any> = {};
     let countMode = false;
     let single = false;
+    let rangeBounds: [number, number] | null = null;
 
     const chain: any = {
       select(_cols?: string, opts?: any) {
@@ -90,6 +91,10 @@ function makeSupa(handlers: Record<string, TableHandler>) {
       limit(_n: number) {
         return chain;
       },
+      range(from: number, to: number) {
+        rangeBounds = [from, to];
+        return chain;
+      },
       maybeSingle() {
         single = true;
         return execute();
@@ -112,7 +117,11 @@ function makeSupa(handlers: Record<string, TableHandler>) {
         const row = Array.isArray(result?.data) ? (result.data[0] ?? null) : (result?.data ?? null);
         return { data: row, error: null };
       }
-      return { data: result?.data ?? null, error: null };
+      let data = result?.data ?? null;
+      if (rangeBounds && Array.isArray(data)) {
+        data = data.slice(rangeBounds[0], rangeBounds[1] + 1);
+      }
+      return { data, error: null };
     }
 
     return chain;

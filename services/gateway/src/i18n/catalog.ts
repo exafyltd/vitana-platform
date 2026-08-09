@@ -130,6 +130,18 @@ export type GatewayI18nKey =
   // "Vitana empfiehlt" header shown on every AI-generated recommendation card
   // so the source is never rendered as a bare "AI" label.
   | 'recommendation.vitana_label'
+  // BOOTSTRAP-COMMUNITY-MARKETPLACE: seller-facing moderation outcome pushes.
+  | 'notif.marketplace_listing_approved.title'
+  | 'notif.marketplace_listing_approved.body'
+  | 'notif.marketplace_listing_rejected.title'
+  | 'notif.marketplace_listing_rejected.body'
+  | 'notif.marketplace_listing_removed.title'
+  | 'notif.marketplace_listing_removed.body'
+  // BOOTSTRAP-COMMUNITY-MARKETPLACE (Chunk 5): seller-facing "someone wants
+  // to buy/hire" push when a buyer sends the first contact message via the
+  // listing's CTA.
+  | 'notif.listing_interest.title'
+  | 'notif.listing_interest.body'
   // BOOTSTRAP-NOVA-SONIC-VOICE: greeting AUDIO bridge — a short, near-instant
   // TTS phrase spoken while the real (context-heavy) upstream greeting is
   // still being generated, so the user hears Vitana immediately instead of
@@ -246,6 +258,14 @@ const DE: LocaleCatalog = {
   'priority.greeting.evening.named': 'Guten Abend, {name}. Bereit, wenn du es bist.',
   'priority.greeting.evening': 'Guten Abend. Bereit, wenn du es bist.',
   'recommendation.vitana_label': 'Vitana empfiehlt',
+  'notif.marketplace_listing_approved.title': 'Dein Angebot ist online',
+  'notif.marketplace_listing_approved.body': '„{title}" wurde geprüft und ist jetzt im Marktplatz sichtbar.',
+  'notif.marketplace_listing_rejected.title': 'Dein Angebot wurde abgelehnt',
+  'notif.marketplace_listing_rejected.body': '„{title}" konnte nicht veröffentlicht werden: {reason}',
+  'notif.marketplace_listing_removed.title': 'Dein Angebot wurde entfernt',
+  'notif.marketplace_listing_removed.body': '„{title}" wurde von einem Admin entfernt: {reason}',
+  'notif.listing_interest.title': 'Interesse an deinem Angebot',
+  'notif.listing_interest.body': 'Jemand hat Interesse an „{title}" gezeigt.',
   'orb.greeting_bridge.morning': 'Guten Morgen! Heute ist der {date}. {line}',
   'orb.greeting_bridge.afternoon': 'Guten Tag! Heute ist der {date}. {line}',
   'orb.greeting_bridge.evening': 'Guten Abend! Heute ist der {date}. {line}',
@@ -356,6 +376,14 @@ const EN: LocaleCatalog = {
   'priority.greeting.evening.named': 'Good evening, {name}. Ready when you are.',
   'priority.greeting.evening': 'Good evening. Ready when you are.',
   'recommendation.vitana_label': 'Vitana recommends',
+  'notif.marketplace_listing_approved.title': 'Your listing is live',
+  'notif.marketplace_listing_approved.body': '"{title}" has been reviewed and is now visible in the marketplace.',
+  'notif.marketplace_listing_rejected.title': 'Your listing was rejected',
+  'notif.marketplace_listing_rejected.body': '"{title}" could not be published: {reason}',
+  'notif.marketplace_listing_removed.title': 'Your listing was removed',
+  'notif.marketplace_listing_removed.body': '"{title}" was removed by an admin: {reason}',
+  'notif.listing_interest.title': 'Interest in your listing',
+  'notif.listing_interest.body': 'Someone is interested in "{title}".',
   'orb.greeting_bridge.morning': 'Good morning! Today is {date}. {line}',
   'orb.greeting_bridge.afternoon': 'Good afternoon! Today is {date}. {line}',
   'orb.greeting_bridge.evening': 'Good evening! Today is {date}. {line}',
