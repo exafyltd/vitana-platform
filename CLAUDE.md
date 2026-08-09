@@ -246,17 +246,25 @@ Claude must apply the following **conditional logic**:
 **Test user UUID:** `a27552a3-0257-4305-8ed0-351a80fd3701`
 Use this user when an authenticated user is needed for testing (e.g., Playwright screenshots, API calls, profile checks).
 
-31. **NEVER create community content as this account — on ANY host.** No posts,
-    comments, likes, videos or chat messages, whether you are pointed at
-    `vitanaland.com`, `preview.vitanaland.com`, or a per-PR preview. **There is
+31. **NEVER write as this account — on ANY host. Reading is fine everywhere.**
+    Not a post, not a comment, not a like, not a profile edit, not an onboarding
+    step, not a settings toggle, not an automation, not a wallet call. **There is
     exactly one Supabase project and every frontend writes to it:**
     `PREVIEW-DEPLOY-FRONTEND.yml` and `STAGE-DEPLOY-FRONTEND.yml` override only
     the gateway URL and leave Supabase unset, inheriting prod from the committed
     `.env`, because `gateway-staging` runs against prod Supabase too
     (BOOTSTRAP-ORB-STAGING-SUPABASE-ALIGN) and a mismatched project makes staging
     logins anonymous to the gateway. **The host selects which code runs, not
-    which database gets written.** Reading as the test user is fine everywhere.
+    which database gets written**, so "do it on the preview instead" mitigates
+    nothing for *any* write. The sign-in's own auth session is the sole
+    unavoidable exception. Anything beyond that needs an explicit recorded
+    reason, must touch only rows this account owns, and must be reverted after.
     (VTID-03506)
+31b. **Community content is the absolute case — no exception clause applies.**
+    Posts, comments, likes, videos and chat messages reach real members' feeds
+    and lock screens the instant they land, and no amount of cleanup afterwards
+    recalls them. A "harmless" test post is indistinguishable from a real
+    member's, because this account is a full member of the production tenant.
 32. **IF** verifying a change needs content that does not exist yet (a post to
     like, a message to reply to, a video to comment on) → **THEN** verify against
     content that already exists, a unit/integration test, or a local Supabase —
