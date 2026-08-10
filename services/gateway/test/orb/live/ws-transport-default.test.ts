@@ -99,7 +99,11 @@ describe('WS session start is not a second implementation (VTID-03471)', () => {
 
 describe('cleanupWsSession keys the live session by its own id (VTID-03471)', () => {
   const src = fs.readFileSync(CONTROLLER, 'utf8');
-  const cleanup = functionBody(src, 'export function cleanupWsSession(sessionId: string): void');
+  // VTID-03561: match on the name + open paren only. Pinning the full
+  // parameter list made this guard break the moment a parameter was added
+  // (`reason`), which fails the VTID-03471 invariant test for a reason that
+  // has nothing to do with the invariant it protects.
+  const cleanup = functionBody(src, 'export function cleanupWsSession(');
 
   it('deletes from liveSessions by the live session id, not the socket id', () => {
     // Now that the two ids differ, `liveSessions.delete(sessionId)` would

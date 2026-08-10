@@ -58,8 +58,10 @@ export function isZombieEscalation(endpoint: string, failureClass: string | null
 
 // BOOTSTRAP-VOICE-AUDIO-IN-ZERO-METRIC: phantom session-stop filter.
 //
-// `vtid.live.session.stop` is emitted from four sites in orb-live.ts. Two of
-// them are session-management bookkeeping, NOT user-perceived conversations:
+// `vtid.live.session.stop` is emitted from five sites — four in orb-live.ts and,
+// since VTID-03561, one in orb/live/session/live-session-controller.ts
+// (`cleanupWsSession`, the WebSocket teardown path). Two of them are
+// session-management bookkeeping, NOT user-perceived conversations:
 //   - `superseded_by_new_session` — terminateExistingSessionsForUser() kills a
 //     prior session whenever the user (re)opens the ORB (reload, reconnect-as-
 //     new-session, multi-tab). The single-session-per-user rule guarantees one
@@ -72,6 +74,18 @@ export function isZombieEscalation(endpoint: string, failureClass: string | null
 // Improve cockpit alarms on). A genuinely abandoned session (user opened, said
 // nothing, closed normally) has NO such `reason` and is still counted — that is
 // a real no-show worth measuring. We only drop the bookkeeping artifacts.
+//
+// VTID-03561 note — EXPECT SESSION COUNTS TO STEP UP when that ships. Until
+// then the WS teardown path emitted nothing at all, so most sessions were
+// invisible here; its three new reasons (`client_disconnect`, `client_error`,
+// `ws_session_expired`) are deliberately NOT in the artifact set, because a
+// user who opened the ORB and closed it is a real session — the same reasoning
+// the paragraph above already applies to a clean `user_stop`. The jump is this
+// filter finally seeing the whole population, not a behaviour regression, and
+// the audio-in-zero ratio will move with it. `ws_session_expired` is the one
+// worth revisiting once there is data: it is a sweep rather than a user
+// action, so it may belong here beside `expired_ttl` — but that call should be
+// made on measurements, not on a guess made while wiring the emit.
 const LIFECYCLE_ARTIFACT_STOP_REASONS = new Set([
   'superseded_by_new_session',
   'expired_ttl',
