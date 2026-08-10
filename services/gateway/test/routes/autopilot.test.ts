@@ -1,5 +1,21 @@
-import request from 'supertest';
+import supertestBase from 'supertest';
 import express from 'express';
+
+// SECURITY (post-audit hardening): routes/autopilot.ts now requires a
+// GATEWAY_SERVICE_TOKEN bearer on every request (bar /health,
+// /pipeline/health) — see requireServiceToken in that file. This test
+// exercises the real router through the full app, so set a known token and
+// route every request() call through this wrapper instead of touching each
+// call site individually. Mirrors the identical pattern already used in
+// test/autopilot-pipeline.test.ts.
+process.env.GATEWAY_SERVICE_TOKEN = 'test-service-token';
+function request(app: any) {
+  const agent = supertestBase(app);
+  return {
+    get: (path: string) => agent.get(path).set('Authorization', 'Bearer test-service-token'),
+    post: (path: string) => agent.post(path).set('Authorization', 'Bearer test-service-token'),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Mocks — autopilot.ts is a thin HTTP layer over a large set of service

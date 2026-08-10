@@ -41,6 +41,20 @@ jest.mock('../../src/services/wave-defaults', () => ({
   DEFAULT_WAVE_CONFIG: {},
   buildTemplateToWaveMap: () => ({}),
 }));
+// The route now requires a verified identity (security-audit fix: this
+// router previously trusted a bare X-User-ID header with no verification).
+// Simulate "verified" auth from the same X-User-ID header the tests already
+// set, so each test can still act as a distinct user without re-mocking JWT
+// verification (which is out of scope for this route-behavior smoke test).
+jest.mock('../../src/middleware/auth-supabase-jwt', () => ({
+  optionalAuth: jest.fn((req: any, _res: any, next: any) => {
+    const userId = req.get('X-User-ID');
+    if (userId) {
+      req.identity = { user_id: userId, email: null, tenant_id: null, exafy_admin: false, role: 'authenticated', aud: null, exp: null, iat: null };
+    }
+    next();
+  }),
+}));
 jest.mock('@supabase/supabase-js', () => {
   // Chainable PostgREST-shaped query stub. Each .from() returns the same
   // shape; .like terminates with {data:[]} and .maybeSingle terminates with
@@ -101,8 +115,10 @@ describe('VTID-03180 — POST /:id/complete', () => {
       .post(`/api/v1/autopilot/recommendations/${REC_ID}/complete`)
       .send({});
 
+    // Rejected by the router-level requireVerifiedIdentity gate (security-audit
+    // fix) before the handler's own "User ID required" check is ever reached.
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ ok: false, error: 'User ID required' });
+    expect(res.body).toEqual({ ok: false, error: 'UNAUTHENTICATED' });
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
