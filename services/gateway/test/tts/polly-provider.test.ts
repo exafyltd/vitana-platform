@@ -34,7 +34,7 @@ describe('VTID-03495 Polly voice resolution', () => {
   });
 
   it('resolves the supported languages with an explicit engine', () => {
-    for (const lang of ['en', 'de', 'fr', 'es', 'ar', 'zh', 'ru']) {
+    for (const lang of ['en', 'de', 'fr', 'es', 'ar', 'zh', 'ru', 'pt', 'pl']) {
       const v = resolvePollyVoice(lang);
       expect(v).not.toBeNull();
       // CLAUDE.md: "IF TTS is used → THEN specify model_name explicitly."
@@ -48,8 +48,34 @@ describe('VTID-03495 Polly voice resolution', () => {
     expect(resolvePollyVoice('ru')!.engine).toBe('standard');
   });
 
-  it('falls back to English for languages outside the table but not on the unsupported list', () => {
-    expect(resolvePollyVoice('ja')!.languageCode).toBe('en-US');
+  // VTID-03578 — every RELEASE locale must resolve to a voice or be an
+  // explicitly-declared gap. This is the assertion that would have caught
+  // pt/pl taking the English fallback: iterating the voice table can only
+  // tell you what IS there, never what the platform ships and is missing.
+  it('covers every release locale, with sr the one declared gap', () => {
+    const RELEASE_LOCALES = ['de', 'en', 'es', 'sr', 'fr', 'pt', 'pl', 'ru', 'zh'];
+    const missing = RELEASE_LOCALES.filter(
+      (l) => resolvePollyVoice(l) === null && !POLLY_UNSUPPORTED_LANGS.has(l),
+    );
+    expect(missing).toEqual([]);
+    // And the declared gap is exactly sr — not a growing amnesty list.
+    expect([...POLLY_UNSUPPORTED_LANGS]).toEqual(['sr']);
+  });
+
+  it('speaks Brazilian Portuguese, not European, for pt', () => {
+    // The catalog is pt-BR (VTID-03576). Polly's pt-PT voice would read
+    // Brazilian text in the European variant — fluent, and wrong.
+    expect(resolvePollyVoice('pt')!.languageCode).toBe('pt-BR');
+    expect(resolvePollyVoice('pt-BR')!.languageCode).toBe('pt-BR');
+  });
+
+  it('returns null for a language outside the table instead of English audio', () => {
+    // VTID-03578: this previously returned Joanna/en-US. The module's own
+    // header calls wrong-language audio worse than no audio, and the old
+    // fallback quietly did exactly that for every unlisted language — which
+    // is how pt and pl shipped speaking English.
+    expect(resolvePollyVoice('ja')).toBeNull();
+    expect(resolvePollyVoice('nl')).toBeNull();
   });
 
   it('normalizes locale tags down to a base language', () => {

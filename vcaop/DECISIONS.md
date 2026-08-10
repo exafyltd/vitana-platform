@@ -142,3 +142,31 @@
 - **consent_receipt's FK is RESTRICT, not CASCADE** — receipts must survive
   their grant; deleting consent history to delete a grant is the exact
   failure an immutable receipt exists to prevent.
+
+## 2026-08-09 — Activation wave (blockers resolved by the platform owner)
+
+- **BLK-007: the AS is self-hosted inside vcaop-mcp, identity delegated to
+  Supabase Auth.** No new identity vendor; the MCP-connector trio (RFC 8414
+  metadata, RFC 7591 DCR, code+PKCE S256) lives on the same origin as the
+  resource. The AS renders no HTML — consent is a vitana-v1 page, so CSP
+  rules and the app's session handling stay untouched.
+- **The privacy review's verdict binds even when activation is pre-approved.**
+  The owner approved Phase 7 activation *subject to* the review; round 1
+  came back FAIL and the layer stayed dormant until every finding (and the
+  re-review's N1–N5) was fixed and re-verified. A pre-approval is approval
+  of the process, not of whatever the first draft happened to be.
+- **Non-sandbox settlement is a recorded authorization, not a flag** —
+  `live_authorization {blocker, authorized_by, authorized_at, reference}`
+  validated field-by-field at construction; mirrors the BLK-009 activation
+  record pattern.
+- **The gateway portal ships in its own PR (#3067) with an evidence pack.**
+  VALIDATOR-CHECK's path-ownership profiles admit only gateway trees per PR
+  — discovered live because #3066 was the first PR to reach that gate's
+  profile branch since its revival, which also surfaced that the gate's awk
+  was syntactically invalid (fixed under VTID-03549, PR #3068) and that the
+  gateway_backend profile forbade the very test files its acceptance gate
+  demands.
+- **The gateway mirrors the connection state machine rather than importing
+  it** — the gateway image cannot depend on the vcaop package; a sync test
+  parses the canonical map out of the vcaop source and fails CI on any
+  divergence (nav-manifest-sync precedent).

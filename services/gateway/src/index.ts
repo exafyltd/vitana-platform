@@ -313,6 +313,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const vcaopRouter = require('./routes/vcaop').default;
   // VCAOP: public, key-verified affiliate postback receiver (Admitad) — no user auth
   const vcaopPostbackRouter = require('./routes/vcaop-postback').default;
+  // VCAOP: Commerce Mesh Partner Portal (connect-business workflow, VTID-03544)
+  const vcaopPortalRouter = require('./routes/vcaop-portal').default;
+  // VCAOP: merchant self-service portal — owner-scoped /my surface (VTID-03553)
+  const vcaopPortalMyRouter = require('./routes/vcaop-portal-my').default;
   // VCAOP: Shopify own-store catalog sync (admin trigger; background worker in services)
   const shopifySyncRouter = require('./routes/shopify-sync').default;
   // VCAOP: Awin joined-programme sync (admin trigger; background worker in services)
@@ -710,6 +714,12 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VCAOP: public affiliate postback receiver — MUST mount before the authed vcaop
   // router so /api/v1/vcaop/postback/* resolves to the key-verified public handler.
   mountRouterSync(app, '/api/v1/vcaop/postback', vcaopPostbackRouter, { owner: 'vcaop-postback' });
+  // VCAOP: merchant self-service /my surface — MUST mount before the admin
+  // portal router so /api/v1/vcaop/portal/my/* resolves to the owner-scoped
+  // handlers instead of the admin ones (VTID-03553).
+  mountRouterSync(app, '/api/v1/vcaop/portal/my', vcaopPortalMyRouter, { owner: 'vcaop-portal-my' });
+  // VCAOP: Partner Portal — mount before the vcaop router so the sub-path resolves.
+  mountRouterSync(app, '/api/v1/vcaop/portal', vcaopPortalRouter, { owner: 'vcaop-portal' });
   // VCAOP: Shopify catalog sync — mount before the vcaop router so the sub-path resolves.
   mountRouterSync(app, '/api/v1/vcaop/shopify', shopifySyncRouter, { owner: 'vcaop-shopify' });
   // VCAOP: Awin programme sync — mount before the vcaop router so the sub-path resolves.

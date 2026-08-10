@@ -601,6 +601,29 @@ one of these adapters**, alongside `anthropic`, `openai`, `vertex`,
   profile ID**, not a bare on-demand model ID. `PROVIDER_FLAGSHIPS.bedrock`
   (`services/gateway/src/constants/llm-defaults.ts`) is only the Command Hub
   dropdown's convenience default — read from `BEDROCK_MODEL_ID` if set.
+- **The profile ID has NO `-v1:0` suffix here, and this bullet used to say it
+  did (corrected VTID-03578).** The example given above was
+  `eu.anthropic.claude-sonnet-4-6-v1:0`. That is wrong, and it is wrong in the
+  dangerous direction: `llm-defaults.ts` records that the suffix-free
+  `eu.anthropic.claude-sonnet-4-6` is what `aws bedrock
+  list-inference-profiles` actually returned for `eu-central-1` under
+  VTID-03403, and names `-v1:0` explicitly as "an earlier unconfirmed guess".
+  Anyone reading this file and trusting the old example would "repair" a
+  working ID into a broken one — which is exactly what VTID-03578 started to
+  do before checking the source. **Source of truth is
+  `list-inference-profiles`, then `llm-defaults.ts`; never this file's prose.**
+- **RESOLVED 2026-08-10 by VTID-03579 — the live invoke the bullet above asked
+  for was run.** VTID-03578 flagged that the active policy carried three
+  mutually inconsistent ID shapes and that at most one convention could be
+  right. Both premises turned out to be wrong in an instructive way: the ID
+  *shape* is not a convention at all (newer profiles simply have no suffix,
+  older ones do — both forms are valid simultaneously), and what actually
+  determines whether a call succeeds is **account subscription**, not the ID
+  string. See the section below for the measured per-model results. The
+  suggested cheap check — querying `oasis_events` for `llm.call.failed` with
+  `provider='bedrock'` — would NOT have found it: an unsubscribed model is
+  skipped or falls back, so the failure never reaches that topic.
+
   Note the id form is **not** uniformly `-v1:0`-suffixed: newer profiles drop
   it (`eu.anthropic.claude-sonnet-4-6`), older ones keep it
   (`eu.anthropic.claude-sonnet-4-5-20250929-v1:0`). A missing suffix is NOT
@@ -735,6 +758,40 @@ quality step down from `ru-RU-Wavenet-A`.
 fallback". Set **`TTS_POLLY_STRICT=true`** to disable the fallback — use it in
 a GCP-shutdown rehearsal to prove no hidden Google dependency remains; with it
 on, an unservable request returns null instead of quietly reaching back to GCP.
+
+### The seam covers the GATEWAY only — the frontend has its own Google TTS (VTID-03578)
+
+The five rows above are every *gateway* call site, and the table has been read
+as "all TTS goes through here". It does not. `vitana-v1`'s `useTextToSpeech.ts`
+and `VoiceSettingsPanel.tsx` call **Supabase edge functions directly** —
+`google-gemini-tts` (Chirp 3 HD voices) and `google-cloud-tts` (Standard/
+Wavenet, and the only path Serbian takes) — over `supabase.functions.invoke`.
+That traffic never touches the gateway, so `TTS_PROVIDER=polly` does not move
+it and `TTS_POLLY_STRICT=true` cannot detect it.
+
+Concretely: `GEMINI_VOICE_MAP` in `useTextToSpeech.ts` hardcodes ten
+`*-Chirp3-HD-*` voice IDs, and the user's stored `tts_voice` preference holds
+one of those strings — so a switch has to migrate stored per-user preferences,
+not just change a provider. **Every user who has opened voice settings has a
+Google voice ID persisted against their profile.**
+
+This is a second, independent workstream (an edge function speaking Polly, plus
+a preference migration), not a flag. Until it lands, "we are off Google TTS" is
+true of the gateway and false of the app.
+
+### Voice coverage after VTID-03578
+
+`pt` and `pl` were in **neither** `POLLY_VOICES` nor `POLLY_UNSUPPORTED_LANGS`,
+and `resolvePollyVoice()` ended `?? POLLY_VOICES['en']` — so both live locales
+resolved to **Joanna, en-US, neural**. A Portuguese user would have been read to
+in fluent English by a voice that logged nothing and returned healthy audio.
+The module's own header called that failure worse than silence, one screen
+above the line that caused it.
+
+Now: `de en es fr pt pl ru zh ar` all resolve; **`sr` is the only gap**, and an
+unlisted language returns null rather than English. `pt` is pinned to **pt-BR**
+(Camila) to match the Brazilian catalog — Polly's pt-PT voice would read
+Brazilian text in the European variant.
 
 ### Before flipping `TTS_PROVIDER=polly`
 
