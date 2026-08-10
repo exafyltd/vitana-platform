@@ -26,7 +26,9 @@
 import fetch from 'node-fetch';
 import { randomUUID } from 'crypto';
 import { createClient } from '@supabase/supabase-js';
-import { VertexAI, GenerateContentResult, Content, Part, FunctionDeclaration, Tool } from '@google-cloud/vertexai';
+// VTID-03579: operator LLM calls go through the router (Bedrock primary,
+// DeepSeek fallback) — never a provider named in this file.
+import { callViaRouter, type LLMRouterTool } from './llm-router';
 import {
   createOperatorTask,
   getAutopilotTaskStatus,
@@ -83,25 +85,14 @@ const VERTEX_PROJECT = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJE
 const VERTEX_LOCATION = process.env.VERTEX_LOCATION || 'us-central1';
 const VERTEX_MODEL = process.env.VERTEX_MODEL || 'gemini-2.5-pro';
 
-// VTID-01023: Check which AI backends are configured
-const hasGeminiConfig = !!GOOGLE_GEMINI_API_KEY;
-// Vertex AI is available if we have project and location (uses ADC for auth)
-const hasVertexConfig = !!VERTEX_PROJECT && !!VERTEX_LOCATION;
-const hasAnyAIConfig = hasGeminiConfig || hasVertexConfig;
+// VTID-03579: the has*Config trio described which GOOGLE backend was wired up.
+// With the operator routed there is no per-provider config to check here at all
+// — the router owns availability, and a stale "do we have an AI backend?" flag
+// computed from Google env vars could only ever answer the wrong question.
 
-// VTID-01023: Initialize Vertex AI client (uses ADC automatically on Cloud Run)
-let vertexAI: VertexAI | null = null;
-if (hasVertexConfig) {
-  try {
-    vertexAI = new VertexAI({
-      project: VERTEX_PROJECT,
-      location: VERTEX_LOCATION,
-    });
-    console.log(`[VTID-01023] Vertex AI initialized: project=${VERTEX_PROJECT}, location=${VERTEX_LOCATION}, model=${VERTEX_MODEL}`);
-  } catch (err: any) {
-    console.warn(`[VTID-01023] Failed to initialize Vertex AI: ${err.message}`);
-  }
-}
+// VTID-03579: the Vertex client is gone. The operator names no provider now —
+// `llm_routing_policy`'s `operator` stage does (Bedrock primary, DeepSeek
+// fallback).
 
 // ==================== Types ====================
 
@@ -2972,24 +2963,26 @@ function getOperatorSystemPrompt(): string {
  * VTID-01023: Convert tool definitions to Vertex AI format
  * Uses explicit typing to match Vertex AI SDK requirements
  */
-function getVertexToolDefinitions(userRole?: string): Tool[] {
-  // VTID-DEV-ASSIST: Filter tool definitions by user role.
-  // dev_ prefixed tools are ONLY included when role is explicitly developer/admin.
-  // If role is unknown/undefined, dev_ tools are excluded (whitelist, not blacklist).
+/**
+ * VTID-03579: the same role-filtered tool set, in the router's provider-neutral
+ * shape. Deliberately built from the SAME `GEMINI_TOOL_DEFINITIONS` source and
+ * the SAME `dev_`-prefix whitelist as `getVertexToolDefinitions` above — the
+ * role filter is a security boundary (dev tools are excluded whenever the role
+ * is not explicitly developer/admin, including when it is unknown), and a
+ * second hand-maintained copy of that list is exactly how such a boundary drifts
+ * open without anyone noticing.
+ */
+function getRouterToolDefinitions(userRole?: string): LLMRouterTool[] {
   let toolDefs = GEMINI_TOOL_DEFINITIONS.functionDeclarations;
   const isDeveloper = userRole && ['developer', 'admin'].includes(userRole);
   if (!isDeveloper) {
     toolDefs = toolDefs.filter(fd => !fd.name.startsWith('dev_') || fd.name === 'dev_verify_deploy_checklist');
   }
-
-  const functionDeclarations: FunctionDeclaration[] = toolDefs.map(fd => ({
+  return toolDefs.map(fd => ({
     name: fd.name,
     description: fd.description,
-    // Cast parameters through unknown to satisfy TypeScript
-    parameters: fd.parameters as unknown as FunctionDeclaration['parameters']
+    inputSchema: fd.parameters as unknown as Record<string, unknown>,
   }));
-
-  return [{ functionDeclarations }];
 }
 
 /**
@@ -3009,21 +3002,6 @@ async function callVertexWithTools(
   toolCalls?: GeminiToolCall[];
   telemetryContext?: LLMCallContext;
 }> {
-  if (!vertexAI) {
-    throw new Error('Vertex AI not initialized');
-  }
-
-  // VTID-01208: Start LLM telemetry tracking
-  const llmContext = await startLLMCall({
-    vtid: vtid || null,
-    threadId,
-    service: 'gemini-operator',
-    stage: 'operator',
-    provider: 'vertex',
-    model: VERTEX_MODEL,
-    prompt: text,
-  });
-
   // VTID-01106: Use custom system instruction if provided (for ORB memory context)
   // VTID-01192: ALWAYS include tool instructions - merge with custom instruction
   const toolInstructions = `
@@ -3039,92 +3017,46 @@ async function callVertexWithTools(
     ? `${customSystemInstruction}\n\n${toolInstructions}`
     : `${getOperatorSystemPrompt()}\n\nCurrent thread: ${threadId}`;
 
-  const generativeModel = vertexAI.getGenerativeModel({
-    model: VERTEX_MODEL,
-    generationConfig: {
-      temperature: 0.7,
-      maxOutputTokens: 4096,
-      topP: 0.95,
-      topK: 40
-    },
-    systemInstruction: {
-      role: 'system',
-      parts: [{ text: systemPrompt }]
-    },
-    tools: getVertexToolDefinitions(userRole)
+  // VTID-03579: was a direct Vertex `generateContent` with ADC. The operator is
+  // the last big Google caller and the hardest, because it is an agentic loop
+  // rather than a one-shot completion: multi-turn history in, possibly several
+  // tool calls out. That is why `callViaRouter` grew `history` and `toolCalls`
+  // in this same change — routing the operator by flattening its history into
+  // one prompt string would have quietly destroyed conversational context and
+  // looked like the assistant developing amnesia.
+  //
+  // Telemetry is the router's now: it emits llm.call.started/completed/failed
+  // itself, so the manual startLLMCall/completeLLMCall/failLLMCall trio that
+  // used to wrap this would double-count every operator turn.
+  const r = await callViaRouter('operator', text, {
+    vtid: vtid || null,
+    service: 'gemini-operator',
+    systemPrompt,
+    maxTokens: 4096,
+    tools: getRouterToolDefinitions(userRole),
+    history: conversationHistory.map((m) => ({ role: m.role, content: m.content })),
   });
 
-  // VTID-01027: Build contents array with conversation history
-  const contents: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [];
-
-  // Add conversation history (map 'assistant' to 'model' for Vertex AI)
-  for (const msg of conversationHistory) {
-    contents.push({
-      role: msg.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: msg.content }]
-    });
+  if (!r.ok) {
+    // Preserved as a throw: the caller has a real fallback path keyed off this
+    // (formatToolResultsAsResponse / the no-AI-backend reply), and swallowing
+    // the failure here would hand the user a confident empty answer instead.
+    throw new Error(r.error || 'Operator LLM call failed');
   }
 
-  // Add current user message
-  contents.push({
-    role: 'user',
-    parts: [{ text }]
-  });
+  const toolCalls: GeminiToolCall[] | undefined =
+    r.toolCalls && r.toolCalls.length > 0
+      ? r.toolCalls.map((tc) => ({ name: tc.name, args: tc.arguments || {} }))
+      : undefined;
 
-  const request = { contents };
-
-  try {
-    console.log(`[VTID-01023] Calling Vertex AI: model=${VERTEX_MODEL}, history_messages=${conversationHistory.length}`);
-    const response = await generativeModel.generateContent(request);
-
-    const candidate = response.response?.candidates?.[0];
-    const content = candidate?.content;
-
-    // VTID-01208: Extract usage metadata if available
-    const usageMetadata = (response.response as any)?.usageMetadata;
-    const inputTokens = usageMetadata?.promptTokenCount;
-    const outputTokens = usageMetadata?.candidatesTokenCount;
-
-    if (!content) {
-      // VTID-01208: Complete telemetry for empty response
-      await completeLLMCall(llmContext, { inputTokens, outputTokens });
-      return { reply: 'I apologize, but I could not generate a response. Please try again.', telemetryContext: llmContext };
-    }
-
-    // Check for function calls
-    const functionCallParts = content.parts?.filter((part: Part) => 'functionCall' in part);
-
-    if (functionCallParts && functionCallParts.length > 0) {
-      const toolCalls: GeminiToolCall[] = functionCallParts.map((fc: Part) => {
-        const functionCall = (fc as any).functionCall;
-        return {
-          name: functionCall.name,
-          args: functionCall.args || {}
-        };
-      });
-      console.log(`[VTID-01023] Vertex AI returned ${toolCalls.length} tool call(s)`);
-
-      // VTID-01208: Complete telemetry for tool call response
-      await completeLLMCall(llmContext, { inputTokens, outputTokens });
-      return { reply: '', toolCalls, telemetryContext: llmContext };
-    }
-
-    // Extract text response
-    const textPart = content.parts?.find((part: Part) => 'text' in part);
-    const reply = textPart ? (textPart as any).text : '';
-    console.log(`[VTID-01023] Vertex AI returned text response (${reply.length} chars)`);
-
-    // VTID-01208: Complete telemetry for text response
-    await completeLLMCall(llmContext, { inputTokens, outputTokens });
-    return { reply, telemetryContext: llmContext };
-  } catch (error: any) {
-    // VTID-01208: Record failure in telemetry
-    await failLLMCall(llmContext, {
-      code: 'VERTEX_ERROR',
-      message: error.message || 'Unknown Vertex AI error'
-    });
-    throw error;
+  if (toolCalls) {
+    console.log(`[VTID-01023] operator returned ${toolCalls.length} tool call(s) via ${r.provider}`);
+    return { reply: r.text || '', toolCalls };
   }
+
+  const reply = r.text || '';
+  console.log(`[VTID-01023] operator returned text response (${reply.length} chars) via ${r.provider}`);
+  return { reply };
 }
 
 /**
@@ -3135,20 +3067,7 @@ async function sendToolResultsToVertex(
   toolResults: GeminiToolResult[],
   threadId: string
 ): Promise<{ reply: string }> {
-  if (!vertexAI) {
-    // Fallback: format tool results as response
-    return formatToolResultsAsResponse(toolResults);
-  }
-
-  const generativeModel = vertexAI.getGenerativeModel({
-    model: VERTEX_MODEL,
-    generationConfig: {
-      temperature: 0.7,
-      maxOutputTokens: 4096,
-    },
-    systemInstruction: {
-      role: 'system',
-      parts: [{ text: `You are Vitana, a friendly community assistant. Present the tool results to the user in a warm, helpful way.
+  const systemPrompt = `You are Vitana, a friendly community assistant. Present the tool results to the user in a warm, helpful way.
 If there were errors or governance blocks, explain them clearly.
 If successful, present the results naturally.
 
@@ -3157,34 +3076,43 @@ CRITICAL — Sharing links:
 - Put the URL on its own line. NEVER say "I'll send the link" — paste the actual URL.
 - Example:
   🎉 City by Bike Tour in Lyon
-  https://vitanaland.com/e/city-by-bike` }]
-    }
-  });
+  https://vitanaland.com/e/city-by-bike`;
 
-  // Build conversation with tool results
-  const contents: Content[] = [
-    {
-      role: 'user',
-      parts: [{ text: originalText }]
-    },
-    {
-      role: 'model',
-      parts: toolResults.map(tr => ({
-        functionResponse: {
-          name: tr.name,
-          response: tr.response
-        }
-      })) as Part[]
-    }
-  ];
+  // VTID-03579: results are presented as a TEXT turn, not as tool_result blocks,
+  // and that is a deliberate protocol choice rather than a shortcut.
+  //
+  // Anthropic requires every `tool_result` to carry the `tool_use_id` of a
+  // `tool_use` block in the immediately preceding assistant message. This
+  // function only receives `GeminiToolResult` (a name and a response) — the
+  // originating ids are not in scope here, and inventing them produces a hard
+  // 400 rather than a degraded answer. Rendering the outcomes as text is valid
+  // on every provider, and the model sees exactly the same information: what
+  // was asked, and what came back.
+  const renderedResults = toolResults
+    .map((tr) => `Tool: ${tr.name}\nResult: ${JSON.stringify(tr.response)}`)
+    .join('\n\n');
 
   try {
-    const response = await generativeModel.generateContent({ contents });
-    const textPart = response.response?.candidates?.[0]?.content?.parts?.find((p: Part) => 'text' in p);
-    const rawReply = textPart ? (textPart as any).text : 'Operation completed.';
-    return { reply: ensureLinksInReply(rawReply, toolResults) };
+    const r = await callViaRouter('operator', renderedResults, {
+      service: 'gemini-operator-tool-results',
+      systemPrompt,
+      maxTokens: 4096,
+      history: [{ role: 'user', content: originalText }],
+    });
+
+    if (!r.ok || !r.text) {
+      console.warn(
+        `[VTID-01023] tool-results call failed via ${r.provider ?? 'router'}: ${r.error ?? 'empty'}`,
+      );
+      return formatToolResultsAsResponse(toolResults);
+    }
+
+    // Unchanged safety net (VTID-01270): the link guarantee does not depend on
+    // the model remembering to paste it, and that matters more now that the
+    // model behind this is a different one than the prompt was tuned against.
+    return { reply: ensureLinksInReply(r.text, toolResults) };
   } catch (err: any) {
-    console.warn(`[VTID-01023] Vertex tool results call failed: ${err.message}`);
+    console.warn(`[VTID-01023] tool results call failed: ${err.message}`);
     return formatToolResultsAsResponse(toolResults);
   }
 }
@@ -3308,10 +3236,14 @@ export async function processWithGemini(input: {
     console.log(`[VTID-01027] Including ${conversationHistory.length} context messages from conversation ${conversationId}`);
   }
 
-  // VTID-01023: Try Vertex AI first (uses ADC, works on Cloud Run without API key)
-  if (vertexAI) {
+  // VTID-03579: no longer gated on a Vertex client existing. That gate meant
+  // "is Google configured?", so removing Vertex without removing the gate would
+  // have skipped the operator entirely and dropped every request to the local
+  // keyword-matching fallback — a silent, total capability loss that still
+  // returns 200. Provider availability is the router's question now.
+  {
     try {
-      console.log('[VTID-01023] Using Vertex AI with ADC');
+      console.log('[VTID-03579] Operator call via llm-router');
       // VTID-01106: Pass custom system instruction if provided (for ORB memory context)
       // VTID-DEV-ASSIST: Pass userRole to filter tool definitions by authorization
       const vertexResponse = await callVertexWithTools(text, threadId, conversationHistory, systemInstruction, undefined, userRole);
@@ -3366,70 +3298,22 @@ export async function processWithGemini(input: {
     }
   }
 
-  // VTID-01023: Fallback to Gemini API key if available
-  if (GOOGLE_GEMINI_API_KEY) {
-    try {
-      console.log('[VTID-01023] Falling back to Gemini API key');
-      // Call Gemini API with function calling
-      // VTID-01027: Pass conversation history
-      // VTID-01106: Pass custom system instruction if provided (for ORB memory context)
-      // VTID-DEV-ASSIST: Pass userRole to filter tool definitions by authorization
-      const geminiResponse = await callGeminiWithTools(text, threadId, conversationHistory, systemInstruction, undefined, userRole);
-
-      // Check if Gemini wants to call any tools
-      if (geminiResponse.toolCalls && geminiResponse.toolCalls.length > 0) {
-        const toolResults: GeminiToolResult[] = [];
-
-        for (const toolCall of geminiResponse.toolCalls) {
-          const result = await executeTool(toolCall.name, toolCall.args, threadId);
-          toolResults.push({
-            name: toolCall.name,
-            response: {
-              ok: result.ok,
-              ...result.data,
-              error: result.error,
-              governanceBlocked: result.governanceBlocked
-            }
-          });
-        }
-
-        // Send tool results back to Gemini for final response
-        const finalResponse = await sendToolResultsToGemini(text, toolResults, threadId);
-
-        return {
-          reply: finalResponse.reply,
-          toolResults,
-          meta: {
-            provider: 'gemini-api',
-            model: 'gemini-pro',
-            mode: 'operator_gemini',
-            tool_calls: geminiResponse.toolCalls.length,
-            vtid: 'VTID-01023'
-          }
-        };
-      }
-
-      // No tool calls, return Gemini's direct response
-      return {
-        reply: geminiResponse.reply,
-        meta: {
-          provider: 'gemini-api',
-          model: 'gemini-pro',
-          mode: 'operator_gemini',
-          tool_calls: 0,
-          vtid: 'VTID-01023'
-        }
-      };
-    } catch (error: any) {
-      console.error(`[VTID-01023] Gemini API error:`, error.message);
-    }
-  }
+  // VTID-03579: the "fall back to the Gemini API key" branch that lived here is
+  // DELETED, not disabled. Per CLAUDE.md ALWAYS 10c, a Claude stage's fallback
+  // is another Bedrock model or an explicit failure — never Google. This branch
+  // was the operator's own private fallback chain, invisible to
+  // `llm_routing_policy`, so the routing table could read "off Google" while
+  // every operator turn that hit a Vertex hiccup silently landed on Gemini.
+  // The router's configured fallback (DeepSeek) now covers this, and it is
+  // visible in the policy table and in llm.call.* telemetry.
 
   // VTID-01023: Final fallback to local routing
   console.log('[VTID-01023] Using local routing fallback');
   const fallbackResponse = await processLocalRouting(text, threadId);
   if (fallbackResponse.meta) {
-    fallbackResponse.meta.fallback_reason = vertexAI ? 'vertex_error' : 'no_ai_backend';
+    // VTID-03579: reaching here now means the router could not serve at all
+    // (primary AND fallback failed), not "Google was unconfigured".
+    fallbackResponse.meta.fallback_reason = 'llm_router_error';
   }
   return fallbackResponse;
 }
@@ -3439,234 +3323,12 @@ export async function processWithGemini(input: {
  * VTID-01027: Added conversation history support
  * VTID-01106: Added optional custom system instruction for ORB memory context
  */
-async function callGeminiWithTools(
-  text: string,
-  threadId: string,
-  conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [],
-  customSystemInstruction?: string,
-  vtid?: string | null,
-  userRole?: string
-): Promise<{
-  reply: string;
-  toolCalls?: GeminiToolCall[];
-  telemetryContext?: LLMCallContext;
-}> {
-  if (!GOOGLE_GEMINI_API_KEY) {
-    throw new Error('GOOGLE_GEMINI_API_KEY not configured');
-  }
-
-  // VTID-01208: Start LLM telemetry tracking
-  const llmContext = await startLLMCall({
-    vtid: vtid || null,
-    threadId,
-    service: 'gemini-operator',
-    stage: 'operator',
-    provider: 'vertex',
-    model: 'gemini-pro',
-    prompt: text,
-  });
-
-  // VTID-01027: Build contents array with conversation history
-  const contents: Array<{ role: string; parts: Array<{ text: string }> }> = [];
-
-  // Add conversation history (map 'assistant' to 'model' for Gemini API)
-  for (const msg of conversationHistory) {
-    contents.push({
-      role: msg.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: msg.content }]
-    });
-  }
-
-  // Add current user message
-  contents.push({
-    role: 'user',
-    parts: [{ text }]
-  });
-
-  // VTID-01106: Use custom system instruction if provided (for ORB memory context)
-  // VTID-01192: ALWAYS include tool instructions - merge with custom instruction
-  const geminiToolInstructions = `
-**Available tools (ALWAYS use for calculations):**
-- run_code: Execute JavaScript code for calculations, date math, conversions
-
-**CRITICAL: When you have data in your context and need to calculate:**
-- Age difference, days between dates, percentages → CALL run_code
-- Extract the dates/numbers from context, then call run_code with JS code
-- NEVER say "I don't have access" when data IS in your context`;
-
-  const systemPrompt = customSystemInstruction
-    ? `${customSystemInstruction}\n\n${geminiToolInstructions}`
-    : `${getOperatorSystemPrompt()}\n\nCurrent thread: ${threadId}`;
-
-  const requestBody = {
-    contents,
-    // VTID-DEV-ASSIST: Filter tool definitions by role — dev_ tools ONLY for developer/admin (whitelist)
-    tools: [{
-      functionDeclarations: (userRole && ['developer', 'admin'].includes(userRole))
-        ? GEMINI_TOOL_DEFINITIONS.functionDeclarations
-        : GEMINI_TOOL_DEFINITIONS.functionDeclarations.filter(fd => !fd.name.startsWith('dev_') || fd.name === 'dev_verify_deploy_checklist')
-    }],
-    systemInstruction: {
-      parts: [{
-        text: systemPrompt
-      }]
-    },
-    generationConfig: {
-      temperature: 0.7,
-      maxOutputTokens: 4096
-    }
-  };
-
-  try {
-    console.log(`[VTID-01027] Calling Gemini API with ${conversationHistory.length} history messages`);
-
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${GOOGLE_GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(requestBody)
-      }
-    );
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
-    }
-
-    const result = await response.json() as any;
-    const candidate = result.candidates?.[0];
-    const content = candidate?.content;
-
-    // VTID-01208: Extract usage metadata if available
-    const usageMetadata = result.usageMetadata;
-    const inputTokens = usageMetadata?.promptTokenCount;
-    const outputTokens = usageMetadata?.candidatesTokenCount;
-
-    if (!content) {
-      await completeLLMCall(llmContext, { inputTokens, outputTokens });
-      return { reply: 'I apologize, but I could not generate a response. Please try again.', telemetryContext: llmContext };
-    }
-
-    // Check for function calls
-    const functionCalls = content.parts?.filter((part: any) => part.functionCall);
-
-    if (functionCalls && functionCalls.length > 0) {
-      const toolCalls: GeminiToolCall[] = functionCalls.map((fc: any) => ({
-        name: fc.functionCall.name,
-        args: fc.functionCall.args || {}
-      }));
-      await completeLLMCall(llmContext, { inputTokens, outputTokens });
-      return { reply: '', toolCalls, telemetryContext: llmContext };
-    }
-
-    // Extract text response
-    const textPart = content.parts?.find((part: any) => part.text);
-    await completeLLMCall(llmContext, { inputTokens, outputTokens });
-    return { reply: textPart?.text || '', telemetryContext: llmContext };
-  } catch (error: any) {
-    // VTID-01208: Record failure in telemetry
-    await failLLMCall(llmContext, {
-      code: 'GEMINI_API_ERROR',
-      message: error.message || 'Unknown Gemini API error'
-    });
-    throw error;
-  }
-}
-
-/**
- * Send tool results back to Gemini for final response
- */
-async function sendToolResultsToGemini(
-  originalText: string,
-  toolResults: GeminiToolResult[],
-  threadId: string
-): Promise<{ reply: string }> {
-  if (!GOOGLE_GEMINI_API_KEY) {
-    // Format tool results as response
-    const successResults = toolResults.filter(r => r.response.ok);
-    const failedResults = toolResults.filter(r => !r.response.ok);
-
-    let reply = '';
-
-    for (const result of successResults) {
-      if (result.response.message) {
-        reply += result.response.message + '\n\n';
-      }
-    }
-
-    for (const result of failedResults) {
-      if (result.response.governanceBlocked) {
-        reply += `**Governance Blocked:** ${result.response.error}\n\n`;
-      } else {
-        reply += `**Error:** ${result.response.error}\n\n`;
-      }
-    }
-
-    return { reply: reply.trim() || 'Operation completed.' };
-  }
-
-  // Build conversation with tool results
-  const requestBody = {
-    contents: [
-      {
-        role: 'user',
-        parts: [{ text: originalText }]
-      },
-      {
-        role: 'model',
-        parts: toolResults.map(tr => ({
-          functionResponse: {
-            name: tr.name,
-            response: tr.response
-          }
-        }))
-      }
-    ],
-    systemInstruction: {
-      parts: [{
-        text: `You are Vitana, a friendly community assistant. Present the tool results to the user in a warm, helpful way.
-If there were errors or governance blocks, explain them clearly.
-If successful, present the results naturally.
-
-CRITICAL — Sharing links:
-- Event search results contain "Link: https://vitanaland.com/e/..." for each event. You MUST include this URL in your response.
-- Put the URL on its own line. NEVER say "I'll send the link" — paste the actual URL.
-- Example:
-  🎉 City by Bike Tour in Lyon
-  https://vitanaland.com/e/city-by-bike`
-      }]
-    },
-    generationConfig: {
-      temperature: 0.7,
-      maxOutputTokens: 4096
-    }
-  };
-
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${GOOGLE_GEMINI_API_KEY}`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(requestBody)
-    }
-  );
-
-  if (!response.ok) {
-    // Fallback to formatted results
-    return sendToolResultsToGemini(originalText, toolResults, threadId);
-  }
-
-  const result = await response.json() as any;
-  const textPart = result.candidates?.[0]?.content?.parts?.find((p: any) => p.text);
-  const rawReply = textPart?.text || 'Operation completed.';
-
-  return { reply: ensureLinksInReply(rawReply, toolResults) };
-}
+// VTID-03579: `callGeminiWithTools` and `sendToolResultsToGemini` lived here —
+// ~230 lines POSTing to generativelanguage.googleapis.com with a hardcoded
+// gemini-2.5-pro. Both are removed rather than left unreferenced: dead code
+// that still names a provider is the thing a future "quick fix" reaches for.
+// The routed equivalents are `callVertexWithTools` and `sendToolResultsToVertex`
+// above (names kept so this diff stays about behaviour, and now inaccurate).
 
 /**
  * Local routing fallback when Gemini is not available

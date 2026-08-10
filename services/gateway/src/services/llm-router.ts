@@ -104,6 +104,12 @@ export interface LLMRouterOpts {
    * arguments instead of free text. Index into `tools` array.
    */
   forceTool?: number;
+  /**
+   * VTID-03579: prior turns, oldest first. `prompt` remains the CURRENT user
+   * turn and is appended after these — so every existing caller is unaffected
+   * and a single-turn call is still literally a string.
+   */
+  history?: LLMRouterMessage[];
 }
 
 /** Returned when `forceTool` is set and the model emitted a tool call. */
@@ -111,13 +117,45 @@ export interface LLMRouterToolCall {
   name: string;
   /** Already-parsed JSON arguments. Adapters parse the provider-specific shape. */
   arguments: Record<string, unknown>;
+  /**
+   * VTID-03579: provider-assigned id for this call. Opaque here, but it must be
+   * echoed back on the matching tool result — Anthropic pairs them by id and
+   * rejects a mismatch outright.
+   */
+  id?: string;
 }
+
+/**
+ * VTID-03579: one prior turn of a multi-turn exchange.
+ *
+ * Deliberately provider-neutral and deliberately NOT a raw provider payload:
+ * an agentic caller should describe what happened (the model asked for tools /
+ * here are the results), and each adapter renders that into its own wire shape.
+ * Passing Anthropic content blocks straight through would work today and pin
+ * every future caller to Anthropic, which is the coupling this whole file
+ * exists to prevent.
+ */
+export type LLMRouterMessage =
+  | { role: 'user' | 'assistant'; content: string }
+  /** The model asked to call tools. */
+  | { role: 'assistant'; toolCalls: LLMRouterToolCall[]; content?: string }
+  /** The caller ran them; these are the outcomes, in the same order. */
+  | {
+      role: 'user';
+      toolResults: Array<{ id?: string; name: string; result: string; isError?: boolean }>;
+    };
 
 export interface LLMRouterResult {
   ok: boolean;
   text?: string;
   /** Populated when `forceTool` was set and the model emitted a structured call. */
   toolCall?: LLMRouterToolCall;
+  /**
+   * VTID-03579: ALL tool calls from this turn. A model can request several at
+   * once; reading `toolCall` alone drops the rest and then waits forever for
+   * results the caller was never told to produce.
+   */
+  toolCalls?: LLMRouterToolCall[];
   usage?: LLMUsage;
   provider?: LLMProvider;
   model?: string;
@@ -134,12 +172,16 @@ interface AdapterCallArgs {
   images?: LLMRouterImage[];
   tools?: LLMRouterTool[];
   forceTool?: number;
+  /** VTID-03579: prior turns; `prompt` is appended as the current user turn. */
+  history?: LLMRouterMessage[];
 }
 
 interface AdapterResult {
   ok: boolean;
   text?: string;
   toolCall?: LLMRouterToolCall;
+  /** VTID-03579: every tool the model asked for this turn, in order. */
+  toolCalls?: LLMRouterToolCall[];
   usage?: LLMUsage;
   error?: string;
 }
@@ -551,7 +593,7 @@ const vertexAdapter: ProviderAdapter = {
  */
 const deepseekAdapter: ProviderAdapter = {
   isAvailable: () => Boolean(process.env.DEEPSEEK_API_KEY),
-  async call({ prompt, model, systemPrompt, maxTokens, image, images, tools, forceTool }): Promise<AdapterResult> {
+  async call({ prompt, model, systemPrompt, maxTokens, image, images, tools, forceTool, history }): Promise<AdapterResult> {
     const apiKey = process.env.DEEPSEEK_API_KEY;
     if (!apiKey) return { ok: false, error: 'DEEPSEEK_API_KEY not set' };
 
@@ -564,6 +606,41 @@ const deepseekAdapter: ProviderAdapter = {
 
     const messages: Array<Record<string, unknown>> = [];
     if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
+
+    // VTID-03579: DeepSeek is the standing fallback for every Bedrock stage, so
+    // it has to carry conversation history too — otherwise a Bedrock blip would
+    // silently drop the whole exchange and the model would answer the current
+    // turn with no idea what came before. That is worse than a visible failure,
+    // because it looks like the assistant simply forgot.
+    //
+    // DeepSeek speaks the OpenAI shape, where a tool round-trip is an assistant
+    // message carrying `tool_calls` and one `role:'tool'` message per result —
+    // not Anthropic's content blocks. Rendering happens here so the caller only
+    // ever describes what happened, never a provider's wire format.
+    for (const m of history ?? []) {
+      if ('toolCalls' in m && m.toolCalls) {
+        messages.push({
+          role: 'assistant',
+          content: m.content ?? null,
+          tool_calls: m.toolCalls.map((tc) => ({
+            id: tc.id ?? tc.name,
+            type: 'function',
+            function: { name: tc.name, arguments: JSON.stringify(tc.arguments) },
+          })),
+        });
+      } else if ('toolResults' in m && m.toolResults) {
+        for (const tr of m.toolResults) {
+          messages.push({
+            role: 'tool',
+            tool_call_id: tr.id ?? tr.name,
+            content: tr.result,
+          });
+        }
+      } else if ('content' in m && typeof m.content === 'string') {
+        messages.push({ role: m.role, content: m.content });
+      }
+    }
+
     messages.push({ role: 'user', content: prompt });
 
     const body: Record<string, unknown> = {
@@ -686,7 +763,7 @@ const claudeSubscriptionAdapter: ProviderAdapter = {
  */
 const bedrockAdapter: ProviderAdapter = {
   isAvailable: () => Boolean(process.env.BEDROCK_ROLE_ARN),
-  async call({ prompt, model, systemPrompt, maxTokens, image, images, tools, forceTool }): Promise<AdapterResult> {
+  async call({ prompt, model, systemPrompt, maxTokens, image, images, tools, forceTool, history }): Promise<AdapterResult> {
     // VTID-03496: images and tools are now supported. Bedrock speaks the same
     // Anthropic Messages API shape as `anthropicAdapter` above, so the content
     // blocks, tool schema key (`input_schema`) and `tool_choice` are built
@@ -724,9 +801,45 @@ const bedrockAdapter: ProviderAdapter = {
         ? ({ type: 'tool', name: tools[forceTool].name } as const)
         : undefined;
 
+    // VTID-03579: prior turns render into Anthropic content blocks here rather
+    // than in the caller, so an agentic caller never has to know Anthropic's
+    // wire shape. tool_use/tool_result pair by id — an id that does not match
+    // is a 400, not a degraded answer, so it is carried through verbatim.
+    const historyMessages: Array<{
+      role: 'user' | 'assistant';
+      content: string | BedrockContentBlock[];
+    }> = [];
+    for (const m of history ?? []) {
+      if ('toolCalls' in m && m.toolCalls) {
+        const blocks: BedrockContentBlock[] = [];
+        if (m.content) blocks.push({ type: 'text', text: m.content });
+        for (const tc of m.toolCalls) {
+          blocks.push({
+            type: 'tool_use',
+            id: tc.id ?? tc.name,
+            name: tc.name,
+            input: tc.arguments,
+          });
+        }
+        historyMessages.push({ role: 'assistant', content: blocks });
+      } else if ('toolResults' in m && m.toolResults) {
+        historyMessages.push({
+          role: 'user',
+          content: m.toolResults.map((tr) => ({
+            type: 'tool_result' as const,
+            tool_use_id: tr.id ?? tr.name,
+            content: tr.result,
+            ...(tr.isError ? { is_error: true } : {}),
+          })),
+        });
+      } else if ('content' in m && typeof m.content === 'string') {
+        historyMessages.push({ role: m.role, content: m.content });
+      }
+    }
+
     const result = await invokeBedrock({
       model,
-      messages: [{ role: 'user', content }],
+      messages: [...historyMessages, { role: 'user', content }],
       system: systemPrompt,
       max_tokens: maxTokens,
       tools: bedrockTools,
@@ -740,6 +853,7 @@ const bedrockAdapter: ProviderAdapter = {
       ok: true,
       text: result.text,
       toolCall: result.toolCall,
+      toolCalls: result.toolCalls,
       usage: {
         inputTokens: result.usage?.input_tokens ?? 0,
         outputTokens: result.usage?.output_tokens ?? 0,
@@ -943,6 +1057,7 @@ async function runProviderCall(
     images: opts.images,
     tools: opts.tools,
     forceTool: opts.forceTool,
+    history: opts.history,
   });
 
   if (result.ok) {
@@ -955,6 +1070,7 @@ async function runProviderCall(
       ok: true,
       text: result.text,
       toolCall: result.toolCall,
+      toolCalls: result.toolCalls,
       usage: result.usage,
       provider,
       model,
