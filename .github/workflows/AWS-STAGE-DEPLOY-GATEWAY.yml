@@ -269,6 +269,29 @@ jobs:
           # apostrophe -- it is bash single-quoted, so a stray "'" closes
           # the string early and breaks the whole command (bit us once,
           # see PR #2978's failed AWS deploy run).
+          #
+          # That applies to jq COMMENTS too, which is why the note below lives
+          # out here rather than beside the pair it describes: a `#` comment
+          # inside the program is still inside the shell's single-quoted
+          # string, so one apostrophe in a word like "isn't" silently ends the
+          # program 20 lines early. Keep the jq body free of prose.
+          #
+          # VTID-03578 — TTS_PROVIDER=polly, AWS STAGING ONLY, so the switch is
+          # exercised somewhere real before it reaches prod.
+          #
+          # Deliberately NOT set in STAGE-DEPLOY.yml (GCP Cloud Run staging):
+          # Polly authenticates through the ECS task role and a Cloud Run
+          # instance carries no AWS credentials at all, so every call there
+          # would throw, return null, and fall back to Google. That looks like
+          # "Polly is broken" when the truth is "Polly was never reachable from
+          # that host" — a test that teaches the wrong lesson is worse than no
+          # test.
+          #
+          # Requires polly:SynthesizeSpeech on the gateway task role. Without
+          # it, synthesis still succeeds via the Google fallback and logs
+          # `[TTS] FALLBACK polly→google` — grep that line to tell a missing
+          # IAM grant apart from a working switch, because the user-visible
+          # behaviour is identical either way.
           NEW_DEF=$(aws ecs describe-task-definition --task-definition "$TD_ARN" --query taskDefinition \
             | jq --arg IMG "$IMAGE" --arg SHA "$SHA" --arg SHORT "$SHORT" \
                  --arg NOVA_ENABLED "$NOVA_SONIC_ENABLED" \
@@ -282,7 +305,8 @@ jobs:
                     ( [ .[] | select(.name | IN("GIT_COMMIT_SHA","COMMIT_SHA","BUILD_INFO_MARKER",
                                                 "NOVA_SONIC_ENABLED","NOVA_SONIC_REGION","NOVA_SONIC_MODEL_ID",
                                                 "NOVA_SONIC_CANARY_USER_IDS","NOVA_SONIC_CANARY_TENANT_IDS",
-                                                "FEATURE_ORB_GREETING_TTS_BRIDGE_ENV") | not) ]
+                                                "FEATURE_ORB_GREETING_TTS_BRIDGE_ENV",
+                                                "TTS_PROVIDER") | not) ]
                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
                           {name:"COMMIT_SHA", value:$SHA},
                           {name:"BUILD_INFO_MARKER", value:$SHORT},
@@ -291,7 +315,8 @@ jobs:
                           {name:"NOVA_SONIC_MODEL_ID", value:"amazon.nova-2-sonic-v1:0"},
                           {name:"NOVA_SONIC_CANARY_USER_IDS", value:$NOVA_USERS},
                           {name:"NOVA_SONIC_CANARY_TENANT_IDS", value:$NOVA_TENANTS},
-                          {name:"FEATURE_ORB_GREETING_TTS_BRIDGE_ENV", value:"off"} ] )
+                          {name:"FEATURE_ORB_GREETING_TTS_BRIDGE_ENV", value:"off"},
+                          {name:"TTS_PROVIDER", value:"polly"} ] )
                 | .containerDefinitions[0].secrets |=
                     ( [ .[] | select(.name | IN("SUPABASE_JWT_SECRET","SUPABASE_ANON_KEY",
                                                 "GOOGLE_GEMINI_API_KEY","GEMINI_API_KEY",

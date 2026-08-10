@@ -104,6 +104,24 @@ on:
         description: 'Set AWS_BEDROCK_REGION — must be a region where the chosen Claude profile is actually offered; a wrong region fails with an opaque model-not-found (EMPTY = preserve)'
         required: false
         default: ''
+      # VTID-03578: the remaining two Google seams. The adapters have existed
+      # since VTID-03495/03497 and both default to the Google provider, so the
+      # code has shipped to prod repeatedly while changing nothing — the switch
+      # was only ever reachable by hand-editing the live task definition, i.e.
+      # the exact mechanism VTID-03513 cost four days of staging downtime for.
+      # Same EMPTY-preserving shape as every lever above.
+      tts_provider:
+        description: 'Set TTS_PROVIDER (google|polly) — polly routes all 4 gateway TTS call sites to Amazon Polly. NOTE: sr has no Polly voice in any engine and still falls back to Google (EMPTY = preserve)'
+        required: false
+        default: ''
+      tts_polly_strict:
+        description: 'Set TTS_POLLY_STRICT — true DISABLES the polly→google fallback, so an unservable request returns no audio instead of quietly reaching back to GCP. Use to prove a shutdown is clean; it will take Serbian TTS down (true/false; EMPTY = preserve)'
+        required: false
+        default: ''
+      image_provider:
+        description: 'Set IMAGE_PROVIDER (vertex|bedrock) — bedrock routes cover-image generation/outpainting to Amazon Titan. Run scripts/images/verify-titan-image.ts FIRST; outpaint mask polarity is still unverified (EMPTY = preserve)'
+        required: false
+        default: ''
       reason:
         description: 'Reason for this AWS production gateway deploy — required'
         required: true
@@ -295,6 +313,9 @@ jobs:
           BEDROCK_ROLE_ARN_INPUT: ${{ inputs.bedrock_role_arn }}
           BEDROCK_MODEL_ID_INPUT: ${{ inputs.bedrock_model_id }}
           AWS_BEDROCK_REGION_INPUT: ${{ inputs.aws_bedrock_region }}
+          TTS_PROVIDER_INPUT: ${{ inputs.tts_provider }}
+          TTS_POLLY_STRICT_INPUT: ${{ inputs.tts_polly_strict }}
+          IMAGE_PROVIDER_INPUT: ${{ inputs.image_provider }}
         run: |
           set -e
           # VTID-03420: promote mode ships staging's image; rebuild mode ships
@@ -453,6 +474,50 @@ jobs:
               .containerDefinitions[0].environment |=
                 ( [ .[] | select(.name != "AWS_BEDROCK_REGION") ]
                   + [ {name:"AWS_BEDROCK_REGION", value:$R} ] )')
+          fi
+
+          # VTID-03578: TTS provider. tts-provider.ts falls back to google on
+          # an unrecognised value rather than failing closed, so a typo here
+          # degrades to the status quo instead of taking voice down — but it
+          # also means a typo is SILENT. Read the deploy log line below to
+          # confirm what was actually applied; do not infer it from a green run.
+          #
+          # Serbian: Polly has no sr voice in ANY engine, so with this set to
+          # polly the sr path still reaches Google. That is deliberate (fluent
+          # wrong-language audio is worse than a fallback) and it is the one
+          # thing standing between this and a clean GCP TTS shutdown.
+          if [ -n "$TTS_PROVIDER_INPUT" ]; then
+            echo "Applying TTS provider: TTS_PROVIDER=$TTS_PROVIDER_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg P "$TTS_PROVIDER_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "TTS_PROVIDER") ]
+                  + [ {name:"TTS_PROVIDER", value:$P} ] )')
+          fi
+
+          # Strict mode removes the polly→google safety net. It exists to PROVE
+          # no hidden Google dependency remains before a shutdown — turning it
+          # on in normal operation converts every Polly gap into silence for
+          # that user, starting with every Serbian one.
+          if [ -n "$TTS_POLLY_STRICT_INPUT" ]; then
+            echo "Applying Polly strict mode: TTS_POLLY_STRICT=$TTS_POLLY_STRICT_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg S "$TTS_POLLY_STRICT_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "TTS_POLLY_STRICT") ]
+                  + [ {name:"TTS_POLLY_STRICT", value:$S} ] )')
+          fi
+
+          # Image generation. Titan's outpaint mask polarity is INVERTED vs
+          # Imagen and has never been confirmed against the live API — get it
+          # backwards and the subject is regenerated while the margins are
+          # kept, which produces a plausible-looking and completely wrong
+          # image that no automated check will flag. Run
+          # scripts/images/verify-titan-image.ts before setting this.
+          if [ -n "$IMAGE_PROVIDER_INPUT" ]; then
+            echo "Applying image provider: IMAGE_PROVIDER=$IMAGE_PROVIDER_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg I "$IMAGE_PROVIDER_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "IMAGE_PROVIDER") ]
+                  + [ {name:"IMAGE_PROVIDER", value:$I} ] )')
           fi
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
             --query 'taskDefinition.taskDefinitionArn' --output text)

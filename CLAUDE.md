@@ -598,10 +598,32 @@ one of these adapters**, alongside `anthropic`, `openai`, `vertex`,
 - **Model selection:** `ADAPTERS.bedrock.call()` takes the model string
   straight from whatever the active stage's `llm_routing_policy` row
   specifies — for Bedrock this must be a resolved **cross-region inference
-  profile ID** (e.g. `eu.anthropic.claude-sonnet-4-6-v1:0`), not a bare
-  on-demand model ID. `PROVIDER_FLAGSHIPS.bedrock`
+  profile ID**, not a bare on-demand model ID. `PROVIDER_FLAGSHIPS.bedrock`
   (`services/gateway/src/constants/llm-defaults.ts`) is only the Command Hub
   dropdown's convenience default — read from `BEDROCK_MODEL_ID` if set.
+- **The profile ID has NO `-v1:0` suffix here, and this bullet used to say it
+  did (corrected VTID-03578).** The example given above was
+  `eu.anthropic.claude-sonnet-4-6-v1:0`. That is wrong, and it is wrong in the
+  dangerous direction: `llm-defaults.ts` records that the suffix-free
+  `eu.anthropic.claude-sonnet-4-6` is what `aws bedrock
+  list-inference-profiles` actually returned for `eu-central-1` under
+  VTID-03403, and names `-v1:0` explicitly as "an earlier unconfirmed guess".
+  Anyone reading this file and trusting the old example would "repair" a
+  working ID into a broken one — which is exactly what VTID-03578 started to
+  do before checking the source. **Source of truth is
+  `list-inference-profiles`, then `llm-defaults.ts`; never this file's prose.**
+- **UNRESOLVED, and it needs one live invoke to settle:** the active policy
+  (v11) carries three mutually inconsistent ID shapes at once —
+  `eu.anthropic.claude-sonnet-4-6` (no suffix, matches the confirmed form),
+  `eu.anthropic.claude-haiku-4-5-20251001-v1:0` (dated + full suffix), and
+  `eu.anthropic.claude-opus-4-6-v1` (partial suffix). At most one convention
+  can be right, so at least two of the six stages are pointed at an ID that
+  will fail at CALL time — never at deploy time, so a green deploy and a
+  healthy-looking policy table both prove nothing. **Do not guess and do not
+  bulk-normalise them.** Verify per-ID, then correct. The cheap check with no
+  AWS credentials: after any traffic, query `oasis_events` for
+  `llm.call.failed` with `metadata->>'provider' = 'bedrock'` — a bad profile
+  ID surfaces there as a model-not-found and nowhere else.
 - **~~Not selected by default anywhere.~~ SUPERSEDED 2026-08-10 by
   VTID-03563.** This bullet used to say adding the adapter changes no
   routing and Bedrock only runs when an operator explicitly opts a stage
@@ -685,6 +707,40 @@ quality step down from `ru-RU-Wavenet-A`.
 fallback". Set **`TTS_POLLY_STRICT=true`** to disable the fallback — use it in
 a GCP-shutdown rehearsal to prove no hidden Google dependency remains; with it
 on, an unservable request returns null instead of quietly reaching back to GCP.
+
+### The seam covers the GATEWAY only — the frontend has its own Google TTS (VTID-03578)
+
+The five rows above are every *gateway* call site, and the table has been read
+as "all TTS goes through here". It does not. `vitana-v1`'s `useTextToSpeech.ts`
+and `VoiceSettingsPanel.tsx` call **Supabase edge functions directly** —
+`google-gemini-tts` (Chirp 3 HD voices) and `google-cloud-tts` (Standard/
+Wavenet, and the only path Serbian takes) — over `supabase.functions.invoke`.
+That traffic never touches the gateway, so `TTS_PROVIDER=polly` does not move
+it and `TTS_POLLY_STRICT=true` cannot detect it.
+
+Concretely: `GEMINI_VOICE_MAP` in `useTextToSpeech.ts` hardcodes ten
+`*-Chirp3-HD-*` voice IDs, and the user's stored `tts_voice` preference holds
+one of those strings — so a switch has to migrate stored per-user preferences,
+not just change a provider. **Every user who has opened voice settings has a
+Google voice ID persisted against their profile.**
+
+This is a second, independent workstream (an edge function speaking Polly, plus
+a preference migration), not a flag. Until it lands, "we are off Google TTS" is
+true of the gateway and false of the app.
+
+### Voice coverage after VTID-03578
+
+`pt` and `pl` were in **neither** `POLLY_VOICES` nor `POLLY_UNSUPPORTED_LANGS`,
+and `resolvePollyVoice()` ended `?? POLLY_VOICES['en']` — so both live locales
+resolved to **Joanna, en-US, neural**. A Portuguese user would have been read to
+in fluent English by a voice that logged nothing and returned healthy audio.
+The module's own header called that failure worse than silence, one screen
+above the line that caused it.
+
+Now: `de en es fr pt pl ru zh ar` all resolve; **`sr` is the only gap**, and an
+unlisted language returns null rather than English. `pt` is pinned to **pt-BR**
+(Camila) to match the Brazilian catalog — Polly's pt-PT voice would read
+Brazilian text in the European variant.
 
 ### Before flipping `TTS_PROVIDER=polly`
 
