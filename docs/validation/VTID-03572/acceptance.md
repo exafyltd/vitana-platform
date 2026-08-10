@@ -5,11 +5,11 @@
 Origin: four Codex review findings on #3075, which merged with them
 unaddressed. All four confirmed against the code. Findings 1 and 2 are
 seeder-side and land here; findings 3 and 4 are runner-side
-(`scripts/db-i18n/seed-aurora.sh`) and ship separately under VTID-03573,
+(`scripts/db-i18n/seed-aurora.sh`) and ship separately under VTID-03574,
 because `scripts/` is outside every `VALIDATOR-CHECK` profile allowlist and a
 PR spanning both cannot pass this gate under any profile.
 
-**Merge order matters:** this PR first. VTID-03573's runner passes
+**Merge order matters:** this PR first. VTID-03574's runner passes
 `--sync-locales`, which only exists after this change.
 
 ---
