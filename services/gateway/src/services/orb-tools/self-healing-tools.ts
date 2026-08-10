@@ -62,6 +62,7 @@ export const dev_report_incident: Handler = async (args, id) => {
   const endpoint = `routine-incident://${slugify(service)}/${slugify(summary)}`;
   const { ok, status, body } = await gatewayApiCall('/api/v1/self-healing/report', {
     method: 'POST',
+    headers: authHeaders(id),
     body: {
       total: 1,
       live: 0,
@@ -106,6 +107,7 @@ export const dev_set_healing_mode: Handler = async (args, id) => {
   }
   const { ok, status, body } = await gatewayApiCall('/api/v1/self-healing/config', {
     method: 'PATCH',
+    headers: authHeaders(id),
     body: { autonomy_level: level },
   });
   if (!ok) return { ok: true, result: { updated: false, status, detail: body }, text: `Could not change the autonomy level: ${String(body.error ?? `gateway returned ${status}`)}.` };
@@ -132,6 +134,7 @@ export const dev_healing_kill_switch: Handler = async (args, id) => {
   }
   const { ok, status, body } = await gatewayApiCall('/api/v1/self-healing/kill-switch', {
     method: 'POST',
+    headers: authHeaders(id),
     body: { action, reason: typeof args.reason === 'string' ? args.reason : undefined },
   });
   if (!ok) return { ok: true, result: { changed: false, status, detail: body }, text: `Could not flip the kill switch: ${String(body.error ?? `gateway returned ${status}`)}.` };
@@ -187,6 +190,7 @@ async function decideHeal(args: OrbToolArgs, id: OrbToolIdentity, decision: 'app
   }
   const { ok, status, body } = await gatewayApiCall(`/api/v1/self-healing/${decision}`, {
     method: 'POST',
+    headers: authHeaders(id),
     body: { id: healId, reason: typeof args.reason === 'string' ? args.reason : undefined },
   });
   if (!ok) return { ok: true, result: { decided: false, status, detail: body }, text: `Could not ${decision} the heal: ${String(body.error ?? `gateway returned ${status}`)}.` };
@@ -205,7 +209,7 @@ export const dev_verify_heal: Handler = async (args, id) => {
   if (denied) return denied;
   const vtid = String(args.vtid ?? '').trim();
   if (!vtid) return { ok: false, error: 'dev_verify_heal requires vtid.' };
-  const { ok, status, body } = await gatewayApiCall(`/api/v1/self-healing/verify/${encodeURIComponent(vtid)}`, { method: 'POST' });
+  const { ok, status, body } = await gatewayApiCall(`/api/v1/self-healing/verify/${encodeURIComponent(vtid)}`, { method: 'POST', headers: authHeaders(id) });
   if (!ok) return { ok: false, error: `dev_verify_heal failed (${status}): ${String(body.error ?? 'unknown')}` };
   return { ok: true, result: body.result ?? body, text: `Blast-radius verification for ${vtid} complete.` };
 };
@@ -226,7 +230,7 @@ export const dev_rollback_heal: Handler = async (args, id) => {
       text: `About to roll back the heal for ${vtid} to its pre-fix snapshot. Confirm, then call again with confirm=true.`,
     };
   }
-  const { ok, status, body } = await gatewayApiCall(`/api/v1/self-healing/rollback/${encodeURIComponent(vtid)}`, { method: 'POST' });
+  const { ok, status, body } = await gatewayApiCall(`/api/v1/self-healing/rollback/${encodeURIComponent(vtid)}`, { method: 'POST', headers: authHeaders(id) });
   if (!ok) {
     return status === 404
       ? { ok: true, result: { rolled_back: false, reason: 'no_snapshot' }, text: `No pre-fix snapshot exists for ${vtid} — nothing to roll back to.` }

@@ -1,0 +1,101 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.error
+    [self-healing][FAIL-CLOSED] autonomy-level exception (network down) — OBSERVE_ONLY
+
+      129 |     return level as AutonomyLevel;
+      130 |   } catch (err: any) {
+    > 131 |     console.error(`[self-healing][FAIL-CLOSED] autonomy-level exception (${err?.message}) — OBSERVE_ONLY`);
+          |             ^
+      132 |     return AutonomyLevel.OBSERVE_ONLY;
+      133 |   }
+      134 | }
+
+      at getAutonomyLevel (src/routes/self-healing.ts:131:13)
+      at Object.<anonymous> (test/self-healing-control-plane-auth.test.ts:157:19)
+
+PASS test/self-healing-control-plane-auth.test.ts
+  control-plane auth gates (P0-1)
+    requireServiceOrAdmin
+      ✓ rejects a request with no Authorization header (401) (4 ms)
+      ✓ rejects a non-bearer Authorization header (401) (1 ms)
+      ✓ accepts a matching GATEWAY_SERVICE_TOKEN without touching JWT validation
+      ✓ accepts a valid exafy_admin JWT when no service token matches (1 ms)
+      ✓ rejects a valid but non-admin JWT (403)
+    requireAdminOnly
+      ✓ rejects a request with no Authorization header (401)
+      ✓ does NOT accept the service token — admin actions require a human admin JWT (401) (1 ms)
+      ✓ accepts a valid exafy_admin JWT
+  getAutonomyLevel fail-closed default (P0-5)
+    ✓ returns OBSERVE_ONLY (not AUTO_FIX_SIMPLE) when the control plane is unreachable (15 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb-tools/self-healing-tools.test.ts
+  catalogue
+    ✓ exposes all 13 tools with matching declarations (7 ms)
+    ✓ dev_report_incident denies community role (1 ms)
+    ✓ dev_healing_config denies community role (1 ms)
+    ✓ dev_set_healing_mode denies community role (1 ms)
+    ✓ dev_healing_kill_switch denies community role (9 ms)
+    ✓ dev_healing_history denies community role (1 ms)
+    ✓ dev_healing_metrics denies community role
+    ✓ dev_approve_heal denies community role (1 ms)
+    ✓ dev_reject_heal denies community role
+    ✓ dev_verify_heal denies community role
+    ✓ dev_rollback_heal denies community role (1 ms)
+    ✓ dev_list_quarantine denies community role
+    ✓ dev_release_quarantine denies community role
+    ✓ dev_shadow_comparison denies community role
+    ✓ dev_report_incident denies unauthenticated callers
+    ✓ dev_healing_config denies unauthenticated callers
+    ✓ dev_set_healing_mode denies unauthenticated callers
+    ✓ dev_healing_kill_switch denies unauthenticated callers
+    ✓ dev_healing_history denies unauthenticated callers (1 ms)
+    ✓ dev_healing_metrics denies unauthenticated callers
+    ✓ dev_approve_heal denies unauthenticated callers
+    ✓ dev_reject_heal denies unauthenticated callers
+    ✓ dev_verify_heal denies unauthenticated callers
+    ✓ dev_rollback_heal denies unauthenticated callers
+    ✓ dev_list_quarantine denies unauthenticated callers (1 ms)
+    ✓ dev_release_quarantine denies unauthenticated callers
+    ✓ dev_shadow_comparison denies unauthenticated callers
+  dev_report_incident
+    ✓ requires service and summary
+    ✓ requires confirmation first
+    ✓ files using the routine-incident:// convention on confirm (1 ms)
+  dev_set_healing_mode
+    ✓ validates autonomy_level range
+    ✓ requires confirmation first
+  dev_healing_kill_switch
+    ✓ validates action
+  dev_verify_heal
+    ✓ is not confirm-gated (verification only)
+  dev_rollback_heal
+    ✓ requires confirmation first
+    ✓ reports honestly when no snapshot exists (1 ms)
+  dev_list_quarantine
+    ✓ requires both failure_class and signature (1 ms)
+    ✓ needs a session JWT
+  forwards caller JWT to gated self-healing endpoints (VTID-03573)
+    ✓ dev_report_incident sends Bearer <jwt> to /report (1 ms)
+    ✓ dev_set_healing_mode sends Bearer <jwt> to PATCH /config
+    ✓ dev_healing_kill_switch sends Bearer <jwt> to /kill-switch (1 ms)
+    ✓ dev_verify_heal sends Bearer <jwt> to /verify/:vtid
+    ✓ dev_rollback_heal sends Bearer <jwt> to /rollback/:vtid
+
+Test Suites: 2 passed, 2 total
+Tests:       52 passed, 52 total
+Snapshots:   0 total
+Time:        1.502 s
+Ran all test suites matching /test\/self-healing-control-plane-auth.test.ts|test\/orb-tools\/self-healing-tools.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

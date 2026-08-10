@@ -236,7 +236,15 @@ async function postSelfHealingReport(
   try {
     const res = await fetch(`${GATEWAY_URL}/api/v1/self-healing/report`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        // Internal service-to-service call: /report now requires auth
+        // (requireServiceOrAdmin). Present the gateway service token so
+        // classified voice failures still enter the repair pipeline.
+        ...(process.env.GATEWAY_SERVICE_TOKEN
+          ? { Authorization: `Bearer ${process.env.GATEWAY_SERVICE_TOKEN}` }
+          : {}),
+      },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(10_000),
     });

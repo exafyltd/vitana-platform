@@ -1090,7 +1090,10 @@ router.get('/snapshots/:vtid', async (req: Request, res: Response) => {
 /**
  * POST /verify/:vtid — Manually trigger post-fix verification
  */
-router.post('/verify/:vtid', requireAdminOnly, async (req: Request, res: Response) => {
+// requireServiceOrAdmin (not admin-only): the autopilot event loop's automated
+// blast-radius verification (autopilot-event-loop.ts triggerVerify) calls this
+// with the internal service token, and operators call it with an admin JWT.
+router.post('/verify/:vtid', requireServiceOrAdmin, async (req: Request, res: Response) => {
   try {
     const { vtid } = req.params;
     console.log(`[self-healing] Manual verification triggered for ${vtid}`);

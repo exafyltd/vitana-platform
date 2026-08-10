@@ -1,0 +1,11 @@
+# VTID-03573 verification commands (run from services/gateway)
+
+# Typecheck — clean (only pre-existing moduleResolution deprecation)
+npx tsc --noEmit -p tsconfig.json
+
+# Affected test suites — control-plane auth gates + ORB self-healing tools
+node_modules/.bin/jest test/self-healing-control-plane-auth.test.ts test/orb-tools/self-healing-tools.test.ts
+# => Test Suites: 2 passed, 2 total; Tests: 52 passed (9 auth-gate + 43 orb-tools)
+
+# Production build
+npm run build

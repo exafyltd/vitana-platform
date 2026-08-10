@@ -704,7 +704,15 @@ async function triggerVerify(vtid: string, event: OasisEvent): Promise<ActionRes
       try {
         const healResp = await fetch(`${gatewayUrl}/api/v1/self-healing/verify/${vtid}`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            // Internal service-to-service call: the self-healing router now
+            // requires auth. Present the gateway service token so this
+            // automated blast-radius verification isn't rejected with 401.
+            ...(process.env.GATEWAY_SERVICE_TOKEN
+              ? { Authorization: `Bearer ${process.env.GATEWAY_SERVICE_TOKEN}` }
+              : {}),
+          },
         });
         const healResult = await healResp.json() as { ok?: boolean; result?: { action?: string; blast_radius?: string } };
         if (healResult.result?.action === 'rollback') {

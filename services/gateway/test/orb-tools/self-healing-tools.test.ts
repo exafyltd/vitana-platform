@@ -127,3 +127,47 @@ describe('dev_list_quarantine', () => {
     expect((r.result as { reason: string }).reason).toBe('no_dev_session');
   });
 });
+
+// ---------------------------------------------------------------------------
+// VTID-03573: the self-healing auth gate (#2884) now requires auth on the
+// mutation/report endpoints. The ORB dev tools call those endpoints, so they
+// must forward the caller's admin JWT or they get 401. These tests pin that
+// the Authorization header is forwarded on every gated call.
+// ---------------------------------------------------------------------------
+describe('forwards caller JWT to gated self-healing endpoints (VTID-03573)', () => {
+  function authOf(fn: jest.Mock): string | undefined {
+    const init = fn.mock.calls[0]?.[1] as { headers?: Record<string, string> } | undefined;
+    return init?.headers?.Authorization;
+  }
+
+  it('dev_report_incident sends Bearer <jwt> to /report', async () => {
+    const fn = mockFetch(200, { ok: true, details: [] });
+    await dev_report_incident({ service: 's', summary: 'x', confirm: true }, DEV_ID, {} as SupabaseClient);
+    expect(fn.mock.calls[0][0]).toContain('/api/v1/self-healing/report');
+    expect(authOf(fn)).toBe('Bearer jwt-dev');
+  });
+
+  it('dev_set_healing_mode sends Bearer <jwt> to PATCH /config', async () => {
+    const fn = mockFetch(200, { ok: true, autonomy_name: 'DIAGNOSE_ONLY' });
+    await dev_set_healing_mode({ autonomy_level: 1, confirm: true }, DEV_ID, {} as SupabaseClient);
+    expect(authOf(fn)).toBe('Bearer jwt-dev');
+  });
+
+  it('dev_healing_kill_switch sends Bearer <jwt> to /kill-switch', async () => {
+    const fn = mockFetch(200, { ok: true, status: 'killed' });
+    await dev_healing_kill_switch({ action: 'activate', confirm: true }, DEV_ID, {} as SupabaseClient);
+    expect(authOf(fn)).toBe('Bearer jwt-dev');
+  });
+
+  it('dev_verify_heal sends Bearer <jwt> to /verify/:vtid', async () => {
+    const fn = mockFetch(200, { ok: true, result: {} });
+    await dev_verify_heal({ vtid: 'VTID-0001' }, DEV_ID, {} as SupabaseClient);
+    expect(authOf(fn)).toBe('Bearer jwt-dev');
+  });
+
+  it('dev_rollback_heal sends Bearer <jwt> to /rollback/:vtid', async () => {
+    const fn = mockFetch(200, { ok: true });
+    await dev_rollback_heal({ vtid: 'VTID-0001', confirm: true }, DEV_ID, {} as SupabaseClient);
+    expect(authOf(fn)).toBe('Bearer jwt-dev');
+  });
+});
