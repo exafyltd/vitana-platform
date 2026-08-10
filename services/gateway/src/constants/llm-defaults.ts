@@ -66,8 +66,19 @@ export interface LLMRoutingPolicy {
   operator: StageRoutingConfig;
   memory: StageRoutingConfig;
   triage: StageRoutingConfig;
-  vision: StageRoutingConfig;
-  classifier: StageRoutingConfig;
+  /**
+   * VTID-03565: optional because they genuinely are absent in production.
+   * The ACTIVE policy (v10, 2026-05-02) predates these two stages and stores
+   * only the original six, and `loadPolicy()` takes the stored row WHOLESALE
+   * — it does not merge missing stages with LLM_SAFE_DEFAULTS. Typing them as
+   * required asserted a shape the live data does not have, which is how
+   * `callViaRouter('vision', ...)` came to fail at runtime with
+   * "No policy configured for stage 'vision'" against a type that said it
+   * could not happen. `callViaRouter` already guards on `!stageConfig`; the
+   * type now admits the case instead of hiding it.
+   */
+  vision?: StageRoutingConfig;
+  classifier?: StageRoutingConfig;
 }
 
 /**
@@ -76,7 +87,11 @@ export interface LLMRoutingPolicy {
  * Every primary AND every fallback is the strongest model the provider
  * exposes. No mid-tier defaults seeded anywhere.
  */
-export const LLM_SAFE_DEFAULTS: LLMRoutingPolicy = {
+// VTID-03565: `Required<>` — the DEFAULTS are complete by construction even
+// though a STORED policy need not be (see LLMRoutingPolicy). That asymmetry is
+// the invariant every `?? LLM_SAFE_DEFAULTS[stage]` call site already relies
+// on, so it is stated here once rather than re-asserted at each of them.
+export const LLM_SAFE_DEFAULTS: Required<LLMRoutingPolicy> = {
   planner: {
     primary_provider: 'vertex',
     primary_model: 'gemini-3.1-pro-preview',
