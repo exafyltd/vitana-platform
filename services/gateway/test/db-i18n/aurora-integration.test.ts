@@ -93,6 +93,86 @@ describeIfDb('AuroraDbI18nRepository against a live PostgreSQL', () => {
     expect(locales.map((l) => l.code)).toEqual(expect.arrayContaining(['de', 'en', 'fr']));
   });
 
+  // VTID-03572. ensureSchema() CREATEs supported_locales and inserts nothing,
+  // so on a fresh Aurora resolveLocales() aborts with "supported_locales is
+  // empty" and no locale can ever be seeded. This is the step that closes that
+  // gap, and it is worth an integration test rather than a unit test because
+  // what can go wrong is the SQL: the unnest arity, the ON CONFLICT target
+  // matching the primary key, and NULL handling on informal_hint.
+  describe('upsertSupportedLocales bootstraps the registry', () => {
+    // Resolved lazily. `repo` is assigned in beforeAll, which runs AFTER this
+    // describe body is evaluated, so capturing it in a const here binds
+    // undefined and every test in the block fails on a null read.
+    const up = () =>
+      repo as unknown as {
+        upsertSupportedLocales(r: Array<Record<string, unknown>>): Promise<number>;
+      };
+
+    it('inserts new locales, coalescing an absent hint to the column default', async () => {
+      // informal_hint is `text NOT NULL DEFAULT ''`. Passing null through would
+      // abort the entire batch on a not-null violation — which this test found,
+      // and which no mock could have: the constraint lives in the schema, not
+      // in the call.
+      const n = await up().upsertSupportedLocales([
+        { code: 'zz', english_name: 'Test', informal_hint: null, status: 'draft' },
+      ]);
+      expect(n).toBe(1);
+      const row = (await repo.listSupportedLocales()).find((l) => l.code === 'zz');
+      expect(row).toMatchObject({ english_name: 'Test', status: 'draft', informal_hint: '' });
+    });
+
+    it('UPDATES on conflict rather than ignoring', async () => {
+      // DO NOTHING would leave a stale hint in place forever. That matters
+      // because informal_hint is fed verbatim into the translation prompt and
+      // status decides which locales get selected — a stale row here produces
+      // wrong translations silently instead of an error, so re-running must
+      // converge on upstream rather than preserve whatever landed first.
+      await up().upsertSupportedLocales([
+        { code: 'zz', english_name: 'Test Renamed', informal_hint: 'be informal', status: 'ga' },
+      ]);
+      const row = (await repo.listSupportedLocales()).find((l) => l.code === 'zz');
+      expect(row).toMatchObject({
+        english_name: 'Test Renamed',
+        informal_hint: 'be informal',
+        status: 'ga',
+      });
+    });
+
+    it('binds a multi-row batch column-for-column', async () => {
+      // The unnest form fails silently-wrong if the arrays are transposed:
+      // every row would still insert, just with the fields swapped. One row
+      // cannot detect that; two rows with distinguishable values can.
+      await up().upsertSupportedLocales([
+        { code: 'zy', english_name: 'Alpha', informal_hint: 'hint-a', status: 'beta' },
+        { code: 'zx', english_name: 'Beta', informal_hint: 'hint-b', status: 'draft' },
+      ]);
+      const all = await repo.listSupportedLocales();
+      expect(all.find((l) => l.code === 'zy')).toMatchObject({
+        english_name: 'Alpha', informal_hint: 'hint-a', status: 'beta',
+      });
+      expect(all.find((l) => l.code === 'zx')).toMatchObject({
+        english_name: 'Beta', informal_hint: 'hint-b', status: 'draft',
+      });
+    });
+
+    it('is blocked without the write flag, like every other write', async () => {
+      const ro = createDbI18nRepository(null, readOnlyEnv) as unknown as {
+        upsertSupportedLocales(r: Array<Record<string, unknown>>): Promise<number>;
+      };
+      await expect(
+        ro.upsertSupportedLocales([
+          { code: 'zw', english_name: 'Nope', informal_hint: null, status: 'draft' },
+        ]),
+      ).rejects.toThrow();
+    });
+
+    it('writes nothing for an empty batch', async () => {
+      const before = (await repo.listSupportedLocales()).length;
+      await expect(up().upsertSupportedLocales([])).resolves.toBe(0);
+      expect((await repo.listSupportedLocales()).length).toBe(before);
+    });
+  });
+
   it('upserts nav rows and is idempotent on the natural key', async () => {
     const rows = [
       {
