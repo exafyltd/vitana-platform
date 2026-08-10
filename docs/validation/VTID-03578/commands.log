@@ -1,0 +1,16 @@
+# VTID-03578 — commands run, in order
+
+cd services/gateway
+
+# baseline suite + typecheck
+npx tsc --noEmit -p tsconfig.json          # -> outputs/tsc.txt (exit 0)
+npx jest test/tts/                          # -> outputs/tts-suite.txt (20/20)
+
+# voice coverage across the release locales, printed from the real module
+npx jest test/_tmp/cov.test.ts              # -> outputs/voice-coverage.txt
+
+# mutation verification of both new guards
+bash /tmp/mut.sh                            # -> outputs/mutation-verification.txt
+#   mutation 1: delete the pt voice row          -> 3 tests fail
+#   mutation 2: restore `?? POLLY_VOICES['en']`  -> 1 test fails
+#   revert                                       -> 20/20

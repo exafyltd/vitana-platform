@@ -1,0 +1,18 @@
+    VTID-03578 — Polly voice coverage across release locales
+    
+    de   Vicki / neural / de-DE
+    en   Joanna / neural / en-US
+    es   Lucia / neural / es-ES
+    sr   NULL — declared unsupported, falls back to Google
+    fr   Lea / neural / fr-FR
+    pt   Camila / neural / pt-BR
+    pl   Ola / neural / pl-PL
+    ru   Tatyana / standard / ru-RU
+    zh   Zhiyu / neural / cmn-CN
+    ar   Hala / neural / ar-AE
+    
+    --- languages outside the table (must NOT get English) ---
+    ja   NULL — no English substitution
+    nl   NULL — no English substitution
+    tr   NULL — no English substitution
+

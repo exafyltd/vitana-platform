@@ -1,0 +1,15 @@
+=== BASELINE ===
+Tests:       20 passed, 20 total
+
+=== MUTATION 1: delete the pt voice row ===
+    ✕ resolves the supported languages with an explicit engine (3 ms)
+    ✕ covers every release locale, with sr the one declared gap (4 ms)
+    ✕ speaks Brazilian Portuguese, not European, for pt
+Tests:       3 failed, 17 passed, 20 total
+
+=== MUTATION 2: restore the English fallback ===
+    ✕ returns null for a language outside the table instead of English audio (1 ms)
+Tests:       1 failed, 19 passed, 20 total
+
+=== RESTORED ===
+Tests:       20 passed, 20 total
