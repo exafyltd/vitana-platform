@@ -403,6 +403,7 @@ const SUPPORTED_LANGUAGES: Record<GatewayLocale, { full: string; name: string }>
   pt: { full: 'pt-PT', name: 'Portuguese (Português)' },
   ru: { full: 'ru-RU', name: 'Russian (Русский)' },
   pl: { full: 'pl-PL', name: 'Polish (Polski)' },
+  zh: { full: 'zh-CN', name: 'Simplified Chinese (简体中文)' },
 };
 
 export async function tool_set_language(
