@@ -11,6 +11,7 @@ import {
   AURORA_READINESS_NOTE,
   createDbI18nRepository,
   resolveDbI18nTarget,
+  DEFAULT_DB_I18N_TARGET,
 } from '../../src/services/db-i18n/db-i18n-repository';
 import {
   assertAuroraWritesAllowed,
@@ -26,9 +27,21 @@ import {
 } from '../../src/services/db-i18n/translator';
 
 describe('target selection', () => {
-  it('defaults to supabase when unset or empty', () => {
-    expect(resolveDbI18nTarget({} as NodeJS.ProcessEnv)).toBe('supabase');
-    expect(resolveDbI18nTarget({ DB_I18N_TARGET: '' } as NodeJS.ProcessEnv)).toBe('supabase');
+  // VTID-03564: the default is AURORA now — owner decision, Aurora is the
+  // intended primary for staging and production. Asserted against the exported
+  // constant rather than a literal, so the two cannot drift apart silently.
+  it('defaults to the declared default (aurora) when unset or empty', () => {
+    expect(DEFAULT_DB_I18N_TARGET).toBe('aurora');
+    expect(resolveDbI18nTarget({} as NodeJS.ProcessEnv)).toBe(DEFAULT_DB_I18N_TARGET);
+    expect(resolveDbI18nTarget({ DB_I18N_TARGET: '' } as NodeJS.ProcessEnv)).toBe(
+      DEFAULT_DB_I18N_TARGET,
+    );
+  });
+
+  it('still selects supabase when asked for explicitly', () => {
+    expect(resolveDbI18nTarget({ DB_I18N_TARGET: 'supabase' } as NodeJS.ProcessEnv)).toBe(
+      'supabase',
+    );
   });
 
   it('selects aurora on the exact value, case/space tolerant', () => {
@@ -36,9 +49,11 @@ describe('target selection', () => {
     expect(resolveDbI18nTarget({ DB_I18N_TARGET: ' AURORA ' } as NodeJS.ProcessEnv)).toBe('aurora');
   });
 
-  it('falls back to supabase on an unrecognised value rather than guessing', () => {
+  it('falls back to the default on an unrecognised value rather than guessing', () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
-    expect(resolveDbI18nTarget({ DB_I18N_TARGET: 'postgres' } as NodeJS.ProcessEnv)).toBe('supabase');
+    expect(resolveDbI18nTarget({ DB_I18N_TARGET: 'postgres' } as NodeJS.ProcessEnv)).toBe(
+      DEFAULT_DB_I18N_TARGET,
+    );
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
   });
@@ -192,9 +207,12 @@ describe('aurora TLS resolution', () => {
 
 describe('supabase target requires a client', () => {
   it('throws a specific error rather than a null dereference', () => {
-    expect(() => createDbI18nRepository(null, {} as NodeJS.ProcessEnv)).toThrow(
-      /no Supabase client was supplied/,
-    );
+    // VTID-03564: must ask for supabase EXPLICITLY now. An empty env resolves
+    // to the aurora default, so `{}` would exercise the Aurora branch and this
+    // assertion would pass or fail for entirely the wrong reason.
+    expect(() =>
+      createDbI18nRepository(null, { DB_I18N_TARGET: 'supabase' } as NodeJS.ProcessEnv),
+    ).toThrow(/no Supabase client was supplied/);
   });
 });
 

@@ -62,7 +62,25 @@ Claude must **always** do the following:
 
 ### Database & Memory
 
-21. **Always use Supabase as the persistent data store.**
+21. **Always check which database a service actually points at — do not
+    assume.** Aurora (`vitana-aurora-prod`) is the INTENDED primary for
+    staging and production (owner decision, 2026-08-10, VTID-03564). It is
+    **not yet the live one**, and the gap is measured, not guessed:
+    - Both `vitana-gateway-awsdr` (prod, rev 51) and `vitana-gateway`
+      (staging, rev 173) carry **only** `SUPABASE_*` secrets. Neither has
+      `AURORA_DATABASE_URL` or `DATABASE_URL`. Every runtime read and write
+      goes to Supabase over PostgREST.
+    - **DMS is dead.** `vitana-supabase-to-aurora` stopped 2026-07-21;
+      `vitana-supabase-to-aurora-v3` is `FAILED` — `FATAL_ERROR` after 7
+      recovery attempts, 2026-07-27. No CDC task runs, so Aurora has taken
+      no updates since July and is a stale full-load snapshot.
+    So: **writing to Aurora today does not reach users, and reading it
+    returns July data.** The one exception is DB-content i18n, whose
+    `DB_I18N_TARGET` now defaults to `aurora` (VTID-03564) — a seeder-only
+    surface with no runtime caller, deliberately flipped first so nobody
+    seeds Supabase by accident mid-migration. Everything else is Supabase
+    until a task definition says otherwise. Verify with
+    `aws ecs describe-task-definition`, never from intent.
 22. **Always enforce tenant isolation (RLS).**
 23. **Always use snake_case table names.**
 24. **Always update `DATABASE_SCHEMA.md` when schema changes.**

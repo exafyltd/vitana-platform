@@ -42,6 +42,13 @@ on:
         description: 'Guided Journey curriculum version'
         required: false
         default: 'v2'
+      runner:
+        description: >-
+          Runner label. Aurora is in a PRIVATE VPC, so a GitHub-hosted runner
+          cannot reach it — use a self-hosted runner inside the VPC for any
+          Aurora-targeted run.
+        required: false
+        default: 'ubuntu-latest'
   repository_dispatch:
     # NO LANGUAGE LEFT BEHIND, for content that does not live in git.
     #
@@ -82,7 +89,7 @@ concurrency:
 
 jobs:
   seed:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -95,6 +102,44 @@ jobs:
       - name: Install gateway deps
         working-directory: services/gateway
         run: npm ci --no-audit --no-fund
+
+      # VTID-03564. Aurora prod is PubliclyAccessible=false in a private VPC.
+      # A GitHub-hosted runner is not in that VPC, so an Aurora-targeted run
+      # from `ubuntu-latest` cannot connect — it just hangs on TCP until the
+      # step times out, which reads like a broken seeder rather than a
+      # placement problem. This turns that into a 5-second, actionable failure.
+      #
+      # It also fetches the RDS CA bundle, because aurora-client.ts verifies
+      # TLS and fails CLOSED without it, by design.
+      - name: Preflight — can this runner actually reach the target?
+        env:
+          DB_I18N_TARGET: ${{ vars.DB_I18N_TARGET || 'aurora' }}
+          AURORA_DATABASE_URL: ${{ secrets.AURORA_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          if [ "${DB_I18N_TARGET}" != "aurora" ]; then
+            echo "Target is '${DB_I18N_TARGET}' — no VPC requirement."; exit 0
+          fi
+          if [ -z "${AURORA_DATABASE_URL:-}" ]; then
+            echo "::error::DB_I18N_TARGET=aurora but AURORA_DATABASE_URL is not set."
+            echo "Add the repo secret, or set the DB_I18N_TARGET variable to 'supabase'."
+            exit 1
+          fi
+          curl -fsSL -o /tmp/rds-global-bundle.pem \
+            https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
+          HOST=$(printf '%s' "$AURORA_DATABASE_URL" | sed -E 's|.*@([^:/]+).*|\1|')
+          PORT=$(printf '%s' "$AURORA_DATABASE_URL" | sed -nE 's|.*:([0-9]+)/.*|\1|p'); PORT=${PORT:-5432}
+          echo "Probing ${HOST}:${PORT} ..."
+          if timeout 10 bash -c "cat < /dev/null > /dev/tcp/${HOST}/${PORT}" 2>/dev/null; then
+            echo "Reachable."
+          else
+            echo "::error::Cannot reach Aurora at ${HOST}:${PORT} from this runner."
+            echo "Aurora prod is PubliclyAccessible=false inside a private VPC, and"
+            echo "GitHub-hosted runners are outside it. Re-dispatch with the 'runner'"
+            echo "input set to a self-hosted runner label inside the VPC, or run"
+            echo "scripts/db-i18n/seed-aurora.sh from a bastion."
+            exit 1
+          fi
 
       # Automatic propagation for DB-backed content.
       #
@@ -111,6 +156,12 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          # VTID-03564: Aurora is primary. DB_I18N_TARGET now defaults to
+          # 'aurora', so these must be present or the adapter throws.
+          DB_I18N_TARGET: ${{ vars.DB_I18N_TARGET || 'aurora' }}
+          AURORA_DATABASE_URL: ${{ secrets.AURORA_DATABASE_URL }}
+          AURORA_CA_BUNDLE_PATH: /tmp/rds-global-bundle.pem
+          AURORA_I18N_WRITES: ${{ vars.AURORA_I18N_WRITES }}
           GOOGLE_GEMINI_API_KEY: ${{ secrets.GOOGLE_GEMINI_API_KEY }}
         run: npm run i18n:db:seed -- --all --apply
 
@@ -122,6 +173,12 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          # VTID-03564: Aurora is primary. DB_I18N_TARGET now defaults to
+          # 'aurora', so these must be present or the adapter throws.
+          DB_I18N_TARGET: ${{ vars.DB_I18N_TARGET || 'aurora' }}
+          AURORA_DATABASE_URL: ${{ secrets.AURORA_DATABASE_URL }}
+          AURORA_CA_BUNDLE_PATH: /tmp/rds-global-bundle.pem
+          AURORA_I18N_WRITES: ${{ vars.AURORA_I18N_WRITES }}
         run: npm run i18n:db:check
 
       # continue-on-error so PARTIAL progress still reaches the commit step.
@@ -137,6 +194,12 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          # VTID-03564: Aurora is primary. DB_I18N_TARGET now defaults to
+          # 'aurora', so these must be present or the adapter throws.
+          DB_I18N_TARGET: ${{ vars.DB_I18N_TARGET || 'aurora' }}
+          AURORA_DATABASE_URL: ${{ secrets.AURORA_DATABASE_URL }}
+          AURORA_CA_BUNDLE_PATH: /tmp/rds-global-bundle.pem
+          AURORA_I18N_WRITES: ${{ vars.AURORA_I18N_WRITES }}
           GOOGLE_GEMINI_API_KEY: ${{ secrets.GOOGLE_GEMINI_API_KEY }}
         run: |
           ARGS=""

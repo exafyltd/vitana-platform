@@ -70,14 +70,35 @@ export class DbI18nRepositoryError extends Error {
 
 export type DbI18nTarget = 'supabase' | 'aurora';
 
+/**
+ * VTID-03564: Aurora is the live database for staging AND production — owner
+ * decision, 2026-08-10. The default is therefore `aurora`, not `supabase`.
+ *
+ * Flipping a default is normally the risky half of a migration. It is safe
+ * HERE for one specific reason worth stating: this repository has exactly two
+ * callers — `surfaces.ts` and the seeder script — and no runtime request path
+ * touches it. Changing the default cannot alter what a live gateway request
+ * does; it only changes where a deliberate seed/verify run points.
+ *
+ * The Aurora adapter throws when `AURORA_DATABASE_URL` is unset rather than
+ * falling back to Supabase. Under an Aurora-primary default that is the whole
+ * point: an unconfigured environment must fail loudly, because the failure it
+ * replaces — quietly seeding Supabase while an operator believes Aurora was
+ * written — is the one that stays invisible until users read German.
+ */
+export const DEFAULT_DB_I18N_TARGET: DbI18nTarget = 'aurora';
+
 /** Read at call time, not module load, so a task-def change needs no restart. */
 export function resolveDbI18nTarget(env: NodeJS.ProcessEnv = process.env): DbI18nTarget {
   const raw = (env.DB_I18N_TARGET ?? '').trim().toLowerCase();
   if (raw === 'aurora') return 'aurora';
-  if (raw === 'supabase' || raw === '') return 'supabase';
-  // Unrecognised value: say so and use the safe default rather than guessing.
-  console.warn(`[db-i18n] unrecognised DB_I18N_TARGET=${JSON.stringify(raw)} — using 'supabase'`);
-  return 'supabase';
+  if (raw === 'supabase') return 'supabase';
+  if (raw === '') return DEFAULT_DB_I18N_TARGET;
+  // Unrecognised value: say so and use the default rather than guessing.
+  console.warn(
+    `[db-i18n] unrecognised DB_I18N_TARGET=${JSON.stringify(raw)} — using '${DEFAULT_DB_I18N_TARGET}'`,
+  );
+  return DEFAULT_DB_I18N_TARGET;
 }
 
 /**
