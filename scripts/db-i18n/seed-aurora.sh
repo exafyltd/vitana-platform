@@ -69,6 +69,47 @@ esac
 # only --apply/--replay set the second one.
 export DB_I18N_TARGET=aurora
 
+# --- 4. Supabase credentials -----------------------------------------------
+# Aurora is DOWNSTREAM of Supabase here, so three of the four modes need to
+# read upstream (VTID-03574):
+#
+#   --sync-locales  copies the locale registry in
+#   --verify        reconciles the two sides — that IS its job
+#   --apply         does both of the above
+#
+# Only --check is Aurora-only. Fetching these lazily and failing with a named
+# secret beats the previous behaviour, where a successful 20-minute apply
+# finished by throwing a config error in the reconciliation step.
+require_supabase_env() {
+  [ -n "${SUPABASE_URL:-}" ] && [ -n "${SUPABASE_SERVICE_ROLE:-}" ] && return 0
+  echo "==> reading Supabase credentials from Secrets Manager"
+  SUPABASE_URL="${SUPABASE_URL:-$(aws secretsmanager get-secret-value \
+      --secret-id "${SUPABASE_URL_SECRET_ID:-vitana/supabase/prod/url}" \
+      --region "$REGION" --query SecretString --output text)}"
+  SUPABASE_SERVICE_ROLE="${SUPABASE_SERVICE_ROLE:-$(aws secretsmanager get-secret-value \
+      --secret-id "${SUPABASE_ROLE_SECRET_ID:-vitana/supabase/prod/service-role}" \
+      --region "$REGION" --query SecretString --output text)}"
+  if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE" ]; then
+    echo "REFUSING: could not resolve Supabase credentials. Set SUPABASE_URL and" >&2
+    echo "SUPABASE_SERVICE_ROLE in the environment, or point SUPABASE_URL_SECRET_ID/" >&2
+    echo "SUPABASE_ROLE_SECRET_ID at the right secrets." >&2
+    exit 2
+  fi
+  export SUPABASE_URL SUPABASE_SERVICE_ROLE
+}
+
+# --replay replays COMMITTED artifacts. There are currently none tracked under
+# data/db-i18n/, so without this the mode runs to completion having upserted
+# nothing and reports success — the failure mode this whole pipeline exists to
+# avoid, since an empty locale is indistinguishable from an up-to-date one.
+require_artifacts() {
+  if [ -z "$(find "$REPO_DIR/data/db-i18n" -name '*.json' -type f 2>/dev/null | head -1)" ]; then
+    echo "REFUSING: --replay re-applies committed artifacts and there are none under" >&2
+    echo "$REPO_DIR/data/db-i18n. Run --apply first (it writes them), then commit them." >&2
+    exit 2
+  fi
+}
+
 cd "$REPO_DIR/services/gateway"
 [ -d node_modules ] || npm ci --no-audit --no-fund
 
@@ -77,17 +118,24 @@ case "$MODE" in
     npm run i18n:db:seed -- --locale="$LOCALES" --check
     ;;
   --verify)
+    require_supabase_env
     npm run i18n:db:seed -- --locale="$LOCALES" --verify
     ;;
   --apply)
+    require_supabase_env
     export AURORA_I18N_WRITES=enabled
-    npm run i18n:db:seed -- --ensure-schema --locale="$LOCALES" --apply
+    # --ensure-schema and --sync-locales now fall THROUGH into the apply
+    # (VTID-03572); before that they returned, so this line created a schema
+    # and exited, and the reconciliation below then reported every row missing.
+    npm run i18n:db:seed -- --ensure-schema --sync-locales --locale="$LOCALES" --apply
     echo "==> reconciling"
     npm run i18n:db:seed -- --locale="$LOCALES" --verify
     ;;
   --replay)
+    require_supabase_env
+    require_artifacts
     export AURORA_I18N_WRITES=enabled
-    npm run i18n:db:seed -- --ensure-schema --locale="$LOCALES" --from-artifact --apply
+    npm run i18n:db:seed -- --ensure-schema --sync-locales --locale="$LOCALES" --from-artifact --apply
     npm run i18n:db:seed -- --locale="$LOCALES" --verify
     ;;
   *)
