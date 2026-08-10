@@ -244,6 +244,10 @@ router.post('/connections/:id/mapping-decisions', async (req: Request, res: Resp
   });
   if (decision === 'approve') {
     await supabase.from('schema_mapping').update({ decided_by: 'human' }).eq('id', mapping_id);
+  } else {
+    // A rejected mapping must never reach certification: remove it from the
+    // version's mapping set (the mapping_decision row keeps the audit trail).
+    await supabase.from('schema_mapping').delete().eq('id', mapping_id);
   }
   await emitOasisEvent(supabase, 'vcaop.portal.mapping.decided', 'success', `mapping ${mapping_id}: ${decision}`, {
     connection_id: rec.id, mapping_id, decision, actor: userId(req), surface: 'merchant_self_service',
@@ -256,7 +260,10 @@ router.post('/connections/:id/sandbox-tests', async (req: Request, res: Response
   const supabase = db(res); if (!supabase) return;
   const rec = await getOwnedManifest(supabase, req);
   if (!rec) return res.status(404).json({ ok: false, error: 'connection not found' });
-  if (!canTransition(rec.status, 'testing') && rec.status !== 'testing') {
+  // approval_required is re-runnable so a human mapping decision can clear
+  // the gate (canonical service: approval_required -> mapping -> testing).
+  const canRun = canTransition(rec.status, 'testing') || rec.status === 'testing' || rec.status === 'approval_required';
+  if (!canRun) {
     return res.status(409).json({ ok: false, error: `cannot run tests from state ${rec.status}` });
   }
   const version = await latestVersion(supabase, rec.id);
@@ -264,6 +271,11 @@ router.post('/connections/:id/sandbox-tests', async (req: Request, res: Response
 
   const { data: mappings } = await supabase
     .from('schema_mapping').select('id,sensitive,confidence,decided_by').eq('version_id', version.id);
+  if (!mappings || mappings.length === 0) {
+    // Zero mappings = the factory has not produced its proposals yet — a
+    // pipeline state, never a passed mapping gate.
+    return res.status(409).json({ ok: false, error: 'awaiting_factory_run: no mappings exist for this version yet' });
+  }
   const pending = pendingReviewMappings(mappings || []);
   const certStatus = pending.length > 0 ? 'approval_required' : 'certified';
   const now = new Date().toISOString();

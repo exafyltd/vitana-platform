@@ -33,6 +33,7 @@ function tableStub(result: { data?: any; error?: any }) {
     select: jest.fn(() => chain),
     insert: jest.fn(() => Promise.resolve({ error: null })),
     update: jest.fn(() => chain),
+    delete: jest.fn(() => chain),
     eq: jest.fn((col: string, val: unknown) => { filters[col] = val; return chain; }),
     is: jest.fn(() => chain),
     order: jest.fn(() => chain),
@@ -111,6 +112,59 @@ describe('authority boundaries', () => {
     expect(res.status).toBe(200);
     expect(res.body.data.awaiting_platform_approval).toBe(true);
     expect(res.body.data).not.toHaveProperty('can_activate');
+  });
+});
+
+describe('certification gate integrity (Codex review, VTID-03555)', () => {
+  const rec = { id: 'm-1', status: 'mapping', partner_tenant: { name: 'Shop', owner_user_id: 'merchant-1' } };
+  const version = { id: 'v-1', version: '0.1.0' };
+
+  test('zero mappings can NEVER certify — sandbox tests refuse with awaiting_factory_run', async () => {
+    asMerchant('merchant-1');
+    const tables: Record<string, any> = {
+      integration_manifest: tableStub({ data: rec }),
+      integration_version: tableStub({ data: version }),
+      schema_mapping: tableStub({ data: [] }),
+    };
+    (getSupabase as jest.Mock).mockReturnValue({ from: jest.fn((t: string) => tables[t] ?? tableStub({})) });
+    const res = await request(app).post('/api/v1/vcaop/portal/my/connections/m-1/sandbox-tests');
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/awaiting_factory_run/);
+  });
+
+  test('a rejected mapping is removed from the version so it cannot reach certification', async () => {
+    asMerchant('merchant-1');
+    const schemaMapping = tableStub({ data: { id: 'map-1', version_id: 'v-1' } });
+    const tables: Record<string, any> = {
+      integration_manifest: tableStub({ data: rec }),
+      integration_version: tableStub({ data: version }),
+      schema_mapping: schemaMapping,
+      mapping_decision: tableStub({}),
+      oasis_events: tableStub({}),
+    };
+    (getSupabase as jest.Mock).mockReturnValue({ from: jest.fn((t: string) => tables[t] ?? tableStub({})) });
+    const res = await request(app)
+      .post('/api/v1/vcaop/portal/my/connections/m-1/mapping-decisions')
+      .send({ mapping_id: 'map-1', decision: 'reject' });
+    expect(res.status).toBe(200);
+    expect(schemaMapping.delete).toHaveBeenCalled();
+    expect(schemaMapping.filters['id']).toBe('map-1');
+  });
+
+  test('approval_required connections can re-run sandbox tests after a decision', async () => {
+    asMerchant('merchant-1');
+    const blocked = { ...rec, status: 'approval_required' };
+    const tables: Record<string, any> = {
+      integration_manifest: tableStub({ data: blocked }),
+      integration_version: tableStub({ data: version }),
+      schema_mapping: tableStub({ data: [{ id: 'map-1', sensitive: false, confidence: 0.99, decided_by: 'human' }] }),
+      connector_certification: tableStub({}),
+      oasis_events: tableStub({}),
+    };
+    (getSupabase as jest.Mock).mockReturnValue({ from: jest.fn((t: string) => tables[t] ?? tableStub({})) });
+    const res = await request(app).post('/api/v1/vcaop/portal/my/connections/m-1/sandbox-tests');
+    expect(res.status).toBe(200);
+    expect(res.body.data.certification).toBe('certified');
   });
 });
 

@@ -59,6 +59,20 @@ AC-10 — Lifecycle writes on foreign connections are refused before any DB writ
   TEST: "lifecycle transition on a foreign connection is 404 and writes nothing"
   CURL: POST /api/v1/vcaop/portal/my/connections/<foreign>/revoke as non-owner -> 404, row unchanged
 
+Certification-gate hardening from the Codex review of this PR (both routers):
+
+AC-11 — Zero mappings never certify: sandbox tests refuse until the factory has produced proposals
+  TEST: "zero mappings can NEVER certify — sandbox tests refuse with awaiting_factory_run"
+  CURL: POST .../sandbox-tests on a version with no schema_mapping rows -> 409 awaiting_factory_run
+
+AC-12 — A rejected mapping is removed from the version and can never reach certification
+  TEST: "a rejected mapping is removed from the version so it cannot reach certification"
+  CURL: POST .../mapping-decisions {decision:"reject"} -> schema_mapping row deleted; mapping_decision keeps the audit row
+
+AC-13 — approval_required connections can re-run sandbox tests after a human decision
+  TEST: "approval_required connections can re-run sandbox tests after a decision"
+  CURL: POST .../sandbox-tests from state approval_required -> 200 (not locked out of the re-run that clears the gate)
+
 ROUTE_MOUNT: `/api/v1/vcaop/portal` mounted in services/gateway/src/index.ts via mountRouterSync BEFORE the `/api/v1/vcaop` catch-all (same ordering rule as the postback/shopify/awin sub-paths). `/api/v1/vcaop/portal/my` (VTID-03553) mounts BEFORE `/api/v1/vcaop/portal` so the owner-scoped handlers win over the admin ones.
 FINAL_URL: https://preview-gateway.vitanaland.com/api/v1/vcaop/portal/connections
 FINAL_URL: https://preview-gateway.vitanaland.com/api/v1/vcaop/portal/my/connections

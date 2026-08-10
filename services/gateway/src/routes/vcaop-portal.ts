@@ -319,6 +319,11 @@ router.post('/connections/:id/mapping-decisions', async (req: Request, res: Resp
   });
   if (decision === 'approve') {
     await supabase.from('schema_mapping').update({ decided_by: 'human' }).eq('id', mapping_id);
+  } else {
+    // A rejected mapping must never reach certification: remove it from the
+    // version's mapping set (the mapping_decision row keeps the audit trail).
+    // Leaving it in place would let the sandbox gate count it as eligible.
+    await supabase.from('schema_mapping').delete().eq('id', mapping_id);
   }
   await emitOasisEvent(supabase, 'vcaop.portal.mapping.decided', 'success', `mapping ${mapping_id}: ${decision}`, {
     connection_id: rec.id, mapping_id, decision, actor: userId(req),
@@ -332,7 +337,12 @@ router.post('/connections/:id/sandbox-tests', async (req: Request, res: Response
   const supabase = db(res); if (!supabase) return;
   const rec = await getOwnedManifest(supabase, req);
   if (!rec) return res.status(404).json({ ok: false, error: 'connection not found' });
-  if (!canTransition(rec.status, 'testing') && rec.status !== 'testing') {
+  // approval_required is re-runnable: after a human mapping decision the
+  // canonical service walks approval_required -> mapping -> testing, so a
+  // connection that failed the mapping gate must not be locked out of the
+  // very re-run that clears it.
+  const canRun = canTransition(rec.status, 'testing') || rec.status === 'testing' || rec.status === 'approval_required';
+  if (!canRun) {
     return res.status(409).json({ ok: false, error: `cannot run tests from state ${rec.status}` });
   }
   const version = await latestVersion(supabase, rec.id);
@@ -340,6 +350,12 @@ router.post('/connections/:id/sandbox-tests', async (req: Request, res: Response
 
   const { data: mappings } = await supabase
     .from('schema_mapping').select('id,sensitive,confidence,decided_by').eq('version_id', version.id);
+  if (!mappings || mappings.length === 0) {
+    // Zero mappings means the factory has not run yet — that is a pipeline
+    // state, not a passed mapping gate. Certifying here would activate a
+    // connector no mapping or contract test ever touched.
+    return res.status(409).json({ ok: false, error: 'awaiting_factory_run: no mappings exist for this version yet' });
+  }
   const pending = pendingReviewMappings(mappings || []);
   const certStatus = pending.length > 0 ? 'approval_required' : 'certified';
   const now = new Date().toISOString();
