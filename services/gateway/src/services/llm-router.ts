@@ -761,6 +761,84 @@ const ADAPTERS: Record<LLMProvider, ProviderAdapter> = {
 // Public API
 // =============================================================================
 
+/** Outcome of a provider preflight — see `verifyProvider()`. */
+export interface ProviderVerifyResult {
+  provider: LLMProvider;
+  model: string;
+  /** True only if the provider actually returned a completion. */
+  ok: boolean;
+  /** Why it failed, verbatim from the adapter — the whole point of this call. */
+  error?: string;
+  /** False when the provider's credentials env gate is unset (router SKIPS it). */
+  available: boolean;
+  latencyMs: number;
+}
+
+/**
+ * Preflight a provider/model with a real, minimal completion (VTID-03565).
+ *
+ * This exists because nothing else in the codebase could answer "does this
+ * provider actually work?". `GET /providers/health` reports env-var PRESENCE,
+ * which is precisely the illusion that hid VTID-03563: `anthropic` reported
+ * available while every call died on credit balance, and the router silently
+ * served Gemini instead. A routing table states intent; only a real invoke
+ * says who will actually serve the request.
+ *
+ * Deliberately routed through `ADAPTERS[provider]` — the exact map
+ * `runProviderCall()` uses — so a preflight cannot pass via a code path the
+ * real traffic does not take.
+ *
+ * Deliberately NOT recorded via startLLMCall/completeLLMCall: a preflight is
+ * an operator action, not traffic, and booking it as `llm.call.completed`
+ * would corrupt the very telemetry used to decide whether a flip worked.
+ */
+export async function verifyProvider(
+  provider: LLMProvider,
+  model: string,
+): Promise<ProviderVerifyResult> {
+  const startedAt = Date.now();
+  const base = { provider, model, latencyMs: 0 };
+  const adapter = ADAPTERS[provider];
+  if (!adapter) {
+    return { ...base, ok: false, available: false, error: `Unknown provider '${provider}'` };
+  }
+  if (!adapter.isAvailable()) {
+    return {
+      ...base,
+      ok: false,
+      available: false,
+      error: `Provider '${provider}' has no credentials configured — the router SKIPS it and serves the fallback instead`,
+    };
+  }
+
+  try {
+    const result = await adapter.call({
+      prompt: 'Reply with exactly: OK',
+      model,
+      maxTokens: 16,
+    });
+    return {
+      provider,
+      model,
+      available: true,
+      ok: result.ok,
+      error: result.ok ? undefined : result.error,
+      latencyMs: Date.now() - startedAt,
+    };
+  } catch (err) {
+    // Adapters are contractually non-throwing, but a preflight that itself
+    // throws would report as a route 500 and tell the operator nothing.
+    return {
+      provider,
+      model,
+      available: true,
+      ok: false,
+      error: `adapter threw: ${String(err).slice(0, 300)}`,
+      latencyMs: Date.now() - startedAt,
+    };
+  }
+}
+
 /**
  * Dispatch an LLM call to the configured provider for `stage`.
  *
@@ -774,7 +852,12 @@ export async function callViaRouter(
   opts: LLMRouterOpts,
 ): Promise<LLMRouterResult> {
   const policy = await loadPolicy();
-  const stageConfig: StageRoutingConfig = policy[stage];
+  // VTID-03565: `| undefined` is not defensive typing — the ACTIVE production
+  // policy really does omit `vision`/`classifier`, and `loadPolicy()` takes the
+  // stored row wholesale rather than merging per-stage defaults (unlike
+  // `getStageRoutingConfig()`, which does merge). The guard below was already
+  // correct; only the annotation claimed otherwise.
+  const stageConfig: StageRoutingConfig | undefined = policy[stage];
   if (!stageConfig) {
     return { ok: false, error: `No policy configured for stage '${stage}'` };
   }

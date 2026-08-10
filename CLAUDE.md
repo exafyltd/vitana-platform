@@ -44,6 +44,28 @@ Claude must **always** do the following:
 9. **Always prefer existing systems** over rebuilding.
 10. **Always fail loudly** if a required invariant is missing.
 
+### AI Providers (STANDING RULE — VTID-03563)
+
+10a. **Always use Claude via AWS Bedrock (`provider: 'bedrock'`). Always.**
+     This is a permanent, standing decision made by the platform owner on
+     2026-08-10 and is not to be re-litigated or re-asked. Every stage in
+     `llm_routing_policy` that needs a Claude model points at the
+     **`bedrock`** provider — never at `anthropic`.
+
+10b. **Never route a stage at the direct Anthropic API (`provider:
+     'anthropic'`).** That account has **no credit balance**. Every call
+     returns `400 invalid_request_error — "Your credit balance is too low
+     to access the Anthropic API"` and then **silently falls back to
+     Gemini/Vertex**, which is how the Gemini bill kept growing while the
+     policy table claimed two stages were already on Claude. Measured
+     2026-08-10: 268 such failures in 14 days, 33 in one day. Bedrock bills
+     to AWS and is unaffected by that balance. See §2b.
+
+10c. **Never "fix" a Claude outage by failing a stage back to
+     `vertex`/Gemini.** A Claude stage's fallback is another Bedrock model
+     or an explicit hard failure — never Google. A silent Google fallback
+     is what made this invisible for months.
+
 ### Infrastructure & Deployment
 
 11. **Always use GCP project `lovable-vitana-vers1`.**
@@ -331,11 +353,24 @@ await page.reload();
 
 ### AI & Autonomy
 
-26. **IF** planner is needed → **THEN use Gemini Pro.**
-27. **IF** worker is needed → **THEN use Gemini Flash.**
-28. **IF** validation is needed → **THEN use Claude.**
-29. **IF** model fallback occurs → **THEN log explicitly.**
+26. **IF** a stage needs Claude → **THEN route it at `provider: 'bedrock'`,
+    never `'anthropic'`.** (VTID-03563 — see ALWAYS 10a/10b and §2b.)
+    **This supersedes the former rules 26 and 27**, which said to use Gemini
+    Pro for the planner and Gemini Flash for the worker. Those are obsolete:
+    the standing direction is Claude-on-Bedrock, off Google.
+27. **IF** you are about to point any stage at `vertex` or a Gemini model →
+    **THEN STOP.** The only sanctioned Google dependency left is the ORB
+    voice fallback (§2e), and that exists solely because no Anthropic model
+    has a speech-to-speech API. It is not a licence to add new ones.
+28. **IF** validation is needed → **THEN use Claude (via Bedrock).**
+29. **IF** model fallback occurs → **THEN log explicitly.** A fallback that
+    lands on Google must be treated as an incident, not as normal operation.
 30. **IF** TTS is used → **THEN specify model_name explicitly.**
+31. **IF** Bedrock is unconfigured (`BEDROCK_ROLE_ARN` unset) → **THEN the
+    adapter reports `not_configured` and the router SKIPS it.** Flipping
+    routing to `bedrock` before that var is set does not fail loudly — it
+    quietly serves the fallback instead. Configure and verify Bedrock
+    FIRST, then flip routing. Never the other way round.
 
 ---
 
@@ -511,6 +546,38 @@ Located at: `config/service-path-map.json`
 
 ## 2b. LLM ROUTING — BEDROCK PROVIDER (VTID-03403)
 
+> ### ⭐ STANDING DECISION (2026-08-10, VTID-03563): CLAUDE ALWAYS VIA BEDROCK
+>
+> **Claude runs on AWS Bedrock. Always. Never on the direct Anthropic API.**
+> Decided by the platform owner on 2026-08-10 in response to Gemini costs.
+> Do not re-ask, do not re-litigate, do not "temporarily" route a stage at
+> `anthropic` or `vertex` to get something working.
+>
+> **Why, concretely — this is not a preference, the alternative is broken:**
+> the direct Anthropic API account has **no credit balance**. Every
+> `provider: 'anthropic'` call returns
+> `400 invalid_request_error — "Your credit balance is too low to access the
+> Anthropic API"` and the router then **silently falls back to Gemini/Vertex**.
+>
+> That is exactly how this stayed hidden: `llm_routing_policy` v10 has had
+> `memory` and `validator` on `primary_provider: 'anthropic'` since
+> 2026-05-02, so the table *read* as "already partly on Claude" while every
+> one of those calls was actually being served by Google. Measured on prod
+> 2026-08-10: **268 `llm.call.failed` credit-balance errors in 14 days, 33 in
+> a single day**, and `llm.call.completed` shows **zero** successful
+> `anthropic` completions — only `vertex`. A routing table is a statement of
+> intent; only the completion telemetry tells you who actually served it.
+>
+> **Bedrock bills to AWS**, so it is unaffected by that balance, and it is
+> the same Claude models over the same Messages API wire shape (vision and
+> tool calling included since VTID-03496).
+>
+> **Order of operations is load-bearing** — see IF-THEN rule 31. Setting
+> `BEDROCK_ROLE_ARN` comes FIRST and must be verified; only then flip
+> `llm_routing_policy`. Flipping routing at an unconfigured Bedrock does not
+> fail loudly, it silently serves the fallback — i.e. it reproduces the exact
+> bug this decision exists to end.
+
 The gateway's LLM dispatcher (`services/gateway/src/services/llm-router.ts`)
 selects a provider per-*stage* from the DB-backed `llm_routing_policy` table
 (editable via the Command Hub dropdown), via an `ADAPTERS: Record<LLMProvider,
@@ -535,9 +602,14 @@ one of these adapters**, alongside `anthropic`, `openai`, `vertex`,
   on-demand model ID. `PROVIDER_FLAGSHIPS.bedrock`
   (`services/gateway/src/constants/llm-defaults.ts`) is only the Command Hub
   dropdown's convenience default — read from `BEDROCK_MODEL_ID` if set.
-- **Not selected by default anywhere.** Adding the adapter does not change
-  any stage's routing — Bedrock only runs when an operator explicitly points
-  a stage at `'bedrock'`.
+- **~~Not selected by default anywhere.~~ SUPERSEDED 2026-08-10 by
+  VTID-03563.** This bullet used to say adding the adapter changes no
+  routing and Bedrock only runs when an operator explicitly opts a stage
+  in. That was the VTID-03403 build-time posture. The standing decision
+  above reverses it: **Bedrock is now the intended destination for every
+  Claude stage**, and `anthropic` is forbidden. The adapter is still inert
+  until `BEDROCK_ROLE_ARN` is set — that gate is unchanged and is the
+  reason ordering matters.
 - **Vision and tool calling ARE supported (VTID-03496).** `image`/`images`
   become Anthropic content blocks and `tools`/`forceTool` become `tools` +
   `tool_choice`, built identically to `anthropicAdapter` — Bedrock speaks the
@@ -1611,6 +1683,8 @@ Use these PATs with the GitHub REST API (`api.github.com`) for all PR and deploy
 
 | Date | Change | VTID |
 |------|--------|------|
+| 2026-08-10 | **STANDING RULE: Claude always via AWS Bedrock, never the direct Anthropic API.** Platform-owner decision, prompted by Gemini API being the top GCP line item. **The finding that forced it:** the direct Anthropic account has **no credit balance** — every `provider:'anthropic'` call returns `400 "Your credit balance is too low"` and the router then **silently falls back to Gemini/Vertex**. `llm_routing_policy` v10 has had `memory` and `validator` on `primary_provider:'anthropic'` since 2026-05-02, so the table *read* as "already partly on Claude" while Google served every one of those calls. Measured on prod: **268 credit-balance failures in 14 days, 33 in one day, and ZERO successful `anthropic` completions on record.** A routing table states intent; only completion telemetry says who actually served the request — that gap is the whole bug. Codified as ALWAYS 10a/10b/10c, IF-THEN 26/27/31 (**26 and 27 previously said "planner → Gemini Pro" and "worker → Gemini Flash" — now obsolete and explicitly superseded**), and a standing-decision block at the head of §2b; §2b's "not selected by default anywhere" bullet is marked superseded rather than deleted, since the activation-gate half of it still holds. **Ordering is load-bearing and is now its own rule:** `BEDROCK_ROLE_ARN` is the activation gate, and while it is unset the adapter reports `not_configured` and llm-router *skips* bedrock — so a policy row pointing at `bedrock` quietly serves its FALLBACK. Flipping routing before verifying Bedrock therefore reproduces the exact silent-fallback bug this rule exists to end. `AWS-PROD-DEPLOY-GATEWAY.yml` gained `bedrock_role_arn`/`bedrock_model_id`/`aws_bedrock_region` as EMPTY-preserving dispatch inputs (jq upserts verified idempotent against a mock task def) so the gate lives in a diffable file — the VTID-03513 lesson, where task-def wiring existed only in live AWS state and was cloned forward through every deploy. **Routing was deliberately NOT flipped in this VTID.** Inspection of the live task def shows Bedrock already configured (`BEDROCK_ROLE_ARN=…/vitana-ecs-task-role`, `AWS_BEDROCK_REGION=eu-central-1`, `BEDROCK_MODEL_ID=eu.anthropic.claude-opus-4-7`) — but that model id carries **no version suffix**, unlike the documented cross-region inference-profile form (`eu.anthropic.claude-sonnet-4-6-v1:0`), and telemetry shows **0 successful and 1 failed** bedrock call in 30 days (`NGHTTP2_PROTOCOL_ERROR`, 2026-07-22). The session's IAM user is denied `bedrock:ListInferenceProfiles`/`ListFoundationModels`, so the id could not be validated. **Next step, in order: validate the inference-profile id with a real invoke, then flip `memory` + `validator` first** — they are on `anthropic` today and therefore 100% broken, so moving them to bedrock is pure upside and cannot regress anything. | VTID-03563 |
+| 2026-08-10 | **Most ORB sessions left no lifecycle record at all — the WebSocket teardown path never emitted `vtid.live.session.stop`.** Found while verifying VTID-03560 on real traffic: 3 sessions since the deploy, **1 stop event**. `vtid.live.session.stop` has four emit sites (idle sweep, supersede, explicit `POST /stop`, `stop_session` frame) and `cleanupWsSession()` is none of them — it closed the upstream, deleted from `liveSessions` and returned silently. **Because it DELETES, the idle sweep could never emit on its behalf either**, so the session vanished permanently rather than surfacing later as `expired_ttl`. **What made a dormant gap into the common case: VTID-03471 made WebSocket the default browser transport on 2026-08-01**, so the one silent teardown became the ordinary way a session ends. The line-1252 comment shows the gap was known and half-patched (*"~10 of 67 sessions / 24h had no stop event"*) — the sweep got an emit, the disconnect path did not. **This is NOT a cost bug and was deliberately not treated as one:** every close reason that bills money already emitted, and the silent one ends the billed stream promptly by definition — the two sessions measured closed their upstream 1.3s after start. It is a measurement bug, and it reached user-facing behaviour because **`fetchLastSessionInfo()` resolves the ORB opening directive by querying this exact topic** (`limit 1`), so the common close path writing nothing degrades the greeting-cadence rungs toward treating every open as fresh — worth tracing against VTID-03475's repeated-greeting symptom. **Correct denominator in the meantime:** `vtid.live.session.start` is emitted reliably, and the Nova failure numerator (`orb.upstream.nova.premature_close_fallback`) is its own topic, so a post-promotion failure RATE must be computed against starts, not stops. Fix adds the emit plus a **`stopEventEmitted` latch**, because the ordinary sequence `stop_session` → socket closes → `ws.on('close')` → cleanup would otherwise book two stops for every clean session; the latch is deliberately NOT keyed off `active`, which is false both for "already stopped" and "never started" — two states needing opposite answers. `reason` became a **parameter**, not a constant, so the three call sites report `client_disconnect` / `client_error` / `ws_session_expired` separately rather than collapsing into one bucket (the mistake §2e's Nova work already paid for once: a bare `close()` put 42 of 46 sessions in one catch-all). Emits `liveSessionKey`, never the `ws-<uuid>` socket id — the VTID-03471 divergence means the socket id keys nothing any start event or continuity row uses. Whole emit is wrapped: cleanup runs from `ws.on('error')`, so telemetry must never cost the teardown it describes; timestamps read defensively so a session torn down before it started reports null duration rather than throwing. **Expect session counts in the Improve cockpit to STEP UP on deploy, and the audio-in-zero ratio to move** — that is the filter finally seeing the whole population, not a regression; the three new reasons are deliberately NOT added to `LIFECYCLE_ARTIFACT_STOP_REASONS` (a user who opened and closed the ORB is a real session), with `ws_session_expired` flagged for revisiting on data rather than guessed at now. 9 new tests, **mutation-verified — 7 fail with the emit disabled**, and the 2 that survive are exactly the ones asserting absence of emission. Also repaired a VTID-03471 guard test that pinned `cleanupWsSession`'s full parameter list as a string literal and so broke on an added parameter, for reasons unrelated to the invariant it protects. Suite 12,162 passing, 0 failed. | VTID-03561 |
 | 2026-08-09 | **ORB voice promoted off Google onto AWS Nova Sonic, and the two levers that move that bill were not settable until now.** Prompted by "turn off the Gemini API, we have Anthropic and should only use that" against a billing report showing Gemini API $79.50 MTD. **The premise needed correcting before acting on it, and the correction is the reusable part: the Gemini API line is not text AI — it is ORB voice, the Gemini Live stream billed per second of open connection.** All text AI is **$3.75** on the *Vertex* line, so routing text to Claude does not touch this bill at all, and no Anthropic model has a speech-to-speech API to replace the voice path with. Nova Sonic is the only AWS route off it. **First, the measurement that showed VTID-03510 had already worked:** prod picked up the idle reaper at 08-08 08:49 UTC, and ORB Live billed minutes went **427/day (08-07) → 99.9 (08-08) → 88.4 (08-09)**, avg session 21.4 min → 3.7 min, with the 32-minute `expired_ttl` bucket (97.5% of the old bill) at **zero sessions**. The report still showed $79.50 because it is *month-to-date cumulative* over 8 days, ~6.5 of them at the old rate — a running total cannot go down, which is worth remembering before concluding a cost fix did not land. **What was actually missing:** `AWS-PROD-DEPLOY-GATEWAY.yml` could set `NOVA_SONIC_ENABLED` but had no input for `NOVA_SONIC_GLOBAL_ENABLED` or `ORB_IDLE_NO_ENGAGEMENT_MS` — so the promotion was unreachable except by hand-editing the live task definition, **which is exactly the mechanism that had just cost four days of staging downtime under VTID-03513** (task-def wiring existing only in AWS state, invisible to review, cloned forward through every later deploy). Both are now EMPTY-preserving dispatch inputs in a diffable file; jq upserts verified idempotent against a mock task def. Nova global is a **separate branch** from the canary block on purpose — promoting to everyone and editing the allowlist are different decisions, and coupling them would mean you cannot do one without restating the other. **§2e's standing ⛔ DO-NOT-SET gate is cleared, not deleted:** its one condition was a runtime fallback so a Nova premature-close does not leave the user in silence, and VTID-03502 shipped that to prod 08-08 08:49. Every word of the "Premature close" diagnosis is deliberately retained — **the root cause is still unknown**, so promotion routes ~10% of sessions through a Vertex reconnect hop: mitigation, not a fix. Deployed `rebuild-main` (not `promote-staging` — that reads staging build-info and AWS staging is still 504ing) and **verified live rather than trusting the green check**: prod on `e3b87e9`, `/nova-sonic/health` reports `global_enabled:true`, `ready:true`, and `canary_user_count:4` **unchanged** so `nova_sonic_global_enabled=false` restores the exact prior population with no allowlist edits. The 90s idle budget could not be confirmed at deploy time — zero sessions in the following minutes at 22:17 UTC — and needs `idle_ms ≈ 90s` on the next real traffic. Watch `orb.upstream.nova.premature_close_fallback`: at canary scale the failure was 6 sessions in 7 days, and VTID-03501's `canary:false` reporting exists precisely so that rate stays measurable now the population is everyone. | VTID-03560 |
 | 2026-08-09 | **`WATCHER_REMINDERS_ENABLED` was a kill switch for two of its three consumers — production read "off" while injecting.** `GET /api/v1/watcher/remind` reported `enabled_resolved` and then served the reminders regardless. The planner and executor are in-process and check `remindersEnabled()` themselves, so they were genuinely dark; **`worker-runner` is a separate service whose only path to the Watcher is that HTTP route**, and it never checked the flag. Measured on prod with the var unset: `enabled_resolved: false` and **six reminders in the same response**. A partially-effective kill switch is worse than none, because it makes you trust a state that is not real — and the state it misreported was "is this feature touching production prompts". The stale comment on the route asserted *"the worker-runner bridge uses buildReminders() directly and never traverses this route"*, which was simply false and is how the gap survived review; believing a comment over the call graph is the same failure mode as VTID-03531's unwired distiller. Gate now keys on **`record_shown`**, which already encoded caller intent: `record_shown=true` means "I am injecting this" and honours the flag; omitting it means "show me what the Watcher knows" and is always served, because an operator needs the preview to decide whether to flip the flag at all. Suppression happens **before** `buildReminders()` (tests assert `watcher_rules`/`watcher_lessons` are never queried, not merely that the array is empty, so a later refactor that builds-then-filters fails), returns **200 not an error** (worker-runner maps any non-2xx to null, which would make a deliberate off indistinguishable from a Watcher outage), and reports a new `injection_suppressed` so "off, so you got nothing" is distinguishable from "on, and there was nothing to say". 4 new route tests; suite 628/628, 12,228 passing. | VTID-03551 |
 | 2026-08-08 | **The Watcher stored memory none of its own consumers could read — the same defect as the row below, one layer up.** After VTID-03531's backfill: **34 lessons stored, 25 injectable by frequency, 0 returned to any real caller.** `distiller.ts` copied `evidence.service` into the lesson's retrieval `scope`. But `scope` is a retrieval FILTER — `scopeMatches()` deliberately refuses a scoped lesson whenever the caller omits that key (correct; otherwise a scanner-specific lesson leaks into every unrelated prompt) — while `evidence.service` is the name of the service that **emitted** the event. Provenance, not caller context. Conflating them made every lesson unreachable by all three consumers at once: `dev-autopilot-planning` and `dev-autopilot-execute` pass `stage`+`scanner` and never a service, and `worker-runner` passes its **domain** (`'backend'`) against an **emitter name** (`'worker-backend'`) — even the one caller that supplied the key could never match. Proven live rather than inferred: `/remind?stage=execute` → 3 rules + **0** lessons; the same call with `&service=autopilot-controller` → 3 rules + **3** lessons. Nothing was wrong with the lessons, the scoring, the quarantine or the endpoint — only the scope key. Second defect found in review (#3062) and worse than the first: `upsertLesson`'s recurrence branch updated frequency, evidence and text but **never `scope`**, so any pattern already in the table kept the scope it was born with **permanently**, no matter how often the definition changed afterwards — a scope fix would have applied only to patterns never seen before, leaving all 34 backfilled rows (the highest-frequency ones, i.e. most of the value) dead for good. Recurrence now writes scope, so a definition change **self-heals** instead of needing an out-of-band migration; the 36 existing rows were cleared with `scope = scope - 'service'` so they became reachable immediately. Verified on the exact contexts the real callers use — both previously zero — now **6 reminders, 3 of them learned** (`seen 113x`, `43x`, `41x`). **Standing lesson: VTID-03531 and this are one defect at two layers — one stored memory nothing wrote to, the other wrote memory nothing could read. Both passed every unit test, because each component was individually correct. The failure was in the SEAM, and seams are what unit tests are worst at. Verifying "the feature works" has to mean asking a real consumer for a real answer, not confirming each part is green.** | VTID-03534 |

@@ -867,6 +867,17 @@ export interface GeminiLiveSession {
   upstreamProvider?: 'vertex' | 'livekit' | 'nova_sonic';
   sseResponse: Response | null;
   active: boolean;
+  // VTID-03561: latch — at most one `vtid.live.session.stop` per session.
+  // Every teardown path sets this immediately after emitting. `cleanupWsSession`
+  // is the only path that CHECKS it, because it is the one teardown that can run
+  // *after* another has already emitted: the client sends `stop_session` (which
+  // emits `user_stop`) and its socket then closes a moment later, firing
+  // `ws.on('close')` → cleanup. Without the latch that ordinary sequence would
+  // book two stops for one conversation and double-count every clean session.
+  // Deliberately NOT keyed off `active`, which is false both for "already
+  // stopped" and for "never successfully started" — two states that need
+  // opposite answers here.
+  stopEventEmitted?: boolean;
   // VTID-02047 voice channel-swap: persona currently driving the voice channel.
   // 'vitana' is the default; report_to_specialist tool flips this to a
   // specialist key, then triggers a transparent reconnect of the upstream
@@ -1265,6 +1276,7 @@ setInterval(() => {
         duration_ms: Date.now() - s.createdAt.getTime(),
         turn_count: s.turn_count,
       }).catch(() => { });
+      s.stopEventEmitted = true; // VTID-03561
       // VTID-01959: voice self-healing dispatch (mode-gated for /report path).
       // VTID-01994: pass session metrics so quality classifier can detect
       // failures regardless of mode and route to investigator.
@@ -1362,6 +1374,7 @@ function terminateExistingSessionsForUser(userId: string, excludeSessionId?: str
       duration_ms: Date.now() - existingSession.createdAt.getTime(),
       turn_count: existingSession.turn_count,
     }).catch(() => {});
+    existingSession.stopEventEmitted = true; // VTID-03561
     // VTID-01959: voice self-healing dispatch (mode-gated for /report path).
     // VTID-01994: pass session metrics for mode-independent quality classifier.
     dispatchVoiceFailureFireAndForget({
@@ -14763,7 +14776,9 @@ export function initializeOrbWebSocket(server: HttpServer): void {
     for (const [sessionId, session] of wsClientSessions.entries()) {
       if (now - session.lastActivity.getTime() > SESSION_TIMEOUT_MS) {
         console.log(`[VTID-01222] WebSocket session expired: ${sessionId}`);
-        cleanupWsSession(sessionId);
+        // VTID-03561: the client-session expiry sweep, distinct from the
+        // live-session idle sweep that emits idle_*/expired_ttl.
+        cleanupWsSession(sessionId, 'ws_session_expired');
       }
     }
   }, 5 * 60 * 1000);
@@ -14894,14 +14909,14 @@ async function handleWebSocketConnection(ws: WebSocket, req: IncomingMessage): P
   ws.on('close', (code, reason) => {
     console.log(`[VTID-01222] WebSocket disconnected: ${sessionId}, code=${code}, reason=${reason}`);
     clearInterval(clientPingInterval);
-    cleanupWsSession(sessionId);
+    cleanupWsSession(sessionId, 'client_disconnect'); // VTID-03561
     decrementConnection(clientIP);
   });
 
   // Handle errors
   ws.on('error', (error) => {
     console.error(`[VTID-01222] WebSocket error for ${sessionId}:`, error);
-    cleanupWsSession(sessionId);
+    cleanupWsSession(sessionId, 'client_error'); // VTID-03561
     decrementConnection(clientIP);
   });
 }
@@ -15696,6 +15711,7 @@ function handleWsStopSession(clientSession: WsClientSession): void {
       user_turns: liveSession.transcriptTurns.filter(t => t.role === 'user').length,
       model_turns: liveSession.transcriptTurns.filter(t => t.role === 'assistant').length,
     }).catch(() => { });
+    liveSession.stopEventEmitted = true; // VTID-03561
     // VTID-01959: voice self-healing dispatch (mode-gated for /report path).
     // VTID-01994: pass session metrics for mode-independent quality classifier.
     dispatchVoiceFailureFireAndForget({

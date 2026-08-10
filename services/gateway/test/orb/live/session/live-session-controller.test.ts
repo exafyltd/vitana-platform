@@ -221,6 +221,202 @@ describe('A8.2: cleanupWsSession', () => {
   });
 });
 
+/**
+ * VTID-03561: the WS teardown path emitted no `vtid.live.session.stop` at all.
+ *
+ * Four other sites emit the topic; this one closed the upstream, deleted the
+ * session and returned silently — and because it DELETES, the idle sweep could
+ * never emit on its behalf afterwards, so the session left no lifecycle record
+ * in OASIS. Harmless while SSE was the browser default; VTID-03471 made
+ * WebSocket the default on 2026-08-01, turning the silent path into the
+ * ordinary way a session ends (measured on prod 2026-08-10: 2 of 3 sessions had
+ * no stop event).
+ *
+ * These tests assert the WIRING, not just that a payload builder works. The
+ * defect was never a wrong field — it was that nothing called the emit at all,
+ * which is exactly the failure a per-function unit test cannot see.
+ */
+describe('VTID-03561: cleanupWsSession emits session.stop', () => {
+  let emitted: Array<{ type: string; payload: any }>;
+  let emitSpy: jest.Mock;
+
+  const makeLiveSession = (over: Record<string, unknown> = {}): any => ({
+    sessionId: 'live-abc',
+    identity: { user_id: 'u1', tenant_id: 't1' },
+    transcriptTurns: [
+      { role: 'user', text: 'hi' },
+      { role: 'assistant', text: 'hello' },
+      { role: 'user', text: 'bye' },
+    ],
+    active: true,
+    createdAt: new Date(Date.now() - 10_000),
+    lastActivity: new Date(Date.now() - 4_000),
+    audioInChunks: 7,
+    audioInForwarded: 5,
+    audioOutChunks: 9,
+    videoInFrames: 2,
+    turn_count: 3,
+    upstreamWs: { close: jest.fn() },
+    ...over,
+  });
+
+  const wire = (liveSession: any, socketId = 'ws-123') => {
+    const clientWs = { readyState: WS_OPEN, close: jest.fn() };
+    if (liveSession) liveSessions.set(liveSession.sessionId, liveSession);
+    wsClientSessions.set(socketId, { liveSession, clientWs } as any);
+    return clientWs;
+  };
+
+  beforeEach(() => {
+    emitted = [];
+    emitSpy = jest.fn(async (type: string, payload: any) => {
+      emitted.push({ type, payload });
+    });
+    __resetLiveSessionControllerForTests();
+    configureLiveSessionController({
+      resolveOrbIdentity: async () => null,
+      clearResponseWatchdog: jest.fn(),
+      sendEndOfTurn: () => true,
+      emitLiveSessionEvent: emitSpy,
+    } as any);
+  });
+
+  it('emits vtid.live.session.stop on WS teardown (the regression)', () => {
+    wire(makeLiveSession());
+
+    cleanupWsSession('ws-123');
+
+    const stops = emitted.filter((e) => e.type === 'vtid.live.session.stop');
+    expect(stops).toHaveLength(1);
+  });
+
+  it('reports the LIVE session id, never the ws-<uuid> socket id', () => {
+    // VTID-03471 trap: the two ids diverged when the WS path started sharing
+    // handleLiveSessionStart. Filing the stop under the socket id would key it
+    // to something no start event or continuity row has ever used.
+    wire(makeLiveSession({ sessionId: 'live-abc' }), 'ws-123');
+
+    cleanupWsSession('ws-123');
+
+    expect(emitted[0].payload.session_id).toBe('live-abc');
+    expect(emitted[0].payload.session_id).not.toBe('ws-123');
+  });
+
+  it('carries the session metrics the cost/quality consumers read', () => {
+    wire(makeLiveSession());
+
+    cleanupWsSession('ws-123');
+
+    expect(emitted[0].payload).toMatchObject({
+      user_id: 'u1',
+      tenant_id: 't1',
+      transport: 'websocket',
+      audio_in_chunks: 7,
+      audio_in_forwarded_chunks: 5,
+      audio_out_chunks: 9,
+      // VTID-03565: was `video_in_frames`, which NO consumer reads. This test's
+      // own name says "the metrics the consumers read" — voice-lab's session
+      // detail projection reads `endEvent.metadata.video_frames`, and the
+      // explicit stop path in orb-live.ts already emitted that key. So these
+      // newly-visible WS sessions were showing a blank video-frame count while
+      // the assertion passed. Caught in review on #3073.
+      video_frames: 2,
+      turn_count: 3,
+      user_turns: 2,
+      model_turns: 1,
+    });
+    // The old key must be GONE, not merely accompanied — `toMatchObject` is a
+    // subset match and would happily pass if both were emitted.
+    expect(emitted[0].payload).not.toHaveProperty('video_in_frames');
+    expect(emitted[0].payload.duration_ms).toBeGreaterThanOrEqual(10_000);
+    expect(emitted[0].payload.idle_ms).toBeGreaterThanOrEqual(4_000);
+  });
+
+  it('passes the caller-supplied reason through, and defaults to client_disconnect', () => {
+    wire(makeLiveSession());
+    cleanupWsSession('ws-123');
+    expect(emitted[0].payload.reason).toBe('client_disconnect');
+
+    emitted = [];
+    wire(makeLiveSession({ sessionId: 'live-def' }), 'ws-456');
+    cleanupWsSession('ws-456', 'client_error');
+    expect(emitted[0].payload.reason).toBe('client_error');
+
+    emitted = [];
+    wire(makeLiveSession({ sessionId: 'live-ghi' }), 'ws-789');
+    cleanupWsSession('ws-789', 'ws_session_expired');
+    expect(emitted[0].payload.reason).toBe('ws_session_expired');
+  });
+
+  it('does NOT double-emit when a stop was already emitted for the session', () => {
+    // The ordinary sequence this guards: the client sends `stop_session`
+    // (which emits user_stop and latches), and its socket closes a moment
+    // later, firing ws.on('close') -> cleanup. Without the latch every clean
+    // session would be booked twice.
+    wire(makeLiveSession({ stopEventEmitted: true }));
+
+    cleanupWsSession('ws-123');
+
+    expect(emitted.filter((e) => e.type === 'vtid.live.session.stop')).toHaveLength(0);
+    // teardown itself still runs
+    expect(liveSessions.has('live-abc')).toBe(false);
+    expect(wsClientSessions.has('ws-123')).toBe(false);
+  });
+
+  it('latches after emitting so a repeat teardown cannot re-emit', () => {
+    const ls = makeLiveSession();
+    wire(ls);
+
+    cleanupWsSession('ws-123');
+    expect(ls.stopEventEmitted).toBe(true);
+
+    // re-register the same live session object under a fresh socket
+    wire(ls, 'ws-999');
+    cleanupWsSession('ws-999');
+
+    expect(emitted.filter((e) => e.type === 'vtid.live.session.stop')).toHaveLength(1);
+  });
+
+  it('completes teardown even when the emit throws', () => {
+    // cleanup runs from ws.on('close') / ws.on('error'); a throw here would
+    // turn an ordinary disconnect into an unhandled exception in a socket
+    // callback. Telemetry never costs us the teardown it describes.
+    __resetLiveSessionControllerForTests();
+    configureLiveSessionController({
+      resolveOrbIdentity: async () => null,
+      clearResponseWatchdog: jest.fn(),
+      sendEndOfTurn: () => true,
+      emitLiveSessionEvent: jest.fn(() => {
+        throw new Error('oasis down');
+      }),
+    } as any);
+    const clientWs = wire(makeLiveSession());
+
+    expect(() => cleanupWsSession('ws-123')).not.toThrow();
+    expect(liveSessions.has('live-abc')).toBe(false);
+    expect(wsClientSessions.has('ws-123')).toBe(false);
+    expect(clientWs.close).toHaveBeenCalledWith(1000, 'Session cleanup');
+  });
+
+  it('reports null duration/idle for a session torn down before it started', () => {
+    wire(makeLiveSession({ createdAt: undefined, lastActivity: undefined }));
+
+    expect(() => cleanupWsSession('ws-123')).not.toThrow();
+    expect(emitted[0].payload.duration_ms).toBeNull();
+    expect(emitted[0].payload.idle_ms).toBeNull();
+  });
+
+  it('still emits when the session never resolved an identity', () => {
+    wire(makeLiveSession({ identity: null }));
+
+    cleanupWsSession('ws-123');
+
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0].payload.user_id).toBeNull();
+    expect(emitted[0].payload.tenant_id).toBeNull();
+  });
+});
+
 describe('A8.2: handleLiveStreamEndTurn', () => {
   beforeEach(() => {
     configureLiveSessionController({
