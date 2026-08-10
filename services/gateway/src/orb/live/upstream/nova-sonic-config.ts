@@ -24,6 +24,25 @@ export const NOVA_SONIC_SUPPORTED_LANGUAGES = ['en', 'de', 'fr', 'es'] as const;
 export type NovaSonicLanguage = (typeof NOVA_SONIC_SUPPORTED_LANGUAGES)[number];
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
+// VTID-03557: NodeHttp2Handler's `requestTimeout` is NOT a "wait for headers"
+// bound — `node-http2-handler.js` arms it via `clientHttp2Stream.setTimeout()`,
+// which fires on inactivity ANYWHERE across the stream's full lifetime
+// (idle-since-any-frame, either direction), not just at connect. Wiring it to
+// `connectTimeoutMs` (15s — sized for "how long to wait to open a stream") was
+// a category error: it applied a connect-scoped bound to a bidirectional voice
+// stream meant to live for minutes. AWS's own official Node.js sample for this
+// exact API (InvokeModelWithBidirectionalStreamCommand) configures
+// `requestTimeout: 300000` — 300s, not 15s. This does NOT explain the
+// "Premature close" failures found in production (those carry Node's own
+// distinct `TimeoutError` name/message, and classifyNovaError routes that to
+// `nova_stream_timeout`, never observed in the `nova_stream_error` telemetry
+// this VTID investigated) — but it is a real, independent deviation from AWS's
+// documented practice that could cause an unrelated false-positive disconnect
+// (e.g. a slow tool round-trip or context-build pause with no Bedrock frame
+// activity) once traffic patterns hit it. Kept as its own field rather than
+// reusing connectTimeoutMs so the two concerns (time-to-open vs.
+// stream-lifetime-idle-bound) can never silently collide again.
+const DEFAULT_STREAM_INACTIVITY_TIMEOUT_MS = 300_000;
 /** 7m15s — rotate 45s before Bedrock's 8-minute bidirectional stream cap. */
 const DEFAULT_ROTATION_AFTER_MS = 435_000;
 // BOOTSTRAP-NOVA-IDLE-ROTATION: Bedrock enforces TWO independent deadlines,
@@ -117,6 +136,7 @@ export type NovaSonicConfigIssue =
   | 'nova_canary_user_ids_invalid'
   | 'nova_canary_tenant_ids_invalid'
   | 'nova_connect_timeout_invalid'
+  | 'nova_stream_inactivity_timeout_invalid'
   | 'nova_rotation_after_invalid'
   | 'nova_idle_rotation_after_invalid'
   | 'nova_keepwarm_invalid'
@@ -144,6 +164,13 @@ export interface NovaSonicConfig {
   canaryUserIds: ReadonlySet<string>;
   canaryTenantIds: ReadonlySet<string>;
   connectTimeoutMs: number;
+  /**
+   * `NodeHttp2Handler`'s `requestTimeout` — a whole-stream idle-since-any-
+   * activity bound, NOT a connect/header-wait bound. See the
+   * DEFAULT_STREAM_INACTIVITY_TIMEOUT_MS comment. Deliberately separate from
+   * `connectTimeoutMs`.
+   */
+  streamInactivityTimeoutMs: number;
   rotationAfterMs: number;
   /**
    * Fail-safe: rotate the stream once this long has passed since the last
@@ -266,6 +293,12 @@ export function getNovaSonicConfig(env: NodeJS.ProcessEnv): NovaSonicConfig {
   );
   if (connectTimeoutMs === null) issues.push('nova_connect_timeout_invalid');
 
+  const streamInactivityTimeoutMs = parsePositiveInt(
+    env.NOVA_SONIC_STREAM_INACTIVITY_TIMEOUT_MS,
+    DEFAULT_STREAM_INACTIVITY_TIMEOUT_MS,
+  );
+  if (streamInactivityTimeoutMs === null) issues.push('nova_stream_inactivity_timeout_invalid');
+
   const rotationAfterMs = parsePositiveInt(
     env.NOVA_SONIC_ROTATION_AFTER_MS,
     DEFAULT_ROTATION_AFTER_MS,
@@ -320,6 +353,7 @@ export function getNovaSonicConfig(env: NodeJS.ProcessEnv): NovaSonicConfig {
     canaryUserIds: canaryUserIds ?? new Set(),
     canaryTenantIds: canaryTenantIds ?? new Set(),
     connectTimeoutMs: connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS,
+    streamInactivityTimeoutMs: streamInactivityTimeoutMs ?? DEFAULT_STREAM_INACTIVITY_TIMEOUT_MS,
     rotationAfterMs: rotationAfterMs ?? DEFAULT_ROTATION_AFTER_MS,
     idleRotationAfterMs: idleRotationAfterMs ?? DEFAULT_IDLE_ROTATION_AFTER_MS,
     keepWarmMs: keepWarmMs ?? DEFAULT_KEEPWARM_MS,

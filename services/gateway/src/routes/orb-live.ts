@@ -1514,11 +1514,24 @@ import { synthesizeGreetingBridgeAudioPcm, GREETING_BRIDGE_PCM_SAMPLE_RATE_HZ } 
  * VTID-03502: should a closed Nova stream fall back to Vertex?
  *
  * True only for the measured premature-close-at-open failure: the stream
- * closed on its own before ANY audio was produced. `audioOutChunks === 0` is
- * the discriminator because it is perfectly correlated with
- * `nova_stream_error` across the canary window (6/6) and appears under no
- * other close reason (local_close 0/35, client_disconnect 0/13, user_stop
- * 0/3, nova_validation 0/1) — a mid-conversation drop always has audio out.
+ * closed on its own before ANY audio was produced. `!hasProducedAudio` is
+ * the discriminator because zero real upstream output is perfectly
+ * correlated with `nova_stream_error` across the canary window (6/6) and
+ * appears under no other close reason (local_close 0/35, client_disconnect
+ * 0/13, user_stop 0/3, nova_validation 0/1) — a mid-conversation drop always
+ * has audio out.
+ *
+ * VTID-03557 review fix: this used to be `audioOutChunks === 0`, backed by
+ * `session.audioOutChunks` — a counter also incremented by the synthetic
+ * activation chime (orb-live.ts's instant-feedback sends) BEFORE any real
+ * model audio arrives. A premature close that happens to land after the
+ * chime but before genuine Nova output would have read as "audio produced"
+ * and silently skipped both this fallback and the VTID-03557 retry, even
+ * though the failure signature (greeting_sent=true, zero real content) was
+ * exactly what this predicate exists to catch. The caller now passes
+ * `session.transportHasShownLife` — set only by genuine upstream traffic
+ * (model audio, input transcription proving the provider answered), never
+ * by the chime — so the discriminator can't be defeated by synthetic audio.
  *
  * Exported as a pure predicate so this decision is testable on its own rather
  * than only through the Nova connect closure it is used in.
@@ -1529,7 +1542,8 @@ export function shouldFallbackToVertexOnNovaClose(args: {
   initiatedLocally: boolean;
   /** A planned rotation owns its own reconnect; do not race it. */
   rotationInFlight: boolean;
-  audioOutChunks: number;
+  /** True once genuine upstream traffic has been seen — never set by the chime. */
+  hasProducedAudio: boolean;
   /** Guard against a Vertex-side failure bouncing back and looping. */
   alreadyFellBack: boolean;
 }): boolean {
@@ -1537,8 +1551,55 @@ export function shouldFallbackToVertexOnNovaClose(args: {
     args.sessionActive &&
     !args.initiatedLocally &&
     !args.rotationInFlight &&
-    args.audioOutChunks === 0 &&
+    !args.hasProducedAudio &&
     !args.alreadyFellBack
+  );
+}
+
+/**
+ * VTID-03557: should a Nova stream that died before any audio get ONE fresh
+ * Nova retry before VTID-03502's Vertex fallback pins the session away from
+ * Nova for good?
+ *
+ * Evidence this targets: every measured "Premature close" failure is Node's
+ * own `ERR_STREAM_PREMATURE_CLOSE` (from `stream.finished()`), not our own
+ * timeout code (`classifyNovaError` routes a genuine local timeout to the
+ * distinct `nova_stream_timeout` code, never observed here) — meaning the far
+ * end (Bedrock, or a network hop to it) tore down the stream, not us.
+ * `NodeHttp2ConnectionManager.lease()` skips its pooled-session fast path for
+ * event-stream commands (`isEventStream` → `createIsolatedSession`), so every
+ * Nova connect already opens a genuinely fresh HTTP/2 session — a retry does
+ * not reuse whatever the first attempt hit. Fresh-connection resets shortly
+ * after open are common, transient infrastructure noise on any pooled/load-
+ * balanced backend; the standard mitigation is exactly this: one prompt retry
+ * before giving up on the preferred path.
+ *
+ * Same discriminator as `shouldFallbackToVertexOnNovaClose` (this predicate
+ * runs first, on the identical signature) but gated on a SEPARATE flag so the
+ * two compose into a two-strike policy: retry once, fall back to Vertex only
+ * if the retry ALSO dies before any audio. `alreadyRetried` therefore must be
+ * checked (and set) independently of `alreadyFellBack` — collapsing them
+ * would either skip the retry entirely or let the fallback retry forever.
+ *
+ * VTID-03557 review fix: see `shouldFallbackToVertexOnNovaClose`'s doc — this
+ * takes the same `hasProducedAudio` (backed by `transportHasShownLife`, not
+ * the chime-inclusive `audioOutChunks`) for the identical reason.
+ */
+export function shouldRetryNovaOnPrematureClose(args: {
+  sessionActive: boolean;
+  initiatedLocally: boolean;
+  rotationInFlight: boolean;
+  /** True once genuine upstream traffic has been seen — never set by the chime. */
+  hasProducedAudio: boolean;
+  /** Guard against retrying more than once per session. */
+  alreadyRetried: boolean;
+}): boolean {
+  return (
+    args.sessionActive &&
+    !args.initiatedLocally &&
+    !args.rotationInFlight &&
+    !args.hasProducedAudio &&
+    !args.alreadyRetried
   );
 }
 // VTID-03495: Polly seam for the /tts route. No-ops unless TTS_PROVIDER=polly.
@@ -7901,6 +7962,86 @@ async function connectToLiveAPI(
             });
             return;
           }
+          // VTID-03557: one fresh Nova retry BEFORE the VTID-03502 Vertex
+          // fallback below pins the session away from Nova. Every measured
+          // "Premature close" is Node's own stream-teardown error, not our
+          // code's timeout path, and each Nova connect already opens a brand
+          // new HTTP/2 session (event-stream commands skip the SDK's session
+          // pool) — so a retry is not replaying whatever the first attempt
+          // hit, it is a materially independent connection attempt. This is
+          // the standard mitigation for a transient reset at connection open.
+          //
+          // Runs on the identical signature as the fallback below, gated on
+          // its OWN flag (`_novaPrematureCloseRetried`) so the two compose as
+          // a two-strike policy: retry once, fall back to Vertex only if the
+          // retry ALSO dies before any audio. `attemptTransparentReconnect`
+          // reconnects via the normal provider-selection path, which still
+          // resolves to Nova here because `_novaFallbackToVertex` is not set
+          // yet — so this genuinely retries Nova, not a disguised Vertex hop.
+          const shouldRetryNova = shouldRetryNovaOnPrematureClose({
+            sessionActive: session.active,
+            initiatedLocally: closeEvent.initiatedLocally === true,
+            rotationInFlight,
+            hasProducedAudio: session.transportHasShownLife === true,
+            alreadyRetried: (session as any)._novaPrematureCloseRetried === true,
+          });
+
+          if (shouldRetryNova) {
+            console.warn(
+              `[VTID-03557] Nova stream for session ${session.sessionId} closed before any audio ` +
+                `(reason=${closeEvent.reason ?? 'unknown'}, audio_out=0) — retrying Nova once before ` +
+                `falling back to Vertex.`,
+            );
+            (session as any)._novaPrematureCloseRetried = true;
+            emitDiag(session, 'nova_premature_close_retry', {
+              provider: 'nova_sonic',
+              reason: closeEvent.reason ?? null,
+              audio_out: 0,
+            });
+            void emitOasisEvent({
+              type: 'orb.upstream.nova.premature_close_retry',
+              vtid: 'VTID-03557',
+              payload: {
+                session_id: session.sessionId,
+                provider: 'nova_sonic',
+                reason: closeEvent.reason ?? null,
+                status: 'warning',
+              } as any,
+            } as any).catch(() => { /* best-effort */ });
+
+            void attemptTransparentReconnect(
+              session,
+              onAudioResponse,
+              onTextResponse,
+              onError,
+              onTurnComplete,
+              onInterrupted,
+            ).then((ok) => {
+              if (!ok) {
+                // The retry itself never got a new connection attempted at
+                // all (e.g. session went inactive, or MAX_RECONNECTS hit) —
+                // this onClose handler will not fire again to pick up the
+                // Vertex fallback below, so surface the disconnect here
+                // rather than leaving the user in unexplained silence.
+                console.warn(
+                  `[VTID-03557] Nova retry reconnect failed outright for session ${session.sessionId}.`,
+                );
+                emitConnectionIssue(session, 'upstream_disconnected');
+                return;
+              }
+              // VTID-03557 review fix: the failed first attempt already
+              // dispatched the greeting prompt (that's the measured failure
+              // signature — greeting_sent=true, zero real audio), so without
+              // this the new Nova connection would sit open with no greeting
+              // ever sent.
+              resendGreetingIfStuckAtZeroTurns(session, 'VTID-03557-retry');
+            }).catch((e) => {
+              console.warn(`[VTID-03557] Nova retry reconnect threw: ${(e as Error).message}`);
+              emitConnectionIssue(session, 'upstream_disconnected');
+            });
+            return;
+          }
+
           // VTID-03502: premature-close-at-open fallback.
           //
           // Measured 2026-07-29 → 08-05: 10.2% of Nova sessions (6/59) die
@@ -7910,6 +8051,11 @@ async function connectToLiveAPI(
           // close reason (local_close 0/35, client_disconnect 0/13,
           // user_stop 0/3, nova_validation 0/1), which is what makes it a safe
           // discriminator rather than a heuristic.
+          //
+          // VTID-03557: by the time this fires, a fresh Nova retry has ALREADY
+          // failed the same way once (see above) — this is now strike two, so
+          // pinning to Vertex is the right call rather than retrying Nova
+          // indefinitely.
           //
           // Without this branch the code below emits connection_issue with
           // should_close:true and the user is simply left in silence — they
@@ -7923,7 +8069,7 @@ async function connectToLiveAPI(
             sessionActive: session.active,
             initiatedLocally: closeEvent.initiatedLocally === true,
             rotationInFlight,
-            audioOutChunks: session.audioOutChunks,
+            hasProducedAudio: session.transportHasShownLife === true,
             alreadyFellBack: (session as any)._novaFallbackToVertex === true,
           });
 
@@ -7966,7 +8112,12 @@ async function connectToLiveAPI(
                   `[VTID-03502] Vertex fallback reconnect failed for session ${session.sessionId}.`,
                 );
                 emitConnectionIssue(session, 'upstream_disconnected');
+                return;
               }
+              // VTID-03557 review fix: same greeting-stuck gap as the retry
+              // path above — the pre-fallback Nova attempt already marked
+              // greetingSent, so the new Vertex connection needs it replayed.
+              resendGreetingIfStuckAtZeroTurns(session, 'VTID-03502-fallback');
             }).catch((e) => {
               console.warn(`[VTID-03502] Vertex fallback reconnect threw: ${(e as Error).message}`);
               emitConnectionIssue(session, 'upstream_disconnected');
@@ -8512,6 +8663,44 @@ function scheduleProactiveGoAwayResume(session: GeminiLiveSession, timeLeftMs: n
   };
 
   (session as any)._goAwayTimer = setTimeout(attempt, fireIn);
+}
+
+/**
+ * VTID-03557 review fix: replay the greeting after a reconnect that landed
+ * with zero completed turns.
+ *
+ * Both the VTID-03557 Nova retry and the VTID-03502 Vertex fallback reconnect
+ * via `attemptTransparentReconnect` after a premature-close-at-open failure —
+ * and that failure's own measured signature is `greeting_sent=true`: the
+ * greeting PROMPT was already dispatched to the dead upstream connection
+ * before it closed. `sendGreetingPromptToLiveAPI` silently no-ops whenever
+ * `session.greetingSent` is already true (its duplicate-greeting guard), so
+ * without this, a successful reconnect opens a fresh, healthy upstream
+ * connection that then sits waiting for a greeting that will never be sent —
+ * the user hears nothing until an unrelated watchdog eventually intervenes.
+ *
+ * Mirrors the existing VTID-GREETING-RECOVERY stall-recovery logic above
+ * (the `isStallRecovery` branch of the keepalive-close handler) for the
+ * identical underlying case: "a greeting was dispatched but the conversation
+ * never actually started." That logic lives on a different reconnect path
+ * (idle-stall detection) and is not reached by the premature-close retry or
+ * fallback, so it does not cover them on its own.
+ */
+function resendGreetingIfStuckAtZeroTurns(session: GeminiLiveSession, source: string): void {
+  if (session.turn_count === 0 && session.greetingSent) {
+    console.log(
+      `[${source}] Reconnected with 0 turns but greetingSent=true — resetting to re-send greeting for session ${session.sessionId}`,
+    );
+    session.greetingSent = false;
+    session.greetingTurnIndex = undefined;
+    if (session.upstreamWs && session.upstreamWs.readyState === WebSocket.OPEN) {
+      sendGreetingPromptToLiveAPI(session.upstreamWs, session);
+    }
+    emitDiag(session, 'greeting_recovery', {
+      reconnect_count: (session as any)._reconnectCount || 0,
+      source,
+    });
+  }
 }
 
 async function attemptTransparentReconnect(
