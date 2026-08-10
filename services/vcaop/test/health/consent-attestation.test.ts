@@ -187,6 +187,18 @@ describe('consent grants', () => {
 });
 
 describe('derived attestations', () => {
+  test('concurrent issuance is single-flight: two racing issue() calls yield ONE attestation (Codex P2)', async () => {
+    const { consents, attestations } = rig();
+    const grant = consents.propose(grantInput());
+    consents.approve(grant.id, 'user-1');
+    const [a, b] = await Promise.all([
+      attestations.issue(grant.id, 'weekly_activity_target_met', '2026-Q2', INSURER),
+      attestations.issue(grant.id, 'weekly_activity_target_met', '2026-Q2', INSURER),
+    ]);
+    expect(a.id).toBe(b.id); // idempotency held across the race
+    expect(attestations.listForGrant(grant.id)).toHaveLength(1); // budget counted once
+  });
+
   test('attestation carries the derived claim only — no raw values, coarse confidence band, raw_data_disclosed hardwired false', async () => {
     const { consents, attestations } = rig();
     const grant = consents.propose(grantInput());

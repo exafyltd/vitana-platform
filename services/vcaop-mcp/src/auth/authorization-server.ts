@@ -55,6 +55,11 @@ interface AuthCode {
   used: boolean;
   /** jtis of tokens minted from this code — revoked wholesale on code reuse. */
   mintedJtis: string[];
+  /** Refresh families minted from this code — burned wholesale on code reuse.
+   * Without this, replaying the code revokes the access token but the
+   * original exchange's refresh token survives and can immediately mint a
+   * fresh, unrevoked access token — defeating the replay defense. */
+  mintedFamilyIds: string[];
 }
 
 interface RefreshRecord {
@@ -254,6 +259,7 @@ export class AuthorizationServer {
       expiresAt: this.now() + (this.opts.codeTtlMs ?? 5 * 60_000),
       used: false,
       mintedJtis: [],
+      mintedFamilyIds: [],
     };
     this.codes.set(code.code, code);
     back.searchParams.set('code', code.code);
@@ -278,8 +284,11 @@ export class AuthorizationServer {
     const record = this.codes.get(String(body.code ?? ''));
     if (!record || record.expiresAt < this.now()) throw new OAuthError('invalid_grant', 'unknown or expired code');
     if (record.used) {
-      // OAuth 2.1 replay defense: a reused code revokes everything it minted.
+      // OAuth 2.1 replay defense: a reused code revokes everything it minted —
+      // access-token jtis AND the refresh families the exchange created, so a
+      // surviving refresh token cannot re-mint around the revocation.
       for (const jti of record.mintedJtis) this.revokedJtis.add(jti);
+      this.burnFamilies(record.mintedFamilyIds);
       throw new OAuthError('invalid_grant', 'code already used — issued tokens revoked');
     }
     if (String(body.client_id ?? '') !== record.clientId) throw new OAuthError('invalid_client', 'client mismatch');
@@ -292,7 +301,18 @@ export class AuthorizationServer {
       throw new OAuthError('invalid_grant', 'PKCE verification failed');
     }
     record.used = true;
-    return this.mint(record.clientId, record.userId, record.tenantId, record.scopes, record.resource, record.mintedJtis);
+    return this.mint(record.clientId, record.userId, record.tenantId, record.scopes, record.resource, record.mintedJtis, undefined, record.mintedFamilyIds);
+  }
+
+  private burnFamilies(familyIds: string[]): void {
+    if (familyIds.length === 0) return;
+    const burn = new Set(familyIds);
+    for (const [, r] of this.refresh) {
+      if (burn.has(r.familyId)) {
+        r.rotated = true;
+        for (const jti of r.mintedJtis) this.revokedJtis.add(jti);
+      }
+    }
   }
 
   private tokenFromRefresh(body: Record<string, unknown>) {
@@ -300,12 +320,7 @@ export class AuthorizationServer {
     if (!record || record.expiresAt < this.now()) throw new OAuthError('invalid_grant', 'unknown or expired refresh token');
     if (record.rotated) {
       // Reuse of a rotated refresh token → the whole family is burned.
-      for (const [, r] of this.refresh) {
-        if (r.familyId === record.familyId) {
-          r.rotated = true;
-          for (const jti of r.mintedJtis) this.revokedJtis.add(jti);
-        }
-      }
+      this.burnFamilies([record.familyId]);
       throw new OAuthError('invalid_grant', 'refresh token reuse detected — family revoked');
     }
     if (String(body.client_id ?? '') !== record.clientId) throw new OAuthError('invalid_client', 'client mismatch');
@@ -321,6 +336,7 @@ export class AuthorizationServer {
     resource: string,
     parentJtis: string[],
     familyId?: string,
+    familyOut?: string[],
   ) {
     const nowSec = Math.floor(this.now() / 1000);
     const ttl = this.opts.accessTokenTtlSec ?? 15 * 60;
@@ -350,6 +366,7 @@ export class AuthorizationServer {
       mintedJtis: [jti],
     };
     this.refresh.set(refreshRecord.token, refreshRecord);
+    familyOut?.push(refreshRecord.familyId);
     return {
       access_token: accessToken,
       token_type: 'Bearer' as const,
@@ -371,12 +388,18 @@ function timingSafeEq(a: string, b: string): boolean {
   return ab.length === bb.length && crypto.timingSafeEqual(ab, bb);
 }
 
-/** Production identity delegation: verify a Supabase access token via GoTrue. */
+/** Production identity delegation: verify a Supabase access token via GoTrue.
+ *
+ * Tenant resolution mirrors the gateway's canonical identity middleware
+ * (auth-supabase-jwt.ts extractIdentity): the ACTIVE tenant claim is
+ * `app_metadata.active_tenant_id`. A user without one is REJECTED rather
+ * than silently elevated to the platform tenant — a wrong-tenant token
+ * routes requests and audit records to the wrong tenant.
+ */
 export class SupabaseIdentityVerifier implements IdentityVerifier {
   constructor(
     private readonly supabaseUrl: string,
     private readonly anonKey: string,
-    private readonly defaultTenant = 'platform',
     private readonly fetchImpl: typeof fetch = fetch,
   ) {}
 
@@ -387,9 +410,15 @@ export class SupabaseIdentityVerifier implements IdentityVerifier {
         headers: { Authorization: `Bearer ${token}`, apikey: this.anonKey },
       });
       if (!res.ok) return null;
-      const body = (await res.json()) as { id?: string; app_metadata?: { tenant_id?: string } };
+      const body = (await res.json()) as {
+        id?: string;
+        app_metadata?: { active_tenant_id?: string; tenant_id?: string };
+      };
       if (!body.id) return null;
-      return { userId: body.id, tenantId: body.app_metadata?.tenant_id ?? this.defaultTenant };
+      // Canonical claim first; legacy tenant_id tolerated for older tokens.
+      const tenantId = body.app_metadata?.active_tenant_id ?? body.app_metadata?.tenant_id;
+      if (!tenantId) return null;
+      return { userId: body.id, tenantId };
     } catch {
       return null;
     }

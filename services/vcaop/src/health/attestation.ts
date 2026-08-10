@@ -104,6 +104,11 @@ const CANNOT_ATTEST = () => new AttestationError('cannot_attest', 'cannot attest
 export class AttestationService {
   private issued = new Map<string, HealthAttestation[]>(); // by grant id
   private byKey = new Map<string, HealthAttestation>(); // grant|claim|period → idempotent reissue
+  // Single-flight per issuance key: two concurrent issue() calls for the same
+  // (grant, claim, period) would both pass the byKey/budget checks before the
+  // async metrics read and then both append — breaking idempotency, the hard
+  // budget, and (DB-backed) the unique constraint. Joiners await the leader.
+  private inFlight = new Map<string, Promise<HealthAttestation>>();
 
   constructor(
     private readonly consents: ConsentRegistry,
@@ -140,13 +145,41 @@ export class AttestationService {
       return { ...existing };
     }
 
+    // Join an in-flight issuance for the same key instead of racing it. The
+    // joiner has already passed authorize() above; it receives the leader's
+    // result (or the leader's refusal) and records a reissue receipt.
+    const pending = this.inFlight.get(key);
+    if (pending) {
+      const att = await pending;
+      this.consents.record(grantId, 'attestation_issued', { accessor, claim, raw_data_disclosed: false, reissued: true });
+      return { ...att };
+    }
+
+    const leader = this.issueUncontended(grant.userId, grantId, claim, period, accessor, key, def);
+    this.inFlight.set(key, leader);
+    try {
+      return { ...(await leader) };
+    } finally {
+      this.inFlight.delete(key);
+    }
+  }
+
+  private async issueUncontended(
+    userId: string,
+    grantId: string,
+    claim: string,
+    period: string,
+    accessor: string,
+    key: string,
+    def: (typeof CLAIM_DEFINITIONS)[number],
+  ): Promise<HealthAttestation> {
     // F6: hard issuance budget per grant.
     if ((this.issued.get(grantId)?.length ?? 0) >= MAX_ISSUANCES_PER_GRANT) {
       this.consents.record(grantId, 'access_denied', { accessor, claim, reason: 'issuance_budget_exceeded' });
       throw new AttestationError('issuance_budget_exceeded', 'issuance budget for this grant is exhausted');
     }
 
-    const window = await this.metrics.read(grant.userId, def.metric, period);
+    const window = await this.metrics.read(userId, def.metric, period);
 
     // F2: the read yielded the event loop — re-check consent before recording
     // anything. A revoke that landed during the read must win.

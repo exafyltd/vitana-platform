@@ -146,8 +146,16 @@ export class SettlementLedger {
 
   private funding = new Map<string, number>();
 
-  /** Credit an account from outside the ledger (sandbox funding). Tracked so reconcile() accounts for it. */
+  /** Credit an account from outside the ledger — SANDBOX ONLY. Tracked so
+   * reconcile() accounts for it. On a production ledger this method refuses:
+   * it takes no authorization, writes no receipt, and validates nothing, so
+   * leaving it open would let any code holding the ledger mint live VTNA
+   * around the BLK-010 authorization gate. A production funding path must be
+   * its own authenticated, receipted mechanism — it does not exist yet. */
   fund(account: string, amount: number): void {
+    if (this.config.environment !== 'sandbox') {
+      throw new SettlementError('not_sandbox', 'fund() is a sandbox-only faucet — production funding requires an authenticated, receipted path');
+    }
     this.balances.set(account, (this.balances.get(account) ?? 0) + amount);
     this.funding.set(account, (this.funding.get(account) ?? 0) + amount);
   }

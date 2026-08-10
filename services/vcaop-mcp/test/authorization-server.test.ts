@@ -7,7 +7,7 @@
 import * as crypto from 'crypto';
 import express from 'express';
 import request from 'supertest';
-import { AuthorizationServer, IdentityVerifier, OAuthError } from '../src/auth/authorization-server';
+import { AuthorizationServer, IdentityVerifier, OAuthError, SupabaseIdentityVerifier } from '../src/auth/authorization-server';
 import { buildAuthServerRouter } from '../src/auth/auth-server-router';
 import { SigningKeys } from '../src/auth/keys';
 import { Es256TokenVerifier } from '../src/auth/token-verifier';
@@ -287,6 +287,26 @@ describe('token endpoint — PKCE + replay defenses', () => {
     expect(result).toMatchObject({ ok: false, reason: 'revoked' });
   });
 
+  test('code reuse ALSO burns the refresh family the exchange minted (Codex P1)', async () => {
+    const { as } = makeAs();
+    const { client, verifier, code } = await fullFlow(as);
+    const exchange = () =>
+      as.token({
+        grant_type: 'authorization_code',
+        code,
+        client_id: client.client_id,
+        redirect_uri: 'https://claude.ai/api/mcp/auth_callback',
+        code_verifier: verifier,
+      });
+    const tokens = exchange();
+    expect(() => exchange()).toThrow(/already used/);
+    // The surviving refresh token from the original exchange must NOT be able
+    // to mint a fresh, unrevoked access token around the replay defense.
+    expect(() =>
+      as.token({ grant_type: 'refresh_token', refresh_token: tokens.refresh_token, client_id: client.client_id }),
+    ).toThrow(/reuse detected|unknown or expired/);
+  });
+
   test('refresh rotation: old token dies, reuse burns the family', async () => {
     const { as } = makeAs();
     const { client, verifier, code } = await fullFlow(as);
@@ -336,6 +356,26 @@ describe('token endpoint — PKCE + replay defenses', () => {
     const otherKeys = SigningKeys.ephemeral();
     const rsVerifier = new Es256TokenVerifier({ publicKey: otherKeys.publicKey, issuer: ISSUER, audience: RESOURCE, now });
     expect(await rsVerifier.verify(tokens.access_token)).toMatchObject({ ok: false, reason: 'bad_signature' });
+  });
+});
+
+describe('Supabase identity delegation — tenant claim (Codex P1)', () => {
+  const gotrue = (appMetadata: Record<string, unknown>) =>
+    (async () => ({ ok: true, json: async () => ({ id: 'user-9', app_metadata: appMetadata }) })) as unknown as typeof fetch;
+
+  test('reads the canonical active_tenant_id claim', async () => {
+    const v = new SupabaseIdentityVerifier('https://sb.example', 'anon', gotrue({ active_tenant_id: 'tenant-x', tenant_id: 'stale' }));
+    await expect(v.verify('t')).resolves.toEqual({ userId: 'user-9', tenantId: 'tenant-x' });
+  });
+
+  test('legacy tenant_id is tolerated when active_tenant_id is absent', async () => {
+    const v = new SupabaseIdentityVerifier('https://sb.example', 'anon', gotrue({ tenant_id: 'tenant-legacy' }));
+    await expect(v.verify('t')).resolves.toEqual({ userId: 'user-9', tenantId: 'tenant-legacy' });
+  });
+
+  test('a user with NO tenant claim is rejected — never silently elevated to platform', async () => {
+    const v = new SupabaseIdentityVerifier('https://sb.example', 'anon', gotrue({}));
+    await expect(v.verify('t')).resolves.toBeNull();
   });
 });
 
