@@ -71,3 +71,34 @@ Fact embeddings still call text-embedding-004 because Anthropic publishes no
 embedding model. Carved out by exact path so any OTHER Google call still fails,
 and separately asserted to EXIST so the test breaks when it is fixed.
 TEST: services/gateway/test/inline-fact-extractor-deepseek.test.ts
+
+---
+
+OASIS_PROOF: llm.call.* emission changes in two directions, both intended.
+
+MORE events: call sites that previously bypassed the router (gemini-operator,
+inline-fact-extractor, knowledge-hub, user-model-synthesis,
+guide/session-summaries, recommendation-llm-analyzer, natural-language-service,
+assistant-core frame analysis) now emit llm.call.started / llm.call.completed /
+llm.call.failed. Those calls were always happening — they were simply invisible
+to OASIS, which is the defect this VTID exists to close. The rise in event
+volume IS the fix, not a side effect of it.
+
+FEWER events, for two services: assistant-service and gemini-operator hand-rolled
+their own startLLMCall / completeLLMCall / failLLMCall around calls that now go
+through the router, which emits the same three events itself. Both manual trios
+are removed, so those services drop from two event pairs per turn to one.
+Leaving them would have double-counted every ORB assistant and operator turn in
+the exact topics the cost analysis reads.
+
+New metadata.service values to expect: inline-fact-extractor, knowledge-hub,
+user-model-synthesis, guide-session-summaries, recommendation-llm-analyzer,
+orb-assistant, natural-language-service, natural-language-service-parse,
+assistant-core-frame, gemini-operator, gemini-operator-tool-results.
+
+No new topics, no schema change, no migration. Verification query:
+
+  select metadata->>'service', metadata->>'provider', count(*)
+    from oasis_events
+   where topic like 'llm.call.%' and created_at > now() - interval '1 hour'
+   group by 1,2 order by 3 desc;
