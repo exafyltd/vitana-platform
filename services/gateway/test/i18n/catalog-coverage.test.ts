@@ -31,9 +31,10 @@ import fr from '../../src/i18n/locales/fr.json';
 import pt from '../../src/i18n/locales/pt.json';
 import ru from '../../src/i18n/locales/ru.json';
 import pl from '../../src/i18n/locales/pl.json';
+import zh from '../../src/i18n/locales/zh.json';
 
 const RAW: Record<GatewayLocale, Record<string, string>> = {
-  de, en, es, sr, fr, pt, ru, pl,
+  de, en, es, sr, fr, pt, ru, pl, zh,
 };
 
 const KEYS = Object.keys(de) as GatewayI18nKey[];
@@ -44,9 +45,13 @@ function placeholders(s: string): string[] {
 }
 
 describe('gateway i18n catalog coverage', () => {
-  it('ships all 8 release locales', () => {
+  it('ships all 9 registered locales', () => {
+    // zh added VTID-03569. This assertion is deliberately an exact list rather
+    // than a count: it is the one place a locale silently disappearing from
+    // GATEWAY_LOCALES — and therefore falling back to German for every push
+    // notification — would be caught.
     expect([...GATEWAY_LOCALES].sort()).toEqual(
-      ['de', 'en', 'es', 'fr', 'pl', 'pt', 'ru', 'sr'],
+      ['de', 'en', 'es', 'fr', 'pl', 'pt', 'ru', 'sr', 'zh'],
     );
   });
 
@@ -64,7 +69,7 @@ describe('gateway i18n catalog fidelity', () => {
   // The `{ ...EN }` bug. A translated locale shares SOME strings with English
   // legitimately — 'Vitana' is 'Vitana' everywhere, and emoji-only values are
   // identical by design. What is not legitimate is the vast majority matching.
-  const TRANSLATED: GatewayLocale[] = ['de', 'es', 'sr', 'fr', 'pt', 'ru', 'pl'];
+  const TRANSLATED: GatewayLocale[] = ['de', 'es', 'sr', 'fr', 'pt', 'ru', 'pl', 'zh'];
 
   it.each(TRANSLATED)('%s is not a copy of the English catalog', (locale) => {
     const identical = KEYS.filter((k) => RAW[locale][k] === en[k]);

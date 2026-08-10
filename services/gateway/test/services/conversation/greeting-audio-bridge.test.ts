@@ -104,9 +104,19 @@ describe('buildGreetingBridgeText', () => {
     },
   );
 
+  // VTID-03569: this used to pass 'zh', and zh is now a real catalog locale, so
+  // the premise evaporated for the SECOND time — the comment above records
+  // VTID-03559 repointing it off 'fr' for exactly the same reason.
+  //
+  // Changing the assertion to expect Chinese would have been the wrong repair:
+  // it would delete the only coverage of the fallback path rather than fix it.
+  // So it is repointed instead — at 'xx', which is ISO 639-2 reserved for local
+  // use and can therefore never graduate into a product locale. Every real code
+  // is a candidate for the next language; this one is not, so the test stops
+  // needing this fix each time the catalog grows.
   it('still falls back to German for a locale the catalog genuinely lacks', () => {
     const text = buildGreetingBridgeText({
-      lang: 'zh' as never,
+      lang: 'xx' as never,
       now: new Date('2026-07-26T08:00:00Z'),
       timezone: 'UTC',
     });

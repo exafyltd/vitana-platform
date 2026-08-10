@@ -15,11 +15,11 @@
 // see a problem, while Spanish users got English push notifications on their
 // lock screen. Locale files are now `Partial<LocaleCatalog>` and a genuinely
 // missing key falls back visibly (see `tt`), so coverage is measurable.
-export type GatewayLocale = 'de' | 'en' | 'es' | 'sr' | 'fr' | 'pt' | 'ru' | 'pl';
+export type GatewayLocale = 'de' | 'en' | 'es' | 'sr' | 'fr' | 'pt' | 'ru' | 'pl' | 'zh';
 
 /** Every locale the gateway can emit. Order is not significant. */
 export const GATEWAY_LOCALES: readonly GatewayLocale[] = [
-  'de', 'en', 'es', 'sr', 'fr', 'pt', 'ru', 'pl',
+  'de', 'en', 'es', 'sr', 'fr', 'pt', 'ru', 'pl', 'zh',
 ] as const;
 
 export const GATEWAY_DEFAULT_LOCALE: GatewayLocale = 'de';
@@ -178,6 +178,7 @@ import frJson from './locales/fr.json';
 import ptJson from './locales/pt.json';
 import ruJson from './locales/ru.json';
 import plJson from './locales/pl.json';
+import zhJson from './locales/zh.json';
 
 // DE and EN are the two locales that must be complete: DE is the default and
 // EN is the universal fallback, so between them every key is always resolvable.
@@ -195,6 +196,7 @@ const FR: Partial<LocaleCatalog> = frJson;
 const PT: Partial<LocaleCatalog> = ptJson;
 const RU: Partial<LocaleCatalog> = ruJson;
 const PL: Partial<LocaleCatalog> = plJson;
+const ZH: Partial<LocaleCatalog> = zhJson;
 
 const CATALOGS: Record<GatewayLocale, Partial<LocaleCatalog>> = {
   de: DE,
@@ -205,6 +207,7 @@ const CATALOGS: Record<GatewayLocale, Partial<LocaleCatalog>> = {
   pt: PT,
   ru: RU,
   pl: PL,
+  zh: ZH,
 };
 
 /**
@@ -301,6 +304,7 @@ export const LOCALE_ENGLISH_NAME: Record<GatewayLocale, string> = {
   pt: 'Portuguese',
   ru: 'Russian',
   pl: 'Polish',
+  zh: 'Chinese (Simplified)',
 };
 
 /**

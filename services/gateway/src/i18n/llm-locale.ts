@@ -36,6 +36,10 @@ const LANGUAGE_NAMES: Record<GatewayLocale, string> = {
   pt: 'Portuguese (Português)',
   ru: 'Russian (Русский)',
   pl: 'Polish (Polski)',
+  // Simplified named explicitly: script is a separate axis from language, and
+  // an LLM told only "Chinese" may answer in Traditional, which is wrong for
+  // zh-CN and which no register or coverage check would notice.
+  zh: 'Simplified Chinese (简体中文)',
 };
 
 // Per-language register hints. Friendly informal tone, mirrors the brand voice.
@@ -51,6 +55,11 @@ const REGISTER_HINTS: Partial<Record<GatewayLocale, string>> = {
   pt: 'Use tu-form (European Portuguese informal), NOT você or o/a senhor(a). Friendly tone.',
   ru: 'Use ты-form (informal), NOT вы-form. Friendly, casual register.',
   pl: 'Use ty-form (informal), NOT Pan/Pani. Friendly, casual register.',
+  // Chinese marks register with a pronoun CHARACTER rather than verb form, so
+  // the instruction names the characters. Simplified is restated here because
+  // this hint is appended to the language directive and an LLM drifting to
+  // Traditional mid-response is the failure this pair of lines prevents.
+  zh: 'Use 你/你的 (ordinary second person), NOT the polite 您. Write in Simplified Chinese only. Friendly, direct register.',
 };
 
 // Per-language compound-word rules (German is the only language with this

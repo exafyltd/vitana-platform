@@ -104,21 +104,27 @@ describe('applyTranslations', () => {
 // erroring or being refused.
 // ---------------------------------------------------------------------------
 describe('curriculum locale surface (VTID-03509)', () => {
-  const RELEASE_LOCALES = ['de', 'en', 'es', 'sr', 'fr', 'pt', 'ru', 'pl'] as const;
+  const RELEASE_LOCALES = ['de', 'en', 'es', 'sr', 'fr', 'pt', 'ru', 'pl', 'zh'] as const;
 
   it('accepts every release locale as a ChecklistLocale', () => {
     // Compile-time assertion: if ChecklistLocale ever narrows again, this fails
     // to typecheck rather than silently rejecting locales at runtime.
     const locales: ChecklistLocale[] = [...RELEASE_LOCALES];
-    expect(locales).toHaveLength(8);
+    expect(locales).toHaveLength(9);
     expect(GATEWAY_LOCALES).toEqual(expect.arrayContaining([...RELEASE_LOCALES]));
   });
 
   it('exposes exactly the release locale set — no more, no less', () => {
     // Guards both directions: a locale added to the gateway without a curriculum
     // decision, and a release locale quietly dropped.
+    // VTID-03569 added zh. This assertion asks for a CURRICULUM DECISION when a
+    // locale reaches the gateway, and the decision is: serve it. zh behaves
+    // exactly like fr/pt/ru/pl did on arrival — zero rows in
+    // journey_checklist_translations, so the curriculum degrades to the authored
+    // German source rather than erroring or refusing the request. Serving German
+    // to a zh reader is the honest failure; refusing the request is not.
     expect([...GATEWAY_LOCALES].sort()).toEqual(
-      ['de', 'en', 'es', 'fr', 'pl', 'pt', 'ru', 'sr'],
+      ['de', 'en', 'es', 'fr', 'pl', 'pt', 'ru', 'sr', 'zh'],
     );
   });
 
