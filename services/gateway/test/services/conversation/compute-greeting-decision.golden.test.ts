@@ -313,10 +313,32 @@ describe('computeGreetingDecision — recency bucket axis (legacy ladder)', () =
     });
   }
 
-  test('legacy apology branch: wasFailure + reconnect', () => {
+  test('legacy apology branch: wasFailure + reconnect (lang=de — VTID-03556 regression)', () => {
+    // Base ctx() defaults to lang='de'. Before VTID-03556 this branch ignored
+    // ctx.lang entirely and always emitted the English literal, so a
+    // German-locale user got an English apology opener after a failed
+    // session (e.g. a Nova Sonic "Premature close" reconnect).
     const d = computeGreetingDecision(ctx({ bucket: 'reconnect', wasFailure: true }));
+    expect(d.directive).toContain('Entschuldige');
+    expect(d.directive).not.toContain('Sorry about that');
+    expect(d).toMatchSnapshot();
+  });
+
+  test('legacy apology branch: wasFailure + reconnect (lang=en)', () => {
+    const d = computeGreetingDecision(ctx({ bucket: 'reconnect', wasFailure: true, lang: 'en', greetLang: 'en' }));
     expect(d.directive).toContain('Sorry about that');
     expect(d).toMatchSnapshot();
+  });
+
+  test('legacy apology branch: wasFailure + recent (lang=fr)', () => {
+    const d = computeGreetingDecision(ctx({ bucket: 'recent', wasFailure: true, lang: 'fr', greetLang: 'fr' }));
+    expect(d.directive).toContain('Désolé');
+    expect(d).toMatchSnapshot();
+  });
+
+  test('legacy apology branch falls back to English for an unknown lang', () => {
+    const d = computeGreetingDecision(ctx({ bucket: 'reconnect', wasFailure: true, lang: 'xx', greetLang: 'xx' }));
+    expect(d.directive).toContain('Sorry about that');
   });
 });
 

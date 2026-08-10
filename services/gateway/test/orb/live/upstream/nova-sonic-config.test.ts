@@ -23,6 +23,7 @@ describe('getNovaSonicConfig', () => {
         region: 'eu-north-1',
         modelId: 'amazon.nova-2-sonic-v1:0',
         connectTimeoutMs: 15000,
+        streamInactivityTimeoutMs: 300000,
         rotationAfterMs: 435000,
         keepWarmMs: 240000,
         modelWarmMs: 90000,
@@ -100,6 +101,33 @@ describe('getNovaSonicConfig', () => {
         'nova_model_warm_invalid',
       ]),
     );
+  });
+
+  it('VTID-03557: streamInactivityTimeoutMs defaults to 300s (AWS sample value), independent of connectTimeoutMs', () => {
+    const cfg = getNovaSonicConfig({
+      NOVA_SONIC_ENABLED: 'true',
+      NOVA_SONIC_CONNECT_TIMEOUT_MS: '15000',
+    } as NodeJS.ProcessEnv);
+    expect(cfg.connectTimeoutMs).toBe(15000);
+    expect(cfg.streamInactivityTimeoutMs).toBe(300000);
+    expect(cfg.ready).toBe(true);
+  });
+
+  it('streamInactivityTimeoutMs is env-tunable and invalid values are a typed issue, without affecting connectTimeoutMs', () => {
+    const cfg = getNovaSonicConfig({
+      NOVA_SONIC_ENABLED: 'true',
+      NOVA_SONIC_STREAM_INACTIVITY_TIMEOUT_MS: '600000',
+    } as NodeJS.ProcessEnv);
+    expect(cfg.streamInactivityTimeoutMs).toBe(600000);
+    expect(cfg.connectTimeoutMs).toBe(15000);
+    expect(cfg.ready).toBe(true);
+
+    const bad = getNovaSonicConfig({
+      NOVA_SONIC_ENABLED: 'true',
+      NOVA_SONIC_STREAM_INACTIVITY_TIMEOUT_MS: 'soon',
+    } as NodeJS.ProcessEnv);
+    expect(bad.issues).toContain('nova_stream_inactivity_timeout_invalid');
+    expect(bad.ready).toBe(false);
   });
 
   it('keep-warm accepts 0 as an explicit disable (no issue)', () => {

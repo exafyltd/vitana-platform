@@ -583,10 +583,40 @@ exports[`computeGreetingDecision — recency bucket axis (legacy ladder) bucket=
 }
 `;
 
-exports[`computeGreetingDecision — recency bucket axis (legacy ladder) legacy apology branch: wasFailure + reconnect 1`] = `
+exports[`computeGreetingDecision — recency bucket axis (legacy ladder) legacy apology branch: wasFailure + recent (lang=fr) 1`] = `
+{
+  "diag": {
+    "lang": "fr",
+    "prompt_len": 120,
+  },
+  "directive": "Dis exactement : "Désolé pour ça. Comment puis-je t'aider ?" UNE seule courte phrase. Ne dis PAS "Bonjour" ni le prénom.",
+  "effects": {
+    "armWatchdog": true,
+    "markGreetingSent": true,
+  },
+  "wakeOpener": "legacy_default",
+}
+`;
+
+exports[`computeGreetingDecision — recency bucket axis (legacy ladder) legacy apology branch: wasFailure + reconnect (lang=de — VTID-03556 regression) 1`] = `
 {
   "diag": {
     "lang": "de",
+    "prompt_len": 147,
+  },
+  "directive": "Sag genau: "Entschuldige, da ist etwas schiefgelaufen. Wie kann ich dir helfen?" NUR EIN kurzer Satz. Sag NICHT "Hallo" oder den Namen des Nutzers.",
+  "effects": {
+    "armWatchdog": true,
+    "markGreetingSent": true,
+  },
+  "wakeOpener": "legacy_default",
+}
+`;
+
+exports[`computeGreetingDecision — recency bucket axis (legacy ladder) legacy apology branch: wasFailure + reconnect (lang=en) 1`] = `
+{
+  "diag": {
+    "lang": "en",
     "prompt_len": 110,
   },
   "directive": "Say exactly: "Sorry about that. How can I help?" ONE short phrase only. Do NOT say "Hello" or the user's name.",

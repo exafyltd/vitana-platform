@@ -37,7 +37,7 @@ process.env.SUPABASE_URL = 'http://supabase.test';
 process.env.SUPABASE_SERVICE_ROLE = 'test-service-role';
 delete process.env.DEFAULT_TENANT_ID;
 
-import request from 'supertest';
+import supertestBase from 'supertest';
 import express from 'express';
 
 // ---------------------------------------------------------------------------
@@ -85,6 +85,22 @@ jest.mock('../../src/services/dev-autopilot-execute', () => ({
 jest.mock('../../src/services/calendar-service', () => ({
   computeNextAvailableSlot: jest.fn().mockResolvedValue(new Date('2026-08-01T10:00:00.000Z')),
   createCalendarEvent: jest.fn().mockResolvedValue({ id: 'cal-evt-1' }),
+}));
+
+// The route now requires a verified identity (security-audit fix, #2867: this
+// router previously trusted a bare X-User-ID header with no verification).
+// Simulate "verified" auth from the same X-User-ID header the tests already
+// set, so each test can still act as a distinct user without re-mocking JWT
+// verification (out of scope for this route-behavior suite) — same pattern
+// as autopilot-recommendations-complete.test.ts.
+jest.mock('../../src/middleware/auth-supabase-jwt', () => ({
+  optionalAuth: jest.fn((req: any, _res: any, next: any) => {
+    const userId = req.get('X-User-ID');
+    if (userId) {
+      req.identity = { user_id: userId, email: null, tenant_id: null, exafy_admin: false, role: 'authenticated', aud: null, exp: null, iat: null };
+    }
+    next();
+  }),
 }));
 
 jest.mock('@supabase/supabase-js', () => {
@@ -252,6 +268,25 @@ const OTHER_USER_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const REC_ID = '11111111-1111-4111-8111-111111111111';
 const TENANT_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 
+// The route now requires a verified identity on every path but /health
+// (security-audit fix, #2867). Most tests in this suite exercise recommendation
+// logic, not the auth gate itself, so `request()` defaults every call to a
+// verified USER_ID — exactly like the X-User-ID header these tests already
+// set explicitly wherever a *specific* user mattered. A call can still
+// override to a different user via `.set('X-User-ID', OTHER_USER_ID)`
+// afterward (supertest's last `.set()` for a header wins). The handful of
+// tests that specifically assert the unauthenticated-rejection behavior use
+// `supertestBase(app)` directly instead, bypassing this default.
+function request(app: any) {
+  const agent = supertestBase(app);
+  const methods = ['get', 'post', 'put', 'patch', 'delete'] as const;
+  const wrapped: any = {};
+  for (const m of methods) {
+    wrapped[m] = (...args: any[]) => (agent[m] as any)(...args).set('X-User-ID', USER_ID);
+  }
+  return wrapped;
+}
+
 // =============================================================================
 // GET /recommendations
 // =============================================================================
@@ -328,13 +363,16 @@ describe('GET /api/v1/autopilot/recommendations', () => {
     expect(res.body.recommendations[0].id).toBe('dev-1');
   });
 
-  it('role=community, no user id: short-circuits to an empty list without calling fetch', async () => {
+  it('role=community, no user id: rejected by the router-level auth gate before reaching the handler', async () => {
+    // Superseded by #2867 (security-audit fix): this route previously let an
+    // unauthenticated caller through to a graceful "empty list" short-circuit.
+    // The router-level requireVerifiedIdentity gate now runs before any
+    // handler, so an anonymous request never reaches that logic at all.
     const app = mountApp();
-    const res = await request(app).get('/api/v1/autopilot/recommendations?role=community');
+    const res = await supertestBase(app).get('/api/v1/autopilot/recommendations?role=community');
 
-    expect(res.status).toBe(200);
-    expect(res.body.recommendations).toEqual([]);
-    expect(res.body.count).toBe(0);
+    expect(res.status).toBe(401);
+    expect(res.body).toEqual({ ok: false, error: 'UNAUTHENTICATED' });
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
@@ -484,7 +522,7 @@ describe('GET /api/v1/autopilot/recommendations/count', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.count).toBe(42);
-    expect(res.body._debug).toEqual({ role: 'developer', userId: null, queryPath: 'role-based' });
+    expect(res.body._debug).toEqual({ role: 'developer', userId: USER_ID, queryPath: 'role-based' });
   });
 
   it('role-based: transport failure degrades to count=0, not an error', async () => {
@@ -504,11 +542,13 @@ describe('GET /api/v1/autopilot/recommendations/count', () => {
 
 describe('POST /api/v1/autopilot/recommendations/generate-personal', () => {
   it('401 when no user id is present', async () => {
+    // Rejected by the router-level auth gate (#2867) before the handler's own
+    // "User ID required" check is ever reached.
     const app = mountApp();
-    const res = await request(app).post('/api/v1/autopilot/recommendations/generate-personal').send({});
+    const res = await supertestBase(app).post('/api/v1/autopilot/recommendations/generate-personal').send({});
 
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ ok: false, error: 'User ID required' });
+    expect(res.body).toEqual({ ok: false, error: 'UNAUTHENTICATED' });
   });
 
   it('503 when Supabase is not configured', async () => {
@@ -872,7 +912,7 @@ describe('POST /api/v1/autopilot/recommendations/:id/activate', () => {
       expect(res.status).toBe(200);
       // Fire-and-forget: flush microtasks so the .then() chain resolves before asserting.
       await new Promise((r) => setImmediate(r));
-      expect(mockBridgeActivationToExecution).toHaveBeenCalledWith(REC_ID, null);
+      expect(mockBridgeActivationToExecution).toHaveBeenCalledWith(REC_ID, USER_ID);
     });
   });
 });
@@ -991,7 +1031,7 @@ describe('POST /api/v1/autopilot/recommendations/generate', () => {
   describe('role=community', () => {
     it('401 when no user id present', async () => {
       const app = mountApp();
-      const res = await request(app).post('/api/v1/autopilot/recommendations/generate?role=community').send({});
+      const res = await supertestBase(app).post('/api/v1/autopilot/recommendations/generate?role=community').send({});
 
       expect(res.status).toBe(401);
     });
@@ -1203,11 +1243,13 @@ describe('GET /api/v1/autopilot/recommendations/history', () => {
 
 describe('POST /api/v1/autopilot/recommendations/:id/complete', () => {
   it('401 when no user id is present', async () => {
+    // Rejected by the router-level auth gate (#2867) before the handler's own
+    // "User ID required" check is ever reached.
     const app = mountApp();
-    const res = await request(app).post(`/api/v1/autopilot/recommendations/${REC_ID}/complete`).send({});
+    const res = await supertestBase(app).post(`/api/v1/autopilot/recommendations/${REC_ID}/complete`).send({});
 
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ ok: false, error: 'User ID required' });
+    expect(res.body).toEqual({ ok: false, error: 'UNAUTHENTICATED' });
   });
 
   it('happy path: completes and returns the reward', async () => {

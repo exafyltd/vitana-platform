@@ -68,6 +68,42 @@ on:
         description: 'Nova canary tenant UUID allowlist (comma-separated; used only when nova_sonic_enabled is set)'
         required: false
         default: ''
+      # VTID-03560: the two levers that actually move the Gemini API bill.
+      # Both are independent of nova_sonic_enabled and are EMPTY-preserving
+      # for the same reason the Nova block is — a routine prod deploy must
+      # never flip voice routing or a cost budget as a side effect.
+      #
+      # These live here, as upserted deploy inputs, rather than as a hand-edit
+      # to the live task definition ON PURPOSE. VTID-03513 cost four days of
+      # staging downtime precisely because task-def state existed only in AWS
+      # and never in this repo: one bad value cloned itself forward through
+      # every subsequent deploy and was invisible to code review. Anything
+      # that changes runtime behaviour belongs in a file someone can diff.
+      nova_sonic_global_enabled:
+        description: 'Set NOVA_SONIC_GLOBAL_ENABLED — true promotes Nova OFF the canary allowlist to ALL sessions (true/false; EMPTY = preserve)'
+        required: false
+        default: ''
+      orb_idle_no_engagement_ms:
+        description: 'Set ORB_IDLE_NO_ENGAGEMENT_MS — reap budget for a live session with zero engagement (default 300000; EMPTY = preserve)'
+        required: false
+        default: ''
+      # VTID-03563: Claude-always-on-Bedrock is standing governance (CLAUDE.md
+      # ALWAYS 10a). These exist so the activation gate lives in a diffable
+      # file instead of only in live AWS state — the failure mode VTID-03513
+      # paid four days of staging downtime for, where task-def wiring existed
+      # nowhere in git and got cloned forward through every later deploy.
+      bedrock_role_arn:
+        description: 'Set BEDROCK_ROLE_ARN — THE activation gate for Claude-on-Bedrock. Unset = adapter reports not_configured and the router SILENTLY serves the fallback. (EMPTY = preserve)'
+        required: false
+        default: ''
+      bedrock_model_id:
+        description: 'Set BEDROCK_MODEL_ID — must be a resolved cross-region INFERENCE PROFILE id (e.g. eu.anthropic.claude-sonnet-4-6-v1:0), NOT a bare on-demand model id (EMPTY = preserve)'
+        required: false
+        default: ''
+      aws_bedrock_region:
+        description: 'Set AWS_BEDROCK_REGION — must be a region where the chosen Claude profile is actually offered; a wrong region fails with an opaque model-not-found (EMPTY = preserve)'
+        required: false
+        default: ''
       reason:
         description: 'Reason for this AWS production gateway deploy — required'
         required: true
@@ -254,6 +290,11 @@ jobs:
           NOVA_ENABLED_INPUT: ${{ inputs.nova_sonic_enabled }}
           NOVA_USERS_INPUT: ${{ inputs.nova_canary_user_ids }}
           NOVA_TENANTS_INPUT: ${{ inputs.nova_canary_tenant_ids }}
+          NOVA_GLOBAL_INPUT: ${{ inputs.nova_sonic_global_enabled }}
+          ORB_IDLE_NO_ENGAGEMENT_INPUT: ${{ inputs.orb_idle_no_engagement_ms }}
+          BEDROCK_ROLE_ARN_INPUT: ${{ inputs.bedrock_role_arn }}
+          BEDROCK_MODEL_ID_INPUT: ${{ inputs.bedrock_model_id }}
+          AWS_BEDROCK_REGION_INPUT: ${{ inputs.aws_bedrock_region }}
         run: |
           set -e
           # VTID-03420: promote mode ships staging's image; rebuild mode ships
@@ -335,6 +376,83 @@ jobs:
                         {name:"NOVA_SONIC_MODEL_ID", value:"amazon.nova-2-sonic-v1:0"},
                         {name:"NOVA_SONIC_CANARY_USER_IDS", value:$U},
                         {name:"NOVA_SONIC_CANARY_TENANT_IDS", value:$T} ] )')
+          fi
+
+          # VTID-03560: Nova GLOBAL promotion. Deliberately a separate branch
+          # from the canary block above — promoting Nova to every session and
+          # editing the canary allowlist are different decisions, and coupling
+          # them would mean you could not do one without restating the other.
+          #
+          # isNovaSonicIdentityAllowed() short-circuits on the exact string
+          # "true"; anything else leaves the allowlist semantics untouched, so
+          # setting this back to false restores the prior canary population
+          # with no allowlist edits. Promotion widens WHO gets Nova, never what
+          # it runs on — the enabled/language/aws-ecs gates all still bite.
+          if [ -n "$NOVA_GLOBAL_INPUT" ]; then
+            echo "Applying Nova GLOBAL promotion: NOVA_SONIC_GLOBAL_ENABLED=$NOVA_GLOBAL_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg G "$NOVA_GLOBAL_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "NOVA_SONIC_GLOBAL_ENABLED") ]
+                  + [ {name:"NOVA_SONIC_GLOBAL_ENABLED", value:$G} ] )')
+          fi
+
+          # VTID-03560: idle reap budget for a live session that never engaged.
+          # This is the single biggest remaining lever on the Gemini Live bill
+          # (billed per second of open stream). VTID-03510 set it to 5 min and
+          # cut billed minutes ~80%; the residual is 26 abandoned sessions a
+          # day still burning the full 5 min each before the sweep takes them.
+          #
+          # Do NOT push this below ~60s without checking classifyIdleSession
+          # tests: a session is created with lastActivity = now, so the budget
+          # must survive the greeting plus the seconds a user spends deciding
+          # to speak. Reaping a user mid-thought is a worse failure than the
+          # cost it saves, and it is invisible to anyone but that user.
+          if [ -n "$ORB_IDLE_NO_ENGAGEMENT_INPUT" ]; then
+            echo "Applying ORB idle budget: ORB_IDLE_NO_ENGAGEMENT_MS=$ORB_IDLE_NO_ENGAGEMENT_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg I "$ORB_IDLE_NO_ENGAGEMENT_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "ORB_IDLE_NO_ENGAGEMENT_MS") ]
+                  + [ {name:"ORB_IDLE_NO_ENGAGEMENT_MS", value:$I} ] )')
+          fi
+
+          # VTID-03563: Claude-always-on-Bedrock (CLAUDE.md ALWAYS 10a).
+          #
+          # BEDROCK_ROLE_ARN is THE activation gate. Until it is set, the
+          # adapter reports not_configured and llm-router SKIPS bedrock — so a
+          # policy row pointing at 'bedrock' quietly serves its FALLBACK
+          # instead. That is not a hypothetical: the direct-Anthropic stages
+          # have been failing on a zero credit balance and silently landing on
+          # Gemini since 2026-05, which is the whole reason this rule exists.
+          # Set and VERIFY this before flipping llm_routing_policy, never after.
+          if [ -n "$BEDROCK_ROLE_ARN_INPUT" ]; then
+            echo "Applying Bedrock activation: BEDROCK_ROLE_ARN=<set>"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg B "$BEDROCK_ROLE_ARN_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "BEDROCK_ROLE_ARN") ]
+                  + [ {name:"BEDROCK_ROLE_ARN", value:$B} ] )')
+          fi
+
+          # Must be a resolved cross-region INFERENCE PROFILE id, not a bare
+          # on-demand model id — see CLAUDE.md §2b. A bare id fails at call
+          # time, not at deploy time, so a green deploy proves nothing here.
+          if [ -n "$BEDROCK_MODEL_ID_INPUT" ]; then
+            echo "Applying Bedrock model: BEDROCK_MODEL_ID=$BEDROCK_MODEL_ID_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg M "$BEDROCK_MODEL_ID_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "BEDROCK_MODEL_ID") ]
+                  + [ {name:"BEDROCK_MODEL_ID", value:$M} ] )')
+          fi
+
+          # Its own var rather than inheriting AWS_REGION blindly: Claude
+          # inference profiles are not offered in every region, and the rest of
+          # this estate is eu-central-1 while Nova Sonic runs in eu-north-1 —
+          # so "the region the account uses" is already not a single answer.
+          if [ -n "$AWS_BEDROCK_REGION_INPUT" ]; then
+            echo "Applying Bedrock region: AWS_BEDROCK_REGION=$AWS_BEDROCK_REGION_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg R "$AWS_BEDROCK_REGION_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "AWS_BEDROCK_REGION") ]
+                  + [ {name:"AWS_BEDROCK_REGION", value:$R} ] )')
           fi
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
             --query 'taskDefinition.taskDefinitionArn' --output text)

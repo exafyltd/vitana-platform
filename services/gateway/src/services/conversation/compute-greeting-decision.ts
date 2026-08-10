@@ -648,7 +648,25 @@ function buildLegacyGreetingPrompt(ctx: GreetingDecisionContext): string {
     const menuList = ctx.menuPhrases.map((p) => `"${p}"`).join(', ');
 
     if (ctx.wasFailure && (ctx.bucket === 'reconnect' || ctx.bucket === 'recent')) {
-      prompt = `Say exactly: "Sorry about that. How can I help?" ONE short phrase only. Do NOT say "Hello" or the user's name.${screenHint}`;
+      // VTID-03556: this "legacy tail apology branch" fires after a failed
+      // previous session (wasFailure is set when the prior session's stop
+      // event shows turn_count=0/audio_out=0 — the Nova Sonic "Premature
+      // close" signature, CLAUDE.md §2e). It used to hardcode an English
+      // literal for the model to "say exactly", bypassing every other
+      // branch's per-`ctx.lang` localization — a German-locale user got an
+      // English apology opener. Localized the same way as `greetingPrompts`
+      // above; each string is already in the user's language.
+      const apologyPrompts: Record<string, string> = {
+        en: 'Say exactly: "Sorry about that. How can I help?" ONE short phrase only. Do NOT say "Hello" or the user\'s name.',
+        de: 'Sag genau: "Entschuldige, da ist etwas schiefgelaufen. Wie kann ich dir helfen?" NUR EIN kurzer Satz. Sag NICHT "Hallo" oder den Namen des Nutzers.',
+        fr: 'Dis exactement : "Désolé pour ça. Comment puis-je t\'aider ?" UNE seule courte phrase. Ne dis PAS "Bonjour" ni le prénom.',
+        es: 'Di exactamente: "Perdona por eso. ¿En qué puedo ayudarte?" SOLO una frase corta. NO digas "Hola" ni el nombre.',
+        ar: 'قل بالضبط: "آسف بخصوص ذلك. كيف يمكنني مساعدتك؟" عبارة واحدة قصيرة فقط. لا تقل "مرحبا" أو اسم المستخدم.',
+        zh: '请准确说："抱歉刚才的问题。我能帮你什么？"只说这一句简短的话。不要说"你好"或用户的名字。',
+        ru: 'Скажи точно: "Извини за это. Чем могу помочь?" ТОЛЬКО одна короткая фраза. НЕ говори "Здравствуйте" или имя пользователя.',
+        sr: 'Реци тачно: "Извини због тога. Како могу да ти помогнем?" САМО једна кратка реченица. НЕ говори "Здраво" или име корисника.',
+      };
+      prompt = `${apologyPrompts[ctx.lang] || apologyPrompts.en}${screenHint}`;
     } else {
       switch (ctx.bucket) {
         case 'reconnect':
