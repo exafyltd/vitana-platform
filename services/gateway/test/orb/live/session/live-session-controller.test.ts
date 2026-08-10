@@ -314,11 +314,20 @@ describe('VTID-03561: cleanupWsSession emits session.stop', () => {
       audio_in_chunks: 7,
       audio_in_forwarded_chunks: 5,
       audio_out_chunks: 9,
-      video_in_frames: 2,
+      // VTID-03565: was `video_in_frames`, which NO consumer reads. This test's
+      // own name says "the metrics the consumers read" — voice-lab's session
+      // detail projection reads `endEvent.metadata.video_frames`, and the
+      // explicit stop path in orb-live.ts already emitted that key. So these
+      // newly-visible WS sessions were showing a blank video-frame count while
+      // the assertion passed. Caught in review on #3073.
+      video_frames: 2,
       turn_count: 3,
       user_turns: 2,
       model_turns: 1,
     });
+    // The old key must be GONE, not merely accompanied — `toMatchObject` is a
+    // subset match and would happily pass if both were emitted.
+    expect(emitted[0].payload).not.toHaveProperty('video_in_frames');
     expect(emitted[0].payload.duration_ms).toBeGreaterThanOrEqual(10_000);
     expect(emitted[0].payload.idle_ms).toBeGreaterThanOrEqual(4_000);
   });

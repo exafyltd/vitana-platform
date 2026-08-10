@@ -210,6 +210,19 @@ export const VALID_STAGES: LLMStage[] = [
 ];
 
 /**
+ * Stages a stored policy may legitimately omit (VTID-03565).
+ *
+ * The ACTIVE production policy (v10, 2026-05-02) predates these two and stores
+ * only the original six. Both the route's `PolicySchema` and the service's
+ * `validatePolicy()` must agree on this set — they are two gates on the SAME
+ * write, and the first version of this fix relaxed only the zod schema, so a
+ * six-stage round-trip passed validation at the route and was then rejected by
+ * the service with "Missing configuration for stage: vision". Caught in review
+ * on #3073. The list lives here so neither gate can drift from the other.
+ */
+export const OPTIONAL_STAGES: LLMStage[] = ['vision', 'classifier'];
+
+/**
  * Valid providers
  */
 export const VALID_PROVIDERS: LLMProvider[] = [

@@ -387,7 +387,7 @@ export function cleanupWsSession(
           audio_in_chunks: ls.audioInChunks ?? 0,
           audio_in_forwarded_chunks: ls.audioInForwarded ?? 0, // VTID-VOICE-FWD
           audio_out_chunks: ls.audioOutChunks ?? 0,
-          video_in_frames: ls.videoInFrames ?? 0,
+          video_frames: ls.videoInFrames ?? 0, // VTID-03565: key voice-lab actually reads
           duration_ms: startedMs === null ? null : nowMs - startedMs,
           turn_count: ls.turn_count ?? 0,
           user_turns: turns.filter((t) => t.role === 'user').length,
@@ -2169,7 +2169,7 @@ export async function handleLiveSessionStop(
     tenant_id: session.identity?.tenant_id || null,
     audio_in_chunks: session.audioInChunks,
     audio_in_forwarded_chunks: session.audioInForwarded, // VTID-VOICE-FWD (Track A)
-    video_in_frames: session.videoInFrames,
+    video_frames: session.videoInFrames, // VTID-03565: was video_in_frames — no reader, voice-lab reads video_frames
     audio_out_chunks: session.audioOutChunks,
     duration_ms: Date.now() - session.createdAt.getTime(),
     turn_count: session.turn_count,

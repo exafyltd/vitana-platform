@@ -255,3 +255,100 @@ describe('VTID-03565 verifyProvider preflight', () => {
     expect(result.error).toMatch(/Unknown provider/);
   });
 });
+
+/**
+ * VTID-03565 SEAM tests — added after review (#3073) found the first version of
+ * this fix was defeated one layer down.
+ *
+ * The route's zod schema and the service's `validatePolicy()` are TWO gates on
+ * the SAME write. The original change relaxed only the schema, so every test
+ * passed while the operation it was meant to enable still returned 400. Testing
+ * each gate in isolation could never catch that — these call the real
+ * `validatePolicy()` with the real production policy shape.
+ */
+describe('VTID-03565 write path: route schema and service validator agree', () => {
+  const ORIGINAL_ENV = { ...process.env };
+
+  const ALLOWLIST = [
+    // the six live stages' current models
+    { provider_key: 'anthropic', model_id: 'claude-3-5-sonnet-20241022',
+      applicable_stages: ['planner','worker','validator','operator','memory','triage'] },
+    { provider_key: 'vertex', model_id: 'gemini-3.1-pro-preview',
+      applicable_stages: ['planner','worker','validator','operator','memory','triage'] },
+    { provider_key: 'vertex', model_id: 'gemini-2.5-pro',
+      applicable_stages: ['planner','worker','validator','operator','memory','triage'] },
+    // bedrock rows as seeded by migration 20260810120000
+    { provider_key: 'bedrock', model_id: 'eu.anthropic.claude-sonnet-4-6',
+      applicable_stages: ['planner','worker','validator','operator','memory','triage','vision','classifier'] },
+    { provider_key: 'bedrock', model_id: 'eu.anthropic.claude-haiku-4-5-20251001-v1:0',
+      applicable_stages: ['classifier','memory','worker','triage','validator','operator'] },
+  ];
+
+  beforeEach(() => {
+    process.env.SUPABASE_URL = 'https://example.supabase.co';
+    process.env.SUPABASE_SERVICE_ROLE = 'test-key';
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true, json: async () => ALLOWLIST, text: async () => '',
+    }) as unknown as typeof fetch;
+  });
+  afterEach(() => { process.env = { ...ORIGINAL_ENV }; jest.resetModules(); });
+
+  test('the ACTIVE six-stage policy passes validatePolicy (no phantom missing-stage errors)', async () => {
+    const { validatePolicy } = await import('../src/services/llm-routing-policy-service');
+    const result = await validatePolicy(LIVE_V10_POLICY as never);
+    // Regression: previously produced "Missing configuration for stage: vision"
+    // and "...: classifier" despite the caller touching neither.
+    expect(result.errors.filter((e) => e.includes('Missing configuration'))).toEqual([]);
+  });
+
+  test('a bedrock stage validates once the allowlist is seeded', async () => {
+    const { validatePolicy } = await import('../src/services/llm-routing-policy-service');
+    const next = {
+      ...LIVE_V10_POLICY,
+      validator: {
+        primary_provider: 'bedrock',
+        primary_model: 'eu.anthropic.claude-sonnet-4-6',
+        fallback_provider: 'bedrock',
+        fallback_model: 'eu.anthropic.claude-haiku-4-5-20251001-v1:0',
+      },
+    };
+    const result = await validatePolicy(next as never);
+    expect(result.errors.filter((e) => e.toLowerCase().includes('bedrock'))).toEqual([]);
+  });
+
+  test('an UNSEEDED bedrock model is still rejected — the allowlist still bites', async () => {
+    // eu.anthropic.claude-opus-4-7 is AccessDenied for this account and is
+    // deliberately NOT in the migration. Accepting it would let an operator
+    // select a model that fails every call and silently serves the fallback.
+    const { validatePolicy } = await import('../src/services/llm-routing-policy-service');
+    const next = {
+      ...LIVE_V10_POLICY,
+      validator: {
+        primary_provider: 'bedrock',
+        primary_model: 'eu.anthropic.claude-opus-4-7',
+        fallback_provider: 'bedrock',
+        fallback_model: 'eu.anthropic.claude-sonnet-4-6',
+      },
+    };
+    const result = await validatePolicy(next as never);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.includes('claude-opus-4-7'))).toBe(true);
+  });
+
+  test('a missing CORE stage is still rejected by validatePolicy', async () => {
+    const { validatePolicy } = await import('../src/services/llm-routing-policy-service');
+    const partial: Record<string, unknown> = { ...LIVE_V10_POLICY };
+    delete partial.planner;
+    const result = await validatePolicy(partial as never);
+    expect(result.errors).toContain('Missing configuration for stage: planner');
+  });
+
+  test('PolicySchema optional keys are EXACTLY OPTIONAL_STAGES (drift guard)', async () => {
+    // The two gates must never disagree again. If someone makes a third stage
+    // optional in one place only, this fails.
+    const { OPTIONAL_STAGES } = await import('../src/constants/llm-defaults');
+    const shape = (PolicySchema as unknown as { shape: Record<string, { isOptional(): boolean }> }).shape;
+    const optionalInSchema = Object.keys(shape).filter((k) => shape[k].isOptional()).sort();
+    expect(optionalInSchema).toEqual([...OPTIONAL_STAGES].sort());
+  });
+});
