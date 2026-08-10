@@ -24,6 +24,14 @@
 -- 100.0% coverage (14,199/14,199) against DE, 0 `_pending_review`, 0 placeholder
 -- mismatches, 0 drift vs the EN source, and 0 register violations.
 
+-- impact-allow-solo-migration
+--   Deliberately code-free. This is a two-row data update to a config registry
+--   that VTID-03515 designed precisely so adding or promoting a language is an
+--   INSERT/UPDATE rather than DDL plus a deploy. Both columns are read at
+--   runtime by code that already exists and is already live: `status` by
+--   seed-db-i18n.ts, `informal_hint` by the translator prompt builder. There is
+--   no gateway change that could accompany this without inventing one.
+
 UPDATE public.supported_locales
    SET status = 'ga'
  WHERE code IN ('pt', 'ru', 'pl');
