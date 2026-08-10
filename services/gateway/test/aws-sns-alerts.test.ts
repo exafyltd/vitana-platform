@@ -152,7 +152,7 @@ describe('POST /api/v1/aws-alerts/sns', () => {
     const base = {
       Type: 'Notification',
       MessageId: 'm1',
-      TopicArn: 'arn:aws:sns:eu-central-1:1:vitana-alarms-prod',
+      TopicArn: 'arn:aws:sns:eu-central-1:472838866351:vitana-alarms-prod',
       Message: alarm,
       Timestamp: '2026-07-26T00:00:00Z',
     };
@@ -179,7 +179,7 @@ describe('POST /api/v1/aws-alerts/sns', () => {
     const base = {
       Type: 'SubscriptionConfirmation',
       MessageId: 'm2',
-      TopicArn: 'arn:aws:sns:eu-central-1:1:vitana-alarms-prod',
+      TopicArn: 'arn:aws:sns:eu-central-1:472838866351:vitana-alarms-prod',
       Message: 'confirm me',
       Timestamp: '2026-07-26T00:00:00Z',
       Token: 'tok',
@@ -200,5 +200,92 @@ describe('POST /api/v1/aws-alerts/sns', () => {
     expect(res.status).toBe(200);
     expect(res.body.confirmed).toBe(true);
     expect(fetchMock).toHaveBeenCalledWith(base.SubscribeURL);
+  });
+
+  it('403s a correctly-signed message for a topic other than the expected one', async () => {
+    const base = {
+      Type: 'Notification',
+      MessageId: 'm3',
+      TopicArn: 'arn:aws:sns:eu-central-1:999999999999:some-other-topic',
+      Message: '{}',
+      Timestamp: '2026-07-26T00:00:00Z',
+    };
+    const msg = {
+      ...base,
+      SignatureVersion: '1',
+      Signature: sign(base),
+      SigningCertURL: VALID_CERT_URL,
+    };
+
+    const res = await request(makeApp())
+      .post('/api/v1/aws-alerts/sns')
+      .set('Content-Type', 'text/plain')
+      .send(JSON.stringify(msg));
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('unexpected_topic');
+    expect(notifyGChatMock).not.toHaveBeenCalled();
+  });
+
+  it('502s when the SubscribeURL confirmation request itself fails', async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (String(url).endsWith('.pem')) {
+        return { ok: true, text: async () => certPem } as unknown as Response;
+      }
+      return { ok: false, status: 500, text: async () => 'server error' } as unknown as Response;
+    });
+
+    const base = {
+      Type: 'SubscriptionConfirmation',
+      MessageId: 'm4',
+      TopicArn: 'arn:aws:sns:eu-central-1:472838866351:vitana-alarms-prod',
+      Message: 'confirm me',
+      Timestamp: '2026-07-26T00:00:00Z',
+      Token: 'tok',
+      SubscribeURL: 'https://sns.eu-central-1.amazonaws.com/?Action=ConfirmSubscription',
+    };
+    const msg = {
+      ...base,
+      SignatureVersion: '1',
+      Signature: sign(base),
+      SigningCertURL: VALID_CERT_URL,
+    };
+
+    const res = await request(makeApp())
+      .post('/api/v1/aws-alerts/sns')
+      .set('Content-Type', 'text/plain')
+      .send(JSON.stringify(msg));
+
+    expect(res.status).toBe(502);
+    expect(res.body.error).toBe('subscribe_confirm_rejected');
+    expect(notifyGChatMock).not.toHaveBeenCalled();
+  });
+
+  it('502s (so SNS retries) when Google Chat delivery fails', async () => {
+    notifyGChatMock.mockReset().mockResolvedValue({ ok: false, webhook_set: true, status: 404 });
+
+    const alarm = JSON.stringify({ AlarmName: 'x', NewStateValue: 'ALARM', OldStateValue: 'OK' });
+    const base = {
+      Type: 'Notification',
+      MessageId: 'm5',
+      TopicArn: 'arn:aws:sns:eu-central-1:472838866351:vitana-alarms-prod',
+      Message: alarm,
+      Timestamp: '2026-07-26T00:00:00Z',
+    };
+    const msg = {
+      ...base,
+      SignatureVersion: '1',
+      Signature: sign(base),
+      SigningCertURL: VALID_CERT_URL,
+    };
+
+    const res = await request(makeApp())
+      .post('/api/v1/aws-alerts/sns')
+      .set('Content-Type', 'text/plain')
+      .send(JSON.stringify(msg));
+
+    expect(res.status).toBe(502);
+    expect(res.body.error).toBe('chat_delivery_failed');
+    expect(notifyGChatMock).toHaveBeenCalledTimes(1);
   });
 });

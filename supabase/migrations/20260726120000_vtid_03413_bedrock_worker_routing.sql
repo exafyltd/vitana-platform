@@ -35,12 +35,22 @@
 --
 -- MODEL ID
 -- --------
--- `eu.anthropic.claude-opus-4-7` is a resolved cross-region INFERENCE
--- PROFILE id, not a bare on-demand model id — CLAUDE.md §2b requires the
--- profile form for Bedrock. Verified ACTIVE in eu-central-1 via
--- `aws bedrock list-inference-profiles`. Same model tier as the
--- `claude_subscription/claude-opus-4-7` the worker stage used previously,
--- so this is not a capability downgrade.
+-- UPDATED post-review (PR #2946): the original text here claimed
+-- `eu.anthropic.claude-opus-4-7` was verified ACTIVE via
+-- `aws bedrock list-inference-profiles` and used it as both the seeded
+-- model and the policy's primary_model. That conflates "listed as ACTIVE"
+-- with "this account can invoke it" — they are different things, and the
+-- gap only surfaces as an `AccessDeniedException` at call time.
+-- `20260810120000_vtid_03565_seed_bedrock_allowlist.sql` (a later,
+-- independent verification pass with a real `invoke-model` call against
+-- account 472838866351) found `eu.anthropic.claude-opus-4-7`
+-- AccessDenied and deliberately excluded it, keeping only
+-- `eu.anthropic.claude-sonnet-4-6` as verified-invokable. Using opus-4-7
+-- here would have meant the worker stage's Bedrock primary failed on
+-- every real call — on AWS, falling back to `vertex/gemini-3.1-pro-preview`
+-- doesn't work either (no GCP ADC on an AWS ECS task), so the keyless path
+-- this migration exists to create would never actually have worked.
+-- Fixed to seed and route only the verified-invokable Sonnet 4.6 profile.
 --
 -- NOT marked applicable to the `vision` stage on purpose: the Bedrock
 -- adapter explicitly rejects image/tool payloads (VTID-03403), so claiming
@@ -48,9 +58,27 @@
 -- always errors.
 
 -- ---------------------------------------------------------------------------
--- 1. Register the Bedrock models in the allowlist.
+-- 0. Seed the `bedrock` provider row.
+--    `llm_allowed_models.provider_key` has a FOREIGN KEY to
+--    `llm_allowed_providers(provider_key)` — without this, the model
+--    INSERT below fails on a fresh database, since this migration
+--    (2026-07-26) runs before VTID-03565's own provider seed (2026-08-10).
+--    Idempotent both ways: a no-op if VTID-03565 (or a rerun) already did it.
+-- ---------------------------------------------------------------------------
+INSERT INTO public.llm_allowed_providers (provider_key, display_name, is_active, config)
+SELECT 'bedrock', 'Anthropic Claude via AWS Bedrock', true,
+       jsonb_build_object(
+         'region_env', 'AWS_BEDROCK_REGION',
+         'activation_gate', 'BEDROCK_ROLE_ARN'
+       )
+WHERE NOT EXISTS (
+  SELECT 1 FROM public.llm_allowed_providers WHERE provider_key = 'bedrock'
+);
+
+-- ---------------------------------------------------------------------------
+-- 1. Register the Bedrock model in the allowlist.
 --    `validatePolicy()` rejects any provider/model pair absent from this
---    table, so without these rows the policy update below is impossible —
+--    table, so without this row the policy update below is impossible —
 --    and the Command Hub LLM Providers dropdown would not offer Bedrock.
 -- ---------------------------------------------------------------------------
 INSERT INTO public.llm_allowed_models (
@@ -61,27 +89,15 @@ INSERT INTO public.llm_allowed_models (
 VALUES
   (
     'bedrock',
-    'eu.anthropic.claude-opus-4-7',
-    'Claude Opus 4.7 (Bedrock, EU)',
-    true,
-    true,
-    ARRAY['planner', 'worker', 'validator', 'operator', 'memory', 'triage'],
-    15.00,
-    75.00,
-    200000,
-    'VTID-03413: EU cross-region inference profile. Reached via the ECS task role''s bedrock:InvokeModel - needs no API key, which is why the keyless autopilot-executor task can use it. No vision/tools (adapter limitation, VTID-03403).'
-  ),
-  (
-    'bedrock',
     'eu.anthropic.claude-sonnet-4-6',
     'Claude Sonnet 4.6 (Bedrock, EU)',
     true,
-    false,
+    true,
     ARRAY['planner', 'worker', 'validator', 'operator', 'memory', 'triage', 'classifier'],
     3.00,
     15.00,
     200000,
-    'VTID-03413: cheaper EU Bedrock option for the same keyless path. No vision/tools (adapter limitation, VTID-03403).'
+    'VTID-03413: verified-invokable EU cross-region inference profile (account 472838866351, confirmed by VTID-03565). Reached via the ECS task role''s bedrock:InvokeModel - needs no API key, which is why the keyless autopilot-executor task can use it. No vision/tools (adapter limitation, VTID-03403).'
   )
 ON CONFLICT (provider_key, model_id) DO UPDATE SET
   display_name      = EXCLUDED.display_name,
@@ -130,7 +146,7 @@ BEGIN
     '{worker}',
     jsonb_build_object(
       'primary_provider', 'bedrock',
-      'primary_model',    'eu.anthropic.claude-opus-4-7',
+      'primary_model',    'eu.anthropic.claude-sonnet-4-6',
       -- Fallback = the outgoing primary, so GCP (no BEDROCK_ROLE_ARN)
       -- keeps using the exact model it uses today.
       'fallback_provider', 'vertex',
@@ -154,6 +170,6 @@ BEGIN
     NOW()
   );
 
-  RAISE NOTICE 'VTID-03413: worker stage -> bedrock/eu.anthropic.claude-opus-4-7 (version % -> %)',
+  RAISE NOTICE 'VTID-03413: worker stage -> bedrock/eu.anthropic.claude-sonnet-4-6 (version % -> %)',
     v_current.version, v_current.version + 1;
 END $$;

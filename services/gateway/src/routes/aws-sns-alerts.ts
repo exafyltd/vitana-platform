@@ -17,7 +17,11 @@
  * Chat post is a spam/spoofing vector, so every Notification and
  * SubscriptionConfirmation is signature-checked against a certificate
  * fetched from a URL that must itself be on an *.amazonaws.com SNS
- * signing-cert host, before being trusted.
+ * signing-cert host, before being trusted. Signature verification alone
+ * only proves *some* AWS account's SNS sent the message, not that it's
+ * ours — TopicArn is additionally checked against the expected topic
+ * below, or any AWS customer could self-serve subscribe this endpoint to
+ * their own topic and post arbitrary content into the Chat channel.
  */
 
 import { Router, Request, Response } from 'express';
@@ -25,6 +29,14 @@ import * as crypto from 'crypto';
 import { notifyGChat } from '../services/self-healing-snapshot-service';
 
 const router = Router();
+
+// The one topic this endpoint accepts messages for. Signature verification
+// proves AWS SNS signed the message; it says nothing about which topic it
+// came from — any AWS customer can create a topic and subscribe this public
+// endpoint to it. Reject anything not addressed to the real topic.
+const EXPECTED_TOPIC_ARN =
+  process.env.AWS_ALARMS_SNS_TOPIC_ARN ||
+  'arn:aws:sns:eu-central-1:472838866351:vitana-alarms-prod';
 
 interface SnsMessage {
   Type: string;
@@ -143,12 +155,23 @@ router.post('/sns', async (req: Request, res: Response) => { // public-route —
     return res.status(403).json({ ok: false, error: 'signature_invalid' });
   }
 
+  if (msg.TopicArn !== EXPECTED_TOPIC_ARN) {
+    console.error(`[AwsSnsAlerts] Rejected message for unexpected topic: ${msg.TopicArn}`);
+    return res.status(403).json({ ok: false, error: 'unexpected_topic' });
+  }
+
   if (msg.Type === 'SubscriptionConfirmation') {
     if (!msg.SubscribeURL) {
       return res.status(400).json({ ok: false, error: 'missing_subscribe_url' });
     }
     try {
-      await fetch(msg.SubscribeURL);
+      const confirmResp = await fetch(msg.SubscribeURL);
+      if (!confirmResp.ok) {
+        console.error(
+          `[AwsSnsAlerts] Subscribe URL returned non-2xx: status=${confirmResp.status}`,
+        );
+        return res.status(502).json({ ok: false, error: 'subscribe_confirm_rejected', status: confirmResp.status });
+      }
       console.log(`[AwsSnsAlerts] Confirmed subscription for topic ${msg.TopicArn}`);
       await notifyGChat(`✅ AWS alerting subscription confirmed for topic \`${msg.TopicArn}\``);
     } catch (e) {
@@ -165,7 +188,15 @@ router.post('/sns', async (req: Request, res: Response) => { // public-route —
 
   if (msg.Type === 'Notification') {
     const text = formatAlertText(msg.Message);
-    await notifyGChat(text);
+    const result = await notifyGChat(text);
+    if (!result.ok) {
+      // Non-2xx here tells SNS to retry delivery rather than silently
+      // dropping the alert — notifyGChat() never throws, it returns
+      // {ok:false} for an unset/unreachable/non-2xx webhook, which the
+      // caller must check explicitly (see its own doc comment).
+      console.error(`[AwsSnsAlerts] Chat delivery failed, requesting SNS retry: ${JSON.stringify(result)}`);
+      return res.status(502).json({ ok: false, error: 'chat_delivery_failed', detail: result });
+    }
     return res.status(200).json({ ok: true });
   }
 
