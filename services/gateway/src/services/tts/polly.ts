@@ -31,6 +31,18 @@
  *    Google (or degrades to no audio if Google is gone). See
  *    `POLLY_UNSUPPORTED_LANGS`.
  *
+ *    **`sr` is therefore the one hard blocker on switching Google TTS off
+ *    entirely.** Everything else this platform ships now has a Polly voice.
+ *
+ * VTID-03578 — coverage against the 9 release locales after the language
+ * expansion, so the table is checkable against something rather than being a
+ * list that happens to exist:
+ *
+ *   de en es fr pt pl ru zh  → Polly voice below
+ *   sr                       → no voice in any engine; falls back to Google
+ *
+ * `ar` is also present here though it is not yet a release locale.
+ *
  * Voice/engine pairs below are pinned per-language. `Engine` is always sent
  * explicitly, satisfying CLAUDE.md's "IF TTS is used → THEN specify
  * model_name explicitly" rule — Polly's `Engine` is that knob.
@@ -79,6 +91,18 @@ const POLLY_VOICES: Record<string, PollyVoiceConfig> = {
   ar: { voiceId: 'Hala' as VoiceId, engine: 'neural' as Engine, languageCode: 'ar-AE' },
   zh: { voiceId: 'Zhiyu' as VoiceId, engine: 'neural' as Engine, languageCode: 'cmn-CN' },
   ru: { voiceId: 'Tatyana' as VoiceId, engine: 'standard' as Engine, languageCode: 'ru-RU' },
+  // VTID-03578. Both added when `pt`/`pl` went live as release locales. Until
+  // then they were absent from this table AND absent from the unsupported set,
+  // so they took the English fallback below — a Portuguese user would have been
+  // read to in English by a `neural` voice that sounded entirely healthy.
+  //
+  // `pt` is pinned to pt-BR, not pt-PT: the UI catalog is Brazilian (VTID-03576),
+  // and Polly's pt-PT voice (Inês) would speak the European variant over
+  // Brazilian text. Camila is the neural pt-BR female voice, matching the
+  // female-throughout convention above.
+  pt: { voiceId: 'Camila' as VoiceId, engine: 'neural' as Engine, languageCode: 'pt-BR' },
+  // Ola is Polly's only NEURAL Polish voice; Ewa/Maja are standard-engine.
+  pl: { voiceId: 'Ola' as VoiceId, engine: 'neural' as Engine, languageCode: 'pl-PL' },
 };
 
 /**
@@ -98,11 +122,19 @@ export function normalizeLang(input: string): string {
  * Returns null (rather than an English fallback) for unsupported languages
  * on purpose: emitting fluent audio in the wrong language is a worse failure
  * than emitting none, because it is not self-evidently broken to the caller.
+ *
+ * VTID-03578: that principle used to be stated here and then contradicted on
+ * the next line, which ended `?? POLLY_VOICES['en']` — so `sr` was refused
+ * while every OTHER unlisted language got confident English audio. The two
+ * that actually hit it were `pt` and `pl`, both live release locales. An
+ * unlisted language now returns null like `sr` does, so the caller's existing
+ * "null means fall back / degrade" contract covers the whole gap rather than
+ * one hand-picked entry of it.
  */
 export function resolvePollyVoice(lang: string): PollyVoiceConfig | null {
   const normalized = normalizeLang(lang);
   if (POLLY_UNSUPPORTED_LANGS.has(normalized)) return null;
-  return POLLY_VOICES[normalized] ?? POLLY_VOICES['en'];
+  return POLLY_VOICES[normalized] ?? null;
 }
 
 /** XML-escape text destined for an SSML payload. */
@@ -185,10 +217,14 @@ export async function synthesizePolly(opts: {
 
   const voice = resolvePollyVoice(lang);
   if (!voice) {
-    console.warn(
-      `[POLLY] No Polly voice for lang='${normalizeLang(lang)}' ` +
-        `(unsupported: ${[...POLLY_UNSUPPORTED_LANGS].join(',')}) — caller must fall back.`,
-    );
+    // Name BOTH reasons a lang can land here — explicitly unsupported, or
+    // simply not in the voice table — because they need different fixes and
+    // the log line is the only place anyone will see which one happened.
+    const n = normalizeLang(lang);
+    const why = POLLY_UNSUPPORTED_LANGS.has(n)
+      ? 'Polly has no voice for this language in any engine'
+      : 'no entry in POLLY_VOICES — add one, or add it to POLLY_UNSUPPORTED_LANGS';
+    console.warn(`[POLLY] No Polly voice for lang='${n}' (${why}) — caller must fall back.`);
     return null;
   }
 
