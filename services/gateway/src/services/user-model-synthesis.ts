@@ -22,26 +22,17 @@
  * their own language per the session's language directive.
  */
 
-import { VertexAI } from '@google-cloud/vertexai';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { callViaRouter } from './llm-router'; // VTID-03579: provider from llm_routing_policy, never hardcoded
 
 export const SIGNAL_PROFILE_NARRATIVE = 'user_profile_narrative_v1';
 /** Below this many live facts a narrative adds nothing — skip. */
 export const MIN_FACTS_FOR_NARRATIVE = 3;
 const MAX_FACTS_IN_PROMPT = 30;
 const MAX_ROUTINES_IN_PROMPT = 5;
-const NARRATIVE_MODEL = 'gemini-2.0-flash';
-
-const VERTEX_PROJECT =
-  process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT || 'lovable-vitana-vers1';
-const VERTEX_LOCATION = process.env.VERTEX_LOCATION || 'us-central1';
-
-let vertexAI: VertexAI | null = null;
-try {
-  vertexAI = new VertexAI({ project: VERTEX_PROJECT, location: VERTEX_LOCATION });
-} catch (err: any) {
-  console.warn(`[user-model-synthesis] Vertex init failed: ${err?.message}`);
-}
+// VTID-03579: no NARRATIVE_MODEL / Vertex client here any more. Which model
+// writes the narrative is a routing decision (`memory` stage), not a property
+// of this module — see the cascade removal below.
 
 const SYNTHESIS_SYSTEM_PROMPT = `You write a compact profile of a wellness-community member for their AI companion's private context. INPUTS are structured records the system has verified. Your job is to SYNTHESIZE, not to list:
 
@@ -157,89 +148,29 @@ async function callSynthesisModel(inputs: SynthesisInputs): Promise<string | nul
 
   const prompt = lines.join('\n');
 
-  // BOOTSTRAP-MEMORY-DAILY-LEARNING: DeepSeek is now PRIMARY — staging
-  // verification (runs a6811834 and 2f1f51e3, 2026-07-06) showed Vertex
-  // returning nothing for all 26 eligible users even with the Gemini
-  // API-key fallback in place. Vertex/Gemini remain as fallbacks below.
-  const deepseekKey = process.env.DEEPSEEK_API_KEY;
-  if (deepseekKey) {
-    try {
-      const response = await fetch('https://api.deepseek.com/chat/completions', {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${deepseekKey}`,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'deepseek-chat',
-          messages: [
-            { role: 'system', content: SYNTHESIS_SYSTEM_PROMPT },
-            { role: 'user', content: prompt },
-          ],
-          temperature: 0.3,
-          max_tokens: 400,
-        }),
-      });
-      if (!response.ok) {
-        throw new Error(`DeepSeek returned ${response.status}`);
-      }
-      const data = (await response.json()) as {
-        choices?: Array<{ message?: { content?: string } }>;
-      };
-      const text = data.choices?.[0]?.message?.content;
-      const narrative = typeof text === 'string' ? text.trim() : '';
-      if (narrative.length >= 40) return narrative;
-    } catch (err: any) {
-      console.warn(`[user-model-synthesis] DeepSeek call failed: ${err?.message}`);
-    }
+  // VTID-03579: this used to be a hand-rolled DeepSeek -> Vertex -> Gemini-API
+  // cascade. Three providers were named here, so switching the platform off
+  // Google could not be done by changing routing — it needed a code change in
+  // this file. The `memory` stage decides now, and its own fallback chain is
+  // configured in `llm_routing_policy` rather than re-implemented per caller.
+  const r = await callViaRouter('memory', prompt, {
+    service: 'user-model-synthesis',
+    systemPrompt: SYNTHESIS_SYSTEM_PROMPT,
+    maxTokens: 400,
+  });
+
+  if (!r.ok || !r.text) {
+    console.warn(
+      `[user-model-synthesis] narrative generation failed via ${r.provider ?? 'router'}: ${r.error ?? 'empty response'}`,
+    );
+    return null;
   }
 
-  if (vertexAI) {
-    try {
-      const model = vertexAI.getGenerativeModel({
-        model: NARRATIVE_MODEL,
-        generationConfig: { temperature: 0.3, maxOutputTokens: 400, topP: 0.9 },
-        systemInstruction: { role: 'system', parts: [{ text: SYNTHESIS_SYSTEM_PROMPT }] },
-      });
-      const response = await model.generateContent({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      });
-      const text = response.response?.candidates?.[0]?.content?.parts?.[0]?.text;
-      const narrative = typeof text === 'string' ? text.trim() : '';
-      if (narrative.length >= 40) return narrative;
-    } catch (err: any) {
-      console.warn(`[user-model-synthesis] Vertex call failed: ${err?.message}`);
-    }
-  }
-
-  const apiKey = process.env.GOOGLE_GEMINI_API_KEY;
-  if (apiKey) {
-    try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${NARRATIVE_MODEL}:generateContent?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            systemInstruction: { parts: [{ text: SYNTHESIS_SYSTEM_PROMPT }] },
-            generationConfig: { temperature: 0.3, maxOutputTokens: 400 },
-          }),
-        },
-      );
-      if (!response.ok) {
-        throw new Error(`Gemini API returned ${response.status}`);
-      }
-      const data = (await response.json()) as any;
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      const narrative = typeof text === 'string' ? text.trim() : '';
-      if (narrative.length >= 40) return narrative;
-    } catch (err: any) {
-      console.warn(`[user-model-synthesis] Gemini API fallback failed: ${err?.message}`);
-    }
-  }
-
-  return null;
+  const narrative = r.text.trim();
+  // Unchanged guard: a very short answer is a degenerate synthesis, not a
+  // narrative, and storing it would poison the user's private context.
+  if (narrative.length < 40) return null;
+  return narrative;
 }
 
 /**
