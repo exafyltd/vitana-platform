@@ -253,13 +253,51 @@ async function main(): Promise<void> {
   const supabase = target === 'supabase' ? getSupabase() : null;
   const repo = createDbI18nRepository(supabase, process.env);
 
-  if (args['ensure-schema']) {
+  // VTID-03572. --ensure-schema and --sync-locales are MODIFIERS that run and
+  // then fall through, not terminal actions.
+  //
+  // They used to `return` unconditionally, so `--ensure-schema --locale=x
+  // --apply` — the exact command the runner script issued — created the schema
+  // and exited. No translation, no upsert, and then the reconciliation step
+  // compared a freshly-empty Aurora against a populated Supabase and reported
+  // every row as missing. The operator sees a plausible-looking failure whose
+  // cause is three steps upstream of where it surfaces.
+  //
+  // Falling through instead of returning means the bootstrap sequence is one
+  // invocation and cannot be issued in the wrong order.
+  if (args['ensure-schema'] || args['sync-locales']) {
     if (repo.target !== 'aurora') {
-      console.error('[db-i18n] --ensure-schema applies only to DB_I18N_TARGET=aurora.');
+      console.error('[db-i18n] --ensure-schema/--sync-locales apply only to DB_I18N_TARGET=aurora.');
       process.exit(2);
     }
+  }
+
+  if (args['ensure-schema']) {
     await (repo as unknown as { ensureSchema(): Promise<void> }).ensureSchema();
     console.log('[db-i18n] Aurora schema ensured (supported_locales + both content tables).');
+  }
+
+  // A schema is not a registry. ensureSchema() CREATEs supported_locales and
+  // inserts nothing, so on a fresh Aurora the very next step — resolveLocales()
+  // — aborts with "supported_locales is empty" and no locale is ever applied.
+  //
+  // The rows are copied from Supabase rather than hardcoded here because
+  // Supabase is the upstream of record for this table (Aurora is its DMS
+  // target). A second hardcoded list is a second thing to forget when a
+  // language is added, which is the manual step VTID-03515 removed.
+  if (args['sync-locales']) {
+    const upstream = await createDbI18nRepository(getSupabase(), {
+      ...process.env,
+      DB_I18N_TARGET: 'supabase',
+    }).listSupportedLocales();
+    const n = await (
+      repo as unknown as { upsertSupportedLocales(r: SupportedLocaleRow[]): Promise<number> }
+    ).upsertSupportedLocales(upstream);
+    console.log(`[db-i18n] locale registry synced from Supabase → Aurora (${n} locale(s)).`);
+  }
+
+  // Nothing else asked for: the modifiers were the whole request.
+  if (!APPLY && !args.check && !FROM_ARTIFACT) {
     await closeAuroraPool();
     return;
   }

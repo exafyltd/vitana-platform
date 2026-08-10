@@ -393,6 +393,49 @@ class AuroraDbI18nRepository implements DbI18nRepository {
   }
 
   /**
+   * Copy the locale registry in from Supabase (VTID-03572). Aurora-only, and
+   * deliberately not on the shared `DbI18nRepository` interface: this is a
+   * one-way bootstrap of a replication TARGET, not an operation that makes
+   * sense against the upstream.
+   *
+   * `ensureSchema()` creates `supported_locales` empty, and `resolveLocales()`
+   * then refuses to proceed against an empty registry — correctly, since a
+   * missing locale row is a foreign-key failure a few hundred upserts later.
+   * So a fresh Aurora needs this between the two, or nothing can ever be
+   * seeded into it.
+   *
+   * ON CONFLICT UPDATE rather than DO NOTHING: `informal_hint` is fed verbatim
+   * into the translation prompt and `status` gates which locales are selected,
+   * so a stale row here silently produces wrong translations rather than an
+   * error. Re-running must converge on upstream, not preserve whatever landed
+   * first.
+   */
+  async upsertSupportedLocales(rows: SupportedLocaleRow[]): Promise<number> {
+    assertAuroraWritesAllowed('upsert supported_locales', this.env);
+    if (rows.length === 0) return 0;
+    await this.query(
+      'upsertSupportedLocales',
+      `INSERT INTO public.supported_locales (code, english_name, informal_hint, status)
+       SELECT * FROM unnest($1::text[], $2::text[], $3::text[], $4::text[])
+       ON CONFLICT (code) DO UPDATE SET
+         english_name  = EXCLUDED.english_name,
+         informal_hint = EXCLUDED.informal_hint,
+         status        = EXCLUDED.status`,
+      [
+        rows.map((r) => r.code),
+        rows.map((r) => r.english_name),
+        // '' not null: the column is `text NOT NULL DEFAULT ''`, so coalescing
+        // to the schema's own default makes an absent hint behave exactly as if
+        // the column had been omitted, instead of failing the whole batch on a
+        // not-null violation.
+        rows.map((r) => r.informal_hint ?? ''),
+        rows.map((r) => r.status),
+      ],
+    );
+    return rows.length;
+  }
+
+  /**
    * One statement per batch via `unnest`, not one per row. 291 nav entries x 8
    * locales is 2,328 round trips otherwise, and a partially-applied locale is
    * exactly the half-written state the pipeline is built to avoid.

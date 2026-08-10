@@ -1,0 +1,115 @@
+$ AURORA_TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:55433/ev1?sslmode=disable npx jest test/db-i18n/aurora-integration.test.ts
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.warn
+    [aurora] sslmode=disable on a loopback host — plaintext connection (local/test only).
+
+      91 | function resolveSsl(env: NodeJS.ProcessEnv): PoolConfig['ssl'] {
+      92 |   if (allowsPlaintext((env.AURORA_DATABASE_URL ?? '').trim())) {
+    > 93 |     console.warn('[aurora] sslmode=disable on a loopback host — plaintext connection (local/test only).');
+         |             ^
+      94 |     return false;
+      95 |   }
+      96 |   const caPath = (env.AURORA_CA_BUNDLE_PATH ?? '').trim();
+
+      at resolveSsl (src/services/db-i18n/aurora-client.ts:93:13)
+      at resolveAuroraConfig (src/services/db-i18n/aurora-client.ts:127:40)
+      at getAuroraPool (src/services/db-i18n/aurora-client.ts:173:15)
+      at withAuroraClient (src/services/db-i18n/aurora-client.ts:205:24)
+      at AuroraDbI18nRepository.query (src/services/db-i18n/db-i18n-repository.ts:369:36)
+      at AuroraDbI18nRepository.ensureSchema (src/services/db-i18n/db-i18n-repository.ts:384:16)
+      at Object.<anonymous> (test/db-i18n/aurora-integration.test.ts:58:16)
+
+  console.log
+    [aurora] pool created for postgresql://postgres@127.0.0.1:55433/ev1?sslmode=disable
+
+      at getAuroraPool (src/services/db-i18n/aurora-client.ts:185:11)
+
+  console.warn
+    [aurora] sslmode=disable on a loopback host — plaintext connection (local/test only).
+
+      91 | function resolveSsl(env: NodeJS.ProcessEnv): PoolConfig['ssl'] {
+      92 |   if (allowsPlaintext((env.AURORA_DATABASE_URL ?? '').trim())) {
+    > 93 |     console.warn('[aurora] sslmode=disable on a loopback host — plaintext connection (local/test only).');
+         |             ^
+      94 |     return false;
+      95 |   }
+      96 |   const caPath = (env.AURORA_CA_BUNDLE_PATH ?? '').trim();
+
+      at resolveSsl (src/services/db-i18n/aurora-client.ts:93:13)
+      at resolveAuroraConfig (src/services/db-i18n/aurora-client.ts:127:40)
+      at getAuroraPool (src/services/db-i18n/aurora-client.ts:173:15)
+      at withAuroraClient (src/services/db-i18n/aurora-client.ts:205:24)
+      at AuroraDbI18nRepository.query (src/services/db-i18n/db-i18n-repository.ts:369:36)
+      at AuroraDbI18nRepository.navCatalogCoverage (src/services/db-i18n/db-i18n-repository.ts:521:29)
+      at Object.<anonymous> (test/db-i18n/aurora-integration.test.ts:402:21)
+
+  console.log
+    [aurora] pool created for postgresql://postgres@127.0.0.1:55433/ev1?sslmode=disable
+
+      at getAuroraPool (src/services/db-i18n/aurora-client.ts:185:11)
+
+  console.warn
+    [aurora] AURORA_SSL_INSECURE=true — TLS certificate verification is DISABLED. Acceptable only for a migration rehearsal; set AURORA_CA_BUNDLE_PATH for real use.
+
+      105 |   }
+      106 |   if ((env.AURORA_SSL_INSECURE ?? '').trim().toLowerCase() === 'true') {
+    > 107 |     console.warn(
+          |             ^
+      108 |       '[aurora] AURORA_SSL_INSECURE=true — TLS certificate verification is DISABLED. ' +
+      109 |         'Acceptable only for a migration rehearsal; set AURORA_CA_BUNDLE_PATH for real use.',
+      110 |     );
+
+      at resolveSsl (src/services/db-i18n/aurora-client.ts:107:13)
+      at resolveAuroraConfig (src/services/db-i18n/aurora-client.ts:127:40)
+      at getAuroraPool (src/services/db-i18n/aurora-client.ts:173:15)
+      at withAuroraClient (src/services/db-i18n/aurora-client.ts:205:24)
+      at AuroraDbI18nRepository.query (src/services/db-i18n/db-i18n-repository.ts:369:36)
+      at AuroraDbI18nRepository.listSupportedLocales (src/services/db-i18n/db-i18n-repository.ts:388:17)
+      at Object.<anonymous> (test/db-i18n/aurora-integration.test.ts:412:25)
+
+  console.log
+    [aurora] pool created for postgres://nobody@127.0.0.1:1/nope
+
+      at getAuroraPool (src/services/db-i18n/aurora-client.ts:185:11)
+
+PASS test/db-i18n/aurora-integration.test.ts
+  AuroraDbI18nRepository against a live PostgreSQL
+    ✓ ensureSchema is idempotent (6 ms)
+    ✓ reads the locale registry (2 ms)
+    ✓ upserts nav rows and is idempotent on the natural key (4 ms)
+    ✓ ON CONFLICT updates content and re-stamps, rather than ignoring (3 ms)
+    ✓ binds a multi-row batch column-for-column (5 ms)
+    ✓ upserts checklist rows with all six fields and both provenance columns (2 ms)
+    ✓ preserves NULL for an untranslated optional field (2 ms)
+    ✓ BLOCKS writes when AURORA_I18N_WRITES is unset, even against a reachable DB (9 ms)
+    ✓ surfaces a database error as DbI18nRepositoryError, not an empty result (4 ms)
+    upsertSupportedLocales bootstraps the registry
+      ✓ inserts new locales, coalescing an absent hint to the column default (4 ms)
+      ✓ UPDATES on conflict rather than ignoring (2 ms)
+      ✓ binds a multi-row batch column-for-column (2 ms)
+      ✓ is blocked without the write flag, like every other write (17 ms)
+      ✓ writes nothing for an empty batch (2 ms)
+    navCatalogSource prefers German over English
+      ✓ uses the de row when both exist (3 ms)
+      ✓ falls back to en when there is no de row, and says so (3 ms)
+      ✓ omits an entry with no source text at all (1 ms)
+      ✓ excludes inactive catalog entries (3 ms)
+    checklistSource reads the published snapshot
+      ✓ maps camelCase snapshot fields to the DB column names (1 ms)
+      ✓ defaults absent snapshot fields to empty rather than undefined (1 ms)
+      ✓ skips malformed snapshot entries instead of throwing (1 ms)
+      ✓ returns [] for a curriculum version with no current publication (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       22 passed, 22 total
+Snapshots:   0 total
+Time:        0.708 s, estimated 1 s
+Ran all test suites matching /test\/db-i18n\/aurora-integration.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
