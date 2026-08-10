@@ -81,10 +81,51 @@ the characters rather than saying "informal", which is not actionable here.
 TEST: `test/i18n/llm-locale.test.ts` (suite green). The directive is built from
 `LANGUAGE_NAMES.zh` = `Simplified Chinese (简体中文)` and `REGISTER_HINTS.zh`.
 
-AC-8 — no regression in the other eight locales
+AC-8 — no regression anywhere in the gateway
 
-TEST: `npx jest test/i18n test/db-i18n/db-i18n.test.ts` → 103 passed.
-Evidence: `outputs/jest-i18n.txt`.
+Adding a locale to `GatewayLocale` reaches further than the i18n directory:
+three suites outside it pinned the 8-locale set as a fact and had to be
+answered individually rather than bulk-updated.
+
+TEST: `npx jest` (full suite) → **638 suites, 12,470 tests, 44 snapshots, 0
+failed**. Evidence: `outputs/jest-full-suite.txt`.
+
+AC-9 — the fallback path for an unsupported locale is still covered
+
+`greeting-audio-bridge.test.ts` used `'zh' as never` as its stand-in for "a
+locale the catalog lacks". zh is now a real locale, so the premise evaporated —
+for the SECOND time, since its own comment records VTID-03559 repointing it off
+`'fr'` for exactly this reason.
+
+Changing the assertion to expect Chinese would have been the wrong repair: it
+deletes the only coverage of the fallback rather than fixing it. Repointed at
+`'xx'` — ISO 639-2 reserved for local use, so it can never graduate into a
+product locale and the test stops needing this fix every time the catalog grows.
+
+TEST: `test/services/conversation/greeting-audio-bridge.test.ts` → "still falls
+back to German for a locale the catalog genuinely lacks".
+
+AC-10 — the curriculum decision for zh is explicit, not implied
+
+`journey-checklist-translations.test.ts` asserts the gateway locale set exactly,
+and its own comment says it exists to force a CURRICULUM DECISION when a locale
+reaches the gateway. Adding zh triggered it, so the decision is recorded rather
+than the number bumped: **serve it.** zh behaves exactly as fr/pt/ru/pl did on
+arrival — zero rows in `journey_checklist_translations`, so the curriculum
+degrades to the authored German source. Serving German to a zh reader is the
+honest failure; refusing the request is not.
+
+TEST: `test/journey-checklist-translations.test.ts` → "exposes exactly the
+release locale set — no more, no less".
+
+AC-11 — the ORB tool-catalog snapshot change is only the enum entry
+
+Updating a characterization snapshot is how a real regression hides, so the
+resulting diff was inspected in full before accepting: **2 added lines, both
+`"zh"`** (one per catalog variant), and nothing else.
+
+TEST: `test/orb/live/characterization/tool-catalog.characterization.test.ts` →
+44/44 snapshots pass.
 
 ---
 
