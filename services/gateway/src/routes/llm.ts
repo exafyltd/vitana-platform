@@ -20,6 +20,8 @@ import {
 } from '../services/llm-routing-policy-service';
 import { queryLLMTelemetry } from '../services/llm-telemetry-service';
 import { verifyProvider } from '../services/llm-router';
+import { emitOasisEvent } from '../services/oasis-event-service';
+import { requireAdminAuth } from '../middleware/auth-supabase-jwt';
 import {
   LLM_SAFE_DEFAULTS,
   VALID_STAGES,
@@ -452,7 +454,13 @@ router.get('/providers/health', (_req: Request, res: Response) => {
 // POST /api/v1/llm/providers/verify
 // Real preflight: actually invoke a provider/model and report what happened.
 // =============================================================================
-router.post('/providers/verify', async (req: Request, res: Response) => {
+// Gated with real middleware, NOT the x-actor-role header the older handlers in
+// this file use (VTID-03565). Two reasons: this endpoint spends money on every
+// call — it performs a genuine provider completion — and a spoofable request
+// header is not a gate for that. As a NEW route it has no existing caller to
+// break, so it can start at the standard the rest of the admin surface already
+// uses (requireAdminAuth = requireAuth + requireExafyAdmin).
+router.post('/providers/verify', requireAdminAuth, async (req: Request, res: Response) => {
   try {
     const validation = VerifyProviderSchema.safeParse(req.body);
     if (!validation.success) {
@@ -463,16 +471,6 @@ router.post('/providers/verify', async (req: Request, res: Response) => {
       });
     }
 
-    const actorRole = (req.headers['x-actor-role'] as string) || 'developer';
-    const allowedRoles = ['developer', 'infra', 'admin'];
-    if (!allowedRoles.includes(actorRole)) {
-      return res.status(403).json({
-        ok: false,
-        error: 'Forbidden: insufficient permissions',
-        details: `Role '${actorRole}' not allowed to run a provider preflight`,
-      });
-    }
-
     const { provider } = validation.data;
     // Default to the provider's flagship so an operator can verify a provider
     // without first knowing its model-id convention (Bedrock's, in particular,
@@ -480,6 +478,36 @@ router.post('/providers/verify', async (req: Request, res: Response) => {
     const model = validation.data.model || getProviderFlagship(provider);
 
     const result = await verifyProvider(provider, model);
+
+    // Record the preflight as a governance DECISION, not as LLM traffic. This
+    // is the evidence the "verify Bedrock FIRST, then flip routing" ordering
+    // rule asks for — without it, "was this provider ever actually checked?"
+    // has no auditable answer, which is the same gap that let a routing table
+    // claim two stages were on Claude while Google served every call.
+    // Never fails the request: the diagnosis is the deliverable, and an OASIS
+    // outage must not turn a successful preflight into a 500.
+    try {
+      await emitOasisEvent({
+        vtid: 'VTID-03565',
+        type: 'llm.provider.verified',
+        source: 'gateway',
+        status: result.ok ? 'success' : 'error',
+        message: `Provider preflight ${provider}/${model}: ${result.ok ? 'OK' : result.error || 'failed'}`,
+        payload: {
+          provider,
+          model,
+          ok: result.ok,
+          available: result.available,
+          error: result.error,
+          latency_ms: result.latencyMs,
+        },
+        actor_id: (req as { identity?: { user_id?: string } }).identity?.user_id,
+        actor_role: 'admin',
+        surface: 'command-hub',
+      });
+    } catch (emitErr) {
+      console.warn(`[LLM API] preflight OASIS emit failed: ${String(emitErr).slice(0, 200)}`);
+    }
 
     // Always HTTP 200: a failed preflight is a successful diagnosis, and the
     // caller needs the body to read `error`. Non-2xx would make "Bedrock is
