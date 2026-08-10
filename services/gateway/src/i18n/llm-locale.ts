@@ -21,21 +21,36 @@
 //     locale,
 //   );
 
-import type { GatewayLocale } from './catalog';
+import { resolveLocaleStrict, type GatewayLocale } from './catalog';
 
-// Mirrors the edge-function names + adds the languages the catalog supports.
+// Mirrors supabase/functions/_shared/llm-locale.ts in vitana-v1. Keep the two
+// in sync — they are the same directive delivered by two runtimes, and a
+// locale present in one but not the other means the same user gets their own
+// language from an edge function and English from the gateway.
 const LANGUAGE_NAMES: Record<GatewayLocale, string> = {
   de: 'German (Deutsch)',
   en: 'English',
-  sr: 'Serbian (Srpski)',
   es: 'Spanish (Español)',
+  sr: 'Serbian (Srpski)',
+  fr: 'French (Français)',
+  pt: 'Portuguese (Português)',
+  ru: 'Russian (Русский)',
+  pl: 'Polish (Polski)',
 };
 
 // Per-language register hints. Friendly informal tone, mirrors the brand voice.
+// The brand voice is informal in EVERY language. A locale missing from this
+// map gets no register directive, and LLMs default to the formal register for
+// most European languages — so a merely-translated locale still reads like a
+// bank letter next to the German original.
 const REGISTER_HINTS: Partial<Record<GatewayLocale, string>> = {
   de: 'Use du-form (informal "du"), NOT Sie-form. The brand voice is informal and friendly.',
   sr: 'Use ti-form (informal), NOT Vi-form. Friendly, casual register.',
   es: 'Use tú-form (informal), NOT usted. Friendly tone.',
+  fr: 'Use tu-form (tutoyer), NOT vous. Friendly tone.',
+  pt: 'Use tu-form (European Portuguese informal), NOT você or o/a senhor(a). Friendly tone.',
+  ru: 'Use ты-form (informal), NOT вы-form. Friendly, casual register.',
+  pl: 'Use ty-form (informal), NOT Pan/Pani. Friendly, casual register.',
 };
 
 // Per-language compound-word rules (German is the only language with this
@@ -78,9 +93,10 @@ export function buildLocalizedSystemPromptForLang(
 ): string {
   if (!lang) return basePrompt;
   const lower = lang.toLowerCase();
-  if (lower.startsWith('de')) return buildLocalizedSystemPrompt(basePrompt, 'de');
-  if (lower.startsWith('en')) return buildLocalizedSystemPrompt(basePrompt, 'en');
-  if (lower.startsWith('sr')) return buildLocalizedSystemPrompt(basePrompt, 'sr');
-  if (lower.startsWith('es')) return buildLocalizedSystemPrompt(basePrompt, 'es');
-  return basePrompt; // unsupported locale → don't constrain
+  // Resolve through the catalog so language WORDS ("Polish") and ISO codes
+  // behave identically here and in tt(). Hand-rolling prefix checks again is
+  // exactly how 'pt'/'pl' would silently become German — both start with "po".
+  const resolved = resolveLocaleStrict(lower);
+  if (!resolved) return basePrompt; // unsupported locale → don't constrain
+  return buildLocalizedSystemPrompt(basePrompt, resolved);
 }

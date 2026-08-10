@@ -409,8 +409,35 @@ const VALID_STAGES = [
  *
  * Admin-gated like the rest: the reminder text quotes governance rules and
  * summarizes prior failures, which is internal engineering information.
- * In-process callers (the planner, the executor, the worker-runner bridge)
- * use buildReminders() directly and never traverse this route.
+ *
+ * =============================================================================
+ * WATCHER_REMINDERS_ENABLED gates INJECTION here, not inspection — VTID-03551
+ * =============================================================================
+ * This route previously reported `enabled_resolved` and then served the
+ * reminders regardless. That made the flag a kill switch for only two of its
+ * three consumers:
+ *
+ *   planner / executor   in-process, check remindersEnabled() themselves  → off
+ *   worker-runner        a SEPARATE service that calls this route over
+ *                        HTTP and never checks the flag                   → ON
+ *
+ * Measured on production with the flag unset: `enabled_resolved: false` and
+ * six reminders in the same response. Prod looked dark and was not. A
+ * partially-effective kill switch is worse than none, because it makes you
+ * trust a state that is not real.
+ *
+ * (The comment previously here claimed "the worker-runner bridge uses
+ * buildReminders() directly and never traverses this route". That was simply
+ * wrong — worker-runner is out-of-process and this route is its only path —
+ * and believing it is how the gap survived review.)
+ *
+ * The gate keys on `record_shown`, which already encodes the caller's intent:
+ *
+ *   record_shown=true  → "I am injecting this into a prompt." Honours the
+ *                        flag; returns an empty bundle when off.
+ *   omitted            → "Show me what the Watcher knows." Always served: it
+ *                        changes nothing, and an operator needs to see what
+ *                        WOULD be injected before deciding to flip the flag.
  */
 router.get('/remind', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
   const stage = String(req.query.stage || '') as LessonStage;
@@ -426,28 +453,45 @@ router.get('/remind', requireAdminAuth, async (req: AuthenticatedRequest, res: R
     ? req.query.touched_paths.split(',').map((s) => s.trim()).filter(Boolean)
     : undefined;
 
-  const bundle = await buildReminders({
-    stage,
-    vtid: typeof req.query.vtid === 'string' ? req.query.vtid : null,
-    scanner: typeof req.query.scanner === 'string' ? req.query.scanner : undefined,
-    service: typeof req.query.service === 'string' ? req.query.service : undefined,
-    step: typeof req.query.step === 'string' ? req.query.step : undefined,
-    actor: typeof req.query.actor === 'string' ? req.query.actor : undefined,
-    touched_paths: touched,
-  });
+  const forInjection = String(req.query.record_shown) === 'true';
+  const enabled = remindersEnabled();
+
+  // Suppress BEFORE building: with the flag off an injecting caller must get
+  // nothing, and there is no reason to do the query work to produce it.
+  // 200-with-empty rather than an error status, deliberately — "the feature is
+  // off" is a normal state, and worker-runner maps any non-2xx to null, which
+  // would make a deliberate off look identical to a Watcher outage.
+  const injectionSuppressed = forInjection && !enabled;
+
+  const bundle = injectionSuppressed
+    ? { reminders: [], truncated: { dropped: 0 }, tokens_used: 0 }
+    : await buildReminders({
+      stage,
+      vtid: typeof req.query.vtid === 'string' ? req.query.vtid : null,
+      scanner: typeof req.query.scanner === 'string' ? req.query.scanner : undefined,
+      service: typeof req.query.service === 'string' ? req.query.service : undefined,
+      step: typeof req.query.step === 'string' ? req.query.step : undefined,
+      actor: typeof req.query.actor === 'string' ? req.query.actor : undefined,
+      touched_paths: touched,
+    });
 
   // Only count a reminder as "shown" when the caller asked for the injectable
   // block. A Command Hub operator browsing what the Watcher knows must not
   // move the auto-mute denominator — that would let idle inspection silently
-  // retire lessons nobody ever injected.
-  if (String(req.query.record_shown) === 'true') {
+  // retire lessons nobody ever injected. Nothing was shown when injection is
+  // suppressed either, so the empty list keeps that honest for free.
+  if (forInjection) {
     await recordShown(bundle.reminders.map((r) => r.reminder_id));
   }
 
   return res.status(200).json({
     ok: true,
     data: {
-      enabled_resolved: remindersEnabled(),
+      enabled_resolved: enabled,
+      // Distinguishes "off, so you got nothing" from "on, and there genuinely
+      // was nothing to say" — otherwise both read as an empty array and the
+      // flag's effect is invisible in the response that it acted on.
+      injection_suppressed: injectionSuppressed,
       stage,
       ...bundle,
       block: renderRemindersBlock(bundle),

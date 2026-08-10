@@ -86,6 +86,71 @@ export function createMobileSmokeTests(suiteName: string, routes: string[]) {
 }
 
 /**
+ * A mobile screen and its load-time budget (milliseconds).
+ *   lcp  — Largest Contentful Paint ceiling.
+ *   load — full `load` event ceiling (proxy for time-to-interactive).
+ */
+export interface MobilePerfTarget {
+  name: string;
+  route: string;
+  lcp: number;
+  load: number;
+}
+
+/**
+ * Creates mobile performance-budget tests. Unlike the smoke tests (which only
+ * assert a screen *renders*), these fail when a screen renders too *slowly* —
+ * so a load-time regression on Events / Memory / Live Rooms / etc. breaks CI
+ * instead of waiting for a user complaint.
+ *
+ * Measures LCP (via PerformanceObserver) and the navigation `load` event, then
+ * asserts each against the per-screen budget. Run under the `mobile-*`
+ * Playwright projects (iPhone-14 emulation) so the numbers reflect mobile.
+ */
+export function createMobilePerfTests(suiteName: string, targets: MobilePerfTarget[]) {
+  test.describe(suiteName, () => {
+    for (const target of targets) {
+      test(`${target.name} (${target.route}) loads within budget`, async ({ page }) => {
+        const response = await page.goto(target.route, { waitUntil: 'load' });
+        expect(response?.status()).toBeLessThan(500);
+
+        // LCP: read the last largest-contentful-paint entry the browser saw.
+        // buffered:true replays entries from before the observer attached.
+        const lcp = await page.evaluate<number>(() => {
+          return new Promise<number>((resolve) => {
+            let last = 0;
+            try {
+              const po = new PerformanceObserver((list) => {
+                for (const e of list.getEntries()) last = (e as PerformanceEntry).startTime;
+              });
+              po.observe({ type: 'largest-contentful-paint', buffered: true });
+              // LCP finalizes on the next frame after load; give it a beat.
+              setTimeout(() => { po.disconnect(); resolve(last); }, 500);
+            } catch {
+              resolve(0);
+            }
+          });
+        });
+
+        const loadMs = await page.evaluate<number>(() => {
+          const nav = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
+          return nav ? nav.loadEventEnd : 0;
+        });
+
+        // 0 means the metric wasn't captured (e.g. no contentful paint) — don't
+        // fail the budget on a missing sample, only on a real over-budget value.
+        if (lcp > 0) {
+          expect(lcp, `${target.name} LCP ${Math.round(lcp)}ms > ${target.lcp}ms budget`).toBeLessThanOrEqual(target.lcp);
+        }
+        if (loadMs > 0) {
+          expect(loadMs, `${target.name} load ${Math.round(loadMs)}ms > ${target.load}ms budget`).toBeLessThanOrEqual(target.load);
+        }
+      });
+    }
+  });
+}
+
+/**
  * Creates redirect tests — verifies legacy routes resolve to new paths.
  * Each redirect is tested: navigate to old path, assert URL contains new path.
  */

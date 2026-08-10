@@ -28,7 +28,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createHash } from 'crypto';
 import { callViaRouter } from '../services/llm-router';
-import { normalizeLocale, type GatewayLocale } from './catalog';
+import { normalizeLocale, LOCALE_ENGLISH_NAME, LOCALE_INFORMAL_HINT, type GatewayLocale } from './catalog';
 
 const LOG = '[catalog-i18n]';
 const CACHE_TABLE = 'content_i18n';
@@ -49,19 +49,11 @@ export interface LocalizeOptions {
   service: string;
 }
 
-const LANGUAGE_NAMES: Record<GatewayLocale, string> = {
-  de: 'German',
-  en: 'English',
-  es: 'Spanish',
-  sr: 'Serbian',
-};
+// Shared with every other locale-aware prompt builder — see catalog.ts.
+const LANGUAGE_NAMES = LOCALE_ENGLISH_NAME;
 
 // Brand voice is informal across every locale (DE never Sie/Ihr/Ihnen).
-const REGISTER_HINT: Partial<Record<GatewayLocale, string>> = {
-  de: ' Use the informal du-form (never Sie/Ihr/Ihnen).',
-  sr: ' Use the informal ti-form.',
-  es: ' Use the informal tú-form.',
-};
+const REGISTER_HINT = LOCALE_INFORMAL_HINT;
 
 // --- compact JSON extraction (worker models sometimes fence or prose-wrap) ---
 function extractJsonObject(text: string): string | null {

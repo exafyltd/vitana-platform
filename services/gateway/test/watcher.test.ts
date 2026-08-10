@@ -296,6 +296,74 @@ describe('GET /api/v1/watcher/health', () => {
   });
 });
 
+describe('GET /api/v1/watcher/remind — the flag gates INJECTION (VTID-03551)', () => {
+  // WATCHER_REMINDERS_ENABLED used to gate only the two in-process callers.
+  // worker-runner is a separate service reaching this route over HTTP and
+  // never checked the flag, so production reported enabled_resolved:false and
+  // served six reminders in the same response — dark on paper, live in fact.
+
+  it('serves nothing to an INJECTING caller when the flag is off', async () => {
+    delete process.env.WATCHER_REMINDERS_ENABLED;
+    const sb = stubSupabase({ data: [] });
+    mockGetSupabase.mockReturnValue(sb);
+
+    const res = await request(buildApp())
+      .get('/api/v1/watcher/remind?stage=execute&record_shown=true');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.enabled_resolved).toBe(false);
+    expect(res.body.data.injection_suppressed).toBe(true);
+    expect(res.body.data.reminders).toEqual([]);
+    expect(res.body.data.block).toBe('');
+    // Suppressed BEFORE the build: the rules/lessons tables are never touched.
+    // Asserting this rather than only the empty array is what makes the test
+    // fail if someone later builds the bundle and filters it afterwards.
+    const tables = sb.from.mock.calls.map((c: unknown[]) => c[0]);
+    expect(tables).not.toContain('watcher_rules');
+    expect(tables).not.toContain('watcher_lessons');
+  });
+
+  it('still serves an INSPECTING caller when the flag is off', async () => {
+    // The Command Hub preview must keep working — an operator needs to see
+    // what WOULD be injected before deciding whether to turn the flag on.
+    delete process.env.WATCHER_REMINDERS_ENABLED;
+    const sb = stubSupabase({ data: [] });
+    mockGetSupabase.mockReturnValue(sb);
+
+    const res = await request(buildApp()).get('/api/v1/watcher/remind?stage=execute');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.injection_suppressed).toBe(false);
+    const tables = sb.from.mock.calls.map((c: unknown[]) => c[0]);
+    expect(tables).toContain('watcher_rules');
+  });
+
+  it('serves an injecting caller normally when the flag is on', async () => {
+    process.env.WATCHER_REMINDERS_ENABLED = 'true';
+    const sb = stubSupabase({ data: [] });
+    mockGetSupabase.mockReturnValue(sb);
+
+    const res = await request(buildApp())
+      .get('/api/v1/watcher/remind?stage=execute&record_shown=true');
+
+    expect(res.body.data.enabled_resolved).toBe(true);
+    expect(res.body.data.injection_suppressed).toBe(false);
+    const tables = sb.from.mock.calls.map((c: unknown[]) => c[0]);
+    expect(tables).toContain('watcher_rules');
+  });
+
+  it('returns 200, not an error status, when suppressed', async () => {
+    // worker-runner maps any non-2xx to null, which would make a deliberate
+    // "off" indistinguishable from a Watcher outage in its logs.
+    delete process.env.WATCHER_REMINDERS_ENABLED;
+    mockGetSupabase.mockReturnValue(stubSupabase({ data: [] }));
+    const res = await request(buildApp())
+      .get('/api/v1/watcher/remind?stage=execute&record_shown=true');
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+  });
+});
+
 describe('POST /api/v1/watcher/session-step — auth', () => {
   const validBody = { session_id: 'sess-1', step: 'doc_updated' };
 
