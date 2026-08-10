@@ -399,6 +399,8 @@ model PartnerTenant {
   name         String
   status       String   @default("discovered") // CONNECTION_STATES (manifest.ts)
   jurisdiction String?
+  ownerUserId  String?  @map("owner_user_id") // VTID-03553: self-service owner
+  ownerEmail   String?  @map("owner_email")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
@@ -406,6 +408,7 @@ model PartnerTenant {
 
   @@index([tenantId], map: "idx_partner_tenant_tenant")
   @@index([status], map: "idx_partner_tenant_status")
+  @@index([ownerUserId], map: "idx_partner_tenant_owner")
   @@map("partner_tenant")
 }
 
@@ -707,11 +710,12 @@ model ConsentGrantRecord {
 }
 
 model ConsentReceiptRecord {
-  id      String   @id @default(cuid())
-  grantId String   @map("grant_id")
-  kind    String // granted|revoked|attestation_issued|access_denied
-  detail  Json // metadata only — claim names/grantee/purpose, NEVER metric values
-  at      DateTime @default(now())
+  id       String   @id @default(cuid())
+  grantId  String   @map("grant_id")
+  kind     String // granted|revoked|attestation_issued|access_denied|quote_submitted|quote_denied|quote_selected
+  accessor String   @default("unknown") // F8: who asked — part of the audit record
+  detail   Json // metadata only — claim names/grantee/purpose, NEVER metric values
+  at       DateTime @default(now())
 
   grant ConsentGrantRecord @relation(fields: [grantId], references: [id], onDelete: Restrict)
 
@@ -725,7 +729,7 @@ model HealthDataAttestationRecord {
   claim            String
   period           String
   met              Boolean
-  confidence       Float
+  confidenceBand   String    @map("confidence_band") // low|medium|high — F6: never the exact ratio
   issuer           String    @default("Vitanaland")
   rawDataDisclosed Boolean   @default(false) @map("raw_data_disclosed")
   issuedAt         DateTime  @default(now()) @map("issued_at")
@@ -733,6 +737,7 @@ model HealthDataAttestationRecord {
 
   grant ConsentGrantRecord @relation(fields: [grantId], references: [id], onDelete: Cascade)
 
+  @@unique([grantId, claim, period], map: "uq_health_attestation_grant_claim_period")
   @@index([grantId], map: "idx_health_attestation_grant")
   @@map("health_data_attestation")
 }

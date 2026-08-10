@@ -15,10 +15,94 @@ const ledger = () => {
 };
 
 describe('settlement ledger', () => {
-  test('BLK-010 gate: refuses any non-sandbox config at construction', () => {
+  test('BLK-010 gate: refuses a non-sandbox config with no authorization record', () => {
     expect(
-      () => new SettlementLedger({ ...config, environment: 'production' as never }),
-    ).toThrow(/sandbox/);
+      () => new SettlementLedger({ ...config, environment: 'production' }),
+    ).toThrow(/live_authorization/);
+  });
+
+  test('fund() is a sandbox-only faucet — a production ledger refuses it (Codex P1)', () => {
+    const live = new SettlementLedger({
+      ...config,
+      environment: 'production',
+      live_authorization: {
+        blocker: 'BLK-010',
+        authorized_by: 'd.stevanovic@exafy.io',
+        authorized_at: '2026-08-09T00:00:00Z',
+        reference: 'BLK-010 conversation approval, 2026-08-09',
+      },
+    });
+    expect(() => live.fund('tenant-a:treasury', 1)).toThrow(/sandbox-only faucet/);
+    expect(live.balance('tenant-a:treasury')).toBe(0);
+  });
+
+  test('BLK-010 gate: refuses an incomplete authorization record', () => {
+    expect(
+      () =>
+        new SettlementLedger({
+          ...config,
+          environment: 'production',
+          live_authorization: {
+            blocker: 'BLK-010',
+            authorized_by: '   ',
+            authorized_at: '2026-08-09',
+            reference: 'VTID-03548',
+          },
+        }),
+    ).toThrow(/live_authorization/);
+    expect(
+      () =>
+        new SettlementLedger({
+          ...config,
+          environment: 'production',
+          live_authorization: {
+            blocker: 'BLK-010',
+            authorized_by: 'platform owner',
+            authorized_at: 'not-a-date',
+            reference: 'VTID-03548',
+          },
+        }),
+    ).toThrow(/live_authorization/);
+    expect(
+      () =>
+        new SettlementLedger({
+          ...config,
+          environment: 'production',
+          live_authorization: {
+            blocker: 'BLK-000' as never,
+            authorized_by: 'platform owner',
+            authorized_at: '2026-08-09',
+            reference: 'VTID-03548',
+          },
+        }),
+    ).toThrow(/live_authorization/);
+  });
+
+  test('BLK-010 gate: accepts production with a complete recorded authorization (VTID-03548)', () => {
+    const l = new SettlementLedger({
+      ...config,
+      config_version: 'prod-v1',
+      environment: 'production',
+      live_authorization: {
+        blocker: 'BLK-010',
+        authorized_by: 'platform owner (d.stevanovic)',
+        authorized_at: '2026-08-09',
+        reference: 'VTID-03548 — BLK-010 resolution conversation',
+      },
+    });
+    // Construction and fee computation work on a live ledger; balances can
+    // only ever enter through a future authenticated, receipted funding path
+    // (fund() is sandbox-only — see the Codex P1 test above), so movement
+    // from an empty account is correctly refused.
+    expect(l.feeFor('loyalty_reward', 1_000)).toBe(25);
+    expect(() =>
+      l.settle({ id: 'prod-ins-1', type: 'loyalty_reward', tenantId: 'tenant-a', from: 'tenant-a:treasury', to: 'user:bob', amount: 100 }),
+    ).toThrow(SettlementError);
+    expect(l.reconcile().ok).toBe(true);
+  });
+
+  test('sandbox config still needs no authorization record', () => {
+    expect(() => new SettlementLedger(config)).not.toThrow();
   });
 
   test('fee-bearing transfer computes the fee HERE from versioned config', () => {
