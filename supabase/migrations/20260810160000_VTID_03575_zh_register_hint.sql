@@ -21,6 +21,15 @@
 -- which a register check cannot see, because it looks at pronouns.
 --
 -- Status stays 'draft'. This corrects what zh is told, not whether it ships.
+--
+-- impact-allow-solo-migration
+--
+-- Deliberate solo migration. The impact rule asks for a code change in the same
+-- PR or an explicit confirmation that existing code already uses this. The
+-- latter holds: `informal_hint` is already READ by the seeder's surface
+-- registry and passed into the translation prompt — this UPDATE changes the
+-- VALUE of a column that is already wired, not the schema. Nothing new needs
+-- writing to consume it. Pure data backfill, one row, no DDL.
 
 UPDATE public.supported_locales
    SET informal_hint = 'Use Simplified Chinese (zh-CN) and the ordinary second person 你/你的. Never the polite 您. Do not return Traditional characters. Direct, friendly tone.'
