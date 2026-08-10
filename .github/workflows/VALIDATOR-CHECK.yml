@@ -76,7 +76,11 @@ jobs:
         id: diff
         run: |
           BASE="${{ github.base_ref }}"
-          git fetch origin "$BASE" --depth=1
+          # Fetch the base branch FULLY: the checkout is fetch-depth 0, but a --depth=1
+          # base fetch shallow-clips origin/$BASE, and the moment main advances past the
+          # PR fork point `git diff origin/main...HEAD` dies with "no merge base"
+          # (VTID-03570 — bit every PR after the first post-fork merge to main).
+          git fetch origin "$BASE"
           git diff --name-only "origin/$BASE"...HEAD > /tmp/changed_files.txt
           COUNT="$(wc -l < /tmp/changed_files.txt | tr -d ' ')"
           echo "Changed files: $COUNT"
