@@ -2,8 +2,18 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import fetch from 'node-fetch';
 import { GeminiParsedCommand, COMMAND_PARSE_PROMPT } from '../types/operator-command';
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyDCbka2qbs9ql_UxzAtLIfz_n-9g985KCc';
+// SECURITY: previously fell back to a hardcoded literal API key when neither
+// env var was set — that literal was a real, billable Gemini key committed
+// to source. GEMINI_API_KEY is documented in CLAUDE.md but GOOGLE_GEMINI_API_KEY
+// is the name actually provisioned via Secret Manager for this service (see
+// intent-extractor.ts / intent-classifier.ts, which accept both for the same
+// reason). No literal fallback — fail loudly per CLAUDE.md if truly unset.
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY;
 const OASIS_URL = process.env.OASIS_OPERATOR_URL || 'https://oasis-operator-86804897789.us-central1.run.app';
+
+if (!GEMINI_API_KEY) {
+  throw new Error('GEMINI_API_KEY or GOOGLE_GEMINI_API_KEY is required (natural-language-service)');
+}
 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 const flashModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
