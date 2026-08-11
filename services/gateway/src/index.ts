@@ -195,6 +195,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // crashing routeGuard at startup.
   const wearablesRouter = require('./routes/wearables').default;
   const connectorWebhooksRouter = require('./routes/connector-webhooks').default;
+  // VTID-03413: AWS SNS -> existing Google Chat alerting channel bridge.
+  const awsSnsAlertsRouter = require('./routes/aws-sns-alerts').default;
   const { initializeAllConnectors } = require('./connectors');
   initializeAllConnectors().catch((err: unknown) => {
     console.error('[connectors] initialization error:', err);
@@ -516,6 +518,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   app.use('/api/v1/stripe/webhook', express.raw({ type: 'application/json' }));
   // VTID-03107: Raw body parser for customer-side Stripe billing webhook (separate signing secret)
   app.use('/api/v1/billing/webhooks/stripe', express.raw({ type: 'application/json' }));
+  // VTID-03413: AWS SNS posts Content-Type: text/plain (even though the body is JSON) —
+  // express.json() below would silently skip it, leaving req.body empty. Route handler
+  // JSON.parse()s this text itself after verifying the SNS signature.
+  app.use('/api/v1/aws-alerts/sns', express.text({ type: '*/*', limit: '1mb' }));
 
   // Middleware - IMPORTANT: JSON body parser must come before route handlers
   app.use(express.json({ limit: '2mb' }));
@@ -1090,6 +1096,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // PR #661 removed the duplicate /waitlist route from wearablesRouter so this mount is safe.
   mountRouterSync(app, '/api/v1/wearables', wearablesRouter, { owner: 'wearables' });
   mountRouterSync(app, '/api/v1/connectors', connectorWebhooksRouter, { owner: 'connector-webhooks' });
+  // VTID-03413: AWS SNS -> Google Chat alerting bridge (no auth; SNS signature verified in-route).
+  mountRouterSync(app, '/api/v1/aws-alerts', awsSnsAlertsRouter, { owner: 'aws-sns-alerts' });
 
   // VTID-02403: AI Subscription Connect Phase 1 — user-keyed ChatGPT / Claude
   mountRouterSync(app, '/api/v1/integrations/ai-assistants', aiAssistantsRouter, { owner: 'ai-assistants' });
