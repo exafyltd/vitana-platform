@@ -29,12 +29,29 @@ describe('BOOTSTRAP-LLM-ROUTER constants', () => {
       }
     });
 
-    test('every fallback model in LLM_SAFE_DEFAULTS is its provider flagship (when set)', () => {
+    // VTID-03579: the flagship rule no longer holds for FALLBACKS, deliberately.
+    // Two stages need a non-flagship fallback for reasons that outrank tidiness:
+    //   - vision falls back to a SECOND Bedrock model, because DeepSeek has no
+    //     image input and a text-only fallback fails every frame call.
+    //   - the deepseek fallbacks split chat/reasoner by stage cost, so the
+    //     cheaper `deepseek-chat` is correct where `deepseek-reasoner` (the
+    //     flagship) would be waste.
+    // The invariant that still matters is narrower and is asserted instead: a
+    // fallback must never be Google, and a Bedrock fallback must be a model the
+    // account can actually invoke.
+    test('every fallback is a real, permitted provider/model pair', () => {
+      const SUBSCRIBED_BEDROCK = [
+        'eu.anthropic.claude-sonnet-4-6',
+        'global.anthropic.claude-sonnet-4-6',
+        'eu.anthropic.claude-sonnet-4-5-20250929-v1:0',
+      ];
       for (const stage of VALID_STAGES) {
         const cfg = LLM_SAFE_DEFAULTS[stage];
-        if (cfg.fallback_provider && cfg.fallback_model) {
-          const flagship = PROVIDER_FLAGSHIPS[cfg.fallback_provider];
-          expect(cfg.fallback_model).toBe(flagship);
+        if (!cfg.fallback_provider || !cfg.fallback_model) continue;
+        expect(cfg.fallback_provider).not.toBe('vertex');
+        expect(cfg.fallback_provider).not.toBe('anthropic');
+        if (cfg.fallback_provider === 'bedrock') {
+          expect(SUBSCRIBED_BEDROCK).toContain(cfg.fallback_model);
         }
       }
     });
@@ -51,22 +68,33 @@ describe('BOOTSTRAP-LLM-ROUTER constants', () => {
       }
     });
 
-    test('worker stage primary is claude_subscription (free path)', () => {
-      expect(LLM_SAFE_DEFAULTS.worker.primary_provider).toBe('claude_subscription');
-      expect(LLM_SAFE_DEFAULTS.worker.fallback_provider).toBe('vertex');
+    // VTID-03579: these three tests pinned per-stage provider CHOICES —
+    // worker on claude_subscription with a vertex fallback, classifier on
+    // deepseek, vision on vertex/gemini-3.1-pro-preview. Every one of those is
+    // now wrong by policy, and pinning them here is what would make the next
+    // legitimate routing change look like a test failure.
+    //
+    // They are replaced by the property that actually needs defending: these
+    // defaults are what `loadPolicy()` serves when the Supabase read FAILS, so
+    // whatever they name is what a database outage routes production to. On
+    // 2026-08-11 that was Google, silently, while the policy table said bedrock.
+    test('the compiled-in fallback policy never routes to Google', () => {
+      for (const stage of VALID_STAGES) {
+        const cfg = LLM_SAFE_DEFAULTS[stage];
+        expect(cfg.primary_provider).not.toBe('vertex');
+        expect(cfg.fallback_provider).not.toBe('vertex');
+        expect(`${cfg.primary_model} ${cfg.fallback_model}`).not.toMatch(/gemini/i);
+      }
     });
 
-    test('classifier stage primary is deepseek (highest-volume cheapest path)', () => {
-      expect(LLM_SAFE_DEFAULTS.classifier.primary_provider).toBe('deepseek');
-      expect(LLM_SAFE_DEFAULTS.classifier.primary_model).toBe('deepseek-reasoner');
-    });
-
-    test('vision stage primary is vertex with gemini-3.1-pro-preview', () => {
-      // VTID-02690: the Gemini 3.1 flagship is only exposed as a preview
-      // model id — the router special-cases preview ids, so the safe default
-      // deliberately uses the `-preview` suffix.
-      expect(LLM_SAFE_DEFAULTS.vision.primary_provider).toBe('vertex');
-      expect(LLM_SAFE_DEFAULTS.vision.primary_model).toBe('gemini-3.1-pro-preview');
+    test('the compiled-in fallback policy never routes to the credit-less anthropic account', () => {
+      // §2b: that account has no credit balance, so every call 400s and the
+      // router then falls onward — historically onto Google.
+      for (const stage of VALID_STAGES) {
+        const cfg = LLM_SAFE_DEFAULTS[stage];
+        expect(cfg.primary_provider).not.toBe('anthropic');
+        expect(cfg.fallback_provider).not.toBe('anthropic');
+      }
     });
   });
 
