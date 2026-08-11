@@ -304,6 +304,50 @@ jobs:
               ( [ .[] | select(.name != "FEATURE_ORB_FAST_START_ENV") ]
                 + [ {name:"FEATURE_ORB_FAST_START_ENV", value:"staging+prod"} ] )')
 
+          # VTID-03584: the new-day greeting was suppressed on 100% of
+          # authenticated production sessions from 2026-08-04 onward. Measured:
+          # `greeting_context_pending` + `safe_fast_greeting` fired on every
+          # session (0 on 08-03 across 1,631 ORB events / 20 users, then 22, 35,
+          # 27, 24, 43, ... every day after).
+          #
+          # Mechanism: with fast-start deferral on (pinned above),
+          # `contextReadyResolved` starts false and the greeting builder waits
+          # ORB_CONTEXT_READY_GATE_TIMEOUT_MS for the wake-brief + journey
+          # assembly. `safeFastApplies()` (compute-greeting-decision.ts) then
+          # takes the short generic opener whenever that gate expires. The rich
+          # new-day payload — unread messages, Vitana index, Life Compass,
+          # calendar, reminders (`newdayHasContent`) — needs several Supabase
+          # round-trips and never completes inside 300ms, so the greeting was
+          # timed out before it could ever speak.
+          #
+          # 300 is the STAGING experiment value (see STAGE-DEPLOY.yml, which
+          # sets it next to FEATURE_ORB_SAFE_FAST_GREETING_ENV=staging-only). It
+          # was carried onto the prod task def, where the flag is 'production' —
+          # i.e. the experiment's fallback became prod's default path.
+          #
+          # The code default is 4000 (orb-live.ts). Pin it so prod cannot
+          # silently inherit a staging tuning value again. Safe-fast remains a
+          # real fallback for genuinely slow starts; it is no longer the norm.
+          #
+          # If a future session raises or lowers this: measure
+          # `greeting_context_pending` rate first, and treat any sustained
+          # non-zero rate as the greeting being silently downgraded.
+          NEW_DEF=$(echo "$NEW_DEF" | jq '
+            .containerDefinitions[0].environment |=
+              ( [ .[] | select(.name != "ORB_CONTEXT_READY_GATE_TIMEOUT_MS") ]
+                + [ {name:"ORB_CONTEXT_READY_GATE_TIMEOUT_MS", value:"4000"} ] )')
+
+          # VTID-03585: NOVA_SONIC_GLOBAL_ENABLED is read by NO code in this
+          # repo (verified: zero references across services/, scripts/,
+          # .github/). It sat on the prod task def reading `true`, which invites
+          # the conclusion that Nova is globally enabled for all users. It is
+          # not — isNovaSonicIdentityAllowed() is a strict allowlist of
+          # NOVA_SONIC_CANARY_USER_IDS + NOVA_SONIC_CANARY_TENANT_IDS. Strip it
+          # so the task def stops asserting something untrue.
+          NEW_DEF=$(echo "$NEW_DEF" | jq '
+            .containerDefinitions[0].environment |=
+              [ .[] | select(.name != "NOVA_SONIC_GLOBAL_ENABLED") ]')
+
           # BOOTSTRAP-NOVA-SONIC-VOICE: only when explicitly requested, replace
           # the Nova env block (region/model stay pinned — never inputs).
           if [ -n "$NOVA_ENABLED_INPUT" ]; then

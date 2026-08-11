@@ -33,6 +33,10 @@
  */
 
 import WebSocket from 'ws';
+import {
+  navigationDispatchedThisTurn,
+  markNavigationDispatchedThisTurn,
+} from './navigation-turn-scope';
 import { randomUUID } from 'crypto';
 import type { GeminiLiveSession } from '../../../routes/orb-live';
 import type { LatencyPhase } from '../latency-tracker';
@@ -597,7 +601,7 @@ export function createUpstreamLiveMessageHandler(
               if (
                 process.env.NAV_CONTINUATION_BIND === 'true' &&
                 !session.pendingNavigation &&
-                !session.navigationDispatched &&
+                !navigationDispatchedThisTurn(session) &&
                 session.identity?.user_id
               ) {
                 const _accSb = getSupabase();
@@ -616,7 +620,7 @@ export function createUpstreamLiveMessageHandler(
                       if (!p.screen_id || !p.route) return;
                       // Re-check at dispatch time: if the LLM navigated while the
                       // async read was in flight, defer to it (no double-nav).
-                      if (session.pendingNavigation || session.navigationDispatched) return;
+                      if (session.pendingNavigation || navigationDispatchedThisTurn(session)) return;
                       const directive = {
                         type: 'orb_directive',
                         directive: 'navigate',
@@ -631,6 +635,7 @@ export function createUpstreamLiveMessageHandler(
                         try { ctx.deps.sendWsMessage((session as any).clientWs, directive); } catch (_e) { /* WS closed */ }
                       }
                       session.navigationDispatched = true;
+                      markNavigationDispatchedThisTurn(session);
                       console.log(
                         `[NAV-CONTINUATION-BIND] accepted pending offer → ${p.screen_id} (${p.route}) — session=${session.sessionId}`,
                       );
@@ -2238,7 +2243,7 @@ export function handleTurnComplete(
     if (
       process.env.NAV_CONTINUATION_BIND === 'true' &&
       !session.pendingNavigation &&
-      !session.navigationDispatched &&
+      !navigationDispatchedThisTurn(session) &&
       session.identity?.user_id
     ) {
       const _accSb = getSupabase();
@@ -2255,7 +2260,7 @@ export function handleTurnComplete(
             if (!bound || bound.tool !== 'navigate_to_screen') return;
             const p = bound.payload as { screen_id?: string; route?: string; title?: string };
             if (!p.screen_id || !p.route) return;
-            if (session.pendingNavigation || session.navigationDispatched) return;
+            if (session.pendingNavigation || navigationDispatchedThisTurn(session)) return;
             const directive = {
               type: 'orb_directive',
               directive: 'navigate',
@@ -2270,6 +2275,7 @@ export function handleTurnComplete(
               try { ctx.deps.sendWsMessage((session as any).clientWs, directive); } catch (_e) { /* WS closed */ }
             }
             session.navigationDispatched = true;
+            markNavigationDispatchedThisTurn(session);
             console.log(
               `[NAV-CONTINUATION-BIND] accepted pending offer → ${p.screen_id} (${p.route}) — session=${session.sessionId}`,
             );
