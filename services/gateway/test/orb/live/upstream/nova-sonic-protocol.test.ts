@@ -274,11 +274,130 @@ describe('NovaOutputNormalizer', () => {
     expect(n.normalize({ event: { completionEnd: { stopReason: 'END_TURN' } } })).toEqual([
       { kind: 'ignored', eventName: 'completionEnd' },
     ]);
-    // Next turn's content resets the guard: its END_TURN fires again.
+    // The USER taking the floor is the real turn boundary — it resets the
+    // guard, so the NEXT assistant turn's END_TURN fires again.
+    n.normalize({ event: { contentStart: { contentId: 'u1', type: 'TEXT', role: 'USER' } } });
     n.normalize({ event: { contentStart: { contentId: 'a2', type: 'AUDIO', role: 'ASSISTANT' } } });
     expect(
       n.normalize({ event: { contentEnd: { contentId: 'a2', type: 'AUDIO', stopReason: 'END_TURN' } } }),
     ).toEqual([{ kind: 'turnComplete' }]);
+  });
+
+  // VTID-03592 regression block.
+  //
+  // Nova uses STAGED generation: one spoken assistant turn arrives as TWO
+  // ASSISTANT content blocks — SPECULATIVE then FINAL — and each is bracketed
+  // by its own contentEnd/END_TURN. The guard used to reset on EVERY
+  // contentStart, so the FINAL block re-opened a turn the SPECULATIVE block
+  // had already completed and the session booked two turns for one utterance.
+  // Downstream that ran the whole turn_complete pipeline twice, including the
+  // chat_messages voice bridge — every line Vitana spoke appeared twice in the
+  // user's Messenger thread ~3s apart (prod session live-37aa4388, 2026-08-11).
+  describe('VTID-03592 — staged generation is ONE turn', () => {
+    it('SPECULATIVE + FINAL assistant blocks emit exactly one turnComplete', () => {
+      const n = new NovaOutputNormalizer();
+      const events: unknown[] = [];
+
+      n.normalize({
+        event: {
+          contentStart: {
+            contentId: 'spec',
+            type: 'TEXT',
+            role: 'ASSISTANT',
+            additionalModelFields: JSON.stringify({ generationStage: 'SPECULATIVE' }),
+          },
+        },
+      });
+      events.push(
+        ...n.normalize({
+          event: { contentEnd: { contentId: 'spec', type: 'TEXT', stopReason: 'END_TURN' } },
+        }),
+      );
+
+      n.normalize({
+        event: {
+          contentStart: {
+            contentId: 'final',
+            type: 'TEXT',
+            role: 'ASSISTANT',
+            additionalModelFields: JSON.stringify({ generationStage: 'FINAL' }),
+          },
+        },
+      });
+      events.push(
+        ...n.normalize({
+          event: { contentEnd: { contentId: 'final', type: 'TEXT', stopReason: 'END_TURN' } },
+        }),
+      );
+
+      expect(events.filter((e) => (e as { kind: string }).kind === 'turnComplete')).toHaveLength(1);
+    });
+
+    it('an interleaved AUDIO assistant block does not re-open the turn either', () => {
+      const n = new NovaOutputNormalizer();
+      const turns = (raw: unknown) =>
+        n.normalize(raw).filter((e) => e.kind === 'turnComplete').length;
+
+      n.normalize({ event: { contentStart: { contentId: 'a1', type: 'AUDIO', role: 'ASSISTANT' } } });
+      expect(
+        turns({ event: { contentEnd: { contentId: 'a1', type: 'AUDIO', stopReason: 'END_TURN' } } }),
+      ).toBe(1);
+
+      n.normalize({ event: { contentStart: { contentId: 'a2', type: 'TEXT', role: 'ASSISTANT' } } });
+      expect(
+        turns({ event: { contentEnd: { contentId: 'a2', type: 'TEXT', stopReason: 'END_TURN' } } }),
+      ).toBe(0);
+    });
+
+    it('a USER content block reopens the turn so the next assistant turn still completes', () => {
+      const n = new NovaOutputNormalizer();
+      const turns = (raw: unknown) =>
+        n.normalize(raw).filter((e) => e.kind === 'turnComplete').length;
+
+      n.normalize({ event: { contentStart: { contentId: 'a1', type: 'AUDIO', role: 'ASSISTANT' } } });
+      expect(
+        turns({ event: { contentEnd: { contentId: 'a1', type: 'AUDIO', stopReason: 'END_TURN' } } }),
+      ).toBe(1);
+
+      // User speaks — a real new turn.
+      n.normalize({ event: { contentStart: { contentId: 'u1', type: 'TEXT', role: 'USER' } } });
+      n.normalize({ event: { contentEnd: { contentId: 'u1', type: 'TEXT', stopReason: 'END_TURN' } } });
+
+      n.normalize({ event: { contentStart: { contentId: 'a2', type: 'AUDIO', role: 'ASSISTANT' } } });
+      expect(
+        turns({ event: { contentEnd: { contentId: 'a2', type: 'AUDIO', stopReason: 'END_TURN' } } }),
+      ).toBe(1);
+    });
+
+    it('a TOOL content block also reopens the turn (non-assistant)', () => {
+      const n = new NovaOutputNormalizer();
+      const turns = (raw: unknown) =>
+        n.normalize(raw).filter((e) => e.kind === 'turnComplete').length;
+
+      n.normalize({ event: { contentStart: { contentId: 'a1', type: 'AUDIO', role: 'ASSISTANT' } } });
+      expect(
+        turns({ event: { contentEnd: { contentId: 'a1', type: 'AUDIO', stopReason: 'END_TURN' } } }),
+      ).toBe(1);
+
+      n.normalize({ event: { contentStart: { contentId: 't1', type: 'TOOL', role: 'TOOL' } } });
+
+      n.normalize({ event: { contentStart: { contentId: 'a2', type: 'AUDIO', role: 'ASSISTANT' } } });
+      expect(
+        turns({ event: { contentEnd: { contentId: 'a2', type: 'AUDIO', stopReason: 'END_TURN' } } }),
+      ).toBe(1);
+    });
+
+    it('a trailing completionEnd after staged generation is still deduped', () => {
+      const n = new NovaOutputNormalizer();
+      n.normalize({ event: { contentStart: { contentId: 'spec', type: 'TEXT', role: 'ASSISTANT' } } });
+      n.normalize({ event: { contentEnd: { contentId: 'spec', type: 'TEXT', stopReason: 'END_TURN' } } });
+      n.normalize({ event: { contentStart: { contentId: 'final', type: 'TEXT', role: 'ASSISTANT' } } });
+      n.normalize({ event: { contentEnd: { contentId: 'final', type: 'TEXT', stopReason: 'END_TURN' } } });
+
+      expect(n.normalize({ event: { completionEnd: { stopReason: 'END_TURN' } } })).toEqual([
+        { kind: 'ignored', eventName: 'completionEnd' },
+      ]);
+    });
   });
 
   it('USER (ASR) contentEnd END_TURN does NOT complete the model turn', () => {

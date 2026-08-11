@@ -480,3 +480,100 @@ describe('computeGreetingDecision — spoken-facts ledger continuity (#2835)', (
     expect(computeGreetingDecision(c)).toEqual(computeGreetingDecision(c));
   });
 });
+
+// ---------------------------------------------------------------------------
+// VTID-03593 — the rich new-day briefing is reachable on the NORMAL ladder
+//
+// Before this, the briefing existed ONLY as rung 1 of the safe-fast ladder,
+// and safeFastApplies() requires `contextReadyResolved === false`. So the one
+// greeting built FROM context could fire only when context had NOT resolved,
+// and was skipped entirely whenever it had. Every speedup to context assembly
+// therefore made the briefing rarer — which is how a user on a genuine new day
+// ended up hearing the generic wake-brief one-liner from rung 8 instead
+// (prod session live-37aa4388, 2026-08-11: bootstrap 16ms, no
+// `greeting_context_pending`, wake_opener `override_v2`).
+// ---------------------------------------------------------------------------
+
+describe('computeGreetingDecision — VTID-03593 new-day briefing on the normal ladder', () => {
+  const dueNormalCtx = (over: Partial<GreetingDecisionContext> = {}) =>
+    ctx({
+      lastFullBriefingDate: '2026-06-29', // stale → briefing due
+      newdayOverview: richPayload({ messages_unread: 3 }),
+      ...over,
+    });
+
+  test('briefing due + rich payload + context resolved → newday_overview, not override_v2', () => {
+    const d = computeGreetingDecision(
+      dueNormalCtx({ openDecision: { mode: 'speak', source: 'baseline_lead', line: 'Dein Index hat sich bewegt.' } }),
+    );
+    expect(d.wakeOpener).toBe('newday_overview');
+    expect(d.register).toBe('daily_briefing');
+    expect(d.effects.stampBriefingDate).toBe('2026-06-30');
+  });
+
+  test('the briefing outranks a wake-brief line that would otherwise fire rung 8', () => {
+    const withLine = { openDecision: { mode: 'speak' as const, source: 'baseline_lead', line: 'Etwas Kurzes.' } };
+    // Without the payload the same context still fires override_v2 — so the
+    // ordering, not the absence of a line, is what this test pins.
+    expect(computeGreetingDecision(ctx({ ...withLine })).wakeOpener).toBe('override_v2');
+    expect(computeGreetingDecision(dueNormalCtx(withLine)).wakeOpener).toBe('newday_overview');
+  });
+
+  test('a silent reconnect still wins — a briefing is the loudest thing to say into one', () => {
+    const d = computeGreetingDecision(
+      dueNormalCtx({ openDecision: { mode: 'silent', source: 'native_resume', line: null } }),
+    );
+    expect(d.wakeOpener).toBe('silent_reconnect');
+    expect(d.directive).toBeNull();
+  });
+
+  test('already briefed today → does NOT fire again (once per calendar day)', () => {
+    const d = computeGreetingDecision(
+      dueNormalCtx({
+        lastFullBriefingDate: '2026-06-30', // == todayTz
+        openDecision: { mode: 'speak', source: 'baseline_lead', line: 'Etwas Kurzes.' },
+      }),
+    );
+    expect(d.wakeOpener).not.toBe('newday_overview');
+  });
+
+  test('no payload gathered → normal ladder is byte-identical to before', () => {
+    const withLine = { openDecision: { mode: 'speak' as const, source: 'baseline_lead', line: 'Etwas Kurzes.' } };
+    const before = computeGreetingDecision(ctx({ ...withLine, lastFullBriefingDate: '2026-06-29' }));
+    expect(before.wakeOpener).toBe('override_v2');
+    expect(before.directive).toContain('Etwas Kurzes.');
+  });
+
+  test('an empty payload (nothing worth saying) does not hijack the turn', () => {
+    const d = computeGreetingDecision(
+      dueNormalCtx({
+        newdayOverview: richPayload({
+          journey: null,
+          vitana_index: { state: 'none' } as never,
+          life_compass: { state: 'unset' } as never,
+          calendar_today: { count: 0, items: [] } as never,
+          calendar_passed: { count: 0, items: [] } as never,
+          autopilot: { state: 'none' } as never,
+          matches_unread: 0,
+          messages_unread: 0,
+          reminders_today: { count: 0, items: [] } as never,
+        }),
+        openDecision: { mode: 'speak', source: 'baseline_lead', line: 'Etwas Kurzes.' },
+      }),
+    );
+    expect(d.wakeOpener).toBe('override_v2');
+  });
+
+  test('both ladders produce the SAME directive for the same payload — one implementation', () => {
+    const shared = {
+      lastFullBriefingDate: '2026-06-29',
+      newdayOverview: richPayload({ messages_unread: 3 }),
+    };
+    const fast = computeGreetingDecision(safeFastCtx(shared));
+    const normal = computeGreetingDecision(ctx(shared));
+    expect(fast.wakeOpener).toBe('safe_fast_newday_overview');
+    expect(normal.wakeOpener).toBe('newday_overview');
+    expect(normal.directive).toBe(fast.directive);
+    expect(normal.effects.stampBriefingDate).toBe(fast.effects.stampBriefingDate);
+  });
+});

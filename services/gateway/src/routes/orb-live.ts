@@ -9405,7 +9405,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
     const _voiceReasonSync = Array.isArray(_providerResultsSync)
       ? (_providerResultsSync.find((r: any) => r?.providerKey === 'voice_wake_brief')?.reason ?? null)
       : null;
-    const _syncDecision = computeGreetingDecision({
+    const _baseCtxSync: GreetingDecisionContext = {
       contextReadyResolved: true, // past the safe-fast block -> force the normal ladder
       isAnonymous: !!session.isAnonymous,
       safeFastGreetingLive: false,
@@ -9441,38 +9441,189 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
       silenceOnSkipEnabled: process.env.ORB_GREETING_SILENCE_ON_SKIP_ENABLED !== 'false',
       wakeBriefHasSelectedContinuation: (_wb as any)?.selectedContinuation != null,
       voiceWakeBriefReason: _voiceReasonSync,
-    });
-    if (_syncDecision.directive !== null) {
-      const _greetingClientContentMsg = JSON.stringify({
-        client_content: {
-          turns: [{ role: 'user', parts: [{ text: _syncDecision.directive }] }],
-          turn_complete: true,
-        },
-      });
-      // BOOTSTRAP-AWS-STAGING-VALIDATION: diagnosing a code=1007 "Request
-      // contains an invalid argument" close from AI Studio's Live API right
-      // after this exact send (Vertex accepts it fine). Log size + a safe
-      // preview so the real payload is inspectable in CloudWatch instead of
-      // guessed at — remove once the AI-Studio-vs-Vertex divergence is found.
+    };
+
+    /** Render one decision onto the wire + perform its effects. Shared by the
+     *  plain sync path and the VTID-03593 new-day path so the two cannot drift. */
+    const _renderSync = (decision: ReturnType<typeof computeGreetingDecision>) => {
+      if (decision.directive !== null) {
+        const _greetingClientContentMsg = JSON.stringify({
+          client_content: {
+            turns: [{ role: 'user', parts: [{ text: decision.directive }] }],
+            turn_complete: true,
+          },
+        });
+        // BOOTSTRAP-AWS-STAGING-VALIDATION: diagnosing a code=1007 "Request
+        // contains an invalid argument" close from AI Studio's Live API right
+        // after this exact send (Vertex accepts it fine). Log size + a safe
+        // preview so the real payload is inspectable in CloudWatch instead of
+        // guessed at — remove once the AI-Studio-vs-Vertex divergence is found.
+        console.log(
+          `[BOOTSTRAP-AWS-STAGING-VALIDATION] Sending greeting client_content for session ${session.sessionId}: wakeOpener=${decision.wakeOpener} bytes=${Buffer.byteLength(_greetingClientContentMsg)} directive_chars=${decision.directive.length} preview=${JSON.stringify(decision.directive.slice(0, 200))}`,
+        );
+        ws.send(_greetingClientContentMsg);
+      }
       console.log(
-        `[BOOTSTRAP-AWS-STAGING-VALIDATION] Sending greeting client_content for session ${session.sessionId}: wakeOpener=${_syncDecision.wakeOpener} bytes=${Buffer.byteLength(_greetingClientContentMsg)} directive_chars=${_syncDecision.directive.length} preview=${JSON.stringify(_syncDecision.directive.slice(0, 200))}`,
+        `[VTID-VOICE-INIT] greeting via brain wake_opener=${decision.wakeOpener} lang=${lang} turnIndex=${session.turn_count}`,
       );
-      ws.send(_greetingClientContentMsg);
-    }
+      emitDiag(session, 'greeting_sent', decision.diag);
+      if (decision.effects.armWatchdog) {
+        startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
+      }
+    };
+
+    // VTID-03593 — cheap, I/O-free pre-guard for the rich new-day briefing.
+    //
+    // The real guard is `shouldAttemptNewdayOverview`, but it needs `todayTz`,
+    // which needs the timezone helpers, which are dynamically imported (module
+    // graph parity with the safe-fast path). So: screen out everything that can
+    // be screened out synchronously first, and only go async for the handful of
+    // sessions that could genuinely be a new-day return. Every other session
+    // takes the byte-identical synchronous path below.
+    //
+    // `briefingDue` is deliberately NOT approximated here — it is re-checked
+    // inside, against the real `todayTz`, by the same exported guard the
+    // safe-fast path uses. A session that reaches the async block but is not
+    // actually due simply falls through to the same normal ladder.
+    const _syncUid = session.identity?.user_id || null;
+    const _syncSupa = getSupabase();
+    const _syncFirstName = (session as any).greetingFirstName ?? null;
+    const _newdaySyncPossible =
+      !session.isAnonymous &&
+      !!_syncUid &&
+      !!_syncSupa &&
+      typeof _syncFirstName === 'string' &&
+      _syncFirstName.trim().length > 0 &&
+      (session as any).greetingNeedsOnboarding !== true &&
+      (session as any).greetingIsFirstTime !== true &&
+      /^(de|en)/i.test(lang || '') &&
+      // A reconnect must stay silent — rung 7 owns that and outranks the
+      // briefing. Skipping the gather entirely keeps that true without
+      // spending the Supabase round-trips to discover it.
+      !(
+        _openDecision.mode === 'silent' &&
+        (_openDecision.source === 'native_resume' || _openDecision.source === 'reconnect_no_handle')
+      );
+
+    // Claim the greeting synchronously in BOTH branches: the async branch below
+    // must not leave a window in which a second caller also decides to greet.
     session.greetingSent = true;
     session.greetingTurnIndex = session.turn_count;
+
+    if (_newdaySyncPossible) {
+      void (async () => {
+        try {
+          const { readGreetingLedger, extractSpokenFactsFromPayload, recordGreetingFacts, EMPTY_GREETING_LEDGER: _EMPTY_LEDGER_NS } =
+            await import('../services/conversation/greeting-facts-ledger');
+          const { gatherOverviewPayload } = await import(
+            '../services/assistant-continuation/providers/new-day-overview-payload'
+          );
+          const { todayInTimezone, localHourInTimezone } = await import(
+            '../services/assistant-continuation/providers/new-day-return'
+          );
+
+          const _nowNS = new Date();
+          const _ctxNS: GreetingDecisionContext = {
+            ..._baseCtxSync,
+            todayTz: todayInTimezone(_nowNS, _tzSync),
+            localHour: localHourInTimezone(_nowNS, _tzSync),
+          };
+
+          // Real guard, single-sourced with the pure rung.
+          if (shouldAttemptNewdayOverview(_ctxNS)) {
+            const _lastSessIsoNS = (session as any).lastSessionInfo?.time ?? null;
+            const _lastSessDateNS =
+              typeof _lastSessIsoNS === 'string' && _lastSessIsoNS.length > 0
+                ? todayInTimezone(new Date(_lastSessIsoNS), _tzSync)
+                : null;
+            const _overviewNS = await Promise.race([
+              gatherOverviewPayload({
+                supabase: _syncSupa!,
+                userId: _syncUid!,
+                now: _nowNS,
+                timezone: _tzSync,
+                lang,
+                lastSessionDateUserTz: _lastSessDateNS,
+                lastSessionAtIso: _lastSessIsoNS,
+              }),
+              new Promise<null>((r) =>
+                setTimeout(() => r(null), Number(process.env.ORB_NEWDAY_OVERVIEW_WAIT_MS || 3000)),
+              ),
+            ]).catch(() => null);
+
+            const _tenantNS = session.identity?.tenant_id || null;
+            const _ledgerNS =
+              _overviewNS && _tenantNS
+                ? await Promise.race([
+                    readGreetingLedger({ supabase: _syncSupa!, tenantId: _tenantNS, userId: _syncUid! }),
+                    new Promise<typeof _EMPTY_LEDGER_NS>((r) => setTimeout(() => r({ ..._EMPTY_LEDGER_NS }), 800)),
+                  ]).catch(() => ({ ..._EMPTY_LEDGER_NS }))
+                : { ..._EMPTY_LEDGER_NS };
+
+            if (ws.readyState !== WebSocket.OPEN) return;
+
+            const _decisionNS = computeGreetingDecision({
+              ..._ctxNS,
+              newdayOverview: _overviewNS,
+              greetingLedger: _ledgerNS,
+            });
+
+            if (_decisionNS.wakeOpener !== 'legacy_default') _sm.markOpeningDelivered();
+            _renderSync(_decisionNS);
+
+            if (_decisionNS.effects.stampBriefingDate) {
+              (session as any).lastFullBriefingDate = _decisionNS.effects.stampBriefingDate;
+              void _syncSupa!
+                .from('user_journey')
+                .update({ last_full_briefing_date: _decisionNS.effects.stampBriefingDate })
+                .eq('user_id', _syncUid!)
+                .then(() => {}, () => {});
+            }
+            if (_decisionNS.wakeOpener === 'newday_overview' && _tenantNS) {
+              const _spokenNS = extractSpokenFactsFromPayload(_overviewNS);
+              if (Object.keys(_spokenNS).length > 0) {
+                void recordGreetingFacts({
+                  supabase: _syncSupa!,
+                  tenantId: _tenantNS,
+                  userId: _syncUid!,
+                  facts: _spokenNS,
+                });
+              }
+            }
+            return;
+          }
+
+          // Not actually due / not eligible — same normal ladder, no payload.
+          if (ws.readyState !== WebSocket.OPEN) return;
+          const _fallbackNS = computeGreetingDecision(_ctxNS);
+          if (_fallbackNS.wakeOpener !== 'legacy_default') _sm.markOpeningDelivered();
+          _renderSync(_fallbackNS);
+        } catch (err: any) {
+          // Never leave the user with silence because the briefing gather blew
+          // up: fall back to the plain ladder rather than swallowing the turn.
+          console.warn(
+            `[GREETING-NEWDAY-SYNC] session ${session.sessionId} briefing path failed (non-fatal, falling back): ${err?.message || err}`,
+          );
+          try {
+            if (ws.readyState !== WebSocket.OPEN) return;
+            const _recoverNS = computeGreetingDecision(_baseCtxSync);
+            if (_recoverNS.wakeOpener !== 'legacy_default') _sm.markOpeningDelivered();
+            _renderSync(_recoverNS);
+          } catch {
+            /* the fallback ladder is pure; if it throws there is nothing left to try */
+          }
+        }
+      })();
+      return true;
+    }
+
+    const _syncDecision = computeGreetingDecision(_baseCtxSync);
     // legacy_default historically did NOT advance the opening state machine; the
     // other rungs did. Preserve that exactly.
     if (_syncDecision.wakeOpener !== 'legacy_default') {
       _sm.markOpeningDelivered();
     }
-    console.log(
-      `[VTID-VOICE-INIT] greeting via brain wake_opener=${_syncDecision.wakeOpener} lang=${lang} turnIndex=${session.turn_count}`,
-    );
-    emitDiag(session, 'greeting_sent', _syncDecision.diag);
-    if (_syncDecision.effects.armWatchdog) {
-      startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
-    }
+    _renderSync(_syncDecision);
     return true;
   }
 }
