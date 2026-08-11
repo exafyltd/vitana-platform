@@ -17,6 +17,7 @@
 
 import { randomUUID } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
+import { callViaRouter } from './llm-router'; // VTID-03579: provider from llm_routing_policy, never hardcoded
 
 // Environment config
 const GOOGLE_GEMINI_API_KEY = process.env.GOOGLE_GEMINI_API_KEY;
@@ -355,14 +356,17 @@ export async function processFrame(request: FrameProcessRequest): Promise<FrameP
     route: request.route,
     selectedId: request.selectedId,
     sizeBytes: frameSizeBytes,
-    model: GOOGLE_GEMINI_API_KEY ? 'gemini-2.5-flash' : undefined
+    model: undefined // VTID-03579: resolved by the router per call, not known here
   });
 
-  // Optional: Send to Gemini Vision API for analysis (stub)
+  // VTID-03579: no longer gated on GOOGLE_GEMINI_API_KEY. With Google switched
+  // off that key is unset, so the old gate would have silently disabled frame
+  // analysis entirely rather than routing it. Whether a provider is available
+  // is the router's question to answer, not this call site's.
   let analysis: string | undefined;
   let modelUsed: string | undefined;
 
-  if (GOOGLE_GEMINI_API_KEY) {
+  {
     try {
       const visionResult = await analyzeFrameWithGemini(request.frame, request.source);
       analysis = visionResult.analysis;
@@ -396,52 +400,29 @@ async function analyzeFrameWithGemini(frameBase64: string, source: 'camera' | 's
   analysis: string;
   model: string;
 }> {
-  if (!GOOGLE_GEMINI_API_KEY) {
-    throw new Error('Gemini API key not configured');
-  }
-
   const prompt = source === 'screen'
     ? 'Briefly describe what you see on this screen. Focus on the main UI elements and any important information visible.'
     : 'Briefly describe what you see in this camera frame. Focus on the main subjects and context.';
 
-  const requestBody = {
-    contents: [{
-      parts: [
-        { text: prompt },
-        {
-          inlineData: {
-            mimeType: 'image/jpeg',
-            data: frameBase64
-          }
-        }
-      ]
-    }],
-    generationConfig: {
-      temperature: 0.4,
-      maxOutputTokens: 256
-    }
-  };
+  // VTID-03579: was a hardcoded gemini-2.5-flash call against
+  // generativelanguage.googleapis.com. Routed now via the `vision` stage —
+  // Bedrock Claude accepts the same base64 image blocks, so this is a provider
+  // swap and not a capability change.
+  const r = await callViaRouter('vision', prompt, {
+    service: 'assistant-core-frame',
+    maxTokens: 256,
+    image: { base64: frameBase64, mimeType: 'image/jpeg' },
+  });
 
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GOOGLE_GEMINI_API_KEY}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody)
-    }
-  );
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Gemini Vision API error: ${response.status} - ${errorText}`);
+  if (!r.ok || !r.text) {
+    throw new Error(
+      `Frame analysis failed via ${r.provider ?? 'router'}: ${r.error ?? 'empty response'}`,
+    );
   }
 
-  const result = await response.json() as any;
-  const textPart = result.candidates?.[0]?.content?.parts?.find((p: any) => p.text);
-
   return {
-    analysis: textPart?.text || 'Unable to analyze frame.',
-    model: 'gemini-pro-vision'
+    analysis: r.text,
+    model: r.model ?? 'router',
   };
 }
 
@@ -478,20 +459,14 @@ export async function processAudio(request: AudioProcessRequest): Promise<AudioP
   session.audioChunkCount++;
   session.lastActivity = new Date().toISOString();
 
-  // Optional: Send to Gemini for transcription (stub)
-  let transcript: string | undefined;
-  let modelUsed: string | undefined;
-
-  if (GOOGLE_GEMINI_API_KEY) {
-    try {
-      const audioResult = await transcribeAudioWithGemini(request.audio);
-      transcript = audioResult.transcript;
-      modelUsed = audioResult.model;
-    } catch (err: any) {
-      console.warn(`[VTID-0151] Audio transcription failed: ${err.message}`);
-      // Non-fatal - continue without transcript
-    }
-  }
+  // VTID-03579: transcription is disabled, not merely unconfigured — see
+  // `transcribeAudioWithGemini` for why no routing change can restore it.
+  // Left as an explicit constant rather than a live call that throws on every
+  // chunk: this path receives audio continuously, and a per-chunk warning would
+  // be pure log noise for a known, documented gap.
+  const transcript: string | undefined = undefined;
+  const modelUsed: string | undefined = undefined;
+  void transcribeAudioWithGemini;
 
   // Log to OASIS
   await logAudioReceived({
@@ -521,53 +496,26 @@ export async function processAudio(request: AudioProcessRequest): Promise<AudioP
 /**
  * Transcribe audio using Gemini Audio API
  */
-async function transcribeAudioWithGemini(audioBase64: string): Promise<{
+async function transcribeAudioWithGemini(_audioBase64: string): Promise<{
   transcript: string;
   model: string;
 }> {
-  if (!GOOGLE_GEMINI_API_KEY) {
-    throw new Error('Gemini API key not configured');
-  }
-
-  const requestBody = {
-    contents: [{
-      parts: [
-        {
-          inlineData: {
-            mimeType: 'audio/wav',
-            data: audioBase64
-          }
-        },
-        { text: 'Transcribe this audio and respond briefly.' }
-      ]
-    }],
-    generationConfig: {
-      temperature: 0.2,
-      maxOutputTokens: 512
-    }
-  };
-
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GOOGLE_GEMINI_API_KEY}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody)
-    }
+  // VTID-03579: this path is OFF, deliberately and visibly.
+  //
+  // It used to POST raw audio to gemini-2.5-flash. Google is switched off
+  // platform-wide, and unlike the frame path above this one CANNOT simply be
+  // rerouted: no Anthropic model — on Bedrock or anywhere else — accepts audio
+  // input. Speech is a different modality, not a different provider.
+  //
+  // The AWS replacement is Amazon Transcribe, which is a new adapter and its
+  // own build, not a routing change. Until that exists this throws with the
+  // real reason rather than returning an empty transcript, because an empty
+  // string here is indistinguishable from "the user said nothing" and would
+  // silently corrupt the session transcript.
+  throw new Error(
+    'Audio transcription is unavailable: the Google provider is disabled and no ' +
+      'Anthropic/Bedrock model accepts audio input. Needs an Amazon Transcribe adapter (VTID-03579).',
   );
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Gemini Audio API error: ${response.status} - ${errorText}`);
-  }
-
-  const result = await response.json() as any;
-  const textPart = result.candidates?.[0]?.content?.parts?.find((p: any) => p.text);
-
-  return {
-    transcript: textPart?.text || '',
-    model: 'gemini-1.5-flash'
-  };
 }
 
 /**

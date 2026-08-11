@@ -15,6 +15,19 @@
 process.env.DEEPSEEK_API_KEY = 'test-deepseek-key';
 delete process.env.GOOGLE_GEMINI_API_KEY;
 
+// VTID-03579: synthesis no longer owns a provider cascade — it calls the
+// router. `deepseekNarrative` / `deepseekOk` keep their names so the assertions
+// read unchanged, but they now drive the ROUTER's reply. The behaviour these
+// tests protect (inputs-hash gating, upsert shape, model_failed reporting) is
+// provider-independent, which is the point of routing in the first place.
+jest.mock('../../src/services/llm-router', () => ({
+  callViaRouter: jest.fn(async () =>
+    deepseekOk
+      ? { ok: true, provider: 'bedrock', model: 'eu.anthropic.claude-haiku-4-5-20251001-v1:0', text: deepseekNarrative }
+      : { ok: false, provider: 'bedrock', error: 'router mock failure' },
+  ),
+}));
+
 jest.mock('@google-cloud/vertexai', () => ({
   VertexAI: jest.fn().mockImplementation(() => ({
     getGenerativeModel: jest.fn().mockReturnValue({
@@ -139,14 +152,21 @@ describe('synthesizeUserModel', () => {
     expect(fetchCalls.length).toBe(0);
   });
 
-  it('calls DeepSeek as the primary provider and writes the narrative with its inputs hash', async () => {
+  it('routes the synthesis and writes the narrative with its inputs hash', async () => {
     const { client, upserts } = makeSupabaseStub({ factCount: 5 });
     const result = await synthesizeUserModel(client, 't1', 'u1');
     expect(result).toEqual({ ok: true, written: true });
 
-    const dsCall = fetchCalls.find((c) => c.url.includes('api.deepseek.com'));
-    expect(dsCall).toBeDefined();
-    expect(dsCall!.body.model).toBe('deepseek-chat');
+    // VTID-03579: was `expect(deepseek was called)`. The invariant now is the
+    // inverse and the stronger one — synthesis must reach NO provider directly,
+    // whichever provider is currently configured. Pinning "bedrock was called"
+    // here would just re-hardcode a provider in the tests and break on the next
+    // legitimate routing change, without catching a reintroduced direct fetch.
+    const directProviderCalls = fetchCalls.filter((c) =>
+      ['api.deepseek.com', 'generativelanguage.googleapis.com', 'aiplatform.googleapis.com', 'api.anthropic.com']
+        .some((h) => c.url.includes(h)),
+    );
+    expect(directProviderCalls).toEqual([]);
 
     expect(upserts).toHaveLength(1);
     expect(upserts[0].signal_name).toBe(SIGNAL_PROFILE_NARRATIVE);

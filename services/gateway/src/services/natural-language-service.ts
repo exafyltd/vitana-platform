@@ -1,30 +1,28 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { callViaRouter } from './llm-router'; // VTID-03579: provider from llm_routing_policy, never hardcoded
 import fetch from 'node-fetch';
 import { GeminiParsedCommand, COMMAND_PARSE_PROMPT } from '../types/operator-command';
 
-// SECURITY: previously fell back to a hardcoded literal API key when neither
-// env var was set — that literal was a real, billable Gemini key committed
-// to source. GEMINI_API_KEY is documented in CLAUDE.md but GOOGLE_GEMINI_API_KEY
-// is the name actually provisioned via Secret Manager for this service (see
-// intent-extractor.ts / intent-classifier.ts, which accept both for the same
-// reason). No literal fallback — fail loudly per CLAUDE.md if truly unset.
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY;
+// VTID-03579: this module used to REQUIRE a Gemini API key and threw at import
+// if it was absent. That was correct while it held its own Gemini client — a
+// missing key meant a dead service, and failing loudly beat failing silently.
+// It is actively harmful now: the key is deliberately unset platform-wide, and
+// a module-load throw on an unused credential would take the whole gateway down
+// at import for a dependency this file no longer has. Provider credentials are
+// the router's concern; this module has none of its own left to check.
 const OASIS_URL = process.env.OASIS_OPERATOR_URL || 'https://oasis-operator-86804897789.us-central1.run.app';
 
-if (!GEMINI_API_KEY) {
-  throw new Error('GEMINI_API_KEY or GOOGLE_GEMINI_API_KEY is required (natural-language-service)');
-}
-
-const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-const flashModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
-const proModel = genAI.getGenerativeModel({ model: 'gemini-2.0-pro-exp' });
+// VTID-03579: the fast/complex split survives, but as a STAGE choice rather
+// than two pinned Gemini models. `triage` is the cheap stage, `operator` the
+// capable one — which concrete models those resolve to is `llm_routing_policy`'s
+// business, so this file no longer has to change when the platform changes
+// provider.
 
 export class NaturalLanguageService {
   async processMessage(message: string): Promise<string> {
     try {
       const context = await this.buildContext(message);
       const useComplex = message.length > 300 || /analyze|compare|explain|detail/.test(message.toLowerCase());
-      const model = useComplex ? proModel : flashModel;
+      const stage = useComplex ? 'operator' : 'triage';
 
       const prompt = `You are the Vitana Command Hub AI assistant for the VITANA DevOps platform.
 
@@ -41,9 +39,13 @@ USER QUESTION: ${message}
 
 Provide a helpful, concise answer:`;
 
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      return response.text();
+      const r = await callViaRouter(stage, prompt, {
+        service: 'natural-language-service',
+      });
+      if (!r.ok || !r.text) {
+        throw new Error(r.error ?? 'empty response');
+      }
+      return r.text;
     } catch (error: any) {
       console.error('[natural-language-service] Gemini error:', error);
 
@@ -73,10 +75,14 @@ Provide a helpful, concise answer:`;
 
       const prompt = COMMAND_PARSE_PROMPT + message + '\n\nRespond with valid JSON only:';
 
-      // Use flash model for command parsing (fast)
-      const result = await flashModel.generateContent(prompt);
-      const response = await result.response;
-      const text = response.text().trim();
+      // Command parsing is the cheap path — `triage` stage.
+      const r = await callViaRouter('triage', prompt, {
+        service: 'natural-language-service-parse',
+      });
+      if (!r.ok || !r.text) {
+        throw new Error(r.error ?? 'empty response');
+      }
+      const text = r.text.trim();
 
       console.log('[natural-language-service] Gemini response:', text);
 
