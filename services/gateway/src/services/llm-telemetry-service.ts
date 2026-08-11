@@ -431,6 +431,103 @@ export async function queryLLMTelemetry(
 }
 
 /**
+ * A single (hour, provider) bucket in the summary's hourly trend.
+ */
+export interface LLMTelemetrySummaryHourlyBucket {
+  hour: string;
+  provider: string;
+  calls: number;
+}
+
+/** Per-provider / per-service / per-stage breakdown row shapes. */
+export interface LLMTelemetrySummaryProviderRow {
+  provider: string;
+  calls: number;
+  completed: number;
+  failed: number;
+  fallback: number;
+  cost_usd: number;
+}
+export interface LLMTelemetrySummaryBreakdownRow {
+  calls: number;
+  failed: number;
+  service?: string;
+  stage?: string;
+}
+
+export interface LLMTelemetrySummary {
+  window_hours: number;
+  since: string;
+  generated_at: string;
+  total_started: number;
+  total_completed: number;
+  total_failed: number;
+  total_fallback: number;
+  total_cost_usd: number;
+  /**
+   * VTID-03599: named on purpose, not left for the caller to derive from
+   * by_provider. This is the exact number that should be zero -- any
+   * `anthropic` call 400s on a dead credit balance, any `vertex` call is the
+   * Google line VTID-03579/03563 exist to kill. Non-zero means a stage is
+   * routing somewhere it never should be.
+   */
+  non_bedrock_google_or_anthropic_calls: number;
+  by_provider: LLMTelemetrySummaryProviderRow[];
+  by_service: LLMTelemetrySummaryBreakdownRow[];
+  by_stage: LLMTelemetrySummaryBreakdownRow[];
+  hourly: LLMTelemetrySummaryHourlyBucket[];
+}
+
+export interface LLMTelemetrySummaryResponse {
+  ok: boolean;
+  summary: LLMTelemetrySummary | null;
+  error?: string;
+}
+
+/**
+ * VTID-03599: aggregate LLM call volume for the Command Hub "Usage Summary"
+ * panel, via the `llm_telemetry_summary` SECURITY DEFINER RPC (migration
+ * 20260811210000). Direct follow-up to VTID-03579/03563 -- routing tables
+ * and per-call telemetry already existed, but nothing ever aggregated them,
+ * which is exactly how a 268-call credit-balance leak and a 990-call
+ * runaway planner loop both went unnoticed until someone read a bill.
+ */
+export async function getLLMTelemetrySummary(hours = 24): Promise<LLMTelemetrySummaryResponse> {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+
+  if (!supabaseUrl || !supabaseKey) {
+    console.error('[LLM Telemetry] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE');
+    return { ok: false, summary: null, error: 'Gateway misconfigured: missing Supabase credentials' };
+  }
+
+  try {
+    const response = await fetch(`${supabaseUrl}/rest/v1/rpc/llm_telemetry_summary`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`,
+      },
+      body: JSON.stringify({ p_hours: hours }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[LLM Telemetry] Summary RPC failed: ${response.status} - ${errorText}`);
+      return { ok: false, summary: null, error: `Summary query failed: ${response.status}` };
+    }
+
+    const summary = (await response.json()) as LLMTelemetrySummary;
+    return { ok: true, summary };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[LLM Telemetry] Summary query error: ${errorMessage}`);
+    return { ok: false, summary: null, error: errorMessage };
+  }
+}
+
+/**
  * LLM Telemetry Event Types for exports
  */
 export const LLM_CALL_EVENT_TYPES = LLM_TELEMETRY_EVENT_TYPES;
@@ -444,6 +541,7 @@ export default {
   failLLMCall,
   withLLMTelemetry,
   queryLLMTelemetry,
+  getLLMTelemetrySummary,
   hashPrompt,
   generateTraceId,
 };

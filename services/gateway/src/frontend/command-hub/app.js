@@ -3796,14 +3796,22 @@ const state = {
             timeWindow: '1h'
         },
         // UI state
-        activeTab: 'telemetry', // 'telemetry' | 'routing'
+        activeTab: 'telemetry', // 'telemetry' | 'routing' | 'usage'
         showAuditLog: false,
         auditRecords: [],
         auditLoading: false,
         // Edit state
         editingPolicy: null,
         saveInProgress: false,
-        saveError: null
+        saveError: null,
+        // VTID-03599: Usage Summary tab -- aggregate call volume so nobody has
+        // to read raw telemetry rows to answer "how many LLM calls today, by
+        // whom, on what". See docs comment on renderTelemetryUsagePanel().
+        summary: null,
+        summaryLoading: false,
+        summaryFetched: false,
+        summaryError: null,
+        summaryHours: 24
     },
 
     // ──── New Module States (51-screen build) ────
@@ -15568,6 +15576,49 @@ function loadMoreTelemetryEvents() {
 }
 
 /**
+ * VTID-03599: Fetch aggregate LLM call usage (totals, per-provider/service/
+ * stage breakdowns, hourly trend, and the non_bedrock_google_or_anthropic_calls
+ * watchdog count) for the Usage Summary tab.
+ */
+async function fetchLLMTelemetrySummary() {
+    if (state.agentsTelemetry.summaryLoading) return;
+
+    state.agentsTelemetry.summaryLoading = true;
+    state.agentsTelemetry.summaryError = null;
+    renderApp();
+
+    try {
+        var hours = state.agentsTelemetry.summaryHours;
+        var response = await fetch('/api/v1/llm/telemetry/summary?hours=' + hours, {
+            headers: buildContextHeaders({})
+        });
+
+        if (!response.ok) {
+            var errorText = await response.text();
+            console.error('[VTID-03599] Telemetry summary fetch failed:', response.status, errorText);
+            state.agentsTelemetry.summaryError = 'Failed to load usage summary: ' + response.status;
+            state.agentsTelemetry.summary = null;
+        } else {
+            var data = await response.json();
+            if (data.ok && data.data) {
+                state.agentsTelemetry.summary = data.data;
+            } else {
+                state.agentsTelemetry.summary = null;
+                state.agentsTelemetry.summaryError = data.error || 'Invalid response format';
+            }
+        }
+    } catch (err) {
+        console.error('[VTID-03599] Telemetry summary fetch error:', err);
+        state.agentsTelemetry.summaryError = 'Network error: ' + err.message;
+        state.agentsTelemetry.summary = null;
+    } finally {
+        state.agentsTelemetry.summaryLoading = false;
+        state.agentsTelemetry.summaryFetched = true;
+        renderApp();
+    }
+}
+
+/**
  * VTID-01208: Render the Agents Telemetry view
  */
 function renderAgentsTelemetryView() {
@@ -15596,7 +15647,8 @@ function renderAgentsTelemetryView() {
 
     var tabs = [
         { key: 'telemetry', label: 'Telemetry Stream' },
-        { key: 'routing', label: 'Routing Policy' }
+        { key: 'routing', label: 'Routing Policy' },
+        { key: 'usage', label: 'Usage Summary' }
     ];
 
     tabs.forEach(function (t) {
@@ -15616,6 +15668,8 @@ function renderAgentsTelemetryView() {
     // Render active tab content
     if (state.agentsTelemetry.activeTab === 'routing') {
         container.appendChild(renderTelemetryRoutingPanel());
+    } else if (state.agentsTelemetry.activeTab === 'usage') {
+        container.appendChild(renderTelemetryUsagePanel());
     } else {
         container.appendChild(renderTelemetryStreamPanel());
     }
@@ -15671,10 +15725,16 @@ function renderTelemetryStreamPanel() {
     // Provider filter
     var providerSelect = document.createElement('select');
     providerSelect.className = 'telemetry-filter-select';
+    // VTID-03599: was hardcoded to anthropic/vertex/openai only -- missing
+    // bedrock/deepseek/claude_subscription meant nobody could even FILTER the
+    // stream by the providers the platform actually routes to today.
     providerSelect.innerHTML = '<option value="">All Providers</option>' +
-        '<option value="anthropic">Anthropic</option>' +
-        '<option value="vertex">Vertex AI</option>' +
-        '<option value="openai">OpenAI</option>';
+        '<option value="bedrock">Bedrock (Claude)</option>' +
+        '<option value="deepseek">DeepSeek</option>' +
+        '<option value="anthropic">Anthropic (direct)</option>' +
+        '<option value="vertex">Vertex AI (Google)</option>' +
+        '<option value="openai">OpenAI</option>' +
+        '<option value="claude_subscription">Claude Subscription</option>';
     providerSelect.value = state.agentsTelemetry.filters.provider;
     providerSelect.onchange = function (e) {
         state.agentsTelemetry.filters.provider = e.target.value;
@@ -15832,6 +15892,363 @@ function renderTelemetryStreamPanel() {
     }
 
     return panel;
+}
+
+// VTID-03599: fixed provider color order -- never cycled/generated. Bedrock,
+// DeepSeek and Claude Subscription are the sanctioned destinations (calm
+// colors); Vertex and Anthropic-direct are the two providers CLAUDE.md's
+// ALWAYS 10a/10b forbid a Claude stage from ever routing to (warning red) --
+// this is a status encoding, not arbitrary categorical identity, and every
+// swatch is always paired with the provider's name as text, never color alone.
+var LLM_PROVIDER_COLORS = {
+    bedrock: '#60a5fa',
+    deepseek: '#22d3ee',
+    claude_subscription: '#a78bfa',
+    openai: '#9ca3af',
+    vertex: '#ef4444',
+    anthropic: '#f87171',
+    unknown: '#6b7280'
+};
+
+function llmProviderColor(provider) {
+    return LLM_PROVIDER_COLORS[provider] || LLM_PROVIDER_COLORS.unknown;
+}
+
+function llmProviderLabel(provider) {
+    var labels = {
+        bedrock: 'Bedrock (Claude)',
+        deepseek: 'DeepSeek',
+        claude_subscription: 'Claude Subscription',
+        openai: 'OpenAI',
+        vertex: 'Vertex AI (Google)',
+        anthropic: 'Anthropic (direct)',
+        unknown: 'Unknown'
+    };
+    return labels[provider] || provider;
+}
+
+/**
+ * VTID-03599: Render the Usage Summary panel -- aggregate LLM call volume so
+ * a supervisor can answer "how many calls, by whom, on what process, via
+ * which provider" without reading raw telemetry rows. Direct follow-up to
+ * VTID-03579/03563 (the Gemini billing incident): a routing table states
+ * intent, only aggregated completion telemetry says who actually served
+ * every call -- this panel is that aggregation, visible on demand instead of
+ * discoverable only by reading a bill after the fact.
+ */
+function renderTelemetryUsagePanel() {
+    var panel = document.createElement('div');
+    panel.className = 'telemetry-usage-panel';
+
+    if (!state.agentsTelemetry.summaryFetched && !state.agentsTelemetry.summaryLoading) {
+        fetchLLMTelemetrySummary();
+    }
+
+    // Window selector
+    var controls = document.createElement('div');
+    controls.className = 'telemetry-filters-bar';
+
+    var windowSelect = document.createElement('select');
+    windowSelect.className = 'telemetry-filter-select';
+    windowSelect.innerHTML =
+        '<option value="1">Last 1h</option>' +
+        '<option value="6">Last 6h</option>' +
+        '<option value="24">Last 24h</option>' +
+        '<option value="168">Last 7d</option>' +
+        '<option value="720">Last 30d</option>';
+    windowSelect.value = String(state.agentsTelemetry.summaryHours);
+    windowSelect.onchange = function (e) {
+        state.agentsTelemetry.summaryHours = Number(e.target.value);
+        state.agentsTelemetry.summaryFetched = false;
+        fetchLLMTelemetrySummary();
+    };
+    controls.appendChild(windowSelect);
+
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'telemetry-tab-btn';
+    refreshBtn.textContent = state.agentsTelemetry.summaryLoading ? 'Refreshing...' : 'Refresh';
+    refreshBtn.disabled = state.agentsTelemetry.summaryLoading;
+    refreshBtn.onclick = function () {
+        state.agentsTelemetry.summaryFetched = false;
+        fetchLLMTelemetrySummary();
+    };
+    controls.appendChild(refreshBtn);
+
+    panel.appendChild(controls);
+
+    if (state.agentsTelemetry.summaryError) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'telemetry-error';
+        errorDiv.textContent = state.agentsTelemetry.summaryError;
+        panel.appendChild(errorDiv);
+    }
+
+    if (state.agentsTelemetry.summaryLoading && !state.agentsTelemetry.summary) {
+        var loadingDiv = document.createElement('div');
+        loadingDiv.className = 'telemetry-loading';
+        loadingDiv.textContent = 'Loading usage summary...';
+        panel.appendChild(loadingDiv);
+        return panel;
+    }
+
+    var summary = state.agentsTelemetry.summary;
+    if (!summary) {
+        return panel;
+    }
+
+    // Watchdog banner: the ONE number that should always be zero. Named
+    // explicitly so nobody has to derive it from the provider breakdown.
+    var watchdogCount = summary.non_bedrock_google_or_anthropic_calls || 0;
+    var watchdog = document.createElement('div');
+    watchdog.className = 'usage-watchdog-banner ' + (watchdogCount > 0 ? 'usage-watchdog-alert' : 'usage-watchdog-ok');
+    watchdog.textContent = watchdogCount > 0
+        ? watchdogCount + ' call' + (watchdogCount === 1 ? '' : 's') + ' served by Vertex AI (Google) or the direct Anthropic API in the last ' + summary.window_hours + 'h -- CLAUDE.md ALWAYS 10a/10b says every Claude stage must route via Bedrock. Investigate before assuming this is fine.'
+        : 'Zero calls served by Vertex AI (Google) or the direct Anthropic API in the last ' + summary.window_hours + 'h. Every LLM call is accounted for.';
+    panel.appendChild(watchdog);
+
+    // Stat tiles
+    var stats = document.createElement('div');
+    stats.className = 'usage-stat-grid';
+    var tiles = [
+        { label: 'Total Calls', value: summary.total_started || 0 },
+        { label: 'Completed', value: summary.total_completed || 0 },
+        { label: 'Failed', value: summary.total_failed || 0, warn: (summary.total_failed || 0) > 0 },
+        { label: 'Fallback Used', value: summary.total_fallback || 0 },
+        { label: 'Est. Cost (USD)', value: '$' + Number(summary.total_cost_usd || 0).toFixed(2) }
+    ];
+    tiles.forEach(function (t) {
+        var tile = document.createElement('div');
+        tile.className = 'usage-stat-tile';
+        var val = document.createElement('div');
+        val.className = 'usage-stat-value' + (t.warn ? ' usage-stat-warn' : '');
+        val.textContent = t.value;
+        var lbl = document.createElement('div');
+        lbl.className = 'usage-stat-label';
+        lbl.textContent = t.label;
+        tile.appendChild(val);
+        tile.appendChild(lbl);
+        stats.appendChild(tile);
+    });
+    panel.appendChild(stats);
+
+    // By provider -- "who is triggering these calls, via which provider"
+    var providerSection = document.createElement('div');
+    providerSection.className = 'usage-section';
+    var providerTitle = document.createElement('h3');
+    providerTitle.className = 'usage-section-title';
+    providerTitle.textContent = 'Calls by Provider';
+    providerSection.appendChild(providerTitle);
+
+    var byProvider = summary.by_provider || [];
+    var maxProviderCalls = byProvider.reduce(function (m, r) { return Math.max(m, r.calls || 0); }, 0) || 1;
+    if (byProvider.length === 0) {
+        providerSection.appendChild(usageEmptyRow('No LLM calls in this window.'));
+    } else {
+        byProvider.forEach(function (row) {
+            providerSection.appendChild(usageBarRow(
+                llmProviderLabel(row.provider),
+                row.calls,
+                row.calls / maxProviderCalls,
+                llmProviderColor(row.provider),
+                row.failed > 0 ? row.failed + ' failed' : null
+            ));
+        });
+    }
+    panel.appendChild(providerSection);
+
+    // By service / by stage -- "what process triggered this"
+    var breakdownGrid = document.createElement('div');
+    breakdownGrid.className = 'usage-breakdown-grid';
+    breakdownGrid.appendChild(usageBreakdownTable('Calls by Service', summary.by_service || [], 'service'));
+    breakdownGrid.appendChild(usageBreakdownTable('Calls by Stage', summary.by_stage || [], 'stage'));
+    panel.appendChild(breakdownGrid);
+
+    // Hourly trend -- catches a runaway-loop spike (the VTID-03579 shape:
+    // 990 calls/day, most in a handful of hours) visually instead of only
+    // discoverable by reading a billing CSV after the fact.
+    var trendSection = document.createElement('div');
+    trendSection.className = 'usage-section';
+    var trendTitle = document.createElement('h3');
+    trendTitle.className = 'usage-section-title';
+    trendTitle.textContent = 'Hourly Volume';
+    trendSection.appendChild(trendTitle);
+    trendSection.appendChild(renderUsageHourlyTrend(summary.hourly || []));
+    panel.appendChild(trendSection);
+
+    return panel;
+}
+
+function usageEmptyRow(text) {
+    var div = document.createElement('div');
+    div.className = 'telemetry-empty';
+    div.textContent = text;
+    return div;
+}
+
+/**
+ * A single labeled horizontal bar: name on the left, proportional fill bar
+ * in the middle, call count (+ optional note, e.g. failure count) on the
+ * right. Identity is never color-alone -- the label text always ships next
+ * to the swatch.
+ */
+function usageBarRow(label, calls, fraction, color, note) {
+    var row = document.createElement('div');
+    row.className = 'usage-bar-row';
+
+    var labelEl = document.createElement('div');
+    labelEl.className = 'usage-bar-label';
+    labelEl.textContent = label;
+    row.appendChild(labelEl);
+
+    var track = document.createElement('div');
+    track.className = 'usage-bar-track';
+    var fill = document.createElement('div');
+    fill.className = 'usage-bar-fill';
+    fill.style.width = Math.max(2, Math.round(fraction * 100)) + '%';
+    fill.style.background = color;
+    track.appendChild(fill);
+    row.appendChild(track);
+
+    var valueEl = document.createElement('div');
+    valueEl.className = 'usage-bar-value';
+    valueEl.textContent = calls + (note ? ' (' + note + ')' : '');
+    row.appendChild(valueEl);
+
+    return row;
+}
+
+function usageBreakdownTable(title, rows, keyField) {
+    var wrap = document.createElement('div');
+    wrap.className = 'usage-breakdown-card';
+
+    var h = document.createElement('h4');
+    h.className = 'usage-breakdown-title';
+    h.textContent = title;
+    wrap.appendChild(h);
+
+    if (!rows || rows.length === 0) {
+        wrap.appendChild(usageEmptyRow('No data in this window.'));
+        return wrap;
+    }
+
+    var table = document.createElement('table');
+    table.className = 'telemetry-table';
+    var thead = document.createElement('thead');
+    thead.innerHTML = '<tr><th>' + (keyField === 'service' ? 'Service' : 'Stage') + '</th><th>Calls</th><th>Failed</th></tr>';
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    rows.forEach(function (row) {
+        var tr = document.createElement('tr');
+        if (row.failed > 0) tr.className = 'telemetry-row-error';
+        var nameTd = document.createElement('td');
+        nameTd.textContent = row[keyField] || 'unknown';
+        var callsTd = document.createElement('td');
+        callsTd.textContent = row.calls;
+        var failedTd = document.createElement('td');
+        failedTd.textContent = row.failed || 0;
+        tr.appendChild(nameTd);
+        tr.appendChild(callsTd);
+        tr.appendChild(failedTd);
+        tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+
+    return wrap;
+}
+
+/**
+ * Hourly volume as stacked horizontal rows -- one row per hour, segments
+ * stacked left-to-right by provider (fixed color order, 2px surface gap
+ * between segments per the stacked-bar spec). Simpler and more legible at
+ * this data scale than a vertical bar chart, and reuses the same
+ * usageBarRow track styling as the provider breakdown above.
+ */
+function renderUsageHourlyTrend(hourlyRows) {
+    var container = document.createElement('div');
+    container.className = 'usage-hourly-trend';
+
+    if (!hourlyRows || hourlyRows.length === 0) {
+        container.appendChild(usageEmptyRow('No LLM calls in this window.'));
+        return container;
+    }
+
+    // Group flat (hour, provider, calls) rows into per-hour totals + segments.
+    var byHour = {};
+    var hourOrder = [];
+    hourlyRows.forEach(function (row) {
+        if (!byHour[row.hour]) {
+            byHour[row.hour] = { total: 0, segments: [] };
+            hourOrder.push(row.hour);
+        }
+        byHour[row.hour].total += row.calls;
+        byHour[row.hour].segments.push({ provider: row.provider, calls: row.calls });
+    });
+    hourOrder.sort();
+
+    var maxTotal = hourOrder.reduce(function (m, h) { return Math.max(m, byHour[h].total); }, 0) || 1;
+
+    hourOrder.forEach(function (hourKey) {
+        var bucket = byHour[hourKey];
+        var row = document.createElement('div');
+        row.className = 'usage-hourly-row';
+
+        var labelEl = document.createElement('div');
+        labelEl.className = 'usage-hourly-label';
+        var d = new Date(hourKey);
+        labelEl.textContent = isNaN(d.getTime()) ? hourKey : (d.getUTCMonth() + 1) + '/' + d.getUTCDate() + ' ' + String(d.getUTCHours()).padStart(2, '0') + ':00 UTC';
+        row.appendChild(labelEl);
+
+        var track = document.createElement('div');
+        track.className = 'usage-bar-track usage-hourly-track';
+        var trackWidthFraction = bucket.total / maxTotal;
+        var stackWrap = document.createElement('div');
+        stackWrap.className = 'usage-hourly-stack';
+        stackWrap.style.width = Math.max(2, Math.round(trackWidthFraction * 100)) + '%';
+
+        bucket.segments
+            .sort(function (a, b) { return b.calls - a.calls; })
+            .forEach(function (seg) {
+                var segEl = document.createElement('div');
+                segEl.className = 'usage-hourly-segment';
+                segEl.style.width = Math.round((seg.calls / bucket.total) * 100) + '%';
+                segEl.style.background = llmProviderColor(seg.provider);
+                segEl.title = llmProviderLabel(seg.provider) + ': ' + seg.calls;
+                stackWrap.appendChild(segEl);
+            });
+
+        track.appendChild(stackWrap);
+        row.appendChild(track);
+
+        var valueEl = document.createElement('div');
+        valueEl.className = 'usage-bar-value';
+        valueEl.textContent = bucket.total;
+        row.appendChild(valueEl);
+
+        container.appendChild(row);
+    });
+
+    // Legend -- identity is never color-alone even in the stacked chart.
+    var legend = document.createElement('div');
+    legend.className = 'usage-legend';
+    var seenProviders = {};
+    hourlyRows.forEach(function (row) { seenProviders[row.provider] = true; });
+    Object.keys(seenProviders).sort().forEach(function (provider) {
+        var item = document.createElement('div');
+        item.className = 'usage-legend-item';
+        var swatch = document.createElement('span');
+        swatch.className = 'usage-legend-swatch';
+        swatch.style.background = llmProviderColor(provider);
+        var label = document.createElement('span');
+        label.textContent = llmProviderLabel(provider);
+        item.appendChild(swatch);
+        item.appendChild(label);
+        legend.appendChild(item);
+    });
+    container.appendChild(legend);
+
+    return container;
 }
 
 /**

@@ -15333,6 +15333,199 @@ border-bottom: 1px solid var(--color-border, #333);
   font-size: 0.875rem;
 }
 
+/* VTID-03599: Usage Summary panel */
+.telemetry-usage-panel {
+  padding: 0.25rem 0 1rem 0;
+}
+
+.usage-watchdog-banner {
+  padding: 0.875rem 1rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  margin-bottom: 1.25rem;
+  border: 1px solid transparent;
+}
+
+.usage-watchdog-alert {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #ef4444;
+}
+
+.usage-watchdog-ok {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.3);
+  color: #10b981;
+}
+
+.usage-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.usage-stat-tile {
+  background: var(--color-sidebar-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 1rem;
+  text-align: left;
+}
+
+.usage-stat-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  line-height: 1.2;
+}
+
+.usage-stat-value.usage-stat-warn {
+  color: #f59e0b;
+}
+
+.usage-stat-label {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  margin-top: 0.25rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.usage-section {
+  margin-bottom: 1.75rem;
+}
+
+.usage-section-title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0 0 0.75rem 0;
+}
+
+.usage-bar-row {
+  display: grid;
+  grid-template-columns: 180px 1fr 90px;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.35rem 0;
+  font-size: 0.8125rem;
+}
+
+.usage-bar-label {
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.usage-bar-track {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  height: 10px;
+  overflow: hidden;
+}
+
+.usage-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  min-width: 2px;
+}
+
+.usage-bar-value {
+  color: var(--color-text-secondary);
+  text-align: right;
+  white-space: nowrap;
+  font-size: 0.75rem;
+}
+
+.usage-breakdown-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.75rem;
+}
+
+.usage-breakdown-card {
+  background: var(--color-sidebar-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.usage-breakdown-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  margin: 0 0 0.5rem 0;
+}
+
+.usage-hourly-trend {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.usage-hourly-row {
+  display: grid;
+  grid-template-columns: 130px 1fr 50px;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.75rem;
+}
+
+.usage-hourly-label {
+  color: var(--color-text-secondary);
+  font-family: monospace;
+  white-space: nowrap;
+}
+
+.usage-hourly-track {
+  height: 12px;
+}
+
+.usage-hourly-stack {
+  display: flex;
+  height: 100%;
+}
+
+.usage-hourly-segment {
+  height: 100%;
+  border-right: 2px solid var(--color-bg);
+}
+
+.usage-hourly-segment:last-child {
+  border-right: none;
+}
+
+.usage-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.usage-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+
+.usage-legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
 /* Routing Policy Panel */
 .telemetry-routing-panel {
   padding: 1rem;

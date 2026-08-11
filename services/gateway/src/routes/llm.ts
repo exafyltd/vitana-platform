@@ -18,7 +18,7 @@ import {
   resetToDefaults,
   getPolicyAuditHistory,
 } from '../services/llm-routing-policy-service';
-import { queryLLMTelemetry } from '../services/llm-telemetry-service';
+import { queryLLMTelemetry, getLLMTelemetrySummary } from '../services/llm-telemetry-service';
 import { verifyProvider } from '../services/llm-router';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { requireAdminAuth } from '../middleware/auth-supabase-jwt';
@@ -377,6 +377,53 @@ router.get('/telemetry', async (req: Request, res: Response) => {
     res.status(500).json({
       ok: false,
       error: 'Failed to query telemetry',
+      details: message,
+    });
+  }
+});
+
+// =============================================================================
+// GET /api/v1/llm/telemetry/summary
+//
+// VTID-03599: aggregate call volume for the Command Hub "Usage Summary" tab
+// -- totals, provider/service/stage breakdowns, hourly trend, and a named
+// non_bedrock_google_or_anthropic_calls watchdog count. Direct follow-up to
+// VTID-03579/03563: routing tables and per-call events already existed, but
+// nothing ever aggregated them into a "how many calls, by whom, on what"
+// answer -- so a runaway loop or a silent Google fallback only became
+// visible when someone happened to read a bill.
+// =============================================================================
+router.get('/telemetry/summary', async (req: Request, res: Response) => {
+  try {
+    const hoursRaw = req.query.hours;
+    const hours = hoursRaw !== undefined ? Number(hoursRaw) : 24;
+
+    if (!Number.isFinite(hours) || hours <= 0) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Invalid query parameters',
+        details: 'hours must be a positive number',
+      });
+    }
+
+    const result = await getLLMTelemetrySummary(hours);
+
+    if (!result.ok || !result.summary) {
+      return res.status(500).json({
+        ok: false,
+        error: 'Failed to query telemetry summary',
+        details: result.error,
+      });
+    }
+
+    res.json({ ok: true, data: result.summary });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[LLM API] GET /telemetry/summary error: ${message}`);
+
+    res.status(500).json({
+      ok: false,
+      error: 'Failed to query telemetry summary',
       details: message,
     });
   }
