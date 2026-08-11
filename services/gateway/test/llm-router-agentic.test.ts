@@ -168,6 +168,55 @@ describe('llm-router: agentic history + parallel tool calls (VTID-03579)', () =>
     expect(body.messages[4]).toEqual({ role: 'user', content: 'And how many are blocked?' });
   });
 
+  it('normalises a singular toolCall from a fallback adapter into toolCalls', async () => {
+    // Codex review (P1). Only bedrockAdapter populates `toolCalls`; anthropic,
+    // openai, vertex and deepseek all return the singular `toolCall`. An
+    // agentic caller reading only the plural therefore got NOTHING whenever the
+    // router fell back — and because a tool-call response has empty text, that
+    // surfaced as an empty assistant reply with the tool never executed, not as
+    // an error. Exactly the silent class this VTID is about.
+    invokeBedrock.mockResolvedValue({ ok: false, error: 'invoke_failed', message: 'boom' });
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [{
+          message: {
+            content: '',
+            tool_calls: [{
+              id: 'call_1',
+              type: 'function',
+              function: { name: 'list_vtids', arguments: '{"status":"open"}' },
+            }],
+          },
+        }],
+      }),
+    });
+
+    const r = await callViaRouter('operator', 'how many open vtids?', {
+      service: 'test',
+      tools: [{ name: 'list_vtids', description: 'list', inputSchema: { type: 'object' } }],
+    });
+
+    expect(r.ok).toBe(true);
+    expect(r.provider).toBe('deepseek');
+    expect(r.fallbackUsed).toBe(true);
+    // The whole point: plural is populated even though the adapter set singular.
+    expect(r.toolCalls).toHaveLength(1);
+    expect(r.toolCalls![0].name).toBe('list_vtids');
+    expect(r.toolCalls![0].arguments).toEqual({ status: 'open' });
+    // Singular still present for pre-existing single-tool callers.
+    expect(r.toolCall!.name).toBe('list_vtids');
+  });
+
+  it('leaves toolCalls undefined when the model asked for no tools', async () => {
+    // Normalisation must not manufacture an empty array — callers branch on
+    // presence, and an empty array would read as "tools were requested".
+    invokeBedrock.mockResolvedValue({ ok: true, text: 'plain answer' });
+    const r = await callViaRouter('operator', 'hello', { service: 'test' });
+    expect(r.ok).toBe(true);
+    expect(r.toolCalls).toBeUndefined();
+  });
+
   it('leaves a call with no history byte-identical to before', async () => {
     invokeBedrock.mockResolvedValue({ ok: true, text: 'ok', toolCalls: [] });
 

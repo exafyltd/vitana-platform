@@ -3001,6 +3001,14 @@ async function callVertexWithTools(
   reply: string;
   toolCalls?: GeminiToolCall[];
   telemetryContext?: LLMCallContext;
+  // VTID-03579 (review follow-up): who ACTUALLY served this turn. Without it
+  // the caller kept reporting provider:'vertex' for every Bedrock/DeepSeek
+  // call, which is the same "the table says one thing, the wire did another"
+  // blindness this whole VTID exists to remove — and it is exposed to clients
+  // and stored in memory-indexer metadata, so it would have poisoned exactly
+  // the diagnostics used to verify the migration.
+  provider?: string;
+  model?: string;
 }> {
   // VTID-01106: Use custom system instruction if provided (for ORB memory context)
   // VTID-01192: ALWAYS include tool instructions - merge with custom instruction
@@ -3051,12 +3059,12 @@ async function callVertexWithTools(
 
   if (toolCalls) {
     console.log(`[VTID-01023] operator returned ${toolCalls.length} tool call(s) via ${r.provider}`);
-    return { reply: r.text || '', toolCalls };
+    return { reply: r.text || '', toolCalls, provider: r.provider, model: r.model };
   }
 
   const reply = r.text || '';
   console.log(`[VTID-01023] operator returned text response (${reply.length} chars) via ${r.provider}`);
-  return { reply };
+  return { reply, provider: r.provider, model: r.model };
 }
 
 /**
@@ -3272,9 +3280,9 @@ export async function processWithGemini(input: {
           reply: finalResponse.reply,
           toolResults,
           meta: {
-            provider: 'vertex',
-            model: VERTEX_MODEL,
-            mode: 'operator_vertex',
+            provider: vertexResponse.provider ?? 'router',
+            model: vertexResponse.model ?? 'router',
+            mode: `operator_${vertexResponse.provider ?? 'router'}`,
             tool_calls: vertexResponse.toolCalls.length,
             vtid: 'VTID-01023'
           }
@@ -3285,9 +3293,9 @@ export async function processWithGemini(input: {
       return {
         reply: vertexResponse.reply,
         meta: {
-          provider: 'vertex',
-          model: VERTEX_MODEL,
-          mode: 'operator_vertex',
+          provider: vertexResponse.provider ?? 'router',
+          model: vertexResponse.model ?? 'router',
+          mode: `operator_${vertexResponse.provider ?? 'router'}`,
           tool_calls: 0,
           vtid: 'VTID-01023'
         }
