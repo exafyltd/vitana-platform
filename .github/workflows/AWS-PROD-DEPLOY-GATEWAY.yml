@@ -416,17 +416,6 @@ jobs:
               ( [ .[] | select(.name != "ORB_CONTEXT_READY_GATE_TIMEOUT_MS") ]
                 + [ {name:"ORB_CONTEXT_READY_GATE_TIMEOUT_MS", value:"4000"} ] )')
 
-          # VTID-03585: NOVA_SONIC_GLOBAL_ENABLED is read by NO code in this
-          # repo (verified: zero references across services/, scripts/,
-          # .github/). It sat on the prod task def reading `true`, which invites
-          # the conclusion that Nova is globally enabled for all users. It is
-          # not — isNovaSonicIdentityAllowed() is a strict allowlist of
-          # NOVA_SONIC_CANARY_USER_IDS + NOVA_SONIC_CANARY_TENANT_IDS. Strip it
-          # so the task def stops asserting something untrue.
-          NEW_DEF=$(echo "$NEW_DEF" | jq '
-            .containerDefinitions[0].environment |=
-              [ .[] | select(.name != "NOVA_SONIC_GLOBAL_ENABLED") ]')
-
           # BOOTSTRAP-NOVA-SONIC-VOICE: only when explicitly requested, replace
           # the Nova env block (region/model stay pinned — never inputs).
           if [ -n "$NOVA_ENABLED_INPUT" ]; then
