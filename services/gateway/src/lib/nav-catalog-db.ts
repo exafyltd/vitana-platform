@@ -31,6 +31,7 @@ import type { NavCatalogEntry, LangCode, NavCategory } from './navigation-catalo
 import { NAVIGATION_CATALOG, getContent, resolveEffectiveRoles } from './navigation-catalog';
 import { getSupabase } from './supabase';
 import { notifyDbI18nSourceChanged } from '../services/db-i18n/notify-source-changed';
+import { expandQueryTokens, EXPANSION_WEIGHT } from './nav-query-expansion';
 
 // =============================================================================
 // Types (shape of the rows coming back from Supabase)
@@ -507,6 +508,8 @@ export function searchCatalogEntries(
   const rawTokens = scorerTokenize(lowerQuery).filter(t => t.length > 2);
   const queryTokens = rawTokens.filter(t => !SCORER_STOPWORDS.has(t));
   const effectiveTokens = queryTokens.length > 0 ? queryTokens : rawTokens;
+  // VTID-03595: computed once for the whole catalog sweep, not per entry.
+  const expandedTokens = expandQueryTokens(effectiveTokens);
 
   const excluded = new Set(opts.exclude_routes || []);
   const results: Array<{ entry: NavCatalogEntry; score: number }> = [];
@@ -541,19 +544,40 @@ export function searchCatalogEntries(
     else if (descLower.includes(lowerQuery)) score += 20;
 
     const matchedTokens = new Set<string>();
-    for (const tok of effectiveTokens) {
+    // VTID-03595: `weight` scales every award below. Literal tokens the user
+    // actually said score at 1; inferred (expanded) tokens score at
+    // EXPANSION_WEIGHT, so a literal match always outranks an inferred one and
+    // an entry can be ADMITTED on inference without being PROMOTED by it.
+    const scoreToken = (tok: string, weight: number): boolean => {
       let matched = false;
-      if (titleWords.has(tok)) { score += 15; matched = true; }
-      if (hintWords.has(tok))  { score += 6;  matched = true; }
-      if (descWords.has(tok))  { score += 3;  matched = true; }
+      if (titleWords.has(tok)) { score += 15 * weight; matched = true; }
+      if (hintWords.has(tok))  { score += 6 * weight;  matched = true; }
+      if (descWords.has(tok))  { score += 3 * weight;  matched = true; }
 
       // Long-token substring fallback for German compounds and similar.
       if (!matched && tok.length >= 6) {
-        if (titleLower.includes(tok)) { score += 5; matched = true; }
-        else if (hintLower.includes(tok)) { score += 2; matched = true; }
+        if (titleLower.includes(tok)) { score += 5 * weight; matched = true; }
+        else if (hintLower.includes(tok)) { score += 2 * weight; matched = true; }
       }
+      return matched;
+    };
 
-      if (matched) matchedTokens.add(tok);
+    for (const tok of effectiveTokens) {
+      if (scoreToken(tok, 1)) matchedTokens.add(tok);
+    }
+
+    // VTID-03595: bridge the user's vocabulary to the catalog's. Without this,
+    // a screen whose text answers the question in different words scores 0 and
+    // is dropped by the `score > 0` admission test below — invisible to every
+    // later stage, including the LLM consult, which then guesses from whatever
+    // survived. See nav-query-expansion.ts for why this is a shared lexicon
+    // rather than per-screen keywords or an embedding index.
+    //
+    // Expanded tokens deliberately do NOT count toward the all-tokens-matched
+    // bonus: that bonus rewards a question the entry answers completely in the
+    // user's own words, and inference is not that.
+    for (const tok of expandedTokens) {
+      scoreToken(tok, EXPANSION_WEIGHT);
     }
 
     if (effectiveTokens.length > 1 && matchedTokens.size >= effectiveTokens.length) {
