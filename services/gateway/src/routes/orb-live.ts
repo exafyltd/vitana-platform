@@ -2731,6 +2731,9 @@ async function handleNavigate(
       // mobile_route override (e.g. Settings pills → /settings?mode=<section>).
       // Without this the unified navigate path always used the desktop route.
       is_mobile: session.is_mobile === true,
+      // VTID-03586: attribution only — lets navigator OASIS events be grouped
+      // by provider instead of leaving Nova-vs-Vertex claims unfalsifiable.
+      upstream_provider: (session as any).upstreamProvider ?? null,
     },
     sb,
   );
@@ -2922,6 +2925,9 @@ export async function handleNavigateToScreen(
       session_id: session.sessionId,
       is_anonymous: !!session.isAnonymous || !hasIdentity,
       is_mobile: session.is_mobile === true,
+      // VTID-03586: attribution only — lets navigator OASIS events be grouped
+      // by provider instead of leaving Nova-vs-Vertex claims unfalsifiable.
+      upstream_provider: (session as any).upstreamProvider ?? null,
     },
     sb,
   );
