@@ -19,7 +19,10 @@ jobs:
       - env:
           WEBHOOK_URL: ${{ secrets.VITANA_CHAT_WEBHOOK }}
           SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
-          GATEWAY_URL: https://gateway-q74ibpv6ia-uc.a.run.app
+          # VTID-03598: gateway.vitanaland.com is AWS ECS/ALB, sole production
+          # since the VTID-03419 cutover. The old GCP Cloud Run URL is a
+          # scaled-to-zero rollback target (VTID-03508) that never answers.
+          GATEWAY_URL: https://gateway.vitanaland.com
         run: python3 scripts/ci/collect-status.py
       - name: Commit + publish status snapshot
         run: |

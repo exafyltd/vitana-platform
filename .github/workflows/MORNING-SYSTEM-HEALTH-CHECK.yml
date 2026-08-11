@@ -33,8 +33,12 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  GATEWAY_URL: https://gateway-q74ibpv6ia-uc.a.run.app
-  STAGING_GATEWAY_URL: https://gateway-staging-q74ibpv6ia-uc.a.run.app
+  # VTID-03598: gateway + gateway-staging moved to AWS ECS/ALB. Production
+  # is sole-AWS since the VTID-03419 cutover (gateway.vitanaland.com); the
+  # old GCP Cloud Run URLs were scaled to min-instances=0 as rollback
+  # targets only (VTID-03508) and no longer answer these checks.
+  GATEWAY_URL: https://gateway.vitanaland.com
+  STAGING_GATEWAY_URL: https://preview-aws-gateway.vitanaland.com
   COMMUNITY_PROD_URL: https://vitanaland.com
   COMMUNITY_STAGING_URL: https://preview.vitanaland.com
   REPORT: /tmp/morning-report.md
@@ -225,7 +229,7 @@ jobs:
         working-directory: e2e
         env:
           COMMUNITY_URL: https://vitanaland.com
-          GATEWAY_URL: https://gateway-q74ibpv6ia-uc.a.run.app
+          GATEWAY_URL: https://gateway.vitanaland.com
           SCREEN_LOAD_ENV: production
           SCREEN_LOAD_RUN_ID: morning-health-${{ github.run_id }}
           TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
