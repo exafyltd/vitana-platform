@@ -19,7 +19,23 @@
 -- is structurally broken here (Supabase network allow-list excludes runner
 -- IPs, VTID-03485/03492), and this also needs to be callable from the
 -- gateway's own PostgREST client without a DB connection string.
-CREATE OR REPLACE FUNCTION public.llm_telemetry_summary(p_hours integer DEFAULT 24)
+--
+-- The one-arg overload never shipped to a wide audience (this migration was
+-- authored and hand-applied to prod the same day it added the p_env
+-- parameter, PR review round), but DROP it explicitly rather than leaving it
+-- as a dangling, ungated overload next to the real one.
+DROP FUNCTION IF EXISTS public.llm_telemetry_summary(integer);
+--
+-- p_env: AWS staging (vitana-gateway) and AWS prod (vitana-gateway-awsdr)
+-- share this same Supabase project/oasis_events table (CLAUDE.md §1b). Every
+-- emitOasisEvent() call tags metadata.env from VITANA_ENV, so without a
+-- filter here staging traffic inflates production totals -- and could trip
+-- the production non_bedrock_google_or_anthropic_calls watchdog on a
+-- staging-only test call, or dilute a real production leak with staging's
+-- zero count. Defaults to 'production' (matching env.ts's own resolveEnv()
+-- default for an unset VITANA_ENV) rather than no filter, so an unscoped
+-- call is still scoped instead of silently reintroducing the mixing bug.
+CREATE OR REPLACE FUNCTION public.llm_telemetry_summary(p_hours integer DEFAULT 24, p_env text DEFAULT 'production')
 RETURNS jsonb
 LANGUAGE sql
 SECURITY DEFINER
@@ -41,6 +57,7 @@ AS $$
     FROM oasis_events e, bounded b
     WHERE e.topic IN ('llm.call.started', 'llm.call.completed', 'llm.call.failed')
       AND e.created_at > now() - (b.hours || ' hours')::interval
+      AND coalesce(e.metadata->>'env', 'production') = coalesce(p_env, 'production')
   ),
   totals AS (
     SELECT
@@ -114,6 +131,7 @@ AS $$
   )
   SELECT jsonb_build_object(
     'window_hours', b.hours,
+    'env', coalesce(p_env, 'production'),
     'since', now() - (b.hours || ' hours')::interval,
     'generated_at', now(),
     'total_started', t.total_started,
@@ -130,15 +148,16 @@ AS $$
   FROM bounded b, totals t, by_provider bp, by_service bs, by_stage bst, hourly h;
 $$;
 
-REVOKE ALL ON FUNCTION public.llm_telemetry_summary(integer) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.llm_telemetry_summary(integer) FROM anon;
-REVOKE ALL ON FUNCTION public.llm_telemetry_summary(integer) FROM authenticated;
-GRANT EXECUTE ON FUNCTION public.llm_telemetry_summary(integer) TO service_role;
+REVOKE ALL ON FUNCTION public.llm_telemetry_summary(integer, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.llm_telemetry_summary(integer, text) FROM anon;
+REVOKE ALL ON FUNCTION public.llm_telemetry_summary(integer, text) FROM authenticated;
+GRANT EXECUTE ON FUNCTION public.llm_telemetry_summary(integer, text) TO service_role;
 
-COMMENT ON FUNCTION public.llm_telemetry_summary(integer) IS
+COMMENT ON FUNCTION public.llm_telemetry_summary(integer, text) IS
   'VTID-03599: aggregates oasis_events llm.call.* topics over a bounded time '
   'window (default/max clamped 1h-720h) into totals, per-provider/service/stage '
   'breakdowns, an hourly trend, and a named non_bedrock_google_or_anthropic_calls '
-  'watchdog count. Backs GET /api/v1/llm/telemetry/summary in the Command Hub. '
-  'service_role only -- called from the gateway over PostgREST, never from a '
-  'browser session.';
+  'watchdog count. Scoped to a single VITANA_ENV (default production) so AWS '
+  'staging and prod, which share this oasis_events table, never mix totals. '
+  'Backs GET /api/v1/llm/telemetry/summary in the Command Hub. service_role '
+  'only -- called from the gateway over PostgREST, never from a browser session.';

@@ -56,9 +56,12 @@ describe('getLLMTelemetrySummary (VTID-03599)', () => {
     // Must hit the RPC endpoint (not the raw oasis_events table), with the
     // window forwarded as p_hours -- a caller passing a window that never
     // reaches the query would silently always report the same 24h default.
+    // p_env is forwarded too (VTID-03599 review fix): AWS staging and prod
+    // share this oasis_events table, so a call that omits it would silently
+    // mix the two stacks' totals.
     const [url, init] = fetchMock.mock.calls[0];
     expect(String(url)).toContain('/rest/v1/rpc/llm_telemetry_summary');
-    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ p_hours: 24 });
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ p_hours: 24, p_env: 'production' });
   });
 
   test('defaults to a 24-hour window when no argument is given', async () => {
@@ -72,7 +75,22 @@ describe('getLLMTelemetrySummary (VTID-03599)', () => {
     await getLLMTelemetrySummary();
 
     const [, init] = fetchMock.mock.calls[0];
-    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ p_hours: 24 });
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ p_hours: 24, p_env: 'production' });
+  });
+
+  test('scopes to VITANA_ENV=staging when the gateway is a staging deploy', async () => {
+    process.env.VITANA_ENV = 'staging';
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ window_hours: 24 }),
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const { getLLMTelemetrySummary } = await import('../src/services/llm-telemetry-service');
+    await getLLMTelemetrySummary(24);
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ p_hours: 24, p_env: 'staging' });
   });
 
   test('reports ok:false without throwing when Supabase credentials are missing', async () => {

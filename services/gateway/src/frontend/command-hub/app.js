@@ -15581,15 +15581,21 @@ function loadMoreTelemetryEvents() {
  * watchdog count) for the Usage Summary tab.
  */
 async function fetchLLMTelemetrySummary() {
+    // A fetch is already in flight -- don't start a second one, but don't
+    // drop this request either. If it's asking for a different window than
+    // the in-flight one (the user changed the selector while it was
+    // loading), the finally block below re-fetches for whatever window is
+    // current once the in-flight request settles, so the result always
+    // matches the selector instead of getting stuck on the first response.
     if (state.agentsTelemetry.summaryLoading) return;
 
     state.agentsTelemetry.summaryLoading = true;
     state.agentsTelemetry.summaryError = null;
     renderApp();
 
+    var requestedHours = state.agentsTelemetry.summaryHours;
     try {
-        var hours = state.agentsTelemetry.summaryHours;
-        var response = await fetch('/api/v1/llm/telemetry/summary?hours=' + hours, {
+        var response = await fetch('/api/v1/llm/telemetry/summary?hours=' + requestedHours, {
             headers: buildContextHeaders({})
         });
 
@@ -15615,6 +15621,13 @@ async function fetchLLMTelemetrySummary() {
         state.agentsTelemetry.summaryLoading = false;
         state.agentsTelemetry.summaryFetched = true;
         renderApp();
+        // The window selector may have changed while this request was in
+        // flight (its own fetchLLMTelemetrySummary() call would have hit
+        // the guard above and returned early). Re-fetch for the now-current
+        // window so the display doesn't stay pinned to a stale response.
+        if (state.agentsTelemetry.summaryHours !== requestedHours) {
+            fetchLLMTelemetrySummary();
+        }
     }
 }
 

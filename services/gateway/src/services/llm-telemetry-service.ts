@@ -14,6 +14,7 @@
 import { randomUUID, createHash } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
 import { estimateCost } from '../constants/llm-defaults';
+import { VITANA_ENV } from '../env';
 import {
   LLMStage,
   LLMProvider,
@@ -457,6 +458,8 @@ export interface LLMTelemetrySummaryBreakdownRow {
 
 export interface LLMTelemetrySummary {
   window_hours: number;
+  /** VTID-03599: which VITANA_ENV this summary was scoped to (staging/production share oasis_events). */
+  env: string;
   since: string;
   generated_at: string;
   total_started: number;
@@ -491,6 +494,11 @@ export interface LLMTelemetrySummaryResponse {
  * and per-call telemetry already existed, but nothing ever aggregated them,
  * which is exactly how a 268-call credit-balance leak and a 990-call
  * runaway planner loop both went unnoticed until someone read a bill.
+ *
+ * Always scopes to THIS gateway's own VITANA_ENV -- AWS staging
+ * (vitana-gateway) and AWS prod (vitana-gateway-awsdr) share the same
+ * Supabase oasis_events table, so without this a staging load test would
+ * inflate production's numbers (or dilute a real production leak).
  */
 export async function getLLMTelemetrySummary(hours = 24): Promise<LLMTelemetrySummaryResponse> {
   const supabaseUrl = process.env.SUPABASE_URL;
@@ -509,7 +517,7 @@ export async function getLLMTelemetrySummary(hours = 24): Promise<LLMTelemetrySu
         'apikey': supabaseKey,
         'Authorization': `Bearer ${supabaseKey}`,
       },
-      body: JSON.stringify({ p_hours: hours }),
+      body: JSON.stringify({ p_hours: hours, p_env: VITANA_ENV }),
     });
 
     if (!response.ok) {
