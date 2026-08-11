@@ -101,6 +101,7 @@ import {
 // VTID-03273 Pillar C — explicit conversation state machine. `openingDelivered`
 // is a property of the state (replacing the scattered greetingSent boolean);
 // the opener fires exactly once, in OPENING, for the life of the conversation.
+import { wasPreviousSessionFailure } from '../orb/live/session/session-failure-classifier';
 import { ConversationStateMachine } from '../orb/live/session/conversation-state-machine';
 // VTID-03583: per-TURN navigation marker. Deliberately NOT the session-lifetime
 // `navigationDispatched` latch — see navigation-turn-scope.ts for why.
@@ -13623,9 +13624,18 @@ async function fetchLastSessionInfo(userId: string, timezone?: string | null): P
         const stopData = await stopResp.json() as Array<{ created_at: string; metadata: Record<string, unknown> }>;
         if (stopData.length > 0) {
           const meta = stopData[0].metadata || {};
-          const turnCount = Number(meta.turn_count) || 0;
-          const audioOut = Number(meta.audio_out_chunks) || 0;
-          wasFailure = turnCount === 0 || audioOut === 0;
+          // VTID-03597: classify on the close REASON, not on the metrics.
+          // This previously read `turnCount === 0 || audioOut === 0`, which is
+          // the signature of the three commonest BENIGN closes — the idle
+          // reaper, the TTL cap, and the user reopening ORB. Measured on prod:
+          // 153 of 176 stops in 14 days were flagged as failures and not one
+          // was real, so the apology opener ("Entschuldige, da ist etwas
+          // schiefgelaufen") fired on nearly every reopen.
+          wasFailure = wasPreviousSessionFailure({
+            reason: (meta.reason as string) ?? null,
+            turnCount: Number(meta.turn_count) || 0,
+            audioOutChunks: Number(meta.audio_out_chunks) || 0,
+          });
           // If we only have a stop event (no start event hit), fall back to the stop time.
           if (!time) time = stopData[0].created_at;
         }
