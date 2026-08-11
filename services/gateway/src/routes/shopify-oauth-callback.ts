@@ -33,6 +33,9 @@ async function emitOasisEvent(supabase: any, type: string, status: string, messa
 
 const router = Router();
 
+// public-route: Shopify's own server-to-browser redirect carries no bearer
+// token to check — HMAC + signed state (see services/shopify-oauth.ts) are
+// this route's actual authentication.
 router.get('/callback', async (req: Request, res: Response) => {
   if (!isShopifyOAuthConfigured()) {
     return res.status(503).json({ ok: false, error: 'not_configured' });

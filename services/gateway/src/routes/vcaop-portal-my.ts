@@ -122,6 +122,9 @@ router.post('/connections/detect-platform', async (req: Request, res: Response) 
 // flow for a connection already created with connector_id='shopify'.
 // Dormant until SHOPIFY_CLIENT_ID/SECRET/OAUTH_REDIRECT_URI are configured.
 router.post('/connections/:id/shopify/authorize', async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: builds and returns a URL only — no DB write, no
+  // state transition. The real mutation happens in the callback, which
+  // already emits vcaop.portal.connection.shopify_authorized.
   const supabase = db(res); if (!supabase) return;
   const rec = await getOwnedManifest(supabase, req);
   if (!rec) return res.status(404).json({ ok: false, error: 'connection not found' });
