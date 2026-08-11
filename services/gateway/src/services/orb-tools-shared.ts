@@ -4899,6 +4899,280 @@ export async function tool_find_community_member(
 }
 
 // ---------------------------------------------------------------------------
+// VTID-03582 — ORB read tools: view_messages / recent_conversations /
+// followers-following.
+//
+// Root cause (docs/CONVERSATION_DEFECTS_FIX_PLAN.md, Defects 1/4/5): Vitana
+// had SEND (send_chat_message) and SEARCH (search_community,
+// find_community_member) capabilities but nothing to READ her own inbox or
+// social graph. With the "8 unread messages" COUNT in context but no tool to
+// open them, the model hallucinated categories ("archived messages") and, on
+// a follow-up, mis-bound internal community messages to a Google/Gmail
+// "connect your account" requirement that has nothing to do with them. Asked
+// "who follows me" / "who did I last message", it had nothing to call and
+// deflected to "search the member list". These three tools close that gap
+// over EXISTING data — no new tables, no new writes.
+// ---------------------------------------------------------------------------
+
+/** Speakable summary of chat_messages rows. Never raw JSON, never empty without saying so. */
+function formatMessagesForSpeech(
+  rows: Array<{ peer_name: string; content: string; created_at: string }>,
+): string {
+  return rows
+    .slice(0, 5)
+    .map((r, i) => {
+      const snippet = r.content.length > 80 ? `${r.content.slice(0, 77)}...` : r.content;
+      return `${i + 1}) ${r.peer_name}: "${snippet}"`;
+    })
+    .join('; ');
+}
+
+/**
+ * view_messages — read the user's OWN internal community inbox. Internal
+ * only: chat_messages has no external-account dependency, so this must NEVER
+ * be described as needing Google/Gmail/"connected apps" (Defect 4).
+ */
+export async function tool_view_messages(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  if (!id.user_id || !id.tenant_id) return { ok: false, error: 'auth_required' };
+  const onlyUnread = args.filter !== 'all';
+  const limit = Math.min(20, Math.max(1, Number(args.limit) || 10));
+
+  try {
+    let q = sb
+      .from('chat_messages')
+      .select('id, sender_id, sender_vitana_id, content, created_at, read_at')
+      .eq('receiver_id', id.user_id)
+      .eq('tenant_id', id.tenant_id)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (onlyUnread) q = q.is('read_at', null);
+    const { data, error } = await q;
+    if (error) return { ok: false, error: error.message };
+
+    const rows = (data ?? []) as Array<{
+      sender_id: string;
+      sender_vitana_id: string | null;
+      content: string;
+      created_at: string;
+    }>;
+
+    if (rows.length === 0) {
+      return {
+        ok: true,
+        result: { ok: true, messages: [], filter: onlyUnread ? 'unread' : 'all' },
+        text: onlyUnread
+          ? 'HANDLED — no unread messages right now. Everything is read. Do NOT say you could not check — there is simply nothing unread.'
+          : 'HANDLED — no messages found. Do NOT say you could not check.',
+      };
+    }
+
+    const senderIds = [...new Set(rows.map((r) => r.sender_id))];
+    const { data: senders } = await sb
+      .from('app_users')
+      .select('user_id, display_name')
+      .in('user_id', senderIds);
+    const nameByUserId = new Map(
+      ((senders ?? []) as Array<{ user_id: string; display_name: string | null }>).map((s) => [
+        s.user_id,
+        s.display_name || 'a member',
+      ]),
+    );
+
+    const forSpeech = rows.map((r) => ({
+      peer_name: nameByUserId.get(r.sender_id) ?? r.sender_vitana_id ?? 'a member',
+      content: r.content,
+      created_at: r.created_at,
+    }));
+
+    return {
+      ok: true,
+      result: {
+        ok: true,
+        messages: rows.map((r) => ({
+          sender_id: r.sender_id,
+          sender_name: nameByUserId.get(r.sender_id) ?? null,
+          content: r.content,
+          created_at: r.created_at,
+        })),
+        filter: onlyUnread ? 'unread' : 'all',
+      },
+      // SUCCESS + speakable + explicit anti-fake-fail + internal/external guard.
+      text:
+        `SUCCESS — ${rows.length} ${onlyUnread ? 'unread ' : ''}message${rows.length === 1 ? '' : 's'}. ` +
+        `Present them now: ${formatMessagesForSpeech(forSpeech)}. Offer to reply to one. ` +
+        `Do NOT say you could not check. These are INTERNAL Vitana community messages — ` +
+        `NEVER mention Google, Gmail, or connecting an external account; none is required.`,
+    };
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : 'view_messages error' };
+  }
+}
+
+/**
+ * recent_conversations — "with whom did I last chat / who did I last message".
+ * Reuses the existing get_recent_conversations() RPC (VTID-03493) rather than
+ * re-deriving the peer/last-message logic — it already fixed the
+ * DISTINCT-ON-then-LIMIT bug for this exact query shape.
+ */
+export async function tool_recent_conversations(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  if (!id.user_id || !id.tenant_id) return { ok: false, error: 'auth_required' };
+  const limit = Math.min(20, Math.max(1, Number(args.limit) || 5));
+
+  try {
+    const { data, error } = await sb.rpc('get_recent_conversations', {
+      p_user_id: id.user_id,
+      p_tenant_id: id.tenant_id,
+      p_limit: limit,
+    });
+    if (error) return { ok: false, error: error.message };
+
+    const rows = (data ?? []) as Array<{
+      peer_id: string;
+      sender_id: string;
+      content: string;
+      created_at: string;
+    }>;
+    if (rows.length === 0) {
+      return {
+        ok: true,
+        result: { ok: true, conversations: [] },
+        text: 'HANDLED — no conversations yet. Do NOT say you could not check.',
+      };
+    }
+
+    const peerIds = [...new Set(rows.map((r) => r.peer_id))];
+    const { data: peers } = await sb
+      .from('app_users')
+      .select('user_id, display_name')
+      .in('user_id', peerIds);
+    const nameByUserId = new Map(
+      ((peers ?? []) as Array<{ user_id: string; display_name: string | null }>).map((p) => [
+        p.user_id,
+        p.display_name || 'a member',
+      ]),
+    );
+
+    const top = rows[0];
+    const topName = nameByUserId.get(top.peer_id) ?? 'a member';
+    const list = rows
+      .slice(0, 5)
+      .map((r, i) => `${i + 1}) ${nameByUserId.get(r.peer_id) ?? 'a member'}`)
+      .join(', ');
+
+    return {
+      ok: true,
+      result: {
+        ok: true,
+        conversations: rows.map((r) => ({
+          peer_id: r.peer_id,
+          peer_name: nameByUserId.get(r.peer_id) ?? null,
+          last_message: r.content,
+          last_message_at: r.created_at,
+        })),
+        last_contact: { peer_id: top.peer_id, peer_name: topName, at: top.created_at },
+      },
+      text:
+        `SUCCESS — the user's most recent conversation is with ${topName}. ` +
+        `Recent conversations, newest first: ${list}. ` +
+        `Do NOT say you could not check.`,
+    };
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : 'recent_conversations error' };
+  }
+}
+
+/**
+ * list_followers / list_following — the user's OWN social graph. Backed by
+ * user_follows + the user_follow_counts view; no external account involved.
+ */
+async function listFollowConnections(
+  direction: 'followers' | 'following',
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  if (!id.user_id || !id.tenant_id) return { ok: false, error: 'auth_required' };
+  const limit = Math.min(20, Math.max(1, Number(args.limit) || 10));
+  const matchColumn = direction === 'followers' ? 'following_id' : 'follower_id';
+  const selectColumn = direction === 'followers' ? 'follower_id' : 'following_id';
+
+  try {
+    const { data: countRow } = await sb
+      .from('user_follow_counts')
+      .select('followers_count, following_count')
+      .eq('user_id', id.user_id)
+      .maybeSingle();
+    const total =
+      direction === 'followers'
+        ? Number((countRow as { followers_count?: number } | null)?.followers_count ?? 0)
+        : Number((countRow as { following_count?: number } | null)?.following_count ?? 0);
+
+    if (total === 0) {
+      return {
+        ok: true,
+        result: { ok: true, direction, total: 0, people: [] },
+        text:
+          direction === 'followers'
+            ? 'HANDLED — nobody follows the user yet. Do NOT say you could not check.'
+            : 'HANDLED — the user is not following anyone yet. Do NOT say you could not check.',
+      };
+    }
+
+    const { data: edges, error } = await sb
+      .from('user_follows')
+      .select(`${selectColumn}, created_at`)
+      .eq(matchColumn, id.user_id)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) return { ok: false, error: error.message };
+
+    const rows = (edges ?? []) as Array<Record<string, unknown>>;
+    const peerIds = rows.map((r) => String(r[selectColumn]));
+    const { data: peers } = peerIds.length
+      ? await sb.from('app_users').select('user_id, display_name').in('user_id', peerIds)
+      : { data: [] as Array<{ user_id: string; display_name: string | null }> };
+    const nameByUserId = new Map(
+      ((peers ?? []) as Array<{ user_id: string; display_name: string | null }>).map((p) => [
+        p.user_id,
+        p.display_name || 'a member',
+      ]),
+    );
+
+    const names = peerIds.slice(0, 8).map((pid) => nameByUserId.get(pid) ?? 'a member');
+    const label = direction === 'followers' ? 'follow the user' : 'the user follows';
+
+    return {
+      ok: true,
+      result: {
+        ok: true,
+        direction,
+        total,
+        people: peerIds.map((pid) => ({ user_id: pid, display_name: nameByUserId.get(pid) ?? null })),
+      },
+      text:
+        `SUCCESS — ${total} ${direction === 'followers' ? 'people follow' : 'people'} the user. ` +
+        `${label}: ${names.join(', ')}${total > names.length ? `, and ${total - names.length} more` : ''}. ` +
+        `Do NOT say you could not check.`,
+    };
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : `${direction} error` };
+  }
+}
+
+export const tool_list_followers = (args: OrbToolArgs, id: OrbToolIdentity, sb: SupabaseClient) =>
+  listFollowConnections('followers', args, id, sb);
+export const tool_list_following = (args: OrbToolArgs, id: OrbToolIdentity, sb: SupabaseClient) =>
+  listFollowConnections('following', args, id, sb);
+
+// ---------------------------------------------------------------------------
 // Registry + dispatcher
 // ---------------------------------------------------------------------------
 
@@ -5334,6 +5608,11 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   search_community: tool_search_community,
   // VTID-02754 — auto-redirecting community member search (PR 1.B-1)
   find_community_member: tool_find_community_member,
+  // VTID-03582 — read tools: inbox + own social graph (Defects 1/4/5)
+  view_messages: tool_view_messages,
+  recent_conversations: tool_recent_conversations,
+  list_followers: tool_list_followers,
+  list_following: tool_list_following,
   // VTID-02753 — structured Health logging (LiveKit/text path)
   log_water:        (args, id, sb) => tool_log_health('log_water', args, id),
   log_sleep:        (args, id, sb) => tool_log_health('log_sleep', args, id),

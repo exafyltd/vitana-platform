@@ -1743,6 +1743,96 @@ export function buildLiveApiTools(
           },
         },
         {
+          // VTID-03582 — read the user's OWN inbox (Defects 1 & 4).
+          name: 'view_messages',
+          description: [
+            'Show the user their OWN internal Vitana community messages — the',
+            'senders and content, read aloud/shown, not just a count.',
+            '',
+            'CALL THIS WHEN the user asks:',
+            '  - "show me my messages" / "zeig mir meine Nachrichten"',
+            '  - "what are my unread messages" / after you yourself mention an',
+            '    unread-message count and the user accepts your offer to see them',
+            '',
+            'These are INTERNAL community messages (chat_messages). They require',
+            'NO external account. NEVER say the user needs to connect Google,',
+            'Gmail, or "connected apps" to see them — that has nothing to do with',
+            'this feature and is always wrong. There is also no "archived" state —',
+            'only unread and all; never invent other categories.',
+            '',
+            'Default shows unread only. Pass filter:"all" for the full recent list.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              filter: {
+                type: 'string',
+                enum: ['unread', 'all'],
+                description: 'unread (default) or all recent messages.',
+              },
+              limit: { type: 'integer', description: 'Max messages to return. Default 10.' },
+            },
+          },
+        },
+        {
+          // VTID-03582 — "who did I last message" (Defect 5).
+          name: 'recent_conversations',
+          description: [
+            'Tell the user who they most recently messaged, or list their',
+            'recent conversation threads.',
+            '',
+            'CALL THIS WHEN the user asks:',
+            '  - "with whom did I last chat" / "mit wem habe ich zuletzt geschrieben"',
+            '  - "who did I last message" / "show my recent conversations"',
+            '',
+            'Do NOT deflect this to a community member search — this tool answers',
+            'it directly from the user\'s real message history.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              limit: { type: 'integer', description: 'Max conversations to return. Default 5.' },
+            },
+          },
+        },
+        {
+          // VTID-03582 — "who follows me" (Defect 5).
+          name: 'list_followers',
+          description: [
+            'Tell the user who follows them in the Vitana community, and how many.',
+            '',
+            'CALL THIS WHEN the user asks "who follows me" / "gibt es Personen,',
+            'die mir folgen" / "wie viele Follower habe ich".',
+            '',
+            'Do NOT say you cannot tell them directly, and do NOT deflect to',
+            '"search the member list" — this tool answers it directly.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              limit: { type: 'integer', description: 'Max people to name. Default 10.' },
+            },
+          },
+        },
+        {
+          // VTID-03582 — "who do I follow" (Defect 5).
+          name: 'list_following',
+          description: [
+            'Tell the user who THEY follow in the Vitana community, and how many.',
+            '',
+            'CALL THIS WHEN the user asks "who do I follow" / "wem folge ich".',
+            '',
+            'Do NOT say you cannot tell them directly, and do NOT deflect to',
+            '"search the member list" — this tool answers it directly.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              limit: { type: 'integer', description: 'Max people to name. Default 10.' },
+            },
+          },
+        },
+        {
           // V2 — Proactive Initiative Engine
           name: 'activate_recommendation',
           description: [
