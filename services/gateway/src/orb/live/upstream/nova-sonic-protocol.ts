@@ -385,9 +385,35 @@ export class NovaOutputNormalizer {
         }
       }
       if (contentId) this.contentMeta.set(contentId, meta);
-      // New content block = new generation activity → the next END_TURN /
-      // completionEnd is a fresh turn boundary again.
-      this.turnCompleteEmitted = false;
+      // VTID-03592: only a USER content block re-opens the turn.
+      //
+      // This previously reset on EVERY contentStart, on the reasoning that any
+      // new content block means new generation activity. That is wrong for
+      // Nova's staged generation: one spoken assistant turn produces TWO
+      // ASSISTANT blocks — SPECULATIVE, then FINAL — and each is bracketed by
+      // its own contentEnd/END_TURN. So the sequence was
+      //
+      //   contentStart(ASSISTANT,SPECULATIVE) -> reset
+      //   contentEnd(END_TURN)                -> turnComplete #1
+      //   contentStart(ASSISTANT,FINAL)       -> reset      <-- the bug
+      //   contentEnd(END_TURN)                -> turnComplete #2
+      //
+      // and the session booked two turns for one utterance. Measured on
+      // production session live-37aa4388 (2026-08-11): turn_complete at
+      // 15:11:54.160 and again at 15:11:57.478 for a single greeting, which
+      // ran the whole turn_complete pipeline twice — including the
+      // chat_messages voice bridge, so EVERY line Vitana spoke appeared twice
+      // in the user's Messenger thread ~3s apart.
+      //
+      // The real turn boundary is the user taking the floor. An ASSISTANT
+      // block is a continuation of the turn already in flight, never the start
+      // of a new one; keeping the latch set across it collapses the
+      // SPECULATIVE/FINAL pair into the single turn it actually is. USER (and
+      // any non-assistant, e.g. TOOL) blocks still reset, so a genuine next
+      // turn is unaffected.
+      if ((meta.role ?? '').toUpperCase() !== 'ASSISTANT') {
+        this.turnCompleteEmitted = false;
+      }
       out.push({ kind: 'ignored', eventName: 'contentStart' });
     }
 
