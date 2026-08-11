@@ -9,6 +9,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type { GatewayLocale } from '../../i18n/catalog';
 import type {
   ChecklistTopic,
   ChecklistTopicRow,
@@ -279,8 +280,17 @@ export interface PublishedChecklist {
   topics: PublicChecklistTopic[];
 }
 
-/** Locales the curriculum can be served in. 'de' is the authored source. */
-export type ChecklistLocale = 'de' | 'en' | 'es' | 'sr';
+/**
+ * Locales the curriculum can be served in. 'de' is the authored source.
+ *
+ * VTID-03509 — aliased to GatewayLocale rather than re-listing the codes. This
+ * was its own hardcoded 4-locale union, so `?locale=fr` was REJECTED by the
+ * route below and silently downgraded to the caller's profile locale. Content
+ * for a locale with no translation rows still falls back to the German source
+ * (see fetchChecklistTranslations), which is the documented behaviour — but
+ * that should be a content gap, not an API that refuses the language.
+ */
+export type ChecklistLocale = GatewayLocale;
 
 interface ChecklistTranslationRow {
   topic_id: string;

@@ -1,5 +1,21 @@
-import request from 'supertest';
+import supertestBase from 'supertest';
 import express from 'express';
+
+// SECURITY (post-audit hardening): routes/autopilot.ts now requires a
+// GATEWAY_SERVICE_TOKEN bearer on every request (bar /health,
+// /pipeline/health) — see requireServiceToken in that file. This test
+// exercises the real router through the full app, so set a known token and
+// route every request() call through this wrapper instead of touching each
+// call site individually. Mirrors the identical pattern already used in
+// test/autopilot-pipeline.test.ts.
+process.env.GATEWAY_SERVICE_TOKEN = 'test-service-token';
+function request(app: any) {
+  const agent = supertestBase(app);
+  return {
+    get: (path: string) => agent.get(path).set('Authorization', 'Bearer test-service-token'),
+    post: (path: string) => agent.post(path).set('Authorization', 'Bearer test-service-token'),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Mocks — autopilot.ts is a thin HTTP layer over a large set of service
@@ -711,13 +727,24 @@ describe('GET /health', () => {
     expect(res.body.ok).toBe(true);
   });
 
-  it('reports degraded (still HTTP 200) when the loop is not running', async () => {
-    (getEventLoopStatus as jest.Mock).mockResolvedValue({ is_running: false, ok: true });
+  it('reports degraded (still HTTP 200) when the loop is enabled but not running', async () => {
+    // VTID-03401: degraded is reserved for a genuine stall — enabled but not
+    // running. A config-disarmed loop reports ok_governance_limited instead.
+    (getEventLoopStatus as jest.Mock).mockResolvedValue({ is_running: false, ok: true, config: { enabled: true } });
     const res = await request(app).get('/api/v1/autopilot/health');
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('degraded');
     expect(res.body.ok).toBe(false);
     expect(res.body.reason).toMatch(/not running/);
+  });
+
+  it('reports ok_governance_limited (ok:true) when the loop is disarmed by config', async () => {
+    (getEventLoopStatus as jest.Mock).mockResolvedValue({ is_running: false, ok: true, config: { enabled: false } });
+    const res = await request(app).get('/api/v1/autopilot/health');
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('ok_governance_limited');
+    expect(res.body.ok).toBe(true);
+    expect(res.body.note).toMatch(/idle by design/);
   });
 
   it('reports error status with the loop error message when the loop IS running but unhealthy', async () => {
@@ -736,7 +763,7 @@ describe('GET /health', () => {
     const res = await request(app).get('/api/v1/autopilot/health');
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('error');
-    expect(res.body.reason).toBe('Event loop is not running — autopilot is inactive');
+    expect(res.body.reason).toBe('Event loop is enabled but not running — autopilot may have stalled');
   });
 
   it('degrades gracefully (does not 500) when getEventLoopStatus throws', async () => {

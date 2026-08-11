@@ -270,8 +270,21 @@ export function cleanupExpiredSessions(): void {
  *   - VTID-WATCHDOG: clears the response watchdog.
  *   - Closes upstream Vertex WS if open; closes client WS with code 1000.
  *   - Removes the entry from both `liveSessions` and `wsClientSessions`.
+ *   - VTID-03561: emits `vtid.live.session.stop` — see the comment at the
+ *     emit site for why this teardown was silent and why that mattered.
+ *
+ * `reason` names WHY teardown ran, and is passed straight through to the stop
+ * event. It is a parameter rather than a constant because the three call sites
+ * are three different causes — a clean socket close, a socket error, and the
+ * 5-minute client-session expiry sweep — which are indistinguishable once
+ * they are all bucketed under one label. That is the same mistake the Nova
+ * work already paid for once: a bare `close()` put 42 of 46 prod sessions in
+ * a single catch-all bucket and made them impossible to tell apart.
  */
-export function cleanupWsSession(sessionId: string): void {
+export function cleanupWsSession(
+  sessionId: string,
+  reason: string = 'client_disconnect',
+): void {
   const deps = getDeps();
   const clientSession = wsClientSessions.get(sessionId);
   if (!clientSession) return;
@@ -324,6 +337,67 @@ export function cleanupWsSession(sessionId: string): void {
         clientSession.liveSession.upstreamWs.close(1000, 'ws_session_cleanup');
       } catch (e) {
         // Ignore
+      }
+    }
+
+    // VTID-03561: this teardown is the only one that never reported itself.
+    // Four other sites emit `vtid.live.session.stop`; this one closed the
+    // upstream, deleted the session and returned silently — and because it
+    // DELETES, the idle sweep could never emit on its behalf afterwards
+    // either, so the session left no lifecycle record in OASIS at all.
+    // That was survivable while SSE was the browser default; VTID-03471 made
+    // WebSocket the default on 2026-08-01, which turned the silent path into
+    // the ordinary way a session ends. Measured on prod 2026-08-10: 2 of 3
+    // sessions had no stop event.
+    //
+    // This is NOT a cost bug. Every close reason that bills money already
+    // emitted (idle/expired via the sweep, supersede, explicit stop); the
+    // silent one ends the billed stream promptly by definition. It is a
+    // measurement bug — and `fetchLastSessionInfo()` resolves the ORB opening
+    // directive from this exact topic, so the blind spot reached user-facing
+    // behaviour, not just dashboards.
+    //
+    // The whole emit is wrapped: this function runs from `ws.on('close')` and
+    // `ws.on('error')` handlers, so a throw here would turn an ordinary
+    // disconnect into an unhandled exception in a socket callback. Telemetry
+    // is never allowed to cost us the teardown it is describing. Timestamps
+    // are read defensively for the same reason — a session torn down before
+    // it finished starting has no `createdAt`, and that must report a null
+    // duration rather than crash.
+    if (!ls.stopEventEmitted) {
+      try {
+        const nowMs = Date.now();
+        const startedMs =
+          ls.createdAt instanceof Date ? ls.createdAt.getTime() : null;
+        const lastActivityMs =
+          ls.lastActivity instanceof Date ? ls.lastActivity.getTime() : null;
+        const turns = Array.isArray(ls.transcriptTurns) ? ls.transcriptTurns : [];
+        void deps.emitLiveSessionEvent?.('vtid.live.session.stop', {
+          // VTID-03471: report the LIVE session id. Since the WS path started
+          // sharing handleLiveSessionStart it is no longer the same string as
+          // the `ws-<uuid>` socket id this function is called with; emitting
+          // the socket id would file every stop under a key that no start
+          // event, transcript or continuity row has ever used.
+          session_id: liveSessionKey,
+          user_id: ls.identity?.user_id || null,
+          tenant_id: ls.identity?.tenant_id || null,
+          transport: 'websocket',
+          reason,
+          idle_ms: lastActivityMs === null ? null : nowMs - lastActivityMs,
+          audio_in_chunks: ls.audioInChunks ?? 0,
+          audio_in_forwarded_chunks: ls.audioInForwarded ?? 0, // VTID-VOICE-FWD
+          audio_out_chunks: ls.audioOutChunks ?? 0,
+          video_frames: ls.videoInFrames ?? 0, // VTID-03565: key voice-lab actually reads
+          duration_ms: startedMs === null ? null : nowMs - startedMs,
+          turn_count: ls.turn_count ?? 0,
+          user_turns: turns.filter((t) => t.role === 'user').length,
+          model_turns: turns.filter((t) => t.role === 'assistant').length,
+        })?.catch(() => {
+          /* fire-and-forget: teardown must never depend on OASIS */
+        });
+        ls.stopEventEmitted = true;
+      } catch {
+        /* telemetry must never cost us the teardown it describes */
       }
     }
 
@@ -2095,13 +2169,14 @@ export async function handleLiveSessionStop(
     tenant_id: session.identity?.tenant_id || null,
     audio_in_chunks: session.audioInChunks,
     audio_in_forwarded_chunks: session.audioInForwarded, // VTID-VOICE-FWD (Track A)
-    video_in_frames: session.videoInFrames,
+    video_frames: session.videoInFrames, // VTID-03565: was video_in_frames — no reader, voice-lab reads video_frames
     audio_out_chunks: session.audioOutChunks,
     duration_ms: Date.now() - session.createdAt.getTime(),
     turn_count: session.turn_count,
     user_turns: session.transcriptTurns.filter((t) => t.role === 'user').length,
     model_turns: session.transcriptTurns.filter((t) => t.role === 'assistant').length,
   });
+  session.stopEventEmitted = true; // VTID-03561
 
   // VTID-03255: write a Journey Foundation session summary (fire-and-forget).
   // Feeds the "since we last spoke" line + morning greeting on next open. Never

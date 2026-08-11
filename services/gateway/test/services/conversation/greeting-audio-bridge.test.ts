@@ -84,9 +84,39 @@ describe('buildGreetingBridgeText', () => {
     expect(text).toContain('26. Juli'); // date must match the same fallback language
   });
 
-  it("falls back to German for 'fr' — Nova speaks French but the i18n catalog has no French entries, matching tt()'s own fallback", () => {
+  // VTID-03559. This test previously asserted the OPPOSITE — that 'fr' falls
+  // back to German — and its name gave the reason: "the i18n catalog has no
+  // French entries". VTID-03509 added them, so the premise is gone and the
+  // old assertion had become a pin holding the bug in place: an fr session
+  // heard the whole bridge in German, spoken by a French voice.
+  it.each(['fr', 'pt', 'ru', 'pl'] as const)(
+    'renders %s in its own language now that the catalog has it — not German',
+    (lang) => {
+      const text = buildGreetingBridgeText({
+        lang,
+        now: new Date('2026-07-26T08:00:00Z'),
+        timezone: 'UTC',
+      });
+      expect(text).not.toContain('Guten Morgen!');
+      // The date must be in the SAME language as the sentence — the whole
+      // point of normalizing at all is to never glue two languages together.
+      expect(text).not.toContain('26. Juli');
+    },
+  );
+
+  // VTID-03569: this used to pass 'zh', and zh is now a real catalog locale, so
+  // the premise evaporated for the SECOND time — the comment above records
+  // VTID-03559 repointing it off 'fr' for exactly the same reason.
+  //
+  // Changing the assertion to expect Chinese would have been the wrong repair:
+  // it would delete the only coverage of the fallback path rather than fix it.
+  // So it is repointed instead — at 'xx', which is ISO 639-2 reserved for local
+  // use and can therefore never graduate into a product locale. Every real code
+  // is a candidate for the next language; this one is not, so the test stops
+  // needing this fix each time the catalog grows.
+  it('still falls back to German for a locale the catalog genuinely lacks', () => {
     const text = buildGreetingBridgeText({
-      lang: 'fr',
+      lang: 'xx' as never,
       now: new Date('2026-07-26T08:00:00Z'),
       timezone: 'UTC',
     });

@@ -110,16 +110,13 @@ fi
 # the only safe way to embed arbitrary SQL (quotes, newlines, $$ bodies).
 PAYLOAD=$(printf '%s' "$SQL_TEXT" | jq -Rs '{query: .}')
 
-RESPONSE_FILE=$(mktemp)
-trap 'rm -f "$RESPONSE_FILE"' EXIT
-
-HTTP=$(curl -sS -o "$RESPONSE_FILE" -w '%{http_code}' \
+HTTP=$(curl -sS -o mgmt-response.json -w '%{http_code}' \
   -X POST "https://api.supabase.com/v1/projects/${PROJECT_REF}/database/query" \
   -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
   -H 'Content-Type: application/json' \
   --data-binary "$PAYLOAD")
 
-BODY=$(head -c 2000 "$RESPONSE_FILE" 2>/dev/null || true)
+BODY=$(head -c 2000 mgmt-response.json 2>/dev/null || true)
 
 if [ "$HTTP" != "200" ] && [ "$HTTP" != "201" ]; then
   echo "::error::Management API returned HTTP $HTTP"

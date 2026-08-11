@@ -1,0 +1,87 @@
+name: Cron Context Quality Score
+
+# VTID-03246 — Phase 1 W3-D1 PR 2. Daily context-quality-score over
+# the inventory landed in PR 1 (VTID-03238). Read-only. No production
+# behavior change. Output feeds the W3-D1 PR 5 cockpit spine and gives
+# the operator a single 0..100 number for "how much real signal does
+# the brain actually have today".
+
+on:
+  schedule:
+    # Daily at 09:45 UTC — 15 min after the inventory cron (09:30 UTC)
+    # so the scorer reads a fresh inventory each day.
+    - cron: '45 9 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: cron-context-quality-score
+  cancel-in-progress: false
+
+env:
+  GCP_PROJECT: lovable-vitana-vers1
+
+jobs:
+  score:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: services/gateway/package-lock.json
+      - working-directory: services/gateway
+        run: npm ci --no-audit --no-fund
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Resolve prod Supabase creds
+        run: |
+          set -euo pipefail
+          PROD_URL=$(gcloud secrets versions access latest --secret=SUPABASE_URL --project="${GCP_PROJECT}" 2>/dev/null || echo '')
+          PROD_KEY=$(gcloud secrets versions access latest --secret=SUPABASE_SERVICE_ROLE --project="${GCP_PROJECT}" 2>/dev/null || echo '')
+          if [ -z "$PROD_URL" ] || [ -z "$PROD_KEY" ]; then
+            echo "::error::Could not resolve prod Supabase creds."
+            exit 1
+          fi
+          echo "::add-mask::$PROD_URL"
+          echo "::add-mask::$PROD_KEY"
+          {
+            echo "PROD_SUPABASE_URL=$PROD_URL"
+            echo "PROD_SUPABASE_SERVICE_ROLE=$PROD_KEY"
+          } >> "$GITHUB_ENV"
+
+      - name: Run context quality score
+        working-directory: services/gateway
+        env:
+          REPORT_MARKDOWN_PATH: /tmp/context-quality-score.md
+        run: |
+          set -euo pipefail
+          npx tsx scripts/intelligence/context-quality-score.ts > /tmp/context-quality-score.json
+          echo "JSON written: $(wc -c < /tmp/context-quality-score.json) bytes"
+
+      - name: Append summary
+        if: always()
+        run: |
+          if [ -f /tmp/context-quality-score.md ]; then
+            cat /tmp/context-quality-score.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: context-quality-score-${{ github.run_id }}
+          path: |
+            /tmp/context-quality-score.json
+            /tmp/context-quality-score.md
+          if-no-files-found: warn
+          retention-days: 90

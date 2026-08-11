@@ -161,15 +161,108 @@ export async function getUserHealthContext(
   let lifecycle_stage: LifecycleStage | null = null;
   let tenant_id: string | null = null;
 
+  // All reads below are keyed by user_id and independent of each other, so
+  // they are fired concurrently. Results are folded in afterwards in the
+  // original order to keep dedup/merge semantics identical. A rejected
+  // promise resolves to null so one failed source cannot sink the others.
+  const safe = <T>(p: PromiseLike<T>): Promise<T | null> =>
+    Promise.resolve(p).then(
+      (r) => r,
+      () => null
+    );
+
+  const healthKeys = [
+    'user_allergy',
+    'user_medication',
+    'user_health_condition',
+    'user_pregnancy_status',
+    'user_ingredient_sensitivity',
+    'user_dietary_preference',
+    'user_religious_restriction',
+    'user_goal',
+  ];
+  const nowIso = new Date().toISOString();
+  const horizonIso = new Date(Date.now() + 21 * 24 * 60 * 60 * 1000).toISOString();
+
+  const [userRes, tenantRes, limRes, factsRes, topicsRes, ordersRes, rollupRes, eventsRes] =
+    supabase
+      ? await Promise.all([
+          safe(
+            supabase
+              .from('app_users')
+              .select(
+                'country_code, delivery_country_code, region_group, currency_preference, product_scope_preference, lifecycle_stage'
+              )
+              .eq('user_id', user_id)
+              .maybeSingle()
+          ),
+          safe(
+            supabase
+              .from('user_tenants')
+              .select('tenant_id')
+              .eq('user_id', user_id)
+              .eq('is_active', true)
+              .limit(1)
+              .maybeSingle()
+          ),
+          safe(
+            supabase
+              .from('user_limitations')
+              .select(
+                'allergies, dietary_restrictions, contraindications, current_medications, pregnancy_status, age_bracket, religious_restrictions, ingredient_sensitivities, budget_max_per_product_cents, budget_monthly_cap_cents, budget_preferred_band'
+              )
+              .eq('user_id', user_id)
+              .maybeSingle()
+          ),
+          safe(
+            supabase
+              .from('memory_facts')
+              .select('fact_key, fact_value, extracted_at, provenance_source')
+              .eq('user_id', user_id)
+              .in('fact_key', healthKeys)
+              .is('superseded_by', null)
+          ),
+          safe(supabase.from('user_topic_profile').select('topic_key, score').eq('user_id', user_id)),
+          opts.include_past_purchases !== false
+            ? safe(
+                supabase
+                  .from('product_orders')
+                  .select('product_id, purchased_at, state')
+                  .eq('user_id', user_id)
+                  .eq('state', 'converted')
+                  .order('purchased_at', { ascending: false })
+                  .limit(50)
+              )
+            : Promise.resolve(null),
+          opts.include_wearable !== false
+            ? safe(
+                supabase
+                  .from('wearable_rollup_7d')
+                  .select(
+                    'sleep_avg_minutes, sleep_deep_pct, hrv_avg_ms, resting_hr, activity_minutes, workout_count, days_with_data, latest_date'
+                  )
+                  .eq('user_id', user_id)
+                  .maybeSingle()
+              )
+            : Promise.resolve(null),
+          opts.include_calendar !== false
+            ? safe(
+                supabase
+                  .from('calendar_events')
+                  .select('title, start_time, event_type, wellness_tags')
+                  .eq('user_id', user_id)
+                  .gte('start_time', nowIso)
+                  .lte('start_time', horizonIso)
+                  .order('start_time', { ascending: true })
+                  .limit(10)
+              )
+            : Promise.resolve(null),
+        ])
+      : [null, null, null, null, null, null, null, null];
+
   if (supabase) {
-    const { data: userRow, error: userErr } = await supabase
-      .from('app_users')
-      .select(
-        'country_code, delivery_country_code, region_group, currency_preference, product_scope_preference, lifecycle_stage'
-      )
-      .eq('user_id', user_id)
-      .maybeSingle();
-    if (!userErr && userRow) {
+    const userRow = userRes?.data;
+    if (userRes && !userRes.error && userRow) {
       country_code = userRow.delivery_country_code ?? userRow.country_code ?? null;
       region_group = userRow.region_group ?? null;
       currency = userRow.currency_preference ?? null;
@@ -181,14 +274,7 @@ export async function getUserHealthContext(
     }
 
     // Resolve tenant_id from user_tenants if available
-    const { data: userTenant } = await supabase
-      .from('user_tenants')
-      .select('tenant_id')
-      .eq('user_id', user_id)
-      .eq('is_active', true)
-      .limit(1)
-      .maybeSingle();
-    if (userTenant) tenant_id = userTenant.tenant_id;
+    if (tenantRes?.data) tenant_id = tenantRes.data.tenant_id;
   } else {
     stale = true;
   }
@@ -228,14 +314,11 @@ export async function getUserHealthContext(
 
   if (supabase) {
     // user_limitations (primary source of truth for hard filters)
-    try {
-      const { data: lim } = await supabase
-        .from('user_limitations')
-        .select(
-          'allergies, dietary_restrictions, contraindications, current_medications, pregnancy_status, age_bracket, religious_restrictions, ingredient_sensitivities, budget_max_per_product_cents, budget_monthly_cap_cents, budget_preferred_band'
-        )
-        .eq('user_id', user_id)
-        .maybeSingle();
+    if (limRes === null) {
+      // network-level failure (would have thrown in the sequential version)
+      stale = true;
+    } else {
+      const lim = limRes.data;
       if (lim) {
         ctx.allergies = lim.allergies ?? [];
         ctx.dietary_restrictions = lim.dietary_restrictions ?? [];
@@ -254,29 +337,13 @@ export async function getUserHealthContext(
           ctx.active_conditions.push({ key: c, source: 'limitations_table' });
         }
       }
-    } catch {
-      stale = true;
     }
 
     // memory_facts — health/dietary/medication/goal facts
-    try {
-      const healthKeys = [
-        'user_allergy',
-        'user_medication',
-        'user_health_condition',
-        'user_pregnancy_status',
-        'user_ingredient_sensitivity',
-        'user_dietary_preference',
-        'user_religious_restriction',
-        'user_goal',
-      ];
-      const { data: facts } = await supabase
-        .from('memory_facts')
-        .select('fact_key, fact_value, extracted_at, provenance_source')
-        .eq('user_id', user_id)
-        .in('fact_key', healthKeys)
-        .is('superseded_by', null);
-
+    if (factsRes === null) {
+      stale = true;
+    } else {
+      const facts = factsRes.data;
       if (facts) {
         for (const f of facts) {
           const val = (f.fact_value ?? '').toString().trim();
@@ -296,16 +363,12 @@ export async function getUserHealthContext(
         }
         sources_queried.push('memory_facts');
       }
-    } catch {
-      stale = true;
     }
 
-    // user_topic_profile — affinity signals (optional source)
-    try {
-      const { data: topics } = await supabase
-        .from('user_topic_profile')
-        .select('topic_key, score')
-        .eq('user_id', user_id);
+    // user_topic_profile — affinity signals (optional source; the table may
+    // not exist in all environments — a failed read is non-fatal)
+    {
+      const topics = topicsRes?.data;
       if (topics) {
         for (const t of topics) {
           if (t.topic_key && typeof t.score === 'number') {
@@ -314,20 +377,12 @@ export async function getUserHealthContext(
         }
         sources_queried.push('user_topic_profile');
       }
-    } catch {
-      // This table may not exist in all environments — non-fatal.
     }
 
-    // past_purchases (exclude re-recommendation)
+    // past_purchases (exclude re-recommendation) — non-fatal
     if (opts.include_past_purchases !== false) {
-      try {
-        const { data: orders } = await supabase
-          .from('product_orders')
-          .select('product_id, purchased_at, state')
-          .eq('user_id', user_id)
-          .eq('state', 'converted')
-          .order('purchased_at', { ascending: false })
-          .limit(50);
+      {
+        const orders = ordersRes?.data;
         if (orders) {
           const seen = new Set<string>();
           for (const o of orders) {
@@ -342,19 +397,13 @@ export async function getUserHealthContext(
           }
           sources_queried.push('product_orders');
         }
-      } catch {
-        // non-fatal
       }
     }
 
-    // VTID-02100: wearable 7-day rollup
+    // VTID-02100: wearable 7-day rollup — non-fatal
     if (opts.include_wearable !== false) {
-      try {
-        const { data: rollup } = await supabase
-          .from('wearable_rollup_7d')
-          .select('sleep_avg_minutes, sleep_deep_pct, hrv_avg_ms, resting_hr, activity_minutes, workout_count, days_with_data, latest_date')
-          .eq('user_id', user_id)
-          .maybeSingle();
+      {
+        const rollup = rollupRes?.data;
         if (rollup && rollup.days_with_data && rollup.days_with_data > 0) {
           ctx.wearable_summary_7d = {
             sleep_avg_minutes: rollup.sleep_avg_minutes,
@@ -366,24 +415,14 @@ export async function getUserHealthContext(
           };
           sources_queried.push('wearable_rollup_7d');
         }
-      } catch {
-        // non-fatal
       }
     }
 
-    // calendar — upcoming relevant events (next 21 days)
+    // calendar — upcoming relevant events (next 21 days); the table may not
+    // exist in all envs — non-fatal
     if (opts.include_calendar !== false) {
-      try {
-        const nowIso = new Date().toISOString();
-        const horizonIso = new Date(Date.now() + 21 * 24 * 60 * 60 * 1000).toISOString();
-        const { data: events } = await supabase
-          .from('calendar_events')
-          .select('title, start_time, event_type, wellness_tags')
-          .eq('user_id', user_id)
-          .gte('start_time', nowIso)
-          .lte('start_time', horizonIso)
-          .order('start_time', { ascending: true })
-          .limit(10);
+      {
+        const events = eventsRes?.data;
         if (events) {
           for (const e of events) {
             ctx.upcoming_events.push({
@@ -395,8 +434,6 @@ export async function getUserHealthContext(
           }
           sources_queried.push('calendar_events');
         }
-      } catch {
-        // calendar may not exist in all envs — non-fatal
       }
     }
   }

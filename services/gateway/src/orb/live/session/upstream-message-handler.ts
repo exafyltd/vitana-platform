@@ -71,6 +71,7 @@ import { addTurn as addSessionTurn } from '../../../services/session-memory-buff
 import { addTurnRedis } from '../../../services/redis-turn-buffer';
 import { getSupabase } from '../../../lib/supabase';
 import { VITANA_BOT_USER_ID } from '../../../lib/vitana-bot';
+import { notifyUserAsync } from '../../../services/notification-service';
 
 /**
  * BOOTSTRAP-NOVA-IDLE-KEEPALIVE: is this session on Amazon Nova Sonic?
@@ -115,12 +116,12 @@ export async function bridgeVoiceTranscript(
   },
   direction: 'user_to_vitana' | 'vitana_to_user',
   sessionId: string,
-): Promise<void> {
+): Promise<boolean> {
   const MAX_ATTEMPTS = 2;
   let lastError: string | undefined;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const { error } = await bridgeSupabase.from('chat_messages').insert(row);
-    if (!error) return;
+    if (!error) return true;
     lastError = error.message;
     console.warn(`[VTID-CHAT-BRIDGE] ${direction} transcript write attempt ${attempt}/${MAX_ATTEMPTS} failed for session ${sessionId}: ${error.message}`);
   }
@@ -137,6 +138,48 @@ export async function bridgeVoiceTranscript(
       error: lastError,
     },
   }).catch(() => { /* best-effort telemetry only, never let this throw into the voice pipeline */ });
+  return false;
+}
+
+/**
+ * VTID-03520: fire the same push+inapp notification
+ * chat.ts's /send route has always fired for a Vitana reply to a human
+ * (type `new_chat_message`) — voice-bridged turns never did. Without this,
+ * `bridgeVoiceTranscript()`'s insert lands in `chat_messages` immediately,
+ * but nothing tells the client a new message exists: the frontend's
+ * Realtime subscription only mirrors while the Messages screen is mounted
+ * and React Query's `staleTime` otherwise leaves it looking current, so the
+ * message is only discovered whenever the user next happens to reopen the
+ * Messenger — anywhere from minutes to 24h+ later (reported live). Only
+ * call this for the Vitana→user leg (the user doesn't need a push about
+ * their own transcribed speech), and only once `wroteToChatMessages` is
+ * true — no point notifying about a row that was never written.
+ */
+export function notifyOrbVoiceBridgeWrite(
+  wroteToChatMessages: boolean,
+  bridgeUserId: string,
+  bridgeTenantId: string,
+  assistantText: string,
+  bridgeSupabase: NonNullable<ReturnType<typeof getSupabase>>,
+): void {
+  if (!wroteToChatMessages) return;
+  notifyUserAsync(
+    bridgeUserId,
+    bridgeTenantId,
+    'new_chat_message',
+    {
+      title: 'Vitana',
+      body: assistantText.length > 100 ? assistantText.slice(0, 97) + '...' : assistantText,
+      data: {
+        type: 'new_chat_message',
+        sender_id: VITANA_BOT_USER_ID,
+        sender_name: 'Vitana',
+        thread_id: VITANA_BOT_USER_ID,
+        url: `/inbox/u/${VITANA_BOT_USER_ID}`,
+      },
+    },
+    bridgeSupabase,
+  );
 }
 
 /**
@@ -952,7 +995,9 @@ export function createUpstreamLiveMessageHandler(
                     metadata: { ...bridgeMeta, direction: 'vitana_to_user', is_greeting: isGreetingTurn },
                     read_at: assistantMsgTime.toISOString(),
                     created_at: assistantMsgTime.toISOString(),
-                  }, 'vitana_to_user', session.sessionId);
+                  }, 'vitana_to_user', session.sessionId).then((written) => {
+                    notifyOrbVoiceBridgeWrite(written, bridgeUserId, bridgeTenantId, chatBridgeAssistantText, bridgeSupabase);
+                  });
                 }
               }
             }

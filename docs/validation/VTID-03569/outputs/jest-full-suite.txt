@@ -1,0 +1,4 @@
+$ npx jest   (full gateway suite)
+Test Suites: 1 skipped, 638 passed, 638 of 639 total
+Tests:       24 skipped, 6 todo, 12470 passed, 12500 total
+Snapshots:   44 passed, 44 total

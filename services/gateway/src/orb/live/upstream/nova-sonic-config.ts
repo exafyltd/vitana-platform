@@ -24,6 +24,25 @@ export const NOVA_SONIC_SUPPORTED_LANGUAGES = ['en', 'de', 'fr', 'es'] as const;
 export type NovaSonicLanguage = (typeof NOVA_SONIC_SUPPORTED_LANGUAGES)[number];
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
+// VTID-03557: NodeHttp2Handler's `requestTimeout` is NOT a "wait for headers"
+// bound — `node-http2-handler.js` arms it via `clientHttp2Stream.setTimeout()`,
+// which fires on inactivity ANYWHERE across the stream's full lifetime
+// (idle-since-any-frame, either direction), not just at connect. Wiring it to
+// `connectTimeoutMs` (15s — sized for "how long to wait to open a stream") was
+// a category error: it applied a connect-scoped bound to a bidirectional voice
+// stream meant to live for minutes. AWS's own official Node.js sample for this
+// exact API (InvokeModelWithBidirectionalStreamCommand) configures
+// `requestTimeout: 300000` — 300s, not 15s. This does NOT explain the
+// "Premature close" failures found in production (those carry Node's own
+// distinct `TimeoutError` name/message, and classifyNovaError routes that to
+// `nova_stream_timeout`, never observed in the `nova_stream_error` telemetry
+// this VTID investigated) — but it is a real, independent deviation from AWS's
+// documented practice that could cause an unrelated false-positive disconnect
+// (e.g. a slow tool round-trip or context-build pause with no Bedrock frame
+// activity) once traffic patterns hit it. Kept as its own field rather than
+// reusing connectTimeoutMs so the two concerns (time-to-open vs.
+// stream-lifetime-idle-bound) can never silently collide again.
+const DEFAULT_STREAM_INACTIVITY_TIMEOUT_MS = 300_000;
 /** 7m15s — rotate 45s before Bedrock's 8-minute bidirectional stream cap. */
 const DEFAULT_ROTATION_AFTER_MS = 435_000;
 // BOOTSTRAP-NOVA-IDLE-ROTATION: Bedrock enforces TWO independent deadlines,
@@ -117,6 +136,7 @@ export type NovaSonicConfigIssue =
   | 'nova_canary_user_ids_invalid'
   | 'nova_canary_tenant_ids_invalid'
   | 'nova_connect_timeout_invalid'
+  | 'nova_stream_inactivity_timeout_invalid'
   | 'nova_rotation_after_invalid'
   | 'nova_idle_rotation_after_invalid'
   | 'nova_keepwarm_invalid'
@@ -127,11 +147,30 @@ export type NovaSonicConfigIssue =
 
 export interface NovaSonicConfig {
   enabled: boolean;
+  /**
+   * VTID-03501 (GCP cutover build 4): promote Nova out of canary — every
+   * identity, not just the allowlists. Default FALSE; `NOVA_SONIC_GLOBAL_ENABLED`
+   * must be the literal string 'true'.
+   *
+   * Deliberately a SECOND gate on top of `enabled`, not a widening of the
+   * allowlist semantics: `isNovaSonicIdentityAllowed()` keeps its
+   * "empty allowlist allows NOBODY" contract intact, so turning global off
+   * again restores exactly the previous canary population with no allowlist
+   * edits and no ambiguity about what "empty" meant.
+   */
+  globalEnabled: boolean;
   region: typeof NOVA_SONIC_REGION;
   modelId: typeof NOVA_SONIC_MODEL_ID;
   canaryUserIds: ReadonlySet<string>;
   canaryTenantIds: ReadonlySet<string>;
   connectTimeoutMs: number;
+  /**
+   * `NodeHttp2Handler`'s `requestTimeout` — a whole-stream idle-since-any-
+   * activity bound, NOT a connect/header-wait bound. See the
+   * DEFAULT_STREAM_INACTIVITY_TIMEOUT_MS comment. Deliberately separate from
+   * `connectTimeoutMs`.
+   */
+  streamInactivityTimeoutMs: number;
   rotationAfterMs: number;
   /**
    * Fail-safe: rotate the stream once this long has passed since the last
@@ -228,6 +267,11 @@ export function getNovaSonicConfig(env: NodeJS.ProcessEnv): NovaSonicConfig {
   const issues: NovaSonicConfigIssue[] = [];
 
   const enabled = env.NOVA_SONIC_ENABLED === 'true';
+  // VTID-03501: exact-string opt-in, same shape as `enabled` above. Anything
+  // other than 'true' (including unset, 'TRUE', '1', 'yes') leaves the canary
+  // population unchanged — a promotion this consequential should not happen
+  // through a loosely-parsed value.
+  const globalEnabled = env.NOVA_SONIC_GLOBAL_ENABLED === 'true';
 
   // Region/model are pinned — a mismatched override is a typed failure, not
   // a redirect (Never-rule: no silent provider/priority changes).
@@ -248,6 +292,12 @@ export function getNovaSonicConfig(env: NodeJS.ProcessEnv): NovaSonicConfig {
     DEFAULT_CONNECT_TIMEOUT_MS,
   );
   if (connectTimeoutMs === null) issues.push('nova_connect_timeout_invalid');
+
+  const streamInactivityTimeoutMs = parsePositiveInt(
+    env.NOVA_SONIC_STREAM_INACTIVITY_TIMEOUT_MS,
+    DEFAULT_STREAM_INACTIVITY_TIMEOUT_MS,
+  );
+  if (streamInactivityTimeoutMs === null) issues.push('nova_stream_inactivity_timeout_invalid');
 
   const rotationAfterMs = parsePositiveInt(
     env.NOVA_SONIC_ROTATION_AFTER_MS,
@@ -297,11 +347,13 @@ export function getNovaSonicConfig(env: NodeJS.ProcessEnv): NovaSonicConfig {
 
   return {
     enabled,
+    globalEnabled,
     region: NOVA_SONIC_REGION,
     modelId: NOVA_SONIC_MODEL_ID,
     canaryUserIds: canaryUserIds ?? new Set(),
     canaryTenantIds: canaryTenantIds ?? new Set(),
     connectTimeoutMs: connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS,
+    streamInactivityTimeoutMs: streamInactivityTimeoutMs ?? DEFAULT_STREAM_INACTIVITY_TIMEOUT_MS,
     rotationAfterMs: rotationAfterMs ?? DEFAULT_ROTATION_AFTER_MS,
     idleRotationAfterMs: idleRotationAfterMs ?? DEFAULT_IDLE_ROTATION_AFTER_MS,
     keepWarmMs: keepWarmMs ?? DEFAULT_KEEPWARM_MS,
@@ -320,9 +372,14 @@ export function getNovaSonicConfig(env: NodeJS.ProcessEnv): NovaSonicConfig {
  * canary — never "empty means everyone").
  */
 export function isNovaSonicIdentityAllowed(
-  config: Pick<NovaSonicConfig, 'canaryUserIds' | 'canaryTenantIds'>,
+  config: Pick<NovaSonicConfig, 'canaryUserIds' | 'canaryTenantIds'> &
+    Partial<Pick<NovaSonicConfig, 'globalEnabled'>>,
   identity: { userId?: string | null; tenantId?: string | null },
 ): boolean {
+  // VTID-03501: global promotion short-circuits the allowlists entirely.
+  // `globalEnabled` is optional on the parameter type so existing callers
+  // that pass a narrowed object keep compiling with canary-only behaviour.
+  if (config.globalEnabled === true) return true;
   const user = identity.userId?.trim().toLowerCase();
   const tenant = identity.tenantId?.trim().toLowerCase();
   if (user && config.canaryUserIds.has(user)) return true;
@@ -349,6 +406,10 @@ export function buildNovaSonicHealthPayload(env: NodeJS.ProcessEnv): Record<stri
     supported_languages: [...NOVA_SONIC_SUPPORTED_LANGUAGES],
     canary_user_count: cfg.canaryUserIds.size,
     canary_tenant_count: cfg.canaryTenantIds.size,
+    // VTID-03501: without this, the health endpoint reports a 4-user canary
+    // while Nova is actually serving everyone — the counts above become
+    // actively misleading the moment global promotion is on.
+    global_enabled: cfg.globalEnabled,
     issues: [...cfg.issues],
   };
 }

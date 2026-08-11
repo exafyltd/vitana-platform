@@ -95,6 +95,36 @@ import {
 const router = Router();
 
 // =============================================================================
+// SECURITY (post-audit hardening): same defect as routes/execute.ts — this
+// whole router (bar /health, /pipeline/health) had NO authentication at
+// all. The only gate was X-BYPASS-ORCHESTRATOR, a documented
+// governance-violation marker (CLAUDE.md §"Bypass Header"), not a secret.
+// Anyone on the internet could drive the autopilot planner/worker/validator
+// pipeline — submit plans, mark work complete, start/stop the event loop —
+// with just that header. Reuses the same GATEWAY_SERVICE_TOKEN bearer
+// pattern as admin-staging.ts / execute.ts.
+// =============================================================================
+function requireServiceToken(req: Request, res: Response, next: () => void): void {
+  if (req.path === "/health" || req.path === "/pipeline/health") {
+    next();
+    return;
+  }
+  const header = req.header("authorization") ?? req.header("Authorization");
+  if (!header || !header.toLowerCase().startsWith("bearer ")) {
+    res.status(401).json({ ok: false, error: "missing bearer token" });
+    return;
+  }
+  const token = header.slice("bearer ".length).trim();
+  const expected = process.env.GATEWAY_SERVICE_TOKEN ?? "";
+  if (!expected || token !== expected) {
+    res.status(401).json({ ok: false, error: "invalid service token" });
+    return;
+  }
+  next();
+}
+router.use(requireServiceToken);
+
+// =============================================================================
 // VTID-01170: Deprecation Guard
 // =============================================================================
 
@@ -1043,26 +1073,48 @@ router.post('/loop/cursor/reset', async (req: Request, res: Response) => {
  */
 router.get('/health', async (_req: Request, res: Response) => {
   const controllerStatus = getAutopilotStatus();
-  let loopStatus: { ok?: boolean; is_running: boolean; execution_armed?: boolean; error?: string; [key: string]: unknown };
+  let loopStatus: {
+    ok?: boolean;
+    is_running: boolean;
+    execution_armed?: boolean;
+    error?: string;
+    config?: { enabled?: boolean };
+    [key: string]: unknown;
+  };
   try {
     loopStatus = await getEventLoopStatus();
   } catch {
     loopStatus = { ok: false, is_running: false, execution_armed: false, error: 'Failed to get loop status' };
   }
 
-  // Determine real health: autopilot is only healthy when the event loop is running
+  // Determine real health.
   const loopRunning = loopStatus.is_running === true;
   const loopOk = loopStatus.ok !== false;
   const hasErrors = !!loopStatus.error;
+  // VTID-01178: the event loop is INTENTIONALLY disarmed when AUTOPILOT_LOOP_ENABLED
+  // is off (config.enabled === false). That is a governance state — the deliberate
+  // idle mode — NOT a fault, so it must not surface as a "down"/degraded service in
+  // the Command Hub Service Health panel. Only flag `degraded` when the loop is
+  // SUPPOSED to run (enabled) but isn't (a genuine stall). This mirrors
+  // /pipeline/health, which already reports ok:true while the loop is off.
+  const loopEnabled = loopStatus.config?.enabled === true;
 
   let status: string;
   let ok: boolean;
+  let note: string | undefined;
   if (!loopOk || hasErrors) {
     status = 'error';
     ok = false;
-  } else if (!loopRunning) {
+  } else if (!loopRunning && loopEnabled) {
+    // Armed to run but not running — a real fault worth alerting on.
     status = 'degraded';
     ok = false;
+  } else if (!loopRunning) {
+    // Disarmed by config (AUTOPILOT_LOOP_ENABLED=off) — healthy, idle by design.
+    // 'ok_governance_limited' is the panel's recognized healthy-but-limited state.
+    status = 'ok_governance_limited';
+    ok = true;
+    note = 'Autopilot event loop is disarmed (AUTOPILOT_LOOP_ENABLED=off) — idle by design, not a fault.';
   } else {
     status = 'healthy';
     ok = true;
@@ -1077,8 +1129,9 @@ router.get('/health', async (_req: Request, res: Response) => {
     status,
     vtid: 'VTID-01178',
     reason: !ok
-      ? (!loopRunning ? 'Event loop is not running — autopilot is inactive' : loopStatus.error || 'Unknown error')
+      ? (!loopRunning ? 'Event loop is enabled but not running — autopilot may have stalled' : loopStatus.error || 'Unknown error')
       : undefined,
+    note,
     capabilities: {
       task_extraction: true,
       planner_handoff: true,

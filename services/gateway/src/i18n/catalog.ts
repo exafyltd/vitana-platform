@@ -6,10 +6,21 @@
 //   - Scheduled notifications run in cron jobs with no client locale to consume.
 //   - Mobile push notifications surface on the device lock-screen pre-app-open.
 //
-// German is the default. New keys MUST be added to all GA locales (de, en).
-// Draft locales (sr, es) can fall back to en until they go GA.
+// German is the default. Translations live in ./locales/<locale>.json — the
+// TypeScript here is only the key registry, the loader and the fallback chain.
+//
+// VTID-03509 — es/sr used to be `{ ...EN }`, i.e. literal English claiming to
+// be Spanish and Serbian. That is worse than an obvious gap: `tt()` found a
+// value for every key, so no fallback ever fired and no coverage check could
+// see a problem, while Spanish users got English push notifications on their
+// lock screen. Locale files are now `Partial<LocaleCatalog>` and a genuinely
+// missing key falls back visibly (see `tt`), so coverage is measurable.
+export type GatewayLocale = 'de' | 'en' | 'es' | 'sr' | 'fr' | 'pt' | 'ru' | 'pl' | 'zh';
 
-export type GatewayLocale = 'de' | 'en' | 'sr' | 'es';
+/** Every locale the gateway can emit. Order is not significant. */
+export const GATEWAY_LOCALES: readonly GatewayLocale[] = [
+  'de', 'en', 'es', 'sr', 'fr', 'pt', 'ru', 'pl', 'zh',
+] as const;
 
 export const GATEWAY_DEFAULT_LOCALE: GatewayLocale = 'de';
 
@@ -143,246 +154,80 @@ export type GatewayI18nKey =
   | 'orb.greeting_bridge.line_2'
   | 'orb.greeting_bridge.line_3'
   | 'orb.greeting_bridge.line_4'
-  | 'orb.greeting_bridge.line_5';
+  | 'orb.greeting_bridge.line_5'
+  // BOOTSTRAP-COMMUNITY-MARKETPLACE: seller-facing moderation outcome pushes.
+  | 'notif.marketplace_listing_approved.title'
+  | 'notif.marketplace_listing_approved.body'
+  | 'notif.marketplace_listing_rejected.title'
+  | 'notif.marketplace_listing_rejected.body'
+  | 'notif.marketplace_listing_removed.title'
+  | 'notif.marketplace_listing_removed.body'
+  // BOOTSTRAP-COMMUNITY-MARKETPLACE (Chunk 5): seller-facing "someone wants
+  // to buy/hire" push when a buyer sends the first contact message via the
+  // listing
+  | 'notif.listing_interest.title'
+  | 'notif.listing_interest.body';
 
 type LocaleCatalog = Record<GatewayI18nKey, string>;
 
-const DE: LocaleCatalog = {
-  'notif.morning_briefing.title': 'Dein Morgenbriefing',
-  'notif.morning_briefing.body': 'Schau dir an, was heute auf dich wartet.',
-  'notif.diary_reminder.title': 'Tagebuch-Erinnerung',
-  'notif.diary_reminder.body': 'Nimm dir einen Moment, um über deinen Tag nachzudenken.',
-  'notif.weekly_digest.title': 'Wöchentlicher Community-Überblick',
-  'notif.weekly_digest.body': 'Sieh dir an, was diese Woche in deiner Community passiert ist.',
-  'notif.weekly_summary.title': 'Deine wöchentliche Zusammenfassung',
-  'notif.weekly_summary.body': 'Hier ist ein Überblick über deine Aktivität und deinen Fortschritt diese Woche.',
-  'notif.daily_learning.title': 'Ich habe heute etwas über dich gelernt',
-  'notif.daily_learning.body': 'Dein Erinnerungsgarten ist heute um {count} neue Erinnerungen gewachsen. Schau vorbei, was ich mir gemerkt habe.',
-  'notif.memory_match.title': 'Mir ist etwas an dir aufgefallen',
-  'notif.memory_match.body': 'Ich habe mir gemerkt, dass du {trait} erwähnt hast – genau deshalb könnte dieses Match gut zu dir passen.',
-  'notif.weekly_reflection.title': 'Wöchentliche Reflexion',
-  'notif.weekly_reflection.body': 'Nimm dir ein paar Minuten Zeit, um über deine Woche nachzudenken und Absichten zu setzen.',
-  'notif.meetup_starting_soon.title': 'Meetup beginnt bald',
-  'notif.meetup_starting_soon.body': '"{title}" beginnt in etwa 15 Minuten.',
-  'notif.meetup_starting_now.title': 'Meetup beginnt jetzt!',
-  'notif.meetup_starting_now.body': '"{title}" startet gerade. Sei dabei!',
-  'notif.event_today.title': 'Du hast heute ein Event',
-  'notif.event_today.body': '"{title}" um {time}.',
-  'notif.recommendation_expiring.title': 'Empfehlung läuft ab',
-  'notif.recommendation_expiring.body': '"{title}" läuft bald ab. Jetzt handeln!',
-  'notif.signal_expired.title': 'Signal abgelaufen',
-  'notif.signal_expired.body': 'Ein prädiktives Signal ist abgelaufen.',
-  'notif.reminder.title': '🔔 Erinnerung',
-  'notif.fallback_app_name': 'Vitana',
-  'notif.live_going_live.title': '🔴 Jetzt live!',
-  'notif.live_going_live.body': '„{title}" hat gerade begonnen. Schau jetzt rein.',
-  'notif.post_like.title': 'Neues Like',
-  'notif.post_like.body': '{name} gefällt dein Beitrag.',
-  'notif.post_comment.title': 'Neuer Kommentar',
-  'notif.post_comment.body': '{name} hat deinen Beitrag kommentiert.',
-  'notif.feature_announcement.title': 'Neues Feature: {feature}',
-  'notif.feature_tip.title': 'Wusstest du schon: {feature}',
-  // Daily pace check
-  'notif.daily_pace.on_track.title': 'Auf Kurs ✨',
-  'notif.daily_pace.on_track.body': 'Du bist auf einem guten Weg. Schließ heute noch deinen Tagesplan ab — dein Ziel kommt näher.',
-  'notif.daily_pace.slightly_behind.title': 'Heute geht noch was',
-  'notif.daily_pace.slightly_behind.body': 'Ein, zwei Schritte vom Tagesplan reichen, um wieder mit deinem Ziel im Gleichschritt zu sein.',
-  'notif.daily_pace.falling_behind.title': 'Dein Ziel wartet',
-  'notif.daily_pace.falling_behind.body': 'Wir kommen vom Kurs ab. Ein kleiner Schritt heute — und du bist wieder dabei.',
-  'notif.celebration.daily_goal.title': 'Heutiges Ziel geschafft 🎉',
-  'notif.celebration.daily_goal.body': 'Schön gemacht — du bist wieder einen Tag näher an deinem Ziel.',
-  'notif.celebration.phase_milestone.title': 'Neue Phase erreicht 🌟',
-  'notif.celebration.phase_milestone.body': 'Du bist jetzt in der Phase „{phase}". Weiter so.',
-  'notif.celebration.progress_25.title': 'Ein Viertel geschafft 🌱',
-  'notif.celebration.progress_25.body': 'Du bist 25% deiner Reise weit. Bleib dran.',
-  'notif.celebration.progress_50.title': 'Halbzeit erreicht 🌟',
-  'notif.celebration.progress_50.body': 'Mehr als die Hälfte liegt hinter dir. Du machst das großartig.',
-  'notif.celebration.progress_75.title': 'Drei Viertel — fast da 🚀',
-  'notif.celebration.progress_75.body': '75% deiner Reise hast du geschafft. Die Zielgerade wartet.',
-  'notif.celebration.progress_100.title': 'Ziel erreicht 🏆',
-  'notif.celebration.progress_100.body': 'Glückwunsch! Du hast es geschafft.',
-  // Notification-category labels (Settings → Benachrichtigungen)
-  'notif.category.chat.direct_messages.label': 'Direktnachrichten',
-  'notif.category.chat.direct_messages.desc': 'Neue Nachrichten von Personen und Gruppen',
-  'notif.category.chat.orb_messages.label': 'ORB-Nachrichten',
-  'notif.category.chat.orb_messages.desc': 'Proaktive Nachrichten und Vorschläge von deinem KI-Assistenten',
-  'notif.category.chat.followup_reminders.label': 'Folge-Erinnerungen',
-  'notif.category.chat.followup_reminders.desc': 'Erinnerungen, Unterhaltungen fortzuführen',
-  'notif.category.calendar.event_reminders.label': 'Event-Erinnerungen',
-  'notif.category.calendar.event_reminders.desc': 'Anstehende Events und Meetups, die bald beginnen',
-  'notif.category.calendar.morning_briefing.label': 'Morgenbriefing',
-  'notif.category.calendar.morning_briefing.desc': 'Deine tägliche Morgenzusammenfassung und dein Tagesplan',
-  'notif.category.calendar.weekly_digest.label': 'Wöchentlicher Überblick',
-  'notif.category.calendar.weekly_digest.desc': 'Wöchentlicher Community-Überblick und Aktivitätszusammenfassung',
-  'notif.category.calendar.rsvp_updates.label': 'Zusagen-Updates',
-  'notif.category.calendar.rsvp_updates.desc': 'Bestätigungen und Updates zu deinen Zusagen',
-  'notif.category.community.group_activity.label': 'Gruppenaktivität',
-  'notif.category.community.group_activity.desc': 'Aktivität in deinen Gruppen — Beitritte, Meilensteine, Einladungen',
-  'notif.category.community.meetups.label': 'Meetups',
-  'notif.category.community.meetups.desc': 'Empfohlene Meetups und Meetup-Updates',
-  'notif.category.community.live_rooms.label': 'Live-Räume',
-  'notif.category.community.live_rooms.desc': 'Live-Raum-Starts, Einladungen, Zusammenfassungen und Aufzeichnungen',
-  'notif.category.community.connections_social.label': 'Verbindungen & Soziales',
-  'notif.category.community.connections_social.desc': 'Neue Matches, Verbindungen und soziale Aktivität',
-  // Priority of the Day banner (VTID-01947)
-  'priority.absence_streak.named': '{name}, willkommen zurück. Deine Tagebuch-Serie pausierte bei {streak} Tagen – lass uns sie heute fortsetzen.',
-  'priority.absence_streak': 'Willkommen zurück. Deine Tagebuch-Serie pausierte bei {streak} Tagen – lass uns sie heute fortsetzen.',
-  'priority.absence.named.day': '{name}, es ist {days} Tag her – schön, dass du wieder da bist.',
-  'priority.absence.named.days': '{name}, es sind {days} Tage her – schön, dass du wieder da bist.',
-  'priority.absence.day': 'Es ist {days} Tag her – schön, dass du wieder da bist.',
-  'priority.absence.days': 'Es sind {days} Tage her – schön, dass du wieder da bist.',
-  'priority.overdue.one': '{count} Journey-Aktivität wartet noch von vorhin. Lass sie uns jetzt gemeinsam angehen.',
-  'priority.overdue.many': '{count} Journey-Aktivitäten warten noch von vorhin. Lass uns eine davon jetzt gemeinsam angehen.',
-  'priority.goal_prosperity_idle': 'Dein Ziel zielt auf finanzielle Freiheit. Ein Business-Hub-Check-in könnte es heute voranbringen.',
-  'priority.welcome_wave': 'Du bist in „{wave}“ – {description}. Lass mich dir in zwei Minuten zeigen, wie es funktioniert.',
-  'priority.welcome_generic': 'Willkommen auf deiner Longevity-Reise. Lass mich dir zeigen, was wir gemeinsam tun können.',
-  'priority.open_recs.one': '{count} Autopilot-Aktion ist für dich bereit. Einen Blick wert?',
-  'priority.open_recs.many': '{count} Autopilot-Aktionen sind für dich bereit. Einen Blick wert?',
-  'priority.journey_day': 'Tag {day} deiner Reise, in „{wave}“. Bleib dran.',
-  'priority.greeting.morning.named': 'Guten Morgen, {name}. Bereit, wenn du es bist.',
-  'priority.greeting.morning': 'Guten Morgen. Bereit, wenn du es bist.',
-  'priority.greeting.afternoon.named': 'Guten Tag, {name}. Bereit, wenn du es bist.',
-  'priority.greeting.afternoon': 'Guten Tag. Bereit, wenn du es bist.',
-  'priority.greeting.evening.named': 'Guten Abend, {name}. Bereit, wenn du es bist.',
-  'priority.greeting.evening': 'Guten Abend. Bereit, wenn du es bist.',
-  'recommendation.vitana_label': 'Vitana empfiehlt',
-  'orb.greeting_bridge.morning': 'Guten Morgen! Heute ist der {date}. {line}',
-  'orb.greeting_bridge.afternoon': 'Guten Tag! Heute ist der {date}. {line}',
-  'orb.greeting_bridge.evening': 'Guten Abend! Heute ist der {date}. {line}',
-  'orb.greeting_bridge.transition': 'Lass mich kurz deine aktuellen Daten anschauen …',
-  'orb.greeting_bridge.line_1': 'Ein neuer Tag, eine neue Chance, an dir zu arbeiten.',
-  'orb.greeting_bridge.line_2': 'Kleine Schritte summieren sich zu großen Veränderungen.',
-  'orb.greeting_bridge.line_3': 'Dein zukünftiges Ich dankt dir für das, was du heute tust.',
-  'orb.greeting_bridge.line_4': 'Konstanz schlägt Perfektion — mach einfach weiter.',
-  'orb.greeting_bridge.line_5': 'Jeder Tag ist eine neue Gelegenheit, dich besser zu fühlen.',
-};
+import deJson from './locales/de.json';
+import enJson from './locales/en.json';
+import esJson from './locales/es.json';
+import srJson from './locales/sr.json';
+import frJson from './locales/fr.json';
+import ptJson from './locales/pt.json';
+import ruJson from './locales/ru.json';
+import plJson from './locales/pl.json';
+import zhJson from './locales/zh.json';
 
-const EN: LocaleCatalog = {
-  'notif.morning_briefing.title': 'Your Morning Briefing',
-  'notif.morning_briefing.body': 'See what\'s waiting for you today.',
-  'notif.diary_reminder.title': 'Diary Reminder',
-  'notif.diary_reminder.body': 'Take a moment to reflect on your day.',
-  'notif.weekly_digest.title': 'Weekly Community Digest',
-  'notif.weekly_digest.body': 'See what happened in your community this week.',
-  'notif.weekly_summary.title': 'Your Weekly Summary',
-  'notif.weekly_summary.body': 'Here\'s a snapshot of your activity and progress this week.',
-  'notif.daily_learning.title': 'I learned something new about you today',
-  'notif.daily_learning.body': 'Your memory garden grew by {count} new memories today. Take a look at what I noticed.',
-  'notif.memory_match.title': 'I noticed something about you',
-  'notif.memory_match.body': 'I remembered you mentioned {trait} — that is exactly why this match could be a great fit for you.',
-  'notif.weekly_reflection.title': 'Weekly Reflection',
-  'notif.weekly_reflection.body': 'Take a few minutes to reflect on your week and set intentions.',
-  'notif.meetup_starting_soon.title': 'Meetup Starting Soon',
-  'notif.meetup_starting_soon.body': '"{title}" starts in about 15 minutes.',
-  'notif.meetup_starting_now.title': 'Meetup Starting Now!',
-  'notif.meetup_starting_now.body': '"{title}" is starting now. Join in!',
-  'notif.event_today.title': 'You have an event today',
-  'notif.event_today.body': '"{title}" at {time}.',
-  'notif.recommendation_expiring.title': 'Recommendation Expiring',
-  'notif.recommendation_expiring.body': '"{title}" expires soon. Act now!',
-  'notif.signal_expired.title': 'Signal Expired',
-  'notif.signal_expired.body': 'A predictive signal has expired.',
-  'notif.reminder.title': '🔔 Reminder',
-  'notif.fallback_app_name': 'Vitana',
-  'notif.live_going_live.title': '🔴 Now live!',
-  'notif.live_going_live.body': '"{title}" just started. Tune in now.',
-  'notif.post_like.title': 'New like',
-  'notif.post_like.body': '{name} liked your post.',
-  'notif.post_comment.title': 'New comment',
-  'notif.post_comment.body': '{name} commented on your post.',
-  'notif.feature_announcement.title': 'New feature: {feature}',
-  'notif.feature_tip.title': 'Did you know: {feature}',
-  // Daily pace check
-  'notif.daily_pace.on_track.title': 'On track ✨',
-  'notif.daily_pace.on_track.body': "You're moving well. Wrap up today's plan — your goal is getting closer.",
-  'notif.daily_pace.slightly_behind.title': "Today's still open",
-  'notif.daily_pace.slightly_behind.body': "One or two steps from today's plan are enough to fall back in step with your goal.",
-  'notif.daily_pace.falling_behind.title': 'Your goal is waiting',
-  'notif.daily_pace.falling_behind.body': "We're drifting off course. One small step today — and you're back in.",
-  'notif.celebration.daily_goal.title': "Today's goal done 🎉",
-  'notif.celebration.daily_goal.body': "Nice work — you're another day closer to your goal.",
-  'notif.celebration.phase_milestone.title': 'New phase reached 🌟',
-  'notif.celebration.phase_milestone.body': 'You’re now in the "{phase}" phase. Keep going.',
-  'notif.celebration.progress_25.title': 'A quarter of the way 🌱',
-  'notif.celebration.progress_25.body': "You're 25% through your journey. Stay with it.",
-  'notif.celebration.progress_50.title': 'Halfway there 🌟',
-  'notif.celebration.progress_50.body': "More than half is behind you. You're doing great.",
-  'notif.celebration.progress_75.title': 'Three quarters — almost there 🚀',
-  'notif.celebration.progress_75.body': "You're 75% of the way there. The finish line is in sight.",
-  'notif.celebration.progress_100.title': 'Goal reached 🏆',
-  'notif.celebration.progress_100.body': 'Congratulations! You did it.',
-  // Notification-category labels (Settings → Notifications)
-  'notif.category.chat.direct_messages.label': 'Direct Messages',
-  'notif.category.chat.direct_messages.desc': 'New messages from people and groups',
-  'notif.category.chat.orb_messages.label': 'ORB Messages',
-  'notif.category.chat.orb_messages.desc': 'Proactive messages and suggestions from your AI assistant',
-  'notif.category.chat.followup_reminders.label': 'Follow-up Reminders',
-  'notif.category.chat.followup_reminders.desc': 'Reminders to continue conversations',
-  'notif.category.calendar.event_reminders.label': 'Event Reminders',
-  'notif.category.calendar.event_reminders.desc': 'Upcoming events and meetups starting soon',
-  'notif.category.calendar.morning_briefing.label': 'Morning Briefing',
-  'notif.category.calendar.morning_briefing.desc': 'Your daily morning summary and schedule',
-  'notif.category.calendar.weekly_digest.label': 'Weekly Digest',
-  'notif.category.calendar.weekly_digest.desc': 'Weekly community digest and activity summary',
-  'notif.category.calendar.rsvp_updates.label': 'RSVP Updates',
-  'notif.category.calendar.rsvp_updates.desc': 'Confirmations and updates about your RSVPs',
-  'notif.category.community.group_activity.label': 'Group Activity',
-  'notif.category.community.group_activity.desc': 'Activity in your groups — joins, milestones, invitations',
-  'notif.category.community.meetups.label': 'Meetups',
-  'notif.category.community.meetups.desc': 'Recommended meetups and meetup updates',
-  'notif.category.community.live_rooms.label': 'Live Rooms',
-  'notif.category.community.live_rooms.desc': 'Live room starting, invites, summaries, and recordings',
-  'notif.category.community.connections_social.label': 'Connections & Social',
-  'notif.category.community.connections_social.desc': 'New matches, connections, and social activity',
-  // Priority of the Day banner (VTID-01947)
-  'priority.absence_streak.named': '{name}, welcome back. Your diary streak paused at {streak} days — want to pick it up?',
-  'priority.absence_streak': 'Welcome back. Your diary streak paused at {streak} days — want to pick it up?',
-  'priority.absence.named.day': "{name}, it's been {days} day — glad you're back.",
-  'priority.absence.named.days': "{name}, it's been {days} days — glad you're back.",
-  'priority.absence.day': "It's been {days} day — glad you're back.",
-  'priority.absence.days': "It's been {days} days — glad you're back.",
-  'priority.overdue.one': '{count} journey activity is waiting from earlier. Want to tackle it now?',
-  'priority.overdue.many': '{count} journey activities are waiting from earlier. Want to tackle one now?',
-  'priority.goal_prosperity_idle': 'Your goal points at building freedom. One Business Hub check-in could move it today.',
-  'priority.welcome_wave': 'You\'re in "{wave}" — {description}. Want a 2-minute walkthrough?',
-  'priority.welcome_generic': 'Welcome to your longevity journey. Let me show you what we can do together.',
-  'priority.open_recs.one': '{count} Autopilot action ready for you. Worth a look?',
-  'priority.open_recs.many': '{count} Autopilot actions ready for you. Worth a look?',
-  'priority.journey_day': 'Day {day} of your journey, in {wave}. Keep going.',
-  'priority.greeting.morning.named': 'Good morning, {name}. Ready when you are.',
-  'priority.greeting.morning': 'Good morning. Ready when you are.',
-  'priority.greeting.afternoon.named': 'Good afternoon, {name}. Ready when you are.',
-  'priority.greeting.afternoon': 'Good afternoon. Ready when you are.',
-  'priority.greeting.evening.named': 'Good evening, {name}. Ready when you are.',
-  'priority.greeting.evening': 'Good evening. Ready when you are.',
-  'recommendation.vitana_label': 'Vitana recommends',
-  'orb.greeting_bridge.morning': 'Good morning! Today is {date}. {line}',
-  'orb.greeting_bridge.afternoon': 'Good afternoon! Today is {date}. {line}',
-  'orb.greeting_bridge.evening': 'Good evening! Today is {date}. {line}',
-  'orb.greeting_bridge.transition': "Let me pull up your latest data…",
-  'orb.greeting_bridge.line_1': "A new day, a new chance to invest in yourself.",
-  'orb.greeting_bridge.line_2': "Small steps add up to big changes.",
-  'orb.greeting_bridge.line_3': "Your future self will thank you for what you do today.",
-  'orb.greeting_bridge.line_4': "Consistency beats perfection — just keep going.",
-  'orb.greeting_bridge.line_5': "Every day is a new chance to feel a little better.",
-};
+// DE and EN are the two locales that must be complete: DE is the default and
+// EN is the universal fallback, so between them every key is always resolvable.
+// Typing them as the full LocaleCatalog makes `tsc` fail the build if a key is
+// added to GatewayI18nKey without a DE/EN translation.
+const DE: LocaleCatalog = deJson;
+const EN: LocaleCatalog = enJson;
 
-// Draft locales — start as a copy of EN; replace with native strings as they
-// graduate to GA. The i18n-translate workflow already covers the frontend
-// catalog; we'll wire the gateway catalog in once GA-readiness is decided.
-const ES: LocaleCatalog = { ...EN };
-const SR: LocaleCatalog = { ...EN };
+// Everything else may legitimately lag behind a freshly-added key. Partial is
+// the honest type — it is what makes the fallback in `tt()` reachable instead
+// of being masked by an English value pretending to be a translation.
+const ES: Partial<LocaleCatalog> = esJson;
+const SR: Partial<LocaleCatalog> = srJson;
+const FR: Partial<LocaleCatalog> = frJson;
+const PT: Partial<LocaleCatalog> = ptJson;
+const RU: Partial<LocaleCatalog> = ruJson;
+const PL: Partial<LocaleCatalog> = plJson;
+const ZH: Partial<LocaleCatalog> = zhJson;
 
-const CATALOGS: Record<GatewayLocale, LocaleCatalog> = {
+const CATALOGS: Record<GatewayLocale, Partial<LocaleCatalog>> = {
   de: DE,
   en: EN,
   es: ES,
   sr: SR,
+  fr: FR,
+  pt: PT,
+  ru: RU,
+  pl: PL,
+  zh: ZH,
 };
 
 /**
+ * Keys a locale is missing relative to DE. Used by the coverage test and by
+ * `GET /api/v1/admin/i18n-coverage` so a gap is a number someone can watch,
+ * not something discovered by a user reading English on their lock screen.
+ */
+export function missingKeysForLocale(locale: GatewayLocale): GatewayI18nKey[] {
+  const cat = CATALOGS[locale] ?? {};
+  return (Object.keys(DE) as GatewayI18nKey[]).filter((k) => typeof cat[k] !== 'string');
+}
+
+/**
  * Resolve a key against the user's locale, substitute {placeholders}.
- * Falls back to DE (default), then EN, then the key itself.
+ *
+ * Fallback order is locale → EN → DE → the key itself. EN comes before DE
+ * deliberately: the fallback only fires when the user's own locale is missing
+ * a key, and at that point a French or Polish user is far more likely to read
+ * English than German. DE stays as the final backstop because it is the
+ * default locale and is guaranteed complete.
  */
 export function tt(
   key: GatewayI18nKey,
@@ -391,7 +236,7 @@ export function tt(
 ): string {
   const lc = normalizeLocale(locale);
   const value =
-    CATALOGS[lc]?.[key] ?? CATALOGS[GATEWAY_DEFAULT_LOCALE][key] ?? CATALOGS.en[key] ?? key;
+    CATALOGS[lc]?.[key] ?? CATALOGS.en[key] ?? CATALOGS[GATEWAY_DEFAULT_LOCALE][key] ?? key;
   if (!params) return value;
   return value.replace(/\{(\w+)\}/g, (match, name: string) => {
     const replacement = params[name];
@@ -405,6 +250,12 @@ export function tt(
 // checks below silently mis-resolve them: "serbian" starts with "se" (not "sr")
 // and "spanish" starts with "sp" (not "es"), so both used to collapse to the
 // default locale — Serbian users were served German content. Match names first.
+//
+// VTID-03509 extended this to the 18 Aug locale set, and the trap got worse
+// rather than better: "portuguese", "polish", "portugiesisch" and "polnisch"
+// ALL begin with "po" — matching neither 'pt' nor 'pl', and colliding with
+// each other. A word-form value for either language would resolve to German
+// without an explicit entry here, so these are not optional niceties.
 const LANGUAGE_NAME_TO_LOCALE: Record<string, GatewayLocale> = {
   german: 'de',
   deutsch: 'de',
@@ -417,7 +268,78 @@ const LANGUAGE_NAME_TO_LOCALE: Record<string, GatewayLocale> = {
   spanisch: 'es',
   espanol: 'es',
   'español': 'es',
+  french: 'fr',
+  franzosisch: 'fr',
+  'französisch': 'fr',
+  francais: 'fr',
+  'français': 'fr',
+  portuguese: 'pt',
+  portugiesisch: 'pt',
+  portugues: 'pt',
+  'português': 'pt',
+  russian: 'ru',
+  russisch: 'ru',
+  russkiy: 'ru',
+  'русский': 'ru',
+  polish: 'pl',
+  polnisch: 'pl',
+  polski: 'pl',
 };
+
+/**
+ * Plain English language names, for building translate-into-X instructions.
+ *
+ * VTID-03509 — this map (and the register hints below) previously existed as
+ * THREE independent copies: here-equivalent literals in `catalog-localizer.ts`,
+ * `journey/goal-plan-i18n.ts`, and `llm-locale.ts`. Adding a locale updated
+ * some and not others, which is precisely how a "supported" language ends up
+ * silently translated into German. Import these; do not re-declare them.
+ */
+export const LOCALE_ENGLISH_NAME: Record<GatewayLocale, string> = {
+  de: 'German',
+  en: 'English',
+  es: 'Spanish',
+  sr: 'Serbian',
+  fr: 'French',
+  pt: 'Portuguese',
+  ru: 'Russian',
+  pl: 'Polish',
+  zh: 'Chinese (Simplified)',
+};
+
+/**
+ * Informal-register hint appended to translate instructions. The brand voice
+ * is informal in every language; without this most LLMs pick the formal
+ * register for European languages and the copy reads like a bank letter.
+ * Leading space is intentional — callers concatenate directly.
+ */
+export const LOCALE_INFORMAL_HINT: Partial<Record<GatewayLocale, string>> = {
+  de: ' Use the informal du-form (never Sie/Ihr/Ihnen).',
+  sr: ' Use the informal ti-form.',
+  es: ' Use the informal tú-form.',
+  fr: ' Use the informal tu-form (tutoyer, never vous).',
+  pt: ' Use the informal tu-form (European Portuguese, never você/o senhor).',
+  ru: ' Use the informal ты-form (never вы).',
+  pl: ' Use the informal ty-form (never Pan/Pani).',
+};
+
+/**
+ * Like `normalizeLocale`, but returns null instead of the default when the
+ * input is not recognised. Callers that must distinguish "the user asked for
+ * German" from "we have no idea what this is" need this — `normalizeLocale`
+ * collapses both to 'de', which is correct for rendering a string and wrong
+ * for deciding whether to constrain an LLM to a language at all.
+ */
+export function resolveLocaleStrict(loc: string | null | undefined): GatewayLocale | null {
+  if (!loc) return null;
+  const lower = loc.toLowerCase().trim();
+  const byName = LANGUAGE_NAME_TO_LOCALE[lower];
+  if (byName) return byName;
+  for (const code of GATEWAY_LOCALES) {
+    if (lower.startsWith(code)) return code;
+  }
+  return null;
+}
 
 export function normalizeLocale(loc: string | null | undefined): GatewayLocale {
   if (!loc) return GATEWAY_DEFAULT_LOCALE;
@@ -426,9 +348,10 @@ export function normalizeLocale(loc: string | null | undefined): GatewayLocale {
   // word-form values resolve correctly regardless of their leading letters.
   const byName = LANGUAGE_NAME_TO_LOCALE[lower];
   if (byName) return byName;
-  if (lower.startsWith('de')) return 'de';
-  if (lower.startsWith('en')) return 'en';
-  if (lower.startsWith('sr')) return 'sr';
-  if (lower.startsWith('es')) return 'es';
+  // ISO-code prefixes ('de-DE' → 'de'). Only reached when the value is not a
+  // language word, because the name map above already returned.
+  for (const code of GATEWAY_LOCALES) {
+    if (lower.startsWith(code)) return code;
+  }
   return GATEWAY_DEFAULT_LOCALE;
 }

@@ -303,9 +303,36 @@ The authoritative figure is GCP Console → Billing → Reports, grouped by serv
 
 ### Action taken
 
-Only `gateway` had a warm instance with no justification behind it, so only
-`gateway` was changed (VTID-03491). The other three are each load-bearing for a
-documented, previously-diagnosed reason and were deliberately left alone.
+**2026-08-03 (VTID-03491):** only `gateway` had a warm instance with no
+justification behind it, so only `gateway` was changed. The other three were
+each load-bearing for a documented, previously-diagnosed reason and were left
+alone.
+
+**2026-08-06 (VTID-03508) — superseding two of those three.** On an explicit
+instruction to cut instance cost while keeping Imagen/Cloud TTS on a
+pay-per-call basis, the "load-bearing" claims were re-tested against live data
+rather than taken from the earlier config reading:
+
+| Service | Earlier verdict | Re-tested finding | Now |
+|---|---|---|---|
+| `orb-agent` | "**YES** — do not change" | **Wrong in practice.** The LiveKit canary allowlist holds **one** user, and `oasis_events` shows **zero** room-join/agent-dispatch events in 90 days. The only `orb.livekit.*` topics still firing are `next_action.*`, which is gateway-side suggestion logic and does not involve this service. It has been billing ~$150/mo — the largest single item — as standby for a path nobody uses. | min=0, throttled; restore via `warm_worker=true` |
+| `gateway-staging` | "**YES** — 9.4s cold vs 8s abort" | **Still true**, and accepted anyway. It is a preview environment; the regression is confined to the first ORB open after idle, and prod is on AWS. | min=0, warm manually before voice testing |
+| `worker-runner` | "**YES** — VTID-01206 polling" | **Unresolved.** Two worker-runners heartbeat seconds apart, but `worker_registry` carries no cloud attribution, so it cannot be shown from the DB whether the second is the AWS ECS twin or a second GCP revision. Guessing wrong stops the canonical pipeline **silently**. | **unchanged** — needs one `aws ecs describe-services` call to settle |
+
+The important correction is `orb-agent`: the earlier "do not change" was
+inferred from the deploy config's own comment, not from usage data. Reading the
+config tells you what a service is *set up* to do; only the event log tells you
+whether anyone is doing it.
+
+`--no-cpu-throttling` and `--min-instances=1` are **not independent knobs** for
+this service — a livekit-agents worker needs both to stay registered with
+LiveKit Cloud — so this is a genuine on/off, not a tuning. It is reversible in
+one dispatch and is documented as such at the top of `DEPLOY-ORB-AGENT.yml`.
+
+**Applying it:** workflow edits only bind on the next deploy of each service.
+`scripts/gcp/scale-idle-to-zero.sh` applies the same changes to the live
+services immediately (`--apply`; `--restore` reverses all three), and refuses to
+touch `worker-runner` or the VPC connector.
 
 **This is a config change — it takes effect on the next GCP gateway deploy and
 does not retroactively resize the running service.** To realise the saving

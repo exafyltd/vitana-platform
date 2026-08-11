@@ -297,6 +297,63 @@ router.get('/providers', requireTenantAdmin, async (_req: Request, res: Response
   res.json({ ok: true, providers });
 });
 
+// ==================== Awin feed discovery ====================
+
+// Removes the manual "look up each feed_id in the Awin dashboard" step. Lists
+// every product datafeed the publisher's API key can download and returns a
+// ready-to-save source config (paste into POST /sources, or save in the
+// Command Hub "Add Awin source" form). The moment a health advertiser approval
+// lands, it shows up here and is one save away from flowing onto /discover.
+//
+// Key resolution: ?api_key= query > an existing saved awin source > env
+// (AWIN_DATAFEED_API_KEY, then AWIN_API_TOKEN as a last resort).
+router.get('/awin/feeds', requireTenantAdmin, async (req: Request, res: Response) => {
+  const supabase = getSupabase();
+  let apiKey = typeof req.query.api_key === 'string' ? req.query.api_key : '';
+  let publisherId =
+    typeof req.query.publisher_id === 'string' && req.query.publisher_id
+      ? req.query.publisher_id
+      : process.env.AWIN_PUBLISHER_ID || '';
+
+  if (!apiKey && supabase) {
+    const { data } = await supabase
+      .from('marketplace_sources_config')
+      .select('config')
+      .eq('source_network', 'awin')
+      .eq('is_active', true)
+      .limit(1);
+    const cfg = data?.[0]?.config as { api_key?: string; publisher_id?: string } | undefined;
+    if (cfg?.api_key) apiKey = cfg.api_key;
+    if (!publisherId && cfg?.publisher_id) publisherId = cfg.publisher_id;
+  }
+  if (!apiKey) apiKey = process.env.AWIN_DATAFEED_API_KEY || process.env.AWIN_API_TOKEN || '';
+  if (!apiKey) {
+    return res.status(400).json({
+      ok: false,
+      error: 'No Awin datafeed API key. Pass ?api_key=, save an Awin source first, or set AWIN_DATAFEED_API_KEY.',
+    });
+  }
+
+  const joinedOnly = req.query.joined_only === 'true' || req.query.joined_only === '1';
+  try {
+    const { listAwinFeeds } = await import('../services/marketplace-sync/awin-sync');
+    const feeds = await listAwinFeeds(apiKey, { joinedOnly });
+    const suggested_config = {
+      api_key: apiKey,
+      publisher_id: publisherId || null,
+      feeds: feeds.map((f) => ({
+        feed_id: f.feed_id,
+        advertiser_id: f.advertiser_id,
+        advertiser_name: f.advertiser_name,
+      })),
+      max_products_per_feed: 500,
+    };
+    res.json({ ok: true, count: feeds.length, feeds, suggested_config });
+  } catch (e: unknown) {
+    res.status(502).json({ ok: false, error: String((e instanceof Error ? e.message : e)) });
+  }
+});
+
 // ==================== VTID-02200: Sources (Shopify + CJ + etc) ====================
 
 router.get('/sources', requireTenantAdmin, async (req: Request, res: Response) => {

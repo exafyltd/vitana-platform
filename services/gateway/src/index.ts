@@ -3,6 +3,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import cors from 'cors';
+import compression from 'compression';
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -179,6 +180,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const discoverRecommendationsPublicRouter = require('./routes/discover-recommendations-public').default;
   // VTID-02000: Maxina admin marketplace routes
   const adminMarketplaceRouter = require('./routes/admin-marketplace').default;
+  // BOOTSTRAP-COMMUNITY-MARKETPLACE: peer-to-peer classifieds (seller + buyer API)
+  const communityMarketplaceRouter = require('./routes/community-marketplace').default;
+  // BOOTSTRAP-COMMUNITY-MARKETPLACE (Chunk 7): admin review queue (listings/reports/seller suspensions/categories)
+  const adminCommunityMarketplaceRouter = require('./routes/admin-community-marketplace').default;
   // VTID-02000: Internal scheduler-authed sync trigger (shared secret, no user JWT)
   const internalMarketplaceSyncRouter = require('./routes/internal-marketplace-sync').default;
   // VTID-02000: User limitations CRUD + impact counter
@@ -190,6 +195,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // crashing routeGuard at startup.
   const wearablesRouter = require('./routes/wearables').default;
   const connectorWebhooksRouter = require('./routes/connector-webhooks').default;
+  // VTID-03413: AWS SNS -> existing Google Chat alerting channel bridge.
+  const awsSnsAlertsRouter = require('./routes/aws-sns-alerts').default;
   const { initializeAllConnectors } = require('./connectors');
   initializeAllConnectors().catch((err: unknown) => {
     console.error('[connectors] initialization error:', err);
@@ -308,6 +315,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const vcaopRouter = require('./routes/vcaop').default;
   // VCAOP: public, key-verified affiliate postback receiver (Admitad) — no user auth
   const vcaopPostbackRouter = require('./routes/vcaop-postback').default;
+  // VCAOP: Commerce Mesh Partner Portal (connect-business workflow, VTID-03544)
+  const vcaopPortalRouter = require('./routes/vcaop-portal').default;
+  // VCAOP: merchant self-service portal — owner-scoped /my surface (VTID-03553)
+  const vcaopPortalMyRouter = require('./routes/vcaop-portal-my').default;
   // VCAOP: Shopify own-store catalog sync (admin trigger; background worker in services)
   const shopifySyncRouter = require('./routes/shopify-sync').default;
   // VCAOP: Awin joined-programme sync (admin trigger; background worker in services)
@@ -491,10 +502,26 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   setupCors(app);
   app.use(sseHeaders);
 
+  // Cloud Run does not gzip responses; compress everything except SSE streams,
+  // which must flush per-event and would sit in the compressor's buffer.
+  app.use(
+    compression({
+      filter: (req, res) => {
+        if ((req.headers.accept || '').includes('text/event-stream')) return false;
+        if (String(res.getHeader('Content-Type') || '').includes('text/event-stream')) return false;
+        return compression.filter(req, res);
+      },
+    })
+  );
+
   // VTID-01230: Raw body parser for Stripe Connect webhooks (MUST come BEFORE express.json())
   app.use('/api/v1/stripe/webhook', express.raw({ type: 'application/json' }));
   // VTID-03107: Raw body parser for customer-side Stripe billing webhook (separate signing secret)
   app.use('/api/v1/billing/webhooks/stripe', express.raw({ type: 'application/json' }));
+  // VTID-03413: AWS SNS posts Content-Type: text/plain (even though the body is JSON) —
+  // express.json() below would silently skip it, leaving req.body empty. Route handler
+  // JSON.parse()s this text itself after verifying the SNS signature.
+  app.use('/api/v1/aws-alerts/sns', express.text({ type: '*/*', limit: '1mb' }));
 
   // Middleware - IMPORTANT: JSON body parser must come before route handlers
   app.use(express.json({ limit: '2mb' }));
@@ -693,6 +720,12 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VCAOP: public affiliate postback receiver — MUST mount before the authed vcaop
   // router so /api/v1/vcaop/postback/* resolves to the key-verified public handler.
   mountRouterSync(app, '/api/v1/vcaop/postback', vcaopPostbackRouter, { owner: 'vcaop-postback' });
+  // VCAOP: merchant self-service /my surface — MUST mount before the admin
+  // portal router so /api/v1/vcaop/portal/my/* resolves to the owner-scoped
+  // handlers instead of the admin ones (VTID-03553).
+  mountRouterSync(app, '/api/v1/vcaop/portal/my', vcaopPortalMyRouter, { owner: 'vcaop-portal-my' });
+  // VCAOP: Partner Portal — mount before the vcaop router so the sub-path resolves.
+  mountRouterSync(app, '/api/v1/vcaop/portal', vcaopPortalRouter, { owner: 'vcaop-portal' });
   // VCAOP: Shopify catalog sync — mount before the vcaop router so the sub-path resolves.
   mountRouterSync(app, '/api/v1/vcaop/shopify', shopifySyncRouter, { owner: 'vcaop-shopify' });
   // VCAOP: Awin programme sync — mount before the vcaop router so the sub-path resolves.
@@ -1041,6 +1074,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/public', publicProfileOgRouter, { owner: 'public-profile-og' });
   // VTID-02000: Maxina admin marketplace
   mountRouterSync(app, '/api/v1/admin/marketplace', adminMarketplaceRouter, { owner: 'admin-marketplace' });
+  // BOOTSTRAP-COMMUNITY-MARKETPLACE: peer-to-peer classifieds (seller + buyer API)
+  mountRouterSync(app, '/api/v1/community-marketplace', communityMarketplaceRouter, { owner: 'community-marketplace' });
+  // BOOTSTRAP-COMMUNITY-MARKETPLACE (Chunk 7): admin review queue
+  mountRouterSync(app, '/api/v1/admin/community-marketplace', adminCommunityMarketplaceRouter, { owner: 'admin-community-marketplace' });
   // BOOTSTRAP-CMDHUB-I18N-OPS: i18n operations (locale status + workflow dispatch)
   mountRouterSync(app, '/api/v1/admin/i18n-ops', adminI18nOpsRouter, { owner: 'admin-i18n-ops' });
   mountRouterSync(app, '/api/v1/internal/marketplace', internalMarketplaceSyncRouter, { owner: 'marketplace-sync' });
@@ -1059,6 +1096,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // PR #661 removed the duplicate /waitlist route from wearablesRouter so this mount is safe.
   mountRouterSync(app, '/api/v1/wearables', wearablesRouter, { owner: 'wearables' });
   mountRouterSync(app, '/api/v1/connectors', connectorWebhooksRouter, { owner: 'connector-webhooks' });
+  // VTID-03413: AWS SNS -> Google Chat alerting bridge (no auth; SNS signature verified in-route).
+  mountRouterSync(app, '/api/v1/aws-alerts', awsSnsAlertsRouter, { owner: 'aws-sns-alerts' });
 
   // VTID-02403: AI Subscription Connect Phase 1 — user-keyed ChatGPT / Claude
   mountRouterSync(app, '/api/v1/integrations/ai-assistants', aiAssistantsRouter, { owner: 'ai-assistants' });

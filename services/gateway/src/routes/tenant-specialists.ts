@@ -20,13 +20,18 @@
 
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
+import { createClient } from '@supabase/supabase-js';
 import * as tenantRepo from '../services/specialists/tenant-specialists-repository';
-import * as ticketRepo from '../services/feedback/feedback-tickets-repository';
 import { RepositoryError } from '../services/specialists/tenant-specialists-repository';
 import { clearTenantPersonaCache } from '../services/persona-registry';
 
 const router = Router();
 const VTID = 'VTID-02655';
+
+function getServiceClient() {
+  return createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE!,
+    { auth: { persistSession: false, autoRefreshToken: false } });
+}
 
 function getBearerToken(req: Request): string | null {
   const h = req.headers.authorization;
@@ -333,27 +338,40 @@ router.post('/:tenantId/customers/:vitanaId/approve-all', async (req: Request, r
   const userId = await ensureTenantAdmin(req, res, tenantId);
   if (!userId) return;
 
-  // Resolve vitana_id → user_id and confirm tenant membership. Refusing to act
-  // on tickets owned by users outside the tenant is the security guarantee.
-  let customerUserId: string;
-  let tickets: Array<Record<string, any>>;
-  try {
-    const customer = await ticketRepo.resolveTenantCustomer(tenantId, vitanaId);
-    if (customer.status === 'not_found') {
-      return res.status(404).json({ ok: false, error: 'CUSTOMER_NOT_FOUND' });
-    }
-    if (customer.status === 'not_in_tenant') {
-      return res.status(404).json({ ok: false, error: 'CUSTOMER_NOT_IN_TENANT' });
-    }
-    customerUserId = customer.userId;
-    tickets = await ticketRepo.listActionableTicketsForUser(customerUserId);
-  } catch (e) {
-    if (e instanceof RepositoryError) {
-      return res.status(502).json({ ok: false, error: 'QUERY_FAILED', details: e.message });
-    }
-    throw e;
+  const supabase = getServiceClient();
+
+  // Resolve vitana_id → user_id via the canonical app_users mirror, then
+  // confirm the customer is a member of this tenant. Refusing to act on
+  // tickets owned by users outside the tenant is the security guarantee.
+  const { data: appUser } = await supabase
+    .from('app_users')
+    .select('user_id')
+    .eq('vitana_id', vitanaId)
+    .maybeSingle();
+  if (!appUser) {
+    return res.status(404).json({ ok: false, error: 'CUSTOMER_NOT_FOUND' });
   }
-  void customerUserId;
+  const customerUserId = appUser.user_id;
+
+  const { data: membership } = await supabase
+    .from('user_tenants')
+    .select('user_id')
+    .eq('user_id', customerUserId)
+    .eq('tenant_id', tenantId)
+    .maybeSingle();
+  if (!membership) {
+    return res.status(404).json({ ok: false, error: 'CUSTOMER_NOT_IN_TENANT' });
+  }
+
+  // Find this customer's actionable tickets.
+  const { data: tickets, error: qErr } = await supabase
+    .from('feedback_tickets')
+    .select('id, ticket_number, kind, status, vitana_id, resolver_agent')
+    .eq('user_id', customerUserId)
+    .in('status', ['spec_ready', 'answer_ready']);
+  if (qErr) {
+    return res.status(502).json({ ok: false, error: 'QUERY_FAILED', details: qErr.message });
+  }
 
   let approved = 0;
   let sent = 0;
@@ -379,26 +397,28 @@ router.post('/:tenantId/customers/:vitanaId/approve-all', async (req: Request, r
     } catch { /* non-blocking */ }
   }
 
-  for (const t of tickets) {
+  for (const t of tickets ?? []) {
     if (t.status === 'spec_ready') {
-      // Optimistic lock on the expected status guards against concurrent edits;
-      // a contended ticket is skipped, not fatal to the batch.
-      const updated = await ticketRepo.transitionTicketStatus(
-        t.id, 'spec_ready',
-        { status: 'in_progress' },
-        'id, ticket_number, kind, status, vitana_id, resolver_agent',
-      );
-      if (!updated) { skipped++; continue; }
+      const { data: updated, error: upErr } = await supabase
+        .from('feedback_tickets')
+        .update({ status: 'in_progress' })
+        .eq('id', t.id)
+        .eq('status', 'spec_ready')          // optimistic lock against concurrent edits
+        .select('id, ticket_number, kind, status, vitana_id, resolver_agent')
+        .single();
+      if (upErr || !updated) { skipped++; continue; }
       approved++;
       results.push({ ticket_number: updated.ticket_number, from: 'spec_ready', to: 'in_progress' });
       await emit('feedback.ticket.status_changed', updated, { new_status: 'in_progress', from: 'bulk-approve' });
     } else if (t.status === 'answer_ready') {
-      const updated = await ticketRepo.transitionTicketStatus(
-        t.id, 'answer_ready',
-        { status: 'resolved', resolved_at: now, auto_resolved: false },
-        'id, ticket_number, kind, status, vitana_id, resolver_agent, draft_answer_md',
-      );
-      if (!updated) { skipped++; continue; }
+      const { data: updated, error: upErr } = await supabase
+        .from('feedback_tickets')
+        .update({ status: 'resolved', resolved_at: now, auto_resolved: false })
+        .eq('id', t.id)
+        .eq('status', 'answer_ready')
+        .select('id, ticket_number, kind, status, vitana_id, resolver_agent, draft_answer_md')
+        .single();
+      if (upErr || !updated) { skipped++; continue; }
       sent++;
       results.push({ ticket_number: updated.ticket_number, from: 'answer_ready', to: 'resolved' });
       await emit('feedback.ticket.resolved', updated, { from: 'bulk-send-answer', resolver_agent: updated.resolver_agent });
@@ -407,10 +427,15 @@ router.post('/:tenantId/customers/:vitanaId/approve-all', async (req: Request, r
 
   // Tenant audit row covering the whole batch — easier to scan than N
   // individual rows when reading the tenant audit log.
-  // Closest existing enum slot. Future cleanup: extend the action enum
-  // with 'tenant_bulk_approve' for clearer audit reads.
-  await writeTenantAudit(userId, tenantId, null, 'tenant_persona_enable', null,
-    { vitana_id: vitanaId, approved, sent, skipped, results, ts: now });
+  await supabase.from('agent_audit_log').insert({
+    actor_user_id: userId,
+    tenant_id: tenantId,
+    persona_id: null,
+    // Closest existing enum slot. Future cleanup: extend the action enum
+    // with 'tenant_bulk_approve' for clearer audit reads.
+    action: 'tenant_persona_enable',
+    after_state: { vitana_id: vitanaId, approved, sent, skipped, results, ts: now },
+  });
 
   return res.json({
     ok: true,
@@ -418,7 +443,7 @@ router.post('/:tenantId/customers/:vitanaId/approve-all', async (req: Request, r
     approved,
     sent,
     skipped,
-    total: tickets.length,
+    total: (tickets ?? []).length,
     results,
   });
 });
@@ -440,10 +465,27 @@ async function loadTicketIfTenantOwned(
   ticketId: string,
   tenantId: string,
 ): Promise<null | { ticket: Record<string, any>; handoffs: Array<Record<string, any>> }> {
-  // The gate itself lives in the repository so the three-step chain
-  // (ticket -> ticket.user_id -> user_tenants membership) cannot be performed
-  // partially by any caller. Argument order is flipped there: tenant first.
-  return ticketRepo.loadTicketIfTenantOwned(tenantId, ticketId);
+  const supabase = getServiceClient();
+  const { data: ticket } = await supabase
+    .from('feedback_tickets')
+    .select('*')
+    .eq('id', ticketId)
+    .maybeSingle();
+  if (!ticket) return null;
+  if (!ticket.user_id) return null;
+  const { data: membership } = await supabase
+    .from('user_tenants')
+    .select('user_id')
+    .eq('user_id', ticket.user_id)
+    .eq('tenant_id', tenantId)
+    .maybeSingle();
+  if (!membership) return null;
+  const { data: handoffs } = await supabase
+    .from('feedback_handoff_events')
+    .select('id, from_agent, to_agent, reason, detected_intent, matched_keyword, confidence, ts')
+    .eq('ticket_id', ticketId)
+    .order('ts', { ascending: true });
+  return { ticket, handoffs: handoffs ?? [] };
 }
 
 router.get('/:tenantId/tickets/:id', async (req: Request, res: Response) => {
@@ -469,10 +511,15 @@ router.get('/:tenantId/tickets/:id', async (req: Request, res: Response) => {
   } | null = null;
   const findingId = (loaded.ticket as { linked_finding_id?: string | null }).linked_finding_id ?? null;
   if (findingId) {
-    try {
-      const data = await ticketRepo.latestExecutionForFinding(findingId);
-      if (data) execution = data as unknown as typeof execution;
-    } catch (e) { return handleRepoError(e, res); }
+    const supabase = getServiceClient();
+    const { data } = await supabase
+      .from('dev_autopilot_executions')
+      .select('id, status, pr_url, pr_number, branch, failure_stage, created_at, updated_at, completed_at')
+      .eq('finding_id', findingId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (data) execution = data as unknown as typeof execution;
   }
 
   return res.json({ ok: true, ticket: loaded.ticket, handoffs: loaded.handoffs, execution });
@@ -488,18 +535,22 @@ router.post('/:tenantId/tickets/:id/reject', async (req: Request, res: Response)
   const loaded = await loadTicketIfTenantOwned(req.params.id, tenantId);
   if (!loaded) return res.status(404).json({ ok: false, error: 'NOT_FOUND_OR_NOT_IN_TENANT' });
 
-  let updated: Record<string, any>;
-  try {
-    updated = await ticketRepo.updateTicketReturning(
-      req.params.id,
-      { status: 'rejected', supervisor_notes: v.data.reason ?? null },
-      'id, ticket_number, kind, status, vitana_id',
-    );
-  } catch (e) { return handleRepoError(e, res); }
+  const supabase = getServiceClient();
+  const { data: updated, error } = await supabase
+    .from('feedback_tickets')
+    .update({ status: 'rejected', supervisor_notes: v.data.reason ?? null })
+    .eq('id', req.params.id)
+    .select('id, ticket_number, kind, status, vitana_id')
+    .single();
+  if (error || !updated) return res.status(502).json({ ok: false, error: error?.message });
 
-  // closest existing slot until 'tenant_ticket_reject' is added to the enum
-  await writeTenantAudit(userId, tenantId, null, 'tenant_persona_disable', null,
-    { ticket_id: updated.id, ticket_number: updated.ticket_number, reason: v.data.reason ?? null });
+  await supabase.from('agent_audit_log').insert({
+    actor_user_id: userId,
+    tenant_id: tenantId,
+    persona_id: null,
+    action: 'tenant_persona_disable',  // closest existing slot until 'tenant_ticket_reject' added
+    after_state: { ticket_id: updated.id, ticket_number: updated.ticket_number, reason: v.data.reason ?? null },
+  });
 
   try {
     const { emitOasisEvent } = await import('../services/oasis-event-service');
@@ -586,10 +637,15 @@ router.post('/:tenantId/tickets/:id/rollback', async (req: Request, res: Respons
   }
 
   // Look up the execution row so we can get the merge SHA.
-  let exec: Awaited<ReturnType<typeof ticketRepo.latestCompletedExecutionForFinding>>;
-  try {
-    exec = await ticketRepo.latestCompletedExecutionForFinding(t.linked_finding_id);
-  } catch (e) { return handleRepoError(e, res); }
+  const supabase = getServiceClient();
+  const { data: exec } = await supabase
+    .from('dev_autopilot_executions')
+    .select('id, status, pr_url, pr_number, metadata')
+    .eq('finding_id', t.linked_finding_id)
+    .eq('status', 'completed')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
   if (!exec) {
     return res.status(409).json({ ok: false, error: 'NO_COMPLETED_EXEC' });
   }
@@ -624,27 +680,31 @@ router.post('/:tenantId/tickets/:id/rollback', async (req: Request, res: Respons
   // status back to 'reopened' so a fresh autopilot attempt can be launched
   // (or so the supervisor can refine the spec and try again).
   const nowIso = new Date().toISOString();
-  try {
-    await ticketRepo.updateTicket(t.id, {
+  const { error: upErr } = await supabase
+    .from('feedback_tickets')
+    .update({
       status: 'reopened',
       rolled_back_at: nowIso,
       rollback_pr_url: revertPr.html_url,
       rolled_back_by: userId,
-    });
-  } catch (e) {
-    if (e instanceof RepositoryError) {
-      return res.status(502).json({ ok: false, error: 'TICKET_UPDATE_FAILED', detail: e.message });
-    }
-    throw e;
+    })
+    .eq('id', t.id);
+  if (upErr) {
+    return res.status(502).json({ ok: false, error: 'TICKET_UPDATE_FAILED', detail: upErr.message });
   }
 
   // Audit + OASIS event for traceability.
-  // closest existing slot
-  await writeTenantAudit(userId, tenantId, null, 'tenant_persona_disable', null, {
-    ticket_id: t.id,
-    ticket_number: t.ticket_number,
-    revert_pr_url: revertPr.html_url,
-    reverted_merge_sha: mergeSha,
+  await supabase.from('agent_audit_log').insert({
+    actor_user_id: userId,
+    tenant_id: tenantId,
+    persona_id: null,
+    action: 'tenant_persona_disable', // closest existing slot
+    after_state: {
+      ticket_id: t.id,
+      ticket_number: t.ticket_number,
+      revert_pr_url: revertPr.html_url,
+      reverted_merge_sha: mergeSha,
+    },
   });
   try {
     const { emitOasisEvent } = await import('../services/oasis-event-service');
@@ -714,6 +774,7 @@ router.post('/:tenantId/tickets/:id/draft-spec', async (req: Request, res: Respo
     id: string; status: string; kind: string; ticket_number: string; vitana_id: string | null;
   };
 
+  const supabase = getServiceClient();
   const TERMINAL = new Set(['resolved', 'user_confirmed', 'rejected', 'wont_fix', 'duplicate']);
   if (TERMINAL.has(t.status) || t.status === 'in_progress') {
     return res.status(409).json({ ok: false, error: 'CANNOT_DRAFT_AT_THIS_STATUS', status: t.status });
@@ -770,17 +831,22 @@ router.post('/:tenantId/tickets/:id/draft-spec', async (req: Request, res: Respo
     [draftField]: markdown,
   };
   if (supervisorInstructions) patch.supervisor_notes = supervisorInstructions;
-  try {
-    await ticketRepo.updateTicket(t.id, patch);
-  } catch (e) { return handleRepoError(e, res); }
+  const { error: upErr } = await supabase
+    .from('feedback_tickets').update(patch).eq('id', t.id);
+  if (upErr) return res.status(502).json({ ok: false, error: upErr.message });
 
   // Audit + OASIS
-  // closest existing slot
-  await writeTenantAudit(userId, tenantId, null, 'tenant_persona_enable', null, {
-    ticket_id: t.id, ticket_number: t.ticket_number,
-    from: t.status, to: nextStatus, action: 'draft_spec',
-    resolver_agent: resolverAgent, provider,
-    had_supervisor_instructions: !!supervisorInstructions,
+  await supabase.from('agent_audit_log').insert({
+    actor_user_id: userId,
+    tenant_id: tenantId,
+    persona_id: null,
+    action: 'tenant_persona_enable', // closest existing slot
+    after_state: {
+      ticket_id: t.id, ticket_number: t.ticket_number,
+      from: t.status, to: nextStatus, action: 'draft_spec',
+      resolver_agent: resolverAgent, provider,
+      had_supervisor_instructions: !!supervisorInstructions,
+    },
   });
   try {
     const { emitOasisEvent } = await import('../services/oasis-event-service');
@@ -854,6 +920,7 @@ router.post('/:tenantId/tickets/:id/activate', async (req: Request, res: Respons
     linked_finding_id: string | null;
   };
 
+  const supabase = getServiceClient();
   const TERMINAL = new Set(['resolved', 'user_confirmed', 'rejected', 'wont_fix', 'duplicate']);
   if (TERMINAL.has(t.status)) {
     return res.status(409).json({ ok: false, error: 'ALREADY_TERMINAL', status: t.status });
@@ -914,11 +981,11 @@ router.post('/:tenantId/tickets/:id/activate', async (req: Request, res: Respons
     // (the bridge already wrote linked_finding_id; we do another write so
     // status + audit are coherent if the bridge's intermediate write
     // briefly persisted nothing).
-    try {
-      await ticketRepo.updateTicket(t.id, {
-        status: 'in_progress', linked_finding_id: dispatch.recommendation_id ?? null,
-      });
-    } catch (e) { return handleRepoError(e, res); }
+    const { error: upErr } = await supabase
+      .from('feedback_tickets')
+      .update({ status: 'in_progress', linked_finding_id: dispatch.recommendation_id ?? null })
+      .eq('id', t.id);
+    if (upErr) return res.status(502).json({ ok: false, error: upErr.message });
     newStatus = 'in_progress';
     action = 'dispatched';
     dispatchInfo = {
@@ -932,28 +999,28 @@ router.post('/:tenantId/tickets/:id/activate', async (req: Request, res: Respons
   // The actual delivery to the user (push notification / inbox) is a
   // separate follow-up; for now status flip + audit is the contract.
   else if (t.kind === 'support_question' && t.status === 'answer_ready') {
-    try {
-      const u = await ticketRepo.updateTicketReturning(t.id,
-        { status: 'resolved', resolved_at: new Date().toISOString(), auto_resolved: false }, 'status');
-      if (u) { newStatus = 'resolved'; action = 'sent_answer'; }
-    } catch (e) { return handleRepoError(e, res); }
+    const { data: u, error: upErr } = await supabase.from('feedback_tickets')
+      .update({ status: 'resolved', resolved_at: new Date().toISOString(), auto_resolved: false })
+      .eq('id', t.id).select('status').single();
+    if (upErr) return res.status(502).json({ ok: false, error: upErr.message });
+    if (u) { newStatus = 'resolved'; action = 'sent_answer'; }
   }
 
   // marketplace_claim / account_issue: spec_ready → in_progress (no
   // executor adapter yet — these stay in_progress until manually closed).
   else if ((t.kind === 'marketplace_claim' || t.kind === 'account_issue') && t.status === 'spec_ready') {
-    try {
-      const u = await ticketRepo.updateTicketReturning(t.id, { status: 'in_progress' }, 'status');
-      if (u) { newStatus = 'in_progress'; action = 'approved'; }
-    } catch (e) { return handleRepoError(e, res); }
+    const { data: u, error: upErr } = await supabase.from('feedback_tickets')
+      .update({ status: 'in_progress' }).eq('id', t.id).select('status').single();
+    if (upErr) return res.status(502).json({ ok: false, error: upErr.message });
+    if (u) { newStatus = 'in_progress'; action = 'approved'; }
   }
 
   // feedback / feature_request: NEEDS_DRAFT → in_progress.
   else if (!KINDS_WITH_DRAFT.has(t.kind) && NEEDS_DRAFT.has(t.status)) {
-    try {
-      const u = await ticketRepo.updateTicketReturning(t.id, { status: 'in_progress' }, 'status');
-      if (u) { newStatus = 'in_progress'; action = 'activated'; }
-    } catch (e) { return handleRepoError(e, res); }
+    const { data: u, error: upErr } = await supabase.from('feedback_tickets')
+      .update({ status: 'in_progress' }).eq('id', t.id).select('status').single();
+    if (upErr) return res.status(502).json({ ok: false, error: upErr.message });
+    if (u) { newStatus = 'in_progress'; action = 'activated'; }
   }
 
   else {
@@ -967,9 +1034,13 @@ router.post('/:tenantId/tickets/:id/activate', async (req: Request, res: Respons
   }
 
   // Audit + OASIS
-  // closest existing slot until 'tenant_ticket_activate' is added to the enum
-  await writeTenantAudit(userId, tenantId, null, 'tenant_persona_enable', null,
-    { ticket_id: t.id, ticket_number: t.ticket_number, from: t.status, to: newStatus, action });
+  await supabase.from('agent_audit_log').insert({
+    actor_user_id: userId,
+    tenant_id: tenantId,
+    persona_id: null,
+    action: 'tenant_persona_enable', // closest existing slot until 'tenant_ticket_activate' added
+    after_state: { ticket_id: t.id, ticket_number: t.ticket_number, from: t.status, to: newStatus, action },
+  });
   try {
     const { emitOasisEvent } = await import('../services/oasis-event-service');
     await emitOasisEvent({
@@ -1040,20 +1111,27 @@ router.put('/:tenantId/tickets/:id/reclassify', async (req: Request, res: Respon
     return res.json({ ok: true, ticket_id: t.id, kind: t.kind, no_change: true });
   }
 
-  try {
-    await ticketRepo.updateTicket(t.id, {
+  const supabase = getServiceClient();
+  const { error: upErr } = await supabase
+    .from('feedback_tickets')
+    .update({
       kind: v.data.kind,
       status: 'triaged',
       spec_md: null,
       draft_answer_md: null,
       resolution_md: null,
       resolver_agent: null,
-    });
-  } catch (e) { return handleRepoError(e, res); }
+    })
+    .eq('id', t.id);
+  if (upErr) return res.status(502).json({ ok: false, error: upErr.message });
 
-  // closest existing slot
-  await writeTenantAudit(userId, tenantId, null, 'tenant_persona_enable', null,
-    { ticket_id: t.id, ticket_number: t.ticket_number, action: 'reclassify', from_kind: t.kind, to_kind: v.data.kind });
+  await supabase.from('agent_audit_log').insert({
+    actor_user_id: userId,
+    tenant_id: tenantId,
+    persona_id: null,
+    action: 'tenant_persona_enable', // closest existing slot
+    after_state: { ticket_id: t.id, ticket_number: t.ticket_number, action: 'reclassify', from_kind: t.kind, to_kind: v.data.kind },
+  });
 
   try {
     const { emitOasisEvent } = await import('../services/oasis-event-service');

@@ -19,7 +19,16 @@ import {
   getPolicyAuditHistory,
 } from '../services/llm-routing-policy-service';
 import { queryLLMTelemetry } from '../services/llm-telemetry-service';
-import { LLM_SAFE_DEFAULTS, VALID_STAGES, VALID_PROVIDERS, type LLMProvider } from '../constants/llm-defaults';
+import { verifyProvider } from '../services/llm-router';
+import { emitOasisEvent } from '../services/oasis-event-service';
+import { requireAdminAuth } from '../middleware/auth-supabase-jwt';
+import {
+  LLM_SAFE_DEFAULTS,
+  VALID_STAGES,
+  VALID_PROVIDERS,
+  getProviderFlagship,
+  type LLMProvider,
+} from '../constants/llm-defaults';
 import { getSupabase } from '../lib/supabase';
 
 const router = Router();
@@ -30,15 +39,21 @@ const router = Router();
 
 // BOOTSTRAP-LLM-ROUTER: extended provider list (added deepseek + claude_subscription)
 // and made fallback nullable so a stage can be configured with no fallback.
-const ProviderEnum = z.enum([
-  'anthropic',
-  'vertex',
-  'openai',
-  'deepseek',
-  'claude_subscription',
-] as const);
+//
+// VTID-03565: derived from VALID_PROVIDERS rather than restated as a literal.
+// It previously omitted 'bedrock' while VALID_PROVIDERS included it, so the
+// Command Hub dropdown OFFERED Bedrock and this endpoint then rejected the
+// save with a 400 — i.e. the standing "Claude always via Bedrock" rule
+// (VTID-03563) could not physically be stored through the API. Deriving the
+// schema from the single source of truth means adding a provider to
+// VALID_PROVIDERS can never again leave the write path unable to accept it.
+// Exported for tests: a test that restates this schema instead of importing it
+// cannot detect the drift it exists to prevent (VTID-03565).
+export const ProviderEnum = z.enum(
+  VALID_PROVIDERS as unknown as [LLMProvider, ...LLMProvider[]],
+);
 
-const StageConfigSchema = z.object({
+export const StageConfigSchema = z.object({
   primary_provider: ProviderEnum,
   primary_model: z.string().min(1),
   fallback_provider: ProviderEnum.nullable(),
@@ -46,15 +61,26 @@ const StageConfigSchema = z.object({
 });
 
 // BOOTSTRAP-LLM-ROUTER: extended schema with triage/vision/classifier stages.
-const PolicySchema = z.object({
+//
+// VTID-03565: `vision` and `classifier` are optional because the ACTIVE
+// production policy (v10, 2026-05-02) does not contain them — it predates
+// their addition and carries only the original six stages. Requiring all
+// eight meant a read-modify-write round-trip of the live policy 400'd on
+// stages the caller never touched, so the only way to change routing was to
+// write the table directly (against "Always route DB mutations through
+// Gateway APIs"). The other six stay REQUIRED: a partial policy is not
+// merged with defaults — `loadPolicy()` takes the row wholesale — so
+// dropping one would make every call to that stage fail with
+// "No policy configured for stage '<x>'".
+export const PolicySchema = z.object({
   planner: StageConfigSchema,
   worker: StageConfigSchema,
   validator: StageConfigSchema,
   operator: StageConfigSchema,
   memory: StageConfigSchema,
   triage: StageConfigSchema,
-  vision: StageConfigSchema,
-  classifier: StageConfigSchema,
+  vision: StageConfigSchema.optional(),
+  classifier: StageConfigSchema.optional(),
 });
 
 const UpdatePolicySchema = z.object({
@@ -64,6 +90,14 @@ const UpdatePolicySchema = z.object({
 
 const ResetPolicySchema = z.object({
   reason: z.string().optional(),
+});
+
+// VTID-03565: model is optional — omitted, the preflight uses the provider's
+// flagship. An explicit model is what makes this useful for Bedrock, where the
+// question is usually "can this account invoke THIS inference profile?".
+const VerifyProviderSchema = z.object({
+  provider: ProviderEnum,
+  model: z.string().min(1).optional(),
 });
 
 const TelemetryQuerySchema = z.object({
@@ -394,8 +428,94 @@ router.get('/providers/health', (_req: Request, res: Response) => {
           ? undefined
           : 'DEV_AUTOPILOT_USE_WORKER=true required (worker queue disabled)',
     },
+    // VTID-03565: 'bedrock' was missing from this list entirely, so the one
+    // provider the standing rule (VTID-03563) mandates was the one provider
+    // an operator could not see the state of.
+    {
+      provider: 'bedrock',
+      available: Boolean(process.env.BEDROCK_ROLE_ARN),
+      reason: process.env.BEDROCK_ROLE_ARN
+        ? undefined
+        : 'BEDROCK_ROLE_ARN not set on gateway — the router SKIPS bedrock and serves the fallback',
+    },
   ];
-  res.json({ ok: true, data: providers });
+  res.json({
+    ok: true,
+    data: providers,
+    // Stated inline because this payload reads like a health check and is not
+    // one: every entry above is an env-var presence test. `anthropic` reported
+    // available:true throughout VTID-03563 while all 268 of its calls failed
+    // on credit balance. Use POST /providers/verify for ground truth.
+    note: 'available = credentials present, NOT verified working. POST /api/v1/llm/providers/verify performs a real invoke.',
+  });
+});
+
+// =============================================================================
+// POST /api/v1/llm/providers/verify
+// Real preflight: actually invoke a provider/model and report what happened.
+// =============================================================================
+// Gated with real middleware, NOT the x-actor-role header the older handlers in
+// this file use (VTID-03565). Two reasons: this endpoint spends money on every
+// call — it performs a genuine provider completion — and a spoofable request
+// header is not a gate for that. As a NEW route it has no existing caller to
+// break, so it can start at the standard the rest of the admin surface already
+// uses (requireAdminAuth = requireAuth + requireExafyAdmin).
+router.post('/providers/verify', requireAdminAuth, async (req: Request, res: Response) => {
+  try {
+    const validation = VerifyProviderSchema.safeParse(req.body);
+    if (!validation.success) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Invalid request body',
+        details: validation.error.issues,
+      });
+    }
+
+    const { provider } = validation.data;
+    // Default to the provider's flagship so an operator can verify a provider
+    // without first knowing its model-id convention (Bedrock's, in particular,
+    // is a cross-region inference profile id, not a plain model name).
+    const model = validation.data.model || getProviderFlagship(provider);
+
+    const result = await verifyProvider(provider, model);
+
+    // Record the preflight as a governance DECISION, not as LLM traffic. This
+    // is the evidence the "verify Bedrock FIRST, then flip routing" ordering
+    // rule asks for — without it, "was this provider ever actually checked?"
+    // has no auditable answer, which is the same gap that let a routing table
+    // claim two stages were on Claude while Google served every call.
+    // Never fails the request: the diagnosis is the deliverable, and an OASIS
+    // outage must not turn a successful preflight into a 500.
+    try {
+      await emitOasisEvent({
+        vtid: 'VTID-03565',
+        type: 'llm.provider.verified',
+        source: 'gateway',
+        status: result.ok ? 'success' : 'error',
+        message: `Provider preflight ${provider}/${model}: ${result.ok ? 'OK' : result.error || 'failed'}`,
+        payload: {
+          provider,
+          model,
+          ok: result.ok,
+          available: result.available,
+          error: result.error,
+          latency_ms: result.latencyMs,
+        },
+        actor_id: (req as { identity?: { user_id?: string } }).identity?.user_id,
+        actor_role: 'admin',
+        surface: 'command-hub',
+      });
+    } catch (emitErr) {
+      console.warn(`[LLM API] preflight OASIS emit failed: ${String(emitErr).slice(0, 200)}`);
+    }
+
+    // Always HTTP 200: a failed preflight is a successful diagnosis, and the
+    // caller needs the body to read `error`. Non-2xx would make "Bedrock is
+    // denied" indistinguishable from "the verify endpoint is broken".
+    res.json({ ok: true, data: result });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: String(err).slice(0, 300) });
+  }
 });
 
 router.get('/models', async (req: Request, res: Response) => {

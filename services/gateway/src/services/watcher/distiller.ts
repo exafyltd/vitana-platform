@@ -168,7 +168,32 @@ export function distilStep(step: WatcherStep & { id?: string }): DistilledLesson
   const scope: LessonScope = {};
   const ev = step.evidence || {};
   if (ev.scanner) scope.scanner = String(ev.scanner);
-  if (ev.service) scope.service = String(ev.service);
+
+  // `evidence.service` is deliberately NOT copied into the scope — VTID-03534.
+  //
+  // scope is a RETRIEVAL filter, and scopeMatches() refuses a scoped lesson
+  // whenever the caller does not supply that key (correctly — otherwise a
+  // scanner-specific lesson leaks into every unrelated prompt). But
+  // evidence.service is the name of the service that EMITTED the event, which
+  // is provenance, not a caller context. The two are different things, and
+  // conflating them made every learned lesson unreachable by all three of its
+  // consumers:
+  //
+  //   planner        passes stage + scanner, never service  -> no match
+  //   executor       passes stage + scanner, never service  -> no match
+  //   worker-runner  passes service = its DOMAIN ('backend') while the lesson
+  //                  carried the emitter name ('worker-backend')  -> no match
+  //
+  // Measured on production data after the VTID-03531 backfill: 34 lessons
+  // stored, 25 injectable by frequency, and 0 reachable by any real caller.
+  // The memory existed and nothing could read it — the same shape as the bug
+  // VTID-03531 fixed one layer down.
+  //
+  // The emitting service is not lost: it stays in the step's evidence and in
+  // the lesson's pattern_key/example_message, where it belongs as provenance.
+  // Leaving scope empty makes the lesson universal within its stage, which is
+  // the correct default — "a previous attempt failed to typecheck" is worth
+  // knowing regardless of which service emitted it.
 
   const raw = String((ev.message as string) || (ev.error as string) || '');
 

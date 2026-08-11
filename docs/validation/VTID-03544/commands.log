@@ -1,0 +1,22 @@
+# VTID-03544 — commands executed for verification (2026-08-09)
+
+# 1. Route + helper + auth tests (output captured in ./outputs/portal-tests.txt)
+cd services/gateway && npx jest test/routes/vcaop-portal.test.ts
+# -> Test Suites: 1 passed; Tests: 8 passed
+
+# 2. Transition-map sync verification is part of the suite above — it parses
+#    STATE_TRANSITIONS out of services/vcaop/src/factory/manifest.ts at test
+#    time and compares row-for-row against the mirror in the route module.
+
+# 3. Mesh factory tables applied to Supabase (project inmkhvwdcuyhnxkgfvsb)
+#    via MCP apply_migration as vcaop_mesh_factory_0001_vtid_03535 (RLS
+#    enabled on all 8 tables). Applied 2026-08-09, before this route ships.
+
+# 4. Local `npm run build` on this container reports 3 pre-existing errors
+#    that are IDENTICAL on clean origin/main (stale local node_modules —
+#    missing `compression` types); verified by stashing the diff and
+#    rebuilding. CI's clean `npm ci && npm run build` is the authority.
+
+# VTID-03553 /my surface (2026-08-09)
+cd services/gateway && npx tsc --noEmit   # pre-existing local-env compression/any errors only (also present on stashed tree)
+npx jest test/routes/vcaop-portal-my.test.ts test/routes/vcaop-portal.test.ts   # 16/16 pass -> outputs/portal-my-tests.txt

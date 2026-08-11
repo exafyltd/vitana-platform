@@ -9,36 +9,33 @@
  * - GET  /personas      — read-only roster (also feeds Specialists tab)
  * - GET  /kpis          — aggregate KPIs by kind / specialist / week
  *
- * Auth: requires authenticated user; service role used for cross-tenant
- * reads. The Command Hub is operator-only — TODO when role gating is wired,
- * add an explicit `developer` / `operator` role check here. For now, the
- * gateway's existing auth-supabase-jwt middleware enforces authentication.
+ * Auth: requires exafy_admin (Command Hub operator). Enforced via
+ * requireAdminAuth, which verifies the JWT signature and app_metadata.
+ * exafy_admin=true — see SECURITY note below.
  */
 
 import { Router, Request, Response } from 'express';
 import { createClient } from '@supabase/supabase-js';
+import { requireAdminAuth } from '../middleware/auth-supabase-jwt';
 
 const router = Router();
 const VTID = 'VTID-02605';
+
+// SECURITY (post-audit hardening): every route below reads cross-tenant
+// data via the service-role client (support transcripts, persona system
+// prompts, handoff events). Previously gated by ensureAuth(), which only
+// checked that an Authorization header was PRESENT — the token itself was
+// never verified, so `Authorization: Bearer anything` was sufficient to
+// dump every tenant's feedback tickets. requireAdminAuth verifies the JWT
+// signature and requires exafy_admin, matching this file's own stated
+// intent ("The Command Hub is operator-only").
+router.use(requireAdminAuth);
 
 function getServiceClient() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE;
   if (!url || !key) throw new Error('SUPABASE_URL or SUPABASE_SERVICE_ROLE missing');
   return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
-}
-
-function getBearerToken(req: Request): string | null {
-  const h = req.headers.authorization;
-  return h && h.startsWith('Bearer ') ? h.slice(7) : null;
-}
-
-function ensureAuth(req: Request, res: Response): boolean {
-  if (!getBearerToken(req)) {
-    res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
-    return false;
-  }
-  return true;
 }
 
 // VTID-02659: produce a short, readable excerpt for the tenant ticket list.
@@ -72,7 +69,6 @@ function excerptFromTranscript(raw: string | null): string | null {
 // ---------------------------------------------------------------------------
 
 router.get('/tickets', async (req: Request, res: Response) => {
-  if (!ensureAuth(req, res)) return;
   const supabase = getServiceClient();
 
   const limit = Math.min(parseInt(String(req.query.limit ?? '50'), 10) || 50, 200);
@@ -107,7 +103,6 @@ router.get('/tickets', async (req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 
 router.get('/tickets/:id', async (req: Request, res: Response) => {
-  if (!ensureAuth(req, res)) return;
   const id = req.params.id;
   const supabase = getServiceClient();
 
@@ -139,7 +134,6 @@ router.get('/tickets/:id', async (req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 
 router.get('/handoffs/recent', async (req: Request, res: Response) => {
-  if (!ensureAuth(req, res)) return;
   const limit = Math.min(parseInt(String(req.query.limit ?? '50'), 10) || 50, 200);
   const supabase = getServiceClient();
 
@@ -160,7 +154,6 @@ router.get('/handoffs/recent', async (req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 
 router.get('/personas', async (req: Request, res: Response) => {
-  if (!ensureAuth(req, res)) return;
   const supabase = getServiceClient();
   const { data, error } = await supabase
     .from('agent_personas')
@@ -175,7 +168,6 @@ router.get('/personas', async (req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 
 router.get('/kpis', async (req: Request, res: Response) => {
-  if (!ensureAuth(req, res)) return;
   const supabase = getServiceClient();
 
   // Total counts by status
@@ -223,13 +215,12 @@ router.get('/kpis', async (req: Request, res: Response) => {
 // whose user_id is a member of the requested tenant. Used by the vitana-v1
 // /admin/feedback screen (PR 25 baseline).
 //
-// SECURITY NOTE: This endpoint currently authenticates only (any logged-in
-// user passes). Per-tenant authorization (caller must be admin of that
-// tenant) is enforced by the consuming UI's tenant context but should be
-// hardened with an explicit middleware check in a follow-up.
+// Gated by the router-level requireAdminAuth (exafy_admin) above. Per-tenant
+// scoping to the requested tenantId's own admins (vs. any exafy_admin) is a
+// separate, lower-severity follow-up — see require-tenant-admin.ts for the
+// pattern to adopt here.
 
 router.get('/tenants/:tenantId/tickets', async (req: Request, res: Response) => {
-  if (!ensureAuth(req, res)) return;
   const tenantId = req.params.tenantId;
   const limit = Math.min(parseInt(String(req.query.limit ?? '50'), 10) || 50, 200);
   const supabase = getServiceClient();
@@ -302,7 +293,6 @@ router.get('/tenants/:tenantId/tickets', async (req: Request, res: Response) => 
 // seeing prompt internals.
 
 router.get('/tenants/:tenantId/personas', async (req: Request, res: Response) => {
-  if (!ensureAuth(req, res)) return;
   const supabase = getServiceClient();
   // Return ALL non-archived personas including 'disabled' so the admin UI's
   // per-card on/off toggle reflects the real state (a disabled persona must

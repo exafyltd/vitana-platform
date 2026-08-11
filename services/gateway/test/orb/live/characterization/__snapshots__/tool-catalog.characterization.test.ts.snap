@@ -3880,12 +3880,17 @@ the change; the app screens follow on the next reload.",
         "parameters": {
           "properties": {
             "language": {
-              "description": "Target language code: de (German), en (English), es (Spanish), sr (Serbian).",
+              "description": "Target language code: de (German), en (English), es (Spanish), sr (Serbian), fr (French), pt (Portuguese), ru (Russian), pl (Polish).",
               "enum": [
                 "de",
                 "en",
                 "es",
                 "sr",
+                "fr",
+                "pt",
+                "ru",
+                "pl",
+                "zh",
               ],
               "type": "string",
             },
@@ -16636,12 +16641,17 @@ the change; the app screens follow on the next reload.",
         "parameters": {
           "properties": {
             "language": {
-              "description": "Target language code: de (German), en (English), es (Spanish), sr (Serbian).",
+              "description": "Target language code: de (German), en (English), es (Spanish), sr (Serbian), fr (French), pt (Portuguese), ru (Russian), pl (Polish).",
               "enum": [
                 "de",
                 "en",
                 "es",
                 "sr",
+                "fr",
+                "pt",
+                "ru",
+                "pl",
+                "zh",
               ],
               "type": "string",
             },

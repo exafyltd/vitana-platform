@@ -149,6 +149,15 @@ export const TYPE_META: Record<string, TypeMeta> = {
   onboarding_step_completed:   { channel: 'inapp',          priority: 'p3', category: 'system' },
   weekly_activity_summary:     { channel: 'push_and_inapp', priority: 'p2', category: 'system' },
   feature_announcement:        { channel: 'push_and_inapp', priority: 'p2', category: 'system' },
+  // BOOTSTRAP-COMMUNITY-MARKETPLACE: seller-facing moderation outcomes
+  marketplace_listing_approved: { channel: 'push_and_inapp', priority: 'p2', category: 'system' },
+  marketplace_listing_rejected: { channel: 'push_and_inapp', priority: 'p1', category: 'system' },
+  marketplace_listing_removed:  { channel: 'push_and_inapp', priority: 'p1', category: 'system' },
+  // BOOTSTRAP-COMMUNITY-MARKETPLACE (Chunk 5): buyer's first contact message
+  // on a listing — category 'chat' (not 'system') so it respects the same
+  // chat notification preference as new_chat_message, since it IS a chat
+  // message, just with listing-specific copy instead of the generic sender-name title.
+  listing_interest:            { channel: 'push_and_inapp', priority: 'p1', category: 'chat' },
   // Admin Companion (BOOTSTRAP-ADMIN-EE)
   admin_insight_urgent:        { channel: 'push_and_inapp', priority: 'p0', category: 'system' },
   admin_insight_action_needed: { channel: 'inapp',          priority: 'p1', category: 'system' },
@@ -249,11 +258,12 @@ export async function sendPushToUser(
   userId: string,
   tenantId: string,
   payload: NotificationPayload,
-  supabase: SupabaseClient<any, any, any>
+  supabase: SupabaseClient<any, any, any>,
+  opts?: { excludeAppilixTagged?: boolean }
 ): Promise<number> {
   const { data: tokens } = await supabase
     .from('user_device_tokens')
-    .select('fcm_token')
+    .select('fcm_token, device_label')
     .eq('user_id', userId)
     .eq('tenant_id', tenantId)
     // Only devices this user still OWNS (VTID-03481). A revoked row means the
@@ -265,8 +275,21 @@ export async function sendPushToUser(
 
   if (!tokens?.length) return 0;
 
+  // Tokens registered from inside the Appilix WebView (tagged "Appilix " by
+  // registerAppilixDevice()) can only be tapped safely via an Appilix-native
+  // push — a raw FCM push to that same device is what crashes the WebView
+  // (see the comment in notifyUser()). Callers that already tried Appilix
+  // and got no device pass excludeAppilixTagged so we don't repeat the
+  // crash-causing delivery on the very token Appilix just told us it can't
+  // reach.
+  const targets = opts?.excludeAppilixTagged
+    ? tokens.filter((t) => !t.device_label?.startsWith('Appilix '))
+    : tokens;
+
+  if (!targets.length) return 0;
+
   let sent = 0;
-  for (const { fcm_token } of tokens) {
+  for (const { fcm_token } of targets) {
     const ok = await sendPushNotification(fcm_token, payload);
     if (ok) {
       sent++;
@@ -312,6 +335,71 @@ export async function isSignedOutOnAllKnownDevices(
   // a duplicate one, and the token takeover already removes most duplicates.
   if (error || !data?.length) return false;
   return data.every((row: { revoked_at: string | null }) => row.revoked_at !== null);
+}
+
+/**
+ * A phone this user no longer owns must stop buzzing, even while the user is
+ * still signed in somewhere else. (VTID-03507)
+ *
+ * `isSignedOutOnAllKnownDevices` above only suppresses Appilix for a user who
+ * is signed out on EVERY device. That misses the common real case and left the
+ * duplicate in place: someone hands the phone over (or signs a second account
+ * into it) but stays signed in on their laptop. Their phone claim is revoked,
+ * their desktop claim is live, so "signed out everywhere" is false — and
+ * Appilix, which addresses devices by `user_identity` and keeps stale
+ * identity→device mappings we cannot purge, keeps delivering that account's
+ * copy to the phone. Two accounts, two languages, one lock screen.
+ *
+ * Observed exactly this way: one Android token held live by the current owner
+ * (de) and revoked for the previous owner (en), who still had a live Windows
+ * desktop claim — and whose English copy still arrived on the phone.
+ *
+ * Suppress when BOTH hold:
+ *   1. the user has no live claim on any NATIVE (app-shell) device — a live
+ *      desktop/web claim is irrelevant here, Appilix cannot reach a browser; and
+ *   2. one of their revoked native claims is now held live by a DIFFERENT
+ *      account — i.e. that phone demonstrably belongs to someone else now.
+ *
+ * Both conditions together keep this narrow: a user who still has the app on
+ * their own phone is never suppressed, and neither is one whose claim lapsed
+ * without anyone else taking the device over. Fails OPEN on any query error.
+ */
+export async function hasLostDeviceToAnotherAccount(
+  userId: string,
+  supabase: SupabaseClient<any, any, any>
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('user_device_tokens')
+    .select('fcm_token, device_label, revoked_at')
+    .eq('user_id', userId);
+  if (error || !data?.length) return false;
+
+  type Row = { fcm_token: string; device_label: string | null; revoked_at: string | null };
+  const rows = data as Row[];
+
+  // Native app-shell devices are the only ones Appilix can reach. The frontend's
+  // registerAppilixDevice() prefixes the label with "Appilix "; the wrapper's own
+  // WebView UA also carries an "App<NN>" build token (App9/App10/App95/App96…).
+  // Plain browser UAs match neither — note "AppleWebKit" has no digits after
+  // "App", so it cannot false-positive here.
+  const isNative = (label: string | null) => /appilix|\bApp\d+\b/i.test(label || '');
+
+  if (rows.some((r) => r.revoked_at === null && isNative(r.device_label))) return false;
+
+  const lostNativeTokens = rows
+    .filter((r) => r.revoked_at !== null && isNative(r.device_label))
+    .map((r) => r.fcm_token);
+  if (!lostNativeTokens.length) return false;
+
+  const { data: heldByOthers, error: othersErr } = await supabase
+    .from('user_device_tokens')
+    .select('fcm_token')
+    .in('fcm_token', lostNativeTokens)
+    .neq('user_id', userId)
+    .is('revoked_at', null)
+    .limit(1);
+  if (othersErr) return false;
+  return !!heldByOthers?.length;
 }
 
 // ── Appilix Native Push (Maxina iOS + Android apps) ──────────
@@ -682,7 +770,11 @@ export async function notifyUser(
     // identity→device mappings we can't purge, so without this the account that
     // LEFT a shared phone keeps pushing to it — the second, wrong-language copy
     // of every notification.
-    const appilixSuppressed = await isSignedOutOnAllKnownDevices(userId, supabase);
+    // VTID-03507 widens this: signed out EVERYWHERE, or still signed in
+    // elsewhere but no longer the owner of the phone Appilix would reach.
+    const appilixSuppressed =
+      (await isSignedOutOnAllKnownDevices(userId, supabase)) ||
+      (await hasLostDeviceToAnotherAccount(userId, supabase));
 
     if (payload.data?.url) {
       // Notifications with deep-link URLs must go through Appilix first.
@@ -691,7 +783,14 @@ export async function notifyUser(
       // doesn't pass the URL to Appilix's native tap handler.
       appilixSent = appilixSuppressed ? false : await sendAppilixPush(userId, payload);
       if (!appilixSent) {
-        pushed = await sendPushToUser(userId, tenantId, payload, supabase);
+        // Appilix reported no device for this user (e.g. its client-side
+        // identity registration never took) — do NOT retry via raw FCM on
+        // an Appilix-tagged token, since that's the exact delivery path
+        // that crashes the WebView on tap. Only non-Appilix tokens (real
+        // browser web-push) are safe to fall back to here.
+        pushed = await sendPushToUser(userId, tenantId, payload, supabase, {
+          excludeAppilixTagged: true,
+        });
       }
     } else {
       pushed = await sendPushToUser(userId, tenantId, payload, supabase);

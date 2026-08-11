@@ -873,6 +873,17 @@ export interface GeminiLiveSession {
   upstreamProvider?: 'vertex' | 'livekit' | 'nova_sonic';
   sseResponse: Response | null;
   active: boolean;
+  // VTID-03561: latch — at most one `vtid.live.session.stop` per session.
+  // Every teardown path sets this immediately after emitting. `cleanupWsSession`
+  // is the only path that CHECKS it, because it is the one teardown that can run
+  // *after* another has already emitted: the client sends `stop_session` (which
+  // emits `user_stop`) and its socket then closes a moment later, firing
+  // `ws.on('close')` → cleanup. Without the latch that ordinary sequence would
+  // book two stops for one conversation and double-count every clean session.
+  // Deliberately NOT keyed off `active`, which is false both for "already
+  // stopped" and for "never successfully started" — two states that need
+  // opposite answers here.
+  stopEventEmitted?: boolean;
   // VTID-02047 voice channel-swap: persona currently driving the voice channel.
   // 'vitana' is the default; report_to_specialist tool flips this to a
   // specialist key, then triggers a transparent reconnect of the upstream
@@ -1184,16 +1195,85 @@ export type { ClientContext } from '../orb/live/types';
 
 // VTID-SESSION-LEAK-FIX: Periodic sweep to purge zombie sessions.
 // Safety net in case SSE/WS close handlers miss cleanup (e.g. abrupt process kill).
-// Runs every 5 minutes, removes sessions older than 30 minutes.
+//
+// VTID-03510 — REAP ON IDLE, NOT ON AGE.
+// ---------------------------------------
+// The original sweep keyed purely off `createdAt`: anything older than 30 min
+// was killed, regardless of whether anyone was talking. Since `liveSessions`
+// owns the UPSTREAM Gemini Live WebSocket, and Gemini Live bills per second of
+// open stream, an abandoned session kept billing for the full 30 min (plus up
+// to one 5-min sweep interval).
+//
+// Measured 2026-08-06 over 7 days, from `vtid.live.session.stop`:
+//
+//   close reason                 sessions  avg turns  avg mins  % of billed mins
+//   expired_ttl                       132        0.0      32.4             97.5%
+//   superseded_by_new_session          60        0.1       1.6              2.3%
+//   (normal close)                     33        1.3       0.4              0.3%
+//
+// i.e. **97.5% of all billed Live minutes were sessions nobody ever spoke to**,
+// held open for half an hour each. Real conversation was 12 minutes a WEEK.
+//
+// `lastActivity` already existed on the session and is bumped on every inbound
+// audio chunk and tool call — the sweep simply never read it. There is even an
+// idle-based sweep already, but it runs over `wsClientSessions` (the client
+// socket map), not `liveSessions` (the upstream stream). That gap is the bug.
+//
+// Deliberately NOT keyed on audio-OUT: a model monologuing to a user who left
+// must still be reaped. That is exactly the VTID-03480 signature (model speaks,
+// user never hears it), and keeping the stream alive for it burns money while
+// hiding the fault. The distinct `idle_no_engagement` reason below keeps that
+// case *more* visible, not less — it separates "user walked away" from the old
+// undifferentiated `expired_ttl` bucket.
+const MAX_SESSION_AGE_MS = 30 * 60 * 1000;
+/** No inbound audio and no turns ever — user opened ORB and walked away. */
+const IDLE_NO_ENGAGEMENT_MS = Number(process.env.ORB_IDLE_NO_ENGAGEMENT_MS || 5 * 60 * 1000);
+/** Had a real conversation, then went quiet. More generous — they may be thinking. */
+const IDLE_AFTER_ENGAGEMENT_MS = Number(process.env.ORB_IDLE_AFTER_ENGAGEMENT_MS || 10 * 60 * 1000);
+
+/**
+ * VTID-03510: decide whether an idle live session should be reaped, and why.
+ *
+ * Extracted as a pure function (same rationale as VTID-03502's
+ * `shouldFallbackToVertexOnNovaClose`) because both directions are expensive:
+ * too aggressive cuts off a user mid-thought, too lax keeps paying for silence.
+ * Returning the REASON rather than a boolean is what keeps the saving
+ * measurable afterwards — collapsing these back into `expired_ttl` would make
+ * the fix invisible in exactly the telemetry that revealed the problem.
+ *
+ * @returns the close reason, or null to keep the session alive.
+ */
+export function classifyIdleSession(args: {
+  ageMs: number;
+  idleMs: number;
+  turnCount: number;
+  audioInChunks: number;
+}): 'expired_ttl' | 'idle_no_engagement' | 'idle_timeout' | null {
+  // Absolute backstop first, and it keeps its original reason string so any
+  // existing dashboard filtering on `expired_ttl` still means what it did.
+  if (args.ageMs > MAX_SESSION_AGE_MS) return 'expired_ttl';
+  const engaged = args.turnCount > 0 || args.audioInChunks > 0;
+  if (!engaged && args.idleMs > IDLE_NO_ENGAGEMENT_MS) return 'idle_no_engagement';
+  if (engaged && args.idleMs > IDLE_AFTER_ENGAGEMENT_MS) return 'idle_timeout';
+  return null;
+}
+
+// Sweep every 60s, not every 5 min: a 5-minute idle budget checked on a
+// 5-minute interval yields up to 10 minutes of actual billed idle.
 setInterval(() => {
-  const MAX_SESSION_AGE_MS = 30 * 60 * 1000;
   const now = Date.now();
   let purged = 0;
   for (const [sid, s] of liveSessions) {
-    if (now - s.createdAt.getTime() > MAX_SESSION_AGE_MS) {
+    const closeReason = classifyIdleSession({
+      ageMs: now - s.createdAt.getTime(),
+      idleMs: now - s.lastActivity.getTime(),
+      turnCount: s.turn_count,
+      audioInChunks: s.audioInChunks,
+    });
+    if (closeReason) {
       // Nova item 6: this is the abandoned-session sweep, not a user action —
       // distinguish it from user_stop / client_disconnect in telemetry.
-      if (s.upstreamWs) { try { s.upstreamWs.close(1000, 'zombie_sweep_max_age'); } catch (_) { /* ignore */ } }
+      if (s.upstreamWs) { try { s.upstreamWs.close(1000, `zombie_sweep_${closeReason}`); } catch (_) { /* ignore */ } }
       // BOOTSTRAP-ORB-1007-AUDIT: emit session.stop so abandoned sessions
       // (client closed tab / mobile killed app mid-conversation) show up in
       // OASIS instead of just disappearing. Prior behaviour left a silent
@@ -1203,12 +1283,18 @@ setInterval(() => {
         user_id: s.identity?.user_id || null,
         tenant_id: s.identity?.tenant_id || null,
         transport: s.clientWs ? 'websocket' : 'sse',
-        reason: 'expired_ttl',
+        reason: closeReason,
+        // VTID-03510: idle_ms makes the saving auditable — it is the billed
+        // silence this sweep stopped paying for. Without it the only way to
+        // tell a 5-minute reap from a 32-minute one is duration_ms, which
+        // also includes the useful part of the session.
+        idle_ms: now - s.lastActivity.getTime(),
         audio_in_chunks: s.audioInChunks,
         audio_out_chunks: s.audioOutChunks,
         duration_ms: Date.now() - s.createdAt.getTime(),
         turn_count: s.turn_count,
       }).catch(() => { });
+      s.stopEventEmitted = true; // VTID-03561
       // VTID-01959: voice self-healing dispatch (mode-gated for /report path).
       // VTID-01994: pass session metrics so quality classifier can detect
       // failures regardless of mode and route to investigator.
@@ -1229,8 +1315,8 @@ setInterval(() => {
       purged++;
     }
   }
-  if (purged > 0) console.log(`[VTID-SESSION-TTL] Purged ${purged} expired sessions (remaining: ${liveSessions.size})`);
-}, 5 * 60 * 1000);
+  if (purged > 0) console.log(`[VTID-03510] Reaped ${purged} idle/expired live sessions (remaining: ${liveSessions.size})`);
+}, 60 * 1000);
 
 // =============================================================================
 // VTID-SESSION-LIMIT: Enforce single active ORB session per user
@@ -1306,6 +1392,7 @@ function terminateExistingSessionsForUser(userId: string, excludeSessionId?: str
       duration_ms: Date.now() - existingSession.createdAt.getTime(),
       turn_count: existingSession.turn_count,
     }).catch(() => {});
+    existingSession.stopEventEmitted = true; // VTID-03561
     // VTID-01959: voice self-healing dispatch (mode-gated for /report path).
     // VTID-01994: pass session metrics for mode-independent quality classifier.
     dispatchVoiceFailureFireAndForget({
@@ -1440,6 +1527,99 @@ import {
 // take 5-8+s to first greeting audio; this fills the silence).
 import { buildGreetingBridgeText } from '../services/conversation/greeting-audio-bridge';
 import { synthesizeGreetingBridgeAudioPcm, GREETING_BRIDGE_PCM_SAMPLE_RATE_HZ } from '../services/tts/greeting-bridge-tts';
+
+/**
+ * VTID-03502: should a closed Nova stream fall back to Vertex?
+ *
+ * True only for the measured premature-close-at-open failure: the stream
+ * closed on its own before ANY audio was produced. `!hasProducedAudio` is
+ * the discriminator because zero real upstream output is perfectly
+ * correlated with `nova_stream_error` across the canary window (6/6) and
+ * appears under no other close reason (local_close 0/35, client_disconnect
+ * 0/13, user_stop 0/3, nova_validation 0/1) — a mid-conversation drop always
+ * has audio out.
+ *
+ * VTID-03557 review fix: this used to be `audioOutChunks === 0`, backed by
+ * `session.audioOutChunks` — a counter also incremented by the synthetic
+ * activation chime (orb-live.ts's instant-feedback sends) BEFORE any real
+ * model audio arrives. A premature close that happens to land after the
+ * chime but before genuine Nova output would have read as "audio produced"
+ * and silently skipped both this fallback and the VTID-03557 retry, even
+ * though the failure signature (greeting_sent=true, zero real content) was
+ * exactly what this predicate exists to catch. The caller now passes
+ * `session.transportHasShownLife` — set only by genuine upstream traffic
+ * (model audio, input transcription proving the provider answered), never
+ * by the chime — so the discriminator can't be defeated by synthetic audio.
+ *
+ * Exported as a pure predicate so this decision is testable on its own rather
+ * than only through the Nova connect closure it is used in.
+ */
+export function shouldFallbackToVertexOnNovaClose(args: {
+  sessionActive: boolean;
+  /** We closed the stream ourselves (shutdown, swap, rotation) — not a failure. */
+  initiatedLocally: boolean;
+  /** A planned rotation owns its own reconnect; do not race it. */
+  rotationInFlight: boolean;
+  /** True once genuine upstream traffic has been seen — never set by the chime. */
+  hasProducedAudio: boolean;
+  /** Guard against a Vertex-side failure bouncing back and looping. */
+  alreadyFellBack: boolean;
+}): boolean {
+  return (
+    args.sessionActive &&
+    !args.initiatedLocally &&
+    !args.rotationInFlight &&
+    !args.hasProducedAudio &&
+    !args.alreadyFellBack
+  );
+}
+
+/**
+ * VTID-03557: should a Nova stream that died before any audio get ONE fresh
+ * Nova retry before VTID-03502's Vertex fallback pins the session away from
+ * Nova for good?
+ *
+ * Evidence this targets: every measured "Premature close" failure is Node's
+ * own `ERR_STREAM_PREMATURE_CLOSE` (from `stream.finished()`), not our own
+ * timeout code (`classifyNovaError` routes a genuine local timeout to the
+ * distinct `nova_stream_timeout` code, never observed here) — meaning the far
+ * end (Bedrock, or a network hop to it) tore down the stream, not us.
+ * `NodeHttp2ConnectionManager.lease()` skips its pooled-session fast path for
+ * event-stream commands (`isEventStream` → `createIsolatedSession`), so every
+ * Nova connect already opens a genuinely fresh HTTP/2 session — a retry does
+ * not reuse whatever the first attempt hit. Fresh-connection resets shortly
+ * after open are common, transient infrastructure noise on any pooled/load-
+ * balanced backend; the standard mitigation is exactly this: one prompt retry
+ * before giving up on the preferred path.
+ *
+ * Same discriminator as `shouldFallbackToVertexOnNovaClose` (this predicate
+ * runs first, on the identical signature) but gated on a SEPARATE flag so the
+ * two compose into a two-strike policy: retry once, fall back to Vertex only
+ * if the retry ALSO dies before any audio. `alreadyRetried` therefore must be
+ * checked (and set) independently of `alreadyFellBack` — collapsing them
+ * would either skip the retry entirely or let the fallback retry forever.
+ *
+ * VTID-03557 review fix: see `shouldFallbackToVertexOnNovaClose`'s doc — this
+ * takes the same `hasProducedAudio` (backed by `transportHasShownLife`, not
+ * the chime-inclusive `audioOutChunks`) for the identical reason.
+ */
+export function shouldRetryNovaOnPrematureClose(args: {
+  sessionActive: boolean;
+  initiatedLocally: boolean;
+  rotationInFlight: boolean;
+  /** True once genuine upstream traffic has been seen — never set by the chime. */
+  hasProducedAudio: boolean;
+  /** Guard against retrying more than once per session. */
+  alreadyRetried: boolean;
+}): boolean {
+  return (
+    args.sessionActive &&
+    !args.initiatedLocally &&
+    !args.rotationInFlight &&
+    !args.hasProducedAudio &&
+    !args.alreadyRetried
+  );
+}
 // VTID-03495: Polly seam for the /tts route. No-ops unless TTS_PROVIDER=polly.
 import { tryPollySynthesis } from '../services/tts/tts-provider';
 import { resolveNovaSonicVoice } from '../orb/live/voice/nova-sonic-voice';
@@ -2339,6 +2519,45 @@ const VERTEX_BOOTSTRAP_CACHE = new Map<string, { at: number; value: {
 const VERTEX_BOOTSTRAP_CACHE_TTL_MS = 5 * 60_000;
 const VERTEX_BOOTSTRAP_CACHE_MAX_ENTRIES = 500;
 
+// VTID-03504: in-flight de-dupe for the legacy bootstrap, mirroring the fix in
+// `vitana-brain-cache.ts`. VERTEX_BOOTSTRAP_CACHE is a read-through cache that
+// is only WRITTEN once the work finishes, so N concurrent starts for the same
+// user all miss, all run the full fetch, and all compete — a textbook cache
+// stampede. The ORB's own reconnect loop generates exactly that traffic shape.
+// Keyed identically to the cache (tenant|user) so the two agree on identity.
+const VERTEX_BOOTSTRAP_INFLIGHT = new Map<string, Promise<{
+  contextPack?: ContextPack;
+  contextInstruction?: string;
+  latencyMs: number;
+  skippedReason?: string;
+}>>();
+
+// VTID-03504: upper bound on a single caller's wait. The underlying build is
+// NOT cancelled on timeout — it runs to completion and populates the cache, so
+// the retry that follows lands on a warm entry instead of starting a third
+// copy. What is bounded is how long a caller sits on it: an unbounded await
+// here is what let a degraded bootstrap hold the greeting for ~120s while the
+// widget's 8s budget had long since expired and fired another reconnect.
+const BOOTSTRAP_CALLER_TIMEOUT_MS = Number(process.env.ORB_BOOTSTRAP_CALLER_TIMEOUT_MS || 6000);
+
+/** VTID-03504: the "no memory available" shape, used as a fail-soft fallback. */
+function emptyMemoryContext(
+  userId: string,
+  tenantId: string,
+  error: string,
+): Awaited<ReturnType<typeof fetchMemoryContextWithIdentity>> {
+  return {
+    ok: false,
+    user_id: userId,
+    tenant_id: tenantId,
+    items: [],
+    summary: '',
+    formatted_context: '',
+    fetched_at: new Date().toISOString(),
+    error,
+  };
+}
+
 function storeVertexBootstrapCache(key: string, value: {
   contextPack?: ContextPack;
   contextInstruction?: string;
@@ -2379,6 +2598,51 @@ export async function buildBootstrapContextPack(
     return { ...cached.value, latencyMs: Date.now() - startTime };
   }
 
+  // VTID-03504: join an identical build already running for this user rather
+  // than starting a second one.
+  let work = VERTEX_BOOTSTRAP_INFLIGHT.get(bootstrapCacheKey);
+  if (work) {
+    console.log(`[VTID-03504] Bootstrap JOIN in-flight for session ${sessionId} (key ${bootstrapCacheKey})`);
+  } else {
+    work = buildBootstrapContextPackUncached(identity, sessionId, bootstrapCacheKey);
+    VERTEX_BOOTSTRAP_INFLIGHT.set(bootstrapCacheKey, work);
+    // Release the slot on settle, guarded on identity so a newer build that
+    // has already claimed the key is never evicted by an older one finishing.
+    const release = () => {
+      if (VERTEX_BOOTSTRAP_INFLIGHT.get(bootstrapCacheKey) === work) {
+        VERTEX_BOOTSTRAP_INFLIGHT.delete(bootstrapCacheKey);
+      }
+    };
+    work.then(release, release);
+  }
+
+  // Bound the caller's wait, not the build (see BOOTSTRAP_CALLER_TIMEOUT_MS).
+  // Degrading to "no memory preamble" is a real loss of personalization, and
+  // it is still strictly better than the alternative this replaces: a session
+  // that never greets at all because the client gave up first.
+  return withBootstrapTimeout(
+    work,
+    { latencyMs: Date.now() - startTime, skippedReason: 'bootstrap_timeout' },
+    `bootstrap(${sessionId})`,
+    BOOTSTRAP_CALLER_TIMEOUT_MS,
+  );
+}
+
+async function buildBootstrapContextPackUncached(
+  identity: SupabaseIdentity,
+  sessionId: string,
+  bootstrapCacheKey: string
+): Promise<{
+  contextPack?: ContextPack;
+  contextInstruction?: string;
+  latencyMs: number;
+  skippedReason?: string;
+}> {
+  const startTime = Date.now();
+  // The exported wrapper already rejected a missing tenant/user; restate it
+  // here so this function narrows the same way on its own.
+  const userId = identity.user_id as string;
+  const tenantId = identity.tenant_id as string;
   try {
     // VTID-01224: identity-scoped memory fetch so each user gets their own memory.
     // VTID-RECENT-TURNS: fetch the 3 most recent raw user utterances in parallel
@@ -2386,18 +2650,42 @@ export async function buildBootstrapContextPack(
     // hallucinating from aggregated facts.
     // BOOTSTRAP-HISTORY-AWARE-TIMELINE: also fetch the User Context Profile
     // (recent activity, routines, preferences) so the voice ORB is history-aware.
+    // VTID-03504: the profiler leg has capped its own stages since
+    // BOOTSTRAP-ORB-CONNECT-HANG, but these two had no bound at all — so the
+    // build's worst case was "however long Supabase takes", which under load
+    // was measured at 120s. Both fail soft to an empty result, which the
+    // formatting below already handles (it is the same shape a user with no
+    // memory items produces).
     const profilerEnabled = process.env.PROFILER_IN_ORB_INSTRUCTION !== 'false';
     const [memoryContext, recentTurns, profileResult] = await Promise.all([
-      fetchMemoryContextWithIdentity(
-        { user_id: identity.user_id, tenant_id: identity.tenant_id },
-        LIVE_CONTEXT_CONFIG.MAX_MEMORY_ITEMS
+      withBootstrapTimeout(
+        // The inner .catch keeps the ORIGINAL failure message on `error`,
+        // which becomes the caller-visible `skippedReason` below. Letting
+        // withBootstrapTimeout's own catch swallow it would report every
+        // memory failure as a bare 'timeout' and lose the cause — a
+        // regression this repo's tests correctly refuse ("never silence
+        // errors"). Only a genuine timeout says so.
+        fetchMemoryContextWithIdentity(
+          { user_id: userId, tenant_id: tenantId },
+          LIVE_CONTEXT_CONFIG.MAX_MEMORY_ITEMS
+        ).catch((err: any) => emptyMemoryContext(userId, tenantId, `error: ${err?.message || err}`)),
+        emptyMemoryContext(userId, tenantId, `error: bootstrap.fetchMemoryContext timed out after ${WS_BOOTSTRAP_STAGE_TIMEOUT_MS}ms`),
+        'bootstrap.fetchMemoryContext',
       ),
-      fetchRecentOrbUserTurns(
-        { user_id: identity.user_id, tenant_id: identity.tenant_id },
-        3
+      // Recent turns are one optional block of the preamble, so a failure here
+      // degrades to "no recent-turns block" rather than failing the whole
+      // bootstrap — matching how the profiler leg has always behaved. The
+      // cause is still logged by withBootstrapTimeout.
+      withBootstrapTimeout(
+        fetchRecentOrbUserTurns(
+          { user_id: userId, tenant_id: tenantId },
+          3
+        ),
+        [] as Awaited<ReturnType<typeof fetchRecentOrbUserTurns>>,
+        'bootstrap.fetchRecentTurns',
       ),
       profilerEnabled
-        ? getUserContextSummary(identity.user_id, { tenantId: identity.tenant_id })
+        ? getUserContextSummary(userId, { tenantId })
             .catch((err: any) => {
               console.warn(`[UserContextProfiler] voice bootstrap fetch failed: ${err?.message || err}`);
               return { summary: '', version: 0, cached: false, warnings: [] };
@@ -6625,6 +6913,8 @@ async function connectToLiveAPI(
         }),
         languageSupported: isNovaSonicLanguageSupported(session.lang),
         runtime: __novaRuntime === 'aws-ecs' ? 'aws-ecs' : __novaRuntime,
+        // VTID-03501: labels the decision as global-promotion vs canary.
+        globalEnabled: __novaCfg.globalEnabled === true,
       },
     });
   } catch (e) {
@@ -7647,6 +7937,30 @@ async function connectToLiveAPI(
         // Close policy: diag always; on an unexpected close of an active,
         // non-rotating session, emit ONE typed connection issue (same dedupe
         // contract as the Vertex ws close handler).
+        /**
+         * VTID-03502: emit the localized connection_issue frame to whichever
+         * client transport this session uses. Extracted so the premature-close
+         * fallback can reach the same user-visible outcome when its Vertex
+         * reconnect ALSO fails — the one thing worse than a failed fallback is
+         * a failed fallback that says nothing.
+         */
+        const emitConnectionIssue = (s: typeof session, reason: string): void => {
+          if (s.connectionIssueEmitted) return;
+          s.connectionIssueEmitted = true;
+          const issueEvent = {
+            type: 'connection_issue',
+            reason,
+            message: getConnectionIssueMessage(s.lang || 'en'),
+            should_close: true,
+          };
+          if (s.sseResponse) {
+            try { s.sseResponse.write(`data: ${JSON.stringify(issueEvent)}\n\n`); } catch (_e) { /* ignore */ }
+          }
+          if (s.clientWs && s.clientWs.readyState === WebSocket.OPEN) {
+            try { s.clientWs.send(JSON.stringify(issueEvent)); } catch (_e) { /* ignore */ }
+          }
+        };
+
         novaClient.onClose((closeEvent) => {
           emitDiag(session, 'upstream_closed', {
             provider: 'nova_sonic',
@@ -7683,6 +7997,169 @@ async function connectToLiveAPI(
             });
             return;
           }
+          // VTID-03557: one fresh Nova retry BEFORE the VTID-03502 Vertex
+          // fallback below pins the session away from Nova. Every measured
+          // "Premature close" is Node's own stream-teardown error, not our
+          // code's timeout path, and each Nova connect already opens a brand
+          // new HTTP/2 session (event-stream commands skip the SDK's session
+          // pool) — so a retry is not replaying whatever the first attempt
+          // hit, it is a materially independent connection attempt. This is
+          // the standard mitigation for a transient reset at connection open.
+          //
+          // Runs on the identical signature as the fallback below, gated on
+          // its OWN flag (`_novaPrematureCloseRetried`) so the two compose as
+          // a two-strike policy: retry once, fall back to Vertex only if the
+          // retry ALSO dies before any audio. `attemptTransparentReconnect`
+          // reconnects via the normal provider-selection path, which still
+          // resolves to Nova here because `_novaFallbackToVertex` is not set
+          // yet — so this genuinely retries Nova, not a disguised Vertex hop.
+          const shouldRetryNova = shouldRetryNovaOnPrematureClose({
+            sessionActive: session.active,
+            initiatedLocally: closeEvent.initiatedLocally === true,
+            rotationInFlight,
+            hasProducedAudio: session.transportHasShownLife === true,
+            alreadyRetried: (session as any)._novaPrematureCloseRetried === true,
+          });
+
+          if (shouldRetryNova) {
+            console.warn(
+              `[VTID-03557] Nova stream for session ${session.sessionId} closed before any audio ` +
+                `(reason=${closeEvent.reason ?? 'unknown'}, audio_out=0) — retrying Nova once before ` +
+                `falling back to Vertex.`,
+            );
+            (session as any)._novaPrematureCloseRetried = true;
+            emitDiag(session, 'nova_premature_close_retry', {
+              provider: 'nova_sonic',
+              reason: closeEvent.reason ?? null,
+              audio_out: 0,
+            });
+            void emitOasisEvent({
+              type: 'orb.upstream.nova.premature_close_retry',
+              vtid: 'VTID-03557',
+              payload: {
+                session_id: session.sessionId,
+                provider: 'nova_sonic',
+                reason: closeEvent.reason ?? null,
+                status: 'warning',
+              } as any,
+            } as any).catch(() => { /* best-effort */ });
+
+            void attemptTransparentReconnect(
+              session,
+              onAudioResponse,
+              onTextResponse,
+              onError,
+              onTurnComplete,
+              onInterrupted,
+            ).then((ok) => {
+              if (!ok) {
+                // The retry itself never got a new connection attempted at
+                // all (e.g. session went inactive, or MAX_RECONNECTS hit) —
+                // this onClose handler will not fire again to pick up the
+                // Vertex fallback below, so surface the disconnect here
+                // rather than leaving the user in unexplained silence.
+                console.warn(
+                  `[VTID-03557] Nova retry reconnect failed outright for session ${session.sessionId}.`,
+                );
+                emitConnectionIssue(session, 'upstream_disconnected');
+                return;
+              }
+              // VTID-03557 review fix: the failed first attempt already
+              // dispatched the greeting prompt (that's the measured failure
+              // signature — greeting_sent=true, zero real audio), so without
+              // this the new Nova connection would sit open with no greeting
+              // ever sent.
+              resendGreetingIfStuckAtZeroTurns(session, 'VTID-03557-retry');
+            }).catch((e) => {
+              console.warn(`[VTID-03557] Nova retry reconnect threw: ${(e as Error).message}`);
+              emitConnectionIssue(session, 'upstream_disconnected');
+            });
+            return;
+          }
+
+          // VTID-03502: premature-close-at-open fallback.
+          //
+          // Measured 2026-07-29 → 08-05: 10.2% of Nova sessions (6/59) die
+          // exactly here with diagnostic "Premature close" — the bidirectional
+          // HTTP/2 stream closing before ANY audio moves. audio_out === 0 is
+          // perfectly correlated with that failure and appears under no other
+          // close reason (local_close 0/35, client_disconnect 0/13,
+          // user_stop 0/3, nova_validation 0/1), which is what makes it a safe
+          // discriminator rather than a heuristic.
+          //
+          // VTID-03557: by the time this fires, a fresh Nova retry has ALREADY
+          // failed the same way once (see above) — this is now strike two, so
+          // pinning to Vertex is the right call rather than retrying Nova
+          // indefinitely.
+          //
+          // Without this branch the code below emits connection_issue with
+          // should_close:true and the user is simply left in silence — they
+          // cannot tell the session failed. Instead, pin the session to Vertex
+          // and reconnect transparently, reusing the exact machinery
+          // nova_rotation_exhausted_fallback already uses.
+          //
+          // Guarded on !_novaFallbackToVertex so a Vertex-side failure can
+          // never bounce back here and loop.
+          const novaDiedBeforeAnyAudio = shouldFallbackToVertexOnNovaClose({
+            sessionActive: session.active,
+            initiatedLocally: closeEvent.initiatedLocally === true,
+            rotationInFlight,
+            hasProducedAudio: session.transportHasShownLife === true,
+            alreadyFellBack: (session as any)._novaFallbackToVertex === true,
+          });
+
+          if (novaDiedBeforeAnyAudio) {
+            console.warn(
+              `[VTID-03502] Nova stream for session ${session.sessionId} closed before any audio ` +
+                `(reason=${closeEvent.reason ?? 'unknown'}, audio_out=0) — pinning to Vertex and reconnecting.`,
+            );
+            (session as any)._novaFallbackToVertex = true;
+            emitDiag(session, 'nova_premature_close_fallback', {
+              provider: 'nova_sonic',
+              reason: closeEvent.reason ?? null,
+              audio_out: 0,
+            });
+            void emitOasisEvent({
+              type: 'orb.upstream.nova.premature_close_fallback',
+              vtid: 'VTID-03502',
+              payload: {
+                session_id: session.sessionId,
+                from: 'nova_sonic',
+                to: 'vertex',
+                reason: closeEvent.reason ?? null,
+                status: 'warning',
+              } as any,
+            } as any).catch(() => { /* best-effort */ });
+
+            void attemptTransparentReconnect(
+              session,
+              onAudioResponse,
+              onTextResponse,
+              onError,
+              onTurnComplete,
+              onInterrupted,
+            ).then((ok) => {
+              if (!ok) {
+                // Reconnect failed too — fall through to the normal
+                // connection_issue path rather than leaving the user in
+                // silence with no signal at all.
+                console.warn(
+                  `[VTID-03502] Vertex fallback reconnect failed for session ${session.sessionId}.`,
+                );
+                emitConnectionIssue(session, 'upstream_disconnected');
+                return;
+              }
+              // VTID-03557 review fix: same greeting-stuck gap as the retry
+              // path above — the pre-fallback Nova attempt already marked
+              // greetingSent, so the new Vertex connection needs it replayed.
+              resendGreetingIfStuckAtZeroTurns(session, 'VTID-03502-fallback');
+            }).catch((e) => {
+              console.warn(`[VTID-03502] Vertex fallback reconnect threw: ${(e as Error).message}`);
+              emitConnectionIssue(session, 'upstream_disconnected');
+            });
+            return;
+          }
+
           if (
             session.active &&
             !closeEvent.initiatedLocally &&
@@ -8221,6 +8698,44 @@ function scheduleProactiveGoAwayResume(session: GeminiLiveSession, timeLeftMs: n
   };
 
   (session as any)._goAwayTimer = setTimeout(attempt, fireIn);
+}
+
+/**
+ * VTID-03557 review fix: replay the greeting after a reconnect that landed
+ * with zero completed turns.
+ *
+ * Both the VTID-03557 Nova retry and the VTID-03502 Vertex fallback reconnect
+ * via `attemptTransparentReconnect` after a premature-close-at-open failure —
+ * and that failure's own measured signature is `greeting_sent=true`: the
+ * greeting PROMPT was already dispatched to the dead upstream connection
+ * before it closed. `sendGreetingPromptToLiveAPI` silently no-ops whenever
+ * `session.greetingSent` is already true (its duplicate-greeting guard), so
+ * without this, a successful reconnect opens a fresh, healthy upstream
+ * connection that then sits waiting for a greeting that will never be sent —
+ * the user hears nothing until an unrelated watchdog eventually intervenes.
+ *
+ * Mirrors the existing VTID-GREETING-RECOVERY stall-recovery logic above
+ * (the `isStallRecovery` branch of the keepalive-close handler) for the
+ * identical underlying case: "a greeting was dispatched but the conversation
+ * never actually started." That logic lives on a different reconnect path
+ * (idle-stall detection) and is not reached by the premature-close retry or
+ * fallback, so it does not cover them on its own.
+ */
+function resendGreetingIfStuckAtZeroTurns(session: GeminiLiveSession, source: string): void {
+  if (session.turn_count === 0 && session.greetingSent) {
+    console.log(
+      `[${source}] Reconnected with 0 turns but greetingSent=true — resetting to re-send greeting for session ${session.sessionId}`,
+    );
+    session.greetingSent = false;
+    session.greetingTurnIndex = undefined;
+    if (session.upstreamWs && session.upstreamWs.readyState === WebSocket.OPEN) {
+      sendGreetingPromptToLiveAPI(session.upstreamWs, session);
+    }
+    emitDiag(session, 'greeting_recovery', {
+      reconnect_count: (session as any)._reconnectCount || 0,
+      source,
+    });
+  }
 }
 
 async function attemptTransparentReconnect(
@@ -14485,7 +15000,9 @@ export function initializeOrbWebSocket(server: HttpServer): void {
     for (const [sessionId, session] of wsClientSessions.entries()) {
       if (now - session.lastActivity.getTime() > SESSION_TIMEOUT_MS) {
         console.log(`[VTID-01222] WebSocket session expired: ${sessionId}`);
-        cleanupWsSession(sessionId);
+        // VTID-03561: the client-session expiry sweep, distinct from the
+        // live-session idle sweep that emits idle_*/expired_ttl.
+        cleanupWsSession(sessionId, 'ws_session_expired');
       }
     }
   }, 5 * 60 * 1000);
@@ -14616,14 +15133,14 @@ async function handleWebSocketConnection(ws: WebSocket, req: IncomingMessage): P
   ws.on('close', (code, reason) => {
     console.log(`[VTID-01222] WebSocket disconnected: ${sessionId}, code=${code}, reason=${reason}`);
     clearInterval(clientPingInterval);
-    cleanupWsSession(sessionId);
+    cleanupWsSession(sessionId, 'client_disconnect'); // VTID-03561
     decrementConnection(clientIP);
   });
 
   // Handle errors
   ws.on('error', (error) => {
     console.error(`[VTID-01222] WebSocket error for ${sessionId}:`, error);
-    cleanupWsSession(sessionId);
+    cleanupWsSession(sessionId, 'client_error'); // VTID-03561
     decrementConnection(clientIP);
   });
 }
@@ -15418,6 +15935,7 @@ function handleWsStopSession(clientSession: WsClientSession): void {
       user_turns: liveSession.transcriptTurns.filter(t => t.role === 'user').length,
       model_turns: liveSession.transcriptTurns.filter(t => t.role === 'assistant').length,
     }).catch(() => { });
+    liveSession.stopEventEmitted = true; // VTID-03561
     // VTID-01959: voice self-healing dispatch (mode-gated for /report path).
     // VTID-01994: pass session metrics for mode-independent quality classifier.
     dispatchVoiceFailureFireAndForget({

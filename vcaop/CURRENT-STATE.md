@@ -11,6 +11,195 @@
 
 ## Current position
 
+- **AI COMMERCE MESH — Phases 6+7 built (2026-08-08, VTID-03540 / VTID-03541)
+  — the program's build phases are COMPLETE (0-7), all dev/sandbox-only:**
+  - **Phase 6 (VTID-03540):** (a) `src/settlement/` deterministic VTNA
+    ledger — versioned fee config, integer minor units only, idempotent by
+    instruction id, balance validation, escrow lock/release, reversal as
+    compensating entries (history append-only), receipts, reconcile()
+    re-deriving balances; **constructor refuses any non-sandbox config**
+    (BLK-010 is a legal decision, not a code path); no LLM ever computes or
+    executes a transfer. (b) `vcaop-mcp` Phase 6 WRITE tools (create_cart,
+    add_cart_item, create_checkout_session, confirm_order, cancel_order,
+    request_refund, create/activate_business_connection,
+    request/approve/revoke_data_grant, settle_vtna) behind new per-family
+    write scopes; every write requires an idempotency_key (dup key returns
+    the ORIGINAL result — proven no double effect); consequential tools
+    refuse without `user_confirmation:true` (central `confirmation_required`
+    gate; revoke_data_grant deliberately friction-free); **settle_vtna has NO
+    amount parameter** — the ledger computes amounts from the reference;
+    write tools exist ONLY when a write backend is configured (Phase 1
+    read-only config unchanged). DB: `settlement_instruction` +
+    `connector_usage_record` (migration 0003, PG16-verified).
+  - **Phase 7 (VTID-03541) — BUILT DORMANT, delivery gated on BLK-009:**
+    `src/health/` is library+tests only, exported with a ⛔ note, mounted on
+    NO route and exposed as NO MCP tool until the independent privacy/consent
+    review passes. Purpose-bound ConsentRegistry (one grantee, one purpose,
+    explicit claims, validity window; only the data subject approves/revokes;
+    denials receipted too; receipts immutable), AttestationService (derived
+    claims only — `raw_data_disclosed` hardwired false, no field for raw
+    values; consent gate runs BEFORE any metric read; **ai_inferred
+    provenance refused** — no insurance action on unverifiable inference;
+    revocation cascades: attestations deleted, access refused), QuoteExchange
+    (insurer must match grantee; compare is a pure sort; only the data
+    subject selects; reward = the amount from the APPROVED GRANT settled via
+    the deterministic ledger). DB: consent/health tables (migration 0004,
+    PG16-verified incl. the consent_receipt RESTRICT append-only guarantee)
+    — do NOT apply live until BLK-009 passes; service_role-only + dedicated
+    RLS at that point. **Suites: vcaop 45/45 suites 269/269 tests; vcaop-mcp
+    6/6 suites 38/38 tests.** Runtime wiring (gateway mounting, Prisma repos,
+    dev deploy) remains BLK-001; open human gates: BLK-006 (mcp DNS),
+    BLK-007 (OAuth AS), BLK-009 (privacy review), BLK-010 (VTNA legal).
+- **AI COMMERCE MESH — Phase 5 built (2026-08-08, VTID-03538):** AI-assisted
+  mapping + drift healing in `src/factory/`. (1) **Transform registry**
+  (`transforms.ts`): named deterministic transforms (cents_to_decimal,
+  epoch_seconds_to_iso, to_number, uppercase_currency, …) — generated
+  CONFIGURATION, not generated executable code; unknown names throw (drift
+  signal); the event normalizer now applies a mapping's transform, and
+  ingestion/repair propose transforms deterministically (price_cents →
+  *_amount, *_ts → *_at, currency casing). (2) **MappingProposer seam**
+  (`proposer.ts`): DeterministicMappingProposer is the default and the only
+  hard dependency of certification; MockLlmMappingProposer stands in for the
+  future llm-router-backed proposer (mock-first, Sec. 0.8 — no runtime LLM
+  credentials here) and its output is CLAMPED to the contract (decided_by
+  forced to 'ai', confidence clamped to [0,1]) so a hallucinating model can
+  never smuggle a human decision or over-confidence past the gates.
+  (3) **Drift detection** (`drift.ts`): certified manifest vs fresh
+  discovery → per-change materiality; conservative: removed/type-changed
+  MAPPED fields, auth changes, removed actions, new SENSITIVE fields, and
+  fields becoming required are material; added benign fields/schemas/actions
+  are non-material. (4) **Repair pipeline** (`repair.ts`): proposeRepair
+  (patch bump non-material / minor bump material; surviving mappings kept,
+  dropped mappings noted, new candidates re-proposed as ai-decided) →
+  testRepair (FULL certification pipeline in sandbox, no shortcuts) →
+  applyRepair (refuses uncertified; refuses material without human
+  approval; prior certified version never mutated — rollback target).
+  **Healing limits enforced structurally:** auth mechanism + scopes are
+  copied from the CERTIFIED manifest, never from discovery (no scope
+  expansion, no auth swap — partner auth drift lands as a
+  re-authorize-deliberately note); new partner actions are NOT auto-added
+  (capability growth is onboarding, not repair). (5) **healConnectorDrift**
+  ladder: detect → propose → sandbox-test → auto-apply non-material |
+  CONNECTOR_REPAIR_APPROVAL human task for material or sandbox-failing
+  repairs; silent on no-drift (repetition ≠ signal). 17 new tests; **suite
+  43/43 suites, 254/254 tests green.** Remaining: Phase 6 (commerce writes +
+  VTNA settlement, BLK-010) and Phase 7 (health attestations, BLK-009).
+- **AI COMMERCE MESH — Phases 3+4 built (2026-08-08, VTID-03536 / VTID-03537):**
+  - **Phase 3 (`src/portal/`, VTID-03536):** `PartnerOnboardingService` — the
+    connect-business workflow over the Phase 2 factory+certification pipeline:
+    discover → (OpenAPI ingest | authorization_required when no spec) →
+    mapping preview (confidence + needs_review flags) → human
+    MappingDecisions (decided_by is ALWAYS the authenticated user, spoofing
+    ignored) → sandbox tests → approval_required|certified → THE one
+    activation approval (admin-only; `activateConnector` still refuses
+    uncertified — the portal adds orchestration, never a second gate) →
+    active, plus pause/resume/reauthorize (suspend until fresh credentials)/
+    revoke per the state machine. Framework-independent view models
+    (BLK-008 pattern): connection list, mapping preview, activation summary
+    stating exactly what is approved (capabilities, scopes, data read,
+    actions, events, human-gated actions, test results; fees honestly
+    "pending Phase 6"). Portal Express router `/api/v1/vcaop/portal/*` with
+    role authz (community denied; activation+revoke admin-only) and
+    tenant-isolation (foreign connection ≡ 404). Every transition emits an
+    OASIS-style event (ids/states only). 11 tests.
+  - **Phase 4 (`src/workflows/`, VTID-03537):** event normalization via
+    certified-manifest mappings (data minimization: unmapped partner fields
+    DROPPED and listed, never forwarded) + durable `WorkflowEngine`:
+    persisted-after-every-step state, resume-from-cursor, idempotent event
+    consumption (deterministic content-hash event ids), idempotent commands
+    (unique run idempotency keys — ALSO enforced at DB level), per-step
+    deterministic idempotency keys for downstream services, bounded
+    exponential backoff retry, per-step timeouts, per-step circuit breaker
+    with cooldown/half-open, saga compensation in reverse, DLQ + replay
+    (event entries replayable; run-failure entries resume-only — recovering a
+    compensated order is a NEW deliberate command, not an automatic retry),
+    stuck-run reconciliation emitting ONCE per transition. Cross-partner
+    order workflow e2e: order event → reserve inventory → merchant order →
+    invoice → commission → reward → notify; duplicate event ids dedup;
+    re-sent events with new ids still can't duplicate the run; invoice-outage
+    compensates the reservation + dead-letters. 13 tests. **DB:** 7 additive
+    models, migration `20260808_vcaop_mesh_workflows_0002` verified
+    up→down→up + cascade + idempotency-unique on ephemeral PG16; NOT applied
+    live (BLK-001). **Suite: 41/41 suites, 237/237 tests green.** Next:
+    Phase 5 (AI-assisted mapping/healing) or Phase 6 (commerce writes +
+    settlement); gateway mounting of the portal router + Prisma-backed
+    ConnectionRepository/WorkflowStore are the BLK-001-gated runtime steps.
+- **AI COMMERCE MESH — Phase 2 built (2026-08-08, VTID-03535):** Connector
+  Factory core in `services/vcaop/src/factory/` + canonical model seed in
+  `src/canonical/model.ts`. (1) **ConnectorManifest** (zod, versioned):
+  connection types incl. mcp/openapi/graphql/webhook/edi_sftp, secret
+  REFERENCES only (validator hunts inline secret-shaped values anywhere in the
+  document), cross-ref checks, destructive-action rule (human-gated or
+  idempotency key — no third option), connection-state machine with legal
+  transitions. (2) **OpenAPI ingestion** → draft manifest: schemas/actions/
+  webhooks/auth extracted; canonical mapping proposals scored by a transparent
+  deterministic lexical model (camelCase-aware); sensitive fields flagged;
+  unmappable fields become warnings, never guesses. (3) **ConnectorFactory**
+  compiles a manifest into `GeneratedApiConnector extends BaseConnector` —
+  guardrails inherited by construction (proved by tests: default-deny without
+  a policy row, human-gate halts before the partner is reached, registration
+  human-gated), plus generated zod input/output validators (output failure =
+  drift signal), retry/timeout/idempotency handling, generated health check,
+  generated CONTRACT TESTS (happy path, idempotency dedup, invalid input
+  never reaches transport, auth-failure surfacing, bounded retry), and
+  read-only MCP tool declarations. (4) **Certification pipeline**: all
+  contract tests must pass against the sandbox AND no low-confidence or
+  sensitive AI mapping without a human MappingDecision → otherwise
+  `approval_required`; `activateConnector` refuses anything uncertified — no
+  override exists. (5) **Sandbox partner e2e**: synthetic sandbox-supplier
+  OpenAPI fixture ingested → compiled → certified (after a human mapping
+  approval) → activated → serves reads. (6) **DB**: 8 additive Prisma models
+  (`partner_tenant`, `integration_manifest`, `integration_version`,
+  `partner_capability`, `schema_source`, `schema_mapping`,
+  `mapping_decision`, `connector_certification`) + reversible migration
+  `20260808_vcaop_mesh_factory_0001` — **verified up→down→up + FK cascade on
+  ephemeral Postgres 16 in-session**; NOT applied live (BLK-001);
+  `prisma validate` clean; DATABASE_SCHEMA.md updated. **Suite: 37/37
+  suites, 213/213 tests green** (was 33/184 at Phase 0 baseline). Next:
+  Phase 3 (Partner Portal onboarding presenters/API) or Phase 4 (durable
+  workflows); marketplace-sync's six handwritten providers are the first
+  real re-expression candidates.
+- **AI COMMERCE MESH — Phase 1 built (2026-08-08, VTID-03533):** new
+  `services/vcaop-mcp/` — the public MCP/OAuth gateway foundation (ADR-004),
+  dev-only. MCP Streamable HTTP (official SDK, stateless JSON, fresh server
+  per request), OAuth 2.1 resource-server side behind a swappable
+  `TokenVerifier` (HS256 test AS today; production JWKS verifier lands with
+  BLK-007), RFC 9728 protected-resource metadata, 10 declarative read-only
+  tools (registry with per-tool scopes/risk/confirmation/idempotency/audit
+  declarations; NO generic passthrough tool per ADR-005), **scope-filtered
+  tool discovery** (unauthorized tool ≡ nonexistent tool), tenant+user
+  identity from token claims only, per-subject rate limiting, sanitized
+  audit events (`assertAuditSafe` on every emit), stable error codes.
+  Backends: `MemoryReadBackend` (synthetic fixtures, CI) +
+  `GatewayReadBackend` (dev wiring for the wallet/commissions/providers
+  endpoints the gateway actually serves; catalog/cart/order reads honestly
+  return `backend_unavailable` pending the Phase 2 canonical read-model
+  API). **Verified:** 5 suites/30 tests green; `tsc` clean; built server
+  boots; **MCP Inspector CLI validated** initialize + scope-filtered
+  tools/list + tools/call against a running local instance. vcaop baseline
+  re-run: still 33/33 suites, 184/184. **Not done (blocked):** public
+  exposure, real AS, ChatGPT/Claude live connector validation — BLK-006/007.
+- **AI COMMERCE MESH — Phase 0 complete (2026-08-08, VTID-03532):** VCAOP is
+  being evolved into the Vitanaland AI Commerce Mesh (Connector Factory over
+  versioned manifests, canonical commerce model, public multi-tenant MCP/OAuth
+  gateway at `mcp.vitanaland.com`, durable workflows, AI-assisted integration
+  builder) per the 2026-08-08 user brief. Phase 0 deliverables:
+  `vcaop/MESH-PHASE0-REPORT.md` (verified current-state, implementation-gap
+  report, canonical-model proposal, threat model, migration/compatibility
+  plan) + `vcaop/adr/ADR-001…005` + new blockers BLK-006…010. **Test baseline
+  re-established on this branch: `services/vcaop` 33/33 suites, 184/184 tests
+  green; `tsc --noEmit` clean.** Verified live-gateway reality exceeds this
+  file's earlier records: marketplace-sync now has SIX handwritten provider
+  adapters (admitad, amazon, awin, cj, rakuten, shopify) + awin order/
+  conversion sync — these are the prime candidates for manifest re-expression
+  in Phase 2. Key decisions: extend VCAOP, never a second platform (ADR-001);
+  factory emits the existing `Connector` interface so guardrails are inherited
+  (ADR-002); versioned canonical envelope, read-models stay authoritative
+  (ADR-003); public MCP gateway is a NEW service, internal MCP stays internal
+  (ADR-004); AI plans / deterministic executes, no generic passthrough tool
+  (ADR-005). **Next: Phase 1 (public read-only MCP)** — new VTID at start;
+  resource-server + read tools built dev-only against a test AS
+  (BLK-006/007 gate public exposure).
 - **DISCOVER real purchasable catalog LIVE via Admitad (2026-06-29):** seeded 12
   curated, on-brand longevity/wellness products (8 AliExpress + 4 Bodylab24) into the
   `products` table, each `affiliate_url` = the LIVE cashback-allowed program gotolink

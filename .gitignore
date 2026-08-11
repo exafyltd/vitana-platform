@@ -34,4 +34,9 @@ Thumbs.db
 .test-venv/
 
 __pycache__/
-mgmt-response.json
+
+# RepoWise codebase-intelligence index (local, machine-specific — see .mcp.json note)
+.repowise/
+.mcp.json
+.vscode/mcp.json
+.vscode/extensions.json

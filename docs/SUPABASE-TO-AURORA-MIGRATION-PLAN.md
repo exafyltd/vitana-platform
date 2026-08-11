@@ -173,52 +173,6 @@ migrations rather than deliberate removals.
 **Exit criteria:** every one of the 103 is either applied or its `CREATE`
 deliberately removed; the baseline is empty; migration state is trustworthy.
 
-### TESTED 2026-08-05 — the "just never ran" hypothesis is WRONG
-
-With `SUPABASE_ACCESS_TOKEN` available, the experiment proposed above was run
-against production inside a `BEGIN … ROLLBACK` (verified: nothing persisted).
-
-`20251231100000_vtid_01092_services_products_memory.sql` — which declares four
-of the baselined-missing tables including `products_catalog` and
-`services_catalog` — **does not apply.** It fails with:
-
-```
-ERROR: 42703: column "user_id" does not exist
-```
-
-The cause matters more than the error. That migration also declares
-`relationship_edges`, which **does** exist in production — with a completely
-different schema:
-
-| migration declares | production actually has |
-|---|---|
-| `user_id`, `relationship_type`, `context`, `target_type`, `target_id` | `source_type`, `source_id`, `edge_type`, `mention_count_30d`, `mention_count_90d`, `sentiment_avg`, `recent_topics` |
-
-`CREATE TABLE IF NOT EXISTS` silently skips the existing table, and the
-migration's own `UNIQUE (tenant_id, user_id, …)` then fails against the live
-column set. Production's `relationship_edges` came from a different, later
-design — this migration describes a superseded one.
-
-**Three consequences, all of which change the plan:**
-
-1. **The 103 cannot be bulk-applied.** At least some are stale, not merely
-   un-run. Each needs individual triage: apply / rewrite / delete the `CREATE`.
-   Re-running them blindly would fail, and where it *didn't* fail it could
-   create tables matching an abandoned design.
-2. **`CREATE TABLE IF NOT EXISTS` actively masks divergence.** A table can
-   "exist" while being a completely different thing from what the migration
-   says. The drift check (VTID-03486) only asserts existence — it cannot catch
-   this class. A column-level drift check would be a meaningful follow-up.
-3. **Phase 3 must NOT rebuild the Aurora schema by replaying migration files.**
-   That is the obvious approach and it would produce the *wrong*
-   `relationship_edges` — and silently, since the replay would succeed. Schema
-   transfer has to come from the live database (`pg_dump --schema-only`), with
-   the migration files treated as historical narrative rather than as truth.
-
-This also means the "dead `RUN-MIGRATION`" theory is at best partial. A broken
-CI path may explain *some* of the backlog, but not a migration that cannot
-apply at all.
-
 ---
 
 ## Phase 3 — Schema and data transfer
