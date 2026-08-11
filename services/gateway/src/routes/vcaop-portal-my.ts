@@ -32,6 +32,7 @@ import {
   extractSchemaSources,
   pendingReviewMappings,
 } from './vcaop-portal';
+import { detectPlatform } from '../services/platform-detect';
 
 const router = Router();
 router.use(requireAuth as any);
@@ -100,6 +101,20 @@ async function transitionAndEmitOasisEvent(supabase: any, req: Request, res: Res
   });
   return res.json({ ok: true, data: { id: rec.id, state: to } });
 }
+
+// Storefront platform sniff (VTID-03601, Track 4): merchant pastes a URL,
+// we fetch it server-side (SSRF-guarded, see services/platform-detect.ts)
+// and suggest connector_id/provider_id instead of requiring manual entry.
+// Read-only — never touches partner_tenant/integration_manifest.
+router.post('/connections/detect-platform', async (req: Request, res: Response) => {
+  const { url } = req.body ?? {};
+  if (!url || typeof url !== 'string') {
+    return res.status(400).json({ ok: false, error: 'url is required' });
+  }
+  const result = await detectPlatform(url);
+  if (!result.ok) return res.status(422).json(result);
+  res.json(result);
+});
 
 // ===== List / create =====
 router.get('/connections', async (req: Request, res: Response) => {

@@ -11,9 +11,11 @@ import request from 'supertest';
 import vcaopPortalMyRouter from '../../src/routes/vcaop-portal-my';
 import { requireAuth } from '../../src/middleware/auth-supabase-jwt';
 import { getSupabase } from '../../src/lib/supabase';
+import { detectPlatform } from '../../src/services/platform-detect';
 
 jest.mock('../../src/middleware/auth-supabase-jwt', () => ({ requireAuth: jest.fn() }));
 jest.mock('../../src/lib/supabase', () => ({ getSupabase: jest.fn() }));
+jest.mock('../../src/services/platform-detect', () => ({ detectPlatform: jest.fn() }));
 
 const app = express();
 app.use(express.json());
@@ -194,5 +196,35 @@ describe('input + infrastructure guards', () => {
     const res = await request(app).post('/api/v1/vcaop/portal/my/connections/foreign/revoke');
     expect(res.status).toBe(404);
     expect(update).not.toHaveBeenCalled();
+  });
+});
+
+describe('detect-platform (VTID-03601, Track 4)', () => {
+  test('requires a url', async () => {
+    asMerchant();
+    const res = await request(app).post('/api/v1/vcaop/portal/my/connections/detect-platform').send({});
+    expect(res.status).toBe(400);
+    expect(detectPlatform).not.toHaveBeenCalled();
+  });
+
+  test('is read-only — never touches the database', async () => {
+    asMerchant();
+    (detectPlatform as jest.Mock).mockResolvedValue({ ok: true, connector_id: 'shopify', confidence: 'high' });
+    const res = await request(app)
+      .post('/api/v1/vcaop/portal/my/connections/detect-platform')
+      .send({ url: 'https://shop.example.test' });
+    expect(res.status).toBe(200);
+    expect(res.body.connector_id).toBe('shopify');
+    expect(getSupabase).not.toHaveBeenCalled();
+  });
+
+  test('an SSRF-blocked or failed detection surfaces as 422, not 500', async () => {
+    asMerchant();
+    (detectPlatform as jest.Mock).mockResolvedValue({ ok: false, error: 'blocked_private_address' });
+    const res = await request(app)
+      .post('/api/v1/vcaop/portal/my/connections/detect-platform')
+      .send({ url: 'http://169.254.169.254/' });
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe('blocked_private_address');
   });
 });
