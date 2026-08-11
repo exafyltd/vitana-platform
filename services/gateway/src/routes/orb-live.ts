@@ -102,6 +102,12 @@ import {
 // is a property of the state (replacing the scattered greetingSent boolean);
 // the opener fires exactly once, in OPENING, for the life of the conversation.
 import { ConversationStateMachine } from '../orb/live/session/conversation-state-machine';
+// VTID-03583: per-TURN navigation marker. Deliberately NOT the session-lifetime
+// `navigationDispatched` latch — see navigation-turn-scope.ts for why.
+import {
+  navigationDispatchedThisTurn,
+  markNavigationDispatchedThisTurn,
+} from '../orb/live/session/navigation-turn-scope';
 // VTID-03252: ENVIRONMENT block formatter, extracted for testability.
 import { formatClientContextForInstruction } from '../orb/live/instruction/client-context-format';
 // BOOTSTRAP-ORB-R0-INSTRUCTION-CAP: aggregate byte-budget guard for the final
@@ -1122,7 +1128,19 @@ export interface GeminiLiveSession {
   // VTID-NAV: Set true the moment a navigation is queued. Gates input audio
   // forwarding so Gemini doesn't start a new turn while the widget is closing.
   // Once true, the session is effectively in "closing for navigation" mode.
+  //
+  // VTID-03583: this is a ONE-WAY latch by design — nothing resets it, because
+  // its original contract is "this session is closing", which never un-happens.
+  // Do NOT reuse it to mean "already navigated this turn": VTID-03446 did, and
+  // because the latch never clears, every navigation after the first in a
+  // session was refused for the rest of that session. Use
+  // `navigationDispatchedTurn` for per-turn questions.
   navigationDispatched?: boolean;
+  // VTID-03583: turn_count at the moment a navigation was dispatched. A
+  // per-turn marker, not a latch — `turn_count` advancing at turn_complete IS
+  // the reset, so there is no clear-path that an error branch can skip.
+  // Compare with `navigationDispatchedThisTurn(session)`.
+  navigationDispatchedTurn?: number;
   // BOOTSTRAP-NOVA-SONIC-VOICE-NAV-FIX: set true when handleNavigateToScreen
   // already wrote the orb_directive to the transport at tool-call time
   // (VTID-NAV-FAST), instead of waiting for turn_complete to flush
@@ -2951,7 +2969,11 @@ async function handleNavigate(
   // comment on handleNavigateToScreen below) tries to re-open the Navigator
   // anyway, short-circuit instead of re-running consultNavigator and risking
   // a second, deeper disambiguation question stacked on top of the first.
-  if (session.navigationDispatched) {
+  //
+  // VTID-03583: scoped to the CURRENT TURN. This originally read the
+  // session-lifetime `navigationDispatched` latch, which never resets, so it
+  // refused every navigation after the first one in a session.
+  if (navigationDispatchedThisTurn(session)) {
     return {
       success: true,
       result: 'NAVIGATING_TO: (already in progress)\nA redirect is already underway from earlier in this turn. Do NOT ask another question or call navigate/navigate_to_screen again — just finish your sentence and stop.',
@@ -2997,6 +3019,9 @@ async function handleNavigate(
       // mobile_route override (e.g. Settings pills → /settings?mode=<section>).
       // Without this the unified navigate path always used the desktop route.
       is_mobile: session.is_mobile === true,
+      // VTID-03586: attribution only — lets navigator OASIS events be grouped
+      // by provider instead of leaving Nova-vs-Vertex claims unfalsifiable.
+      upstream_provider: (session as any).upstreamProvider ?? null,
     },
     sb,
   );
@@ -3040,6 +3065,7 @@ async function handleNavigate(
       requested_at: Date.now(),
     };
     session.navigationDispatched = true;
+    markNavigationDispatchedThisTurn(session);
     session.pendingNavigation = undefined;
 
     const previousRoute = session.current_route;
@@ -3148,7 +3174,8 @@ export async function handleNavigateToScreen(
   args: Record<string, unknown>
 ): Promise<{ success: boolean; result: string; error?: string }> {
   // VTID-03446: same-turn re-entry guard — mirrors handleNavigate() above.
-  if (session.navigationDispatched) {
+  // VTID-03583: turn-scoped, for the reason documented on that guard.
+  if (navigationDispatchedThisTurn(session)) {
     return {
       success: true,
       result: 'NAVIGATING_TO: (already in progress)\nA redirect is already underway from earlier in this turn. Do NOT ask another question or call navigate/navigate_to_screen again — just finish your sentence and stop.',
@@ -3186,6 +3213,9 @@ export async function handleNavigateToScreen(
       session_id: session.sessionId,
       is_anonymous: !!session.isAnonymous || !hasIdentity,
       is_mobile: session.is_mobile === true,
+      // VTID-03586: attribution only — lets navigator OASIS events be grouped
+      // by provider instead of leaving Nova-vs-Vertex claims unfalsifiable.
+      upstream_provider: (session as any).upstreamProvider ?? null,
     },
     sb,
   );
@@ -3271,6 +3301,7 @@ export async function handleNavigateToScreen(
       requested_at: Date.now(),
     };
     session.navigationDispatched = true;
+    markNavigationDispatchedThisTurn(session);
     session.navigationDirectiveSentImmediately = true;
 
     const isOverlay = result.entry_kind === 'overlay';
@@ -4168,6 +4199,7 @@ async function executeLiveApiToolInner(
             requested_at: Date.now(),
           };
           session.navigationDispatched = true;
+          markNavigationDispatchedThisTurn(session);
           session.pendingNavigation = undefined;
         }
         return {
@@ -4237,6 +4269,7 @@ async function executeLiveApiToolInner(
             requested_at: Date.now(),
           };
           session.navigationDispatched = true;
+          markNavigationDispatchedThisTurn(session);
           session.pendingNavigation = undefined;
           const previousRoute = session.current_route;
           session.current_route = directive.route;
@@ -4323,6 +4356,7 @@ async function executeLiveApiToolInner(
             requested_at: Date.now(),
           };
           session.navigationDispatched = true;
+          markNavigationDispatchedThisTurn(session);
 
           const previousRoute = session.current_route;
           session.current_route = route;
@@ -5762,6 +5796,7 @@ async function executeLiveApiToolInner(
             requested_at: Date.now(),
           };
           session.navigationDispatched = true;
+          markNavigationDispatchedThisTurn(session);
           session.pendingNavigation = undefined;
           const previousRoute = session.current_route;
           session.current_route = directive.route;

@@ -166,6 +166,21 @@ export interface OrbToolIdentity {
    */
   is_anonymous?: boolean | null;
   is_mobile?: boolean | null;
+  /**
+   * VTID-03586 — which upstream voice provider produced this tool call
+   * ('vertex' | 'nova_sonic' | 'livekit'), for OASIS attribution only. Never
+   * used for behaviour: the navigator consult is provider-agnostic and must
+   * stay that way.
+   *
+   * Why it exists: navigator events carried no provider at all, so a live
+   * report of "navigation regressed when we moved to Nova" could not be
+   * confirmed or refuted from telemetry — grouping navigator events by
+   * provider returned nothing but nulls. Attribution then falls back to
+   * argument-by-plausibility, which is how the same navigation bug got
+   * misdiagnosed twice in one session (see VTID-03583). Populate from
+   * `session.upstreamProvider` wherever a session is in hand.
+   */
+  upstream_provider?: string | null;
 }
 
 export type OrbToolResult =
@@ -3489,6 +3504,8 @@ export async function tool_navigate(
       memory_hint_count: consultResult.memory_hint_count,
       ms_elapsed: consultResult.ms_elapsed,
       is_anonymous: isAnonymous,
+      // VTID-03586: attribution only — see OrbToolIdentity.upstream_provider.
+      provider: id.upstream_provider ?? null,
     },
   }).catch(() => {});
 
@@ -3517,6 +3534,8 @@ export async function tool_navigate(
         })),
         ms_elapsed: consultResult.ms_elapsed,
         lang,
+        // VTID-03586: attribution only.
+        provider: id.upstream_provider ?? null,
       },
     }).catch(() => {});
 

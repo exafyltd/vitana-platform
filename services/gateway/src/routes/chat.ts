@@ -21,6 +21,7 @@ import { createClient } from '@supabase/supabase-js';
 import { notifyUser } from '../services/notification-service';
 import { VITANA_BOT_USER_ID, isVitanaBot } from '../lib/vitana-bot';
 import { processConversationTurn } from '../services/conversation-client';
+import { extractDmActions } from '../services/chat/dm-tool-actions';
 import { tt } from '../i18n/catalog';
 import { getUserLocale } from '../i18n/server-locale';
 
@@ -536,6 +537,17 @@ async function handleVitanaTextReply(
       return { ok: false, error };
     }
 
+    // VTID-03587: derive the client-actionable instructions BEFORE the insert
+    // so a malformed tool call can never cost the user their reply text.
+    const dmActions = extractDmActions((result as { tool_calls?: unknown }).tool_calls);
+    if (dmActions.length > 0) {
+      console.log(
+        `[Chat] Vitana reply carries ${dmActions.length} action(s): ${dmActions
+          .map((a) => (a.kind === 'navigate' ? `navigate:${a.screen_id ?? a.route}` : `event:${a.event}`))
+          .join(', ')}`,
+      );
+    }
+
     // Write Vitana's reply to chat_messages
     const { error } = await supabase
       .from('chat_messages')
@@ -552,6 +564,12 @@ async function handleVitanaTextReply(
           thread_id: result.thread_id,
           turn_number: result.turn_number,
           brain_enabled: useBrain,
+          // VTID-03587: carry the turn's client-actionable tool calls. This
+          // array was previously built by processConversationTurn, logged to
+          // OASIS, and then dropped — so the assistant would narrate "let me
+          // show you the articles" and never open anything, forever. See
+          // services/chat/dm-tool-actions.ts.
+          actions: dmActions,
         },
       });
 
