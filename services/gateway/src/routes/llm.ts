@@ -392,8 +392,13 @@ router.get('/telemetry', async (req: Request, res: Response) => {
 // nothing ever aggregated them into a "how many calls, by whom, on what"
 // answer -- so a runaway loop or a silent Google fallback only became
 // visible when someone happened to read a bill.
+//
+// Admin-gated (unlike its sibling GET /telemetry, a pre-existing gap out of
+// scope here): this endpoint surfaces aggregate cost/volume data, and the
+// Command Hub client already sends the admin bearer token on every request
+// via buildContextHeaders(), so this is a drop-in requirement change.
 // =============================================================================
-router.get('/telemetry/summary', async (req: Request, res: Response) => {
+router.get('/telemetry/summary', requireAdminAuth, async (req: Request, res: Response) => {
   try {
     const hoursRaw = req.query.hours;
     const hours = hoursRaw !== undefined ? Number(hoursRaw) : 24;
