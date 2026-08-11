@@ -228,3 +228,82 @@ describe('detect-platform (VTID-03601, Track 4)', () => {
     expect(res.body.error).toBe('blocked_private_address');
   });
 });
+
+describe('shopify OAuth authorize (VTID-03603, Track 2)', () => {
+  const ORIGINAL_ENV = { ...process.env };
+  afterEach(() => {
+    process.env = { ...ORIGINAL_ENV };
+  });
+
+  test('reports not_configured when SHOPIFY_CLIENT_ID/SECRET/REDIRECT_URI are unset', async () => {
+    delete process.env.SHOPIFY_CLIENT_ID;
+    delete process.env.SHOPIFY_CLIENT_SECRET;
+    delete process.env.SHOPIFY_OAUTH_REDIRECT_URI;
+    asMerchant('merchant-1');
+    const rec = { id: 'm-1', connector_id: 'shopify', status: 'authorization_required', partner_tenant: { owner_user_id: 'merchant-1' } };
+    (getSupabase as jest.Mock).mockReturnValue({ from: jest.fn(() => tableStub({ data: rec })) });
+    const res = await request(app)
+      .post('/api/v1/vcaop/portal/my/connections/m-1/shopify/authorize')
+      .send({ shop: 'my-shop.myshopify.com' });
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe('not_configured');
+  });
+
+  test('a foreign connection reads as 404 even when configured', async () => {
+    process.env.SHOPIFY_CLIENT_ID = 'id';
+    process.env.SHOPIFY_CLIENT_SECRET = 'secret';
+    process.env.SHOPIFY_OAUTH_REDIRECT_URI = 'https://gateway.example/api/v1/vcaop/shopify-oauth/callback';
+    asMerchant('merchant-2');
+    (getSupabase as jest.Mock).mockReturnValue({ from: jest.fn(() => tableStub({ data: null })) });
+    const res = await request(app)
+      .post('/api/v1/vcaop/portal/my/connections/foreign/shopify/authorize')
+      .send({ shop: 'my-shop.myshopify.com' });
+    expect(res.status).toBe(404);
+  });
+
+  test('rejects a connection whose connector_id is not shopify', async () => {
+    process.env.SHOPIFY_CLIENT_ID = 'id';
+    process.env.SHOPIFY_CLIENT_SECRET = 'secret';
+    process.env.SHOPIFY_OAUTH_REDIRECT_URI = 'https://gateway.example/api/v1/vcaop/shopify-oauth/callback';
+    asMerchant('merchant-1');
+    const rec = { id: 'm-1', connector_id: 'woocommerce', status: 'authorization_required', partner_tenant: { owner_user_id: 'merchant-1' } };
+    (getSupabase as jest.Mock).mockReturnValue({ from: jest.fn(() => tableStub({ data: rec })) });
+    const res = await request(app)
+      .post('/api/v1/vcaop/portal/my/connections/m-1/shopify/authorize')
+      .send({ shop: 'my-shop.myshopify.com' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/not a shopify connector/);
+  });
+
+  test('rejects a non *.myshopify.com shop domain', async () => {
+    process.env.SHOPIFY_CLIENT_ID = 'id';
+    process.env.SHOPIFY_CLIENT_SECRET = 'secret';
+    process.env.SHOPIFY_OAUTH_REDIRECT_URI = 'https://gateway.example/api/v1/vcaop/shopify-oauth/callback';
+    asMerchant('merchant-1');
+    const rec = { id: 'm-1', connector_id: 'shopify', status: 'authorization_required', partner_tenant: { owner_user_id: 'merchant-1' } };
+    (getSupabase as jest.Mock).mockReturnValue({ from: jest.fn(() => tableStub({ data: rec })) });
+    const res = await request(app)
+      .post('/api/v1/vcaop/portal/my/connections/m-1/shopify/authorize')
+      .send({ shop: 'evil.example.com' });
+    expect(res.status).toBe(400);
+  });
+
+  test('returns a real Shopify authorize_url when configured, owned, and valid', async () => {
+    process.env.SHOPIFY_CLIENT_ID = 'test-client-id';
+    process.env.SHOPIFY_CLIENT_SECRET = 'test-client-secret';
+    process.env.SHOPIFY_OAUTH_REDIRECT_URI = 'https://gateway.example/api/v1/vcaop/shopify-oauth/callback';
+    asMerchant('merchant-1');
+    const rec = { id: 'm-1', connector_id: 'shopify', status: 'authorization_required', partner_tenant: { owner_user_id: 'merchant-1' } };
+    (getSupabase as jest.Mock).mockReturnValue({ from: jest.fn(() => tableStub({ data: rec })) });
+    const res = await request(app)
+      .post('/api/v1/vcaop/portal/my/connections/m-1/shopify/authorize')
+      .send({ shop: 'my-shop.myshopify.com' });
+    expect(res.status).toBe(200);
+    const url = new URL(res.body.data.authorize_url);
+    expect(url.origin).toBe('https://my-shop.myshopify.com');
+    expect(url.pathname).toBe('/admin/oauth/authorize');
+    expect(url.searchParams.get('client_id')).toBe('test-client-id');
+    expect(url.searchParams.get('redirect_uri')).toBe('https://gateway.example/api/v1/vcaop/shopify-oauth/callback');
+    expect(url.searchParams.get('state')).toBeTruthy();
+  });
+});

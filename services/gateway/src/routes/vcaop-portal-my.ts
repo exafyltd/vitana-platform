@@ -33,6 +33,7 @@ import {
   pendingReviewMappings,
 } from './vcaop-portal';
 import { detectPlatform } from '../services/platform-detect';
+import { isShopifyOAuthConfigured, isValidShopDomain, signState, buildAuthorizeUrl } from '../services/shopify-oauth';
 
 const router = Router();
 router.use(requireAuth as any);
@@ -115,6 +116,30 @@ router.post('/connections/detect-platform', async (req: Request, res: Response) 
   const result = await detectPlatform(url);
   if (!result.ok) return res.status(422).json(result);
   res.json(result);
+});
+
+// Shopify OAuth (VTID-03603, Track 2): starts the authorization-code-grant
+// flow for a connection already created with connector_id='shopify'.
+// Dormant until SHOPIFY_CLIENT_ID/SECRET/OAUTH_REDIRECT_URI are configured.
+router.post('/connections/:id/shopify/authorize', async (req: Request, res: Response) => {
+  const supabase = db(res); if (!supabase) return;
+  const rec = await getOwnedManifest(supabase, req);
+  if (!rec) return res.status(404).json({ ok: false, error: 'connection not found' });
+  if (rec.connector_id !== 'shopify') {
+    return res.status(400).json({ ok: false, error: 'connection is not a shopify connector' });
+  }
+  const redirectUri = process.env.SHOPIFY_OAUTH_REDIRECT_URI;
+  if (!isShopifyOAuthConfigured() || !redirectUri) {
+    return res.status(503).json({ ok: false, error: 'not_configured' });
+  }
+  const { shop } = req.body ?? {};
+  if (!isValidShopDomain(shop)) {
+    return res.status(400).json({ ok: false, error: 'shop must be a valid *.myshopify.com domain' });
+  }
+  const state = signState(rec.id);
+  const authorizeUrl = buildAuthorizeUrl(shop, state, redirectUri);
+  if (!authorizeUrl) return res.status(503).json({ ok: false, error: 'not_configured' });
+  res.json({ ok: true, data: { authorize_url: authorizeUrl } });
 });
 
 // ===== List / create =====

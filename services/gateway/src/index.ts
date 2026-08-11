@@ -321,6 +321,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const vcaopPortalMyRouter = require('./routes/vcaop-portal-my').default;
   // VCAOP: Shopify own-store catalog sync (admin trigger; background worker in services)
   const shopifySyncRouter = require('./routes/shopify-sync').default;
+  // VCAOP: Shopify OAuth callback for the merchant self-service connector (VTID-03603) —
+  // PUBLIC (Shopify's own redirect, no bearer token), distinct from shopifySyncRouter above.
+  const shopifyOAuthCallbackRouter = require('./routes/shopify-oauth-callback').default;
   // VCAOP: Awin joined-programme sync (admin trigger; background worker in services)
   const awinSyncRouter = require('./routes/awin-sync').default;
   // VTID-01169: Deploy → Ledger Terminalization (terminalize endpoint + repair job)
@@ -728,6 +731,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/vcaop/portal', vcaopPortalRouter, { owner: 'vcaop-portal' });
   // VCAOP: Shopify catalog sync — mount before the vcaop router so the sub-path resolves.
   mountRouterSync(app, '/api/v1/vcaop/shopify', shopifySyncRouter, { owner: 'vcaop-shopify' });
+  mountRouterSync(app, '/api/v1/vcaop/shopify-oauth', shopifyOAuthCallbackRouter, { owner: 'vcaop-shopify-oauth' });
   // VCAOP: Awin programme sync — mount before the vcaop router so the sub-path resolves.
   mountRouterSync(app, '/api/v1/vcaop/awin', awinSyncRouter, { owner: 'vcaop-awin' });
   // VCAOP: Vitanaland Commerce API — providers/affiliate-programs/shop/wallet/onboarding
