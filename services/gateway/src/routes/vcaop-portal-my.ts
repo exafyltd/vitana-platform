@@ -107,6 +107,7 @@ async function transitionAndEmitOasisEvent(supabase: any, req: Request, res: Res
 // and suggest connector_id/provider_id instead of requiring manual entry.
 // Read-only — never touches partner_tenant/integration_manifest.
 router.post('/connections/detect-platform', async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: read-only lookup, no state transition to record.
   const { url } = req.body ?? {};
   if (!url || typeof url !== 'string') {
     return res.status(400).json({ ok: false, error: 'url is required' });
