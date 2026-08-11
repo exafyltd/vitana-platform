@@ -68,6 +68,11 @@ export type WakeOpener =
   | 'safe_fast_newday'
   | 'safe_fast_pending_context'
   | 'silent_reconnect'
+  /** VTID-03593 — the SAME rich new-day briefing as `safe_fast_newday_overview`,
+   *  reached on the NORMAL (sync) ladder. Deliberately its own name rather than
+   *  reusing the safe-fast one: which ladder served the briefing is exactly the
+   *  fact this VTID exists to make measurable, and collapsing them would hide it. */
+  | 'newday_overview'
   | 'override_v2'
   | 'silenced_on_cadence'
   | 'legacy_default';
@@ -314,9 +319,32 @@ export function computeGreetingDecision(ctx: GreetingDecisionContext): GreetingD
   return safeFastApplies(ctx) ? computeSafeFastLadder(ctx) : computeNormalLadder(ctx);
 }
 
-// --- SAFE-FAST ladder (rungs 1–6) ------------------------------------------
-function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
-  // Rung 1 — safe_fast_newday_overview (rich morning briefing owns turn 1).
+/**
+ * The rich new-day briefing rung, shared by BOTH ladders (VTID-03593).
+ *
+ * This used to exist only as rung 1 of the safe-fast ladder, and the safe-fast
+ * ladder is taken **only when `contextReadyResolved === false`** — i.e. only
+ * when the greeting overtook context assembly. So the one briefing built FROM
+ * context could fire only when context was NOT ready, and was skipped entirely
+ * whenever context WAS ready. That is upside down, and it is why the user's
+ * new-day greeting ("welcome + how many new messages + your Vitana index
+ * moved") disappeared: prod session live-37aa4388 (2026-08-11) completed its
+ * bootstrap in 16ms, never emitted `greeting_context_pending`, took the normal
+ * ladder, and got the generic wake-brief line from rung 8 instead.
+ *
+ * Anything that makes context assembly FASTER therefore made the briefing
+ * RARER — the brain-cache single-flight (VTID-03504) and raising
+ * `ORB_CONTEXT_READY_GATE_TIMEOUT_MS` back to its 4000ms default (VTID-03584)
+ * both pushed sessions off the only ladder that could speak it.
+ *
+ * Returns null when the rung does not fire, so each ladder keeps its own
+ * ordering. Extracted rather than duplicated so the two ladders cannot drift
+ * apart on what counts as "a briefing worth speaking".
+ */
+function tryNewDayOverviewRung(
+  ctx: GreetingDecisionContext,
+  wakeOpener: 'safe_fast_newday_overview' | 'newday_overview',
+): GreetingDecision | null {
   if (shouldAttemptNewdayOverview(ctx) && ctx.newdayOverview && newdayHasContent(ctx.newdayOverview)) {
     // Spoken-facts continuity (#2835): compute this rung's deltas purely from
     // its payload + the injected ledger — same as the live path.
@@ -339,13 +367,13 @@ function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
     if (block && block.trim().length > 0) {
       const o = ctx.newdayOverview;
       return {
-        wakeOpener: 'safe_fast_newday_overview',
+        wakeOpener,
         directive: block,
         register: 'daily_briefing',
         diag: {
           lang: ctx.lang,
           prompt_len: block.length,
-          wake_opener: 'safe_fast_newday_overview',
+          wake_opener: wakeOpener,
           bucket: ctx.bucket,
           briefing_date: ctx.todayTz,
           overview_signals: {
@@ -364,6 +392,14 @@ function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
       };
     }
   }
+  return null;
+}
+
+// --- SAFE-FAST ladder (rungs 1–6) ------------------------------------------
+function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
+  // Rung 1 — safe_fast_newday_overview (rich morning briefing owns turn 1).
+  const newdayFast = tryNewDayOverviewRung(ctx, 'safe_fast_newday_overview');
+  if (newdayFast) return newdayFast;
 
   // Rung 2 — safe_fast_first_time_welcome (a brand-new user gets onboarding).
   if (firstTimeWelcomeFires(ctx)) {
@@ -522,6 +558,23 @@ function computeNormalLadder(ctx: GreetingDecisionContext): GreetingDecision {
       effects: { markGreetingSent: true, armWatchdog: false },
     };
   }
+
+  // Rung 7b — newday_overview (VTID-03593). The SAME rich briefing as rung 1,
+  // now reachable when context resolved before the greeting — which, since the
+  // context-assembly speedups, is the common case rather than the rare one.
+  //
+  // Placed BELOW silent_reconnect deliberately: a reconnect must stay silent,
+  // and a briefing is the loudest possible thing to say into one. Placed ABOVE
+  // override_v2 because `briefingDue()` already limits this to once per
+  // calendar day, so on the day it fires it is strictly the better opener —
+  // the wake-brief's one-liner is what the user has been getting INSTEAD of
+  // their briefing, not in addition to it.
+  //
+  // Fires only when the caller actually gathered the payload; every other
+  // session passes `newdayOverview: null` and falls straight through, so the
+  // normal ladder is byte-identical for them.
+  const newdaySync = tryNewDayOverviewRung(ctx, 'newday_overview');
+  if (newdaySync) return newdaySync;
 
   // Rung 8 — override_v2 (speak the wake-brief / contract-selected line verbatim).
   const wakeOverrideLine = od.mode === 'speak' ? (od.line ?? '').trim() : '';

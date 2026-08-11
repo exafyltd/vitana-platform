@@ -42,9 +42,19 @@ describe('VTID-03104 / 1c: override_v2 opener lives in the brain; transport dele
   });
 
   it('orb-live.ts delegates the sync opening rungs to computeGreetingDecision', () => {
-    expect(orbLive).toMatch(/computeGreetingDecision\(\{/);
-    expect(orbLive).toMatch(/_syncDecision\.directive/);
-    expect(orbLive).toMatch(/_syncDecision\.effects\.armWatchdog/);
+    // VTID-03593: this used to pin the literal spellings `computeGreetingDecision({`
+    // and `_syncDecision.directive`. Those are the shape the code happened to
+    // have, not the invariant this test protects — which is "the transport
+    // ASKS the brain and RENDERS the answer, it does not decide inline". The
+    // sync path now builds its context as a named `_baseCtxSync` (so the
+    // new-day branch can extend it) and renders through a shared `_renderSync`
+    // closure, both of which honour the invariant exactly. Assert the
+    // invariant; the rung-by-rung behaviour is pinned by the brain's own
+    // golden snapshots, not by grepping this file.
+    expect(orbLive).toMatch(/computeGreetingDecision\(/);
+    expect(orbLive).toMatch(/const _baseCtxSync: GreetingDecisionContext = \{/);
+    expect(orbLive).toMatch(/decision\.directive !== null/);
+    expect(orbLive).toMatch(/decision\.effects\.armWatchdog/);
   });
 
   it('orb-live.ts no longer carries the inline override / silent / cadence branches', () => {

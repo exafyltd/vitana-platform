@@ -43,12 +43,15 @@ describe('VTID-03108 / 1c: cadence-silence lives in the brain; transport delegat
     // armWatchdog: false; the transport only ws.sends / arms when non-null / true.
     expect(brain).toMatch(/directive: null/);
     expect(brain).toMatch(/armWatchdog: false/);
-    expect(orbLive).toMatch(/if \(_syncDecision\.directive !== null\)/);
-    expect(orbLive).toMatch(/if \(_syncDecision\.effects\.armWatchdog\)/);
+    // VTID-03593: the render moved into a shared `_renderSync(decision)` closure
+    // so the new-day branch and the plain sync path cannot drift on how a
+    // decision reaches the wire. The guarded reads are unchanged in substance.
+    expect(orbLive).toMatch(/if \(decision\.directive !== null\)/);
+    expect(orbLive).toMatch(/if \(decision\.effects\.armWatchdog\)/);
   });
 
   it('orb-live.ts no longer carries the inline cadence-silence branch', () => {
     expect(orbLive).not.toMatch(/wake_opener: 'silenced_on_cadence'/);
-    expect(orbLive).toMatch(/computeGreetingDecision\(\{/);
+    expect(orbLive).toMatch(/computeGreetingDecision\(/);
   });
 });
