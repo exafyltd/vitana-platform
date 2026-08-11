@@ -462,7 +462,7 @@ function generateMitigationFromRule(
   healthContext?: HealthContext
 ): RiskMitigation {
   const now = new Date().toISOString();
-  const expiresAt = new Date();
+  const expiresAt = new Date(now);
   expiresAt.setHours(expiresAt.getHours() + MITIGATION_THRESHOLDS.DEFAULT_EXPIRY_HOURS);
 
   // Compute confidence based on risk confidence and rule match
