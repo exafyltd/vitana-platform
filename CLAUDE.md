@@ -177,6 +177,55 @@ Claude must **never** do the following:
 39. **Never change provider priority ad-hoc.**
 40. **Never bypass validation.**
 
+### Spoken Wording (STANDING RULE — VTID-03622)
+
+41. **NEVER hardcode a sentence Vitana speaks. Never. Not once.**
+    Not a greeting, not a recovery line, not a fallback, not a "temporary"
+    placeholder, not a per-language variant, not a template with a blank in
+    it. If a string is destined to come out of Vitana's mouth as speech, it
+    must be **composed by the model at runtime**, every time.
+
+    **What you write instead is the INTENT.** Tell the model what the
+    sentence must accomplish — "briefly acknowledge you are back and hand
+    the floor to the user" — and let it choose the words. Intent
+    descriptions live in the prompt in **English** (§13b: system
+    instructions stay English; the model emits the user's language), which
+    also removes the per-language copies.
+
+    **Why this is absolute and not a style preference:** the system
+    instruction already carries a `FLEXIBLE WORDING — ABSOLUTE` rule
+    ("never speak a fixed, memorised sentence; NEVER open two conversations
+    with the same one"). Handing the model a finished sentence and saying
+    "open with this" overrides that rule at point-blank range. Every
+    occurrence of this bug has taken the same shape and none of them looked
+    like a bug in review:
+    - **VTID-03475** — a greeting *exemplar* (`"Hi <Name>"`) in the prompt
+      header outranked all three cadence mechanisms; every session opened
+      identically.
+    - **VTID-03622** — the reconnect-recovery path shipped the literal
+      sentence *"Ich bin wieder da. Lass mich dir den nächsten Schritt
+      zeigen."*, reported after the user heard it **49 times**. Reconnects
+      are not rare (Nova drops ~10% of sessions at open, §2e), so the fixed
+      line became one of the most-heard phrases in the product.
+
+    A hardcoded line is also invisible to every cadence, rotation and
+    anti-repeat mechanism in the greeting brain, because those choose
+    *which rung fires* — they cannot vary wording that arrived pre-written.
+
+42. **IF** you are about to write a user-facing spoken string in a prompt →
+    **THEN STOP** and write the intent instead. The tell is a quoted
+    sentence in the user's language sitting in a `.ts` file, especially a
+    `Record<lang, string>` of them. Note the second failure mode that shape
+    invites: the four `intros` locales in VTID-03622 had **drifted apart** —
+    `fr`/`es` idle asked "what do you want to talk about?" while `en`/`de`
+    promised to show the next step, so the assistant committed to different
+    things depending on language.
+
+    **This is about SPEECH, not all strings.** Push notifications, email
+    subjects and error bodies are still catalog entries via `tt()` (§13b) —
+    they are written text with a fixed contract, and they must stay
+    translated and reviewable. The rule here covers what the voice says.
+
 ---
 
 ## 🔁 IF–THEN RULES
