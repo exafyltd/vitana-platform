@@ -78,10 +78,8 @@ function buildShapeExample(lang: string, phase: 'late_evening' | 'past_midnight'
 ### ❌ Dashboard-Ton — AUCH NICHT:
 "Tagesabschluss: 2 Termine erledigt, 1 Erinnerung offen, Index 71. Gute Nacht."`;
     const good =
-      phase === 'past_midkeep' /* unreachable, keeps switch exhaustive */
-        ? ''
-        : phase === 'past_midnight'
-          ? `### ✅ SO — GENAU DIESE TEXTUR IMITIEREN (Beispiel: Tomas, Regattasegler):
+      phase === 'past_midnight'
+        ? `### ✅ SO — GENAU DIESE TEXTUR IMITIEREN (Beispiel: Tomas, Regattasegler):
 "Oh, schon nach Mitternacht, Tomas. Das war ein langer.
 
 Weißt du, wir haben noch einiges vor — aber das läuft dir nicht weg. Wenn dir noch was im Kopf rumgeht, gib's mir mit, dann musst du's nicht bis morgen mitschleppen. Sonst: Schlaf gut."`
