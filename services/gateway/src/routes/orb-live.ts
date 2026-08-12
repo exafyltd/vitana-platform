@@ -9490,7 +9490,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
     const _syncSupa = getSupabase();
     const _syncFirstName = (session as any).greetingFirstName ?? null;
     // VTID-03609 — every gate is a NAMED boolean, and all of them are emitted,
-    // because VTID-03593 shipped this branch with no diagnostic on the
+    // because VTID-03607 shipped this branch with no diagnostic on the
     // not-fired path: five production sessions that were demonstrably due a
     // briefing (last_full_briefing_date 2026-07-24 … 2026-08-01, against
     // 2026-08-12) all reported `override_v2`, and nothing in the telemetry
@@ -9506,7 +9506,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
     // pre-fetch (`live-session-controller.ts` L1367), which seeds the session
     // with the still-null locals and only copies the real values when
     // `session.greetingFactsReady` resolves. The safe-fast block has always
-    // done a bounded wait on that promise before reading them; VTID-03593's
+    // done a bounded wait on that promise before reading them; VTID-03607's
     // sync branch read them straight, so on a session whose facts had not
     // landed yet `firstName` was null, the pre-guard rejected, and the briefing
     // could not fire — which is exactly what five due production sessions did

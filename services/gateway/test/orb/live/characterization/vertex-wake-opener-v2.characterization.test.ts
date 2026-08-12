@@ -71,7 +71,7 @@ describe('VTID-03104 / 1c: override_v2 opener lives in the brain; transport dele
 // `greetingFirstName`, `greetingIsFirstTime`, `greetingNeedsOnboarding` and
 // `lastFullBriefingDate` come from the greeting-facts pre-fetch, which seeds
 // the session with still-null locals and only copies the real values when
-// `session.greetingFactsReady` resolves. VTID-03593's branch read them
+// `session.greetingFactsReady` resolves. VTID-03607's branch read them
 // synchronously, so on a session whose facts had not landed the pre-guard saw
 // firstName=null and the briefing could not fire — five due production
 // sessions on 2026-08-12 reported `override_v2` and nothing else.
