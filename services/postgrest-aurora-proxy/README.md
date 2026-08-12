@@ -42,8 +42,37 @@ Two containers in one ECS task:
 
 ## What's blocking a live deploy right now
 
-One missing piece, and it needs privileged access this session's AWS
-identity does not have (deliberately — see below):
+**Two** missing pieces, and both need the same privileged access this
+session's AWS identity does not have (deliberately — see below).
+
+### 0. Aurora's target schema has 245 live FK constraints, and DMS can't load through them
+
+Found 2026-08-12 while reloading Aurora after the replication-slot recovery
+(see the parent VTID-03613/reconciliation work). Every AWS DMS full-load
+target-prep mode does per-table TRUNCATE or DROP with no dependency
+ordering, so any table referenced by another table's FK fails with
+`cannot truncate/drop table X because other objects depend on it` — this
+cascades across most of the 566-table schema, not a handful.
+
+Aurora is a DMS-fed replica with no direct write traffic yet — Supabase
+(the actual DMS source) is what enforces referential integrity today — so
+dropping the FKs to unblock the load is safe and standard DMS practice, not
+a data-integrity risk. Restore them later, once something writes to Aurora
+directly and needs local FK enforcement (i.e. once this proxy or the
+eventual real cutover is live).
+
+- `aurora-fk-drop-2026-08-12.sql` — 245 generated `ALTER TABLE ... DROP
+  CONSTRAINT` statements, exact current state of Aurora's `public` schema
+  FKs as of the timestamp in the filename (not hand-typed — generated from
+  `pg_constraint` directly).
+- `aurora-fk-restore-2026-08-12.sql` — the inverse, via `pg_get_constraintdef()`,
+  to bring them back verbatim later.
+
+Needs `vitana_admin` (table owner) — `claude_readonly` (this session's
+Aurora role) is confirmed only a member of `pg_read_all_data`, no path to
+table-owner privilege on any of these tables.
+
+### 1. The `authenticator` PostgREST login role
 
 **The `authenticator` login role PostgREST connects as.** Needs
 `CREATEROLE`, which `vitana_admin` has and `claude_readonly` (this
@@ -78,24 +107,28 @@ empty-password lockout on this same cluster), not a bug to route around.
   special privileges beyond pulling the image and writing logs) and the
   authenticator secret ARN from the step above.
 
-## Remaining steps once the authenticator role/secret exist
+## Remaining steps once vitana_admin access is available
 
-1. Build + push the `proxy` image to ECR (`cloud-run-source-deploy`-style
+0. Run `aurora-fk-drop-2026-08-12.sql`, then restart the DMS task
+   (`vitana-supabase-to-aurora-v3`) via `reload-target` — it was left
+   **stopped**, not flailing, so this is a clean resume, not a recovery.
+1. Run the `authenticator` role SQL above, create its secret.
+2. Build + push the `proxy` image to ECR (`cloud-run-source-deploy`-style
    repo, or a new `vitana-postgrest-aurora-proxy` ECR repo).
-2. Create the ECS execution/task roles, register the task definition.
-3. New ECS service on `Vitana-ECS-Cluster` (same cluster as AWS staging
+3. Create the ECS execution/task roles, register the task definition.
+4. New ECS service on `Vitana-ECS-Cluster` (same cluster as AWS staging
    gateway), target group + ALB host-header rule
    (`aurora-staging-rest.vitanaland.com` or similar — remember: priority
    **< 10**, the path-based rules at priority 10 route to staging
    regardless of `Host` otherwise, per CLAUDE.md §1b's documented trap).
-4. Point `gateway-staging`'s `SUPABASE_URL` at the new host — **staging
+5. Point `gateway-staging`'s `SUPABASE_URL` at the new host — **staging
    only**, never production, until this has actually been tested.
-5. Smoke test: an authenticated request through the real login flow, then
+6. Smoke test: an authenticated request through the real login flow, then
    a `.from()` read against a real table, then an RLS-sensitive read
    (confirm tenant isolation actually holds — this is the one thing that
    silently breaking would be worst, per CLAUDE.md's own "Never bypass RLS"
    / "Never mix tenant data" rules).
-6. Only after that passes: the actual "run all tests, get approval" step
+7. Only after that passes: the actual "run all tests, get approval" step
    the user asked for, before any production conversation.
 
 ## Explicitly out of scope for this build
