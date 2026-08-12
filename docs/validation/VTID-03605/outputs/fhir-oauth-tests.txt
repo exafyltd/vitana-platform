@@ -1,0 +1,97 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+PASS test/routes/vcaop-portal-my.test.ts
+  ownership scoping
+    ✓ GET /connections filters on partner_tenant.owner_user_id = the caller (25 ms)
+    ✓ a connection owned by someone else reads as 404, not 403 (5 ms)
+    ✓ create stamps owner_user_id + owner_email from the JWT, never the body (17 ms)
+  authority boundaries
+    ✓ no /approve-activation on the merchant surface — activation stays admin-only (4 ms)
+    ✓ activation-summary reports awaiting_platform_approval instead of can_activate (4 ms)
+  certification gate integrity (Codex review, VTID-03555)
+    ✓ zero mappings can NEVER certify — sandbox tests refuse with awaiting_factory_run (4 ms)
+    ✓ a rejected mapping is removed from the version so it cannot reach certification (4 ms)
+    ✓ approval_required connections can re-run sandbox tests after a decision (3 ms)
+  input + infrastructure guards
+    ✓ database unavailable → 503, not a crash (4 ms)
+    ✓ create validates required fields before touching the database (3 ms)
+    ✓ lifecycle transition on a foreign connection is 404 and writes nothing (2 ms)
+  detect-platform (VTID-03601, Track 4)
+    ✓ requires a url (2 ms)
+    ✓ is read-only — never touches the database (2 ms)
+    ✓ an SSRF-blocked or failed detection surfaces as 422, not 500 (2 ms)
+  shopify OAuth authorize (VTID-03603, Track 2)
+    ✓ reports not_configured when SHOPIFY_CLIENT_ID/SECRET/REDIRECT_URI are unset (2 ms)
+    ✓ a foreign connection reads as 404 even when configured (2 ms)
+    ✓ rejects a connection whose connector_id is not shopify (2 ms)
+    ✓ rejects a non *.myshopify.com shop domain (2 ms)
+    ✓ returns a real Shopify authorize_url when configured, owned, and valid (3 ms)
+  SMART on FHIR authorize (VTID-03605, Track 3)
+    ✓ reports not_configured when FHIR_OAUTH_STATE_SECRET/REDIRECT_URI are unset (2 ms)
+    ✓ a foreign connection reads as 404 even when configured (2 ms)
+    ✓ rejects a connection whose connector_id is not smart_fhir (2 ms)
+    ✓ rejects a non-https fhir_base_url before any discovery call (2 ms)
+    ✓ requires a client_id (2 ms)
+    ✓ a discovery failure surfaces as 502, not a crash (2 ms)
+    ✓ returns a real SMART authorize_url when configured, owned, and valid (3 ms)
+    ✓ honors a caller-supplied scope instead of the default (2 ms)
+
+PASS test/routes/fhir-oauth-callback.test.ts
+  dormant-until-configured
+    ✓ 503s before touching the database when unconfigured (5 ms)
+  forgery defenses
+    ✓ rejects a request with no code or state (2 ms)
+    ✓ surfaces an authorization_denied error from the EHR without touching state (2 ms)
+    ✓ rejects garbage state (2 ms)
+    ✓ rejects a state encrypted with a stale secret (rotated key) (3 ms)
+  happy path
+    ✓ verified callback exchanges the code, stores the credential, and advances state (7 ms)
+    ✓ a token-exchange failure is reported and never writes a credential (2 ms)
+    ✓ a manifest that is not connector_id=smart_fhir is rejected (2 ms)
+    ✓ a manifest that does not exist is rejected (2 ms)
+
+PASS test/services/smart-fhir-oauth.test.ts
+  dormant-until-configured
+    ✓ isFhirOAuthConfigured is false with no env var set (2 ms)
+    ✓ signState throws not_configured rather than minting a token (16 ms)
+    ✓ decodeAndVerifyState returns null rather than decrypting
+  FHIR base URL validation
+    ✓ accepts a well-formed https URL
+    ✓ rejects http (SMART requires TLS)
+    ✓ rejects an empty, non-string, or malformed value (1 ms)
+  PKCE
+    ✓ generateCodeVerifier produces an RFC7636-shaped value (43-128 chars, unreserved) (1 ms)
+    ✓ generateCodeChallenge is the base64url(sha256(verifier)), per spec
+  encrypted state
+    ✓ a freshly signed state decrypts back to the same payload (1 ms)
+    ✓ round-trips an optional client_secret without leaking it in plaintext (1 ms)
+    ✓ the code_verifier is not recoverable from the state without the key
+    ✓ a tampered ciphertext byte is rejected (GCM auth tag fails)
+    ✓ a state encrypted under a different secret is rejected
+    ✓ an expired state is rejected (1 ms)
+    ✓ garbage input does not throw (1 ms)
+  discoverSmartConfiguration (SSRF-guarded)
+    ✓ rejects a non-https base URL before any network call
+    ✓ rejects a base URL that resolves to a private address (3 ms)
+    ✓ fetches {fhirBaseUrl}/.well-known/smart-configuration and parses endpoints (2 ms)
+    ✓ strips a trailing slash on the base URL before appending the discovery path
+    ✓ reports a malformed (non-JSON) discovery document rather than throwing
+    ✓ reports a discovery document missing required endpoints (1 ms)
+  buildAuthorizeUrl
+    ✓ builds a standalone-launch authorize URL with every required SMART param (1 ms)
+    ✓ returns null for a malformed authorization endpoint
+    ✓ returns null for a non-https authorization endpoint (1 ms)
+  exchangeCodeForToken
+    ✓ posts the documented SMART token-exchange body (1 ms)
+    ✓ includes client_secret when supplied (confidential client)
+    ✓ rejects a non-https token endpoint before making any network call
+    ✓ a non-2xx response is reported, not thrown (1 ms)
+    ✓ a missing access_token in a 200 response is reported
+    ✓ a network failure is reported, not thrown (1 ms)
+
+Test Suites: 3 passed, 3 total
+Tests:       66 passed, 66 total
+Snapshots:   0 total
+Time:        0.919 s, estimated 1 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

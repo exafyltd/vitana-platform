@@ -99,6 +99,18 @@ async function readBounded(res: Response, maxBytes: number): Promise<string> {
   return Buffer.concat(chunks.map((c) => Buffer.from(c))).slice(0, maxBytes).toString('utf8');
 }
 
+/**
+ * SSRF-guarded fetch, exported for reuse by any other module that needs to
+ * fetch a merchant/user-supplied URL server-side (e.g. the SMART on FHIR
+ * connector's `.well-known/smart-configuration` discovery, VTID-03605) —
+ * see the module header for exactly what this does and does not protect
+ * against (not rebinding-proof; acceptable for an authenticated caller
+ * probing their own endpoint, not an anonymous oracle).
+ */
+export async function ssrfGuardedFetch(startUrl: string): Promise<{ headers: Headers; body: string }> {
+  return guardedFetch(startUrl);
+}
+
 async function guardedFetch(startUrl: string): Promise<{ headers: Headers; body: string }> {
   let current = new URL(startUrl);
   for (let hop = 0; hop <= MAX_HOPS; hop++) {

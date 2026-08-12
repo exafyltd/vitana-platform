@@ -78,7 +78,7 @@ router.get('/callback', async (req: Request, res: Response) => { // public-route
       id: randomUUID(),
       manifest_id: rec.id,
       provider: 'shopify',
-      shop_domain: shop,
+      endpoint_domain: shop,
       access_token: token.access_token,
       scope: token.scope ?? null,
       updated_at: now,

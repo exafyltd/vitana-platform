@@ -125,7 +125,7 @@ describe('happy path', () => {
     expect(res.status).toBe(200);
     expect(res.body.data).toEqual({ connection_id: 'm-1', shop_domain: 'a.myshopify.com' });
     expect(credentials.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ manifest_id: 'm-1', provider: 'shopify', shop_domain: 'a.myshopify.com', access_token: 'shpat_xyz' }),
+      expect.objectContaining({ manifest_id: 'm-1', provider: 'shopify', endpoint_domain: 'a.myshopify.com', access_token: 'shpat_xyz' }),
       { onConflict: 'manifest_id,provider' },
     );
     expect(manifests.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'mapping' }));

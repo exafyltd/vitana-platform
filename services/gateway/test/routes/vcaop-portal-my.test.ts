@@ -12,10 +12,18 @@ import vcaopPortalMyRouter from '../../src/routes/vcaop-portal-my';
 import { requireAuth } from '../../src/middleware/auth-supabase-jwt';
 import { getSupabase } from '../../src/lib/supabase';
 import { detectPlatform } from '../../src/services/platform-detect';
+import { discoverSmartConfiguration } from '../../src/services/smart-fhir-oauth';
 
 jest.mock('../../src/middleware/auth-supabase-jwt', () => ({ requireAuth: jest.fn() }));
 jest.mock('../../src/lib/supabase', () => ({ getSupabase: jest.fn() }));
 jest.mock('../../src/services/platform-detect', () => ({ detectPlatform: jest.fn() }));
+// Only discovery is mocked (it makes a real network call); state
+// signing/URL-building stay real, same treatment shopify-oauth gets below —
+// those are deterministic pure functions worth exercising for real.
+jest.mock('../../src/services/smart-fhir-oauth', () => ({
+  ...jest.requireActual('../../src/services/smart-fhir-oauth'),
+  discoverSmartConfiguration: jest.fn(),
+}));
 
 const app = express();
 app.use(express.json());
@@ -305,5 +313,138 @@ describe('shopify OAuth authorize (VTID-03603, Track 2)', () => {
     expect(url.searchParams.get('client_id')).toBe('test-client-id');
     expect(url.searchParams.get('redirect_uri')).toBe('https://gateway.example/api/v1/vcaop/shopify-oauth/callback');
     expect(url.searchParams.get('state')).toBeTruthy();
+  });
+});
+
+describe('SMART on FHIR authorize (VTID-03605, Track 3)', () => {
+  const ORIGINAL_ENV = { ...process.env };
+  afterEach(() => {
+    process.env = { ...ORIGINAL_ENV };
+  });
+
+  test('reports not_configured when FHIR_OAUTH_STATE_SECRET/REDIRECT_URI are unset', async () => {
+    delete process.env.FHIR_OAUTH_STATE_SECRET;
+    delete process.env.FHIR_OAUTH_REDIRECT_URI;
+    asMerchant('merchant-1');
+    const rec = { id: 'm-1', connector_id: 'smart_fhir', status: 'authorization_required', partner_tenant: { owner_user_id: 'merchant-1' } };
+    (getSupabase as jest.Mock).mockReturnValue({ from: jest.fn(() => tableStub({ data: rec })) });
+    const res = await request(app)
+      .post('/api/v1/vcaop/portal/my/connections/m-1/fhir/authorize')
+      .send({ fhir_base_url: 'https://ehr.example.com/fhir/r4', client_id: 'client-abc' });
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe('not_configured');
+    expect(discoverSmartConfiguration).not.toHaveBeenCalled();
+  });
+
+  test('a foreign connection reads as 404 even when configured', async () => {
+    process.env.FHIR_OAUTH_STATE_SECRET = 'secret';
+    process.env.FHIR_OAUTH_REDIRECT_URI = 'https://gateway.example/api/v1/vcaop/fhir-oauth/callback';
+    asMerchant('merchant-2');
+    (getSupabase as jest.Mock).mockReturnValue({ from: jest.fn(() => tableStub({ data: null })) });
+    const res = await request(app)
+      .post('/api/v1/vcaop/portal/my/connections/foreign/fhir/authorize')
+      .send({ fhir_base_url: 'https://ehr.example.com/fhir/r4', client_id: 'client-abc' });
+    expect(res.status).toBe(404);
+  });
+
+  test('rejects a connection whose connector_id is not smart_fhir', async () => {
+    process.env.FHIR_OAUTH_STATE_SECRET = 'secret';
+    process.env.FHIR_OAUTH_REDIRECT_URI = 'https://gateway.example/api/v1/vcaop/fhir-oauth/callback';
+    asMerchant('merchant-1');
+    const rec = { id: 'm-1', connector_id: 'shopify', status: 'authorization_required', partner_tenant: { owner_user_id: 'merchant-1' } };
+    (getSupabase as jest.Mock).mockReturnValue({ from: jest.fn(() => tableStub({ data: rec })) });
+    const res = await request(app)
+      .post('/api/v1/vcaop/portal/my/connections/m-1/fhir/authorize')
+      .send({ fhir_base_url: 'https://ehr.example.com/fhir/r4', client_id: 'client-abc' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/not a smart_fhir connector/);
+  });
+
+  test('rejects a non-https fhir_base_url before any discovery call', async () => {
+    process.env.FHIR_OAUTH_STATE_SECRET = 'secret';
+    process.env.FHIR_OAUTH_REDIRECT_URI = 'https://gateway.example/api/v1/vcaop/fhir-oauth/callback';
+    asMerchant('merchant-1');
+    const rec = { id: 'm-1', connector_id: 'smart_fhir', status: 'authorization_required', partner_tenant: { owner_user_id: 'merchant-1' } };
+    (getSupabase as jest.Mock).mockReturnValue({ from: jest.fn(() => tableStub({ data: rec })) });
+    const res = await request(app)
+      .post('/api/v1/vcaop/portal/my/connections/m-1/fhir/authorize')
+      .send({ fhir_base_url: 'http://ehr.example.com/fhir', client_id: 'client-abc' });
+    expect(res.status).toBe(400);
+    expect(discoverSmartConfiguration).not.toHaveBeenCalled();
+  });
+
+  test('requires a client_id', async () => {
+    process.env.FHIR_OAUTH_STATE_SECRET = 'secret';
+    process.env.FHIR_OAUTH_REDIRECT_URI = 'https://gateway.example/api/v1/vcaop/fhir-oauth/callback';
+    asMerchant('merchant-1');
+    const rec = { id: 'm-1', connector_id: 'smart_fhir', status: 'authorization_required', partner_tenant: { owner_user_id: 'merchant-1' } };
+    (getSupabase as jest.Mock).mockReturnValue({ from: jest.fn(() => tableStub({ data: rec })) });
+    const res = await request(app)
+      .post('/api/v1/vcaop/portal/my/connections/m-1/fhir/authorize')
+      .send({ fhir_base_url: 'https://ehr.example.com/fhir/r4' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/client_id/);
+  });
+
+  test('a discovery failure surfaces as 502, not a crash', async () => {
+    process.env.FHIR_OAUTH_STATE_SECRET = 'secret';
+    process.env.FHIR_OAUTH_REDIRECT_URI = 'https://gateway.example/api/v1/vcaop/fhir-oauth/callback';
+    asMerchant('merchant-1');
+    const rec = { id: 'm-1', connector_id: 'smart_fhir', status: 'authorization_required', partner_tenant: { owner_user_id: 'merchant-1' } };
+    (getSupabase as jest.Mock).mockReturnValue({ from: jest.fn(() => tableStub({ data: rec })) });
+    (discoverSmartConfiguration as jest.Mock).mockResolvedValue({ ok: false, error: 'blocked_private_address' });
+    const res = await request(app)
+      .post('/api/v1/vcaop/portal/my/connections/m-1/fhir/authorize')
+      .send({ fhir_base_url: 'https://internal-ehr.example.com/fhir', client_id: 'client-abc' });
+    expect(res.status).toBe(502);
+    expect(res.body.error).toBe('blocked_private_address');
+  });
+
+  test('returns a real SMART authorize_url when configured, owned, and valid', async () => {
+    process.env.FHIR_OAUTH_STATE_SECRET = 'test-fhir-state-secret';
+    process.env.FHIR_OAUTH_REDIRECT_URI = 'https://gateway.example/api/v1/vcaop/fhir-oauth/callback';
+    asMerchant('merchant-1');
+    const rec = { id: 'm-1', connector_id: 'smart_fhir', status: 'authorization_required', partner_tenant: { owner_user_id: 'merchant-1' } };
+    (getSupabase as jest.Mock).mockReturnValue({ from: jest.fn(() => tableStub({ data: rec })) });
+    (discoverSmartConfiguration as jest.Mock).mockResolvedValue({
+      ok: true,
+      config: {
+        authorization_endpoint: 'https://ehr.example.com/oauth/authorize',
+        token_endpoint: 'https://ehr.example.com/oauth/token',
+      },
+    });
+    const res = await request(app)
+      .post('/api/v1/vcaop/portal/my/connections/m-1/fhir/authorize')
+      .send({ fhir_base_url: 'https://ehr.example.com/fhir/r4', client_id: 'client-abc' });
+    expect(res.status).toBe(200);
+    const url = new URL(res.body.data.authorize_url);
+    expect(url.origin + url.pathname).toBe('https://ehr.example.com/oauth/authorize');
+    expect(url.searchParams.get('client_id')).toBe('client-abc');
+    expect(url.searchParams.get('redirect_uri')).toBe('https://gateway.example/api/v1/vcaop/fhir-oauth/callback');
+    expect(url.searchParams.get('aud')).toBe('https://ehr.example.com/fhir/r4');
+    expect(url.searchParams.get('code_challenge_method')).toBe('S256');
+    expect(url.searchParams.get('scope')).toBe('openid fhirUser patient/*.read');
+    expect(url.searchParams.get('state')).toBeTruthy();
+  });
+
+  test('honors a caller-supplied scope instead of the default', async () => {
+    process.env.FHIR_OAUTH_STATE_SECRET = 'test-fhir-state-secret';
+    process.env.FHIR_OAUTH_REDIRECT_URI = 'https://gateway.example/api/v1/vcaop/fhir-oauth/callback';
+    asMerchant('merchant-1');
+    const rec = { id: 'm-1', connector_id: 'smart_fhir', status: 'authorization_required', partner_tenant: { owner_user_id: 'merchant-1' } };
+    (getSupabase as jest.Mock).mockReturnValue({ from: jest.fn(() => tableStub({ data: rec })) });
+    (discoverSmartConfiguration as jest.Mock).mockResolvedValue({
+      ok: true,
+      config: {
+        authorization_endpoint: 'https://ehr.example.com/oauth/authorize',
+        token_endpoint: 'https://ehr.example.com/oauth/token',
+      },
+    });
+    const res = await request(app)
+      .post('/api/v1/vcaop/portal/my/connections/m-1/fhir/authorize')
+      .send({ fhir_base_url: 'https://ehr.example.com/fhir/r4', client_id: 'client-abc', scope: 'launch/patient patient/Observation.read' });
+    expect(res.status).toBe(200);
+    const url = new URL(res.body.data.authorize_url);
+    expect(url.searchParams.get('scope')).toBe('launch/patient patient/Observation.read');
   });
 });

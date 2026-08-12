@@ -34,6 +34,17 @@ import {
 } from './vcaop-portal';
 import { detectPlatform } from '../services/platform-detect';
 import { isShopifyOAuthConfigured, isValidShopDomain, signState, buildAuthorizeUrl } from '../services/shopify-oauth';
+import {
+  isFhirOAuthConfigured,
+  isValidFhirBaseUrl,
+  discoverSmartConfiguration,
+  generateCodeVerifier,
+  generateCodeChallenge,
+  signState as signFhirState,
+  buildAuthorizeUrl as buildFhirAuthorizeUrl,
+} from '../services/smart-fhir-oauth';
+
+const DEFAULT_FHIR_SCOPE = 'openid fhirUser patient/*.read';
 
 const router = Router();
 router.use(requireAuth as any);
@@ -142,6 +153,69 @@ router.post('/connections/:id/shopify/authorize', async (req: Request, res: Resp
   const state = signState(rec.id);
   const authorizeUrl = buildAuthorizeUrl(shop, state, redirectUri);
   if (!authorizeUrl) return res.status(503).json({ ok: false, error: 'not_configured' });
+  res.json({ ok: true, data: { authorize_url: authorizeUrl } });
+});
+
+// SMART on FHIR OAuth (VTID-03605, Track 3): starts the SMART App Launch
+// (standalone) flow for a connection already created with
+// connector_id='smart_fhir'. Unlike Shopify, the merchant supplies their own
+// EHR-issued client_id/client_secret per connection — there's no global app
+// credential to fall back on, so those come from the request body, never
+// from env. Dormant until FHIR_OAUTH_STATE_SECRET/FHIR_OAUTH_REDIRECT_URI
+// are configured.
+router.post('/connections/:id/fhir/authorize', async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: discovers the EHR's endpoints and returns an
+  // authorize URL only — no DB write, no state transition. The real
+  // mutation happens in the callback, which emits its own OASIS event.
+  const supabase = db(res); if (!supabase) return;
+  const rec = await getOwnedManifest(supabase, req);
+  if (!rec) return res.status(404).json({ ok: false, error: 'connection not found' });
+  if (rec.connector_id !== 'smart_fhir') {
+    return res.status(400).json({ ok: false, error: 'connection is not a smart_fhir connector' });
+  }
+  const redirectUri = process.env.FHIR_OAUTH_REDIRECT_URI;
+  if (!isFhirOAuthConfigured() || !redirectUri) {
+    return res.status(503).json({ ok: false, error: 'not_configured' });
+  }
+  const { fhir_base_url, client_id, client_secret, scope } = req.body ?? {};
+  if (!isValidFhirBaseUrl(fhir_base_url)) {
+    return res.status(400).json({ ok: false, error: 'fhir_base_url must be a valid https URL' });
+  }
+  if (typeof client_id !== 'string' || client_id.length === 0) {
+    return res.status(400).json({ ok: false, error: 'client_id is required' });
+  }
+  if (client_secret !== undefined && typeof client_secret !== 'string') {
+    return res.status(400).json({ ok: false, error: 'client_secret must be a string when provided' });
+  }
+  if (scope !== undefined && typeof scope !== 'string') {
+    return res.status(400).json({ ok: false, error: 'scope must be a string when provided' });
+  }
+
+  const discovery = await discoverSmartConfiguration(fhir_base_url);
+  if (!discovery.ok || !discovery.config) {
+    return res.status(502).json({ ok: false, error: discovery.error ?? 'discovery_failed' });
+  }
+
+  const codeVerifier = generateCodeVerifier();
+  const codeChallenge = generateCodeChallenge(codeVerifier);
+  const state = signFhirState({
+    manifestId: rec.id,
+    fhirBaseUrl: fhir_base_url,
+    clientId: client_id,
+    clientSecret: client_secret || undefined,
+    codeVerifier,
+    tokenEndpoint: discovery.config.token_endpoint,
+  });
+  const authorizeUrl = buildFhirAuthorizeUrl({
+    authorizationEndpoint: discovery.config.authorization_endpoint,
+    fhirBaseUrl: fhir_base_url,
+    clientId: client_id,
+    redirectUri,
+    scope: scope || DEFAULT_FHIR_SCOPE,
+    state,
+    codeChallenge,
+  });
+  if (!authorizeUrl) return res.status(502).json({ ok: false, error: 'invalid_authorization_endpoint' });
   res.json({ ok: true, data: { authorize_url: authorizeUrl } });
 });
 
