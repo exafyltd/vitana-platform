@@ -304,6 +304,15 @@ export function dayCloseNightKey(todayLocalIso: string, localHour: number): stri
  */
 function tryDayCloseRung(ctx: GreetingDecisionContext): GreetingDecision | null {
   if (ctx.isAnonymous) return null;
+  // `todayTz: ''` is the documented placeholder orb-live.ts seeds the SYNC
+  // context with before the timezone helpers resolve (mirrors `localHour: -1`
+  // on the safe-fast side) — an empty string is not a valid ISO date and must
+  // never be read as "no date, so any date matches". Without this, a session
+  // that falls through to the placeholder context (e.g. the async new-day
+  // branch's own error-recovery path) would compute a garbage night key and
+  // could fire day_close at literally any hour, because `localHour: 0` on
+  // that same placeholder reads as "inside the window".
+  if (!ctx.todayTz) return null;
   if (!isDayCloseWindow(ctx.localHour)) return null;
 
   const nightKey = dayCloseNightKey(ctx.todayTz, ctx.localHour);

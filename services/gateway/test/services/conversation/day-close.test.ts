@@ -266,3 +266,30 @@ describe('VTID-03604 — the composed block', () => {
     expect(b).not.toMatch(/Sprich wie jemand/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// VTID-03604 wiring safety — orb-live.ts seeds the SYNC ladder context with a
+// PLACEHOLDER (`todayTz: '', localHour: 0`) before the timezone helpers
+// resolve, exactly mirroring the safe-fast side's `localHour: -1`. `0` reads
+// as a normal midnight hour and is INSIDE the day-close window, so without an
+// explicit guard this placeholder would make day_close fire at any hour, on
+// any session that reaches the placeholder context (the async new-day
+// branch's own error-recovery path, or any future caller that has not yet
+// resolved a real clock reading).
+// ---------------------------------------------------------------------------
+describe('VTID-03604 — the todayTz placeholder cannot fire day-close', () => {
+  test('an empty todayTz never fires day_close, even with an in-window localHour', () => {
+    const d = computeGreetingDecision(ctx({ todayTz: '', localHour: 0 }));
+    expect(d.wakeOpener).not.toBe('day_close');
+  });
+
+  test('the same placeholder with a real lastDayCloseDate still does not crash or fire', () => {
+    const d = computeGreetingDecision(ctx({ todayTz: '', localHour: 0, lastDayCloseDate: '2026-06-29' }));
+    expect(d.wakeOpener).not.toBe('day_close');
+  });
+
+  test('a real todayTz at the same hour fires normally — the guard is scoped to the placeholder, not the hour', () => {
+    const d = computeGreetingDecision(ctx({ todayTz: '2026-06-30', localHour: 0 }));
+    expect(d.wakeOpener).toBe('day_close');
+  });
+});
