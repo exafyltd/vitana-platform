@@ -40,7 +40,15 @@ const ID = {
   session_id: 'selfcheck-test',
 } as any;
 
-type Candidate = { user_id: string; vitana_id: string | null; display_name: string | null; score: number; reason: string };
+type Candidate = {
+  user_id: string;
+  vitana_id: string | null;
+  display_name: string | null;
+  score: number;
+  reason: string;
+  is_chat_peer?: boolean;
+  last_chat_at?: string | null;
+};
 
 /** Minimal SupabaseClient stub: only `.rpc()` is reached on these code paths. */
 function sbWithCandidates(candidates: Candidate[] | { error: string }) {
@@ -146,6 +154,98 @@ describe('resolve_recipient — never confidently pick the wrong / weak match', 
     expect(r.text).toMatch(/Maria B/);
     expect(r.text).toMatch(/Maria C/);
     expect(r.text).toMatch(/which one/i);
+  });
+
+  // VTID-03623: robust matching via chat history. Live ask — "if I've
+  // exchanged messages with this person before, don't make me confirm the
+  // match again." A weak-but-dominant name match (below the 0.85 auto-
+  // resolve floor, exactly the "Maria Maxina" -> "Mariia Maksina" shape) now
+  // resolves immediately when the actor has real chat history with that
+  // specific candidate — no round-trip disambiguation.
+  it('weak-but-dominant match + real chat history with that ONE candidate → resolved, no confirmation round-trip', async () => {
+    const r = await tool_resolve_recipient(
+      { spoken_name: 'Maria Maxina' },
+      ID,
+      sbWithCandidates([
+        cand({
+          display_name: 'Mariia Maksina',
+          vitana_id: 'mariia11',
+          score: 0.6735,
+          is_chat_peer: true,
+          last_chat_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
+        }),
+      ]),
+    );
+    expect((r.result as any).ambiguous).toBe(false);
+    expect(r.text).toMatch(/^STATUS: resolved\b/);
+    expect(r.text).toMatch(/Mariia Maksina/);
+    expect(r.text).toMatch(/5 days ago/);
+    expect(r.text).not.toMatch(/which one/i);
+  });
+
+  it('chat history corroborates the CORRECT candidate even when it is not raw candidate #0', async () => {
+    const r = await tool_resolve_recipient(
+      { spoken_name: 'Maria' },
+      ID,
+      sbWithCandidates([
+        // Higher raw score, but the actor has never messaged this person.
+        cand({ display_name: 'Maria Stranger', vitana_id: 'maria_stranger', score: 0.72, is_chat_peer: false }),
+        // Lower raw score, but competitive AND a real, recent chat contact —
+        // chat history should still win the resolution.
+        cand({
+          user_id: '33333333-3333-3333-3333-333333333333',
+          display_name: 'Maria Contact',
+          vitana_id: 'maria_contact',
+          score: 0.63,
+          is_chat_peer: true,
+          last_chat_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+        }),
+      ]),
+    );
+    expect((r.result as any).ambiguous).toBe(false);
+    expect(r.text).toMatch(/Maria Contact/);
+    expect(r.text).not.toMatch(/Maria Stranger/);
+  });
+
+  it('TWO competitive candidates both have chat history → still ambiguous, "which one" (history cannot break this tie)', async () => {
+    const r = await tool_resolve_recipient(
+      { spoken_name: 'Maria' },
+      ID,
+      sbWithCandidates([
+        cand({
+          display_name: 'Maria One',
+          vitana_id: 'maria_one',
+          score: 0.7,
+          is_chat_peer: true,
+          last_chat_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+        }),
+        cand({
+          user_id: '33333333-3333-3333-3333-333333333333',
+          display_name: 'Maria Two',
+          vitana_id: 'maria_two',
+          score: 0.65,
+          is_chat_peer: true,
+          last_chat_at: new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString(),
+        }),
+      ]),
+    );
+    expect((r.result as any).ambiguous).toBe(true);
+    expect(r.text).toMatch(/which one/i);
+    expect(r.text).toMatch(/Maria One/);
+    expect(r.text).toMatch(/Maria Two/);
+  });
+
+  it('weak top match with NO chat history at all → still asks for confirmation (unchanged safety)', async () => {
+    const r = await tool_resolve_recipient(
+      { spoken_name: 'Maria Maxina' },
+      ID,
+      sbWithCandidates([
+        cand({ display_name: 'Mariia Maksina', vitana_id: 'mariia11', score: 0.6735, is_chat_peer: false }),
+      ]),
+    );
+    expect((r.result as any).ambiguous).toBe(true);
+    expect(r.text).toMatch(/^STATUS: ambiguous\b/);
+    expect(r.text).toMatch(/no chat history/i);
   });
 });
 
