@@ -122,6 +122,37 @@ const REFRESH_INTERVAL_MS = 60_000;
  * populated yet, falls back to the compile-time NAVIGATION_CATALOG constant
  * so the Navigator never goes dark.
  */
+/**
+ * Pick the entries visible to `platform`, without losing screens that exist
+ * only in the other platform's catalog. Exported so the selection rule is
+ * testable on its own — see the VTID-03614 comment inside
+ * `getCatalogForTenant` for why a plain filter was wrong.
+ *
+ * Order is load-bearing: requested-platform entries keep their original
+ * relative order and come first, so nothing that resolves today can be
+ * outranked by a newly-visible cross-platform entry on a tie.
+ */
+export function selectPlatformEntries<T extends { screen_id: string; platform?: string }>(
+  list: readonly T[],
+  platform: 'mobile' | 'desktop'
+): T[] {
+  const out: T[] = [];
+  const seen = new Set<string>();
+  for (const e of list) {
+    if ((e.platform || 'mobile') === platform) {
+      out.push(e);
+      seen.add(e.screen_id);
+    }
+  }
+  for (const e of list) {
+    if ((e.platform || 'mobile') === platform) continue;
+    if (seen.has(e.screen_id)) continue;
+    seen.add(e.screen_id);
+    out.push(e);
+  }
+  return out;
+}
+
 export function getCatalogForTenant(
   tenantId: string | null | undefined,
   platform: 'mobile' | 'desktop' = 'mobile'
@@ -130,8 +161,37 @@ export function getCatalogForTenant(
   // explicit platform (the compile-time NAVIGATION_CATALOG / gap-filled rows)
   // are the Mobile catalog, so they match platform='mobile'. Defaulting to
   // 'mobile' keeps every existing caller (ORB navigation) behaving as before.
-  const onPlatform = (list: NavCatalogEntryWithRules[]) =>
-    list.filter((e) => ((e.platform as string) || 'mobile') === platform);
+  //
+  // VTID-03614: a plain FILTER here made 36 of the catalog's 187 screens
+  // permanently unreachable by ORB voice navigation.
+  //
+  // The catalog carries one row per (screen_id, platform). 104 screens have
+  // both a mobile and a desktop row; 47 are mobile-only; and **36 are
+  // desktop-only** — including every Health plan tab (Ernährung, Training,
+  // Schlaf, Hydration, Mental), every Wallet balance/rewards tab, every
+  // Assistant tab, every Services-Hub tab, Shop, Meine Tickets, Passende
+  // Mitglieder. `effectivePlatform()` in navigator-consult.ts hard-returns
+  // 'mobile' while NAV_PLATFORM_AWARE is unset (it is unset in production and
+  // appears in no deploy workflow), so those 36 screens were filtered out of
+  // the search space on EVERY consult, from every device.
+  //
+  // The user-visible symptom is not "screen not found" — it is the Navigator
+  // confidently offering the wrong neighbours and then looping, because the
+  // right answer was never a candidate. "Where do I log my steps" scored
+  // Erinnerungen / Vitana-Index / Meine Reise while CONNECTORS.FITNESS and the
+  // plan tabs sat outside the search space entirely.
+  //
+  // `platform` describes which catalog a row was AUTHORED into, not which
+  // device can open it: the route string is identical across a screen's two
+  // rows (verified on production — every duplicated screen_id has exactly one
+  // distinct route). So a desktop-only entry is perfectly navigable from
+  // mobile, and excluding it buys nothing.
+  //
+  // Union with dedupe, requested platform winning: every entry visible today
+  // stays visible with byte-identical content and ordering, and the screens
+  // that were only ever in the other platform's catalog are appended rather
+  // than dropped. This can only ADD reachable destinations.
+  const onPlatform = (list: NavCatalogEntryWithRules[]) => selectPlatformEntries(list, platform);
 
   if (!dbLoadedAtLeastOnce) {
     return onPlatform(NAVIGATION_CATALOG as NavCatalogEntryWithRules[]);
