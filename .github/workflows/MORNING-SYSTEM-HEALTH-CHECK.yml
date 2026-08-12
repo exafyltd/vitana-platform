@@ -245,6 +245,19 @@ jobs:
       # 15 — Scheduled-workflow self-audit: catches exactly the failure mode
       # that motivated this workflow (4 crons quietly failing every run for
       # days with nobody noticing).
+      #
+      # VTID-03615: this workflow used to watch its OWN filename via the
+      # GitHub API ("did my last completed run fail?"). That is a
+      # self-referential trap — TODAY's run cannot know its own conclusion
+      # yet (it hasn't finished), so the API always answers with YESTERDAY's
+      # run. Any single real failure (in checks 1-14, or in a past run of
+      # this very step) then makes every FUTURE day's self-audit report FAIL
+      # too, because each failing self-audit becomes the next day's "latest
+      # completed run" — a loop that never self-heals even after every real
+      # issue is fixed. Confirmed live 2026-08-12: this workflow kept
+      # reporting itself FAIL a full day after the 4 originally-broken crons
+      # were fixed. Fix: judge THIS run's own health from the checks already
+      # written to $REPORT (1-14) instead of asking GitHub about a past run.
       - name: '15. Scheduled-workflow self-audit'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -257,7 +270,6 @@ jobs:
             "DAILY-STATUS-UPDATE.yml"
             "VCAOP-HEALTH.yml"
             "ALERT-WELCOME-GREETING-HEALTH.yml"
-            "MORNING-SYSTEM-HEALTH-CHECK.yml"
           )
           BAD=""
           for WF in "${WATCHLIST[@]}"; do
@@ -269,10 +281,16 @@ jobs:
               BAD="$BAD $WF"
             fi
           done
+          # Self: judged from THIS run's own checks 1-14, not a past run.
+          SELF_FAILS=$(grep -c '| FAIL |' "$REPORT" || true)
+          if [ "$SELF_FAILS" -gt 0 ]; then
+            BAD="$BAD MORNING-SYSTEM-HEALTH-CHECK.yml(self:$SELF_FAILS/14_checks_failed_today)"
+          fi
+          TOTAL=$((${#WATCHLIST[@]} + 1))
           if [ -z "$BAD" ]; then
-            R=PASS; D="all ${#WATCHLIST[@]} watched crons green on last run"
+            R=PASS; D="all $TOTAL watched crons green (6 on last run + self on today's checks)"
           else
-            R=FAIL; D="latest run failed for:$BAD"
+            R=FAIL; D="failing:$BAD"
           fi
           echo "| 15 | Scheduled-workflow self-audit | $R | $D |" >> "$REPORT"
 
