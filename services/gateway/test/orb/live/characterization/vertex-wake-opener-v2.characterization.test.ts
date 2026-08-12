@@ -83,10 +83,7 @@ describe('VTID-03104 / 1c: override_v2 opener lives in the brain; transport dele
 // ---------------------------------------------------------------------------
 
 describe('VTID-03609: the sync new-day branch awaits greetingFactsReady', () => {
-  const orbLiveSrc = readFileSync(
-    join(__dirname, '../../../../src/routes/orb-live.ts'),
-    'utf8',
-  );
+  const orbLiveSrc = fs.readFileSync(path.join(GATEWAY_SRC, 'routes/orb-live.ts'), 'utf8');
 
   it('the pre-guard does NOT gate on any pre-fetch-owned fact', () => {
     const gateBlock = orbLiveSrc.slice(
