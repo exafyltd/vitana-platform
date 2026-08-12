@@ -42,7 +42,7 @@ describe('VTID-03104 / 1c: override_v2 opener lives in the brain; transport dele
   });
 
   it('orb-live.ts delegates the sync opening rungs to computeGreetingDecision', () => {
-    // VTID-03593: this used to pin the literal spellings `computeGreetingDecision({`
+    // VTID-03607: this used to pin the literal spellings `computeGreetingDecision({`
     // and `_syncDecision.directive`. Those are the shape the code happened to
     // have, not the invariant this test protects — which is "the transport
     // ASKS the brain and RENDERS the answer, it does not decide inline". The

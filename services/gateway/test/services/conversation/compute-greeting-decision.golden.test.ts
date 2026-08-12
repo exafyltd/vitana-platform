@@ -482,7 +482,7 @@ describe('computeGreetingDecision — spoken-facts ledger continuity (#2835)', (
 });
 
 // ---------------------------------------------------------------------------
-// VTID-03593 — the rich new-day briefing is reachable on the NORMAL ladder
+// VTID-03607 — the rich new-day briefing is reachable on the NORMAL ladder
 //
 // Before this, the briefing existed ONLY as rung 1 of the safe-fast ladder,
 // and safeFastApplies() requires `contextReadyResolved === false`. So the one
@@ -494,7 +494,7 @@ describe('computeGreetingDecision — spoken-facts ledger continuity (#2835)', (
 // `greeting_context_pending`, wake_opener `override_v2`).
 // ---------------------------------------------------------------------------
 
-describe('computeGreetingDecision — VTID-03593 new-day briefing on the normal ladder', () => {
+describe('computeGreetingDecision — VTID-03607 new-day briefing on the normal ladder', () => {
   const dueNormalCtx = (over: Partial<GreetingDecisionContext> = {}) =>
     ctx({
       lastFullBriefingDate: '2026-06-29', // stale → briefing due
