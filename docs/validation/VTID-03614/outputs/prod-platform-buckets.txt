@@ -1,0 +1,38 @@
+Supabase (project inmkhvwdcuyhnxkgfvsb), read-only, 2026-08-12.
+
+nav_catalog totals
+------------------
+active_catalog_total     291
+distinct_screen_ids      187
+
+per-screen platform coverage
+----------------------------
+bucket          count
+both            104
+mobile_only      47
+DESKTOP_ONLY     36
+
+The 36 desktop-only screens (unreachable before this change, because
+effectivePlatform() hard-returns 'mobile' while NAV_PLATFORM_AWARE is unset):
+
+  ai         ASSISTANT.AI, ASSISTANT.AUTOPILOT, ASSISTANT.PROACTIVE,
+             ASSISTANT.REFERRALS, ASSISTANT.VOICE
+  community  COMM.GROUPS_DISCOVER, COMM.INVITE, COMM.MATCHES
+  discover   DISCOVER.DEALS_AI, DISCOVER.DEALS_SAVED, DISCOVER.DEALS_TRENDING,
+             DISCOVER.MARKETPLACE_MINE, DISCOVER.MARKETPLACE_OPEN,
+             DISCOVER.MY_TICKETS, DISCOVER.SHOP
+  health     HEALTH.BIOLOGY_OMICS, HEALTH.BIOLOGY_SUPPLEMENTS,
+             HEALTH.EDUCATION_PODCASTS, HEALTH.EDUCATION_VIDEOS,
+             HEALTH.PLANS_EXERCISE, HEALTH.PLANS_HYDRATION,
+             HEALTH.PLANS_MENTAL, HEALTH.PLANS_NUTRITION, HEALTH.PLANS_SLEEP,
+             HEALTH.SERVICES_INSURANCE, HEALTH.SERVICES_MEDICAL,
+             HEALTH.SERVICES_MINE, HEALTH.SERVICES_WELLNESS
+  settings   SETTINGS.PREFERENCES_ACCESSIBILITY
+  sharing    SHARING.CAMPAIGN_DETAIL
+  wallet     WALLET.BALANCE_MEMBERSHIP, WALLET.BALANCE_OPTIMIZATION,
+             WALLET.BALANCE_TOKENS, WALLET.REWARDS_INTELLIGENCE,
+             WALLET.REWARDS_PENDING, WALLET.REWARDS_REFERRAL
+
+Route check across duplicated screens: every screen_id with two rows has
+exactly ONE distinct route, confirming `platform` records which catalog a row
+was authored into and not which device can open the destination.
