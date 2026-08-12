@@ -68,7 +68,7 @@ export type WakeOpener =
   | 'safe_fast_newday'
   | 'safe_fast_pending_context'
   | 'silent_reconnect'
-  /** VTID-03593 — the SAME rich new-day briefing as `safe_fast_newday_overview`,
+  /** VTID-03607 — the SAME rich new-day briefing as `safe_fast_newday_overview`,
    *  reached on the NORMAL (sync) ladder. Deliberately its own name rather than
    *  reusing the safe-fast one: which ladder served the briefing is exactly the
    *  fact this VTID exists to make measurable, and collapsing them would hide it. */
@@ -320,7 +320,7 @@ export function computeGreetingDecision(ctx: GreetingDecisionContext): GreetingD
 }
 
 /**
- * The rich new-day briefing rung, shared by BOTH ladders (VTID-03593).
+ * The rich new-day briefing rung, shared by BOTH ladders (VTID-03607).
  *
  * This used to exist only as rung 1 of the safe-fast ladder, and the safe-fast
  * ladder is taken **only when `contextReadyResolved === false`** — i.e. only
@@ -559,7 +559,7 @@ function computeNormalLadder(ctx: GreetingDecisionContext): GreetingDecision {
     };
   }
 
-  // Rung 7b — newday_overview (VTID-03593). The SAME rich briefing as rung 1,
+  // Rung 7b — newday_overview (VTID-03607). The SAME rich briefing as rung 1,
   // now reachable when context resolved before the greeting — which, since the
   // context-assembly speedups, is the common case rather than the rare one.
   //

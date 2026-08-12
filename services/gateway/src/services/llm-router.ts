@@ -104,6 +104,12 @@ export interface LLMRouterOpts {
    * arguments instead of free text. Index into `tools` array.
    */
   forceTool?: number;
+  /**
+   * VTID-03579: prior turns, oldest first. `prompt` remains the CURRENT user
+   * turn and is appended after these — so every existing caller is unaffected
+   * and a single-turn call is still literally a string.
+   */
+  history?: LLMRouterMessage[];
 }
 
 /** Returned when `forceTool` is set and the model emitted a tool call. */
@@ -111,13 +117,45 @@ export interface LLMRouterToolCall {
   name: string;
   /** Already-parsed JSON arguments. Adapters parse the provider-specific shape. */
   arguments: Record<string, unknown>;
+  /**
+   * VTID-03579: provider-assigned id for this call. Opaque here, but it must be
+   * echoed back on the matching tool result — Anthropic pairs them by id and
+   * rejects a mismatch outright.
+   */
+  id?: string;
 }
+
+/**
+ * VTID-03579: one prior turn of a multi-turn exchange.
+ *
+ * Deliberately provider-neutral and deliberately NOT a raw provider payload:
+ * an agentic caller should describe what happened (the model asked for tools /
+ * here are the results), and each adapter renders that into its own wire shape.
+ * Passing Anthropic content blocks straight through would work today and pin
+ * every future caller to Anthropic, which is the coupling this whole file
+ * exists to prevent.
+ */
+export type LLMRouterMessage =
+  | { role: 'user' | 'assistant'; content: string }
+  /** The model asked to call tools. */
+  | { role: 'assistant'; toolCalls: LLMRouterToolCall[]; content?: string }
+  /** The caller ran them; these are the outcomes, in the same order. */
+  | {
+      role: 'user';
+      toolResults: Array<{ id?: string; name: string; result: string; isError?: boolean }>;
+    };
 
 export interface LLMRouterResult {
   ok: boolean;
   text?: string;
   /** Populated when `forceTool` was set and the model emitted a structured call. */
   toolCall?: LLMRouterToolCall;
+  /**
+   * VTID-03579: ALL tool calls from this turn. A model can request several at
+   * once; reading `toolCall` alone drops the rest and then waits forever for
+   * results the caller was never told to produce.
+   */
+  toolCalls?: LLMRouterToolCall[];
   usage?: LLMUsage;
   provider?: LLMProvider;
   model?: string;
@@ -134,12 +172,16 @@ interface AdapterCallArgs {
   images?: LLMRouterImage[];
   tools?: LLMRouterTool[];
   forceTool?: number;
+  /** VTID-03579: prior turns; `prompt` is appended as the current user turn. */
+  history?: LLMRouterMessage[];
 }
 
 interface AdapterResult {
   ok: boolean;
   text?: string;
   toolCall?: LLMRouterToolCall;
+  /** VTID-03579: every tool the model asked for this turn, in order. */
+  toolCalls?: LLMRouterToolCall[];
   usage?: LLMUsage;
   error?: string;
 }
@@ -184,10 +226,75 @@ export function _resetPolicyCacheForTests(): void {
 // Provider adapters
 // =============================================================================
 
+/**
+ * VTID-03579 (review follow-up): render prior turns into the Anthropic Messages
+ * wire shape. Extracted so `anthropicAdapter` and `bedrockAdapter` cannot drift
+ * — they speak the same protocol, and a history bug in one that the other lacks
+ * would surface only on fallback, i.e. exactly when nobody is watching.
+ */
+function renderAnthropicHistory(
+  history: LLMRouterMessage[] | undefined,
+): Array<{ role: 'user' | 'assistant'; content: string | BedrockContentBlock[] }> {
+  const out: Array<{ role: 'user' | 'assistant'; content: string | BedrockContentBlock[] }> = [];
+  for (const m of history ?? []) {
+    if ('toolCalls' in m && m.toolCalls) {
+      const blocks: BedrockContentBlock[] = [];
+      if (m.content) blocks.push({ type: 'text', text: m.content });
+      for (const tc of m.toolCalls) {
+        blocks.push({ type: 'tool_use', id: tc.id ?? tc.name, name: tc.name, input: tc.arguments });
+      }
+      out.push({ role: 'assistant', content: blocks });
+    } else if ('toolResults' in m && m.toolResults) {
+      out.push({
+        role: 'user',
+        content: m.toolResults.map((tr) => ({
+          type: 'tool_result' as const,
+          tool_use_id: tr.id ?? tr.name,
+          content: tr.result,
+          ...(tr.isError ? { is_error: true } : {}),
+        })),
+      });
+    } else if ('content' in m && typeof m.content === 'string') {
+      out.push({ role: m.role, content: m.content });
+    }
+  }
+  return out;
+}
+
+/**
+ * VTID-03579 (review follow-up): render prior turns into the OpenAI chat shape,
+ * shared by `openaiAdapter` and `deepseekAdapter`. A tool round-trip here is an
+ * assistant message carrying `tool_calls` plus one `role:'tool'` message per
+ * result — NOT Anthropic's content blocks.
+ */
+function renderOpenAIHistory(history: LLMRouterMessage[] | undefined): Array<Record<string, unknown>> {
+  const out: Array<Record<string, unknown>> = [];
+  for (const m of history ?? []) {
+    if ('toolCalls' in m && m.toolCalls) {
+      out.push({
+        role: 'assistant',
+        content: m.content ?? null,
+        tool_calls: m.toolCalls.map((tc) => ({
+          id: tc.id ?? tc.name,
+          type: 'function',
+          function: { name: tc.name, arguments: JSON.stringify(tc.arguments) },
+        })),
+      });
+    } else if ('toolResults' in m && m.toolResults) {
+      for (const tr of m.toolResults) {
+        out.push({ role: 'tool', tool_call_id: tr.id ?? tr.name, content: tr.result });
+      }
+    } else if ('content' in m && typeof m.content === 'string') {
+      out.push({ role: m.role, content: m.content });
+    }
+  }
+  return out;
+}
+
 /** Anthropic Messages API — supports text, multi-image, and tool_use. */
 const anthropicAdapter: ProviderAdapter = {
   isAvailable: () => Boolean(process.env.ANTHROPIC_API_KEY),
-  async call({ prompt, model, systemPrompt, maxTokens, image, images, tools, forceTool }): Promise<AdapterResult> {
+  async call({ prompt, model, systemPrompt, maxTokens, image, images, tools, forceTool, history }): Promise<AdapterResult> {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) return { ok: false, error: 'ANTHROPIC_API_KEY not set' };
 
@@ -206,7 +313,7 @@ const anthropicAdapter: ProviderAdapter = {
     const body: Record<string, unknown> = {
       model,
       max_tokens: maxTokens ?? 8000,
-      messages: [{ role: 'user', content: userContent }],
+      messages: [...renderAnthropicHistory(history), { role: 'user', content: userContent }],
     };
     if (systemPrompt) body.system = systemPrompt;
     if (tools && tools.length > 0) {
@@ -261,12 +368,16 @@ const anthropicAdapter: ProviderAdapter = {
 /** OpenAI Chat Completions API — supports text, multi-image, and function calling. */
 const openaiAdapter: ProviderAdapter = {
   isAvailable: () => Boolean(process.env.OPENAI_API_KEY),
-  async call({ prompt, model, systemPrompt, maxTokens, image, images, tools, forceTool }): Promise<AdapterResult> {
+  async call({ prompt, model, systemPrompt, maxTokens, image, images, tools, forceTool, history }): Promise<AdapterResult> {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) return { ok: false, error: 'OPENAI_API_KEY not set' };
 
     const messages: Array<Record<string, unknown>> = [];
     if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
+    // VTID-03579 (review follow-up): OpenAI is a selectable operator provider,
+    // so it must carry history too — otherwise switching the policy to it makes
+    // every follow-up turn stateless, silently.
+    messages.push(...renderOpenAIHistory(history));
 
     const allImages: LLMRouterImage[] = [];
     if (images && images.length > 0) allImages.push(...images);
@@ -551,7 +662,7 @@ const vertexAdapter: ProviderAdapter = {
  */
 const deepseekAdapter: ProviderAdapter = {
   isAvailable: () => Boolean(process.env.DEEPSEEK_API_KEY),
-  async call({ prompt, model, systemPrompt, maxTokens, image, images, tools, forceTool }): Promise<AdapterResult> {
+  async call({ prompt, model, systemPrompt, maxTokens, image, images, tools, forceTool, history }): Promise<AdapterResult> {
     const apiKey = process.env.DEEPSEEK_API_KEY;
     if (!apiKey) return { ok: false, error: 'DEEPSEEK_API_KEY not set' };
 
@@ -564,6 +675,14 @@ const deepseekAdapter: ProviderAdapter = {
 
     const messages: Array<Record<string, unknown>> = [];
     if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
+
+    // VTID-03579: DeepSeek is the standing fallback for every Bedrock stage, so
+    // it has to carry conversation history too — otherwise a Bedrock blip would
+    // silently drop the whole exchange and the model would answer the current
+    // turn with no idea what came before. That is worse than a visible failure,
+    // because it looks like the assistant simply forgot.
+    messages.push(...renderOpenAIHistory(history));
+
     messages.push({ role: 'user', content: prompt });
 
     const body: Record<string, unknown> = {
@@ -686,7 +805,7 @@ const claudeSubscriptionAdapter: ProviderAdapter = {
  */
 const bedrockAdapter: ProviderAdapter = {
   isAvailable: () => Boolean(process.env.BEDROCK_ROLE_ARN),
-  async call({ prompt, model, systemPrompt, maxTokens, image, images, tools, forceTool }): Promise<AdapterResult> {
+  async call({ prompt, model, systemPrompt, maxTokens, image, images, tools, forceTool, history }): Promise<AdapterResult> {
     // VTID-03496: images and tools are now supported. Bedrock speaks the same
     // Anthropic Messages API shape as `anthropicAdapter` above, so the content
     // blocks, tool schema key (`input_schema`) and `tool_choice` are built
@@ -724,9 +843,13 @@ const bedrockAdapter: ProviderAdapter = {
         ? ({ type: 'tool', name: tools[forceTool].name } as const)
         : undefined;
 
+    // VTID-03579: prior turns render into Anthropic content blocks via the
+    // shared helper, so this and `anthropicAdapter` cannot drift apart.
+    const historyMessages = renderAnthropicHistory(history);
+
     const result = await invokeBedrock({
       model,
-      messages: [{ role: 'user', content }],
+      messages: [...historyMessages, { role: 'user', content }],
       system: systemPrompt,
       max_tokens: maxTokens,
       tools: bedrockTools,
@@ -740,6 +863,7 @@ const bedrockAdapter: ProviderAdapter = {
       ok: true,
       text: result.text,
       toolCall: result.toolCall,
+      toolCalls: result.toolCalls,
       usage: {
         inputTokens: result.usage?.input_tokens ?? 0,
         outputTokens: result.usage?.output_tokens ?? 0,
@@ -943,6 +1067,7 @@ async function runProviderCall(
     images: opts.images,
     tools: opts.tools,
     forceTool: opts.forceTool,
+    history: opts.history,
   });
 
   if (result.ok) {
@@ -955,6 +1080,20 @@ async function runProviderCall(
       ok: true,
       text: result.text,
       toolCall: result.toolCall,
+      // VTID-03579 (review follow-up): normalise here, once, rather than in
+      // each adapter. Only `bedrockAdapter` populates `toolCalls`; anthropic,
+      // openai, vertex and deepseek all return the singular `toolCall`. An
+      // agentic caller reading only `toolCalls` therefore saw NOTHING whenever
+      // the router fell back — and since a tool-call response has empty text,
+      // that surfaced as an empty assistant reply rather than an error, with
+      // the requested tool never executed. Normalising at the seam means a new
+      // adapter cannot reintroduce the gap by forgetting the plural field.
+      toolCalls:
+        result.toolCalls && result.toolCalls.length > 0
+          ? result.toolCalls
+          : result.toolCall
+            ? [result.toolCall]
+            : undefined,
       usage: result.usage,
       provider,
       model,

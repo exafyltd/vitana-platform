@@ -104,6 +104,22 @@ on:
         description: 'Set AWS_BEDROCK_REGION — must be a region where the chosen Claude profile is actually offered; a wrong region fails with an opaque model-not-found (EMPTY = preserve)'
         required: false
         default: ''
+      # VTID-03579: the autopilot background executor. Unlike every other lever
+      # here, this one is DANGEROUS BY DEFAULT: the gate in index.ts reads
+      # `!== 'false'`, so leaving it unset ENABLES the executor. On 2026-08-11
+      # it ran 990 planner LLM calls in a day — the same 12 findings replanned
+      # every 30s, because lazyPlanTick's only dedupe guard is "skip if a plan
+      # row exists" and generatePlanVersion was never writing one. It billed
+      # 863 of those to Gemini (preview models skip Vertex and hit AI Studio),
+      # which is what took the Gemini API line to $173 MTD.
+      #
+      # Setting this to 'false' is therefore not a tuning knob, it is a
+      # circuit breaker, and it must be settable from a diffable file rather
+      # than by hand-editing live AWS state (the VTID-03513 lesson).
+      dev_autopilot_executor_enabled:
+        description: "Set DEV_AUTOPILOT_EXECUTOR_ENABLED — 'false' STOPS the autopilot background executor (lazyPlanTick every 30s). NOTE: unset means ENABLED, the code gate is !== 'false'. (EMPTY = preserve)"
+        required: false
+        default: ''
       # VTID-03578: the remaining two Google seams. The adapters have existed
       # since VTID-03495/03497 and both default to the Google provider, so the
       # code has shipped to prod repeatedly while changing nothing — the switch
@@ -305,6 +321,7 @@ jobs:
 
       - name: Register task-definition revision + roll the service
         env:
+          MARKETPLACE_SYNC_SECRET_VALUE: ${{ secrets.MARKETPLACE_SYNC_SECRET }}
           NOVA_ENABLED_INPUT: ${{ inputs.nova_sonic_enabled }}
           NOVA_USERS_INPUT: ${{ inputs.nova_canary_user_ids }}
           NOVA_TENANTS_INPUT: ${{ inputs.nova_canary_tenant_ids }}
@@ -313,6 +330,7 @@ jobs:
           BEDROCK_ROLE_ARN_INPUT: ${{ inputs.bedrock_role_arn }}
           BEDROCK_MODEL_ID_INPUT: ${{ inputs.bedrock_model_id }}
           AWS_BEDROCK_REGION_INPUT: ${{ inputs.aws_bedrock_region }}
+          DEV_AUTOPILOT_EXECUTOR_INPUT: ${{ inputs.dev_autopilot_executor_enabled }}
           TTS_PROVIDER_INPUT: ${{ inputs.tts_provider }}
           TTS_POLLY_STRICT_INPUT: ${{ inputs.tts_polly_strict }}
           IMAGE_PROVIDER_INPUT: ${{ inputs.image_provider }}
@@ -382,6 +400,27 @@ jobs:
               ( [ .[] | select(.name | IN("FEATURE_ORB_FAST_START_ENV","FEATURE_ORB_BRAIN_CACHE_ENV") | not) ]
                 + [ {name:"FEATURE_ORB_FAST_START_ENV", value:"staging+prod"},
                     {name:"FEATURE_ORB_BRAIN_CACHE_ENV", value:"staging+prod"} ] )')
+
+          # VTID-03618: same class of bug as FEATURE_ORB_FAST_START_ENV above —
+          # a value the GCP deploy pipeline (EXEC-DEPLOY.yml) has always passed
+          # unconditionally as a plain env var (`--update-env-vars=
+          # MARKETPLACE_SYNC_SECRET=...`) but was never carried across the
+          # VTID-03419 GCP→AWS cutover, because the AWS task def was built by
+          # cloning forward whatever GCP happened to have wired at build time,
+          # not by mirroring every GCP env var. Confirmed live 2026-08-12: the
+          # gateway answered `/api/v1/internal/marketplace/sync/all` with
+          # HTTP 500 "MARKETPLACE_SYNC_SECRET not configured on gateway" — the
+          # cron's own secret is correct (it's the same GH secret sourced
+          # below), the gateway simply never had it. Pinned unconditionally,
+          # not behind a dispatch input, because this is a required credential
+          # for a route that already exists in prod code, not an optional
+          # feature lever — the same reasoning FEATURE_ORB_FAST_START_ENV
+          # above uses. A plain env var, not a Secrets Manager reference,
+          # matching GCP's existing shape for this exact value.
+          NEW_DEF=$(echo "$NEW_DEF" | jq --arg S "$MARKETPLACE_SYNC_SECRET_VALUE" '
+            .containerDefinitions[0].environment |=
+              ( [ .[] | select(.name != "MARKETPLACE_SYNC_SECRET") ]
+                + [ {name:"MARKETPLACE_SYNC_SECRET", value:$S} ] )')
 
           # VTID-03584: the new-day greeting was suppressed on 100% of
           # authenticated production sessions from 2026-08-04 onward. Measured:
@@ -507,6 +546,19 @@ jobs:
               .containerDefinitions[0].environment |=
                 ( [ .[] | select(.name != "AWS_BEDROCK_REGION") ]
                   + [ {name:"AWS_BEDROCK_REGION", value:$R} ] )')
+          fi
+
+          # VTID-03579: autopilot executor circuit breaker. Deliberately the
+          # same upsert shape as the levers above, but read the gate carefully
+          # before using it: index.ts starts the executor when the var is
+          # `!== 'false'`, so PRESERVING an unset value leaves it RUNNING. The
+          # only value that stops it is the literal string 'false'.
+          if [ -n "$DEV_AUTOPILOT_EXECUTOR_INPUT" ]; then
+            echo "Applying autopilot executor gate: DEV_AUTOPILOT_EXECUTOR_ENABLED=$DEV_AUTOPILOT_EXECUTOR_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg E "$DEV_AUTOPILOT_EXECUTOR_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "DEV_AUTOPILOT_EXECUTOR_ENABLED") ]
+                  + [ {name:"DEV_AUTOPILOT_EXECUTOR_ENABLED", value:$E} ] )')
           fi
 
           # VTID-03578: TTS provider. tts-provider.ts falls back to google on

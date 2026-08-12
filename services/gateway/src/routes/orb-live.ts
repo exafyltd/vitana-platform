@@ -101,6 +101,7 @@ import {
 // VTID-03273 Pillar C — explicit conversation state machine. `openingDelivered`
 // is a property of the state (replacing the scattered greetingSent boolean);
 // the opener fires exactly once, in OPENING, for the life of the conversation.
+import { wasPreviousSessionFailure } from '../orb/live/session/session-failure-classifier';
 import { ConversationStateMachine } from '../orb/live/session/conversation-state-machine';
 // VTID-03583: per-TURN navigation marker. Deliberately NOT the session-lifetime
 // `navigationDispatched` latch — see navigation-turn-scope.ts for why.
@@ -8966,7 +8967,22 @@ function startResponseWatchdog(
   session.responseWatchdogReason = reason;
 
   session.responseWatchdogTimer = setTimeout(() => {
-    if (!session.active) return;
+    // VTID-03616: the timer handle must be cleared on EVERY firing path,
+    // including this early no-op — otherwise a session that goes inactive
+    // between arming and firing leaves session.responseWatchdogTimer
+    // pointing at an already-fired (dead) timer forever. `has_watchdog`
+    // (`!!session.responseWatchdogTimer`, admin/diag surfaces) then reports
+    // "a watchdog is armed" for a session with no live safety net, and the
+    // sliding-rearm guards elsewhere (`canSlide = !session.responseWatchdogTimer
+    // || ...`) refuse to arm a fresh one because the stale reference is
+    // still truthy — the exact shape that let a stalled Nova greeting run
+    // to Bedrock's own ~55s idle kill instead of the 30s greeting_timeout
+    // watchdog catching it.
+    if (!session.active) {
+      session.responseWatchdogTimer = undefined;
+      session.responseWatchdogReason = undefined;
+      return;
+    }
 
     const lang = session.lang || 'en';
     const message = getConnectionIssueMessage(lang);
@@ -9459,7 +9475,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
     };
 
     /** Render one decision onto the wire + perform its effects. Shared by the
-     *  plain sync path and the VTID-03593 new-day path so the two cannot drift. */
+     *  plain sync path and the VTID-03607 new-day path so the two cannot drift. */
     const _renderSync = (decision: ReturnType<typeof computeGreetingDecision>) => {
       if (decision.directive !== null) {
         const _greetingClientContentMsg = JSON.stringify({
@@ -9487,7 +9503,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
       }
     };
 
-    // VTID-03593 — cheap, I/O-free pre-guard for the rich new-day briefing.
+    // VTID-03607 — cheap, I/O-free pre-guard for the rich new-day briefing.
     //
     // The real guard is `shouldAttemptNewdayOverview`, but it needs `todayTz`,
     // which needs the timezone helpers, which are dynamically imported (module
@@ -9503,22 +9519,55 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
     const _syncUid = session.identity?.user_id || null;
     const _syncSupa = getSupabase();
     const _syncFirstName = (session as any).greetingFirstName ?? null;
-    const _newdaySyncPossible =
-      !session.isAnonymous &&
-      !!_syncUid &&
-      !!_syncSupa &&
-      typeof _syncFirstName === 'string' &&
-      _syncFirstName.trim().length > 0 &&
-      (session as any).greetingNeedsOnboarding !== true &&
-      (session as any).greetingIsFirstTime !== true &&
-      /^(de|en)/i.test(lang || '') &&
+    // VTID-03609 — every gate is a NAMED boolean, and all of them are emitted,
+    // because VTID-03607 shipped this branch with no diagnostic on the
+    // not-fired path: five production sessions that were demonstrably due a
+    // briefing (last_full_briefing_date 2026-07-24 … 2026-08-01, against
+    // 2026-08-12) all reported `override_v2`, and nothing in the telemetry
+    // could say whether the pre-guard rejected them, the real guard did, the
+    // gather came back empty, or the payload had nothing worth speaking.
+    // "It didn't fire" and "it fired and had nothing to say" have to be
+    // distinguishable or the next round is guesswork again.
+    //
+    // VTID-03609, and this is the substantive half: the pre-guard may only read
+    // facts that are RELIABLE SYNCHRONOUSLY. `greetingFirstName`,
+    // `greetingIsFirstTime`, `greetingNeedsOnboarding` and
+    // `lastFullBriefingDate` are NOT — they come from the greeting-facts
+    // pre-fetch (`live-session-controller.ts` L1367), which seeds the session
+    // with the still-null locals and only copies the real values when
+    // `session.greetingFactsReady` resolves. The safe-fast block has always
+    // done a bounded wait on that promise before reading them; VTID-03607's
+    // sync branch read them straight, so on a session whose facts had not
+    // landed yet `firstName` was null, the pre-guard rejected, and the briefing
+    // could not fire — which is exactly what five due production sessions did
+    // on 2026-08-12 while reporting nothing but `override_v2`.
+    //
+    // Those four moved BELOW the wait, into `shouldAttemptNewdayOverview`,
+    // where they were always meant to be checked.
+    const _ndGates = {
+      not_anonymous: !session.isAnonymous,
+      has_user_id: !!_syncUid,
+      has_supabase: !!_syncSupa,
+      lang_supported: /^(de|en)/i.test(lang || ''),
       // A reconnect must stay silent — rung 7 owns that and outranks the
       // briefing. Skipping the gather entirely keeps that true without
       // spending the Supabase round-trips to discover it.
-      !(
+      not_silent_reconnect: !(
         _openDecision.mode === 'silent' &&
         (_openDecision.source === 'native_resume' || _openDecision.source === 'reconnect_no_handle')
-      );
+      ),
+    };
+    const _newdaySyncPossible = Object.values(_ndGates).every(Boolean);
+    if (!_newdaySyncPossible) {
+      emitDiag(session, 'newday_briefing_eval', {
+        outcome: 'pre_guard_rejected',
+        blocked_by: Object.entries(_ndGates)
+          .filter(([, v]) => !v)
+          .map(([k]) => k),
+        lang,
+        last_full_briefing_date: (session as any).lastFullBriefingDate ?? null,
+      });
+    }
 
     // Claim the greeting synchronously in BOTH branches: the async branch below
     // must not leave a window in which a second caller also decides to greet.
@@ -9528,6 +9577,41 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
     if (_newdaySyncPossible) {
       void (async () => {
         try {
+          // VTID-03609 — bounded wait for the greeting-facts pre-fetch, mirroring
+          // the safe-fast block's wait exactly (same two env budgets, same
+          // conditions). Without it, every fact this decision rests on is read
+          // before it exists. A session whose facts already landed races through
+          // both `Promise.race`es immediately and pays nothing, which is the
+          // common case here — the sync ladder is reached only after context
+          // assembly finished, by which time this independent prefetch usually
+          // has too.
+          const _factsReadyNS: Promise<void> | undefined = (session as any).greetingFactsReady;
+          const _firstWaitMsNS = Number(process.env.ORB_GREETING_FACTS_WAIT_MS || 700);
+          await Promise.race([
+            _factsReadyNS ?? Promise.resolve(),
+            new Promise<void>((r) => setTimeout(r, _firstWaitMsNS)),
+          ]);
+          if (ws.readyState !== WebSocket.OPEN) return;
+
+          // Until last-session info lands we cannot even tell whether this IS a
+          // new-day return, so when the facts are still pending give them the
+          // larger first-greeting-of-the-day budget — the same product call the
+          // safe-fast path makes (richness > latency for turn 1 of the day).
+          // Sessions whose facts already resolved skip this entirely.
+          if (_factsReadyNS && !(session as any).lastSessionInfo) {
+            const _extraWaitMsNS = Math.max(
+              0,
+              Number(process.env.ORB_NEWDAY_FACTS_WAIT_MS || 2200) - _firstWaitMsNS,
+            );
+            if (_extraWaitMsNS > 0) {
+              await Promise.race([
+                _factsReadyNS,
+                new Promise<void>((r) => setTimeout(r, _extraWaitMsNS)),
+              ]);
+              if (ws.readyState !== WebSocket.OPEN) return;
+            }
+          }
+
           const { readGreetingLedger, extractSpokenFactsFromPayload, recordGreetingFacts, EMPTY_GREETING_LEDGER: _EMPTY_LEDGER_NS } =
             await import('../services/conversation/greeting-facts-ledger');
           const { gatherOverviewPayload } = await import(
@@ -9537,9 +9621,24 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             '../services/assistant-continuation/providers/new-day-return'
           );
 
+          // RE-READ every fact the pre-fetch owns. `_baseCtxSync` was built
+          // synchronously, before the wait above, so its copies are the stale
+          // nulls. `session.lastSessionInfo` may also have been seeded by the
+          // prefetch, which changes the temporal bucket the ladder reasons about.
           const _nowNS = new Date();
+          const _temporalNS = describeTimeSince(session.lastSessionInfo);
           const _ctxNS: GreetingDecisionContext = {
             ..._baseCtxSync,
+            firstName: (session as any).greetingFirstName ?? null,
+            greetingIsFirstTime: (session as any).greetingIsFirstTime === true,
+            greetingNeedsOnboarding: (session as any).greetingNeedsOnboarding === true,
+            hasPriorSession: (session as any).greetingHasPriorSession === true,
+            lastFullBriefingDate: (session as any).lastFullBriefingDate ?? null,
+            proactiveLine: (session as any).greetingProactiveLine ?? null,
+            recentNbaKeys: ((session as any).recentNbaKeys as string[] | undefined) ?? [],
+            bucket: _temporalNS.bucket,
+            timeAgo: _temporalNS.timeAgo,
+            wasFailure: _temporalNS.wasFailure,
             todayTz: todayInTimezone(_nowNS, _tzSync),
             localHour: localHourInTimezone(_nowNS, _tzSync),
           };
@@ -9583,6 +9682,34 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
               greetingLedger: _ledgerNS,
             });
 
+            // VTID-03609 — the three ways this can still not fire, named apart.
+            emitDiag(session, 'newday_briefing_eval', {
+              outcome:
+                _decisionNS.wakeOpener === 'newday_overview'
+                  ? 'fired'
+                  : !_overviewNS
+                    ? 'gather_empty'
+                    : 'payload_had_no_content',
+              today_tz: _ctxNS.todayTz,
+              last_full_briefing_date: _ctxNS.lastFullBriefingDate,
+              timezone: _tzSync,
+              gathered: !!_overviewNS,
+              wake_opener: _decisionNS.wakeOpener,
+              overview_signals: _overviewNS
+                ? {
+                    journey: !!_overviewNS.journey,
+                    index: _overviewNS.vitana_index?.state ?? null,
+                    life_compass: _overviewNS.life_compass?.state ?? null,
+                    calendar_today: _overviewNS.calendar_today?.count ?? null,
+                    autopilot: _overviewNS.autopilot?.state ?? null,
+                    matches_unread: _overviewNS.matches_unread ?? null,
+                    messages_unread: _overviewNS.messages_unread ?? null,
+                    reminders_today: _overviewNS.reminders_today?.count ?? null,
+                    diary_last_7d: _overviewNS.diary_last_7d ?? null,
+                  }
+                : null,
+            });
+
             if (_decisionNS.wakeOpener !== 'legacy_default') _sm.markOpeningDelivered();
             _renderSync(_decisionNS);
 
@@ -9609,6 +9736,26 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
           }
 
           // Not actually due / not eligible — same normal ladder, no payload.
+          emitDiag(session, 'newday_briefing_eval', {
+            outcome: 'guard_rejected',
+            // The guard is one boolean; report its four inputs separately or
+            // this tells you no more than `override_v2` already did.
+            briefing_due: !(
+              typeof _ctxNS.lastFullBriefingDate === 'string' &&
+              _ctxNS.lastFullBriefingDate >= _ctxNS.todayTz
+            ),
+            has_first_name:
+              typeof _ctxNS.firstName === 'string' && _ctxNS.firstName.trim().length > 0,
+            not_first_time: _ctxNS.greetingIsFirstTime !== true,
+            not_onboarding: _ctxNS.greetingNeedsOnboarding !== true,
+            facts_ready_awaited: !!(session as any).greetingFactsReady,
+            today_tz: _ctxNS.todayTz,
+            last_full_briefing_date: _ctxNS.lastFullBriefingDate,
+            timezone: _tzSync,
+            local_hour: _ctxNS.localHour,
+            bucket: _ctxNS.bucket,
+            lang,
+          });
           if (ws.readyState !== WebSocket.OPEN) return;
           const _fallbackNS = computeGreetingDecision(_ctxNS);
           if (_fallbackNS.wakeOpener !== 'legacy_default') _sm.markOpeningDelivered();
@@ -9619,6 +9766,10 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
           console.warn(
             `[GREETING-NEWDAY-SYNC] session ${session.sessionId} briefing path failed (non-fatal, falling back): ${err?.message || err}`,
           );
+          emitDiag(session, 'newday_briefing_eval', {
+            outcome: 'threw',
+            error: String(err?.message || err).slice(0, 300),
+          });
           try {
             if (ws.readyState !== WebSocket.OPEN) return;
             const _recoverNS = computeGreetingDecision(_baseCtxSync);
@@ -13656,9 +13807,18 @@ async function fetchLastSessionInfo(userId: string, timezone?: string | null): P
         const stopData = await stopResp.json() as Array<{ created_at: string; metadata: Record<string, unknown> }>;
         if (stopData.length > 0) {
           const meta = stopData[0].metadata || {};
-          const turnCount = Number(meta.turn_count) || 0;
-          const audioOut = Number(meta.audio_out_chunks) || 0;
-          wasFailure = turnCount === 0 || audioOut === 0;
+          // VTID-03597: classify on the close REASON, not on the metrics.
+          // This previously read `turnCount === 0 || audioOut === 0`, which is
+          // the signature of the three commonest BENIGN closes — the idle
+          // reaper, the TTL cap, and the user reopening ORB. Measured on prod:
+          // 153 of 176 stops in 14 days were flagged as failures and not one
+          // was real, so the apology opener ("Entschuldige, da ist etwas
+          // schiefgelaufen") fired on nearly every reopen.
+          wasFailure = wasPreviousSessionFailure({
+            reason: (meta.reason as string) ?? null,
+            turnCount: Number(meta.turn_count) || 0,
+            audioOutChunks: Number(meta.audio_out_chunks) || 0,
+          });
           // If we only have a stop event (no start event hit), fall back to the stop time.
           if (!time) time = stopData[0].created_at;
         }
@@ -16089,6 +16249,18 @@ function handleWsStopSession(clientSession: WsClientSession): void {
 
   if (liveSession) {
     liveSession.active = false;
+
+    // VTID-03616: mirror terminateExistingSessionsForUser's teardown — clear
+    // the response watchdog and both keepalive intervals BEFORE dropping the
+    // upstream connection. Without this, a watchdog armed against this
+    // session (e.g. a pending 'greeting_timeout') keeps its timer handle
+    // live after the session is gone: it either fires against a stopped
+    // session and silently no-ops (leaving has_watchdog looking armed
+    // forever) or, worse, still holds a reference nothing will ever clear.
+    // The silence keepalive is the same shape of leak — an orphaned interval
+    // with nothing left to feed.
+    clearResponseWatchdog(liveSession);
+    clearUpstreamKeepalive(liveSession);
 
     // Close upstream WebSocket
     if (liveSession.upstreamWs) {

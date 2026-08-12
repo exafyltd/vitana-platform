@@ -31,6 +31,7 @@ import type { NavCatalogEntry, LangCode, NavCategory } from './navigation-catalo
 import { NAVIGATION_CATALOG, getContent, resolveEffectiveRoles } from './navigation-catalog';
 import { getSupabase } from './supabase';
 import { notifyDbI18nSourceChanged } from '../services/db-i18n/notify-source-changed';
+import { expandQueryTokens, EXPANSION_WEIGHT } from './nav-query-expansion';
 
 // =============================================================================
 // Types (shape of the rows coming back from Supabase)
@@ -121,6 +122,37 @@ const REFRESH_INTERVAL_MS = 60_000;
  * populated yet, falls back to the compile-time NAVIGATION_CATALOG constant
  * so the Navigator never goes dark.
  */
+/**
+ * Pick the entries visible to `platform`, without losing screens that exist
+ * only in the other platform's catalog. Exported so the selection rule is
+ * testable on its own — see the VTID-03614 comment inside
+ * `getCatalogForTenant` for why a plain filter was wrong.
+ *
+ * Order is load-bearing: requested-platform entries keep their original
+ * relative order and come first, so nothing that resolves today can be
+ * outranked by a newly-visible cross-platform entry on a tie.
+ */
+export function selectPlatformEntries<T extends { screen_id: string; platform?: string }>(
+  list: readonly T[],
+  platform: 'mobile' | 'desktop'
+): T[] {
+  const out: T[] = [];
+  const seen = new Set<string>();
+  for (const e of list) {
+    if ((e.platform || 'mobile') === platform) {
+      out.push(e);
+      seen.add(e.screen_id);
+    }
+  }
+  for (const e of list) {
+    if ((e.platform || 'mobile') === platform) continue;
+    if (seen.has(e.screen_id)) continue;
+    seen.add(e.screen_id);
+    out.push(e);
+  }
+  return out;
+}
+
 export function getCatalogForTenant(
   tenantId: string | null | undefined,
   platform: 'mobile' | 'desktop' = 'mobile'
@@ -129,8 +161,37 @@ export function getCatalogForTenant(
   // explicit platform (the compile-time NAVIGATION_CATALOG / gap-filled rows)
   // are the Mobile catalog, so they match platform='mobile'. Defaulting to
   // 'mobile' keeps every existing caller (ORB navigation) behaving as before.
-  const onPlatform = (list: NavCatalogEntryWithRules[]) =>
-    list.filter((e) => ((e.platform as string) || 'mobile') === platform);
+  //
+  // VTID-03614: a plain FILTER here made 36 of the catalog's 187 screens
+  // permanently unreachable by ORB voice navigation.
+  //
+  // The catalog carries one row per (screen_id, platform). 104 screens have
+  // both a mobile and a desktop row; 47 are mobile-only; and **36 are
+  // desktop-only** — including every Health plan tab (Ernährung, Training,
+  // Schlaf, Hydration, Mental), every Wallet balance/rewards tab, every
+  // Assistant tab, every Services-Hub tab, Shop, Meine Tickets, Passende
+  // Mitglieder. `effectivePlatform()` in navigator-consult.ts hard-returns
+  // 'mobile' while NAV_PLATFORM_AWARE is unset (it is unset in production and
+  // appears in no deploy workflow), so those 36 screens were filtered out of
+  // the search space on EVERY consult, from every device.
+  //
+  // The user-visible symptom is not "screen not found" — it is the Navigator
+  // confidently offering the wrong neighbours and then looping, because the
+  // right answer was never a candidate. "Where do I log my steps" scored
+  // Erinnerungen / Vitana-Index / Meine Reise while CONNECTORS.FITNESS and the
+  // plan tabs sat outside the search space entirely.
+  //
+  // `platform` describes which catalog a row was AUTHORED into, not which
+  // device can open it: the route string is identical across a screen's two
+  // rows (verified on production — every duplicated screen_id has exactly one
+  // distinct route). So a desktop-only entry is perfectly navigable from
+  // mobile, and excluding it buys nothing.
+  //
+  // Union with dedupe, requested platform winning: every entry visible today
+  // stays visible with byte-identical content and ordering, and the screens
+  // that were only ever in the other platform's catalog are appended rather
+  // than dropped. This can only ADD reachable destinations.
+  const onPlatform = (list: NavCatalogEntryWithRules[]) => selectPlatformEntries(list, platform);
 
   if (!dbLoadedAtLeastOnce) {
     return onPlatform(NAVIGATION_CATALOG as NavCatalogEntryWithRules[]);
@@ -507,6 +568,8 @@ export function searchCatalogEntries(
   const rawTokens = scorerTokenize(lowerQuery).filter(t => t.length > 2);
   const queryTokens = rawTokens.filter(t => !SCORER_STOPWORDS.has(t));
   const effectiveTokens = queryTokens.length > 0 ? queryTokens : rawTokens;
+  // VTID-03595: computed once for the whole catalog sweep, not per entry.
+  const expandedTokens = expandQueryTokens(effectiveTokens);
 
   const excluded = new Set(opts.exclude_routes || []);
   const results: Array<{ entry: NavCatalogEntry; score: number }> = [];
@@ -541,19 +604,40 @@ export function searchCatalogEntries(
     else if (descLower.includes(lowerQuery)) score += 20;
 
     const matchedTokens = new Set<string>();
-    for (const tok of effectiveTokens) {
+    // VTID-03595: `weight` scales every award below. Literal tokens the user
+    // actually said score at 1; inferred (expanded) tokens score at
+    // EXPANSION_WEIGHT, so a literal match always outranks an inferred one and
+    // an entry can be ADMITTED on inference without being PROMOTED by it.
+    const scoreToken = (tok: string, weight: number): boolean => {
       let matched = false;
-      if (titleWords.has(tok)) { score += 15; matched = true; }
-      if (hintWords.has(tok))  { score += 6;  matched = true; }
-      if (descWords.has(tok))  { score += 3;  matched = true; }
+      if (titleWords.has(tok)) { score += 15 * weight; matched = true; }
+      if (hintWords.has(tok))  { score += 6 * weight;  matched = true; }
+      if (descWords.has(tok))  { score += 3 * weight;  matched = true; }
 
       // Long-token substring fallback for German compounds and similar.
       if (!matched && tok.length >= 6) {
-        if (titleLower.includes(tok)) { score += 5; matched = true; }
-        else if (hintLower.includes(tok)) { score += 2; matched = true; }
+        if (titleLower.includes(tok)) { score += 5 * weight; matched = true; }
+        else if (hintLower.includes(tok)) { score += 2 * weight; matched = true; }
       }
+      return matched;
+    };
 
-      if (matched) matchedTokens.add(tok);
+    for (const tok of effectiveTokens) {
+      if (scoreToken(tok, 1)) matchedTokens.add(tok);
+    }
+
+    // VTID-03595: bridge the user's vocabulary to the catalog's. Without this,
+    // a screen whose text answers the question in different words scores 0 and
+    // is dropped by the `score > 0` admission test below — invisible to every
+    // later stage, including the LLM consult, which then guesses from whatever
+    // survived. See nav-query-expansion.ts for why this is a shared lexicon
+    // rather than per-screen keywords or an embedding index.
+    //
+    // Expanded tokens deliberately do NOT count toward the all-tokens-matched
+    // bonus: that bonus rewards a question the entry answers completely in the
+    // user's own words, and inference is not that.
+    for (const tok of expandedTokens) {
+      scoreToken(tok, EXPANSION_WEIGHT);
     }
 
     if (effectiveTokens.length > 1 && matchedTokens.size >= effectiveTokens.length) {
