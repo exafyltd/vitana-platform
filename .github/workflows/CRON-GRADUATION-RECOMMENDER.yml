@@ -22,14 +22,10 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: cron-graduation-recommender
   cancel-in-progress: false
-
-env:
-  GCP_PROJECT: lovable-vitana-vers1
 
 jobs:
   recommend:
@@ -45,34 +41,24 @@ jobs:
       - working-directory: services/gateway
         run: npm ci --no-audit --no-fund
 
-      - name: Auth to GCP (WIF)
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
-          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
-
-      - uses: google-github-actions/setup-gcloud@v2
-
-      - name: Resolve STAGING + PROD Supabase creds
-        run: |
-          set -euo pipefail
-          STAGING_URL=$(gcloud secrets versions access latest --secret=STAGING_SUPABASE_URL --project="${GCP_PROJECT}")
-          STAGING_KEY=$(gcloud secrets versions access latest --secret=STAGING_SUPABASE_SERVICE_ROLE_KEY --project="${GCP_PROJECT}")
-          PROD_URL=$(gcloud secrets versions access latest --secret=SUPABASE_URL --project="${GCP_PROJECT}")
-          PROD_KEY=$(gcloud secrets versions access latest --secret=SUPABASE_SERVICE_ROLE --project="${GCP_PROJECT}")
-          echo "::add-mask::$STAGING_URL"
-          echo "::add-mask::$STAGING_KEY"
-          echo "::add-mask::$PROD_URL"
-          echo "::add-mask::$PROD_KEY"
-          {
-            echo "STAGING_SUPABASE_URL=$STAGING_URL"
-            echo "STAGING_SUPABASE_SERVICE_ROLE_KEY=$STAGING_KEY"
-            echo "SUPABASE_URL=$PROD_URL"
-            echo "SUPABASE_SERVICE_ROLE=$PROD_KEY"
-          } >> "$GITHUB_ENV"
-
+      # VTID-03608: identical root cause and fix as CRON-AUTO-PROMOTER.yml
+      # — this job's WIF identity has been denied
+      # secretmanager.versions.access on STAGING_SUPABASE_URL for every
+      # single run since this workflow's first, 2026-06-13 (~2 months,
+      # 100% failure rate). CLAUDE.md documents that staging and prod
+      # share the SAME Supabase project throughout this codebase
+      # (BOOTSTRAP-ORB-STAGING-SUPABASE-ALIGN, VTID-03513), so
+      # STAGING_SUPABASE_URL/KEY were never a genuinely different value
+      # from SUPABASE_URL/SUPABASE_SERVICE_ROLE — just a GCP Secret
+      # Manager hop to the identical credential, and the one hop that was
+      # broken. Use the repo secrets directly instead of chasing a GCP IAM
+      # grant this session can't make.
       - name: Run graduation recommender
         working-directory: services/gateway
         env:
+          STAGING_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
           GRADUATION_DRY_RUN: ${{ inputs.dry_run == 'true' && '1' || '0' }}
         run: npx tsx scripts/graduation-recommender.ts
