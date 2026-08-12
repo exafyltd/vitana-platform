@@ -1,0 +1,37 @@
+# VTID-03607 — commands run for this PR's evidence
+# All read-only or local. Nothing writes to production.
+
+# 1. Apply the rename across every file citing the wrong VTID
+$ grep -rl "VTID-03593" services/gateway/src services/gateway/test \
+    | xargs sed -i 's/VTID-03593/VTID-03607/g'
+services/gateway/src/services/conversation/compute-greeting-decision.ts
+services/gateway/src/routes/orb-live.ts
+services/gateway/test/orb/live/characterization/vertex-wake-opener-v2.characterization.test.ts
+services/gateway/test/orb/live/characterization/vertex-cadence-silence.characterization.test.ts
+services/gateway/test/services/conversation/compute-greeting-decision.golden.test.ts
+
+# 2. AC-1 — no stale references remain
+$ grep -rn "VTID-03593" services/gateway/src services/gateway/test
+0 matches
+  -> outputs/grep-no-stale-vtid.txt
+
+# 3. AC-2 / AC-3 — affected suites still pass, snapshots unchanged
+$ cd services/gateway && npx jest \
+    test/services/conversation/compute-greeting-decision.golden.test.ts \
+    test/orb/live/characterization
+Tests:       230 passed, 230 total
+Snapshots:   35 passed, 35 total
+  -> outputs/jest-affected-suites.txt
+  (3 suites fail to LOAD locally on a missing optional dep, @aws-sdk/client-polly;
+   incomplete local node_modules, not repo state. CI's `npm ci` installs it.)
+
+# 4. CURL_PROOF — the touched routes file still serves; JSON, not an HTML 404
+$ curl -s -w "%{http_code} %{content_type}" \
+    https://gateway.vitanaland.com/api/v1/orb/live/transport
+200 application/json; charset=utf-8
+{"ok":true,"transport":"sse"}
+  -> outputs/curl-orb-live-transport.txt
+
+# 5. CSP gate rehearsed locally against the same changed-file list CI builds
+$ python3 <the workflow's CSP pattern list> over `git diff --name-only origin/main...HEAD`
+CSP CLEAN
