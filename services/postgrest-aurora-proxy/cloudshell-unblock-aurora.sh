@@ -16,22 +16,47 @@ CLUSTER_ARN="arn:aws:rds:eu-central-1:472838866351:cluster:vitana-aurora-prod"
 DB="vitana"
 
 echo "=== Resolving Aurora master secret ==="
-# --no-paginate is load-bearing here: list-secrets auto-paginates, and
-# --query is applied PER PAGE by the CLI, not to the combined result set.
-# With ~80 secrets in this account spread across multiple pages, most pages
-# have no match (prints "None") and exactly one page has the real ARN --
-# without --no-paginate, $MASTER_SECRET_ARN ends up as a multi-line blob of
-# "None"s with the real ARN buried in the middle, which silently poisons
-# every use of the variable below.
-MASTER_SECRET_ARN=$(aws secretsmanager list-secrets --region "$REGION" --no-paginate \
-  --query "SecretList[?starts_with(Name, 'rds!cluster-')].ARN | [0]" --output text)
+MASTER_SECRET_ARN="${MASTER_SECRET_ARN:-}"
+if [ -n "$MASTER_SECRET_ARN" ]; then
+  echo "Using MASTER_SECRET_ARN from environment (skipping auto-resolve): $MASTER_SECRET_ARN"
+fi
+if [ -z "$MASTER_SECRET_ARN" ]; then
+# Ask the cluster directly instead of guessing a secret name pattern --
+# describe-db-clusters returns MasterUserSecret.SecretArn when the cluster
+# has RDS-managed master-password rotation enabled (ManageMasterUserPassword),
+# which is authoritative and avoids the list-secrets name-guessing/pagination
+# class of bug entirely (see git history on this file: the previous version
+# guessed the 'rds!cluster-*' name prefix via list-secrets and a first pass
+# at fixing pagination still came back empty -- there is no secret with that
+# prefix for this cluster, i.e. it's not RDS-managed rotation).
+MASTER_SECRET_ARN=$(aws rds describe-db-clusters --region "$REGION" \
+  --db-cluster-identifier vitana-aurora-prod \
+  --query 'DBClusters[0].MasterUserSecret.SecretArn' --output text 2>/dev/null || true)
+fi
 
-# Defensive check: this must be exactly one line and look like an ARN. If
-# pagination bites again for any reason, fail loudly here instead of
-# passing garbage to get-secret-value.
+if [ -z "$MASTER_SECRET_ARN" ] || [ "$MASTER_SECRET_ARN" == "None" ]; then
+  echo "Cluster has no RDS-managed master secret (ManageMasterUserPassword is off)." >&2
+  echo "Falling back to a broad Secrets Manager search by name..." >&2
+  # --no-paginate: --query applies per-page on an auto-paginating list API,
+  # so without it a multi-page account silently drops matches on other pages.
+  CANDIDATES=$(aws secretsmanager list-secrets --region "$REGION" --no-paginate \
+    --query "SecretList[?contains(Name, 'aurora') || contains(Name, 'vitana-aurora') || contains(Name, 'rds')].{Name:Name,ARN:ARN}" \
+    --output table)
+  echo "$CANDIDATES" >&2
+  echo "" >&2
+  echo "ERROR: could not auto-resolve the Aurora master credential secret. Aborting." >&2
+  echo "Pick the correct ARN from the table above (the one holding the cluster's" >&2
+  echo "master/admin password -- likely named something like vitana/aurora/... or" >&2
+  echo "similar to the vitana/gateway/staging/* / vitana/supabase/prod/* pattern" >&2
+  echo "used elsewhere in this account), then re-run with:" >&2
+  echo "  MASTER_SECRET_ARN='<arn>' bash $0" >&2
+  exit 1
+fi
+
+# Defensive check: this must be exactly one line and look like an ARN.
 LINE_COUNT=$(printf '%s' "$MASTER_SECRET_ARN" | wc -l)
-if [ -z "$MASTER_SECRET_ARN" ] || [ "$MASTER_SECRET_ARN" == "None" ] || [ "$LINE_COUNT" -gt 0 ] || [[ "$MASTER_SECRET_ARN" != arn:aws:secretsmanager:* ]]; then
-  echo "ERROR: could not cleanly resolve the RDS-managed master secret (got: '$MASTER_SECRET_ARN'). Aborting." >&2
+if [ "$LINE_COUNT" -gt 0 ] || [[ "$MASTER_SECRET_ARN" != arn:aws:secretsmanager:* ]]; then
+  echo "ERROR: resolved master secret doesn't look like a clean ARN (got: '$MASTER_SECRET_ARN'). Aborting." >&2
   exit 1
 fi
 echo "Using master secret: $MASTER_SECRET_ARN"
