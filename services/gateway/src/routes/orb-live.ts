@@ -8952,7 +8952,22 @@ function startResponseWatchdog(
   session.responseWatchdogReason = reason;
 
   session.responseWatchdogTimer = setTimeout(() => {
-    if (!session.active) return;
+    // VTID-03616: the timer handle must be cleared on EVERY firing path,
+    // including this early no-op — otherwise a session that goes inactive
+    // between arming and firing leaves session.responseWatchdogTimer
+    // pointing at an already-fired (dead) timer forever. `has_watchdog`
+    // (`!!session.responseWatchdogTimer`, admin/diag surfaces) then reports
+    // "a watchdog is armed" for a session with no live safety net, and the
+    // sliding-rearm guards elsewhere (`canSlide = !session.responseWatchdogTimer
+    // || ...`) refuse to arm a fresh one because the stale reference is
+    // still truthy — the exact shape that let a stalled Nova greeting run
+    // to Bedrock's own ~55s idle kill instead of the 30s greeting_timeout
+    // watchdog catching it.
+    if (!session.active) {
+      session.responseWatchdogTimer = undefined;
+      session.responseWatchdogReason = undefined;
+      return;
+    }
 
     const lang = session.lang || 'en';
     const message = getConnectionIssueMessage(lang);
@@ -16201,6 +16216,18 @@ function handleWsStopSession(clientSession: WsClientSession): void {
 
   if (liveSession) {
     liveSession.active = false;
+
+    // VTID-03616: mirror terminateExistingSessionsForUser's teardown — clear
+    // the response watchdog and both keepalive intervals BEFORE dropping the
+    // upstream connection. Without this, a watchdog armed against this
+    // session (e.g. a pending 'greeting_timeout') keeps its timer handle
+    // live after the session is gone: it either fires against a stopped
+    // session and silently no-ops (leaving has_watchdog looking armed
+    // forever) or, worse, still holds a reference nothing will ever clear.
+    // The silence keepalive is the same shape of leak — an orphaned interval
+    // with nothing left to feed.
+    clearResponseWatchdog(liveSession);
+    clearUpstreamKeepalive(liveSession);
 
     // Close upstream WebSocket
     if (liveSession.upstreamWs) {
