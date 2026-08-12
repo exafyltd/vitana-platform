@@ -1854,11 +1854,30 @@ export async function tool_resolve_recipient(
   if (candidates.length === 0) {
     text = `STATUS: not_found. No one named "${spoken}" is in the community right now — they may not have a Vitana account yet.`;
   } else if (ambiguous) {
-    const names = candidates
-      .slice(0, 3)
-      .map((c) => c.display_name || c.vitana_id || c.user_id)
-      .join(', ');
-    text = `STATUS: ambiguous. Found ${candidates.length} possible matches: ${names}. Which one did you mean?`;
+    // VTID-03623-followup: `ambiguous` can fire for two very different
+    // reasons — a genuine near-tie (candidate #2 is within 0.85 of the top
+    // score), or the top candidate simply sitting under the 0.85 auto-resolve
+    // floor with NO real competition. The old code treated both the same way
+    // and always listed the top 3 raw candidates, so a clearly-dominant match
+    // (e.g. "Mariia Maksina" for spoken "Maria Maxina") got listed alongside
+    // unrelated names ("Marion Ederer") that only cleared the RPC's low 0.2
+    // fuzzy-match floor — a live user report called this out directly.
+    // Reuse the SAME 0.85 ratio that decided ambiguity to decide who is
+    // actually worth presenting as an option; a candidate that isn't
+    // competitive with the top score has no business being offered as a pick.
+    const competitive = candidates.filter(
+      (c) => Number(c.score) / Math.max(top_confidence, 0.0001) > 0.85,
+    );
+    if (competitive.length <= 1) {
+      const top = candidates[0];
+      text = `STATUS: ambiguous. Best (unconfirmed) guess: ${top.display_name || top.vitana_id || top.user_id} (confidence ${(top_confidence * 100).toFixed(0)}%, below the auto-confirm threshold, no other close matches). Confirm this specific person with the user before sending anything.`;
+    } else {
+      const names = competitive
+        .slice(0, 3)
+        .map((c) => c.display_name || c.vitana_id || c.user_id)
+        .join(', ');
+      text = `STATUS: ambiguous. Found ${competitive.length} closely-matching candidates: ${names}. Which one did you mean?`;
+    }
   } else {
     const top = candidates[0];
     text = `STATUS: resolved. Best match: ${top.display_name || top.vitana_id || top.user_id} (confidence ${(top_confidence * 100).toFixed(0)}%).`;

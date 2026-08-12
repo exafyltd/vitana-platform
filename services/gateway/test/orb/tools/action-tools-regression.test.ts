@@ -107,6 +107,46 @@ describe('resolve_recipient — never confidently pick the wrong / weak match', 
     expect((r.result as any).ambiguous).toBe(true);
     expect(r.text).toMatch(/which one/i);
   });
+
+  // VTID-03623-followup: live report — "Maria Maxina" resolved (correctly, as
+  // #1) against "Mariia Maksina", but the response text listed her alongside
+  // "Maria Dier" and "Marion Ederer", two candidates that only cleared the
+  // RPC's low 0.2 fuzzy floor and were nowhere near competitive with the top
+  // score. A dominant-but-under-0.85 top match must not be diluted by weak
+  // filler candidates in the text a user/model actually reads.
+  it('dominant top match, but under 0.85, with only WEAK trailing candidates → single confirm, not a 3-way menu', async () => {
+    const r = await tool_resolve_recipient(
+      { spoken_name: 'Maria Maxina' },
+      ID,
+      sbWithCandidates([
+        cand({ display_name: 'Mariia Maksina', vitana_id: 'mariia11', score: 0.6735 }),
+        cand({ user_id: '33333333-3333-3333-3333-333333333333', display_name: 'Maria Dier', vitana_id: 'maria164', score: 0.34 }),
+        cand({ user_id: '44444444-4444-4444-4444-444444444444', display_name: 'Marion Ederer', vitana_id: 'marion168', score: 0.3 }),
+      ]),
+    );
+    expect((r.result as any).ambiguous).toBe(true);
+    expect(r.text).toMatch(/Mariia Maksina/);
+    expect(r.text).not.toMatch(/Maria Dier/);
+    expect(r.text).not.toMatch(/Marion Ederer/);
+    expect(r.text).not.toMatch(/which one/i);
+  });
+
+  it('genuine 3-way near-tie → all 3 competitive candidates listed, "which one"', async () => {
+    const r = await tool_resolve_recipient(
+      { spoken_name: 'Maria' },
+      ID,
+      sbWithCandidates([
+        cand({ display_name: 'Maria A', vitana_id: 'maria_a', score: 0.8 }),
+        cand({ user_id: '33333333-3333-3333-3333-333333333333', display_name: 'Maria B', vitana_id: 'maria_b', score: 0.78 }),
+        cand({ user_id: '44444444-4444-4444-4444-444444444444', display_name: 'Maria C', vitana_id: 'maria_c', score: 0.75 }),
+      ]),
+    );
+    expect((r.result as any).ambiguous).toBe(true);
+    expect(r.text).toMatch(/Maria A/);
+    expect(r.text).toMatch(/Maria B/);
+    expect(r.text).toMatch(/Maria C/);
+    expect(r.text).toMatch(/which one/i);
+  });
 });
 
 describe('send_chat_message — fail loudly, never silent-success or wrong recipient', () => {
