@@ -2391,10 +2391,16 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
   {
     screen_id: 'HEALTH.TRACKER', route: '/health-tracker', category: 'health',
     access: 'authenticated', anonymous_safe: false,
-    aliases: ['health-tracker', 'tracker', 'my-health-tracker', '/health/my-health-tracker'],
+    // VTID-03594: 'steps'/'schritte' added — this is the actual step-logging
+    // screen but carried no step-related keyword anywhere (title, description,
+    // hint, or alias), so a query like "wo ich meine Schritte eintragen kann"
+    // scored zero matches here and the navigator fell through to unrelated
+    // entries (Reminders / Vitana Index / My Journey) that happened to share
+    // other tokens instead.
+    aliases: ['health-tracker', 'tracker', 'my-health-tracker', '/health/my-health-tracker', 'steps', 'schritte', 'step-counter', 'schrittzähler'],
     i18n: {
-      en: { title: 'Health Tracker', description: 'Track your daily health behaviors and Vitana Index movements.', when_to_visit: 'When the user asks to open the health tracker, log a health behavior, track water/sleep/exercise, or see today\'s tracker.' },
-      de: { title: 'Gesundheits-Tracker', description: 'Verfolge dein tägliches Gesundheitsverhalten und Vitana-Index-Bewegungen.', when_to_visit: 'Wenn der Nutzer den Gesundheits-Tracker öffnen, ein Gesundheitsverhalten loggen, Wasser/Schlaf/Bewegung verfolgen oder den heutigen Tracker sehen möchte.' },
+      en: { title: 'Health Tracker', description: 'Track your daily health behaviors and Vitana Index movements.', when_to_visit: 'When the user asks to open the health tracker, log a health behavior, track water/sleep/exercise/steps, or see today\'s tracker.' },
+      de: { title: 'Gesundheits-Tracker', description: 'Verfolge dein tägliches Gesundheitsverhalten und Vitana-Index-Bewegungen.', when_to_visit: 'Wenn der Nutzer den Gesundheits-Tracker öffnen, ein Gesundheitsverhalten loggen, Wasser/Schlaf/Bewegung/Schritte verfolgen, seine Schritte eintragen oder den heutigen Tracker sehen möchte.' },
     },
   },
 

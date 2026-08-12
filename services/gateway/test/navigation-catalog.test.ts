@@ -396,6 +396,14 @@ const ROUTING_CASES: RoutingCase[] = [
   { utterance: 'open my chat history',                       lang: 'en', expected_screen_id: 'INBOX.OVERVIEW' },
   { utterance: 'show my message history and conversations',   lang: 'en', expected_screen_id: 'INBOX.OVERVIEW' },
   { utterance: 'öffne meinen chat verlauf',                  lang: 'de', expected_screen_id: 'INBOX.OVERVIEW' },
+
+  // ── HEALTH.TRACKER (VTID-03594) ──
+  // "wo ich meine Schritte eintragen kann" ("where I can log my steps") had no
+  // matching token anywhere on HEALTH.TRACKER and fell through to unrelated
+  // entries (Reminders / Vitana Index / My Journey) that shared other words.
+  { utterance: 'wo ich meine schritte eintragen kann',       lang: 'de', expected_screen_id: 'HEALTH.TRACKER' },
+  { utterance: 'schritte eintragen',                         lang: 'de', expected_screen_id: 'HEALTH.TRACKER' },
+  { utterance: 'log my steps',                                lang: 'en', expected_screen_id: 'HEALTH.TRACKER' },
 ];
 
 describe('navigation-catalog — routing quality', () => {
