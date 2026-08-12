@@ -9488,22 +9488,55 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
     const _syncUid = session.identity?.user_id || null;
     const _syncSupa = getSupabase();
     const _syncFirstName = (session as any).greetingFirstName ?? null;
-    const _newdaySyncPossible =
-      !session.isAnonymous &&
-      !!_syncUid &&
-      !!_syncSupa &&
-      typeof _syncFirstName === 'string' &&
-      _syncFirstName.trim().length > 0 &&
-      (session as any).greetingNeedsOnboarding !== true &&
-      (session as any).greetingIsFirstTime !== true &&
-      /^(de|en)/i.test(lang || '') &&
+    // VTID-03609 — every gate is a NAMED boolean, and all of them are emitted,
+    // because VTID-03593 shipped this branch with no diagnostic on the
+    // not-fired path: five production sessions that were demonstrably due a
+    // briefing (last_full_briefing_date 2026-07-24 … 2026-08-01, against
+    // 2026-08-12) all reported `override_v2`, and nothing in the telemetry
+    // could say whether the pre-guard rejected them, the real guard did, the
+    // gather came back empty, or the payload had nothing worth speaking.
+    // "It didn't fire" and "it fired and had nothing to say" have to be
+    // distinguishable or the next round is guesswork again.
+    //
+    // VTID-03609, and this is the substantive half: the pre-guard may only read
+    // facts that are RELIABLE SYNCHRONOUSLY. `greetingFirstName`,
+    // `greetingIsFirstTime`, `greetingNeedsOnboarding` and
+    // `lastFullBriefingDate` are NOT — they come from the greeting-facts
+    // pre-fetch (`live-session-controller.ts` L1367), which seeds the session
+    // with the still-null locals and only copies the real values when
+    // `session.greetingFactsReady` resolves. The safe-fast block has always
+    // done a bounded wait on that promise before reading them; VTID-03593's
+    // sync branch read them straight, so on a session whose facts had not
+    // landed yet `firstName` was null, the pre-guard rejected, and the briefing
+    // could not fire — which is exactly what five due production sessions did
+    // on 2026-08-12 while reporting nothing but `override_v2`.
+    //
+    // Those four moved BELOW the wait, into `shouldAttemptNewdayOverview`,
+    // where they were always meant to be checked.
+    const _ndGates = {
+      not_anonymous: !session.isAnonymous,
+      has_user_id: !!_syncUid,
+      has_supabase: !!_syncSupa,
+      lang_supported: /^(de|en)/i.test(lang || ''),
       // A reconnect must stay silent — rung 7 owns that and outranks the
       // briefing. Skipping the gather entirely keeps that true without
       // spending the Supabase round-trips to discover it.
-      !(
+      not_silent_reconnect: !(
         _openDecision.mode === 'silent' &&
         (_openDecision.source === 'native_resume' || _openDecision.source === 'reconnect_no_handle')
-      );
+      ),
+    };
+    const _newdaySyncPossible = Object.values(_ndGates).every(Boolean);
+    if (!_newdaySyncPossible) {
+      emitDiag(session, 'newday_briefing_eval', {
+        outcome: 'pre_guard_rejected',
+        blocked_by: Object.entries(_ndGates)
+          .filter(([, v]) => !v)
+          .map(([k]) => k),
+        lang,
+        last_full_briefing_date: (session as any).lastFullBriefingDate ?? null,
+      });
+    }
 
     // Claim the greeting synchronously in BOTH branches: the async branch below
     // must not leave a window in which a second caller also decides to greet.
@@ -9513,6 +9546,41 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
     if (_newdaySyncPossible) {
       void (async () => {
         try {
+          // VTID-03609 — bounded wait for the greeting-facts pre-fetch, mirroring
+          // the safe-fast block's wait exactly (same two env budgets, same
+          // conditions). Without it, every fact this decision rests on is read
+          // before it exists. A session whose facts already landed races through
+          // both `Promise.race`es immediately and pays nothing, which is the
+          // common case here — the sync ladder is reached only after context
+          // assembly finished, by which time this independent prefetch usually
+          // has too.
+          const _factsReadyNS: Promise<void> | undefined = (session as any).greetingFactsReady;
+          const _firstWaitMsNS = Number(process.env.ORB_GREETING_FACTS_WAIT_MS || 700);
+          await Promise.race([
+            _factsReadyNS ?? Promise.resolve(),
+            new Promise<void>((r) => setTimeout(r, _firstWaitMsNS)),
+          ]);
+          if (ws.readyState !== WebSocket.OPEN) return;
+
+          // Until last-session info lands we cannot even tell whether this IS a
+          // new-day return, so when the facts are still pending give them the
+          // larger first-greeting-of-the-day budget — the same product call the
+          // safe-fast path makes (richness > latency for turn 1 of the day).
+          // Sessions whose facts already resolved skip this entirely.
+          if (_factsReadyNS && !(session as any).lastSessionInfo) {
+            const _extraWaitMsNS = Math.max(
+              0,
+              Number(process.env.ORB_NEWDAY_FACTS_WAIT_MS || 2200) - _firstWaitMsNS,
+            );
+            if (_extraWaitMsNS > 0) {
+              await Promise.race([
+                _factsReadyNS,
+                new Promise<void>((r) => setTimeout(r, _extraWaitMsNS)),
+              ]);
+              if (ws.readyState !== WebSocket.OPEN) return;
+            }
+          }
+
           const { readGreetingLedger, extractSpokenFactsFromPayload, recordGreetingFacts, EMPTY_GREETING_LEDGER: _EMPTY_LEDGER_NS } =
             await import('../services/conversation/greeting-facts-ledger');
           const { gatherOverviewPayload } = await import(
@@ -9522,9 +9590,24 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             '../services/assistant-continuation/providers/new-day-return'
           );
 
+          // RE-READ every fact the pre-fetch owns. `_baseCtxSync` was built
+          // synchronously, before the wait above, so its copies are the stale
+          // nulls. `session.lastSessionInfo` may also have been seeded by the
+          // prefetch, which changes the temporal bucket the ladder reasons about.
           const _nowNS = new Date();
+          const _temporalNS = describeTimeSince(session.lastSessionInfo);
           const _ctxNS: GreetingDecisionContext = {
             ..._baseCtxSync,
+            firstName: (session as any).greetingFirstName ?? null,
+            greetingIsFirstTime: (session as any).greetingIsFirstTime === true,
+            greetingNeedsOnboarding: (session as any).greetingNeedsOnboarding === true,
+            hasPriorSession: (session as any).greetingHasPriorSession === true,
+            lastFullBriefingDate: (session as any).lastFullBriefingDate ?? null,
+            proactiveLine: (session as any).greetingProactiveLine ?? null,
+            recentNbaKeys: ((session as any).recentNbaKeys as string[] | undefined) ?? [],
+            bucket: _temporalNS.bucket,
+            timeAgo: _temporalNS.timeAgo,
+            wasFailure: _temporalNS.wasFailure,
             todayTz: todayInTimezone(_nowNS, _tzSync),
             localHour: localHourInTimezone(_nowNS, _tzSync),
           };
@@ -9568,6 +9651,34 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
               greetingLedger: _ledgerNS,
             });
 
+            // VTID-03609 — the three ways this can still not fire, named apart.
+            emitDiag(session, 'newday_briefing_eval', {
+              outcome:
+                _decisionNS.wakeOpener === 'newday_overview'
+                  ? 'fired'
+                  : !_overviewNS
+                    ? 'gather_empty'
+                    : 'payload_had_no_content',
+              today_tz: _ctxNS.todayTz,
+              last_full_briefing_date: _ctxNS.lastFullBriefingDate,
+              timezone: _tzSync,
+              gathered: !!_overviewNS,
+              wake_opener: _decisionNS.wakeOpener,
+              overview_signals: _overviewNS
+                ? {
+                    journey: !!_overviewNS.journey,
+                    index: _overviewNS.vitana_index?.state ?? null,
+                    life_compass: _overviewNS.life_compass?.state ?? null,
+                    calendar_today: _overviewNS.calendar_today?.count ?? null,
+                    autopilot: _overviewNS.autopilot?.state ?? null,
+                    matches_unread: _overviewNS.matches_unread ?? null,
+                    messages_unread: _overviewNS.messages_unread ?? null,
+                    reminders_today: _overviewNS.reminders_today?.count ?? null,
+                    diary_last_7d: _overviewNS.diary_last_7d ?? null,
+                  }
+                : null,
+            });
+
             if (_decisionNS.wakeOpener !== 'legacy_default') _sm.markOpeningDelivered();
             _renderSync(_decisionNS);
 
@@ -9594,6 +9705,26 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
           }
 
           // Not actually due / not eligible — same normal ladder, no payload.
+          emitDiag(session, 'newday_briefing_eval', {
+            outcome: 'guard_rejected',
+            // The guard is one boolean; report its four inputs separately or
+            // this tells you no more than `override_v2` already did.
+            briefing_due: !(
+              typeof _ctxNS.lastFullBriefingDate === 'string' &&
+              _ctxNS.lastFullBriefingDate >= _ctxNS.todayTz
+            ),
+            has_first_name:
+              typeof _ctxNS.firstName === 'string' && _ctxNS.firstName.trim().length > 0,
+            not_first_time: _ctxNS.greetingIsFirstTime !== true,
+            not_onboarding: _ctxNS.greetingNeedsOnboarding !== true,
+            facts_ready_awaited: !!(session as any).greetingFactsReady,
+            today_tz: _ctxNS.todayTz,
+            last_full_briefing_date: _ctxNS.lastFullBriefingDate,
+            timezone: _tzSync,
+            local_hour: _ctxNS.localHour,
+            bucket: _ctxNS.bucket,
+            lang,
+          });
           if (ws.readyState !== WebSocket.OPEN) return;
           const _fallbackNS = computeGreetingDecision(_ctxNS);
           if (_fallbackNS.wakeOpener !== 'legacy_default') _sm.markOpeningDelivered();
@@ -9604,6 +9735,10 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
           console.warn(
             `[GREETING-NEWDAY-SYNC] session ${session.sessionId} briefing path failed (non-fatal, falling back): ${err?.message || err}`,
           );
+          emitDiag(session, 'newday_briefing_eval', {
+            outcome: 'threw',
+            error: String(err?.message || err).slice(0, 300),
+          });
           try {
             if (ws.readyState !== WebSocket.OPEN) return;
             const _recoverNS = computeGreetingDecision(_baseCtxSync);
