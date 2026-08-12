@@ -29,7 +29,13 @@ export type BedrockContentBlock =
   | {
       type: 'image';
       source: { type: 'base64'; media_type: string; data: string };
-    };
+    }
+  // VTID-03579: the two blocks an agentic loop needs. A tool-calling turn is
+  // three messages, not one — the model's tool_use, the caller's tool_result,
+  // and the model's follow-up — and Anthropic pairs them by `id`/`tool_use_id`.
+  // Without these the operator's tool round-trip cannot be expressed at all.
+  | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
+  | { type: 'tool_result'; tool_use_id: string; content: string; is_error?: boolean };
 
 export interface BedrockTool {
   name: string;
@@ -68,6 +74,12 @@ export interface BedrockInvokeRequest {
 export interface BedrockToolCall {
   name: string;
   arguments: Record<string, unknown>;
+  /**
+   * VTID-03579: the provider-assigned tool_use id. Required to send the result
+   * back — Anthropic matches a tool_result to its tool_use by this id, and a
+   * mismatched or missing id is a hard 400, not a soft degradation.
+   */
+  id?: string;
 }
 
 export interface BedrockInvokeResponse {
@@ -75,6 +87,13 @@ export interface BedrockInvokeResponse {
   text: string;
   /** VTID-03496: populated when the model emitted a `tool_use` block. */
   toolCall?: BedrockToolCall;
+  /**
+   * VTID-03579: ALL tool_use blocks, in order. Claude can request several tools
+   * in one turn; `toolCall` reports only the first, so an agentic caller reading
+   * it alone would silently drop the rest and then hang waiting for results it
+   * never asked for. `toolCall` is kept as the first element for back-compat.
+   */
+  toolCalls?: BedrockToolCall[];
   /** Anthropic stop reason, e.g. 'tool_use' | 'end_turn' | 'max_tokens'. */
   stopReason?: string;
   model: string;
@@ -108,19 +127,37 @@ function bedrockRegion(): string {
  * the first. Both are now handled by filtering across all blocks.
  */
 export function parseBedrockContent(payload: {
-  content?: Array<{ type?: string; text?: string; name?: string; input?: Record<string, unknown> }>;
-}): { text: string; toolCall?: BedrockToolCall } {
+  content?: Array<{
+    type?: string;
+    text?: string;
+    name?: string;
+    id?: string;
+    input?: Record<string, unknown>;
+  }>;
+}): { text: string; toolCall?: BedrockToolCall; toolCalls: BedrockToolCall[] } {
   const blocks = Array.isArray(payload?.content) ? payload.content : [];
   const text = blocks
     .filter((b) => b?.type === 'text' && typeof b.text === 'string')
     .map((b) => b.text as string)
     .join('');
-  const toolBlock = blocks.find((b) => b?.type === 'tool_use');
-  const toolCall =
-    toolBlock && typeof toolBlock.name === 'string' && toolBlock.input && typeof toolBlock.input === 'object'
-      ? { name: toolBlock.name, arguments: toolBlock.input }
-      : undefined;
-  return { text, toolCall };
+  // VTID-03579: collect EVERY tool_use block, not just the first. Claude emits
+  // parallel tool calls in a single turn; taking `.find()` silently executed one
+  // and dropped the others, which reads downstream as the model ignoring its own
+  // request.
+  const toolCalls = blocks
+    .filter(
+      (b) =>
+        b?.type === 'tool_use' &&
+        typeof b.name === 'string' &&
+        b.input &&
+        typeof b.input === 'object',
+    )
+    .map((b) => ({
+      name: b.name as string,
+      arguments: b.input as Record<string, unknown>,
+      id: typeof b.id === 'string' ? b.id : undefined,
+    }));
+  return { text, toolCall: toolCalls[0], toolCalls };
 }
 
 export async function invokeBedrock(
@@ -164,11 +201,12 @@ export async function invokeBedrock(
     });
     const resp = await client.send(command);
     const payload = JSON.parse(new TextDecoder().decode(resp.body));
-    const { text, toolCall } = parseBedrockContent(payload);
+    const { text, toolCall, toolCalls } = parseBedrockContent(payload);
     return {
       ok: true,
       text,
       toolCall,
+      toolCalls,
       stopReason: typeof payload?.stop_reason === 'string' ? payload.stop_reason : undefined,
       model: req.model,
       upstream_ms: Date.now() - start,
