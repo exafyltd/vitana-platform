@@ -321,6 +321,7 @@ jobs:
 
       - name: Register task-definition revision + roll the service
         env:
+          MARKETPLACE_SYNC_SECRET_VALUE: ${{ secrets.MARKETPLACE_SYNC_SECRET }}
           NOVA_ENABLED_INPUT: ${{ inputs.nova_sonic_enabled }}
           NOVA_USERS_INPUT: ${{ inputs.nova_canary_user_ids }}
           NOVA_TENANTS_INPUT: ${{ inputs.nova_canary_tenant_ids }}
@@ -399,6 +400,27 @@ jobs:
               ( [ .[] | select(.name | IN("FEATURE_ORB_FAST_START_ENV","FEATURE_ORB_BRAIN_CACHE_ENV") | not) ]
                 + [ {name:"FEATURE_ORB_FAST_START_ENV", value:"staging+prod"},
                     {name:"FEATURE_ORB_BRAIN_CACHE_ENV", value:"staging+prod"} ] )')
+
+          # VTID-03618: same class of bug as FEATURE_ORB_FAST_START_ENV above —
+          # a value the GCP deploy pipeline (EXEC-DEPLOY.yml) has always passed
+          # unconditionally as a plain env var (`--update-env-vars=
+          # MARKETPLACE_SYNC_SECRET=...`) but was never carried across the
+          # VTID-03419 GCP→AWS cutover, because the AWS task def was built by
+          # cloning forward whatever GCP happened to have wired at build time,
+          # not by mirroring every GCP env var. Confirmed live 2026-08-12: the
+          # gateway answered `/api/v1/internal/marketplace/sync/all` with
+          # HTTP 500 "MARKETPLACE_SYNC_SECRET not configured on gateway" — the
+          # cron's own secret is correct (it's the same GH secret sourced
+          # below), the gateway simply never had it. Pinned unconditionally,
+          # not behind a dispatch input, because this is a required credential
+          # for a route that already exists in prod code, not an optional
+          # feature lever — the same reasoning FEATURE_ORB_FAST_START_ENV
+          # above uses. A plain env var, not a Secrets Manager reference,
+          # matching GCP's existing shape for this exact value.
+          NEW_DEF=$(echo "$NEW_DEF" | jq --arg S "$MARKETPLACE_SYNC_SECRET_VALUE" '
+            .containerDefinitions[0].environment |=
+              ( [ .[] | select(.name != "MARKETPLACE_SYNC_SECRET") ]
+                + [ {name:"MARKETPLACE_SYNC_SECRET", value:$S} ] )')
 
           # VTID-03584: the new-day greeting was suppressed on 100% of
           # authenticated production sessions from 2026-08-04 onward. Measured:
