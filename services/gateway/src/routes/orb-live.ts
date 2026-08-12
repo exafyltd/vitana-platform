@@ -6098,6 +6098,30 @@ async function executeLiveApiToolInner(
       case 'list_following':
       case 'recent_conversations':
       case 'get_social_context':
+      // VTID-03604 surface 4 — on-demand day summary. Mirrors get_life_compass.
+      case 'get_day_summary': {
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
+        }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          toolName,
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+            lang: session.lang ?? null,
+          },
+          supabase,
+        );
+      }
+
       case 'get_life_compass': {
         const SUPABASE_URL = process.env.SUPABASE_URL;
         const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
