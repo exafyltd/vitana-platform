@@ -9445,7 +9445,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
     };
 
     /** Render one decision onto the wire + perform its effects. Shared by the
-     *  plain sync path and the VTID-03593 new-day path so the two cannot drift. */
+     *  plain sync path and the VTID-03607 new-day path so the two cannot drift. */
     const _renderSync = (decision: ReturnType<typeof computeGreetingDecision>) => {
       if (decision.directive !== null) {
         const _greetingClientContentMsg = JSON.stringify({
@@ -9473,7 +9473,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
       }
     };
 
-    // VTID-03593 — cheap, I/O-free pre-guard for the rich new-day briefing.
+    // VTID-03607 — cheap, I/O-free pre-guard for the rich new-day briefing.
     //
     // The real guard is `shouldAttemptNewdayOverview`, but it needs `todayTz`,
     // which needs the timezone helpers, which are dynamically imported (module
