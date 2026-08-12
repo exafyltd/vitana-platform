@@ -1671,9 +1671,9 @@ async function scheduleReminderFcmPush(
 // =============================================================================
 const NIGHT_PUSH_LOCAL_HOUR = 22;
 
+// public-route — called by Cloud Scheduler (no JWT); protected by GCP IAM at
+// the scheduler layer, same pattern as every other entry in this file.
 router.post('/night-push', async (req: Request, res: Response) => {
-  // public-route — called by Cloud Scheduler (no JWT); protected by GCP IAM
-  // at the scheduler layer, same pattern as the other entries in this file.
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
