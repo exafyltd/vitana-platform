@@ -16,13 +16,22 @@ CLUSTER_ARN="arn:aws:rds:eu-central-1:472838866351:cluster:vitana-aurora-prod"
 DB="vitana"
 
 echo "=== Resolving Aurora master secret ==="
-RESOURCE_ID=$(aws rds describe-db-clusters --region "$REGION" \
-  --db-cluster-identifier vitana-aurora-prod \
-  --query 'DBClusters[0].DbClusterResourceId' --output text)
-MASTER_SECRET_ARN=$(aws secretsmanager list-secrets --region "$REGION" \
+# --no-paginate is load-bearing here: list-secrets auto-paginates, and
+# --query is applied PER PAGE by the CLI, not to the combined result set.
+# With ~80 secrets in this account spread across multiple pages, most pages
+# have no match (prints "None") and exactly one page has the real ARN --
+# without --no-paginate, $MASTER_SECRET_ARN ends up as a multi-line blob of
+# "None"s with the real ARN buried in the middle, which silently poisons
+# every use of the variable below.
+MASTER_SECRET_ARN=$(aws secretsmanager list-secrets --region "$REGION" --no-paginate \
   --query "SecretList[?starts_with(Name, 'rds!cluster-')].ARN | [0]" --output text)
-if [ -z "$MASTER_SECRET_ARN" ] || [ "$MASTER_SECRET_ARN" == "None" ]; then
-  echo "ERROR: could not resolve the RDS-managed master secret. Aborting." >&2
+
+# Defensive check: this must be exactly one line and look like an ARN. If
+# pagination bites again for any reason, fail loudly here instead of
+# passing garbage to get-secret-value.
+LINE_COUNT=$(printf '%s' "$MASTER_SECRET_ARN" | wc -l)
+if [ -z "$MASTER_SECRET_ARN" ] || [ "$MASTER_SECRET_ARN" == "None" ] || [ "$LINE_COUNT" -gt 0 ] || [[ "$MASTER_SECRET_ARN" != arn:aws:secretsmanager:* ]]; then
+  echo "ERROR: could not cleanly resolve the RDS-managed master secret (got: '$MASTER_SECRET_ARN'). Aborting." >&2
   exit 1
 fi
 echo "Using master secret: $MASTER_SECRET_ARN"
