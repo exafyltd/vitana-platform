@@ -968,6 +968,32 @@ export function buildLiveApiTools(
         // my Life Compass goal?" with the canonical value — it either
         // invents one from prior conversation or denies access.
         {
+          name: 'get_day_summary',
+          description: [
+            "Return an aggregate of the user's day SO FAR — today's Vitana",
+            'Index reading + 7-day trend, calendar events today, the autopilot',
+            "checkpoint prepared for today, today's reminders, unread messages",
+            '/ matches, and anything newly learned about the user today.',
+            '',
+            'CALL THIS ONLY WHEN THE USER EXPLICITLY ASKS, e.g.:',
+            '  - "How was my day?" / "Wie war mein Tag?"',
+            '  - "Give me a summary of today" / "Gib mir eine Tageszusammenfassung"',
+            '  - "What happened today?" / "Was ist heute passiert?"',
+            '',
+            'Never call this proactively or as part of a greeting — the day-close',
+            "ritual already covers that on its own schedule; this tool is ONLY",
+            'for an explicit on-demand ask, any time of day.',
+            '',
+            'The result is DATA, not a script — compose your own sentence from it',
+            'in your own words. Do NOT read it back as a list. If has_content is',
+            'false, say warmly that it was a quiet day — that is not a bad thing.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {},
+          },
+        },
+        {
           name: 'get_life_compass',
           description: [
             "Return the user's active Life Compass — the one-sentence long-term",

@@ -236,6 +236,11 @@ TENANT_DIRECT_JOBS=(
   "daily-pace-notifications|0 * * * *|UTC|/api/v1/scheduled-notifications/daily-pace-notifications"
   # BOOTSTRAP-DAILY-FEATURE-TIP: automatic once-a-day "Did You Know" card.
   "daily-feature-tip|0 17 * * *|UTC|/api/v1/scheduled-notifications/daily-feature-tip"
+  # VTID-03604: nightly goodnight push, same hourly-UTC-tick / per-user-
+  # local-hour pattern as daily-pace-notifications — fires every hour, the
+  # endpoint dispatches only to users whose local hour == 22 and who did not
+  # already get the spoken ORB day-close tonight.
+  "night-push|0 * * * *|UTC|/api/v1/scheduled-notifications/night-push"
 )
 
 for JOB in "${TENANT_DIRECT_JOBS[@]}"; do

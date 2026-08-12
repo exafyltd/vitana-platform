@@ -6098,6 +6098,30 @@ async function executeLiveApiToolInner(
       case 'list_following':
       case 'recent_conversations':
       case 'get_social_context':
+      // VTID-03604 surface 4 — on-demand day summary. Mirrors get_life_compass.
+      case 'get_day_summary': {
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
+        }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          toolName,
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+            lang: session.lang ?? null,
+          },
+          supabase,
+        );
+      }
+
       case 'get_life_compass': {
         const SUPABASE_URL = process.env.SUPABASE_URL;
         const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
@@ -9232,6 +9256,9 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
               greetingNeedsOnboarding: (session as any).greetingNeedsOnboarding === true,
               greetingIsFirstTime: (session as any).greetingIsFirstTime === true,
               lastFullBriefingDate: (session as any).lastFullBriefingDate ?? null,
+              // VTID-03604
+              lastDayCloseDate: (session as any).lastDayCloseDate ?? null,
+              userId: _uidSF,
               todayTz: _todaySF,
               localHour: localHourInTimezone(_nowSF, _tzSF),
               timezone: _tzSF,
@@ -9341,6 +9368,15 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
               void _supaSF
                 .from('user_journey')
                 .update({ last_full_briefing_date: _sfDecision.effects.stampBriefingDate })
+                .eq('user_id', _uidSF)
+                .then(() => {}, () => {});
+            }
+            // VTID-03604: same pattern for the day-close stamp.
+            if (_sfDecision.effects.stampDayCloseDate && _uidSF && _supaSF) {
+              (session as any).lastDayCloseDate = _sfDecision.effects.stampDayCloseDate;
+              void _supaSF
+                .from('user_journey')
+                .update({ last_day_close_date: _sfDecision.effects.stampDayCloseDate })
                 .eq('user_id', _uidSF)
                 .then(() => {}, () => {});
             }
@@ -9641,6 +9677,9 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             wasFailure: _temporalNS.wasFailure,
             todayTz: todayInTimezone(_nowNS, _tzSync),
             localHour: localHourInTimezone(_nowNS, _tzSync),
+            // VTID-03604
+            lastDayCloseDate: (session as any).lastDayCloseDate ?? null,
+            userId: _syncUid,
           };
 
           // Real guard, single-sourced with the pure rung.
@@ -9721,6 +9760,15 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                 .eq('user_id', _syncUid!)
                 .then(() => {}, () => {});
             }
+            // VTID-03604
+            if (_decisionNS.effects.stampDayCloseDate) {
+              (session as any).lastDayCloseDate = _decisionNS.effects.stampDayCloseDate;
+              void _syncSupa!
+                .from('user_journey')
+                .update({ last_day_close_date: _decisionNS.effects.stampDayCloseDate })
+                .eq('user_id', _syncUid!)
+                .then(() => {}, () => {});
+            }
             if (_decisionNS.wakeOpener === 'newday_overview' && _tenantNS) {
               const _spokenNS = extractSpokenFactsFromPayload(_overviewNS);
               if (Object.keys(_spokenNS).length > 0) {
@@ -9760,6 +9808,19 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
           const _fallbackNS = computeGreetingDecision(_ctxNS);
           if (_fallbackNS.wakeOpener !== 'legacy_default') _sm.markOpeningDelivered();
           _renderSync(_fallbackNS);
+          // VTID-03604 — this IS the path a routine evening takes: the user
+          // already got their morning briefing, so briefingDue() is false and
+          // shouldAttemptNewdayOverview rejected above, but the day-close rung
+          // still runs inside computeGreetingDecision(_ctxNS) and outranks
+          // everything below it.
+          if (_fallbackNS.effects.stampDayCloseDate && _syncUid && _syncSupa) {
+            (session as any).lastDayCloseDate = _fallbackNS.effects.stampDayCloseDate;
+            void _syncSupa
+              .from('user_journey')
+              .update({ last_day_close_date: _fallbackNS.effects.stampDayCloseDate })
+              .eq('user_id', _syncUid)
+              .then(() => {}, () => {});
+          }
         } catch (err: any) {
           // Never leave the user with silence because the briefing gather blew
           // up: fall back to the plain ladder rather than swallowing the turn.

@@ -52,6 +52,11 @@ import {
   EMPTY_GREETING_LEDGER,
   type GreetingLedger,
 } from './greeting-facts-ledger';
+import {
+  selectDayCloseTheme,
+  isHardDay,
+} from '../assistant-continuation/providers/day-close-themes';
+import { buildDayCloseBlock } from '../assistant-continuation/providers/day-close-prompt';
 
 // ---------------------------------------------------------------------------
 // Decision shape
@@ -68,6 +73,9 @@ export type WakeOpener =
   | 'safe_fast_newday'
   | 'safe_fast_pending_context'
   | 'silent_reconnect'
+  /** VTID-03604 — the end-of-day close. Its own name so the evening ritual is
+   *  measurable separately from every morning rung it deliberately outranks. */
+  | 'day_close'
   /** VTID-03607 — the SAME rich new-day briefing as `safe_fast_newday_overview`,
    *  reached on the NORMAL (sync) ladder. Deliberately its own name rather than
    *  reusing the safe-fast one: which ladder served the briefing is exactly the
@@ -89,6 +97,9 @@ export interface GreetingEffects {
   stampBriefingDate?: string;
   /** Append this NBA key to user_journey.recent_nbas (keep last 8) — conv_resume. */
   recordNbaKey?: string;
+  /** VTID-03604: stamp user_journey.last_day_close_date = this LOCAL EVENING
+   *  date (dayCloseNightKey, not todayTz). Once per night. */
+  stampDayCloseDate?: string;
 }
 
 export interface GreetingDecision {
@@ -224,6 +235,126 @@ export interface GreetingDecisionContext {
   wakeBriefHasSelectedContinuation: boolean;
   /** The voice_wake_brief provider `reason`, or null (cadence-skip detection). */
   voiceWakeBriefReason: string | null;
+
+  // --- VTID-03604 day-close ------------------------------------------------
+  /** user_journey.last_day_close_date — the LOCAL EVENING date of the last
+   *  spoken goodnight (see dayCloseNightKey). null = never closed a day. */
+  lastDayCloseDate?: string | null;
+  /** session.identity.user_id — only used to de-phase the theme rotation so
+   *  two members do not hear the same closing thought on the same night. */
+  userId?: string | null;
+  /** 7-day Vitana-index trend, when known. Feeds isHardDay ONLY. */
+  indexTrend7d?: number | null;
+  /** Did the user log anything at all today? Feeds isHardDay ONLY. */
+  loggedAnythingToday?: boolean;
+  /** A prepared autopilot checkpoint that can genuinely be activated tonight —
+   *  offered by name, never invented. */
+  pendingCheckpointTitle?: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// VTID-03604 — the night window
+// ---------------------------------------------------------------------------
+
+/**
+ * Is this local hour inside the day-close window (21:00 → 04:59)?
+ *
+ * Strict integer 0-23 on purpose. The synchronous greeting path builds its
+ * context BEFORE the timezone helpers are loaded and passes `localHour: -1` as
+ * a placeholder; if the placeholder read as midnight the close would fire all
+ * day long, on every session, which is the loudest possible way to get this
+ * wrong. `-1`, `24`, `NaN` and any fractional hour are therefore all false.
+ */
+export function isDayCloseWindow(localHour: number): boolean {
+  if (!Number.isInteger(localHour) || localHour < 0 || localHour > 23) return false;
+  return localHour >= 21 || localHour <= 4;
+}
+
+/**
+ * Which EVENING does this moment belong to?
+ *
+ * Between 00:00 and 04:59 the calendar date has already rolled but the evening
+ * has not ended — so the night is keyed to the date it STARTED. Without this,
+ * a user said goodnight at 23:50 who reopens at 00:10 is a different "day" by
+ * `todayTz` and gets a second goodnight: exactly the repeat-on-every-reopen
+ * failure VTID-03597 removed. Outside the window the local date is returned
+ * unchanged so callers never have to branch.
+ */
+export function dayCloseNightKey(todayLocalIso: string, localHour: number): string {
+  if (!Number.isInteger(localHour) || localHour > 4 || localHour < 0) return todayLocalIso;
+  const d = new Date(`${todayLocalIso}T12:00:00Z`);
+  if (Number.isNaN(d.getTime())) return todayLocalIso;
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * The day-close rung, shared by BOTH ladders (VTID-03604).
+ *
+ * Placed ABOVE every morning rung deliberately. At 00:15 the calendar date has
+ * rolled, so `briefingDue()` believes a new day is owed a morning briefing — it
+ * is not. You have not started a day, you have failed to end one, and being met
+ * with "Guten Morgen" at a quarter past midnight is the single most obviously
+ * wrong thing this subsystem can say.
+ *
+ * Placed BELOW `silent_reconnect`, for the same reason the new-day briefing is:
+ * a reconnect must stay silent, and a goodnight is loud.
+ *
+ * Returns null when it does not fire, so each ladder keeps its own ordering.
+ */
+function tryDayCloseRung(ctx: GreetingDecisionContext): GreetingDecision | null {
+  if (ctx.isAnonymous) return null;
+  // `todayTz: ''` is the documented placeholder orb-live.ts seeds the SYNC
+  // context with before the timezone helpers resolve (mirrors `localHour: -1`
+  // on the safe-fast side) — an empty string is not a valid ISO date and must
+  // never be read as "no date, so any date matches". Without this, a session
+  // that falls through to the placeholder context (e.g. the async new-day
+  // branch's own error-recovery path) would compute a garbage night key and
+  // could fire day_close at literally any hour, because `localHour: 0` on
+  // that same placeholder reads as "inside the window".
+  if (!ctx.todayTz) return null;
+  if (!isDayCloseWindow(ctx.localHour)) return null;
+
+  const nightKey = dayCloseNightKey(ctx.todayTz, ctx.localHour);
+  // Once per night. The stamp holds the EVENING date, so the 23:50 → 00:10
+  // reopen compares equal and stays quiet.
+  if (typeof ctx.lastDayCloseDate === 'string' && ctx.lastDayCloseDate >= nightKey) return null;
+
+  const theme = selectDayCloseTheme({ todayLocalIso: nightKey, userId: ctx.userId ?? null });
+  const hardDay = isHardDay({
+    indexTrend7d: ctx.indexTrend7d,
+    loggedAnythingToday: ctx.loggedAnythingToday,
+  });
+  const ledger = ctx.greetingLedger ?? EMPTY_GREETING_LEDGER;
+
+  const block = buildDayCloseBlock({
+    lang: ctx.greetLang,
+    firstName: ctx.firstName ?? null,
+    localHour: ctx.localHour,
+    timezone: ctx.timezone,
+    theme,
+    hardDay,
+    previousUtterance: ledger.last_utterance,
+    sessionsToday: ledger.sessions_today,
+    pendingCheckpointTitle: ctx.pendingCheckpointTitle ?? null,
+  });
+  if (!block || block.trim().length === 0) return null;
+
+  return {
+    wakeOpener: 'day_close',
+    directive: block,
+    diag: {
+      lang: ctx.lang,
+      prompt_len: block.length,
+      wake_opener: 'day_close',
+      night_key: nightKey,
+      local_hour: ctx.localHour,
+      theme: theme.key,
+      hard_day: hardDay,
+      has_checkpoint: !!ctx.pendingCheckpointTitle,
+    },
+    effects: { markGreetingSent: true, armWatchdog: true, stampDayCloseDate: nightKey },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -397,6 +528,12 @@ function tryNewDayOverviewRung(
 
 // --- SAFE-FAST ladder (rungs 1–6) ------------------------------------------
 function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
+  // VTID-03604 — the day-close outranks every morning rung, on BOTH ladders.
+  // At 00:15 the calendar date has rolled and the morning briefing believes it
+  // is owed; it is not. Ending a day is not starting one.
+  const dayCloseFast = tryDayCloseRung(ctx);
+  if (dayCloseFast) return dayCloseFast;
+
   // Rung 1 — safe_fast_newday_overview (rich morning briefing owns turn 1).
   const newdayFast = tryNewDayOverviewRung(ctx, 'safe_fast_newday_overview');
   if (newdayFast) return newdayFast;
@@ -558,6 +695,11 @@ function computeNormalLadder(ctx: GreetingDecisionContext): GreetingDecision {
       effects: { markGreetingSent: true, armWatchdog: false },
     };
   }
+
+  // VTID-03604 — day-close, below silent_reconnect (a reconnect stays silent,
+  // and a goodnight is loud) and above every morning rung.
+  const dayCloseSync = tryDayCloseRung(ctx);
+  if (dayCloseSync) return dayCloseSync;
 
   // Rung 7b — newday_overview (VTID-03607). The SAME rich briefing as rung 1,
   // now reachable when context resolved before the greeting — which, since the
