@@ -4,6 +4,15 @@ on:
     # Run every hour at :00 (was daily at 08:00 — too slow for self-healing)
     - cron: '0 * * * *'
   workflow_dispatch:
+    inputs:
+      confirmation_message:
+        description: >-
+          Optional: post this text to Google Chat regardless of check
+          outcome. collect-status.py is silent-by-design when all 54
+          services are live (only posts on failures), so use this to force
+          a visible confirmation ping after a fix — e.g. verifying VTID-03598.
+        required: false
+        default: ''
 
 jobs:
   update-status:
@@ -24,6 +33,19 @@ jobs:
           # scaled-to-zero rollback target (VTID-03508) that never answers.
           GATEWAY_URL: https://gateway.vitanaland.com
         run: python3 scripts/ci/collect-status.py
+      - name: Post manual confirmation message
+        if: ${{ inputs.confirmation_message != '' }}
+        env:
+          WEBHOOK_URL: ${{ secrets.VITANA_CHAT_WEBHOOK }}
+          MSG: ${{ inputs.confirmation_message }}
+        run: |
+          set -euo pipefail
+          if [ -z "${WEBHOOK_URL:-}" ]; then
+            echo "::error::VITANA_CHAT_WEBHOOK secret missing"
+            exit 1
+          fi
+          TEXT=$(python3 -c "import json,os; print(json.dumps({'text': os.environ['MSG']}))")
+          curl -sS -X POST "$WEBHOOK_URL" -H 'Content-Type: application/json' -d "$TEXT"
       - name: Commit + publish status snapshot
         run: |
           set -euo pipefail
