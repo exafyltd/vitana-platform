@@ -166,7 +166,14 @@ export type GatewayI18nKey =
   // to buy/hire" push when a buyer sends the first contact message via the
   // listing
   | 'notif.listing_interest.title'
-  | 'notif.listing_interest.body';
+  | 'notif.listing_interest.body'
+  // VTID-03604: nightly goodnight push — the "you didn't open ORB tonight"
+  // counterpart to the spoken day-close. Fixed catalog text, not
+  // LLM-composed: unlike the ORB voice path (CLAUDE.md NEVER-rule 41), a
+  // push notification has a fixed contract and must stay translated and
+  // reviewable, same as every other entry in this file.
+  | 'notif.day_close.title'
+  | 'notif.day_close.body';
 
 type LocaleCatalog = Record<GatewayI18nKey, string>;
 

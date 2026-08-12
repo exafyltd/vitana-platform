@@ -15,6 +15,7 @@
  *   POST /api/v1/scheduled-notifications/upcoming-events
  *   POST /api/v1/scheduled-notifications/recommendation-expiry
  *   POST /api/v1/scheduled-notifications/signal-cleanup
+ *   POST /api/v1/scheduled-notifications/night-push
  */
 
 import { Router, Request, Response } from 'express';
@@ -1648,6 +1649,150 @@ async function scheduleReminderFcmPush(
     console.error(`[reminders-tick] FCM fallback error for ${row.id}:`, err?.message);
   }
 }
+
+// =============================================================================
+// POST /night-push — Hourly UTC (VTID-03604, surface 2 of the ORB day-close)
+//
+// The "you did not open ORB tonight" counterpart to the spoken day-close rung
+// in compute-greeting-decision.ts. Same hourly-UTC-tick / per-user-local-hour
+// pattern as /daily-pace-notifications (the first hourly entry in this file):
+// this fires every hour, and each user is only ELIGIBLE on the one tick where
+// their local hour equals NIGHT_PUSH_LOCAL_HOUR.
+//
+// Fixed catalog text (notif.day_close.*), never LLM-composed — a push has a
+// fixed contract and must stay translated/reviewable (CLAUDE.md §13b), unlike
+// the ORB voice path (CLAUDE.md NEVER-rule 41, VTID-03622), which is
+// deliberately never scripted. Do not "upgrade" this to a composed line.
+//
+// Deliberately fires at 22:00 local, not 21:00 (the start of the day-close
+// window): the spoken close takes priority, so the push waits until the
+// window has had an hour to be claimed by an actual ORB open before assuming
+// the user is not coming back tonight.
+// =============================================================================
+const NIGHT_PUSH_LOCAL_HOUR = 22;
+
+router.post('/night-push', async (req: Request, res: Response) => {
+  // public-route — called by Cloud Scheduler (no JWT); protected by GCP IAM
+  // at the scheduler layer, same pattern as the other entries in this file.
+  const tenantId = getTenantId(req);
+  if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
+
+  // Debug params for on-call / manual testing, same convention as
+  // /daily-pace-notifications: user_id targets one user directly, force
+  // bypasses the wrong_hour gate.
+  const debugUserId =
+    (req.body?.user_id as string | undefined) ||
+    (req.query?.user_id as string | undefined) ||
+    undefined;
+  const force =
+    req.body?.force === true ||
+    req.body?.force === 'true' ||
+    req.query?.force === 'true' ||
+    req.query?.force === '1';
+
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+
+  const { getUserTimezone } = await import('../services/daily-pace-service');
+  const { todayInTimezone, localHourInTimezone } = await import(
+    '../services/assistant-continuation/providers/new-day-return'
+  );
+
+  const nowUtc = new Date();
+  const users = debugUserId
+    ? [{ user_id: debugUserId }]
+    : await getActiveUsers(supa, tenantId);
+  const locales = await bulkGetUserLocales(supa, users.map((u) => u.user_id));
+
+  const skipped: Record<'wrong_hour' | 'already_closed' | 'already_pushed' | 'error', number> = {
+    wrong_hour: 0,
+    already_closed: 0,
+    already_pushed: 0,
+    error: 0,
+  };
+  let dispatched = 0;
+  const errors: Array<{ user_id: string; message: string }> = [];
+
+  for (const { user_id } of users) {
+    try {
+      const tz = await getUserTimezone(supa, user_id, tenantId);
+      const localHour = localHourInTimezone(nowUtc, tz);
+      if (!force && localHour !== NIGHT_PUSH_LOCAL_HOUR) {
+        skipped.wrong_hour++;
+        continue;
+      }
+      // 22:00 local is inside the day-close window and never past midnight,
+      // so tonight's night key is simply the user's local calendar date —
+      // no dayCloseNightKey rollover math needed the way the ORB rung has.
+      const nightKey = todayInTimezone(nowUtc, tz);
+
+      const { data: journeyRow } = await supa
+        .from('user_journey')
+        .select('last_day_close_date, last_night_push_date')
+        .eq('user_id', user_id)
+        .maybeSingle();
+      const lastClose = (journeyRow as { last_day_close_date?: string | null } | null)?.last_day_close_date ?? null;
+      const lastPush = (journeyRow as { last_night_push_date?: string | null } | null)?.last_night_push_date ?? null;
+
+      // Already got the SPOKEN close tonight — the whole point of separate
+      // stamps (see the migration header): the push must defer to it.
+      if (typeof lastClose === 'string' && lastClose >= nightKey) {
+        skipped.already_closed++;
+        continue;
+      }
+      // Already pushed tonight — once per night.
+      if (typeof lastPush === 'string' && lastPush >= nightKey) {
+        skipped.already_pushed++;
+        continue;
+      }
+
+      const lc = locales.get(user_id);
+      const titleStr = tt('notif.day_close.title', lc);
+      const bodyStr = tt('notif.day_close.body', lc);
+
+      // Stamp FIRST, dispatch second — same ordering rationale as
+      // /daily-pace-notifications: a same-hour retry must see the stamp
+      // before it can double-send, not after.
+      await supa
+        .from('user_journey')
+        .update({ last_night_push_date: nightKey })
+        .eq('user_id', user_id);
+
+      notifyUserAsync(
+        user_id,
+        tenantId,
+        'day_close_push' as any,
+        { title: titleStr, body: bodyStr, data: { type: 'day_close_push', url: '/orb' } },
+        supa,
+      );
+      dispatched++;
+    } catch (err: any) {
+      skipped.error++;
+      errors.push({ user_id, message: err?.message || String(err) });
+      console.warn(`[Scheduled] night_push error for ${user_id.slice(0, 8)}: ${err?.message || err}`);
+    }
+  }
+
+  console.log(
+    `[Scheduled] night_push → dispatched=${dispatched} skipped=${JSON.stringify(skipped)} total_users=${users.length}`,
+  );
+
+  try {
+    const { emitOasisEvent } = await import('../services/oasis-event-service');
+    await emitOasisEvent({
+      type: 'notification.night_push.dispatched' as any,
+      source: 'gateway',
+      vtid: 'VTID-03604',
+      status: 'info',
+      message: `night_push fan-out: ${dispatched} dispatched, ${errors.length} errors`,
+      payload: { tenant_id: tenantId, dispatched, errors: errors.length, skipped, total_users: users.length },
+    });
+  } catch (oasisErr: any) {
+    console.warn(`[Scheduled] night_push OASIS emit failed: ${oasisErr?.message || oasisErr}`);
+  }
+
+  return res.status(200).json({ ok: true, dispatched, skipped, errors });
+});
 
 // =============================================================================
 // Health check
