@@ -117,32 +117,19 @@ CREATE INDEX IF NOT EXISTS idx_usage_outcomes_date
     ON public.usage_outcomes (tenant_id, user_id, outcome_date DESC);
 
 -- ===========================================================================
--- E. relationship_edges - Graph edges between users and entities
+-- E. relationship_edges - INTENTIONALLY NOT CREATED HERE (VTID-03613)
 -- ===========================================================================
-
-CREATE TABLE IF NOT EXISTS public.relationship_edges (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID NOT NULL,
-    user_id UUID NOT NULL,
-    target_type TEXT NOT NULL CHECK (target_type IN ('service', 'product', 'person', 'community')),
-    target_id UUID NOT NULL,
-    relationship_type TEXT NOT NULL CHECK (relationship_type IN ('using', 'trusted', 'saved', 'dismissed', 'connected', 'following')),
-    strength INT NOT NULL DEFAULT 0 CHECK (strength >= -100 AND strength <= 100),
-    context JSONB NOT NULL DEFAULT '{}',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (tenant_id, user_id, target_type, target_id)
-);
-
--- Indexes for efficient queries
-CREATE INDEX IF NOT EXISTS idx_relationship_edges_tenant_user
-    ON public.relationship_edges (tenant_id, user_id, strength DESC);
-
-CREATE INDEX IF NOT EXISTS idx_relationship_edges_target
-    ON public.relationship_edges (target_type, target_id);
-
-CREATE INDEX IF NOT EXISTS idx_relationship_edges_type
-    ON public.relationship_edges (tenant_id, user_id, relationship_type);
+-- This migration originally declared its own relationship_edges (user_id /
+-- target_type / relationship_type / strength / context). Applying it against
+-- production (2026-08-12) failed with "column user_id does not exist"
+-- because a DIFFERENT relationship_edges already exists in production, built
+-- for the VTID-01087 relationship graph (source_type/source_id/target_type/
+-- target_id/edge_type/strength/mention_count_30d/mention_count_90d/
+-- sentiment_avg/recent_topics/...) and is live, populated, and used
+-- elsewhere. The two schemas are incompatible and this migration must not
+-- touch that table's DDL, RLS, or grants. offers_set_state/
+-- offers_get_recommendations/offers_get_memory below were adapted to stop
+-- depending on the schema this migration used to assume.
 
 -- ===========================================================================
 -- RLS Policies
@@ -153,7 +140,6 @@ ALTER TABLE public.services_catalog ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.products_catalog ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_offers_memory ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.usage_outcomes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.relationship_edges ENABLE ROW LEVEL SECURITY;
 
 -- services_catalog: tenant isolation for read, authenticated for insert
 DROP POLICY IF EXISTS services_catalog_select ON public.services_catalog;
@@ -232,37 +218,7 @@ CREATE POLICY usage_outcomes_insert ON public.usage_outcomes
         AND user_id = auth.uid()
     );
 
--- relationship_edges: user-tenant isolation
-DROP POLICY IF EXISTS relationship_edges_select ON public.relationship_edges;
-CREATE POLICY relationship_edges_select ON public.relationship_edges
-    FOR SELECT
-    TO authenticated
-    USING (
-        tenant_id = public.current_tenant_id()
-        AND user_id = auth.uid()
-    );
-
-DROP POLICY IF EXISTS relationship_edges_insert ON public.relationship_edges;
-CREATE POLICY relationship_edges_insert ON public.relationship_edges
-    FOR INSERT
-    TO authenticated
-    WITH CHECK (
-        tenant_id = public.current_tenant_id()
-        AND user_id = auth.uid()
-    );
-
-DROP POLICY IF EXISTS relationship_edges_update ON public.relationship_edges;
-CREATE POLICY relationship_edges_update ON public.relationship_edges
-    FOR UPDATE
-    TO authenticated
-    USING (
-        tenant_id = public.current_tenant_id()
-        AND user_id = auth.uid()
-    )
-    WITH CHECK (
-        tenant_id = public.current_tenant_id()
-        AND user_id = auth.uid()
-    );
+-- relationship_edges already has its own RLS/policies from VTID-01087 — not touched here.
 
 -- ===========================================================================
 -- RPC: catalog_add_service
@@ -461,7 +417,6 @@ DECLARE
     v_result_id UUID;
     v_strength_delta INT;
     v_relationship_type TEXT;
-    v_edge_context JSONB;
 BEGIN
     -- Derive tenant_id from context
     v_tenant_id := public.current_tenant_id();
@@ -588,43 +543,14 @@ BEGIN
             v_relationship_type := 'dismissed';
     END CASE;
 
-    -- Build edge context
-    v_edge_context := jsonb_build_object(
-        'last_state', v_state,
-        'last_updated', NOW()::TEXT
-    );
-
-    -- Add cooldown for dismissed items (14 days)
-    IF v_state = 'dismissed' THEN
-        v_edge_context := v_edge_context || jsonb_build_object(
-            'cooldown_until', (NOW() + INTERVAL '14 days')::TEXT
-        );
-    END IF;
-
-    -- Upsert relationship edge
-    INSERT INTO public.relationship_edges (
-        tenant_id,
-        user_id,
-        target_type,
-        target_id,
-        relationship_type,
-        strength,
-        context
-    ) VALUES (
-        v_tenant_id,
-        v_user_id,
-        v_target_type,
-        v_target_id,
-        v_relationship_type,
-        v_strength_delta,
-        v_edge_context
-    )
-    ON CONFLICT (tenant_id, user_id, target_type, target_id)
-    DO UPDATE SET
-        relationship_type = EXCLUDED.relationship_type,
-        strength = LEAST(100, GREATEST(-100, relationship_edges.strength + v_strength_delta)),
-        context = relationship_edges.context || v_edge_context,
-        updated_at = NOW();
+    -- NOTE (VTID-03613): this used to also upsert public.relationship_edges
+    -- with (user_id, target_type, relationship_type, strength, context).
+    -- Production already has a relationship_edges table with a different,
+    -- live VTID-01087 schema (source_type/source_id/edge_type/...), so that
+    -- write was removed rather than guessing at a mapping onto a schema this
+    -- migration doesn't own. v_strength_delta/v_relationship_type are still
+    -- computed (kept in the response below) in case a future migration
+    -- wants to feed them into the real relationship graph deliberately.
 
     -- Return success
     RETURN jsonb_build_object(
@@ -813,6 +739,12 @@ BEGIN
     v_cooldown_threshold := NOW();
 
     -- Fetch services (if not filtered to products only)
+    -- NOTE (VTID-03613): relationship_strength/dismissed-cooldown used to
+    -- come from public.relationship_edges, which this migration no longer
+    -- owns (see the comment above section E) — cooldown is now driven off
+    -- user_offers_memory.state/updated_at directly, and relationship_strength
+    -- is dropped from the payload rather than guessed from a schema this
+    -- migration doesn't control.
     IF p_target_type IS NULL OR p_target_type = 'service' THEN
         SELECT COALESCE(
             jsonb_agg(
@@ -823,36 +755,26 @@ BEGIN
                     'topic_keys', sc.topic_keys,
                     'provider_name', sc.provider_name,
                     'metadata', sc.metadata,
-                    'relationship_strength', COALESCE(re.strength, 0),
                     'user_state', uom.state,
                     'trust_score', uom.trust_score
                 )
-                ORDER BY COALESCE(re.strength, 0) DESC, sc.created_at DESC
+                ORDER BY sc.created_at DESC
             ),
             '[]'::JSONB
         )
         INTO v_services
         FROM public.services_catalog sc
-        LEFT JOIN public.relationship_edges re
-            ON re.tenant_id = v_tenant_id
-            AND re.user_id = v_user_id
-            AND re.target_type = 'service'
-            AND re.target_id = sc.id
         LEFT JOIN public.user_offers_memory uom
             ON uom.tenant_id = v_tenant_id
             AND uom.user_id = v_user_id
             AND uom.target_type = 'service'
             AND uom.target_id = sc.id
         WHERE sc.tenant_id = v_tenant_id
-          -- Exclude dismissed items in cooldown
-          AND NOT EXISTS (
-              SELECT 1 FROM public.relationship_edges re2
-              WHERE re2.tenant_id = v_tenant_id
-                AND re2.user_id = v_user_id
-                AND re2.target_type = 'service'
-                AND re2.target_id = sc.id
-                AND re2.relationship_type = 'dismissed'
-                AND (re2.context->>'cooldown_until')::TIMESTAMPTZ > v_cooldown_threshold
+          -- Exclude dismissed items in cooldown (COALESCE: no memory row = never dismissed = not excluded)
+          AND NOT COALESCE(
+              uom.state = 'dismissed'
+              AND uom.updated_at > v_cooldown_threshold - INTERVAL '14 days',
+              false
           )
         LIMIT p_limit;
     ELSE
@@ -869,36 +791,26 @@ BEGIN
                     'product_type', pc.product_type,
                     'topic_keys', pc.topic_keys,
                     'metadata', pc.metadata,
-                    'relationship_strength', COALESCE(re.strength, 0),
                     'user_state', uom.state,
                     'trust_score', uom.trust_score
                 )
-                ORDER BY COALESCE(re.strength, 0) DESC, pc.created_at DESC
+                ORDER BY pc.created_at DESC
             ),
             '[]'::JSONB
         )
         INTO v_products
         FROM public.products_catalog pc
-        LEFT JOIN public.relationship_edges re
-            ON re.tenant_id = v_tenant_id
-            AND re.user_id = v_user_id
-            AND re.target_type = 'product'
-            AND re.target_id = pc.id
         LEFT JOIN public.user_offers_memory uom
             ON uom.tenant_id = v_tenant_id
             AND uom.user_id = v_user_id
             AND uom.target_type = 'product'
             AND uom.target_id = pc.id
         WHERE pc.tenant_id = v_tenant_id
-          -- Exclude dismissed items in cooldown
-          AND NOT EXISTS (
-              SELECT 1 FROM public.relationship_edges re2
-              WHERE re2.tenant_id = v_tenant_id
-                AND re2.user_id = v_user_id
-                AND re2.target_type = 'product'
-                AND re2.target_id = pc.id
-                AND re2.relationship_type = 'dismissed'
-                AND (re2.context->>'cooldown_until')::TIMESTAMPTZ > v_cooldown_threshold
+          -- Exclude dismissed items in cooldown (COALESCE: no memory row = never dismissed = not excluded)
+          AND NOT COALESCE(
+              uom.state = 'dismissed'
+              AND uom.updated_at > v_cooldown_threshold - INTERVAL '14 days',
+              false
           )
         LIMIT p_limit;
     ELSE
@@ -980,8 +892,7 @@ BEGIN
                     WHEN uom.target_type = 'service' THEN sc.name
                     WHEN uom.target_type = 'product' THEN pc.name
                     ELSE NULL
-                END,
-                'relationship_strength', re.strength
+                END
             )
             ORDER BY uom.updated_at DESC
         ),
@@ -993,11 +904,9 @@ BEGIN
         ON uom.target_type = 'service' AND sc.id = uom.target_id
     LEFT JOIN public.products_catalog pc
         ON uom.target_type = 'product' AND pc.id = uom.target_id
-    LEFT JOIN public.relationship_edges re
-        ON re.tenant_id = uom.tenant_id
-        AND re.user_id = uom.user_id
-        AND re.target_type = uom.target_type
-        AND re.target_id = uom.target_id
+    -- NOTE (VTID-03613): relationship_strength dropped — used to come from
+    -- public.relationship_edges, which this migration no longer owns (see
+    -- the comment above section E).
     WHERE uom.tenant_id = v_tenant_id
       AND uom.user_id = v_user_id
       AND (p_target_type IS NULL OR uom.target_type = p_target_type)
@@ -1034,7 +943,7 @@ GRANT SELECT, INSERT ON public.services_catalog TO authenticated;
 GRANT SELECT, INSERT ON public.products_catalog TO authenticated;
 GRANT SELECT, INSERT, UPDATE ON public.user_offers_memory TO authenticated;
 GRANT SELECT, INSERT ON public.usage_outcomes TO authenticated;
-GRANT SELECT, INSERT, UPDATE ON public.relationship_edges TO authenticated;
+-- relationship_edges already has its own grants from VTID-01087 — not touched here.
 
 -- ===========================================================================
 -- Comments
@@ -1044,11 +953,10 @@ COMMENT ON TABLE public.services_catalog IS 'VTID-01092: Catalog of services ava
 COMMENT ON TABLE public.products_catalog IS 'VTID-01092: Catalog of products available to users (supplements, devices, apps, etc.)';
 COMMENT ON TABLE public.user_offers_memory IS 'VTID-01092: Tracks user relationship to services/products (viewed, saved, used, dismissed, rated)';
 COMMENT ON TABLE public.usage_outcomes IS 'VTID-01092: User-stated outcomes from using services/products (deterministic, non-medical)';
-COMMENT ON TABLE public.relationship_edges IS 'VTID-01092: Graph edges representing user relationships to entities (services, products, people)';
 
 COMMENT ON FUNCTION public.catalog_add_service IS 'VTID-01092: Add a service to the catalog';
 COMMENT ON FUNCTION public.catalog_add_product IS 'VTID-01092: Add a product to the catalog';
-COMMENT ON FUNCTION public.offers_set_state IS 'VTID-01092: Set user state for a service/product and update relationship edge';
+COMMENT ON FUNCTION public.offers_set_state IS 'VTID-01092: Set user state for a service/product';
 COMMENT ON FUNCTION public.offers_record_outcome IS 'VTID-01092: Record a perceived outcome from using a service/product';
 COMMENT ON FUNCTION public.offers_get_recommendations IS 'VTID-01092: Get recommended services/products based on relationship strength';
 COMMENT ON FUNCTION public.offers_get_memory IS 'VTID-01092: Get user offers memory with catalog details';
