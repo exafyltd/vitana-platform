@@ -404,6 +404,12 @@ const ROUTING_CASES: RoutingCase[] = [
   { utterance: 'wo ich meine schritte eintragen kann',       lang: 'de', expected_screen_id: 'HEALTH.TRACKER' },
   { utterance: 'schritte eintragen',                         lang: 'de', expected_screen_id: 'HEALTH.TRACKER' },
   { utterance: 'log my steps',                                lang: 'en', expected_screen_id: 'HEALTH.TRACKER' },
+
+  // ── VTID-03627: the "Zeig mir X" imperative must not shadow X ──
+  // The exact utterance reported live (VTID-03624): adding the "Zeig mir"
+  // prefix to an otherwise-identical steps query must not change the result.
+  { utterance: 'Zeig mir, wo ich meine Schritte eintragen kann', lang: 'de', expected_screen_id: 'HEALTH.TRACKER' },
+  { utterance: 'zeig mir meine Matches',                       lang: 'de', expected_screen_id: 'COMM.FIND_PARTNER_MATCHES' },
 ];
 
 describe('navigation-catalog — routing quality', () => {
@@ -446,6 +452,54 @@ describe('navigation-catalog — routing quality', () => {
     // Just verify priority entries appear in top 5
     const top5Priorities = results.slice(0, 5).map(r => r.entry.priority || 0);
     expect(Math.max(...top5Priorities)).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// VTID-03627: 'zeig' (bare imperative "Zeig mir X") was missing from the
+// German stopwords and survived tokenization as a real query token. Several
+// when_to_visit hints embed a literal example utterance starting "zeig
+// mir ..." (REMINDERS.OVERVIEW, OVERLAY.VITANA_INDEX), so ANY "Zeig mir ..."
+// query — regardless of what it actually asked for — picked up a spurious
+// hint-word hit on whichever of those came first in catalog order. Reported
+// live as VTID-03624: "Zeig mir, wo ich meine Schritte eintragen kann" (a
+// request to log steps) resolved to REMINDERS.OVERVIEW / OVERLAY.VITANA_
+// INDEX / AUTOPILOT.MY_JOURNEY — none of which log anything. That fix added
+// HEALTH.TRACKER's missing steps/Schritte keyword coverage, which fixed the
+// bare query but not the prefixed one — the stopword gap independently made
+// "Zeig mir X" queries lose to unrelated screens regardless of what X was.
+// ---------------------------------------------------------------------------
+describe('navigation-catalog — VTID-03627: "zeig" imperative is a stopword', () => {
+  test('a "Zeig mir X" query resolves identically to the same request without the prefix', () => {
+    // The prefix carries no navigational information — with or without it,
+    // the ranking must be the same.
+    const withoutPrefix = searchCatalog('wo ich meine schritte eintragen kann', 'de');
+    const withPrefix = searchCatalog('Zeig mir, wo ich meine Schritte eintragen kann', 'de');
+    expect(withPrefix.map(r => r.entry.screen_id)).toEqual(withoutPrefix.map(r => r.entry.screen_id));
+  });
+
+  test('"Zeig mir, wo ich meine Schritte eintragen kann" no longer matches REMINDERS.OVERVIEW', () => {
+    const results = searchCatalog('Zeig mir, wo ich meine Schritte eintragen kann', 'de');
+    const ids = results.map(r => r.entry.screen_id);
+    expect(ids).not.toContain('REMINDERS.OVERVIEW');
+    expect(ids).not.toContain('OVERLAY.VITANA_INDEX');
+    expect(ids).not.toContain('AUTOPILOT.MY_JOURNEY');
+  });
+
+  test('"zeig" alone falls back to the raw-token weak-signal path, same as any other all-stopword query', () => {
+    // A lone imperative isn't a real navigational query — this pins the
+    // EXISTING "all tokens were stopwords → keep the raw list" fallback
+    // (searchCatalog's own comment: "better weak signal than none"), not a
+    // new guarantee. The regression this suite protects is scoped to
+    // multi-token queries where 'zeig' should contribute nothing alongside
+    // real content words — covered by the tests above and below.
+    expect(searchCatalog('zeig', 'de').length).toBeGreaterThan(0);
+  });
+
+  test('the real keyword in a "Zeig mir X" query still wins ("zeig mir meine Matches")', () => {
+    const results = searchCatalog('zeig mir meine Matches', 'de');
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0].entry.screen_id).toBe('COMM.FIND_PARTNER_MATCHES');
   });
 });
 
