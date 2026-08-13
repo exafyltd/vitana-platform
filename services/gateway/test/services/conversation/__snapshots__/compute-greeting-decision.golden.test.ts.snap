@@ -497,9 +497,9 @@ exports[`computeGreetingDecision — recency bucket axis (legacy ladder) bucket=
 {
   "diag": {
     "lang": "de",
-    "prompt_len": 335,
+    "prompt_len": 600,
   },
-  "directive": "You were just talking to the user ~recent. Do NOT use a formal greeting. Do NOT say the user's name. Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM (already in the user's language): "Schön, dass du da bist.", "Lass uns weitermachen.", "Ich höre dir zu.". Vary across sessions. NEVER use two-part sentences.",
+  "directive": "You were just talking to the user ~recent. Do NOT use a formal greeting. Do NOT say the user's name. Open with EXACTLY ONE short spoken phrase. INTENT: Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself, never ask what they want. Compose this sentence yourself, in the user's own language, in your own words. There is no approved phrasing to reproduce and nothing to recite — do not reuse wording you or another session has used before; vary it every single time. NEVER use two-part sentences.",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,
@@ -512,9 +512,9 @@ exports[`computeGreetingDecision — recency bucket axis (legacy ladder) bucket=
 {
   "diag": {
     "lang": "de",
-    "prompt_len": 358,
+    "prompt_len": 598,
   },
-  "directive": "You were JUST talking to the user ~reconnect. Do NOT greet. Do NOT say "Hello" or the user's name. Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM (these are already in the user's language): "Schön, dass du da bist.", "Lass uns weitermachen.", "Ich höre dir zu.". Pick a different one than last time. NEVER use two-part sentences.",
+  "directive": "You were JUST talking to the user ~reconnect. Do NOT greet. Do NOT say "Hello" or the user's name. Open with EXACTLY ONE short spoken phrase. INTENT: Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself, never ask what they want. Compose this sentence yourself, in the user's own language, in your own words. There is no approved phrasing to reproduce and nothing to recite — do not reuse wording you or another session has used before; vary it every single time. NEVER use two-part sentences.",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,
@@ -527,9 +527,9 @@ exports[`computeGreetingDecision — recency bucket axis (legacy ladder) bucket=
 {
   "diag": {
     "lang": "de",
-    "prompt_len": 291,
+    "prompt_len": 556,
   },
-  "directive": "The user was here ~same_day. Do NOT say the user's name. Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM (already in the user's language): "Schön, dass du da bist.", "Lass uns weitermachen.", "Ich höre dir zu.". Vary across sessions. NEVER use two-part sentences.",
+  "directive": "The user was here ~same_day. Do NOT say the user's name. Open with EXACTLY ONE short spoken phrase. INTENT: Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself, never ask what they want. Compose this sentence yourself, in the user's own language, in your own words. There is no approved phrasing to reproduce and nothing to recite — do not reuse wording you or another session has used before; vary it every single time. NEVER use two-part sentences.",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,
@@ -647,9 +647,9 @@ exports[`computeGreetingDecision — rung golden snapshots legacy default: authe
 {
   "diag": {
     "lang": "de",
-    "prompt_len": 361,
+    "prompt_len": 601,
   },
-  "directive": "You were JUST talking to the user earlier today. Do NOT greet. Do NOT say "Hello" or the user's name. Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM (these are already in the user's language): "Schön, dass du da bist.", "Lass uns weitermachen.", "Ich höre dir zu.". Pick a different one than last time. NEVER use two-part sentences.",
+  "directive": "You were JUST talking to the user earlier today. Do NOT greet. Do NOT say "Hello" or the user's name. Open with EXACTLY ONE short spoken phrase. INTENT: Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself, never ask what they want. Compose this sentence yourself, in the user's own language, in your own words. There is no approved phrasing to reproduce and nothing to recite — do not reuse wording you or another session has used before; vary it every single time. NEVER use two-part sentences.",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,
@@ -1133,10 +1133,10 @@ exports[`computeGreetingDecision — rung golden snapshots rung 6: safe_fast_pen
 {
   "diag": {
     "lang": "de",
-    "prompt_len": 297,
+    "prompt_len": 584,
     "wake_opener": "safe_fast_pending_context",
   },
-  "directive": "Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM (already in the user's language): "Schön, dass du da bist.", "Lass uns weitermachen.", "Ich höre dir zu.". Do NOT say "Hello" or the user's name. Do NOT introduce yourself. NEVER use two-part sentences. Speak it as audio.",
+  "directive": "Open with EXACTLY ONE short spoken phrase. INTENT: Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself, never ask what they want. Compose this sentence yourself, in the user's own language, in your own words. There is no approved phrasing to reproduce and nothing to recite — do not reuse wording you or another session has used before; vary it every single time. Do NOT say "Hello" or the user's name. Do NOT introduce yourself. NEVER use two-part sentences. Speak it as audio.",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,

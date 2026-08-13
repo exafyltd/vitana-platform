@@ -110,5 +110,7 @@
   "notif.marketplace_listing_removed.title": "Dein Angebot wurde entfernt",
   "notif.marketplace_listing_removed.body": "„{title}\" wurde von einem Admin entfernt: {reason}",
   "notif.listing_interest.title": "Interesse an deinem Angebot",
-  "notif.listing_interest.body": "Jemand hat Interesse an „{title}\" gezeigt."
+  "notif.listing_interest.body": "Jemand hat Interesse an „{title}\" gezeigt.",
+  "notif.day_close.title": "Gute Nacht 🌙",
+  "notif.day_close.body": "Der Tag ist zu Ende — wenn dir noch was durch den Kopf geht, sag es mir kurz."
 }
