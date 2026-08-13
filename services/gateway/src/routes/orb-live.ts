@@ -1541,6 +1541,9 @@ import {
   isNovaSonicLanguageSupported,
   NOVA_SONIC_MODEL_ID,
 } from '../orb/live/upstream/nova-sonic-config';
+// VTID-03641: languages with no native voice on Nova OR Vertex — see the
+// module doc comment for why this must stay a pure, static predicate.
+import { needsPollyOnlyVoice } from '../orb/live/voice/polly-only-voice';
 // BOOTSTRAP-NOVA-SONIC-VOICE: greeting AUDIO bridge — see the module doc in
 // greeting-audio-bridge.ts for why this exists (both Vertex and Nova now
 // take 5-8+s to first greeting audio; this fills the silence).
@@ -1583,13 +1586,22 @@ export function shouldFallbackToVertexOnNovaClose(args: {
   hasProducedAudio: boolean;
   /** Guard against a Vertex-side failure bouncing back and looping. */
   alreadyFellBack: boolean;
+  /**
+   * VTID-03641: session language has no native voice on Vertex either
+   * (`needsPollyOnlyVoice`) — the standing platform-owner direction is that
+   * this class of session must NEVER fall back to Vertex (it would silently
+   * speak English). Default false so every existing caller/test keeps its
+   * current behaviour unchanged.
+   */
+  pollyOnlyVoice?: boolean;
 }): boolean {
   return (
     args.sessionActive &&
     !args.initiatedLocally &&
     !args.rotationInFlight &&
     !args.hasProducedAudio &&
-    !args.alreadyFellBack
+    !args.alreadyFellBack &&
+    args.pollyOnlyVoice !== true
   );
 }
 
@@ -6973,6 +6985,9 @@ async function connectToLiveAPI(
         runtime: __novaRuntime === 'aws-ecs' ? 'aws-ecs' : __novaRuntime,
         // VTID-03501: labels the decision as global-promotion vs canary.
         globalEnabled: __novaCfg.globalEnabled === true,
+        // VTID-03641: bypasses the language gate for languages with no voice
+        // on ANY provider — see needsPollyOnlyVoice's doc comment.
+        pollyOnlyLanguage: needsPollyOnlyVoice(session.lang),
       },
     });
   } catch (e) {
@@ -7018,6 +7033,41 @@ async function connectToLiveAPI(
   // Vertex. (The later `session.upstreamProvider = 'nova_sonic'` deeper in
   // the Nova branch is now redundant but harmless — left in place.)
   session.upstreamProvider = __upstreamDecision.provider;
+  // VTID-03641: Nova was selected via the polly-only-voice bypass — flag the
+  // session so the turn-complete handler suppresses Nova's own (wrong-
+  // language) audio output and substitutes an Amazon Polly synthesis.
+  (session as any).pollyOnlyVoice = __upstreamDecision.pollyOnly === true;
+  // VTID-03641 hard gate: standing platform-owner direction is that a
+  // language with no native voice on ANY provider must NEVER be served by
+  // Vertex — that is exactly the silent-wrong-language-English bug this VTID
+  // exists to close, and it is the one path `evaluateNovaCanary`/
+  // `evaluateNovaRequest` cannot self-correct (Nova may be disabled, not
+  // allowlisted, or on the wrong runtime — all of which legitimately degrade
+  // to Vertex for every OTHER language). Checked at this single choke point,
+  // right before the Vertex-only fail-fast checks below, so it catches every
+  // path that could resolve to `provider: 'vertex'` — default, explicit env
+  // override, idle-rotation-exhausted pin, all of it — rather than needing a
+  // separate guard at each one. Fails the session start loudly (never a
+  // silent fallback) rather than quietly speaking the wrong language.
+  if (needsPollyOnlyVoice(session.lang) && __upstreamDecision.provider !== 'nova_sonic') {
+    console.error(
+      `[VTID-03641] Session ${session.sessionId} lang=${session.lang} has no native voice on any ` +
+        `provider and Nova Sonic is unavailable (decision reason=${__upstreamDecision.reason}) — ` +
+        `refusing to fall back to Vertex.`,
+    );
+    void emitOasisEvent({
+      type: 'orb.upstream.provider.polly_only_voice_unavailable',
+      vtid: 'VTID-03641',
+      payload: {
+        session_id: session.sessionId,
+        lang: session.lang,
+        decision_reason: __upstreamDecision.reason,
+      } as any,
+    } as any).catch(() => { /* best-effort */ });
+    throw new Error(
+      `ORB_VOICE_UNAVAILABLE_FOR_LANGUAGE: no voice provider available for lang=${session.lang}`,
+    );
+  }
   // OASIS emission — every connect call emits a single `selected` event.
   // When the request was LiveKit but the path degraded (config invalid or
   // pinned_to_vertex_l1 or canary_not_allowlisted), also emit
@@ -8164,6 +8214,7 @@ async function connectToLiveAPI(
             rotationInFlight,
             hasProducedAudio: session.transportHasShownLife === true,
             alreadyFellBack: (session as any)._novaFallbackToVertex === true,
+            pollyOnlyVoice: (session as any).pollyOnlyVoice === true,
           });
 
           if (novaDiedBeforeAnyAudio) {

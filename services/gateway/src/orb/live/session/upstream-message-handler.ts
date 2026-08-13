@@ -42,6 +42,10 @@ import type { GeminiLiveSession } from '../../../routes/orb-live';
 import type { LatencyPhase } from '../latency-tracker';
 import type { MemoryIdentity } from '../../../services/orb-memory-bridge';
 import { writeSseEvent } from '../transport/sse-handler';
+// VTID-03641: called directly (not via tryPollySynthesis) — this path is
+// unconditional for polly-only-voice sessions, independent of the
+// TTS_PROVIDER toggle that governs the separate Google-Cloud-TTS migration.
+import { synthesizePolly } from '../../../services/tts/polly';
 // BOOTSTRAP-ORB-TOOL-CARRYOVER: keep an unconsumed tool result alive across a
 // stall-recovery reconnect so the rebuilt session continues instead of
 // resuming with no memory of what it was doing.
@@ -1734,6 +1738,19 @@ export function handleAudioOutput(
 
   ctx.deps.startResponseWatchdog(session, getTurnResponseTimeoutMs(), 'audio_stall');
   session.audioOutChunks++;
+  // VTID-03641: this session's language has no native voice on Nova (it was
+  // selected via the polly-only-voice bypass — see connectToLiveAPI). Nova
+  // still generates audio using whatever voice it has (e.g. English 'tina'
+  // reading Portuguese text), which is exactly the silent-wrong-language bug
+  // this VTID exists to close — so its native audio is ALWAYS dropped for
+  // the whole session, not suppressed per-turn like `suppressCurrentTurnAudio`.
+  // `handleTurnComplete` substitutes an Amazon Polly synthesis of the turn's
+  // text instead. Bookkeeping above (isModelSpeaking, watchdog, chunk count,
+  // greeting-delivered event) still runs — those track turn TIMING, which is
+  // unaffected by which audio bytes actually reach the client.
+  if ((session as any).pollyOnlyVoice === true) {
+    return;
+  }
   if ((session as any).suppressCurrentTurnAudio === true) {
     (session as any).currentTurnAudioChunksDropped =
       ((session as any).currentTurnAudioChunksDropped || 0) + 1;
@@ -2115,6 +2132,77 @@ export function handleUpstreamClose(
   });
 }
 
+/**
+ * VTID-03641: synthesize a completed assistant turn via Amazon Polly and
+ * forward it to the client as a standard `{type:'audio'}` frame — the same
+ * wire shape Nova/Vertex native audio already uses, just with whatever
+ * sample rate Polly actually returned (8k/16k, never Nova's fixed 24k) so
+ * the client's existing `audio/pcm;rate=` handling plays it correctly.
+ *
+ * Only ever called for `pollyOnlyVoice` sessions (see connectToLiveAPI's
+ * polly-only-voice bypass) — Nova's own audio for the turn was already
+ * dropped in `handleAudioOutput`, so this is the session's ONLY source of
+ * speech. Called unconditionally (not via `tryPollySynthesis`), because this
+ * path exists independently of the `TTS_PROVIDER` toggle that governs the
+ * separate Google-Cloud-TTS replacement migration — for a language with no
+ * voice anywhere else, Polly is the only option, not a preference.
+ *
+ * Never throws to the caller, and produces no audio on failure rather than
+ * falling back to a wrong-language voice — matching `resolvePollyVoice`'s own
+ * "null, not English" contract. The turn's text has already reached the
+ * client via the ordinary output_transcript events, so a Polly failure here
+ * degrades to "no speech, transcript still visible", not silence with no
+ * explanation.
+ */
+export async function deliverPollyOnlyTurnAudio(
+  ctx: UpstreamSessionHandlerContext,
+  text: string,
+): Promise<void> {
+  const { session } = ctx;
+  if (!text || text.trim().length === 0) return;
+
+  let result: Awaited<ReturnType<typeof synthesizePolly>>;
+  try {
+    result = await synthesizePolly({ text, lang: session.lang, format: 'pcm' });
+  } catch (err) {
+    console.warn(
+      `[VTID-03641] Polly synthesis threw for session ${session.sessionId} lang=${session.lang}: ${(err as Error)?.message || err}`,
+    );
+    result = null;
+  }
+
+  if (!result) {
+    console.warn(
+      `[VTID-03641] No Polly audio for session ${session.sessionId} lang=${session.lang} — turn will have text but no speech.`,
+    );
+    ctx.deps.emitDiag(session, 'polly_only_voice_synthesis_failed', {
+      lang: session.lang,
+      text_chars: text.length,
+    });
+    return;
+  }
+
+  const audioMsg = {
+    type: 'audio',
+    data_b64: result.audioB64,
+    mime: `audio/pcm;rate=${result.sampleRateHz}`,
+  };
+  if (session.sseResponse) {
+    writeSseEvent(session.sseResponse, audioMsg);
+  }
+  if ((session as any).clientWs && (session as any).clientWs.readyState === WebSocket.OPEN) {
+    try {
+      ctx.deps.sendWsMessage((session as any).clientWs, audioMsg);
+    } catch (_e) { /* WS closed */ }
+  }
+  ctx.deps.emitDiag(session, 'polly_only_voice_synthesized', {
+    lang: session.lang,
+    voice: result.voice,
+    text_chars: text.length,
+    rate_hz: result.sampleRateHz,
+  });
+}
+
 /** Turn complete — mirror of the raw handler's turn_complete branch. */
 export function handleTurnComplete(
   ctx: UpstreamSessionHandlerContext,
@@ -2184,6 +2272,20 @@ export function handleTurnComplete(
   }
   (session as any).suppressCurrentTurnAudio = false;
   (session as any).currentTurnAudioChunksDropped = 0;
+
+  // VTID-03641: Nova's own audio for this turn was dropped in
+  // handleAudioOutput — this is the ONLY source of speech for a
+  // pollyOnlyVoice session. Fire-and-forget: must never block turn
+  // completion, and a synthesis failure degrades to text-only (see
+  // deliverPollyOnlyTurnAudio's doc comment), never a silent Vertex/English
+  // substitution.
+  if ((session as any).pollyOnlyVoice === true && !wasSuppressed && completedTranscript.length > 0) {
+    void deliverPollyOnlyTurnAudio(ctx, completedTranscript).catch((err) => {
+      console.warn(
+        `[VTID-03641] deliverPollyOnlyTurnAudio failed for session ${session.sessionId}: ${(err as Error)?.message || err}`,
+      );
+    });
+  }
 
   // Anonymous-session auth-intent detection + turn limits.
   if (session.isAnonymous && !isGreetingTurn) {

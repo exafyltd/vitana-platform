@@ -69,4 +69,22 @@ describe('VTID-03502 shouldFallbackToVertexOnNovaClose', () => {
       expect(shouldFallbackToVertexOnNovaClose({ ...base, ...n })).toBe(false);
     }
   });
+
+  // VTID-03641: a session whose language has no native voice on Vertex
+  // either (pt/pl today) must never fall back to Vertex — that would
+  // silently speak fluent English. `pollyOnlyVoice` defaults to false/
+  // undefined so every case above (pre-existing behaviour) is unaffected.
+  describe('VTID-03641 pollyOnlyVoice', () => {
+    it('does NOT fire for a polly-only-voice session even when every other condition matches', () => {
+      expect(shouldFallbackToVertexOnNovaClose({ ...base, pollyOnlyVoice: true })).toBe(false);
+    });
+
+    it('still fires normally when pollyOnlyVoice is explicitly false', () => {
+      expect(shouldFallbackToVertexOnNovaClose({ ...base, pollyOnlyVoice: false })).toBe(true);
+    });
+
+    it('still fires normally when pollyOnlyVoice is omitted (default)', () => {
+      expect(shouldFallbackToVertexOnNovaClose(base)).toBe(true);
+    });
+  });
 });

@@ -94,6 +94,13 @@ export type SelectionReason =
   | 'nova_not_allowlisted'        // nova gate on but identity not in allowlist → vertex
   | 'nova_language_unsupported'   // session language outside en/de/fr/es → vertex
   | 'nova_runtime_unsupported'    // runtime cannot carry the HTTP/2 stream (GCP) → vertex
+  // VTID-03641: session language has NO native voice on Nova OR Vertex (see
+  // needsPollyOnlyVoice). Standing direction is "never Vertex for this class
+  // of gap" — so instead of falling through to Vertex's wrong-language
+  // English voice, Nova is selected anyway (every OTHER Nova gate must still
+  // pass) with `pollyOnly: true`, and the caller suppresses Nova's own audio
+  // output in favour of an Amazon Polly synthesis of the turn text.
+  | 'nova_polly_only_voice'
   // BOOTSTRAP-NOVA-IDLE-ROTATION: a mid-session pin applied by the CALLER,
   // never returned by selectUpstreamProvider() itself (which is stateless and
   // has no notion of a session's rotation history). Set when a planned Nova
@@ -165,6 +172,16 @@ export interface UpstreamSelectorContext {
     languageSupported: boolean;
     runtime?: 'aws-ecs' | 'gcp-cloud-run' | 'unknown';
     /**
+     * VTID-03641: session language has no native voice on Nova OR Vertex
+     * (`needsPollyOnlyVoice`). When true, a failed `languageSupported` gate
+     * does NOT degrade to Vertex — every OTHER Nova gate must still pass,
+     * but the language gate itself is bypassed, because the alternative is
+     * Vertex silently speaking English. The caller is responsible for
+     * suppressing Nova's own audio output and substituting Polly synthesis
+     * when the returned decision carries `pollyOnly: true`.
+     */
+    pollyOnlyLanguage?: boolean;
+    /**
      * VTID-03501: true when Nova is promoted globally rather than by
      * allowlist. Only affects the reported `reason`/`canary` labels — the
      * gate itself is already expressed through `identityAllowed`.
@@ -211,6 +228,16 @@ export interface UpstreamSelectionDecision {
    * explicit Nova reasons and on `nova_canary_allowlisted`.
    */
   novaReady?: boolean;
+
+  /**
+   * VTID-03641: true when `provider: 'nova_sonic'` was selected via the
+   * polly-only-language bypass (`reason: 'nova_polly_only_voice'`) rather
+   * than because the language is in Nova's native canary set. The caller
+   * MUST suppress Nova's own audio output for this session and substitute
+   * Amazon Polly synthesis — Nova will still try to speak with its nearest
+   * available voice, which is the wrong language.
+   */
+  pollyOnly?: boolean;
 }
 
 const LIVEKIT_CRED_FIELDS = ['url', 'apiKey', 'apiSecret'] as const;
@@ -368,7 +395,7 @@ function evaluateNovaRequest(
       error: 'Nova Sonic requires the AWS ECS runtime (HTTP/2 bidirectional stream); pinning to Vertex.',
     };
   }
-  if (nova.languageSupported !== true) {
+  if (nova.languageSupported !== true && nova.pollyOnlyLanguage !== true) {
     return {
       provider: 'vertex',
       requested: 'nova_sonic',
@@ -388,6 +415,20 @@ function evaluateNovaRequest(
       canary: true,
       novaReady: false,
       error: 'Session identity is not on the Nova canary allowlist; pinning to Vertex.',
+    };
+  }
+  // VTID-03641: the language gate was bypassed via pollyOnlyLanguage — every
+  // OTHER gate above still had to pass. Report the dedicated reason so this
+  // is distinguishable from an ordinary in-canary-set Nova selection.
+  if (nova.languageSupported !== true && nova.pollyOnlyLanguage === true) {
+    return {
+      provider: 'nova_sonic',
+      requested: 'nova_sonic',
+      reason: 'nova_polly_only_voice',
+      livekitReady: false,
+      canary: true,
+      novaReady: true,
+      pollyOnly: true,
     };
   }
   return {
@@ -412,8 +453,22 @@ function evaluateNovaCanary(
   const nova = ctx.nova;
   if (!nova || nova.enabled !== true) return null;
   if (nova.runtime !== undefined && nova.runtime !== 'aws-ecs') return null;
-  if (nova.languageSupported !== true) return null;
   if (nova.identityAllowed !== true) return null;
+  // VTID-03641: a polly-only-language session bypasses the language gate —
+  // every OTHER gate above still had to pass — and is reported distinctly so
+  // it never gets silently counted as an ordinary canary selection.
+  if (nova.languageSupported !== true) {
+    if (nova.pollyOnlyLanguage !== true) return null;
+    return {
+      provider: 'nova_sonic',
+      requested: null,
+      reason: 'nova_polly_only_voice',
+      livekitReady: false,
+      canary: true,
+      novaReady: true,
+      pollyOnly: true,
+    };
+  }
   // VTID-03501: a globally-promoted session is NOT a canary session. Reporting
   // `canary: true` for the whole user base would make every canary-scoped
   // dashboard and alert read as if the rollout never widened — the population
