@@ -579,6 +579,20 @@ function tryNewDayOverviewRung(
   return null;
 }
 
+// VTID-03630 — CLAUDE.md NEVER-rule 41: never hardcode a sentence Vitana
+// speaks. The short-gap opener used to hand the model a per-language MENU of
+// finished sentences ("picked from this menu and used VERBATIM") pulled from
+// `greeting-pools.ts`'s SHORT_GAP_GREETING_PHRASES pool. Live report: with
+// the day_close/newday_overview rungs killed (VTID-03628/03629), MORE
+// sessions fall through to this rung than before, and the model reliably
+// converged on reciting the same pool entry verbatim — "Lass mich dir den
+// nächsten Schritt zeigen." heard on a session where nothing else fired.
+// Replaced with an INTENT (English, per the rule — the model composes fresh
+// wording in the user's own language every time; there is no menu left to
+// recite from).
+const SHORT_GAP_OPENER_INTENT =
+  "Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself, never ask what they want. Compose this sentence yourself, in the user's own language, in your own words. There is no approved phrasing to reproduce and nothing to recite — do not reuse wording you or another session has used before; vary it every single time.";
+
 // --- SAFE-FAST ladder (rungs 1–6) ------------------------------------------
 function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
   // VTID-03604 — the day-close outranks every morning rung, on BOTH ladders.
@@ -717,11 +731,10 @@ function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
     };
   }
 
-  // Rung 6 — safe_fast_pending_context (generic short menu opener; always fires).
-  const menu = ctx.menuPhrases.map((p) => `"${p}"`).join(', ');
+  // Rung 6 — safe_fast_pending_context (generic short opener; always fires).
   const safePrompt =
-    `Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM ` +
-    `(already in the user's language): ${menu}. Do NOT say "Hello" or the user's name. ` +
+    `Open with EXACTLY ONE short spoken phrase. INTENT: ${SHORT_GAP_OPENER_INTENT} ` +
+    `Do NOT say "Hello" or the user's name. ` +
     `Do NOT introduce yourself. NEVER use two-part sentences. Speak it as audio.`;
   return {
     wakeOpener: 'safe_fast_pending_context',
@@ -856,21 +869,22 @@ function computeNormalLadder(ctx: GreetingDecisionContext): GreetingDecision {
   };
 }
 
+// VTID-03630 — CLAUDE.md NEVER-rule 41: this per-language "pick ONE of:
+// <finished sentence> / <finished sentence>" map is exactly the hardcoded-
+// spoken-sentence shape the rule forbids, and it was live-reachable: any
+// anonymous session that reconnects (ctx.isAnonymous && ctx.reconnectCount >
+// 0) falls through both overrides below and speaks straight from this list —
+// the `de` entry offered "Lass mich dir den nächsten Schritt zeigen." as one
+// of four choices. Replaced with a single English INTENT (composed in the
+// user's own language per the system instruction's language directive) —
+// there is no per-language pool left to pick from.
+const LEGACY_DEFAULT_OPENER_INTENT =
+  'Open with ONE single short spoken phrase that LEADS — propose the next move yourself, never ask the user\'s preference. NEVER use two-part sentences with dashes. Do NOT say "Hello", "Hi", or the user\'s name. Do NOT introduce yourself. If your system instruction\'s OPENING SHAPE MATRIX provides a Proactive Opener Candidate, USE IT. Otherwise compose your own short opener yourself, in your own words — there is no approved phrasing to reproduce and nothing to pick from a list. NEVER ask "How can I help?" or "What would you like?". Vary your wording across sessions; never repeat the exact phrasing from a previous session.';
+
 /** The legacy default greeting prompt (orb-live L8382–8491): anonymous intro,
  *  or the recency-bucket-aware authenticated menu. Verbatim transcription. */
 function buildLegacyGreetingPrompt(ctx: GreetingDecisionContext): string {
-  const greetingPrompts: Record<string, string> = {
-    en: 'Open with ONE single short phrase that LEADS — propose the next move, never ask the user\'s preference. NEVER use two-part sentences with dashes. Do NOT say "Hello", "Hi", or the user\'s name. Do NOT introduce yourself. If your system instruction\'s OPENING SHAPE MATRIX provides a Proactive Opener Candidate, USE IT. Otherwise pick ONE of: "Let me show you where we are." / "Let me show you your next step." / "I am listening." / "Let\'s keep going.". NEVER "How can I help?" / "What would you like?". Vary across sessions.',
-    de: 'Beginne mit EINER einzelnen kurzen Aussage, die FÜHRT — schlage den nächsten Schritt vor, frage nie nach der Vorliebe des Benutzers. NIEMALS zweiteilige Sätze mit Gedankenstrichen. Sage KEIN "Hallo", kein "Hi" und nicht den Namen des Benutzers. Stelle dich NICHT vor. Wenn die OPENING SHAPE MATRIX in deinem System-Prompt einen Proactive Opener Candidate enthält, NUTZE IHN. Ansonsten wähle EINE: "Lass mich dir zeigen, wo wir stehen." / "Lass mich dir den nächsten Schritt zeigen." / "Ich höre dir zu." / "Lass uns weitermachen.". NIEMALS "Womit kann ich helfen?" / "Was möchtest du?". Variiere zwischen Sitzungen.',
-    fr: 'Commence par UNE seule courte phrase qui MÈNE — propose la prochaine étape, ne demande jamais la préférence de l\'utilisateur. JAMAIS de phrases en deux parties avec des tirets. Ne dis PAS "Bonjour" ni le prénom. Ne te présente PAS. Si l\'OPENING SHAPE MATRIX de ton instruction système fournit un Proactive Opener Candidate, UTILISE-LE. Sinon choisis UNE : "Laisse-moi te montrer où nous en sommes." / "Laisse-moi te montrer ta prochaine étape." / "Je t\'écoute." / "On continue.". JAMAIS "En quoi puis-je aider ?" / "Que puis-je faire pour vous ?". Varie entre les sessions.',
-    es: 'Comienza con UNA sola frase corta que LIDERA — propone el siguiente paso, nunca preguntes la preferencia del usuario. NUNCA frases de dos partes con guiones. NO digas "Hola" ni el nombre del usuario. NO te presentes. Si la OPENING SHAPE MATRIX de tu instrucción de sistema ofrece un Proactive Opener Candidate, ÚSALO. Si no, elige UNA: "Déjame mostrarte dónde estamos." / "Déjame mostrarte tu siguiente paso." / "Te escucho." / "Sigamos.". NUNCA "¿En qué puedo ayudar?" / "¿Qué necesitas?". Varía entre sesiones.',
-    ar: 'ابدأ بعبارة واحدة قصيرة تقود — اقترح الخطوة التالية، ولا تسأل المستخدم أبداً عن تفضيله. لا تستخدم جملاً من جزأين. لا تقل "مرحبا" أو اسم المستخدم. لا تقدم نفسك. إذا وفرت OPENING SHAPE MATRIX مرشحاً استباقياً فاستخدمه. وإلا اختر واحدة: "دعني أريك أين وصلنا." / "دعني أريك خطوتك التالية." / "أنا أستمع." / "لنواصل.". أبداً "كيف يمكنني المساعدة؟"',
-    zh: '用一句简短、引导性的话开场——提出下一步，绝不询问用户的偏好。不要使用两部分的句子。不要说"你好"或用户名字。不要自我介绍。如果系统指令的 OPENING SHAPE MATRIX 提供了主动开场候选，请使用它。否则选一个："让我带你看看我们的进展。" / "让我带你看看你的下一步。" / "我在听。" / "我们继续。"。绝不说"有什么我可以帮忙的？"',
-    ru: 'Начни с ОДНОЙ короткой фразы, которая ВЕДЁТ — предложи следующий шаг, никогда не спрашивай предпочтение пользователя. НИКОГДА не используй двухчастные предложения с тире. НЕ говори "Здравствуйте" или имя пользователя. НЕ представляйся. Если OPENING SHAPE MATRIX в системной инструкции даёт Proactive Opener Candidate — ИСПОЛЬЗУЙ ЕГО. Иначе выбери одну: "Давай покажу, где мы остановились." / "Давай покажу твой следующий шаг." / "Я слушаю." / "Продолжаем.". НИКОГДА "Чем могу помочь?" / "Что вас интересует?"',
-    sr: 'Почни са ЈЕДНОМ кратком реченицом која ВОДИ — предложи следећи корак, никад не питај корисника шта жели. НИКАД не користи дводелне реченице са цртама. НЕ говори "Здраво" или име корисника. НЕ представљај се. Ако OPENING SHAPE MATRIX у системској инструкцији нуди Proactive Opener Candidate — КОРИСТИ ГА. Иначе изабери једну: "Да ти покажем докле смо стигли." / "Да ти покажем твој следећи корак." / "Слушам те." / "Настављамо.". НИКАД "Како могу да помогнем?" / "Шта те занима?"',
-  };
-
-  let prompt = greetingPrompts[ctx.lang] || greetingPrompts.en;
+  let prompt = LEGACY_DEFAULT_OPENER_INTENT;
 
   // Anonymous landing-page intro (unless this is a reconnect).
   if (ctx.isAnonymous && !(ctx.reconnectCount > 0)) {
@@ -893,7 +907,6 @@ function buildLegacyGreetingPrompt(ctx: GreetingDecisionContext): string {
       ? ` The user is currently on the "${ctx.currentScreenTitle}" screen.`
       : '';
     const tod = ctx.timeOfDay === 'night' ? 'evening' : ctx.timeOfDay || 'day';
-    const menuList = ctx.menuPhrases.map((p) => `"${p}"`).join(', ');
 
     if (ctx.wasFailure && (ctx.bucket === 'reconnect' || ctx.bucket === 'recent')) {
       // VTID-03556: this "legacy tail apology branch" fires after a failed
@@ -918,13 +931,13 @@ function buildLegacyGreetingPrompt(ctx: GreetingDecisionContext): string {
     } else {
       switch (ctx.bucket) {
         case 'reconnect':
-          prompt = `You were JUST talking to the user ${ctx.timeAgo}. Do NOT greet. Do NOT say "Hello" or the user's name. Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM (these are already in the user's language): ${menuList}. Pick a different one than last time. NEVER use two-part sentences.${screenHint}`;
+          prompt = `You were JUST talking to the user ${ctx.timeAgo}. Do NOT greet. Do NOT say "Hello" or the user's name. Open with EXACTLY ONE short spoken phrase. INTENT: ${SHORT_GAP_OPENER_INTENT} NEVER use two-part sentences.${screenHint}`;
           break;
         case 'recent':
-          prompt = `You were just talking to the user ${ctx.timeAgo}. Do NOT use a formal greeting. Do NOT say the user's name. Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM (already in the user's language): ${menuList}. Vary across sessions. NEVER use two-part sentences.${screenHint}`;
+          prompt = `You were just talking to the user ${ctx.timeAgo}. Do NOT use a formal greeting. Do NOT say the user's name. Open with EXACTLY ONE short spoken phrase. INTENT: ${SHORT_GAP_OPENER_INTENT} NEVER use two-part sentences.${screenHint}`;
           break;
         case 'same_day':
-          prompt = `The user was here ${ctx.timeAgo}. Do NOT say the user's name. Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM (already in the user's language): ${menuList}. Vary across sessions. NEVER use two-part sentences.${screenHint}`;
+          prompt = `The user was here ${ctx.timeAgo}. Do NOT say the user's name. Open with EXACTLY ONE short spoken phrase. INTENT: ${SHORT_GAP_OPENER_INTENT} NEVER use two-part sentences.${screenHint}`;
           break;
         case 'today':
           prompt = `The user was here ${ctx.timeAgo} — this is a NEW-DAY greeting. Open with "Good ${tod}, [Name]." using the user's name from your memory context. Then follow per the OPENING SHAPE MATRIX in your system instruction (use the Proactive Opener Candidate if one is provided). Max TWO short sentences if no candidate; longer if the matrix says so.${screenHint}`;
