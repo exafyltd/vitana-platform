@@ -15,6 +15,7 @@ import {
   computeGreetingDecision,
   isDayCloseWindow,
   dayCloseNightKey,
+  setDayCloseRungEnabled,
   type GreetingDecisionContext,
 } from '../../../src/services/conversation/compute-greeting-decision';
 import {
@@ -291,5 +292,37 @@ describe('VTID-03604 — the todayTz placeholder cannot fire day-close', () => {
   test('a real todayTz at the same hour fires normally — the guard is scoped to the placeholder, not the hour', () => {
     const d = computeGreetingDecision(ctx({ todayTz: '2026-06-30', localHour: 0 }));
     expect(d.wakeOpener).toBe('day_close');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// VTID-03629 — P0 emergency kill switch. Bedrock's content filter rejects
+// this rung's auto-generated diary/mood content on Nova Sonic sessions; see
+// compute-greeting-decision.ts for the full incident writeup.
+// ---------------------------------------------------------------------------
+describe('setDayCloseRungEnabled — day-close kill switch', () => {
+  afterEach(() => {
+    // Module default is enabled — restore it for any other test file
+    // sharing this worker.
+    setDayCloseRungEnabled(true);
+  });
+
+  test('defaults to enabled — unchanged behaviour for any caller that never touches the switch', () => {
+    const d = computeGreetingDecision(ctx({ localHour: 23 }));
+    expect(d.wakeOpener).toBe('day_close');
+  });
+
+  test('disabling makes day_close fall through to a later rung instead of firing', () => {
+    setDayCloseRungEnabled(false);
+    const d = computeGreetingDecision(ctx({ localHour: 23 }));
+    expect(d.wakeOpener).not.toBe('day_close');
+    expect(typeof d.wakeOpener).toBe('string');
+  });
+
+  test('re-enabling restores the rung for the identical context', () => {
+    setDayCloseRungEnabled(false);
+    expect(computeGreetingDecision(ctx({ localHour: 23 })).wakeOpener).not.toBe('day_close');
+    setDayCloseRungEnabled(true);
+    expect(computeGreetingDecision(ctx({ localHour: 23 })).wakeOpener).toBe('day_close');
   });
 });
