@@ -9546,7 +9546,23 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
       openDecision: { mode: _openDecision.mode, source: _openDecision.source, line: _openDecision.line },
       guidedTopicNarrationContent: (session as any).guidedTopicNarrationContent ?? null,
       wakeBriefDecisionId: (_wb as any)?.decisionId ?? null,
-      silenceOnSkipEnabled: process.env.ORB_GREETING_SILENCE_ON_SKIP_ENABLED !== 'false',
+      // VTID-03635 — rung 9 (silenced_on_cadence) is a SECOND, independent
+      // silencing mechanism, fed by `voiceWakeBriefReason` (the wake-brief
+      // provider's OWN cadence verdict, computed from `_wb.sourceProviderResults`
+      // at session-start time — untouched by the `_freshOpenAfterZeroTurnRecovery`
+      // override above, which only reaches `decideOpening`'s `isReconnect`).
+      // Confirmed live right after VTID-03634 shipped: `wake_opener` moved from
+      // `silent_reconnect` to `silenced_on_cadence` — same zero-turn user, same
+      // dead silence, different rung. Reason values like
+      // `bucket_reconnect_forces_skip` / `greeted_recently_within_window` mean
+      // "a greeting was already dispatched recently", which is exactly as wrong
+      // here as `isReconnect` was: a greeting dispatched to a connection that
+      // died before any audio reached the user was never actually heard.
+      // Disabling the WHOLE rung for this one resend (rather than trying to
+      // adjust the reason string) falls through to override_v2/legacy_default,
+      // both of which speak unconditionally.
+      silenceOnSkipEnabled:
+        !_freshOpenAfterZeroTurnRecovery && process.env.ORB_GREETING_SILENCE_ON_SKIP_ENABLED !== 'false',
       wakeBriefHasSelectedContinuation: (_wb as any)?.selectedContinuation != null,
       voiceWakeBriefReason: _voiceReasonSync,
     };
