@@ -37,8 +37,15 @@ describe('VTID-03104 / 1c: override_v2 opener lives in the brain; transport dele
     expect(brain).not.toMatch(/Begin your first turn now/);
   });
 
-  it('the legacy menu fallback likewise lives in the brain', () => {
-    expect(brain).toMatch(/pick ONE of: "Let me show you where we are\./);
+  it('the legacy default fallback likewise lives in the brain', () => {
+    // VTID-03630: the old fallback handed the model a per-language "pick ONE
+    // of: <finished sentence>" menu — the same hardcoded-spoken-sentence
+    // shape CLAUDE.md NEVER-rule 41 forbids, and reachable for an anonymous
+    // session that reconnects. Replaced with a single English INTENT the
+    // model composes itself; assert the invariant that survives (the
+    // fallback still lives in the brain) rather than the removed literal.
+    expect(brain).toMatch(/const LEGACY_DEFAULT_OPENER_INTENT =/);
+    expect(brain).not.toMatch(/pick ONE of: "Let me show you where we are\./);
   });
 
   it('orb-live.ts delegates the sync opening rungs to computeGreetingDecision', () => {

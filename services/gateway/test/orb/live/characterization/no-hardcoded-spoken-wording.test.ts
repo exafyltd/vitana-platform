@@ -25,6 +25,14 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 
 const orbLiveRaw = readFileSync(join(__dirname, '../../../../src/routes/orb-live.ts'), 'utf8');
+const greetingDecisionRaw = readFileSync(
+  join(__dirname, '../../../../src/services/conversation/compute-greeting-decision.ts'),
+  'utf8',
+);
+const wakeBriefRaw = readFileSync(
+  join(__dirname, '../../../../src/services/assistant-continuation/providers/voice-wake-brief.ts'),
+  'utf8',
+);
 
 /**
  * Scan CODE, not prose. The comments in this file deliberately quote the
@@ -96,5 +104,32 @@ describe('VTID-03622 — no hardcoded spoken wording in the ORB voice path', () 
     // spoken copy so it does not fire on comments or identifiers.
     const germanSpoken = /["'`](?:[A-ZÄÖÜ][^"'`\n]{0,120}\s)?(?:Lass mich dir|Ich bin wieder|Ich zeige dir|Schön, dass du)\b/;
     expect(orbLive).not.toMatch(germanSpoken);
+  });
+});
+
+describe('VTID-03630 — the short-gap opener no longer hands the model a VERBATIM menu', () => {
+  // The sibling regression to VTID-03622, found live once VTID-03628/03629
+  // disabled the day_close/newday_overview rungs: more reconnects fell
+  // through to the short-gap "safe_fast_pending_context" rung and the
+  // reconnect/recent/same_day legacy-default buckets, both of which told the
+  // model to pick a pool entry from greeting-pools.ts and use it VERBATIM.
+  // Nova reliably recited "Lass mich dir den nächsten Schritt zeigen."
+  const greetingDecision = stripComments(greetingDecisionRaw);
+  const wakeBrief = stripComments(wakeBriefRaw);
+
+  it('compute-greeting-decision.ts never instructs the model to use a menu VERBATIM', () => {
+    expect(greetingDecision).not.toMatch(/VERBATIM/);
+    expect(greetingDecision).not.toContain('Lass mich dir den nächsten Schritt zeigen');
+  });
+
+  it('compute-greeting-decision.ts hands the short-gap rungs an INTENT instead', () => {
+    expect(greetingDecision).toMatch(/const SHORT_GAP_OPENER_INTENT =/);
+    expect(greetingDecision).toContain('There is no approved phrasing to reproduce');
+  });
+
+  it('voice-wake-brief.ts never instructs the model to use a menu VERBATIM', () => {
+    expect(wakeBrief).not.toMatch(/Pick ONE of these example phrasings/);
+    expect(wakeBrief).not.toContain('use them VERBATIM');
+    expect(wakeBrief).toContain('INTENT: briefly and warmly acknowledge');
   });
 });
