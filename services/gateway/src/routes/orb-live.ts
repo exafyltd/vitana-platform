@@ -340,8 +340,21 @@ import {
   shouldAttemptNewdayOverview,
   shouldAttemptResumeOverview,
   newdayHasContent,
+  setNewdayOverviewRungEnabled,
   type GreetingDecisionContext,
 } from '../services/conversation/compute-greeting-decision';
+
+// VTID-03628 — P0 emergency kill switch (see compute-greeting-decision.ts
+// for the full incident writeup): Bedrock's content filter started
+// rejecting the rich new-day overview greeting on Nova Sonic sessions, and
+// the automatic retry resent the identical rejected content in a loop.
+// Set once at module load — every `computeGreetingDecision` call site
+// (there are several, independently built) inherits it automatically, so
+// there is nothing left to diverge. Default OFF (disabled) unless
+// explicitly re-enabled via ORB_NEWDAY_OVERVIEW_RUNG_ENABLED=true, which
+// should happen only after a Nova-aware fix (skip the identical-content
+// retry, not the whole rung) ships.
+setNewdayOverviewRungEnabled(process.env.ORB_NEWDAY_OVERVIEW_RUNG_ENABLED === 'true');
 import { EMPTY_GREETING_LEDGER } from '../services/conversation/greeting-facts-ledger';
 
 const router = Router();

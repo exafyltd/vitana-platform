@@ -52,6 +52,43 @@ import {
   EMPTY_GREETING_LEDGER,
   type GreetingLedger,
 } from './greeting-facts-ledger';
+
+// VTID-03628 — P0 emergency kill switch, 2026-08-13.
+//
+// Bedrock's own content moderation started rejecting the rich new-day
+// overview block ("This request has been blocked by our content filters.")
+// on Nova Sonic sessions, at turn_count=0, immediately after greeting_sent —
+// 100% reproducible for the affected account, first observed once
+// VTID-03607 (same day) made this rung reachable on every qualifying session
+// instead of rarely (see tryNewDayOverviewRung's own comment). The automatic
+// Nova retry (VTID-03557, orb-live.ts resendGreetingIfStuckAtZeroTurns) then
+// resends the SAME decision — since nothing in the inputs changed, it
+// rebuilds the identical rejected content and gets blocked again, which is
+// the "Einen Moment, ich verbinde mich neu" loop reported live.
+//
+// SET, NOT READ, HERE — this module is explicitly pure (see file header,
+// "IMPURITY IS INJECTED, NOT PERFORMED") so the golden-snapshot suite stays
+// deterministic; the one process.env read lives at the gateway boundary
+// (routes/orb-live.ts, module load) and calls setNewdayOverviewRungEnabled()
+// once. Module-level rather than threaded through every context-literal at
+// every `computeGreetingDecision` call site (there are 5+, independently
+// constructed, no shared builder) — a per-site flag would need every one
+// touched correctly under time pressure, which is exactly the ladder-
+// divergence bug class this file's own history has been bitten by
+// repeatedly. A single switch point cannot diverge.
+//
+// This module's OWN default is ENABLED (true) — unchanged behaviour for the
+// golden-snapshot suite and any other caller that never touches the switch.
+// The emergency disable is applied ONLY at the gateway's production entry
+// point (routes/orb-live.ts, module load), which reads
+// ORB_NEWDAY_OVERVIEW_RUNG_ENABLED and defaults IT to false. Disabling does
+// not fail sessions; the ladder falls through to a later, simpler rung —
+// same behaviour as before VTID-03607 shipped today (when this rung fired
+// only rarely, per its own comment).
+let _newdayOverviewRungEnabled = true;
+export function setNewdayOverviewRungEnabled(enabled: boolean): void {
+  _newdayOverviewRungEnabled = enabled;
+}
 import {
   selectDayCloseTheme,
   isHardDay,
@@ -413,6 +450,7 @@ export function safeFastApplies(ctx: GreetingDecisionContext): boolean {
  *  rung cannot diverge. Mirrors orb-live L7723. */
 export function shouldAttemptNewdayOverview(ctx: GreetingDecisionContext): boolean {
   return (
+    _newdayOverviewRungEnabled &&
     isDeOrEn(ctx.lang) &&
     briefingDue(ctx) &&
     !(ctx.greetingNeedsOnboarding === true || ctx.greetingIsFirstTime === true) &&

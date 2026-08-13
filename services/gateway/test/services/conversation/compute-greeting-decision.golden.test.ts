@@ -28,6 +28,7 @@
 
 import {
   computeGreetingDecision,
+  setNewdayOverviewRungEnabled,
   type GreetingDecisionContext,
 } from '../../../src/services/conversation/compute-greeting-decision';
 import type { OverviewPayload } from '../../../src/services/assistant-continuation/providers/new-day-overview-payload';
@@ -575,5 +576,46 @@ describe('computeGreetingDecision — VTID-03607 new-day briefing on the normal 
     expect(normal.wakeOpener).toBe('newday_overview');
     expect(normal.directive).toBe(fast.directive);
     expect(normal.effects.stampBriefingDate).toBe(fast.effects.stampBriefingDate);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// VTID-03628 — P0 emergency kill switch for the new-day overview rung.
+// ---------------------------------------------------------------------------
+describe('setNewdayOverviewRungEnabled — new-day overview kill switch', () => {
+  afterEach(() => {
+    // This module's own default is enabled — restore it so no other test
+    // file in the same worker inherits a disabled switch.
+    setNewdayOverviewRungEnabled(true);
+  });
+
+  const richContext = {
+    lastFullBriefingDate: '2026-06-29', // stale -> briefing due
+    newdayOverview: richPayload({ messages_unread: 3 }),
+  };
+
+  test('defaults to enabled — unchanged behaviour for any caller that never touches the switch', () => {
+    const fast = computeGreetingDecision(safeFastCtx(richContext));
+    const normal = computeGreetingDecision(ctx(richContext));
+    expect(fast.wakeOpener).toBe('safe_fast_newday_overview');
+    expect(normal.wakeOpener).toBe('newday_overview');
+  });
+
+  test('disabling makes BOTH ladders fall through to a later rung instead of failing', () => {
+    setNewdayOverviewRungEnabled(false);
+    const fast = computeGreetingDecision(safeFastCtx(richContext));
+    const normal = computeGreetingDecision(ctx(richContext));
+    expect(fast.wakeOpener).not.toBe('safe_fast_newday_overview');
+    expect(normal.wakeOpener).not.toBe('newday_overview');
+    // Falls through to a real rung, not a crash/undefined.
+    expect(typeof fast.wakeOpener).toBe('string');
+    expect(typeof normal.wakeOpener).toBe('string');
+  });
+
+  test('re-enabling restores the rung for the identical context', () => {
+    setNewdayOverviewRungEnabled(false);
+    expect(computeGreetingDecision(ctx(richContext)).wakeOpener).not.toBe('newday_overview');
+    setNewdayOverviewRungEnabled(true);
+    expect(computeGreetingDecision(ctx(richContext)).wakeOpener).toBe('newday_overview');
   });
 });
