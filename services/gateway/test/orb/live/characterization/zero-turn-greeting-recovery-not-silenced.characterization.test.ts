@@ -82,3 +82,33 @@ describe('VTID-03634 — zero-turn-recovery resend is never silenced as a reconn
     expect(orbLive).toMatch(/\(session as any\)\._reconnectCount = reconnectCount \+ 1;/);
   });
 });
+
+describe('VTID-03635 — the SAME override also disables rung 9 (silenced_on_cadence)', () => {
+  // Live confirmation right after VTID-03634 shipped: wake_opener moved from
+  // silent_reconnect to silenced_on_cadence for the identical zero-turn user —
+  // a second, independent silencing mechanism fed by voiceWakeBriefReason
+  // (computed from the wake-brief provider's own cadence verdict, untouched by
+  // the isReconnect override alone). Both must be disabled by the same
+  // one-shot flag for a zero-turn-recovery resend to actually speak.
+  it('silenceOnSkipEnabled is gated by the same _freshOpenAfterZeroTurnRecovery flag', () => {
+    expect(orbLive).toMatch(
+      /silenceOnSkipEnabled:\s*\n?\s*!_freshOpenAfterZeroTurnRecovery && process\.env\.ORB_GREETING_SILENCE_ON_SKIP_ENABLED !== 'false',/,
+    );
+  });
+
+  it('the flag capture happens before the reset, so both use sites read the SAME value', () => {
+    // _freshOpenAfterZeroTurnRecovery must be a local const captured once
+    // (before the one-shot reset), not re-read from the session a second time
+    // — re-reading after the reset would always see false at the second site.
+    const declIdx = orbLive.indexOf(
+      "const _freshOpenAfterZeroTurnRecovery = (session as any)._freshOpenAfterZeroTurnRecovery === true;",
+    );
+    const resetIdx = orbLive.indexOf('(session as any)._freshOpenAfterZeroTurnRecovery = false;');
+    const cadenceUseIdx = orbLive.indexOf('!_freshOpenAfterZeroTurnRecovery && process.env.ORB_GREETING_SILENCE_ON_SKIP_ENABLED');
+    expect(declIdx).toBeGreaterThan(-1);
+    expect(resetIdx).toBeGreaterThan(-1);
+    expect(cadenceUseIdx).toBeGreaterThan(-1);
+    expect(declIdx).toBeLessThan(resetIdx);
+    expect(resetIdx).toBeLessThan(cadenceUseIdx);
+  });
+});
