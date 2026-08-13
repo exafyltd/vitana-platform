@@ -340,8 +340,26 @@ import {
   shouldAttemptNewdayOverview,
   shouldAttemptResumeOverview,
   newdayHasContent,
+  setNewdayOverviewRungEnabled,
+  setDayCloseRungEnabled,
   type GreetingDecisionContext,
 } from '../services/conversation/compute-greeting-decision';
+
+// VTID-03628/03629 — P0 emergency kill switches (see compute-greeting-
+// decision.ts for the full incident writeup): Bedrock's content filter
+// started rejecting rich auto-generated greeting content on Nova Sonic
+// sessions — first suspected on the new-day overview rung (VTID-03628), then
+// confirmed live to actually be the day_close rung (VTID-03629, diary/mood
+// reflection content, fires at local_hour 0-4) — and the automatic retry
+// resent the identical rejected content in a loop either way. Set once at
+// module load — every `computeGreetingDecision` call site (there are
+// several, independently built) inherits both automatically, so there is
+// nothing left to diverge. Both default OFF (disabled) unless explicitly
+// re-enabled via their env vars, which should happen only after a
+// Nova-aware fix (skip the identical-content retry, not the whole rung)
+// ships for each.
+setNewdayOverviewRungEnabled(process.env.ORB_NEWDAY_OVERVIEW_RUNG_ENABLED === 'true');
+setDayCloseRungEnabled(process.env.ORB_DAY_CLOSE_RUNG_ENABLED === 'true');
 import { EMPTY_GREETING_LEDGER } from '../services/conversation/greeting-facts-ledger';
 
 const router = Router();
