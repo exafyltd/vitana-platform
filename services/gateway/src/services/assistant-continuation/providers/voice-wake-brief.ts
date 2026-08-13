@@ -44,7 +44,6 @@ import type {
   DecisionPillarMomentum,
   PillarKey,
 } from '../../../orb/context/types';
-import { pickShortGapGreetings } from '../../../orb/instruction/greeting-pools';
 
 // ---------------------------------------------------------------------------
 // Temporal / bucketed fallback pools
@@ -60,10 +59,16 @@ import { pickShortGapGreetings } from '../../../orb/instruction/greeting-pools';
 // (a soft transport conflict). The fallback content now lives HERE, on the
 // priority-80 pure-fallback producer that owns the temporal fallback pools.
 //
-// The actual per-language greeting STRINGS still live in
-// `orb/instruction/greeting-pools.ts` (`SHORT_GAP_GREETING_PHRASES`, surfaced
-// via `pickShortGapGreetings`); only the bucket templating moved here. No
-// greeting string or language was dropped in the move.
+// VTID-03630 — the short-gap phrase menu (below, `expandShortGapPhraseMenu`)
+// used to pull per-language finished sentences from `greeting-pools.ts`
+// (`SHORT_GAP_GREETING_PHRASES`) and instruct the model to use one "VERBATIM".
+// That is exactly the shape CLAUDE.md NEVER-rule 41 forbids (a hardcoded
+// sentence Vitana speaks) and it was live: with the day_close/newday_overview
+// rungs disabled (VTID-03628/03629) more reconnects fell through to this
+// fallback, and the model reliably recited the same pool entry verbatim
+// ("Lass mich dir den nächsten Schritt zeigen."). Replaced with an INTENT —
+// see `expandShortGapPhraseMenu` below. No hardcoded greeting string
+// survives in this file's fallback path.
 
 /** Time-since-last-session buckets the legacy stack keyed its templates on. */
 export type WakeBriefTemporalBucket =
@@ -149,27 +154,24 @@ export const WAKE_BRIEF_BUCKET_TEMPLATES: Record<WakeBriefTemporalBucket, string
 };
 
 /**
- * Expand the `{{short_gap_phrase_menu}}` token. Identical line-for-line to
- * the `expandShortGapPhraseMenu()` helper that used to live inside
- * `buildTemporalJourneyContextSection`. Pulls the per-language greeting
- * strings from the preserved `SHORT_GAP_GREETING_PHRASES` pool.
+ * Expand the `{{short_gap_phrase_menu}}` token. `lang` is accepted for
+ * signature compatibility with call sites that resolve it per-session, but
+ * the INTENT itself is deliberately English (CLAUDE.md §13b: system
+ * instructions stay English, the model emits the user's language) — there
+ * is no per-language pool to select from any more (VTID-03630).
  */
 export function expandShortGapPhraseMenu(
-  lang: string,
+  _lang: string,
   wakeBriefOverrideActive?: boolean,
 ): string {
   if (wakeBriefOverrideActive) {
     return '  • SHORT-GAP PHRASE LIST SUPPRESSED — a VERTEX WAKE BRIEF override is active later in this prompt. Speak the override line verbatim instead of any phrase here.';
   }
-  const examples = pickShortGapGreetings(lang, 6);
-  const out: string[] = [
-    '  • Pick ONE of these example phrasings (use them VERBATIM — they are already in the user\'s language; pick a different one than last time):',
-  ];
-  for (const p of examples) {
-    out.push(`      "${p}"`);
-  }
-  out.push('  • Rotate across sessions — the user notices repetition. If the previous session used one of these, pick a different one.');
-  return out.join('\n');
+  return [
+    "  • INTENT: briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself, never ask what they want.",
+    "  • Compose this sentence yourself, in the user's own language, in your own words. There is no approved phrasing to reproduce.",
+    '  • Rotate across sessions — the user notices repetition. Do NOT reuse wording you or another session used before.',
+  ].join('\n');
 }
 
 /**

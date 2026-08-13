@@ -53,6 +53,62 @@ import {
   type GreetingLedger,
 } from './greeting-facts-ledger';
 
+// VTID-03628 — P0 emergency kill switch, 2026-08-13.
+//
+// Bedrock's own content moderation started rejecting the rich new-day
+// overview block ("This request has been blocked by our content filters.")
+// on Nova Sonic sessions, at turn_count=0, immediately after greeting_sent —
+// 100% reproducible for the affected account, first observed once
+// VTID-03607 (same day) made this rung reachable on every qualifying session
+// instead of rarely (see tryNewDayOverviewRung's own comment). The automatic
+// Nova retry (VTID-03557, orb-live.ts resendGreetingIfStuckAtZeroTurns) then
+// resends the SAME decision — since nothing in the inputs changed, it
+// rebuilds the identical rejected content and gets blocked again, which is
+// the "Einen Moment, ich verbinde mich neu" loop reported live.
+//
+// SET, NOT READ, HERE — this module is explicitly pure (see file header,
+// "IMPURITY IS INJECTED, NOT PERFORMED") so the golden-snapshot suite stays
+// deterministic; the one process.env read lives at the gateway boundary
+// (routes/orb-live.ts, module load) and calls setNewdayOverviewRungEnabled()
+// once. Module-level rather than threaded through every context-literal at
+// every `computeGreetingDecision` call site (there are 5+, independently
+// constructed, no shared builder) — a per-site flag would need every one
+// touched correctly under time pressure, which is exactly the ladder-
+// divergence bug class this file's own history has been bitten by
+// repeatedly. A single switch point cannot diverge.
+//
+// This module's OWN default is ENABLED (true) — unchanged behaviour for the
+// golden-snapshot suite and any other caller that never touches the switch.
+// The emergency disable is applied ONLY at the gateway's production entry
+// point (routes/orb-live.ts, module load), which reads
+// ORB_NEWDAY_OVERVIEW_RUNG_ENABLED and defaults IT to false. Disabling does
+// not fail sessions; the ladder falls through to a later, simpler rung —
+// same behaviour as before VTID-03607 shipped today (when this rung fired
+// only rarely, per its own comment).
+let _newdayOverviewRungEnabled = true;
+export function setNewdayOverviewRungEnabled(enabled: boolean): void {
+  _newdayOverviewRungEnabled = enabled;
+}
+
+// VTID-03629 — the SAME incident, the ACTUAL rung. VTID-03628 (above) disabled
+// `newday_overview` on the theory that it was the content Bedrock's filter was
+// rejecting. Live retest immediately after showed the guard rejecting
+// newday_overview anyway (missing first name) and a DIFFERENT rung —
+// `day_close` (tryDayCloseRung below, local_hour 0-4, built from diary/mood
+// reflection content via buildDayCloseBlock/isHardDay) — firing instead and
+// getting blocked the same way (prompt_len 4202, "This request has been
+// blocked by our content filters."). Same switch shape, same reasoning
+// (module default true, orb-live.ts boundary defaults it off).
+let _dayCloseRungEnabled = true;
+export function setDayCloseRungEnabled(enabled: boolean): void {
+  _dayCloseRungEnabled = enabled;
+}
+import {
+  selectDayCloseTheme,
+  isHardDay,
+} from '../assistant-continuation/providers/day-close-themes';
+import { buildDayCloseBlock } from '../assistant-continuation/providers/day-close-prompt';
+
 // ---------------------------------------------------------------------------
 // Decision shape
 // ---------------------------------------------------------------------------
@@ -68,6 +124,9 @@ export type WakeOpener =
   | 'safe_fast_newday'
   | 'safe_fast_pending_context'
   | 'silent_reconnect'
+  /** VTID-03604 — the end-of-day close. Its own name so the evening ritual is
+   *  measurable separately from every morning rung it deliberately outranks. */
+  | 'day_close'
   /** VTID-03607 — the SAME rich new-day briefing as `safe_fast_newday_overview`,
    *  reached on the NORMAL (sync) ladder. Deliberately its own name rather than
    *  reusing the safe-fast one: which ladder served the briefing is exactly the
@@ -89,6 +148,9 @@ export interface GreetingEffects {
   stampBriefingDate?: string;
   /** Append this NBA key to user_journey.recent_nbas (keep last 8) — conv_resume. */
   recordNbaKey?: string;
+  /** VTID-03604: stamp user_journey.last_day_close_date = this LOCAL EVENING
+   *  date (dayCloseNightKey, not todayTz). Once per night. */
+  stampDayCloseDate?: string;
 }
 
 export interface GreetingDecision {
@@ -224,6 +286,127 @@ export interface GreetingDecisionContext {
   wakeBriefHasSelectedContinuation: boolean;
   /** The voice_wake_brief provider `reason`, or null (cadence-skip detection). */
   voiceWakeBriefReason: string | null;
+
+  // --- VTID-03604 day-close ------------------------------------------------
+  /** user_journey.last_day_close_date — the LOCAL EVENING date of the last
+   *  spoken goodnight (see dayCloseNightKey). null = never closed a day. */
+  lastDayCloseDate?: string | null;
+  /** session.identity.user_id — only used to de-phase the theme rotation so
+   *  two members do not hear the same closing thought on the same night. */
+  userId?: string | null;
+  /** 7-day Vitana-index trend, when known. Feeds isHardDay ONLY. */
+  indexTrend7d?: number | null;
+  /** Did the user log anything at all today? Feeds isHardDay ONLY. */
+  loggedAnythingToday?: boolean;
+  /** A prepared autopilot checkpoint that can genuinely be activated tonight —
+   *  offered by name, never invented. */
+  pendingCheckpointTitle?: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// VTID-03604 — the night window
+// ---------------------------------------------------------------------------
+
+/**
+ * Is this local hour inside the day-close window (21:00 → 04:59)?
+ *
+ * Strict integer 0-23 on purpose. The synchronous greeting path builds its
+ * context BEFORE the timezone helpers are loaded and passes `localHour: -1` as
+ * a placeholder; if the placeholder read as midnight the close would fire all
+ * day long, on every session, which is the loudest possible way to get this
+ * wrong. `-1`, `24`, `NaN` and any fractional hour are therefore all false.
+ */
+export function isDayCloseWindow(localHour: number): boolean {
+  if (!Number.isInteger(localHour) || localHour < 0 || localHour > 23) return false;
+  return localHour >= 21 || localHour <= 4;
+}
+
+/**
+ * Which EVENING does this moment belong to?
+ *
+ * Between 00:00 and 04:59 the calendar date has already rolled but the evening
+ * has not ended — so the night is keyed to the date it STARTED. Without this,
+ * a user said goodnight at 23:50 who reopens at 00:10 is a different "day" by
+ * `todayTz` and gets a second goodnight: exactly the repeat-on-every-reopen
+ * failure VTID-03597 removed. Outside the window the local date is returned
+ * unchanged so callers never have to branch.
+ */
+export function dayCloseNightKey(todayLocalIso: string, localHour: number): string {
+  if (!Number.isInteger(localHour) || localHour > 4 || localHour < 0) return todayLocalIso;
+  const d = new Date(`${todayLocalIso}T12:00:00Z`);
+  if (Number.isNaN(d.getTime())) return todayLocalIso;
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * The day-close rung, shared by BOTH ladders (VTID-03604).
+ *
+ * Placed ABOVE every morning rung deliberately. At 00:15 the calendar date has
+ * rolled, so `briefingDue()` believes a new day is owed a morning briefing — it
+ * is not. You have not started a day, you have failed to end one, and being met
+ * with "Guten Morgen" at a quarter past midnight is the single most obviously
+ * wrong thing this subsystem can say.
+ *
+ * Placed BELOW `silent_reconnect`, for the same reason the new-day briefing is:
+ * a reconnect must stay silent, and a goodnight is loud.
+ *
+ * Returns null when it does not fire, so each ladder keeps its own ordering.
+ */
+function tryDayCloseRung(ctx: GreetingDecisionContext): GreetingDecision | null {
+  if (!_dayCloseRungEnabled) return null;
+  if (ctx.isAnonymous) return null;
+  // `todayTz: ''` is the documented placeholder orb-live.ts seeds the SYNC
+  // context with before the timezone helpers resolve (mirrors `localHour: -1`
+  // on the safe-fast side) — an empty string is not a valid ISO date and must
+  // never be read as "no date, so any date matches". Without this, a session
+  // that falls through to the placeholder context (e.g. the async new-day
+  // branch's own error-recovery path) would compute a garbage night key and
+  // could fire day_close at literally any hour, because `localHour: 0` on
+  // that same placeholder reads as "inside the window".
+  if (!ctx.todayTz) return null;
+  if (!isDayCloseWindow(ctx.localHour)) return null;
+
+  const nightKey = dayCloseNightKey(ctx.todayTz, ctx.localHour);
+  // Once per night. The stamp holds the EVENING date, so the 23:50 → 00:10
+  // reopen compares equal and stays quiet.
+  if (typeof ctx.lastDayCloseDate === 'string' && ctx.lastDayCloseDate >= nightKey) return null;
+
+  const theme = selectDayCloseTheme({ todayLocalIso: nightKey, userId: ctx.userId ?? null });
+  const hardDay = isHardDay({
+    indexTrend7d: ctx.indexTrend7d,
+    loggedAnythingToday: ctx.loggedAnythingToday,
+  });
+  const ledger = ctx.greetingLedger ?? EMPTY_GREETING_LEDGER;
+
+  const block = buildDayCloseBlock({
+    lang: ctx.greetLang,
+    firstName: ctx.firstName ?? null,
+    localHour: ctx.localHour,
+    timezone: ctx.timezone,
+    theme,
+    hardDay,
+    previousUtterance: ledger.last_utterance,
+    sessionsToday: ledger.sessions_today,
+    pendingCheckpointTitle: ctx.pendingCheckpointTitle ?? null,
+  });
+  if (!block || block.trim().length === 0) return null;
+
+  return {
+    wakeOpener: 'day_close',
+    directive: block,
+    diag: {
+      lang: ctx.lang,
+      prompt_len: block.length,
+      wake_opener: 'day_close',
+      night_key: nightKey,
+      local_hour: ctx.localHour,
+      theme: theme.key,
+      hard_day: hardDay,
+      has_checkpoint: !!ctx.pendingCheckpointTitle,
+    },
+    effects: { markGreetingSent: true, armWatchdog: true, stampDayCloseDate: nightKey },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -282,6 +465,7 @@ export function safeFastApplies(ctx: GreetingDecisionContext): boolean {
  *  rung cannot diverge. Mirrors orb-live L7723. */
 export function shouldAttemptNewdayOverview(ctx: GreetingDecisionContext): boolean {
   return (
+    _newdayOverviewRungEnabled &&
     isDeOrEn(ctx.lang) &&
     briefingDue(ctx) &&
     !(ctx.greetingNeedsOnboarding === true || ctx.greetingIsFirstTime === true) &&
@@ -395,8 +579,28 @@ function tryNewDayOverviewRung(
   return null;
 }
 
+// VTID-03630 — CLAUDE.md NEVER-rule 41: never hardcode a sentence Vitana
+// speaks. The short-gap opener used to hand the model a per-language MENU of
+// finished sentences ("picked from this menu and used VERBATIM") pulled from
+// `greeting-pools.ts`'s SHORT_GAP_GREETING_PHRASES pool. Live report: with
+// the day_close/newday_overview rungs killed (VTID-03628/03629), MORE
+// sessions fall through to this rung than before, and the model reliably
+// converged on reciting the same pool entry verbatim — "Lass mich dir den
+// nächsten Schritt zeigen." heard on a session where nothing else fired.
+// Replaced with an INTENT (English, per the rule — the model composes fresh
+// wording in the user's own language every time; there is no menu left to
+// recite from).
+const SHORT_GAP_OPENER_INTENT =
+  "Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself, never ask what they want. Compose this sentence yourself, in the user's own language, in your own words. There is no approved phrasing to reproduce and nothing to recite — do not reuse wording you or another session has used before; vary it every single time.";
+
 // --- SAFE-FAST ladder (rungs 1–6) ------------------------------------------
 function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
+  // VTID-03604 — the day-close outranks every morning rung, on BOTH ladders.
+  // At 00:15 the calendar date has rolled and the morning briefing believes it
+  // is owed; it is not. Ending a day is not starting one.
+  const dayCloseFast = tryDayCloseRung(ctx);
+  if (dayCloseFast) return dayCloseFast;
+
   // Rung 1 — safe_fast_newday_overview (rich morning briefing owns turn 1).
   const newdayFast = tryNewDayOverviewRung(ctx, 'safe_fast_newday_overview');
   if (newdayFast) return newdayFast;
@@ -527,11 +731,10 @@ function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
     };
   }
 
-  // Rung 6 — safe_fast_pending_context (generic short menu opener; always fires).
-  const menu = ctx.menuPhrases.map((p) => `"${p}"`).join(', ');
+  // Rung 6 — safe_fast_pending_context (generic short opener; always fires).
   const safePrompt =
-    `Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM ` +
-    `(already in the user's language): ${menu}. Do NOT say "Hello" or the user's name. ` +
+    `Open with EXACTLY ONE short spoken phrase. INTENT: ${SHORT_GAP_OPENER_INTENT} ` +
+    `Do NOT say "Hello" or the user's name. ` +
     `Do NOT introduce yourself. NEVER use two-part sentences. Speak it as audio.`;
   return {
     wakeOpener: 'safe_fast_pending_context',
@@ -558,6 +761,11 @@ function computeNormalLadder(ctx: GreetingDecisionContext): GreetingDecision {
       effects: { markGreetingSent: true, armWatchdog: false },
     };
   }
+
+  // VTID-03604 — day-close, below silent_reconnect (a reconnect stays silent,
+  // and a goodnight is loud) and above every morning rung.
+  const dayCloseSync = tryDayCloseRung(ctx);
+  if (dayCloseSync) return dayCloseSync;
 
   // Rung 7b — newday_overview (VTID-03607). The SAME rich briefing as rung 1,
   // now reachable when context resolved before the greeting — which, since the
@@ -661,21 +869,22 @@ function computeNormalLadder(ctx: GreetingDecisionContext): GreetingDecision {
   };
 }
 
+// VTID-03630 — CLAUDE.md NEVER-rule 41: this per-language "pick ONE of:
+// <finished sentence> / <finished sentence>" map is exactly the hardcoded-
+// spoken-sentence shape the rule forbids, and it was live-reachable: any
+// anonymous session that reconnects (ctx.isAnonymous && ctx.reconnectCount >
+// 0) falls through both overrides below and speaks straight from this list —
+// the `de` entry offered "Lass mich dir den nächsten Schritt zeigen." as one
+// of four choices. Replaced with a single English INTENT (composed in the
+// user's own language per the system instruction's language directive) —
+// there is no per-language pool left to pick from.
+const LEGACY_DEFAULT_OPENER_INTENT =
+  'Open with ONE single short spoken phrase that LEADS — propose the next move yourself, never ask the user\'s preference. NEVER use two-part sentences with dashes. Do NOT say "Hello", "Hi", or the user\'s name. Do NOT introduce yourself. If your system instruction\'s OPENING SHAPE MATRIX provides a Proactive Opener Candidate, USE IT. Otherwise compose your own short opener yourself, in your own words — there is no approved phrasing to reproduce and nothing to pick from a list. NEVER ask "How can I help?" or "What would you like?". Vary your wording across sessions; never repeat the exact phrasing from a previous session.';
+
 /** The legacy default greeting prompt (orb-live L8382–8491): anonymous intro,
  *  or the recency-bucket-aware authenticated menu. Verbatim transcription. */
 function buildLegacyGreetingPrompt(ctx: GreetingDecisionContext): string {
-  const greetingPrompts: Record<string, string> = {
-    en: 'Open with ONE single short phrase that LEADS — propose the next move, never ask the user\'s preference. NEVER use two-part sentences with dashes. Do NOT say "Hello", "Hi", or the user\'s name. Do NOT introduce yourself. If your system instruction\'s OPENING SHAPE MATRIX provides a Proactive Opener Candidate, USE IT. Otherwise pick ONE of: "Let me show you where we are." / "Let me show you your next step." / "I am listening." / "Let\'s keep going.". NEVER "How can I help?" / "What would you like?". Vary across sessions.',
-    de: 'Beginne mit EINER einzelnen kurzen Aussage, die FÜHRT — schlage den nächsten Schritt vor, frage nie nach der Vorliebe des Benutzers. NIEMALS zweiteilige Sätze mit Gedankenstrichen. Sage KEIN "Hallo", kein "Hi" und nicht den Namen des Benutzers. Stelle dich NICHT vor. Wenn die OPENING SHAPE MATRIX in deinem System-Prompt einen Proactive Opener Candidate enthält, NUTZE IHN. Ansonsten wähle EINE: "Lass mich dir zeigen, wo wir stehen." / "Lass mich dir den nächsten Schritt zeigen." / "Ich höre dir zu." / "Lass uns weitermachen.". NIEMALS "Womit kann ich helfen?" / "Was möchtest du?". Variiere zwischen Sitzungen.',
-    fr: 'Commence par UNE seule courte phrase qui MÈNE — propose la prochaine étape, ne demande jamais la préférence de l\'utilisateur. JAMAIS de phrases en deux parties avec des tirets. Ne dis PAS "Bonjour" ni le prénom. Ne te présente PAS. Si l\'OPENING SHAPE MATRIX de ton instruction système fournit un Proactive Opener Candidate, UTILISE-LE. Sinon choisis UNE : "Laisse-moi te montrer où nous en sommes." / "Laisse-moi te montrer ta prochaine étape." / "Je t\'écoute." / "On continue.". JAMAIS "En quoi puis-je aider ?" / "Que puis-je faire pour vous ?". Varie entre les sessions.',
-    es: 'Comienza con UNA sola frase corta que LIDERA — propone el siguiente paso, nunca preguntes la preferencia del usuario. NUNCA frases de dos partes con guiones. NO digas "Hola" ni el nombre del usuario. NO te presentes. Si la OPENING SHAPE MATRIX de tu instrucción de sistema ofrece un Proactive Opener Candidate, ÚSALO. Si no, elige UNA: "Déjame mostrarte dónde estamos." / "Déjame mostrarte tu siguiente paso." / "Te escucho." / "Sigamos.". NUNCA "¿En qué puedo ayudar?" / "¿Qué necesitas?". Varía entre sesiones.',
-    ar: 'ابدأ بعبارة واحدة قصيرة تقود — اقترح الخطوة التالية، ولا تسأل المستخدم أبداً عن تفضيله. لا تستخدم جملاً من جزأين. لا تقل "مرحبا" أو اسم المستخدم. لا تقدم نفسك. إذا وفرت OPENING SHAPE MATRIX مرشحاً استباقياً فاستخدمه. وإلا اختر واحدة: "دعني أريك أين وصلنا." / "دعني أريك خطوتك التالية." / "أنا أستمع." / "لنواصل.". أبداً "كيف يمكنني المساعدة؟"',
-    zh: '用一句简短、引导性的话开场——提出下一步，绝不询问用户的偏好。不要使用两部分的句子。不要说"你好"或用户名字。不要自我介绍。如果系统指令的 OPENING SHAPE MATRIX 提供了主动开场候选，请使用它。否则选一个："让我带你看看我们的进展。" / "让我带你看看你的下一步。" / "我在听。" / "我们继续。"。绝不说"有什么我可以帮忙的？"',
-    ru: 'Начни с ОДНОЙ короткой фразы, которая ВЕДЁТ — предложи следующий шаг, никогда не спрашивай предпочтение пользователя. НИКОГДА не используй двухчастные предложения с тире. НЕ говори "Здравствуйте" или имя пользователя. НЕ представляйся. Если OPENING SHAPE MATRIX в системной инструкции даёт Proactive Opener Candidate — ИСПОЛЬЗУЙ ЕГО. Иначе выбери одну: "Давай покажу, где мы остановились." / "Давай покажу твой следующий шаг." / "Я слушаю." / "Продолжаем.". НИКОГДА "Чем могу помочь?" / "Что вас интересует?"',
-    sr: 'Почни са ЈЕДНОМ кратком реченицом која ВОДИ — предложи следећи корак, никад не питај корисника шта жели. НИКАД не користи дводелне реченице са цртама. НЕ говори "Здраво" или име корисника. НЕ представљај се. Ако OPENING SHAPE MATRIX у системској инструкцији нуди Proactive Opener Candidate — КОРИСТИ ГА. Иначе изабери једну: "Да ти покажем докле смо стигли." / "Да ти покажем твој следећи корак." / "Слушам те." / "Настављамо.". НИКАД "Како могу да помогнем?" / "Шта те занима?"',
-  };
-
-  let prompt = greetingPrompts[ctx.lang] || greetingPrompts.en;
+  let prompt = LEGACY_DEFAULT_OPENER_INTENT;
 
   // Anonymous landing-page intro (unless this is a reconnect).
   if (ctx.isAnonymous && !(ctx.reconnectCount > 0)) {
@@ -698,7 +907,6 @@ function buildLegacyGreetingPrompt(ctx: GreetingDecisionContext): string {
       ? ` The user is currently on the "${ctx.currentScreenTitle}" screen.`
       : '';
     const tod = ctx.timeOfDay === 'night' ? 'evening' : ctx.timeOfDay || 'day';
-    const menuList = ctx.menuPhrases.map((p) => `"${p}"`).join(', ');
 
     if (ctx.wasFailure && (ctx.bucket === 'reconnect' || ctx.bucket === 'recent')) {
       // VTID-03556: this "legacy tail apology branch" fires after a failed
@@ -723,13 +931,13 @@ function buildLegacyGreetingPrompt(ctx: GreetingDecisionContext): string {
     } else {
       switch (ctx.bucket) {
         case 'reconnect':
-          prompt = `You were JUST talking to the user ${ctx.timeAgo}. Do NOT greet. Do NOT say "Hello" or the user's name. Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM (these are already in the user's language): ${menuList}. Pick a different one than last time. NEVER use two-part sentences.${screenHint}`;
+          prompt = `You were JUST talking to the user ${ctx.timeAgo}. Do NOT greet. Do NOT say "Hello" or the user's name. Open with EXACTLY ONE short spoken phrase. INTENT: ${SHORT_GAP_OPENER_INTENT} NEVER use two-part sentences.${screenHint}`;
           break;
         case 'recent':
-          prompt = `You were just talking to the user ${ctx.timeAgo}. Do NOT use a formal greeting. Do NOT say the user's name. Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM (already in the user's language): ${menuList}. Vary across sessions. NEVER use two-part sentences.${screenHint}`;
+          prompt = `You were just talking to the user ${ctx.timeAgo}. Do NOT use a formal greeting. Do NOT say the user's name. Open with EXACTLY ONE short spoken phrase. INTENT: ${SHORT_GAP_OPENER_INTENT} NEVER use two-part sentences.${screenHint}`;
           break;
         case 'same_day':
-          prompt = `The user was here ${ctx.timeAgo}. Do NOT say the user's name. Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM (already in the user's language): ${menuList}. Vary across sessions. NEVER use two-part sentences.${screenHint}`;
+          prompt = `The user was here ${ctx.timeAgo}. Do NOT say the user's name. Open with EXACTLY ONE short spoken phrase. INTENT: ${SHORT_GAP_OPENER_INTENT} NEVER use two-part sentences.${screenHint}`;
           break;
         case 'today':
           prompt = `The user was here ${ctx.timeAgo} — this is a NEW-DAY greeting. Open with "Good ${tod}, [Name]." using the user's name from your memory context. Then follow per the OPENING SHAPE MATRIX in your system instruction (use the Proactive Opener Candidate if one is provided). Max TWO short sentences if no candidate; longer if the matrix says so.${screenHint}`;

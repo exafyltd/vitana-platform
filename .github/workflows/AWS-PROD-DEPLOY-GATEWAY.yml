@@ -447,13 +447,34 @@ jobs:
           # silently inherit a staging tuning value again. Safe-fast remains a
           # real fallback for genuinely slow starts; it is no longer the norm.
           #
-          # If a future session raises or lowers this: measure
-          # `greeting_context_pending` rate first, and treat any sustained
-          # non-zero rate as the greeting being silently downgraded.
+          # VTID-03625 — P0 REVERT, 2026-08-13: the 4000 value above is what
+          # actually shipped from Aug 11 14:54 UTC onward, and it correlates
+          # EXACTLY with a new, previously-nonexistent nova_validation failure
+          # class: 0 errors Aug 6-10 at the prior 300ms value, first error 47
+          # minutes after this deploy, escalating to 17/day by Aug 12. Bedrock
+          # kills a Nova Sonic stream after ~55s of no audio/interactive
+          # content; waiting up to 4s longer to assemble a heavier
+          # multi-Supabase-round-trip "new-day" payload (unread messages,
+          # Vitana index, Life Compass, calendar, reminders) before the
+          # greeting can even start is pushing a growing share of Nova
+          # sessions past that deadline — a dead, unrecoverable ORB session,
+          # not merely a downgraded greeting.
+          #
+          # Reverting to 300 (the exact value proven error-free Aug 6-10)
+          # rather than guessing a middle value, because a total connection
+          # kill is strictly worse than the greeting-downgrade problem 300 was
+          # originally raised to fix. The greeting-downgrade tradeoff is
+          # KNOWINGLY reinstated by this revert — see VTID-03584 above for
+          # what that looks like — pending a Nova-aware follow-up (a much
+          # tighter gate specifically for nova_sonic sessions, since Vertex
+          # sessions show no matching failure class and can likely keep a
+          # longer wait). Do not re-raise this value without first confirming
+          # via a real Bedrock invoke that the greeting-assembly path finishes
+          # well inside Nova's 55s budget, not just inside the gate timeout.
           NEW_DEF=$(echo "$NEW_DEF" | jq '
             .containerDefinitions[0].environment |=
               ( [ .[] | select(.name != "ORB_CONTEXT_READY_GATE_TIMEOUT_MS") ]
-                + [ {name:"ORB_CONTEXT_READY_GATE_TIMEOUT_MS", value:"4000"} ] )')
+                + [ {name:"ORB_CONTEXT_READY_GATE_TIMEOUT_MS", value:"300"} ] )')
 
           # BOOTSTRAP-NOVA-SONIC-VOICE: only when explicitly requested, replace
           # the Nova env block (region/model stay pinned — never inputs).

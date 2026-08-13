@@ -110,5 +110,7 @@
   "notif.marketplace_listing_removed.title": "Your listing was removed",
   "notif.marketplace_listing_removed.body": "\"{title}\" was removed by an admin: {reason}",
   "notif.listing_interest.title": "Interest in your listing",
-  "notif.listing_interest.body": "Someone is interested in \"{title}\"."
+  "notif.listing_interest.body": "Someone is interested in \"{title}\".",
+  "notif.day_close.title": "Good night 🌙",
+  "notif.day_close.body": "The day's done — if anything's still on your mind, tell me quickly."
 }

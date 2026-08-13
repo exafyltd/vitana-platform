@@ -340,8 +340,26 @@ import {
   shouldAttemptNewdayOverview,
   shouldAttemptResumeOverview,
   newdayHasContent,
+  setNewdayOverviewRungEnabled,
+  setDayCloseRungEnabled,
   type GreetingDecisionContext,
 } from '../services/conversation/compute-greeting-decision';
+
+// VTID-03628/03629 — P0 emergency kill switches (see compute-greeting-
+// decision.ts for the full incident writeup): Bedrock's content filter
+// started rejecting rich auto-generated greeting content on Nova Sonic
+// sessions — first suspected on the new-day overview rung (VTID-03628), then
+// confirmed live to actually be the day_close rung (VTID-03629, diary/mood
+// reflection content, fires at local_hour 0-4) — and the automatic retry
+// resent the identical rejected content in a loop either way. Set once at
+// module load — every `computeGreetingDecision` call site (there are
+// several, independently built) inherits both automatically, so there is
+// nothing left to diverge. Both default OFF (disabled) unless explicitly
+// re-enabled via their env vars, which should happen only after a
+// Nova-aware fix (skip the identical-content retry, not the whole rung)
+// ships for each.
+setNewdayOverviewRungEnabled(process.env.ORB_NEWDAY_OVERVIEW_RUNG_ENABLED === 'true');
+setDayCloseRungEnabled(process.env.ORB_DAY_CLOSE_RUNG_ENABLED === 'true');
 import { EMPTY_GREETING_LEDGER } from '../services/conversation/greeting-facts-ledger';
 
 const router = Router();
@@ -2260,10 +2278,17 @@ function buildSwapBackWelcomeBlock(fromPersonaKey: string, lang: string | undefi
   lines.push(`  (3) THEN one of (pick whichever is most natural for this user right now):`);
   lines.push(`      (a) an OPEN question: "what else can I do for you?" / "Womit kann ich noch helfen?" / "what else would you like to continue with?" — varied wording every call.`);
   lines.push(`      (b) a PROACTIVE suggestion drawn from your bootstrap context (Proactive Initiative Engine / Did You Know Tour / current goal). Pick something the user was working on or about to be guided toward — NOT a fresh non-sequitur.`);
-  lines.push(`Examples (NEVER recite verbatim):`);
-  lines.push(`  - "Welcome back, Dragan. I hope ${role} could help — what else can I do for you?"`);
-  lines.push(`  - "Schön, dass du wieder da bist, Dragan. Hat dir ${role} weiterhelfen können? Womit machen wir weiter?"`);
-  lines.push(`  - "Welcome back. I hope our team helped. Earlier you wanted to [proactive context]; want to continue with that?"`);
+  // VTID-03622: the three worked EXAMPLES that used to sit here are gone, and
+  // the "(NEVER recite verbatim)" label they carried is exactly why they had
+  // to go rather than being reworded. VTID-03475 is the recorded proof that a
+  // caveat does not hold: a greeting exemplar in the prompt header outranked
+  // all three cadence mechanisms beneath it and every session opened with the
+  // same sentence. An example IS a script to a model — the disclaimer next to
+  // it is not. One of these even hardcoded a real user's first name, which
+  // makes a parroted line look correct rather than obviously wrong.
+  // The three components above already say what the turn must contain; the
+  // model does not need a finished sentence to imitate.
+  lines.push(`Compose the wording YOURSELF from the three components above. You are given NO example to imitate and there is no approved phrasing — write it fresh, in the user's language, different every time.`);
   lines.push(`FORBIDDEN on this turn (all v1-era loop triggers):`);
   lines.push(`  - "What's on your mind?"`);
   lines.push(`  - "How can I help?" (generic restart)`);
@@ -4479,9 +4504,17 @@ async function executeLiveApiToolInner(
           }
           if (!deflection) {
             // Last-resort generic fallback — still NOT "no recommendations".
-            deflection = (session.lang || 'en').toLowerCase().startsWith('de')
-              ? 'Lass mich dir einen guten nächsten Schritt in Vitanaland zeigen — wir schauen es uns gemeinsam an.'
-              : "Let me show you a good next step in Vitanaland — let's take a look together.";
+            //
+            // VTID-03622: this used to be the finished sentence, in two
+            // languages, returned straight into the model's mouth. A tool
+            // result is spoken copy just as much as a greeting is, and a
+            // LAST-RESORT path is the worst place to fix the wording: it is
+            // reached whenever the real deflection builder has nothing, so a
+            // user who keeps hitting the empty case hears the identical
+            // sentence every time. Return the INTENT and let the model write
+            // it — same contract as the recovery path.
+            deflection =
+              'INSTRUCTION (not a script): tell the user, in your own fresh wording and in their language, that you will point them at a good next step in Vitanaland and will look at it together. Do NOT say there are no recommendations. One short sentence, never one you have used before in this session.';
           }
           return { success: true, result: deflection };
         }
@@ -6083,6 +6116,30 @@ async function executeLiveApiToolInner(
       case 'list_following':
       case 'recent_conversations':
       case 'get_social_context':
+      // VTID-03604 surface 4 — on-demand day summary. Mirrors get_life_compass.
+      case 'get_day_summary': {
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
+        }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          toolName,
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+            lang: session.lang ?? null,
+          },
+          supabase,
+        );
+      }
+
       case 'get_life_compass': {
         const SUPABASE_URL = process.env.SUPABASE_URL;
         const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
@@ -9217,6 +9274,9 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
               greetingNeedsOnboarding: (session as any).greetingNeedsOnboarding === true,
               greetingIsFirstTime: (session as any).greetingIsFirstTime === true,
               lastFullBriefingDate: (session as any).lastFullBriefingDate ?? null,
+              // VTID-03604
+              lastDayCloseDate: (session as any).lastDayCloseDate ?? null,
+              userId: _uidSF,
               todayTz: _todaySF,
               localHour: localHourInTimezone(_nowSF, _tzSF),
               timezone: _tzSF,
@@ -9326,6 +9386,15 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
               void _supaSF
                 .from('user_journey')
                 .update({ last_full_briefing_date: _sfDecision.effects.stampBriefingDate })
+                .eq('user_id', _uidSF)
+                .then(() => {}, () => {});
+            }
+            // VTID-03604: same pattern for the day-close stamp.
+            if (_sfDecision.effects.stampDayCloseDate && _uidSF && _supaSF) {
+              (session as any).lastDayCloseDate = _sfDecision.effects.stampDayCloseDate;
+              void _supaSF
+                .from('user_journey')
+                .update({ last_day_close_date: _sfDecision.effects.stampDayCloseDate })
                 .eq('user_id', _uidSF)
                 .then(() => {}, () => {});
             }
@@ -9626,6 +9695,9 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             wasFailure: _temporalNS.wasFailure,
             todayTz: todayInTimezone(_nowNS, _tzSync),
             localHour: localHourInTimezone(_nowNS, _tzSync),
+            // VTID-03604
+            lastDayCloseDate: (session as any).lastDayCloseDate ?? null,
+            userId: _syncUid,
           };
 
           // Real guard, single-sourced with the pure rung.
@@ -9706,6 +9778,15 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                 .eq('user_id', _syncUid!)
                 .then(() => {}, () => {});
             }
+            // VTID-03604
+            if (_decisionNS.effects.stampDayCloseDate) {
+              (session as any).lastDayCloseDate = _decisionNS.effects.stampDayCloseDate;
+              void _syncSupa!
+                .from('user_journey')
+                .update({ last_day_close_date: _decisionNS.effects.stampDayCloseDate })
+                .eq('user_id', _syncUid!)
+                .then(() => {}, () => {});
+            }
             if (_decisionNS.wakeOpener === 'newday_overview' && _tenantNS) {
               const _spokenNS = extractSpokenFactsFromPayload(_overviewNS);
               if (Object.keys(_spokenNS).length > 0) {
@@ -9745,6 +9826,19 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
           const _fallbackNS = computeGreetingDecision(_ctxNS);
           if (_fallbackNS.wakeOpener !== 'legacy_default') _sm.markOpeningDelivered();
           _renderSync(_fallbackNS);
+          // VTID-03604 — this IS the path a routine evening takes: the user
+          // already got their morning briefing, so briefingDue() is false and
+          // shouldAttemptNewdayOverview rejected above, but the day-close rung
+          // still runs inside computeGreetingDecision(_ctxNS) and outranks
+          // everything below it.
+          if (_fallbackNS.effects.stampDayCloseDate && _syncUid && _syncSupa) {
+            (session as any).lastDayCloseDate = _fallbackNS.effects.stampDayCloseDate;
+            void _syncSupa
+              .from('user_journey')
+              .update({ last_day_close_date: _fallbackNS.effects.stampDayCloseDate })
+              .eq('user_id', _syncUid)
+              .then(() => {}, () => {});
+          }
         } catch (err: any) {
           // Never leave the user with silence because the briefing gather blew
           // up: fall back to the plain ladder rather than swallowing the turn.
@@ -9991,35 +10085,43 @@ function sendReconnectRecoveryPromptToLiveAPI(ws: WebSocket, session: GeminiLive
   //    paraphrases it back ("You were saying X — go on") instead of
   //    forcing a replay. The structural rule below tells Gemini to fall
   //    back to a neutral resume if the partial really is empty.
-  const intros: Record<string, Record<string, string>> = {
-    en: {
-      thinking: "Sorry, we lost the connection for a moment. You were asking about <PARAPHRASE THE USER'S LAST TURN IN 3-6 WORDS>. Here's the answer:",
-      listening_user_speaking: "Sorry, we lost the connection mid-sentence. You were saying <PARAPHRASE THEIR PARTIAL UTTERANCE IN 3-6 WORDS> — go on, I'm listening.",
-      speaking: "Sorry, we lost the connection while I was answering. Let me continue:",
-      idle: "I'm back. Let me show you your next step."
-    },
-    de: {
-      thinking: "Entschuldige, die Verbindung war kurz weg. Du hast nach <PARAPHRASIERE DEN LETZTEN BEITRAG IN 3-6 WORTEN> gefragt. Hier ist die Antwort:",
-      listening_user_speaking: "Entschuldige, die Verbindung war kurz weg, während du gesprochen hast. Du warst gerade bei <PARAPHRASIERE DAS UNTERBROCHENE THEMA IN 3-6 WORTEN> — sprich ruhig weiter, ich höre zu.",
-      speaking: "Entschuldige, die Verbindung war kurz weg, während ich geantwortet habe. Ich mache weiter:",
-      idle: "Ich bin wieder da. Lass mich dir den nächsten Schritt zeigen."
-    },
-    fr: {
-      thinking: "Désolé, la connexion a sauté un instant. Vous me demandiez à propos de <PARAPHRASEZ EN 3-6 MOTS>. Voici la réponse :",
-      listening_user_speaking: "Désolé, la connexion a sauté en plein milieu. Vous étiez en train de parler de <PARAPHRASEZ EN 3-6 MOTS> — continuez, je vous écoute.",
-      speaking: "Désolé, la connexion a sauté pendant que je répondais. Je continue :",
-      idle: "Je suis de retour. De quoi voulez-vous parler ?"
-    },
-    es: {
-      thinking: "Perdón, se cortó la conexión un momento. Estabas preguntando sobre <PARAFRASEA EN 3-6 PALABRAS>. Aquí va la respuesta:",
-      listening_user_speaking: "Perdón, se cortó la conexión mientras hablabas. Estabas comentando sobre <PARAFRASEA EN 3-6 PALABRAS> — sigue, te escucho.",
-      speaking: "Perdón, se cortó la conexión mientras yo respondía. Continúo:",
-      idle: "Estoy de vuelta. ¿De qué quieres hablar?"
-    }
+  // VTID-03622 — NO VERBATIM SPOKEN SENTENCES. See CLAUDE.md Part 1
+  // NEVER-rule 41 ("Never hardcode a sentence Vitana speaks").
+  //
+  // This block used to ship the exact sentence the model was told to say,
+  // per language — e.g. de/idle was literally
+  //   "Ich bin wieder da. Lass mich dir den nächsten Schritt zeigen."
+  // Reported live after hearing it "for the 49th time". A reconnect is not a
+  // rare event (Nova drops ~10% of sessions at open, §2e, and mobile
+  // transports churn), so a fixed recovery line is a phrase the user hears
+  // more often than almost anything else Vitana says — and it was the ONE
+  // path that shipped its wording as a finished string.
+  //
+  // The system already forbids this everywhere else: the system instruction
+  // carries a `FLEXIBLE WORDING — ABSOLUTE` rule ("never speak a fixed,
+  // memorised sentence; NEVER open two conversations with the same one").
+  // Handing the model a completed sentence and saying "open with this"
+  // overrides that rule at point-blank range — the same mechanism as
+  // VTID-03475, where a greeting EXEMPLAR in the prompt header outranked
+  // every cadence rule underneath it.
+  //
+  // So: describe the INTENT, never the words. The model composes the line
+  // fresh each time, in the user's language (set in the system instruction —
+  // §13b: system instructions stay English and the model emits the user's
+  // language). That also deletes the 4-language duplication, which was
+  // itself a bug generator: `fr`/`es` idle asked "what do you want to talk
+  // about?" while `en`/`de` promised to show the next step — three languages
+  // that disagreed about what the assistant just committed to.
+  const stageIntents: Record<string, string> = {
+    thinking:
+      'briefly acknowledge that the connection dropped for a moment, name what the user had been asking about in 3-6 words drawn from the conversation history (never their exact words), and lead straight into the answer',
+    listening_user_speaking:
+      'briefly acknowledge that the connection dropped while they were mid-sentence, name the topic of their partial utterance in 3-6 words drawn from the conversation history, and invite them to carry on',
+    speaking:
+      'briefly acknowledge that the connection dropped while you were answering, and say you are picking your answer back up',
+    idle: 'briefly acknowledge you are back, and hand the floor to the user',
   };
-
-  const stageIntros = intros[lang] || intros['en'];
-  const introTemplate = stageIntros[stage] || stageIntros['idle'];
+  const stageIntent = stageIntents[stage] || stageIntents['idle'];
 
   // The full prompt sent as a "user" turn to Gemini. It tells Gemini how to
   // open AND what to do next (answer / wait / continue) based on the stage.
@@ -10034,14 +10136,24 @@ function sendReconnectRecoveryPromptToLiveAPI(ws: WebSocket, session: GeminiLive
     '',
     `RECONNECT_STAGE = "${stage}" (the user was in this state when the connection dropped).`,
     '',
-    'STRUCTURE — speak ONE acknowledgment sentence first, then take the matching follow-up action:',
-    `- For stage "thinking": open with "${stageIntros.thinking}" and IMMEDIATELY answer the user's last question using the conversation history. Replace the placeholder with a brief 3-6 word paraphrase of the user's actual last turn topic. Do NOT repeat their words verbatim. Keep the answer focused and concise.`,
-    `- For stage "listening_user_speaking": open with "${stageIntros.listening_user_speaking}". CRITICAL: you must paraphrase the user's most recent partial utterance from the conversation history into the placeholder (3-6 words, capturing the topic — e.g. "your sleep last week", "the magnesium reminder", "your trip to Mallorca"). NEVER ask the user to repeat what they said — their words are in the history; use them. If the partial really is empty (no recent user turn at all in history), fall back to: "Sorry, we lost the connection — please go on, I'm listening." Then STOP and wait. Do NOT guess what they were going to ask next.`,
-    `- For stage "speaking": say "${stageIntros.speaking}" and then RESUME the assistant's last answer using the conversation history — pick up logically from where you left off. Do not restart the answer from scratch.`,
-    `- For stage "idle" or unknown: say "${stageIntros.idle}" and wait.`,
+    'STRUCTURE — speak ONE acknowledgment sentence first, then take the matching follow-up action.',
+    '',
+    `YOUR ACKNOWLEDGMENT for this stage must: ${stageIntent}.`,
+    '',
+    'Compose that sentence YOURSELF, in your own words, fresh for this reconnect.',
+    'You are NOT given a script and there is no approved phrasing to reproduce.',
+    'Vary it every time — the user reconnects often and must never hear the same',
+    'sentence twice. Keep it to one short sentence.',
+    '',
+    'Then take the follow-up action for the stage:',
+    `- "thinking": IMMEDIATELY answer the user's last question using the conversation history. Keep the answer focused and concise.`,
+    `- "listening_user_speaking": STOP and wait after your acknowledgment. NEVER ask the user to repeat themselves — their words are in the history, so name the topic yourself. If there really is no recent user turn in the history, just say you got cut off and are listening. Do NOT guess what they were about to ask.`,
+    `- "speaking": RESUME the assistant's last answer using the conversation history — pick up logically from where you left off. Do not restart the answer from scratch.`,
+    `- "idle" or unknown: STOP and wait.`,
     '',
     'CRITICAL RULES:',
     '- Speak in the user\'s language (it is set in your system instruction).',
+    '- Do NOT speak a memorised or fixed sentence. Never reuse a previous recovery line.',
     '- Do NOT introduce yourself.',
     '- Do NOT say "Hello", "Hi", or the user\'s name.',
     '- Do NOT use the standard greeting prompt — this is a RECOVERY, not a fresh start.',
