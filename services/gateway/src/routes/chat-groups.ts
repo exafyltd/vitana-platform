@@ -580,6 +580,48 @@ async function fanoutGroupNotifications(
   }
 }
 
+/**
+ * VTID-03620: mirrors fetchVitanaDmHistory in routes/chat.ts — see that
+ * function's header comment for the full root-cause writeup. This handler
+ * had the identical gap: no thread_id, no conversation_history, so every
+ * @vitana mention in a group was processed as a context-free first turn.
+ * Scoped to the GROUP (not the individual asker) since a group mention is a
+ * shared conversation multiple members can contribute to; any human sender
+ * maps to 'user', Vitana's own prior replies map to 'assistant'.
+ */
+async function fetchVitanaGroupHistory(
+  supabase: SupabaseClient,
+  groupId: string,
+  currentMessage: string,
+  limit = 12,
+): Promise<Array<{ role: 'user' | 'assistant'; content: string }>> {
+  try {
+    const { data, error } = await supabase
+      .from('chat_messages')
+      .select('sender_id, content, created_at')
+      .eq('group_id', groupId)
+      .order('created_at', { ascending: false })
+      .limit(limit + 1);
+    if (error || !data) return [];
+
+    const rows = [...data].reverse() as Array<{ sender_id: string; content: string | null }>;
+    const last = rows[rows.length - 1];
+    if (last && last.sender_id !== VITANA_BOT_USER_ID && last.content === currentMessage) {
+      rows.pop();
+    }
+
+    return rows
+      .filter((r): r is { sender_id: string; content: string } => !!r.content && r.content.trim().length > 0)
+      .slice(-limit)
+      .map((r) => ({
+        role: r.sender_id === VITANA_BOT_USER_ID ? ('assistant' as const) : ('user' as const),
+        content: r.content,
+      }));
+  } catch {
+    return [];
+  }
+}
+
 async function handleVitanaGroupMention(
   supabase: SupabaseClient,
   groupId: string,
@@ -594,6 +636,10 @@ async function handleVitanaGroupMention(
     const { isVitanaBrainEnabled } = await import('../services/system-controls-service');
     const useBrain = await isVitanaBrainEnabled();
 
+    // VTID-03620: stable per-group thread id + reconstructed recent history.
+    const threadId = `vitana-group:${groupId}`;
+    const conversationHistory = await fetchVitanaGroupHistory(supabase, groupId, content);
+
     let result: { ok: boolean; reply: string; error?: string; thread_id: string; turn_number: number; meta: { model_used: string; latency_ms: number } };
 
     if (useBrain) {
@@ -605,6 +651,8 @@ async function handleVitanaGroupMention(
         role: 'user',
         message: question,
         message_type: 'text',
+        thread_id: threadId,
+        conversation_history: conversationHistory,
         vtid: 'VTID-03089',
       });
     } else {
@@ -615,6 +663,8 @@ async function handleVitanaGroupMention(
         role: 'user',
         message: question,
         message_type: 'text',
+        thread_id: threadId,
+        conversation_history: conversationHistory,
         vtid: 'VTID-03089',
       });
     }
