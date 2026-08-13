@@ -89,6 +89,20 @@ let _newdayOverviewRungEnabled = true;
 export function setNewdayOverviewRungEnabled(enabled: boolean): void {
   _newdayOverviewRungEnabled = enabled;
 }
+
+// VTID-03629 — the SAME incident, the ACTUAL rung. VTID-03628 (above) disabled
+// `newday_overview` on the theory that it was the content Bedrock's filter was
+// rejecting. Live retest immediately after showed the guard rejecting
+// newday_overview anyway (missing first name) and a DIFFERENT rung —
+// `day_close` (tryDayCloseRung below, local_hour 0-4, built from diary/mood
+// reflection content via buildDayCloseBlock/isHardDay) — firing instead and
+// getting blocked the same way (prompt_len 4202, "This request has been
+// blocked by our content filters."). Same switch shape, same reasoning
+// (module default true, orb-live.ts boundary defaults it off).
+let _dayCloseRungEnabled = true;
+export function setDayCloseRungEnabled(enabled: boolean): void {
+  _dayCloseRungEnabled = enabled;
+}
 import {
   selectDayCloseTheme,
   isHardDay,
@@ -340,6 +354,7 @@ export function dayCloseNightKey(todayLocalIso: string, localHour: number): stri
  * Returns null when it does not fire, so each ladder keeps its own ordering.
  */
 function tryDayCloseRung(ctx: GreetingDecisionContext): GreetingDecision | null {
+  if (!_dayCloseRungEnabled) return null;
   if (ctx.isAnonymous) return null;
   // `todayTz: ''` is the documented placeholder orb-live.ts seeds the SYNC
   // context with before the timezone helpers resolve (mirrors `localHour: -1`
