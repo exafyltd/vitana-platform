@@ -24,14 +24,10 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: cron-auto-promoter
   cancel-in-progress: false
-
-env:
-  GCP_PROJECT: lovable-vitana-vers1
 
 jobs:
   promote:
@@ -47,26 +43,23 @@ jobs:
       - working-directory: services/gateway
         run: npm ci --no-audit --no-fund
 
-      - name: Auth to GCP (WIF)
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
-          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
-
-      - uses: google-github-actions/setup-gcloud@v2
-
-      - name: Resolve STAGING Supabase creds
-        run: |
-          set -euo pipefail
-          STAGING_URL=$(gcloud secrets versions access latest --secret=STAGING_SUPABASE_URL --project="${GCP_PROJECT}")
-          STAGING_KEY=$(gcloud secrets versions access latest --secret=STAGING_SUPABASE_SERVICE_ROLE_KEY --project="${GCP_PROJECT}")
-          echo "::add-mask::$STAGING_URL"
-          echo "::add-mask::$STAGING_KEY"
-          echo "STAGING_SUPABASE_URL=$STAGING_URL" >> "$GITHUB_ENV"
-          echo "STAGING_SUPABASE_SERVICE_ROLE_KEY=$STAGING_KEY" >> "$GITHUB_ENV"
-
+      # VTID-03608: this job's WIF service account has been denied
+      # secretmanager.versions.access on STAGING_SUPABASE_URL since before
+      # the earliest run in this workflow's history (2 months of 100%
+      # failures, PERMISSION_DENIED, every hourly run — checked back to
+      # 2026-06-13). Rather than chase a GCP IAM grant this session can't
+      # make, use the repo secrets that already work: CLAUDE.md documents
+      # repeatedly that "staging" and "prod" share the SAME Supabase
+      # project throughout this codebase (gateway-staging talks to prod
+      # Supabase — BOOTSTRAP-ORB-STAGING-SUPABASE-ALIGN; AWS staging same,
+      # VTID-03513), so STAGING_SUPABASE_URL/KEY were never a genuinely
+      # different value from SUPABASE_URL/SUPABASE_SERVICE_ROLE — just an
+      # extra GCP Secret Manager hop to the identical credential, and the
+      # one hop that was broken.
       - name: Run auto-promoter
         working-directory: services/gateway
         env:
+          STAGING_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE }}
           AUTO_PROMOTER_DRY_RUN: ${{ inputs.dry_run == 'false' && '0' || '1' }}
         run: npx tsx scripts/auto-promoter.ts

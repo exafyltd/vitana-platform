@@ -4630,6 +4630,108 @@ export async function tool_get_life_compass(
   }
 }
 
+/**
+ * VTID-03604 surface 4 — the on-demand day summary.
+ *
+ * "The day aggregate, built only when they ask." Deliberately reuses
+ * gatherOverviewPayload() — the SAME aggregator the new-day briefing and the
+ * day-close rung already use — rather than a second bespoke query set, scoped
+ * to TODAY by passing today's local midnight as the lookback cutoff instead
+ * of the user's last-session timestamp. One aggregator, three call sites,
+ * each choosing a different window.
+ *
+ * Returns a DATA DUMP, not a composed sentence — same shape as
+ * get_recommendations ("Here are your personalized recommendations:\n...").
+ * This is deliberately NOT a `Say exactly` / scripted string: CLAUDE.md
+ * NEVER-rule 41 forbids handing the model finished spoken wording, and a tool
+ * result the model narrates in its own words is exactly the safe pattern —
+ * the data is fixed, the sentence is not.
+ */
+export async function tool_get_day_summary(
+  _args: OrbToolArgs,
+  identity: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  if (!identity.user_id) {
+    return { ok: false, error: 'get_day_summary requires an authenticated user.' };
+  }
+  try {
+    const { gatherOverviewPayload, dayWindowUtcIso } = await import(
+      './assistant-continuation/providers/new-day-overview-payload'
+    );
+    const { todayInTimezone } = await import('./assistant-continuation/providers/new-day-return');
+    const { getUserTimezone } = await import('./daily-pace-service');
+    const tz = await getUserTimezone(sb, identity.user_id, identity.tenant_id || undefined);
+    const now = new Date();
+    // Scope to TODAY: pass local midnight as the lookback cutoff instead of
+    // the user's actual last-session time, so "how was my day" always means
+    // the whole day so far — even mid-afternoon, even for a user who has
+    // reopened ORB five times today.
+    const { startUtc } = dayWindowUtcIso(now, tz);
+    const overview = await gatherOverviewPayload({
+      supabase: sb,
+      userId: identity.user_id,
+      now,
+      timezone: tz,
+      lang: identity.lang || 'en',
+      lastSessionDateUserTz: todayInTimezone(now, tz),
+      lastSessionAtIso: startUtc,
+    });
+
+    const lines: string[] = [];
+    if (overview.vitana_index.today != null) {
+      lines.push(
+        `Vitana Index today: ${overview.vitana_index.today}` +
+          (overview.vitana_index.trend_7d != null ? ` (7-day trend: ${overview.vitana_index.trend_7d >= 0 ? '+' : ''}${overview.vitana_index.trend_7d})` : ''),
+      );
+    }
+    if (overview.calendar_today.count > 0) {
+      lines.push(
+        `Calendar today: ${overview.calendar_today.count} event(s)` +
+          (overview.calendar_today.next ? `, next up: "${overview.calendar_today.next.title}"` : ''),
+      );
+    }
+    if (overview.autopilot.today_checkpoint) {
+      lines.push(`Today's autopilot checkpoint: "${overview.autopilot.today_checkpoint.title}"`);
+    }
+    if (overview.reminders_today.count > 0) {
+      lines.push(`Reminders today: ${overview.reminders_today.count}`);
+    }
+    if (overview.messages_unread > 0) lines.push(`Unread messages: ${overview.messages_unread}`);
+    if (overview.matches_unread > 0) lines.push(`Unread matches: ${overview.matches_unread}`);
+    if (overview.facts_learned_since_last && overview.facts_learned_since_last.count > 0) {
+      lines.push(`New things learned about the user today: ${overview.facts_learned_since_last.count}`);
+    }
+    if (overview.guided_journey?.next_session_title) {
+      lines.push(`Next guided-journey session: "${overview.guided_journey.next_session_title}"`);
+    }
+
+    const hasContent = lines.length > 0;
+    const text = hasContent
+      ? `Day summary (compose your own sentence from this — do NOT read it as a list):\n${lines.join('\n')}`
+      : 'Nothing notable happened today by these signals (no index reading, no calendar events, no checkpoint, no unread messages/matches, no reminders). Say so warmly — a quiet day is not a bad day.';
+
+    return {
+      ok: true,
+      result: {
+        index_today: overview.vitana_index.today,
+        index_trend_7d: overview.vitana_index.trend_7d,
+        calendar_today_count: overview.calendar_today.count,
+        autopilot_checkpoint: overview.autopilot.today_checkpoint?.title ?? null,
+        reminders_today_count: overview.reminders_today.count,
+        messages_unread: overview.messages_unread,
+        matches_unread: overview.matches_unread,
+        facts_learned_today: overview.facts_learned_since_last?.count ?? 0,
+        has_content: hasContent,
+      },
+      text,
+    };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'get_day_summary_exception';
+    return { ok: false, error: msg };
+  }
+}
+
 async function _getWeakestPillarAndGoal(
   sb: SupabaseClient,
   userId: string,
@@ -5406,6 +5508,7 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   // the LLM can answer "what is my Life Compass goal?" / "remind me what I'm
   // working toward" with the canonical value instead of inventing one.
   get_life_compass: tool_get_life_compass,
+  get_day_summary: tool_get_day_summary,
   // BOOTSTRAP-SOCIAL-MEMORY — live Social Context Pack for voice sessions
   // (follows, matches, messages, groups, person intelligence, ranked
   // posts/events). Voice-side bridge for the per-turn social injection the
