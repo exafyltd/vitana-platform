@@ -8786,6 +8786,12 @@ function resendGreetingIfStuckAtZeroTurns(session: GeminiLiveSession, source: st
     );
     session.greetingSent = false;
     session.greetingTurnIndex = undefined;
+    // VTID-03634 — the user has heard NOTHING yet (that's what turn_count===0
+    // means here), so the resend must speak, not fall into the reconnect-
+    // silence branch just because `_reconnectCount` was bumped by this same
+    // retry. One-shot flag consumed by sendGreetingPromptToLiveAPI's
+    // decideOpening() call below.
+    (session as any)._freshOpenAfterZeroTurnRecovery = true;
     if (session.upstreamWs && session.upstreamWs.readyState === WebSocket.OPEN) {
       sendGreetingPromptToLiveAPI(session.upstreamWs, session);
     }
@@ -9465,10 +9471,27 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   // per-connection setup and less stable mobile transport made re-opens (and
   // thus the bug) far more frequent, which is why it surfaced now.
   const _cadenceBucketPre = describeTimeSince(session.lastSessionInfo).bucket;
+  // VTID-03634 — a server-internal Nova retry (content-filter block or
+  // premature-close on the FIRST connection attempt, VTID-03557/VTID-03502)
+  // bumps `_reconnectCount` before `resendGreetingIfStuckAtZeroTurns` calls
+  // back in here. `decideOpening`'s reconnect branch is correct for a genuine
+  // mid-conversation transport hiccup (the user already heard something, so
+  // silently continuing is right) — but here the user has heard NOTHING at
+  // all yet (turn_count===0, the original greeting never reached them), so
+  // `isReconnect: true` produced permanent silence on the user's very first
+  // connection: they open ORB, the widget shows "listening", and Vitana never
+  // speaks. Live report: "not even connecting... then listening mode but not
+  // listening at all". `_freshOpenAfterZeroTurnRecovery` is a one-shot flag
+  // set only by that exact recovery path (never by a real mid-conversation
+  // reconnect, which has turn_count > 0) so this treats the recomputed
+  // opener as a FRESH open instead of a silent reconnect, without touching
+  // `_reconnectCount` itself (still used for MAX_RECONNECTS and elsewhere).
+  const _freshOpenAfterZeroTurnRecovery = (session as any)._freshOpenAfterZeroTurnRecovery === true;
+  (session as any)._freshOpenAfterZeroTurnRecovery = false;
   const _openDecision = decideOpening({
     isAnonymous: !!session.isAnonymous,
     hasResumptionHandle: !!session.resumptionHandle,
-    isReconnect: ((session as any)._reconnectCount || 0) > 0,
+    isReconnect: !_freshOpenAfterZeroTurnRecovery && ((session as any)._reconnectCount || 0) > 0,
     wakeSelectedLine: _wb?.selectedContinuation?.userFacingLine ?? null,
     wakeSelectedKind: _wb?.selectedContinuation?.kind ?? null,
     lastOpenerLine: (session as any)._lastOpenerLine ?? null,
