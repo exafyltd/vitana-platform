@@ -102,7 +102,14 @@ export function makeGuidedTopicNarrationProvider(): ContinuationProvider {
 
       let seed: Awaited<ReturnType<typeof getOrbTopicSeed>>;
       try {
-        seed = await getOrbTopicSeed(inputs.supabase, inputs.topicId, inputs.curriculumVersion);
+        // VTID-03644: overlay journey_checklist_translations for the tapping
+        // user's language instead of always narrating the German source.
+        seed = await getOrbTopicSeed(
+          inputs.supabase,
+          inputs.topicId,
+          inputs.curriculumVersion,
+          inputs.lang as Parameters<typeof getOrbTopicSeed>[3],
+        );
       } catch (err) {
         return {
           providerKey: GUIDED_TOPIC_NARRATION_PROVIDER_KEY,
