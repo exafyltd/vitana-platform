@@ -225,7 +225,12 @@ describe('computeGreetingDecision — rung golden snapshots', () => {
     expect(d).toMatchSnapshot();
   });
 
-  test('rung 8: override_v2 (wake-brief selected line, spoken verbatim)', () => {
+  // VTID-03646 — was "(wake-brief selected line, spoken verbatim)". The line is
+  // no longer spoken verbatim: it is a LEAD the model builds substance +
+  // next step + confirmation on. The old snapshot pinned the dead-end
+  // directive ("ONE short utterance... NO question after") that produced the
+  // reported "announce, then listen" opening, and is deliberately re-recorded.
+  test('rung 8: override_v2 (wake-brief selected line, used as the turn lead)', () => {
     const d = computeGreetingDecision(
       ctx({
         openDecision: { mode: 'speak', source: 'wake:teacher', line: 'Heute ist dein 12. Tag — bleiben wir dran.' },
