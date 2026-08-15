@@ -1639,6 +1639,48 @@ export function shouldRetryNovaOnPrematureClose(args: {
     !args.alreadyRetried
   );
 }
+
+/**
+ * VTID-03636: should a Nova close be treated as a watchdog stall recovery —
+ * i.e. reconnect Nova itself, never Vertex?
+ *
+ * `startResponseWatchdog` (this file) is provider-agnostic: when the model
+ * goes silent mid-turn it force-terminates whatever `session.upstreamWs`
+ * currently is (Vertex's raw WebSocket, or the Nova ws-facade) and sets
+ * `_stallRecoveryPending = true` so the close handler reconnects instead of
+ * treating it as a disconnect. The Vertex raw-WS close handler has honored
+ * that flag since VTID-STREAM-RECONNECT (`classifyUpstreamClose` treats it
+ * exactly like Vertex's own code=1000 session-expiry close). This Nova
+ * close handler never checked it.
+ *
+ * Measured live (session live-d5cfc38d, 2026-08-13): turn 4 stalled mid-
+ * response for 20s, the watchdog fired and terminated the stream — and the
+ * session was silently abandoned. `shouldRetryNovaOnPrematureClose` was
+ * gated on `!alreadyRetried` (the one retry budget had already been spent
+ * recovering the session's first-connect content-filter block, a near-
+ * universal Nova failure mode — see VTID-03557), and both that predicate
+ * and `shouldFallbackToVertexOnNovaClose` are gated on `!hasProducedAudio`
+ * (false here — three prior turns had already produced real audio). Every
+ * existing gate protects a DIFFERENT scenario (retry budget, zero-audio
+ * fallback) and none of them recognizes "the watchdog wants a reconnect".
+ * This predicate is deliberately the inverse of the other two on the two
+ * signals that matter: it fires BECAUSE the close was initiated locally
+ * (the watchdog's own `.terminate()`) and regardless of prior audio — a
+ * mid-conversation stall is not the same failure as a premature close at
+ * connect, so it must not compete for the same retry/fallback budgets.
+ *
+ * Reconnects Nova itself via the normal provider-selection path — this
+ * branch never sets `_novaFallbackToVertex`, so Nova stays the sole active
+ * voice provider.
+ */
+export function shouldReconnectNovaOnStall(args: {
+  sessionActive: boolean;
+  rotationInFlight: boolean;
+  /** Set by startResponseWatchdog immediately before it terminates the stream. */
+  stallRecoveryPending: boolean;
+}): boolean {
+  return args.sessionActive && args.stallRecoveryPending && !args.rotationInFlight;
+}
 // VTID-03495: Polly seam for the /tts route. No-ops unless TTS_PROVIDER=polly.
 import { tryPollySynthesis } from '../services/tts/tts-provider';
 import { resolveNovaSonicVoice } from '../orb/live/voice/nova-sonic-voice';
@@ -8055,6 +8097,64 @@ async function connectToLiveAPI(
             });
             return;
           }
+
+          // VTID-03636: a watchdog-triggered stall recovery reconnects Nova
+          // itself and must be handled BEFORE the retry/fallback checks below
+          // — those two are gated on signals (retry budget, zero audio) that
+          // describe a different failure (a premature close at connect), and
+          // a mid-conversation stall would otherwise fall through both of
+          // them plus the generic disconnect notice (also gated on
+          // !initiated_locally, which is false here since the watchdog itself
+          // called .terminate()) and be silently abandoned. See
+          // shouldReconnectNovaOnStall's doc comment for the full trace.
+          const stallRecoveryPending = (session as any)._stallRecoveryPending === true;
+          if (shouldReconnectNovaOnStall({
+            sessionActive: session.active,
+            rotationInFlight,
+            stallRecoveryPending,
+          })) {
+            (session as any)._stallRecoveryPending = false;
+            console.warn(
+              `[VTID-03636] Nova stall-recovery close for session ${session.sessionId} ` +
+                `(reason=${closeEvent.reason ?? 'unknown'}, turn=${session.turn_count}) — reconnecting Nova.`,
+            );
+            emitDiag(session, 'nova_stall_recovery_reconnect', {
+              provider: 'nova_sonic',
+              reason: closeEvent.reason ?? null,
+              turn_count: session.turn_count,
+            });
+            void emitOasisEvent({
+              type: 'orb.upstream.nova.stall_recovery_reconnect',
+              vtid: 'VTID-03636',
+              payload: {
+                session_id: session.sessionId,
+                provider: 'nova_sonic',
+                reason: closeEvent.reason ?? null,
+                status: 'warning',
+              } as any,
+            } as any).catch(() => { /* best-effort */ });
+
+            void attemptTransparentReconnect(
+              session,
+              onAudioResponse,
+              onTextResponse,
+              onError,
+              onTurnComplete,
+              onInterrupted,
+            ).then((ok) => {
+              if (!ok) {
+                console.warn(
+                  `[VTID-03636] Nova stall-recovery reconnect failed outright for session ${session.sessionId}.`,
+                );
+                emitConnectionIssue(session, 'upstream_disconnected');
+              }
+            }).catch((e) => {
+              console.warn(`[VTID-03636] Nova stall-recovery reconnect threw: ${(e as Error).message}`);
+              emitConnectionIssue(session, 'upstream_disconnected');
+            });
+            return;
+          }
+
           // VTID-03557: one fresh Nova retry BEFORE the VTID-03502 Vertex
           // fallback below pins the session away from Nova. Every measured
           // "Premature close" is Node's own stream-teardown error, not our
