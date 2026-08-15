@@ -1619,6 +1619,36 @@ export function shouldFallbackToVertexOnNovaClose(args: {
 }
 
 /**
+ * VTID-03647 — should a Nova content-filter block on a session carrying an
+ * EXPLICIT guided-topic request (a My Journey chapter tap) skip the
+ * VTID-03557 same-provider retry and go straight to the VTID-03502 Vertex
+ * fallback? Deliberately NOT gated on `hasProducedAudio` the way
+ * `shouldFallbackToVertexOnNovaClose` is — measured live (34 content-filter
+ * blocks over 3 days) that a same-provider retry is unreliable for this
+ * exact instruction shape regardless of how much audio the blocked attempt
+ * produced before dying, and an explicit, direct user request must never be
+ * silently substituted with a generic greeting to avoid one extra provider
+ * hop.
+ */
+export function shouldFallbackToVertexOnGuidedTopicContentFilterBlock(args: {
+  closeReason: string | null;
+  hasGuidedTopicRequest: boolean;
+  sessionActive: boolean;
+  initiatedLocally: boolean;
+  rotationInFlight: boolean;
+  alreadyFellBack: boolean;
+}): boolean {
+  return (
+    args.closeReason === 'nova_validation' &&
+    args.hasGuidedTopicRequest &&
+    args.sessionActive &&
+    !args.initiatedLocally &&
+    !args.rotationInFlight &&
+    !args.alreadyFellBack
+  );
+}
+
+/**
  * VTID-03557: should a Nova stream that died before any audio get ONE fresh
  * Nova retry before VTID-03502's Vertex fallback pins the session away from
  * Nova for good?
@@ -8080,6 +8110,75 @@ async function connectToLiveAPI(
             });
             return;
           }
+          // VTID-03647: a Nova content-filter block ("This request has been
+          // blocked by our content filters", diag code nova_validation) on a
+          // session carrying an EXPLICIT guided-topic request (the user
+          // tapped a specific My Journey chapter) must not retry the SAME
+          // provider — measured live (34 occurrences over 3 days, 2026-08-12
+          // → 08-15) that Nova is unreliable for this exact instruction
+          // shape, whether the block is transient (a same-provider retry can
+          // still hit it again) or Nova simply doesn't comply with the
+          // "say exactly this specific lesson, then stop" pattern the way
+          // Gemini/Vertex did (VTID-03293 — this whole mechanism was built
+          // and validated against Vertex, never Nova). Losing an explicit,
+          // direct user request to a silently-substituted generic greeting
+          // is worse than the extra latency of a provider hop, so this
+          // bypasses the VTID-03557 same-provider retry below entirely and
+          // goes straight to the VTID-03502 Vertex-fallback machinery —
+          // reusing it exactly, not a parallel implementation.
+          const shouldFallbackOnGuidedTopicBlock = shouldFallbackToVertexOnGuidedTopicContentFilterBlock({
+            closeReason: closeEvent.reason ?? null,
+            hasGuidedTopicRequest: !!(session as any).guidedTopicNarrationContent,
+            sessionActive: session.active,
+            initiatedLocally: closeEvent.initiatedLocally === true,
+            rotationInFlight,
+            alreadyFellBack: (session as any)._novaFallbackToVertex === true,
+          });
+          if (shouldFallbackOnGuidedTopicBlock) {
+            console.warn(
+              `[VTID-03647] Nova content filter blocked a guided-topic request for session ` +
+                `${session.sessionId} — falling back to Vertex instead of retrying Nova.`,
+            );
+            (session as any)._novaFallbackToVertex = true;
+            emitDiag(session, 'nova_guided_topic_content_filter_fallback', {
+              provider: 'nova_sonic',
+              reason: closeEvent.reason ?? null,
+            });
+            void emitOasisEvent({
+              type: 'orb.upstream.nova.guided_topic_content_filter_fallback',
+              vtid: 'VTID-03647',
+              payload: {
+                session_id: session.sessionId,
+                from: 'nova_sonic',
+                to: 'vertex',
+                reason: closeEvent.reason ?? null,
+                status: 'warning',
+              } as any,
+            } as any).catch(() => { /* best-effort */ });
+
+            void attemptTransparentReconnect(
+              session,
+              onAudioResponse,
+              onTextResponse,
+              onError,
+              onTurnComplete,
+              onInterrupted,
+            ).then((ok) => {
+              if (!ok) {
+                console.warn(
+                  `[VTID-03647] Vertex fallback reconnect failed for session ${session.sessionId}.`,
+                );
+                emitConnectionIssue(session, 'upstream_disconnected');
+                return;
+              }
+              resendGreetingIfStuckAtZeroTurns(session, 'VTID-03647-guided-topic-fallback');
+            }).catch((e) => {
+              console.warn(`[VTID-03647] Vertex fallback reconnect threw: ${(e as Error).message}`);
+              emitConnectionIssue(session, 'upstream_disconnected');
+            });
+            return;
+          }
+
           // VTID-03557: one fresh Nova retry BEFORE the VTID-03502 Vertex
           // fallback below pins the session away from Nova. Every measured
           // "Premature close" is Node's own stream-teardown error, not our
