@@ -11,6 +11,7 @@
  */
 
 import type { GuidedTopicNarrationContent } from '../../../services/assistant-continuation/providers/guided-topic-narration';
+import { LOCALE_ENGLISH_NAME, resolveLocaleStrict } from '../../../i18n/catalog';
 
 /**
  * The SPOKEN opener LINE. CRITICAL transport constraint (same as the journey
@@ -138,7 +139,18 @@ export function buildGuidedTopicNarrationBlock(
   // teaching material below is authored in German (the KB), and the previous
   // vague "speak in the user's language" let the German source pull the model
   // into German for English (and other non-German) users mid-session.
-  const langName = lang === 'es' ? 'Spanish' : lang === 'sr' ? 'Serbian' : lang === 'fr' ? 'French' : 'English';
+  //
+  // VTID-03644: this used to be a local 4-way ternary (es/sr/fr/else-English)
+  // — a 4th undocumented copy of exactly the "language name lives in three
+  // places, a new locale updates some and not others" bug VTID-03509 already
+  // fixed once for the notification catalog (see catalog.ts's own comment on
+  // LOCALE_ENGLISH_NAME). Every locale not in that ternary — pt, ru, pl (all
+  // already GA/beta) and every one of the 9-language rollout's new locales —
+  // was silently told "Speak ONLY in English" here. Reuse the shared registry
+  // instead of re-declaring it a 4th time.
+  // resolveLocaleStrict (not normalizeLocale) so an empty/unrecognized `lang`
+  // keeps the previous fallback to English rather than silently becoming German.
+  const langName = LOCALE_ENGLISH_NAME[resolveLocaleStrict(lang) ?? 'en'] || 'English';
   return [
     '',
     '## GUIDE MODE (TEACH) — you INTRODUCE this topic and TEACH it',

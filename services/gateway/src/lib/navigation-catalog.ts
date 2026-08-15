@@ -309,7 +309,24 @@ const STOPWORDS = new Set<string>([
   'auch', 'noch', 'schon', 'mal', 'doch', 'eben', 'halt',
   'für', 'mit', 'von', 'bei', 'aus', 'nach', 'zu', 'zur', 'zum', 'auf', 'in',
   'gehe', 'gehen', 'geht', 'mache', 'machen', 'macht', 'tue', 'tun', 'tut',
-  'sehe', 'sehen', 'sieht', 'zeige', 'zeigen', 'zeigt',
+  'sehe', 'sehen', 'sieht',
+  // VTID-03627: 'zeig' is the bare imperative of 'zeigen' ("Zeig mir X" —
+  // the single most common way a German speaker phrases "show me X"). Its
+  // conjugated siblings ('zeige', 'zeigen', 'zeigt') were already here; the
+  // imperative was missing, so it survived tokenization as a real query
+  // token. Several when_to_visit hints embed a literal example utterance
+  // beginning "zeig mir ..." (REMINDERS.OVERVIEW's "zeig mir meine
+  // Erinnerungen", OVERLAY.VITANA_INDEX's "zeig mir meinen Score",
+  // COMM.FIND_PARTNER_MATCHES' "zeig meine Matches") — any query that
+  // happened to open with "Zeig mir" picked up a spurious hint-word hit on
+  // whichever of those three came first, regardless of what the rest of the
+  // sentence was actually asking for. Reported live as VTID-03624 ("Zeig
+  // mir, wo ich meine Schritte eintragen kann" landing on Reminders/Index/
+  // Journey) — that fix added HEALTH.TRACKER's missing steps/Schritte
+  // coverage, which is necessary but not sufficient: without this stopword,
+  // a "Zeig mir X" query can still lose to a spurious hint match on a
+  // screen with nothing to do with X.
+  'zeig', 'zeige', 'zeigen', 'zeigt',
 ]);
 
 export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
@@ -2391,10 +2408,16 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
   {
     screen_id: 'HEALTH.TRACKER', route: '/health-tracker', category: 'health',
     access: 'authenticated', anonymous_safe: false,
-    aliases: ['health-tracker', 'tracker', 'my-health-tracker', '/health/my-health-tracker'],
+    // VTID-03594: 'steps'/'schritte' added — this is the actual step-logging
+    // screen but carried no step-related keyword anywhere (title, description,
+    // hint, or alias), so a query like "wo ich meine Schritte eintragen kann"
+    // scored zero matches here and the navigator fell through to unrelated
+    // entries (Reminders / Vitana Index / My Journey) that happened to share
+    // other tokens instead.
+    aliases: ['health-tracker', 'tracker', 'my-health-tracker', '/health/my-health-tracker', 'steps', 'schritte', 'step-counter', 'schrittzähler'],
     i18n: {
-      en: { title: 'Health Tracker', description: 'Track your daily health behaviors and Vitana Index movements.', when_to_visit: 'When the user asks to open the health tracker, log a health behavior, track water/sleep/exercise, or see today\'s tracker.' },
-      de: { title: 'Gesundheits-Tracker', description: 'Verfolge dein tägliches Gesundheitsverhalten und Vitana-Index-Bewegungen.', when_to_visit: 'Wenn der Nutzer den Gesundheits-Tracker öffnen, ein Gesundheitsverhalten loggen, Wasser/Schlaf/Bewegung verfolgen oder den heutigen Tracker sehen möchte.' },
+      en: { title: 'Health Tracker', description: 'Track your daily health behaviors and Vitana Index movements.', when_to_visit: 'When the user asks to open the health tracker, log a health behavior, track water/sleep/exercise/steps, or see today\'s tracker.' },
+      de: { title: 'Gesundheits-Tracker', description: 'Verfolge dein tägliches Gesundheitsverhalten und Vitana-Index-Bewegungen.', when_to_visit: 'Wenn der Nutzer den Gesundheits-Tracker öffnen, ein Gesundheitsverhalten loggen, Wasser/Schlaf/Bewegung/Schritte verfolgen, seine Schritte eintragen oder den heutigen Tracker sehen möchte.' },
     },
   },
 

@@ -53,7 +53,10 @@ describe('VTID-03495 Polly voice resolution', () => {
   // pt/pl taking the English fallback: iterating the voice table can only
   // tell you what IS there, never what the platform ships and is missing.
   it('covers every release locale, with sr the one declared gap', () => {
-    const RELEASE_LOCALES = ['de', 'en', 'es', 'sr', 'fr', 'pt', 'pl', 'ru', 'zh'];
+    // VTID-03644: ar added (9-language activation prep). Polly already had a
+    // voice for it (see the resolution test above) — this list just needed
+    // to catch up to GATEWAY_LOCALES.
+    const RELEASE_LOCALES = ['de', 'en', 'es', 'sr', 'fr', 'pt', 'pl', 'ru', 'zh', 'ar'];
     const missing = RELEASE_LOCALES.filter(
       (l) => resolvePollyVoice(l) === null && !POLLY_UNSUPPORTED_LANGS.has(l),
     );
