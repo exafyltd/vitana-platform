@@ -87,6 +87,10 @@ on:
         description: 'Set ORB_IDLE_NO_ENGAGEMENT_MS — reap budget for a live session with zero engagement (default 300000; EMPTY = preserve)'
         required: false
         default: ''
+      orb_newday_overview_rung_enabled:
+        description: 'Set ORB_NEWDAY_OVERVIEW_RUNG_ENABLED — false kills the rich new-day briefing opener and falls back to the wake-brief line (false/true; EMPTY = preserve, code default is ON)'
+        required: false
+        default: ''
       # VTID-03563: Claude-always-on-Bedrock is standing governance (CLAUDE.md
       # ALWAYS 10a). These exist so the activation gate lives in a diffable
       # file instead of only in live AWS state — the failure mode VTID-03513
@@ -327,6 +331,7 @@ jobs:
           NOVA_TENANTS_INPUT: ${{ inputs.nova_canary_tenant_ids }}
           NOVA_GLOBAL_INPUT: ${{ inputs.nova_sonic_global_enabled }}
           ORB_IDLE_NO_ENGAGEMENT_INPUT: ${{ inputs.orb_idle_no_engagement_ms }}
+          ORB_NEWDAY_RUNG_INPUT: ${{ inputs.orb_newday_overview_rung_enabled }}
           BEDROCK_ROLE_ARN_INPUT: ${{ inputs.bedrock_role_arn }}
           BEDROCK_MODEL_ID_INPUT: ${{ inputs.bedrock_model_id }}
           AWS_BEDROCK_REGION_INPUT: ${{ inputs.aws_bedrock_region }}
@@ -527,6 +532,36 @@ jobs:
               .containerDefinitions[0].environment |=
                 ( [ .[] | select(.name != "ORB_IDLE_NO_ENGAGEMENT_MS") ]
                   + [ {name:"ORB_IDLE_NO_ENGAGEMENT_MS", value:$I} ] )')
+          fi
+
+          # VTID-03646: the kill switch for the rich new-day briefing opener.
+          #
+          # Deliberately an EMPTY-preserving INPUT and not pinned like the two
+          # flags above, because it is not the same kind of thing. Those pin a
+          # value prod must always have; this is an emergency OFF for a rung
+          # whose code default is now ON. Pinning "true" here would make the
+          # switch unreachable without a PR — the opposite of why it exists.
+          #
+          # Read as `!== 'false'` (orb-live.ts, module load), so any value
+          # other than the exact string "false" leaves the briefing enabled.
+          #
+          # When you would set this to false: the briefing is speaking content
+          # that trips Bedrock's Nova content filter at turn_count=0, and the
+          # session is stuck in the "einen Moment, ich verbinde mich neu" retry
+          # loop (VTID-03628's symptom). Note that was diagnosed once already
+          # and the rung was NOT the cause — it had never fired in production
+          # at all (its guard rejected on a missing first name, VTID-03646),
+          # and the filter blocks continued for days after it was disabled.
+          # So check `orb.live.diag` / `stage=upstream_error` against
+          # `wake_opener` before reaching for this: if the blocked sessions are
+          # not reporting `newday_overview`, turning this off costs you the
+          # briefing and fixes nothing.
+          if [ -n "$ORB_NEWDAY_RUNG_INPUT" ]; then
+            echo "Applying new-day briefing rung: ORB_NEWDAY_OVERVIEW_RUNG_ENABLED=$ORB_NEWDAY_RUNG_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg N "$ORB_NEWDAY_RUNG_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "ORB_NEWDAY_OVERVIEW_RUNG_ENABLED") ]
+                  + [ {name:"ORB_NEWDAY_OVERVIEW_RUNG_ENABLED", value:$N} ] )')
           fi
 
           # VTID-03563: Claude-always-on-Bedrock (CLAUDE.md ALWAYS 10a).
