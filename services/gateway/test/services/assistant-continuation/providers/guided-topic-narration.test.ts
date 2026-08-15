@@ -114,7 +114,16 @@ describe('guided-topic-narration provider', () => {
     expect(c.guidedTopicNarration.topic_id).toBe('T001');
     expect(c.guidedTopicNarration.voice_script).toContain('Vitanaland');
     expect(c.guidedTopicNarration.practice_target).toBe('community');
-    expect(mockGetOrbTopicSeed).toHaveBeenCalledWith(FAKE_SB, 'T001', 'v2');
+    // VTID-03644: locale is now forwarded so the seed overlays
+    // journey_checklist_translations instead of always narrating German.
+    expect(mockGetOrbTopicSeed).toHaveBeenCalledWith(FAKE_SB, 'T001', 'v2', 'de');
+  });
+
+  it('VTID-03644: forwards a non-German lang as the seed locale', async () => {
+    mockGetOrbTopicSeed.mockResolvedValue(SEED);
+    const p = makeGuidedTopicNarrationProvider();
+    await p.produce(makeCtx({ lang: 'pt' }));
+    expect(mockGetOrbTopicSeed).toHaveBeenCalledWith(FAKE_SB, 'T001', 'v2', 'pt');
   });
 
   it('greets by name when firstName is provided', async () => {
