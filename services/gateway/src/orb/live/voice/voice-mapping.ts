@@ -64,6 +64,20 @@ const NEURAL2_ENABLED_LANGUAGES_FALLBACK: ReadonlyArray<string> = [
 // Accessors
 // =============================================================================
 
+/**
+ * VTID-03641: languages this table has EVER had a Vertex/Gemini Live fallback
+ * voice wired for — static, matching `getLiveLanguageVoice`'s own safety net,
+ * not the DB-backed override (that would make the predicate impure and
+ * network-dependent, which `needsPollyOnlyVoice` — a selector input — cannot
+ * be; see upstream-provider-selector.ts's "the selector is a pure function"
+ * contract). A language DB-promoted to a real voice later should also gain a
+ * fallback entry here, or this set drifts from what `getLiveLanguageVoice`
+ * would actually resolve to for a cold cache.
+ */
+export const VERTEX_VOICE_FALLBACK_LANGUAGES: ReadonlySet<string> = new Set(
+  Object.keys(LIVE_LANGUAGE_VOICE_FALLBACKS),
+);
+
 export function getLiveLanguageVoice(lang: string): string {
   const safeLang = typeof lang === 'string' && lang.length > 0 ? lang : 'en';
   const fallback = LIVE_LANGUAGE_VOICE_FALLBACKS[safeLang] ?? LIVE_LANGUAGE_VOICE_FALLBACKS['en'];
