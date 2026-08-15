@@ -104,35 +104,37 @@ describe('applyTranslations', () => {
 // erroring or being refused.
 // ---------------------------------------------------------------------------
 describe('curriculum locale surface (VTID-03509)', () => {
-  const RELEASE_LOCALES = ['de', 'en', 'es', 'sr', 'fr', 'pt', 'ru', 'pl', 'zh'] as const;
+  const RELEASE_LOCALES = ['de', 'en', 'es', 'sr', 'fr', 'pt', 'ru', 'pl', 'zh', 'ar'] as const;
 
   it('accepts every release locale as a ChecklistLocale', () => {
     // Compile-time assertion: if ChecklistLocale ever narrows again, this fails
     // to typecheck rather than silently rejecting locales at runtime.
     const locales: ChecklistLocale[] = [...RELEASE_LOCALES];
-    expect(locales).toHaveLength(9);
+    expect(locales).toHaveLength(10);
     expect(GATEWAY_LOCALES).toEqual(expect.arrayContaining([...RELEASE_LOCALES]));
   });
 
   it('exposes exactly the release locale set — no more, no less', () => {
     // Guards both directions: a locale added to the gateway without a curriculum
     // decision, and a release locale quietly dropped.
-    // VTID-03569 added zh. This assertion asks for a CURRICULUM DECISION when a
-    // locale reaches the gateway, and the decision is: serve it. zh behaves
-    // exactly like fr/pt/ru/pl did on arrival — zero rows in
+    // VTID-03569 added zh; VTID-03644 added ar (the 9-language activation prep
+    // — de plus 9 non-German locales). Each addition is a deliberate CURRICULUM
+    // DECISION when a locale reaches the gateway, and the decision is: serve it.
+    // ar behaves exactly like fr/pt/ru/pl/zh did on arrival — zero rows in
     // journey_checklist_translations, so the curriculum degrades to the authored
     // German source rather than erroring or refusing the request. Serving German
-    // to a zh reader is the honest failure; refusing the request is not.
+    // to an ar reader is the honest failure; refusing the request is not.
     expect([...GATEWAY_LOCALES].sort()).toEqual(
-      ['de', 'en', 'es', 'fr', 'pl', 'pt', 'ru', 'sr', 'zh'],
+      ['ar', 'de', 'en', 'es', 'fr', 'pl', 'pt', 'ru', 'sr', 'zh'],
     );
   });
 
   it('serves the German source verbatim for a locale with no translation rows', () => {
-    // fr/pt/ru/pl have zero rows in journey_checklist_translations today. The
-    // curriculum must still render — degraded to German, never empty or broken.
+    // fr/pt/ru/pl/ar have zero-or-near-zero rows in journey_checklist_translations
+    // today. The curriculum must still render — degraded to German, never empty
+    // or broken.
     const topics = [deTopic('T001'), deTopic('T002')];
-    for (const _locale of ['fr', 'pt', 'ru', 'pl'] as const) {
+    for (const _locale of ['fr', 'pt', 'ru', 'pl', 'ar'] as const) {
       const out = applyTranslations(topics, []);
       expect(out).toEqual(topics);
       expect(out[0].displayLabel).toBe('Sektor-Fit');
