@@ -32,12 +32,33 @@ import pt from '../../src/i18n/locales/pt.json';
 import ru from '../../src/i18n/locales/ru.json';
 import pl from '../../src/i18n/locales/pl.json';
 import zh from '../../src/i18n/locales/zh.json';
+// VTID-03644: ar registered (9-language activation prep) but deliberately
+// ships EMPTY — see the note above `FULLY_TRANSLATED_LOCALES` below for why
+// this is not treated the same as the other 8 by the coverage/fidelity/
+// placeholder suites.
+import ar from '../../src/i18n/locales/ar.json';
 
 const RAW: Record<GatewayLocale, Record<string, string>> = {
-  de, en, es, sr, fr, pt, ru, pl, zh,
+  de, en, es, sr, fr, pt, ru, pl, zh, ar,
 };
 
 const KEYS = Object.keys(de) as GatewayI18nKey[];
+
+// VTID-03644 — locales that are REGISTERED (GATEWAY_LOCALES) but not yet
+// EXPECTED to have full coverage. `ar` was added for the 9-language rollout
+// with an intentionally empty catalog (`{}`) rather than a copy of English —
+// VTID-03509's own lesson is that a fake "complete" translation is worse than
+// an honest gap, because it defeats every coverage check silently. So `ar` is
+// carved OUT of the "must be 100%" suites below and gets its own explicit
+// "is honestly incomplete, and tt() falls back visibly" assertion instead.
+// Promote it out of this list (and its `supported_locales.status` out of
+// 'draft') once it goes through the normal translate+audit pipeline
+// (`docs/DB-CONTENT-I18N.md`-adjacent workflow: `scripts/translate-keys.mjs`
+// + `i18n-audit-llm.yml`), the same graduation path every other locale here
+// took.
+const FULLY_TRANSLATED_LOCALES: GatewayLocale[] = GATEWAY_LOCALES.filter(
+  (l) => l !== 'ar',
+) as GatewayLocale[];
 
 /** Placeholder names in a string, sorted — `{count}` etc. */
 function placeholders(s: string): string[] {
@@ -45,23 +66,34 @@ function placeholders(s: string): string[] {
 }
 
 describe('gateway i18n catalog coverage', () => {
-  it('ships all 9 registered locales', () => {
-    // zh added VTID-03569. This assertion is deliberately an exact list rather
-    // than a count: it is the one place a locale silently disappearing from
-    // GATEWAY_LOCALES — and therefore falling back to German for every push
-    // notification — would be caught.
+  it('ships all 10 registered locales', () => {
+    // zh added VTID-03569; ar added VTID-03644. This assertion is deliberately
+    // an exact list rather than a count: it is the one place a locale silently
+    // disappearing from GATEWAY_LOCALES — and therefore falling back to German
+    // for every push notification — would be caught.
     expect([...GATEWAY_LOCALES].sort()).toEqual(
-      ['de', 'en', 'es', 'fr', 'pl', 'pt', 'ru', 'sr', 'zh'],
+      ['ar', 'de', 'en', 'es', 'fr', 'pl', 'pt', 'ru', 'sr', 'zh'],
     );
   });
 
-  it.each(GATEWAY_LOCALES)('%s has every key DE has', (locale) => {
+  it.each(FULLY_TRANSLATED_LOCALES)('%s has every key DE has', (locale) => {
     expect(missingKeysForLocale(locale)).toEqual([]);
   });
 
-  it.each(GATEWAY_LOCALES)('%s has no empty values', (locale) => {
+  it.each(FULLY_TRANSLATED_LOCALES)('%s has no empty values', (locale) => {
     const empty = KEYS.filter((k) => !String(RAW[locale][k] ?? '').trim());
     expect(empty).toEqual([]);
+  });
+
+  it('ar is honestly incomplete (registered, not yet translated) and tt() falls back visibly', () => {
+    // The assertion this test guards against: shipping `{ ...en }` for ar to
+    // make the coverage suite pass, which is precisely the bug VTID-03509 dug
+    // this whole file out of. Missing 100% of DE's keys is the correct, honest
+    // state for a locale that has not gone through the translate+audit
+    // pipeline yet — and every push notification for an Arabic user still
+    // renders (via the EN → DE fallback chain in `tt()`), never a raw key.
+    expect(missingKeysForLocale('ar')).toEqual(KEYS);
+    expect(tt('notif.diary_reminder.title', 'ar')).toBe(en['notif.diary_reminder.title']);
   });
 });
 
@@ -91,7 +123,7 @@ describe('gateway i18n placeholder integrity', () => {
   // A translator dropping {count} or renaming it to {cantidad} produces a
   // grammatical sentence with a missing number — invisible to a reviewer who
   // does not speak the language, and only ever seen by the affected users.
-  it.each(GATEWAY_LOCALES)('%s preserves every {placeholder} exactly', (locale) => {
+  it.each(FULLY_TRANSLATED_LOCALES)('%s preserves every {placeholder} exactly', (locale) => {
     const broken = KEYS.filter(
       (k) => placeholders(RAW[locale][k]).join(',') !== placeholders(en[k]).join(','),
     ).map((k) => `${k}: en{${placeholders(en[k])}} vs ${locale}{${placeholders(RAW[locale][k])}}`);

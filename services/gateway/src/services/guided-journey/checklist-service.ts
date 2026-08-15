@@ -412,6 +412,31 @@ export async function getPublishedChecklist(
   return result;
 }
 
+/** Overlay a single-topic translation row onto an ORB seed's translatable
+ *  fields (displayLabel + explanation). `vitanaVoiceScript` has no translated
+ *  column in `journey_checklist_translations` (VTID-03515 schema) and stays
+ *  the German source — the spoken-lesson builders already carry an explicit
+ *  "translate this faithfully into {language}" instruction for that field. */
+function applyTranslationToSeed(
+  seed: OrbTopicSeed,
+  translations: ChecklistTranslationRow[],
+): OrbTopicSeed {
+  const tr = translations.find((t) => t.topic_id === seed.topicId);
+  if (!tr) return seed;
+  const pick = (translated: string | null | undefined, source: string | null) =>
+    translated != null && translated !== '' ? translated : source;
+  return {
+    ...seed,
+    displayLabel: pick(tr.display_label, seed.displayLabel) ?? seed.displayLabel,
+    explanation: {
+      whatItIs: pick(tr.explanation_what_it_is, seed.explanation.whatItIs),
+      userBenefit: pick(tr.explanation_user_benefit, seed.explanation.userBenefit),
+      whenToUse: pick(tr.explanation_when_to_use, seed.explanation.whenToUse),
+      tryThis: pick(tr.explanation_try_this, seed.explanation.tryThis),
+    },
+  };
+}
+
 /**
  * VTID-03289 — the ORB voice bridge pickup. Given a tapped topicId, return the
  * narration seed (voice script + explanation + redirect target) for the ORB to
@@ -419,11 +444,19 @@ export async function getPublishedChecklist(
  * unpublished draft edits never leak into live narration — and only falls back
  * to the live draft when nothing is published yet (bootstrap), mirroring
  * `getPublishedChecklist`. Returns null when the topic is not live.
+ *
+ * VTID-03644: accepts `locale` and overlays `journey_checklist_translations`
+ * the same way `getPublishedChecklist` does for the text reading view. Before
+ * this fix the seed was ALWAYS the German source regardless of the tapping
+ * user's language, so guided-topic voice teaching relied entirely on the
+ * model correctly live-translating a German script rather than reusing the
+ * already-reviewed translated content the static My Journey view reads.
  */
 export async function getOrbTopicSeed(
   client: SupabaseClient,
   topicId: string,
   curriculumVersion = 'v2',
+  locale: ChecklistLocale = 'de',
 ): Promise<OrbTopicSeed | null> {
   const { data: ver, error } = await client
     .from(V)
@@ -433,32 +466,42 @@ export async function getOrbTopicSeed(
     .maybeSingle();
   if (error) throw error;
 
+  let seed: OrbTopicSeed | null = null;
+
   // A published version is authoritative: if it exists, the ORB narrates ONLY
   // what's in it. A topic absent from the snapshot (gated/disabled at publish)
   // is intentionally not live → no seed, no draft peek.
   if (ver && Array.isArray((ver as any).snapshot)) {
     const snap = (ver as any).snapshot as SnapshotChecklistTopic[];
     const hit = snap.find((t) => t.topicId === topicId);
-    if (!hit) return null;
-    return {
-      topicId: hit.topicId,
-      displayLabel: hit.displayLabel,
-      vitanaVoiceScript: hit.vitanaVoiceScript ?? null,
-      explanation: hit.explanation,
-      guidedPracticeTarget: hit.guidedPracticeTarget ?? null,
-      source: 'published',
-    };
+    if (hit) {
+      seed = {
+        topicId: hit.topicId,
+        displayLabel: hit.displayLabel,
+        vitanaVoiceScript: hit.vitanaVoiceScript ?? null,
+        explanation: hit.explanation,
+        guidedPracticeTarget: hit.guidedPracticeTarget ?? null,
+        source: 'published',
+      };
+    }
+  } else {
+    // Bootstrap fallback: nothing published yet → read the live draft row.
+    const draft = await getTopic(client, topicId);
+    if (draft && draft.enabled && draft.status !== 'disabled') {
+      seed = {
+        topicId: draft.topicId,
+        displayLabel: draft.displayLabel,
+        vitanaVoiceScript: draft.vitanaVoiceScript,
+        explanation: draft.explanation,
+        guidedPracticeTarget: draft.guidedPracticeTarget,
+        source: 'draft_fallback',
+      };
+    }
   }
 
-  // Bootstrap fallback: nothing published yet → read the live draft row.
-  const draft = await getTopic(client, topicId);
-  if (!draft || !draft.enabled || draft.status === 'disabled') return null;
-  return {
-    topicId: draft.topicId,
-    displayLabel: draft.displayLabel,
-    vitanaVoiceScript: draft.vitanaVoiceScript,
-    explanation: draft.explanation,
-    guidedPracticeTarget: draft.guidedPracticeTarget,
-    source: 'draft_fallback',
-  };
+  if (!seed) return null;
+  if (locale === 'de') return seed;
+
+  const translations = await fetchChecklistTranslations(client, locale, [topicId]);
+  return applyTranslationToSeed(seed, translations);
 }

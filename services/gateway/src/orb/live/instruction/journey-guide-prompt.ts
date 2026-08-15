@@ -8,6 +8,7 @@
  */
 
 import type { JourneyGuideContent } from '../../../services/assistant-continuation/providers/journey-guide';
+import { LOCALE_ENGLISH_NAME, resolveLocaleStrict } from '../../../i18n/catalog';
 
 /**
  * VTID-03266 (Fix-6) — the SPOKEN opener LINE for the journey guide.
@@ -145,7 +146,14 @@ export function buildJourneyGuideBlock(
   // GUIDE-MODE blocks. Journey/step material is authored in German, so a vague
   // "speak in the user's language" let the model flip to German for English users
   // mid-session. Naming the language pins it.
-  const langName = lang === 'es' ? 'Spanish' : lang === 'sr' ? 'Serbian' : lang === 'fr' ? 'French' : 'English';
+  //
+  // VTID-03644: was a local 4-way ternary (es/sr/fr/else-English) — the same
+  // undocumented-copy bug fixed in guided-topic-narration-prompt.ts. Reuse the
+  // shared registry so pt/ru/pl and the incoming 9-language rollout locales
+  // aren't silently told "Speak ONLY in English" here too.
+  // resolveLocaleStrict (not normalizeLocale) so an empty/unrecognized `lang`
+  // keeps the previous fallback to English rather than silently becoming German.
+  const langName = LOCALE_ENGLISH_NAME[resolveLocaleStrict(lang) ?? 'en'] || 'English';
   const done = guide.focus_done === true;
 
   // VTID-03266/03267: lead with the already-localized opener line (beat-B aware
