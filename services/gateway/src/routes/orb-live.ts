@@ -8786,6 +8786,12 @@ function resendGreetingIfStuckAtZeroTurns(session: GeminiLiveSession, source: st
     );
     session.greetingSent = false;
     session.greetingTurnIndex = undefined;
+    // VTID-03634 — the user has heard NOTHING yet (that's what turn_count===0
+    // means here), so the resend must speak, not fall into the reconnect-
+    // silence branch just because `_reconnectCount` was bumped by this same
+    // retry. One-shot flag consumed by sendGreetingPromptToLiveAPI's
+    // decideOpening() call below.
+    (session as any)._freshOpenAfterZeroTurnRecovery = true;
     if (session.upstreamWs && session.upstreamWs.readyState === WebSocket.OPEN) {
       sendGreetingPromptToLiveAPI(session.upstreamWs, session);
     }
@@ -9465,10 +9471,27 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   // per-connection setup and less stable mobile transport made re-opens (and
   // thus the bug) far more frequent, which is why it surfaced now.
   const _cadenceBucketPre = describeTimeSince(session.lastSessionInfo).bucket;
+  // VTID-03634 — a server-internal Nova retry (content-filter block or
+  // premature-close on the FIRST connection attempt, VTID-03557/VTID-03502)
+  // bumps `_reconnectCount` before `resendGreetingIfStuckAtZeroTurns` calls
+  // back in here. `decideOpening`'s reconnect branch is correct for a genuine
+  // mid-conversation transport hiccup (the user already heard something, so
+  // silently continuing is right) — but here the user has heard NOTHING at
+  // all yet (turn_count===0, the original greeting never reached them), so
+  // `isReconnect: true` produced permanent silence on the user's very first
+  // connection: they open ORB, the widget shows "listening", and Vitana never
+  // speaks. Live report: "not even connecting... then listening mode but not
+  // listening at all". `_freshOpenAfterZeroTurnRecovery` is a one-shot flag
+  // set only by that exact recovery path (never by a real mid-conversation
+  // reconnect, which has turn_count > 0) so this treats the recomputed
+  // opener as a FRESH open instead of a silent reconnect, without touching
+  // `_reconnectCount` itself (still used for MAX_RECONNECTS and elsewhere).
+  const _freshOpenAfterZeroTurnRecovery = (session as any)._freshOpenAfterZeroTurnRecovery === true;
+  (session as any)._freshOpenAfterZeroTurnRecovery = false;
   const _openDecision = decideOpening({
     isAnonymous: !!session.isAnonymous,
     hasResumptionHandle: !!session.resumptionHandle,
-    isReconnect: ((session as any)._reconnectCount || 0) > 0,
+    isReconnect: !_freshOpenAfterZeroTurnRecovery && ((session as any)._reconnectCount || 0) > 0,
     wakeSelectedLine: _wb?.selectedContinuation?.userFacingLine ?? null,
     wakeSelectedKind: _wb?.selectedContinuation?.kind ?? null,
     lastOpenerLine: (session as any)._lastOpenerLine ?? null,
@@ -9523,7 +9546,23 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
       openDecision: { mode: _openDecision.mode, source: _openDecision.source, line: _openDecision.line },
       guidedTopicNarrationContent: (session as any).guidedTopicNarrationContent ?? null,
       wakeBriefDecisionId: (_wb as any)?.decisionId ?? null,
-      silenceOnSkipEnabled: process.env.ORB_GREETING_SILENCE_ON_SKIP_ENABLED !== 'false',
+      // VTID-03635 — rung 9 (silenced_on_cadence) is a SECOND, independent
+      // silencing mechanism, fed by `voiceWakeBriefReason` (the wake-brief
+      // provider's OWN cadence verdict, computed from `_wb.sourceProviderResults`
+      // at session-start time — untouched by the `_freshOpenAfterZeroTurnRecovery`
+      // override above, which only reaches `decideOpening`'s `isReconnect`).
+      // Confirmed live right after VTID-03634 shipped: `wake_opener` moved from
+      // `silent_reconnect` to `silenced_on_cadence` — same zero-turn user, same
+      // dead silence, different rung. Reason values like
+      // `bucket_reconnect_forces_skip` / `greeted_recently_within_window` mean
+      // "a greeting was already dispatched recently", which is exactly as wrong
+      // here as `isReconnect` was: a greeting dispatched to a connection that
+      // died before any audio reached the user was never actually heard.
+      // Disabling the WHOLE rung for this one resend (rather than trying to
+      // adjust the reason string) falls through to override_v2/legacy_default,
+      // both of which speak unconditionally.
+      silenceOnSkipEnabled:
+        !_freshOpenAfterZeroTurnRecovery && process.env.ORB_GREETING_SILENCE_ON_SKIP_ENABLED !== 'false',
       wakeBriefHasSelectedContinuation: (_wb as any)?.selectedContinuation != null,
       voiceWakeBriefReason: _voiceReasonSync,
     };

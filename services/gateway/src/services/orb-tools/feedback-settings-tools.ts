@@ -404,6 +404,7 @@ const SUPPORTED_LANGUAGES: Record<GatewayLocale, { full: string; name: string }>
   ru: { full: 'ru-RU', name: 'Russian (Русский)' },
   pl: { full: 'pl-PL', name: 'Polish (Polski)' },
   zh: { full: 'zh-CN', name: 'Simplified Chinese (简体中文)' },
+  ar: { full: 'ar-SA', name: 'Arabic (العربية)' },
 };
 
 export async function tool_set_language(
