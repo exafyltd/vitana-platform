@@ -8088,27 +8088,47 @@ async function connectToLiveAPI(
           // VTID-03647: a Nova content-filter block ("This request has been
           // blocked by our content filters", diag code nova_validation) on a
           // session carrying an EXPLICIT guided-topic request (the user
-          // tapped a specific My Journey chapter) must not retry the SAME
-          // provider — measured live (34 occurrences over 3 days, 2026-08-12
-          // → 08-15) that Nova is unreliable for this exact instruction
-          // shape, whether the block is transient (a same-provider retry can
-          // still hit it again) or Nova simply doesn't comply with the
-          // "say exactly this specific lesson, then stop" pattern the way
-          // Gemini/Vertex did (VTID-03293 — this whole mechanism was built
-          // and validated against Vertex, never Nova). Losing an explicit,
-          // direct user request to a silently-substituted generic greeting
-          // is worse than the extra latency of a provider hop, so this
-          // bypasses the VTID-03557 same-provider retry below entirely and
-          // goes straight to the VTID-03502 Vertex-fallback machinery —
-          // reusing it exactly, not a parallel implementation.
-          const shouldFallbackOnGuidedTopicBlock = shouldFallbackToVertexOnGuidedTopicContentFilterBlock({
-            closeReason: closeEvent.reason ?? null,
-            hasGuidedTopicRequest: !!(session as any).guidedTopicNarrationContent,
-            sessionActive: session.active,
-            initiatedLocally: closeEvent.initiatedLocally === true,
-            rotationInFlight,
-            alreadyFellBack: (session as any)._novaFallbackToVertex === true,
-          });
+          // tapped a specific My Journey chapter) was rerouted here to the
+          // VTID-03502 Vertex-fallback machinery instead of the VTID-03557
+          // same-provider retry.
+          //
+          // VTID-03650 (2026-08-15, hours after 03647 shipped): DISABLED by
+          // default via this kill switch. Live-traced (session
+          // live-c494ba29-2450-41c2-a308-8e6c47e84d0f) that the Vertex
+          // fallback fires correctly but Vertex ITSELF then rejects the
+          // reconnect — `upstream_ws_close` code 1007 "Request contains an
+          // invalid argument" ~270ms after the resent greeting, i.e. the
+          // same guided-topic content Nova blocked is ALSO rejected by
+          // Vertex, just via a hard connection close instead of a soft
+          // content-filter error. Because `attemptTransparentReconnect`
+          // resolves success optimistically (once the WS opens + setup is
+          // sent, not once Vertex actually accepts it), the code believed
+          // the fallback had succeeded, resent the greeting, and then the
+          // async 1007 close fell into the "genuine disconnect" branch —
+          // which tells the CLIENT to give up (`should_close: true`) rather
+          // than retry. That is what produced the user-visible loop: several
+          // "reconnecting" cues (spanning session live-bf419eed → c494ba29
+          // → 7fbd656d, each a fresh client-side restart) before finally
+          // landing back on a plain Nova conversation — measurably WORSE
+          // than the pre-03647 behavior (straight to the VTID-03557 retry,
+          // which succeeded on its first attempt in the very same incident,
+          // session live-7fbd656d). Re-enable via
+          // `ORB_GUIDED_TOPIC_VERTEX_FALLBACK_ENABLED=true` only after the
+          // Vertex-side rejection is root-caused (candidate: this exact
+          // lesson's raw `voice_script` content, since Nova and Vertex are
+          // independent implementations rejecting the identical text) —
+          // simply routing to a different provider does not fix a payload
+          // both providers reject.
+          const shouldFallbackOnGuidedTopicBlock =
+            process.env.ORB_GUIDED_TOPIC_VERTEX_FALLBACK_ENABLED === 'true' &&
+            shouldFallbackToVertexOnGuidedTopicContentFilterBlock({
+              closeReason: closeEvent.reason ?? null,
+              hasGuidedTopicRequest: !!(session as any).guidedTopicNarrationContent,
+              sessionActive: session.active,
+              initiatedLocally: closeEvent.initiatedLocally === true,
+              rotationInFlight,
+              alreadyFellBack: (session as any)._novaFallbackToVertex === true,
+            });
           if (shouldFallbackOnGuidedTopicBlock) {
             console.warn(
               `[VTID-03647] Nova content filter blocked a guided-topic request for session ` +
