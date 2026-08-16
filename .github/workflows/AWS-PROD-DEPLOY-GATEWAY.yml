@@ -87,6 +87,14 @@ on:
         description: 'Set ORB_IDLE_NO_ENGAGEMENT_MS — reap budget for a live session with zero engagement (default 300000; EMPTY = preserve)'
         required: false
         default: ''
+      # VTID-03649: GCP project billing was disabled, permanently killing
+      # Vertex Live. Without this, sessions whose language/runtime fail
+      # Nova's gates (and Nova's own premature-close recovery) still degrade
+      # to Vertex — now a guaranteed connection failure, not a real fallback.
+      vertex_live_unavailable:
+        description: 'Set VERTEX_LIVE_UNAVAILABLE — true forces Nova through the runtime/language gates instead of degrading to a dead Vertex Live (true/false; EMPTY = preserve)'
+        required: false
+        default: ''
       # VTID-03563: Claude-always-on-Bedrock is standing governance (CLAUDE.md
       # ALWAYS 10a). These exist so the activation gate lives in a diffable
       # file instead of only in live AWS state — the failure mode VTID-03513
@@ -326,6 +334,7 @@ jobs:
           NOVA_TENANTS_INPUT: ${{ inputs.nova_canary_tenant_ids }}
           NOVA_GLOBAL_INPUT: ${{ inputs.nova_sonic_global_enabled }}
           ORB_IDLE_NO_ENGAGEMENT_INPUT: ${{ inputs.orb_idle_no_engagement_ms }}
+          VERTEX_LIVE_UNAVAILABLE_INPUT: ${{ inputs.vertex_live_unavailable }}
           BEDROCK_ROLE_ARN_INPUT: ${{ inputs.bedrock_role_arn }}
           BEDROCK_MODEL_ID_INPUT: ${{ inputs.bedrock_model_id }}
           AWS_BEDROCK_REGION_INPUT: ${{ inputs.aws_bedrock_region }}
@@ -465,6 +474,16 @@ jobs:
               .containerDefinitions[0].environment |=
                 ( [ .[] | select(.name != "NOVA_SONIC_GLOBAL_ENABLED") ]
                   + [ {name:"NOVA_SONIC_GLOBAL_ENABLED", value:$G} ] )')
+          fi
+
+          # VTID-03649: forces Nova through the runtime/language gates instead
+          # of degrading to a permanently-dead Vertex Live.
+          if [ -n "$VERTEX_LIVE_UNAVAILABLE_INPUT" ]; then
+            echo "Applying VERTEX_LIVE_UNAVAILABLE=$VERTEX_LIVE_UNAVAILABLE_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg V "$VERTEX_LIVE_UNAVAILABLE_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "VERTEX_LIVE_UNAVAILABLE") ]
+                  + [ {name:"VERTEX_LIVE_UNAVAILABLE", value:$V} ] )')
           fi
 
           # VTID-03560: idle reap budget for a live session that never engaged.
