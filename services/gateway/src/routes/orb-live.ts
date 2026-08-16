@@ -6917,6 +6917,11 @@ async function connectToLiveAPI(
         // VTID-03501: labels the decision as global-promotion vs canary.
         globalEnabled: __novaCfg.globalEnabled === true,
       },
+      // VTID-emergency-gcp-shutdown: Vertex Live is permanently unreachable
+      // once the GCP project's billing is off. Set VERTEX_LIVE_UNAVAILABLE=true
+      // on the task def to stop the runtime/language gates from routing
+      // anyone toward it.
+      vertexUnavailable: process.env.VERTEX_LIVE_UNAVAILABLE === 'true',
     });
   } catch (e) {
     // Voice/canary config read failure must NOT block the session start;
@@ -8109,7 +8114,11 @@ async function connectToLiveAPI(
             alreadyFellBack: (session as any)._novaFallbackToVertex === true,
           });
 
-          if (novaDiedBeforeAnyAudio) {
+          // VTID-emergency-gcp-shutdown: with Vertex permanently unreachable,
+          // pinning to it and reconnecting is a guaranteed-doomed round trip
+          // that only delays the honest connection_issue signal below. Skip
+          // straight there instead of pretending a Vertex reconnect might work.
+          if (novaDiedBeforeAnyAudio && process.env.VERTEX_LIVE_UNAVAILABLE !== 'true') {
             console.warn(
               `[VTID-03502] Nova stream for session ${session.sessionId} closed before any audio ` +
                 `(reason=${closeEvent.reason ?? 'unknown'}, audio_out=0) — pinning to Vertex and reconnecting.`,
