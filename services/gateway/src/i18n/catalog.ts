@@ -15,11 +15,11 @@
 // see a problem, while Spanish users got English push notifications on their
 // lock screen. Locale files are now `Partial<LocaleCatalog>` and a genuinely
 // missing key falls back visibly (see `tt`), so coverage is measurable.
-export type GatewayLocale = 'de' | 'en' | 'es' | 'sr' | 'fr' | 'pt' | 'ru' | 'pl' | 'zh';
+export type GatewayLocale = 'de' | 'en' | 'es' | 'sr' | 'fr' | 'pt' | 'ru' | 'pl' | 'zh' | 'ar';
 
 /** Every locale the gateway can emit. Order is not significant. */
 export const GATEWAY_LOCALES: readonly GatewayLocale[] = [
-  'de', 'en', 'es', 'sr', 'fr', 'pt', 'ru', 'pl', 'zh',
+  'de', 'en', 'es', 'sr', 'fr', 'pt', 'ru', 'pl', 'zh', 'ar',
 ] as const;
 
 export const GATEWAY_DEFAULT_LOCALE: GatewayLocale = 'de';
@@ -166,7 +166,14 @@ export type GatewayI18nKey =
   // to buy/hire" push when a buyer sends the first contact message via the
   // listing
   | 'notif.listing_interest.title'
-  | 'notif.listing_interest.body';
+  | 'notif.listing_interest.body'
+  // VTID-03604: nightly goodnight push — the "you didn't open ORB tonight"
+  // counterpart to the spoken day-close. Fixed catalog text, not
+  // LLM-composed: unlike the ORB voice path (CLAUDE.md NEVER-rule 41), a
+  // push notification has a fixed contract and must stay translated and
+  // reviewable, same as every other entry in this file.
+  | 'notif.day_close.title'
+  | 'notif.day_close.body';
 
 type LocaleCatalog = Record<GatewayI18nKey, string>;
 
@@ -179,6 +186,12 @@ import ptJson from './locales/pt.json';
 import ruJson from './locales/ru.json';
 import plJson from './locales/pl.json';
 import zhJson from './locales/zh.json';
+// VTID-03645: 'ar' is a live locale in vitana-v1 (RTL) but was never added to
+// the GATEWAY's separate catalog — this is that missing 9th non-German
+// locale. Starts empty (not a copy of EN — VTID-03509's own lesson) so
+// coverage reads honestly as 0% and every key falls back to EN/DE via tt()
+// until real translations land through the normal audit workflow.
+import arJson from './locales/ar.json';
 
 // DE and EN are the two locales that must be complete: DE is the default and
 // EN is the universal fallback, so between them every key is always resolvable.
@@ -197,6 +210,7 @@ const PT: Partial<LocaleCatalog> = ptJson;
 const RU: Partial<LocaleCatalog> = ruJson;
 const PL: Partial<LocaleCatalog> = plJson;
 const ZH: Partial<LocaleCatalog> = zhJson;
+const AR: Partial<LocaleCatalog> = arJson;
 
 const CATALOGS: Record<GatewayLocale, Partial<LocaleCatalog>> = {
   de: DE,
@@ -208,6 +222,7 @@ const CATALOGS: Record<GatewayLocale, Partial<LocaleCatalog>> = {
   ru: RU,
   pl: PL,
   zh: ZH,
+  ar: AR,
 };
 
 /**
@@ -284,6 +299,9 @@ const LANGUAGE_NAME_TO_LOCALE: Record<string, GatewayLocale> = {
   polish: 'pl',
   polnisch: 'pl',
   polski: 'pl',
+  arabic: 'ar',
+  arabisch: 'ar',
+  'العربية': 'ar',
 };
 
 /**
@@ -305,6 +323,7 @@ export const LOCALE_ENGLISH_NAME: Record<GatewayLocale, string> = {
   ru: 'Russian',
   pl: 'Polish',
   zh: 'Chinese (Simplified)',
+  ar: 'Arabic',
 };
 
 /**

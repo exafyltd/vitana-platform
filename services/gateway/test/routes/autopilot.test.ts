@@ -775,6 +775,39 @@ describe('GET /health', () => {
 });
 
 // =============================================================================
+// VTID-03598: requireServiceToken's health-check exemption list
+//
+// This router is mounted at /api/v1/autopilot BEFORE autopilot-prompts.ts
+// and autopilot-recommendations.ts (see index.ts), which are mounted at the
+// same prefix and own /prompts/health and /recommendations/health. Because
+// this router's `router.use(requireServiceToken)` runs unconditionally for
+// every request under that prefix, an unexempted path here 401s and NEVER
+// reaches those routers' own unauthenticated handlers — a 200 route became
+// unreachable with no error pointing at the real cause. These paths don't
+// resolve to a real route on THIS bare router (that's autopilot-prompts.ts'
+// job), so the meaningful assertion is that the auth gate itself doesn't
+// block them — proven by getting Express's plain 404 instead of the gate's
+// 401.
+// =============================================================================
+
+describe('requireServiceToken health-check exemptions (no Authorization header)', () => {
+  it('does not 401 an unauthenticated /prompts/health request', async () => {
+    const res = await supertestBase(app).get('/api/v1/autopilot/prompts/health');
+    expect(res.status).not.toBe(401);
+  });
+
+  it('does not 401 an unauthenticated /recommendations/health request', async () => {
+    const res = await supertestBase(app).get('/api/v1/autopilot/recommendations/health');
+    expect(res.status).not.toBe(401);
+  });
+
+  it('still 401s an unauthenticated request to a real gated route', async () => {
+    const res = await supertestBase(app).get('/api/v1/autopilot/controller/status');
+    expect(res.status).toBe(401);
+  });
+});
+
+// =============================================================================
 // GET /pipeline/health, GET /pipeline/summary — raw-fetch Supabase queries
 // =============================================================================
 

@@ -292,6 +292,31 @@ jobs:
           # `[TTS] FALLBACK polly→google` — grep that line to tell a missing
           # IAM grant apart from a working switch, because the user-visible
           # behaviour is identical either way.
+          # VTID-03580 — BEDROCK_ROLE_ARN on STAGING, so staging can verify the
+          # thing it exists to verify.
+          #
+          # Measured 2026-08-11: this var was set on `vitana-gateway-awsdr`
+          # (prod) and on NOTHING else. `bedrockAdapter.isAvailable()` is a bare
+          # `Boolean(process.env.BEDROCK_ROLE_ARN)`, so with it unset the router
+          # SKIPS bedrock and serves the stage's fallback — quietly, and with no
+          # `llm.call.failed` event, because no call is ever attempted. Staging
+          # was therefore answering every backend stage on DeepSeek while prod
+          # answered on Claude, and the staging-first workflow (§16) would have
+          # certified a Claude routing change it never once exercised.
+          #
+          # Both services already run as the SAME task role
+          # (`vitana-ecs-task-role`), so this grants no new access — it only
+          # stops staging pretending the adapter is unconfigured. Resolved from
+          # the task definition rather than hardcoded, so it cannot drift from
+          # whatever role the service actually assumes.
+          TASK_ROLE_ARN=$(aws ecs describe-task-definition --task-definition "$TD_ARN" \
+            --query 'taskDefinition.taskRoleArn' --output text)
+          if [ -z "$TASK_ROLE_ARN" ] || [ "$TASK_ROLE_ARN" = "None" ]; then
+            echo "::error::Task definition $TD_ARN has no taskRoleArn — cannot set BEDROCK_ROLE_ARN."
+            exit 1
+          fi
+          echo "Bedrock activation on staging: BEDROCK_ROLE_ARN=$TASK_ROLE_ARN"
+
           NEW_DEF=$(aws ecs describe-task-definition --task-definition "$TD_ARN" --query taskDefinition \
             | jq --arg IMG "$IMAGE" --arg SHA "$SHA" --arg SHORT "$SHORT" \
                  --arg NOVA_ENABLED "$NOVA_SONIC_ENABLED" \
@@ -299,14 +324,16 @@ jobs:
                  --arg NOVA_TENANTS "$NOVA_SONIC_CANARY_TENANT_IDS" \
                  --arg SEC_JWT "$SEC_JWT" --arg SEC_ANON "$SEC_ANON" \
                  --arg SEC_GEMINI "$SEC_GEMINI" --arg SEC_OPENAI "$SEC_OPENAI" \
-                 --arg SEC_DEEPSEEK "$SEC_DEEPSEEK" '
+                 --arg SEC_DEEPSEEK "$SEC_DEEPSEEK" \
+                 --arg TASK_ROLE "$TASK_ROLE_ARN" '
                 .containerDefinitions[0].image = $IMG
                 | .containerDefinitions[0].environment |=
                     ( [ .[] | select(.name | IN("GIT_COMMIT_SHA","COMMIT_SHA","BUILD_INFO_MARKER",
                                                 "NOVA_SONIC_ENABLED","NOVA_SONIC_REGION","NOVA_SONIC_MODEL_ID",
                                                 "NOVA_SONIC_CANARY_USER_IDS","NOVA_SONIC_CANARY_TENANT_IDS",
                                                 "FEATURE_ORB_GREETING_TTS_BRIDGE_ENV",
-                                                "TTS_PROVIDER") | not) ]
+                                                "TTS_PROVIDER",
+                                                "BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION") | not) ]
                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
                           {name:"COMMIT_SHA", value:$SHA},
                           {name:"BUILD_INFO_MARKER", value:$SHORT},
@@ -316,7 +343,9 @@ jobs:
                           {name:"NOVA_SONIC_CANARY_USER_IDS", value:$NOVA_USERS},
                           {name:"NOVA_SONIC_CANARY_TENANT_IDS", value:$NOVA_TENANTS},
                           {name:"FEATURE_ORB_GREETING_TTS_BRIDGE_ENV", value:"off"},
-                          {name:"TTS_PROVIDER", value:"polly"} ] )
+                          {name:"TTS_PROVIDER", value:"polly"},
+                          {name:"BEDROCK_ROLE_ARN", value:$TASK_ROLE},
+                          {name:"AWS_BEDROCK_REGION", value:"eu-central-1"} ] )
                 | .containerDefinitions[0].secrets |=
                     ( [ .[] | select(.name | IN("SUPABASE_JWT_SECRET","SUPABASE_ANON_KEY",
                                                 "GOOGLE_GEMINI_API_KEY","GEMINI_API_KEY",

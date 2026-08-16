@@ -837,6 +837,9 @@ export async function handleLiveSessionStart(
   // the briefing fires on the first session of a day where this is stale, then
   // same-day reopens get the short proactive opener.
   let greetingLastFullBriefingDate: string | null = null;
+  // VTID-03604: same once-per-night pattern as the briefing date, for the
+  // day-close rung.
+  let greetingLastDayCloseDate: string | null = null;
   // Durable per-user history of recently-suggested next-best-actions (keys,
   // most-recent last) from user_journey.recent_nbas. Lets the resume opener
   // ADVANCE past what it already suggested instead of repeating it.
@@ -1124,7 +1127,7 @@ export async function handleLiveSessionStart(
             supa
               ? supa
                   .from('user_journey')
-                  .select('is_first_session, last_session_date, last_full_briefing_date, recent_nbas')
+                  .select('is_first_session, last_session_date, last_full_briefing_date, last_day_close_date, recent_nbas')
                   .eq('user_id', _ndIdentity.user_id)
                   .maybeSingle()
               : Promise.resolve(null as any),
@@ -1163,6 +1166,7 @@ export async function handleLiveSessionStart(
               is_first_session?: boolean | null;
               last_session_date?: string | null;
               last_full_briefing_date?: string | null;
+              last_day_close_date?: string | null;
               recent_nbas?: unknown;
             } | null;
             // No row at all → user has never had a journey row → treat as first-time.
@@ -1176,6 +1180,8 @@ export async function handleLiveSessionStart(
             // Durable once-per-day briefing flag (null when never delivered or
             // column absent → briefing is due).
             greetingLastFullBriefingDate = _fsRow?.last_full_briefing_date ?? null;
+            // VTID-03604: read alongside — same row, zero extra cost.
+            greetingLastDayCloseDate = _fsRow?.last_day_close_date ?? null;
             // Recent NBA history → keys (defensive: accept string[] or {key}[]).
             if (Array.isArray(_fsRow?.recent_nbas)) {
               greetingRecentNbaKeys = (_fsRow!.recent_nbas as unknown[])
@@ -1371,6 +1377,7 @@ export async function handleLiveSessionStart(
     (session as any).greetingNeedsOnboarding = greetingNeedsOnboarding;
     (session as any).greetingHasPriorSession = greetingHasPriorSession;
     (session as any).lastFullBriefingDate = greetingLastFullBriefingDate;
+    (session as any).lastDayCloseDate = greetingLastDayCloseDate;
     (session as any).recentNbaKeys = greetingRecentNbaKeys;
     if (greetingEarlyLastSessionInfo && !session.lastSessionInfo) {
       session.lastSessionInfo = greetingEarlyLastSessionInfo;
@@ -1384,6 +1391,7 @@ export async function handleLiveSessionStart(
       (session as any).greetingNeedsOnboarding = greetingNeedsOnboarding;
       (session as any).greetingHasPriorSession = greetingHasPriorSession;
       (session as any).lastFullBriefingDate = greetingLastFullBriefingDate;
+      (session as any).lastDayCloseDate = greetingLastDayCloseDate;
       (session as any).recentNbaKeys = greetingRecentNbaKeys;
       // BOOTSTRAP-ORB-GREETING-LANG: apply the resolved stored language onto the
       // session BEFORE the greeting builder's bounded wait resolves, so the

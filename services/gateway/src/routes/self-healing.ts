@@ -55,9 +55,12 @@ const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
 
 // Deep link used in every real-time Gchat alert so recipients can
 // click straight into the Self Healing panel and act on the row.
+// VTID-03598: gateway.vitanaland.com is AWS ECS/ALB, sole production since
+// the VTID-03419 cutover — the old GCP Cloud Run URL is a scaled-to-zero
+// rollback target only (VTID-03508) and no longer serves the Command Hub.
 const COMMAND_HUB_SH_URL =
   process.env.COMMAND_HUB_SH_URL ||
-  'https://gateway-q74ibpv6ia-uc.a.run.app/command-hub/infrastructure/self-healing';
+  'https://gateway.vitanaland.com/command-hub/infrastructure/self-healing';
 
 function supabaseHeaders() {
   return {

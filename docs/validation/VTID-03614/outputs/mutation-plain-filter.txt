@@ -1,0 +1,10 @@
+MUTATION APPLIED — reverting selectPlatformEntries to a plain platform filter
+    ✕ a desktop-only screen IS reachable from a mobile consult (6 ms)
+    ✕ a mobile-only screen is reachable from a desktop consult (1 ms)
+    ✓ a screen present on both platforms appears exactly once (1 ms)
+    ✓ for a duplicated screen the REQUESTED platform row wins (1 ms)
+    ✕ an entry with no platform column still counts as mobile (1 ms)
+    ✕ every screen in the catalog is reachable from every platform (3 ms)
+    ✕ requested-platform entries lead, in their original order (2 ms)
+    ✓ an empty catalog stays empty (no crash, no phantom entries)
+Tests:       5 failed, 3 passed, 8 total

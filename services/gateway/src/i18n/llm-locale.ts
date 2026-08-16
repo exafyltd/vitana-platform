@@ -40,6 +40,7 @@ const LANGUAGE_NAMES: Record<GatewayLocale, string> = {
   // an LLM told only "Chinese" may answer in Traditional, which is wrong for
   // zh-CN and which no register or coverage check would notice.
   zh: 'Simplified Chinese (简体中文)',
+  ar: 'Arabic (العربية)',
 };
 
 // Per-language register hints. Friendly informal tone, mirrors the brand voice.

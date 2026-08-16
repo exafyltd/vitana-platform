@@ -8,6 +8,19 @@
  * inject a random subset into the greeting prompt each turn. Applies ONLY to
  * the short-gap buckets (reconnect, recent, same_day) — new-day greetings keep
  * the polite "Good morning, [Name]" pattern untouched.
+ *
+ * VTID-03630 — SHORT_GAP_GREETING_PHRASES / pickShortGapGreetings() are no
+ * longer used to build spoken directives. Both remaining callers
+ * (compute-greeting-decision.ts's short-gap rungs, voice-wake-brief.ts's
+ * expandShortGapPhraseMenu) told the model to use a pool entry "VERBATIM" —
+ * exactly the hardcoded-spoken-sentence shape CLAUDE.md NEVER-rule 41
+ * forbids, and this file's own header above already documented the failure
+ * mode it produces ("Gemini/Nova converges on a single translation"). Live
+ * report: "Lass mich dir den nächsten Schritt zeigen." (pool entry, line 49
+ * below) recited verbatim once the day_close/newday_overview rungs were
+ * disabled and more sessions fell through to this one. Both call sites now
+ * hand the model an INTENT instead — do not reintroduce a VERBATIM
+ * instruction against this pool.
  */
 
 // VTID-03090: every phrase below MUST sound like a warm, service-grade

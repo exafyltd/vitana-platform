@@ -110,5 +110,7 @@
   "notif.marketplace_listing_removed.title": "你的商品已被下架",
   "notif.marketplace_listing_removed.body": "“{title}”已被管理员下架：{reason}",
   "notif.listing_interest.title": "有人对你的商品感兴趣",
-  "notif.listing_interest.body": "有人对“{title}”感兴趣。"
+  "notif.listing_interest.body": "有人对“{title}”感兴趣。",
+  "notif.day_close.title": "晚安 🌙",
+  "notif.day_close.body": "今天过去了——如果心里还有什么事，告诉我一声吧。"
 }

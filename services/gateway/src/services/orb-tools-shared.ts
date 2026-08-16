@@ -1835,9 +1835,11 @@ export async function tool_resolve_recipient(
     display_name: string | null;
     score: number;
     reason: string;
+    is_chat_peer?: boolean;
+    last_chat_at?: string | null;
   }>;
   const top_confidence = candidates.length > 0 ? Number(candidates[0].score) : 0;
-  const ambiguous =
+  const scoreAmbiguous =
     candidates.length === 0 ||
     top_confidence < 0.85 ||
     (candidates.length > 1 &&
@@ -1851,17 +1853,60 @@ export async function tool_resolve_recipient(
   // that instruction. This was a real, previously-undetected contributor to
   // "send a message" flows silently never completing.
   let text: string;
+  let ambiguous = scoreAmbiguous;
   if (candidates.length === 0) {
     text = `STATUS: not_found. No one named "${spoken}" is in the community right now — they may not have a Vitana account yet.`;
-  } else if (ambiguous) {
-    const names = candidates
-      .slice(0, 3)
-      .map((c) => c.display_name || c.vitana_id || c.user_id)
-      .join(', ');
-    text = `STATUS: ambiguous. Found ${candidates.length} possible matches: ${names}. Which one did you mean?`;
+  } else if (scoreAmbiguous) {
+    // VTID-03623-followup: `scoreAmbiguous` can fire for two very different
+    // reasons — a genuine near-tie (candidate #2 is within 0.85 of the top
+    // score), or the top candidate simply sitting under the 0.85 auto-resolve
+    // floor with NO real competition. The old code treated both the same way
+    // and always listed the top 3 raw candidates, so a clearly-dominant match
+    // (e.g. "Mariia Maksina" for spoken "Maria Maxina") got listed alongside
+    // unrelated names ("Marion Ederer") that only cleared the RPC's low 0.2
+    // fuzzy-match floor — a live user report called this out directly.
+    // Reuse the SAME 0.85 ratio that decided ambiguity to decide who is
+    // actually worth presenting as an option; a candidate that isn't
+    // competitive with the top score has no business being offered as a pick.
+    const competitive = candidates.filter(
+      (c) => Number(c.score) / Math.max(top_confidence, 0.0001) > 0.85,
+    );
+
+    // VTID-03623: robust matching via chat history. A pure name-similarity
+    // score routinely sits under 0.85 for genuine fuzzy matches ("Maria
+    // Maxina" -> "Mariia Maksina" scores ~0.55-0.67), which is exactly the
+    // case this file's user report is about — the person WAS the right
+    // match, we just couldn't say so confidently from the name alone. If the
+    // actor has actually exchanged messages with exactly one of the
+    // competitive candidates, that real conversation history is strong
+    // independent corroboration ("I chatted with a Maria 5 days ago, and
+    // she's the only real match for 'Maria Maxina'") — skip the confirmation
+    // round-trip entirely. If MULTIPLE competitive candidates are chat
+    // peers, chat history can't disambiguate between them either, so we
+    // still ask — but the "which one" now cites recency to help the user
+    // answer fast.
+    const chatPeers = competitive.filter((c) => c.is_chat_peer);
+    if (chatPeers.length === 1) {
+      const top = chatPeers[0];
+      ambiguous = false;
+      text = `STATUS: resolved. Best match: ${top.display_name || top.vitana_id || top.user_id} (name confidence ${(Number(top.score) * 100).toFixed(0)}%, confirmed by chat history — ${describeRecency(top.last_chat_at)}).`;
+    } else if (competitive.length <= 1) {
+      const top = candidates[0];
+      text = `STATUS: ambiguous. Best (unconfirmed) guess: ${top.display_name || top.vitana_id || top.user_id} (confidence ${(top_confidence * 100).toFixed(0)}%, below the auto-confirm threshold, no other close matches, no chat history with this person). Confirm this specific person with the user before sending anything.`;
+    } else {
+      const names = competitive
+        .slice(0, 3)
+        .map((c) => {
+          const label = c.display_name || c.vitana_id || c.user_id;
+          return c.is_chat_peer ? `${label} (chatted ${describeRecency(c.last_chat_at)})` : label;
+        })
+        .join(', ');
+      text = `STATUS: ambiguous. Found ${competitive.length} closely-matching candidates: ${names}. Which one did you mean?`;
+    }
   } else {
     const top = candidates[0];
-    text = `STATUS: resolved. Best match: ${top.display_name || top.vitana_id || top.user_id} (confidence ${(top_confidence * 100).toFixed(0)}%).`;
+    const recencyNote = top.is_chat_peer ? `, chatted ${describeRecency(top.last_chat_at)}` : '';
+    text = `STATUS: resolved. Best match: ${top.display_name || top.vitana_id || top.user_id} (confidence ${(top_confidence * 100).toFixed(0)}%${recencyNote}).`;
   }
 
   return {
@@ -1869,6 +1914,20 @@ export async function tool_resolve_recipient(
     result: { candidates, top_confidence, ambiguous },
     text,
   };
+}
+
+/** VTID-03623: human-readable recency for chat-history corroboration text. */
+function describeRecency(lastChatAt: string | null | undefined): string {
+  if (!lastChatAt) return 'no prior chat history';
+  const ms = Date.now() - new Date(lastChatAt).getTime();
+  const days = Math.floor(ms / (24 * 60 * 60 * 1000));
+  if (days <= 0) return 'today';
+  if (days === 1) return '1 day ago';
+  if (days < 30) return `${days} days ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return months === 1 ? '1 month ago' : `${months} months ago`;
+  const years = Math.floor(days / 365);
+  return years === 1 ? '1 year ago' : `${years} years ago`;
 }
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -4630,6 +4689,108 @@ export async function tool_get_life_compass(
   }
 }
 
+/**
+ * VTID-03604 surface 4 — the on-demand day summary.
+ *
+ * "The day aggregate, built only when they ask." Deliberately reuses
+ * gatherOverviewPayload() — the SAME aggregator the new-day briefing and the
+ * day-close rung already use — rather than a second bespoke query set, scoped
+ * to TODAY by passing today's local midnight as the lookback cutoff instead
+ * of the user's last-session timestamp. One aggregator, three call sites,
+ * each choosing a different window.
+ *
+ * Returns a DATA DUMP, not a composed sentence — same shape as
+ * get_recommendations ("Here are your personalized recommendations:\n...").
+ * This is deliberately NOT a `Say exactly` / scripted string: CLAUDE.md
+ * NEVER-rule 41 forbids handing the model finished spoken wording, and a tool
+ * result the model narrates in its own words is exactly the safe pattern —
+ * the data is fixed, the sentence is not.
+ */
+export async function tool_get_day_summary(
+  _args: OrbToolArgs,
+  identity: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  if (!identity.user_id) {
+    return { ok: false, error: 'get_day_summary requires an authenticated user.' };
+  }
+  try {
+    const { gatherOverviewPayload, dayWindowUtcIso } = await import(
+      './assistant-continuation/providers/new-day-overview-payload'
+    );
+    const { todayInTimezone } = await import('./assistant-continuation/providers/new-day-return');
+    const { getUserTimezone } = await import('./daily-pace-service');
+    const tz = await getUserTimezone(sb, identity.user_id, identity.tenant_id || undefined);
+    const now = new Date();
+    // Scope to TODAY: pass local midnight as the lookback cutoff instead of
+    // the user's actual last-session time, so "how was my day" always means
+    // the whole day so far — even mid-afternoon, even for a user who has
+    // reopened ORB five times today.
+    const { startUtc } = dayWindowUtcIso(now, tz);
+    const overview = await gatherOverviewPayload({
+      supabase: sb,
+      userId: identity.user_id,
+      now,
+      timezone: tz,
+      lang: identity.lang || 'en',
+      lastSessionDateUserTz: todayInTimezone(now, tz),
+      lastSessionAtIso: startUtc,
+    });
+
+    const lines: string[] = [];
+    if (overview.vitana_index.today != null) {
+      lines.push(
+        `Vitana Index today: ${overview.vitana_index.today}` +
+          (overview.vitana_index.trend_7d != null ? ` (7-day trend: ${overview.vitana_index.trend_7d >= 0 ? '+' : ''}${overview.vitana_index.trend_7d})` : ''),
+      );
+    }
+    if (overview.calendar_today.count > 0) {
+      lines.push(
+        `Calendar today: ${overview.calendar_today.count} event(s)` +
+          (overview.calendar_today.next ? `, next up: "${overview.calendar_today.next.title}"` : ''),
+      );
+    }
+    if (overview.autopilot.today_checkpoint) {
+      lines.push(`Today's autopilot checkpoint: "${overview.autopilot.today_checkpoint.title}"`);
+    }
+    if (overview.reminders_today.count > 0) {
+      lines.push(`Reminders today: ${overview.reminders_today.count}`);
+    }
+    if (overview.messages_unread > 0) lines.push(`Unread messages: ${overview.messages_unread}`);
+    if (overview.matches_unread > 0) lines.push(`Unread matches: ${overview.matches_unread}`);
+    if (overview.facts_learned_since_last && overview.facts_learned_since_last.count > 0) {
+      lines.push(`New things learned about the user today: ${overview.facts_learned_since_last.count}`);
+    }
+    if (overview.guided_journey?.next_session_title) {
+      lines.push(`Next guided-journey session: "${overview.guided_journey.next_session_title}"`);
+    }
+
+    const hasContent = lines.length > 0;
+    const text = hasContent
+      ? `Day summary (compose your own sentence from this — do NOT read it as a list):\n${lines.join('\n')}`
+      : 'Nothing notable happened today by these signals (no index reading, no calendar events, no checkpoint, no unread messages/matches, no reminders). Say so warmly — a quiet day is not a bad day.';
+
+    return {
+      ok: true,
+      result: {
+        index_today: overview.vitana_index.today,
+        index_trend_7d: overview.vitana_index.trend_7d,
+        calendar_today_count: overview.calendar_today.count,
+        autopilot_checkpoint: overview.autopilot.today_checkpoint?.title ?? null,
+        reminders_today_count: overview.reminders_today.count,
+        messages_unread: overview.messages_unread,
+        matches_unread: overview.matches_unread,
+        facts_learned_today: overview.facts_learned_since_last?.count ?? 0,
+        has_content: hasContent,
+      },
+      text,
+    };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'get_day_summary_exception';
+    return { ok: false, error: msg };
+  }
+}
+
 async function _getWeakestPillarAndGoal(
   sb: SupabaseClient,
   userId: string,
@@ -5406,6 +5567,7 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   // the LLM can answer "what is my Life Compass goal?" / "remind me what I'm
   // working toward" with the canonical value instead of inventing one.
   get_life_compass: tool_get_life_compass,
+  get_day_summary: tool_get_day_summary,
   // BOOTSTRAP-SOCIAL-MEMORY — live Social Context Pack for voice sessions
   // (follows, matches, messages, groups, person intelligence, ranked
   // posts/events). Voice-side bridge for the per-turn social injection the

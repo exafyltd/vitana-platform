@@ -11,7 +11,10 @@ import { emitOasisEvent } from './oasis-event-service';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
-const GATEWAY_URL = process.env.GATEWAY_URL || 'https://gateway-q74ibpv6ia-uc.a.run.app';
+// VTID-03598: gateway.vitanaland.com is AWS ECS/ALB, sole production since
+// the VTID-03419 cutover. The old GCP Cloud Run URL is a scaled-to-zero
+// rollback target only (VTID-03508) and never answers these probes.
+const GATEWAY_URL = process.env.GATEWAY_URL || 'https://gateway.vitanaland.com';
 
 function supabaseHeaders(): Record<string, string> {
   return {

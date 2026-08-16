@@ -110,5 +110,7 @@
   "notif.marketplace_listing_removed.title": "O teu anúncio foi removido",
   "notif.marketplace_listing_removed.body": "Um administrador removeu «{title}»: {reason}",
   "notif.listing_interest.title": "Interesse no teu anúncio",
-  "notif.listing_interest.body": "Alguém está interessado em «{title}»."
+  "notif.listing_interest.body": "Alguém está interessado em «{title}».",
+  "notif.day_close.title": "Boa noite 🌙",
+  "notif.day_close.body": "O dia terminou — se ainda tiver algo em mente, me conte rapidinho."
 }

@@ -6,9 +6,16 @@ name: Marketplace Sync Cron
 #
 # Requires repo secrets:
 #   MARKETPLACE_SYNC_SECRET — shared secret also set on the gateway's
-#                             Cloud Run env. Rotate in both places.
-#   GATEWAY_URL             — full base URL, e.g.
-#                             https://gateway-q74ibpv6ia-uc.a.run.app
+#                             env. Rotate in both places.
+#
+# VTID-03608: GATEWAY_URL used to come from a repo secret that still
+# pointed at the old GCP Cloud Run host (scaled to min-instances=0 as a
+# rollback target after the VTID-03419 AWS cutover) — every run got an
+# HTML 404 "Page not found" back instead of the marketplace-sync JSON.
+# gateway.vitanaland.com (AWS ECS/ALB) is sole production for the gateway
+# since that cutover, same fix already applied to DAILY-STATUS-UPDATE.yml
+# and MORNING-SYSTEM-HEALTH-CHECK.yml — hardcoded here rather than left as
+# a secret so it can't silently drift again.
 #
 # Can be triggered manually via workflow_dispatch with optional `network`
 # input (shopify / cj / all). Default is `all`.
@@ -40,13 +47,13 @@ jobs:
     steps:
       - name: Trigger sync
         env:
-          GATEWAY_URL: ${{ secrets.GATEWAY_URL }}
+          GATEWAY_URL: https://gateway.vitanaland.com
           SECRET: ${{ secrets.MARKETPLACE_SYNC_SECRET }}
           NETWORK: ${{ inputs.network || 'all' }}
         run: |
           set -euo pipefail
-          if [ -z "${GATEWAY_URL:-}" ] || [ -z "${SECRET:-}" ]; then
-            echo "::error::GATEWAY_URL or MARKETPLACE_SYNC_SECRET secret missing"
+          if [ -z "${SECRET:-}" ]; then
+            echo "::error::MARKETPLACE_SYNC_SECRET secret missing"
             exit 1
           fi
           echo "Triggering marketplace sync: network=$NETWORK"

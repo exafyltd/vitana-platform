@@ -1,0 +1,47 @@
+# VTID-03614 — evidence commands (run from services/gateway unless noted)
+
+# 1. Production measurement that established the defect (Supabase, read-only).
+#    187 distinct screen_ids across 291 active nav_catalog rows; bucketed by
+#    which platform rows exist for each screen.
+#
+#    with p as (
+#      select screen_id,
+#             bool_or(platform='mobile')  as hm,
+#             bool_or(platform='desktop') as hd
+#      from nav_catalog where is_active is not false group by screen_id)
+#    select case when hm and hd then 'both'
+#                when hm then 'mobile_only'
+#                when hd then 'DESKTOP_ONLY' end as bucket, count(*)
+#    from p group by 1 order by 2 desc;
+#
+#    -> both 104 | mobile_only 47 | DESKTOP_ONLY 36
+#    See outputs/prod-platform-buckets.txt
+
+# 2. Confirm the route string does not differ across a screen's two rows
+#    (this is what makes the union safe).
+#
+#    select screen_id, array_agg(distinct route) routes
+#    from nav_catalog where is_active is not false
+#    group by screen_id having count(*) > 1 limit 8;
+#
+#    -> every row returns exactly one distinct route.
+
+# 3. Unit + regression suites over the whole nav surface.
+npx jest test/nav-catalog-platform-reach.test.ts test/navigator-consult.test.ts \
+         test/navigation-catalog.test.ts test/nav-catalog-role.test.ts \
+         test/nav-redirect-flow.test.ts test/nav-regression-contract.test.ts
+#    -> 283 passed, 0 failed. See outputs/nav-tests.txt
+#    (nav-redirect-flow.test.ts fails to LOAD locally on a missing optional
+#     dependency, @aws-sdk/client-polly — pre-existing, unrelated, reproduces
+#     on a clean tree.)
+
+# 4. Mutation check — revert selectPlatformEntries() to the plain filter this
+#    VTID replaces, and confirm the new tests actually catch it.
+#    -> 5 failed, 3 passed. See outputs/mutation-plain-filter.txt
+#    The 3 survivors are exactly the properties a plain filter already
+#    satisfies (requested-platform-wins, dedupe, empty input).
+
+# 5. Typecheck.
+npx tsc --noEmit -p tsconfig.json
+#    -> clean, aside from pre-existing missing optional deps
+#       (@aws-sdk/client-ecs, @aws-sdk/client-polly, pg, compression).

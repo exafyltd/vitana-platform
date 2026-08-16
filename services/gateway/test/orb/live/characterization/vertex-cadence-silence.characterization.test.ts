@@ -43,7 +43,7 @@ describe('VTID-03108 / 1c: cadence-silence lives in the brain; transport delegat
     // armWatchdog: false; the transport only ws.sends / arms when non-null / true.
     expect(brain).toMatch(/directive: null/);
     expect(brain).toMatch(/armWatchdog: false/);
-    // VTID-03593: the render moved into a shared `_renderSync(decision)` closure
+    // VTID-03607: the render moved into a shared `_renderSync(decision)` closure
     // so the new-day branch and the plain sync path cannot drift on how a
     // decision reaches the wire. The guarded reads are unchanged in substance.
     expect(orbLive).toMatch(/if \(decision\.directive !== null\)/);

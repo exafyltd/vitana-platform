@@ -24,10 +24,27 @@
   // model's natural speaking pace reads as "too slow" in playback. Applied
   // uniformly to every streamed PCM chunk (all providers — Vertex, Nova),
   // not a provider-specific TTS parameter (neither exposes one over the
-  // live bidirectional stream). +5% speed carries a proportional pitch
-  // rise via AudioBufferSourceNode.playbackRate — the same trick podcast
-  // apps use at 1.05x, imperceptible as "chipmunk" at this magnitude.
+  // live bidirectional stream — Nova 2 Sonic's session/prompt-start events
+  // carry no speech-rate field at all). +5% speed carries a proportional
+  // pitch rise via AudioBufferSourceNode.playbackRate — the same trick
+  // podcast apps use at 1.05x, imperceptible as "chipmunk" at this
+  // magnitude.
   var _AUDIO_PLAYBACK_RATE = 1.05;
+
+  // VTID-03606: German-language feedback specifically called Nova Sonic
+  // voice-to-voice "too slow" even at the +5% baseline above — bump German
+  // an additional 10% over normal speed (1.1x flat, not stacked on the
+  // 1.05x baseline) while every other language keeps 1.05x. Read at
+  // schedule-time via _currentPlaybackRate() so a language change mid-
+  // session (rare, but _cfg.lang can be updated post-connect) picks up
+  // immediately rather than needing a reconnect.
+  var _AUDIO_PLAYBACK_RATE_DE = 1.1;
+
+  function _currentPlaybackRate() {
+    return (_cfg.lang && _cfg.lang.startsWith('de'))
+      ? _AUDIO_PLAYBACK_RATE_DE
+      : _AUDIO_PLAYBACK_RATE;
+  }
 
   // Prevent double-load
   if (window.VitanaOrb && window.VitanaOrb._loaded) return;
@@ -1284,9 +1301,15 @@
         var buf = ctx.createBuffer(1, floats.length, 24000);
         buf.copyToChannel(floats, 0);
 
+        // Snapshot once per chunk so the schedule-gap compensation below
+        // (_s.lastScheduledEnd +=) divides by the exact rate this chunk was
+        // actually played at — using the wrong constant here would drift or
+        // gap consecutive chunks the moment DE and non-DE rates diverge.
+        var chunkRate = _currentPlaybackRate();
+
         var src = ctx.createBufferSource();
         src.buffer = buf;
-        src.playbackRate.value = _AUDIO_PLAYBACK_RATE;
+        src.playbackRate.value = chunkRate;
         src.connect(ctx.destination);
 
         var now = ctx.currentTime;
@@ -1328,9 +1351,10 @@
 
         // buf.duration is the UNPLAYED-rate duration; at playbackRate>1 the
         // chunk actually finishes sooner, so scheduling by buf.duration
-        // would leave audible gaps between chunks. Divide by the rate to
-        // keep back-to-back chunks gapless.
-        _s.lastScheduledEnd += buf.duration / _AUDIO_PLAYBACK_RATE;
+        // would leave audible gaps between chunks. Divide by the SAME rate
+        // just assigned to this chunk's src.playbackRate (chunkRate) —
+        // not the global constant — to keep back-to-back chunks gapless.
+        _s.lastScheduledEnd += buf.duration / chunkRate;
         _s.audioPlaying = true;
         isFirstChunk = false;
       } catch (e) {

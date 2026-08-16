@@ -9,7 +9,11 @@ import os, requests, json
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-GATEWAY_URL = os.environ.get('GATEWAY_URL', 'https://gateway-q74ibpv6ia-uc.a.run.app')
+# VTID-03598: canonical gateway moved to AWS ECS/ALB at the VTID-03419
+# cutover (2026-07-27) — gateway.vitanaland.com is sole production, and the
+# old GCP Cloud Run URL below was scaled to min-instances=0 as a rollback
+# target only (VTID-03508), so it never answers these checks anymore.
+GATEWAY_URL = os.environ.get('GATEWAY_URL', 'https://gateway.vitanaland.com')
 
 # All gateway health endpoints organised by domain
 SERVICES = {
@@ -148,6 +152,7 @@ md = f"""# Vitana Platform — Live Status
 
 **Updated:** {now}
 **Summary:** {live_count}/{total} services live
+**Checked against:** {GATEWAY_URL}
 
 ## Service Health
 
@@ -156,7 +161,7 @@ md = f"""# Vitana Platform — Live Status
 {"" if not down_services else "### ⚠️ Down Services" + chr(10) + chr(10).join(f"- {s}" for s in down_services) + chr(10)}
 
 ---
-This file auto-updates daily at 08:00 UTC via `DAILY-STATUS-UPDATE.yml`.
+This file auto-updates hourly via `DAILY-STATUS-UPDATE.yml` ("Hourly Status Check").
 """
 
 with open('docs/STATUS.md', 'w') as f:
@@ -173,7 +178,12 @@ if webhook:
         down_list = ', '.join(down_services[:10])
         if len(down_services) > 10:
             down_list += f' (+{len(down_services) - 10} more)'
-        text = f'{summary}\n⚠️ Down: {down_list}'
+        # VTID-03598: name the base URL that was actually probed. The 54/54
+        # outage this VTID fixed was invisible from the message alone — it
+        # read as a real outage when it was really a stale GATEWAY_URL
+        # pointed at a scaled-to-zero rollback target, and nothing in the
+        # Chat post said which host was checked.
+        text = f'{summary} ({GATEWAY_URL})\n⚠️ Down: {down_list}'
         try:
             requests.post(webhook, json={'text': text}, timeout=10)
             print('Posted to Chat (failures detected)')

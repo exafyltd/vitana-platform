@@ -105,7 +105,20 @@ const router = Router();
 // pattern as admin-staging.ts / execute.ts.
 // =============================================================================
 function requireServiceToken(req: Request, res: Response, next: () => void): void {
-  if (req.path === "/health" || req.path === "/pipeline/health") {
+  // VTID-03598: this router is mounted at /api/v1/autopilot BEFORE the
+  // prompts/recommendations sub-routers (see index.ts), so every request
+  // under that prefix passes through here first — including requests meant
+  // for those routers' own unauthenticated /health handlers. Without these
+  // two exemptions, /api/v1/autopilot/prompts/health and
+  // /api/v1/autopilot/recommendations/health always 401 here and never
+  // reach the handler that would otherwise return 200, no matter what the
+  // caller sends.
+  if (
+    req.path === "/health" ||
+    req.path === "/pipeline/health" ||
+    req.path === "/prompts/health" ||
+    req.path === "/recommendations/health"
+  ) {
     next();
     return;
   }
