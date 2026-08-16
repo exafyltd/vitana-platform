@@ -50,6 +50,18 @@ export interface GuidedTopicNarrationContent {
   practice_target: string | null;
   /** 'published' | 'draft_fallback' — for telemetry/debugging. */
   source: string;
+  /**
+   * VTID-03650 — pre-synthesized Polly audio for the lesson, when Polly could
+   * serve this language/text. The controller (routes/orb-live.ts) plays this
+   * to the client BEFORE the live model's first turn, and the turn-1 line +
+   * turns-2+ block both switch to their short post-narration variants when
+   * this is set — see guided-topic-narration-audio.ts and
+   * buildGuidedTopicPostNarrationLine/buildGuidedTopicNarrationBlock. Null or
+   * undefined (optional so pre-VTID-03650 test fixtures stay valid) means
+   * Polly couldn't serve this request, or wasn't attempted; the pre-existing
+   * (VTID-03293) model-narrated behavior applies unchanged.
+   */
+  narrationAudio?: { audioB64: string; sampleRateHz: number } | null;
 }
 
 interface GuidedTopicNarrationInputs {
@@ -132,19 +144,33 @@ export function makeGuidedTopicNarrationProvider(): ContinuationProvider {
         explanation: seed.explanation,
         practice_target: seed.guidedPracticeTarget,
         source: seed.source,
+        narrationAudio: null,
       };
 
-      // VTID-03293: the SPOKEN LINE is now the LESSON itself (the authored
-      // voice_script), spoken verbatim via the reliable "say exactly" greeting
-      // path — NOT a short opener + a long "teach more" instruction, which made
-      // native-audio go text-only / stall (the stuck-connecting bug). The lesson
-      // IS the teaching; the bundled GUIDE-MODE block governs follow-up turns.
-      const { buildGuidedTopicSpokenLesson } = await import(
+      // VTID-03650: try Polly FIRST — deterministic TTS has no content-safety
+      // judgment to reject legitimate curriculum text with, unlike the two
+      // conversational models VTID-03647/03648 measured independently
+      // rejecting this exact payload. On success the lesson is delivered as
+      // pre-recorded audio (routes/orb-live.ts sends it before the live
+      // model's first turn) and the model's own turn-1 line shrinks to a
+      // short, safe post-narration follow-up. On failure (unsupported
+      // language, API error) content.narrationAudio stays null and behavior
+      // is BYTE-FOR-BYTE the pre-existing VTID-03293 model-narrated path.
+      const { synthesizeGuidedTopicNarrationAudio } = await import(
+        '../../tts/guided-topic-narration-audio'
+      );
+      content.narrationAudio = await synthesizeGuidedTopicNarrationAudio(content, inputs.lang);
+
+      const { buildGuidedTopicSpokenLesson, buildGuidedTopicPostNarrationLine } = await import(
         '../../../orb/live/instruction/guided-topic-narration-prompt'
       );
-      const spokenLesson = buildGuidedTopicSpokenLesson(content, inputs.lang, {
-        firstName: inputs.firstName ?? null,
-      });
+      const spokenLesson = content.narrationAudio
+        ? buildGuidedTopicPostNarrationLine(content.topic_title, inputs.lang, {
+            hasPracticeTarget: !!content.practice_target,
+          })
+        : buildGuidedTopicSpokenLesson(content, inputs.lang, {
+            firstName: inputs.firstName ?? null,
+          });
 
       const candidate = {
         id: `guided-topic-${seed.topicId}`,
