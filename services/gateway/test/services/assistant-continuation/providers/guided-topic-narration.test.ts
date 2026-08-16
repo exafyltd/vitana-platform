@@ -21,6 +21,15 @@ jest.mock('../../../../src/services/guided-journey/checklist-service', () => ({
   getOrbTopicSeed: (...args: any[]) => mockGetOrbTopicSeed(...args),
 }));
 
+// VTID-03650: the provider now dynamic-imports the Polly narration
+// synthesizer. Default to null (Polly unavailable) so all the PRE-EXISTING
+// tests below keep asserting the pre-VTID-03650 model-narrated behavior
+// unchanged; individual tests override this to cover the Polly-success path.
+const mockSynthesizeGuidedTopicNarrationAudio = jest.fn();
+jest.mock('../../../../src/services/tts/guided-topic-narration-audio', () => ({
+  synthesizeGuidedTopicNarrationAudio: (...args: any[]) => mockSynthesizeGuidedTopicNarrationAudio(...args),
+}));
+
 const FAKE_SB = { from: () => ({}) } as any;
 
 function makeCtx(extraOverride: any = {}) {
@@ -53,6 +62,8 @@ const SEED = {
 
 beforeEach(() => {
   mockGetOrbTopicSeed.mockReset();
+  mockSynthesizeGuidedTopicNarrationAudio.mockReset();
+  mockSynthesizeGuidedTopicNarrationAudio.mockResolvedValue(null); // Polly unavailable by default
 });
 
 describe('guided-topic-narration provider', () => {
@@ -131,5 +142,47 @@ describe('guided-topic-narration provider', () => {
     const p = makeGuidedTopicNarrationProvider();
     const r = await p.produce(makeCtx({ firstName: 'Dragan' }));
     expect((r.candidate as any).userFacingLine).toContain('Dragan');
+  });
+
+  describe('VTID-03650: Polly narration bridge', () => {
+    it('tries Polly with the resolved content and locale before deciding the turn-1 line', async () => {
+      mockGetOrbTopicSeed.mockResolvedValue(SEED);
+      mockSynthesizeGuidedTopicNarrationAudio.mockResolvedValue({ audioB64: 'YQ==', sampleRateHz: 16000 });
+      const p = makeGuidedTopicNarrationProvider();
+      await p.produce(makeCtx());
+      expect(mockSynthesizeGuidedTopicNarrationAudio).toHaveBeenCalledWith(
+        expect.objectContaining({ topic_id: 'T001', voice_script: SEED.vitanaVoiceScript }),
+        'de',
+      );
+    });
+
+    it('when Polly succeeds: turn-1 line is the SHORT post-narration line, not the raw script', async () => {
+      mockGetOrbTopicSeed.mockResolvedValue(SEED);
+      mockSynthesizeGuidedTopicNarrationAudio.mockResolvedValue({ audioB64: 'YQ==', sampleRateHz: 16000 });
+      const p = makeGuidedTopicNarrationProvider();
+      const r = await p.produce(makeCtx());
+      const c = r.candidate as any;
+      expect(c.userFacingLine).not.toContain('Vitanaland ist deine');
+      expect(c.userFacingLine).toContain(SEED.displayLabel);
+      expect(c.userFacingLine.length).toBeLessThan(200);
+    });
+
+    it('when Polly succeeds: the audio is bundled on the candidate content for the controller to send', async () => {
+      mockGetOrbTopicSeed.mockResolvedValue(SEED);
+      mockSynthesizeGuidedTopicNarrationAudio.mockResolvedValue({ audioB64: 'YQ==', sampleRateHz: 16000 });
+      const p = makeGuidedTopicNarrationProvider();
+      const r = await p.produce(makeCtx());
+      expect((r.candidate as any).guidedTopicNarration.narrationAudio).toEqual({ audioB64: 'YQ==', sampleRateHz: 16000 });
+    });
+
+    it('when Polly fails: behavior is BYTE-FOR-BYTE the pre-VTID-03650 model-narrated path', async () => {
+      mockGetOrbTopicSeed.mockResolvedValue(SEED);
+      mockSynthesizeGuidedTopicNarrationAudio.mockResolvedValue(null);
+      const p = makeGuidedTopicNarrationProvider();
+      const r = await p.produce(makeCtx());
+      const c = r.candidate as any;
+      expect(c.userFacingLine).toContain('Vitanaland ist deine');
+      expect(c.guidedTopicNarration.narrationAudio).toBeNull();
+    });
   });
 });
