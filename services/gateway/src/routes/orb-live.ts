@@ -1594,6 +1594,36 @@ export function shouldFallbackToVertexOnNovaClose(args: {
 }
 
 /**
+ * VTID-03647 — should a Nova content-filter block on a session carrying an
+ * EXPLICIT guided-topic request (a My Journey chapter tap) skip the
+ * VTID-03557 same-provider retry and go straight to the VTID-03502 Vertex
+ * fallback? Deliberately NOT gated on `hasProducedAudio` the way
+ * `shouldFallbackToVertexOnNovaClose` is — measured live (34 content-filter
+ * blocks over 3 days) that a same-provider retry is unreliable for this
+ * exact instruction shape regardless of how much audio the blocked attempt
+ * produced before dying, and an explicit, direct user request must never be
+ * silently substituted with a generic greeting to avoid one extra provider
+ * hop.
+ */
+export function shouldFallbackToVertexOnGuidedTopicContentFilterBlock(args: {
+  closeReason: string | null;
+  hasGuidedTopicRequest: boolean;
+  sessionActive: boolean;
+  initiatedLocally: boolean;
+  rotationInFlight: boolean;
+  alreadyFellBack: boolean;
+}): boolean {
+  return (
+    args.closeReason === 'nova_validation' &&
+    args.hasGuidedTopicRequest &&
+    args.sessionActive &&
+    !args.initiatedLocally &&
+    !args.rotationInFlight &&
+    !args.alreadyFellBack
+  );
+}
+
+/**
  * VTID-03557: should a Nova stream that died before any audio get ONE fresh
  * Nova retry before VTID-03502's Vertex fallback pins the session away from
  * Nova for good?
@@ -6974,6 +7004,11 @@ async function connectToLiveAPI(
         // VTID-03501: labels the decision as global-promotion vs canary.
         globalEnabled: __novaCfg.globalEnabled === true,
       },
+      // VTID-emergency-gcp-shutdown: Vertex Live is permanently unreachable
+      // once the GCP project's billing is off. Set VERTEX_LIVE_UNAVAILABLE=true
+      // on the task def to stop the runtime/language gates from routing
+      // anyone toward it.
+      vertexUnavailable: process.env.VERTEX_LIVE_UNAVAILABLE === 'true',
     });
   } catch (e) {
     // Voice/canary config read failure must NOT block the session start;
@@ -8055,6 +8090,95 @@ async function connectToLiveAPI(
             });
             return;
           }
+          // VTID-03647: a Nova content-filter block ("This request has been
+          // blocked by our content filters", diag code nova_validation) on a
+          // session carrying an EXPLICIT guided-topic request (the user
+          // tapped a specific My Journey chapter) was rerouted here to the
+          // VTID-03502 Vertex-fallback machinery instead of the VTID-03557
+          // same-provider retry.
+          //
+          // VTID-03650 (2026-08-15, hours after 03647 shipped): DISABLED by
+          // default via this kill switch. Live-traced (session
+          // live-c494ba29-2450-41c2-a308-8e6c47e84d0f) that the Vertex
+          // fallback fires correctly but Vertex ITSELF then rejects the
+          // reconnect — `upstream_ws_close` code 1007 "Request contains an
+          // invalid argument" ~270ms after the resent greeting, i.e. the
+          // same guided-topic content Nova blocked is ALSO rejected by
+          // Vertex, just via a hard connection close instead of a soft
+          // content-filter error. Because `attemptTransparentReconnect`
+          // resolves success optimistically (once the WS opens + setup is
+          // sent, not once Vertex actually accepts it), the code believed
+          // the fallback had succeeded, resent the greeting, and then the
+          // async 1007 close fell into the "genuine disconnect" branch —
+          // which tells the CLIENT to give up (`should_close: true`) rather
+          // than retry. That is what produced the user-visible loop: several
+          // "reconnecting" cues (spanning session live-bf419eed → c494ba29
+          // → 7fbd656d, each a fresh client-side restart) before finally
+          // landing back on a plain Nova conversation — measurably WORSE
+          // than the pre-03647 behavior (straight to the VTID-03557 retry,
+          // which succeeded on its first attempt in the very same incident,
+          // session live-7fbd656d). Re-enable via
+          // `ORB_GUIDED_TOPIC_VERTEX_FALLBACK_ENABLED=true` only after the
+          // Vertex-side rejection is root-caused (candidate: this exact
+          // lesson's raw `voice_script` content, since Nova and Vertex are
+          // independent implementations rejecting the identical text) —
+          // simply routing to a different provider does not fix a payload
+          // both providers reject.
+          const shouldFallbackOnGuidedTopicBlock =
+            process.env.ORB_GUIDED_TOPIC_VERTEX_FALLBACK_ENABLED === 'true' &&
+            shouldFallbackToVertexOnGuidedTopicContentFilterBlock({
+              closeReason: closeEvent.reason ?? null,
+              hasGuidedTopicRequest: !!(session as any).guidedTopicNarrationContent,
+              sessionActive: session.active,
+              initiatedLocally: closeEvent.initiatedLocally === true,
+              rotationInFlight,
+              alreadyFellBack: (session as any)._novaFallbackToVertex === true,
+            });
+          if (shouldFallbackOnGuidedTopicBlock) {
+            console.warn(
+              `[VTID-03647] Nova content filter blocked a guided-topic request for session ` +
+                `${session.sessionId} — falling back to Vertex instead of retrying Nova.`,
+            );
+            (session as any)._novaFallbackToVertex = true;
+            emitDiag(session, 'nova_guided_topic_content_filter_fallback', {
+              provider: 'nova_sonic',
+              reason: closeEvent.reason ?? null,
+            });
+            void emitOasisEvent({
+              type: 'orb.upstream.nova.guided_topic_content_filter_fallback',
+              vtid: 'VTID-03647',
+              payload: {
+                session_id: session.sessionId,
+                from: 'nova_sonic',
+                to: 'vertex',
+                reason: closeEvent.reason ?? null,
+                status: 'warning',
+              } as any,
+            } as any).catch(() => { /* best-effort */ });
+
+            void attemptTransparentReconnect(
+              session,
+              onAudioResponse,
+              onTextResponse,
+              onError,
+              onTurnComplete,
+              onInterrupted,
+            ).then((ok) => {
+              if (!ok) {
+                console.warn(
+                  `[VTID-03647] Vertex fallback reconnect failed for session ${session.sessionId}.`,
+                );
+                emitConnectionIssue(session, 'upstream_disconnected');
+                return;
+              }
+              resendGreetingIfStuckAtZeroTurns(session, 'VTID-03647-guided-topic-fallback');
+            }).catch((e) => {
+              console.warn(`[VTID-03647] Vertex fallback reconnect threw: ${(e as Error).message}`);
+              emitConnectionIssue(session, 'upstream_disconnected');
+            });
+            return;
+          }
+
           // VTID-03557: one fresh Nova retry BEFORE the VTID-03502 Vertex
           // fallback below pins the session away from Nova. Every measured
           // "Premature close" is Node's own stream-teardown error, not our
@@ -8166,7 +8290,11 @@ async function connectToLiveAPI(
             alreadyFellBack: (session as any)._novaFallbackToVertex === true,
           });
 
-          if (novaDiedBeforeAnyAudio) {
+          // VTID-emergency-gcp-shutdown: with Vertex permanently unreachable,
+          // pinning to it and reconnecting is a guaranteed-doomed round trip
+          // that only delays the honest connection_issue signal below. Skip
+          // straight there instead of pretending a Vertex reconnect might work.
+          if (novaDiedBeforeAnyAudio && process.env.VERTEX_LIVE_UNAVAILABLE !== 'true') {
             console.warn(
               `[VTID-03502] Nova stream for session ${session.sessionId} closed before any audio ` +
                 `(reason=${closeEvent.reason ?? 'unknown'}, audio_out=0) — pinning to Vertex and reconnecting.`,
@@ -9960,6 +10088,67 @@ async function sendGreetingAudioBridge(session: GeminiLiveSession): Promise<void
     emitDiag(session, 'greeting_bridge_sent', { lang, chars: text.length });
   } catch (err) {
     console.warn('[GREETING-BRIDGE] Failed (non-fatal, real greeting proceeds normally):', (err as Error).message);
+  }
+}
+
+/**
+ * VTID-03650: play the pre-synthesized Polly guided-topic lesson audio to the
+ * client, BEFORE the live model's first turn. The audio itself was already
+ * synthesized during wake-brief decision (see
+ * `services/tts/guided-topic-narration-audio.ts` and the
+ * guided-topic-narration provider) and is bundled on
+ * `session.guidedTopicNarrationContent.narrationAudio` — this function only
+ * dispatches it, transport-aware (SSE write / WS message), mirroring
+ * `sendGreetingAudioBridge`'s message shape so the client's existing PCM
+ * playback queue (orb-widget.js `_processQueue`) handles it identically.
+ *
+ * One-shot: `guidedTopicAudioDelivered` is set (true on send, false when
+ * Polly had nothing to send) the first time this runs and short-circuits
+ * every subsequent call for the session, including reconnects — the lesson
+ * was already played once; a reconnect must not replay it, and the turns-2+
+ * system-instruction block already reads `narrationAudio` independently of
+ * this flag, so a reconnect still behaves post-narration whether or not the
+ * audio itself is (correctly) never resent.
+ */
+function sendGuidedTopicNarrationAudioBridge(session: GeminiLiveSession): void {
+  if ((session as any).guidedTopicAudioDelivered !== undefined) return;
+
+  const content = (session as any).guidedTopicNarrationContent as
+    | { narrationAudio: { audioB64: string; sampleRateHz: number } | null; topic_id: string }
+    | null
+    | undefined;
+  const audio = content?.narrationAudio ?? null;
+  if (!audio) {
+    (session as any).guidedTopicAudioDelivered = false;
+    return;
+  }
+
+  const msg = {
+    type: 'audio',
+    data_b64: audio.audioB64,
+    mime: `audio/pcm;rate=${audio.sampleRateHz}`,
+    chunk_number: session.audioOutChunks++,
+    source: 'guided_topic_narration',
+  };
+  try {
+    if (session.sseResponse) {
+      session.sseResponse.write(`data: ${JSON.stringify(msg)}\n\n`);
+    } else if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+      sendWsMessage(session.clientWs, msg);
+    } else {
+      (session as any).guidedTopicAudioDelivered = false;
+      return;
+    }
+    (session as any).guidedTopicAudioDelivered = true;
+    emitDiag(session, 'guided_topic_audio_bridge_sent', { topic_id: content?.topic_id ?? null });
+    void emitOasisEvent({
+      type: 'orb.guided_topic.audio_bridge_sent',
+      vtid: 'VTID-03650',
+      payload: { session_id: session.sessionId, topic_id: content?.topic_id ?? null, provider: 'polly' } as any,
+    } as any).catch(() => { /* best-effort */ });
+  } catch (err) {
+    (session as any).guidedTopicAudioDelivered = false;
+    console.warn('[VTID-03650] Guided-topic audio bridge send failed:', (err as Error).message);
   }
 }
 
@@ -14580,6 +14769,10 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
   // takes 5-8+s to first audio — a clear net win, and feature-flagged so it
   // can be disabled instantly if that tradeoff is ever wrong.
   await sendGreetingAudioBridge(session);
+  // VTID-03650: guided-topic lesson audio (if a topic was tapped and Polly
+  // could serve it) — also before the real upstream connect, same ordering
+  // rationale as the greeting bridge above.
+  sendGuidedTopicNarrationAudioBridge(session);
 
   // VTID-01219: Connect to Vertex AI Live API WebSocket IN PARALLEL (non-blocking).
   // The ready event is already sent so the client gets instant visual + audio feedback
@@ -15688,6 +15881,11 @@ async function handleWsClientMessage(clientSession: WsClientSession, message: Ws
         } catch (err) {
           console.warn('[VTID-INSTANT-FEEDBACK] Failed to send chime via WS:', err);
         }
+        // VTID-03650: guided-topic lesson audio (if a topic was tapped and
+        // Polly could serve it) — after the chime, before the live model's
+        // own first turn. Same audio_ready gating as the greeting itself, so
+        // it can't arrive before the client's AudioContext is unlocked.
+        sendGuidedTopicNarrationAudioBridge(liveSession);
         sendGreetingPromptToLiveAPI(liveSession.upstreamWs, liveSession);
         liveSession.greetingDeferred = false;
         // ORB-CONVERSATION-LATENCY: greeting dispatched upstream — remaining
@@ -16053,6 +16251,10 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
           } catch (err) {
             console.warn('[VTID-INSTANT-FEEDBACK] Failed to send chime in fallback:', err);
           }
+          // VTID-03650: same guided-topic bridge as the primary audio_ready
+          // path — the one-shot guard in the function itself makes this a
+          // no-op if it already fired there.
+          sendGuidedTopicNarrationAudioBridge(liveSession);
           sendGreetingPromptToLiveAPI(liveSession.upstreamWs, liveSession);
           liveSession.greetingDeferred = false;
           liveSession.establishLatency?.mark('greeting_sent', { deferred: true, fallback: true });

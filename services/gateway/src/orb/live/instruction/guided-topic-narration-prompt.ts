@@ -76,17 +76,91 @@ export function buildGuidedTopicSpokenLesson(
 }
 
 /**
- * The GUIDE-MODE TEACH block. Governs turns 2+ (follow-up Q&A about the topic):
- * the lesson itself is spoken on turn 1 via the spoken line (see
- * buildGuidedTopicSpokenLesson); this block tells the model how to handle the
- * conversation AFTER the lesson. Bundled on the candidate, injected on both
- * transports — like the Journey Guide block.
+ * VTID-03650 — the SHORT turn-1 line when the lesson was ALREADY delivered as
+ * pre-recorded Polly audio (see `guided-topic-narration-audio.ts`). Replaces
+ * `buildGuidedTopicSpokenLesson` for this case: the model no longer needs to
+ * (and — per VTID-03647/03648 — reliably cannot be trusted to) say the lesson
+ * itself, so its first turn is a short, safe, natural follow-up instead of the
+ * lesson text. Same literal-line constraint as the other spoken lines in this
+ * file (native-audio needs a short, direct turn to reliably produce audio —
+ * VTID-03293) and the same de/en-only scope as `buildGuidedTopicNarrationOpenerLine`.
+ */
+export function buildGuidedTopicPostNarrationLine(
+  topicTitle: string,
+  lang: string,
+  opts?: { hasPracticeTarget?: boolean },
+): string {
+  const isDe = (lang || 'en').toLowerCase().startsWith('de');
+  if (isDe) {
+    return opts?.hasPracticeTarget
+      ? `So, das war „${topicTitle}". Hast du Fragen dazu, oder sollen wir direkt gemeinsam loslegen?`
+      : `So, das war „${topicTitle}". Hast du Fragen dazu?`;
+  }
+  return opts?.hasPracticeTarget
+    ? `So, that was "${topicTitle}". Any questions about it, or should we jump straight into practicing it together?`
+    : `So, that was "${topicTitle}". Any questions about it?`;
+}
+
+/**
+ * The GUIDE-MODE TEACH block. Governs turns 2+ (follow-up Q&A about the topic).
+ *
+ * VTID-03650: when `content.narrationAudio` is set, the lesson was already
+ * delivered verbatim as pre-recorded Polly audio BEFORE this session's live
+ * model turn ever ran — the raw curriculum text (`voice_script`) must NOT be
+ * re-injected here, because that is exactly the payload VTID-03647/03648
+ * measured Nova and Vertex both independently rejecting. This branch carries
+ * only topic_title/practice_target (safe, short, non-curriculum) so the model
+ * can field follow-up questions and guide to practice without ever seeing the
+ * raw material again.
  */
 export function buildGuidedTopicNarrationBlock(
   content: GuidedTopicNarrationContent,
   lang: string,
 ): string {
   const isDe = (lang || 'en').toLowerCase().startsWith('de');
+
+  if (content.narrationAudio) {
+    return isDe
+      ? [
+          '',
+          '## GUIDE-MODUS (NACH DER LEKTION) — die Lektion wurde bereits per Audio vorgetragen',
+          '',
+          'SPRACHE: Sprich AUSSCHLIESSLICH auf Deutsch. Dieser Modus gilt für die GANZE Sitzung und hat Vorrang vor JEDER generischen Begrüßungs- oder Eröffnungsregel.',
+          '',
+          `Die Lektion zu „${content.topic_title}" wurde der Person GERADE als vorab aufgenommene Audio-Lektion vorgespielt — du hast sie NICHT selbst vorgetragen und musst sie NICHT wiederholen.`,
+          '',
+          'STRENG VERBOTEN:',
+          '- Die Lektion erneut vortragen oder zusammenfassen, als hättest du sie noch nicht erklärt.',
+          '- „Was möchtest du?" / „Wie kann ich dir helfen?" — du WEISST, worum es gerade ging.',
+          '',
+          'So führst du:',
+          '- Beantworte Rückfragen zur Lektion natürlich und knapp.',
+          content.practice_target
+            ? `- Wenn die Person bereit ist, FÜHRE sie zur Übung („${content.practice_target}") — biete an, es direkt gemeinsam zu machen.`
+            : '- Wenn die Person bereit ist, schlage einen konkreten nächsten Schritt vor.',
+          '',
+        ].join('\n')
+      : [
+          '',
+          '## GUIDE MODE (POST-LESSON) — the lesson was already narrated via audio',
+          '',
+          `LANGUAGE: Speak ONLY in ${LOCALE_ENGLISH_NAME[resolveLocaleStrict(lang) ?? 'en'] || 'English'}. This mode applies to the WHOLE session and OVERRIDES every generic greeting/opening rule.`,
+          '',
+          `The lesson on "${content.topic_title}" was JUST played to the person as a pre-recorded audio narration — you did NOT narrate it yourself and do NOT need to repeat it.`,
+          '',
+          'STRICTLY FORBIDDEN:',
+          '- Re-narrating or summarizing the lesson as if you hadn\'t already explained it.',
+          '- "What do you want?" / "How can I help you?" — you KNOW what this was just about.',
+          '',
+          'How to lead:',
+          '- Answer follow-up questions about the lesson naturally and concisely.',
+          content.practice_target
+            ? `- Once they're ready, GUIDE them to the practice ("${content.practice_target}") — offer to do it together right now.`
+            : '- Once they\'re ready, propose a concrete next step.',
+          '',
+        ].join('\n');
+  }
+
   const exp = content.explanation || {
     whatItIs: null,
     userBenefit: null,
