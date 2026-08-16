@@ -10092,6 +10092,67 @@ async function sendGreetingAudioBridge(session: GeminiLiveSession): Promise<void
 }
 
 /**
+ * VTID-03650: play the pre-synthesized Polly guided-topic lesson audio to the
+ * client, BEFORE the live model's first turn. The audio itself was already
+ * synthesized during wake-brief decision (see
+ * `services/tts/guided-topic-narration-audio.ts` and the
+ * guided-topic-narration provider) and is bundled on
+ * `session.guidedTopicNarrationContent.narrationAudio` — this function only
+ * dispatches it, transport-aware (SSE write / WS message), mirroring
+ * `sendGreetingAudioBridge`'s message shape so the client's existing PCM
+ * playback queue (orb-widget.js `_processQueue`) handles it identically.
+ *
+ * One-shot: `guidedTopicAudioDelivered` is set (true on send, false when
+ * Polly had nothing to send) the first time this runs and short-circuits
+ * every subsequent call for the session, including reconnects — the lesson
+ * was already played once; a reconnect must not replay it, and the turns-2+
+ * system-instruction block already reads `narrationAudio` independently of
+ * this flag, so a reconnect still behaves post-narration whether or not the
+ * audio itself is (correctly) never resent.
+ */
+function sendGuidedTopicNarrationAudioBridge(session: GeminiLiveSession): void {
+  if ((session as any).guidedTopicAudioDelivered !== undefined) return;
+
+  const content = (session as any).guidedTopicNarrationContent as
+    | { narrationAudio: { audioB64: string; sampleRateHz: number } | null; topic_id: string }
+    | null
+    | undefined;
+  const audio = content?.narrationAudio ?? null;
+  if (!audio) {
+    (session as any).guidedTopicAudioDelivered = false;
+    return;
+  }
+
+  const msg = {
+    type: 'audio',
+    data_b64: audio.audioB64,
+    mime: `audio/pcm;rate=${audio.sampleRateHz}`,
+    chunk_number: session.audioOutChunks++,
+    source: 'guided_topic_narration',
+  };
+  try {
+    if (session.sseResponse) {
+      session.sseResponse.write(`data: ${JSON.stringify(msg)}\n\n`);
+    } else if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+      sendWsMessage(session.clientWs, msg);
+    } else {
+      (session as any).guidedTopicAudioDelivered = false;
+      return;
+    }
+    (session as any).guidedTopicAudioDelivered = true;
+    emitDiag(session, 'guided_topic_audio_bridge_sent', { topic_id: content?.topic_id ?? null });
+    void emitOasisEvent({
+      type: 'orb.guided_topic.audio_bridge_sent',
+      vtid: 'VTID-03650',
+      payload: { session_id: session.sessionId, topic_id: content?.topic_id ?? null, provider: 'polly' } as any,
+    } as any).catch(() => { /* best-effort */ });
+  } catch (err) {
+    (session as any).guidedTopicAudioDelivered = false;
+    console.warn('[VTID-03650] Guided-topic audio bridge send failed:', (err as Error).message);
+  }
+}
+
+/**
  * VTID-02020: Contextual recovery prompt for reconnects.
  *
  * After a network disconnect, the orb-widget client tears down the dead SSE
@@ -14708,6 +14769,10 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
   // takes 5-8+s to first audio — a clear net win, and feature-flagged so it
   // can be disabled instantly if that tradeoff is ever wrong.
   await sendGreetingAudioBridge(session);
+  // VTID-03650: guided-topic lesson audio (if a topic was tapped and Polly
+  // could serve it) — also before the real upstream connect, same ordering
+  // rationale as the greeting bridge above.
+  sendGuidedTopicNarrationAudioBridge(session);
 
   // VTID-01219: Connect to Vertex AI Live API WebSocket IN PARALLEL (non-blocking).
   // The ready event is already sent so the client gets instant visual + audio feedback
@@ -15816,6 +15881,11 @@ async function handleWsClientMessage(clientSession: WsClientSession, message: Ws
         } catch (err) {
           console.warn('[VTID-INSTANT-FEEDBACK] Failed to send chime via WS:', err);
         }
+        // VTID-03650: guided-topic lesson audio (if a topic was tapped and
+        // Polly could serve it) — after the chime, before the live model's
+        // own first turn. Same audio_ready gating as the greeting itself, so
+        // it can't arrive before the client's AudioContext is unlocked.
+        sendGuidedTopicNarrationAudioBridge(liveSession);
         sendGreetingPromptToLiveAPI(liveSession.upstreamWs, liveSession);
         liveSession.greetingDeferred = false;
         // ORB-CONVERSATION-LATENCY: greeting dispatched upstream — remaining
@@ -16181,6 +16251,10 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
           } catch (err) {
             console.warn('[VTID-INSTANT-FEEDBACK] Failed to send chime in fallback:', err);
           }
+          // VTID-03650: same guided-topic bridge as the primary audio_ready
+          // path — the one-shot guard in the function itself makes this a
+          // no-op if it already fired there.
+          sendGuidedTopicNarrationAudioBridge(liveSession);
           sendGreetingPromptToLiveAPI(liveSession.upstreamWs, liveSession);
           liveSession.greetingDeferred = false;
           liveSession.establishLatency?.mark('greeting_sent', { deferred: true, fallback: true });
