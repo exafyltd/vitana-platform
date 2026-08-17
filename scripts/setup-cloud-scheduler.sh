@@ -209,6 +209,18 @@ echo "Done. ${#JOBS[@]} scheduler jobs processed."
 DIRECT_JOBS=(
   "reminders-tick|* * * * *|UTC|/api/v1/scheduled-notifications/reminders-tick"
   "reminders-sweeper|*/5 * * * *|UTC|/api/v1/scheduled-notifications/reminders-sweeper"
+  # VTID-03656: push-dispatch is the ONLY delivery path for FCM/Appilix push
+  # on notifications written directly by DB triggers (new post/video, like,
+  # comment, follow, mention — see vitana-v1 migrations 20260630120000 and
+  # 20260805160000). It was NEVER registered here, so whatever Cloud
+  # Scheduler job was invoking it before existed only in live GCP state,
+  # outside this repo entirely — undiscoverable by reading the code, and it
+  # silently stopped succeeding around 2026-08-15, leaving 782+ "new post"
+  # push notifications undelivered for 40+ hours before anyone noticed.
+  # `* * * * *` is the fastest a standard unix-cron Cloud Scheduler job can
+  # go (1 minute) — the route's old comment claimed "every 30 seconds",
+  # which was never actually achievable via this script's job format.
+  "push-dispatch|* * * * *|UTC|/api/v1/scheduled-notifications/push-dispatch"
 )
 
 # ──────────────────────────────────────────────────────────────
