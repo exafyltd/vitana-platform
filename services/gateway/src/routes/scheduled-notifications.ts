@@ -1241,7 +1241,7 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
   // while — the exact condition that let the 2026-08-15 outage run silent
   // for 40+ hours. Anything older than the old 5-minute window means the
   // scheduler missed at least one expected invocation.
-  const oldestAgeMs = Date.now() - new Date(pending[pending.length - 1]?.created_at ?? Date.now()).getTime();
+  const oldestAgeMs = Date.now() - new Date(pending[0]?.created_at ?? Date.now()).getTime();
   if (oldestAgeMs > 5 * 60 * 1000) {
     console.warn(
       `[PushDispatch] Catching up on a backlog — oldest pending notification is ${Math.round(oldestAgeMs / 60000)}min old (batch of ${pending.length}). ` +
