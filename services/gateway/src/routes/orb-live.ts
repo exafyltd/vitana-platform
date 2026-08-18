@@ -14324,13 +14324,54 @@ function persistLanguagePreference(
 }
 
 /**
- * Retrieve user's stored language preference from memory_facts.
- * Returns the 2-letter ISO code or null if not found.
+ * Retrieve user's stored language preference.
+ * Returns the 2-letter ISO code (restricted to SUPPORTED_LIVE_LANGUAGES) or
+ * null if not found.
+ *
+ * VTID-03668: this used to read ONLY memory_facts.preferred_language — an
+ * assistant-inferred fact, often stale or never written at all. The
+ * canonical priority order this codebase already documents elsewhere
+ * (src/i18n/server-locale.ts's getUserLocale, used for push notifications
+ * per CLAUDE.md §13b) puts `user_preferences.stt_language` ABOVE it, calling
+ * that column out explicitly: "the field the frontend Language picker
+ * actually writes... the live source for most users today". ORB voice
+ * skipped that column entirely, so any session/start call that omits an
+ * explicit client-requested lang (a reconnect, or any session recreation
+ * that doesn't resend the user's UI selection) fell through to whatever
+ * memory_facts happened to hold — reported live as ORB reverting to German
+ * mid-session despite the user having selected English in Voice Settings.
+ * Confirmed end to end: vitana-v1's VoiceSettingsPanel.tsx reads/writes
+ * exactly `preferences.stt_language` via useUserPreferences.ts.
+ *
+ * Worse, `persistLanguagePreference()` (below) writes whatever gets
+ * resolved back into memory_facts with confidence 0.95 — so one wrong
+ * resolution entrenches itself for every future session too. Checking
+ * stt_language FIRST breaks that loop: it is always the live value the
+ * user actually set, so a stale memory_facts fact can never outrank it
+ * again once this fires even once for a given user.
  */
 async function getStoredLanguagePreference(
   tenantId: string,
   userId: string
 ): Promise<string | null> {
+  try {
+    const supa = getSupabase();
+    if (supa) {
+      const { data: prefRow } = await supa
+        .from('user_preferences')
+        .select('stt_language')
+        .eq('user_id', userId)
+        .maybeSingle();
+      const stt = (prefRow as { stt_language?: string | null } | null)?.stt_language ?? null;
+      if (stt) {
+        const code = normalizeLang(stt);
+        if (SUPPORTED_LIVE_LANGUAGES.includes(code)) return code;
+      }
+    }
+  } catch (err: any) {
+    console.warn(`[LANG-PREF] Failed to retrieve stt_language preference: ${err.message}`);
+  }
+
   try {
     const result = await getCurrentFacts({
       tenant_id: tenantId,
