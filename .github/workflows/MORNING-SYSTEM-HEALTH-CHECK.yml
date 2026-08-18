@@ -226,21 +226,26 @@ jobs:
           fi
 
           # 10 — AI provider governance: no stage may route Claude at the
-          # direct Anthropic API (CLAUDE.md ALWAYS 10a/10b, VTID-03563). That
-          # account has no credit balance; every call silently falls back to
-          # Google, which is how this stayed hidden for months last time.
+          # direct Anthropic API (CLAUDE.md ALWAYS 10a/10b, VTID-03563), and
+          # no stage may be pointed at vertex/Gemini AT ALL (IF-THEN 27 is
+          # absolute — the only sanctioned Google dependency is ORB voice's
+          # own Nova->Vertex fallback, which lives outside llm_routing_policy
+          # entirely and cannot appear in either signal checked here). That
+          # anthropic account has no credit balance; every call silently
+          # falls back to Google, which is how this stayed hidden for months
+          # last time.
           if [ "$VITAL_HTTP" != "200" ]; then
             echo "| 10 | AI provider governance (Bedrock-only routing) | FAIL | RPC HTTP $VITAL_HTTP $(head -c 120 vital.json 2>/dev/null) |" >> "$REPORT"
           else
-            BAD_STAGES=$(jq -c '.llm_stages_on_forbidden_anthropic' vital.json 2>/dev/null)
+            BAD_STAGES=$(jq -c '.llm_stages_on_forbidden_provider' vital.json 2>/dev/null)
             BAD_COUNT=$(echo "$BAD_STAGES" | jq 'length' 2>/dev/null)
             CREDIT_FAILS=$(jq -r '.llm_anthropic_credit_failures_24h' vital.json 2>/dev/null)
             BEDROCK_OK=$(jq -r '.llm_bedrock_completions_24h' vital.json 2>/dev/null)
             VERTEX_N=$(jq -r '.llm_vertex_completions_24h' vital.json 2>/dev/null)
-            if [ "$BAD_COUNT" = "0" ] && [ "$CREDIT_FAILS" = "0" ]; then
-              echo "| 10 | AI provider governance (Bedrock-only routing) | PASS | 0 stages on anthropic, 0 credit-balance failures/24h, $BEDROCK_OK bedrock completions/24h (vertex: $VERTEX_N, informational) |" >> "$REPORT"
+            if [ "$BAD_COUNT" = "0" ] && [ "$CREDIT_FAILS" = "0" ] && [ "$VERTEX_N" = "0" ]; then
+              echo "| 10 | AI provider governance (Bedrock-only routing) | PASS | 0 stages on anthropic/vertex, 0 credit-balance failures/24h, 0 vertex completions/24h, $BEDROCK_OK bedrock completions/24h |" >> "$REPORT"
             else
-              echo "| 10 | AI provider governance (Bedrock-only routing) | FAIL | forbidden-anthropic stages: $BAD_STAGES; anthropic credit-balance failures/24h: $CREDIT_FAILS |" >> "$REPORT"
+              echo "| 10 | AI provider governance (Bedrock-only routing) | FAIL | forbidden-provider stages: $BAD_STAGES; anthropic credit-balance failures/24h: $CREDIT_FAILS; vertex completions/24h: $VERTEX_N |" >> "$REPORT"
             fi
           fi
 
