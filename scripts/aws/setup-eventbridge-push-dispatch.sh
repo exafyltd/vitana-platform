@@ -15,45 +15,43 @@
 # platform owner: move this — and eventually everything else this
 # repo runs on GCP Cloud Scheduler — onto AWS.
 #
-# This script is the AWS-native equivalent for ONE job: it recreates
-# what GCP Cloud Scheduler did (fire an unauthenticated HTTP POST to
-# the gateway once a minute) using EventBridge Scheduler + an EventBridge
-# API destination — no compute (no Lambda) needed.
-#
 # SCOPE: this covers ONLY gateway-push-dispatch. scripts/setup-cloud-
-# scheduler.sh still defines ~25 other GCP Cloud Scheduler jobs (the
-# AP-XXXX automation registry jobs, the memory-intelligence jobs, the
-# tenant-scoped daily jobs) that are EQUALLY BROKEN by the same missing
-# GCP billing account — those need the identical AWS migration but are
-# deliberately NOT done here.
+# scheduler.sh still defines ~25 other GCP Cloud Scheduler jobs that
+# are EQUALLY BROKEN by the same missing GCP billing account — those
+# need the identical AWS migration but are deliberately NOT done here.
 #
-# VERIFIED against a live AWS account 2026-08-18 (account 472838866351)
-# after two real bugs found and fixed on the first run:
-#   1. AWS_REGION collision: AWS CloudShell auto-exports AWS_REGION to
-#      match whichever region tab is open, which silently overrode this
-#      script's eu-central-1 default (everything got created in
-#      us-east-1 on the first attempt). Deliberately reads
-#      VITANA_AWS_REGION instead, which nothing else sets, so this
-#      script's own default always wins unless explicitly overridden.
-#   2. Connection/API-destination ARNs are now resolved from AWS's own
-#      create/describe JSON responses, not hand-constructed — a
-#      hand-built ARN with a trailing "/*" (valid in an IAM policy
-#      Resource field, invalid as a literal create-api-destination
-#      parameter) failed AWS's own ARN regex validation on the first run.
-#   3. Scheduler's Target schema has NO HttpParameters field (that
-#      belongs to EventBridge RULES, a different/older API surface,
-#      not EventBridge SCHEDULER) — confirmed via a real
-#      ParamValidation error naming the actual allowed fields. Removed;
-#      the route needs no particular header to function.
+# ARCHITECTURE, and why it changed mid-build (both found via REAL
+# ValidationExceptions against a live account, 472838866351,
+# eu-central-1, 2026-08-18):
+#
+#   Attempt 1: EventBridge Scheduler → EventBridge API destination
+#   directly (Target.Arn = the api-destination ARN). This is a common
+#   assumption (Rules and Pipes both support API destinations as
+#   targets) but Scheduler does NOT: `aws scheduler create-schedule`
+#   rejected a syntactically-correct, freshly-minted api-destination
+#   ARN with "Provided Arn is not in correct format" — not a typo, a
+#   genuine unsupported-target-type rejection. If you're tempted to
+#   "fix" this by targeting an API destination again, don't — it's
+#   been tried and confirmed unsupported.
+#
+#   Attempt 2 (this version): EventBridge Scheduler → Lambda → the
+#   Lambda does the actual HTTPS POST to the gateway. Lambda-as-
+#   Scheduler-target is a first-class, unambiguous, well-documented
+#   integration — no format guessing involved. The EventBridge
+#   connection + API destination created by attempt 1 are orphaned by
+#   this pivot (harmless, zero ongoing cost) — clean up manually if
+#   you like:
+#     aws events delete-api-destination --name vitana-push-dispatch --region eu-central-1
+#     aws events delete-connection --name vitana-push-dispatch-trigger --region eu-central-1
 #
 # Usage:
 #   ./scripts/aws/setup-eventbridge-push-dispatch.sh [--delete] [--dry-run]
 #
 # Prerequisites:
-#   - aws CLI v2 + jq, authenticated (`aws sts get-caller-identity` should work)
-#   - IAM permissions: iam:CreateRole, iam:PutRolePolicy, iam:GetRole,
-#     events:CreateConnection, events:DescribeConnection,
-#     events:CreateApiDestination, events:DescribeApiDestination,
+#   - aws CLI v2 + jq + zip, authenticated (`aws sts get-caller-identity`)
+#   - IAM permissions: iam:CreateRole, iam:PutRolePolicy, iam:DeleteRolePolicy,
+#     iam:AttachRolePolicy, iam:GetRole, lambda:CreateFunction,
+#     lambda:UpdateFunctionCode, lambda:GetFunction,
 #     scheduler:CreateSchedule, scheduler:UpdateSchedule, scheduler:GetSchedule
 #     (+ Delete* for --delete)
 # ──────────────────────────────────────────────────────────────
@@ -61,14 +59,17 @@
 set -euo pipefail
 
 # ── Config ────────────────────────────────────────────────────
-# Deliberately VITANA_AWS_REGION, not AWS_REGION — see header note above.
+# Deliberately VITANA_AWS_REGION, not AWS_REGION — AWS CloudShell auto-
+# exports AWS_REGION to match whichever region tab is open, which
+# silently overrode this script's eu-central-1 default on an earlier
+# run (everything got created in us-east-1 instead).
 REGION="${VITANA_AWS_REGION:-eu-central-1}"           # matches the rest of this repo's AWS estate (CLAUDE.md §2b)
 ACCOUNT_ID="${AWS_ACCOUNT_ID:-472838866351}"          # this repo's documented AWS account (CLAUDE.md §1b)
 GATEWAY_URL="${GATEWAY_URL:-https://gateway.vitanaland.com}"
 TARGET_PATH="/api/v1/scheduled-notifications/push-dispatch"
 
-CONNECTION_NAME="vitana-push-dispatch-trigger"
-API_DEST_NAME="vitana-push-dispatch"
+LAMBDA_NAME="vitana-push-dispatch"
+LAMBDA_EXEC_ROLE_NAME="vitana-push-dispatch-lambda-exec"
 SCHEDULE_NAME="gateway-push-dispatch"
 SCHEDULER_ROLE_NAME="vitana-scheduler-push-dispatch"
 
@@ -90,61 +91,114 @@ echo "Dry run:      $DRY_RUN"
 echo ""
 
 if $DELETE; then
-  echo "Deleting schedule, API destination, connection, and IAM role..."
+  echo "Deleting schedule, Lambda function, and IAM roles..."
   aws scheduler delete-schedule --name "$SCHEDULE_NAME" --region "$REGION" 2>/dev/null || true
-  aws events delete-api-destination --name "$API_DEST_NAME" --region "$REGION" 2>/dev/null || true
-  aws events delete-connection --name "$CONNECTION_NAME" --region "$REGION" 2>/dev/null || true
+  aws lambda delete-function --function-name "$LAMBDA_NAME" --region "$REGION" 2>/dev/null || true
+  aws iam delete-role-policy --role-name "$SCHEDULER_ROLE_NAME" --policy-name "invoke-lambda-target" 2>/dev/null || true
   aws iam delete-role-policy --role-name "$SCHEDULER_ROLE_NAME" --policy-name "invoke-api-destination" 2>/dev/null || true
   aws iam delete-role --role-name "$SCHEDULER_ROLE_NAME" 2>/dev/null || true
-  echo "Done."
+  aws iam detach-role-policy --role-name "$LAMBDA_EXEC_ROLE_NAME" --policy-arn "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole" 2>/dev/null || true
+  aws iam delete-role --role-name "$LAMBDA_EXEC_ROLE_NAME" 2>/dev/null || true
+  echo "Done. (Any orphaned EventBridge connection/API destination from an earlier attempt are unaffected — see script header for their cleanup commands.)"
   exit 0
 fi
 
 if $DRY_RUN; then
-  echo "Dry run — would create/update a connection, API destination, IAM role, and schedule in $REGION. Exiting without making changes."
+  echo "Dry run — would create/update a Lambda function, two IAM roles, and a schedule in $REGION. Exiting."
   exit 0
 fi
 
-# ── 1. EventBridge Connection ────────────────────────────────
-# API destinations require a Connection with SOME auth mechanism — there
-# is no "no auth" option. The gateway route does not check for this
-# header (matching the GCP Cloud Scheduler job it replaces, which was
-# also unauthenticated); it exists only because EventBridge requires a
-# Connection to have an authorization type.
-echo "── Creating EventBridge connection: $CONNECTION_NAME"
-if CONN_JSON=$(aws events create-connection \
-  --name "$CONNECTION_NAME" \
-  --region "$REGION" \
-  --authorization-type API_KEY \
-  --auth-parameters '{"ApiKeyAuthParameters":{"ApiKeyName":"X-Scheduler-Trigger","ApiKeyValue":"vitana-push-dispatch"}}' 2>&1); then
-  echo "$CONN_JSON"
-else
-  echo "  (create failed — checking whether it already exists)"
-  CONN_JSON=$(aws events describe-connection --name "$CONNECTION_NAME" --region "$REGION")
-fi
-CONNECTION_ARN=$(echo "$CONN_JSON" | jq -r '.ConnectionArn')
-echo "Connection ARN: $CONNECTION_ARN"
+# ── 1. Lambda execution role ─────────────────────────────────
+echo "── Creating Lambda execution role: $LAMBDA_EXEC_ROLE_NAME"
+LAMBDA_TRUST_POLICY=$(cat <<JSON
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": { "Service": "lambda.amazonaws.com" },
+    "Action": "sts:AssumeRole"
+  }]
+}
+JSON
+)
+aws iam create-role \
+  --role-name "$LAMBDA_EXEC_ROLE_NAME" \
+  --assume-role-policy-document "$LAMBDA_TRUST_POLICY" \
+  --description "Execution role for vitana-push-dispatch Lambda (VTID-03676)" \
+  || echo "  (role may already exist — continuing)"
+aws iam attach-role-policy \
+  --role-name "$LAMBDA_EXEC_ROLE_NAME" \
+  --policy-arn "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+LAMBDA_EXEC_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${LAMBDA_EXEC_ROLE_NAME}"
 
-# ── 2. EventBridge API destination ───────────────────────────
-echo "── Creating API destination: $API_DEST_NAME"
-if DEST_JSON=$(aws events create-api-destination \
-  --name "$API_DEST_NAME" \
-  --region "$REGION" \
-  --connection-arn "$CONNECTION_ARN" \
-  --invocation-endpoint "${GATEWAY_URL}${TARGET_PATH}" \
-  --http-method POST \
-  --invocation-rate-limit-per-second 1 2>&1); then
-  echo "$DEST_JSON"
-else
-  echo "  (create failed — checking whether it already exists)"
-  DEST_JSON=$(aws events describe-api-destination --name "$API_DEST_NAME" --region "$REGION")
-fi
-API_DEST_ARN=$(echo "$DEST_JSON" | jq -r '.ApiDestinationArn')
-echo "API destination ARN: $API_DEST_ARN"
+echo "Waiting 10s for IAM role propagation..."
+sleep 10
 
-# ── 3. IAM role EventBridge Scheduler assumes to invoke it ──
-echo "── Creating IAM role: $SCHEDULER_ROLE_NAME"
-TRUST_POLICY=$(cat <<JSON
+# ── 2. Lambda function code ──────────────────────────────────
+echo "── Packaging Lambda function"
+WORKDIR=$(mktemp -d)
+cat > "$WORKDIR/index.js" <<'JS'
+const https = require('https');
+
+// VTID-03676: fires the same unauthenticated POST GCP Cloud Scheduler
+// used to send. The route needs no request body or special headers.
+exports.handler = async () => {
+  const url = new URL(
+    (process.env.GATEWAY_URL || 'https://gateway.vitanaland.com') +
+    '/api/v1/scheduled-notifications/push-dispatch'
+  );
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        hostname: url.hostname,
+        path: url.pathname,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': 0 },
+        timeout: 25000,
+      },
+      (res) => {
+        let body = '';
+        res.on('data', (chunk) => { body += chunk; });
+        res.on('end', () => {
+          console.log(`push-dispatch responded ${res.statusCode}: ${body.slice(0, 500)}`);
+          resolve({ statusCode: res.statusCode, body });
+        });
+      }
+    );
+    req.on('timeout', () => req.destroy(new Error('push-dispatch request timed out')));
+    req.on('error', reject);
+    req.end();
+  });
+};
+JS
+(cd "$WORKDIR" && zip -q function.zip index.js)
+
+echo "── Creating/updating Lambda function: $LAMBDA_NAME"
+if aws lambda create-function \
+  --function-name "$LAMBDA_NAME" \
+  --region "$REGION" \
+  --runtime nodejs20.x \
+  --role "$LAMBDA_EXEC_ROLE_ARN" \
+  --handler index.handler \
+  --zip-file "fileb://$WORKDIR/function.zip" \
+  --timeout 30 \
+  --environment "Variables={GATEWAY_URL=$GATEWAY_URL}" \
+  --description "Vitana push-dispatch cron trigger (VTID-03676) — replaces the GCP Cloud Scheduler job of the same purpose" 2>&1; then
+  echo "Function created."
+else
+  echo "  (create failed — trying update-function-code instead, in case it already exists)"
+  aws lambda update-function-code \
+    --function-name "$LAMBDA_NAME" \
+    --region "$REGION" \
+    --zip-file "fileb://$WORKDIR/function.zip"
+  echo "Function code updated."
+fi
+LAMBDA_ARN="arn:aws:lambda:${REGION}:${ACCOUNT_ID}:function:${LAMBDA_NAME}"
+rm -rf "$WORKDIR"
+
+# ── 3. IAM role EventBridge Scheduler assumes to invoke the Lambda ──
+echo "── Creating Scheduler invoke role: $SCHEDULER_ROLE_NAME"
+SCHEDULER_TRUST_POLICY=$(cat <<JSON
 {
   "Version": "2012-10-17",
   "Statement": [{
@@ -158,24 +212,28 @@ JSON
 )
 aws iam create-role \
   --role-name "$SCHEDULER_ROLE_NAME" \
-  --assume-role-policy-document "$TRUST_POLICY" \
-  --description "Allows EventBridge Scheduler to invoke the push-dispatch API destination (VTID-03676)" \
+  --assume-role-policy-document "$SCHEDULER_TRUST_POLICY" \
+  --description "Allows EventBridge Scheduler to invoke the push-dispatch Lambda (VTID-03676)" \
   || echo "  (role may already exist — continuing)"
+
+# Clean up the stale events:InvokeApiDestination policy from the earlier
+# (unsupported) attempt, if it's still attached.
+aws iam delete-role-policy --role-name "$SCHEDULER_ROLE_NAME" --policy-name "invoke-api-destination" 2>/dev/null || true
 
 INVOKE_POLICY=$(cat <<JSON
 {
   "Version": "2012-10-17",
   "Statement": [{
     "Effect": "Allow",
-    "Action": "events:InvokeApiDestination",
-    "Resource": "${API_DEST_ARN}"
+    "Action": "lambda:InvokeFunction",
+    "Resource": "${LAMBDA_ARN}"
   }]
 }
 JSON
 )
 aws iam put-role-policy \
   --role-name "$SCHEDULER_ROLE_NAME" \
-  --policy-name "invoke-api-destination" \
+  --policy-name "invoke-lambda-target" \
   --policy-document "$INVOKE_POLICY"
 
 SCHEDULER_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${SCHEDULER_ROLE_NAME}"
@@ -185,17 +243,11 @@ sleep 10
 
 # ── 4. EventBridge Scheduler schedule (every minute — matching the
 #      old GCP job; 1 minute is also Scheduler's floor for rate()) ──
-# NOTE: Scheduler's Target schema has no HttpParameters field — that
-# belongs to EventBridge RULES (a different API), not SCHEDULER.
-# Confirmed via a real ParamValidation error on the first run against
-# this exact CLI. The route needs no particular header to function, so
-# it's simply omitted rather than guessed at again.
 echo "── Creating/updating schedule: $SCHEDULE_NAME"
 TARGET=$(cat <<JSON
 {
-  "Arn": "${API_DEST_ARN}",
+  "Arn": "${LAMBDA_ARN}",
   "RoleArn": "${SCHEDULER_ROLE_ARN}",
-  "Input": "{}",
   "RetryPolicy": { "MaximumRetryAttempts": 1 }
 }
 JSON
@@ -209,7 +261,7 @@ if aws scheduler create-schedule \
   --target "$TARGET"; then
   echo "Schedule created."
 else
-  echo "  (create failed — trying update-schedule instead, in case it already exists)"
+  echo "  (create failed — trying update-schedule instead)"
   aws scheduler update-schedule \
     --name "$SCHEDULE_NAME" \
     --region "$REGION" \
@@ -223,6 +275,7 @@ fi
 echo ""
 echo "Done. Verify with:"
 echo "  aws scheduler get-schedule --name $SCHEDULE_NAME --region $REGION --query 'State'"
+echo "  aws logs tail /aws/lambda/$LAMBDA_NAME --region $REGION --since 5m   # confirm it's actually being invoked and succeeding"
 echo ""
-echo "Then confirm it's actually firing — the push notification backlog"
-echo "in user_notifications should start draining within a few minutes."
+echo "Then confirm the push notification backlog in user_notifications"
+echo "starts draining within a few minutes."
