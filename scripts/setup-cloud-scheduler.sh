@@ -20,7 +20,14 @@ set -euo pipefail
 # ── Config ────────────────────────────────────────────────────
 PROJECT="${GCP_PROJECT_ID:-lovable-vitana-vers1}"
 REGION="${GCP_REGION:-us-central1}"
-GATEWAY_URL="${GATEWAY_URL:-https://gateway-q74ibpv6ia-uc.a.run.app}"
+# Gateway serving traffic has been AWS ECS (vitana-gateway-awsdr), not this
+# GCP Cloud Run project, since the VTID-03419 cutover (2026-07-27). Cloud
+# Scheduler itself still runs on GCP (no AWS equivalent exists yet — see
+# CLAUDE.md's cutover notes), but it must POST to the AWS host or every job
+# this script creates silently targets the GCP rollback target instead of
+# production. The old Cloud Run URL is still valid via --gateway/GATEWAY_URL
+# for anyone deliberately re-pointing at the GCP rollback instance.
+GATEWAY_URL="${GATEWAY_URL:-https://gateway.vitanaland.com}"
 TENANT_ID="${DEFAULT_TENANT_ID:-}"
 DELETE=false
 DRY_RUN=false
