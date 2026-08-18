@@ -7,10 +7,17 @@
  */
 import express from 'express';
 import request from 'supertest';
+import { lookup as dnsLookup } from 'node:dns/promises';
 import fhirOAuthCallbackRouter from '../../src/routes/fhir-oauth-callback';
 import { getSupabase } from '../../src/lib/supabase';
 
 jest.mock('../../src/lib/supabase', () => ({ getSupabase: jest.fn() }));
+// exchangeCodeForToken SSRF-guards the token endpoint's resolved host
+// (see smart-fhir-oauth.ts) — mocked here the same way as
+// smart-fhir-oauth.test.ts so the route tests below never make a real
+// DNS lookup for ehr.example.com.
+jest.mock('node:dns/promises', () => ({ lookup: jest.fn() }));
+const mockLookup = dnsLookup as jest.Mock;
 
 const app = express();
 app.use('/api/v1/vcaop/fhir-oauth', fhirOAuthCallbackRouter);
@@ -18,12 +25,12 @@ app.use('/api/v1/vcaop/fhir-oauth', fhirOAuthCallbackRouter);
 const STATE_SECRET = 'test-fhir-state-secret';
 const ORIGINAL_ENV = { ...process.env };
 
-function tableStub(result: { data?: any; error?: any }) {
+function tableStub(result: { data?: any; error?: any; upsertError?: any }) {
   const chain: any = {
     select: jest.fn(() => chain),
     eq: jest.fn(() => chain),
     maybeSingle: jest.fn(() => Promise.resolve({ data: result.data ?? null, error: result.error ?? null })),
-    upsert: jest.fn(() => Promise.resolve({ error: null })),
+    upsert: jest.fn(() => Promise.resolve({ error: result.upsertError ?? null })),
     update: jest.fn(() => chain),
     insert: jest.fn(() => Promise.resolve({ error: null })),
   };
@@ -47,6 +54,7 @@ beforeEach(() => {
   process.env.FHIR_OAUTH_STATE_SECRET = STATE_SECRET;
   process.env.FHIR_OAUTH_REDIRECT_URI = 'https://gateway.example/api/v1/vcaop/fhir-oauth/callback';
   global.fetch = jest.fn();
+  mockLookup.mockResolvedValue([{ address: '93.184.216.34', family: 4 }]); // public by default
 });
 
 afterEach(() => {
@@ -140,6 +148,30 @@ describe('happy path', () => {
 
     expect(res.status).toBe(502);
     expect(credentials.upsert).not.toHaveBeenCalled();
+  });
+
+  test('a credential-persist failure is reported and never advances state or emits a success event', async () => {
+    const state = await makeState();
+    const manifests = tableStub({ data: { id: 'm-1', connector_id: 'smart_fhir', status: 'authorization_required' } });
+    const credentials = tableStub({ upsertError: { message: 'duplicate key value violates unique constraint' } });
+    const oasisEvents = tableStub({});
+    const tables: Record<string, any> = { integration_manifest: manifests, partner_oauth_credential: credentials, oasis_events: oasisEvents };
+    (getSupabase as jest.Mock).mockReturnValue({ from: jest.fn((t: string) => tables[t] ?? tableStub({})) });
+    (global.fetch as jest.Mock).mockResolvedValue(
+      new Response(JSON.stringify({ access_token: 'tok_xyz', token_type: 'Bearer' }), { status: 200 }),
+    );
+
+    const res = await request(app).get('/api/v1/vcaop/fhir-oauth/callback').query({ code: 'the-code', state });
+
+    expect(res.status).toBe(502);
+    expect(res.body).toEqual({ ok: false, error: 'credential_persist_failed' });
+    expect(manifests.update).not.toHaveBeenCalled();
+    expect(oasisEvents.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'vcaop.portal.connection.fhir_credential_persist_failed', status: 'error' }),
+    );
+    expect(oasisEvents.insert).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'vcaop.portal.connection.fhir_authorized' }),
+    );
   });
 
   test('a manifest that is not connector_id=smart_fhir is rejected', async () => {

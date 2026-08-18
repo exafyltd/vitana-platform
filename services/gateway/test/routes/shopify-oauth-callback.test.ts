@@ -33,12 +33,12 @@ function hmacFor(query: Record<string, string>): string {
   return createHmac('sha256', CLIENT_SECRET).update(message).digest('hex');
 }
 
-function tableStub(result: { data?: any; error?: any }) {
+function tableStub(result: { data?: any; error?: any; upsertError?: any }) {
   const chain: any = {
     select: jest.fn(() => chain),
     eq: jest.fn(() => chain),
     maybeSingle: jest.fn(() => Promise.resolve({ data: result.data ?? null, error: result.error ?? null })),
-    upsert: jest.fn(() => Promise.resolve({ error: null })),
+    upsert: jest.fn(() => Promise.resolve({ error: result.upsertError ?? null })),
     update: jest.fn(() => chain),
     insert: jest.fn(() => Promise.resolve({ error: null })),
   };
@@ -150,6 +150,33 @@ describe('happy path', () => {
 
     expect(res.status).toBe(502);
     expect(credentials.upsert).not.toHaveBeenCalled();
+  });
+
+  test('a credential-persist failure is reported and never advances state or emits a success event', async () => {
+    const state = signState('m-1');
+    const query = { code: 'the-code', shop: 'a.myshopify.com', state, timestamp: '1' };
+    const hmac = hmacFor(query);
+
+    const manifests = tableStub({ data: { id: 'm-1', connector_id: 'shopify', status: 'authorization_required' } });
+    const credentials = tableStub({ upsertError: { message: 'duplicate key value violates unique constraint' } });
+    const oasisEvents = tableStub({});
+    const tables: Record<string, any> = { integration_manifest: manifests, partner_oauth_credential: credentials, oasis_events: oasisEvents };
+    (getSupabase as jest.Mock).mockReturnValue({ from: jest.fn((t: string) => tables[t] ?? tableStub({})) });
+    (global.fetch as jest.Mock).mockResolvedValue(
+      new Response(JSON.stringify({ access_token: 'shpat_xyz', scope: 'read_products' }), { status: 200 }),
+    );
+
+    const res = await request(app).get('/api/v1/vcaop/shopify-oauth/callback').query({ ...query, hmac });
+
+    expect(res.status).toBe(502);
+    expect(res.body).toEqual({ ok: false, error: 'credential_persist_failed' });
+    expect(manifests.update).not.toHaveBeenCalled();
+    expect(oasisEvents.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'vcaop.portal.connection.shopify_credential_persist_failed', status: 'error' }),
+    );
+    expect(oasisEvents.insert).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'vcaop.portal.connection.shopify_authorized' }),
+    );
   });
 
   test('a manifest that is not connector_id=shopify is rejected', async () => {

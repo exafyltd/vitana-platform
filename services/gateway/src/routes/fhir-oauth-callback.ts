@@ -81,7 +81,7 @@ router.get('/callback', async (req: Request, res: Response) => { // public-route
   }
 
   const now = new Date().toISOString();
-  await supabase.from('partner_oauth_credential').upsert(
+  const { error: upsertError } = await supabase.from('partner_oauth_credential').upsert(
     {
       id: randomUUID(),
       manifest_id: rec.id,
@@ -94,6 +94,13 @@ router.get('/callback', async (req: Request, res: Response) => { // public-route
     },
     { onConflict: 'manifest_id,provider' },
   );
+  if (upsertError) {
+    await emitOasisEvent(supabase, 'vcaop.portal.connection.fhir_credential_persist_failed', 'error',
+      `connection ${rec.id}: SMART on FHIR OAuth code exchanged but credential write failed: ${upsertError.message ?? 'unknown error'}`, {
+        connection_id: rec.id, fhir_base_url: decoded.fhirBaseUrl, surface: 'merchant_self_service',
+      });
+    return res.status(502).json({ ok: false, error: 'credential_persist_failed' });
+  }
 
   // A completed OAuth exchange is authorization; move the connection into
   // mapping the same way the Shopify connector does.

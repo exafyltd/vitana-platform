@@ -369,4 +369,38 @@ describe('exchangeCodeForToken', () => {
     });
     expect(result).toEqual({ ok: false, error: 'ECONNRESET' });
   });
+
+  test('rejects a token endpoint that resolves to a private IP before making any network call (SSRF guard)', async () => {
+    const mod = await freshModule();
+    mockLookup.mockResolvedValueOnce([{ address: '169.254.169.254', family: 4 }]); // cloud metadata address
+    global.fetch = jest.fn();
+    const result = await mod.exchangeCodeForToken({
+      tokenEndpoint: 'https://attacker-controlled-discovery-result.example/token',
+      code: 'c', redirectUri: 'https://gateway.example/cb', codeVerifier: 'v', clientId: 'client-abc',
+    });
+    expect(result).toEqual({ ok: false, error: 'blocked_token_endpoint' });
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  test('never follows a redirect from the token endpoint, even to a public host', async () => {
+    const mod = await freshModule();
+    global.fetch = jest.fn().mockResolvedValue(new Response(JSON.stringify({ access_token: 'tok' }), { status: 200 }));
+    await mod.exchangeCodeForToken({
+      tokenEndpoint: 'https://ehr.example.com/oauth/token', code: 'c', redirectUri: 'https://gateway.example/cb',
+      codeVerifier: 'v', clientId: 'client-abc',
+    });
+    const [, init] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(init.redirect).toBe('error');
+  });
+
+  test('a redirect response from the token endpoint is reported as a failure, not followed', async () => {
+    const mod = await freshModule();
+    // fetch itself throws when `redirect: 'error'` encounters a 3xx — simulate that contract.
+    global.fetch = jest.fn().mockRejectedValue(new TypeError('fetch failed: unexpected redirect'));
+    const result = await mod.exchangeCodeForToken({
+      tokenEndpoint: 'https://ehr.example.com/oauth/token', code: 'c', redirectUri: 'https://gateway.example/cb',
+      codeVerifier: 'v', clientId: 'client-abc',
+    });
+    expect(result.ok).toBe(false);
+  });
 });

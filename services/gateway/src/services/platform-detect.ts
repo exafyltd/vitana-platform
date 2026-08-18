@@ -67,7 +67,16 @@ function isDisallowedIP(ip: string): boolean {
   return true; // unknown address family — fail closed
 }
 
-async function assertPublicHost(hostname: string): Promise<void> {
+/**
+ * Exported for reuse by any caller that needs to validate a merchant/user-
+ * supplied host before a server-side request without going through the full
+ * guardedFetch GET+redirect-follow flow (e.g. the SMART on FHIR connector's
+ * token-endpoint POST, VTID-03605 — that call must never follow a redirect
+ * at all, since resending a POST body containing a client_secret to a
+ * redirected host is its own risk independent of SSRF, so it validates the
+ * host once via this function and then fetches with `redirect: 'error'`).
+ */
+export async function assertPublicHost(hostname: string): Promise<void> {
   if (net.isIP(hostname)) {
     if (isDisallowedIP(hostname)) throw new Error('blocked_private_address');
     return;

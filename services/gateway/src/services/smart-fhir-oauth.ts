@@ -50,15 +50,26 @@
  * HMAC gave Shopify's state.
  *
  * The FHIR base URL is merchant-supplied free text (a different EHR per
- * connection), so both discovery and the base-URL shape get the same SSRF
- * treatment as platform-detect.ts's storefront fetch — reusing its guarded
- * fetch (ssrfGuardedFetch) rather than duplicating the private-IP/redirect
- * logic. See that module's header for what the guard does and does not
- * cover (not rebinding-proof; acceptable for an authenticated merchant
- * probing their own EHR's discovery document, not an anonymous oracle).
+ * connection), so discovery gets the same SSRF treatment as platform-
+ * detect.ts's storefront fetch — reusing its guarded fetch
+ * (ssrfGuardedFetch) rather than duplicating the private-IP/redirect logic.
+ * See that module's header for what the guard does and does not cover (not
+ * rebinding-proof; acceptable for an authenticated merchant probing their
+ * own EHR's discovery document, not an anonymous oracle).
+ *
+ * The token endpoint is untrusted for a stronger reason than the discovery
+ * URL: it comes out of that same discovery document, so a malicious or
+ * compromised EHR server can point `token_endpoint` anywhere. The exchange
+ * therefore (a) validates the resolved host against the same private/
+ * reserved-IP list via `assertPublicHost` before ever connecting, and (b)
+ * fetches with `redirect: 'error'` rather than following any redirect at
+ * all — unlike the discovery GET, this call sends `client_secret` in the
+ * POST body, and resending that body to whatever host a 3xx points at is
+ * its own risk independent of SSRF (a compliant token endpoint has no
+ * legitimate reason to redirect a token exchange).
  */
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
-import { ssrfGuardedFetch } from './platform-detect';
+import { ssrfGuardedFetch, assertPublicHost } from './platform-detect';
 
 const STATE_TTL_MS = 10 * 60 * 1000; // 10 minutes to complete the OAuth round trip
 const GCM_IV_BYTES = 12;
@@ -253,6 +264,11 @@ export async function exchangeCodeForToken(opts: {
     return { ok: false, error: 'invalid_token_endpoint' };
   }
   if (url.protocol !== 'https:') return { ok: false, error: 'invalid_token_endpoint' };
+  try {
+    await assertPublicHost(url.hostname);
+  } catch {
+    return { ok: false, error: 'blocked_token_endpoint' };
+  }
   const body = new URLSearchParams({
     grant_type: 'authorization_code',
     code: opts.code,
@@ -266,6 +282,7 @@ export async function exchangeCodeForToken(opts: {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
       body: body.toString(),
+      redirect: 'error', // a compliant token endpoint never redirects; never resend client_secret to a redirected host
       signal: AbortSignal.timeout(10_000),
     });
     if (!res.ok) return { ok: false, error: `token_exchange_failed_${res.status}` };

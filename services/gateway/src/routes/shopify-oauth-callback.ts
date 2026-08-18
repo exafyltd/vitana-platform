@@ -73,7 +73,7 @@ router.get('/callback', async (req: Request, res: Response) => { // public-route
   }
 
   const now = new Date().toISOString();
-  await supabase.from('partner_oauth_credential').upsert(
+  const { error: upsertError } = await supabase.from('partner_oauth_credential').upsert(
     {
       id: randomUUID(),
       manifest_id: rec.id,
@@ -85,6 +85,13 @@ router.get('/callback', async (req: Request, res: Response) => { // public-route
     },
     { onConflict: 'manifest_id,provider' },
   );
+  if (upsertError) {
+    await emitOasisEvent(supabase, 'vcaop.portal.connection.shopify_credential_persist_failed', 'error',
+      `connection ${rec.id}: shopify OAuth code exchanged but credential write failed: ${upsertError.message ?? 'unknown error'}`, {
+        connection_id: rec.id, shop_domain: shop, surface: 'merchant_self_service',
+      });
+    return res.status(502).json({ ok: false, error: 'credential_persist_failed' });
+  }
 
   // A completed OAuth exchange is authorization; move the connection into
   // mapping the same way an OpenAPI-document connection does at creation.
