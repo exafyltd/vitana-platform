@@ -58,8 +58,16 @@ export interface GuidedTopicNarrationContent {
    * this is set — see guided-topic-narration-audio.ts and
    * buildGuidedTopicPostNarrationLine/buildGuidedTopicNarrationBlock. Null or
    * undefined (optional so pre-VTID-03650 test fixtures stay valid) means
-   * Polly couldn't serve this request, or wasn't attempted; the pre-existing
-   * (VTID-03293) model-narrated behavior applies unchanged.
+   * Polly couldn't serve this request, or wasn't attempted. **This is no
+   * longer a fallback to a "say the whole lesson verbatim" turn-1 line
+   * (VTID-03665) — that fallback was itself the unresolved defect: it still
+   * asked a conversational model to comply with a huge literal payload, the
+   * exact shape VTID-03647/03648 measured Nova and Vertex both rejecting.**
+   * On this branch turn 1 is the short opener line
+   * (buildGuidedTopicNarrationOpenerLine) and the model teaches the topic
+   * conversationally from the material via buildGuidedTopicNarrationBlock's
+   * legacy paraphrase branch — same teaching mechanism as when Polly
+   * succeeds, just without pre-recorded audio.
    */
   narrationAudio?: { audioB64: string; sampleRateHz: number } | null;
 }
@@ -153,22 +161,40 @@ export function makeGuidedTopicNarrationProvider(): ContinuationProvider {
       // rejecting this exact payload. On success the lesson is delivered as
       // pre-recorded audio (routes/orb-live.ts sends it before the live
       // model's first turn) and the model's own turn-1 line shrinks to a
-      // short, safe post-narration follow-up. On failure (unsupported
-      // language, API error) content.narrationAudio stays null and behavior
-      // is BYTE-FOR-BYTE the pre-existing VTID-03293 model-narrated path.
+      // short, safe post-narration follow-up.
       const { synthesizeGuidedTopicNarrationAudio } = await import(
         '../../tts/guided-topic-narration-audio'
       );
       content.narrationAudio = await synthesizeGuidedTopicNarrationAudio(content, inputs.lang);
 
-      const { buildGuidedTopicSpokenLesson, buildGuidedTopicPostNarrationLine } = await import(
+      // VTID-03665: on Polly FAILURE, do NOT fall back to speaking the raw
+      // voice_script verbatim (the pre-VTID-03650 `buildGuidedTopicSpokenLesson`
+      // path). Live production evidence after VTID-03650 shipped showed a
+      // guided-topic candidate winning the turn-1 ranker correctly
+      // (priority 96, dedupe_key guided_topic:T253) with a 1625-char
+      // userFacingLine and ZERO `guided_topic_audio_bridge_sent` events in the
+      // following 2 days — i.e. Polly never once succeeded in production, so
+      // EVERY guided-topic session was still hitting the exact "say this
+      // whole curriculum block word-for-word" trigger that VTID-03647/03648
+      // measured Nova (and Vertex, now permanently unreachable after the GCP
+      // shutdown) independently failing to comply with — which is what
+      // "tapping a session opens regular conversation instead" actually was.
+      // A working Polly call was never a safe precondition for correctness;
+      // it was only ever a nicer DELIVERY MECHANISM for the same lesson. Use
+      // the short, direct opener line (already proven reliable — every other
+      // continuation provider speaks a short line this same way) for turn 1
+      // regardless of Polly's outcome, and let the GUIDE-MODE (TEACH) system
+      // instruction block do the actual teaching in the model's own words —
+      // `buildGuidedTopicNarrationBlock`'s legacy branch already does exactly
+      // this paraphrase-from-material behavior; only the SPOKEN line changes.
+      const { buildGuidedTopicNarrationOpenerLine, buildGuidedTopicPostNarrationLine } = await import(
         '../../../orb/live/instruction/guided-topic-narration-prompt'
       );
       const spokenLesson = content.narrationAudio
         ? buildGuidedTopicPostNarrationLine(content.topic_title, inputs.lang, {
             hasPracticeTarget: !!content.practice_target,
           })
-        : buildGuidedTopicSpokenLesson(content, inputs.lang, {
+        : buildGuidedTopicNarrationOpenerLine(content.topic_title, inputs.lang, {
             firstName: inputs.firstName ?? null,
           });
 
