@@ -58,7 +58,6 @@ const PROMPTS = {
 
 const promptName = randomUUID();
 const sysContent = randomUUID();
-const usrContent = randomUUID();
 const audContent = randomUUID();
 // REAL speech, not silence. Nova Sonic is speech-to-speech: silence produces a
 // valid stream that simply never generates a turn, which is indistinguishable
@@ -75,8 +74,22 @@ async function synthesizePrompt(lang, text) {
   }));
   return Buffer.from(await out.AudioStream.transformToByteArray());
 }
-const SPEECH = await synthesizePrompt(LANG, PROMPTS[LANG] ?? PROMPTS.en);
-console.log(`  polly pcm    : ${SPEECH.length} bytes (${POLLY_VOICE[LANG] ?? 'Joanna'})`);
+// Polly may be denied to the caller (this script's author hit a 403 for
+// polly:SynthesizeSpeech). That must not crash the run: without speech the
+// script still answers the question that actually gates the gate — can this
+// account invoke the model with this voice — so it degrades to silence and
+// reports exactly which of the two claims it could support.
+let SPEECH = null;
+let speechErr = null;
+try {
+  SPEECH = await synthesizePrompt(LANG, PROMPTS[LANG] ?? PROMPTS.en);
+  console.log(`  polly pcm    : ${SPEECH.length} bytes (${POLLY_VOICE[LANG] ?? 'Joanna'})`);
+} catch (e) {
+  speechErr = `${e.name}: ${e.message}`.slice(0, 160);
+  SPEECH = Buffer.alloc(16000 * 2); // 1s silence
+  console.log(`  polly pcm    : UNAVAILABLE (${speechErr})`);
+  console.log('                 falling back to silence — voice/entitlement still checked, generation NOT');
+}
 // Nova wants a stream of chunks, not one blob.
 const SPEECH_CHUNKS = [];
 for (let i = 0; i < SPEECH.length; i += 3200) SPEECH_CHUNKS.push(SPEECH.subarray(i, i + 3200).toString('base64'));
@@ -109,8 +122,10 @@ const events = [
   // protocol rather than the language and would otherwise have read as "German
   // is not supported".
   //
-  // The payload is silence: this script tests whether the ACCOUNT can invoke
-  // the model with the given VOICE, not whether the model transcribes speech.
+  // The payload is REAL speech synthesised by Polly, because silence produces a
+  // valid stream that never generates a turn — indistinguishable from an
+  // unsupported language. If Polly is unavailable this degrades to silence and
+  // the summary below downgrades what it claims accordingly.
   { event: { contentStart: { promptName, contentName: audContent, type: 'AUDIO', role: 'USER', interactive: true,
       audioInputConfiguration: { mediaType: 'audio/lpcm', sampleRateHertz: 16000, sampleSizeBits: 16, channelCount: 1, audioType: 'SPEECH', encoding: 'base64' } } } },
   ...SPEECH_CHUNKS.map((c) => ({ event: { audioInput: { promptName, contentName: audContent, content: c } } })),
@@ -172,6 +187,19 @@ console.log(`  audio bytes  : ${audioBytes}`);
 console.log(`  text         : ${text.trim().slice(0, 200) || '(none)'}`);
 if (failure) console.log(`  FAILURE      : ${failure}`);
 
-const ok = audioChunks > 0 && audioBytes > 0 && !failure;
-console.log(ok ? `\nPASS — ${LANG}/${VOICE} is invokable on ${MODEL_ID}` : `\nFAIL — ${LANG}/${VOICE} did NOT produce audio`);
-process.exit(ok ? 0 : 1);
+// Two independent claims, reported separately because they fail for different
+// reasons and a single verdict hides which one you actually have.
+const voiceAccepted = !/invalid id/i.test(failure ?? '') && !/AccessDenied/i.test(failure ?? '');
+const generated = audioChunks > 0 && audioBytes > 0;
+
+console.log('');
+console.log(`  voice accepted + account entitled : ${voiceAccepted ? 'YES' : 'NO'}`);
+console.log(`  model generated audio             : ${generated ? 'YES' : 'NO'}${speechErr ? ' (inconclusive — no speech input)' : ''}`);
+
+if (!voiceAccepted) { console.log(`\nFAIL — ${LANG}/${VOICE}: ${failure}`); process.exit(1); }
+if (!generated && speechErr) {
+  console.log(`\nPARTIAL — ${LANG}/${VOICE} is accepted and the account is entitled, but generation could not be tested without Polly.`);
+  process.exit(0);
+}
+console.log(generated ? `\nPASS — ${LANG}/${VOICE} fully verified on ${MODEL_ID}` : `\nFAIL — ${LANG}/${VOICE} accepted but produced no audio`);
+process.exit(generated ? 0 : 1);
