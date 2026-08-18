@@ -140,8 +140,21 @@ WORKDIR=$(mktemp -d)
 cat > "$WORKDIR/index.js" <<'JS'
 const https = require('https');
 
-// VTID-03676: fires the same unauthenticated POST GCP Cloud Scheduler
-// used to send. The route needs no request body or special headers.
+// VTID-03676 / P1 review finding: the route processes up to 100 rows
+// sequentially, marking push_sent_at only after each row's delivery
+// completes (services/gateway/src/routes/scheduled-notifications.ts)
+// — a large backlog batch or slow FCM/Appilix calls can legitimately
+// take well over 30s. A client-side timeout that fires before the
+// gateway finishes is dangerous here, not just slow: Lambda's own
+// async-invoke error retry (plus this schedule's own RetryPolicy) can
+// then fire a SECOND request while the first is still running and
+// hasn't marked its rows sent yet, which would select the same
+// still-unmarked rows and send duplicate push notifications for them.
+// This isn't hypothetical — it's the exact shape observed live during
+// the initial backlog catch-up (VTID-03676 changelog). The old GCP
+// Cloud Scheduler job allowed 120s; matching that here with headroom
+// under the Lambda function's own 180s timeout (set in this script's
+// `--timeout 180`).
 exports.handler = async () => {
   const url = new URL(
     (process.env.GATEWAY_URL || 'https://gateway.vitanaland.com') +
@@ -154,14 +167,22 @@ exports.handler = async () => {
         path: url.pathname,
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Content-Length': 0 },
-        timeout: 25000,
+        timeout: 170000,
       },
       (res) => {
         let body = '';
         res.on('data', (chunk) => { body += chunk; });
         res.on('end', () => {
           console.log(`push-dispatch responded ${res.statusCode}: ${body.slice(0, 500)}`);
-          resolve({ statusCode: res.statusCode, body });
+          // P2 review finding: a 500/503 from the gateway (e.g. a
+          // Supabase query failure) must surface as a Lambda failure,
+          // not a silent success — otherwise neither Lambda's own
+          // retry-on-error nor any future alerting can see it.
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            resolve({ statusCode: res.statusCode, body });
+          } else {
+            reject(new Error(`push-dispatch returned ${res.statusCode}: ${body.slice(0, 500)}`));
+          }
         });
       }
     );
@@ -181,17 +202,30 @@ if aws lambda create-function \
   --role "$LAMBDA_EXEC_ROLE_ARN" \
   --handler index.handler \
   --zip-file "fileb://$WORKDIR/function.zip" \
-  --timeout 30 \
+  --timeout 180 \
   --environment "Variables={GATEWAY_URL=$GATEWAY_URL}" \
   --description "Vitana push-dispatch cron trigger (VTID-03676) — replaces the GCP Cloud Scheduler job of the same purpose" 2>&1; then
   echo "Function created."
 else
-  echo "  (create failed — trying update-function-code instead, in case it already exists)"
+  echo "  (create failed — updating code AND config instead, in case it already exists)"
   aws lambda update-function-code \
     --function-name "$LAMBDA_NAME" \
     --region "$REGION" \
     --zip-file "fileb://$WORKDIR/function.zip"
-  echo "Function code updated."
+  # P2 review finding: on a rerun with a changed GATEWAY_URL (or any
+  # other config), only the code was being updated — the deployed
+  # environment/timeout/runtime silently kept whatever they were set to
+  # on first create, while the script printed the NEW gateway and
+  # claimed success. update-function-configuration must run too, and
+  # only after the code update settles (Lambda rejects a concurrent
+  # config update while one is still in progress).
+  aws lambda wait function-updated --function-name "$LAMBDA_NAME" --region "$REGION"
+  aws lambda update-function-configuration \
+    --function-name "$LAMBDA_NAME" \
+    --region "$REGION" \
+    --timeout 180 \
+    --environment "Variables={GATEWAY_URL=$GATEWAY_URL}"
+  echo "Function code and configuration updated."
 fi
 LAMBDA_ARN="arn:aws:lambda:${REGION}:${ACCOUNT_ID}:function:${LAMBDA_NAME}"
 rm -rf "$WORKDIR"
