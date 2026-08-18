@@ -82,11 +82,21 @@ describe('guided-topic-narration provider', () => {
     expect(mockGetOrbTopicSeed).not.toHaveBeenCalled();
   });
 
-  it('suppresses on transparent reconnect', async () => {
+  it('VTID-03677: still LEADS turn-1 with a topic even when isReconnect is true', async () => {
+    // Regression guard for the live production incident: after VTID-03675
+    // fixed the widget to resend guided_topic_id on a client-side retry, the
+    // retry request ALSO legitimately sets isReconnect (a client WS drop is
+    // exactly what that flag exists to detect, for transport-continuity
+    // reasons unrelated to whether this specific topic was ever taught) —
+    // and the provider used to unconditionally suppress on it, silently
+    // discarding the very retry VTID-03675 exists to make possible. A topic
+    // reaching this provider at all means (per the widget's own contract)
+    // it has not been delivered yet, reconnect or not.
+    mockGetOrbTopicSeed.mockResolvedValue(SEED);
     const p = makeGuidedTopicNarrationProvider();
     const r = await p.produce(makeCtx({ isReconnect: true }));
-    expect(r.status).toBe('suppressed');
-    expect(r.reason).toBe('forced_skip_reconnect');
+    expect(r.status).toBe('returned');
+    expect((r.candidate as any).priority).toBe(96);
   });
 
   it('suppresses when the topic is not live (no seed)', async () => {
