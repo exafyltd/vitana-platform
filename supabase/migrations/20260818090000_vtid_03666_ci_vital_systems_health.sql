@@ -21,6 +21,14 @@
 -- SECURITY: SECURITY DEFINER, service_role only — same as its siblings.
 -- Returns counts, provider/locale labels and small aggregate lists, never
 -- user content or credentials.
+--
+-- impact-allow-solo-migration
+--   No gateway/worker code change accompanies this migration on purpose:
+--   the only caller is .github/workflows/MORNING-SYSTEM-HEALTH-CHECK.yml,
+--   shipped in this same PR, which invokes the RPC directly over PostgREST
+--   (the same shape as ci_system_health/ci_welcome_greeting_health/
+--   ci_orb_session_state_health/ci_ledger_integrity_check, none of which
+--   have a gateway call site either).
 
 CREATE OR REPLACE FUNCTION public.ci_vital_systems_health()
 RETURNS json
