@@ -1179,15 +1179,15 @@ exports[`computeGreetingDecision — rung golden snapshots rung 8: override_v2 (
 }
 `;
 
-exports[`computeGreetingDecision — rung golden snapshots rung 8: override_v2 guided-teach (narration content → translate/teach trigger) 1`] = `
+exports[`computeGreetingDecision — rung golden snapshots rung 8: override_v2 guided-teach (narration content → SAME plain trigger as every other provider, VTID-03674) 1`] = `
 {
   "diag": {
     "decision_id": null,
     "lang": "en",
-    "prompt_len": 299,
+    "prompt_len": 155,
     "wake_opener": "override_v2",
   },
-  "directive": "Say the following lesson to the user in fluent English. The text may be in another language — translate it faithfully and completely into English and speak ONLY that translation, then stop and listen. Do NOT summarize, shorten, add a greeting, or ask a question: "Lektion: Atme langsam ein und aus."",
+  "directive": "Say exactly: "Lektion: Atme langsam ein und aus." — ONE short utterance only. Do NOT add a greeting before. Do NOT add a question after. Do NOT paraphrase.",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,
