@@ -14,6 +14,8 @@
  *   de → tina / lennart
  *   fr → ambre / florian
  *   es → lupe / carlos
+ *   pt → carolina / leo   (VTID-03672 — AWS Nova 2 table, pt-BR; matches this
+ *                          app's Brazilian catalog so the accent fits the text)
  * Unknown personas fall back to the feminine (Vitana-default) voice;
  * unsupported languages resolve to `null` — callers must have already
  * fallen back to Vertex before asking for a Nova voice, so `null` is a
@@ -29,6 +31,19 @@ const NOVA_VOICES = {
   de: { feminine: 'tina', masculine: 'lennart' },
   fr: { feminine: 'ambre', masculine: 'florian' },
   es: { feminine: 'lupe', masculine: 'carlos' },
+  // VTID-03672. AWS's Nova 2 Sonic voice table gives Portuguese as pt-BR ->
+  // carolina / leo. pt-BR is also exactly this app's Portuguese catalog
+  // (VTID-03577), so the accent matches the text rather than reading Brazilian
+  // copy in European Portuguese.
+  //
+  // Both ids were confirmed by a real bidirectional stream: Bedrock ACCEPTS
+  // them, and rejects a deliberately bogus id with `Received invalid id`. That
+  // contrast is what makes acceptance evidence rather than absence of an error.
+  //
+  // Sourced from the NOVA 2 table, not the Nova 1 one — Nova 1 lists German as
+  // `greta` where this codebase (and Nova 2) use `tina`, so the v1 page would
+  // have supplied a plausible, wrong id for a model we do not run.
+  pt: { feminine: 'carolina', masculine: 'leo' },
 } as const;
 
 export type NovaSonicVoiceId =
