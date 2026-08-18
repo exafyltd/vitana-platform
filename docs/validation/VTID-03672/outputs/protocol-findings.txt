@@ -1,0 +1,17 @@
+Two Nova protocol facts, both found by running a KNOWN-GOOD control (de/tina)
+before the language under test. Each would otherwise have been misread as
+"Portuguese is not supported".
+
+1. A text-only prompt is rejected:
+     ValidationException: Prompt [<id>] must have at least one audio content
+   Nova requires at least one AUDIO content block per prompt even when the
+   user turn is supplied as text.
+
+2. Silent audio is accepted and produces NOTHING:
+     audio chunks: 0, audio bytes: 0, no error
+   A valid stream that never generates a turn looks exactly like an
+   unsupported language. This is why the script now feeds real synthesised
+   speech when it can, and downgrades its own verdict to PARTIAL when it
+   cannot.
+
+Both are encoded in the script so the next language does not rediscover them.
