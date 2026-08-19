@@ -96,6 +96,38 @@ TEST: `test/orb/live/voice/nova-sonic-voice-fallback.test.ts` →
 
 ---
 
+## Route markers (VALIDATOR-CHECK exit 70/71/72)
+
+The gate requires these because the diff touches a file under
+`services/gateway/src/routes/`. It keys on the **file path**, not on whether a
+route actually changed — and this change adds none, so the honest answers are
+negative ones. They are recorded rather than fabricated:
+
+ROUTE_MOUNT: **None — no route added, removed, or remounted.** The only edit to
+`routes/orb-live.ts` is inside `connectToLiveAPI()`, the existing
+already-mounted Nova upstream-connect path: one voice-resolution expression and
+a fallback branch, ~26 lines at L7772. `git diff` shows no `router.get`/`.post`/
+`.use` change of any kind.
+
+FINAL_URL: **Unchanged.** No new or altered URL. The affected code runs behind
+the existing ORB live transports (`/api/v1/orb/live/ws` and the SSE session
+path); their paths, methods, auth and response shapes are byte-identical before
+and after this change.
+
+CURL_PROOF: **Not applicable, and deliberately not fabricated.** There is no
+endpoint whose response differs — the change alters which *voice id* is sent on
+an outbound Bedrock bidirectional stream and adds a log line plus a diag event.
+`curl` cannot observe any of that. Two things prove it instead: (1) the suite in
+`test/orb/live/voice/nova-sonic-voice-fallback.test.ts`, including a source-level
+assertion on the call site itself, all four seams mutation-verified
+(`outputs/mutation.txt`); and (2) after deploy, `nova_voice_fallback` in
+`oasis_events` — a signal that did not previously exist, which is the entire
+point of the change. Note also that exercising this against production is
+forbidden outright by CLAUDE.md's standing rule, so a live curl was never an
+available form of evidence here.
+
+---
+
 ## What this does NOT do
 
 - **It does not make `ru` work.** `ru` emits ~11 audio chunks / **172 ms**
