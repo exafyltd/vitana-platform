@@ -1,0 +1,36 @@
+$ npx tsc --noEmit
+(exit 0, no output)
+
+$ npx jest test/orb/live/language-coverage.test.ts
+  VTID-03681: ORB live language coverage
+    ok admits pt and pl through the gate that used to coerce them to English
+    ok gives every gated language its own live voice - never the English one by default
+    ok resolves a TTS languageCode matching the requested language, not en-US
+    ok pins pt to pt-BR, not pt-PT - the catalog is Brazilian
+    ok gives every gated language a Live API voice entry
+    ok gives every gated language its own greeting pool, in that language
+    ok keeps the decision-contract enum in step with the gate
+Tests: 7 passed, 7 total
+
+MUTATION VERIFICATION (each mutation applied, suite run, then reverted):
+  M1  remove `pt` pool from greeting-pools.ts        -> Tests: 1 failed, 6 passed
+  M2  remove `pl` from LIVE_LANGUAGE_VOICE_FALLBACKS -> Tests: 1 failed, 6 passed
+  M3  remove `pt` from decision-contract enum        -> Tests: 1 failed, 6 passed
+  restored                                           -> Tests: 7 passed
+
+A guard that cannot detect a table left behind is the defect it is meant to
+prevent, so each of the three seams was broken independently.
+
+$ npx jest test/orb test/services/decision-contract
+Test Suites: 184 passed, 184 total
+Tests:       6 todo, 3474 passed, 3480 total
+Snapshots:   10 passed, 10 total
+
+$ npx jest    (full gateway suite)
+Test Suites: 1 skipped, 671 passed, 671 of 672 total
+Tests:       29 skipped, 6 todo, 12921 passed, 12956 total
+Snapshots:   44 passed, 44 total
+
+SNAPSHOT DELTA (greeting-pools characterization):
+  1 file changed, 20 insertions(+), 0 deletions(-)
+  -> pt and pl pools added; NO existing language's phrases altered.
