@@ -46,7 +46,6 @@ import { buildFirstTimeWelcomeLine } from '../../orb/instruction/greeting-pools'
 import type { TemporalBucket } from '../guide/temporal-bucket';
 import { decideOpeningRegister, buildResumeDirective, type OpeningRegister } from './decide-opening';
 import type { NextBestAction } from './next-best-action';
-import { LOCALE_ENGLISH_NAME, resolveLocaleStrict } from '../../i18n/catalog';
 import {
   computeFactDeltas,
   extractSpokenFactsFromPayload,
@@ -803,18 +802,25 @@ function computeNormalLadder(ctx: GreetingDecisionContext): GreetingDecision {
       pt: `Diga exatamente: "${safe}" — APENAS uma frase curta. NÃO acrescente saudação antes. NÃO acrescente pergunta depois. NÃO parafraseie.`,
       pl: `Powiedz dokładnie: "${safe}" — TYLKO jedno krótkie zdanie. BEZ powitania przed. BEZ pytania po. NIE parafrazuj.`,
     };
-    const isGuidedTeach = !!ctx.guidedTopicNarrationContent;
-    const guidedIsDe = (ctx.lang || 'en').toLowerCase().startsWith('de');
-    // VTID-03644: was a 4th (5th, counting the two orb/live/instruction prompt
-    // files) undocumented copy of the language-name table VTID-03509 already
-    // centralized — and this copy was missing 'pl', so a Polish user tapping a
-    // guided topic had turn-1 itself (the actual lesson) delivered in English,
-    // not just the turn-2+ follow-up guidance. Reuse the shared registry.
-    const guidedLangName = LOCALE_ENGLISH_NAME[resolveLocaleStrict(ctx.lang) ?? 'en'] || 'English';
-    const guidedTeachTrigger = guidedIsDe
-      ? `Sage Folgendes WÖRTLICH und VOLLSTÄNDIG — Wort für Wort, dann höre auf und höre zu. NICHT zusammenfassen, kürzen, umformulieren oder eine Begrüßung/Frage hinzufügen: "${safe}"`
-      : `Say the following lesson to the user in fluent ${guidedLangName}. The text may be in another language — translate it faithfully and completely into ${guidedLangName} and speak ONLY that translation, then stop and listen. Do NOT summarize, shorten, add a greeting, or ask a question: "${safe}"`;
-    const wakePrompt = isGuidedTeach ? guidedTeachTrigger : wakeTriggerByLang[ctx.lang] || wakeTriggerByLang.en;
+    // VTID-03674: guided-topic candidates USED to get a special "translate it
+    // faithfully and completely... do NOT summarize, shorten" trigger
+    // (guidedTeachTrigger) instead of the plain wakeTriggerByLang template —
+    // built when `safe` was the FULL raw lesson and needed a forceful
+    // verbatim-recitation instruction. VTID-03650/03665 already made `safe`
+    // a short, pre-translated line (buildGuidedTopicPostNarrationLine /
+    // buildGuidedTopicNarrationOpenerLine both localize to ctx.lang
+    // themselves), so that special wrapper had nothing left to justify it —
+    // and live evidence shows it was ITSELF the problem: a real production
+    // session (topic T015, "Datenschutz-Kontrolle") hit `nova_validation`
+    // ("blocked by our content filters") on a 370-char prompt built from
+    // guidedTeachTrigger wrapping the SHORT opener line, proving the block
+    // was never about lesson length or content — it was this trigger's
+    // phrasing (telling the model text "may be in another language, translate
+    // it faithfully" when the line is already in ctx.lang reads as a
+    // confusing/adversarial instruction to Nova's guardrails). Guided-topic
+    // candidates now use the exact same plain trigger every other provider
+    // (Teacher, Journey Guide, login-briefing) already uses successfully.
+    const wakePrompt = wakeTriggerByLang[ctx.lang] || wakeTriggerByLang.en;
     return {
       wakeOpener: 'override_v2',
       directive: wakePrompt,
