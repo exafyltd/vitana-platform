@@ -18,34 +18,65 @@ It is invisible in telemetry for a second reason: `vtid.live.session.start`
 records the **coerced** value, so those sessions are indistinguishable from
 genuine English ones.
 
-## AC-1 — the coercion is real, measured on production
+---
 
-3 days of `vtid.live.session.start`, before the fix:
+AC-1 — The gate admits `pt` and `pl`, so they are no longer coerced to English.
+Production evidence that the coercion was real, 3 days of
+`vtid.live.session.start` before the fix: de 66, en 63, sr 4, es/fr/ru 3 each,
+and **pt 0 / pl 0** — zero, not few; structurally unreachable. Full query and
+result in `outputs/prod-telemetry.txt`.
+TEST: `test/orb/live/language-coverage.test.ts` →
+"admits pt and pl through the gate that used to coerce them to English"
 
-| lang | sessions | voice |
-|---|---|---|
-| de | 66 | Achernar |
-| en | 63 | Callirrhoe |
-| sr | 4 | Vindemiatrix |
-| es / fr / ru | 3 each | Aoede / Leda / Gacrux |
-| **pt / pl** | **0** | — |
+AC-2 — Every language the gate admits resolves its own live voice and a TTS
+`languageCode` for that language, never the English default. `pt` is pinned to
+**pt-BR** specifically: both `pt-BR` and `pt-PT` satisfy a naive prefix check,
+and European Portuguese read over Brazilian copy is fluent, wrong, and
+undetectable downstream.
+TEST: `test/orb/live/language-coverage.test.ts` →
+"gives every gated language its own live voice — never the English one by default",
+"resolves a TTS languageCode matching the requested language, not en-US",
+"pins pt to pt-BR, not pt-PT — the catalog is Brazilian"
 
-Zero, not few — structurally unreachable. See `outputs/prod-telemetry.txt`.
+AC-3 — Every gated language has a Live API voice entry and its own greeting
+pool. Without the pool, `pickShortGapGreetings` falls to
+`SHORT_GAP_GREETING_PHRASES.en` and hands the model eight English openers
+inside a prompt that just told it to speak Portuguese — so the assertion is
+"not the English pool", not merely "a pool exists".
+TEST: `test/orb/live/language-coverage.test.ts` →
+"gives every gated language a Live API voice entry",
+"gives every gated language its own greeting pool, in that language"
 
-## AC-2 — VTID-03672 was inert, and this is what makes it reachable
+AC-4 — The decision-contract enum stays in step with the gate. Unlike every
+other table here this one **rejects** rather than degrades (`invariants.ts`
+runs `checkEnum` against it), so a language admitted by the gate but absent
+here is reported as a contract violation.
+TEST: `test/orb/live/language-coverage.test.ts` →
+"keeps the decision-contract enum in step with the gate"
 
-`normalizeLang()` runs at session start (`orb-live.ts:14609`), **before**
-`isNovaSonicLanguageSupported(session.lang)` (`orb-live.ts:6915`). By the time
-the Nova gate is consulted the value is already `'en'`, so adding `pt` to
-`NOVA_SONIC_SUPPORTED_LANGUAGES` under VTID-03672 could never be selected.
-Verifying that VTID via the health endpoint's self-reported
-`supported_languages` confirmed a list, not a routed session.
+AC-5 — No existing language changed, and the guard actually detects a table
+left behind. Mutation-verified: removing `pt` from the greeting pools, `pl`
+from the live-voice map, or `pt` from the decision-contract enum each fails the
+suite (see `outputs/tests.txt`). The greeting-pool snapshot gained 20 lines and
+removed 0. The characterization assertion pinning the old 8-language list was
+updated to the new truth, not relaxed.
+TEST: `npx jest` — 671 suites, 12,921 passed, 0 failed; `npx tsc --noEmit` clean
 
-## AC-3 — every per-language table covers every gated language
+---
 
-Widening the gate alone is not a fix: `languageNames` in
-`live-system-instruction.ts` ends `|| 'English'`, so a correctly-tagged `pt`
-session would still carry "Respond ONLY in English". Seven tables must agree:
+## Why the guard is shaped the way it is
+
+The defect was not "pt is missing from a list". Each table was internally
+correct and every existing test passed. It lived in the **seam**: the gate
+admitted a language and a table three modules away had no row for it.
+
+So the test deliberately does **not** assert `voices.pt === 'Zephyr'`. That
+form passes the moment someone adds `pt`, says nothing about `pl`, and nothing
+at all about the next language — which is precisely how the expansion shipped
+eight locales with two of them silently broken. It iterates the gate and
+requires every downstream table to answer.
+
+## The seven tables that must agree
 
 | # | Table | File | Failure mode if missing |
 |---|---|---|---|
@@ -57,32 +88,24 @@ session would still carry "Respond ONLY in English". Seven tables must agree:
 | 6 | `SHORT_GAP_GREETING_PHRASES` | `orb/instruction/greeting-pools.ts` | English openers |
 | 7 | `SUPPORTED_LANGUAGES` | `services/decision-contract/types.ts` | contract violation |
 
-## AC-4 — the guard asserts the seam, not the symptom
+Widening only #1 would have been harder to diagnose than the original bug:
+#2 ends `|| 'English'`, so the session would be correctly tagged `lang: 'pt'`
+while the prompt still ordered English — symptom unchanged, telemetry now
+clean.
 
-`test/orb/live/language-coverage.test.ts` iterates `SUPPORTED_LIVE_LANGUAGES`
-and requires every downstream table to answer. It deliberately does **not**
-assert `voices.pt === 'Zephyr'` — that form passes the moment someone adds
-`pt`, says nothing about `pl`, and nothing at all about the next language.
-That is precisely how eight locales shipped with two silently broken.
+## VTID-03672 was inert, and this is what makes it reachable
 
-**Mutation-verified** (`outputs/tests.txt`): removing `pt` from the greeting
-pools, `pl` from the live-voice map, or `pt` from the decision-contract enum
-each fails the suite.
-
-## AC-5 — no existing language changed
-
-The greeting-pool snapshot gained **20 lines and removed 0**. The
-characterization assertion that pinned the 8-language list was **updated to
-the new truth, not relaxed** — weakening it to "contains at least these" would
-have stopped it ever catching a dropped pool.
-
-Full gateway suite: **671 suites, 12,921 passed, 0 failed**; `tsc --noEmit` clean.
+`normalizeLang()` runs at session start (`orb-live.ts:14609`), **before**
+`isNovaSonicLanguageSupported(session.lang)` (`orb-live.ts:6915`). By then the
+value is already `'en'`, so adding `pt` to `NOVA_SONIC_SUPPORTED_LANGUAGES`
+could never be selected. That VTID was verified against the health endpoint's
+self-reported `supported_languages` — a list, not a routed session.
 
 ## Known gaps, stated rather than glossed
 
-- **`pt` now routes to Nova, whose Portuguese generation was never verified
+- **`pt` now routes to Nova, whose Portuguese *generation* was never verified
   end-to-end.** VTID-03672 proved the model invokes and `carolina`/`leo` are
-  accepted (a bogus id is rejected), but Polly returned 403 for this principal
+  accepted (a bogus id is rejected), but Polly returned 403 for that principal
   so the probe fed silence. VTID-03502 falls a failed Nova session back to
   Vertex, so the worst case is a reconnect hop.
 - **`pl` has no Nova path** — Nova 2 Sonic does not speak it — so it routes to
