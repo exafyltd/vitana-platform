@@ -1301,12 +1301,20 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
       // one opens Try Again" bug.
       const hasDeepLink =
         typeof notif.data === 'object' && notif.data !== null && !!(notif.data as any).url;
+      // VTID-03684: stable per-entity tag so a row that gets UPDATEd (e.g.
+      // a cumulative post_like notification picking up another liker) and
+      // re-queued via push_sent_at=NULL replaces its earlier push in the OS
+      // tray on the FCM/web-push path, instead of stacking a second one.
+      const entityId =
+        typeof notif.data === 'object' && notif.data !== null ? (notif.data as any).entity_id : undefined;
+      const pushTag = entityId ? `${notif.type}:${entityId}` : undefined;
       const pushPayload = {
         title: notif.title || 'Vitana',
         body: notif.body || '',
         data: typeof notif.data === 'object' && notif.data !== null
           ? Object.fromEntries(Object.entries(notif.data).map(([k, v]) => [k, String(v)]))
           : undefined,
+        tag: pushTag,
       };
       //
       // VTID-03481: mirror notifyUser()'s Appilix suppression too. This cron is
