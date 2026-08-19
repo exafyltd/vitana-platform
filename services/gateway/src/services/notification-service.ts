@@ -32,6 +32,17 @@ export interface NotificationPayload {
   title: string;
   body: string;
   data?: Record<string, string>; // FCM data payload (all values must be strings)
+  // Optional stable dedup key (VTID-03684), e.g. "post_like:<postId>". When
+  // set, a re-sent push for the same underlying notification REPLACES the
+  // prior one in the OS tray instead of stacking a second one — used so an
+  // updated cumulative-likes push ("X and 2 more liked your post") doesn't
+  // leave the earlier "X liked your post" push sitting alongside it. Only
+  // takes effect on the FCM/web-push path (Android `notification.tag`,
+  // APNs `apns-collapse-id`); Appilix's push API (below) exposes no
+  // equivalent parameter, so a user reached only via Appilix native push
+  // can still see both notifications stacked — a known, documented gap,
+  // not a silent one.
+  tag?: string;
 }
 
 type Channel = 'push' | 'inapp' | 'push_and_inapp' | 'silent';
@@ -230,10 +241,20 @@ export async function sendPushNotification(
         body: payload.body,
       },
       data: payload.data,
+      // VTID-03684: tag/collapse-id so a re-sent push for the same
+      // notification (e.g. an updated cumulative-likes count) replaces the
+      // one already in the tray instead of stacking a second one.
+      ...(payload.tag
+        ? {
+            android: { notification: { tag: payload.tag } },
+            apns: { headers: { 'apns-collapse-id': payload.tag.slice(0, 64) } },
+          }
+        : {}),
       webpush: {
         fcmOptions: {
           link: payload.data?.url || '/',
         },
+        ...(payload.tag ? { notification: { tag: payload.tag } } : {}),
       },
     });
     return true;
