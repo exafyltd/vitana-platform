@@ -1528,11 +1528,31 @@
       // VTID-03291 / DEV-COMHU-0507: Guided Journey catalog topic tap. When the
       // host opened the orb via VitanaOrb.focusGuidedTopic(topicId), the topicId
       // rides along so the guided-topic-narration provider LEADS turn-1 and
-      // Vitana teaches that topic from the published KB. One-shot: consumed for
-      // this session only so the next normal open reverts to default behaviour.
+      // Vitana teaches that topic from the published KB.
+      //
+      // VTID-03675: deliberately NOT one-shot-consumed (nulled) here anymore.
+      // This used to null _s.guidedTopic the instant it was read into the
+      // payload, on the theory that "consumed for this session only" meant
+      // "consumed by this _sessionStart call". But a FAILED first attempt
+      // (Nova nova_validation-rejects the guided-topic prompt, the server
+      // gives up retrying internally, the WS dies) still needs it: the
+      // widget's OWN _attemptReconnect() then tears down and calls
+      // _sessionStart() again from scratch, and with guidedTopic already
+      // null that retry went out with no guided_topic_id at all — the new
+      // session's wake-brief ladder never even considered teaching the
+      // topic and fell back to a generic "let's continue" opener, while
+      // guidedAutoClose (armed together with guidedTopic, below) still
+      // fired on THAT turn's completion and auto-closed the overlay as if
+      // the topic had been taught. Reproduced live 2026-08-18 (topic T017,
+      // 3 distinct session_ids within 5s: the first got the guided-topic
+      // candidate and was nova_validation-rejected twice, the next two
+      // never requested one at all). guidedTopic now lives until the guided
+      // turn actually completes (cleared alongside guidedAutoClose, see the
+      // turn-complete handler) or the overlay is closed (_hide()) — both
+      // already-existing lifecycle points for guidedAutoClose, so the two
+      // flags now share one lifecycle instead of drifting apart.
       if (_s.guidedTopic) {
         startPayload.guided_topic_id = _s.guidedTopic;
-        _s.guidedTopic = null;
       }
 
       // VTID-02020: when this _sessionStart is happening as part of a reconnect
@@ -2112,8 +2132,15 @@
             // overlay so the underlying Topic drawer's next-step buttons are
             // usable, instead of dropping to listening. Widget-side so it does
             // not depend on the host wiring. One-shot (cleared here).
+            // VTID-03675: guidedTopic is cleared in the SAME place, now that
+            // _sessionStart no longer one-shot-nulls it — this is the actual
+            // "the guided turn is done, one way or another" point in the
+            // lifecycle (success or a fallback opener both complete a turn
+            // here), so it's also the right point to stop resending
+            // guided_topic_id on any later reconnect.
             if (_s.guidedAutoClose && !_s.greetingComplete) {
               _s.guidedAutoClose = false;
+              _s.guidedTopic = null;
               console.log('[VTOrb] guided teaching turn complete — auto-closing overlay (reveal drawer)');
               _hide();
               return;
@@ -3484,6 +3511,7 @@
     _s._disconnectStuck = false;
     _s._isReconnecting = false;
     _s.guidedAutoClose = false; // VTID-03294 (#4): clear any pending guided auto-close
+    _s.guidedTopic = null; // VTID-03675: don't let a never-delivered topic leak into a later, unrelated session
     try { clearInterval(_s._recoveryWatchdog); } catch (e) { /* noop */ }
     _s._recoveryWatchdog = null;
     // VTID-03295 (X-close fix): STOP AUDIO + CLOSE THE OVERLAY SYNCHRONOUSLY, the

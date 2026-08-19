@@ -1,8 +1,20 @@
 # CLAUDE.md - Vitana Platform Development Guide
-**CANONICAL REFERENCE - Last Updated: 2026-01-21**
+**CANONICAL REFERENCE - Last Updated: 2026-08-18**
 
 This file contains critical information for AI assistants working on the Vitana platform.
 **READ THIS BEFORE MAKING ANY CHANGES.**
+
+> **GCP IS FULLY DECOMMISSIONED.** GCP project `lovable-vitana-vers1` billing
+> was disabled 2026-08-16 and the GCP `gateway` Cloud Run service was deleted
+> the same night (VTID-03599/VTID-03649 emergency response). **Zero Vitana
+> processes run on GCP any more — no OASIS, no autopilot, no agents, no
+> Cloud Run, no Cloud Scheduler, nothing.** AWS is now the sole cloud for
+> every service. This file has been swept to remove GCP as a direction for
+> new work; every `gcloud`/Cloud Run/Artifact Registry/GCP-project reference
+> below is either replaced with its AWS equivalent or marked historical. See
+> the CHANGE LOG entry for this pass for what was touched and what is still
+> an open follow-up (a few code-level defaults still fall back toward Google
+> when their controlling env var is unset — see §2c/§2d/§2e).
 
 ---
 
@@ -66,25 +78,32 @@ Claude must **always** do the following:
      or an explicit hard failure — never Google. A silent Google fallback
      is what made this invisible for months.
 
-### Infrastructure & Deployment
+### Infrastructure & Deployment (AWS — GCP is decommissioned, see banner above)
 
-11. **Always use GCP project `lovable-vitana-vers1`.**
-12. **Always deploy in `us-central1`.**
-13. **Always resolve Cloud Run URLs dynamically** via `gcloud`.
-14. **Always use Artifact Registry (`pkg.dev`)**, never `gcr.io`.
-15. **Always expose `/alive`** as the health endpoint.
-16. **Always use port `8080`.**
-17. **Always read `.gcp-config` before GCP commands.**
-18. **Always deploy via the canonical deploy scripts.**
-19. **Always log provider, model, and latency for AI calls.**
-20. **Always treat CI/CD as governed, not ad-hoc.**
-21. **Always verify source code BEFORE deployment** — grep for critical routes/features in the deploy source to confirm they exist.
-22. **Always verify deployment AFTER deploy** — curl critical endpoints to confirm the new code is live (check for JSON responses, not HTML 404s).
-23. **Always verify Cloud Shell is on latest `origin/main`** before deploying — run `git log --oneline -3` and compare with local repo.
+11. **Always use AWS account `472838866351`, region `eu-central-1`.** This is
+    the only cloud account/region Vitana infrastructure runs in.
+12. **Always resolve ECS/ALB service state dynamically** — `aws ecs
+    describe-services`, `aws elbv2 describe-target-groups` — never hardcode
+    a task count, IP, or URL.
+13. **Always push images to Amazon ECR**, never `gcr.io`/Artifact Registry
+    (both are permanently unreachable now — GCP billing is off).
+14. **Always expose `/alive`** as the health endpoint.
+15. **Always use port `8080`.**
+16. **Always read the live ECS task definition** (`aws ecs
+    describe-task-definition`) before editing or redeploying it — task-def
+    drift (a secret ARN, an env var) has repeatedly caused silent outages
+    here (VTID-03513, VTID-03516).
+17. **Always deploy via the canonical `AWS-*-DEPLOY-*.yml` GitHub Actions
+    workflows** — never a manual `aws ecs update-service` outside CI.
+18. **Always log provider, model, and latency for AI calls.**
+19. **Always treat CI/CD as governed, not ad-hoc.**
+20. **Always verify source code BEFORE deployment** — grep for critical routes/features in the deploy source to confirm they exist.
+21. **Always verify deployment AFTER deploy** — curl critical endpoints to confirm the new code is live (check for JSON responses, not HTML 404s).
+22. **Always verify the deploy source is on latest `origin/main`** before deploying — run `git fetch origin && git log --oneline origin/main -3` and compare with local repo.
 
 ### Database & Memory
 
-21. **Always use Supabase as the persistent data store.**
+21. **Always use the platform's Postgres store (Aurora, migrating off Supabase — see §3) as the persistent data store.**
 22. **Always enforce tenant isolation (RLS).**
 23. **Always use snake_case table names.**
 24. **Always update `DATABASE_SCHEMA.md` when schema changes.**
@@ -116,18 +135,14 @@ Claude must **never** do the following:
 
 ### Architecture & Logic
 
-1. **Never invent new projects, environments, or services.** (Exception:
-   the AWS parallel/DR environment, sanctioned under **VTID-03398,
-   VTID-03409, VTID-03410, VTID-03411, VTID-03414, VTID-03415** — see
-   §1b. GCP remains canonical production for every service **except
-   gateway and community-app** — those two were cut over to AWS as
-   sole production under **VTID-03419** (2026-07-27; DNS execution
-   record in `docs/AWS-CUTOVER-RUNBOOK.md` §3). Everything else (Aurora
-   as a failover target, oasis-projector, orb-agent, autopilot-cdc, and
-   full GCP decommission) remains additive DR only — not yet a
-   sole-production cutover, and still gated on that runbook's §2
-   checklist plus its own separate execution VTID. Extending AWS-DR to
-   a service not already listed in §1b still needs its own new VTID.)
+1. **Never invent new projects, environments, or services.** AWS is now
+   canonical production for **every** Vitana service — the GCP↔AWS
+   parallel/DR period (VTID-03398, VTID-03409, VTID-03410, VTID-03411,
+   VTID-03414, VTID-03415, VTID-03419) ended when GCP billing was disabled
+   2026-08-16 (VTID-03599/VTID-03649). See §1b for the full service table.
+   A new AWS resource (a new ECS service, a new ALB rule) still needs its
+   own VTID — this rule is about not inventing infrastructure ungoverned,
+   not about GCP specifically any more.
 2. **Never bypass governance gates.**
 3. **Never execute without a VTID.**
 4. **Never deploy without OASIS approval.**
@@ -141,9 +156,9 @@ Claude must **never** do the following:
 ### Infrastructure & CI/CD
 
 11. **Never hardcode URLs, paths, or service names.**
-12. **Never deploy to the wrong GCP project.**
-13. **Never use `/healthz` for Cloud Run health checks.**
-14. **Never use deprecated `gcr.io`.**
+12. **Never deploy to the wrong AWS account/region** (`472838866351` / `eu-central-1`).
+13. **Never use `/healthz` for a health check.**
+14. **Never use a container registry other than Amazon ECR.**
 15. **Never run parallel VTID executions.**
 16. **Never skip schema documentation updates.**
 17. **Never push ungoverned production changes.**
@@ -256,19 +271,19 @@ Claude must apply the following **conditional logic**:
 
 ### Infrastructure
 
-11. **IF** GCP project ≠ `lovable-vitana-vers1` → **THEN STOP.**
-12. **IF** service URL is unknown → **THEN resolve dynamically.**
+11. **IF** AWS account/region ≠ `472838866351`/`eu-central-1` → **THEN STOP.**
+12. **IF** service URL is unknown → **THEN resolve dynamically via `aws ecs`/`aws elbv2`.**
 13. **IF** `/healthz` is used → **THEN replace with `/alive`.**
-14. **IF** Artifact Registry is not used → **THEN fix before deploy.**
+14. **IF** a container image is pushed anywhere but ECR → **THEN fix before deploy.**
 15. **IF** CI/CD token is missing → **THEN abort merge.**
 
 ### Deployment Verification
 
-16. **IF** deploying to Cloud Run → **THEN grep source for critical routes/features BEFORE `gcloud builds submit`.**
+16. **IF** deploying an ECS service → **THEN grep source for critical routes/features BEFORE building the image.**
 17. **IF** deploy completes → **THEN curl critical endpoints and confirm JSON response (not HTML 404).**
 18. **IF** curl returns `text/html` content-type → **THEN the route does NOT exist on deployed code — deploy failed or wrong code.**
-19. **IF** deploying from Cloud Shell → **THEN run `git fetch origin && git log --oneline origin/main -3` and compare with local repo to confirm Cloud Shell has latest code.**
-20. **IF** Cloud Shell is behind `origin/main` → **THEN run `git reset --hard origin/main` before deploying.**
+19. **IF** deploying by hand rather than via CI → **THEN run `git fetch origin && git log --oneline origin/main -3` and compare with the checkout you're building from to confirm it has latest code.**
+20. **IF** the checkout you're deploying from is behind `origin/main` → **THEN run `git reset --hard origin/main` before deploying.**
 
 ### Targeted Visual Verification (MANDATORY - Updated 2026-04-14)
 
@@ -286,7 +301,7 @@ Claude must apply the following **conditional logic**:
     ```typescript
     // Example: you changed the Settings page
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('https://community-app-q74ibpv6ia-uc.a.run.app/settings');
+    await page.goto('https://vitanaland.com/settings'); // AWS ECS — the old Cloud Run URL is dead, GCP is decommissioned
     await page.screenshot({ path: '/tmp/settings-mobile.png' });
     ```
 
@@ -378,10 +393,10 @@ await page.reload();
 > lives in each deploy workflow's `cutover_gate` job; manual dispatch is never
 > frozen. No redeploy is needed to flip it — it is purely time-based.
 
-21. **IF** you push/merge to `main` **on/after the cutover** → **THEN it deploys to STAGING (gateway via `STAGE-DEPLOY.yml` → `gateway-staging`). It does NOT touch production. Verify on `preview-gateway.vitanaland.com`, not prod.**
+21. **IF** you push/merge to `main` **on/after the cutover** → **THEN it deploys to STAGING (gateway via `AWS-STAGE-DEPLOY-GATEWAY.yml` → ECS service `vitana-gateway`). It does NOT touch production. Verify on `preview-aws-gateway.vitanaland.com`, not prod. (The GCP `STAGE-DEPLOY.yml`/`gateway-staging`/`preview-gateway.vitanaland.com` path this rule originally described is dead — GCP is decommissioned.)**
 22. **IF** you need code on PRODUCTION (post-cutover) → **THEN do NOT push and expect prod to update. Either click PUBLISH in the Command Hub (promotes the tested staging build) or run `scripts/deploy/publish-to-prod.sh --service <svc> --vtid <id> --reason "<why>"` (the explicit exception).**
-23. **IF** you are tempted to manually dispatch `EXEC-DEPLOY.yml` to prod "to be safe" post-cutover → **THEN STOP. That is the old auto-to-prod habit. Auto = staging. Prod = PUBLISH button or escape-hatch/manual dispatch only, with a recorded reason.**
-24. **IF** `worker-runner` / `vitana-orb-agent` / the autopilot job needs a prod update post-cutover → **THEN use the escape-hatch script or the workflow's manual `workflow_dispatch`. These have no staging twin yet, so they are freeze-only on the auto path until one exists.**
+23. **IF** you are tempted to manually dispatch a prod deploy workflow "to be safe" post-cutover → **THEN STOP. That is the old auto-to-prod habit. Auto = staging. Prod = PUBLISH button or escape-hatch/manual dispatch (`AWS-PROD-DEPLOY-GATEWAY.yml` etc.) only, with a recorded reason.**
+24. **IF** `worker-runner` / `orb-agent` / the autopilot executor needs a prod update → **THEN use the escape-hatch script or the relevant `AWS-PROD-DEPLOY-*.yml` workflow's manual `workflow_dispatch`. These have no staging twin, so they are manual-dispatch-only.**
 25. **IF** making frontend CSS/JS changes (Command Hub) → **THEN bump the `?v=` cache-busting parameter in index.html. Post-cutover the change auto-deploys to STAGING; it reaches prod only when PUBLISH is clicked.**
 
 ### Memory
@@ -407,10 +422,12 @@ await page.reload();
     **This supersedes the former rules 26 and 27**, which said to use Gemini
     Pro for the planner and Gemini Flash for the worker. Those are obsolete:
     the standing direction is Claude-on-Bedrock, off Google.
-27. **IF** you are about to point any stage at `vertex` or a Gemini model →
-    **THEN STOP.** The only sanctioned Google dependency left is the ORB
-    voice fallback (§2e), and that exists solely because no Anthropic model
-    has a speech-to-speech API. It is not a licence to add new ones.
+27. **IF** you are about to point any stage at `vertex`, Gemini, or any other
+    Google Cloud API → **THEN STOP.** There is no sanctioned Google
+    dependency left at all. ORB voice used to fall back to Vertex Live —
+    that fallback is now permanently dead (GCP billing disabled 2026-08-16
+    killed Vertex Live outright, VTID-03649) and voice runs on Amazon Nova
+    Sonic exclusively (§2e). Do not reintroduce a Google call anywhere.
 28. **IF** validation is needed → **THEN use Claude (via Bedrock).**
 29. **IF** model fallback occurs → **THEN log explicitly.** A fallback that
     lands on Google must be treated as an incident, not as normal operation.
@@ -427,41 +444,33 @@ await page.reload();
 
 ---
 
-## 1. GCP INFRASTRUCTURE (CRITICAL - DO NOT GUESS)
+## 1. GCP INFRASTRUCTURE — DECOMMISSIONED (2026-08-16), DO NOT USE
 
-| Setting | Value |
-|---------|-------|
-| **GCP Project ID** | `lovable-vitana-vers1` |
-| **Region** | `us-central1` |
-| **Artifact Registry** | `us-central1-docker.pkg.dev/lovable-vitana-vers1/<repo>/<service>` |
-| **Artifact Registry Repos** | `cloud-run-source-deploy`, `crewai-gcp` |
-
-### Cloud Build Pattern
-```bash
-gcloud builds submit \
-  --tag us-central1-docker.pkg.dev/lovable-vitana-vers1/cloud-run-source-deploy/<service>:latest \
-  --project lovable-vitana-vers1
-
-gcloud run deploy <service> \
-  --image us-central1-docker.pkg.dev/lovable-vitana-vers1/cloud-run-source-deploy/<service>:latest \
-  --region us-central1 \
-  --project lovable-vitana-vers1
-```
+**GCP is fully off.** Project `lovable-vitana-vers1` had billing disabled
+2026-08-16 and the GCP `gateway` Cloud Run service was deleted the same
+night (VTID-03599/VTID-03649 emergency response, prompted by the Gemini
+cost incident chain in §2b's history). No process — OASIS, autopilot,
+agents, Cloud Run, Cloud Scheduler, Cloud Build, Artifact Registry — runs
+on GCP any more. There is no rollback path back to GCP; AWS (§1b) is the
+only cloud. `gcloud`/Cloud Run/Artifact Registry commands that used to live
+in this section are gone — do not run them, they will fail against a
+disabled-billing project. If you find a live reference to
+`lovable-vitana-vers1`, `us-central1`, `pkg.dev`, `gcr.io`, or a
+`*.run.app` URL anywhere (a workflow, a task def, a script default), treat
+it as dead code to be removed on sight, not as a fallback target.
 
 ---
 
-## 1b. AWS PRODUCTION (DR) (VTID-03398, VTID-03409, VTID-03410, VTID-03411, VTID-03414, VTID-03415)
+## 1b. AWS PRODUCTION (VTID-03398, VTID-03409, VTID-03410, VTID-03411, VTID-03414, VTID-03415, VTID-03419, VTID-03599/VTID-03649)
 
-GCP (`lovable-vitana-vers1`) remains the **canonical** production for every
-service **except gateway and community-app**. Those two were cut over to
-AWS as **sole production** under **VTID-03419** (2026-07-27) — see
-`docs/AWS-CUTOVER-RUNBOOK.md` §3 for the DNS execution record. For every
-other service in the table below, AWS remains **parallel/DR production
-infrastructure** — additive capacity, not a migration, not yet a
-sole-production cutover, gated on `docs/AWS-CUTOVER-RUNBOOK.md`
-(VTID-03412) §2's checklist and its own separate execution VTID.
-Extending this pattern to a service not listed in the table below still
-needs its own new VTID.
+**AWS is canonical production for every Vitana service.** gateway and
+community-app were cut over first, as sole production, under **VTID-03419**
+(2026-07-27; DNS execution record in `docs/AWS-CUTOVER-RUNBOOK.md` §3).
+Every other service in the table below was built as parallel/DR
+infrastructure under the VTIDs listed and became the **only** production
+once GCP billing was disabled 2026-08-16 (VTID-03599/VTID-03649) — there is
+no GCP instance left to be "the canonical one" instead. A new AWS resource
+not listed in the table below still needs its own VTID.
 
 | Service | VTID | ECS resource / dispatch | Public URL / access | Deploy workflow |
 |---|---|---|---|---|
@@ -472,7 +481,7 @@ needs its own new VTID.
 | worker-runner | VTID-03411 | ECS service `vitana-worker-runner`, fixed `desiredCount` | No public ALB/DNS — polls outward to gateway; verify via ECS `healthStatus` (`/alive`) | `AWS-PROD-DEPLOY-WORKER-RUNNER.yml` |
 | verification-engine | VTID-03411 | ECS service `vitana-vitana-verification-engine`, fixed `desiredCount` | No public ALB/DNS — self-registers heartbeat outward; verify via ECS `healthStatus` (`/health`) | `AWS-PROD-DEPLOY-VERIFICATION-ENGINE.yml` |
 | orb-agent | VTID-03414 | ECS service + task def family `vitana-orb-agent` — **pre-existing** from the unexplained 2026-07-09 bulk-provisioning event; this VTID added the missing deploy pipeline on top | No public ALB/DNS — outbound to LiveKit Cloud; verify via ECS `healthStatus` (`/alive`) | `AWS-PROD-DEPLOY-ORB-AGENT.yml` |
-| autopilot-executor | VTID-03415 | No ECS service — Cloud-Run-Job equivalent. Task def family `vitana-autopilot-executor`, dispatched per-execution via `ecs:RunTask` from `dispatchExecutorJobAws()` (`services/gateway/src/services/aws-ecs-admin.ts`), selected by `DEV_AUTOPILOT_JOB_CLOUD=aws\|gcp` env var (default `gcp`) | N/A — no long-running service to curl | `AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml` — build+push+register only, no service to roll; the next RunTask dispatch picks up the new `:LATEST` revision automatically |
+| autopilot-executor | VTID-03415 | No ECS service — one-shot task. Task def family `vitana-autopilot-executor`, dispatched per-execution via `ecs:RunTask` from `dispatchExecutorJobAws()` (`services/gateway/src/services/aws-ecs-admin.ts`), selected by `DEV_AUTOPILOT_JOB_CLOUD=aws\|gcp` env var — **must be `aws`**; the `gcp` branch is dead code left over from the dual-cloud period and will fail (no GCP job runner exists any more) | N/A — no long-running service to curl | `AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml` — build+push+register only, no service to roll; the next RunTask dispatch picks up the new `:LATEST` revision automatically |
 
 Shared infra across all of the above:
 
@@ -480,12 +489,12 @@ Shared infra across all of the above:
 |---|---|
 | AWS account / region | `472838866351` / `eu-central-1` |
 | ECS cluster | `Vitana-ECS-Cluster` (shared with AWS staging) |
-| Database | RDS Aurora PostgreSQL `vitana-aurora-prod` (writer/reader), same Supabase project as GCP prod (`inmkhvwdcuyhnxkgfvsb`) |
+| Database | RDS Aurora PostgreSQL `vitana-aurora-prod` (writer/reader) — DMS-replicated from the same Supabase-hosted Postgres project used pre-cutover (`inmkhvwdcuyhnxkgfvsb`). **This is not a Supabase→Aurora application cutover** — see §3 for the actual current state, which the code does not yet fully match this table's aspirational framing. |
 | Redis | ElastiCache `vitana-redis-prod` |
 | ALB | `vitana-alb-prod` — all host-header rules sit **below** priority 10 (see hard rule below) |
 | Deploy auth | GitHub OIDC federation, `AWS_PROD_ROLE_ARN` (all except community-app's frontend workflow — see its row above) |
 | Deploy trigger | Every `AWS-PROD-DEPLOY-*.yml` is `workflow_dispatch`-only, required `reason`, never on push |
-| Command Hub PUBLISH target | `PUBLISH_TARGET_CLOUD=aws` (gateway env var, VTID-03420, default `gcp`) switches the PUBLISH button to promote **AWS staging → AWS prod**: `POST /publish` resolves the commit `vitana-gateway` staging actually serves (HTTP build-info, never ECS status) and dispatches `AWS-PROD-DEPLOY-GATEWAY.yml` in `promote-staging` mode with `expected_commit` pinned — the exact tested ECR image ships, no rebuild. `/operator/revisions` for the two gateway rows is likewise build-info-backed (Cloud Run APIs have no credentials on ECS). `GCP_DUAL_PUBLISH_ENABLED=true` (default off) additionally refreshes the GCP rollback target via EXEC-DEPLOY with the same commit. With the var unset/`gcp`, the original GCP flow is untouched (where `AWS_DUAL_PUBLISH_ENABLED=true` still best-effort dispatches the AWS workflow — legacy leg, rebuilds `main`). |
+| Command Hub PUBLISH target | `PUBLISH_TARGET_CLOUD` (gateway env var, VTID-03420) **must be `aws`** — `gcp` is dead, there is no GCP target left to promote to. When `aws`, PUBLISH promotes **AWS staging → AWS prod**: `POST /publish` resolves the commit `vitana-gateway` staging actually serves (HTTP build-info, never ECS status) and dispatches `AWS-PROD-DEPLOY-GATEWAY.yml` in `promote-staging` mode with `expected_commit` pinned — the exact tested ECR image ships, no rebuild. `/operator/revisions` for the gateway rows is likewise build-info-backed. `GCP_DUAL_PUBLISH_ENABLED`/`AWS_DUAL_PUBLISH_ENABLED` were dual-cloud-period flags for refreshing/dispatching a GCP leg alongside AWS — **both are now no-ops to leave on; turn them off**, there is no GCP leg left to refresh. |
 
 **Secrets intentionally deferred (2026-07-24):** `ANTHROPIC_API_KEY` and
 `OPENAI_API_KEY` are not populated in AWS Secrets Manager pending an AWS
@@ -499,30 +508,27 @@ header comment for the concrete example.
 **Full build record, exact commands, and pre-existing-state findings:**
 `docs/AWS-PRODUCTION-BUILD-LOG.md`.
 
-**Full production cutover (GCP→AWS) is a separate, larger action from any
-per-service DR build above — never assume it's authorized by this
-section.** The runbook, go/no-go checklist, DNS repoint sequence, and
-rollback plan live in `docs/AWS-CUTOVER-RUNBOOK.md` (VTID-03412). That
-document does not itself authorize a cutover; it's the prerequisite a
-future execution VTID must reference and satisfy before any
-`gateway.vitanaland.com`/apex DNS record is touched.
+**The GCP→AWS cutover this section used to gate is complete and irreversible** —
+GCP billing is off, so there is no rollback target and no further sign-off
+needed to treat AWS as canonical. `docs/AWS-CUTOVER-RUNBOOK.md` (VTID-03412)
+is now a historical record of how the cutover was executed, not a
+still-open checklist.
 
-### Hard rules specific to AWS-DR prod
+### Hard rules specific to AWS prod
 
-- **Never** deploy to AWS-DR prod on push — `AWS-PROD-DEPLOY-GATEWAY.yml`
-  has no `on: push` trigger. It mirrors the GCP staging-first model
-  (§16): AWS staging (`vitana-gateway`) auto-deploys on push; AWS prod
-  (`vitana-gateway-awsdr`) is a deliberate manual dispatch with a
-  recorded reason, same spirit as the GCP PUBLISH button /
-  `publish-to-prod.sh` escape hatch. The Command Hub PUBLISH button MAY
-  also dispatch it (via `workflow_dispatch`, never push) when
-  `AWS_DUAL_PUBLISH_ENABLED=true` — that is still a deliberate dispatch
-  triggered by an admin's PUBLISH click, not an automatic push trigger.
+- **Never** deploy to AWS prod on push — `AWS-PROD-DEPLOY-GATEWAY.yml`
+  has no `on: push` trigger. AWS staging (`vitana-gateway`) auto-deploys on
+  push; AWS prod (`vitana-gateway-awsdr`) is a deliberate manual dispatch
+  with a recorded reason, via the Command Hub PUBLISH button or
+  `publish-to-prod.sh`. The Command Hub PUBLISH button dispatches it (via
+  `workflow_dispatch`, never push) when an admin clicks PUBLISH — that is
+  still a deliberate dispatch, not an automatic push trigger.
 - **Never** confuse `vitana-gateway` (AWS staging) with
-  `vitana-gateway-awsdr` (AWS DR prod) — same ECS cluster, similarly
-  named. The `vitana-alb-prod` ALB's target group named
-  `vitana-tg-gateway-prod` is a **pre-existing naming leftover that
-  actually serves staging traffic**, not AWS-DR prod — verify via
+  `vitana-gateway-awsdr` (AWS prod — the `-awsdr` suffix is a naming
+  leftover from when this was the DR target; it is now simply prod) — same
+  ECS cluster, similarly named. The `vitana-alb-prod` ALB's target group
+  named `vitana-tg-gateway-prod` is a **pre-existing naming leftover that
+  actually serves staging traffic**, not prod — verify via
   `/api/v1/admin/health`'s `env` field before trusting a resource name.
   The owning IaC is `exafyltd/vitana-infra` (private repo, TMC migration
   handover — found 2026-07-31, was not previously cross-referenced from
@@ -539,7 +545,7 @@ future execution VTID must reference and satisfy before any
   host-header rules regardless of `Host`, and will silently route to
   staging otherwise (see the build log's "ALB listener-rule priority"
   section for how this bit the initial build).
-- **Never** assume a service not listed in the §1b table has AWS-DR
+- **Never** assume a service not listed in the §1b table has AWS
   infrastructure. As of VTID-03415, gateway, community-app,
   oasis-operator, oasis-projector, worker-runner, verification-engine,
   orb-agent, and the autopilot-executor RunTask path are all built out
@@ -562,7 +568,7 @@ future execution VTID must reference and satisfy before any
   and no public ALB/DNS for all three is deliberate, not an oversight.
 - GitHub OIDC federation (no static AWS keys) is required for the prod
   deploy role, mirroring `scripts/aws/README.md`'s pattern — **never**
-  add a static-key IAM user for AWS-DR prod deploys the way AWS staging
+  add a static-key IAM user for AWS prod deploys the way AWS staging
   did (`claude-staging-validation`; a known shortcut, not to be repeated).
   The community-app frontend workflow (VTID-03409) is a documented,
   temporary exception — see its §1b table row.
@@ -571,8 +577,8 @@ future execution VTID must reference and satisfy before any
 
 ## 2. SERVICES ARCHITECTURE
 
-### Deployable Services (Cloud Run)
-| Service | Source Path | Cloud Run Name |
+### Deployable Services (AWS ECS — see §1b for exact ECS service/task-def names)
+| Service | Source Path | Service Name |
 |---------|-------------|----------------|
 | Gateway | `services/gateway/` | `gateway` |
 | OASIS Operator | `services/oasis-operator/` | `oasis-operator` |
@@ -632,7 +638,11 @@ selects a provider per-*stage* from the DB-backed `llm_routing_policy` table
 (editable via the Command Hub dropdown), via an `ADAPTERS: Record<LLMProvider,
 ProviderAdapter>` map. **Anthropic Claude via Amazon Bedrock (`'bedrock'`) is
 one of these adapters**, alongside `anthropic`, `openai`, `vertex`,
-`deepseek`, and `claude_subscription`.
+`deepseek`, and `claude_subscription`. **`vertex` still exists as adapter
+code but is permanently unreachable — GCP billing is off (§1).** Any stage
+still pointed at `vertex` fails outright rather than falling back to
+Google, per rule 27 above; treat that as a bug to fix, not a quirk to
+tolerate.
 
 - **Region:** `eu-central-1` — the only region with any Vitana AWS
   infrastructure for account `472838866351` (confirmed via
@@ -760,16 +770,20 @@ dropdown would produce an unexplained AccessDenied.
 
 ## 2c. TTS — AMAZON POLLY PROVIDER (VTID-03495)
 
-Build 1 of the 4 provider replacements that must exist before any GCP
-shutdown is possible (Polly → Titan image gen → Bedrock vision/tool-calling →
-Nova Sonic promotion).
+Build 1 of the 4 provider replacements that were required before a GCP
+shutdown — GCP billing was in fact disabled 2026-08-16 (§1), so this is no
+longer a precondition to plan around, it's live reality to operate under.
 
-All Google Cloud TTS synthesis now routes through one seam,
+Gateway TTS synthesis routes through one seam,
 `services/gateway/src/services/tts/tts-provider.ts`, selected by
-**`TTS_PROVIDER=google|polly`, default `google`** — same deliberate-opt-in
-shape as `BEDROCK_ROLE_ARN` (§2b) and `DEV_AUTOPILOT_JOB_CLOUD` (§1b).
-**Deploying this code changes nothing.** An unrecognised value logs and falls
-back to `google` rather than failing closed and taking voice down.
+`TTS_PROVIDER=google|polly`. **⚠️ The code's internal fallback, when the env
+var is unset or unrecognised, is still `google` — checked live in this repo
+2026-08-18.** With GCP off, that fallback is not a safe default any more, it
+is a hard failure waiting to happen. **Production and staging task
+definitions must have `TTS_PROVIDER=polly` set explicitly** — verify this on
+the live ECS task defs, don't assume it from this file. Flipping the code's
+own internal default to `polly` (so an unset var fails safe) is an open
+follow-up from this doc pass, not yet done.
 
 | Call site | File | Format | Behaviour |
 |---|---|---|---|
@@ -785,8 +799,11 @@ back to `google` rather than failing closed and taking voice down.
    (§13b lists DE/EN/ES/SR). `resolvePollyVoice('sr')` returns **null** and the
    caller falls back to Google — it does **not** substitute English. Fluent
    audio in the wrong language is worse than no audio, because nothing
-   downstream can detect it. **This is an unresolved coverage gap for a full
-   GCP shutdown**: with GCP gone, Serbian users get no TTS at all.
+   downstream can detect it. **⚠️ This is no longer a hypothetical
+   pre-shutdown gap — GCP is off now, so the Google fallback this describes
+   cannot succeed either. Serbian TTS is currently silent/broken in
+   production until this gets a real fix (a third provider, or accept the
+   gap as a known product limitation).**
 2. **Polly PCM is 8kHz/16kHz only — it cannot do the 24kHz** the greeting
    bridge used. `synthesizeGreetingBridgeAudioPcm()` therefore returns
    `{ audioB64, sampleRateHz }` instead of a bare string, and `orb-live.ts`
@@ -800,15 +817,18 @@ back to `google` rather than failing closed and taking voice down.
 Also note Polly's Russian is **standard-engine only** (no neural voice) — a
 quality step down from `ru-RU-Wavenet-A`.
 
-### Fallback is never silent
+### Fallback is never silent — and is now a dead end, not a safety net
 
-`TTS_PROVIDER=polly` + an unservable request → falls back to Google **with a
-`[TTS] FALLBACK polly→google` log line**, per "Never allow silent model
-fallback". Set **`TTS_POLLY_STRICT=true`** to disable the fallback — use it in
-a GCP-shutdown rehearsal to prove no hidden Google dependency remains; with it
-on, an unservable request returns null instead of quietly reaching back to GCP.
+`TTS_PROVIDER=polly` + an unservable request → the code attempts to fall back
+to Google **with a `[TTS] FALLBACK polly→google` log line**, per "Never allow
+silent model fallback". **⚠️ That fallback target no longer exists — GCP is
+off, so this "fallback" is itself a guaranteed failure, just a slower and
+noisier one.** Set **`TTS_POLLY_STRICT=true`** everywhere now (it was framed
+as an optional shutdown-rehearsal flag; it is now the only mode that fails
+fast instead of hanging on a dead Google call) — with it on, an unservable
+request returns null immediately instead of reaching for GCP and timing out.
 
-### The seam covers the GATEWAY only — the frontend has its own Google TTS (VTID-03578)
+### The seam covers the GATEWAY only — the frontend still calls Google directly, and that is now a live outage, not a pending workstream (VTID-03578)
 
 The five rows above are every *gateway* call site, and the table has been read
 as "all TTS goes through here". It does not. `vitana-v1`'s `useTextToSpeech.ts`
@@ -824,9 +844,13 @@ one of those strings — so a switch has to migrate stored per-user preferences,
 not just change a provider. **Every user who has opened voice settings has a
 Google voice ID persisted against their profile.**
 
-This is a second, independent workstream (an edge function speaking Polly, plus
-a preference migration), not a flag. Until it lands, "we are off Google TTS" is
-true of the gateway and false of the app.
+**⚠️ As of the 2026-08-16 GCP shutdown this is a live outage, not a pending
+workstream**: any user whose stored `tts_voice` is a Google id, and every
+Serbian user, gets an error or silence from `useTextToSpeech.ts` today,
+because the edge functions it calls (`google-gemini-tts`, `google-cloud-tts`)
+have nothing to reach. This still needs its own fix in `exafyltd/vitana-v1`
+(a Polly-backed edge function plus a preference migration) — not done by
+this doc pass, flagged here so it doesn't stay invisible.
 
 ### Voice coverage after VTID-03578
 
@@ -855,14 +879,20 @@ on the gateway task role (`AWS_POLLY_REGION`, else `AWS_REGION`, else
 
 ## 2d. IMAGE GENERATION — AMAZON TITAN (VTID-03497)
 
-Build 3 of the 4 provider replacements gating a GCP shutdown, and the only
-one Claude cannot cover at all: Vertex **Imagen** generates images and no
-Anthropic model does, so this is a separate Bedrock adapter
-(`services/gateway/src/providers/titan-image.ts`), not an llm-router provider.
+Build 3 of the 4 provider replacements that were required before a GCP
+shutdown — the shutdown has since happened (§1, 2026-08-16). Vertex
+**Imagen** generated images and no Anthropic model does, so this is a
+separate Bedrock adapter (`services/gateway/src/providers/titan-image.ts`),
+not an llm-router provider.
 
-Selected by **`IMAGE_PROVIDER=vertex|bedrock`, default `vertex`** — same
-deliberate-opt-in shape as `TTS_PROVIDER` (§2c). **Deploying this changes
-nothing.** Gated additionally on `BEDROCK_ROLE_ARN` (shared with §2b).
+Selected by `IMAGE_PROVIDER=vertex|bedrock`. **⚠️ The code's internal
+fallback, when unset, is still `vertex` — checked live in this repo
+2026-08-18 — and `vertex` is now permanently unreachable.** Any image
+generation call left on the unset/`vertex` default now fails outright.
+**Production and staging task definitions must have `IMAGE_PROVIDER=bedrock`
+set explicitly** — verify on the live ECS task defs. Flipping the code's own
+default to `bedrock` is an open follow-up from this doc pass. Gated
+additionally on `BEDROCK_ROLE_ARN` (shared with §2b).
 
 **There are TWO Imagen consumers, not one.** The cutover changelog previously
 listed only the outpaint path; a Titan build covering just that would have
@@ -920,7 +950,28 @@ on the Titan model for the gateway task role.
 
 ## 2e. ORB VOICE — NOVA SONIC GLOBAL PROMOTION (VTID-03501)
 
-Build 4 of the 4 provider replacements gating a GCP shutdown. Adds a global
+> **⚠️ UPDATE 2026-08-16 (VTID-03649): GCP shutdown killed Vertex Live
+> outright, and most of the "fallback to Vertex" mechanism described below
+> is now describing a dead path.** GCP billing was disabled the night of
+> 2026-08-16, and `services/gateway/src/routes/orb-live.ts`'s
+> `selectUpstreamProvider()` — which used to degrade any session with an
+> unsupported language or a non-`aws-ecs` runtime to Vertex, and which the
+> Nova premature-close fallback (below) reconnected onto — would otherwise
+> just guarantee a second, doomed connection failure instead of a real
+> fallback. The fix shipped the same night: a caller-supplied
+> `vertexUnavailable` context field, read from **`VERTEX_LIVE_UNAVAILABLE=true`**,
+> forces Nova through its own runtime/language gates instead of degrading to
+> Vertex (reported as `nova_forced_vertex_unavailable`), and gates the
+> premature-close-to-Vertex reconnect attempt (below) on the same flag so a
+> failure goes straight to the honest `connection_issue` signal instead of a
+> doomed round trip through a dead endpoint. **The fix is zero-behavior-change
+> until `VERTEX_LIVE_UNAVAILABLE` is actually set on the live task
+> definition — verify that directly, do not assume it from this file.**
+> Voice now runs on Nova Sonic exclusively; there is no working Google
+> speech fallback left, full stop (see rule 27).
+
+Build 4 of the 4 provider replacements that were required before a GCP
+shutdown — that shutdown has since happened. Adds a global
 (non-canary) Nova activation path behind **`NOVA_SONIC_GLOBAL_ENABLED`,
 default `false`**, requiring the exact string `'true'`.
 
@@ -1003,15 +1054,33 @@ failure bouncing back into the same branch and looping. Emits
 normal `connection_issue` frame is emitted rather than leaving the user with
 nothing.
 
-**This mitigates the 10% but does not fix it.** Nova still drops those
-sessions; users now get a working Vertex session instead of silence. The
-underlying "Premature close" cause is still unroot-caused and needs
-CloudWatch-level investigation before Nova can be considered healthy enough
-to promote.
+**This mitigated the 10% but did not fix it, and it no longer works as
+described the moment GCP is off and `VERTEX_LIVE_UNAVAILABLE` isn't set** —
+see the callout at the top of this section. With the flag set (as it should
+be now), a premature-close reports the honest `connection_issue` signal
+instead of attempting a reconnect to a dead Vertex endpoint. The underlying
+"Premature close" cause is still unroot-caused and, with the Vertex mitigation
+gone, is now a harder open problem than before — a future fix needs either a
+Nova-side retry or another AWS-native recovery path, not another Google hop.
 
 ---
 
-## 3. DATABASE (SUPABASE)
+## 3. DATABASE (SUPABASE — Aurora migration is IN PROGRESS, not complete)
+
+> **Status check against this repo, 2026-08-18 — do not assume Aurora is
+> primary anywhere yet.** `SUPABASE_URL`/PostgREST is still the connection
+> used by ~231 files under `services/gateway/src`; `AURORA_DATABASE_URL` is
+> referenced by 2. `DB_I18N_TARGET` (the one seam with a real Aurora write
+> path — VTID-03515/03517) still defaults to `supabase`, and its own header
+> comment says explicitly: *"Not a migration, and not Aurora becoming
+> primary."* A DMS reconciliation script
+> (`scripts/reconciliation/aurora-supabase-reconcile.ts`) exists but per its
+> own VTID-03649 commit note had **not yet been exercised against real
+> credentials** as of 2026-08-16. Treat "we've moved to Aurora" as the
+> **target direction**, not the current state, until each of these is
+> re-verified — most consumers reading this file should keep writing
+> Supabase-client code exactly as before; only touch the Aurora seam if you
+> are specifically working the DB migration itself.
 
 ### Critical Rules
 1. **PostgreSQL tables MUST use `snake_case`** (vtid_ledger, oasis_events)
@@ -1240,42 +1309,50 @@ NODE_ENV=production|development|test
 # frontend_promote.ok=false with a "token not set" detail (deploy frontend manually).
 FRONTEND_DEPLOY_TOKEN=<PAT with actions:write on exafyltd/vitana-v1>
 FRONTEND_DEPLOY_REPO=exafyltd/vitana-v1
-# AWS dual-publish (VTID-03398): when 'true', the Command Hub PUBLISH button
-# also best-effort dispatches AWS-PROD-DEPLOY-GATEWAY.yml with the same
-# commit, after the GCP EXEC-DEPLOY dispatch. Default OFF — AWS-PROD-DEPLOY-
-# GATEWAY.yml was deliberately built workflow_dispatch-only with a required
-# human-entered reason so AWS prod deploys stay a deliberate action; this
-# flag trades that off for one-click dual-publish. GCP remains canonical
-# regardless of this flag — see §1b. Failure on the AWS leg never fails the
-# publish (response reports aws_promote.ok=false with detail).
-AWS_DUAL_PUBLISH_ENABLED=true|false
-# VTID-03420: which cloud the Command Hub PUBLISH button promotes. 'aws' =
-# promote AWS staging (vitana-gateway) → AWS prod (vitana-gateway-awsdr) by
-# exact-image promotion (AWS-PROD-DEPLOY-GATEWAY.yml promote-staging mode,
-# expected_commit pinned); default 'gcp' = original gateway-staging →
-# gateway Cloud Run flow. Set 'aws' on the AWS task defs post-VTID-03419.
-PUBLISH_TARGET_CLOUD=aws|gcp
-# VTID-03420 (only used when PUBLISH_TARGET_CLOUD=aws): when 'true', PUBLISH
-# also best-effort ships the same commit to GCP Cloud Run via EXEC-DEPLOY so
-# the standing rollback target stays fresh. Default off — mirror image of
-# AWS_DUAL_PUBLISH_ENABLED's deliberate-action tradeoff.
-GCP_DUAL_PUBLISH_ENABLED=true|false
-GOOGLE_CLOUD_PROJECT=lovable-vitana-vers1
-GCP_PROJECT=lovable-vitana-vers1
-VERTEX_LOCATION=us-central1
-VERTEX_MODEL=gemini-2.5-pro
-GEMINI_API_KEY=xxx
+# VTID-03420: PUBLISH_TARGET_CLOUD must be 'aws' — 'gcp' is dead code from the
+# dual-cloud period (there is no GCP target left to promote to). AWS_DUAL_PUBLISH_ENABLED
+# and GCP_DUAL_PUBLISH_ENABLED were dual-cloud-period flags for a second GCP leg
+# on publish; both are now no-ops and should be left off/unset.
+PUBLISH_TARGET_CLOUD=aws
+# Amazon Polly / Titan Image / Bedrock — see §2b/2c/2d. Must be set explicitly;
+# the code's own internal fallback for TTS_PROVIDER/IMAGE_PROVIDER is still
+# 'google'/'vertex' and both are now dead (GCP is off).
+TTS_PROVIDER=polly
+TTS_POLLY_STRICT=true
+IMAGE_PROVIDER=bedrock
+BEDROCK_ROLE_ARN=xxx
+VERTEX_LIVE_UNAVAILABLE=true
 OPENAI_API_KEY=xxx
 ```
+
+**Removed from this list (2026-08-18 cleanup):** `GOOGLE_CLOUD_PROJECT`,
+`GCP_PROJECT`, `VERTEX_LOCATION`, `VERTEX_MODEL`, `GEMINI_API_KEY` — all
+GCP/Vertex/Gemini configuration, all now pointing at a decommissioned
+project. If any of these are still set on a live task definition, they are
+inert and safe to remove, not something to keep "just in case."
 
 ---
 
 ## 9. CI/CD WORKFLOWS
 
 ### Key Workflows
+
+`EXEC-DEPLOY.yml` was the canonical **GCP** deploy workflow and is dead —
+GCP is decommissioned (§1). Canonical deployment is now the AWS
+`AWS-*-DEPLOY-*.yml` family (see §1b for the per-service list) plus
+`AWS-STAGE-DEPLOY-GATEWAY.yml` for staging. Other GCP-oriented workflow
+files (`AUTO-DEPLOY.yml`, `DEPLOY-ORB-AGENT.yml`, `DEPLOY-AUTOPILOT-JOB.yml`,
+`STAGE-DEPLOY.yml`, `STAGE-ARTIFACTS-GCS.yml`, `PROVISION-MEMORYSTORE.yml`,
+`GRANT-WIF-STAGING-SECRETS.yml`, `ENABLE-GOOGLE-OAUTH-APIS.yml`,
+`DESCRIBE-VERTEX-CUSTOMJOB.yml`, and others still present in
+`.github/workflows/`) are legacy artifacts of the dual-cloud period — do
+not dispatch them, and treat them as candidates for deletion in a follow-up
+repo-hygiene pass rather than as a live deploy path.
+
 | File | Purpose |
 |------|---------|
-| `EXEC-DEPLOY.yml` | Canonical deployment (VTID governance) |
+| `AWS-PROD-DEPLOY-GATEWAY.yml` | Canonical gateway prod deployment (VTID governance, `workflow_dispatch` only, required `reason`) |
+| `AWS-STAGE-DEPLOY-GATEWAY.yml` | Gateway staging, auto-deploys on push to `main` |
 | `MCP-GATEWAY-CI.yml` | MCP Gateway CI |
 
 ### Deployment Requirements
@@ -1312,33 +1389,29 @@ services/<service>/
 
 ---
 
-## 11. QUICK REFERENCE
+## 11. QUICK REFERENCE (AWS)
 
-### Get Gateway URL
+### Get a service's live status / task def
 ```bash
-gcloud run services describe gateway \
-  --region=us-central1 \
-  --project=lovable-vitana-vers1 \
-  --format="value(status.url)"
+aws ecs describe-services --cluster Vitana-ECS-Cluster \
+  --services vitana-gateway-awsdr --region eu-central-1
 ```
 
-### Deploy a Service
-```bash
-cd services/<service>
-gcloud builds submit \
-  --tag us-central1-docker.pkg.dev/lovable-vitana-vers1/cloud-run-source-deploy/<service>:latest \
-  --project lovable-vitana-vers1
-gcloud run deploy <service> \
-  --image us-central1-docker.pkg.dev/lovable-vitana-vers1/cloud-run-source-deploy/<service>:latest \
-  --region us-central1 \
-  --project lovable-vitana-vers1
-```
+### Get a service's public URL
+Resolve via the ALB host-header rule for that service (see §1b's table) —
+e.g. gateway is `https://gateway.vitanaland.com`. There is no per-service
+dynamic-URL lookup equivalent to `gcloud run services describe`; ECS
+services sit behind the shared `vitana-alb-prod` ALB, not their own URL.
 
-### Check Service Logs
+### Deploy a service
+Deploys go through the canonical `AWS-*-DEPLOY-*.yml` GitHub Actions
+workflow for that service (§1b/§9) — `workflow_dispatch` with a required
+`reason` for prod, automatic on push for staging. Do not build/push/register
+a task definition by hand outside CI.
+
+### Check service logs
 ```bash
-gcloud logging read "resource.type=cloud_run_revision AND resource.labels.service_name=<service>" \
-  --project lovable-vitana-vers1 \
-  --limit 50
+aws logs tail /ecs/vitana-gateway-awsdr --region eu-central-1 --since 1h
 ```
 
 ---
@@ -1349,7 +1422,9 @@ gcloud logging read "resource.type=cloud_run_revision AND resource.labels.servic
 |----------|---------|
 | `DATABASE_SCHEMA.md` | Canonical database schema reference |
 | `config/service-path-map.json` | Service to path mapping |
-| `.github/workflows/EXEC-DEPLOY.yml` | Deployment workflow |
+| `.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml` | Canonical gateway deployment workflow |
+| `docs/AWS-PRODUCTION-BUILD-LOG.md` | Full AWS build record and pre-existing-state findings |
+| `docs/AWS-CUTOVER-RUNBOOK.md` | Historical record of the GCP→AWS cutover execution |
 | `docs/MOBILE_DEVICE_TESTING.md` | Device-level frontend testing (sim-use: iOS Simulator / Android) |
 
 ---
@@ -1477,7 +1552,7 @@ This section documents the complete Memory & Intelligence stack, including how d
 
 | Channel | Technology | Entry Point |
 |---------|------------|-------------|
-| **ORB Voice** | Gemini Live API v2 (WebSocket) | `orb-live.ts` |
+| **ORB Voice** | Amazon Nova Sonic (WebSocket) — see §2e; the Gemini Live API this row named is decommissioned | `orb-live.ts` |
 | **Operator Console** | REST API (Text/Tasks) | `conversation.ts` |
 
 ### Memory Garden Categories (13 Total)
@@ -1537,7 +1612,7 @@ User Input (ORB/Operator)
        │
        ▼
 ┌──────────────────────────────────────────┐
-│  4. LLM Generation (Gemini)              │
+│  4. LLM Generation (Claude via Bedrock)  │
 │                                          │
 │     System Instruction includes:         │
 │     - User context from memory           │
@@ -1691,25 +1766,24 @@ write_fact(
 
 **This is mandatory for EVERY deployment. No exceptions.**
 
-Deployments have repeatedly failed because Cloud Shell had stale code, or the wrong branch was deployed. This protocol prevents that.
+Deployments have repeatedly failed because the checkout being deployed had stale code, or the wrong branch was deployed. This protocol prevents that.
 
-> **Staging-first note (effective Mon 8 Jun 2026, 10:00 Europe/Berlin):** from
-> the cutover instant you are by default verifying **STAGING**
-> (`gateway-staging` / `preview-gateway.vitanaland.com`), because pushes to
-> `main` auto-deploy staging only. The same curl/revision checks below apply —
-> just point them at the staging URL and expect `env=staging`. You verify
-> **production** only after a PUBLISH-button promotion or an escape-hatch
-> (`scripts/deploy/publish-to-prod.sh`) / manual-dispatch deploy — never as a
-> side effect of a push. (Before the cutover, pushes still reach prod.)
+> **Staging-first note:** by default you are verifying **STAGING**
+> (ECS service `vitana-gateway` / `preview-aws-gateway.vitanaland.com`),
+> because pushes to `main` auto-deploy staging only. The same curl/revision
+> checks below apply — just point them at the staging URL and expect
+> `env=staging`. You verify **production** only after a PUBLISH-button
+> promotion or an escape-hatch (`scripts/deploy/publish-to-prod.sh`) /
+> manual-dispatch deploy — never as a side effect of a push.
 
-### Pre-Deploy Verification (BEFORE `gcloud builds submit`)
+### Pre-Deploy Verification (BEFORE the CI build starts)
 
 1. **Verify source code has the expected changes:**
    ```bash
    # Example: Verify sessions route exists before deploying Gateway
    grep -r "sessions" services/gateway/src/routes/live.ts | head -5
    ```
-2. **If deploying from Cloud Shell, verify it's on latest main:**
+2. **If deploying by hand from a local checkout, verify it's on latest main:**
    ```bash
    git fetch origin
    git log --oneline origin/main -3   # Compare with local repo
@@ -1722,25 +1796,26 @@ Deployments have repeatedly failed because Cloud Shell had stale code, or the wr
    cd services/<service> && npm run build
    ```
 
-### Post-Deploy Verification (AFTER `gcloud run deploy` succeeds)
+### Post-Deploy Verification (AFTER the ECS deploy succeeds)
 
 1. **Curl a critical endpoint that only exists in the new code:**
    ```bash
    # Check content-type: must be application/json, NOT text/html
    curl -s -o /dev/null -w "%{http_code} %{content_type}" \
-     -X POST "https://gateway-86804897789.us-central1.run.app/api/v1/live/rooms/test/sessions" \
+     -X POST "https://gateway.vitanaland.com/api/v1/live/rooms/test/sessions" \
      -H "Content-Type: application/json" -d '{}'
    # Expected: "401 application/json..." (auth required, but JSON = route exists)
    # FAILURE: "404 text/html..." (Express default = route does NOT exist)
    ```
 2. **Check the /alive endpoint:**
    ```bash
-   curl -s "https://gateway-86804897789.us-central1.run.app/alive"
+   curl -s "https://gateway.vitanaland.com/alive"
    ```
-3. **Check the latest revision is serving:**
+3. **Check the latest deployment is serving:**
    ```bash
-   gcloud run revisions list --service=<service> \
-     --region=us-central1 --project=lovable-vitana-vers1 --limit=3
+   aws ecs describe-services --cluster Vitana-ECS-Cluster \
+     --services vitana-gateway-awsdr --region eu-central-1 \
+     --query 'services[0].deployments'
    ```
 
 ### Key Diagnostic: HTML 404 vs JSON 404
@@ -1754,40 +1829,32 @@ Deployments have repeatedly failed because Cloud Shell had stale code, or the wr
 
 If post-deploy verification fails:
 1. **Do NOT tell the user "deployment succeeded"** — it didn't
-2. Check which revision is serving: `gcloud run revisions list`
-3. Check the build logs in Cloud Console (CLI `gcloud builds log` has known bugs)
+2. Check which deployment is serving: `aws ecs describe-services --cluster Vitana-ECS-Cluster --services <svc>`
+3. Check the build/deploy logs in the GitHub Actions run
 4. Verify the source that was submitted had the correct code
 
 ---
 
-## 16. CI/CD DEPLOYMENT PIPELINE — STAGING-FIRST (Updated 2026-06-04)
+## 16. CI/CD DEPLOYMENT PIPELINE — STAGING-FIRST (AWS)
 
-**This section was rewritten for the staging-first cutover. READ CAREFULLY —
-the old "merge to main → manually dispatch EXEC-DEPLOY to prod" flow is GONE.**
+**The staging-first model is unchanged by the AWS cutover — only the
+underlying cloud is. The old "merge to main → manually dispatch a GCP prod
+deploy" flow is gone because GCP itself is gone.**
 
 ### The model: push freely → staging; one button → prod
 
-The cutover is **time-gated** — it flips at **Mon 8 Jun 2026, 10:00
-Europe/Berlin**. Before then, push still reaches prod; the table below
-describes behavior **at/after** the cutover.
-
 | Action | Where it lands | How |
 |--------|----------------|-----|
-| Push / merge to `main` (gateway) | **STAGING** (`gateway-staging`) | `STAGE-DEPLOY.yml`, automatic |
+| Push / merge to `main` (gateway) | **STAGING** (ECS `vitana-gateway`) | `AWS-STAGE-DEPLOY-GATEWAY.yml`, automatic |
 | Promote to **production** | `gateway` (+ frontend) | **PUBLISH button** in Command Hub |
 | Exceptional manual prod deploy | single service | `scripts/deploy/publish-to-prod.sh` |
 
-- **`STAGE-DEPLOY.yml`** auto-deploys staging on every push to `main` under
-  `services/gateway/**`. Smoke-gates on `/api/v1/admin/health` → `env=staging`.
-  Unaffected by the cutover — staging deploys always run.
-- **`AUTO-DEPLOY.yml`** (and `DEPLOY-ORB-AGENT.yml`, `DEPLOY-AUTOPILOT-JOB.yml`,
-  `VTID-02409-BOOTSTRAP.yml`) each carry a `cutover_gate` job. On a push
-  **at/after** the cutover instant the prod path is frozen (auto = staging);
-  **before** it, prod deploys as before. Their manual `workflow_dispatch`
-  (which requires a `reason` on AUTO-DEPLOY) is **never** frozen — it is the
-  deliberate prod lever. Prefer the escape-hatch script, which records the reason.
-- **`EXEC-DEPLOY.yml`** is still the canonical governed prod deploy, driven by
-  the PUBLISH button and the escape-hatch script (both `workflow_dispatch`).
+- **`AWS-STAGE-DEPLOY-GATEWAY.yml`** auto-deploys staging on every push to
+  `main` under `services/gateway/**`. Smoke-gates on `/api/v1/admin/health`
+  → `env=staging`.
+- **`AWS-PROD-DEPLOY-*.yml`** (one per service, §1b) is `workflow_dispatch`-only
+  with a required `reason` — never on push. That's the deliberate prod
+  lever, driven by the PUBLISH button and the escape-hatch script.
 
 ### End-to-End Deployment Checklist (STAGING-FIRST)
 
@@ -1797,9 +1864,10 @@ When changing code:
 2. **Commit** — include a VTID (`(VTID-XXXXX)`) or `BOOTSTRAP-<description>`.
 3. **Push** — to the `claude/` branch; open a PR.
 4. **Merge to `main`** — this auto-deploys to **STAGING only**.
-5. **Verify on staging** — `preview-gateway.vitanaland.com` (gateway) /
-   `preview.vitanaland.com` (frontend). Confirm `env=staging`. Do **NOT**
-   expect or look for a prod deploy here.
+5. **Verify on staging** — `preview-aws-gateway.vitanaland.com` (gateway) /
+   `preview-aws.vitanaland.com` (frontend, see `exafyltd/vitana-v1`
+   CLAUDE.md). Confirm `env=staging`. Do **NOT** expect or look for a prod
+   deploy here.
 6. **Ship to production** — when staging is verified, click **PUBLISH** in the
    Command Hub (promotes the exact tested staging build). For the rare
    out-of-band case, run:
@@ -1809,14 +1877,13 @@ When changing code:
    ```
 7. **Verify prod** — only after PUBLISH/escape-hatch, per §15.
 
-### Do NOT auto-dispatch EXEC-DEPLOY to prod
+### Do NOT manually dispatch a prod deploy workflow as a routine step
 
-The old habit was: merge to main, then manually `POST .../EXEC-DEPLOY.yml/dispatches`
-to push prod. **That is no longer correct.** Merging deploys staging. Prod is a
-deliberate, separate, governed action (PUBLISH button or escape-hatch script
-with a recorded reason). If you find yourself hand-dispatching EXEC-DEPLOY to
-prod as a routine step, you are reintroducing the auto-to-prod behavior this
-cutover removed — stop.
+Merging deploys staging. Prod is a deliberate, separate, governed action
+(PUBLISH button or escape-hatch script with a recorded reason). If you find
+yourself hand-dispatching `AWS-PROD-DEPLOY-GATEWAY.yml` to prod as a
+routine step rather than a deliberate, reasoned action, stop — that
+reintroduces the auto-to-prod behavior the staging-first cutover removed.
 
 ### CSS/JS Cache-Busting
 
@@ -1839,6 +1906,13 @@ Use these PATs with the GitHub REST API (`api.github.com`) for all PR and deploy
 
 | Date | Change | VTID |
 |------|--------|------|
+| 2026-08-18 | **Rebuilt MORNING-SYSTEM-HEALTH-CHECK.yml for the AWS/Aurora era and extended it from 15 to 21 checks — the two check-13/15 failures reported this morning were both real, and both were signals the check itself was stale, not that anything vital was actually down.** Check 13 ("Maxina STAGING reachability") pointed at `preview.vitanaland.com`, which has returned a permanent HTTP 500 since GCP billing was deliberately disabled (VTID-03508) — that Cloud Run host is dead by design, not broken; the live AWS staging frontend has been `preview-aws.vitanaland.com` since VTID-03409/AWS-STAGE-DEPLOY-FRONTEND.yml, and this check had been reporting a fake outage of a decommissioned host every morning since. Check 15 (self-audit) was simply reporting check 13's failure honestly. **Fix for both: pointed the URL at the real AWS staging host.** Separately audited the whole file against what has actually changed since it was written the week gateway/community-app were still on Cloud Run: it had no check for the VTID-03563 standing rule ("Claude always via Bedrock, never the direct Anthropic API" — that account has no credit balance and every call to it silently falls back to Google, which is exactly how 268 such failures went unnoticed for 14 days last time), no check for the 8-language DB-content release that went live this same day (VTID-03515/03580 — `supported_locales` can say a language is `status='ga'` while its `journey_checklist_translations`/`nav_catalog_i18n` rows are partial or zero, which renders German inside an otherwise translated UI with no error anywhere; this already happened once silently to es/sr/fr per VTID-03519), no check for Nova Sonic (ORB voice, promoted to 100% of sessions under VTID-03560, own public health endpoint already existed and nothing was polling it on a schedule), and no regression guard for either of the two VTID-03480/VTID-03516 incidents that were each silently broken for days-to-months before anyone happened to look — both already have their own daily ALERT-*.yml workflow and RPC, now reused here rather than duplicated (ALWAYS 9). New migration `20260818090000_vtid_03666_ci_vital_systems_health.sql` adds one more `service_role`-only PostgREST RPC, `ci_vital_systems_health()`, following the exact transport pattern VTID-03492 established (GitHub runner IPs cannot reach the Supabase DB pooler directly, only PostgREST): it reports any `llm_routing_policy` stage still pointed at `primary_provider`/`fallback_provider = 'anthropic'` (checked across every active policy row, not a guessed `environment` string — `LLM_ROUTING_ENV` is not pinned in any tracked deploy workflow) plus 24h `oasis_events` counts for anthropic credit-balance failures and bedrock/vertex completions; per-locale row counts for `journey_checklist_translations`/`nav_catalog_i18n` against every `status='ga'` locale's canonical `'en'` count; and whether the VTID-03506 notification test-actor guard (`_notif_is_test_actor()` + `trg_suppress_test_actor_notifications`) is still installed and enabled. The workflow now also directly reuses `ci_orb_session_state_health()` and `ci_ledger_integrity_check()` (the RPCs behind ALERT-ORB-SESSION-STATE-HEALTH.yml and ALERT-OASIS-LEDGER-INTEGRITY.yml) and curls `/api/v1/orb/nova-sonic/health` (public, secret-free by construction). The scheduled-workflow self-audit's watchlist grew from 6 to 9 entries — the three newer ALERT-*.yml workflows had never been added, which defeated the point of a check whose entire purpose is catching crons that fail silently. Total checks 15 → 21; the report table, self-audit denominator, and the final pass/fail summary all read from a single `TOTAL_CHECKS` env var instead of hardcoded numbers, closing the exact class of drift (a stale hardcoded count) that made this rebuild necessary in the first place. Verified the new SQL for balanced parens/dollar-quoting and every workflow `run:` block for `bash -n` syntax validity; could not execute the RPC against live Supabase or dispatch the workflow from this session (no `SUPABASE_SERVICE_ROLE`/repo-dispatch credentials available here) — next scheduled run (or a manual `workflow_dispatch`) is the first live confirmation. | VTID-03666 |
+| 2026-08-18 | **Swept this file to remove GCP as a direction for new work, following the real GCP shutdown that VTID-03599/VTID-03649 (row below, 2026-08-16) had already executed but this file had never been updated to reflect.** Requested directly by the platform owner: "not a single process is running there [GCP]... no oasis, no autopilot, no agent, nothing." Rewrote Part 1's Infrastructure/Deployment ALWAYS/NEVER/IF-THEN rules from `gcloud`/Cloud Run/Artifact Registry/GCP-project to their AWS ECS/ECR/ALB equivalents; retired the "sanctioned Google dependency for ORB voice" exception (rule 27) now that Vertex Live is permanently dead; rewrote §1 (GCP INFRASTRUCTURE) into a decommission notice and §1b (AWS "DR") into "AWS PRODUCTION — canonical, not DR"; updated §2b/2c/2d/2e to flag that GCP's shutdown is now real, not planned. **Checked the live code while doing this rather than trusting the prose (2026-08-18):** `TTS_PROVIDER`'s and `IMAGE_PROVIDER`'s own internal fallback constants are still `'google'`/`'vertex'` when the env var is unset — now a hard failure risk rather than a safe default, since GCP is off; flagged in §2c/§2d as an open follow-up (flip the code default, or confirm the AWS task defs already set these explicitly — this pass could not verify live AWS env state). Also surfaced two **live gaps this pass did not fix**: (1) `vitana-v1`'s `useTextToSpeech.ts`/`VoiceSettingsPanel.tsx` still call Google edge functions (`google-gemini-tts`, `google-cloud-tts`) directly, bypassing the gateway's Polly seam entirely — with GCP off this is a live outage for any user with a stored Google voice preference, and the sole path Serbian TTS ever had; (2) Nova Sonic's premature-close mitigation (VTID-03502, §2e) reconnected to Vertex Live, which VTID-03649 already patched behind a `VERTEX_LIVE_UNAVAILABLE` flag — but that flag only takes effect once set on the live task definition, unverified from this repo. **Deliberately left alone:** the CHANGE LOG below this entry is a historical record and was not rewritten — GCP is named throughout it because that is what was true at the time each row was written; only the file's forward-looking rules and reference sections were brought current. Full report of every section touched given to the user in-conversation, not duplicated here. | (docs cleanup, no VTID — see IF-THEN rule 1/§4.1; no gateway/DB access from this session to self-allocate one) |
+| 2026-08-18 | **VTID-03675 shipped and correctly resent `guided_topic_id` on a client-side retry — but the retry ALSO legitimately set `reconnect_stage`, which fed a second, independent suppression the provider had had since VTID-03290: reported live as "now it talks generally about the My Journey screen, not the selected session, and completes the entire session, not just that step."** Traced live via `oasis_events` (topic T003, right after VTID-03675 went to prod): the first client session (`live-513be0bc...`) won the guided-topic candidate correctly (`wake_opener:override_v2`, `prompt_len:227`) and was `nova_validation`-rejected twice — identical shape to the T017/T015 incidents, still unroot-caused. A THIRD client session (`live-008e054c...`, ~3s later) then actually delivered audio and completed a turn — but its `greeting_sent` carried **no `wake_opener` at all** (not `override_v2`), and a `tool_call` fired mid-turn — consistent with a generic, route-aware ("what screen are you on") provider winning instead of the guided-topic one. Root cause: `guided-topic-narration.ts`'s `produce()` unconditionally suppressed (`forced_skip_reconnect`) whenever `isReconnect` was true, on the theory "the previous turn is still alive — don't re-open." `isReconnect` here is `orb-live.ts`'s `isReconnectStart`, computed in `live-session-controller.ts` as `reconnectTranscriptHistory.length>0 || reconnectStage!=='idle'` — set whenever the WIDGET sends `reconnect_stage`/`transcript_history` on its start payload, which it does for ANY reconnect after a detected disconnect, for entirely separate reasons (conversation continuity across a transport hiccup). VTID-03675's fix meant this retry now correctly carried `guided_topic_id` for the first time in this failure's history — and immediately walked into this second, previously-unreachable suppression, since prior to VTID-03675 a reconnect could never have carried `topicId` at all (nulled before any retry could see it), so this branch had never actually fired outside its own unit test. **Fix:** removed the `isReconnect` suppression from `guided-topic-narration.ts` entirely. The wake-brief pipeline that invokes this provider runs exactly once per `session_id` (at session start, never re-run for same-session server-internal Nova retries), and the widget only ever sends `guided_topic_id` while the topic genuinely has not been delivered yet (cleared on delivery or on close, per VTID-03675) — so by the time this provider ever sees a `topicId` on a reconnect-flavored request, "isReconnect" can only mean "retrying a topic that was never taught," never "resuming a lesson already in progress." There is no live case left for the old branch to protect. `isReconnect` stays on the type (still forwarded, still computed) but is no longer read by `produce()`. Updated the one test that had encoded the old (now-proven-wrong) suppression as expected behavior — it now asserts the candidate still LEADS turn-1 with `isReconnect: true`. Full suite 670/671 suites (1 pre-existing skip), 12906/12941 tests passing, `tsc --noEmit` clean. **Not yet independently confirmed against live traffic** — same honest caveat as every row in this chain, plus the still-unresolved, still-separate `nova_validation` flakiness that makes a retry necessary in the first place. | VTID-03677 |
+| 2026-08-18 | **GCP project `lovable-vitana-vers1` has NO LINKED BILLING ACCOUNT — confirmed live via the GCP Console ("This project has no billing account") — which is why the VTID-03656 fix could not actually be completed: `gcloud scheduler jobs create` for `gateway-push-dispatch` requires active billing and fails on this project today.** This contradicts a great deal of this file's own documented state: §1b and the AWS-DR table describe GCP as "canonical production for every service except gateway and community-app," several ALWAYS/NEVER/IF-THEN rules in Part 1 instruct "Always use GCP project `lovable-vitana-vers1`," and multiple 2026-08 changelog rows above this one report live `gcloud`/Cloud Run verification against this same project. **None of that is re-verified here** — this entry only confirms the billing account is unlinked as of 2026-08-18; whether existing GCP resources (Cloud Run services, existing Cloud Scheduler jobs, `oasis-projector`/`worker-runner`/`verification-engine`/`orb-agent`, all still documented as GCP-canonical) are still actually running, or have been suspended/degraded by the missing billing account, is **unverified and unknown** — this session has no `gcloud` access to check. Explicit direction from the platform owner: move to AWS instead of restoring GCP billing. **Scoped fix landed here (VTID-03676):** `scripts/aws/setup-eventbridge-push-dispatch.sh` — an AWS-native replacement for just the `gateway-push-dispatch` job, using EventBridge Scheduler + an EventBridge API destination (no compute) to POST to `gateway.vitanaland.com/api/v1/scheduled-notifications/push-dispatch` every minute, mirroring what the GCP job did as closely as AWS's primitives allow. **Not yet run or verified against a live AWS account** — this session has no AWS CLI credentials; the script is a best-effort draft against documented AWS CLI syntax, flagged for whoever runs it to report back any command errors. **Explicitly NOT in scope here:** the other ~25 GCP Cloud Scheduler jobs in `scripts/setup-cloud-scheduler.sh` (the AP-XXXX automation registry jobs, the memory-intelligence jobs, the tenant-scoped daily jobs) hit the exact same missing-billing blocker and are equally unable to be created/updated on GCP right now — they are NOT migrated by this VTID and should be assumed broken until someone confirms otherwise; a full GCP→AWS scheduler migration is a separate, larger follow-up. **Follow-up same VTID, verified live 2026-08-18:** EventBridge Scheduler does NOT support invoking an EventBridge API destination directly via `Target.Arn` — confirmed via a real `ValidationException` ("Provided Arn is not in correct format") against a syntactically-correct, freshly-minted api-destination ARN, on a live run in `eu-central-1`. That capability belongs to EventBridge Rules/Pipes, not Scheduler; the API destination + connection approach was abandoned. Rebuilt on Lambda-as-target instead (a first-class, unambiguous Scheduler integration): a small Node.js function does the actual HTTPS POST, invoked by the schedule every minute. Confirmed firing via CloudWatch logs (`/aws/lambda/vitana-push-dispatch`) and the real backlog draining 1020 → 0 *reachable* rows within the 48h window. **New finding, also resolved:** the ~3 real days between outage discovery and the fix actually landing (GCP billing dead-end → AWS pivot → script debugging) pushed the *oldest* ~16h of the original backlog (2026-08-15 18:52 → ~16:00 next day) past the 48h lookback cutoff by the time the scheduler started running — 394 rows landed permanently unreachable by the current window, confirmed via `unsent_AGED_OUT_of_window`. Platform owner decision: leave them unsent rather than widen the window further — a push for a 3-day-stale "new post" event reads as noise, and those rows remain visible in-app regardless (`push_sent_at` only gates the push alert, not in-app delivery). VTID-03676 terminalized `success`. | VTID-03676 |
+| 2026-08-18 | **VTID-03674's plain trigger still got `nova_validation`-blocked sometimes, and when it did, the widget's own reconnect silently threw away the guided topic — a third, independent defect in the client, not the prompt.** Reported live again by the user after VTID-03674 shipped: "not fixed, it just says: Let's continue from where we left off... after it said: Let's continue..." with a screenshot of the "Well done! You just completed this session" drawer for a topic Vitana never actually taught. Traced live via `oasis_events`: topic T017 ("Profil-Grundlagen" / Profile Basics) produced **three distinct `session_id`s within 5 seconds**. Session 1 (`live-92addc94...`) correctly won the guided-topic candidate (`wake_opener:override_v2`, `prompt_len:225` — the VTID-03674 plain-trigger shape, confirming that fix is live and working as designed) and was rejected by Nova's `nova_validation` content filter TWICE in a row on the byte-identical prompt (same `decision_id`, same `prompt_len` both times) — the server's own internal retry (`resendGreetingIfStuckAtZeroTurns`/VTID-03557-retry) correctly resent the SAME guided-topic line both times, so the plain-trigger fix was never the gap; Nova's block on this exact benign 225-char prompt is evidence the content-filter behavior is at least partly non-deterministic, independent of trigger wording — an open question this VTID does not resolve. What actually broke the user's session: once the server gave up retrying and the WS died, the **widget's own client-side `_attemptReconnect()`** (a different mechanism from the server-internal retry — it tears the connection down and calls `_sessionStart()` fresh) started two more brand-new sessions, and NEITHER carried `guided_topic_id` — confirmed by `orb.livekit.next_action.*` telemetry showing exactly one `guided_topic:T017` candidate/suggested pair in the whole window, tied only to session 1. Root cause in `orb-widget.js`: `focusGuidedTopic(topicId)` arms `_s.guidedTopic` as a one-shot value, and `_sessionStart()` read-then-immediately-nulled it the instant it built the FIRST payload — before knowing whether that attempt would even succeed. The server-internal retry (same session object, `session.guided_topic_id` already stored server-side) was never affected by this; only the CLIENT's own `_attemptReconnect()`, which calls `_sessionStart()` as a fresh top-level call, was — and by then `_s.guidedTopic` was already gone. Session 3 (`live-e0ae5329...`) therefore ran the normal (non-guided) ladder, landed on a much longer, generic prompt (`prompt_len:655`, no `wake_opener` tag at all — a different rung entirely) that produced "let's continue" wording, and succeeded (`model_start_speaking`/`turn_complete`) — but `_s.guidedAutoClose`, armed together with the now-lost `_s.guidedTopic` back in `focusGuidedTopic`, fires unconditionally on ANY first turn completing, so the overlay auto-closed and revealed the My Journey "session completed" drawer as if the (never-delivered) lesson had happened. **Fix:** `_sessionStart()` no longer nulls `_s.guidedTopic` after reading it — it now lives until the guided turn actually completes (cleared alongside `_s.guidedAutoClose` at the SAME existing turn-complete auto-close point, so the two flags can no longer drift apart the way they did here) or the overlay is closed via `_hide()` (also cleared there, so a never-delivered topic can't leak into a later, unrelated session). A client-side `_attemptReconnect()` retry now naturally resends the still-armed `guided_topic_id`, matching the server-internal retry's existing behavior. 5 new static-source-check tests (`orb-widget-guided-topic-reconnect.test.ts`, same pattern as the sibling `orb-widget-failed-start-recovery.test.ts` suite — the widget is a plain IIFE with no export surface) pin: the payload block no longer nulls the field, `_attemptReconnect` doesn't clear it either, both flags clear together at turn-complete (in the right order, before `_hide()` runs), `_hide()` clears both, and `focusGuidedTopic` still arms both together. Full suite 670/671 suites (1 pre-existing skip), 12906/12941 tests passing, `tsc --noEmit` clean. **Not yet independently confirmed against live traffic** — same honest caveat as every row in this chain, plus a residual open question this does NOT resolve: Nova rejected an identical, already-fixed 225-char prompt twice with no content-based explanation, so the underlying `nova_validation` flakiness itself is still unroot-caused and this fix only stops that flakiness from silently losing the topic instead of retrying it correctly. | VTID-03675 |
+| 2026-08-18 | **VTID-03665's fix landed correctly but a real production session STILL showed the same "regular conversation, no lesson" symptom — root-caused to a second, independent defect: a special guided-topic trigger wrapper that Nova's content filter rejects regardless of length or content.** Reported live by the user tapping a My Journey session on the mobile app. Traced via `oasis_events`: THREE `vtid.live.session.start` events fired for the same user within 90 seconds — the middle one (topic T015, "Datenschutz-Kontrolle") shows the guided-topic candidate winning the ranker correctly (priority 96) with `user_facing_line_chars:103` — proof VTID-03665's short-opener fallback fired exactly as designed — and STILL hit `code:nova_validation, diagnostic:"This request has been blocked by our content filters."` on a mere **370-character** prompt. That length (down from the ~1600-1900 chars the original bug reproduced at) is decisive: the block was never about lesson length or curriculum subject matter (T015's script is an innocuous privacy-settings blurb; T251's, checked in parallel, is a benign community-welcome message — neither remotely "unsafe"). What both the short opener AND the old full lesson shared is `compute-greeting-decision.ts`'s `guidedTeachTrigger` — a SEPARATE, more forceful wrapper template used only for guided-topic candidates ("Say the following lesson to the user in fluent English. The text may be in another language — translate it faithfully and completely into English and speak ONLY that translation, then stop and listen. Do NOT summarize, shorten, add a greeting, or ask a question: ...") instead of the plain trigger every other provider (Teacher, Journey Guide, login-briefing) uses successfully ("Say exactly: ... — ONE short utterance only. Do NOT add a greeting before..."). That special wrapper was built when `safe` was the entire raw lesson and needed a forceful verbatim-recitation instruction to hold up under native-audio's preference for short direct turns (VTID-03293) — but VTID-03650/03665 already made `safe` a short, PRE-TRANSLATED line (`buildGuidedTopicPostNarrationLine`/`buildGuidedTopicNarrationOpenerLine` both localize to the session's own `lang` internally), so telling the model "this text may be in another language, translate it faithfully" about text that is ALREADY in the target language reads as a confusing or adversarial instruction pattern — plausibly why Nova's guardrails treat it differently from the plain "say exactly this" template every other rung uses without incident. **Fix:** deleted `isGuidedTeach`/`guidedTeachTrigger` entirely; guided-topic candidates now render through the exact same `wakeTriggerByLang[ctx.lang]` template as every other override_v2 candidate — no special-casing left to diverge, and the `LOCALE_ENGLISH_NAME`/`resolveLocaleStrict` imports it alone needed are removed. Updated the golden snapshot test (`compute-greeting-decision.golden.test.ts`) to assert the new plain-trigger shape instead of the old "fluent English"/"translate" wording. Full suite 669/670 suites (1 pre-existing skip), 12901/12936 tests passing, `tsc --noEmit` clean. **Not yet independently confirmed against live traffic post-deploy** — same honest caveat as every row in this chain: watch for the next real guided-topic tap to actually get taught the topic rather than opening generic conversation, and watch whether `nova_validation` content-filter blocks on guided-topic sessions drop to zero. | VTID-03674 |
+| 2026-08-17 | **Reported "no one is getting push notifications for posts" — `/push-dispatch`, the only delivery path for DB-trigger notifications (new post/video, like, comment, follow, mention), silently stopped succeeding 2026-08-15 ~18:52 UTC and never resumed.** Verified live via read-only query against production: `community_post_published` push delivery ran fine for 7000+ rows, then `push_sent_at` stopped advancing entirely — 782 unsent as of 2026-08-17, plus a smaller backlog of `post_like`/`post_comment`/`message_reaction`. Everything dispatched *synchronously* by other scheduled-notifications.ts handlers (`feature_announcement`, `new_chat_message`, `morning_briefing_ready`, `daily_pace_check`, etc.) kept delivering fine through 08-16/17 — that isolates the fault to this one cron/scheduler path, ruling out a global FCM/Appilix credential or preference-default problem. **Two compounding defects, both fixed here:** (1) the route's query only ever looked at notifications created in the last 5 minutes, so once the scheduler missed an invocation, everything older was orphaned PERMANENTLY — even after the scheduler resumed, those rows could never be picked up again. Widened to a 48h lookback (still capped, still ordered oldest-first, still 100/call) so a multi-day outage is recoverable instead of silently unrecoverable, plus a `console.warn` when the oldest picked-up row is older than the old 5min window, so a future stall is loud in logs immediately rather than needing someone to notice missing pushes. (2) `push-dispatch` was **never registered in `scripts/setup-cloud-scheduler.sh`** — whatever Cloud Scheduler job was calling it before this VTID lived only in live GCP state, invisible to this repo, the identical "wiring existed only in live state" trap VTID-03513/VTID-03551 already hit for other systems. Added it to `DIRECT_JOBS` at `* * * * *` (also corrected the route's stale "every 30 seconds" comment — GCP Cloud Scheduler's standard cron format cannot go below 1-minute granularity, so that claim was never actually achievable via this script). Added `ALERT-PUSH-DISPATCH-HEALTH.yml` (20-min PostgREST poll of `user_notifications` for growing unsent-push backlog / stale oldest-row age) so a recurrence surfaces within an hour, not 40+. **Not yet resolved: the actual live Cloud Scheduler job.** This session had no `gcloud`/AWS CLI credentials to inspect or restore whatever was (or wasn't) invoking `/push-dispatch` before — that is the one remaining action needed to resume real delivery, and it's an infra action outside this session's reach; someone with GCP access needs to run the updated `setup-cloud-scheduler.sh` (or otherwise confirm/recreate the `gateway-push-dispatch` job) before the code fix above can take effect on the 782+ row backlog. **Follow-up same VTID:** `setup-cloud-scheduler.sh`'s `GATEWAY_URL` default still pointed at the retired GCP Cloud Run gateway (`gateway-q74ibpv6ia-uc.a.run.app`) — a rollback target no user reaches since the VTID-03419 AWS cutover, not `gateway.vitanaland.com` — so running the script with defaults, including for the `push-dispatch` job just added, would have created a Cloud Scheduler job POSTing to the wrong host and doing nothing for real production traffic. Default corrected to the AWS gateway; the old Cloud Run URL is still reachable via `--gateway`/`GATEWAY_URL` for anyone deliberately targeting the rollback instance. Cloud Scheduler itself still has to run on GCP regardless — there is still no AWS equivalent (open gap noted in the 2026-07-31 draft cutover spec) — this only fixes which host it calls. | VTID-03656 |
 | 2026-08-16 | **VTID-03650's Polly fallback was itself the still-open defect: live production evidence showed Polly never once succeeded, so every guided-topic session kept hitting the exact "say this whole lesson word-for-word" trigger VTID-03647/03648 had already proven Nova and Vertex both reject — reported again as "clicking a session doesn't activate it, regular Orb communication starts."** Traced live via `oasis_events`: a guided-topic candidate won the turn-1 ranker correctly (`orb.livekit.next_action.candidate`, `winner:true`, priority 96, `dedupe_key:"guided_topic:T253"` — that topic prefix is a legacy naming artifact of the shared telemetry allowlist, not evidence of the LiveKit transport) with `user_facing_line_chars:1625` — the FULL raw `voice_script`, not the short post-narration line — and **zero** `guided_topic_audio_bridge_sent` events anywhere in the prior 2 days. Every layer between the frontend tap (`orbActivate.ts` → `VitanaOrb.focusGuidedTopic` → `orb-widget.js`'s WS `start` frame → `ws-start-adapter.ts` → `live-session-controller.ts` → `wake-brief-wiring.ts`) was independently verified correct — `guided_topic_id` reaches the backend and the provider wins the ranker every time. The break was `guided-topic-narration.ts`'s OWN Polly-failure branch: VTID-03650 correctly stopped feeding the raw script to the model on the Polly-SUCCESS path, but its Polly-FAILURE fallback was `buildGuidedTopicSpokenLesson()` — the unmodified VTID-03293 mechanism, i.e. exactly the payload already proven unreliable. A working Polly call was never a safe precondition for correctness; it was only ever meant to be a nicer delivery mechanism for the same lesson, and this session's environment apparently can't reach Polly (unverified IAM/`polly:SynthesizeSpeech` permission per VTID-03495's own build-time caveat, or another config gap — no AWS CLI access from this session to confirm directly). **Fix:** the Polly-failure fallback now uses the SHORT, DIRECT opener line (`buildGuidedTopicNarrationOpenerLine` — "Let's talk about '<topic>' — I'll walk you through what it is and how it helps you", already proven reliable since every other continuation provider speaks a short line this exact same way) instead of the raw script, and lets the pre-existing GUIDE-MODE (TEACH) system-instruction block (`buildGuidedTopicNarrationBlock`'s legacy branch, unchanged) do the actual teaching in the model's own words from the material as reference — the SAME teaching mechanism the Polly-success path already uses via its post-narration follow-up, just without pre-recorded audio. This finally removes the "say a large literal block verbatim" pattern entirely, regardless of whether Polly works — Polly succeeding now only changes WHICH short line opens the turn and whether pre-recorded audio plays underneath it, never whether the model is asked to recite curriculum text. `orb-livekit.ts` reads the identical `picked.userFacingLine` from the same shared candidate, so its `session.say()` opener is fixed by the same change with no separate edit needed. 4 tests updated (the "byte-for-byte VTID-03293" assertions replaced with assertions that the short opener is used and the raw script text is absent from `userFacingLine`); full suite 669/670 suites (1 pre-existing skip), 12901/12936 tests passing, `tsc --noEmit` clean. **Still not independently confirmed against live traffic** — same honest gap as every prior row in this chain: the next real signal is either `orb.guided_topic.audio_bridge_sent` finally firing (if the Polly permission gap gets fixed separately) or, regardless of Polly, the reporting user's next tap actually being taught the topic instead of opening generic conversation. | VTID-03665 |
 | 2026-08-16 | **Root-cause fix for the VTID-03644/03647/03648 chain: stopped asking a conversational model to read curriculum text at all.** Explicit user directive after VTID-03648's kill-switch: "fix it... only nova and polly by aws" — no Vertex, and the lesson content itself must actually work. Both prior attempts treated this as a ROUTING problem (which provider should read the lesson); the real defect is that ANY conversational model asked to read a specific pre-authored text has its own judgment about whether to comply — Nova refused via its content-safety filter (34 blocks/3 days), and the identical text, rerouted to Vertex, was ALSO rejected (`upstream_ws_close` 1007). **Fix: stop routing curriculum content through a conversational model at all.** New `services/gateway/src/services/tts/guided-topic-narration-audio.ts` synthesizes the guided-topic `voice_script` via Amazon Polly directly (`synthesizePolly`, bypassing the `TTS_PROVIDER` gate deliberately — this call site is Polly-only, unconditionally, because falling back to a second judgment-bearing pipeline would reproduce the exact defect this exists to eliminate) — chunks text over Polly's 3000-char synchronous limit on sentence boundaries and concatenates the headerless PCM buffers, since a script over ~2000 chars was already observed live. `guided-topic-narration.ts` (the continuation provider) now attempts this synthesis BEFORE deciding the turn-1 spoken line: on success, the model's turn-1 line shrinks from the full lesson text (`buildGuidedTopicSpokenLesson`, the VTID-03293 mechanism that fed Nova/Vertex the risky payload as a literal "say exactly this" turn) to a short, safe post-narration follow-up (`buildGuidedTopicPostNarrationLine`, "any questions, or ready to practice?"), and the turns-2+ system-instruction block (`buildGuidedTopicNarrationBlock`) drops the raw `voice_script`/explanation material entirely, replaced with a short "you already narrated this via audio, don't repeat it" instruction — the raw curriculum text now NEVER re-enters the conversational model's prompt on the success path. On Polly failure (unsupported language, API error) `content.narrationAudio` stays null and every downstream branch is BYTE-FOR-BYTE the pre-existing VTID-03293 behavior — no regression for the case this can't cover yet. The actual audio dispatch (`sendGuidedTopicNarrationAudioBridge` in `routes/orb-live.ts`) plays it to the client directly — mirroring the existing `sendGreetingAudioBridge` SSE pattern but extended to the WS transport too (which never had ANY pre-greeting audio bridge before this), wired at both WS `audio_ready` call sites (the primary ack and the 1s-timeout fallback) plus the SSE session-start path, always before the live model's own first turn, one-shot per session (a reconnect never replays it). **Nova only, as directed — the VTID-03647/03648 Vertex-fallback machinery is untouched but now far less likely to ever fire for guided-topic sessions**, since the payload that was tripping it is gone from the prompt on the Polly-success path; VTID-03648's kill switch (`ORB_GUIDED_TOPIC_VERTEX_FALLBACK_ENABLED`, default off) stays exactly as it was. 37 new tests across three files (`guided-topic-narration-audio.test.ts` — text assembly, chunking, Polly-only routing, whole-narration-fails-on-any-chunk-failure; `guided-topic-narration-prompt.test.ts` — the post-narration line + block branch, asserting the raw script text is verifiably ABSENT once narrated; a characterization test for the orb-live.ts wiring, matching this file's established pattern for testing that massive/stateful module) plus updates to the existing provider test asserting the Polly-success and Polly-failure branches both behave as specified. Full suite: 662/663 suites (1 pre-existing skip), 12781/12816 tests passing, `tsc --noEmit` clean. **Not yet independently confirmed against live traffic** — same honest caveat as VTID-03647: the next step is watching `orb.guided_topic.audio_bridge_sent` in `oasis_events` and, ideally, a real user confirming the lesson audio is now what they actually hear. | VTID-03650 |
 | 2026-08-15 | **The VTID-03647 fallback made the same live bug WORSE within hours of shipping — kill-switched pending root cause.** Re-reported by the same user, this time describing several "one moment, reconnecting" cues in a row before landing on a generic conversation ("talks to me like a regular ORB conversation... redirects to session completed"). Live-traced via `oasis_events` across the exact session chain (`live-bf419eed` → `live-c494ba29` → `live-7fbd656d`, all ~23:38:19-23:38:43 UTC): VTID-03647's predicate fired correctly on `live-c494ba29` — `nova_validation` on a guided-topic session, `nova_guided_topic_content_filter_fallback` diag, `attemptTransparentReconnect()` to Vertex. **But Vertex itself then closed the reconnect** — `upstream_ws_close` **code 1007 "Request contains an invalid argument"**, ~270ms after the resent greeting (`greeting_recovery source: VTID-03647-guided-topic-fallback`) — i.e. the identical guided-topic content Nova blocked as unsafe is ALSO rejected by Vertex, just via a hard connection close instead of a soft content-filter error; two independent providers rejecting the same payload is strong evidence the defect is in the LESSON CONTENT itself, not in either provider's tolerance. **The mechanism that turned one failure into a visible loop:** `attemptTransparentReconnect()` resolves success as soon as the WS opens and the setup message is *sent* — not once Vertex actually *accepts* it — so the code believed the fallback had succeeded, called `resendGreetingIfStuckAtZeroTurns()`, and only ~270ms later did the async 1007 close arrive. By then `setupComplete` was already true, so the close handler's `if (!setupComplete) reject(...)` no-ops (the promise had already resolved) and the close falls into the plain "genuine disconnect" branch, which tells the **client** to give up (`should_close: true`) rather than retry server-side. The client's own restart-from-scratch is what produced the second and third session in the chain — each opening with its own "reconnecting" cue — before session 3 finally succeeded via the **pre-existing** VTID-03557 same-provider (Nova) retry, which worked on its first attempt in this very incident. Net effect: 03647 added a failed Vertex hop and its accompanying reconnect flicker on top of a bug it did not fix, measurably worse UX than the pre-03647 behavior for the one case observed. **Fix:** wrapped the `shouldFallbackToVertexOnGuidedTopicContentFilterBlock()` call site in a new kill switch, `ORB_GUIDED_TOPIC_VERTEX_FALLBACK_ENABLED` (default unset/off, same EMPTY-preserving shape as every other lever in `AWS-PROD-DEPLOY-GATEWAY.yml`) — disabled, guided-topic `nova_validation` closes fall through to the unchanged VTID-03557 retry exactly as they did before 03647. The predicate function and its 8 tests are UNCHANGED and still pass (the gate lives at the call site in `orb-live.ts`, not inside the exported function), so re-enabling later is a one-line flip once the Vertex-side rejection is root-caused. **Deliberately not attempted here:** guessing at the exact byte-level defect in the lesson content without the raw `voice_script` text and without live debugging access — a second guess-fix in one evening, on a live incident, without hard confirmation, was assessed as more likely to cause a third failure mode than to fix this one. **Next step for whoever picks this up:** identify the exact My Journey topic tapped in this incident (the tap itself is not currently logged to `oasis_events` — a known gap noted in the VTID-03644 changelog row above) and inspect its raw `voice_script` for whatever both Nova's content filter and Vertex's setup/turn validator are independently rejecting. | VTID-03648 |

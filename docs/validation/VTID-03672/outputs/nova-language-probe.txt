@@ -1,0 +1,42 @@
+Nova 2 Sonic language/voice probe — eu-north-1, amazon.nova-2-sonic-v1:0
+Principal: arn:aws:iam::472838866351:user/claude-code-aws-agent
+Run: 2026-08-18
+
+--- discriminator: a deliberately BOGUS voice must be rejected -------------
+$ node scripts/verify-nova-language.mjs --lang pt --voice notarealvoice
+  FAILURE : ValidationException: Received invalid id: 'notarealvoice'.
+            Please check AWS documentation for valid voiceIds.
+  voice accepted + account entitled : NO
+  exit 1
+
+--- control: a language ALREADY in the gate -------------------------------
+$ node scripts/verify-nova-language.mjs --lang de --voice tina
+  voice accepted + account entitled : YES
+  model generated audio             : NO (inconclusive — no speech input)
+  exit 0  (PARTIAL)
+
+--- the language under test ------------------------------------------------
+$ node scripts/verify-nova-language.mjs --lang pt --voice carolina
+  polly pcm : UNAVAILABLE (AccessDeniedException: User:
+              arn:aws:iam::472838866351:user/claude-code-aws-agent is not
+              authorized to perform: polly:SynthesizeSpeech)
+              falling back to silence — voice/entitlement checked, generation NOT
+  voice accepted + account entitled : YES
+  model generated audio             : NO (inconclusive — no speech input)
+  exit 0  (PARTIAL)
+
+$ node scripts/verify-nova-language.mjs --lang pt --voice leo
+  voice accepted + account entitled : YES
+
+READING THIS CORRECTLY
+The bogus-voice run is what makes the others mean something. Bedrock rejects an
+unknown voiceId by name, so `carolina` and `leo` being accepted is a positive
+result, not merely the absence of an error. And no AccessDeniedException on the
+model itself means this account is entitled to invoke it — the check that
+VTID-03579 showed cannot be inferred from a listing.
+
+WHAT IS STILL UNPROVEN
+Portuguese generation end to end. Nova is speech-to-speech; feeding it silence
+yields a valid stream that never produces a turn, which is indistinguishable
+from an unsupported language. Real speech input needs Polly, and this principal
+is denied polly:SynthesizeSpeech.

@@ -236,7 +236,14 @@ describe('computeGreetingDecision — rung golden snapshots', () => {
     expect(d).toMatchSnapshot();
   });
 
-  test('rung 8: override_v2 guided-teach (narration content → translate/teach trigger)', () => {
+  test('rung 8: override_v2 guided-teach (narration content → SAME plain trigger as every other provider, VTID-03674)', () => {
+    // VTID-03674: guided-topic candidates used to get a special "translate it
+    // faithfully and completely... do NOT summarize" trigger. Live evidence
+    // showed that wrapper itself (not lesson length/content) tripped Nova's
+    // content filter on a real production session, even wrapping a short
+    // opener line. Guided-teach candidates now use the identical plain
+    // wakeTriggerByLang template every other provider already uses
+    // successfully — no special-casing left to diverge.
     const d = computeGreetingDecision(
       ctx({
         lang: 'en',
@@ -246,7 +253,9 @@ describe('computeGreetingDecision — rung golden snapshots', () => {
       }),
     );
     expect(d.wakeOpener).toBe('override_v2');
-    expect(d.directive).toContain('fluent English');
+    expect(d.directive).toContain('Say exactly:');
+    expect(d.directive).not.toContain('fluent');
+    expect(d.directive).not.toContain('translate');
     expect(d).toMatchSnapshot();
   });
 
