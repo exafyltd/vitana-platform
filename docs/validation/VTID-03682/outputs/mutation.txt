@@ -1,0 +1,42 @@
+VTID-03682 — mutation verification
+
+Each seam broken independently, suite re-run, source restored. A guard that
+cannot fail when the thing it guards is removed is not a guard.
+
+Baseline: 7 passed, 0 failed.
+
+=== MUTATION 1: fallback flag always false ===
+  - { voice: NOVA_SONIC_FALLBACK_VOICE, fallback: true }
+  + { voice: NOVA_SONIC_FALLBACK_VOICE, fallback: false }
+
+    ✕ reports fallback=true for every language with no native Nova voice (5 ms)
+Tests:       1 failed, 6 passed, 7 total
+
+=== MUTATION 2: no dedupe latch (log every time) ===
+  - if (loggedNovaVoiceFallbacks.has(base)) return;
+
+    ✕ logs the substitution once per language, not once per session (3 ms)
+    ✕ normalises locale tags so ru-RU does not log twice (2 ms)
+Tests:       2 failed, 5 passed, 7 total
+
+=== MUTATION 3: no locale-tag normalisation ===
+  - const base = (language || '').trim().toLowerCase().split(/[-_]/)[0] || 'unknown';
+  + const base = language || 'unknown';
+
+    ✕ normalises locale tags so ru-RU does not log twice (2 ms)
+Tests:       1 failed, 6 passed, 7 total
+
+=== MUTATION 4: call site reverted to the original bare ?? 'tina' ===
+  routes/orb-live.ts — restored the pre-fix expression and disabled the
+  fallback branch, i.e. exactly the production code this VTID replaces.
+
+    ✕ the call site no longer uses a bare ?? fallback (11 ms)
+Tests:       1 failed, 6 passed, 7 total
+
+=== restored ===
+Tests:       7 passed, 7 total
+
+Note which test survives each mutation and why: the three tests asserting the
+SERVED VOICE (AC-2) survive all four, because they must — this change is not
+allowed to alter what anyone hears, and a mutation to the reporting path must
+not be able to move them.
