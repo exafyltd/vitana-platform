@@ -14340,9 +14340,13 @@ async function getStoredLanguagePreference(
     if (result.ok && result.facts.length > 0) {
       const storedLang = result.facts[0].fact_value.toLowerCase();
       // Map full language name back to 2-letter code
+      // VTID-03681: pt/pl added. A miss here returns null (no stored
+      // preference), so the session silently falls back to the widget's
+      // browser-detected language instead of the one the user actually chose.
       const nameToCode: Record<string, string> = {
         english: 'en', german: 'de', french: 'fr', spanish: 'es',
         arabic: 'ar', chinese: 'zh', russian: 'ru', serbian: 'sr',
+        portuguese: 'pt', polish: 'pl',
       };
       return nameToCode[storedLang] || (SUPPORTED_LIVE_LANGUAGES.includes(storedLang) ? storedLang : null);
     }

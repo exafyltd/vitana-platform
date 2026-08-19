@@ -107,6 +107,30 @@ export type NovaRotationReason = 'provider_stream_rotation' | 'idle_deadline_fai
  * Languages the Live API officially supports. New languages must land
  * here AND in the voice + greeting lookup tables.
  *
+ * VTID-03681 — `pt` and `pl` were missing here for the whole language
+ * expansion, and the consequence was NOT an error. `normalizeLang()`
+ * (`routes/orb-live.ts`) ends `SUPPORTED_LIVE_LANGUAGES.includes(langPart)
+ * ? langPart : 'en'`, so an unlisted language is silently COERCED to
+ * English: a Portuguese user opened the ORB and got a fluent English
+ * assistant, with no error anywhere to notice.
+ *
+ * It is invisible in telemetry too, and worse than merely absent —
+ * `vtid.live.session.start` records the COERCED value, so those sessions
+ * are indistinguishable from genuine English ones. Measured on prod over
+ * 3 days before this fix: de 66, en 63, sr 4, es/fr/ru 3 each, and **pt 0
+ * / pl 0** — not "few users", but structurally unreachable.
+ *
+ * It also silently disabled VTID-03672: the coercion runs at session start,
+ * BEFORE `isNovaSonicLanguageSupported(session.lang)`, so adding `pt` to
+ * Nova's list could never take effect while `pt` was absent here. Adding a
+ * language to a downstream provider is worthless until it survives this gate.
+ *
+ * The sentence above ("AND in the voice + greeting lookup tables") is the
+ * actual contract and it is load-bearing — widening ONLY this array gives a
+ * session whose system instruction still orders "Respond ONLY in English",
+ * because `languageNames` in `live-system-instruction.ts` ends `|| 'English'`.
+ * The full set that must agree is listed in that file's VTID-03681 note.
+ *
  * NOTE: typed as `string[]` (not `readonly ['en', 'de', ...]`) on purpose:
  * existing callsites pass arbitrary strings into `.includes()` for runtime
  * checks, and narrowing the type would force casts at every callsite.
@@ -122,4 +146,6 @@ export const SUPPORTED_LIVE_LANGUAGES: string[] = [
   'zh',
   'sr',
   'ru',
+  'pt',
+  'pl',
 ];
