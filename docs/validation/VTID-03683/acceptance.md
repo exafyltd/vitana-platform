@@ -192,13 +192,24 @@ not have would not be.
   and no other TTS provider is wired since GCP went off. `sr` is refused by name,
   with the reason naming Polly, so it stays a visible product gap rather than
   being quietly served in the wrong language.
-- **It does not enable itself.** `ORB_CASCADED_VOICE_ENABLED` is unset and this
-  change does not set it, in any workflow or task definition. Enabling it is a
-  separate, deliberate action — and the ordering matters for the same reason
-  §2b's Bedrock rule does: the gateway task role needs
-  `transcribe:StartStreamTranscription` and `polly:SynthesizeSpeech`, and
-  VTID-03665 already found Polly failing silently in one environment from a
-  missing permission. Verify the IAM grants first, then flip the flag.
+- **It does not enable itself.** `ORB_CASCADED_VOICE_ENABLED` and
+  `AWS_TRANSCRIBE_REGION` are now declared as `workflow_dispatch` inputs on
+  `AWS-PROD-DEPLOY-GATEWAY.yml`, both defaulting to **EMPTY = preserve**, so a
+  deploy that omits them changes nothing. Declaring the levers is not setting
+  them — and they are declared rather than left to a hand-edit of the live task
+  definition because that is precisely what cost four days of staging downtime
+  under VTID-03513: task-def state that existed only in AWS, invisible to review,
+  cloned forward through every later deploy. jq upserts verified idempotent
+  against a mock task def (applied twice → identical output, no duplicate key,
+  other vars preserved).
+
+  Enabling it is a separate, deliberate action, and the **ordering is
+  load-bearing** for the same reason §2b's Bedrock rule is: the gateway task
+  role needs `transcribe:StartStreamTranscription` and `polly:SynthesizeSpeech`
+  FIRST. The eligibility gate refuses a language it cannot serve, but it cannot
+  see an IAM denial — that surfaces per turn as a session that connects and then
+  produces nothing, the same invisible shape as VTID-03480 and VTID-03665.
+  Verify the grants, then flip.
 - **It does not touch the forced-Nova path for anything else.** A language Nova
   supports, and a language the cascade cannot cover, both take exactly the route
   they take today.
@@ -208,12 +219,37 @@ not have would not be.
   underneath the language ceiling. If `ru` is still anomalous after the cascade
   is enabled, that is a separate investigation, not evidence this did not work.
 
-## Dependency note (VALIDATOR-CHECK exit 20)
+## Dependency note (VALIDATOR-CHECK exit 20 / 22)
 
-This change adds `@aws-sdk/client-transcribe-streaming`, which necessarily
-modifies `services/gateway/package-lock.json`. The gate's `deny_common` rule
-rejects any lockfile change outright, so **this PR will fail VALIDATOR-CHECK at
-exit 20 and there is no way to add the required SDK without it.** The gate is
-advisory rather than a required check (VTID-03681 merged with it red), and the
-underlying trigger-scoping problem is already tracked as its own follow-up. It is
-recorded here rather than worked around.
+This change adds `@aws-sdk/client-transcribe-streaming`. Three files it must
+touch are rejected by the gate, and none of them can be avoided:
+
+- `services/gateway/pnpm-lock.yaml` and `services/gateway/package-lock.json` —
+  `deny_common` rejects any lockfile change outright (**exit 20**).
+- `services/gateway/package.json` and
+  `.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml` — outside the
+  `gateway_backend` path allowlist, which covers only
+  `services/gateway/{src,dist,test,openapi}/` and `docs/validation/` (**exit 22**).
+
+**There is no way to add the required SDK, or to declare its env levers in a
+diffable file, without tripping both.** The gate is advisory rather than a
+required check (VTID-03681 merged with it red), and the underlying
+trigger-scoping problem is already tracked as its own follow-up. Recorded here
+rather than worked around — the honest state is a red advisory gate, not a
+weakened rule.
+
+**Which lockfile actually matters, learned the hard way on this PR's first CI
+run:** `npm install` updated `services/gateway/package-lock.json`, but the
+Gateway Jest job installs with `pnpm install --frozen-lockfile` against
+`services/gateway/pnpm-lock.yaml`. The job failed with
+`ERR_PNPM_OUTDATED_LOCKFILE` — not a single test ran, and the check name
+("Gateway (Jest, ~7.5k tests)") makes that look like a test failure. Both
+lockfiles are tracked in this repo; only the pnpm one is consumed by CI.
+Regenerated with `pnpm install --lockfile-only`, then verified under the
+CI-pinned **pnpm 9.0.0** (`packageManager` in the root `package.json`) in an
+isolated copy: the new lockfile passes `--frozen-lockfile`, and the previous one
+fails against the new `package.json` — a negative control, so the check is known
+to be meaningful rather than merely green. `lockfileVersion` stays `'9.0'`, and
+the only churn beyond the new package is one peer-suffix key on `openai`
+(`@aws-sdk/credential-provider-node` 3.972.78 → .80), which is the expected
+consequence of adding an AWS SDK.

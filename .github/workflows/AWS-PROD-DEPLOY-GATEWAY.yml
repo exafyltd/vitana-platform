@@ -87,6 +87,26 @@ on:
         description: 'Set ORB_IDLE_NO_ENGAGEMENT_MS — reap budget for a live session with zero engagement (default 300000; EMPTY = preserve)'
         required: false
         default: ''
+      # VTID-03683: the cascaded voice pipeline (Transcribe -> Bedrock -> Polly)
+      # for the languages Nova Sonic cannot speak at all (ru/pl/ar/zh). These
+      # are declared here rather than left to a hand-edit of the live task def
+      # for the reason the block above this one already records: that is exactly
+      # how VTID-03513 cost four days of staging downtime.
+      #
+      # ORDERING IS LOAD-BEARING, same shape as BEDROCK_ROLE_ARN below. The
+      # gateway task role needs transcribe:StartStreamTranscription AND
+      # polly:SynthesizeSpeech before this is switched on. Without them the
+      # cascade fails per-turn instead of failing to start — and VTID-03665
+      # already found Polly failing silently in one environment from exactly
+      # this kind of missing grant. Verify the IAM first, then flip.
+      orb_cascaded_voice_enabled:
+        description: 'Set ORB_CASCADED_VOICE_ENABLED — true routes Nova-unsupported languages (ru/pl/ar/zh) to the Transcribe->Bedrock->Polly cascade instead of forcing them onto Nova. Needs transcribe+polly IAM FIRST (true/false; EMPTY = preserve)'
+        required: false
+        default: ''
+      aws_transcribe_region:
+        description: 'Set AWS_TRANSCRIBE_REGION — region for Transcribe streaming; falls back to AWS_REGION then eu-central-1 (EMPTY = preserve)'
+        required: false
+        default: ''
       # VTID-03649: GCP project billing was disabled, permanently killing
       # Vertex Live. Without this, sessions whose language/runtime fail
       # Nova's gates (and Nova's own premature-close recovery) still degrade
@@ -335,6 +355,8 @@ jobs:
           NOVA_TENANTS_INPUT: ${{ inputs.nova_canary_tenant_ids }}
           NOVA_GLOBAL_INPUT: ${{ inputs.nova_sonic_global_enabled }}
           ORB_IDLE_NO_ENGAGEMENT_INPUT: ${{ inputs.orb_idle_no_engagement_ms }}
+          ORB_CASCADED_VOICE_INPUT: ${{ inputs.orb_cascaded_voice_enabled }}
+          AWS_TRANSCRIBE_REGION_INPUT: ${{ inputs.aws_transcribe_region }}
           VERTEX_LIVE_UNAVAILABLE_INPUT: ${{ inputs.vertex_live_unavailable }}
           BEDROCK_ROLE_ARN_INPUT: ${{ inputs.bedrock_role_arn }}
           BEDROCK_MODEL_ID_INPUT: ${{ inputs.bedrock_model_id }}
@@ -546,6 +568,38 @@ jobs:
               .containerDefinitions[0].environment |=
                 ( [ .[] | select(.name != "ORB_IDLE_NO_ENGAGEMENT_MS") ]
                   + [ {name:"ORB_IDLE_NO_ENGAGEMENT_MS", value:$I} ] )')
+          fi
+
+          # VTID-03683: cascaded voice (Transcribe -> Bedrock -> Polly) for the
+          # languages Nova Sonic cannot speak. Unset, the selector is
+          # byte-for-byte the existing forced-Nova path, so a deploy that omits
+          # this input changes no routing at all.
+          #
+          # Do NOT set this to true before the gateway task role actually has
+          # transcribe:StartStreamTranscription and polly:SynthesizeSpeech.
+          # The eligibility gate refuses a language it cannot serve, but it
+          # cannot see an IAM denial — that surfaces per turn, as a session
+          # that connects and then produces nothing, which is the same
+          # invisible shape as VTID-03480 and VTID-03665.
+          if [ -n "$ORB_CASCADED_VOICE_INPUT" ]; then
+            echo "Applying cascaded voice: ORB_CASCADED_VOICE_ENABLED=$ORB_CASCADED_VOICE_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg C "$ORB_CASCADED_VOICE_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "ORB_CASCADED_VOICE_ENABLED") ]
+                  + [ {name:"ORB_CASCADED_VOICE_ENABLED", value:$C} ] )')
+          fi
+
+          # VTID-03683: its own var rather than inheriting AWS_REGION blindly,
+          # for the same reason AWS_TITAN_IMAGE_REGION is (§2d) — Transcribe
+          # streaming is not offered in every region, and a wrong region fails
+          # with an opaque error rather than a named one. Falls back to
+          # AWS_REGION then eu-central-1 in code, so leaving it EMPTY is fine.
+          if [ -n "$AWS_TRANSCRIBE_REGION_INPUT" ]; then
+            echo "Applying AWS_TRANSCRIBE_REGION=$AWS_TRANSCRIBE_REGION_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg R "$AWS_TRANSCRIBE_REGION_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "AWS_TRANSCRIBE_REGION") ]
+                  + [ {name:"AWS_TRANSCRIBE_REGION", value:$R} ] )')
           fi
 
           # VTID-03563: Claude-always-on-Bedrock (CLAUDE.md ALWAYS 10a).

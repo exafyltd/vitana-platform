@@ -52,3 +52,35 @@ npx jest
 #   mean audio_out per turn_complete by session language, 14d
 #   count of nova_forced_vertex_unavailable, 14d  → 0 rows
 #   full results and the correction they forced: outputs/prod-telemetry.txt
+
+# =============================================================================
+# FOLLOW-UP after the first CI run on PR #3139
+# =============================================================================
+
+# The "Gateway (Jest, ~7.5k tests)" check FAILED without running a single test:
+#   ERR_PNPM_OUTDATED_LOCKFILE  Cannot install with "frozen-lockfile"
+# CI installs with pnpm against services/gateway/pnpm-lock.yaml; `npm install`
+# had only updated services/gateway/package-lock.json. Both are tracked here;
+# only the pnpm one is consumed by CI. The check NAME made this look like a
+# test failure, which it was not.
+cd services/gateway && pnpm install --lockfile-only
+#   → lockfileVersion stays '9.0'; only new churn beyond the transcribe package
+#     is one peer-suffix key on openai (credential-provider-node .78 -> .80),
+#     the expected consequence of adding an AWS SDK.
+
+# Verified under the CI-PINNED pnpm (root package.json packageManager: pnpm@9.0.0),
+# in an isolated copy so the working node_modules is never touched:
+#   cp package.json pnpm-lock.yaml $TMP && cd $TMP
+npx --yes pnpm@9.0.0 install --frozen-lockfile --lockfile-only
+#   → exit 0. NEGATIVE CONTROL, same command with the PREVIOUS lockfile against
+#     the new package.json → ERR_PNPM_OUTDATED_LOCKFILE, exit 1. So the check is
+#     known to be meaningful rather than merely green.
+
+# Impact-scan raised: ORB_CASCADED_VOICE_ENABLED / AWS_TRANSCRIBE_REGION have no
+# binding in any workflow. Added both to AWS-PROD-DEPLOY-GATEWAY.yml as
+# EMPTY-preserving workflow_dispatch inputs, matching the VTID-03560/03563
+# pattern (a lever settable only by hand-editing the live task def is the
+# VTID-03513 trap). Declaring is not setting: both default to EMPTY = preserve.
+#   → YAML parses (24 dispatch inputs), every run block bash -n clean
+#   → jq upsert applied twice against a mock task def: identical output,
+#     no duplicate key, unrelated vars (PORT) preserved.
