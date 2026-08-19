@@ -1,0 +1,104 @@
+name: Alert — Push Dispatch Health
+
+# VTID-03656.
+#
+# WHY THIS EXISTS: /push-dispatch is the ONLY delivery path for FCM/Appilix
+# push on notifications a DB trigger writes directly (new community post/
+# video, like, comment, follow, mention — see vitana-v1 migrations
+# 20260630120000 / 20260805160000). It runs off a Cloud Scheduler job that
+# was never registered anywhere in this repo (scripts/setup-cloud-scheduler.sh
+# didn't list it until this VTID) — it lived only in live GCP state, so when
+# it silently stopped succeeding around 2026-08-15 ~18:52 UTC, nothing
+# noticed for 40+ hours: 782+ "new post" notifications sat with
+# push_sent_at IS NULL and were never delivered. A live user report
+# ("no one is getting push notifications for posts") was the only signal.
+#
+# This checks the thing that actually matters — are unsent rows piling up —
+# rather than trying to infer scheduler health indirectly. VTID-03480's
+# standing lesson: a degradation nobody alerts on is not detected, it is
+# merely recorded.
+#
+# TRANSPORT: PostgREST over HTTPS, deliberately NOT `psql "$SUPABASE_DB_URL"`.
+# GitHub runner IPs are not on the Supabase project's network allow-list, so
+# every psql-based check in this repo is structurally unable to connect
+# (VTID-03485/03492). user_notifications is already reachable by
+# service_role through PostgREST — no RPC or migration needed.
+
+on:
+  schedule:
+    - cron: '*/20 * * * *'   # every 20 minutes — catch an outage within an hour, not a day
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # If the single oldest unsent push-eligible notification is older than
+  # this, the dispatch cron has very likely missed multiple invocations
+  # (steady state clears a row within ~1-2 minutes of creation).
+  STALE_THRESHOLD_MINUTES: '15'
+  # A handful of unsent rows younger than the threshold is normal churn
+  # between scheduler ticks — only alarm once a real backlog has formed.
+  BACKLOG_COUNT_THRESHOLD: '25'
+
+jobs:
+  push-dispatch-health:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch oldest unsent push-eligible notifications
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE:-}" ]; then
+            echo "::error::SUPABASE_URL / SUPABASE_SERVICE_ROLE secrets are not set on this repo."
+            exit 1
+          fi
+          HTTP=$(curl -sS -o pending.json -w '%{http_code}' -G \
+            "${SUPABASE_URL%/}/rest/v1/user_notifications" \
+            --data-urlencode 'select=id,type,created_at' \
+            --data-urlencode 'push_sent_at=is.null' \
+            --data-urlencode 'channel=in.(push,push_and_inapp)' \
+            --data-urlencode 'order=created_at.asc' \
+            --data-urlencode 'limit=1000' \
+            -H "apikey: $SUPABASE_SERVICE_ROLE" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE")
+          if [ "$HTTP" != "200" ]; then
+            echo "::error::user_notifications query returned HTTP $HTTP"
+            head -c 500 pending.json || true
+            exit 1
+          fi
+
+      - name: Evaluate
+        run: |
+          set -euo pipefail
+          node -e '
+            const fs = require("fs");
+            const rows = JSON.parse(fs.readFileSync("pending.json", "utf8"));
+
+            if (rows.length === 0) {
+              console.log("No unsent push-eligible notifications — push-dispatch is keeping up.");
+              process.exit(0);
+            }
+
+            const oldest = rows[0];
+            const ageMin = Math.round((Date.now() - new Date(oldest.created_at).getTime()) / 60000);
+            const staleLimit = Number(process.env.STALE_THRESHOLD_MINUTES);
+            const countLimit = Number(process.env.BACKLOG_COUNT_THRESHOLD);
+
+            const byType = {};
+            for (const r of rows) byType[r.type] = (byType[r.type] || 0) + 1;
+            console.log(`unsent=${rows.length}  oldest_age_min=${ageMin}  by_type=${JSON.stringify(byType)}`);
+
+            const problems = [];
+            if (ageMin > staleLimit) problems.push(`oldest unsent notification is ${ageMin}min old (limit ${staleLimit}min)`);
+            if (rows.length > countLimit) problems.push(`${rows.length} unsent notifications (limit ${countLimit})`);
+
+            if (problems.length) {
+              console.log("::error::push-dispatch backlog is growing — " + problems.join("; "));
+              console.log("Check: does the gateway-push-dispatch Cloud Scheduler job exist and is it succeeding? `gcloud scheduler jobs describe gateway-push-dispatch --location=us-central1`. See VTID-03656.");
+              process.exit(1);
+            }
+            console.log("push-dispatch backlog within normal bounds.");
+          '
