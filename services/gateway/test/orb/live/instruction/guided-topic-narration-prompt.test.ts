@@ -85,6 +85,13 @@ describe('buildGuidedTopicNarrationBlock — post-narration branch (content.narr
     const block = buildGuidedTopicNarrationBlock(narratedContent, 'en');
     expect(block).toContain('Speak ONLY in English');
   });
+
+  it('VTID-03686: forbids calling a tool on a brief "yes" before checking for follow-up questions', () => {
+    const de = buildGuidedTopicNarrationBlock(narratedContent, 'de');
+    expect(de.toLowerCase()).toMatch(/tool.*aufrufen.*switch_persona|switch_persona.*navigate/);
+    const en = buildGuidedTopicNarrationBlock(narratedContent, 'en');
+    expect(en.toLowerCase()).toMatch(/calling a tool.*switch_persona|switch_persona.*navigate/);
+  });
 });
 
 describe('buildGuidedTopicNarrationBlock — legacy model-narrated branch (no narrationAudio)', () => {
@@ -98,5 +105,12 @@ describe('buildGuidedTopicNarrationBlock — legacy model-narrated branch (no na
     const withUndefined = buildGuidedTopicNarrationBlock(BASE_CONTENT, 'de');
     const withNull: GuidedTopicNarrationContent = { ...BASE_CONTENT, narrationAudio: null };
     expect(buildGuidedTopicNarrationBlock(withNull, 'de')).toBe(withUndefined);
+  });
+
+  it('VTID-03686: forbids calling a tool or skipping to practice before actually explaining the content', () => {
+    const de = buildGuidedTopicNarrationBlock(BASE_CONTENT, 'de');
+    expect(de.toLowerCase()).toMatch(/tool.*aufrufen.*switch_persona|switch_persona.*navigate/);
+    const en = buildGuidedTopicNarrationBlock(BASE_CONTENT, 'en');
+    expect(en.toLowerCase()).toMatch(/calling any tool.*switch_persona|switch_persona.*navigate/);
   });
 });

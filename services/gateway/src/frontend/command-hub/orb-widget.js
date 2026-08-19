@@ -2252,7 +2252,22 @@
         break;
 
       case 'error':
-        _setStatus('Error: ' + (msg.message || 'Unknown'));
+        // VTID-03686: an upstream 'error' on the FIRST connection attempt
+        // (e.g. Nova's nova_validation content filter) is followed by a
+        // silent server-internal retry that usually succeeds within a few
+        // seconds (resendGreetingIfStuckAtZeroTurns) — nothing has been
+        // heard yet, so there is nothing for the user to be "in error"
+        // from. Flashing a raw internal error string here reads as broken
+        // even when the recovery is about to work; a genuinely terminal
+        // failure is reported separately via 'connection_issue'/
+        // 'live_api_disconnected', which _attemptReconnect handles with
+        // its own status text. Once something has actually played
+        // (greetingComplete), a real error is worth surfacing.
+        if (_s.greetingComplete) {
+          _setStatus('Error: ' + (msg.message || 'Unknown'));
+        } else {
+          console.warn('[VTOrb] Upstream error before first audio — suppressing status flash, awaiting server retry: ' + (msg.message || 'Unknown'));
+        }
         break;
 
       case 'connection_alert':
