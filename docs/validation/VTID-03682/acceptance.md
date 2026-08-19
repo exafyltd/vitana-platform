@@ -126,6 +126,33 @@ point of the change. Note also that exercising this against production is
 forbidden outright by CLAUDE.md's standing rule, so a live curl was never an
 available form of evidence here.
 
+## OASIS traceability (VALIDATOR-CHECK exit 80/81)
+
+OASIS_PROOF: This change **adds one new OASIS signal and alters none**.
+`emitDiag(session, 'nova_voice_fallback', { provider, lang, voice, reason })`
+is emitted into the existing `orb.live.diag` topic from
+`routes/orb-live.ts`'s Nova connect path, exactly once per session whose
+language has no native Nova voice. `nova_voice_fallback` is a **new** stage
+value in that topic's vocabulary — no existing topic, stage or payload shape is
+renamed or removed, so no dashboard or query that works today can break.
+
+That is deliberately the *point* of the VTID rather than a side effect: before
+this change the substitution produced no OASIS record at all, which is why
+`ru`/`sr`/`pl` sessions could be served a German voice for months without
+anything to query. The counterpart signal is the once-per-language
+`[voice-fallback]` log line; the log says "this deployment substitutes for
+Russian", the diag says how often and for whom.
+
+**Honest limit on this proof:** the emit is verified by the test suite and by
+reading the wired call site — it has **not** been observed in a live
+`oasis_events` row, because the code is not deployed yet and this repo's
+standing rule forbids exercising production to produce one. The first real
+confirmation is a `nova_voice_fallback` row after deploy; per the VTID-03681
+precedent, terminalization waits for that rather than being claimed at merge.
+
+VTID-03682 is `status=in_progress`, `spec_status=approved` (user-instructed in
+conversation, per §4.1).
+
 ---
 
 ## What this does NOT do
