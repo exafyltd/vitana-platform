@@ -19,7 +19,10 @@
  *     `UpstreamLiveClient` — the selector must be able to express it.
  */
 
-export const VOICE_PROVIDER_NAMES = ['vertex', 'livekit', 'nova_sonic'] as const;
+// VTID-03683: `cascaded` is the Transcribe -> Bedrock -> Polly pipeline for
+// languages Nova Sonic cannot speak (ru/pl/ar/zh). Unlike `livekit` it DOES
+// implement `UpstreamLiveClient`, so the factory can construct it.
+export const VOICE_PROVIDER_NAMES = ['vertex', 'livekit', 'nova_sonic', 'cascaded'] as const;
 
 export type VoiceProviderName = (typeof VOICE_PROVIDER_NAMES)[number];
 

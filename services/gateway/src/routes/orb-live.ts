@@ -889,7 +889,10 @@ export interface GeminiLiveSession {
   // sites keep working; typed events flow via bindUpstreamSessionHandlers.
   upstreamClient?: UpstreamLiveClient | null;
   // Which upstream provider carries this session ('vertex' default).
-  upstreamProvider?: 'vertex' | 'livekit' | 'nova_sonic';
+  // VTID-03683: use the canonical union, not a re-declared copy.
+  // provider-name.ts's own header requires this: adding `cascaded` there
+  // surfaced these two sites as the only places still restating the list.
+  upstreamProvider?: VoiceProviderName;
   sseResponse: Response | null;
   active: boolean;
   // VTID-03561: latch — at most one `vtid.live.session.stop` per session.
@@ -1675,6 +1678,7 @@ import {
   resolveNovaSonicVoiceOrFallback,
   logNovaSonicVoiceFallbackOnce,
 } from '../orb/live/voice/nova-sonic-voice';
+import type { VoiceProviderName } from '../orb/live/upstream/provider-name';
 import { prewarmNovaSonicBedrock } from '../orb/live/upstream/nova-sonic-live-client';
 import { sanitizeInstructionForNova } from '../orb/live/upstream/nova-instruction-sanitizer';
 import { startNovaSonicKeepWarm, startNovaSonicModelWarm } from '../orb/live/upstream/nova-sonic-keepwarm';
@@ -15483,7 +15487,7 @@ router.get('/health', async (_req: Request, res: Response) => {
   //
   // We gather the exact same inputs selectUpstreamProvider() reads at session
   // connect time, then derive runtime readiness from the resolved provider.
-  let activeProvider: 'vertex' | 'livekit' | 'nova_sonic' = 'vertex';
+  let activeProvider: VoiceProviderName = 'vertex';
   let providerReason = 'default';
   let livekitReady = false;
   try {
