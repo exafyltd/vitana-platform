@@ -131,10 +131,23 @@ available form of evidence here.
 OASIS_PROOF: This change **adds one new OASIS signal and alters none**.
 `emitDiag(session, 'nova_voice_fallback', { provider, lang, voice, reason })`
 is emitted into the existing `orb.live.diag` topic from
-`routes/orb-live.ts`'s Nova connect path, exactly once per session whose
-language has no native Nova voice. `nova_voice_fallback` is a **new** stage
-value in that topic's vocabulary — no existing topic, stage or payload shape is
-renamed or removed, so no dashboard or query that works today can break.
+`routes/orb-live.ts`'s Nova connect path, **at most once per session** whose
+language has no native Nova voice — latched on `_novaVoiceFallbackDiagEmitted`.
+`nova_voice_fallback` is a **new** stage value in that topic's vocabulary — no
+existing topic, stage or payload shape is renamed or removed, so no dashboard or
+query that works today can break.
+
+**The latch is load-bearing, and this doc originally got it wrong.** It claimed
+"exactly once per session" while the emit was unconditional. Raised in review on
+#3136 and confirmed against the call graph: `connectToLiveAPI()` is re-entered by
+`attemptTransparentReconnect()`, both for a genuine reconnect and for every
+planned Nova stream rotation (`_novaRotationInFlight`) — which is routine, not
+exceptional. Unlatched, one Russian session emits a row per rotation, so a metric
+meant to count **affected sessions** would count **reconnects** and read high for
+reasons that have nothing to do with language coverage. That is precisely the
+defect this VTID exists to remove — a signal that does not mean what its name
+says — reintroduced one layer up. Now latched and mutation-verified (removing the
+latch fails the suite).
 
 That is deliberately the *point* of the VTID rather than a side effect: before
 this change the substitution produced no OASIS record at all, which is why

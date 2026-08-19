@@ -40,3 +40,25 @@ Note which test survives each mutation and why: the three tests asserting the
 SERVED VOICE (AC-2) survive all four, because they must — this change is not
 allowed to alter what anyone hears, and a mutation to the reporting path must
 not be able to move them.
+
+===============================================================================
+FOLLOW-UP (review finding on #3136): session latch on the diag
+===============================================================================
+
+Codex review raised P2 on the emit at orb-live.ts:7791. Verified against the
+call graph and CONFIRMED: `attemptTransparentReconnect()` (L8957) calls
+`connectToLiveAPI()` (L9007), and a planned Nova stream rotation
+(`_novaRotationInFlight`, routine) takes that same path. So the emit fired per
+reconnect/rotation, not per session — and this pack's own OASIS_PROOF claimed
+"exactly once per session". The doc was wrong, not just the code.
+
+=== MUTATION 5: latch removed (emit unconditional, i.e. as first shipped) ===
+    ✕ latches the diag per session — connectToLiveAPI is re-entered on every
+      reconnect AND rotation (27 ms)
+Tests:       1 failed, 7 passed, 8 total
+
+=== restored ===
+Tests:       8 passed, 8 total
+
+Full suite after the fix: 672/673 suites (1 pre-existing skip),
+12929 passed, 0 failed. tsc --noEmit clean.

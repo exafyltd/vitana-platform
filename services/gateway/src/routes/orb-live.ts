@@ -7788,12 +7788,25 @@ async function connectToLiveAPI(
           // Per-session diag as well as the once-per-process log: the log says
           // "this deployment substitutes for Russian", the diag says how often
           // and for whom, which is what makes the rate measurable.
-          emitDiag(session, 'nova_voice_fallback', {
-            provider: 'nova_sonic',
-            lang: session.lang || 'en',
-            voice: novaVoice,
-            reason: 'no_native_nova_voice',
-          });
+          //
+          // LATCHED PER SESSION, and the latch is load-bearing: this function is
+          // re-entered by `attemptTransparentReconnect()` — for a genuine
+          // reconnect AND for every planned Nova stream rotation
+          // (`_novaRotationInFlight`), which is routine, not exceptional. Without
+          // the latch a single Russian session emits one row per rotation, so a
+          // metric meant to count AFFECTED SESSIONS would instead count
+          // reconnects and read high for reasons unrelated to language coverage.
+          // That is the same defect this VTID exists to remove — a signal that
+          // does not mean what its name says — reintroduced one layer up.
+          if (!(session as any)._novaVoiceFallbackDiagEmitted) {
+            (session as any)._novaVoiceFallbackDiagEmitted = true;
+            emitDiag(session, 'nova_voice_fallback', {
+              provider: 'nova_sonic',
+              lang: session.lang || 'en',
+              voice: novaVoice,
+              reason: 'no_native_nova_voice',
+            });
+          }
         }
         // Stashed for the connect_failed OASIS payload — makes a rejected
         // envelope diagnosable without server-log access.

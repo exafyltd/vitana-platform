@@ -17,3 +17,7 @@ $ npx jest   # full gateway suite
 Test Suites: 1 skipped, 672 passed, 672 of 673 total
 Tests:       29 skipped, 6 todo, 12928 passed, 12963 total
 Snapshots:   44 passed, 44 total
+
+=== after review fix (session latch) ===
+PASS test/orb/live/voice/nova-sonic-voice-fallback.test.ts
+Tests:       8 passed, 8 total

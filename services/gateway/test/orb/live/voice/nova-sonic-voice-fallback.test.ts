@@ -102,4 +102,27 @@ describe('VTID-03682: Nova voice fallback is explicit', () => {
     expect(code).toContain('resolveNovaSonicVoiceOrFallback');
     expect(code).toContain('nova_voice_fallback');
   });
+
+  it('latches the diag per session — connectToLiveAPI is re-entered on every reconnect AND rotation', () => {
+    // Raised in review on #3136 and confirmed against the call graph:
+    // `attemptTransparentReconnect()` calls `connectToLiveAPI()`, and a planned
+    // Nova stream rotation (`_novaRotationInFlight`) goes through that same
+    // path. Unlatched, one Russian session emits a row per rotation, so a
+    // metric meant to count AFFECTED SESSIONS counts reconnects instead — the
+    // very "signal that doesn't mean what it says" defect this VTID removes.
+    const src = fs.readFileSync(
+      path.join(__dirname, '../../../../src/routes/orb-live.ts'),
+      'utf8',
+    );
+    // The emit must sit behind a session-scoped latch that is set before it.
+    const guarded =
+      /if\s*\(!\(session as any\)\._novaVoiceFallbackDiagEmitted\)\s*\{[\s\S]{0,400}?_novaVoiceFallbackDiagEmitted\s*=\s*true;[\s\S]{0,400}?emitDiag\(\s*session,\s*'nova_voice_fallback'/;
+    expect(src).toMatch(guarded);
+
+    // And the reconnect path this guards against must still be real — if
+    // connectToLiveAPI ever stops being re-entered, this test should be
+    // revisited deliberately rather than quietly passing for a new reason.
+    expect(src).toMatch(/attemptTransparentReconnect/);
+    expect(src).toMatch(/_novaRotationInFlight/);
+  });
 });
