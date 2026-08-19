@@ -100,14 +100,14 @@ describe('orb-widget guided-topic reconnect (VTID-03675)', () => {
     const block = source.slice(idx, closeIdx + 1);
     expect(block).toMatch(/_s\.guidedAutoClose = false/);
     expect(block).toMatch(/_s\.guidedTopic = null/);
-    // Order matters: both must be cleared BEFORE _hide() tears the session
-    // down, not after (dead code) or only inside _hide() (too late for a
-    // caller that reads guidedTopic between here and the _hide() call).
-    const autoCloseIdx = block.indexOf('_s.guidedAutoClose = false');
-    const guidedTopicIdx = block.indexOf('_s.guidedTopic = null');
-    const hideIdx = block.indexOf('_hide()');
-    expect(guidedTopicIdx).toBeGreaterThan(autoCloseIdx);
-    expect(hideIdx).toBeGreaterThan(guidedTopicIdx);
+    // VTID-03685: this block must NOT call _hide() anymore. It used to close
+    // the overlay the instant the opener (turn 1) finished playing — which,
+    // since VTID-03650 shortened turn 1 to just an opener line, killed the
+    // session before the actual GUIDE-MODE teaching (turns 2+) ever ran.
+    // The flags still clear here (a candidate DID win and get spoken, so a
+    // later reconnect must not resend guided_topic_id); the overlay itself
+    // now falls through to the normal listening transition below.
+    expect(block).not.toMatch(/_hide\(\)/);
   });
 
   it('_hide() also clears a never-delivered guided topic so it cannot leak into a later session', () => {

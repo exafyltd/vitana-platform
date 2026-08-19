@@ -9002,8 +9002,24 @@ async function attemptTransparentReconnect(
   // BOOTSTRAP-NOVA-SONIC-VOICE: a planned Nova stream rotation is invisible
   // to the user — no "reconnecting"/"reconnected" cues, no greeting replay.
   const isNovaRotation = !!(session as any)._novaRotationInFlight;
+  // VTID-03685: turn_count===0 means the user has heard NOTHING yet — this is
+  // the FIRST connection attempt failing before any audio ever reached them
+  // (the common case being a guided-topic session's opener hitting Nova's
+  // `nova_validation` content filter, VTID-03674/03677's still-open
+  // flakiness). The comment above this block already names the exact
+  // mechanism for the persona-swap case ("just makes the widget speak
+  // 'Einen Moment, ich verbinde mich neu' on top of her") — the same defect
+  // applies here, minus the "on top of her" part: there is nothing to
+  // reconnect TO yet, so a loud "reconnecting" announcement reads as "this
+  // is already broken" before the session has even properly started.
+  // Reproduced live: every guided-topic tap that hit nova_validation on its
+  // first attempt spoke this cue before the (eventual) short opener.
+  // resendGreetingIfStuckAtZeroTurns still recovers the greeting normally
+  // once this reconnect succeeds — silencing the announcement here doesn't
+  // touch that recovery path at all.
+  const hasHeardNothingYet = (session.turn_count || 0) === 0;
 
-  if (!isPersonaSwap && !isNovaRotation) {
+  if (!isPersonaSwap && !isNovaRotation && !hasHeardNothingYet) {
     // Notify client that we're reconnecting (informational, not an error)
     // Works for both SSE and WS transports
     const reconnectMsg = { type: 'reconnecting', reconnect_count: reconnectCount + 1, message: 'Extending session...' };
@@ -9013,7 +9029,10 @@ async function attemptTransparentReconnect(
       try { sendWsMessage(session.clientWs, reconnectMsg); } catch (e) { /* WS may be closed */ }
     }
   } else {
-    console.log(`[VTID-02047] Persona swap reconnect — suppressing reconnect TTS announcement`);
+    console.log(
+      `[VTID-02047/VTID-03685] Reconnect TTS announcement suppressed for ${session.sessionId} ` +
+        `(personaSwap=${isPersonaSwap}, novaRotation=${isNovaRotation}, heardNothingYet=${hasHeardNothingYet})`,
+    );
   }
 
   try {
