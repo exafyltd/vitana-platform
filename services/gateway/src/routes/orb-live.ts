@@ -1671,7 +1671,10 @@ export function shouldRetryNovaOnPrematureClose(args: {
 }
 // VTID-03495: Polly seam for the /tts route. No-ops unless TTS_PROVIDER=polly.
 import { tryPollySynthesis } from '../services/tts/tts-provider';
-import { resolveNovaSonicVoice } from '../orb/live/voice/nova-sonic-voice';
+import {
+  resolveNovaSonicVoiceOrFallback,
+  logNovaSonicVoiceFallbackOnce,
+} from '../orb/live/voice/nova-sonic-voice';
 import { prewarmNovaSonicBedrock } from '../orb/live/upstream/nova-sonic-live-client';
 import { sanitizeInstructionForNova } from '../orb/live/upstream/nova-instruction-sanitizer';
 import { startNovaSonicKeepWarm, startNovaSonicModelWarm } from '../orb/live/upstream/nova-sonic-keepwarm';
@@ -7769,8 +7772,42 @@ async function connectToLiveAPI(
           ? (setup.tools as Array<Record<string, unknown>>)
           : [];
         const novaPersona = ((session as any).activePersona as string) || 'vitana';
-        const novaVoice =
-          resolveNovaSonicVoice({ language: session.lang || 'en', persona: novaPersona }) ?? 'tina';
+        // VTID-03682: was `resolveNovaSonicVoice(...) ?? 'tina'`. That `??`
+        // silently served Nova's GERMAN voice to every language with no native
+        // Nova voice (ru, pl, sr, ar, zh) — no log, no telemetry, nothing a
+        // reader or a dashboard could see. Same shape as VTID-03578's
+        // `?? POLLY_VOICES['en']`. The voice served is UNCHANGED; the
+        // substitution is now observable.
+        const novaVoiceResolution = resolveNovaSonicVoiceOrFallback({
+          language: session.lang || 'en',
+          persona: novaPersona,
+        });
+        const novaVoice = novaVoiceResolution.voice;
+        if (novaVoiceResolution.fallback) {
+          logNovaSonicVoiceFallbackOnce(session.lang || 'en', novaVoice);
+          // Per-session diag as well as the once-per-process log: the log says
+          // "this deployment substitutes for Russian", the diag says how often
+          // and for whom, which is what makes the rate measurable.
+          //
+          // LATCHED PER SESSION, and the latch is load-bearing: this function is
+          // re-entered by `attemptTransparentReconnect()` — for a genuine
+          // reconnect AND for every planned Nova stream rotation
+          // (`_novaRotationInFlight`), which is routine, not exceptional. Without
+          // the latch a single Russian session emits one row per rotation, so a
+          // metric meant to count AFFECTED SESSIONS would instead count
+          // reconnects and read high for reasons unrelated to language coverage.
+          // That is the same defect this VTID exists to remove — a signal that
+          // does not mean what its name says — reintroduced one layer up.
+          if (!(session as any)._novaVoiceFallbackDiagEmitted) {
+            (session as any)._novaVoiceFallbackDiagEmitted = true;
+            emitDiag(session, 'nova_voice_fallback', {
+              provider: 'nova_sonic',
+              lang: session.lang || 'en',
+              voice: novaVoice,
+              reason: 'no_native_nova_voice',
+            });
+          }
+        }
         // Stashed for the connect_failed OASIS payload — makes a rejected
         // envelope diagnosable without server-log access.
         (session as any)._novaInstructionChars = novaSystemInstruction.length;
