@@ -64,10 +64,14 @@ describe('VTID-03685 — reconnecting announcement silenced when nothing has bee
     expect(body).toMatch(/\(session as any\)\._reconnectCount = reconnectCount \+ 1;/);
   });
 
-  it('resendGreetingIfStuckAtZeroTurns (the actual recovery) is untouched by this change', () => {
-    // Silencing the announcement must not silence the recovery itself — that
-    // is a completely separate, already-correct mechanism (VTID-03634).
+  it('resendGreetingIfStuckAtZeroTurns (the actual recovery) still gates on turn_count===0', () => {
+    // Silencing the announcement must not silence the recovery itself.
+    // VTID-03687 dropped the `&& session.greetingSent` half of this guard
+    // (a content-filter block during Nova's own setup phase can kill the
+    // connection before greetingSent ever flips true — see that VTID's own
+    // test file for the full story) but the turn_count===0 check — "has
+    // this user heard anything at all" — is still the load-bearing signal.
     const recoveryFn = functionBody(orbLive, 'function resendGreetingIfStuckAtZeroTurns(');
-    expect(recoveryFn).toMatch(/session\.turn_count === 0 && session\.greetingSent/);
+    expect(recoveryFn).toMatch(/if \(session\.turn_count === 0\) \{/);
   });
 });

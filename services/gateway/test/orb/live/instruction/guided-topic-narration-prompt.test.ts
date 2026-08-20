@@ -86,11 +86,11 @@ describe('buildGuidedTopicNarrationBlock — post-narration branch (content.narr
     expect(block).toContain('Speak ONLY in English');
   });
 
-  it('VTID-03686: forbids calling a tool on a brief "yes" before checking for follow-up questions', () => {
+  it('VTID-03686/03686-followup: instructs checking for follow-up questions before moving on from a brief "yes"', () => {
     const de = buildGuidedTopicNarrationBlock(narratedContent, 'de');
-    expect(de.toLowerCase()).toMatch(/tool.*aufrufen.*switch_persona|switch_persona.*navigate/);
+    expect(de.toLowerCase()).toMatch(/ja.*mach das.*okay.*rückfragen|rückfragen.*bevor/);
     const en = buildGuidedTopicNarrationBlock(narratedContent, 'en');
-    expect(en.toLowerCase()).toMatch(/calling a tool.*switch_persona|switch_persona.*navigate/);
+    expect(en.toLowerCase()).toMatch(/yes.*sure.*okay.*follow-up|follow-up questions before/);
   });
 });
 
@@ -107,10 +107,10 @@ describe('buildGuidedTopicNarrationBlock — legacy model-narrated branch (no na
     expect(buildGuidedTopicNarrationBlock(withNull, 'de')).toBe(withUndefined);
   });
 
-  it('VTID-03686: forbids calling a tool or skipping to practice before actually explaining the content', () => {
+  it('VTID-03686/03686-followup: instructs explaining core points before moving to practice on a brief "yes"', () => {
     const de = buildGuidedTopicNarrationBlock(BASE_CONTENT, 'de');
-    expect(de.toLowerCase()).toMatch(/tool.*aufrufen.*switch_persona|switch_persona.*navigate/);
+    expect(de.toLowerCase()).toMatch(/ja.*mach das.*okay.*erklär mir das jetzt/);
     const en = buildGuidedTopicNarrationBlock(BASE_CONTENT, 'en');
-    expect(en.toLowerCase()).toMatch(/calling any tool.*switch_persona|switch_persona.*navigate/);
+    expect(en.toLowerCase()).toMatch(/yes.*sure.*okay.*explain it to me now/);
   });
 });
