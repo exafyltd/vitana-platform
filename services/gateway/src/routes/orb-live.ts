@@ -8974,9 +8974,24 @@ function scheduleProactiveGoAwayResume(session: GeminiLiveSession, timeLeftMs: n
  * fallback, so it does not cover them on its own.
  */
 function resendGreetingIfStuckAtZeroTurns(session: GeminiLiveSession, source: string): void {
-  if (session.turn_count === 0 && session.greetingSent) {
+  // VTID-03687: VTID-03634 gated this on `session.greetingSent` because the
+  // incident it fixed always had the prompt already dispatched to the dead
+  // connection (greetingSent=true) before the retry fired. That assumption
+  // does not hold when Nova's content filter rejects the connection during
+  // its OWN setup/validation phase, before sendGreetingPromptToLiveAPI is
+  // ever called — greetingSent stays false, this guard never engages, and
+  // the reconnect falls through to the default "reconnect → stay silent"
+  // rule with turn_count still 0. Reproduced live 2026-08-20 (guided-topic
+  // sessions on T254/T252, both content-filter-blocked with greeting_sent:
+  // false both times): wake_opener ended up "silent_reconnect", prompt_len 0,
+  // the guided-topic content never delivered and no error shown either —
+  // the user just got silence. What actually matters here is turn_count===0
+  // ("has this user heard anything at all"), not whether a PRIOR attempt
+  // happened to get as far as flipping greetingSent — so drop that half of
+  // the condition entirely.
+  if (session.turn_count === 0) {
     console.log(
-      `[${source}] Reconnected with 0 turns but greetingSent=true — resetting to re-send greeting for session ${session.sessionId}`,
+      `[${source}] Reconnected with 0 turns (greetingSent=${session.greetingSent}) — resetting to re-send greeting for session ${session.sessionId}`,
     );
     session.greetingSent = false;
     session.greetingTurnIndex = undefined;
