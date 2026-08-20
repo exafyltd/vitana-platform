@@ -1,0 +1,40 @@
+# VTID-03646 — commands run, in order
+#
+# All local (tests, typecheck, mutation) plus read-only production SELECTs.
+# No production write, no ORB session started, no deploy.
+
+# --- production telemetry, read-only (the diagnosis) ---
+#   oasis_events, topic='orb.live.diag', stage='newday_briefing_eval', 2026-08-15
+#   → every row: outcome=guard_rejected, briefing_due=true, not_first_time=true,
+#     not_onboarding=true, has_first_name=false, last_full_briefing_date=null
+#   oasis_events, metadata->>'wake_opener' over 4 days
+#   → 24 of 24 = override_v2; newday_overview: 0 rows, all time
+#   oasis_events, stage='upstream_error', 2026-08-14/15
+#   → "blocked by our content filters" still firing days after both rungs
+#     were disabled, i.e. the rungs were never the cause
+
+# --- typecheck ---
+npx tsc --noEmit
+#   → exit 0, clean
+
+# --- targeted suites ---
+npx jest test/services/conversation test/orb
+#   → 179/179 suites, 3401 passed, 6 todo, 44 snapshots
+
+# --- full gateway suite ---
+npx jest
+#   → 676/677 suites (1 pre-existing skip), 12961 passed, 0 failed
+#   → see outputs/tests.txt
+
+# --- mutation verification (before the merge with main) ---
+#   restore the firstName conjunct in shouldAttemptNewdayOverview()  → 3 tests fail
+#   restore the verbatim "ONE short utterance / no question after"   → 3 tests fail
+#   i.e. the new tests fail for the reason they exist, not incidentally
+
+# --- deliberate snapshot re-records (not worked around) ---
+npx jest test/services/conversation/compute-greeting-decision.golden.test.ts -u
+#   → the golden snapshot had pinned the dead-end directive as correct behaviour;
+#     re-recorded, and the test renamed from "spoken verbatim" (no longer true).
+#   → after merging main, the guided rung's snapshot was re-recorded once more:
+#     VTID-03674 had replaced the guided wrapper, and the literal `Say exactly:`
+#     assertion was rewritten to pin that VTID's invariants instead of its wording.
