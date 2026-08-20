@@ -58,8 +58,16 @@ export interface GuidedTopicNarrationContent {
    * this is set — see guided-topic-narration-audio.ts and
    * buildGuidedTopicPostNarrationLine/buildGuidedTopicNarrationBlock. Null or
    * undefined (optional so pre-VTID-03650 test fixtures stay valid) means
-   * Polly couldn't serve this request, or wasn't attempted; the pre-existing
-   * (VTID-03293) model-narrated behavior applies unchanged.
+   * Polly couldn't serve this request, or wasn't attempted. **This is no
+   * longer a fallback to a "say the whole lesson verbatim" turn-1 line
+   * (VTID-03665) — that fallback was itself the unresolved defect: it still
+   * asked a conversational model to comply with a huge literal payload, the
+   * exact shape VTID-03647/03648 measured Nova and Vertex both rejecting.**
+   * On this branch turn 1 is the short opener line
+   * (buildGuidedTopicNarrationOpenerLine) and the model teaches the topic
+   * conversationally from the material via buildGuidedTopicNarrationBlock's
+   * legacy paraphrase branch — same teaching mechanism as when Polly
+   * succeeds, just without pre-recorded audio.
    */
   narrationAudio?: { audioB64: string; sampleRateHz: number } | null;
 }
@@ -67,6 +75,11 @@ export interface GuidedTopicNarrationContent {
 interface GuidedTopicNarrationInputs {
   supabase: SupabaseClient;
   userId: string;
+  /**
+   * VTID-03677: kept on the type — still forwarded by wake-brief-wiring.ts
+   * and computed by readInputs() below — but no longer read by produce().
+   * See the comment where the suppression it used to drive was removed.
+   */
   isReconnect?: boolean;
   lang: string;
   /** The topicId the user tapped in the Guided Journey catalog. The trigger. */
@@ -107,10 +120,34 @@ export function makeGuidedTopicNarrationProvider(): ContinuationProvider {
       if (!inputs.topicId) {
         return { providerKey: GUIDED_TOPIC_NARRATION_PROVIDER_KEY, status: 'skipped', latencyMs: 0, reason: 'no_topic_tapped' };
       }
-      // Transparent reconnect: the previous turn is still alive — don't re-open.
-      if (inputs.isReconnect) {
-        return { providerKey: GUIDED_TOPIC_NARRATION_PROVIDER_KEY, status: 'suppressed', latencyMs: 0, reason: 'forced_skip_reconnect' };
-      }
+      // VTID-03677: deliberately NOT suppressed on isReconnect anymore. This
+      // used to skip whenever isReconnect was true, on the theory of
+      // "transparent reconnect: the previous turn is still alive — don't
+      // re-open." That theory only holds if a prior turn for THIS topic
+      // actually delivered — but isReconnect here is fed from orb-live.ts's
+      // isReconnectStart, which is set by transcript_history/reconnect_stage
+      // being present on the START PAYLOAD, i.e. "the widget is reconnecting
+      // for transport-continuity reasons" — not "this exact topic is
+      // mid-lesson." Reproduced live 2026-08-18 (topic T003, right after
+      // VTID-03675 shipped): the first attempt won the ranker correctly
+      // (wake_opener override_v2) and was nova_validation-rejected twice; the
+      // widget's own reconnect correctly resent guided_topic_id (VTID-03675
+      // working as designed) but that retry ALSO set reconnect_stage (a
+      // client-side WS drop is exactly what isReconnectStart exists to
+      // detect for OTHER purposes — conversation continuity), which silently
+      // suppressed this provider's candidate on the one session that
+      // actually delivered audio. A lower-priority provider won instead,
+      // producing generic screen-aware small talk ("My Journey" described,
+      // not taught) and — via the client's guidedAutoClose, armed for the
+      // same topic — an auto-close that read as the whole thing being
+      // completed. The wake-brief pipeline that calls this provider only
+      // ever runs ONCE per session_id (at session start), and the widget
+      // only ever sends guided_topic_id while the topic genuinely has not
+      // been delivered yet (cleared on delivery or on close — VTID-03675) —
+      // so by the time this provider sees a topicId at all, "isReconnect" can
+      // only mean "retrying a topic that was never actually taught," never
+      // "resuming a lesson already in progress." There is no live case left
+      // for this branch to protect.
 
       let seed: Awaited<ReturnType<typeof getOrbTopicSeed>>;
       try {
@@ -153,22 +190,40 @@ export function makeGuidedTopicNarrationProvider(): ContinuationProvider {
       // rejecting this exact payload. On success the lesson is delivered as
       // pre-recorded audio (routes/orb-live.ts sends it before the live
       // model's first turn) and the model's own turn-1 line shrinks to a
-      // short, safe post-narration follow-up. On failure (unsupported
-      // language, API error) content.narrationAudio stays null and behavior
-      // is BYTE-FOR-BYTE the pre-existing VTID-03293 model-narrated path.
+      // short, safe post-narration follow-up.
       const { synthesizeGuidedTopicNarrationAudio } = await import(
         '../../tts/guided-topic-narration-audio'
       );
       content.narrationAudio = await synthesizeGuidedTopicNarrationAudio(content, inputs.lang);
 
-      const { buildGuidedTopicSpokenLesson, buildGuidedTopicPostNarrationLine } = await import(
+      // VTID-03665: on Polly FAILURE, do NOT fall back to speaking the raw
+      // voice_script verbatim (the pre-VTID-03650 `buildGuidedTopicSpokenLesson`
+      // path). Live production evidence after VTID-03650 shipped showed a
+      // guided-topic candidate winning the turn-1 ranker correctly
+      // (priority 96, dedupe_key guided_topic:T253) with a 1625-char
+      // userFacingLine and ZERO `guided_topic_audio_bridge_sent` events in the
+      // following 2 days — i.e. Polly never once succeeded in production, so
+      // EVERY guided-topic session was still hitting the exact "say this
+      // whole curriculum block word-for-word" trigger that VTID-03647/03648
+      // measured Nova (and Vertex, now permanently unreachable after the GCP
+      // shutdown) independently failing to comply with — which is what
+      // "tapping a session opens regular conversation instead" actually was.
+      // A working Polly call was never a safe precondition for correctness;
+      // it was only ever a nicer DELIVERY MECHANISM for the same lesson. Use
+      // the short, direct opener line (already proven reliable — every other
+      // continuation provider speaks a short line this same way) for turn 1
+      // regardless of Polly's outcome, and let the GUIDE-MODE (TEACH) system
+      // instruction block do the actual teaching in the model's own words —
+      // `buildGuidedTopicNarrationBlock`'s legacy branch already does exactly
+      // this paraphrase-from-material behavior; only the SPOKEN line changes.
+      const { buildGuidedTopicNarrationOpenerLine, buildGuidedTopicPostNarrationLine } = await import(
         '../../../orb/live/instruction/guided-topic-narration-prompt'
       );
       const spokenLesson = content.narrationAudio
         ? buildGuidedTopicPostNarrationLine(content.topic_title, inputs.lang, {
             hasPracticeTarget: !!content.practice_target,
           })
-        : buildGuidedTopicSpokenLesson(content, inputs.lang, {
+        : buildGuidedTopicNarrationOpenerLine(content.topic_title, inputs.lang, {
             firstName: inputs.firstName ?? null,
           });
 

@@ -914,7 +914,10 @@ export interface GeminiLiveSession {
   // sites keep working; typed events flow via bindUpstreamSessionHandlers.
   upstreamClient?: UpstreamLiveClient | null;
   // Which upstream provider carries this session ('vertex' default).
-  upstreamProvider?: 'vertex' | 'livekit' | 'nova_sonic';
+  // VTID-03683: use the canonical union, not a re-declared copy.
+  // provider-name.ts's own header requires this: adding `cascaded` there
+  // surfaced these two sites as the only places still restating the list.
+  upstreamProvider?: VoiceProviderName;
   sseResponse: Response | null;
   active: boolean;
   // VTID-03561: latch — at most one `vtid.live.session.stop` per session.
@@ -1696,7 +1699,11 @@ export function shouldRetryNovaOnPrematureClose(args: {
 }
 // VTID-03495: Polly seam for the /tts route. No-ops unless TTS_PROVIDER=polly.
 import { tryPollySynthesis } from '../services/tts/tts-provider';
-import { resolveNovaSonicVoice } from '../orb/live/voice/nova-sonic-voice';
+import {
+  resolveNovaSonicVoiceOrFallback,
+  logNovaSonicVoiceFallbackOnce,
+} from '../orb/live/voice/nova-sonic-voice';
+import type { VoiceProviderName } from '../orb/live/upstream/provider-name';
 import { prewarmNovaSonicBedrock } from '../orb/live/upstream/nova-sonic-live-client';
 import { sanitizeInstructionForNova } from '../orb/live/upstream/nova-instruction-sanitizer';
 import { startNovaSonicKeepWarm, startNovaSonicModelWarm } from '../orb/live/upstream/nova-sonic-keepwarm';
@@ -7794,8 +7801,42 @@ async function connectToLiveAPI(
           ? (setup.tools as Array<Record<string, unknown>>)
           : [];
         const novaPersona = ((session as any).activePersona as string) || 'vitana';
-        const novaVoice =
-          resolveNovaSonicVoice({ language: session.lang || 'en', persona: novaPersona }) ?? 'tina';
+        // VTID-03682: was `resolveNovaSonicVoice(...) ?? 'tina'`. That `??`
+        // silently served Nova's GERMAN voice to every language with no native
+        // Nova voice (ru, pl, sr, ar, zh) — no log, no telemetry, nothing a
+        // reader or a dashboard could see. Same shape as VTID-03578's
+        // `?? POLLY_VOICES['en']`. The voice served is UNCHANGED; the
+        // substitution is now observable.
+        const novaVoiceResolution = resolveNovaSonicVoiceOrFallback({
+          language: session.lang || 'en',
+          persona: novaPersona,
+        });
+        const novaVoice = novaVoiceResolution.voice;
+        if (novaVoiceResolution.fallback) {
+          logNovaSonicVoiceFallbackOnce(session.lang || 'en', novaVoice);
+          // Per-session diag as well as the once-per-process log: the log says
+          // "this deployment substitutes for Russian", the diag says how often
+          // and for whom, which is what makes the rate measurable.
+          //
+          // LATCHED PER SESSION, and the latch is load-bearing: this function is
+          // re-entered by `attemptTransparentReconnect()` — for a genuine
+          // reconnect AND for every planned Nova stream rotation
+          // (`_novaRotationInFlight`), which is routine, not exceptional. Without
+          // the latch a single Russian session emits one row per rotation, so a
+          // metric meant to count AFFECTED SESSIONS would instead count
+          // reconnects and read high for reasons unrelated to language coverage.
+          // That is the same defect this VTID exists to remove — a signal that
+          // does not mean what its name says — reintroduced one layer up.
+          if (!(session as any)._novaVoiceFallbackDiagEmitted) {
+            (session as any)._novaVoiceFallbackDiagEmitted = true;
+            emitDiag(session, 'nova_voice_fallback', {
+              provider: 'nova_sonic',
+              lang: session.lang || 'en',
+              voice: novaVoice,
+              reason: 'no_native_nova_voice',
+            });
+          }
+        }
         // Stashed for the connect_failed OASIS payload — makes a rejected
         // envelope diagnosable without server-log access.
         (session as any)._novaInstructionChars = novaSystemInstruction.length;
@@ -8990,8 +9031,24 @@ async function attemptTransparentReconnect(
   // BOOTSTRAP-NOVA-SONIC-VOICE: a planned Nova stream rotation is invisible
   // to the user — no "reconnecting"/"reconnected" cues, no greeting replay.
   const isNovaRotation = !!(session as any)._novaRotationInFlight;
+  // VTID-03685: turn_count===0 means the user has heard NOTHING yet — this is
+  // the FIRST connection attempt failing before any audio ever reached them
+  // (the common case being a guided-topic session's opener hitting Nova's
+  // `nova_validation` content filter, VTID-03674/03677's still-open
+  // flakiness). The comment above this block already names the exact
+  // mechanism for the persona-swap case ("just makes the widget speak
+  // 'Einen Moment, ich verbinde mich neu' on top of her") — the same defect
+  // applies here, minus the "on top of her" part: there is nothing to
+  // reconnect TO yet, so a loud "reconnecting" announcement reads as "this
+  // is already broken" before the session has even properly started.
+  // Reproduced live: every guided-topic tap that hit nova_validation on its
+  // first attempt spoke this cue before the (eventual) short opener.
+  // resendGreetingIfStuckAtZeroTurns still recovers the greeting normally
+  // once this reconnect succeeds — silencing the announcement here doesn't
+  // touch that recovery path at all.
+  const hasHeardNothingYet = (session.turn_count || 0) === 0;
 
-  if (!isPersonaSwap && !isNovaRotation) {
+  if (!isPersonaSwap && !isNovaRotation && !hasHeardNothingYet) {
     // Notify client that we're reconnecting (informational, not an error)
     // Works for both SSE and WS transports
     const reconnectMsg = { type: 'reconnecting', reconnect_count: reconnectCount + 1, message: 'Extending session...' };
@@ -9001,7 +9058,10 @@ async function attemptTransparentReconnect(
       try { sendWsMessage(session.clientWs, reconnectMsg); } catch (e) { /* WS may be closed */ }
     }
   } else {
-    console.log(`[VTID-02047] Persona swap reconnect — suppressing reconnect TTS announcement`);
+    console.log(
+      `[VTID-02047/VTID-03685] Reconnect TTS announcement suppressed for ${session.sessionId} ` +
+        `(personaSwap=${isPersonaSwap}, novaRotation=${isNovaRotation}, heardNothingYet=${hasHeardNothingYet})`,
+    );
   }
 
   try {
@@ -14365,9 +14425,13 @@ async function getStoredLanguagePreference(
     if (result.ok && result.facts.length > 0) {
       const storedLang = result.facts[0].fact_value.toLowerCase();
       // Map full language name back to 2-letter code
+      // VTID-03681: pt/pl added. A miss here returns null (no stored
+      // preference), so the session silently falls back to the widget's
+      // browser-detected language instead of the one the user actually chose.
       const nameToCode: Record<string, string> = {
         english: 'en', german: 'de', french: 'fr', spanish: 'es',
         arabic: 'ar', chinese: 'zh', russian: 'ru', serbian: 'sr',
+        portuguese: 'pt', polish: 'pl',
       };
       return nameToCode[storedLang] || (SUPPORTED_LIVE_LANGUAGES.includes(storedLang) ? storedLang : null);
     }
@@ -15467,7 +15531,7 @@ router.get('/health', async (_req: Request, res: Response) => {
   //
   // We gather the exact same inputs selectUpstreamProvider() reads at session
   // connect time, then derive runtime readiness from the resolved provider.
-  let activeProvider: 'vertex' | 'livekit' | 'nova_sonic' = 'vertex';
+  let activeProvider: VoiceProviderName = 'vertex';
   let providerReason = 'default';
   let livekitReady = false;
   try {

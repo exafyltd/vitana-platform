@@ -127,6 +127,33 @@ export const SHORT_GAP_GREETING_PHRASES: Record<string, string[]> = {
     "Поздрав. Како могу да те подржим данас?",
     "Лепо што си се вратио. Како могу да помогнем?",
   ],
+  // VTID-03681. `pickShortGapGreetings` ends `|| SHORT_GAP_GREETING_PHRASES.en`,
+  // so without these a Portuguese session was handed eight ENGLISH openers to
+  // choose from — inside a prompt otherwise telling it to speak Portuguese.
+  // Brazilian Portuguese (pt-BR), matching the shipped catalog; informal
+  // "você", which is the Brazilian register equivalent of the du-form used
+  // throughout the German source of truth.
+  pt: [
+    "Que bom te ver de novo. Deixa eu te mostrar o seu próximo passo.",
+    "Bem-vindo de volta. Vou te mostrar o próximo passo.",
+    "Que bom te ouvir. Deixa eu te mostrar onde estamos.",
+    "Olá de novo. Vou te levar ao seu próximo passo.",
+    "Estou aqui para você. Deixa eu te levar ao próximo passo.",
+    "Bem-vindo de volta. Vou te mostrar o que vem a seguir.",
+    "Que bom que você voltou. Deixa eu te mostrar o próximo passo.",
+    "Que prazer te ouvir. Vou te mostrar o que vem a seguir.",
+  ],
+  // Informal "ty" register throughout, per the same brand-voice rule.
+  pl: [
+    "Dobrze znów cię słyszeć. Pokażę ci twój następny krok.",
+    "Witaj z powrotem. Pokażę ci następny krok.",
+    "Miło, że znów jesteś. Pokażę ci, co dalej.",
+    "Cześć ponownie. Zaprowadzę cię do następnego kroku.",
+    "Jestem tu dla ciebie. Pokażę ci następny krok.",
+    "Witaj z powrotem. Pokażę ci, co czeka dalej.",
+    "Dobrze, że wróciłeś. Pokażę ci, na jakim jesteśmy etapie.",
+    "Miło cię słyszeć. Pokażę ci, co dalej.",
+  ],
 };
 
 /**

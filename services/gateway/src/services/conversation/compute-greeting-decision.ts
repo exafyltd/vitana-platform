@@ -46,7 +46,6 @@ import { buildFirstTimeWelcomeLine } from '../../orb/instruction/greeting-pools'
 import type { TemporalBucket } from '../guide/temporal-bucket';
 import { decideOpeningRegister, buildResumeDirective, type OpeningRegister } from './decide-opening';
 import type { NextBestAction } from './next-best-action';
-import { LOCALE_ENGLISH_NAME, resolveLocaleStrict } from '../../i18n/catalog';
 import {
   computeFactDeltas,
   extractSpokenFactsFromPayload,
@@ -825,10 +824,10 @@ function computeNormalLadder(ctx: GreetingDecisionContext): GreetingDecision {
     //
     // The provider line is a LEAD, not the whole turn. The product contract
     // this rung is supposed to serve, and the one every other rich rung
-    // already serves, is: deliver the actual update → propose one concrete
-    // next step → ask for confirmation. `override_v2` is now the ONLY opener
-    // most sessions ever reach (24 of 24 wake_opener events in the last four
-    // days), so its shape IS the conversation flow.
+    // already serves, is: deliver the actual update -> propose one concrete
+    // next step -> ask for confirmation. `override_v2` is now the ONLY opener
+    // most sessions ever reach (24 of 24 wake_opener events in four days), so
+    // its shape IS the conversation flow.
     //
     // Written as an English INTENT rather than a per-language finished
     // sentence, per CLAUDE.md NEVER-rule 41 and §13b (system instructions stay
@@ -848,21 +847,27 @@ function computeNormalLadder(ctx: GreetingDecisionContext): GreetingDecision {
       `2. NEXT STEP — propose ONE concrete next step yourself. Never ask the user what they want to do, never offer a menu.\n` +
       `3. CONFIRMATION — close by asking them to confirm that one step, so they can simply say yes.\n` +
       `Keep every concrete fact from the lead — numbers, names, dates — exactly as given, and invent nothing beyond it. Compose the wording yourself in the user's own language; do not recite the lead word for word and do not reuse phrasing from a previous session. Do not greet the user by name first; go straight into the substance. Then stop and listen.`;
-    const isGuidedTeach = !!ctx.guidedTopicNarrationContent;
-    const guidedIsDe = (ctx.lang || 'en').toLowerCase().startsWith('de');
-    // VTID-03644: was a 4th (5th, counting the two orb/live/instruction prompt
-    // files) undocumented copy of the language-name table VTID-03509 already
-    // centralized — and this copy was missing 'pl', so a Polish user tapping a
-    // guided topic had turn-1 itself (the actual lesson) delivered in English,
-    // not just the turn-2+ follow-up guidance. Reuse the shared registry.
-    const guidedLangName = LOCALE_ENGLISH_NAME[resolveLocaleStrict(ctx.lang) ?? 'en'] || 'English';
-    const guidedTeachTrigger = guidedIsDe
-      ? `Sage Folgendes WÖRTLICH und VOLLSTÄNDIG — Wort für Wort, dann höre auf und höre zu. NICHT zusammenfassen, kürzen, umformulieren oder eine Begrüßung/Frage hinzufügen: "${safe}"`
-      : `Say the following lesson to the user in fluent ${guidedLangName}. The text may be in another language — translate it faithfully and completely into ${guidedLangName} and speak ONLY that translation, then stop and listen. Do NOT summarize, shorten, add a greeting, or ask a question: "${safe}"`;
-    // The guided-teach branch is deliberately UNCHANGED: a tapped Journey topic
-    // is a lesson with an authored script, so verbatim delivery is the correct
-    // contract there — it is not a lead to build a proposal on.
-    const wakePrompt = isGuidedTeach ? guidedTeachTrigger : wakeTrigger;
+    // A tapped My Journey topic is NOT a lead to build a proposal on, so it
+    // deliberately does not get the three-beat contract above.
+    //
+    // VTID-03674 removed the old guided-only `guidedTeachTrigger` ("the text
+    // may be in another language — translate it faithfully and completely...")
+    // on live evidence: Nova's content filter blocked a 370-char prompt built
+    // from that wrapper around an ALREADY-short, ALREADY-localized opener
+    // line, so the phrasing itself was the problem. That removal is kept —
+    // nothing here reintroduces it, and the language-name table it needed is
+    // gone with it.
+    //
+    // What guided candidates keep is the plain "say this one line, then stop
+    // and listen" shape 03674 fell back to. Handing them the three-beat
+    // contract instead would tell the model to propose a next step and ask for
+    // confirmation before it has taught anything — precisely the skip-ahead
+    // VTID-03686 had to forbid in the GUIDE-MODE block one day earlier. The
+    // actual teaching happens on turns 2+ from that block; turn 1 only opens.
+    const guidedTrigger =
+      `Open by saying this prepared line, in the user's own language: "${safe}"\n` +
+      `Keep it to ONE short utterance. Do not add a greeting before it, do not add a question after it, and do not turn it into something else. Then stop and listen.`;
+    const wakePrompt = ctx.guidedTopicNarrationContent ? guidedTrigger : wakeTrigger;
     return {
       wakeOpener: 'override_v2',
       directive: wakePrompt,

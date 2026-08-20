@@ -30,6 +30,15 @@ const LIVE_API_VOICE_FALLBACKS: Record<string, LiveApiVoiceConfig> = {
   zh: { voice_name: 'Kore', fallback_lang: 'de' },
   ru: { voice_name: 'Aoede', fallback_lang: 'en' },
   sr: { voice_name: 'Aoede', fallback_lang: 'en' },
+  // VTID-03681. `fallback_lang: null` for both, unlike ar/zh/ru/sr above:
+  // Zephyr and Despina are the voices this codebase pairs with pt-BR and
+  // pl-PL respectively (see LIVE_LANGUAGE_VOICE_FALLBACKS), not borrowed from
+  // another language, so there is nothing to warn about. Setting a
+  // `fallback_lang` here would emit a `[voice-fallback]` line on every pt/pl
+  // session claiming a native voice is missing when one was chosen — noise
+  // that would train readers to ignore the warning that matters.
+  pt: { voice_name: 'Zephyr', fallback_lang: null },
+  pl: { voice_name: 'Despina', fallback_lang: null },
 };
 
 // Dedup log lines so a hot per-session loop doesn't spam the logger.

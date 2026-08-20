@@ -1184,15 +1184,16 @@ Keep every concrete fact from the lead — numbers, names, dates — exactly as 
 }
 `;
 
-exports[`computeGreetingDecision — rung golden snapshots rung 8: override_v2 guided-teach (narration content → translate/teach trigger) 1`] = `
+exports[`computeGreetingDecision — rung golden snapshots rung 8: override_v2 guided-teach (narration content → SAME plain trigger as every other provider, VTID-03674) 1`] = `
 {
   "diag": {
     "decision_id": null,
     "lang": "en",
-    "prompt_len": 299,
+    "prompt_len": 258,
     "wake_opener": "override_v2",
   },
-  "directive": "Say the following lesson to the user in fluent English. The text may be in another language — translate it faithfully and completely into English and speak ONLY that translation, then stop and listen. Do NOT summarize, shorten, add a greeting, or ask a question: "Lektion: Atme langsam ein und aus."",
+  "directive": "Open by saying this prepared line, in the user's own language: "Lektion: Atme langsam ein und aus."
+Keep it to ONE short utterance. Do not add a greeting before it, do not add a question after it, and do not turn it into something else. Then stop and listen.",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,

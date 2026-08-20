@@ -1179,7 +1179,14 @@ router.post('/signal-cleanup', async (req: Request, res: Response) => {
 });
 
 // =============================================================================
-// POST /push-dispatch — Every 30 seconds (Cloud Scheduler)
+// POST /push-dispatch — Cloud Scheduler, every minute
+// (VTID-03656: the "every 30 seconds" this comment used to claim doesn't
+// match what GCP Cloud Scheduler's standard unix-cron can express — minimum
+// granularity is 1 minute — and doesn't match the job actually registered in
+// scripts/setup-cloud-scheduler.sh's `gateway-push-dispatch` entry either.
+// This route ALSO wasn't registered in that script at all until VTID-03656,
+// meaning whatever job was calling it before lived only in live GCP state,
+// invisible to this repo — see that VTID for the outage this caused.)
 // Picks up trigger-created notifications that haven't had FCM push sent yet.
 // DB triggers (chat messages, group invites, predictive signals, etc.) write
 // to user_notifications but can't send FCM. This cron bridges the gap.
@@ -1191,15 +1198,33 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
   // Find notifications created by DB triggers that haven't been pushed yet.
   // push_sent_at IS NULL  → not yet pushed
   // channel includes push → should be pushed
-  // created in last 5 min → don't bother with very old ones
-  const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  //
+  // VTID-03656: this used to bound the query to `created_at >= now - 5min`.
+  // That window was sized for the steady-state case (this cron is expected
+  // to fire every ~30s), but it meant a stalled/dead scheduler invocation
+  // — for ANY reason, including one this route can't detect from inside a
+  // single request — silently and PERMANENTLY orphaned every notification
+  // older than 5 minutes: once the cron resumed, those rows would simply
+  // never be selected again. That is exactly what happened 2026-08-15
+  // ~18:52 UTC onward — the scheduler stopped invoking this route (root
+  // cause not yet found; the job isn't even registered in
+  // scripts/setup-cloud-scheduler.sh, so it was never visible to this
+  // repo) and 782+ community_post_published notifications sat unsent for
+  // 40+ hours with no way to recover them even after the cron came back.
+  // A late "X shared a new post" push is strictly better than a
+  // notification that silently never arrives, so the window is now wide
+  // enough to drain a multi-day outage once the scheduler resumes — capped
+  // so a truly ancient/abandoned backlog doesn't get pushed as if it were
+  // fresh forever.
+  const LOOKBACK_MS = 48 * 60 * 60 * 1000; // 48h — see VTID-03656 comment above
+  const lookbackCutoff = new Date(Date.now() - LOOKBACK_MS).toISOString();
 
   const { data: pending, error } = await supa
     .from('user_notifications')
-    .select('id, user_id, tenant_id, type, title, body, data, channel, priority')
+    .select('id, user_id, tenant_id, type, title, body, data, channel, priority, created_at')
     .is('push_sent_at', null)
     .in('channel', ['push', 'push_and_inapp'])
-    .gte('created_at', fiveMinAgo)
+    .gte('created_at', lookbackCutoff)
     .order('created_at', { ascending: true })
     .limit(100);
 
@@ -1210,6 +1235,18 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
 
   if (!pending?.length) {
     return res.status(200).json({ ok: true, dispatched: 0, message: 'no pending pushes' });
+  }
+
+  // VTID-03656: a loud, grep-able signal that this cron went quiet for a
+  // while — the exact condition that let the 2026-08-15 outage run silent
+  // for 40+ hours. Anything older than the old 5-minute window means the
+  // scheduler missed at least one expected invocation.
+  const oldestAgeMs = Date.now() - new Date(pending[0]?.created_at ?? Date.now()).getTime();
+  if (oldestAgeMs > 5 * 60 * 1000) {
+    console.warn(
+      `[PushDispatch] Catching up on a backlog — oldest pending notification is ${Math.round(oldestAgeMs / 60000)}min old (batch of ${pending.length}). ` +
+      `The scheduler likely missed invocations; if this recurs, verify the Cloud Scheduler job still exists and is succeeding.`,
+    );
   }
 
   let dispatched = 0;
@@ -1264,12 +1301,20 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
       // one opens Try Again" bug.
       const hasDeepLink =
         typeof notif.data === 'object' && notif.data !== null && !!(notif.data as any).url;
+      // VTID-03684: stable per-entity tag so a row that gets UPDATEd (e.g.
+      // a cumulative post_like notification picking up another liker) and
+      // re-queued via push_sent_at=NULL replaces its earlier push in the OS
+      // tray on the FCM/web-push path, instead of stacking a second one.
+      const entityId =
+        typeof notif.data === 'object' && notif.data !== null ? (notif.data as any).entity_id : undefined;
+      const pushTag = entityId ? `${notif.type}:${entityId}` : undefined;
       const pushPayload = {
         title: notif.title || 'Vitana',
         body: notif.body || '',
         data: typeof notif.data === 'object' && notif.data !== null
           ? Object.fromEntries(Object.entries(notif.data).map(([k, v]) => [k, String(v)]))
           : undefined,
+        tag: pushTag,
       };
       //
       // VTID-03481: mirror notifyUser()'s Appilix suppression too. This cron is

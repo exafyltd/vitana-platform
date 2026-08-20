@@ -113,6 +113,11 @@ export type SelectionReason =
   // replace. Lives in this union so the override is a typed, greppable
   // decision rather than a cast.
   | 'nova_rotation_exhausted_fallback'
+  // VTID-03683: the session's language is one Nova CANNOT speak (ru/pl/ar/zh),
+  // and instead of forcing it onto Nova anyway — which produced ~30 audio
+  // chunks per turn against de/en's ~165 — it is served by the cascaded
+  // Transcribe -> Bedrock -> Polly pipeline, which does support it.
+  | 'cascaded_language_rescue'
   | 'provider_invalid';           // unknown provider string anywhere → vertex
 
 export interface CanarySelectorConfig {
@@ -196,6 +201,21 @@ export interface UpstreamSelectorContext {
    * stays pure. Default undefined/false — zero behavior change until set.
    */
   vertexUnavailable?: boolean;
+
+  /**
+   * VTID-03683: the cascaded pipeline's readiness for THIS session.
+   *
+   * Precomputed by the caller for the same reason `nova.languageSupported`
+   * is: this module is stateless and never sees the session's language
+   * string, only booleans derived from it. `languageSupported` here means
+   * `evaluateCascadeEligibility(lang).eligible` — which already refuses any
+   * language Nova speaks natively, so a working Nova session can never be
+   * diverted into the slower three-hop path.
+   */
+  cascade?: {
+    enabled: boolean;
+    languageSupported: boolean;
+  };
 }
 
 export interface UpstreamSelectionDecision {
@@ -366,6 +386,34 @@ export function selectUpstreamProvider(
  * (env or system_config). Every failed gate degrades to Vertex with a
  * typed reason — no silent access broadening, no raw config detail.
  */
+/**
+ * VTID-03683: when Nova is about to be FORCED to carry a language it cannot
+ * speak, hand the session to the cascade instead — if the cascade is switched
+ * on and actually covers that language.
+ *
+ * Returns null when it does not apply, so both call sites fall through to the
+ * pre-existing forced-Nova behaviour byte-for-byte. That is deliberate: with
+ * `ORB_CASCADED_VOICE_ENABLED` unset this whole feature is inert, and `sr`
+ * (which Polly cannot voice) keeps the old path rather than being routed
+ * somewhere that would also fail.
+ */
+function tryCascadeRescue(
+  ctx: UpstreamSelectorContext,
+  languageBlocked: boolean,
+): UpstreamSelectionDecision | null {
+  if (!languageBlocked) return null;
+  if (ctx.cascade?.enabled !== true) return null;
+  if (ctx.cascade.languageSupported !== true) return null;
+  return {
+    provider: 'cascaded',
+    requested: 'nova_sonic',
+    reason: 'cascaded_language_rescue',
+    livekitReady: false,
+    canary: false,
+    novaReady: false,
+  };
+}
+
 function evaluateNovaRequest(
   ctx: UpstreamSelectorContext,
   happyReason: 'env_explicit_nova_sonic' | 'system_config_nova_sonic',
@@ -421,6 +469,8 @@ function evaluateNovaRequest(
     };
   }
   const forced = runtimeBlocked || languageBlocked;
+  const rescue = tryCascadeRescue(ctx, languageBlocked);
+  if (rescue) return rescue;
   return {
     provider: 'nova_sonic',
     requested: 'nova_sonic',
@@ -453,6 +503,8 @@ function evaluateNovaCanary(
   // changed, so the label has to change with it.
   const global = nova.globalEnabled === true;
   const forced = runtimeBlocked || languageBlocked;
+  const rescue = tryCascadeRescue(ctx, languageBlocked);
+  if (rescue) return { ...rescue, requested: null };
   return {
     provider: 'nova_sonic',
     requested: null,

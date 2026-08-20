@@ -19,8 +19,40 @@
 export const NOVA_SONIC_MODEL_ID = 'amazon.nova-2-sonic-v1:0' as const;
 export const NOVA_SONIC_REGION = 'eu-north-1' as const;
 
-/** Languages eligible for the first Nova canary. Everything else → Vertex. */
-export const NOVA_SONIC_SUPPORTED_LANGUAGES = ['en', 'de', 'fr', 'es'] as const;
+/**
+ * Languages Nova serves. Everything else → Vertex (i.e. Google).
+ *
+ * VTID-03672 added `pt`. This list was the first canary set, not a statement of
+ * what the model supports, and the gap mattered: `pt` is a shipped GA locale
+ * whose voice traffic was going to Google purely because nobody had revisited
+ * this array.
+ *
+ * WHAT IS AND IS NOT HERE, AND WHY
+ * --------------------------------
+ * AWS's Nova 2 Sonic language table (nova2-userguide/sonic-language-support)
+ * lists English, French, Italian, German, Spanish, Portuguese and Hindi. Of the
+ * eight GA locales this app ships, that covers en/de/fr/es/pt and NOT ru, pl or
+ * sr. Those three have no Nova path at all — they are not gated out by caution,
+ * the model does not speak them — so they continue to Vertex, and Serbian
+ * additionally has no Polly voice in any engine.
+ *
+ * Adding a language here without a matching entry in NOVA_VOICES resolves to
+ * `null` and is a programming error, not a fallback — see nova-sonic-voice.ts.
+ *
+ * VERIFIED, and the distinction is the point: `amazon.nova-2-sonic-v1:0`
+ * invokes in eu-north-1 with no AccessDeniedException, and `carolina`/`leo` are
+ * accepted as voiceIds while a bogus id is rejected with `Received invalid id`.
+ * Documentation describes the MODEL; only a real invoke tells you what THIS
+ * ACCOUNT may use — the lesson VTID-03579 paid for when 22 Bedrock profiles
+ * reported ACTIVE and 3 were invokable.
+ *
+ * NOT verified: end-to-end Portuguese generation, which needs speech input this
+ * session could not synthesize (Polly returned 403). The risk is bounded rather
+ * than unknown: `pt` routes to Vertex today anyway, and VTID-03502 falls a
+ * failed Nova session back to Vertex, so the worst case is the current
+ * behaviour and the only new exposure is degraded rather than absent audio.
+ */
+export const NOVA_SONIC_SUPPORTED_LANGUAGES = ['en', 'de', 'fr', 'es', 'pt'] as const;
 export type NovaSonicLanguage = (typeof NOVA_SONIC_SUPPORTED_LANGUAGES)[number];
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;

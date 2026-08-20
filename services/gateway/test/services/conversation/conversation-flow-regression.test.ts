@@ -214,7 +214,19 @@ describe('VTID-03646 C — override_v2 delivers, proposes, and asks', () => {
     }
   });
 
-  test("a guided-topic lesson is UNCHANGED — it is a script, not a lead", () => {
+  test('a guided-topic lesson does NOT get the three-beat contract — it opens, it does not propose', () => {
+    // A tapped My Journey topic is an authored lesson, not a lead to build a
+    // proposal on: the teaching happens on turns 2+ from the GUIDE-MODE block,
+    // so turn 1 only opens. Handing it SUBSTANCE -> NEXT STEP -> CONFIRMATION
+    // would tell the model to propose a next step and ask for confirmation
+    // before it has taught anything — the exact skip-ahead VTID-03686 had to
+    // forbid in that block.
+    //
+    // This assertion used to pin the German 'WÖRTLICH' wrapper. VTID-03674
+    // deleted that guided-only wrapper on live evidence (Nova's content filter
+    // blocked a 370-char prompt built from it around an already-short,
+    // already-localized line), so the negatives below matter as much as the
+    // positives: nothing here may reintroduce that phrasing.
     const d = spoken({
       lang: 'de',
       greetLang: 'de',
@@ -222,8 +234,14 @@ describe('VTID-03646 C — override_v2 delivers, proposes, and asks', () => {
       openDecision: { mode: 'speak', source: 'wake:guided', line: 'Lektion: Atme langsam ein und aus.' },
     });
     expect(d.wakeOpener).toBe('override_v2');
-    expect(d.directive).toContain('WÖRTLICH');
+    expect(d.directive).toContain('Lektion: Atme langsam ein und aus.');
+    expect(d.directive).toMatch(/ONE short utterance/i);
     expect(d.directive).not.toMatch(/NEXT STEP/);
+    expect(d.directive).not.toMatch(/CONFIRMATION/);
+    // VTID-03674's removed wrapper must not come back by any route.
+    expect(d.directive).not.toMatch(/translate/i);
+    expect(d.directive).not.toMatch(/fluent/i);
+    expect(d.directive).not.toMatch(/WÖRTLICH/);
   });
 
   test('a silent reconnect still outranks it and stays silent', () => {

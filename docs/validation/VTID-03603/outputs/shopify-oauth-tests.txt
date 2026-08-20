@@ -1,0 +1,89 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/routes/vcaop-portal-my.test.ts
+  ownership scoping
+    ✓ GET /connections filters on partner_tenant.owner_user_id = the caller (30 ms)
+    ✓ a connection owned by someone else reads as 404, not 403 (7 ms)
+    ✓ create stamps owner_user_id + owner_email from the JWT, never the body (18 ms)
+  authority boundaries
+    ✓ no /approve-activation on the merchant surface — activation stays admin-only (14 ms)
+    ✓ activation-summary reports awaiting_platform_approval instead of can_activate (6 ms)
+  certification gate integrity (Codex review, VTID-03555)
+    ✓ zero mappings can NEVER certify — sandbox tests refuse with awaiting_factory_run (5 ms)
+    ✓ a rejected mapping is removed from the version so it cannot reach certification (5 ms)
+    ✓ approval_required connections can re-run sandbox tests after a decision (5 ms)
+  input + infrastructure guards
+    ✓ database unavailable → 503, not a crash (6 ms)
+    ✓ create validates required fields before touching the database (4 ms)
+    ✓ lifecycle transition on a foreign connection is 404 and writes nothing (3 ms)
+  detect-platform (VTID-03601, Track 4)
+    ✓ requires a url (3 ms)
+    ✓ is read-only — never touches the database (3 ms)
+    ✓ an SSRF-blocked or failed detection surfaces as 422, not 500 (3 ms)
+  shopify OAuth authorize (VTID-03603, Track 2)
+    ✓ reports not_configured when SHOPIFY_CLIENT_ID/SECRET/REDIRECT_URI are unset (3 ms)
+    ✓ a foreign connection reads as 404 even when configured (4 ms)
+    ✓ rejects a connection whose connector_id is not shopify (4 ms)
+    ✓ rejects a non *.myshopify.com shop domain (3 ms)
+    ✓ returns a real Shopify authorize_url when configured, owned, and valid (4 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/routes/shopify-oauth-callback.test.ts
+  dormant-until-configured
+    ✓ 503s before touching the database when unconfigured (6 ms)
+  forgery defenses
+    ✓ rejects a request with no hmac (3 ms)
+    ✓ rejects a tampered query even with a well-formed hmac from a different payload (4 ms)
+    ✓ rejects an expired or forged state even with a valid hmac (2 ms)
+    ✓ rejects a non-myshopify.com shop before verifying anything else (3 ms)
+  happy path
+    ✓ verified callback exchanges the code, stores the credential, and advances state (12 ms)
+    ✓ a token-exchange failure is reported and never writes a credential (3 ms)
+    ✓ a manifest that is not connector_id=shopify is rejected (3 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/services/shopify-oauth.test.ts
+  dormant-until-configured
+    ✓ isShopifyOAuthConfigured is false with no env vars set (2 ms)
+    ✓ isShopifyOAuthConfigured is false with only one of the two vars set (1 ms)
+    ✓ buildAuthorizeUrl returns null when not configured (1 ms)
+    ✓ exchangeCodeForToken reports not_configured rather than making a network call (1 ms)
+  shop domain validation
+    ✓ accepts a well-formed *.myshopify.com domain (9 ms)
+    ✓ rejects a non-Shopify host (SSRF/open-redirect guard) (1 ms)
+    ✓ rejects an empty or non-string shop value (1 ms)
+  state signing
+    ✓ a freshly signed state decodes back to the same manifest id (1 ms)
+    ✓ a tampered state (different manifest id spliced in) is rejected (1 ms)
+    ✓ an expired state is rejected (1 ms)
+    ✓ garbage input does not throw (1 ms)
+  callback HMAC verification (shopify.dev algorithm)
+    ✓ a correctly computed HMAC over the sorted, hmac-excluded query verifies (1 ms)
+    ✓ a tampered query parameter fails verification (1 ms)
+    ✓ a missing hmac param fails closed
+  exchangeCodeForToken
+    ✓ posts to https://{shop}/admin/oauth/access_token with client_id/client_secret/code (2 ms)
+    ✓ rejects a non-Shopify shop domain before making any network call (1 ms)
+    ✓ a non-2xx response is reported, not thrown (1 ms)
+    ✓ a network failure is reported, not thrown (1 ms)
+
+Test Suites: 3 passed, 3 total
+Tests:       45 passed, 45 total
+Snapshots:   0 total
+Time:        1.229 s
+Ran all test suites matching /test\/services\/shopify-oauth.test.ts|test\/routes\/shopify-oauth-callback.test.ts|test\/routes\/vcaop-portal-my.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
