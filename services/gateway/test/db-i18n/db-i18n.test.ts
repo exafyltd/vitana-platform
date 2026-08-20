@@ -17,12 +17,16 @@ import {
   resolveAuroraConfig,
 } from '../../src/services/db-i18n/aurora-client';
 import { getSurface, sourceSha, SOURCE_LOCALE, SURFACES } from '../../src/services/db-i18n/surfaces';
+import { readFileSync, readdirSync } from 'fs';
+import { join } from 'path';
 import {
   placeholders,
   repairPlaceholders,
   translateUnits,
   validateUnit,
   type TranslateUnit,
+  type TranslateCompleteFn,
+  type TranslationCompletion,
 } from '../../src/services/db-i18n/translator';
 
 describe('target selection', () => {
@@ -342,20 +346,19 @@ describe('validateUnit', () => {
 });
 
 describe('translateUnits batch splitting', () => {
-  const opts = (fetchImpl: typeof fetch) => ({
-    apiKey: 'k',
+  // VTID-03689 — the seam is now "prompt in, text out" rather than a `fetch`
+  // impl. A fetch seam takes a URL and so can be pointed at a provider host;
+  // this one cannot express a host at all, which is the property that keeps
+  // provider choice in llm-router and nowhere else.
+  const opts = (completeImpl: TranslateCompleteFn) => ({
     languageName: 'French',
     informalHint: 'tu',
     brief: 'b',
-    fetchImpl,
+    completeImpl,
   });
 
-  const geminiText = (text: string) =>
-    ({
-      ok: true,
-      json: async () => ({ candidates: [{ content: { parts: [{ text }] } }] }),
-    }) as unknown as Response;
-  const geminiOk = (payload: unknown) => geminiText(JSON.stringify(payload));
+  const okText = (text: string): TranslationCompletion => ({ ok: true, text });
+  const okJson = (payload: unknown) => okText(JSON.stringify(payload));
 
   const units: TranslateUnit[] = Array.from({ length: 4 }, (_, i) => ({
     key: `K${i}`,
@@ -368,20 +371,16 @@ describe('translateUnits batch splitting', () => {
    */
   it('splits a batch that fails to parse, down to units that succeed', async () => {
     const seen: number[] = [];
-    const fetchImpl = (async (_url: string, init: RequestInit) => {
-      const body = JSON.parse(String(init.body));
-      const prompt = body.contents[0].parts[0].text as string;
+    const completeImpl: TranslateCompleteFn = async (prompt) => {
       const count = (prompt.match(/"K\d"/g) ?? []).length;
       seen.push(count);
-      if (count > 2) {
-        return geminiText("{\"K0\": {");
-      }
+      if (count > 2) return okText('{"K0": {');
       const payload: Record<string, unknown> = {};
       for (const m of prompt.matchAll(/"(K\d)"/g)) payload[m[1]] = { title: `Source num ${m[1]}` };
-      return geminiOk(payload);
-    }) as unknown as typeof fetch;
+      return okJson(payload);
+    };
 
-    const res = await translateUnits(units, opts(fetchImpl), ['title'], 4);
+    const res = await translateUnits(units, opts(completeImpl), ['title'], 4);
     expect(seen[0]).toBe(4); // first attempt took the whole batch
     expect(Math.max(...seen.slice(1))).toBeLessThanOrEqual(2); // then halved
     expect(res.translated.size).toBe(4);
@@ -389,19 +388,51 @@ describe('translateUnits batch splitting', () => {
   });
 
   it('reports a genuine per-unit failure once the batch is a single unit', async () => {
-    const fetchImpl = (async () =>
-      ({ ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: 'not json' }] } }] }) }) as unknown as Response) as unknown as typeof fetch;
-
-    const res = await translateUnits(units.slice(0, 2), opts(fetchImpl), ['title'], 2);
+    const completeImpl: TranslateCompleteFn = async () => okText('not json');
+    const res = await translateUnits(units.slice(0, 2), opts(completeImpl), ['title'], 2);
     expect(res.translated.size).toBe(0);
     expect(res.failures.map((f) => f.key).sort()).toEqual(['K0', 'K1']);
   });
 
-  it('surfaces an HTTP error as a failure rather than an empty success', async () => {
-    const fetchImpl = (async () =>
-      ({ ok: false, status: 429, text: async () => 'rate limited' }) as unknown as Response) as unknown as typeof fetch;
-    const res = await translateUnits(units.slice(0, 1), opts(fetchImpl), ['title'], 1);
-    expect(res.failures[0].reason).toMatch(/429/);
+  it('surfaces a provider failure as a failure rather than an empty success', async () => {
+    const completeImpl: TranslateCompleteFn = async () => ({ ok: false, error: 'quota exceeded' });
+    const res = await translateUnits(units.slice(0, 1), opts(completeImpl), ['title'], 1);
+    expect(res.failures[0].reason).toMatch(/quota exceeded/);
+  });
+
+  /**
+   * VTID-03689 — the pathology that made the nightly cron unreadable.
+   *
+   * Splitting is the recovery for a truncated RESPONSE. Applied to a provider
+   * REFUSAL it is actively harmful: a provider that refuses a batch refuses its
+   * halves too, so one refused call became ~15 (15→8→4→2→1 per batch), each
+   * logging an identical "splitting" warning that buried the real reason and
+   * read like a content problem. Fail the batch directly instead.
+   */
+  it('does NOT split on a provider failure — one refusal must not become fifteen', async () => {
+    let calls = 0;
+    const completeImpl: TranslateCompleteFn = async () => {
+      calls += 1;
+      return { ok: false, error: 'HTTP 429: You exceeded your quota' };
+    };
+    const res = await translateUnits(units, opts(completeImpl), ['title'], 4);
+    expect(calls).toBe(1); // one attempt for the batch, no recursion
+    expect(res.translated.size).toBe(0);
+    expect(res.failures).toHaveLength(4); // every unit reported, with the real reason
+    expect(res.failures.every((f) => /429/.test(f.reason))).toBe(true);
+  });
+
+  it('names no provider and no model — routing belongs to llm_routing_policy', () => {
+    // Guards the actual defect: a direct provider host in this module. The
+    // module-level check in the suite below covers the whole db-i18n tree; this
+    // one pins the translator specifically, since it is the file that had it.
+    const src = readFileSync(
+      join(__dirname, '../../src/services/db-i18n/translator.ts'),
+      'utf8',
+    );
+    expect(src).not.toMatch(/generativelanguage\.googleapis\.com/);
+    expect(src).not.toMatch(/gemini-\d/);
+    expect(src).toMatch(/callViaRouter/);
   });
 });
 
@@ -449,5 +480,44 @@ describe('surface registry', () => {
   it('requires a non-empty label on both surfaces', () => {
     expect(getSurface('nav-catalog').requiredFields).toContain('title');
     expect(getSurface('journey-checklist').requiredFields).toContain('display_label');
+  });
+});
+
+/**
+ * VTID-03689 — the guard that did not exist.
+ *
+ * VTID-03579 swept the codebase for direct provider calls and asserted the
+ * INVERSE invariant ("no provider host is contacted directly") rather than
+ * "Bedrock was called" — deliberately, because pinning a provider name just
+ * re-hardcodes the thing one layer along. But those assertions were written
+ * per-module, so `db-i18n/translator.ts` — added four days earlier under
+ * VTID-03515 — was never covered, and quietly kept a raw
+ * `generativelanguage.googleapis.com` fetch until the nightly seeder had been
+ * failing on HTTP 429 for a week.
+ *
+ * This walks the whole db-i18n tree instead of naming files, so a module added
+ * tomorrow is covered without anyone remembering to extend the test.
+ */
+describe('db-i18n contacts no provider host directly', () => {
+  const DIR = join(__dirname, '../../src/services/db-i18n');
+  const FORBIDDEN = [
+    /generativelanguage\.googleapis\.com/,
+    /\.googleapis\.com/,
+    /api\.openai\.com/,
+    /api\.anthropic\.com/,
+    /api\.deepseek\.com/,
+  ];
+
+  const files = readdirSync(DIR).filter((f) => f.endsWith('.ts'));
+
+  it('has files to check (a passing scan over an empty list proves nothing)', () => {
+    expect(files.length).toBeGreaterThan(0);
+  });
+
+  it.each(files)('%s contacts no provider host', (file) => {
+    const src = readFileSync(join(DIR, file), 'utf8');
+    for (const pattern of FORBIDDEN) {
+      expect(src).not.toMatch(pattern);
+    }
   });
 });
