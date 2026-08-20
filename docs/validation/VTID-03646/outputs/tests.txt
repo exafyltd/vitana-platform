@@ -1,6 +1,14 @@
-A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
-Test Suites: 1 skipped, 676 passed, 676 of 677 total
-Tests:       29 skipped, 6 todo, 12961 passed, 12996 total
+# Verification run after merging origin/main (0e194c4, VTID-03687) into
+# claude/conversation-flow-regression-86ijyc.
+# Run from services/gateway (NOT the repo root — the root jest config picks up
+# every workspace and reports false failures).
+
+$ npx tsc --noEmit
+(no output — exit 0)
+
+$ npx jest --silent
+Test Suites: 1 skipped, 677 passed, 677 of 678 total
+Tests:       29 skipped, 6 todo, 12964 passed, 12999 total
 Snapshots:   44 passed, 44 total
-Time:        61.844 s
-Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+
+The 1 skipped suite is pre-existing and unrelated to this change.
