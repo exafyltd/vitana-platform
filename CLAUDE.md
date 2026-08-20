@@ -620,12 +620,71 @@ which no longer exists — instead of failing fast.
 3. **No `speakingRate` field** — rate becomes SSML `<prosody rate="N%">`,
    forcing `TextType:'ssml'` + XML-escaping (plain text only at rate 1.0).
 
-Also: Russian is standard-engine only (no neural voice). Locale coverage:
-`de en es fr pt pl ru zh ar` all resolve; `pt` is pinned to pt-BR (Camila);
-`sr` is the only unresolved locale (returns null, not a wrong-language
-voice). **Not verified against the live Polly API** — confirm with `aws
-polly describe-voices`; needs IAM `polly:SynthesizeSpeech` on the gateway
-task role.
+Locale coverage: `de en es fr pt pl ru zh ar` all resolve; `pt` is pinned to
+pt-BR (Camila); `sr` is the only unresolved locale (returns null, not a
+wrong-language voice).
+
+### ✅ VERIFIED against the live API 2026-08-20 (BOOTSTRAP-POLLY-NARRATION-CACHE)
+
+This table had carried "not verified against the live Polly API" since
+VTID-03495 — the building session had no AWS credentials. It has now been
+checked with real `DescribeVoices` + `SynthesizeSpeech` calls in
+`eu-central-1`. Run `scripts/tts/verify-polly-voices.ts` to re-check.
+
+- **Serbian is genuinely absent — confirmed, not assumed.** 106 voices, 42
+  language codes, nothing matching `sr`/`hr`/`bs`/`sh` under any spelling.
+  `POLLY_UNSUPPORTED_LANGS` is correct and no Polly setting closes the gap.
+- **Every pinned voice exists and supports its pinned engine.** The
+  docs-derived table was right; nothing needed repair.
+- **Russian is the quality floor and is unfixable inside Polly** —
+  `Tatyana` **and** `Maxim` are both `standard`-only. There is no neural
+  Russian voice at all, so this is a product limitation, not a config gap.
+- **Six of nine languages can upgrade engine without changing voice.**
+  `en`/Joanna, `de`/Vicki, `fr`/Lea, `es`/Lucia, `pt`/Camila, `pl`/Ola all
+  support **`generative`** on the *same* voice id and are pinned to
+  `neural`. Same speaker, better engine. `ar` (Hala) and `zh` (Zhiyu) are
+  neural-only and stay put.
+- Generative was verified to support **mp3, PCM 16k, PCM 8k and SSML
+  `<prosody rate>`**, and the rate genuinely *applies* (70% → 6.40s,
+  150% → 3.41s vs 4.82s plain) rather than being accepted and ignored.
+
+**⚠️ Order matters if you flip the engine.** Generative costs roughly 1.9x
+neural per character. Guided-topic lesson audio had **no cache** until
+BOOTSTRAP-POLLY-NARRATION-CACHE, so the multiplier would have applied to
+every single My Journey tap rather than once per rendered asset. Cache
+first (`NARRATION_AUDIO_CACHE`, §2c-cache below), then flip. The narration
+cache key includes the engine, so flipping invalidates cleanly instead of
+serving stale neural audio under a generative configuration.
+
+### 2c-cache. Guided-topic narration audio cache (BOOTSTRAP-POLLY-NARRATION-CACHE)
+
+`synthesizeGuidedTopicNarrationAudio()` runs on every guided-topic session
+start and had no cache, so each My Journey tap re-synthesized the full
+~1,800-char lesson. The audio is deterministic and there are ~2,000 assets
+(254 topics x 8 languages), so this was a per-tap bill and a per-tap
+latency cost on the exact path the VTID-03650→03685 chain was about.
+
+`NARRATION_AUDIO_CACHE=off|memory|s3` (default **`memory`**; an
+unrecognised value resolves to `memory`, never `off` — a typo must not
+silently restore per-tap billing). `s3` additionally needs
+`NARRATION_AUDIO_BUCKET`; without it the code logs an error and falls back
+to `memory` rather than to nothing. Provision with
+`scripts/aws/setup-narration-audio-cache.sh` (bucket + lifecycle + scoped
+`s3:GetObject`/`PutObject` on `vitana-ecs-task-role`).
+
+**⚠️ The S3 leg has never executed against a real bucket** — the dependency
+was newly added, the bucket does not exist yet, and the task role has no
+s3 grant. Treat it as unproven until a real `cache=hit store=s3` is
+observed in the gateway logs on a second tap of the same topic. Per §2b's
+own lesson, configuration is not verification. The `memory` leg is tested
+and works today; it just does not survive a deploy or a scale-out.
+
+Failure posture is deliberately **unlike** the `DB_I18N_TARGET` Aurora seam,
+which throws rather than falling back: a cache holds no truth and a miss has
+a correct cheap recovery (synthesize), so store errors log loudly and
+degrade to synthesis. A partial render is never written — every chunk-failure
+path bails before the write, so a transient Polly blip cannot be frozen into
+a permanently truncated lesson.
 
 **⚠️ Live gap: this seam is gateway-only.** `vitana-v1`'s
 `useTextToSpeech.ts`/`VoiceSettingsPanel.tsx` call `google-gemini-tts`/
