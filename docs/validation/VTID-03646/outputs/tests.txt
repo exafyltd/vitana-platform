@@ -1,4 +1,5 @@
-# Verification run after merging origin/main (0e194c4, VTID-03687) into
+# Verification run after merging origin/main (3c784e4 — the CLAUDE.md
+# changelog-archive restructure, VTID-03689) into
 # claude/conversation-flow-regression-86ijyc.
 # Run from services/gateway (NOT the repo root — the root jest config picks up
 # every workspace and reports false failures).
@@ -8,7 +9,7 @@ $ npx tsc --noEmit
 
 $ npx jest --silent
 Test Suites: 1 skipped, 677 passed, 677 of 678 total
-Tests:       29 skipped, 6 todo, 12964 passed, 12999 total
+Tests:       29 skipped, 6 todo, 12972 passed, 13007 total
 Snapshots:   44 passed, 44 total
 
 The 1 skipped suite is pre-existing and unrelated to this change.
