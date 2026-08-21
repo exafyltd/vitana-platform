@@ -45,13 +45,21 @@ export MASTER_SECRET_ARN REGION CLUSTER_ARN DB
 # generates -- single-line or the multi-line CREATE POLICY blocks -- ends
 # with a semicolon immediately before a newline), executes each via RDS
 # Data API, tolerates individual failures (logs them, keeps going), and
-# writes a running ok/fail count to its own log file.
+# writes a running ok/fail/timeout count to its own log file.
+#
+# Each call is wrapped in `timeout 20s` -- a prior run showed 6 concurrent
+# execute-statement calls all wedge indefinitely with zero CPU burned and
+# NOTHING in pg_locks (confirmed via a second session with full
+# pg_stat_activity/pg_locks visibility), meaning the hang is in the
+# network/HTTP layer between the CLI and the RDS Data API endpoint, not a
+# real Postgres lock wait. Since every statement here is idempotent, a
+# timed-out one is simply retried on the next full pass of the script.
 run_category() {
   local file="$1"
   local name
   name="$(basename "$file" .sql)"
   local log="$LOGDIR/${name}.log"
-  local ok=0 fail=0
+  local ok=0 fail=0 timedout=0
   : > "$log"
   python3 -c "
 import re, sys
@@ -72,10 +80,15 @@ for p in parts:
     stmt=""
     while IFS= read -r line; do
       if [ "$line" == "---STMT-END---" ]; then
-        if aws rds-data execute-statement --region "$REGION" \
+        timeout 20s aws rds-data execute-statement --region "$REGION" \
           --resource-arn "$CLUSTER_ARN" --secret-arn "$MASTER_SECRET_ARN" --database "$DB" \
-          --sql "$stmt" >/dev/null 2>>"$log"; then
+          --sql "$stmt" >/dev/null 2>>"$log"
+        rc=$?
+        if [ $rc -eq 0 ]; then
           ok=$((ok+1))
+        elif [ $rc -eq 124 ]; then
+          timedout=$((timedout+1))
+          echo "TIMEOUT (20s): $stmt" >> "$log"
         else
           fail=$((fail+1))
           echo "FAILED: $stmt" >> "$log"
@@ -86,7 +99,7 @@ for p in parts:
 $line"; fi
       fi
     done
-    echo "$name: $ok ok, $fail failed" | tee "$LOGDIR/${name}.summary"
+    echo "$name: $ok ok, $fail failed, $timedout timed out" | tee "$LOGDIR/${name}.summary"
   }
 }
 export -f run_category
