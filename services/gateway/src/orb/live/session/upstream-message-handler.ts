@@ -1374,12 +1374,29 @@ export function createUpstreamLiveMessageHandler(
               // recent one, Gemini is repeating — flip the audio
               // suppression flag so subsequent chunks are dropped.
               // Pure string comparison after normalization; no LLM call.
+              //
+              // VTID-03637: this only targets the model repeating ITSELF
+              // unprompted (the original bug — Gemini re-emitting a scripted
+              // line after a "Say-exactly" directive). It must not fire when
+              // the user just asked for the thing the matching prefix
+              // promised — "I'll show you your messages" (turn 0) followed
+              // by the user saying yes and a delivery turn opening "Here are
+              // your messages..." (turn 1) is not a repeat, it's the model
+              // doing what was asked, and dropping the rest of that turn's
+              // audio leaves the user with an orphaned promise and dead air.
+              // Gated the same way the sibling `greeting_reemit_suppressed`
+              // check above gates unsolicited-greeting suppression: only
+              // treat it as unprompted when the user hasn't said anything
+              // this turn yet (inputTranscriptBuffer isn't cleared until
+              // turn_complete, so it still holds the current turn's speech
+              // here).
               const SUPPRESS_PREFIX_CHARS = 30;
               const recent: string[] = ((session as any).recentAssistantTexts as string[]) || [];
               if (
                 !(session as any).suppressCurrentTurnAudio
                 && session.outputTranscriptBuffer.length >= SUPPRESS_PREFIX_CHARS
                 && recent.length > 0
+                && (session.inputTranscriptBuffer || '').trim().length === 0
               ) {
                 const norm = (s: string) =>
                   s.toLowerCase().replace(/[^\p{L}\p{N} ]+/gu, ' ').replace(/\s+/g, ' ').trim();
@@ -1841,12 +1858,20 @@ export function handleTranscript(
 
   // VTID-03143 duplicate-turn detection (same normalization + prefix rule
   // as the raw handler).
+  //
+  // VTID-03637: gated on the user NOT having spoken this turn yet — see the
+  // raw handler's copy of this comment for the full rationale. Without this,
+  // a delivery turn that legitimately echoes the promise it's fulfilling
+  // ("I'll show you your messages" → user says yes → "Here are your
+  // messages...") gets treated as the model repeating itself unprompted, and
+  // most of that turn's real content is silently dropped.
   const SUPPRESS_PREFIX_CHARS = 30;
   const recent: string[] = ((session as any).recentAssistantTexts as string[]) || [];
   if (
     !(session as any).suppressCurrentTurnAudio
     && session.outputTranscriptBuffer.length >= SUPPRESS_PREFIX_CHARS
     && recent.length > 0
+    && (session.inputTranscriptBuffer || '').trim().length === 0
   ) {
     const norm = (s: string) =>
       s.toLowerCase().replace(/[^\p{L}\p{N} ]+/gu, ' ').replace(/\s+/g, ' ').trim();
