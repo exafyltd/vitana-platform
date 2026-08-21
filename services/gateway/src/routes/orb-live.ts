@@ -354,11 +354,36 @@ import {
 // resent the identical rejected content in a loop either way. Set once at
 // module load — every `computeGreetingDecision` call site (there are
 // several, independently built) inherits both automatically, so there is
-// nothing left to diverge. Both default OFF (disabled) unless explicitly
-// re-enabled via their env vars, which should happen only after a
-// Nova-aware fix (skip the identical-content retry, not the whole rung)
-// ships for each.
-setNewdayOverviewRungEnabled(process.env.ORB_NEWDAY_OVERVIEW_RUNG_ENABLED === 'true');
+// nothing left to diverge.
+//
+// VTID-03646 — `newday_overview` is re-enabled by default; `day_close` is NOT.
+// The two were disabled together on the same night under one theory, and the
+// evidence since separates them:
+//
+//   1. VTID-03629's own writeup records that newday_overview "was already
+//      being rejected by its own guard (missing first name) before it could
+//      even fire" — i.e. VTID-03628 disabled a rung that was not running, and
+//      the content filter kept firing regardless. Prod telemetry agrees: zero
+//      `newday_overview` events have EVER been recorded, before or after the
+//      kill switch. It cannot have been the content Bedrock rejected.
+//   2. Disabling both did not stop the blocks. `orb.live.diag` /
+//      `stage=upstream_error` still carries "This request has been blocked by
+//      our content filters" on 2026-08-14 (x2) and 2026-08-15 (x1), days after
+//      both rungs went dark. Whatever trips the filter is not these rungs.
+//   3. Meanwhile the cost of keeping it off is the entire reported regression:
+//      every session falls to the rung-8 teaser line (24 of 24 `wake_opener`
+//      events in the last 4 days are `override_v2`).
+//
+// `day_close` stays default-OFF because it is the rung that was actually
+// observed firing and being blocked (14 events on 08-13, prompt_len 4202), it
+// only fires at local_hour 0-4, and it is not implicated in this report. It
+// keeps its unchanged `=== 'true'` opt-in until a Nova-aware retry (rebuild
+// the opener from reduced content instead of resending identical content)
+// ships for it.
+//
+// The kill switch itself is kept in both cases — `ORB_NEWDAY_OVERVIEW_RUNG_
+// ENABLED=false` still turns the briefing off without a code change.
+setNewdayOverviewRungEnabled(process.env.ORB_NEWDAY_OVERVIEW_RUNG_ENABLED !== 'false');
 setDayCloseRungEnabled(process.env.ORB_DAY_CLOSE_RUNG_ENABLED === 'true');
 import { EMPTY_GREETING_LEDGER } from '../services/conversation/greeting-facts-ledger';
 

@@ -469,8 +469,28 @@ export function shouldAttemptNewdayOverview(ctx: GreetingDecisionContext): boole
     isDeOrEn(ctx.lang) &&
     briefingDue(ctx) &&
     !(ctx.greetingNeedsOnboarding === true || ctx.greetingIsFirstTime === true) &&
-    typeof ctx.firstName === 'string' &&
-    ctx.firstName.trim().length > 0 &&
+    // VTID-03646 — the `firstName` requirement that used to sit here made the
+    // ENTIRE proactive briefing unreachable in production, on every session.
+    //
+    // Measured on prod 2026-08-15, every `newday_briefing_eval` emitted that
+    // day (all users, all languages, all timezones): `outcome:guard_rejected`,
+    // `briefing_due:true`, `not_first_time:true`, `not_onboarding:true` — and
+    // `has_first_name:false` with `facts_ready_awaited:false`. The name comes
+    // from the greeting-facts prefetch, which `live-session-controller.ts`
+    // (L1101) gates on `isFeatureLive('ORB_SAFE_FAST_GREETING')`, and that flag
+    // is `staging-only` (STAGE-DEPLOY.yml L189). So in PRODUCTION the prefetch
+    // never runs, `session.greetingFirstName` is permanently null, and this one
+    // conjunct rejected 100% of briefings — every one of which then fell to the
+    // rung-8 teaser line. VTID-03629 had already SEEN this ("newday_overview
+    // was already being rejected by its own guard (missing first name)") and
+    // read it as a reason to look elsewhere rather than as the defect.
+    //
+    // The name was never load-bearing for the briefing's CONTENT:
+    // `buildNewDayOverviewBlock` takes `firstName: string | null` and has
+    // always had an explicit unknown-name branch ("do not invent one; address
+    // user warmly without name"). A briefing about unread messages, the Vitana
+    // index, the calendar and the journey is worth speaking whether or not the
+    // prefetch that carries the name happened to run.
     ctx.hasUserId &&
     ctx.hasSupabase
   );
@@ -541,7 +561,13 @@ function tryNewDayOverviewRung(
     const block = buildNewDayOverviewBlock({
       payload: ctx.newdayOverview,
       lang: ctx.greetLang,
-      firstName: (ctx.firstName as string).trim(),
+      // VTID-03646 — was `(ctx.firstName as string).trim()`, a cast that was
+      // only safe because the guard above rejected a null name. The guard no
+      // longer does (see shouldAttemptNewdayOverview), so pass the null through
+      // to the builder's own unknown-name branch instead of asserting it away.
+      firstName: typeof ctx.firstName === 'string' && ctx.firstName.trim().length > 0
+        ? ctx.firstName.trim()
+        : null,
       localHour: ctx.localHour,
       timezone: ctx.timezone,
       factDeltas,
@@ -788,39 +814,60 @@ function computeNormalLadder(ctx: GreetingDecisionContext): GreetingDecision {
   const wakeOverrideLine = od.mode === 'speak' ? (od.line ?? '').trim() : '';
   if (wakeOverrideLine.length > 0 && !ctx.isAnonymous) {
     const safe = wakeOverrideLine.replace(/"/g, '\\"');
-    const wakeTriggerByLang: Record<string, string> = {
-      en: `Say exactly: "${safe}" — ONE short utterance only. Do NOT add a greeting before. Do NOT add a question after. Do NOT paraphrase.`,
-      de: `Sage genau Folgendes: "${safe}" — NUR EINE kurze Aussage. KEINE Begrüßung davor. KEINE Frage danach. NICHT umformulieren.`,
-      fr: `Dis exactement : "${safe}" — UNE seule courte phrase. PAS de salutation avant. PAS de question après. NE PAS reformuler.`,
-      es: `Di exactamente: "${safe}" — UNA sola frase corta. NO añadas saludo antes. NO añadas pregunta después. NO parafrasees.`,
-      ar: `قل بالضبط: "${safe}" — جملة قصيرة واحدة فقط. لا تحية قبلها. لا سؤال بعدها. لا تعيد صياغتها.`,
-      zh: `请准确地说："${safe}" —— 只说一句话。前面不要加问候。后面不要加问题。不要改述。`,
-      ru: `Скажи ровно: "${safe}" — ОДНА короткая фраза. БЕЗ приветствия перед. БЕЗ вопроса после. НЕ перефразируй.`,
-      sr: `Реци тачно: "${safe}" — ЈЕДНА кратка реченица. БЕЗ поздрава пре. БЕЗ питања после. НЕ преформулиши.`,
-      // VTID-03644: pt/pl were missing — both fell back to the English trigger
-      // wrapper (wakeTriggerByLang.en below), one of the 9 rollout locales.
-      pt: `Diga exatamente: "${safe}" — APENAS uma frase curta. NÃO acrescente saudação antes. NÃO acrescente pergunta depois. NÃO parafraseie.`,
-      pl: `Powiedz dokładnie: "${safe}" — TYLKO jedno krótkie zdanie. BEZ powitania przed. BEZ pytania po. NIE parafrazuj.`,
-    };
-    // VTID-03674: guided-topic candidates USED to get a special "translate it
-    // faithfully and completely... do NOT summarize, shorten" trigger
-    // (guidedTeachTrigger) instead of the plain wakeTriggerByLang template —
-    // built when `safe` was the FULL raw lesson and needed a forceful
-    // verbatim-recitation instruction. VTID-03650/03665 already made `safe`
-    // a short, pre-translated line (buildGuidedTopicPostNarrationLine /
-    // buildGuidedTopicNarrationOpenerLine both localize to ctx.lang
-    // themselves), so that special wrapper had nothing left to justify it —
-    // and live evidence shows it was ITSELF the problem: a real production
-    // session (topic T015, "Datenschutz-Kontrolle") hit `nova_validation`
-    // ("blocked by our content filters") on a 370-char prompt built from
-    // guidedTeachTrigger wrapping the SHORT opener line, proving the block
-    // was never about lesson length or content — it was this trigger's
-    // phrasing (telling the model text "may be in another language, translate
-    // it faithfully" when the line is already in ctx.lang reads as a
-    // confusing/adversarial instruction to Nova's guardrails). Guided-topic
-    // candidates now use the exact same plain trigger every other provider
-    // (Teacher, Journey Guide, login-briefing) already uses successfully.
-    const wakePrompt = wakeTriggerByLang[ctx.lang] || wakeTriggerByLang.en;
+    // VTID-03646 — this rung used to instruct the model, per language, to
+    // "say exactly <line> — ONE short utterance only. No greeting before. NO
+    // QUESTION AFTER. Do not paraphrase." That is what the live report
+    // describes: Vitana opens with a bare announcement ("ich zeige dir die
+    // neuesten Nachrichten"), delivers nothing, asks nothing, and drops
+    // straight into listening mode. The dead end was not the model failing to
+    // follow the directive — it was the directive.
+    //
+    // The provider line is a LEAD, not the whole turn. The product contract
+    // this rung is supposed to serve, and the one every other rich rung
+    // already serves, is: deliver the actual update -> propose one concrete
+    // next step -> ask for confirmation. `override_v2` is now the ONLY opener
+    // most sessions ever reach (24 of 24 wake_opener events in four days), so
+    // its shape IS the conversation flow.
+    //
+    // Written as an English INTENT rather than a per-language finished
+    // sentence, per CLAUDE.md NEVER-rule 41 and §13b (system instructions stay
+    // English; the model emits the user's language) — the same treatment
+    // SHORT_GAP_OPENER_INTENT and LEGACY_DEFAULT_OPENER_INTENT above already
+    // get. That also retires the 10-entry per-language wrapper map, which was
+    // the fifth copy of a language table in this subsystem and had already
+    // shipped missing pt/pl once (VTID-03644).
+    //
+    // The line's SUBSTANCE is still authoritative: providers ground it in real
+    // data (unread counts, index movement, calendar), so the facts are pinned
+    // verbatim even though the wording is not.
+    const wakeTrigger =
+      `Open the conversation from this prepared lead: "${safe}"\n` +
+      `It is a LEAD, not your whole turn. Deliver the turn in three beats, as ONE continuous piece of speech:\n` +
+      `1. SUBSTANCE — say what is actually going on, not that you are about to. If the lead names something you can already tell them (their messages, their index, their calendar, what changed), tell them the substance of it now, in one or two sentences. Never announce an intention you then do not carry out in this same turn.\n` +
+      `2. NEXT STEP — propose ONE concrete next step yourself. Never ask the user what they want to do, never offer a menu.\n` +
+      `3. CONFIRMATION — close by asking them to confirm that one step, so they can simply say yes.\n` +
+      `Keep every concrete fact from the lead — numbers, names, dates — exactly as given, and invent nothing beyond it. Compose the wording yourself in the user's own language; do not recite the lead word for word and do not reuse phrasing from a previous session. Do not greet the user by name first; go straight into the substance. Then stop and listen.`;
+    // A tapped My Journey topic is NOT a lead to build a proposal on, so it
+    // deliberately does not get the three-beat contract above.
+    //
+    // VTID-03674 removed the old guided-only `guidedTeachTrigger` ("the text
+    // may be in another language — translate it faithfully and completely...")
+    // on live evidence: Nova's content filter blocked a 370-char prompt built
+    // from that wrapper around an ALREADY-short, ALREADY-localized opener
+    // line, so the phrasing itself was the problem. That removal is kept —
+    // nothing here reintroduces it, and the language-name table it needed is
+    // gone with it.
+    //
+    // What guided candidates keep is the plain "say this one line, then stop
+    // and listen" shape 03674 fell back to. Handing them the three-beat
+    // contract instead would tell the model to propose a next step and ask for
+    // confirmation before it has taught anything — precisely the skip-ahead
+    // VTID-03686 had to forbid in the GUIDE-MODE block one day earlier. The
+    // actual teaching happens on turns 2+ from that block; turn 1 only opens.
+    const guidedTrigger =
+      `Open by saying this prepared line, in the user's own language: "${safe}"\n` +
+      `Keep it to ONE short utterance. Do not add a greeting before it, do not add a question after it, and do not turn it into something else. Then stop and listen.`;
+    const wakePrompt = ctx.guidedTopicNarrationContent ? guidedTrigger : wakeTrigger;
     return {
       wakeOpener: 'override_v2',
       directive: wakePrompt,
