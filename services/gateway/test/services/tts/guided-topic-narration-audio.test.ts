@@ -16,11 +16,21 @@ import {
   splitTextForPolly,
   synthesizeGuidedTopicNarrationAudio,
 } from '../../../src/services/tts/guided-topic-narration-audio';
+import { resetNarrationAudioStoreForTests } from '../../../src/services/tts/narration-audio-cache';
 import type { GuidedTopicNarrationContent } from '../../../src/services/assistant-continuation/providers/guided-topic-narration';
 
 const mockSynthesizePolly = jest.fn();
 jest.mock('../../../src/services/tts/polly', () => ({
   synthesizePolly: (...args: any[]) => mockSynthesizePolly(...args),
+  // BOOTSTRAP-POLLY-NARRATION-CACHE: the synthesis path now resolves the voice
+  // BEFORE synthesizing, because the cache key is derived from the voice id and
+  // engine. `sr` returns null here to preserve this suite's existing
+  // "Polly cannot serve the language" case, which previously relied on
+  // synthesizePolly itself returning null.
+  resolvePollyVoice: (lang: string) =>
+    lang === 'sr'
+      ? null
+      : { voiceId: 'Vicki', engine: 'neural', languageCode: 'de-DE' },
 }));
 
 function makeContent(overrides: Partial<GuidedTopicNarrationContent> = {}): GuidedTopicNarrationContent {
@@ -37,6 +47,12 @@ function makeContent(overrides: Partial<GuidedTopicNarrationContent> = {}): Guid
 
 beforeEach(() => {
   mockSynthesizePolly.mockReset();
+  // BOOTSTRAP-POLLY-NARRATION-CACHE: the store is memoized per process and the
+  // in-process cache deliberately outlives a single call, so without this reset
+  // one test's successful render is served to the next test that happens to use
+  // the same (text, lang, voice, engine) — which silently masked the
+  // "any chunk fails ⇒ whole narration fails" assertion below.
+  resetNarrationAudioStoreForTests();
 });
 
 describe('buildGuidedTopicSpokenText', () => {

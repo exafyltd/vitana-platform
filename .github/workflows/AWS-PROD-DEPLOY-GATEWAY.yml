@@ -107,6 +107,21 @@ on:
         description: 'Set AWS_TRANSCRIBE_REGION — region for Transcribe streaming; falls back to AWS_REGION then eu-central-1 (EMPTY = preserve)'
         required: false
         default: ''
+      # BOOTSTRAP-POLLY-NARRATION-CACHE: guided-topic lesson audio was
+      # re-synthesized on EVERY My Journey tap (~1800 chars, ~2000 distinct
+      # assets across 254 topics x 8 languages). These two turn that into a
+      # per-asset cost. `s3` REQUIRES the bucket + the s3 grant on
+      # vitana-ecs-task-role — run scripts/aws/setup-narration-audio-cache.sh
+      # first. Setting `s3` with no bucket logs an error and falls back to the
+      # in-process cache rather than silently disabling caching.
+      narration_audio_cache:
+        description: 'Set NARRATION_AUDIO_CACHE — off|memory|s3. s3 needs narration_audio_bucket AND the IAM grant (off/memory/s3; EMPTY = preserve)'
+        required: false
+        default: ''
+      narration_audio_bucket:
+        description: 'Set NARRATION_AUDIO_BUCKET — S3 bucket holding pre-rendered lesson audio; only read when NARRATION_AUDIO_CACHE=s3 (EMPTY = preserve)'
+        required: false
+        default: ''
       # VTID-03649: GCP project billing was disabled, permanently killing
       # Vertex Live. Without this, sessions whose language/runtime fail
       # Nova's gates (and Nova's own premature-close recovery) still degrade
@@ -365,6 +380,8 @@ jobs:
           TTS_PROVIDER_INPUT: ${{ inputs.tts_provider }}
           TTS_POLLY_STRICT_INPUT: ${{ inputs.tts_polly_strict }}
           IMAGE_PROVIDER_INPUT: ${{ inputs.image_provider }}
+          NARRATION_AUDIO_CACHE_INPUT: ${{ inputs.narration_audio_cache }}
+          NARRATION_AUDIO_BUCKET_INPUT: ${{ inputs.narration_audio_bucket }}
         run: |
           set -e
           # VTID-03420: promote mode ships staging's image; rebuild mode ships
@@ -697,6 +714,21 @@ jobs:
               .containerDefinitions[0].environment |=
                 ( [ .[] | select(.name != "IMAGE_PROVIDER") ]
                   + [ {name:"IMAGE_PROVIDER", value:$I} ] )')
+          fi
+          # BOOTSTRAP-POLLY-NARRATION-CACHE
+          if [ -n "$NARRATION_AUDIO_CACHE_INPUT" ]; then
+            echo "Applying narration cache: NARRATION_AUDIO_CACHE=$NARRATION_AUDIO_CACHE_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg I "$NARRATION_AUDIO_CACHE_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "NARRATION_AUDIO_CACHE") ]
+                  + [ {name:"NARRATION_AUDIO_CACHE", value:$I} ] )')
+          fi
+          if [ -n "$NARRATION_AUDIO_BUCKET_INPUT" ]; then
+            echo "Applying narration bucket: NARRATION_AUDIO_BUCKET=$NARRATION_AUDIO_BUCKET_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg I "$NARRATION_AUDIO_BUCKET_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "NARRATION_AUDIO_BUCKET") ]
+                  + [ {name:"NARRATION_AUDIO_BUCKET", value:$I} ] )')
           fi
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
             --query 'taskDefinition.taskDefinitionArn' --output text)
