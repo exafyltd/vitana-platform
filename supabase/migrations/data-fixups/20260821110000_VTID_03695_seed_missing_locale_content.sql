@@ -65,20 +65,16 @@ BEGIN;
 -- rebuilt database where it may not be.
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
--- The current-format source fingerprint, mirroring sourceSha() exactly.
-CREATE OR REPLACE FUNCTION pg_temp.nav_source_sha(
-  p_title text, p_description text, p_when_to_visit text
-) RETURNS text LANGUAGE sql IMMUTABLE AS $$
-  SELECT substr(
-    encode(
-      digest(
-        'title ' || coalesce(p_title, '') ||
-        'description ' || coalesce(p_description, '') ||
-        'when_to_visit ' || coalesce(p_when_to_visit, ''),
-        'sha1'
-      ), 'hex'
-    ), 1, 16);
-$$;
+-- The source fingerprint is INLINED at both call sites rather than wrapped in
+-- a helper. A `pg_temp` function survives only as long as one session, and
+-- this file is applied through the Supabase Management API
+-- (.github/workflows/RUN-MIGRATION.yml), where the session boundary is not
+-- something this file gets to assume. Inline is uglier and cannot silently
+-- vanish between statements.
+--
+-- It mirrors sourceSha() in services/gateway/src/services/db-i18n/surfaces.ts:
+--   sha1( order.map(f => `${f} ${fields[f] ?? ''}`).join('') ).slice(0, 16)
+-- with order = ['title', 'description', 'when_to_visit'].
 
 -- ---------------------------------------------------------------------------
 -- PART A — 18 rows filled from a SIBLING entry, no translation involved.
@@ -111,7 +107,10 @@ gaps AS (
 )
 INSERT INTO nav_catalog_i18n (catalog_id, lang, title, description, when_to_visit, source_sha, updated_at)
 SELECT g.catalog_id, g.lang, sib.title, sib.description, sib.when_to_visit,
-       pg_temp.nav_source_sha(dg.title, dg.description, dg.when_to_visit),
+       substr(encode(digest(
+         'title ' || coalesce(dg.title, '') ||
+         'description ' || coalesce(dg.description, '') ||
+         'when_to_visit ' || coalesce(dg.when_to_visit, ''), 'sha1'), 'hex'), 1, 16),
        now()
 FROM gaps g
 JOIN de dg ON dg.catalog_id = g.catalog_id
@@ -244,7 +243,10 @@ tr (de_title, lang, title, description, when_to_visit) AS (VALUES
 )
 INSERT INTO nav_catalog_i18n (catalog_id, lang, title, description, when_to_visit, source_sha, updated_at)
 SELECT dg.catalog_id, tr.lang, tr.title, tr.description, tr.when_to_visit,
-       pg_temp.nav_source_sha(dg.title, dg.description, dg.when_to_visit),
+       substr(encode(digest(
+         'title ' || coalesce(dg.title, '') ||
+         'description ' || coalesce(dg.description, '') ||
+         'when_to_visit ' || coalesce(dg.when_to_visit, ''), 'sha1'), 'hex'), 1, 16),
        now()
 FROM tr
 JOIN de dg ON dg.title = tr.de_title
