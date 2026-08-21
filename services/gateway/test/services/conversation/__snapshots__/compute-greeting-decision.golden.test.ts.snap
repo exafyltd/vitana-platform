@@ -399,33 +399,37 @@ exports[`computeGreetingDecision — current-screen awareness legacy default car
 }
 `;
 
-exports[`computeGreetingDecision — language axis legacy default — lang=de, bucket=long 1`] = `
+exports[`computeGreetingDecision — language axis newday_bare (was legacy default pre-VTID-03667) — lang=de, bucket=long 1`] = `
 {
   "diag": {
+    "bucket": "long",
     "lang": "de",
-    "prompt_len": 357,
+    "prompt_len": 139,
+    "wake_opener": "newday_bare",
   },
-  "directive": "The user hasn't been here in 10 days — this is a NEW-DAY greeting. Use the OPENING SHAPE MATRIX in your system instruction. For motivation_signal=cooling (8-14 days) or absent (>14 days), explicitly acknowledge the absence — e.g. "Hi {Name}, it's been 10 days since we last talked. Welcome back." Pause for the user to respond before any productivity nudge.",
+  "directive": "Say exactly: "Guten Morgen, Dragan." — ONE short utterance only. Do NOT add anything before or after. Do NOT paraphrase. Speak it as audio.",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,
   },
-  "wakeOpener": "legacy_default",
+  "wakeOpener": "newday_bare",
 }
 `;
 
-exports[`computeGreetingDecision — language axis legacy default — lang=en, bucket=long 1`] = `
+exports[`computeGreetingDecision — language axis newday_bare (was legacy default pre-VTID-03667) — lang=en, bucket=long 1`] = `
 {
   "diag": {
+    "bucket": "long",
     "lang": "en",
-    "prompt_len": 357,
+    "prompt_len": 139,
+    "wake_opener": "newday_bare",
   },
-  "directive": "The user hasn't been here in 10 days — this is a NEW-DAY greeting. Use the OPENING SHAPE MATRIX in your system instruction. For motivation_signal=cooling (8-14 days) or absent (>14 days), explicitly acknowledge the absence — e.g. "Hi {Name}, it's been 10 days since we last talked. Welcome back." Pause for the user to respond before any productivity nudge.",
+  "directive": "Say exactly: "Good morning, Dragan." — ONE short utterance only. Do NOT add anything before or after. Do NOT paraphrase. Speak it as audio.",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,
   },
-  "wakeOpener": "legacy_default",
+  "wakeOpener": "newday_bare",
 }
 `;
 
@@ -481,15 +485,17 @@ exports[`computeGreetingDecision — recency bucket axis (legacy ladder) bucket=
 exports[`computeGreetingDecision — recency bucket axis (legacy ladder) bucket=long 1`] = `
 {
   "diag": {
+    "bucket": "long",
     "lang": "de",
-    "prompt_len": 353,
+    "prompt_len": 139,
+    "wake_opener": "newday_bare",
   },
-  "directive": "The user hasn't been here in ~long — this is a NEW-DAY greeting. Use the OPENING SHAPE MATRIX in your system instruction. For motivation_signal=cooling (8-14 days) or absent (>14 days), explicitly acknowledge the absence — e.g. "Hi {Name}, it's been ~long since we last talked. Welcome back." Pause for the user to respond before any productivity nudge.",
+  "directive": "Say exactly: "Guten Morgen, Dragan." — ONE short utterance only. Do NOT add anything before or after. Do NOT paraphrase. Speak it as audio.",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,
   },
-  "wakeOpener": "legacy_default",
+  "wakeOpener": "newday_bare",
 }
 `;
 
@@ -556,30 +562,34 @@ exports[`computeGreetingDecision — recency bucket axis (legacy ladder) bucket=
 exports[`computeGreetingDecision — recency bucket axis (legacy ladder) bucket=week 1`] = `
 {
   "diag": {
+    "bucket": "week",
     "lang": "de",
-    "prompt_len": 350,
+    "prompt_len": 139,
+    "wake_opener": "newday_bare",
   },
-  "directive": "The user was last here ~week — this is a NEW-DAY greeting. Open with "Good morning, [Name]." using the user's name from your memory context. Then follow per the OPENING SHAPE MATRIX in your system instruction (use the Proactive Opener Candidate if one is provided — for early-tenure users a 2-3 day absence warrants warmth like "glad you came back").",
+  "directive": "Say exactly: "Guten Morgen, Dragan." — ONE short utterance only. Do NOT add anything before or after. Do NOT paraphrase. Speak it as audio.",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,
   },
-  "wakeOpener": "legacy_default",
+  "wakeOpener": "newday_bare",
 }
 `;
 
 exports[`computeGreetingDecision — recency bucket axis (legacy ladder) bucket=yesterday 1`] = `
 {
   "diag": {
+    "bucket": "yesterday",
     "lang": "de",
-    "prompt_len": 269,
+    "prompt_len": 139,
+    "wake_opener": "newday_bare",
   },
-  "directive": "The user was last here yesterday — this is a NEW-DAY greeting. Open with "Good morning, [Name]." using the user's name from your memory context. Then follow per the OPENING SHAPE MATRIX in your system instruction (use the Proactive Opener Candidate if one is provided).",
+  "directive": "Say exactly: "Guten Morgen, Dragan." — ONE short utterance only. Do NOT add anything before or after. Do NOT paraphrase. Speak it as audio.",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,
   },
-  "wakeOpener": "legacy_default",
+  "wakeOpener": "newday_bare",
 }
 `;
 

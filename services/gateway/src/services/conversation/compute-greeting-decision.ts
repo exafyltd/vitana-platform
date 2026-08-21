@@ -132,6 +132,15 @@ export type WakeOpener =
    *  reusing the safe-fast one: which ladder served the briefing is exactly the
    *  fact this VTID exists to make measurable, and collapsing them would hide it. */
   | 'newday_overview'
+  /** VTID-03667 — the bare "Good <tod>, <Name>." greeting (the SAME
+   *  composition as `safe_fast_newday`), reached on the NORMAL ladder for the
+   *  first time. Its own name for the same reason `newday_overview` has one:
+   *  measuring which ladder actually spoke it. See `tryBareNewDayRung`'s own
+   *  comment for why this exists — `newday_overview`/`day_close` have sat
+   *  disabled since 2026-08-13 (Bedrock content-filter incident, unresolved)
+   *  and the normal ladder had NO new-day acknowledgment at all in their
+   *  absence, only the fully generic legacy default. */
+  | 'newday_bare'
   | 'override_v2'
   | 'silenced_on_cadence'
   | 'legacy_default';
@@ -593,6 +602,98 @@ function tryNewDayOverviewRung(
 const SHORT_GAP_OPENER_INTENT =
   "Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself, never ask what they want. Compose this sentence yourself, in the user's own language, in your own words. There is no approved phrasing to reproduce and nothing to recite — do not reuse wording you or another session has used before; vary it every single time.";
 
+/**
+ * The bare, localized "Good <tod>, <Name>." new-day acknowledgment — shared
+ * by both ladders (VTID-03667), mirroring the `tryNewDayOverviewRung`/
+ * `tryDayCloseRung` sharing pattern above.
+ *
+ * This existed ONLY on the safe-fast ladder (`safe_fast_newday`, rung 5), and
+ * the safe-fast ladder is taken iff `contextReadyResolved === false` — the
+ * same "wrong ladder" shape VTID-03593/03607 already found and fixed for the
+ * rich briefing. The normal ladder had no new-day acknowledgment at all: with
+ * `newday_overview`/`day_close` both disabled since 2026-08-13 (P0 Bedrock
+ * content-filter incident, VTID-03628/03629 — still unresolved, and NOT
+ * touched by this change; re-enabling either without root-causing the block
+ * risks reproducing the exact incident, per VTID-03648's own "a second
+ * guess-fix made the live bug WORSE" finding), a returning user on a genuine
+ * new day got nothing beyond the fully generic legacy-default line. Reported
+ * live 2026-08-18: "no new day greeting, just: good to see you back... next
+ * step" — that IS the legacy default, composed correctly, just standing in
+ * for every rung above it that never fired.
+ *
+ * Deliberately the SAME short "Say exactly: <bare greeting>" composition that
+ * has never once been observed blocked in 7 days of `oasis_events` (unlike
+ * the two disabled rungs, whose blocked sizes were 1625/4202 chars — though
+ * note the two `safe_fast_newday_overview` fires that DID succeed pre-kill-
+ * switch were 16522/18255 chars, so size alone does not predict the block;
+ * this rung's small size is a property worth preserving, not a proven-safe
+ * threshold to lean on for anything bigger).
+ */
+function tryBareNewDayRung(
+  ctx: GreetingDecisionContext,
+  wakeOpener: 'safe_fast_newday' | 'newday_bare',
+): GreetingDecision | null {
+  // `bucket === 'today'` means "the LAST session was earlier today" (see
+  // temporal-bucket.ts), not "a new calendar day" — a same-day reopen, not a
+  // new one. The safe-fast ladder including it here is pre-existing,
+  // unchanged behaviour: `conv_resume` (rung 3, ABOVE this one on that
+  // ladder) already intercepts same-day reopens with a resume-worthy
+  // payload, so this only fires there when conv_resume had nothing to say.
+  // The normal ladder has NO conv_resume equivalent, so without excluding
+  // 'today' here, `newday_bare` would repeat "Good evening, Name" on every
+  // single reopen within one day — the exact same-greeting-every-session
+  // regression class VTID-03475 already fixed once for a different rung.
+  // `wakeOpener==='newday_bare'` is therefore stricter: genuinely a new day.
+  const isNewDay =
+    (wakeOpener === 'safe_fast_newday' && ctx.bucket === 'today') ||
+    ctx.bucket === 'yesterday' ||
+    ctx.bucket === 'week' ||
+    ctx.bucket === 'long';
+  if (!isNewDay || typeof ctx.firstName !== 'string' || ctx.firstName.trim().length === 0) return null;
+
+  const name = ctx.firstName.trim();
+  const tod = ctx.timeOfDay === 'night' ? 'evening' : ctx.timeOfDay || 'day';
+  const greetingByLang: Record<string, string> = {
+    en:
+      tod === 'morning'
+        ? `Good morning, ${name}.`
+        : tod === 'afternoon'
+          ? `Good afternoon, ${name}.`
+          : tod === 'evening'
+            ? `Good evening, ${name}.`
+            : `Hello, ${name}.`,
+    de:
+      tod === 'morning'
+        ? `Guten Morgen, ${name}.`
+        : tod === 'evening'
+          ? `Guten Abend, ${name}.`
+          : `Guten Tag, ${name}.`,
+    es:
+      tod === 'morning'
+        ? `Buenos días, ${name}.`
+        : tod === 'evening'
+          ? `Buenas noches, ${name}.`
+          : `Buenas tardes, ${name}.`,
+    fr: tod === 'evening' ? `Bonsoir, ${name}.` : `Bonjour, ${name}.`,
+    sr:
+      tod === 'morning'
+        ? `Добро јутро, ${name}.`
+        : tod === 'evening'
+          ? `Добро вече, ${name}.`
+          : `Добар дан, ${name}.`,
+  };
+  const lk = langKey2(ctx.greetLang);
+  const spoken = greetingByLang[lk] || greetingByLang.en;
+  const safe = spoken.replace(/"/g, '\\"');
+  const newDayPrompt = `Say exactly: "${safe}" — ONE short utterance only. Do NOT add anything before or after. Do NOT paraphrase. Speak it as audio.`;
+  return {
+    wakeOpener,
+    directive: newDayPrompt,
+    diag: { lang: ctx.lang, prompt_len: newDayPrompt.length, wake_opener: wakeOpener, bucket: ctx.bucket },
+    effects: { markGreetingSent: true, armWatchdog: true },
+  };
+}
+
 // --- SAFE-FAST ladder (rungs 1–6) ------------------------------------------
 function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
   // VTID-03604 — the day-close outranks every morning rung, on BOTH ladders.
@@ -685,51 +786,8 @@ function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
   }
 
   // Rung 5 — safe_fast_newday (bare localized "Good <tod>, <Name>." on a new day).
-  const isNewDay =
-    ctx.bucket === 'today' || ctx.bucket === 'yesterday' || ctx.bucket === 'week' || ctx.bucket === 'long';
-  if (isNewDay && typeof ctx.firstName === 'string' && ctx.firstName.trim().length > 0) {
-    const name = ctx.firstName.trim();
-    const tod = ctx.timeOfDay === 'night' ? 'evening' : ctx.timeOfDay || 'day';
-    const greetingByLang: Record<string, string> = {
-      en:
-        tod === 'morning'
-          ? `Good morning, ${name}.`
-          : tod === 'afternoon'
-            ? `Good afternoon, ${name}.`
-            : tod === 'evening'
-              ? `Good evening, ${name}.`
-              : `Hello, ${name}.`,
-      de:
-        tod === 'morning'
-          ? `Guten Morgen, ${name}.`
-          : tod === 'evening'
-            ? `Guten Abend, ${name}.`
-            : `Guten Tag, ${name}.`,
-      es:
-        tod === 'morning'
-          ? `Buenos días, ${name}.`
-          : tod === 'evening'
-            ? `Buenas noches, ${name}.`
-            : `Buenas tardes, ${name}.`,
-      fr: tod === 'evening' ? `Bonsoir, ${name}.` : `Bonjour, ${name}.`,
-      sr:
-        tod === 'morning'
-          ? `Добро јутро, ${name}.`
-          : tod === 'evening'
-            ? `Добро вече, ${name}.`
-            : `Добар дан, ${name}.`,
-    };
-    const lk = langKey2(ctx.greetLang);
-    const spoken = greetingByLang[lk] || greetingByLang.en;
-    const safe = spoken.replace(/"/g, '\\"');
-    const newDayPrompt = `Say exactly: "${safe}" — ONE short utterance only. Do NOT add anything before or after. Do NOT paraphrase. Speak it as audio.`;
-    return {
-      wakeOpener: 'safe_fast_newday',
-      directive: newDayPrompt,
-      diag: { lang: ctx.lang, prompt_len: newDayPrompt.length, wake_opener: 'safe_fast_newday', bucket: ctx.bucket },
-      effects: { markGreetingSent: true, armWatchdog: true },
-    };
-  }
+  const bareNewdayFast = tryBareNewDayRung(ctx, 'safe_fast_newday');
+  if (bareNewdayFast) return bareNewdayFast;
 
   // Rung 6 — safe_fast_pending_context (generic short opener; always fires).
   const safePrompt =
@@ -783,6 +841,13 @@ function computeNormalLadder(ctx: GreetingDecisionContext): GreetingDecision {
   // normal ladder is byte-identical for them.
   const newdaySync = tryNewDayOverviewRung(ctx, 'newday_overview');
   if (newdaySync) return newdaySync;
+
+  // Rung 7c — newday_bare (VTID-03667). Below the rich briefing (a session
+  // that gets the full newday_overview should never also get the bare
+  // version first) and above override_v2 (a personalized "Good evening,
+  // Dragan" beats the generic wake-brief one-liner on the one day it fires).
+  const bareNewdaySync = tryBareNewDayRung(ctx, 'newday_bare');
+  if (bareNewdaySync) return bareNewdaySync;
 
   // Rung 8 — override_v2 (speak the wake-brief / contract-selected line verbatim).
   const wakeOverrideLine = od.mode === 'speak' ? (od.line ?? '').trim() : '';
