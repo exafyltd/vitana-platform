@@ -197,7 +197,29 @@ jobs:
           # arrives at column 0 and the heredoc works. `<<PY` is deliberately
           # UNQUOTED so bash expands $p and $f into the Python source.
           #
-          # Scan only changed files for forbidden patterns
+          # VTID-03696 — scan only the browser-served surface.
+          #
+          # This used to scan EVERY changed file. Those patterns only mean
+          # something in code a browser executes; against YAML, lockfiles,
+          # markdown and CI scripts they are just strings. Two false positives,
+          # one of them a trap:
+          #
+          #   * THIS FILE matched `<script`, `.style` and `unsafe-inline` —
+          #     because the PATTERNS list below IS those strings. The gate flags
+          #     its own source, so the CSP gate rejected any PR that edits
+          #     VALIDATOR-CHECK.yml: the validator could not be modified without
+          #     the validator failing the change. It stayed hidden because the
+          #     file is rarely touched and, pre-VTID-03696, the path guard
+          #     rejected such PRs several steps earlier anyway.
+          #   * services/gateway/package-lock.json matched the CDN-asset URL
+          #     pattern on a registry URL. A lockfile is not served to anyone.
+          #
+          # Scoping is by construction (the command-hub frontend trees) rather
+          # than by luck. See `CSP_SURFACE` in the guard module.
+          node scripts/ci/validator-path-guard.cjs --csp-targets \
+            /tmp/changed_files.txt > /tmp/csp_files.txt
+          echo "CSP scan targets: $(wc -l < /tmp/csp_files.txt)"
+
           PATTERNS=(
             "<script(?![^>]*\\bsrc=)"
             "style\\s*="
@@ -224,7 +246,7 @@ jobs:
                 FAIL=1
               fi
             done
-          done < /tmp/changed_files.txt
+          done < /tmp/csp_files.txt
           [ "$FAIL" -eq 0 ] || exit 50
 
       - name: Build Gate (profile-based)

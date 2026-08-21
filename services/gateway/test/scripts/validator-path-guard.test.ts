@@ -218,6 +218,54 @@ describe('route-mount evidence keys off an ADDED route, not a touched file', () 
   });
 });
 
+describe('CSP scanning is scoped to the browser-served surface', () => {
+  const targets = (files: string[]): string[] => guard.cspScanTargets(files);
+
+  it('scans the command-hub frontend trees', () => {
+    expect(
+      targets([
+        'services/gateway/src/frontend/command-hub/app.js',
+        'services/gateway/dist/frontend/command-hub/index.html',
+      ]),
+    ).toHaveLength(2);
+  });
+
+  it('does not scan the validator workflow — which contains the CSP patterns itself', () => {
+    // The trap: VALIDATOR-CHECK.yml holds the pattern list as its own source,
+    // so scanning it flagged `<script`, `.style` and `unsafe-inline` every time.
+    // That made the validator reject any PR that edits the validator.
+    expect(targets(['.github/workflows/VALIDATOR-CHECK.yml'])).toEqual([]);
+  });
+
+  it('does not scan lockfiles — a registry URL is not a CDN asset', () => {
+    expect(targets(['services/gateway/package-lock.json'])).toEqual([]);
+  });
+
+  it('does not scan markdown, CI scripts or migrations', () => {
+    expect(
+      targets([
+        'CLAUDE.md',
+        'scripts/ci/validator-path-guard.cjs',
+        'supabase/migrations/data-fixups/x.sql',
+      ]),
+    ).toEqual([]);
+  });
+
+  it('does not scan gateway backend source — it is not served to a browser', () => {
+    expect(targets(['services/gateway/src/routes/orb-live.ts'])).toEqual([]);
+  });
+
+  it('picks the frontend files out of a mixed change set', () => {
+    expect(
+      targets([
+        'CLAUDE.md',
+        'services/gateway/src/frontend/command-hub/styles.css',
+        'services/gateway/src/routes/orb-live.ts',
+      ]),
+    ).toEqual(['services/gateway/src/frontend/command-hub/styles.css']);
+  });
+});
+
 describe('degenerate input', () => {
   it('ignores blank lines and surrounding whitespace', () => {
     const r = run('gateway_backend', ['', '  services/gateway/src/a.ts  ', '']);

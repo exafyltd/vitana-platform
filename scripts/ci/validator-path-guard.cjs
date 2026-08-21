@@ -217,9 +217,47 @@ function routeEvidenceRequired(addedLines) {
     .some((l) => ROUTE_REGISTRATION.test(l));
 }
 
+/**
+ * Which changed files can actually violate a Content-Security-Policy?
+ *
+ * The CSP gate scanned EVERY changed file for `<script`, `style=`, `.style`,
+ * `eval(`, `unsafe-inline` and CDN asset URLs. Those patterns only mean
+ * something in code a browser executes. Applied to YAML, lockfiles, markdown
+ * and CI scripts they are just strings, and the gate produced two false
+ * positives that are worth naming because one of them is a trap:
+ *
+ *  1. `.github/workflows/VALIDATOR-CHECK.yml` matched `<script`, `.style` AND
+ *     `unsafe-inline` — because the workflow file CONTAINS THE PATTERN LIST
+ *     ITSELF. The gate flags its own source. That means the CSP gate rejected
+ *     any PR that edits VALIDATOR-CHECK.yml, i.e. **the validator could not be
+ *     modified without the validator failing the change.** It never surfaced
+ *     because the file is rarely touched and, before VTID-03696, the path guard
+ *     rejected such PRs several steps earlier anyway.
+ *  2. `services/gateway/package-lock.json` matched the CDN-asset URL pattern on
+ *     a registry URL. A lockfile is not served to anyone.
+ *
+ * So the scan is scoped to the surface a CSP actually governs: the command-hub
+ * frontend trees, which is the only browser-served code this repo ships from
+ * the gateway. Everything else is out of scope by construction rather than by
+ * luck.
+ */
+const CSP_SURFACE = [
+  'services/gateway/src/frontend/',
+  'services/gateway/dist/frontend/',
+];
+
+function cspScanTargets(files) {
+  return files
+    .map((f) => f.trim())
+    .filter(Boolean)
+    .filter((f) => isUnder(f, CSP_SURFACE));
+}
+
 module.exports = {
   evaluate,
   routeEvidenceRequired,
+  cspScanTargets,
+  CSP_SURFACE,
   REMIT,
   PROFILES,
   LOCKFILE,
@@ -231,6 +269,19 @@ module.exports = {
 //      node validator-path-guard.cjs --route-evidence-required <diff.txt>
 //        exit 0 = a route was added, evidence IS required
 //        exit 1 = no route added, the evidence gate should be skipped
+// CLI: --csp-targets <changed_files.txt>  → prints the files worth CSP-scanning
+if (require.main === module && process.argv[2] === '--csp-targets') {
+  const { readFileSync } = require('node:fs');
+  let files = [];
+  try {
+    files = readFileSync(process.argv[3], 'utf8').split('\n');
+  } catch {
+    files = [];
+  }
+  cspScanTargets(files).forEach((f) => console.log(f));
+  process.exit(0);
+}
+
 if (require.main === module && process.argv[2] === '--route-evidence-required') {
   const { readFileSync } = require('node:fs');
   const diffPath = process.argv[3];
