@@ -66,9 +66,30 @@ jobs:
       - name: Extract VTID + Validation Profile
         id: meta
         run: |
+          # VTID-03696 — the body fallback must be a DECLARATION, not a prose
+          # mention.
+          #
+          # This used to take the first `VTID-\d+` appearing anywhere in the
+          # body. Every later gate keys off it — most importantly the Evidence
+          # Pack Gate, which demands `docs/validation/$VTID/`. So a PR that
+          # merely CITES an older VTID as background had its evidence directory
+          # silently pointed at unrelated, already-shipped work.
+          #
+          # Measured on PR #3144: the first VTID- in the body was VTID-03495
+          # (the Polly provider, cited as context), and the gate would have
+          # demanded docs/validation/VTID-03495/. Creating that directory to go
+          # green would have filed evidence for this PR under someone else's
+          # VTID — a green check attached to the wrong work.
+          #
+          # The title remains the primary source (the Merge Deploy Gate already
+          # requires the VTID there). The body fallback now requires an explicit
+          # `VTID: VTID-XXXXX` line.
           VTID="$(grep -Eo 'VTID-[0-9]{4,5}' /tmp/pr_title.txt | head -n 1)"
-          test -n "$VTID" || VTID="$(grep -Eo 'VTID-[0-9]{4,5}' /tmp/pr_body.txt | head -n 1)"
-          test -n "$VTID" || (echo "REJECTED: VTID missing from title/body" && exit 10)
+          if [ -z "$VTID" ]; then
+            VTID="$(grep -Eo '^[[:space:]]*VTID:[[:space:]]*VTID-[0-9]{4,5}' /tmp/pr_body.txt \
+                    | grep -Eo 'VTID-[0-9]{4,5}' | head -n 1)"
+          fi
+          test -n "$VTID" || (echo "REJECTED: no VTID in the title, and no explicit 'VTID: VTID-XXXXX' line in the body" && exit 10)
 
           PROFILE="$(grep -Eo 'VALIDATION_PROFILE:\s*[a-zA-Z0-9_/-]+' /tmp/pr_body.txt | head -n 1 | awk '{print $2}')"
           test -n "$PROFILE" || (echo "REJECTED: VALIDATION_PROFILE missing in PR body" && exit 11)
