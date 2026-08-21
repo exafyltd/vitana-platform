@@ -228,8 +228,28 @@ jobs:
         env:
           VTID: ${{ steps.meta.outputs.VTID }}
         run: |
-          # If routes touched, enforce markers in acceptance.md
-          if grep -qE '^services/gateway/src/routes/|^services/gateway/src/(index|app)\.ts' /tmp/changed_files.txt; then
+          # VTID-03696 — trigger on an ADDED ROUTE, not on a touched route FILE.
+          #
+          # This used to fire whenever anything under src/routes/ (or
+          # src/index.ts / src/app.ts) changed, and then demand ROUTE_MOUNT: /
+          # FINAL_URL: / CURL_PROOF:. But editing a route file is not the same
+          # as adding a route — VTID-03692 changed a branch inside an existing
+          # WebSocket handler in routes/orb-live.ts and added no route at all.
+          #
+          # Demanding a curl proof for a route that does not exist does not
+          # produce evidence, it produces INVENTED evidence: the only way to go
+          # green is to write down a URL nobody can call. A gate that can only
+          # be passed by making something up launders a guess into a green
+          # check, which is worse than not having the gate.
+          #
+          # When a route IS added the requirement is unchanged and still binds.
+          BASE="${{ github.base_ref }}"
+          git diff "origin/$BASE"...HEAD -- \
+            'services/gateway/src/routes/' \
+            'services/gateway/src/index.ts' \
+            'services/gateway/src/app.ts' > /tmp/route_diff.txt || true
+
+          if node scripts/ci/validator-path-guard.cjs --route-evidence-required /tmp/route_diff.txt; then
             A="docs/validation/$VTID/acceptance.md"
             grep -q "ROUTE_MOUNT:" "$A" || (echo "REJECTED: missing ROUTE_MOUNT:" && exit 70)
             grep -q "FINAL_URL:"   "$A" || (echo "REJECTED: missing FINAL_URL:" && exit 71)

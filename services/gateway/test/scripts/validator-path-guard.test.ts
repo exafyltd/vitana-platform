@@ -175,6 +175,49 @@ describe('dependency changes are declared, not forbidden', () => {
   });
 });
 
+describe('route-mount evidence keys off an ADDED route, not a touched file', () => {
+  const req = (lines: string[]): boolean => guard.routeEvidenceRequired(lines);
+
+  it('requires evidence when a route is actually added', () => {
+    expect(req(["+router.get('/api/v1/thing', handler);"])).toBe(true);
+    expect(req(['+  app.use(\'/api/v1/orb\', orbRouter);'])).toBe(true);
+    expect(req(["+router.post('/x', h)"])).toBe(true);
+  });
+
+  it('does NOT require evidence for a route file edited without adding a route', () => {
+    // The VTID-03692 shape: a branch added inside an existing WS handler.
+    expect(
+      req([
+        "+  if (__upstreamDecision.provider === 'cascaded') {",
+        '+    const cascadedClient = createUpstreamClient(...);',
+        '+    resolve(cascadedFacade);',
+        '+  }',
+      ]),
+    ).toBe(false);
+  });
+
+  it('ignores removed and context lines', () => {
+    // A deleted route must not demand fresh curl proof for a URL that is gone.
+    expect(req(["-router.get('/api/v1/gone', handler);"])).toBe(false);
+    expect(req(["   router.get('/api/v1/existing', handler);"])).toBe(false);
+  });
+
+  it('ignores the +++ file header, which is not an added line', () => {
+    expect(req(['+++ b/services/gateway/src/routes/router.get.ts'])).toBe(false);
+  });
+
+  it('requires evidence if any added line registers a route, among many that do not', () => {
+    expect(
+      req(['+const x = 1;', '+// comment', "+router.delete('/api/v1/thing/:id', h);"]),
+    ).toBe(true);
+  });
+
+  it('treats an empty diff as not requiring evidence', () => {
+    expect(req([])).toBe(false);
+    expect(req([''])).toBe(false);
+  });
+});
+
 describe('degenerate input', () => {
   it('ignores blank lines and surrounding whitespace', () => {
     const r = run('gateway_backend', ['', '  services/gateway/src/a.ts  ', '']);

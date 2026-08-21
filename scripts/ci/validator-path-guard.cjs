@@ -188,9 +188,67 @@ function evaluate({ profile, changedFiles, dependencyChangeDeclared }) {
   return { code: 0, messages };
 }
 
-module.exports = { evaluate, REMIT, PROFILES, LOCKFILE, DOTENV };
+/**
+ * Does this diff actually ADD a route registration or a router mount?
+ *
+ * The Route Mount Evidence Gate used to fire whenever any file under
+ * `src/routes/` (or `src/index.ts` / `src/app.ts`) was touched, and then demand
+ * ROUTE_MOUNT: / FINAL_URL: / CURL_PROOF: markers. But editing a route FILE is
+ * not the same thing as adding a ROUTE: VTID-03692 changed a branch inside an
+ * existing WebSocket handler in `routes/orb-live.ts` and added no route at all.
+ *
+ * Demanding a curl proof for a route that does not exist does not produce
+ * evidence — it produces invented evidence, because the only way to satisfy the
+ * gate is to write down a URL nobody can call. A gate that can only be passed
+ * by making something up is worse than no gate: it launders a guess into a
+ * green check.
+ *
+ * So the trigger is the real signal — an ADDED line that registers a route or
+ * mounts a router. Removals and context lines do not count. When a route IS
+ * added, the evidence requirement is untouched and still has full force.
+ *
+ * @param {string[]} addedLines  lines from `git diff` that begin with '+'
+ */
+const ROUTE_REGISTRATION = /\b(router|app)\s*\.\s*(get|post|put|patch|delete|all|options|head|use)\s*\(/;
+
+function routeEvidenceRequired(addedLines) {
+  return addedLines
+    .filter((l) => l.startsWith('+') && !l.startsWith('+++'))
+    .some((l) => ROUTE_REGISTRATION.test(l));
+}
+
+module.exports = {
+  evaluate,
+  routeEvidenceRequired,
+  REMIT,
+  PROFILES,
+  LOCKFILE,
+  DOTENV,
+  ROUTE_REGISTRATION,
+};
 
 // CLI: node validator-path-guard.cjs <changed_files.txt> <profile> <pr_body.txt>
+//      node validator-path-guard.cjs --route-evidence-required <diff.txt>
+//        exit 0 = a route was added, evidence IS required
+//        exit 1 = no route added, the evidence gate should be skipped
+if (require.main === module && process.argv[2] === '--route-evidence-required') {
+  const { readFileSync } = require('node:fs');
+  const diffPath = process.argv[3];
+  let diff = '';
+  try {
+    diff = readFileSync(diffPath, 'utf8');
+  } catch {
+    diff = '';
+  }
+  const required = routeEvidenceRequired(diff.split('\n'));
+  console.log(
+    required
+      ? 'Route registration ADDED — route-mount evidence is required.'
+      : 'No route registration added — route-mount evidence not required for this diff.',
+  );
+  process.exit(required ? 0 : 1);
+}
+
 if (require.main === module) {
   const { readFileSync } = require('node:fs');
   const [filesPath, profile, bodyPath] = process.argv.slice(2);
