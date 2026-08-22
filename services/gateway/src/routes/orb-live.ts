@@ -354,11 +354,36 @@ import {
 // resent the identical rejected content in a loop either way. Set once at
 // module load — every `computeGreetingDecision` call site (there are
 // several, independently built) inherits both automatically, so there is
-// nothing left to diverge. Both default OFF (disabled) unless explicitly
-// re-enabled via their env vars, which should happen only after a
-// Nova-aware fix (skip the identical-content retry, not the whole rung)
-// ships for each.
-setNewdayOverviewRungEnabled(process.env.ORB_NEWDAY_OVERVIEW_RUNG_ENABLED === 'true');
+// nothing left to diverge.
+//
+// VTID-03646 — `newday_overview` is re-enabled by default; `day_close` is NOT.
+// The two were disabled together on the same night under one theory, and the
+// evidence since separates them:
+//
+//   1. VTID-03629's own writeup records that newday_overview "was already
+//      being rejected by its own guard (missing first name) before it could
+//      even fire" — i.e. VTID-03628 disabled a rung that was not running, and
+//      the content filter kept firing regardless. Prod telemetry agrees: zero
+//      `newday_overview` events have EVER been recorded, before or after the
+//      kill switch. It cannot have been the content Bedrock rejected.
+//   2. Disabling both did not stop the blocks. `orb.live.diag` /
+//      `stage=upstream_error` still carries "This request has been blocked by
+//      our content filters" on 2026-08-14 (x2) and 2026-08-15 (x1), days after
+//      both rungs went dark. Whatever trips the filter is not these rungs.
+//   3. Meanwhile the cost of keeping it off is the entire reported regression:
+//      every session falls to the rung-8 teaser line (24 of 24 `wake_opener`
+//      events in the last 4 days are `override_v2`).
+//
+// `day_close` stays default-OFF because it is the rung that was actually
+// observed firing and being blocked (14 events on 08-13, prompt_len 4202), it
+// only fires at local_hour 0-4, and it is not implicated in this report. It
+// keeps its unchanged `=== 'true'` opt-in until a Nova-aware retry (rebuild
+// the opener from reduced content instead of resending identical content)
+// ships for it.
+//
+// The kill switch itself is kept in both cases — `ORB_NEWDAY_OVERVIEW_RUNG_
+// ENABLED=false` still turns the briefing off without a code change.
+setNewdayOverviewRungEnabled(process.env.ORB_NEWDAY_OVERVIEW_RUNG_ENABLED !== 'false');
 setDayCloseRungEnabled(process.env.ORB_DAY_CLOSE_RUNG_ENABLED === 'true');
 import { EMPTY_GREETING_LEDGER } from '../services/conversation/greeting-facts-ledger';
 
@@ -1670,6 +1695,47 @@ export function shouldRetryNovaOnPrematureClose(args: {
     !args.rotationInFlight &&
     !args.hasProducedAudio &&
     !args.alreadyRetried
+  );
+}
+
+/**
+ * VTID-03646 follow-up — the Nova-aware retry `day_close` (VTID-03629) has
+ * been waiting on since it went default-OFF: "rebuild the opener from
+ * reduced content instead of resending identical content".
+ *
+ * This does NOT decide whether a retry happens at all — `shouldRetryNova`
+ * above already covers that for any zero-audio close, `day_close` included,
+ * since it isn't gated on `closeReason`. This decides whether the resend
+ * that `shouldRetryNova` is about to trigger should rebuild `day_close`'s
+ * directive REDUCED (`buildDayCloseOpenerLine`, no quoted exemplars) instead
+ * of resending the ~4200-char `buildDayCloseBlock` that just got rejected —
+ * the resend the pre-existing code comment on `_dayCloseRungEnabled`
+ * criticized as looping on identical content.
+ *
+ * Deliberately keyed on `closeReason === 'nova_validation'` specifically
+ * (not `!hasProducedAudio` generally, the way the retry-at-all decision is):
+ * a `day_close` open that dies for an unrelated transport reason (premature
+ * close, rotation) should get the SAME directive back — the content was
+ * never in question, so shrinking it would just make an unrelated failure
+ * look "explained" by content it never had anything to do with.
+ */
+export function shouldRetryDayCloseReduced(args: {
+  closeReason: string | null;
+  lastWakeOpener: string | null;
+  sessionActive: boolean;
+  initiatedLocally: boolean;
+  rotationInFlight: boolean;
+  /** Guard against re-arming on a second, independent nova_validation close
+   *  later in the same session (e.g. a future day_close open next night). */
+  alreadyReducedThisClose: boolean;
+}): boolean {
+  return (
+    args.closeReason === 'nova_validation' &&
+    args.lastWakeOpener === 'day_close' &&
+    args.sessionActive &&
+    !args.initiatedLocally &&
+    !args.rotationInFlight &&
+    !args.alreadyReducedThisClose
   );
 }
 // VTID-03495: Polly seam for the /tts route. No-ops unless TTS_PROVIDER=polly.
@@ -8381,6 +8447,23 @@ async function connectToLiveAPI(
             return;
           }
 
+          // VTID-03646 follow-up — arm the day_close reduced-content resend
+          // (see `shouldRetryDayCloseReduced`'s doc). This only DECIDES the
+          // flag; whether a retry actually happens at all is still entirely
+          // `shouldRetryNova` below, unchanged. Reset to false first so a
+          // second, later nova_validation close on the same session (e.g. a
+          // reduced retry that ALSO gets blocked) does not re-arm forever —
+          // `resendGreetingIfStuckAtZeroTurns`'s existing `alreadyRetried`
+          // gate on `shouldRetryNova` already stops it after one attempt.
+          (session as any)._dayCloseReducedRetry = shouldRetryDayCloseReduced({
+            closeReason: closeEvent.reason ?? null,
+            lastWakeOpener: (session as any)._lastWakeOpener ?? null,
+            sessionActive: session.active,
+            initiatedLocally: closeEvent.initiatedLocally === true,
+            rotationInFlight,
+            alreadyReducedThisClose: (session as any)._dayCloseReducedRetry === true,
+          });
+
           // VTID-03557: one fresh Nova retry BEFORE the VTID-03502 Vertex
           // fallback below pins the session away from Nova. Every measured
           // "Premature close" is Node's own stream-teardown error, not our
@@ -9852,6 +9935,12 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   // `_reconnectCount` itself (still used for MAX_RECONNECTS and elsewhere).
   const _freshOpenAfterZeroTurnRecovery = (session as any)._freshOpenAfterZeroTurnRecovery === true;
   (session as any)._freshOpenAfterZeroTurnRecovery = false;
+  // VTID-03646 follow-up — one-shot, consumed the same way as the flag
+  // above: read once for THIS rebuild, then cleared so a later, unrelated
+  // resend on the same session (a fresh day_close next night, say) does not
+  // inherit a stale "reduced" instruction from a close that already recovered.
+  const _dayCloseReduced = (session as any)._dayCloseReducedRetry === true;
+  (session as any)._dayCloseReducedRetry = false;
   const _openDecision = decideOpening({
     isAnonymous: !!session.isAnonymous,
     hasResumptionHandle: !!session.resumptionHandle,
@@ -9909,6 +9998,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
       menuPhrases: pickShortGapGreetings(lang, 6),
       openDecision: { mode: _openDecision.mode, source: _openDecision.source, line: _openDecision.line },
       guidedTopicNarrationContent: (session as any).guidedTopicNarrationContent ?? null,
+      dayCloseReduced: _dayCloseReduced,
       wakeBriefDecisionId: (_wb as any)?.decisionId ?? null,
       // VTID-03635 — rung 9 (silenced_on_cadence) is a SECOND, independent
       // silencing mechanism, fed by `voiceWakeBriefReason` (the wake-brief
@@ -9954,6 +10044,11 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
       console.log(
         `[VTID-VOICE-INIT] greeting via brain wake_opener=${decision.wakeOpener} lang=${lang} turnIndex=${session.turn_count}`,
       );
+      // VTID-03646 follow-up — the only thing `shouldRetryDayCloseReduced`
+      // needs to know is "was the greeting that just got nova_validation-
+      // closed a day_close one", so a plain last-value stash is enough; no
+      // history, no other reader.
+      (session as any)._lastWakeOpener = decision.wakeOpener;
       emitDiag(session, 'greeting_sent', decision.diag);
       if (decision.effects.armWatchdog) {
         startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
