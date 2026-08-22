@@ -107,7 +107,7 @@ import {
   selectDayCloseTheme,
   isHardDay,
 } from '../assistant-continuation/providers/day-close-themes';
-import { buildDayCloseBlock } from '../assistant-continuation/providers/day-close-prompt';
+import { buildDayCloseBlock, buildDayCloseOpenerLine } from '../assistant-continuation/providers/day-close-prompt';
 
 // ---------------------------------------------------------------------------
 // Decision shape
@@ -276,6 +276,13 @@ export interface GreetingDecisionContext {
   // --- wake-brief / cadence ------------------------------------------------
   /** !!session.guidedTopicNarrationContent — switches override_v2 to teach mode. */
   guidedTopicNarrationContent: string | null;
+  /** One-shot: true only on the resend that follows a `day_close` open getting
+   *  `nova_validation`-closed. Rebuilds `day_close`'s directive with
+   *  `buildDayCloseOpenerLine` (short, no quoted exemplars) instead of
+   *  resending the ~4200-char `buildDayCloseBlock` that just got rejected.
+   *  See `shouldRetryDayCloseReduced` in routes/orb-live.ts. Optional so
+   *  every other call site (and the golden-snapshot suite) is unaffected. */
+  dayCloseReduced?: boolean;
   /** wakeBriefDecision.decisionId, or null. */
   wakeBriefDecisionId: string | null;
   /** Whether silence-on-cadence-skip is enabled. The caller resolves this from
@@ -379,7 +386,7 @@ function tryDayCloseRung(ctx: GreetingDecisionContext): GreetingDecision | null 
   });
   const ledger = ctx.greetingLedger ?? EMPTY_GREETING_LEDGER;
 
-  const block = buildDayCloseBlock({
+  const blockArgs = {
     lang: ctx.greetLang,
     firstName: ctx.firstName ?? null,
     localHour: ctx.localHour,
@@ -389,7 +396,8 @@ function tryDayCloseRung(ctx: GreetingDecisionContext): GreetingDecision | null 
     previousUtterance: ledger.last_utterance,
     sessionsToday: ledger.sessions_today,
     pendingCheckpointTitle: ctx.pendingCheckpointTitle ?? null,
-  });
+  };
+  const block = ctx.dayCloseReduced ? buildDayCloseOpenerLine(blockArgs) : buildDayCloseBlock(blockArgs);
   if (!block || block.trim().length === 0) return null;
 
   return {
@@ -404,6 +412,7 @@ function tryDayCloseRung(ctx: GreetingDecisionContext): GreetingDecision | null 
       theme: theme.key,
       hard_day: hardDay,
       has_checkpoint: !!ctx.pendingCheckpointTitle,
+      reduced: !!ctx.dayCloseReduced,
     },
     effects: { markGreetingSent: true, armWatchdog: true, stampDayCloseDate: nightKey },
   };
