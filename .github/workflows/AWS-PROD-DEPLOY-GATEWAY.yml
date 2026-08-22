@@ -111,6 +111,45 @@ on:
         description: 'Set AWS_TRANSCRIBE_REGION — region for Transcribe streaming; falls back to AWS_REGION then eu-central-1 (EMPTY = preserve)'
         required: false
         default: ''
+      # BOOTSTRAP-POLLY-NARRATION-CACHE: guided-topic lesson audio was
+      # re-synthesized on EVERY My Journey tap (~1800 chars, ~2000 distinct
+      # assets across 254 topics x 8 languages). These two turn that into a
+      # per-asset cost. `s3` REQUIRES the bucket + the s3 grant on
+      # vitana-ecs-task-role — run scripts/aws/setup-narration-audio-cache.sh
+      # first. Setting `s3` with no bucket logs an error and falls back to the
+      # in-process cache rather than silently disabling caching.
+      # VTID-03697 — narration_audio_cache / narration_audio_bucket REMOVED.
+      #
+      # GitHub allows a maximum of 25 `workflow_dispatch` inputs. Adding these
+      # two took this file from 24 to 26, and GitHub then refuses to parse the
+      # workflow AT ALL:
+      #
+      #   failed to parse workflow: you may only define up to 25 `inputs`
+      #   for a `workflow_dispatch` event
+      #
+      # That is not a degraded input — it makes the whole workflow
+      # undispatchable, which took production deploys offline entirely,
+      # including the Command Hub PUBLISH button (it dispatches this same
+      # workflow). Nothing caught it because this workflow is
+      # `workflow_dispatch`-only: no push exercises it, so the breakage
+      # surfaces at the exact moment someone needs to ship.
+      #
+      # Removing these two is safe for every known caller. PUBLISH
+      # (`routes/operator.ts`) passes only reason/deploy_mode/expected_commit,
+      # and `scripts/deploy/publish-to-prod.sh` passes only its own service /
+      # vtid / environment / health_path / canary / initiator set. Neither has
+      # ever passed a narration input.
+      #
+      # Nothing is lost operationally today: NARRATION_AUDIO_CACHE defaults to
+      # `memory` in code when unset, which is the intended production value,
+      # and the s3 leg is explicitly unaccepted (the bucket does not exist and
+      # the task role has no s3 grant — CLAUDE.md §2c-cache).
+      #
+      # TO SET THEM LATER: this file is at the ceiling, so a new env toggle
+      # cannot simply be appended. Either retire an obsolete input first, or
+      # replace the one-input-per-env-var pattern with a single JSON
+      # `env_overrides` input. A guard test now fails if any workflow exceeds
+      # the limit, so this cannot silently recur.
       # VTID-03649: GCP project billing was disabled, permanently killing
       # Vertex Live. Without this, sessions whose language/runtime fail
       # Nova's gates (and Nova's own premature-close recovery) still degrade
@@ -370,6 +409,8 @@ jobs:
           TTS_PROVIDER_INPUT: ${{ inputs.tts_provider }}
           TTS_POLLY_STRICT_INPUT: ${{ inputs.tts_polly_strict }}
           IMAGE_PROVIDER_INPUT: ${{ inputs.image_provider }}
+          NARRATION_AUDIO_CACHE_INPUT: ${{ inputs.narration_audio_cache }}
+          NARRATION_AUDIO_BUCKET_INPUT: ${{ inputs.narration_audio_bucket }}
         run: |
           set -e
           # VTID-03420: promote mode ships staging's image; rebuild mode ships
@@ -732,6 +773,21 @@ jobs:
               .containerDefinitions[0].environment |=
                 ( [ .[] | select(.name != "IMAGE_PROVIDER") ]
                   + [ {name:"IMAGE_PROVIDER", value:$I} ] )')
+          fi
+          # BOOTSTRAP-POLLY-NARRATION-CACHE
+          if [ -n "$NARRATION_AUDIO_CACHE_INPUT" ]; then
+            echo "Applying narration cache: NARRATION_AUDIO_CACHE=$NARRATION_AUDIO_CACHE_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg I "$NARRATION_AUDIO_CACHE_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "NARRATION_AUDIO_CACHE") ]
+                  + [ {name:"NARRATION_AUDIO_CACHE", value:$I} ] )')
+          fi
+          if [ -n "$NARRATION_AUDIO_BUCKET_INPUT" ]; then
+            echo "Applying narration bucket: NARRATION_AUDIO_BUCKET=$NARRATION_AUDIO_BUCKET_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg I "$NARRATION_AUDIO_BUCKET_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "NARRATION_AUDIO_BUCKET") ]
+                  + [ {name:"NARRATION_AUDIO_BUCKET", value:$I} ] )')
           fi
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
             --query 'taskDefinition.taskDefinitionArn' --output text)

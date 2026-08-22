@@ -1749,6 +1749,14 @@ import { prewarmNovaSonicBedrock } from '../orb/live/upstream/nova-sonic-live-cl
 import { sanitizeInstructionForNova } from '../orb/live/upstream/nova-instruction-sanitizer';
 import { startNovaSonicKeepWarm, startNovaSonicModelWarm } from '../orb/live/upstream/nova-sonic-keepwarm';
 import { createUpstreamClient } from '../orb/live/upstream/upstream-client-factory';
+// BOOTSTRAP-CASCADE-WIRING: these two had NO caller on any live path. The
+// selector's cascade branch and the factory's `case 'cascaded'` both existed
+// and were unreachable because nothing in this file ever asked whether the
+// cascade was on, or which languages it covers.
+import {
+  isCascadeEnabled,
+  isCascadeLanguageSupported,
+} from '../orb/live/upstream/cascaded-config';
 import { bindUpstreamSessionHandlers } from '../orb/live/session/upstream-message-handler';
 import { createNovaWsFacade } from '../orb/live/upstream/nova-ws-facade';
 import type { UpstreamLiveClient } from '../orb/live/upstream/types';
@@ -7082,6 +7090,26 @@ async function connectToLiveAPI(
       // on the task def to stop the runtime/language gates from routing
       // anyone toward it.
       vertexUnavailable: process.env.VERTEX_LIVE_UNAVAILABLE === 'true',
+      // BOOTSTRAP-CASCADE-WIRING (seam 1 of 3) — this field did not exist.
+      //
+      // VTID-03683 built the whole Transcribe->Bedrock->Polly pipeline and its
+      // selector branch, but never populated `cascade` HERE. `tryCascadeRescue`
+      // opens with `if (ctx.cascade?.enabled !== true) return null`, so with the
+      // field absent it returned null on every session and the rescue could
+      // not fire for anyone — `ORB_CASCADED_VOICE_ENABLED=true` changed
+      // nothing, because `isCascadeEnabled()` had no caller on any live path.
+      //
+      // Same shape as VTID-03531: a fully built, fully tested component that
+      // nothing called. A green unit suite proves a function works, not that
+      // anything invokes it.
+      cascade: {
+        enabled: isCascadeEnabled(),
+        // Precomputed here because the selector is stateless and never sees
+        // the language string. `evaluateCascadeEligibility` already refuses
+        // every language Nova speaks natively, so a healthy Nova session can
+        // never be diverted into the slower three-hop path.
+        languageSupported: isCascadeLanguageSupported(session.lang),
+      },
     });
   } catch (e) {
     // Voice/canary config read failure must NOT block the session start;
@@ -7810,6 +7838,139 @@ async function connectToLiveAPI(
     // buildLiveSystemInstruction + buildLiveApiTools — then decoded into
     // provider-neutral parts and re-encoded through nova-sonic-protocol.ts
     // inside the client. Parity by construction, not by duplication.
+    // BOOTSTRAP-CASCADE-WIRING (seams 2 and 3 of 3) — this branch did not exist.
+    //
+    // Seam 2: `createUpstreamClient` has a `case 'cascaded'` that throws
+    // `cascaded_not_configured` unless `deps.cascaded` is supplied, and nothing
+    // supplied it.
+    //
+    // Seam 3: the only factory call in this file passed the LITERAL
+    // `'nova_sonic'`, not `__upstreamDecision.provider` — so even a
+    // `provider: 'cascaded'` decision built a Nova client. And because the
+    // Nova block below is gated on `=== 'nova_sonic'`, a cascaded decision
+    // would otherwise fall through to the Vertex path at the bottom of this
+    // function, which is dead since the GCP shutdown.
+    //
+    // Placed BEFORE the Nova block deliberately: a sibling `if` that returns,
+    // so the Nova block's 750 lines are not re-indented or otherwise touched.
+    // The cascade cannot steal a Nova-supported language — the selector only
+    // returns 'cascaded' when `languageBlocked` is already true.
+    if (__upstreamDecision.provider === 'cascaded') {
+      try {
+        const cascadedLang = session.lang || 'en';
+        // Same envelope the Nova and Vertex paths use, so the cascade gets the
+        // identical assembled context rather than a second, drifting build.
+        const cascadedEnvelope = (await buildOrbVertexSetupEnvelope()) as { setup?: Record<string, any> };
+        const cascadedSetup = cascadedEnvelope.setup ?? {};
+        const cascadedInstruction: string =
+          cascadedSetup.system_instruction?.parts?.[0]?.text ?? '';
+
+        const cascadedClient = createUpstreamClient('cascaded', {
+          cascaded: { lang: cascadedLang },
+        });
+
+        bindUpstreamSessionHandlers({
+          session,
+          client: cascadedClient,
+          callbacks: { onAudioResponse, onTextResponse, onError, onTurnComplete, onInterrupted },
+          deps: {
+            clearResponseWatchdog,
+            detectAuthIntent,
+            emitDiag,
+            emitLiveSessionEvent,
+            executeLiveApiTool,
+            isDevSandbox,
+            sendAudioToLiveAPI,
+            sendFunctionResponseToLiveAPI,
+            sendWsMessage,
+            startResponseWatchdog,
+            markVoiceLatency,
+            finalizeVoiceTurnLatency,
+          },
+          // NO silence keepalive, deliberately — and this is the one place the
+          // cascade must NOT copy Nova.
+          //
+          // Nova needs synthetic PCM because Bedrock kills a bidirectional
+          // stream that goes ~15s without audio frames. The cascade has no
+          // such stream: Transcribe opens lazily on the first real chunk and
+          // Bedrock is a single completion per turn. Feeding it silence would
+          // bill Transcribe for ambient quiet and could push a turn's endpoint
+          // detection around, for a deadline that does not exist here.
+        });
+
+        session.upstreamClient = cascadedClient;
+        session.upstreamProvider = 'cascaded';
+        const cascadedConnectStart = Date.now();
+        await cascadedClient.connect({
+          // `model`/`voiceName` are required by the provider-neutral options
+          // type but the cascaded client reads neither: Bedrock's model comes
+          // from `llm_routing_policy` via callViaRouter, and the Polly voice is
+          // resolved from the language. Descriptive values, so anything that
+          // logs the options says what actually ran instead of a bare ''.
+          model: 'cascaded:transcribe+bedrock+polly',
+          voiceName: `polly:${cascadedLang}`,
+          responseModalities: session.responseModalities.includes('audio') ? ['audio'] : ['text'],
+          vadSilenceMs: session.vadSilenceMs,
+          systemInstruction: cascadedInstruction,
+        });
+        setupComplete = true;
+        clearTimeout(connectionTimeout);
+        session.establishLatency?.mark('upstream_connected');
+        console.log(
+          `[VTID-03683] cascaded pipeline open for session ${session.sessionId}: ` +
+            `lang=${cascadedLang} connect_ms=${Date.now() - cascadedConnectStart} ` +
+            `reason=${__upstreamDecision.reason}`,
+        );
+        void emitOasisEvent({
+          type: 'orb.upstream.cascaded.connect_succeeded',
+          vtid: 'VTID-03683',
+          payload: {
+            session_id: session.sessionId,
+            provider: 'cascaded',
+            lang: cascadedLang,
+            reason: __upstreamDecision.reason,
+            connect_ms: Date.now() - cascadedConnectStart,
+            instruction_chars: cascadedInstruction.length,
+            status: 'success',
+          } as any,
+        } as any).catch(() => { /* best-effort */ });
+
+        // The same generic facade Nova uses — `createNovaWsFacade` takes an
+        // `UpstreamLiveClient`, not a Nova client, so every legacy
+        // `upstreamWs` call site drives the cascade unchanged.
+        const cascadedFacade = createNovaWsFacade(cascadedClient) as unknown as WebSocket;
+        resolve(cascadedFacade);
+        return;
+      } catch (err) {
+        // Fail LOUDLY. A cascaded session that cannot open must not silently
+        // fall through to the dead Vertex path below — that would turn a
+        // named, diagnosable failure into a connection timeout.
+        setupComplete = false;
+        clearTimeout(connectionTimeout);
+        session.upstreamClient = null;
+        console.error(
+          `[VTID-03683] cascaded connect FAILED for session ${session.sessionId}: ${(err as Error).message}`,
+        );
+        void emitOasisEvent({
+          type: 'orb.upstream.cascaded.connect_failed',
+          vtid: 'VTID-03683',
+          payload: {
+            session_id: session.sessionId,
+            provider: 'cascaded',
+            lang: session.lang || null,
+            error: (err as Error).message,
+            // `cascaded_not_configured` / `cascade_language_unsupported` /
+            // an AWS AccessDenied all surface here distinctly — the IAM case
+            // is the one most likely to bite first (VTID-03665 shape).
+            code: (err as { code?: string })?.code ?? null,
+            status: 'error',
+          } as any,
+        } as any).catch(() => { /* best-effort */ });
+        reject(err as Error);
+        return;
+      }
+    }
+
     if (__upstreamDecision.provider === 'nova_sonic') {
       try {
         const novaCfg = getNovaSonicConfig(process.env);

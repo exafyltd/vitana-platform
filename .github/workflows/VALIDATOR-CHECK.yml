@@ -16,12 +16,24 @@ on:
     # That never surfaced because the file was unparseable YAML and the workflow
     # never started (see this VTID). Fixing the parse without scoping the trigger
     # would put an unactionable red X on most PRs in this repo — which is how a
-    # governance gate gets muted a second time. Keep this list in step with the
-    # profile guards in the "Enforce Path Ownership Guard" step.
+    # governance gate gets muted a second time.
+    #
+    # VTID-03696: this list is now the gate's REMIT — the guard judges exactly
+    # these trees and reports everything else as "not judged" instead of
+    # rejecting it. `scripts/ci/validator-path-guard.cjs` holds the same list in
+    # `REMIT` and a test fails if the two drift, so they can no longer disagree
+    # the way they did between VTID-03525 and VTID-03696.
+    #
+    # `services/gateway/test/**` was added here by VTID-03696: VTID-03549 had
+    # already allowlisted it in the profile (the Acceptance Mapping Gate REQUIRES
+    # TEST: tokens and those jest suites live there) but never added it to the
+    # trigger, so a tests-only PR was allowed by the profile and never triggered
+    # the gate that demanded it.
     paths:
       - 'services/gateway/src/**'
       - 'services/gateway/dist/**'
       - 'services/gateway/openapi/**'
+      - 'services/gateway/test/**'
       - 'docs/validation/**'
 
 jobs:
@@ -54,9 +66,30 @@ jobs:
       - name: Extract VTID + Validation Profile
         id: meta
         run: |
+          # VTID-03696 — the body fallback must be a DECLARATION, not a prose
+          # mention.
+          #
+          # This used to take the first `VTID-\d+` appearing anywhere in the
+          # body. Every later gate keys off it — most importantly the Evidence
+          # Pack Gate, which demands `docs/validation/$VTID/`. So a PR that
+          # merely CITES an older VTID as background had its evidence directory
+          # silently pointed at unrelated, already-shipped work.
+          #
+          # Measured on PR #3144: the first VTID- in the body was VTID-03495
+          # (the Polly provider, cited as context), and the gate would have
+          # demanded docs/validation/VTID-03495/. Creating that directory to go
+          # green would have filed evidence for this PR under someone else's
+          # VTID — a green check attached to the wrong work.
+          #
+          # The title remains the primary source (the Merge Deploy Gate already
+          # requires the VTID there). The body fallback now requires an explicit
+          # `VTID: VTID-XXXXX` line.
           VTID="$(grep -Eo 'VTID-[0-9]{4,5}' /tmp/pr_title.txt | head -n 1)"
-          test -n "$VTID" || VTID="$(grep -Eo 'VTID-[0-9]{4,5}' /tmp/pr_body.txt | head -n 1)"
-          test -n "$VTID" || (echo "REJECTED: VTID missing from title/body" && exit 10)
+          if [ -z "$VTID" ]; then
+            VTID="$(grep -Eo '^[[:space:]]*VTID:[[:space:]]*VTID-[0-9]{4,5}' /tmp/pr_body.txt \
+                    | grep -Eo 'VTID-[0-9]{4,5}' | head -n 1)"
+          fi
+          test -n "$VTID" || (echo "REJECTED: no VTID in the title, and no explicit 'VTID: VTID-XXXXX' line in the body" && exit 10)
 
           PROFILE="$(grep -Eo 'VALIDATION_PROFILE:\s*[a-zA-Z0-9_/-]+' /tmp/pr_body.txt | head -n 1 | awk '{print $2}')"
           test -n "$PROFILE" || (echo "REJECTED: VALIDATION_PROFILE missing in PR body" && exit 11)
@@ -89,41 +122,22 @@ jobs:
       - name: Enforce Path Ownership Guard (profile-based)
         env:
           PROFILE: ${{ steps.meta.outputs.PROFILE }}
+        # VTID-03696 — the logic moved into `scripts/ci/validator-path-guard.cjs`
+        # so it can be unit-tested. This step had been silently broken twice, and
+        # BOTH times it was a parsing trap rather than a logic error: a heredoc
+        # that terminated the YAML block scalar (VTID-03505), and a multi-line
+        # awk program that was invalid syntax and so failed every PR regardless
+        # of content (VTID-03549). Neither is visible when reading the YAML and
+        # neither had a test. Inline shell is where that class of bug lives.
+        #
+        # Exit codes are unchanged in meaning except 20, which was split:
+        #   20 committed .env      (was: .env OR lockfile)
+        #   21 unknown profile
+        #   22 in-remit file outside the profile allowlist
+        #   23 lockfile without a DEPENDENCY_CHANGE: declaration (new)
         run: |
-          deny_common='(^|/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$|\.env$'
-          if grep -Eqi "$deny_common" /tmp/changed_files.txt; then
-            echo "REJECTED: lockfile/.env change not allowed"
-            grep -Ein "$deny_common" /tmp/changed_files.txt | head -n 25
-            exit 20
-          fi
-
-          # VTID-03549: these guards previously used a multi-line awk program
-          # with a newline directly after `!(` — invalid awk syntax, so awk
-          # exited 1 and (under bash -e) the gate failed on EVERY PR it
-          # triggered on, regardless of content. grep -Ev expresses the same
-          # allowlist without the parse trap; it exits 1 when no violations
-          # remain, which is success here — hence `|| true`.
-          if [ "$PROFILE" = "command_hub_frontend" ]; then
-            # allow only the two command-hub frontend trees + docs/validation for evidence
-            grep -Ev '^(services/gateway/src/frontend/command-hub/|services/gateway/dist/frontend/command-hub/|docs/validation/)' \
-              /tmp/changed_files.txt > /tmp/violations.txt || true
-          elif [ "$PROFILE" = "gateway_backend" ]; then
-            # services/gateway/test/ is allowlisted too (VTID-03549): the
-            # Acceptance Mapping Gate below REQUIRES TEST: tokens, and those
-            # jest suites live in services/gateway/test/ — a profile that
-            # forbids shipping the tests it demands can never be satisfied.
-            grep -Ev '^(services/gateway/src/|services/gateway/dist/|services/gateway/test/|services/gateway/openapi/|docs/validation/)' \
-              /tmp/changed_files.txt > /tmp/violations.txt || true
-          else
-            echo "REJECTED: unknown VALIDATION_PROFILE=$PROFILE"
-            exit 21
-          fi
-
-          if [ -s /tmp/violations.txt ]; then
-            echo "REJECTED: files outside allowlist (showing first 25)"
-            head -n 25 /tmp/violations.txt
-            exit 22
-          fi
+          node scripts/ci/validator-path-guard.cjs \
+            /tmp/changed_files.txt "$PROFILE" /tmp/pr_body.txt
 
       - name: Evidence Pack Gate
         env:
@@ -183,7 +197,29 @@ jobs:
           # arrives at column 0 and the heredoc works. `<<PY` is deliberately
           # UNQUOTED so bash expands $p and $f into the Python source.
           #
-          # Scan only changed files for forbidden patterns
+          # VTID-03696 — scan only the browser-served surface.
+          #
+          # This used to scan EVERY changed file. Those patterns only mean
+          # something in code a browser executes; against YAML, lockfiles,
+          # markdown and CI scripts they are just strings. Two false positives,
+          # one of them a trap:
+          #
+          #   * THIS FILE matched `<script`, `.style` and `unsafe-inline` —
+          #     because the PATTERNS list below IS those strings. The gate flags
+          #     its own source, so the CSP gate rejected any PR that edits
+          #     VALIDATOR-CHECK.yml: the validator could not be modified without
+          #     the validator failing the change. It stayed hidden because the
+          #     file is rarely touched and, pre-VTID-03696, the path guard
+          #     rejected such PRs several steps earlier anyway.
+          #   * services/gateway/package-lock.json matched the CDN-asset URL
+          #     pattern on a registry URL. A lockfile is not served to anyone.
+          #
+          # Scoping is by construction (the command-hub frontend trees) rather
+          # than by luck. See `CSP_SURFACE` in the guard module.
+          node scripts/ci/validator-path-guard.cjs --csp-targets \
+            /tmp/changed_files.txt > /tmp/csp_files.txt
+          echo "CSP scan targets: $(wc -l < /tmp/csp_files.txt)"
+
           PATTERNS=(
             "<script(?![^>]*\\bsrc=)"
             "style\\s*="
@@ -210,7 +246,7 @@ jobs:
                 FAIL=1
               fi
             done
-          done < /tmp/changed_files.txt
+          done < /tmp/csp_files.txt
           [ "$FAIL" -eq 0 ] || exit 50
 
       - name: Build Gate (profile-based)
@@ -235,8 +271,28 @@ jobs:
         env:
           VTID: ${{ steps.meta.outputs.VTID }}
         run: |
-          # If routes touched, enforce markers in acceptance.md
-          if grep -qE '^services/gateway/src/routes/|^services/gateway/src/(index|app)\.ts' /tmp/changed_files.txt; then
+          # VTID-03696 — trigger on an ADDED ROUTE, not on a touched route FILE.
+          #
+          # This used to fire whenever anything under src/routes/ (or
+          # src/index.ts / src/app.ts) changed, and then demand ROUTE_MOUNT: /
+          # FINAL_URL: / CURL_PROOF:. But editing a route file is not the same
+          # as adding a route — VTID-03692 changed a branch inside an existing
+          # WebSocket handler in routes/orb-live.ts and added no route at all.
+          #
+          # Demanding a curl proof for a route that does not exist does not
+          # produce evidence, it produces INVENTED evidence: the only way to go
+          # green is to write down a URL nobody can call. A gate that can only
+          # be passed by making something up launders a guess into a green
+          # check, which is worse than not having the gate.
+          #
+          # When a route IS added the requirement is unchanged and still binds.
+          BASE="${{ github.base_ref }}"
+          git diff "origin/$BASE"...HEAD -- \
+            'services/gateway/src/routes/' \
+            'services/gateway/src/index.ts' \
+            'services/gateway/src/app.ts' > /tmp/route_diff.txt || true
+
+          if node scripts/ci/validator-path-guard.cjs --route-evidence-required /tmp/route_diff.txt; then
             A="docs/validation/$VTID/acceptance.md"
             grep -q "ROUTE_MOUNT:" "$A" || (echo "REJECTED: missing ROUTE_MOUNT:" && exit 70)
             grep -q "FINAL_URL:"   "$A" || (echo "REJECTED: missing FINAL_URL:" && exit 71)
