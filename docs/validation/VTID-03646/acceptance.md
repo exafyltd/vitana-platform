@@ -80,7 +80,8 @@ TEST: services/gateway/test/services/conversation/compute-greeting-decision.gold
 
 ## OASIS_PROOF
 
-This changes what `orb.live.diag` emits, so the deploy is verifiable from
+OASIS_PROOF: this changes what `orb.live.diag` emits (topic unchanged, new
+`wake_opener`/`stage` values below), so the deploy is verifiable from
 telemetry alone — and, until now, `newday_overview` has NEVER appeared there:
 
 ```sql
