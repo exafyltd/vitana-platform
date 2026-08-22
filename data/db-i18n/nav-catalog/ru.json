@@ -1,0 +1,12 @@
+{
+  "surface": "nav-catalog",
+  "locale": "ru",
+  "source_locale": "de",
+  "generated_at": "2026-08-22T05:31:57.803Z",
+  "field_order": [
+    "title",
+    "description",
+    "when_to_visit"
+  ],
+  "entries": {}
+}
