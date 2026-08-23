@@ -20,6 +20,7 @@ import * as crypto from 'crypto';
 import { getSupabase } from '../lib/supabase';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import * as repo from '../services/ai-assistants/ai-assistants-repository';
 
 const router = Router();
 const VTID = 'VTID-02403';
@@ -170,7 +171,7 @@ async function logConsent(params: {
   const supabase = getSupabase();
   if (!supabase) return;
   try {
-    await supabase.from('ai_consent_log').insert({
+    await repo.insertConsentLog(supabase, {
       user_id: params.user_id,
       tenant_id: params.tenant_id,
       provider: params.provider,
@@ -199,32 +200,20 @@ router.get('/providers', async (req: AuthenticatedRequest, res: Response) => {
   if (!tenantId) return res.status(400).json({ ok: false, error: 'TENANT_NOT_FOUND' });
 
   // Catalog
-  const { data: registry, error: regErr } = await supabase
-    .from('connector_registry')
-    .select('id, display_name, description, auth_type, capabilities, docs_url, enabled')
-    .eq('category', 'ai_assistant')
-    .eq('enabled', true)
-    .order('display_name', { ascending: true });
+  const { data: registry, error: regErr } = await repo.fetchAiConnectorRegistry(supabase);
   if (regErr) {
     console.error(`${LOG_PREFIX} GET /providers registry err`, regErr.message);
     return res.status(500).json({ ok: false, error: regErr.message });
   }
 
   // Tenant policy
-  const { data: policies } = await supabase
-    .from('ai_provider_policies')
-    .select('provider, allowed, allowed_models, cost_cap_usd_month')
-    .eq('tenant_id', tenantId);
+  const { data: policies } = await repo.fetchProviderPoliciesForTenant(supabase, tenantId);
   const policyByProvider = new Map(
     (policies ?? []).map((p) => [p.provider, p])
   );
 
   // Active connections for this user
-  const { data: connections } = await supabase
-    .from('user_connections')
-    .select('id, connector_id, is_active, connected_at')
-    .eq('user_id', userId)
-    .eq('category', 'ai_assistant');
+  const { data: connections } = await repo.fetchAiConnectionsForProviders(supabase, userId);
   const connByProvider = new Map(
     (connections ?? []).filter((c) => c.is_active).map((c) => [c.connector_id, c])
   );
@@ -233,10 +222,7 @@ router.get('/providers', async (req: AuthenticatedRequest, res: Response) => {
   const connectionIds = (connections ?? []).map((c) => c.id);
   let credsByConnection = new Map<string, { last_verified_at: string | null; last_verify_status: string | null }>();
   if (connectionIds.length > 0) {
-    const { data: creds } = await supabase
-      .from('ai_assistant_credentials')
-      .select('connection_id, last_verified_at, last_verify_status')
-      .in('connection_id', connectionIds);
+    const { data: creds } = await repo.fetchCredentialsMetaForConnections(supabase, connectionIds);
     credsByConnection = new Map(
       (creds ?? []).map((c) => [c.connection_id, { last_verified_at: c.last_verified_at, last_verify_status: c.last_verify_status }])
     );
@@ -300,12 +286,7 @@ router.post('/apikey/:provider', async (req: AuthenticatedRequest, res: Response
   if (!tenantId) return res.status(400).json({ ok: false, error: 'TENANT_NOT_FOUND' });
 
   // Tenant must allow this provider
-  const { data: policy } = await supabase
-    .from('ai_provider_policies')
-    .select('allowed')
-    .eq('tenant_id', tenantId)
-    .eq('provider', provider)
-    .maybeSingle();
+  const { data: policy } = await repo.fetchProviderPolicy(supabase, tenantId, provider);
   if (!policy || policy.allowed !== true) {
     return res.status(403).json({ ok: false, error: 'PROVIDER_NOT_ALLOWED_FOR_TENANT' });
   }
@@ -321,47 +302,31 @@ router.post('/apikey/:provider', async (req: AuthenticatedRequest, res: Response
   const key_last4 = apiKey.slice(-4);
 
   // Upsert connection
-  const { data: existing } = await supabase
-    .from('user_connections')
-    .select('id')
-    .eq('tenant_id', tenantId)
-    .eq('user_id', userId)
-    .eq('connector_id', provider)
-    .eq('category', 'ai_assistant')
-    .is('provider_user_id', null)
-    .limit(1)
-    .maybeSingle();
+  const { data: existing } = await repo.fetchExistingApiKeyConnection(supabase, tenantId, userId, provider);
 
   let connectionId: string;
   if (existing?.id) {
     connectionId = existing.id;
-    const { error: updErr } = await supabase
-      .from('user_connections')
-      .update({
-        is_active: true,
-        connected_at: new Date().toISOString(),
-        disconnected_at: null,
-        last_error: null,
-      })
-      .eq('id', connectionId);
+    const { error: updErr } = await repo.updateAiConnection(supabase, connectionId, {
+      is_active: true,
+      connected_at: new Date().toISOString(),
+      disconnected_at: null,
+      last_error: null,
+    });
     if (updErr) {
       console.error(`${LOG_PREFIX} POST /apikey/${provider} update err`, updErr.message);
       return res.status(500).json({ ok: false, error: updErr.message });
     }
   } else {
-    const { data: inserted, error: insErr } = await supabase
-      .from('user_connections')
-      .insert({
-        tenant_id: tenantId,
-        user_id: userId,
-        connector_id: provider,
-        category: 'ai_assistant',
-        display_name: cfg.display_name,
-        is_active: true,
-        connected_at: new Date().toISOString(),
-      })
-      .select('id')
-      .single();
+    const { data: inserted, error: insErr } = await repo.insertAiConnection(supabase, {
+      tenant_id: tenantId,
+      user_id: userId,
+      connector_id: provider,
+      category: 'ai_assistant',
+      display_name: cfg.display_name,
+      is_active: true,
+      connected_at: new Date().toISOString(),
+    });
     if (insErr || !inserted) {
       console.error(`${LOG_PREFIX} POST /apikey/${provider} insert err`, insErr?.message);
       return res.status(500).json({ ok: false, error: insErr?.message || 'INSERT_FAILED' });
@@ -370,23 +335,18 @@ router.post('/apikey/:provider', async (req: AuthenticatedRequest, res: Response
   }
 
   // Upsert credentials (service role)
-  const { error: credErr } = await supabase
-    .from('ai_assistant_credentials')
-    .upsert(
-      {
-        connection_id: connectionId,
-        encrypted_key: `\\x${encrypted.ciphertext.toString('hex')}`,
-        encryption_iv: `\\x${encrypted.iv.toString('hex')}`,
-        encryption_tag: `\\x${encrypted.tag.toString('hex')}`,
-        key_prefix,
-        key_last4,
-        last_verified_at: null,
-        last_verify_status: null,
-        last_verify_error: null,
-        verify_failure_count: 0,
-      },
-      { onConflict: 'connection_id' }
-    );
+  const { error: credErr } = await repo.upsertAiCredentials(supabase, {
+    connection_id: connectionId,
+    encrypted_key: `\\x${encrypted.ciphertext.toString('hex')}`,
+    encryption_iv: `\\x${encrypted.iv.toString('hex')}`,
+    encryption_tag: `\\x${encrypted.tag.toString('hex')}`,
+    key_prefix,
+    key_last4,
+    last_verified_at: null,
+    last_verify_status: null,
+    last_verify_error: null,
+    verify_failure_count: 0,
+  });
   if (credErr) {
     console.error(`${LOG_PREFIX} POST /apikey/${provider} cred upsert err`, credErr.message);
     return res.status(500).json({ ok: false, error: credErr.message });
@@ -419,23 +379,11 @@ router.post('/verify/:provider', async (req: AuthenticatedRequest, res: Response
   }
   const cfg = PROVIDERS[provider];
 
-  const { data: conn, error: connErr } = await supabase
-    .from('user_connections')
-    .select('id, is_active')
-    .eq('user_id', userId)
-    .eq('connector_id', provider)
-    .eq('category', 'ai_assistant')
-    .order('connected_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const { data: conn, error: connErr } = await repo.fetchLatestConnectionForVerify(supabase, userId, provider);
   if (connErr) return res.status(500).json({ ok: false, error: connErr.message });
   if (!conn) return res.status(404).json({ ok: false, error: 'CONNECTION_NOT_FOUND' });
 
-  const { data: cred, error: credErr } = await supabase
-    .from('ai_assistant_credentials')
-    .select('encrypted_key, encryption_iv, encryption_tag, verify_failure_count')
-    .eq('connection_id', conn.id)
-    .maybeSingle();
+  const { data: cred, error: credErr } = await repo.fetchCredentialForVerify(supabase, conn.id);
   if (credErr) return res.status(500).json({ ok: false, error: credErr.message });
   if (!cred) return res.status(404).json({ ok: false, error: 'CREDENTIAL_NOT_FOUND' });
 
@@ -490,14 +438,11 @@ router.post('/verify/:provider', async (req: AuthenticatedRequest, res: Response
     last_verify_error: errorMessage,
     verify_failure_count: newFailureCount,
   };
-  await supabase.from('ai_assistant_credentials').update(updates).eq('connection_id', conn.id);
+  await repo.updateAiCredentials(supabase, conn.id, updates);
 
   // Deactivate after 3 consecutive failures
   if (verifyStatus !== 'ok' && newFailureCount >= 3) {
-    await supabase
-      .from('user_connections')
-      .update({ is_active: false, last_error: `verify_${verifyStatus}` })
-      .eq('id', conn.id);
+    await repo.updateAiConnection(supabase, conn.id, { is_active: false, last_error: `verify_${verifyStatus}` });
   }
 
   // Tenant id for audit/oasis
@@ -566,21 +511,13 @@ router.get('/connections', async (req: AuthenticatedRequest, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
-  const { data: conns, error } = await supabase
-    .from('user_connections')
-    .select('id, connector_id, is_active, connected_at, disconnected_at, last_error')
-    .eq('user_id', userId)
-    .eq('category', 'ai_assistant')
-    .order('connected_at', { ascending: false });
+  const { data: conns, error } = await repo.fetchAiConnectionsList(supabase, userId);
   if (error) return res.status(500).json({ ok: false, error: error.message });
 
   const ids = (conns ?? []).map((c) => c.id);
   let credMap = new Map<string, { key_prefix: string; key_last4: string; last_verified_at: string | null; last_verify_status: string | null }>();
   if (ids.length > 0) {
-    const { data: creds } = await supabase
-      .from('ai_assistant_credentials')
-      .select('connection_id, key_prefix, key_last4, last_verified_at, last_verify_status')
-      .in('connection_id', ids);
+    const { data: creds } = await repo.fetchCredentialsMetaList(supabase, ids);
     credMap = new Map(
       (creds ?? []).map((c) => [
         c.connection_id,
@@ -627,35 +564,22 @@ router.delete('/:provider', async (req: AuthenticatedRequest, res: Response) => 
     return res.status(404).json({ ok: false, error: 'UNKNOWN_PROVIDER' });
   }
 
-  const { data: conn } = await supabase
-    .from('user_connections')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('connector_id', provider)
-    .eq('category', 'ai_assistant')
-    .eq('is_active', true)
-    .maybeSingle();
+  const { data: conn } = await repo.fetchActiveConnectionForDisconnect(supabase, userId, provider);
   if (!conn) return res.status(404).json({ ok: false, error: 'CONNECTION_NOT_FOUND' });
 
-  const { error: updErr } = await supabase
-    .from('user_connections')
-    .update({ is_active: false, disconnected_at: new Date().toISOString() })
-    .eq('id', conn.id);
+  const { error: updErr } = await repo.updateAiConnection(supabase, conn.id, { is_active: false, disconnected_at: new Date().toISOString() });
   if (updErr) return res.status(500).json({ ok: false, error: updErr.message });
 
   // Purge encrypted_key — overwrite with all-zero bytea (preserve row for audit)
   const zeros = `\\x${'00'.repeat(32)}`;
   const zeroIv = `\\x${'00'.repeat(12)}`;
   const zeroTag = `\\x${'00'.repeat(16)}`;
-  await supabase
-    .from('ai_assistant_credentials')
-    .update({
-      encrypted_key: zeros,
-      encryption_iv: zeroIv,
-      encryption_tag: zeroTag,
-      last_verify_status: 'purged',
-    })
-    .eq('connection_id', conn.id);
+  await repo.updateAiCredentials(supabase, conn.id, {
+    encrypted_key: zeros,
+    encryption_iv: zeroIv,
+    encryption_tag: zeroTag,
+    last_verify_status: 'purged',
+  });
 
   const tenantId = tokenTenantId ?? (await resolveTenantId(userId));
   emitOasisEvent({
