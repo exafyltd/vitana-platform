@@ -96,27 +96,97 @@ describe('vertexUnavailable — the default (no-request) path also forces Nova',
   });
 });
 
-describe('vertexUnavailable — does NOT override deliberate operator gates', () => {
-  it('Nova disabled, explicit request: still vertex even with vertexUnavailable=true (nothing to force through)', () => {
+describe('vertexUnavailable — VTID-03703: now forces through EVERY gate, none excepted', () => {
+  // VTID-03703 corrects the prior (wrong) design in this describe block.
+  // Live traffic (VTID-03688) proved "nova_disabled"/"nova_not_allowlisted"
+  // are NOT safe to still pin to Vertex once Vertex is dead: real sessions
+  // reached a genuine Vertex connect this way and died with upstream code
+  // 1007. There is no longer any gate that may return `provider: 'vertex'`
+  // while `vertexUnavailable` is true — see the new assertions below.
+
+  it('Nova disabled, explicit request, unset (default): still vertex — unchanged behavior', () => {
     const d = selectUpstreamProvider({
       ...base,
       envProviderOverride: 'nova_sonic',
-      vertexUnavailable: true,
       nova: { enabled: false, identityAllowed: true, languageSupported: true, runtime: 'aws-ecs' },
     });
     expect(d.provider).toBe('vertex');
     expect(d.reason).toBe('nova_disabled');
   });
 
-  it('identity not allowlisted, explicit request: still vertex even with vertexUnavailable=true — an operator "no" is not a technical gate', () => {
+  it('Nova disabled, explicit request, vertexUnavailable=true: forced onto Nova, never Vertex', () => {
+    const d = selectUpstreamProvider({
+      ...base,
+      envProviderOverride: 'nova_sonic',
+      vertexUnavailable: true,
+      nova: { enabled: false, identityAllowed: true, languageSupported: true, runtime: 'aws-ecs' },
+    });
+    expect(d.provider).toBe('nova_sonic');
+    expect(d.reason).toBe('nova_forced_vertex_unavailable');
+    expect(d.novaReady).toBe(false);
+  });
+
+  it('Nova disabled, default (no-request) path, vertexUnavailable=true: forced onto Nova, never falls through to a vertex default', () => {
+    const d = selectUpstreamProvider({
+      ...base,
+      vertexUnavailable: true,
+      nova: { enabled: false, identityAllowed: true, languageSupported: true, runtime: 'aws-ecs' },
+    });
+    expect(d.provider).toBe('nova_sonic');
+    expect(d.reason).toBe('nova_forced_vertex_unavailable');
+  });
+
+  it('Nova disabled, language a cascade already covers, vertexUnavailable=true: routes to the cascade, not a blind forced Nova', () => {
+    const d = selectUpstreamProvider({
+      ...base,
+      vertexUnavailable: true,
+      nova: { enabled: false, identityAllowed: true, languageSupported: false, runtime: 'aws-ecs' },
+      cascade: { enabled: true, languageSupported: true },
+    });
+    expect(d.provider).toBe('cascaded');
+    expect(d.reason).toBe('cascaded_language_rescue');
+  });
+
+  it('Nova disabled, no nova context at all, vertexUnavailable=true: forced onto Nova blind rather than Vertex', () => {
+    const d = selectUpstreamProvider({
+      ...base,
+      envProviderOverride: 'nova_sonic',
+      vertexUnavailable: true,
+    });
+    expect(d.provider).toBe('nova_sonic');
+    expect(d.reason).toBe('nova_forced_vertex_unavailable');
+  });
+
+  it('identity not allowlisted, explicit request, unset (default): still vertex — unchanged behavior', () => {
+    const d = selectUpstreamProvider({
+      ...base,
+      envProviderOverride: 'nova_sonic',
+      nova: { enabled: true, identityAllowed: false, languageSupported: true, runtime: 'aws-ecs' },
+    });
+    expect(d.provider).toBe('vertex');
+    expect(d.reason).toBe('nova_not_allowlisted');
+  });
+
+  it('identity not allowlisted, explicit request, vertexUnavailable=true: forced onto Nova — a dead Vertex outranks canary policy', () => {
     const d = selectUpstreamProvider({
       ...base,
       envProviderOverride: 'nova_sonic',
       vertexUnavailable: true,
       nova: { enabled: true, identityAllowed: false, languageSupported: true, runtime: 'aws-ecs' },
     });
-    expect(d.provider).toBe('vertex');
-    expect(d.reason).toBe('nova_not_allowlisted');
+    expect(d.provider).toBe('nova_sonic');
+    expect(d.reason).toBe('nova_forced_vertex_unavailable');
+    expect(d.novaReady).toBe(false);
+  });
+
+  it('identity not allowlisted, default (no-request) path, vertexUnavailable=true: forced onto Nova, never falls through to a vertex default', () => {
+    const d = selectUpstreamProvider({
+      ...base,
+      vertexUnavailable: true,
+      nova: { enabled: true, identityAllowed: false, languageSupported: true, runtime: 'aws-ecs' },
+    });
+    expect(d.provider).toBe('nova_sonic');
+    expect(d.reason).toBe('nova_forced_vertex_unavailable');
   });
 
   it('all gates pass normally: vertexUnavailable=true does not change the happy-path reason', () => {
@@ -128,5 +198,16 @@ describe('vertexUnavailable — does NOT override deliberate operator gates', ()
     expect(d.provider).toBe('nova_sonic');
     expect(d.reason).toBe('nova_canary_allowlisted');
     expect(d.novaReady).toBe(true);
+  });
+
+  it('env_explicit_vertex is untouched — the emergency-rollback escape hatch is a deliberate operator action, not automatic session routing', () => {
+    const d = selectUpstreamProvider({
+      ...base,
+      envProviderOverride: 'vertex',
+      vertexUnavailable: true,
+      nova: { enabled: true, identityAllowed: true, languageSupported: true, runtime: 'aws-ecs' },
+    });
+    expect(d.provider).toBe('vertex');
+    expect(d.reason).toBe('env_explicit_vertex');
   });
 });
