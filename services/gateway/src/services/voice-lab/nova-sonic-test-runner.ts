@@ -522,14 +522,25 @@ export async function runNovaSonicTestSuite(options: {
       : { status: 'fail', detail: `shapesOk=${shapesOk} normOk=${normOk}` };
   }));
 
-  checks.push(await runCheck('voice_mapping', 'Voice mapping (persona × language)', () => {
+  checks.push(await runCheck('voice_mapping', 'Voice mapping (one female voice per language)', () => {
+    // VTID-03704 — persona must NOT change the voice any more. That is asserted
+    // here as an equality between two personas rather than as "devon → lennart",
+    // because the persona-split is exactly what made the voice differ across the
+    // sign-in boundary (anonymous has no persona, a signed-in user may carry
+    // `devon`). `pt` and `sr` both resolve null: `pt` because Nova answered a
+    // live Portuguese session in English and now routes to the Polly cascade,
+    // `sr` because Polly has no Serbian voice, so it stays on Nova via the
+    // documented fallback.
     const ok =
       resolveNovaSonicVoice({ language: 'de', persona: 'vitana' }) === 'tina' &&
-      resolveNovaSonicVoice({ language: 'de', persona: 'devon' }) === 'lennart' &&
-      resolveNovaSonicVoice({ language: 'en', persona: 'vitana' }) === 'tina' &&
+      resolveNovaSonicVoice({ language: 'de', persona: 'devon' }) === 'tina' &&
+      resolveNovaSonicVoice({ language: 'en', persona: 'atlas' }) === 'tina' &&
+      resolveNovaSonicVoice({ language: 'fr', persona: 'devon' }) === 'ambre' &&
+      resolveNovaSonicVoice({ language: 'es', persona: 'devon' }) === 'lupe' &&
+      resolveNovaSonicVoice({ language: 'pt', persona: 'vitana' }) === null &&
       resolveNovaSonicVoice({ language: 'sr', persona: 'vitana' }) === null;
     return ok
-      ? { status: 'pass', detail: 'de→tina/lennart, en→tina/lennart, sr→null (fallback)' }
+      ? { status: 'pass', detail: 'de/en→tina, fr→ambre, es→lupe (persona-independent); pt+sr→null' }
       : { status: 'fail', detail: 'unexpected voice mapping' };
   }));
 

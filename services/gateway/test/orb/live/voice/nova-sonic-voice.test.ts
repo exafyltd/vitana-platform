@@ -14,11 +14,28 @@ describe('resolveNovaSonicVoice', () => {
     expect(resolveNovaSonicVoice({ language: 'es', persona: 'vitana' })).toBe('lupe');
   });
 
-  it('maps masculine personas (devon, atlas) per language', () => {
-    expect(resolveNovaSonicVoice({ language: 'en', persona: 'devon' })).toBe('lennart');
-    expect(resolveNovaSonicVoice({ language: 'de', persona: 'devon' })).toBe('lennart');
-    expect(resolveNovaSonicVoice({ language: 'fr', persona: 'atlas' })).toBe('florian');
-    expect(resolveNovaSonicVoice({ language: 'es', persona: 'atlas' })).toBe('carlos');
+  // VTID-03704 — persona NO LONGER selects the voice. This test used to assert
+  // devon/atlas → lennart/florian/carlos; that split is what made the voice
+  // change across the sign-in boundary (an anonymous session has no persona and
+  // resolved feminine; a signed-in user carrying `devon` resolved masculine), so
+  // it is now asserted as an EQUALITY across personas rather than deleted. A
+  // deleted test would let the split come back unnoticed.
+  it('ignores persona — every persona gets the same female voice', () => {
+    for (const persona of ['vitana', 'devon', 'atlas', 'sage', 'mira', 'zzz']) {
+      expect(resolveNovaSonicVoice({ language: 'en', persona })).toBe('tina');
+      expect(resolveNovaSonicVoice({ language: 'de', persona })).toBe('tina');
+      expect(resolveNovaSonicVoice({ language: 'fr', persona })).toBe('ambre');
+      expect(resolveNovaSonicVoice({ language: 'es', persona })).toBe('lupe');
+    }
+  });
+
+  it('never returns one of the retired masculine voices', () => {
+    for (const lang of ['en', 'de', 'fr', 'es']) {
+      for (const persona of ['devon', 'atlas', 'vitana']) {
+        expect(['lennart', 'florian', 'carlos', 'leo'])
+          .not.toContain(resolveNovaSonicVoice({ language: lang, persona }));
+      }
+    }
   });
 
   it('sage and mira use feminine voices', () => {
@@ -32,7 +49,7 @@ describe('resolveNovaSonicVoice', () => {
   });
 
   it('handles regional tags and casing', () => {
-    expect(resolveNovaSonicVoice({ language: 'de-DE', persona: 'devon' })).toBe('lennart');
+    expect(resolveNovaSonicVoice({ language: 'de-DE', persona: 'devon' })).toBe('tina');
     expect(resolveNovaSonicVoice({ language: 'EN_us', persona: 'vitana' })).toBe('tina');
   });
 
@@ -41,18 +58,17 @@ describe('resolveNovaSonicVoice', () => {
     expect(resolveNovaSonicVoice({ language: 'ru', persona: 'devon' })).toBeNull();
   });
 
-  // VTID-03672 — pt moved from "falls through to Vertex" to a served Nova
-  // language. These assert the two halves that can independently break: the
-  // language must be admitted by the gate, AND it must resolve to Nova's real
-  // pt-BR voices. A wrong-but-plausible id (Nova 1's table, another locale's
-  // voice) fails at stream open, in production, for exactly the users whose
-  // language just changed.
-  it('serves pt with Nova\'s documented pt-BR voices', () => {
-    expect(resolveNovaSonicVoice({ language: 'pt', persona: 'vitana' })).toBe('carolina');
-    expect(resolveNovaSonicVoice({ language: 'pt', persona: 'devon' })).toBe('leo');
-    // pt-BR specifically — the app's Portuguese catalog is Brazilian, and a
-    // pt-PT voice would read Brazilian copy in the European variant.
-    expect(resolveNovaSonicVoice({ language: 'pt-BR', persona: 'vitana' })).toBe('carolina');
+  // VTID-03704 — pt REVERSED out of Nova. VTID-03672 admitted it on the
+  // strength of Bedrock accepting `carolina`/`leo` as voiceIds, while its own
+  // note said end-to-end Portuguese generation was never verified. A live
+  // production session then answered a `pt` user in ENGLISH. Portuguese now
+  // routes to the Polly cascade (Transcribe pt-BR + Polly Camila) instead, so
+  // Nova must refuse it here — refusing is what makes the cascade the taken
+  // path rather than a branch nothing reaches.
+  it('refuses pt so it routes to the Polly cascade instead', () => {
+    expect(resolveNovaSonicVoice({ language: 'pt', persona: 'vitana' })).toBeNull();
+    expect(resolveNovaSonicVoice({ language: 'pt-BR', persona: 'vitana' })).toBeNull();
+    expect(resolveNovaSonicVoice({ language: 'pt', persona: 'devon' })).toBeNull();
   });
 
   it('still refuses the languages Nova genuinely does not speak', () => {
@@ -66,7 +82,7 @@ describe('resolveNovaSonicVoice', () => {
 
   it('never returns a Gemini voice ID', () => {
     const geminiVoices = ['Kore', 'Charon', 'Aoede', 'Fenrir', 'Callirrhoe', 'Achernar'];
-    for (const lang of ['en', 'de', 'fr', 'es', 'pt']) {
+    for (const lang of ['en', 'de', 'fr', 'es']) {
       for (const persona of ['vitana', 'devon', 'sage', 'atlas', 'mira']) {
         const v = resolveNovaSonicVoice({ language: lang, persona });
         expect(geminiVoices).not.toContain(v);

@@ -16488,7 +16488,14 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     emitLiveSessionEvent('vtid.live.session.start', {
       session_id: sessionId,
       lang,
+      // VTID-03704 — `voice` here is the LIVE-API (Gemini-era) voice name and is
+      // NOT what Nova speaks with; Nova resolves its own id separately. Keeping
+      // it alone made "which voice did this user actually hear?" unanswerable,
+      // which is exactly what the pre/post-login voice report ran into. The
+      // three fields below are the ones that decide the audible voice.
       voice: getLiveApiVoice(lang),
+      nova_voice: resolveNovaSonicVoiceOrFallback({ language: lang, persona: null }).voice,
+      nova_language_supported: isNovaSonicLanguageSupported(lang),
       response_modalities: responseModalities,
       transport: 'websocket',
       // VTID-01224: Include context bootstrap info

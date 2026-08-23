@@ -24,15 +24,18 @@ describe('VTID-03682: Nova voice fallback is explicit', () => {
   it('reports fallback=true for every language with no native Nova voice', () => {
     // These are the languages SUPPORTED_LIVE_LANGUAGES admits but NOVA_VOICES
     // has no entry for — i.e. every language that was silently getting German.
-    for (const lang of ['ru', 'pl', 'sr', 'ar', 'zh']) {
+    for (const lang of ['ru', 'pl', 'sr', 'ar', 'zh', 'pt']) {
       const r = resolveNovaSonicVoiceOrFallback({ language: lang, persona: 'vitana' });
       expect(r.fallback).toBe(true);
       expect(r.voice).toBe(NOVA_SONIC_FALLBACK_VOICE);
     }
   });
 
+  // VTID-03704 — `pt` removed: Nova answered a live Portuguese session in
+  // English, so it is no longer a language Nova speaks and now cascades to
+  // Polly. It belongs in the fallback=true list above, not here.
   it('reports fallback=false for languages Nova actually speaks', () => {
-    for (const lang of ['en', 'de', 'fr', 'es', 'pt']) {
+    for (const lang of ['en', 'de', 'fr', 'es']) {
       const r = resolveNovaSonicVoiceOrFallback({ language: lang, persona: 'vitana' });
       expect(r.fallback).toBe(false);
       expect(r.voice).toBe(resolveNovaSonicVoice({ language: lang, persona: 'vitana' }));

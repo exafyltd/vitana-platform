@@ -1,53 +1,52 @@
 /**
- * BOOTSTRAP-NOVA-SONIC-VOICE (Task 3): application language/persona →
- * Nova 2 Sonic voice ID mapping.
+ * BOOTSTRAP-NOVA-SONIC-VOICE (Task 3): application language → Nova 2 Sonic
+ * voice ID mapping.
  *
  * Nova has its OWN voice catalog — Gemini voice IDs (`Kore`, `Charon`,
- * `Aoede`, …) must never be passed to Nova. Per the plan's language/voice
- * decision: feminine voices for the `vitana`, `sage`, and `mira` personas,
- * masculine voices for `devon` and `atlas`, per canary language:
- *   en → tina / lennart   (user live-test verdict 2026-07-28: en's native
- *                          `tiffany`/`matthew` sounded bad; `tina`/`lennart`
- *                          — Nova's DE voices — sound good and are reused
- *                          for EN content too, at the cost of a German
- *                          accent on English speech)
- *   de → tina / lennart
- *   fr → ambre / florian
- *   es → lupe / carlos
- *   pt → carolina / leo   (VTID-03672 — AWS Nova 2 table, pt-BR; matches this
- *                          app's Brazilian catalog so the accent fits the text)
- * Unknown personas fall back to the feminine (Vitana-default) voice;
- * unsupported languages resolve to `null` — callers must have already
- * fallen back to Vertex before asking for a Nova voice, so `null` is a
- * programming-error signal, not a runtime fallback path.
+ * `Aoede`, …) must never be passed to Nova. The ones this file names are:
+ *   en → tina   (user live-test verdict 2026-07-28: en's native `tiffany`
+ *                sounded bad; `tina` — Nova's DE voice — sounds good and is
+ *                reused for EN content too, at the cost of a German accent
+ *                on English speech)
+ *   de → tina
+ *   fr → ambre
+ *   es → lupe
+ *
+ * VTID-03704 — ONE VOICE PER LANGUAGE, ALWAYS FEMALE.
+ * ---------------------------------------------------
+ * This map used to be `{ feminine, masculine }` per language, with `devon`
+ * and `atlas` selecting the masculine voice. That is gone. Vitana speaks with
+ * a female voice in every language, so the persona no longer picks the vocal
+ * cords — it still drives the system instruction, tone and tools.
+ *
+ * The pair-shaped table is removed rather than left half-read: keeping
+ * `masculine` keys nothing resolves would be a mechanism that looks live and
+ * cannot fire, and the next reader would reasonably assume persona still
+ * switches the voice. Nova's masculine ids (`lennart`, `florian`, `carlos`)
+ * are recorded here in prose so reinstating the split is a lookup, not a
+ * research task.
+ *
+ * `pt` is no longer listed: Nova answered a live Portuguese session in
+ * English, so `pt` now routes to the Polly cascade instead (see
+ * `nova-sonic-config.ts`). Its Nova ids were `carolina`/`leo`.
+ *
+ * Unsupported languages resolve to `null` — callers must already have routed
+ * to the cascade before asking for a Nova voice, so `null` is a
+ * programming-error signal, not a runtime fallback path. The one language
+ * that legitimately reaches the fallback is `sr`: Polly has no Serbian voice
+ * in any engine, so Serbian stays on Nova with a substituted voice.
  */
 
 import { isNovaSonicLanguageSupported } from '../upstream/nova-sonic-config';
 
-const MASCULINE_PERSONAS = new Set(['devon', 'atlas']);
-
 const NOVA_VOICES = {
-  en: { feminine: 'tina', masculine: 'lennart' },
-  de: { feminine: 'tina', masculine: 'lennart' },
-  fr: { feminine: 'ambre', masculine: 'florian' },
-  es: { feminine: 'lupe', masculine: 'carlos' },
-  // VTID-03672. AWS's Nova 2 Sonic voice table gives Portuguese as pt-BR ->
-  // carolina / leo. pt-BR is also exactly this app's Portuguese catalog
-  // (VTID-03577), so the accent matches the text rather than reading Brazilian
-  // copy in European Portuguese.
-  //
-  // Both ids were confirmed by a real bidirectional stream: Bedrock ACCEPTS
-  // them, and rejects a deliberately bogus id with `Received invalid id`. That
-  // contrast is what makes acceptance evidence rather than absence of an error.
-  //
-  // Sourced from the NOVA 2 table, not the Nova 1 one — Nova 1 lists German as
-  // `greta` where this codebase (and Nova 2) use `tina`, so the v1 page would
-  // have supplied a plausible, wrong id for a model we do not run.
-  pt: { feminine: 'carolina', masculine: 'leo' },
+  en: 'tina',
+  de: 'tina',
+  fr: 'ambre',
+  es: 'lupe',
 } as const;
 
-export type NovaSonicVoiceId =
-  (typeof NOVA_VOICES)[keyof typeof NOVA_VOICES][keyof (typeof NOVA_VOICES)['en']];
+export type NovaSonicVoiceId = (typeof NOVA_VOICES)[keyof typeof NOVA_VOICES];
 
 export interface NovaSonicVoiceQuery {
   /** Application language (BCP-47 tag or bare code; base tag is used). */
@@ -63,10 +62,21 @@ export interface NovaSonicVoiceQuery {
 export function resolveNovaSonicVoice(query: NovaSonicVoiceQuery): NovaSonicVoiceId | null {
   if (!isNovaSonicLanguageSupported(query.language)) return null;
   const base = query.language.trim().toLowerCase().split(/[-_]/)[0] as keyof typeof NOVA_VOICES;
-  const table = NOVA_VOICES[base];
-  if (!table) return null;
-  const persona = (query.persona ?? 'vitana').trim().toLowerCase();
-  return MASCULINE_PERSONAS.has(persona) ? table.masculine : table.feminine;
+  const voice = NOVA_VOICES[base];
+  if (!voice) return null;
+  // VTID-03704 — Vitana speaks with a FEMALE voice in every language, and the
+  // persona no longer changes that.
+  //
+  // This is what made the voice differ across the sign-in boundary, which is
+  // how it was reported: an anonymous session has no `activePersona`, so it
+  // resolved `vitana` → feminine, while a signed-in user carrying `devon` or
+  // `atlas` resolved masculine. Same user, same language, different voice
+  // before and after login, with nothing in the telemetry naming the cause
+  // (`persona` was not recorded on the session — VTID-03704 adds it).
+  //
+  // Persona still drives everything else it always did (system instruction,
+  // tone, tools). It just no longer picks the vocal cords.
+  return voice;
 }
 
 /**
