@@ -1,0 +1,619 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb/routes/session-start-voice-telemetry.test.ts
+  VTID-03704: session-start voice telemetry
+    ✓ records the Nova voice that actually speaks (5 ms)
+    ✓ records whether the language is on Nova at all (1 ms)
+    ✓ resolves the Nova voice through the fallback-REPORTING resolver (2 ms)
+    ✓ keeps the legacy live-api voice field rather than silently replacing it (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb/live/voice/voice-routing-policy.test.ts
+  VTID-03704: voice routing policy
+    rule 1 — not on Nova means Polly, except Serbian
+      ✓ routes every non-Nova language to the cascade unless Polly cannot voice it (2 ms)
+      ✓ never cascades a language Nova already speaks — speech-to-speech wins (1 ms)
+      ✓ keeps Serbian on Nova and blames Polly, the blocker that is real
+      ✓ leaves no language with no route at all (1 ms)
+    rule 1b — rerouting a language must not change how it SOUNDS
+      ✓ keeps a real Nova voice for a cascade-routed language Nova can still voice (1 ms)
+      ✓ only reports a substitution when Nova genuinely has no voice (9 ms)
+    rule 2 — one female voice per language, persona-independent
+      ✓ resolves the same voice for every persona, in every Nova language
+      ✓ resolves the same voice with no persona at all — the anonymous case
+      ✓ never resolves one of the retired masculine voice ids (6 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.live_language.en" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at getLiveLanguageVoice (src/orb/live/voice/voice-mapping.ts:120:30)
+      at Object.<anonymous> (test/orb/live/voice/voice-mapping.test.ts:48:34)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.live_language.de" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at getLiveLanguageVoice (src/orb/live/voice/voice-mapping.ts:120:30)
+      at Object.<anonymous> (test/orb/live/voice/voice-mapping.test.ts:49:34)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.live_language.fr" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at getLiveLanguageVoice (src/orb/live/voice/voice-mapping.ts:120:30)
+      at Object.<anonymous> (test/orb/live/voice/voice-mapping.test.ts:50:34)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.live_language.es" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at getLiveLanguageVoice (src/orb/live/voice/voice-mapping.ts:120:30)
+      at Object.<anonymous> (test/orb/live/voice/voice-mapping.test.ts:51:34)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.live_language.ar" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at getLiveLanguageVoice (src/orb/live/voice/voice-mapping.ts:120:30)
+      at Object.<anonymous> (test/orb/live/voice/voice-mapping.test.ts:52:34)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.live_language.zh" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at getLiveLanguageVoice (src/orb/live/voice/voice-mapping.ts:120:30)
+      at Object.<anonymous> (test/orb/live/voice/voice-mapping.test.ts:53:34)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.live_language.sr" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at getLiveLanguageVoice (src/orb/live/voice/voice-mapping.ts:120:30)
+      at Object.<anonymous> (test/orb/live/voice/voice-mapping.test.ts:54:34)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.live_language.ru" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at getLiveLanguageVoice (src/orb/live/voice/voice-mapping.ts:120:30)
+      at Object.<anonymous> (test/orb/live/voice/voice-mapping.test.ts:55:34)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.gemini_tts.en" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at getGeminiTtsVoice (src/orb/live/voice/voice-mapping.ts:130:30)
+      at Object.<anonymous> (test/orb/live/voice/voice-mapping.test.ts:59:31)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.gemini_tts.de" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at getGeminiTtsVoice (src/orb/live/voice/voice-mapping.ts:130:30)
+      at Object.<anonymous> (test/orb/live/voice/voice-mapping.test.ts:60:31)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.gemini_tts.fr" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at getGeminiTtsVoice (src/orb/live/voice/voice-mapping.ts:130:30)
+      at Object.<anonymous> (test/orb/live/voice/voice-mapping.test.ts:61:31)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.gemini_tts.es" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at getGeminiTtsVoice (src/orb/live/voice/voice-mapping.ts:130:30)
+      at Object.<anonymous> (test/orb/live/voice/voice-mapping.test.ts:62:31)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.gemini_tts.ar" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at getGeminiTtsVoice (src/orb/live/voice/voice-mapping.ts:130:30)
+      at Object.<anonymous> (test/orb/live/voice/voice-mapping.test.ts:63:31)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.gemini_tts.zh" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at getGeminiTtsVoice (src/orb/live/voice/voice-mapping.ts:130:30)
+      at Object.<anonymous> (test/orb/live/voice/voice-mapping.test.ts:64:31)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.gemini_tts.sr" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at getGeminiTtsVoice (src/orb/live/voice/voice-mapping.ts:130:30)
+      at Object.<anonymous> (test/orb/live/voice/voice-mapping.test.ts:65:31)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.gemini_tts.ru" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at getGeminiTtsVoice (src/orb/live/voice/voice-mapping.ts:130:30)
+      at Object.<anonymous> (test/orb/live/voice/voice-mapping.test.ts:66:31)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.neural2_tts.de" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at getNeural2TtsVoice (src/orb/live/voice/voice-mapping.ts:140:30)
+      at Object.<anonymous> (test/orb/live/voice/voice-mapping.test.ts:70:32)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.neural2_tts.en" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at getNeural2TtsVoice (src/orb/live/voice/voice-mapping.ts:140:30)
+      at Object.<anonymous> (test/orb/live/voice/voice-mapping.test.ts:71:32)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.neural2_tts.fr" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at getNeural2TtsVoice (src/orb/live/voice/voice-mapping.ts:140:30)
+      at Object.<anonymous> (test/orb/live/voice/voice-mapping.test.ts:72:32)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.neural2_tts.es" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at getNeural2TtsVoice (src/orb/live/voice/voice-mapping.ts:140:30)
+      at Object.<anonymous> (test/orb/live/voice/voice-mapping.test.ts:73:32)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.neural2_tts.ar" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at getNeural2TtsVoice (src/orb/live/voice/voice-mapping.ts:140:30)
+      at Object.<anonymous> (test/orb/live/voice/voice-mapping.test.ts:74:32)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.neural2_tts.zh" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at getNeural2TtsVoice (src/orb/live/voice/voice-mapping.ts:140:30)
+      at Object.<anonymous> (test/orb/live/voice/voice-mapping.test.ts:75:32)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.neural2_tts.ru" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at getNeural2TtsVoice (src/orb/live/voice/voice-mapping.ts:140:30)
+      at Object.<anonymous> (test/orb/live/voice/voice-mapping.test.ts:76:32)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.neural2_tts.sr" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at getNeural2TtsVoice (src/orb/live/voice/voice-mapping.ts:140:30)
+      at Object.<anonymous> (test/orb/live/voice/voice-mapping.test.ts:77:32)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.neural2.enabled_languages" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at getNeural2EnabledLanguages (src/orb/live/voice/voice-mapping.ts:147:35)
+      at Object.<anonymous> (test/orb/live/voice/voice-mapping.test.ts:81:47)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.neural2.enabled_languages" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at getNeural2EnabledLanguages (src/orb/live/voice/voice-mapping.ts:147:35)
+      at isNeural2EnabledFor (src/orb/live/voice/voice-mapping.ts:157:10)
+      at Object.<anonymous> (test/orb/live/voice/voice-mapping.test.ts:87:35)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.live_language.jp" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at getLiveLanguageVoice (src/orb/live/voice/voice-mapping.ts:120:30)
+      at Object.<anonymous> (test/orb/live/voice/voice-mapping.test.ts:94:34)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.gemini_tts.jp" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at getGeminiTtsVoice (src/orb/live/voice/voice-mapping.ts:130:30)
+      at Object.<anonymous> (test/orb/live/voice/voice-mapping.test.ts:95:31)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.neural2_tts.jp" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at getNeural2TtsVoice (src/orb/live/voice/voice-mapping.ts:140:30)
+      at Object.<anonymous> (test/orb/live/voice/voice-mapping.test.ts:96:32)
+
+PASS test/orb/live/voice/voice-mapping.test.ts
+  VTID-03134 Phase D.3.b-e voice mapping accessors
+    cold-cache fallback parity (byte-identical to pre-D.3.b-e Records)
+      ✓ LIVE_LANGUAGE_VOICES — getLiveLanguageVoice across 8 langs (24 ms)
+      ✓ GEMINI_TTS_VOICES — getGeminiTtsVoice returns {name, languageCode} (13 ms)
+      ✓ NEURAL2_TTS_VOICES — Neural2/WaveNet/Standard fallback chain preserved (15 ms)
+      ✓ NEURAL2_ENABLED_LANGUAGES — 8 supported langs (2 ms)
+      ✓ isNeural2EnabledFor returns true for all 8 supported, false otherwise (3 ms)
+      ✓ unknown lang defaults to en safely (no throw) (4 ms)
+    resolver-seeded path — DB row wins
+      ✓ seeded voice.live_language.<lang> overrides fallback
+      ✓ seeded voice.gemini_tts.<lang> overrides fallback (JSON shape) (1 ms)
+      ✓ seeded voice.neural2_tts.<lang> overrides fallback
+      ✓ seeded voice.neural2.enabled_languages array overrides fallback (1 ms)
+    defensive
+      ✓ malformed enabled_languages row (not an array) falls back to literal (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb/live/voice/nova-sonic-voice-fallback.test.ts
+  VTID-03682: Nova voice fallback is explicit
+    ✓ reports fallback=true for every language with no native Nova voice (2 ms)
+    ✓ reports fallback=false for languages Nova has a real voice for (1 ms)
+    ✓ does NOT change which voice is served — pl and sr work today on tina
+    ✓ preserves the null contract of the underlying resolver
+    ✓ logs the substitution once per language, not once per session (2 ms)
+    ✓ normalises locale tags so ru-RU does not log twice
+    ✓ the call site no longer uses a bare ?? fallback (10 ms)
+    ✓ latches the diag per session — connectToLiveAPI is re-entered on every reconnect AND rotation (4 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb/live/voice/live-api-voice.test.ts
+  VTID-03126 Phase D.3 Live API voice accessor
+    cold-cache fallback path (byte-identical to pre-D.3 Record)
+      ✓ en → Aoede (native, no warning) (2 ms)
+      ✓ de → Kore (native, no warning) (1 ms)
+      ✓ fr → Charon (native, no warning)
+      ✓ es → Fenrir (native, no warning) (1 ms)
+      ✓ ar → Aoede (English fallback) and emits a warning (1 ms)
+      ✓ zh → Kore (German fallback) and emits a warning (1 ms)
+      ✓ ru → Aoede (English fallback) and emits a warning (1 ms)
+      ✓ sr → Aoede (English fallback) and emits a warning (1 ms)
+    telemetry de-duplication
+      ✓ emits the fallback warning at most once per (lang, fallback_lang) pair
+      ✓ different fallback langs each get their own one-time warning (1 ms)
+    resolver-seeded path — DB row wins over fallback
+      ✓ returns the seeded voice_name
+      ✓ clearing fallback_lang in DB silences the telemetry
+      ✓ setting fallback_lang in DB on a previously-native lang surfaces a warning
+    input sanitization
+      ✓ empty string lang → English default, no warning
+      ✓ unknown lang → English fallback voice (Aoede), no warning (no DB row at all) (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb/live/voice/nova-sonic-voice.test.ts
+  resolveNovaSonicVoice
+    ✓ maps Vitana (feminine default) per language (1 ms)
+    ✓ ignores persona — every persona gets the same female voice (2 ms)
+    ✓ never returns one of the retired masculine voices (1 ms)
+    ✓ sage and mira use feminine voices
+    ✓ unknown/absent persona falls back to the feminine voice
+    ✓ handles regional tags and casing (1 ms)
+    ✓ returns null for languages outside the Nova canary (callers must have fallen back)
+    ✓ keeps carolina for pt — the cascade gate is inert until IAM lands (1 ms)
+    ✓ never substitutes a German voice for Portuguese
+    ✓ still refuses the languages Nova genuinely does not speak
+    ✓ never returns a Gemini voice ID (2 ms)
+
+Test Suites: 6 passed, 6 total
+Tests:       58 passed, 58 total
+Snapshots:   0 total
+Time:        1.069 s
+Ran all test suites matching /test\/orb\/live\/voice\/|test\/orb\/routes\/session-start-voice-telemetry.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
