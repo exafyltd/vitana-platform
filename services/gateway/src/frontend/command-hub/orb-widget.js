@@ -2458,7 +2458,19 @@
                 _s.lastScheduledEnd = 0;
                 _s.audioPlaying = false;
 
-                _hide();
+                // BOOTSTRAP-ORB-UNREAD-MESSAGES-NAV: a deterministic
+                // greeting-effect navigate (e.g. "you have new messages" ->
+                // open the inbox) can ask the session to stay open instead
+                // of tearing down, so a dictated reply can follow right
+                // away. Without clearing navigationPending here, every
+                // audio chunk from now on would be silently dropped (see
+                // the 'audio'/'audio_out' case above) — the widget would
+                // look alive but never speak again.
+                if (msg.keep_orb_open === true) {
+                  _s.navigationPending = false;
+                } else {
+                  _hide();
+                }
                 if (typeof _cfg.onNavigationRequest === 'function') {
                   try { _cfg.onNavigationRequest(navRoute, navCtx); }
                   catch (e) { console.error('[VTOrb] onNavigationRequest failed:', e); }
