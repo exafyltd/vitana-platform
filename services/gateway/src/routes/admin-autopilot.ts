@@ -13,6 +13,7 @@ import { AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { getSupabase } from '../lib/supabase';
 import { AUTOMATION_REGISTRY } from '../services/automation-registry';
 import { DEFAULT_WAVE_CONFIG, WaveDefinition } from '../services/wave-defaults';
+import * as repo from '../services/admin-autopilot/admin-autopilot-repository';
 
 const router = Router();
 const VTID = 'VTID-AP-ADMIN';
@@ -39,21 +40,13 @@ router.get('/settings', requireTenantAdmin, async (req: Request, res: Response) 
     const supabase = getSupabase();
     if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
-    let { data, error } = await supabase
-      .from('tenant_autopilot_settings')
-      .select('*')
-      .eq('tenant_id', tenantId)
-      .maybeSingle();
+    let { data, error } = await repo.fetchSettingsFull(supabase, tenantId);
 
     if (error) throw error;
 
     // Auto-provision defaults on first access
     if (!data) {
-      const { data: created, error: createErr } = await supabase
-        .from('tenant_autopilot_settings')
-        .insert({ tenant_id: tenantId })
-        .select('*')
-        .single();
+      const { data: created, error: createErr } = await repo.insertSettingsDefault(supabase, tenantId);
       if (createErr) throw createErr;
       data = created;
     }
@@ -91,29 +84,16 @@ router.patch('/settings', requireTenantAdmin, async (req: Request, res: Response
     updates.updated_by = userId;
 
     // Ensure row exists first
-    const { data: existing } = await supabase
-      .from('tenant_autopilot_settings')
-      .select('id')
-      .eq('tenant_id', tenantId)
-      .maybeSingle();
+    const { data: existing } = await repo.fetchSettingsIdOnly(supabase, tenantId);
 
     if (!existing) {
       // Create with overrides
-      const { data, error } = await supabase
-        .from('tenant_autopilot_settings')
-        .insert({ tenant_id: tenantId, ...updates })
-        .select('*')
-        .single();
+      const { data, error } = await repo.insertSettingsWithOverrides(supabase, { tenant_id: tenantId, ...updates });
       if (error) throw error;
       return res.json({ ok: true, data });
     }
 
-    const { data, error } = await supabase
-      .from('tenant_autopilot_settings')
-      .update(updates)
-      .eq('tenant_id', tenantId)
-      .select('*')
-      .single();
+    const { data, error } = await repo.updateSettingsReturning(supabase, tenantId, updates);
 
     if (error) throw error;
     res.json({ ok: true, data });
@@ -136,16 +116,8 @@ router.get('/bindings', requireTenantAdmin, async (req: Request, res: Response) 
     if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
     const { enabled } = req.query;
-    let query = supabase
-      .from('tenant_autopilot_bindings')
-      .select('*')
-      .eq('tenant_id', tenantId)
-      .order('automation_id', { ascending: true });
-
-    if (enabled === 'true') query = query.eq('enabled', true);
-    if (enabled === 'false') query = query.eq('enabled', false);
-
-    const { data, error } = await query;
+    const enabledFilter = enabled === 'true' ? true : enabled === 'false' ? false : undefined;
+    const { data, error } = await repo.fetchBindings(supabase, tenantId, enabledFilter);
     if (error) throw error;
 
     res.json({ ok: true, data: data || [] });
@@ -186,11 +158,7 @@ router.post('/bindings', requireTenantAdmin, async (req: Request, res: Response)
       updated_by: userId,
     };
 
-    const { data, error } = await supabase
-      .from('tenant_autopilot_bindings')
-      .upsert(row, { onConflict: 'tenant_id,automation_id' })
-      .select('*')
-      .single();
+    const { data, error } = await repo.upsertBinding(supabase, row);
 
     if (error) throw error;
     res.json({ ok: true, data });
@@ -225,13 +193,7 @@ router.patch('/bindings/:bindingId', requireTenantAdmin, async (req: Request, re
     }
     updates.updated_by = userId;
 
-    const { data, error } = await supabase
-      .from('tenant_autopilot_bindings')
-      .update(updates)
-      .eq('id', bindingId)
-      .eq('tenant_id', tenantId)
-      .select('*')
-      .single();
+    const { data, error } = await repo.updateBinding(supabase, bindingId, tenantId, updates);
 
     if (error) throw error;
     if (!data) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
@@ -253,11 +215,7 @@ router.delete('/bindings/:bindingId', requireTenantAdmin, async (req: Request, r
     const supabase = getSupabase();
     if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
-    const { error } = await supabase
-      .from('tenant_autopilot_bindings')
-      .delete()
-      .eq('id', bindingId)
-      .eq('tenant_id', tenantId);
+    const { error } = await repo.deleteBinding(supabase, bindingId, tenantId);
 
     if (error) throw error;
     res.json({ ok: true });
@@ -283,17 +241,7 @@ router.get('/runs', requireTenantAdmin, async (req: Request, res: Response) => {
     const offset = parseInt(req.query.offset as string) || 0;
     const { status, automation_id } = req.query;
 
-    let query = supabase
-      .from('tenant_autopilot_runs')
-      .select('*', { count: 'exact' })
-      .eq('tenant_id', tenantId)
-      .order('started_at', { ascending: false })
-      .range(offset, offset + limit - 1);
-
-    if (status) query = query.eq('status', status);
-    if (automation_id) query = query.eq('automation_id', automation_id);
-
-    const { data, error, count } = await query;
+    const { data, error, count } = await repo.fetchRuns(supabase, { tenantId, status, automationId: automation_id, offset, limit });
     if (error) throw error;
 
     res.json({ ok: true, data: data || [], total: count || 0 });
@@ -316,11 +264,7 @@ router.get('/runs/stats', requireTenantAdmin, async (req: Request, res: Response
     const days = parseInt(req.query.days as string) || 30;
     const since = new Date(Date.now() - days * 86400000).toISOString();
 
-    const { data: runs, error } = await supabase
-      .from('tenant_autopilot_runs')
-      .select('status, duration_ms, started_at, automation_id')
-      .eq('tenant_id', tenantId)
-      .gte('started_at', since);
+    const { data: runs, error } = await repo.fetchRunsForStats(supabase, tenantId, since);
 
     if (error) throw error;
 
@@ -397,11 +341,7 @@ router.get('/recommendations', requireTenantAdmin, async (req: Request, res: Res
     const { status, domain, risk_level } = req.query;
 
     // Get tenant settings for filtering
-    const { data: settings } = await supabase
-      .from('tenant_autopilot_settings')
-      .select('allowed_domains, allowed_risk_levels, enabled')
-      .eq('tenant_id', tenantId)
-      .maybeSingle();
+    const { data: settings } = await repo.fetchSettingsForRecommendations(supabase, tenantId);
 
     // If autopilot is disabled for this tenant, return empty
     if (settings && !settings.enabled) {
@@ -411,23 +351,9 @@ router.get('/recommendations', requireTenantAdmin, async (req: Request, res: Res
     const allowedDomains = settings?.allowed_domains || ['health', 'community', 'longevity', 'professional', 'general'];
     const allowedRisks = settings?.allowed_risk_levels || ['low', 'medium'];
 
-    let query = supabase
-      .from('autopilot_recommendations')
-      .select('*', { count: 'exact' })
-      .in('domain', allowedDomains)
-      .in('risk_level', allowedRisks)
-      .order('impact_score', { ascending: false })
-      .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1);
-
-    // Exclude snoozed
-    query = query.or('snoozed_until.is.null,snoozed_until.lt.' + new Date().toISOString());
-
-    if (status) query = query.eq('status', status as string);
-    if (domain) query = query.eq('domain', domain as string);
-    if (risk_level) query = query.eq('risk_level', risk_level as string);
-
-    const { data, error, count } = await query;
+    const { data, error, count } = await repo.fetchRecommendations(supabase, {
+      allowedDomains, allowedRisks, status, domain, riskLevel: risk_level, offset, limit,
+    });
     if (error) throw error;
 
     res.json({ ok: true, data: data || [], total: count || 0, autopilot_enabled: true });
@@ -447,11 +373,7 @@ router.get('/recommendations/summary', requireTenantAdmin, async (req: Request, 
     const supabase = getSupabase();
     if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
-    const { data: settings } = await supabase
-      .from('tenant_autopilot_settings')
-      .select('allowed_domains, allowed_risk_levels, enabled')
-      .eq('tenant_id', tenantId)
-      .maybeSingle();
+    const { data: settings } = await repo.fetchSettingsForRecommendations(supabase, tenantId);
 
     if (settings && !settings.enabled) {
       return res.json({ ok: true, data: { new: 0, activated: 0, rejected: 0, snoozed: 0, total: 0 } });
@@ -460,11 +382,7 @@ router.get('/recommendations/summary', requireTenantAdmin, async (req: Request, 
     const allowedDomains = settings?.allowed_domains || ['health', 'community', 'longevity', 'professional', 'general'];
     const allowedRisks = settings?.allowed_risk_levels || ['low', 'medium'];
 
-    const { data, error } = await supabase
-      .from('autopilot_recommendations')
-      .select('status')
-      .in('domain', allowedDomains)
-      .in('risk_level', allowedRisks);
+    const { data, error } = await repo.fetchRecommendationsStatusOnly(supabase, allowedDomains, allowedRisks);
 
     if (error) throw error;
 
@@ -497,19 +415,12 @@ router.get('/waves', requireTenantAdmin, async (req: Request, res: Response) => 
     if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
     // Get tenant wave_config overrides
-    const { data: settings } = await supabase
-      .from('tenant_autopilot_settings')
-      .select('wave_config')
-      .eq('tenant_id', tenantId)
-      .maybeSingle();
+    const { data: settings } = await repo.fetchSettingsWaveConfig(supabase, tenantId);
 
     const overrides: Record<string, Partial<WaveDefinition>> = settings?.wave_config || {};
 
     // Get tenant bindings for automation status
-    const { data: bindings } = await supabase
-      .from('tenant_autopilot_bindings')
-      .select('automation_id, enabled')
-      .eq('tenant_id', tenantId);
+    const { data: bindings } = await repo.fetchBindingsForWaves(supabase, tenantId);
 
     const bindingMap = new Map((bindings || []).map((b: any) => [b.automation_id, b.enabled]));
     const registryMap = new Map(AUTOMATION_REGISTRY.map(a => [a.id, a]));
@@ -565,14 +476,10 @@ router.patch('/waves/:waveId', requireTenantAdmin, async (req: Request, res: Res
     if (typeof enabled !== 'boolean') return res.status(400).json({ ok: false, error: 'MISSING_ENABLED' });
 
     // Get or create settings
-    let { data: settings } = await supabase
-      .from('tenant_autopilot_settings')
-      .select('wave_config')
-      .eq('tenant_id', tenantId)
-      .maybeSingle();
+    let { data: settings } = await repo.fetchSettingsWaveConfig(supabase, tenantId);
 
     if (!settings) {
-      await supabase.from('tenant_autopilot_settings').insert({ tenant_id: tenantId });
+      await repo.insertSettingsMinimal(supabase, tenantId);
       settings = { wave_config: {} };
     }
 
@@ -580,10 +487,7 @@ router.patch('/waves/:waveId', requireTenantAdmin, async (req: Request, res: Res
     waveConfig[waveId] = { ...(waveConfig[waveId] || {}), enabled };
 
     // Save wave_config
-    const { error: updateErr } = await supabase
-      .from('tenant_autopilot_settings')
-      .update({ wave_config: waveConfig, updated_by: userId })
-      .eq('tenant_id', tenantId);
+    const { error: updateErr } = await repo.updateSettingsNoReturn(supabase, tenantId, { wave_config: waveConfig, updated_by: userId });
 
     if (updateErr) throw updateErr;
 
@@ -597,9 +501,7 @@ router.patch('/waves/:waveId', requireTenantAdmin, async (req: Request, res: Res
       }));
 
       for (const row of rows) {
-        await supabase
-          .from('tenant_autopilot_bindings')
-          .upsert(row, { onConflict: 'tenant_id,automation_id' });
+        await repo.upsertBindingNoReturn(supabase, row);
       }
     }
 
@@ -624,10 +526,7 @@ router.get('/catalog', requireTenantAdmin, async (req: Request, res: Response) =
     if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
     // Get tenant bindings
-    const { data: bindings, error: bErr } = await supabase
-      .from('tenant_autopilot_bindings')
-      .select('*')
-      .eq('tenant_id', tenantId);
+    const { data: bindings, error: bErr } = await repo.fetchBindingsFull(supabase, tenantId);
 
     if (bErr) throw bErr;
 
