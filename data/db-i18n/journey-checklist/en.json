@@ -1,0 +1,15 @@
+{
+  "surface": "journey-checklist",
+  "locale": "en",
+  "source_locale": "de",
+  "generated_at": "2026-08-23T05:33:25.127Z",
+  "field_order": [
+    "display_label",
+    "short_description",
+    "explanation_what_it_is",
+    "explanation_user_benefit",
+    "explanation_when_to_use",
+    "explanation_try_this"
+  ],
+  "entries": {}
+}
