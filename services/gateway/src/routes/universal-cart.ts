@@ -40,6 +40,7 @@ import { createUserSupabaseClient } from '../lib/supabase-user';
 import { getSupabase } from '../lib/supabase';
 import { checkoutUniversalCart, CHECKOUT_ERROR_STATUS } from '../services/checkout/checkout-service';
 import { getMonthlySpend } from '../services/budget/spend-service';
+import * as cartRepo from '../services/universal-cart/universal-cart-repository';
 
 export const VTID = 'VTID-03213';
 
@@ -261,14 +262,12 @@ export async function emitCartEvent(args: {
     console.error(`[${VTID}] cart event drop (${args.event_type}): service-role client unavailable`);
     return;
   }
-  const { error } = await supabase
-    .from('universal_cart_events')
-    .insert({
-      cart_id: args.cart_id,
-      user_id: args.user_id,
-      event_type: args.event_type,
-      event_payload: sanitizeEventPayload(args.event_payload),
-    });
+  const { error } = await cartRepo.insertCartEvent(supabase, {
+    cart_id: args.cart_id,
+    user_id: args.user_id,
+    event_type: args.event_type,
+    event_payload: sanitizeEventPayload(args.event_payload),
+  });
   if (error) {
     console.error(
       `[${VTID}] cart event insert failed (${args.event_type}, cart ${args.cart_id}):`,
@@ -340,12 +339,7 @@ router.post('/', async (req: Request, res: Response) => {
 
   // Look up an existing active cart first to keep the response shape consistent
   // and avoid emitting cart.created on every POST.
-  const existing = await supabase
-    .from('universal_carts')
-    .select('*')
-    .eq('user_id', id.user_id)
-    .eq('status', 'active')
-    .maybeSingle();
+  const existing = await cartRepo.fetchActiveCartFull(supabase, id.user_id);
 
   if (existing.data) {
     return res.status(200).json({ ok: true, cart: existing.data, created: false });
@@ -364,25 +358,16 @@ router.post('/', async (req: Request, res: Response) => {
       ? String(req.body.source_context).slice(0, 200)
       : null;
 
-  const created = await supabase
-    .from('universal_carts')
-    .insert({
-      user_id: id.user_id,
-      tenant_id: id.tenant_id,
-      status: 'active',
-      source_context: sourceContext,
-      metadata: {},
-    })
-    .select('*')
-    .single();
+  const created = await cartRepo.insertCart(supabase, {
+    user_id: id.user_id,
+    tenant_id: id.tenant_id,
+    status: 'active',
+    source_context: sourceContext,
+    metadata: {},
+  });
 
   if (created.error && isUniqueViolation(created.error)) {
-    const racedExisting = await supabase
-      .from('universal_carts')
-      .select('*')
-      .eq('user_id', id.user_id)
-      .eq('status', 'active')
-      .maybeSingle();
+    const racedExisting = await cartRepo.fetchActiveCartFull(supabase, id.user_id);
 
     if (racedExisting.data) {
       return res.status(200).json({ ok: true, cart: racedExisting.data, created: false });
@@ -424,12 +409,7 @@ router.get('/', async (req: Request, res: Response) => {
 
   const supabase = createUserSupabaseClient(id.token);
 
-  const cartRes = await supabase
-    .from('universal_carts')
-    .select('*')
-    .eq('user_id', id.user_id)
-    .eq('status', 'active')
-    .maybeSingle();
+  const cartRes = await cartRepo.fetchActiveCartFull(supabase, id.user_id);
 
   if (cartRes.error && !isNoRowsError(cartRes.error)) {
     return res.status(500).json({
@@ -443,12 +423,7 @@ router.get('/', async (req: Request, res: Response) => {
     return res.status(200).json({ ok: true, cart: null, items: [] });
   }
 
-  const itemsRes = await supabase
-    .from('universal_cart_items')
-    .select('*')
-    .eq('cart_id', cartRes.data.id)
-    .eq('status', 'active')
-    .order('created_at', { ascending: true });
+  const itemsRes = await cartRepo.fetchActiveCartItems(supabase, cartRes.data.id);
 
   if (itemsRes.error) {
     return res.status(500).json({
@@ -514,12 +489,7 @@ router.get('/budget', async (req: Request, res: Response) => {
   const userClient = createUserSupabaseClient(id.token);
   let cart_active_subtotal_cents = 0;
 
-  const cartRes = await userClient
-    .from('universal_carts')
-    .select('id')
-    .eq('user_id', id.user_id)
-    .eq('status', 'active')
-    .maybeSingle();
+  const cartRes = await cartRepo.fetchActiveCartId(userClient, id.user_id);
 
   if (cartRes.error && !isNoRowsError(cartRes.error)) {
     return res.status(500).json({
@@ -530,11 +500,7 @@ router.get('/budget', async (req: Request, res: Response) => {
   }
 
   if (cartRes.data?.id) {
-    const itemsRes = await userClient
-      .from('universal_cart_items')
-      .select('unit_price_cents_snapshot, quantity')
-      .eq('cart_id', cartRes.data.id)
-      .eq('status', 'active');
+    const itemsRes = await cartRepo.fetchActiveCartItemsForBudget(userClient, cartRes.data.id);
 
     if (itemsRes.error) {
       return res.status(500).json({
@@ -641,12 +607,7 @@ router.post('/items', async (req: Request, res: Response) => {
   }
 
   // 1. Resolve or create the active cart.
-  const cartLookup = await supabase
-    .from('universal_carts')
-    .select('id')
-    .eq('user_id', id.user_id)
-    .eq('status', 'active')
-    .maybeSingle();
+  const cartLookup = await cartRepo.fetchActiveCartId(supabase, id.user_id);
 
   if (cartLookup.error && !isNoRowsError(cartLookup.error)) {
     return res.status(500).json({
@@ -660,23 +621,14 @@ router.post('/items', async (req: Request, res: Response) => {
   let cartCreatedThisRequest = false;
 
   if (!cartId) {
-    const newCart = await supabase
-      .from('universal_carts')
-      .insert({
-        user_id: id.user_id,
-        tenant_id: id.tenant_id,
-        status: 'active',
-        metadata: {},
-      })
-      .select('id')
-      .single();
+    const newCart = await cartRepo.insertCartMinimal(supabase, {
+      user_id: id.user_id,
+      tenant_id: id.tenant_id,
+      status: 'active',
+      metadata: {},
+    });
     if (newCart.error && isUniqueViolation(newCart.error)) {
-      const racedCart = await supabase
-        .from('universal_carts')
-        .select('id')
-        .eq('user_id', id.user_id)
-        .eq('status', 'active')
-        .maybeSingle();
+      const racedCart = await cartRepo.fetchActiveCartId(supabase, id.user_id);
 
       if (racedCart.error && !isNoRowsError(racedCart.error)) {
         return res.status(500).json({
@@ -715,13 +667,7 @@ router.post('/items', async (req: Request, res: Response) => {
   }
 
   // 2. Check whether the product is already in the cart with status='active'.
-  const existingItem = await supabase
-    .from('universal_cart_items')
-    .select('*')
-    .eq('cart_id', cartId!)
-    .eq('product_id', body.product_id)
-    .eq('status', 'active')
-    .maybeSingle();
+  const existingItem = await cartRepo.fetchActiveCartItemByProduct(supabase, cartId!, body.product_id);
 
   if (existingItem.error && !isNoRowsError(existingItem.error)) {
     return res.status(500).json({
@@ -741,15 +687,10 @@ router.post('/items', async (req: Request, res: Response) => {
     const before = Number(existingItem.data.quantity ?? 0);
     const after = before + body.quantity;
     const mergedMetadata = { ...(existingItem.data.metadata || {}), ...incomingMetadata };
-    const updated = await supabase
-      .from('universal_cart_items')
-      .update({
-        quantity: after,
-        metadata: mergedMetadata,
-      })
-      .eq('id', existingItem.data.id)
-      .select('*')
-      .single();
+    const updated = await cartRepo.updateCartItem(supabase, existingItem.data.id, {
+      quantity: after,
+      metadata: mergedMetadata,
+    });
     if (updated.error) {
       return res.status(500).json({
         ok: false,
@@ -796,11 +737,7 @@ router.post('/items', async (req: Request, res: Response) => {
   if (body.source_video_id !== undefined) insertPayload.source_video_id = body.source_video_id;
   if (body.source_creator_id !== undefined) insertPayload.source_creator_id = body.source_creator_id;
 
-  const inserted = await supabase
-    .from('universal_cart_items')
-    .insert(insertPayload)
-    .select('*')
-    .single();
+  const inserted = await cartRepo.insertCartItem(supabase, insertPayload);
 
   if (inserted.error) {
     return res.status(500).json({
@@ -857,11 +794,7 @@ router.patch('/items/:itemId', async (req: Request, res: Response) => {
 
   // Read the current row to capture quantity_before for the event payload.
   // RLS scopes this to the caller; cross-user reads return null.
-  const current = await supabase
-    .from('universal_cart_items')
-    .select('id, cart_id, quantity, metadata, status')
-    .eq('id', itemId)
-    .maybeSingle();
+  const current = await cartRepo.fetchCartItemForPatch(supabase, itemId);
 
   if (current.error && !isNoRowsError(current.error)) {
     return res.status(500).json({
@@ -887,12 +820,7 @@ router.patch('/items/:itemId', async (req: Request, res: Response) => {
     updatePayload.metadata = { ...(current.data.metadata || {}), ...body.metadata };
   }
 
-  const updated = await supabase
-    .from('universal_cart_items')
-    .update(updatePayload)
-    .eq('id', itemId)
-    .select('*')
-    .single();
+  const updated = await cartRepo.updateCartItem(supabase, itemId, updatePayload);
 
   if (updated.error) {
     return res.status(500).json({
@@ -933,11 +861,7 @@ router.delete('/items/:itemId', async (req: Request, res: Response) => {
 
   const supabase = createUserSupabaseClient(id.token);
 
-  const current = await supabase
-    .from('universal_cart_items')
-    .select('id, cart_id, status')
-    .eq('id', itemId)
-    .maybeSingle();
+  const current = await cartRepo.fetchCartItemForDelete(supabase, itemId);
 
   if (current.error && !isNoRowsError(current.error)) {
     return res.status(500).json({
@@ -957,12 +881,7 @@ router.delete('/items/:itemId', async (req: Request, res: Response) => {
     });
   }
 
-  const updated = await supabase
-    .from('universal_cart_items')
-    .update({ status: 'removed' })
-    .eq('id', itemId)
-    .select('*')
-    .single();
+  const updated = await cartRepo.updateCartItem(supabase, itemId, { status: 'removed' });
 
   if (updated.error) {
     return res.status(500).json({
@@ -997,11 +916,7 @@ router.post('/items/:itemId/complete', async (req: Request, res: Response) => {
 
   const supabase = createUserSupabaseClient(id.token);
 
-  const current = await supabase
-    .from('universal_cart_items')
-    .select('id, cart_id, status, product_id')
-    .eq('id', itemId)
-    .maybeSingle();
+  const current = await cartRepo.fetchCartItemForComplete(supabase, itemId);
 
   if (current.error && !isNoRowsError(current.error)) {
     return res.status(500).json({
@@ -1029,12 +944,7 @@ router.post('/items/:itemId/complete', async (req: Request, res: Response) => {
     });
   }
 
-  const updated = await supabase
-    .from('universal_cart_items')
-    .update({ status: 'completed' })
-    .eq('id', itemId)
-    .select('*')
-    .single();
+  const updated = await cartRepo.updateCartItem(supabase, itemId, { status: 'completed' });
 
   if (updated.error) {
     return res.status(500).json({
@@ -1069,12 +979,7 @@ router.get('/events', async (req: Request, res: Response) => {
   const supabase = createUserSupabaseClient(id.token);
 
   // Find the caller's active cart first so we can scope the events query to it.
-  const cartRes = await supabase
-    .from('universal_carts')
-    .select('id')
-    .eq('user_id', id.user_id)
-    .eq('status', 'active')
-    .maybeSingle();
+  const cartRes = await cartRepo.fetchActiveCartId(supabase, id.user_id);
 
   if (cartRes.error && !isNoRowsError(cartRes.error)) {
     return res.status(500).json({
@@ -1090,12 +995,7 @@ router.get('/events', async (req: Request, res: Response) => {
   const rawLimit = Number(req.query.limit);
   const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 200) : 50;
 
-  const eventsRes = await supabase
-    .from('universal_cart_events')
-    .select('*')
-    .eq('cart_id', cartRes.data.id)
-    .order('created_at', { ascending: false })
-    .limit(limit);
+  const eventsRes = await cartRepo.fetchCartEvents(supabase, cartRes.data.id, limit);
 
   if (eventsRes.error) {
     return res.status(500).json({
