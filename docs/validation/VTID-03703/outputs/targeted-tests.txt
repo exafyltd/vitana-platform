@@ -1,0 +1,30 @@
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb/live/upstream/vertex-unavailable-forces-nova.test.ts
+  vertexUnavailable — unsupported language forces Nova instead of Vertex
+    ✓ unset (default), explicit request: unsupported language still degrades to vertex — unchanged behavior (1 ms)
+    ✓ true, explicit request: unsupported language is forced onto Nova with a distinct reason (1 ms)
+  vertexUnavailable — unsupported runtime forces Nova instead of Vertex
+    ✓ unset (default), explicit request: gcp-cloud-run runtime still degrades to vertex — unchanged behavior (1 ms)
+    ✓ true, explicit request: gcp-cloud-run runtime is forced onto Nova with a distinct reason
+  vertexUnavailable — the default (no-request) path also forces Nova
+    ✓ true: default path with unsupported language forces Nova, reports canary=false (1 ms)
+  vertexUnavailable — VTID-03703: now forces through EVERY gate, none excepted
+    ✓ Nova disabled, explicit request, unset (default): still vertex — unchanged behavior (1 ms)
+    ✓ Nova disabled, explicit request, vertexUnavailable=true: forced onto Nova, never Vertex
+    ✓ Nova disabled, default (no-request) path, vertexUnavailable=true: forced onto Nova, never falls through to a vertex default (1 ms)
+    ✓ Nova disabled, language a cascade already covers, vertexUnavailable=true: routes to the cascade, not a blind forced Nova
+    ✓ Nova disabled, no nova context at all, vertexUnavailable=true: forced onto Nova blind rather than Vertex
+    ✓ identity not allowlisted, explicit request, unset (default): still vertex — unchanged behavior (1 ms)
+    ✓ identity not allowlisted, explicit request, vertexUnavailable=true: forced onto Nova — a dead Vertex outranks canary policy
+    ✓ identity not allowlisted, default (no-request) path, vertexUnavailable=true: forced onto Nova, never falls through to a vertex default
+    ✓ all gates pass normally: vertexUnavailable=true does not change the happy-path reason (1 ms)
+    ✓ env_explicit_vertex is untouched — the emergency-rollback escape hatch is a deliberate operator action, not automatic session routing
+
+Test Suites: 3 passed, 3 total
+Tests:       59 passed, 59 total
+Snapshots:   0 total
+Time:        0.818 s, estimated 1 s
+Ran all test suites matching /test\/orb\/live\/upstream\/vertex-unavailable-forces-nova.test.ts|test\/orb\/live\/upstream\/upstream-provider-selector.test.ts|test\/orb\/live\/upstream\/cascaded-voice.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
