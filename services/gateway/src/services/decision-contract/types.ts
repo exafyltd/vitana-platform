@@ -20,9 +20,16 @@ export function asVerbatim(s: string): VerbatimString {
   return s as VerbatimString;
 }
 
-export type SupportedLanguage = 'en' | 'de' | 'fr' | 'es' | 'ar' | 'zh' | 'ru' | 'sr';
+// VTID-03681: pt/pl added. This one is an INVARIANT, not a lookup —
+// `invariants.ts` runs `checkEnum(v.language, SUPPORTED_LANGUAGES, ...)`, so
+// unlike every other table in the pt/pl fix a miss here does not degrade
+// quietly, it reports a contract violation. It must therefore stay in step
+// with `SUPPORTED_LIVE_LANGUAGES` (orb/live/config.ts) or a language that now
+// legitimately reaches the live path gets flagged as invalid.
+export type SupportedLanguage =
+  'en' | 'de' | 'fr' | 'es' | 'ar' | 'zh' | 'ru' | 'sr' | 'pt' | 'pl';
 export const SUPPORTED_LANGUAGES: readonly SupportedLanguage[] = [
-  'en', 'de', 'fr', 'es', 'ar', 'zh', 'ru', 'sr',
+  'en', 'de', 'fr', 'es', 'ar', 'zh', 'ru', 'sr', 'pt', 'pl',
 ];
 
 export type RecencyBucket =

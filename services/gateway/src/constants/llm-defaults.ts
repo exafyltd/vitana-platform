@@ -66,8 +66,19 @@ export interface LLMRoutingPolicy {
   operator: StageRoutingConfig;
   memory: StageRoutingConfig;
   triage: StageRoutingConfig;
-  vision: StageRoutingConfig;
-  classifier: StageRoutingConfig;
+  /**
+   * VTID-03565: optional because they genuinely are absent in production.
+   * The ACTIVE policy (v10, 2026-05-02) predates these two stages and stores
+   * only the original six, and `loadPolicy()` takes the stored row WHOLESALE
+   * — it does not merge missing stages with LLM_SAFE_DEFAULTS. Typing them as
+   * required asserted a shape the live data does not have, which is how
+   * `callViaRouter('vision', ...)` came to fail at runtime with
+   * "No policy configured for stage 'vision'" against a type that said it
+   * could not happen. `callViaRouter` already guards on `!stageConfig`; the
+   * type now admits the case instead of hiding it.
+   */
+  vision?: StageRoutingConfig;
+  classifier?: StageRoutingConfig;
 }
 
 /**
@@ -76,54 +87,79 @@ export interface LLMRoutingPolicy {
  * Every primary AND every fallback is the strongest model the provider
  * exposes. No mid-tier defaults seeded anywhere.
  */
-export const LLM_SAFE_DEFAULTS: LLMRoutingPolicy = {
+// VTID-03565: `Required<>` — the DEFAULTS are complete by construction even
+// though a STORED policy need not be (see LLMRoutingPolicy). That asymmetry is
+// the invariant every `?? LLM_SAFE_DEFAULTS[stage]` call site already relies
+// on, so it is stated here once rather than re-asserted at each of them.
+// VTID-03579: these defaults used to route 7 of 8 stages to vertex/Gemini as
+// PRIMARY, with `anthropic` as the usual fallback. Both were actively harmful.
+//
+// `loadPolicy()` returns these whenever the policy read fails OR the active row
+// is missing — so a Supabase hiccup silently moved the entire platform back onto
+// Google, logging one console.warn and nothing else. That is not hypothetical:
+// on 2026-08-11 the planner served real traffic on `vertex/gemini-3.1-pro-preview`
+// with `fallback_used: false` while `llm_routing_policy` v14 said bedrock, during
+// a window when Supabase was returning "remaining connection slots are reserved".
+// A safety net that fails toward the provider the platform is deliberately
+// leaving is the exact silent-fallback shape ALWAYS 10c forbids.
+//
+// `anthropic` was equally wrong as a fallback: that account has no credit
+// balance, so every such call 400s (see §2b).
+//
+// Models here are restricted to the two profiles VERIFIED invokable by real
+// InvokeModel against eu-central-1 on 2026-08-10. Every Haiku and Opus profile
+// returns AccessDenied — the account is not subscribed — so naming one here
+// would reintroduce the same silent-fallback bug one layer down.
+export const LLM_SAFE_DEFAULTS: Required<LLMRoutingPolicy> = {
   planner: {
-    primary_provider: 'vertex',
-    primary_model: 'gemini-3.1-pro-preview',
-    fallback_provider: 'anthropic',
-    fallback_model: 'claude-opus-4-7',
-  },
-  worker: {
-    primary_provider: 'claude_subscription',
-    primary_model: 'claude-opus-4-7',
-    fallback_provider: 'vertex',
-    fallback_model: 'gemini-3.1-pro-preview',
-  },
-  validator: {
-    primary_provider: 'vertex',
-    primary_model: 'gemini-3.1-pro-preview',
-    fallback_provider: 'anthropic',
-    fallback_model: 'claude-opus-4-7',
-  },
-  operator: {
-    primary_provider: 'vertex',
-    primary_model: 'gemini-3.1-pro-preview',
-    fallback_provider: 'anthropic',
-    fallback_model: 'claude-opus-4-7',
-  },
-  memory: {
-    primary_provider: 'vertex',
-    primary_model: 'gemini-3.1-pro-preview',
+    primary_provider: 'bedrock',
+    primary_model: 'eu.anthropic.claude-sonnet-4-6',
     fallback_provider: 'deepseek',
     fallback_model: 'deepseek-reasoner',
   },
+  worker: {
+    primary_provider: 'bedrock',
+    primary_model: 'eu.anthropic.claude-sonnet-4-6',
+    fallback_provider: 'deepseek',
+    fallback_model: 'deepseek-chat',
+  },
+  validator: {
+    primary_provider: 'bedrock',
+    primary_model: 'eu.anthropic.claude-sonnet-4-6',
+    fallback_provider: 'deepseek',
+    fallback_model: 'deepseek-reasoner',
+  },
+  operator: {
+    primary_provider: 'bedrock',
+    primary_model: 'eu.anthropic.claude-sonnet-4-6',
+    fallback_provider: 'deepseek',
+    fallback_model: 'deepseek-chat',
+  },
+  memory: {
+    primary_provider: 'bedrock',
+    primary_model: 'eu.anthropic.claude-sonnet-4-6',
+    fallback_provider: 'deepseek',
+    fallback_model: 'deepseek-chat',
+  },
   triage: {
-    primary_provider: 'vertex',
-    primary_model: 'gemini-3.1-pro-preview',
-    fallback_provider: 'anthropic',
-    fallback_model: 'claude-opus-4-7',
+    primary_provider: 'bedrock',
+    primary_model: 'eu.anthropic.claude-sonnet-4-6',
+    fallback_provider: 'deepseek',
+    fallback_model: 'deepseek-chat',
   },
   vision: {
-    primary_provider: 'vertex',
-    primary_model: 'gemini-3.1-pro-preview',
-    fallback_provider: 'anthropic',
-    fallback_model: 'claude-opus-4-7',
+    primary_provider: 'bedrock',
+    primary_model: 'eu.anthropic.claude-sonnet-4-6',
+    // DeepSeek has no image input, so a text-only fallback would fail every
+    // frame call rather than degrade. Second Bedrock model instead.
+    fallback_provider: 'bedrock',
+    fallback_model: 'eu.anthropic.claude-sonnet-4-5-20250929-v1:0',
   },
   classifier: {
-    primary_provider: 'deepseek',
-    primary_model: 'deepseek-reasoner',
-    fallback_provider: 'vertex',
-    fallback_model: 'gemini-3.1-pro-preview',
+    primary_provider: 'bedrock',
+    primary_model: 'eu.anthropic.claude-sonnet-4-6',
+    fallback_provider: 'deepseek',
+    fallback_model: 'deepseek-chat',
   },
 };
 
@@ -193,6 +229,19 @@ export const VALID_STAGES: LLMStage[] = [
   'vision',
   'classifier',
 ];
+
+/**
+ * Stages a stored policy may legitimately omit (VTID-03565).
+ *
+ * The ACTIVE production policy (v10, 2026-05-02) predates these two and stores
+ * only the original six. Both the route's `PolicySchema` and the service's
+ * `validatePolicy()` must agree on this set — they are two gates on the SAME
+ * write, and the first version of this fix relaxed only the zod schema, so a
+ * six-stage round-trip passed validation at the route and was then rejected by
+ * the service with "Missing configuration for stage: vision". Caught in review
+ * on #3073. The list lives here so neither gate can drift from the other.
+ */
+export const OPTIONAL_STAGES: LLMStage[] = ['vision', 'classifier'];
 
 /**
  * Valid providers

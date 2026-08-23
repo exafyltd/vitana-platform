@@ -44,6 +44,10 @@ const BeaconSchema = z.object({
   captured_at: z.string().min(20).max(40),
   user_agent: z.string().max(512).optional(),
   ts_origin_ms: z.number().int().nonnegative().optional(),
+  // Device split (vitana-v1 RUM W2): lets the rollup compare iOS vs Android
+  // vs desktop, and Appilix WebView vs plain browser, without re-parsing UAs.
+  platform: z.enum(['ios', 'android', 'desktop', 'other']).optional(),
+  webview: z.boolean().optional(),
 });
 
 export type RumBeacon = z.infer<typeof BeaconSchema>;
@@ -83,6 +87,8 @@ router.post('/beacon', async (req: Request, res: Response) => {
         captured_at: beacon.captured_at,
         user_agent: beacon.user_agent,
         ts_origin_ms: beacon.ts_origin_ms,
+        platform: beacon.platform,
+        webview: beacon.webview,
       },
     });
     return res.status(204).end();

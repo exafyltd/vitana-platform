@@ -1,5 +1,21 @@
-import request from 'supertest';
+import supertestBase from 'supertest';
 import express from 'express';
+
+// SECURITY (post-audit hardening): routes/autopilot.ts now requires a
+// GATEWAY_SERVICE_TOKEN bearer on every request (bar /health,
+// /pipeline/health) — see requireServiceToken in that file. This test
+// exercises the real router through the full app, so set a known token and
+// route every request() call through this wrapper instead of touching each
+// call site individually. Mirrors the identical pattern already used in
+// test/autopilot-pipeline.test.ts.
+process.env.GATEWAY_SERVICE_TOKEN = 'test-service-token';
+function request(app: any) {
+  const agent = supertestBase(app);
+  return {
+    get: (path: string) => agent.get(path).set('Authorization', 'Bearer test-service-token'),
+    post: (path: string) => agent.post(path).set('Authorization', 'Bearer test-service-token'),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Mocks — autopilot.ts is a thin HTTP layer over a large set of service
@@ -755,6 +771,39 @@ describe('GET /health', () => {
     const res = await request(app).get('/api/v1/autopilot/health');
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(false);
+  });
+});
+
+// =============================================================================
+// VTID-03598: requireServiceToken's health-check exemption list
+//
+// This router is mounted at /api/v1/autopilot BEFORE autopilot-prompts.ts
+// and autopilot-recommendations.ts (see index.ts), which are mounted at the
+// same prefix and own /prompts/health and /recommendations/health. Because
+// this router's `router.use(requireServiceToken)` runs unconditionally for
+// every request under that prefix, an unexempted path here 401s and NEVER
+// reaches those routers' own unauthenticated handlers — a 200 route became
+// unreachable with no error pointing at the real cause. These paths don't
+// resolve to a real route on THIS bare router (that's autopilot-prompts.ts'
+// job), so the meaningful assertion is that the auth gate itself doesn't
+// block them — proven by getting Express's plain 404 instead of the gate's
+// 401.
+// =============================================================================
+
+describe('requireServiceToken health-check exemptions (no Authorization header)', () => {
+  it('does not 401 an unauthenticated /prompts/health request', async () => {
+    const res = await supertestBase(app).get('/api/v1/autopilot/prompts/health');
+    expect(res.status).not.toBe(401);
+  });
+
+  it('does not 401 an unauthenticated /recommendations/health request', async () => {
+    const res = await supertestBase(app).get('/api/v1/autopilot/recommendations/health');
+    expect(res.status).not.toBe(401);
+  });
+
+  it('still 401s an unauthenticated request to a real gated route', async () => {
+    const res = await supertestBase(app).get('/api/v1/autopilot/controller/status');
+    expect(res.status).toBe(401);
   });
 });
 

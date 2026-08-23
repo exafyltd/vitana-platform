@@ -346,10 +346,21 @@ export async function generateEmbedding(text: string): Promise<EmbeddingResponse
       type: 'embedding.fallback_used',
       source: SERVICE_NAME,
       status: 'warning',
-      message: 'Used Gemini fallback for embedding generation',
+      message: `Used Gemini fallback for embedding generation (${geminiResult.model})`,
       payload: {
         openai_error: openaiResult.error,
-        gemini_latency_ms: geminiResult.latency_ms
+        gemini_latency_ms: geminiResult.latency_ms,
+        // VTID-03579: naming provider/model/dimensions here is not cosmetic.
+        // A Gemini vector and an OpenAI vector of the SAME length are not
+        // comparable — they occupy different semantic spaces — yet both insert
+        // happily into memory_items.embedding (vector(1536)) and neither errors.
+        // Similarity across the mixed set is quietly meaningless, so the only
+        // way to know which rows are affected is to have recorded it at write
+        // time. 495 such fallbacks fired between 2026-05-27 and 2026-07-06 with
+        // none of this captured.
+        provider: 'gemini',
+        model: geminiResult.model,
+        dimensions: geminiResult.dimensions
       }
     }).catch(() => {});
 
@@ -407,11 +418,20 @@ export async function generateBatchEmbeddings(texts: string[]): Promise<BatchEmb
       type: 'embedding.batch_generated',
       source: SERVICE_NAME,
       status: 'success',
-      message: `Generated ${texts.length} embeddings`,
+      message: `Generated ${texts.length} embeddings via openai/${result.model}`,
       payload: {
         count: texts.length,
         dimensions: result.dimensions,
-        latency_ms: result.latency_ms
+        latency_ms: result.latency_ms,
+        // VTID-03579: provider/model were absent here, so 1384 batch events over
+        // 90 days recorded WHAT was embedded and never WHO embedded it. That is
+        // the same blindness that let the Gemini bill hide behind a routing
+        // table: only completion telemetry says who actually served a request.
+        // This path is OpenAI-only by construction (there is no batch fallback),
+        // but recording it explicitly means a future fallback cannot be added
+        // without the events showing it.
+        provider: 'openai',
+        model: result.model
       }
     }).catch(() => {});
 

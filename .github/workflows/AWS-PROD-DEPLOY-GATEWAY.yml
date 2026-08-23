@@ -68,6 +68,147 @@ on:
         description: 'Nova canary tenant UUID allowlist (comma-separated; used only when nova_sonic_enabled is set)'
         required: false
         default: ''
+      # VTID-03560: the two levers that actually move the Gemini API bill.
+      # Both are independent of nova_sonic_enabled and are EMPTY-preserving
+      # for the same reason the Nova block is — a routine prod deploy must
+      # never flip voice routing or a cost budget as a side effect.
+      #
+      # These live here, as upserted deploy inputs, rather than as a hand-edit
+      # to the live task definition ON PURPOSE. VTID-03513 cost four days of
+      # staging downtime precisely because task-def state existed only in AWS
+      # and never in this repo: one bad value cloned itself forward through
+      # every subsequent deploy and was invisible to code review. Anything
+      # that changes runtime behaviour belongs in a file someone can diff.
+      nova_sonic_global_enabled:
+        description: 'Set NOVA_SONIC_GLOBAL_ENABLED — true promotes Nova OFF the canary allowlist to ALL sessions (true/false; EMPTY = preserve)'
+        required: false
+        default: ''
+      orb_idle_no_engagement_ms:
+        description: 'Set ORB_IDLE_NO_ENGAGEMENT_MS — reap budget for a live session with zero engagement (default 300000; EMPTY = preserve)'
+        required: false
+        default: ''
+      orb_newday_overview_rung_enabled:
+        description: 'Set ORB_NEWDAY_OVERVIEW_RUNG_ENABLED — false kills the rich new-day briefing opener and falls back to the wake-brief line (false/true; EMPTY = preserve, code default is ON)'
+        required: false
+        default: ''
+      # VTID-03683: the cascaded voice pipeline (Transcribe -> Bedrock -> Polly)
+      # for the languages Nova Sonic cannot speak at all (ru/pl/ar/zh). These
+      # are declared here rather than left to a hand-edit of the live task def
+      # for the reason the block above this one already records: that is exactly
+      # how VTID-03513 cost four days of staging downtime.
+      #
+      # ORDERING IS LOAD-BEARING, same shape as BEDROCK_ROLE_ARN below. The
+      # gateway task role needs transcribe:StartStreamTranscription AND
+      # polly:SynthesizeSpeech before this is switched on. Without them the
+      # cascade fails per-turn instead of failing to start — and VTID-03665
+      # already found Polly failing silently in one environment from exactly
+      # this kind of missing grant. Verify the IAM first, then flip.
+      orb_cascaded_voice_enabled:
+        description: 'Set ORB_CASCADED_VOICE_ENABLED — true routes Nova-unsupported languages (ru/pl/ar/zh) to the Transcribe->Bedrock->Polly cascade instead of forcing them onto Nova. Needs transcribe+polly IAM FIRST (true/false; EMPTY = preserve)'
+        required: false
+        default: ''
+      aws_transcribe_region:
+        description: 'Set AWS_TRANSCRIBE_REGION — region for Transcribe streaming; falls back to AWS_REGION then eu-central-1 (EMPTY = preserve)'
+        required: false
+        default: ''
+      # BOOTSTRAP-POLLY-NARRATION-CACHE: guided-topic lesson audio was
+      # re-synthesized on EVERY My Journey tap (~1800 chars, ~2000 distinct
+      # assets across 254 topics x 8 languages). These two turn that into a
+      # per-asset cost. `s3` REQUIRES the bucket + the s3 grant on
+      # vitana-ecs-task-role — run scripts/aws/setup-narration-audio-cache.sh
+      # first. Setting `s3` with no bucket logs an error and falls back to the
+      # in-process cache rather than silently disabling caching.
+      # VTID-03697 — narration_audio_cache / narration_audio_bucket REMOVED.
+      #
+      # GitHub allows a maximum of 25 `workflow_dispatch` inputs. Adding these
+      # two took this file from 24 to 26, and GitHub then refuses to parse the
+      # workflow AT ALL:
+      #
+      #   failed to parse workflow: you may only define up to 25 `inputs`
+      #   for a `workflow_dispatch` event
+      #
+      # That is not a degraded input — it makes the whole workflow
+      # undispatchable, which took production deploys offline entirely,
+      # including the Command Hub PUBLISH button (it dispatches this same
+      # workflow). Nothing caught it because this workflow is
+      # `workflow_dispatch`-only: no push exercises it, so the breakage
+      # surfaces at the exact moment someone needs to ship.
+      #
+      # Removing these two is safe for every known caller. PUBLISH
+      # (`routes/operator.ts`) passes only reason/deploy_mode/expected_commit,
+      # and `scripts/deploy/publish-to-prod.sh` passes only its own service /
+      # vtid / environment / health_path / canary / initiator set. Neither has
+      # ever passed a narration input.
+      #
+      # Nothing is lost operationally today: NARRATION_AUDIO_CACHE defaults to
+      # `memory` in code when unset, which is the intended production value,
+      # and the s3 leg is explicitly unaccepted (the bucket does not exist and
+      # the task role has no s3 grant — CLAUDE.md §2c-cache).
+      #
+      # TO SET THEM LATER: this file is at the ceiling, so a new env toggle
+      # cannot simply be appended. Either retire an obsolete input first, or
+      # replace the one-input-per-env-var pattern with a single JSON
+      # `env_overrides` input. A guard test now fails if any workflow exceeds
+      # the limit, so this cannot silently recur.
+      # VTID-03649: GCP project billing was disabled, permanently killing
+      # Vertex Live. Without this, sessions whose language/runtime fail
+      # Nova's gates (and Nova's own premature-close recovery) still degrade
+      # to Vertex — now a guaranteed connection failure, not a real fallback.
+      vertex_live_unavailable:
+        description: 'Set VERTEX_LIVE_UNAVAILABLE — true forces Nova through the runtime/language gates instead of degrading to a dead Vertex Live (true/false; EMPTY = preserve)'
+        required: false
+        default: ''
+      # VTID-03563: Claude-always-on-Bedrock is standing governance (CLAUDE.md
+      # ALWAYS 10a). These exist so the activation gate lives in a diffable
+      # file instead of only in live AWS state — the failure mode VTID-03513
+      # paid four days of staging downtime for, where task-def wiring existed
+      # nowhere in git and got cloned forward through every later deploy.
+      bedrock_role_arn:
+        description: 'Set BEDROCK_ROLE_ARN — THE activation gate for Claude-on-Bedrock. Unset = adapter reports not_configured and the router SILENTLY serves the fallback. (EMPTY = preserve)'
+        required: false
+        default: ''
+      bedrock_model_id:
+        description: 'Set BEDROCK_MODEL_ID — must be a resolved cross-region INFERENCE PROFILE id (e.g. eu.anthropic.claude-sonnet-4-6-v1:0), NOT a bare on-demand model id (EMPTY = preserve)'
+        required: false
+        default: ''
+      aws_bedrock_region:
+        description: 'Set AWS_BEDROCK_REGION — must be a region where the chosen Claude profile is actually offered; a wrong region fails with an opaque model-not-found (EMPTY = preserve)'
+        required: false
+        default: ''
+      # VTID-03579: the autopilot background executor. Unlike every other lever
+      # here, this one is DANGEROUS BY DEFAULT: the gate in index.ts reads
+      # `!== 'false'`, so leaving it unset ENABLES the executor. On 2026-08-11
+      # it ran 990 planner LLM calls in a day — the same 12 findings replanned
+      # every 30s, because lazyPlanTick's only dedupe guard is "skip if a plan
+      # row exists" and generatePlanVersion was never writing one. It billed
+      # 863 of those to Gemini (preview models skip Vertex and hit AI Studio),
+      # which is what took the Gemini API line to $173 MTD.
+      #
+      # Setting this to 'false' is therefore not a tuning knob, it is a
+      # circuit breaker, and it must be settable from a diffable file rather
+      # than by hand-editing live AWS state (the VTID-03513 lesson).
+      dev_autopilot_executor_enabled:
+        description: "Set DEV_AUTOPILOT_EXECUTOR_ENABLED — 'false' STOPS the autopilot background executor (lazyPlanTick every 30s). NOTE: unset means ENABLED, the code gate is !== 'false'. (EMPTY = preserve)"
+        required: false
+        default: ''
+      # VTID-03578: the remaining two Google seams. The adapters have existed
+      # since VTID-03495/03497 and both default to the Google provider, so the
+      # code has shipped to prod repeatedly while changing nothing — the switch
+      # was only ever reachable by hand-editing the live task definition, i.e.
+      # the exact mechanism VTID-03513 cost four days of staging downtime for.
+      # Same EMPTY-preserving shape as every lever above.
+      tts_provider:
+        description: 'Set TTS_PROVIDER (google|polly) — polly routes all 4 gateway TTS call sites to Amazon Polly. NOTE: sr has no Polly voice in any engine and still falls back to Google (EMPTY = preserve)'
+        required: false
+        default: ''
+      tts_polly_strict:
+        description: 'Set TTS_POLLY_STRICT — true DISABLES the polly→google fallback, so an unservable request returns no audio instead of quietly reaching back to GCP. Use to prove a shutdown is clean; it will take Serbian TTS down (true/false; EMPTY = preserve)'
+        required: false
+        default: ''
+      image_provider:
+        description: 'Set IMAGE_PROVIDER (vertex|bedrock) — bedrock routes cover-image generation/outpainting to Amazon Titan. Run scripts/images/verify-titan-image.ts FIRST; outpaint mask polarity is still unverified (EMPTY = preserve)'
+        required: false
+        default: ''
       reason:
         description: 'Reason for this AWS production gateway deploy — required'
         required: true
@@ -251,9 +392,25 @@ jobs:
 
       - name: Register task-definition revision + roll the service
         env:
+          MARKETPLACE_SYNC_SECRET_VALUE: ${{ secrets.MARKETPLACE_SYNC_SECRET }}
           NOVA_ENABLED_INPUT: ${{ inputs.nova_sonic_enabled }}
           NOVA_USERS_INPUT: ${{ inputs.nova_canary_user_ids }}
           NOVA_TENANTS_INPUT: ${{ inputs.nova_canary_tenant_ids }}
+          NOVA_GLOBAL_INPUT: ${{ inputs.nova_sonic_global_enabled }}
+          ORB_IDLE_NO_ENGAGEMENT_INPUT: ${{ inputs.orb_idle_no_engagement_ms }}
+          ORB_NEWDAY_RUNG_INPUT: ${{ inputs.orb_newday_overview_rung_enabled }}
+          ORB_CASCADED_VOICE_INPUT: ${{ inputs.orb_cascaded_voice_enabled }}
+          AWS_TRANSCRIBE_REGION_INPUT: ${{ inputs.aws_transcribe_region }}
+          VERTEX_LIVE_UNAVAILABLE_INPUT: ${{ inputs.vertex_live_unavailable }}
+          BEDROCK_ROLE_ARN_INPUT: ${{ inputs.bedrock_role_arn }}
+          BEDROCK_MODEL_ID_INPUT: ${{ inputs.bedrock_model_id }}
+          AWS_BEDROCK_REGION_INPUT: ${{ inputs.aws_bedrock_region }}
+          DEV_AUTOPILOT_EXECUTOR_INPUT: ${{ inputs.dev_autopilot_executor_enabled }}
+          TTS_PROVIDER_INPUT: ${{ inputs.tts_provider }}
+          TTS_POLLY_STRICT_INPUT: ${{ inputs.tts_polly_strict }}
+          IMAGE_PROVIDER_INPUT: ${{ inputs.image_provider }}
+          NARRATION_AUDIO_CACHE_INPUT: ${{ inputs.narration_audio_cache }}
+          NARRATION_AUDIO_BUCKET_INPUT: ${{ inputs.narration_audio_bucket }}
         run: |
           set -e
           # VTID-03420: promote mode ships staging's image; rebuild mode ships
@@ -321,6 +478,81 @@ jobs:
                 + [ {name:"FEATURE_ORB_FAST_START_ENV", value:"staging+prod"},
                     {name:"FEATURE_ORB_BRAIN_CACHE_ENV", value:"staging+prod"} ] )')
 
+          # VTID-03618: same class of bug as FEATURE_ORB_FAST_START_ENV above —
+          # a value the GCP deploy pipeline (EXEC-DEPLOY.yml) has always passed
+          # unconditionally as a plain env var (`--update-env-vars=
+          # MARKETPLACE_SYNC_SECRET=...`) but was never carried across the
+          # VTID-03419 GCP→AWS cutover, because the AWS task def was built by
+          # cloning forward whatever GCP happened to have wired at build time,
+          # not by mirroring every GCP env var. Confirmed live 2026-08-12: the
+          # gateway answered `/api/v1/internal/marketplace/sync/all` with
+          # HTTP 500 "MARKETPLACE_SYNC_SECRET not configured on gateway" — the
+          # cron's own secret is correct (it's the same GH secret sourced
+          # below), the gateway simply never had it. Pinned unconditionally,
+          # not behind a dispatch input, because this is a required credential
+          # for a route that already exists in prod code, not an optional
+          # feature lever — the same reasoning FEATURE_ORB_FAST_START_ENV
+          # above uses. A plain env var, not a Secrets Manager reference,
+          # matching GCP's existing shape for this exact value.
+          NEW_DEF=$(echo "$NEW_DEF" | jq --arg S "$MARKETPLACE_SYNC_SECRET_VALUE" '
+            .containerDefinitions[0].environment |=
+              ( [ .[] | select(.name != "MARKETPLACE_SYNC_SECRET") ]
+                + [ {name:"MARKETPLACE_SYNC_SECRET", value:$S} ] )')
+
+          # VTID-03584: the new-day greeting was suppressed on 100% of
+          # authenticated production sessions from 2026-08-04 onward. Measured:
+          # `greeting_context_pending` + `safe_fast_greeting` fired on every
+          # session (0 on 08-03 across 1,631 ORB events / 20 users, then 22, 35,
+          # 27, 24, 43, ... every day after).
+          #
+          # Mechanism: with fast-start deferral on (pinned above),
+          # `contextReadyResolved` starts false and the greeting builder waits
+          # ORB_CONTEXT_READY_GATE_TIMEOUT_MS for the wake-brief + journey
+          # assembly. `safeFastApplies()` (compute-greeting-decision.ts) then
+          # takes the short generic opener whenever that gate expires. The rich
+          # new-day payload — unread messages, Vitana index, Life Compass,
+          # calendar, reminders (`newdayHasContent`) — needs several Supabase
+          # round-trips and never completes inside 300ms, so the greeting was
+          # timed out before it could ever speak.
+          #
+          # 300 is the STAGING experiment value (see STAGE-DEPLOY.yml, which
+          # sets it next to FEATURE_ORB_SAFE_FAST_GREETING_ENV=staging-only). It
+          # was carried onto the prod task def, where the flag is 'production' —
+          # i.e. the experiment's fallback became prod's default path.
+          #
+          # The code default is 4000 (orb-live.ts). Pin it so prod cannot
+          # silently inherit a staging tuning value again. Safe-fast remains a
+          # real fallback for genuinely slow starts; it is no longer the norm.
+          #
+          # VTID-03625 — P0 REVERT, 2026-08-13: the 4000 value above is what
+          # actually shipped from Aug 11 14:54 UTC onward, and it correlates
+          # EXACTLY with a new, previously-nonexistent nova_validation failure
+          # class: 0 errors Aug 6-10 at the prior 300ms value, first error 47
+          # minutes after this deploy, escalating to 17/day by Aug 12. Bedrock
+          # kills a Nova Sonic stream after ~55s of no audio/interactive
+          # content; waiting up to 4s longer to assemble a heavier
+          # multi-Supabase-round-trip "new-day" payload (unread messages,
+          # Vitana index, Life Compass, calendar, reminders) before the
+          # greeting can even start is pushing a growing share of Nova
+          # sessions past that deadline — a dead, unrecoverable ORB session,
+          # not merely a downgraded greeting.
+          #
+          # Reverting to 300 (the exact value proven error-free Aug 6-10)
+          # rather than guessing a middle value, because a total connection
+          # kill is strictly worse than the greeting-downgrade problem 300 was
+          # originally raised to fix. The greeting-downgrade tradeoff is
+          # KNOWINGLY reinstated by this revert — see VTID-03584 above for
+          # what that looks like — pending a Nova-aware follow-up (a much
+          # tighter gate specifically for nova_sonic sessions, since Vertex
+          # sessions show no matching failure class and can likely keep a
+          # longer wait). Do not re-raise this value without first confirming
+          # via a real Bedrock invoke that the greeting-assembly path finishes
+          # well inside Nova's 55s budget, not just inside the gate timeout.
+          NEW_DEF=$(echo "$NEW_DEF" | jq '
+            .containerDefinitions[0].environment |=
+              ( [ .[] | select(.name != "ORB_CONTEXT_READY_GATE_TIMEOUT_MS") ]
+                + [ {name:"ORB_CONTEXT_READY_GATE_TIMEOUT_MS", value:"300"} ] )')
+
           # BOOTSTRAP-NOVA-SONIC-VOICE: only when explicitly requested, replace
           # the Nova env block (region/model stay pinned — never inputs).
           if [ -n "$NOVA_ENABLED_INPUT" ]; then
@@ -335,6 +567,227 @@ jobs:
                         {name:"NOVA_SONIC_MODEL_ID", value:"amazon.nova-2-sonic-v1:0"},
                         {name:"NOVA_SONIC_CANARY_USER_IDS", value:$U},
                         {name:"NOVA_SONIC_CANARY_TENANT_IDS", value:$T} ] )')
+          fi
+
+          # VTID-03560: Nova GLOBAL promotion. Deliberately a separate branch
+          # from the canary block above — promoting Nova to every session and
+          # editing the canary allowlist are different decisions, and coupling
+          # them would mean you could not do one without restating the other.
+          #
+          # isNovaSonicIdentityAllowed() short-circuits on the exact string
+          # "true"; anything else leaves the allowlist semantics untouched, so
+          # setting this back to false restores the prior canary population
+          # with no allowlist edits. Promotion widens WHO gets Nova, never what
+          # it runs on — the enabled/language/aws-ecs gates all still bite.
+          if [ -n "$NOVA_GLOBAL_INPUT" ]; then
+            echo "Applying Nova GLOBAL promotion: NOVA_SONIC_GLOBAL_ENABLED=$NOVA_GLOBAL_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg G "$NOVA_GLOBAL_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "NOVA_SONIC_GLOBAL_ENABLED") ]
+                  + [ {name:"NOVA_SONIC_GLOBAL_ENABLED", value:$G} ] )')
+          fi
+
+          # VTID-03649: forces Nova through the runtime/language gates instead
+          # of degrading to a permanently-dead Vertex Live.
+          if [ -n "$VERTEX_LIVE_UNAVAILABLE_INPUT" ]; then
+            echo "Applying VERTEX_LIVE_UNAVAILABLE=$VERTEX_LIVE_UNAVAILABLE_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg V "$VERTEX_LIVE_UNAVAILABLE_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "VERTEX_LIVE_UNAVAILABLE") ]
+                  + [ {name:"VERTEX_LIVE_UNAVAILABLE", value:$V} ] )')
+          fi
+
+          # VTID-03560: idle reap budget for a live session that never engaged.
+          # This is the single biggest remaining lever on the Gemini Live bill
+          # (billed per second of open stream). VTID-03510 set it to 5 min and
+          # cut billed minutes ~80%; the residual is 26 abandoned sessions a
+          # day still burning the full 5 min each before the sweep takes them.
+          #
+          # Do NOT push this below ~60s without checking classifyIdleSession
+          # tests: a session is created with lastActivity = now, so the budget
+          # must survive the greeting plus the seconds a user spends deciding
+          # to speak. Reaping a user mid-thought is a worse failure than the
+          # cost it saves, and it is invisible to anyone but that user.
+          if [ -n "$ORB_IDLE_NO_ENGAGEMENT_INPUT" ]; then
+            echo "Applying ORB idle budget: ORB_IDLE_NO_ENGAGEMENT_MS=$ORB_IDLE_NO_ENGAGEMENT_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg I "$ORB_IDLE_NO_ENGAGEMENT_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "ORB_IDLE_NO_ENGAGEMENT_MS") ]
+                  + [ {name:"ORB_IDLE_NO_ENGAGEMENT_MS", value:$I} ] )')
+          fi
+
+          # VTID-03646: the kill switch for the rich new-day briefing opener.
+          #
+          # Deliberately an EMPTY-preserving INPUT and not pinned like the two
+          # flags above, because it is not the same kind of thing. Those pin a
+          # value prod must always have; this is an emergency OFF for a rung
+          # whose code default is now ON. Pinning "true" here would make the
+          # switch unreachable without a PR — the opposite of why it exists.
+          #
+          # Read as `!== 'false'` (orb-live.ts, module load), so any value
+          # other than the exact string "false" leaves the briefing enabled.
+          #
+          # When you would set this to false: the briefing is speaking content
+          # that trips Bedrock's Nova content filter at turn_count=0, and the
+          # session is stuck in the "einen Moment, ich verbinde mich neu" retry
+          # loop (VTID-03628's symptom). Note that was diagnosed once already
+          # and the rung was NOT the cause — it had never fired in production
+          # at all (its guard rejected on a missing first name, VTID-03646),
+          # and the filter blocks continued for days after it was disabled.
+          # So check `orb.live.diag` / `stage=upstream_error` against
+          # `wake_opener` before reaching for this: if the blocked sessions are
+          # not reporting `newday_overview`, turning this off costs you the
+          # briefing and fixes nothing.
+          if [ -n "$ORB_NEWDAY_RUNG_INPUT" ]; then
+            echo "Applying new-day briefing rung: ORB_NEWDAY_OVERVIEW_RUNG_ENABLED=$ORB_NEWDAY_RUNG_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg N "$ORB_NEWDAY_RUNG_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "ORB_NEWDAY_OVERVIEW_RUNG_ENABLED") ]
+                  + [ {name:"ORB_NEWDAY_OVERVIEW_RUNG_ENABLED", value:$N} ] )')
+          fi
+
+          # VTID-03683: cascaded voice (Transcribe -> Bedrock -> Polly) for the
+          # languages Nova Sonic cannot speak. Unset, the selector is
+          # byte-for-byte the existing forced-Nova path, so a deploy that omits
+          # this input changes no routing at all.
+          #
+          # Do NOT set this to true before the gateway task role actually has
+          # transcribe:StartStreamTranscription and polly:SynthesizeSpeech.
+          # The eligibility gate refuses a language it cannot serve, but it
+          # cannot see an IAM denial — that surfaces per turn, as a session
+          # that connects and then produces nothing, which is the same
+          # invisible shape as VTID-03480 and VTID-03665.
+          if [ -n "$ORB_CASCADED_VOICE_INPUT" ]; then
+            echo "Applying cascaded voice: ORB_CASCADED_VOICE_ENABLED=$ORB_CASCADED_VOICE_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg C "$ORB_CASCADED_VOICE_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "ORB_CASCADED_VOICE_ENABLED") ]
+                  + [ {name:"ORB_CASCADED_VOICE_ENABLED", value:$C} ] )')
+          fi
+
+          # VTID-03683: its own var rather than inheriting AWS_REGION blindly,
+          # for the same reason AWS_TITAN_IMAGE_REGION is (§2d) — Transcribe
+          # streaming is not offered in every region, and a wrong region fails
+          # with an opaque error rather than a named one. Falls back to
+          # AWS_REGION then eu-central-1 in code, so leaving it EMPTY is fine.
+          if [ -n "$AWS_TRANSCRIBE_REGION_INPUT" ]; then
+            echo "Applying AWS_TRANSCRIBE_REGION=$AWS_TRANSCRIBE_REGION_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg R "$AWS_TRANSCRIBE_REGION_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "AWS_TRANSCRIBE_REGION") ]
+                  + [ {name:"AWS_TRANSCRIBE_REGION", value:$R} ] )')
+          fi
+
+          # VTID-03563: Claude-always-on-Bedrock (CLAUDE.md ALWAYS 10a).
+          #
+          # BEDROCK_ROLE_ARN is THE activation gate. Until it is set, the
+          # adapter reports not_configured and llm-router SKIPS bedrock — so a
+          # policy row pointing at 'bedrock' quietly serves its FALLBACK
+          # instead. That is not a hypothetical: the direct-Anthropic stages
+          # have been failing on a zero credit balance and silently landing on
+          # Gemini since 2026-05, which is the whole reason this rule exists.
+          # Set and VERIFY this before flipping llm_routing_policy, never after.
+          if [ -n "$BEDROCK_ROLE_ARN_INPUT" ]; then
+            echo "Applying Bedrock activation: BEDROCK_ROLE_ARN=<set>"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg B "$BEDROCK_ROLE_ARN_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "BEDROCK_ROLE_ARN") ]
+                  + [ {name:"BEDROCK_ROLE_ARN", value:$B} ] )')
+          fi
+
+          # Must be a resolved cross-region INFERENCE PROFILE id, not a bare
+          # on-demand model id — see CLAUDE.md §2b. A bare id fails at call
+          # time, not at deploy time, so a green deploy proves nothing here.
+          if [ -n "$BEDROCK_MODEL_ID_INPUT" ]; then
+            echo "Applying Bedrock model: BEDROCK_MODEL_ID=$BEDROCK_MODEL_ID_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg M "$BEDROCK_MODEL_ID_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "BEDROCK_MODEL_ID") ]
+                  + [ {name:"BEDROCK_MODEL_ID", value:$M} ] )')
+          fi
+
+          # Its own var rather than inheriting AWS_REGION blindly: Claude
+          # inference profiles are not offered in every region, and the rest of
+          # this estate is eu-central-1 while Nova Sonic runs in eu-north-1 —
+          # so "the region the account uses" is already not a single answer.
+          if [ -n "$AWS_BEDROCK_REGION_INPUT" ]; then
+            echo "Applying Bedrock region: AWS_BEDROCK_REGION=$AWS_BEDROCK_REGION_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg R "$AWS_BEDROCK_REGION_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "AWS_BEDROCK_REGION") ]
+                  + [ {name:"AWS_BEDROCK_REGION", value:$R} ] )')
+          fi
+
+          # VTID-03579: autopilot executor circuit breaker. Deliberately the
+          # same upsert shape as the levers above, but read the gate carefully
+          # before using it: index.ts starts the executor when the var is
+          # `!== 'false'`, so PRESERVING an unset value leaves it RUNNING. The
+          # only value that stops it is the literal string 'false'.
+          if [ -n "$DEV_AUTOPILOT_EXECUTOR_INPUT" ]; then
+            echo "Applying autopilot executor gate: DEV_AUTOPILOT_EXECUTOR_ENABLED=$DEV_AUTOPILOT_EXECUTOR_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg E "$DEV_AUTOPILOT_EXECUTOR_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "DEV_AUTOPILOT_EXECUTOR_ENABLED") ]
+                  + [ {name:"DEV_AUTOPILOT_EXECUTOR_ENABLED", value:$E} ] )')
+          fi
+
+          # VTID-03578: TTS provider. tts-provider.ts falls back to google on
+          # an unrecognised value rather than failing closed, so a typo here
+          # degrades to the status quo instead of taking voice down — but it
+          # also means a typo is SILENT. Read the deploy log line below to
+          # confirm what was actually applied; do not infer it from a green run.
+          #
+          # Serbian: Polly has no sr voice in ANY engine, so with this set to
+          # polly the sr path still reaches Google. That is deliberate (fluent
+          # wrong-language audio is worse than a fallback) and it is the one
+          # thing standing between this and a clean GCP TTS shutdown.
+          if [ -n "$TTS_PROVIDER_INPUT" ]; then
+            echo "Applying TTS provider: TTS_PROVIDER=$TTS_PROVIDER_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg P "$TTS_PROVIDER_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "TTS_PROVIDER") ]
+                  + [ {name:"TTS_PROVIDER", value:$P} ] )')
+          fi
+
+          # Strict mode removes the polly→google safety net. It exists to PROVE
+          # no hidden Google dependency remains before a shutdown — turning it
+          # on in normal operation converts every Polly gap into silence for
+          # that user, starting with every Serbian one.
+          if [ -n "$TTS_POLLY_STRICT_INPUT" ]; then
+            echo "Applying Polly strict mode: TTS_POLLY_STRICT=$TTS_POLLY_STRICT_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg S "$TTS_POLLY_STRICT_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "TTS_POLLY_STRICT") ]
+                  + [ {name:"TTS_POLLY_STRICT", value:$S} ] )')
+          fi
+
+          # Image generation. Titan's outpaint mask polarity is INVERTED vs
+          # Imagen and has never been confirmed against the live API — get it
+          # backwards and the subject is regenerated while the margins are
+          # kept, which produces a plausible-looking and completely wrong
+          # image that no automated check will flag. Run
+          # scripts/images/verify-titan-image.ts before setting this.
+          if [ -n "$IMAGE_PROVIDER_INPUT" ]; then
+            echo "Applying image provider: IMAGE_PROVIDER=$IMAGE_PROVIDER_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg I "$IMAGE_PROVIDER_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "IMAGE_PROVIDER") ]
+                  + [ {name:"IMAGE_PROVIDER", value:$I} ] )')
+          fi
+          # BOOTSTRAP-POLLY-NARRATION-CACHE
+          if [ -n "$NARRATION_AUDIO_CACHE_INPUT" ]; then
+            echo "Applying narration cache: NARRATION_AUDIO_CACHE=$NARRATION_AUDIO_CACHE_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg I "$NARRATION_AUDIO_CACHE_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "NARRATION_AUDIO_CACHE") ]
+                  + [ {name:"NARRATION_AUDIO_CACHE", value:$I} ] )')
+          fi
+          if [ -n "$NARRATION_AUDIO_BUCKET_INPUT" ]; then
+            echo "Applying narration bucket: NARRATION_AUDIO_BUCKET=$NARRATION_AUDIO_BUCKET_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg I "$NARRATION_AUDIO_BUCKET_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "NARRATION_AUDIO_BUCKET") ]
+                  + [ {name:"NARRATION_AUDIO_BUCKET", value:$I} ] )')
           fi
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
             --query 'taskDefinition.taskDefinitionArn' --output text)

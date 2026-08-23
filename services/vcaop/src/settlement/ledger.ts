@@ -12,22 +12,42 @@
  *    reversal is a compensating entry, never an edit of history.
  *  - Every movement appends an immutable receipt; reconcile() re-derives
  *    balances from receipts and reports any divergence loudly.
- *  - SANDBOX-ONLY instruments pending legal/regulatory review (BLK-010):
- *    the ledger refuses to construct unless the config is explicitly marked
- *    sandbox. Flipping that is a human legal decision, not a code path.
+ *  - Non-sandbox environments require an explicit, recorded human
+ *    authorization in the config (BLK-010 — resolved by the platform owner
+ *    on 2026-08-09, VTID-03548). The authorization is data the ledger
+ *    validates, not a code path an operator can stumble into: a config that
+ *    merely says environment:'production' without the full authorization
+ *    record still refuses to construct.
  *  - VTNA is a utility/settlement mechanism — nothing here models price,
  *    appreciation, or investment semantics.
  */
 
+/**
+ * Recorded human decision that permits a non-sandbox ledger. Every field is
+ * required and validated — this is an audit record, not a boolean flag.
+ */
+export interface LiveSettlementAuthorization {
+  /** Must be the literal blocker id this gate was built for. */
+  blocker: 'BLK-010';
+  /** Who made the call (person, not a service identity). */
+  authorized_by: string;
+  /** ISO date of the decision. */
+  authorized_at: string;
+  /** Where the decision is recorded (VTID / document / conversation ref). */
+  reference: string;
+}
+
 export interface SettlementConfig {
   /** Version of the token-economic parameters — transparent + auditable. */
   config_version: string;
-  /** 'sandbox' is the only accepted environment until BLK-010 is resolved. */
-  environment: 'sandbox';
+  /** 'production' additionally requires `live_authorization` (BLK-010). */
+  environment: 'sandbox' | 'production';
   /** Platform fee in basis points, applied to fee-bearing instruction types. */
   network_fee_bps: number;
   /** Account receiving network fees. */
   fee_account: string;
+  /** Required (and validated) whenever environment !== 'sandbox'. */
+  live_authorization?: LiveSettlementAuthorization;
 }
 
 export type InstructionType =
@@ -104,8 +124,20 @@ export class SettlementLedger {
     private readonly now: () => Date = () => new Date(),
   ) {
     if (config.environment !== 'sandbox') {
-      // BLK-010: live instruments require the legal/regulatory review outcome.
-      throw new SettlementError('not_sandbox', 'Settlement ledger only accepts sandbox config until BLK-010 is resolved');
+      // BLK-010: live instruments require a recorded human authorization.
+      const auth = config.live_authorization;
+      const complete =
+        auth &&
+        auth.blocker === 'BLK-010' &&
+        typeof auth.authorized_by === 'string' && auth.authorized_by.trim().length > 0 &&
+        typeof auth.authorized_at === 'string' && !Number.isNaN(Date.parse(auth.authorized_at)) &&
+        typeof auth.reference === 'string' && auth.reference.trim().length > 0;
+      if (!complete) {
+        throw new SettlementError(
+          'not_sandbox',
+          'Non-sandbox settlement requires a complete live_authorization record (BLK-010): blocker, authorized_by, authorized_at, reference',
+        );
+      }
     }
     if (config.network_fee_bps < 0 || config.network_fee_bps > 2000) {
       throw new SettlementError('invalid_instruction', 'network_fee_bps outside sane bounds');
@@ -114,8 +146,16 @@ export class SettlementLedger {
 
   private funding = new Map<string, number>();
 
-  /** Credit an account from outside the ledger (sandbox funding). Tracked so reconcile() accounts for it. */
+  /** Credit an account from outside the ledger — SANDBOX ONLY. Tracked so
+   * reconcile() accounts for it. On a production ledger this method refuses:
+   * it takes no authorization, writes no receipt, and validates nothing, so
+   * leaving it open would let any code holding the ledger mint live VTNA
+   * around the BLK-010 authorization gate. A production funding path must be
+   * its own authenticated, receipted mechanism — it does not exist yet. */
   fund(account: string, amount: number): void {
+    if (this.config.environment !== 'sandbox') {
+      throw new SettlementError('not_sandbox', 'fund() is a sandbox-only faucet — production funding requires an authenticated, receipted path');
+    }
     this.balances.set(account, (this.balances.get(account) ?? 0) + amount);
     this.funding.set(account, (this.funding.get(account) ?? 0) + amount);
   }

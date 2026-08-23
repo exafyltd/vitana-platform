@@ -4,7 +4,15 @@
 // Helpers below accept an explicit { gatewayUrl, supabaseFunctions } config so
 // no module-level mutable state is shared across concurrent requests.
 const DEFAULT_SUPABASE_FUNCTIONS = 'https://inmkhvwdcuyhnxkgfvsb.supabase.co/functions/v1';
-const DEFAULT_GATEWAY_URL = 'https://gateway-q74ibpv6ia-uc.a.run.app';
+// VTID-03419: canonical hostname, not a provider URL. As of 2026-07-27 this
+// resolves to the AWS ALB (vitana-gateway-awsdr); before that it was GCP
+// Cloud Run. Using the canonical name means this worker follows any future
+// infra move via DNS instead of needing another hard-coded-URL edit like
+// the one this line replaced (the old value pinned the raw Cloud Run URL,
+// which would have silently broken OG previews on any GCP shutdown).
+// Same-zone fetch is safe: gateway.vitanaland.com is DNS-only (grey-cloud)
+// and has no Worker route, so no proxy loop is possible.
+const DEFAULT_GATEWAY_URL = 'https://gateway.vitanaland.com';
 
 function resolveConfig(env) {
   return {

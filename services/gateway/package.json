@@ -17,13 +17,19 @@
     "validate:dev-frontend-spec": "node ./scripts/validate-dev-frontend-spec.mjs",
     "nav:sync": "tsx scripts/sync-nav-catalog-from-manifest.ts",
     "nav:check": "tsx scripts/sync-nav-catalog-from-manifest.ts --check",
-    "smoke:orb-widget": "node ./scripts/orb-widget-stop-regression.mjs && node ./scripts/orb-widget-audio-playback-regression.mjs && node ./scripts/orb-widget-speaking-watchdog-regression.mjs && node ./scripts/orb-widget-greeting-unlock-regression.mjs && node ./scripts/orb-widget-no-startup-tts-regression.mjs && node ./scripts/orb-anon-wake-skip-regression.mjs"
+    "i18n:db:seed": "tsx src/scripts/seed-db-i18n.ts",
+    "i18n:db:check": "tsx src/scripts/seed-db-i18n.ts --all-ga --check",
+    "smoke:orb-widget": "node ./scripts/orb-widget-stop-regression.mjs && node ./scripts/orb-widget-audio-playback-regression.mjs && node ./scripts/orb-widget-speaking-watchdog-regression.mjs && node ./scripts/orb-widget-greeting-unlock-regression.mjs && node ./scripts/orb-widget-no-startup-tts-regression.mjs && node ./scripts/orb-anon-wake-skip-regression.mjs",
+    "i18n:db:verify": "tsx src/scripts/seed-db-i18n.ts --verify",
+    "reconcile:aurora-supabase": "tsx scripts/reconciliation/aurora-supabase-reconcile.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",
     "@aws-sdk/client-bedrock-runtime": "^3.1091.0",
     "@aws-sdk/client-ecs": "^3.1094.0",
     "@aws-sdk/client-polly": "^3.1091.0",
+    "@aws-sdk/client-s3": "^3.1114.0",
+    "@aws-sdk/client-transcribe-streaming": "^3.1113.0",
     "@google-cloud/text-to-speech": "^5.5.0",
     "@google-cloud/vertexai": "^1.9.2",
     "@google/generative-ai": "^0.24.1",

@@ -1,0 +1,52 @@
+# VTID-03557 — verification commands (run in services/gateway)
+
+$ npx jest test/orb/nova-premature-close-retry.test.ts \
+    test/orb/nova-premature-close-fallback.test.ts \
+    test/orb/live/upstream/nova-sonic-config.test.ts \
+    test/orb/live/upstream/nova-sonic-live-client.test.ts
+# Test Suites: 4 passed, 4 total
+# Tests:       66 passed, 66 total
+# see ./outputs/targeted-tests.txt
+
+$ npx jest                   # full gateway suite
+# Test Suites: 633 passed, 633 total
+# Tests:       7 skipped, 6 todo, 12314 passed, 12327 total
+# Snapshots:   44 passed, 44 total
+
+$ npx tsc --noEmit
+# exit 0
+
+$ npm run build              # tsc && copy-frontend && copy-data
+# exit 0
+# see ./outputs/full-suite-typecheck-build.txt for all three combined
+
+# Production evidence gathered BEFORE writing any code (read-only, via
+# Supabase MCP execute_sql against oasis_events, topic=orb.live.diag):
+# every "Premature close" event over 2026-08-01..08-09 carries
+# code=nova_stream_error (never nova_stream_timeout), audio_in=0, audio_out=0,
+# turn_count=0, greeting_sent=true, upstream_ws_state=3, initiated_locally=false
+# — the exact signature VTID-03502's shouldFallbackToVertexOnNovaClose already
+# discriminates on. No live/production mutation was performed — this was a
+# read-only SELECT against oasis_events.
+
+# --- Post-review re-verification (2 Codex findings fixed — see
+# acceptance.md "Post-review fixes") ---
+
+$ npx jest test/orb/nova-premature-close-retry.test.ts \
+    test/orb/nova-premature-close-fallback.test.ts \
+    test/orb/live/upstream/nova-sonic-config.test.ts \
+    test/orb/live/upstream/nova-sonic-live-client.test.ts
+# Test Suites: 4 passed, 4 total
+# Tests:       66 passed, 66 total
+
+$ npx tsc --noEmit
+# exit 0
+
+$ npx jest                   # full gateway suite
+# Test Suites: 633 passed, 633 total
+# Tests:       7 skipped, 6 todo, 12314 passed, 12327 total
+# Snapshots:   44 passed, 44 total
+# (identical counts to the pre-review run above — additive fix, no regressions)
+
+$ npm run build
+# exit 0 (tsc && copy-frontend && copy-data)

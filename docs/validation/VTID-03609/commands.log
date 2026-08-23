@@ -1,0 +1,43 @@
+# VTID-03609 — commands run, in order, with what each proves.
+# Run from services/gateway/ unless noted.
+
+# 1. Typecheck. Clean apart from four pre-existing missing OPTIONAL deps in this
+#    local checkout (@aws-sdk/client-ecs, @aws-sdk/client-polly, pg, compression);
+#    CI's npm ci installs them.
+npx tsc --noEmit -p tsconfig.json
+
+# 2. The suite carrying the 5 new VTID-03609 tests, run ALONE and read in full.
+#    This matters: an earlier run of this same suite was reported as passing when
+#    it had in fact failed to LOAD (ReferenceError: readFileSync is not defined).
+#    A suite that fails to load emits no per-test failure lines, so a grep for
+#    '✕' showed nothing and the other suites' passing count was mistaken for
+#    success. CI caught it. The command below prints every test name.
+npx jest test/orb/live/characterization/vertex-wake-opener-v2.characterization.test.ts
+#  -> 10 passed, including all 5 under
+#     "VTID-03609: the sync new-day branch awaits greetingFactsReady"
+
+# 3. Both affected suites together — outputs/jest-affected-suites.txt
+npx jest test/orb/live/characterization test/services/conversation/compute-greeting-decision.golden.test.ts
+#  -> 235 tests passed, 35 snapshots passed, 0 failed tests.
+#     3 suites fail to LOAD locally on "Cannot find module '@aws-sdk/client-polly'"
+#     (system-instruction, time-since, tool-catalog characterization). That is this
+#     checkout's incomplete node_modules, not a repo state, and it is unrelated to
+#     this diff — those three do not import anything this PR touches.
+
+# 4. No stale VTID reference survives — outputs/grep-no-stale-vtid.txt
+#    (run from the repo root)
+grep -rn "VTID-03593" services/gateway/src services/gateway/test
+#  -> no matches (exit 1)
+
+# 5. The touched router still serves — outputs/curl-orb-live-transport.txt
+curl -s -w '\n%{http_code} %{content_type}\n' https://gateway.vitanaland.com/api/v1/orb/live/transport
+#  -> {"ok":true,"transport":"sse"} / 200 application/json; charset=utf-8
+
+# 6. Production evidence that motivated this VTID (read-only, via PostgREST).
+#    Five sessions on 2026-08-12 07:14-07:23 UTC, every one reporting
+#    wake_opener=override_v2, against user_journey rows whose
+#    last_full_briefing_date was 2026-07-24 / 07-25 / 07-28 / 07-29 / 08-01 and
+#    two NULL — i.e. all five were due a briefing and none fired. None of the
+#    five emitted greeting_context_pending, which is what proves they reached
+#    the sync ladder rather than the safe-fast one.
+#    See outputs/prod-evidence.md.

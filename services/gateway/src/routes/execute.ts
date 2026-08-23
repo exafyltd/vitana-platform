@@ -43,6 +43,39 @@ import { TaskStage } from "../lib/stage-mapping";
 export const router = Router();
 
 // =============================================================================
+// SECURITY (post-audit hardening): this whole router (bar /health) was
+// reachable with NO authentication at all — the only gate was the
+// X-BYPASS-ORCHESTRATOR header, which is a documented governance-violation
+// marker (see CLAUDE.md §"Bypass Header"), not a secret. Anyone on the
+// internet could POST /vtid with that header and trigger real governed
+// execution (worker run, PR automerge) — see IF-THEN rule "emergency bypass
+// is used → log + escalate", which presumes a legitimate internal caller,
+// not an anonymous one. Reuses the same GATEWAY_SERVICE_TOKEN bearer pattern
+// as admin-staging.ts so only callers holding the service token can reach
+// these deprecated-but-still-live endpoints; the bypass header + governance
+// ledger checks remain as defense-in-depth on top.
+// =============================================================================
+function requireServiceToken(req: Request, res: Response, next: NextFunction): void {
+  if (req.path === "/health") {
+    next();
+    return;
+  }
+  const header = req.header("authorization") ?? req.header("Authorization");
+  if (!header || !header.toLowerCase().startsWith("bearer ")) {
+    res.status(401).json({ ok: false, error: "missing bearer token" });
+    return;
+  }
+  const token = header.slice("bearer ".length).trim();
+  const expected = process.env.GATEWAY_SERVICE_TOKEN ?? "";
+  if (!expected || token !== expected) {
+    res.status(401).json({ ok: false, error: "invalid service token" });
+    return;
+  }
+  next();
+}
+router.use(requireServiceToken);
+
+// =============================================================================
 // VTID-01170: Deprecation Guard
 // =============================================================================
 

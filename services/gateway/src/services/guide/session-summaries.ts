@@ -11,28 +11,17 @@
  * dedicated LLM call for richer summaries.
  */
 
-import { VertexAI } from '@google-cloud/vertexai';
 import { getSupabase } from '../../lib/supabase';
+import { callViaRouter } from '../llm-router'; // VTID-03579: provider from llm_routing_policy, never hardcoded
 import { emitGuideTelemetry } from './guide-telemetry';
 
 const LOG_PREFIX = '[Guide:session-summaries]';
 const MAX_SUMMARY_CHARS = 600;
 const RECENT_SUMMARIES_LIMIT = 3;
 
-// VTID-01990: Gemini Flash summarizer config
-const GOOGLE_GEMINI_API_KEY = process.env.GOOGLE_GEMINI_API_KEY;
-const VERTEX_PROJECT = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT || 'lovable-vitana-vers1';
-const VERTEX_LOCATION = process.env.VERTEX_LOCATION || 'us-central1';
-const SUMMARY_MODEL = 'gemini-2.0-flash';
-
-let summaryVertexAI: VertexAI | null = null;
-try {
-  if (VERTEX_PROJECT && VERTEX_LOCATION) {
-    summaryVertexAI = new VertexAI({ project: VERTEX_PROJECT, location: VERTEX_LOCATION });
-  }
-} catch (err: any) {
-  console.warn(`${LOG_PREFIX} Vertex AI init for summarization failed: ${err.message}`);
-}
+// VTID-03579: the summarizer no longer names a provider or a model. It used
+// to be pinned to Gemini Flash via two independent Google clients; the
+// `memory` stage in `llm_routing_policy` decides now.
 
 const SUMMARY_SYSTEM_PROMPT = `You write 1-2 sentence summaries of a conversation between a User and an AI assistant named Vitana.
 
@@ -196,47 +185,22 @@ export async function summarizeWithGeminiFlash(
     }
   }
 
-  if (summaryVertexAI) {
-    try {
-      const model = summaryVertexAI.getGenerativeModel({
-        model: SUMMARY_MODEL,
-        generationConfig: { temperature: 0.2, maxOutputTokens: 200, topP: 0.8 },
-        systemInstruction: { role: 'system', parts: [{ text: localizedPrompt }] },
-      });
-      const response = await model.generateContent({
-        contents: [{ role: 'user', parts: [{ text: transcript }] }],
-      });
-      const candidate = response.response?.candidates?.[0];
-      const textPart = candidate?.content?.parts?.find((p: any) => 'text' in p);
-      const raw = textPart ? ((textPart as any).text || '').trim() : '';
-      if (raw.length > 0) return truncate(raw, MAX_SUMMARY_CHARS);
-    } catch (err: any) {
-      console.warn(`${LOG_PREFIX} Vertex summary failed: ${err.message}`);
-    }
-  }
+  // VTID-03579: was a Vertex -> Gemini-API cascade with the provider chosen
+  // here. Routing decides now (`memory` stage); this module only says what it
+  // needs, not who serves it.
+  const r = await callViaRouter('memory', transcript, {
+    service: 'guide-session-summaries',
+    systemPrompt: localizedPrompt,
+    maxTokens: 200,
+  });
 
-  if (GOOGLE_GEMINI_API_KEY) {
-    try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${SUMMARY_MODEL}:generateContent?key=${GOOGLE_GEMINI_API_KEY}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: transcript }] }],
-            systemInstruction: { parts: [{ text: localizedPrompt }] },
-            generationConfig: { temperature: 0.2, maxOutputTokens: 200 },
-          }),
-        },
-      );
-      if (response.ok) {
-        const data = (await response.json()) as any;
-        const raw = (data.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
-        if (raw.length > 0) return truncate(raw, MAX_SUMMARY_CHARS);
-      }
-    } catch (err: any) {
-      console.warn(`${LOG_PREFIX} Gemini API summary failed: ${err.message}`);
-    }
+  if (r.ok && r.text) {
+    const raw = r.text.trim();
+    if (raw.length > 0) return truncate(raw, MAX_SUMMARY_CHARS);
+  } else {
+    console.warn(
+      `${LOG_PREFIX} summary failed via ${r.provider ?? 'router'}: ${r.error ?? 'empty response'}`,
+    );
   }
 
   return null;

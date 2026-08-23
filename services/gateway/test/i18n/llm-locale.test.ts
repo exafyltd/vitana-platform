@@ -71,9 +71,41 @@ describe('buildLocalizedSystemPromptForLang (short-code convenience)', () => {
     expect(buildLocalizedSystemPromptForLang(BASE, 'es-419')).toContain('Spanish (Español)');
   });
 
+  // VTID-03509 — the 18 Aug release locales. 'fr' asserted BASE here before,
+  // because French genuinely was unsupported; that expectation is what this
+  // change reverses.
+  it('constrains the four locales added for the 18 Aug release', () => {
+    expect(buildLocalizedSystemPromptForLang(BASE, 'fr-FR')).toContain('French (Français)');
+    expect(buildLocalizedSystemPromptForLang(BASE, 'pt-PT')).toContain('Portuguese (Português)');
+    expect(buildLocalizedSystemPromptForLang(BASE, 'ru-RU')).toContain('Russian (Русский)');
+    expect(buildLocalizedSystemPromptForLang(BASE, 'pl-PL')).toContain('Polish (Polski)');
+  });
+
+  // "portuguese", "polish", "portugiesisch" and "polnisch" all begin with
+  // "po", which matches neither 'pt' nor 'pl'. Without the language-name map
+  // every one of these resolves to German — the exact bug the map exists for.
+  it('resolves word-form language names whose spelling does not match their ISO code', () => {
+    expect(buildLocalizedSystemPromptForLang(BASE, 'Portuguese')).toContain('Portuguese (Português)');
+    expect(buildLocalizedSystemPromptForLang(BASE, 'Polish')).toContain('Polish (Polski)');
+    expect(buildLocalizedSystemPromptForLang(BASE, 'polnisch')).toContain('Polish (Polski)');
+    expect(buildLocalizedSystemPromptForLang(BASE, 'portugiesisch')).toContain('Portuguese (Português)');
+    // Regression guard for the pre-existing es/sr cases documented in catalog.ts.
+    expect(buildLocalizedSystemPromptForLang(BASE, 'Serbian')).toContain('Serbian (Srpski)');
+    expect(buildLocalizedSystemPromptForLang(BASE, 'Spanish')).toContain('Spanish (Español)');
+  });
+
+  it('gives every supported locale an informal-register directive', () => {
+    // A locale with no register hint reads formally — translated, but off-brand.
+    for (const lang of ['de', 'es', 'sr', 'fr', 'pt', 'ru', 'pl']) {
+      expect(buildLocalizedSystemPromptForLang(BASE, lang)).toMatch(/informal|du-form|ti-form|tú-form|tu-form|ты-form|ty-form/);
+    }
+  });
+
   it('passes through unchanged for null / empty / unsupported languages', () => {
     expect(buildLocalizedSystemPromptForLang(BASE, null)).toBe(BASE);
     expect(buildLocalizedSystemPromptForLang(BASE, '')).toBe(BASE);
-    expect(buildLocalizedSystemPromptForLang(BASE, 'fr')).toBe(BASE);
+    // Deferred past the 18 Aug release — deliberately NOT in GatewayLocale.
+    expect(buildLocalizedSystemPromptForLang(BASE, 'ja')).toBe(BASE);
+    expect(buildLocalizedSystemPromptForLang(BASE, 'ko-KR')).toBe(BASE);
   });
 });

@@ -485,6 +485,39 @@ export async function triggerWorkflow(
 }
 
 /**
+ * Fire a `repository_dispatch` event (VTID-03522).
+ *
+ * Distinct from triggerWorkflow(): that one names ONE workflow and a ref, and
+ * only reaches workflows declaring `workflow_dispatch`. A repository_dispatch
+ * is addressed by EVENT rather than by file, so any number of workflows can
+ * subscribe to `event_type` without the emitter knowing they exist. That is the
+ * property wanted here — "the source content changed" is a fact about the repo,
+ * not an instruction to run one specific job, and a second surface added later
+ * should not require editing the gateway.
+ *
+ * Note GitHub always runs repository_dispatch handlers on the DEFAULT branch;
+ * there is no ref parameter to pass, by design of the API.
+ */
+export async function triggerRepositoryDispatch(
+  repo: string,
+  eventType: string,
+  clientPayload: Record<string, unknown> = {},
+  tokenOverride?: string
+): Promise<void> {
+  await githubRequest<void>(
+    `/repos/${repo}/dispatches`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        event_type: eventType,
+        client_payload: clientPayload,
+      }),
+    },
+    tokenOverride
+  );
+}
+
+/**
  * Get recent workflow runs
  */
 export async function getWorkflowRuns(

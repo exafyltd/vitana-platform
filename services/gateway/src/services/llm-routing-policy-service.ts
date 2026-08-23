@@ -10,7 +10,7 @@
 
 import { randomUUID } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
-import { LLM_SAFE_DEFAULTS, VALID_STAGES, VALID_PROVIDERS } from '../constants/llm-defaults';
+import { LLM_SAFE_DEFAULTS, VALID_STAGES, VALID_PROVIDERS, OPTIONAL_STAGES } from '../constants/llm-defaults';
 import {
   LLMStage,
   LLMProvider,
@@ -178,6 +178,13 @@ export async function validatePolicy(
   for (const stage of VALID_STAGES) {
     const config = policy[stage];
     if (!config) {
+      // VTID-03565: vision/classifier are legitimately absent from the ACTIVE
+      // policy (v10 predates them), so a read-modify-write of the live row must
+      // not be rejected for stages the caller never touched. The six core
+      // stages stay required — `loadPolicy()` takes the stored row wholesale
+      // without merging defaults, so a missing core stage is a runtime outage
+      // for that stage, not a fallback.
+      if (OPTIONAL_STAGES.includes(stage)) continue;
       errors.push(`Missing configuration for stage: ${stage}`);
       continue;
     }

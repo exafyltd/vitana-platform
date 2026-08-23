@@ -316,8 +316,16 @@ describe('tool_set_language', () => {
     );
   });
 
-  it('rejects unsupported languages', async () => {
-    const res = await tool_set_language({ language: 'fr' }, IDENT, makeSb());
+  // VTID-03559: 'fr' used to be the example of an unsupported language. It is
+  // a shipping locale now, so this asserts BOTH halves — the new locales are
+  // accepted, and something genuinely outside the registry is still refused.
+  it.each(['fr', 'pt', 'ru', 'pl'])('accepts the newly shipped locale %s', async (code) => {
+    const res = await tool_set_language({ language: code }, IDENT, makeSb());
+    expect(res.ok).toBe(true);
+  });
+
+  it('rejects a language outside the registry', async () => {
+    const res = await tool_set_language({ language: 'xx' }, IDENT, makeSb());
     expect(res.ok).toBe(false);
     expect((res as any).error).toContain('Unsupported language');
   });

@@ -16,19 +16,6 @@
  * now does, against the new owner.
  */
 
-// pickShortGapGreetings shuffles its return value, which would make the
-// menu-expansion comparison flap. Pin it to a fixed sequence.
-jest.mock('../../../../src/orb/instruction/greeting-pools', () => ({
-  pickShortGapGreetings: (_lang: string, _n: number) => [
-    'fixed phrase 1',
-    'fixed phrase 2',
-    'fixed phrase 3',
-    'fixed phrase 4',
-    'fixed phrase 5',
-    'fixed phrase 6',
-  ],
-}));
-
 import {
   WAKE_BRIEF_BUCKET_TEMPLATES,
   renderWakeBriefFallbackBlock,
@@ -135,14 +122,16 @@ describe('R2: voice-wake-brief owns the temporal fallback pools (byte-identical 
     expect(out).not.toContain('{{short_gap_phrase_menu}}');
   });
 
-  it('recent bucket expands the short-gap phrase menu (non-wake-brief path)', () => {
+  it('recent bucket expands the short-gap phrase menu into an INTENT, not a VERBATIM script (VTID-03630)', () => {
     const out = renderWakeBriefFallbackBlock('recent', 'en', 'evening');
-    expect(out).toContain('  • Pick ONE of these example phrasings (use them VERBATIM');
+    expect(out).toContain('  • INTENT: briefly and warmly acknowledge');
     expect(out).toContain(
-      '  • Rotate across sessions — the user notices repetition. If the previous session used one of these, pick a different one.',
+      '  • Rotate across sessions — the user notices repetition. Do NOT reuse wording you or another session used before.',
     );
     expect(out).toContain('  • Max ONE short phrase. Warm but direct.');
     expect(out).not.toContain('{{short_gap_phrase_menu}}');
+    expect(out).not.toContain('VERBATIM');
+    expect(out).not.toContain('Pick ONE of these example phrasings');
   });
 
   it('wake-brief override suppresses the short-gap phrase list', () => {
@@ -151,10 +140,15 @@ describe('R2: voice-wake-brief owns the temporal fallback pools (byte-identical 
     expect(out).not.toContain('Pick ONE of these example phrasings');
   });
 
-  it('expandShortGapPhraseMenu emits the pinned fixed phrases verbatim', () => {
+  it('expandShortGapPhraseMenu hands the model an intent, never a finished sentence to recite (VTID-03630)', () => {
+    // CLAUDE.md NEVER-rule 41 regression: this used to pick a per-language
+    // pool entry and instruct "use it VERBATIM" — live report showed Nova
+    // reciting "Lass mich dir den nächsten Schritt zeigen." unchanged.
     const menu = expandShortGapPhraseMenu('en');
-    expect(menu).toContain('"fixed phrase 1"');
-    expect(menu).toContain('"fixed phrase 6"');
+    expect(menu).not.toContain('VERBATIM');
+    expect(menu).not.toMatch(/"[A-Z][^"]{5,80}"/); // no quoted finished sentence
+    expect(menu).toContain('INTENT:');
+    expect(menu).toContain('There is no approved phrasing to reproduce.');
   });
 
   it('every bucket renders with no surviving placeholder tokens', () => {

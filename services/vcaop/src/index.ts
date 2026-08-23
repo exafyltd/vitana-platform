@@ -20,5 +20,9 @@ export * as factory from './factory';
 export * as portal from './portal';
 export * as workflows from './workflows';
 export * as settlement from './settlement';
-// ⛔ health is DORMANT (BLK-009): library-only, never mounted/exposed.
+// health (BLK-009): independent privacy review 2026-08-09 — round 1 FAIL,
+// remediated (F1–F14), re-review PASS WITH REQUIRED CHANGES, N1–N5 fixed.
+// Constructing the layer still requires an explicit BLK-009 activation
+// record (ConsentRegistry's gate). The future DB-backed persistence
+// implementation needs its own review pass before it ships.
 export * as health from './health';

@@ -13,47 +13,22 @@
  * Uses gemini-3-pro-preview with fallback to gemini-2.5-pro.
  */
 
-import { GoogleGenerativeAI, GenerateContentResult } from '@google/generative-ai';
+import { callViaRouter } from './llm-router'; // VTID-03579: provider from llm_routing_policy, never hardcoded
 import { randomUUID } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
 import { AssistantContext, AssistantChatResponse } from '../types/assistant';
 import { getPersonalityConfigSync } from './ai-personality-service';
-// VTID-01208: LLM Telemetry
-import {
-  startLLMCall,
-  completeLLMCall,
-  failLLMCall,
-} from './llm-telemetry-service';
+// VTID-01208 telemetry imports removed under VTID-03579 — callViaRouter emits
+// the llm.call.* events itself; calling both double-counted every turn.
 
-// Gemini API configuration (AI Studio API key)
-// NOTE: Lazy initialization - do NOT throw at import time!
-// This allows the gateway to start even if Gemini is not configured.
-const GEMINI_API_KEY = process.env.GOOGLE_GEMINI_API_KEY;
-
-// Model configuration with fallback
-const PRIMARY_MODEL = 'gemini-3-pro-preview';
-const FALLBACK_MODEL = 'gemini-2.5-pro';
-
-// Lazy-initialized Gemini API client (created on first use)
-let genAI: GoogleGenerativeAI | null = null;
-
-/**
- * Get or create the Gemini API client (lazy initialization)
- * Throws only when Gemini is actually needed, not at startup
- */
-function getGeminiClient(): GoogleGenerativeAI {
-  if (!GEMINI_API_KEY) {
-    throw new Error('GOOGLE_GEMINI_API_KEY not configured - Gemini API unavailable');
-  }
-  if (!genAI) {
-    genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-    console.log('[VTID-0150-B] Gemini API client initialized (lazy)');
-  }
-  return genAI;
-}
+// VTID-03579: no PRIMARY_MODEL / FALLBACK_MODEL / Gemini client here any more.
+// This module used to own a two-model Gemini cascade AND its own API-key check,
+// which meant switching the platform off Google required editing this file. The
+// `operator` stage decides now, and its fallback is configured in
+// `llm_routing_policy` rather than reimplemented here.
 
 // Track which model was used in the last request (for metadata)
-let lastUsedModel = PRIMARY_MODEL;
+let lastUsedModel = 'router';
 
 // Track sessions to detect first turn
 const activeSessions = new Set<string>();
@@ -95,50 +70,7 @@ Answer the developer's question with clarity and precision.`;
 
 /**
  * VTID-0151-C: Generate content with model fallback
- * Tries PRIMARY_MODEL first, falls back to FALLBACK_MODEL on error.
- */
-async function generateWithFallback(
-  prompt: string,
-  systemPrompt: string
-): Promise<GenerateContentResult> {
-  // Get Gemini client (lazy init - throws if not configured)
-  const client = getGeminiClient();
-
-  try {
-    console.log(`[VTID-0151-C] Trying primary model: ${PRIMARY_MODEL}`);
-    const model = client.getGenerativeModel({
-      model: PRIMARY_MODEL,
-      systemInstruction: systemPrompt,
-      generationConfig: {
-        temperature: 0.7,
-        maxOutputTokens: 1024,
-        topP: 0.95,
-        topK: 40
-      }
-    });
-    lastUsedModel = PRIMARY_MODEL;
-    return await model.generateContent(prompt);
-  } catch (err: any) {
-    console.warn(`[VTID-0151-C] Primary model (${PRIMARY_MODEL}) failed, falling back to ${FALLBACK_MODEL}:`, err.message);
-    const fallback = client.getGenerativeModel({
-      model: FALLBACK_MODEL,
-      systemInstruction: systemPrompt,
-      generationConfig: {
-        temperature: 0.7,
-        maxOutputTokens: 1024,
-        topP: 0.95,
-        topK: 40
-      }
-    });
-    lastUsedModel = FALLBACK_MODEL;
-    return await fallback.generateContent(prompt);
-  }
-}
-
-/**
- * VTID-0150-B/VTID-0151-C: Call Gemini API for assistant response
- * Uses API key authentication with model fallback.
- * VTID-01208: Added LLM telemetry instrumentation.
+ * Provider and fallback both come from the `operator` stage's routing policy.
  */
 async function callGemini(
   message: string,
@@ -146,79 +78,38 @@ async function callGemini(
 ): Promise<{ reply: string; tokens_in: number; tokens_out: number; model: string }> {
   const systemPrompt = buildSystemPrompt(context);
 
-  // VTID-01208: Start LLM telemetry - service='orb-assistant' to differentiate from Operator
-  const llmContext = await startLLMCall({
-    vtid: null, // ORB assistant doesn't have a VTID context
-    threadId: context.sessionId,
+  // VTID-03579: the manual startLLMCall/completeLLMCall/failLLMCall trio that
+  // used to wrap this call is gone — `callViaRouter` emits exactly that
+  // telemetry itself, so keeping both would double-count every ORB assistant
+  // turn in the llm.call.* topics the cost analysis reads.
+  const r = await callViaRouter('operator', message, {
     service: 'orb-assistant',
-    stage: 'operator',
-    provider: 'vertex',
-    model: PRIMARY_MODEL,
-    prompt: message,
+    systemPrompt,
+    maxTokens: 1024,
   });
 
-  try {
-    console.log(`[VTID-0151-C] Calling Gemini API (primary=${PRIMARY_MODEL}, fallback=${FALLBACK_MODEL})`);
-
-    // Generate content with fallback
-    const result = await generateWithFallback(message, systemPrompt);
-
-    const response = result.response;
-    const candidate = response?.candidates?.[0];
-    const content = candidate?.content;
-
-    if (!content) {
-      // VTID-01208: Complete telemetry even for empty responses
-      await completeLLMCall(llmContext, { inputTokens: 0, outputTokens: 0 });
-      return {
-        reply: 'I apologize, but I could not generate a response. Please try again.',
-        tokens_in: 0,
-        tokens_out: 0,
-        model: lastUsedModel
-      };
-    }
-
-    // Extract text response
-    const reply =
-      content.parts?.map((p: { text?: string }) => p.text).filter(Boolean).join('') ||
-      'I could not generate a response.';
-
-    // Extract token usage if available
-    const usageMetadata = response?.usageMetadata;
-    const tokens_in = usageMetadata?.promptTokenCount || 0;
-    const tokens_out = usageMetadata?.candidatesTokenCount || 0;
-
-    console.log(`[VTID-0151-C] Gemini API response received (model=${lastUsedModel}), tokens_in=${tokens_in}, tokens_out=${tokens_out}`);
-
-    // VTID-01208: Complete LLM telemetry
-    const usedFallback = lastUsedModel !== PRIMARY_MODEL;
-    await completeLLMCall(llmContext, {
-      inputTokens: tokens_in,
-      outputTokens: tokens_out,
-      fallbackUsed: usedFallback,
-      fallbackFrom: usedFallback ? PRIMARY_MODEL : undefined,
-      fallbackTo: usedFallback ? lastUsedModel : undefined,
-    });
-
-    return { reply, tokens_in, tokens_out, model: lastUsedModel };
-  } catch (error: any) {
-    console.error(`[VTID-0151-C] Gemini API call failed:`, error.message);
-
-    // VTID-01208: Record failed LLM call
-    await failLLMCall(llmContext, {
-      code: 'GEMINI_API_ERROR',
-      message: error.message,
-    });
-
+  if (!r.ok || !r.text) {
+    console.error(
+      `[VTID-0151-C] assistant call failed via ${r.provider ?? 'router'}: ${r.error ?? 'empty response'}`,
+    );
     return {
-      reply: `I encountered an error while processing your request. Please try again.
-
-Error: ${error.message}`,
+      reply: 'I encountered an error while processing your request. Please try again.',
       tokens_in: 0,
       tokens_out: 0,
-      model: 'error'
+      model: 'error',
     };
   }
+
+  const usedModel = r.model ?? 'router';
+  lastUsedModel = usedModel;
+  const tokens_in = r.usage?.inputTokens ?? 0;
+  const tokens_out = r.usage?.outputTokens ?? 0;
+
+  console.log(
+    `[VTID-0151-C] assistant response received (provider=${r.provider}, model=${usedModel}), tokens_in=${tokens_in}, tokens_out=${tokens_out}`,
+  );
+
+  return { reply: r.text, tokens_in, tokens_out, model: usedModel };
 }
 
 /**

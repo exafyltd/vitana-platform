@@ -24,10 +24,27 @@
   // model's natural speaking pace reads as "too slow" in playback. Applied
   // uniformly to every streamed PCM chunk (all providers — Vertex, Nova),
   // not a provider-specific TTS parameter (neither exposes one over the
-  // live bidirectional stream). +5% speed carries a proportional pitch
-  // rise via AudioBufferSourceNode.playbackRate — the same trick podcast
-  // apps use at 1.05x, imperceptible as "chipmunk" at this magnitude.
+  // live bidirectional stream — Nova 2 Sonic's session/prompt-start events
+  // carry no speech-rate field at all). +5% speed carries a proportional
+  // pitch rise via AudioBufferSourceNode.playbackRate — the same trick
+  // podcast apps use at 1.05x, imperceptible as "chipmunk" at this
+  // magnitude.
   var _AUDIO_PLAYBACK_RATE = 1.05;
+
+  // VTID-03606: German-language feedback specifically called Nova Sonic
+  // voice-to-voice "too slow" even at the +5% baseline above — bump German
+  // an additional 10% over normal speed (1.1x flat, not stacked on the
+  // 1.05x baseline) while every other language keeps 1.05x. Read at
+  // schedule-time via _currentPlaybackRate() so a language change mid-
+  // session (rare, but _cfg.lang can be updated post-connect) picks up
+  // immediately rather than needing a reconnect.
+  var _AUDIO_PLAYBACK_RATE_DE = 1.1;
+
+  function _currentPlaybackRate() {
+    return (_cfg.lang && _cfg.lang.startsWith('de'))
+      ? _AUDIO_PLAYBACK_RATE_DE
+      : _AUDIO_PLAYBACK_RATE;
+  }
 
   // Prevent double-load
   if (window.VitanaOrb && window.VitanaOrb._loaded) return;
@@ -1284,9 +1301,15 @@
         var buf = ctx.createBuffer(1, floats.length, 24000);
         buf.copyToChannel(floats, 0);
 
+        // Snapshot once per chunk so the schedule-gap compensation below
+        // (_s.lastScheduledEnd +=) divides by the exact rate this chunk was
+        // actually played at — using the wrong constant here would drift or
+        // gap consecutive chunks the moment DE and non-DE rates diverge.
+        var chunkRate = _currentPlaybackRate();
+
         var src = ctx.createBufferSource();
         src.buffer = buf;
-        src.playbackRate.value = _AUDIO_PLAYBACK_RATE;
+        src.playbackRate.value = chunkRate;
         src.connect(ctx.destination);
 
         var now = ctx.currentTime;
@@ -1328,9 +1351,10 @@
 
         // buf.duration is the UNPLAYED-rate duration; at playbackRate>1 the
         // chunk actually finishes sooner, so scheduling by buf.duration
-        // would leave audible gaps between chunks. Divide by the rate to
-        // keep back-to-back chunks gapless.
-        _s.lastScheduledEnd += buf.duration / _AUDIO_PLAYBACK_RATE;
+        // would leave audible gaps between chunks. Divide by the SAME rate
+        // just assigned to this chunk's src.playbackRate (chunkRate) —
+        // not the global constant — to keep back-to-back chunks gapless.
+        _s.lastScheduledEnd += buf.duration / chunkRate;
         _s.audioPlaying = true;
         isFirstChunk = false;
       } catch (e) {
@@ -1504,11 +1528,31 @@
       // VTID-03291 / DEV-COMHU-0507: Guided Journey catalog topic tap. When the
       // host opened the orb via VitanaOrb.focusGuidedTopic(topicId), the topicId
       // rides along so the guided-topic-narration provider LEADS turn-1 and
-      // Vitana teaches that topic from the published KB. One-shot: consumed for
-      // this session only so the next normal open reverts to default behaviour.
+      // Vitana teaches that topic from the published KB.
+      //
+      // VTID-03675: deliberately NOT one-shot-consumed (nulled) here anymore.
+      // This used to null _s.guidedTopic the instant it was read into the
+      // payload, on the theory that "consumed for this session only" meant
+      // "consumed by this _sessionStart call". But a FAILED first attempt
+      // (Nova nova_validation-rejects the guided-topic prompt, the server
+      // gives up retrying internally, the WS dies) still needs it: the
+      // widget's OWN _attemptReconnect() then tears down and calls
+      // _sessionStart() again from scratch, and with guidedTopic already
+      // null that retry went out with no guided_topic_id at all — the new
+      // session's wake-brief ladder never even considered teaching the
+      // topic and fell back to a generic "let's continue" opener, while
+      // guidedAutoClose (armed together with guidedTopic, below) still
+      // fired on THAT turn's completion and auto-closed the overlay as if
+      // the topic had been taught. Reproduced live 2026-08-18 (topic T017,
+      // 3 distinct session_ids within 5s: the first got the guided-topic
+      // candidate and was nova_validation-rejected twice, the next two
+      // never requested one at all). guidedTopic now lives until the guided
+      // turn actually completes (cleared alongside guidedAutoClose, see the
+      // turn-complete handler) or the overlay is closed (_hide()) — both
+      // already-existing lifecycle points for guidedAutoClose, so the two
+      // flags now share one lifecycle instead of drifting apart.
       if (_s.guidedTopic) {
         startPayload.guided_topic_id = _s.guidedTopic;
-        _s.guidedTopic = null;
       }
 
       // VTID-02020: when this _sessionStart is happening as part of a reconnect
@@ -2083,19 +2127,45 @@
               try { _cfg.onTurnComplete({ was_greeting: !_s.greetingComplete }); }
               catch (e) { /* host callback must never break the voice loop */ }
             }
-            // VTID-03294 (#4): GUIDED auto-close. The teaching turn (turn 1,
-            // greetingComplete still false) has finished playing — close the
-            // overlay so the underlying Topic drawer's next-step buttons are
-            // usable, instead of dropping to listening. Widget-side so it does
-            // not depend on the host wiring. One-shot (cleared here).
+            // VTID-03294 (#4) — SUPERSEDED by VTID-03685, do not restore.
+            // This used to close the overlay the instant turn 1 finished
+            // playing, on the theory that turn 1 WAS the whole lesson
+            // (true under the original VTID-03293 design, where the model's
+            // first turn spoke the complete voice_script verbatim). VTID-
+            // 03650/03665 changed turn 1 into a SHORT opener line — the real
+            // teaching moved to the conversational GUIDE-MODE block that
+            // governs turns 2+ (guided-topic-narration-prompt.ts: "Keep it
+            // conversational: short chunks, check understanding, answer
+            // follow-ups") — and nobody updated this auto-close to match.
+            // The result, confirmed live via oasis_events on two consecutive
+            // guided-topic taps (T252 "Dein Plan", T253 "Dein erster
+            // Schritt"): `upstream_closed reason:"user_stop"` at
+            // `turn_count:1`, seconds after the opener's ~1s of audio
+            // finished — THIS auto-close was the client sending that stop.
+            // The multi-paragraph lesson content never had a chance to be
+            // taught; the user's own report named it exactly: "what's
+            // completely missing is reading the session."
+            //
+            // VTID-03675's guidedTopic clear still happens here — the topic
+            // WAS delivered (a candidate won, the opener was spoken), so a
+            // later unrelated reconnect must not resend guided_topic_id —
+            // but the overlay itself now stays open and falls through to
+            // the normal listening transition below, exactly like any other
+            // ORB conversation, so the model's GUIDE-MODE turns can actually
+            // run. Closing the overlay (and revealing the already-open
+            // Topic Explanation drawer underneath) is now the user's own
+            // action, same as ending any other ORB conversation — there is
+            // no reliable signal yet for "the model decided teaching is
+            // done" to auto-trigger it, and guessing at one here would
+            // trade a definite bug for a fragile heuristic.
             if (_s.guidedAutoClose && !_s.greetingComplete) {
               _s.guidedAutoClose = false;
-              console.log('[VTOrb] guided teaching turn complete — auto-closing overlay (reveal drawer)');
-              _hide();
-              return;
+              _s.guidedTopic = null;
+              console.log('[VTOrb] guided teaching opener complete — continuing conversation (no auto-close)');
             }
-            // If the host closed the overlay in the callback (guided auto-close),
-            // stop here — don't beep / arm the mic on a torn-down session.
+            // If the overlay was closed some other way while we were waiting
+            // for audio to drain (user pressed X, session torn down), stop
+            // here — don't beep / arm the mic on a torn-down session.
             if (!_s.active || _s._userRequestedClose || !_s.overlayVisible) return;
             // VTID-02035b: play the ready beep BEFORE starting mic capture.
             // On iOS / Appilix WebView, getUserMedia switches the audio
@@ -2182,7 +2252,22 @@
         break;
 
       case 'error':
-        _setStatus('Error: ' + (msg.message || 'Unknown'));
+        // VTID-03686: an upstream 'error' on the FIRST connection attempt
+        // (e.g. Nova's nova_validation content filter) is followed by a
+        // silent server-internal retry that usually succeeds within a few
+        // seconds (resendGreetingIfStuckAtZeroTurns) — nothing has been
+        // heard yet, so there is nothing for the user to be "in error"
+        // from. Flashing a raw internal error string here reads as broken
+        // even when the recovery is about to work; a genuinely terminal
+        // failure is reported separately via 'connection_issue'/
+        // 'live_api_disconnected', which _attemptReconnect handles with
+        // its own status text. Once something has actually played
+        // (greetingComplete), a real error is worth surfacing.
+        if (_s.greetingComplete) {
+          _setStatus('Error: ' + (msg.message || 'Unknown'));
+        } else {
+          console.warn('[VTOrb] Upstream error before first audio — suppressing status flash, awaiting server retry: ' + (msg.message || 'Unknown'));
+        }
         break;
 
       case 'connection_alert':
@@ -3460,6 +3545,7 @@
     _s._disconnectStuck = false;
     _s._isReconnecting = false;
     _s.guidedAutoClose = false; // VTID-03294 (#4): clear any pending guided auto-close
+    _s.guidedTopic = null; // VTID-03675: don't let a never-delivered topic leak into a later, unrelated session
     try { clearInterval(_s._recoveryWatchdog); } catch (e) { /* noop */ }
     _s._recoveryWatchdog = null;
     // VTID-03295 (X-close fix): STOP AUDIO + CLOSE THE OVERLAY SYNCHRONOUSLY, the

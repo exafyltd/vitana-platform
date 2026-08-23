@@ -21,6 +21,15 @@ jest.mock('../../../../src/services/guided-journey/checklist-service', () => ({
   getOrbTopicSeed: (...args: any[]) => mockGetOrbTopicSeed(...args),
 }));
 
+// VTID-03650: the provider now dynamic-imports the Polly narration
+// synthesizer. Default to null (Polly unavailable) so the tests below
+// exercise the short-opener fallback (VTID-03665) by default; individual
+// tests override this to cover the Polly-success path.
+const mockSynthesizeGuidedTopicNarrationAudio = jest.fn();
+jest.mock('../../../../src/services/tts/guided-topic-narration-audio', () => ({
+  synthesizeGuidedTopicNarrationAudio: (...args: any[]) => mockSynthesizeGuidedTopicNarrationAudio(...args),
+}));
+
 const FAKE_SB = { from: () => ({}) } as any;
 
 function makeCtx(extraOverride: any = {}) {
@@ -53,6 +62,8 @@ const SEED = {
 
 beforeEach(() => {
   mockGetOrbTopicSeed.mockReset();
+  mockSynthesizeGuidedTopicNarrationAudio.mockReset();
+  mockSynthesizeGuidedTopicNarrationAudio.mockResolvedValue(null); // Polly unavailable by default
 });
 
 describe('guided-topic-narration provider', () => {
@@ -71,11 +82,21 @@ describe('guided-topic-narration provider', () => {
     expect(mockGetOrbTopicSeed).not.toHaveBeenCalled();
   });
 
-  it('suppresses on transparent reconnect', async () => {
+  it('VTID-03677: still LEADS turn-1 with a topic even when isReconnect is true', async () => {
+    // Regression guard for the live production incident: after VTID-03675
+    // fixed the widget to resend guided_topic_id on a client-side retry, the
+    // retry request ALSO legitimately sets isReconnect (a client WS drop is
+    // exactly what that flag exists to detect, for transport-continuity
+    // reasons unrelated to whether this specific topic was ever taught) —
+    // and the provider used to unconditionally suppress on it, silently
+    // discarding the very retry VTID-03675 exists to make possible. A topic
+    // reaching this provider at all means (per the widget's own contract)
+    // it has not been delivered yet, reconnect or not.
+    mockGetOrbTopicSeed.mockResolvedValue(SEED);
     const p = makeGuidedTopicNarrationProvider();
     const r = await p.produce(makeCtx({ isReconnect: true }));
-    expect(r.status).toBe('suppressed');
-    expect(r.reason).toBe('forced_skip_reconnect');
+    expect(r.status).toBe('returned');
+    expect((r.candidate as any).priority).toBe(96);
   });
 
   it('suppresses when the topic is not live (no seed)', async () => {
@@ -106,15 +127,28 @@ describe('guided-topic-narration provider', () => {
     expect(c.cta.type).toBe('explain');
     // the whole candidate passes the framework validator (else it errors + never wins)
     expect(validateContinuationCandidate(c).ok).toBe(true);
-    // VTID-03293: the spoken LINE is now the LESSON itself (the authored voice
-    // script), so native-audio reliably speaks it; not a short opener + a long
-    // "teach more" instruction (which stalled audio).
-    expect(c.userFacingLine).toContain('Vitanaland ist deine');
+    // VTID-03665: without pre-recorded Polly audio, turn-1 is the SHORT
+    // opener line (names the topic, invites the teaching to begin) — NOT
+    // the raw voice_script recited word-for-word. The raw script is the
+    // exact payload VTID-03647/03648 measured Nova and Vertex both
+    // independently rejecting; it now only ever lives in the system
+    // instruction as paraphrase material, never as a literal spoken trigger.
+    expect(c.userFacingLine).not.toContain('Vitanaland ist deine');
+    expect(c.userFacingLine).toContain(SEED.displayLabel);
     // TEACH content bundled for the controller / livekit handler
     expect(c.guidedTopicNarration.topic_id).toBe('T001');
     expect(c.guidedTopicNarration.voice_script).toContain('Vitanaland');
     expect(c.guidedTopicNarration.practice_target).toBe('community');
-    expect(mockGetOrbTopicSeed).toHaveBeenCalledWith(FAKE_SB, 'T001', 'v2');
+    // VTID-03644: locale is now forwarded so the seed overlays
+    // journey_checklist_translations instead of always narrating German.
+    expect(mockGetOrbTopicSeed).toHaveBeenCalledWith(FAKE_SB, 'T001', 'v2', 'de');
+  });
+
+  it('VTID-03644: forwards a non-German lang as the seed locale', async () => {
+    mockGetOrbTopicSeed.mockResolvedValue(SEED);
+    const p = makeGuidedTopicNarrationProvider();
+    await p.produce(makeCtx({ lang: 'pt' }));
+    expect(mockGetOrbTopicSeed).toHaveBeenCalledWith(FAKE_SB, 'T001', 'v2', 'pt');
   });
 
   it('greets by name when firstName is provided', async () => {
@@ -122,5 +156,58 @@ describe('guided-topic-narration provider', () => {
     const p = makeGuidedTopicNarrationProvider();
     const r = await p.produce(makeCtx({ firstName: 'Dragan' }));
     expect((r.candidate as any).userFacingLine).toContain('Dragan');
+  });
+
+  describe('VTID-03650: Polly narration bridge', () => {
+    it('tries Polly with the resolved content and locale before deciding the turn-1 line', async () => {
+      mockGetOrbTopicSeed.mockResolvedValue(SEED);
+      mockSynthesizeGuidedTopicNarrationAudio.mockResolvedValue({ audioB64: 'YQ==', sampleRateHz: 16000 });
+      const p = makeGuidedTopicNarrationProvider();
+      await p.produce(makeCtx());
+      expect(mockSynthesizeGuidedTopicNarrationAudio).toHaveBeenCalledWith(
+        expect.objectContaining({ topic_id: 'T001', voice_script: SEED.vitanaVoiceScript }),
+        'de',
+      );
+    });
+
+    it('when Polly succeeds: turn-1 line is the SHORT post-narration line, not the raw script', async () => {
+      mockGetOrbTopicSeed.mockResolvedValue(SEED);
+      mockSynthesizeGuidedTopicNarrationAudio.mockResolvedValue({ audioB64: 'YQ==', sampleRateHz: 16000 });
+      const p = makeGuidedTopicNarrationProvider();
+      const r = await p.produce(makeCtx());
+      const c = r.candidate as any;
+      expect(c.userFacingLine).not.toContain('Vitanaland ist deine');
+      expect(c.userFacingLine).toContain(SEED.displayLabel);
+      expect(c.userFacingLine.length).toBeLessThan(200);
+    });
+
+    it('when Polly succeeds: the audio is bundled on the candidate content for the controller to send', async () => {
+      mockGetOrbTopicSeed.mockResolvedValue(SEED);
+      mockSynthesizeGuidedTopicNarrationAudio.mockResolvedValue({ audioB64: 'YQ==', sampleRateHz: 16000 });
+      const p = makeGuidedTopicNarrationProvider();
+      const r = await p.produce(makeCtx());
+      expect((r.candidate as any).guidedTopicNarration.narrationAudio).toEqual({ audioB64: 'YQ==', sampleRateHz: 16000 });
+    });
+
+    it('VTID-03665: when Polly fails, turn-1 is the SHORT opener line — NEVER the raw script verbatim', async () => {
+      // Regression guard for the live production incident: a guided-topic
+      // candidate won the ranker correctly but Polly never once succeeded,
+      // so every session still spoke the raw voice_script as a literal
+      // "say this word-for-word" trigger — the exact payload VTID-03647/
+      // 03648 measured Nova and Vertex both rejecting. The user experienced
+      // this as "tapping a session opens regular conversation instead."
+      mockGetOrbTopicSeed.mockResolvedValue(SEED);
+      mockSynthesizeGuidedTopicNarrationAudio.mockResolvedValue(null);
+      const p = makeGuidedTopicNarrationProvider();
+      const r = await p.produce(makeCtx());
+      const c = r.candidate as any;
+      expect(c.userFacingLine).not.toContain('Vitanaland ist deine');
+      expect(c.userFacingLine).toContain(SEED.displayLabel);
+      expect(c.userFacingLine.length).toBeLessThan(200);
+      expect(c.guidedTopicNarration.narrationAudio).toBeNull();
+      // The raw material still reaches the model — just as paraphrase
+      // material in the system instruction, not as the literal spoken line.
+      expect(c.guidedTopicNarration.voice_script).toContain('Vitanaland');
+    });
   });
 });

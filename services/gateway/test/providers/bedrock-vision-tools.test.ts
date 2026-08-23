@@ -62,9 +62,44 @@ describe('VTID-03496 parseBedrockContent', () => {
     expect(out.toolCall).toBeUndefined();
   });
 
+  it('returns EVERY tool_use block, in order, with its id (VTID-03579)', () => {
+    // An agentic caller executes this list and must send back one result per
+    // entry. Parsing only the first executed one tool, returned results for
+    // one, and then left the model waiting on calls it had already made — a
+    // hang, not an error, and invisible to any test asserting "a tool call came
+    // back". The ids matter as much as the names: the tool_result round-trip is
+    // paired by id, and Anthropic 400s on a mismatch.
+    const parsed = parseBedrockContent({
+      content: [
+        { type: 'text', text: 'Working on it. ' },
+        { type: 'tool_use', id: 'tu_a', name: 'list_vtids', input: { status: 'open' } },
+        { type: 'tool_use', id: 'tu_b', name: 'get_health', input: {} },
+        { type: 'tool_use', id: 'tu_c', name: 'run_code', input: { code: '1+1' } },
+      ],
+    });
+
+    expect(parsed.toolCalls).toHaveLength(3);
+    expect(parsed.toolCalls.map((t) => t.name)).toEqual(['list_vtids', 'get_health', 'run_code']);
+    expect(parsed.toolCalls.map((t) => t.id)).toEqual(['tu_a', 'tu_b', 'tu_c']);
+    expect(parsed.toolCalls[2].arguments).toEqual({ code: '1+1' });
+
+    // Text still accumulates across blocks, and `toolCall` remains the first
+    // entry so existing single-tool callers are unaffected.
+    expect(parsed.text).toBe('Working on it. ');
+    expect(parsed.toolCall!.name).toBe('list_vtids');
+  });
+
   it('tolerates a missing/!array content field rather than throwing', () => {
-    expect(parseBedrockContent({})).toEqual({ text: '', toolCall: undefined });
-    expect(parseBedrockContent({ content: undefined })).toEqual({ text: '', toolCall: undefined });
+    // VTID-03579: `toolCalls` (plural) is now always present — an empty array
+    // when nothing was requested. Asserted explicitly rather than loosened to
+    // toMatchObject: a caller that iterates the list must never get `undefined`
+    // back on the no-tools path, which is precisely the case this test covers.
+    expect(parseBedrockContent({})).toEqual({ text: '', toolCall: undefined, toolCalls: [] });
+    expect(parseBedrockContent({ content: undefined })).toEqual({
+      text: '',
+      toolCall: undefined,
+      toolCalls: [],
+    });
   });
 
   it('ignores a malformed tool_use block with no name or input', () => {

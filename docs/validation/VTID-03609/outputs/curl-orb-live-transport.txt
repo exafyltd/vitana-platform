@@ -1,0 +1,2 @@
+{"ok":true,"transport":"sse"}
+200 application/json; charset=utf-8

@@ -41,9 +41,32 @@ describe('resolveNovaSonicVoice', () => {
     expect(resolveNovaSonicVoice({ language: 'ru', persona: 'devon' })).toBeNull();
   });
 
+  // VTID-03672 — pt moved from "falls through to Vertex" to a served Nova
+  // language. These assert the two halves that can independently break: the
+  // language must be admitted by the gate, AND it must resolve to Nova's real
+  // pt-BR voices. A wrong-but-plausible id (Nova 1's table, another locale's
+  // voice) fails at stream open, in production, for exactly the users whose
+  // language just changed.
+  it('serves pt with Nova\'s documented pt-BR voices', () => {
+    expect(resolveNovaSonicVoice({ language: 'pt', persona: 'vitana' })).toBe('carolina');
+    expect(resolveNovaSonicVoice({ language: 'pt', persona: 'devon' })).toBe('leo');
+    // pt-BR specifically — the app's Portuguese catalog is Brazilian, and a
+    // pt-PT voice would read Brazilian copy in the European variant.
+    expect(resolveNovaSonicVoice({ language: 'pt-BR', persona: 'vitana' })).toBe('carolina');
+  });
+
+  it('still refuses the languages Nova genuinely does not speak', () => {
+    // Not caution — the Nova 2 language table does not list these at all, so
+    // widening the gate to them would send users to a model that cannot answer.
+    for (const language of ['ru', 'pl', 'sr']) {
+      expect(resolveNovaSonicVoice({ language, persona: 'vitana' })).toBeNull();
+      expect(resolveNovaSonicVoice({ language, persona: 'devon' })).toBeNull();
+    }
+  });
+
   it('never returns a Gemini voice ID', () => {
     const geminiVoices = ['Kore', 'Charon', 'Aoede', 'Fenrir', 'Callirrhoe', 'Achernar'];
-    for (const lang of ['en', 'de', 'fr', 'es']) {
+    for (const lang of ['en', 'de', 'fr', 'es', 'pt']) {
       for (const persona of ['vitana', 'devon', 'sage', 'atlas', 'mira']) {
         const v = resolveNovaSonicVoice({ language: lang, persona });
         expect(geminiVoices).not.toContain(v);

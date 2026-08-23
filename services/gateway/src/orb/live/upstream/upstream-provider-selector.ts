@@ -94,6 +94,17 @@ export type SelectionReason =
   | 'nova_not_allowlisted'        // nova gate on but identity not in allowlist → vertex
   | 'nova_language_unsupported'   // session language outside en/de/fr/es → vertex
   | 'nova_runtime_unsupported'    // runtime cannot carry the HTTP/2 stream (GCP) → vertex
+  // VTID-emergency-gcp-shutdown: the GCP project's billing was disabled, so
+  // Vertex Live is permanently unreachable, not merely deprioritized. Once
+  // `ctx.vertexUnavailable` is set, the runtime/language gates stop being
+  // able to route anyone to Vertex — there is nothing there to route to.
+  // They still route to a HARD Vertex failure (`nova_disabled`,
+  // `nova_not_allowlisted`) exactly as before, because those two gates
+  // reflect deliberate operator config (Nova switched off, identity not
+  // allowlisted), not a technical/quality limit Vertex used to cover for.
+  // A degraded Nova session in an unverified language beats a guaranteed-dead
+  // connection attempt.
+  | 'nova_forced_vertex_unavailable'
   // BOOTSTRAP-NOVA-IDLE-ROTATION: a mid-session pin applied by the CALLER,
   // never returned by selectUpstreamProvider() itself (which is stateless and
   // has no notion of a session's rotation history). Set when a planned Nova
@@ -102,6 +113,11 @@ export type SelectionReason =
   // replace. Lives in this union so the override is a typed, greppable
   // decision rather than a cast.
   | 'nova_rotation_exhausted_fallback'
+  // VTID-03683: the session's language is one Nova CANNOT speak (ru/pl/ar/zh),
+  // and instead of forcing it onto Nova anyway — which produced ~30 audio
+  // chunks per turn against de/en's ~165 — it is served by the cascaded
+  // Transcribe -> Bedrock -> Polly pipeline, which does support it.
+  | 'cascaded_language_rescue'
   | 'provider_invalid';           // unknown provider string anywhere → vertex
 
 export interface CanarySelectorConfig {
@@ -170,6 +186,35 @@ export interface UpstreamSelectorContext {
      * gate itself is already expressed through `identityAllowed`.
      */
     globalEnabled?: boolean;
+  };
+
+  /**
+   * VTID-emergency-gcp-shutdown: true when Vertex Live is known to be
+   * permanently unreachable (GCP project billing disabled), not merely
+   * disfavored. When set, the `runtime`/`languageSupported` Nova gates can no
+   * longer degrade a session to Vertex — there is nothing there to degrade
+   * to — so a Nova session is forced through instead, reported with the
+   * distinct `nova_forced_vertex_unavailable` reason so the rate stays
+   * measurable. Does NOT touch the `enabled`/`identityAllowed` gates, which
+   * reflect deliberate operator config rather than a technical limit.
+   * Caller-supplied (reads `VERTEX_LIVE_UNAVAILABLE=true`) so the selector
+   * stays pure. Default undefined/false — zero behavior change until set.
+   */
+  vertexUnavailable?: boolean;
+
+  /**
+   * VTID-03683: the cascaded pipeline's readiness for THIS session.
+   *
+   * Precomputed by the caller for the same reason `nova.languageSupported`
+   * is: this module is stateless and never sees the session's language
+   * string, only booleans derived from it. `languageSupported` here means
+   * `evaluateCascadeEligibility(lang).eligible` — which already refuses any
+   * language Nova speaks natively, so a working Nova session can never be
+   * diverted into the slower three-hop path.
+   */
+  cascade?: {
+    enabled: boolean;
+    languageSupported: boolean;
   };
 }
 
@@ -341,6 +386,34 @@ export function selectUpstreamProvider(
  * (env or system_config). Every failed gate degrades to Vertex with a
  * typed reason — no silent access broadening, no raw config detail.
  */
+/**
+ * VTID-03683: when Nova is about to be FORCED to carry a language it cannot
+ * speak, hand the session to the cascade instead — if the cascade is switched
+ * on and actually covers that language.
+ *
+ * Returns null when it does not apply, so both call sites fall through to the
+ * pre-existing forced-Nova behaviour byte-for-byte. That is deliberate: with
+ * `ORB_CASCADED_VOICE_ENABLED` unset this whole feature is inert, and `sr`
+ * (which Polly cannot voice) keeps the old path rather than being routed
+ * somewhere that would also fail.
+ */
+function tryCascadeRescue(
+  ctx: UpstreamSelectorContext,
+  languageBlocked: boolean,
+): UpstreamSelectionDecision | null {
+  if (!languageBlocked) return null;
+  if (ctx.cascade?.enabled !== true) return null;
+  if (ctx.cascade.languageSupported !== true) return null;
+  return {
+    provider: 'cascaded',
+    requested: 'nova_sonic',
+    reason: 'cascaded_language_rescue',
+    livekitReady: false,
+    canary: false,
+    novaReady: false,
+  };
+}
+
 function evaluateNovaRequest(
   ctx: UpstreamSelectorContext,
   happyReason: 'env_explicit_nova_sonic' | 'system_config_nova_sonic',
@@ -357,7 +430,12 @@ function evaluateNovaRequest(
       error: 'Nova Sonic requested but disabled or not ready; pinning to Vertex.',
     };
   }
-  if (nova.runtime !== undefined && nova.runtime !== 'aws-ecs') {
+
+  const vertexDead = ctx.vertexUnavailable === true;
+  const runtimeBlocked = nova.runtime !== undefined && nova.runtime !== 'aws-ecs';
+  const languageBlocked = nova.languageSupported !== true;
+
+  if (runtimeBlocked && !vertexDead) {
     return {
       provider: 'vertex',
       requested: 'nova_sonic',
@@ -368,7 +446,7 @@ function evaluateNovaRequest(
       error: 'Nova Sonic requires the AWS ECS runtime (HTTP/2 bidirectional stream); pinning to Vertex.',
     };
   }
-  if (nova.languageSupported !== true) {
+  if (languageBlocked && !vertexDead) {
     return {
       provider: 'vertex',
       requested: 'nova_sonic',
@@ -390,13 +468,16 @@ function evaluateNovaRequest(
       error: 'Session identity is not on the Nova canary allowlist; pinning to Vertex.',
     };
   }
+  const forced = runtimeBlocked || languageBlocked;
+  const rescue = tryCascadeRescue(ctx, languageBlocked);
+  if (rescue) return rescue;
   return {
     provider: 'nova_sonic',
     requested: 'nova_sonic',
-    reason: happyReason,
+    reason: forced ? 'nova_forced_vertex_unavailable' : happyReason,
     livekitReady: false,
     canary: true,
-    novaReady: true,
+    novaReady: !forced,
   };
 }
 
@@ -411,21 +492,26 @@ function evaluateNovaCanary(
 ): UpstreamSelectionDecision | null {
   const nova = ctx.nova;
   if (!nova || nova.enabled !== true) return null;
-  if (nova.runtime !== undefined && nova.runtime !== 'aws-ecs') return null;
-  if (nova.languageSupported !== true) return null;
+  const vertexDead = ctx.vertexUnavailable === true;
+  const runtimeBlocked = nova.runtime !== undefined && nova.runtime !== 'aws-ecs';
+  const languageBlocked = nova.languageSupported !== true;
+  if ((runtimeBlocked || languageBlocked) && !vertexDead) return null;
   if (nova.identityAllowed !== true) return null;
   // VTID-03501: a globally-promoted session is NOT a canary session. Reporting
   // `canary: true` for the whole user base would make every canary-scoped
   // dashboard and alert read as if the rollout never widened — the population
   // changed, so the label has to change with it.
   const global = nova.globalEnabled === true;
+  const forced = runtimeBlocked || languageBlocked;
+  const rescue = tryCascadeRescue(ctx, languageBlocked);
+  if (rescue) return { ...rescue, requested: null };
   return {
     provider: 'nova_sonic',
     requested: null,
-    reason: global ? 'nova_global_enabled' : 'nova_canary_allowlisted',
+    reason: forced ? 'nova_forced_vertex_unavailable' : (global ? 'nova_global_enabled' : 'nova_canary_allowlisted'),
     livekitReady: false,
-    canary: !global,
-    novaReady: true,
+    canary: forced ? false : !global,
+    novaReady: !forced,
   };
 }
 

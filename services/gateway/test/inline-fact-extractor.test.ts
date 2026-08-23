@@ -26,6 +26,26 @@ let vertexResponseText = JSON.stringify([
 ]);
 let vertexShouldFail = false;
 
+// VTID-03579: the extractor no longer owns a provider — it calls the router.
+// `vertexResponseText` / `vertexShouldFail` keep their names so the assertions
+// below read unchanged, but they now drive the ROUTER's reply rather than a
+// Vertex SDK reply. What these tests actually cover — response parsing, fact
+// persistence and the fail-soft contract — is provider-independent and is
+// exactly as valid against Bedrock as it was against Vertex.
+jest.mock('../src/services/llm-router', () => ({
+  callViaRouter: jest.fn(async () => {
+    if (vertexShouldFail) {
+      return { ok: false, provider: 'bedrock', error: 'router mock failure' };
+    }
+    return {
+      ok: true,
+      provider: 'bedrock',
+      model: 'eu.anthropic.claude-haiku-4-5-20251001-v1:0',
+      text: vertexResponseText,
+    };
+  }),
+}));
+
 // Mock VertexAI BEFORE any imports
 jest.mock('@google-cloud/vertexai', () => ({
   VertexAI: jest.fn().mockImplementation(() => ({
@@ -471,59 +491,48 @@ describe('VTID-01225: Fact Parsing Edge Cases', () => {
     expect(factKeys).toContain('user_favorite_tea');
   });
 
-  it('should handle Vertex failure and fall through to Gemini API', async () => {
+  it('does NOT fall through to Google when the router fails (VTID-03579)', async () => {
+    // This test used to assert the opposite: "Vertex failed, so Gemini API was
+    // called". That cascade was the bug — a per-module fallback chain that
+    // reached Google no matter what `llm_routing_policy` said, which is how the
+    // Gemini bill kept growing while the routing table read as if it had moved
+    // off it. Per CLAUDE.md ALWAYS 10c, a Claude stage's fallback is another
+    // Bedrock model or an explicit failure; it is NEVER Google.
     vertexShouldFail = true;
 
-    // Gemini API fallback should return facts
     mockFetch.mockImplementation(async (url: string, options?: RequestInit) => {
       const method = options?.method || 'GET';
       const body = options?.body ? JSON.parse(options.body as string) : undefined;
       fetchCalls.push({ url, method, body });
-
-      if (url.includes('generativelanguage.googleapis.com')) {
-        return {
-          ok: true,
-          json: async () => ({
-            candidates: [{
-              content: {
-                parts: [{
-                  text: '[{"fact_key":"user_name","fact_value":"Dragan","entity":"self","fact_value_type":"text"}]',
-                }],
-              },
-            }],
-          }),
-        };
-      }
-
       if (url.includes('write_fact')) {
         return { ok: true, json: async () => 'fact-id' };
       }
-
       return { ok: true, json: async () => ({}), text: async () => '' };
     });
 
-    await extractAndPersistFacts({
-      conversationText: 'User: My name is Dragan and I am from Aachen.\nAssistant: Welcome!',
-      tenant_id: 't', user_id: 'u', session_id: 's',
-    });
+    await expect(
+      extractAndPersistFacts({
+        conversationText: 'User: My name is Dragan and I am from Aachen.\nAssistant: Welcome!',
+        tenant_id: 't', user_id: 'u', session_id: 's',
+      }),
+    ).resolves.not.toThrow();
 
-    // Should have called Gemini API as fallback for EXTRACTION specifically.
-    // Filtered on ':generateContent' (not just the bare domain) because
-    // successful extraction now fires a fire-and-forget fact-embedding call
-    // (generateFactEmbeddingAsync) that ALSO falls back to Gemini when
-    // OPENAI_API_KEY isn't set (as here) — via a different endpoint,
-    // ':embedContent'. A bare-domain filter would flakily double-count
-    // depending on whether that fire-and-forget promise resolved before
-    // this assertion runs.
-    const geminiCalls = fetchCalls.filter(
+    // No generation call to Google. `:generateContent` specifically, not the
+    // bare domain: fact EMBEDDING still goes to Google via `:embedContent`
+    // (no Anthropic embedding model exists — see the sibling
+    // inline-fact-extractor-deepseek.test.ts carve-out), and a bare-domain
+    // filter would conflate a real regression with that known gap.
+    const geminiGeneration = fetchCalls.filter(
       (c) => c.url.includes('generativelanguage.googleapis.com') && c.url.includes(':generateContent'),
     );
-    expect(geminiCalls.length).toBe(1);
+    expect(geminiGeneration).toEqual([]);
 
-    // Should still persist the fact
+    // And nothing is persisted from a failed extraction — a failed call must
+    // not be able to write a fact, since a fabricated memory is worse than none.
     const writes = fetchCalls.filter(c => c.url.includes('write_fact'));
-    expect(writes.length).toBe(1);
-    expect(writes[0].body.p_fact_key).toBe('user_name');
+    expect(writes).toEqual([]);
+
+    vertexShouldFail = false;
   });
 });
 

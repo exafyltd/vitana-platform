@@ -9,6 +9,7 @@
  */
 
 import { createHash } from 'crypto';
+import { callViaRouter } from '../../llm-router'; // VTID-03579: provider from llm_routing_policy, never hardcoded
 
 const LOG_PREFIX = '[VTID-01185:LLM]';
 
@@ -92,55 +93,23 @@ async function queryVtidLedger(query: string): Promise<any[]> {
 // =============================================================================
 
 async function callLLM(prompt: string, systemInstruction: string): Promise<string | null> {
-  // Try Gemini via Vertex AI
-  const projectId = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID || 'lovable-vitana-vers1';
-  const location = 'us-central1';
-  const model = 'gemini-3.1-pro-preview';
+  // VTID-03579: was a direct Vertex `aiplatform.googleapis.com` call, ADC-signed
+  // and pinned to gemini-3.1-pro-preview. The `worker` stage decides the
+  // provider now — this analyzer produces JSON, which every routed provider can
+  // do, so nothing here depends on Google specifically.
+  const r = await callViaRouter('worker', prompt, {
+    service: 'recommendation-llm-analyzer',
+    systemPrompt: systemInstruction,
+    maxTokens: 2048,
+  });
 
-  try {
-    // Get access token via ADC
-    const { GoogleAuth } = await import('google-auth-library');
-    const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/cloud-platform'] });
-    const client = await auth.getClient();
-    const accessToken = (await client.getAccessToken()).token;
-
-    if (!accessToken) {
-      console.warn(`${LOG_PREFIX} No access token available, skipping LLM analysis`);
-      return null;
-    }
-
-    const url = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:generateContent`;
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        systemInstruction: { parts: [{ text: systemInstruction }] },
-        generationConfig: {
-          temperature: 0.3,
-          maxOutputTokens: 2048,
-          responseMimeType: 'application/json',
-        },
-      }),
-    });
-
-    if (!response.ok) {
-      const err = await response.text();
-      console.error(`${LOG_PREFIX} Gemini API error: ${response.status}: ${err}`);
-      return null;
-    }
-
-    const data = await response.json() as any;
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    return text || null;
-  } catch (error) {
-    console.error(`${LOG_PREFIX} LLM call failed:`, error);
+  if (!r.ok || !r.text) {
+    console.error(
+      `${LOG_PREFIX} LLM call failed via ${r.provider ?? 'router'}: ${r.error ?? 'empty response'}`,
+    );
     return null;
   }
+  return r.text;
 }
 
 // =============================================================================

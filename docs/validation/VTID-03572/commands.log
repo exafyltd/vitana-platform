@@ -1,0 +1,44 @@
+# VTID-03572 — verification commands, in the order run.
+#
+# All against a throwaway PostgreSQL 16, not a mock. Everything worth catching
+# in this adapter is SQL — unnest arity, the ON CONFLICT target matching the
+# primary key, NOT NULL constraints — and none of it is visible to a mocked pg
+# client. AC-6 is the proof: the not-null violation on informal_hint was found
+# by the server, not by review.
+
+# --- throwaway server -------------------------------------------------------
+initdb -D /tmp/pgdata2 -U postgres --auth=trust           # as user `postgres`; initdb refuses to run as root
+pg_ctl -D /tmp/pgdata2 -o '-p 55433 -h 127.0.0.1' start
+psql -h 127.0.0.1 -p 55433 -U postgres -c 'CREATE DATABASE ev1'
+
+# --- the suite this VTID extends (17 -> 22) ---------------------------------
+# A FRESH database each run. The suite is not re-runnable against a used one:
+# its beforeAll inserts a second is_current row into journey_checklist_versions,
+# so a second run reads the wrong version. Pre-existing; CI uses a fresh
+# service container per run, so it does not bite there.
+AURORA_TEST_DATABASE_URL="postgresql://postgres@127.0.0.1:55433/ev1?sslmode=disable" \
+  npx jest test/db-i18n/aurora-integration.test.ts
+# -> 22/22   (outputs/aurora-integration.txt)
+
+# --- baseline, to prove the new failures were mine and not inherited --------
+# Run BEFORE the change, on a clean database:
+#   git stash && AURORA_TEST_DATABASE_URL=...clean1... npx jest ...aurora-integration
+# -> 17/17 passed. So the 4 failures seen mid-work were introduced by this
+#    change and had to be fixed, not tolerated as pre-existing.
+
+# --- wider suites -----------------------------------------------------------
+npx jest test/db-i18n test/i18n
+# -> 110 passed, 22 skipped   (outputs/db-i18n-suites.txt)
+#    The 22 skipped are the Aurora integration tests, which skip themselves
+#    without AURORA_TEST_DATABASE_URL. A skipped suite is green, which is why
+#    AURORA-I18N-INTEGRATION.yml asserts explicitly that it did not skip.
+
+npx tsc --noEmit
+# -> exit 0   (outputs/tsc.txt)
+
+# --- two mistakes made while verifying, kept because they were instructive ---
+# 1. First `--flag`-style probe of the new tests bound `repo` in the describe
+#    body, before beforeAll had assigned it, so every test failed on a null
+#    read. The test was wrong, not the code.
+# 2. A "second run" against an already-used database reported 21/22 and looked
+#    like a real regression. It was the version-row artifact noted above.

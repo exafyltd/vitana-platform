@@ -45,6 +45,11 @@ const AUTH_NAMES = [
   // the secret is unset, so the endpoint is CLOSED by default rather than open.
   // It IS auth.
   'requireSessionToken',
+  // requireServiceOrAdmin / requireAdminOnly: canonical control-plane gates
+  // (middleware/require-service-or-admin) used by the self-healing router.
+  // requireServiceOrAdmin = GATEWAY_SERVICE_TOKEN or exafy_admin JWT;
+  // requireAdminOnly = exafy_admin JWT only. Both ARE auth.
+  'requireServiceOrAdmin', 'requireAdminOnly',
 ];
 const ROUTE_PREFIX_RE = /^\s*router\.(get|post|put|patch|delete)\s*\(/;
 

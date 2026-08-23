@@ -498,6 +498,13 @@ export type CicdEventType =
   | 'llm.call.started'
   | 'llm.call.completed'
   | 'llm.call.failed'
+  // VTID-03565: an operator preflighting a provider before flipping routing at
+  // it. Deliberately its OWN topic rather than an llm.call.* event: a preflight
+  // is not served traffic, and booking it as llm.call.completed would corrupt
+  // the who-actually-served-this telemetry that VTID-03563 exists to protect.
+  // It is a governance DECISION (§6) — the evidence the "verify Bedrock FIRST,
+  // then flip" ordering rule demands, and the record of who checked what.
+  | 'llm.provider.verified'
   | 'governance.llm_policy.updated'
   | 'governance.llm_policy.activated'
   | 'governance.llm_policy.reset'
@@ -737,6 +744,11 @@ export type CicdEventType =
   | 'self-healing.dispatch.retried'
   | 'self-healing.approved'
   | 'self-healing.rejected'
+  // Control-plane audit events (self-healing hardening, audit P0-1 item 6):
+  // operator-attributable governance/mutation actions.
+  | 'self-healing.autonomy.changed'
+  | 'self-healing.verify.requested'
+  | 'self-healing.rollback.requested_by_operator'
   | 'autopilot.task.spec.created'
   // VTID-DEV-ASSIST: Developer Assistant Events
   | 'dev_assist.spec.generated'

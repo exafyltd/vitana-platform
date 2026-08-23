@@ -5,12 +5,24 @@
  *
  * Chrome's first-run flow (ToS/"no thanks" prompts) is dismissed first —
  * a fresh AVD image hits this before any page content is reachable.
+ *
+ * `uiautomator dump` reflects the CURRENT layout snapshot, not the full
+ * scrollable DOM — on a small emulator viewport a field below the fold
+ * genuinely isn't in the dump yet (confirmed live: the email field was
+ * found and typed into correctly, but the password field was absent from
+ * that same dump). Scroll-and-retry before giving up on a missing field.
  */
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { label } from '../lib/uiautomator.mjs';
 import { sleep } from '../../lib/device.mjs';
 
 const CHROME_FIRSTRUN_RE = /accept\s*&?\s*continue|no\s*thanks|use\s*without\s*an?\s*account|got\s*it|^ok$/i;
 const LOGIN_BUTTON_RE = /^(anmelden|einloggen|weiter|sign\s?in|log\s?in|login|continue)$/i;
+
+function entrySummary(entries) {
+  return entries.map(e => `${e.className.split('.').pop()} "${label(e)}" pw=${e.password} bounds=${JSON.stringify(e.bounds)}`).join('\n');
+}
 
 async function dismissChromeFirstRun(driver, report, maxHops = 3) {
   for (let i = 0; i < maxHops; i++) {
@@ -21,6 +33,20 @@ async function dismissChromeFirstRun(driver, report, maxHops = 3) {
     await driver.tapEntry(hit);
     await sleep(1500);
   }
+}
+
+/** Re-dump, scrolling down up to `maxScrolls` times, until a password EditText appears. */
+async function findPasswordField(driver, report, maxScrolls = 3) {
+  for (let i = 0; i <= maxScrolls; i++) {
+    const entries = await driver.visibleEntries();
+    const found = entries.filter(e => e.className.includes('EditText')).find(e => e.password);
+    if (found) return found;
+    if (i === maxScrolls) return null;
+    report.record({ label: `scroll for password field (${i + 1}/${maxScrolls})`, ok: true, detail: 'password EditText not in current dump — scrolling' });
+    await driver.scroll({ direction: 'down' });
+    await sleep(600);
+  }
+  return null;
 }
 
 export async function loginFlow({ driver, report, email, password }, depth = 0) {
@@ -36,6 +62,11 @@ export async function loginFlow({ driver, report, email, password }, depth = 0) 
   }
 
   const entries = await driver.visibleEntries();
+  report.record({ label: 'login screen observe', ok: true, outline: entrySummary(entries) });
+  try {
+    writeFileSync(join(report.outDir, 'login-screen.dump.txt'), entrySummary(entries) + '\n');
+  } catch { /* diagnostic only */ }
+
   const editTexts = entries.filter(e => e.className.includes('EditText'));
 
   if (editTexts.length === 0) {
@@ -53,23 +84,23 @@ export async function loginFlow({ driver, report, email, password }, depth = 0) 
     return false;
   }
 
-  const passField = editTexts.find(e => e.password) || editTexts[1];
-  const emailField = editTexts.find(e => e !== passField) || editTexts[0];
+  const emailField = editTexts.find(e => !e.password) || editTexts[0];
 
   await driver.tapEntry(emailField);
   await sleep(400);
   await driver.typeText(email);
   report.record({ label: 'typed email', ok: true, detail: email });
 
+  // The password field may not have been in the *initial* dump if it sits
+  // below the fold — re-check (with scroll-retry) after typing the email,
+  // rather than relying on the pre-typing snapshot.
+  const passField = await findPasswordField(driver, report);
   if (!passField) {
-    report.record({ label: 'password field', ok: false, detail: 'no password field found' });
+    report.record({ label: 'password field', ok: false, detail: 'no password field found after scrolling' });
     return false;
   }
 
-  // Re-dump: the soft keyboard appearing can shift on-screen positions.
-  const midEntries = (await driver.visibleEntries()).filter(e => e.className.includes('EditText'));
-  const passNow = midEntries.find(e => e.password) || passField;
-  await driver.tapEntry(passNow);
+  await driver.tapEntry(passField);
   await sleep(400);
   await driver.typeText(password);
   report.record({ label: 'typed password', ok: true });

@@ -20,7 +20,14 @@ set -euo pipefail
 # ── Config ────────────────────────────────────────────────────
 PROJECT="${GCP_PROJECT_ID:-lovable-vitana-vers1}"
 REGION="${GCP_REGION:-us-central1}"
-GATEWAY_URL="${GATEWAY_URL:-https://gateway-q74ibpv6ia-uc.a.run.app}"
+# Gateway serving traffic has been AWS ECS (vitana-gateway-awsdr), not this
+# GCP Cloud Run project, since the VTID-03419 cutover (2026-07-27). Cloud
+# Scheduler itself still runs on GCP (no AWS equivalent exists yet — see
+# CLAUDE.md's cutover notes), but it must POST to the AWS host or every job
+# this script creates silently targets the GCP rollback target instead of
+# production. The old Cloud Run URL is still valid via --gateway/GATEWAY_URL
+# for anyone deliberately re-pointing at the GCP rollback instance.
+GATEWAY_URL="${GATEWAY_URL:-https://gateway.vitanaland.com}"
 TENANT_ID="${DEFAULT_TENANT_ID:-}"
 DELETE=false
 DRY_RUN=false
@@ -209,6 +216,18 @@ echo "Done. ${#JOBS[@]} scheduler jobs processed."
 DIRECT_JOBS=(
   "reminders-tick|* * * * *|UTC|/api/v1/scheduled-notifications/reminders-tick"
   "reminders-sweeper|*/5 * * * *|UTC|/api/v1/scheduled-notifications/reminders-sweeper"
+  # VTID-03656: push-dispatch is the ONLY delivery path for FCM/Appilix push
+  # on notifications written directly by DB triggers (new post/video, like,
+  # comment, follow, mention — see vitana-v1 migrations 20260630120000 and
+  # 20260805160000). It was NEVER registered here, so whatever Cloud
+  # Scheduler job was invoking it before existed only in live GCP state,
+  # outside this repo entirely — undiscoverable by reading the code, and it
+  # silently stopped succeeding around 2026-08-15, leaving 782+ "new post"
+  # push notifications undelivered for 40+ hours before anyone noticed.
+  # `* * * * *` is the fastest a standard unix-cron Cloud Scheduler job can
+  # go (1 minute) — the route's old comment claimed "every 30 seconds",
+  # which was never actually achievable via this script's job format.
+  "push-dispatch|* * * * *|UTC|/api/v1/scheduled-notifications/push-dispatch"
 )
 
 # ──────────────────────────────────────────────────────────────
@@ -236,6 +255,11 @@ TENANT_DIRECT_JOBS=(
   "daily-pace-notifications|0 * * * *|UTC|/api/v1/scheduled-notifications/daily-pace-notifications"
   # BOOTSTRAP-DAILY-FEATURE-TIP: automatic once-a-day "Did You Know" card.
   "daily-feature-tip|0 17 * * *|UTC|/api/v1/scheduled-notifications/daily-feature-tip"
+  # VTID-03604: nightly goodnight push, same hourly-UTC-tick / per-user-
+  # local-hour pattern as daily-pace-notifications — fires every hour, the
+  # endpoint dispatches only to users whose local hour == 22 and who did not
+  # already get the spoken ORB day-close tonight.
+  "night-push|0 * * * *|UTC|/api/v1/scheduled-notifications/night-push"
 )
 
 for JOB in "${TENANT_DIRECT_JOBS[@]}"; do

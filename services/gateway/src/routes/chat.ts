@@ -21,6 +21,7 @@ import { createClient } from '@supabase/supabase-js';
 import { notifyUser } from '../services/notification-service';
 import { VITANA_BOT_USER_ID, isVitanaBot } from '../lib/vitana-bot';
 import { processConversationTurn } from '../services/conversation-client';
+import { extractDmActions } from '../services/chat/dm-tool-actions';
 import { tt } from '../i18n/catalog';
 import { getUserLocale } from '../i18n/server-locale';
 
@@ -491,6 +492,63 @@ router.get('/unread-count', requireAuth, requireTenant, async (req: Request, res
 // route it through the unified conversation intelligence layer and
 // write Vitana's reply back to chat_messages.
 
+/**
+ * VTID-03620: every call into processConversationTurn/processBrainTurn from
+ * this handler used to omit BOTH thread_id and conversation_history, so
+ * getOrCreateThread() (conversation-client.ts) minted a brand-new random
+ * thread on every single message — the model had zero memory of anything
+ * said one turn earlier in the SAME visible DM. Reported live: Vitana
+ * re-resolving a message recipient from scratch every turn, re-asking for
+ * the message body after the user had already supplied it in a prior
+ * message, and an incoherent first reply. This reconstructs recent history
+ * from chat_messages (already persisted for every DM turn) and a stable
+ * per-DM thread id, mirroring how a real multi-turn conversation is meant
+ * to work — same fix pattern applied to handleVitanaGroupMention
+ * (routes/chat-groups.ts), which had the identical gap.
+ */
+async function fetchVitanaDmHistory(
+  supabase: ReturnType<typeof getSupabase>,
+  tenantId: string,
+  userId: string,
+  currentMessage: string,
+  limit = 12,
+): Promise<Array<{ role: 'user' | 'assistant'; content: string }>> {
+  try {
+    const { data, error } = await supabase
+      .from('chat_messages')
+      .select('sender_id, content, created_at')
+      .eq('tenant_id', tenantId)
+      .or(
+        `and(sender_id.eq.${userId},receiver_id.eq.${VITANA_BOT_USER_ID}),and(sender_id.eq.${VITANA_BOT_USER_ID},receiver_id.eq.${userId})`,
+      )
+      .order('created_at', { ascending: false })
+      .limit(limit + 1);
+    if (error || !data) return [];
+
+    const rows = [...data].reverse() as Array<{ sender_id: string; content: string | null }>;
+    // The caller's own message for THIS turn is already in chat_messages (the
+    // client's prior POST /send call wrote it before hitting /vitana-reply) —
+    // drop it here so it is not duplicated between conversation_history and
+    // the turn's own `message` field.
+    const last = rows[rows.length - 1];
+    if (last && last.sender_id === userId && last.content === currentMessage) {
+      rows.pop();
+    }
+
+    return rows
+      .filter((r): r is { sender_id: string; content: string } => !!r.content && r.content.trim().length > 0)
+      .slice(-limit)
+      .map((r) => ({
+        role: r.sender_id === userId ? ('user' as const) : ('assistant' as const),
+        content: r.content,
+      }));
+  } catch {
+    // History is an enhancement, never a hard dependency — a fetch failure
+    // degrades to the old (context-free) behavior rather than failing the turn.
+    return [];
+  }
+}
+
 async function handleVitanaTextReply(
   userId: string,
   tenantId: string,
@@ -504,6 +562,11 @@ async function handleVitanaTextReply(
     const { isVitanaBrainEnabled } = await import('../services/system-controls-service');
     const useBrain = await isVitanaBrainEnabled();
 
+    // VTID-03620: stable per-DM thread id + reconstructed recent history —
+    // see fetchVitanaDmHistory's header comment for why this is required.
+    const threadId = `vitana-dm:${tenantId}:${userId}`;
+    const conversationHistory = await fetchVitanaDmHistory(supabase, tenantId, userId, userContent);
+
     let result: { ok: boolean; reply: string; error?: string; thread_id: string; turn_number: number; meta: { model_used: string; latency_ms: number } };
 
     if (useBrain) {
@@ -516,6 +579,8 @@ async function handleVitanaTextReply(
         role: 'user',
         message: userContent,
         message_type: 'text',
+        thread_id: threadId,
+        conversation_history: conversationHistory,
         vtid: 'VTID-CHAT-BRIDGE',
       });
     } else {
@@ -526,6 +591,8 @@ async function handleVitanaTextReply(
         role: 'user',
         message: userContent,
         message_type: 'text',
+        thread_id: threadId,
+        conversation_history: conversationHistory,
         vtid: 'VTID-CHAT-BRIDGE',
       });
     }
@@ -534,6 +601,17 @@ async function handleVitanaTextReply(
       const error = result.error || 'empty reply';
       console.warn(`[Chat] Vitana reply failed: ${error}`);
       return { ok: false, error };
+    }
+
+    // VTID-03587: derive the client-actionable instructions BEFORE the insert
+    // so a malformed tool call can never cost the user their reply text.
+    const dmActions = extractDmActions((result as { tool_calls?: unknown }).tool_calls);
+    if (dmActions.length > 0) {
+      console.log(
+        `[Chat] Vitana reply carries ${dmActions.length} action(s): ${dmActions
+          .map((a) => (a.kind === 'navigate' ? `navigate:${a.screen_id ?? a.route}` : `event:${a.event}`))
+          .join(', ')}`,
+      );
     }
 
     // Write Vitana's reply to chat_messages
@@ -552,6 +630,12 @@ async function handleVitanaTextReply(
           thread_id: result.thread_id,
           turn_number: result.turn_number,
           brain_enabled: useBrain,
+          // VTID-03587: carry the turn's client-actionable tool calls. This
+          // array was previously built by processConversationTurn, logged to
+          // OASIS, and then dropped — so the assistant would narrate "let me
+          // show you the articles" and never open anything, forever. See
+          // services/chat/dm-tool-actions.ts.
+          actions: dmActions,
         },
       });
 

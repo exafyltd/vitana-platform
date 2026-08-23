@@ -30,6 +30,21 @@ import request from 'supertest';
 // VTID-01170: Header required to bypass deprecation guards in tests
 const BYPASS_HEADER = { 'X-BYPASS-ORCHESTRATOR': 'EMERGENCY-BYPASS' };
 
+// SECURITY (post-audit hardening): routes/autopilot.ts now requires a
+// GATEWAY_SERVICE_TOKEN bearer on every request (bar /health,
+// /pipeline/health) — see requireServiceToken in that file. This test
+// exercises the real router through the full app, so set a known token and
+// route every request() call through this wrapper instead of touching each
+// of this file's ~28 call sites individually.
+process.env.GATEWAY_SERVICE_TOKEN = 'test-service-token';
+function authedRequest(app: any) {
+  const agent = request(app);
+  return {
+    get: (path: string) => agent.get(path).set('Authorization', 'Bearer test-service-token'),
+    post: (path: string) => agent.post(path).set('Authorization', 'Bearer test-service-token'),
+  };
+}
+
 // Create a chainable mock that supports Supabase's fluent API
 const createChainableMock = () => {
   let defaultData: any = { data: [], error: null };
@@ -153,7 +168,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
 
   describe('GET /api/v1/autopilot/health', () => {
     it('should return VTID-0535 with Validator-Core Engine capabilities', async () => {
-      const response = await request(app)
+      const response = await authedRequest(app)
         .get('/api/v1/autopilot/health')
         .expect(200);
 
@@ -206,7 +221,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     };
 
     it('should reject missing plan object', async () => {
-      const response = await request(app)
+      const response = await authedRequest(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/plan')
         .set(BYPASS_HEADER)
         .send({ metadata: validPlanPayload.metadata })
@@ -218,7 +233,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     });
 
     it('should reject missing plan.summary', async () => {
-      const response = await request(app)
+      const response = await authedRequest(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/plan')
         .set(BYPASS_HEADER)
         .send({
@@ -233,7 +248,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     });
 
     it('should reject missing plan.steps array', async () => {
-      const response = await request(app)
+      const response = await authedRequest(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/plan')
         .set(BYPASS_HEADER)
         .send({
@@ -248,7 +263,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     });
 
     it('should reject missing metadata object', async () => {
-      const response = await request(app)
+      const response = await authedRequest(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/plan')
         .set(BYPASS_HEADER)
         .send({ plan: validPlanPayload.plan })
@@ -260,7 +275,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     });
 
     it('should reject missing plannerModel', async () => {
-      const response = await request(app)
+      const response = await authedRequest(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/plan')
         .set(BYPASS_HEADER)
         .send({
@@ -276,7 +291,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
 
     it('should accept valid plan and return response', async () => {
       // The endpoint works with valid input - actual submission depends on Supabase mocking
-      const response = await request(app)
+      const response = await authedRequest(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/plan')
         .set(BYPASS_HEADER)
         .send(validPlanPayload)
@@ -303,7 +318,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     };
 
     it('should reject missing step_id', async () => {
-      const response = await request(app)
+      const response = await authedRequest(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/work/start')
         .set(BYPASS_HEADER)
         .send({ ...validWorkStartPayload, step_id: undefined })
@@ -315,7 +330,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     });
 
     it('should reject missing step_index', async () => {
-      const response = await request(app)
+      const response = await authedRequest(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/work/start')
         .set(BYPASS_HEADER)
         .send({ ...validWorkStartPayload, step_index: undefined })
@@ -327,7 +342,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     });
 
     it('should reject missing label', async () => {
-      const response = await request(app)
+      const response = await authedRequest(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/work/start')
         .set(BYPASS_HEADER)
         .send({ ...validWorkStartPayload, label: undefined })
@@ -339,7 +354,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     });
 
     it('should reject missing agent', async () => {
-      const response = await request(app)
+      const response = await authedRequest(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/work/start')
         .set(BYPASS_HEADER)
         .send({ ...validWorkStartPayload, agent: undefined })
@@ -351,7 +366,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     });
 
     it('should reject missing executor_type', async () => {
-      const response = await request(app)
+      const response = await authedRequest(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/work/start')
         .set(BYPASS_HEADER)
         .send({ ...validWorkStartPayload, executor_type: undefined })
@@ -363,7 +378,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     });
 
     it('should accept valid work start payload (v1 format)', async () => {
-      const response = await request(app)
+      const response = await authedRequest(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/work/start')
         .set(BYPASS_HEADER)
         .send(validWorkStartPayload)
@@ -376,7 +391,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     });
 
     it('should return worker.plan_missing error when no plan exists', async () => {
-      const response = await request(app)
+      const response = await authedRequest(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/work/start')
         .set(BYPASS_HEADER)
         .send(validWorkStartPayload);
@@ -400,7 +415,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     };
 
     it('should reject missing step_id', async () => {
-      const response = await request(app)
+      const response = await authedRequest(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/work/complete')
         .set(BYPASS_HEADER)
         .send({ ...validWorkCompletePayload, step_id: undefined })
@@ -412,7 +427,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     });
 
     it('should reject missing step_index', async () => {
-      const response = await request(app)
+      const response = await authedRequest(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/work/complete')
         .set(BYPASS_HEADER)
         .send({ ...validWorkCompletePayload, step_index: undefined })
@@ -424,7 +439,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     });
 
     it('should reject invalid status (only completed or failed allowed)', async () => {
-      const response = await request(app)
+      const response = await authedRequest(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/work/complete')
         .set(BYPASS_HEADER)
         .send({ ...validWorkCompletePayload, status: 'success' })
@@ -436,7 +451,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     });
 
     it('should reject partial status (not allowed in v1)', async () => {
-      const response = await request(app)
+      const response = await authedRequest(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/work/complete')
         .set(BYPASS_HEADER)
         .send({ ...validWorkCompletePayload, status: 'partial' })
@@ -448,7 +463,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     });
 
     it('should accept valid work complete payload with completed status', async () => {
-      const response = await request(app)
+      const response = await authedRequest(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/work/complete')
         .set(BYPASS_HEADER)
         .send(validWorkCompletePayload)
@@ -461,7 +476,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     });
 
     it('should accept failed status with error message', async () => {
-      const response = await request(app)
+      const response = await authedRequest(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/work/complete')
         .set(BYPASS_HEADER)
         .send({
@@ -477,7 +492,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     });
 
     it('should return worker.plan_missing error when no plan exists', async () => {
-      const response = await request(app)
+      const response = await authedRequest(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/work/complete')
         .set(BYPASS_HEADER)
         .send(validWorkCompletePayload);
@@ -493,7 +508,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
 
   describe('POST /api/v1/autopilot/tasks/:vtid/validate', () => {
     it('should accept empty body and use defaults', async () => {
-      const response = await request(app)
+      const response = await authedRequest(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/validate')
         .send({})
         .expect((res) => {
@@ -505,7 +520,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     });
 
     it('should accept mode: auto', async () => {
-      const response = await request(app)
+      const response = await authedRequest(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/validate')
         .send({ mode: 'auto' })
         .expect((res) => {
@@ -516,7 +531,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     });
 
     it('should return validator.plan_missing when no plan exists', async () => {
-      const response = await request(app)
+      const response = await authedRequest(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/validate')
         .send({ mode: 'auto' });
 
@@ -527,7 +542,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     });
 
     it('should return validation object in response on success', async () => {
-      const response = await request(app)
+      const response = await authedRequest(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/validate')
         .send({ mode: 'auto' });
 
@@ -549,7 +564,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
   describe('GET /api/v1/autopilot/tasks/:vtid/status', () => {
     it('should return 404 for non-existent task', async () => {
       // Without Supabase mock returning data, task won't be found
-      const response = await request(app)
+      const response = await authedRequest(app)
         .get('/api/v1/autopilot/tasks/NON-EXISTENT-VTID/status')
         .expect(404);
 
@@ -559,7 +574,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
 
     it('should accept valid vtid format', async () => {
       // Test that endpoint accepts proper VTID format
-      const response = await request(app)
+      const response = await authedRequest(app)
         .get('/api/v1/autopilot/tasks/DEV-COMHU-2025-0001/status')
         .expect((res) => {
           // Without Supabase, will be 404, with mocked data could be 200
@@ -574,7 +589,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
 
   describe('GET /api/v1/autopilot/tasks/pending-plan', () => {
     it('should return ok: true with data array', async () => {
-      const response = await request(app)
+      const response = await authedRequest(app)
         .get('/api/v1/autopilot/tasks/pending-plan')
         .expect(200);
 

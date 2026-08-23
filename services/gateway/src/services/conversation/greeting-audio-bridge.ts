@@ -14,7 +14,7 @@
  * (orb-live.ts), which also owns the feature-flag gate.
  */
 
-import { tt, type GatewayLocale } from '../../i18n/catalog';
+import { tt, GATEWAY_LOCALES, type GatewayLocale } from '../../i18n/catalog';
 
 const LINE_KEYS = [
   'orb.greeting_bridge.line_1',
@@ -101,14 +101,18 @@ export function buildGreetingBridgeText(options: GreetingBridgeTextOptions): str
 /**
  * Mirrors `normalizeLocale()` in i18n/catalog.ts EXACTLY (same supported set,
  * same 'de' fallback for anything else) so the Intl-formatted date and the
- * tt()-rendered template text are always in the SAME language. Nova's canary
- * additionally supports 'fr' as a spoken language, but the gateway i18n
- * catalog has no French entries — tt() would silently fall back to German
- * for 'fr', so this must too, or a French session would hear a French date
- * glued to a German sentence.
+ * tt()-rendered template text are always in the SAME language.
+ *
+ * VTID-03559: this used to hardcode a 4-locale set because the gateway i18n
+ * catalog genuinely had no fr/pt/ru/pl entries — normalizing to 'de' kept the
+ * date and the sentence in one language rather than gluing a French date to a
+ * German sentence. VTID-03509 added those catalogs, so the premise is gone and
+ * the hardcoded copy became the bug: an fr/pt/ru/pl session heard the entire
+ * greeting bridge in German, spoken in their target-language voice. Derived
+ * from GATEWAY_LOCALES now, so a ninth locale needs no edit here.
  */
 function normalizeToBcp47(lang: string | GatewayLocale | null | undefined): string {
   const base = (lang ?? '').trim().toLowerCase().split(/[-_]/)[0];
-  const supported = new Set(['de', 'en', 'es', 'sr']);
+  const supported = new Set<string>(GATEWAY_LOCALES);
   return supported.has(base) ? base : 'de';
 }

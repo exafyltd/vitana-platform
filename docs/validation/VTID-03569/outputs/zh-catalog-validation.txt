@@ -1,0 +1,8 @@
+$ zh catalog validation (keys / placeholders / register / script)
+en keys: 112 zh keys: 112
+missing: none
+extra: none
+placeholder mismatches: none
+polite 您 occurrences: 0
+traditional-only chars: NONE
+simplified-only chars present: 19

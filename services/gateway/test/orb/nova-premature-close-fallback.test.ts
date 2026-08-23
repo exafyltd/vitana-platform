@@ -17,7 +17,7 @@ const base = {
   sessionActive: true,
   initiatedLocally: false,
   rotationInFlight: false,
-  audioOutChunks: 0,
+  hasProducedAudio: false,
   alreadyFellBack: false,
 };
 
@@ -27,11 +27,14 @@ describe('VTID-03502 shouldFallbackToVertexOnNovaClose', () => {
   });
 
   it('does NOT fire once any audio has been produced', () => {
-    // audio_out > 0 means the stream worked at least briefly — that is a
+    // hasProducedAudio means the stream worked at least briefly — that is a
     // mid-conversation drop, not the premature-close-at-open failure, and
-    // every non-nova_stream_error close reason has audio_out > 0.
-    expect(shouldFallbackToVertexOnNovaClose({ ...base, audioOutChunks: 1 })).toBe(false);
-    expect(shouldFallbackToVertexOnNovaClose({ ...base, audioOutChunks: 293 })).toBe(false);
+    // every non-nova_stream_error close reason has real audio out.
+    //
+    // VTID-03557 review fix: this is backed by session.transportHasShownLife,
+    // never the synthetic activation chime, precisely so a chime sent between
+    // connect and a premature close can't be mistaken for a live stream.
+    expect(shouldFallbackToVertexOnNovaClose({ ...base, hasProducedAudio: true })).toBe(false);
   });
 
   it('does NOT fire when we closed the stream ourselves', () => {
@@ -59,7 +62,7 @@ describe('VTID-03502 shouldFallbackToVertexOnNovaClose', () => {
       { sessionActive: false },
       { initiatedLocally: true },
       { rotationInFlight: true },
-      { audioOutChunks: 1 },
+      { hasProducedAudio: true },
       { alreadyFellBack: true },
     ];
     for (const n of negations) {

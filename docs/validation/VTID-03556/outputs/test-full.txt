@@ -1,0 +1,60 @@
+      1728 | // BOOTSTRAP-NOVA-SONIC-VOICE: same latency treatment for Nova — when Nova is
+
+      at src/routes/orb-live.ts:1725:15
+
+(node:7828) MetadataLookupWarning: received unexpected error = Request failed with status code 502 code = UNKNOWN
+  console.warn
+    [VTID-01219] ORB Voice access-token prewarm failed (will fetch lazily): Could not load the default credentials. Browse to https://cloud.google.com/docs/authentication/getting-started for more information.
+
+      1723 |     .then(() => console.log('[VTID-01219] ORB Voice access token prewarmed'))
+      1724 |     .catch((err: any) =>
+    > 1725 |       console.warn('[VTID-01219] ORB Voice access-token prewarm failed (will fetch lazily):', err?.message));
+           |               ^
+      1726 | }
+      1727 |
+      1728 | // BOOTSTRAP-NOVA-SONIC-VOICE: same latency treatment for Nova — when Nova is
+
+      at src/routes/orb-live.ts:1725:15
+
+(node:7828) MetadataLookupWarning: received unexpected error = Request failed with status code 502 code = UNKNOWN
+  console.warn
+    [VTID-01219] ORB Voice access-token prewarm failed (will fetch lazily): Could not load the default credentials. Browse to https://cloud.google.com/docs/authentication/getting-started for more information.
+
+      1723 |     .then(() => console.log('[VTID-01219] ORB Voice access token prewarmed'))
+      1724 |     .catch((err: any) =>
+    > 1725 |       console.warn('[VTID-01219] ORB Voice access-token prewarm failed (will fetch lazily):', err?.message));
+           |               ^
+      1726 | }
+      1727 |
+      1728 | // BOOTSTRAP-NOVA-SONIC-VOICE: same latency treatment for Nova — when Nova is
+
+      at src/routes/orb-live.ts:1725:15
+
+(node:7828) MetadataLookupWarning: received unexpected error = Request failed with status code 502 code = UNKNOWN
+  console.log
+    [OASIS Event] Emitted: self-healing.execution.deferred for VTID-00004 (4faee7a7-e44f-4797-88fa-b468e678557c)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+PASS test/worker-orchestrator-await-autopilot.test.ts (60.808 s)
+  POST /api/v1/worker/orchestrator/await-autopilot-execution — auth
+    ✓ 400 when vtid is missing (32 ms)
+    ✓ 400 when autopilot_execution_id is missing (5 ms)
+    ✓ 401 when worker_id is missing (3 ms)
+    ✓ 401 when worker is NOT in worker_registry (3 ms)
+    ✓ 403 when worker does not hold the claim (4 ms)
+    ✓ 403 when claim has expired (claim_expires_at in the past) (3 ms)
+  POST /api/v1/worker/orchestrator/await-autopilot-execution — four-state contract
+    ✓ returns completed with files_changed from PR diff when status=completed (4 ms)
+    ✓ returns pr_ready with files when status=ci (PR opened, CI in flight) (3 ms)
+    ✓ returns failed when status=failed (5 ms)
+    ✓ returns deferred (NOT failed) when timeout elapses while status=running (60130 ms)
+    ✓ returns failed (NOT deferred) when execution row is missing entirely (6 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 632 passed, 632 total
+Tests:       7 skipped, 6 todo, 12304 passed, 12317 total
+Snapshots:   44 passed, 44 total
+Time:        61.995 s
+Ran all test suites.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

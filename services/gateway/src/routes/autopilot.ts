@@ -95,6 +95,49 @@ import {
 const router = Router();
 
 // =============================================================================
+// SECURITY (post-audit hardening): same defect as routes/execute.ts — this
+// whole router (bar /health, /pipeline/health) had NO authentication at
+// all. The only gate was X-BYPASS-ORCHESTRATOR, a documented
+// governance-violation marker (CLAUDE.md §"Bypass Header"), not a secret.
+// Anyone on the internet could drive the autopilot planner/worker/validator
+// pipeline — submit plans, mark work complete, start/stop the event loop —
+// with just that header. Reuses the same GATEWAY_SERVICE_TOKEN bearer
+// pattern as admin-staging.ts / execute.ts.
+// =============================================================================
+function requireServiceToken(req: Request, res: Response, next: () => void): void {
+  // VTID-03598: this router is mounted at /api/v1/autopilot BEFORE the
+  // prompts/recommendations sub-routers (see index.ts), so every request
+  // under that prefix passes through here first — including requests meant
+  // for those routers' own unauthenticated /health handlers. Without these
+  // two exemptions, /api/v1/autopilot/prompts/health and
+  // /api/v1/autopilot/recommendations/health always 401 here and never
+  // reach the handler that would otherwise return 200, no matter what the
+  // caller sends.
+  if (
+    req.path === "/health" ||
+    req.path === "/pipeline/health" ||
+    req.path === "/prompts/health" ||
+    req.path === "/recommendations/health"
+  ) {
+    next();
+    return;
+  }
+  const header = req.header("authorization") ?? req.header("Authorization");
+  if (!header || !header.toLowerCase().startsWith("bearer ")) {
+    res.status(401).json({ ok: false, error: "missing bearer token" });
+    return;
+  }
+  const token = header.slice("bearer ".length).trim();
+  const expected = process.env.GATEWAY_SERVICE_TOKEN ?? "";
+  if (!expected || token !== expected) {
+    res.status(401).json({ ok: false, error: "invalid service token" });
+    return;
+  }
+  next();
+}
+router.use(requireServiceToken);
+
+// =============================================================================
 // VTID-01170: Deprecation Guard
 // =============================================================================
 

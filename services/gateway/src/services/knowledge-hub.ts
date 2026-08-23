@@ -12,6 +12,7 @@
 
 import fetch from 'node-fetch';
 import { emitOasisEvent } from './oasis-event-service';
+import { callViaRouter } from './llm-router'; // VTID-03579: provider from llm_routing_policy, never hardcoded
 
 // Environment config
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -125,10 +126,12 @@ async function generateAnswer(
     return `I couldn't find any documentation matching your query "${query}". Try rephrasing your question or check the Vitana documentation directly.`;
   }
 
-  // If no Gemini API key, return a simple formatted answer
-  if (!GOOGLE_GEMINI_API_KEY) {
-    return formatSimpleAnswer(query, docs);
-  }
+  // VTID-03579: this used to bail to the non-LLM answer whenever
+  // GOOGLE_GEMINI_API_KEY was absent. With Google switched off that silently
+  // downgraded every Knowledge Hub answer, with no error anywhere. Provider
+  // availability is the router's concern now — if no provider can serve, the
+  // call returns !ok and we fall back to formatSimpleAnswer below, which is
+  // the same graceful degradation, decided in one place instead of two.
 
   try {
     // Build context from docs
@@ -162,32 +165,21 @@ Answer (be specific and reference the documentation):`;
 
     const prompt = basePrompt;
 
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${GOOGLE_GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.3,
-            maxOutputTokens: 512
-          }
-        })
-      }
-    );
+    // VTID-03579: routed, not hardcoded. Provider is whatever the `memory`
+    // stage resolves to (Bedrock primary, DeepSeek fallback) — never Google.
+    const r = await callViaRouter('memory', prompt, {
+      service: 'knowledge-hub',
+      maxTokens: 512,
+    });
 
-    if (!response.ok) {
-      console.warn(`[VTID-0538] Gemini answer generation failed: ${response.status}`);
+    if (!r.ok || !r.text) {
+      console.warn(
+        `[VTID-0538] answer generation failed via ${r.provider ?? 'router'}: ${r.error ?? 'empty'}`,
+      );
       return formatSimpleAnswer(query, docs);
     }
 
-    const result = (await response.json()) as any;
-    const textPart = result.candidates?.[0]?.content?.parts?.find((p: any) => p.text);
-
-    return textPart?.text || formatSimpleAnswer(query, docs);
+    return r.text || formatSimpleAnswer(query, docs);
   } catch (error: any) {
     console.warn(`[VTID-0538] Answer generation error:`, error.message);
     return formatSimpleAnswer(query, docs);

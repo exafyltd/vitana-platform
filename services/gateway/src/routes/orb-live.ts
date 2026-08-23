@@ -101,7 +101,14 @@ import {
 // VTID-03273 Pillar C — explicit conversation state machine. `openingDelivered`
 // is a property of the state (replacing the scattered greetingSent boolean);
 // the opener fires exactly once, in OPENING, for the life of the conversation.
+import { wasPreviousSessionFailure } from '../orb/live/session/session-failure-classifier';
 import { ConversationStateMachine } from '../orb/live/session/conversation-state-machine';
+// VTID-03583: per-TURN navigation marker. Deliberately NOT the session-lifetime
+// `navigationDispatched` latch — see navigation-turn-scope.ts for why.
+import {
+  navigationDispatchedThisTurn,
+  markNavigationDispatchedThisTurn,
+} from '../orb/live/session/navigation-turn-scope';
 // VTID-03252: ENVIRONMENT block formatter, extracted for testability.
 import { formatClientContextForInstruction } from '../orb/live/instruction/client-context-format';
 // BOOTSTRAP-ORB-R0-INSTRUCTION-CAP: aggregate byte-budget guard for the final
@@ -333,8 +340,51 @@ import {
   shouldAttemptNewdayOverview,
   shouldAttemptResumeOverview,
   newdayHasContent,
+  setNewdayOverviewRungEnabled,
+  setDayCloseRungEnabled,
   type GreetingDecisionContext,
 } from '../services/conversation/compute-greeting-decision';
+
+// VTID-03628/03629 — P0 emergency kill switches (see compute-greeting-
+// decision.ts for the full incident writeup): Bedrock's content filter
+// started rejecting rich auto-generated greeting content on Nova Sonic
+// sessions — first suspected on the new-day overview rung (VTID-03628), then
+// confirmed live to actually be the day_close rung (VTID-03629, diary/mood
+// reflection content, fires at local_hour 0-4) — and the automatic retry
+// resent the identical rejected content in a loop either way. Set once at
+// module load — every `computeGreetingDecision` call site (there are
+// several, independently built) inherits both automatically, so there is
+// nothing left to diverge.
+//
+// VTID-03646 — `newday_overview` is re-enabled by default; `day_close` is NOT.
+// The two were disabled together on the same night under one theory, and the
+// evidence since separates them:
+//
+//   1. VTID-03629's own writeup records that newday_overview "was already
+//      being rejected by its own guard (missing first name) before it could
+//      even fire" — i.e. VTID-03628 disabled a rung that was not running, and
+//      the content filter kept firing regardless. Prod telemetry agrees: zero
+//      `newday_overview` events have EVER been recorded, before or after the
+//      kill switch. It cannot have been the content Bedrock rejected.
+//   2. Disabling both did not stop the blocks. `orb.live.diag` /
+//      `stage=upstream_error` still carries "This request has been blocked by
+//      our content filters" on 2026-08-14 (x2) and 2026-08-15 (x1), days after
+//      both rungs went dark. Whatever trips the filter is not these rungs.
+//   3. Meanwhile the cost of keeping it off is the entire reported regression:
+//      every session falls to the rung-8 teaser line (24 of 24 `wake_opener`
+//      events in the last 4 days are `override_v2`).
+//
+// `day_close` stays default-OFF because it is the rung that was actually
+// observed firing and being blocked (14 events on 08-13, prompt_len 4202), it
+// only fires at local_hour 0-4, and it is not implicated in this report. It
+// keeps its unchanged `=== 'true'` opt-in until a Nova-aware retry (rebuild
+// the opener from reduced content instead of resending identical content)
+// ships for it.
+//
+// The kill switch itself is kept in both cases — `ORB_NEWDAY_OVERVIEW_RUNG_
+// ENABLED=false` still turns the briefing off without a code change.
+setNewdayOverviewRungEnabled(process.env.ORB_NEWDAY_OVERVIEW_RUNG_ENABLED !== 'false');
+setDayCloseRungEnabled(process.env.ORB_DAY_CLOSE_RUNG_ENABLED === 'true');
 import { EMPTY_GREETING_LEDGER } from '../services/conversation/greeting-facts-ledger';
 
 const router = Router();
@@ -864,9 +914,23 @@ export interface GeminiLiveSession {
   // sites keep working; typed events flow via bindUpstreamSessionHandlers.
   upstreamClient?: UpstreamLiveClient | null;
   // Which upstream provider carries this session ('vertex' default).
-  upstreamProvider?: 'vertex' | 'livekit' | 'nova_sonic';
+  // VTID-03683: use the canonical union, not a re-declared copy.
+  // provider-name.ts's own header requires this: adding `cascaded` there
+  // surfaced these two sites as the only places still restating the list.
+  upstreamProvider?: VoiceProviderName;
   sseResponse: Response | null;
   active: boolean;
+  // VTID-03561: latch — at most one `vtid.live.session.stop` per session.
+  // Every teardown path sets this immediately after emitting. `cleanupWsSession`
+  // is the only path that CHECKS it, because it is the one teardown that can run
+  // *after* another has already emitted: the client sends `stop_session` (which
+  // emits `user_stop`) and its socket then closes a moment later, firing
+  // `ws.on('close')` → cleanup. Without the latch that ordinary sequence would
+  // book two stops for one conversation and double-count every clean session.
+  // Deliberately NOT keyed off `active`, which is false both for "already
+  // stopped" and for "never successfully started" — two states that need
+  // opposite answers here.
+  stopEventEmitted?: boolean;
   // VTID-02047 voice channel-swap: persona currently driving the voice channel.
   // 'vitana' is the default; report_to_specialist tool flips this to a
   // specialist key, then triggers a transparent reconnect of the upstream
@@ -1111,7 +1175,19 @@ export interface GeminiLiveSession {
   // VTID-NAV: Set true the moment a navigation is queued. Gates input audio
   // forwarding so Gemini doesn't start a new turn while the widget is closing.
   // Once true, the session is effectively in "closing for navigation" mode.
+  //
+  // VTID-03583: this is a ONE-WAY latch by design — nothing resets it, because
+  // its original contract is "this session is closing", which never un-happens.
+  // Do NOT reuse it to mean "already navigated this turn": VTID-03446 did, and
+  // because the latch never clears, every navigation after the first in a
+  // session was refused for the rest of that session. Use
+  // `navigationDispatchedTurn` for per-turn questions.
   navigationDispatched?: boolean;
+  // VTID-03583: turn_count at the moment a navigation was dispatched. A
+  // per-turn marker, not a latch — `turn_count` advancing at turn_complete IS
+  // the reset, so there is no clear-path that an error branch can skip.
+  // Compare with `navigationDispatchedThisTurn(session)`.
+  navigationDispatchedTurn?: number;
   // BOOTSTRAP-NOVA-SONIC-VOICE-NAV-FIX: set true when handleNavigateToScreen
   // already wrote the orb_directive to the transport at tool-call time
   // (VTID-NAV-FAST), instead of waiting for turn_complete to flush
@@ -1265,6 +1341,7 @@ setInterval(() => {
         duration_ms: Date.now() - s.createdAt.getTime(),
         turn_count: s.turn_count,
       }).catch(() => { });
+      s.stopEventEmitted = true; // VTID-03561
       // VTID-01959: voice self-healing dispatch (mode-gated for /report path).
       // VTID-01994: pass session metrics so quality classifier can detect
       // failures regardless of mode and route to investigator.
@@ -1362,6 +1439,7 @@ function terminateExistingSessionsForUser(userId: string, excludeSessionId?: str
       duration_ms: Date.now() - existingSession.createdAt.getTime(),
       turn_count: existingSession.turn_count,
     }).catch(() => {});
+    existingSession.stopEventEmitted = true; // VTID-03561
     // VTID-01959: voice self-healing dispatch (mode-gated for /report path).
     // VTID-01994: pass session metrics for mode-independent quality classifier.
     dispatchVoiceFailureFireAndForget({
@@ -1501,11 +1579,24 @@ import { synthesizeGreetingBridgeAudioPcm, GREETING_BRIDGE_PCM_SAMPLE_RATE_HZ } 
  * VTID-03502: should a closed Nova stream fall back to Vertex?
  *
  * True only for the measured premature-close-at-open failure: the stream
- * closed on its own before ANY audio was produced. `audioOutChunks === 0` is
- * the discriminator because it is perfectly correlated with
- * `nova_stream_error` across the canary window (6/6) and appears under no
- * other close reason (local_close 0/35, client_disconnect 0/13, user_stop
- * 0/3, nova_validation 0/1) — a mid-conversation drop always has audio out.
+ * closed on its own before ANY audio was produced. `!hasProducedAudio` is
+ * the discriminator because zero real upstream output is perfectly
+ * correlated with `nova_stream_error` across the canary window (6/6) and
+ * appears under no other close reason (local_close 0/35, client_disconnect
+ * 0/13, user_stop 0/3, nova_validation 0/1) — a mid-conversation drop always
+ * has audio out.
+ *
+ * VTID-03557 review fix: this used to be `audioOutChunks === 0`, backed by
+ * `session.audioOutChunks` — a counter also incremented by the synthetic
+ * activation chime (orb-live.ts's instant-feedback sends) BEFORE any real
+ * model audio arrives. A premature close that happens to land after the
+ * chime but before genuine Nova output would have read as "audio produced"
+ * and silently skipped both this fallback and the VTID-03557 retry, even
+ * though the failure signature (greeting_sent=true, zero real content) was
+ * exactly what this predicate exists to catch. The caller now passes
+ * `session.transportHasShownLife` — set only by genuine upstream traffic
+ * (model audio, input transcription proving the provider answered), never
+ * by the chime — so the discriminator can't be defeated by synthetic audio.
  *
  * Exported as a pure predicate so this decision is testable on its own rather
  * than only through the Nova connect closure it is used in.
@@ -1516,7 +1607,8 @@ export function shouldFallbackToVertexOnNovaClose(args: {
   initiatedLocally: boolean;
   /** A planned rotation owns its own reconnect; do not race it. */
   rotationInFlight: boolean;
-  audioOutChunks: number;
+  /** True once genuine upstream traffic has been seen — never set by the chime. */
+  hasProducedAudio: boolean;
   /** Guard against a Vertex-side failure bouncing back and looping. */
   alreadyFellBack: boolean;
 }): boolean {
@@ -1524,17 +1616,147 @@ export function shouldFallbackToVertexOnNovaClose(args: {
     args.sessionActive &&
     !args.initiatedLocally &&
     !args.rotationInFlight &&
-    args.audioOutChunks === 0 &&
+    !args.hasProducedAudio &&
     !args.alreadyFellBack
+  );
+}
+
+/**
+ * VTID-03647 — should a Nova content-filter block on a session carrying an
+ * EXPLICIT guided-topic request (a My Journey chapter tap) skip the
+ * VTID-03557 same-provider retry and go straight to the VTID-03502 Vertex
+ * fallback? Deliberately NOT gated on `hasProducedAudio` the way
+ * `shouldFallbackToVertexOnNovaClose` is — measured live (34 content-filter
+ * blocks over 3 days) that a same-provider retry is unreliable for this
+ * exact instruction shape regardless of how much audio the blocked attempt
+ * produced before dying, and an explicit, direct user request must never be
+ * silently substituted with a generic greeting to avoid one extra provider
+ * hop.
+ */
+export function shouldFallbackToVertexOnGuidedTopicContentFilterBlock(args: {
+  closeReason: string | null;
+  hasGuidedTopicRequest: boolean;
+  sessionActive: boolean;
+  initiatedLocally: boolean;
+  rotationInFlight: boolean;
+  alreadyFellBack: boolean;
+}): boolean {
+  return (
+    args.closeReason === 'nova_validation' &&
+    args.hasGuidedTopicRequest &&
+    args.sessionActive &&
+    !args.initiatedLocally &&
+    !args.rotationInFlight &&
+    !args.alreadyFellBack
+  );
+}
+
+/**
+ * VTID-03557: should a Nova stream that died before any audio get ONE fresh
+ * Nova retry before VTID-03502's Vertex fallback pins the session away from
+ * Nova for good?
+ *
+ * Evidence this targets: every measured "Premature close" failure is Node's
+ * own `ERR_STREAM_PREMATURE_CLOSE` (from `stream.finished()`), not our own
+ * timeout code (`classifyNovaError` routes a genuine local timeout to the
+ * distinct `nova_stream_timeout` code, never observed here) — meaning the far
+ * end (Bedrock, or a network hop to it) tore down the stream, not us.
+ * `NodeHttp2ConnectionManager.lease()` skips its pooled-session fast path for
+ * event-stream commands (`isEventStream` → `createIsolatedSession`), so every
+ * Nova connect already opens a genuinely fresh HTTP/2 session — a retry does
+ * not reuse whatever the first attempt hit. Fresh-connection resets shortly
+ * after open are common, transient infrastructure noise on any pooled/load-
+ * balanced backend; the standard mitigation is exactly this: one prompt retry
+ * before giving up on the preferred path.
+ *
+ * Same discriminator as `shouldFallbackToVertexOnNovaClose` (this predicate
+ * runs first, on the identical signature) but gated on a SEPARATE flag so the
+ * two compose into a two-strike policy: retry once, fall back to Vertex only
+ * if the retry ALSO dies before any audio. `alreadyRetried` therefore must be
+ * checked (and set) independently of `alreadyFellBack` — collapsing them
+ * would either skip the retry entirely or let the fallback retry forever.
+ *
+ * VTID-03557 review fix: see `shouldFallbackToVertexOnNovaClose`'s doc — this
+ * takes the same `hasProducedAudio` (backed by `transportHasShownLife`, not
+ * the chime-inclusive `audioOutChunks`) for the identical reason.
+ */
+export function shouldRetryNovaOnPrematureClose(args: {
+  sessionActive: boolean;
+  initiatedLocally: boolean;
+  rotationInFlight: boolean;
+  /** True once genuine upstream traffic has been seen — never set by the chime. */
+  hasProducedAudio: boolean;
+  /** Guard against retrying more than once per session. */
+  alreadyRetried: boolean;
+}): boolean {
+  return (
+    args.sessionActive &&
+    !args.initiatedLocally &&
+    !args.rotationInFlight &&
+    !args.hasProducedAudio &&
+    !args.alreadyRetried
+  );
+}
+
+/**
+ * VTID-03646 follow-up — the Nova-aware retry `day_close` (VTID-03629) has
+ * been waiting on since it went default-OFF: "rebuild the opener from
+ * reduced content instead of resending identical content".
+ *
+ * This does NOT decide whether a retry happens at all — `shouldRetryNova`
+ * above already covers that for any zero-audio close, `day_close` included,
+ * since it isn't gated on `closeReason`. This decides whether the resend
+ * that `shouldRetryNova` is about to trigger should rebuild `day_close`'s
+ * directive REDUCED (`buildDayCloseOpenerLine`, no quoted exemplars) instead
+ * of resending the ~4200-char `buildDayCloseBlock` that just got rejected —
+ * the resend the pre-existing code comment on `_dayCloseRungEnabled`
+ * criticized as looping on identical content.
+ *
+ * Deliberately keyed on `closeReason === 'nova_validation'` specifically
+ * (not `!hasProducedAudio` generally, the way the retry-at-all decision is):
+ * a `day_close` open that dies for an unrelated transport reason (premature
+ * close, rotation) should get the SAME directive back — the content was
+ * never in question, so shrinking it would just make an unrelated failure
+ * look "explained" by content it never had anything to do with.
+ */
+export function shouldRetryDayCloseReduced(args: {
+  closeReason: string | null;
+  lastWakeOpener: string | null;
+  sessionActive: boolean;
+  initiatedLocally: boolean;
+  rotationInFlight: boolean;
+  /** Guard against re-arming on a second, independent nova_validation close
+   *  later in the same session (e.g. a future day_close open next night). */
+  alreadyReducedThisClose: boolean;
+}): boolean {
+  return (
+    args.closeReason === 'nova_validation' &&
+    args.lastWakeOpener === 'day_close' &&
+    args.sessionActive &&
+    !args.initiatedLocally &&
+    !args.rotationInFlight &&
+    !args.alreadyReducedThisClose
   );
 }
 // VTID-03495: Polly seam for the /tts route. No-ops unless TTS_PROVIDER=polly.
 import { tryPollySynthesis } from '../services/tts/tts-provider';
-import { resolveNovaSonicVoice } from '../orb/live/voice/nova-sonic-voice';
+import {
+  resolveNovaSonicVoiceOrFallback,
+  logNovaSonicVoiceFallbackOnce,
+} from '../orb/live/voice/nova-sonic-voice';
+import type { VoiceProviderName } from '../orb/live/upstream/provider-name';
 import { prewarmNovaSonicBedrock } from '../orb/live/upstream/nova-sonic-live-client';
 import { sanitizeInstructionForNova } from '../orb/live/upstream/nova-instruction-sanitizer';
 import { startNovaSonicKeepWarm, startNovaSonicModelWarm } from '../orb/live/upstream/nova-sonic-keepwarm';
 import { createUpstreamClient } from '../orb/live/upstream/upstream-client-factory';
+// BOOTSTRAP-CASCADE-WIRING: these two had NO caller on any live path. The
+// selector's cascade branch and the factory's `case 'cascaded'` both existed
+// and were unreachable because nothing in this file ever asked whether the
+// cascade was on, or which languages it covers.
+import {
+  isCascadeEnabled,
+  isCascadeLanguageSupported,
+} from '../orb/live/upstream/cascaded-config';
 import { bindUpstreamSessionHandlers } from '../orb/live/session/upstream-message-handler';
 import { createNovaWsFacade } from '../orb/live/upstream/nova-ws-facade';
 import type { UpstreamLiveClient } from '../orb/live/upstream/types';
@@ -2167,10 +2389,17 @@ function buildSwapBackWelcomeBlock(fromPersonaKey: string, lang: string | undefi
   lines.push(`  (3) THEN one of (pick whichever is most natural for this user right now):`);
   lines.push(`      (a) an OPEN question: "what else can I do for you?" / "Womit kann ich noch helfen?" / "what else would you like to continue with?" — varied wording every call.`);
   lines.push(`      (b) a PROACTIVE suggestion drawn from your bootstrap context (Proactive Initiative Engine / Did You Know Tour / current goal). Pick something the user was working on or about to be guided toward — NOT a fresh non-sequitur.`);
-  lines.push(`Examples (NEVER recite verbatim):`);
-  lines.push(`  - "Welcome back, Dragan. I hope ${role} could help — what else can I do for you?"`);
-  lines.push(`  - "Schön, dass du wieder da bist, Dragan. Hat dir ${role} weiterhelfen können? Womit machen wir weiter?"`);
-  lines.push(`  - "Welcome back. I hope our team helped. Earlier you wanted to [proactive context]; want to continue with that?"`);
+  // VTID-03622: the three worked EXAMPLES that used to sit here are gone, and
+  // the "(NEVER recite verbatim)" label they carried is exactly why they had
+  // to go rather than being reworded. VTID-03475 is the recorded proof that a
+  // caveat does not hold: a greeting exemplar in the prompt header outranked
+  // all three cadence mechanisms beneath it and every session opened with the
+  // same sentence. An example IS a script to a model — the disclaimer next to
+  // it is not. One of these even hardcoded a real user's first name, which
+  // makes a parroted line look correct rather than obviously wrong.
+  // The three components above already say what the turn must contain; the
+  // model does not need a finished sentence to imitate.
+  lines.push(`Compose the wording YOURSELF from the three components above. You are given NO example to imitate and there is no approved phrasing — write it fresh, in the user's language, different every time.`);
   lines.push(`FORBIDDEN on this turn (all v1-era loop triggers):`);
   lines.push(`  - "What's on your mind?"`);
   lines.push(`  - "How can I help?" (generic restart)`);
@@ -2877,7 +3106,11 @@ async function handleNavigate(
   // comment on handleNavigateToScreen below) tries to re-open the Navigator
   // anyway, short-circuit instead of re-running consultNavigator and risking
   // a second, deeper disambiguation question stacked on top of the first.
-  if (session.navigationDispatched) {
+  //
+  // VTID-03583: scoped to the CURRENT TURN. This originally read the
+  // session-lifetime `navigationDispatched` latch, which never resets, so it
+  // refused every navigation after the first one in a session.
+  if (navigationDispatchedThisTurn(session)) {
     return {
       success: true,
       result: 'NAVIGATING_TO: (already in progress)\nA redirect is already underway from earlier in this turn. Do NOT ask another question or call navigate/navigate_to_screen again — just finish your sentence and stop.',
@@ -2923,6 +3156,9 @@ async function handleNavigate(
       // mobile_route override (e.g. Settings pills → /settings?mode=<section>).
       // Without this the unified navigate path always used the desktop route.
       is_mobile: session.is_mobile === true,
+      // VTID-03586: attribution only — lets navigator OASIS events be grouped
+      // by provider instead of leaving Nova-vs-Vertex claims unfalsifiable.
+      upstream_provider: (session as any).upstreamProvider ?? null,
     },
     sb,
   );
@@ -2966,6 +3202,7 @@ async function handleNavigate(
       requested_at: Date.now(),
     };
     session.navigationDispatched = true;
+    markNavigationDispatchedThisTurn(session);
     session.pendingNavigation = undefined;
 
     const previousRoute = session.current_route;
@@ -3074,7 +3311,8 @@ export async function handleNavigateToScreen(
   args: Record<string, unknown>
 ): Promise<{ success: boolean; result: string; error?: string }> {
   // VTID-03446: same-turn re-entry guard — mirrors handleNavigate() above.
-  if (session.navigationDispatched) {
+  // VTID-03583: turn-scoped, for the reason documented on that guard.
+  if (navigationDispatchedThisTurn(session)) {
     return {
       success: true,
       result: 'NAVIGATING_TO: (already in progress)\nA redirect is already underway from earlier in this turn. Do NOT ask another question or call navigate/navigate_to_screen again — just finish your sentence and stop.',
@@ -3112,6 +3350,9 @@ export async function handleNavigateToScreen(
       session_id: session.sessionId,
       is_anonymous: !!session.isAnonymous || !hasIdentity,
       is_mobile: session.is_mobile === true,
+      // VTID-03586: attribution only — lets navigator OASIS events be grouped
+      // by provider instead of leaving Nova-vs-Vertex claims unfalsifiable.
+      upstream_provider: (session as any).upstreamProvider ?? null,
     },
     sb,
   );
@@ -3197,6 +3438,7 @@ export async function handleNavigateToScreen(
       requested_at: Date.now(),
     };
     session.navigationDispatched = true;
+    markNavigationDispatchedThisTurn(session);
     session.navigationDirectiveSentImmediately = true;
 
     const isOverlay = result.entry_kind === 'overlay';
@@ -4094,6 +4336,7 @@ async function executeLiveApiToolInner(
             requested_at: Date.now(),
           };
           session.navigationDispatched = true;
+          markNavigationDispatchedThisTurn(session);
           session.pendingNavigation = undefined;
         }
         return {
@@ -4163,6 +4406,7 @@ async function executeLiveApiToolInner(
             requested_at: Date.now(),
           };
           session.navigationDispatched = true;
+          markNavigationDispatchedThisTurn(session);
           session.pendingNavigation = undefined;
           const previousRoute = session.current_route;
           session.current_route = directive.route;
@@ -4249,6 +4493,7 @@ async function executeLiveApiToolInner(
             requested_at: Date.now(),
           };
           session.navigationDispatched = true;
+          markNavigationDispatchedThisTurn(session);
 
           const previousRoute = session.current_route;
           session.current_route = route;
@@ -4370,9 +4615,17 @@ async function executeLiveApiToolInner(
           }
           if (!deflection) {
             // Last-resort generic fallback — still NOT "no recommendations".
-            deflection = (session.lang || 'en').toLowerCase().startsWith('de')
-              ? 'Lass mich dir einen guten nächsten Schritt in Vitanaland zeigen — wir schauen es uns gemeinsam an.'
-              : "Let me show you a good next step in Vitanaland — let's take a look together.";
+            //
+            // VTID-03622: this used to be the finished sentence, in two
+            // languages, returned straight into the model's mouth. A tool
+            // result is spoken copy just as much as a greeting is, and a
+            // LAST-RESORT path is the worst place to fix the wording: it is
+            // reached whenever the real deflection builder has nothing, so a
+            // user who keeps hitting the empty case hears the identical
+            // sentence every time. Return the INTENT and let the model write
+            // it — same contract as the recovery path.
+            deflection =
+              'INSTRUCTION (not a script): tell the user, in your own fresh wording and in their language, that you will point them at a good next step in Vitanaland and will look at it together. Do NOT say there are no recommendations. One short sentence, never one you have used before in this session.';
           }
           return { success: true, result: deflection };
         }
@@ -5688,6 +5941,7 @@ async function executeLiveApiToolInner(
             requested_at: Date.now(),
           };
           session.navigationDispatched = true;
+          markNavigationDispatchedThisTurn(session);
           session.pendingNavigation = undefined;
           const previousRoute = session.current_route;
           session.current_route = directive.route;
@@ -5973,6 +6227,30 @@ async function executeLiveApiToolInner(
       case 'list_following':
       case 'recent_conversations':
       case 'get_social_context':
+      // VTID-03604 surface 4 — on-demand day summary. Mirrors get_life_compass.
+      case 'get_day_summary': {
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
+        }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          toolName,
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+            lang: session.lang ?? null,
+          },
+          supabase,
+        );
+      }
+
       case 'get_life_compass': {
         const SUPABASE_URL = process.env.SUPABASE_URL;
         const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
@@ -6807,6 +7085,31 @@ async function connectToLiveAPI(
         // VTID-03501: labels the decision as global-promotion vs canary.
         globalEnabled: __novaCfg.globalEnabled === true,
       },
+      // VTID-emergency-gcp-shutdown: Vertex Live is permanently unreachable
+      // once the GCP project's billing is off. Set VERTEX_LIVE_UNAVAILABLE=true
+      // on the task def to stop the runtime/language gates from routing
+      // anyone toward it.
+      vertexUnavailable: process.env.VERTEX_LIVE_UNAVAILABLE === 'true',
+      // BOOTSTRAP-CASCADE-WIRING (seam 1 of 3) — this field did not exist.
+      //
+      // VTID-03683 built the whole Transcribe->Bedrock->Polly pipeline and its
+      // selector branch, but never populated `cascade` HERE. `tryCascadeRescue`
+      // opens with `if (ctx.cascade?.enabled !== true) return null`, so with the
+      // field absent it returned null on every session and the rescue could
+      // not fire for anyone — `ORB_CASCADED_VOICE_ENABLED=true` changed
+      // nothing, because `isCascadeEnabled()` had no caller on any live path.
+      //
+      // Same shape as VTID-03531: a fully built, fully tested component that
+      // nothing called. A green unit suite proves a function works, not that
+      // anything invokes it.
+      cascade: {
+        enabled: isCascadeEnabled(),
+        // Precomputed here because the selector is stateless and never sees
+        // the language string. `evaluateCascadeEligibility` already refuses
+        // every language Nova speaks natively, so a healthy Nova session can
+        // never be diverted into the slower three-hop path.
+        languageSupported: isCascadeLanguageSupported(session.lang),
+      },
     });
   } catch (e) {
     // Voice/canary config read failure must NOT block the session start;
@@ -7535,6 +7838,139 @@ async function connectToLiveAPI(
     // buildLiveSystemInstruction + buildLiveApiTools — then decoded into
     // provider-neutral parts and re-encoded through nova-sonic-protocol.ts
     // inside the client. Parity by construction, not by duplication.
+    // BOOTSTRAP-CASCADE-WIRING (seams 2 and 3 of 3) — this branch did not exist.
+    //
+    // Seam 2: `createUpstreamClient` has a `case 'cascaded'` that throws
+    // `cascaded_not_configured` unless `deps.cascaded` is supplied, and nothing
+    // supplied it.
+    //
+    // Seam 3: the only factory call in this file passed the LITERAL
+    // `'nova_sonic'`, not `__upstreamDecision.provider` — so even a
+    // `provider: 'cascaded'` decision built a Nova client. And because the
+    // Nova block below is gated on `=== 'nova_sonic'`, a cascaded decision
+    // would otherwise fall through to the Vertex path at the bottom of this
+    // function, which is dead since the GCP shutdown.
+    //
+    // Placed BEFORE the Nova block deliberately: a sibling `if` that returns,
+    // so the Nova block's 750 lines are not re-indented or otherwise touched.
+    // The cascade cannot steal a Nova-supported language — the selector only
+    // returns 'cascaded' when `languageBlocked` is already true.
+    if (__upstreamDecision.provider === 'cascaded') {
+      try {
+        const cascadedLang = session.lang || 'en';
+        // Same envelope the Nova and Vertex paths use, so the cascade gets the
+        // identical assembled context rather than a second, drifting build.
+        const cascadedEnvelope = (await buildOrbVertexSetupEnvelope()) as { setup?: Record<string, any> };
+        const cascadedSetup = cascadedEnvelope.setup ?? {};
+        const cascadedInstruction: string =
+          cascadedSetup.system_instruction?.parts?.[0]?.text ?? '';
+
+        const cascadedClient = createUpstreamClient('cascaded', {
+          cascaded: { lang: cascadedLang },
+        });
+
+        bindUpstreamSessionHandlers({
+          session,
+          client: cascadedClient,
+          callbacks: { onAudioResponse, onTextResponse, onError, onTurnComplete, onInterrupted },
+          deps: {
+            clearResponseWatchdog,
+            detectAuthIntent,
+            emitDiag,
+            emitLiveSessionEvent,
+            executeLiveApiTool,
+            isDevSandbox,
+            sendAudioToLiveAPI,
+            sendFunctionResponseToLiveAPI,
+            sendWsMessage,
+            startResponseWatchdog,
+            markVoiceLatency,
+            finalizeVoiceTurnLatency,
+          },
+          // NO silence keepalive, deliberately — and this is the one place the
+          // cascade must NOT copy Nova.
+          //
+          // Nova needs synthetic PCM because Bedrock kills a bidirectional
+          // stream that goes ~15s without audio frames. The cascade has no
+          // such stream: Transcribe opens lazily on the first real chunk and
+          // Bedrock is a single completion per turn. Feeding it silence would
+          // bill Transcribe for ambient quiet and could push a turn's endpoint
+          // detection around, for a deadline that does not exist here.
+        });
+
+        session.upstreamClient = cascadedClient;
+        session.upstreamProvider = 'cascaded';
+        const cascadedConnectStart = Date.now();
+        await cascadedClient.connect({
+          // `model`/`voiceName` are required by the provider-neutral options
+          // type but the cascaded client reads neither: Bedrock's model comes
+          // from `llm_routing_policy` via callViaRouter, and the Polly voice is
+          // resolved from the language. Descriptive values, so anything that
+          // logs the options says what actually ran instead of a bare ''.
+          model: 'cascaded:transcribe+bedrock+polly',
+          voiceName: `polly:${cascadedLang}`,
+          responseModalities: session.responseModalities.includes('audio') ? ['audio'] : ['text'],
+          vadSilenceMs: session.vadSilenceMs,
+          systemInstruction: cascadedInstruction,
+        });
+        setupComplete = true;
+        clearTimeout(connectionTimeout);
+        session.establishLatency?.mark('upstream_connected');
+        console.log(
+          `[VTID-03683] cascaded pipeline open for session ${session.sessionId}: ` +
+            `lang=${cascadedLang} connect_ms=${Date.now() - cascadedConnectStart} ` +
+            `reason=${__upstreamDecision.reason}`,
+        );
+        void emitOasisEvent({
+          type: 'orb.upstream.cascaded.connect_succeeded',
+          vtid: 'VTID-03683',
+          payload: {
+            session_id: session.sessionId,
+            provider: 'cascaded',
+            lang: cascadedLang,
+            reason: __upstreamDecision.reason,
+            connect_ms: Date.now() - cascadedConnectStart,
+            instruction_chars: cascadedInstruction.length,
+            status: 'success',
+          } as any,
+        } as any).catch(() => { /* best-effort */ });
+
+        // The same generic facade Nova uses — `createNovaWsFacade` takes an
+        // `UpstreamLiveClient`, not a Nova client, so every legacy
+        // `upstreamWs` call site drives the cascade unchanged.
+        const cascadedFacade = createNovaWsFacade(cascadedClient) as unknown as WebSocket;
+        resolve(cascadedFacade);
+        return;
+      } catch (err) {
+        // Fail LOUDLY. A cascaded session that cannot open must not silently
+        // fall through to the dead Vertex path below — that would turn a
+        // named, diagnosable failure into a connection timeout.
+        setupComplete = false;
+        clearTimeout(connectionTimeout);
+        session.upstreamClient = null;
+        console.error(
+          `[VTID-03683] cascaded connect FAILED for session ${session.sessionId}: ${(err as Error).message}`,
+        );
+        void emitOasisEvent({
+          type: 'orb.upstream.cascaded.connect_failed',
+          vtid: 'VTID-03683',
+          payload: {
+            session_id: session.sessionId,
+            provider: 'cascaded',
+            lang: session.lang || null,
+            error: (err as Error).message,
+            // `cascaded_not_configured` / `cascade_language_unsupported` /
+            // an AWS AccessDenied all surface here distinctly — the IAM case
+            // is the one most likely to bite first (VTID-03665 shape).
+            code: (err as { code?: string })?.code ?? null,
+            status: 'error',
+          } as any,
+        } as any).catch(() => { /* best-effort */ });
+        reject(err as Error);
+        return;
+      }
+    }
+
     if (__upstreamDecision.provider === 'nova_sonic') {
       try {
         const novaCfg = getNovaSonicConfig(process.env);
@@ -7567,8 +8003,42 @@ async function connectToLiveAPI(
           ? (setup.tools as Array<Record<string, unknown>>)
           : [];
         const novaPersona = ((session as any).activePersona as string) || 'vitana';
-        const novaVoice =
-          resolveNovaSonicVoice({ language: session.lang || 'en', persona: novaPersona }) ?? 'tina';
+        // VTID-03682: was `resolveNovaSonicVoice(...) ?? 'tina'`. That `??`
+        // silently served Nova's GERMAN voice to every language with no native
+        // Nova voice (ru, pl, sr, ar, zh) — no log, no telemetry, nothing a
+        // reader or a dashboard could see. Same shape as VTID-03578's
+        // `?? POLLY_VOICES['en']`. The voice served is UNCHANGED; the
+        // substitution is now observable.
+        const novaVoiceResolution = resolveNovaSonicVoiceOrFallback({
+          language: session.lang || 'en',
+          persona: novaPersona,
+        });
+        const novaVoice = novaVoiceResolution.voice;
+        if (novaVoiceResolution.fallback) {
+          logNovaSonicVoiceFallbackOnce(session.lang || 'en', novaVoice);
+          // Per-session diag as well as the once-per-process log: the log says
+          // "this deployment substitutes for Russian", the diag says how often
+          // and for whom, which is what makes the rate measurable.
+          //
+          // LATCHED PER SESSION, and the latch is load-bearing: this function is
+          // re-entered by `attemptTransparentReconnect()` — for a genuine
+          // reconnect AND for every planned Nova stream rotation
+          // (`_novaRotationInFlight`), which is routine, not exceptional. Without
+          // the latch a single Russian session emits one row per rotation, so a
+          // metric meant to count AFFECTED SESSIONS would instead count
+          // reconnects and read high for reasons unrelated to language coverage.
+          // That is the same defect this VTID exists to remove — a signal that
+          // does not mean what its name says — reintroduced one layer up.
+          if (!(session as any)._novaVoiceFallbackDiagEmitted) {
+            (session as any)._novaVoiceFallbackDiagEmitted = true;
+            emitDiag(session, 'nova_voice_fallback', {
+              provider: 'nova_sonic',
+              lang: session.lang || 'en',
+              voice: novaVoice,
+              reason: 'no_native_nova_voice',
+            });
+          }
+        }
         // Stashed for the connect_failed OASIS payload — makes a rejected
         // envelope diagnosable without server-log access.
         (session as any)._novaInstructionChars = novaSystemInstruction.length;
@@ -7888,6 +8358,192 @@ async function connectToLiveAPI(
             });
             return;
           }
+          // VTID-03647: a Nova content-filter block ("This request has been
+          // blocked by our content filters", diag code nova_validation) on a
+          // session carrying an EXPLICIT guided-topic request (the user
+          // tapped a specific My Journey chapter) was rerouted here to the
+          // VTID-03502 Vertex-fallback machinery instead of the VTID-03557
+          // same-provider retry.
+          //
+          // VTID-03650 (2026-08-15, hours after 03647 shipped): DISABLED by
+          // default via this kill switch. Live-traced (session
+          // live-c494ba29-2450-41c2-a308-8e6c47e84d0f) that the Vertex
+          // fallback fires correctly but Vertex ITSELF then rejects the
+          // reconnect — `upstream_ws_close` code 1007 "Request contains an
+          // invalid argument" ~270ms after the resent greeting, i.e. the
+          // same guided-topic content Nova blocked is ALSO rejected by
+          // Vertex, just via a hard connection close instead of a soft
+          // content-filter error. Because `attemptTransparentReconnect`
+          // resolves success optimistically (once the WS opens + setup is
+          // sent, not once Vertex actually accepts it), the code believed
+          // the fallback had succeeded, resent the greeting, and then the
+          // async 1007 close fell into the "genuine disconnect" branch —
+          // which tells the CLIENT to give up (`should_close: true`) rather
+          // than retry. That is what produced the user-visible loop: several
+          // "reconnecting" cues (spanning session live-bf419eed → c494ba29
+          // → 7fbd656d, each a fresh client-side restart) before finally
+          // landing back on a plain Nova conversation — measurably WORSE
+          // than the pre-03647 behavior (straight to the VTID-03557 retry,
+          // which succeeded on its first attempt in the very same incident,
+          // session live-7fbd656d). Re-enable via
+          // `ORB_GUIDED_TOPIC_VERTEX_FALLBACK_ENABLED=true` only after the
+          // Vertex-side rejection is root-caused (candidate: this exact
+          // lesson's raw `voice_script` content, since Nova and Vertex are
+          // independent implementations rejecting the identical text) —
+          // simply routing to a different provider does not fix a payload
+          // both providers reject.
+          const shouldFallbackOnGuidedTopicBlock =
+            process.env.ORB_GUIDED_TOPIC_VERTEX_FALLBACK_ENABLED === 'true' &&
+            shouldFallbackToVertexOnGuidedTopicContentFilterBlock({
+              closeReason: closeEvent.reason ?? null,
+              hasGuidedTopicRequest: !!(session as any).guidedTopicNarrationContent,
+              sessionActive: session.active,
+              initiatedLocally: closeEvent.initiatedLocally === true,
+              rotationInFlight,
+              alreadyFellBack: (session as any)._novaFallbackToVertex === true,
+            });
+          if (shouldFallbackOnGuidedTopicBlock) {
+            console.warn(
+              `[VTID-03647] Nova content filter blocked a guided-topic request for session ` +
+                `${session.sessionId} — falling back to Vertex instead of retrying Nova.`,
+            );
+            (session as any)._novaFallbackToVertex = true;
+            emitDiag(session, 'nova_guided_topic_content_filter_fallback', {
+              provider: 'nova_sonic',
+              reason: closeEvent.reason ?? null,
+            });
+            void emitOasisEvent({
+              type: 'orb.upstream.nova.guided_topic_content_filter_fallback',
+              vtid: 'VTID-03647',
+              payload: {
+                session_id: session.sessionId,
+                from: 'nova_sonic',
+                to: 'vertex',
+                reason: closeEvent.reason ?? null,
+                status: 'warning',
+              } as any,
+            } as any).catch(() => { /* best-effort */ });
+
+            void attemptTransparentReconnect(
+              session,
+              onAudioResponse,
+              onTextResponse,
+              onError,
+              onTurnComplete,
+              onInterrupted,
+            ).then((ok) => {
+              if (!ok) {
+                console.warn(
+                  `[VTID-03647] Vertex fallback reconnect failed for session ${session.sessionId}.`,
+                );
+                emitConnectionIssue(session, 'upstream_disconnected');
+                return;
+              }
+              resendGreetingIfStuckAtZeroTurns(session, 'VTID-03647-guided-topic-fallback');
+            }).catch((e) => {
+              console.warn(`[VTID-03647] Vertex fallback reconnect threw: ${(e as Error).message}`);
+              emitConnectionIssue(session, 'upstream_disconnected');
+            });
+            return;
+          }
+
+          // VTID-03646 follow-up — arm the day_close reduced-content resend
+          // (see `shouldRetryDayCloseReduced`'s doc). This only DECIDES the
+          // flag; whether a retry actually happens at all is still entirely
+          // `shouldRetryNova` below, unchanged. Reset to false first so a
+          // second, later nova_validation close on the same session (e.g. a
+          // reduced retry that ALSO gets blocked) does not re-arm forever —
+          // `resendGreetingIfStuckAtZeroTurns`'s existing `alreadyRetried`
+          // gate on `shouldRetryNova` already stops it after one attempt.
+          (session as any)._dayCloseReducedRetry = shouldRetryDayCloseReduced({
+            closeReason: closeEvent.reason ?? null,
+            lastWakeOpener: (session as any)._lastWakeOpener ?? null,
+            sessionActive: session.active,
+            initiatedLocally: closeEvent.initiatedLocally === true,
+            rotationInFlight,
+            alreadyReducedThisClose: (session as any)._dayCloseReducedRetry === true,
+          });
+
+          // VTID-03557: one fresh Nova retry BEFORE the VTID-03502 Vertex
+          // fallback below pins the session away from Nova. Every measured
+          // "Premature close" is Node's own stream-teardown error, not our
+          // code's timeout path, and each Nova connect already opens a brand
+          // new HTTP/2 session (event-stream commands skip the SDK's session
+          // pool) — so a retry is not replaying whatever the first attempt
+          // hit, it is a materially independent connection attempt. This is
+          // the standard mitigation for a transient reset at connection open.
+          //
+          // Runs on the identical signature as the fallback below, gated on
+          // its OWN flag (`_novaPrematureCloseRetried`) so the two compose as
+          // a two-strike policy: retry once, fall back to Vertex only if the
+          // retry ALSO dies before any audio. `attemptTransparentReconnect`
+          // reconnects via the normal provider-selection path, which still
+          // resolves to Nova here because `_novaFallbackToVertex` is not set
+          // yet — so this genuinely retries Nova, not a disguised Vertex hop.
+          const shouldRetryNova = shouldRetryNovaOnPrematureClose({
+            sessionActive: session.active,
+            initiatedLocally: closeEvent.initiatedLocally === true,
+            rotationInFlight,
+            hasProducedAudio: session.transportHasShownLife === true,
+            alreadyRetried: (session as any)._novaPrematureCloseRetried === true,
+          });
+
+          if (shouldRetryNova) {
+            console.warn(
+              `[VTID-03557] Nova stream for session ${session.sessionId} closed before any audio ` +
+                `(reason=${closeEvent.reason ?? 'unknown'}, audio_out=0) — retrying Nova once before ` +
+                `falling back to Vertex.`,
+            );
+            (session as any)._novaPrematureCloseRetried = true;
+            emitDiag(session, 'nova_premature_close_retry', {
+              provider: 'nova_sonic',
+              reason: closeEvent.reason ?? null,
+              audio_out: 0,
+            });
+            void emitOasisEvent({
+              type: 'orb.upstream.nova.premature_close_retry',
+              vtid: 'VTID-03557',
+              payload: {
+                session_id: session.sessionId,
+                provider: 'nova_sonic',
+                reason: closeEvent.reason ?? null,
+                status: 'warning',
+              } as any,
+            } as any).catch(() => { /* best-effort */ });
+
+            void attemptTransparentReconnect(
+              session,
+              onAudioResponse,
+              onTextResponse,
+              onError,
+              onTurnComplete,
+              onInterrupted,
+            ).then((ok) => {
+              if (!ok) {
+                // The retry itself never got a new connection attempted at
+                // all (e.g. session went inactive, or MAX_RECONNECTS hit) —
+                // this onClose handler will not fire again to pick up the
+                // Vertex fallback below, so surface the disconnect here
+                // rather than leaving the user in unexplained silence.
+                console.warn(
+                  `[VTID-03557] Nova retry reconnect failed outright for session ${session.sessionId}.`,
+                );
+                emitConnectionIssue(session, 'upstream_disconnected');
+                return;
+              }
+              // VTID-03557 review fix: the failed first attempt already
+              // dispatched the greeting prompt (that's the measured failure
+              // signature — greeting_sent=true, zero real audio), so without
+              // this the new Nova connection would sit open with no greeting
+              // ever sent.
+              resendGreetingIfStuckAtZeroTurns(session, 'VTID-03557-retry');
+            }).catch((e) => {
+              console.warn(`[VTID-03557] Nova retry reconnect threw: ${(e as Error).message}`);
+              emitConnectionIssue(session, 'upstream_disconnected');
+            });
+            return;
+          }
+
           // VTID-03502: premature-close-at-open fallback.
           //
           // Measured 2026-07-29 → 08-05: 10.2% of Nova sessions (6/59) die
@@ -7897,6 +8553,11 @@ async function connectToLiveAPI(
           // close reason (local_close 0/35, client_disconnect 0/13,
           // user_stop 0/3, nova_validation 0/1), which is what makes it a safe
           // discriminator rather than a heuristic.
+          //
+          // VTID-03557: by the time this fires, a fresh Nova retry has ALREADY
+          // failed the same way once (see above) — this is now strike two, so
+          // pinning to Vertex is the right call rather than retrying Nova
+          // indefinitely.
           //
           // Without this branch the code below emits connection_issue with
           // should_close:true and the user is simply left in silence — they
@@ -7910,11 +8571,15 @@ async function connectToLiveAPI(
             sessionActive: session.active,
             initiatedLocally: closeEvent.initiatedLocally === true,
             rotationInFlight,
-            audioOutChunks: session.audioOutChunks,
+            hasProducedAudio: session.transportHasShownLife === true,
             alreadyFellBack: (session as any)._novaFallbackToVertex === true,
           });
 
-          if (novaDiedBeforeAnyAudio) {
+          // VTID-emergency-gcp-shutdown: with Vertex permanently unreachable,
+          // pinning to it and reconnecting is a guaranteed-doomed round trip
+          // that only delays the honest connection_issue signal below. Skip
+          // straight there instead of pretending a Vertex reconnect might work.
+          if (novaDiedBeforeAnyAudio && process.env.VERTEX_LIVE_UNAVAILABLE !== 'true') {
             console.warn(
               `[VTID-03502] Nova stream for session ${session.sessionId} closed before any audio ` +
                 `(reason=${closeEvent.reason ?? 'unknown'}, audio_out=0) — pinning to Vertex and reconnecting.`,
@@ -7953,7 +8618,12 @@ async function connectToLiveAPI(
                   `[VTID-03502] Vertex fallback reconnect failed for session ${session.sessionId}.`,
                 );
                 emitConnectionIssue(session, 'upstream_disconnected');
+                return;
               }
+              // VTID-03557 review fix: same greeting-stuck gap as the retry
+              // path above — the pre-fallback Nova attempt already marked
+              // greetingSent, so the new Vertex connection needs it replayed.
+              resendGreetingIfStuckAtZeroTurns(session, 'VTID-03502-fallback');
             }).catch((e) => {
               console.warn(`[VTID-03502] Vertex fallback reconnect threw: ${(e as Error).message}`);
               emitConnectionIssue(session, 'upstream_disconnected');
@@ -8501,6 +9171,65 @@ function scheduleProactiveGoAwayResume(session: GeminiLiveSession, timeLeftMs: n
   (session as any)._goAwayTimer = setTimeout(attempt, fireIn);
 }
 
+/**
+ * VTID-03557 review fix: replay the greeting after a reconnect that landed
+ * with zero completed turns.
+ *
+ * Both the VTID-03557 Nova retry and the VTID-03502 Vertex fallback reconnect
+ * via `attemptTransparentReconnect` after a premature-close-at-open failure —
+ * and that failure's own measured signature is `greeting_sent=true`: the
+ * greeting PROMPT was already dispatched to the dead upstream connection
+ * before it closed. `sendGreetingPromptToLiveAPI` silently no-ops whenever
+ * `session.greetingSent` is already true (its duplicate-greeting guard), so
+ * without this, a successful reconnect opens a fresh, healthy upstream
+ * connection that then sits waiting for a greeting that will never be sent —
+ * the user hears nothing until an unrelated watchdog eventually intervenes.
+ *
+ * Mirrors the existing VTID-GREETING-RECOVERY stall-recovery logic above
+ * (the `isStallRecovery` branch of the keepalive-close handler) for the
+ * identical underlying case: "a greeting was dispatched but the conversation
+ * never actually started." That logic lives on a different reconnect path
+ * (idle-stall detection) and is not reached by the premature-close retry or
+ * fallback, so it does not cover them on its own.
+ */
+function resendGreetingIfStuckAtZeroTurns(session: GeminiLiveSession, source: string): void {
+  // VTID-03687: VTID-03634 gated this on `session.greetingSent` because the
+  // incident it fixed always had the prompt already dispatched to the dead
+  // connection (greetingSent=true) before the retry fired. That assumption
+  // does not hold when Nova's content filter rejects the connection during
+  // its OWN setup/validation phase, before sendGreetingPromptToLiveAPI is
+  // ever called — greetingSent stays false, this guard never engages, and
+  // the reconnect falls through to the default "reconnect → stay silent"
+  // rule with turn_count still 0. Reproduced live 2026-08-20 (guided-topic
+  // sessions on T254/T252, both content-filter-blocked with greeting_sent:
+  // false both times): wake_opener ended up "silent_reconnect", prompt_len 0,
+  // the guided-topic content never delivered and no error shown either —
+  // the user just got silence. What actually matters here is turn_count===0
+  // ("has this user heard anything at all"), not whether a PRIOR attempt
+  // happened to get as far as flipping greetingSent — so drop that half of
+  // the condition entirely.
+  if (session.turn_count === 0) {
+    console.log(
+      `[${source}] Reconnected with 0 turns (greetingSent=${session.greetingSent}) — resetting to re-send greeting for session ${session.sessionId}`,
+    );
+    session.greetingSent = false;
+    session.greetingTurnIndex = undefined;
+    // VTID-03634 — the user has heard NOTHING yet (that's what turn_count===0
+    // means here), so the resend must speak, not fall into the reconnect-
+    // silence branch just because `_reconnectCount` was bumped by this same
+    // retry. One-shot flag consumed by sendGreetingPromptToLiveAPI's
+    // decideOpening() call below.
+    (session as any)._freshOpenAfterZeroTurnRecovery = true;
+    if (session.upstreamWs && session.upstreamWs.readyState === WebSocket.OPEN) {
+      sendGreetingPromptToLiveAPI(session.upstreamWs, session);
+    }
+    emitDiag(session, 'greeting_recovery', {
+      reconnect_count: (session as any)._reconnectCount || 0,
+      source,
+    });
+  }
+}
+
 async function attemptTransparentReconnect(
   session: GeminiLiveSession,
   onAudioResponse: (audioB64: string) => void,
@@ -8536,8 +9265,24 @@ async function attemptTransparentReconnect(
   // BOOTSTRAP-NOVA-SONIC-VOICE: a planned Nova stream rotation is invisible
   // to the user — no "reconnecting"/"reconnected" cues, no greeting replay.
   const isNovaRotation = !!(session as any)._novaRotationInFlight;
+  // VTID-03685: turn_count===0 means the user has heard NOTHING yet — this is
+  // the FIRST connection attempt failing before any audio ever reached them
+  // (the common case being a guided-topic session's opener hitting Nova's
+  // `nova_validation` content filter, VTID-03674/03677's still-open
+  // flakiness). The comment above this block already names the exact
+  // mechanism for the persona-swap case ("just makes the widget speak
+  // 'Einen Moment, ich verbinde mich neu' on top of her") — the same defect
+  // applies here, minus the "on top of her" part: there is nothing to
+  // reconnect TO yet, so a loud "reconnecting" announcement reads as "this
+  // is already broken" before the session has even properly started.
+  // Reproduced live: every guided-topic tap that hit nova_validation on its
+  // first attempt spoke this cue before the (eventual) short opener.
+  // resendGreetingIfStuckAtZeroTurns still recovers the greeting normally
+  // once this reconnect succeeds — silencing the announcement here doesn't
+  // touch that recovery path at all.
+  const hasHeardNothingYet = (session.turn_count || 0) === 0;
 
-  if (!isPersonaSwap && !isNovaRotation) {
+  if (!isPersonaSwap && !isNovaRotation && !hasHeardNothingYet) {
     // Notify client that we're reconnecting (informational, not an error)
     // Works for both SSE and WS transports
     const reconnectMsg = { type: 'reconnecting', reconnect_count: reconnectCount + 1, message: 'Extending session...' };
@@ -8547,7 +9292,10 @@ async function attemptTransparentReconnect(
       try { sendWsMessage(session.clientWs, reconnectMsg); } catch (e) { /* WS may be closed */ }
     }
   } else {
-    console.log(`[VTID-02047] Persona swap reconnect — suppressing reconnect TTS announcement`);
+    console.log(
+      `[VTID-02047/VTID-03685] Reconnect TTS announcement suppressed for ${session.sessionId} ` +
+        `(personaSwap=${isPersonaSwap}, novaRotation=${isNovaRotation}, heardNothingYet=${hasHeardNothingYet})`,
+    );
   }
 
   try {
@@ -8714,7 +9462,22 @@ function startResponseWatchdog(
   session.responseWatchdogReason = reason;
 
   session.responseWatchdogTimer = setTimeout(() => {
-    if (!session.active) return;
+    // VTID-03616: the timer handle must be cleared on EVERY firing path,
+    // including this early no-op — otherwise a session that goes inactive
+    // between arming and firing leaves session.responseWatchdogTimer
+    // pointing at an already-fired (dead) timer forever. `has_watchdog`
+    // (`!!session.responseWatchdogTimer`, admin/diag surfaces) then reports
+    // "a watchdog is armed" for a session with no live safety net, and the
+    // sliding-rearm guards elsewhere (`canSlide = !session.responseWatchdogTimer
+    // || ...`) refuse to arm a fresh one because the stale reference is
+    // still truthy — the exact shape that let a stalled Nova greeting run
+    // to Bedrock's own ~55s idle kill instead of the 30s greeting_timeout
+    // watchdog catching it.
+    if (!session.active) {
+      session.responseWatchdogTimer = undefined;
+      session.responseWatchdogReason = undefined;
+      return;
+    }
 
     const lang = session.lang || 'en';
     const message = getConnectionIssueMessage(lang);
@@ -8964,6 +9727,9 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
               greetingNeedsOnboarding: (session as any).greetingNeedsOnboarding === true,
               greetingIsFirstTime: (session as any).greetingIsFirstTime === true,
               lastFullBriefingDate: (session as any).lastFullBriefingDate ?? null,
+              // VTID-03604
+              lastDayCloseDate: (session as any).lastDayCloseDate ?? null,
+              userId: _uidSF,
               todayTz: _todaySF,
               localHour: localHourInTimezone(_nowSF, _tzSF),
               timezone: _tzSF,
@@ -9076,6 +9842,15 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                 .eq('user_id', _uidSF)
                 .then(() => {}, () => {});
             }
+            // VTID-03604: same pattern for the day-close stamp.
+            if (_sfDecision.effects.stampDayCloseDate && _uidSF && _supaSF) {
+              (session as any).lastDayCloseDate = _sfDecision.effects.stampDayCloseDate;
+              void _supaSF
+                .from('user_journey')
+                .update({ last_day_close_date: _sfDecision.effects.stampDayCloseDate })
+                .eq('user_id', _uidSF)
+                .then(() => {}, () => {});
+            }
             // Durable recent-NBA history (conv_resume) — keep the last 8.
             if (_sfDecision.effects.recordNbaKey && _uidSF && _supaSF) {
               const _updatedNbas = [..._recentNbaKeysSF, _sfDecision.effects.recordNbaKey].slice(-8);
@@ -9143,10 +9918,33 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   // per-connection setup and less stable mobile transport made re-opens (and
   // thus the bug) far more frequent, which is why it surfaced now.
   const _cadenceBucketPre = describeTimeSince(session.lastSessionInfo).bucket;
+  // VTID-03634 — a server-internal Nova retry (content-filter block or
+  // premature-close on the FIRST connection attempt, VTID-03557/VTID-03502)
+  // bumps `_reconnectCount` before `resendGreetingIfStuckAtZeroTurns` calls
+  // back in here. `decideOpening`'s reconnect branch is correct for a genuine
+  // mid-conversation transport hiccup (the user already heard something, so
+  // silently continuing is right) — but here the user has heard NOTHING at
+  // all yet (turn_count===0, the original greeting never reached them), so
+  // `isReconnect: true` produced permanent silence on the user's very first
+  // connection: they open ORB, the widget shows "listening", and Vitana never
+  // speaks. Live report: "not even connecting... then listening mode but not
+  // listening at all". `_freshOpenAfterZeroTurnRecovery` is a one-shot flag
+  // set only by that exact recovery path (never by a real mid-conversation
+  // reconnect, which has turn_count > 0) so this treats the recomputed
+  // opener as a FRESH open instead of a silent reconnect, without touching
+  // `_reconnectCount` itself (still used for MAX_RECONNECTS and elsewhere).
+  const _freshOpenAfterZeroTurnRecovery = (session as any)._freshOpenAfterZeroTurnRecovery === true;
+  (session as any)._freshOpenAfterZeroTurnRecovery = false;
+  // VTID-03646 follow-up — one-shot, consumed the same way as the flag
+  // above: read once for THIS rebuild, then cleared so a later, unrelated
+  // resend on the same session (a fresh day_close next night, say) does not
+  // inherit a stale "reduced" instruction from a close that already recovered.
+  const _dayCloseReduced = (session as any)._dayCloseReducedRetry === true;
+  (session as any)._dayCloseReducedRetry = false;
   const _openDecision = decideOpening({
     isAnonymous: !!session.isAnonymous,
     hasResumptionHandle: !!session.resumptionHandle,
-    isReconnect: ((session as any)._reconnectCount || 0) > 0,
+    isReconnect: !_freshOpenAfterZeroTurnRecovery && ((session as any)._reconnectCount || 0) > 0,
     wakeSelectedLine: _wb?.selectedContinuation?.userFacingLine ?? null,
     wakeSelectedKind: _wb?.selectedContinuation?.kind ?? null,
     lastOpenerLine: (session as any)._lastOpenerLine ?? null,
@@ -9168,7 +9966,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
     const _voiceReasonSync = Array.isArray(_providerResultsSync)
       ? (_providerResultsSync.find((r: any) => r?.providerKey === 'voice_wake_brief')?.reason ?? null)
       : null;
-    const _syncDecision = computeGreetingDecision({
+    const _baseCtxSync: GreetingDecisionContext = {
       contextReadyResolved: true, // past the safe-fast block -> force the normal ladder
       isAnonymous: !!session.isAnonymous,
       safeFastGreetingLive: false,
@@ -9200,42 +9998,375 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
       menuPhrases: pickShortGapGreetings(lang, 6),
       openDecision: { mode: _openDecision.mode, source: _openDecision.source, line: _openDecision.line },
       guidedTopicNarrationContent: (session as any).guidedTopicNarrationContent ?? null,
+      dayCloseReduced: _dayCloseReduced,
       wakeBriefDecisionId: (_wb as any)?.decisionId ?? null,
-      silenceOnSkipEnabled: process.env.ORB_GREETING_SILENCE_ON_SKIP_ENABLED !== 'false',
+      // VTID-03635 — rung 9 (silenced_on_cadence) is a SECOND, independent
+      // silencing mechanism, fed by `voiceWakeBriefReason` (the wake-brief
+      // provider's OWN cadence verdict, computed from `_wb.sourceProviderResults`
+      // at session-start time — untouched by the `_freshOpenAfterZeroTurnRecovery`
+      // override above, which only reaches `decideOpening`'s `isReconnect`).
+      // Confirmed live right after VTID-03634 shipped: `wake_opener` moved from
+      // `silent_reconnect` to `silenced_on_cadence` — same zero-turn user, same
+      // dead silence, different rung. Reason values like
+      // `bucket_reconnect_forces_skip` / `greeted_recently_within_window` mean
+      // "a greeting was already dispatched recently", which is exactly as wrong
+      // here as `isReconnect` was: a greeting dispatched to a connection that
+      // died before any audio reached the user was never actually heard.
+      // Disabling the WHOLE rung for this one resend (rather than trying to
+      // adjust the reason string) falls through to override_v2/legacy_default,
+      // both of which speak unconditionally.
+      silenceOnSkipEnabled:
+        !_freshOpenAfterZeroTurnRecovery && process.env.ORB_GREETING_SILENCE_ON_SKIP_ENABLED !== 'false',
       wakeBriefHasSelectedContinuation: (_wb as any)?.selectedContinuation != null,
       voiceWakeBriefReason: _voiceReasonSync,
-    });
-    if (_syncDecision.directive !== null) {
-      const _greetingClientContentMsg = JSON.stringify({
-        client_content: {
-          turns: [{ role: 'user', parts: [{ text: _syncDecision.directive }] }],
-          turn_complete: true,
-        },
-      });
-      // BOOTSTRAP-AWS-STAGING-VALIDATION: diagnosing a code=1007 "Request
-      // contains an invalid argument" close from AI Studio's Live API right
-      // after this exact send (Vertex accepts it fine). Log size + a safe
-      // preview so the real payload is inspectable in CloudWatch instead of
-      // guessed at — remove once the AI-Studio-vs-Vertex divergence is found.
+    };
+
+    /** Render one decision onto the wire + perform its effects. Shared by the
+     *  plain sync path and the VTID-03607 new-day path so the two cannot drift. */
+    const _renderSync = (decision: ReturnType<typeof computeGreetingDecision>) => {
+      if (decision.directive !== null) {
+        const _greetingClientContentMsg = JSON.stringify({
+          client_content: {
+            turns: [{ role: 'user', parts: [{ text: decision.directive }] }],
+            turn_complete: true,
+          },
+        });
+        // BOOTSTRAP-AWS-STAGING-VALIDATION: diagnosing a code=1007 "Request
+        // contains an invalid argument" close from AI Studio's Live API right
+        // after this exact send (Vertex accepts it fine). Log size + a safe
+        // preview so the real payload is inspectable in CloudWatch instead of
+        // guessed at — remove once the AI-Studio-vs-Vertex divergence is found.
+        console.log(
+          `[BOOTSTRAP-AWS-STAGING-VALIDATION] Sending greeting client_content for session ${session.sessionId}: wakeOpener=${decision.wakeOpener} bytes=${Buffer.byteLength(_greetingClientContentMsg)} directive_chars=${decision.directive.length} preview=${JSON.stringify(decision.directive.slice(0, 200))}`,
+        );
+        ws.send(_greetingClientContentMsg);
+      }
       console.log(
-        `[BOOTSTRAP-AWS-STAGING-VALIDATION] Sending greeting client_content for session ${session.sessionId}: wakeOpener=${_syncDecision.wakeOpener} bytes=${Buffer.byteLength(_greetingClientContentMsg)} directive_chars=${_syncDecision.directive.length} preview=${JSON.stringify(_syncDecision.directive.slice(0, 200))}`,
+        `[VTID-VOICE-INIT] greeting via brain wake_opener=${decision.wakeOpener} lang=${lang} turnIndex=${session.turn_count}`,
       );
-      ws.send(_greetingClientContentMsg);
+      // VTID-03646 follow-up — the only thing `shouldRetryDayCloseReduced`
+      // needs to know is "was the greeting that just got nova_validation-
+      // closed a day_close one", so a plain last-value stash is enough; no
+      // history, no other reader.
+      (session as any)._lastWakeOpener = decision.wakeOpener;
+      emitDiag(session, 'greeting_sent', decision.diag);
+      if (decision.effects.armWatchdog) {
+        startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
+      }
+    };
+
+    // VTID-03607 — cheap, I/O-free pre-guard for the rich new-day briefing.
+    //
+    // The real guard is `shouldAttemptNewdayOverview`, but it needs `todayTz`,
+    // which needs the timezone helpers, which are dynamically imported (module
+    // graph parity with the safe-fast path). So: screen out everything that can
+    // be screened out synchronously first, and only go async for the handful of
+    // sessions that could genuinely be a new-day return. Every other session
+    // takes the byte-identical synchronous path below.
+    //
+    // `briefingDue` is deliberately NOT approximated here — it is re-checked
+    // inside, against the real `todayTz`, by the same exported guard the
+    // safe-fast path uses. A session that reaches the async block but is not
+    // actually due simply falls through to the same normal ladder.
+    const _syncUid = session.identity?.user_id || null;
+    const _syncSupa = getSupabase();
+    const _syncFirstName = (session as any).greetingFirstName ?? null;
+    // VTID-03609 — every gate is a NAMED boolean, and all of them are emitted,
+    // because VTID-03607 shipped this branch with no diagnostic on the
+    // not-fired path: five production sessions that were demonstrably due a
+    // briefing (last_full_briefing_date 2026-07-24 … 2026-08-01, against
+    // 2026-08-12) all reported `override_v2`, and nothing in the telemetry
+    // could say whether the pre-guard rejected them, the real guard did, the
+    // gather came back empty, or the payload had nothing worth speaking.
+    // "It didn't fire" and "it fired and had nothing to say" have to be
+    // distinguishable or the next round is guesswork again.
+    //
+    // VTID-03609, and this is the substantive half: the pre-guard may only read
+    // facts that are RELIABLE SYNCHRONOUSLY. `greetingFirstName`,
+    // `greetingIsFirstTime`, `greetingNeedsOnboarding` and
+    // `lastFullBriefingDate` are NOT — they come from the greeting-facts
+    // pre-fetch (`live-session-controller.ts` L1367), which seeds the session
+    // with the still-null locals and only copies the real values when
+    // `session.greetingFactsReady` resolves. The safe-fast block has always
+    // done a bounded wait on that promise before reading them; VTID-03607's
+    // sync branch read them straight, so on a session whose facts had not
+    // landed yet `firstName` was null, the pre-guard rejected, and the briefing
+    // could not fire — which is exactly what five due production sessions did
+    // on 2026-08-12 while reporting nothing but `override_v2`.
+    //
+    // Those four moved BELOW the wait, into `shouldAttemptNewdayOverview`,
+    // where they were always meant to be checked.
+    const _ndGates = {
+      not_anonymous: !session.isAnonymous,
+      has_user_id: !!_syncUid,
+      has_supabase: !!_syncSupa,
+      lang_supported: /^(de|en)/i.test(lang || ''),
+      // A reconnect must stay silent — rung 7 owns that and outranks the
+      // briefing. Skipping the gather entirely keeps that true without
+      // spending the Supabase round-trips to discover it.
+      not_silent_reconnect: !(
+        _openDecision.mode === 'silent' &&
+        (_openDecision.source === 'native_resume' || _openDecision.source === 'reconnect_no_handle')
+      ),
+    };
+    const _newdaySyncPossible = Object.values(_ndGates).every(Boolean);
+    if (!_newdaySyncPossible) {
+      emitDiag(session, 'newday_briefing_eval', {
+        outcome: 'pre_guard_rejected',
+        blocked_by: Object.entries(_ndGates)
+          .filter(([, v]) => !v)
+          .map(([k]) => k),
+        lang,
+        last_full_briefing_date: (session as any).lastFullBriefingDate ?? null,
+      });
     }
+
+    // Claim the greeting synchronously in BOTH branches: the async branch below
+    // must not leave a window in which a second caller also decides to greet.
     session.greetingSent = true;
     session.greetingTurnIndex = session.turn_count;
+
+    if (_newdaySyncPossible) {
+      void (async () => {
+        try {
+          // VTID-03609 — bounded wait for the greeting-facts pre-fetch, mirroring
+          // the safe-fast block's wait exactly (same two env budgets, same
+          // conditions). Without it, every fact this decision rests on is read
+          // before it exists. A session whose facts already landed races through
+          // both `Promise.race`es immediately and pays nothing, which is the
+          // common case here — the sync ladder is reached only after context
+          // assembly finished, by which time this independent prefetch usually
+          // has too.
+          const _factsReadyNS: Promise<void> | undefined = (session as any).greetingFactsReady;
+          const _firstWaitMsNS = Number(process.env.ORB_GREETING_FACTS_WAIT_MS || 700);
+          await Promise.race([
+            _factsReadyNS ?? Promise.resolve(),
+            new Promise<void>((r) => setTimeout(r, _firstWaitMsNS)),
+          ]);
+          if (ws.readyState !== WebSocket.OPEN) return;
+
+          // Until last-session info lands we cannot even tell whether this IS a
+          // new-day return, so when the facts are still pending give them the
+          // larger first-greeting-of-the-day budget — the same product call the
+          // safe-fast path makes (richness > latency for turn 1 of the day).
+          // Sessions whose facts already resolved skip this entirely.
+          if (_factsReadyNS && !(session as any).lastSessionInfo) {
+            const _extraWaitMsNS = Math.max(
+              0,
+              Number(process.env.ORB_NEWDAY_FACTS_WAIT_MS || 2200) - _firstWaitMsNS,
+            );
+            if (_extraWaitMsNS > 0) {
+              await Promise.race([
+                _factsReadyNS,
+                new Promise<void>((r) => setTimeout(r, _extraWaitMsNS)),
+              ]);
+              if (ws.readyState !== WebSocket.OPEN) return;
+            }
+          }
+
+          const { readGreetingLedger, extractSpokenFactsFromPayload, recordGreetingFacts, EMPTY_GREETING_LEDGER: _EMPTY_LEDGER_NS } =
+            await import('../services/conversation/greeting-facts-ledger');
+          const { gatherOverviewPayload } = await import(
+            '../services/assistant-continuation/providers/new-day-overview-payload'
+          );
+          const { todayInTimezone, localHourInTimezone } = await import(
+            '../services/assistant-continuation/providers/new-day-return'
+          );
+
+          // RE-READ every fact the pre-fetch owns. `_baseCtxSync` was built
+          // synchronously, before the wait above, so its copies are the stale
+          // nulls. `session.lastSessionInfo` may also have been seeded by the
+          // prefetch, which changes the temporal bucket the ladder reasons about.
+          const _nowNS = new Date();
+          const _temporalNS = describeTimeSince(session.lastSessionInfo);
+          const _ctxNS: GreetingDecisionContext = {
+            ..._baseCtxSync,
+            firstName: (session as any).greetingFirstName ?? null,
+            greetingIsFirstTime: (session as any).greetingIsFirstTime === true,
+            greetingNeedsOnboarding: (session as any).greetingNeedsOnboarding === true,
+            hasPriorSession: (session as any).greetingHasPriorSession === true,
+            lastFullBriefingDate: (session as any).lastFullBriefingDate ?? null,
+            proactiveLine: (session as any).greetingProactiveLine ?? null,
+            recentNbaKeys: ((session as any).recentNbaKeys as string[] | undefined) ?? [],
+            bucket: _temporalNS.bucket,
+            timeAgo: _temporalNS.timeAgo,
+            wasFailure: _temporalNS.wasFailure,
+            todayTz: todayInTimezone(_nowNS, _tzSync),
+            localHour: localHourInTimezone(_nowNS, _tzSync),
+            // VTID-03604
+            lastDayCloseDate: (session as any).lastDayCloseDate ?? null,
+            userId: _syncUid,
+          };
+
+          // Real guard, single-sourced with the pure rung.
+          if (shouldAttemptNewdayOverview(_ctxNS)) {
+            const _lastSessIsoNS = (session as any).lastSessionInfo?.time ?? null;
+            const _lastSessDateNS =
+              typeof _lastSessIsoNS === 'string' && _lastSessIsoNS.length > 0
+                ? todayInTimezone(new Date(_lastSessIsoNS), _tzSync)
+                : null;
+            const _overviewNS = await Promise.race([
+              gatherOverviewPayload({
+                supabase: _syncSupa!,
+                userId: _syncUid!,
+                now: _nowNS,
+                timezone: _tzSync,
+                lang,
+                lastSessionDateUserTz: _lastSessDateNS,
+                lastSessionAtIso: _lastSessIsoNS,
+              }),
+              new Promise<null>((r) =>
+                setTimeout(() => r(null), Number(process.env.ORB_NEWDAY_OVERVIEW_WAIT_MS || 3000)),
+              ),
+            ]).catch(() => null);
+
+            const _tenantNS = session.identity?.tenant_id || null;
+            const _ledgerNS =
+              _overviewNS && _tenantNS
+                ? await Promise.race([
+                    readGreetingLedger({ supabase: _syncSupa!, tenantId: _tenantNS, userId: _syncUid! }),
+                    new Promise<typeof _EMPTY_LEDGER_NS>((r) => setTimeout(() => r({ ..._EMPTY_LEDGER_NS }), 800)),
+                  ]).catch(() => ({ ..._EMPTY_LEDGER_NS }))
+                : { ..._EMPTY_LEDGER_NS };
+
+            if (ws.readyState !== WebSocket.OPEN) return;
+
+            const _decisionNS = computeGreetingDecision({
+              ..._ctxNS,
+              newdayOverview: _overviewNS,
+              greetingLedger: _ledgerNS,
+            });
+
+            // VTID-03609 — the three ways this can still not fire, named apart.
+            emitDiag(session, 'newday_briefing_eval', {
+              outcome:
+                _decisionNS.wakeOpener === 'newday_overview'
+                  ? 'fired'
+                  : !_overviewNS
+                    ? 'gather_empty'
+                    : 'payload_had_no_content',
+              today_tz: _ctxNS.todayTz,
+              last_full_briefing_date: _ctxNS.lastFullBriefingDate,
+              timezone: _tzSync,
+              gathered: !!_overviewNS,
+              wake_opener: _decisionNS.wakeOpener,
+              overview_signals: _overviewNS
+                ? {
+                    journey: !!_overviewNS.journey,
+                    index: _overviewNS.vitana_index?.state ?? null,
+                    life_compass: _overviewNS.life_compass?.state ?? null,
+                    calendar_today: _overviewNS.calendar_today?.count ?? null,
+                    autopilot: _overviewNS.autopilot?.state ?? null,
+                    matches_unread: _overviewNS.matches_unread ?? null,
+                    messages_unread: _overviewNS.messages_unread ?? null,
+                    reminders_today: _overviewNS.reminders_today?.count ?? null,
+                    diary_last_7d: _overviewNS.diary_last_7d ?? null,
+                  }
+                : null,
+            });
+
+            if (_decisionNS.wakeOpener !== 'legacy_default') _sm.markOpeningDelivered();
+            _renderSync(_decisionNS);
+
+            if (_decisionNS.effects.stampBriefingDate) {
+              (session as any).lastFullBriefingDate = _decisionNS.effects.stampBriefingDate;
+              void _syncSupa!
+                .from('user_journey')
+                .update({ last_full_briefing_date: _decisionNS.effects.stampBriefingDate })
+                .eq('user_id', _syncUid!)
+                .then(() => {}, () => {});
+            }
+            // VTID-03604
+            if (_decisionNS.effects.stampDayCloseDate) {
+              (session as any).lastDayCloseDate = _decisionNS.effects.stampDayCloseDate;
+              void _syncSupa!
+                .from('user_journey')
+                .update({ last_day_close_date: _decisionNS.effects.stampDayCloseDate })
+                .eq('user_id', _syncUid!)
+                .then(() => {}, () => {});
+            }
+            if (_decisionNS.wakeOpener === 'newday_overview' && _tenantNS) {
+              const _spokenNS = extractSpokenFactsFromPayload(_overviewNS);
+              if (Object.keys(_spokenNS).length > 0) {
+                void recordGreetingFacts({
+                  supabase: _syncSupa!,
+                  tenantId: _tenantNS,
+                  userId: _syncUid!,
+                  facts: _spokenNS,
+                });
+              }
+            }
+            return;
+          }
+
+          // Not actually due / not eligible — same normal ladder, no payload.
+          emitDiag(session, 'newday_briefing_eval', {
+            outcome: 'guard_rejected',
+            // The guard is one boolean; report its four inputs separately or
+            // this tells you no more than `override_v2` already did.
+            briefing_due: !(
+              typeof _ctxNS.lastFullBriefingDate === 'string' &&
+              _ctxNS.lastFullBriefingDate >= _ctxNS.todayTz
+            ),
+            has_first_name:
+              typeof _ctxNS.firstName === 'string' && _ctxNS.firstName.trim().length > 0,
+            not_first_time: _ctxNS.greetingIsFirstTime !== true,
+            not_onboarding: _ctxNS.greetingNeedsOnboarding !== true,
+            facts_ready_awaited: !!(session as any).greetingFactsReady,
+            today_tz: _ctxNS.todayTz,
+            last_full_briefing_date: _ctxNS.lastFullBriefingDate,
+            timezone: _tzSync,
+            local_hour: _ctxNS.localHour,
+            bucket: _ctxNS.bucket,
+            lang,
+          });
+          if (ws.readyState !== WebSocket.OPEN) return;
+          const _fallbackNS = computeGreetingDecision(_ctxNS);
+          if (_fallbackNS.wakeOpener !== 'legacy_default') _sm.markOpeningDelivered();
+          _renderSync(_fallbackNS);
+          // VTID-03604 — this IS the path a routine evening takes: the user
+          // already got their morning briefing, so briefingDue() is false and
+          // shouldAttemptNewdayOverview rejected above, but the day-close rung
+          // still runs inside computeGreetingDecision(_ctxNS) and outranks
+          // everything below it.
+          if (_fallbackNS.effects.stampDayCloseDate && _syncUid && _syncSupa) {
+            (session as any).lastDayCloseDate = _fallbackNS.effects.stampDayCloseDate;
+            void _syncSupa
+              .from('user_journey')
+              .update({ last_day_close_date: _fallbackNS.effects.stampDayCloseDate })
+              .eq('user_id', _syncUid)
+              .then(() => {}, () => {});
+          }
+        } catch (err: any) {
+          // Never leave the user with silence because the briefing gather blew
+          // up: fall back to the plain ladder rather than swallowing the turn.
+          console.warn(
+            `[GREETING-NEWDAY-SYNC] session ${session.sessionId} briefing path failed (non-fatal, falling back): ${err?.message || err}`,
+          );
+          emitDiag(session, 'newday_briefing_eval', {
+            outcome: 'threw',
+            error: String(err?.message || err).slice(0, 300),
+          });
+          try {
+            if (ws.readyState !== WebSocket.OPEN) return;
+            const _recoverNS = computeGreetingDecision(_baseCtxSync);
+            if (_recoverNS.wakeOpener !== 'legacy_default') _sm.markOpeningDelivered();
+            _renderSync(_recoverNS);
+          } catch {
+            /* the fallback ladder is pure; if it throws there is nothing left to try */
+          }
+        }
+      })();
+      return true;
+    }
+
+    const _syncDecision = computeGreetingDecision(_baseCtxSync);
     // legacy_default historically did NOT advance the opening state machine; the
     // other rungs did. Preserve that exactly.
     if (_syncDecision.wakeOpener !== 'legacy_default') {
       _sm.markOpeningDelivered();
     }
-    console.log(
-      `[VTID-VOICE-INIT] greeting via brain wake_opener=${_syncDecision.wakeOpener} lang=${lang} turnIndex=${session.turn_count}`,
-    );
-    emitDiag(session, 'greeting_sent', _syncDecision.diag);
-    if (_syncDecision.effects.armWatchdog) {
-      startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
-    }
+    _renderSync(_syncDecision);
     return true;
   }
 }
@@ -9288,6 +10419,67 @@ async function sendGreetingAudioBridge(session: GeminiLiveSession): Promise<void
     emitDiag(session, 'greeting_bridge_sent', { lang, chars: text.length });
   } catch (err) {
     console.warn('[GREETING-BRIDGE] Failed (non-fatal, real greeting proceeds normally):', (err as Error).message);
+  }
+}
+
+/**
+ * VTID-03650: play the pre-synthesized Polly guided-topic lesson audio to the
+ * client, BEFORE the live model's first turn. The audio itself was already
+ * synthesized during wake-brief decision (see
+ * `services/tts/guided-topic-narration-audio.ts` and the
+ * guided-topic-narration provider) and is bundled on
+ * `session.guidedTopicNarrationContent.narrationAudio` — this function only
+ * dispatches it, transport-aware (SSE write / WS message), mirroring
+ * `sendGreetingAudioBridge`'s message shape so the client's existing PCM
+ * playback queue (orb-widget.js `_processQueue`) handles it identically.
+ *
+ * One-shot: `guidedTopicAudioDelivered` is set (true on send, false when
+ * Polly had nothing to send) the first time this runs and short-circuits
+ * every subsequent call for the session, including reconnects — the lesson
+ * was already played once; a reconnect must not replay it, and the turns-2+
+ * system-instruction block already reads `narrationAudio` independently of
+ * this flag, so a reconnect still behaves post-narration whether or not the
+ * audio itself is (correctly) never resent.
+ */
+function sendGuidedTopicNarrationAudioBridge(session: GeminiLiveSession): void {
+  if ((session as any).guidedTopicAudioDelivered !== undefined) return;
+
+  const content = (session as any).guidedTopicNarrationContent as
+    | { narrationAudio: { audioB64: string; sampleRateHz: number } | null; topic_id: string }
+    | null
+    | undefined;
+  const audio = content?.narrationAudio ?? null;
+  if (!audio) {
+    (session as any).guidedTopicAudioDelivered = false;
+    return;
+  }
+
+  const msg = {
+    type: 'audio',
+    data_b64: audio.audioB64,
+    mime: `audio/pcm;rate=${audio.sampleRateHz}`,
+    chunk_number: session.audioOutChunks++,
+    source: 'guided_topic_narration',
+  };
+  try {
+    if (session.sseResponse) {
+      session.sseResponse.write(`data: ${JSON.stringify(msg)}\n\n`);
+    } else if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+      sendWsMessage(session.clientWs, msg);
+    } else {
+      (session as any).guidedTopicAudioDelivered = false;
+      return;
+    }
+    (session as any).guidedTopicAudioDelivered = true;
+    emitDiag(session, 'guided_topic_audio_bridge_sent', { topic_id: content?.topic_id ?? null });
+    void emitOasisEvent({
+      type: 'orb.guided_topic.audio_bridge_sent',
+      vtid: 'VTID-03650',
+      payload: { session_id: session.sessionId, topic_id: content?.topic_id ?? null, provider: 'polly' } as any,
+    } as any).catch(() => { /* best-effort */ });
+  } catch (err) {
+    (session as any).guidedTopicAudioDelivered = false;
+    console.warn('[VTID-03650] Guided-topic audio bridge send failed:', (err as Error).message);
   }
 }
 
@@ -9452,35 +10644,43 @@ function sendReconnectRecoveryPromptToLiveAPI(ws: WebSocket, session: GeminiLive
   //    paraphrases it back ("You were saying X — go on") instead of
   //    forcing a replay. The structural rule below tells Gemini to fall
   //    back to a neutral resume if the partial really is empty.
-  const intros: Record<string, Record<string, string>> = {
-    en: {
-      thinking: "Sorry, we lost the connection for a moment. You were asking about <PARAPHRASE THE USER'S LAST TURN IN 3-6 WORDS>. Here's the answer:",
-      listening_user_speaking: "Sorry, we lost the connection mid-sentence. You were saying <PARAPHRASE THEIR PARTIAL UTTERANCE IN 3-6 WORDS> — go on, I'm listening.",
-      speaking: "Sorry, we lost the connection while I was answering. Let me continue:",
-      idle: "I'm back. Let me show you your next step."
-    },
-    de: {
-      thinking: "Entschuldige, die Verbindung war kurz weg. Du hast nach <PARAPHRASIERE DEN LETZTEN BEITRAG IN 3-6 WORTEN> gefragt. Hier ist die Antwort:",
-      listening_user_speaking: "Entschuldige, die Verbindung war kurz weg, während du gesprochen hast. Du warst gerade bei <PARAPHRASIERE DAS UNTERBROCHENE THEMA IN 3-6 WORTEN> — sprich ruhig weiter, ich höre zu.",
-      speaking: "Entschuldige, die Verbindung war kurz weg, während ich geantwortet habe. Ich mache weiter:",
-      idle: "Ich bin wieder da. Lass mich dir den nächsten Schritt zeigen."
-    },
-    fr: {
-      thinking: "Désolé, la connexion a sauté un instant. Vous me demandiez à propos de <PARAPHRASEZ EN 3-6 MOTS>. Voici la réponse :",
-      listening_user_speaking: "Désolé, la connexion a sauté en plein milieu. Vous étiez en train de parler de <PARAPHRASEZ EN 3-6 MOTS> — continuez, je vous écoute.",
-      speaking: "Désolé, la connexion a sauté pendant que je répondais. Je continue :",
-      idle: "Je suis de retour. De quoi voulez-vous parler ?"
-    },
-    es: {
-      thinking: "Perdón, se cortó la conexión un momento. Estabas preguntando sobre <PARAFRASEA EN 3-6 PALABRAS>. Aquí va la respuesta:",
-      listening_user_speaking: "Perdón, se cortó la conexión mientras hablabas. Estabas comentando sobre <PARAFRASEA EN 3-6 PALABRAS> — sigue, te escucho.",
-      speaking: "Perdón, se cortó la conexión mientras yo respondía. Continúo:",
-      idle: "Estoy de vuelta. ¿De qué quieres hablar?"
-    }
+  // VTID-03622 — NO VERBATIM SPOKEN SENTENCES. See CLAUDE.md Part 1
+  // NEVER-rule 41 ("Never hardcode a sentence Vitana speaks").
+  //
+  // This block used to ship the exact sentence the model was told to say,
+  // per language — e.g. de/idle was literally
+  //   "Ich bin wieder da. Lass mich dir den nächsten Schritt zeigen."
+  // Reported live after hearing it "for the 49th time". A reconnect is not a
+  // rare event (Nova drops ~10% of sessions at open, §2e, and mobile
+  // transports churn), so a fixed recovery line is a phrase the user hears
+  // more often than almost anything else Vitana says — and it was the ONE
+  // path that shipped its wording as a finished string.
+  //
+  // The system already forbids this everywhere else: the system instruction
+  // carries a `FLEXIBLE WORDING — ABSOLUTE` rule ("never speak a fixed,
+  // memorised sentence; NEVER open two conversations with the same one").
+  // Handing the model a completed sentence and saying "open with this"
+  // overrides that rule at point-blank range — the same mechanism as
+  // VTID-03475, where a greeting EXEMPLAR in the prompt header outranked
+  // every cadence rule underneath it.
+  //
+  // So: describe the INTENT, never the words. The model composes the line
+  // fresh each time, in the user's language (set in the system instruction —
+  // §13b: system instructions stay English and the model emits the user's
+  // language). That also deletes the 4-language duplication, which was
+  // itself a bug generator: `fr`/`es` idle asked "what do you want to talk
+  // about?" while `en`/`de` promised to show the next step — three languages
+  // that disagreed about what the assistant just committed to.
+  const stageIntents: Record<string, string> = {
+    thinking:
+      'briefly acknowledge that the connection dropped for a moment, name what the user had been asking about in 3-6 words drawn from the conversation history (never their exact words), and lead straight into the answer',
+    listening_user_speaking:
+      'briefly acknowledge that the connection dropped while they were mid-sentence, name the topic of their partial utterance in 3-6 words drawn from the conversation history, and invite them to carry on',
+    speaking:
+      'briefly acknowledge that the connection dropped while you were answering, and say you are picking your answer back up',
+    idle: 'briefly acknowledge you are back, and hand the floor to the user',
   };
-
-  const stageIntros = intros[lang] || intros['en'];
-  const introTemplate = stageIntros[stage] || stageIntros['idle'];
+  const stageIntent = stageIntents[stage] || stageIntents['idle'];
 
   // The full prompt sent as a "user" turn to Gemini. It tells Gemini how to
   // open AND what to do next (answer / wait / continue) based on the stage.
@@ -9495,14 +10695,24 @@ function sendReconnectRecoveryPromptToLiveAPI(ws: WebSocket, session: GeminiLive
     '',
     `RECONNECT_STAGE = "${stage}" (the user was in this state when the connection dropped).`,
     '',
-    'STRUCTURE — speak ONE acknowledgment sentence first, then take the matching follow-up action:',
-    `- For stage "thinking": open with "${stageIntros.thinking}" and IMMEDIATELY answer the user's last question using the conversation history. Replace the placeholder with a brief 3-6 word paraphrase of the user's actual last turn topic. Do NOT repeat their words verbatim. Keep the answer focused and concise.`,
-    `- For stage "listening_user_speaking": open with "${stageIntros.listening_user_speaking}". CRITICAL: you must paraphrase the user's most recent partial utterance from the conversation history into the placeholder (3-6 words, capturing the topic — e.g. "your sleep last week", "the magnesium reminder", "your trip to Mallorca"). NEVER ask the user to repeat what they said — their words are in the history; use them. If the partial really is empty (no recent user turn at all in history), fall back to: "Sorry, we lost the connection — please go on, I'm listening." Then STOP and wait. Do NOT guess what they were going to ask next.`,
-    `- For stage "speaking": say "${stageIntros.speaking}" and then RESUME the assistant's last answer using the conversation history — pick up logically from where you left off. Do not restart the answer from scratch.`,
-    `- For stage "idle" or unknown: say "${stageIntros.idle}" and wait.`,
+    'STRUCTURE — speak ONE acknowledgment sentence first, then take the matching follow-up action.',
+    '',
+    `YOUR ACKNOWLEDGMENT for this stage must: ${stageIntent}.`,
+    '',
+    'Compose that sentence YOURSELF, in your own words, fresh for this reconnect.',
+    'You are NOT given a script and there is no approved phrasing to reproduce.',
+    'Vary it every time — the user reconnects often and must never hear the same',
+    'sentence twice. Keep it to one short sentence.',
+    '',
+    'Then take the follow-up action for the stage:',
+    `- "thinking": IMMEDIATELY answer the user's last question using the conversation history. Keep the answer focused and concise.`,
+    `- "listening_user_speaking": STOP and wait after your acknowledgment. NEVER ask the user to repeat themselves — their words are in the history, so name the topic yourself. If there really is no recent user turn in the history, just say you got cut off and are listening. Do NOT guess what they were about to ask.`,
+    `- "speaking": RESUME the assistant's last answer using the conversation history — pick up logically from where you left off. Do not restart the answer from scratch.`,
+    `- "idle" or unknown: STOP and wait.`,
     '',
     'CRITICAL RULES:',
     '- Speak in the user\'s language (it is set in your system instruction).',
+    '- Do NOT speak a memorised or fixed sentence. Never reuse a previous recovery line.',
     '- Do NOT introduce yourself.',
     '- Do NOT say "Hello", "Hi", or the user\'s name.',
     '- Do NOT use the standard greeting prompt — this is a RECOVERY, not a fresh start.',
@@ -13235,9 +14445,18 @@ async function fetchLastSessionInfo(userId: string, timezone?: string | null): P
         const stopData = await stopResp.json() as Array<{ created_at: string; metadata: Record<string, unknown> }>;
         if (stopData.length > 0) {
           const meta = stopData[0].metadata || {};
-          const turnCount = Number(meta.turn_count) || 0;
-          const audioOut = Number(meta.audio_out_chunks) || 0;
-          wasFailure = turnCount === 0 || audioOut === 0;
+          // VTID-03597: classify on the close REASON, not on the metrics.
+          // This previously read `turnCount === 0 || audioOut === 0`, which is
+          // the signature of the three commonest BENIGN closes — the idle
+          // reaper, the TTL cap, and the user reopening ORB. Measured on prod:
+          // 153 of 176 stops in 14 days were flagged as failures and not one
+          // was real, so the apology opener ("Entschuldige, da ist etwas
+          // schiefgelaufen") fired on nearly every reopen.
+          wasFailure = wasPreviousSessionFailure({
+            reason: (meta.reason as string) ?? null,
+            turnCount: Number(meta.turn_count) || 0,
+            audioOutChunks: Number(meta.audio_out_chunks) || 0,
+          });
           // If we only have a stop event (no start event hit), fall back to the stop time.
           if (!time) time = stopData[0].created_at;
         }
@@ -13452,9 +14671,13 @@ async function getStoredLanguagePreference(
     if (result.ok && result.facts.length > 0) {
       const storedLang = result.facts[0].fact_value.toLowerCase();
       // Map full language name back to 2-letter code
+      // VTID-03681: pt/pl added. A miss here returns null (no stored
+      // preference), so the session silently falls back to the widget's
+      // browser-detected language instead of the one the user actually chose.
       const nameToCode: Record<string, string> = {
         english: 'en', german: 'de', french: 'fr', spanish: 'es',
         arabic: 'ar', chinese: 'zh', russian: 'ru', serbian: 'sr',
+        portuguese: 'pt', polish: 'pl',
       };
       return nameToCode[storedLang] || (SUPPORTED_LIVE_LANGUAGES.includes(storedLang) ? storedLang : null);
     }
@@ -13881,6 +15104,10 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
   // takes 5-8+s to first audio — a clear net win, and feature-flagged so it
   // can be disabled instantly if that tradeoff is ever wrong.
   await sendGreetingAudioBridge(session);
+  // VTID-03650: guided-topic lesson audio (if a topic was tapped and Polly
+  // could serve it) — also before the real upstream connect, same ordering
+  // rationale as the greeting bridge above.
+  sendGuidedTopicNarrationAudioBridge(session);
 
   // VTID-01219: Connect to Vertex AI Live API WebSocket IN PARALLEL (non-blocking).
   // The ready event is already sent so the client gets instant visual + audio feedback
@@ -14550,7 +15777,7 @@ router.get('/health', async (_req: Request, res: Response) => {
   //
   // We gather the exact same inputs selectUpstreamProvider() reads at session
   // connect time, then derive runtime readiness from the resolved provider.
-  let activeProvider: 'vertex' | 'livekit' | 'nova_sonic' = 'vertex';
+  let activeProvider: VoiceProviderName = 'vertex';
   let providerReason = 'default';
   let livekitReady = false;
   try {
@@ -14763,7 +15990,9 @@ export function initializeOrbWebSocket(server: HttpServer): void {
     for (const [sessionId, session] of wsClientSessions.entries()) {
       if (now - session.lastActivity.getTime() > SESSION_TIMEOUT_MS) {
         console.log(`[VTID-01222] WebSocket session expired: ${sessionId}`);
-        cleanupWsSession(sessionId);
+        // VTID-03561: the client-session expiry sweep, distinct from the
+        // live-session idle sweep that emits idle_*/expired_ttl.
+        cleanupWsSession(sessionId, 'ws_session_expired');
       }
     }
   }, 5 * 60 * 1000);
@@ -14894,14 +16123,14 @@ async function handleWebSocketConnection(ws: WebSocket, req: IncomingMessage): P
   ws.on('close', (code, reason) => {
     console.log(`[VTID-01222] WebSocket disconnected: ${sessionId}, code=${code}, reason=${reason}`);
     clearInterval(clientPingInterval);
-    cleanupWsSession(sessionId);
+    cleanupWsSession(sessionId, 'client_disconnect'); // VTID-03561
     decrementConnection(clientIP);
   });
 
   // Handle errors
   ws.on('error', (error) => {
     console.error(`[VTID-01222] WebSocket error for ${sessionId}:`, error);
-    cleanupWsSession(sessionId);
+    cleanupWsSession(sessionId, 'client_error'); // VTID-03561
     decrementConnection(clientIP);
   });
 }
@@ -14987,6 +16216,11 @@ async function handleWsClientMessage(clientSession: WsClientSession, message: Ws
         } catch (err) {
           console.warn('[VTID-INSTANT-FEEDBACK] Failed to send chime via WS:', err);
         }
+        // VTID-03650: guided-topic lesson audio (if a topic was tapped and
+        // Polly could serve it) — after the chime, before the live model's
+        // own first turn. Same audio_ready gating as the greeting itself, so
+        // it can't arrive before the client's AudioContext is unlocked.
+        sendGuidedTopicNarrationAudioBridge(liveSession);
         sendGreetingPromptToLiveAPI(liveSession.upstreamWs, liveSession);
         liveSession.greetingDeferred = false;
         // ORB-CONVERSATION-LATENCY: greeting dispatched upstream — remaining
@@ -15352,6 +16586,10 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
           } catch (err) {
             console.warn('[VTID-INSTANT-FEEDBACK] Failed to send chime in fallback:', err);
           }
+          // VTID-03650: same guided-topic bridge as the primary audio_ready
+          // path — the one-shot guard in the function itself makes this a
+          // no-op if it already fired there.
+          sendGuidedTopicNarrationAudioBridge(liveSession);
           sendGreetingPromptToLiveAPI(liveSession.upstreamWs, liveSession);
           liveSession.greetingDeferred = false;
           liveSession.establishLatency?.mark('greeting_sent', { deferred: true, fallback: true });
@@ -15667,6 +16905,18 @@ function handleWsStopSession(clientSession: WsClientSession): void {
   if (liveSession) {
     liveSession.active = false;
 
+    // VTID-03616: mirror terminateExistingSessionsForUser's teardown — clear
+    // the response watchdog and both keepalive intervals BEFORE dropping the
+    // upstream connection. Without this, a watchdog armed against this
+    // session (e.g. a pending 'greeting_timeout') keeps its timer handle
+    // live after the session is gone: it either fires against a stopped
+    // session and silently no-ops (leaving has_watchdog looking armed
+    // forever) or, worse, still holds a reference nothing will ever clear.
+    // The silence keepalive is the same shape of leak — an orphaned interval
+    // with nothing left to feed.
+    clearResponseWatchdog(liveSession);
+    clearUpstreamKeepalive(liveSession);
+
     // Close upstream WebSocket
     if (liveSession.upstreamWs) {
       try {
@@ -15696,6 +16946,7 @@ function handleWsStopSession(clientSession: WsClientSession): void {
       user_turns: liveSession.transcriptTurns.filter(t => t.role === 'user').length,
       model_turns: liveSession.transcriptTurns.filter(t => t.role === 'assistant').length,
     }).catch(() => { });
+    liveSession.stopEventEmitted = true; // VTID-03561
     // VTID-01959: voice self-healing dispatch (mode-gated for /report path).
     // VTID-01994: pass session metrics for mode-independent quality classifier.
     dispatchVoiceFailureFireAndForget({

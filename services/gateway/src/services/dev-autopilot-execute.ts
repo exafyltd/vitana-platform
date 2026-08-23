@@ -2846,6 +2846,74 @@ export async function autoApproveTick(): Promise<void> {
 const LAZY_PLAN_BATCH_SIZE = 3;
 const LAZY_PLAN_RISK_CLASSES = ['low', 'medium'];
 
+// ---------------------------------------------------------------------------
+// VTID-03579: retry backoff for plan generation.
+//
+// The only thing that used to stop a finding being re-planned was the EXISTENCE
+// of a plan_versions row. So a finding whose plan generation FAILED was
+// indistinguishable from one nobody had tried yet, and came straight back on
+// the next 30s tick — forever, with no record on the finding itself.
+//
+// Measured on prod 2026-08-10/11: 12 findings, 19-38 consecutive plan_gen
+// failures each over ~40 hours, 990 planner LLM calls in a single day, 863 of
+// them billed to Gemini. Not one produced a plan.
+//
+// The symptom was already known and half-treated: writeAutopilotFailure() has a
+// 10-minute dedup window whose comment names "lazyPlanTick re-firing the same
+// plan_gen failure every ~30s" as the thing it exists to suppress. That
+// silenced the LOG and left the LOOP running — which is why this went unnoticed
+// while costing money. Deduping a symptom is not the same as bounding a retry.
+//
+// Base interval is deliberately the dedup window, not something smaller: prod
+// records at most one failure row per 10 minutes per finding, so a backoff
+// shorter than that cannot be observed in the data it reads.
+const PLAN_RETRY_BASE_MS = 10 * 60 * 1000;
+const PLAN_RETRY_CAP_MS = 6 * 60 * 60 * 1000;
+/** Distinct 10-minute failure windows before a finding is left alone. */
+const PLAN_RETRY_MAX_ATTEMPTS = 6;
+/** How far back to read failure history when computing backoff. */
+const PLAN_RETRY_LOOKBACK_MS = 24 * 60 * 60 * 1000;
+
+export interface PlanRetryDecision {
+  attempt: boolean;
+  /** Populated when attempt=false — why this finding was skipped. */
+  reason?: 'backoff' | 'exhausted';
+  /** Backoff the decision used, for logging. Absent when attempt=true. */
+  waitMs?: number;
+}
+
+/**
+ * Decide whether a finding may be re-planned, given its recent plan_gen
+ * failures. Pure so the policy is testable without a database — the bug this
+ * replaces was invisible precisely because the decision lived inline in a tick.
+ *
+ * failureCount is a count of failure ROWS, which (given the writer's 10-minute
+ * dedup) approximates "distinct 10-minute windows in which this failed", not
+ * raw attempts. That is the right unit: raw attempts would be inflated by every
+ * extra Cloud Run instance running its own copy of the tick.
+ */
+export function planRetryDecision(
+  failureCount: number,
+  lastFailureMs: number | null,
+  nowMs: number,
+): PlanRetryDecision {
+  if (failureCount <= 0 || lastFailureMs === null) return { attempt: true };
+  // Stop entirely rather than backing off forever. A finding that has failed
+  // this consistently needs a human or a code change, and continuing to pay an
+  // LLM to rediscover that is the exact waste this whole change is about.
+  if (failureCount >= PLAN_RETRY_MAX_ATTEMPTS) {
+    return { attempt: false, reason: 'exhausted' };
+  }
+  const waitMs = Math.min(PLAN_RETRY_BASE_MS * 2 ** (failureCount - 1), PLAN_RETRY_CAP_MS);
+  if (nowMs - lastFailureMs < waitMs) return { attempt: false, reason: 'backoff', waitMs };
+  return { attempt: true };
+}
+
+/** finding.id → the vtid writeAutopilotFailure() records against it. */
+export function findingVtid(findingId: string): string {
+  return `VTID-DA-FIND-${findingId.slice(0, 8)}`;
+}
+
 export async function lazyPlanTick(): Promise<void> {
   const s = getSupabase();
   if (!s) return;
@@ -2880,7 +2948,33 @@ export async function lazyPlanTick(): Promise<void> {
   );
   if (!findingsR.ok || !findingsR.data) return;
 
+  // VTID-03579: read plan_gen failure history ONCE per tick, not once per
+  // finding — this loop already costs 2 round-trips per candidate and the whole
+  // point of the change is to spend less, not more.
+  const sinceIso = new Date(Date.now() - PLAN_RETRY_LOOKBACK_MS).toISOString();
+  const failuresR = await supa<Array<{ vtid: string; created_at: string }>>(
+    s,
+    `/rest/v1/self_healing_log?vtid=like.VTID-DA-FIND-*`
+    + `&failure_class=in.(dev_autopilot_plan_gen_failed,dev_autopilot_worker_binary_missing)`
+    + `&created_at=gte.${sinceIso}&select=vtid,created_at`,
+  );
+  const failureHistory = new Map<string, { count: number; lastMs: number }>();
+  for (const row of failuresR.data ?? []) {
+    const prev = failureHistory.get(row.vtid);
+    const ts = Date.parse(row.created_at);
+    if (!prev) failureHistory.set(row.vtid, { count: 1, lastMs: ts });
+    else failureHistory.set(row.vtid, { count: prev.count + 1, lastMs: Math.max(prev.lastMs, ts) });
+  }
+  // Fail OPEN if the history read fails: a Supabase blip must not silently
+  // freeze all planning. The pre-existing behaviour was unbounded retry, so
+  // degrading to that for one tick is no worse than before — whereas failing
+  // closed would turn a transient DB error into a stalled autopilot.
+  const historyOk = failuresR.ok;
+  const nowMs = Date.now();
+
   let generated = 0;
+  let skippedBackoff = 0;
+  let skippedExhausted = 0;
   for (const f of findingsR.data) {
     if (generated >= LAZY_PLAN_BATCH_SIZE) break;
     // Skip if a plan already exists for this finding.
@@ -2897,6 +2991,18 @@ export async function lazyPlanTick(): Promise<void> {
       `/rest/v1/dev_autopilot_worker_queue?finding_id=eq.${f.id}&kind=eq.plan&status=in.(pending,running)&select=id&limit=1`,
     );
     if (inflightR.ok && inflightR.data && inflightR.data.length > 0) continue;
+    // VTID-03579: the guards above only ask "does a plan exist yet?", which a
+    // FAILED generation never changes. Consult failure history before spending
+    // another LLM call on a finding that has been failing for hours.
+    if (historyOk) {
+      const hist = failureHistory.get(findingVtid(f.id));
+      const decision = planRetryDecision(hist?.count ?? 0, hist?.lastMs ?? null, nowMs);
+      if (!decision.attempt) {
+        if (decision.reason === 'exhausted') skippedExhausted++;
+        else skippedBackoff++;
+        continue;
+      }
+    }
     try {
       const result = await generatePlanVersion(f.id);
       if (result.ok) {
@@ -2906,6 +3012,15 @@ export async function lazyPlanTick(): Promise<void> {
     } catch (err) {
       console.error(`${LOG_PREFIX} lazy-plan error for ${f.id.slice(0, 8)}:`, err);
     }
+  }
+  // Visible, or this becomes the next silent thing: an operator seeing "no
+  // plans generated" must be able to tell "nothing to plan" from "everything is
+  // failing and being held back".
+  if (skippedBackoff > 0 || skippedExhausted > 0) {
+    console.log(
+      `${LOG_PREFIX} lazy-plan skipped ${skippedBackoff} in backoff, `
+      + `${skippedExhausted} exhausted (>=${PLAN_RETRY_MAX_ATTEMPTS} failures)`,
+    );
   }
   if (generated > 0) {
     console.log(`${LOG_PREFIX} lazy-plan tick: generated ${generated} plan(s)`);

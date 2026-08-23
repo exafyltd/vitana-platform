@@ -15,6 +15,7 @@
  *   POST /api/v1/scheduled-notifications/upcoming-events
  *   POST /api/v1/scheduled-notifications/recommendation-expiry
  *   POST /api/v1/scheduled-notifications/signal-cleanup
+ *   POST /api/v1/scheduled-notifications/night-push
  */
 
 import { Router, Request, Response } from 'express';
@@ -1178,7 +1179,14 @@ router.post('/signal-cleanup', async (req: Request, res: Response) => {
 });
 
 // =============================================================================
-// POST /push-dispatch — Every 30 seconds (Cloud Scheduler)
+// POST /push-dispatch — Cloud Scheduler, every minute
+// (VTID-03656: the "every 30 seconds" this comment used to claim doesn't
+// match what GCP Cloud Scheduler's standard unix-cron can express — minimum
+// granularity is 1 minute — and doesn't match the job actually registered in
+// scripts/setup-cloud-scheduler.sh's `gateway-push-dispatch` entry either.
+// This route ALSO wasn't registered in that script at all until VTID-03656,
+// meaning whatever job was calling it before lived only in live GCP state,
+// invisible to this repo — see that VTID for the outage this caused.)
 // Picks up trigger-created notifications that haven't had FCM push sent yet.
 // DB triggers (chat messages, group invites, predictive signals, etc.) write
 // to user_notifications but can't send FCM. This cron bridges the gap.
@@ -1190,15 +1198,33 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
   // Find notifications created by DB triggers that haven't been pushed yet.
   // push_sent_at IS NULL  → not yet pushed
   // channel includes push → should be pushed
-  // created in last 5 min → don't bother with very old ones
-  const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  //
+  // VTID-03656: this used to bound the query to `created_at >= now - 5min`.
+  // That window was sized for the steady-state case (this cron is expected
+  // to fire every ~30s), but it meant a stalled/dead scheduler invocation
+  // — for ANY reason, including one this route can't detect from inside a
+  // single request — silently and PERMANENTLY orphaned every notification
+  // older than 5 minutes: once the cron resumed, those rows would simply
+  // never be selected again. That is exactly what happened 2026-08-15
+  // ~18:52 UTC onward — the scheduler stopped invoking this route (root
+  // cause not yet found; the job isn't even registered in
+  // scripts/setup-cloud-scheduler.sh, so it was never visible to this
+  // repo) and 782+ community_post_published notifications sat unsent for
+  // 40+ hours with no way to recover them even after the cron came back.
+  // A late "X shared a new post" push is strictly better than a
+  // notification that silently never arrives, so the window is now wide
+  // enough to drain a multi-day outage once the scheduler resumes — capped
+  // so a truly ancient/abandoned backlog doesn't get pushed as if it were
+  // fresh forever.
+  const LOOKBACK_MS = 48 * 60 * 60 * 1000; // 48h — see VTID-03656 comment above
+  const lookbackCutoff = new Date(Date.now() - LOOKBACK_MS).toISOString();
 
   const { data: pending, error } = await supa
     .from('user_notifications')
-    .select('id, user_id, tenant_id, type, title, body, data, channel, priority')
+    .select('id, user_id, tenant_id, type, title, body, data, channel, priority, created_at')
     .is('push_sent_at', null)
     .in('channel', ['push', 'push_and_inapp'])
-    .gte('created_at', fiveMinAgo)
+    .gte('created_at', lookbackCutoff)
     .order('created_at', { ascending: true })
     .limit(100);
 
@@ -1209,6 +1235,18 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
 
   if (!pending?.length) {
     return res.status(200).json({ ok: true, dispatched: 0, message: 'no pending pushes' });
+  }
+
+  // VTID-03656: a loud, grep-able signal that this cron went quiet for a
+  // while — the exact condition that let the 2026-08-15 outage run silent
+  // for 40+ hours. Anything older than the old 5-minute window means the
+  // scheduler missed at least one expected invocation.
+  const oldestAgeMs = Date.now() - new Date(pending[0]?.created_at ?? Date.now()).getTime();
+  if (oldestAgeMs > 5 * 60 * 1000) {
+    console.warn(
+      `[PushDispatch] Catching up on a backlog — oldest pending notification is ${Math.round(oldestAgeMs / 60000)}min old (batch of ${pending.length}). ` +
+      `The scheduler likely missed invocations; if this recurs, verify the Cloud Scheduler job still exists and is succeeding.`,
+    );
   }
 
   let dispatched = 0;
@@ -1263,12 +1301,20 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
       // one opens Try Again" bug.
       const hasDeepLink =
         typeof notif.data === 'object' && notif.data !== null && !!(notif.data as any).url;
+      // VTID-03684: stable per-entity tag so a row that gets UPDATEd (e.g.
+      // a cumulative post_like notification picking up another liker) and
+      // re-queued via push_sent_at=NULL replaces its earlier push in the OS
+      // tray on the FCM/web-push path, instead of stacking a second one.
+      const entityId =
+        typeof notif.data === 'object' && notif.data !== null ? (notif.data as any).entity_id : undefined;
+      const pushTag = entityId ? `${notif.type}:${entityId}` : undefined;
       const pushPayload = {
         title: notif.title || 'Vitana',
         body: notif.body || '',
         data: typeof notif.data === 'object' && notif.data !== null
           ? Object.fromEntries(Object.entries(notif.data).map(([k, v]) => [k, String(v)]))
           : undefined,
+        tag: pushTag,
       };
       //
       // VTID-03481: mirror notifyUser()'s Appilix suppression too. This cron is
@@ -1648,6 +1694,150 @@ async function scheduleReminderFcmPush(
     console.error(`[reminders-tick] FCM fallback error for ${row.id}:`, err?.message);
   }
 }
+
+// =============================================================================
+// POST /night-push — Hourly UTC (VTID-03604, surface 2 of the ORB day-close)
+//
+// The "you did not open ORB tonight" counterpart to the spoken day-close rung
+// in compute-greeting-decision.ts. Same hourly-UTC-tick / per-user-local-hour
+// pattern as /daily-pace-notifications (the first hourly entry in this file):
+// this fires every hour, and each user is only ELIGIBLE on the one tick where
+// their local hour equals NIGHT_PUSH_LOCAL_HOUR.
+//
+// Fixed catalog text (notif.day_close.*), never LLM-composed — a push has a
+// fixed contract and must stay translated/reviewable (CLAUDE.md §13b), unlike
+// the ORB voice path (CLAUDE.md NEVER-rule 41, VTID-03622), which is
+// deliberately never scripted. Do not "upgrade" this to a composed line.
+//
+// Deliberately fires at 22:00 local, not 21:00 (the start of the day-close
+// window): the spoken close takes priority, so the push waits until the
+// window has had an hour to be claimed by an actual ORB open before assuming
+// the user is not coming back tonight.
+// =============================================================================
+const NIGHT_PUSH_LOCAL_HOUR = 22;
+
+// public-route — called by Cloud Scheduler (no JWT); protected by GCP IAM at
+// the scheduler layer, same pattern as every other entry in this file.
+router.post('/night-push', async (req: Request, res: Response) => {
+  const tenantId = getTenantId(req);
+  if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
+
+  // Debug params for on-call / manual testing, same convention as
+  // /daily-pace-notifications: user_id targets one user directly, force
+  // bypasses the wrong_hour gate.
+  const debugUserId =
+    (req.body?.user_id as string | undefined) ||
+    (req.query?.user_id as string | undefined) ||
+    undefined;
+  const force =
+    req.body?.force === true ||
+    req.body?.force === 'true' ||
+    req.query?.force === 'true' ||
+    req.query?.force === '1';
+
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+
+  const { getUserTimezone } = await import('../services/daily-pace-service');
+  const { todayInTimezone, localHourInTimezone } = await import(
+    '../services/assistant-continuation/providers/new-day-return'
+  );
+
+  const nowUtc = new Date();
+  const users = debugUserId
+    ? [{ user_id: debugUserId }]
+    : await getActiveUsers(supa, tenantId);
+  const locales = await bulkGetUserLocales(supa, users.map((u) => u.user_id));
+
+  const skipped: Record<'wrong_hour' | 'already_closed' | 'already_pushed' | 'error', number> = {
+    wrong_hour: 0,
+    already_closed: 0,
+    already_pushed: 0,
+    error: 0,
+  };
+  let dispatched = 0;
+  const errors: Array<{ user_id: string; message: string }> = [];
+
+  for (const { user_id } of users) {
+    try {
+      const tz = await getUserTimezone(supa, user_id, tenantId);
+      const localHour = localHourInTimezone(nowUtc, tz);
+      if (!force && localHour !== NIGHT_PUSH_LOCAL_HOUR) {
+        skipped.wrong_hour++;
+        continue;
+      }
+      // 22:00 local is inside the day-close window and never past midnight,
+      // so tonight's night key is simply the user's local calendar date —
+      // no dayCloseNightKey rollover math needed the way the ORB rung has.
+      const nightKey = todayInTimezone(nowUtc, tz);
+
+      const { data: journeyRow } = await supa
+        .from('user_journey')
+        .select('last_day_close_date, last_night_push_date')
+        .eq('user_id', user_id)
+        .maybeSingle();
+      const lastClose = (journeyRow as { last_day_close_date?: string | null } | null)?.last_day_close_date ?? null;
+      const lastPush = (journeyRow as { last_night_push_date?: string | null } | null)?.last_night_push_date ?? null;
+
+      // Already got the SPOKEN close tonight — the whole point of separate
+      // stamps (see the migration header): the push must defer to it.
+      if (typeof lastClose === 'string' && lastClose >= nightKey) {
+        skipped.already_closed++;
+        continue;
+      }
+      // Already pushed tonight — once per night.
+      if (typeof lastPush === 'string' && lastPush >= nightKey) {
+        skipped.already_pushed++;
+        continue;
+      }
+
+      const lc = locales.get(user_id);
+      const titleStr = tt('notif.day_close.title', lc);
+      const bodyStr = tt('notif.day_close.body', lc);
+
+      // Stamp FIRST, dispatch second — same ordering rationale as
+      // /daily-pace-notifications: a same-hour retry must see the stamp
+      // before it can double-send, not after.
+      await supa
+        .from('user_journey')
+        .update({ last_night_push_date: nightKey })
+        .eq('user_id', user_id);
+
+      notifyUserAsync(
+        user_id,
+        tenantId,
+        'day_close_push' as any,
+        { title: titleStr, body: bodyStr, data: { type: 'day_close_push', url: '/orb' } },
+        supa,
+      );
+      dispatched++;
+    } catch (err: any) {
+      skipped.error++;
+      errors.push({ user_id, message: err?.message || String(err) });
+      console.warn(`[Scheduled] night_push error for ${user_id.slice(0, 8)}: ${err?.message || err}`);
+    }
+  }
+
+  console.log(
+    `[Scheduled] night_push → dispatched=${dispatched} skipped=${JSON.stringify(skipped)} total_users=${users.length}`,
+  );
+
+  try {
+    const { emitOasisEvent } = await import('../services/oasis-event-service');
+    await emitOasisEvent({
+      type: 'notification.night_push.dispatched' as any,
+      source: 'gateway',
+      vtid: 'VTID-03604',
+      status: 'info',
+      message: `night_push fan-out: ${dispatched} dispatched, ${errors.length} errors`,
+      payload: { tenant_id: tenantId, dispatched, errors: errors.length, skipped, total_users: users.length },
+    });
+  } catch (oasisErr: any) {
+    console.warn(`[Scheduled] night_push OASIS emit failed: ${oasisErr?.message || oasisErr}`);
+  }
+
+  return res.status(200).json({ ok: true, dispatched, skipped, errors });
+});
 
 // =============================================================================
 // Health check

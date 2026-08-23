@@ -53,6 +53,62 @@ import {
   type GreetingLedger,
 } from './greeting-facts-ledger';
 
+// VTID-03628 — P0 emergency kill switch, 2026-08-13.
+//
+// Bedrock's own content moderation started rejecting the rich new-day
+// overview block ("This request has been blocked by our content filters.")
+// on Nova Sonic sessions, at turn_count=0, immediately after greeting_sent —
+// 100% reproducible for the affected account, first observed once
+// VTID-03607 (same day) made this rung reachable on every qualifying session
+// instead of rarely (see tryNewDayOverviewRung's own comment). The automatic
+// Nova retry (VTID-03557, orb-live.ts resendGreetingIfStuckAtZeroTurns) then
+// resends the SAME decision — since nothing in the inputs changed, it
+// rebuilds the identical rejected content and gets blocked again, which is
+// the "Einen Moment, ich verbinde mich neu" loop reported live.
+//
+// SET, NOT READ, HERE — this module is explicitly pure (see file header,
+// "IMPURITY IS INJECTED, NOT PERFORMED") so the golden-snapshot suite stays
+// deterministic; the one process.env read lives at the gateway boundary
+// (routes/orb-live.ts, module load) and calls setNewdayOverviewRungEnabled()
+// once. Module-level rather than threaded through every context-literal at
+// every `computeGreetingDecision` call site (there are 5+, independently
+// constructed, no shared builder) — a per-site flag would need every one
+// touched correctly under time pressure, which is exactly the ladder-
+// divergence bug class this file's own history has been bitten by
+// repeatedly. A single switch point cannot diverge.
+//
+// This module's OWN default is ENABLED (true) — unchanged behaviour for the
+// golden-snapshot suite and any other caller that never touches the switch.
+// The emergency disable is applied ONLY at the gateway's production entry
+// point (routes/orb-live.ts, module load), which reads
+// ORB_NEWDAY_OVERVIEW_RUNG_ENABLED and defaults IT to false. Disabling does
+// not fail sessions; the ladder falls through to a later, simpler rung —
+// same behaviour as before VTID-03607 shipped today (when this rung fired
+// only rarely, per its own comment).
+let _newdayOverviewRungEnabled = true;
+export function setNewdayOverviewRungEnabled(enabled: boolean): void {
+  _newdayOverviewRungEnabled = enabled;
+}
+
+// VTID-03629 — the SAME incident, the ACTUAL rung. VTID-03628 (above) disabled
+// `newday_overview` on the theory that it was the content Bedrock's filter was
+// rejecting. Live retest immediately after showed the guard rejecting
+// newday_overview anyway (missing first name) and a DIFFERENT rung —
+// `day_close` (tryDayCloseRung below, local_hour 0-4, built from diary/mood
+// reflection content via buildDayCloseBlock/isHardDay) — firing instead and
+// getting blocked the same way (prompt_len 4202, "This request has been
+// blocked by our content filters."). Same switch shape, same reasoning
+// (module default true, orb-live.ts boundary defaults it off).
+let _dayCloseRungEnabled = true;
+export function setDayCloseRungEnabled(enabled: boolean): void {
+  _dayCloseRungEnabled = enabled;
+}
+import {
+  selectDayCloseTheme,
+  isHardDay,
+} from '../assistant-continuation/providers/day-close-themes';
+import { buildDayCloseBlock, buildDayCloseOpenerLine } from '../assistant-continuation/providers/day-close-prompt';
+
 // ---------------------------------------------------------------------------
 // Decision shape
 // ---------------------------------------------------------------------------
@@ -68,6 +124,14 @@ export type WakeOpener =
   | 'safe_fast_newday'
   | 'safe_fast_pending_context'
   | 'silent_reconnect'
+  /** VTID-03604 — the end-of-day close. Its own name so the evening ritual is
+   *  measurable separately from every morning rung it deliberately outranks. */
+  | 'day_close'
+  /** VTID-03607 — the SAME rich new-day briefing as `safe_fast_newday_overview`,
+   *  reached on the NORMAL (sync) ladder. Deliberately its own name rather than
+   *  reusing the safe-fast one: which ladder served the briefing is exactly the
+   *  fact this VTID exists to make measurable, and collapsing them would hide it. */
+  | 'newday_overview'
   | 'override_v2'
   | 'silenced_on_cadence'
   | 'legacy_default';
@@ -84,6 +148,9 @@ export interface GreetingEffects {
   stampBriefingDate?: string;
   /** Append this NBA key to user_journey.recent_nbas (keep last 8) — conv_resume. */
   recordNbaKey?: string;
+  /** VTID-03604: stamp user_journey.last_day_close_date = this LOCAL EVENING
+   *  date (dayCloseNightKey, not todayTz). Once per night. */
+  stampDayCloseDate?: string;
 }
 
 export interface GreetingDecision {
@@ -209,6 +276,13 @@ export interface GreetingDecisionContext {
   // --- wake-brief / cadence ------------------------------------------------
   /** !!session.guidedTopicNarrationContent — switches override_v2 to teach mode. */
   guidedTopicNarrationContent: string | null;
+  /** One-shot: true only on the resend that follows a `day_close` open getting
+   *  `nova_validation`-closed. Rebuilds `day_close`'s directive with
+   *  `buildDayCloseOpenerLine` (short, no quoted exemplars) instead of
+   *  resending the ~4200-char `buildDayCloseBlock` that just got rejected.
+   *  See `shouldRetryDayCloseReduced` in routes/orb-live.ts. Optional so
+   *  every other call site (and the golden-snapshot suite) is unaffected. */
+  dayCloseReduced?: boolean;
   /** wakeBriefDecision.decisionId, or null. */
   wakeBriefDecisionId: string | null;
   /** Whether silence-on-cadence-skip is enabled. The caller resolves this from
@@ -219,6 +293,129 @@ export interface GreetingDecisionContext {
   wakeBriefHasSelectedContinuation: boolean;
   /** The voice_wake_brief provider `reason`, or null (cadence-skip detection). */
   voiceWakeBriefReason: string | null;
+
+  // --- VTID-03604 day-close ------------------------------------------------
+  /** user_journey.last_day_close_date — the LOCAL EVENING date of the last
+   *  spoken goodnight (see dayCloseNightKey). null = never closed a day. */
+  lastDayCloseDate?: string | null;
+  /** session.identity.user_id — only used to de-phase the theme rotation so
+   *  two members do not hear the same closing thought on the same night. */
+  userId?: string | null;
+  /** 7-day Vitana-index trend, when known. Feeds isHardDay ONLY. */
+  indexTrend7d?: number | null;
+  /** Did the user log anything at all today? Feeds isHardDay ONLY. */
+  loggedAnythingToday?: boolean;
+  /** A prepared autopilot checkpoint that can genuinely be activated tonight —
+   *  offered by name, never invented. */
+  pendingCheckpointTitle?: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// VTID-03604 — the night window
+// ---------------------------------------------------------------------------
+
+/**
+ * Is this local hour inside the day-close window (21:00 → 04:59)?
+ *
+ * Strict integer 0-23 on purpose. The synchronous greeting path builds its
+ * context BEFORE the timezone helpers are loaded and passes `localHour: -1` as
+ * a placeholder; if the placeholder read as midnight the close would fire all
+ * day long, on every session, which is the loudest possible way to get this
+ * wrong. `-1`, `24`, `NaN` and any fractional hour are therefore all false.
+ */
+export function isDayCloseWindow(localHour: number): boolean {
+  if (!Number.isInteger(localHour) || localHour < 0 || localHour > 23) return false;
+  return localHour >= 21 || localHour <= 4;
+}
+
+/**
+ * Which EVENING does this moment belong to?
+ *
+ * Between 00:00 and 04:59 the calendar date has already rolled but the evening
+ * has not ended — so the night is keyed to the date it STARTED. Without this,
+ * a user said goodnight at 23:50 who reopens at 00:10 is a different "day" by
+ * `todayTz` and gets a second goodnight: exactly the repeat-on-every-reopen
+ * failure VTID-03597 removed. Outside the window the local date is returned
+ * unchanged so callers never have to branch.
+ */
+export function dayCloseNightKey(todayLocalIso: string, localHour: number): string {
+  if (!Number.isInteger(localHour) || localHour > 4 || localHour < 0) return todayLocalIso;
+  const d = new Date(`${todayLocalIso}T12:00:00Z`);
+  if (Number.isNaN(d.getTime())) return todayLocalIso;
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * The day-close rung, shared by BOTH ladders (VTID-03604).
+ *
+ * Placed ABOVE every morning rung deliberately. At 00:15 the calendar date has
+ * rolled, so `briefingDue()` believes a new day is owed a morning briefing — it
+ * is not. You have not started a day, you have failed to end one, and being met
+ * with "Guten Morgen" at a quarter past midnight is the single most obviously
+ * wrong thing this subsystem can say.
+ *
+ * Placed BELOW `silent_reconnect`, for the same reason the new-day briefing is:
+ * a reconnect must stay silent, and a goodnight is loud.
+ *
+ * Returns null when it does not fire, so each ladder keeps its own ordering.
+ */
+function tryDayCloseRung(ctx: GreetingDecisionContext): GreetingDecision | null {
+  if (!_dayCloseRungEnabled) return null;
+  if (ctx.isAnonymous) return null;
+  // `todayTz: ''` is the documented placeholder orb-live.ts seeds the SYNC
+  // context with before the timezone helpers resolve (mirrors `localHour: -1`
+  // on the safe-fast side) — an empty string is not a valid ISO date and must
+  // never be read as "no date, so any date matches". Without this, a session
+  // that falls through to the placeholder context (e.g. the async new-day
+  // branch's own error-recovery path) would compute a garbage night key and
+  // could fire day_close at literally any hour, because `localHour: 0` on
+  // that same placeholder reads as "inside the window".
+  if (!ctx.todayTz) return null;
+  if (!isDayCloseWindow(ctx.localHour)) return null;
+
+  const nightKey = dayCloseNightKey(ctx.todayTz, ctx.localHour);
+  // Once per night. The stamp holds the EVENING date, so the 23:50 → 00:10
+  // reopen compares equal and stays quiet.
+  if (typeof ctx.lastDayCloseDate === 'string' && ctx.lastDayCloseDate >= nightKey) return null;
+
+  const theme = selectDayCloseTheme({ todayLocalIso: nightKey, userId: ctx.userId ?? null });
+  const hardDay = isHardDay({
+    indexTrend7d: ctx.indexTrend7d,
+    loggedAnythingToday: ctx.loggedAnythingToday,
+  });
+  const ledger = ctx.greetingLedger ?? EMPTY_GREETING_LEDGER;
+
+  const blockArgs = {
+    lang: ctx.greetLang,
+    firstName: ctx.firstName ?? null,
+    localHour: ctx.localHour,
+    timezone: ctx.timezone,
+    theme,
+    hardDay,
+    previousUtterance: ledger.last_utterance,
+    sessionsToday: ledger.sessions_today,
+    pendingCheckpointTitle: ctx.pendingCheckpointTitle ?? null,
+  };
+  const block = ctx.dayCloseReduced ? buildDayCloseOpenerLine(blockArgs) : buildDayCloseBlock(blockArgs);
+  if (!block || block.trim().length === 0) return null;
+
+  return {
+    wakeOpener: 'day_close',
+    directive: block,
+    diag: {
+      lang: ctx.lang,
+      prompt_len: block.length,
+      wake_opener: 'day_close',
+      night_key: nightKey,
+      local_hour: ctx.localHour,
+      theme: theme.key,
+      hard_day: hardDay,
+      has_checkpoint: !!ctx.pendingCheckpointTitle,
+      reduced: !!ctx.dayCloseReduced,
+    },
+    effects: { markGreetingSent: true, armWatchdog: true, stampDayCloseDate: nightKey },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -277,11 +474,32 @@ export function safeFastApplies(ctx: GreetingDecisionContext): boolean {
  *  rung cannot diverge. Mirrors orb-live L7723. */
 export function shouldAttemptNewdayOverview(ctx: GreetingDecisionContext): boolean {
   return (
+    _newdayOverviewRungEnabled &&
     isDeOrEn(ctx.lang) &&
     briefingDue(ctx) &&
     !(ctx.greetingNeedsOnboarding === true || ctx.greetingIsFirstTime === true) &&
-    typeof ctx.firstName === 'string' &&
-    ctx.firstName.trim().length > 0 &&
+    // VTID-03646 — the `firstName` requirement that used to sit here made the
+    // ENTIRE proactive briefing unreachable in production, on every session.
+    //
+    // Measured on prod 2026-08-15, every `newday_briefing_eval` emitted that
+    // day (all users, all languages, all timezones): `outcome:guard_rejected`,
+    // `briefing_due:true`, `not_first_time:true`, `not_onboarding:true` — and
+    // `has_first_name:false` with `facts_ready_awaited:false`. The name comes
+    // from the greeting-facts prefetch, which `live-session-controller.ts`
+    // (L1101) gates on `isFeatureLive('ORB_SAFE_FAST_GREETING')`, and that flag
+    // is `staging-only` (STAGE-DEPLOY.yml L189). So in PRODUCTION the prefetch
+    // never runs, `session.greetingFirstName` is permanently null, and this one
+    // conjunct rejected 100% of briefings — every one of which then fell to the
+    // rung-8 teaser line. VTID-03629 had already SEEN this ("newday_overview
+    // was already being rejected by its own guard (missing first name)") and
+    // read it as a reason to look elsewhere rather than as the defect.
+    //
+    // The name was never load-bearing for the briefing's CONTENT:
+    // `buildNewDayOverviewBlock` takes `firstName: string | null` and has
+    // always had an explicit unknown-name branch ("do not invent one; address
+    // user warmly without name"). A briefing about unread messages, the Vitana
+    // index, the calendar and the journey is worth speaking whether or not the
+    // prefetch that carries the name happened to run.
     ctx.hasUserId &&
     ctx.hasSupabase
   );
@@ -314,9 +532,32 @@ export function computeGreetingDecision(ctx: GreetingDecisionContext): GreetingD
   return safeFastApplies(ctx) ? computeSafeFastLadder(ctx) : computeNormalLadder(ctx);
 }
 
-// --- SAFE-FAST ladder (rungs 1–6) ------------------------------------------
-function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
-  // Rung 1 — safe_fast_newday_overview (rich morning briefing owns turn 1).
+/**
+ * The rich new-day briefing rung, shared by BOTH ladders (VTID-03607).
+ *
+ * This used to exist only as rung 1 of the safe-fast ladder, and the safe-fast
+ * ladder is taken **only when `contextReadyResolved === false`** — i.e. only
+ * when the greeting overtook context assembly. So the one briefing built FROM
+ * context could fire only when context was NOT ready, and was skipped entirely
+ * whenever context WAS ready. That is upside down, and it is why the user's
+ * new-day greeting ("welcome + how many new messages + your Vitana index
+ * moved") disappeared: prod session live-37aa4388 (2026-08-11) completed its
+ * bootstrap in 16ms, never emitted `greeting_context_pending`, took the normal
+ * ladder, and got the generic wake-brief line from rung 8 instead.
+ *
+ * Anything that makes context assembly FASTER therefore made the briefing
+ * RARER — the brain-cache single-flight (VTID-03504) and raising
+ * `ORB_CONTEXT_READY_GATE_TIMEOUT_MS` back to its 4000ms default (VTID-03584)
+ * both pushed sessions off the only ladder that could speak it.
+ *
+ * Returns null when the rung does not fire, so each ladder keeps its own
+ * ordering. Extracted rather than duplicated so the two ladders cannot drift
+ * apart on what counts as "a briefing worth speaking".
+ */
+function tryNewDayOverviewRung(
+  ctx: GreetingDecisionContext,
+  wakeOpener: 'safe_fast_newday_overview' | 'newday_overview',
+): GreetingDecision | null {
   if (shouldAttemptNewdayOverview(ctx) && ctx.newdayOverview && newdayHasContent(ctx.newdayOverview)) {
     // Spoken-facts continuity (#2835): compute this rung's deltas purely from
     // its payload + the injected ledger — same as the live path.
@@ -329,7 +570,13 @@ function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
     const block = buildNewDayOverviewBlock({
       payload: ctx.newdayOverview,
       lang: ctx.greetLang,
-      firstName: (ctx.firstName as string).trim(),
+      // VTID-03646 — was `(ctx.firstName as string).trim()`, a cast that was
+      // only safe because the guard above rejected a null name. The guard no
+      // longer does (see shouldAttemptNewdayOverview), so pass the null through
+      // to the builder's own unknown-name branch instead of asserting it away.
+      firstName: typeof ctx.firstName === 'string' && ctx.firstName.trim().length > 0
+        ? ctx.firstName.trim()
+        : null,
       localHour: ctx.localHour,
       timezone: ctx.timezone,
       factDeltas,
@@ -339,13 +586,13 @@ function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
     if (block && block.trim().length > 0) {
       const o = ctx.newdayOverview;
       return {
-        wakeOpener: 'safe_fast_newday_overview',
+        wakeOpener,
         directive: block,
         register: 'daily_briefing',
         diag: {
           lang: ctx.lang,
           prompt_len: block.length,
-          wake_opener: 'safe_fast_newday_overview',
+          wake_opener: wakeOpener,
           bucket: ctx.bucket,
           briefing_date: ctx.todayTz,
           overview_signals: {
@@ -364,6 +611,34 @@ function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
       };
     }
   }
+  return null;
+}
+
+// VTID-03630 — CLAUDE.md NEVER-rule 41: never hardcode a sentence Vitana
+// speaks. The short-gap opener used to hand the model a per-language MENU of
+// finished sentences ("picked from this menu and used VERBATIM") pulled from
+// `greeting-pools.ts`'s SHORT_GAP_GREETING_PHRASES pool. Live report: with
+// the day_close/newday_overview rungs killed (VTID-03628/03629), MORE
+// sessions fall through to this rung than before, and the model reliably
+// converged on reciting the same pool entry verbatim — "Lass mich dir den
+// nächsten Schritt zeigen." heard on a session where nothing else fired.
+// Replaced with an INTENT (English, per the rule — the model composes fresh
+// wording in the user's own language every time; there is no menu left to
+// recite from).
+const SHORT_GAP_OPENER_INTENT =
+  "Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself, never ask what they want. Compose this sentence yourself, in the user's own language, in your own words. There is no approved phrasing to reproduce and nothing to recite — do not reuse wording you or another session has used before; vary it every single time.";
+
+// --- SAFE-FAST ladder (rungs 1–6) ------------------------------------------
+function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
+  // VTID-03604 — the day-close outranks every morning rung, on BOTH ladders.
+  // At 00:15 the calendar date has rolled and the morning briefing believes it
+  // is owed; it is not. Ending a day is not starting one.
+  const dayCloseFast = tryDayCloseRung(ctx);
+  if (dayCloseFast) return dayCloseFast;
+
+  // Rung 1 — safe_fast_newday_overview (rich morning briefing owns turn 1).
+  const newdayFast = tryNewDayOverviewRung(ctx, 'safe_fast_newday_overview');
+  if (newdayFast) return newdayFast;
 
   // Rung 2 — safe_fast_first_time_welcome (a brand-new user gets onboarding).
   if (firstTimeWelcomeFires(ctx)) {
@@ -491,11 +766,10 @@ function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
     };
   }
 
-  // Rung 6 — safe_fast_pending_context (generic short menu opener; always fires).
-  const menu = ctx.menuPhrases.map((p) => `"${p}"`).join(', ');
+  // Rung 6 — safe_fast_pending_context (generic short opener; always fires).
   const safePrompt =
-    `Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM ` +
-    `(already in the user's language): ${menu}. Do NOT say "Hello" or the user's name. ` +
+    `Open with EXACTLY ONE short spoken phrase. INTENT: ${SHORT_GAP_OPENER_INTENT} ` +
+    `Do NOT say "Hello" or the user's name. ` +
     `Do NOT introduce yourself. NEVER use two-part sentences. Speak it as audio.`;
   return {
     wakeOpener: 'safe_fast_pending_context',
@@ -523,39 +797,86 @@ function computeNormalLadder(ctx: GreetingDecisionContext): GreetingDecision {
     };
   }
 
+  // VTID-03604 — day-close, below silent_reconnect (a reconnect stays silent,
+  // and a goodnight is loud) and above every morning rung.
+  const dayCloseSync = tryDayCloseRung(ctx);
+  if (dayCloseSync) return dayCloseSync;
+
+  // Rung 7b — newday_overview (VTID-03607). The SAME rich briefing as rung 1,
+  // now reachable when context resolved before the greeting — which, since the
+  // context-assembly speedups, is the common case rather than the rare one.
+  //
+  // Placed BELOW silent_reconnect deliberately: a reconnect must stay silent,
+  // and a briefing is the loudest possible thing to say into one. Placed ABOVE
+  // override_v2 because `briefingDue()` already limits this to once per
+  // calendar day, so on the day it fires it is strictly the better opener —
+  // the wake-brief's one-liner is what the user has been getting INSTEAD of
+  // their briefing, not in addition to it.
+  //
+  // Fires only when the caller actually gathered the payload; every other
+  // session passes `newdayOverview: null` and falls straight through, so the
+  // normal ladder is byte-identical for them.
+  const newdaySync = tryNewDayOverviewRung(ctx, 'newday_overview');
+  if (newdaySync) return newdaySync;
+
   // Rung 8 — override_v2 (speak the wake-brief / contract-selected line verbatim).
   const wakeOverrideLine = od.mode === 'speak' ? (od.line ?? '').trim() : '';
   if (wakeOverrideLine.length > 0 && !ctx.isAnonymous) {
     const safe = wakeOverrideLine.replace(/"/g, '\\"');
-    const wakeTriggerByLang: Record<string, string> = {
-      en: `Say exactly: "${safe}" — ONE short utterance only. Do NOT add a greeting before. Do NOT add a question after. Do NOT paraphrase.`,
-      de: `Sage genau Folgendes: "${safe}" — NUR EINE kurze Aussage. KEINE Begrüßung davor. KEINE Frage danach. NICHT umformulieren.`,
-      fr: `Dis exactement : "${safe}" — UNE seule courte phrase. PAS de salutation avant. PAS de question après. NE PAS reformuler.`,
-      es: `Di exactamente: "${safe}" — UNA sola frase corta. NO añadas saludo antes. NO añadas pregunta después. NO parafrasees.`,
-      ar: `قل بالضبط: "${safe}" — جملة قصيرة واحدة فقط. لا تحية قبلها. لا سؤال بعدها. لا تعيد صياغتها.`,
-      zh: `请准确地说："${safe}" —— 只说一句话。前面不要加问候。后面不要加问题。不要改述。`,
-      ru: `Скажи ровно: "${safe}" — ОДНА короткая фраза. БЕЗ приветствия перед. БЕЗ вопроса после. НЕ перефразируй.`,
-      sr: `Реци тачно: "${safe}" — ЈЕДНА кратка реченица. БЕЗ поздрава пре. БЕЗ питања после. НЕ преформулиши.`,
-    };
-    const isGuidedTeach = !!ctx.guidedTopicNarrationContent;
-    const guidedIsDe = (ctx.lang || 'en').toLowerCase().startsWith('de');
-    const GUIDED_LANG_NAMES: Record<string, string> = {
-      en: 'English',
-      de: 'German',
-      es: 'Spanish',
-      fr: 'French',
-      sr: 'Serbian',
-      ar: 'Arabic',
-      zh: 'Chinese',
-      ru: 'Russian',
-      it: 'Italian',
-      pt: 'Portuguese',
-    };
-    const guidedLangName = GUIDED_LANG_NAMES[langKey2(ctx.lang)] || 'English';
-    const guidedTeachTrigger = guidedIsDe
-      ? `Sage Folgendes WÖRTLICH und VOLLSTÄNDIG — Wort für Wort, dann höre auf und höre zu. NICHT zusammenfassen, kürzen, umformulieren oder eine Begrüßung/Frage hinzufügen: "${safe}"`
-      : `Say the following lesson to the user in fluent ${guidedLangName}. The text may be in another language — translate it faithfully and completely into ${guidedLangName} and speak ONLY that translation, then stop and listen. Do NOT summarize, shorten, add a greeting, or ask a question: "${safe}"`;
-    const wakePrompt = isGuidedTeach ? guidedTeachTrigger : wakeTriggerByLang[ctx.lang] || wakeTriggerByLang.en;
+    // VTID-03646 — this rung used to instruct the model, per language, to
+    // "say exactly <line> — ONE short utterance only. No greeting before. NO
+    // QUESTION AFTER. Do not paraphrase." That is what the live report
+    // describes: Vitana opens with a bare announcement ("ich zeige dir die
+    // neuesten Nachrichten"), delivers nothing, asks nothing, and drops
+    // straight into listening mode. The dead end was not the model failing to
+    // follow the directive — it was the directive.
+    //
+    // The provider line is a LEAD, not the whole turn. The product contract
+    // this rung is supposed to serve, and the one every other rich rung
+    // already serves, is: deliver the actual update -> propose one concrete
+    // next step -> ask for confirmation. `override_v2` is now the ONLY opener
+    // most sessions ever reach (24 of 24 wake_opener events in four days), so
+    // its shape IS the conversation flow.
+    //
+    // Written as an English INTENT rather than a per-language finished
+    // sentence, per CLAUDE.md NEVER-rule 41 and §13b (system instructions stay
+    // English; the model emits the user's language) — the same treatment
+    // SHORT_GAP_OPENER_INTENT and LEGACY_DEFAULT_OPENER_INTENT above already
+    // get. That also retires the 10-entry per-language wrapper map, which was
+    // the fifth copy of a language table in this subsystem and had already
+    // shipped missing pt/pl once (VTID-03644).
+    //
+    // The line's SUBSTANCE is still authoritative: providers ground it in real
+    // data (unread counts, index movement, calendar), so the facts are pinned
+    // verbatim even though the wording is not.
+    const wakeTrigger =
+      `Open the conversation from this prepared lead: "${safe}"\n` +
+      `It is a LEAD, not your whole turn. Deliver the turn in three beats, as ONE continuous piece of speech:\n` +
+      `1. SUBSTANCE — say what is actually going on, not that you are about to. If the lead names something you can already tell them (their messages, their index, their calendar, what changed), tell them the substance of it now, in one or two sentences. Never announce an intention you then do not carry out in this same turn.\n` +
+      `2. NEXT STEP — propose ONE concrete next step yourself. Never ask the user what they want to do, never offer a menu.\n` +
+      `3. CONFIRMATION — close by asking them to confirm that one step, so they can simply say yes.\n` +
+      `Keep every concrete fact from the lead — numbers, names, dates — exactly as given, and invent nothing beyond it. Compose the wording yourself in the user's own language; do not recite the lead word for word and do not reuse phrasing from a previous session. Do not greet the user by name first; go straight into the substance. Then stop and listen.`;
+    // A tapped My Journey topic is NOT a lead to build a proposal on, so it
+    // deliberately does not get the three-beat contract above.
+    //
+    // VTID-03674 removed the old guided-only `guidedTeachTrigger` ("the text
+    // may be in another language — translate it faithfully and completely...")
+    // on live evidence: Nova's content filter blocked a 370-char prompt built
+    // from that wrapper around an ALREADY-short, ALREADY-localized opener
+    // line, so the phrasing itself was the problem. That removal is kept —
+    // nothing here reintroduces it, and the language-name table it needed is
+    // gone with it.
+    //
+    // What guided candidates keep is the plain "say this one line, then stop
+    // and listen" shape 03674 fell back to. Handing them the three-beat
+    // contract instead would tell the model to propose a next step and ask for
+    // confirmation before it has taught anything — precisely the skip-ahead
+    // VTID-03686 had to forbid in the GUIDE-MODE block one day earlier. The
+    // actual teaching happens on turns 2+ from that block; turn 1 only opens.
+    const guidedTrigger =
+      `Open by saying this prepared line, in the user's own language: "${safe}"\n` +
+      `Keep it to ONE short utterance. Do not add a greeting before it, do not add a question after it, and do not turn it into something else. Then stop and listen.`;
+    const wakePrompt = ctx.guidedTopicNarrationContent ? guidedTrigger : wakeTrigger;
     return {
       wakeOpener: 'override_v2',
       directive: wakePrompt,
@@ -608,21 +929,22 @@ function computeNormalLadder(ctx: GreetingDecisionContext): GreetingDecision {
   };
 }
 
+// VTID-03630 — CLAUDE.md NEVER-rule 41: this per-language "pick ONE of:
+// <finished sentence> / <finished sentence>" map is exactly the hardcoded-
+// spoken-sentence shape the rule forbids, and it was live-reachable: any
+// anonymous session that reconnects (ctx.isAnonymous && ctx.reconnectCount >
+// 0) falls through both overrides below and speaks straight from this list —
+// the `de` entry offered "Lass mich dir den nächsten Schritt zeigen." as one
+// of four choices. Replaced with a single English INTENT (composed in the
+// user's own language per the system instruction's language directive) —
+// there is no per-language pool left to pick from.
+const LEGACY_DEFAULT_OPENER_INTENT =
+  'Open with ONE single short spoken phrase that LEADS — propose the next move yourself, never ask the user\'s preference. NEVER use two-part sentences with dashes. Do NOT say "Hello", "Hi", or the user\'s name. Do NOT introduce yourself. If your system instruction\'s OPENING SHAPE MATRIX provides a Proactive Opener Candidate, USE IT. Otherwise compose your own short opener yourself, in your own words — there is no approved phrasing to reproduce and nothing to pick from a list. NEVER ask "How can I help?" or "What would you like?". Vary your wording across sessions; never repeat the exact phrasing from a previous session.';
+
 /** The legacy default greeting prompt (orb-live L8382–8491): anonymous intro,
  *  or the recency-bucket-aware authenticated menu. Verbatim transcription. */
 function buildLegacyGreetingPrompt(ctx: GreetingDecisionContext): string {
-  const greetingPrompts: Record<string, string> = {
-    en: 'Open with ONE single short phrase that LEADS — propose the next move, never ask the user\'s preference. NEVER use two-part sentences with dashes. Do NOT say "Hello", "Hi", or the user\'s name. Do NOT introduce yourself. If your system instruction\'s OPENING SHAPE MATRIX provides a Proactive Opener Candidate, USE IT. Otherwise pick ONE of: "Let me show you where we are." / "Let me show you your next step." / "I am listening." / "Let\'s keep going.". NEVER "How can I help?" / "What would you like?". Vary across sessions.',
-    de: 'Beginne mit EINER einzelnen kurzen Aussage, die FÜHRT — schlage den nächsten Schritt vor, frage nie nach der Vorliebe des Benutzers. NIEMALS zweiteilige Sätze mit Gedankenstrichen. Sage KEIN "Hallo", kein "Hi" und nicht den Namen des Benutzers. Stelle dich NICHT vor. Wenn die OPENING SHAPE MATRIX in deinem System-Prompt einen Proactive Opener Candidate enthält, NUTZE IHN. Ansonsten wähle EINE: "Lass mich dir zeigen, wo wir stehen." / "Lass mich dir den nächsten Schritt zeigen." / "Ich höre dir zu." / "Lass uns weitermachen.". NIEMALS "Womit kann ich helfen?" / "Was möchtest du?". Variiere zwischen Sitzungen.',
-    fr: 'Commence par UNE seule courte phrase qui MÈNE — propose la prochaine étape, ne demande jamais la préférence de l\'utilisateur. JAMAIS de phrases en deux parties avec des tirets. Ne dis PAS "Bonjour" ni le prénom. Ne te présente PAS. Si l\'OPENING SHAPE MATRIX de ton instruction système fournit un Proactive Opener Candidate, UTILISE-LE. Sinon choisis UNE : "Laisse-moi te montrer où nous en sommes." / "Laisse-moi te montrer ta prochaine étape." / "Je t\'écoute." / "On continue.". JAMAIS "En quoi puis-je aider ?" / "Que puis-je faire pour vous ?". Varie entre les sessions.',
-    es: 'Comienza con UNA sola frase corta que LIDERA — propone el siguiente paso, nunca preguntes la preferencia del usuario. NUNCA frases de dos partes con guiones. NO digas "Hola" ni el nombre del usuario. NO te presentes. Si la OPENING SHAPE MATRIX de tu instrucción de sistema ofrece un Proactive Opener Candidate, ÚSALO. Si no, elige UNA: "Déjame mostrarte dónde estamos." / "Déjame mostrarte tu siguiente paso." / "Te escucho." / "Sigamos.". NUNCA "¿En qué puedo ayudar?" / "¿Qué necesitas?". Varía entre sesiones.',
-    ar: 'ابدأ بعبارة واحدة قصيرة تقود — اقترح الخطوة التالية، ولا تسأل المستخدم أبداً عن تفضيله. لا تستخدم جملاً من جزأين. لا تقل "مرحبا" أو اسم المستخدم. لا تقدم نفسك. إذا وفرت OPENING SHAPE MATRIX مرشحاً استباقياً فاستخدمه. وإلا اختر واحدة: "دعني أريك أين وصلنا." / "دعني أريك خطوتك التالية." / "أنا أستمع." / "لنواصل.". أبداً "كيف يمكنني المساعدة؟"',
-    zh: '用一句简短、引导性的话开场——提出下一步，绝不询问用户的偏好。不要使用两部分的句子。不要说"你好"或用户名字。不要自我介绍。如果系统指令的 OPENING SHAPE MATRIX 提供了主动开场候选，请使用它。否则选一个："让我带你看看我们的进展。" / "让我带你看看你的下一步。" / "我在听。" / "我们继续。"。绝不说"有什么我可以帮忙的？"',
-    ru: 'Начни с ОДНОЙ короткой фразы, которая ВЕДЁТ — предложи следующий шаг, никогда не спрашивай предпочтение пользователя. НИКОГДА не используй двухчастные предложения с тире. НЕ говори "Здравствуйте" или имя пользователя. НЕ представляйся. Если OPENING SHAPE MATRIX в системной инструкции даёт Proactive Opener Candidate — ИСПОЛЬЗУЙ ЕГО. Иначе выбери одну: "Давай покажу, где мы остановились." / "Давай покажу твой следующий шаг." / "Я слушаю." / "Продолжаем.". НИКОГДА "Чем могу помочь?" / "Что вас интересует?"',
-    sr: 'Почни са ЈЕДНОМ кратком реченицом која ВОДИ — предложи следећи корак, никад не питај корисника шта жели. НИКАД не користи дводелне реченице са цртама. НЕ говори "Здраво" или име корисника. НЕ представљај се. Ако OPENING SHAPE MATRIX у системској инструкцији нуди Proactive Opener Candidate — КОРИСТИ ГА. Иначе изабери једну: "Да ти покажем докле смо стигли." / "Да ти покажем твој следећи корак." / "Слушам те." / "Настављамо.". НИКАД "Како могу да помогнем?" / "Шта те занима?"',
-  };
-
-  let prompt = greetingPrompts[ctx.lang] || greetingPrompts.en;
+  let prompt = LEGACY_DEFAULT_OPENER_INTENT;
 
   // Anonymous landing-page intro (unless this is a reconnect).
   if (ctx.isAnonymous && !(ctx.reconnectCount > 0)) {
@@ -645,20 +967,37 @@ function buildLegacyGreetingPrompt(ctx: GreetingDecisionContext): string {
       ? ` The user is currently on the "${ctx.currentScreenTitle}" screen.`
       : '';
     const tod = ctx.timeOfDay === 'night' ? 'evening' : ctx.timeOfDay || 'day';
-    const menuList = ctx.menuPhrases.map((p) => `"${p}"`).join(', ');
 
     if (ctx.wasFailure && (ctx.bucket === 'reconnect' || ctx.bucket === 'recent')) {
-      prompt = `Say exactly: "Sorry about that. How can I help?" ONE short phrase only. Do NOT say "Hello" or the user's name.${screenHint}`;
+      // VTID-03556: this "legacy tail apology branch" fires after a failed
+      // previous session (wasFailure is set when the prior session's stop
+      // event shows turn_count=0/audio_out=0 — the Nova Sonic "Premature
+      // close" signature, CLAUDE.md §2e). It used to hardcode an English
+      // literal for the model to "say exactly", bypassing every other
+      // branch's per-`ctx.lang` localization — a German-locale user got an
+      // English apology opener. Localized the same way as `greetingPrompts`
+      // above; each string is already in the user's language.
+      const apologyPrompts: Record<string, string> = {
+        en: 'Say exactly: "Sorry about that. How can I help?" ONE short phrase only. Do NOT say "Hello" or the user\'s name.',
+        de: 'Sag genau: "Entschuldige, da ist etwas schiefgelaufen. Wie kann ich dir helfen?" NUR EIN kurzer Satz. Sag NICHT "Hallo" oder den Namen des Nutzers.',
+        fr: 'Dis exactement : "Désolé pour ça. Comment puis-je t\'aider ?" UNE seule courte phrase. Ne dis PAS "Bonjour" ni le prénom.',
+        es: 'Di exactamente: "Perdona por eso. ¿En qué puedo ayudarte?" SOLO una frase corta. NO digas "Hola" ni el nombre.',
+        ar: 'قل بالضبط: "آسف بخصوص ذلك. كيف يمكنني مساعدتك؟" عبارة واحدة قصيرة فقط. لا تقل "مرحبا" أو اسم المستخدم.',
+        zh: '请准确说："抱歉刚才的问题。我能帮你什么？"只说这一句简短的话。不要说"你好"或用户的名字。',
+        ru: 'Скажи точно: "Извини за это. Чем могу помочь?" ТОЛЬКО одна короткая фраза. НЕ говори "Здравствуйте" или имя пользователя.',
+        sr: 'Реци тачно: "Извини због тога. Како могу да ти помогнем?" САМО једна кратка реченица. НЕ говори "Здраво" или име корисника.',
+      };
+      prompt = `${apologyPrompts[ctx.lang] || apologyPrompts.en}${screenHint}`;
     } else {
       switch (ctx.bucket) {
         case 'reconnect':
-          prompt = `You were JUST talking to the user ${ctx.timeAgo}. Do NOT greet. Do NOT say "Hello" or the user's name. Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM (these are already in the user's language): ${menuList}. Pick a different one than last time. NEVER use two-part sentences.${screenHint}`;
+          prompt = `You were JUST talking to the user ${ctx.timeAgo}. Do NOT greet. Do NOT say "Hello" or the user's name. Open with EXACTLY ONE short spoken phrase. INTENT: ${SHORT_GAP_OPENER_INTENT} NEVER use two-part sentences.${screenHint}`;
           break;
         case 'recent':
-          prompt = `You were just talking to the user ${ctx.timeAgo}. Do NOT use a formal greeting. Do NOT say the user's name. Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM (already in the user's language): ${menuList}. Vary across sessions. NEVER use two-part sentences.${screenHint}`;
+          prompt = `You were just talking to the user ${ctx.timeAgo}. Do NOT use a formal greeting. Do NOT say the user's name. Open with EXACTLY ONE short spoken phrase. INTENT: ${SHORT_GAP_OPENER_INTENT} NEVER use two-part sentences.${screenHint}`;
           break;
         case 'same_day':
-          prompt = `The user was here ${ctx.timeAgo}. Do NOT say the user's name. Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM (already in the user's language): ${menuList}. Vary across sessions. NEVER use two-part sentences.${screenHint}`;
+          prompt = `The user was here ${ctx.timeAgo}. Do NOT say the user's name. Open with EXACTLY ONE short spoken phrase. INTENT: ${SHORT_GAP_OPENER_INTENT} NEVER use two-part sentences.${screenHint}`;
           break;
         case 'today':
           prompt = `The user was here ${ctx.timeAgo} — this is a NEW-DAY greeting. Open with "Good ${tod}, [Name]." using the user's name from your memory context. Then follow per the OPENING SHAPE MATRIX in your system instruction (use the Proactive Opener Candidate if one is provided). Max TWO short sentences if no candidate; longer if the matrix says so.${screenHint}`;

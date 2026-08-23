@@ -11,6 +11,7 @@
  */
 
 import type { GuidedTopicNarrationContent } from '../../../services/assistant-continuation/providers/guided-topic-narration';
+import { LOCALE_ENGLISH_NAME, resolveLocaleStrict } from '../../../i18n/catalog';
 
 /**
  * The SPOKEN opener LINE. CRITICAL transport constraint (same as the journey
@@ -75,17 +76,93 @@ export function buildGuidedTopicSpokenLesson(
 }
 
 /**
- * The GUIDE-MODE TEACH block. Governs turns 2+ (follow-up Q&A about the topic):
- * the lesson itself is spoken on turn 1 via the spoken line (see
- * buildGuidedTopicSpokenLesson); this block tells the model how to handle the
- * conversation AFTER the lesson. Bundled on the candidate, injected on both
- * transports — like the Journey Guide block.
+ * VTID-03650 — the SHORT turn-1 line when the lesson was ALREADY delivered as
+ * pre-recorded Polly audio (see `guided-topic-narration-audio.ts`). Replaces
+ * `buildGuidedTopicSpokenLesson` for this case: the model no longer needs to
+ * (and — per VTID-03647/03648 — reliably cannot be trusted to) say the lesson
+ * itself, so its first turn is a short, safe, natural follow-up instead of the
+ * lesson text. Same literal-line constraint as the other spoken lines in this
+ * file (native-audio needs a short, direct turn to reliably produce audio —
+ * VTID-03293) and the same de/en-only scope as `buildGuidedTopicNarrationOpenerLine`.
+ */
+export function buildGuidedTopicPostNarrationLine(
+  topicTitle: string,
+  lang: string,
+  opts?: { hasPracticeTarget?: boolean },
+): string {
+  const isDe = (lang || 'en').toLowerCase().startsWith('de');
+  if (isDe) {
+    return opts?.hasPracticeTarget
+      ? `So, das war „${topicTitle}". Hast du Fragen dazu, oder sollen wir direkt gemeinsam loslegen?`
+      : `So, das war „${topicTitle}". Hast du Fragen dazu?`;
+  }
+  return opts?.hasPracticeTarget
+    ? `So, that was "${topicTitle}". Any questions about it, or should we jump straight into practicing it together?`
+    : `So, that was "${topicTitle}". Any questions about it?`;
+}
+
+/**
+ * The GUIDE-MODE TEACH block. Governs turns 2+ (follow-up Q&A about the topic).
+ *
+ * VTID-03650: when `content.narrationAudio` is set, the lesson was already
+ * delivered verbatim as pre-recorded Polly audio BEFORE this session's live
+ * model turn ever ran — the raw curriculum text (`voice_script`) must NOT be
+ * re-injected here, because that is exactly the payload VTID-03647/03648
+ * measured Nova and Vertex both independently rejecting. This branch carries
+ * only topic_title/practice_target (safe, short, non-curriculum) so the model
+ * can field follow-up questions and guide to practice without ever seeing the
+ * raw material again.
  */
 export function buildGuidedTopicNarrationBlock(
   content: GuidedTopicNarrationContent,
   lang: string,
 ): string {
   const isDe = (lang || 'en').toLowerCase().startsWith('de');
+
+  if (content.narrationAudio) {
+    return isDe
+      ? [
+          '',
+          '## GUIDE-MODUS (NACH DER LEKTION) — die Lektion wurde bereits per Audio vorgetragen',
+          '',
+          'SPRACHE: Sprich AUSSCHLIESSLICH auf Deutsch. Dieser Modus gilt für die GANZE Sitzung und hat Vorrang vor JEDER generischen Begrüßungs- oder Eröffnungsregel.',
+          '',
+          `Die Lektion zu „${content.topic_title}" wurde der Person GERADE als vorab aufgenommene Audio-Lektion vorgespielt — du hast sie NICHT selbst vorgetragen und musst sie NICHT wiederholen.`,
+          '',
+          'Wichtig, für die GANZE Sitzung:',
+          '- Trage die Lektion nicht erneut vor und fasse sie nicht zusammen, als hättest du sie noch nicht erklärt.',
+          '- Frag nicht „Was möchtest du?" oder „Wie kann ich dir helfen?" — du weißt, worum es gerade ging.',
+          '- Wenn die Person kurz mit „ja", „mach das" oder „okay" antwortet, prüfe zuerst, ob sie noch Rückfragen hat, bevor du zu einer anderen Aktion übergehst.',
+          '',
+          'So führst du:',
+          '- Beantworte Rückfragen zur Lektion natürlich und knapp.',
+          content.practice_target
+            ? `- Wenn die Person bereit ist, FÜHRE sie zur Übung („${content.practice_target}") — biete an, es direkt gemeinsam zu machen.`
+            : '- Wenn die Person bereit ist, schlage einen konkreten nächsten Schritt vor.',
+          '',
+        ].join('\n')
+      : [
+          '',
+          '## GUIDE MODE (POST-LESSON) — the lesson was already narrated via audio',
+          '',
+          `LANGUAGE: Speak ONLY in ${LOCALE_ENGLISH_NAME[resolveLocaleStrict(lang) ?? 'en'] || 'English'}. This mode applies to the WHOLE session and OVERRIDES every generic greeting/opening rule.`,
+          '',
+          `The lesson on "${content.topic_title}" was JUST played to the person as a pre-recorded audio narration — you did NOT narrate it yourself and do NOT need to repeat it.`,
+          '',
+          'Important, for the WHOLE session:',
+          '- Don\'t re-narrate or summarize the lesson as if you hadn\'t already explained it.',
+          '- Don\'t ask "What do you want?" or "How can I help you?" — you KNOW what this was just about.',
+          '- If they respond with a brief "yes", "sure", or "okay", check first whether they have follow-up questions before moving on to anything else.',
+          '',
+          'How to lead:',
+          '- Answer follow-up questions about the lesson naturally and concisely.',
+          content.practice_target
+            ? `- Once they're ready, GUIDE them to the practice ("${content.practice_target}") — offer to do it together right now.`
+            : '- Once they\'re ready, propose a concrete next step.',
+          '',
+        ].join('\n');
+  }
+
   const exp = content.explanation || {
     whatItIs: null,
     userBenefit: null,
@@ -116,9 +193,10 @@ export function buildGuidedTopicNarrationBlock(
       '',
       `Die Person hat in „Meine Reise" das Thema „${content.topic_title}" angetippt, um es von dir erklärt zu bekommen. Stell es vor und LEHRE es — proaktiv, in EIGENEN Worten.`,
       '',
-      'STRENG VERBOTEN — in der GANZEN Sitzung:',
-      '- „Was möchtest du?" / „Wie kann ich dir helfen?" / „Womit fangen wir an?" — du WEISST, worum es geht: dieses Thema.',
-      '- Das Skript Wort für Wort vorlesen. Nutze es als GRUNDLAGE und erkläre es natürlich, im Gespräch.',
+      'Wichtig — für die GANZE Sitzung:',
+      '- Frag nicht „Was möchtest du?" / „Wie kann ich dir helfen?" / „Womit fangen wir an?" — du weißt, worum es geht: dieses Thema.',
+      '- Das Skript nicht vorlesen, Wort für Wort. Nutze es als Grundlage und erkläre es natürlich, im Gespräch.',
+      '- Ein kurzes „ja", „mach das" oder „okay" der Person direkt nach deiner Eröffnungszeile heißt „erklär mir das jetzt" — nicht „spring zum nächsten Schritt". Erkläre zuerst die Kernpunkte aus dem Lehrmaterial unten, in eigenen Worten, bevor du zur Übung überleitest oder etwas anderes vorschlägst.',
       '',
       `THEMA: ${content.topic_title}`,
       'Lehrmaterial (paraphrasieren, NICHT vorlesen):',
@@ -138,7 +216,18 @@ export function buildGuidedTopicNarrationBlock(
   // teaching material below is authored in German (the KB), and the previous
   // vague "speak in the user's language" let the German source pull the model
   // into German for English (and other non-German) users mid-session.
-  const langName = lang === 'es' ? 'Spanish' : lang === 'sr' ? 'Serbian' : lang === 'fr' ? 'French' : 'English';
+  //
+  // VTID-03644: this used to be a local 4-way ternary (es/sr/fr/else-English)
+  // — a 4th undocumented copy of exactly the "language name lives in three
+  // places, a new locale updates some and not others" bug VTID-03509 already
+  // fixed once for the notification catalog (see catalog.ts's own comment on
+  // LOCALE_ENGLISH_NAME). Every locale not in that ternary — pt, ru, pl (all
+  // already GA/beta) and every one of the 9-language rollout's new locales —
+  // was silently told "Speak ONLY in English" here. Reuse the shared registry
+  // instead of re-declaring it a 4th time.
+  // resolveLocaleStrict (not normalizeLocale) so an empty/unrecognized `lang`
+  // keeps the previous fallback to English rather than silently becoming German.
+  const langName = LOCALE_ENGLISH_NAME[resolveLocaleStrict(lang) ?? 'en'] || 'English';
   return [
     '',
     '## GUIDE MODE (TEACH) — you INTRODUCE this topic and TEACH it',
@@ -147,9 +236,10 @@ export function buildGuidedTopicNarrationBlock(
     '',
     `The person tapped the topic "${content.topic_title}" in "My Journey" to have you explain it. Introduce it and TEACH it — proactively, in your OWN words.`,
     '',
-    'STRICTLY FORBIDDEN — for the WHOLE session:',
-    '- "What do you want?" / "How can I help you?" / "Where should we start?" — you KNOW what this is about: this topic.',
-    '- Reading the script word-for-word. Use it as the BASIS and explain it naturally, conversationally.',
+    'Important — for the WHOLE session:',
+    '- Don\'t ask "What do you want?" / "How can I help you?" / "Where should we start?" — you know what this is about: this topic.',
+    '- Don\'t read the script word-for-word. Use it as the basis and explain it naturally, conversationally.',
+    '- A brief "yes", "sure", or "okay" from the person right after your opening line means "explain it to me now" — not "skip to the next step". Explain the core points from the teaching material below, in your own words, before moving on to practice or anything else.',
     '',
     `TOPIC: ${content.topic_title}`,
     'Teaching material (paraphrase, do NOT read aloud):',

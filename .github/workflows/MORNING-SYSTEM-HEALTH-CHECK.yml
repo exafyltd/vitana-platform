@@ -1,14 +1,56 @@
 name: Morning System Health Check
 
-# BOOTSTRAP-FAILING-ROUTINES-ANALYSIS — single daily 07:00 CET roll-up of the
-# 15 functions judged most load-bearing for Vitanaland (the platform) and
-# Maxina (the community app). Existing scheduled workflows already cover
-# individual slices (VCAOP-HEALTH, SMOKE-WELCOME-GREETING,
-# ALERT-WELCOME-GREETING-HEALTH, E2E-ORB-MONITOR, SCREEN-LOAD-TIMING, ...) —
-# this does NOT replace them. It (a) gives a human ONE place to read every
-# morning instead of hunting across ~25 cron workflows, and (b) closes the
-# gap that let 4 of those workflows fail on every single run for days
-# without anyone noticing (see check #15 below).
+# BOOTSTRAP-FAILING-ROUTINES-ANALYSIS, rebuilt under VTID-03666 for the AWS +
+# Aurora era. Single daily 07:00 CET roll-up of the functions judged most
+# load-bearing for Vitanaland (the platform) and Maxina (the community app).
+# Existing scheduled workflows already cover individual slices (VCAOP-HEALTH,
+# SMOKE-WELCOME-GREETING, ALERT-WELCOME-GREETING-HEALTH, ALERT-OASIS-LEDGER-
+# INTEGRITY, ALERT-ORB-SESSION-STATE-HEALTH, ALERT-ORB-BOOTSTRAP-LATENCY,
+# E2E-ORB-MONITOR, SCREEN-LOAD-TIMING, ...) — this does NOT replace them. It
+# (a) gives a human ONE place to read every morning instead of hunting across
+# ~25 cron workflows, and (b) closes the gap that let 4 of those workflows
+# fail on every single run for days without anyone noticing (see the
+# self-audit check below).
+#
+# VTID-03666 REBUILD — why this needed doing now:
+#
+# 1. Check "Maxina STAGING reachability" pointed at `preview.vitanaland.com`,
+#    which is DEAD (GCP billing was deliberately disabled — VTID-03508 —
+#    and that Cloud Run host now 500s permanently; vitana-v1/CLAUDE.md has
+#    documented this since). The live AWS staging frontend is
+#    `preview-aws.vitanaland.com` and has been since VTID-03409/AWS-STAGE-
+#    DEPLOY-FRONTEND.yml went live. This was reporting a real outage of a
+#    service that no longer exists, every single morning.
+# 2. gateway/community-app moved to AWS as SOLE production under VTID-03419
+#    (2026-07-27) — the URLs below already reflected that, but nothing here
+#    checked the two regression guards built for AWS-cutover-era incidents
+#    that were each silent for weeks (VTID-03480 orb_session_state,
+#    VTID-03516 false ledger terminalizations) until someone happened to go
+#    looking. Both already have their own daily ALERT workflow AND their own
+#    RPC — reused here, not rebuilt (CLAUDE.md ALWAYS 9).
+# 3. CLAUDE.md's standing rule (VTID-03563, 2026-08-10): Claude runs on AWS
+#    Bedrock, ALWAYS, never the direct Anthropic API — because that API has
+#    no credit balance and every call to it SILENTLY falls back to Google.
+#    That stayed hidden for months because the routing *table* read "on
+#    Claude" while completion *telemetry* told a different story. Nothing in
+#    this check asked the telemetry. Now it does.
+# 4. The 8-language DB-content release (VTID-03515/03580) went live
+#    18 Aug 2026 — the same day this rebuild happened. `supported_locales`
+#    can say a language is `status='ga'` while its rows in
+#    `journey_checklist_translations` / `nav_catalog_i18n` are partial or
+#    zero, which renders as German content inside an otherwise fully
+#    translated UI with no error anywhere (this exact failure already
+#    happened once, silently, to es/sr/fr — VTID-03519's own finding).
+#    Given how much of this cycle's work was language coverage, that gap
+#    was the least defensible one to leave unmonitored.
+# 5. Nova Sonic (ORB voice) has no health check anywhere in this workflow
+#    despite being promoted to 100% of sessions (VTID-03560) and having a
+#    documented ~10% "Premature close" failure rate with a Vertex fallback
+#    that mitigates but does not fix it (§2e). Its own health endpoint
+#    already exists and is public; nothing was reading it on a schedule.
+# 6. The VTID-03506 notification test-actor guard (the fix for the incident
+#    where a test account's writes became 960 notifications / 600 pushes to
+#    real members) had no regression check confirming it stays installed.
 #
 # Design: every check runs to completion regardless of earlier failures
 # (never `set -e` across the whole job) and appends a PASS/FAIL row to
@@ -33,11 +75,19 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  GATEWAY_URL: https://gateway-q74ibpv6ia-uc.a.run.app
-  STAGING_GATEWAY_URL: https://gateway-staging-q74ibpv6ia-uc.a.run.app
+  # VTID-03598: gateway + gateway-staging moved to AWS ECS/ALB. Production
+  # is sole-AWS since the VTID-03419 cutover (gateway.vitanaland.com); the
+  # old GCP Cloud Run URLs were scaled to min-instances=0 as rollback
+  # targets only (VTID-03508) and no longer answer these checks.
+  GATEWAY_URL: https://gateway.vitanaland.com
+  STAGING_GATEWAY_URL: https://preview-aws-gateway.vitanaland.com
   COMMUNITY_PROD_URL: https://vitanaland.com
-  COMMUNITY_STAGING_URL: https://preview.vitanaland.com
+  # VTID-03666: was preview.vitanaland.com — that Cloud Run host has been
+  # dead (permanent HTTP 500) since GCP billing was deliberately disabled
+  # (VTID-03508). Staging frontend is AWS ECS via AWS-STAGE-DEPLOY-FRONTEND.yml.
+  COMMUNITY_STAGING_URL: https://preview-aws.vitanaland.com
   REPORT: /tmp/morning-report.md
+  TOTAL_CHECKS: 21
 
 jobs:
   morning-check:
@@ -56,7 +106,7 @@ jobs:
           echo "| # | Check | Result | Detail |" > "$REPORT"
           echo "|---|-------|--------|--------|" >> "$REPORT"
 
-      # 1 — Gateway PROD /alive
+      # 1 — Gateway PROD /alive (AWS ECS vitana-gateway-awsdr, sole prod since VTID-03419)
       - name: '1. Gateway PROD /alive'
         run: |
           CODE=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "$GATEWAY_URL/alive" || echo 000)
@@ -70,7 +120,7 @@ jobs:
           if [ "$CODE" = "200" ]; then R=PASS; else R=FAIL; fi
           echo "| 2 | Gateway PROD /health | $R | HTTP $CODE |" >> "$REPORT"
 
-      # 3 — Gateway STAGING /alive (primary post-cutover deploy target)
+      # 3 — Gateway STAGING /alive (AWS ECS vitana-gateway, primary deploy target)
       - name: '3. Gateway STAGING /alive'
         run: |
           CODE=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "$STAGING_GATEWAY_URL/alive" || echo 000)
@@ -100,15 +150,15 @@ jobs:
           fi
           echo "| 4 | Staging deploy freshness | $R | $D |" >> "$REPORT"
 
-      # 5 — Supabase Postgres reachability
-      # VTID-03492: steps 5-9 were five separate `psql "$SUPABASE_DB_URL"`
-      # calls. That transport cannot connect from GitHub Actions — the Supabase
-      # project has a network allow-list and runner IPs are not on it, so every
-      # one of these five rows had been reporting a connection error rather than
-      # a real health verdict. They now come from two PostgREST RPCs over HTTPS
-      # (a separate edge service, not subject to the DB allow-list) in a single
-      # step. Same five report rows, same pass/fail semantics.
-      - name: '5-9. Database health (reachability, VTID claims, OASIS, greeting trigger)'
+      # 5-9 — Database health (reachability, VTID claims, OASIS, greeting trigger)
+      # VTID-03492: these five report rows come from two PostgREST RPCs over
+      # HTTPS (a separate edge service, not subject to the Supabase DB
+      # network allow-list that blocks GitHub runner IPs from `psql`).
+      #
+      # 10-12 — AI-provider governance + DB-content locale coverage +
+      # notification safety guard (VTID-03666, new). Same RPC pattern, one
+      # additional round trip, six more report rows.
+      - name: '5-12. Database + governance health (RPCs)'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
@@ -124,6 +174,7 @@ jobs:
 
           SYS_HTTP=$(rpc ci_system_health sys.json)
           GRT_HTTP=$(rpc ci_welcome_greeting_health grt.json)
+          VITAL_HTTP=$(rpc ci_vital_systems_health vital.json)
 
           # 5 — reachability. A 200 from the RPC proves the database answered.
           if [ "$SYS_HTTP" = "200" ] && [ "$(jq -r '.db_ok' sys.json 2>/dev/null)" = "true" ]; then
@@ -174,8 +225,68 @@ jobs:
             echo "| 9 | Welcome-greeting trigger (behavioral) | FAIL | query error (HTTP $GRT_HTTP) |" >> "$REPORT"
           fi
 
-      # 10 — ORB Live voice: health + session-start smoke
-      - name: '10. ORB Live voice — health + session start'
+          # 10 — AI provider governance: no stage may route Claude at the
+          # direct Anthropic API (CLAUDE.md ALWAYS 10a/10b, VTID-03563), and
+          # no stage may be pointed at vertex/Gemini AT ALL (IF-THEN 27 is
+          # absolute — the only sanctioned Google dependency is ORB voice's
+          # own Nova->Vertex fallback, which lives outside llm_routing_policy
+          # entirely and cannot appear in either signal checked here). That
+          # anthropic account has no credit balance; every call silently
+          # falls back to Google, which is how this stayed hidden for months
+          # last time.
+          if [ "$VITAL_HTTP" != "200" ]; then
+            echo "| 10 | AI provider governance (Bedrock-only routing) | FAIL | RPC HTTP $VITAL_HTTP $(head -c 120 vital.json 2>/dev/null) |" >> "$REPORT"
+          else
+            BAD_STAGES=$(jq -c '.llm_stages_on_forbidden_provider' vital.json 2>/dev/null)
+            BAD_COUNT=$(echo "$BAD_STAGES" | jq 'length' 2>/dev/null)
+            CREDIT_FAILS=$(jq -r '.llm_anthropic_credit_failures_24h' vital.json 2>/dev/null)
+            BEDROCK_OK=$(jq -r '.llm_bedrock_completions_24h' vital.json 2>/dev/null)
+            VERTEX_N=$(jq -r '.llm_vertex_completions_24h' vital.json 2>/dev/null)
+            if [ "$BAD_COUNT" = "0" ] && [ "$CREDIT_FAILS" = "0" ] && [ "$VERTEX_N" = "0" ]; then
+              echo "| 10 | AI provider governance (Bedrock-only routing) | PASS | 0 stages on anthropic/vertex, 0 credit-balance failures/24h, 0 vertex completions/24h, $BEDROCK_OK bedrock completions/24h |" >> "$REPORT"
+            else
+              echo "| 10 | AI provider governance (Bedrock-only routing) | FAIL | forbidden-provider stages: $BAD_STAGES; anthropic credit-balance failures/24h: $CREDIT_FAILS; vertex completions/24h: $VERTEX_N |" >> "$REPORT"
+            fi
+          fi
+
+          # 11 — DB-content locale coverage (VTID-03515/03580 8-language
+          # release, live 18 Aug 2026). A locale can be `status='ga'` in the
+          # picker while its journey_checklist_translations / nav_catalog_i18n
+          # rows are partial or zero — that renders German inside an
+          # otherwise translated UI with no error anywhere (already happened
+          # once to es/sr/fr — VTID-03519).
+          if [ "$VITAL_HTTP" != "200" ]; then
+            echo "| 11 | DB-content locale coverage (GA languages) | FAIL | RPC HTTP $VITAL_HTTP |" >> "$REPORT"
+          else
+            GA_N=$(jq -r '.locales_ga' vital.json 2>/dev/null)
+            JCT_BAD=$(jq -c '.journey_checklist_incomplete_ga_locales' vital.json 2>/dev/null)
+            NAV_BAD=$(jq -c '.nav_catalog_incomplete_ga_locales' vital.json 2>/dev/null)
+            JCT_BAD_N=$(echo "$JCT_BAD" | jq 'length' 2>/dev/null)
+            NAV_BAD_N=$(echo "$NAV_BAD" | jq 'length' 2>/dev/null)
+            if [ "$JCT_BAD_N" = "0" ] && [ "$NAV_BAD_N" = "0" ]; then
+              echo "| 11 | DB-content locale coverage (GA languages) | PASS | $GA_N GA locale(s), My Journey + Navigator at full parity |" >> "$REPORT"
+            else
+              echo "| 11 | DB-content locale coverage (GA languages) | FAIL | My Journey short: $JCT_BAD; Navigator short: $NAV_BAD |" >> "$REPORT"
+            fi
+          fi
+
+          # 12 — Notification test-actor safety guard (VTID-03506). The
+          # regression guard for the incident where a test account's writes
+          # became 960 notifications / 600 pushes to real members.
+          if [ "$VITAL_HTTP" != "200" ]; then
+            echo "| 12 | Notification test-actor safety guard | FAIL | RPC HTTP $VITAL_HTTP |" >> "$REPORT"
+          else
+            GUARD_PRESENT=$(jq -r '.notif_test_actor_guard_present' vital.json 2>/dev/null)
+            TRIGGER_ENABLED=$(jq -r '.notif_test_actor_trigger_enabled' vital.json 2>/dev/null)
+            if [ "$GUARD_PRESENT" = "true" ] && [ "$TRIGGER_ENABLED" = "true" ]; then
+              echo "| 12 | Notification test-actor safety guard | PASS | guard fn present, sink trigger enabled |" >> "$REPORT"
+            else
+              echo "| 12 | Notification test-actor safety guard | FAIL | fn_present=$GUARD_PRESENT trigger_enabled=$TRIGGER_ENABLED (VTID-03506 regression) |" >> "$REPORT"
+            fi
+          fi
+
+      # 13 — ORB Live voice: health + session-start smoke (Vertex/default transport)
+      - name: '13. ORB Live voice — health + session start'
         env:
           SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
         run: |
@@ -187,30 +298,116 @@ jobs:
           else
             R=FAIL; D="health=$HCODE, session-start content-type='$CT' (html = route missing/deploy drift)"
           fi
-          echo "| 10 | ORB Live voice | $R | $D |" >> "$REPORT"
+          echo "| 13 | ORB Live voice | $R | $D |" >> "$REPORT"
 
-      # 11 — Live Rooms (Go Live) health
-      - name: '11. Live Rooms health'
+      # 14 — Nova Sonic voice health (VTID-03501/03560: promoted to 100% of
+      # sessions). Public, secret-free config-health endpoint — credentials
+      # live in the ECS task role, nothing to leak. `ready` folds in both
+      # `enabled` and an empty `issues` list; reported separately so a config
+      # issue (e.g. BEDROCK-style unconfigured gate) is legible at a glance
+      # instead of just "not ready".
+      - name: '14. Nova Sonic voice health'
+        run: |
+          set +e
+          BODY=$(curl -sS --max-time 10 "$GATEWAY_URL/api/v1/orb/nova-sonic/health")
+          READY=$(echo "$BODY" | jq -r '.ready' 2>/dev/null)
+          ISSUES=$(echo "$BODY" | jq -c '.issues' 2>/dev/null)
+          GLOBAL=$(echo "$BODY" | jq -r '.global_enabled' 2>/dev/null)
+          if [ "$READY" = "true" ]; then
+            R=PASS; D="ready, global_enabled=$GLOBAL (mitigated ~10% premature-close rate — see CLAUDE.md §2e, not caught here)"
+          else
+            R=FAIL; D="not ready, issues=$ISSUES"
+          fi
+          echo "| 14 | Nova Sonic voice health | $R | $D |" >> "$REPORT"
+
+      # 15 — Live Rooms (Go Live) health
+      - name: '15. Live Rooms health'
         run: |
           CODE=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "$GATEWAY_URL/api/v1/live/health" || echo 000)
           if [ "$CODE" = "200" ]; then R=PASS; else R=FAIL; fi
-          echo "| 11 | Live Rooms health | $R | HTTP $CODE |" >> "$REPORT"
+          echo "| 15 | Live Rooms health | $R | HTTP $CODE |" >> "$REPORT"
 
-      # 12 — Maxina (community app) PROD reachability
-      - name: '12. Maxina PROD reachability'
+      # 16 — ORB session-state regression guard (VTID-03480: the
+      # orb_session_state table was authored but never applied to production
+      # for ~2 months, and because every helper fails soft, nothing surfaced
+      # it — four ORB features silently inert the whole time). Reuses the
+      # existing RPC from ALERT-ORB-SESSION-STATE-HEALTH.yml rather than
+      # duplicating the check (CLAUDE.md ALWAYS 9).
+      - name: '16. ORB session-state health (VTID-03480 regression guard)'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+        run: |
+          set +e
+          HTTP=$(curl -sS -o osh.json -w '%{http_code}' \
+            -X POST "${SUPABASE_URL%/}/rest/v1/rpc/ci_orb_session_state_health" \
+            -H "apikey: $SUPABASE_SERVICE_ROLE" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE" \
+            -H 'Content-Type: application/json' -d '{}')
+          if [ "$HTTP" != "200" ]; then
+            echo "| 16 | ORB session-state health | FAIL | RPC HTTP $HTTP (if 404, apply 20260804080000_vtid_03486_ci_health_rpcs.sql) |" >> "$REPORT"
+          else
+            EXISTS_=$(jq -r '.table_exists' osh.json 2>/dev/null)
+            STARTS=$(jq -r '.session_starts_24h' osh.json 2>/dev/null)
+            ACKS=$(jq -r '.acks_24h' osh.json 2>/dev/null)
+            ACKS_FAILED=$(jq -r '.acks_failed_24h' osh.json 2>/dev/null)
+            if [ "$EXISTS_" != "true" ]; then
+              echo "| 16 | ORB session-state health | FAIL | orb_session_state relation MISSING — VTID-03480 signature |" >> "$REPORT"
+            elif [[ "$STARTS" =~ ^[0-9]+$ ]] && [ "$STARTS" -gt 0 ] && [ "$ACKS" = "0" ]; then
+              echo "| 16 | ORB session-state health | FAIL | $STARTS session start(s)/24h but 0 audio-ready acks — handshake likely dead |" >> "$REPORT"
+            else
+              echo "| 16 | ORB session-state health | PASS | table present, $ACKS ack(s)/24h ($ACKS_FAILED failed) |" >> "$REPORT"
+            fi
+          fi
+
+      # 17 — OASIS ledger integrity regression guard (VTID-03516: the
+      # autonomous plane's worker-runner claimed and false-failed 24+ VTIDs
+      # that were actually session work, for six days, because its
+      # eligibility predicate matched exactly what CLAUDE.md §4.1 tells every
+      # session to write onto its own VTID). Reuses the existing RPC from
+      # ALERT-OASIS-LEDGER-INTEGRITY.yml.
+      - name: '17. OASIS ledger integrity (VTID-03516 regression guard)'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+        run: |
+          set +e
+          HTTP=$(curl -sS -o findings.json -w '%{http_code}' \
+            -X POST "${SUPABASE_URL%/}/rest/v1/rpc/ci_ledger_integrity_check" \
+            -H "apikey: $SUPABASE_SERVICE_ROLE" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE" \
+            -H 'Content-Type: application/json' \
+            -d '{"p_lookback_days": 3}')
+          if [ "$HTTP" != "200" ]; then
+            echo "| 17 | OASIS ledger integrity | FAIL | RPC HTTP $HTTP (if 404, apply 20260806160000_vtid_03516_ledger_integrity_check.sql) |" >> "$REPORT"
+          else
+            COUNT=$(jq 'length' findings.json 2>/dev/null)
+            if [ "$COUNT" = "0" ]; then
+              echo "| 17 | OASIS ledger integrity | PASS | 0 false failures (3d lookback) |" >> "$REPORT"
+            else
+              VTIDS=$(jq -r '[.[].vtid] | join(", ")' findings.json 2>/dev/null)
+              echo "| 17 | OASIS ledger integrity | FAIL | $COUNT false failure(s): $VTIDS — see ALERT-OASIS-LEDGER-INTEGRITY.yml |" >> "$REPORT"
+            fi
+          fi
+
+      # 18 — Maxina (community app) PROD reachability (AWS ECS
+      # vitana-community-app-awsdr, apex + www since VTID-03419)
+      - name: '18. Maxina PROD reachability'
         run: |
           CODE=$(curl -sSL -o /dev/null -w '%{http_code}' --max-time 15 "$COMMUNITY_PROD_URL" || echo 000)
           if [ "$CODE" = "200" ]; then R=PASS; else R=FAIL; fi
-          echo "| 12 | Maxina PROD reachability | $R | HTTP $CODE |" >> "$REPORT"
+          echo "| 18 | Maxina PROD reachability | $R | HTTP $CODE |" >> "$REPORT"
 
-      # 13 — Maxina (community app) STAGING reachability
-      - name: '13. Maxina STAGING reachability'
+      # 19 — Maxina (community app) STAGING reachability. VTID-03666: URL
+      # fixed from the dead preview.vitanaland.com (GCP, billing off,
+      # permanent 500) to preview-aws.vitanaland.com (AWS ECS, live).
+      - name: '19. Maxina STAGING reachability'
         run: |
           CODE=$(curl -sSL -o /dev/null -w '%{http_code}' --max-time 15 "$COMMUNITY_STAGING_URL" || echo 000)
           if [ "$CODE" = "200" ]; then R=PASS; else R=FAIL; fi
-          echo "| 13 | Maxina STAGING reachability | $R | HTTP $CODE |" >> "$REPORT"
+          echo "| 19 | Maxina STAGING reachability | $R | HTTP $CODE |" >> "$REPORT"
 
-      # 14 — Screen Load Timing spot-check (reuses the e2e spec that already
+      # 20 — Screen Load Timing spot-check (reuses the e2e spec that already
       # feeds Command Hub's Overview grid)
       - uses: actions/setup-node@v4
         with:
@@ -221,11 +418,11 @@ jobs:
       - name: Install Playwright chromium
         working-directory: e2e
         run: npx playwright install chromium --with-deps
-      - name: '14. Screen Load Timing spot-check'
+      - name: '20. Screen Load Timing spot-check'
         working-directory: e2e
         env:
           COMMUNITY_URL: https://vitanaland.com
-          GATEWAY_URL: https://gateway-q74ibpv6ia-uc.a.run.app
+          GATEWAY_URL: https://gateway.vitanaland.com
           SCREEN_LOAD_ENV: production
           SCREEN_LOAD_RUN_ID: morning-health-${{ github.run_id }}
           TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
@@ -236,12 +433,29 @@ jobs:
           set +e
           npx playwright test --project=mobile-shared screen-load-timing.spec.ts
           if [ $? -eq 0 ]; then R=PASS; D="within threshold"; else R=FAIL; D="see e2e/playwright-report"; fi
-          echo "| 14 | Screen Load Timing spot-check | $R | $D |" >> "$REPORT"
+          echo "| 20 | Screen Load Timing spot-check | $R | $D |" >> "$REPORT"
 
-      # 15 — Scheduled-workflow self-audit: catches exactly the failure mode
-      # that motivated this workflow (4 crons quietly failing every run for
+      # 21 — Scheduled-workflow self-audit: catches exactly the failure mode
+      # that motivated this workflow (crons quietly failing every run for
       # days with nobody noticing).
-      - name: '15. Scheduled-workflow self-audit'
+      #
+      # VTID-03615: this workflow used to watch its OWN filename via the
+      # GitHub API ("did my last completed run fail?"). That is a
+      # self-referential trap — TODAY's run cannot know its own conclusion
+      # yet (it hasn't finished), so the API always answers with YESTERDAY's
+      # run. Any single real failure (in checks 1-20, or in a past run of
+      # this very step) then makes every FUTURE day's self-audit report FAIL
+      # too, because each failing self-audit becomes the next day's "latest
+      # completed run" — a loop that never self-heals even after every real
+      # issue is fixed. Confirmed live 2026-08-12: this workflow kept
+      # reporting itself FAIL a full day after the 4 originally-broken crons
+      # were fixed. Fix: judge THIS run's own health from the checks already
+      # written to $REPORT (1-20) instead of asking GitHub about a past run.
+      #
+      # VTID-03666: watchlist extended with the three newer ALERT-*.yml
+      # workflows that did not exist when this list was first written —
+      # leaving them off defeats the exact purpose of this self-audit.
+      - name: '21. Scheduled-workflow self-audit'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -253,7 +467,9 @@ jobs:
             "DAILY-STATUS-UPDATE.yml"
             "VCAOP-HEALTH.yml"
             "ALERT-WELCOME-GREETING-HEALTH.yml"
-            "MORNING-SYSTEM-HEALTH-CHECK.yml"
+            "ALERT-OASIS-LEDGER-INTEGRITY.yml"
+            "ALERT-ORB-SESSION-STATE-HEALTH.yml"
+            "ALERT-ORB-BOOTSTRAP-LATENCY.yml"
           )
           BAD=""
           for WF in "${WATCHLIST[@]}"; do
@@ -265,12 +481,18 @@ jobs:
               BAD="$BAD $WF"
             fi
           done
-          if [ -z "$BAD" ]; then
-            R=PASS; D="all ${#WATCHLIST[@]} watched crons green on last run"
-          else
-            R=FAIL; D="latest run failed for:$BAD"
+          # Self: judged from THIS run's own checks 1-20, not a past run.
+          SELF_FAILS=$(grep -c '| FAIL |' "$REPORT" || true)
+          if [ "$SELF_FAILS" -gt 0 ]; then
+            BAD="$BAD MORNING-SYSTEM-HEALTH-CHECK.yml(self:${SELF_FAILS}/$((TOTAL_CHECKS - 1))_checks_failed_today)"
           fi
-          echo "| 15 | Scheduled-workflow self-audit | $R | $D |" >> "$REPORT"
+          TOTAL=$((${#WATCHLIST[@]} + 1))
+          if [ -z "$BAD" ]; then
+            R=PASS; D="all $TOTAL watched crons green (${#WATCHLIST[@]} on last run + self on today's checks)"
+          else
+            R=FAIL; D="failing:$BAD"
+          fi
+          echo "| 21 | Scheduled-workflow self-audit | $R | $D |" >> "$REPORT"
 
       - name: Publish + gate
         if: always()
@@ -280,9 +502,9 @@ jobs:
           cat "$REPORT" >> "$GITHUB_STEP_SUMMARY"
           FAILS=$(grep -c '| FAIL |' "$REPORT" || true)
           if [ "$FAILS" -gt 0 ]; then
-            echo "::error::$FAILS/15 morning checks FAILED — see step summary"
+            echo "::error::$FAILS/$TOTAL_CHECKS morning checks FAILED — see step summary"
             if [ -n "${WEBHOOK_URL:-}" ]; then
-              TEXT="*Morning Health Check: $FAILS/15 FAILED*"
+              TEXT="*Morning Health Check: $FAILS/$TOTAL_CHECKS FAILED*"
               while IFS= read -r line; do
                 TEXT="$TEXT
           $line"
@@ -292,4 +514,4 @@ jobs:
             fi
             exit 1
           fi
-          echo "All 15 morning checks passed."
+          echo "All $TOTAL_CHECKS morning checks passed — every vital Vitanaland/Maxina system (gateway AWS prod+staging, Supabase, ORB voice on both Vertex and Nova Sonic, Live Rooms, AI-provider governance, DB-content language coverage, the community frontend, and the crons that watch all of the above) is green."

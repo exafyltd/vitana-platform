@@ -212,7 +212,10 @@ async function buildBedrockClient(config: NovaSonicConfig): Promise<NovaBedrockL
   return new BedrockRuntimeClient({
     region: config.region,
     requestHandler: new NodeHttp2Handler({
-      requestTimeout: config.connectTimeoutMs,
+      // VTID-03557: was `config.connectTimeoutMs` (15s) — a connect-scoped
+      // value repurposed as this stream's whole-lifetime idle bound (see
+      // nova-sonic-config.ts's DEFAULT_STREAM_INACTIVITY_TIMEOUT_MS comment).
+      requestTimeout: config.streamInactivityTimeoutMs,
       sessionTimeout: 480_000,
     }),
   }) as unknown as NovaBedrockLike;

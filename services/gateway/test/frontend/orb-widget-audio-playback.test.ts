@@ -35,3 +35,33 @@ describe('orb-widget audio playback queue', () => {
     expect(processQueueBody).not.toMatch(/var\s+endedSrc\s*=\s*src;/);
   });
 });
+
+describe('orb-widget German playback rate (VTID-03606)', () => {
+  const source = fs.readFileSync(WIDGET_PATH, 'utf8');
+
+  it('defines a German-specific rate above the baseline', () => {
+    expect(source).toMatch(/var\s+_AUDIO_PLAYBACK_RATE\s*=\s*1\.05\s*;/);
+    expect(source).toMatch(/var\s+_AUDIO_PLAYBACK_RATE_DE\s*=\s*1\.1\s*;/);
+  });
+
+  it('_currentPlaybackRate() selects the DE rate only when _cfg.lang starts with de', () => {
+    const body = extractFunctionBody(source, 'function _currentPlaybackRate()');
+    expect(body).toMatch(
+      /_cfg\.lang\s*&&\s*_cfg\.lang\.startsWith\(\s*['"]de['"]\s*\)\s*\)[\s\S]*\?\s*_AUDIO_PLAYBACK_RATE_DE[\s\S]*:\s*_AUDIO_PLAYBACK_RATE/,
+    );
+  });
+
+  it('_processQueue applies the SAME per-chunk rate to both playbackRate.value and the schedule-gap divisor', () => {
+    // Regression guard: if a future edit reads _currentPlaybackRate() (or the
+    // raw constants) independently at the two use sites instead of sharing
+    // one `chunkRate` snapshot, DE and non-DE chunks can be scheduled at one
+    // rate and played at another, drifting or gapping consecutive chunks.
+    const processQueueBody = extractFunctionBody(source, 'function _processQueue()');
+    expect(processQueueBody).toMatch(/var\s+chunkRate\s*=\s*_currentPlaybackRate\(\)\s*;/);
+    expect(processQueueBody).toMatch(/src\.playbackRate\.value\s*=\s*chunkRate\s*;/);
+    expect(processQueueBody).toMatch(/_s\.lastScheduledEnd\s*\+=\s*buf\.duration\s*\/\s*chunkRate\s*;/);
+    // Neither assignment should fall back to the old flat global.
+    expect(processQueueBody).not.toMatch(/playbackRate\.value\s*=\s*_AUDIO_PLAYBACK_RATE\s*;/);
+    expect(processQueueBody).not.toMatch(/buf\.duration\s*\/\s*_AUDIO_PLAYBACK_RATE\s*;/);
+  });
+});

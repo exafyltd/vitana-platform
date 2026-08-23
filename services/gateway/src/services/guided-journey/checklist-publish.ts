@@ -14,6 +14,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { ChecklistValidationResult, ChecklistVersion } from '../../types/journey-checklist';
 import { listTopics, toSnapshotTopic } from './checklist-service';
 import { validateChecklist } from './checklist-validator';
+import { notifyDbI18nSourceChanged } from '../db-i18n/notify-source-changed';
 
 const V = 'journey_checklist_versions';
 const A = 'journey_checklist_audit';
@@ -111,6 +112,15 @@ export async function publishChecklist(
     version_id: version.id,
     detail: `Published ${version.topicCount} topics across ${version.sessionCount} sessions`,
   });
+
+  // VTID-03522: a publish changes the German source every other language is
+  // translated FROM, and nothing about it produces a git push, so CI would
+  // otherwise not learn of it until the nightly cron. Deliberately not awaited
+  // and deliberately unable to throw — the admin's publish has already
+  // succeeded at this point, and a GitHub outage must not turn that into an
+  // error response for work that is durably committed.
+  void notifyDbI18nSourceChanged('journey-checklist', `publish:${version.versionLabel}`);
+
   return { version, validation };
 }
 
@@ -152,5 +162,13 @@ export async function rollbackChecklist(
     version_id: versionId,
     detail: `Rolled current pointer back to version ${versionId}`,
   });
+
+  // VTID-03522: a rollback is a source change too, and an easy one to miss.
+  // The German text users see reverts to the older snapshot, so every stored
+  // translation is now derived from text that is no longer current — the same
+  // staleness as a forward publish, in the opposite direction. source_sha
+  // catches it either way, but only if something tells the seeder to look.
+  void notifyDbI18nSourceChanged('journey-checklist', `rollback:${versionId}`);
+
   return rowToVersion(updated.data);
 }
