@@ -25,6 +25,13 @@
  * `global_community_profiles` (generic, not marketplace-owned — those stay
  * inline in the route, same as other B1 seams leave shared/general tables
  * alone rather than claiming them for a single-domain repository).
+ *
+ * Extended (still VTID-03702) to also cover routes/admin-community-
+ * marketplace.ts — the admin review-queue router for these same tables.
+ * Its embedded-join reads (profiles/community_listings via `!inner`-less
+ * foreign-table select) and unfiltered-columns update shapes differ from
+ * the seller/buyer router's, so they get their own named functions rather
+ * than reusing fetchListings/updateListing etc.
  */
 
 import { getSupabase } from '../../lib/supabase';
@@ -297,4 +304,115 @@ export async function countActiveReports(supabase: Supabase, listingId: string) 
     .select('id', { count: 'exact', head: true })
     .eq('listing_id', listingId)
     .neq('status', 'dismissed');
+}
+
+// ==================== Admin review queue (admin-community-marketplace.ts) ====================
+
+export interface AdminListingsQueueFilters {
+  tenantId: string | null;
+  requiresAdminReview?: boolean;
+  status?: string;
+  category?: string;
+  listingKind?: string;
+  search?: string;
+  offset: number;
+  limit: number;
+}
+
+export async function fetchAdminListingsQueue(supabase: Supabase, f: AdminListingsQueueFilters) {
+  let q = supabase!
+    .from('community_listings')
+    .select(
+      'id, seller_user_id, listing_kind, condition, category, subcategory, title, description, images, ' +
+        'price_cents, currency, price_on_request, status, auto_check_result, auto_check_reasons, ' +
+        'requires_admin_review, admin_review_reason, admin_notes, reviewed_by, reviewed_at, created_at, updated_at, ' +
+        'profiles:seller_user_id(display_name, vitana_id)',
+      { count: 'exact' },
+    )
+    .eq('tenant_id', f.tenantId);
+
+  if (f.requiresAdminReview !== undefined) q = q.eq('requires_admin_review', f.requiresAdminReview);
+  if (f.status) q = q.eq('status', f.status);
+  if (f.category) q = q.eq('category', f.category);
+  if (f.listingKind) q = q.eq('listing_kind', f.listingKind);
+  if (f.search) q = q.ilike('title', `%${f.search}%`);
+
+  q = q
+    .order('requires_admin_review', { ascending: false })
+    .order('created_at', { ascending: false })
+    .range(f.offset, f.offset + f.limit - 1);
+
+  return q;
+}
+
+export async function fetchListingForAdminEdit(supabase: Supabase, id: string, tenantId: string | null) {
+  return supabase!.from('community_listings').select('id, status').eq('id', id).eq('tenant_id', tenantId).maybeSingle();
+}
+
+export async function updateListingAdmin(supabase: Supabase, id: string, patch: Record<string, unknown>) {
+  return supabase!.from('community_listings').update(patch).eq('id', id).select().single();
+}
+
+export async function fetchListingsForBulkAction(supabase: Supabase, tenantId: string | null, listingIds: string[]) {
+  return supabase!.from('community_listings').select('id, seller_user_id, title, status').eq('tenant_id', tenantId).in('id', listingIds);
+}
+
+export async function bulkUpdateListings(supabase: Supabase, ids: string[], patch: Record<string, unknown>) {
+  return supabase!.from('community_listings').update(patch).in('id', ids);
+}
+
+export async function upsertSellerSuspension(supabase: Supabase, row: Record<string, unknown>) {
+  return supabase!.from('community_marketplace_seller_suspensions').upsert(row);
+}
+
+export async function deleteSellerSuspension(supabase: Supabase, userId: string, tenantId: string | null) {
+  return supabase!.from('community_marketplace_seller_suspensions').delete().eq('seller_user_id', userId).eq('tenant_id', tenantId);
+}
+
+export async function fetchActiveListingsForSeller(supabase: Supabase, userId: string, tenantId: string | null) {
+  return supabase!
+    .from('community_listings')
+    .select('id, status')
+    .eq('seller_user_id', userId)
+    .eq('tenant_id', tenantId)
+    .in('status', ['active', 'paused']);
+}
+
+export interface AdminReportsQueueFilters {
+  tenantId: string | null;
+  status?: string;
+  offset: number;
+  limit: number;
+}
+
+export async function fetchAdminReportsQueue(supabase: Supabase, f: AdminReportsQueueFilters) {
+  let q = supabase!
+    .from('community_listing_reports')
+    .select(
+      'id, listing_id, reporter_user_id, report_reason, report_note, status, admin_notes, resolved_by, resolved_at, created_at, ' +
+        'community_listings:listing_id(title, status, seller_user_id)',
+      { count: 'exact' },
+    )
+    .eq('tenant_id', f.tenantId);
+  if (f.status) q = q.eq('status', f.status);
+  else q = q.in('status', ['received', 'under_review']);
+
+  q = q.order('created_at', { ascending: false }).range(f.offset, f.offset + f.limit - 1);
+
+  return q;
+}
+
+export async function updateReport(supabase: Supabase, id: string, tenantId: string | null, patch: Record<string, unknown>) {
+  return supabase!.from('community_listing_reports').update(patch).eq('id', id).eq('tenant_id', tenantId).select().single();
+}
+
+export async function fetchAllCategoriesAdmin(supabase: Supabase) {
+  return supabase!
+    .from('community_listing_categories')
+    .select('key, listing_kind, display_label, parent_key, is_prohibited, requires_verified_provider, requires_admin_review_always, is_active, sort_order')
+    .order('sort_order', { ascending: true });
+}
+
+export async function updateCategory(supabase: Supabase, key: string, patch: Record<string, unknown>) {
+  return supabase!.from('community_listing_categories').update(patch).eq('key', key).select().maybeSingle();
 }
