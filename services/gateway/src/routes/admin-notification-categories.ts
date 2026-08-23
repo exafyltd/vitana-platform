@@ -18,6 +18,7 @@ import { Router, Response } from 'express';
 import { getSupabase } from '../lib/supabase';
 import { notifyUser, NotificationPayload } from '../services/notification-service';
 import { requireAuth, requireExafyAdmin, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import * as repo from '../services/notification-categories/notification-categories-repository';
 
 const router = Router();
 const VTID = 'BOOTSTRAP-NOTIF-CATEGORIES';
@@ -44,25 +45,11 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
 
   const { type, tenant_id, include_inactive } = req.query;
 
-  let query = supabase
-    .from('notification_categories')
-    .select('*')
-    .order('type')
-    .order('sort_order', { ascending: true });
-
-  if (type && typeof type === 'string' && VALID_TYPES.includes(type)) {
-    query = query.eq('type', type);
-  }
-  if (tenant_id && typeof tenant_id === 'string') {
-    query = query.or(`tenant_id.eq.${tenant_id},tenant_id.is.null`);
-  } else {
-    query = query.is('tenant_id', null);
-  }
-  if (include_inactive !== 'true') {
-    query = query.eq('is_active', true);
-  }
-
-  const { data, error } = await query;
+  const { data, error } = await repo.fetchCategories(supabase, {
+    type: type && typeof type === 'string' && VALID_TYPES.includes(type) ? type : undefined,
+    tenantId: tenant_id && typeof tenant_id === 'string' ? tenant_id : undefined,
+    includeInactive: include_inactive === 'true',
+  });
   if (error) {
     console.error(`[${VTID}] GET / error:`, error.message);
     return res.status(500).json({ ok: false, error: error.message });
@@ -85,11 +72,7 @@ router.get('/:id', async (req: AuthenticatedRequest, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'no supabase' });
 
-  const { data, error } = await supabase
-    .from('notification_categories')
-    .select('*')
-    .eq('id', req.params.id)
-    .single();
+  const { data, error } = await repo.fetchCategoryById(supabase, req.params.id);
 
   if (error || !data) {
     return res.status(404).json({ ok: false, error: 'CATEGORY_NOT_FOUND' });
@@ -146,11 +129,7 @@ router.post('/', async (req: AuthenticatedRequest, res: Response) => {
     created_by: identity.user_id,
   };
 
-  const { data, error } = await supabase
-    .from('notification_categories')
-    .insert(insertData)
-    .select()
-    .single();
+  const { data, error } = await repo.insertCategory(supabase, insertData);
 
   if (error) {
     if (error.code === '23505') {
@@ -186,12 +165,7 @@ router.patch('/:id', async (req: AuthenticatedRequest, res: Response) => {
     return res.status(400).json({ ok: false, error: 'INVALID_INPUT', message: 'Cannot change category type after creation' });
   }
 
-  const { data, error } = await supabase
-    .from('notification_categories')
-    .update(updateData)
-    .eq('id', req.params.id)
-    .select()
-    .single();
+  const { data, error } = await repo.updateCategory(supabase, req.params.id, updateData);
 
   if (error) {
     console.error(`[${VTID}] PATCH /:id error:`, error.message);
@@ -213,12 +187,7 @@ router.delete('/:id', async (req: AuthenticatedRequest, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'no supabase' });
 
-  const { data, error } = await supabase
-    .from('notification_categories')
-    .update({ is_active: false, updated_at: new Date().toISOString() })
-    .eq('id', req.params.id)
-    .select()
-    .single();
+  const { data, error } = await repo.updateCategory(supabase, req.params.id, { is_active: false, updated_at: new Date().toISOString() });
 
   if (error) {
     console.error(`[${VTID}] DELETE /:id error:`, error.message);
@@ -241,11 +210,7 @@ router.post('/:id/test', async (req: AuthenticatedRequest, res: Response) => {
   if (!supabase) return res.status(503).json({ ok: false, error: 'no supabase' });
 
   // Get the category
-  const { data: category, error: catError } = await supabase
-    .from('notification_categories')
-    .select('*')
-    .eq('id', req.params.id)
-    .single();
+  const { data: category, error: catError } = await repo.fetchCategoryById(supabase, req.params.id);
 
   if (catError || !category) {
     return res.status(404).json({ ok: false, error: 'CATEGORY_NOT_FOUND' });
