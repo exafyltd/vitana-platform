@@ -21,6 +21,11 @@
  *
  * Served to the commerce.vitanaland.com frontend (host-routed community-app
  * build); DNS/exposure for that host is deferred the BLK-006 way.
+ *
+ * Data access for the mesh factory tables goes through
+ * services/vcaop-portal/vcaop-portal-repository.ts (VTID-03702, Aurora
+ * migration B1 data-access seam), shared with routes/vcaop-portal.ts — see
+ * that repository's header for why one seam serves both routers.
  */
 import { Router, Request, Response } from 'express';
 import { createHash, randomUUID } from 'crypto';
@@ -32,6 +37,7 @@ import {
   extractSchemaSources,
   pendingReviewMappings,
 } from './vcaop-portal';
+import * as repo from '../services/vcaop-portal/vcaop-portal-repository';
 import { detectPlatform } from '../services/platform-detect';
 import { isShopifyOAuthConfigured, isValidShopDomain, signState, buildAuthorizeUrl } from '../services/shopify-oauth';
 import {
@@ -69,7 +75,7 @@ function tenantId(req: Request): string {
 }
 async function emitOasisEvent(supabase: any, type: string, status: string, message: string, payload: Record<string, unknown>) {
   try {
-    await supabase.from('oasis_events').insert({
+    await repo.insertOasisEvent(supabase, {
       id: randomUUID(), service: 'vcaop', source: 'vcaop-portal-my', type, topic: type, status, message,
       metadata: payload, created_at: new Date().toISOString(),
     });
@@ -80,24 +86,11 @@ async function emitOasisEvent(supabase: any, type: string, status: string, messa
  * Anything else — other merchants' rows, admin-seeded rows with no owner —
  * reads as 404. */
 async function getOwnedManifest(supabase: any, req: Request) {
-  const { data } = await supabase
-    .from('integration_manifest')
-    .select('id,partner_tenant_id,connector_id,provider_id,connection_type,risk_level,status,created_at,updated_at, partner_tenant!inner(id,tenant_id,name,jurisdiction,owner_user_id)')
-    .eq('id', req.params.id)
-    .eq('partner_tenant.owner_user_id', userId(req))
-    .maybeSingle();
-  return data ?? null;
+  return repo.fetchOwnedManifestByOwner(supabase, req.params.id, userId(req));
 }
 
 async function latestVersion(supabase: any, manifestId: string) {
-  const { data } = await supabase
-    .from('integration_version')
-    .select('id,version,certification_status,document_hash,created_at')
-    .eq('manifest_id', manifestId)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  return data ?? null;
+  return repo.fetchLatestVersion(supabase, manifestId);
 }
 
 async function transitionAndEmitOasisEvent(supabase: any, req: Request, res: Response, to: ConnectionState, eventType: string) {
@@ -107,7 +100,7 @@ async function transitionAndEmitOasisEvent(supabase: any, req: Request, res: Res
     return res.status(409).json({ ok: false, error: `illegal transition ${rec.status} -> ${to}` });
   }
   const now = new Date().toISOString();
-  await supabase.from('integration_manifest').update({ status: to, updated_at: now }).eq('id', rec.id);
+  await repo.updateManifestStatus(supabase, rec.id, to, now);
   await emitOasisEvent(supabase, eventType, 'success', `connection ${rec.id}: ${rec.status} -> ${to}`, {
     connection_id: rec.id, from: rec.status, to, actor: userId(req), surface: 'merchant_self_service',
   });
@@ -222,11 +215,7 @@ router.post('/connections/:id/fhir/authorize', async (req: Request, res: Respons
 // ===== List / create =====
 router.get('/connections', async (req: Request, res: Response) => {
   const supabase = db(res); if (!supabase) return;
-  const { data, error } = await supabase
-    .from('integration_manifest')
-    .select('id,connector_id,provider_id,connection_type,risk_level,status,created_at,updated_at, partner_tenant!inner(tenant_id,name,jurisdiction,owner_user_id)')
-    .eq('partner_tenant.owner_user_id', userId(req))
-    .order('updated_at', { ascending: false });
+  const { data, error } = await repo.fetchConnectionsForOwner(supabase, userId(req));
   if (error) return res.status(500).json({ ok: false, error: error.message });
   res.json({
     ok: true,
@@ -249,12 +238,11 @@ router.post('/connections', async (req: Request, res: Response) => {
 
   // One partner_tenant row per (owner, business name) — a merchant's own
   // business, distinct from any admin-seeded partner with the same name.
-  const { data: existingPartner } = await supabase
-    .from('partner_tenant').select('id').eq('owner_user_id', owner).eq('name', name).maybeSingle();
+  const existingPartner = await repo.fetchPartnerTenantByOwnerAndName(supabase, owner, name);
   let partnerId = existingPartner?.id;
   if (!partnerId) {
     partnerId = randomUUID();
-    const { error } = await supabase.from('partner_tenant').insert({
+    const { error } = await repo.insertPartnerTenant(supabase, {
       id: partnerId, tenant_id: tenantId(req), name, status: 'discovered', jurisdiction: jurisdiction ?? null,
       owner_user_id: owner, owner_email: userEmail(req),
       created_at: now, updated_at: now,
@@ -264,7 +252,7 @@ router.post('/connections', async (req: Request, res: Response) => {
 
   const initialState: ConnectionState = openapi_document ? 'mapping' : 'authorization_required';
   const manifestId = randomUUID();
-  const { error: mErr } = await supabase.from('integration_manifest').insert({
+  const { error: mErr } = await repo.insertIntegrationManifest(supabase, {
     id: manifestId, partner_tenant_id: partnerId, connector_id, provider_id,
     connection_type: connection_type ?? 'api', risk_level: risk_level ?? 'medium',
     status: initialState, created_at: now, updated_at: now,
@@ -277,13 +265,13 @@ router.post('/connections', async (req: Request, res: Response) => {
   if (openapi_document) {
     const versionId = randomUUID();
     const docJson = JSON.stringify(openapi_document);
-    await supabase.from('integration_version').insert({
+    await repo.insertIntegrationVersion(supabase, {
       id: versionId, manifest_id: manifestId, version: '0.1.0', document: openapi_document,
       document_hash: createHash('sha256').update(docJson).digest('hex'), certification_status: 'draft', created_at: now,
     });
     const sources = extractSchemaSources(openapi_document);
     for (const s of sources) {
-      await supabase.from('schema_source').insert({
+      await repo.insertSchemaSource(supabase, {
         id: randomUUID(), version_id: versionId, name: s.name, fields: s.fields,
         hash: createHash('sha256').update(JSON.stringify(s.fields)).digest('hex'), created_at: now,
       });
@@ -321,10 +309,8 @@ router.get('/connections/:id/mapping-preview', async (req: Request, res: Respons
     return res.json({ ok: true, data: { state: rec.status, pipeline_status: 'awaiting_specification', sources: [], mappings: [], pending_review: [] } });
   }
   const [{ data: sources }, { data: mappings }] = await Promise.all([
-    supabase.from('schema_source').select('id,name,fields').eq('version_id', version.id),
-    supabase.from('schema_mapping')
-      .select('id,source_schema,source_field,canonical_entity,canonical_field,transform,confidence,decided_by,sensitive')
-      .eq('version_id', version.id),
+    repo.fetchSchemaSourcesForVersion(supabase, version.id),
+    repo.fetchSchemaMappingsForVersion(supabase, version.id),
   ]);
   const pending = pendingReviewMappings(mappings || []);
   res.json({
@@ -351,21 +337,20 @@ router.post('/connections/:id/mapping-decisions', async (req: Request, res: Resp
   }
   const version = await latestVersion(supabase, rec.id);
   if (!version) return res.status(409).json({ ok: false, error: 'no integration version to decide on' });
-  const { data: mapping } = await supabase
-    .from('schema_mapping').select('id,version_id').eq('id', mapping_id).eq('version_id', version.id).maybeSingle();
+  const mapping = await repo.fetchMappingForDecision(supabase, mapping_id, version.id);
   if (!mapping) return res.status(404).json({ ok: false, error: 'mapping not found on latest version' });
 
   const now = new Date().toISOString();
   // decided_by is ALWAYS the authenticated caller — a client-supplied value is ignored.
-  await supabase.from('mapping_decision').insert({
+  await repo.insertMappingDecision(supabase, {
     id: randomUUID(), mapping_id, decision, decided_by: userId(req), reason: reason ?? null, created_at: now,
   });
   if (decision === 'approve') {
-    await supabase.from('schema_mapping').update({ decided_by: 'human' }).eq('id', mapping_id);
+    await repo.approveMapping(supabase, mapping_id);
   } else {
     // A rejected mapping must never reach certification: remove it from the
     // version's mapping set (the mapping_decision row keeps the audit trail).
-    await supabase.from('schema_mapping').delete().eq('id', mapping_id);
+    await repo.deleteRejectedMapping(supabase, mapping_id);
   }
   await emitOasisEvent(supabase, 'vcaop.portal.mapping.decided', 'success', `mapping ${mapping_id}: ${decision}`, {
     connection_id: rec.id, mapping_id, decision, actor: userId(req), surface: 'merchant_self_service',
@@ -387,8 +372,7 @@ router.post('/connections/:id/sandbox-tests', async (req: Request, res: Response
   const version = await latestVersion(supabase, rec.id);
   if (!version) return res.status(409).json({ ok: false, error: 'no integration version to test' });
 
-  const { data: mappings } = await supabase
-    .from('schema_mapping').select('id,sensitive,confidence,decided_by').eq('version_id', version.id);
+  const { data: mappings } = await repo.fetchMappingsForSandboxTest(supabase, version.id);
   if (!mappings || mappings.length === 0) {
     // Zero mappings = the factory has not produced its proposals yet — a
     // pipeline state, never a passed mapping gate.
@@ -398,15 +382,15 @@ router.post('/connections/:id/sandbox-tests', async (req: Request, res: Response
   const certStatus = pending.length > 0 ? 'approval_required' : 'certified';
   const now = new Date().toISOString();
 
-  await supabase.from('connector_certification').insert({
+  await repo.insertConnectorCertification(supabase, {
     id: randomUUID(), version_id: version.id, status: certStatus,
     test_results: { mode: 'gateway_dev_sandbox', contract_tests_executed: 0, mapping_gate: pending.length === 0 ? 'pass' : 'pending_review' },
     pending_mappings: pending, reasons: pending.length > 0 ? ['sensitive or low-confidence mappings need a human decision'] : [],
     certified_by: null, created_at: now,
   });
-  await supabase.from('integration_version').update({ certification_status: certStatus }).eq('id', version.id);
+  await repo.updateVersionCertificationStatus(supabase, version.id, certStatus);
   const nextState: ConnectionState = certStatus === 'certified' ? 'certified' : 'approval_required';
-  await supabase.from('integration_manifest').update({ status: nextState, updated_at: now }).eq('id', rec.id);
+  await repo.updateManifestStatus(supabase, rec.id, nextState, now);
   await emitOasisEvent(supabase, 'vcaop.portal.sandbox_tests.completed', 'success', `connection ${rec.id}: ${certStatus}`, {
     connection_id: rec.id, version: version.version, status: certStatus, pending: pending.length, actor: userId(req), surface: 'merchant_self_service',
   });
@@ -420,10 +404,7 @@ router.get('/connections/:id/activation-summary', async (req: Request, res: Resp
   const version = await latestVersion(supabase, rec.id);
   let cert = null;
   if (version) {
-    const { data } = await supabase
-      .from('connector_certification').select('id,status,test_results,pending_mappings,reasons,created_at')
-      .eq('version_id', version.id).order('created_at', { ascending: false }).limit(1).maybeSingle();
-    cert = data ?? null;
+    cert = await repo.fetchLatestCertification(supabase, version.id);
   }
   res.json({
     ok: true,

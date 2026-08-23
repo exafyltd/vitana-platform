@@ -19,11 +19,17 @@
  * deterministic mapping gate (no sensitive/low-confidence mapping without a
  * human decision) and execute ZERO live partner calls — test_results says so
  * explicitly rather than pretending contract tests ran.
+ *
+ * Data access for the mesh factory tables goes through
+ * services/vcaop-portal/vcaop-portal-repository.ts (VTID-03702, Aurora
+ * migration B1 data-access seam), shared with routes/vcaop-portal-my.ts —
+ * see that repository's header for why one seam serves both routers.
  */
 import { Router, Request, Response } from 'express';
 import { createHash, randomUUID } from 'crypto';
 import { getSupabase } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth-supabase-jwt';
+import * as repo from '../services/vcaop-portal/vcaop-portal-repository';
 
 // ---------------------------------------------------------------------------
 // Connection state machine — MIRROR of services/vcaop/src/factory/manifest.ts.
@@ -129,7 +135,7 @@ function requireAdmin(req: Request, res: Response): boolean {
 }
 async function emitOasisEvent(supabase: any, type: string, status: string, message: string, payload: Record<string, unknown>) {
   try {
-    await supabase.from('oasis_events').insert({
+    await repo.insertOasisEvent(supabase, {
       id: randomUUID(), service: 'vcaop', source: 'vcaop-portal', type, topic: type, status, message,
       metadata: payload, created_at: new Date().toISOString(),
     });
@@ -138,24 +144,11 @@ async function emitOasisEvent(supabase: any, type: string, status: string, messa
 
 /** Load a manifest row scoped to the caller's tenant; foreign rows read as 404. */
 async function getOwnedManifest(supabase: any, req: Request) {
-  const { data } = await supabase
-    .from('integration_manifest')
-    .select('id,partner_tenant_id,connector_id,provider_id,connection_type,risk_level,status,created_at,updated_at, partner_tenant!inner(id,tenant_id,name,jurisdiction)')
-    .eq('id', req.params.id)
-    .eq('partner_tenant.tenant_id', tenantId(req))
-    .maybeSingle();
-  return data ?? null;
+  return repo.fetchOwnedManifestByTenant(supabase, req.params.id, tenantId(req));
 }
 
 async function latestVersion(supabase: any, manifestId: string) {
-  const { data } = await supabase
-    .from('integration_version')
-    .select('id,version,certification_status,document_hash,created_at')
-    .eq('manifest_id', manifestId)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  return data ?? null;
+  return repo.fetchLatestVersion(supabase, manifestId);
 }
 
 async function transitionAndEmitOasisEvent(supabase: any, req: Request, res: Response, to: ConnectionState, eventType: string) {
@@ -165,7 +158,7 @@ async function transitionAndEmitOasisEvent(supabase: any, req: Request, res: Res
     return res.status(409).json({ ok: false, error: `illegal transition ${rec.status} -> ${to}` });
   }
   const now = new Date().toISOString();
-  await supabase.from('integration_manifest').update({ status: to, updated_at: now }).eq('id', rec.id);
+  await repo.updateManifestStatus(supabase, rec.id, to, now);
   await emitOasisEvent(supabase, eventType, 'success', `connection ${rec.id}: ${rec.status} -> ${to}`, {
     connection_id: rec.id, from: rec.status, to, actor: userId(req),
   });
@@ -176,11 +169,7 @@ async function transitionAndEmitOasisEvent(supabase: any, req: Request, res: Res
 router.get('/connections', async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
   const supabase = db(res); if (!supabase) return;
-  const { data, error } = await supabase
-    .from('integration_manifest')
-    .select('id,connector_id,provider_id,connection_type,risk_level,status,created_at,updated_at, partner_tenant!inner(tenant_id,name,jurisdiction)')
-    .eq('partner_tenant.tenant_id', tenantId(req))
-    .order('updated_at', { ascending: false });
+  const { data, error } = await repo.fetchConnectionsForTenant(supabase, tenantId(req));
   if (error) return res.status(500).json({ ok: false, error: error.message });
   res.json({
     ok: true,
@@ -203,12 +192,11 @@ router.post('/connections', async (req: Request, res: Response) => {
   const now = new Date().toISOString();
 
   // One partner_tenant row per (tenant, business name).
-  const { data: existingPartner } = await supabase
-    .from('partner_tenant').select('id').eq('tenant_id', tenant).eq('name', name).maybeSingle();
+  const existingPartner = await repo.fetchPartnerTenantByTenantAndName(supabase, tenant, name);
   let partnerId = existingPartner?.id;
   if (!partnerId) {
     partnerId = randomUUID();
-    const { error } = await supabase.from('partner_tenant').insert({
+    const { error } = await repo.insertPartnerTenant(supabase, {
       id: partnerId, tenant_id: tenant, name, status: 'discovered', jurisdiction: jurisdiction ?? null,
       created_at: now, updated_at: now,
     });
@@ -219,7 +207,7 @@ router.post('/connections', async (req: Request, res: Response) => {
   // the vcaop onboarding service).
   const initialState: ConnectionState = openapi_document ? 'mapping' : 'authorization_required';
   const manifestId = randomUUID();
-  const { error: mErr } = await supabase.from('integration_manifest').insert({
+  const { error: mErr } = await repo.insertIntegrationManifest(supabase, {
     id: manifestId, partner_tenant_id: partnerId, connector_id, provider_id,
     connection_type: connection_type ?? 'api', risk_level: risk_level ?? 'medium',
     status: initialState, created_at: now, updated_at: now,
@@ -232,13 +220,13 @@ router.post('/connections', async (req: Request, res: Response) => {
   if (openapi_document) {
     const versionId = randomUUID();
     const docJson = JSON.stringify(openapi_document);
-    await supabase.from('integration_version').insert({
+    await repo.insertIntegrationVersion(supabase, {
       id: versionId, manifest_id: manifestId, version: '0.1.0', document: openapi_document,
       document_hash: createHash('sha256').update(docJson).digest('hex'), certification_status: 'draft', created_at: now,
     });
     const sources = extractSchemaSources(openapi_document);
     for (const s of sources) {
-      await supabase.from('schema_source').insert({
+      await repo.insertSchemaSource(supabase, {
         id: randomUUID(), version_id: versionId, name: s.name, fields: s.fields,
         hash: createHash('sha256').update(JSON.stringify(s.fields)).digest('hex'), created_at: now,
       });
@@ -278,10 +266,8 @@ router.get('/connections/:id/mapping-preview', async (req: Request, res: Respons
     return res.json({ ok: true, data: { state: rec.status, pipeline_status: 'awaiting_specification', sources: [], mappings: [], pending_review: [] } });
   }
   const [{ data: sources }, { data: mappings }] = await Promise.all([
-    supabase.from('schema_source').select('id,name,fields').eq('version_id', version.id),
-    supabase.from('schema_mapping')
-      .select('id,source_schema,source_field,canonical_entity,canonical_field,transform,confidence,decided_by,sensitive')
-      .eq('version_id', version.id),
+    repo.fetchSchemaSourcesForVersion(supabase, version.id),
+    repo.fetchSchemaMappingsForVersion(supabase, version.id),
   ]);
   const pending = pendingReviewMappings(mappings || []);
   res.json({
@@ -308,22 +294,21 @@ router.post('/connections/:id/mapping-decisions', async (req: Request, res: Resp
   }
   const version = await latestVersion(supabase, rec.id);
   if (!version) return res.status(409).json({ ok: false, error: 'no integration version to decide on' });
-  const { data: mapping } = await supabase
-    .from('schema_mapping').select('id,version_id').eq('id', mapping_id).eq('version_id', version.id).maybeSingle();
+  const mapping = await repo.fetchMappingForDecision(supabase, mapping_id, version.id);
   if (!mapping) return res.status(404).json({ ok: false, error: 'mapping not found on latest version' });
 
   const now = new Date().toISOString();
   // decided_by is ALWAYS the authenticated caller — a client-supplied value is ignored.
-  await supabase.from('mapping_decision').insert({
+  await repo.insertMappingDecision(supabase, {
     id: randomUUID(), mapping_id, decision, decided_by: userId(req), reason: reason ?? null, created_at: now,
   });
   if (decision === 'approve') {
-    await supabase.from('schema_mapping').update({ decided_by: 'human' }).eq('id', mapping_id);
+    await repo.approveMapping(supabase, mapping_id);
   } else {
     // A rejected mapping must never reach certification: remove it from the
     // version's mapping set (the mapping_decision row keeps the audit trail).
     // Leaving it in place would let the sandbox gate count it as eligible.
-    await supabase.from('schema_mapping').delete().eq('id', mapping_id);
+    await repo.deleteRejectedMapping(supabase, mapping_id);
   }
   await emitOasisEvent(supabase, 'vcaop.portal.mapping.decided', 'success', `mapping ${mapping_id}: ${decision}`, {
     connection_id: rec.id, mapping_id, decision, actor: userId(req),
@@ -348,8 +333,7 @@ router.post('/connections/:id/sandbox-tests', async (req: Request, res: Response
   const version = await latestVersion(supabase, rec.id);
   if (!version) return res.status(409).json({ ok: false, error: 'no integration version to test' });
 
-  const { data: mappings } = await supabase
-    .from('schema_mapping').select('id,sensitive,confidence,decided_by').eq('version_id', version.id);
+  const { data: mappings } = await repo.fetchMappingsForSandboxTest(supabase, version.id);
   if (!mappings || mappings.length === 0) {
     // Zero mappings means the factory has not run yet — that is a pipeline
     // state, not a passed mapping gate. Certifying here would activate a
@@ -360,7 +344,7 @@ router.post('/connections/:id/sandbox-tests', async (req: Request, res: Response
   const certStatus = pending.length > 0 ? 'approval_required' : 'certified';
   const now = new Date().toISOString();
 
-  await supabase.from('connector_certification').insert({
+  await repo.insertConnectorCertification(supabase, {
     id: randomUUID(), version_id: version.id, status: certStatus,
     // Honest record: the gateway dev sandbox evaluates the deterministic
     // mapping gate only. Real contract tests execute in the VCAOP factory
@@ -369,9 +353,9 @@ router.post('/connections/:id/sandbox-tests', async (req: Request, res: Response
     pending_mappings: pending, reasons: pending.length > 0 ? ['sensitive or low-confidence mappings need a human decision'] : [],
     certified_by: null, created_at: now,
   });
-  await supabase.from('integration_version').update({ certification_status: certStatus }).eq('id', version.id);
+  await repo.updateVersionCertificationStatus(supabase, version.id, certStatus);
   const nextState: ConnectionState = certStatus === 'certified' ? 'certified' : 'approval_required';
-  await supabase.from('integration_manifest').update({ status: nextState, updated_at: now }).eq('id', rec.id);
+  await repo.updateManifestStatus(supabase, rec.id, nextState, now);
   await emitOasisEvent(supabase, 'vcaop.portal.sandbox_tests.completed', 'success', `connection ${rec.id}: ${certStatus}`, {
     connection_id: rec.id, version: version.version, status: certStatus, pending: pending.length, actor: userId(req),
   });
@@ -386,10 +370,7 @@ router.get('/connections/:id/activation-summary', async (req: Request, res: Resp
   const version = await latestVersion(supabase, rec.id);
   let cert = null;
   if (version) {
-    const { data } = await supabase
-      .from('connector_certification').select('id,status,test_results,pending_mappings,reasons,created_at')
-      .eq('version_id', version.id).order('created_at', { ascending: false }).limit(1).maybeSingle();
-    cert = data ?? null;
+    cert = await repo.fetchLatestCertification(supabase, version.id);
   }
   res.json({
     ok: true,
@@ -414,10 +395,8 @@ router.post('/connections/:id/approve-activation', async (req: Request, res: Res
     return res.status(409).json({ ok: false, error: 'latest version is not certified' });
   }
   const now = new Date().toISOString();
-  await supabase.from('connector_certification')
-    .update({ certified_by: userId(req) })
-    .eq('version_id', version.id).eq('status', 'certified').is('certified_by', null);
-  await supabase.from('integration_manifest').update({ status: 'active', updated_at: now }).eq('id', rec.id);
+  await repo.markCertificationApprovedBy(supabase, version.id, userId(req));
+  await repo.updateManifestStatus(supabase, rec.id, 'active', now);
   await emitOasisEvent(supabase, 'vcaop.portal.connection.activated', 'success', `connection ${rec.id} activated`, {
     connection_id: rec.id, version: version.version, approved_by: userId(req),
   });
