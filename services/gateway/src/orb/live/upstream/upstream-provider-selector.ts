@@ -94,16 +94,19 @@ export type SelectionReason =
   | 'nova_not_allowlisted'        // nova gate on but identity not in allowlist → vertex
   | 'nova_language_unsupported'   // session language outside en/de/fr/es → vertex
   | 'nova_runtime_unsupported'    // runtime cannot carry the HTTP/2 stream (GCP) → vertex
-  // VTID-emergency-gcp-shutdown: the GCP project's billing was disabled, so
-  // Vertex Live is permanently unreachable, not merely deprioritized. Once
-  // `ctx.vertexUnavailable` is set, the runtime/language gates stop being
-  // able to route anyone to Vertex — there is nothing there to route to.
-  // They still route to a HARD Vertex failure (`nova_disabled`,
-  // `nova_not_allowlisted`) exactly as before, because those two gates
-  // reflect deliberate operator config (Nova switched off, identity not
-  // allowlisted), not a technical/quality limit Vertex used to cover for.
-  // A degraded Nova session in an unverified language beats a guaranteed-dead
-  // connection attempt.
+  // VTID-emergency-gcp-shutdown / VTID-03703: the GCP project's billing was
+  // disabled, so Vertex Live is permanently unreachable, not merely
+  // deprioritized. Once `ctx.vertexUnavailable` is set, NO gate may route to
+  // Vertex any more — runtime, language, disabled, AND not-allowlisted all
+  // force through instead. This corrects an earlier, narrower version of
+  // this comment which carved `nova_disabled`/`nova_not_allowlisted` OUT of
+  // the force-through on the theory those reflect deliberate operator
+  // config rather than a technical limit — live traffic proved that
+  // carve-out wrong: real sessions reached a genuine (dead) Vertex connect
+  // and died with upstream code 1007 (VTID-03688). A degraded/forced Nova
+  // session, or the cascaded Transcribe->Bedrock->Polly pipeline when the
+  // language genuinely isn't one Nova speaks, both beat a guaranteed-dead
+  // connection attempt every time.
   | 'nova_forced_vertex_unavailable'
   // BOOTSTRAP-NOVA-IDLE-ROTATION: a mid-session pin applied by the CALLER,
   // never returned by selectUpstreamProvider() itself (which is stateless and
@@ -419,7 +422,29 @@ function evaluateNovaRequest(
   happyReason: 'env_explicit_nova_sonic' | 'system_config_nova_sonic',
 ): UpstreamSelectionDecision {
   const nova = ctx.nova;
+  const vertexDead = ctx.vertexUnavailable === true;
+
   if (!nova || nova.enabled !== true) {
+    // VTID-03703: Nova itself isn't ready. Vertex is dead — never pin there.
+    // `nova.languageSupported` is computed independently of `nova.enabled`
+    // by the caller (session language vs Nova's supported set), so it is
+    // still meaningful here even though Nova is off; `nova` can also be
+    // fully absent (no context at all), in which case cascade eligibility
+    // can't be assessed and Nova is forced through blind.
+    if (vertexDead) {
+      const languageBlocked = nova ? nova.languageSupported !== true : false;
+      const rescue = tryCascadeRescue(ctx, languageBlocked);
+      if (rescue) return rescue;
+      return {
+        provider: 'nova_sonic',
+        requested: 'nova_sonic',
+        reason: 'nova_forced_vertex_unavailable',
+        livekitReady: false,
+        canary: false,
+        novaReady: false,
+        error: 'Nova Sonic disabled/not-ready and Vertex is unavailable; forcing Nova rather than a dead Vertex connect.',
+      };
+    }
     return {
       provider: 'vertex',
       requested: 'nova_sonic',
@@ -431,9 +456,9 @@ function evaluateNovaRequest(
     };
   }
 
-  const vertexDead = ctx.vertexUnavailable === true;
   const runtimeBlocked = nova.runtime !== undefined && nova.runtime !== 'aws-ecs';
   const languageBlocked = nova.languageSupported !== true;
+  const identityBlocked = nova.identityAllowed !== true;
 
   if (runtimeBlocked && !vertexDead) {
     return {
@@ -457,7 +482,10 @@ function evaluateNovaRequest(
       error: 'Session language is outside the Nova canary set; pinning to Vertex.',
     };
   }
-  if (nova.identityAllowed !== true) {
+  // VTID-03703: `identityAllowed` reflects deliberate canary/allowlist
+  // policy, not a Nova capability gap — but Vertex being permanently dead
+  // outranks that policy. Force through rather than pin to Vertex.
+  if (identityBlocked && !vertexDead) {
     return {
       provider: 'vertex',
       requested: 'nova_sonic',
@@ -468,7 +496,7 @@ function evaluateNovaRequest(
       error: 'Session identity is not on the Nova canary allowlist; pinning to Vertex.',
     };
   }
-  const forced = runtimeBlocked || languageBlocked;
+  const forced = runtimeBlocked || languageBlocked || identityBlocked;
   const rescue = tryCascadeRescue(ctx, languageBlocked);
   if (rescue) return rescue;
   return {
@@ -491,18 +519,42 @@ function evaluateNovaCanary(
   ctx: UpstreamSelectorContext,
 ): UpstreamSelectionDecision | null {
   const nova = ctx.nova;
-  if (!nova || nova.enabled !== true) return null;
   const vertexDead = ctx.vertexUnavailable === true;
+
+  if (!nova || nova.enabled !== true) {
+    // VTID-03703: returning null here means "fall through to the caller's
+    // normal Vertex path" — exactly the silent Vertex hand-off that must
+    // never happen once Vertex is dead. Cascade first, then force Nova.
+    if (!vertexDead) return null;
+    const languageBlocked = nova ? nova.languageSupported !== true : false;
+    const rescue = tryCascadeRescue(ctx, languageBlocked);
+    if (rescue) return { ...rescue, requested: null };
+    return {
+      provider: 'nova_sonic',
+      requested: null,
+      reason: 'nova_forced_vertex_unavailable',
+      livekitReady: false,
+      canary: false,
+      novaReady: false,
+    };
+  }
+
   const runtimeBlocked = nova.runtime !== undefined && nova.runtime !== 'aws-ecs';
   const languageBlocked = nova.languageSupported !== true;
   if ((runtimeBlocked || languageBlocked) && !vertexDead) return null;
-  if (nova.identityAllowed !== true) return null;
+
+  // VTID-03703: identity/allowlist gating is policy, not a Nova capability
+  // gap, but a dead Vertex outranks that policy — force through instead of
+  // falling back to the (dead) default path.
+  const identityBlocked = nova.identityAllowed !== true;
+  if (identityBlocked && !vertexDead) return null;
+
   // VTID-03501: a globally-promoted session is NOT a canary session. Reporting
   // `canary: true` for the whole user base would make every canary-scoped
   // dashboard and alert read as if the rollout never widened — the population
   // changed, so the label has to change with it.
   const global = nova.globalEnabled === true;
-  const forced = runtimeBlocked || languageBlocked;
+  const forced = runtimeBlocked || languageBlocked || identityBlocked;
   const rescue = tryCascadeRescue(ctx, languageBlocked);
   if (rescue) return { ...rescue, requested: null };
   return {
