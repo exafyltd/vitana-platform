@@ -308,8 +308,9 @@ describe('computeGreetingDecision — rung golden snapshots', () => {
 
 describe('computeGreetingDecision — language axis', () => {
   for (const lang of ['de', 'en'] as const) {
-    test(`legacy default — lang=${lang}, bucket=long`, () => {
+    test(`newday_bare (was legacy default pre-VTID-03667) — lang=${lang}, bucket=long`, () => {
       const d = computeGreetingDecision(ctx({ lang, greetLang: lang, bucket: 'long', timeAgo: '10 days' }));
+      expect(d.wakeOpener).toBe('newday_bare');
       expect(d).toMatchSnapshot();
     });
 
@@ -329,10 +330,17 @@ describe('computeGreetingDecision — language axis', () => {
 
 describe('computeGreetingDecision — recency bucket axis (legacy ladder)', () => {
   const buckets = ['reconnect', 'recent', 'same_day', 'today', 'yesterday', 'week', 'long', 'first'] as const;
+  // VTID-03667: 'yesterday'/'week'/'long' genuinely are a new day (unlike
+  // 'today', which means "the last session was earlier today" — see
+  // tryBareNewDayRung's own comment) and now correctly fire `newday_bare` on
+  // the normal ladder, given the default fixture's non-empty firstName. This
+  // is the fix, not a regression: before it, every returning user on a real
+  // new day landed on the fully generic legacy default.
+  const nowNewDayBare = new Set(['yesterday', 'week', 'long']);
   for (const bucket of buckets) {
     test(`bucket=${bucket}`, () => {
       const d = computeGreetingDecision(ctx({ bucket, timeAgo: `~${bucket}` }));
-      expect(d.wakeOpener).toBe('legacy_default');
+      expect(d.wakeOpener).toBe(nowNewDayBare.has(bucket) ? 'newday_bare' : 'legacy_default');
       expect(d).toMatchSnapshot();
     });
   }
@@ -640,5 +648,80 @@ describe('setNewdayOverviewRungEnabled — new-day overview kill switch', () => 
     expect(computeGreetingDecision(ctx(richContext)).wakeOpener).not.toBe('newday_overview');
     setNewdayOverviewRungEnabled(true);
     expect(computeGreetingDecision(ctx(richContext)).wakeOpener).toBe('newday_overview');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// VTID-03667 — the bare new-day greeting is reachable on the NORMAL ladder
+//
+// `newday_overview`/`day_close` have sat disabled since 2026-08-13 (a
+// Bedrock content-filter incident on Nova Sonic, still unresolved) with
+// nothing re-enabling them — measured on prod, zero occurrences of either in
+// the 5 days since, against 68% of all greetings landing on the fully
+// generic `legacy_default` line. Reported live: "no new day greeting, just:
+// good to see you back... next step" — legacy_default, composed correctly,
+// standing in for every rung above it. This does NOT touch the two disabled
+// rungs (re-enabling either without root-causing the block risks reproducing
+// the incident) — it gives the normal ladder the SAME short, never-once-
+// observed-blocked bare greeting the safe-fast ladder already had.
+// ---------------------------------------------------------------------------
+
+describe('computeGreetingDecision — VTID-03667 bare new-day greeting on the normal ladder', () => {
+  test('bucket=yesterday + firstName → newday_bare, not legacy_default', () => {
+    const d = computeGreetingDecision(ctx({ bucket: 'yesterday', timeAgo: 'yesterday' }));
+    expect(d.wakeOpener).toBe('newday_bare');
+    expect(d.directive).toContain('Dragan');
+    expect(d.effects.markGreetingSent).toBe(true);
+    expect(d.effects.armWatchdog).toBe(true);
+  });
+
+  test('bucket=today does NOT fire newday_bare — that is a same-day reopen, not a new day', () => {
+    // Unlike the safe-fast ladder (where conv_resume already intercepts
+    // same-day reopens above this rung), the normal ladder has no such
+    // interceptor — firing here on 'today' would repeat "Good evening, Name"
+    // on every reopen within one day.
+    const d = computeGreetingDecision(ctx({ bucket: 'today' }));
+    expect(d.wakeOpener).not.toBe('newday_bare');
+  });
+
+  test('no firstName → falls through, does not crash', () => {
+    const d = computeGreetingDecision(ctx({ bucket: 'week', firstName: null }));
+    expect(d.wakeOpener).not.toBe('newday_bare');
+    expect(typeof d.wakeOpener).toBe('string');
+  });
+
+  test('a silent reconnect still outranks it', () => {
+    const d = computeGreetingDecision(
+      ctx({ bucket: 'week', openDecision: { mode: 'silent', source: 'native_resume', line: null } }),
+    );
+    expect(d.wakeOpener).toBe('silent_reconnect');
+  });
+
+  test('the rich newday_overview briefing still outranks the bare version when both would fire', () => {
+    const d = computeGreetingDecision(
+      ctx({
+        bucket: 'week',
+        lastFullBriefingDate: '2026-06-29',
+        newdayOverview: richPayload({ messages_unread: 3 }),
+      }),
+    );
+    expect(d.wakeOpener).toBe('newday_overview');
+  });
+
+  test('outranks override_v2 on a genuine new day', () => {
+    const d = computeGreetingDecision(
+      ctx({ bucket: 'long', openDecision: { mode: 'speak', source: 'baseline_lead', line: 'Etwas Kurzes.' } }),
+    );
+    expect(d.wakeOpener).toBe('newday_bare');
+  });
+
+  test('anonymous sessions never fire it (no firstName to address)', () => {
+    const d = computeGreetingDecision(ctx({ bucket: 'week', isAnonymous: true, firstName: null }));
+    expect(d.wakeOpener).not.toBe('newday_bare');
+  });
+
+  test('safe-fast ladder is unaffected — still fires on bucket=today', () => {
+    const d = computeGreetingDecision(safeFastCtx({ bucket: 'today', lastFullBriefingDate: '2026-06-30' }));
+    expect(d.wakeOpener).toBe('safe_fast_newday');
   });
 });

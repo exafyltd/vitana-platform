@@ -103,6 +103,15 @@ const POLLY_VOICES: Record<string, PollyVoiceConfig> = {
   pt: { voiceId: 'Camila' as VoiceId, engine: 'neural' as Engine, languageCode: 'pt-BR' },
   // Ola is Polly's only NEURAL Polish voice; Ewa/Maja are standard-engine.
   pl: { voiceId: 'Ola' as VoiceId, engine: 'neural' as Engine, languageCode: 'pl-PL' },
+  // VTID-03701 (tr as the 11th locale). Filiz is Polly's only Turkish voice
+  // and it is standard-engine only — like `ru`, there is no neural Turkish
+  // voice to pin instead, so this is a real quality ceiling, not a config
+  // gap. NOT yet confirmed against a live DescribeVoices call (this session
+  // has no AWS CLI credentials) — re-run scripts/tts/verify-polly-voices.ts
+  // for `tr` before relying on this in production, same caveat every other
+  // entry in this table carried until BOOTSTRAP-POLLY-NARRATION-CACHE
+  // verified it live.
+  tr: { voiceId: 'Filiz' as VoiceId, engine: 'standard' as Engine, languageCode: 'tr-TR' },
 };
 
 /**
