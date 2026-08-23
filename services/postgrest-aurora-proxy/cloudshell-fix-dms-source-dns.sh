@@ -71,4 +71,13 @@ else
 fi
 
 echo ""
+echo "=== Optional follow-up: repoint Aurora's 116 auth.users FKs at app_users ==="
+echo "Once a fresh full reload has run (so app_users/other tables aren't stale),"
+echo "you can also run:"
+echo "  bash services/postgrest-aurora-proxy/cloudshell-apply-fk-repoint.sh"
+echo "This is the identity-anchor step from docs/AURORA-EXCEPT-AUTH-ASSESSMENT.md --"
+echo "safe to run any time (idempotent, skips FK violations with a NOTICE instead"
+echo "of aborting), but most effective after Aurora's data is current."
+
+echo ""
 echo "=== Done. Paste the connection-test result and task status back to Claude. ==="
