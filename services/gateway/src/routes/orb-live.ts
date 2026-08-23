@@ -14718,7 +14718,7 @@ async function getStoredLanguagePreference(
       const nameToCode: Record<string, string> = {
         english: 'en', german: 'de', french: 'fr', spanish: 'es',
         arabic: 'ar', chinese: 'zh', russian: 'ru', serbian: 'sr',
-        portuguese: 'pt', polish: 'pl',
+        portuguese: 'pt', polish: 'pl', turkish: 'tr',
       };
       return nameToCode[storedLang] || (SUPPORTED_LIVE_LANGUAGES.includes(storedLang) ? storedLang : null);
     }

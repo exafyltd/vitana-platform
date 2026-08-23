@@ -27,9 +27,9 @@ export function asVerbatim(s: string): VerbatimString {
 // with `SUPPORTED_LIVE_LANGUAGES` (orb/live/config.ts) or a language that now
 // legitimately reaches the live path gets flagged as invalid.
 export type SupportedLanguage =
-  'en' | 'de' | 'fr' | 'es' | 'ar' | 'zh' | 'ru' | 'sr' | 'pt' | 'pl';
+  'en' | 'de' | 'fr' | 'es' | 'ar' | 'zh' | 'ru' | 'sr' | 'pt' | 'pl' | 'tr';
 export const SUPPORTED_LANGUAGES: readonly SupportedLanguage[] = [
-  'en', 'de', 'fr', 'es', 'ar', 'zh', 'ru', 'sr', 'pt', 'pl',
+  'en', 'de', 'fr', 'es', 'ar', 'zh', 'ru', 'sr', 'pt', 'pl', 'tr',
 ];
 
 export type RecencyBucket =

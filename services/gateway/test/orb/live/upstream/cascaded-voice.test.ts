@@ -44,7 +44,7 @@ describe('VTID-03683: cascade language eligibility', () => {
       expect(e.reason).toBeNull();
       expect(e.transcribeLanguageCode).toBeTruthy();
     }
-    expect(listCascadeLanguages().sort()).toEqual(['ar', 'pl', 'ru', 'zh']);
+    expect(listCascadeLanguages().sort()).toEqual(['ar', 'pl', 'ru', 'tr', 'zh']);
   });
 
   it('refuses sr, and blames POLLY — the blocker that is actually verified', () => {

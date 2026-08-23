@@ -70,6 +70,11 @@ const TRANSCRIBE_LANGUAGE_CODES: Record<string, LanguageCode> = {
   // has no matching Polly neural voice, so pairing them would put a Gulf
   // voice on MSA transcription for no gain.
   ar: 'ar-AE',
+  // VTID-03701 (tr as the 11th locale). Nova does not speak Turkish
+  // (`NOVA_SONIC_SUPPORTED_LANGUAGES` is en/de/fr/es/pt), so `tr` needs the
+  // cascade exactly like ru/pl/ar/zh. Transcribe's Turkish streaming code
+  // is `tr-TR`; paired with Polly's Filiz voice (also tr-TR) above.
+  tr: 'tr-TR',
   // `sr-RS` IS a real Transcribe streaming language code — verified against the
   // SDK's own `LanguageCode` union, not assumed. It is listed here deliberately
   // even though `sr` can never be eligible, because it makes the refusal REASON
