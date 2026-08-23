@@ -317,7 +317,11 @@ async function main(): Promise<void> {
     : SURFACES.map((s) => s.id);
   const surfaces = surfaceIds.map(getSurface);
 
-  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || '';
+  // VTID-03689 — no provider key is read here any more. Translation goes
+  // through the gateway's llm-router, which picks provider+model from
+  // `llm_routing_policy` (Claude on Bedrock, DeepSeek fallback). Reading a
+  // GEMINI_API_KEY here was both forbidden (ALWAYS 10a/10c, IF-THEN 27) and
+  // useless — that quota is exhausted and GCP billing is off.
   let hadFailures = false;
   let hadGaps = false;
 
@@ -345,19 +349,10 @@ async function main(): Promise<void> {
           hadGaps = true;
           continue;
         }
-        if (!apiKey) {
-          console.error(
-            `[db-i18n] ${surface.id}/${locale.code}: ${todo.length} unit(s) need translating but ` +
-              `no GEMINI_API_KEY / GOOGLE_GEMINI_API_KEY is set.`,
-          );
-          hadFailures = true;
-          continue;
-        }
         const units: TranslateUnit[] = todo.map((u) => ({ key: u.key, fields: u.fields }));
         const { translated, failures } = await translateUnits(
           units,
           {
-            apiKey,
             languageName: locale.english_name,
             informalHint: locale.informal_hint,
             brief: surface.translatorBrief,

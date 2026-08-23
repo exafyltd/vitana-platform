@@ -225,7 +225,12 @@ describe('computeGreetingDecision — rung golden snapshots', () => {
     expect(d).toMatchSnapshot();
   });
 
-  test('rung 8: override_v2 (wake-brief selected line, spoken verbatim)', () => {
+  // VTID-03646 — was "(wake-brief selected line, spoken verbatim)". The line is
+  // no longer spoken verbatim: it is a LEAD the model builds substance +
+  // next step + confirmation on. The old snapshot pinned the dead-end
+  // directive ("ONE short utterance... NO question after") that produced the
+  // reported "announce, then listen" opening, and is deliberately re-recorded.
+  test('rung 8: override_v2 (wake-brief selected line, used as the turn lead)', () => {
     const d = computeGreetingDecision(
       ctx({
         openDecision: { mode: 'speak', source: 'wake:teacher', line: 'Heute ist dein 12. Tag — bleiben wir dran.' },
@@ -253,7 +258,16 @@ describe('computeGreetingDecision — rung golden snapshots', () => {
       }),
     );
     expect(d.wakeOpener).toBe('override_v2');
-    expect(d.directive).toContain('Say exactly:');
+    // VTID-03646 merge: the plain trigger this rung falls back to is now an
+    // English INTENT rather than the per-language `Say exactly: "<line>"`
+    // table (NEVER-rule 41 / §13b), so the literal is gone. VTID-03674's
+    // actual invariants are unchanged and are what is pinned here: guided
+    // candidates get the plain short-utterance shape — NOT the three-beat
+    // proposal contract non-guided openers now get — and none of the
+    // "translate it faithfully / fluent <language>" phrasing that tripped
+    // Nova's content filter may reappear.
+    expect(d.directive).toMatch(/ONE short utterance/i);
+    expect(d.directive).not.toMatch(/NEXT STEP/);
     expect(d.directive).not.toContain('fluent');
     expect(d.directive).not.toContain('translate');
     expect(d).toMatchSnapshot();

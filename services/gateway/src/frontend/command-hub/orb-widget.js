@@ -2127,26 +2127,45 @@
               try { _cfg.onTurnComplete({ was_greeting: !_s.greetingComplete }); }
               catch (e) { /* host callback must never break the voice loop */ }
             }
-            // VTID-03294 (#4): GUIDED auto-close. The teaching turn (turn 1,
-            // greetingComplete still false) has finished playing — close the
-            // overlay so the underlying Topic drawer's next-step buttons are
-            // usable, instead of dropping to listening. Widget-side so it does
-            // not depend on the host wiring. One-shot (cleared here).
-            // VTID-03675: guidedTopic is cleared in the SAME place, now that
-            // _sessionStart no longer one-shot-nulls it — this is the actual
-            // "the guided turn is done, one way or another" point in the
-            // lifecycle (success or a fallback opener both complete a turn
-            // here), so it's also the right point to stop resending
-            // guided_topic_id on any later reconnect.
+            // VTID-03294 (#4) — SUPERSEDED by VTID-03685, do not restore.
+            // This used to close the overlay the instant turn 1 finished
+            // playing, on the theory that turn 1 WAS the whole lesson
+            // (true under the original VTID-03293 design, where the model's
+            // first turn spoke the complete voice_script verbatim). VTID-
+            // 03650/03665 changed turn 1 into a SHORT opener line — the real
+            // teaching moved to the conversational GUIDE-MODE block that
+            // governs turns 2+ (guided-topic-narration-prompt.ts: "Keep it
+            // conversational: short chunks, check understanding, answer
+            // follow-ups") — and nobody updated this auto-close to match.
+            // The result, confirmed live via oasis_events on two consecutive
+            // guided-topic taps (T252 "Dein Plan", T253 "Dein erster
+            // Schritt"): `upstream_closed reason:"user_stop"` at
+            // `turn_count:1`, seconds after the opener's ~1s of audio
+            // finished — THIS auto-close was the client sending that stop.
+            // The multi-paragraph lesson content never had a chance to be
+            // taught; the user's own report named it exactly: "what's
+            // completely missing is reading the session."
+            //
+            // VTID-03675's guidedTopic clear still happens here — the topic
+            // WAS delivered (a candidate won, the opener was spoken), so a
+            // later unrelated reconnect must not resend guided_topic_id —
+            // but the overlay itself now stays open and falls through to
+            // the normal listening transition below, exactly like any other
+            // ORB conversation, so the model's GUIDE-MODE turns can actually
+            // run. Closing the overlay (and revealing the already-open
+            // Topic Explanation drawer underneath) is now the user's own
+            // action, same as ending any other ORB conversation — there is
+            // no reliable signal yet for "the model decided teaching is
+            // done" to auto-trigger it, and guessing at one here would
+            // trade a definite bug for a fragile heuristic.
             if (_s.guidedAutoClose && !_s.greetingComplete) {
               _s.guidedAutoClose = false;
               _s.guidedTopic = null;
-              console.log('[VTOrb] guided teaching turn complete — auto-closing overlay (reveal drawer)');
-              _hide();
-              return;
+              console.log('[VTOrb] guided teaching opener complete — continuing conversation (no auto-close)');
             }
-            // If the host closed the overlay in the callback (guided auto-close),
-            // stop here — don't beep / arm the mic on a torn-down session.
+            // If the overlay was closed some other way while we were waiting
+            // for audio to drain (user pressed X, session torn down), stop
+            // here — don't beep / arm the mic on a torn-down session.
             if (!_s.active || _s._userRequestedClose || !_s.overlayVisible) return;
             // VTID-02035b: play the ready beep BEFORE starting mic capture.
             // On iOS / Appilix WebView, getUserMedia switches the audio
@@ -2233,7 +2252,22 @@
         break;
 
       case 'error':
-        _setStatus('Error: ' + (msg.message || 'Unknown'));
+        // VTID-03686: an upstream 'error' on the FIRST connection attempt
+        // (e.g. Nova's nova_validation content filter) is followed by a
+        // silent server-internal retry that usually succeeds within a few
+        // seconds (resendGreetingIfStuckAtZeroTurns) — nothing has been
+        // heard yet, so there is nothing for the user to be "in error"
+        // from. Flashing a raw internal error string here reads as broken
+        // even when the recovery is about to work; a genuinely terminal
+        // failure is reported separately via 'connection_issue'/
+        // 'live_api_disconnected', which _attemptReconnect handles with
+        // its own status text. Once something has actually played
+        // (greetingComplete), a real error is worth surfacing.
+        if (_s.greetingComplete) {
+          _setStatus('Error: ' + (msg.message || 'Unknown'));
+        } else {
+          console.warn('[VTOrb] Upstream error before first audio — suppressing status flash, awaiting server retry: ' + (msg.message || 'Unknown'));
+        }
         break;
 
       case 'connection_alert':

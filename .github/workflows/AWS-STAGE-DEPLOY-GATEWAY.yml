@@ -233,6 +233,19 @@ jobs:
           # it cannot silently drift back to a stale "staging-only" value
           # left on the task definition from before.
           #
+          # VTID-03646 follow-up -- FEATURE_ORB_SAFE_FAST_GREETING_ENV is
+          # upserted to "staging-only" below. Checked live in this repo: it
+          # is set on neither AWS gateway task def (only the dead GCP
+          # STAGE-DEPLOY.yml ever set it), so the whole greeting-facts
+          # prefetch this flag gates -- first name, last-session info,
+          # lastFullBriefingDate, lastDayCloseDate, recentNbaKeys, the
+          # proactive line -- has been dead on AWS staging AND prod both,
+          # not staging-only as VTID-03646's own PR body assumed. Wiring it
+          # here, staging only, on purpose -- this repo's prod lever is a
+          # deliberate separate action (PUBLISH / manual dispatch, see
+          # AWS-PROD-DEPLOY-GATEWAY.yml), never a side effect of a push, and
+          # this workflow only ever runs on push.
+          #
           # VTID-03513: resolve the FULL secret ARNs before rewriting the task
           # definition. ECS `valueFrom` requires the complete ARN INCLUDING the
           # six-character random suffix Secrets Manager appends
@@ -360,6 +373,7 @@ jobs:
                                                 "NOVA_SONIC_ENABLED","NOVA_SONIC_REGION","NOVA_SONIC_MODEL_ID",
                                                 "NOVA_SONIC_CANARY_USER_IDS","NOVA_SONIC_CANARY_TENANT_IDS",
                                                 "FEATURE_ORB_GREETING_TTS_BRIDGE_ENV",
+                                                "FEATURE_ORB_SAFE_FAST_GREETING_ENV",
                                                 "TTS_PROVIDER",
                                                 "BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION") | not) ]
                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
@@ -371,6 +385,7 @@ jobs:
                           {name:"NOVA_SONIC_CANARY_USER_IDS", value:$NOVA_USERS},
                           {name:"NOVA_SONIC_CANARY_TENANT_IDS", value:$NOVA_TENANTS},
                           {name:"FEATURE_ORB_GREETING_TTS_BRIDGE_ENV", value:"off"},
+                          {name:"FEATURE_ORB_SAFE_FAST_GREETING_ENV", value:"staging-only"},
                           {name:"TTS_PROVIDER", value:"polly"},
                           {name:"BEDROCK_ROLE_ARN", value:$TASK_ROLE},
                           {name:"AWS_BEDROCK_REGION", value:"eu-central-1"} ] )

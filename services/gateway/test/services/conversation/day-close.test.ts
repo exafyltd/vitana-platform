@@ -23,7 +23,10 @@ import {
   isHardDay,
   DAY_CLOSE_THEMES,
 } from '../../../src/services/assistant-continuation/providers/day-close-themes';
-import { buildDayCloseBlock } from '../../../src/services/assistant-continuation/providers/day-close-prompt';
+import {
+  buildDayCloseBlock,
+  buildDayCloseOpenerLine,
+} from '../../../src/services/assistant-continuation/providers/day-close-prompt';
 
 function ctx(over: Partial<GreetingDecisionContext> = {}): GreetingDecisionContext {
   return {
@@ -324,5 +327,110 @@ describe('setDayCloseRungEnabled — day-close kill switch', () => {
     expect(computeGreetingDecision(ctx({ localHour: 23 })).wakeOpener).not.toBe('day_close');
     setDayCloseRungEnabled(true);
     expect(computeGreetingDecision(ctx({ localHour: 23 })).wakeOpener).toBe('day_close');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// VTID-03646 follow-up — the Nova-aware reduced retry VTID-03629 left as an
+// open TODO: "rebuild the opener from reduced content instead of resending
+// identical content". `dayCloseReduced: true` on the context switches
+// tryDayCloseRung from buildDayCloseBlock (~4200 chars, two quoted-dialogue
+// exemplars) to buildDayCloseOpenerLine (short, no exemplars) without
+// touching anything else about the rung — same window/once-per-night/
+// kill-switch guards, same stamped effects.
+// ---------------------------------------------------------------------------
+describe('VTID-03646 follow-up — dayCloseReduced switches the composed prompt', () => {
+  test('off by default — the normal ladder still gets the full block', () => {
+    const d = computeGreetingDecision(ctx({ localHour: 23 }));
+    expect(d.wakeOpener).toBe('day_close');
+    expect(d.diag.reduced).toBeFalsy();
+    expect(d.directive!.length).toBeGreaterThan(2000);
+  });
+
+  test('dayCloseReduced: true fires the SAME rung with a much shorter directive', () => {
+    const full = computeGreetingDecision(ctx({ localHour: 23 }));
+    const reduced = computeGreetingDecision(ctx({ localHour: 23, dayCloseReduced: true }));
+    expect(reduced.wakeOpener).toBe('day_close');
+    expect(reduced.diag.reduced).toBe(true);
+    expect(reduced.directive!.length).toBeLessThan(full.directive!.length);
+    expect(reduced.directive!.length).toBeLessThan(800);
+  });
+
+  test('the reduced directive carries no quoted-dialogue exemplar', () => {
+    const d = computeGreetingDecision(ctx({ localHour: 23, dayCloseReduced: true }));
+    // The full block's shape-example persona/quoted lines must not survive
+    // into the reduced path — that quoted-speech framing is the thing this
+    // fix exists to remove, not merely shrink around.
+    expect(d.directive).not.toMatch(/Tomas/);
+    expect(d.directive).not.toMatch(/IMITATE THE TEXTURE/i);
+  });
+
+  test('still stamps the night and still respects once-per-night, hard-day and window guards', () => {
+    const stamped = computeGreetingDecision(ctx({ localHour: 23, dayCloseReduced: true }));
+    expect(stamped.effects.stampDayCloseDate).toBe('2026-06-30');
+
+    const alreadyClosed = computeGreetingDecision(
+      ctx({ localHour: 23, dayCloseReduced: true, lastDayCloseDate: '2026-06-30' }),
+    );
+    expect(alreadyClosed.wakeOpener).not.toBe('day_close');
+
+    const outsideWindow = computeGreetingDecision(ctx({ localHour: 14, dayCloseReduced: true }));
+    expect(outsideWindow.wakeOpener).not.toBe('day_close');
+  });
+});
+
+describe('VTID-03646 follow-up — buildDayCloseOpenerLine', () => {
+  const opener = (over: Partial<Parameters<typeof buildDayCloseOpenerLine>[0]> = {}) =>
+    buildDayCloseOpenerLine({
+      lang: 'de',
+      firstName: 'Dragan',
+      localHour: 0,
+      timezone: 'Europe/Berlin',
+      theme: DAY_CLOSE_THEMES[0],
+      hardDay: false,
+      previousUtterance: null,
+      sessionsToday: 2,
+      pendingCheckpointTitle: null,
+      ...over,
+    });
+
+  test('is short — an order of magnitude below the full block', () => {
+    expect(opener().length).toBeLessThan(700);
+  });
+
+  test('carries no quoted persona dialogue and no "Say exactly" directive', () => {
+    const o = opener();
+    expect(o).not.toMatch(/Tomas/);
+    expect(o).not.toMatch(/Say exactly/i);
+    expect(o).not.toMatch(/Sag genau/i);
+  });
+
+  test('still states the intent: warm close, carry-not-do, no recap', () => {
+    const o = opener({ lang: 'en' });
+    expect(o).toMatch(/carry|hold/i);
+    expect(o).toMatch(/never promise to complete/i);
+    expect(o).toMatch(/no recap|no numbers/i);
+  });
+
+  test('unknown name is never invented', () => {
+    const o = opener({ firstName: null, lang: 'en' });
+    expect(o).toMatch(/unknown — do not invent one/i);
+  });
+
+  test('known name is passed through', () => {
+    expect(opener({ firstName: 'Dragan', lang: 'de' })).toMatch(/Dragan/);
+  });
+
+  test('hard day still swaps to warmth instead of the theme sentence', () => {
+    const hard = opener({ hardDay: true, lang: 'en' });
+    expect(hard).toMatch(/did not go well/i);
+    expect(hard).not.toContain(DAY_CLOSE_THEMES[0].senseEn);
+    const normal = opener({ hardDay: false, lang: 'en' });
+    expect(normal).toContain(DAY_CLOSE_THEMES[0].senseEn);
+  });
+
+  test('English locale gets English, German gets German', () => {
+    expect(opener({ lang: 'en' })).toMatch(/end of their day/i);
+    expect(opener({ lang: 'de' })).toMatch(/endet, nicht beginnt/);
   });
 });
