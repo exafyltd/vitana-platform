@@ -26,24 +26,34 @@
  * are recorded here in prose so reinstating the split is a lookup, not a
  * research task.
  *
- * `pt` is no longer listed: Nova answered a live Portuguese session in
- * English, so `pt` now routes to the Polly cascade instead (see
- * `nova-sonic-config.ts`). Its Nova ids were `carolina`/`leo`.
+ * `pt` is ROUTED to the Polly cascade (Nova answered a live Portuguese
+ * session in English — see `nova-sonic-config.ts`) but KEEPS its Nova voice
+ * entry here, `carolina`. Routing and voice are separate questions; see the
+ * note on `resolveNovaSonicVoice` for why collapsing them regressed `pt` to a
+ * German voice.
  *
- * Unsupported languages resolve to `null` — callers must already have routed
- * to the cascade before asking for a Nova voice, so `null` is a
- * programming-error signal, not a runtime fallback path. The one language
- * that legitimately reaches the fallback is `sr`: Polly has no Serbian voice
- * in any engine, so Serbian stays on Nova with a substituted voice.
+ * A `null` result means Nova publishes no voice for the language at all
+ * (`ru`/`pl`/`ar`/`zh`/`sr`). That is a real runtime path, not a
+ * programming error: `sr` stays on Nova permanently because Polly has no
+ * Serbian voice in any engine, and the rest reach it whenever the cascade is
+ * switched off. `resolveNovaSonicVoiceOrFallback` is what callers use, and it
+ * reports the substitution rather than hiding it.
  */
-
-import { isNovaSonicLanguageSupported } from '../upstream/nova-sonic-config';
 
 const NOVA_VOICES = {
   en: 'tina',
   de: 'tina',
   fr: 'ambre',
   es: 'lupe',
+  // pt is NOT in `NOVA_SONIC_SUPPORTED_LANGUAGES` — it routes to the Polly
+  // cascade. It is still in THIS table on purpose; see the note on
+  // `resolveNovaSonicVoice` about why routing and voice are separate
+  // questions. `carolina` is Nova 2's pt-BR feminine voice, confirmed by a
+  // real bidirectional stream under VTID-03672 (Bedrock accepts it and
+  // rejects a deliberately bogus id with `Received invalid id`, which is what
+  // makes acceptance evidence rather than absence of an error). pt-BR also
+  // matches this app's Portuguese catalog (VTID-03577).
+  pt: 'carolina',
 } as const;
 
 export type NovaSonicVoiceId = (typeof NOVA_VOICES)[keyof typeof NOVA_VOICES];
@@ -56,11 +66,39 @@ export interface NovaSonicVoiceQuery {
 }
 
 /**
- * Resolve the Nova voice for a language + persona. Returns `null` for
- * languages outside the Nova canary set.
+ * Resolve the Nova voice for a language. Returns `null` when Nova publishes
+ * no voice for it at all.
+ *
+ * VTID-03704 — THIS DOES NOT GATE ON `isNovaSonicLanguageSupported()`, and
+ * that is the whole point of the function.
+ *
+ * Routing and voice answer different questions:
+ *
+ *   - `NOVA_SONIC_SUPPORTED_LANGUAGES` decides WHERE a session goes. `pt` is
+ *     not in it, so `pt` is routed to the Polly cascade.
+ *   - This table decides WHICH VOICE Nova uses if it ends up carrying the
+ *     language anyway.
+ *
+ * The second case is not hypothetical. `tryCascadeRescue()`
+ * (`upstream-provider-selector.ts`) returns null whenever
+ * `ORB_CASCADED_VOICE_ENABLED` is not exactly `'true'`, and control falls
+ * through to `nova_forced_vertex_unavailable` — Nova is forced to carry the
+ * language rather than connect to dead Vertex. So between this code landing
+ * and the cascade's IAM being granted, every `pt` session still transits
+ * Nova.
+ *
+ * Sharing the routing guard here meant `pt` resolved to `null` and took the
+ * `tina` fallback — a GERMAN voice reading Brazilian Portuguese, strictly
+ * worse than the `carolina` it had before, i.e. a regression introduced by
+ * the fix. A voice table that silently empties itself when a language is
+ * rerouted is the failure this codebase has already paid for twice
+ * (VTID-03578's `?? POLLY_VOICES['en']`, VTID-03682's bare `??`).
+ *
+ * `ru`/`pl`/`ar`/`zh`/`sr` are absent because Nova genuinely publishes no
+ * voice for them — they still resolve `null` and take the documented
+ * substitution, unchanged.
  */
 export function resolveNovaSonicVoice(query: NovaSonicVoiceQuery): NovaSonicVoiceId | null {
-  if (!isNovaSonicLanguageSupported(query.language)) return null;
   const base = query.language.trim().toLowerCase().split(/[-_]/)[0] as keyof typeof NOVA_VOICES;
   const voice = NOVA_VOICES[base];
   if (!voice) return null;

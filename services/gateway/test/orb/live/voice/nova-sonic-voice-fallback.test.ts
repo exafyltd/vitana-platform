@@ -24,18 +24,23 @@ describe('VTID-03682: Nova voice fallback is explicit', () => {
   it('reports fallback=true for every language with no native Nova voice', () => {
     // These are the languages SUPPORTED_LIVE_LANGUAGES admits but NOVA_VOICES
     // has no entry for — i.e. every language that was silently getting German.
-    for (const lang of ['ru', 'pl', 'sr', 'ar', 'zh', 'pt']) {
+    // VTID-03704: `pt` is deliberately NOT in this list. It is ROUTED to the
+    // cascade, but Nova publishes a real pt-BR voice (`carolina`), so it is
+    // not one of the languages "silently getting German" — and while the
+    // cascade gate is off it still transits Nova and must keep that voice.
+    for (const lang of ['ru', 'pl', 'sr', 'ar', 'zh']) {
       const r = resolveNovaSonicVoiceOrFallback({ language: lang, persona: 'vitana' });
       expect(r.fallback).toBe(true);
       expect(r.voice).toBe(NOVA_SONIC_FALLBACK_VOICE);
     }
   });
 
-  // VTID-03704 — `pt` removed: Nova answered a live Portuguese session in
-  // English, so it is no longer a language Nova speaks and now cascades to
-  // Polly. It belongs in the fallback=true list above, not here.
-  it('reports fallback=false for languages Nova actually speaks', () => {
-    for (const lang of ['en', 'de', 'fr', 'es']) {
+  // `pt` appears here — fallback=false — even though it is routed to Polly.
+  // This list is "languages Nova has a real voice for", which is not the same
+  // set as "languages Nova is allowed to serve"; conflating the two is what
+  // put a German voice on Portuguese in an earlier draft of VTID-03704.
+  it('reports fallback=false for languages Nova has a real voice for', () => {
+    for (const lang of ['en', 'de', 'fr', 'es', 'pt']) {
       const r = resolveNovaSonicVoiceOrFallback({ language: lang, persona: 'vitana' });
       expect(r.fallback).toBe(false);
       expect(r.voice).toBe(resolveNovaSonicVoice({ language: lang, persona: 'vitana' }));

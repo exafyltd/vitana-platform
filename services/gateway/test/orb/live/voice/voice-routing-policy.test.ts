@@ -82,6 +82,33 @@ describe('VTID-03704: voice routing policy', () => {
     });
   });
 
+  describe('rule 1b — rerouting a language must not change how it SOUNDS', () => {
+    // `tryCascadeRescue()` returns null unless ORB_CASCADED_VOICE_ENABLED is
+    // exactly 'true', so between this landing and the cascade's IAM being
+    // granted, every cascade-routed language still transits Nova via
+    // `nova_forced_vertex_unavailable`. Moving a language OUT of Nova's
+    // routing set therefore must not empty its voice entry — an earlier draft
+    // of VTID-03704 did exactly that and put `tina` (German) on Portuguese,
+    // which is worse than the bug it was fixing.
+    it('keeps a real Nova voice for a cascade-routed language Nova can still voice', () => {
+      const pt = resolveNovaSonicVoiceOrFallback({ language: 'pt' });
+      expect(pt.fallback).toBe(false);
+      expect(pt.voice).not.toBe(resolveNovaSonicVoiceOrFallback({ language: 'de' }).voice);
+    });
+
+    it('only reports a substitution when Nova genuinely has no voice', () => {
+      // ru/pl/ar/zh/sr are absent from Nova's voice table entirely, so a
+      // substitution here is honest. Anything else reporting fallback=true
+      // means a voice entry was dropped, not that Nova lacks the voice.
+      for (const lang of ['ru', 'pl', 'ar', 'zh', 'sr']) {
+        expect(resolveNovaSonicVoiceOrFallback({ language: lang }).fallback).toBe(true);
+      }
+      for (const lang of ['en', 'de', 'fr', 'es', 'pt']) {
+        expect(resolveNovaSonicVoiceOrFallback({ language: lang }).fallback).toBe(false);
+      }
+    });
+  });
+
   describe('rule 2 — one female voice per language, persona-independent', () => {
     const PERSONAS = ['vitana', 'devon', 'atlas', 'sage', 'mira', 'unknown-persona', ''];
 

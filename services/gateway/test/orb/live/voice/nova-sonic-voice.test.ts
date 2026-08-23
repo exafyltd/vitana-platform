@@ -58,17 +58,37 @@ describe('resolveNovaSonicVoice', () => {
     expect(resolveNovaSonicVoice({ language: 'ru', persona: 'devon' })).toBeNull();
   });
 
-  // VTID-03704 — pt REVERSED out of Nova. VTID-03672 admitted it on the
-  // strength of Bedrock accepting `carolina`/`leo` as voiceIds, while its own
-  // note said end-to-end Portuguese generation was never verified. A live
-  // production session then answered a `pt` user in ENGLISH. Portuguese now
-  // routes to the Polly cascade (Transcribe pt-BR + Polly Camila) instead, so
-  // Nova must refuse it here — refusing is what makes the cascade the taken
-  // path rather than a branch nothing reaches.
-  it('refuses pt so it routes to the Polly cascade instead', () => {
-    expect(resolveNovaSonicVoice({ language: 'pt', persona: 'vitana' })).toBeNull();
-    expect(resolveNovaSonicVoice({ language: 'pt-BR', persona: 'vitana' })).toBeNull();
-    expect(resolveNovaSonicVoice({ language: 'pt', persona: 'devon' })).toBeNull();
+  // VTID-03704 — pt is ROUTED out of Nova but KEEPS its Nova voice.
+  //
+  // VTID-03672 admitted pt to Nova on the strength of Bedrock accepting
+  // `carolina`/`leo` as voiceIds, while its own note said end-to-end
+  // Portuguese generation was never verified. A live production session then
+  // answered a `pt` user in ENGLISH, so Portuguese now routes to the Polly
+  // cascade (Transcribe pt-BR + Polly Camila) — that part is
+  // `nova-sonic-config.ts`'s job, asserted in its own suite.
+  //
+  // This suite pins the OTHER half, which an earlier draft of VTID-03704 got
+  // wrong: the voice resolver must NOT also refuse pt. `tryCascadeRescue()`
+  // is inert until `ORB_CASCADED_VOICE_ENABLED='true'`, so until the
+  // cascade's IAM is granted every pt session still transits Nova via
+  // `nova_forced_vertex_unavailable`. Refusing here sent those sessions to
+  // the `tina` fallback — a GERMAN voice reading Brazilian Portuguese, worse
+  // than what pt had before the fix.
+  it('keeps carolina for pt — the cascade gate is inert until IAM lands', () => {
+    expect(resolveNovaSonicVoice({ language: 'pt', persona: 'vitana' })).toBe('carolina');
+    expect(resolveNovaSonicVoice({ language: 'pt-BR', persona: 'vitana' })).toBe('carolina');
+    // Persona-independent, like every other language.
+    expect(resolveNovaSonicVoice({ language: 'pt', persona: 'devon' })).toBe('carolina');
+  });
+
+  it('never substitutes a German voice for Portuguese', () => {
+    // The mutation-style guard for the regression above, stated as the
+    // outcome a user would actually hear rather than as an id equality.
+    for (const persona of ['vitana', 'devon', 'atlas', 'mira', 'sage']) {
+      expect(resolveNovaSonicVoice({ language: 'pt', persona })).not.toBe(
+        resolveNovaSonicVoice({ language: 'de', persona }),
+      );
+    }
   });
 
   it('still refuses the languages Nova genuinely does not speak', () => {
