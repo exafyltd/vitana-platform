@@ -58,6 +58,27 @@ on:
         description: 'Override Nova canary tenant UUID allowlist (comma-separated; empty = use repo var)'
         required: false
         default: ''
+      # VTID-03700 — same lever AWS-PROD-DEPLOY-GATEWAY.yml already declares
+      # for the cascaded voice pipeline (VTID-03683: Transcribe -> Bedrock ->
+      # Polly, for the languages Nova cannot speak at all — ru/pl/ar/zh).
+      # Staging never had this input, so the only way to test the cascade
+      # before promoting it to prod was to skip staging entirely. EMPTY =
+      # preserve, matching the prod convention exactly, so a routine staging
+      # deploy that omits this input changes nothing here either.
+      #
+      # ORDERING IS LOAD-BEARING, same as prod: the gateway task role needs
+      # transcribe:StartStreamTranscription + polly:SynthesizeSpeech FIRST
+      # (scripts/aws/setup-cascaded-voice-iam.sh) or the cascade fails per-turn
+      # instead of failing to start — the same invisible shape as VTID-03480
+      # and VTID-03665. Verify the IAM, then flip this.
+      orb_cascaded_voice_enabled:
+        description: 'Set ORB_CASCADED_VOICE_ENABLED — true routes Nova-unsupported languages (ru/pl/ar/zh) to the Transcribe->Bedrock->Polly cascade instead of forcing them onto Nova. Needs transcribe+polly IAM FIRST (true/false; EMPTY = preserve)'
+        required: false
+        default: ''
+      aws_transcribe_region:
+        description: 'Set AWS_TRANSCRIBE_REGION — region for Transcribe streaming; falls back to AWS_REGION then eu-central-1 (EMPTY = preserve)'
+        required: false
+        default: ''
       aws_region:
         description: 'AWS region'
         required: false
@@ -181,6 +202,13 @@ jobs:
           NOVA_SONIC_ENABLED: ${{ inputs.nova_sonic_enabled || vars.AWS_STAGE_NOVA_SONIC_ENABLED || 'true' }}
           NOVA_SONIC_CANARY_USER_IDS: ${{ inputs.nova_canary_user_ids || vars.AWS_STAGE_NOVA_SONIC_CANARY_USER_IDS || 'a27552a3-0257-4305-8ed0-351a80fd3701,c5a4daf9-190a-4a9e-9638-d6b32f85244a,a2c6ba7e-2ad4-48af-8253-9fe34d0f9232,0adc6ff6-acb0-4dca-99d0-295211a40e3e' }}
           NOVA_SONIC_CANARY_TENANT_IDS: ${{ inputs.nova_canary_tenant_ids || vars.AWS_STAGE_NOVA_SONIC_CANARY_TENANT_IDS || '00000000-0000-0000-0000-000000000001' }}
+          # VTID-03700 — EMPTY = preserve, deliberately NOT `|| 'false'` or any
+          # other default. Unlike the Nova vars above (which this workflow
+          # unconditionally upserts every deploy), these two are only touched
+          # when the dispatcher explicitly provides a value — see the `if [ -n
+          # ... ]` guards below, mirroring AWS-PROD-DEPLOY-GATEWAY.yml exactly.
+          ORB_CASCADED_VOICE_INPUT: ${{ inputs.orb_cascaded_voice_enabled }}
+          AWS_TRANSCRIBE_REGION_INPUT: ${{ inputs.aws_transcribe_region }}
         run: |
           set -e
           IMAGE="${{ steps.build.outputs.image }}"
@@ -358,6 +386,34 @@ jobs:
                           {name:"DEEPSEEK_API_KEY",      valueFrom:$SEC_DEEPSEEK} ] )
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
+
+          # VTID-03700 — cascaded voice pipeline levers, EMPTY = preserve.
+          # Applied as separate upserts (not folded into the big jq call above)
+          # so a dispatch that omits them leaves whatever the task definition
+          # already carries untouched — exactly AWS-PROD-DEPLOY-GATEWAY.yml's
+          # pattern for the same two vars, kept identical on purpose so the two
+          # workflows cannot silently diverge on what "empty" means here.
+          #
+          # The eligibility gate (cascaded-config.ts) refuses a language it
+          # cannot serve, but it cannot see an IAM denial — that surfaces per
+          # turn as a session that connects and then produces nothing, the
+          # same invisible shape as VTID-03480 and VTID-03665.
+          if [ -n "$ORB_CASCADED_VOICE_INPUT" ]; then
+            echo "Applying cascaded voice: ORB_CASCADED_VOICE_ENABLED=$ORB_CASCADED_VOICE_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg C "$ORB_CASCADED_VOICE_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "ORB_CASCADED_VOICE_ENABLED") ]
+                  + [ {name:"ORB_CASCADED_VOICE_ENABLED", value:$C} ] )')
+          fi
+
+          if [ -n "$AWS_TRANSCRIBE_REGION_INPUT" ]; then
+            echo "Applying AWS_TRANSCRIBE_REGION=$AWS_TRANSCRIBE_REGION_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg R "$AWS_TRANSCRIBE_REGION_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "AWS_TRANSCRIBE_REGION") ]
+                  + [ {name:"AWS_TRANSCRIBE_REGION", value:$R} ] )')
+          fi
+
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
             --query 'taskDefinition.taskDefinitionArn' --output text)
           echo "Registered $NEW_ARN"
