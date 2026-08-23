@@ -16,6 +16,7 @@ import { Router, Request, Response } from 'express';
 import { getSupabase } from '../../lib/supabase';
 import { requireTenantAdmin } from '../../middleware/require-tenant-admin';
 import { requireAuth, AuthenticatedRequest } from '../../middleware/auth-supabase-jwt';
+import * as repo from '../../services/tenant-invitations/tenant-invitations-repository';
 
 const router = Router({ mergeParams: true }); // mergeParams to access :tenantId from parent
 
@@ -38,14 +39,7 @@ router.post('/', requireTenantAdmin, async (req: AuthenticatedRequest, res: Resp
     const grantRoles = Array.isArray(roles) && roles.length > 0 ? roles : ['community'];
 
     // Check for existing pending invitation for this email+tenant
-    const { data: existing } = await supabase
-      .from('tenant_invitations')
-      .select('id')
-      .eq('tenant_id', tenantId)
-      .eq('email', email.toLowerCase().trim())
-      .is('accepted_at', null)
-      .is('revoked_at', null)
-      .single();
+    const { data: existing } = await repo.fetchExistingPendingInvitation(supabase, tenantId, email.toLowerCase().trim());
 
     if (existing) {
       return res.status(409).json({
@@ -56,17 +50,13 @@ router.post('/', requireTenantAdmin, async (req: AuthenticatedRequest, res: Resp
     }
 
     // Create invitation
-    const { data: invitation, error } = await supabase
-      .from('tenant_invitations')
-      .insert({
-        tenant_id: tenantId,
-        email: email.toLowerCase().trim(),
-        roles: grantRoles,
-        invited_by: req.identity!.user_id,
-        message: message || null,
-      })
-      .select('*')
-      .single();
+    const { data: invitation, error } = await repo.insertInvitation(supabase, {
+      tenant_id: tenantId,
+      email: email.toLowerCase().trim(),
+      roles: grantRoles,
+      invited_by: req.identity!.user_id,
+      message: message || null,
+    });
 
     if (error) {
       console.error(`[${VTID}] Insert error:`, error.message);
@@ -105,21 +95,7 @@ router.get('/', requireTenantAdmin, async (req: AuthenticatedRequest, res: Respo
     const tenantId = req.params.tenantId || (req as any).targetTenantId;
     const status = (req.query.status as string || '').trim();
 
-    let query = supabase
-      .from('tenant_invitations')
-      .select('*')
-      .eq('tenant_id', tenantId)
-      .order('created_at', { ascending: false });
-
-    if (status === 'pending') {
-      query = query.is('accepted_at', null).is('revoked_at', null);
-    } else if (status === 'accepted') {
-      query = query.not('accepted_at', 'is', null);
-    } else if (status === 'revoked') {
-      query = query.not('revoked_at', 'is', null);
-    }
-
-    const { data, error } = await query;
+    const { data, error } = await repo.fetchInvitations(supabase, tenantId, status);
 
     if (error) {
       console.error(`[${VTID}] List error:`, error.message);
@@ -143,18 +119,10 @@ router.post('/:id/revoke', requireTenantAdmin, async (req: AuthenticatedRequest,
     const tenantId = req.params.tenantId || (req as any).targetTenantId;
     const { id } = req.params;
 
-    const { data, error } = await supabase
-      .from('tenant_invitations')
-      .update({
-        revoked_at: new Date().toISOString(),
-        revoked_by: req.identity!.user_id,
-      })
-      .eq('id', id)
-      .eq('tenant_id', tenantId)
-      .is('accepted_at', null)
-      .is('revoked_at', null)
-      .select('*')
-      .single();
+    const { data, error } = await repo.revokeInvitation(supabase, id, tenantId, {
+      revoked_at: new Date().toISOString(),
+      revoked_by: req.identity!.user_id,
+    });
 
     if (error || !data) {
       return res.status(404).json({ ok: false, error: 'NOT_FOUND', message: 'Invitation not found or already used/revoked.' });
@@ -182,13 +150,7 @@ acceptRouter.post('/accept/:token', requireAuth, async (req: AuthenticatedReques
     const { token } = req.params;
 
     // Find the invitation
-    const { data: invitation, error: findError } = await supabase
-      .from('tenant_invitations')
-      .select('*')
-      .eq('token', token)
-      .is('accepted_at', null)
-      .is('revoked_at', null)
-      .single();
+    const { data: invitation, error: findError } = await repo.fetchInvitationByToken(supabase, token);
 
     if (findError || !invitation) {
       return res.status(404).json({ ok: false, error: 'INVALID_TOKEN', message: 'Invitation not found, expired, or already used.' });
@@ -202,16 +164,11 @@ acceptRouter.post('/accept/:token', requireAuth, async (req: AuthenticatedReques
     const userId = req.identity!.user_id;
 
     // Ensure user has a user_tenants row for this tenant
-    const { data: existingMembership } = await supabase
-      .from('user_tenants')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('tenant_id', invitation.tenant_id)
-      .single();
+    const { data: existingMembership } = await repo.fetchUserTenantMembership(supabase, userId, invitation.tenant_id);
 
     if (!existingMembership) {
       // Create membership with the first offered role as active_role
-      await supabase.from('user_tenants').insert({
+      await repo.insertUserTenantMembership(supabase, {
         user_id: userId,
         tenant_id: invitation.tenant_id,
         active_role: invitation.roles[0] || 'community',
@@ -221,27 +178,19 @@ acceptRouter.post('/accept/:token', requireAuth, async (req: AuthenticatedReques
 
     // Grant all offered roles via user_permitted_roles
     for (const role of invitation.roles) {
-      await supabase
-        .from('user_permitted_roles')
-        .upsert(
-          {
-            user_id: userId,
-            tenant_id: invitation.tenant_id,
-            role,
-            granted_by: invitation.invited_by,
-          },
-          { onConflict: 'user_id,tenant_id,role' }
-        );
+      await repo.upsertUserPermittedRole(supabase, {
+        user_id: userId,
+        tenant_id: invitation.tenant_id,
+        role,
+        granted_by: invitation.invited_by,
+      });
     }
 
     // Mark invitation as accepted
-    await supabase
-      .from('tenant_invitations')
-      .update({
-        accepted_at: new Date().toISOString(),
-        accepted_by: userId,
-      })
-      .eq('id', invitation.id);
+    await repo.markInvitationAccepted(supabase, invitation.id, {
+      accepted_at: new Date().toISOString(),
+      accepted_by: userId,
+    });
 
     console.log(`[${VTID}] Invitation accepted: ${invitation.id} by user ${userId}, roles: ${invitation.roles.join(', ')}`);
 
