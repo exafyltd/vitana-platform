@@ -36,19 +36,13 @@ Both branches' additions are kept: `@aws-sdk/client-s3` and
 TEST: `grep -n "^<<<<<<<\|^=======\|^>>>>>>>" services/gateway/package.json`
 returns nothing.
 
-AC-3 — `services/gateway/pnpm-lock.yaml` (the lockfile CI's
-`pnpm install --frozen-lockfile` actually reads, per
-`.github/workflows/TEST-SUITE.yml`'s `working-directory: services/gateway`)
-matches the resolved `package.json`
+AC-3 — `services/gateway/pnpm-lock.yaml` matches the resolved `package.json`
 
-The first fix attempt regenerated the wrong lockfile
-(`services/gateway/package-lock.json` via `npm`, harmless but insufficient)
-and CI kept failing with `ERR_PNPM_OUTDATED_LOCKFILE` against
-`services/gateway/pnpm-lock.yaml`, which still carried `origin/main`'s old
-`pg@8.22.0`/`@types/pg@8.20.4`. Regenerated with pnpm 9.0.0 (matching the
-version this repo's `packageManager` field and CI both pin) so the lockfile
-format is byte-identical to what CI produces, not just semantically
-equivalent.
+That's the lockfile CI's `pnpm install --frozen-lockfile` actually reads
+(`TEST-SUITE.yml`'s `working-directory: services/gateway`). The first fix
+attempt regenerated the wrong one (`package-lock.json` via `npm`) and CI
+kept failing with `ERR_PNPM_OUTDATED_LOCKFILE`. Regenerated with pnpm 9.0.0
+(matching `packageManager`/CI's pin) so the format matches CI exactly.
 
 TEST: `cd services/gateway && pnpm install --frozen-lockfile` exits 0.
 Output: `outputs/pnpm-frozen-lockfile-check.txt`
