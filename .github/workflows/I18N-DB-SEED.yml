@@ -101,6 +101,26 @@ jobs:
         working-directory: services/gateway
         run: npm ci --no-audit --no-fund
 
+      # VTID-03701 — this job's LLM calls go through the gateway's own
+      # llm-router, which per CLAUDE.md §2b/standing rule VTID-03563 routes
+      # every Claude stage at `provider: 'bedrock'`, never a direct API key.
+      # This job previously only ever set GOOGLE_GEMINI_API_KEY, which the
+      # router does not read at all — every unit failed with "Provider
+      # 'bedrock' has no credentials configured" (confirmed live, run
+      # 32665367441, VTID-03701's tr dispatch: 0 of ~250 units applied).
+      # `configure-aws-credentials` gives the SDK's default credential chain
+      # something to find; `BEDROCK_ROLE_ARN` is only an activation gate
+      # (`invokeBedrock()` checks it is set, never assumes it as a role —
+      # see providers/bedrock.ts), same secret the dead GCP STAGE-DEPLOY.yml
+      # already threaded through to Cloud Run for the identical reason.
+      - name: Configure AWS credentials (Bedrock)
+        if: github.event_name == 'schedule' || github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_STAGING_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_STAGING_SECRET_ACCESS_KEY }}
+          aws-region: eu-central-1
+
       # Automatic propagation for DB-backed content.
       #
       # This DOES spend on LLM calls and DOES write to the database, which is a
@@ -117,6 +137,8 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
           GOOGLE_GEMINI_API_KEY: ${{ secrets.GOOGLE_GEMINI_API_KEY }}
+          BEDROCK_ROLE_ARN: ${{ secrets.BEDROCK_ROLE_ARN }}
+          AWS_BEDROCK_REGION: eu-central-1
         run: npm run i18n:db:seed -- --all --apply
 
       # Runs after the propagation above, so it asserts the END state. Red here
@@ -143,6 +165,8 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
           GOOGLE_GEMINI_API_KEY: ${{ secrets.GOOGLE_GEMINI_API_KEY }}
+          BEDROCK_ROLE_ARN: ${{ secrets.BEDROCK_ROLE_ARN }}
+          AWS_BEDROCK_REGION: eu-central-1
         run: |
           ARGS=""
           case "${{ inputs.locale }}" in
