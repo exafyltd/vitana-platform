@@ -11,6 +11,15 @@
  *
  * Out of scope here (separate chunks): the admin review queue (Chunk 7,
  * its own admin-community-marketplace.ts) and any frontend UI (Chunks 3-6, 8).
+ *
+ * Data access for marketplace-owned tables (community_listings,
+ * community_listing_*, community_marketplace_seller_suspensions,
+ * listing_status_history) goes through
+ * services/community-marketplace/community-marketplace-repository.ts
+ * (VTID-03702, Aurora migration B1 data-access seam) instead of calling
+ * supabase.from(...) directly — see that file's header for why. Reads
+ * against the generic `profiles`/`global_community_profiles` tables stay
+ * inline here, same as other B1 seams leave shared/general tables alone.
  */
 
 import { Router, Request, Response } from 'express';
@@ -22,8 +31,8 @@ import type { CicdEventType } from '../types/cicd';
 import {
   runModerationCheck,
   ModerationBlockedError,
-  type ModerationCategoryInfo,
 } from '../services/community-marketplace/listing-moderation-check';
+import * as repo from '../services/community-marketplace/community-marketplace-repository';
 
 const router = Router();
 router.use(requireAuthWithTenant);
@@ -43,14 +52,6 @@ function identity(req: Request) {
 }
 
 // ==================== Shared row shaping ====================
-
-const PUBLIC_LISTING_COLUMNS =
-  'id, tenant_id, seller_user_id, listing_kind, condition, category, subcategory, title, description, images, ' +
-  'price_cents, currency, price_on_request, location_text, is_remote_service, delivery_method, ' +
-  'requires_verified_provider, status, sold_at, renewed_at, expires_at, view_count, contact_click_count, created_at, updated_at';
-
-const OWNER_ONLY_COLUMNS =
-  'auto_check_result, auto_check_reasons, requires_admin_review, admin_review_reason, admin_notes, reviewed_at';
 
 function serializeListing(row: any, opts: { isOwner: boolean; seller?: any }) {
   const base: Record<string, unknown> = {
@@ -98,42 +99,7 @@ function serializeListing(row: any, opts: { isOwner: boolean; seller?: any }) {
   return base;
 }
 
-export async function recordStatusHistory(
-  supabase: ReturnType<typeof getSupabase>,
-  listingId: string,
-  actorType: 'seller' | 'admin' | 'system',
-  actorUserId: string | null,
-  fromStatus: string | null,
-  toStatus: string,
-  reason: string
-): Promise<void> {
-  await supabase!.from('listing_status_history').insert({
-    listing_id: listingId,
-    actor_type: actorType,
-    actor_user_id: actorUserId,
-    from_status: fromStatus,
-    to_status: toStatus,
-    reason,
-  });
-}
-
-async function fetchCategory(
-  supabase: ReturnType<typeof getSupabase>,
-  key: string
-): Promise<ModerationCategoryInfo | null> {
-  const { data } = await supabase!
-    .from('community_listing_categories')
-    .select('key, listing_kind, is_prohibited, requires_verified_provider, requires_admin_review_always, is_active')
-    .eq('key', key)
-    .maybeSingle();
-  if (!data || !data.is_active) return null;
-  return {
-    key: data.key,
-    is_prohibited: data.is_prohibited,
-    requires_verified_provider: data.requires_verified_provider,
-    requires_admin_review_always: data.requires_admin_review_always,
-  };
-}
+export const recordStatusHistory = repo.recordStatusHistory;
 
 // ==================== GET /categories ====================
 
@@ -142,19 +108,9 @@ router.get('/categories', async (req: Request, res: Response) => {
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
   const listingKind = typeof req.query.listing_kind === 'string' ? req.query.listing_kind : undefined;
+  const kind = listingKind === 'product' || listingKind === 'service' ? listingKind : undefined;
 
-  let query = supabase
-    .from('community_listing_categories')
-    .select('key, listing_kind, display_label, parent_key, sort_order')
-    .eq('is_active', true)
-    .eq('is_prohibited', false)
-    .order('sort_order', { ascending: true });
-
-  if (listingKind === 'product' || listingKind === 'service') {
-    query = query.in('listing_kind', [listingKind, 'both']);
-  }
-
-  const { data, error } = await query;
+  const { data, error } = await repo.fetchActiveCategories(supabase, kind);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   res.json({ ok: true, categories: data ?? [] });
 });
@@ -185,35 +141,24 @@ router.get('/listings', async (req: Request, res: Response) => {
   const tenantId = identity(req).tenant_id!;
   const viewerId = identity(req).user_id;
 
-  const { data: blocks } = await supabase
-    .from('community_listing_seller_blocks')
-    .select('blocked_seller_id')
-    .eq('viewer_user_id', viewerId);
+  const { data: blocks } = await repo.fetchBlockedSellerIds(supabase, viewerId);
   const blockedIds = (blocks ?? []).map((b: any) => b.blocked_seller_id);
 
-  let query = supabase
-    .from(`community_listings`)
-    .select(PUBLIC_LISTING_COLUMNS, { count: 'exact' })
-    .eq('tenant_id', tenantId)
-    .eq('status', 'active');
-
-  if (blockedIds.length > 0) query = query.not('seller_user_id', 'in', `(${blockedIds.join(',')})`);
-  if (p.category) query = query.eq('category', p.category);
-  if (p.subcategory) query = query.eq('subcategory', p.subcategory);
-  if (p.listing_kind) query = query.eq('listing_kind', p.listing_kind);
-  if (p.condition) query = query.eq('condition', p.condition);
-  if (p.delivery_method) query = query.eq('delivery_method', p.delivery_method);
-  if (p.min_price_cents !== undefined) query = query.gte('price_cents', p.min_price_cents);
-  if (p.max_price_cents !== undefined) query = query.lte('price_cents', p.max_price_cents);
-  if (p.q) query = query.textSearch('search_text', p.q, { type: 'websearch' });
-
-  if (p.sort === 'price_asc') query = query.order('price_cents', { ascending: true, nullsFirst: false });
-  else if (p.sort === 'price_desc') query = query.order('price_cents', { ascending: false, nullsFirst: false });
-  else query = query.order('created_at', { ascending: false });
-
-  query = query.range(p.offset, p.offset + p.limit - 1);
-
-  const { data, error, count } = await query;
+  const { data, error, count } = await repo.fetchListings(supabase, {
+    tenantId,
+    blockedSellerIds: blockedIds,
+    category: p.category,
+    subcategory: p.subcategory,
+    listingKind: p.listing_kind,
+    condition: p.condition,
+    deliveryMethod: p.delivery_method,
+    minPriceCents: p.min_price_cents,
+    maxPriceCents: p.max_price_cents,
+    q: p.q,
+    sort: p.sort,
+    limit: p.limit,
+    offset: p.offset,
+  });
   if (error) return res.status(500).json({ ok: false, error: error.message });
 
   res.json({
@@ -233,16 +178,7 @@ router.get('/my/listings', async (req: Request, res: Response) => {
   const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? '20'), 10) || 20, 1), 50);
   const offset = Math.max(parseInt(String(req.query.offset ?? '0'), 10) || 0, 0);
 
-  let query = supabase
-    .from('community_listings')
-    .select(`${PUBLIC_LISTING_COLUMNS}, ${OWNER_ONLY_COLUMNS}`, { count: 'exact' })
-    .eq('seller_user_id', identity(req).user_id)
-    .order('created_at', { ascending: false })
-    .range(offset, offset + limit - 1);
-
-  if (statusFilter) query = query.eq('status', statusFilter);
-
-  const { data, error, count } = await query;
+  const { data, error, count } = await repo.fetchMyListings(supabase, identity(req).user_id, statusFilter, limit, offset);
   if (error) return res.status(500).json({ ok: false, error: error.message });
 
   res.json({
@@ -291,22 +227,10 @@ router.get('/listings/by-seller/:vitanaId', async (req: Request, res: Response) 
   // If the viewer has blocked this seller, return an empty list rather than
   // a 403/404 — same silent-exclusion posture as GET /listings, so visiting
   // the profile directly can't be used to confirm a block exists.
-  const { data: block } = await supabase
-    .from('community_listing_seller_blocks')
-    .select('id')
-    .eq('viewer_user_id', viewerId)
-    .eq('blocked_seller_id', subject.user_id)
-    .maybeSingle();
+  const { data: block } = await repo.checkSellerBlocked(supabase, viewerId, subject.user_id);
   if (block) return res.json({ ok: true, listings: [] });
 
-  const { data, error } = await supabase
-    .from('community_listings')
-    .select(PUBLIC_LISTING_COLUMNS)
-    .eq('tenant_id', tenantId)
-    .eq('seller_user_id', subject.user_id)
-    .eq('status', 'active')
-    .order('created_at', { ascending: false })
-    .range(0, 19);
+  const { data, error } = await repo.fetchListingsBySeller(supabase, tenantId, subject.user_id);
   if (error) return res.status(500).json({ ok: false, error: error.message });
 
   res.json({ ok: true, listings: (data ?? []).map((row: any) => serializeListing(row, { isOwner: false })) });
@@ -319,24 +243,14 @@ router.get('/listings/:id', async (req: Request, res: Response) => {
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
   const viewerId = identity(req).user_id;
-  const { data: row, error } = await supabase
-    .from('community_listings')
-    .select(`${PUBLIC_LISTING_COLUMNS}, ${OWNER_ONLY_COLUMNS}`)
-    .eq('id', req.params.id)
-    .eq('tenant_id', identity(req).tenant_id!)
-    .maybeSingle();
+  const { data: row, error } = await repo.fetchListingById(supabase, req.params.id, identity(req).tenant_id!);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   if (!row) return res.status(404).json({ ok: false, error: 'listing_not_found' });
 
   const isOwner = row.seller_user_id === viewerId;
   if (!isOwner) {
     if (!['active', 'paused', 'sold'].includes(row.status)) return res.status(404).json({ ok: false, error: 'listing_not_found' });
-    const { data: block } = await supabase
-      .from('community_listing_seller_blocks')
-      .select('id')
-      .eq('viewer_user_id', viewerId)
-      .eq('blocked_seller_id', row.seller_user_id)
-      .maybeSingle();
+    const { data: block } = await repo.checkSellerBlocked(supabase, viewerId, row.seller_user_id);
     if (block) return res.status(404).json({ ok: false, error: 'listing_not_found' });
   }
 
@@ -349,7 +263,7 @@ router.get('/listings/:id', async (req: Request, res: Response) => {
   if (!isOwner && row.status === 'active') {
     void (async () => {
       try {
-        await supabase.from('community_listings').update({ view_count: row.view_count + 1 }).eq('id', row.id);
+        await repo.bumpListingCounter(supabase, row.id, 'view_count', row.view_count + 1);
       } catch { /* non-fatal */ }
     })();
   }
@@ -387,7 +301,7 @@ router.post('/listings', async (req: Request, res: Response) => {
     return res.status(400).json({ ok: false, error: 'price_cents_and_currency_required_unless_price_on_request' });
   }
 
-  const category = await fetchCategory(supabase, p.category);
+  const category = await repo.fetchCategory(supabase, p.category);
   if (!category) return res.status(400).json({ ok: false, error: 'invalid_category' });
 
   const userId = identity(req).user_id;
@@ -397,11 +311,7 @@ router.post('/listings', async (req: Request, res: Response) => {
   // (see admin-community-marketplace.ts POST /sellers/:userId/suspend) can't
   // create new listings — checked here rather than via RLS since this route
   // uses the service-role client throughout.
-  const { data: suspension } = await supabase
-    .from('community_marketplace_seller_suspensions')
-    .select('seller_user_id')
-    .eq('seller_user_id', userId)
-    .maybeSingle();
+  const { data: suspension } = await repo.checkSellerSuspended(supabase, userId);
   if (suspension) return res.status(403).json({ ok: false, error: 'seller_suspended' });
 
   const { data: profile } = await supabase.from('profiles').select('verification_status').eq('user_id', userId).maybeSingle();
@@ -419,36 +329,32 @@ router.post('/listings', async (req: Request, res: Response) => {
     throw e;
   }
 
-  const { data: inserted, error } = await supabase
-    .from('community_listings')
-    .insert({
-      tenant_id: tenantId,
-      seller_user_id: userId,
-      listing_kind: p.listing_kind,
-      condition: p.condition ?? null,
-      category: p.category,
-      subcategory: p.subcategory ?? null,
-      title: p.title,
-      description: p.description,
-      images: p.images,
-      price_cents: p.price_on_request ? null : p.price_cents,
-      currency: p.price_on_request ? null : p.currency,
-      price_on_request: p.price_on_request,
-      location_text: p.location_text ?? null,
-      is_remote_service: p.is_remote_service,
-      delivery_method: p.delivery_method,
-      requires_verified_provider: moderation.requires_verified_provider,
-      status: moderation.initial_status,
-      auto_check_result: moderation.auto_check_result,
-      auto_check_reasons: moderation.auto_check_reasons,
-      requires_admin_review: moderation.requires_admin_review,
-      admin_review_reason: moderation.requires_admin_review_reason,
-    })
-    .select(`${PUBLIC_LISTING_COLUMNS}, ${OWNER_ONLY_COLUMNS}`)
-    .single();
+  const { data: inserted, error } = await repo.insertListing(supabase, {
+    tenant_id: tenantId,
+    seller_user_id: userId,
+    listing_kind: p.listing_kind,
+    condition: p.condition ?? null,
+    category: p.category,
+    subcategory: p.subcategory ?? null,
+    title: p.title,
+    description: p.description,
+    images: p.images,
+    price_cents: p.price_on_request ? null : p.price_cents,
+    currency: p.price_on_request ? null : p.currency,
+    price_on_request: p.price_on_request,
+    location_text: p.location_text ?? null,
+    is_remote_service: p.is_remote_service,
+    delivery_method: p.delivery_method,
+    requires_verified_provider: moderation.requires_verified_provider,
+    status: moderation.initial_status,
+    auto_check_result: moderation.auto_check_result,
+    auto_check_reasons: moderation.auto_check_reasons,
+    requires_admin_review: moderation.requires_admin_review,
+    admin_review_reason: moderation.requires_admin_review_reason,
+  });
   if (error) return res.status(500).json({ ok: false, error: error.message });
 
-  await recordStatusHistory(supabase, inserted.id, 'system', userId, null, moderation.initial_status, 'listing_created');
+  await repo.recordStatusHistory(supabase, inserted.id, 'system', userId, null, moderation.initial_status, 'listing_created');
   await emitOasisEvent({
     vtid: VTID,
     type: 'community_marketplace.listing.created',
@@ -479,12 +385,7 @@ router.patch('/listings/:id', async (req: Request, res: Response) => {
   const p = parsed.data;
 
   const userId = identity(req).user_id;
-  const { data: existing, error: fetchErr } = await supabase
-    .from('community_listings')
-    .select('*')
-    .eq('id', req.params.id)
-    .eq('seller_user_id', userId)
-    .maybeSingle();
+  const { data: existing, error: fetchErr } = await repo.fetchListingForEdit(supabase, req.params.id, userId);
   if (fetchErr) return res.status(500).json({ ok: false, error: fetchErr.message });
   if (!existing) return res.status(404).json({ ok: false, error: 'listing_not_found' });
   if (['sold', 'removed'].includes(existing.status)) {
@@ -526,7 +427,7 @@ router.patch('/listings/:id', async (req: Request, res: Response) => {
 
   let statusOverride: string | null = null;
   if (contentChanged) {
-    const category = await fetchCategory(supabase, merged.category);
+    const category = await repo.fetchCategory(supabase, merged.category);
     if (!category) return res.status(400).json({ ok: false, error: 'invalid_category' });
 
     const { data: profile } = await supabase.from('profiles').select('verification_status').eq('user_id', userId).maybeSingle();
@@ -556,16 +457,11 @@ router.patch('/listings/:id', async (req: Request, res: Response) => {
     }
   }
 
-  const { data: updated, error } = await supabase
-    .from('community_listings')
-    .update(update)
-    .eq('id', existing.id)
-    .select(`${PUBLIC_LISTING_COLUMNS}, ${OWNER_ONLY_COLUMNS}`)
-    .single();
+  const { data: updated, error } = await repo.updateListing(supabase, existing.id, update);
   if (error) return res.status(500).json({ ok: false, error: error.message });
 
   if (statusOverride) {
-    await recordStatusHistory(supabase, existing.id, 'system', userId, existing.status, statusOverride, 're_review_after_edit');
+    await repo.recordStatusHistory(supabase, existing.id, 'system', userId, existing.status, statusOverride, 're_review_after_edit');
   }
 
   await emitOasisEvent({
@@ -610,12 +506,7 @@ router.post('/listings/:id/status', async (req: Request, res: Response) => {
   const { action } = parsed.data;
 
   const userId = identity(req).user_id;
-  const { data: existing, error: fetchErr } = await supabase
-    .from('community_listings')
-    .select('id, status, seller_user_id')
-    .eq('id', req.params.id)
-    .eq('seller_user_id', userId)
-    .maybeSingle();
+  const { data: existing, error: fetchErr } = await repo.fetchListingForStatusChange(supabase, req.params.id, userId);
   if (fetchErr) return res.status(500).json({ ok: false, error: fetchErr.message });
   if (!existing) return res.status(404).json({ ok: false, error: 'listing_not_found' });
 
@@ -636,19 +527,14 @@ router.post('/listings/:id/status', async (req: Request, res: Response) => {
     update.expires_at = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
   }
 
-  const { data: updated, error } = await supabase
-    .from('community_listings')
-    .update(update)
-    .eq('id', existing.id)
-    .select(`${PUBLIC_LISTING_COLUMNS}, ${OWNER_ONLY_COLUMNS}`)
-    .single();
+  const { data: updated, error } = await repo.updateListing(supabase, existing.id, update);
   if (error) return res.status(500).json({ ok: false, error: error.message });
 
   // action === 'renew' skips this: it only touches expires_at/renewed_at, not
   // `status`, and is a routine seller self-service action rather than a
   // state transition worth the global timeline.
   if (toStatus) {
-    await recordStatusHistory(supabase, existing.id, 'seller', userId, existing.status, toStatus, `seller_action:${action}`);
+    await repo.recordStatusHistory(supabase, existing.id, 'seller', userId, existing.status, toStatus, `seller_action:${action}`);
     await emitOasisEvent({
       vtid: VTID,
       type: 'community_marketplace.listing.status_changed',
@@ -672,13 +558,7 @@ router.post('/listings/:id/contact-click', async (req: Request, res: Response) =
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
   const viewerId = identity(req).user_id;
-  const { data: row, error } = await supabase
-    .from('community_listings')
-    .select('id, seller_user_id, status, contact_click_count')
-    .eq('id', req.params.id)
-    .eq('tenant_id', identity(req).tenant_id!)
-    .in('status', ['active', 'paused'])
-    .maybeSingle();
+  const { data: row, error } = await repo.fetchListingForContactClick(supabase, req.params.id, identity(req).tenant_id!);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   if (!row) return res.status(404).json({ ok: false, error: 'listing_not_found' });
 
@@ -690,7 +570,7 @@ router.post('/listings/:id/contact-click', async (req: Request, res: Response) =
   if (!seller) return res.status(404).json({ ok: false, error: 'seller_not_found' });
 
   if (row.seller_user_id !== viewerId) {
-    await supabase.from('community_listings').update({ contact_click_count: row.contact_click_count + 1 }).eq('id', row.id);
+    await repo.bumpListingCounter(supabase, row.id, 'contact_click_count', row.contact_click_count + 1);
   }
 
   res.json({
@@ -717,36 +597,29 @@ router.post('/listings/:id/reports', async (req: Request, res: Response) => {
   const reporterId = identity(req).user_id;
   const tenantId = identity(req).tenant_id!;
 
-  const { data: listing } = await supabase
-    .from('community_listings')
-    .select('id, seller_user_id, status, requires_admin_review')
-    .eq('id', req.params.id)
-    .eq('tenant_id', tenantId)
-    .maybeSingle();
+  const { data: listing } = await repo.fetchListingForReport(supabase, req.params.id, tenantId);
   if (!listing) return res.status(404).json({ ok: false, error: 'listing_not_found' });
   if (listing.seller_user_id === reporterId) return res.status(400).json({ ok: false, error: 'cannot_report_own_listing' });
 
-  const { data: report, error } = await supabase
-    .from('community_listing_reports')
-    .insert({ listing_id: listing.id, reporter_user_id: reporterId, tenant_id: tenantId, report_reason: p.report_reason, report_note: p.report_note ?? null })
-    .select('id')
-    .single();
+  const { data: report, error } = await repo.insertReport(supabase, {
+    listing_id: listing.id,
+    reporter_user_id: reporterId,
+    tenant_id: tenantId,
+    report_reason: p.report_reason,
+    report_note: p.report_note ?? null,
+  });
   if (error) {
     if ((error as any).code === '23505') return res.status(409).json({ ok: false, error: 'already_reported' });
     return res.status(500).json({ ok: false, error: error.message });
   }
 
-  const { count } = await supabase
-    .from('community_listing_reports')
-    .select('id', { count: 'exact', head: true })
-    .eq('listing_id', listing.id)
-    .neq('status', 'dismissed');
+  const { count } = await repo.countActiveReports(supabase, listing.id);
 
   if ((count ?? 0) >= AUTO_ESCALATE_REPORT_THRESHOLD && !listing.requires_admin_review) {
     const update: Record<string, unknown> = { requires_admin_review: true, admin_review_reason: 'auto_escalated_reports' };
     if (listing.status === 'active') update.status = 'draft';
-    await supabase.from('community_listings').update(update).eq('id', listing.id);
-    if (update.status) await recordStatusHistory(supabase, listing.id, 'system', null, listing.status, 'draft', 'auto_escalated_reports');
+    await repo.updateListingAdminReview(supabase, listing.id, update);
+    if (update.status) await repo.recordStatusHistory(supabase, listing.id, 'system', null, listing.status, 'draft', 'auto_escalated_reports');
     await emitOasisEvent({
       vtid: VTID,
       type: 'community_marketplace.listing.auto_escalated',
@@ -766,11 +639,7 @@ router.get('/seller-blocks', async (req: Request, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
-  const { data, error } = await supabase
-    .from('community_listing_seller_blocks')
-    .select('id, blocked_seller_id, reason, created_at, profiles:blocked_seller_id(display_name, vitana_id)')
-    .eq('viewer_user_id', identity(req).user_id)
-    .order('created_at', { ascending: false });
+  const { data, error } = await repo.fetchSellerBlocks(supabase, identity(req).user_id);
   if (error) return res.status(500).json({ ok: false, error: error.message });
 
   res.json({
@@ -805,14 +674,12 @@ router.post('/seller-blocks', async (req: Request, res: Response) => {
 
   if (p.blocked_seller_id === viewerId) return res.status(400).json({ ok: false, error: 'cannot_block_self' });
 
-  const { data, error } = await supabase
-    .from('community_listing_seller_blocks')
-    .upsert(
-      { viewer_user_id: viewerId, blocked_seller_id: p.blocked_seller_id, tenant_id: identity(req).tenant_id!, reason: p.reason ?? null },
-      { onConflict: 'viewer_user_id,blocked_seller_id' }
-    )
-    .select('id')
-    .single();
+  const { data, error } = await repo.upsertSellerBlock(supabase, {
+    viewer_user_id: viewerId,
+    blocked_seller_id: p.blocked_seller_id,
+    tenant_id: identity(req).tenant_id!,
+    reason: p.reason ?? null,
+  });
   if (error) return res.status(500).json({ ok: false, error: error.message });
 
   res.status(201).json({ ok: true, block_id: data.id });
@@ -824,11 +691,7 @@ router.delete('/seller-blocks/:blockedSellerId', async (req: Request, res: Respo
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
-  const { error } = await supabase
-    .from('community_listing_seller_blocks')
-    .delete()
-    .eq('viewer_user_id', identity(req).user_id)
-    .eq('blocked_seller_id', req.params.blockedSellerId);
+  const { error } = await repo.deleteSellerBlock(supabase, identity(req).user_id, req.params.blockedSellerId);
   if (error) return res.status(500).json({ ok: false, error: error.message });
 
   res.json({ ok: true });
