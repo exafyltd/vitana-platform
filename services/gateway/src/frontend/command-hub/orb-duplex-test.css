@@ -1,0 +1,138 @@
+/* VTID-03706 — ORB full-duplex gate device test harness.
+   External stylesheet, no inline styles: CSP forbids them (CLAUDE.md). */
+
+:root {
+  --bg: #0e1116;
+  --panel: #161b22;
+  --border: #2a323d;
+  --fg: #e6edf3;
+  --muted: #97a3b1;
+  --accent: #4b9fff;
+  --ok: #2ea043;
+  --bad: #d93a3a;
+  --warn: #d29922;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+
+.wrap {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px 16px 64px;
+}
+
+header h1 { font-size: 1.35rem; margin: 0 0 4px; }
+.sub { color: var(--muted); font-size: 0.9rem; margin: 0 0 8px; }
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  margin: 16px 0;
+}
+
+.panel h2 { font-size: 1rem; margin: 0 0 10px; }
+.panel p { margin: 0 0 10px; font-size: 0.92rem; }
+
+.warn { color: var(--warn); }
+
+.steps { margin: 0 0 14px; padding-left: 20px; font-size: 0.9rem; }
+.steps li { margin-bottom: 6px; }
+
+.controls { display: flex; flex-wrap: wrap; gap: 8px; }
+
+button {
+  flex: 1 1 auto;
+  min-height: 46px;               /* WCAG 2.2 target size */
+  padding: 10px 14px;
+  font: inherit;
+  font-size: 0.92rem;
+  color: var(--fg);
+  background: #21262d;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+button.primary { background: var(--accent); border-color: var(--accent); color: #06121f; font-weight: 600; }
+button.danger { background: #3d1f1f; border-color: #5c2b2b; }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.status { margin-top: 12px; font-size: 0.88rem; color: var(--muted); }
+
+.meters { margin-bottom: 14px; }
+.meter { display: flex; align-items: center; gap: 10px; }
+.meter-label { flex: 0 0 72px; font-size: 0.8rem; color: var(--muted); }
+.meter-val { flex: 0 0 56px; font-variant-numeric: tabular-nums; font-size: 0.85rem; text-align: right; }
+
+.bar {
+  position: relative;
+  flex: 1 1 auto;
+  height: 18px;
+  background: #0b0f14;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.bar-fill { height: 100%; width: 0; background: #3b4b5e; transition: width 60ms linear; }
+.bar-fill-open { background: var(--ok); }
+
+.mark { position: absolute; top: 0; bottom: 0; width: 2px; }
+.mark-open { background: var(--bad); }
+.mark-close { background: var(--warn); }
+
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin: 0; }
+.stats > div { background: #0b0f14; border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; }
+/* Long single-word keys (BARGECONFIRMFRAMES) have no break opportunity and
+   overflow the tile on a 390px viewport — uppercase + letter-spacing makes
+   them wider still. Allow a break anywhere rather than clipping the label. */
+.stats dt {
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  overflow-wrap: anywhere;
+}
+.stats dd { margin: 2px 0 0; font-size: 0.95rem; font-variant-numeric: tabular-nums; }
+
+.pill { display: inline-block; padding: 1px 8px; border-radius: 999px; background: #21262d; font-size: 0.82rem; }
+.pill-open { background: var(--ok); color: #04140a; font-weight: 600; }
+.pill-on { background: var(--accent); color: #06121f; font-weight: 600; }
+
+.verdict { padding: 12px; border-radius: 8px; font-size: 0.92rem; border: 1px solid var(--border); }
+.verdict-idle { background: #0b0f14; color: var(--muted); }
+.verdict-pass { background: #0d2417; border-color: var(--ok); color: #7ee2a0; }
+.verdict-fail { background: #2a1113; border-color: var(--bad); color: #ff9d9d; }
+
+details { margin-top: 12px; }
+summary { cursor: pointer; font-size: 0.86rem; color: var(--muted); }
+
+.log {
+  margin: 8px 0 0;
+  padding: 10px;
+  max-height: 220px;
+  overflow: auto;
+  background: #05080b;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+code { font: 0.85em ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--accent); }
+
+@media (prefers-reduced-motion: reduce) {
+  .bar-fill { transition: none; }
+}

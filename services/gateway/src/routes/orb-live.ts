@@ -326,6 +326,14 @@ import {
   // PolicyResolver render-block lookup with English fallback baked in.
   getConnectionIssueMessage,
 } from '../orb/upstream/constants';
+// VTID-03706: full-duplex voice — the mic stays open while Vitana speaks so
+// Nova Sonic's native barge-in can actually fire. Inert unless
+// FEATURE_ORB_FULL_DUPLEX_ENV is set.
+import {
+  isFullDuplexEnabled,
+  shouldDropMicWhileModelSpeaking,
+  shouldDropMicForPostTurnCooldown,
+} from '../orb/live/duplex/full-duplex-gate';
 import {
   SHORT_GAP_GREETING_PHRASES,
   pickShortGapGreetings,
@@ -16522,6 +16530,12 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
       session_id: sessionId,
       live_api_connected: true,
       setupComplete: true, // v1 compatibility: signals Gemini is ready
+      // VTID-03706: tell the widget whether to run the full-duplex mic gate.
+      // The server is the authority — the widget has no env of its own, and a
+      // client that gated frames while the server still dropped them (or vice
+      // versa) would be a half-applied change with no single place to debug.
+      // Absent/false ⇒ the widget keeps its pre-existing barge-in behavior.
+      full_duplex: isFullDuplexEnabled(),
       // VTID-01224: Include context bootstrap status
       context_bootstrap: {
         included: !!contextInstruction,
@@ -16659,12 +16673,26 @@ async function handleWsAudioMessage(clientSession: WsClientSession, message: WsC
     return;
   }
 
+  // VTID-03706: full duplex resolved once per chunk — both gates below must
+  // agree, and reading the flag twice invites them to disagree if an operator
+  // flips the env var between the two calls.
+  const fullDuplex = isFullDuplexEnabled();
+
   // VTID-VOICE-INIT: Echo prevention gate — drop mic audio while model is speaking.
   // On mobile devices without hardware AEC, the phone speaker output is picked up by
   // the mic and forwarded to Gemini, which interprets it as new user speech. This causes
   // Gemini to interrupt itself and generate 2-3 overlapping response streams.
   // The gate is released when turn_complete or interrupted is received from Gemini.
-  if (liveSession.isModelSpeaking) {
+  //
+  // VTID-03706: under full duplex this gate is OFF, and that is the whole
+  // point. Dropping every chunk here meant Nova received literal silence
+  // during its own turn, so its native barge-in — which is what actually
+  // stops generation, since `sendEndOfTurn()` is a documented no-op for Nova
+  // — could never fire. The echo this gate protects against is now removed
+  // at the source: the client replaces sub-threshold frames with digital
+  // silence before they ever leave the device (see full-duplex-gate.ts), so
+  // what arrives is safe to forward AND carries the user's interruption.
+  if (shouldDropMicWhileModelSpeaking({ fullDuplex, isModelSpeaking: liveSession.isModelSpeaking })) {
     // Log sparingly to avoid flooding (every 50th dropped chunk)
     if (liveSession.audioInChunks % 50 === 0) {
       console.log(`[VTID-VOICE-INIT] Dropping mic audio — model is speaking: session=${sessionId}, dropped_at_chunk=${liveSession.audioInChunks}`);
@@ -16676,7 +16704,17 @@ async function handleWsAudioMessage(clientSession: WsClientSession, message: WsC
 
   // VTID-ECHO-COOLDOWN: Post-turn cooldown — gate mic audio for N ms after
   // turn_complete to let client-side audio playback finish draining.
-  if (liveSession.turnCompleteAt > 0 && (Date.now() - liveSession.turnCompleteAt) < getPostTurnCooldownMs()) {
+  //
+  // VTID-03706: also off under full duplex. The draining queue is gated
+  // frame-by-frame on the client now, so this blanket time window only
+  // discards the user's first words after every model turn — the same class
+  // of bug as the gate above, just smaller.
+  if (shouldDropMicForPostTurnCooldown({
+    fullDuplex,
+    turnCompleteAt: liveSession.turnCompleteAt,
+    nowMs: Date.now(),
+    cooldownMs: getPostTurnCooldownMs(),
+  })) {
     liveSession.audioInChunks++;
     liveSession.lastActivity = new Date();
     return;

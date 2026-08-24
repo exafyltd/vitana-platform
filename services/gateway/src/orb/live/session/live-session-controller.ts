@@ -48,6 +48,13 @@ import {
   getPostTurnCooldownMs,
   getForwardingAckTimeoutMs,
 } from '../../upstream/constants';
+// VTID-03706: full-duplex voice — see full-duplex-gate.ts. Inert unless
+// FEATURE_ORB_FULL_DUPLEX_ENV is set.
+import {
+  isFullDuplexEnabled,
+  shouldDropMicWhileModelSpeaking,
+  shouldDropMicForPostTurnCooldown,
+} from '../duplex/full-duplex-gate';
 import { destroySessionBuffer } from '../../../services/session-memory-buffer';
 // VTID-03107: Live AI voice quota check at session start + per-minute meter.
 import {
@@ -2393,8 +2400,13 @@ export async function handleLiveStreamSend(
         return res.json({ ok: true, dropped: true, reason: 'navigation_dispatched' });
       }
 
+      // VTID-03706: resolved once so both gates below decide on the same value.
+      const fullDuplex = isFullDuplexEnabled();
+
       // VTID-VOICE-INIT: Echo prevention gate (SSE path) — same as WebSocket path
-      if (session.isModelSpeaking) {
+      // VTID-03706: and, like the WS path, off under full duplex — see
+      // full-duplex-gate.ts for why forwarding is what makes barge-in work.
+      if (shouldDropMicWhileModelSpeaking({ fullDuplex, isModelSpeaking: session.isModelSpeaking })) {
         session.audioInChunks++;
         if (session.audioInChunks % 50 === 0) {
           console.log(`[VTID-VOICE-INIT] SSE path: dropping mic audio — model is speaking: session=${effectiveSessionId}`);
@@ -2403,7 +2415,12 @@ export async function handleLiveStreamSend(
       }
 
       // VTID-ECHO-COOLDOWN: Post-turn cooldown drops mic for N ms.
-      if (session.turnCompleteAt > 0 && (Date.now() - session.turnCompleteAt) < getPostTurnCooldownMs()) {
+      if (shouldDropMicForPostTurnCooldown({
+        fullDuplex,
+        turnCompleteAt: session.turnCompleteAt,
+        nowMs: Date.now(),
+        cooldownMs: getPostTurnCooldownMs(),
+      })) {
         session.audioInChunks++;
         return res.json({ ok: true, dropped: true, reason: 'post_turn_cooldown' });
       }

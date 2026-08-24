@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>ORB Full-Duplex Gate — Device Test (VTID-03706)</title>
+  <link rel="stylesheet" href="/command-hub/orb-duplex-test.css?v=20260824-01" />
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <h1>ORB Full-Duplex Gate — Device Test</h1>
+      <p class="sub">VTID-03706 · answers one question: <strong>does this device's echo open the mic gate?</strong></p>
+    </header>
+
+    <section class="panel" aria-labelledby="why-h">
+      <h2 id="why-h">What this is for</h2>
+      <p>
+        Full-duplex voice keeps the microphone open while Vitana speaks. That is
+        only safe if the speaker output, after the browser's echo canceller has
+        done its work, stays <em>below</em> the gate's open threshold. If it does
+        not, Nova hears its own voice and interrupts itself in a loop.
+      </p>
+      <p>
+        This page runs the <strong>exact same gate logic</strong> as the ORB
+        widget, against your real microphone and your real speaker, on this
+        device. It talks to no server, writes nothing, and starts no ORB session.
+      </p>
+      <p class="warn">
+        Run it with the speaker at the volume you would actually use, and with
+        headphones <em>off</em> — speakerphone is the hard case.
+      </p>
+    </section>
+
+    <section class="panel" aria-labelledby="run-h">
+      <h2 id="run-h">Run</h2>
+      <ol class="steps">
+        <li><strong>Echo test</strong> — plays a tone, you stay silent. Any gate opening is echo leaking through. Must be zero.</li>
+        <li><strong>Speech test</strong> — plays a tone, you talk over it normally. The gate must open and barge must fire.</li>
+        <li><strong>Quiet-speech test</strong> — same, but say "nein" / "stop" at normal conversational volume, not loudly.</li>
+      </ol>
+      <div class="controls">
+        <button id="btn-echo" type="button" class="primary">1 · Echo test (stay silent)</button>
+        <button id="btn-speech" type="button">2 · Speech test (talk over it)</button>
+        <button id="btn-stop" type="button" class="danger" disabled>Stop</button>
+      </div>
+      <p id="status" class="status" role="status" aria-live="polite">Idle. Grant microphone access when prompted.</p>
+    </section>
+
+    <section class="panel" aria-labelledby="live-h">
+      <h2 id="live-h">Live</h2>
+      <div class="meters">
+        <div class="meter">
+          <span class="meter-label">Mic RMS</span>
+          <div class="bar" role="img" aria-label="Microphone RMS level">
+            <div id="bar-rms" class="bar-fill"></div>
+            <div id="mark-open" class="mark mark-open" title="open threshold"></div>
+            <div id="mark-close" class="mark mark-close" title="close threshold"></div>
+          </div>
+          <span id="val-rms" class="meter-val">0.000</span>
+        </div>
+      </div>
+      <dl class="stats">
+        <div><dt>Gate</dt><dd id="stat-gate" class="pill">shut</dd></div>
+        <div><dt>Playing</dt><dd id="stat-playing" class="pill">no</dd></div>
+        <div><dt>Peak RMS</dt><dd id="stat-peak">0.000</dd></div>
+        <div><dt>Frames sent</dt><dd id="stat-frames">0</dd></div>
+        <div><dt>Silent frames</dt><dd id="stat-silent">0</dd></div>
+        <div><dt>Barge events</dt><dd id="stat-barge">0</dd></div>
+      </dl>
+    </section>
+
+    <section class="panel" aria-labelledby="verdict-h">
+      <h2 id="verdict-h">Verdict</h2>
+      <div id="verdict" class="verdict verdict-idle">Run a test to get a verdict.</div>
+      <details>
+        <summary>Event log</summary>
+        <pre id="log" class="log" aria-live="polite"></pre>
+      </details>
+    </section>
+
+    <section class="panel" aria-labelledby="cfg-h">
+      <h2 id="cfg-h">Gate configuration</h2>
+      <p class="sub">
+        Mirrors <code>DUPLEX_GATE</code> in
+        <code>services/gateway/src/orb/live/duplex/full-duplex-gate.ts</code>.
+        If you change a value there, change it here and in
+        <code>orb-widget.js</code> — the parity test enforces the widget copy.
+      </p>
+      <dl class="stats">
+        <div><dt>openRms</dt><dd id="cfg-open">—</dd></div>
+        <div><dt>closeRms</dt><dd id="cfg-close">—</dd></div>
+        <div><dt>hangoverMs</dt><dd id="cfg-hangover">—</dd></div>
+        <div><dt>aecWarmupMs</dt><dd id="cfg-warmup">—</dd></div>
+        <div><dt>bargeConfirmFrames</dt><dd id="cfg-confirm">—</dd></div>
+      </dl>
+    </section>
+  </main>
+
+  <script src="/command-hub/orb-duplex-test.js?v=20260824-01"></script>
+</body>
+</html>
