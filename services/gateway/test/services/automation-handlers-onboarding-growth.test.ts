@@ -20,6 +20,7 @@ import { AutomationContext } from '../../src/types/automations';
 registerOnboardingGrowthHandlers();
 
 const SRC = path.join(__dirname, '..', '..', 'src', 'services', 'automation-handlers', 'onboarding-growth.ts');
+const REPO_SRC = path.join(__dirname, '..', '..', 'src', 'services', 'automation-handlers', 'onboarding-growth-repository.ts');
 
 function makeFakeSupabase(resultsByTable: Record<string, Array<{ data?: any; count?: number; error?: any }>>) {
   const cursors: Record<string, number> = {};
@@ -74,7 +75,11 @@ function makeCtx(supabase: any, metadata: Record<string, unknown> = {}) {
 }
 
 describe('onboarding-growth — source-level wall against never-deployed / wrong tables', () => {
-  const src = fs.readFileSync(SRC, 'utf8');
+  // VTID-03702 (Aurora migration B1): the literal `.from(...)` calls this
+  // wall pins now live in the repository seam, not the handler file itself
+  // — check the combined text so the pure-move refactor doesn't break a
+  // still-valid invariant.
+  const src = fs.readFileSync(SRC, 'utf8') + '\n' + fs.readFileSync(REPO_SRC, 'utf8');
 
   it('never references the never-deployed VTID-01084/legacy tables', () => {
     expect(src).not.toMatch(/from\(['"]user_topic_profile['"]\)/);
