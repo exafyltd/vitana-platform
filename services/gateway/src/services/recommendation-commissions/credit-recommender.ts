@@ -20,6 +20,7 @@
 
 import { getSupabase } from '../../lib/supabase';
 import { creditWalletForEarning } from '../wallet/spend-earning-service';
+import * as repo from './credit-recommender-repository';
 
 export type CreditRecommenderStatus = 'credited' | 'skipped_ineligible' | 'skipped_no_recommendation' | 'already_credited' | 'failed';
 
@@ -34,11 +35,7 @@ const DEFAULT_RATE = 0.2;
 
 async function loadDefaultRate(supabase: ReturnType<typeof getSupabase>): Promise<number> {
   if (!supabase) return DEFAULT_RATE;
-  const { data } = await supabase
-    .from('admin_settings')
-    .select('value')
-    .eq('key', 'recommendation_commission_default_rate')
-    .maybeSingle();
+  const { data } = await repo.fetchDefaultCommissionRateSetting(supabase);
   const rate = (data?.value as { rate?: number } | undefined)?.rate;
   return typeof rate === 'number' && rate > 0 && rate <= 1 ? rate : DEFAULT_RATE;
 }
@@ -51,11 +48,7 @@ export async function creditRecommenderForOrder(orderId: string): Promise<Credit
   const supabase = getSupabase();
   if (!supabase) return { ok: false, status: 'failed', message: 'DB_UNAVAILABLE' };
 
-  const { data: order, error: orderErr } = await supabase
-    .from('product_orders')
-    .select('id, state, commission_cents, currency, attribution_recommendation_id, merchant_id')
-    .eq('id', orderId)
-    .maybeSingle();
+  const { data: order, error: orderErr } = await repo.fetchProductOrderForCommission(supabase, orderId);
   if (orderErr || !order) return { ok: false, status: 'failed', message: 'ORDER_NOT_FOUND' };
   if (order.state !== 'converted') return { ok: true, status: 'skipped_no_recommendation', message: 'order not converted' };
   if (!order.attribution_recommendation_id) return { ok: true, status: 'skipped_no_recommendation' };
@@ -64,32 +57,23 @@ export async function creditRecommenderForOrder(orderId: string): Promise<Credit
   }
 
   // Idempotency check — a re-pull of the same conversion must not double-credit.
-  const { data: existing } = await supabase
-    .from('recommendation_commissions')
-    .select('id, status')
-    .eq('product_order_id', orderId)
-    .maybeSingle();
+  const { data: existing } = await repo.fetchExistingRecommendationCommission(supabase, orderId);
   if (existing) return { ok: true, status: 'already_credited' };
 
-  const { data: recommendation } = await supabase
-    .from('product_recommendations')
-    .select('id, user_id')
-    .eq('id', order.attribution_recommendation_id)
-    .maybeSingle();
+  const { data: recommendation } = await repo.fetchProductRecommendationForCommission(
+    supabase,
+    order.attribution_recommendation_id,
+  );
   if (!recommendation) return { ok: true, status: 'skipped_no_recommendation' };
 
-  const { data: merchant } = await supabase
-    .from('merchants')
-    .select('recommendation_commission_eligible, recommendation_commission_rate_override')
-    .eq('id', order.merchant_id)
-    .maybeSingle();
+  const { data: merchant } = await repo.fetchMerchantCommissionEligibility(supabase, order.merchant_id);
 
   const currency = (order.currency ?? 'EUR').toUpperCase();
   const rate = merchant?.recommendation_commission_rate_override ?? (await loadDefaultRate(supabase));
   const payoutMinor = Math.round(order.commission_cents * rate);
 
   if (!merchant?.recommendation_commission_eligible) {
-    await supabase.from('recommendation_commissions').insert({
+    await repo.insertRecommendationCommission(supabase, {
       product_recommendation_id: recommendation.id,
       product_order_id: orderId,
       recommender_user_id: recommendation.user_id,
@@ -99,7 +83,7 @@ export async function creditRecommenderForOrder(orderId: string): Promise<Credit
       currency,
       status: 'skipped_ineligible',
     });
-    await supabase.from('oasis_events').insert({
+    await repo.insertCommissionSkippedIneligibleEvent(supabase, {
       service: 'discover', source: 'recommendation-commissions',
       type: 'marketplace.recommendation.commission_skipped_ineligible',
       topic: 'marketplace.recommendation.commission_skipped_ineligible',
@@ -114,12 +98,7 @@ export async function creditRecommenderForOrder(orderId: string): Promise<Credit
     return { ok: true, status: 'skipped_no_recommendation', message: 'non-positive payout or unsupported currency' };
   }
 
-  const { data: account } = await supabase
-    .from('wallet_accounts')
-    .select('id, currency')
-    .eq('user_id', recommendation.user_id)
-    .eq('currency', currency)
-    .maybeSingle();
+  const { data: account } = await repo.fetchRecommenderWalletAccount(supabase, recommendation.user_id, currency);
   if (!account) {
     return { ok: false, status: 'failed', message: 'RECOMMENDER_WALLET_NOT_FOUND' };
   }
@@ -135,7 +114,7 @@ export async function creditRecommenderForOrder(orderId: string): Promise<Credit
   });
 
   if (!creditResult.ok) {
-    await supabase.from('recommendation_commissions').insert({
+    await repo.insertRecommendationCommission(supabase, {
       product_recommendation_id: recommendation.id,
       product_order_id: orderId,
       recommender_user_id: recommendation.user_id,
@@ -148,7 +127,7 @@ export async function creditRecommenderForOrder(orderId: string): Promise<Credit
     return { ok: false, status: 'failed', message: creditResult.error };
   }
 
-  await supabase.from('recommendation_commissions').insert({
+  await repo.insertRecommendationCommission(supabase, {
     product_recommendation_id: recommendation.id,
     product_order_id: orderId,
     recommender_user_id: recommendation.user_id,
@@ -160,7 +139,7 @@ export async function creditRecommenderForOrder(orderId: string): Promise<Credit
     status: 'credited',
   });
 
-  await supabase.rpc('increment_product_recommendation_stats', {
+  await repo.incrementProductRecommendationStats(supabase, {
     p_recommendation_id: recommendation.id,
     p_commission_earned_minor: payoutMinor,
   });
