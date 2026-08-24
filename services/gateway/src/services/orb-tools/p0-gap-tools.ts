@@ -14,6 +14,7 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
+import * as repo from './p0-gap-tools-repository';
 
 type Handler = (args: OrbToolArgs, id: OrbToolIdentity, sb: SupabaseClient) => Promise<OrbToolResult>;
 
@@ -98,18 +99,11 @@ export async function tool_follow_member(
     if (person.user_id === id.user_id) {
       return { ok: true, result: { followed: false, reason: 'self' }, text: 'That is your own profile — you cannot follow yourself.' };
     }
-    const { data: existing } = await sb
-      .from('user_follows')
-      .select('id')
-      .eq('follower_id', id.user_id)
-      .eq('following_id', person.user_id)
-      .maybeSingle();
+    const { data: existing } = await repo.fetchFollowRow(sb, id.user_id, person.user_id);
     if (existing) {
       return { ok: true, result: { followed: true, already: true, user_id: person.user_id }, text: `You already follow ${who}.` };
     }
-    const { error } = await sb
-      .from('user_follows')
-      .insert({ follower_id: id.user_id, following_id: person.user_id });
+    const { error } = await repo.insertFollow(sb, id.user_id, person.user_id);
     if (error) return { ok: false, error: `Could not follow ${who}: ${error.message}` };
     return {
       ok: true,
@@ -139,12 +133,7 @@ export async function tool_unfollow_member(
       };
     }
     const who = person.display_name || name;
-    const { data: existing } = await sb
-      .from('user_follows')
-      .select('id')
-      .eq('follower_id', id.user_id)
-      .eq('following_id', person.user_id)
-      .maybeSingle();
+    const { data: existing } = await repo.fetchFollowRow(sb, id.user_id, person.user_id);
     if (!existing) {
       return { ok: true, result: { unfollowed: false, reason: 'not_following' }, text: `You are not following ${who}, so there is nothing to unfollow.` };
     }
@@ -155,11 +144,7 @@ export async function tool_unfollow_member(
         text: `CONFIRM REQUIRED: Ask the user "Should I unfollow ${who}?" and call unfollow_member again with confirmed=true only after they say yes.`,
       };
     }
-    const { error } = await sb
-      .from('user_follows')
-      .delete()
-      .eq('follower_id', id.user_id)
-      .eq('following_id', person.user_id);
+    const { error } = await repo.deleteFollow(sb, id.user_id, person.user_id);
     if (error) return { ok: false, error: `Could not unfollow ${who}: ${error.message}` };
     return {
       ok: true,
@@ -195,13 +180,7 @@ export async function tool_get_notifications(
   const limitRaw = Number(args.limit);
   const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 20) : 10;
   try {
-    const { data, error } = await sb
-      .from('user_notifications')
-      .select('id, type, title, body, read_at, created_at')
-      .eq('user_id', id.user_id)
-      .eq('tenant_id', id.tenant_id)
-      .order('created_at', { ascending: false })
-      .limit(20);
+    const { data, error } = await repo.fetchRecentNotifications(sb, id.user_id, id.tenant_id);
     if (error) return { ok: false, error: `Could not read notifications: ${error.message}` };
     const rows = (data ?? []) as NotificationRow[];
     if (rows.length === 0) {
@@ -256,18 +235,9 @@ export async function tool_mark_notifications_read(
   const reference = strArg(args, 'reference', 'title');
   const now = new Date().toISOString();
   try {
-    let query = sb
-      .from('user_notifications')
-      .update({ read_at: now })
-      .eq('user_id', id.user_id)
-      .eq('tenant_id', id.tenant_id)
-      .is('read_at', null);
-    if (reference) {
-      // Scope to notifications whose title mentions the spoken reference.
-      const safe = reference.replace(/[%_,]/g, ' ').trim();
-      query = query.ilike('title', `%${safe}%`);
-    }
-    const { data, error } = await query.select('id');
+    // Scope to notifications whose title mentions the spoken reference.
+    const safe = reference ? reference.replace(/[%_,]/g, ' ').trim() : null;
+    const { data, error } = await repo.markNotificationsRead(sb, id.user_id, id.tenant_id, now, safe);
     if (error) return { ok: false, error: `Could not mark notifications read: ${error.message}` };
     const count = (data ?? []).length;
     if (count === 0) {
@@ -317,12 +287,7 @@ export async function tool_get_wallet_balance(
     }
     let subscription: SubscriptionRow | null = null;
     try {
-      let subQuery = sb
-        .from('user_subscriptions')
-        .select('plan_key, status, current_period_end')
-        .eq('user_id', id.user_id);
-      if (id.tenant_id) subQuery = subQuery.eq('tenant_id', id.tenant_id);
-      const { data: subRow } = await subQuery.maybeSingle();
+      const { data: subRow } = await repo.fetchUserSubscription(sb, id.user_id, id.tenant_id ?? null);
       subscription = (subRow as SubscriptionRow | null) ?? null;
     } catch {
       /* subscription read is optional */
@@ -410,7 +375,7 @@ export async function tool_update_profile(
         text: `CONFIRM REQUIRED: Read the change back verbatim — setting ${readback} — then call update_profile again with confirmed=true after the user agrees.`,
       };
     }
-    const { error } = await sb.from('profiles').update(updates).eq('user_id', id.user_id);
+    const { error } = await repo.updateOwnProfile(sb, id.user_id, updates);
     if (error) return { ok: false, error: `Could not update your profile: ${error.message}` };
     const spoken = Object.entries(updates)
       .map(([k, v]) => `${k.replace('_', ' ')} is now "${v}"`)
@@ -451,17 +416,8 @@ export async function tool_play_podcast(
 ): Promise<OrbToolResult> {
   const query = strArg(args, 'query', 'title', 'topic');
   try {
-    let q = sb
-      .from('media_uploads')
-      .select('id, title, description, file_url, thumbnail_url, duration, podcast_metadata(host_name, series_name)')
-      .eq('status', 'approved')
-      .eq('is_public', true)
-      .eq('media_type', 'podcast');
-    if (query) {
-      const pattern = `%${query.replace(/[\\%_,]/g, ' ').trim()}%`;
-      q = q.or(`title.ilike.${pattern},description.ilike.${pattern}`);
-    }
-    const { data, error } = await q.order('plays_count', { ascending: false }).limit(5);
+    const pattern = query ? `%${query.replace(/[\\%_,]/g, ' ').trim()}%` : null;
+    const { data, error } = await repo.searchApprovedPodcasts(sb, pattern);
     if (error) return { ok: false, error: `Podcast search failed: ${error.message}` };
     const rows = (data ?? []) as unknown as PodcastRow[];
     if (rows.length === 0) {
@@ -531,13 +487,7 @@ async function resolveAuthorPost(
 ): Promise<PostOutcome> {
   const author = await resolveMember(authorName);
   if (!author) return { kind: 'no_author' };
-  const { data, error } = await sb
-    .from('profile_posts')
-    .select('id, user_id, content, created_at')
-    .eq('user_id', author.user_id)
-    .eq('is_public', true)
-    .order('created_at', { ascending: false })
-    .limit(5);
+  const { data, error } = await repo.fetchRecentPublicPostsByAuthor(sb, author.user_id);
   if (error) return { kind: 'error', message: error.message };
   const posts = (data ?? []) as PostRow[];
   if (posts.length === 0) return { kind: 'no_post', author };
@@ -569,12 +519,7 @@ export async function tool_like_post(
       return { ok: true, result: { liked: false, reason: 'no_posts' }, text: `${authorDisplay} has no public posts to like right now.` };
     }
     const { post } = outcome;
-    const { data: existing } = await sb
-      .from('profile_post_likes')
-      .select('id')
-      .eq('post_id', post.id)
-      .eq('user_id', id.user_id)
-      .maybeSingle();
+    const { data: existing } = await repo.fetchPostLikeRow(sb, post.id, id.user_id);
     if (existing) {
       return {
         ok: true,
@@ -582,7 +527,7 @@ export async function tool_like_post(
         text: `You already liked ${authorDisplay}'s post "${snippet(post.content)}".`,
       };
     }
-    const { error } = await sb.from('profile_post_likes').insert({ post_id: post.id, user_id: id.user_id });
+    const { error } = await repo.insertPostLike(sb, post.id, id.user_id);
     if (error) return { ok: false, error: `Could not like the post: ${error.message}` };
     return {
       ok: true,
@@ -629,9 +574,7 @@ export async function tool_comment_on_post(
         text: `CONFIRM REQUIRED: Read the comment back verbatim — "${comment}" — on ${authorDisplay}'s post "${snippet(post.content)}", then call comment_on_post again with confirmed=true after the user says post/yes.`,
       };
     }
-    const { error } = await sb
-      .from('profile_post_comments')
-      .insert({ post_id: post.id, user_id: id.user_id, content: comment });
+    const { error } = await repo.insertPostComment(sb, post.id, id.user_id, comment);
     if (error) return { ok: false, error: `Could not post the comment: ${error.message}` };
     return {
       ok: true,
