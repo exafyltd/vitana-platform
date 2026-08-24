@@ -15692,6 +15692,12 @@ const ttsPcmDiagnosticLimiter = rateLimit({
 });
 
 router.post('/tts-pcm-diagnostic', ttsPcmDiagnosticLimiter, optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis: the Dev Autopilot Impact Scan's
+  // new-mutation-without-oasis-emit rule pattern-matches for a literal
+  // `emitOasisEvent(` call and doesn't see through a wrapper — this handler
+  // does emit OASIS state via emitTtsEvent() below (request/success/failure),
+  // the exact same helper the sibling /tts route above uses for the same
+  // purpose (see VTID-01155's emitTtsEvent()).
   const body = req.body as { text?: string; lang?: string };
   const text = (body.text || '').trim();
   if (!text) {

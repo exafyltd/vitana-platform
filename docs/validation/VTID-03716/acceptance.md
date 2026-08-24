@@ -119,6 +119,22 @@ Output: `outputs/tsc.txt` (empty — clean)
 
 ---
 
+ROUTE_MOUNT: `POST /tts-pcm-diagnostic` rides the existing ORB Live router
+mount — same router (`orbLiveRouter`, `services/gateway/src/routes/orb-live.ts`)
+as the sibling `/tts` route, mounted at `/api/v1/orb` in
+`services/gateway/src/index.ts:834` (`mountRouterSync(app, '/api/v1/orb',
+orbLiveRouter, { owner: 'orb-live' })`) — unchanged by this PR, no new mount.
+FINAL_URL: https://preview-aws-gateway.vitanaland.com/api/v1/orb/tts-pcm-diagnostic
+CURL_PROOF: after merge-to-main auto-deploys staging:
+`curl -s -o /dev/null -w "%{http_code} %{content_type}" -X POST
+https://preview-aws-gateway.vitanaland.com/api/v1/orb/tts-pcm-diagnostic -H
+"Content-Type: application/json" -d '{"text":"hi","lang":"en"}'` must return
+`200 application/json...` (route exists, real Polly PCM synthesis) — NOT
+`404 text/html`. This exact route is also the target of the automated
+`scripts/tts/verify-cascade-audio-timing.ts` program (VTID-03716's actual
+purpose), which will be run for real against staging once this deploys —
+results reported directly, not assumed.
+
 ## Verification summary
 
 | Check | Result |
