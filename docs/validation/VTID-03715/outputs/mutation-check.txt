@@ -1,0 +1,19 @@
+# Mutation 1 — restore the dropped mime in upstream-message-handler.ts
+#   ctx.callbacks.onAudioResponse(event.dataB64, event.mimeType)
+#     -> ctx.callbacks.onAudioResponse(event.dataB64)
+      ✕ passes event.mimeType through to onAudioResponse
+      ✕ no longer calls onAudioResponse with the payload alone
+Tests:       2 failed, 10 passed, 12 total
+# reverted -> 12/12
+
+# Mutation 2 — re-hardcode the forwarding rate in orb-live.ts
+#   mime: audioMime || DEFAULT_UPSTREAM_AUDIO_MIME
+#     -> mime: 'audio/pcm;rate=24000'
+      ✕ SSE and WS both send the chunk mime with a named fallback
+      ✕ every surviving hardcoded rate belongs to a chime send
+Tests:       2 failed, 10 passed, 12 total
+# reverted -> 12/12
+#
+# Note the second failure: the structural sweep correctly distinguished an
+# upstream forwarding path from a chime send, which is the thing that makes
+# it a guard rather than a count of literals.
