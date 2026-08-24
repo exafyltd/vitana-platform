@@ -81,6 +81,33 @@ git add services/gateway/src/routes/orb-live.ts \
 git commit -m "Add stateless Polly PCM diagnostic route + automated audio-timing test program (VTID-03716)"
 git push -u origin claude/polly-pcm-audio-test-program-vtid-03716
 
+# Dev Autopilot Impact Scan (PR #3173) flagged new-mutation-without-oasis-emit
+# on the new route -- legitimate, since the sibling /tts route already emits
+# TTS telemetry via emitTtsEvent(). Added matching
+# emitTtsEvent('vtid.tts.request'|'success'|'failure', {...}) calls to
+# /tts-pcm-diagnostic, mirroring the sibling route's exact payload shape
+# (lang, voice, voice_type, engine, text_length, audio_bytes, mime_type,
+# error), tagged route:'tts-pcm-diagnostic' to distinguish from the MP3 /tts
+# route in oasis_events.
+cd services/gateway
+npx tsc --noEmit
+#   -> clean, no output (outputs/tsc.txt)
+
+npx jest test/orb/live/characterization/tts-pcm-diagnostic-route.characterization.test.ts --silent
+#   -> Test Suites: 1 passed, 1 total
+#   -> Tests: 8 passed, 8 total (unchanged -- route body shape unaffected)
+#   -> outputs/targeted-tests.txt
+
+npx jest test/orb --silent
+#   -> Test Suites: 177 passed, 177 total
+#   -> Tests: 6 todo, 3278 passed, 3284 total
+#   -> outputs/full-orb-suite.txt
+
+cd ..
+git add services/gateway/src/routes/orb-live.ts docs/validation/VTID-03716/
+git commit -m "Add OASIS TTS telemetry to /tts-pcm-diagnostic route (VTID-03716)"
+git push origin claude/polly-pcm-audio-test-program-vtid-03716
+
 # --- NOT done from this session yet ---
 # Once merged and staging redeploys, the actual live run against real
 # Polly audio for ru/pl/ar/zh/tr/de/en is the next step:

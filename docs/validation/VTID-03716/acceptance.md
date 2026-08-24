@@ -62,9 +62,18 @@ Output: `outputs/pre-deploy-dry-run.txt`
 
 AC-5 — no regression to the full suite
 
-TEST: `npx jest test/orb` — 176/176 suites, 3266/3272 tests passing (6
+TEST: `npx jest test/orb` — 177/177 suites, 3278/3284 tests passing (6
 pre-existing todo), 0 failures.
 Output: `outputs/full-orb-suite.txt`
+
+AC-7 — the route emits OASIS TTS telemetry, matching the sibling `/tts`
+route's observability pattern (Dev Autopilot Impact Scan finding, addressed)
+
+TEST: `services/gateway/test/orb/live/characterization/tts-pcm-diagnostic-route.characterization.test.ts`
+— all 8 pre-existing assertions still pass unchanged against the route body
+slice, confirming the added `emitTtsEvent('vtid.tts.request'|'success'|'failure', ...)`
+calls did not alter the route's synthesis/validation shape.
+Output: `outputs/targeted-tests.txt`
 
 AC-6 — type-checks clean
 
@@ -78,7 +87,8 @@ Output: `outputs/tsc.txt` (empty — clean)
 | Check | Result |
 |---|---|
 | Targeted route characterization tests | 8/8 passing |
-| Full `test/orb` suite | 176/176 suites, 3266/3272 tests, 0 failures |
+| Full `test/orb` suite | 177/177 suites, 3278/3284 tests, 0 failures |
+| OASIS TTS telemetry (Dev Autopilot Impact Scan finding) | added — mirrors sibling `/tts` route's `emitTtsEvent` request/success/failure calls |
 | `tsc --noEmit` | clean |
 | Pre-deploy dry run of the test program | confirmed graceful, correct failure mode against a target without the route |
 | **Post-deploy live run against real staging (ru/pl/ar/zh/tr/de/en)** | **pending — this PR must merge and deploy before the program can run against real Polly audio; results will be reported directly to the platform owner once staging serves this commit** |

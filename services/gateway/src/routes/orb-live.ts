@@ -15684,16 +15684,40 @@ router.post('/tts-pcm-diagnostic', optionalAuth, async (req: AuthenticatedReques
   }
   const lang = normalizeLang(body.lang || 'en');
 
+  await emitTtsEvent('vtid.tts.request', {
+    lang,
+    voice_type: 'Polly',
+    format: 'pcm',
+    text_length: text.length,
+    route: 'tts-pcm-diagnostic',
+  });
+
   try {
     const result = await synthesizePolly({ text, lang, format: 'pcm' });
     if (!result) {
-      return res.status(422).json({
-        ok: false,
-        error: POLLY_UNSUPPORTED_LANGS.has(lang)
-          ? `Polly has no voice for lang='${lang}' in any engine`
-          : `Polly synthesis failed for lang='${lang}'`,
+      const error = POLLY_UNSUPPORTED_LANGS.has(lang)
+        ? `Polly has no voice for lang='${lang}' in any engine`
+        : `Polly synthesis failed for lang='${lang}'`;
+      await emitTtsEvent('vtid.tts.failure', {
+        lang,
+        voice_type: 'Polly',
+        format: 'pcm',
+        text_length: text.length,
+        route: 'tts-pcm-diagnostic',
+        error,
       });
+      return res.status(422).json({ ok: false, error });
     }
+    await emitTtsEvent('vtid.tts.success', {
+      lang,
+      voice: result.voice,
+      voice_type: 'Polly',
+      engine: result.engine,
+      text_length: text.length,
+      audio_bytes: result.audioB64.length,
+      mime_type: `audio/pcm;rate=${result.sampleRateHz}`,
+      route: 'tts-pcm-diagnostic',
+    });
     return res.status(200).json({
       ok: true,
       audio_b64: result.audioB64,
@@ -15706,6 +15730,14 @@ router.post('/tts-pcm-diagnostic', optionalAuth, async (req: AuthenticatedReques
     });
   } catch (error: any) {
     console.error('[VTID-03716] /tts-pcm-diagnostic error:', error);
+    await emitTtsEvent('vtid.tts.failure', {
+      lang,
+      voice_type: 'Polly',
+      format: 'pcm',
+      text_length: text.length,
+      route: 'tts-pcm-diagnostic',
+      error: error.message,
+    });
     return res.status(500).json({ ok: false, error: error.message || 'PCM synthesis failed' });
   }
 });

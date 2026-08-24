@@ -4,16 +4,16 @@ ts-jest[config] (WARN)
 PASS test/orb/live/characterization/tts-pcm-diagnostic-route.characterization.test.ts
   VTID-03716 — /tts-pcm-diagnostic route
     ✓ is mounted with optionalAuth — stateless, no session required (2 ms)
-    ✓ calls synthesizePolly with format:"pcm" unconditionally — the same call CascadedLiveClient makes
+    ✓ calls synthesizePolly with format:"pcm" unconditionally — the same call CascadedLiveClient makes (1 ms)
     ✓ does not gate on TTS_PROVIDER — imports synthesizePolly directly, not the tts-provider wrapper (1 ms)
-    ✓ returns sample_rate_hz and a matching audio/pcm;rate= mime — the exact fields the widget fix reads (1 ms)
-    ✓ rejects empty text with 400, not a silent empty-audio synthesis attempt
-    ✓ rejects oversized text with 400 before calling Polly (cost/latency guard) (1 ms)
-    ✓ reports a Polly-unsupported language distinctly (422), not a generic 500 (1 ms)
+    ✓ returns sample_rate_hz and a matching audio/pcm;rate= mime — the exact fields the widget fix reads
+    ✓ rejects empty text with 400, not a silent empty-audio synthesis attempt (1 ms)
+    ✓ rejects oversized text with 400 before calling Polly (cost/latency guard)
+    ✓ reports a Polly-unsupported language distinctly (422), not a generic 500
     ✓ the import is the direct, unconditional Polly module, not the gated provider wrapper
 
 Test Suites: 1 passed, 1 total
 Tests:       8 passed, 8 total
 Snapshots:   0 total
-Time:        0.499 s, estimated 1 s
+Time:        0.468 s, estimated 1 s
 Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
