@@ -401,7 +401,7 @@ jobs:
                           {name:"FEATURE_ORB_GREETING_TTS_BRIDGE_ENV", value:"off"},
                           {name:"FEATURE_ORB_SAFE_FAST_GREETING_ENV", value:"staging-only"},
                           # VTID-03706 — ORB full-duplex voice: the mic stays
-                          # open while Vitana speaks so Nova Sonic's native
+                          # open while Vitana speaks so the native Nova Sonic
                           # barge-in can fire. STAGING ONLY. Deliberately not
                           # added to AWS-PROD-DEPLOY-GATEWAY.yml: this changes
                           # live audio behaviour for every voice session and
