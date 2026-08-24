@@ -12,6 +12,7 @@
  */
 import { getSupabase } from '../../lib/supabase';
 import type { AdminScanner, InsightDraft } from './types';
+import * as repo from './notifications-repository';
 
 const LOG_PREFIX = '[admin-scanner:notifications]';
 const UNREAD_PILEUP_THRESHOLD = 100;
@@ -33,12 +34,7 @@ export const notificationsScanner: AdminScanner = {
 
     // 1. Unread notification pileup
     try {
-      const { count } = await supabase
-        .from('user_notifications')
-        .select('id', { count: 'exact', head: true })
-        .eq('tenant_id', tenantId)
-        .is('read_at', null)
-        .lt('created_at', d7);
+      const { count } = await repo.countUnreadNotificationsOlderThan(supabase, tenantId, d7);
       if (count !== null && count >= UNREAD_PILEUP_THRESHOLD) {
         insights.push({
           natural_key: 'notifications_unread_pileup_7d',
@@ -66,15 +62,8 @@ export const notificationsScanner: AdminScanner = {
     // 2. Push opt-in rate
     try {
       const [{ count: totalUsers }, { count: pushEnabled }] = await Promise.all([
-        supabase
-          .from('user_notification_preferences')
-          .select('user_id', { count: 'exact', head: true })
-          .eq('tenant_id', tenantId),
-        supabase
-          .from('user_notification_preferences')
-          .select('user_id', { count: 'exact', head: true })
-          .eq('tenant_id', tenantId)
-          .eq('push_enabled', true),
+        repo.countNotificationPreferencesTotal(supabase, tenantId),
+        repo.countNotificationPreferencesPushEnabled(supabase, tenantId),
       ]);
       if (totalUsers !== null && totalUsers >= 10 && pushEnabled !== null) {
         const rate = (pushEnabled / totalUsers) * 100;
@@ -110,15 +99,8 @@ export const notificationsScanner: AdminScanner = {
     // 3. Dead notification channel — users exist but zero notifications in 30d
     try {
       const [{ count: userCount }, { count: notifCount }] = await Promise.all([
-        supabase
-          .from('user_tenants')
-          .select('user_id', { count: 'exact', head: true })
-          .eq('tenant_id', tenantId),
-        supabase
-          .from('user_notifications')
-          .select('id', { count: 'exact', head: true })
-          .eq('tenant_id', tenantId)
-          .gte('created_at', d30),
+        repo.countUserTenants(supabase, tenantId),
+        repo.countNotificationsSince(supabase, tenantId, d30),
       ]);
       if (userCount !== null && userCount >= 10 && notifCount === 0) {
         insights.push({
