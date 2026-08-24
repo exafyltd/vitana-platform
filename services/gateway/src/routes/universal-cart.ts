@@ -41,6 +41,7 @@ import { getSupabase } from '../lib/supabase';
 import { checkoutUniversalCart, CHECKOUT_ERROR_STATUS } from '../services/checkout/checkout-service';
 import { getMonthlySpend } from '../services/budget/spend-service';
 import * as cartRepo from '../services/universal-cart/universal-cart-repository';
+import * as ctxRepo from './universal-cart-context-repository';
 
 export const VTID = 'VTID-03213';
 
@@ -109,7 +110,7 @@ export type UserContext =
 export async function getUserContext(token: string): Promise<UserContext> {
   try {
     const supabase = createUserSupabaseClient(token);
-    const { data, error } = await supabase.rpc('me_context');
+    const { data, error } = await ctxRepo.fetchMeContext(supabase);
     if (error) return { ok: false, error: error.message };
     const user_id = (data?.user_id || data?.id) as string | undefined;
     if (!user_id) return { ok: false, error: 'me_context returned no user_id' };
@@ -141,12 +142,7 @@ export async function getActiveRole(
     console.error(`[${VTID}] active-role lookup: service-role client unavailable`);
     return null;
   }
-  const { data, error } = await supabase
-    .from('user_tenants')
-    .select('active_role')
-    .eq('user_id', user_id)
-    .eq('tenant_id', tenant_id)
-    .maybeSingle();
+  const { data, error } = await ctxRepo.fetchActiveRoleForTenant(supabase, user_id, tenant_id);
   if (error) {
     console.error(`[${VTID}] active-role lookup error:`, error.message);
     return null;
@@ -168,12 +164,7 @@ export async function getActiveRole(
 export async function resolvePrimaryTenantId(user_id: string): Promise<string | null> {
   const supabase = getSupabase();
   if (!supabase) return null;
-  const { data, error } = await supabase
-    .from('user_tenants')
-    .select('tenant_id')
-    .eq('user_id', user_id)
-    .eq('is_primary', true)
-    .maybeSingle();
+  const { data, error } = await ctxRepo.fetchPrimaryTenantId(supabase, user_id);
   if (error) {
     console.error(`[${VTID}] primary-tenant fallback lookup error:`, error.message);
     return null;
@@ -462,20 +453,12 @@ router.get('/budget', async (req: Request, res: Response) => {
   let monthly_cap_cents: number | null = null;
 
   if (svc) {
-    const userRow = await svc
-      .from('app_users')
-      .select('currency_preference')
-      .eq('user_id', id.user_id)
-      .maybeSingle();
+    const userRow = await ctxRepo.fetchUserCurrencyPreference(svc, id.user_id);
     if (!userRow.error && userRow.data?.currency_preference) {
       currency = userRow.data.currency_preference as string;
     }
 
-    const limRow = await svc
-      .from('user_limitations')
-      .select('budget_monthly_cap_cents')
-      .eq('user_id', id.user_id)
-      .maybeSingle();
+    const limRow = await ctxRepo.fetchUserBudgetMonthlyCap(svc, id.user_id);
     if (!limRow.error && limRow.data) {
       monthly_cap_cents = (limRow.data.budget_monthly_cap_cents as number | null) ?? null;
     }
@@ -574,11 +557,7 @@ router.post('/items', async (req: Request, res: Response) => {
     if (!svc) {
       return res.status(500).json({ ok: false, error: 'service_unavailable' });
     }
-    const product = await svc
-      .from('products')
-      .select('id, is_active, availability')
-      .eq('id', body.product_id)
-      .maybeSingle();
+    const product = await ctxRepo.fetchProductAvailabilityForVideoShop(svc, body.product_id);
     if (product.error) {
       return res.status(500).json({ ok: false, error: 'product_lookup_failed', detail: product.error.message });
     }
@@ -589,14 +568,7 @@ router.post('/items', async (req: Request, res: Response) => {
       return res.status(409).json({ ok: false, error: 'product_out_of_stock' });
     }
     if (body.source_video_id) {
-      const anchor = await svc
-        .from('shop_video_anchors')
-        .select('id, shop_videos!inner(id, status, moderation_status)')
-        .eq('video_id', body.source_video_id)
-        .eq('product_id', body.product_id)
-        .eq('shop_videos.status', 'active')
-        .eq('shop_videos.moderation_status', 'approved')
-        .maybeSingle();
+      const anchor = await ctxRepo.fetchApprovedShopVideoAnchor(svc, body.source_video_id, body.product_id);
       if (anchor.error) {
         return res.status(500).json({ ok: false, error: 'anchor_lookup_failed', detail: anchor.error.message });
       }
