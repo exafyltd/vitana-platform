@@ -253,11 +253,97 @@ function cspScanTargets(files) {
     .filter((f) => isUnder(f, CSP_SURFACE));
 }
 
+/**
+ * VTID-03714 — the CSP gate scanned whole FILE CONTENT, not the diff.
+ *
+ * `cspScanTargets` correctly narrowed WHICH FILES to look at (VTID-03696),
+ * but the step that consumed its output still read each target file's full
+ * content with `open(f).read()` and pattern-matched against that. A large,
+ * long-lived file like `orb-widget.js` accumulates legitimate `.style.cssText`
+ * DOM manipulation and doc-comment `<script src=...>` examples over time —
+ * none of it new — so ANY PR touching that file failed this gate regardless
+ * of what the PR actually changed. Confirmed live on PR #3167 (VTID-03711):
+ * the diff itself matched zero patterns; the whole-file scan still rejected
+ * on 4 lines nobody had touched.
+ *
+ * This is the same defect shape the Route Mount Evidence Gate already had
+ * fixed for it (VTID-03696): judging the whole file instead of the diff
+ * produces false rejections, and a gate that rejects PRs for content they
+ * didn't touch eventually gets muted or bypassed by someone. The fix mirrors
+ * `routeEvidenceRequired()` exactly — filter to lines a `git diff` reports as
+ * ADDED (skip removed lines, context lines, and the `+++` file header), and
+ * pattern-match only those.
+ *
+ * The diff handed to this function is expected to already be restricted to
+ * `CSP_SURFACE` paths (via `git diff ... -- <CSP_SURFACE paths>`), so every
+ * added line here is inherently browser-served content — no additional
+ * per-file filtering is needed at this layer.
+ *
+ * @param {string[]} diffLines  lines from `git diff`, CSP_SURFACE-scoped
+ * @returns {{pattern:string, line:string}[]} one entry per violation found
+ */
+const CSP_PATTERNS = [
+  /<script(?![^>]*\bsrc=)/i,
+  /style\s*=/i,
+  /\.style\b/i,
+  /\beval\s*\(/i,
+  /new\s+Function\s*\(/i,
+  /unsafe-inline/i,
+  /https?:\/\/[^\s"']+\.(js|css)/i,
+];
+
+/**
+ * A real unified-diff file header is always `+++ b/path` (or `+++ a/path`,
+ * `+++ /dev/null`) — git always emits a space after the header's `+++`. An
+ * added SOURCE line that happens to start with `++` (e.g. `++counter;`)
+ * renders as `+` (the diff marker) followed by `++counter;`, i.e.
+ * `+++counter;` — no space after the third `+`. Testing only `startsWith
+ * ('+++')` conflated the two and silently dropped any such added line.
+ */
+function isDiffFileHeader(raw) {
+  return raw === '+++' || raw.startsWith('+++ ') || raw.startsWith('+++\t');
+}
+
+function cspViolationsInAddedLines(diffLines) {
+  // Group maximal contiguous runs of added lines and match against the
+  // JOINED block, not each line independently. A pattern can legitimately
+  // span an added line break (e.g. `eval` on one line, `(userInput)` on the
+  // next) — the whole-file scan this replaces caught that because `\s` in
+  // JS regex matches `\n` too. Matching line-by-line would silently lose
+  // that coverage. Only genuinely CONTIGUOUS added lines are joined: a
+  // context or removed line between two `+` lines means something else
+  // sits between them in the real file, so the run ends there.
+  const runs = [];
+  let current = [];
+  for (const raw of diffLines) {
+    if (raw.startsWith('+') && !isDiffFileHeader(raw)) {
+      current.push(raw.slice(1));
+    } else if (current.length > 0) {
+      runs.push(current);
+      current = [];
+    }
+  }
+  if (current.length > 0) runs.push(current);
+
+  const violations = [];
+  for (const run of runs) {
+    const block = run.join('\n');
+    for (const pattern of CSP_PATTERNS) {
+      const match = block.match(pattern);
+      if (match) violations.push({ pattern: pattern.source, line: match[0] });
+    }
+  }
+  return violations;
+}
+
 module.exports = {
   evaluate,
   routeEvidenceRequired,
   cspScanTargets,
+  cspViolationsInAddedLines,
+  isDiffFileHeader,
   CSP_SURFACE,
+  CSP_PATTERNS,
   REMIT,
   PROFILES,
   LOCKFILE,
@@ -270,6 +356,8 @@ module.exports = {
 //        exit 0 = a route was added, evidence IS required
 //        exit 1 = no route added, the evidence gate should be skipped
 // CLI: --csp-targets <changed_files.txt>  → prints the files worth CSP-scanning
+// CLI: --csp-added-lines <diff.txt>  → CSP_SURFACE-scoped diff; prints any
+//      violations found in ADDED lines only, exit 1 if any, else exit 0
 if (require.main === module && process.argv[2] === '--csp-targets') {
   const { readFileSync } = require('node:fs');
   let files = [];
@@ -280,6 +368,24 @@ if (require.main === module && process.argv[2] === '--csp-targets') {
   }
   cspScanTargets(files).forEach((f) => console.log(f));
   process.exit(0);
+}
+
+if (require.main === module && process.argv[2] === '--csp-added-lines') {
+  const { readFileSync } = require('node:fs');
+  const diffPath = process.argv[3];
+  let diff = '';
+  try {
+    diff = readFileSync(diffPath, 'utf8');
+  } catch {
+    diff = '';
+  }
+  const violations = cspViolationsInAddedLines(diff.split('\n'));
+  if (violations.length === 0) {
+    console.log('No CSP pattern hits in added lines.');
+    process.exit(0);
+  }
+  violations.forEach((v) => console.log(`REJECTED: CSP pattern hit in an added line :: /${v.pattern}/\n  ${v.line}`));
+  process.exit(1);
 }
 
 if (require.main === module && process.argv[2] === '--route-evidence-required') {

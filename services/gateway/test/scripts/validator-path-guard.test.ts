@@ -266,6 +266,106 @@ describe('CSP scanning is scoped to the browser-served surface', () => {
   });
 });
 
+describe('CSP scan judges ADDED lines, not whole file content (VTID-03714)', () => {
+  const violations = (lines: string[]): { pattern: string; line: string }[] =>
+    guard.cspViolationsInAddedLines(lines);
+
+  it('flags a pattern that appears in an ADDED line', () => {
+    expect(violations(["+  el.style.display = 'none';"])).toHaveLength(1);
+    expect(violations(['+<script>alert(1)</script>'])).toHaveLength(1);
+  });
+
+  it('does NOT flag the identical pattern in a context (unchanged) line', () => {
+    // The VTID-03711 shape: orb-widget.js has always had legitimate
+    // `.style.cssText` usage. Touching an unrelated function in that same
+    // file must not re-litigate content nobody changed.
+    expect(violations(["   auraInner.style.cssText = 'opacity:0;';"])).toEqual([]);
+  });
+
+  it('does NOT flag a pattern in a REMOVED line', () => {
+    expect(violations(["-  el.style.display = 'none';"])).toEqual([]);
+  });
+
+  it('ignores the +++ file header, which is not an added line', () => {
+    expect(
+      violations(['+++ b/services/gateway/src/frontend/command-hub/orb-widget.js']),
+    ).toEqual([]);
+  });
+
+  it('reproduces the exact PR #3167 false positive and confirms it is now clean', () => {
+    // orb-widget.js's pre-existing content (a doc-comment <script src=...>
+    // example, three .style.cssText DOM-manipulation lines) — none of it
+    // touched by this diff. As whole-file content it used to reject; as
+    // context (unchanged) lines here it must not.
+    const preExistingContext = [
+      '   *   <script src="https://gateway-xxx.a.run.app/command-hub/orb-widget.js"></script>',
+      "    _root.style.cssText = 'position:fixed;top:0;';",
+      "    shell.style.cssText = 'position:relative;width:50vmin;';",
+      "    auraInner.style.cssText = 'position:absolute;inset:-20%;';",
+    ];
+    // The actual VTID-03711 diff: a new helper + one changed createBuffer call.
+    const actualAddedLines = [
+      "+  function _pcmRateFromMime(mime) {",
+      "+    var m = /rate=(\\d+)/.exec(mime || '');",
+      "+    var rate = m ? parseInt(m[1], 10) : NaN;",
+      "+    return (rate > 0) ? rate : 24000;",
+      "+  }",
+      '+        var pcmRate = _pcmRateFromMime(chunk.mime);',
+      '+        var buf = ctx.createBuffer(1, floats.length, pcmRate);',
+    ];
+    expect(violations([...preExistingContext, ...actualAddedLines])).toEqual([]);
+  });
+
+  it('still catches a genuinely NEW CSP violation added by a diff', () => {
+    const preExistingContext = [
+      "    auraInner.style.cssText = 'position:absolute;inset:-20%;';",
+    ];
+    const newViolation = ["+    el.innerHTML = '<script>' + userInput + '</script>';"];
+    expect(violations([...preExistingContext, ...newViolation]).length).toBeGreaterThan(0);
+  });
+
+  // Codex review findings on PR #3170, both confirmed real and fixed.
+
+  it('P2 — an added line that itself starts with "++" is not mistaken for a file header', () => {
+    // Diff rendering: an added source line '++counter;' becomes '+' (the
+    // diff marker) + '++counter;' = '+++counter;' — no space after the
+    // third '+'. A real header is always '+++ b/path' (git always emits
+    // the space). Confirm the added-line content is actually scanned by
+    // giving it a CSP pattern to trip.
+    expect(violations(["+++counter; el.style.display='none';"])).not.toEqual([]);
+  });
+
+  it('P2 — a genuine unified-diff file header (with the space) is still skipped', () => {
+    expect(
+      violations(['+++ b/services/gateway/src/frontend/command-hub/orb-widget.js']),
+    ).toEqual([]);
+  });
+
+  it('P1 — a pattern split across two consecutive added lines is still caught', () => {
+    // The old whole-file scan caught this because JS \s matches \n too, so
+    // 'eval' + newline + '(userInput)' still matched \beval\s*\(. Testing
+    // added lines independently would silently lose that.
+    expect(violations(['+    eval', '+    (userInput);'])).not.toEqual([]);
+  });
+
+  it('P1 — consecutive added lines are joined only when truly contiguous (no context/removed line between)', () => {
+    // A context or removed line between two '+' lines means real,
+    // untouched content sits between them in the file — they must NOT be
+    // joined into one block, or a pattern could be "found" spanning
+    // content the diff never actually placed adjacent.
+    expect(
+      violations(['+    eval', '     // unrelated untouched line', '+    (userInput);']),
+    ).toEqual([]);
+  });
+
+  it('isDiffFileHeader distinguishes a real header from added content that merely starts with +++', () => {
+    expect(guard.isDiffFileHeader('+++ b/some/path.js')).toBe(true);
+    expect(guard.isDiffFileHeader('+++ /dev/null')).toBe(true);
+    expect(guard.isDiffFileHeader('+++')).toBe(true);
+    expect(guard.isDiffFileHeader('+++counter;')).toBe(false);
+  });
+});
+
 describe('degenerate input', () => {
   it('ignores blank lines and surrounding whitespace', () => {
     const r = run('gateway_backend', ['', '  services/gateway/src/a.ts  ', '']);
