@@ -17,7 +17,7 @@
 (function (window) {
   'use strict';
 
-  var _WIDGET_VERSION = '2026-08-24-caption-i18n';
+  var _WIDGET_VERSION = '2026-08-24-caption-fontsize-19px';
   console.log('[VTOrb] Widget version: ' + _WIDGET_VERSION);
 
   // BOOTSTRAP-NOVA-SONIC-VOICE: user live-test feedback 2026-07-28 — the
@@ -44,6 +44,20 @@
     return (_cfg.lang && _cfg.lang.startsWith('de'))
       ? _AUDIO_PLAYBACK_RATE_DE
       : _AUDIO_PLAYBACK_RATE;
+  }
+
+  // VTID-03711: every PCM chunk's mime carries its ACTUAL encoding rate
+  // (server-side: 'audio/pcm;rate=24000' for Nova, 'audio/pcm;rate=16000'
+  // for Polly — greeting bridge, guided-topic narration, and the cascade
+  // voice client all set this correctly). The playback path used to ignore
+  // it entirely and hardcode 24000 into createBuffer() regardless, so any
+  // 16kHz Polly audio decoded as if it were 24kHz played back at 1.5x
+  // speed/pitch — a "chipmunk" voice. Falls back to 24000 (Nova's rate,
+  // the historical default) only when the mime is missing or unparseable.
+  function _pcmRateFromMime(mime) {
+    var m = /rate=(\d+)/.exec(mime || '');
+    var rate = m ? parseInt(m[1], 10) : NaN;
+    return (rate > 0) ? rate : 24000;
   }
 
   // Prevent double-load
@@ -512,8 +526,8 @@
       // silently never apply. One shared value covers mobile and desktop.
       '.vtorb-status {',
       '  margin-top: 20px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;',
-      '  font-size: 17px; color: rgba(255,255,255,0.6); text-align: center;',
-      '  min-height: 24px; transition: opacity 0.3s;',
+      '  font-size: 19px; color: rgba(255,255,255,0.6); text-align: center;',
+      '  min-height: 26px; transition: opacity 0.3s;',
       '}',
       '.vtorb-status.vtorb-status-listening { color: rgba(59,130,246,0.8); }',
       '.vtorb-status.vtorb-status-thinking { color: rgba(139,92,246,0.8); }',
@@ -1528,7 +1542,8 @@
         var floats = new Float32Array(int16.length);
         for (var j = 0; j < int16.length; j++) floats[j] = int16[j] / 32768.0;
 
-        var buf = ctx.createBuffer(1, floats.length, 24000);
+        var pcmRate = _pcmRateFromMime(chunk.mime);
+        var buf = ctx.createBuffer(1, floats.length, pcmRate);
         buf.copyToChannel(floats, 0);
 
         // Snapshot once per chunk so the schedule-gap compensation below
@@ -3577,7 +3592,7 @@
     // Status
     var status = document.createElement('div');
     status.className = 'vtorb-status';
-    status.style.cssText = 'margin-top:20px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:17px;color:rgba(255,255,255,0.6);text-align:center;min-height:24px;';
+    status.style.cssText = 'margin-top:20px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:19px;color:rgba(255,255,255,0.6);text-align:center;min-height:26px;';
     _root.appendChild(status);
 
     // Controls

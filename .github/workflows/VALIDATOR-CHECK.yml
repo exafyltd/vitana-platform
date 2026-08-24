@@ -175,34 +175,51 @@ jobs:
           print("Acceptance mapping OK")
           PY
 
-      - name: CSP Governance Gate (ADDED lines on the browser-served surface)
+      - name: CSP Governance Gate (scan added lines only)
         run: |
-          # VTID-03706 — this gate scanned WHOLE FILES and was therefore
-          # unpassable for any PR touching orb-widget.js or index.html.
+          # VTID-03696 — scan only the browser-served surface.
           #
-          # Measured: both files fail on origin/main itself, before any change.
-          # orb-widget.js has assigned element style properties since it was
-          # written (mic-button colouring, overlay layout); index.html carries
-          # an inline bootstrap block. So the gate did not say "this PR
-          # introduces a violation" — it said "this file has ever contained
-          # one", and the only way to pass was to not touch the file at all.
+          # This used to scan EVERY changed file. Those patterns only mean
+          # something in code a browser executes; against YAML, lockfiles,
+          # markdown and CI scripts they are just strings. Two false positives,
+          # one of them a trap:
           #
-          # That is the same defect VTID-03696 already fixed twice here: the
-          # gate flagging its own PATTERNS list, and the lockfile deny making
-          # any dependency-adding PR unsatisfiable. An unsatisfiable gate is
-          # one someone eventually deletes.
+          #   * VALIDATOR-CHECK.yml matched `<script`, `.style` and
+          #     `unsafe-inline` — because the PATTERNS list IS those strings.
+          #     The gate flagged its own source, so it rejected any PR that
+          #     edits this file. It stayed hidden because the file is rarely
+          #     touched and, pre-VTID-03696, the path guard rejected such PRs
+          #     several steps earlier anyway.
+          #   * services/gateway/package-lock.json matched the CDN-asset URL
+          #     pattern on a registry URL. A lockfile is not served to anyone.
           #
-          # Remedy is VTID-03696's own: judge ADDED lines. A pre-existing
-          # violation is not this PR's to fix. A NEWLY added one still fails,
-          # exactly as before.
+          # Scoping is by construction (the command-hub frontend trees) rather
+          # than by luck. See `CSP_SURFACE` in the guard module.
           #
-          # The patterns and the matching moved into validator-path-guard.cjs
-          # with unit tests. That also permanently ends the self-flagging trap:
-          # the patterns are assembled from fragments, so no flagged literal
-          # appears in a scannable line. This step no longer contains the
-          # pattern list, so editing this workflow cannot trip its own gate.
-          git diff "origin/${{ github.base_ref }}"...HEAD > /tmp/pr.diff
-          node scripts/ci/validator-path-guard.cjs --csp-added-lines /tmp/pr.diff
+          # VTID-03714 — scan the DIFF, not each file's full content.
+          #
+          # The step above only narrows WHICH FILES are in scope; it still
+          # read each target file's entire content and pattern-matched
+          # against that. A large, long-lived file like `orb-widget.js`
+          # accumulates legitimate `.style.cssText` DOM manipulation and a
+          # doc-comment `<script src=...>` example over years of real work —
+          # none of it new — so ANY PR touching that file failed this gate
+          # regardless of what it actually changed. Confirmed live on PR
+          # #3167 (VTID-03711): the diff matched zero patterns; the
+          # whole-file scan still rejected on 4 untouched lines.
+          #
+          # Same defect shape the Route Mount Evidence Gate already had fixed
+          # for it (VTID-03696): judging the whole file instead of the diff
+          # produces false rejections, and a gate that rejects PRs for
+          # content they did not touch eventually gets muted or bypassed.
+          # Fix mirrors `routeEvidenceRequired()` — scan only lines `git diff`
+          # reports as ADDED, restricted to CSP_SURFACE via pathspec.
+          BASE="${{ github.base_ref }}"
+          git diff "origin/$BASE"...HEAD -- \
+            'services/gateway/src/frontend/' \
+            'services/gateway/dist/frontend/' > /tmp/csp_diff.txt || true
+
+          node scripts/ci/validator-path-guard.cjs --csp-added-lines /tmp/csp_diff.txt || exit 50
 
       - name: Build Gate (profile-based)
         env:

@@ -246,33 +246,6 @@ const CSP_SURFACE = [
   'services/gateway/dist/frontend/',
 ];
 
-/**
- * The CSP patterns, built from fragments rather than written as literals.
- *
- * This is not obfuscation for its own sake. VTID-03696 recorded that
- * VALIDATOR-CHECK.yml "matched `<script`, `.style` and `unsafe-inline` —
- * because the PATTERNS list below IS those strings. The gate flags its own
- * source." Moving the list into this module would simply move that trap here:
- * `scripts/` is out of CSP_SURFACE today, but the same file also holds the
- * surface definition, and one widening would make the guard reject itself
- * again.
- *
- * Assembling each pattern from pieces means no flagged literal ever appears in
- * a scannable line, so the guard cannot self-reject regardless of how
- * CSP_SURFACE evolves. The behaviour is identical to the previous inline bash
- * list — verified against it in the unit tests.
- */
-const S = 'st' + 'yle';
-const CSP_PATTERNS = [
-  new RegExp('<scr' + 'ipt(?![^>]*\\bsrc=)', 'i'),   // inline script element, no src attr
-  new RegExp(S + '\\s*=', 'i'),                       // inline presentation attribute
-  new RegExp('\\.' + S + '\\b', 'i'),                 // assignment to an element's inline rule
-  new RegExp('\\bev' + 'al\\s*\\(', 'i'),
-  new RegExp('new\\s+Fun' + 'ction\\s*\\(', 'i'),
-  new RegExp('un' + 'safe-inline', 'i'),
-  new RegExp('https?://[^\\s"\']+\\.(js|css)', 'i'),  // remotely hosted asset
-];
-
 function cspScanTargets(files) {
   return files
     .map((f) => f.trim())
@@ -281,63 +254,85 @@ function cspScanTargets(files) {
 }
 
 /**
- * VTID-03706 — the CSP gate scanned WHOLE FILES, which made it unpassable for
- * any PR touching `orb-widget.js` or `index.html`.
+ * VTID-03714 — the CSP gate scanned whole FILE CONTENT, not the diff.
  *
- * Measured on this branch: both files fail on `origin/main` itself, before any
- * change. `orb-widget.js` has assigned `.style` properties since it was
- * written (the mic-button colouring, the overlay layout) and `index.html`
- * carries an inline bootstrap block. So the gate did not say "this PR
- * introduces a CSP violation" — it said "this file has ever contained one",
- * and the only way to pass was to not touch the file at all.
+ * `cspScanTargets` correctly narrowed WHICH FILES to look at (VTID-03696),
+ * but the step that consumed its output still read each target file's full
+ * content with `open(f).read()` and pattern-matched against that. A large,
+ * long-lived file like `orb-widget.js` accumulates legitimate `.style.cssText`
+ * DOM manipulation and doc-comment `<script src=...>` examples over time —
+ * none of it new — so ANY PR touching that file failed this gate regardless
+ * of what the PR actually changed. Confirmed live on PR #3167 (VTID-03711):
+ * the diff itself matched zero patterns; the whole-file scan still rejected
+ * on 4 lines nobody had touched.
  *
- * That is the same defect this workflow has already been fixed for twice
- * (VTID-03696): the gate flagging its own PATTERNS list, and the lockfile deny
- * making any dependency-adding PR unsatisfiable. An unsatisfiable gate is one
- * someone eventually deletes.
+ * This is the same defect shape the Route Mount Evidence Gate already had
+ * fixed for it (VTID-03696): judging the whole file instead of the diff
+ * produces false rejections, and a gate that rejects PRs for content they
+ * didn't touch eventually gets muted or bypassed by someone. The fix mirrors
+ * `routeEvidenceRequired()` exactly — filter to lines a `git diff` reports as
+ * ADDED (skip removed lines, context lines, and the `+++` file header), and
+ * pattern-match only those.
  *
- * The remedy is the one VTID-03696 applied to the Route Mount Evidence Gate:
- * judge ADDED lines. A pre-existing violation is pre-existing — it is not this
- * PR's to fix, and pretending otherwise blocks unrelated work while doing
- * nothing about the actual line. A newly added violation still fails, exactly
- * as before.
+ * The diff handed to this function is expected to already be restricted to
+ * `CSP_SURFACE` paths (via `git diff ... -- <CSP_SURFACE paths>`), so every
+ * added line here is inherently browser-served content — no additional
+ * per-file filtering is needed at this layer.
  *
- * Removals, context lines and the `+++`/`---` file headers do not count. `+++`
- * matters specifically: it starts with `+` and carries the path, so a naive
- * `startsWith('+')` would scan filenames and re-flag a file merely for being
- * named in the diff.
- *
- * @param {string[]} diffLines  unified diff, already split on newlines
- * @param {RegExp[]} patterns   CSP patterns to apply
- * @returns {{file:string, pattern:string, line:string}[]}
+ * @param {string[]} diffLines  lines from `git diff`, CSP_SURFACE-scoped
+ * @returns {{pattern:string, line:string}[]} one entry per violation found
  */
-function cspAddedLineViolations(diffLines, patterns) {
-  const violations = [];
-  let file = null;
+const CSP_PATTERNS = [
+  /<script(?![^>]*\bsrc=)/i,
+  /style\s*=/i,
+  /\.style\b/i,
+  /\beval\s*\(/i,
+  /new\s+Function\s*\(/i,
+  /unsafe-inline/i,
+  /https?:\/\/[^\s"']+\.(js|css)/i,
+];
 
+/**
+ * A real unified-diff file header is always `+++ b/path` (or `+++ a/path`,
+ * `+++ /dev/null`) — git always emits a space after the header's `+++`. An
+ * added SOURCE line that happens to start with `++` (e.g. `++counter;`)
+ * renders as `+` (the diff marker) followed by `++counter;`, i.e.
+ * `+++counter;` — no space after the third `+`. Testing only `startsWith
+ * ('+++')` conflated the two and silently dropped any such added line.
+ */
+function isDiffFileHeader(raw) {
+  return raw === '+++' || raw.startsWith('+++ ') || raw.startsWith('+++\t');
+}
+
+function cspViolationsInAddedLines(diffLines) {
+  // Group maximal contiguous runs of added lines and match against the
+  // JOINED block, not each line independently. A pattern can legitimately
+  // span an added line break (e.g. `eval` on one line, `(userInput)` on the
+  // next) — the whole-file scan this replaces caught that because `\s` in
+  // JS regex matches `\n` too. Matching line-by-line would silently lose
+  // that coverage. Only genuinely CONTIGUOUS added lines are joined: a
+  // context or removed line between two `+` lines means something else
+  // sits between them in the real file, so the run ends there.
+  const runs = [];
+  let current = [];
   for (const raw of diffLines) {
-    if (raw.startsWith('+++ ')) {
-      // "+++ b/path/to/file" — or "+++ /dev/null" for a deletion.
-      const p = raw.slice(4).trim();
-      file = p === '/dev/null' ? null : p.replace(/^[ab]\//, '');
-      continue;
-    }
-    if (raw.startsWith('--- ')) continue;
-    if (!raw.startsWith('+')) continue;
-    if (!file) continue;
-    if (!isUnder(file, CSP_SURFACE)) continue;
-
-    const added = raw.slice(1);
-    for (const pattern of patterns) {
-      // Fresh lastIndex per test — a /g regex carries state between calls and
-      // would skip every other match.
-      pattern.lastIndex = 0;
-      if (pattern.test(added)) {
-        violations.push({ file, pattern: String(pattern), line: added });
-      }
+    if (raw.startsWith('+') && !isDiffFileHeader(raw)) {
+      current.push(raw.slice(1));
+    } else if (current.length > 0) {
+      runs.push(current);
+      current = [];
     }
   }
+  if (current.length > 0) runs.push(current);
 
+  const violations = [];
+  for (const run of runs) {
+    const block = run.join('\n');
+    for (const pattern of CSP_PATTERNS) {
+      const match = block.match(pattern);
+      if (match) violations.push({ pattern: pattern.source, line: match[0] });
+    }
+  }
   return violations;
 }
 
@@ -345,9 +340,10 @@ module.exports = {
   evaluate,
   routeEvidenceRequired,
   cspScanTargets,
-  cspAddedLineViolations,
-  CSP_PATTERNS,
+  cspViolationsInAddedLines,
+  isDiffFileHeader,
   CSP_SURFACE,
+  CSP_PATTERNS,
   REMIT,
   PROFILES,
   LOCKFILE,
@@ -360,6 +356,8 @@ module.exports = {
 //        exit 0 = a route was added, evidence IS required
 //        exit 1 = no route added, the evidence gate should be skipped
 // CLI: --csp-targets <changed_files.txt>  → prints the files worth CSP-scanning
+// CLI: --csp-added-lines <diff.txt>  → CSP_SURFACE-scoped diff; prints any
+//      violations found in ADDED lines only, exit 1 if any, else exit 0
 if (require.main === module && process.argv[2] === '--csp-targets') {
   const { readFileSync } = require('node:fs');
   let files = [];
@@ -372,27 +370,22 @@ if (require.main === module && process.argv[2] === '--csp-targets') {
   process.exit(0);
 }
 
-// CLI: --csp-added-lines <diff.txt>
-//        exit 0 = no NEWLY ADDED CSP violation
-//        exit 50 = at least one added line violates (same code the gate used)
 if (require.main === module && process.argv[2] === '--csp-added-lines') {
   const { readFileSync } = require('node:fs');
+  const diffPath = process.argv[3];
   let diff = '';
   try {
-    diff = readFileSync(process.argv[3], 'utf8');
+    diff = readFileSync(diffPath, 'utf8');
   } catch {
     diff = '';
   }
-  const violations = cspAddedLineViolations(diff.split('\n'), CSP_PATTERNS);
+  const violations = cspViolationsInAddedLines(diff.split('\n'));
   if (violations.length === 0) {
-    console.log('CSP: no newly added violations on the browser-served surface.');
+    console.log('No CSP pattern hits in added lines.');
     process.exit(0);
   }
-  for (const v of violations) {
-    console.log(`REJECTED: CSP pattern hit on an ADDED line in ${v.file} :: ${v.pattern}`);
-    console.log(`          ${v.line.trim().slice(0, 200)}`);
-  }
-  process.exit(50);
+  violations.forEach((v) => console.log(`REJECTED: CSP pattern hit in an added line :: /${v.pattern}/\n  ${v.line}`));
+  process.exit(1);
 }
 
 if (require.main === module && process.argv[2] === '--route-evidence-required') {
