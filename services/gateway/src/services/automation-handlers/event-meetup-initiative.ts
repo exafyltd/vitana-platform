@@ -11,6 +11,7 @@
 
 import { AutomationContext } from '../../types/automations';
 import { registerHandler } from '../automation-executor';
+import * as repo from './event-meetup-initiative-repository';
 
 // ── AP-1401: Smart Event Creation ───────────────────────────
 // Heartbeat scan: finds a user with 3+ connections sharing a top interest
@@ -29,35 +30,15 @@ async function runSmartEventCreation(ctx: AutomationContext) {
   const cooldownCutoff = new Date(Date.now() - SMART_CREATE_COOLDOWN_DAYS * 86_400_000).toISOString();
 
   for (const { user_id } of users) {
-    const { data: connections } = await supabase
-      .from('relationship_edges')
-      .select('target_id')
-      .eq('tenant_id', tenantId)
-      .eq('source_type', 'person')
-      .eq('source_id', user_id)
-      .eq('target_type', 'person')
-      .eq('edge_type', 'connected')
-      .limit(50);
+    const { data: connections } = await repo.fetchConnectedRelationshipTargets(supabase, tenantId, user_id, 50);
 
     if ((connections?.length || 0) < SMART_CREATE_MIN_CONNECTIONS) continue;
 
-    const { data: topInterest } = await supabase
-      .from('user_interests')
-      .select('interest')
-      .eq('user_id', user_id)
-      .order('confidence_score', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const { data: topInterest } = await repo.fetchTopUserInterest(supabase, user_id);
 
     if (!topInterest?.interest) continue;
 
-    const { data: recentSuggestion } = await supabase
-      .from('user_notifications')
-      .select('id')
-      .eq('user_id', user_id)
-      .contains('data', { automation_id: 'AP-1401' })
-      .gte('created_at', cooldownCutoff)
-      .limit(1);
+    const { data: recentSuggestion } = await repo.fetchRecentAutomationSuggestion(supabase, user_id, 'AP-1401', cooldownCutoff);
     if (recentSuggestion && recentSuggestion.length > 0) continue;
 
     ctx.notify(user_id, 'orb_suggestion', {
@@ -84,20 +65,15 @@ async function runCalendarAvailabilityCheck(ctx: AutomationContext) {
 
   const { supabase } = ctx;
 
-  const { data: event } = await supabase
-    .from('global_community_events')
-    .select('title, start_time, end_time')
-    .eq('id', eventId)
-    .maybeSingle();
+  const { data: event } = await repo.fetchEventForAvailabilityCheck(supabase, eventId);
   if (!event) return { usersAffected: 0, actionsTaken: 0 };
 
-  const { data: conflicts } = await supabase
-    .from('calendar_events')
-    .select('id, title')
-    .eq('user_id', userId)
-    .lt('start_time', event.end_time || event.start_time)
-    .gt('end_time', event.start_time)
-    .limit(1);
+  const { data: conflicts } = await repo.fetchConflictingCalendarEvents(
+    supabase,
+    userId,
+    event.end_time || event.start_time,
+    event.start_time,
+  );
 
   if (!conflicts?.length) return { usersAffected: 0, actionsTaken: 0 };
 
@@ -126,31 +102,18 @@ async function runAutoInvitationSender(ctx: AutomationContext) {
 
   const since = new Date(Date.now() - AUTO_INVITE_LOOKBACK_MINUTES * 60 * 1000).toISOString();
 
-  const { data: events } = await supabase
-    .from('global_community_events')
-    .select('id, title, created_by')
-    .not('created_by', 'is', null)
-    .gte('created_at', since)
-    .limit(AUTO_INVITE_MAX_EVENTS_PER_RUN);
+  const { data: events } = await repo.fetchRecentlyCreatedEvents(supabase, since, AUTO_INVITE_MAX_EVENTS_PER_RUN);
 
   for (const event of events || []) {
-    const { data: connections } = await supabase
-      .from('relationship_edges')
-      .select('target_id')
-      .eq('tenant_id', tenantId)
-      .eq('source_type', 'person')
-      .eq('source_id', event.created_by)
-      .eq('target_type', 'person')
-      .eq('edge_type', 'connected')
-      .limit(AUTO_INVITE_MAX_CONNECTIONS_PER_EVENT);
+    const { data: connections } = await repo.fetchConnectedRelationshipTargets(
+      supabase,
+      tenantId,
+      event.created_by,
+      AUTO_INVITE_MAX_CONNECTIONS_PER_EVENT,
+    );
 
     for (const conn of connections || []) {
-      const { data: existing } = await supabase
-        .from('global_event_participants')
-        .select('id')
-        .eq('event_id', event.id)
-        .eq('user_id', conn.target_id)
-        .limit(1);
+      const { data: existing } = await repo.fetchEventParticipant(supabase, event.id, conn.target_id);
       if (existing && existing.length > 0) continue;
 
       ctx.notify(conn.target_id, 'orb_suggestion', {
@@ -181,13 +144,7 @@ async function runEventDiscoveryRecommendation(ctx: AutomationContext) {
   const now = new Date();
   const lookahead = new Date(now.getTime() + DISCOVERY_LOOKAHEAD_DAYS * 86_400_000);
 
-  const { data: events } = await supabase
-    .from('global_community_events')
-    .select('id, title, participant_count')
-    .gte('start_time', now.toISOString())
-    .lte('start_time', lookahead.toISOString())
-    .order('participant_count', { ascending: false })
-    .limit(5);
+  const { data: events } = await repo.fetchUpcomingEventsByParticipation(supabase, now.toISOString(), lookahead.toISOString(), 5);
 
   if (!events?.length) return { usersAffected: 0, actionsTaken: 0 };
 
@@ -196,12 +153,7 @@ async function runEventDiscoveryRecommendation(ctx: AutomationContext) {
   for (const { user_id } of users) {
     let recommended: any = null;
     for (const event of events) {
-      const { data: attending } = await supabase
-        .from('global_event_participants')
-        .select('id')
-        .eq('event_id', event.id)
-        .eq('user_id', user_id)
-        .limit(1);
+      const { data: attending } = await repo.fetchEventParticipant(supabase, event.id, user_id);
       if (!attending || attending.length === 0) { recommended = event; break; }
     }
     if (!recommended) continue;
@@ -235,15 +187,7 @@ async function runSocialMeetupOrganizer(ctx: AutomationContext) {
   const cooldownCutoff = new Date(Date.now() - ORGANIZER_COOLDOWN_DAYS * 86_400_000).toISOString();
 
   for (const { user_id } of users) {
-    const { data: connections } = await supabase
-      .from('relationship_edges')
-      .select('target_id')
-      .eq('tenant_id', tenantId)
-      .eq('source_type', 'person')
-      .eq('source_id', user_id)
-      .eq('target_type', 'person')
-      .eq('edge_type', 'connected')
-      .limit(20);
+    const { data: connections } = await repo.fetchConnectedRelationshipTargets(supabase, tenantId, user_id, 20);
 
     const connectionIds = (connections || []).map((c: any) => c.target_id);
     if (connectionIds.length < 2) continue;
@@ -251,29 +195,20 @@ async function runSocialMeetupOrganizer(ctx: AutomationContext) {
     // Find a mutual pair among this user's connections (a-b also connected)
     let mutualPair: [string, string] | null = null;
     for (let i = 0; i < connectionIds.length && !mutualPair; i++) {
-      const { data: mutualEdge } = await supabase
-        .from('relationship_edges')
-        .select('target_id')
-        .eq('tenant_id', tenantId)
-        .eq('source_type', 'person')
-        .eq('source_id', connectionIds[i])
-        .eq('target_type', 'person')
-        .eq('edge_type', 'connected')
-        .in('target_id', connectionIds)
-        .limit(1);
+      const { data: mutualEdge } = await repo.fetchMutualConnectedTargetsIn(
+        supabase,
+        tenantId,
+        connectionIds[i],
+        connectionIds,
+        1,
+      );
       if (mutualEdge && mutualEdge.length > 0) {
         mutualPair = [connectionIds[i], mutualEdge[0].target_id];
       }
     }
     if (!mutualPair) continue;
 
-    const { data: recentSuggestion } = await supabase
-      .from('user_notifications')
-      .select('id')
-      .eq('user_id', user_id)
-      .contains('data', { automation_id: 'AP-1405' })
-      .gte('created_at', cooldownCutoff)
-      .limit(1);
+    const { data: recentSuggestion } = await repo.fetchRecentAutomationSuggestion(supabase, user_id, 'AP-1405', cooldownCutoff);
     if (recentSuggestion && recentSuggestion.length > 0) continue;
 
     ctx.notify(user_id, 'orb_suggestion', {
