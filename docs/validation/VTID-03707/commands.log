@@ -81,3 +81,45 @@ PY
 # spec_status='approved' on that row (the user directly instructed this
 # work in conversation, which is the approval per IF-THEN rule "task moved
 # to in_progress manually -> explicit consent").
+
+# --- Follow-up (same VTID): 17px/24px -> 19px/26px, per explicit user ---
+# --- request ("bump it to 18-19px pls") after the first bump shipped   ---
+# --- to staging and wasn't visibly noticeable enough.                  ---
+
+# Edits: font-size/min-height bumped at both source locations
+# (injected <style> rule + inline cssText in _renderOverlay()), plus
+# _WIDGET_VERSION. (Edits made directly; not reproducible as a single
+# shell command.)
+
+node --check services/gateway/src/frontend/command-hub/orb-widget.js
+# -> clean, exit 0. See outputs/node-check.txt (regenerated)
+
+grep -n "_pickLang()" services/gateway/src/frontend/command-hub/orb-widget.js
+grep -n "_cfg\.lang\.startsWith('de')\|_cfg\.lang && _cfg\.lang\.startsWith" \
+  services/gateway/src/frontend/command-hub/orb-widget.js
+grep -n "font-size:1\|font-size: 1\|min-height:2\|min-height: 2" \
+  services/gateway/src/frontend/command-hub/orb-widget.js
+# -> See outputs/grep-sweep.txt (regenerated, confirms 19px/26px everywhere,
+#    no stray 17px/24px)
+
+# jest still could not run in this sandbox (same E403 as before).
+
+# Offline Playwright harness, this time actually executed against a real
+# local Chromium (found the pre-installed /opt/pw-browsers/chromium-1194
+# build + the global playwright npm package at
+# /opt/node22/lib/node_modules/playwright, unlike the earlier session which
+# hit ERR_CONNECTION_RESET trying to reach a *live* page through the
+# sandbox's rotating proxy — this harness never leaves 127.0.0.1, so the
+# proxy is irrelevant):
+#   - served services/gateway/src/frontend/command-hub/ on 127.0.0.1:8934
+#   - served a throwaway harness HTML page (loads orb-widget.js via
+#     <script src>) on a second local server, 127.0.0.1:8935
+#   - chromium.launch({ executablePath:
+#     '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
+#     args: ['--no-sandbox'] })
+#   - VitanaOrb._test_showOverlay() + _test_setState('listening', <text>)
+#     for en/es/ar/de-idleNudge at 390x844 and 1400x900
+#   - read getComputedStyle(.vtorb-status).fontSize -> 19px in every case
+#   - took + visually reviewed screenshots (mobile/German-longest-phrase,
+#     desktop/Arabic-RTL): no clipping, correct RTL centering
+# -> See outputs/playwright-check.txt (regenerated)

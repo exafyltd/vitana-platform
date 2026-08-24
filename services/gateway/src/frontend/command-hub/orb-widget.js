@@ -17,7 +17,7 @@
 (function (window) {
   'use strict';
 
-  var _WIDGET_VERSION = '2026-08-24-caption-i18n';
+  var _WIDGET_VERSION = '2026-08-24-caption-fontsize-19px';
   console.log('[VTOrb] Widget version: ' + _WIDGET_VERSION);
 
   // BOOTSTRAP-NOVA-SONIC-VOICE: user live-test feedback 2026-07-28 — the
@@ -496,8 +496,8 @@
       // silently never apply. One shared value covers mobile and desktop.
       '.vtorb-status {',
       '  margin-top: 20px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;',
-      '  font-size: 17px; color: rgba(255,255,255,0.6); text-align: center;',
-      '  min-height: 24px; transition: opacity 0.3s;',
+      '  font-size: 19px; color: rgba(255,255,255,0.6); text-align: center;',
+      '  min-height: 26px; transition: opacity 0.3s;',
       '}',
       '.vtorb-status.vtorb-status-listening { color: rgba(59,130,246,0.8); }',
       '.vtorb-status.vtorb-status-thinking { color: rgba(139,92,246,0.8); }',
@@ -3403,7 +3403,7 @@
     // Status
     var status = document.createElement('div');
     status.className = 'vtorb-status';
-    status.style.cssText = 'margin-top:20px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:17px;color:rgba(255,255,255,0.6);text-align:center;min-height:24px;';
+    status.style.cssText = 'margin-top:20px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:19px;color:rgba(255,255,255,0.6);text-align:center;min-height:26px;';
     _root.appendChild(status);
 
     // Controls
