@@ -20,6 +20,7 @@
  */
 
 import { SupabaseClient } from '@supabase/supabase-js';
+import * as repo from './superlatives-repository';
 
 export type Pillar = 'nutrition' | 'hydration' | 'exercise' | 'sleep' | 'mental';
 
@@ -52,10 +53,7 @@ export interface SuperlativeError {
  * Used to filter every superlative response.
  */
 async function getHiddenUserIds(sb: SupabaseClient): Promise<Set<string>> {
-  const { data } = await sb
-    .from('global_community_profiles')
-    .select('user_id')
-    .eq('is_visible', false);
+  const { data } = await repo.fetchHiddenCommunityProfileUserIds(sb);
   return new Set<string>((data || []).map((r: any) => String(r.user_id)));
 }
 
@@ -66,14 +64,8 @@ async function hydrateProfiles(
 ): Promise<Map<string, ProfileCard>> {
   if (userIds.length === 0) return new Map();
   const [{ data: users }, { data: profs }] = await Promise.all([
-    sb
-      .from('app_users')
-      .select('user_id, display_name, vitana_id, created_at, avatar_url:profile->>avatar_url')
-      .in('user_id', userIds),
-    sb
-      .from('profiles')
-      .select('user_id, registration_seq, location')
-      .in('user_id', userIds),
+    repo.fetchAppUsersForHydration(sb, userIds),
+    repo.fetchProfilesForHydration(sb, userIds),
   ]);
   const profMap = new Map<string, any>((profs || []).map((p: any) => [String(p.user_id), p]));
   const out = new Map<string, ProfileCard>();
@@ -103,12 +95,7 @@ export async function getHighestVitanaIndex(
 
   // Most-recent vitana_index_scores per user, ordered by score_total desc.
   // We over-fetch then filter privacy + dedupe per user, then truncate to `limit`.
-  const { data, error } = await sb
-    .from('vitana_index_scores')
-    .select('user_id, score_total, date')
-    .order('score_total', { ascending: false })
-    .order('date', { ascending: false })
-    .limit(Math.max(50, limit * 5));
+  const { data, error } = await repo.fetchTopVitanaIndexScores(sb, Math.max(50, limit * 5));
   if (error) return { ok: false, error: `index_query_failed: ${error.message}` };
 
   const seen = new Set<string>();
@@ -159,12 +146,7 @@ export async function getTopInPillar(
   const column = `score_${pillar}` as const;
   const hidden = await getHiddenUserIds(sb);
 
-  const { data, error } = await sb
-    .from('vitana_index_scores')
-    .select(`user_id, ${column}, date`)
-    .order(column, { ascending: false })
-    .order('date', { ascending: false })
-    .limit(Math.max(50, limit * 5));
+  const { data, error } = await repo.fetchTopPillarScores(sb, column, Math.max(50, limit * 5));
   if (error) return { ok: false, error: `pillar_query_failed: ${error.message}` };
 
   const seen = new Set<string>();
@@ -212,11 +194,7 @@ export async function getMemberByRegistration(
 
   // Prefer profiles.registration_seq (deterministic, monotonic). Fall back
   // to app_users.created_at if registration_seq isn't populated.
-  const { data, error } = await sb
-    .from('profiles')
-    .select('user_id, registration_seq')
-    .order('registration_seq', { ascending, nullsFirst: false })
-    .limit(Math.max(50, limit * 5));
+  const { data, error } = await repo.fetchProfilesByRegistrationOrder(sb, ascending, Math.max(50, limit * 5));
   if (error) return { ok: false, error: `registration_query_failed: ${error.message}` };
 
   const seen = new Set<string>();
@@ -266,10 +244,7 @@ export async function getMostFollowed(
   let errMsg = '';
 
   // Attempt 1: to_user_id (most common naming)
-  const probe1 = await sb
-    .from('relationships')
-    .select('to_user_id')
-    .limit(20000);
+  const probe1 = await repo.fetchRelationshipsToUserIdProbe(sb, 20000);
   if (!probe1.error && Array.isArray(probe1.data)) {
     for (const r of probe1.data) {
       const u = String((r as any).to_user_id ?? '');
@@ -282,10 +257,7 @@ export async function getMostFollowed(
 
   // Attempt 2: followee_id
   if (counts.size === 0) {
-    const probe2 = await sb
-      .from('relationships')
-      .select('followee_id')
-      .limit(20000);
+    const probe2 = await repo.fetchRelationshipsFolloweeIdProbe(sb, 20000);
     if (!probe2.error && Array.isArray(probe2.data)) {
       for (const r of probe2.data) {
         const u = String((r as any).followee_id ?? '');
