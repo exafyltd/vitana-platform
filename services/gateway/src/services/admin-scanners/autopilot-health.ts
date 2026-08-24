@@ -16,6 +16,7 @@
  */
 import { getSupabase } from '../../lib/supabase';
 import type { AdminScanner, InsightDraft } from './types';
+import * as repo from './autopilot-health-repository';
 
 const LOG_PREFIX = '[admin-scanner:autopilot_health]';
 const FAILURE_RATE_THRESHOLD_PCT = 30;
@@ -40,18 +41,8 @@ export const autopilotHealthScanner: AdminScanner = {
     // 1. Run failure spike
     try {
       const [completed, failed] = await Promise.all([
-        supabase
-          .from('tenant_autopilot_runs')
-          .select('id', { count: 'exact', head: true })
-          .eq('tenant_id', tenantId)
-          .eq('status', 'completed')
-          .gte('started_at', d7),
-        supabase
-          .from('tenant_autopilot_runs')
-          .select('id', { count: 'exact', head: true })
-          .eq('tenant_id', tenantId)
-          .eq('status', 'failed')
-          .gte('started_at', d7),
+        repo.countCompletedAutopilotRuns(supabase, tenantId, d7),
+        repo.countFailedAutopilotRuns(supabase, tenantId, d7),
       ]);
       const c = completed.count ?? 0;
       const f = failed.count ?? 0;
@@ -84,11 +75,7 @@ export const autopilotHealthScanner: AdminScanner = {
 
     // 2. Self-healing pending-approval backlog (global, not tenant-scoped — flagged in context)
     try {
-      const { count } = await supabase
-        .from('self_healing_log')
-        .select('id', { count: 'exact', head: true })
-        .eq('outcome', 'pending')
-        .lt('confidence', 0.8);
+      const { count } = await repo.countSelfHealingPendingBacklog(supabase);
       if (count !== null && count >= SELF_HEALING_BACKLOG_THRESHOLD) {
         insights.push({
           natural_key: 'self_healing_pending_backlog',
@@ -114,10 +101,7 @@ export const autopilotHealthScanner: AdminScanner = {
 
     // 3. Recommendation queue depth per tenant
     try {
-      const { count } = await supabase
-        .from('autopilot_recommendations')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'new');
+      const { count } = await repo.countNewAutopilotRecommendations(supabase);
       // NOTE: autopilot_recommendations currently isn't tenant_id scoped in the
       // count query because the `user_id` column targets specific users; a
       // tenant-scoped rollup lives in the per-user index we don't reach here.
@@ -150,17 +134,8 @@ export const autopilotHealthScanner: AdminScanner = {
     // 4. Activation-rate drop — compare last 7d vs prior 7d
     try {
       const [act7, act14] = await Promise.all([
-        supabase
-          .from('autopilot_recommendations')
-          .select('id', { count: 'exact', head: true })
-          .eq('status', 'activated')
-          .gte('updated_at', d7),
-        supabase
-          .from('autopilot_recommendations')
-          .select('id', { count: 'exact', head: true })
-          .eq('status', 'activated')
-          .gte('updated_at', d14)
-          .lt('updated_at', d7),
+        repo.countActivatedRecommendationsSince(supabase, d7),
+        repo.countActivatedRecommendationsBetween(supabase, d14, d7),
       ]);
       const last7 = act7.count ?? 0;
       const prior7 = act14.count ?? 0;
