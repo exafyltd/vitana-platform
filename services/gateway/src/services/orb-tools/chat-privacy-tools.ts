@@ -22,6 +22,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
 import { FIELD_DEFAULTS, HARDCODED_KEYS, type FieldVisibility } from '../../lib/account-visibility';
 import { runRecentConversations } from '../social-memory/social-read-tools';
+import * as repo from './chat-privacy-tools-repository';
 
 type Handler = (
   args: OrbToolArgs,
@@ -64,11 +65,7 @@ async function resolveTenantId(
   sb: SupabaseClient,
 ): Promise<string | null> {
   if (id.tenant_id) return id.tenant_id;
-  const { data } = await sb
-    .from('app_users')
-    .select('tenant_id')
-    .eq('user_id', id.user_id)
-    .maybeSingle();
+  const { data } = await repo.fetchTenantIdForUser(sb, id.user_id);
   return (data as { tenant_id?: string } | null)?.tenant_id ?? null;
 }
 
@@ -89,11 +86,7 @@ async function resolveMember(
   }
 
   if (UUID_RE.test(token)) {
-    const { data, error } = await sb
-      .from('app_users')
-      .select('user_id, display_name, vitana_id')
-      .eq('user_id', token)
-      .maybeSingle();
+    const { data, error } = await repo.fetchAppUserById(sb, token);
     if (error) {
       return { ok: false, error: 'I had a problem looking that member up — want me to try again?' };
     }
@@ -103,12 +96,7 @@ async function resolveMember(
     return { ok: true, member: data as ResolvedMember };
   }
 
-  const { data, error } = await sb.rpc('resolve_recipient_candidates', {
-    p_actor: id.user_id,
-    p_token: token,
-    p_limit: 5,
-    p_global: true,
-  });
+  const { data, error } = await repo.rpcResolveRecipientCandidates(sb, id.user_id, token, 5);
   if (error) {
     return { ok: false, error: `I had a problem looking up ${token} — want me to try again?` };
   }
@@ -207,15 +195,7 @@ export const tool_start_conversation: Handler = async (args, id, sb) => {
       };
     }
 
-    const { data: lastRows, error: lastErr } = await sb
-      .from('chat_messages')
-      .select('id, content, created_at')
-      .eq('tenant_id', tenantId)
-      .or(
-        `and(sender_id.eq.${id.user_id},receiver_id.eq.${member.user_id}),and(sender_id.eq.${member.user_id},receiver_id.eq.${id.user_id})`,
-      )
-      .order('created_at', { ascending: false })
-      .limit(1);
+    const { data: lastRows, error: lastErr } = await repo.fetchLastMessageBetween(sb, tenantId, id.user_id, member.user_id);
     if (lastErr) {
       return { ok: false, error: 'I had a problem checking your chats — want me to try again?' };
     }
@@ -290,12 +270,7 @@ export const tool_mark_conversation_read: Handler = async (args, id, sb) => {
     const markAll = args.all === true || (!memberArg && !memberIdArg);
 
     if (markAll) {
-      const { error, count } = await sb
-        .from('chat_messages')
-        .update({ read_at: new Date().toISOString() }, { count: 'exact' })
-        .eq('tenant_id', tenantId)
-        .eq('receiver_id', id.user_id)
-        .is('read_at', null);
+      const { error, count } = await repo.markAllReceivedMessagesRead(sb, tenantId, id.user_id, new Date().toISOString());
       if (error) {
         return { ok: false, error: "I couldn't mark your messages read just now — want me to try again?" };
       }
@@ -310,13 +285,7 @@ export const tool_mark_conversation_read: Handler = async (args, id, sb) => {
     const resolved = await resolveMember(memberIdArg || memberArg, id, sb);
     if (!resolved.ok) return resolved;
     const member = resolved.member;
-    const { error, count } = await sb
-      .from('chat_messages')
-      .update({ read_at: new Date().toISOString() }, { count: 'exact' })
-      .eq('tenant_id', tenantId)
-      .eq('sender_id', member.user_id)
-      .eq('receiver_id', id.user_id)
-      .is('read_at', null);
+    const { error, count } = await repo.markPeerMessagesRead(sb, tenantId, member.user_id, id.user_id, new Date().toISOString());
     if (error) {
       return { ok: false, error: "I couldn't mark that conversation read just now — want me to try again?" };
     }
@@ -400,11 +369,7 @@ async function writeVisibilityMap(
   sb: SupabaseClient,
   mutate: (current: Record<string, FieldVisibility>) => Record<string, FieldVisibility>,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const { data, error } = await sb
-    .from('profiles')
-    .select('account_visibility')
-    .eq('user_id', id.user_id)
-    .maybeSingle();
+  const { data, error } = await repo.fetchAccountVisibility(sb, id.user_id);
   if (error) {
     return { ok: false, error: "I couldn't read your privacy settings just now — want me to try again?" };
   }
@@ -414,10 +379,7 @@ async function writeVisibilityMap(
   const current = ((data as { account_visibility?: Record<string, FieldVisibility> })
     .account_visibility ?? {}) as Record<string, FieldVisibility>;
   const next = mutate({ ...current });
-  const { error: updErr } = await sb
-    .from('profiles')
-    .update({ account_visibility: next })
-    .eq('user_id', id.user_id);
+  const { error: updErr } = await repo.updateAccountVisibility(sb, id.user_id, next);
   if (updErr) {
     return { ok: false, error: "I couldn't save your privacy settings just now — want me to try again?" };
   }
@@ -608,12 +570,7 @@ export const tool_block_user: Handler = async (args, id, sb) => {
           `Confirm with the user, then call block_user again with confirm=true and member_user_id=${member.user_id}.`,
       };
     }
-    const { error } = await sb
-      .from('user_blocked_authors')
-      .upsert(
-        { user_id: id.user_id, author_id: member.user_id },
-        { onConflict: 'user_id,author_id' },
-      );
+    const { error } = await repo.upsertBlockedAuthor(sb, id.user_id, member.user_id);
     if (error) {
       return { ok: false, error: `I couldn't block ${name} just now — want me to try again?` };
     }
@@ -644,11 +601,7 @@ export const tool_unblock_user: Handler = async (args, id, sb) => {
       return { ok: false, error: 'Who would you like to unblock?' };
     }
 
-    const { data: blockedRows, error: blockedErr } = await sb
-      .from('user_blocked_authors')
-      .select('author_id')
-      .eq('user_id', id.user_id)
-      .limit(500);
+    const { data: blockedRows, error: blockedErr } = await repo.fetchBlockedAuthorIds(sb, id.user_id);
     if (blockedErr) {
       return { ok: false, error: "I couldn't read your blocked list just now — want me to try again?" };
     }
@@ -663,10 +616,7 @@ export const tool_unblock_user: Handler = async (args, id, sb) => {
       };
     }
 
-    const { data: peopleRows, error: peopleErr } = await sb
-      .from('app_users')
-      .select('user_id, display_name, vitana_id')
-      .in('user_id', blockedIds);
+    const { data: peopleRows, error: peopleErr } = await repo.fetchAppUsersByIds(sb, blockedIds);
     if (peopleErr) {
       return { ok: false, error: "I couldn't read your blocked list just now — want me to try again?" };
     }
@@ -706,11 +656,7 @@ export const tool_unblock_user: Handler = async (args, id, sb) => {
     }
 
     const target = matches[0];
-    const { error: delErr } = await sb
-      .from('user_blocked_authors')
-      .delete()
-      .eq('user_id', id.user_id)
-      .eq('author_id', target.user_id);
+    const { error: delErr } = await repo.deleteBlockedAuthor(sb, id.user_id, target.user_id);
     if (delErr) {
       return { ok: false, error: `I couldn't unblock ${memberDisplay(target)} just now — want me to try again?` };
     }
