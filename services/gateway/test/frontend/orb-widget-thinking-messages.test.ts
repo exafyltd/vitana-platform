@@ -76,9 +76,16 @@ describe('orb-widget thinking-status messages (VTID-03449, VTID-03451)', () => {
     );
   });
 
-  it('every message pair has both an en and de value, without forbidden technical wording or formal German register', () => {
+  it('every message pair has en/de plus all 8 other BOOTSTRAP-ORB-CAPTION-I18N locales, without forbidden technical wording or formal German register', () => {
     const forbidden = /\b(processing|request|retrieving|query|system)\b/i;
-    const pairs = source.match(/\{ en: '[^']*', de: '[^']*' \}/g) || [];
+    // BOOTSTRAP-ORB-CAPTION-I18N: each pool entry grew from {en, de} to all
+    // 10 gateway-supported locales — see services/gateway/src/i18n/catalog.ts
+    // GATEWAY_LOCALES. This regex pins the full 10-key shape so a future
+    // edit can't silently drop a locale from one entry.
+    const pairs =
+      source.match(
+        /\{ en: '[^']*', de: '[^']*', es: '[^']*', sr: '[^']*', fr: '[^']*', pt: '[^']*', ru: '[^']*', pl: '[^']*', zh: '[^']*', ar: '[^']*' \}/g,
+      ) || [];
     // quick(6) + primary(7) + alternates(8) = 21 pairs
     expect(pairs.length).toBe(21);
     for (const pair of pairs) {
@@ -107,8 +114,10 @@ describe('orb-widget thinking-status messages (VTID-03449, VTID-03451)', () => {
     const body = extractFunctionBody(source, 'function _startThinkingProgress()');
     expect(body).toMatch(/_buildThinkingQueue\(\)/);
     // shows queue[0] right away — this is what most turns actually display,
-    // since they resolve before the first interval tick
-    expect(body).toMatch(/_setStatus\(isDe \? queue\[0\]\.de : queue\[0\]\.en\)/);
+    // since they resolve before the first interval tick. BOOTSTRAP-ORB-
+    // CAPTION-I18N: routed through _loc() (all 10 locales) instead of the
+    // old isDe ternary (de/en only).
+    expect(body).toMatch(/_setStatus\(_loc\(queue\[0\]\)\)/);
     expect(body).toMatch(/Math\.floor\(elapsed \/ 4\)/);
     expect(body).toMatch(/queue\.length - 1/);
     expect(body).not.toMatch(/elapsed \+ 's'/);
