@@ -65,3 +65,28 @@ describe('orb-widget German playback rate (VTID-03606)', () => {
     expect(processQueueBody).not.toMatch(/buf\.duration\s*\/\s*_AUDIO_PLAYBACK_RATE\s*;/);
   });
 });
+
+describe('orb-widget PCM decode rate (VTID-03712)', () => {
+  const source = fs.readFileSync(WIDGET_PATH, 'utf8');
+
+  // Regression guard: createBuffer used to hardcode 24000 regardless of the
+  // mime the server actually sent. Polly-sourced chunks (greeting bridge,
+  // guided-topic narration) are 16000Hz (POLLY_PCM_SAMPLE_RATE_HZ), so every
+  // one of those played 1.5x too fast with a matching pitch rise — audibly
+  // "Mickey Mouse" — independent of the deliberate 1.05x/1.1x
+  // _AUDIO_PLAYBACK_RATE(_DE) speed-up, which is a separate knob.
+  it('_pcmRateHzFromMime() parses the rate out of the mime, defaulting to 24000', () => {
+    const body = extractFunctionBody(source, 'function _pcmRateHzFromMime(mimeType)');
+    expect(body).toMatch(/rate=\(\\d\+\)/);
+    expect(body).toMatch(/parseInt\(/);
+    expect(body).toMatch(/24000/);
+  });
+
+  it('_processQueue creates the playback buffer at the parsed rate, never a hardcoded 24000', () => {
+    const processQueueBody = extractFunctionBody(source, 'function _processQueue()');
+    expect(processQueueBody).toMatch(
+      /ctx\.createBuffer\(\s*1\s*,\s*floats\.length\s*,\s*_pcmRateHzFromMime\(\s*chunk\.mime\s*\)\s*\)/,
+    );
+    expect(processQueueBody).not.toMatch(/ctx\.createBuffer\(\s*1\s*,\s*floats\.length\s*,\s*24000\s*\)/);
+  });
+});

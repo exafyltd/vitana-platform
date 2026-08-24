@@ -17,7 +17,7 @@
 (function (window) {
   'use strict';
 
-  var _WIDGET_VERSION = '2026-08-24-caption-fontsize-19px';
+  var _WIDGET_VERSION = '2026-08-24-pcm-rate-fix';
   console.log('[VTOrb] Widget version: ' + _WIDGET_VERSION);
 
   // BOOTSTRAP-NOVA-SONIC-VOICE: user live-test feedback 2026-07-28 — the
@@ -44,6 +44,24 @@
     return (_cfg.lang && _cfg.lang.startsWith('de'))
       ? _AUDIO_PLAYBACK_RATE_DE
       : _AUDIO_PLAYBACK_RATE;
+  }
+
+  // VTID-03712: every server-sent PCM chunk carries its true encode rate in
+  // its mime ("audio/pcm;rate=16000"), and the gateway genuinely varies it —
+  // Polly's pcm output is 16000Hz (POLLY_PCM_SAMPLE_RATE_HZ,
+  // services/gateway/src/services/tts/polly.ts), while the live model's own
+  // native audio (Nova Sonic / the legacy Vertex path) is 24000Hz. This used
+  // to be decoded at a hardcoded 24000 regardless of what the mime said, so
+  // every 16kHz Polly chunk (greeting bridge, guided-topic narration) played
+  // at 1.5x speed with a matching pitch rise — audibly "Mickey Mouse" — on
+  // top of the deliberate 1.05x/1.1x _AUDIO_PLAYBACK_RATE(_DE) speed-up
+  // above, which is a separate, intentional knob and not the bug. Default
+  // stays 24000 only for the case the mime is missing/unparseable, matching
+  // the pre-existing fallback for the native-audio streaming path.
+  function _pcmRateHzFromMime(mimeType) {
+    var m = /rate=(\d+)/.exec(mimeType || '');
+    var parsed = m ? parseInt(m[1], 10) : NaN;
+    return (parsed > 0) ? parsed : 24000;
   }
 
   // Prevent double-load
@@ -1512,7 +1530,7 @@
         var floats = new Float32Array(int16.length);
         for (var j = 0; j < int16.length; j++) floats[j] = int16[j] / 32768.0;
 
-        var buf = ctx.createBuffer(1, floats.length, 24000);
+        var buf = ctx.createBuffer(1, floats.length, _pcmRateHzFromMime(chunk.mime));
         buf.copyToChannel(floats, 0);
 
         // Snapshot once per chunk so the schedule-gap compensation below
