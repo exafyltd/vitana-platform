@@ -24,6 +24,7 @@ import { z } from 'zod';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { resolveVitanaId } from '../middleware/auth-supabase-jwt';
+import * as repo from './feedback-intake-repository';
 
 const router = Router();
 const VTID = 'VTID-02603';
@@ -63,7 +64,7 @@ router.post('/handoff-detect', async (req: Request, res: Response) => {
   if (!v.success) return res.status(400).json({ ok: false, error: 'VALIDATION_FAILED' });
 
   const supabase = createUserSupabaseClient(token);
-  const { data, error } = await supabase.rpc('pick_specialist_for_text', { p_text: v.data.text });
+  const { data, error } = await repo.pickSpecialistForText(supabase, v.data.text);
 
   if (error) {
     console.error(`[${VTID}] pick_specialist RPC error:`, error.message);
@@ -138,22 +139,18 @@ router.post('/start', async (req: Request, res: Response) => {
   ];
 
   // Create ticket in 'interviewing' state
-  const { data: ticket, error: insErr } = await supabase
-    .from('feedback_tickets')
-    .insert({
-      user_id: userId,
-      vitana_id: vitanaId,
-      kind: KIND_BY_AGENT[body.to_persona] ?? 'feedback',
-      status: 'interviewing',
-      raw_transcript: body.initial_user_text,
-      intake_messages: initialMessages,
-      structured_fields: {},
-      screen_path: body.screen_path ?? null,
-      app_version: body.app_version ?? null,
-      device_meta: body.device_meta ?? null,
-    })
-    .select('id, ticket_number, kind, status')
-    .single();
+  const { data: ticket, error: insErr } = await repo.insertFeedbackTicketForIntake(supabase, {
+    user_id: userId,
+    vitana_id: vitanaId,
+    kind: KIND_BY_AGENT[body.to_persona] ?? 'feedback',
+    status: 'interviewing',
+    raw_transcript: body.initial_user_text,
+    intake_messages: initialMessages,
+    structured_fields: {},
+    screen_path: body.screen_path ?? null,
+    app_version: body.app_version ?? null,
+    device_meta: body.device_meta ?? null,
+  });
 
   if (insErr) {
     console.error(`[${VTID}] ticket insert failed:`, insErr.message);
@@ -183,11 +180,7 @@ router.post('/start', async (req: Request, res: Response) => {
   }).catch(err => console.warn(`[${VTID}] handoff event write failed:`, err?.message));
 
   // Fetch the persona for the frontend
-  const { data: persona } = await supabase
-    .from('agent_personas')
-    .select('key, display_name, role, voice_id, system_prompt, intake_schema_ref, max_questions, max_duration_seconds')
-    .eq('key', body.to_persona)
-    .maybeSingle();
+  const { data: persona } = await repo.fetchAgentPersonaForHandoff(supabase, body.to_persona);
 
   emitOasisEvent({
     vtid: VTID,
@@ -238,11 +231,7 @@ router.post('/turn', async (req: Request, res: Response) => {
   const supabase = createUserSupabaseClient(token);
 
   // Read current intake_messages (RLS = own ticket only)
-  const { data: existing, error: readErr } = await supabase
-    .from('feedback_tickets')
-    .select('id, intake_messages, status')
-    .eq('id', body.ticket_id)
-    .maybeSingle();
+  const { data: existing, error: readErr } = await repo.fetchTicketForTurn(supabase, body.ticket_id);
 
   if (readErr || !existing) {
     return res.status(404).json({ ok: false, error: 'TICKET_NOT_FOUND' });
@@ -254,10 +243,7 @@ router.post('/turn', async (req: Request, res: Response) => {
   const messages = Array.isArray(existing.intake_messages) ? existing.intake_messages : [];
   messages.push({ ...body, ts: new Date().toISOString() });
 
-  const { error: upErr } = await supabase
-    .from('feedback_tickets')
-    .update({ intake_messages: messages })
-    .eq('id', body.ticket_id);
+  const { error: upErr } = await repo.updateTicketIntakeMessages(supabase, body.ticket_id, messages);
 
   if (upErr) {
     return res.status(502).json({ ok: false, error: 'UPDATE_FAILED', details: upErr.message });
@@ -288,19 +274,14 @@ router.post('/complete', async (req: Request, res: Response) => {
   const body = v.data;
   const supabase = createUserSupabaseClient(token);
 
-  const { data: updated, error: upErr } = await supabase
-    .from('feedback_tickets')
-    .update({
-      status: 'triaged',
-      structured_fields: body.structured_fields,
-      raw_transcript: body.raw_transcript ?? undefined,
-      interviewed_at: new Date().toISOString(),
-      triaged_at: new Date().toISOString(),
-      resolver_agent: body.resolver_persona ?? null,
-    })
-    .eq('id', body.ticket_id)
-    .select('id, ticket_number, status, kind, vitana_id')
-    .single();
+  const { data: updated, error: upErr } = await repo.updateTicketComplete(supabase, body.ticket_id, {
+    status: 'triaged',
+    structured_fields: body.structured_fields,
+    raw_transcript: body.raw_transcript ?? undefined,
+    interviewed_at: new Date().toISOString(),
+    triaged_at: new Date().toISOString(),
+    resolver_agent: body.resolver_persona ?? null,
+  });
 
   if (upErr || !updated) {
     return res.status(502).json({ ok: false, error: 'UPDATE_FAILED', details: upErr?.message });
