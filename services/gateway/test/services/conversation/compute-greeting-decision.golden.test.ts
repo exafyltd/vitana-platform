@@ -300,6 +300,25 @@ describe('computeGreetingDecision — rung golden snapshots', () => {
     expect(d.wakeOpener).toBe('legacy_default');
     expect(d).toMatchSnapshot();
   });
+
+  // VTID-03718 — regression guard for the pt/pl anonymous-intro gap: every
+  // supported anonymous-intro language must get ITS OWN instruction, never
+  // the English fallback. Reported live as "Polish and Portuguese ORB
+  // sessions speak English, with a Portuguese/Polish accent" — the voice
+  // was never the bug; this table's missing pt/pl rows were.
+  test.each(['en', 'de', 'fr', 'es', 'ar', 'zh', 'ru', 'sr', 'pt', 'pl'] as const)(
+    'legacy default: anonymous intro speech is never the English fallback for lang=%s',
+    (lang) => {
+      const en = computeGreetingDecision(ctx({ isAnonymous: true, lang: 'en' }));
+      const d = computeGreetingDecision(ctx({ isAnonymous: true, lang }));
+      expect(d.wakeOpener).toBe('legacy_default');
+      expect(typeof d.directive).toBe('string');
+      expect((d.directive as string).length).toBeGreaterThan(0);
+      if (lang !== 'en') {
+        expect(d.directive).not.toBe(en.directive);
+      }
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------

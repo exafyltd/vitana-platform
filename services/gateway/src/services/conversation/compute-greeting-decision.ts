@@ -991,6 +991,17 @@ function buildLegacyGreetingPrompt(ctx: GreetingDecisionContext): string {
       zh: '请按照您的指示发表完整的介绍性演讲。',
       ru: 'Пожалуйста, произнесите полную вступительную речь, как описано в ваших инструкциях.',
       sr: 'Молимо вас, одржите комплетан уводни говор како је описано у вашим упутствима.',
+      // VTID-03718: missing here, so ctx.lang='pt'/'pl' fell through to
+      // anonPrompts.en — the model then received an ENGLISH instruction
+      // while the Polly voice (resolved independently, correctly, from
+      // ctx.lang) stayed Portuguese/Polish. Reported live as "Polish and
+      // Portuguese talk English with a Portuguese/Polish accent" — the
+      // accent is right because voice selection was never broken; only this
+      // one table was. Same defect shape as VTID-03644 (pt/pl missing from
+      // a different per-language wrapper map) — that instance was fixed,
+      // this sibling table was not.
+      pt: 'Por favor, faça o discurso de apresentação completo conforme descrito em suas instruções.',
+      pl: 'Proszę wygłoś pełne przemówienie wprowadzające, tak jak opisano w Twoich instrukcjach.',
     };
     prompt = anonPrompts[ctx.lang] || anonPrompts.en;
   }

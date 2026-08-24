@@ -1,0 +1,15 @@
+Nova Sonic NOVA_SONIC_SUPPORTED_LANGUAGES: [ 'en', 'de', 'fr', 'es' ]
+Cascade enabled (ORB_CASCADED_VOICE_ENABLED env, as read by isCascadeEnabled()): true
+
+en  novaNative=true  pollyVoice=true  transcribeCode=en-US  cascadeEligible=false reason=nova_supports_natively => DECIDED PROVIDER: nova_sonic (native)
+de  novaNative=true  pollyVoice=true  transcribeCode=de-DE  cascadeEligible=false reason=nova_supports_natively => DECIDED PROVIDER: nova_sonic (native)
+fr  novaNative=true  pollyVoice=true  transcribeCode=fr-FR  cascadeEligible=false reason=nova_supports_natively => DECIDED PROVIDER: nova_sonic (native)
+es  novaNative=true  pollyVoice=true  transcribeCode=es-ES  cascadeEligible=false reason=nova_supports_natively => DECIDED PROVIDER: nova_sonic (native)
+pt  novaNative=false pollyVoice=true  transcribeCode=pt-BR  cascadeEligible=true  reason=null                   => DECIDED PROVIDER: cascaded
+pl  novaNative=false pollyVoice=true  transcribeCode=pl-PL  cascadeEligible=true  reason=null                   => DECIDED PROVIDER: cascaded
+ru  novaNative=false pollyVoice=true  transcribeCode=ru-RU  cascadeEligible=true  reason=null                   => DECIDED PROVIDER: cascaded
+ar  novaNative=false pollyVoice=true  transcribeCode=ar-AE  cascadeEligible=true  reason=null                   => DECIDED PROVIDER: cascaded
+zh  novaNative=false pollyVoice=true  transcribeCode=zh-CN  cascadeEligible=true  reason=null                   => DECIDED PROVIDER: cascaded
+sr  novaNative=false pollyVoice=false transcribeCode=sr-RS  cascadeEligible=false reason=no_polly_voice         => DECIDED PROVIDER: nova_sonic (FORCED — does not speak this language)  <<< PROBLEM
+
+RESULT: at least one language routes to a provider that cannot actually speak it.
