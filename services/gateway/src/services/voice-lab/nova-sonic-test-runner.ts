@@ -522,14 +522,30 @@ export async function runNovaSonicTestSuite(options: {
       : { status: 'fail', detail: `shapesOk=${shapesOk} normOk=${normOk}` };
   }));
 
-  checks.push(await runCheck('voice_mapping', 'Voice mapping (persona × language)', () => {
+  checks.push(await runCheck('voice_mapping', 'Voice mapping (one female voice per language)', () => {
+    // VTID-03704 — persona must NOT change the voice any more. That is asserted
+    // here as an equality between two personas rather than as "devon → lennart",
+    // because the persona-split is exactly what made the voice differ across the
+    // sign-in boundary (anonymous has no persona, a signed-in user may carry
+    // `devon`).
+    //
+    // `pt` resolves to `carolina`, NOT null, even though it routes to the
+    // Polly cascade: the cascade gate is inert until
+    // `ORB_CASCADED_VOICE_ENABLED='true'`, so pt sessions still transit Nova
+    // and must not be handed the German fallback. `sr` genuinely resolves
+    // null — Nova publishes no Serbian voice, and Polly has none either, so
+    // it stays on Nova via the documented substitution.
     const ok =
       resolveNovaSonicVoice({ language: 'de', persona: 'vitana' }) === 'tina' &&
-      resolveNovaSonicVoice({ language: 'de', persona: 'devon' }) === 'lennart' &&
-      resolveNovaSonicVoice({ language: 'en', persona: 'vitana' }) === 'tina' &&
+      resolveNovaSonicVoice({ language: 'de', persona: 'devon' }) === 'tina' &&
+      resolveNovaSonicVoice({ language: 'en', persona: 'atlas' }) === 'tina' &&
+      resolveNovaSonicVoice({ language: 'fr', persona: 'devon' }) === 'ambre' &&
+      resolveNovaSonicVoice({ language: 'es', persona: 'devon' }) === 'lupe' &&
+      resolveNovaSonicVoice({ language: 'pt', persona: 'vitana' }) === 'carolina' &&
+      resolveNovaSonicVoice({ language: 'pt', persona: 'devon' }) === 'carolina' &&
       resolveNovaSonicVoice({ language: 'sr', persona: 'vitana' }) === null;
     return ok
-      ? { status: 'pass', detail: 'de→tina/lennart, en→tina/lennart, sr→null (fallback)' }
+      ? { status: 'pass', detail: 'de/en→tina, fr→ambre, es→lupe, pt→carolina (persona-independent); sr→null' }
       : { status: 'fail', detail: 'unexpected voice mapping' };
   }));
 
