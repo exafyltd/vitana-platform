@@ -1101,7 +1101,11 @@ export interface GeminiLiveSession {
   // decouples "start generating" from "client ready to play", hiding the model's
   // first-token latency behind the unlock the legacy path serially waits for.
   prebufferGreetingAudio?: boolean;
-  bufferedGreetingChunks?: string[];
+  // VTID-03715: each held chunk carries its own declared mime. It used to be a
+  // bare string[], which silently assumed every buffered chunk was 24kHz — true
+  // while Nova was the only upstream, false the moment the Polly cascade (16kHz)
+  // could produce a greeting.
+  bufferedGreetingChunks?: Array<{ audioB64: string; audioMime?: string }>;
   // DEV-COMHU-0513 B2: false while fast-start's deferred wake-brief/journey work
   // is still running; flips true when contextReadyPromise settles. Lets the
   // greeting builder detect "context still pending" and emit a short audio-safe
@@ -1998,6 +2002,19 @@ if (googleAuth && VERTEX_PROJECT_ID) {
 
 let cachedChimePcmB64: string | null = null;
 
+/**
+ * VTID-03715: the rate to declare when an upstream chunk arrives with no mime
+ * of its own. 24kHz is Nova's rate and was the ONLY rate this file ever emitted,
+ * so it is the historically-correct default — but it is a fallback now, not an
+ * assertion. Where the real rate is known it must be forwarded instead: the
+ * Polly cascade streams 16kHz, and declaring that as 24kHz plays it 1.5x fast.
+ *
+ * NOT used for the activation chime — generateChimePcm() synthesizes at 24000
+ * below, so those call sites state their own rate as a fact about local data,
+ * not as a guess about an upstream.
+ */
+const DEFAULT_UPSTREAM_AUDIO_MIME = 'audio/pcm;rate=24000';
+
 function generateChimePcm(): string {
   if (cachedChimePcmB64) return cachedChimePcmB64;
 
@@ -2136,13 +2153,14 @@ function flushPrebufferedGreeting(
   } catch (err) {
     console.warn('[GREETING-PREBUFFER] Failed to send chime on flush:', err);
   }
-  for (const data_b64 of chunks) {
+  for (const { audioB64: data_b64, audioMime } of chunks) {
     if (clientWs.readyState !== WebSocket.OPEN) break;
     try {
       sendWsMessage(clientWs, {
         type: 'audio',
         data_b64,
-        mime: 'audio/pcm;rate=24000',
+        // VTID-03715: replay at the rate this chunk was actually encoded at.
+        mime: audioMime || DEFAULT_UPSTREAM_AUDIO_MIME,
         chunk_number: session.audioOutChunks,
       });
     } catch (err) {
@@ -15158,7 +15176,7 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
     const liveApiPromise = connectToLiveAPI(
       session,
       // Audio response handler - forward to client via SSE
-      (audioB64: string) => {
+      (audioB64: string, audioMime?: string) => {
         // ORB-CONVERSATION-LATENCY: the first audio chunk out is the greeting —
         // it finalizes the establishment tracker (total = time_to_first_audio).
         // The greeting has no preceding user turn, so the per-turn tracker never
@@ -15181,7 +15199,7 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
             session.sseResponse.write(`data: ${JSON.stringify({
               type: 'audio',
               data_b64: audioB64,
-              mime: 'audio/pcm;rate=24000',
+              mime: audioMime || DEFAULT_UPSTREAM_AUDIO_MIME,
               chunk_number: session.audioOutChunks
             })}\n\n`);
           } catch (err) {
@@ -16396,7 +16414,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
       liveSession,
       // Audio response handler - forward to client via WebSocket
       // FIX: Send raw PCM for Web Audio API scheduled playback (eliminates gaps between chunks)
-      (audioB64: string) => {
+      (audioB64: string, audioMime?: string) => {
         if (liveSession.establishLatency) {
           // BOOTSTRAP-NOVA-SONIC-VOICE: see the SSE audio handler's identical
           // comment — the tracker's Vertex default needs correcting once
@@ -16416,7 +16434,11 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
         // audio is held; once flushed, prebufferGreetingAudio is false and all
         // later turns forward live with zero overhead.
         if (liveSession.prebufferGreetingAudio) {
-          (liveSession.bufferedGreetingChunks ||= []).push(audioB64);
+          // VTID-03715: hold each chunk's OWN mime with it. These are replayed
+          // by flushPrebufferedGreeting() once the client unlocks its player,
+          // and a cascaded greeting held here is 16kHz — stashing only the
+          // bytes would lose that and replay it 1.5x fast.
+          (liveSession.bufferedGreetingChunks ||= []).push({ audioB64, audioMime });
           return;
         }
         if (clientWs.readyState === WebSocket.OPEN) {
@@ -16425,7 +16447,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
             sendWsMessage(clientWs, {
               type: 'audio',
               data_b64: audioB64,
-              mime: 'audio/pcm;rate=24000',
+              mime: audioMime || DEFAULT_UPSTREAM_AUDIO_MIME,
               chunk_number: liveSession.audioOutChunks
             });
           } catch (err) {
