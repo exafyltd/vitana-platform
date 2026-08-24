@@ -82,6 +82,12 @@ AC-4 — Caption font-size increased for legibility (14px→17px→**19px**,
 min-height 20px→24px→**26px**), applied consistently in both places it's
 set, with no mobile/desktop divergence risk
 
+TEST: `orb-widget-caption-i18n.test.ts` — ".vtorb-status font-size and
+min-height are 19px/26px in both the inline style and the injected
+stylesheet" (also asserts no stray 17px/24px left over from the first bump)
+UI: verified live in a rendered DOM — see AC-5.
+Output: `outputs/grep-sweep.txt`
+
 Both the inline `cssText` set once at element creation (`_renderOverlay()`)
 and the injected `<style>` stylesheet rule were bumped identically, twice:
 first to 17px/24px, then — per explicit follow-up user request ("bump it
@@ -92,12 +98,6 @@ CSS specificity than any stylesheet rule (media-scoped or not) and is
 never updated after creation, so a mobile-only override there would
 silently never apply — a single shared value covers both viewports named
 in this repo's visual-verification protocol.
-
-TEST: `orb-widget-caption-i18n.test.ts` — ".vtorb-status font-size and
-min-height are 19px/26px in both the inline style and the injected
-stylesheet" (also asserts no stray 17px/24px left over from the first bump)
-UI: verified live in a rendered DOM — see AC-5.
-Output: `outputs/grep-sweep.txt`
 
 AC-5 — The new caption text and font-size actually render correctly,
 including RTL, at both required viewports
