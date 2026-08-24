@@ -14,6 +14,7 @@
  */
 
 import { SupabaseClient } from '@supabase/supabase-js';
+import * as repo from './milestone-service-repository';
 
 // =============================================================================
 // Milestone Definitions
@@ -177,12 +178,7 @@ async function getAchievedMilestones(
   userId: string,
   tenantId: string,
 ): Promise<Set<string>> {
-  const { data } = await supabase
-    .from('autopilot_recommendations')
-    .select('source_ref')
-    .eq('user_id', userId)
-    .eq('source_type', 'milestone')
-    .eq('status', 'completed');
+  const { data } = await repo.fetchAchievedMilestoneRefs(supabase, userId);
 
   return new Set((data || []).map((r: any) => r.source_ref));
 }
@@ -199,7 +195,7 @@ async function recordMilestone(
   const def = MILESTONES[milestoneId];
   if (!def) return;
 
-  await supabase.from('autopilot_recommendations').insert({
+  await repo.insertAchievedMilestone(supabase, {
     tenant_id: tenantId,
     user_id: userId,
     title: def.name,
@@ -285,19 +281,11 @@ interface CheckContext {
 async function checkProfileComplete(ctx: CheckContext): Promise<string | null> {
   if (ctx.achieved.has('profile_complete')) return null;
 
-  const { data: user } = await ctx.supabase
-    .from('app_users')
-    .select('display_name, avatar_url:profile->>avatar_url')
-    .eq('user_id', ctx.userId)
-    .maybeSingle();
+  const { data: user } = await repo.fetchAppUserForProfileCheck(ctx.supabase, ctx.userId);
 
   if (!user?.display_name || !user?.avatar_url) return null;
 
-  const { count: interestCount } = await ctx.supabase
-    .from('user_topic_profile')
-    .select('id', { count: 'exact', head: true })
-    .eq('tenant_id', ctx.tenantId)
-    .eq('user_id', ctx.userId);
+  const { count: interestCount } = await repo.countUserTopicProfileRows(ctx.supabase, ctx.tenantId, ctx.userId);
 
   if ((interestCount || 0) === 0) return null;
 
@@ -307,23 +295,13 @@ async function checkProfileComplete(ctx: CheckContext): Promise<string | null> {
 async function checkFirstDiary(ctx: CheckContext): Promise<string | null> {
   if (ctx.achieved.has('first_diary')) return null;
 
-  const { count } = await ctx.supabase
-    .from('memory_items')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', ctx.userId)
-    .eq('item_type', 'diary');
+  const { count } = await repo.countDiaryMemoryItems(ctx.supabase, ctx.userId);
 
   return (count || 0) >= 1 ? 'first_diary' : null;
 }
 
 async function checkConnectionMilestones(ctx: CheckContext): Promise<string | null> {
-  const { count } = await ctx.supabase
-    .from('relationship_edges')
-    .select('id', { count: 'exact', head: true })
-    .eq('tenant_id', ctx.tenantId)
-    .eq('user_id', ctx.userId)
-    .eq('target_type', 'person')
-    .eq('relationship_type', 'connected');
+  const { count } = await repo.countConnectedRelationshipEdges(ctx.supabase, ctx.tenantId, ctx.userId);
 
   const connections = count || 0;
 
@@ -335,12 +313,7 @@ async function checkConnectionMilestones(ctx: CheckContext): Promise<string | nu
 async function checkFirstGroup(ctx: CheckContext): Promise<string | null> {
   if (ctx.achieved.has('first_group')) return null;
 
-  const { count } = await ctx.supabase
-    .from('relationship_edges')
-    .select('id', { count: 'exact', head: true })
-    .eq('tenant_id', ctx.tenantId)
-    .eq('user_id', ctx.userId)
-    .eq('target_type', 'group');
+  const { count } = await repo.countGroupRelationshipEdges(ctx.supabase, ctx.tenantId, ctx.userId);
 
   return (count || 0) >= 1 ? 'first_group' : null;
 }
@@ -348,11 +321,7 @@ async function checkFirstGroup(ctx: CheckContext): Promise<string | null> {
 async function checkFirstEventRsvp(ctx: CheckContext): Promise<string | null> {
   if (ctx.achieved.has('first_event_rsvp')) return null;
 
-  const { count } = await ctx.supabase
-    .from('community_meetup_attendance')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', ctx.userId)
-    .eq('status', 'rsvp');
+  const { count } = await repo.countRsvpMeetupAttendance(ctx.supabase, ctx.userId);
 
   return (count || 0) >= 1 ? 'first_event_rsvp' : null;
 }
@@ -360,25 +329,14 @@ async function checkFirstEventRsvp(ctx: CheckContext): Promise<string | null> {
 async function checkFirstMatchAccepted(ctx: CheckContext): Promise<string | null> {
   if (ctx.achieved.has('first_match_accepted')) return null;
 
-  const { count } = await ctx.supabase
-    .from('matches_daily')
-    .select('id', { count: 'exact', head: true })
-    .eq('tenant_id', ctx.tenantId)
-    .eq('user_id', ctx.userId)
-    .eq('state', 'accepted');
+  const { count } = await repo.countAcceptedDailyMatches(ctx.supabase, ctx.tenantId, ctx.userId);
 
   return (count || 0) >= 1 ? 'first_match_accepted' : null;
 }
 
 async function checkDiaryStreaks(ctx: CheckContext): Promise<string | null> {
   // Calculate current streak from diary entries
-  const { data: entries } = await ctx.supabase
-    .from('memory_items')
-    .select('created_at')
-    .eq('user_id', ctx.userId)
-    .eq('item_type', 'diary')
-    .order('created_at', { ascending: false })
-    .limit(35);
+  const { data: entries } = await repo.fetchRecentDiaryEntryDates(ctx.supabase, ctx.userId, 35);
 
   if (!entries?.length) return null;
 
@@ -413,10 +371,7 @@ async function checkDiaryStreaks(ctx: CheckContext): Promise<string | null> {
 async function checkFirstHealthCheck(ctx: CheckContext): Promise<string | null> {
   if (ctx.achieved.has('first_health_check')) return null;
 
-  const { count } = await ctx.supabase
-    .from('vitana_index_scores')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', ctx.userId);
+  const { count } = await repo.countVitanaIndexScoreRows(ctx.supabase, ctx.userId);
 
   return (count || 0) >= 1 ? 'first_health_check' : null;
 }
@@ -424,12 +379,7 @@ async function checkFirstHealthCheck(ctx: CheckContext): Promise<string | null> 
 async function checkFirstReferral(ctx: CheckContext): Promise<string | null> {
   if (ctx.achieved.has('first_referral')) return null;
 
-  const { count } = await ctx.supabase
-    .from('referrals')
-    .select('id', { count: 'exact', head: true })
-    .eq('tenant_id', ctx.tenantId)
-    .eq('referrer_id', ctx.userId)
-    .in('status', ['signed_up', 'activated', 'rewarded']);
+  const { count } = await repo.countSuccessfulReferrals(ctx.supabase, ctx.tenantId, ctx.userId);
 
   return (count || 0) >= 1 ? 'first_referral' : null;
 }
@@ -489,7 +439,7 @@ export async function scanUserMilestones(
     const def = MILESTONES[milestoneId];
     if (def && def.reward > 0) {
       try {
-        await supabase.rpc('credit_wallet', {
+        await repo.creditWalletForMilestone(supabase, {
           p_tenant_id: tenantId,
           p_user_id: userId,
           p_amount: def.reward,
@@ -573,7 +523,7 @@ export async function checkMilestonesForAction(
     const def = MILESTONES[milestoneId];
     if (def && def.reward > 0) {
       try {
-        await supabase.rpc('credit_wallet', {
+        await repo.creditWalletForMilestone(supabase, {
           p_tenant_id: tenantId,
           p_user_id: userId,
           p_amount: def.reward,
