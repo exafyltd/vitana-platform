@@ -36,6 +36,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabase } from '../lib/supabase';
 import { computeMonetizationContext } from './d36-financial-monetization-engine';
+import * as repo from './entitlement-service-repository';
 
 const VTID = 'VTID-03107';
 const LOG_PREFIX = '[entitlement-service]';
@@ -159,12 +160,7 @@ const DEFAULT_FAIL_CLOSED: BehaviorOnExceed = 'paywall';
  */
 export async function getUserPlan(userId: string, tenantId: string): Promise<PlanSnapshot> {
   const sb = client();
-  const { data, error } = await sb
-    .from('user_subscriptions')
-    .select('plan_key, status, current_period_end, cancel_at_period_end, trial_end, metadata')
-    .eq('tenant_id', tenantId)
-    .eq('user_id', userId)
-    .maybeSingle();
+  const { data, error } = await repo.fetchUserSubscription(sb, tenantId, userId);
 
   if (error) {
     console.error(`${LOG_PREFIX} getUserPlan error for user=${userId}: ${error.message}`);
@@ -208,12 +204,7 @@ async function readEntitlementConfig(
   feature: string
 ): Promise<EntitlementConfig | null> {
   const sb = client();
-  const { data, error } = await sb
-    .from('feature_entitlements')
-    .select('plan_key, feature_key, quota, window_seconds, window_5h_quota, weekly_quota, unit, behavior_on_exceed, credit_cost_per_unit, allowed_burn_buckets')
-    .eq('plan_key', planKey)
-    .eq('feature_key', feature)
-    .maybeSingle();
+  const { data, error } = await repo.fetchFeatureEntitlementConfig(sb, planKey, feature);
 
   if (error) {
     console.error(`${LOG_PREFIX} readEntitlementConfig(${planKey},${feature}) error: ${error.message}`);
@@ -255,7 +246,7 @@ async function readUsageInCurrentWindow(
   windowSeconds: number
 ): Promise<UsageSnapshot> {
   const sb = client();
-  const { data, error } = await sb.rpc('fn_get_feature_usage', {
+  const { data, error } = await repo.getFeatureUsage(sb, {
     p_tenant_id: tenantId,
     p_user_id: userId,
     p_feature_key: feature,
@@ -286,7 +277,7 @@ async function readUsageInSlidingWindow(
   windowSeconds: number
 ): Promise<UsageSnapshot> {
   const sb = client();
-  const { data, error } = await sb.rpc('fn_get_feature_usage_in_window', {
+  const { data, error } = await repo.getFeatureUsageInWindow(sb, {
     p_tenant_id: tenantId,
     p_user_id: userId,
     p_feature_key: feature,
@@ -383,12 +374,7 @@ async function readWalletBuckets(
   userId: string
 ): Promise<WalletBucketsSnapshot> {
   const sb = client();
-  const { data, error } = await sb
-    .from('wallet_balances')
-    .select('purchased_credits, reward_credits, cash_balance')
-    .eq('tenant_id', tenantId)
-    .eq('user_id', userId)
-    .maybeSingle();
+  const { data, error } = await repo.fetchWalletBalances(sb, tenantId, userId);
 
   if (error || !data) {
     return { purchased_credits: 0, reward_credits: 0, cash_balance: 0 };
@@ -569,7 +555,7 @@ export async function recordUsage(
 ): Promise<number | null> {
   const sb = client();
   // Always write at minute granularity so sliding-window SUM works.
-  const { data, error } = await sb.rpc('fn_increment_feature_usage', {
+  const { data, error } = await repo.incrementFeatureUsage(sb, {
     p_tenant_id: tenantId,
     p_user_id: userId,
     p_feature_key: feature,
@@ -635,7 +621,7 @@ export async function consumeCredits(
   }
 
   const sb = client();
-  const { data, error } = await sb.rpc('fn_consume_credits', {
+  const { data, error } = await repo.consumeCreditsRpc(sb, {
     p_tenant_id: tenantId,
     p_user_id: userId,
     p_credits: creditsToDebit,
@@ -697,7 +683,7 @@ export async function recordPaywallEvent(
   context: Record<string, unknown> = {}
 ): Promise<void> {
   const sb = client();
-  const { error } = await sb.from('paywall_events').insert({
+  const { error } = await repo.insertPaywallEvent(sb, {
     tenant_id: tenantId,
     user_id: userId,
     feature_key: feature,
