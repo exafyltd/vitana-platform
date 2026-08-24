@@ -18,6 +18,7 @@ import { Router, Response } from 'express';
 import { requireTenantAdmin } from '../../middleware/require-tenant-admin';
 import { AuthenticatedRequest } from '../../middleware/auth-supabase-jwt';
 import { getSupabase } from '../../lib/supabase';
+import * as repo from './overview-repository';
 
 const router = Router({ mergeParams: true });
 const VTID = 'TENANT-OVERVIEW';
@@ -55,17 +56,17 @@ router.get('/summary', requireTenantAdmin, async (req: AuthenticatedRequest, res
       kbDocsResult,
     ] = await Promise.all([
       // Total members in this tenant
-      supabase.from('user_tenants').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId),
+      repo.countTenantMembers(supabase, tenantId),
       // New signups last 7 days
-      supabase.from('user_tenants').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).gte('created_at', d7),
+      repo.countTenantSignupsSince(supabase, tenantId, d7),
       // New signups prior 7 days (for delta)
-      supabase.from('user_tenants').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).gte('created_at', d7prior).lt('created_at', d7),
+      repo.countTenantSignupsInWindow(supabase, tenantId, d7prior, d7),
       // Role distribution
-      supabase.from('user_tenants').select('active_role').eq('tenant_id', tenantId),
+      repo.fetchTenantMemberRoles(supabase, tenantId),
       // Pending invitations
-      supabase.from('tenant_invitations').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).is('accepted_at', null).is('revoked_at', null),
+      repo.countPendingTenantInvitations(supabase, tenantId),
       // KB docs count
-      supabase.from('kb_documents').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId),
+      repo.countKbDocuments(supabase, tenantId),
     ]);
 
     const totalMembers = totalMembersResult.count || 0;
@@ -120,20 +121,14 @@ router.get('/at-risk', requireTenantAdmin, async (req: AuthenticatedRequest, res
     const tenantId = req.params.tenantId || (req as any).targetTenantId;
 
     // Get all tenant members with their app_users info
-    const { data: members } = await supabase
-      .from('user_tenants')
-      .select('user_id, active_role, created_at')
-      .eq('tenant_id', tenantId);
+    const { data: members } = await repo.fetchTenantMembers(supabase, tenantId);
 
     if (!members || members.length === 0) {
       return res.json({ ok: true, at_risk: [], count: 0 });
     }
 
     const userIds = members.map((m: any) => m.user_id);
-    const { data: users } = await supabase
-      .from('app_users')
-      .select('user_id, email, display_name, updated_at, avatar_url:profile->>avatar_url')
-      .in('user_id', userIds);
+    const { data: users } = await repo.fetchAppUsersByIds(supabase, userIds);
 
     // "At-risk" heuristic: user hasn't updated their profile in 14+ days
     // (proxy for activity — real activity tracking needs session telemetry)
@@ -169,11 +164,7 @@ router.get('/activity', requireTenantAdmin, async (req: AuthenticatedRequest, re
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
 
     // Query oasis_events — filter by tenant metadata if available
-    const { data, error } = await supabase
-      .from('oasis_events')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(limit);
+    const { data, error } = await repo.fetchRecentOasisEvents(supabase, limit);
 
     if (error) return res.status(500).json({ ok: false, error: error.message });
 
@@ -199,13 +190,7 @@ router.get('/alerts', requireTenantAdmin, async (req: AuthenticatedRequest, res:
     const tenantId = req.params.tenantId || (req as any).targetTenantId;
     const d24h = new Date(Date.now() - 86400_000).toISOString();
 
-    const { data, error } = await supabase
-      .from('oasis_events')
-      .select('*')
-      .in('status', ['error', 'critical'])
-      .gte('created_at', d24h)
-      .order('created_at', { ascending: false })
-      .limit(50);
+    const { data, error } = await repo.fetchRecentSevereOasisEvents(supabase, ['error', 'critical'], d24h, 50);
 
     if (error) return res.status(500).json({ ok: false, error: error.message });
 
