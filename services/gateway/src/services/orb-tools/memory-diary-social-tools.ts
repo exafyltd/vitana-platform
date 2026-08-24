@@ -31,6 +31,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
 import { tool_get_memory_garden_summary } from './diary-memory-tools';
 import { gatewayApiCall, clampLimit } from './developer-tools';
+import * as repo from './memory-diary-social-tools-repository';
 
 type Handler = (
   args: OrbToolArgs,
@@ -189,14 +190,7 @@ export const share_my_profile: Handler = async (args, id) => {
 export const get_my_milestones: Handler = async (args, id, sb) => {
   if (!id.user_id) return { ok: false, error: 'get_my_milestones requires an authenticated user.' };
   const limit = clampLimit(args.limit, 20, 100);
-  const { data, error } = await sb
-    .from('autopilot_recommendations')
-    .select('source_ref, title, summary, impact_score, created_at')
-    .eq('user_id', id.user_id)
-    .eq('source_type', 'milestone')
-    .eq('status', 'completed')
-    .order('created_at', { ascending: false })
-    .limit(limit);
+  const { data, error } = await repo.fetchCompletedMilestones(sb, id.user_id, limit);
   if (error) return { ok: false, error: `get_my_milestones failed: ${error.message}` };
   const milestones = (data ?? []) as Array<{ title?: string }>;
   if (milestones.length === 0) return { ok: true, result: { milestones: [] }, text: 'No milestones achieved yet.' };

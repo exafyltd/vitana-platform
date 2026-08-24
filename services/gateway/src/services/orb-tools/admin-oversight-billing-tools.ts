@@ -23,6 +23,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
 import { gatewayApiCall, relAge, clampLimit } from './developer-tools';
 import { adminGate, authHeaders, NO_ADMIN_SESSION } from './admin-users-rbac-tools';
+import * as repo from './admin-oversight-billing-tools-repository';
 
 type Handler = (
   args: OrbToolArgs,
@@ -216,13 +217,7 @@ async function resolveWalletAccountId(
   userId: string,
   currency: string,
 ): Promise<string | null> {
-  const { data } = await sb
-    .from('wallet_accounts')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('currency', currency)
-    .eq('status', 'active')
-    .maybeSingle();
+  const { data } = await repo.fetchActiveWalletAccountId(sb, userId, currency);
   return (data as { id?: string } | null)?.id ?? null;
 }
 
