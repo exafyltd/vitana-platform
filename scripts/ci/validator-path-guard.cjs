@@ -292,13 +292,45 @@ const CSP_PATTERNS = [
   /https?:\/\/[^\s"']+\.(js|css)/i,
 ];
 
+/**
+ * A real unified-diff file header is always `+++ b/path` (or `+++ a/path`,
+ * `+++ /dev/null`) — git always emits a space after the header's `+++`. An
+ * added SOURCE line that happens to start with `++` (e.g. `++counter;`)
+ * renders as `+` (the diff marker) followed by `++counter;`, i.e.
+ * `+++counter;` — no space after the third `+`. Testing only `startsWith
+ * ('+++')` conflated the two and silently dropped any such added line.
+ */
+function isDiffFileHeader(raw) {
+  return raw === '+++' || raw.startsWith('+++ ') || raw.startsWith('+++\t');
+}
+
 function cspViolationsInAddedLines(diffLines) {
-  const violations = [];
+  // Group maximal contiguous runs of added lines and match against the
+  // JOINED block, not each line independently. A pattern can legitimately
+  // span an added line break (e.g. `eval` on one line, `(userInput)` on the
+  // next) — the whole-file scan this replaces caught that because `\s` in
+  // JS regex matches `\n` too. Matching line-by-line would silently lose
+  // that coverage. Only genuinely CONTIGUOUS added lines are joined: a
+  // context or removed line between two `+` lines means something else
+  // sits between them in the real file, so the run ends there.
+  const runs = [];
+  let current = [];
   for (const raw of diffLines) {
-    if (!raw.startsWith('+') || raw.startsWith('+++')) continue;
-    const line = raw.slice(1);
+    if (raw.startsWith('+') && !isDiffFileHeader(raw)) {
+      current.push(raw.slice(1));
+    } else if (current.length > 0) {
+      runs.push(current);
+      current = [];
+    }
+  }
+  if (current.length > 0) runs.push(current);
+
+  const violations = [];
+  for (const run of runs) {
+    const block = run.join('\n');
     for (const pattern of CSP_PATTERNS) {
-      if (pattern.test(line)) violations.push({ pattern: pattern.source, line });
+      const match = block.match(pattern);
+      if (match) violations.push({ pattern: pattern.source, line: match[0] });
     }
   }
   return violations;
@@ -309,6 +341,7 @@ module.exports = {
   routeEvidenceRequired,
   cspScanTargets,
   cspViolationsInAddedLines,
+  isDiffFileHeader,
   CSP_SURFACE,
   CSP_PATTERNS,
   REMIT,

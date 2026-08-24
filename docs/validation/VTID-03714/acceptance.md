@@ -83,13 +83,43 @@ Output: `outputs/targeted-tests.txt`
 
 AC-6 — No regression to the guard's existing behaviour
 
-TEST: `npx jest test/scripts/validator-path-guard.test.ts` — 37/37 tests
-passing (31 pre-existing + 6 new), 0 failures. Includes the untouched
+TEST: `npx jest test/scripts/validator-path-guard.test.ts` — 42/42 tests
+passing (31 pre-existing + 11 new), 0 failures. Includes the untouched
 `the remit is exactly the workflow trigger` test, confirming this change
 did not touch `REMIT`/the workflow's `paths:` trigger.
 Output: `outputs/targeted-tests.txt`
 
-AC-7 — Type-checks and syntax-checks clean
+AC-7 — Codex review findings (P1, P2) on PR #3170, both confirmed real
+and fixed
+
+TEST: same file — "P2 — an added line that itself starts with '++' is not
+mistaken for a file header"
+TEST: same file — "P2 — a genuine unified-diff file header (with the
+space) is still skipped"
+TEST: same file — "P1 — a pattern split across two consecutive added
+lines is still caught"
+TEST: same file — "P1 — consecutive added lines are joined only when
+truly contiguous (no context/removed line between)"
+TEST: same file — "isDiffFileHeader distinguishes a real header from
+added content that merely starts with +++"
+Output: `outputs/targeted-tests.txt`
+
+P2: a real unified-diff file header is always `+++ b/path` (git always
+emits the trailing space) — the original `startsWith('+++')` check
+conflated that with an added SOURCE line that happens to start with `++`
+(rendering as `+++counter;`, no space), silently dropping it from the
+scan. Fixed via `isDiffFileHeader()`, checked against the space/tab/bare
+`+++` shape a real header actually has.
+
+P1: matching each added line independently missed a pattern split across
+two consecutive added lines (e.g. `eval` on one line, `(userInput);` on
+the next) — the old whole-file scan caught this because JS `\s` matches
+`\n` too. Fixed by grouping maximal CONTIGUOUS runs of added lines (a
+context or removed line between two `+` lines ends the run, since real
+untouched content sits between them) and matching against the joined
+block.
+
+AC-8 — Type-checks and syntax-checks clean
 
 TEST: `node -c scripts/ci/validator-path-guard.cjs` — syntax OK.
 TEST: `npx tsc --noEmit` — no output, exit 0.
@@ -101,7 +131,7 @@ Output: `outputs/tsc.txt` (empty — clean)
 
 | Check | Result |
 |---|---|
-| Targeted guard tests | 37/37 passing (6 new for this fix) |
+| Targeted guard tests | 42/42 passing (11 new for this fix) |
 | End-to-end against the real PR #3167 diff | exits 0 — false positive gone |
 | `node -c` syntax check | clean |
 | `tsc --noEmit` | clean |

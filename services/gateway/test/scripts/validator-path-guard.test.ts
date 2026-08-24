@@ -323,6 +323,47 @@ describe('CSP scan judges ADDED lines, not whole file content (VTID-03714)', () 
     const newViolation = ["+    el.innerHTML = '<script>' + userInput + '</script>';"];
     expect(violations([...preExistingContext, ...newViolation]).length).toBeGreaterThan(0);
   });
+
+  // Codex review findings on PR #3170, both confirmed real and fixed.
+
+  it('P2 — an added line that itself starts with "++" is not mistaken for a file header', () => {
+    // Diff rendering: an added source line '++counter;' becomes '+' (the
+    // diff marker) + '++counter;' = '+++counter;' — no space after the
+    // third '+'. A real header is always '+++ b/path' (git always emits
+    // the space). Confirm the added-line content is actually scanned by
+    // giving it a CSP pattern to trip.
+    expect(violations(["+++counter; el.style.display='none';"])).not.toEqual([]);
+  });
+
+  it('P2 — a genuine unified-diff file header (with the space) is still skipped', () => {
+    expect(
+      violations(['+++ b/services/gateway/src/frontend/command-hub/orb-widget.js']),
+    ).toEqual([]);
+  });
+
+  it('P1 — a pattern split across two consecutive added lines is still caught', () => {
+    // The old whole-file scan caught this because JS \s matches \n too, so
+    // 'eval' + newline + '(userInput)' still matched \beval\s*\(. Testing
+    // added lines independently would silently lose that.
+    expect(violations(['+    eval', '+    (userInput);'])).not.toEqual([]);
+  });
+
+  it('P1 — consecutive added lines are joined only when truly contiguous (no context/removed line between)', () => {
+    // A context or removed line between two '+' lines means real,
+    // untouched content sits between them in the file — they must NOT be
+    // joined into one block, or a pattern could be "found" spanning
+    // content the diff never actually placed adjacent.
+    expect(
+      violations(['+    eval', '     // unrelated untouched line', '+    (userInput);']),
+    ).toEqual([]);
+  });
+
+  it('isDiffFileHeader distinguishes a real header from added content that merely starts with +++', () => {
+    expect(guard.isDiffFileHeader('+++ b/some/path.js')).toBe(true);
+    expect(guard.isDiffFileHeader('+++ /dev/null')).toBe(true);
+    expect(guard.isDiffFileHeader('+++')).toBe(true);
+    expect(guard.isDiffFileHeader('+++counter;')).toBe(false);
+  });
 });
 
 describe('degenerate input', () => {
