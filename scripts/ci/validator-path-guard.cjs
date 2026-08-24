@@ -253,10 +253,153 @@ function cspScanTargets(files) {
     .filter((f) => isUnder(f, CSP_SURFACE));
 }
 
+/**
+ * VTID-03712 — the pattern-matching half of the CSP gate had the exact same
+ * defect class as everything else VTID-03696 fixed above: it matched literal
+ * TEXT, not code that a browser actually executes.
+ *
+ * Scoping to `CSP_SURFACE` (VTID-03696) stopped the gate from flagging files
+ * that are never browser-served. It did not stop the gate from flagging
+ * DOCUMENTATION inside a file that IS browser-served: `orb-widget.js`'s own
+ * top-of-file usage comment (`<script src="...">`, a `.js` URL as an example)
+ * matched `<script` and the CDN-asset pattern, and its very ordinary
+ * `el.style.cssText = '...'` / `el.style.display = '...'` DOM styling —
+ * 26 occurrences, none of them a CSP violation — matched the old blanket
+ * `\.style\b` pattern. Confirmed on `main` before this fix (not introduced by
+ * whatever PR runs this): every one of those matches is either inside a `/**
+ * ... *\/` comment or a plain CSSOM property assignment. Since the scan reads
+ * the WHOLE file, not the diff, this meant the gate could not be satisfied by
+ * ANY PR that touches `orb-widget.js`, ever — the exact "unsatisfiable gate"
+ * shape this file's own header already warns about.
+ *
+ * Two independent fixes, both narrowing toward what CSP actually restricts:
+ *
+ * 1. `stripJsComments()` removes `//` and `/* *\/` comments before scanning
+ *    for `<script` and the CDN-asset URL, so documentation examples stop
+ *    reading as functional code. It is string/template-literal aware — `//`
+ *    inside a `"https://..."` string (which is exactly what the CDN pattern
+ *    itself searches for) is real code, not a comment, and must not be
+ *    stripped, or the scan would corrupt the very thing it is looking for.
+ * 2. The blanket `\.style\b` pattern is gone. CSP's `style-src` restricts
+ *    stylesheets, `<style>` elements, and the `style` HTML ATTRIBUTE — it
+ *    does not intercept a script's own CSSOM mutations
+ *    (`element.style.property = value` / `.style.cssText = value`), which is
+ *    why browsers never block those regardless of policy. What CSP actually
+ *    restricts is dynamically SETTING that attribute — `setAttribute('style',
+ *    ...)` — or writing a literal `style="..."` HTML attribute into a string
+ *    (e.g. for `innerHTML`). The two new patterns target exactly those; a
+ *    plain `.style.foo = bar` no longer matches anything.
+ *
+ * `eval(`, `new Function(`, and `unsafe-inline` are unchanged — this file had
+ * zero matches for any of them, so nothing about the actually-dangerous
+ * patterns was ever the problem.
+ */
+const CSP_PATTERNS = [
+  { id: 'inline-script-tag', re: /<script(?![^>]*\bsrc=)/i },
+  { id: 'style-attribute-value', re: /\bstyle\s*=\s*["']/i },
+  { id: 'set-style-attribute', re: /setAttribute\(\s*['"]style['"]/i },
+  { id: 'eval-call', re: /\beval\s*\(/i },
+  { id: 'new-function', re: /new\s+Function\s*\(/i },
+  { id: 'unsafe-inline-directive', re: /unsafe-inline/i },
+  { id: 'cdn-asset-url', re: /https?:\/\/[^\s"']+\.(js|css)\b/i },
+];
+
+/**
+ * Strip `//` line comments and `/* *\/` block comments from JS source,
+ * leaving string and template-literal content untouched (including any `//`
+ * or `/*` sequence that happens to appear inside one — e.g. a URL). Comments
+ * are replaced with nothing; newlines inside them are preserved so line
+ * counts of the surrounding code do not shift.
+ *
+ * This is a best-effort lexer scoped to exactly what the CSP scan needs
+ * (tell code from comments); it is not a full JS parser.
+ */
+function stripJsComments(src) {
+  let out = '';
+  let i = 0;
+  const n = src.length;
+  let state = 'code'; // code | line-comment | block-comment | string | template
+  let quote = '';
+  while (i < n) {
+    const c = src[i];
+    const c2 = i + 1 < n ? src[i + 1] : '';
+    if (state === 'code') {
+      if (c === '/' && c2 === '/') {
+        state = 'line-comment';
+        i += 2;
+        continue;
+      }
+      if (c === '/' && c2 === '*') {
+        state = 'block-comment';
+        i += 2;
+        continue;
+      }
+      if (c === '"' || c === "'") {
+        state = 'string';
+        quote = c;
+        out += c;
+        i += 1;
+        continue;
+      }
+      if (c === '`') {
+        state = 'template';
+        out += c;
+        i += 1;
+        continue;
+      }
+      out += c;
+      i += 1;
+      continue;
+    }
+    if (state === 'line-comment') {
+      if (c === '\n') {
+        state = 'code';
+        out += c;
+      }
+      i += 1;
+      continue;
+    }
+    if (state === 'block-comment') {
+      if (c === '*' && c2 === '/') {
+        state = 'code';
+        i += 2;
+        continue;
+      }
+      if (c === '\n') out += c;
+      i += 1;
+      continue;
+    }
+    // state === 'string' || state === 'template'
+    out += c;
+    if (c === '\\') {
+      out += c2;
+      i += 2;
+      continue;
+    }
+    if ((state === 'string' && c === quote) || (state === 'template' && c === '`')) {
+      state = 'code';
+    }
+    i += 1;
+  }
+  return out;
+}
+
+/**
+ * @param {string} fileContent  raw source of one file under CSP_SURFACE
+ * @returns {string[]} ids of CSP_PATTERNS that matched (empty = clean)
+ */
+function cspFindings(fileContent) {
+  const stripped = stripJsComments(fileContent);
+  return CSP_PATTERNS.filter(({ re }) => re.test(stripped)).map(({ id }) => id);
+}
+
 module.exports = {
   evaluate,
   routeEvidenceRequired,
   cspScanTargets,
+  cspFindings,
+  stripJsComments,
+  CSP_PATTERNS,
   CSP_SURFACE,
   REMIT,
   PROFILES,
@@ -280,6 +423,30 @@ if (require.main === module && process.argv[2] === '--csp-targets') {
   }
   cspScanTargets(files).forEach((f) => console.log(f));
   process.exit(0);
+}
+
+// CLI: --csp-scan <csp_targets.txt>  → scans each target file, exit 0 = clean
+if (require.main === module && process.argv[2] === '--csp-scan') {
+  const { readFileSync, existsSync } = require('node:fs');
+  let files = [];
+  try {
+    files = readFileSync(process.argv[3], 'utf8').split('\n');
+  } catch {
+    files = [];
+  }
+  let fail = false;
+  for (const raw of files) {
+    const f = raw.trim();
+    if (!f || !existsSync(f)) continue;
+    const content = readFileSync(f, 'utf8');
+    const findings = cspFindings(content);
+    if (findings.length > 0) {
+      fail = true;
+      findings.forEach((id) => console.log(`REJECTED: CSP finding "${id}" in ${f}`));
+    }
+  }
+  if (!fail) console.log('CSP scan clean.');
+  process.exit(fail ? 1 : 0);
 }
 
 if (require.main === module && process.argv[2] === '--route-evidence-required') {

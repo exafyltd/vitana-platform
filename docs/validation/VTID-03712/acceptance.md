@@ -37,6 +37,35 @@ change in place.
 TEST: `npx tsc --noEmit` (clean, no output) and `npm run build` (exits 0).
   See commands.log and outputs/build.txt.
 
+AC-4: VALIDATOR-CHECK's CSP Governance Gate no longer produces false
+positives on `orb-widget.js`. Confirmed pre-existing on `main` (unrelated
+to this PR's diff) that the old gate's `\.style\b` and un-scoped
+`<script`/CDN-URL patterns matched 26 benign `.style.cssText`/`.style.<prop>`
+CSSOM assignments and 3 doc-comment usage-example matches, meaning the gate
+was unsatisfiable for any PR touching this file. New `cspFindings()` +
+`stripJsComments()` in `scripts/ci/validator-path-guard.cjs` scan
+comment-stripped source with precise patterns (`setAttribute('style', ...)`,
+a literal `style="..."` string, real `<script>`/CDN usage) instead of the
+blanket `.style`/un-scoped matches; `eval`/`new Function`/`unsafe-inline`
+patterns are unchanged. VALIDATOR-CHECK.yml's CSP step now calls the tested
+`--csp-scan` CLI mode instead of an inline bash+python heredoc — the exact
+fragile-inline-CI-logic shape VTID-03505/VTID-03549 already burned this repo
+on twice.
+TEST: services/gateway/test/scripts/validator-path-guard.test.ts — new
+  "CSP scan (VTID-03712)" describe block, 15 tests: false-positive
+  regression fixtures pinning the exact `orb-widget.js` shapes that used to
+  fail (doc-comment script/CDN example, `.style.cssText`/`.style.<prop>`),
+  true-positive coverage for every pattern (inline `<script>`, `eval(`,
+  `new Function(`, `unsafe-inline`, `setAttribute('style', ...)`, a literal
+  `style="..."` string, a real CDN URL in code), `stripJsComments()`
+  string/template-literal-awareness (a `//` or `/*` inside a string/template
+  is not mistaken for a comment, an escaped quote doesn't end a string
+  early, block-comment newlines are preserved), and a direct assertion that
+  the real `orb-widget.js` file at HEAD scans clean. See
+  outputs/jest-validator-path-guard.txt. Also manually simulated the exact
+  CI steps (`--csp-targets` then `--csp-scan`) against this PR's real
+  changed-file list — see commands.log.
+
 ## Not yet independently confirmed
 
 This session has no way to trigger a real Polly-backed ORB session against

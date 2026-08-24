@@ -1,0 +1,72 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/scripts/validator-path-guard.test.ts
+  the remit is exactly the workflow trigger
+    ✓ matches the paths: list in VALIDATOR-CHECK.yml (4 ms)
+  gateway_backend — the ordinary cases
+    ✓ approves a PR confined to the gateway source tree (1 ms)
+    ✓ approves evidence docs alongside source
+  the VTID-03696 fix — out-of-remit files are reported, not rejected
+    ✓ approves the mixed PR that previously could not pass under any profile (1 ms)
+    ✓ says out loud which files it did not judge (1 ms)
+    ✓ does not present "not judged" as approval of those trees (1 ms)
+    ✓ .env.example is NOT treated as a committed .env (1 ms)
+  what the guard still rejects
+    ✓ rejects a committed .env anywhere, ignoring remit
+    ✓ rejects a bare .env at the repo root
+    ✓ rejects an unknown profile
+    ✓ rejects an in-remit file outside the declared profile — the check that still has teeth
+    ✓ does not let out-of-remit files mask an in-remit violation (1 ms)
+  dependency changes are declared, not forbidden
+    ✓ rejects an undeclared lockfile change
+    ✓ approves the same change once declared (1 ms)
+    ✓ still reports the dependency change when declared
+    ✓ catches yarn.lock too, not just npm and pnpm (1 ms)
+    ✓ ranks a committed .env above an undeclared lockfile (1 ms)
+  route-mount evidence keys off an ADDED route, not a touched file
+    ✓ requires evidence when a route is actually added (1 ms)
+    ✓ does NOT require evidence for a route file edited without adding a route
+    ✓ ignores removed and context lines (1 ms)
+    ✓ ignores the +++ file header, which is not an added line
+    ✓ requires evidence if any added line registers a route, among many that do not (1 ms)
+    ✓ treats an empty diff as not requiring evidence (1 ms)
+  CSP scanning is scoped to the browser-served surface
+    ✓ scans the command-hub frontend trees
+    ✓ does not scan the validator workflow — which contains the CSP patterns itself (1 ms)
+    ✓ does not scan lockfiles — a registry URL is not a CDN asset
+    ✓ does not scan markdown, CI scripts or migrations (5 ms)
+    ✓ does not scan gateway backend source — it is not served to a browser
+    ✓ picks the frontend files out of a mixed change set (1 ms)
+  degenerate input
+    ✓ ignores blank lines and surrounding whitespace
+    ✓ approves an empty change set rather than throwing
+  CSP scan (VTID-03712) — comment-aware, and .style is no longer a false positive
+    ✓ stays clean on a doc-comment example script tag + CDN url
+    ✓ stays clean on ordinary CSSOM property assignment (.style.cssText / .style.<prop>) (1 ms)
+    ✓ still flags a real inline <script> tag (no src)
+    ✓ does not flag <script src="..."> (1 ms)
+    ✓ still flags eval(), new Function(), and unsafe-inline
+    ✓ still flags setAttribute("style", ...) and a literal style="" HTML attribute (1 ms)
+    ✓ still flags a real CDN asset URL in executable code
+    ✓ does not flag a CDN url that appears only inside a comment (1 ms)
+    ✓ does not flag a script tag that appears only inside a block comment
+    ✓ the real orb-widget.js file at HEAD scans clean (10 ms)
+    stripJsComments — string/template-literal awareness
+      ✓ does not treat "//" inside a string as a line-comment start
+      ✓ does not treat "/*" inside a template literal as a block-comment start
+      ✓ handles an escaped quote inside a string without ending it early
+      ✓ removes a line comment but preserves the newline (1 ms)
+      ✓ removes a block comment, preserving embedded newlines so line counts do not shift
+
+Test Suites: 1 passed, 1 total
+Tests:       46 passed, 46 total
+Snapshots:   0 total
+Time:        0.632 s, estimated 1 s
+Ran all test suites matching /test\/scripts\/validator-path-guard.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

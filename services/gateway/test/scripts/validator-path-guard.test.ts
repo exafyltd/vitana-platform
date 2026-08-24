@@ -278,3 +278,109 @@ describe('degenerate input', () => {
     expect(run('gateway_backend', []).code).toBe(0);
   });
 });
+
+describe('CSP scan (VTID-03712) — comment-aware, and .style is no longer a false positive', () => {
+  // Regression fixture: real matches found on `orb-widget.js` at HEAD before
+  // this fix, none of them an actual CSP violation. Pinning the exact source
+  // shapes (not a summary) so a future change to the patterns can't silently
+  // reintroduce the false positives without a test going red.
+  it('stays clean on a doc-comment example script tag + CDN url', () => {
+    const src = [
+      '/**',
+      ' * Usage:',
+      ' *   <script src="https://gateway-xxx.a.run.app/command-hub/orb-widget.js"></script>',
+      ' */',
+      "console.log('real code, no CSP issue');",
+    ].join('\n');
+    expect(guard.cspFindings(src)).toEqual([]);
+  });
+
+  it('stays clean on ordinary CSSOM property assignment (.style.cssText / .style.<prop>)', () => {
+    const src = [
+      "shell.style.cssText = 'position:fixed;top:0;left:0;';",
+      "orb.style.display = 'none';",
+    ].join('\n');
+    expect(guard.cspFindings(src)).toEqual([]);
+  });
+
+  it('still flags a real inline <script> tag (no src)', () => {
+    expect(guard.cspFindings('<script>doEvil()</script>')).toContain('inline-script-tag');
+  });
+
+  it('does not flag <script src="...">', () => {
+    expect(guard.cspFindings('<script src="app.js"></script>')).toEqual([]);
+  });
+
+  it('still flags eval(), new Function(), and unsafe-inline', () => {
+    expect(guard.cspFindings('eval(x)')).toContain('eval-call');
+    expect(guard.cspFindings('new Function("return 1")()')).toContain('new-function');
+    expect(guard.cspFindings("policy = 'unsafe-inline'")).toContain('unsafe-inline-directive');
+  });
+
+  it('still flags setAttribute("style", ...) and a literal style="" HTML attribute', () => {
+    expect(guard.cspFindings("el.setAttribute('style', 'color:red')")).toContain(
+      'set-style-attribute',
+    );
+    expect(guard.cspFindings('var html = \'<div style="color:red">\';')).toContain(
+      'style-attribute-value',
+    );
+  });
+
+  it('still flags a real CDN asset URL in executable code', () => {
+    expect(guard.cspFindings("loadScript('https://cdn.example.com/lib.js')")).toContain(
+      'cdn-asset-url',
+    );
+  });
+
+  it('does not flag a CDN url that appears only inside a comment', () => {
+    expect(guard.cspFindings('// see https://cdn.example.com/lib.js for reference')).toEqual([]);
+  });
+
+  it('does not flag a script tag that appears only inside a block comment', () => {
+    expect(guard.cspFindings('/* <script>bad</script> */')).toEqual([]);
+  });
+
+  describe('stripJsComments — string/template-literal awareness', () => {
+    it('does not treat "//" inside a string as a line-comment start', () => {
+      // The naive bug: a URL string contains "//", so a non-string-aware
+      // stripper would truncate the rest of the line (and the CDN pattern's
+      // own target) as if it were a comment.
+      const src = "fetch('https://example.com/x.js')";
+      expect(guard.stripJsComments(src)).toBe(src);
+      expect(guard.cspFindings(src)).toContain('cdn-asset-url');
+    });
+
+    it('does not treat "/*" inside a template literal as a block-comment start', () => {
+      const src = 'const s = `a /* not a comment */ b`;';
+      expect(guard.stripJsComments(src)).toBe(src);
+    });
+
+    it('handles an escaped quote inside a string without ending it early', () => {
+      const src = "const s = 'it\\'s // not a comment either';";
+      expect(guard.stripJsComments(src)).toBe(src);
+    });
+
+    it('removes a line comment but preserves the newline', () => {
+      expect(guard.stripJsComments('a();\n// comment\nb();')).toBe('a();\n\nb();');
+    });
+
+    it('removes a block comment, preserving embedded newlines so line counts do not shift', () => {
+      expect(guard.stripJsComments('a();\n/* line1\nline2 */\nb();')).toBe('a();\n\n\nb();');
+    });
+  });
+
+  it('the real orb-widget.js file at HEAD scans clean', () => {
+    // The actual regression check: this is the file that made every one of
+    // the above false positives real on a live PR (VTID-03712). If this ever
+    // goes red, either a genuine CSP-relevant pattern was introduced (good,
+    // investigate it) or the patterns above regressed toward the old
+    // over-broad shape (bad, fix the patterns instead of this file).
+    const { readFileSync } = require('fs');
+    const { join } = require('path');
+    const content = readFileSync(
+      join(__dirname, '../../src/frontend/command-hub/orb-widget.js'),
+      'utf8',
+    );
+    expect(guard.cspFindings(content)).toEqual([]);
+  });
+});
