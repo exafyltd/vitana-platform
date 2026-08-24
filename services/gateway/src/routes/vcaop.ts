@@ -15,6 +15,7 @@ import { Router, Request, Response } from 'express';
 import { randomUUID, createHash } from 'crypto';
 import { getSupabase } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth-supabase-jwt';
+import * as repo from './vcaop-repository';
 
 const router = Router();
 router.use(requireAuth as any);
@@ -44,7 +45,7 @@ function tenantId(req: Request): string {
 }
 async function emitEvent(supabase: any, type: string, status: string, message: string, payload: Record<string, unknown>) {
   try {
-    await supabase.from('oasis_events').insert({
+    await repo.insertOasisEvent(supabase, {
       id: randomUUID(), service: 'vcaop', source: 'vcaop', type, topic: type, status, message,
       metadata: payload, created_at: new Date().toISOString(),
     });
@@ -54,16 +55,14 @@ async function emitEvent(supabase: any, type: string, status: string, message: s
 // ===== Catalog (any authenticated user) =====
 router.get('/providers', async (req: Request, res: Response) => {
   const supabase = db(res); if (!supabase) return;
-  let q = supabase.from('provider').select('id,name,category,connector_mode,kyb_required').order('category');
-  if (req.query.category) q = q.eq('category', String(req.query.category));
-  const { data, error } = await q;
+  const { data, error } = await repo.fetchProviders(supabase, req.query.category ? String(req.query.category) : undefined);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   res.json({ ok: true, data });
 });
 
 router.get('/affiliate-programs', async (_req: Request, res: Response) => {
   const supabase = db(res); if (!supabase) return;
-  const { data, error } = await supabase.from('affiliate_program').select('id,network,merchant,source,affiliate_cashback_allowed').order('id');
+  const { data, error } = await repo.fetchAffiliatePrograms(supabase);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   res.json({ ok: true, data });
 });
@@ -80,9 +79,9 @@ router.post('/shop', async (req: Request, res: Response) => {
 
   const cartId = randomUUID();
   const now = new Date().toISOString();
-  await supabase.from('cart_order').insert({ id: cartId, user_id: uid, status: 'open', currency: 'EUR', created_at: now, updated_at: now });
+  await repo.insertCartOrder(supabase, { id: cartId, user_id: uid, status: 'open', currency: 'EUR', created_at: now, updated_at: now });
   const disclosureId = randomUUID();
-  await supabase.from('disclosure').insert({ id: disclosureId, cart_order_id: cartId, kind: 'ftc_affiliate', text: FTC_DISCLOSURE, dismissible: false, shown_at: now, created_at: now });
+  await repo.insertDisclosure(supabase, { id: disclosureId, cart_order_id: cartId, kind: 'ftc_affiliate', text: FTC_DISCLOSURE, dismissible: false, shown_at: now, created_at: now });
 
   // Build all rows first, then insert per-table batches (3 round-trips total
   // instead of up to 3 per merchant). Insert order respects FK dependencies:
@@ -116,10 +115,10 @@ router.post('/shop', async (req: Request, res: Response) => {
       earnings.push({ merchant: m.merchant, affiliateProgramId: m.affiliateProgramId, subId, commissionId, projectedReward: reward });
     }
   }
-  await supabase.from('merchant_route').insert(routeRows);
-  if (commissionRows.length > 0) await supabase.from('commission_event').insert(commissionRows);
-  if (rewardRows.length > 0) await supabase.from('rewards_ledger').insert(rewardRows);
-  await supabase.from('cart_order').update({ status: 'routed', total_amount: +total.toFixed(2), updated_at: now }).eq('id', cartId);
+  await repo.insertMerchantRouteRows(supabase, routeRows);
+  if (commissionRows.length > 0) await repo.insertCommissionEventRows(supabase, commissionRows);
+  if (rewardRows.length > 0) await repo.insertRewardsLedgerRows(supabase, rewardRows);
+  await repo.updateCartOrderRouted(supabase, cartId, +total.toFixed(2), now);
   await emitEvent(supabase, 'vcaop.commerce.shopped', 'success', `shop routed ${merchants.length} merchant(s)`, { cartOrderId: cartId, userId: uid });
 
   res.status(201).json({ ok: true, data: { cartOrderId: cartId, total: +total.toFixed(2), disclosure: { text: FTC_DISCLOSURE, dismissible: false }, earnings, totalProjectedReward: +earnings.reduce((s, e) => s + e.projectedReward, 0).toFixed(4) } });
@@ -139,19 +138,16 @@ router.post('/affiliate-link', async (req: Request, res: Response) => {
   const productUrl = String(req.body?.productUrl || '').trim();
   if (!programId) return res.status(400).json({ ok: false, error: 'affiliateProgramId required' });
 
-  const { data: prog } = await supabase
-    .from('affiliate_program')
-    .select('id,network,policy,affiliate_cashback_allowed')
-    .eq('id', programId).maybeSingle();
+  const { data: prog } = await repo.fetchAffiliateProgramById(supabase, programId);
   if (!prog) return res.status(404).json({ ok: false, error: 'program not found' });
 
   const subId = subIdFor(uid, programId);
   const now = new Date().toISOString();
   // Reverse-attribution map (idempotent): postback resolves subId -> this member.
-  await supabase.from('subid_map').upsert({
+  await repo.upsertSubidMap(supabase, {
     sub_id: subId, user_id: uid, tenant_id: tenant, affiliate_program_id: programId,
     network: prog.network, updated_at: now,
-  }, { onConflict: 'sub_id' });
+  });
 
   // Decorate the program gotolink with our subid (+ optional product deeplink).
   const policy = (prog.policy || {}) as Record<string, unknown>;
@@ -177,7 +173,7 @@ router.post('/affiliate-link', async (req: Request, res: Response) => {
 router.get('/wallet', async (req: Request, res: Response) => {
   const supabase = db(res); if (!supabase) return;
   const uid = userId(req);
-  const { data, error } = await supabase.from('rewards_ledger').select('id,amount,state,currency').eq('user_id', uid);
+  const { data, error } = await repo.fetchWalletLedgerEntries(supabase, uid);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   const balance = (data || []).filter((r: any) => r.state === 'confirmed' || r.state === 'redeemable').reduce((s: number, r: any) => s + Number(r.amount), 0);
   res.json({ ok: true, data: { balance: +balance.toFixed(4), entries: data } });
@@ -187,11 +183,7 @@ router.get('/wallet', async (req: Request, res: Response) => {
 router.get('/commissions', async (req: Request, res: Response) => {
   if (!isAdmin(req)) return res.status(403).json({ ok: false, error: 'forbidden' });
   const supabase = db(res); if (!supabase) return;
-  let q = supabase.from('commission_event')
-    .select('id,merchant,user_id,sub_id,gross_commission,currency,status,postback_ref,created_at')
-    .order('created_at', { ascending: false }).limit(200);
-  if (req.query.status) q = q.eq('status', String(req.query.status));
-  const { data, error } = await q;
+  const { data, error } = await repo.fetchCommissionsQueue(supabase, req.query.status ? String(req.query.status) : undefined);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   res.json({ ok: true, data });
 });
@@ -202,12 +194,12 @@ router.post('/commissions/:id/confirm', async (req: Request, res: Response) => {
   const supabase = db(res); if (!supabase) return;
   const postbackRef = String(req.body?.postbackRef || '');
   if (!postbackRef) return res.status(400).json({ ok: false, error: 'postbackRef required' });
-  const { data: c } = await supabase.from('commission_event').select('id,status').eq('id', req.params.id).maybeSingle();
+  const { data: c } = await repo.fetchCommissionEventById(supabase, req.params.id);
   if (!c) return res.status(404).json({ ok: false, error: 'commission not found' });
   if (c.status !== 'pending') return res.status(409).json({ ok: false, error: `commission is '${c.status}', not pending` });
   const now = new Date().toISOString();
-  await supabase.from('commission_event').update({ status: 'confirmed', postback_ref: postbackRef, updated_at: now }).eq('id', req.params.id);
-  await supabase.from('rewards_ledger').update({ state: 'confirmed', updated_at: now }).eq('commission_event_id', req.params.id);
+  await repo.updateCommissionEventConfirmed(supabase, req.params.id, postbackRef, now);
+  await repo.updateRewardsLedgerConfirmedByCommission(supabase, req.params.id, now);
   await emitEvent(supabase, 'vcaop.reward.confirmed', 'success', 'commission confirmed', { commissionId: req.params.id });
   res.json({ ok: true });
 });
@@ -216,8 +208,8 @@ router.post('/commissions/:id/reverse', async (req: Request, res: Response) => {
   if (!isAdmin(req)) return res.status(403).json({ ok: false, error: 'forbidden' });
   const supabase = db(res); if (!supabase) return;
   const now = new Date().toISOString();
-  await supabase.from('commission_event').update({ status: 'reversed', updated_at: now }).eq('id', req.params.id);
-  await supabase.from('rewards_ledger').update({ state: 'reversed', updated_at: now }).eq('commission_event_id', req.params.id);
+  await repo.updateCommissionEventReversed(supabase, req.params.id, now);
+  await repo.updateRewardsLedgerReversedByCommission(supabase, req.params.id, now);
   await emitEvent(supabase, 'vcaop.reward.reversed', 'warning', 'commission reversed', { commissionId: req.params.id });
   res.json({ ok: true });
 });
@@ -226,7 +218,7 @@ router.post('/commissions/:id/reverse', async (req: Request, res: Response) => {
 router.get('/onboarding/inbox', async (req: Request, res: Response) => {
   if (!isAdmin(req)) return res.status(403).json({ ok: false, error: 'forbidden' });
   const supabase = db(res); if (!supabase) return;
-  const { data, error } = await supabase.from('human_task').select('id,type,status,provider_id,job_id,payload,created_at').in('status', ['open', 'in_progress']).order('created_at', { ascending: false });
+  const { data, error } = await repo.fetchOpenHumanTasks(supabase);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   res.json({ ok: true, data });
 });
@@ -239,9 +231,7 @@ router.post('/onboarding/batch', async (req: Request, res: Response) => {
   // One query for all requested providers (previously one select per id),
   // then per-table batch inserts in FK order: provider_account →
   // provisioning_job → human_task.
-  let providersQuery = supabase.from('provider').select('id,connector_mode,kyb_required');
-  if (ids.length > 0) providersQuery = providersQuery.in('id', ids);
-  const { data: provRows } = await providersQuery;
+  const { data: provRows } = await repo.fetchProvidersForOnboarding(supabase, ids);
   const now = new Date().toISOString();
   let queued = 0, humanTasks = 0;
   const accountRows: any[] = [];
@@ -265,9 +255,9 @@ router.post('/onboarding/batch', async (req: Request, res: Response) => {
     }
     queued++;
   }
-  if (accountRows.length > 0) await supabase.from('provider_account').insert(accountRows);
-  if (jobRows.length > 0) await supabase.from('provisioning_job').insert(jobRows);
-  if (taskRows.length > 0) await supabase.from('human_task').insert(taskRows);
+  if (accountRows.length > 0) await repo.insertProviderAccountRows(supabase, accountRows);
+  if (jobRows.length > 0) await repo.insertProvisioningJobRows(supabase, jobRows);
+  if (taskRows.length > 0) await repo.insertHumanTaskRows(supabase, taskRows);
   await emitEvent(supabase, 'vcaop.onboarding.batch_kickoff', 'success', `batch onboard: ${queued} queued`, { tenant, queued, humanTasks });
   res.status(201).json({ ok: true, data: { queued, humanTasksCreated: humanTasks } });
 });
@@ -275,11 +265,11 @@ router.post('/onboarding/batch', async (req: Request, res: Response) => {
 router.post('/tasks/:id/complete', async (req: Request, res: Response) => {
   if (!isAdmin(req)) return res.status(403).json({ ok: false, error: 'forbidden' });
   const supabase = db(res); if (!supabase) return;
-  const { data: task } = await supabase.from('human_task').select('id,type,job_id').eq('id', req.params.id).maybeSingle();
+  const { data: task } = await repo.fetchHumanTaskById(supabase, req.params.id);
   if (!task) return res.status(404).json({ ok: false, error: 'task not found' });
   const now = new Date().toISOString();
-  await supabase.from('human_task').update({ status: 'completed', updated_at: now }).eq('id', req.params.id);
-  if (task.job_id) await supabase.from('provisioning_job').update({ status: 'running', updated_at: now }).eq('id', task.job_id);
+  await repo.updateHumanTaskCompleted(supabase, req.params.id, now);
+  if (task.job_id) await repo.updateProvisioningJobRunning(supabase, task.job_id, now);
   await emitEvent(supabase, 'vcaop.human_task.completed', 'success', `task ${req.params.id} completed`, { taskId: req.params.id, type: task.type });
   res.json({ ok: true });
 });
