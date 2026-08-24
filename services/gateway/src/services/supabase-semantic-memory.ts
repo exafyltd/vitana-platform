@@ -29,6 +29,7 @@ import {
   validateContextLens,
 } from '../types/context-lens';
 import { emitOasisEvent } from './oasis-event-service';
+import * as repo from './supabase-semantic-memory-repository';
 
 // =============================================================================
 // Configuration
@@ -134,7 +135,7 @@ export async function semanticSearch(
     const embeddingStr = `[${request.query_embedding.join(',')}]`;
 
     // Call the memory_semantic_search RPC
-    const { data, error } = await supabase.rpc('memory_semantic_search', {
+    const { data, error } = await repo.callMemorySemanticSearch(supabase, {
       p_query_embedding: embeddingStr,
       p_top_k: request.top_k ?? 10,
       p_tenant_id: request.lens.tenant_id,
@@ -306,9 +307,7 @@ export async function writeMemoryItem(
     }
 
     // Call memory_write_item_v2 RPC
-    const { data, error } = await supabase.rpc('memory_write_item_v2', {
-      p_payload: rpcPayload
-    });
+    const { data, error } = await repo.callMemoryWriteItemV2(supabase, rpcPayload);
 
     if (error) {
       // Fallback to original RPC if v2 not available
@@ -370,17 +369,16 @@ async function writeMemoryItemV1(
 
   // Set context first (ignore errors - context may already be set)
   try {
-    await supabase.rpc('dev_bootstrap_request_context', {
-      p_tenant_id: payload.lens.tenant_id,
-      p_active_role: payload.lens.active_role ?? 'developer'
-    });
+    await repo.callDevBootstrapRequestContext(
+      supabase,
+      payload.lens.tenant_id,
+      payload.lens.active_role ?? 'developer',
+    );
   } catch {
     // Ignore context bootstrap errors
   }
 
-  const { data, error } = await supabase.rpc('memory_write_item', {
-    p_payload: rpcPayload
-  });
+  const { data, error } = await repo.callMemoryWriteItemV1(supabase, rpcPayload);
 
   if (error) {
     throw error;
@@ -416,7 +414,7 @@ export async function getItemsNeedingEmbeddings(
   }
 
   try {
-    const { data, error } = await supabase.rpc('memory_get_items_needing_embeddings', {
+    const { data, error } = await repo.callMemoryGetItemsNeedingEmbeddings(supabase, {
       p_limit: limit,
       p_tenant_id: filters?.tenant_id ?? null,
       p_category_key: filters?.category_key ?? null,
@@ -473,9 +471,7 @@ export async function updateEmbeddings(
       embedding_model: u.embedding_model
     }));
 
-    const { data, error } = await supabase.rpc('memory_update_embeddings', {
-      p_updates: formattedUpdates
-    });
+    const { data, error } = await repo.callMemoryUpdateEmbeddings(supabase, formattedUpdates);
 
     if (error) {
       if (error.message.includes('does not exist')) {
@@ -525,7 +521,7 @@ export async function markForReembed(
   }
 
   try {
-    const { data, error } = await supabase.rpc('memory_mark_for_reembed', {
+    const { data, error } = await repo.callMemoryMarkForReembed(supabase, {
       p_tenant_id: request.tenant_id ?? null,
       p_user_id: request.user_id ?? null,
       p_category_key: request.category_key ?? null,
