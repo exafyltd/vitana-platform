@@ -15,6 +15,7 @@
 
 import { SupabaseClient } from '@supabase/supabase-js';
 import { VITANA_BOT_USER_ID } from '../lib/vitana-bot';
+import * as repo from './welcome-chat-service-repository';
 
 const MAX_COMMUNITY_SIZE = 1000;
 const BATCH_SIZE = 50;
@@ -41,11 +42,7 @@ export async function sendWelcomeChatMessages(
 
   try {
     // 1. Check if welcome messages were already sent for this user
-    const { data: appUser, error: appUserErr } = await supabase
-      .from('app_users')
-      .select('welcome_chat_sent')
-      .eq('user_id', userId)
-      .single();
+    const { data: appUser, error: appUserErr } = await repo.fetchAppUserWelcomeChatSent(supabase, userId);
 
     if (appUserErr) {
       console.warn(`${tag} Could not check app_users for ${userId}: ${appUserErr.message}`);
@@ -58,12 +55,7 @@ export async function sendWelcomeChatMessages(
     }
 
     // 2. Count community members in this tenant (exclude self + bot)
-    const { count, error: countErr } = await supabase
-      .from('user_tenants')
-      .select('*', { count: 'exact', head: true })
-      .eq('tenant_id', tenantId)
-      .neq('user_id', userId)
-      .neq('user_id', VITANA_BOT_USER_ID);
+    const { count, error: countErr } = await repo.countTenantMembersExcluding(supabase, tenantId, userId, VITANA_BOT_USER_ID);
 
     if (countErr) {
       console.warn(`${tag} Count query failed: ${countErr.message}`);
@@ -85,13 +77,13 @@ export async function sendWelcomeChatMessages(
     }
 
     // 3. Fetch all member user_ids (excluding self + bot)
-    const { data: members, error: membersErr } = await supabase
-      .from('user_tenants')
-      .select('user_id')
-      .eq('tenant_id', tenantId)
-      .neq('user_id', userId)
-      .neq('user_id', VITANA_BOT_USER_ID)
-      .limit(MAX_COMMUNITY_SIZE);
+    const { data: members, error: membersErr } = await repo.fetchTenantMemberIdsExcluding(
+      supabase,
+      tenantId,
+      userId,
+      VITANA_BOT_USER_ID,
+      MAX_COMMUNITY_SIZE,
+    );
 
     if (membersErr || !members) {
       console.warn(`${tag} Members fetch failed: ${membersErr?.message}`);
@@ -115,9 +107,7 @@ export async function sendWelcomeChatMessages(
     let totalSent = 0;
     for (let i = 0; i < rows.length; i += BATCH_SIZE) {
       const batch = rows.slice(i, i + BATCH_SIZE);
-      const { error: insertErr } = await supabase
-        .from('chat_messages')
-        .insert(batch as any);
+      const { error: insertErr } = await repo.insertWelcomeChatMessagesBatch(supabase, batch);
 
       if (insertErr) {
         console.warn(`${tag} Batch insert failed at offset ${i}: ${insertErr.message}`);
@@ -138,10 +128,7 @@ export async function sendWelcomeChatMessages(
 }
 
 async function markWelcomeSent(userId: string, supabase: SupabaseClient): Promise<void> {
-  const { error } = await supabase
-    .from('app_users')
-    .update({ welcome_chat_sent: true } as any)
-    .eq('user_id', userId);
+  const { error } = await repo.markAppUserWelcomeChatSent(supabase, userId);
 
   if (error) {
     console.warn(`[WelcomeChat] Failed to mark welcome_chat_sent for ${userId}: ${error.message}`);
