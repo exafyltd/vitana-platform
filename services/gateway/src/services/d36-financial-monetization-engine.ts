@@ -25,6 +25,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { emitOasisEvent } from './oasis-event-service';
 import { TrustRepairService, TrustContext } from './trust-repair-service';
 import { getCurrentSignals, SignalBundle } from './d28-emotional-cognitive-engine';
+import * as repo from './d36-financial-monetization-engine-repository';
 import {
   FinancialSensitivity,
   FinancialSensitivityInference,
@@ -230,22 +231,14 @@ export async function inferFinancialSensitivity(
     // Bootstrap dev context if needed
     if (useDevIdentity) {
       try {
-        await supabase.rpc('dev_bootstrap_request_context', {
-          p_tenant_id: DEV_IDENTITY.TENANT_ID,
-          p_active_role: 'developer'
-        });
+        await repo.devBootstrapRequestContext(supabase, DEV_IDENTITY.TENANT_ID, 'developer');
       } catch {
         // Ignore bootstrap errors in dev mode
       }
     }
 
     // Fetch recent financial signals (last 30 days)
-    const { data: signalsData, error: signalsError } = await supabase
-      .from('monetization_signals')
-      .select('*')
-      .gte('detected_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
-      .order('detected_at', { ascending: false })
-      .limit(50);
+    const { data: signalsData, error: signalsError } = await repo.fetchRecentMonetizationSignals(supabase, new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
 
     if (signalsError) {
       console.warn(`${LOG_PREFIX} Failed to fetch signals:`, signalsError.message);
@@ -405,12 +398,7 @@ export async function computeMonetizationReadiness(
 
     if (supabase) {
       // Check for recent rejections
-      const { data: recentAttempts } = await supabase
-        .from('monetization_attempts')
-        .select('*')
-        .eq('session_id', sessionId || 'current')
-        .order('created_at', { ascending: false })
-        .limit(10);
+      const { data: recentAttempts } = await repo.fetchRecentMonetizationAttemptsForSession(supabase, sessionId || 'current');
 
       if (recentAttempts && recentAttempts.length > 0) {
         const rejections = recentAttempts.filter(a => a.outcome === 'rejected');
@@ -594,12 +582,7 @@ export async function buildValueProfile(
     if (!supabase) return profile;
 
     // Fetch value signals from history
-    const { data: valueSignals } = await supabase
-      .from('value_signals')
-      .select('*')
-      .gte('detected_at', new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString()) // Last 60 days
-      .order('detected_at', { ascending: false })
-      .limit(100);
+    const { data: valueSignals } = await repo.fetchRecentValueSignals(supabase, new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString());
 
     if (valueSignals && valueSignals.length >= 3) {
       // Calculate driver scores
@@ -944,7 +927,7 @@ async function recordSignalsToDatabase(
         session_id: sessionId
       }));
 
-      await supabase.from('monetization_signals').insert(financialRecords);
+      await repo.insertMonetizationSignalRecords(supabase, financialRecords);
     }
 
     // Record value signals
@@ -958,7 +941,7 @@ async function recordSignalsToDatabase(
         session_id: sessionId
       }));
 
-      await supabase.from('value_signals').insert(valueRecords);
+      await repo.insertValueSignalRecords(supabase, valueRecords);
     }
   } catch (error) {
     console.warn(`${LOG_PREFIX} Failed to record signals:`, error);
@@ -1001,18 +984,14 @@ export async function recordSignal(
     ].includes(signalType);
 
     if (isFinancialSignal) {
-      const { data, error } = await supabase
-        .from('monetization_signals')
-        .insert({
-          signal_type: signalType,
-          indicator,
-          weight: indicator === 'negative' ? 80 : indicator === 'positive' ? 70 : 50,
-          detected_at: now,
-          context,
-          session_id: sessionId
-        })
-        .select('id')
-        .single();
+      const { data, error } = await repo.insertMonetizationSignal(supabase, {
+        signal_type: signalType,
+        indicator,
+        weight: indicator === 'negative' ? 80 : indicator === 'positive' ? 70 : 50,
+        detected_at: now,
+        context,
+        session_id: sessionId
+      });
 
       if (error) {
         return { ok: false, error: error.message };
@@ -1025,18 +1004,14 @@ export async function recordSignal(
                     signalType.includes('experience') ? 'experience' :
                     signalType.includes('time') ? 'efficiency' : 'price';
 
-      const { data, error } = await supabase
-        .from('value_signals')
-        .insert({
-          signal_type: signalType,
-          driver,
-          strength: 70,
-          detected_at: now,
-          context,
-          session_id: sessionId
-        })
-        .select('id')
-        .single();
+      const { data, error } = await repo.insertValueSignal(supabase, {
+        signal_type: signalType,
+        driver,
+        strength: 70,
+        detected_at: now,
+        context,
+        session_id: sessionId
+      });
 
       if (error) {
         return { ok: false, error: error.message };
@@ -1079,19 +1054,15 @@ export async function recordAttempt(
     // Get current envelope for context
     const context = await computeMonetizationContext(undefined, sessionId, authToken);
 
-    const { data, error } = await supabase
-      .from('monetization_attempts')
-      .insert({
-        attempt_type: attemptType,
-        outcome,
-        readiness_score_at_attempt: context.readiness?.score || 0,
-        envelope_at_attempt: context.envelope,
-        user_response: userResponse,
-        session_id: sessionId,
-        created_at: new Date().toISOString()
-      })
-      .select('id')
-      .single();
+    const { data, error } = await repo.insertMonetizationAttempt(supabase, {
+      attempt_type: attemptType,
+      outcome,
+      readiness_score_at_attempt: context.readiness?.score || 0,
+      envelope_at_attempt: context.envelope,
+      user_response: userResponse,
+      session_id: sessionId,
+      created_at: new Date().toISOString()
+    });
 
     if (error) {
       return { ok: false, error: error.message };
@@ -1178,11 +1149,7 @@ export async function getMonetizationHistory(
       return { ok: false, error: 'SERVICE_UNAVAILABLE' };
     }
 
-    const { data, error, count } = await supabase
-      .from('monetization_attempts')
-      .select('*', { count: 'exact' })
-      .order('created_at', { ascending: false })
-      .limit(limit);
+    const { data, error, count } = await repo.fetchMonetizationAttemptsHistory(supabase, limit);
 
     if (error) {
       return { ok: false, error: error.message };
