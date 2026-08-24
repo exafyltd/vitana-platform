@@ -17,6 +17,7 @@
 import { createHash } from 'crypto';
 import { getSupabase } from '../lib/supabase';
 import { resolveAwinConfig } from './awin-sync';
+import * as repo from './awin-conversions-repository';
 
 /** Member share of the gross commission (mirrors the /shop + postback 50% split). */
 const DEFAULT_MEMBER_SHARE = 0.5;
@@ -140,7 +141,7 @@ async function pullUniqueTransactions(cfg: AwinTxConfig, now: Date): Promise<Awi
 async function emitOasis(supabase: any, topic: string, status: string, message: string, metadata: Record<string, unknown>): Promise<void> {
   // Uses only columns present on oasis_events (no `type`), so the audit row persists.
   try {
-    await supabase.from('oasis_events').insert({
+    await repo.insertOasisAuditEvent(supabase, {
       id: createHash('sha256').update(`${topic}:${message}:${JSON.stringify(metadata)}`).digest('hex').replace(
         /^(.{8})(.{4})(.{3})(.{3})(.{12}).*$/, '$1-$2-4$3-8$4-$5',
       ),
@@ -162,7 +163,7 @@ export async function creditAwinConversions(supabase: any, cfg: AwinTxConfig): P
   // commission rows carry a human merchant label without a per-tx query.
   const merchantById = new Map<string, string>();
   try {
-    const { data: progs } = await supabase.from('affiliate_program').select('id,merchant').eq('network', 'awin');
+    const { data: progs } = await repo.fetchAwinProgramMerchants(supabase);
     for (const p of progs || []) merchantById.set(String(p.id), String(p.merchant || ''));
   } catch { /* enrichment is best-effort */ }
 
@@ -171,11 +172,7 @@ export async function creditAwinConversions(supabase: any, cfg: AwinTxConfig): P
     const credit = mapAwinTransaction(tx);
     if (!credit) continue;
 
-    const { data: map } = await supabase
-      .from('subid_map')
-      .select('user_id, affiliate_program_id, network')
-      .eq('sub_id', credit.subId)
-      .maybeSingle();
+    const { data: map } = await repo.fetchSubidMapEntry(supabase, credit.subId);
     if (!map) { unattributed++; continue; }
     attributed++;
 
@@ -185,20 +182,19 @@ export async function creditAwinConversions(supabase: any, cfg: AwinTxConfig): P
     const nowIso = now.toISOString();
 
     // Skip the write when nothing changed (idempotent, quiet re-pulls).
-    const { data: existing } = await supabase
-      .from('commission_event').select('status').eq('id', commissionId).maybeSingle();
+    const { data: existing } = await repo.fetchCommissionEventStatus(supabase, commissionId);
     if (existing && existing.status === credit.state) continue;
 
     const reward = +(credit.gross * cfg.memberShare).toFixed(4);
-    await supabase.from('commission_event').upsert({
+    await repo.upsertCommissionEvent(supabase, {
       id: commissionId, affiliate_program_id: programId, sub_id: credit.subId, user_id: map.user_id,
       merchant, order_ref: credit.txId, gross_commission: credit.gross, currency: credit.currency,
       status: credit.state, postback_ref: credit.txId, updated_at: nowIso,
-    }, { onConflict: 'id' });
-    await supabase.from('rewards_ledger').upsert({
+    });
+    await repo.upsertRewardsLedgerEntry(supabase, {
       id: rewardId, user_id: map.user_id, commission_event_id: commissionId,
       amount: reward, currency: credit.currency, state: credit.state, updated_at: nowIso,
-    }, { onConflict: 'id' });
+    });
     await emitOasis(supabase, `vcaop.reward.${credit.state}`, credit.state === 'reversed' ? 'warning' : 'success',
       `awin conversion ${credit.state}`,
       { commissionId, txId: credit.txId, subId: credit.subId, userId: map.user_id, gross: credit.gross, reward, state: credit.state });
