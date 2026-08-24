@@ -16,7 +16,7 @@ const PROTECTED_PATH = 'services/gateway/src/frontend/command-hub/';
 // VTID-0302: Original guard VTID
 // VTID-03706: ORB full-duplex voice — the mic stays open while Vitana speaks so
 //             Nova Sonic's native barge-in can fire. Touches orb-widget.js
-//             (capture gate + mic-live ring) and adds orb-duplex-test.{html,js,css},
+//             (capture gate + mic-live ring) and adds orb-voice-bench.{html,js,css},
 //             the real-device echo harness.
 // VTID-0539: Operator Console Chat Experience Improvements
 // VTID-0541: OASIS + CI/CD Alignment Repair (includes Publish modal semantics fix)

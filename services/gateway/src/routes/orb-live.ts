@@ -328,7 +328,7 @@ import {
 } from '../orb/upstream/constants';
 // VTID-03706: full-duplex voice — the mic stays open while Vitana speaks so
 // Nova Sonic's native barge-in can actually fire. Inert unless
-// FEATURE_ORB_FULL_DUPLEX_ENV is set.
+// ORB_FULL_DUPLEX_ENABLED=true is set.
 import {
   isFullDuplexEnabled,
   shouldDropMicWhileModelSpeaking,

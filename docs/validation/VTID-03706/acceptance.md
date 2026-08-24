@@ -97,7 +97,7 @@ TEST: same file — "LEGACY: drops mic audio while the model speaks (unchanged)"
 TEST: same file — "LEGACY: forwards once the window has elapsed (unchanged)"
 Output: `outputs/duplex-gate-tests.txt`
 
-`FEATURE_ORB_FULL_DUPLEX_ENV` unset resolves to `'off'`, which is the prior
+`ORB_FULL_DUPLEX_ENABLED` is an exact-`'true'` opt-in; anything else is the prior
 behaviour byte-for-byte. The legacy pre-roll path is deliberately kept rather
 than deleted, so rollback is a flag flip, not a revert.
 
@@ -109,7 +109,7 @@ TEST: same file — "sends the interrupt AFTER forwarding audio, not instead of 
 TEST: same file — "uses the same getUserMedia constraints as the widget"
 Output: `outputs/duplex-gate-tests.txt`
 
-`orb-widget.js` and `orb-duplex-test.js` are plain assets that cannot import
+`orb-widget.js` and `orb-voice-bench.js` are plain assets that cannot import
 `DUPLEX_GATE`, so they repeat the literals. The parity test reads both sources
 and fails the build on any drift — the remedy VTID-03696 needed after a
 workflow's `paths:` list desynced unnoticed for 30+ runs, and VTID-03644 after
@@ -160,7 +160,7 @@ Output: `outputs/full-suite.txt`, `outputs/tsc.txt`
 **No real-device echo run has happened.** There is no acoustic path in a unit
 test and Playwright renders pixels, not sound; this session has no microphone.
 
-`/command-hub/orb-duplex-test.html` exists precisely for this. It runs the
+`/command-hub/orb-voice-bench.html` exists precisely for this. It runs the
 identical gate against a real mic and speaker, reports gate openings, peak RMS
 and barge events with a pass/fail verdict, measures the room noise floor first
 and warns when ambient noise already exceeds `closeRms`. It is self-contained:
@@ -183,3 +183,55 @@ The `ScriptProcessorNode` → `AudioWorklet` migration. It is the right thing
 (deprecated API, main-thread jitter under React load) but it is a
 latency/robustness improvement, not a correctness fix for barge-in — bundling
 it here would have put the risky part and the safe part behind one flag.
+
+---
+
+AC-8 — The activation flag is an exact-`true` opt-in named per the ORB
+convention
+
+TEST: `full-duplex-session-gate.test.ts` — "is ON only for the exact string \"true\""
+TEST: same file — "is OFF for %p" (`false`, `TRUE`, `True`, `1`, `yes`, `on`, `staging-only`, ``, `  true  `)
+TEST: same file — "is OFF when unset"
+TEST: same file — "reads the env at call time, so an operator flip needs no restart"
+Output: `outputs/duplex-gate-tests.txt`
+
+`ORB_FULL_DUPLEX_ENABLED`, matching the sibling ORB kill switches
+(`ORB_GUIDED_TOPIC_VERTEX_FALLBACK_ENABLED === 'true'`) rather than the
+`FEATURE_*_ENV` tri-state. A feature that changes live audio behaviour for
+every voice session should require someone to say yes, not merely fail to
+say no — so a casing slip, a stray space, or a leftover `staging-only` from
+the previous convention all land OFF. Staging sets it; the production task
+definition deliberately does not.
+
+AC-9 — TTS is verified by what it SOUNDS like, not by its status code
+
+TEST: `full-duplex-session-gate.widget-parity.test.ts` — "decodes the audio rather than trusting the response envelope"
+TEST: same file — "measures peak amplitude, so silent-but-well-formed audio fails"
+TEST: same file — "fails when the gateway serves a different language than requested"
+TEST: same file — "treats Serbian as a KNOWN GAP, not a passing test and not a mystery failure"
+TEST: same file — "reports it as NEWS when an expected-fail locale starts working"
+Output: `outputs/tts-bench-run.txt`
+
+Nothing in this repo produced an audible sound to check.
+`/api/v1/voice-lab/nova/tests/run` checks Nova config, the selector table,
+codecs and stream latency; `/tests/eval` checks tool selection;
+`runVoiceProbe()` GETs `/api/v1/orb/health` and asserts booleans — its own
+comment records that the audio-path probe was never built. So the failure
+that actually reaches a user had no check anywhere.
+
+The bench's TTS tab calls the real route, decodes with `decodeAudioData`
+(which also proves the bytes are audio and not an error body wearing an
+audio mime), plays it, and measures peak amplitude and duration.
+
+**Proven against planted failures, not just against a happy path**
+(`outputs/tts-bench-run.txt`). A stub mirroring the real route's contract
+returned: `ru` as 200 OK with amplitude 0.0, `zh` as 200 OK but serving
+`lang:'en'`, and `sr` as the known no-voice gap. The bench caught all three
+and classified each correctly — `ru`/`zh` as real failures that redden the
+sweep, `sr` as a known gap that does not. Both real failures carry HTTP 200
+and a well-formed body, so no status-code check in the repo would have seen
+them.
+
+The sweep also reports it as NEWS if an expected-fail locale starts
+passing, because a provider being added would otherwise look identical to
+the gap persisting.

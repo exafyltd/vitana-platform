@@ -20,7 +20,9 @@
 
 import {
   DUPLEX_GATE,
+  FULL_DUPLEX_ENV_VAR,
   evaluateDuplexGateFrame,
+  isFullDuplexEnabled,
   initialDuplexGateState,
   shouldDropMicForPostTurnCooldown,
   shouldDropMicWhileModelSpeaking,
@@ -285,5 +287,44 @@ describe('VTID-03706 constants stay physically coherent', () => {
     // could not interrupt the first three seconds of every turn, which is
     // the complaint this VTID exists to fix.
     expect(DUPLEX_GATE.aecWarmupMs).toBeLessThanOrEqual(500);
+  });
+});
+
+describe('VTID-03706 isFullDuplexEnabled — exact-true opt-in', () => {
+  const VAR = FULL_DUPLEX_ENV_VAR;
+  const original = process.env[VAR];
+
+  afterEach(() => {
+    if (original === undefined) delete process.env[VAR];
+    else process.env[VAR] = original;
+  });
+
+  it('is ON only for the exact string "true"', () => {
+    process.env[VAR] = 'true';
+    expect(isFullDuplexEnabled()).toBe(true);
+  });
+
+  it.each(['false', 'TRUE', 'True', '1', 'yes', 'on', 'staging-only', '', '  true  '])(
+    'is OFF for %p',
+    (value) => {
+      // A feature that changes live audio for every voice session must
+      // require someone to say yes. Near-misses — a casing slip, a leftover
+      // 'staging-only' from the previous flag convention, a stray space —
+      // must land OFF, never on.
+      process.env[VAR] = value;
+      expect(isFullDuplexEnabled()).toBe(false);
+    },
+  );
+
+  it('is OFF when unset', () => {
+    delete process.env[VAR];
+    expect(isFullDuplexEnabled()).toBe(false);
+  });
+
+  it('reads the env at call time, so an operator flip needs no restart', () => {
+    delete process.env[VAR];
+    expect(isFullDuplexEnabled()).toBe(false);
+    process.env[VAR] = 'true';
+    expect(isFullDuplexEnabled()).toBe(true);
   });
 });

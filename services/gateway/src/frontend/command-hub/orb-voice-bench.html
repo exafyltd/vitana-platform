@@ -3,16 +3,85 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>ORB Full-Duplex Gate — Device Test (VTID-03706)</title>
-  <link rel="stylesheet" href="/command-hub/orb-duplex-test.css?v=20260824-01" />
+  <title>ORB Voice Bench — TTS &amp; voice-to-voice</title>
+  <link rel="stylesheet" href="/command-hub/orb-voice-bench.css?v=20260824-02" />
 </head>
 <body>
   <main class="wrap">
     <header>
-      <h1>ORB Full-Duplex Gate — Device Test</h1>
-      <p class="sub">VTID-03706 · answers one question: <strong>does this device's echo open the mic gate?</strong></p>
+      <h1>ORB Voice Bench</h1>
+      <p class="sub">
+        The two things nothing else in this repo can check:
+        <strong>does TTS actually produce audible speech</strong>, and
+        <strong>does this device's echo open the mic gate?</strong>
+      </p>
+      <p class="sub">
+        Everything else is already covered —
+        <code>/api/v1/voice-lab/nova/tests/run</code> checks Nova config,
+        codecs and stream latency; <code>/tests/eval</code> checks tool
+        selection. Neither plays a sound, and
+        <code>runVoiceProbe()</code> is HTTP-health only (its own comment says
+        the audio probe was never built). That is the gap this page fills, so
+        keep it to audio you can hear.
+      </p>
     </header>
 
+    <nav class="tabs" aria-label="Bench sections">
+      <button id="tab-tts" type="button" class="tab tab-on" aria-selected="true">1 · TTS output</button>
+      <button id="tab-duplex" type="button" class="tab" aria-selected="false">2 · Voice-to-voice</button>
+    </nav>
+
+    <!-- ================= TTS ================= -->
+    <div id="pane-tts">
+      <section class="panel" aria-labelledby="tts-why-h">
+        <h2 id="tts-why-h">What this checks</h2>
+        <p>
+          Calls the gateway's real <code>POST /api/v1/orb/tts</code>, decodes
+          what comes back, plays it, and measures it. It catches the failures
+          a status code cannot: audio that returns <em>200 OK and is silent</em>,
+          a language quietly served by the wrong provider, or a locale with no
+          voice at all.
+        </p>
+        <p class="warn">
+          Serbian is expected to fail on Polly — there is no <code>sr</code>
+          voice in any engine (verified against the live API: 106 voices, 42
+          language codes). That is a known product gap, not a regression.
+        </p>
+        <label class="field">
+          <span>Gateway base URL <em>(blank = this origin)</em></span>
+          <input id="tts-base" type="text" placeholder="https://preview-aws-gateway.vitanaland.com" />
+        </label>
+        <label class="field">
+          <span>Text to speak</span>
+          <input id="tts-text" type="text" value="Vitana voice check: one, two, three." />
+        </label>
+        <div class="controls">
+          <button id="btn-tts-all" type="button" class="primary">Run all languages</button>
+          <button id="btn-tts-one" type="button">Run selected only</button>
+          <select id="tts-lang" aria-label="Language"></select>
+        </div>
+        <p id="tts-status" class="status" role="status" aria-live="polite">Idle.</p>
+      </section>
+
+      <section class="panel" aria-labelledby="tts-res-h">
+        <h2 id="tts-res-h">Results</h2>
+        <div class="tablewrap">
+          <table class="grid">
+            <thead>
+              <tr>
+                <th>Lang</th><th>Status</th><th>Provider</th><th>Voice</th>
+                <th>ms</th><th>KB</th><th>Sec</th><th>Peak</th><th>Verdict</th>
+              </tr>
+            </thead>
+            <tbody id="tts-rows"></tbody>
+          </table>
+        </div>
+        <div id="tts-verdict" class="verdict verdict-idle">Run a sweep to get a verdict.</div>
+      </section>
+    </div>
+
+    <!-- ================= DUPLEX ================= -->
+    <div id="pane-duplex" class="hidden">
     <section class="panel" aria-labelledby="why-h">
       <h2 id="why-h">What this is for</h2>
       <p>
@@ -101,8 +170,9 @@
         <div><dt>bargeConfirmFrames</dt><dd id="cfg-confirm">—</dd></div>
       </dl>
     </section>
+    </div>
   </main>
 
-  <script src="/command-hub/orb-duplex-test.js?v=20260824-01"></script>
+  <script src="/command-hub/orb-voice-bench.js?v=20260824-02"></script>
 </body>
 </html>

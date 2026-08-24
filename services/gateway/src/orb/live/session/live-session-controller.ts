@@ -49,7 +49,7 @@ import {
   getForwardingAckTimeoutMs,
 } from '../../upstream/constants';
 // VTID-03706: full-duplex voice — see full-duplex-gate.ts. Inert unless
-// FEATURE_ORB_FULL_DUPLEX_ENV is set.
+// ORB_FULL_DUPLEX_ENABLED=true is set.
 import {
   isFullDuplexEnabled,
   shouldDropMicWhileModelSpeaking,

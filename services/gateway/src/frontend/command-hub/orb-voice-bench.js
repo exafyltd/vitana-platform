@@ -1,5 +1,6 @@
 /**
- * VTID-03706 — ORB full-duplex gate, real-device test harness.
+ * VTID-03706 — ORB Voice Bench: TTS output + full-duplex/barge-in, on a real
+ * device, with real audio.
  *
  * WHY THIS EXISTS
  * ---------------
@@ -43,6 +44,10 @@
     'stat-frames', 'stat-silent', 'stat-barge', 'verdict', 'log',
     'cfg-open', 'cfg-close', 'cfg-hangover', 'cfg-warmup', 'cfg-confirm',
     'note-open', 'note-close',
+    // TTS bench + tabs
+    'tab-tts', 'tab-duplex', 'pane-tts', 'pane-duplex',
+    'tts-base', 'tts-text', 'tts-lang', 'tts-status', 'tts-rows', 'tts-verdict',
+    'btn-tts-all', 'btn-tts-one',
   ].forEach(function (id) { el[id] = document.getElementById(id); });
 
   // RMS is displayed on a 0..0.3 scale — conversational speech tops out
@@ -360,5 +365,238 @@
   el['btn-speech'].addEventListener('click', function () { run('speech'); });
   el['btn-stop'].addEventListener('click', finish);
 
+  // ==================================================================
+  // TTS BENCH
+  // ==================================================================
+  //
+  // WHY THIS IS NOT COVERED ELSEWHERE
+  // ---------------------------------
+  // `/api/v1/voice-lab/nova/tests/run` checks Nova config, the selector
+  // table, codecs and stream latency. `/tests/eval` checks which tools the
+  // model would call. `runVoiceProbe()` GETs `/api/v1/orb/health` and asserts
+  // some booleans — its own comment records that the audio-path probe was
+  // never built. None of them produce a sound.
+  //
+  // So the failure mode none of them can see is the one that actually reaches
+  // a user: a 200 OK carrying audio that is silent, truncated, or spoken by
+  // the wrong voice. This decodes what the gateway returns and measures it.
+
+  // Every locale the gateway's TTS layer claims to serve. `sr` is included
+  // deliberately even though it is expected to fail — a bench that only lists
+  // the languages known to work cannot tell you when one stops working.
+  var TTS_LANGS = ['de', 'en', 'es', 'fr', 'pt', 'pl', 'ru', 'zh', 'ar', 'sr'];
+
+  // Known gap, asserted rather than hidden: Polly has no Serbian voice in any
+  // engine. Verified against the live API — 106 voices, 42 language codes,
+  // nothing matching sr/hr/bs/sh. A failure here is EXPECTED; a success is
+  // news (someone added a provider) and the verdict says so.
+  var TTS_EXPECTED_FAIL = { sr: 'no Polly voice for sr in any engine' };
+
+  // Below this peak amplitude the decoded audio is silence for practical
+  // purposes. This is the check that a status code cannot make: TTS can
+  // return a well-formed, correctly-sized, completely inaudible buffer.
+  var TTS_SILENCE_PEAK = 0.01;
+
+  var ttsRunning = false;
+
+  function ttsBase() {
+    var v = (el['tts-base'].value || '').trim().replace(/\/+$/, '');
+    return v; // '' => same origin, which is the normal case (served by the gateway)
+  }
+
+  function initTts() {
+    var sel = el['tts-lang'];
+    TTS_LANGS.forEach(function (l) {
+      var o = document.createElement('option');
+      o.value = l;
+      o.textContent = l + (TTS_EXPECTED_FAIL[l] ? ' (expected fail)' : '');
+      sel.appendChild(o);
+    });
+    el['btn-tts-all'].addEventListener('click', function () { runTtsSweep(TTS_LANGS); });
+    el['btn-tts-one'].addEventListener('click', function () { runTtsSweep([sel.value]); });
+  }
+
+  function initTabs() {
+    function show(which) {
+      var tts = which === 'tts';
+      el['pane-tts'].className = tts ? '' : 'hidden';
+      el['pane-duplex'].className = tts ? 'hidden' : '';
+      el['tab-tts'].className = 'tab' + (tts ? ' tab-on' : '');
+      el['tab-duplex'].className = 'tab' + (tts ? '' : ' tab-on');
+      el['tab-tts'].setAttribute('aria-selected', String(tts));
+      el['tab-duplex'].setAttribute('aria-selected', String(!tts));
+    }
+    el['tab-tts'].addEventListener('click', function () { show('tts'); });
+    el['tab-duplex'].addEventListener('click', function () { show('duplex'); });
+  }
+
+  function b64ToBytes(b64) {
+    var bin = atob(b64);
+    var out = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
+  /**
+   * Decode and PLAY the returned audio, and report what it actually contains.
+   *
+   * Web Audio rather than an <audio> element on purpose: decodeAudioData both
+   * proves the bytes are really decodable audio (not an error body with an
+   * audio mime) and hands back the samples, so peak amplitude and true
+   * duration can be measured. An <audio> element would happily "play" silence
+   * and report success.
+   */
+  async function decodeAndPlay(bytes) {
+    var Ctx = window.AudioContext || window.webkitAudioContext;
+    var ctx = new Ctx();
+    try {
+      if (ctx.state === 'suspended') await ctx.resume();
+      // decodeAudioData detaches the buffer, so hand it a copy — the caller
+      // still needs `bytes.length` for the size column afterwards.
+      var buf = await ctx.decodeAudioData(bytes.slice().buffer);
+      var peak = 0;
+      for (var c = 0; c < buf.numberOfChannels; c++) {
+        var d = buf.getChannelData(c);
+        for (var i = 0; i < d.length; i += 16) {   // stride: peak, not an average
+          var a = Math.abs(d[i]);
+          if (a > peak) peak = a;
+        }
+      }
+      var src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(ctx.destination);
+      src.start();
+      await new Promise(function (r) { src.onended = r; setTimeout(r, (buf.duration + 0.5) * 1000); });
+      return { seconds: buf.duration, peak: peak };
+    } finally {
+      try { ctx.close(); } catch (e) { /* ok */ }
+    }
+  }
+
+  function ttsRow(lang) {
+    var tr = document.createElement('tr');
+    for (var i = 0; i < 9; i++) tr.appendChild(document.createElement('td'));
+    tr.children[0].textContent = lang;
+    tr.children[1].textContent = '…';
+    el['tts-rows'].appendChild(tr);
+    return tr;
+  }
+
+  function fillRow(tr, cells, cls) {
+    for (var i = 0; i < cells.length; i++) tr.children[i + 1].textContent = cells[i];
+    if (cls) tr.className = cls;
+  }
+
+  async function runOneTts(lang, text) {
+    var tr = ttsRow(lang);
+    var t0 = Date.now();
+    var res, body;
+    try {
+      res = await fetch(ttsBase() + '/api/v1/orb/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: text, lang: lang }),
+      });
+    } catch (err) {
+      fillRow(tr, ['network', '—', '—', String(Date.now() - t0), '—', '—', '—', 'FAIL ' + (err && err.message)], 'row-bad');
+      return { lang: lang, ok: false, reason: 'network' };
+    }
+    var ms = Date.now() - t0;
+
+    try { body = await res.json(); } catch (e) { body = null; }
+
+    if (!res.ok || !body || !body.ok || !body.audio_b64) {
+      var why = (body && (body.error || body.message)) || ('HTTP ' + res.status);
+      var expected = TTS_EXPECTED_FAIL[lang];
+      fillRow(tr,
+        [String(res.status), body && body.voice_type || '—', body && body.voice || '—',
+         String(ms), '—', '—', '—',
+         expected ? 'EXPECTED FAIL — ' + expected : 'FAIL ' + why],
+        expected ? 'row-warn' : 'row-bad');
+      return { lang: lang, ok: false, expected: !!expected, reason: why };
+    }
+
+    var bytes = b64ToBytes(body.audio_b64);
+    var kb = (bytes.length / 1024).toFixed(1);
+
+    var played;
+    try {
+      played = await decodeAndPlay(bytes);
+    } catch (err) {
+      // 200 + audio_b64 that will not decode is a real failure, and one no
+      // status-code check would ever surface.
+      fillRow(tr, [String(res.status), body.voice_type || '—', body.voice || '—', String(ms), kb, '—', '—',
+        'FAIL undecodable: ' + (err && err.message)], 'row-bad');
+      return { lang: lang, ok: false, reason: 'undecodable' };
+    }
+
+    var silent = played.peak < TTS_SILENCE_PEAK;
+    // The gateway echoes back the lang it actually served. If that is not the
+    // lang asked for, a user gets fluent audio in the wrong language — which
+    // sounds like a working system and is not.
+    var langMismatch = body.lang && body.lang !== lang;
+
+    var verdict = silent ? 'FAIL silent (peak ' + played.peak.toFixed(3) + ')'
+      : langMismatch ? 'FAIL served lang=' + body.lang
+      : 'PASS';
+
+    fillRow(tr, [String(res.status), body.voice_type || '—', body.voice || '—', String(ms), kb,
+      played.seconds.toFixed(2), played.peak.toFixed(3), verdict],
+      verdict === 'PASS' ? 'row-ok' : 'row-bad');
+
+    return { lang: lang, ok: verdict === 'PASS', reason: verdict };
+  }
+
+  async function runTtsSweep(langs) {
+    if (ttsRunning) return;
+    ttsRunning = true;
+    el['btn-tts-all'].disabled = true;
+    el['btn-tts-one'].disabled = true;
+    el['tts-rows'].textContent = '';
+    el['tts-verdict'].className = 'verdict verdict-idle';
+    el['tts-verdict'].textContent = 'Running…';
+
+    var text = el['tts-text'].value || 'Vitana voice check.';
+    var results = [];
+    for (var i = 0; i < langs.length; i++) {
+      el['tts-status'].textContent = 'Synthesizing + playing ' + langs[i] +
+        ' (' + (i + 1) + '/' + langs.length + ')…';
+      // Serial on purpose: they play out loud, and overlapping audio would
+      // make the peak/duration numbers meaningless.
+      results.push(await runOneTts(langs[i], text));
+    }
+
+    var unexpectedFails = results.filter(function (r) { return !r.ok && !r.expected; });
+    var expectedFails = results.filter(function (r) { return !r.ok && r.expected; });
+    var surprises = results.filter(function (r) { return r.ok && TTS_EXPECTED_FAIL[r.lang]; });
+    var passed = results.filter(function (r) { return r.ok; }).length;
+
+    var msg = passed + '/' + results.length + ' spoke audible, correct-language audio.';
+    if (expectedFails.length) {
+      msg += ' Known gaps (not regressions): ' +
+        expectedFails.map(function (r) { return r.lang; }).join(', ') + '.';
+    }
+    if (surprises.length) {
+      msg += ' NEW: ' + surprises.map(function (r) { return r.lang; }).join(', ') +
+        ' now works — a provider was added; update TTS_EXPECTED_FAIL.';
+    }
+    if (unexpectedFails.length) {
+      el['tts-verdict'].className = 'verdict verdict-fail';
+      el['tts-verdict'].textContent = 'FAIL — ' +
+        unexpectedFails.map(function (r) { return r.lang + ': ' + r.reason; }).join(' · ') +
+        '. ' + msg;
+    } else {
+      el['tts-verdict'].className = 'verdict verdict-pass';
+      el['tts-verdict'].textContent = 'PASS — ' + msg;
+    }
+
+    el['tts-status'].textContent = 'Done.';
+    el['btn-tts-all'].disabled = false;
+    el['btn-tts-one'].disabled = false;
+    ttsRunning = false;
+  }
+
   renderConfig();
+  initTts();
+  initTabs();
 })();

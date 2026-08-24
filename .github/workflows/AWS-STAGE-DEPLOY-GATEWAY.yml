@@ -346,7 +346,7 @@ jobs:
                                                 "NOVA_SONIC_CANARY_USER_IDS","NOVA_SONIC_CANARY_TENANT_IDS",
                                                 "FEATURE_ORB_GREETING_TTS_BRIDGE_ENV",
                                                 "FEATURE_ORB_SAFE_FAST_GREETING_ENV",
-                                                "FEATURE_ORB_FULL_DUPLEX_ENV",
+                                                "ORB_FULL_DUPLEX_ENABLED",
                                                 "TTS_PROVIDER",
                                                 "BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION") | not) ]
                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
@@ -365,10 +365,11 @@ jobs:
                           # added to AWS-PROD-DEPLOY-GATEWAY.yml: this changes
                           # live audio behaviour for every voice session and
                           # needs real-device echo verification (see
-                          # /command-hub/orb-duplex-test.html) before prod is
-                          # even a question. Rollback is this value -> "off",
-                          # no code revert.
-                          {name:"FEATURE_ORB_FULL_DUPLEX_ENV", value:"staging-only"},
+                          # /command-hub/orb-voice-bench.html) before prod is
+                          # even a question. Rollback is this value -> "false",
+                          # no code revert. Exact-"true" opt-in, matching the
+                          # sibling ORB kill switches — anything else is OFF.
+                          {name:"ORB_FULL_DUPLEX_ENABLED", value:"true"},
                           {name:"TTS_PROVIDER", value:"polly"},
                           {name:"BEDROCK_ROLE_ARN", value:$TASK_ROLE},
                           {name:"AWS_BEDROCK_REGION", value:"eu-central-1"} ] )

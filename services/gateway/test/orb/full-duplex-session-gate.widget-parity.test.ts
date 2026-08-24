@@ -52,19 +52,19 @@ describe('VTID-03706 widget mirrors DUPLEX_GATE exactly', () => {
 });
 
 describe('VTID-03706 the device test harness mirrors DUPLEX_GATE too', () => {
-  // orb-duplex-test.js is the ONLY way to establish that this device's echo
+  // orb-voice-bench.js is the ONLY way to establish that this device's echo
   // stays below the open threshold — a property no unit test can reach,
   // since there is no acoustic path in CI. A harness running different
   // thresholds than the shipped gate would return a green result that means
   // nothing, which is worse than having no harness at all.
   const harness = readFileSync(
-    join(__dirname, '../../src/frontend/command-hub/orb-duplex-test.js'),
+    join(__dirname, '../../src/frontend/command-hub/orb-voice-bench.js'),
     'utf8',
   );
 
   function harnessConst(key: string): number {
     const m = harness.match(new RegExp(`${key}:\\s*([0-9.]+)\\s*,`));
-    if (!m) throw new Error(`harness constant ${key} not found in orb-duplex-test.js`);
+    if (!m) throw new Error(`harness constant ${key} not found in orb-voice-bench.js`);
     return Number(m[1]);
   }
 
@@ -160,5 +160,82 @@ describe('VTID-03706 AEC warm-up is anchored to the playback burst', () => {
     expect(widget).toMatch(
       /if\s*\(!_s\.audioPlaying\)\s*\{\s*\n\s*_s\.audioPlayStartedAt = Date\.now\(\);/,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// VTID-03706 — the TTS half of the bench.
+//
+// Nothing in this repo produces an audible sound to check.
+// `/api/v1/voice-lab/nova/tests/run` checks Nova config, the selector table,
+// codecs and stream latency; `/tests/eval` checks tool selection;
+// `runVoiceProbe()` GETs `/api/v1/orb/health` and asserts booleans — its own
+// comment records that the audio-path probe was never built. So the failure
+// that actually reaches a user — a 200 OK carrying silent, undecodable or
+// wrong-language audio — had no check anywhere.
+//
+// These pin the properties that make the bench worth trusting. They are
+// source assertions, not behaviour tests: the page needs a real browser,
+// speaker and network, which is the whole point of it existing.
+// ---------------------------------------------------------------------------
+
+describe('VTID-03706 TTS bench checks what a status code cannot', () => {
+  const bench = readFileSync(
+    join(__dirname, '../../src/frontend/command-hub/orb-voice-bench.js'),
+    'utf8',
+  );
+
+  it('calls the real gateway TTS route, not a mock', () => {
+    expect(bench).toContain("'/api/v1/orb/tts'");
+    expect(bench).toContain("method: 'POST'");
+  });
+
+  it('decodes the audio rather than trusting the response envelope', () => {
+    // decodeAudioData both proves the bytes are really decodable audio (not
+    // an error body wearing an audio mime) and yields samples to measure.
+    expect(bench).toContain('decodeAudioData');
+  });
+
+  it('measures peak amplitude, so silent-but-well-formed audio fails', () => {
+    expect(bench).toMatch(/TTS_SILENCE_PEAK\s*=\s*0?\.\d+/);
+    expect(bench).toContain('FAIL silent');
+  });
+
+  it('fails when the gateway serves a different language than requested', () => {
+    // Fluent audio in the wrong language sounds like a working system.
+    expect(bench).toContain('langMismatch');
+    expect(bench).toContain('FAIL served lang=');
+  });
+
+  it('sweeps every locale the TTS layer claims to serve, including the broken one', () => {
+    // A bench that lists only the languages known to work cannot tell you
+    // when one of them stops working.
+    for (const lang of ['de', 'en', 'es', 'fr', 'pt', 'pl', 'ru', 'zh', 'ar', 'sr']) {
+      expect(bench).toContain(`'${lang}'`);
+    }
+  });
+
+  it('treats Serbian as a KNOWN GAP, not a passing test and not a mystery failure', () => {
+    // Polly has no sr voice in any engine (verified live: 106 voices, 42
+    // language codes). Silently excluding it would hide the gap; failing the
+    // whole sweep on it would train people to ignore a red result.
+    expect(bench).toContain('TTS_EXPECTED_FAIL');
+    expect(bench).toMatch(/sr:\s*'no Polly voice/);
+    expect(bench).toContain('EXPECTED FAIL');
+  });
+
+  it('reports it as NEWS when an expected-fail locale starts working', () => {
+    // Otherwise adding a provider looks identical to the gap persisting.
+    expect(bench).toContain('surprises');
+    expect(bench).toContain('update TTS_EXPECTED_FAIL');
+  });
+
+  it('plays languages serially so the measurements stay meaningful', () => {
+    // Overlapping playback would make peak and duration meaningless.
+    expect(bench).toContain('await runOneTts(');
+  });
+
+  it('defaults to same-origin so the bench tests the gateway serving it', () => {
+    expect(bench).toContain("'' => same origin");
   });
 });

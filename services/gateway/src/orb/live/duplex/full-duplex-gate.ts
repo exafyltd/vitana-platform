@@ -73,16 +73,24 @@
  *
  * SCOPE / SAFETY
  * --------------
- * Everything here is inert unless `FEATURE_ORB_FULL_DUPLEX_ENV` is set.
- * Unset resolves to `'off'` and every predicate returns the pre-existing
- * behavior byte-for-byte. Staging sets `'staging-only'`; production is a
- * separate, later decision.
+ * Everything here is inert unless `ORB_FULL_DUPLEX_ENABLED=true`. Anything
+ * else — unset, empty, `false`, a typo — resolves to OFF and every predicate
+ * returns the pre-existing behavior byte-for-byte. Staging sets it; the
+ * production task definition deliberately does not, so promoting this build
+ * still runs half-duplex until someone sets it explicitly.
+ *
+ * Deliberately an exact-`'true'` opt-in, matching the sibling ORB kill
+ * switches (`ORB_GUIDED_TOPIC_VERTEX_FALLBACK_ENABLED === 'true'`) rather
+ * than a `!== 'false'` opt-out: a feature that changes live audio behaviour
+ * for every voice session should require someone to say yes, not fail to say
+ * no.
  */
 
-import { isFeatureLive } from '../../../services/feature-flags';
-
-/** Feature-flag name (the env var is `FEATURE_ORB_FULL_DUPLEX_ENV`). */
-export const FULL_DUPLEX_FLAG = 'ORB_FULL_DUPLEX';
+/**
+ * Env var that activates full duplex. Exported so tests and the parity check
+ * name it once rather than repeating the literal.
+ */
+export const FULL_DUPLEX_ENV_VAR = 'ORB_FULL_DUPLEX_ENABLED';
 
 /**
  * Tuning constants for the client-side echo-aware noise gate.
@@ -147,9 +155,15 @@ export const DUPLEX_GATE = {
   bargeConfirmFrames: 2,
 } as const;
 
-/** True when full-duplex voice is active on this process's environment. */
+/**
+ * True when full-duplex voice is active on this process's environment.
+ *
+ * Read at call time, not cached: an operator flipping the value on the task
+ * definition takes effect on the next session without a code change, which is
+ * the whole point of having the lever.
+ */
 export function isFullDuplexEnabled(): boolean {
-  return isFeatureLive(FULL_DUPLEX_FLAG);
+  return process.env[FULL_DUPLEX_ENV_VAR] === 'true';
 }
 
 /**
