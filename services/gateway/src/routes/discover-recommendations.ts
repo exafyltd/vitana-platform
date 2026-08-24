@@ -14,6 +14,7 @@ import { randomUUID } from 'crypto';
 import { getSupabase } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth-supabase-jwt';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import * as repo from './discover-recommendations-repository';
 
 const router = Router();
 router.use(requireAuth as any);
@@ -45,55 +46,37 @@ router.post('/recommendations', async (req: Request, res: Response) => {
   const tenantId = getTenantId(req);
   const { product_id } = parsed.data;
 
-  const { data: product, error: productErr } = await supabase
-    .from('products')
-    .select('id, merchant_id, title, is_active')
-    .eq('id', product_id)
-    .eq('is_active', true)
-    .maybeSingle();
+  const { data: product, error: productErr } = await repo.fetchActiveProductForRecommendation(supabase, product_id);
   if (productErr || !product) return res.status(404).json({ ok: false, error: 'PRODUCT_NOT_FOUND' });
 
   // Find-or-create — one recommendation per (user, product).
-  const { data: existing } = await supabase
-    .from('product_recommendations')
-    .select('id, sharing_link_id')
-    .eq('user_id', userId)
-    .eq('product_id', product_id)
-    .maybeSingle();
+  const { data: existing } = await repo.fetchExistingRecommendation(supabase, userId, product_id);
 
   let recommendationId: string;
   if (existing) {
     recommendationId = existing.id;
   } else {
-    const { data: link, error: linkErr } = await supabase
-      .from('sharing_links')
-      .insert({
-        tenant_id: tenantId,
-        user_id: userId,
-        target_type: 'product',
-        target_id: product_id,
-        short_code: shortCode(),
-        utm_source: 'vitana',
-        utm_medium: 'recommend',
-        utm_campaign: 'discover_recommend',
-      })
-      .select('id')
-      .single();
+    const { data: link, error: linkErr } = await repo.insertSharingLink(supabase, {
+      tenant_id: tenantId,
+      user_id: userId,
+      target_type: 'product',
+      target_id: product_id,
+      short_code: shortCode(),
+      utm_source: 'vitana',
+      utm_medium: 'recommend',
+      utm_campaign: 'discover_recommend',
+    });
     if (linkErr || !link) {
       return res.status(500).json({ ok: false, error: 'SHARING_LINK_FAILED', message: linkErr?.message });
     }
 
-    const { data: created, error: createErr } = await supabase
-      .from('product_recommendations')
-      .insert({
-        tenant_id: tenantId,
-        user_id: userId,
-        product_id,
-        merchant_id: product.merchant_id,
-        sharing_link_id: link.id,
-      })
-      .select('id')
-      .single();
+    const { data: created, error: createErr } = await repo.insertProductRecommendation(supabase, {
+      tenant_id: tenantId,
+      user_id: userId,
+      product_id,
+      merchant_id: product.merchant_id,
+      sharing_link_id: link.id,
+    });
     if (createErr || !created) {
       return res.status(500).json({ ok: false, error: 'RECOMMENDATION_CREATE_FAILED', message: createErr?.message });
     }
@@ -123,13 +106,7 @@ router.get('/my-recommendations', async (req: Request, res: Response) => {
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
   const userId = getUserId(req);
 
-  const { data, error } = await supabase
-    .from('product_recommendations')
-    .select(
-      'id, product_id, status, click_count, conversion_count, commission_earned_minor, commission_currency, created_at, products(title, images)'
-    )
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false });
+  const { data, error } = await repo.fetchMyRecommendations(supabase, userId);
   if (error) return res.status(500).json({ ok: false, error: error.message });
 
   const items = (data ?? []).map((r: any) => ({
