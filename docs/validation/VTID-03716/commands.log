@@ -108,6 +108,78 @@ git add services/gateway/src/routes/orb-live.ts docs/validation/VTID-03716/
 git commit -m "Add OASIS TTS telemetry to /tts-pcm-diagnostic route (VTID-03716)"
 git push origin claude/polly-pcm-audio-test-program-vtid-03716
 
+# Codex review posted 3 findings on PR #3173, all confirmed real:
+#   P1: /tts-pcm-diagnostic is optionalAuth + no rate limit -- unauthenticated
+#       billing/DoS vector against real Polly synthesis (up to 3000 chars/call).
+#   P2: route-level normalizeLang() (orb-live.ts's live-session allowlist
+#       version) silently maps any unsupported language to 'en' BEFORE the
+#       route's own unsupported-language check can run -- a typo'd or
+#       newly-Polly-supported lang gets a false 200 with English audio
+#       instead of the intended 422.
+#   P2: verify-cascade-audio-timing.ts only exercised the extracted
+#       _pcmRateFromMime() parser -- a regression to
+#       createBuffer(..., 24000) in the widget's real playback call site
+#       would leave the parser untouched and every check would still pass,
+#       silently missing the exact VTID-03711 defect this program exists
+#       to catch.
+#
+# Fixes:
+#   - Added a dedicated express-rate-limit limiter (20 req/15min), same
+#     pattern as routes/live.ts's existing per-route limiters.
+#   - Route now uses polly.ts's own normalizeLang (shape-only: lowercase,
+#     strip region, NO allowlist-to-'en' fallback) instead of orb-live.ts's
+#     live-session version, so synthesizePolly's own voice table/
+#     POLLY_UNSUPPORTED_LANGS makes the real call.
+#   - Added verifyWidgetWiringIsConnected() to the test program: a
+#     structural check (run first, fatal on failure) proving createBuffer()
+#     is wired to the variable _pcmRateFromMime() actually assigns, not a
+#     hardcoded literal. Exported it (+ guarded the script's auto-run
+#     behind require.main===module) so it has direct unit test coverage,
+#     including a mutation test that reproduces the VTID-03711 defect
+#     exactly and confirms the check catches it.
+
+cd services/gateway
+npx tsc --noEmit
+#   -> clean, no output (outputs/tsc.txt)
+
+npx jest test/orb/live/characterization/tts-pcm-diagnostic-route.characterization.test.ts --silent
+#   -> Test Suites: 1 passed, 1 total
+#   -> Tests: 11 passed, 11 total (8 original + 3 for the Codex fixes)
+#   -> outputs/targeted-tests.txt
+
+npx jest test/scripts/verify-cascade-audio-timing.test.ts --silent
+#   -> Test Suites: 1 passed, 1 total
+#   -> Tests: 4 passed, 4 total
+#   -> outputs/verify-script-unit-tests.txt
+
+npx jest test/orb --silent
+#   -> Test Suites: 177 passed, 177 total
+#   -> Tests: 6 todo, 3281 passed, 3287 total
+#   -> outputs/full-orb-suite.txt
+
+npx jest test/scripts --silent
+#   -> Test Suites: 4 passed, 4 total
+#   -> Tests: 60 passed, 60 total (includes the 3 pre-existing scripts/ suites)
+
+# Sanity-checked the CLI guard (require.main === module) doesn't break the
+# actual standalone invocation -- ran against a deliberately unreachable
+# GATEWAY_URL and confirmed: the wiring check + parser load both still run
+# and log success BEFORE the per-language network calls, which then fail
+# cleanly with "fetch failed" per language (expected, not a route-not-found
+# 404 -- this was a DNS-unreachable host, not a real target):
+GATEWAY_URL=https://example-nonexistent-target-for-dry-run.invalid \
+  npx ts-node --project services/gateway/tsconfig.json --transpile-only \
+  scripts/tts/verify-cascade-audio-timing.ts
+
+cd ..
+git add services/gateway/src/routes/orb-live.ts \
+        services/gateway/test/orb/live/characterization/tts-pcm-diagnostic-route.characterization.test.ts \
+        services/gateway/test/scripts/verify-cascade-audio-timing.test.ts \
+        scripts/tts/verify-cascade-audio-timing.ts \
+        docs/validation/VTID-03716/
+git commit -m "Address Codex review findings on PR #3173 (VTID-03716)"
+git push origin claude/polly-pcm-audio-test-program-vtid-03716
+
 # --- NOT done from this session yet ---
 # Once merged and staging redeploys, the actual live run against real
 # Polly audio for ru/pl/ar/zh/tr/de/en is the next step:

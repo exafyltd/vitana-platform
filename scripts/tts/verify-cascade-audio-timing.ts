@@ -90,6 +90,39 @@ function loadRealPcmRateFromMime(): (mime: string | undefined) => number {
   return fn as (mime: string | undefined) => number;
 }
 
+/**
+ * Codex review fix (P2, PR #3173): `loadRealPcmRateFromMime()` proves the
+ * EXTRACTED parser function is correct in isolation — but a regression
+ * could revert the widget's actual playback call site back to
+ * `createBuffer(1, floats.length, 24000)` while leaving the now-unused
+ * `_pcmRateFromMime()` helper untouched. Every per-language check below
+ * would still pass in that case, silently missing the exact "Mickey Mouse
+ * speed" defect (VTID-03711) this whole program exists to catch. This
+ * verifies the WIRING itself: the real `createBuffer()` call site passes a
+ * variable sourced from `_pcmRateFromMime()`, not a hardcoded literal.
+ */
+function verifyWidgetWiringIsConnected(): void {
+  const widgetPath = join(__dirname, '../../services/gateway/src/frontend/command-hub/orb-widget.js');
+  const source = readFileSync(widgetPath, 'utf8');
+
+  const rateAssignMatch = source.match(/var (\w+) = _pcmRateFromMime\((\w+)\.mime\);/);
+  if (!rateAssignMatch) {
+    throw new Error(
+      'orb-widget.js: could not find "var X = _pcmRateFromMime(chunk.mime);" — the widget ' +
+      'playback wiring was refactored and this structural check needs updating, not silently skipped.',
+    );
+  }
+  const rateVar = rateAssignMatch[1];
+
+  const createBufferPattern = new RegExp(`ctx\\.createBuffer\\(1,\\s*[\\w.]+,\\s*${rateVar}\\)`);
+  if (!createBufferPattern.test(source)) {
+    throw new Error(
+      `orb-widget.js: createBuffer() is not called with '${rateVar}' (the parsed PCM rate) — ` +
+      'this is the exact VTID-03711 regression (a hardcoded sample rate) this program exists to catch.',
+    );
+  }
+}
+
 interface DiagnosticResponse {
   ok: boolean;
   audio_b64?: string;
@@ -222,6 +255,9 @@ async function testOneLanguage(
 async function main(): Promise<void> {
   console.log(`[verify-cascade-audio-timing] endpoint=${ENDPOINT}\n`);
 
+  verifyWidgetWiringIsConnected();
+  console.log('[verify-cascade-audio-timing] confirmed createBuffer() is wired to the parsed PCM rate, not a hardcoded literal\n');
+
   const pcmRateFromMime = loadRealPcmRateFromMime();
   console.log('[verify-cascade-audio-timing] loaded REAL _pcmRateFromMime from orb-widget.js (not reimplemented)\n');
 
@@ -248,7 +284,14 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err) => {
-  console.error('[verify-cascade-audio-timing] fatal error:', err);
-  process.exitCode = 1;
-});
+// VTID-03716 review fix: guarded so this module can be `require()`d by a
+// unit test (see services/gateway/test/scripts/verify-cascade-audio-timing.test.ts)
+// without firing real network calls — only the actual CLI invocation runs main().
+if (require.main === module) {
+  main().catch((err) => {
+    console.error('[verify-cascade-audio-timing] fatal error:', err);
+    process.exitCode = 1;
+  });
+}
+
+export { verifyWidgetWiringIsConnected, loadRealPcmRateFromMime, testOneLanguage, main };

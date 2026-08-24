@@ -1747,7 +1747,12 @@ import { tryPollySynthesis } from '../services/tts/tts-provider';
 // VTID-03716: direct, unconditional Polly access for the PCM diagnostic route
 // below — same import CascadedLiveClient uses, deliberately bypassing the
 // TTS_PROVIDER gate (this route exists specifically to test Polly PCM output).
-import { synthesizePolly, POLLY_UNSUPPORTED_LANGS } from '../services/tts/polly';
+import {
+  synthesizePolly,
+  POLLY_UNSUPPORTED_LANGS,
+  normalizeLang as normalizePollyLang,
+} from '../services/tts/polly';
+import rateLimit from 'express-rate-limit';
 import {
   resolveNovaSonicVoiceOrFallback,
   logNovaSonicVoiceFallbackOnce,
@@ -15673,7 +15678,20 @@ router.post('/tts', optionalAuth, async (req: AuthenticatedRequest, res: Respons
  * See `scripts/tts/verify-cascade-audio-timing.ts` for the automated
  * program that calls this route and mathematically proves the fix.
  */
-router.post('/tts-pcm-diagnostic', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+// VTID-03716: this route pays for real Polly synthesis on every call and is
+// mounted with optionalAuth (no login required) — an unauthenticated client
+// could otherwise repeatedly submit up to 3000 chars and rack up billing /
+// exhaust resources. Diagnostic traffic is inherently low-volume, so this
+// stays tight regardless of who's calling.
+const ttsPcmDiagnosticLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: { ok: false, error: 'RATE_LIMIT_EXCEEDED', message: 'Too many TTS diagnostic requests' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+router.post('/tts-pcm-diagnostic', ttsPcmDiagnosticLimiter, optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
   const body = req.body as { text?: string; lang?: string };
   const text = (body.text || '').trim();
   if (!text) {
@@ -15682,7 +15700,14 @@ router.post('/tts-pcm-diagnostic', optionalAuth, async (req: AuthenticatedReques
   if (text.length > 3000) {
     return res.status(400).json({ ok: false, error: 'text exceeds 3000 character limit' });
   }
-  const lang = normalizeLang(body.lang || 'en');
+  // VTID-03716 review fix: this route's job is testing what POLLY can serve,
+  // not what live ORB sessions offer — orb-live.ts's own normalizeLang()
+  // silently maps anything outside SUPPORTED_LIVE_LANGUAGES to 'en', which
+  // would mask a typo'd or newly-added-to-Polly language behind a false
+  // English 200 instead of the intended 422. Normalize only the locale SHAPE
+  // (polly.ts's normalizeLang — lowercase, strip region) and let
+  // synthesizePolly's own voice table / POLLY_UNSUPPORTED_LANGS decide.
+  const lang = normalizePollyLang(body.lang || 'en');
 
   await emitTtsEvent('vtid.tts.request', {
     lang,

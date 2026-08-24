@@ -36,7 +36,21 @@ describe('VTID-03716 — /tts-pcm-diagnostic route', () => {
   const routeBody = extractRouteBody();
 
   it('is mounted with optionalAuth — stateless, no session required', () => {
-    expect(routeBody).toMatch(/router\.post\('\/tts-pcm-diagnostic',\s*optionalAuth/);
+    expect(routeBody).toMatch(/router\.post\('\/tts-pcm-diagnostic',[\s\S]*?optionalAuth/);
+  });
+
+  it('is rate-limited — unauthenticated callers cannot repeatedly trigger paid Polly synthesis (Codex P1)', () => {
+    expect(orbLive).toMatch(/const ttsPcmDiagnosticLimiter = rateLimit\(\{/);
+    expect(routeBody).toMatch(/router\.post\('\/tts-pcm-diagnostic',\s*ttsPcmDiagnosticLimiter,\s*optionalAuth/);
+  });
+
+  it('normalizes the requested language with the Polly-shape normalizer, not the live-session allowlist one (Codex P2)', () => {
+    // orb-live.ts's own normalizeLang() silently falls back to 'en' for any
+    // language outside the live-session allowlist, which would mask a
+    // Polly-unsupported or typo'd language behind a false 200 instead of the
+    // intended 422 below. This route must use polly.ts's shape-only version.
+    expect(routeBody).toMatch(/const lang = normalizePollyLang\(/);
+    expect(routeBody).not.toMatch(/const lang = normalizeLang\(/);
   });
 
   it('calls synthesizePolly with format:"pcm" unconditionally — the same call CascadedLiveClient makes', () => {
@@ -69,8 +83,13 @@ describe('VTID-03716 — /tts-pcm-diagnostic route', () => {
   });
 
   it('the import is the direct, unconditional Polly module, not the gated provider wrapper', () => {
-    expect(orbLive).toMatch(
-      /import \{ synthesizePolly, POLLY_UNSUPPORTED_LANGS \} from '\.\.\/services\/tts\/polly';/,
-    );
+    expect(orbLive).toMatch(/synthesizePolly/);
+    expect(orbLive).toMatch(/POLLY_UNSUPPORTED_LANGS/);
+    expect(orbLive).toMatch(/normalizeLang as normalizePollyLang/);
+    expect(orbLive).toMatch(/from '\.\.\/services\/tts\/polly';/);
+  });
+
+  it('imports express-rate-limit for the diagnostic limiter', () => {
+    expect(orbLive).toMatch(/import rateLimit from 'express-rate-limit';/);
   });
 });

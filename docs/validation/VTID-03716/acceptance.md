@@ -75,6 +75,43 @@ slice, confirming the added `emitTtsEvent('vtid.tts.request'|'success'|'failure'
 calls did not alter the route's synthesis/validation shape.
 Output: `outputs/targeted-tests.txt`
 
+AC-8 — three Codex review findings on PR #3173, all confirmed real and fixed
+
+1. **P1 — unauthenticated Polly billing/DoS vector.** The route paid for
+   real Polly synthesis (up to 3000 chars) on every call with no auth and
+   no rate limit. Fixed with a dedicated `express-rate-limit` limiter
+   (20 req / 15 min, matching this codebase's existing per-route limiter
+   pattern in `routes/live.ts`).
+   TEST: same characterization file — "is rate-limited — unauthenticated
+   callers cannot repeatedly trigger paid Polly synthesis (Codex P1)"
+2. **P2 — silent unsupported-language fallback masked the diagnostic's own
+   purpose.** The route normalized `lang` with `orb-live.ts`'s own
+   `normalizeLang()`, built for live-session allowlisting — it silently
+   maps anything outside `SUPPORTED_LIVE_LANGUAGES` to `'en'`, so a typo'd
+   or newly-Polly-supported language would get fluent ENGLISH audio and a
+   false 200 instead of the intended 422. Fixed by using `polly.ts`'s own
+   `normalizeLang` (shape-only — lowercase, strip region, no allowlist
+   fallback), letting `synthesizePolly`'s own voice table decide.
+   TEST: same file — "normalizes the requested language with the
+   Polly-shape normalizer, not the live-session allowlist one (Codex P2)"
+3. **P2 — the test program could report success through the exact
+   regression it exists to catch.** `verify-cascade-audio-timing.ts` only
+   exercised the extracted `_pcmRateFromMime()` parser in isolation; a
+   regression reverting the widget's real `createBuffer()` call back to a
+   hardcoded rate while leaving the now-unused parser intact would still
+   pass every check. Fixed with `verifyWidgetWiringIsConnected()` — a
+   structural check (run first, fatal on failure) proving the real
+   `createBuffer()` call site is wired to the variable
+   `_pcmRateFromMime()` actually assigns, not a literal.
+   TEST: `services/gateway/test/scripts/verify-cascade-audio-timing.test.ts`
+   — imports the REAL function (not reimplemented) and mutation-tests it:
+   passes against the real shipped widget, throws against a widget with
+   `createBuffer(..., 24000)` restored (the actual VTID-03711 defect,
+   reproduced), throws if the assignment pattern disappears entirely, and
+   still passes when the parsed-rate variable is renamed (proving the
+   check doesn't overfit to one variable name).
+Output: `outputs/targeted-tests.txt`, `outputs/verify-script-unit-tests.txt`
+
 AC-6 — type-checks clean
 
 TEST: `npx tsc --noEmit` — no output, exit 0.
@@ -86,9 +123,12 @@ Output: `outputs/tsc.txt` (empty — clean)
 
 | Check | Result |
 |---|---|
-| Targeted route characterization tests | 8/8 passing |
-| Full `test/orb` suite | 177/177 suites, 3278/3284 tests, 0 failures |
+| Targeted route characterization tests | 11/11 passing (8 original + 3 for the Codex fixes) |
+| `verify-cascade-audio-timing.ts` unit tests (new) | 4/4 passing, including a mutation test reproducing the exact VTID-03711 defect |
+| Full `test/orb` suite | 177/177 suites, 3281/3287 tests, 0 failures |
+| Full `test/scripts` suite | 4/4 suites, 60/60 tests, 0 failures |
 | OASIS TTS telemetry (Dev Autopilot Impact Scan finding) | added — mirrors sibling `/tts` route's `emitTtsEvent` request/success/failure calls |
+| 3 Codex review findings (rate limit, silent-fallback lang bug, test-program blind spot) | all confirmed real, all fixed |
 | `tsc --noEmit` | clean |
 | Pre-deploy dry run of the test program | confirmed graceful, correct failure mode against a target without the route |
 | **Post-deploy live run against real staging (ru/pl/ar/zh/tr/de/en)** | **pending — this PR must merge and deploy before the program can run against real Polly audio; results will be reported directly to the platform owner once staging serves this commit** |
