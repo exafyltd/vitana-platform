@@ -27,6 +27,7 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { emitOasisEvent } from './oasis-event-service';
+import * as repo from './d43-longitudinal-adaptation-engine-repository';
 import {
   LongitudinalDomain,
   DriftType,
@@ -153,10 +154,7 @@ async function getClientWithContext(authToken?: string): Promise<{
 
   // Bootstrap dev context if needed
   if (useDevIdentity) {
-    const { error: bootstrapError } = await supabase.rpc('dev_bootstrap_request_context', {
-      p_tenant_id: DEV_IDENTITY.TENANT_ID,
-      p_active_role: 'developer'
-    });
+    const { error: bootstrapError } = await repo.devBootstrapRequestContext(supabase, DEV_IDENTITY.TENANT_ID, 'developer');
     if (bootstrapError) {
       console.warn(`${LOG_PREFIX} Bootstrap context failed (non-fatal):`, bootstrapError.message);
     }
@@ -567,7 +565,7 @@ export async function recordDataPoint(
       return { ok: false, error: clientError || 'SERVICE_UNAVAILABLE' };
     }
 
-    const { data, error } = await supabase.rpc('d43_record_data_point', {
+    const { data, error } = await repo.recordD43DataPoint(supabase, {
       p_domain: request.domain,
       p_key: request.key,
       p_value: request.value,
@@ -630,11 +628,7 @@ export async function getTrends(
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - request.time_window_days);
 
-    const { data: dataPoints, error } = await supabase.rpc('d43_get_data_points', {
-      p_domains: request.domains || null,
-      p_since: cutoffDate.toISOString(),
-      p_limit: 1000
-    });
+    const { data: dataPoints, error } = await repo.fetchD43DataPoints(supabase, request.domains || null, cutoffDate.toISOString(), 1000);
 
     if (error) {
       console.error(`${LOG_PREFIX} RPC error (get_data_points):`, error);
@@ -847,9 +841,7 @@ export async function getEvolutionState(authToken?: string): Promise<GetEvolutio
       return { ok: false, error: clientError || 'SERVICE_UNAVAILABLE' };
     }
 
-    const { data: pendingPlans, error: planError } = await supabase.rpc('d43_get_pending_adaptations', {
-      p_limit: 5
-    });
+    const { data: pendingPlans, error: planError } = await repo.fetchD43PendingAdaptations(supabase, 5);
 
     // Find last major change
     const majorEvents = driftResult.events.filter(e => e.magnitude >= 60);
@@ -896,9 +888,7 @@ export async function generateAdaptationPlan(
     }
 
     // Store the plan
-    const { data, error } = await supabase.rpc('d43_create_adaptation_plan', {
-      p_plan: planData
-    });
+    const { data, error } = await repo.createD43AdaptationPlan(supabase, planData);
 
     if (error) {
       console.error(`${LOG_PREFIX} RPC error (create_adaptation_plan):`, error);
@@ -943,11 +933,7 @@ export async function approveAdaptation(
 
     const newStatus = request.confirm ? 'approved' : 'rejected';
 
-    const { data, error } = await supabase.rpc('d43_update_adaptation_status', {
-      p_plan_id: request.plan_id,
-      p_status: newStatus,
-      p_apply: request.confirm
-    });
+    const { data, error } = await repo.updateD43AdaptationStatus(supabase, request.plan_id, newStatus, request.confirm);
 
     if (error) {
       console.error(`${LOG_PREFIX} RPC error (update_adaptation_status):`, error);
@@ -992,10 +978,7 @@ export async function rollbackAdaptation(
       return { ok: false, error: clientError || 'SERVICE_UNAVAILABLE' };
     }
 
-    const { data, error } = await supabase.rpc('d43_rollback_adaptation', {
-      p_plan_id: request.plan_id,
-      p_reason: request.reason || 'User requested rollback'
-    });
+    const { data, error } = await repo.rollbackD43Adaptation(supabase, request.plan_id, request.reason || 'User requested rollback');
 
     if (error) {
       console.error(`${LOG_PREFIX} RPC error (rollback_adaptation):`, error);
@@ -1041,10 +1024,7 @@ export async function acknowledgeDrift(
       return { ok: false, error: clientError || 'SERVICE_UNAVAILABLE' };
     }
 
-    const { data, error } = await supabase.rpc('d43_acknowledge_drift', {
-      p_drift_id: request.drift_id,
-      p_response: request.response
-    });
+    const { data, error } = await repo.acknowledgeD43Drift(supabase, request.drift_id, request.response);
 
     if (error) {
       console.error(`${LOG_PREFIX} RPC error (acknowledge_drift):`, error);
@@ -1097,10 +1077,7 @@ export async function createSnapshot(
       return { ok: false, error: clientError || 'SERVICE_UNAVAILABLE' };
     }
 
-    const { data, error } = await supabase.rpc('d43_create_snapshot', {
-      p_snapshot_type: snapshotType,
-      p_adaptation_plan_id: adaptationPlanId || null
-    });
+    const { data, error } = await repo.createD43Snapshot(supabase, snapshotType, adaptationPlanId || null);
 
     if (error) {
       console.error(`${LOG_PREFIX} RPC error (create_snapshot):`, error);
