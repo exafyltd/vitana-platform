@@ -10,6 +10,7 @@
 
 import { AutomationContext } from '../../types/automations';
 import { registerHandler } from '../automation-executor';
+import * as repo from './health-action-initiative-repository';
 
 // ── AP-1601: Lab Test Kit Ordering ──────────────────────────
 // Suggests an active lab test to users who have never ordered one.
@@ -21,32 +22,17 @@ async function runLabTestKitOrdering(ctx: AutomationContext) {
   let usersAffected = 0;
   let actionsTaken = 0;
 
-  const { data: recommendedTest } = await supabase
-    .from('lab_tests')
-    .select('id, name')
-    .eq('is_active', true)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const { data: recommendedTest } = await repo.fetchActiveLabTest(supabase);
   if (!recommendedTest) return { usersAffected: 0, actionsTaken: 0 };
 
   const users = (await ctx.queryTargetUsers()).slice(0, LAB_KIT_MAX_USERS_PER_RUN);
   const cooldownCutoff = new Date(Date.now() - LAB_KIT_COOLDOWN_DAYS * 86_400_000).toISOString();
 
   for (const { user_id } of users) {
-    const { count: orderCount } = await supabase
-      .from('lab_test_orders')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', user_id);
+    const { count: orderCount } = await repo.countLabTestOrdersForUser(supabase, user_id);
     if (orderCount && orderCount > 0) continue;
 
-    const { data: recentSuggestion } = await supabase
-      .from('user_notifications')
-      .select('id')
-      .eq('user_id', user_id)
-      .contains('data', { automation_id: 'AP-1601' })
-      .gte('created_at', cooldownCutoff)
-      .limit(1);
+    const { data: recentSuggestion } = await repo.fetchRecentAutomationSuggestion(supabase, user_id, 'AP-1601', cooldownCutoff);
     if (recentSuggestion && recentSuggestion.length > 0) continue;
 
     ctx.notify(user_id, 'orb_suggestion', {
@@ -76,11 +62,7 @@ async function runHealthScreeningScheduler(ctx: AutomationContext) {
   const lookbackCutoff = new Date(Date.now() - SCREENING_LOOKBACK_MONTHS_DAYS * 86_400_000).toISOString();
 
   for (const { user_id } of users) {
-    const { count: recentAppointments } = await supabase
-      .from('provider_appointments')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', user_id)
-      .gte('start_time', lookbackCutoff);
+    const { count: recentAppointments } = await repo.countRecentProviderAppointments(supabase, user_id, lookbackCutoff);
     if (recentAppointments && recentAppointments > 0) continue;
 
     ctx.notify(user_id, 'orb_suggestion', {
@@ -109,22 +91,10 @@ async function runMotivationalHealthNudge(ctx: AutomationContext) {
   const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
 
   for (const { user_id } of users) {
-    const { data: todayScore } = await supabase
-      .from('vitana_index_scores')
-      .select('score_total')
-      .eq('tenant_id', tenantId)
-      .eq('user_id', user_id)
-      .eq('date', today)
-      .maybeSingle();
+    const { data: todayScore } = await repo.fetchVitanaIndexScoreForDate(supabase, tenantId, user_id, today);
     if (!todayScore?.score_total) continue;
 
-    const { data: yesterdayScore } = await supabase
-      .from('vitana_index_scores')
-      .select('score_total')
-      .eq('tenant_id', tenantId)
-      .eq('user_id', user_id)
-      .eq('date', yesterday)
-      .maybeSingle();
+    const { data: yesterdayScore } = await repo.fetchVitanaIndexScoreForDate(supabase, tenantId, user_id, yesterday);
 
     const improved = yesterdayScore?.score_total != null && todayScore.score_total > yesterdayScore.score_total;
 
@@ -157,20 +127,11 @@ async function runExerciseInitiation(ctx: AutomationContext) {
   const gapCutoff = new Date(Date.now() - EXERCISE_GAP_DAYS * 86_400_000).toISOString();
 
   for (const { user_id } of users) {
-    const { count: recentWorkouts } = await supabase
-      .from('wearable_workouts')
-      .select('id', { count: 'exact', head: true })
-      .eq('tenant_id', tenantId)
-      .eq('user_id', user_id)
-      .gte('started_at', gapCutoff);
+    const { count: recentWorkouts } = await repo.countRecentWearableWorkouts(supabase, tenantId, user_id, gapCutoff);
     if (recentWorkouts && recentWorkouts > 0) continue;
 
     // Only nudge users who have ever connected a wearable (have any workout history at all)
-    const { count: everWorkedOut } = await supabase
-      .from('wearable_workouts')
-      .select('id', { count: 'exact', head: true })
-      .eq('tenant_id', tenantId)
-      .eq('user_id', user_id);
+    const { count: everWorkedOut } = await repo.countAllWearableWorkouts(supabase, tenantId, user_id);
     if (!everWorkedOut) continue;
 
     ctx.notify(user_id, 'orb_suggestion', {
@@ -201,14 +162,7 @@ async function runSupplementReorderReminder(ctx: AutomationContext) {
   const users = (await ctx.queryTargetUsers()).slice(0, REORDER_MAX_USERS_PER_RUN);
 
   for (const { user_id } of users) {
-    const { data: orders } = await supabase
-      .from('product_orders')
-      .select('id, product_id, purchased_at')
-      .eq('tenant_id', tenantId)
-      .eq('user_id', user_id)
-      .eq('state', 'completed')
-      .order('purchased_at', { ascending: false })
-      .limit(10);
+    const { data: orders } = await repo.fetchCompletedProductOrders(supabase, tenantId, user_id, 10);
     if (!orders?.length) continue;
 
     let reminded = false;
@@ -217,11 +171,7 @@ async function runSupplementReorderReminder(ctx: AutomationContext) {
       const daysSince = Math.floor((Date.now() - new Date(order.purchased_at).getTime()) / 86_400_000);
       if (Math.abs(daysSince - REORDER_WINDOW_DAYS) > REORDER_TOLERANCE_DAYS) continue;
 
-      const { data: product } = await supabase
-        .from('products')
-        .select('title, category')
-        .eq('id', order.product_id)
-        .maybeSingle();
+      const { data: product } = await repo.fetchProductById(supabase, order.product_id);
       if (!product || !(product.category || '').toLowerCase().includes('supplement')) continue;
 
       ctx.notify(user_id, 'orb_suggestion', {
