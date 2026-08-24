@@ -1,0 +1,208 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/frontend/orb-widget-caption-i18n.test.ts
+  orb-widget caption i18n (BOOTSTRAP-ORB-CAPTION-I18N)
+    ✓ _CAPTIONS defines all 10 supported locales for every key (24 ms)
+    ✓ _DISCONNECT_LABELS and _RECOVERY_LABELS define all 10 locales for every reason (6 ms)
+    ✓ _THINKING_QUICK/_PRIMARY/_ALTERNATES entries all carry the full 10-key shape (1 ms)
+    ✓ no _setStatus call site still branches directly on de/en for caption text (2 ms)
+    ✓ _pickLang() is scoped to exactly one caller — the disconnect-alert MP3 clip id (2 ms)
+    ✓ a sample of non-English translations are real translations, not copies of the English text (4 ms)
+    ✓ .vtorb-status font-size and min-height are 19px/26px in both the inline style and the injected stylesheet (2 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/frontend/orb-widget-thinking-messages.test.ts
+  orb-widget thinking-status messages (VTID-03449, VTID-03451)
+    ✓ removes the old technical message arrays and the visible elapsed-time counter (1 ms)
+    ✓ no longer has a single fixed opener — removes _THINKING_OPENER entirely (1 ms)
+    ✓ defines a 6-item quick pool, 7-item primary sequence, and 8-item alternates pool merged into one 21-item pool (1 ms)
+    ✓ every message pair has en/de plus all 8 other BOOTSTRAP-ORB-CAPTION-I18N locales, without forbidden technical wording or formal German register (9 ms)
+    ✓ _buildThinkingQueue fully shuffles the merged pool and guards against repeating the previous first line (1 ms)
+    ✓ _shuffled performs a Fisher-Yates shuffle on a copy, not the original array (1 ms)
+    ✓ _startThinkingProgress shows the first message immediately, then rotates every 4 seconds with no counter suffix (1 ms)
+    ✓ the ready and thinking SSE handlers pick from the shared pool instead of a hardcoded opener (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/frontend/orb-widget-bargein-preroll.test.ts
+  orb-widget barge-in pre-roll
+    ✓ captures mic frames into a bounded pre-roll while the model is speaking (1 ms)
+    ✓ flushes the buffered speech GATED ON the interrupt acknowledgement (1 ms)
+    ✓ serializes the HTTP flush and prevents live frames overtaking it (2 ms)
+    ✓ interrupt and audio sends are awaitable, and never wedge on failure (4 ms)
+    ✓ resets the buffer once the model is no longer speaking
+    ✓ shares one encoder between the live path and the pre-roll (1 ms)
+    ✓ never reaches the during-playback return without having buffered the frame (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/frontend/orb-widget-continuity.test.ts
+  orb-widget close/reopen continuity (DEV-COMHU-0503)
+    ✓ _hide persists continuity (reason hide, 15 min) before teardown (2 ms)
+    ✓ _persistContinuity POSTs conversation_id + transcript to the continuity endpoint (1 ms)
+    ✓ _reset clears continuity AND in-memory identity-bound state (1 ms)
+    ✓ _reset suppresses the _hide persist so DELETE is not raced by a POST (review fix) (1 ms)
+    ✓ _persistContinuity honors the suppression flag (review fix)
+    ✓ _sessionStart hydrates persisted continuity on a fresh reopen (review fix) (2 ms)
+    ✓ exposes reset on the public API
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/frontend/orb-widget-gesture-audio-unlock.test.ts
+  orb-widget page-level gesture audio unlock (VTID-03469)
+    ✓ installs the unlock at script load, not from init() (2 ms)
+    ✓ binds document-level gesture listeners in the capture phase (2 ms)
+    ✓ starts the context with a 1-sample silent buffer, not resume() alone (1 ms)
+    ✓ surfaces blocked audio instead of silently dropping the queue (1 ms)
+    ✓ offers a tap that repairs playback and drains the pipeline (8 ms)
+    ✓ keeps the tap prompt visible through the end-of-turn transition (1 ms)
+    ✓ drops the tap listener when the session tears down
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/frontend/orb-widget-guided-topic-reconnect.test.ts
+  orb-widget guided-topic reconnect (VTID-03675)
+    ✓ reads guided_topic_id into the start payload without nulling _s.guidedTopic (2 ms)
+    ✓ a client-side reconnect (_attemptReconnect -> _sessionStart) can still see a pending guided topic (1 ms)
+    ✓ clears guidedTopic in the SAME place guidedAutoClose is cleared on a completed guided turn (1 ms)
+    ✓ _hide() also clears a never-delivered guided topic so it cannot leak into a later session
+    ✓ focusGuidedTopic still arms both flags together (unchanged contract)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/frontend/orb-widget-audio-playback.test.ts
+  orb-widget audio playback queue
+    ✓ removes the actual ended AudioBufferSource from scheduledSources (2 ms)
+  orb-widget German playback rate (VTID-03606)
+    ✓ defines a German-specific rate above the baseline
+    ✓ _currentPlaybackRate() selects the DE rate only when _cfg.lang starts with de (1 ms)
+    ✓ _processQueue applies the SAME per-chunk rate to both playbackRate.value and the schedule-gap divisor (1 ms)
+  orb-widget PCM decode rate (VTID-03712)
+    ✓ _pcmRateHzFromMime() parses the rate out of the mime, defaulting to 24000
+    ✓ _processQueue creates the playback buffer at the parsed rate, never a hardcoded 24000 (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/frontend/orb-widget-failed-start-recovery.test.ts
+  orb-widget failed session start (BOOTSTRAP-ORB-FASTSTART-DRIFT)
+    ✓ replaces the stale status text instead of leaving "Verbinden..." on screen (3 ms)
+    ✓ the failure status is localized and does not itself say "Verbinden..." (1 ms)
+    ✓ hands off to the retry loop so a slow start is not a permanent dead end (2 ms)
+    ✓ does not retry when the user is deliberately leaving (2 ms)
+    ✓ does not stack a second retry while one is already in flight
+    ✓ still records the error state the rest of the widget reads
+    ✓ the WS transport start shares this handler (its await is inside the try) (1 ms)
+    ✓ the 8s start budget still exists on both transports
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/frontend/orb-widget-auth-reactive.test.ts
+  orb-widget reactive auth contract (DEV-COMHU-0502)
+    ✓ setAuth lifts the anonymous lock when a real token arrives (8 ms)
+    ✓ clearAuth stops the live session, clears token, and wipes identity-bound continuity (anti-leak) (1 ms)
+    ✓ _wipeIdentityBoundState clears all identity-bound continuity fields (1 ms)
+    ✓ setAuth wipes continuity + stops the session ONLY on account switch (sub change) (1 ms)
+    ✓ _jwtSub extracts the JWT subject for account-switch detection (1 ms)
+    ✓ init seeds the identity baseline so a same-user refresh is not a switch
+    ✓ exposes clearAuth on the public API (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/frontend/orb-widget-guided-teaching-no-premature-close.test.ts
+  orb-widget guided teaching does not close before it starts (VTID-03685)
+    ✓ the turn-1-complete handler never calls _hide() or _sessionStop() for a guided open (1 ms)
+    ✓ falls through to the normal listening transition instead of returning early (1 ms)
+    ✓ still clears guidedAutoClose/guidedTopic so a later reconnect does not resend a delivered topic (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/frontend/orb-widget-background-watchdog.test.ts
+  orb-widget background/idle watchdog (mobile overheating fix)
+    ✓ detects backgrounding via setTimeout drift, not the Visibility API (1 ms)
+    ✓ ends the session instead of leaving it running when backgrounding is detected (1 ms)
+    ✓ reschedules itself while the overlay is open, not gated on _s.active (1 ms)
+    ✓ uses a 5s check interval and a 30s kill threshold
+    ✓ _stopBackgroundWatchdog clears the timer (1 ms)
+    ✓ starts on overlay open (_show) and stops on session teardown (_sessionStop) (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/frontend/orb-widget-unread-messages-keep-open.test.ts
+  orb-widget keep_orb_open on navigate (BOOTSTRAP-ORB-UNREAD-MESSAGES-NAV)
+    ✓ skips _hide() and clears navigationPending when keep_orb_open is true (1 ms)
+    ✓ still calls _hide() on the normal (keep_orb_open absent) path
+    ✓ onNavigationRequest is still called in both branches (navigation itself is unaffected) (1 ms)
+    ✓ the audio/audio_out handler still drops audio while navigationPending — unaffected by this change
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/frontend/orb-widget-audio-ready.test.ts
+  orb-widget audio-ready handshake (DEV-COMHU-0504)
+    ✓ _signalAudioReady is idempotent and gated on a running context (2 ms)
+    ✓ _signalAudioReady POSTs to the audio-ready endpoint with keepalive (1 ms)
+    ✓ is invoked on session start and on ctx resume
+    ✓ re-arms the ack flag on session stop (1 ms)
+    ✓ re-arms the ack flag at the top of _sessionStart so reconnect paths re-ack (review fix) (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/frontend/orb-widget-speaking-watchdog.test.ts
+  orb-widget cross-provider speaking-state watchdog (DEV-COMHU-0501)
+    ✓ defines _speakingStateWatchdog gating on quiet + no sources + empty queue (2 ms)
+    ✓ uses a 2-second quiet window (1 ms)
+    ✓ stamps lastAudioReceivedAt on every inbound audio frame
+    ✓ starts the watchdog on SSE open and stops it on session stop (1 ms)
+    ✓ emits a session-shape diagnostic line on session open
+
+Test Suites: 14 passed, 14 total
+Tests:       85 passed, 85 total
+Snapshots:   0 total
+Time:        1.257 s
+Ran all test suites matching /test\/frontend\//i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

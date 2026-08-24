@@ -1,0 +1,44 @@
+VTID-03712 — commands run for verification (cwd: services/gateway unless noted)
+
+$ node -c services/gateway/src/frontend/command-hub/orb-widget.js
+SYNTAX OK
+
+$ npx jest test/frontend/orb-widget-audio-playback.test.ts --silent=false
+PASS test/frontend/orb-widget-audio-playback.test.ts
+  orb-widget audio playback queue
+    ✓ removes the actual ended AudioBufferSource from scheduledSources
+  orb-widget German playback rate (VTID-03606)
+    ✓ defines a German-specific rate above the baseline
+    ✓ _currentPlaybackRate() selects the DE rate only when _cfg.lang starts with de
+    ✓ _processQueue applies the SAME per-chunk rate to both playbackRate.value and the schedule-gap divisor
+  orb-widget PCM decode rate (VTID-03712)
+    ✓ _pcmRateHzFromMime() parses the rate out of the mime, defaulting to 24000
+    ✓ _processQueue creates the playback buffer at the parsed rate, never a hardcoded 24000
+Test Suites: 1 passed, 1 total
+Tests:       6 passed, 6 total
+
+$ npx jest test/frontend/
+Test Suites: 14 passed, 14 total
+Tests:       85 passed, 85 total
+(full output: outputs/jest-frontend.txt)
+
+$ npx tsc --noEmit
+(clean, no output — see outputs/tsc.txt)
+
+$ npm run build
+> @vitana/gateway@1.0.1 prebuild
+> rm -rf dist
+> @vitana/gateway@1.0.1 build
+> tsc && npm run copy-frontend && npm run copy-data
+> @vitana/gateway@1.0.1 copy-frontend
+> mkdir -p dist/frontend/command-hub && cp -r src/frontend/command-hub/* dist/frontend/command-hub/ && mkdir -p dist/frontend/voice-lab && cp -r src/frontend/voice-lab/* dist/frontend/voice-lab/
+> @vitana/gateway@1.0.1 copy-data
+> mkdir -p dist/services && cp src/services/tool-manifest.json dist/services/tool-manifest.json && mkdir -p dist/kb && cp -r src/kb/instruction-manual dist/kb/
+exit 0
+(full output: outputs/build.txt)
+
+NOT RUN (no credentials/environment available to this session):
+- Live Polly-backed ORB session against gateway.vitanaland.com or
+  preview-aws-gateway.vitanaland.com (no way to trigger a real voice
+  session from this session). See acceptance.md "Not yet independently
+  confirmed".
