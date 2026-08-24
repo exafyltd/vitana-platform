@@ -27,6 +27,7 @@ jest.mock('node:fs', () => {
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const {
   verifyWidgetWiringIsConnected,
+  pacingBoundsFor,
 } = require('../../../../scripts/tts/verify-cascade-audio-timing');
 
 const mockedReadFileSync = readFileSync as jest.MockedFunction<typeof readFileSync>;
@@ -81,5 +82,26 @@ describe('VTID-03716 — verifyWidgetWiringIsConnected (Codex P2 fix)', () => {
     }) as typeof readFileSync);
 
     expect(() => verifyWidgetWiringIsConnected()).not.toThrow();
+  });
+});
+
+describe('VTID-03719 — pacingBoundsFor (script-aware plausibility bounds)', () => {
+  it('uses the wider alphabetic band for Latin/Cyrillic/Arabic languages', () => {
+    for (const lang of ['en', 'de', 'ru', 'pl', 'ar', 'tr']) {
+      expect(pacingBoundsFor(lang)).toEqual({ min: 6, max: 30 });
+    }
+  });
+
+  it('uses a lower CJK band for zh — real Mandarin speech runs ~3-5 chars/sec', () => {
+    expect(pacingBoundsFor('zh')).toEqual({ min: 2, max: 10 });
+  });
+
+  it('a real measured zh sample (4.9 chars/sec) falls inside the zh band but would have failed the alphabetic one', () => {
+    const measured = 4.9; // 31 chars / 6.330s, from a real staging run (VTID-03719)
+    const zhBounds = pacingBoundsFor('zh');
+    const alphaBounds = pacingBoundsFor('en');
+    expect(measured).toBeGreaterThanOrEqual(zhBounds.min);
+    expect(measured).toBeLessThanOrEqual(zhBounds.max);
+    expect(measured).toBeLessThan(alphaBounds.min); // proves this is a real widen, not a no-op
   });
 });
