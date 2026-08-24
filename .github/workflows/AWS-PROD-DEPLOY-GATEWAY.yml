@@ -390,27 +390,35 @@ jobs:
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
           echo "Pushed $IMAGE"
 
-      - name: Register task-definition revision + roll the service
+      - name: Build task-definition (1/2 — image, commit stamp, always-pinned flags)
+        # VTID-03709: this used to be ONE step covering the whole task-def
+        # build through the final register+roll. It grew, dispatch-input by
+        # dispatch-input, VTID after VTID (Nova/Vertex/Bedrock/TTS/Titan/
+        # narration-cache/cascade), until its `run:` body hit 24,989
+        # characters — over GitHub Actions' real per-step limit for a step
+        # containing `${{ }}` expressions (~21,000). Past that point the
+        # workflow does not merely fail to run, it fails to PARSE: every
+        # dispatch attempt (and every push to `main`, since GitHub tries to
+        # parse every workflow file on every push to check applicability)
+        # errored "Exceeded max expression length 21000" and the run showed
+        # up in the Actions list under the literal FILE PATH instead of the
+        # workflow name — the exact same signature VTID-03505/VTID-03521
+        # documented for a parse failure, this time from sheer step size
+        # rather than a YAML syntax trap. The ONLY governed path to
+        # production gateway deploys was broken for an unknown number of
+        # pushes before this was caught.
+        #
+        # Fix: split the one step into two, handing the in-progress task-def
+        # JSON between them via a file on the runner's filesystem (steps in
+        # the same job share it — no artifact needed). This step does the
+        # image swap, commit stamp, and the always-pinned flags that apply
+        # unconditionally on every deploy; the next step applies the
+        # optional dispatch-input overrides and does the actual
+        # register+roll. No behavior change — same jq passes, same order,
+        # just split at a natural boundary (before the first `if [ -n
+        # "$..._INPUT" ]` conditional override block).
         env:
           MARKETPLACE_SYNC_SECRET_VALUE: ${{ secrets.MARKETPLACE_SYNC_SECRET }}
-          NOVA_ENABLED_INPUT: ${{ inputs.nova_sonic_enabled }}
-          NOVA_USERS_INPUT: ${{ inputs.nova_canary_user_ids }}
-          NOVA_TENANTS_INPUT: ${{ inputs.nova_canary_tenant_ids }}
-          NOVA_GLOBAL_INPUT: ${{ inputs.nova_sonic_global_enabled }}
-          ORB_IDLE_NO_ENGAGEMENT_INPUT: ${{ inputs.orb_idle_no_engagement_ms }}
-          ORB_NEWDAY_RUNG_INPUT: ${{ inputs.orb_newday_overview_rung_enabled }}
-          ORB_CASCADED_VOICE_INPUT: ${{ inputs.orb_cascaded_voice_enabled }}
-          AWS_TRANSCRIBE_REGION_INPUT: ${{ inputs.aws_transcribe_region }}
-          VERTEX_LIVE_UNAVAILABLE_INPUT: ${{ inputs.vertex_live_unavailable }}
-          BEDROCK_ROLE_ARN_INPUT: ${{ inputs.bedrock_role_arn }}
-          BEDROCK_MODEL_ID_INPUT: ${{ inputs.bedrock_model_id }}
-          AWS_BEDROCK_REGION_INPUT: ${{ inputs.aws_bedrock_region }}
-          DEV_AUTOPILOT_EXECUTOR_INPUT: ${{ inputs.dev_autopilot_executor_enabled }}
-          TTS_PROVIDER_INPUT: ${{ inputs.tts_provider }}
-          TTS_POLLY_STRICT_INPUT: ${{ inputs.tts_polly_strict }}
-          IMAGE_PROVIDER_INPUT: ${{ inputs.image_provider }}
-          NARRATION_AUDIO_CACHE_INPUT: ${{ inputs.narration_audio_cache }}
-          NARRATION_AUDIO_BUCKET_INPUT: ${{ inputs.narration_audio_bucket }}
         run: |
           set -e
           # VTID-03420: promote mode ships staging's image; rebuild mode ships
@@ -552,6 +560,34 @@ jobs:
             .containerDefinitions[0].environment |=
               ( [ .[] | select(.name != "ORB_CONTEXT_READY_GATE_TIMEOUT_MS") ]
                 + [ {name:"ORB_CONTEXT_READY_GATE_TIMEOUT_MS", value:"300"} ] )')
+
+          # VTID-03709: hand off to the next step via the runner's filesystem.
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Wrote partial task definition to /tmp/vitana-new-task-def.json ($(wc -c < /tmp/vitana-new-task-def.json) bytes)"
+
+      - name: Build task-definition (2/2 — optional overrides) + register + roll the service
+        env:
+          NOVA_ENABLED_INPUT: ${{ inputs.nova_sonic_enabled }}
+          NOVA_USERS_INPUT: ${{ inputs.nova_canary_user_ids }}
+          NOVA_TENANTS_INPUT: ${{ inputs.nova_canary_tenant_ids }}
+          NOVA_GLOBAL_INPUT: ${{ inputs.nova_sonic_global_enabled }}
+          ORB_IDLE_NO_ENGAGEMENT_INPUT: ${{ inputs.orb_idle_no_engagement_ms }}
+          ORB_NEWDAY_RUNG_INPUT: ${{ inputs.orb_newday_overview_rung_enabled }}
+          ORB_CASCADED_VOICE_INPUT: ${{ inputs.orb_cascaded_voice_enabled }}
+          AWS_TRANSCRIBE_REGION_INPUT: ${{ inputs.aws_transcribe_region }}
+          VERTEX_LIVE_UNAVAILABLE_INPUT: ${{ inputs.vertex_live_unavailable }}
+          BEDROCK_ROLE_ARN_INPUT: ${{ inputs.bedrock_role_arn }}
+          BEDROCK_MODEL_ID_INPUT: ${{ inputs.bedrock_model_id }}
+          AWS_BEDROCK_REGION_INPUT: ${{ inputs.aws_bedrock_region }}
+          DEV_AUTOPILOT_EXECUTOR_INPUT: ${{ inputs.dev_autopilot_executor_enabled }}
+          TTS_PROVIDER_INPUT: ${{ inputs.tts_provider }}
+          TTS_POLLY_STRICT_INPUT: ${{ inputs.tts_polly_strict }}
+          IMAGE_PROVIDER_INPUT: ${{ inputs.image_provider }}
+          NARRATION_AUDIO_CACHE_INPUT: ${{ inputs.narration_audio_cache }}
+          NARRATION_AUDIO_BUCKET_INPUT: ${{ inputs.narration_audio_bucket }}
+        run: |
+          set -e
+          NEW_DEF="$(cat /tmp/vitana-new-task-def.json)"
 
           # BOOTSTRAP-NOVA-SONIC-VOICE: only when explicitly requested, replace
           # the Nova env block (region/model stay pinned — never inputs).
