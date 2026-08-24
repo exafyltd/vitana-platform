@@ -15,6 +15,7 @@
  */
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import * as repo from './health-log-repository';
 
 type LogTool = 'log_water' | 'log_sleep' | 'log_exercise' | 'log_meditation';
 
@@ -122,23 +123,13 @@ export async function logHealthSignal(
   // Resolve tenant via user_tenants fallback (mirrors integrations.ts).
   let tenantId = input.tenant_id;
   if (!tenantId) {
-    const { data: tenantRow } = await admin
-      .from('user_tenants')
-      .select('tenant_id')
-      .eq('user_id', input.user_id)
-      .limit(1)
-      .maybeSingle();
+    const { data: tenantRow } = await repo.fetchUserTenantIdForVoiceLog(admin, input.user_id);
     tenantId = (tenantRow?.tenant_id as string | undefined) ?? null;
   }
   const effectiveTenantId = tenantId ?? '00000000-0000-0000-0000-000000000000';
 
   // Snapshot current Index for delta computation.
-  const { data: prevRow } = await admin
-    .from('vitana_index_scores')
-    .select('score_total')
-    .eq('user_id', input.user_id)
-    .eq('date', input.date)
-    .maybeSingle();
+  const { data: prevRow } = await repo.fetchVitanaIndexScoreTotal(admin, input.user_id, input.date);
   const prevTotal = (prevRow?.score_total as number | undefined) ?? null;
 
   // Optional metadata: activity_type rides along on the row's metadata.
@@ -147,43 +138,34 @@ export async function logHealthSignal(
       ? { activity_type: input.activity_type, source: 'voice_tool' }
       : { source: 'voice_tool' };
 
-  const { error: featErr } = await admin.from('health_features_daily').upsert(
-    {
-      tenant_id: effectiveTenantId,
-      user_id: input.user_id,
-      date: input.date,
-      feature_key: map.feature_key,
-      feature_value: value,
-      feature_unit: map.unit,
-      sample_count: 1,
-      confidence: 0.85,
-      metadata,
-    },
-    { onConflict: 'tenant_id,user_id,date,feature_key' },
-  );
+  const { error: featErr } = await repo.upsertHealthFeatureDaily(admin, {
+    tenant_id: effectiveTenantId,
+    user_id: input.user_id,
+    date: input.date,
+    feature_key: map.feature_key,
+    feature_value: value,
+    feature_unit: map.unit,
+    sample_count: 1,
+    confidence: 0.85,
+    metadata,
+  });
   if (featErr) {
     return { ok: false, error: `feature_write_failed: ${featErr.message}` };
   }
 
   // Mark manual-entry integration connected (mirrors integrations.ts).
-  await admin.from('user_integrations').upsert(
-    {
-      user_id: input.user_id,
-      integration_id: 'manual-entry',
-      status: 'connected',
-      connected_at: new Date().toISOString(),
-      last_sync_at: new Date().toISOString(),
-      metadata: { source: 'voice_tool' },
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'user_id,integration_id' },
-  );
+  await repo.upsertManualEntryUserIntegration(admin, {
+    user_id: input.user_id,
+    integration_id: 'manual-entry',
+    status: 'connected',
+    connected_at: new Date().toISOString(),
+    last_sync_at: new Date().toISOString(),
+    metadata: { source: 'voice_tool' },
+    updated_at: new Date().toISOString(),
+  });
 
   // Recompute the Index so the badge + pillar score reflect the new signal.
-  const { data: newRow } = await admin.rpc('health_compute_vitana_index_for_user', {
-    p_user_id: input.user_id,
-    p_date: input.date,
-  });
+  const { data: newRow } = await repo.computeVitanaIndexForUser(admin, input.user_id, input.date);
 
   const newTotal = (newRow?.score_total as number | undefined) ?? null;
   const pillarColumn = `score_${map.pillar}` as const;
