@@ -32,6 +32,7 @@ import type {
   ProductScopePreference,
   LifecycleStage,
 } from '../types/catalog-ingest';
+import * as repo from './user-health-context-repository';
 
 // ==================== Types ====================
 
@@ -187,75 +188,19 @@ export async function getUserHealthContext(
   const [userRes, tenantRes, limRes, factsRes, topicsRes, ordersRes, rollupRes, eventsRes] =
     supabase
       ? await Promise.all([
-          safe(
-            supabase
-              .from('app_users')
-              .select(
-                'country_code, delivery_country_code, region_group, currency_preference, product_scope_preference, lifecycle_stage'
-              )
-              .eq('user_id', user_id)
-              .maybeSingle()
-          ),
-          safe(
-            supabase
-              .from('user_tenants')
-              .select('tenant_id')
-              .eq('user_id', user_id)
-              .eq('is_active', true)
-              .limit(1)
-              .maybeSingle()
-          ),
-          safe(
-            supabase
-              .from('user_limitations')
-              .select(
-                'allergies, dietary_restrictions, contraindications, current_medications, pregnancy_status, age_bracket, religious_restrictions, ingredient_sensitivities, budget_max_per_product_cents, budget_monthly_cap_cents, budget_preferred_band'
-              )
-              .eq('user_id', user_id)
-              .maybeSingle()
-          ),
-          safe(
-            supabase
-              .from('memory_facts')
-              .select('fact_key, fact_value, extracted_at, provenance_source')
-              .eq('user_id', user_id)
-              .in('fact_key', healthKeys)
-              .is('superseded_by', null)
-          ),
-          safe(supabase.from('user_topic_profile').select('topic_key, score').eq('user_id', user_id)),
+          safe(repo.fetchAppUserContextRow(supabase, user_id)),
+          safe(repo.fetchActiveTenantForUser(supabase, user_id)),
+          safe(repo.fetchUserLimitations(supabase, user_id)),
+          safe(repo.fetchHealthMemoryFacts(supabase, user_id, healthKeys)),
+          safe(repo.fetchUserTopicProfile(supabase, user_id)),
           opts.include_past_purchases !== false
-            ? safe(
-                supabase
-                  .from('product_orders')
-                  .select('product_id, purchased_at, state')
-                  .eq('user_id', user_id)
-                  .eq('state', 'converted')
-                  .order('purchased_at', { ascending: false })
-                  .limit(50)
-              )
+            ? safe(repo.fetchConvertedProductOrders(supabase, user_id, 50))
             : Promise.resolve(null),
           opts.include_wearable !== false
-            ? safe(
-                supabase
-                  .from('wearable_rollup_7d')
-                  .select(
-                    'sleep_avg_minutes, sleep_deep_pct, hrv_avg_ms, resting_hr, activity_minutes, workout_count, days_with_data, latest_date'
-                  )
-                  .eq('user_id', user_id)
-                  .maybeSingle()
-              )
+            ? safe(repo.fetchWearableRollup7d(supabase, user_id))
             : Promise.resolve(null),
           opts.include_calendar !== false
-            ? safe(
-                supabase
-                  .from('calendar_events')
-                  .select('title, start_time, event_type, wellness_tags')
-                  .eq('user_id', user_id)
-                  .gte('start_time', nowIso)
-                  .lte('start_time', horizonIso)
-                  .order('start_time', { ascending: true })
-                  .limit(10)
-              )
+            ? safe(repo.fetchUpcomingCalendarEvents(supabase, user_id, nowIso, horizonIso, 10))
             : Promise.resolve(null),
         ])
       : [null, null, null, null, null, null, null, null];
