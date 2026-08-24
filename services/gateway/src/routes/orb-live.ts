@@ -1744,6 +1744,15 @@ export function shouldRetryDayCloseReduced(args: {
 }
 // VTID-03495: Polly seam for the /tts route. No-ops unless TTS_PROVIDER=polly.
 import { tryPollySynthesis } from '../services/tts/tts-provider';
+// VTID-03716: direct, unconditional Polly access for the PCM diagnostic route
+// below — same import CascadedLiveClient uses, deliberately bypassing the
+// TTS_PROVIDER gate (this route exists specifically to test Polly PCM output).
+import {
+  synthesizePolly,
+  POLLY_UNSUPPORTED_LANGS,
+  normalizeLang as normalizePollyLang,
+} from '../services/tts/polly';
+import rateLimit from 'express-rate-limit';
 import {
   resolveNovaSonicVoiceOrFallback,
   logNovaSonicVoiceFallbackOnce,
@@ -15635,6 +15644,132 @@ router.post('/tts', optionalAuth, async (req: AuthenticatedRequest, res: Respons
       ok: false,
       error: error.message || 'TTS processing failed'
     });
+  }
+});
+
+/**
+ * VTID-03716: POST /tts-pcm-diagnostic — stateless Polly PCM synthesis, for
+ * automated testing.
+ *
+ * This exists because VTID-03711 (orb-widget playing cascade-voice audio at
+ * 1.5x speed/pitch — reported live as "Mickey Mouse speed") could only be
+ * proven fixed by decoding REAL Polly PCM bytes at their REAL declared rate
+ * and checking playback duration math — and the only place that synthesis
+ * happened before this route existed was deep inside a live ORB session
+ * (`CascadedLiveClient.runTurn()`), which cannot be exercised by an
+ * automated test without opening a real session against the shared
+ * production Supabase project (forbidden — see CLAUDE.md's absolute
+ * test-account rule; a live ORB session writes `oasis_events` and session
+ * state regardless of who/what opens it).
+ *
+ * This route calls the EXACT SAME `synthesizePolly({format:'pcm'})` call
+ * `CascadedLiveClient` makes, unconditionally (bypassing `TTS_PROVIDER`,
+ * same deliberate choice `guided-topic-narration-audio.ts` already makes)
+ * and returns the audio + its true declared sample rate. It is:
+ *   - Stateless: no ORB session, no session state, no memory extraction.
+ *   - optionalAuth, same as the existing `/tts` route above — no account
+ *     write of any kind, same category as an "API call" CLAUDE.md's own
+ *     test-user section already treats as safe to test with.
+ *   - The same category as the existing `/voice/preview` admin route,
+ *     minus the admin gate (nothing here is more sensitive than that route
+ *     already exposes) and with PCM instead of MP3 so the exact bug's
+ *     rate-labeling can be reproduced end-to-end.
+ *
+ * See `scripts/tts/verify-cascade-audio-timing.ts` for the automated
+ * program that calls this route and mathematically proves the fix.
+ */
+// VTID-03716: this route pays for real Polly synthesis on every call and is
+// mounted with optionalAuth (no login required) — an unauthenticated client
+// could otherwise repeatedly submit up to 3000 chars and rack up billing /
+// exhaust resources. Diagnostic traffic is inherently low-volume, so this
+// stays tight regardless of who's calling.
+const ttsPcmDiagnosticLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: { ok: false, error: 'RATE_LIMIT_EXCEEDED', message: 'Too many TTS diagnostic requests' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+router.post('/tts-pcm-diagnostic', ttsPcmDiagnosticLimiter, optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis: the Dev Autopilot Impact Scan's
+  // new-mutation-without-oasis-emit rule pattern-matches for a literal
+  // `emitOasisEvent(` call and doesn't see through a wrapper — this handler
+  // does emit OASIS state via emitTtsEvent() below (request/success/failure),
+  // the exact same helper the sibling /tts route above uses for the same
+  // purpose (see VTID-01155's emitTtsEvent()).
+  const body = req.body as { text?: string; lang?: string };
+  const text = (body.text || '').trim();
+  if (!text) {
+    return res.status(400).json({ ok: false, error: 'text is required' });
+  }
+  if (text.length > 3000) {
+    return res.status(400).json({ ok: false, error: 'text exceeds 3000 character limit' });
+  }
+  // VTID-03716 review fix: this route's job is testing what POLLY can serve,
+  // not what live ORB sessions offer — orb-live.ts's own normalizeLang()
+  // silently maps anything outside SUPPORTED_LIVE_LANGUAGES to 'en', which
+  // would mask a typo'd or newly-added-to-Polly language behind a false
+  // English 200 instead of the intended 422. Normalize only the locale SHAPE
+  // (polly.ts's normalizeLang — lowercase, strip region) and let
+  // synthesizePolly's own voice table / POLLY_UNSUPPORTED_LANGS decide.
+  const lang = normalizePollyLang(body.lang || 'en');
+
+  await emitTtsEvent('vtid.tts.request', {
+    lang,
+    voice_type: 'Polly',
+    format: 'pcm',
+    text_length: text.length,
+    route: 'tts-pcm-diagnostic',
+  });
+
+  try {
+    const result = await synthesizePolly({ text, lang, format: 'pcm' });
+    if (!result) {
+      const error = POLLY_UNSUPPORTED_LANGS.has(lang)
+        ? `Polly has no voice for lang='${lang}' in any engine`
+        : `Polly synthesis failed for lang='${lang}'`;
+      await emitTtsEvent('vtid.tts.failure', {
+        lang,
+        voice_type: 'Polly',
+        format: 'pcm',
+        text_length: text.length,
+        route: 'tts-pcm-diagnostic',
+        error,
+      });
+      return res.status(422).json({ ok: false, error });
+    }
+    await emitTtsEvent('vtid.tts.success', {
+      lang,
+      voice: result.voice,
+      voice_type: 'Polly',
+      engine: result.engine,
+      text_length: text.length,
+      audio_bytes: result.audioB64.length,
+      mime_type: `audio/pcm;rate=${result.sampleRateHz}`,
+      route: 'tts-pcm-diagnostic',
+    });
+    return res.status(200).json({
+      ok: true,
+      audio_b64: result.audioB64,
+      sample_rate_hz: result.sampleRateHz,
+      mime: `audio/pcm;rate=${result.sampleRateHz}`,
+      voice: result.voice,
+      engine: result.engine,
+      lang,
+      text_length: text.length,
+    });
+  } catch (error: any) {
+    console.error('[VTID-03716] /tts-pcm-diagnostic error:', error);
+    await emitTtsEvent('vtid.tts.failure', {
+      lang,
+      voice_type: 'Polly',
+      format: 'pcm',
+      text_length: text.length,
+      route: 'tts-pcm-diagnostic',
+      error: error.message,
+    });
+    return res.status(500).json({ ok: false, error: error.message || 'PCM synthesis failed' });
   }
 });
 
