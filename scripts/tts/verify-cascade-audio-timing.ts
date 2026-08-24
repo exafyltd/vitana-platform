@@ -64,11 +64,37 @@ const TEST_CASES: Array<{ lang: string; text: string }> = [
   { lang: 'pl', text: 'Witamy w Vitana. To jest testowa wiadomość służąca do sprawdzenia poprawnej prędkości odtwarzania dźwięku.' },
   { lang: 'ar', text: 'مرحبًا بك في فيتانا. هذه رسالة اختبارية للتحقق من سرعة تشغيل الصوت الصحيحة.' },
   { lang: 'zh', text: '欢迎使用维塔纳。这是一条测试消息，用于验证正确的音频播放速度。' },
+  // VTID-03719 — tr was missing entirely despite being a cascade-voice
+  // language (nova-sonic-config.ts's NOVA_SONIC_SUPPORTED_LANGUAGES does not
+  // include it). Adding it here only became meaningful once polly.ts also
+  // gained a real tr entry (VTID-03719) — before that, resolvePollyVoice('tr')
+  // silently fell back to English, so this line would have passed while
+  // testing the wrong language entirely, which is worse than not testing it.
+  { lang: 'tr', text: "Vitana'ya hoş geldin. Bu, doğru ses oynatma hızını doğrulamak için bir test mesajıdır." },
   { lang: 'de', text: 'Willkommen bei Vitana. Dies ist eine Testnachricht, um die korrekte Wiedergabegeschwindigkeit des Audios zu überprüfen.' },
   { lang: 'en', text: 'Welcome to Vitana. This is a test message to verify the correct audio playback speed.' },
 ];
 
 const OLD_BUGGY_HARDCODED_RATE = 24000; // the literal orb-widget.js used to pass to createBuffer()
+
+// VTID-03719 — a single alphabetic-language pacing band does not transfer to
+// a logographic script, the exact class of mistake this codebase has already
+// been burned by once (translator.ts's own docstring: a French register regex
+// produced 39/41 false positives on `rendez-vous`, because a rule tuned on one
+// language does not transfer). Chinese is denser per character — each glyph
+// typically carries a full syllable's worth of phonetic content — so natural
+// Mandarin speech runs roughly 3-5 chars/sec, well under the 6 chars/sec floor
+// that is a safe minimum for alphabetic scripts. Measured live against real
+// Polly audio (Zhiyu, neural): 31 chars / 6.330s = 4.9 chars/sec, comfortably
+// inside a CJK-appropriate band and NOT evidence of truncated/garbled audio.
+// Every other check (sample count, PCM rate parsing, duration match) already
+// caught real defects independent of this heuristic — this only widens the
+// one check whose calibration does not generalize across scripts.
+const CJK_LANGS = new Set(['zh']);
+const PACING_BOUNDS = { default: { min: 6, max: 30 }, cjk: { min: 2, max: 10 } };
+function pacingBoundsFor(lang: string): { min: number; max: number } {
+  return CJK_LANGS.has(lang) ? PACING_BOUNDS.cjk : PACING_BOUNDS.default;
+}
 
 /**
  * Extract `_pcmRateFromMime`'s literal source out of the shipped widget
@@ -195,19 +221,20 @@ async function testOneLanguage(
     details.push(`FAIL: only ${sampleCount} samples — suspiciously little audio for ${text.length} chars`);
   }
 
-  // Check 2: plausible human-speech pacing for the input length (generous
-  // bounds: 6-30 chars/sec covers every real Polly voice/engine/language
-  // combination in this table with margin) — catches garbled/truncated
-  // audio as a side effect of the timing check, not just the rate bug.
+  // Check 2: plausible human-speech pacing for the input length. Bounds are
+  // script-aware (see pacingBoundsFor/CJK_LANGS above) — a uniform alphabetic
+  // band false-positives on logographic languages, where each character
+  // carries more phonetic content than a Latin/Cyrillic/Arabic letter.
+  const { min: pacingMin, max: pacingMax } = pacingBoundsFor(lang);
   const charsPerSec = text.length / trueDurationSec;
-  if (charsPerSec < 6 || charsPerSec > 30) {
+  if (charsPerSec < pacingMin || charsPerSec > pacingMax) {
     pass = false;
     details.push(
-      `FAIL: ${charsPerSec.toFixed(1)} chars/sec is outside plausible human-speech range (6-30) — ` +
-      `audio may be truncated, garbled, or mis-timed`,
+      `FAIL: ${charsPerSec.toFixed(1)} chars/sec is outside plausible human-speech range ` +
+      `(${pacingMin}-${pacingMax} for lang=${lang}) — audio may be truncated, garbled, or mis-timed`,
     );
   } else {
-    details.push(`OK: ${charsPerSec.toFixed(1)} chars/sec — plausible human speech pacing`);
+    details.push(`OK: ${charsPerSec.toFixed(1)} chars/sec — plausible human speech pacing (${pacingMin}-${pacingMax} for lang=${lang})`);
   }
 
   // Check 3: the REAL, extracted widget function parses this REAL mime
@@ -294,4 +321,4 @@ if (require.main === module) {
   });
 }
 
-export { verifyWidgetWiringIsConnected, loadRealPcmRateFromMime, testOneLanguage, main };
+export { verifyWidgetWiringIsConnected, loadRealPcmRateFromMime, testOneLanguage, pacingBoundsFor, main };
