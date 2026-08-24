@@ -13,6 +13,7 @@ import { callViaRouter } from '../llm-router';
 import { bulkCreateCalendarEvents } from '../calendar-service';
 import { getUserLocale } from '../../i18n/server-locale';
 import { seedGoalPlanSourceCache } from './goal-plan-i18n';
+import * as repo from './goal-planner-service-repository';
 import type { CreateCalendarEventInput } from '../../types/calendar';
 
 const LOG = '[VTID-03152 goal-planner]';
@@ -154,13 +155,7 @@ export function mapPlanToSteps(plan: LLMPlan, startDateIso: string, totalDays: n
 }
 
 async function fetchActiveGoal(client: SupabaseClient, userId: string): Promise<ActiveGoal | null> {
-  const { data, error } = await client
-    .from('life_compass')
-    .select('id, primary_goal, category, target_date, target_value, target_unit, created_at')
-    .eq('user_id', userId)
-    .eq('is_active', true)
-    .order('created_at', { ascending: false })
-    .limit(1);
+  const { data, error } = await repo.fetchActiveLifeCompassGoalForPlanning(client, userId);
   if (error || !data || data.length === 0) return null;
   const row = data[0] as any;
   if (!row.target_date) return null; // a plan needs a deadline
@@ -406,50 +401,44 @@ export async function generateGoalPlan(
   const drafts = mapPlanToSteps(plan, startIso, totalDays);
 
   // Supersede prior active plans before inserting the new one.
-  await client.from('goal_plans').update({ status: 'superseded' }).eq('user_id', userId).eq('status', 'active');
+  await repo.supersedeActiveGoalPlans(client, userId);
 
-  const { data: planRows, error: planErr } = await client
-    .from('goal_plans')
-    .insert({
-      user_id: userId,
-      tenant_id: goal.tenant_id ?? null,
-      life_compass_id: goal.id,
-      goal_text: goal.primary_goal,
-      plan_summary: plan.plan_summary,
-      start_date: startDate,
-      target_date: goal.target_date,
-      total_days: totalDays,
-      status: 'active',
-      model: result.model ?? null,
-      // Language the stored title/description/plan_summary are authored in, so
-      // view-time localization (goal-plan-i18n) can skip translating when the
-      // requested locale already matches the source. (VTID-03152b)
-      source_lang: locale,
-    })
-    .select('id')
-    .single();
+  const { data: planRows, error: planErr } = await repo.insertGoalPlan(client, {
+    user_id: userId,
+    tenant_id: goal.tenant_id ?? null,
+    life_compass_id: goal.id,
+    goal_text: goal.primary_goal,
+    plan_summary: plan.plan_summary,
+    start_date: startDate,
+    target_date: goal.target_date,
+    total_days: totalDays,
+    status: 'active',
+    model: result.model ?? null,
+    // Language the stored title/description/plan_summary are authored in, so
+    // view-time localization (goal-plan-i18n) can skip translating when the
+    // requested locale already matches the source. (VTID-03152b)
+    source_lang: locale,
+  });
   if (planErr || !planRows) {
     console.error(`${LOG} insert goal_plans failed: ${planErr?.message}`);
     return null;
   }
   const planId = (planRows as any).id as string;
 
-  const { data: stepRows, error: stepErr } = await client
-    .from('goal_plan_steps')
-    .insert(
-      drafts.map((s) => ({
-        plan_id: planId,
-        user_id: userId,
-        kind: s.kind,
-        title: s.title,
-        description: s.description,
-        day_offset: s.day_offset,
-        scheduled_date: s.scheduled_date,
-        sort_order: s.sort_order,
-        status: 'pending',
-      })),
-    )
-    .select('id, kind, title, description, scheduled_date');
+  const { data: stepRows, error: stepErr } = await repo.insertGoalPlanSteps(
+    client,
+    drafts.map((s) => ({
+      plan_id: planId,
+      user_id: userId,
+      kind: s.kind,
+      title: s.title,
+      description: s.description,
+      day_offset: s.day_offset,
+      scheduled_date: s.scheduled_date,
+      sort_order: s.sort_order,
+      status: 'pending',
+    })),
+  );
   if (stepErr) {
     console.error(`${LOG} insert goal_plan_steps failed: ${stepErr.message}`);
     return null;
@@ -559,21 +548,11 @@ export interface GoalPlanView {
 
 /** Read the active plan + steps and compute live day/days-left. Null when none. */
 export async function getGoalPlan(client: SupabaseClient, userId: string): Promise<GoalPlanView | null> {
-  const { data: planRows, error: planErr } = await client
-    .from('goal_plans')
-    .select('id, goal_text, plan_summary, start_date, target_date, total_days, status, source_lang')
-    .eq('user_id', userId)
-    .eq('status', 'active')
-    .order('generated_at', { ascending: false })
-    .limit(1);
+  const { data: planRows, error: planErr } = await repo.fetchActiveGoalPlan(client, userId);
   if (planErr || !planRows || planRows.length === 0) return null;
   const plan = planRows[0] as any;
 
-  const { data: steps } = await client
-    .from('goal_plan_steps')
-    .select('id, kind, title, description, day_offset, scheduled_date, status, sort_order')
-    .eq('plan_id', plan.id)
-    .order('sort_order', { ascending: true });
+  const { data: steps } = await repo.fetchGoalPlanSteps(client, plan.id);
 
   const all = (steps as GoalPlanStep[]) ?? [];
   const nowIso = new Date().toISOString();
@@ -604,11 +583,10 @@ export async function setStepStatus(
   stepId: string,
   status: 'done' | 'pending',
 ): Promise<boolean> {
-  const { error } = await client
-    .from('goal_plan_steps')
-    .update({ status, completed_at: status === 'done' ? new Date().toISOString() : null })
-    .eq('id', stepId)
-    .eq('user_id', userId);
+  const { error } = await repo.updateGoalPlanStepStatus(client, stepId, userId, {
+    status,
+    completed_at: status === 'done' ? new Date().toISOString() : null,
+  });
   if (error) {
     console.error(`${LOG} setStepStatus failed: ${error.message}`);
     return false;
