@@ -24,6 +24,7 @@ import {
   extractStoragePath,
   VideoExtractionError,
 } from '../services/video-thumbnail-service';
+import * as repo from './media-hub-repository';
 
 const router = Router();
 
@@ -76,18 +77,15 @@ router.get('/search', async (req: Request, res: Response) => {
 
   // ── music + podcasts share media_uploads ───────────────────────────────
   if (wantMusic || wantPodcast) {
-    const { data: uploads, error } = await supabase
-      .from('media_uploads')
-      .select('id, title, description, media_type, file_url, thumbnail_url, duration, tags, music_metadata(artist_name), podcast_metadata(host_name, series_name)')
-      .eq('status', 'approved')
-      .eq('is_public', true)
-      .in('media_type', [
+    const { data: uploads, error } = await repo.searchMediaUploads(
+      supabase,
+      [
         ...(wantMusic ? ['music'] : []),
         ...(wantPodcast ? ['podcast'] : []),
-      ])
-      .or(`title.ilike.${pattern},description.ilike.${pattern}`)
-      .order('plays_count', { ascending: false })
-      .limit(limit);
+      ],
+      pattern,
+      limit,
+    );
 
     if (!error && uploads) {
       for (const u of uploads as Array<Record<string, any>>) {
@@ -112,13 +110,7 @@ router.get('/search', async (req: Request, res: Response) => {
 
   // ── shorts live in media_videos ────────────────────────────────────────
   if (wantShorts) {
-    const { data: videos, error } = await supabase
-      .from('media_videos')
-      .select('id, title, description, src_url, thumbnail_url, duration_sec, tags')
-      .eq('status', 'published')
-      .or(`title.ilike.${pattern},description.ilike.${pattern}`)
-      .order('views_count', { ascending: false })
-      .limit(limit);
+    const { data: videos, error } = await repo.searchMediaVideos(supabase, pattern, limit);
 
     if (!error && videos) {
       for (const v of videos as Array<Record<string, any>>) {
@@ -250,11 +242,7 @@ router.post('/shorts/extract-thumbnail', requireAuth, async (req: AuthenticatedR
   const supabase = await getServiceClient();
   if (!supabase) return res.status(503).json({ ok: false, error: 'Service unavailable' });
 
-  const { data: row, error: fetchError } = await supabase
-    .from('media_videos')
-    .select('id, user_id, src_url')
-    .eq('id', video_id)
-    .maybeSingle();
+  const { data: row, error: fetchError } = await repo.fetchVideoForThumbnailExtraction(supabase, video_id);
   if (fetchError) {
     console.error(`[media-hub] POST /shorts/extract-thumbnail fetch error: ${fetchError.message}`);
     return res.status(500).json({ ok: false, error: 'Database error', code: 'DB_FETCH_FAILED' });
@@ -269,15 +257,7 @@ router.post('/shorts/extract-thumbnail', requireAuth, async (req: AuthenticatedR
   const started = Date.now();
   try {
     const extracted = await extractThumbnail(supabase, video_path);
-    const { error: patchError } = await supabase
-      .from('media_videos')
-      .update({
-        thumbnail_url: extracted.thumbnail_url,
-        duration_sec: extracted.duration_sec,
-        width: extracted.width,
-        height: extracted.height,
-      })
-      .eq('id', video_id);
+    const { error: patchError } = await repo.updateVideoThumbnail(supabase, video_id, extracted);
     if (patchError) {
       console.error(`[media-hub] POST /shorts/extract-thumbnail patch error: ${patchError.message}`);
       return res.status(500).json({ ok: false, error: 'Database error', code: 'DB_PATCH_FAILED' });
@@ -334,12 +314,7 @@ router.post(
     const supabase = await getServiceClient();
     if (!supabase) return res.status(503).json({ ok: false, error: 'Service unavailable' });
 
-    const { data: rows, error: listError } = await supabase
-      .from('media_videos')
-      .select('id, src_url')
-      .is('thumbnail_url', null)
-      .not('src_url', 'is', null)
-      .limit(batchSize);
+    const { data: rows, error: listError } = await repo.fetchVideosMissingThumbnails(supabase, batchSize);
     if (listError) {
       return res.status(500).json({ ok: false, error: 'Database error', code: 'DB_LIST_FAILED', details: listError.message });
     }
@@ -357,15 +332,7 @@ router.post(
       }
       try {
         const extracted = await extractThumbnail(supabase, videoPath);
-        const { error: patchError } = await supabase
-          .from('media_videos')
-          .update({
-            thumbnail_url: extracted.thumbnail_url,
-            duration_sec: extracted.duration_sec,
-            width: extracted.width,
-            height: extracted.height,
-          })
-          .eq('id', row.id);
+        const { error: patchError } = await repo.updateVideoThumbnail(supabase, row.id as string, extracted);
         if (patchError) {
           errors.push({ id: row.id as string, code: 'DB_PATCH_FAILED', message: patchError.message });
           continue;
