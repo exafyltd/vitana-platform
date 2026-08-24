@@ -30,9 +30,14 @@ import { AutomationContext } from '../../src/types/automations';
 registerCommunityGroupsHandlers();
 
 const SRC = path.join(__dirname, '..', '..', 'src', 'services', 'automation-handlers', 'community-groups.ts');
+const REPO_SRC = path.join(__dirname, '..', '..', 'src', 'services', 'automation-handlers', 'community-groups-repository.ts');
 
 describe('community-groups — source-level wall against never-deployed / wrong-column tables', () => {
-  const src = fs.readFileSync(SRC, 'utf8');
+  // VTID-03702 (Aurora migration B1): the literal `.from(...)` calls this
+  // wall pins now live in the repository seam, not the handler file itself
+  // — check the combined text so the pure-move refactor doesn't break a
+  // still-valid invariant.
+  const src = fs.readFileSync(SRC, 'utf8') + '\n' + fs.readFileSync(REPO_SRC, 'utf8');
 
   it('never references the never-deployed VTID-01084 tables', () => {
     expect(src).not.toMatch(/from\(['"]community_groups['"]\)/);

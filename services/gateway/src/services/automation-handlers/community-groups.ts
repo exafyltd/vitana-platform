@@ -6,6 +6,7 @@
 
 import { AutomationContext } from '../../types/automations';
 import { registerHandler } from '../automation-executor';
+import * as repo from './community-groups-repository';
 
 // ── AP-0202: Group Invite Follow-Up ─────────────────────────
 // Real schema: community_groups/community_memberships (VTID-01084) were
@@ -20,26 +21,12 @@ async function runGroupInviteFollowUp(ctx: AutomationContext) {
 
   const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
 
-  const { data: pendingInvites } = await supabase
-    .from('community_group_invitations')
-    .select('id, invited_user_id, group_id, invited_by')
-    .eq('tenant_id', tenantId)
-    .eq('status', 'pending')
-    .lte('created_at', fortyEightHoursAgo)
-    .limit(100);
+  const { data: pendingInvites } = await repo.fetchPendingGroupInvites(supabase, tenantId, fortyEightHoursAgo);
 
   for (const invite of pendingInvites || []) {
-    const { data: group } = await supabase
-      .from('global_community_groups')
-      .select('name')
-      .eq('id', invite.group_id)
-      .maybeSingle();
+    const { data: group } = await repo.fetchGroupNameById(supabase, invite.group_id);
 
-    const { data: inviter } = await supabase
-      .from('app_users')
-      .select('display_name')
-      .eq('user_id', invite.invited_by)
-      .maybeSingle();
+    const { data: inviter } = await repo.fetchUserDisplayName(supabase, invite.invited_by);
 
     ctx.notify(invite.invited_user_id, 'group_invitation_received', {
       title: 'Group Invitation Reminder',
@@ -64,16 +51,9 @@ async function runNewMemberWelcome(ctx: AutomationContext) {
 
   const { supabase } = ctx;
 
-  const { data: group } = await supabase
-    .from('global_community_groups')
-    .select('name, description, created_by')
-    .eq('id', group_id)
-    .maybeSingle();
+  const { data: group } = await repo.fetchGroupDetails(supabase, group_id);
 
-  const { count: memberCount } = await supabase
-    .from('global_community_group_members')
-    .select('id', { count: 'exact', head: true })
-    .eq('group_id', group_id);
+  const { count: memberCount } = await repo.fetchGroupMemberCount(supabase, group_id);
 
   ctx.notify(user_id, 'orb_proactive_message', {
     title: `Welcome to ${group?.name || 'the group'}!`,
@@ -83,8 +63,7 @@ async function runNewMemberWelcome(ctx: AutomationContext) {
 
   // Notify group creator
   if (group?.created_by && group.created_by !== user_id) {
-    const { data: newMember } = await supabase
-      .from('app_users').select('display_name').eq('user_id', user_id).maybeSingle();
+    const { data: newMember } = await repo.fetchUserDisplayName(supabase, user_id);
 
     ctx.notify(group.created_by, 'someone_joined_your_group', {
       title: 'New Group Member!',
@@ -121,30 +100,16 @@ async function runWelcomeSquad(ctx: AutomationContext) {
   // Real schema: global_community_groups / global_community_group_members
   // (the VTID-01084 community_groups/_memberships tables were never deployed
   // to production; the live, populated tables are the global_* ones).
-  const { data: group } = await supabase
-    .from('global_community_groups')
-    .select('name, description, created_by, category')
-    .eq('id', group_id)
-    .maybeSingle();
+  const { data: group } = await repo.fetchGroupWithCategory(supabase, group_id);
   if (!group) return { usersAffected: 0, actionsTaken: 0 };
 
-  const { data: newMember } = await supabase
-    .from('app_users')
-    .select('display_name')
-    .eq('user_id', user_id)
-    .maybeSingle();
+  const { data: newMember } = await repo.fetchUserDisplayName(supabase, user_id);
   const newMemberName = newMember?.display_name || 'A new member';
 
   // Step 1 — pick the squad: up to 3 existing members of this group
   // (excluding the newcomer and the host, who is notified separately).
   // Oldest members first so the newcomer meets established regulars.
-  const { data: members } = await supabase
-    .from('global_community_group_members')
-    .select('user_id')
-    .eq('group_id', group_id)
-    .neq('user_id', user_id)
-    .order('joined_at', { ascending: true })
-    .limit(50);
+  const { data: members } = await repo.fetchGroupMembersOrderedByJoin(supabase, group_id, user_id);
 
   const squad: string[] = [];
   for (const m of members || []) {
@@ -156,13 +121,7 @@ async function runWelcomeSquad(ctx: AutomationContext) {
   // Step 2 — suggest related public groups in the same category.
   let suggestedGroups: Array<{ id: string; name: string }> = [];
   if (group.category) {
-    const { data: related } = await supabase
-      .from('global_community_groups')
-      .select('id, name')
-      .eq('category', group.category)
-      .eq('is_public', true)
-      .neq('id', group_id)
-      .limit(2);
+    const { data: related } = await repo.fetchRelatedPublicGroups(supabase, group.category, group_id);
     suggestedGroups = related || [];
   }
 
@@ -245,12 +204,7 @@ async function runMeetupRsvpEncouragement(ctx: AutomationContext) {
   const now = new Date();
   const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000);
 
-  const { data: events } = await supabase
-    .from('global_community_events')
-    .select('id, title, created_by, start_time, participant_count, max_participants')
-    .gte('start_time', now.toISOString())
-    .lte('start_time', in24h.toISOString())
-    .not('created_by', 'is', null);
+  const { data: events } = await repo.fetchUpcomingEventsForEncouragement(supabase, now.toISOString(), in24h.toISOString());
 
   for (const event of events || []) {
     const participantCount = event.participant_count || 0;
@@ -283,17 +237,9 @@ async function runPostMeetupConnect(ctx: AutomationContext) {
   let usersAffected = 0;
   let actionsTaken = 0;
 
-  const { data: attendees } = await supabase
-    .from('global_event_participants')
-    .select('user_id')
-    .eq('event_id', meetupId)
-    .eq('status', 'attending');
+  const { data: attendees } = await repo.fetchEventAttendeesForConnect(supabase, meetupId);
 
-  const { data: meetup } = await supabase
-    .from('global_community_events')
-    .select('title')
-    .eq('id', meetupId)
-    .maybeSingle();
+  const { data: meetup } = await repo.fetchEventTitle(supabase, meetupId);
 
   for (const attendee of attendees || []) {
     ctx.notify(attendee.user_id, 'orb_proactive_message', {
@@ -314,19 +260,12 @@ async function runCommunityCreatorDigest(ctx: AutomationContext) {
   let usersAffected = 0;
   let actionsTaken = 0;
 
-  const { data: groups } = await supabase
-    .from('global_community_groups')
-    .select('id, name, created_by')
-    .not('created_by', 'is', null);
+  const { data: groups } = await repo.fetchGroupsWithCreator(supabase);
 
   for (const group of groups || []) {
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
-    const { count: newMembers } = await supabase
-      .from('global_community_group_members')
-      .select('id', { count: 'exact', head: true })
-      .eq('group_id', group.id)
-      .gte('joined_at', sevenDaysAgo);
+    const { count: newMembers } = await repo.countNewGroupMembers(supabase, group.id, sevenDaysAgo);
 
     ctx.notify(group.created_by, 'orb_proactive_message', {
       title: `Your group "${group.name}" this week`,
@@ -361,13 +300,7 @@ async function runReviveYourGroup(ctx: AutomationContext) {
 
   // Active, hosted groups that still have members. global_community_groups has
   // no tenant_id — the global community is shared — so we scan all of them.
-  const { data: groups } = await supabase
-    .from('global_community_groups')
-    .select('id, name, created_by, member_count')
-    .eq('status', 'approved')
-    .not('created_by', 'is', null)
-    .gte('member_count', 1)
-    .limit(500);
+  const { data: groups } = await repo.fetchApprovedGroupsWithMembers(supabase);
 
   let scanned = 0;
   for (const group of groups || []) {
@@ -375,27 +308,14 @@ async function runReviveYourGroup(ctx: AutomationContext) {
     scanned++;
 
     // Most recent post in the group is the activity signal.
-    const { data: lastPost } = await supabase
-      .from('group_posts')
-      .select('created_at')
-      .eq('group_id', group.id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const { data: lastPost } = await repo.fetchLastGroupPost(supabase, group.id);
 
     // Dormant = no posts at all, or the latest post is older than the cutoff.
     const isDormant = !lastPost || lastPost.created_at < dormantCutoff;
     if (!isDormant) continue;
 
     // Cooldown: skip if this host was already nudged for this group recently.
-    const { data: recentNudge } = await supabase
-      .from('user_notifications')
-      .select('id')
-      .eq('user_id', group.created_by)
-      .eq('type', 'orb_proactive_message')
-      .contains('data', { automation_id: 'AP-0211', group_id: group.id })
-      .gte('created_at', cooldownCutoff)
-      .limit(1);
+    const { data: recentNudge } = await repo.fetchRecentReviveNudge(supabase, group.created_by, group.id, cooldownCutoff);
     if (recentNudge && recentNudge.length > 0) continue;
 
     const daysQuiet = lastPost
@@ -448,11 +368,7 @@ async function runAutoCreateGroupFromInterestCluster(ctx: AutomationContext) {
   let usersAffected = 0;
   let actionsTaken = 0;
 
-  const { data: interestRows } = await supabase
-    .from('user_interests')
-    .select('user_id, interest, confidence_score')
-    .gte('confidence_score', INTEREST_CLUSTER_MIN_CONFIDENCE)
-    .limit(2000);
+  const { data: interestRows } = await repo.fetchInterestRows(supabase, INTEREST_CLUSTER_MIN_CONFIDENCE);
 
   const usersByInterest = new Map<string, string[]>();
   for (const row of interestRows || []) {
@@ -468,32 +384,21 @@ async function runAutoCreateGroupFromInterestCluster(ctx: AutomationContext) {
     if (groupsCreated >= INTEREST_CLUSTER_MAX_NEW_GROUPS) break;
     if (userIds.length < INTEREST_CLUSTER_MIN_USERS) continue;
 
-    const { data: existingGroup } = await supabase
-      .from('global_community_groups')
-      .select('id')
-      .ilike('category', interest)
-      .limit(1)
-      .maybeSingle();
+    const { data: existingGroup } = await repo.fetchExistingGroupByCategory(supabase, interest);
     if (existingGroup) continue;
 
     const displayName = interest.replace(/(^|\s)\S/g, (c: string) => c.toUpperCase());
-    const { data: newGroup, error: createErr } = await supabase
-      .from('global_community_groups')
-      .insert({
-        name: `${displayName} Circle`,
-        description: `Auto-created for members who share an interest in ${displayName}.`,
-        category: interest,
-        is_public: true,
-        created_by: VITANA_BOT_USER_ID,
-      })
-      .select('id, name')
-      .single();
+    const { data: newGroup, error: createErr } = await repo.insertGroup(supabase, {
+      name: `${displayName} Circle`,
+      description: `Auto-created for members who share an interest in ${displayName}.`,
+      category: interest,
+      is_public: true,
+      created_by: VITANA_BOT_USER_ID,
+    });
     if (createErr || !newGroup) continue;
 
     const memberIds = userIds.slice(0, INTEREST_CLUSTER_MAX_MEMBERS_PER_GROUP);
-    await supabase
-      .from('global_community_group_members')
-      .insert(memberIds.map((user_id) => ({ group_id: newGroup.id, user_id, role: 'member' })));
+    await repo.insertGroupMembers(supabase, memberIds.map((user_id) => ({ group_id: newGroup.id, user_id, role: 'member' })));
 
     for (const user_id of memberIds) {
       ctx.notify(user_id, 'group_recommended', {
@@ -533,32 +438,17 @@ async function runAutoSuggestMeetupFromGroupActivity(ctx: AutomationContext) {
   const windowStart = new Date(Date.now() - ACTIVITY_SPIKE_WINDOW_HOURS * 60 * 60 * 1000).toISOString();
   const cooldownCutoff = new Date(Date.now() - ACTIVITY_SPIKE_COOLDOWN_DAYS * 86_400_000).toISOString();
 
-  const { data: groups } = await supabase
-    .from('global_community_groups')
-    .select('id, name, created_by, chat_thread_id')
-    .not('chat_thread_id', 'is', null)
-    .not('created_by', 'is', null)
-    .limit(500);
+  const { data: groups } = await repo.fetchGroupsWithChatThread(supabase);
 
   let suggestionsSent = 0;
   for (const group of groups || []) {
     if (suggestionsSent >= ACTIVITY_SPIKE_MAX_SUGGESTIONS) break;
 
-    const { count: messageCount } = await supabase
-      .from('global_messages')
-      .select('id', { count: 'exact', head: true })
-      .eq('thread_id', group.chat_thread_id)
-      .gte('created_at', windowStart);
+    const { count: messageCount } = await repo.countMessagesInThreadSince(supabase, group.chat_thread_id, windowStart);
 
     if ((messageCount || 0) < ACTIVITY_SPIKE_MIN_MESSAGES) continue;
 
-    const { data: recentSuggestion } = await supabase
-      .from('user_notifications')
-      .select('id')
-      .eq('user_id', group.created_by)
-      .contains('data', { automation_id: 'AP-0204', group_id: group.id })
-      .gte('created_at', cooldownCutoff)
-      .limit(1);
+    const { data: recentSuggestion } = await repo.fetchRecentActivitySuggestion(supabase, group.created_by, group.id, cooldownCutoff);
     if (recentSuggestion && recentSuggestion.length > 0) continue;
 
     ctx.notify(group.created_by, 'orb_proactive_message', {
@@ -593,11 +483,7 @@ async function runGroupHealthMonitor(ctx: AutomationContext) {
 
   const dormantCutoff = new Date(Date.now() - DORMANT_DAYS * 86_400_000).toISOString();
 
-  const { data: groups } = await supabase
-    .from('global_community_groups')
-    .select('id, name, member_count')
-    .eq('status', 'approved')
-    .limit(1000);
+  const { data: groups } = await repo.fetchApprovedGroupsForHealth(supabase);
 
   const emptyGroups: string[] = [];
   const dormantGroups: string[] = [];
@@ -608,13 +494,7 @@ async function runGroupHealthMonitor(ctx: AutomationContext) {
       continue;
     }
 
-    const { data: lastPost } = await supabase
-      .from('group_posts')
-      .select('created_at')
-      .eq('group_id', group.id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const { data: lastPost } = await repo.fetchLastGroupPost(supabase, group.id);
 
     if (!lastPost || lastPost.created_at < dormantCutoff) {
       dormantGroups.push(group.name);
@@ -661,10 +541,7 @@ async function runCrossGroupIntroduction(ctx: AutomationContext) {
   let usersAffected = 0;
   let actionsTaken = 0;
 
-  const { data: memberships } = await supabase
-    .from('global_community_group_members')
-    .select('user_id, group_id')
-    .limit(5000);
+  const { data: memberships } = await repo.fetchAllGroupMemberships(supabase);
 
   const groupsByUser = new Map<string, Set<string>>();
   for (const m of memberships || []) {
@@ -690,15 +567,7 @@ async function runCrossGroupIntroduction(ctx: AutomationContext) {
       for (const g of groupsA) if (groupsB.has(g)) shared++;
       if (shared < CROSS_GROUP_MIN_SHARED_GROUPS) continue;
 
-      const { data: existingEdge } = await supabase
-        .from('relationship_edges')
-        .select('id')
-        .eq('tenant_id', tenantId)
-        .eq('source_type', 'person')
-        .eq('source_id', userA)
-        .eq('target_type', 'person')
-        .eq('target_id', userB)
-        .limit(1);
+      const { data: existingEdge } = await repo.fetchExistingConnectionEdge(supabase, tenantId, userA, userB);
       if (existingEdge && existingEdge.length > 0) continue;
 
       introduced.add(pairKey);
@@ -735,14 +604,7 @@ async function runGroupCreationFromMatchCluster(ctx: AutomationContext) {
   let usersAffected = 0;
   let actionsTaken = 0;
 
-  const { data: edges } = await supabase
-    .from('relationship_edges')
-    .select('source_id, target_id')
-    .eq('tenant_id', tenantId)
-    .eq('source_type', 'person')
-    .eq('target_type', 'person')
-    .eq('edge_type', 'connected')
-    .limit(MATCH_CLUSTER_MAX_EDGES_SCANNED);
+  const { data: edges } = await repo.fetchConnectedEdges(supabase, tenantId, MATCH_CLUSTER_MAX_EDGES_SCANNED);
 
   const connections = new Map<string, Set<string>>();
   for (const e of edges || []) {
@@ -773,10 +635,7 @@ async function runGroupCreationFromMatchCluster(ctx: AutomationContext) {
     if (groupsCreated >= MATCH_CLUSTER_MAX_NEW_GROUPS) break;
 
     // Skip if these three already share a group.
-    const { data: sharedMemberships } = await supabase
-      .from('global_community_group_members')
-      .select('group_id, user_id')
-      .in('user_id', [userA, userB, userC]);
+    const { data: sharedMemberships } = await repo.fetchSharedMemberships(supabase, [userA, userB, userC]);
 
     const groupCounts = new Map<string, number>();
     for (const m of sharedMemberships || []) {
@@ -784,21 +643,15 @@ async function runGroupCreationFromMatchCluster(ctx: AutomationContext) {
     }
     if ([...groupCounts.values()].some((count) => count === 3)) continue;
 
-    const { data: newGroup, error: createErr } = await supabase
-      .from('global_community_groups')
-      .insert({
-        name: 'Your Match Circle',
-        description: 'Auto-created for a group of mutually connected matches.',
-        is_public: false,
-        created_by: VITANA_BOT_USER_ID,
-      })
-      .select('id, name')
-      .single();
+    const { data: newGroup, error: createErr } = await repo.insertGroup(supabase, {
+      name: 'Your Match Circle',
+      description: 'Auto-created for a group of mutually connected matches.',
+      is_public: false,
+      created_by: VITANA_BOT_USER_ID,
+    });
     if (createErr || !newGroup) continue;
 
-    await supabase.from('global_community_group_members').insert(
-      [userA, userB, userC].map((user_id) => ({ group_id: newGroup.id, user_id, role: 'member' }))
-    );
+    await repo.insertGroupMembers(supabase, [userA, userB, userC].map((user_id) => ({ group_id: newGroup.id, user_id, role: 'member' })));
 
     for (const user_id of [userA, userB, userC]) {
       ctx.notify(user_id, 'group_recommended', {
