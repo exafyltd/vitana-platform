@@ -1,45 +1,55 @@
-Offline Playwright verification (BOOTSTRAP/VTID-03707) — local harness only, no
-network/live-session calls, using the widget's own pre-existing test helpers
-_test_showOverlay()/_test_setState() (documented in-source as the sanctioned
-way to render the overlay without creating a real Vertex/Nova session).
+Offline Playwright verification (VTID-03707 follow-up — 17px→19px bump) —
+local harness only, no network/live-session calls, using the widget's own
+pre-existing test helpers _test_showOverlay()/_test_setState() (documented
+in-source as the sanctioned way to render the overlay without creating a
+real Vertex/Nova session).
 
-Harness: static file server over services/gateway/src/frontend/command-hub/,
-Playwright (chromium) loads it, calls VitanaOrb._test_showOverlay(), then
-VitanaOrb._test_setState('listening', <caption text>) for representative
-locale strings pulled from the new _CAPTIONS dictionary, at both the
-390x844 (mobile) and 1400x900 (desktop) viewports named in this repo's
-CLAUDE.md visual-verification protocol.
+Harness: static file server over
+services/gateway/src/frontend/command-hub/ (port 8934) plus a second local
+static server (port 8935) serving a throwaway harness HTML page that loads
+orb-widget.js via <script src>. Playwright (chromium, the pre-installed
+/opt/pw-browsers/chromium-1194 build) navigates to the harness page, calls
+VitanaOrb._test_showOverlay(), then VitanaOrb._test_setState('listening',
+<caption text>) for representative locale strings, at both the 390x844
+(mobile) and 1400x900 (desktop) viewports named in this repo's CLAUDE.md
+visual-verification protocol.
 
 Console output from the run (verbatim):
 
-[console] [VTOrb] Widget version: 2026-08-24-caption-i18n
+[console] [VTOrb] Widget version: 2026-08-24-caption-fontsize-19px
 [console] [VTOrb] Auto-detect: token=NONE, lang=en, gw=http://127.0.0.1:8934
 [console] [VTOrb] _injectStyles: creating vtorb-css style tag
 [console] [VTOrb] _renderOverlay: creating overlay DOM
-mobile en-listening font-size= 17px
-mobile es-listening font-size= 17px
-mobile ar-listening font-size= 17px
-mobile de-idleNudge-long font-size= 17px
-[console] [VTOrb] Widget version: 2026-08-24-caption-i18n
+mobile en-listening font-size= 19px
+mobile es-listening font-size= 19px
+mobile ar-listening font-size= 19px
+mobile de-idleNudge font-size= 19px
+[console] [VTOrb] Widget version: 2026-08-24-caption-fontsize-19px
 [console] [VTOrb] Auto-detect: token=NONE, lang=en, gw=http://127.0.0.1:8934
 [console] [VTOrb] _injectStyles: creating vtorb-css style tag
 [console] [VTOrb] _renderOverlay: creating overlay DOM
-desktop en-listening font-size= 17px
-desktop es-listening font-size= 17px
-desktop ar-listening font-size= 17px
-desktop de-idleNudge-long font-size= 17px
+desktop en-listening font-size= 19px
+desktop es-listening font-size= 19px
+desktop ar-listening font-size= 19px
+desktop de-idleNudge font-size= 19px
 DONE
 
-getComputedStyle(.vtorb-status).fontSize reads 17px live in the DOM for
-every case, in both viewports — confirms the CSS/inline-style bump actually
-takes effect, not just that the source string changed.
+getComputedStyle(.vtorb-status).fontSize reads 19px live in the DOM for
+every case, in both viewports — confirms the CSS/inline-style bump to 19px
+actually takes effect, not just that the source string changed. (Widget
+version string in the console output also confirms the harness loaded the
+edited file, not a cached copy.)
 
-Visually reviewed (Read tool, screenshots) during this session, not
-committed to the repo (matches this evidence pack's own convention of
-referencing suite/tool output, not binary images):
-  - en/es/ar/de captions render fully inside the 390px mobile viewport with
-    no clipping or horizontal overflow at the new 17px size.
-  - Arabic ("أستمع...") renders centered and right-to-left correctly with
-    no special-casing needed (.vtorb-status is text-align:center).
-  - The longest new phrase (German idleNudge, 44 chars) wraps cleanly on
-    one line with no overflow past the shell/controls below it.
+Screenshots taken via Playwright and visually reviewed with the Read tool
+during this session (not committed to the repo, matching this evidence
+pack's own convention of citing tool/suite output rather than binary
+images):
+  - Mobile (390x844), German idleNudge caption ("Ich bin noch da, falls du
+    reden möchtest", the longest phrase in the dictionary): renders fully
+    inside the viewport width, no clipping or horizontal overflow at 19px,
+    comfortably legible, clear separation from the mic/close controls
+    below.
+  - Desktop (1400x900), Arabic listening caption ("أستمع..."): renders
+    centered and correctly right-to-left with no special-casing needed
+    (.vtorb-status is text-align:center), no layout issues at the larger
+    size.

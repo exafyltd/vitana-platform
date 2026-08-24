@@ -5,6 +5,17 @@ subtitles under the Orb are always in English, except when we choose German
 and English" — plus a request to make the caption text a little bigger,
 since there's a lot of empty space around it on mobile.
 
+**Follow-up (same VTID, second PR):** the initial 14px→17px bump shipped and
+was verified live on staging, but the user reported the size increase
+wasn't visibly noticeable. Requested explicitly: "bump it to 18–19px pls".
+Font-size is now **19px** (from 17px), `min-height` scaled proportionally
+to **26px** (from 24px) to avoid clipping/cramping at the larger size. Same
+two source locations, same test file, same evidence-pack directory —
+updated in place rather than opening a second VTID, since this is a
+refinement of the same shipped feature, not distinct work. AC-4/AC-5 and
+the verification summary below reflect the final 19px/26px values; the
+19px/26px values superseded 17px/24px in both the source and the tests.
+
 Root cause: `.vtorb-status` (the caption shown under the voice Orb) is not a
 live transcript — that feature was deliberately removed from this widget
 previously — it is always one of a small, fixed set of status phrases
@@ -67,21 +78,24 @@ one caller — the disconnect-alert MP3 clip id"
 Output: `outputs/grep-sweep.txt` — `_pickLang()` appears exactly twice in
 the file (its declaration, and the one `clipLang = _pickLang()` call).
 
-AC-4 — Caption font-size increased for legibility (14px→17px, min-height
-20px→24px), applied consistently in both places it's set, with no
-mobile/desktop divergence risk
+AC-4 — Caption font-size increased for legibility (14px→17px→**19px**,
+min-height 20px→24px→**26px**), applied consistently in both places it's
+set, with no mobile/desktop divergence risk
 
 Both the inline `cssText` set once at element creation (`_renderOverlay()`)
-and the injected `<style>` stylesheet rule were bumped identically.
-Deliberately not overridden inside the `@media (max-width:600px)` block:
-the inline style has higher CSS specificity than any stylesheet rule
-(media-scoped or not) and is never updated after creation, so a mobile-only
-override there would silently never apply — a single shared value covers
-both viewports named in this repo's visual-verification protocol.
+and the injected `<style>` stylesheet rule were bumped identically, twice:
+first to 17px/24px, then — per explicit follow-up user request ("bump it
+to 18–19px pls") after live staging testing showed the first bump wasn't
+visibly noticeable enough — to 19px/26px. Deliberately not overridden
+inside the `@media (max-width:600px)` block: the inline style has higher
+CSS specificity than any stylesheet rule (media-scoped or not) and is
+never updated after creation, so a mobile-only override there would
+silently never apply — a single shared value covers both viewports named
+in this repo's visual-verification protocol.
 
 TEST: `orb-widget-caption-i18n.test.ts` — ".vtorb-status font-size and
-min-height are 17px/24px in both the inline style and the injected
-stylesheet"
+min-height are 19px/26px in both the inline style and the injected
+stylesheet" (also asserts no stray 17px/24px left over from the first bump)
 UI: verified live in a rendered DOM — see AC-5.
 Output: `outputs/grep-sweep.txt`
 
@@ -92,8 +106,9 @@ UI: `outputs/playwright-check.txt` — local, fully offline Playwright
 harness using the widget's own `_test_showOverlay()`/`_test_setState()`
 helpers (no network/live-session calls): English/Spanish/Arabic captions
 and the longest new phrase (German idle-nudge, 44 chars) at 390×844 and
-1400×900. `getComputedStyle(.vtorb-status).fontSize` read `17px` live in
-the DOM in every case.
+1400×900. `getComputedStyle(.vtorb-status).fontSize` read `19px` live in
+the DOM in every case (re-run against the follow-up 19px bump; the
+original run against 17px is superseded).
 
 Screenshots were visually reviewed during this session (no clipping or
 overflow on mobile, Arabic renders centered and correctly right-to-left,
@@ -135,8 +150,8 @@ OASIS event.
 | Updated `orb-widget-thinking-messages.test.ts` | Written; **not executed in this sandbox** — see limitation below |
 | `node --check` on the edited widget file | Clean, exit 0 |
 | Manual grep sweep for lingering hardcoded de/en branches | Only the two documented, deliberately out-of-scope sites remain |
-| Offline Playwright harness (widget's own `_test_showOverlay`/`_test_setState`, no live session) | 17px confirmed live in DOM, mobile+desktop, en/es/ar/de, no clipping, correct RTL |
-| Companion `vitana-v1` cache-bust PR | `exafyltd/vitana-v1#1018` |
+| Offline Playwright harness (widget's own `_test_showOverlay`/`_test_setState`, no live session) | 19px confirmed live in DOM, mobile+desktop, en/es/ar/de, no clipping, correct RTL |
+| Companion `vitana-v1` cache-bust PR | `exafyltd/vitana-v1#1018` (initial 17px), plus this follow-up PR's own `vitana-v1` companion (19px) |
 
 ## Known limitation — jest could not be executed in this session
 

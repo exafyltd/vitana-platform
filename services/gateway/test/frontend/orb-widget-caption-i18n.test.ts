@@ -175,16 +175,20 @@ describe('orb-widget caption i18n (BOOTSTRAP-ORB-CAPTION-I18N)', () => {
     }
   });
 
-  it('.vtorb-status font-size and min-height are 17px/24px in both the inline style and the injected stylesheet', () => {
+  it('.vtorb-status font-size and min-height are 19px/26px in both the inline style and the injected stylesheet', () => {
     // Inline style, set once at element creation in _renderOverlay().
-    expect(source).toMatch(/status\.style\.cssText = '[^']*font-size:17px[^']*min-height:24px[^']*'/);
+    expect(source).toMatch(/status\.style\.cssText = '[^']*font-size:19px[^']*min-height:26px[^']*'/);
     // Injected <style> tag rule — built as an array of string literals
     // joined with '\n', so font-size and min-height live on separate lines
     // (separate quoted strings), not inside one string like the inline style.
-    expect(source).toMatch(/'\s*font-size: 17px; color: rgba\(255,255,255,0\.6\); text-align: center;',/);
-    expect(source).toMatch(/'\s*min-height: 24px; transition: opacity 0\.3s;',/);
-    // No stray 14px/20px left behind on this element's rules.
+    expect(source).toMatch(/'\s*font-size: 19px; color: rgba\(255,255,255,0\.6\); text-align: center;',/);
+    expect(source).toMatch(/'\s*min-height: 26px; transition: opacity 0\.3s;',/);
+    // No stray 14px/20px (original) or 17px/24px (first bump) left behind.
     expect(source).not.toMatch(/font-size:14px/);
     expect(source).not.toMatch(/font-size: 14px;/);
+    expect(source).not.toMatch(/font-size:17px/);
+    expect(source).not.toMatch(/font-size: 17px;/);
+    expect(source).not.toMatch(/min-height:24px/);
+    expect(source).not.toMatch(/min-height: 24px;/);
   });
 });
