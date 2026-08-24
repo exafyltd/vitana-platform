@@ -88,18 +88,18 @@ Output: `outputs/grep-sweep.txt`
 AC-5 — The new caption text and font-size actually render correctly,
 including RTL, at both required viewports
 
-Verified in a local, fully offline Playwright harness using the widget's
-own pre-existing `_test_showOverlay()`/`_test_setState()` test helpers (no
-network or live-session calls) — English/Spanish/Arabic captions and the
-longest new phrase (German idle-nudge, 44 chars) at 390×844 and 1400×900.
-`getComputedStyle(.vtorb-status).fontSize` read `17px` live in the DOM in
-every case. Screenshots were visually reviewed during this session (no
-clipping/overflow on mobile, Arabic renders centered and correctly
-right-to-left, the long German phrase wraps cleanly on one line) but are
-not committed here, matching this evidence pack's convention of citing
-tool/suite output rather than binary images.
+UI: `outputs/playwright-check.txt` — local, fully offline Playwright
+harness using the widget's own `_test_showOverlay()`/`_test_setState()`
+helpers (no network/live-session calls): English/Spanish/Arabic captions
+and the longest new phrase (German idle-nudge, 44 chars) at 390×844 and
+1400×900. `getComputedStyle(.vtorb-status).fontSize` read `17px` live in
+the DOM in every case.
 
-UI: `outputs/playwright-check.txt`
+Screenshots were visually reviewed during this session (no clipping or
+overflow on mobile, Arabic renders centered and correctly right-to-left,
+the long German phrase wraps cleanly on one line) but are not committed
+here, matching this pack's convention of citing tool/suite output rather
+than binary images.
 
 AC-6 — The sibling thinking-messages test suite still passes against the
 new 10-key phrase-pool shape
