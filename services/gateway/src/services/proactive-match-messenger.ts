@@ -17,6 +17,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { VITANA_BOT_USER_ID } from '../lib/vitana-bot';
 import { notifyUserAsync } from './notification-service';
 import { emitOasisEvent } from './oasis-event-service';
+import * as repo from './proactive-match-messenger-repository';
 
 const VTID = 'VTID-01270';
 const MATCH_SHARE_BASE = 'https://e.vitanaland.com/matches';
@@ -146,14 +147,7 @@ export async function sendProactiveMatchMessages(
 
   try {
     // Step 1: Dedup — check for existing proactive message today
-    const { data: existing } = await supabase
-      .from('chat_messages')
-      .select('id')
-      .eq('sender_id', VITANA_BOT_USER_ID)
-      .eq('receiver_id', user_id)
-      .eq('tenant_id', tenant_id)
-      .contains('metadata', { proactive_match_date: date })
-      .limit(1);
+    const { data: existing } = await repo.fetchExistingProactiveMessage(supabase, VITANA_BOT_USER_ID, user_id, tenant_id, date);
 
     if (existing && existing.length > 0) {
       console.log(`[${VTID}] Proactive message already sent to ${user_id} for ${date}, skipping`);
@@ -186,15 +180,7 @@ export async function sendProactiveMatchMessages(
     // match.proactive.error. Fetching match_targets in a separate query (Step
     // 2b) removes that dependency entirely and matches how matches_daily is
     // read elsewhere in the gateway.
-    const { data: matches, error: matchError } = await supabase
-      .from('matches_daily')
-      .select('id, match_type, target_id, score, reasons')
-      .eq('user_id', user_id)
-      .eq('match_date', date)
-      .eq('state', 'suggested')
-      .gte('score', min_score)
-      .order('score', { ascending: false })
-      .limit(max_matches);
+    const { data: matches, error: matchError } = await repo.fetchTopDailyMatches(supabase, user_id, date, min_score, max_matches);
 
     if (matchError) {
       // Graceful fallback if migration not deployed or schema drift on the
@@ -248,10 +234,7 @@ export async function sendProactiveMatchMessages(
     const targetIds = [...new Set(typedMatches.map((m) => m.target_id).filter(Boolean))];
     const targetMap = new Map<string, MatchTargetRow>();
     if (targetIds.length > 0) {
-      const { data: targets, error: targetError } = await supabase
-        .from('match_targets')
-        .select('id, display_name, topic_keys, tags, metadata, target_type')
-        .in('id', targetIds);
+      const { data: targets, error: targetError } = await repo.fetchMatchTargets(supabase, targetIds);
 
       if (targetError) {
         // Non-fatal: degrade to display_name fallbacks rather than dropping
@@ -274,20 +257,11 @@ export async function sendProactiveMatchMessages(
     }
 
     // Step 3: Get total count for context
-    const { count: totalCount } = await supabase
-      .from('matches_daily')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', user_id)
-      .eq('match_date', date)
-      .eq('state', 'suggested');
+    const { count: totalCount } = await repo.countSuggestedDailyMatches(supabase, user_id, date);
 
     // Step 4: Privacy gate for person matches
     let revealMode = 'first_name';
-    const { data: prefs } = await supabase
-      .from('user_match_preferences')
-      .select('reveal_identity_mode')
-      .eq('user_id', user_id)
-      .single();
+    const { data: prefs } = await repo.fetchUserMatchRevealPreference(supabase, user_id);
 
     if (prefs?.reveal_identity_mode) {
       revealMode = prefs.reveal_identity_mode;
@@ -329,16 +303,14 @@ export async function sendProactiveMatchMessages(
     };
 
     // Step 8: Insert chat message
-    const { error: insertError } = await supabase
-      .from('chat_messages')
-      .insert({
-        tenant_id,
-        sender_id: VITANA_BOT_USER_ID,
-        receiver_id: user_id,
-        content: messageContent,
-        message_type: 'text',
-        metadata,
-      });
+    const { error: insertError } = await repo.insertProactiveMatchChatMessage(supabase, {
+      tenant_id,
+      sender_id: VITANA_BOT_USER_ID,
+      receiver_id: user_id,
+      content: messageContent,
+      message_type: 'text',
+      metadata,
+    });
 
     if (insertError) {
       throw new Error(`Chat message insert failed: ${insertError.message}`);
