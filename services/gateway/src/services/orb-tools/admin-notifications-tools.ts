@@ -14,6 +14,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
 import { gatewayApiCall, clampLimit, relAge } from './developer-tools';
 import { adminGate, authHeaders, NO_ADMIN_SESSION } from './admin-users-rbac-tools';
+import * as repo from './admin-notifications-tools-repository';
 
 type Handler = (
   args: OrbToolArgs,
@@ -32,16 +33,12 @@ async function resolveAudienceCount(
   }
   if (!tenantId) return { error: 'A tenant_id is required to resolve the audience.' };
   if (args.send_to_all === true) {
-    const { count, error } = await sb.from('user_tenants').select('user_id', { count: 'exact', head: true }).eq('tenant_id', tenantId);
+    const { count, error } = await repo.countTenantMembers(sb, tenantId);
     if (error) return { error: error.message };
     return { count: count ?? 0, description: `all ${count ?? 0} members of the tenant` };
   }
   if (typeof args.recipient_role === 'string' && args.recipient_role) {
-    const { count, error } = await sb
-      .from('user_tenants')
-      .select('user_id', { count: 'exact', head: true })
-      .eq('tenant_id', tenantId)
-      .eq('active_role', args.recipient_role);
+    const { count, error } = await repo.countTenantMembersByRole(sb, tenantId, args.recipient_role);
     if (error) return { error: error.message };
     return { count: count ?? 0, description: `${count ?? 0} members with role "${args.recipient_role}"` };
   }
