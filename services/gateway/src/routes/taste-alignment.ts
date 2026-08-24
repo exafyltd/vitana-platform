@@ -40,6 +40,7 @@ import {
   TASTE_DIMENSION_METADATA,
   LIFESTYLE_DIMENSION_METADATA
 } from '../types/taste-alignment';
+import * as repo from './taste-alignment-repository';
 
 const router = Router();
 
@@ -69,7 +70,7 @@ async function getUserContext(token: string): Promise<{
 }> {
   try {
     const supabase = createUserSupabaseClient(token);
-    const { data, error } = await supabase.rpc('me_context');
+    const { data, error } = await repo.fetchMeContext(supabase);
 
     if (error) {
       return { ok: false, tenant_id: null, user_id: null, error: error.message };
@@ -163,7 +164,7 @@ router.get('/bundle', async (req: Request, res: Response) => {
 
   try {
     const supabase = createUserSupabaseClient(token);
-    const { data, error } = await supabase.rpc('taste_alignment_bundle_get');
+    const { data, error } = await repo.fetchTasteAlignmentBundle(supabase);
 
     if (error) {
       console.error(`[${VTID}] taste_alignment_bundle_get error:`, error.message);
@@ -222,7 +223,7 @@ router.get('/taste', async (req: Request, res: Response) => {
 
   try {
     const supabase = createUserSupabaseClient(token);
-    const { data, error } = await supabase.rpc('taste_profile_get');
+    const { data, error } = await repo.fetchTasteProfile(supabase);
 
     if (error) {
       console.error(`[${VTID}] taste_profile_get error:`, error.message);
@@ -278,7 +279,7 @@ router.post('/taste', async (req: Request, res: Response) => {
 
   try {
     const supabase = createUserSupabaseClient(token);
-    const { data, error } = await supabase.rpc('taste_profile_set', {
+    const { data, error } = await repo.setTasteProfile(supabase, {
       p_simplicity_preference: simplicity_preference ?? null,
       p_premium_orientation: premium_orientation ?? null,
       p_aesthetic_style: aesthetic_style ?? null,
@@ -339,7 +340,7 @@ router.get('/lifestyle', async (req: Request, res: Response) => {
 
   try {
     const supabase = createUserSupabaseClient(token);
-    const { data, error } = await supabase.rpc('lifestyle_profile_get');
+    const { data, error } = await repo.fetchLifestyleProfile(supabase);
 
     if (error) {
       console.error(`[${VTID}] lifestyle_profile_get error:`, error.message);
@@ -399,7 +400,7 @@ router.post('/lifestyle', async (req: Request, res: Response) => {
 
   try {
     const supabase = createUserSupabaseClient(token);
-    const { data, error } = await supabase.rpc('lifestyle_profile_set', {
+    const { data, error } = await repo.setLifestyleProfile(supabase, {
       p_routine_style: routine_style ?? null,
       p_social_orientation: social_orientation ?? null,
       p_convenience_bias: convenience_bias ?? null,
@@ -482,7 +483,7 @@ router.post('/score', async (req: Request, res: Response) => {
   try {
     // Get user's alignment bundle
     const supabase = createUserSupabaseClient(token);
-    const { data: bundleData, error: bundleError } = await supabase.rpc('taste_alignment_bundle_get');
+    const { data: bundleData, error: bundleError } = await repo.fetchTasteAlignmentBundle(supabase);
 
     if (bundleError) {
       console.error(`[${VTID}] taste_alignment_bundle_get error:`, bundleError.message);
@@ -583,7 +584,7 @@ router.post('/reaction', async (req: Request, res: Response) => {
 
   try {
     const supabase = createUserSupabaseClient(token);
-    const { data, error } = await supabase.rpc('taste_reaction_record', {
+    const { data, error } = await repo.recordTasteReaction(supabase, {
       p_action_id: action_id,
       p_action_type: action_type,
       p_reaction: reaction,
@@ -652,7 +653,7 @@ router.get('/audit', async (req: Request, res: Response) => {
 
   try {
     const supabase = createUserSupabaseClient(token);
-    const { data, error } = await supabase.rpc('taste_alignment_audit_get', {
+    const { data, error } = await repo.fetchTasteAlignmentAudit(supabase, {
       p_limit: limit,
       p_offset: offset,
       p_target_type: targetType ?? null
