@@ -80,7 +80,9 @@ describe('orb-widget caption i18n (BOOTSTRAP-ORB-CAPTION-I18N)', () => {
       const entryEnd = literal.indexOf('},', entryIdx);
       const entry = literal.slice(entryIdx, entryEnd >= 0 ? entryEnd : undefined);
       for (const lc of CAPTION_LOCALES) {
-        expect(entry).toMatch(new RegExp(`\\b${lc}:\\s*'`));
+        // Quote-agnostic: a value containing an apostrophe (e.g. fr "J'écoute…")
+        // is double-quoted in the source, so this must accept either.
+        expect(entry).toMatch(new RegExp(`\\b${lc}:\\s*['"]`));
       }
     }
   });
@@ -101,10 +103,15 @@ describe('orb-widget caption i18n (BOOTSTRAP-ORB-CAPTION-I18N)', () => {
   });
 
   it('_THINKING_QUICK/_PRIMARY/_ALTERNATES entries all carry the full 10-key shape', () => {
-    const pairs =
-      source.match(
-        /\{ en: '[^']*', de: '[^']*', es: '[^']*', sr: '[^']*', fr: '[^']*', pt: '[^']*', ru: '[^']*', pl: '[^']*', zh: '[^']*', ar: '[^']*' \}/g,
-      ) || [];
+    // Quote-agnostic per field: a value with an apostrophe (French phrases
+    // like "D'accord, attends…") is double-quoted, so a single-quote-only
+    // pattern under-counts.
+    const Q = `(?:'[^']*'|"[^"]*")`;
+    const entryPattern = new RegExp(
+      `\\{ en: ${Q}, de: ${Q}, es: ${Q}, sr: ${Q}, fr: ${Q}, pt: ${Q}, ru: ${Q}, pl: ${Q}, zh: ${Q}, ar: ${Q} \\}`,
+      'g',
+    );
+    const pairs = source.match(entryPattern) || [];
     // quick(6) + primary(7) + alternates(8) = 21 entries — same total the
     // sibling orb-widget-thinking-messages.test.ts pins.
     expect(pairs.length).toBe(21);
@@ -124,7 +131,14 @@ describe('orb-widget caption i18n (BOOTSTRAP-ORB-CAPTION-I18N)', () => {
   });
 
   it('_pickLang() is scoped to exactly one caller — the disconnect-alert MP3 clip id', () => {
-    const occurrences = (source.match(/\b_pickLang\(\)/g) || []).length;
+    // Counts only real code, not the explanatory comments above/around the
+    // declaration that mention "_pickLang()" by name (a plain substring
+    // count would over-count those).
+    const codeOnly = source
+      .split('\n')
+      .filter((l: string) => !l.trim().startsWith('//'))
+      .join('\n');
+    const occurrences = (codeOnly.match(/\b_pickLang\(\)/g) || []).length;
     // 1 for `function _pickLang() { ... }`, 1 for the `clipLang = _pickLang()`
     // call inside _announceDisconnect. Guards against a future edit silently
     // widening this back into a caption-text lookup, which would break the
@@ -148,13 +162,15 @@ describe('orb-widget caption i18n (BOOTSTRAP-ORB-CAPTION-I18N)', () => {
       const entryIdx = literal.indexOf(`${key}: {`);
       const entryEnd = literal.indexOf('},', entryIdx);
       const entry = literal.slice(entryIdx, entryEnd >= 0 ? entryEnd : undefined);
-      const enMatch = entry.match(/en:\s*'([^']*)'/);
+      // Quote-agnostic: capture from whichever quote style the field uses.
+      const enMatch = entry.match(/en:\s*(?:'([^']*)'|"([^"]*)")/);
       expect(enMatch).not.toBeNull();
-      const en = enMatch![1];
+      const en = enMatch![1] ?? enMatch![2];
       for (const lc of locales) {
-        const m = entry.match(new RegExp(`${lc}:\\s*'([^']*)'`));
+        const m = entry.match(new RegExp(`${lc}:\\s*(?:'([^']*)'|"([^"]*)")`));
         expect(m).not.toBeNull();
-        expect(m![1]).not.toBe(en);
+        const val = m![1] ?? m![2];
+        expect(val).not.toBe(en);
       }
     }
   });

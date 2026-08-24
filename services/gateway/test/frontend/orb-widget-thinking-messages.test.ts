@@ -82,9 +82,16 @@ describe('orb-widget thinking-status messages (VTID-03449, VTID-03451)', () => {
     // 10 gateway-supported locales — see services/gateway/src/i18n/catalog.ts
     // GATEWAY_LOCALES. This regex pins the full 10-key shape so a future
     // edit can't silently drop a locale from one entry.
+    // Quote-agnostic per field: a value with an apostrophe (French phrases
+    // like "D'accord, attends…") is double-quoted in the source, so a
+    // single-quote-only pattern under-counts.
+    const Q = `(?:'[^']*'|"[^"]*")`;
     const pairs =
       source.match(
-        /\{ en: '[^']*', de: '[^']*', es: '[^']*', sr: '[^']*', fr: '[^']*', pt: '[^']*', ru: '[^']*', pl: '[^']*', zh: '[^']*', ar: '[^']*' \}/g,
+        new RegExp(
+          `\\{ en: ${Q}, de: ${Q}, es: ${Q}, sr: ${Q}, fr: ${Q}, pt: ${Q}, ru: ${Q}, pl: ${Q}, zh: ${Q}, ar: ${Q} \\}`,
+          'g',
+        ),
       ) || [];
     // quick(6) + primary(7) + alternates(8) = 21 pairs
     expect(pairs.length).toBe(21);
