@@ -28,6 +28,7 @@ import { getCurrentFacts } from './memory-facts-service';
 import { fetchPreferenceFacts } from './preference-facts';
 import { getAwarenessConfig } from './awareness-registry';
 import { getJourneyEngagementBonus } from './guided-journey/journey-index-award';
+import * as repo from './user-context-profiler-repository';
 
 const TTL_MS = 10 * 60 * 1000;
 const DEFAULT_WINDOW_DAYS = 14;
@@ -90,11 +91,7 @@ function serviceClient(): SupabaseClient | null {
 }
 
 async function readProfilerVersion(client: SupabaseClient, userId: string): Promise<number> {
-  const { data } = await client
-    .from('user_profiler_version')
-    .select('version')
-    .eq('user_id', userId)
-    .maybeSingle();
+  const { data } = await repo.readProfilerVersion(client, userId);
   return data?.version ?? 0;
 }
 
@@ -195,25 +192,13 @@ interface PreferenceRow {
 }
 
 async function fetchActivityLog(client: SupabaseClient, userId: string, sinceIso: string): Promise<ActivityRow[]> {
-  const { data, error } = await client
-    .from('user_activity_log')
-    .select('activity_type, activity_data, created_at')
-    .eq('user_id', userId)
-    .gte('created_at', sinceIso)
-    .order('created_at', { ascending: false })
-    .limit(400);
+  const { data, error } = await repo.fetchActivityLogRows(client, userId, sinceIso);
   if (error) return [];
   return (data || []) as ActivityRow[];
 }
 
 async function fetchRoutines(client: SupabaseClient, userId: string): Promise<RoutineRow[]> {
-  const { data, error } = await client
-    .from('user_routines')
-    .select('routine_kind, title, summary, confidence')
-    .eq('user_id', userId)
-    .gte('confidence', 0.5)
-    .order('confidence', { ascending: false })
-    .limit(8);
+  const { data, error } = await repo.fetchRoutineRows(client, userId);
   if (error) return [];
   return (data || []) as RoutineRow[];
 }
@@ -232,11 +217,7 @@ async function fetchAppUsersAccount(
   userId: string,
 ): Promise<AccountRow> {
   try {
-    const { data, error } = await client
-      .from('app_users')
-      .select('created_at')
-      .eq('user_id', userId)
-      .maybeSingle();
+    const { data, error } = await repo.fetchAppUsersAccountRow(client, userId);
     if (error || !data) return { createdAt: null };
     const raw = (data as { created_at?: string | null }).created_at;
     if (!raw) return { createdAt: null };
@@ -363,9 +344,6 @@ export type VitanaIndexFetchResult =
   | { state: 'no_score_baseline_exists' }     // survey done, compute failed (#839 state)
   | { state: 'not_set_up' };                   // neither row exists
 
-const INDEX_SELECT_COLUMNS =
-  'date, score_total, score_nutrition, score_hydration, score_exercise, score_sleep, score_mental, model_version, feature_inputs, confidence';
-
 function parseSubscoresFromFeatureInputs(featureInputs: any): Partial<Record<PillarKey, PillarSubscores>> {
   const out: Partial<Record<PillarKey, PillarSubscores>> = {};
   if (!featureInputs || typeof featureInputs !== 'object') return out;
@@ -401,14 +379,7 @@ export async function fetchLifeCompass(
     // back to the base columns rather than dropping the compass entirely.
     const extendedCols =
       'primary_goal, category, confidence_score, target_date, target_value, target_unit, starting_value, created_at';
-    const queryCols = async (cols: string) =>
-      client
-        .from('life_compass')
-        .select(cols)
-        .eq('user_id', userId)
-        .eq('is_active', true)
-        .order('created_at', { ascending: false })
-        .limit(1);
+    const queryCols = async (cols: string) => repo.queryLifeCompass(client, userId, cols);
 
     let data: any[] | null;
     let error: any;
@@ -445,13 +416,7 @@ export async function fetchLifeCompass(
 async function fetchVitanaIndex(client: SupabaseClient, userId: string): Promise<VitanaIndexFetchResult> {
   // 1) Try last 7 days first (for trend math).
   const sinceIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  const { data: recentData, error: recentErr } = await client
-    .from('vitana_index_scores')
-    .select(INDEX_SELECT_COLUMNS)
-    .eq('user_id', userId)
-    .gte('date', sinceIso)
-    .order('date', { ascending: true })
-    .limit(14);
+  const { data: recentData, error: recentErr } = await repo.fetchVitanaIndexRecent(client, userId, sinceIso);
 
   let rows: any[] | null = null;
   if (!recentErr && recentData && recentData.length > 0) {
@@ -459,24 +424,14 @@ async function fetchVitanaIndex(client: SupabaseClient, userId: string): Promise
   } else {
     // 2) Fallback: latest-ever score. User may have paused or not computed in a week;
     //    we still want to report what they have instead of saying nothing.
-    const { data: latestData } = await client
-      .from('vitana_index_scores')
-      .select(INDEX_SELECT_COLUMNS)
-      .eq('user_id', userId)
-      .order('date', { ascending: false })
-      .limit(1);
+    const { data: latestData } = await repo.fetchVitanaIndexLatest(client, userId);
     if (latestData && latestData.length > 0) rows = latestData as any[];
   }
 
   if (!rows || rows.length === 0) {
     // 3) No score row at all. Distinguish "compute failed after baseline" from
     //    "never set up" so voice can redirect honestly (BOOTSTRAP-VITANA-INDEX-STATUS #839).
-    const { data: surveyData } = await client
-      .from('vitana_index_baseline_survey')
-      .select('user_id')
-      .eq('user_id', userId)
-      .limit(1)
-      .maybeSingle();
+    const { data: surveyData } = await repo.fetchVitanaIndexBaselineSurveyExists(client, userId);
     if (surveyData) return { state: 'no_score_baseline_exists' };
     return { state: 'not_set_up' };
   }
@@ -513,14 +468,7 @@ async function fetchVitanaIndex(client: SupabaseClient, userId: string): Promise
 
   let last_movement: VitanaIndexSnapshot['last_movement'] | undefined;
   try {
-    const { data: evt } = await client
-      .from('oasis_events')
-      .select('topic, payload, created_at')
-      .eq('actor_id', userId)
-      .eq('topic', 'index.recomputed')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const { data: evt } = await repo.fetchLatestIndexRecomputedEvent(client, userId);
     if (evt) {
       const p = (evt.payload as any) || {};
       const delta = Number(p.total_delta ?? p.delta ?? 0);
@@ -537,13 +485,7 @@ async function fetchVitanaIndex(client: SupabaseClient, userId: string): Promise
   let projected_day_90: number | null = null;
   let projected_day_90_tier: string | null = null;
   try {
-    const { data: firstRow } = await client
-      .from('vitana_index_scores')
-      .select('date')
-      .eq('user_id', userId)
-      .order('date', { ascending: true })
-      .limit(1)
-      .maybeSingle();
+    const { data: firstRow } = await repo.fetchFirstVitanaIndexScoreDate(client, userId);
     const firstDate = firstRow?.date as string | undefined;
     const today = new Date();
     const firstTs = firstDate ? Date.parse(firstDate) : today.getTime();
