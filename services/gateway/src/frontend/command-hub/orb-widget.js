@@ -488,6 +488,15 @@
       '.vtorb-btn-mic.vtorb-muted {',
       '  background: rgba(239,68,68,0.2); color: #fca5a5;',
       '}',
+      // VTID-03706: under full duplex the mic is genuinely still open while
+      // Vitana speaks. A ring rather than a colour swap, deliberately: the
+      // background/colour are still assigned inline just below (legacy, "no
+      // CSS dependency"), and an inline rule outranks a class — a colour rule
+      // here would silently never apply. A ring also reads as "live" more
+      // directly than a hue change, and needs no !important to win.
+      '.vtorb-btn-mic.vtorb-mic-live {',
+      '  box-shadow: 0 0 0 2px rgba(34,197,94,0.85), 0 0 12px rgba(34,197,94,0.45);',
+      '}',
       '.vtorb-btn-close {',
       '  background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.7);',
       '}',
@@ -3455,22 +3464,19 @@
       var muted = _s.voiceState === 'MUTED';
       micBtn.innerHTML = muted ? _ICONS.micOff : _ICONS.mic;
       // Apply muted style inline (no CSS dependency)
+      micBtn.style.background = muted ? 'rgba(239,68,68,0.2)' : 'rgba(59,130,246,0.2)';
+      micBtn.style.color = muted ? '#fca5a5' : '#93c5fd';
       // VTID-03706: under full duplex the mic is genuinely still open while
-      // Vitana speaks, so it gets its own colour rather than the idle blue.
-      // Without this the UI is indistinguishable from the old half-duplex
-      // behaviour and users have no way to learn that interrupting works —
-      // a capability nobody discovers is the same as one that doesn't exist.
-      // Deliberately colour-only, no status string: the existing wording is
-      // per-language ternaries in this file, and a new one would ship
+      // Vitana speaks, so say so. Without this the UI is indistinguishable
+      // from the old half-duplex behaviour and users have no way to learn
+      // that interrupting works — a capability nobody discovers is the same
+      // as one that doesn't exist. Applied as a CLASS (the .vtorb-mic-live
+      // ring in _injectStyles), not an inline rule: it composes with the
+      // legacy inline colours above instead of fighting them, and keeps this
+      // file from adding new inline styling. Deliberately no status string —
+      // the wording here is per-language ternaries, and a new one would ship
       // untranslated for every locale past de/en.
-      var liveThroughSpeech = !muted && _s.fullDuplex && _s.audioPlaying;
-      if (liveThroughSpeech) {
-        micBtn.style.background = 'rgba(34,197,94,0.22)';
-        micBtn.style.color = '#86efac';
-      } else {
-        micBtn.style.background = muted ? 'rgba(239,68,68,0.2)' : 'rgba(59,130,246,0.2)';
-        micBtn.style.color = muted ? '#fca5a5' : '#93c5fd';
-      }
+      micBtn.classList.toggle('vtorb-mic-live', !muted && !!_s.fullDuplex && !!_s.audioPlaying);
     }
     // Update FAB visibility
     if (_fab) {

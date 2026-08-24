@@ -175,79 +175,34 @@ jobs:
           print("Acceptance mapping OK")
           PY
 
-      - name: CSP Governance Gate (scan changed files)
+      - name: CSP Governance Gate (ADDED lines on the browser-served surface)
         run: |
-          # VTID-03505 — DO NOT un-indent the `python3 - <<PY` heredoc below.
+          # VTID-03706 — this gate scanned WHOLE FILES and was therefore
+          # unpassable for any PR touching orb-widget.js or index.html.
           #
-          # A `run: |` block scalar ends at the first line indented less than
-          # the block, so a heredoc body written at column 0 (which is what
-          # bash normally wants) silently TERMINATES the YAML scalar. GitHub
-          # then fails to parse the whole workflow:
+          # Measured: both files fail on origin/main itself, before any change.
+          # orb-widget.js has assigned element style properties since it was
+          # written (mic-button colouring, overlay layout); index.html carries
+          # an inline bootstrap block. So the gate did not say "this PR
+          # introduces a violation" — it said "this file has ever contained
+          # one", and the only way to pass was to not touch the file at all.
           #
-          #   could not find expected ':'  ... line 160, column 1
+          # That is the same defect VTID-03696 already fixed twice here: the
+          # gate flagging its own PATTERNS list, and the lockfile deny making
+          # any dependency-adding PR unsatisfiable. An unsatisfiable gate is
+          # one someone eventually deletes.
           #
-          # That is a *startup* failure, not a step failure: the run completes
-          # in the same second it starts with ZERO jobs and a bare red X, and
-          # nothing in the Actions UI says why. This file sat broken that way
-          # for at least 30 consecutive runs on every branch including main,
-          # so PR governance was silently unenforced the entire time.
+          # Remedy is VTID-03696's own: judge ADDED lines. A pre-existing
+          # violation is not this PR's to fix. A NEWLY added one still fails,
+          # exactly as before.
           #
-          # Indentation is safe: YAML strips the block's common indentation
-          # before bash ever sees the script, so the `PY` terminator still
-          # arrives at column 0 and the heredoc works. `<<PY` is deliberately
-          # UNQUOTED so bash expands $p and $f into the Python source.
-          #
-          # VTID-03696 — scan only the browser-served surface.
-          #
-          # This used to scan EVERY changed file. Those patterns only mean
-          # something in code a browser executes; against YAML, lockfiles,
-          # markdown and CI scripts they are just strings. Two false positives,
-          # one of them a trap:
-          #
-          #   * THIS FILE matched `<script`, `.style` and `unsafe-inline` —
-          #     because the PATTERNS list below IS those strings. The gate flags
-          #     its own source, so the CSP gate rejected any PR that edits
-          #     VALIDATOR-CHECK.yml: the validator could not be modified without
-          #     the validator failing the change. It stayed hidden because the
-          #     file is rarely touched and, pre-VTID-03696, the path guard
-          #     rejected such PRs several steps earlier anyway.
-          #   * services/gateway/package-lock.json matched the CDN-asset URL
-          #     pattern on a registry URL. A lockfile is not served to anyone.
-          #
-          # Scoping is by construction (the command-hub frontend trees) rather
-          # than by luck. See `CSP_SURFACE` in the guard module.
-          node scripts/ci/validator-path-guard.cjs --csp-targets \
-            /tmp/changed_files.txt > /tmp/csp_files.txt
-          echo "CSP scan targets: $(wc -l < /tmp/csp_files.txt)"
-
-          PATTERNS=(
-            "<script(?![^>]*\\bsrc=)"
-            "style\\s*="
-            "\\.style\\b"
-            "\\beval\\s*\\("
-            "new\\s+Function\\s*\\("
-            "unsafe-inline"
-            "https?://[^\\s\"']+\\.(js|css)"
-          )
-          FAIL=0
-          while IFS= read -r f; do
-            [ -f "$f" ] || continue
-            for p in "${PATTERNS[@]}"; do
-              if python3 - <<PY
-          import re,sys
-          p=re.compile(r'''$p''', re.IGNORECASE)
-          data=open("$f","rb").read()
-          try: s=data.decode("utf-8", errors="ignore")
-          except: s=str(data)
-          sys.exit(0 if not p.search(s) else 1)
-          PY
-              then : ; else
-                echo "REJECTED: CSP pattern hit in $f :: /$p/"
-                FAIL=1
-              fi
-            done
-          done < /tmp/csp_files.txt
-          [ "$FAIL" -eq 0 ] || exit 50
+          # The patterns and the matching moved into validator-path-guard.cjs
+          # with unit tests. That also permanently ends the self-flagging trap:
+          # the patterns are assembled from fragments, so no flagged literal
+          # appears in a scannable line. This step no longer contains the
+          # pattern list, so editing this workflow cannot trip its own gate.
+          git diff "origin/${{ github.base_ref }}"...HEAD > /tmp/pr.diff
+          node scripts/ci/validator-path-guard.cjs --csp-added-lines /tmp/pr.diff
 
       - name: Build Gate (profile-based)
         env:

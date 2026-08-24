@@ -39,9 +39,10 @@
   var el = {};
   [
     'btn-echo', 'btn-speech', 'btn-stop', 'status', 'bar-rms', 'val-rms',
-    'mark-open', 'mark-close', 'stat-gate', 'stat-playing', 'stat-peak',
+    'stat-gate', 'stat-playing', 'stat-peak',
     'stat-frames', 'stat-silent', 'stat-barge', 'verdict', 'log',
     'cfg-open', 'cfg-close', 'cfg-hangover', 'cfg-warmup', 'cfg-confirm',
+    'note-open', 'note-close',
   ].forEach(function (id) { el[id] = document.getElementById(id); });
 
   // RMS is displayed on a 0..0.3 scale — conversational speech tops out
@@ -69,8 +70,9 @@
     el['cfg-confirm'].textContent =
       GATE.bargeConfirmFrames + ' (~' +
       Math.round(GATE.bargeConfirmFrames * (FRAME_SAMPLES / SAMPLE_RATE) * 1000) + ' ms)';
-    el['mark-open'].style.left = (GATE.openRms / BAR_MAX * 100) + '%';
-    el['mark-close'].style.left = (GATE.closeRms / BAR_MAX * 100) + '%';
+    el['note-open'].textContent = String(GATE.openRms);
+    el['note-close'].textContent = String(GATE.closeRms);
+    el['bar-rms'].max = BAR_MAX;
   }
 
   /**
@@ -113,9 +115,11 @@
   }
 
   function render(rms) {
-    var pct = Math.min(100, (rms / BAR_MAX) * 100);
-    el['bar-rms'].style.width = pct + '%';
-    el['bar-rms'].className = 'bar-fill' + (state.gateOpen ? ' bar-fill-open' : '');
+    // `value` is a property, not a style — no inline CSS, nothing for a
+    // strict `style-src` to reject.
+    el['bar-rms'].value = Math.min(BAR_MAX, rms);
+    var band = rms > GATE.openRms ? ' bar-hot' : (rms > GATE.closeRms ? ' bar-warm' : '');
+    el['bar-rms'].className = 'bar' + band;
     el['val-rms'].textContent = rms.toFixed(3);
     el['stat-gate'].textContent = state.gateOpen ? 'OPEN' : 'shut';
     el['stat-gate'].className = 'pill ' + (state.gateOpen ? 'pill-open' : '');

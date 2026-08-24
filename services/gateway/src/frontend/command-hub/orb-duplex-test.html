@@ -51,14 +51,20 @@
       <h2 id="live-h">Live</h2>
       <div class="meters">
         <div class="meter">
-          <span class="meter-label">Mic RMS</span>
-          <div class="bar" role="img" aria-label="Microphone RMS level">
-            <div id="bar-rms" class="bar-fill"></div>
-            <div id="mark-open" class="mark mark-open" title="open threshold"></div>
-            <div id="mark-close" class="mark mark-close" title="close threshold"></div>
-          </div>
+          <label class="meter-label" for="bar-rms">Mic RMS</label>
+          <!-- A native progress element rather than a div whose width is set
+               from JS. Writing a width that way produces an inline rule the
+               CSP has to allow; the value property does not, so this is safe
+               by construction — and it reads correctly to a screen reader,
+               which the div never did. -->
+          <progress id="bar-rms" class="bar" max="0.3" value="0"></progress>
           <span id="val-rms" class="meter-val">0.000</span>
         </div>
+        <p class="sub meter-note">
+          Bar turns amber past <code id="note-close">closeRms</code> and green
+          past <code id="note-open">openRms</code> — green during the echo test
+          is a failure.
+        </p>
       </div>
       <dl class="stats">
         <div><dt>Gate</dt><dd id="stat-gate" class="pill">shut</dd></div>

@@ -278,3 +278,128 @@ describe('degenerate input', () => {
     expect(run('gateway_backend', []).code).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// VTID-03706 — the CSP gate judged WHOLE FILES, which made it structurally
+// unpassable for any PR touching orb-widget.js or index.html.
+//
+// Measured on origin/main, before any change: orb-widget.js hits `.style`,
+// `style=`, the inline-<script> pattern and the remote-asset pattern;
+// index.html hits the inline-<script> pattern. So the gate never said "this PR
+// introduces a violation" — it said "this file has ever contained one", and
+// the only way to pass was to not touch the file.
+//
+// Same defect family this workflow was already fixed for twice (VTID-03696:
+// the gate flagging its own PATTERNS list; the lockfile deny making any
+// dependency-adding PR unsatisfiable). Remedy is VTID-03696's own — judge
+// ADDED lines.
+// ---------------------------------------------------------------------------
+
+const CSP_PATTERNS = guard.CSP_PATTERNS as RegExp[];
+
+function cspScan(diff: string) {
+  return guard.cspAddedLineViolations(diff.split('\n'), CSP_PATTERNS) as Array<{
+    file: string;
+    line: string;
+  }>;
+}
+
+/** A minimal unified diff for one file. */
+function diffFor(file: string, lines: string[]) {
+  return ['--- a/' + file, '+++ b/' + file, '@@ -1,1 +1,1 @@', ...lines].join('\n');
+}
+
+describe('VTID-03706 CSP gate judges added lines only', () => {
+  const WIDGET = 'services/gateway/src/frontend/command-hub/orb-widget.js';
+
+  it('flags a NEWLY ADDED inline style assignment', () => {
+    const v = cspScan(diffFor(WIDGET, ['+  el.style.background = "red";']));
+    expect(v).toHaveLength(1);
+    expect(v[0].file).toBe(WIDGET);
+  });
+
+  it('does NOT flag a pre-existing violation carried as a context line', () => {
+    // THE regression this fixes. A context line is the file as it already is;
+    // blaming this PR for it blocks unrelated work and fixes nothing.
+    expect(cspScan(diffFor(WIDGET, ['   el.style.background = "red";']))).toHaveLength(0);
+  });
+
+  it('does NOT flag a violation being REMOVED', () => {
+    expect(cspScan(diffFor(WIDGET, ['-  el.style.background = "red";']))).toHaveLength(0);
+  });
+
+  it('does NOT flag the +++ file header', () => {
+    // `+++ b/…` starts with '+', so a naive startsWith('+') scans the PATH and
+    // re-flags a file merely for appearing in the diff.
+    const styleFile = 'services/gateway/src/frontend/command-hub/x.style.js';
+    expect(
+      cspScan(['--- a/' + styleFile, '+++ b/' + styleFile, '@@ -1 +1 @@', ' ok'].join('\n')),
+    ).toHaveLength(0);
+  });
+
+  it('ignores added lines outside the browser-served surface', () => {
+    // A backend .ts file is not served to a browser; the patterns mean nothing
+    // there and flagging them is the false-positive class VTID-03696 removed.
+    const v = cspScan(diffFor('services/gateway/src/routes/orb-live.ts', ['+  el.style.x = 1;']));
+    expect(v).toHaveLength(0);
+  });
+
+  it('still catches every pattern class on an added line', () => {
+    const cases = [
+      '+  <scr' + 'ipt>alert(1)</scr' + 'ipt>',
+      '+  <div st' + 'yle="color:red">',
+      '+  node.st' + 'yle.color = "red";',
+      '+  ev' + 'al("x");',
+      '+  new Fun' + 'ction("x");',
+      '+  content="un' + 'safe-inline"',
+      '+  <link href="https://cdn.example.com/a.css">',
+    ];
+    for (const c of cases) {
+      expect(cspScan(diffFor(WIDGET, [c])).length).toBeGreaterThan(0);
+    }
+  });
+
+  it('does not flag an external <script src=…>, which is the sanctioned form', () => {
+    expect(
+      cspScan(diffFor(WIDGET, ['+  <scr' + 'ipt src="/command-hub/app.js"></scr' + 'ipt>'])),
+    ).toHaveLength(0);
+  });
+
+  it('handles a deleted file (+++ /dev/null) without attributing lines to it', () => {
+    expect(
+      cspScan(['--- a/' + WIDGET, '+++ /dev/null', '@@ -1 +0,0 @@', '-  el.style.x = 1;'].join('\n')),
+    ).toHaveLength(0);
+  });
+});
+
+describe('VTID-03706 the CSP patterns cannot flag their own source', () => {
+  it('no pattern matches the CSP_PATTERNS declaration block', () => {
+    // VTID-03696 recorded VALIDATOR-CHECK.yml flagging itself, "because the
+    // PATTERNS list below IS those strings" — so the validator could not be
+    // edited without the validator failing the change. Moving the list into
+    // this module would have relocated that trap rather than removed it, so
+    // the patterns are assembled from fragments. This is what keeps that true
+    // if someone later "tidies" them back into literals.
+    //
+    // Scoped to the DECLARATION BLOCK, not the whole file: the surrounding
+    // VTID-03696 prose legitimately quotes the flagged literals while
+    // explaining this exact history, and `scripts/` is outside CSP_SURFACE so
+    // the real gate never reads any of it. The invariant that matters is that
+    // the pattern list itself stays literal-free.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { readFileSync } = require('node:fs');
+    const src = readFileSync(
+      require.resolve('../../../../scripts/ci/validator-path-guard.cjs'),
+      'utf8',
+    ) as string;
+    const start = src.indexOf('const CSP_PATTERNS = [');
+    const block = src.slice(start, src.indexOf('];', start) + 2);
+    expect(start).toBeGreaterThan(-1);
+    for (const p of CSP_PATTERNS) {
+      expect({ pattern: String(p), matched: p.test(block) }).toEqual({
+        pattern: String(p),
+        matched: false,
+      });
+    }
+  });
+});
