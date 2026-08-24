@@ -17,6 +17,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { redactMatchForReader, type RedactedMatch } from './intent-mutual-reveal';
 import type { MatchRow } from './intent-matcher';
+import * as repo from './intent-match-enrich-repository';
 
 function getSupabase() {
   return createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE!);
@@ -91,10 +92,7 @@ export async function enrichMatchesWithCounterpartyProfiles(
   );
   const ownerByIntent = new Map<string, string>(); // intent_id → requester_user_id
   if (intentIds.length > 0) {
-    const { data: owners } = await supabase
-      .from('user_intents')
-      .select('intent_id, requester_user_id')
-      .in('intent_id', intentIds);
+    const { data: owners } = await repo.fetchIntentOwners(supabase, intentIds);
     for (const row of (owners ?? []) as { intent_id: string; requester_user_id: string }[]) {
       ownerByIntent.set(row.intent_id, row.requester_user_id);
     }
@@ -128,10 +126,7 @@ export async function enrichMatchesWithCounterpartyProfiles(
   };
   const cpIntentByIntentId = new Map<string, CpIntentRow>();
   if (counterpartyIntentIds.size > 0) {
-    const { data: cpIntents } = await supabase
-      .from('user_intents')
-      .select('intent_id, title, scope, intent_kind, status, cover_url')
-      .in('intent_id', Array.from(counterpartyIntentIds));
+    const { data: cpIntents } = await repo.fetchCounterpartyIntentFields(supabase, Array.from(counterpartyIntentIds));
     for (const row of (cpIntents ?? []) as CpIntentRow[]) {
       cpIntentByIntentId.set(row.intent_id, row);
     }
@@ -149,10 +144,7 @@ export async function enrichMatchesWithCounterpartyProfiles(
   };
   const profileByVid = new Map<string, ProfileRow>();
   if (counterpartyVids.size > 0) {
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('user_id, vitana_id, display_name, full_name, avatar_url, gender, date_of_birth')
-      .in('vitana_id', Array.from(counterpartyVids));
+    const { data: profiles } = await repo.fetchCounterpartyProfiles(supabase, Array.from(counterpartyVids));
     for (const p of (profiles ?? []) as ProfileRow[]) {
       if (p.vitana_id) profileByVid.set(p.vitana_id, p);
     }
@@ -163,10 +155,7 @@ export async function enrichMatchesWithCounterpartyProfiles(
   const visibleByUserId = new Map<string, boolean>();
   const userIds = Array.from(profileByVid.values()).map((p) => p.user_id);
   if (userIds.length > 0) {
-    const { data: gcps } = await supabase
-      .from('global_community_profiles')
-      .select('user_id, is_visible')
-      .in('user_id', userIds);
+    const { data: gcps } = await repo.fetchCommunityProfileVisibility(supabase, userIds);
     for (const row of (gcps ?? []) as { user_id: string; is_visible: boolean | null }[]) {
       visibleByUserId.set(row.user_id, row.is_visible !== false);
     }
