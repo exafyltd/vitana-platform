@@ -27,6 +27,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
 import { emitCartEvent } from '../../routes/universal-cart';
 import { deriveItemType } from '../shopping-agent/agent-core';
+import * as repo from './cart-checkout-tools-repository';
 
 type Handler = (args: OrbToolArgs, id: OrbToolIdentity, sb: SupabaseClient) => Promise<OrbToolResult>;
 
@@ -103,18 +104,9 @@ interface ProductLite {
   availability: string;
 }
 
-const CART_ITEM_COLS =
-  'id, cart_id, product_id, item_type, quantity, status, source_surface, unit_price_cents_snapshot, currency_snapshot, metadata';
-const PRODUCT_COLS = 'id, title, category, price_cents, currency, is_active, availability';
-
 /** Find the caller's active cart (no autocreate). Always scoped to id.user_id explicitly (sb is service-role). */
 async function findActiveCart(sb: SupabaseClient, userId: string): Promise<{ ok: true; cart: CartRow | null } | { ok: false; error: string }> {
-  const { data, error } = await sb
-    .from('universal_carts')
-    .select('id, user_id, tenant_id, status')
-    .eq('user_id', userId)
-    .eq('status', 'active')
-    .maybeSingle();
+  const { data, error } = await repo.fetchActiveCart(sb, userId);
   if (error && !isNoRowsError(error)) return { ok: false, error: error.message };
   return { ok: true, cart: (data as CartRow | null) ?? null };
 }
@@ -129,11 +121,7 @@ async function resolveOrCreateActiveCart(
   if (!existing.ok) return existing;
   if (existing.cart) return { ok: true, cartId: existing.cart.id, created: false };
 
-  const inserted = await sb
-    .from('universal_carts')
-    .insert({ user_id: userId, tenant_id: tenantId, status: 'active', metadata: {} })
-    .select('id')
-    .single();
+  const inserted = await repo.insertActiveCart(sb, userId, tenantId);
 
   if (inserted.error && isUniqueViolation(inserted.error)) {
     const raced = await findActiveCart(sb, userId);
@@ -153,18 +141,13 @@ async function fetchActiveItemsWithProducts(
   sb: SupabaseClient,
   cartId: string,
 ): Promise<{ ok: true; items: CartItemRow[]; productsById: Map<string, ProductLite> } | { ok: false; error: string }> {
-  const itemsRes = await sb
-    .from('universal_cart_items')
-    .select(CART_ITEM_COLS)
-    .eq('cart_id', cartId)
-    .eq('status', 'active')
-    .order('created_at', { ascending: true });
+  const itemsRes = await repo.fetchActiveCartItems(sb, cartId);
   if (itemsRes.error) return { ok: false, error: itemsRes.error.message };
   const items = (itemsRes.data as CartItemRow[]) ?? [];
   const productsById = new Map<string, ProductLite>();
   if (items.length > 0) {
     const productIds = [...new Set(items.map((i) => i.product_id))];
-    const productsRes = await sb.from('products').select(PRODUCT_COLS).in('id', productIds);
+    const productsRes = await repo.fetchProductsByIds(sb, productIds);
     if (productsRes.error) return { ok: false, error: productsRes.error.message };
     for (const p of (productsRes.data as ProductLite[]) ?? []) productsById.set(p.id, p);
   }
@@ -183,7 +166,7 @@ async function resolveProduct(sb: SupabaseClient, rawId: unknown, rawQuery: unkn
   const query = String(rawQuery ?? '').trim();
 
   if (UUID_RE.test(productId)) {
-    const { data, error } = await sb.from('products').select(PRODUCT_COLS).eq('id', productId).maybeSingle();
+    const { data, error } = await repo.fetchProductById(sb, productId);
     if (error) return { kind: 'error', message: error.message };
     if (!data) return { kind: 'none', query: productId };
     return { kind: 'one', product: data as ProductLite };
@@ -191,13 +174,7 @@ async function resolveProduct(sb: SupabaseClient, rawId: unknown, rawQuery: unkn
 
   if (!query) return { kind: 'none', query: '' };
 
-  const { data, error } = await sb
-    .from('products')
-    .select(PRODUCT_COLS)
-    .eq('is_active', true)
-    .ilike('title', `%${query}%`)
-    .order('title', { ascending: true })
-    .limit(5);
+  const { data, error } = await repo.searchActiveProductsByTitle(sb, query);
   if (error) return { kind: 'error', message: error.message };
   const products = (data as ProductLite[]) ?? [];
   if (products.length === 0) return { kind: 'none', query };
@@ -299,13 +276,7 @@ export async function tool_add_to_cart(args: OrbToolArgs, id: OrbToolIdentity, s
     if (!cartResolution.ok) return { ok: false, error: cartResolution.error };
     const cartId = cartResolution.cartId;
 
-    const existingItem = await sb
-      .from('universal_cart_items')
-      .select('id, quantity, metadata')
-      .eq('cart_id', cartId)
-      .eq('product_id', product.id)
-      .eq('status', 'active')
-      .maybeSingle();
+    const existingItem = await repo.fetchExistingCartItem(sb, cartId, product.id);
     if (existingItem.error && !isNoRowsError(existingItem.error)) {
       return { ok: false, error: existingItem.error.message };
     }
@@ -313,12 +284,7 @@ export async function tool_add_to_cart(args: OrbToolArgs, id: OrbToolIdentity, s
     if (existingItem.data) {
       const before = Number(existingItem.data.quantity ?? 0);
       const after = before + quantity;
-      const updated = await sb
-        .from('universal_cart_items')
-        .update({ quantity: after })
-        .eq('id', existingItem.data.id)
-        .select('id')
-        .single();
+      const updated = await repo.bumpCartItemQuantity(sb, existingItem.data.id, after);
       if (updated.error) return { ok: false, error: updated.error.message };
       await emitCartEvent({
         cart_id: cartId,
@@ -339,21 +305,17 @@ export async function tool_add_to_cart(args: OrbToolArgs, id: OrbToolIdentity, s
       };
     }
 
-    const inserted = await sb
-      .from('universal_cart_items')
-      .insert({
-        cart_id: cartId,
-        item_type: deriveItemType(product.category),
-        product_id: product.id,
-        quantity,
-        status: 'active',
-        source_surface: 'voice',
-        unit_price_cents_snapshot: product.price_cents,
-        currency_snapshot: product.currency,
-        metadata: {},
-      })
-      .select('id')
-      .single();
+    const inserted = await repo.insertCartItem(sb, {
+      cart_id: cartId,
+      item_type: deriveItemType(product.category),
+      product_id: product.id,
+      quantity,
+      status: 'active',
+      source_surface: 'voice',
+      unit_price_cents_snapshot: product.price_cents,
+      currency_snapshot: product.currency,
+      metadata: {},
+    });
     if (inserted.error || !inserted.data) {
       return { ok: false, error: inserted.error?.message ?? 'item_insert_failed' };
     }
@@ -467,13 +429,7 @@ export async function tool_update_cart_item(args: OrbToolArgs, id: OrbToolIdenti
 
     const target = matches[0];
     const before = Number(target.quantity);
-    const updated = await sb
-      .from('universal_cart_items')
-      .update({ quantity: rawQuantity })
-      .eq('id', target.id)
-      .eq('status', 'active')
-      .select('id')
-      .single();
+    const updated = await repo.updateCartItemQuantityActive(sb, target.id, rawQuantity);
     if (updated.error) return { ok: false, error: updated.error.message };
 
     if (rawQuantity !== before) {
@@ -536,13 +492,7 @@ export async function tool_remove_from_cart(args: OrbToolArgs, id: OrbToolIdenti
 
     const target = matches[0];
     const title = productsById.get(target.product_id)?.title ?? 'that item';
-    const updated = await sb
-      .from('universal_cart_items')
-      .update({ status: 'removed' })
-      .eq('id', target.id)
-      .eq('status', 'active')
-      .select('id')
-      .single();
+    const updated = await repo.markCartItemRemoved(sb, target.id);
     if (updated.error) return { ok: false, error: updated.error.message };
 
     await emitCartEvent({
@@ -587,12 +537,7 @@ export async function tool_clear_cart(args: OrbToolArgs, id: OrbToolIdentity, sb
       };
     }
 
-    const cleared = await sb
-      .from('universal_cart_items')
-      .update({ status: 'removed' })
-      .eq('cart_id', cartRes.cart.id)
-      .eq('status', 'active')
-      .select('id');
+    const cleared = await repo.markAllCartItemsRemoved(sb, cartRes.cart.id);
     if (cleared.error) return { ok: false, error: cleared.error.message };
 
     const clearedIds = ((cleared.data as Array<{ id: string }>) ?? []).map((r) => r.id);
@@ -625,7 +570,7 @@ export async function tool_clear_cart(args: OrbToolArgs, id: OrbToolIdentity, sb
 async function resolveTenantId(id: OrbToolIdentity, sb: SupabaseClient): Promise<string | null> {
   if (id.tenant_id) return id.tenant_id;
   try {
-    const { data } = await sb.from('app_users').select('tenant_id').eq('user_id', id.user_id).maybeSingle();
+    const { data } = await repo.fetchAppUserTenantId(sb, id.user_id);
     return (data as { tenant_id?: string | null } | null)?.tenant_id ?? null;
   } catch {
     return null;
@@ -638,26 +583,15 @@ export async function tool_set_shopping_budget(args: OrbToolArgs, id: OrbToolIde
   const clear = args.clear === true;
 
   try {
-    const { data: userRow } = await sb
-      .from('app_users')
-      .select('currency_preference')
-      .eq('user_id', id.user_id)
-      .maybeSingle();
+    const { data: userRow } = await repo.fetchAppUserCurrencyPreference(sb, id.user_id);
     const currency = (userRow as { currency_preference?: string | null } | null)?.currency_preference || DEFAULT_CURRENCY;
 
     if (clear) {
-      const { data: existing } = await sb
-        .from('user_limitations')
-        .select('user_id')
-        .eq('user_id', id.user_id)
-        .maybeSingle();
+      const { data: existing } = await repo.fetchUserLimitationsExists(sb, id.user_id);
       if (!existing) {
         return { ok: true, result: { cleared: false }, text: "You don't have a monthly shopping budget set." };
       }
-      const { error } = await sb
-        .from('user_limitations')
-        .update({ budget_monthly_cap_cents: null })
-        .eq('user_id', id.user_id);
+      const { error } = await repo.clearUserLimitationsBudgetCap(sb, id.user_id);
       if (error) return { ok: false, error: error.message };
       return { ok: true, result: { cleared: true }, text: 'Done — I removed your monthly shopping budget cap.' };
     }
@@ -679,12 +613,7 @@ export async function tool_set_shopping_budget(args: OrbToolArgs, id: OrbToolIde
       return { ok: false, error: 'set_shopping_budget requires a resolvable tenant for this user; none found.' };
     }
 
-    const { error } = await sb
-      .from('user_limitations')
-      .upsert(
-        { user_id: id.user_id, tenant_id: tenantId, budget_monthly_cap_cents: capCents },
-        { onConflict: 'user_id' },
-      );
+    const { error } = await repo.upsertUserLimitationsBudgetCap(sb, id.user_id, tenantId, capCents);
     if (error) return { ok: false, error: error.message };
 
     return {
