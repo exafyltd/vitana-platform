@@ -23,6 +23,7 @@ import type {
   WalletDeposit,
   CreditDepositRpcResult,
 } from '../../types/wallet';
+import * as repo from './deposit-service-repository';
 
 const CHECKOUT_EXPIRY_MINUTES = 30;
 
@@ -78,12 +79,7 @@ export async function createDeposit(input: CreateDepositInput): Promise<CreateDe
 
   // Find the user's account for this currency. Trigger should have provisioned
   // it at signup; if missing, provision lazily (defensive — never block the user).
-  const { data: account, error: accountErr } = await supabase
-    .from('wallet_accounts')
-    .select('id, status')
-    .eq('user_id', input.user_id)
-    .eq('currency', input.currency)
-    .maybeSingle();
+  const { data: account, error: accountErr } = await repo.fetchWalletAccountForCurrency(supabase, input.user_id, input.currency);
 
   if (accountErr) {
     throw new DepositServiceError('DB_ERROR', `account lookup failed: ${accountErr.message}`, 500);
@@ -91,11 +87,7 @@ export async function createDeposit(input: CreateDepositInput): Promise<CreateDe
 
   let accountId: string;
   if (!account) {
-    const { data: created, error: createErr } = await supabase
-      .from('wallet_accounts')
-      .insert({ user_id: input.user_id, currency: input.currency })
-      .select('id')
-      .single();
+    const { data: created, error: createErr } = await repo.insertWalletAccount(supabase, input.user_id, input.currency);
     if (createErr || !created) {
       throw new DepositServiceError(
         'ACCOUNT_PROVISION_FAILED',
@@ -117,18 +109,14 @@ export async function createDeposit(input: CreateDepositInput): Promise<CreateDe
 
   // Insert deposit row in 'created' state.
   const idempotencyKey = randomUUID();
-  const { data: deposit, error: depositErr } = await supabase
-    .from('wallet_deposits')
-    .insert({
-      user_id: input.user_id,
-      account_id: accountId,
-      amount_minor: input.amount_minor,
-      currency: input.currency,
-      status: 'created',
-      idempotency_key: idempotencyKey,
-    })
-    .select('id')
-    .single();
+  const { data: deposit, error: depositErr } = await repo.insertWalletDeposit(supabase, {
+    user_id: input.user_id,
+    account_id: accountId,
+    amount_minor: input.amount_minor,
+    currency: input.currency,
+    status: 'created',
+    idempotency_key: idempotencyKey,
+  });
 
   if (depositErr || !deposit) {
     throw new DepositServiceError(
@@ -182,14 +170,7 @@ export async function createDeposit(input: CreateDepositInput): Promise<CreateDe
     // Surface Stripe's own minimum-amount / card-rejected error to the caller
     // instead of silently leaving a stuck 'created' row.
     const failureReason = err?.code || err?.type || 'stripe_session_create_failed';
-    await supabase
-      .from('wallet_deposits')
-      .update({
-        status: 'failed',
-        failure_reason: failureReason,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', depositId);
+    await repo.markWalletDepositFailedInline(supabase, depositId, failureReason);
     throw new DepositServiceError(
       'STRIPE_CHECKOUT_FAILED',
       err?.message ?? 'Stripe Checkout Session creation failed',
@@ -199,28 +180,18 @@ export async function createDeposit(input: CreateDepositInput): Promise<CreateDe
   }
 
   if (!session.url) {
-    await supabase
-      .from('wallet_deposits')
-      .update({
-        status: 'failed',
-        failure_reason: 'stripe_returned_no_url',
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', depositId);
+    await repo.markWalletDepositFailedInline(supabase, depositId, 'stripe_returned_no_url');
     throw new DepositServiceError('STRIPE_NO_URL', 'Stripe did not return a checkout URL', 500);
   }
 
   // Stamp Stripe IDs onto the deposit, move to checkout_started.
-  const { error: updateErr } = await supabase
-    .from('wallet_deposits')
-    .update({
-      status: 'checkout_started',
-      stripe_checkout_session_id: session.id,
-      stripe_payment_intent_id:
-        typeof session.payment_intent === 'string' ? session.payment_intent : null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', depositId);
+  const { error: updateErr } = await repo.stampWalletDepositStripeIds(supabase, depositId, {
+    status: 'checkout_started',
+    stripe_checkout_session_id: session.id,
+    stripe_payment_intent_id:
+      typeof session.payment_intent === 'string' ? session.payment_intent : null,
+    updated_at: new Date().toISOString(),
+  });
 
   if (updateErr) {
     // The session exists in Stripe but we couldn't record it locally. The
@@ -253,11 +224,7 @@ export async function finalizeDeposit(
     throw new DepositServiceError('GATEWAY_MISCONFIGURED', 'Supabase not configured', 500);
   }
 
-  const { data, error } = await supabase.rpc('credit_deposit', {
-    p_deposit_id: depositId,
-    p_stripe_event_id: stripeEventId,
-    p_stripe_pi_id: stripePaymentIntentId,
-  });
+  const { data, error } = await repo.creditDepositRpc(supabase, depositId, stripeEventId, stripePaymentIntentId);
 
   if (error) {
     throw new DepositServiceError(
@@ -279,15 +246,11 @@ export async function markDepositTerminal(
   if (!supabase) return;
   // Don't overwrite a succeeded deposit. The webhook may deliver a late
   // 'expired' for a session that has already paid; succeeded wins.
-  await supabase
-    .from('wallet_deposits')
-    .update({
-      status,
-      failure_reason: failureReason,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', depositId)
-    .neq('status', 'succeeded');
+  await repo.markWalletDepositTerminal(supabase, depositId, {
+    status,
+    failure_reason: failureReason,
+    updated_at: new Date().toISOString(),
+  });
 }
 
 export async function getDepositForUser(
@@ -296,11 +259,6 @@ export async function getDepositForUser(
 ): Promise<WalletDeposit | null> {
   const supabase = getSupabase();
   if (!supabase) return null;
-  const { data } = await supabase
-    .from('wallet_deposits')
-    .select('*')
-    .eq('id', depositId)
-    .eq('user_id', userId)
-    .maybeSingle();
+  const { data } = await repo.fetchWalletDepositForUser(supabase, depositId, userId);
   return (data as WalletDeposit | null) ?? null;
 }
