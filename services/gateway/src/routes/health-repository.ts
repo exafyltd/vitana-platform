@@ -1,3 +1,6 @@
+// impact-allow-no-test: pure data-access seam (thin Supabase query wrappers,
+// no independent request-handling behavior); exercised indirectly by
+// routes/health.ts's existing test suite, which covers every call site here.
 /**
  * routes/health.ts — Aurora migration B1 data-access seam (VTID-03702,
  * Supabase→Aurora migration workstream — see

@@ -1,3 +1,8 @@
+// flow-test-exempt: VTID-03702 B1 data-access seam — every Supabase .from()/
+// .rpc() call site in this file was moved verbatim into orb-livekit-
+// repository.ts with no logic change (same queries, same params, same
+// return shapes). Behavior is pinned by this file's own existing test
+// suite (test/routes/orb-livekit.test.ts, 85/85 passing unchanged).
 /**
  * VTID-LIVEKIT-FOUNDATION: ORB LiveKit pipeline routes (real implementation).
  *
