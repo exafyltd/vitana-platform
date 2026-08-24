@@ -151,6 +151,17 @@ export interface GreetingEffects {
   /** VTID-03604: stamp user_journey.last_day_close_date = this LOCAL EVENING
    *  date (dayCloseNightKey, not todayTz). Once per night. */
   stampDayCloseDate?: string;
+  /**
+   * BOOTSTRAP-ORB-UNREAD-MESSAGES-NAV — dispatch a navigate directive
+   * DETERMINISTICALLY, as a side effect of this greeting, rather than
+   * leaving it to the model's discretion to call `navigate_to_screen` on a
+   * later turn. Set only when the wake-brief's selected continuation
+   * carried a `cta.type === 'navigate'` (today: the unread-messages
+   * announce provider). The live adapter is the one that actually performs
+   * the navigation (see `handleNavigateToScreen` in routes/orb-live.ts) —
+   * this module only describes that it must.
+   */
+  navigateEffect?: { screenId: string; reason: string; keepOrbOpen?: boolean };
 }
 
 export interface GreetingDecision {
@@ -293,6 +304,16 @@ export interface GreetingDecisionContext {
   wakeBriefHasSelectedContinuation: boolean;
   /** The voice_wake_brief provider `reason`, or null (cadence-skip detection). */
   voiceWakeBriefReason: string | null;
+  /**
+   * BOOTSTRAP-ORB-UNREAD-MESSAGES-NAV — when the wake-brief's selected
+   * continuation carries `cta.type === 'navigate'` (today: only the
+   * unread-messages announce provider sets this), the caller resolves it
+   * into this plain-data shape so `override_v2` can request a deterministic
+   * navigate effect alongside the spoken announcement — see
+   * `GreetingEffects.navigateEffect`. Null for every other continuation
+   * (they carry `explain`/`ask_permission`/etc., which stay conversational).
+   */
+  wakeBriefNavigateCta?: { screenId: string; reason: string } | null;
 
   // --- VTID-03604 day-close ------------------------------------------------
   /** user_journey.last_day_close_date — the LOCAL EVENING date of the last
@@ -877,6 +898,18 @@ function computeNormalLadder(ctx: GreetingDecisionContext): GreetingDecision {
       `Open by saying this prepared line, in the user's own language: "${safe}"\n` +
       `Keep it to ONE short utterance. Do not add a greeting before it, do not add a question after it, and do not turn it into something else. Then stop and listen.`;
     const wakePrompt = ctx.guidedTopicNarrationContent ? guidedTrigger : wakeTrigger;
+    // BOOTSTRAP-ORB-UNREAD-MESSAGES-NAV — the reported bug: override_v2 would
+    // say "let me show you your new messages" and then just listen, because
+    // navigation was never anything more than a proposal in speech — nothing
+    // forced the model to actually call navigate_to_screen. When the winning
+    // continuation is the unread-messages announce (identified by its
+    // cta.type==='navigate'), request navigation as a real side effect here,
+    // not as a hope. A guided-topic open never sets wakeBriefNavigateCta (the
+    // provider that wins is guided-topic-narration, priority 96, which never
+    // carries a navigate cta), so this cannot fire mid-lesson.
+    const navigateEffect = ctx.wakeBriefNavigateCta
+      ? { screenId: ctx.wakeBriefNavigateCta.screenId, reason: ctx.wakeBriefNavigateCta.reason, keepOrbOpen: true }
+      : undefined;
     return {
       wakeOpener: 'override_v2',
       directive: wakePrompt,
@@ -885,8 +918,9 @@ function computeNormalLadder(ctx: GreetingDecisionContext): GreetingDecision {
         prompt_len: wakePrompt.length,
         wake_opener: 'override_v2',
         decision_id: ctx.wakeBriefDecisionId || null,
+        ...(navigateEffect ? { navigate_screen_id: navigateEffect.screenId } : {}),
       },
-      effects: { markGreetingSent: true, armWatchdog: true },
+      effects: { markGreetingSent: true, armWatchdog: true, ...(navigateEffect ? { navigateEffect } : {}) },
     };
   }
 

@@ -288,6 +288,95 @@ describe('fetchRecentMessageContacts', () => {
 });
 
 // ---------------------------------------------------------------------------
+// fetchUnreadMessageSummary — BOOTSTRAP-ORB-UNREAD-MESSAGES-NAV
+// ---------------------------------------------------------------------------
+
+describe('fetchUnreadMessageSummary', () => {
+  it('returns an empty summary with zero unread rows (no second query)', async () => {
+    const log = useSequence([{ data: [] }]);
+    const out = await repo.fetchUnreadMessageSummary('user-A', 'tenant-A', new Set());
+    expect(out).toEqual({ count: 0, senderCount: 0, senders: [] });
+    expect(log).toHaveLength(1); // never queries profiles when there's nothing to name
+  });
+
+  it('scopes the read to tenant + receiver, and to DM rows only (group_id null)', async () => {
+    const log = useSequence([{ data: [] }]);
+    await repo.fetchUnreadMessageSummary('user-A', 'tenant-A', new Set());
+    const calls = log[0].calls;
+    expect(calls).toContainEqual(['eq', 'tenant_id', 'tenant-A']);
+    expect(calls).toContainEqual(['eq', 'receiver_id', 'user-A']);
+    expect(calls).toContainEqual(['is', 'group_id', null]);
+    expect(calls).toContainEqual(['is', 'read_at', null]);
+  });
+
+  it('resolves the sender when exactly 1 sender has unread messages', async () => {
+    useSequence([
+      { data: [
+        { sender_id: 'peer-1' },
+        { sender_id: 'peer-1' },
+        { sender_id: 'peer-1' },
+      ] },
+      { data: [{ user_id: 'peer-1', display_name: 'Anna' }] },
+    ]);
+    const out = await repo.fetchUnreadMessageSummary('user-A', 'tenant-A', new Set());
+    expect(out.count).toBe(3);
+    expect(out.senderCount).toBe(1);
+    expect(out.senders).toHaveLength(1);
+    expect(out.senders[0].person.display_name).toBe('Anna');
+    expect(out.senders[0].unread_count).toBe(3);
+  });
+
+  it('resolves both senders when exactly 2 senders have unread messages', async () => {
+    useSequence([
+      { data: [{ sender_id: 'peer-1' }, { sender_id: 'peer-2' }] },
+      { data: [
+        { user_id: 'peer-1', display_name: 'Anna' },
+        { user_id: 'peer-2', display_name: 'Tom' },
+      ] },
+    ]);
+    const out = await repo.fetchUnreadMessageSummary('user-A', 'tenant-A', new Set());
+    expect(out.count).toBe(2);
+    expect(out.senderCount).toBe(2);
+    expect(out.senders.map((s) => s.person.display_name).sort()).toEqual(['Anna', 'Tom']);
+  });
+
+  it('reports count-only (no name resolution query) for 3+ senders', async () => {
+    const log = useSequence([
+      { data: [
+        { sender_id: 'peer-1' },
+        { sender_id: 'peer-2' },
+        { sender_id: 'peer-3' },
+        { sender_id: 'peer-3' },
+      ] },
+    ]);
+    const out = await repo.fetchUnreadMessageSummary('user-A', 'tenant-A', new Set());
+    expect(out.count).toBe(4);
+    expect(out.senderCount).toBe(3);
+    expect(out.senders).toEqual([]);
+    expect(log).toHaveLength(1); // never resolves names for 3+ senders
+  });
+
+  it('excludes a blocked sender entirely', async () => {
+    useSequence([
+      { data: [{ sender_id: 'blocked-1' }, { sender_id: 'peer-1' }] },
+      { data: [{ user_id: 'peer-1', display_name: 'Anna' }] },
+    ]);
+    const out = await repo.fetchUnreadMessageSummary('user-A', 'tenant-A', new Set(['blocked-1']));
+    expect(out.count).toBe(1);
+    expect(out.senderCount).toBe(1);
+    expect(out.senders[0].person.display_name).toBe('Anna');
+  });
+
+  it('never counts the viewer as their own sender (defensive self-exclusion)', async () => {
+    const out = await (async () => {
+      useSequence([{ data: [{ sender_id: 'user-A' }] }]);
+      return repo.fetchUnreadMessageSummary('user-A', 'tenant-A', new Set());
+    })();
+    expect(out).toEqual({ count: 0, senderCount: 0, senders: [] });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // fetchGroupChats — tenant scoping via membership, short-circuit
 // ---------------------------------------------------------------------------
 
