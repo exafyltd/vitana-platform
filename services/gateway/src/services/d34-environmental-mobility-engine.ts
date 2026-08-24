@@ -25,6 +25,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { createHash, randomUUID } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
+import * as repo from './d34-environmental-mobility-engine-repository';
 import {
   LocationContext,
   LocationContextSchema,
@@ -244,7 +245,7 @@ export async function resolveLocationContext(
   // 2. Try to get from location preferences if Supabase available
   if (supabase) {
     try {
-      const { data, error } = await supabase.rpc('location_preferences_get');
+      const { data, error } = await repo.fetchLocationPreferences(supabase);
       if (!error && data?.ok && data.preferences) {
         const prefs = data.preferences;
         if (prefs.home_city || prefs.home_area) {
@@ -270,11 +271,7 @@ export async function resolveLocationContext(
   // 3. Try to infer from recent visit history
   if (supabase) {
     try {
-      const { data, error } = await supabase.rpc('location_get_visits', {
-        p_from: null,
-        p_to: null,
-        p_limit: 10
-      });
+      const { data, error } = await repo.fetchLocationVisits(supabase, 10);
       if (!error && data?.ok && data.visits?.length > 0) {
         // Use most recent visit location
         const recentVisit = data.visits[0];
@@ -425,7 +422,7 @@ export async function buildMobilityProfile(
   // 2. Infer from user preferences (D27)
   if (supabase && profile.confidence < 70) {
     try {
-      const { data, error } = await supabase.rpc('user_preferences_get_bundle');
+      const { data, error } = await repo.fetchUserPreferencesBundle(supabase);
       if (!error && data?.ok && data.preferences) {
         const prefs = data.preferences;
 
@@ -456,11 +453,7 @@ export async function buildMobilityProfile(
   // 3. Infer from visit history patterns
   if (supabase && profile.confidence < 50) {
     try {
-      const { data, error } = await supabase.rpc('location_get_visits', {
-        p_from: null,
-        p_to: null,
-        p_limit: 20
-      });
+      const { data, error } = await repo.fetchLocationVisits(supabase, 20);
 
       if (!error && data?.ok && data.visits?.length > 0) {
         const distances = analyzeVisitDistances(data.visits);
@@ -1020,10 +1013,7 @@ export async function computeContext(
     // Bootstrap dev context if needed
     if (supabase && useDevIdentity) {
       try {
-        await supabase.rpc('dev_bootstrap_request_context', {
-          p_tenant_id: DEV_IDENTITY.TENANT_ID,
-          p_active_role: 'developer'
-        });
+        await repo.devBootstrapRequestContext(supabase, DEV_IDENTITY.TENANT_ID, 'developer');
       } catch {
         /* Ignore bootstrap errors */
       }
