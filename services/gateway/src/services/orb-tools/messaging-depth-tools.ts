@@ -55,6 +55,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
 import { notifyUserAsync } from '../notification-service';
 import { checkVoiceSendQuota } from '../voice-message-guard';
+import * as repo from './messaging-depth-tools-repository';
 
 type Handler = (args: OrbToolArgs, id: OrbToolIdentity, sb: SupabaseClient) => Promise<OrbToolResult>;
 
@@ -87,11 +88,7 @@ function argString(args: OrbToolArgs, ...keys: string[]): string {
 async function resolveTenantId(id: OrbToolIdentity, sb: SupabaseClient): Promise<string | null> {
   if (id.tenant_id) return id.tenant_id;
   try {
-    const { data } = await sb
-      .from('app_users')
-      .select('tenant_id')
-      .eq('user_id', id.user_id)
-      .maybeSingle();
+    const { data } = await repo.fetchAppUserTenantId(sb, id.user_id);
     return (data as { tenant_id?: string | null } | null)?.tenant_id ?? null;
   } catch {
     return null;
@@ -125,11 +122,7 @@ async function resolveMember(
   }
 
   if (UUID_RE.test(token)) {
-    const { data, error } = await sb
-      .from('app_users')
-      .select('user_id, display_name, vitana_id')
-      .eq('user_id', token)
-      .maybeSingle();
+    const { data, error } = await repo.fetchAppUserByIdForResolve(sb, token);
     if (error) {
       return { ok: false, error: 'I had a problem looking that member up — want me to try again?' };
     }
@@ -139,12 +132,7 @@ async function resolveMember(
     return { ok: true, member: data as ResolvedMember };
   }
 
-  const { data, error } = await sb.rpc('resolve_recipient_candidates', {
-    p_actor: id.user_id,
-    p_token: token,
-    p_limit: 5,
-    p_global: true,
-  });
+  const { data, error } = await repo.resolveRecipientCandidatesForMessaging(sb, id.user_id, token);
   if (error) {
     return { ok: false, error: `I had a problem looking up ${token} — want me to try again?` };
   }
@@ -185,8 +173,8 @@ async function resolveMember(
 async function senderDisplayName(sb: SupabaseClient, userId: string): Promise<string> {
   try {
     const [{ data: profile }, { data: appUser }] = await Promise.all([
-      sb.from('profiles').select('display_name, full_name').eq('user_id', userId).maybeSingle(),
-      sb.from('app_users').select('display_name, email').eq('user_id', userId).maybeSingle(),
+      repo.fetchProfileDisplayNames(sb, userId),
+      repo.fetchAppUserDisplayEmail(sb, userId),
     ]);
     const p = profile as { display_name?: string | null; full_name?: string | null } | null;
     const au = appUser as { display_name?: string | null; email?: string | null } | null;
@@ -250,18 +238,12 @@ async function resolveMyChatGroup(
   const groupIdArg = String(rawGroupId ?? '').trim();
   const query = String(rawQuery ?? '').trim();
 
-  const { data: memberships, error: mErr } = await sb
-    .from('chat_group_members')
-    .select('group_id')
-    .eq('user_id', userId);
+  const { data: memberships, error: mErr } = await repo.fetchMyChatGroupMemberships(sb, userId);
   if (mErr) return { kind: 'error', message: mErr.message };
   const groupIds = ((memberships as Array<{ group_id: string }>) ?? []).map((m) => m.group_id);
   if (groupIds.length === 0) return { kind: 'none' };
 
-  const { data: groups, error: gErr } = await sb
-    .from('chat_groups')
-    .select('id, name, description, is_system, tenant_id')
-    .in('id', groupIds);
+  const { data: groups, error: gErr } = await repo.fetchChatGroupsByIds(sb, groupIds);
   if (gErr) return { kind: 'error', message: gErr.message };
   const myGroups = (groups as ChatGroupRow[]) ?? [];
   if (myGroups.length === 0) return { kind: 'none' };
@@ -357,19 +339,15 @@ export const tool_send_group_chat_message: Handler = async (args, id, sb) => {
       };
     }
 
-    const { data: inserted, error: insErr } = await sb
-      .from('chat_messages')
-      .insert({
-        tenant_id: group.tenant_id,
-        sender_id: id.user_id,
-        receiver_id: null,
-        group_id: group.id,
-        content: body,
-        message_type: 'text',
-        metadata: { source: 'voice', kind: 'group_message' },
-      })
-      .select('id')
-      .single();
+    const { data: inserted, error: insErr } = await repo.insertGroupChatMessage(sb, {
+      tenant_id: group.tenant_id,
+      sender_id: id.user_id,
+      receiver_id: null,
+      group_id: group.id,
+      content: body,
+      message_type: 'text',
+      metadata: { source: 'voice', kind: 'group_message' },
+    });
     if (insErr) {
       return { ok: false, error: "I couldn't send that just now — want me to try again?" };
     }
@@ -379,10 +357,7 @@ export const tool_send_group_chat_message: Handler = async (args, id, sb) => {
     // fanoutGroupNotifications, minus @vitana-mention handling (that is a
     // whole conversation-brain flow out of scope for this voice tool).
     try {
-      const { data: members } = await sb
-        .from('chat_group_members')
-        .select('user_id')
-        .eq('group_id', group.id);
+      const { data: members } = await repo.fetchChatGroupMemberIds(sb, group.id);
       const senderName = await senderDisplayName(sb, id.user_id);
       const preview = body.length > 100 ? `${body.slice(0, 97)}...` : body;
       for (const m of (members as Array<{ user_id: string }>) ?? []) {
@@ -466,23 +441,14 @@ export const tool_react_to_message: Handler = async (args, id, sb) => {
     // group message in a group the caller belongs to — same predicate the
     // message_reactions RLS SELECT policy and get_message_reactions_text RPC
     // use (supabase/migrations/20260522000000_vtid_03089_chat_group_reactions_rls.sql).
-    const { data: msgRow, error: msgErr } = await sb
-      .from('chat_messages')
-      .select('id, sender_id, receiver_id, group_id')
-      .eq('id', messageId)
-      .maybeSingle();
+    const { data: msgRow, error: msgErr } = await repo.fetchChatMessageForReaction(sb, messageId);
     if (msgErr) return { ok: false, error: "I had a problem finding that message — want me to try again?" };
     if (!msgRow) return { ok: false, error: "I couldn't find that message." };
     const msg = msgRow as { sender_id: string; receiver_id: string | null; group_id: string | null };
 
     let allowed = msg.sender_id === id.user_id || msg.receiver_id === id.user_id;
     if (!allowed && msg.group_id) {
-      const { data: membership } = await sb
-        .from('chat_group_members')
-        .select('user_id')
-        .eq('group_id', msg.group_id)
-        .eq('user_id', id.user_id)
-        .maybeSingle();
+      const { data: membership } = await repo.fetchChatGroupMembership(sb, msg.group_id, id.user_id);
       allowed = Boolean(membership);
     }
     if (!allowed) {
@@ -490,19 +456,12 @@ export const tool_react_to_message: Handler = async (args, id, sb) => {
     }
 
     if (args.remove === true) {
-      const { error: delErr } = await sb
-        .from('message_reactions')
-        .delete()
-        .eq('message_id', messageId)
-        .eq('user_id', id.user_id)
-        .eq('emoji', emoji);
+      const { error: delErr } = await repo.deleteMessageReaction(sb, messageId, id.user_id, emoji);
       if (delErr) return { ok: false, error: "I couldn't remove that reaction just now — want me to try again?" };
       return { ok: true, result: { removed: true, message_id: messageId, emoji }, text: `Removed your ${emoji} reaction.` };
     }
 
-    const { error: insErr } = await sb
-      .from('message_reactions')
-      .insert({ message_id: messageId, user_id: id.user_id, emoji });
+    const { error: insErr } = await repo.insertMessageReaction(sb, messageId, id.user_id, emoji);
     if (insErr) {
       if ((insErr as { code?: string }).code === '23505') {
         return {
@@ -573,26 +532,20 @@ export const tool_create_group_chat: Handler = async (args, id, sb) => {
         error: "I can't create that right now — I'm missing some account context. Try once more in a moment.",
       };
     }
-    const { data: group, error: insErr } = await sb
-      .from('chat_groups')
-      .insert({
-        tenant_id: tenantId,
-        name,
-        description: description || null,
-        created_by: id.user_id,
-        is_system: false,
-        metadata: { source: 'voice' },
-      })
-      .select('id, name')
-      .single();
+    const { data: group, error: insErr } = await repo.insertChatGroup(sb, {
+      tenant_id: tenantId,
+      name,
+      description: description || null,
+      created_by: id.user_id,
+      is_system: false,
+      metadata: { source: 'voice' },
+    });
     if (insErr || !group) {
       return { ok: false, error: insErr?.message ?? 'group chat creation failed' };
     }
     const g = group as { id: string; name: string };
 
-    const { error: memErr } = await sb
-      .from('chat_group_members')
-      .insert({ group_id: g.id, user_id: id.user_id, tenant_id: tenantId, role: 'admin' });
+    const { error: memErr } = await repo.insertChatGroupMember(sb, g.id, id.user_id, tenantId, 'admin');
     if (memErr && (memErr as { code?: string }).code !== '23505') {
       return { ok: false, error: memErr.message };
     }
@@ -607,9 +560,7 @@ export const tool_create_group_chat: Handler = async (args, id, sb) => {
       }
       const target = resolved.member;
       if (target.user_id === id.user_id) continue;
-      const { error: addErr } = await sb
-        .from('chat_group_members')
-        .insert({ group_id: g.id, user_id: target.user_id, tenant_id: tenantId, role: 'member' });
+      const { error: addErr } = await repo.insertChatGroupMember(sb, g.id, target.user_id, tenantId, 'member');
       if (addErr && (addErr as { code?: string }).code !== '23505') {
         failed.push(nameArg);
         continue;
@@ -659,9 +610,7 @@ export const tool_add_group_chat_member: Handler = async (args, id, sb) => {
       return { ok: false, error: "You're already in this group." };
     }
 
-    const { error: insErr } = await sb
-      .from('chat_group_members')
-      .insert({ group_id: group.id, user_id: target.user_id, tenant_id: group.tenant_id, role: 'member' });
+    const { error: insErr } = await repo.insertChatGroupMember(sb, group.id, target.user_id, group.tenant_id, 'member');
     const name = memberDisplay(target);
     if (insErr) {
       if ((insErr as { code?: string }).code === '23505') {
@@ -707,11 +656,7 @@ export const tool_leave_group_chat: Handler = async (args, id, sb) => {
       };
     }
 
-    const { error: delErr } = await sb
-      .from('chat_group_members')
-      .delete()
-      .eq('group_id', group.id)
-      .eq('user_id', id.user_id);
+    const { error: delErr } = await repo.deleteChatGroupMembership(sb, group.id, id.user_id);
     if (delErr) return { ok: false, error: `I couldn't leave "${group.name}" just now — want me to try again?` };
 
     return {
@@ -752,31 +697,16 @@ async function resolveMyCalendarEvent(
 ): Promise<CalendarEventResolution> {
   const eventIdArg = String(rawEventId ?? '').trim();
   const query = String(rawQuery ?? '').trim();
-  const cols = 'id, title, start_time, end_time, location';
 
   if (UUID_RE.test(eventIdArg)) {
-    const { data, error } = await sb
-      .from('calendar_events')
-      .select(cols)
-      .eq('id', eventIdArg)
-      .eq('user_id', userId)
-      .neq('status', 'cancelled')
-      .maybeSingle();
+    const { data, error } = await repo.fetchMyCalendarEventById(sb, eventIdArg, userId);
     if (error) return { kind: 'error', message: error.message };
     if (!data) return { kind: 'none' };
     return { kind: 'one', event: data as CalendarEventRow };
   }
 
   if (!query) return { kind: 'none' };
-  const { data, error } = await sb
-    .from('calendar_events')
-    .select(cols)
-    .eq('user_id', userId)
-    .neq('status', 'cancelled')
-    .gte('start_time', new Date().toISOString())
-    .ilike('title', `%${query}%`)
-    .order('start_time', { ascending: true })
-    .limit(5);
+  const { data, error } = await repo.searchMyCalendarEventsByTitle(sb, userId, query);
   if (error) return { kind: 'error', message: error.message };
   const events = (data as CalendarEventRow[]) ?? [];
   if (events.length === 0) return { kind: 'none' };
@@ -870,7 +800,7 @@ export const tool_send_calendar_invite_in_chat: Handler = async (args, id, sb) =
     }
 
     const content = `📅 ${event.title} — ${fmtWhen(event.start_time)}${event.location ? ` at ${event.location}` : ''}`;
-    const { error: insErr } = await sb.from('chat_messages').insert({
+    const { error: insErr } = await repo.insertCalendarInviteChatMessage(sb, {
       tenant_id: tenantId,
       sender_id: id.user_id,
       receiver_id: target.user_id,
@@ -994,7 +924,7 @@ async function sendCallInvite(
 
     const senderName = await senderDisplayName(sb, id.user_id);
     const content = `${isVideo ? '🎥' : '📞'} ${senderName} would like to start a ${kindWord} with you — open Vitana to connect.`;
-    const { error: insErr } = await sb.from('chat_messages').insert({
+    const { error: insErr } = await repo.insertCallInviteChatMessage(sb, {
       tenant_id: tenantId,
       sender_id: id.user_id,
       receiver_id: target.user_id,
