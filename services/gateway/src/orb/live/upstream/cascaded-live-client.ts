@@ -77,6 +77,16 @@ const POLLY_PCM_SAMPLE_RATE_HZ = 16_000;
  */
 const DEFAULT_AUDIO_CHUNK_BYTES = 32_000;
 
+/**
+ * VTID-03722 — default silence budget that ends a user turn, in ms.
+ *
+ * 900ms: long enough to survive a mid-sentence pause (Transcribe emits finals
+ * at clause boundaries, so a shorter value cuts people off), short enough that
+ * the reply does not feel hung. Overridable per-session via `vadSilenceMs` on
+ * connect(), which is range-guarded rather than trusted.
+ */
+export const DEFAULT_CASCADE_VAD_SILENCE_MS = 900;
+
 export class CascadedLiveClient implements UpstreamLiveClient {
   private state: UpstreamConnectionState = 'idle';
   private readonly lang: string;
@@ -87,6 +97,22 @@ export class CascadedLiveClient implements UpstreamLiveClient {
 
   /** Final user speech accumulated since the last turn boundary. */
   private pendingUserText = '';
+  /**
+   * VTID-03722 — silence budget that ENDS a user turn.
+   *
+   * Nova needs no such thing: it does its own VAD inside the bidirectional
+   * stream, which is why `orb-widget.js` only ever sends `{type:'audio'}`
+   * frames and NEVER an `end_turn` (verified: zero occurrences). The cascade
+   * has no VAD, and `runTurn()` was reachable only from `sendTextTurn()` and
+   * `sendEndOfTurn()` — so a real microphone turn transcribed fine, appended
+   * to `pendingUserText`, and never invoked Bedrock. Greeting speaks, then
+   * the user talks to a wall. Strictly worse than the English it replaced.
+   *
+   * `vadSilenceMs` was already being passed to `connect()` and dropped on the
+   * floor; it is now the debounce that closes the turn.
+   */
+  private vadSilenceMs = DEFAULT_CASCADE_VAD_SILENCE_MS;
+  private silenceTimer: ReturnType<typeof setTimeout> | null = null;
   /** Guards against two turns generating concurrently. */
   private turnInFlight = false;
 
@@ -124,6 +150,14 @@ export class CascadedLiveClient implements UpstreamLiveClient {
     }
 
     this.systemInstruction = options.systemInstruction || '';
+    // Guard the range: a 0/absent value would end the turn on the first final
+    // fragment (cutting the user off mid-sentence), and an enormous one would
+    // hang the turn forever. Both are worse than the default.
+    const requestedVad = Number(options.vadSilenceMs);
+    this.vadSilenceMs =
+      Number.isFinite(requestedVad) && requestedVad >= 200 && requestedVad <= 10_000
+        ? requestedVad
+        : DEFAULT_CASCADE_VAD_SILENCE_MS;
 
     const transcribe = new TranscribeStreamSession({
       languageCode: eligibility.transcribeLanguageCode,
@@ -136,6 +170,12 @@ export class CascadedLiveClient implements UpstreamLiveClient {
       if (!f.isPartial) {
         this.pendingUserText = this.pendingUserText ? `${this.pendingUserText} ${f.text}` : f.text;
       }
+      // VTID-03722: any fragment — partial or final — means the user is still
+      // speaking, so push the boundary out. The turn fires only once the
+      // silence budget elapses with nothing new arriving. Arming on partials
+      // too is deliberate: a long sentence produces many partials between
+      // finals, and debouncing only on finals would cut in mid-clause.
+      this.armSilenceTimer();
     });
     transcribe.onError((err) => {
       this.errorHandler?.({
@@ -191,12 +231,37 @@ export class CascadedLiveClient implements UpstreamLiveClient {
    * latch the same user text would be answered twice and both answers would
    * be spoken over each other.
    */
+  /** VTID-03722: (re)start the silence countdown that closes the user's turn. */
+  private armSilenceTimer(): void {
+    this.clearSilenceTimer();
+    if (this.state === 'closing' || this.state === 'closed') return;
+    this.silenceTimer = setTimeout(() => {
+      this.silenceTimer = null;
+      // Nothing transcribed, or a turn is already running — the in-flight turn
+      // re-arms nothing, so a late fragment simply starts the next countdown.
+      if (!this.pendingUserText.trim() || this.turnInFlight) return;
+      void this.runTurn();
+    }, this.vadSilenceMs);
+    // Do not hold the process open on this timer alone.
+    (this.silenceTimer as unknown as { unref?: () => void }).unref?.();
+  }
+
+  private clearSilenceTimer(): void {
+    if (this.silenceTimer) {
+      clearTimeout(this.silenceTimer);
+      this.silenceTimer = null;
+    }
+  }
+
   private async runTurn(): Promise<void> {
     if (this.turnInFlight) return;
     const userText = this.pendingUserText.trim();
     if (!userText) return;
 
     this.turnInFlight = true;
+    // VTID-03722: this turn consumed the buffered text; a countdown still
+    // pending would fire against an empty buffer.
+    this.clearSilenceTimer();
     this.pendingUserText = '';
     const startedAt = Date.now();
 
@@ -302,6 +367,7 @@ export class CascadedLiveClient implements UpstreamLiveClient {
   async close(reason?: string): Promise<void> {
     if (this.state === 'closed' || this.state === 'closing') return;
     this.state = 'closing';
+    this.clearSilenceTimer();
     await this.transcribe?.stop();
     this.transcribe = null;
     this.state = 'closed';
