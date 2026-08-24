@@ -57,11 +57,15 @@ describe('orb-widget failed session start (BOOTSTRAP-ORB-FASTSTART-DRIFT)', () =
 
   it('the failure status is localized and does not itself say "Verbinden..."', () => {
     const handler = failedStartHandler(source);
-    expect(handler).toMatch(/lang\.startsWith\('de'\)/);
-    expect(handler).toMatch(/Verbindung fehlgeschlagen/);
+    // BOOTSTRAP-ORB-CAPTION-I18N: the inline de/en ternary moved into the
+    // localized _CAPTIONS dictionary (all 10 gateway locales) — the handler
+    // now resolves it via _caption('connectFailedRetrying').
+    expect(handler).toMatch(/_setStatus\(_caption\('connectFailedRetrying'\)\)/);
+    const entry = source.match(/connectFailedRetrying:\s*\{[^}]*\}/)?.[0] ?? '';
+    expect(entry).toMatch(/de:\s*'Verbindung fehlgeschlagen[^']*'/);
     // Guard the actual bug: the German failure string must not be the
     // connecting label _show() sets, or the UI is lying again.
-    const deString = handler.match(/'(Verbindung fehlgeschlagen[^']*)'/)?.[1] ?? '';
+    const deString = entry.match(/de:\s*'(Verbindung fehlgeschlagen[^']*)'/)?.[1] ?? '';
     expect(deString).not.toBe('Verbinden...');
     expect(deString.length).toBeGreaterThan(0);
   });
