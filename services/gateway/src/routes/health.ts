@@ -17,6 +17,7 @@ import { createUserSupabaseClient } from '../lib/supabase-user';
 import { getSupabase } from '../lib/supabase';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { CicdEventType } from '../types/cicd';
+import * as repo from './health-repository';
 
 const router = Router();
 
@@ -125,7 +126,7 @@ async function getUserContext(token: string): Promise<{
 }> {
   try {
     const supabase = createUserSupabaseClient(token);
-    const { data, error } = await supabase.rpc('me_context');
+    const { data, error } = await repo.rpcMeContext(supabase);
 
     if (error) {
       return { ok: false, tenant_id: null, user_id: null, active_role: null, error: error.message };
@@ -192,7 +193,7 @@ router.post('/lab-reports/ingest', async (req: Request, res: Response) => {
       p_biomarkers: biomarkers,
     };
 
-    const { data, error } = await supabase.rpc('health_ingest_lab_report', rpcPayload);
+    const { data, error } = await repo.rpcHealthIngestLabReport(supabase, rpcPayload);
 
     if (error) {
       console.error('[VTID-01081] POST /lab-reports/ingest - RPC error:', error.message);
@@ -286,7 +287,7 @@ router.post('/wearables/ingest', async (req: Request, res: Response) => {
       p_samples: samples,
     };
 
-    const { data, error } = await supabase.rpc('health_ingest_wearable_samples', rpcPayload);
+    const { data, error } = await repo.rpcHealthIngestWearableSamples(supabase, rpcPayload);
 
     if (error) {
       console.error('[VTID-01081] POST /wearables/ingest - RPC error:', error.message);
@@ -381,10 +382,7 @@ router.post('/recompute/daily', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // Step 1: Compute daily features
-    const { data: featuresResult, error: featuresError } = await supabase.rpc(
-      'health_compute_features_daily',
-      { p_date: date }
-    );
+    const { data: featuresResult, error: featuresError } = await repo.rpcHealthComputeFeaturesDaily(supabase, date);
 
     if (featuresError) {
       console.error(`[${VTID_C3}] health_compute_features_daily failed:`, featuresError.message);
@@ -430,10 +428,7 @@ router.post('/recompute/daily', async (req: Request, res: Response) => {
     );
 
     // Step 2: Compute Vitana Index
-    const { data: indexResult, error: indexError } = await supabase.rpc(
-      'health_compute_vitana_index',
-      { p_date: date, p_model_version: model_version }
-    );
+    const { data: indexResult, error: indexError } = await repo.rpcHealthComputeVitanaIndex(supabase, date, model_version);
 
     if (indexError) {
       console.error(`[${VTID_C3}] health_compute_vitana_index failed:`, indexError.message);
@@ -486,10 +481,7 @@ router.post('/recompute/daily', async (req: Request, res: Response) => {
     );
 
     // Step 3: Generate recommendations
-    const { data: recsResult, error: recsError } = await supabase.rpc(
-      'health_generate_recommendations',
-      { p_from: date, p_to: date, p_model_version: model_version }
-    );
+    const { data: recsResult, error: recsError } = await repo.rpcHealthGenerateRecommendations(supabase, date, date, model_version);
 
     if (recsError) {
       console.error(`[${VTID_C3}] health_generate_recommendations failed:`, recsError.message);
@@ -605,22 +597,14 @@ router.get('/summary', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // Fetch Vitana Index for the date
-    const { data: indexData, error: indexError } = await supabase
-      .from('vitana_index_scores')
-      .select('*')
-      .eq('date', date)
-      .single();
+    const { data: indexData, error: indexError } = await repo.fetchVitanaIndexScoreForDate(supabase, date);
 
     if (indexError && indexError.code !== 'PGRST116') {
       console.error(`[${VTID_C3}] GET /health/summary - Index query error:`, indexError.message);
     }
 
     // Fetch recommendations for the date
-    const { data: recsData, error: recsError } = await supabase
-      .from('recommendations')
-      .select('*')
-      .eq('date', date)
-      .order('priority', { ascending: false });
+    const { data: recsData, error: recsError } = await repo.fetchRecommendationsForDate(supabase, date);
 
     if (recsError) {
       console.error(`[${VTID_C3}] GET /health/summary - Recommendations query error:`, recsError.message);
@@ -736,27 +720,20 @@ router.post('/baseline-survey', async (req: Request, res: Response) => {
     // Resolve tenant_id: prefer JWT-based me_context, fall back to user_tenants.
     let tenantId: string | null = null;
     try {
-      const { data: ctx } = await userClient.rpc('me_context');
+      const { data: ctx } = await repo.rpcMeContext(userClient);
       if (ctx && typeof ctx === 'object' && (ctx as any).tenant_id) {
         tenantId = (ctx as any).tenant_id as string;
       }
     } catch { /* fall through to user_tenants */ }
 
     if (!tenantId) {
-      const { data: tenantRow } = await admin
-        .from('user_tenants')
-        .select('tenant_id')
-        .eq('user_id', userId)
-        .limit(1)
-        .maybeSingle();
+      const { data: tenantRow } = await repo.fetchTenantIdForUser(admin, userId);
       tenantId = (tenantRow?.tenant_id as string | undefined) ?? null;
     }
 
     // Write the survey row with the 5-pillar answers.
     const answers = { ...ratings, notes: notes ?? null };
-    const { error: surveyErr } = await userClient
-      .from('vitana_index_baseline_survey')
-      .upsert({ user_id: userId, answers, completed_at: new Date().toISOString() }, { onConflict: 'user_id' });
+    const { error: surveyErr } = await repo.upsertBaselineSurvey(userClient, { user_id: userId, answers, completed_at: new Date().toISOString() });
 
     if (surveyErr) {
       console.error(`[${VTID_C3}] baseline-survey upsert failed:`, surveyErr.message);
@@ -776,13 +753,7 @@ router.post('/baseline-survey', async (req: Request, res: Response) => {
     // Read 5-pillar weights from active config (default 1.0 each).
     let weights = { nutrition: 1, hydration: 1, exercise: 1, sleep: 1, mental: 1 };
     try {
-      const { data: cfg } = await admin
-        .from('vitana_index_config')
-        .select('pillar_weights')
-        .eq('is_active', true)
-        .order('version', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const { data: cfg } = await repo.fetchActivePillarWeightsConfig(admin);
       const pw = (cfg as any)?.pillar_weights;
       if (pw && typeof pw === 'object') {
         weights = {
@@ -805,22 +776,20 @@ router.post('/baseline-survey', async (req: Request, res: Response) => {
 
     const effectiveTenantId = tenantId ?? '00000000-0000-0000-0000-000000000000';
 
-    const { error: scoreErr } = await admin
-      .from('vitana_index_scores')
-      .upsert({
-        tenant_id: effectiveTenantId,
-        user_id: userId,
-        date: today,
-        score_total: scoreTotal,
-        score_nutrition: scoreNutrition,
-        score_hydration: scoreHydration,
-        score_exercise: scoreExercise,
-        score_sleep: scoreSleep,
-        score_mental: scoreMental,
-        model_version: 'baseline-survey-v3-5pillar',
-        feature_inputs: { source: 'baseline_survey', ratings },
-        confidence: 0.5,
-      }, { onConflict: 'tenant_id,user_id,date' });
+    const { error: scoreErr } = await repo.upsertVitanaIndexScore(admin, {
+      tenant_id: effectiveTenantId,
+      user_id: userId,
+      date: today,
+      score_total: scoreTotal,
+      score_nutrition: scoreNutrition,
+      score_hydration: scoreHydration,
+      score_exercise: scoreExercise,
+      score_sleep: scoreSleep,
+      score_mental: scoreMental,
+      model_version: 'baseline-survey-v3-5pillar',
+      feature_inputs: { source: 'baseline_survey', ratings },
+      confidence: 0.5,
+    });
 
     if (scoreErr) {
       console.error(`[${VTID_C3}] baseline score write failed:`, scoreErr.message);
@@ -893,22 +862,14 @@ router.get('/baseline-survey/status', async (req: Request, res: Response) => {
       return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
     }
 
-    const { data: survey, error: surveyErr } = await userClient
-      .from('vitana_index_baseline_survey')
-      .select('completed_at')
-      .maybeSingle();
+    const { data: survey, error: surveyErr } = await repo.fetchBaselineSurveyCompletedAt(userClient);
     if (surveyErr) {
       return res.status(400).json({ ok: false, error: surveyErr.message });
     }
 
     let hasScore = false;
     if (admin) {
-      const { data: score } = await admin
-        .from('vitana_index_scores')
-        .select('id')
-        .eq('user_id', userId)
-        .limit(1)
-        .maybeSingle();
+      const { data: score } = await repo.fetchVitanaIndexScoreExistsForUser(admin, userId);
       hasScore = !!score;
     }
 
