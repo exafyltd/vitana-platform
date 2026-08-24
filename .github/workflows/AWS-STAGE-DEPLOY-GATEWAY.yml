@@ -305,6 +305,27 @@ jobs:
           # `[TTS] FALLBACK polly→google` — grep that line to tell a missing
           # IAM grant apart from a working switch, because the user-visible
           # behaviour is identical either way.
+          # VTID-03708 — VERTEX_LIVE_UNAVAILABLE + TTS_POLLY_STRICT on
+          # STAGING, upserted below.
+          #
+          # Live task-def audit (read-only aws ecs describe-task-definition,
+          # 2026-08-23) found VERTEX_LIVE_UNAVAILABLE unset here while prod
+          # already carries it true. That is not a cosmetic gap: with the
+          # flag unset, the selector still believes Vertex is a live
+          # fallback, so the VTID-03703 fix never actually engages on
+          # staging. Walk the real branch: for a Nova-unsupported language
+          # (ru/pl/ar/zh), `if (languageBlocked and not vertexDead) return
+          # {provider:vertex}` fires and returns BEFORE the cascade is ever
+          # consulted -- vertexDead reads false here, so it returns vertex,
+          # and Vertex is permanently dead (GCP shutdown). Those sessions die
+          # with the exact upstream-1007 close VTID-03703 exists to prevent,
+          # even though ORB_CASCADED_VOICE_ENABLED is already true here --
+          # the cascade flag being on does nothing while this one is unset.
+          #
+          # TTS_POLLY_STRICT was unset here too (prod has it true). Without
+          # it an unservable TTS request tries to fall back to Google, which
+          # no longer exists, instead of failing fast.
+          #
           # VTID-03580 — BEDROCK_ROLE_ARN on STAGING, so staging can verify the
           # thing it exists to verify.
           #
@@ -346,7 +367,7 @@ jobs:
                                                 "NOVA_SONIC_CANARY_USER_IDS","NOVA_SONIC_CANARY_TENANT_IDS",
                                                 "FEATURE_ORB_GREETING_TTS_BRIDGE_ENV",
                                                 "FEATURE_ORB_SAFE_FAST_GREETING_ENV",
-                                                "TTS_PROVIDER",
+                                                "TTS_PROVIDER","TTS_POLLY_STRICT","VERTEX_LIVE_UNAVAILABLE",
                                                 "BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION") | not) ]
                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
                           {name:"COMMIT_SHA", value:$SHA},
@@ -359,6 +380,8 @@ jobs:
                           {name:"FEATURE_ORB_GREETING_TTS_BRIDGE_ENV", value:"off"},
                           {name:"FEATURE_ORB_SAFE_FAST_GREETING_ENV", value:"staging-only"},
                           {name:"TTS_PROVIDER", value:"polly"},
+                          {name:"TTS_POLLY_STRICT", value:"true"},
+                          {name:"VERTEX_LIVE_UNAVAILABLE", value:"true"},
                           {name:"BEDROCK_ROLE_ARN", value:$TASK_ROLE},
                           {name:"AWS_BEDROCK_REGION", value:"eu-central-1"} ] )
                 | .containerDefinitions[0].secrets |=
