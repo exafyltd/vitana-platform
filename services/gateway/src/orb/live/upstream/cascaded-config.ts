@@ -42,6 +42,7 @@
 import type { LanguageCode } from '@aws-sdk/client-transcribe-streaming';
 import { resolvePollyVoice } from '../../../services/tts/polly';
 import { isNovaSonicLanguageSupported } from './nova-sonic-config';
+import { SUPPORTED_LIVE_LANGUAGES } from '../config';
 
 /**
  * Amazon Transcribe streaming language codes, keyed by our base language.
@@ -170,6 +171,52 @@ export function isCascadeLanguageSupported(lang: string | null | undefined): boo
  */
 export function isCascadeEnabled(): boolean {
   return (process.env.ORB_CASCADED_VOICE_ENABLED || '').trim() === 'true';
+}
+
+/**
+ * VTID-03721 — report whether the cascade will ACTUALLY run, and for what.
+ *
+ * This exists because answering "is the cascade on?" required AWS console
+ * access. `ORB_CASCADED_VOICE_ENABLED` was set nowhere in the repo (only
+ * asserted in a workflow comment — VTID-03720), no endpoint reported it, and
+ * no session telemetry records which upstream served a turn. So `pl`/`pt`
+ * answered in English for hours with the cause invisible from outside, and
+ * the state had to be reconstructed from code plus a guess about live config.
+ *
+ * `effective` is the field that matters, and it is deliberately NOT just
+ * `enabled`. `VERTEX_LIVE_UNAVAILABLE` gates the branch ABOVE this one: with
+ * it unset the selector returns `{provider:'vertex'}` and returns BEFORE
+ * `tryCascadeRescue()` is ever consulted, so the cascade flag being on does
+ * nothing at all. Reporting `enabled` alone would be true-but-useless — the
+ * exact shape of "plausible-but-wrong" this codebase keeps paying for.
+ *
+ * Secret-free by construction: booleans, a region name, and a per-language
+ * eligibility verdict derived from the same functions routing uses. No
+ * credentials are read.
+ */
+export function buildCascadeHealthPayload(
+  env: NodeJS.ProcessEnv = process.env,
+): Record<string, unknown> {
+  const enabled = (env.ORB_CASCADED_VOICE_ENABLED || '').trim() === 'true';
+  const vertexDead = (env.VERTEX_LIVE_UNAVAILABLE || '').trim() === 'true';
+
+  const languages: Record<string, string> = {};
+  for (const lang of SUPPORTED_LIVE_LANGUAGES) {
+    const e = evaluateCascadeEligibility(lang);
+    languages[lang] = e.eligible
+      ? `cascade:${e.transcribeLanguageCode}`
+      : `no:${e.reason}`;
+  }
+
+  return {
+    enabled,
+    vertex_live_unavailable: vertexDead,
+    // Both, or the pipeline is unreachable regardless of this flag.
+    effective: enabled && vertexDead,
+    transcribe_region:
+      env.AWS_TRANSCRIBE_REGION || env.AWS_REGION || 'eu-central-1',
+    languages,
+  };
 }
 
 /** Region for Transcribe streaming (own var, then the shared AWS region). */
