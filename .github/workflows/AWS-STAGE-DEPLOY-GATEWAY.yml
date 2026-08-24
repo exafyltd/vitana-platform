@@ -386,6 +386,7 @@ jobs:
                                                 "NOVA_SONIC_CANARY_USER_IDS","NOVA_SONIC_CANARY_TENANT_IDS",
                                                 "FEATURE_ORB_GREETING_TTS_BRIDGE_ENV",
                                                 "FEATURE_ORB_SAFE_FAST_GREETING_ENV",
+                                                "ORB_FULL_DUPLEX_ENABLED",
                                                 "TTS_PROVIDER","TTS_POLLY_STRICT","VERTEX_LIVE_UNAVAILABLE",
                                                 "ORB_CASCADED_VOICE_ENABLED",
                                                 "BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION") | not) ]
@@ -399,6 +400,17 @@ jobs:
                           {name:"NOVA_SONIC_CANARY_TENANT_IDS", value:$NOVA_TENANTS},
                           {name:"FEATURE_ORB_GREETING_TTS_BRIDGE_ENV", value:"off"},
                           {name:"FEATURE_ORB_SAFE_FAST_GREETING_ENV", value:"staging-only"},
+                          # VTID-03706 — ORB full-duplex voice: the mic stays
+                          # open while Vitana speaks so Nova Sonic's native
+                          # barge-in can fire. STAGING ONLY. Deliberately not
+                          # added to AWS-PROD-DEPLOY-GATEWAY.yml: this changes
+                          # live audio behaviour for every voice session and
+                          # needs real-device echo verification (see
+                          # /command-hub/orb-voice-bench.html) before prod is
+                          # even a question. Rollback is this value -> "false",
+                          # no code revert. Exact-"true" opt-in, matching the
+                          # sibling ORB kill switches — anything else is OFF.
+                          {name:"ORB_FULL_DUPLEX_ENABLED", value:"true"},
                           {name:"TTS_PROVIDER", value:"polly"},
                           {name:"TTS_POLLY_STRICT", value:"true"},
                           {name:"VERTEX_LIVE_UNAVAILABLE", value:"true"},
