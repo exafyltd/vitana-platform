@@ -39,6 +39,7 @@ import { RoomSessionManager } from '../services/room-session-manager';
 import Stripe from 'stripe';
 import rateLimit from 'express-rate-limit';
 import { notifyUserAsync, notifyUsersAsync } from '../services/notification-service';
+import * as repo from './live-repository';
 
 const router = Router();
 
@@ -525,19 +526,11 @@ router.post('/rooms/:id/start', async (req: Request, res: Response) => {
       let hostId = '';
       try { hostId = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub; } catch {}
 
-      const { data: stream } = await supaN
-        .from('community_live_streams')
-        .select('title, tenant_id')
-        .eq('id', roomId)
-        .single();
+      const { data: stream } = await repo.fetchLiveStreamTitleTenant(supaN, roomId);
 
       const tenantId = (stream as any)?.tenant_id;
       if (tenantId) {
-        const { data: subs } = await supaN
-          .from('live_stream_subscribers')
-          .select('user_id')
-          .eq('stream_id', roomId)
-          .neq('user_id', hostId);
+        const { data: subs } = await repo.fetchLiveStreamSubscribersExcluding(supaN, roomId, hostId);
 
         const subscriberIds = [...new Set((subs || []).map((s: any) => s.user_id as string))];
         if (subscriberIds.length > 0) {
@@ -679,18 +672,10 @@ router.post('/rooms/:id/end', async (req: Request, res: Response) => {
       const { createClient } = await import('@supabase/supabase-js');
       const supa = createClient(creds2.url, creds2.key);
 
-      const { data: room } = await supa
-        .from('live_rooms')
-        .select('title, tenant_id, user_id')
-        .eq('id', roomId)
-        .single();
+      const { data: room } = await repo.fetchLiveRoomTitleTenantUser(supa, roomId);
 
       if (room?.tenant_id) {
-        const { data: attendees } = await supa
-          .from('live_room_attendees')
-          .select('user_id')
-          .eq('room_id', roomId)
-          .neq('user_id', room.user_id || '');
+        const { data: attendees } = await repo.fetchLiveRoomAttendeesExcluding(supa, roomId, room.user_id || '');
 
         const attendeeIds = (attendees || []).map((a: any) => a.user_id);
         if (attendeeIds.length > 0) {
@@ -822,11 +807,7 @@ router.post('/rooms/:id/join', async (req: Request, res: Response) => {
       const { createClient } = await import('@supabase/supabase-js');
       const supa = createClient(creds.url, creds.key);
 
-      const { data: room } = await supa
-        .from('live_rooms')
-        .select('title, tenant_id, user_id')
-        .eq('id', roomId)
-        .single();
+      const { data: room } = await repo.fetchLiveRoomTitleTenantUser(supa, roomId);
 
       if (room?.tenant_id && room.user_id && room.user_id !== user_id) {
         notifyUserAsync(room.user_id, room.tenant_id, 'someone_joined_live_room', {
@@ -1291,11 +1272,7 @@ router.post('/rooms/:id/highlights', async (req: Request, res: Response) => {
       let creatorId = '';
       try { creatorId = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub; } catch {}
 
-      const { data: room } = await supa
-        .from('live_rooms')
-        .select('title, tenant_id, user_id')
-        .eq('id', roomId)
-        .single();
+      const { data: room } = await repo.fetchLiveRoomTitleTenantUser(supa, roomId);
 
       if (room?.tenant_id && room.user_id && room.user_id !== creatorId) {
         notifyUserAsync(room.user_id, room.tenant_id, 'live_room_highlight_added', {
@@ -1647,19 +1624,11 @@ router.post('/rooms/:id/sessions', sessionCreateLimiter, async (req: Request, re
       try { hostId = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub; } catch {}
 
       // Look up room title and find followers (anyone who joined/RSVP'd)
-      const { data: room } = await supa
-        .from('live_rooms')
-        .select('title, tenant_id')
-        .eq('id', roomId)
-        .single();
+      const { data: room } = await repo.fetchLiveRoomTitleTenant(supa, roomId);
 
       if (room?.tenant_id) {
         // Get attendees who previously joined this room (potential followers)
-        const { data: followers } = await supa
-          .from('live_room_attendees')
-          .select('user_id')
-          .eq('room_id', roomId)
-          .neq('user_id', hostId);
+        const { data: followers } = await repo.fetchLiveRoomAttendeesExcluding(supa, roomId, hostId);
 
         const followerIds = (followers || []).map((f: any) => f.user_id);
         if (followerIds.length > 0) {
@@ -2253,11 +2222,7 @@ communityMeetupRouter.post('/meetups/:id/rsvp', async (req: Request, res: Respon
         try { rsvpUserId = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub; } catch {}
 
         // Get meetup title, tenant, and host
-        const { data: meetup } = await supa
-          .from('community_meetups')
-          .select('title, tenant_id, created_by')
-          .eq('id', meetupId)
-          .single();
+        const { data: meetup } = await repo.fetchMeetupTitleTenantCreator(supa, meetupId);
 
         if (meetup?.tenant_id && rsvpUserId) {
           // Notify the RSVP user (confirmation)
@@ -2293,7 +2258,7 @@ communityMeetupRouter.post('/meetups/:id/rsvp', async (req: Request, res: Respon
         if (_uid) {
           const { createClient } = await import('@supabase/supabase-js');
           const svc = createClient(creds4.url, creds4.key);
-          const { data: _m } = await svc.from('community_meetups').select('tenant_id').eq('id', meetupId).maybeSingle();
+          const { data: _m } = await repo.fetchMeetupTenantId(svc, meetupId);
           if (_m?.tenant_id) {
             import('../services/milestone-service').then(({ checkMilestonesForAction }) => {
               checkMilestonesForAction(svc, _uid, _m.tenant_id, 'event_rsvp').catch(() => {});
