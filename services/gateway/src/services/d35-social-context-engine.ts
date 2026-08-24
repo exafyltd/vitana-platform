@@ -26,6 +26,7 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { emitOasisEvent } from './oasis-event-service';
+import * as repo from './d35-social-context-engine-repository';
 import {
   SocialContextBundle,
   SocialComfortProfile,
@@ -130,10 +131,7 @@ function createUserClient(token: string): SupabaseClient | null {
 // =============================================================================
 
 async function bootstrapDevContext(supabase: SupabaseClient): Promise<void> {
-  const { error } = await supabase.rpc('dev_bootstrap_request_context', {
-    p_tenant_id: DEV_IDENTITY.TENANT_ID,
-    p_active_role: 'developer'
-  });
+  const { error } = await repo.devBootstrapRequestContext(supabase, DEV_IDENTITY.TENANT_ID, 'developer');
   if (error) {
     console.warn(`${LOG_PREFIX} Bootstrap context failed (non-fatal):`, error.message);
   }
@@ -181,7 +179,7 @@ export async function getComfortProfile(
       await bootstrapDevContext(supabase);
     }
 
-    const result = await supabase.rpc('social_get_comfort_profile');
+    const result = await repo.fetchSocialComfortProfile(supabase);
 
     if (result.error) {
       console.error(`${LOG_PREFIX} RPC error:`, result.error);
@@ -260,11 +258,7 @@ export async function updateComfortProfile(
 
     const value = typeof request.value === 'number' ? request.value.toString() : request.value;
 
-    const result = await supabase.rpc('social_update_comfort_profile', {
-      p_field: request.field,
-      p_value: value,
-      p_source: request.source
-    });
+    const result = await repo.updateSocialComfortProfileRpc(supabase, request.field, value, request.source);
 
     if (result.error) {
       console.error(`${LOG_PREFIX} RPC error:`, result.error);
@@ -357,10 +351,7 @@ export async function computeProximityScore(
       await bootstrapDevContext(supabase);
     }
 
-    const result = await supabase.rpc('social_compute_proximity', {
-      p_node_id: request.node_id,
-      p_context_domain: request.context_domain || null
-    });
+    const result = await repo.computeSocialProximity(supabase, request.node_id, request.context_domain || null);
 
     if (result.error) {
       console.error(`${LOG_PREFIX} RPC error:`, result.error);
@@ -463,7 +454,7 @@ export async function computeSocialContext(
       await bootstrapDevContext(supabase);
     }
 
-    const result = await supabase.rpc('social_compute_context', {
+    const result = await repo.computeSocialContextRpc(supabase, {
       p_domain: request.domain || null,
       p_intent_type: request.intent_type || null,
       p_emotional_state: request.emotional_state || null,
@@ -598,9 +589,7 @@ export async function invalidateProximityCache(
       await bootstrapDevContext(supabase);
     }
 
-    const result = await supabase.rpc('social_invalidate_cache', {
-      p_node_id: nodeId || null
-    });
+    const result = await repo.invalidateSocialCache(supabase, nodeId || null);
 
     if (result.error) {
       console.error(`${LOG_PREFIX} RPC error:`, result.error);
