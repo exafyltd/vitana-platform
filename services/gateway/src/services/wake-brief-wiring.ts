@@ -128,6 +128,16 @@ import {
   LOGIN_BRIEFING_EXTRA_KEY,
   LOGIN_BRIEFING_PROVIDER_KEY,
 } from './assistant-continuation/providers/login-briefing';
+// BOOTSTRAP-ORB-UNREAD-MESSAGES-NAV: unread-messages-announce at priority
+// 93.5 — between login-briefing (93) and new-day-return (94). Grounded in a
+// real chat_messages query (see the provider's own header); suppresses
+// cleanly when there are zero unread messages, so registering always is
+// safe.
+import {
+  makeUnreadMessagesAnnounceProvider,
+  UNREAD_MESSAGES_ANNOUNCE_EXTRA_KEY,
+  UNREAD_MESSAGES_ANNOUNCE_PROVIDER_KEY,
+} from './assistant-continuation/providers/unread-messages-announce';
 // VTID-03061 (B0d-real Xf.1): auto-emit OASIS next_action.suggested/
 // .suppressed events when a wake-brief decision lands. Fire-and-forget;
 // never blocks the voice path.
@@ -226,6 +236,12 @@ export function ensureWakeBriefProviderRegistered(): void {
   // first-time-welcome paths.
   if (!defaultProviderRegistry.get(LOGIN_BRIEFING_PROVIDER_KEY)) {
     defaultProviderRegistry.register(makeLoginBriefingProvider());
+  }
+  // BOOTSTRAP-ORB-UNREAD-MESSAGES-NAV: unread-messages-announce at priority
+  // 93.5. Suppresses cleanly (no_unread_messages) so registering always is
+  // safe.
+  if (!defaultProviderRegistry.get(UNREAD_MESSAGES_ANNOUNCE_PROVIDER_KEY)) {
+    defaultProviderRegistry.register(makeUnreadMessagesAnnounceProvider());
   }
   // VTID-03307 (SAFE rebuild): Conversation Flow v3 at priority 88. Speak-only;
   // self-suppresses when its flag is off, so registering always is safe.
@@ -553,6 +569,14 @@ export async function decideWakeBriefForSession(
         // the grounded opener fell silent on every <15-min re-tap and a
         // hard-coded fallback provider won the turn.
         skipReason: greetingDecision.reason,
+      };
+      // BOOTSTRAP-ORB-UNREAD-MESSAGES-NAV: unread-messages-announce inputs.
+      // The provider suppresses on zero unread, so forwarding always is safe.
+      extra[UNREAD_MESSAGES_ANNOUNCE_EXTRA_KEY] = {
+        supabase: args.supabase,
+        userId: args.userId,
+        tenantId: args.tenantId,
+        lang: args.lang,
       };
       // Advice #4: real-life-invite inputs. Always forwarded — the provider
       // self-suppresses unless its flag is on, so passing it is safe.

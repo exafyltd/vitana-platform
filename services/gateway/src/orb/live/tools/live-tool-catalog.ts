@@ -2195,10 +2195,13 @@ export function buildLiveApiTools(
             'Overlays (entry_kind=overlay): they open as a popup/drawer on the current screen instead of navigating. Examples: OVERLAY.CALENDAR, LIFE_COMPASS.OVERLAY, OVERLAY.VITANA_INDEX, OVERLAY.PROFILE_PREVIEW, OVERLAY.MEETUP_DRAWER, OVERLAY.EVENT_DRAWER, OVERLAY.WALLET_POPUP, OVERLAY.MASTER_ACTION. Same tool, same call site — the catalog tells the gateway which to render.',
             '',
             '── PARAMETERIZED ROUTES ──',
-            'If the catalog entry has `:param` placeholders, also send the param: `match_id` for INTENTS.MATCH_DETAIL; `vitana_id` (+ optional `intent_id`) for PROFILE.PUBLIC / PROFILE.WITH_MATCH; `meetup_id` / `event_id` for OVERLAY.MEETUP_DRAWER / OVERLAY.EVENT_DRAWER; `user_id` for OVERLAY.PROFILE_PREVIEW; `id` for DISCOVER.PRODUCT_DETAIL / DISCOVER.PROVIDER_PROFILE / NEWS.DETAIL; `groupId` for COMM.GROUP_DETAIL; `roomId` for COMM.LIVE_ROOM_VIEWER. NEVER invent/guess a value for any of these params — if you do not already know the real id from context, use the corresponding LIST/overview screen instead (see below) or ask the user which one they mean.',
+            'If the catalog entry has `:param` placeholders, also send the param: `match_id` for INTENTS.MATCH_DETAIL; `vitana_id` (+ optional `intent_id`) for PROFILE.PUBLIC / PROFILE.WITH_MATCH; `meetup_id` / `event_id` for OVERLAY.MEETUP_DRAWER / OVERLAY.EVENT_DRAWER; `user_id` for OVERLAY.PROFILE_PREVIEW; `id` for DISCOVER.PRODUCT_DETAIL / DISCOVER.PROVIDER_PROFILE / NEWS.DETAIL; `groupId` for COMM.GROUP_DETAIL; `roomId` for COMM.LIVE_ROOM_VIEWER; `recipient_id` for INBOX.CONVERSATION; `chat_group_id` for INBOX.GROUP. NEVER invent/guess a value for any of these params — if you do not already know the real id from context, use the corresponding LIST/overview screen instead (see below) or ask the user which one they mean.',
             '',
             '── "MY MATCHES" — do not confuse the list with a single detail ──',
             'INTENTS.MATCH_DETAIL is a SINGLE match\'s detail page — it requires a real `match_id` you already have from context (e.g. the user just discussed that specific match). For "show me my matches" / "My Matches" / any general request to see their matches, use COMM.FIND_PARTNER_MATCHES (mobile) or COMM.MATCHES (desktop) instead — those need no parameter. Calling INTENTS.MATCH_DETAIL without a real match_id always fails.',
+            '',
+            '── "OPEN THAT MESSAGE" — do not confuse the general inbox with one specific thread ──',
+            'INBOX.OVERVIEW is the general inbox — use it when no specific sender/group is known yet. INBOX.CONVERSATION opens ONE specific person\'s DM thread and needs a real `recipient_id`; INBOX.GROUP opens ONE specific group chat and needs a real `chat_group_id`. Both ids must come from a prior tool result (view_messages\'s senders, recent_conversations/list_conversations\'s contacts, send_group_chat_message\'s group_id) — NEVER invent one from a spoken name. If the user says "open/show me that message" right after you named a sender or read view_messages results, you already have their user_id — call INBOX.CONVERSATION with it instead of just re-offering the general inbox. If you do not have the id, call view_messages or recent_conversations first, or fall back to INBOX.OVERVIEW.',
           ].join('\n'),
           parameters: {
             type: 'object',
@@ -2224,6 +2227,19 @@ export function buildLiveApiTools(
               groupId: { type: 'string', description: 'For COMM.GROUP_DETAIL.' },
               roomId: { type: 'string', description: 'For COMM.LIVE_ROOM_VIEWER.' },
               id: { type: 'string', description: 'For DISCOVER.PRODUCT_DETAIL, DISCOVER.PROVIDER_PROFILE, NEWS.DETAIL.' },
+              recipient_id: {
+                type: 'string',
+                description:
+                  'For INBOX.CONVERSATION — the other person\'s user_id, from a prior tool result ' +
+                  '(view_messages senders, recent_conversations/list_conversations contacts, ' +
+                  'find_community_member, resolve_recipient). Never invent this from a spoken name.',
+              },
+              chat_group_id: {
+                type: 'string',
+                description:
+                  'For INBOX.GROUP — the group_id, from a prior tool result (e.g. send_group_chat_message). ' +
+                  'Never invent this from a spoken name.',
+              },
             },
             // Either screen_id or target must be present — checked in the
             // handler so legacy callers that send `target` continue to work.

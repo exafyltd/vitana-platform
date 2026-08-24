@@ -118,9 +118,15 @@ describe('orb-widget page-level gesture audio unlock (VTID-03469)', () => {
     expect(announceBody).toMatch(/_s\._audioBlocked = true/);
     expect(announceBody).toMatch(/_unlockPlaybackCtxFromGesture\(\)/);
     expect(announceBody).toMatch(/_processQueue\(\)/);
-    // The prompt has to actually say what to do, in both shipped languages.
-    expect(announceBody).toMatch(/Tippe, um Vitana zu hören/);
-    expect(announceBody).toMatch(/Tap anywhere to hear Vitana/);
+    // BOOTSTRAP-ORB-CAPTION-I18N: the prompt text moved into the localized
+    // _CAPTIONS dictionary (all 10 gateway locales) instead of an inline
+    // de/en ternary — verify the handler resolves it via _caption(), and
+    // that the dictionary entry still carries both originally-shipped
+    // language strings.
+    expect(announceBody).toMatch(/_setStatus\(_caption\('tapToHear'\)\)/);
+    const tapToHearEntry = source.match(/tapToHear:\s*\{[^}]*\}/)?.[0] ?? '';
+    expect(tapToHearEntry).toMatch(/de:\s*'Tippe, um Vitana zu hören'/);
+    expect(tapToHearEntry).toMatch(/en:\s*'Tap anywhere to hear Vitana'/);
   });
 
   it('keeps the tap prompt visible through the end-of-turn transition', () => {
@@ -133,8 +139,10 @@ describe('orb-widget page-level gesture audio unlock (VTID-03469)', () => {
     const preamble = source.slice(0, source.indexOf(anchor)).slice(-500);
 
     // Both the "Listening..." repaint and the beep must sit behind the guard.
+    // BOOTSTRAP-ORB-CAPTION-I18N: the literal string moved into _CAPTIONS;
+    // the repaint now resolves it via _caption('listening').
     expect(preamble).toMatch(/if \(!_s\._audioBlocked\)\s*\{/);
-    expect(preamble).toMatch(/'Ich höre zu\.\.\.'/);
+    expect(preamble).toMatch(/_caption\('listening'\)/);
     expect(preamble).toMatch(/_playReadyBeep\(\)/);
   });
 

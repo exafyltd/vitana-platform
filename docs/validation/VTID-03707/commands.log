@@ -1,0 +1,83 @@
+# VTID-03707 — commands actually run.
+
+# --- Diagnosis ---------------------------------------------------------
+
+# Located the caption rendering + de/en-only branching pattern.
+grep -n "_cfg\.lang\.startsWith\('de'\)\|_pickLang()\|lang === 'de'" \
+  services/gateway/src/frontend/command-hub/orb-widget.js
+
+# Confirmed the disconnect-alert MP3 catalog only has -en/-de clips, so
+# _pickLang() could not simply be widened to 10 locales without breaking
+# the audio-clip lookup.
+sed -n '/_ALERT_CLIPS = \[/,/\];/p' \
+  services/gateway/src/frontend/command-hub/orb-widget.js
+
+# --- Implementation ------------------------------------------------------
+
+# Added _CAPTION_LOCALES/_resolveCaptionLocale()/_loc()/_caption() +
+# _CAPTIONS; extended _DISCONNECT_LABELS/_RECOVERY_LABELS/_THINKING_* to
+# 10 locales; replaced every hardcoded call site; bumped font-size/
+# min-height in both the inline style and injected stylesheet rule.
+# (Edits made directly; not reproducible as a single shell command.)
+
+# --- Verification --------------------------------------------------------
+
+node --check services/gateway/src/frontend/command-hub/orb-widget.js
+# -> clean, exit 0. See outputs/node-check.txt
+
+grep -n '_pickLang()' services/gateway/src/frontend/command-hub/orb-widget.js
+grep -n "_cfg\.lang\.startsWith('de') ?\|_cfg\.lang && _cfg\.lang\.startsWith\|lang === 'de' ?" \
+  services/gateway/src/frontend/command-hub/orb-widget.js
+grep -n "font-size:1\|font-size: 1\|min-height:2\|min-height: 2" \
+  services/gateway/src/frontend/command-hub/orb-widget.js
+# -> See outputs/grep-sweep.txt
+
+# jest could not run in this sandbox:
+cd services/gateway && npx jest test/frontend/orb-widget-caption-i18n.test.ts \
+  test/frontend/orb-widget-thinking-messages.test.ts
+#   npm error code E403
+#   npm error 403 403 Forbidden - GET https://registry.npmjs.org/jest
+#   (no cached node_modules/pnpm store in this sandboxed session; this
+#   repo's real CI runners have normal registry access)
+
+# Offline Playwright harness (no network/live-session calls) — served
+# services/gateway/src/frontend/command-hub/ locally, loaded the widget,
+# called VitanaOrb._test_showOverlay() then
+# VitanaOrb._test_setState('listening', <caption text>) for en/es/ar and
+# the longest new German phrase, at 390x844 and 1400x900, and read
+# getComputedStyle(.vtorb-status).fontSize.
+# -> See outputs/playwright-check.txt
+
+# --- CSP gate investigation (separate, pre-existing finding) -------------
+
+# Simulated VALIDATOR-CHECK.yml's exact CSP Governance Gate regex set
+# locally against the file as it already stood before this change, to
+# determine whether the gate failure on this PR is caused by this diff.
+python3 - <<'PY'
+import re
+patterns = [
+    r"<script(?![^>]*\bsrc=)", r"style\s*=", r"\.style\b",
+    r"\beval\s*\(", r"new\s+Function\s*\(", r"unsafe-inline",
+    r"https?://[^\s\"']+\.(js|css)",
+]
+data = open("services/gateway/src/frontend/command-hub/orb-widget.js", encoding="utf-8").read()
+for p in patterns:
+    n = len(list(re.finditer(p, data, re.IGNORECASE)))
+    if n: print(p, n)
+PY
+# -> \.style\b matches 26 times — all pre-existing DOM property writes
+#    (e.g. `status.style.cssText = ...`, `el.style.color = ...`), not
+#    introduced by this PR. Confirms the CSP gate would reject ANY PR
+#    touching this file today, not specifically this one. See
+#    acceptance.md's "Known, separate defect" section.
+
+# --- Governance ------------------------------------------------------------
+
+# Self-allocated the VTID this evidence pack is filed under (Supabase MCP,
+# VITANA project inmkhvwdcuyhnxkgfvsb, per CLAUDE.md section 4.1):
+#   select * from allocate_global_vtid('claude-code', 'COM', 'ORB');
+#   -> VTID-03707
+# Then set title/summary/description, status='in_progress',
+# spec_status='approved' on that row (the user directly instructed this
+# work in conversation, which is the approval per IF-THEN rule "task moved
+# to in_progress manually -> explicit consent").

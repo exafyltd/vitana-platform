@@ -17,7 +17,7 @@
 (function (window) {
   'use strict';
 
-  var _WIDGET_VERSION = '2026-07-31-thinking-tone-fix';
+  var _WIDGET_VERSION = '2026-08-24-caption-i18n';
   console.log('[VTOrb] Widget version: ' + _WIDGET_VERSION);
 
   // BOOTSTRAP-NOVA-SONIC-VOICE: user live-test feedback 2026-07-28 — the
@@ -503,10 +503,17 @@
       '.vtorb-btn-close:hover { background: rgba(239,68,68,0.3); color: #fca5a5; }',
 
       // --- Status text ---
+      // BOOTSTRAP-ORB-CAPTION-I18N: bumped 14px->17px (min-height 20px->24px
+      // to match) for legibility — there's a lot of empty space around the
+      // orb on mobile. Deliberately NOT overridden inside the @media block
+      // below: the inline cssText set once in _renderOverlay() has higher
+      // specificity than any stylesheet rule, including a media-scoped one,
+      // and is never updated afterward, so a mobile-only override here would
+      // silently never apply. One shared value covers mobile and desktop.
       '.vtorb-status {',
       '  margin-top: 20px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;',
-      '  font-size: 14px; color: rgba(255,255,255,0.6); text-align: center;',
-      '  min-height: 20px; transition: opacity 0.3s;',
+      '  font-size: 17px; color: rgba(255,255,255,0.6); text-align: center;',
+      '  min-height: 24px; transition: opacity 0.3s;',
       '}',
       '.vtorb-status.vtorb-status-listening { color: rgba(59,130,246,0.8); }',
       '.vtorb-status.vtorb-status-thinking { color: rgba(139,92,246,0.8); }',
@@ -714,9 +721,8 @@
   function _announceAudioBlocked() {
     if (_s._audioBlocked) return;
     _s._audioBlocked = true;
-    var de = _cfg.lang && _cfg.lang.startsWith('de');
     _setOrbState('paused');
-    _setStatus(de ? 'Tippe, um Vitana zu hören' : 'Tap anywhere to hear Vitana');
+    _setStatus(_caption('tapToHear'));
     _updateUI();
     var onTap = function () {
       _unlockPlaybackCtxFromGesture();
@@ -749,11 +755,10 @@
     var st = (_s.voiceState || 'LISTENING').toLowerCase();
     if (st === 'muted') return; // mute owns the display
     _setOrbState(st === 'speaking' ? 'speaking' : 'listening');
-    var de = _cfg.lang && _cfg.lang.startsWith('de');
     if (st === 'speaking') {
-      _setStatus(de ? 'Vitana spricht...' : 'Vitana speaking...');
+      _setStatus(_caption('speaking'));
     } else {
-      _setStatus(de ? 'Ich höre zu...' : 'Listening...');
+      _setStatus(_caption('listening'));
     }
     _updateUI();
   }
@@ -777,43 +782,246 @@
   // is worse than silence, so missing-clip means tone + visible status only.
   // ============================================================
 
+  // BOOTSTRAP-ORB-CAPTION-I18N: the visible .vtorb-status caption used to
+  // only ever localize to German or English (every call site branched on
+  // _cfg.lang.startsWith('de') ? de : en), even though _cfg.lang legitimately
+  // carries any of the gateway's supported locales (services/gateway/src/
+  // i18n/catalog.ts GATEWAY_LOCALES) and the session's actual spoken voice
+  // already speaks in that real language. This dictionary + resolver mirror
+  // that same 10-locale set so the caption layer never again silently
+  // collapses to English.
+  var _CAPTION_LOCALES = ['de', 'en', 'es', 'sr', 'fr', 'pt', 'ru', 'pl', 'zh', 'ar'];
+
+  // Resolves _cfg.lang (may be a full tag like "de-DE" or "pt-BR") to one of
+  // the 10 supported caption locales via prefix match before the first '-',
+  // falling back to 'en'. Deliberately separate from _pickLang() below,
+  // which stays de/en-only — see the comment on _pickLang() for why the two
+  // must not be merged.
+  function _resolveCaptionLocale() {
+    var raw = ((_cfg.lang || 'en') + '').toLowerCase().split('-')[0];
+    for (var i = 0; i < _CAPTION_LOCALES.length; i++) {
+      if (_CAPTION_LOCALES[i] === raw) return raw;
+    }
+    return 'en';
+  }
+
+  // Picks the current-locale value out of a {en, de, es, ...} phrase object,
+  // falling back to English if a translation is somehow missing.
+  function _loc(entry) {
+    if (!entry) return '';
+    var lc = _resolveCaptionLocale();
+    return entry[lc] || entry.en || '';
+  }
+
+  // Semantic-key caption dictionary — one row per UI status phrase shown in
+  // .vtorb-status. Read via _caption(key) below.
+  var _CAPTIONS = {
+    speaking: {
+      en: 'Vitana speaking...', de: 'Vitana spricht...', es: 'Vitana está hablando…',
+      sr: 'Vitana priča…', fr: 'Vitana parle…', pt: 'A Vitana está a falar…',
+      ru: 'Витана говорит…', pl: 'Vitana mówi…', zh: 'Vitana 正在说话…', ar: 'فيتانا تتحدث...'
+    },
+    listening: {
+      en: 'Listening...', de: 'Ich höre zu...', es: 'Escuchando…',
+      sr: 'Slušam…', fr: "J'écoute…", pt: 'A ouvir…',
+      ru: 'Слушаю…', pl: 'Słucham…', zh: '正在聆听…', ar: 'أستمع...'
+    },
+    connecting: {
+      en: 'Connecting...', de: 'Verbinden...', es: 'Conectando…',
+      sr: 'Povezujem se…', fr: 'Connexion…', pt: 'A ligar…',
+      ru: 'Подключение…', pl: 'Łączenie…', zh: '正在连接…', ar: 'جارٍ الاتصال...'
+    },
+    reconnecting: {
+      en: 'Reconnecting...', de: 'Verbindung wird wiederhergestellt...', es: 'Reconectando…',
+      sr: 'Ponovo se povezujem…', fr: 'Reconnexion…', pt: 'A restabelecer a ligação…',
+      ru: 'Переподключение…', pl: 'Ponowne łączenie…', zh: '正在重新连接…', ar: 'إعادة الاتصال...'
+    },
+    muted: {
+      en: 'Muted', de: 'Stummgeschaltet', es: 'Silenciado',
+      sr: 'Isključen zvuk', fr: 'Muet', pt: 'Silenciado',
+      ru: 'Микрофон выключен', pl: 'Wyciszono', zh: '已静音', ar: 'مكتوم الصوت'
+    },
+    tapToHear: {
+      en: 'Tap anywhere to hear Vitana', de: 'Tippe, um Vitana zu hören',
+      es: 'Toca en cualquier lugar para escuchar a Vitana', sr: 'Dodirni bilo gde da čuješ Vitanu',
+      fr: "Touche n'importe où pour entendre Vitana", pt: 'Toca em qualquer lugar para ouvir a Vitana',
+      ru: 'Коснись экрана, чтобы услышать Витану', pl: 'Dotknij gdziekolwiek, aby usłyszeć Vitanę',
+      zh: '点击任意位置即可听到 Vitana 的声音', ar: 'اضغط في أي مكان لسماع فيتانا'
+    },
+    idleNudge: {
+      en: "I'm still listening. Tell me what you'd like to do!",
+      de: 'Ich höre noch zu. Sag mir, was ich tun soll!',
+      es: '¡Sigo escuchando. Dime qué te gustaría hacer!',
+      sr: 'Još uvek slušam. Reci mi šta želiš da uradim!',
+      fr: 'Je t’écoute toujours. Dis-moi ce que tu veux faire !',
+      pt: 'Continuo a ouvir. Diz-me o que gostarias de fazer!',
+      ru: 'Я всё ещё слушаю. Скажи, что бы ты хотел сделать!',
+      pl: 'Wciąż słucham. Powiedz mi, co chciałbyś zrobić!',
+      zh: '我还在听哦，告诉我你想做什么吧！',
+      ar: 'ما زلت أستمع. أخبرني بما تريد فعله!'
+    },
+    connectFailedRetrying: {
+      en: "Couldn't connect. Retrying...", de: 'Verbindung fehlgeschlagen. Neuer Versuch...',
+      es: 'No se pudo conectar. Reintentando…', sr: 'Povezivanje nije uspelo. Pokušavam ponovo…',
+      fr: 'Échec de la connexion. Nouvelle tentative…', pt: 'Não foi possível ligar. A tentar de novo…',
+      ru: 'Не удалось подключиться. Повторная попытка…', pl: 'Nie udało się połączyć. Ponawiam próbę…',
+      zh: '连接失败，正在重试…', ar: 'تعذر الاتصال. جارٍ إعادة المحاولة...'
+    },
+    offline: {
+      en: 'You seem to be offline. Please check your internet connection.',
+      de: 'Du bist offline. Bitte prüfe deine Internetverbindung.',
+      es: 'Parece que estás sin conexión. Comprueba tu conexión a internet.',
+      sr: 'Izgleda da si offline. Proveri internet konekciju.',
+      fr: 'Il semble que tu sois hors ligne. Vérifie ta connexion internet.',
+      pt: 'Parece que estás offline. Verifica a tua ligação à internet.',
+      ru: 'Похоже, ты офлайн. Проверь подключение к интернету.',
+      pl: 'Wygląda na to, że jesteś offline. Sprawdź połączenie z internetem.',
+      zh: '你似乎已离线，请检查网络连接。',
+      ar: 'يبدو أنك غير متصل بالإنترنت. يرجى التحقق من اتصالك بالإنترنت.'
+    },
+    sessionEndedBackground: {
+      en: 'Session ended — app was in the background.',
+      de: 'Sitzung beendet — App war im Hintergrund.',
+      es: 'Sesión finalizada: la app estaba en segundo plano.',
+      sr: 'Sesija je završena — aplikacija je bila u pozadini.',
+      fr: "Session terminée — l'appli était en arrière-plan.",
+      pt: 'Sessão terminada — a app estava em segundo plano.',
+      ru: 'Сессия завершена — приложение было в фоне.',
+      pl: 'Sesja zakończona — aplikacja działała w tle.',
+      zh: '会话已结束 — 应用在后台运行。',
+      ar: 'انتهت الجلسة — كان التطبيق يعمل في الخلفية.'
+    },
+    tapToReconnect: {
+      en: 'Tap the orb to reconnect', de: 'Tippen zum Neu verbinden',
+      es: 'Toca la esfera para reconectar', sr: 'Dodirni orb da se ponovo povežeš',
+      fr: "Touche l'orbe pour te reconnecter", pt: 'Toca na esfera para reconectar',
+      ru: 'Коснись сферы, чтобы переподключиться', pl: 'Dotknij kuli, aby połączyć się ponownie',
+      zh: '点击光球即可重新连接', ar: 'اضغط على الكرة لإعادة الاتصال'
+    },
+    textModeActive: {
+      en: 'Text mode active', de: 'Textmodus aktiv', es: 'Modo texto activo',
+      sr: 'Tekstualni režim aktivan', fr: 'Mode texte activé', pt: 'Modo de texto ativo',
+      ru: 'Активен текстовый режим', pl: 'Tryb tekstowy aktywny', zh: '文本模式已启用', ar: 'وضع النص مفعّل'
+    },
+    registerFree: {
+      en: 'Register for free to continue the conversation!',
+      de: 'Registriere dich kostenlos, um das Gespräch fortzusetzen!',
+      es: '¡Regístrate gratis para seguir la conversación!',
+      sr: 'Registruj se besplatno da nastaviš razgovor!',
+      fr: 'Inscris-toi gratuitement pour continuer la conversation !',
+      pt: 'Regista-te gratuitamente para continuar a conversa!',
+      ru: 'Зарегистрируйся бесплатно, чтобы продолжить разговор!',
+      pl: 'Zarejestruj się za darmo, aby kontynuować rozmowę!',
+      zh: '免费注册即可继续对话！',
+      ar: 'سجّل مجانًا لمتابعة المحادثة!'
+    }
+  };
+  function _caption(key) { return _loc(_CAPTIONS[key]); }
+
   // Display-only labels for the visible status text under the orb. The audio
-  // is rendered separately from these MP3 clips, but the wording matches.
+  // is rendered separately from these MP3 clips, but the wording matches —
+  // ONLY for en/de, since _ALERT_CLIPS below has no other-locale MP3s (see
+  // _pickLang()'s comment). The label text itself is read via
+  // _resolveCaptionLocale() (all 10 locales); the MP3 clip id stays en/de.
   var _DISCONNECT_LABELS = {
     mic: {
       en: "One moment, I can't hear your microphone.",
-      de: "Einen Moment, Mikrofon-Problem."
+      de: "Einen Moment, Mikrofon-Problem.",
+      es: 'Un momento, no puedo oír tu micrófono.',
+      sr: 'Trenutak, ne čujem tvoj mikrofon.',
+      fr: "Un instant, je n'entends pas ton micro.",
+      pt: 'Um momento, não consigo ouvir o teu microfone.',
+      ru: 'Секунду, я не слышу твой микрофон.',
+      pl: 'Chwilkę, nie słyszę Twojego mikrofonu.',
+      zh: '稍等，我听不到你的麦克风。',
+      ar: 'لحظة، لا أستطيع سماع الميكروفون الخاص بك.'
     },
     network: {
       en: "One moment, we have internet issues.",
-      de: "Einen Moment, Internet-Problem."
+      de: "Einen Moment, Internet-Problem.",
+      es: 'Un momento, tenemos problemas de conexión.',
+      sr: 'Trenutak, imamo problem sa internetom.',
+      fr: 'Un instant, on a un souci de connexion.',
+      pt: 'Um momento, temos problemas de ligação.',
+      ru: 'Секунду, у нас проблемы с интернетом.',
+      pl: 'Chwilkę, mamy problem z internetem.',
+      zh: '稍等，网络出了点问题。',
+      ar: 'لحظة، لدينا مشكلة في الإنترنت.'
     },
     connection: {
       en: "Hold on, I'm reconnecting. Please wait.",
-      de: "Einen Moment, ich verbinde mich neu."
+      de: "Einen Moment, ich verbinde mich neu.",
+      es: 'Espera, me estoy reconectando.',
+      sr: 'Sačekaj, ponovo se povezujem.',
+      fr: 'Patiente, je me reconnecte.',
+      pt: 'Aguarda, estou a reconectar-me.',
+      ru: 'Подожди, я переподключаюсь.',
+      pl: 'Poczekaj, łączę się ponownie.',
+      zh: '请稍等，我正在重新连接。',
+      ar: 'لحظة من فضلك، أنا أعيد الاتصال.'
     },
     offline: {
       en: "You're offline. Please wait, don't talk yet.",
-      de: "Du bist offline. Bitte warte mit Sprechen."
+      de: "Du bist offline. Bitte warte mit Sprechen.",
+      es: 'Estás sin conexión. Espera, no hables todavía.',
+      sr: 'Nisi na mreži. Sačekaj, još ne pričaj.',
+      fr: 'Tu es hors ligne. Attends, ne parle pas encore.',
+      pt: 'Estás offline. Aguarda, ainda não fales.',
+      ru: 'Ты офлайн. Подожди, пока не говори.',
+      pl: 'Jesteś offline. Poczekaj, jeszcze nie mów.',
+      zh: '你已离线，请稍等，先别说话。',
+      ar: 'أنت غير متصل. من فضلك انتظر ولا تتحدث بعد.'
     }
   };
 
   var _RECOVERY_LABELS = {
     mic: {
       en: "Okay, the microphone is working again. Let's continue.",
-      de: "Okay, das Mikrofon funktioniert wieder. Wir können weitermachen."
+      de: "Okay, das Mikrofon funktioniert wieder. Wir können weitermachen.",
+      es: 'Listo, el micrófono ya funciona de nuevo. Sigamos.',
+      sr: 'Dobro, mikrofon opet radi. Nastavimo.',
+      fr: 'Voilà, le micro refonctionne. On continue.',
+      pt: 'Pronto, o microfone voltou a funcionar. Vamos continuar.',
+      ru: 'Готово, микрофон снова работает. Продолжим.',
+      pl: 'Gotowe, mikrofon znów działa. Kontynuujmy.',
+      zh: '好了，麦克风又能用了，我们继续吧。',
+      ar: 'تمام، الميكروفون يعمل مجددًا. لنكمل.'
     },
     network: {
       en: "Okay, we're back online. I'm listening.",
-      de: "Okay, das Netz ist wieder da. Ich höre zu."
+      de: "Okay, das Netz ist wieder da. Ich höre zu.",
+      es: 'Listo, ya estamos en línea otra vez. Te escucho.',
+      sr: 'Dobro, opet smo na mreži. Slušam te.',
+      fr: 'Voilà, on est de nouveau en ligne. Je t’écoute.',
+      pt: 'Pronto, já estamos online outra vez. Estou a ouvir-te.',
+      ru: 'Готово, мы снова онлайн. Я слушаю.',
+      pl: 'Gotowe, znów jesteśmy online. Słucham Cię.',
+      zh: '好了，我们又上线了，我在听。',
+      ar: 'تمام، نحن متصلون مجددًا. أنا أستمع.'
     },
     offline: {
       en: "Okay, we're back online. I'm listening.",
-      de: "Okay, das Netz ist wieder da. Ich höre zu."
+      de: "Okay, das Netz ist wieder da. Ich höre zu.",
+      es: 'Listo, ya estamos en línea otra vez. Te escucho.',
+      sr: 'Dobro, opet smo na mreži. Slušam te.',
+      fr: 'Voilà, on est de nouveau en ligne. Je t’écoute.',
+      pt: 'Pronto, já estamos online outra vez. Estou a ouvir-te.',
+      ru: 'Готово, мы снова онлайн. Я слушаю.',
+      pl: 'Gotowe, znów jesteśmy online. Słucham Cię.',
+      zh: '好了，我们又上线了，我在听。',
+      ar: 'تمام، نحن متصلون مجددًا. أنا أستمع.'
     },
     connection: {
       en: "Okay, sorry for the interruption. I'm listening.",
-      de: "Okay, entschuldige die Unterbrechung. Ich höre zu."
+      de: "Okay, entschuldige die Unterbrechung. Ich höre zu.",
+      es: 'Listo, disculpa la interrupción. Te escucho.',
+      sr: 'Dobro, izvini zbog prekida. Slušam te.',
+      fr: 'Voilà, désolé pour l’interruption. Je t’écoute.',
+      pt: 'Pronto, desculpa a interrupção. Estou a ouvir-te.',
+      ru: 'Готово, извини за перерыв. Я слушаю.',
+      pl: 'Gotowe, przepraszam za przerwę. Słucham Cię.',
+      zh: '好了，抱歉打断了，我在听。',
+      ar: 'تمام، آسفة على المقاطعة. أنا أستمع.'
     }
   };
 
@@ -829,6 +1037,12 @@
     'recovery-connection-en', 'recovery-connection-de'
   ];
 
+  // _pickLang() is used for EXACTLY ONE thing: selecting which pre-rendered
+  // disconnect/recovery-alert MP3 to play (_ALERT_CLIPS above only has
+  // -en/-de clips). Do NOT use this for caption text — use
+  // _resolveCaptionLocale()/_loc()/_caption() instead, which cover all 10
+  // supported locales. Widening this function itself would silently request
+  // a nonexistent MP3 (e.g. 'disconnect-mic-es.mp3') for 8 of 10 locales.
   function _pickLang() { return (_cfg.lang || 'en').startsWith('de') ? 'de' : 'en'; }
 
   function _alertClipBaseUrl() {
@@ -1044,15 +1258,16 @@
     // Tone first — guaranteed <50ms even if the clip buffer is missing
     _playErrorTone();
 
-    var lang = _pickLang();
+    var captionLang = _resolveCaptionLocale();
+    var clipLang = _pickLang();
     var labelBucket = _DISCONNECT_LABELS[reason] || _DISCONNECT_LABELS.connection;
-    var label = labelBucket[lang] || labelBucket.en;
+    var label = labelBucket[captionLang] || labelBucket.en;
 
     _setOrbState('paused');
     _setStatus(label);
     _updateUI();
 
-    _playAlert('disconnect-' + reason + '-' + lang);
+    _playAlert('disconnect-' + reason + '-' + clipLang);
 
     // VTID-01987: active 5-second health probe replaces the previous 60s
     // setTimeout. Mobile WebViews (Android Appilix, iOS WKWebView) fire
@@ -1116,7 +1331,7 @@
     }
     _s._preDisconnectVoiceState = null;
 
-    var lang = _pickLang();
+    var lang = _resolveCaptionLocale();
     var labelBucket = _RECOVERY_LABELS[reason] || _RECOVERY_LABELS.connection;
     var label = labelBucket[lang] || labelBucket.en;
 
@@ -1133,7 +1348,7 @@
     // "Listening..." so the visual transition is unambiguous; the assistant
     // voice will speak shortly after.
     _playReadyBeep();
-    _setStatus(lang === 'de' ? 'Ich höre zu...' : 'Listening...');
+    _setStatus(_caption('listening'));
   }
 
   // BOOTSTRAP-ORB-MODERN-RECOVERY: full session teardown + fresh start. Used
@@ -1176,9 +1391,8 @@
     // Keep _disconnectActive true so the UI doesn't flash to a usable state
     // before the new session lands; _clearDisconnect on success will undo it.
 
-    var lang = _pickLang();
     _setOrbState('connecting');
-    _setStatus(lang === 'de' ? 'Verbindung wird wiederhergestellt...' : 'Reconnecting...');
+    _setStatus(_caption('reconnecting'));
 
     _sessionStart().then(function () {
       if (_s.active && _s._disconnectActive) _clearDisconnect();
@@ -1772,11 +1986,7 @@
       // handler lying about what was happening.
       //
       // Two fixes, both required: say something true, then actually recover.
-      _setStatus(
-        _cfg.lang.startsWith('de')
-          ? 'Verbindung fehlgeschlagen. Neuer Versuch...'
-          : "Couldn't connect. Retrying...",
-      );
+      _setStatus(_caption('connectFailedRetrying'));
       _updateUI();
 
       // Hand to the existing recovery loop — it owns the retry budget, the
@@ -2024,14 +2234,14 @@
         _setOrbState('thinking');
         _s.voiceState = 'THINKING';
         var readyMsg = _buildThinkingQueue()[0];
-        _setStatus(_cfg.lang.startsWith('de') ? readyMsg.de : readyMsg.en);
+        _setStatus(_loc(readyMsg));
         // Stuck guard: 15s timeout
         clearTimeout(_s.stuckGuardTimer);
         _s.stuckGuardTimer = setTimeout(function () {
           if (!_s.greetingAudioReceived && _s.active) {
             _setOrbState('listening');
             _s.voiceState = 'LISTENING';
-            _setStatus(_cfg.lang.startsWith('de') ? 'Ich höre zu...' : 'Listening...');
+            _setStatus(_caption('listening'));
             _updateUI();
           }
         }, 15000);
@@ -2099,7 +2309,7 @@
           } else if (_s.voiceState !== 'SPEAKING') {
             _setOrbState('speaking');
             _s.voiceState = 'SPEAKING';
-            _setStatus(_cfg.lang.startsWith('de') ? 'Vitana spricht...' : 'Vitana speaking...');
+            _setStatus(_caption('speaking'));
             clearTimeout(_s._listeningIdleTimer); // Cancel idle nudge — model is responding
             _updateUI();
           }
@@ -2230,7 +2440,7 @@
               // beep below would be inaudible anyway — keep the prompt up.
               if (!_s._audioBlocked) {
                 _setOrbState('listening');
-                _setStatus(_cfg.lang.startsWith('de') ? 'Ich höre zu...' : 'Listening...');
+                _setStatus(_caption('listening'));
                 _playReadyBeep();
               }
               _updateUI();
@@ -2258,9 +2468,7 @@
                     _armIdleNudge(15000 - sinceSpeech + 200);
                     return;
                   }
-                  _setStatus(_cfg.lang.startsWith('de')
-                    ? 'Ich höre noch zu. Sag mir, was ich tun soll!'
-                    : "I'm still listening. Tell me what you'd like to do!");
+                  _setStatus(_caption('idleNudge'));
                   _playReadyBeep();
                   _updateUI();
                 }, delay);
@@ -2357,7 +2565,7 @@
         } else if (_s.voiceState === 'THINKING' && _s._preReconnectVoiceState === 'LISTENING') {
           _setOrbState('listening');
           _s.voiceState = 'LISTENING';
-          _setStatus(_cfg.lang.startsWith('de') ? 'Ich höre zu...' : 'Listening...');
+          _setStatus(_caption('listening'));
           _updateUI();
         }
         _s._preReconnectVoiceState = null;
@@ -2413,9 +2621,7 @@
         } else {
           // VTID-ANON-NUDGE: Turn limit — show registration prompt
           console.log('[VTOrb] Session limit reached — prompting registration');
-          _setStatus(_cfg.lang.startsWith('de')
-            ? 'Registriere dich kostenlos, um das Gespräch fortzusetzen!'
-            : 'Register for free to continue the conversation!');
+          _setStatus(_caption('registerFree'));
           _setOrbState('paused');
           setTimeout(_sessionStop, 8000);
         }
@@ -2491,7 +2697,19 @@
                 _s.lastScheduledEnd = 0;
                 _s.audioPlaying = false;
 
-                _hide();
+                // BOOTSTRAP-ORB-UNREAD-MESSAGES-NAV: a deterministic
+                // greeting-effect navigate (e.g. "you have new messages" ->
+                // open the inbox) can ask the session to stay open instead
+                // of tearing down, so a dictated reply can follow right
+                // away. Without clearing navigationPending here, every
+                // audio chunk from now on would be silently dropped (see
+                // the 'audio'/'audio_out' case above) — the widget would
+                // look alive but never speak again.
+                if (msg.keep_orb_open === true) {
+                  _s.navigationPending = false;
+                } else {
+                  _hide();
+                }
                 if (typeof _cfg.onNavigationRequest === 'function') {
                   try { _cfg.onNavigationRequest(navRoute, navCtx); }
                   catch (e) { console.error('[VTOrb] onNavigationRequest failed:', e); }
@@ -3092,31 +3310,31 @@
   // remember..."). All lines now live in one pool, freshly shuffled per turn, with a
   // guard against repeating the previous turn's opening line back-to-back.
   var _THINKING_QUICK = [
-    { en: 'Let me think…', de: 'Lass mich kurz überlegen…' },
-    { en: 'Let me take a look…', de: 'Lass mich das kurz prüfen…' },
-    { en: 'One sec…', de: 'Eine Sekunde…' },
-    { en: 'Alright, hang on…', de: 'Alles klar, einen Moment…' },
-    { en: 'Let’s see…', de: 'Mal sehen…' },
-    { en: 'Give me a beat…', de: 'Kurz einen Moment…' }
+    { en: 'Let me think…', de: 'Lass mich kurz überlegen…', es: 'Déjame pensar…', sr: 'Daj da razmislim…', fr: 'Laisse-moi réfléchir…', pt: 'Deixa-me pensar…', ru: 'Дай подумать…', pl: 'Daj mi się zastanowić…', zh: '让我想想…', ar: 'دعني أفكر…' },
+    { en: 'Let me take a look…', de: 'Lass mich das kurz prüfen…', es: 'Déjame echar un vistazo…', sr: 'Daj da pogledam…', fr: 'Laisse-moi jeter un œil…', pt: 'Deixa-me dar uma vista de olhos…', ru: 'Дай взгляну…', pl: 'Daj mi rzucić okiem…', zh: '让我看看…', ar: 'دعني ألقي نظرة…' },
+    { en: 'One sec…', de: 'Eine Sekunde…', es: 'Un segundo…', sr: 'Sekundu…', fr: 'Une seconde…', pt: 'Um segundo…', ru: 'Секунду…', pl: 'Sekundkę…', zh: '一秒钟…', ar: 'لحظة واحدة…' },
+    { en: 'Alright, hang on…', de: 'Alles klar, einen Moment…', es: 'Bien, espera un momento…', sr: 'Dobro, sačekaj malo…', fr: "D'accord, attends…", pt: 'Ok, espera aí…', ru: 'Хорошо, подожди…', pl: 'Dobrze, chwileczkę…', zh: '好的，稍等一下…', ar: 'حسنًا، لحظة من فضلك…' },
+    { en: 'Let’s see…', de: 'Mal sehen…', es: 'A ver…', sr: 'Da vidimo…', fr: 'Voyons voir…', pt: 'Vamos ver…', ru: 'Посмотрим…', pl: 'Zobaczmy…', zh: '让我看看情况…', ar: 'لنرَ…' },
+    { en: 'Give me a beat…', de: 'Kurz einen Moment…', es: 'Dame un momento…', sr: 'Daj mi trenutak…', fr: 'Laisse-moi un instant…', pt: 'Dá-me só um instante…', ru: 'Дай мне момент…', pl: 'Daj mi chwilę…', zh: '给我一点时间…', ar: 'امنحني لحظة…' }
   ];
   var _THINKING_PRIMARY = [
-    { en: 'Checking what I remember…', de: 'Ich schau nach, was ich weiß…' },
-    { en: 'Connecting the dots…', de: 'Ich verbinde die Punkte…' },
-    { en: 'Putting it all together…', de: 'Ich füg alles zusammen…' },
-    { en: 'Just making sure I get it right…', de: 'Ich will sichergehen, dass es passt…' },
-    { en: 'Almost ready ✨', de: 'Gleich fertig ✨' },
-    { en: 'Still with you…', de: 'Bin noch dabei…' },
-    { en: 'Got it — here we go!', de: 'Alles klar, es geht los!' }
+    { en: 'Checking what I remember…', de: 'Ich schau nach, was ich weiß…', es: 'Reviso lo que recuerdo…', sr: 'Proveravam šta se sećam…', fr: 'Je vérifie ce dont je me souviens…', pt: 'Estou a verificar o que sei…', ru: 'Проверяю, что я помню…', pl: 'Sprawdzam, co pamiętam…', zh: '我在回想一下…', ar: 'أتحقق مما أتذكره…' },
+    { en: 'Connecting the dots…', de: 'Ich verbinde die Punkte…', es: 'Uniendo las piezas…', sr: 'Povezujem stvari…', fr: 'Je fais le lien…', pt: 'A juntar as peças…', ru: 'Соединяю всё вместе…', pl: 'Łączę fakty…', zh: '我在把线索串起来…', ar: 'أربط الأمور ببعضها…' },
+    { en: 'Putting it all together…', de: 'Ich füg alles zusammen…', es: 'Poniendo todo junto…', sr: 'Slažem sve zajedno…', fr: 'Je mets tout en ordre…', pt: 'A juntar tudo…', ru: 'Собираю всё воедино…', pl: 'Składam to wszystko w całość…', zh: '我在整理一下…', ar: 'أجمّع كل شيء معًا…' },
+    { en: 'Just making sure I get it right…', de: 'Ich will sichergehen, dass es passt…', es: 'Solo quiero asegurarme de entenderlo bien…', sr: 'Samo hoću da budem siguran da je tačno…', fr: 'Je veux juste être sûr de bien comprendre…', pt: 'Só quero ter a certeza de que percebi bem…', ru: 'Просто хочу удостовериться, что всё правильно…', pl: 'Chcę się tylko upewnić, że dobrze rozumiem…', zh: '我想确认一下有没有理解对…', ar: 'أريد فقط التأكد من أنني فهمت الأمر بشكل صحيح…' },
+    { en: 'Almost ready ✨', de: 'Gleich fertig ✨', es: 'Casi listo ✨', sr: 'Skoro gotovo ✨', fr: 'Presque prêt ✨', pt: 'Quase pronto ✨', ru: 'Почти готово ✨', pl: 'Prawie gotowe ✨', zh: '马上就好 ✨', ar: 'على وشك الانتهاء ✨' },
+    { en: 'Still with you…', de: 'Bin noch dabei…', es: 'Sigo aquí…', sr: 'Još uvek sam tu…', fr: 'Toujours avec toi…', pt: 'Continuo aqui contigo…', ru: 'Я всё ещё здесь…', pl: 'Wciąż tu jestem…', zh: '我还在这里…', ar: 'ما زلت معك…' },
+    { en: 'Got it — here we go!', de: 'Alles klar, es geht los!', es: 'Listo, ¡allá vamos!', sr: 'Evo ga, krećemo!', fr: "C'est bon, on y va !", pt: 'Pronto, cá vamos nós!', ru: 'Готово — поехали!', pl: 'Mam to — zaczynamy!', zh: '好了，我们开始吧！', ar: 'تمام، ها نحن ننطلق!' }
   ];
   var _THINKING_ALTERNATES = [
-    { en: 'On it…', de: 'Bin dran…' },
-    { en: 'Give me a tiny moment…', de: 'Gib mir einen kleinen Moment…' },
-    { en: 'Let me look into that…', de: 'Ich schau mir das an…' },
-    { en: 'Doing a little detective work…', de: 'Ich spiel kurz Detektiv…' },
-    { en: 'Looking in the right places…', de: 'Ich schau an den richtigen Stellen…' },
-    { en: 'Still working my magic…', de: 'Ich zaubere noch…' },
-    { en: 'One more moment…', de: 'Noch ein Moment…' },
-    { en: 'Nearly there…', de: 'Fast geschafft…' }
+    { en: 'On it…', de: 'Bin dran…', es: 'Voy con eso…', sr: 'Radim na tome…', fr: "Je m'en occupe…", pt: 'Estou nisso…', ru: 'Уже занимаюсь…', pl: 'Już się tym zajmuję…', zh: '我在处理了…', ar: 'أنا أعمل على ذلك…' },
+    { en: 'Give me a tiny moment…', de: 'Gib mir einen kleinen Moment…', es: 'Dame un momentito…', sr: 'Daj mi mali trenutak…', fr: 'Laisse-moi un tout petit instant…', pt: 'Dá-me só um bocadinho…', ru: 'Дай мне буквально секунду…', pl: 'Daj mi malutką chwilkę…', zh: '再给我一小会儿…', ar: 'أمهلني لحظة صغيرة…' },
+    { en: 'Let me look into that…', de: 'Ich schau mir das an…', es: 'Voy a revisar eso…', sr: 'Da to proverim…', fr: 'Je regarde ça…', pt: 'Vou verificar isso…', ru: 'Дай-ка я это проверю…', pl: 'Sprawdzę to…', zh: '我来看看这个…', ar: 'دعني أبحث في ذلك…' },
+    { en: 'Doing a little detective work…', de: 'Ich spiel kurz Detektiv…', es: 'Haciendo un poco de trabajo detectivesco…', sr: 'Malo detektivskog posla…', fr: 'Un peu de travail de détective…', pt: 'A fazer um pouco de trabalho de detetive…', ru: 'Провожу небольшое расследование…', pl: 'Trochę detektywistycznej roboty…', zh: '我在小小地侦查一下…', ar: 'أقوم ببعض العمل التحقيقي…' },
+    { en: 'Looking in the right places…', de: 'Ich schau an den richtigen Stellen…', es: 'Buscando en los lugares correctos…', sr: 'Tražim na pravim mestima…', fr: 'Je cherche au bon endroit…', pt: 'A procurar nos sítios certos…', ru: 'Ищу в нужных местах…', pl: 'Szukam we właściwych miejscach…', zh: '我在正确的地方找找看…', ar: 'أبحث في الأماكن الصحيحة…' },
+    { en: 'Still working my magic…', de: 'Ich zaubere noch…', es: 'Sigo haciendo mi magia…', sr: 'Još uvek čarolija u toku…', fr: 'Je fais encore ma petite magie…', pt: 'Ainda a fazer a minha magia…', ru: 'Всё ещё колдую…', pl: 'Wciąż czaruję…', zh: '我还在施展我的小魔法…', ar: 'ما زلت أصنع سحري…' },
+    { en: 'One more moment…', de: 'Noch ein Moment…', es: 'Un momento más…', sr: 'Još jedan trenutak…', fr: 'Encore un instant…', pt: 'Mais um momentinho…', ru: 'Ещё чуть-чуть…', pl: 'Jeszcze chwilka…', zh: '再等一下下…', ar: 'لحظة أخرى فقط…' },
+    { en: 'Nearly there…', de: 'Fast geschafft…', es: 'Ya casi…', sr: 'Skoro sam stigao…', fr: 'Presque fini…', pt: 'Está quase…', ru: 'Почти готово…', pl: 'Już prawie…', zh: '马上就好了…', ar: 'أوشكت على الانتهاء…' }
   ];
   var _THINKING_ALL = _THINKING_QUICK.concat(_THINKING_PRIMARY, _THINKING_ALTERNATES);
 
@@ -3142,11 +3360,10 @@
 
   function _startThinkingProgress() {
     clearInterval(_s.thinkingProgressTimer);
-    var isDe = _cfg.lang.startsWith('de');
     var queue = _buildThinkingQueue();
     // Show the first message immediately — most turns resolve before the first
     // rotation tick, so this (not the interval) is what users actually see.
-    _setStatus(isDe ? queue[0].de : queue[0].en);
+    _setStatus(_loc(queue[0]));
     var msgIndex = 0;
     _s.thinkingProgressTimer = setInterval(function () {
       if (_s.voiceState !== 'THINKING') {
@@ -3158,7 +3375,7 @@
       // Cycle through messages every 4 seconds
       msgIndex = Math.min(Math.floor(elapsed / 4), queue.length - 1);
       var msg = queue[msgIndex];
-      _setStatus(isDe ? msg.de : msg.en);
+      _setStatus(_loc(msg));
     }, 3000);
   }
 
@@ -3219,7 +3436,7 @@
       var drift = Date.now() - scheduledAt - BG_CHECK_MS;
       if (drift > BG_KILL_DRIFT_MS) {
         console.warn('[VTOrb] Background watchdog: timer drifted ' + drift + 'ms — app was backgrounded, ending session');
-        _setStatus(_cfg.lang.startsWith('de') ? 'Sitzung beendet — App war im Hintergrund.' : 'Session ended — app was in the background.');
+        _setStatus(_caption('sessionEndedBackground'));
         _sessionStop();
         return;
       }
@@ -3360,7 +3577,7 @@
     // Status
     var status = document.createElement('div');
     status.className = 'vtorb-status';
-    status.style.cssText = 'margin-top:20px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:14px;color:rgba(255,255,255,0.6);text-align:center;min-height:20px;';
+    status.style.cssText = 'margin-top:20px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:17px;color:rgba(255,255,255,0.6);text-align:center;min-height:24px;';
     _root.appendChild(status);
 
     // Controls
@@ -3500,17 +3717,17 @@
       _s.voiceState = restoreTo;
       if (restoreTo === 'SPEAKING') {
         _setOrbState('speaking');
-        _setStatus(_cfg.lang.startsWith('de') ? 'Vitana spricht...' : 'Vitana speaking...');
+        _setStatus(_caption('speaking'));
       } else {
         _setOrbState('listening');
-        _setStatus(_cfg.lang.startsWith('de') ? 'Ich höre zu...' : 'Listening...');
+        _setStatus(_caption('listening'));
       }
     } else {
       // Mute — remember current state so we can restore it
       _s.preMuteState = _s.voiceState;
       _s.voiceState = 'MUTED';
       _setOrbState('paused');
-      _setStatus(_cfg.lang.startsWith('de') ? 'Stummgeschaltet' : 'Muted');
+      _setStatus(_caption('muted'));
     }
     _updateUI();
   }
@@ -3620,7 +3837,7 @@
     console.log('[VTOrb] _show: overlay inDOM=' + document.body.contains(_root) + ', display=' + _root.style.display);
     _setOrbState('connecting');
     _s.voiceState = 'CONNECTING';
-    _setStatus(_cfg.lang.startsWith('de') ? 'Verbinden...' : 'Connecting...');
+    _setStatus(_caption('connecting'));
     _updateUI();
     _startBackgroundWatchdog();
     _sessionStart();
@@ -3824,7 +4041,7 @@
     if (_s._isOffline) {
       console.log('[VTOrb] _attemptReconnect: skipping — browser is offline. Will retry when online.');
       _setOrbState('offline');
-      _setStatus(_cfg.lang.startsWith('de') ? 'Du bist offline. Bitte prüfe deine Internetverbindung.' : 'You seem to be offline. Please check your internet connection.');
+      _setStatus(_caption('offline'));
       return;
     }
 
@@ -3842,7 +4059,7 @@
     _s._reconnectCount++;
     _s._isReconnecting = true;
     console.log('[VTOrb] _attemptReconnect: scheduled in ' + delay + 'ms (attempt ' + _s._reconnectCount + '/' + MAX_WIDGET_RECONNECTS + ')');
-    _setStatus(_cfg.lang.startsWith('de') ? 'Verbindung wird wiederhergestellt...' : 'Reconnecting...');
+    _setStatus(_caption('reconnecting'));
     _setOrbState('connecting');
 
     setTimeout(function () {
@@ -3898,9 +4115,8 @@
     console.warn('[VTOrb] _enterStuckState: reconnect budget exhausted — switching to tap-to-reconnect');
     _s._isReconnecting = false;
     _s._disconnectStuck = true;
-    var lang = _pickLang();
     _setOrbState('error');
-    _setStatus(lang === 'de' ? 'Tippen zum Neu verbinden' : 'Tap the orb to reconnect');
+    _setStatus(_caption('tapToReconnect'));
     _updateUI();
   }
 
@@ -3920,7 +4136,7 @@
     });
     _setOrbState('listening');
     _s.voiceState = 'LISTENING';
-    _setStatus(_cfg.lang.startsWith('de') ? 'Textmodus aktiv' : 'Text mode active');
+    _setStatus(_caption('textModeActive'));
     _updateUI();
   }
 
@@ -3955,7 +4171,7 @@
         audio.onended = function () {
           _setOrbState('listening');
           _s.voiceState = 'LISTENING';
-          _setStatus(_cfg.lang.startsWith('de') ? 'Ich höre zu...' : 'Listening...');
+          _setStatus(_caption('listening'));
           _playReadyBeep();
           _updateUI();
         };

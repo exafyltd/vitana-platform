@@ -254,4 +254,26 @@ describe('VTID-03646 C — override_v2 delivers, proposes, and asks', () => {
     expect(d.wakeOpener).toBe('silent_reconnect');
     expect(d.directive).toBeNull();
   });
+
+  // BOOTSTRAP-ORB-UNREAD-MESSAGES-NAV — the follow-up: `override_v2` no
+  // longer dead-ends in SPEECH, but nothing forced the model to actually
+  // navigate either. When the wake-brief's winning candidate carried a
+  // navigate cta (today: only unread-messages-announce), the greeting
+  // brain must request navigation as a real, data-only side effect —
+  // never leave it purely to the model's discretion on a later turn.
+  test('requests a deterministic navigate effect when the wake-brief carried one', () => {
+    const d = spoken({ wakeBriefNavigateCta: { screenId: 'INBOX.OVERVIEW', reason: 'unread_messages' } });
+    expect(d.effects.navigateEffect).toEqual({
+      screenId: 'INBOX.OVERVIEW',
+      reason: 'unread_messages',
+      keepOrbOpen: true,
+    });
+    expect(d.diag.navigate_screen_id).toBe('INBOX.OVERVIEW');
+  });
+
+  test('requests no navigate effect for an ordinary spoken-only lead (the common case)', () => {
+    const d = spoken();
+    expect(d.effects.navigateEffect).toBeUndefined();
+    expect(d.diag.navigate_screen_id).toBeUndefined();
+  });
 });

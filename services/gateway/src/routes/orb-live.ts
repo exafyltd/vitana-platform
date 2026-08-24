@@ -3376,7 +3376,7 @@ export async function handleNavigateToScreen(
     title?: string;
     entry_kind?: string;
     already_there?: boolean;
-    directive?: { type: string; directive: string; screen_id: string; route: string; title: string; reason: string; entry_kind: string; vtid: string };
+    directive?: { type: string; directive: string; screen_id: string; route: string; title: string; reason: string; entry_kind: string; vtid: string; keep_orb_open?: boolean };
   };
 
   // Already-there short-circuit — the shared dispatcher returns ok:true
@@ -10027,6 +10027,22 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
         !_freshOpenAfterZeroTurnRecovery && process.env.ORB_GREETING_SILENCE_ON_SKIP_ENABLED !== 'false',
       wakeBriefHasSelectedContinuation: (_wb as any)?.selectedContinuation != null,
       voiceWakeBriefReason: _voiceReasonSync,
+      // BOOTSTRAP-ORB-UNREAD-MESSAGES-NAV: resolve the winning continuation's
+      // navigate CTA (if any) into plain data so override_v2 can request a
+      // deterministic navigate effect instead of leaving it to the model to
+      // decide whether to call navigate_to_screen. Only unread-messages-
+      // announce and first-time-welcome set cta.type==='navigate' today;
+      // every other continuation carries explain/ask_permission/etc. and
+      // this stays null.
+      wakeBriefNavigateCta: (() => {
+        const cta = (_wb as any)?.selectedContinuation?.cta;
+        if (!cta || cta.type !== 'navigate') return null;
+        const screenId = typeof cta.payload?.screen_id === 'string' ? cta.payload.screen_id : null;
+        if (!screenId) return null;
+        const evidence = (_wb as any)?.selectedContinuation?.evidence;
+        const reason = Array.isArray(evidence) && evidence[0]?.kind ? String(evidence[0].kind) : 'wake_brief_navigate';
+        return { screenId, reason };
+      })(),
     };
 
     /** Render one decision onto the wire + perform its effects. Shared by the
@@ -10060,6 +10076,20 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
       emitDiag(session, 'greeting_sent', decision.diag);
       if (decision.effects.armWatchdog) {
         startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
+      }
+      // BOOTSTRAP-ORB-UNREAD-MESSAGES-NAV: the greeting brain asked for a
+      // deterministic navigate — dispatch it the same way an LLM tool call
+      // would (handleNavigateToScreen), not as a hope the model calls
+      // navigate_to_screen on its own later turn. keep_orb_open:true tells
+      // the client widget to skip its normal hide-then-navigate teardown so
+      // the session can keep listening for a dictated reply. Fire-and-forget:
+      // this must never block the greeting itself, and a failure here still
+      // leaves the spoken announcement intact.
+      if (decision.effects.navigateEffect) {
+        const { screenId, reason, keepOrbOpen } = decision.effects.navigateEffect;
+        void handleNavigateToScreen(session, { screen_id: screenId, reason, keep_orb_open: keepOrbOpen === true }).catch(
+          () => { /* best-effort — the spoken announcement already went out */ },
+        );
       }
     };
 

@@ -293,6 +293,67 @@ export async function fetchRecentMessageContacts(
   return out;
 }
 
+/**
+ * BOOTSTRAP-ORB-UNREAD-MESSAGES-NAV — sender-aware unread DM summary.
+ *
+ * `new-day-overview-payload.ts:fetchMessagesUnread` already computes a flat
+ * unread COUNT for the morning-briefing content gate; this is the same
+ * `chat_messages` shape, but grouped by sender so a caller can actually name
+ * who the unread messages are from (1-2 senders) vs. just report a count
+ * (3+). Group messages are excluded the same way `fetchRecentMessageContacts`
+ * excludes them (`group_id IS NULL`) — a DM inbox is what "unread messages"
+ * means here, not group-chat activity.
+ */
+export interface UnreadMessageSummary {
+  /** Total unread rows (blocked senders already excluded). */
+  count: number;
+  /** Distinct senders with at least one unread message. */
+  senderCount: number;
+  /** Only populated when senderCount is 1 or 2 — naming 3+ senders is not
+   *  what the product wants (a count + offer to dictate is). */
+  senders: Array<{ person: SocialPerson; unread_count: number }>;
+}
+
+export async function fetchUnreadMessageSummary(
+  userId: string,
+  tenantId: string,
+  blocked: Set<string>,
+): Promise<UnreadMessageSummary> {
+  const empty: UnreadMessageSummary = { count: 0, senderCount: 0, senders: [] };
+  const supabase = getSupabase();
+  if (!supabase) return empty;
+
+  const { data } = await supabase
+    .from('chat_messages')
+    .select('sender_id')
+    .eq('tenant_id', tenantId)
+    .eq('receiver_id', userId)
+    .is('group_id', null)
+    .is('read_at', null);
+
+  const bySender = new Map<string, number>();
+  for (const row of data || []) {
+    const sid = row.sender_id;
+    if (!sid || sid === userId || blocked.has(sid)) continue;
+    bySender.set(sid, (bySender.get(sid) ?? 0) + 1);
+  }
+  const senderIds = Array.from(bySender.keys());
+  const count = senderIds.reduce((sum, id) => sum + (bySender.get(id) ?? 0), 0);
+  if (senderIds.length === 0) return empty;
+
+  let senders: UnreadMessageSummary['senders'] = [];
+  if (senderIds.length <= 2) {
+    const people = await fetchPeople(senderIds);
+    senders = senderIds
+      .map((id) => {
+        const person = people.get(id);
+        return person ? { person, unread_count: bySender.get(id)! } : null;
+      })
+      .filter((x): x is { person: SocialPerson; unread_count: number } => x !== null);
+  }
+  return { count, senderCount: senderIds.length, senders };
+}
+
 /** Group chats the user participates in (chat_group_members → chat_groups). */
 export async function fetchGroupChats(
   userId: string,
