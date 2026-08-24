@@ -42,3 +42,13 @@ NOT RUN (no credentials/environment available to this session):
   preview-aws-gateway.vitanaland.com (no way to trigger a real voice
   session from this session). See acceptance.md "Not yet independently
   confirmed".
+
+CI note: COMMAND-HUB-GUARDRAILS.yml's `pull_request` trigger has no
+`types:` override, so it defaults to [opened, synchronize, reopened] and
+does not include `edited` — unlike VALIDATOR-CHECK.yml. Its
+"Path Ownership Guard" job therefore keeps evaluating the PR title as it
+stood at the last push/reopen; adding the required DEV-COMHU-03712 marker
+via a title-only edit does not by itself trigger a fresh run. This commit
+(a real evidence-pack addition, not a no-op) is what re-fires it via a
+genuine `synchronize` event against the current (DEV-COMHU-03712-bearing)
+PR title.
