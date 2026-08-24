@@ -1669,6 +1669,54 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
       },
     },
   },
+  // BOOTSTRAP-ORB-INBOX-CONVERSATION-NAV: /inbox/u/:recipientId and
+  // /inbox/g/:groupId are real, live frontend routes (App.tsx) — the same
+  // ones push notifications already deep-link into (notification-types.ts,
+  // messaging-depth-tools.ts, orb-tools-shared.ts's send_chat_message) — but
+  // neither had a navigation-catalog entry, so navigate_to_screen had no
+  // screen_id for "open my chat with X" / "open that group chat", only the
+  // general INBOX.OVERVIEW. That gap is what made Vitana propose to open a
+  // specific message and then have nothing to actually call.
+  {
+    screen_id: 'INBOX.CONVERSATION',
+    route: '/inbox/u/:recipient_id',
+    category: 'inbox',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['conversation', 'chat-with', 'dm', 'direct-message'],
+    i18n: {
+      en: {
+        title: 'Conversation',
+        description: 'A specific one-to-one chat thread with a community member.',
+        when_to_visit: 'When the user wants to open, read, or reply to their chat with ONE specific, already-identified person — e.g. "open my chat with Anna", "show me the message from Ben" right after view_messages/recent_conversations/list_conversations named that sender. Requires the sender\'s user_id from a prior tool result; never guess it from a spoken name alone — use INBOX.OVERVIEW instead when no specific person is known yet.',
+      },
+      de: {
+        title: 'Konversation',
+        description: 'Ein bestimmter Chat-Verlauf mit einem Community-Mitglied.',
+        when_to_visit: 'Wenn der Nutzer seinen Chat mit EINER bestimmten, bereits identifizierten Person öffnen, lesen oder beantworten möchte — z. B. "öffne meinen Chat mit Anna", "zeig mir die Nachricht von Ben", direkt nachdem view_messages/recent_conversations/list_conversations diesen Absender genannt hat. Benötigt die user_id des Absenders aus einem vorherigen Tool-Ergebnis; niemals aus einem gesprochenen Namen raten — sonst INBOX.OVERVIEW verwenden.',
+      },
+    },
+  },
+  {
+    screen_id: 'INBOX.GROUP',
+    route: '/inbox/g/:chat_group_id',
+    category: 'inbox',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['group-chat', 'group-conversation'],
+    i18n: {
+      en: {
+        title: 'Group Chat',
+        description: 'A specific group chat thread the user is already a member of.',
+        when_to_visit: 'When the user wants to open a specific, already-identified group chat — e.g. right after send_group_chat_message resolved its group_id. Requires that group_id from a prior tool result; never guess it — use INBOX.OVERVIEW instead when no specific group is known yet.',
+      },
+      de: {
+        title: 'Gruppenchat',
+        description: 'Ein bestimmter Gruppenchat, in dem der Nutzer bereits Mitglied ist.',
+        when_to_visit: 'Wenn der Nutzer einen bestimmten, bereits identifizierten Gruppenchat öffnen möchte — z. B. direkt nachdem send_group_chat_message dessen group_id aufgelöst hat. Benötigt diese group_id aus einem vorherigen Tool-Ergebnis; niemals raten — sonst INBOX.OVERVIEW verwenden.',
+      },
+    },
+  },
   {
     screen_id: 'INBOX.REMINDERS',
     route: '/inbox/reminder',
