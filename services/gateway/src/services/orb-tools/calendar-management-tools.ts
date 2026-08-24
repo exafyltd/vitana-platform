@@ -17,17 +17,13 @@ import {
   markEventCompleted,
   checkConflicts,
 } from '../calendar-service';
+import * as repo from './calendar-management-tools-repository';
 
 type Handler = (args: OrbToolArgs, id: OrbToolIdentity, sb: SupabaseClient) => Promise<OrbToolResult>;
 
 // ---------------------------------------------------------------------------
 // Shared helpers
 // ---------------------------------------------------------------------------
-
-const EVENT_FIELDS =
-  'id, title, description, location, start_time, end_time, event_type, status, ' +
-  'completion_status, completed_at, completion_notes, reschedule_count, ' +
-  'original_start_time, priority_score, wellness_tags, source_type, role_context';
 
 interface CalendarEventRow {
   id: string;
@@ -159,12 +155,7 @@ async function resolveEvent(
   const titleQuery = strArg(args, 'title_query') || strArg(args, 'title');
 
   if (eventId) {
-    const { data, error } = await sb
-      .from('calendar_events')
-      .select(EVENT_FIELDS)
-      .eq('user_id', id.user_id)
-      .eq('id', eventId)
-      .limit(1);
+    const { data, error } = await repo.fetchCalendarEventById(sb, id.user_id, eventId);
     if (error) return { kind: 'error', message: error.message };
     const row = (data as unknown as CalendarEventRow[] | null)?.[0];
     return row ? { kind: 'found', event: row } : { kind: 'none' };
@@ -174,14 +165,7 @@ async function resolveEvent(
     return { kind: 'error', message: 'Provide event_id or title_query to identify the event.' };
   }
 
-  const { data, error } = await sb
-    .from('calendar_events')
-    .select(EVENT_FIELDS)
-    .eq('user_id', id.user_id)
-    .neq('status', 'cancelled')
-    .ilike('title', `%${titleQuery}%`)
-    .order('start_time', { ascending: false })
-    .limit(20);
+  const { data, error } = await repo.searchCalendarEventsByTitle(sb, id.user_id, titleQuery);
   if (error) return { kind: 'error', message: error.message };
 
   const matches = ((data as unknown as CalendarEventRow[] | null) ?? [])
@@ -433,15 +417,7 @@ export async function tool_find_free_slot(
     }
 
     // Busy intervals: non-cancelled events overlapping the window.
-    const { data, error } = await sb
-      .from('calendar_events')
-      .select('id, title, start_time, end_time, status')
-      .eq('user_id', id.user_id)
-      .neq('status', 'cancelled')
-      .lt('start_time', to.toISOString())
-      .gt('end_time', from.toISOString())
-      .order('start_time', { ascending: true })
-      .limit(500);
+    const { data, error } = await repo.fetchBusyCalendarIntervals(sb, id.user_id, from.toISOString(), to.toISOString());
     if (error) return { ok: false, error: `find_free_slot failed: ${error.message}` };
 
     const busy = ((data as Array<{ start_time: string; end_time: string | null }> | null) ?? [])
