@@ -34,6 +34,7 @@ import { writeFact } from '../memory-facts-service';
 import { getUserHealthContext } from '../user-health-context';
 import { getMonthlySpend } from '../budget/spend-service';
 import { runPropose, type AnnotatedPick, type InsertPickFn } from '../shopping-agent/agent-core';
+import * as repo from './marketplace-guide-tools-repository';
 import {
   authGate,
   resolveTenantId,
@@ -112,14 +113,11 @@ async function searchProductsForGoal(
   budgetMaxCents: number | null,
   limit: number,
 ): Promise<{ items: ProductRow[]; dropped: Array<{ title: string; reason: string }> }> {
-  let query = sb.from('products').select(PRODUCT_COLS).eq('is_active', true);
   const sanitized = goal.replace(/[&|!<>()]/g, ' ').trim();
-  if (sanitized) query = query.textSearch('search_text', sanitized, { config: 'simple', type: 'websearch' });
-  if (budgetMaxCents != null) query = query.lte('price_cents', budgetMaxCents);
-  query = query.order('rating', { ascending: false, nullsFirst: false }).limit(Math.max(limit * 3, 12));
+  const pageLimit = Math.max(limit * 3, 12);
 
   let rows: ProductRow[] = [];
-  const first = await query;
+  const first = await repo.searchActiveProductsFullText(sb, PRODUCT_COLS, sanitized, budgetMaxCents, pageLimit);
   if (!first.error) rows = (first.data as unknown as ProductRow[]) ?? [];
 
   // Websearch too strict (multi-word goals often miss) → ilike fallback on
@@ -127,9 +125,7 @@ async function searchProductsForGoal(
   if (rows.length === 0 && sanitized) {
     const token = sanitized.split(/\s+/).sort((a, b) => b.length - a.length)[0];
     if (token && token.length >= 3) {
-      let fb = sb.from('products').select(PRODUCT_COLS).eq('is_active', true).ilike('search_text', `%${token}%`);
-      if (budgetMaxCents != null) fb = fb.lte('price_cents', budgetMaxCents);
-      const second = await fb.order('rating', { ascending: false, nullsFirst: false }).limit(Math.max(limit * 3, 12));
+      const second = await repo.searchActiveProductsIlikeFallback(sb, PRODUCT_COLS, token, budgetMaxCents, pageLimit);
       if (!second.error) rows = (second.data as unknown as ProductRow[]) ?? [];
     }
   }
@@ -149,9 +145,7 @@ async function searchServicesForGoal(
     .split(/\s+/)
     .filter((t) => t.length >= 3)
     .sort((a, b) => b.length - a.length)[0];
-  let query = sb.from('services_catalog').select(SERVICE_COLS).eq('tenant_id', tenantId);
-  if (token) query = query.or(`name.ilike.%${token}%,provider_name.ilike.%${token}%`);
-  const { data, error } = await query.limit(limit);
+  const { data, error } = await repo.searchServicesCatalogForGoal(sb, SERVICE_COLS, tenantId, token, limit);
   if (error) return [];
   return (data as ServiceRow[]) ?? [];
 }
@@ -886,11 +880,7 @@ export async function tool_get_marketplace_context(
 
     let budgetCapCents: number | null = null;
     try {
-      const { data } = await sb
-        .from('user_limitations')
-        .select('budget_monthly_cap_cents')
-        .eq('user_id', id.user_id)
-        .maybeSingle();
+      const { data } = await repo.fetchUserBudgetMonthlyCapCents(sb, id.user_id);
       budgetCapCents = (data as { budget_monthly_cap_cents?: number | null } | null)?.budget_monthly_cap_cents ?? null;
     } catch {
       /* budget cap is optional context */
@@ -902,12 +892,7 @@ export async function tool_get_marketplace_context(
       /* spend is optional context */
     }
 
-    const { data: orderRows } = await sb
-      .from('product_orders')
-      .select('product_id, state, amount_cents, currency, created_at')
-      .eq('user_id', id.user_id)
-      .order('created_at', { ascending: false })
-      .limit(3);
+    const { data: orderRows } = await repo.fetchRecentProductOrders(sb, id.user_id, 3);
     const orders = (orderRows as Array<{ product_id: string | null; state: string; amount_cents: number | null; currency: string | null }>) ?? [];
 
     const existing = await loadGuideState(sb, tenantId, id.user_id);
@@ -961,17 +946,14 @@ export async function tool_dismiss_marketplace_recommendation(
       return { ok: false, error: 'Could not resolve which recommendation to dismiss — name the product.' };
     }
 
-    const { error } = await sb.from('user_offers_memory').upsert(
-      {
-        tenant_id: tenantId,
-        user_id: id.user_id,
-        target_type: target.type,
-        target_id: target.targetId,
-        state: 'dismissed',
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'tenant_id,user_id,target_type,target_id' },
-    );
+    const { error } = await repo.upsertDismissedOffer(sb, {
+      tenant_id: tenantId,
+      user_id: id.user_id,
+      target_type: target.type,
+      target_id: target.targetId,
+      state: 'dismissed',
+      updated_at: new Date().toISOString(),
+    });
     if (error) return { ok: false, error: error.message };
 
     if (existing && fromPicks) {
