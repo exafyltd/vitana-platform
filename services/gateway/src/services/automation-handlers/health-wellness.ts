@@ -7,6 +7,7 @@
 
 import { AutomationContext } from '../../types/automations';
 import { registerHandler } from '../automation-executor';
+import * as repo from './health-wellness-repository';
 
 // ── AP-0601: PHI Redaction Gate ─────────────────────────────
 async function runPhiRedactionGate(ctx: AutomationContext) {
@@ -19,12 +20,7 @@ async function runPhiRedactionGate(ctx: AutomationContext) {
 async function runHealthReportSummarization(ctx: AutomationContext) {
   const { supabase, tenantId } = ctx;
 
-  const { data: pendingReports } = await supabase
-    .from('lab_reports')
-    .select('id, user_id')
-    .eq('tenant_id', tenantId)
-    .is('parsed_json', null)
-    .limit(10);
+  const { data: pendingReports } = await repo.fetchPendingLabReports(supabase, tenantId, 10);
 
   ctx.log(`Found ${pendingReports?.length || 0} reports pending summarization`);
   // Delegates to existing OpenClaw bridge health report processor
@@ -49,34 +45,13 @@ async function runWellnessCheckIn(ctx: AutomationContext) {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-  const { data: users } = await supabase
-    .from('user_tenants')
-    .select('user_id')
-    .eq('tenant_id', tenantId)
-    .eq('is_primary', true);
+  const { data: users } = await repo.fetchPrimaryTenantUserIds(supabase, tenantId);
 
   for (const { user_id } of users || []) {
     // Get recent vs previous score
-    const { data: recent } = await supabase
-      .from('vitana_index_scores')
-      .select('score_total')
-      .eq('tenant_id', tenantId)
-      .eq('user_id', user_id)
-      .gte('date', sevenDaysAgo)
-      .order('date', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const { data: recent } = await repo.fetchVitanaIndexScoreTotalSince(supabase, tenantId, user_id, sevenDaysAgo);
 
-    const { data: previous } = await supabase
-      .from('vitana_index_scores')
-      .select('score_total')
-      .eq('tenant_id', tenantId)
-      .eq('user_id', user_id)
-      .gte('date', fourteenDaysAgo)
-      .lte('date', sevenDaysAgo)
-      .order('date', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const { data: previous } = await repo.fetchVitanaIndexScoreTotalSince(supabase, tenantId, user_id, fourteenDaysAgo, sevenDaysAgo);
 
     if (!recent?.score_total || !previous?.score_total) continue;
 
@@ -128,13 +103,7 @@ async function runBiomarkerTrendAnalysis(ctx: AutomationContext) {
   const { supabase, tenantId } = ctx;
 
   // Get latest biomarkers
-  const { data: latestBiomarkers } = await supabase
-    .from('biomarker_results')
-    .select('biomarker_code, name, value, unit, status, measured_at')
-    .eq('tenant_id', tenantId)
-    .eq('user_id', user_id)
-    .eq('lab_report_id', report_id)
-    .order('measured_at', { ascending: false });
+  const { data: latestBiomarkers } = await repo.fetchBiomarkerResultsForReport(supabase, tenantId, user_id, report_id);
 
   if (!latestBiomarkers?.length) return { usersAffected: 0, actionsTaken: 0 };
 
@@ -173,14 +142,7 @@ async function runQualityOfLifeRecommendations(ctx: AutomationContext) {
   const { supabase, tenantId } = ctx;
 
   // Get current Vitana Index scores
-  const { data: scores } = await supabase
-    .from('vitana_index_scores')
-    .select('score_sleep, score_nutrition, score_exercise, score_hydration, score_mental')
-    .eq('tenant_id', tenantId)
-    .eq('user_id', userId)
-    .order('date', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const { data: scores } = await repo.fetchLatestVitanaIndexPillars(supabase, tenantId, userId);
 
   if (!scores) return { usersAffected: 0, actionsTaken: 0 };
 
@@ -226,21 +188,10 @@ async function runVitanaIndexWeeklyReport(ctx: AutomationContext) {
   let usersAffected = 0;
   let actionsTaken = 0;
 
-  const { data: users } = await supabase
-    .from('user_tenants')
-    .select('user_id')
-    .eq('tenant_id', tenantId)
-    .eq('is_primary', true);
+  const { data: users } = await repo.fetchPrimaryTenantUserIds(supabase, tenantId);
 
   for (const { user_id } of users || []) {
-    const { data: score } = await supabase
-      .from('vitana_index_scores')
-      .select('score_total')
-      .eq('tenant_id', tenantId)
-      .eq('user_id', user_id)
-      .order('date', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const { data: score } = await repo.fetchLatestVitanaIndexScoreTotal(supabase, tenantId, user_id);
 
     if (!score?.score_total) continue;
 
@@ -270,12 +221,7 @@ async function runProfessionalReferral(ctx: AutomationContext) {
   const { supabase, tenantId } = ctx;
 
   // Find matching service providers
-  const { data: services } = await supabase
-    .from('services_catalog')
-    .select('id, name, service_type, provider_name')
-    .eq('tenant_id', tenantId)
-    .in('service_type', ['doctor', 'coach', 'nutritionist'])
-    .limit(3);
+  const { data: services } = await repo.fetchServiceProvidersByType(supabase, tenantId, ['doctor', 'coach', 'nutritionist'], 3);
 
   if (!services?.length) return { usersAffected: 0, actionsTaken: 0 };
 
@@ -314,24 +260,13 @@ async function runHealthAwareProductRecs(ctx: AutomationContext) {
   const { supabase, tenantId } = ctx;
 
   // Get user's recommendations
-  const { data: recs } = await supabase
-    .from('recommendations')
-    .select('category, title')
-    .eq('tenant_id', tenantId)
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false })
-    .limit(3);
+  const { data: recs } = await repo.fetchRecentRecommendations(supabase, tenantId, userId, 3);
 
   if (!recs?.length) return { usersAffected: 0, actionsTaken: 0 };
 
   // Find matching products
   const categories = recs.map((r: any) => r.category).filter(Boolean);
-  const { data: products } = await supabase
-    .from('products')
-    .select('id, title, category')
-    .eq('is_active', true)
-    .overlaps('topic_keys', categories)
-    .limit(3);
+  const { data: products } = await repo.fetchActiveProductsByTopicKeys(supabase, categories, 3);
 
   if (!products?.length) return { usersAffected: 0, actionsTaken: 0 };
 
@@ -362,13 +297,7 @@ async function runCommunityWellnessEventSuggestion(ctx: AutomationContext) {
   const now = new Date();
   const lookahead = new Date(now.getTime() + WELLNESS_EVENT_LOOKAHEAD_DAYS * 86_400_000);
 
-  const { data: events } = await supabase
-    .from('global_community_events')
-    .select('id, title, start_time')
-    .gte('start_time', now.toISOString())
-    .lte('start_time', lookahead.toISOString())
-    .order('start_time', { ascending: true })
-    .limit(50);
+  const { data: events } = await repo.fetchUpcomingCommunityEventsForWellness(supabase, now.toISOString(), lookahead.toISOString(), 50);
 
   const wellnessEvent = (events || []).find((e: any) =>
     WELLNESS_KEYWORDS.some((kw) => (e.title || '').toLowerCase().includes(kw))
@@ -379,22 +308,10 @@ async function runCommunityWellnessEventSuggestion(ctx: AutomationContext) {
   const cooldownCutoff = new Date(now.getTime() - WELLNESS_SUGGESTION_COOLDOWN_DAYS * 86_400_000).toISOString();
 
   for (const { user_id } of users) {
-    const { data: attending } = await supabase
-      .from('global_event_participants')
-      .select('id')
-      .eq('event_id', wellnessEvent.id)
-      .eq('user_id', user_id)
-      .eq('status', 'attending')
-      .limit(1);
+    const { data: attending } = await repo.fetchEventAttendance(supabase, wellnessEvent.id, user_id);
     if (attending && attending.length > 0) continue;
 
-    const { data: recentSuggestion } = await supabase
-      .from('user_notifications')
-      .select('id')
-      .eq('user_id', user_id)
-      .contains('data', { automation_id: 'AP-0605' })
-      .gte('created_at', cooldownCutoff)
-      .limit(1);
+    const { data: recentSuggestion } = await repo.fetchRecentAutomationSuggestion(supabase, user_id, 'AP-0605', cooldownCutoff);
     if (recentSuggestion && recentSuggestion.length > 0) continue;
 
     ctx.notify(user_id, 'orb_suggestion', {
@@ -425,11 +342,7 @@ async function runHealthDataExportReminder(ctx: AutomationContext) {
   const users = (await ctx.queryTargetUsers()).slice(0, EXPORT_REMINDER_MAX_USERS_PER_RUN);
 
   for (const { user_id } of users) {
-    const { count: reportCount } = await supabase
-      .from('lab_reports')
-      .select('id', { count: 'exact', head: true })
-      .eq('tenant_id', tenantId)
-      .eq('user_id', user_id);
+    const { count: reportCount } = await repo.countLabReportsForUser(supabase, tenantId, user_id);
 
     if (!reportCount || reportCount === 0) continue;
 
