@@ -26,6 +26,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
 import { emitCartEvent } from '../../routes/universal-cart';
+import * as repo from './marketplace-va-shared-repository';
 
 export const MVA_VTID = 'MVA-MARKETPLACE-VA';
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -45,11 +46,7 @@ export function authGate(tool: string, id: OrbToolIdentity): OrbToolResult | nul
 export async function resolveTenantId(id: OrbToolIdentity, sb: SupabaseClient): Promise<string | null> {
   if (id.tenant_id) return id.tenant_id;
   try {
-    const { data } = await sb
-      .from('app_users')
-      .select('tenant_id')
-      .eq('user_id', id.user_id)
-      .maybeSingle();
+    const { data } = await repo.fetchTenantIdForUser(sb, id.user_id);
     return (data as { tenant_id?: string | null } | null)?.tenant_id ?? null;
   } catch {
     return null;
@@ -136,24 +133,12 @@ export async function resolveProduct(
   query: string,
 ): Promise<{ ok: true; product: ProductRow | null } | { ok: false; error: string }> {
   if (UUID_RE.test(productId)) {
-    const { data, error } = await sb
-      .from('products')
-      .select(PRODUCT_COLS)
-      .eq('id', productId)
-      .eq('is_active', true)
-      .maybeSingle();
+    const { data, error } = await repo.fetchProductById(sb, productId);
     if (error) return { ok: false, error: error.message };
     return { ok: true, product: (data as unknown as ProductRow | null) ?? null };
   }
   if (query) {
-    const { data, error } = await sb
-      .from('products')
-      .select(PRODUCT_COLS)
-      .eq('is_active', true)
-      .ilike('title', `%${query}%`)
-      .order('rating', { ascending: false, nullsFirst: false })
-      .limit(1)
-      .maybeSingle();
+    const { data, error } = await repo.fetchProductByFuzzyTitle(sb, query);
     if (error) return { ok: false, error: error.message };
     return { ok: true, product: (data as unknown as ProductRow | null) ?? null };
   }
@@ -222,14 +207,7 @@ export async function loadMarketplacePrefs(
 ): Promise<MarketplacePrefs> {
   const prefs = emptyPrefs();
   try {
-    const { data } = await sb
-      .from('memory_facts')
-      .select('fact_key, fact_value')
-      .eq('tenant_id', tenantId)
-      .eq('user_id', userId)
-      .in('fact_key', [...MARKETPLACE_PREF_KEYS])
-      .eq('entity', 'self')
-      .is('superseded_by', null);
+    const { data } = await repo.fetchMarketplacePrefFacts(sb, tenantId, userId, MARKETPLACE_PREF_KEYS);
     for (const row of (data as Array<{ fact_key: string; fact_value: string }>) ?? []) {
       const v = (row.fact_value ?? '').trim();
       if (!v) continue;
@@ -360,14 +338,7 @@ export async function loadGuideState(
   userId: string,
 ): Promise<{ rowId: string; state: GuideState } | null> {
   try {
-    const { data } = await sb
-      .from('memory_items')
-      .select('id, content_json')
-      .eq('tenant_id', tenantId)
-      .eq('user_id', userId)
-      .eq('content_json->>type', GUIDE_STATE_TYPE)
-      .order('occurred_at', { ascending: false })
-      .limit(1);
+    const { data } = await repo.fetchLatestGuideStateRow(sb, tenantId, userId, GUIDE_STATE_TYPE);
     const row = (data as Array<{ id: string; content_json: Record<string, unknown> }>)?.[0];
     if (!row) return null;
     const cj = row.content_json ?? {};
@@ -398,14 +369,15 @@ export async function saveGuideState(
   try {
     const existing = await loadGuideState(sb, tenantId, userId);
     if (existing) {
-      const { error } = await sb
-        .from('memory_items')
-        .update({ content, content_json: contentJson, occurred_at: stamped.updated_at })
-        .eq('id', existing.rowId);
+      const { error } = await repo.updateGuideStateRow(sb, existing.rowId, {
+        content,
+        content_json: contentJson,
+        occurred_at: stamped.updated_at,
+      });
       if (error) return { ok: false, error: error.message };
       return { ok: true };
     }
-    const { error } = await sb.from('memory_items').insert({
+    const { error } = await repo.insertGuideStateRow(sb, {
       tenant_id: tenantId,
       user_id: userId,
       category_key: 'preferences',
@@ -442,17 +414,13 @@ export async function getOrCreateActiveCart(
   userId: string,
   tenantId: string | null,
 ): Promise<{ ok: true; cartId: string } | { ok: false; error: string }> {
-  const lookup = await sb.from('universal_carts').select('id').eq('user_id', userId).eq('status', 'active').maybeSingle();
+  const lookup = await repo.fetchActiveUniversalCart(sb, userId);
   if (lookup.error && !isNoRowsError(lookup.error)) return { ok: false, error: lookup.error.message };
   if (lookup.data?.id) return { ok: true, cartId: lookup.data.id as string };
 
-  const created = await sb
-    .from('universal_carts')
-    .insert({ user_id: userId, tenant_id: tenantId, status: 'active', metadata: {} })
-    .select('id')
-    .single();
+  const created = await repo.insertUniversalCart(sb, { user_id: userId, tenant_id: tenantId, status: 'active', metadata: {} });
   if (created.error && isUniqueViolation(created.error)) {
-    const raced = await sb.from('universal_carts').select('id').eq('user_id', userId).eq('status', 'active').maybeSingle();
+    const raced = await repo.fetchActiveUniversalCart(sb, userId);
     if (raced.data?.id) return { ok: true, cartId: raced.data.id as string };
     return { ok: false, error: 'cart_create_failed' };
   }
@@ -491,7 +459,7 @@ export async function stageProductInCart(
   if (product.price_cents !== null) insertPayload.unit_price_cents_snapshot = product.price_cents;
   if (product.currency !== null) insertPayload.currency_snapshot = product.currency;
 
-  const inserted = await sb.from('universal_cart_items').insert(insertPayload).select('id').single();
+  const inserted = await repo.insertUniversalCartItem(sb, insertPayload);
   if (inserted.error || !inserted.data) return { ok: false, error: inserted.error?.message ?? 'item_insert_failed' };
   const itemId = inserted.data.id as string;
   await emitCartEvent({
