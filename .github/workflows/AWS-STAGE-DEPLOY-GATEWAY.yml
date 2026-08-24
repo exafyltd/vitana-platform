@@ -322,6 +322,25 @@ jobs:
           # even though ORB_CASCADED_VOICE_ENABLED is already true here --
           # the cascade flag being on does nothing while this one is unset.
           #
+          # VTID-03720 -- "ORB_CASCADED_VOICE_ENABLED is already true here"
+          # was an observation of LIVE AWS STATE, not something this file
+          # guaranteed. The var was in NEITHER the strip list NOR the re-add
+          # list, so it was merely PRESERVED from whatever the previous task
+          # definition happened to carry -- the exact shape VTID-03513 cost
+          # four days for, and unverifiable from the repo. Reported live:
+          # pl/pt still answered in English on staging for hours. That is the
+          # cascade-off branch exactly -- `tryCascadeRescue()` returns null
+          # unless the value is the string 'true', control falls to
+          # `nova_forced_vertex_unavailable`, Nova is forced to carry a
+          # language it cannot speak, and answers in English in a
+          # language-flavoured voice (pt -> carolina, pl -> tina).
+          #
+          # It is now UPSERTED to "true" below, like every other var here, so
+          # staging genuinely exercises Transcribe->Bedrock->Polly. Verified
+          # by running the real decision functions: pl -> Ola/pl-PL,
+          # pt -> Camila/pt-BR, ru/ar/zh all eligible; only sr is refused
+          # (no_polly_voice, Polly has no Serbian voice in any engine).
+          #
           # TTS_POLLY_STRICT was unset here too (prod has it true). Without
           # it an unservable TTS request tries to fall back to Google, which
           # no longer exists, instead of failing fast.
@@ -368,6 +387,7 @@ jobs:
                                                 "FEATURE_ORB_GREETING_TTS_BRIDGE_ENV",
                                                 "FEATURE_ORB_SAFE_FAST_GREETING_ENV",
                                                 "TTS_PROVIDER","TTS_POLLY_STRICT","VERTEX_LIVE_UNAVAILABLE",
+                                                "ORB_CASCADED_VOICE_ENABLED",
                                                 "BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION") | not) ]
                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
                           {name:"COMMIT_SHA", value:$SHA},
@@ -382,6 +402,7 @@ jobs:
                           {name:"TTS_PROVIDER", value:"polly"},
                           {name:"TTS_POLLY_STRICT", value:"true"},
                           {name:"VERTEX_LIVE_UNAVAILABLE", value:"true"},
+                          {name:"ORB_CASCADED_VOICE_ENABLED", value:"true"},
                           {name:"BEDROCK_ROLE_ARN", value:$TASK_ROLE},
                           {name:"AWS_BEDROCK_REGION", value:"eu-central-1"} ] )
                 | .containerDefinitions[0].secrets |=
