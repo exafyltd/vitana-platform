@@ -1,0 +1,32 @@
+# VTID-03701 (follow-up) — commands run, in order. 2026-08-24.
+
+# 0. Diagnosis: real production evidence, not a synthetic repro. Pulled job
+#    logs for I18N-DB-SEED run 32730591018 (zh, both surfaces) via the
+#    GitHub API and grepped for the failure signature.
+curl -sL "https://api.github.com/repos/exafyltd/vitana-platform/actions/jobs/97441724051/logs" \
+  | grep -c "Expected ',' or '}' after property value in JSON"          # 45 matches, zh only, zero on ar
+
+# 1. Fix: added sanitizeControlCharsInStrings() + a retry in
+#    parseJsonObject() (services/gateway/src/services/db-i18n/translator.ts).
+
+# 2. Added 2 tests to services/gateway/test/db-i18n/db-i18n.test.ts:
+#    - recovers from a raw newline embedded in a JSON string value
+#    - still reports a failure when the JSON is genuinely unparseable
+
+# 3. Targeted suite.
+cd services/gateway
+npx jest test/db-i18n/db-i18n.test.ts                                    # 59 passed
+
+# 4. Types.
+npx tsc --noEmit                                                         # exit 0
+
+# 5. Mutation-verify the new test is actually driven by the fix, not
+#    incidentally green.
+#    (disable the sanitize retry: force it to always rethrow)
+npx jest test/db-i18n/db-i18n.test.ts -t "raw newline"                   # 1 FAILED (Bad control character ... position 21)
+#    (restore the real fix — confirmed identical to the committed file via
+#    `git diff`, no accidental drift)
+npx jest test/db-i18n/db-i18n.test.ts                                    # 59 passed again
+
+# 6. Full gateway suite, run before opening the PR.
+npx jest                                                                  # 689/690 suites (1 pre-existing skip), 13138/13173 tests
