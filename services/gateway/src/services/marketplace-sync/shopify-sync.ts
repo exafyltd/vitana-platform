@@ -30,6 +30,7 @@ import {
   type ProductUpsert,
 } from './shared';
 import { inferSupplementAttributes } from './supplement-inference';
+import * as repo from './shopify-sync-repository';
 
 interface ShopifyShopConfig {
   domain: string;
@@ -52,11 +53,7 @@ async function loadShopConfigs(): Promise<ShopifyShopConfig[]> {
   // 1. Check DB-managed configs
   const supabase = getSupabase();
   if (supabase) {
-    const { data } = await supabase
-      .from('marketplace_sources_config')
-      .select('config')
-      .eq('source_network', 'shopify')
-      .eq('is_active', true);
+    const { data } = await repo.fetchActiveMarketplaceSourceConfigs(supabase, 'shopify');
     if (data && data.length > 0) {
       return data
         .map((r) => r.config as ShopifyShopConfig)
