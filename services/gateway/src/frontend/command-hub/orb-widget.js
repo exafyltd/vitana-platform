@@ -811,10 +811,23 @@
   // _cfg.lang.startsWith('de') ? de : en), even though _cfg.lang legitimately
   // carries any of the gateway's supported locales (services/gateway/src/
   // i18n/catalog.ts GATEWAY_LOCALES) and the session's actual spoken voice
-  // already speaks in that real language. This dictionary + resolver mirror
-  // that same 10-locale set so the caption layer never again silently
-  // collapses to English.
-  var _CAPTION_LOCALES = ['de', 'en', 'es', 'sr', 'fr', 'pt', 'ru', 'pl', 'zh', 'ar'];
+  // already speaks in that real language. This dictionary + resolver
+  // originally mirrored that same 10-locale set so the caption layer never
+  // again silently collapses to English.
+  //
+  // VTID-03733: `tr` was added HERE, one language ahead of GATEWAY_LOCALES
+  // (which still doesn't have it — that type drives push/email/notification
+  // text via tt(), a separate, much larger initiative, deliberately out of
+  // scope for the ORB voice work that added Turkish). Reported live:
+  // "Turkish still has English subtitles/captions under the orb unlike
+  // other languages" — VTID-03730 widened SUPPORTED_LIVE_LANGUAGES and every
+  // voice-selection table for `tr`, but this caption dictionary is a
+  // SEPARATE table this widget owns, and it was never touched — the exact
+  // same "one more table missing the language" shape as
+  // VTID-03578/03681/03719. `_CAPTION_LOCALES` and `GATEWAY_LOCALES` are
+  // therefore no longer identical sets on purpose; do not "fix" that by
+  // removing `tr` from here.
+  var _CAPTION_LOCALES = ['de', 'en', 'es', 'sr', 'fr', 'pt', 'ru', 'pl', 'zh', 'ar', 'tr'];
 
   // Resolves _cfg.lang (may be a full tag like "de-DE" or "pt-BR") to one of
   // the 10 supported caption locales via prefix match before the first '-',
@@ -843,34 +856,34 @@
     speaking: {
       en: 'Vitana speaking...', de: 'Vitana spricht...', es: 'Vitana está hablando…',
       sr: 'Vitana priča…', fr: 'Vitana parle…', pt: 'A Vitana está a falar…',
-      ru: 'Витана говорит…', pl: 'Vitana mówi…', zh: 'Vitana 正在说话…', ar: 'فيتانا تتحدث...'
+      ru: 'Витана говорит…', pl: 'Vitana mówi…', zh: 'Vitana 正在说话…', ar: 'فيتانا تتحدث...', tr: 'Vitana konuşuyor...'
     },
     listening: {
       en: 'Listening...', de: 'Ich höre zu...', es: 'Escuchando…',
       sr: 'Slušam…', fr: "J'écoute…", pt: 'A ouvir…',
-      ru: 'Слушаю…', pl: 'Słucham…', zh: '正在聆听…', ar: 'أستمع...'
+      ru: 'Слушаю…', pl: 'Słucham…', zh: '正在聆听…', ar: 'أستمع...', tr: 'Dinliyorum...'
     },
     connecting: {
       en: 'Connecting...', de: 'Verbinden...', es: 'Conectando…',
       sr: 'Povezujem se…', fr: 'Connexion…', pt: 'A ligar…',
-      ru: 'Подключение…', pl: 'Łączenie…', zh: '正在连接…', ar: 'جارٍ الاتصال...'
+      ru: 'Подключение…', pl: 'Łączenie…', zh: '正在连接…', ar: 'جارٍ الاتصال...', tr: 'Bağlanıyor...'
     },
     reconnecting: {
       en: 'Reconnecting...', de: 'Verbindung wird wiederhergestellt...', es: 'Reconectando…',
       sr: 'Ponovo se povezujem…', fr: 'Reconnexion…', pt: 'A restabelecer a ligação…',
-      ru: 'Переподключение…', pl: 'Ponowne łączenie…', zh: '正在重新连接…', ar: 'إعادة الاتصال...'
+      ru: 'Переподключение…', pl: 'Ponowne łączenie…', zh: '正在重新连接…', ar: 'إعادة الاتصال...', tr: 'Yeniden bağlanıyor...'
     },
     muted: {
       en: 'Muted', de: 'Stummgeschaltet', es: 'Silenciado',
       sr: 'Isključen zvuk', fr: 'Muet', pt: 'Silenciado',
-      ru: 'Микрофон выключен', pl: 'Wyciszono', zh: '已静音', ar: 'مكتوم الصوت'
+      ru: 'Микрофон выключен', pl: 'Wyciszono', zh: '已静音', ar: 'مكتوم الصوت', tr: 'Sessize alındı'
     },
     tapToHear: {
       en: 'Tap anywhere to hear Vitana', de: 'Tippe, um Vitana zu hören',
       es: 'Toca en cualquier lugar para escuchar a Vitana', sr: 'Dodirni bilo gde da čuješ Vitanu',
       fr: "Touche n'importe où pour entendre Vitana", pt: 'Toca em qualquer lugar para ouvir a Vitana',
       ru: 'Коснись экрана, чтобы услышать Витану', pl: 'Dotknij gdziekolwiek, aby usłyszeć Vitanę',
-      zh: '点击任意位置即可听到 Vitana 的声音', ar: 'اضغط في أي مكان لسماع فيتانا'
+      zh: '点击任意位置即可听到 Vitana 的声音', ar: 'اضغط في أي مكان لسماع فيتانا', tr: 'Vitana\'yı duymak için herhangi bir yere dokun'
     },
     idleNudge: {
       en: "I'm still listening. Tell me what you'd like to do!",
@@ -882,14 +895,14 @@
       ru: 'Я всё ещё слушаю. Скажи, что бы ты хотел сделать!',
       pl: 'Wciąż słucham. Powiedz mi, co chciałbyś zrobić!',
       zh: '我还在听哦，告诉我你想做什么吧！',
-      ar: 'ما زلت أستمع. أخبرني بما تريد فعله!'
+      ar: 'ما زلت أستمع. أخبرني بما تريد فعله!', tr: 'Hâlâ dinliyorum. Ne yapmak istediğini söyle!'
     },
     connectFailedRetrying: {
       en: "Couldn't connect. Retrying...", de: 'Verbindung fehlgeschlagen. Neuer Versuch...',
       es: 'No se pudo conectar. Reintentando…', sr: 'Povezivanje nije uspelo. Pokušavam ponovo…',
       fr: 'Échec de la connexion. Nouvelle tentative…', pt: 'Não foi possível ligar. A tentar de novo…',
       ru: 'Не удалось подключиться. Повторная попытка…', pl: 'Nie udało się połączyć. Ponawiam próbę…',
-      zh: '连接失败，正在重试…', ar: 'تعذر الاتصال. جارٍ إعادة المحاولة...'
+      zh: '连接失败，正在重试…', ar: 'تعذر الاتصال. جارٍ إعادة المحاولة...', tr: 'Bağlanılamadı. Yeniden deneniyor...'
     },
     offline: {
       en: 'You seem to be offline. Please check your internet connection.',
@@ -901,7 +914,7 @@
       ru: 'Похоже, ты офлайн. Проверь подключение к интернету.',
       pl: 'Wygląda na to, że jesteś offline. Sprawdź połączenie z internetem.',
       zh: '你似乎已离线，请检查网络连接。',
-      ar: 'يبدو أنك غير متصل بالإنترنت. يرجى التحقق من اتصالك بالإنترنت.'
+      ar: 'يبدو أنك غير متصل بالإنترنت. يرجى التحقق من اتصالك بالإنترنت.', tr: 'Çevrimdışı gibi görünüyorsun. Lütfen internet bağlantını kontrol et.'
     },
     sessionEndedBackground: {
       en: 'Session ended — app was in the background.',
@@ -913,19 +926,19 @@
       ru: 'Сессия завершена — приложение было в фоне.',
       pl: 'Sesja zakończona — aplikacja działała w tle.',
       zh: '会话已结束 — 应用在后台运行。',
-      ar: 'انتهت الجلسة — كان التطبيق يعمل في الخلفية.'
+      ar: 'انتهت الجلسة — كان التطبيق يعمل في الخلفية.', tr: 'Oturum sona erdi — uygulama arka plandaydı.'
     },
     tapToReconnect: {
       en: 'Tap the orb to reconnect', de: 'Tippen zum Neu verbinden',
       es: 'Toca la esfera para reconectar', sr: 'Dodirni orb da se ponovo povežeš',
       fr: "Touche l'orbe pour te reconnecter", pt: 'Toca na esfera para reconectar',
       ru: 'Коснись сферы, чтобы переподключиться', pl: 'Dotknij kuli, aby połączyć się ponownie',
-      zh: '点击光球即可重新连接', ar: 'اضغط على الكرة لإعادة الاتصال'
+      zh: '点击光球即可重新连接', ar: 'اضغط على الكرة لإعادة الاتصال', tr: 'Yeniden bağlanmak için küreye dokun'
     },
     textModeActive: {
       en: 'Text mode active', de: 'Textmodus aktiv', es: 'Modo texto activo',
       sr: 'Tekstualni režim aktivan', fr: 'Mode texte activé', pt: 'Modo de texto ativo',
-      ru: 'Активен текстовый режим', pl: 'Tryb tekstowy aktywny', zh: '文本模式已启用', ar: 'وضع النص مفعّل'
+      ru: 'Активен текстовый режим', pl: 'Tryb tekstowy aktywny', zh: '文本模式已启用', ar: 'وضع النص مفعّل', tr: 'Metin modu etkin'
     },
     registerFree: {
       en: 'Register for free to continue the conversation!',
@@ -937,7 +950,7 @@
       ru: 'Зарегистрируйся бесплатно, чтобы продолжить разговор!',
       pl: 'Zarejestruj się za darmo, aby kontynuować rozmowę!',
       zh: '免费注册即可继续对话！',
-      ar: 'سجّل مجانًا لمتابعة المحادثة!'
+      ar: 'سجّل مجانًا لمتابعة المحادثة!', tr: 'Sohbete devam etmek için ücretsiz kaydol!'
     }
   };
   function _caption(key) { return _loc(_CAPTIONS[key]); }
@@ -958,7 +971,7 @@
       ru: 'Секунду, я не слышу твой микрофон.',
       pl: 'Chwilkę, nie słyszę Twojego mikrofonu.',
       zh: '稍等，我听不到你的麦克风。',
-      ar: 'لحظة، لا أستطيع سماع الميكروفون الخاص بك.'
+      ar: 'لحظة، لا أستطيع سماع الميكروفون الخاص بك.', tr: 'Bir saniye, mikrofonunu duyamıyorum.'
     },
     network: {
       en: "One moment, we have internet issues.",
@@ -970,7 +983,7 @@
       ru: 'Секунду, у нас проблемы с интернетом.',
       pl: 'Chwilkę, mamy problem z internetem.',
       zh: '稍等，网络出了点问题。',
-      ar: 'لحظة، لدينا مشكلة في الإنترنت.'
+      ar: 'لحظة، لدينا مشكلة في الإنترنت.', tr: 'Bir saniye, internet sorunu yaşıyoruz.'
     },
     connection: {
       en: "Hold on, I'm reconnecting. Please wait.",
@@ -982,7 +995,7 @@
       ru: 'Подожди, я переподключаюсь.',
       pl: 'Poczekaj, łączę się ponownie.',
       zh: '请稍等，我正在重新连接。',
-      ar: 'لحظة من فضلك، أنا أعيد الاتصال.'
+      ar: 'لحظة من فضلك، أنا أعيد الاتصال.', tr: 'Bekle, yeniden bağlanıyorum. Lütfen bekle.'
     },
     offline: {
       en: "You're offline. Please wait, don't talk yet.",
@@ -994,7 +1007,7 @@
       ru: 'Ты офлайн. Подожди, пока не говори.',
       pl: 'Jesteś offline. Poczekaj, jeszcze nie mów.',
       zh: '你已离线，请稍等，先别说话。',
-      ar: 'أنت غير متصل. من فضلك انتظر ولا تتحدث بعد.'
+      ar: 'أنت غير متصل. من فضلك انتظر ولا تتحدث بعد.', tr: 'Çevrimdışısın. Lütfen bekle, henüz konuşma.'
     }
   };
 
@@ -1009,7 +1022,7 @@
       ru: 'Готово, микрофон снова работает. Продолжим.',
       pl: 'Gotowe, mikrofon znów działa. Kontynuujmy.',
       zh: '好了，麦克风又能用了，我们继续吧。',
-      ar: 'تمام، الميكروفون يعمل مجددًا. لنكمل.'
+      ar: 'تمام، الميكروفون يعمل مجددًا. لنكمل.', tr: 'Tamam, mikrofon tekrar çalışıyor. Devam edelim.'
     },
     network: {
       en: "Okay, we're back online. I'm listening.",
@@ -1021,7 +1034,7 @@
       ru: 'Готово, мы снова онлайн. Я слушаю.',
       pl: 'Gotowe, znów jesteśmy online. Słucham Cię.',
       zh: '好了，我们又上线了，我在听。',
-      ar: 'تمام، نحن متصلون مجددًا. أنا أستمع.'
+      ar: 'تمام، نحن متصلون مجددًا. أنا أستمع.', tr: 'Tamam, tekrar çevrimiçiyiz. Dinliyorum.'
     },
     offline: {
       en: "Okay, we're back online. I'm listening.",
@@ -1033,7 +1046,7 @@
       ru: 'Готово, мы снова онлайн. Я слушаю.',
       pl: 'Gotowe, znów jesteśmy online. Słucham Cię.',
       zh: '好了，我们又上线了，我在听。',
-      ar: 'تمام، نحن متصلون مجددًا. أنا أستمع.'
+      ar: 'تمام، نحن متصلون مجددًا. أنا أستمع.', tr: 'Tamam, tekrar çevrimiçiyiz. Dinliyorum.'
     },
     connection: {
       en: "Okay, sorry for the interruption. I'm listening.",
@@ -1045,7 +1058,7 @@
       ru: 'Готово, извини за перерыв. Я слушаю.',
       pl: 'Gotowe, przepraszam za przerwę. Słucham Cię.',
       zh: '好了，抱歉打断了，我在听。',
-      ar: 'تمام، آسفة على المقاطعة. أنا أستمع.'
+      ar: 'تمام، آسفة على المقاطعة. أنا أستمع.', tr: 'Tamam, kesinti için üzgünüm. Dinliyorum.'
     }
   };
 
@@ -3348,31 +3361,31 @@
   // remember..."). All lines now live in one pool, freshly shuffled per turn, with a
   // guard against repeating the previous turn's opening line back-to-back.
   var _THINKING_QUICK = [
-    { en: 'Let me think…', de: 'Lass mich kurz überlegen…', es: 'Déjame pensar…', sr: 'Daj da razmislim…', fr: 'Laisse-moi réfléchir…', pt: 'Deixa-me pensar…', ru: 'Дай подумать…', pl: 'Daj mi się zastanowić…', zh: '让我想想…', ar: 'دعني أفكر…' },
-    { en: 'Let me take a look…', de: 'Lass mich das kurz prüfen…', es: 'Déjame echar un vistazo…', sr: 'Daj da pogledam…', fr: 'Laisse-moi jeter un œil…', pt: 'Deixa-me dar uma vista de olhos…', ru: 'Дай взгляну…', pl: 'Daj mi rzucić okiem…', zh: '让我看看…', ar: 'دعني ألقي نظرة…' },
-    { en: 'One sec…', de: 'Eine Sekunde…', es: 'Un segundo…', sr: 'Sekundu…', fr: 'Une seconde…', pt: 'Um segundo…', ru: 'Секунду…', pl: 'Sekundkę…', zh: '一秒钟…', ar: 'لحظة واحدة…' },
-    { en: 'Alright, hang on…', de: 'Alles klar, einen Moment…', es: 'Bien, espera un momento…', sr: 'Dobro, sačekaj malo…', fr: "D'accord, attends…", pt: 'Ok, espera aí…', ru: 'Хорошо, подожди…', pl: 'Dobrze, chwileczkę…', zh: '好的，稍等一下…', ar: 'حسنًا، لحظة من فضلك…' },
-    { en: 'Let’s see…', de: 'Mal sehen…', es: 'A ver…', sr: 'Da vidimo…', fr: 'Voyons voir…', pt: 'Vamos ver…', ru: 'Посмотрим…', pl: 'Zobaczmy…', zh: '让我看看情况…', ar: 'لنرَ…' },
-    { en: 'Give me a beat…', de: 'Kurz einen Moment…', es: 'Dame un momento…', sr: 'Daj mi trenutak…', fr: 'Laisse-moi un instant…', pt: 'Dá-me só um instante…', ru: 'Дай мне момент…', pl: 'Daj mi chwilę…', zh: '给我一点时间…', ar: 'امنحني لحظة…' }
+    { en: 'Let me think…', de: 'Lass mich kurz überlegen…', es: 'Déjame pensar…', sr: 'Daj da razmislim…', fr: 'Laisse-moi réfléchir…', pt: 'Deixa-me pensar…', ru: 'Дай подумать…', pl: 'Daj mi się zastanowić…', zh: '让我想想…', ar: 'دعني أفكر…', tr: 'Bir düşüneyim…' },
+    { en: 'Let me take a look…', de: 'Lass mich das kurz prüfen…', es: 'Déjame echar un vistazo…', sr: 'Daj da pogledam…', fr: 'Laisse-moi jeter un œil…', pt: 'Deixa-me dar uma vista de olhos…', ru: 'Дай взгляну…', pl: 'Daj mi rzucić okiem…', zh: '让我看看…', ar: 'دعني ألقي نظرة…', tr: 'Bir bakayım…' },
+    { en: 'One sec…', de: 'Eine Sekunde…', es: 'Un segundo…', sr: 'Sekundu…', fr: 'Une seconde…', pt: 'Um segundo…', ru: 'Секунду…', pl: 'Sekundkę…', zh: '一秒钟…', ar: 'لحظة واحدة…', tr: 'Bir saniye…' },
+    { en: 'Alright, hang on…', de: 'Alles klar, einen Moment…', es: 'Bien, espera un momento…', sr: 'Dobro, sačekaj malo…', fr: "D'accord, attends…", pt: 'Ok, espera aí…', ru: 'Хорошо, подожди…', pl: 'Dobrze, chwileczkę…', zh: '好的，稍等一下…', ar: 'حسنًا، لحظة من فضلك…', tr: 'Tamam, bekle…' },
+    { en: 'Let’s see…', de: 'Mal sehen…', es: 'A ver…', sr: 'Da vidimo…', fr: 'Voyons voir…', pt: 'Vamos ver…', ru: 'Посмотрим…', pl: 'Zobaczmy…', zh: '让我看看情况…', ar: 'لنرَ…', tr: 'Bakalım…' },
+    { en: 'Give me a beat…', de: 'Kurz einen Moment…', es: 'Dame un momento…', sr: 'Daj mi trenutak…', fr: 'Laisse-moi un instant…', pt: 'Dá-me só um instante…', ru: 'Дай мне момент…', pl: 'Daj mi chwilę…', zh: '给我一点时间…', ar: 'امنحني لحظة…', tr: 'Bana bir an ver…' }
   ];
   var _THINKING_PRIMARY = [
-    { en: 'Checking what I remember…', de: 'Ich schau nach, was ich weiß…', es: 'Reviso lo que recuerdo…', sr: 'Proveravam šta se sećam…', fr: 'Je vérifie ce dont je me souviens…', pt: 'Estou a verificar o que sei…', ru: 'Проверяю, что я помню…', pl: 'Sprawdzam, co pamiętam…', zh: '我在回想一下…', ar: 'أتحقق مما أتذكره…' },
-    { en: 'Connecting the dots…', de: 'Ich verbinde die Punkte…', es: 'Uniendo las piezas…', sr: 'Povezujem stvari…', fr: 'Je fais le lien…', pt: 'A juntar as peças…', ru: 'Соединяю всё вместе…', pl: 'Łączę fakty…', zh: '我在把线索串起来…', ar: 'أربط الأمور ببعضها…' },
-    { en: 'Putting it all together…', de: 'Ich füg alles zusammen…', es: 'Poniendo todo junto…', sr: 'Slažem sve zajedno…', fr: 'Je mets tout en ordre…', pt: 'A juntar tudo…', ru: 'Собираю всё воедино…', pl: 'Składam to wszystko w całość…', zh: '我在整理一下…', ar: 'أجمّع كل شيء معًا…' },
-    { en: 'Just making sure I get it right…', de: 'Ich will sichergehen, dass es passt…', es: 'Solo quiero asegurarme de entenderlo bien…', sr: 'Samo hoću da budem siguran da je tačno…', fr: 'Je veux juste être sûr de bien comprendre…', pt: 'Só quero ter a certeza de que percebi bem…', ru: 'Просто хочу удостовериться, что всё правильно…', pl: 'Chcę się tylko upewnić, że dobrze rozumiem…', zh: '我想确认一下有没有理解对…', ar: 'أريد فقط التأكد من أنني فهمت الأمر بشكل صحيح…' },
-    { en: 'Almost ready ✨', de: 'Gleich fertig ✨', es: 'Casi listo ✨', sr: 'Skoro gotovo ✨', fr: 'Presque prêt ✨', pt: 'Quase pronto ✨', ru: 'Почти готово ✨', pl: 'Prawie gotowe ✨', zh: '马上就好 ✨', ar: 'على وشك الانتهاء ✨' },
-    { en: 'Still with you…', de: 'Bin noch dabei…', es: 'Sigo aquí…', sr: 'Još uvek sam tu…', fr: 'Toujours avec toi…', pt: 'Continuo aqui contigo…', ru: 'Я всё ещё здесь…', pl: 'Wciąż tu jestem…', zh: '我还在这里…', ar: 'ما زلت معك…' },
-    { en: 'Got it — here we go!', de: 'Alles klar, es geht los!', es: 'Listo, ¡allá vamos!', sr: 'Evo ga, krećemo!', fr: "C'est bon, on y va !", pt: 'Pronto, cá vamos nós!', ru: 'Готово — поехали!', pl: 'Mam to — zaczynamy!', zh: '好了，我们开始吧！', ar: 'تمام، ها نحن ننطلق!' }
+    { en: 'Checking what I remember…', de: 'Ich schau nach, was ich weiß…', es: 'Reviso lo que recuerdo…', sr: 'Proveravam šta se sećam…', fr: 'Je vérifie ce dont je me souviens…', pt: 'Estou a verificar o que sei…', ru: 'Проверяю, что я помню…', pl: 'Sprawdzam, co pamiętam…', zh: '我在回想一下…', ar: 'أتحقق مما أتذكره…', tr: 'Hatırladıklarımı kontrol ediyorum…' },
+    { en: 'Connecting the dots…', de: 'Ich verbinde die Punkte…', es: 'Uniendo las piezas…', sr: 'Povezujem stvari…', fr: 'Je fais le lien…', pt: 'A juntar as peças…', ru: 'Соединяю всё вместе…', pl: 'Łączę fakty…', zh: '我在把线索串起来…', ar: 'أربط الأمور ببعضها…', tr: 'Noktaları birleştiriyorum…' },
+    { en: 'Putting it all together…', de: 'Ich füg alles zusammen…', es: 'Poniendo todo junto…', sr: 'Slažem sve zajedno…', fr: 'Je mets tout en ordre…', pt: 'A juntar tudo…', ru: 'Собираю всё воедино…', pl: 'Składam to wszystko w całość…', zh: '我在整理一下…', ar: 'أجمّع كل شيء معًا…', tr: 'Her şeyi bir araya getiriyorum…' },
+    { en: 'Just making sure I get it right…', de: 'Ich will sichergehen, dass es passt…', es: 'Solo quiero asegurarme de entenderlo bien…', sr: 'Samo hoću da budem siguran da je tačno…', fr: 'Je veux juste être sûr de bien comprendre…', pt: 'Só quero ter a certeza de que percebi bem…', ru: 'Просто хочу удостовериться, что всё правильно…', pl: 'Chcę się tylko upewnić, że dobrze rozumiem…', zh: '我想确认一下有没有理解对…', ar: 'أريد فقط التأكد من أنني فهمت الأمر بشكل صحيح…', tr: 'Doğru anladığımdan emin oluyorum…' },
+    { en: 'Almost ready ✨', de: 'Gleich fertig ✨', es: 'Casi listo ✨', sr: 'Skoro gotovo ✨', fr: 'Presque prêt ✨', pt: 'Quase pronto ✨', ru: 'Почти готово ✨', pl: 'Prawie gotowe ✨', zh: '马上就好 ✨', ar: 'على وشك الانتهاء ✨', tr: 'Neredeyse hazır ✨' },
+    { en: 'Still with you…', de: 'Bin noch dabei…', es: 'Sigo aquí…', sr: 'Još uvek sam tu…', fr: 'Toujours avec toi…', pt: 'Continuo aqui contigo…', ru: 'Я всё ещё здесь…', pl: 'Wciąż tu jestem…', zh: '我还在这里…', ar: 'ما زلت معك…', tr: 'Hâlâ seninleyim…' },
+    { en: 'Got it — here we go!', de: 'Alles klar, es geht los!', es: 'Listo, ¡allá vamos!', sr: 'Evo ga, krećemo!', fr: "C'est bon, on y va !", pt: 'Pronto, cá vamos nós!', ru: 'Готово — поехали!', pl: 'Mam to — zaczynamy!', zh: '好了，我们开始吧！', ar: 'تمام، ها نحن ننطلق!', tr: 'Tamamdır — işte başlıyoruz!' }
   ];
   var _THINKING_ALTERNATES = [
-    { en: 'On it…', de: 'Bin dran…', es: 'Voy con eso…', sr: 'Radim na tome…', fr: "Je m'en occupe…", pt: 'Estou nisso…', ru: 'Уже занимаюсь…', pl: 'Już się tym zajmuję…', zh: '我在处理了…', ar: 'أنا أعمل على ذلك…' },
-    { en: 'Give me a tiny moment…', de: 'Gib mir einen kleinen Moment…', es: 'Dame un momentito…', sr: 'Daj mi mali trenutak…', fr: 'Laisse-moi un tout petit instant…', pt: 'Dá-me só um bocadinho…', ru: 'Дай мне буквально секунду…', pl: 'Daj mi malutką chwilkę…', zh: '再给我一小会儿…', ar: 'أمهلني لحظة صغيرة…' },
-    { en: 'Let me look into that…', de: 'Ich schau mir das an…', es: 'Voy a revisar eso…', sr: 'Da to proverim…', fr: 'Je regarde ça…', pt: 'Vou verificar isso…', ru: 'Дай-ка я это проверю…', pl: 'Sprawdzę to…', zh: '我来看看这个…', ar: 'دعني أبحث في ذلك…' },
-    { en: 'Doing a little detective work…', de: 'Ich spiel kurz Detektiv…', es: 'Haciendo un poco de trabajo detectivesco…', sr: 'Malo detektivskog posla…', fr: 'Un peu de travail de détective…', pt: 'A fazer um pouco de trabalho de detetive…', ru: 'Провожу небольшое расследование…', pl: 'Trochę detektywistycznej roboty…', zh: '我在小小地侦查一下…', ar: 'أقوم ببعض العمل التحقيقي…' },
-    { en: 'Looking in the right places…', de: 'Ich schau an den richtigen Stellen…', es: 'Buscando en los lugares correctos…', sr: 'Tražim na pravim mestima…', fr: 'Je cherche au bon endroit…', pt: 'A procurar nos sítios certos…', ru: 'Ищу в нужных местах…', pl: 'Szukam we właściwych miejscach…', zh: '我在正确的地方找找看…', ar: 'أبحث في الأماكن الصحيحة…' },
-    { en: 'Still working my magic…', de: 'Ich zaubere noch…', es: 'Sigo haciendo mi magia…', sr: 'Još uvek čarolija u toku…', fr: 'Je fais encore ma petite magie…', pt: 'Ainda a fazer a minha magia…', ru: 'Всё ещё колдую…', pl: 'Wciąż czaruję…', zh: '我还在施展我的小魔法…', ar: 'ما زلت أصنع سحري…' },
-    { en: 'One more moment…', de: 'Noch ein Moment…', es: 'Un momento más…', sr: 'Još jedan trenutak…', fr: 'Encore un instant…', pt: 'Mais um momentinho…', ru: 'Ещё чуть-чуть…', pl: 'Jeszcze chwilka…', zh: '再等一下下…', ar: 'لحظة أخرى فقط…' },
-    { en: 'Nearly there…', de: 'Fast geschafft…', es: 'Ya casi…', sr: 'Skoro sam stigao…', fr: 'Presque fini…', pt: 'Está quase…', ru: 'Почти готово…', pl: 'Już prawie…', zh: '马上就好了…', ar: 'أوشكت على الانتهاء…' }
+    { en: 'On it…', de: 'Bin dran…', es: 'Voy con eso…', sr: 'Radim na tome…', fr: "Je m'en occupe…", pt: 'Estou nisso…', ru: 'Уже занимаюсь…', pl: 'Już się tym zajmuję…', zh: '我在处理了…', ar: 'أنا أعمل على ذلك…', tr: 'Hallediyorum…' },
+    { en: 'Give me a tiny moment…', de: 'Gib mir einen kleinen Moment…', es: 'Dame un momentito…', sr: 'Daj mi mali trenutak…', fr: 'Laisse-moi un tout petit instant…', pt: 'Dá-me só um bocadinho…', ru: 'Дай мне буквально секунду…', pl: 'Daj mi malutką chwilkę…', zh: '再给我一小会儿…', ar: 'أمهلني لحظة صغيرة…', tr: 'Bana ufak bir an ver…' },
+    { en: 'Let me look into that…', de: 'Ich schau mir das an…', es: 'Voy a revisar eso…', sr: 'Da to proverim…', fr: 'Je regarde ça…', pt: 'Vou verificar isso…', ru: 'Дай-ка я это проверю…', pl: 'Sprawdzę to…', zh: '我来看看这个…', ar: 'دعني أبحث في ذلك…', tr: 'Şuna bir bakayım…' },
+    { en: 'Doing a little detective work…', de: 'Ich spiel kurz Detektiv…', es: 'Haciendo un poco de trabajo detectivesco…', sr: 'Malo detektivskog posla…', fr: 'Un peu de travail de détective…', pt: 'A fazer um pouco de trabalho de detetive…', ru: 'Провожу небольшое расследование…', pl: 'Trochę detektywistycznej roboty…', zh: '我在小小地侦查一下…', ar: 'أقوم ببعض العمل التحقيقي…', tr: 'Biraz dedektiflik yapıyorum…' },
+    { en: 'Looking in the right places…', de: 'Ich schau an den richtigen Stellen…', es: 'Buscando en los lugares correctos…', sr: 'Tražim na pravim mestima…', fr: 'Je cherche au bon endroit…', pt: 'A procurar nos sítios certos…', ru: 'Ищу в нужных местах…', pl: 'Szukam we właściwych miejscach…', zh: '我在正确的地方找找看…', ar: 'أبحث في الأماكن الصحيحة…', tr: 'Doğru yerlere bakıyorum…' },
+    { en: 'Still working my magic…', de: 'Ich zaubere noch…', es: 'Sigo haciendo mi magia…', sr: 'Još uvek čarolija u toku…', fr: 'Je fais encore ma petite magie…', pt: 'Ainda a fazer a minha magia…', ru: 'Всё ещё колдую…', pl: 'Wciąż czaruję…', zh: '我还在施展我的小魔法…', ar: 'ما زلت أصنع سحري…', tr: 'Hâlâ sihrimi konuşturuyorum…' },
+    { en: 'One more moment…', de: 'Noch ein Moment…', es: 'Un momento más…', sr: 'Još jedan trenutak…', fr: 'Encore un instant…', pt: 'Mais um momentinho…', ru: 'Ещё чуть-чуть…', pl: 'Jeszcze chwilka…', zh: '再等一下下…', ar: 'لحظة أخرى فقط…', tr: 'Bir an daha…' },
+    { en: 'Nearly there…', de: 'Fast geschafft…', es: 'Ya casi…', sr: 'Skoro sam stigao…', fr: 'Presque fini…', pt: 'Está quase…', ru: 'Почти готово…', pl: 'Już prawie…', zh: '马上就好了…', ar: 'أوشكت على الانتهاء…', tr: 'Neredeyse tamam…' }
   ];
   var _THINKING_ALL = _THINKING_QUICK.concat(_THINKING_PRIMARY, _THINKING_ALTERNATES);
 
@@ -3532,6 +3545,42 @@
       clearTimeout(_s.audioEndGraceTimer);
       _s.audioPlaying = false;
       _s.lastAudioEndTime = Date.now();
+      // VTID-03740: everything above this comment only ever cleared the
+      // INTERNAL audioPlaying flag — it never touched .vtorb-status or the
+      // orb glow. A session whose upstream stream dies mid-turn (delivers
+      // at least one audio chunk, then goes silent before turn_complete)
+      // never gets a server turn_complete, so _waitForAudioEnd() (the only
+      // other place that resets the visible state) never runs either.
+      // Reported live: the pre-login MAXINA Intro orb visibly "spoke"
+      // (caption "Vitana priča..." + amber glow) but stayed silent, stuck
+      // that way for the rest of the session. Restore the VISIBLE state to
+      // LISTENING here too, and re-arm the mic the same way the normal
+      // turn-complete path does on a session's first turn (mic capture is
+      // started exactly once, gated on !greetingComplete, then stays open
+      // for the rest of the session under full duplex) — so recovery is
+      // actually usable, not just cosmetic. Deliberately does NOT invoke
+      // the host's turn-completion callback: this turn never genuinely
+      // completed, and telling the host it did would reproduce the
+      // VTID-03685 bug where a guided-topic "completed" drawer appeared
+      // for a lesson that was never actually delivered.
+      if (_s.voiceState === 'SPEAKING' && _s.active && !_isClosingForNav() &&
+          !_s._userRequestedClose && _s.overlayVisible) {
+        _s.voiceState = 'LISTENING';
+        // VTID-03469: while audio is blocked the overlay shows the
+        // tap-to-hear prompt — don't overwrite it with "Listening...".
+        if (!_s._audioBlocked) {
+          _setOrbState('listening');
+          _setStatus(_caption('listening'));
+        }
+        if (!_s.greetingComplete) {
+          _s.greetingComplete = true;
+          _s._audioEverHeardThisOpen = true;
+          _startAudioCapture().catch(function (err) {
+            console.error('[VTOrb] Mic capture failed after stuck-speaking recovery:', err);
+            _announceDisconnect('mic');
+          });
+        }
+      }
       try { _updateUI(); } catch (e) { /* UI optional during teardown */ }
     }
   }

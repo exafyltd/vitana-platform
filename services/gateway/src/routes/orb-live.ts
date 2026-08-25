@@ -6948,43 +6948,23 @@ ${conversationHistory}
 
 Your next message must be a direct response to whatever the visitor says next, with NO prefix acknowledgment of any pause. If the visitor says nothing, you say nothing — silence is correct here.
 ` : `
-=== FIRST MESSAGE (READ THIS SPEECH VERBATIM — DO NOT SHORTEN, SKIP, OR SUMMARIZE) ===
+=== FIRST MESSAGE (INTRODUCE VITANALAND — COMPOSE THIS FRESH, DO NOT RECITE THE MATERIAL BELOW WORD-FOR-WORD) ===
+LANGUAGE FOR THIS MESSAGE: Deliver it ENTIRELY in ${languageNames[lang] || 'English'}. The material below is English reference content, not a script to translate — compose your own sentences in ${languageNames[lang] || 'English'}, in your own natural voice, the same way you would explain it to a friend.
+
 CRITICAL RULES:
-- Your first message MUST be the COMPLETE speech below — speak ALL of it before stopping.
-- Do NOT stop after the greeting to ask a question.
-- Do NOT say "what can I do for you" or "how can I help" — the visitor has NO IDEA what you do.
-- Do NOT summarize or shorten this speech. Deliver it FULLY.
-- This is approximately 45 seconds of speaking. That is the correct length. Do NOT cut it short.
+- Cover EVERY point in the material below, in your own words — do not skip, shorten, or summarize any of it away.
+- Do NOT stop after a greeting to ask a question.
+- Do NOT say "what can I do for you" or "how can I help" — the visitor has NO IDEA what you do yet.
+- Aim for roughly 45 seconds of natural speaking — enough to properly introduce everything below, not a quick one-liner.
+- If you know the visitor's city (see CONTEXT above), open with it naturally. Otherwise just open warmly — never say a placeholder or bracket.
 
-Speak the following as your COMPLETE first message (adapt the city name naturally, but cover ALL the content — do not skip any section):
-
-${lang === 'de' ? `"""
-Hallo aus [Stadt wenn bekannt]! Mein Name ist Vitana, und ich bin bereit, dein neuer persönlicher Gesundheitsbegleiter zu werden.
-
-Lass mich dir erzählen, worum es hier geht. Du bist auf Vitanaland gelandet, der Heimat der Maxina Community. Maxina wurde rund um Mariia Maksina gegründet — sie ist eine professionelle Tänzerin, die viele Menschen bereits aus der Fernsehshow Let's Dance kennen und lieben. Die Leute kommen ursprünglich hierher, weil sie mit Mariia tanzen und Fitness machen wollen. Diese Energie und Leidenschaft ist das Herzstück von allem, was wir tun.
-
-Aber Maxina ist zu viel mehr geworden. Wir sind eine Longevity-Community von Gleichgesinnten, die das Leben gemeinsam genießen wollen. Es geht darum, an echten Events und Meetups teilzunehmen, Gesundheitserfahrungen miteinander zu teilen und Spaß mit Tanz und Fitness zu haben. Echte Menschen, die sich im echten Leben treffen — in Städten in Deutschland, Österreich und der Schweiz. Und ab Juni bis September in diesem Jahr starten wir auch auf Mallorca mit einer Maxina Experience Eventserie.
-
-Und hier ist, was für dich persönlich drin ist. Als Mitglied bekommst du Zugang zu Tanzsessions, Fitnesskursen, Wellness-Workshops, Koch-Events, Meditationsgruppen, Wander-Meetups — alles mit Menschen, die deine Leidenschaft für ein gutes Leben teilen. Dazu bekommst du mich — Vitana — als deinen persönlichen KI-Gesundheitsbegleiter. Sobald du beitrittst, merke ich mir deine Ziele, deine Vorlieben und all unsere Gespräche. Ich gebe dir persönliche Beratung zu Ernährung, Fitness, Stressmanagement, Schlaf und mentaler Gesundheit. Wir haben auch wunderschöne kuratierte Klangwelten für Fokus, Entspannung und Meditation.
-
-Unsere Vision ist einfach. Longevity bedeutet nicht nur länger zu leben — es bedeutet besser zu leben, gemeinsam. Die Zukunft von Wellness ist menschliche Verbindung, Gemeinschaft und Spaß beim Kümmern um sich selbst. Und das Beste? Der Beitritt zur Maxina Community ist komplett kostenlos.
-
-Also sag mir — was begeistert dich am meisten? Ist es Tanz, Fitness, Ernährung, Gleichgesinnte treffen, oder etwas ganz anderes?
-"""` : `"""
-Hello from [city if known]! My name is Vitana, and I am ready to become your new personal health companion.
-
-Let me tell you what this is all about. You've landed on Vitanaland, the home of the Maxina Community. Maxina was created around Mariia Maksina — she's a professional dancer that many people already know and love from the TV show Let's Dance. People originally come here because they want to dance and do fitness with Mariia. That energy and passion is the heart of everything we do.
-
-But Maxina has grown into so much more than that. We are a longevity community of like-minded people who want to enjoy life together. It's about joining real events and meetups, sharing health experiences with each other, and having fun with dance and fitness. Real people meeting in real life, in cities across Germany, Austria, and Switzerland. And from June to September this year, we are also launching on Mallorca with a Maxina Experience event series.
-
-And here is what's in it for you personally. As a member, you get access to dance sessions, fitness classes, wellness workshops, cooking events, meditation groups, hiking meetups — all with people who share your passion for living well. Plus, you get me — Vitana — as your personal AI health companion. Once you join, I will remember your goals, your preferences, and all our conversations. I give you personalized guidance on nutrition, fitness, stress management, sleep, and mental wellness. We also have beautiful curated soundscapes for focus, relaxation, and meditation.
-
-Our vision is simple. Longevity is not just about living longer — it is about living better, together. The future of wellness is human connection, community, and having fun while taking care of yourself. And the best part? Joining the Maxina Community is completely free.
-
-So tell me — what excites you most? Is it dance, fitness, nutrition, meeting like-minded people, or something else entirely?
-"""`}
-
-IMPORTANT: The speech above is your MINIMUM first message. You must NOT remove or skip any of the sections. Every paragraph above must be spoken.
+Material to introduce, in your own words (reference content — paraphrase and explain naturally, do NOT read aloud):
+- Your identity: your name is Vitana, and you are ready to become their new personal health companion.
+- Origin story: they've landed on Vitanaland, home of the Maxina Community. Maxina was created around Mariia Maksina — a professional dancer many people already know and love from the TV show Let's Dance. People originally came here because they wanted to dance and do fitness with Mariia; that energy and passion is the heart of everything.
+- What it grew into: a longevity community of like-minded people who want to enjoy life together — joining real events and meetups, sharing health experiences with each other, having fun with dance and fitness. Real people meeting in real life, in cities across Germany, Austria, and Switzerland, plus a Maxina Experience event series launching on Mallorca from June to September this year.
+- What's in it for them: as a member, dance sessions, fitness classes, wellness workshops, cooking events, meditation groups, hiking meetups — all with people who share their passion for living well. Plus you, Vitana, as their personal AI health companion: once they join, you remember their goals, preferences, and every conversation, and give personalized guidance on nutrition, fitness, stress management, sleep, and mental wellness. There are also beautiful curated soundscapes for focus, relaxation, and meditation.
+- Vision: longevity is not just about living longer — it is about living better, together. The future of wellness is human connection, community, and having fun while taking care of yourself. Joining the Maxina Community is completely free.
+- Close by asking what excites them most — dance, fitness, nutrition, meeting like-minded people, or something else entirely.
 `}
 
 === AFTER THE USER RESPONDS ===
@@ -9674,7 +9654,20 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             // whether this IS a new-day return. So when facts are still pending,
             // wait once more up to a larger new-day budget. Same-day reconnects
             // whose facts already resolved skip this entirely and stay fast.
-            if (_greetingFactsReady && !(session as any).lastSessionInfo) {
+            // BOOTSTRAP-ORB-NEWDAY-STAMP-DIAGNOSTIC — this used to also require
+            // `!(session as any).lastSessionInfo`, on the theory that a set
+            // lastSessionInfo means the facts prefetch already landed. It
+            // doesn't: lastSessionInfo can be set by the separate, often-faster
+            // "heavy" bootstrap block before THIS prefetch's own promise
+            // (which alone owns lastFullBriefingDate) has resolved, so the
+            // extra wait was being skipped on the wrong signal — live staging
+            // evidence showed newday_briefing_eval reading
+            // last_full_briefing_date: null on every session, even moments
+            // after a prior session's stamp write had already committed.
+            // Racing directly against _greetingFactsReady itself is always
+            // correct and never adds latency beyond what was already budgeted:
+            // if it already resolved, Promise.race returns immediately.
+            if (_greetingFactsReady) {
               const _firstWaitMs = Number(process.env.ORB_GREETING_FACTS_WAIT_MS || 700);
               const _ndFactsWaitMs = Number(process.env.ORB_NEWDAY_FACTS_WAIT_MS || 2200);
               const _extraWaitMs = Math.max(0, _ndFactsWaitMs - _firstWaitMs);
@@ -9879,72 +9872,92 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             // mirror onto the session so a same-process reopen also sees it delivered.
             if (_sfDecision.effects.stampBriefingDate && _uidSF && _supaSF) {
               (session as any).lastFullBriefingDate = _sfDecision.effects.stampBriefingDate;
-              void _supaSF
-                .from('user_journey')
-                .update({ last_full_briefing_date: _sfDecision.effects.stampBriefingDate })
-                .eq('user_id', _uidSF)
-                .select('user_id')
-                .then(
-                  ({ data, error }: any) => {
-                    if (error) {
-                      console.error('[orb-live] stampBriefingDate write failed (safe_fast)', {
-                        user_id: _uidSF,
-                        value: _sfDecision.effects.stampBriefingDate,
-                        error,
-                      });
-                    } else if (!data || data.length === 0) {
-                      // PostgREST reports 0-row-matched UPDATEs as a clean
-                      // success (no `error`) — this is the case the plain
-                      // .then(() => {}, () => {}) this replaced could never
-                      // have surfaced, and is a live suspect for why the
-                      // once-per-day guard keeps reading last_full_briefing_date
-                      // as null on repeat sessions.
-                      console.error('[orb-live] stampBriefingDate write matched 0 rows (safe_fast)', {
-                        user_id: _uidSF,
-                        value: _sfDecision.effects.stampBriefingDate,
-                      });
-                    }
-                  },
-                  (err: any) => {
-                    console.error('[orb-live] stampBriefingDate write threw (safe_fast)', {
-                      user_id: _uidSF,
-                      value: _sfDecision.effects.stampBriefingDate,
-                      err,
-                    });
-                  },
-                );
+              // Awaited deliberately (VTID undetermined — see BOOTSTRAP-ORB-NEWDAY-STAMP-DIAGNOSTIC):
+              // live staging repro showed the once-per-day guard re-firing on
+              // 3 consecutive sessions even after the fire-and-forget write
+              // this replaced was hardened with 0-row-match detection — the
+              // write attempts from earlier sessions in the same rapid
+              // sequence never landed before the next session's read, 45+
+              // seconds later, which rules out ordinary network latency.
+              // Awaiting here guarantees this session's own write is fully
+              // committed (or its failure is loudly logged) before the
+              // handler proceeds — it can no longer be abandoned by session
+              // teardown or an unrelated later await racing ahead of it.
+              try {
+                const { data, error } = await _supaSF
+                  .from('user_journey')
+                  .update({ last_full_briefing_date: _sfDecision.effects.stampBriefingDate })
+                  .eq('user_id', _uidSF)
+                  .select('user_id');
+                if (error) {
+                  console.error('[orb-live] stampBriefingDate write failed (safe_fast)', {
+                    user_id: _uidSF,
+                    value: _sfDecision.effects.stampBriefingDate,
+                    error,
+                  });
+                  emitDiag(session, 'stamp_briefing_date_write', {
+                    branch: 'safe_fast',
+                    result: 'error',
+                    error: String((error as any)?.message ?? error),
+                  });
+                } else if (!data || data.length === 0) {
+                  // PostgREST reports 0-row-matched UPDATEs as a clean
+                  // success (no `error`) — a live suspect for why the
+                  // once-per-day guard kept reading last_full_briefing_date
+                  // as null on repeat sessions.
+                  console.error('[orb-live] stampBriefingDate write matched 0 rows (safe_fast)', {
+                    user_id: _uidSF,
+                    value: _sfDecision.effects.stampBriefingDate,
+                  });
+                  emitDiag(session, 'stamp_briefing_date_write', { branch: 'safe_fast', result: 'zero_rows' });
+                } else {
+                  emitDiag(session, 'stamp_briefing_date_write', {
+                    branch: 'safe_fast',
+                    result: 'ok',
+                    rows: data.length,
+                  });
+                }
+              } catch (err) {
+                console.error('[orb-live] stampBriefingDate write threw (safe_fast)', {
+                  user_id: _uidSF,
+                  value: _sfDecision.effects.stampBriefingDate,
+                  err,
+                });
+                emitDiag(session, 'stamp_briefing_date_write', {
+                  branch: 'safe_fast',
+                  result: 'threw',
+                  error: String((err as any)?.message ?? err),
+                });
+              }
             }
             // VTID-03604: same pattern for the day-close stamp.
             if (_sfDecision.effects.stampDayCloseDate && _uidSF && _supaSF) {
               (session as any).lastDayCloseDate = _sfDecision.effects.stampDayCloseDate;
-              void _supaSF
-                .from('user_journey')
-                .update({ last_day_close_date: _sfDecision.effects.stampDayCloseDate })
-                .eq('user_id', _uidSF)
-                .select('user_id')
-                .then(
-                  ({ data, error }: any) => {
-                    if (error) {
-                      console.error('[orb-live] stampDayCloseDate write failed (safe_fast)', {
-                        user_id: _uidSF,
-                        value: _sfDecision.effects.stampDayCloseDate,
-                        error,
-                      });
-                    } else if (!data || data.length === 0) {
-                      console.error('[orb-live] stampDayCloseDate write matched 0 rows (safe_fast)', {
-                        user_id: _uidSF,
-                        value: _sfDecision.effects.stampDayCloseDate,
-                      });
-                    }
-                  },
-                  (err: any) => {
-                    console.error('[orb-live] stampDayCloseDate write threw (safe_fast)', {
-                      user_id: _uidSF,
-                      value: _sfDecision.effects.stampDayCloseDate,
-                      err,
-                    });
-                  },
-                );
+              try {
+                const { data, error } = await _supaSF
+                  .from('user_journey')
+                  .update({ last_day_close_date: _sfDecision.effects.stampDayCloseDate })
+                  .eq('user_id', _uidSF)
+                  .select('user_id');
+                if (error) {
+                  console.error('[orb-live] stampDayCloseDate write failed (safe_fast)', {
+                    user_id: _uidSF,
+                    value: _sfDecision.effects.stampDayCloseDate,
+                    error,
+                  });
+                } else if (!data || data.length === 0) {
+                  console.error('[orb-live] stampDayCloseDate write matched 0 rows (safe_fast)', {
+                    user_id: _uidSF,
+                    value: _sfDecision.effects.stampDayCloseDate,
+                  });
+                }
+              } catch (err) {
+                console.error('[orb-live] stampDayCloseDate write threw (safe_fast)', {
+                  user_id: _uidSF,
+                  value: _sfDecision.effects.stampDayCloseDate,
+                  err,
+                });
+              }
             }
             // Durable recent-NBA history (conv_resume) — keep the last 8.
             if (_sfDecision.effects.recordNbaKey && _uidSF && _supaSF) {
@@ -10299,7 +10312,10 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
           // larger first-greeting-of-the-day budget — the same product call the
           // safe-fast path makes (richness > latency for turn 1 of the day).
           // Sessions whose facts already resolved skip this entirely.
-          if (_factsReadyNS && !(session as any).lastSessionInfo) {
+          // BOOTSTRAP-ORB-NEWDAY-STAMP-DIAGNOSTIC — see the matching comment on
+          // the safe_fast branch's identical wait above: `!lastSessionInfo` is
+          // the wrong readiness signal for THIS prefetch's own promise.
+          if (_factsReadyNS) {
             const _extraWaitMsNS = Math.max(
               0,
               Number(process.env.ORB_NEWDAY_FACTS_WAIT_MS || 2200) - _firstWaitMsNS,
@@ -10419,66 +10435,79 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
 
             if (_decisionNS.effects.stampBriefingDate) {
               (session as any).lastFullBriefingDate = _decisionNS.effects.stampBriefingDate;
-              void _syncSupa!
-                .from('user_journey')
-                .update({ last_full_briefing_date: _decisionNS.effects.stampBriefingDate })
-                .eq('user_id', _syncUid!)
-                .select('user_id')
-                .then(
-                  ({ data, error }: any) => {
-                    if (error) {
-                      console.error('[orb-live] stampBriefingDate write failed (normal)', {
-                        user_id: _syncUid,
-                        value: _decisionNS.effects.stampBriefingDate,
-                        error,
-                      });
-                    } else if (!data || data.length === 0) {
-                      console.error('[orb-live] stampBriefingDate write matched 0 rows (normal)', {
-                        user_id: _syncUid,
-                        value: _decisionNS.effects.stampBriefingDate,
-                      });
-                    }
-                  },
-                  (err: any) => {
-                    console.error('[orb-live] stampBriefingDate write threw (normal)', {
-                      user_id: _syncUid,
-                      value: _decisionNS.effects.stampBriefingDate,
-                      err,
-                    });
-                  },
-                );
+              // Awaited deliberately — see the matching comment on the
+              // safe_fast branch's stampBriefingDate write above.
+              try {
+                const { data, error } = await _syncSupa!
+                  .from('user_journey')
+                  .update({ last_full_briefing_date: _decisionNS.effects.stampBriefingDate })
+                  .eq('user_id', _syncUid!)
+                  .select('user_id');
+                if (error) {
+                  console.error('[orb-live] stampBriefingDate write failed (normal)', {
+                    user_id: _syncUid,
+                    value: _decisionNS.effects.stampBriefingDate,
+                    error,
+                  });
+                  emitDiag(session, 'stamp_briefing_date_write', {
+                    branch: 'normal',
+                    result: 'error',
+                    error: String((error as any)?.message ?? error),
+                  });
+                } else if (!data || data.length === 0) {
+                  console.error('[orb-live] stampBriefingDate write matched 0 rows (normal)', {
+                    user_id: _syncUid,
+                    value: _decisionNS.effects.stampBriefingDate,
+                  });
+                  emitDiag(session, 'stamp_briefing_date_write', { branch: 'normal', result: 'zero_rows' });
+                } else {
+                  emitDiag(session, 'stamp_briefing_date_write', {
+                    branch: 'normal',
+                    result: 'ok',
+                    rows: data.length,
+                  });
+                }
+              } catch (err) {
+                console.error('[orb-live] stampBriefingDate write threw (normal)', {
+                  user_id: _syncUid,
+                  value: _decisionNS.effects.stampBriefingDate,
+                  err,
+                });
+                emitDiag(session, 'stamp_briefing_date_write', {
+                  branch: 'normal',
+                  result: 'threw',
+                  error: String((err as any)?.message ?? err),
+                });
+              }
             }
             // VTID-03604
             if (_decisionNS.effects.stampDayCloseDate) {
               (session as any).lastDayCloseDate = _decisionNS.effects.stampDayCloseDate;
-              void _syncSupa!
-                .from('user_journey')
-                .update({ last_day_close_date: _decisionNS.effects.stampDayCloseDate })
-                .eq('user_id', _syncUid!)
-                .select('user_id')
-                .then(
-                  ({ data, error }: any) => {
-                    if (error) {
-                      console.error('[orb-live] stampDayCloseDate write failed (normal)', {
-                        user_id: _syncUid,
-                        value: _decisionNS.effects.stampDayCloseDate,
-                        error,
-                      });
-                    } else if (!data || data.length === 0) {
-                      console.error('[orb-live] stampDayCloseDate write matched 0 rows (normal)', {
-                        user_id: _syncUid,
-                        value: _decisionNS.effects.stampDayCloseDate,
-                      });
-                    }
-                  },
-                  (err: any) => {
-                    console.error('[orb-live] stampDayCloseDate write threw (normal)', {
-                      user_id: _syncUid,
-                      value: _decisionNS.effects.stampDayCloseDate,
-                      err,
-                    });
-                  },
-                );
+              try {
+                const { data, error } = await _syncSupa!
+                  .from('user_journey')
+                  .update({ last_day_close_date: _decisionNS.effects.stampDayCloseDate })
+                  .eq('user_id', _syncUid!)
+                  .select('user_id');
+                if (error) {
+                  console.error('[orb-live] stampDayCloseDate write failed (normal)', {
+                    user_id: _syncUid,
+                    value: _decisionNS.effects.stampDayCloseDate,
+                    error,
+                  });
+                } else if (!data || data.length === 0) {
+                  console.error('[orb-live] stampDayCloseDate write matched 0 rows (normal)', {
+                    user_id: _syncUid,
+                    value: _decisionNS.effects.stampDayCloseDate,
+                  });
+                }
+              } catch (err) {
+                console.error('[orb-live] stampDayCloseDate write threw (normal)', {
+                  user_id: _syncUid,
+                  value: _decisionNS.effects.stampDayCloseDate,
+                  err,
+                });
+              }
             }
             if (_decisionNS.wakeOpener === 'newday_overview' && _tenantNS) {
               const _spokenNS = extractSpokenFactsFromPayload(_overviewNS);
