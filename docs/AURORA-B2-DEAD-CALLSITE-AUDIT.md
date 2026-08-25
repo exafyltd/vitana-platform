@@ -182,6 +182,34 @@ after 4 prior addenda) — flagged as the single highest-value target for
 whoever does the next B2 pass, given how many features silently depend on
 it.
 
+## Addendum 6: two more confirmed already-safe-by-design — not every reachable call site is a bug
+
+Checked two more of the higher-traffic remaining tables, both reachable
+from genuinely hot paths, and both turned out to be non-issues:
+
+- **`life_compass_active_view`** — read in `matchmaker-agent.ts`, itself
+  imported by `routes/orb-live.ts` (the live voice session handler),
+  `intents.ts`, and `intent-find-match.ts`. The call site is explicitly
+  wrapped: `try { ... } catch { /* table may not exist on every env */ }`,
+  with its own comment: *"Best-effort fetches — silent on error."* Designed
+  for exactly this situation.
+- **`conversation_threads`** — read in `gemini-operator.ts`'s
+  `resolveThreadUserId()`, reachable from `routes/orb-live.ts`,
+  `routes/conversation.ts`, and `routes/operator.ts`. Also wrapped in a
+  `try { ... } catch { return null; }` with no rethrow.
+
+**Net effect for both: reachable from hot paths, but genuinely harmless.**
+Neither degrades a user-visible feature beyond "one optional enrichment
+signal is always absent" (a life-compass category tag on a matchmaker
+profile; a thread-to-user resolution that always returns null). This
+matters for prioritization — of the tables checked in depth this pass, the
+real severity ranking is **`wallet_balances` (silent, money-adjacent) >
+`d44_predictive_signals`/`d44_intervention_history` (loud, admin-facing) >
+`user_topic_profile` (unconfirmed but wide blast radius) >
+`risk_mitigations`/matchmaking tables (unclear or superseded) >
+`life_compass_active_view`/`conversation_threads` (confirmed harmless by
+design)** — not a flat list of 33 equally-urgent problems.
+
 ## What this does and does not mean
 
 **Not all 33 are the same kind of problem, and this pass does not root-cause
