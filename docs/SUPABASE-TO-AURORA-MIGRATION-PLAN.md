@@ -1,10 +1,23 @@
 # Supabase → Aurora Migration Plan
 
-**VTID-03494** · Status: **DRAFT — planning only, no code changed** · 2026-08-04
+**VTID-03494** · Status: **DECIDED — Option B, execution in progress** · 2026-08-04
+(decision recorded 2026-08-25, VTID-03702 umbrella)
 
 Written at explicit user direction ("Aurora is the target — plan it"). This
-document does **not** authorize execution. Every phase below needs its own
-execution VTID, and Phase 0 is a hard gate on all of them.
+document did **not**, at the time it was written, authorize execution — but
+the platform owner has since given that authorization explicitly and
+repeatedly: **"move everything from Supabase to AWS and Aurora. Also the
+Auth server, so in the end we shut down Supabase... this is final decision,
+so get the migration job done"**, with a hard external deadline ("Supabase
+including auth server disconnecting from production by 20 September 2026
+and downgrading to free plan from paid plan by same day"), and explicit
+authorization to proceed without further check-ins ("go and execute a
+hundred tasks... We have a plan. Go ahead"). See the "Phase 1 — decided"
+note below for what this settles. Individual phases/workstreams still get
+their own execution VTIDs (B1 → VTID-03702, B2 → VTID-03735, B3 →
+VTID-03732, Phase 0 → VTID-03734, B4-sizing → VTID-03739, B5 →
+VTID-03736, B6 → VTID-03737, B7 → VTID-03738) — this note records that the
+**decision to execute at all**, and which option, are no longer open.
 
 ---
 
@@ -112,8 +125,24 @@ Two consequences for this migration:
 
 ## Phase 1 — Decide the target architecture
 
-Three genuinely different end-states. This is the decision that shapes
-everything else, and it has not been made.
+> **DECIDED 2026-08-25: Option B.** The platform owner's standing directive
+> — full migration off Supabase, **including the Auth server**, ending in
+> Supabase being fully disconnected and downgraded to its free plan by
+> 20 September 2026 — rules out Option A by construction: self-hosting the
+> Supabase stack (even on AWS/Aurora) is still running Supabase, not
+> shutting it down, and does not touch GoTrue/Auth at all. Only Option B
+> (gateway → real Postgres, auth → a replacement identity source, realtime
+> → owned WebSockets, storage → S3, edge functions → Lambda/ECS) satisfies
+> "shut down Supabase." This session's B1/B2/B5/B6/B7 work (repository
+> seams talking to Postgres directly rather than through a self-hosted
+> Supabase stack; Storage/Realtime/edge-functions inventoried for
+> replacement, not for a lift-and-shift) has been executing consistent with
+> Option B throughout — this note makes that consistency explicit rather
+> than leaving a future reader to infer it. The three options below are
+> kept as-written for the historical record of what was weighed.
+
+Three genuinely different end-states were considered; below is that original
+analysis, unedited.
 
 ### Option A — Self-hosted Supabase on AWS
 Run the Supabase stack (PostgREST, GoTrue, Realtime, Storage) against Aurora.
@@ -246,7 +275,7 @@ Explicitly **out of scope** until Phase 4 has been stable for an agreed window.
 
 ---
 
-## What I did not do, and why
+## What I did not do, and why (as of when this section was originally written)
 
 - **No code changed.** The instruction was to plan.
 - **No execution VTID allocated.** Following the precedent set for the GCP
@@ -257,12 +286,39 @@ Explicitly **out of scope** until Phase 4 has been stable for an agreed window.
   be amended as part of the Phase 1 decision — not silently ignored, and not
   edited by me ahead of that decision.
 
-## Open questions for the user
+**Status update, 2026-08-25 — all three of the above are now resolved:**
+the sign-off conversation happened (see the header and Phase 1 decision
+note above), execution VTIDs have since been allocated per-workstream
+(B1/B2/B3/Phase 0/B4-sizing/B5/B6/B7, listed in the header), code has
+changed (B1's repository-seam extraction across ~90 gateway files, all on
+`claude/aws-supabase-aurora-cutover-oxdie9`), and **CLAUDE.md's rule 21 has
+itself been updated** — it now reads *"Always use the platform's Postgres
+store (Aurora, migrating off Supabase — see §3) as the persistent data
+store,"* not the old Supabase-only wording this section originally flagged
+as conflicting. The bullets above are left unedited as the historical
+record of the plan's original, more cautious posture.
+
+## Open questions for the user — ANSWERED 2026-08-25
 
 1. **Which option in Phase 1** — A (self-host Supabase on Aurora), or B (full
    platform replacement)? Everything downstream depends on it.
+   → **Answered: Option B.** See the decision note under Phase 1 above.
 2. **What is the actual driver** — cost, AWS consolidation, removing a vendor
    dependency, or something else? A and B serve different goals.
+   → Not stated explicitly by the platform owner in those terms; the
+   directive frames it as removing the Supabase dependency entirely
+   ("in the end we shut down Supabase"), which is Option B's own stated
+   benefit ("no Supabase dependency, full AWS consolidation") regardless of
+   which underlying driver motivated it.
 3. **Who has live AWS/DMS access** to close the Phase 0 gate? No session so far
    has had it.
+   → Partially answered: this session (2026-08-25) has live read-only AWS
+   CLI + Supabase MCP access — see `docs/AURORA-PHASE0-RECONCILIATION-
+   FINDINGS.md`. Read access is not write access: an explicit IAM
+   permissions-boundary deny blocks Secrets Manager writes and DMS endpoint
+   mutation from this session, so the CDC-down gap that Phase 0 found
+   still needs a session/person with write access to actually close.
 4. **Is there a deadline** this is working back from?
+   → **Answered: 20 September 2026** — Supabase (including Auth) fully
+   disconnected from production and downgraded to the free plan by that
+   date, per the platform owner's explicit compressed-deadline directive.
