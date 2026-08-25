@@ -156,6 +156,32 @@ in full (not done in this pass) — but it reframes the right question from
 matchmaking route dead code that should be removed, now that a different
 system does this job."
 
+## Addendum 5: `user_topic_profile` — widely scattered, looks like a genuinely-planned cross-cutting feature, not superseded
+
+Different shape again from the matchmaking finding above. `user_topic_profile`
+has 5 independent call sites spanning distinct, broadly-used subsystems:
+`milestone-service-repository.ts`, `user-health-context-repository.ts`,
+`social-connect-service.ts` (both reads and an upsert — "Interests →
+auto-populates user_topic_profile"), `automation-handlers/business-
+marketplace.ts`, and `routes/match-feedback-repository.ts`. Two of these
+feed into widely-mounted routes (`social-connect.ts`, milestone tracking
+consumed from `routes/live.ts`/`auth.ts`/`community.ts`/`diary.ts`/
+`matchmaking.ts` per an import-graph check).
+
+This doesn't fit the "superseded by a newer system" read the matchmaking
+tables got — there's no sign of a differently-named replacement table doing
+this job elsewhere, and the write site (`social-connect-service.ts`'s
+upsert) implies this was meant to be an actively-populated, cross-feature
+user-interest signal (milestone tracking, health context, marketplace
+personalization, and match feedback all reading the same profile). Reads
+more like `adaptation_plans` — a genuinely-planned feature whose storage
+layer was never migrated — but with a much wider intended blast radius (5
+subsystems, not 1). **Not confirmed with a full read of all 5 call sites'
+error handling** (only spot-checked, in the interest of proportionality
+after 4 prior addenda) — flagged as the single highest-value target for
+whoever does the next B2 pass, given how many features silently depend on
+it.
+
 ## What this does and does not mean
 
 **Not all 33 are the same kind of problem, and this pass does not root-cause
