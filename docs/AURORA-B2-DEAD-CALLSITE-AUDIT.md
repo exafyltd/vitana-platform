@@ -130,6 +130,43 @@ flagging explicitly:
    engines and their storage layer — **not resolved here**, flagged for
    whoever picks up the B2 cleanup or a CLAUDE.md accuracy pass.
 
+## Addendum: `wallet_balances` spot-checked — real, live, money-adjacent gap (not a false alarm)
+
+Per the "read each call site before concluding" discipline, `wallet_balances`
+(3 call sites: `routes/automations-repository.ts`, `routes/billing.ts`,
+`services/entitlement-service-repository.ts`) was checked further, since it
+is money-adjacent and therefore higher-severity than most of the 33.
+
+**This one is not soft-failing the way `awareness_config` is.**
+`routes/billing.ts`'s `GET /me` — *"the single endpoint that powers the
+Subscriptions screen"* per its own comment — queries
+`.from('wallet_balances').select('purchased_credits, reward_credits,
+cash_balance, balance')` and destructures only `{ data: wallet }`, silently
+discarding `error`. Supabase-js doesn't throw on a PostgREST "relation does
+not exist" — it returns `{data: null, error: {...}}` — so `wallet` is always
+`undefined` here rather than the request failing loudly. Every real user
+hitting the Subscriptions screen gets a wallet snapshot that is silently
+absent, with nothing in the response or logs marking it as a failure rather
+than "user genuinely has no wallet yet."
+
+Checked whether this is a stale/renamed table rather than a truly missing
+one: live schema has `wallet_credits`, `wallet_transactions`,
+`wallet_balance_resets`, `user_wallets`, `wallet_accounts`, `wallet_deposits`,
+`wallet_ledger_entries` — plausible rename candidates — but **none of them
+carry the `purchased_credits`/`reward_credits`/`cash_balance` three-bucket
+column shape** the code selects (comment: *"post-§M three-bucket schema"*).
+`user_wallets`/`wallet_accounts` only have a single `balance`/`balance_minor`
+column each. So this isn't a simple find-and-rename — the three-bucket
+schema this code expects does not exist under any name, which means either
+a migration that was supposed to ship never did, or the three-bucket model
+was designed and never built.
+
+**Not fixed here — flagging only.** Guessing at a substitute table/column
+mapping for a money-adjacent read without knowing which schema is actually
+authoritative risks making the wallet display worse (wrong numbers) rather
+than better (still-missing numbers). This needs a product/eng decision on
+which wallet model is canonical, not a static-analysis-driven patch.
+
 ## Next steps (not done in this pass)
 
 - For the 20 genuinely gateway-scoped dead tables (33 total, minus the 12
