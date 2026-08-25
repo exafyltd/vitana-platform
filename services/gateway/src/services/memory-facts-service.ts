@@ -19,6 +19,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { emitOasisEvent } from './oasis-event-service';
 import { assertWriteFact } from './memory-audit'; // VTID-01952 Identity Lock chokepoint
 import { mirrorFact } from './mem-tier2-writer'; // VTID-02005 Phase 5b Tier 2 mirror
+import * as repo from './memory-facts-service-repository';
 
 // =============================================================================
 // Configuration
@@ -173,7 +174,7 @@ export async function writeFact(request: WriteFactRequest): Promise<WriteFactRes
   }
 
   try {
-    const { data, error } = await supabase.rpc('write_fact', {
+    const { data, error } = await repo.writeFactRpc(supabase, {
       p_tenant_id: request.tenant_id,
       p_user_id: request.user_id,
       p_fact_key: request.fact_key,
@@ -272,7 +273,7 @@ export async function getCurrentFacts(request: GetFactsRequest): Promise<GetFact
   }
 
   try {
-    const { data, error } = await supabase.rpc('get_current_facts', {
+    const { data, error } = await repo.getCurrentFactsRpc(supabase, {
       p_tenant_id: request.tenant_id,
       p_user_id: request.user_id,
       p_entity: request.entity || null,
@@ -758,14 +759,13 @@ export function generateFactEmbeddingAsync(
       const supabase = createServiceClient();
       if (!supabase) return;
 
-      const { error } = await supabase
-        .from('memory_facts')
-        .update({
-          embedding: JSON.stringify(embedding),
-          embedding_model: result.model || FACT_EMBEDDING_OPENAI_MODEL,
-          embedding_updated_at: new Date().toISOString(),
-        })
-        .eq('id', factId);
+      const { error } = await repo.updateFactEmbedding(
+        supabase,
+        factId,
+        JSON.stringify(embedding),
+        result.model || FACT_EMBEDDING_OPENAI_MODEL,
+        new Date().toISOString(),
+      );
 
       if (error) {
         console.warn(`[${VTID}] Embedding storage failed for fact ${factId}: ${error.message}`);
