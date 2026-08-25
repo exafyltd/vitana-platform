@@ -111,6 +111,20 @@ severity: it's a broken admin feature with a visible failure, not a
 silently-degraded one — lower stealth-risk than the wallet finding, but
 still a genuine defect an admin would hit today.
 
+## Addendum 3: `risk_mitigations` — mounted, but no confirmed caller (weaker finding than D44's)
+
+`risk_mitigations`'s route (`routes/risk-mitigation.ts`, backed by
+`d49-risk-mitigation-engine.ts` → `d49-risk-mitigation-engine-repository.ts`)
+**is mounted** at `/api/v1/mitigation` in `index.ts` — same shape as D44's
+route — but unlike `d44_predictive_signals`, no caller was found for it:
+not in `vitana-v1/src` (grepped for `mitigation`, zero hits), not in
+`scheduled-notifications.ts`, not in any cron-like wiring checked. It's
+reachable by a direct API call (curl, or a caller this pass didn't check —
+mobile app, an admin script), but has no *confirmed* real-world trigger the
+way D44's Signals page provides. **Weaker finding than D44's, not treated
+as equally severe** — flagged as mounted-but-unconfirmed rather than
+mounted-and-reachable-from-a-real-screen.
+
 ## What this does and does not mean
 
 **Not all 33 are the same kind of problem, and this pass does not root-cause
