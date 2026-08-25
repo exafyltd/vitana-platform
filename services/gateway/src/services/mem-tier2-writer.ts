@@ -20,6 +20,7 @@
 
 import { getSupabase } from '../lib/supabase';
 import { getSystemControl } from './system-controls-service';
+import * as repo from './mem-tier2-writer-repository';
 
 const VTID = 'VTID-02005';
 const POLICY_VERSION = 'mem-2026.04';
@@ -132,7 +133,7 @@ export async function mirrorEpisode(input: EpisodeMirrorInput): Promise<void> {
   };
 
   try {
-    const { error } = await supabase.from('mem_episodes').insert(row);
+    const { error } = await repo.insertMemEpisode(supabase, row);
     if (error) {
       await parkToDLQ('mem_episodes', row, error);
     }
@@ -180,14 +181,7 @@ export async function mirrorFact(input: FactMirrorInput): Promise<void> {
 
   try {
     // Supersede the prior active row for this (tenant,user,entity,fact_key) pair.
-    await supabase
-      .from('mem_facts')
-      .update({ valid_to: now, superseded_at: now })
-      .eq('tenant_id', input.tenant_id)
-      .eq('user_id', input.user_id)
-      .eq('entity', entity)
-      .eq('fact_key', input.fact_key)
-      .is('valid_to', null);
+    await repo.supersedeActiveMemFact(supabase, input.tenant_id, input.user_id, entity, input.fact_key, now);
 
     const row = {
       tenant_id: input.tenant_id,
@@ -208,7 +202,7 @@ export async function mirrorFact(input: FactMirrorInput): Promise<void> {
       vtid: input.vtid ?? null,
     };
 
-    const { error } = await supabase.from('mem_facts').insert(row);
+    const { error } = await repo.insertMemFact(supabase, row);
     if (error) {
       await parkToDLQ('mem_facts', row, error);
     }
@@ -269,7 +263,7 @@ export async function mirrorGraphEdge(input: GraphEdgeMirrorInput): Promise<void
   };
 
   try {
-    const { error } = await supabase.from('mem_graph_edges').insert(row);
+    const { error } = await repo.insertMemGraphEdge(supabase, row);
     if (error) {
       await parkToDLQ('mem_graph_edges', row, error);
     }
@@ -291,7 +285,7 @@ async function parkToDLQ(
   if (!supabase) return;
 
   try {
-    await supabase.from('memory_write_dlq').insert({
+    await repo.insertMemoryWriteDlqRow(supabase, {
       tenant_id: (payload.tenant_id as string) ?? null,
       user_id: (payload.user_id as string) ?? null,
       stream,
