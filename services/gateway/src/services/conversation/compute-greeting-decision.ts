@@ -649,8 +649,76 @@ function tryNewDayOverviewRung(
 const SHORT_GAP_OPENER_INTENT =
   "Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself, never ask what they want. Compose this sentence yourself, in the user's own language, in your own words. There is no approved phrasing to reproduce and nothing to recite — do not reuse wording you or another session has used before; vary it every single time.";
 
+/**
+ * VTID-03724 — an explicit, deliberate guided-topic tap (a My Journey session
+ * the user just tapped) must outrank every PASSIVE/ambient opener on BOTH
+ * ladders — day_close, newday_overview, and everything the safe-fast ladder
+ * tries before it ever reaches override_v2.
+ *
+ * Root cause this fixes: `override_v2` (rung 8 of the normal ladder) was the
+ * ONLY rung that ever consulted `ctx.guidedTopicNarrationContent`, and
+ * `newday_overview` (rung 7b, ABOVE it) was placed there under the reasoning
+ * "the wake-brief's one-liner is what the user has been getting INSTEAD of
+ * their briefing" (VTID-03607) — i.e. a passive nudge competing for
+ * attention with a real briefing. That reasoning never accounted for the
+ * SAME slot sometimes carrying a deliberate user action instead of a passive
+ * nudge. Once VTID-03646 fixed `newday_overview`'s guard to actually be
+ * reachable (it had been permanently guard-rejected in production before
+ * that), it started firing on essentially every user's first session of the
+ * day — and silently swallowing any guided-topic tap that happened to land
+ * there, because nothing upstream of override_v2 ever looked.
+ *
+ * Confirmed live via `oasis_events` (VTID-03724): the wake-brief ranker
+ * correctly selected the guided-topic candidate
+ * (`orb.livekit.next_action.candidate`, `winner:true`,
+ * `dedupe_key:"guided_topic:T001"`) and the session's own `greeting_sent`
+ * event STILL reported `wake_opener:"newday_overview"` moments later — the
+ * tapped session was never spoken; the daily briefing was, instead.
+ *
+ * The safe-fast ladder had ZERO guided-topic awareness before this — not
+ * even the (broken) priority order the normal ladder had. Extracted as one
+ * shared rung, reusing rung 8's exact directive-composition logic, so both
+ * ladders can never drift apart on this again (the same anti-drift
+ * reasoning `tryDayCloseRung`/`tryNewDayOverviewRung` are already extracted
+ * for).
+ */
+function tryGuidedTopicRung(ctx: GreetingDecisionContext): GreetingDecision | null {
+  if (!ctx.guidedTopicNarrationContent || ctx.isAnonymous) return null;
+  const od = ctx.openDecision;
+  const wakeOverrideLine = od.mode === 'speak' ? (od.line ?? '').trim() : '';
+  if (wakeOverrideLine.length === 0) return null;
+
+  const safe = wakeOverrideLine.replace(/"/g, '\\"');
+  // Same plain "say this one line, then stop and listen" shape rung 8 uses
+  // for a guided candidate (VTID-03674) — the teaching itself happens on
+  // turns 2+ from the GUIDE-MODE system-instruction block; turn 1 only opens.
+  const guidedTrigger =
+    `Open by saying this prepared line, in the user's own language: "${safe}"\n` +
+    `Keep it to ONE short utterance. Do not add a greeting before it, do not add a question after it, and do not turn it into something else. Then stop and listen.`;
+
+  return {
+    wakeOpener: 'override_v2',
+    directive: guidedTrigger,
+    diag: {
+      lang: ctx.lang,
+      prompt_len: guidedTrigger.length,
+      wake_opener: 'override_v2',
+      decision_id: ctx.wakeBriefDecisionId || null,
+      guided_topic_outranks_passive_rungs: true,
+    },
+    effects: { markGreetingSent: true, armWatchdog: true },
+  };
+}
+
 // --- SAFE-FAST ladder (rungs 1–6) ------------------------------------------
 function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
+  // VTID-03724 — a tapped guided topic outranks every rung below, including
+  // the day-close/newday-overview rungs this ladder is about to try. See
+  // tryGuidedTopicRung's own comment for the full root-cause trace. This
+  // ladder previously had no guided-topic handling at all.
+  const guidedFast = tryGuidedTopicRung(ctx);
+  if (guidedFast) return guidedFast;
+
   // VTID-03604 — the day-close outranks every morning rung, on BOTH ladders.
   // At 00:15 the calendar date has rolled and the morning briefing believes it
   // is owed; it is not. Ending a day is not starting one.
@@ -817,6 +885,15 @@ function computeNormalLadder(ctx: GreetingDecisionContext): GreetingDecision {
       effects: { markGreetingSent: true, armWatchdog: false },
     };
   }
+
+  // VTID-03724 — a tapped guided topic outranks day_close/newday_overview,
+  // below silent_reconnect (a genuine transport reconnect still stays
+  // silent — the lesson was already spoken in a prior turn). See
+  // tryGuidedTopicRung's own comment for the full root-cause trace: this is
+  // the exact defect reported live ("tapping a session starts the new-day
+  // overview instead").
+  const guidedNormal = tryGuidedTopicRung(ctx);
+  if (guidedNormal) return guidedNormal;
 
   // VTID-03604 — day-close, below silent_reconnect (a reconnect stays silent,
   // and a goodnight is loud) and above every morning rung.
