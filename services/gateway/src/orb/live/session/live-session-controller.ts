@@ -1132,10 +1132,25 @@ export async function handleLiveSessionStart(
             // Authoritative first-time signal — a single cheap column read, in
             // the SAME parallel batch so it adds no latency. Drives the first-time
             // welcome (never "welcome back" for a brand-new user).
+            // BOOTSTRAP-ORB-NEWDAY-STAMP-DIAGNOSTIC — `last_day_close_date`
+            // does NOT exist on the live user_journey table (confirmed via
+            // information_schema.columns), even though the write sites in
+            // orb-live.ts assume it does. Selecting it here made THIS ENTIRE
+            // QUERY error (Postgres 42703), which silently failed the
+            // `!firstSessionResult.value.error` guard below and meant
+            // last_full_briefing_date — read in the SAME query — was NEVER
+            // populated, root-causing the once-per-day briefing guard
+            // re-firing on every session regardless of anything written to
+            // it. Confirmed directly via the greeting_facts_user_journey_read
+            // diagnostic event added in the prior commit. Dropped from the
+            // select list until a migration actually adds the column; the
+            // day-close write sites (stampDayCloseDate) are a separate,
+            // lower-priority defect — day_close's own rung defaults OFF, so
+            // that write path isn't exercised by current traffic.
             supa
               ? supa
                   .from('user_journey')
-                  .select('is_first_session, last_session_date, last_full_briefing_date, last_day_close_date, recent_nbas')
+                  .select('is_first_session, last_session_date, last_full_briefing_date, recent_nbas')
                   .eq('user_id', _ndIdentity.user_id)
                   .maybeSingle()
               : Promise.resolve(null as any),
