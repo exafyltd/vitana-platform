@@ -12,6 +12,7 @@
  */
 import { Router, Request, Response } from 'express';
 import { getSupabase } from '../lib/supabase';
+import * as repo from './public-profile-og-repository';
 
 const router = Router();
 
@@ -40,11 +41,7 @@ router.get('/profile/:id', async (req: Request, res: Response) => {
 
   // Accept either a UUID (matches profiles.user_id which is what useProfileShare
   // puts in the URL, with profiles.id as a secondary match) or a handle.
-  const query = supabase
-    .from('profiles')
-    .select(
-      'id, user_id, handle, display_name, first_name, last_name, longevity_archetype, bio, avatar_url, cover_url',
-    );
+  const query = repo.buildPublicProfileOgQuery(supabase);
 
   const { data, error } = await (isUuid
     ? query.or(`user_id.eq.${raw},id.eq.${raw}`).maybeSingle()
