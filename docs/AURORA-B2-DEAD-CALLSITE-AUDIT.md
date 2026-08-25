@@ -201,14 +201,46 @@ from genuinely hot paths, and both turned out to be non-issues:
 **Net effect for both: reachable from hot paths, but genuinely harmless.**
 Neither degrades a user-visible feature beyond "one optional enrichment
 signal is always absent" (a life-compass category tag on a matchmaker
-profile; a thread-to-user resolution that always returns null). This
-matters for prioritization — of the tables checked in depth this pass, the
-real severity ranking is **`wallet_balances` (silent, money-adjacent) >
-`d44_predictive_signals`/`d44_intervention_history` (loud, admin-facing) >
-`user_topic_profile` (unconfirmed but wide blast radius) >
-`risk_mitigations`/matchmaking tables (unclear or superseded) >
-`life_compass_active_view`/`conversation_threads` (confirmed harmless by
-design)** — not a flat list of 33 equally-urgent problems.
+profile; a thread-to-user resolution that always returns null).
+
+## Addendum 7: `community_group_members` — confirmed live, silently-broken notification path
+
+`routes/community-repository.ts`'s `fetchGroupMembersExcluding()` queries
+`community_group_members`, and — unlike its neighbors two lines below in
+the same file (`fetchGlobalGroupMembership`/`insertGlobalGroupMembership`,
+both correctly targeting the real, live `global_community_group_members`)
+— this table does not exist. Traced the caller: `routes/community.ts`'s
+join-group handler uses it to notify existing group members when someone
+new joins (*"Notify other group members"*), and — same silent-failure
+shape as `wallet_balances` — destructures only `{ data: members }`,
+discarding the Supabase error. `members` is therefore always `undefined`,
+`memberIds` always empty, and **the "notify existing members when someone
+joins your group" notification silently never fires**, for every group,
+every time, with nothing in logs marking it as a failure.
+
+**This is not the same shape as the matchmaking finding** —
+`community_groups` (the tenant-scoped group type this membership table
+would belong to) and `global_community_groups` are both confirmed to be
+real, distinct, live tables (`to_regclass` on both returns non-null), so
+this isn't "the whole tenant-scoped groups concept was abandoned." A
+broader table search (`information_schema.tables` ILIKE `%group%member%`)
+turned up only `global_community_group_members`, `chat_group_members`, and
+`global_group_members` — no plausible same-shape rename target for plain
+`community_groups`. **Not resolved here** — whether `community_groups`
+membership is meant to live in a table that was simply never created, or
+is tracked some other way this pass didn't find (an array column, a
+different join path via `chat_group_members`), needs someone who can read
+`community_groups`' full schema and intended design, not a guess from this
+pass.
+
+This matters for prioritization — of the tables checked in depth this
+pass, the real severity ranking is **`wallet_balances` and
+`community_group_members` (both silent) > `d44_predictive_signals`/
+`d44_intervention_history` (loud, admin-facing) > `user_topic_profile`
+(unconfirmed but wide blast radius) > `risk_mitigations`/matchmaking
+tables (unclear or superseded) > `life_compass_active_view`/
+`conversation_threads` (confirmed harmless by design)** — not a flat list
+of 33 equally-urgent problems.
 
 ## What this does and does not mean
 
