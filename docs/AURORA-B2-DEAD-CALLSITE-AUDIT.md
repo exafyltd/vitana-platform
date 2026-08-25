@@ -85,6 +85,32 @@ worth knowing the code never got a tracked migration for it").
 | `wallet_balances` | `services/gateway/src/routes/automations-repository.ts`, `services/gateway/src/routes/billing.ts`, `services/gateway/src/services/entitlement-service-repository.ts` |
 | `appointments`, `assessment_responses`, `assessments`, `documents`, `health_reports`, `knowledge_articles`, `lab_results`, `tenant_integrations`, `webhooks` | all in `services/openclaw-bridge/src/skills/*` — a **separate service**, not `services/gateway`; see note below |
 
+## Addendum 2: `d44_predictive_signals`/`d44_intervention_history` — confirmed reachable, not just flagged
+
+Follow-up spot-check, same discipline as the `wallet_balances` addendum
+above: `d44_predictive_signals` and `d44_intervention_history` are queried
+by `services/gateway/src/services/d44-signal-detection-engine-repository.ts`,
+consumed by `d44-signal-detection-engine.ts`, which
+`routes/signal-detection.ts` wraps — and that route **is mounted** in
+`index.ts` at `/api/v1/predictive-signals`. A second, independent call site
+in `routes/scheduled-notifications.ts` queries `d44_predictive_signals`
+directly. This is not a dormant/unwired code path like `adaptation_plans`
+— it's live and reachable.
+
+**Confirmed reachable from the frontend too:** `exafyltd/vitana-v1`'s
+`src/pages/admin/intelligence/Signals.tsx` calls this exact API. So an
+admin opening the Intelligence → Signals page hits a mounted route that
+queries two tables neither of which exist in the live schema.
+
+**Unlike `billing.ts`'s wallet snapshot, this one fails loud, not silent** —
+`signal-detection.ts`'s handlers check the Supabase `error` field properly
+(`console.error(...); res.status(...).json({error: ...})`), so this
+surfaces as a visible error response to the admin, not a silently-empty
+page. Confirms this is real (not a false alarm) without needing to guess at
+severity: it's a broken admin feature with a visible failure, not a
+silently-degraded one — lower stealth-risk than the wallet finding, but
+still a genuine defect an admin would hit today.
+
 ## What this does and does not mean
 
 **Not all 33 are the same kind of problem, and this pass does not root-cause
