@@ -20,6 +20,7 @@
 import { Router, Response } from 'express';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { getSupabase } from '../lib/supabase';
+import * as repo from './news-feed-repository';
 
 const router = Router();
 const VTID = 'VTID-03319';
@@ -43,11 +44,7 @@ router.get('/top-performer', requireAuth, async (req: AuthenticatedRequest, res:
     const tenantId = req.identity?.tenant_id || null;
 
     // 1. Members who opted in to the spotlight.
-    let consentQuery = supabase
-      .from('profiles')
-      .select('user_id, display_name, avatar_url')
-      .eq('index_spotlight_consent', true);
-    const { data: consented, error: consentErr } = await consentQuery;
+    const { data: consented, error: consentErr } = await repo.fetchSpotlightConsentedProfiles(supabase);
     if (consentErr || !consented || consented.length === 0) {
       return res.json({ ok: true, vtid: VTID, performer: null });
     }
@@ -57,14 +54,11 @@ router.get('/top-performer', requireAuth, async (req: AuthenticatedRequest, res:
     const since = new Date(Date.now() - WINDOW_DAYS * 24 * 60 * 60 * 1000)
       .toISOString()
       .slice(0, 10);
-    let scoresQuery = supabase
-      .from('vitana_index_scores')
-      .select('user_id, date, score_total')
-      .in('user_id', consentedIds)
-      .gte('date', since)
-      .order('date', { ascending: true });
-    if (tenantId) scoresQuery = scoresQuery.eq('tenant_id', tenantId);
-    const { data: scores, error: scoresErr } = await scoresQuery;
+    const { data: scores, error: scoresErr } = await repo.fetchVitanaIndexScoresForUsersSince(supabase, {
+      userIds: consentedIds,
+      sinceIso: since,
+      tenantId,
+    });
     if (scoresErr || !scores || scores.length === 0) {
       return res.json({ ok: true, vtid: VTID, performer: null });
     }
