@@ -1162,15 +1162,20 @@ exports[`computeGreetingDecision — rung golden snapshots rung 7: silent_reconn
 }
 `;
 
-exports[`computeGreetingDecision — rung golden snapshots rung 8: override_v2 (wake-brief selected line, spoken verbatim) 1`] = `
+exports[`computeGreetingDecision — rung golden snapshots rung 8: override_v2 (wake-brief selected line, used as the turn lead) 1`] = `
 {
   "diag": {
     "decision_id": "wb-123",
     "lang": "de",
-    "prompt_len": 156,
+    "prompt_len": 1074,
     "wake_opener": "override_v2",
   },
-  "directive": "Sage genau Folgendes: "Heute ist dein 12. Tag — bleiben wir dran." — NUR EINE kurze Aussage. KEINE Begrüßung davor. KEINE Frage danach. NICHT umformulieren.",
+  "directive": "Open the conversation from this prepared lead: "Heute ist dein 12. Tag — bleiben wir dran."
+It is a LEAD, not your whole turn. Deliver the turn in three beats, as ONE continuous piece of speech:
+1. SUBSTANCE — say what is actually going on, not that you are about to. If the lead names something you can already tell them (their messages, their index, their calendar, what changed), tell them the substance of it now, in one or two sentences. Never announce an intention you then do not carry out in this same turn.
+2. NEXT STEP — propose ONE concrete next step yourself. Never ask the user what they want to do, never offer a menu.
+3. CONFIRMATION — close by asking them to confirm that one step, so they can simply say yes.
+Keep every concrete fact from the lead — numbers, names, dates — exactly as given, and invent nothing beyond it. Compose the wording yourself in the user's own language; do not recite the lead word for word and do not reuse phrasing from a previous session. Do not greet the user by name first; go straight into the substance. Then stop and listen.",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,
@@ -1184,10 +1189,11 @@ exports[`computeGreetingDecision — rung golden snapshots rung 8: override_v2 g
   "diag": {
     "decision_id": null,
     "lang": "en",
-    "prompt_len": 155,
+    "prompt_len": 258,
     "wake_opener": "override_v2",
   },
-  "directive": "Say exactly: "Lektion: Atme langsam ein und aus." — ONE short utterance only. Do NOT add a greeting before. Do NOT add a question after. Do NOT paraphrase.",
+  "directive": "Open by saying this prepared line, in the user's own language: "Lektion: Atme langsam ein und aus."
+Keep it to ONE short utterance. Do not add a greeting before it, do not add a question after it, and do not turn it into something else. Then stop and listen.",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,

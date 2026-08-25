@@ -49,8 +49,23 @@ const FLOW_SOURCE_RE = [
 // A changed test file that counts as covering the flow change. Broad on purpose:
 // the flow suites live under many names (conversation-flow, narrate-guided-session,
 // guided-journey-*, journey-*, greeting-*, wake-*, continuity-*, system-instruction…).
+//
+// VTID-03721 — `orb-live` added, which also covers `orb-livekit`. The two
+// transport files were added to FLOW_SOURCE_RE above, but their OWN canonical
+// test files — `test/routes/orb-live.test.ts` and `test/routes/orb-livekit.test.ts`,
+// where those routes are actually tested — matched none of the keywords. So the
+// gate flagged a source file and then refused to accept a real test of that same
+// file, in the place it is already tested. Measured: extending
+// `test/routes/orb-livekit.test.ts` with four supertest cases pinning new
+// endpoint behaviour still reported the blocker.
+//
+// An unsatisfiable gate does not get satisfied honestly — it gets satisfied by
+// renaming a file until it hits a keyword, or by claiming the behaviour-free
+// exemption for a change that is not behaviour-free. Both launder a guess into a
+// green check. Same defect family as the Route Mount Evidence Gate (VTID-03696):
+// the rule keyed off a proxy for the thing it meant to check.
 const FLOW_TEST_RE =
-  /^services\/gateway\/test\/.*(conversation|narrate|guided|journey|greeting|wake|continuity|screen|opening|next-best|decide|instruction|session|nba|recency|temporal|diary|match|intent|index|capability|tool).*\.(test|spec)\.(ts|tsx)$/i;
+  /^services\/gateway\/test\/.*(conversation|narrate|guided|journey|greeting|wake|continuity|screen|opening|next-best|decide|instruction|session|nba|recency|temporal|diary|match|intent|index|capability|tool|orb-live).*\.(test|spec)\.(ts|tsx)$/i;
 
 const TEST_OR_DTS_RE = /\.(test|spec)\.(ts|tsx)$|\.d\.ts$/;
 const EXEMPT_RE = /flow-test-exempt/;

@@ -1,0 +1,59 @@
+# VTID-03682 — commands run, 2026-08-19
+
+## 1. The defect, located
+
+$ grep -n "resolveNovaSonicVoice" services/gateway/src/routes/orb-live.ts
+  # orb-live.ts:7773 -> resolveNovaSonicVoice({ language, persona }) ?? 'tina'
+
+$ sed -n '29,47p' services/gateway/src/orb/live/voice/nova-sonic-voice.ts
+  # NOVA_VOICES has en, de, fr, es, pt only.
+  # SUPPORTED_LIVE_LANGUAGES (VTID-03681) admits ten.
+  # => ru, pl, sr, ar, zh all resolve null -> all served `tina` (German), silently.
+
+## 2. Production measurement (read-only, project inmkhvwdcuyhnxkgfvsb)
+
+  Q1  languages actually running live sessions, 7 days
+  Q2  join each ru/pl/sr session to its own provider events
+  Full queries + results: outputs/prod-telemetry.txt
+
+  Key result: ru/sr/pl are real traffic on nova_sonic, and the start event
+  records Gemini-lineage voice ids (Gacrux / Vindemiatrix / Despina) that Nova
+  cannot speak — telemetry reporting a voice that was never used.
+
+## 3. Test suite
+
+$ cd services/gateway
+$ npx jest test/orb/live/voice/nova-sonic-voice-fallback.test.ts
+  Tests: 7 passed, 7 total
+
+## 4. Mutation verification — four seams, each broken independently
+
+  M1 fallback flag forced false ................ 1 failed, 6 passed
+  M2 dedupe latch removed ...................... 2 failed, 5 passed
+  M3 locale normalisation removed .............. 1 failed, 6 passed
+  M4 call site reverted to bare ?? 'tina' ...... 1 failed, 6 passed
+  restored ..................................... 7 passed
+
+  Full transcript: outputs/mutation.txt
+
+## 5. Typecheck + full suite
+
+$ npx tsc --noEmit
+  (clean, exit 0)
+
+$ npx jest
+  Test Suites: 1 skipped, 672 passed, 672 of 673 total
+  Tests:       29 skipped, 6 todo, 12928 passed, 12963 total
+  Snapshots:   44 passed, 44 total
+
+## 6. Validator gates replayed locally before pushing
+
+  # exit 40/41 — acceptance mapping (this is what failed on VTID-03681's first push)
+$ grep -qE '^AC-' docs/validation/VTID-03682/acceptance.md
+  gate40a PASS
+$ python3 <acceptance-mapping-gate replayed from VALIDATOR-CHECK.yml>
+  gate40b PASS (5 ACs mapped)
+
+  # exit 22 — path ownership, profile gateway_backend
+  # allowlist: services/gateway/{src,dist,test,openapi}/ + docs/validation/
+  # this diff touches only src/, test/ and docs/validation/ -> clean

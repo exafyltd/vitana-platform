@@ -52,7 +52,23 @@ export const NOVA_SONIC_REGION = 'eu-north-1' as const;
  * failed Nova session back to Vertex, so the worst case is the current
  * behaviour and the only new exposure is degraded rather than absent audio.
  */
-export const NOVA_SONIC_SUPPORTED_LANGUAGES = ['en', 'de', 'fr', 'es', 'pt'] as const;
+// VTID-03704 — `pt` REMOVED. It was added on the strength of Bedrock accepting
+// `carolina`/`leo` as voiceIds, and the note directly above says so in as many
+// words: "NOT verified: end-to-end Portuguese generation". Accepting a voice id
+// is not generating Portuguese — the same distinction that made 22 Bedrock
+// profiles report ACTIVE while 3 invoked (§2b).
+//
+// A real production session settled it: a `pt` user was answered in ENGLISH
+// (traced 2026-08-23, session live-…15:27:05, `lang=pt`). So Portuguese is not
+// a language Nova serves here, and per the standing direction — anything Nova
+// does not cover goes to Polly — it now falls through to the cascade, which
+// covers `pt` via Transcribe `pt-BR` + Polly `Camila` (pt-BR, matching this
+// app's Brazilian catalog).
+//
+// `sr` is deliberately NOT in this list and deliberately NOT cascaded: Polly
+// has no Serbian voice in any engine, so Serbian stays on Nova with a
+// substituted voice rather than being routed somewhere that would also fail.
+export const NOVA_SONIC_SUPPORTED_LANGUAGES = ['en', 'de', 'fr', 'es'] as const;
 export type NovaSonicLanguage = (typeof NOVA_SONIC_SUPPORTED_LANGUAGES)[number];
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;

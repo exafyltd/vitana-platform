@@ -17,7 +17,7 @@
 (function (window) {
   'use strict';
 
-  var _WIDGET_VERSION = '2026-07-31-thinking-tone-fix';
+  var _WIDGET_VERSION = '2026-08-24-caption-fontsize-19px';
   console.log('[VTOrb] Widget version: ' + _WIDGET_VERSION);
 
   // BOOTSTRAP-NOVA-SONIC-VOICE: user live-test feedback 2026-07-28 — the
@@ -44,6 +44,20 @@
     return (_cfg.lang && _cfg.lang.startsWith('de'))
       ? _AUDIO_PLAYBACK_RATE_DE
       : _AUDIO_PLAYBACK_RATE;
+  }
+
+  // VTID-03711: every PCM chunk's mime carries its ACTUAL encoding rate
+  // (server-side: 'audio/pcm;rate=24000' for Nova, 'audio/pcm;rate=16000'
+  // for Polly — greeting bridge, guided-topic narration, and the cascade
+  // voice client all set this correctly). The playback path used to ignore
+  // it entirely and hardcode 24000 into createBuffer() regardless, so any
+  // 16kHz Polly audio decoded as if it were 24kHz played back at 1.5x
+  // speed/pitch — a "chipmunk" voice. Falls back to 24000 (Nova's rate,
+  // the historical default) only when the mime is missing or unparseable.
+  function _pcmRateFromMime(mime) {
+    var m = /rate=(\d+)/.exec(mime || '');
+    var rate = m ? parseInt(m[1], 10) : NaN;
+    return (rate > 0) ? rate : 24000;
   }
 
   // Prevent double-load
@@ -194,6 +208,13 @@
     playbackCtx: null,
     audioQueue: [],
     audioPlaying: false,
+    // VTID-03706: server-declared per session (see the session_started
+    // handler). Default false ⇒ legacy barge-in, so an older gateway or a
+    // flag-off environment behaves exactly as before.
+    fullDuplex: false,
+    // VTID-03706: start of the current playback burst, for the AEC warm-up
+    // window in the capture handler. 0 ⇒ not currently playing.
+    audioPlayStartedAt: 0,
     scheduledSources: [],
     lastScheduledEnd: 0,
     audioEndGraceTimer: null, // Grace timer to prevent audioPlaying flicker
@@ -481,16 +502,32 @@
       '.vtorb-btn-mic.vtorb-muted {',
       '  background: rgba(239,68,68,0.2); color: #fca5a5;',
       '}',
+      // VTID-03706: under full duplex the mic is genuinely still open while
+      // Vitana speaks. A ring rather than a colour swap, deliberately: the
+      // background/colour are still assigned inline just below (legacy, "no
+      // CSS dependency"), and an inline rule outranks a class — a colour rule
+      // here would silently never apply. A ring also reads as "live" more
+      // directly than a hue change, and needs no !important to win.
+      '.vtorb-btn-mic.vtorb-mic-live {',
+      '  box-shadow: 0 0 0 2px rgba(34,197,94,0.85), 0 0 12px rgba(34,197,94,0.45);',
+      '}',
       '.vtorb-btn-close {',
       '  background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.7);',
       '}',
       '.vtorb-btn-close:hover { background: rgba(239,68,68,0.3); color: #fca5a5; }',
 
       // --- Status text ---
+      // BOOTSTRAP-ORB-CAPTION-I18N: bumped 14px->17px (min-height 20px->24px
+      // to match) for legibility — there's a lot of empty space around the
+      // orb on mobile. Deliberately NOT overridden inside the @media block
+      // below: the inline cssText set once in _renderOverlay() has higher
+      // specificity than any stylesheet rule, including a media-scoped one,
+      // and is never updated afterward, so a mobile-only override here would
+      // silently never apply. One shared value covers mobile and desktop.
       '.vtorb-status {',
       '  margin-top: 20px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;',
-      '  font-size: 14px; color: rgba(255,255,255,0.6); text-align: center;',
-      '  min-height: 20px; transition: opacity 0.3s;',
+      '  font-size: 19px; color: rgba(255,255,255,0.6); text-align: center;',
+      '  min-height: 26px; transition: opacity 0.3s;',
       '}',
       '.vtorb-status.vtorb-status-listening { color: rgba(59,130,246,0.8); }',
       '.vtorb-status.vtorb-status-thinking { color: rgba(139,92,246,0.8); }',
@@ -698,9 +735,8 @@
   function _announceAudioBlocked() {
     if (_s._audioBlocked) return;
     _s._audioBlocked = true;
-    var de = _cfg.lang && _cfg.lang.startsWith('de');
     _setOrbState('paused');
-    _setStatus(de ? 'Tippe, um Vitana zu hören' : 'Tap anywhere to hear Vitana');
+    _setStatus(_caption('tapToHear'));
     _updateUI();
     var onTap = function () {
       _unlockPlaybackCtxFromGesture();
@@ -733,11 +769,10 @@
     var st = (_s.voiceState || 'LISTENING').toLowerCase();
     if (st === 'muted') return; // mute owns the display
     _setOrbState(st === 'speaking' ? 'speaking' : 'listening');
-    var de = _cfg.lang && _cfg.lang.startsWith('de');
     if (st === 'speaking') {
-      _setStatus(de ? 'Vitana spricht...' : 'Vitana speaking...');
+      _setStatus(_caption('speaking'));
     } else {
-      _setStatus(de ? 'Ich höre zu...' : 'Listening...');
+      _setStatus(_caption('listening'));
     }
     _updateUI();
   }
@@ -761,43 +796,246 @@
   // is worse than silence, so missing-clip means tone + visible status only.
   // ============================================================
 
+  // BOOTSTRAP-ORB-CAPTION-I18N: the visible .vtorb-status caption used to
+  // only ever localize to German or English (every call site branched on
+  // _cfg.lang.startsWith('de') ? de : en), even though _cfg.lang legitimately
+  // carries any of the gateway's supported locales (services/gateway/src/
+  // i18n/catalog.ts GATEWAY_LOCALES) and the session's actual spoken voice
+  // already speaks in that real language. This dictionary + resolver mirror
+  // that same 10-locale set so the caption layer never again silently
+  // collapses to English.
+  var _CAPTION_LOCALES = ['de', 'en', 'es', 'sr', 'fr', 'pt', 'ru', 'pl', 'zh', 'ar'];
+
+  // Resolves _cfg.lang (may be a full tag like "de-DE" or "pt-BR") to one of
+  // the 10 supported caption locales via prefix match before the first '-',
+  // falling back to 'en'. Deliberately separate from _pickLang() below,
+  // which stays de/en-only — see the comment on _pickLang() for why the two
+  // must not be merged.
+  function _resolveCaptionLocale() {
+    var raw = ((_cfg.lang || 'en') + '').toLowerCase().split('-')[0];
+    for (var i = 0; i < _CAPTION_LOCALES.length; i++) {
+      if (_CAPTION_LOCALES[i] === raw) return raw;
+    }
+    return 'en';
+  }
+
+  // Picks the current-locale value out of a {en, de, es, ...} phrase object,
+  // falling back to English if a translation is somehow missing.
+  function _loc(entry) {
+    if (!entry) return '';
+    var lc = _resolveCaptionLocale();
+    return entry[lc] || entry.en || '';
+  }
+
+  // Semantic-key caption dictionary — one row per UI status phrase shown in
+  // .vtorb-status. Read via _caption(key) below.
+  var _CAPTIONS = {
+    speaking: {
+      en: 'Vitana speaking...', de: 'Vitana spricht...', es: 'Vitana está hablando…',
+      sr: 'Vitana priča…', fr: 'Vitana parle…', pt: 'A Vitana está a falar…',
+      ru: 'Витана говорит…', pl: 'Vitana mówi…', zh: 'Vitana 正在说话…', ar: 'فيتانا تتحدث...'
+    },
+    listening: {
+      en: 'Listening...', de: 'Ich höre zu...', es: 'Escuchando…',
+      sr: 'Slušam…', fr: "J'écoute…", pt: 'A ouvir…',
+      ru: 'Слушаю…', pl: 'Słucham…', zh: '正在聆听…', ar: 'أستمع...'
+    },
+    connecting: {
+      en: 'Connecting...', de: 'Verbinden...', es: 'Conectando…',
+      sr: 'Povezujem se…', fr: 'Connexion…', pt: 'A ligar…',
+      ru: 'Подключение…', pl: 'Łączenie…', zh: '正在连接…', ar: 'جارٍ الاتصال...'
+    },
+    reconnecting: {
+      en: 'Reconnecting...', de: 'Verbindung wird wiederhergestellt...', es: 'Reconectando…',
+      sr: 'Ponovo se povezujem…', fr: 'Reconnexion…', pt: 'A restabelecer a ligação…',
+      ru: 'Переподключение…', pl: 'Ponowne łączenie…', zh: '正在重新连接…', ar: 'إعادة الاتصال...'
+    },
+    muted: {
+      en: 'Muted', de: 'Stummgeschaltet', es: 'Silenciado',
+      sr: 'Isključen zvuk', fr: 'Muet', pt: 'Silenciado',
+      ru: 'Микрофон выключен', pl: 'Wyciszono', zh: '已静音', ar: 'مكتوم الصوت'
+    },
+    tapToHear: {
+      en: 'Tap anywhere to hear Vitana', de: 'Tippe, um Vitana zu hören',
+      es: 'Toca en cualquier lugar para escuchar a Vitana', sr: 'Dodirni bilo gde da čuješ Vitanu',
+      fr: "Touche n'importe où pour entendre Vitana", pt: 'Toca em qualquer lugar para ouvir a Vitana',
+      ru: 'Коснись экрана, чтобы услышать Витану', pl: 'Dotknij gdziekolwiek, aby usłyszeć Vitanę',
+      zh: '点击任意位置即可听到 Vitana 的声音', ar: 'اضغط في أي مكان لسماع فيتانا'
+    },
+    idleNudge: {
+      en: "I'm still listening. Tell me what you'd like to do!",
+      de: 'Ich höre noch zu. Sag mir, was ich tun soll!',
+      es: '¡Sigo escuchando. Dime qué te gustaría hacer!',
+      sr: 'Još uvek slušam. Reci mi šta želiš da uradim!',
+      fr: 'Je t’écoute toujours. Dis-moi ce que tu veux faire !',
+      pt: 'Continuo a ouvir. Diz-me o que gostarias de fazer!',
+      ru: 'Я всё ещё слушаю. Скажи, что бы ты хотел сделать!',
+      pl: 'Wciąż słucham. Powiedz mi, co chciałbyś zrobić!',
+      zh: '我还在听哦，告诉我你想做什么吧！',
+      ar: 'ما زلت أستمع. أخبرني بما تريد فعله!'
+    },
+    connectFailedRetrying: {
+      en: "Couldn't connect. Retrying...", de: 'Verbindung fehlgeschlagen. Neuer Versuch...',
+      es: 'No se pudo conectar. Reintentando…', sr: 'Povezivanje nije uspelo. Pokušavam ponovo…',
+      fr: 'Échec de la connexion. Nouvelle tentative…', pt: 'Não foi possível ligar. A tentar de novo…',
+      ru: 'Не удалось подключиться. Повторная попытка…', pl: 'Nie udało się połączyć. Ponawiam próbę…',
+      zh: '连接失败，正在重试…', ar: 'تعذر الاتصال. جارٍ إعادة المحاولة...'
+    },
+    offline: {
+      en: 'You seem to be offline. Please check your internet connection.',
+      de: 'Du bist offline. Bitte prüfe deine Internetverbindung.',
+      es: 'Parece que estás sin conexión. Comprueba tu conexión a internet.',
+      sr: 'Izgleda da si offline. Proveri internet konekciju.',
+      fr: 'Il semble que tu sois hors ligne. Vérifie ta connexion internet.',
+      pt: 'Parece que estás offline. Verifica a tua ligação à internet.',
+      ru: 'Похоже, ты офлайн. Проверь подключение к интернету.',
+      pl: 'Wygląda na to, że jesteś offline. Sprawdź połączenie z internetem.',
+      zh: '你似乎已离线，请检查网络连接。',
+      ar: 'يبدو أنك غير متصل بالإنترنت. يرجى التحقق من اتصالك بالإنترنت.'
+    },
+    sessionEndedBackground: {
+      en: 'Session ended — app was in the background.',
+      de: 'Sitzung beendet — App war im Hintergrund.',
+      es: 'Sesión finalizada: la app estaba en segundo plano.',
+      sr: 'Sesija je završena — aplikacija je bila u pozadini.',
+      fr: "Session terminée — l'appli était en arrière-plan.",
+      pt: 'Sessão terminada — a app estava em segundo plano.',
+      ru: 'Сессия завершена — приложение было в фоне.',
+      pl: 'Sesja zakończona — aplikacja działała w tle.',
+      zh: '会话已结束 — 应用在后台运行。',
+      ar: 'انتهت الجلسة — كان التطبيق يعمل في الخلفية.'
+    },
+    tapToReconnect: {
+      en: 'Tap the orb to reconnect', de: 'Tippen zum Neu verbinden',
+      es: 'Toca la esfera para reconectar', sr: 'Dodirni orb da se ponovo povežeš',
+      fr: "Touche l'orbe pour te reconnecter", pt: 'Toca na esfera para reconectar',
+      ru: 'Коснись сферы, чтобы переподключиться', pl: 'Dotknij kuli, aby połączyć się ponownie',
+      zh: '点击光球即可重新连接', ar: 'اضغط على الكرة لإعادة الاتصال'
+    },
+    textModeActive: {
+      en: 'Text mode active', de: 'Textmodus aktiv', es: 'Modo texto activo',
+      sr: 'Tekstualni režim aktivan', fr: 'Mode texte activé', pt: 'Modo de texto ativo',
+      ru: 'Активен текстовый режим', pl: 'Tryb tekstowy aktywny', zh: '文本模式已启用', ar: 'وضع النص مفعّل'
+    },
+    registerFree: {
+      en: 'Register for free to continue the conversation!',
+      de: 'Registriere dich kostenlos, um das Gespräch fortzusetzen!',
+      es: '¡Regístrate gratis para seguir la conversación!',
+      sr: 'Registruj se besplatno da nastaviš razgovor!',
+      fr: 'Inscris-toi gratuitement pour continuer la conversation !',
+      pt: 'Regista-te gratuitamente para continuar a conversa!',
+      ru: 'Зарегистрируйся бесплатно, чтобы продолжить разговор!',
+      pl: 'Zarejestruj się za darmo, aby kontynuować rozmowę!',
+      zh: '免费注册即可继续对话！',
+      ar: 'سجّل مجانًا لمتابعة المحادثة!'
+    }
+  };
+  function _caption(key) { return _loc(_CAPTIONS[key]); }
+
   // Display-only labels for the visible status text under the orb. The audio
-  // is rendered separately from these MP3 clips, but the wording matches.
+  // is rendered separately from these MP3 clips, but the wording matches —
+  // ONLY for en/de, since _ALERT_CLIPS below has no other-locale MP3s (see
+  // _pickLang()'s comment). The label text itself is read via
+  // _resolveCaptionLocale() (all 10 locales); the MP3 clip id stays en/de.
   var _DISCONNECT_LABELS = {
     mic: {
       en: "One moment, I can't hear your microphone.",
-      de: "Einen Moment, Mikrofon-Problem."
+      de: "Einen Moment, Mikrofon-Problem.",
+      es: 'Un momento, no puedo oír tu micrófono.',
+      sr: 'Trenutak, ne čujem tvoj mikrofon.',
+      fr: "Un instant, je n'entends pas ton micro.",
+      pt: 'Um momento, não consigo ouvir o teu microfone.',
+      ru: 'Секунду, я не слышу твой микрофон.',
+      pl: 'Chwilkę, nie słyszę Twojego mikrofonu.',
+      zh: '稍等，我听不到你的麦克风。',
+      ar: 'لحظة، لا أستطيع سماع الميكروفون الخاص بك.'
     },
     network: {
       en: "One moment, we have internet issues.",
-      de: "Einen Moment, Internet-Problem."
+      de: "Einen Moment, Internet-Problem.",
+      es: 'Un momento, tenemos problemas de conexión.',
+      sr: 'Trenutak, imamo problem sa internetom.',
+      fr: 'Un instant, on a un souci de connexion.',
+      pt: 'Um momento, temos problemas de ligação.',
+      ru: 'Секунду, у нас проблемы с интернетом.',
+      pl: 'Chwilkę, mamy problem z internetem.',
+      zh: '稍等，网络出了点问题。',
+      ar: 'لحظة، لدينا مشكلة في الإنترنت.'
     },
     connection: {
       en: "Hold on, I'm reconnecting. Please wait.",
-      de: "Einen Moment, ich verbinde mich neu."
+      de: "Einen Moment, ich verbinde mich neu.",
+      es: 'Espera, me estoy reconectando.',
+      sr: 'Sačekaj, ponovo se povezujem.',
+      fr: 'Patiente, je me reconnecte.',
+      pt: 'Aguarda, estou a reconectar-me.',
+      ru: 'Подожди, я переподключаюсь.',
+      pl: 'Poczekaj, łączę się ponownie.',
+      zh: '请稍等，我正在重新连接。',
+      ar: 'لحظة من فضلك، أنا أعيد الاتصال.'
     },
     offline: {
       en: "You're offline. Please wait, don't talk yet.",
-      de: "Du bist offline. Bitte warte mit Sprechen."
+      de: "Du bist offline. Bitte warte mit Sprechen.",
+      es: 'Estás sin conexión. Espera, no hables todavía.',
+      sr: 'Nisi na mreži. Sačekaj, još ne pričaj.',
+      fr: 'Tu es hors ligne. Attends, ne parle pas encore.',
+      pt: 'Estás offline. Aguarda, ainda não fales.',
+      ru: 'Ты офлайн. Подожди, пока не говори.',
+      pl: 'Jesteś offline. Poczekaj, jeszcze nie mów.',
+      zh: '你已离线，请稍等，先别说话。',
+      ar: 'أنت غير متصل. من فضلك انتظر ولا تتحدث بعد.'
     }
   };
 
   var _RECOVERY_LABELS = {
     mic: {
       en: "Okay, the microphone is working again. Let's continue.",
-      de: "Okay, das Mikrofon funktioniert wieder. Wir können weitermachen."
+      de: "Okay, das Mikrofon funktioniert wieder. Wir können weitermachen.",
+      es: 'Listo, el micrófono ya funciona de nuevo. Sigamos.',
+      sr: 'Dobro, mikrofon opet radi. Nastavimo.',
+      fr: 'Voilà, le micro refonctionne. On continue.',
+      pt: 'Pronto, o microfone voltou a funcionar. Vamos continuar.',
+      ru: 'Готово, микрофон снова работает. Продолжим.',
+      pl: 'Gotowe, mikrofon znów działa. Kontynuujmy.',
+      zh: '好了，麦克风又能用了，我们继续吧。',
+      ar: 'تمام، الميكروفون يعمل مجددًا. لنكمل.'
     },
     network: {
       en: "Okay, we're back online. I'm listening.",
-      de: "Okay, das Netz ist wieder da. Ich höre zu."
+      de: "Okay, das Netz ist wieder da. Ich höre zu.",
+      es: 'Listo, ya estamos en línea otra vez. Te escucho.',
+      sr: 'Dobro, opet smo na mreži. Slušam te.',
+      fr: 'Voilà, on est de nouveau en ligne. Je t’écoute.',
+      pt: 'Pronto, já estamos online outra vez. Estou a ouvir-te.',
+      ru: 'Готово, мы снова онлайн. Я слушаю.',
+      pl: 'Gotowe, znów jesteśmy online. Słucham Cię.',
+      zh: '好了，我们又上线了，我在听。',
+      ar: 'تمام، نحن متصلون مجددًا. أنا أستمع.'
     },
     offline: {
       en: "Okay, we're back online. I'm listening.",
-      de: "Okay, das Netz ist wieder da. Ich höre zu."
+      de: "Okay, das Netz ist wieder da. Ich höre zu.",
+      es: 'Listo, ya estamos en línea otra vez. Te escucho.',
+      sr: 'Dobro, opet smo na mreži. Slušam te.',
+      fr: 'Voilà, on est de nouveau en ligne. Je t’écoute.',
+      pt: 'Pronto, já estamos online outra vez. Estou a ouvir-te.',
+      ru: 'Готово, мы снова онлайн. Я слушаю.',
+      pl: 'Gotowe, znów jesteśmy online. Słucham Cię.',
+      zh: '好了，我们又上线了，我在听。',
+      ar: 'تمام، نحن متصلون مجددًا. أنا أستمع.'
     },
     connection: {
       en: "Okay, sorry for the interruption. I'm listening.",
-      de: "Okay, entschuldige die Unterbrechung. Ich höre zu."
+      de: "Okay, entschuldige die Unterbrechung. Ich höre zu.",
+      es: 'Listo, disculpa la interrupción. Te escucho.',
+      sr: 'Dobro, izvini zbog prekida. Slušam te.',
+      fr: 'Voilà, désolé pour l’interruption. Je t’écoute.',
+      pt: 'Pronto, desculpa a interrupção. Estou a ouvir-te.',
+      ru: 'Готово, извини за перерыв. Я слушаю.',
+      pl: 'Gotowe, przepraszam za przerwę. Słucham Cię.',
+      zh: '好了，抱歉打断了，我在听。',
+      ar: 'تمام، آسفة على المقاطعة. أنا أستمع.'
     }
   };
 
@@ -813,6 +1051,12 @@
     'recovery-connection-en', 'recovery-connection-de'
   ];
 
+  // _pickLang() is used for EXACTLY ONE thing: selecting which pre-rendered
+  // disconnect/recovery-alert MP3 to play (_ALERT_CLIPS above only has
+  // -en/-de clips). Do NOT use this for caption text — use
+  // _resolveCaptionLocale()/_loc()/_caption() instead, which cover all 10
+  // supported locales. Widening this function itself would silently request
+  // a nonexistent MP3 (e.g. 'disconnect-mic-es.mp3') for 8 of 10 locales.
   function _pickLang() { return (_cfg.lang || 'en').startsWith('de') ? 'de' : 'en'; }
 
   function _alertClipBaseUrl() {
@@ -1028,15 +1272,16 @@
     // Tone first — guaranteed <50ms even if the clip buffer is missing
     _playErrorTone();
 
-    var lang = _pickLang();
+    var captionLang = _resolveCaptionLocale();
+    var clipLang = _pickLang();
     var labelBucket = _DISCONNECT_LABELS[reason] || _DISCONNECT_LABELS.connection;
-    var label = labelBucket[lang] || labelBucket.en;
+    var label = labelBucket[captionLang] || labelBucket.en;
 
     _setOrbState('paused');
     _setStatus(label);
     _updateUI();
 
-    _playAlert('disconnect-' + reason + '-' + lang);
+    _playAlert('disconnect-' + reason + '-' + clipLang);
 
     // VTID-01987: active 5-second health probe replaces the previous 60s
     // setTimeout. Mobile WebViews (Android Appilix, iOS WKWebView) fire
@@ -1100,7 +1345,7 @@
     }
     _s._preDisconnectVoiceState = null;
 
-    var lang = _pickLang();
+    var lang = _resolveCaptionLocale();
     var labelBucket = _RECOVERY_LABELS[reason] || _RECOVERY_LABELS.connection;
     var label = labelBucket[lang] || labelBucket.en;
 
@@ -1117,7 +1362,7 @@
     // "Listening..." so the visual transition is unambiguous; the assistant
     // voice will speak shortly after.
     _playReadyBeep();
-    _setStatus(lang === 'de' ? 'Ich höre zu...' : 'Listening...');
+    _setStatus(_caption('listening'));
   }
 
   // BOOTSTRAP-ORB-MODERN-RECOVERY: full session teardown + fresh start. Used
@@ -1160,9 +1405,8 @@
     // Keep _disconnectActive true so the UI doesn't flash to a usable state
     // before the new session lands; _clearDisconnect on success will undo it.
 
-    var lang = _pickLang();
     _setOrbState('connecting');
-    _setStatus(lang === 'de' ? 'Verbindung wird wiederhergestellt...' : 'Reconnecting...');
+    _setStatus(_caption('reconnecting'));
 
     _sessionStart().then(function () {
       if (_s.active && _s._disconnectActive) _clearDisconnect();
@@ -1298,7 +1542,8 @@
         var floats = new Float32Array(int16.length);
         for (var j = 0; j < int16.length; j++) floats[j] = int16[j] / 32768.0;
 
-        var buf = ctx.createBuffer(1, floats.length, 24000);
+        var pcmRate = _pcmRateFromMime(chunk.mime);
+        var buf = ctx.createBuffer(1, floats.length, pcmRate);
         buf.copyToChannel(floats, 0);
 
         // Snapshot once per chunk so the schedule-gap compensation below
@@ -1355,6 +1600,18 @@
         // just assigned to this chunk's src.playbackRate (chunkRate) —
         // not the global constant — to keep back-to-back chunks gapless.
         _s.lastScheduledEnd += buf.duration / chunkRate;
+        // VTID-03706: stamp the START of each playback burst so the capture
+        // handler can hold the mic gate shut while browser AEC converges on
+        // the newly-started render stream. Only on the false->true edge —
+        // re-stamping on every chunk would slide the warm-up window forward
+        // for the whole turn and make the user permanently uninterruptible.
+        if (!_s.audioPlaying) {
+          _s.audioPlayStartedAt = Date.now();
+          _s.audioPlaying = true;
+          // Repaint on the edge so the mic button switches to its
+          // still-listening colour as Vitana starts talking, not a turn late.
+          if (_s.fullDuplex) _updateUI();
+        }
         _s.audioPlaying = true;
         isFirstChunk = false;
       } catch (e) {
@@ -1744,11 +2001,7 @@
       // handler lying about what was happening.
       //
       // Two fixes, both required: say something true, then actually recover.
-      _setStatus(
-        _cfg.lang.startsWith('de')
-          ? 'Verbindung fehlgeschlagen. Neuer Versuch...'
-          : "Couldn't connect. Retrying...",
-      );
+      _setStatus(_caption('connectFailedRetrying'));
       _updateUI();
 
       // Hand to the existing recovery loop — it owns the retry budget, the
@@ -1823,6 +2076,11 @@
           _s.ws = w;
           _s.sessionId = msg.session_id;
           _s.active = true;
+          // VTID-03706: the SERVER decides whether this session runs full
+          // duplex, so client and server can never disagree about whether
+          // frames captured during playback are gated or forwarded. Absent
+          // (older gateway, flag off) ⇒ falsy ⇒ legacy barge-in, unchanged.
+          _s.fullDuplex = msg.full_duplex === true;
           _signalAudioReady();
           if (msg.conversation_id) _s.conversationId = msg.conversation_id;
           _s._preDisconnectStage = null;
@@ -1991,14 +2249,14 @@
         _setOrbState('thinking');
         _s.voiceState = 'THINKING';
         var readyMsg = _buildThinkingQueue()[0];
-        _setStatus(_cfg.lang.startsWith('de') ? readyMsg.de : readyMsg.en);
+        _setStatus(_loc(readyMsg));
         // Stuck guard: 15s timeout
         clearTimeout(_s.stuckGuardTimer);
         _s.stuckGuardTimer = setTimeout(function () {
           if (!_s.greetingAudioReceived && _s.active) {
             _setOrbState('listening');
             _s.voiceState = 'LISTENING';
-            _setStatus(_cfg.lang.startsWith('de') ? 'Ich höre zu...' : 'Listening...');
+            _setStatus(_caption('listening'));
             _updateUI();
           }
         }, 15000);
@@ -2066,7 +2324,7 @@
           } else if (_s.voiceState !== 'SPEAKING') {
             _setOrbState('speaking');
             _s.voiceState = 'SPEAKING';
-            _setStatus(_cfg.lang.startsWith('de') ? 'Vitana spricht...' : 'Vitana speaking...');
+            _setStatus(_caption('speaking'));
             clearTimeout(_s._listeningIdleTimer); // Cancel idle nudge — model is responding
             _updateUI();
           }
@@ -2127,26 +2385,45 @@
               try { _cfg.onTurnComplete({ was_greeting: !_s.greetingComplete }); }
               catch (e) { /* host callback must never break the voice loop */ }
             }
-            // VTID-03294 (#4): GUIDED auto-close. The teaching turn (turn 1,
-            // greetingComplete still false) has finished playing — close the
-            // overlay so the underlying Topic drawer's next-step buttons are
-            // usable, instead of dropping to listening. Widget-side so it does
-            // not depend on the host wiring. One-shot (cleared here).
-            // VTID-03675: guidedTopic is cleared in the SAME place, now that
-            // _sessionStart no longer one-shot-nulls it — this is the actual
-            // "the guided turn is done, one way or another" point in the
-            // lifecycle (success or a fallback opener both complete a turn
-            // here), so it's also the right point to stop resending
-            // guided_topic_id on any later reconnect.
+            // VTID-03294 (#4) — SUPERSEDED by VTID-03685, do not restore.
+            // This used to close the overlay the instant turn 1 finished
+            // playing, on the theory that turn 1 WAS the whole lesson
+            // (true under the original VTID-03293 design, where the model's
+            // first turn spoke the complete voice_script verbatim). VTID-
+            // 03650/03665 changed turn 1 into a SHORT opener line — the real
+            // teaching moved to the conversational GUIDE-MODE block that
+            // governs turns 2+ (guided-topic-narration-prompt.ts: "Keep it
+            // conversational: short chunks, check understanding, answer
+            // follow-ups") — and nobody updated this auto-close to match.
+            // The result, confirmed live via oasis_events on two consecutive
+            // guided-topic taps (T252 "Dein Plan", T253 "Dein erster
+            // Schritt"): `upstream_closed reason:"user_stop"` at
+            // `turn_count:1`, seconds after the opener's ~1s of audio
+            // finished — THIS auto-close was the client sending that stop.
+            // The multi-paragraph lesson content never had a chance to be
+            // taught; the user's own report named it exactly: "what's
+            // completely missing is reading the session."
+            //
+            // VTID-03675's guidedTopic clear still happens here — the topic
+            // WAS delivered (a candidate won, the opener was spoken), so a
+            // later unrelated reconnect must not resend guided_topic_id —
+            // but the overlay itself now stays open and falls through to
+            // the normal listening transition below, exactly like any other
+            // ORB conversation, so the model's GUIDE-MODE turns can actually
+            // run. Closing the overlay (and revealing the already-open
+            // Topic Explanation drawer underneath) is now the user's own
+            // action, same as ending any other ORB conversation — there is
+            // no reliable signal yet for "the model decided teaching is
+            // done" to auto-trigger it, and guessing at one here would
+            // trade a definite bug for a fragile heuristic.
             if (_s.guidedAutoClose && !_s.greetingComplete) {
               _s.guidedAutoClose = false;
               _s.guidedTopic = null;
-              console.log('[VTOrb] guided teaching turn complete — auto-closing overlay (reveal drawer)');
-              _hide();
-              return;
+              console.log('[VTOrb] guided teaching opener complete — continuing conversation (no auto-close)');
             }
-            // If the host closed the overlay in the callback (guided auto-close),
-            // stop here — don't beep / arm the mic on a torn-down session.
+            // If the overlay was closed some other way while we were waiting
+            // for audio to drain (user pressed X, session torn down), stop
+            // here — don't beep / arm the mic on a torn-down session.
             if (!_s.active || _s._userRequestedClose || !_s.overlayVisible) return;
             // VTID-02035b: play the ready beep BEFORE starting mic capture.
             // On iOS / Appilix WebView, getUserMedia switches the audio
@@ -2178,7 +2455,7 @@
               // beep below would be inaudible anyway — keep the prompt up.
               if (!_s._audioBlocked) {
                 _setOrbState('listening');
-                _setStatus(_cfg.lang.startsWith('de') ? 'Ich höre zu...' : 'Listening...');
+                _setStatus(_caption('listening'));
                 _playReadyBeep();
               }
               _updateUI();
@@ -2206,9 +2483,7 @@
                     _armIdleNudge(15000 - sinceSpeech + 200);
                     return;
                   }
-                  _setStatus(_cfg.lang.startsWith('de')
-                    ? 'Ich höre noch zu. Sag mir, was ich tun soll!'
-                    : "I'm still listening. Tell me what you'd like to do!");
+                  _setStatus(_caption('idleNudge'));
                   _playReadyBeep();
                   _updateUI();
                 }, delay);
@@ -2233,7 +2508,22 @@
         break;
 
       case 'error':
-        _setStatus('Error: ' + (msg.message || 'Unknown'));
+        // VTID-03686: an upstream 'error' on the FIRST connection attempt
+        // (e.g. Nova's nova_validation content filter) is followed by a
+        // silent server-internal retry that usually succeeds within a few
+        // seconds (resendGreetingIfStuckAtZeroTurns) — nothing has been
+        // heard yet, so there is nothing for the user to be "in error"
+        // from. Flashing a raw internal error string here reads as broken
+        // even when the recovery is about to work; a genuinely terminal
+        // failure is reported separately via 'connection_issue'/
+        // 'live_api_disconnected', which _attemptReconnect handles with
+        // its own status text. Once something has actually played
+        // (greetingComplete), a real error is worth surfacing.
+        if (_s.greetingComplete) {
+          _setStatus('Error: ' + (msg.message || 'Unknown'));
+        } else {
+          console.warn('[VTOrb] Upstream error before first audio — suppressing status flash, awaiting server retry: ' + (msg.message || 'Unknown'));
+        }
         break;
 
       case 'connection_alert':
@@ -2290,7 +2580,7 @@
         } else if (_s.voiceState === 'THINKING' && _s._preReconnectVoiceState === 'LISTENING') {
           _setOrbState('listening');
           _s.voiceState = 'LISTENING';
-          _setStatus(_cfg.lang.startsWith('de') ? 'Ich höre zu...' : 'Listening...');
+          _setStatus(_caption('listening'));
           _updateUI();
         }
         _s._preReconnectVoiceState = null;
@@ -2346,9 +2636,7 @@
         } else {
           // VTID-ANON-NUDGE: Turn limit — show registration prompt
           console.log('[VTOrb] Session limit reached — prompting registration');
-          _setStatus(_cfg.lang.startsWith('de')
-            ? 'Registriere dich kostenlos, um das Gespräch fortzusetzen!'
-            : 'Register for free to continue the conversation!');
+          _setStatus(_caption('registerFree'));
           _setOrbState('paused');
           setTimeout(_sessionStop, 8000);
         }
@@ -2424,7 +2712,19 @@
                 _s.lastScheduledEnd = 0;
                 _s.audioPlaying = false;
 
-                _hide();
+                // BOOTSTRAP-ORB-UNREAD-MESSAGES-NAV: a deterministic
+                // greeting-effect navigate (e.g. "you have new messages" ->
+                // open the inbox) can ask the session to stay open instead
+                // of tearing down, so a dictated reply can follow right
+                // away. Without clearing navigationPending here, every
+                // audio chunk from now on would be silently dropped (see
+                // the 'audio'/'audio_out' case above) — the widget would
+                // look alive but never speak again.
+                if (msg.keep_orb_open === true) {
+                  _s.navigationPending = false;
+                } else {
+                  _hide();
+                }
                 if (typeof _cfg.onNavigationRequest === 'function') {
                   try { _cfg.onNavigationRequest(navRoute, navCtx); }
                   catch (e) { console.error('[VTOrb] onNavigationRequest failed:', e); }
@@ -2552,10 +2852,34 @@
     // playback goes into this ring buffer; the moment VAD confirms real
     // speech, the buffer is flushed upstream ahead of the live stream. The
     // user's opening words arrive intact instead of being swallowed.
+    //
+    // VTID-03706 SUPERSEDES the above for full-duplex sessions. The pre-roll
+    // exists only to RECONSTRUCT audio the gate destroyed; when the gate
+    // stops destroying anything there is nothing left to reconstruct. Under
+    // full duplex a frame is emitted for EVERY capture callback — verbatim
+    // above the echo floor, digital silence below it — so the user's opening
+    // syllable reaches Nova in the frame it was spoken, with no confirmation
+    // delay and no replay ordering to get wrong. The legacy path below is
+    // kept byte-for-byte for flag-off sessions and is deleted once full
+    // duplex graduates past staging.
     var preRollFrames = [];
     // 8 frames ≈ 512ms at 1024 samples/16kHz — covers vadConfirm (6 frames
     // ≈ 384ms) plus margin, and bounds memory to ~16KB of Int16 PCM.
     var PRE_ROLL_MAX_FRAMES = 8;
+
+    // VTID-03706: echo-aware noise gate state. MIRRORS the constants in
+    // services/gateway/src/orb/live/duplex/full-duplex-gate.ts (DUPLEX_GATE)
+    // — that module is the source of truth and a parity test fails the build
+    // if these literals drift from it. This file is a plain IIFE served as a
+    // static asset, so it cannot import them.
+    var DUPLEX_OPEN_RMS = 0.05;
+    var DUPLEX_CLOSE_RMS = 0.025;
+    var DUPLEX_HANGOVER_MS = 400;
+    var DUPLEX_AEC_WARMUP_MS = 250;
+    var DUPLEX_BARGE_CONFIRM_FRAMES = 2;
+    var duplexGateOpen = false;
+    var duplexLastVoiceAt = 0;
+    var duplexOpenFrames = 0;
 
     processor.onaudioprocess = function (e) {
       if (!_s.active) return;
@@ -2573,6 +2897,88 @@
       // directly, because scheduledSources can be briefly empty between chunks
       // even though more audio is coming. The grace timer covers these gaps.
       var modelPlaying = _s.audioPlaying;
+
+      // ---- VTID-03706: full-duplex path — the mic never closes ----------
+      // Every callback emits a frame. What the gate decides is CONTENT, not
+      // whether to transmit: real audio when the user is speaking, digital
+      // silence when only AEC residue is present. Nova therefore always has
+      // a continuous, correctly-timed stream to run its own turn detection
+      // (and its own barge-in) against, which the old drop-everything gate
+      // made structurally impossible.
+      if (modelPlaying && _s.fullDuplex) {
+        var nowMs = Date.now();
+        var startedAt = _s.audioPlayStartedAt || 0;
+
+        if (startedAt > 0 && (nowMs - startedAt) < DUPLEX_AEC_WARMUP_MS) {
+          // AEC has not converged on this playback burst yet. Residue here is
+          // not evidence of speech; treating it as such is exactly the
+          // self-interrupt loop the old 0.015 threshold produced. Hold shut
+          // and do NOT accumulate confirmation — but still send a frame, so
+          // the upstream stream stays continuous.
+          duplexGateOpen = false;
+          duplexOpenFrames = 0;
+          _sendAudio(_silentFrame(input.length));
+          return;
+        }
+
+        if (duplexGateOpen) {
+          // Sustain on the LOW threshold, close only after the hangover.
+          // A single threshold chatters across the amplitude dips inside a
+          // word and shreds the utterance Nova is trying to transcribe.
+          if (rms > DUPLEX_CLOSE_RMS) {
+            duplexLastVoiceAt = nowMs;
+          } else if (nowMs - duplexLastVoiceAt >= DUPLEX_HANGOVER_MS) {
+            duplexGateOpen = false;
+          }
+        } else if (rms > DUPLEX_OPEN_RMS) {
+          duplexGateOpen = true;
+          duplexLastVoiceAt = nowMs;
+        }
+
+        if (!duplexGateOpen) {
+          duplexOpenFrames = 0;
+          _sendAudio(_silentFrame(input.length));
+          return;
+        }
+
+        // Gate is open: this is real speech. Forward it verbatim FIRST, so
+        // the audio reaches Nova from this very frame regardless of what the
+        // local confirmation below decides.
+        //
+        // Confirmation counts VOICED frames only. The gate stays open through
+        // the hangover with no energy in it; counting those would let a
+        // single loud transient (cough, door slam) reach the threshold purely
+        // by the hangover ticking over in silence. Hangover frames neither
+        // add nor reset, so a mid-word dip does not restart confirmation.
+        // MIRRORS evaluateDuplexGateFrame() in full-duplex-gate.ts.
+        if (rms > DUPLEX_CLOSE_RMS) duplexOpenFrames++;
+        _s._lastSpeechAt = nowMs;
+        _sendAudio(_encodeFrame(input));
+
+        // Local playback stop is a LATENCY optimization, not the authority.
+        // Nova's own INTERRUPTED event is what actually yields the turn; this
+        // just makes the interruption FEEL instant (~128ms) instead of
+        // waiting for the upstream round trip. Two frames rejects a
+        // single-frame cough without adding meaningful delay.
+        if (!vadInterruptSent && duplexOpenFrames >= DUPLEX_BARGE_CONFIRM_FRAMES) {
+          vadInterruptSent = true;
+          _s.audioQueue = [];
+          for (var dq = 0; dq < _s.scheduledSources.length; dq++) {
+            try { _s.scheduledSources[dq].stop(); } catch (ex) { /* ok */ }
+          }
+          _s.scheduledSources = [];
+          _s.lastScheduledEnd = 0;
+          _s.audioPlaying = false;
+          _s.audioPlayStartedAt = 0;
+          clearTimeout(_s.audioEndGraceTimer);
+          _s.interruptPending = true;
+          _sendInterrupt();
+          _updateUI();
+        }
+        return;
+      }
+      // ---- end full-duplex path ----------------------------------------
+
       if (modelPlaying) {
         // BOOTSTRAP-ORB-BARGEIN: capture, don't discard. Encoding happens here
         // so the flush below can replay the exact frames the user spoke.
@@ -2616,6 +3022,12 @@
         vadFrames = 0;
         vadInterruptSent = false;
         preRollFrames = [];
+        // VTID-03706: reset the duplex gate between playback bursts, so the
+        // next turn starts closed and re-earns its open rather than
+        // inheriting the tail of the previous utterance.
+        duplexGateOpen = false;
+        duplexOpenFrames = 0;
+        duplexLastVoiceAt = 0;
         // Record real user speech so the listening-idle nudge timer can
         // defer itself instead of beeping over the user mid-sentence.
         if (rms > vadThreshold) {
@@ -2627,14 +3039,20 @@
       // BOOTSTRAP-ORB-LATENCY-PHASE1: 500→200ms — every ms here is dead air
       // where the user's speech is silently dropped; AEC + the playback-end
       // echo gate below carry the echo protection.
-      if (_s.turnCompleteAt > 0 && (Date.now() - _s.turnCompleteAt) < 200) return;
+      //
+      // VTID-03706: both cooldowns are skipped under full duplex. They are
+      // blanket time windows that discard whatever the user says in them,
+      // and their entire job — keeping draining playback echo out of the
+      // upstream — is now done per-frame by the gate above, which can tell
+      // echo and speech apart instead of muting both.
+      if (!_s.fullDuplex && _s.turnCompleteAt > 0 && (Date.now() - _s.turnCompleteAt) < 200) return;
 
       // Client-side echo cooldown (200ms) — after audio playback actually ends.
       // The server's POST_TURN_COOLDOWN_MS starts when Vertex sends turn_complete,
       // but the client may still be playing buffered audio 1-3s later. This cooldown
       // starts when the LAST audio source actually finishes playing on the client.
       // BOOTSTRAP-ORB-LATENCY-PHASE1: 500→200ms (see above).
-      if (_s.lastAudioEndTime > 0 && (Date.now() - _s.lastAudioEndTime) < 200) return;
+      if (!_s.fullDuplex && _s.lastAudioEndTime > 0 && (Date.now() - _s.lastAudioEndTime) < 200) return;
 
       _sendAudio(_encodeFrame(input));
     };
@@ -2654,6 +3072,29 @@
    * stable copy — `e.inputBuffer` is reused by the Web Audio graph, so
    * retaining the raw Float32Array would alias into the next callback's data.
    */
+  /**
+   * VTID-03706: a base64 Int16 PCM frame of pure silence, same length as a
+   * real capture frame.
+   *
+   * This is what makes "the mic is always open" safe. During playback,
+   * sub-threshold frames are replaced by this rather than dropped: Nova keeps
+   * receiving a continuous, correctly-timed stream (so its turn detection and
+   * native barge-in stay live) while the AEC residue that would make it
+   * interrupt ITSELF never reaches it.
+   *
+   * Cached by length — frame size is fixed for a session, so this allocates
+   * and base64-encodes once rather than on every 64ms callback.
+   */
+  var _silentFrameCache = {};
+  function _silentFrame(sampleCount) {
+    var hit = _silentFrameCache[sampleCount];
+    if (hit) return hit;
+    var u8 = new Uint8Array(sampleCount * 2); // Int16 zeros === digital silence
+    var b64 = btoa(String.fromCharCode.apply(null, u8));
+    _silentFrameCache[sampleCount] = b64;
+    return b64;
+  }
+
   function _encodeFrame(input) {
     var pcm = new Int16Array(input.length);
     for (var n = 0; n < input.length; n++) {
@@ -2884,31 +3325,31 @@
   // remember..."). All lines now live in one pool, freshly shuffled per turn, with a
   // guard against repeating the previous turn's opening line back-to-back.
   var _THINKING_QUICK = [
-    { en: 'Let me think…', de: 'Lass mich kurz überlegen…' },
-    { en: 'Let me take a look…', de: 'Lass mich das kurz prüfen…' },
-    { en: 'One sec…', de: 'Eine Sekunde…' },
-    { en: 'Alright, hang on…', de: 'Alles klar, einen Moment…' },
-    { en: 'Let’s see…', de: 'Mal sehen…' },
-    { en: 'Give me a beat…', de: 'Kurz einen Moment…' }
+    { en: 'Let me think…', de: 'Lass mich kurz überlegen…', es: 'Déjame pensar…', sr: 'Daj da razmislim…', fr: 'Laisse-moi réfléchir…', pt: 'Deixa-me pensar…', ru: 'Дай подумать…', pl: 'Daj mi się zastanowić…', zh: '让我想想…', ar: 'دعني أفكر…' },
+    { en: 'Let me take a look…', de: 'Lass mich das kurz prüfen…', es: 'Déjame echar un vistazo…', sr: 'Daj da pogledam…', fr: 'Laisse-moi jeter un œil…', pt: 'Deixa-me dar uma vista de olhos…', ru: 'Дай взгляну…', pl: 'Daj mi rzucić okiem…', zh: '让我看看…', ar: 'دعني ألقي نظرة…' },
+    { en: 'One sec…', de: 'Eine Sekunde…', es: 'Un segundo…', sr: 'Sekundu…', fr: 'Une seconde…', pt: 'Um segundo…', ru: 'Секунду…', pl: 'Sekundkę…', zh: '一秒钟…', ar: 'لحظة واحدة…' },
+    { en: 'Alright, hang on…', de: 'Alles klar, einen Moment…', es: 'Bien, espera un momento…', sr: 'Dobro, sačekaj malo…', fr: "D'accord, attends…", pt: 'Ok, espera aí…', ru: 'Хорошо, подожди…', pl: 'Dobrze, chwileczkę…', zh: '好的，稍等一下…', ar: 'حسنًا، لحظة من فضلك…' },
+    { en: 'Let’s see…', de: 'Mal sehen…', es: 'A ver…', sr: 'Da vidimo…', fr: 'Voyons voir…', pt: 'Vamos ver…', ru: 'Посмотрим…', pl: 'Zobaczmy…', zh: '让我看看情况…', ar: 'لنرَ…' },
+    { en: 'Give me a beat…', de: 'Kurz einen Moment…', es: 'Dame un momento…', sr: 'Daj mi trenutak…', fr: 'Laisse-moi un instant…', pt: 'Dá-me só um instante…', ru: 'Дай мне момент…', pl: 'Daj mi chwilę…', zh: '给我一点时间…', ar: 'امنحني لحظة…' }
   ];
   var _THINKING_PRIMARY = [
-    { en: 'Checking what I remember…', de: 'Ich schau nach, was ich weiß…' },
-    { en: 'Connecting the dots…', de: 'Ich verbinde die Punkte…' },
-    { en: 'Putting it all together…', de: 'Ich füg alles zusammen…' },
-    { en: 'Just making sure I get it right…', de: 'Ich will sichergehen, dass es passt…' },
-    { en: 'Almost ready ✨', de: 'Gleich fertig ✨' },
-    { en: 'Still with you…', de: 'Bin noch dabei…' },
-    { en: 'Got it — here we go!', de: 'Alles klar, es geht los!' }
+    { en: 'Checking what I remember…', de: 'Ich schau nach, was ich weiß…', es: 'Reviso lo que recuerdo…', sr: 'Proveravam šta se sećam…', fr: 'Je vérifie ce dont je me souviens…', pt: 'Estou a verificar o que sei…', ru: 'Проверяю, что я помню…', pl: 'Sprawdzam, co pamiętam…', zh: '我在回想一下…', ar: 'أتحقق مما أتذكره…' },
+    { en: 'Connecting the dots…', de: 'Ich verbinde die Punkte…', es: 'Uniendo las piezas…', sr: 'Povezujem stvari…', fr: 'Je fais le lien…', pt: 'A juntar as peças…', ru: 'Соединяю всё вместе…', pl: 'Łączę fakty…', zh: '我在把线索串起来…', ar: 'أربط الأمور ببعضها…' },
+    { en: 'Putting it all together…', de: 'Ich füg alles zusammen…', es: 'Poniendo todo junto…', sr: 'Slažem sve zajedno…', fr: 'Je mets tout en ordre…', pt: 'A juntar tudo…', ru: 'Собираю всё воедино…', pl: 'Składam to wszystko w całość…', zh: '我在整理一下…', ar: 'أجمّع كل شيء معًا…' },
+    { en: 'Just making sure I get it right…', de: 'Ich will sichergehen, dass es passt…', es: 'Solo quiero asegurarme de entenderlo bien…', sr: 'Samo hoću da budem siguran da je tačno…', fr: 'Je veux juste être sûr de bien comprendre…', pt: 'Só quero ter a certeza de que percebi bem…', ru: 'Просто хочу удостовериться, что всё правильно…', pl: 'Chcę się tylko upewnić, że dobrze rozumiem…', zh: '我想确认一下有没有理解对…', ar: 'أريد فقط التأكد من أنني فهمت الأمر بشكل صحيح…' },
+    { en: 'Almost ready ✨', de: 'Gleich fertig ✨', es: 'Casi listo ✨', sr: 'Skoro gotovo ✨', fr: 'Presque prêt ✨', pt: 'Quase pronto ✨', ru: 'Почти готово ✨', pl: 'Prawie gotowe ✨', zh: '马上就好 ✨', ar: 'على وشك الانتهاء ✨' },
+    { en: 'Still with you…', de: 'Bin noch dabei…', es: 'Sigo aquí…', sr: 'Još uvek sam tu…', fr: 'Toujours avec toi…', pt: 'Continuo aqui contigo…', ru: 'Я всё ещё здесь…', pl: 'Wciąż tu jestem…', zh: '我还在这里…', ar: 'ما زلت معك…' },
+    { en: 'Got it — here we go!', de: 'Alles klar, es geht los!', es: 'Listo, ¡allá vamos!', sr: 'Evo ga, krećemo!', fr: "C'est bon, on y va !", pt: 'Pronto, cá vamos nós!', ru: 'Готово — поехали!', pl: 'Mam to — zaczynamy!', zh: '好了，我们开始吧！', ar: 'تمام، ها نحن ننطلق!' }
   ];
   var _THINKING_ALTERNATES = [
-    { en: 'On it…', de: 'Bin dran…' },
-    { en: 'Give me a tiny moment…', de: 'Gib mir einen kleinen Moment…' },
-    { en: 'Let me look into that…', de: 'Ich schau mir das an…' },
-    { en: 'Doing a little detective work…', de: 'Ich spiel kurz Detektiv…' },
-    { en: 'Looking in the right places…', de: 'Ich schau an den richtigen Stellen…' },
-    { en: 'Still working my magic…', de: 'Ich zaubere noch…' },
-    { en: 'One more moment…', de: 'Noch ein Moment…' },
-    { en: 'Nearly there…', de: 'Fast geschafft…' }
+    { en: 'On it…', de: 'Bin dran…', es: 'Voy con eso…', sr: 'Radim na tome…', fr: "Je m'en occupe…", pt: 'Estou nisso…', ru: 'Уже занимаюсь…', pl: 'Już się tym zajmuję…', zh: '我在处理了…', ar: 'أنا أعمل على ذلك…' },
+    { en: 'Give me a tiny moment…', de: 'Gib mir einen kleinen Moment…', es: 'Dame un momentito…', sr: 'Daj mi mali trenutak…', fr: 'Laisse-moi un tout petit instant…', pt: 'Dá-me só um bocadinho…', ru: 'Дай мне буквально секунду…', pl: 'Daj mi malutką chwilkę…', zh: '再给我一小会儿…', ar: 'أمهلني لحظة صغيرة…' },
+    { en: 'Let me look into that…', de: 'Ich schau mir das an…', es: 'Voy a revisar eso…', sr: 'Da to proverim…', fr: 'Je regarde ça…', pt: 'Vou verificar isso…', ru: 'Дай-ка я это проверю…', pl: 'Sprawdzę to…', zh: '我来看看这个…', ar: 'دعني أبحث في ذلك…' },
+    { en: 'Doing a little detective work…', de: 'Ich spiel kurz Detektiv…', es: 'Haciendo un poco de trabajo detectivesco…', sr: 'Malo detektivskog posla…', fr: 'Un peu de travail de détective…', pt: 'A fazer um pouco de trabalho de detetive…', ru: 'Провожу небольшое расследование…', pl: 'Trochę detektywistycznej roboty…', zh: '我在小小地侦查一下…', ar: 'أقوم ببعض العمل التحقيقي…' },
+    { en: 'Looking in the right places…', de: 'Ich schau an den richtigen Stellen…', es: 'Buscando en los lugares correctos…', sr: 'Tražim na pravim mestima…', fr: 'Je cherche au bon endroit…', pt: 'A procurar nos sítios certos…', ru: 'Ищу в нужных местах…', pl: 'Szukam we właściwych miejscach…', zh: '我在正确的地方找找看…', ar: 'أبحث في الأماكن الصحيحة…' },
+    { en: 'Still working my magic…', de: 'Ich zaubere noch…', es: 'Sigo haciendo mi magia…', sr: 'Još uvek čarolija u toku…', fr: 'Je fais encore ma petite magie…', pt: 'Ainda a fazer a minha magia…', ru: 'Всё ещё колдую…', pl: 'Wciąż czaruję…', zh: '我还在施展我的小魔法…', ar: 'ما زلت أصنع سحري…' },
+    { en: 'One more moment…', de: 'Noch ein Moment…', es: 'Un momento más…', sr: 'Još jedan trenutak…', fr: 'Encore un instant…', pt: 'Mais um momentinho…', ru: 'Ещё чуть-чуть…', pl: 'Jeszcze chwilka…', zh: '再等一下下…', ar: 'لحظة أخرى فقط…' },
+    { en: 'Nearly there…', de: 'Fast geschafft…', es: 'Ya casi…', sr: 'Skoro sam stigao…', fr: 'Presque fini…', pt: 'Está quase…', ru: 'Почти готово…', pl: 'Już prawie…', zh: '马上就好了…', ar: 'أوشكت على الانتهاء…' }
   ];
   var _THINKING_ALL = _THINKING_QUICK.concat(_THINKING_PRIMARY, _THINKING_ALTERNATES);
 
@@ -2934,11 +3375,10 @@
 
   function _startThinkingProgress() {
     clearInterval(_s.thinkingProgressTimer);
-    var isDe = _cfg.lang.startsWith('de');
     var queue = _buildThinkingQueue();
     // Show the first message immediately — most turns resolve before the first
     // rotation tick, so this (not the interval) is what users actually see.
-    _setStatus(isDe ? queue[0].de : queue[0].en);
+    _setStatus(_loc(queue[0]));
     var msgIndex = 0;
     _s.thinkingProgressTimer = setInterval(function () {
       if (_s.voiceState !== 'THINKING') {
@@ -2950,7 +3390,7 @@
       // Cycle through messages every 4 seconds
       msgIndex = Math.min(Math.floor(elapsed / 4), queue.length - 1);
       var msg = queue[msgIndex];
-      _setStatus(isDe ? msg.de : msg.en);
+      _setStatus(_loc(msg));
     }, 3000);
   }
 
@@ -3011,7 +3451,7 @@
       var drift = Date.now() - scheduledAt - BG_CHECK_MS;
       if (drift > BG_KILL_DRIFT_MS) {
         console.warn('[VTOrb] Background watchdog: timer drifted ' + drift + 'ms — app was backgrounded, ending session');
-        _setStatus(_cfg.lang.startsWith('de') ? 'Sitzung beendet — App war im Hintergrund.' : 'Session ended — app was in the background.');
+        _setStatus(_caption('sessionEndedBackground'));
         _sessionStop();
         return;
       }
@@ -3152,7 +3592,7 @@
     // Status
     var status = document.createElement('div');
     status.className = 'vtorb-status';
-    status.style.cssText = 'margin-top:20px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:14px;color:rgba(255,255,255,0.6);text-align:center;min-height:20px;';
+    status.style.cssText = 'margin-top:20px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:19px;color:rgba(255,255,255,0.6);text-align:center;min-height:26px;';
     _root.appendChild(status);
 
     // Controls
@@ -3258,6 +3698,17 @@
       // Apply muted style inline (no CSS dependency)
       micBtn.style.background = muted ? 'rgba(239,68,68,0.2)' : 'rgba(59,130,246,0.2)';
       micBtn.style.color = muted ? '#fca5a5' : '#93c5fd';
+      // VTID-03706: under full duplex the mic is genuinely still open while
+      // Vitana speaks, so say so. Without this the UI is indistinguishable
+      // from the old half-duplex behaviour and users have no way to learn
+      // that interrupting works — a capability nobody discovers is the same
+      // as one that doesn't exist. Applied as a CLASS (the .vtorb-mic-live
+      // ring in _injectStyles), not an inline rule: it composes with the
+      // legacy inline colours above instead of fighting them, and keeps this
+      // file from adding new inline styling. Deliberately no status string —
+      // the wording here is per-language ternaries, and a new one would ship
+      // untranslated for every locale past de/en.
+      micBtn.classList.toggle('vtorb-mic-live', !muted && !!_s.fullDuplex && !!_s.audioPlaying);
     }
     // Update FAB visibility
     if (_fab) {
@@ -3281,17 +3732,17 @@
       _s.voiceState = restoreTo;
       if (restoreTo === 'SPEAKING') {
         _setOrbState('speaking');
-        _setStatus(_cfg.lang.startsWith('de') ? 'Vitana spricht...' : 'Vitana speaking...');
+        _setStatus(_caption('speaking'));
       } else {
         _setOrbState('listening');
-        _setStatus(_cfg.lang.startsWith('de') ? 'Ich höre zu...' : 'Listening...');
+        _setStatus(_caption('listening'));
       }
     } else {
       // Mute — remember current state so we can restore it
       _s.preMuteState = _s.voiceState;
       _s.voiceState = 'MUTED';
       _setOrbState('paused');
-      _setStatus(_cfg.lang.startsWith('de') ? 'Stummgeschaltet' : 'Muted');
+      _setStatus(_caption('muted'));
     }
     _updateUI();
   }
@@ -3401,7 +3852,7 @@
     console.log('[VTOrb] _show: overlay inDOM=' + document.body.contains(_root) + ', display=' + _root.style.display);
     _setOrbState('connecting');
     _s.voiceState = 'CONNECTING';
-    _setStatus(_cfg.lang.startsWith('de') ? 'Verbinden...' : 'Connecting...');
+    _setStatus(_caption('connecting'));
     _updateUI();
     _startBackgroundWatchdog();
     _sessionStart();
@@ -3605,7 +4056,7 @@
     if (_s._isOffline) {
       console.log('[VTOrb] _attemptReconnect: skipping — browser is offline. Will retry when online.');
       _setOrbState('offline');
-      _setStatus(_cfg.lang.startsWith('de') ? 'Du bist offline. Bitte prüfe deine Internetverbindung.' : 'You seem to be offline. Please check your internet connection.');
+      _setStatus(_caption('offline'));
       return;
     }
 
@@ -3623,7 +4074,7 @@
     _s._reconnectCount++;
     _s._isReconnecting = true;
     console.log('[VTOrb] _attemptReconnect: scheduled in ' + delay + 'ms (attempt ' + _s._reconnectCount + '/' + MAX_WIDGET_RECONNECTS + ')');
-    _setStatus(_cfg.lang.startsWith('de') ? 'Verbindung wird wiederhergestellt...' : 'Reconnecting...');
+    _setStatus(_caption('reconnecting'));
     _setOrbState('connecting');
 
     setTimeout(function () {
@@ -3679,9 +4130,8 @@
     console.warn('[VTOrb] _enterStuckState: reconnect budget exhausted — switching to tap-to-reconnect');
     _s._isReconnecting = false;
     _s._disconnectStuck = true;
-    var lang = _pickLang();
     _setOrbState('error');
-    _setStatus(lang === 'de' ? 'Tippen zum Neu verbinden' : 'Tap the orb to reconnect');
+    _setStatus(_caption('tapToReconnect'));
     _updateUI();
   }
 
@@ -3701,7 +4151,7 @@
     });
     _setOrbState('listening');
     _s.voiceState = 'LISTENING';
-    _setStatus(_cfg.lang.startsWith('de') ? 'Textmodus aktiv' : 'Text mode active');
+    _setStatus(_caption('textModeActive'));
     _updateUI();
   }
 
@@ -3736,7 +4186,7 @@
         audio.onended = function () {
           _setOrbState('listening');
           _s.voiceState = 'LISTENING';
-          _setStatus(_cfg.lang.startsWith('de') ? 'Ich höre zu...' : 'Listening...');
+          _setStatus(_caption('listening'));
           _playReadyBeep();
           _updateUI();
         };

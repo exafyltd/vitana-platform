@@ -71,6 +71,11 @@ on:
 
 permissions:
   contents: write
+  # VTID-03689 — needed by `gh pr create` in the Commit artifacts step. The
+  # step pushes a branch and opens a PR because `main` is protected and a
+  # direct push has never once succeeded (GH006), which is why the artifact
+  # directory has never existed in git history.
+  pull-requests: write
 
 concurrency:
   # Keyed by locale, not just ref. Keying on the ref alone serializes every
@@ -96,6 +101,26 @@ jobs:
         working-directory: services/gateway
         run: npm ci --no-audit --no-fund
 
+      # VTID-03701 — this job's LLM calls go through the gateway's own
+      # llm-router, which per CLAUDE.md §2b/standing rule VTID-03563 routes
+      # every Claude stage at `provider: 'bedrock'`, never a direct API key.
+      # This job previously only ever set GOOGLE_GEMINI_API_KEY, which the
+      # router does not read at all — every unit failed with "Provider
+      # 'bedrock' has no credentials configured" (confirmed live, run
+      # 32665367441, VTID-03701's tr dispatch: 0 of ~250 units applied).
+      # `configure-aws-credentials` gives the SDK's default credential chain
+      # something to find; `BEDROCK_ROLE_ARN` is only an activation gate
+      # (`invokeBedrock()` checks it is set, never assumes it as a role —
+      # see providers/bedrock.ts), same secret the dead GCP STAGE-DEPLOY.yml
+      # already threaded through to Cloud Run for the identical reason.
+      - name: Configure AWS credentials (Bedrock)
+        if: github.event_name == 'schedule' || github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_STAGING_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_STAGING_SECRET_ACCESS_KEY }}
+          aws-region: eu-central-1
+
       # Automatic propagation for DB-backed content.
       #
       # This DOES spend on LLM calls and DOES write to the database, which is a
@@ -112,6 +137,8 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
           GOOGLE_GEMINI_API_KEY: ${{ secrets.GOOGLE_GEMINI_API_KEY }}
+          BEDROCK_ROLE_ARN: ${{ secrets.BEDROCK_ROLE_ARN }}
+          AWS_BEDROCK_REGION: eu-central-1
         run: npm run i18n:db:seed -- --all --apply
 
       # Runs after the propagation above, so it asserts the END state. Red here
@@ -138,6 +165,8 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
           GOOGLE_GEMINI_API_KEY: ${{ secrets.GOOGLE_GEMINI_API_KEY }}
+          BEDROCK_ROLE_ARN: ${{ secrets.BEDROCK_ROLE_ARN }}
+          AWS_BEDROCK_REGION: eu-central-1
         run: |
           ARGS=""
           case "${{ inputs.locale }}" in
@@ -156,9 +185,31 @@ jobs:
       # expensive part, and they are only durable once committed. Re-dispatching
       # the same locale then drains only the remainder, because the source-hash
       # stamps mark everything already done as current.
+      # VTID-03689 — this used to push straight at `${{ github.ref_name }}`,
+      # which for the nightly cron is `main`. `main` is a PROTECTED branch, so
+      # every attempt returned:
+      #
+      #   remote: error: GH006: Protected branch update failed for refs/heads/main
+      #
+      # five times, then exit 1. That is why `data/db-i18n/` has never existed
+      # in git history on any ref — confirmed with `git log --all`. The
+      # consequence was worse than a red check: `--from-artifact`, the
+      # documented zero-LLM-spend replay path (and the stated answer to
+      # repopulating Aurora after the migration), had nothing to replay, so
+      # every run paid full translation cost and then threw the result away.
+      #
+      # Artifacts now land on their own branch and open a PR, which is both the
+      # only thing that CAN work against branch protection and the reviewable
+      # path the VTID-03515 design asked for ("translations are committed
+      # artifacts, and the database is downstream of them"). The DB write is
+      # already done by this point regardless — the PR carries the artifacts so
+      # the next run is cheap, it does not gate the seeding.
       - name: Commit artifacts
         if: always() && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data/db-i18n/ || true
@@ -166,14 +217,43 @@ jobs:
             echo "No artifact changes."
             exit 0
           fi
-          git commit -m "chore(i18n-db): seed ${{ inputs.locale }} DB content translations (VTID-03515)"
+
+          BRANCH="i18n-db/artifacts-${{ github.run_id }}"
+          git checkout -b "$BRANCH"
+          git commit -m "chore(i18n-db): seed DB content translations (VTID-03515, VTID-03689)"
+
           for i in 1 2 3 4 5; do
-            git pull --rebase origin ${{ github.ref_name }} || true
-            if git push origin HEAD:${{ github.ref_name }}; then exit 0; fi
+            if git push origin "HEAD:$BRANCH"; then PUSHED=1; break; fi
             echo "push attempt $i failed — backing off"
             sleep $((5 * i))
           done
-          echo "push failed after 5 attempts"; exit 1
+          if [ "${PUSHED:-0}" != "1" ]; then
+            echo "::error::could not push artifact branch $BRANCH after 5 attempts"
+            exit 1
+          fi
+
+          # A PR is best-effort: the artifacts are safe on the branch either
+          # way, and failing the job over PR creation would discard a
+          # successful, paid-for translation run for a bookkeeping step.
+          # NOTE the indentation of the body lines below. A `run: |` block
+          # scalar ENDS at the first line indented less than the block, so a
+          # multi-line string written flush-left silently truncates the YAML
+          # and the whole workflow stops parsing. That exact mistake has cost
+          # this repo two incidents already (VTID-03505, VTID-03521), and it
+          # does not surface as a failing step — it surfaces as a run with
+          # zero jobs. Keep every continuation line indented.
+          PR_BODY="Automated by I18N-DB-SEED run ${{ github.run_id }}.
+          Committed data/db-i18n/ artifacts so --from-artifact can replay this
+          locale with zero LLM spend. The database write already happened during
+          the run; merging this only makes the next run cheap and the
+          translations reviewable."
+
+          gh pr create \
+            --base "${{ github.ref_name }}" \
+            --head "$BRANCH" \
+            --title "chore(i18n-db): DB content translation artifacts (VTID-03689)" \
+            --body "$PR_BODY" \
+            || echo "::warning::artifacts pushed to $BRANCH but PR creation failed — open one by hand"
 
       # Report the seeder's verdict last, so a partial run is visibly red
       # without having cost the work that did succeed.

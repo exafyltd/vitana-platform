@@ -1,0 +1,14 @@
+    ✓ invokes the model after the silence budget, with NO end_turn ever sent (5 ms)
+    ✓ does not cut the user off mid-sentence — each fragment pushes the boundary out (1 ms)
+    ✓ treats a partial as "still speaking" and re-arms (1 ms)
+    ✓ never fires a turn on silence alone (1 ms)
+    ✓ honours a per-session vadSilenceMs (1 ms)
+    ✓ falls back to the default for an out-of-range vadSilenceMs (0) (1 ms)
+    ✓ falls back to the default for an out-of-range vadSilenceMs (-1)
+    ✓ falls back to the default for an out-of-range vadSilenceMs (50)
+    ✓ falls back to the default for an out-of-range vadSilenceMs (60000) (1 ms)
+    ✓ falls back to the default for an out-of-range vadSilenceMs (NaN) (1 ms)
+    ✓ falls back to the default for an out-of-range vadSilenceMs (undefined)
+    ✓ stops the countdown on close, so a torn-down session cannot fire a turn
+    ✓ does not start a second turn while one is in flight (1 ms)
+Tests:       13 passed, 13 total

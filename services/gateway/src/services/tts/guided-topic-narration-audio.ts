@@ -42,7 +42,12 @@
  */
 
 import type { GuidedTopicNarrationContent } from '../assistant-continuation/providers/guided-topic-narration';
-import { synthesizePolly } from './polly';
+import { synthesizePolly, resolvePollyVoice } from './polly';
+import {
+  buildNarrationCacheKey,
+  getNarrationAudioStore,
+  type NarrationAudioStore,
+} from './narration-audio-cache';
 
 export interface GuidedTopicNarrationAudio {
   audioB64: string;
@@ -115,6 +120,32 @@ export async function synthesizeGuidedTopicNarrationAudio(
   const text = buildGuidedTopicSpokenText(content);
   if (!text) return null;
 
+  // Resolve the voice BEFORE synthesizing, because the cache key depends on
+  // it. A null here means Polly cannot serve this language at all (`sr`), so
+  // there is nothing to cache and nothing to synthesize.
+  const voice = resolvePollyVoice(lang);
+  if (!voice) return null;
+
+  const store: NarrationAudioStore | null = getNarrationAudioStore();
+  const cacheKey = buildNarrationCacheKey({
+    topicId: content.topic_id,
+    lang,
+    text,
+    voiceId: String(voice.voiceId),
+    engine: String(voice.engine),
+  });
+
+  if (store) {
+    const hit = await store.get(cacheKey);
+    if (hit) {
+      console.log(
+        `[GUIDED-TOPIC-TTS] cache=hit store=${store.name} ` +
+          `topic=${content.topic_id} lang=${lang} rate_hz=${hit.sampleRateHz}`,
+      );
+      return hit;
+    }
+  }
+
   const chunks = splitTextForPolly(text);
   if (chunks.length === 0) return null;
 
@@ -129,9 +160,21 @@ export async function synthesizeGuidedTopicNarrationAudio(
   if (buffers.length === 0 || sampleRateHz === null) return null;
 
   const combined = Buffer.concat(buffers);
+  const result = { audioB64: combined.toString('base64'), sampleRateHz };
+
+  // Write-back happens only for a COMPLETE render. Every early return above
+  // bails on partial chunk failure, so a half-synthesized lesson can never be
+  // persisted and then served forever as if it were whole — the cache would
+  // otherwise turn a transient Polly blip into a permanent truncated lesson.
+  if (store) {
+    await store.put(cacheKey, result);
+  }
+
   console.log(
-    `[GUIDED-TOPIC-TTS] provider=polly topic=${content.topic_id} lang=${lang} ` +
+    `[GUIDED-TOPIC-TTS] cache=miss store=${store?.name ?? 'none'} ` +
+      `provider=polly topic=${content.topic_id} lang=${lang} ` +
+      `voice=${voice.voiceId} engine=${voice.engine} ` +
       `chunks=${chunks.length} chars=${text.length} rate_hz=${sampleRateHz}`,
   );
-  return { audioB64: combined.toString('base64'), sampleRateHz };
+  return result;
 }

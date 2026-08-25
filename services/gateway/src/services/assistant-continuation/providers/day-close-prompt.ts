@@ -237,3 +237,61 @@ ${buildShapeExample(langCode, phase)}
 - Did you promise only to HOLD things, never to DO them?
 - Does it end in a way the user can simply stop replying to?`;
 }
+
+/**
+ * VTID-03646 follow-up — the Nova-aware reduced retry `day_close` (VTID-03629)
+ * has been waiting on since it was disabled by default.
+ *
+ * `buildDayCloseBlock` above is a ~4200-char instruction carrying TWO fully
+ * worked quoted-dialogue exemplars (a "do this" and a "not this" for BOTH
+ * night phases) — the same shape as the IDENTITY LOCK block
+ * `nova-instruction-sanitizer.ts` had to rewrite because Nova's content
+ * filter reacts to persona-voiced quoted speech in the system prompt, and
+ * the same shape as `override_v2`'s old `guidedTeachTrigger` wrapper, which
+ * VTID-03674 proved trips the filter independent of length once it carries
+ * that kind of instructional/exemplar framing. `day_close`'s block is the
+ * single largest surviving example of the pattern in this file.
+ *
+ * This is NOT the directive turn-1 speaks by default — it is a REDUCED
+ * fallback, used only when a `day_close` open gets `nova_validation`-closed
+ * and is about to be retried (see `shouldRetryDayCloseReduced` /
+ * `routes/orb-live.ts`'s day-close-reduced arming). Per NEVER-rule 41 /
+ * §13b it states the INTENT in plain English/German, never a sentence to
+ * recite, and — the part this file's header comment argues against for the
+ * default path — carries no quoted exemplar dialogue at all, on the theory
+ * that IS the trigger, not the length. Effects (stamping the night key,
+ * arming the watchdog) are unchanged; only the composed prompt shrinks.
+ *
+ * Unverified against live Nova traffic — same honest caveat as every retry
+ * mechanism in this file's chain until observed working on a real close.
+ */
+export function buildDayCloseOpenerLine(args: BuildDayCloseBlockArgs): string {
+  const langCode = (args.lang || 'en').toLowerCase();
+  const phase = nightPhase(args.localHour);
+  const isDe = langCode.startsWith('de');
+
+  const nameClause = args.firstName
+    ? isDe
+      ? `Der Nutzer heißt ${args.firstName}.`
+      : `The user's name is ${args.firstName}.`
+    : isDe
+      ? 'Der Name ist nicht bekannt — erfinde keinen.'
+      : "The user's name is unknown — do not invent one.";
+
+  const toneClause = args.hardDay
+    ? isDe
+      ? 'Heute lief es nicht gut — sei warmherzig, nicht optimistisch. Frage nicht nach, was los war.'
+      : "Today did not go well — be warm, not upbeat. Don't ask what went wrong."
+    : isDe
+      ? `Vermittle diesen Sinn in einem eigenen Satz: ${args.theme.senseDe}`
+      : `Convey this sense in one sentence of your own: ${args.theme.senseEn}`;
+
+  if (isDe) {
+    return `Der Nutzer öffnet die App gerade ${
+      phase === 'past_midnight' ? 'nach Mitternacht' : 'spät am Abend'
+    } — der Tag endet, nicht beginnt. ${nameClause} Schließe den Tag warm ab: lande kurz im Moment, ${toneClause} und biete an, etwas über Nacht zu übernehmen (du kannst dich erinnern, Erinnerungen setzen, oder einen vorbereiteten nächsten Schritt aktivieren — versprich niemals, ihre Arbeit zu erledigen, während sie schlafen). Kein Rückblick, keine Zahlen, keine Zusammenfassung des Tages. Zwei bis vier Sätze, dann aufhören und zuhören.`;
+  }
+  return `The user is opening the app ${
+    phase === 'past_midnight' ? 'after midnight' : 'late in the evening'
+  } — this is the end of their day, not the start. ${nameClause} Close the day warmly: land in the moment briefly, ${toneClause} and offer to carry something overnight (you can remember, set a reminder, or activate a prepared next step — never promise to complete their work while they sleep). No recap, no numbers, no summary of the day. Two to four sentences, then stop and listen.`;
+}

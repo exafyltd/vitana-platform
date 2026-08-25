@@ -275,7 +275,7 @@ describe('buildNovaSonicHealthPayload', () => {
       model: 'amazon.nova-2-sonic-v1:0',
       region: 'eu-north-1',
       credential_source: 'ecs_task_role',
-      supported_languages: ['en', 'de', 'fr', 'es', 'pt'],
+      supported_languages: ['en', 'de', 'fr', 'es'],
       canary_user_count: 0,
       canary_tenant_count: 0,
       // VTID-03501: global promotion flag. Additive; false by default, so a

@@ -23,10 +23,21 @@ const brain = fs.readFileSync(
 const orbLive = fs.readFileSync(path.join(GATEWAY_SRC, 'routes/orb-live.ts'), 'utf8');
 
 describe('VTID-03104 / 1c: override_v2 opener lives in the brain; transport delegates', () => {
-  it('the override_v2 rung + verbatim trigger shapes are in the brain', () => {
+  it('the override_v2 rung + its trigger shape are in the brain', () => {
     expect(brain).toMatch(/wakeOpener: 'override_v2'/);
-    expect(brain).toMatch(/Say exactly: "\$\{safe\}"/);
-    expect(brain).toMatch(/Sage genau Folgendes: "\$\{safe\}"/);
+    // VTID-03646: this used to pin the two verbatim wrappers by their literal
+    // text (`Say exactly: "${safe}"` / `Sage genau Folgendes: "${safe}"`).
+    // Those wrappers were the defect — they ordered ONE short utterance with
+    // "no question after", which is what produced the reported "announce,
+    // then listen" opening — and they are gone, along with the whole
+    // per-language table. Pin the invariant that survives and that this file
+    // exists to protect: the selected line is embedded in a trigger BUILT IN
+    // THE BRAIN, not in the transport. The trigger's own product contract
+    // (substance → next step → confirmation) is asserted behaviourally in
+    // conversation-flow-regression.test.ts, where a wording change is
+    // reviewable rather than a source-pattern break.
+    expect(brain).toMatch(/const wakeTrigger =/);
+    expect(brain).toMatch(/\$\{safe\}/);
     // The double-quote escape that keeps the line from terminating the wrapper.
     expect(brain).toMatch(/wakeOverrideLine\.replace\(\/"\/g, '\\\\"'\)/);
   });

@@ -440,6 +440,27 @@ export function buildLiveSystemInstruction(
   // structural fix.
   resolvedFirstName?: string | null,
 ): string {
+  // VTID-03681 — this map ends `|| 'English'` at its use site below, so a
+  // language missing HERE does not fail: it emits "Respond ONLY in English"
+  // into the system instruction and the model obeys. That is the second half
+  // of the pt/pl bug — widening SUPPORTED_LIVE_LANGUAGES alone would have
+  // produced a session correctly tagged `lang: 'pt'` whose prompt ordered
+  // English, which is harder to diagnose than the original coercion because
+  // the telemetry then looks right.
+  //
+  // `pt` is named Brazilian Portuguese deliberately: the shipped catalog is
+  // pt-BR (VTID-03577) and Nova's voices are pt-BR (VTID-03672), so a bare
+  // "Portuguese" invites European phrasing over Brazilian copy.
+  //
+  // The full set of tables a new language must appear in — all of them, or it
+  // half-works in a different way each time:
+  //   1. SUPPORTED_LIVE_LANGUAGES  (orb/live/config.ts)      — else coerced to 'en'
+  //   2. this map                                            — else prompted in English
+  //   3. LIVE_LANGUAGE_VOICE_FALLBACKS (voice/voice-mapping.ts) — else English voice
+  //   4. GEMINI_TTS_VOICE_FALLBACKS    (voice/voice-mapping.ts) — else en-US TTS
+  //   5. LIVE_API_VOICE_FALLBACKS      (voice/live-api-voice.ts)
+  //   6. SHORT_GAP_GREETING_PHRASES    (instruction/greeting-pools.ts) — else English opener
+  //   7. nameToCode                    (routes/orb-live.ts)   — stored preference lookup
   const languageNames: Record<string, string> = {
     'en': 'English',
     'de': 'German',
@@ -448,7 +469,9 @@ export function buildLiveSystemInstruction(
     'ar': 'Arabic',
     'zh': 'Chinese',
     'ru': 'Russian',
-    'sr': 'Serbian'
+    'sr': 'Serbian',
+    'pt': 'Brazilian Portuguese',
+    'pl': 'Polish'
   };
 
   // Load personality config from service (uses cached values or hardcoded defaults).

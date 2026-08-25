@@ -3424,6 +3424,14 @@ export async function tool_navigate_to_screen(
     reason: String(args.reason || 'navigate_to_screen tool call'),
     entry_kind: entry.entry_kind || 'route',
     vtid: 'VTID-NAV-01',
+    // BOOTSTRAP-ORB-UNREAD-MESSAGES-NAV: when the caller (a deterministic
+    // greeting-effect dispatch, not an LLM tool call) asks the ORB session
+    // to stay open after navigating — e.g. so a dictated reply to the
+    // sender it just announced can follow immediately — forward that as an
+    // explicit flag the client widget's navigate handler checks. Absent
+    // (the normal tool-call path never sets it) means today's existing
+    // hide-then-navigate behavior, unchanged.
+    ...(args.keep_orb_open === true ? { keep_orb_open: true } : {}),
   };
 
   emitOasisEvent({
