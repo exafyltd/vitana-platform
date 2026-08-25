@@ -41,6 +41,7 @@ import {
   AWARENESS_EVENT_TO_TOPIC,
   type CapabilityAwarenessEventName,
 } from '../services/assistant-continuation/telemetry';
+import * as repo from './voice-teacher-event-repository';
 
 const router = Router();
 const VTID = 'VTID-03094';
@@ -152,20 +153,17 @@ router.post(
           .status(503)
           .json({ ok: false, error: 'DB_UNAVAILABLE', vtid: VTID });
       }
-      const { data: rpcResult, error: rpcError } = await sb.rpc(
-        'advance_capability_awareness',
-        {
-          p_tenant_id: tenantId,
-          p_user_id: userId,
-          p_capability_key: capabilityKey,
-          p_event_name: eventName,
-          p_idempotency_key: idempotencyKey,
-          p_decision_id: decisionId,
-          p_source_surface: sourceSurface,
-          p_occurred_at: occurredAt,
-          p_metadata: metadata ?? null,
-        },
-      );
+      const { data: rpcResult, error: rpcError } = await repo.advanceCapabilityAwarenessRpc(sb, {
+        p_tenant_id: tenantId,
+        p_user_id: userId,
+        p_capability_key: capabilityKey,
+        p_event_name: eventName,
+        p_idempotency_key: idempotencyKey,
+        p_decision_id: decisionId,
+        p_source_surface: sourceSurface,
+        p_occurred_at: occurredAt,
+        p_metadata: metadata ?? null,
+      });
       if (rpcError) {
         console.warn(`[${VTID}] advance_capability_awareness failed: ${rpcError.message}`);
         return res.status(502).json({
@@ -228,11 +226,7 @@ router.post(
       let directive: Record<string, unknown> | null = null;
       if (eventName === 'introduced') {
         try {
-          const { data: cap } = await sb
-            .from('system_capabilities')
-            .select('manual_path, display_name')
-            .eq('capability_key', capabilityKey)
-            .maybeSingle();
+          const { data: cap } = await repo.fetchSystemCapabilityManualInfo(sb, capabilityKey);
           if (cap && typeof cap === 'object') {
             const manualPath = (cap as { manual_path?: string | null }).manual_path;
             if (typeof manualPath === 'string' && manualPath.trim().length > 0) {
