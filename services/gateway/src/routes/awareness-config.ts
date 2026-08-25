@@ -22,6 +22,7 @@ import {
   getManifest,
   getSignal,
 } from '../services/awareness-registry';
+import * as repo from './awareness-config-repository';
 
 const router = Router();
 
@@ -60,11 +61,7 @@ router.get('/audit', requireAdminAuth, async (req: AuthenticatedRequest, res: Re
 
   const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? '20'), 10), 1), 100);
 
-  const { data, error } = await client
-    .from('awareness_config_audit')
-    .select('id, key, prev_enabled, new_enabled, prev_params, new_params, changed_by, changed_at')
-    .order('changed_at', { ascending: false })
-    .limit(limit);
+  const { data, error } = await repo.fetchAwarenessConfigAudit(client, limit);
 
   if (error) {
     return res.status(500).json({ ok: false, error: error.message });
@@ -159,32 +156,22 @@ async function upsertOne(
   if (!client) return { ok: false, error: 'Supabase not configured' };
 
   // Read previous state for audit.
-  const { data: prevRow } = await client
-    .from('awareness_config')
-    .select('enabled, params')
-    .eq('key', key)
-    .maybeSingle();
+  const { data: prevRow } = await repo.fetchAwarenessConfigByKey(client, key);
   const prevEnabled = prevRow?.enabled ?? null;
   const prevParams = (prevRow?.params as Record<string, unknown>) ?? null;
 
-  const { error: upsertError } = await client
-    .from('awareness_config')
-    .upsert(
-      {
-        key,
-        enabled,
-        params,
-        updated_by: changedBy,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'key' }
-    );
+  const { error: upsertError } = await repo.upsertAwarenessConfig(client, {
+    key,
+    enabled,
+    params,
+    updated_by: changedBy,
+    updated_at: new Date().toISOString(),
+  });
   if (upsertError) return { ok: false, error: upsertError.message };
 
   // Audit row — best effort; don't fail the write if audit fails.
-  await client
-    .from('awareness_config_audit')
-    .insert({
+  await repo
+    .insertAwarenessConfigAuditRow(client, {
       key,
       prev_enabled: prevEnabled,
       new_enabled: enabled,
