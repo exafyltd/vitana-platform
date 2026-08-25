@@ -38,3 +38,28 @@ $ npx jest   # full gateway suite
   session's own instructions for this case, restarted the branch from
   origin/main (git checkout -B claude/orb-interruption-voice-comms-x3wh7s
   origin/main) and reapplied this VTID's changes on top via git stash.
+
+## Follow-up (2026-08-25) — Codex review fix (AC-4)
+
+Codex PR review flagged a real regression risk: the AC-2 generic 800ms
+per-provider timeout could mark guided-topic-narration errored on a Polly
+cache-miss, dropping an explicitly-tapped lesson in favor of a lower
+priority provider. Verified the claim by reading
+guided-topic-narration.ts:152-197 (real await on
+synthesizeGuidedTopicNarrationAudio inside produce()) and
+wake-brief-wiring.ts:597-603 (isExplicitSelection only exempts the rotation
+penalty, does not force-select or bypass the timeout).
+
+Fix: pass providerTimeoutMs:10_000 to decideContinuation whenever
+isExplicitSelection is true.
+
+$ npx tsc --noEmit -p services/gateway
+  -> clean, exit 0
+
+$ npx jest test/services/wake-brief-explicit-selection-timeout.test.ts \
+    test/services/wake-brief-wiring.test.ts
+  -> 2 suites, 20 tests, all passing (outputs/targeted-tests-ac4.txt)
+
+$ npx jest   # full gateway suite, re-run after this fix
+  -> 706/707 suites (1 pre-existing skip), 13,358 tests, 0 failures
+     (outputs/full-suite.txt)

@@ -66,6 +66,21 @@ is a recorded judgment call, not a confirmed measurement: both flags are
 pure deferral/caching mechanisms already proven safe in prod for weeks, and
 staging exists specifically to catch a regression before prod.
 
+AC-4 — An explicitly tapped Guided Journey topic cannot lose turn 1 to the generic ranker timeout
+
+Codex review (P1) on this PR correctly flagged that AC-2's 800ms generic
+timeout could mark `guided-topic-narration` errored on a cache-miss Polly
+synthesis, letting a lower-priority provider win — reproducing the
+VTID-03644->03686 "tapping a lesson opens small talk" defect.
+
+TEST: `services/gateway/test/services/wake-brief-explicit-selection-timeout.test.ts`
+
+Fix: `decideWakeBriefForSession` (`wake-brief-wiring.ts`) now passes
+`providerTimeoutMs: 10_000` to `decideContinuation` whenever
+`isExplicitSelection` (`guidedTopicId` or `journeyFocusStep` set) — a
+generous ceiling that still bounds a genuinely hung call, matched to the
+existing rotation-penalty exemption for the same condition.
+
 ## Deliberately NOT done in this VTID
 
 - **Phase 3** (promote `FEATURE_ORB_SAFE_FAST_GREETING` to prod): still
