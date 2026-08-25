@@ -39,6 +39,7 @@ import {
   getActiveRuns,
 } from '../services/automation-executor';
 import { randomUUID } from 'crypto';
+import * as repo from './automations-repository';
 
 const router = Router();
 const VTID = 'VTID-01250';
@@ -170,12 +171,7 @@ router.get('/wallet/balance', async (req: Request, res: Response) => {
   const supa = await getServiceClient();
   if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
 
-  const { data } = await supa
-    .from('wallet_balances')
-    .select('balance, total_earned, total_spent, updated_at')
-    .eq('tenant_id', tenantId)
-    .eq('user_id', userId)
-    .maybeSingle();
+  const { data } = await repo.fetchWalletBalance(supa, tenantId, userId);
 
   return res.json({
     ok: true,
@@ -195,13 +191,7 @@ router.get('/wallet/transactions', async (req: Request, res: Response) => {
   if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
 
   const limit = parseInt(req.query.limit as string) || 50;
-  const { data } = await supa
-    .from('wallet_transactions')
-    .select('id, amount, type, source, description, balance_after, created_at')
-    .eq('tenant_id', tenantId)
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false })
-    .limit(limit);
+  const { data } = await repo.fetchWalletTransactions(supa, tenantId, userId, limit);
 
   return res.json({ ok: true, transactions: data || [] });
 });
@@ -226,14 +216,14 @@ router.post('/sharing/generate-link', async (req: Request, res: Response) => {
   const shortCode = randomUUID().replace(/-/g, '').substring(0, 8);
   const appUrl = process.env.APP_URL || 'https://vitana.app';
 
-  const { data, error } = await supa.from('sharing_links').insert({
+  const { data, error } = await repo.insertSharingLink(supa, {
     tenant_id: tenantId,
     user_id: userId,
     target_type,
     target_id,
     short_code: shortCode,
     utm_campaign: utm_campaign || `${target_type}_share`,
-  }).select('id, short_code').single();
+  });
 
   if (error) return res.status(500).json({ ok: false, error: error.message });
 
@@ -259,13 +249,7 @@ router.get('/sharing/links', async (req: Request, res: Response) => {
   const supa = await getServiceClient();
   if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
 
-  const { data } = await supa
-    .from('sharing_links')
-    .select('id, target_type, target_id, short_code, click_count, signup_count, created_at')
-    .eq('tenant_id', tenantId)
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false })
-    .limit(50);
+  const { data } = await repo.fetchSharingLinks(supa, tenantId, userId);
 
   return res.json({ ok: true, links: data || [] });
 });
@@ -278,13 +262,7 @@ router.get('/referrals', async (req: Request, res: Response) => {
   const supa = await getServiceClient();
   if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
 
-  const { data } = await supa
-    .from('referrals')
-    .select('id, source, status, reward_amount, click_count, created_at, activated_at')
-    .eq('tenant_id', tenantId)
-    .eq('referrer_id', userId)
-    .order('created_at', { ascending: false })
-    .limit(50);
+  const { data } = await repo.fetchReferralsForUser(supa, tenantId, userId);
 
   return res.json({ ok: true, referrals: data || [] });
 });
