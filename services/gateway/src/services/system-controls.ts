@@ -1,16 +1,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { SystemControl } from '../types/system-controls';
+import * as repo from './system-controls-repository';
 
 export async function getSystemControl(
   supabase: SupabaseClient,
   key: string
 ): Promise<{ ok: boolean; data?: SystemControl; error?: string }> {
   try {
-    const { data, error } = await supabase
-      .from('system_controls')
-      .select('*')
-      .eq('key', key)
-      .single();
+    const { data, error } = await repo.fetchSystemControlByKey(supabase, key);
 
     if (error) {
       // PGRST116 indicates 0 rows returned on a .single() query
