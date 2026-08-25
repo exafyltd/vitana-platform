@@ -26,6 +26,7 @@
 
 import { Router, Request, Response } from 'express';
 import { createUserSupabaseClient } from '../lib/supabase-user';
+import * as repo from './life-stage-awareness-repository';
 import {
   assessLifeStage,
   getCurrentLifeStage,
@@ -445,12 +446,7 @@ router.get('/rules', async (req: Request, res: Response) => {
       return res.status(500).json({ ok: false, error: 'SERVICE_UNAVAILABLE' });
     }
 
-    const { data, error } = await supabase
-      .from('life_stage_rules')
-      .select('rule_key, rule_version, domain, target, weight, active')
-      .eq('active', true)
-      .order('domain')
-      .order('weight', { ascending: false });
+    const { data, error } = await repo.fetchActiveLifeStageRules(supabase);
 
     if (error) {
       console.error(`${LOG_PREFIX} GET /rules - Error:`, error);
