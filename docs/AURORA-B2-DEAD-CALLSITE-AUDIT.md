@@ -125,6 +125,37 @@ way D44's Signals page provides. **Weaker finding than D44's, not treated
 as equally severe** — flagged as mounted-but-unconfirmed rather than
 mounted-and-reachable-from-a-real-screen.
 
+## Addendum 4: the gateway matchmaking subsystem looks superseded, not just dead-table
+
+`matches_daily`, `match_targets`, and `user_match_preferences` (3 of the 33)
+are all consumed by the gateway's matchmaking feature — `routes/
+matchmaking.ts` + `routes/match-feedback.ts`, both mounted at `/api/v1/match`,
+backed by `match-tool-handler-repository.ts`/`proactive-match-messenger-
+repository.ts`. Checked whether this is reachable from the frontend the same
+way D44/D49 were — and found something more specific than "no caller found."
+
+`exafyltd/vitana-v1`'s actual "people who match you" feature
+(`src/hooks/useRealMatches.ts`) does **not** call the gateway's `/api/v1/match`
+routes at all. Its own header comment: *"Real 'people who match you' data,
+backed by the `daily_matches` table and the `generate-daily-matches` edge
+function — the same source the full discovery flow (PeopleDiscoveryHero)
+uses."* That's a **different table** (`daily_matches`, confirmed to exist
+live — `to_regclass('public.daily_matches')` is non-null) reached through a
+**different code path** (a Supabase edge function, direct from the
+frontend) than the gateway's `matches_daily`-based system.
+
+**Reading this as one finding rather than three separate dead tables:** the
+gateway's whole matchmaking subsystem behind `/api/v1/match` — not merely
+one broken query — looks like an earlier implementation that was superseded
+by a different, edge-function-based matching feature the frontend actually
+uses today, and the gateway side was never updated or removed. This is a
+plausible explanation, not confirmed by reading every file in
+`match-tool-handler-repository.ts`/`proactive-match-messenger-repository.ts`
+in full (not done in this pass) — but it reframes the right question from
+"is `matches_daily` a typo for some other table" to "is the entire gateway
+matchmaking route dead code that should be removed, now that a different
+system does this job."
+
 ## What this does and does not mean
 
 **Not all 33 are the same kind of problem, and this pass does not root-cause
