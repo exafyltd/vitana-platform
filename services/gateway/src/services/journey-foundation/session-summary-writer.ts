@@ -13,6 +13,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { buildJourneyFoundationSnapshot } from './journey-foundation-state';
 import { getStepDef } from './foundation-steps';
+import * as repo from './session-summary-writer-repository';
 
 function doneKeys(steps: { key: string; status: string }[]): string[] {
   return steps.filter((s) => s.status === 'done' || s.status === 'active').map((s) => s.key);
@@ -28,13 +29,7 @@ export async function recordJourneySessionSummary(
     const doneNow = doneKeys(snapshot.foundation_steps);
 
     // Diff against the last session update to isolate "newly completed".
-    const { data: last } = await client
-      .from('journey_session_updates')
-      .select('completed_steps')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const { data: last } = await repo.fetchLatestJourneySessionUpdate(client, userId);
     const previouslyDone = new Set<string>(
       ((last?.completed_steps as string[] | undefined) ?? []),
     );
@@ -49,7 +44,7 @@ export async function recordJourneySessionSummary(
         ? `Completed: ${titles.join(', ')}.`
         : 'Session started — journey set up.';
 
-    await client.from('journey_session_updates').insert({
+    await repo.insertJourneySessionUpdate(client, {
       user_id: userId,
       session_id: sessionId,
       completed_steps: newlyCompleted.length > 0 ? newlyCompleted : doneNow,
