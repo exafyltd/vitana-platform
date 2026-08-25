@@ -22,6 +22,7 @@ import {
   computeNextStep,
   isGraduated,
 } from './journey-foundation-next-step';
+import * as repo from './journey-foundation-state-repository';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -52,11 +53,7 @@ async function loadRow(
   userId: string,
 ): Promise<JourneyFoundationRow | null> {
   try {
-    const { data } = await client
-      .from('user_journey_foundation')
-      .select('*')
-      .eq('user_id', userId)
-      .maybeSingle();
+    const { data } = await repo.fetchUserJourneyFoundationRow(client, userId);
     return (data as JourneyFoundationRow | null) ?? null;
   } catch {
     return null;
@@ -68,14 +65,7 @@ async function loadGoal(
   userId: string,
 ): Promise<JourneyGoalView | null> {
   try {
-    const { data } = await client
-      .from('life_compass')
-      .select('primary_goal, category, target_value, target_unit, target_date, starting_value')
-      .eq('user_id', userId)
-      .eq('is_active', true)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const { data } = await repo.fetchActiveLifeCompassGoalFull(client, userId);
     if (!data) return null;
     return {
       primary_goal: data.primary_goal ?? null,
@@ -95,11 +85,7 @@ async function loadRegistrationDate(
   userId: string,
 ): Promise<string | null> {
   try {
-    const { data } = await client
-      .from('profiles')
-      .select('created_at')
-      .eq('user_id', userId)
-      .maybeSingle();
+    const { data } = await repo.fetchProfileCreatedAt(client, userId);
     return (data?.created_at as string | undefined) ?? null;
   } catch {
     return null;
@@ -111,12 +97,7 @@ async function loadRecentSessionUpdates(
   userId: string,
 ): Promise<JourneySessionUpdateView[]> {
   try {
-    const { data } = await client
-      .from('journey_session_updates')
-      .select('session_id, completed_steps, next_step, summary, created_at')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(3);
+    const { data } = await repo.fetchRecentJourneySessionUpdates(client, userId);
     return ((data as JourneySessionUpdateView[] | null) ?? []).map((r) => ({
       session_id: r.session_id ?? null,
       completed_steps: r.completed_steps ?? [],

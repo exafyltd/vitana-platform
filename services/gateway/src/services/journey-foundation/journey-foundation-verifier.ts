@@ -15,6 +15,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { FoundationStepStatus, JourneyFoundationRow } from './types';
 import { FOUNDATION_STEPS } from './foundation-steps';
+import * as repo from './journey-foundation-verifier-repository';
 
 const CONCRETE_ECONOMIC_INTENTS = new Set([
   'build_business',
@@ -39,22 +40,6 @@ interface VerificationFacts {
   teacherAck: Set<string>;
 }
 
-async function exists(
-  client: SupabaseClient,
-  table: string,
-  build: (q: any) => any,
-): Promise<boolean> {
-  try {
-    let q = client.from(table).select('user_id', { count: 'exact', head: true });
-    q = build(q);
-    const { count, error } = await q;
-    if (error) return false;
-    return (count ?? 0) > 0;
-  } catch {
-    return false;
-  }
-}
-
 async function gatherFacts(
   client: SupabaseClient,
   userId: string,
@@ -75,50 +60,29 @@ async function gatherFacts(
     connectionActive,
   ] = await Promise.all([
     // Active life_compass goal with non-empty text.
-    client
-      .from('life_compass')
-      .select('primary_goal')
-      .eq('user_id', userId)
-      .eq('is_active', true)
-      .not('primary_goal', 'is', null)
-      .limit(1)
-      .maybeSingle()
+    repo.fetchActiveLifeCompassGoalWithText(client, userId)
       .then((r: any) => r.data ?? null, () => null),
     // Reminders: distinguish "running" from merely "existed".
-    client
-      .from('reminders')
-      .select('status')
-      .eq('user_id', userId)
-      .limit(50)
+    repo.fetchReminderStatuses(client, userId)
       .then(
         (r: any) => (r.data as Array<{ status: string }>) ?? [],
         () => [] as Array<{ status: string }>,
       ),
-    exists(client, 'memory_diary_entries', (q) => q.eq('user_id', userId)),
+    repo.checkRowExists(client, 'memory_diary_entries', (q) => q.eq('user_id', userId)),
     // Baseline survey complete.
-    client
-      .from('vitana_index_baseline_survey')
-      .select('completed_at')
-      .eq('user_id', userId)
-      .not('completed_at', 'is', null)
-      .limit(1)
-      .maybeSingle()
+    repo.fetchCompletedBaselineSurvey(client, userId)
       .then((r: any) => r.data ?? null, () => null),
     // Profile basics.
-    client
-      .from('profiles')
-      .select('full_name, display_name, date_of_birth')
-      .eq('user_id', userId)
-      .maybeSingle()
+    repo.fetchProfileBasics(client, userId)
       .then((r: any) => r.data ?? null, () => null),
     // A calendar event the user actually created — NOT the 'journey' auto-seed.
-    exists(client, 'calendar_events', (q) =>
+    repo.checkRowExists(client, 'calendar_events', (q) =>
       q.eq('user_id', userId).neq('source_type', 'journey'),
     ),
-    exists(client, 'autopilot_recommendations', (q) =>
+    repo.checkRowExists(client, 'autopilot_recommendations', (q) =>
       q.eq('user_id', userId).eq('status', 'activated'),
     ),
-    exists(client, 'user_connections', (q) =>
+    repo.checkRowExists(client, 'user_connections', (q) =>
       q.eq('user_id', userId).eq('is_active', true),
     ),
   ]);
