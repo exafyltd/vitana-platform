@@ -18,6 +18,7 @@
 
 import { AutomationContext } from '../../types/automations';
 import { registerHandler } from '../automation-executor';
+import * as repo from './platform-operations-repository';
 
 // ── AP-1003: Post-Deploy Health Check ───────────────────────
 // CI writes deploy.<service>.success/failed directly into oasis_events
@@ -32,13 +33,7 @@ async function runPostDeployHealthCheck(ctx: AutomationContext) {
 
   const since = new Date(Date.now() - POST_DEPLOY_LOOKBACK_MIN * 60 * 1000).toISOString();
 
-  const { data: deployEvents } = await supabase
-    .from('oasis_events')
-    .select('topic, service, status, message, created_at')
-    .like('topic', 'deploy.%')
-    .gte('created_at', since)
-    .order('created_at', { ascending: false })
-    .limit(50);
+  const { data: deployEvents } = await repo.fetchRecentDeployEvents(supabase, since);
 
   const failed = (deployEvents || []).filter((e: any) => e.topic.endsWith('.failed'));
   if (failed.length === 0) {
@@ -95,12 +90,7 @@ async function runServiceErrorRateAlert(ctx: AutomationContext) {
   const windowStart = new Date(Date.now() - ERROR_RATE_WINDOW_MIN * 60 * 1000).toISOString();
   const cooldownCutoff = new Date(Date.now() - ERROR_RATE_COOLDOWN_MIN * 60 * 1000).toISOString();
 
-  const { data: errorEvents } = await supabase
-    .from('oasis_events')
-    .select('service, message, created_at')
-    .eq('status', 'error')
-    .gte('created_at', windowStart)
-    .limit(1000);
+  const { data: errorEvents } = await repo.fetchRecentErrorEvents(supabase, windowStart);
 
   const byService = new Map<string, { count: number; sample: string }>();
   for (const e of errorEvents || []) {
@@ -119,13 +109,7 @@ async function runServiceErrorRateAlert(ctx: AutomationContext) {
   const opsUsers = await ctx.queryTargetUsers();
   for (const [service, info] of breaches) {
     // Per-service cooldown via automation_runs.metadata so ops isn't re-paged every cycle.
-    const { data: recentAlert } = await supabase
-      .from('automation_runs')
-      .select('id')
-      .eq('automation_id', 'AP-1004')
-      .gte('completed_at', cooldownCutoff)
-      .contains('metadata', { alerted_service: service })
-      .limit(1);
+    const { data: recentAlert } = await repo.fetchRecentServiceAlertRun(supabase, service, cooldownCutoff);
     if (recentAlert && recentAlert.length > 0) continue;
 
     for (const { user_id } of opsUsers) {
@@ -172,7 +156,7 @@ async function runDatabaseMigrationVerification(ctx: AutomationContext) {
   const { supabase } = ctx;
   const missingTables: string[] = [];
   for (const table of expectedTables) {
-    const { error } = await supabase.from(table).select('*', { head: true, count: 'exact' }).limit(1);
+    const { error } = await repo.checkTableReachable(supabase, table);
     if (error) missingTables.push(table);
   }
 
