@@ -15,6 +15,7 @@
 
 import { Router, Request, Response } from 'express';
 import { createUserSupabaseClient } from '../lib/supabase-user';
+import * as repo from './role-admin-repository';
 
 const router = Router();
 const VTID = 'VTID-01230';
@@ -60,7 +61,7 @@ async function verifyAuth(req: Request): Promise<
     const isExafyAdmin = appMetadata.exafy_admin === true;
 
     // Get tenant context via me_context RPC
-    const { data: meData } = await userClient.rpc('me_context');
+    const { data: meData } = await repo.meContextRpc(userClient);
     const tenantId = meData?.tenant_id || null;
     const activeRole = meData?.active_role || null;
 
@@ -148,7 +149,7 @@ router.get('/my-roles', async (req: Request, res: Response) => {
 
   try {
     const userClient = createUserSupabaseClient(auth.token);
-    const { data, error } = await userClient.rpc('get_my_permitted_roles');
+    const { data, error } = await repo.getMyPermittedRolesRpc(userClient);
 
     if (error) {
       console.error(`[${VTID}] GET /my-roles RPC error:`, error.message);
