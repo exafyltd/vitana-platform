@@ -16,6 +16,7 @@ import { requireTenantAdmin } from '../../middleware/require-tenant-admin';
 import { AuthenticatedRequest } from '../../middleware/auth-supabase-jwt';
 import { getSupabase } from '../../lib/supabase';
 import { computeAndStoreForTenant } from '../../services/admin-awareness-worker';
+import * as repo from './kpis-repository';
 
 const router = Router({ mergeParams: true });
 const VTID = 'BOOTSTRAP-ADMIN-KPI-AA';
@@ -31,17 +32,8 @@ router.get('/', requireTenantAdmin, async (req: AuthenticatedRequest, res: Respo
     const sevenDaysAgo = new Date(Date.now() - 7 * 86400_000).toISOString().slice(0, 10);
 
     const [currentResp, historyResp] = await Promise.all([
-      supabase
-        .from('tenant_kpi_current')
-        .select('tenant_id, generated_at, kpi, computation_duration_ms, source_version')
-        .eq('tenant_id', tenantId)
-        .maybeSingle(),
-      supabase
-        .from('tenant_kpi_daily')
-        .select('snapshot_date, kpi, computed_at')
-        .eq('tenant_id', tenantId)
-        .gte('snapshot_date', sevenDaysAgo)
-        .order('snapshot_date', { ascending: false }),
+      repo.fetchTenantKpiCurrent(supabase, tenantId),
+      repo.fetchTenantKpiDailyHistory(supabase, tenantId, sevenDaysAgo),
     ]);
 
     if (currentResp.error) {
@@ -71,11 +63,7 @@ router.get('/current', requireTenantAdmin, async (req: AuthenticatedRequest, res
   const tenantId = req.params.tenantId || (req as any).targetTenantId;
   if (!tenantId) return res.status(400).json({ ok: false, error: 'TENANT_ID_REQUIRED' });
 
-  const { data, error } = await supabase
-    .from('tenant_kpi_current')
-    .select('tenant_id, generated_at, kpi, computation_duration_ms, source_version')
-    .eq('tenant_id', tenantId)
-    .maybeSingle();
+  const { data, error } = await repo.fetchTenantKpiCurrent(supabase, tenantId);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   return res.json({ ok: true, current: data ?? null });
 });
@@ -90,12 +78,7 @@ router.get('/history', requireTenantAdmin, async (req: AuthenticatedRequest, res
   const days = Number.isFinite(daysRaw) ? Math.max(1, Math.min(90, Math.floor(daysRaw))) : 7;
   const from = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
 
-  const { data, error } = await supabase
-    .from('tenant_kpi_daily')
-    .select('snapshot_date, kpi, computed_at')
-    .eq('tenant_id', tenantId)
-    .gte('snapshot_date', from)
-    .order('snapshot_date', { ascending: false });
+  const { data, error } = await repo.fetchTenantKpiDailyHistory(supabase, tenantId, from);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   return res.json({ ok: true, days, history: data ?? [] });
 });
