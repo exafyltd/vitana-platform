@@ -1,4 +1,5 @@
 import { getSupabase } from '../lib/supabase';
+import * as repo from './event-sync-repository';
 
 const STATUS_PRIORITY = {
   active: 1,
@@ -22,11 +23,7 @@ export async function syncVtidFromEvent(event: any): Promise<void> {
     }
 
     // Check if VTID exists
-    const { data: existing, error: fetchError } = await supabase
-      .from('vtid_ledger')
-      .select('vtid, status')
-      .eq('vtid', event.vtid)
-      .single();
+    const { data: existing, error: fetchError } = await repo.fetchVtidLedgerStatus(supabase, event.vtid);
 
     if (fetchError && fetchError.code !== 'PGRST116') {
       console.error('[EventSync] Error fetching VTID:', fetchError);
@@ -35,18 +32,16 @@ export async function syncVtidFromEvent(event: any): Promise<void> {
 
     if (!existing) {
       // Create new VTID
-      const { error: insertError } = await supabase
-        .from('vtid_ledger')
-        .insert({
-          vtid: event.vtid,
-          layer: event.layer || 'UNKNOWN',
-          module: event.module || 'UNKNOWN',
-          description: event.title || 'Auto-created from event',
-          status: event.status,
-          is_test: false,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        });
+      const { error: insertError } = await repo.insertVtidLedgerRow(supabase, {
+        vtid: event.vtid,
+        layer: event.layer || 'UNKNOWN',
+        module: event.module || 'UNKNOWN',
+        description: event.title || 'Auto-created from event',
+        status: event.status,
+        is_test: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
 
       if (insertError) {
         console.error('[EventSync] Error creating VTID:', insertError);
@@ -61,13 +56,7 @@ export async function syncVtidFromEvent(event: any): Promise<void> {
     const newPriority = STATUS_PRIORITY[event.status as keyof typeof STATUS_PRIORITY];
 
     if (newPriority > currentPriority) {
-      const { error: updateError } = await supabase
-        .from('vtid_ledger')
-        .update({
-          status: event.status,
-          updated_at: new Date().toISOString()
-        })
-        .eq('vtid', event.vtid);
+      const { error: updateError } = await repo.updateVtidLedgerStatus(supabase, event.vtid, event.status, new Date().toISOString());
 
       if (!updateError) {
         console.log(`[EventSync] Updated VTID ${event.vtid}: ${existing.status} → ${event.status}`);
