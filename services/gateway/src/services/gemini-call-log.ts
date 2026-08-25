@@ -9,6 +9,7 @@
  */
 
 import { getSupabase } from '../lib/supabase';
+import * as repo from './gemini-call-log-repository';
 
 export interface GeminiCallLogInput {
   feature:
@@ -39,7 +40,7 @@ export async function logGeminiCall(input: GeminiCallLogInput): Promise<void> {
   if (!supabase) return;
 
   try {
-    await supabase.from('gemini_call_log').insert({
+    await repo.insertGeminiCallLog(supabase, {
       feature: input.feature,
       model: input.model,
       status: input.status,
@@ -55,7 +56,7 @@ export async function logGeminiCall(input: GeminiCallLogInput): Promise<void> {
       intent_id: input.intent_id ?? null,
       match_id: input.match_id ?? null,
       metadata: input.metadata ?? {},
-    } as any);
+    });
   } catch {
     // Silent — telemetry must never block the user-facing call.
   }
