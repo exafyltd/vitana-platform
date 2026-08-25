@@ -57,6 +57,10 @@ import {
 import { selectUpstreamProvider } from '../orb/live/upstream/upstream-provider-selector';
 import { getLiveKitCanaryConfig } from '../orb/live/upstream/livekit-canary-config';
 import { getVoiceConfig } from '../services/voice-config';
+// VTID-03729: the /nova/decision probe below must mirror orb-live.ts's real
+// cascade wiring (BOOTSTRAP-CASCADE-WIRING seam 1) or it cannot ever report
+// cascaded_language_rescue for pl/pt/ru/ar/zh.
+import { isCascadeEnabled, isCascadeLanguageSupported } from '../orb/live/upstream/cascaded-config';
 
 const router = Router();
 
@@ -380,6 +384,14 @@ router.get(
 // Per-identity provider-decision probe: answers "would THIS caller's next
 // ORB session ride Nova?" with the exact selector the live session path
 // uses. Manual-canary verification without opening a paid stream.
+//
+// VTID-03729 — this probe never populated `cascade`, so it could not answer
+// its own question for pl/pt/ru/ar/zh: every call reported
+// `nova_forced_vertex_unavailable` for those languages, even though a real
+// session (orb-live.ts's `connectToLiveAPI`, BOOTSTRAP-CASCADE-WIRING seam 1)
+// would resolve to `cascaded`. Confirmed live on staging right after
+// VTID-03723 merged — the exact "use the audio testing program yourself"
+// verification this endpoint exists for was returning a false negative.
 router.get(
   '/nova/decision',
   optionalAuth,
@@ -423,6 +435,13 @@ router.get(
           // VTID-03501: keep the bench's reported reason honest about
           // whether Nova is globally promoted or allowlisted.
           globalEnabled: novaCfg.globalEnabled === true,
+        },
+        // VTID-03729: same fields orb-live.ts's real session path passes —
+        // without this, the probe can never report `cascaded_language_rescue`
+        // for a Nova-unsupported language, regardless of live config.
+        cascade: {
+          enabled: isCascadeEnabled(),
+          languageSupported: isCascadeLanguageSupported(lang),
         },
       });
       return res.status(200).json({

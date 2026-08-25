@@ -1,0 +1,54 @@
+# VTID-03729 — commands actually run.
+
+# --- Why this exists -------------------------------------------------------
+#
+# Immediately after VTID-03723 merged and deployed to staging, used the
+# platform's own "audio testing program" endpoint to verify the fix rather
+# than just trusting the code:
+
+curl -s "https://preview-aws-gateway.vitanaland.com/api/v1/orb/nova-sonic/health"
+#   -> cascade.effective:true, languages.pl:"cascade:pl-PL" (config is correct)
+
+curl -s "https://preview-aws-gateway.vitanaland.com/api/v1/voice-lab/nova/decision?lang=pl"
+#   -> decision.provider:"nova_sonic", decision.reason:"nova_forced_vertex_unavailable"
+#   NOT "cascaded"/"cascaded_language_rescue" — a false negative in the exact
+#   tool meant to confirm the fix.
+
+# --- Root cause, found by reading the route source --------------------------
+
+grep -n "selectUpstreamProvider({" -A 25 services/gateway/src/routes/voice-lab.ts
+#   -> the call passes envProviderOverride, systemConfigActiveProvider,
+#      livekitCredentials, canary, identity, nova — NO `cascade` field.
+
+grep -n "cascade: {" services/gateway/src/routes/orb-live.ts
+#   -> the REAL session path (connectToLiveAPI, BOOTSTRAP-CASCADE-WIRING seam 1)
+#      DOES pass { enabled: isCascadeEnabled(), languageSupported:
+#      isCascadeLanguageSupported(session.lang) }.
+#
+# Without `cascade`, tryCascadeRescue() inside the selector returns null
+# unconditionally (its own first check is `if (ctx.cascade?.enabled !== true)
+# return null`), so this probe could NEVER report cascaded_language_rescue —
+# not "rarely", structurally never, regardless of live config.
+
+# --- Fix ---------------------------------------------------------------------
+
+# Added the same cascade field to voice-lab.ts's selectUpstreamProvider() call,
+# using the same isCascadeEnabled()/isCascadeLanguageSupported() helpers
+# orb-live.ts already imports from cascaded-config.ts.
+
+# --- Verification -------------------------------------------------------------
+
+npx jest --testPathPattern="voice-lab-nova-decision-cascade|routes/voice-lab"
+#   -> Test Suites: 2 passed, 2 total / Tests: 8 passed, 8 total
+#   Output: outputs/targeted-tests.txt
+#   Mutation-style: the "cascade OFF" test case and the "cascade ON" test case
+#   assert OPPOSITE reasons for the same lang=pl input — proves the flag is
+#   genuinely load-bearing in this route now, not just present and ignored.
+
+npx tsc --noEmit
+#   -> exit 0, empty output
+#   Output: outputs/tsc.txt
+
+# Full gateway suite (run once, before writing this evidence pack):
+#   Test Suites: 695 passed, 1 skipped (unrelated) / Tests: 13216 passed,
+#   29 skipped, 6 todo (all pre-existing, unrelated)
