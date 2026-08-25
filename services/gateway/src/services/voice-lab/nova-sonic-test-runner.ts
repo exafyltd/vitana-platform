@@ -550,9 +550,14 @@ export async function runNovaSonicTestSuite(options: {
       resolveNovaSonicVoice({ language: 'es', persona: 'devon' }) === 'lupe' &&
       resolveNovaSonicVoice({ language: 'pt', persona: 'vitana' }) === 'carolina' &&
       resolveNovaSonicVoice({ language: 'pt', persona: 'devon' }) === 'carolina' &&
-      resolveNovaSonicVoice({ language: 'sr', persona: 'vitana' }) === null;
+      resolveNovaSonicVoice({ language: 'sr', persona: 'vitana' }) === null &&
+      // VTID-03730 — Turkish has no native Nova voice (unlike pt, which does
+      // and is confirmed live per the comment above) and no confirmed voice
+      // id to add here, so it must resolve null and take the documented
+      // `tina` substitution via resolveNovaSonicVoiceOrFallback, same as sr.
+      resolveNovaSonicVoice({ language: 'tr', persona: 'vitana' }) === null;
     return ok
-      ? { status: 'pass', detail: 'de/en→tina, fr→ambre, es→lupe, pt→carolina (persona-independent); sr→null' }
+      ? { status: 'pass', detail: 'de/en→tina, fr→ambre, es→lupe, pt→carolina (persona-independent); sr/tr→null' }
       : { status: 'fail', detail: 'unexpected voice mapping' };
   }));
 

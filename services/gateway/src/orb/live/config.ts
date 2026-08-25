@@ -148,4 +148,5 @@ export const SUPPORTED_LIVE_LANGUAGES: string[] = [
   'ru',
   'pt',
   'pl',
+  'tr',
 ];

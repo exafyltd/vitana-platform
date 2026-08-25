@@ -471,7 +471,8 @@ export function buildLiveSystemInstruction(
     'ru': 'Russian',
     'sr': 'Serbian',
     'pt': 'Brazilian Portuguese',
-    'pl': 'Polish'
+    'pl': 'Polish',
+    'tr': 'Turkish'
   };
 
   // Load personality config from service (uses cached values or hardcoded defaults).

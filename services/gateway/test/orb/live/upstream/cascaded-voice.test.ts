@@ -49,7 +49,15 @@ describe('VTID-03683: cascade language eligibility', () => {
     // has pt-BR and Polly has Camila (pt-BR), so it is eligible here. This
     // assertion is the one that proves the standing rule holds: everything Nova
     // does not cover goes to Polly, `sr` excepted because Polly cannot voice it.
-    expect(listCascadeLanguages().sort()).toEqual(['ar', 'pl', 'pt', 'ru', 'zh']);
+    //
+    // VTID-03730 — `tr` joins the same way: absent from
+    // NOVA_SONIC_SUPPORTED_LANGUAGES, has a Polly voice (Filiz, standard) and
+    // a Transcribe code (tr-TR), so it is eligible exactly like pt was.
+    const e = evaluateCascadeEligibility('tr');
+    expect(e.eligible).toBe(true);
+    expect(e.reason).toBeNull();
+    expect(e.transcribeLanguageCode).toBe('tr-TR');
+    expect(listCascadeLanguages().sort()).toEqual(['ar', 'pl', 'pt', 'ru', 'tr', 'zh']);
   });
 
   it('refuses sr, and blames POLLY — the blocker that is actually verified', () => {

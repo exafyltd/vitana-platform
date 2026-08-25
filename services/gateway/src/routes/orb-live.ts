@@ -2523,6 +2523,7 @@ export function buildSpecialistLanguageDirective(lang: string | undefined): stri
   const languageNames: Record<string, string> = {
     en: 'English', de: 'German', fr: 'French', es: 'Spanish',
     ar: 'Arabic', zh: 'Chinese', ru: 'Russian', sr: 'Serbian',
+    pt: 'Brazilian Portuguese', pl: 'Polish', tr: 'Turkish',
   };
   const name = languageNames[lang || 'en'] || 'English';
   return [
@@ -6883,7 +6884,8 @@ function detectIntentSignal(text: string): boolean {
 function buildAnonymousSystemInstruction(lang: string, voiceStyle: string, ctx?: ClientContext, conversationHistory?: string, isReconnect?: boolean): string {
   const languageNames: Record<string, string> = {
     'en': 'English', 'de': 'German', 'fr': 'French', 'es': 'Spanish',
-    'ar': 'Arabic', 'zh': 'Chinese', 'ru': 'Russian', 'sr': 'Serbian'
+    'ar': 'Arabic', 'zh': 'Chinese', 'ru': 'Russian', 'sr': 'Serbian',
+    'pt': 'Brazilian Portuguese', 'pl': 'Polish', 'tr': 'Turkish'
   };
 
   // Build context-aware greeting hints
@@ -14846,7 +14848,7 @@ async function getStoredLanguagePreference(
       const nameToCode: Record<string, string> = {
         english: 'en', german: 'de', french: 'fr', spanish: 'es',
         arabic: 'ar', chinese: 'zh', russian: 'ru', serbian: 'sr',
-        portuguese: 'pt', polish: 'pl',
+        portuguese: 'pt', polish: 'pl', turkish: 'tr',
       };
       return nameToCode[storedLang] || (SUPPORTED_LIVE_LANGUAGES.includes(storedLang) ? storedLang : null);
     }

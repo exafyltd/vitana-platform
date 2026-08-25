@@ -39,6 +39,13 @@ const LIVE_API_VOICE_FALLBACKS: Record<string, LiveApiVoiceConfig> = {
   // that would train readers to ignore the warning that matters.
   pt: { voice_name: 'Zephyr', fallback_lang: null },
   pl: { voice_name: 'Despina', fallback_lang: null },
+  // VTID-03730. Same reasoning as pt/pl above — this field is only ever
+  // read into a legacy `meta.voice` telemetry field now (the real audio
+  // path is Nova Sonic / the cascade, never Vertex — see orb-live.ts's own
+  // VTID-03704 comment at the call sites), but an omission here still
+  // falls back to `LIVE_API_VOICE_FALLBACKS['en']` silently, which is
+  // exactly the "looks native, isn't" gap this table exists to make loud.
+  tr: { voice_name: 'Puck', fallback_lang: null },
 };
 
 // Dedup log lines so a hot per-session loop doesn't spam the logger.
