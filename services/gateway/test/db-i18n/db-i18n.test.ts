@@ -422,6 +422,36 @@ describe('translateUnits batch splitting', () => {
     expect(res.failures.every((f) => /429/.test(f.reason))).toBe(true);
   });
 
+  /**
+   * VTID-03701-follow-up — live evidence from I18N-DB-SEED run 32730591018
+   * (zh nav-catalog + journey-checklist): Claude occasionally emits a raw,
+   * unescaped newline inside a JSON string value instead of `\n`. That is
+   * NOT the truncation case the batch-splitting tests above cover — halving
+   * the batch reproduces the identical malformed character every time, so
+   * these failures persisted all the way down to single-unit batches. This
+   * pins the narrow repair: a raw control character inside a string gets
+   * re-escaped before JSON.parse, so the unit is translated instead of
+   * reported as a parse failure.
+   */
+  it('recovers from a raw newline embedded in a JSON string value (VTID-03701-follow-up)', async () => {
+    const completeImpl: TranslateCompleteFn = async () =>
+      // Deliberately hand-built, not JSON.stringify'd — a real literal
+      // newline byte sitting inside the string, exactly as Bedrock returned
+      // it on the failing zh units, not an escaped "\\n" that stringify
+      // would have produced.
+      okText('{"K0": {"title": "第一行\n第二行"}}');
+    const res = await translateUnits(units.slice(0, 1), opts(completeImpl), ['title'], 1);
+    expect(res.failures).toHaveLength(0);
+    expect(res.translated.get('K0')?.title).toBe('第一行\n第二行');
+  });
+
+  it('still reports a failure when the JSON is genuinely unparseable, sanitization or not', async () => {
+    const completeImpl: TranslateCompleteFn = async () => okText('{"K0": {"title": "unterminated');
+    const res = await translateUnits(units.slice(0, 1), opts(completeImpl), ['title'], 1);
+    expect(res.translated.size).toBe(0);
+    expect(res.failures).toHaveLength(1);
+  });
+
   it('names no provider and no model — routing belongs to llm_routing_policy', () => {
     // Guards the actual defect: a direct provider host in this module. The
     // module-level check in the suite below covers the whole db-i18n tree; this

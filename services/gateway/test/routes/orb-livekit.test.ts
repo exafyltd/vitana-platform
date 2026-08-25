@@ -658,6 +658,55 @@ describe('orb-livekit routes', () => {
       expect(JSON.stringify(res.body)).not.toMatch(/key|secret|token/i);
       delete process.env.NOVA_SONIC_REGION;
     });
+
+    // VTID-03721 — the cascade block. This route is the ONLY way to observe
+    // whether Nova-unsupported languages (pl/pt/ru/ar/zh) are actually being
+    // served: no other endpoint reported it, and session telemetry records no
+    // upstream provider at all. pl/pt answered in English for hours with the
+    // cause invisible from outside because of that.
+    describe('cascade block (VTID-03721)', () => {
+      afterEach(() => {
+        delete process.env.ORB_CASCADED_VOICE_ENABLED;
+        delete process.env.VERTEX_LIVE_UNAVAILABLE;
+      });
+
+      it('reports effective=true only when BOTH gates are set', async () => {
+        process.env.ORB_CASCADED_VOICE_ENABLED = 'true';
+        process.env.VERTEX_LIVE_UNAVAILABLE = 'true';
+        const res = await request(app).get('/api/v1/orb/nova-sonic/health');
+        expect(res.status).toBe(200);
+        expect(res.body.cascade.enabled).toBe(true);
+        expect(res.body.cascade.effective).toBe(true);
+      });
+
+      it('reports enabled=true but effective=false when Vertex is not marked dead', async () => {
+        // The silent configuration: VERTEX_LIVE_UNAVAILABLE gates the branch
+        // ABOVE the cascade, so the selector returns {provider:'vertex'} and
+        // returns before tryCascadeRescue() is consulted. Looks on, does
+        // nothing. This is the state the endpoint exists to make visible.
+        process.env.ORB_CASCADED_VOICE_ENABLED = 'true';
+        const res = await request(app).get('/api/v1/orb/nova-sonic/health');
+        expect(res.body.cascade.enabled).toBe(true);
+        expect(res.body.cascade.effective).toBe(false);
+      });
+
+      it('reports the per-language routing verdict Polish and Portuguese get', async () => {
+        process.env.ORB_CASCADED_VOICE_ENABLED = 'true';
+        process.env.VERTEX_LIVE_UNAVAILABLE = 'true';
+        const res = await request(app).get('/api/v1/orb/nova-sonic/health');
+        expect(res.body.cascade.languages.pl).toBe('cascade:pl-PL');
+        expect(res.body.cascade.languages.pt).toBe('cascade:pt-BR');
+        // Serbian is a real product gap, not a config error — Polly publishes
+        // no Serbian voice in any engine. The reason must name Polly.
+        expect(res.body.cascade.languages.sr).toBe('no:no_polly_voice');
+      });
+
+      it('leaks nothing through the new block on this public route', async () => {
+        process.env.ORB_CASCADED_VOICE_ENABLED = 'true';
+        const res = await request(app).get('/api/v1/orb/nova-sonic/health');
+        expect(JSON.stringify(res.body.cascade)).not.toMatch(/key|secret|arn:aws/i);
+      });
+    });
   });
 
   // =========================================================================

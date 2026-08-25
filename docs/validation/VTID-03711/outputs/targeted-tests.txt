@@ -1,0 +1,20 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+PASS test/frontend/orb-widget-audio-playback.test.ts
+  orb-widget audio playback queue
+    ✓ removes the actual ended AudioBufferSource from scheduledSources (4 ms)
+  orb-widget German playback rate (VTID-03606)
+    ✓ defines a German-specific rate above the baseline (1 ms)
+    ✓ _currentPlaybackRate() selects the DE rate only when _cfg.lang starts with de (1 ms)
+    ✓ _processQueue applies the SAME per-chunk rate to both playbackRate.value and the schedule-gap divisor (1 ms)
+  orb-widget PCM playback rate honors the chunk mime (VTID-03711)
+    ✓ _pcmRateFromMime parses the rate out of the mime string
+    ✓ _pcmRateFromMime falls back to 24000 only when the mime is missing/unparseable (1 ms)
+    ✓ _processQueue passes the parsed per-chunk rate into createBuffer, not a hardcoded constant (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       7 passed, 7 total
+Snapshots:   0 total
+Time:        0.384 s, estimated 1 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

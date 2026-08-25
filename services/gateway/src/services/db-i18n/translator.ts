@@ -178,9 +178,84 @@ async function routerComplete(
   return { ok: true, text };
 }
 
+/**
+ * VTID-03701-follow-up — live evidence (I18N-DB-SEED run 32730591018,
+ * zh nav-catalog + journey-checklist) showed the raw-control-character
+ * failure mode below firing 45 times in one run, all on Chinese output,
+ * none on Arabic in the same run. Claude occasionally emits a literal
+ * newline (or other control byte) inside a JSON string value instead of
+ * the escaped `\n` — every "Expected ',' or '}' after property value in
+ * JSON at position N" failure decoded from these runs matched that shape
+ * exactly. It is NOT the truncation case `translateUnits` already handles
+ * by halving the batch: halving reproduces the same malformed character
+ * identically, which is exactly why these persisted all the way down to
+ * single-unit batches instead of being resolved by the existing split.
+ *
+ * Fixed by re-escaping any raw control character (0x00-0x1F) found INSIDE
+ * a JSON string literal before parsing — the one narrow, mechanical repair
+ * that undoes this specific defect without attempting a general "fix any
+ * malformed JSON" parser. Escaping done inside a string, honoring the
+ * source's own backslash escapes, so a legitimate `\\n` (already escaped)
+ * is left untouched and only a truly raw control byte is rewritten.
+ */
+function sanitizeControlCharsInStrings(text: string): string {
+  let out = '';
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) {
+        out += ch;
+        escaped = false;
+        continue;
+      }
+      if (ch === '\\') {
+        out += ch;
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') {
+        inString = false;
+        out += ch;
+        continue;
+      }
+      const code = ch.charCodeAt(0);
+      if (code < 0x20) {
+        switch (ch) {
+          case '\n': out += '\\n'; break;
+          case '\r': out += '\\r'; break;
+          case '\t': out += '\\t'; break;
+          default: out += `\\u${code.toString(16).padStart(4, '0')}`;
+        }
+        continue;
+      }
+      out += ch;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    out += ch;
+  }
+  return out;
+}
+
 function parseJsonObject(text: string): Record<string, Record<string, string>> {
   const trimmed = text.trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
-  const parsed = JSON.parse(trimmed) as unknown;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch (err) {
+    // Retry once against a sanitized copy — see sanitizeControlCharsInStrings
+    // for why this is the one repair worth attempting rather than a general
+    // malformed-JSON parser. If the sanitized copy still fails, surface the
+    // ORIGINAL error: it names the original text's position, which is what
+    // a human debugging a real truncation/refusal case needs to see.
+    try {
+      parsed = JSON.parse(sanitizeControlCharsInStrings(trimmed));
+    } catch {
+      throw err instanceof Error ? err : new Error(String(err));
+    }
+  }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error('response was not a JSON object');
   }

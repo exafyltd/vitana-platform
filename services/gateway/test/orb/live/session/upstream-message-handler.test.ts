@@ -671,7 +671,8 @@ describe('server_content — model_turn audio (inline_data)', () => {
         model_turn: { parts: [{ inline_data: { mime_type: 'audio/pcm;rate=24000', data: 'AQIDBA==' } }] },
       },
     });
-    expect(callbacks.onAudioResponse).toHaveBeenCalledWith('AQIDBA==');
+    // VTID-03715: the chunk's own declared rate must ride along, not be dropped.
+    expect(callbacks.onAudioResponse).toHaveBeenCalledWith('AQIDBA==', 'audio/pcm;rate=24000');
     expect(deps.startResponseWatchdog).toHaveBeenCalledWith(expect.anything(), expect.any(Number), 'audio_stall');
   });
 
@@ -682,7 +683,7 @@ describe('server_content — model_turn audio (inline_data)', () => {
         modelTurn: { parts: [{ inlineData: { mimeType: 'audio/pcm;rate=24000', data: 'ZZZZ' } }] },
       },
     });
-    expect(callbacks.onAudioResponse).toHaveBeenCalledWith('ZZZZ');
+    expect(callbacks.onAudioResponse).toHaveBeenCalledWith('ZZZZ', 'audio/pcm;rate=24000');
   });
 
   it('marks isModelSpeaking + fires markVoiceLatency/emitDiag exactly once on the FIRST chunk of a turn', () => {
@@ -764,7 +765,7 @@ describe('server_content — model_turn audio (inline_data)', () => {
         },
       },
     });
-    expect(callbacks.onAudioResponse).toHaveBeenCalledWith('AA==');
+    expect(callbacks.onAudioResponse).toHaveBeenCalledWith('AA==', 'audio/pcm');
     expect(callbacks.onTextResponse).toHaveBeenCalledWith('hello there');
   });
 

@@ -305,6 +305,46 @@ jobs:
           # `[TTS] FALLBACK polly→google` — grep that line to tell a missing
           # IAM grant apart from a working switch, because the user-visible
           # behaviour is identical either way.
+          # VTID-03708 — VERTEX_LIVE_UNAVAILABLE + TTS_POLLY_STRICT on
+          # STAGING, upserted below.
+          #
+          # Live task-def audit (read-only aws ecs describe-task-definition,
+          # 2026-08-23) found VERTEX_LIVE_UNAVAILABLE unset here while prod
+          # already carries it true. That is not a cosmetic gap: with the
+          # flag unset, the selector still believes Vertex is a live
+          # fallback, so the VTID-03703 fix never actually engages on
+          # staging. Walk the real branch: for a Nova-unsupported language
+          # (ru/pl/ar/zh), `if (languageBlocked and not vertexDead) return
+          # {provider:vertex}` fires and returns BEFORE the cascade is ever
+          # consulted -- vertexDead reads false here, so it returns vertex,
+          # and Vertex is permanently dead (GCP shutdown). Those sessions die
+          # with the exact upstream-1007 close VTID-03703 exists to prevent,
+          # even though ORB_CASCADED_VOICE_ENABLED is already true here --
+          # the cascade flag being on does nothing while this one is unset.
+          #
+          # VTID-03720 -- "ORB_CASCADED_VOICE_ENABLED is already true here"
+          # was an observation of LIVE AWS STATE, not something this file
+          # guaranteed. The var was in NEITHER the strip list NOR the re-add
+          # list, so it was merely PRESERVED from whatever the previous task
+          # definition happened to carry -- the exact shape VTID-03513 cost
+          # four days for, and unverifiable from the repo. Reported live:
+          # pl/pt still answered in English on staging for hours. That is the
+          # cascade-off branch exactly -- `tryCascadeRescue()` returns null
+          # unless the value is the string 'true', control falls to
+          # `nova_forced_vertex_unavailable`, Nova is forced to carry a
+          # language it cannot speak, and answers in English in a
+          # language-flavoured voice (pt -> carolina, pl -> tina).
+          #
+          # It is now UPSERTED to "true" below, like every other var here, so
+          # staging genuinely exercises Transcribe->Bedrock->Polly. Verified
+          # by running the real decision functions: pl -> Ola/pl-PL,
+          # pt -> Camila/pt-BR, ru/ar/zh all eligible; only sr is refused
+          # (no_polly_voice, Polly has no Serbian voice in any engine).
+          #
+          # TTS_POLLY_STRICT was unset here too (prod has it true). Without
+          # it an unservable TTS request tries to fall back to Google, which
+          # no longer exists, instead of failing fast.
+          #
           # VTID-03580 — BEDROCK_ROLE_ARN on STAGING, so staging can verify the
           # thing it exists to verify.
           #
@@ -346,7 +386,9 @@ jobs:
                                                 "NOVA_SONIC_CANARY_USER_IDS","NOVA_SONIC_CANARY_TENANT_IDS",
                                                 "FEATURE_ORB_GREETING_TTS_BRIDGE_ENV",
                                                 "FEATURE_ORB_SAFE_FAST_GREETING_ENV",
-                                                "TTS_PROVIDER",
+                                                "ORB_FULL_DUPLEX_ENABLED",
+                                                "TTS_PROVIDER","TTS_POLLY_STRICT","VERTEX_LIVE_UNAVAILABLE",
+                                                "ORB_CASCADED_VOICE_ENABLED",
                                                 "BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION") | not) ]
                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
                           {name:"COMMIT_SHA", value:$SHA},
@@ -358,7 +400,21 @@ jobs:
                           {name:"NOVA_SONIC_CANARY_TENANT_IDS", value:$NOVA_TENANTS},
                           {name:"FEATURE_ORB_GREETING_TTS_BRIDGE_ENV", value:"off"},
                           {name:"FEATURE_ORB_SAFE_FAST_GREETING_ENV", value:"staging-only"},
+                          # VTID-03706 — ORB full-duplex voice: the mic stays
+                          # open while Vitana speaks so the native Nova Sonic
+                          # barge-in can fire. STAGING ONLY. Deliberately not
+                          # added to AWS-PROD-DEPLOY-GATEWAY.yml: this changes
+                          # live audio behaviour for every voice session and
+                          # needs real-device echo verification (see
+                          # /command-hub/orb-voice-bench.html) before prod is
+                          # even a question. Rollback is this value -> "false",
+                          # no code revert. Exact-"true" opt-in, matching the
+                          # sibling ORB kill switches — anything else is OFF.
+                          {name:"ORB_FULL_DUPLEX_ENABLED", value:"true"},
                           {name:"TTS_PROVIDER", value:"polly"},
+                          {name:"TTS_POLLY_STRICT", value:"true"},
+                          {name:"VERTEX_LIVE_UNAVAILABLE", value:"true"},
+                          {name:"ORB_CASCADED_VOICE_ENABLED", value:"true"},
                           {name:"BEDROCK_ROLE_ARN", value:$TASK_ROLE},
                           {name:"AWS_BEDROCK_REGION", value:"eu-central-1"} ] )
                 | .containerDefinitions[0].secrets |=

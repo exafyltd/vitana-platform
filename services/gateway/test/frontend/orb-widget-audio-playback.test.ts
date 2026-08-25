@@ -65,3 +65,37 @@ describe('orb-widget German playback rate (VTID-03606)', () => {
     expect(processQueueBody).not.toMatch(/buf\.duration\s*\/\s*_AUDIO_PLAYBACK_RATE\s*;/);
   });
 });
+
+describe('orb-widget PCM playback rate honors the chunk mime (VTID-03711)', () => {
+  const source = fs.readFileSync(WIDGET_PATH, 'utf8');
+
+  // Regression: createBuffer() used to hardcode 24000 (Nova's native rate)
+  // regardless of the chunk's actual mime, so any 16kHz Polly PCM (greeting
+  // bridge, guided-topic narration, the cascaded-voice client — all three
+  // correctly label their audio 'audio/pcm;rate=16000') decoded as 24kHz and
+  // played back at 1.5x speed/pitch. Exposed live in production the moment
+  // ORB_CASCADED_VOICE_ENABLED made a full Polly conversation (not just a
+  // short greeting snippet) audible on this path.
+  it('_pcmRateFromMime parses the rate out of the mime string', () => {
+    const body = extractFunctionBody(source, 'function _pcmRateFromMime(mime)');
+    expect(body).toMatch(/rate=\(\\d\+\)/);
+  });
+
+  it('_pcmRateFromMime falls back to 24000 only when the mime is missing/unparseable', () => {
+    const body = extractFunctionBody(source, 'function _pcmRateFromMime(mime)');
+    expect(body).toMatch(/24000/);
+  });
+
+  it('_processQueue passes the parsed per-chunk rate into createBuffer, not a hardcoded constant', () => {
+    const processQueueBody = extractFunctionBody(source, 'function _processQueue()');
+    expect(processQueueBody).toMatch(
+      /var\s+pcmRate\s*=\s*_pcmRateFromMime\(\s*chunk\.mime\s*\)\s*;/,
+    );
+    expect(processQueueBody).toMatch(
+      /ctx\.createBuffer\(\s*1\s*,\s*floats\.length\s*,\s*pcmRate\s*\)/,
+    );
+    // The exact regression: createBuffer's rate argument must never be the
+    // bare literal 24000 again.
+    expect(processQueueBody).not.toMatch(/ctx\.createBuffer\(\s*1\s*,\s*floats\.length\s*,\s*24000\s*\)/);
+  });
+});

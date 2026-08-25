@@ -46,9 +46,17 @@ describe('VTID-03143: duplicate-turn audio suppression', () => {
     // client through onAudioResponse.
     expect(src).toMatch(/suppressCurrentTurnAudio === true/);
     expect(src).toMatch(/currentTurnAudioChunksDropped/);
-    // The "else { ctx.callbacks.onAudioResponse(audioB64); }" branch
-    // proves we only forward when suppression is off.
-    expect(src).toMatch(/\}\s*else\s*\{\s*ctx\.callbacks\.onAudioResponse\(audioB64\);\s*\}/);
+    // The "else { ...onAudioResponse(audioB64, mimeType); }" branch proves we
+    // only forward when suppression is off.
+    //
+    // VTID-03715 widened the call to carry the chunk's own mime, and this
+    // assertion pinned the single-argument shape by literal text. Re-recorded
+    // to the real shape rather than loosened away: the invariant being
+    // characterized is WHERE the forward sits relative to the guard, so the
+    // arguments are allowed to vary but the else-branch structure is not.
+    expect(src).toMatch(
+      /\}\s*else\s*\{[\s\S]{0,400}?ctx\.callbacks\.onAudioResponse\(audioB64,\s*mimeType\);\s*\}/,
+    );
   });
 
   it('output_transcription handler compares prefix to session.recentAssistantTexts', () => {

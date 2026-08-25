@@ -1,0 +1,12 @@
+# Ran the REAL decision functions (evaluateCascadeEligibility / resolvePollyVoice
+# / isNovaSonicLanguageSupported) — not a reading of the tables.
+#
+# pl: novaSupported=false cascadeEligible=true  transcribe=pl-PL pollyVoice={"voiceId":"Ola","engine":"neural","languageCode":"pl-PL"}
+# pt: novaSupported=false cascadeEligible=true  transcribe=pt-BR pollyVoice={"voiceId":"Camila","engine":"neural","languageCode":"pt-BR"}
+# ru: novaSupported=false cascadeEligible=true  transcribe=ru-RU pollyVoice={"voiceId":"Tatyana","engine":"standard","languageCode":"ru-RU"}
+# ar: novaSupported=false cascadeEligible=true  transcribe=ar-AE pollyVoice={"voiceId":"Hala","engine":"neural","languageCode":"ar-AE"}
+# zh: novaSupported=false cascadeEligible=true  transcribe=zh-CN pollyVoice={"voiceId":"Zhiyu","engine":"neural","languageCode":"cmn-CN"}
+# sr: novaSupported=false cascadeEligible=false reason=no_polly_voice  pollyVoice=null
+#
+# Conclusion: the CODE was never the blocker for pl/pt. Only the runtime flag was.
+# sr remains a genuine product gap (Polly has no Serbian voice in any engine).

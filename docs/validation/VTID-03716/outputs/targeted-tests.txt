@@ -1,0 +1,22 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+PASS test/orb/live/characterization/tts-pcm-diagnostic-route.characterization.test.ts
+  VTID-03716 — /tts-pcm-diagnostic route
+    ✓ is mounted with optionalAuth — stateless, no session required (2 ms)
+    ✓ is rate-limited — unauthenticated callers cannot repeatedly trigger paid Polly synthesis (Codex P1) (1 ms)
+    ✓ normalizes the requested language with the Polly-shape normalizer, not the live-session allowlist one (Codex P2) (1 ms)
+    ✓ calls synthesizePolly with format:"pcm" unconditionally — the same call CascadedLiveClient makes
+    ✓ does not gate on TTS_PROVIDER — imports synthesizePolly directly, not the tts-provider wrapper (1 ms)
+    ✓ returns sample_rate_hz and a matching audio/pcm;rate= mime — the exact fields the widget fix reads (1 ms)
+    ✓ rejects empty text with 400, not a silent empty-audio synthesis attempt
+    ✓ rejects oversized text with 400 before calling Polly (cost/latency guard) (1 ms)
+    ✓ reports a Polly-unsupported language distinctly (422), not a generic 500
+    ✓ the import is the direct, unconditional Polly module, not the gated provider wrapper
+    ✓ imports express-rate-limit for the diagnostic limiter
+
+Test Suites: 1 passed, 1 total
+Tests:       11 passed, 11 total
+Snapshots:   0 total
+Time:        0.471 s, estimated 1 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

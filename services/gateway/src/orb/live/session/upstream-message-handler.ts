@@ -235,7 +235,7 @@ export interface UpstreamMessageHandlerContext {
   session: GeminiLiveSession;
   ws: WebSocket;
   callbacks: {
-    onAudioResponse: (audioB64: string) => void;
+    onAudioResponse: (audioB64: string, mimeType?: string) => void;
     onTextResponse: (text: string) => void;
     onError: (error: Error) => void;
     onTurnComplete?: () => void;
@@ -1256,7 +1256,10 @@ export function createUpstreamLiveMessageHandler(
                   }
                   // Don't forward to client.
                 } else {
-                  ctx.callbacks.onAudioResponse(audioB64);
+                  // VTID-03715: `mimeType` is this chunk's own declared type,
+                  // read from inline_data above. Threading it costs nothing and
+                  // keeps both audio paths honest about their rate.
+                  ctx.callbacks.onAudioResponse(audioB64, mimeType);
                 }
 
                 // VTID-STREAM-KEEPALIVE: Removed per-chunk OASIS event emission.
@@ -1613,7 +1616,7 @@ export interface UpstreamSessionHandlerContext {
   session: GeminiLiveSession;
   client: UpstreamLiveClient;
   callbacks: {
-    onAudioResponse: (audioB64: string) => void;
+    onAudioResponse: (audioB64: string, mimeType?: string) => void;
     onTextResponse: (text: string) => void;
     onError: (error: Error) => void;
     onTurnComplete?: () => void;
@@ -1744,7 +1747,14 @@ export function handleAudioOutput(
     }
     return;
   }
-  ctx.callbacks.onAudioResponse(event.dataB64);
+  // VTID-03715: forward the rate the upstream ACTUALLY encoded at. Nova streams
+  // 24kHz; the Polly cascade streams 16kHz and labels every chunk
+  // `audio/pcm;rate=16000` (cascaded-live-client.ts). Dropping `mimeType` here
+  // meant the forwarding layer fell back to a hardcoded 24000, so cascaded
+  // speech reached the client mislabelled and played 1.5x fast — the reported
+  // chipmunk voice. VTID-03711 fixed the CLIENT's parsing; the rate still has
+  // to survive the server to give that parser anything true to read.
+  ctx.callbacks.onAudioResponse(event.dataB64, event.mimeType);
 }
 
 /** Transcript (both directions) — mirror + Nova final/speculative semantics. */
