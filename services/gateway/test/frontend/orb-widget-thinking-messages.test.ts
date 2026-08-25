@@ -80,7 +80,9 @@ describe('orb-widget thinking-status messages (VTID-03449, VTID-03451)', () => {
     const forbidden = /\b(processing|request|retrieving|query|system)\b/i;
     // BOOTSTRAP-ORB-CAPTION-I18N: each pool entry grew from {en, de} to all
     // 10 gateway-supported locales — see services/gateway/src/i18n/catalog.ts
-    // GATEWAY_LOCALES. This regex pins the full 10-key shape so a future
+    // GATEWAY_LOCALES. VTID-03733 then added an 11th, `tr`, one locale ahead
+    // of GATEWAY_LOCALES on purpose — see orb-widget.js's own comment on
+    // _CAPTION_LOCALES. This regex pins the full 11-key shape so a future
     // edit can't silently drop a locale from one entry.
     // Quote-agnostic per field: a value with an apostrophe (French phrases
     // like "D'accord, attends…") is double-quoted in the source, so a
@@ -89,7 +91,7 @@ describe('orb-widget thinking-status messages (VTID-03449, VTID-03451)', () => {
     const pairs =
       source.match(
         new RegExp(
-          `\\{ en: ${Q}, de: ${Q}, es: ${Q}, sr: ${Q}, fr: ${Q}, pt: ${Q}, ru: ${Q}, pl: ${Q}, zh: ${Q}, ar: ${Q} \\}`,
+          `\\{ en: ${Q}, de: ${Q}, es: ${Q}, sr: ${Q}, fr: ${Q}, pt: ${Q}, ru: ${Q}, pl: ${Q}, zh: ${Q}, ar: ${Q}, tr: ${Q} \\}`,
           'g',
         ),
       ) || [];
