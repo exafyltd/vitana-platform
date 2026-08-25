@@ -9915,6 +9915,11 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                     value: _sfDecision.effects.stampBriefingDate,
                     error,
                   });
+                  emitDiag(session, 'stamp_briefing_date_write', {
+                    branch: 'safe_fast',
+                    result: 'error',
+                    error: String((error as any)?.message ?? error),
+                  });
                 } else if (!data || data.length === 0) {
                   // PostgREST reports 0-row-matched UPDATEs as a clean
                   // success (no `error`) — a live suspect for why the
@@ -9924,12 +9929,24 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                     user_id: _uidSF,
                     value: _sfDecision.effects.stampBriefingDate,
                   });
+                  emitDiag(session, 'stamp_briefing_date_write', { branch: 'safe_fast', result: 'zero_rows' });
+                } else {
+                  emitDiag(session, 'stamp_briefing_date_write', {
+                    branch: 'safe_fast',
+                    result: 'ok',
+                    rows: data.length,
+                  });
                 }
               } catch (err) {
                 console.error('[orb-live] stampBriefingDate write threw (safe_fast)', {
                   user_id: _uidSF,
                   value: _sfDecision.effects.stampBriefingDate,
                   err,
+                });
+                emitDiag(session, 'stamp_briefing_date_write', {
+                  branch: 'safe_fast',
+                  result: 'threw',
+                  error: String((err as any)?.message ?? err),
                 });
               }
             }
@@ -10452,10 +10469,22 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                     value: _decisionNS.effects.stampBriefingDate,
                     error,
                   });
+                  emitDiag(session, 'stamp_briefing_date_write', {
+                    branch: 'normal',
+                    result: 'error',
+                    error: String((error as any)?.message ?? error),
+                  });
                 } else if (!data || data.length === 0) {
                   console.error('[orb-live] stampBriefingDate write matched 0 rows (normal)', {
                     user_id: _syncUid,
                     value: _decisionNS.effects.stampBriefingDate,
+                  });
+                  emitDiag(session, 'stamp_briefing_date_write', { branch: 'normal', result: 'zero_rows' });
+                } else {
+                  emitDiag(session, 'stamp_briefing_date_write', {
+                    branch: 'normal',
+                    result: 'ok',
+                    rows: data.length,
                   });
                 }
               } catch (err) {
@@ -10463,6 +10492,11 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                   user_id: _syncUid,
                   value: _decisionNS.effects.stampBriefingDate,
                   err,
+                });
+                emitDiag(session, 'stamp_briefing_date_write', {
+                  branch: 'normal',
+                  result: 'threw',
+                  error: String((err as any)?.message ?? err),
                 });
               }
             }

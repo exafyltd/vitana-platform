@@ -1107,6 +1107,7 @@ export async function handleLiveSessionStart(
     // with the heavy block, which sets the same field later.
     if (isFeatureLive('ORB_SAFE_FAST_GREETING')) {
       const _ndIdentity = bootstrapIdentity;
+      const _prefetchStartMs = Date.now();
       greetingFactsReady = (async () => {
         try {
           const { getSupabase } = await import('../../../lib/supabase');
@@ -1196,6 +1197,38 @@ export async function handleLiveSessionStart(
                 .filter((k): k is string => typeof k === 'string' && k.length > 0);
             }
           }
+          // BOOTSTRAP-ORB-NEWDAY-STAMP-DIAGNOSTIC — a diagnostic-only event
+          // (never gates behavior) reporting exactly what this query returned,
+          // so a live repro shows whether last_full_briefing_date is missing
+          // because the query errored, found no row, or genuinely read null —
+          // versus being lost downstream after a successful read. `session`
+          // does not exist yet at this point in context bootstrap, so this
+          // uses emitOasisEvent directly rather than deps.emitDiag.
+          emitOasisEvent({
+            vtid: 'BOOTSTRAP-ORB-NEWDAY-STAMP-DIAGNOSTIC',
+            type: 'orb.live.diag' as any,
+            source: 'orb-live-greeting-facts-prefetch',
+            status: 'info',
+            message: 'greeting-facts prefetch: user_journey read result',
+            payload: {
+              session_id: sessionId,
+              user_id: _ndIdentity.user_id,
+              stage: 'greeting_facts_user_journey_read',
+              elapsed_ms: Date.now() - _prefetchStartMs,
+              settled_status: firstSessionResult.status,
+              query_error:
+                firstSessionResult.status === 'fulfilled'
+                  ? (firstSessionResult.value as any)?.error ?? null
+                  : (firstSessionResult as any).reason?.message ?? String((firstSessionResult as any).reason),
+              row_found:
+                firstSessionResult.status === 'fulfilled' ? !!(firstSessionResult.value as any)?.data : null,
+              raw_last_full_briefing_date:
+                firstSessionResult.status === 'fulfilled'
+                  ? ((firstSessionResult.value as any)?.data?.last_full_briefing_date ?? null)
+                  : null,
+              resolved_greeting_last_full_briefing_date: greetingLastFullBriefingDate,
+            },
+          }).catch(() => {});
           if (
             journeyStateResult.status === 'fulfilled' &&
             journeyStateResult.value &&
