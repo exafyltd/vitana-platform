@@ -32,6 +32,7 @@ import { NAVIGATION_CATALOG, getContent, resolveEffectiveRoles } from './navigat
 import { getSupabase } from './supabase';
 import { notifyDbI18nSourceChanged } from '../services/db-i18n/notify-source-changed';
 import { expandQueryTokens, EXPANSION_WEIGHT } from './nav-query-expansion';
+import * as repo from './nav-catalog-db-repository';
 
 // =============================================================================
 // Types (shape of the rows coming back from Supabase)
@@ -285,12 +286,7 @@ export async function refreshNavCatalogCache(): Promise<void> {
         return;
       }
 
-      const { data: rows, error: rowsErr } = await supabase
-        .from('nav_catalog')
-        .select(
-          'id, screen_id, tenant_id, route, category, access, anonymous_safe, priority, platform, related_kb_topics, context_rules, override_triggers, is_active, created_at, updated_at, updated_by'
-        )
-        .eq('is_active', true);
+      const { data: rows, error: rowsErr } = await repo.fetchActiveNavCatalogRows(supabase);
 
       if (rowsErr) {
         console.warn(`[VTID-NAV-02] refreshNavCatalogCache rows error: ${rowsErr.message}`);
@@ -303,10 +299,7 @@ export async function refreshNavCatalogCache(): Promise<void> {
       }
 
       const catalogIds = (rows as NavCatalogRow[]).map(r => r.id);
-      const { data: i18nRows, error: i18nErr } = await supabase
-        .from('nav_catalog_i18n')
-        .select('catalog_id, lang, title, description, when_to_visit, updated_at')
-        .in('catalog_id', catalogIds);
+      const { data: i18nRows, error: i18nErr } = await repo.fetchNavCatalogI18nRowsForCatalogIds(supabase, catalogIds);
 
       if (i18nErr) {
         console.warn(`[VTID-NAV-02] refreshNavCatalogCache i18n error: ${i18nErr.message}`);
