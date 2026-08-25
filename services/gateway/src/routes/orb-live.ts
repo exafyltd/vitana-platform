@@ -15361,7 +15361,20 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
         try {
           session.sseResponse.write(`data: ${JSON.stringify({
             type: 'live_api_ready',
-            session_id: sessionId
+            session_id: sessionId,
+            // VTID-03706 follow-up: the WS session_started handshake carries
+            // full_duplex, but this SSE handshake never did — and SSE is the
+            // widget's DEFAULT transport preference, not a rare fallback. The
+            // client-side full-duplex gate (orb-widget.js _s.fullDuplex) was
+            // structurally unreachable over SSE as a result: it stayed at its
+            // false default forever, so the mic never stayed open during
+            // playback even when ORB_FULL_DUPLEX_ENABLED=true and the SERVER
+            // side gate (live-session-controller.ts) was already applying it
+            // correctly to inbound frames. Confirmed live on staging: a real
+            // SSE session's .vtorb-mic-live class never appeared during
+            // playback before this fix, on the exact commit that shipped
+            // full duplex.
+            full_duplex: isFullDuplexEnabled(),
           })}\n\n`);
         } catch (err) {
           // SSE might be closed

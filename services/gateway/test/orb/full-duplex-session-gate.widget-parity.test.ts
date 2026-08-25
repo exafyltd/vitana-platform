@@ -134,6 +134,29 @@ describe('VTID-03706 legacy behaviour is preserved when the flag is off', () => 
     expect(widget).toContain('_s.fullDuplex = msg.full_duplex === true;');
   });
 
+  it('reads full duplex on BOTH transports, not just WS', () => {
+    // VTID-03706 follow-up: the widget defaults to the SSE transport
+    // (_sessionStart's transport preference), but the original fix only
+    // wired `_s.fullDuplex = msg.full_duplex === true;` into the WS
+    // `session_started` handler. SSE never sends a `session_started`-typed
+    // message at all (it sends `ready`/`live_api_ready`/`audio`/...), so
+    // `_s.fullDuplex` stayed at its false default on every SSE session,
+    // full duplex or not — confirmed live against staging, where the
+    // .vtorb-mic-live class never appeared during playback on a real SSE
+    // session. A single occurrence here would mean one of the two
+    // transports lost its wiring again; there must be exactly two:
+    // the WS `session_started` handler and the SSE `live_api_ready` case
+    // in `_handleMessage`.
+    const occurrences = widget.split('_s.fullDuplex = msg.full_duplex === true;').length - 1;
+    expect(occurrences).toBe(2);
+
+    const liveApiReadyBlock = widget.slice(
+      widget.indexOf("case 'live_api_ready':"),
+      widget.indexOf('case ', widget.indexOf("case 'live_api_ready':") + 1),
+    );
+    expect(liveApiReadyBlock).toContain('_s.fullDuplex = msg.full_duplex === true;');
+  });
+
   it('still declares fullDuplex:false in the initial state', () => {
     expect(widget).toMatch(/fullDuplex:\s*false/);
   });

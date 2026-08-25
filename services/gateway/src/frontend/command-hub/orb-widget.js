@@ -17,7 +17,7 @@
 (function (window) {
   'use strict';
 
-  var _WIDGET_VERSION = '2026-08-24-caption-fontsize-19px';
+  var _WIDGET_VERSION = '2026-08-25-sse-full-duplex-fix';
   console.log('[VTOrb] Widget version: ' + _WIDGET_VERSION);
 
   // BOOTSTRAP-NOVA-SONIC-VOICE: user live-test feedback 2026-07-28 — the
@@ -2264,7 +2264,19 @@
         break;
 
       case 'live_api_ready':
-        // Full voice conversation active
+        // Full voice conversation active.
+        // VTID-03706 follow-up: the WS session_started handshake sets
+        // _s.fullDuplex from msg.full_duplex, but this SSE handshake never
+        // did — and SSE is this widget's DEFAULT transport (see
+        // _sessionStart's transport preference), not a rare fallback.
+        // _s.fullDuplex stayed at its false default for every SSE session,
+        // so the mic-live UI and the full-duplex capture branch in
+        // _startAudioCapture were both structurally unreachable over SSE
+        // even with the server flag on. Mirrors the WS handler's line
+        // exactly (msg.full_duplex === true; absent/false ⇒ legacy
+        // half-duplex, unchanged).
+        _s.fullDuplex = msg.full_duplex === true;
+        _updateUI();
         break;
 
       case 'thinking':
