@@ -7130,33 +7130,32 @@ async function connectToLiveAPI(
       },
     });
   } catch (e) {
-    // Voice/canary config read failure must NOT block the session start;
-    // default to Vertex so production behavior matches today.
-    console.warn(`[VTID-02976] voice/canary config read failed; falling back to vertex defaults: ${(e as Error).message}`);
+    // VTID-03723: voice/canary config read failure must NOT block the
+    // session start; default to Nova (never Vertex — it is not a
+    // destination any more, see upstream-provider-selector.ts).
+    console.warn(`[VTID-02976] voice/canary config read failed; falling back to nova_sonic defaults: ${(e as Error).message}`);
     __upstreamDecision = {
-      provider: 'vertex',
+      provider: 'nova_sonic',
       requested: null,
-      reason: 'default',
+      reason: 'vertex_removed_forced_nova',
       livekitReady: false,
       canary: false,
+      novaReady: false,
     };
   }
-  // BOOTSTRAP-NOVA-IDLE-ROTATION: a session that already exhausted its Nova
-  // rotation attempts is pinned to Vertex for the remainder of its life. This
-  // has to be applied AFTER the selector (which is stateless and would happily
-  // hand back Nova again) and BEFORE `session.upstreamProvider` is recorded,
-  // so latency attribution and the connect branch below both see the pin.
-  // Loud, never silent — CLAUDE.md "Never allow silent model fallback".
+  // BOOTSTRAP-NOVA-IDLE-ROTATION / VTID-03723: a session that already
+  // exhausted its Nova rotation attempts used to be pinned to Vertex for the
+  // remainder of its life. Vertex is not a destination any more — there is
+  // nowhere else to pin it, so the selector's own decision (still
+  // `nova_sonic`, still retried) stands. `_novaFallbackToVertex` is left set
+  // by its trigger sites purely as a re-trigger guard (see the premature-
+  // close / guided-topic-block branches below); it no longer materializes an
+  // actual Vertex connection here.
   if ((session as any)._novaFallbackToVertex && __upstreamDecision.provider === 'nova_sonic') {
     console.warn(
-      `[BOOTSTRAP-NOVA-IDLE-ROTATION] Session ${session.sessionId} is pinned to Vertex after exhausting ` +
-        `Nova rotation attempts — overriding selector decision '${__upstreamDecision.provider}'.`,
+      `[BOOTSTRAP-NOVA-IDLE-ROTATION] Session ${session.sessionId} exhausted Nova rotation attempts; ` +
+        `no Vertex fallback exists any more, retrying Nova rather than pinning to a dead provider.`,
     );
-    __upstreamDecision = {
-      ...__upstreamDecision,
-      provider: 'vertex',
-      reason: 'nova_rotation_exhausted_fallback',
-    };
   }
   console.log(
     `[VTID-02976] upstream provider selected: provider=${__upstreamDecision.provider}` +
@@ -8218,17 +8217,20 @@ async function connectToLiveAPI(
             if (!session.active) return;
             console.warn(
               `[BOOTSTRAP-NOVA-IDLE-ROTATION] Nova rotation failed ${NOVA_ROTATION_MAX_ATTEMPTS}x for session ` +
-                `${session.sessionId} (reason=${reason}) — falling back to Vertex for the rest of this session.`,
+                `${session.sessionId} (reason=${reason}) — attempting a fresh reconnect ` +
+                `(VTID-03723: Vertex is not a fallback destination any more; the reconnect resolves to Nova/the cascade).`,
             );
-            // Pinned for the REST of the session, not just this attempt: if
-            // Nova could not give us a stream three times in a row, bouncing
-            // the next rotation back onto it would just repeat this.
+            // VTID-03723: `_novaFallbackToVertex` no longer pins the session
+            // to an actual Vertex connection — see the override removal at
+            // the top of connectToLiveAPI. It stays set purely as a
+            // re-trigger guard for the OTHER fallback sites below (premature
+            // close, guided-topic content-filter block) so they don't loop.
             (session as any)._novaFallbackToVertex = true;
             emitDiag(session, 'nova_fallback_to_vertex', { provider: 'nova_sonic', reason });
             void emitOasisEvent({
               type: 'orb.upstream.nova.fallback_to_vertex',
               vtid: 'BOOTSTRAP-NOVA-IDLE-ROTATION',
-              payload: { session_id: session.sessionId, from: 'nova_sonic', to: 'vertex', reason } as any,
+              payload: { session_id: session.sessionId, from: 'nova_sonic', to: 'nova_sonic', reason } as any,
             } as any).catch(() => { /* best-effort */ });
 
             let fellBack = false;
@@ -8243,28 +8245,28 @@ async function connectToLiveAPI(
               );
             } catch (e) {
               emitDiag(session, 'nova_fallback_failed', {
-                provider: 'vertex',
+                provider: 'nova_sonic',
                 reason,
                 error: (e as Error).message,
               });
             }
             if (fellBack) {
-              await novaClient.close(`${reason}_vertex_fallback`);
-              emitDiag(session, 'nova_fallback_succeeded', { provider: 'vertex', reason });
+              await novaClient.close(`${reason}_reconnect_fallback`);
+              emitDiag(session, 'nova_fallback_succeeded', { provider: 'nova_sonic', reason });
               void emitOasisEvent({
                 type: 'orb.upstream.nova.fallback_succeeded',
                 vtid: 'BOOTSTRAP-NOVA-IDLE-ROTATION',
-                payload: { session_id: session.sessionId, from: 'nova_sonic', to: 'vertex', reason } as any,
+                payload: { session_id: session.sessionId, from: 'nova_sonic', to: 'nova_sonic', reason } as any,
               } as any).catch(() => { /* best-effort */ });
             } else {
               // Nothing left to try — keep the old Nova stream so the user
               // gets whatever time remains before its deadline rather than
               // being cut off now. Its close handler surfaces the typed issue.
-              emitDiag(session, 'nova_fallback_failed', { provider: 'vertex', reason, code: 'nova_fallback_failed' });
+              emitDiag(session, 'nova_fallback_failed', { provider: 'nova_sonic', reason, code: 'nova_fallback_failed' });
               void emitOasisEvent({
                 type: 'orb.upstream.nova.fallback_failed',
                 vtid: 'BOOTSTRAP-NOVA-IDLE-ROTATION',
-                payload: { session_id: session.sessionId, from: 'nova_sonic', to: 'vertex', reason } as any,
+                payload: { session_id: session.sessionId, from: 'nova_sonic', to: 'nova_sonic', reason } as any,
               } as any).catch(() => { /* best-effort */ });
             }
           } finally {
@@ -8423,7 +8425,7 @@ async function connectToLiveAPI(
           if (shouldFallbackOnGuidedTopicBlock) {
             console.warn(
               `[VTID-03647] Nova content filter blocked a guided-topic request for session ` +
-                `${session.sessionId} — falling back to Vertex instead of retrying Nova.`,
+                `${session.sessionId} — reconnecting (VTID-03723: Vertex is not a fallback destination any more).`,
             );
             (session as any)._novaFallbackToVertex = true;
             emitDiag(session, 'nova_guided_topic_content_filter_fallback', {
@@ -8436,7 +8438,7 @@ async function connectToLiveAPI(
               payload: {
                 session_id: session.sessionId,
                 from: 'nova_sonic',
-                to: 'vertex',
+                to: 'nova_sonic',
                 reason: closeEvent.reason ?? null,
                 status: 'warning',
               } as any,
@@ -8452,14 +8454,14 @@ async function connectToLiveAPI(
             ).then((ok) => {
               if (!ok) {
                 console.warn(
-                  `[VTID-03647] Vertex fallback reconnect failed for session ${session.sessionId}.`,
+                  `[VTID-03647] Reconnect after guided-topic content filter block failed for session ${session.sessionId}.`,
                 );
                 emitConnectionIssue(session, 'upstream_disconnected');
                 return;
               }
               resendGreetingIfStuckAtZeroTurns(session, 'VTID-03647-guided-topic-fallback');
             }).catch((e) => {
-              console.warn(`[VTID-03647] Vertex fallback reconnect threw: ${(e as Error).message}`);
+              console.warn(`[VTID-03647] Reconnect after guided-topic content filter block threw: ${(e as Error).message}`);
               emitConnectionIssue(session, 'upstream_disconnected');
             });
             return;
@@ -8579,11 +8581,12 @@ async function connectToLiveAPI(
           //
           // Without this branch the code below emits connection_issue with
           // should_close:true and the user is simply left in silence — they
-          // cannot tell the session failed. Instead, pin the session to Vertex
-          // and reconnect transparently, reusing the exact machinery
+          // cannot tell the session failed. Instead, reconnect transparently
+          // (which now resolves through Nova/the cascade — VTID-03723 — never
+          // Vertex, regardless of this flag), reusing the exact machinery
           // nova_rotation_exhausted_fallback already uses.
           //
-          // Guarded on !_novaFallbackToVertex so a Vertex-side failure can
+          // Guarded on !_novaFallbackToVertex so a failed fallback attempt can
           // never bounce back here and loop.
           const novaDiedBeforeAnyAudio = shouldFallbackToVertexOnNovaClose({
             sessionActive: session.active,
@@ -8593,14 +8596,17 @@ async function connectToLiveAPI(
             alreadyFellBack: (session as any)._novaFallbackToVertex === true,
           });
 
-          // VTID-emergency-gcp-shutdown: with Vertex permanently unreachable,
-          // pinning to it and reconnecting is a guaranteed-doomed round trip
-          // that only delays the honest connection_issue signal below. Skip
-          // straight there instead of pretending a Vertex reconnect might work.
+          // VTID-emergency-gcp-shutdown / VTID-03723: `VERTEX_LIVE_UNAVAILABLE`
+          // used to gate whether this branch's reconnect landed on a real
+          // (or dead) Vertex. It no longer matters for THAT question — Vertex
+          // is not a destination the selector can return at all any more —
+          // but it is kept as the flag deciding retry-and-reconnect vs. the
+          // honest `connection_issue` signal below, which is still a real,
+          // separate UX choice unrelated to the removed Vertex destination.
           if (novaDiedBeforeAnyAudio && process.env.VERTEX_LIVE_UNAVAILABLE !== 'true') {
             console.warn(
               `[VTID-03502] Nova stream for session ${session.sessionId} closed before any audio ` +
-                `(reason=${closeEvent.reason ?? 'unknown'}, audio_out=0) — pinning to Vertex and reconnecting.`,
+                `(reason=${closeEvent.reason ?? 'unknown'}, audio_out=0) — reconnecting.`,
             );
             (session as any)._novaFallbackToVertex = true;
             emitDiag(session, 'nova_premature_close_fallback', {
@@ -8614,7 +8620,7 @@ async function connectToLiveAPI(
               payload: {
                 session_id: session.sessionId,
                 from: 'nova_sonic',
-                to: 'vertex',
+                to: 'nova_sonic',
                 reason: closeEvent.reason ?? null,
                 status: 'warning',
               } as any,
@@ -8633,17 +8639,17 @@ async function connectToLiveAPI(
                 // connection_issue path rather than leaving the user in
                 // silence with no signal at all.
                 console.warn(
-                  `[VTID-03502] Vertex fallback reconnect failed for session ${session.sessionId}.`,
+                  `[VTID-03502] Reconnect after premature close failed for session ${session.sessionId}.`,
                 );
                 emitConnectionIssue(session, 'upstream_disconnected');
                 return;
               }
               // VTID-03557 review fix: same greeting-stuck gap as the retry
               // path above — the pre-fallback Nova attempt already marked
-              // greetingSent, so the new Vertex connection needs it replayed.
+              // greetingSent, so the new connection needs it replayed.
               resendGreetingIfStuckAtZeroTurns(session, 'VTID-03502-fallback');
             }).catch((e) => {
-              console.warn(`[VTID-03502] Vertex fallback reconnect threw: ${(e as Error).message}`);
+              console.warn(`[VTID-03502] Reconnect after premature close threw: ${(e as Error).message}`);
               emitConnectionIssue(session, 'upstream_disconnected');
             });
             return;

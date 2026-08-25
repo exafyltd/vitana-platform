@@ -457,35 +457,42 @@ export async function runNovaSonicTestSuite(options: {
       : { status: 'fail', detail: `got ${d.provider}/${d.reason}` };
   }));
 
-  checks.push(await runCheck('selector_non_allowlisted', 'Selector: non-allowlisted → vertex', () => {
+  checks.push(await runCheck('selector_non_allowlisted', 'Selector: non-allowlisted → forced Nova, never Vertex (VTID-03723)', () => {
     const d = selectUpstreamProvider({
       systemConfigActiveProvider: 'vertex',
       nova: { ...NOVA_ALL_PASS, identityAllowed: false },
       identity: PROBE_IDENTITY,
     });
-    return d.provider === 'vertex'
+    return d.provider === 'nova_sonic' && d.provider !== ('vertex' as never)
       ? { status: 'pass', detail: d.reason }
       : { status: 'fail', detail: `got ${d.provider}/${d.reason}` };
   }));
 
-  checks.push(await runCheck('selector_language_fallback', 'Selector: unsupported language → vertex', () => {
+  checks.push(await runCheck('selector_language_fallback', 'Selector: unsupported language → forced Nova (or cascade), never Vertex (VTID-03723)', () => {
     const d = selectUpstreamProvider({
       nova: { ...NOVA_ALL_PASS, languageSupported: false },
       identity: PROBE_IDENTITY,
     });
     const langGateOk = !isNovaSonicLanguageSupported('sr') && isNovaSonicLanguageSupported('de-DE');
-    return d.provider === 'vertex' && langGateOk
+    const providerOk = d.provider === 'nova_sonic' || d.provider === 'cascaded';
+    return providerOk && langGateOk
       ? { status: 'pass', detail: d.reason }
       : { status: 'fail', detail: `got ${d.provider}/${d.reason} langGateOk=${langGateOk}` };
   }));
 
-  checks.push(await runCheck('selector_emergency_rollback', 'Selector: ORB_LIVE_PROVIDER=vertex beats canary', () => {
+  checks.push(await runCheck('selector_emergency_rollback', 'Selector: ORB_LIVE_PROVIDER=vertex is FORCED off Vertex too — there is no rollback destination left (VTID-03723)', () => {
+    // This check used to pin the OPPOSITE: `ORB_LIVE_PROVIDER=vertex` was the
+    // deliberate emergency-rollback escape hatch and was expected to win.
+    // Vertex is not a destination any more — this is the exact configuration
+    // ("active_provider says vertex") that produced the reported pl/pt
+    // English-speaking incident, so the selector now forces this off Vertex
+    // like every other path, rather than honoring it as a rollback target.
     const d = selectUpstreamProvider({
       envProviderOverride: 'vertex',
       nova: NOVA_ALL_PASS,
       identity: PROBE_IDENTITY,
     });
-    return d.provider === 'vertex' && d.reason === 'env_explicit_vertex'
+    return d.provider === 'nova_sonic' && d.reason === 'vertex_removed_forced_nova'
       ? { status: 'pass', detail: d.reason }
       : { status: 'fail', detail: `got ${d.provider}/${d.reason}` };
   }));

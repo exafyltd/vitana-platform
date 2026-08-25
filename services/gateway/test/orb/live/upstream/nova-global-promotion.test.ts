@@ -101,9 +101,12 @@ describe('VTID-03501 selector labelling', () => {
     expect(d.canary).toBe(true);
   });
 
-  it('global promotion does NOT bypass the other hard gates', () => {
+  it('global promotion does NOT bypass the other hard gates (VTID-03723: the gate now forces Nova, not Vertex — there is nowhere else to send it)', () => {
     // Language and runtime gates must still bite — promotion widens WHO gets
-    // Nova, never WHAT Nova is allowed to run on.
+    // Nova, never WHAT Nova is allowed to run on. Vertex is not a
+    // destination any more, so a blocked gate no longer degrades to Vertex —
+    // it forces through to Nova (labeled `nova_forced_vertex_unavailable`,
+    // `novaReady: false`) instead.
     const unsupportedLang = selectUpstreamProvider({
       ...(base as object),
       nova: {
@@ -114,7 +117,10 @@ describe('VTID-03501 selector labelling', () => {
         globalEnabled: true,
       },
     } as never);
-    expect(unsupportedLang.provider).toBe('vertex');
+    expect(unsupportedLang.provider).toBe('nova_sonic');
+    expect(unsupportedLang.provider).not.toBe('vertex');
+    expect(unsupportedLang.reason).toBe('nova_forced_vertex_unavailable');
+    expect(unsupportedLang.novaReady).toBe(false);
 
     const gcpRuntime = selectUpstreamProvider({
       ...(base as object),
@@ -126,10 +132,13 @@ describe('VTID-03501 selector labelling', () => {
         globalEnabled: true,
       },
     } as never);
-    expect(gcpRuntime.provider).toBe('vertex');
+    expect(gcpRuntime.provider).toBe('nova_sonic');
+    expect(gcpRuntime.provider).not.toBe('vertex');
+    expect(gcpRuntime.reason).toBe('nova_forced_vertex_unavailable');
+    expect(gcpRuntime.novaReady).toBe(false);
   });
 
-  it('global promotion cannot resurrect a disabled Nova', () => {
+  it('global promotion cannot resurrect a disabled Nova, but a disabled Nova is still forced through rather than pinned to Vertex (VTID-03723)', () => {
     const d = selectUpstreamProvider({
       ...(base as object),
       nova: {
@@ -140,7 +149,10 @@ describe('VTID-03501 selector labelling', () => {
         globalEnabled: true,
       },
     } as never);
-    expect(d.provider).toBe('vertex');
+    expect(d.provider).toBe('nova_sonic');
+    expect(d.provider).not.toBe('vertex');
+    expect(d.reason).toBe('nova_forced_vertex_unavailable');
+    expect(d.novaReady).toBe(false);
   });
 });
 
