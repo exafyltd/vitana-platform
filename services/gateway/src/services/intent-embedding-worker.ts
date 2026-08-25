@@ -28,6 +28,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { embedIntent } from './intent-embedding';
 import { emitOasisEvent } from './oasis-event-service';
+import * as repo from './intent-embedding-worker-repository';
 
 const POLL_INTERVAL_MS = parseInt(process.env.INTENT_EMBEDDING_WORKER_INTERVAL_MS || '5000', 10);
 const BATCH_SIZE = parseInt(process.env.INTENT_EMBEDDING_WORKER_BATCH_SIZE || '16', 10);
@@ -56,12 +57,7 @@ async function processBatch(): Promise<{ embedded: number; failed: number; remai
 
   // Pull a batch of un-embedded intents oldest-first. The covering index
   // (migration 20260427200000) makes this fast even with a large table.
-  const { data, error } = await supabase
-    .from('user_intents')
-    .select('intent_id, intent_kind, category, title, scope, kind_payload')
-    .is('embedding', null)
-    .order('created_at', { ascending: true })
-    .limit(BATCH_SIZE);
+  const { data, error } = await repo.fetchUnembeddedUserIntents(supabase, BATCH_SIZE);
 
   if (error) {
     console.warn(`[VTID-01992] embedding worker fetch failed: ${error.message}`);
@@ -92,10 +88,7 @@ async function processBatch(): Promise<{ embedded: number; failed: number; remai
         failed += 1;
         continue;
       }
-      const { error: updErr } = await supabase
-        .from('user_intents')
-        .update({ embedding: vec as any })
-        .eq('intent_id', row.intent_id);
+      const { error: updErr } = await repo.updateUserIntentEmbedding(supabase, row.intent_id, vec);
       if (updErr) {
         failed += 1;
         console.warn(`[VTID-01992] embedding update failed for ${row.intent_id}: ${updErr.message}`);
