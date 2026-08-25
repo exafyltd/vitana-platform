@@ -942,3 +942,117 @@ describe('VTID-03301 rotation penalty', () => {
     expect(DEFAULT_RECENCY_PENALTY).toBeGreaterThan(0);
   });
 });
+
+// ──────────────────────────────────────────────────────────────────────
+// VTID-03741 — the ranker used to run providers strictly one-await-at-a-time
+// (a plain `for...of` loop), directly on the click-to-first-audio critical
+// path: ~10 wake-brief providers serialized meant their real latencies
+// (55-350ms each, per production oasis_events) summed instead of overlapping.
+// These tests pin the parallel replacement: total wall time tracks the
+// SLOWEST provider (not the sum), a hung provider is bounded by a timeout
+// instead of stalling everything after it, and — critically — none of this
+// changes *which* candidate wins, since selection is priority-based and
+// `results` preserves registration order regardless of completion order.
+// ──────────────────────────────────────────────────────────────────────
+
+import { DEFAULT_PROVIDER_TIMEOUT_MS } from '../../../src/services/assistant-continuation/decide-continuation';
+
+describe('VTID-03741 parallel ranker', () => {
+  function delayedProvider(
+    key: string,
+    candidate: AssistantContinuation,
+    delayMs: number,
+  ): ContinuationProvider {
+    return {
+      key,
+      surfaces: [candidate.surface],
+      produce: async (): Promise<ProviderResult> => {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        return { providerKey: key, status: 'returned', latencyMs: delayMs, candidate };
+      },
+    };
+  }
+
+  function neverResolvingProvider(key: string, surface: AssistantContinuation['surface']): ContinuationProvider {
+    return {
+      key,
+      surfaces: [surface],
+      // Never settles on its own — only the per-provider timeout can end it.
+      produce: () => new Promise<ProviderResult>(() => {}),
+    };
+  }
+
+  it('runs providers concurrently: wall time tracks the slowest provider, not the sum', async () => {
+    const registry = createProviderRegistry();
+    const DELAYS = [40, 40, 40, 40, 40]; // sequential sum = 200ms; parallel ≈ 40ms
+    DELAYS.forEach((delayMs, i) => {
+      registry.register(
+        delayedProvider(
+          `p${i}`,
+          wakeBriefCandidate({ id: `c${i}`, priority: i, line: `line ${i}` }),
+          delayMs,
+        ),
+      );
+    });
+
+    const t0 = Date.now();
+    await decideContinuation({
+      surface: 'orb_wake',
+      context: {},
+      registry,
+      // Real Date.now()-based timing here (not frozenNow) — this test is
+      // specifically about real wall-clock concurrency, which a synthetic
+      // clock can't demonstrate.
+    });
+    const elapsedMs = Date.now() - t0;
+
+    // Generous ceiling: comfortably under the 200ms serial sum, with slack
+    // for CI jitter. A regression back to the sequential loop would push
+    // this well past 200ms.
+    expect(elapsedMs).toBeLessThan(150);
+  });
+
+  it('a hung provider is bounded by the per-provider timeout, not left to stall the decision forever', async () => {
+    const registry = createProviderRegistry();
+    registry.register(neverResolvingProvider('hung', 'orb_wake'));
+    const fast = wakeBriefCandidate({ id: 'fast', priority: 50, line: 'fast one' });
+    registry.register(returningProvider('fast', fast));
+
+    const decision = await decideContinuation({
+      surface: 'orb_wake',
+      context: {},
+      registry,
+      providerTimeoutMs: 30, // small so the test doesn't wait DEFAULT_PROVIDER_TIMEOUT_MS
+    });
+
+    // The hung provider timed out and was recorded as errored — it did not
+    // prevent the decision from completing, and it did not prevent the
+    // OTHER provider's candidate from winning.
+    expect(decision.selectedContinuation?.id).toBe('fast');
+    const hungRow = decision.sourceProviderResults.find((r) => r.providerKey === 'hung');
+    expect(hungRow?.status).toBe('errored');
+    expect(hungRow?.reason).toBe('provider_timeout');
+  });
+
+  it('selection is unaffected by completion order: a slow-but-higher-priority provider still wins over a fast-but-lower-priority one', async () => {
+    const registry = createProviderRegistry();
+    const lowFast = wakeBriefCandidate({ id: 'low-fast', priority: 10, line: 'fast, low priority' });
+    const highSlow = wakeBriefCandidate({ id: 'high-slow', priority: 90, line: 'slow, high priority' });
+    // Registration order: the slow/high provider registers FIRST, so this
+    // also proves `results` stays index-aligned with `providers` (not
+    // completion order) for the registration-order tie-break.
+    registry.register(delayedProvider('high-slow', highSlow, 30));
+    registry.register(delayedProvider('low-fast', lowFast, 1));
+
+    const decision = await decideContinuation({
+      surface: 'orb_wake',
+      context: {},
+      registry,
+    });
+    expect(decision.selectedContinuation?.id).toBe('high-slow');
+  });
+
+  it('DEFAULT_PROVIDER_TIMEOUT_MS is exported and positive', () => {
+    expect(DEFAULT_PROVIDER_TIMEOUT_MS).toBeGreaterThan(0);
+  });
+});

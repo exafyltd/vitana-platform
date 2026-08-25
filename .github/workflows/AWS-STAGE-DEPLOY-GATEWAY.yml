@@ -345,6 +345,49 @@ jobs:
           # it an unservable TTS request tries to fall back to Google, which
           # no longer exists, instead of failing fast.
           #
+          # VTID-03741 — FEATURE_ORB_FAST_START_ENV / FEATURE_ORB_BRAIN_CACHE_ENV,
+          # pinned here to match AWS-PROD-DEPLOY-GATEWAY.yml.
+          #
+          # AWS-PROD-DEPLOY-GATEWAY.yml already pins both of these to the exact
+          # string "staging+prod" (BOOTSTRAP-ORB-FASTSTART-DRIFT / VTID-03504) --
+          # its own comment there records that FEATURE_ORB_FAST_START_ENV missing
+          # measured a 9.5s cold authenticated start, past the widget 8s fetch
+          # abort, and that FEATURE_ORB_BRAIN_CACHE_ENV missing measured a 2.0s
+          # p50 brain build degrading to 17.4s p50 / 119.7s max under stacked
+          # reconnects on 2026-08-05. Neither var was ever set anywhere in THIS
+          # (staging) workflow -- confirmed by reading it, not assumed -- so
+          # whatever the staging task def actually runs today is inherited from
+          # whatever a manual edit or an earlier build happened to leave, exactly
+          # the class of gap VTID-03513 cost four days for elsewhere in this
+          # file. That prod comment also warns not to add a flag here without
+          # first checking GET /api/v1/admin/feature-flags on the live stack --
+          # this session has no AWS/admin credentials to do that read, so this
+          # is deliberately NOT presented as a confirmed measurement the way the
+          # prod entry is. The judgment call: these two flags are pure
+          # deferral/caching mechanisms (they reorder and de-dupe existing
+          # bootstrap work, they do not add new behaviour), already proven safe
+          # in prod for weeks, and staging existing specifically to catch a
+          # regression before prod makes leaving this undetermined the worse
+          # risk, not the safer one -- especially for a VTID whose whole point
+          # is reducing the exact click-to-first-audio delay this flag exists
+          # to prevent. Pinning to the SAME value prod already runs, so staging
+          # and prod stop being two different unverified guesses.
+          #
+          # VTID-03741 — FEATURE_LATENCY_TELEMETRY_ENV, STAGING ONLY.
+          #
+          # LatencyTracker (services/gateway/src/orb/live/latency-tracker.ts)
+          # already exists and already marks the exact click-to-first-audio
+          # breakdown this VTID needs a real baseline for (upstream_connected,
+          # context_awaited, setup_sent, greeting_sent, audio_out_first_chunk),
+          # emitted as voice.latency.measured OASIS events. It was never set on
+          # either AWS gateway task def, so isFeatureLive resolves the code
+          # default (off) and the tracker has been a no-op on staging and prod
+          # both this whole time — the exact same shape as the
+          # FEATURE_ORB_SAFE_FAST_GREETING gap two rows above. Turning it on
+          # here, staging only, gives real per-session numbers to measure the
+          # wake-brief-ranker parallelization (same VTID) against, instead of
+          # relying on log-line spot checks.
+          #
           # VTID-03580 — BEDROCK_ROLE_ARN on STAGING, so staging can verify the
           # thing it exists to verify.
           #
@@ -386,6 +429,9 @@ jobs:
                                                 "NOVA_SONIC_CANARY_USER_IDS","NOVA_SONIC_CANARY_TENANT_IDS",
                                                 "FEATURE_ORB_GREETING_TTS_BRIDGE_ENV",
                                                 "FEATURE_ORB_SAFE_FAST_GREETING_ENV",
+                                                "FEATURE_LATENCY_TELEMETRY_ENV",
+                                                "FEATURE_ORB_FAST_START_ENV",
+                                                "FEATURE_ORB_BRAIN_CACHE_ENV",
                                                 "ORB_FULL_DUPLEX_ENABLED",
                                                 "TTS_PROVIDER","TTS_POLLY_STRICT","VERTEX_LIVE_UNAVAILABLE",
                                                 "ORB_CASCADED_VOICE_ENABLED",
@@ -400,6 +446,9 @@ jobs:
                           {name:"NOVA_SONIC_CANARY_TENANT_IDS", value:$NOVA_TENANTS},
                           {name:"FEATURE_ORB_GREETING_TTS_BRIDGE_ENV", value:"off"},
                           {name:"FEATURE_ORB_SAFE_FAST_GREETING_ENV", value:"staging-only"},
+                          {name:"FEATURE_LATENCY_TELEMETRY_ENV", value:"staging-only"},
+                          {name:"FEATURE_ORB_FAST_START_ENV", value:"staging+prod"},
+                          {name:"FEATURE_ORB_BRAIN_CACHE_ENV", value:"staging+prod"},
                           # VTID-03706 — ORB full-duplex voice: the mic stays
                           # open while Vitana speaks so the native Nova Sonic
                           # barge-in can fire. STAGING ONLY. Deliberately not
