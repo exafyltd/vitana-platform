@@ -1,0 +1,16 @@
+    ✓ reports the Transcribe region it would actually use
+    ✓ leaks no credentials (1 ms)
+      ✓ is true only when BOTH flags are set (3 ms)
+      ✓ is false when the cascade flag is on but Vertex is not marked dead (1 ms)
+      ✓ is false when the cascade flag is absent (1 ms)
+      ✓ treats "TRUE" as OFF, matching isCascadeEnabled()
+      ✓ treats "True" as OFF, matching isCascadeEnabled() (1 ms)
+      ✓ treats "1" as OFF, matching isCascadeEnabled()
+      ✓ treats "yes" as OFF, matching isCascadeEnabled()
+      ✓ treats "on" as OFF, matching isCascadeEnabled()
+      ✓ treats "" as OFF, matching isCascadeEnabled()
+      ✓ accepts the exact string with surrounding whitespace trimmed (1 ms)
+      ✓ reports the languages the cascade rescues, with their Transcribe codes
+      ✓ reports Serbian as refused, naming Polly as the real blocker
+      ✓ reports Nova-native languages as refused for that reason (1 ms)
+Tests:       15 passed, 15 total

@@ -326,6 +326,14 @@ import {
   // PolicyResolver render-block lookup with English fallback baked in.
   getConnectionIssueMessage,
 } from '../orb/upstream/constants';
+// VTID-03706: full-duplex voice — the mic stays open while Vitana speaks so
+// Nova Sonic's native barge-in can actually fire. Inert unless
+// ORB_FULL_DUPLEX_ENABLED=true is set.
+import {
+  isFullDuplexEnabled,
+  shouldDropMicWhileModelSpeaking,
+  shouldDropMicForPostTurnCooldown,
+} from '../orb/live/duplex/full-duplex-gate';
 import {
   SHORT_GAP_GREETING_PHRASES,
   pickShortGapGreetings,
@@ -1744,6 +1752,15 @@ export function shouldRetryDayCloseReduced(args: {
 }
 // VTID-03495: Polly seam for the /tts route. No-ops unless TTS_PROVIDER=polly.
 import { tryPollySynthesis } from '../services/tts/tts-provider';
+// VTID-03716: direct, unconditional Polly access for the PCM diagnostic route
+// below — same import CascadedLiveClient uses, deliberately bypassing the
+// TTS_PROVIDER gate (this route exists specifically to test Polly PCM output).
+import {
+  synthesizePolly,
+  POLLY_UNSUPPORTED_LANGS,
+  normalizeLang as normalizePollyLang,
+} from '../services/tts/polly';
+import rateLimit from 'express-rate-limit';
 import {
   resolveNovaSonicVoiceOrFallback,
   logNovaSonicVoiceFallbackOnce,
@@ -15639,6 +15656,132 @@ router.post('/tts', optionalAuth, async (req: AuthenticatedRequest, res: Respons
 });
 
 /**
+ * VTID-03716: POST /tts-pcm-diagnostic — stateless Polly PCM synthesis, for
+ * automated testing.
+ *
+ * This exists because VTID-03711 (orb-widget playing cascade-voice audio at
+ * 1.5x speed/pitch — reported live as "Mickey Mouse speed") could only be
+ * proven fixed by decoding REAL Polly PCM bytes at their REAL declared rate
+ * and checking playback duration math — and the only place that synthesis
+ * happened before this route existed was deep inside a live ORB session
+ * (`CascadedLiveClient.runTurn()`), which cannot be exercised by an
+ * automated test without opening a real session against the shared
+ * production Supabase project (forbidden — see CLAUDE.md's absolute
+ * test-account rule; a live ORB session writes `oasis_events` and session
+ * state regardless of who/what opens it).
+ *
+ * This route calls the EXACT SAME `synthesizePolly({format:'pcm'})` call
+ * `CascadedLiveClient` makes, unconditionally (bypassing `TTS_PROVIDER`,
+ * same deliberate choice `guided-topic-narration-audio.ts` already makes)
+ * and returns the audio + its true declared sample rate. It is:
+ *   - Stateless: no ORB session, no session state, no memory extraction.
+ *   - optionalAuth, same as the existing `/tts` route above — no account
+ *     write of any kind, same category as an "API call" CLAUDE.md's own
+ *     test-user section already treats as safe to test with.
+ *   - The same category as the existing `/voice/preview` admin route,
+ *     minus the admin gate (nothing here is more sensitive than that route
+ *     already exposes) and with PCM instead of MP3 so the exact bug's
+ *     rate-labeling can be reproduced end-to-end.
+ *
+ * See `scripts/tts/verify-cascade-audio-timing.ts` for the automated
+ * program that calls this route and mathematically proves the fix.
+ */
+// VTID-03716: this route pays for real Polly synthesis on every call and is
+// mounted with optionalAuth (no login required) — an unauthenticated client
+// could otherwise repeatedly submit up to 3000 chars and rack up billing /
+// exhaust resources. Diagnostic traffic is inherently low-volume, so this
+// stays tight regardless of who's calling.
+const ttsPcmDiagnosticLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: { ok: false, error: 'RATE_LIMIT_EXCEEDED', message: 'Too many TTS diagnostic requests' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+router.post('/tts-pcm-diagnostic', ttsPcmDiagnosticLimiter, optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis: the Dev Autopilot Impact Scan's
+  // new-mutation-without-oasis-emit rule pattern-matches for a literal
+  // `emitOasisEvent(` call and doesn't see through a wrapper — this handler
+  // does emit OASIS state via emitTtsEvent() below (request/success/failure),
+  // the exact same helper the sibling /tts route above uses for the same
+  // purpose (see VTID-01155's emitTtsEvent()).
+  const body = req.body as { text?: string; lang?: string };
+  const text = (body.text || '').trim();
+  if (!text) {
+    return res.status(400).json({ ok: false, error: 'text is required' });
+  }
+  if (text.length > 3000) {
+    return res.status(400).json({ ok: false, error: 'text exceeds 3000 character limit' });
+  }
+  // VTID-03716 review fix: this route's job is testing what POLLY can serve,
+  // not what live ORB sessions offer — orb-live.ts's own normalizeLang()
+  // silently maps anything outside SUPPORTED_LIVE_LANGUAGES to 'en', which
+  // would mask a typo'd or newly-added-to-Polly language behind a false
+  // English 200 instead of the intended 422. Normalize only the locale SHAPE
+  // (polly.ts's normalizeLang — lowercase, strip region) and let
+  // synthesizePolly's own voice table / POLLY_UNSUPPORTED_LANGS decide.
+  const lang = normalizePollyLang(body.lang || 'en');
+
+  await emitTtsEvent('vtid.tts.request', {
+    lang,
+    voice_type: 'Polly',
+    format: 'pcm',
+    text_length: text.length,
+    route: 'tts-pcm-diagnostic',
+  });
+
+  try {
+    const result = await synthesizePolly({ text, lang, format: 'pcm' });
+    if (!result) {
+      const error = POLLY_UNSUPPORTED_LANGS.has(lang)
+        ? `Polly has no voice for lang='${lang}' in any engine`
+        : `Polly synthesis failed for lang='${lang}'`;
+      await emitTtsEvent('vtid.tts.failure', {
+        lang,
+        voice_type: 'Polly',
+        format: 'pcm',
+        text_length: text.length,
+        route: 'tts-pcm-diagnostic',
+        error,
+      });
+      return res.status(422).json({ ok: false, error });
+    }
+    await emitTtsEvent('vtid.tts.success', {
+      lang,
+      voice: result.voice,
+      voice_type: 'Polly',
+      engine: result.engine,
+      text_length: text.length,
+      audio_bytes: result.audioB64.length,
+      mime_type: `audio/pcm;rate=${result.sampleRateHz}`,
+      route: 'tts-pcm-diagnostic',
+    });
+    return res.status(200).json({
+      ok: true,
+      audio_b64: result.audioB64,
+      sample_rate_hz: result.sampleRateHz,
+      mime: `audio/pcm;rate=${result.sampleRateHz}`,
+      voice: result.voice,
+      engine: result.engine,
+      lang,
+      text_length: text.length,
+    });
+  } catch (error: any) {
+    console.error('[VTID-03716] /tts-pcm-diagnostic error:', error);
+    await emitTtsEvent('vtid.tts.failure', {
+      lang,
+      voice_type: 'Polly',
+      format: 'pcm',
+      text_length: text.length,
+      route: 'tts-pcm-diagnostic',
+      error: error.message,
+    });
+    return res.status(500).json({ ok: false, error: error.message || 'PCM synthesis failed' });
+  }
+});
+
+/**
  * VTID-FALLBACK: POST /live/chat-tts — Text-mode fallback when Vertex Live API is unavailable.
  *
  * Flow: Client sends text (from Web Speech API STT) → Gemini generates reply → Cloud TTS
@@ -16574,6 +16717,12 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
       session_id: sessionId,
       live_api_connected: true,
       setupComplete: true, // v1 compatibility: signals Gemini is ready
+      // VTID-03706: tell the widget whether to run the full-duplex mic gate.
+      // The server is the authority — the widget has no env of its own, and a
+      // client that gated frames while the server still dropped them (or vice
+      // versa) would be a half-applied change with no single place to debug.
+      // Absent/false ⇒ the widget keeps its pre-existing barge-in behavior.
+      full_duplex: isFullDuplexEnabled(),
       // VTID-01224: Include context bootstrap status
       context_bootstrap: {
         included: !!contextInstruction,
@@ -16711,12 +16860,26 @@ async function handleWsAudioMessage(clientSession: WsClientSession, message: WsC
     return;
   }
 
+  // VTID-03706: full duplex resolved once per chunk — both gates below must
+  // agree, and reading the flag twice invites them to disagree if an operator
+  // flips the env var between the two calls.
+  const fullDuplex = isFullDuplexEnabled();
+
   // VTID-VOICE-INIT: Echo prevention gate — drop mic audio while model is speaking.
   // On mobile devices without hardware AEC, the phone speaker output is picked up by
   // the mic and forwarded to Gemini, which interprets it as new user speech. This causes
   // Gemini to interrupt itself and generate 2-3 overlapping response streams.
   // The gate is released when turn_complete or interrupted is received from Gemini.
-  if (liveSession.isModelSpeaking) {
+  //
+  // VTID-03706: under full duplex this gate is OFF, and that is the whole
+  // point. Dropping every chunk here meant Nova received literal silence
+  // during its own turn, so its native barge-in — which is what actually
+  // stops generation, since `sendEndOfTurn()` is a documented no-op for Nova
+  // — could never fire. The echo this gate protects against is now removed
+  // at the source: the client replaces sub-threshold frames with digital
+  // silence before they ever leave the device (see full-duplex-gate.ts), so
+  // what arrives is safe to forward AND carries the user's interruption.
+  if (shouldDropMicWhileModelSpeaking({ fullDuplex, isModelSpeaking: liveSession.isModelSpeaking })) {
     // Log sparingly to avoid flooding (every 50th dropped chunk)
     if (liveSession.audioInChunks % 50 === 0) {
       console.log(`[VTID-VOICE-INIT] Dropping mic audio — model is speaking: session=${sessionId}, dropped_at_chunk=${liveSession.audioInChunks}`);
@@ -16728,7 +16891,17 @@ async function handleWsAudioMessage(clientSession: WsClientSession, message: WsC
 
   // VTID-ECHO-COOLDOWN: Post-turn cooldown — gate mic audio for N ms after
   // turn_complete to let client-side audio playback finish draining.
-  if (liveSession.turnCompleteAt > 0 && (Date.now() - liveSession.turnCompleteAt) < getPostTurnCooldownMs()) {
+  //
+  // VTID-03706: also off under full duplex. The draining queue is gated
+  // frame-by-frame on the client now, so this blanket time window only
+  // discards the user's first words after every model turn — the same class
+  // of bug as the gate above, just smaller.
+  if (shouldDropMicForPostTurnCooldown({
+    fullDuplex,
+    turnCompleteAt: liveSession.turnCompleteAt,
+    nowMs: Date.now(),
+    cooldownMs: getPostTurnCooldownMs(),
+  })) {
     liveSession.audioInChunks++;
     liveSession.lastActivity = new Date();
     return;

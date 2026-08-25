@@ -378,3 +378,64 @@ describe('degenerate input', () => {
     expect(run('gateway_backend', []).code).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// VTID-03706 — the CSP gate judged WHOLE FILES, which made it structurally
+// unpassable for any PR touching orb-widget.js or index.html.
+//
+// Measured on origin/main, before any change: orb-widget.js hits `.style`,
+// `style=`, the inline-<script> pattern and the remote-asset pattern;
+// index.html hits the inline-<script> pattern. So the gate never said "this PR
+// introduces a violation" — it said "this file has ever contained one", and
+// the only way to pass was to not touch the file.
+//
+// Same defect family this workflow was already fixed for twice (VTID-03696:
+// the gate flagging its own PATTERNS list; the lockfile deny making any
+// dependency-adding PR unsatisfiable). Remedy is VTID-03696's own — judge
+// ADDED lines.
+// ---------------------------------------------------------------------------
+
+const CSP_PATTERNS = guard.CSP_PATTERNS as RegExp[];
+
+function cspScan(diff: string) {
+  return guard.cspAddedLineViolations(diff.split('\n'), CSP_PATTERNS) as Array<{
+    file: string;
+    line: string;
+  }>;
+}
+
+/** A minimal unified diff for one file. */
+function diffFor(file: string, lines: string[]) {
+  return ['--- a/' + file, '+++ b/' + file, '@@ -1,1 +1,1 @@', ...lines].join('\n');
+}
+
+describe('VTID-03706 — the three diff-marker cases VTID-03714 does not cover', () => {
+  // VTID-03714 landed the same "judge added lines" fix independently, and its
+  // implementation is better than the one this branch originally carried: it
+  // joins contiguous runs of added lines (so a pattern spanning a line break is
+  // still caught) and distinguishes `++counter;` from a real `+++ ` header.
+  // That version is the one kept; this block adds only the diff-marker cases
+  // its suite leaves untested, rather than restating them.
+  const scan = (lines: string[]) =>
+    guard.cspViolationsInAddedLines(lines) as Array<{ pattern: string; line: string }>;
+
+  it('does NOT flag a pre-existing violation carried as a CONTEXT line', () => {
+    // THE regression the whole fix exists to prevent. A context line (leading
+    // space) is the file as it already is; blaming this PR for it blocks
+    // unrelated work and fixes nothing. VTID-03714's suite covers the `+++`
+    // header but never a context line.
+    expect(scan(['   el.style.background = "red";'])).toHaveLength(0);
+  });
+
+  it('does NOT flag a violation being REMOVED', () => {
+    // Deleting a violation is the opposite of introducing one.
+    expect(scan(['-  el.style.background = "red";'])).toHaveLength(0);
+  });
+
+  it('does not flag an external <scr' + 'ipt src=…>, which is the sanctioned form', () => {
+    // The inline-script pattern carries a negative lookahead for src=. Without
+    // a test, tightening that regex would start rejecting the one script form
+    // the CSP actually permits.
+    expect(scan(['+  <scr' + 'ipt src="/command-hub/app.js"></scr' + 'ipt>'])).toHaveLength(0);
+  });
+});

@@ -208,6 +208,13 @@
     playbackCtx: null,
     audioQueue: [],
     audioPlaying: false,
+    // VTID-03706: server-declared per session (see the session_started
+    // handler). Default false ⇒ legacy barge-in, so an older gateway or a
+    // flag-off environment behaves exactly as before.
+    fullDuplex: false,
+    // VTID-03706: start of the current playback burst, for the AEC warm-up
+    // window in the capture handler. 0 ⇒ not currently playing.
+    audioPlayStartedAt: 0,
     scheduledSources: [],
     lastScheduledEnd: 0,
     audioEndGraceTimer: null, // Grace timer to prevent audioPlaying flicker
@@ -494,6 +501,15 @@
       '}',
       '.vtorb-btn-mic.vtorb-muted {',
       '  background: rgba(239,68,68,0.2); color: #fca5a5;',
+      '}',
+      // VTID-03706: under full duplex the mic is genuinely still open while
+      // Vitana speaks. A ring rather than a colour swap, deliberately: the
+      // background/colour are still assigned inline just below (legacy, "no
+      // CSS dependency"), and an inline rule outranks a class — a colour rule
+      // here would silently never apply. A ring also reads as "live" more
+      // directly than a hue change, and needs no !important to win.
+      '.vtorb-btn-mic.vtorb-mic-live {',
+      '  box-shadow: 0 0 0 2px rgba(34,197,94,0.85), 0 0 12px rgba(34,197,94,0.45);',
       '}',
       '.vtorb-btn-close {',
       '  background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.7);',
@@ -1584,6 +1600,18 @@
         // just assigned to this chunk's src.playbackRate (chunkRate) —
         // not the global constant — to keep back-to-back chunks gapless.
         _s.lastScheduledEnd += buf.duration / chunkRate;
+        // VTID-03706: stamp the START of each playback burst so the capture
+        // handler can hold the mic gate shut while browser AEC converges on
+        // the newly-started render stream. Only on the false->true edge —
+        // re-stamping on every chunk would slide the warm-up window forward
+        // for the whole turn and make the user permanently uninterruptible.
+        if (!_s.audioPlaying) {
+          _s.audioPlayStartedAt = Date.now();
+          _s.audioPlaying = true;
+          // Repaint on the edge so the mic button switches to its
+          // still-listening colour as Vitana starts talking, not a turn late.
+          if (_s.fullDuplex) _updateUI();
+        }
         _s.audioPlaying = true;
         isFirstChunk = false;
       } catch (e) {
@@ -2048,6 +2076,11 @@
           _s.ws = w;
           _s.sessionId = msg.session_id;
           _s.active = true;
+          // VTID-03706: the SERVER decides whether this session runs full
+          // duplex, so client and server can never disagree about whether
+          // frames captured during playback are gated or forwarded. Absent
+          // (older gateway, flag off) ⇒ falsy ⇒ legacy barge-in, unchanged.
+          _s.fullDuplex = msg.full_duplex === true;
           _signalAudioReady();
           if (msg.conversation_id) _s.conversationId = msg.conversation_id;
           _s._preDisconnectStage = null;
@@ -2819,10 +2852,34 @@
     // playback goes into this ring buffer; the moment VAD confirms real
     // speech, the buffer is flushed upstream ahead of the live stream. The
     // user's opening words arrive intact instead of being swallowed.
+    //
+    // VTID-03706 SUPERSEDES the above for full-duplex sessions. The pre-roll
+    // exists only to RECONSTRUCT audio the gate destroyed; when the gate
+    // stops destroying anything there is nothing left to reconstruct. Under
+    // full duplex a frame is emitted for EVERY capture callback — verbatim
+    // above the echo floor, digital silence below it — so the user's opening
+    // syllable reaches Nova in the frame it was spoken, with no confirmation
+    // delay and no replay ordering to get wrong. The legacy path below is
+    // kept byte-for-byte for flag-off sessions and is deleted once full
+    // duplex graduates past staging.
     var preRollFrames = [];
     // 8 frames ≈ 512ms at 1024 samples/16kHz — covers vadConfirm (6 frames
     // ≈ 384ms) plus margin, and bounds memory to ~16KB of Int16 PCM.
     var PRE_ROLL_MAX_FRAMES = 8;
+
+    // VTID-03706: echo-aware noise gate state. MIRRORS the constants in
+    // services/gateway/src/orb/live/duplex/full-duplex-gate.ts (DUPLEX_GATE)
+    // — that module is the source of truth and a parity test fails the build
+    // if these literals drift from it. This file is a plain IIFE served as a
+    // static asset, so it cannot import them.
+    var DUPLEX_OPEN_RMS = 0.05;
+    var DUPLEX_CLOSE_RMS = 0.025;
+    var DUPLEX_HANGOVER_MS = 400;
+    var DUPLEX_AEC_WARMUP_MS = 250;
+    var DUPLEX_BARGE_CONFIRM_FRAMES = 2;
+    var duplexGateOpen = false;
+    var duplexLastVoiceAt = 0;
+    var duplexOpenFrames = 0;
 
     processor.onaudioprocess = function (e) {
       if (!_s.active) return;
@@ -2840,6 +2897,88 @@
       // directly, because scheduledSources can be briefly empty between chunks
       // even though more audio is coming. The grace timer covers these gaps.
       var modelPlaying = _s.audioPlaying;
+
+      // ---- VTID-03706: full-duplex path — the mic never closes ----------
+      // Every callback emits a frame. What the gate decides is CONTENT, not
+      // whether to transmit: real audio when the user is speaking, digital
+      // silence when only AEC residue is present. Nova therefore always has
+      // a continuous, correctly-timed stream to run its own turn detection
+      // (and its own barge-in) against, which the old drop-everything gate
+      // made structurally impossible.
+      if (modelPlaying && _s.fullDuplex) {
+        var nowMs = Date.now();
+        var startedAt = _s.audioPlayStartedAt || 0;
+
+        if (startedAt > 0 && (nowMs - startedAt) < DUPLEX_AEC_WARMUP_MS) {
+          // AEC has not converged on this playback burst yet. Residue here is
+          // not evidence of speech; treating it as such is exactly the
+          // self-interrupt loop the old 0.015 threshold produced. Hold shut
+          // and do NOT accumulate confirmation — but still send a frame, so
+          // the upstream stream stays continuous.
+          duplexGateOpen = false;
+          duplexOpenFrames = 0;
+          _sendAudio(_silentFrame(input.length));
+          return;
+        }
+
+        if (duplexGateOpen) {
+          // Sustain on the LOW threshold, close only after the hangover.
+          // A single threshold chatters across the amplitude dips inside a
+          // word and shreds the utterance Nova is trying to transcribe.
+          if (rms > DUPLEX_CLOSE_RMS) {
+            duplexLastVoiceAt = nowMs;
+          } else if (nowMs - duplexLastVoiceAt >= DUPLEX_HANGOVER_MS) {
+            duplexGateOpen = false;
+          }
+        } else if (rms > DUPLEX_OPEN_RMS) {
+          duplexGateOpen = true;
+          duplexLastVoiceAt = nowMs;
+        }
+
+        if (!duplexGateOpen) {
+          duplexOpenFrames = 0;
+          _sendAudio(_silentFrame(input.length));
+          return;
+        }
+
+        // Gate is open: this is real speech. Forward it verbatim FIRST, so
+        // the audio reaches Nova from this very frame regardless of what the
+        // local confirmation below decides.
+        //
+        // Confirmation counts VOICED frames only. The gate stays open through
+        // the hangover with no energy in it; counting those would let a
+        // single loud transient (cough, door slam) reach the threshold purely
+        // by the hangover ticking over in silence. Hangover frames neither
+        // add nor reset, so a mid-word dip does not restart confirmation.
+        // MIRRORS evaluateDuplexGateFrame() in full-duplex-gate.ts.
+        if (rms > DUPLEX_CLOSE_RMS) duplexOpenFrames++;
+        _s._lastSpeechAt = nowMs;
+        _sendAudio(_encodeFrame(input));
+
+        // Local playback stop is a LATENCY optimization, not the authority.
+        // Nova's own INTERRUPTED event is what actually yields the turn; this
+        // just makes the interruption FEEL instant (~128ms) instead of
+        // waiting for the upstream round trip. Two frames rejects a
+        // single-frame cough without adding meaningful delay.
+        if (!vadInterruptSent && duplexOpenFrames >= DUPLEX_BARGE_CONFIRM_FRAMES) {
+          vadInterruptSent = true;
+          _s.audioQueue = [];
+          for (var dq = 0; dq < _s.scheduledSources.length; dq++) {
+            try { _s.scheduledSources[dq].stop(); } catch (ex) { /* ok */ }
+          }
+          _s.scheduledSources = [];
+          _s.lastScheduledEnd = 0;
+          _s.audioPlaying = false;
+          _s.audioPlayStartedAt = 0;
+          clearTimeout(_s.audioEndGraceTimer);
+          _s.interruptPending = true;
+          _sendInterrupt();
+          _updateUI();
+        }
+        return;
+      }
+      // ---- end full-duplex path ----------------------------------------
+
       if (modelPlaying) {
         // BOOTSTRAP-ORB-BARGEIN: capture, don't discard. Encoding happens here
         // so the flush below can replay the exact frames the user spoke.
@@ -2883,6 +3022,12 @@
         vadFrames = 0;
         vadInterruptSent = false;
         preRollFrames = [];
+        // VTID-03706: reset the duplex gate between playback bursts, so the
+        // next turn starts closed and re-earns its open rather than
+        // inheriting the tail of the previous utterance.
+        duplexGateOpen = false;
+        duplexOpenFrames = 0;
+        duplexLastVoiceAt = 0;
         // Record real user speech so the listening-idle nudge timer can
         // defer itself instead of beeping over the user mid-sentence.
         if (rms > vadThreshold) {
@@ -2894,14 +3039,20 @@
       // BOOTSTRAP-ORB-LATENCY-PHASE1: 500→200ms — every ms here is dead air
       // where the user's speech is silently dropped; AEC + the playback-end
       // echo gate below carry the echo protection.
-      if (_s.turnCompleteAt > 0 && (Date.now() - _s.turnCompleteAt) < 200) return;
+      //
+      // VTID-03706: both cooldowns are skipped under full duplex. They are
+      // blanket time windows that discard whatever the user says in them,
+      // and their entire job — keeping draining playback echo out of the
+      // upstream — is now done per-frame by the gate above, which can tell
+      // echo and speech apart instead of muting both.
+      if (!_s.fullDuplex && _s.turnCompleteAt > 0 && (Date.now() - _s.turnCompleteAt) < 200) return;
 
       // Client-side echo cooldown (200ms) — after audio playback actually ends.
       // The server's POST_TURN_COOLDOWN_MS starts when Vertex sends turn_complete,
       // but the client may still be playing buffered audio 1-3s later. This cooldown
       // starts when the LAST audio source actually finishes playing on the client.
       // BOOTSTRAP-ORB-LATENCY-PHASE1: 500→200ms (see above).
-      if (_s.lastAudioEndTime > 0 && (Date.now() - _s.lastAudioEndTime) < 200) return;
+      if (!_s.fullDuplex && _s.lastAudioEndTime > 0 && (Date.now() - _s.lastAudioEndTime) < 200) return;
 
       _sendAudio(_encodeFrame(input));
     };
@@ -2921,6 +3072,29 @@
    * stable copy — `e.inputBuffer` is reused by the Web Audio graph, so
    * retaining the raw Float32Array would alias into the next callback's data.
    */
+  /**
+   * VTID-03706: a base64 Int16 PCM frame of pure silence, same length as a
+   * real capture frame.
+   *
+   * This is what makes "the mic is always open" safe. During playback,
+   * sub-threshold frames are replaced by this rather than dropped: Nova keeps
+   * receiving a continuous, correctly-timed stream (so its turn detection and
+   * native barge-in stay live) while the AEC residue that would make it
+   * interrupt ITSELF never reaches it.
+   *
+   * Cached by length — frame size is fixed for a session, so this allocates
+   * and base64-encodes once rather than on every 64ms callback.
+   */
+  var _silentFrameCache = {};
+  function _silentFrame(sampleCount) {
+    var hit = _silentFrameCache[sampleCount];
+    if (hit) return hit;
+    var u8 = new Uint8Array(sampleCount * 2); // Int16 zeros === digital silence
+    var b64 = btoa(String.fromCharCode.apply(null, u8));
+    _silentFrameCache[sampleCount] = b64;
+    return b64;
+  }
+
   function _encodeFrame(input) {
     var pcm = new Int16Array(input.length);
     for (var n = 0; n < input.length; n++) {
@@ -3524,6 +3698,17 @@
       // Apply muted style inline (no CSS dependency)
       micBtn.style.background = muted ? 'rgba(239,68,68,0.2)' : 'rgba(59,130,246,0.2)';
       micBtn.style.color = muted ? '#fca5a5' : '#93c5fd';
+      // VTID-03706: under full duplex the mic is genuinely still open while
+      // Vitana speaks, so say so. Without this the UI is indistinguishable
+      // from the old half-duplex behaviour and users have no way to learn
+      // that interrupting works — a capability nobody discovers is the same
+      // as one that doesn't exist. Applied as a CLASS (the .vtorb-mic-live
+      // ring in _injectStyles), not an inline rule: it composes with the
+      // legacy inline colours above instead of fighting them, and keeps this
+      // file from adding new inline styling. Deliberately no status string —
+      // the wording here is per-language ternaries, and a new one would ship
+      // untranslated for every locale past de/en.
+      micBtn.classList.toggle('vtorb-mic-live', !muted && !!_s.fullDuplex && !!_s.audioPlaying);
     }
     // Update FAB visibility
     if (_fab) {

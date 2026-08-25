@@ -100,6 +100,8 @@ import {
   getNovaSonicConfig,
   buildNovaSonicHealthPayload,
 } from '../orb/live/upstream/nova-sonic-config';
+// VTID-03721: cascade readiness, reported beside Nova's on the same route.
+import { buildCascadeHealthPayload } from '../orb/live/upstream/cascaded-config';
 // VTID-03052: wake-brief continuation wiring on the LiveKit path.
 // `decideWakeBriefForSession` already runs from Vertex's session-start
 // handler (live-session-controller.ts:730); this slice mirrors the call
@@ -619,8 +621,16 @@ router.post(
 // Configuration health surface, secret-free by construction
 // (buildNovaSonicHealthPayload exposes counts and typed issues only).
 // public-route
+// VTID-03721 — the cascade block rides along here rather than on a new route.
+// Nova's health already answers "what serves a session"; the cascade is the
+// OTHER half of that answer for every language Nova cannot speak, and a
+// separate endpoint would let the two drift. See buildCascadeHealthPayload
+// for why `effective` (not `enabled`) is the field to read.
 router.get('/orb/nova-sonic/health', async (_req: Request, res: Response) => {
-  return res.json(buildNovaSonicHealthPayload(process.env));
+  return res.json({
+    ...buildNovaSonicHealthPayload(process.env),
+    cascade: buildCascadeHealthPayload(process.env),
+  });
 });
 
 // ---------------------------------------------------------------------------
