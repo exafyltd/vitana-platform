@@ -27,15 +27,9 @@ community app and the Command Hub admin panel.
 AC-1 — every one of the 4 caption-bearing dictionaries has a real Turkish
 entry, not a silent fallback to English
 
-- `_CAPTIONS` — 13 keys (speaking, listening, connecting, reconnecting,
-  muted, tapToHear, idleNudge, connectFailedRetrying, offline,
-  sessionEndedBackground, tapToReconnect, textModeActive, registerFree)
-- `_DISCONNECT_LABELS` — 4 keys (mic, network, connection, offline)
-- `_RECOVERY_LABELS` — 4 keys (mic, network, offline, connection)
-- `_THINKING_QUICK` / `_THINKING_PRIMARY` / `_THINKING_ALTERNATES` — 6 + 7 + 8
-  = 21 rotating "thinking" filler phrases
-
-42 phrase objects total, all now carrying a `tr:` field.
+- `_CAPTIONS` (13 keys), `_DISCONNECT_LABELS` (4), `_RECOVERY_LABELS` (4),
+  `_THINKING_QUICK`/`_PRIMARY`/`_ALTERNATES` (6+7+8=21) — 42 phrase objects
+  total, all now carrying a `tr:` field.
 
 TEST: `services/gateway/test/frontend/orb-widget-caption-i18n.test.ts` —
 "_CAPTIONS defines all 10 supported locales for every key" and
