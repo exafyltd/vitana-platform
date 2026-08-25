@@ -9674,7 +9674,20 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             // whether this IS a new-day return. So when facts are still pending,
             // wait once more up to a larger new-day budget. Same-day reconnects
             // whose facts already resolved skip this entirely and stay fast.
-            if (_greetingFactsReady && !(session as any).lastSessionInfo) {
+            // BOOTSTRAP-ORB-NEWDAY-STAMP-DIAGNOSTIC — this used to also require
+            // `!(session as any).lastSessionInfo`, on the theory that a set
+            // lastSessionInfo means the facts prefetch already landed. It
+            // doesn't: lastSessionInfo can be set by the separate, often-faster
+            // "heavy" bootstrap block before THIS prefetch's own promise
+            // (which alone owns lastFullBriefingDate) has resolved, so the
+            // extra wait was being skipped on the wrong signal — live staging
+            // evidence showed newday_briefing_eval reading
+            // last_full_briefing_date: null on every session, even moments
+            // after a prior session's stamp write had already committed.
+            // Racing directly against _greetingFactsReady itself is always
+            // correct and never adds latency beyond what was already budgeted:
+            // if it already resolved, Promise.race returns immediately.
+            if (_greetingFactsReady) {
               const _firstWaitMs = Number(process.env.ORB_GREETING_FACTS_WAIT_MS || 700);
               const _ndFactsWaitMs = Number(process.env.ORB_NEWDAY_FACTS_WAIT_MS || 2200);
               const _extraWaitMs = Math.max(0, _ndFactsWaitMs - _firstWaitMs);
@@ -10302,7 +10315,10 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
           // larger first-greeting-of-the-day budget — the same product call the
           // safe-fast path makes (richness > latency for turn 1 of the day).
           // Sessions whose facts already resolved skip this entirely.
-          if (_factsReadyNS && !(session as any).lastSessionInfo) {
+          // BOOTSTRAP-ORB-NEWDAY-STAMP-DIAGNOSTIC — see the matching comment on
+          // the safe_fast branch's identical wait above: `!lastSessionInfo` is
+          // the wrong readiness signal for THIS prefetch's own promise.
+          if (_factsReadyNS) {
             const _extraWaitMsNS = Math.max(
               0,
               Number(process.env.ORB_NEWDAY_FACTS_WAIT_MS || 2200) - _firstWaitMsNS,
