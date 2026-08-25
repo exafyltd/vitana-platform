@@ -124,3 +124,32 @@ describe('VTID-03681: ORB live language coverage', () => {
     }
   });
 });
+
+describe('VTID-03730: Turkish end-to-end, same seam the pt/pl expansion closed', () => {
+  it('admits tr through the gate that used to coerce it to English', () => {
+    expect(SUPPORTED_LIVE_LANGUAGES).toContain('tr');
+  });
+
+  it('gives Turkish its own live voice, distinct from the English one', () => {
+    expect(getLiveLanguageVoice('tr')).not.toBe(getLiveLanguageVoice('en'));
+  });
+
+  it('resolves a Turkish TTS languageCode, not en-US', () => {
+    expect(getGeminiTtsVoice('tr').languageCode).toBe('tr-TR');
+  });
+
+  it('gives Turkish a Live API voice entry', () => {
+    const voice = getLiveApiVoice('tr');
+    expect(typeof voice).toBe('string');
+    expect(voice.length).toBeGreaterThan(0);
+  });
+
+  it('gives Turkish its own greeting pool, not the English one', () => {
+    expect(SHORT_GAP_GREETING_PHRASES.tr).not.toEqual(SHORT_GAP_GREETING_PHRASES.en);
+    expect(SHORT_GAP_GREETING_PHRASES.tr.length).toBeGreaterThan(0);
+  });
+
+  it('keeps the decision-contract enum in step for tr specifically', () => {
+    expect(SUPPORTED_LANGUAGES as readonly string[]).toContain('tr');
+  });
+});
