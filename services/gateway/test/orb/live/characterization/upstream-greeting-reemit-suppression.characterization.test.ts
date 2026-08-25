@@ -73,7 +73,11 @@ describe('BOOTSTRAP-ORB-GREETING-REEMIT: structural greeting re-emit suppression
     // onAudioResponse forward, so a re-emit is dropped from chunk 1.
     const idxIsSpeaking = src.indexOf('if (!session.isModelSpeaking)');
     const idxGuard = src.indexOf('[BOOTSTRAP-ORB-GREETING-REEMIT] Suppressing');
-    const idxForward = src.indexOf('ctx.callbacks.onAudioResponse(audioB64)');
+    // VTID-03715 widened this call to `onAudioResponse(audioB64, mimeType)`,
+    // so an exact-prefix indexOf silently stopped finding it (-1, which then
+    // failed the ordering assertion below). Matched on the call NAME instead —
+    // the ordering is what this test characterizes, not the argument list.
+    const idxForward = src.indexOf('ctx.callbacks.onAudioResponse(audioB64');
     expect(idxIsSpeaking).toBeGreaterThan(-1);
     expect(idxGuard).toBeGreaterThan(idxIsSpeaking);
     expect(idxForward).toBeGreaterThan(idxGuard);

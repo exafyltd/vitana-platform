@@ -326,6 +326,14 @@ import {
   // PolicyResolver render-block lookup with English fallback baked in.
   getConnectionIssueMessage,
 } from '../orb/upstream/constants';
+// VTID-03706: full-duplex voice — the mic stays open while Vitana speaks so
+// Nova Sonic's native barge-in can actually fire. Inert unless
+// ORB_FULL_DUPLEX_ENABLED=true is set.
+import {
+  isFullDuplexEnabled,
+  shouldDropMicWhileModelSpeaking,
+  shouldDropMicForPostTurnCooldown,
+} from '../orb/live/duplex/full-duplex-gate';
 import {
   SHORT_GAP_GREETING_PHRASES,
   pickShortGapGreetings,
@@ -354,11 +362,36 @@ import {
 // resent the identical rejected content in a loop either way. Set once at
 // module load — every `computeGreetingDecision` call site (there are
 // several, independently built) inherits both automatically, so there is
-// nothing left to diverge. Both default OFF (disabled) unless explicitly
-// re-enabled via their env vars, which should happen only after a
-// Nova-aware fix (skip the identical-content retry, not the whole rung)
-// ships for each.
-setNewdayOverviewRungEnabled(process.env.ORB_NEWDAY_OVERVIEW_RUNG_ENABLED === 'true');
+// nothing left to diverge.
+//
+// VTID-03646 — `newday_overview` is re-enabled by default; `day_close` is NOT.
+// The two were disabled together on the same night under one theory, and the
+// evidence since separates them:
+//
+//   1. VTID-03629's own writeup records that newday_overview "was already
+//      being rejected by its own guard (missing first name) before it could
+//      even fire" — i.e. VTID-03628 disabled a rung that was not running, and
+//      the content filter kept firing regardless. Prod telemetry agrees: zero
+//      `newday_overview` events have EVER been recorded, before or after the
+//      kill switch. It cannot have been the content Bedrock rejected.
+//   2. Disabling both did not stop the blocks. `orb.live.diag` /
+//      `stage=upstream_error` still carries "This request has been blocked by
+//      our content filters" on 2026-08-14 (x2) and 2026-08-15 (x1), days after
+//      both rungs went dark. Whatever trips the filter is not these rungs.
+//   3. Meanwhile the cost of keeping it off is the entire reported regression:
+//      every session falls to the rung-8 teaser line (24 of 24 `wake_opener`
+//      events in the last 4 days are `override_v2`).
+//
+// `day_close` stays default-OFF because it is the rung that was actually
+// observed firing and being blocked (14 events on 08-13, prompt_len 4202), it
+// only fires at local_hour 0-4, and it is not implicated in this report. It
+// keeps its unchanged `=== 'true'` opt-in until a Nova-aware retry (rebuild
+// the opener from reduced content instead of resending identical content)
+// ships for it.
+//
+// The kill switch itself is kept in both cases — `ORB_NEWDAY_OVERVIEW_RUNG_
+// ENABLED=false` still turns the briefing off without a code change.
+setNewdayOverviewRungEnabled(process.env.ORB_NEWDAY_OVERVIEW_RUNG_ENABLED !== 'false');
 setDayCloseRungEnabled(process.env.ORB_DAY_CLOSE_RUNG_ENABLED === 'true');
 import { EMPTY_GREETING_LEDGER } from '../services/conversation/greeting-facts-ledger';
 
@@ -889,7 +922,10 @@ export interface GeminiLiveSession {
   // sites keep working; typed events flow via bindUpstreamSessionHandlers.
   upstreamClient?: UpstreamLiveClient | null;
   // Which upstream provider carries this session ('vertex' default).
-  upstreamProvider?: 'vertex' | 'livekit' | 'nova_sonic';
+  // VTID-03683: use the canonical union, not a re-declared copy.
+  // provider-name.ts's own header requires this: adding `cascaded` there
+  // surfaced these two sites as the only places still restating the list.
+  upstreamProvider?: VoiceProviderName;
   sseResponse: Response | null;
   active: boolean;
   // VTID-03561: latch — at most one `vtid.live.session.stop` per session.
@@ -1073,7 +1109,11 @@ export interface GeminiLiveSession {
   // decouples "start generating" from "client ready to play", hiding the model's
   // first-token latency behind the unlock the legacy path serially waits for.
   prebufferGreetingAudio?: boolean;
-  bufferedGreetingChunks?: string[];
+  // VTID-03715: each held chunk carries its own declared mime. It used to be a
+  // bare string[], which silently assumed every buffered chunk was 24kHz — true
+  // while Nova was the only upstream, false the moment the Polly cascade (16kHz)
+  // could produce a greeting.
+  bufferedGreetingChunks?: Array<{ audioB64: string; audioMime?: string }>;
   // DEV-COMHU-0513 B2: false while fast-start's deferred wake-brief/journey work
   // is still running; flips true when contextReadyPromise settles. Lets the
   // greeting builder detect "context still pending" and emit a short audio-safe
@@ -1669,13 +1709,75 @@ export function shouldRetryNovaOnPrematureClose(args: {
     !args.alreadyRetried
   );
 }
+
+/**
+ * VTID-03646 follow-up — the Nova-aware retry `day_close` (VTID-03629) has
+ * been waiting on since it went default-OFF: "rebuild the opener from
+ * reduced content instead of resending identical content".
+ *
+ * This does NOT decide whether a retry happens at all — `shouldRetryNova`
+ * above already covers that for any zero-audio close, `day_close` included,
+ * since it isn't gated on `closeReason`. This decides whether the resend
+ * that `shouldRetryNova` is about to trigger should rebuild `day_close`'s
+ * directive REDUCED (`buildDayCloseOpenerLine`, no quoted exemplars) instead
+ * of resending the ~4200-char `buildDayCloseBlock` that just got rejected —
+ * the resend the pre-existing code comment on `_dayCloseRungEnabled`
+ * criticized as looping on identical content.
+ *
+ * Deliberately keyed on `closeReason === 'nova_validation'` specifically
+ * (not `!hasProducedAudio` generally, the way the retry-at-all decision is):
+ * a `day_close` open that dies for an unrelated transport reason (premature
+ * close, rotation) should get the SAME directive back — the content was
+ * never in question, so shrinking it would just make an unrelated failure
+ * look "explained" by content it never had anything to do with.
+ */
+export function shouldRetryDayCloseReduced(args: {
+  closeReason: string | null;
+  lastWakeOpener: string | null;
+  sessionActive: boolean;
+  initiatedLocally: boolean;
+  rotationInFlight: boolean;
+  /** Guard against re-arming on a second, independent nova_validation close
+   *  later in the same session (e.g. a future day_close open next night). */
+  alreadyReducedThisClose: boolean;
+}): boolean {
+  return (
+    args.closeReason === 'nova_validation' &&
+    args.lastWakeOpener === 'day_close' &&
+    args.sessionActive &&
+    !args.initiatedLocally &&
+    !args.rotationInFlight &&
+    !args.alreadyReducedThisClose
+  );
+}
 // VTID-03495: Polly seam for the /tts route. No-ops unless TTS_PROVIDER=polly.
 import { tryPollySynthesis } from '../services/tts/tts-provider';
-import { resolveNovaSonicVoice } from '../orb/live/voice/nova-sonic-voice';
+// VTID-03716: direct, unconditional Polly access for the PCM diagnostic route
+// below — same import CascadedLiveClient uses, deliberately bypassing the
+// TTS_PROVIDER gate (this route exists specifically to test Polly PCM output).
+import {
+  synthesizePolly,
+  POLLY_UNSUPPORTED_LANGS,
+  normalizeLang as normalizePollyLang,
+} from '../services/tts/polly';
+import rateLimit from 'express-rate-limit';
+import {
+  resolveNovaSonicVoiceOrFallback,
+  logNovaSonicVoiceFallbackOnce,
+} from '../orb/live/voice/nova-sonic-voice';
+import type { VoiceProviderName } from '../orb/live/upstream/provider-name';
 import { prewarmNovaSonicBedrock } from '../orb/live/upstream/nova-sonic-live-client';
 import { sanitizeInstructionForNova } from '../orb/live/upstream/nova-instruction-sanitizer';
 import { startNovaSonicKeepWarm, startNovaSonicModelWarm } from '../orb/live/upstream/nova-sonic-keepwarm';
 import { createUpstreamClient } from '../orb/live/upstream/upstream-client-factory';
+// BOOTSTRAP-CASCADE-WIRING: these two had NO caller on any live path. The
+// selector's cascade branch and the factory's `case 'cascaded'` both existed
+// and were unreachable because nothing in this file ever asked whether the
+// cascade was on, or which languages it covers.
+import {
+  isCascadeEnabled,
+  isCascadeLanguageSupported,
+} from '../orb/live/upstream/cascaded-config';
 import { bindUpstreamSessionHandlers } from '../orb/live/session/upstream-message-handler';
 import { createNovaWsFacade } from '../orb/live/upstream/nova-ws-facade';
 import type { UpstreamLiveClient } from '../orb/live/upstream/types';
@@ -1917,6 +2019,19 @@ if (googleAuth && VERTEX_PROJECT_ID) {
 
 let cachedChimePcmB64: string | null = null;
 
+/**
+ * VTID-03715: the rate to declare when an upstream chunk arrives with no mime
+ * of its own. 24kHz is Nova's rate and was the ONLY rate this file ever emitted,
+ * so it is the historically-correct default — but it is a fallback now, not an
+ * assertion. Where the real rate is known it must be forwarded instead: the
+ * Polly cascade streams 16kHz, and declaring that as 24kHz plays it 1.5x fast.
+ *
+ * NOT used for the activation chime — generateChimePcm() synthesizes at 24000
+ * below, so those call sites state their own rate as a fact about local data,
+ * not as a guess about an upstream.
+ */
+const DEFAULT_UPSTREAM_AUDIO_MIME = 'audio/pcm;rate=24000';
+
 function generateChimePcm(): string {
   if (cachedChimePcmB64) return cachedChimePcmB64;
 
@@ -2055,13 +2170,14 @@ function flushPrebufferedGreeting(
   } catch (err) {
     console.warn('[GREETING-PREBUFFER] Failed to send chime on flush:', err);
   }
-  for (const data_b64 of chunks) {
+  for (const { audioB64: data_b64, audioMime } of chunks) {
     if (clientWs.readyState !== WebSocket.OPEN) break;
     try {
       sendWsMessage(clientWs, {
         type: 'audio',
         data_b64,
-        mime: 'audio/pcm;rate=24000',
+        // VTID-03715: replay at the rate this chunk was actually encoded at.
+        mime: audioMime || DEFAULT_UPSTREAM_AUDIO_MIME,
         chunk_number: session.audioOutChunks,
       });
     } catch (err) {
@@ -3287,7 +3403,7 @@ export async function handleNavigateToScreen(
     title?: string;
     entry_kind?: string;
     already_there?: boolean;
-    directive?: { type: string; directive: string; screen_id: string; route: string; title: string; reason: string; entry_kind: string; vtid: string };
+    directive?: { type: string; directive: string; screen_id: string; route: string; title: string; reason: string; entry_kind: string; vtid: string; keep_orb_open?: boolean };
   };
 
   // Already-there short-circuit — the shared dispatcher returns ok:true
@@ -7009,6 +7125,26 @@ async function connectToLiveAPI(
       // on the task def to stop the runtime/language gates from routing
       // anyone toward it.
       vertexUnavailable: process.env.VERTEX_LIVE_UNAVAILABLE === 'true',
+      // BOOTSTRAP-CASCADE-WIRING (seam 1 of 3) — this field did not exist.
+      //
+      // VTID-03683 built the whole Transcribe->Bedrock->Polly pipeline and its
+      // selector branch, but never populated `cascade` HERE. `tryCascadeRescue`
+      // opens with `if (ctx.cascade?.enabled !== true) return null`, so with the
+      // field absent it returned null on every session and the rescue could
+      // not fire for anyone — `ORB_CASCADED_VOICE_ENABLED=true` changed
+      // nothing, because `isCascadeEnabled()` had no caller on any live path.
+      //
+      // Same shape as VTID-03531: a fully built, fully tested component that
+      // nothing called. A green unit suite proves a function works, not that
+      // anything invokes it.
+      cascade: {
+        enabled: isCascadeEnabled(),
+        // Precomputed here because the selector is stateless and never sees
+        // the language string. `evaluateCascadeEligibility` already refuses
+        // every language Nova speaks natively, so a healthy Nova session can
+        // never be diverted into the slower three-hop path.
+        languageSupported: isCascadeLanguageSupported(session.lang),
+      },
     });
   } catch (e) {
     // Voice/canary config read failure must NOT block the session start;
@@ -7737,6 +7873,139 @@ async function connectToLiveAPI(
     // buildLiveSystemInstruction + buildLiveApiTools — then decoded into
     // provider-neutral parts and re-encoded through nova-sonic-protocol.ts
     // inside the client. Parity by construction, not by duplication.
+    // BOOTSTRAP-CASCADE-WIRING (seams 2 and 3 of 3) — this branch did not exist.
+    //
+    // Seam 2: `createUpstreamClient` has a `case 'cascaded'` that throws
+    // `cascaded_not_configured` unless `deps.cascaded` is supplied, and nothing
+    // supplied it.
+    //
+    // Seam 3: the only factory call in this file passed the LITERAL
+    // `'nova_sonic'`, not `__upstreamDecision.provider` — so even a
+    // `provider: 'cascaded'` decision built a Nova client. And because the
+    // Nova block below is gated on `=== 'nova_sonic'`, a cascaded decision
+    // would otherwise fall through to the Vertex path at the bottom of this
+    // function, which is dead since the GCP shutdown.
+    //
+    // Placed BEFORE the Nova block deliberately: a sibling `if` that returns,
+    // so the Nova block's 750 lines are not re-indented or otherwise touched.
+    // The cascade cannot steal a Nova-supported language — the selector only
+    // returns 'cascaded' when `languageBlocked` is already true.
+    if (__upstreamDecision.provider === 'cascaded') {
+      try {
+        const cascadedLang = session.lang || 'en';
+        // Same envelope the Nova and Vertex paths use, so the cascade gets the
+        // identical assembled context rather than a second, drifting build.
+        const cascadedEnvelope = (await buildOrbVertexSetupEnvelope()) as { setup?: Record<string, any> };
+        const cascadedSetup = cascadedEnvelope.setup ?? {};
+        const cascadedInstruction: string =
+          cascadedSetup.system_instruction?.parts?.[0]?.text ?? '';
+
+        const cascadedClient = createUpstreamClient('cascaded', {
+          cascaded: { lang: cascadedLang },
+        });
+
+        bindUpstreamSessionHandlers({
+          session,
+          client: cascadedClient,
+          callbacks: { onAudioResponse, onTextResponse, onError, onTurnComplete, onInterrupted },
+          deps: {
+            clearResponseWatchdog,
+            detectAuthIntent,
+            emitDiag,
+            emitLiveSessionEvent,
+            executeLiveApiTool,
+            isDevSandbox,
+            sendAudioToLiveAPI,
+            sendFunctionResponseToLiveAPI,
+            sendWsMessage,
+            startResponseWatchdog,
+            markVoiceLatency,
+            finalizeVoiceTurnLatency,
+          },
+          // NO silence keepalive, deliberately — and this is the one place the
+          // cascade must NOT copy Nova.
+          //
+          // Nova needs synthetic PCM because Bedrock kills a bidirectional
+          // stream that goes ~15s without audio frames. The cascade has no
+          // such stream: Transcribe opens lazily on the first real chunk and
+          // Bedrock is a single completion per turn. Feeding it silence would
+          // bill Transcribe for ambient quiet and could push a turn's endpoint
+          // detection around, for a deadline that does not exist here.
+        });
+
+        session.upstreamClient = cascadedClient;
+        session.upstreamProvider = 'cascaded';
+        const cascadedConnectStart = Date.now();
+        await cascadedClient.connect({
+          // `model`/`voiceName` are required by the provider-neutral options
+          // type but the cascaded client reads neither: Bedrock's model comes
+          // from `llm_routing_policy` via callViaRouter, and the Polly voice is
+          // resolved from the language. Descriptive values, so anything that
+          // logs the options says what actually ran instead of a bare ''.
+          model: 'cascaded:transcribe+bedrock+polly',
+          voiceName: `polly:${cascadedLang}`,
+          responseModalities: session.responseModalities.includes('audio') ? ['audio'] : ['text'],
+          vadSilenceMs: session.vadSilenceMs,
+          systemInstruction: cascadedInstruction,
+        });
+        setupComplete = true;
+        clearTimeout(connectionTimeout);
+        session.establishLatency?.mark('upstream_connected');
+        console.log(
+          `[VTID-03683] cascaded pipeline open for session ${session.sessionId}: ` +
+            `lang=${cascadedLang} connect_ms=${Date.now() - cascadedConnectStart} ` +
+            `reason=${__upstreamDecision.reason}`,
+        );
+        void emitOasisEvent({
+          type: 'orb.upstream.cascaded.connect_succeeded',
+          vtid: 'VTID-03683',
+          payload: {
+            session_id: session.sessionId,
+            provider: 'cascaded',
+            lang: cascadedLang,
+            reason: __upstreamDecision.reason,
+            connect_ms: Date.now() - cascadedConnectStart,
+            instruction_chars: cascadedInstruction.length,
+            status: 'success',
+          } as any,
+        } as any).catch(() => { /* best-effort */ });
+
+        // The same generic facade Nova uses — `createNovaWsFacade` takes an
+        // `UpstreamLiveClient`, not a Nova client, so every legacy
+        // `upstreamWs` call site drives the cascade unchanged.
+        const cascadedFacade = createNovaWsFacade(cascadedClient) as unknown as WebSocket;
+        resolve(cascadedFacade);
+        return;
+      } catch (err) {
+        // Fail LOUDLY. A cascaded session that cannot open must not silently
+        // fall through to the dead Vertex path below — that would turn a
+        // named, diagnosable failure into a connection timeout.
+        setupComplete = false;
+        clearTimeout(connectionTimeout);
+        session.upstreamClient = null;
+        console.error(
+          `[VTID-03683] cascaded connect FAILED for session ${session.sessionId}: ${(err as Error).message}`,
+        );
+        void emitOasisEvent({
+          type: 'orb.upstream.cascaded.connect_failed',
+          vtid: 'VTID-03683',
+          payload: {
+            session_id: session.sessionId,
+            provider: 'cascaded',
+            lang: session.lang || null,
+            error: (err as Error).message,
+            // `cascaded_not_configured` / `cascade_language_unsupported` /
+            // an AWS AccessDenied all surface here distinctly — the IAM case
+            // is the one most likely to bite first (VTID-03665 shape).
+            code: (err as { code?: string })?.code ?? null,
+            status: 'error',
+          } as any,
+        } as any).catch(() => { /* best-effort */ });
+        reject(err as Error);
+        return;
+      }
+    }
+
     if (__upstreamDecision.provider === 'nova_sonic') {
       try {
         const novaCfg = getNovaSonicConfig(process.env);
@@ -7769,8 +8038,42 @@ async function connectToLiveAPI(
           ? (setup.tools as Array<Record<string, unknown>>)
           : [];
         const novaPersona = ((session as any).activePersona as string) || 'vitana';
-        const novaVoice =
-          resolveNovaSonicVoice({ language: session.lang || 'en', persona: novaPersona }) ?? 'tina';
+        // VTID-03682: was `resolveNovaSonicVoice(...) ?? 'tina'`. That `??`
+        // silently served Nova's GERMAN voice to every language with no native
+        // Nova voice (ru, pl, sr, ar, zh) — no log, no telemetry, nothing a
+        // reader or a dashboard could see. Same shape as VTID-03578's
+        // `?? POLLY_VOICES['en']`. The voice served is UNCHANGED; the
+        // substitution is now observable.
+        const novaVoiceResolution = resolveNovaSonicVoiceOrFallback({
+          language: session.lang || 'en',
+          persona: novaPersona,
+        });
+        const novaVoice = novaVoiceResolution.voice;
+        if (novaVoiceResolution.fallback) {
+          logNovaSonicVoiceFallbackOnce(session.lang || 'en', novaVoice);
+          // Per-session diag as well as the once-per-process log: the log says
+          // "this deployment substitutes for Russian", the diag says how often
+          // and for whom, which is what makes the rate measurable.
+          //
+          // LATCHED PER SESSION, and the latch is load-bearing: this function is
+          // re-entered by `attemptTransparentReconnect()` — for a genuine
+          // reconnect AND for every planned Nova stream rotation
+          // (`_novaRotationInFlight`), which is routine, not exceptional. Without
+          // the latch a single Russian session emits one row per rotation, so a
+          // metric meant to count AFFECTED SESSIONS would instead count
+          // reconnects and read high for reasons unrelated to language coverage.
+          // That is the same defect this VTID exists to remove — a signal that
+          // does not mean what its name says — reintroduced one layer up.
+          if (!(session as any)._novaVoiceFallbackDiagEmitted) {
+            (session as any)._novaVoiceFallbackDiagEmitted = true;
+            emitDiag(session, 'nova_voice_fallback', {
+              provider: 'nova_sonic',
+              lang: session.lang || 'en',
+              voice: novaVoice,
+              reason: 'no_native_nova_voice',
+            });
+          }
+        }
         // Stashed for the connect_failed OASIS payload — makes a rejected
         // envelope diagnosable without server-log access.
         (session as any)._novaInstructionChars = novaSystemInstruction.length;
@@ -8178,6 +8481,23 @@ async function connectToLiveAPI(
             });
             return;
           }
+
+          // VTID-03646 follow-up — arm the day_close reduced-content resend
+          // (see `shouldRetryDayCloseReduced`'s doc). This only DECIDES the
+          // flag; whether a retry actually happens at all is still entirely
+          // `shouldRetryNova` below, unchanged. Reset to false first so a
+          // second, later nova_validation close on the same session (e.g. a
+          // reduced retry that ALSO gets blocked) does not re-arm forever —
+          // `resendGreetingIfStuckAtZeroTurns`'s existing `alreadyRetried`
+          // gate on `shouldRetryNova` already stops it after one attempt.
+          (session as any)._dayCloseReducedRetry = shouldRetryDayCloseReduced({
+            closeReason: closeEvent.reason ?? null,
+            lastWakeOpener: (session as any)._lastWakeOpener ?? null,
+            sessionActive: session.active,
+            initiatedLocally: closeEvent.initiatedLocally === true,
+            rotationInFlight,
+            alreadyReducedThisClose: (session as any)._dayCloseReducedRetry === true,
+          });
 
           // VTID-03557: one fresh Nova retry BEFORE the VTID-03502 Vertex
           // fallback below pins the session away from Nova. Every measured
@@ -8908,9 +9228,24 @@ function scheduleProactiveGoAwayResume(session: GeminiLiveSession, timeLeftMs: n
  * fallback, so it does not cover them on its own.
  */
 function resendGreetingIfStuckAtZeroTurns(session: GeminiLiveSession, source: string): void {
-  if (session.turn_count === 0 && session.greetingSent) {
+  // VTID-03687: VTID-03634 gated this on `session.greetingSent` because the
+  // incident it fixed always had the prompt already dispatched to the dead
+  // connection (greetingSent=true) before the retry fired. That assumption
+  // does not hold when Nova's content filter rejects the connection during
+  // its OWN setup/validation phase, before sendGreetingPromptToLiveAPI is
+  // ever called — greetingSent stays false, this guard never engages, and
+  // the reconnect falls through to the default "reconnect → stay silent"
+  // rule with turn_count still 0. Reproduced live 2026-08-20 (guided-topic
+  // sessions on T254/T252, both content-filter-blocked with greeting_sent:
+  // false both times): wake_opener ended up "silent_reconnect", prompt_len 0,
+  // the guided-topic content never delivered and no error shown either —
+  // the user just got silence. What actually matters here is turn_count===0
+  // ("has this user heard anything at all"), not whether a PRIOR attempt
+  // happened to get as far as flipping greetingSent — so drop that half of
+  // the condition entirely.
+  if (session.turn_count === 0) {
     console.log(
-      `[${source}] Reconnected with 0 turns but greetingSent=true — resetting to re-send greeting for session ${session.sessionId}`,
+      `[${source}] Reconnected with 0 turns (greetingSent=${session.greetingSent}) — resetting to re-send greeting for session ${session.sessionId}`,
     );
     session.greetingSent = false;
     session.greetingTurnIndex = undefined;
@@ -8965,8 +9300,24 @@ async function attemptTransparentReconnect(
   // BOOTSTRAP-NOVA-SONIC-VOICE: a planned Nova stream rotation is invisible
   // to the user — no "reconnecting"/"reconnected" cues, no greeting replay.
   const isNovaRotation = !!(session as any)._novaRotationInFlight;
+  // VTID-03685: turn_count===0 means the user has heard NOTHING yet — this is
+  // the FIRST connection attempt failing before any audio ever reached them
+  // (the common case being a guided-topic session's opener hitting Nova's
+  // `nova_validation` content filter, VTID-03674/03677's still-open
+  // flakiness). The comment above this block already names the exact
+  // mechanism for the persona-swap case ("just makes the widget speak
+  // 'Einen Moment, ich verbinde mich neu' on top of her") — the same defect
+  // applies here, minus the "on top of her" part: there is nothing to
+  // reconnect TO yet, so a loud "reconnecting" announcement reads as "this
+  // is already broken" before the session has even properly started.
+  // Reproduced live: every guided-topic tap that hit nova_validation on its
+  // first attempt spoke this cue before the (eventual) short opener.
+  // resendGreetingIfStuckAtZeroTurns still recovers the greeting normally
+  // once this reconnect succeeds — silencing the announcement here doesn't
+  // touch that recovery path at all.
+  const hasHeardNothingYet = (session.turn_count || 0) === 0;
 
-  if (!isPersonaSwap && !isNovaRotation) {
+  if (!isPersonaSwap && !isNovaRotation && !hasHeardNothingYet) {
     // Notify client that we're reconnecting (informational, not an error)
     // Works for both SSE and WS transports
     const reconnectMsg = { type: 'reconnecting', reconnect_count: reconnectCount + 1, message: 'Extending session...' };
@@ -8976,7 +9327,10 @@ async function attemptTransparentReconnect(
       try { sendWsMessage(session.clientWs, reconnectMsg); } catch (e) { /* WS may be closed */ }
     }
   } else {
-    console.log(`[VTID-02047] Persona swap reconnect — suppressing reconnect TTS announcement`);
+    console.log(
+      `[VTID-02047/VTID-03685] Reconnect TTS announcement suppressed for ${session.sessionId} ` +
+        `(personaSwap=${isPersonaSwap}, novaRotation=${isNovaRotation}, heardNothingYet=${hasHeardNothingYet})`,
+    );
   }
 
   try {
@@ -9616,6 +9970,12 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   // `_reconnectCount` itself (still used for MAX_RECONNECTS and elsewhere).
   const _freshOpenAfterZeroTurnRecovery = (session as any)._freshOpenAfterZeroTurnRecovery === true;
   (session as any)._freshOpenAfterZeroTurnRecovery = false;
+  // VTID-03646 follow-up — one-shot, consumed the same way as the flag
+  // above: read once for THIS rebuild, then cleared so a later, unrelated
+  // resend on the same session (a fresh day_close next night, say) does not
+  // inherit a stale "reduced" instruction from a close that already recovered.
+  const _dayCloseReduced = (session as any)._dayCloseReducedRetry === true;
+  (session as any)._dayCloseReducedRetry = false;
   const _openDecision = decideOpening({
     isAnonymous: !!session.isAnonymous,
     hasResumptionHandle: !!session.resumptionHandle,
@@ -9673,6 +10033,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
       menuPhrases: pickShortGapGreetings(lang, 6),
       openDecision: { mode: _openDecision.mode, source: _openDecision.source, line: _openDecision.line },
       guidedTopicNarrationContent: (session as any).guidedTopicNarrationContent ?? null,
+      dayCloseReduced: _dayCloseReduced,
       wakeBriefDecisionId: (_wb as any)?.decisionId ?? null,
       // VTID-03635 — rung 9 (silenced_on_cadence) is a SECOND, independent
       // silencing mechanism, fed by `voiceWakeBriefReason` (the wake-brief
@@ -9693,6 +10054,22 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
         !_freshOpenAfterZeroTurnRecovery && process.env.ORB_GREETING_SILENCE_ON_SKIP_ENABLED !== 'false',
       wakeBriefHasSelectedContinuation: (_wb as any)?.selectedContinuation != null,
       voiceWakeBriefReason: _voiceReasonSync,
+      // BOOTSTRAP-ORB-UNREAD-MESSAGES-NAV: resolve the winning continuation's
+      // navigate CTA (if any) into plain data so override_v2 can request a
+      // deterministic navigate effect instead of leaving it to the model to
+      // decide whether to call navigate_to_screen. Only unread-messages-
+      // announce and first-time-welcome set cta.type==='navigate' today;
+      // every other continuation carries explain/ask_permission/etc. and
+      // this stays null.
+      wakeBriefNavigateCta: (() => {
+        const cta = (_wb as any)?.selectedContinuation?.cta;
+        if (!cta || cta.type !== 'navigate') return null;
+        const screenId = typeof cta.payload?.screen_id === 'string' ? cta.payload.screen_id : null;
+        if (!screenId) return null;
+        const evidence = (_wb as any)?.selectedContinuation?.evidence;
+        const reason = Array.isArray(evidence) && evidence[0]?.kind ? String(evidence[0].kind) : 'wake_brief_navigate';
+        return { screenId, reason };
+      })(),
     };
 
     /** Render one decision onto the wire + perform its effects. Shared by the
@@ -9718,9 +10095,28 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
       console.log(
         `[VTID-VOICE-INIT] greeting via brain wake_opener=${decision.wakeOpener} lang=${lang} turnIndex=${session.turn_count}`,
       );
+      // VTID-03646 follow-up — the only thing `shouldRetryDayCloseReduced`
+      // needs to know is "was the greeting that just got nova_validation-
+      // closed a day_close one", so a plain last-value stash is enough; no
+      // history, no other reader.
+      (session as any)._lastWakeOpener = decision.wakeOpener;
       emitDiag(session, 'greeting_sent', decision.diag);
       if (decision.effects.armWatchdog) {
         startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
+      }
+      // BOOTSTRAP-ORB-UNREAD-MESSAGES-NAV: the greeting brain asked for a
+      // deterministic navigate — dispatch it the same way an LLM tool call
+      // would (handleNavigateToScreen), not as a hope the model calls
+      // navigate_to_screen on its own later turn. keep_orb_open:true tells
+      // the client widget to skip its normal hide-then-navigate teardown so
+      // the session can keep listening for a dictated reply. Fire-and-forget:
+      // this must never block the greeting itself, and a failure here still
+      // leaves the spoken announcement intact.
+      if (decision.effects.navigateEffect) {
+        const { screenId, reason, keepOrbOpen } = decision.effects.navigateEffect;
+        void handleNavigateToScreen(session, { screen_id: screenId, reason, keep_orb_open: keepOrbOpen === true }).catch(
+          () => { /* best-effort — the spoken announcement already went out */ },
+        );
       }
     };
 
@@ -14340,9 +14736,13 @@ async function getStoredLanguagePreference(
     if (result.ok && result.facts.length > 0) {
       const storedLang = result.facts[0].fact_value.toLowerCase();
       // Map full language name back to 2-letter code
+      // VTID-03681: pt/pl added. A miss here returns null (no stored
+      // preference), so the session silently falls back to the widget's
+      // browser-detected language instead of the one the user actually chose.
       const nameToCode: Record<string, string> = {
         english: 'en', german: 'de', french: 'fr', spanish: 'es',
         arabic: 'ar', chinese: 'zh', russian: 'ru', serbian: 'sr',
+        portuguese: 'pt', polish: 'pl',
       };
       return nameToCode[storedLang] || (SUPPORTED_LIVE_LANGUAGES.includes(storedLang) ? storedLang : null);
     }
@@ -14793,7 +15193,7 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
     const liveApiPromise = connectToLiveAPI(
       session,
       // Audio response handler - forward to client via SSE
-      (audioB64: string) => {
+      (audioB64: string, audioMime?: string) => {
         // ORB-CONVERSATION-LATENCY: the first audio chunk out is the greeting —
         // it finalizes the establishment tracker (total = time_to_first_audio).
         // The greeting has no preceding user turn, so the per-turn tracker never
@@ -14816,7 +15216,7 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
             session.sseResponse.write(`data: ${JSON.stringify({
               type: 'audio',
               data_b64: audioB64,
-              mime: 'audio/pcm;rate=24000',
+              mime: audioMime || DEFAULT_UPSTREAM_AUDIO_MIME,
               chunk_number: session.audioOutChunks
             })}\n\n`);
           } catch (err) {
@@ -15256,6 +15656,132 @@ router.post('/tts', optionalAuth, async (req: AuthenticatedRequest, res: Respons
 });
 
 /**
+ * VTID-03716: POST /tts-pcm-diagnostic — stateless Polly PCM synthesis, for
+ * automated testing.
+ *
+ * This exists because VTID-03711 (orb-widget playing cascade-voice audio at
+ * 1.5x speed/pitch — reported live as "Mickey Mouse speed") could only be
+ * proven fixed by decoding REAL Polly PCM bytes at their REAL declared rate
+ * and checking playback duration math — and the only place that synthesis
+ * happened before this route existed was deep inside a live ORB session
+ * (`CascadedLiveClient.runTurn()`), which cannot be exercised by an
+ * automated test without opening a real session against the shared
+ * production Supabase project (forbidden — see CLAUDE.md's absolute
+ * test-account rule; a live ORB session writes `oasis_events` and session
+ * state regardless of who/what opens it).
+ *
+ * This route calls the EXACT SAME `synthesizePolly({format:'pcm'})` call
+ * `CascadedLiveClient` makes, unconditionally (bypassing `TTS_PROVIDER`,
+ * same deliberate choice `guided-topic-narration-audio.ts` already makes)
+ * and returns the audio + its true declared sample rate. It is:
+ *   - Stateless: no ORB session, no session state, no memory extraction.
+ *   - optionalAuth, same as the existing `/tts` route above — no account
+ *     write of any kind, same category as an "API call" CLAUDE.md's own
+ *     test-user section already treats as safe to test with.
+ *   - The same category as the existing `/voice/preview` admin route,
+ *     minus the admin gate (nothing here is more sensitive than that route
+ *     already exposes) and with PCM instead of MP3 so the exact bug's
+ *     rate-labeling can be reproduced end-to-end.
+ *
+ * See `scripts/tts/verify-cascade-audio-timing.ts` for the automated
+ * program that calls this route and mathematically proves the fix.
+ */
+// VTID-03716: this route pays for real Polly synthesis on every call and is
+// mounted with optionalAuth (no login required) — an unauthenticated client
+// could otherwise repeatedly submit up to 3000 chars and rack up billing /
+// exhaust resources. Diagnostic traffic is inherently low-volume, so this
+// stays tight regardless of who's calling.
+const ttsPcmDiagnosticLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: { ok: false, error: 'RATE_LIMIT_EXCEEDED', message: 'Too many TTS diagnostic requests' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+router.post('/tts-pcm-diagnostic', ttsPcmDiagnosticLimiter, optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis: the Dev Autopilot Impact Scan's
+  // new-mutation-without-oasis-emit rule pattern-matches for a literal
+  // `emitOasisEvent(` call and doesn't see through a wrapper — this handler
+  // does emit OASIS state via emitTtsEvent() below (request/success/failure),
+  // the exact same helper the sibling /tts route above uses for the same
+  // purpose (see VTID-01155's emitTtsEvent()).
+  const body = req.body as { text?: string; lang?: string };
+  const text = (body.text || '').trim();
+  if (!text) {
+    return res.status(400).json({ ok: false, error: 'text is required' });
+  }
+  if (text.length > 3000) {
+    return res.status(400).json({ ok: false, error: 'text exceeds 3000 character limit' });
+  }
+  // VTID-03716 review fix: this route's job is testing what POLLY can serve,
+  // not what live ORB sessions offer — orb-live.ts's own normalizeLang()
+  // silently maps anything outside SUPPORTED_LIVE_LANGUAGES to 'en', which
+  // would mask a typo'd or newly-added-to-Polly language behind a false
+  // English 200 instead of the intended 422. Normalize only the locale SHAPE
+  // (polly.ts's normalizeLang — lowercase, strip region) and let
+  // synthesizePolly's own voice table / POLLY_UNSUPPORTED_LANGS decide.
+  const lang = normalizePollyLang(body.lang || 'en');
+
+  await emitTtsEvent('vtid.tts.request', {
+    lang,
+    voice_type: 'Polly',
+    format: 'pcm',
+    text_length: text.length,
+    route: 'tts-pcm-diagnostic',
+  });
+
+  try {
+    const result = await synthesizePolly({ text, lang, format: 'pcm' });
+    if (!result) {
+      const error = POLLY_UNSUPPORTED_LANGS.has(lang)
+        ? `Polly has no voice for lang='${lang}' in any engine`
+        : `Polly synthesis failed for lang='${lang}'`;
+      await emitTtsEvent('vtid.tts.failure', {
+        lang,
+        voice_type: 'Polly',
+        format: 'pcm',
+        text_length: text.length,
+        route: 'tts-pcm-diagnostic',
+        error,
+      });
+      return res.status(422).json({ ok: false, error });
+    }
+    await emitTtsEvent('vtid.tts.success', {
+      lang,
+      voice: result.voice,
+      voice_type: 'Polly',
+      engine: result.engine,
+      text_length: text.length,
+      audio_bytes: result.audioB64.length,
+      mime_type: `audio/pcm;rate=${result.sampleRateHz}`,
+      route: 'tts-pcm-diagnostic',
+    });
+    return res.status(200).json({
+      ok: true,
+      audio_b64: result.audioB64,
+      sample_rate_hz: result.sampleRateHz,
+      mime: `audio/pcm;rate=${result.sampleRateHz}`,
+      voice: result.voice,
+      engine: result.engine,
+      lang,
+      text_length: text.length,
+    });
+  } catch (error: any) {
+    console.error('[VTID-03716] /tts-pcm-diagnostic error:', error);
+    await emitTtsEvent('vtid.tts.failure', {
+      lang,
+      voice_type: 'Polly',
+      format: 'pcm',
+      text_length: text.length,
+      route: 'tts-pcm-diagnostic',
+      error: error.message,
+    });
+    return res.status(500).json({ ok: false, error: error.message || 'PCM synthesis failed' });
+  }
+});
+
+/**
  * VTID-FALLBACK: POST /live/chat-tts — Text-mode fallback when Vertex Live API is unavailable.
  *
  * Flow: Client sends text (from Web Speech API STT) → Gemini generates reply → Cloud TTS
@@ -15442,7 +15968,7 @@ router.get('/health', async (_req: Request, res: Response) => {
   //
   // We gather the exact same inputs selectUpstreamProvider() reads at session
   // connect time, then derive runtime readiness from the resolved provider.
-  let activeProvider: 'vertex' | 'livekit' | 'nova_sonic' = 'vertex';
+  let activeProvider: VoiceProviderName = 'vertex';
   let providerReason = 'default';
   let livekitReady = false;
   try {
@@ -16031,7 +16557,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
       liveSession,
       // Audio response handler - forward to client via WebSocket
       // FIX: Send raw PCM for Web Audio API scheduled playback (eliminates gaps between chunks)
-      (audioB64: string) => {
+      (audioB64: string, audioMime?: string) => {
         if (liveSession.establishLatency) {
           // BOOTSTRAP-NOVA-SONIC-VOICE: see the SSE audio handler's identical
           // comment — the tracker's Vertex default needs correcting once
@@ -16051,7 +16577,11 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
         // audio is held; once flushed, prebufferGreetingAudio is false and all
         // later turns forward live with zero overhead.
         if (liveSession.prebufferGreetingAudio) {
-          (liveSession.bufferedGreetingChunks ||= []).push(audioB64);
+          // VTID-03715: hold each chunk's OWN mime with it. These are replayed
+          // by flushPrebufferedGreeting() once the client unlocks its player,
+          // and a cascaded greeting held here is 16kHz — stashing only the
+          // bytes would lose that and replay it 1.5x fast.
+          (liveSession.bufferedGreetingChunks ||= []).push({ audioB64, audioMime });
           return;
         }
         if (clientWs.readyState === WebSocket.OPEN) {
@@ -16060,7 +16590,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
             sendWsMessage(clientWs, {
               type: 'audio',
               data_b64: audioB64,
-              mime: 'audio/pcm;rate=24000',
+              mime: audioMime || DEFAULT_UPSTREAM_AUDIO_MIME,
               chunk_number: liveSession.audioOutChunks
             });
           } catch (err) {
@@ -16153,7 +16683,14 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     emitLiveSessionEvent('vtid.live.session.start', {
       session_id: sessionId,
       lang,
+      // VTID-03704 — `voice` here is the LIVE-API (Gemini-era) voice name and is
+      // NOT what Nova speaks with; Nova resolves its own id separately. Keeping
+      // it alone made "which voice did this user actually hear?" unanswerable,
+      // which is exactly what the pre/post-login voice report ran into. The
+      // three fields below are the ones that decide the audible voice.
       voice: getLiveApiVoice(lang),
+      nova_voice: resolveNovaSonicVoiceOrFallback({ language: lang, persona: null }).voice,
+      nova_language_supported: isNovaSonicLanguageSupported(lang),
       response_modalities: responseModalities,
       transport: 'websocket',
       // VTID-01224: Include context bootstrap info
@@ -16180,6 +16717,12 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
       session_id: sessionId,
       live_api_connected: true,
       setupComplete: true, // v1 compatibility: signals Gemini is ready
+      // VTID-03706: tell the widget whether to run the full-duplex mic gate.
+      // The server is the authority — the widget has no env of its own, and a
+      // client that gated frames while the server still dropped them (or vice
+      // versa) would be a half-applied change with no single place to debug.
+      // Absent/false ⇒ the widget keeps its pre-existing barge-in behavior.
+      full_duplex: isFullDuplexEnabled(),
       // VTID-01224: Include context bootstrap status
       context_bootstrap: {
         included: !!contextInstruction,
@@ -16317,12 +16860,26 @@ async function handleWsAudioMessage(clientSession: WsClientSession, message: WsC
     return;
   }
 
+  // VTID-03706: full duplex resolved once per chunk — both gates below must
+  // agree, and reading the flag twice invites them to disagree if an operator
+  // flips the env var between the two calls.
+  const fullDuplex = isFullDuplexEnabled();
+
   // VTID-VOICE-INIT: Echo prevention gate — drop mic audio while model is speaking.
   // On mobile devices without hardware AEC, the phone speaker output is picked up by
   // the mic and forwarded to Gemini, which interprets it as new user speech. This causes
   // Gemini to interrupt itself and generate 2-3 overlapping response streams.
   // The gate is released when turn_complete or interrupted is received from Gemini.
-  if (liveSession.isModelSpeaking) {
+  //
+  // VTID-03706: under full duplex this gate is OFF, and that is the whole
+  // point. Dropping every chunk here meant Nova received literal silence
+  // during its own turn, so its native barge-in — which is what actually
+  // stops generation, since `sendEndOfTurn()` is a documented no-op for Nova
+  // — could never fire. The echo this gate protects against is now removed
+  // at the source: the client replaces sub-threshold frames with digital
+  // silence before they ever leave the device (see full-duplex-gate.ts), so
+  // what arrives is safe to forward AND carries the user's interruption.
+  if (shouldDropMicWhileModelSpeaking({ fullDuplex, isModelSpeaking: liveSession.isModelSpeaking })) {
     // Log sparingly to avoid flooding (every 50th dropped chunk)
     if (liveSession.audioInChunks % 50 === 0) {
       console.log(`[VTID-VOICE-INIT] Dropping mic audio — model is speaking: session=${sessionId}, dropped_at_chunk=${liveSession.audioInChunks}`);
@@ -16334,7 +16891,17 @@ async function handleWsAudioMessage(clientSession: WsClientSession, message: WsC
 
   // VTID-ECHO-COOLDOWN: Post-turn cooldown — gate mic audio for N ms after
   // turn_complete to let client-side audio playback finish draining.
-  if (liveSession.turnCompleteAt > 0 && (Date.now() - liveSession.turnCompleteAt) < getPostTurnCooldownMs()) {
+  //
+  // VTID-03706: also off under full duplex. The draining queue is gated
+  // frame-by-frame on the client now, so this blanket time window only
+  // discards the user's first words after every model turn — the same class
+  // of bug as the gate above, just smaller.
+  if (shouldDropMicForPostTurnCooldown({
+    fullDuplex,
+    turnCompleteAt: liveSession.turnCompleteAt,
+    nowMs: Date.now(),
+    cooldownMs: getPostTurnCooldownMs(),
+  })) {
     liveSession.audioInChunks++;
     liveSession.lastActivity = new Date();
     return;

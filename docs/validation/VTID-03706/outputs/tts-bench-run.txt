@@ -1,0 +1,37 @@
+# ORB Voice Bench — TTS tab, driven end-to-end (Playwright + Chromium).
+#
+# Served against a LOCAL STUB that mirrors the real POST /api/v1/orb/tts
+# contract and deliberately plants three real failure modes, to prove the
+# bench detects them rather than just rendering green:
+#
+#   sr -> {ok:false}                      (known gap: no Polly Serbian voice)
+#   ru -> 200 OK, amplitude 0.0            (SILENT audio behind a 200)
+#   zh -> 200 OK, but lang:'en' returned   (WRONG LANGUAGE served)
+#   all others -> 200 OK, audible 330Hz tone
+#
+# No live gateway was contacted. Nothing was written anywhere.
+
+--- TTS RESULTS ---
+de   | 200    Polly  V-de     peak=0.500   PASS
+en   | 200    Polly  V-en     peak=0.500   PASS
+es   | 200    Polly  V-es     peak=0.500   PASS
+fr   | 200    Polly  V-fr     peak=0.500   PASS
+pt   | 200    Polly  V-pt     peak=0.500   PASS
+pl   | 200    Polly  V-pl     peak=0.500   PASS
+ru   | 200    Polly  Tatyana  peak=0.000   FAIL silent (peak 0.000)
+zh   | 200    Polly  Zhiyu    peak=0.400   FAIL served lang=en
+ar   | 200    Polly  V-ar     peak=0.500   PASS
+sr   | 200    —      —        peak=—       EXPECTED FAIL — no Polly voice for sr in any engine
+
+VERDICT: FAIL — ru: FAIL silent (peak 0.000) · zh: FAIL served lang=en.
+         7/10 spoke audible, correct-language audio.
+         Known gaps (not regressions): sr.
+
+desktop 1400x900: hOverflow=false errors=[]
+mobile   390x844: hOverflow=false errors=[]
+
+# All three planted failures were caught, and each was classified correctly:
+#   - ru and zh as REAL failures (they fail the sweep)
+#   - sr as a KNOWN GAP (reported, does not redden the verdict)
+# Both of the real ones return HTTP 200 with a well-formed body, so no
+# status-code check anywhere in the repo would have seen them.

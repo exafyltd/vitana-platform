@@ -103,6 +103,18 @@ const POLLY_VOICES: Record<string, PollyVoiceConfig> = {
   pt: { voiceId: 'Camila' as VoiceId, engine: 'neural' as Engine, languageCode: 'pt-BR' },
   // Ola is Polly's only NEURAL Polish voice; Ewa/Maja are standard-engine.
   pl: { voiceId: 'Ola' as VoiceId, engine: 'neural' as Engine, languageCode: 'pl-PL' },
+  // VTID-03719. Turkish had NO entry here and NO entry in
+  // POLLY_UNSUPPORTED_LANGS — the exact undeclared gap this file's own
+  // pt/pl comment above warns about: `resolvePollyVoice('tr')` fell through
+  // to the caller's `?? POLLY_VOICES['en']` fallback, so Turkish users were
+  // silently served English audio by Joanna with no error. Burcu, NOT Filiz:
+  // `aws polly describe-voices --language-code tr-TR` (eu-central-1) lists
+  // both — Filiz is standard-only, Burcu supports `neural`, matching this
+  // table's preference for neural everywhere Polly offers it. Confirmed
+  // live via `synthesize-speech --engine neural --voice-id Burcu` (real PCM
+  // bytes back), not assumed from the voice listing alone (§2b's own
+  // ACTIVE-does-not-mean-invokable lesson, same discipline applied here).
+  tr: { voiceId: 'Burcu' as VoiceId, engine: 'neural' as Engine, languageCode: 'tr-TR' },
 };
 
 /**

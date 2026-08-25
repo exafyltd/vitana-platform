@@ -1,0 +1,88 @@
+# VTID-03720 — commands actually run.
+
+# --- The report: staging still English for pl/pt, hours after the merges ----
+
+# 1. Is the cascade flag even set by the staging workflow?
+grep -n "ORB_CASCADED_VOICE_ENABLED" .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml
+#   -> 322:  # even though ORB_CASCADED_VOICE_ENABLED is already true here --
+#   ONE hit, inside a COMMENT. Not in the strip list, not in the re-add list.
+#   => merely PRESERVED from the previous task def. Repo guarantees nothing.
+
+# 2. Is the CODE capable of serving pl/pt? Ran the real functions.
+#    (temporary jest diagnostic, removed after)
+#   -> pl: cascadeEligible=true transcribe=pl-PL polly=Ola
+#   -> pt: cascadeEligible=true transcribe=pt-BR polly=Camila
+#   -> sr: cascadeEligible=false reason=no_polly_voice
+#                                             (outputs/cascade-eligibility.txt)
+
+# 3. Tried the purpose-built test bench first, as instructed.
+curl -s -X POST "https://preview-aws-gateway.vitanaland.com/api/v1/voice-lab/nova/tests/run" \
+  -H "Content-Type: application/json" -d '{"live":false,"trigger":"claude-code-diagnostic"}'
+#   -> {"ok":false,"error":"missing bearer token"}  HTTP 401
+#   No admin token in this session, so the decision logic was executed
+#   locally instead (step 2) rather than skipped.
+
+# 4. Live runtime trail for a real Polish staging session (read-only).
+#   orb.session.identity.resolved -> env: "staging", surface: "vitanaland"
+#   vtid.live.session.start       -> lang pl, voice "Despina", origin preview-aws
+#   greeting_sent -> model_start_speaking -> turn_complete (audio_out 128)
+#   NO upstream.usage event, NO provider field, NO cascade decision recorded.
+#   => which provider served the session is not observable. Logged as its own
+#      follow-up; the decision had to be reconstructed from code + config.
+
+# --- Two traps found while diagnosing, both worth knowing --------------------
+
+# `env` in oasis_events does NOT distinguish staging from prod:
+#   emitLiveSessionEvent sets  env: isDevSandbox() ? 'dev-sandbox' : 'production'
+#   so STAGING events also report env=production. Use build-info git_commit.
+
+# nova_voice telemetry never lands (0 of 90 session.start events in 24h) —
+# VTID-03704 added it to routes/orb-live.ts:16518, but the emit that fires is
+# live-session-controller.ts:2001. I had used its ABSENCE as evidence that
+# VTID-03704 was not deployed. That inference was wrong:
+git merge-base --is-ancestor b8b54b06 fed50c93 && echo "03704 IS in prod"
+#   -> 03704 IS in prod. Filed as task #35.
+
+# --- Deploy state, checked rather than assumed ------------------------------
+
+curl -s https://gateway.vitanaland.com/api/v1/admin/build-info
+#   -> git_commit fed50c93  (prod: NOT the merged chain)
+curl -s https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info
+#   -> git_commit a2dddd70  env staging
+
+# My earlier prod promote FAILED, twice:
+#   run 32759637918 -> FAILED STEP: "Resolve deploy source (promote-staging vs rebuild-main)"
+#   Cause: expected_commit was pinned to 4cc90468 but staging had already moved
+#   to a2dddd70. The pin refused to ship an unverified image — working as
+#   designed. Prod never moved, and I did not catch it because the container
+#   restart killed the monitor.
+
+# --- Fix + verification -----------------------------------------------------
+
+# ORB_CASCADED_VOICE_ENABLED added to BOTH the strip list and the re-add list.
+python3 -c "import yaml; yaml.safe_load(open('.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml'))"
+#   -> parses, 1 job
+
+# YAML parsing does not prove the jq filter is right. Extracted and RAN it
+# against a fixture carrying a stale inherited value:
+#   in : environment:[{ORB_CASCADED_VOICE_ENABLED, value:"STALE"}]
+#   out: exactly one entry, value:"true";  stale value survived? False
+#                                             (outputs/jq-fixture-run.txt)
+
+cd services/gateway
+npx jest test/orb/live/upstream/staging-cascade-flag-pinned.test.ts   # 4/4
+npx jest test/orb/                                                    # 1741 passing
+npx tsc --noEmit                                                      # clean
+
+# --- NOT done, and why ------------------------------------------------------
+
+which aws
+#   -> aws: command not found
+# So the live staging task definition was never read. I cannot state what the
+# inherited value WAS — only that the repo never pinned it, and that the
+# observed behaviour matches the off branch exactly.
+
+# No live listen: this session cannot play audio, and generating sessions as
+# the test account is a production write, which CLAUDE.md forbids absolutely.
+# The real proof is a Polish session on staging answering in Polish, in Ola's
+# voice, after this deploys.

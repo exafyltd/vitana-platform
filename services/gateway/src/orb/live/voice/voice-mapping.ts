@@ -23,6 +23,25 @@ export interface TtsVoiceConfig {
 // Cache-cold safety-net Records
 // =============================================================================
 
+// VTID-03681 — `pt`/`pl` added. These Records are the CACHE-COLD safety nets;
+// the live source of truth is the per-language `decision_policy` rows. That
+// distinction decides whether editing this file does anything, so it is worth
+// being exact: the seeded rows are per-language keys (`voice.live_language.de`
+// and friends), and there is NO row for `pt` or `pl` — so `getValue()` returns
+// the `defaultValue` below and these entries ARE what production uses. Adding
+// a row later overrides them, which is the intended precedence.
+//
+// (The one key where that is NOT true is `voice.neural2.enabled_languages`,
+// a single seeded ARRAY row that the fallback below cannot override — see the
+// note on NEURAL2_ENABLED_LANGUAGES_FALLBACK.)
+//
+// Voices are Gemini prebuilt voices, which are language-agnostic — the voice
+// speaks whatever the model emits. `pt`→Zephyr and `pl`→Despina match the
+// pairing the frontend already uses for those locales (`GEMINI_VOICE_MAP` in
+// vitana-v1's `useTextToSpeech.ts`: `pt-BR-Chirp3-HD-Zephyr`,
+// `pl-PL-Chirp3-HD-Despina`), so a user hears the same voice identity across
+// ORB and app TTS instead of two different ones for the same language. Both
+// are otherwise unused here, so every language keeps a distinct voice.
 const LIVE_LANGUAGE_VOICE_FALLBACKS: Record<string, string> = {
   en: 'Callirrhoe',
   de: 'Achernar',
@@ -32,6 +51,8 @@ const LIVE_LANGUAGE_VOICE_FALLBACKS: Record<string, string> = {
   zh: 'Laomedeia',
   sr: 'Vindemiatrix',
   ru: 'Gacrux',
+  pt: 'Zephyr',
+  pl: 'Despina',
 };
 
 const GEMINI_TTS_VOICE_FALLBACKS: Record<string, TtsVoiceConfig> = {
@@ -43,6 +64,12 @@ const GEMINI_TTS_VOICE_FALLBACKS: Record<string, TtsVoiceConfig> = {
   zh: { name: 'Kore', languageCode: 'cmn-CN' },
   sr: { name: 'Kore', languageCode: 'sr-RS' },
   ru: { name: 'Kore', languageCode: 'ru-RU' },
+  // VTID-03681. `pt` is pt-BR, not pt-PT — the catalog is Brazilian
+  // (VTID-03577), and the same pin already exists on the Polly side
+  // (`POLLY_VOICES.pt` → Camila/pt-BR). A pt-PT voice would read Brazilian
+  // copy in the European variant: fluent, wrong, and nothing detects it.
+  pt: { name: 'Kore', languageCode: 'pt-BR' },
+  pl: { name: 'Kore', languageCode: 'pl-PL' },
 };
 
 const NEURAL2_TTS_VOICE_FALLBACKS: Record<string, TtsVoiceConfig> = {
@@ -54,8 +81,31 @@ const NEURAL2_TTS_VOICE_FALLBACKS: Record<string, TtsVoiceConfig> = {
   zh: { name: 'cmn-CN-Wavenet-A', languageCode: 'cmn-CN' },
   ru: { name: 'ru-RU-Wavenet-A', languageCode: 'ru-RU' },
   sr: { name: 'sr-RS-Standard-A', languageCode: 'sr-RS' },
+  // VTID-03681. NOT on the live path today — `voice.neural2.enabled_languages`
+  // (see below) excludes pt/pl, so `getNeural2TtsVoice` is never reached for
+  // them. Added anyway, because the accessor ends `?? NEURAL2_TTS_VOICE_
+  // FALLBACKS['en']`: the day someone widens that DB row, the omission would
+  // not fail — it would read Portuguese text aloud with `en-US-Neural2-H`, in
+  // fluent English. That is the exact defect VTID-03578 fixed in `polly.ts`
+  // (`?? POLLY_VOICES['en']`), and leaving the same trap armed one table over
+  // would be repeating it knowingly.
+  //
+  // Wavenet rather than Neural2 for both: it is the tier the other
+  // non-flagship languages here already use (ar/zh/ru), so it is the
+  // conservative choice for voice ids this session could not verify against
+  // the live Cloud TTS API.
+  pt: { name: 'pt-BR-Wavenet-A', languageCode: 'pt-BR' },
+  pl: { name: 'pl-PL-Wavenet-A', languageCode: 'pl-PL' },
 };
 
+// VTID-03681 — deliberately NOT widened to pt/pl, and this one is different
+// from every other table in this file: `voice.neural2.enabled_languages` is a
+// single seeded `decision_policy` ARRAY row, so the DB value WINS and editing
+// this fallback would change nothing in production while looking like it had.
+//
+// Leaving pt/pl out routes them to `getGeminiTtsVoice()` instead, which is the
+// better default anyway — it needs no additional Google Cloud TTS voices at a
+// moment when the direction of travel is off Google entirely (§2c).
 const NEURAL2_ENABLED_LANGUAGES_FALLBACK: ReadonlyArray<string> = [
   'en', 'de', 'fr', 'es', 'ar', 'zh', 'ru', 'sr',
 ];

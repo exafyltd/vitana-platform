@@ -157,7 +157,9 @@ describe('bindUpstreamSessionHandlers — normalized session behavior', () => {
   it('forwards audio output to onAudioResponse', () => {
     const { client, callbacks } = makeContext();
     client.emitAudio({ dataB64: 'AQID', mimeType: 'audio/pcm;rate=24000' });
-    expect(callbacks.onAudioResponse).toHaveBeenCalledWith('AQID');
+    // VTID-03715: the normalized path is the one the Polly cascade uses. If the
+    // mime stops arriving here, 16kHz speech gets relabelled 24kHz downstream.
+    expect(callbacks.onAudioResponse).toHaveBeenCalledWith('AQID', 'audio/pcm;rate=24000');
   });
 
   it('gates audio behind navigationDispatched', () => {

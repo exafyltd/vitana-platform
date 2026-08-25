@@ -52,6 +52,8 @@ async function main(): Promise<void> {
   console.log(`[verify-polly] ${voices.length} voices visible in ${region}\n`);
 
   let failures = 0;
+  // Advisory, never a failure — see the engine-upgrade block below.
+  let upgrades = 0;
   for (const [lang, want] of Object.entries(EXPECTED)) {
     const found = voices.find((v) => v.Id === want.voiceId);
     if (!found) {
@@ -76,7 +78,45 @@ async function main(): Promise<void> {
       failures++;
       continue;
     }
-    console.log(`✓ ${lang}: ${want.voiceId} / ${want.engine} / ${want.languageCode}`);
+    // BOOTSTRAP-POLLY-NARRATION-CACHE — report a BETTER engine going unused.
+    //
+    // Every check above validates the STATUS QUO: the voice exists, it supports
+    // the engine we pinned, the language code matches. All of that passed for
+    // months while six languages sat on `neural` and Polly had `generative`
+    // available on the very same voice. A check that can only confirm what you
+    // already configured cannot tell you the configuration is leaving quality
+    // on the table, so it never said a word.
+    //
+    // Ranked worst→best; anything above the pinned engine is reported. This is
+    // ADVISORY and does not count as a failure — the upgrade has a real cost
+    // multiplier, so it is a decision to surface, not a rule to enforce.
+    const RANK = ['standard', 'neural', 'generative'];
+    const better = engines.filter(
+      (e) => RANK.indexOf(e) > RANK.indexOf(want.engine),
+    );
+    if (better.length > 0) {
+      console.log(
+        `✓ ${lang}: ${want.voiceId} / ${want.engine} / ${want.languageCode}  ` +
+          `→ UPGRADE AVAILABLE: '${want.voiceId}' also supports ` +
+          `${better.map((e) => `'${e}'`).join(', ')} on the SAME voice ` +
+          `(same speaker, better engine).`,
+      );
+      upgrades++;
+    } else {
+      console.log(`✓ ${lang}: ${want.voiceId} / ${want.engine} / ${want.languageCode}`);
+    }
+  }
+
+  if (upgrades > 0) {
+    console.log(
+      `\nℹ ${upgrades} language(s) could move to a better engine without ` +
+        `changing voice.\n` +
+        `  Generative costs roughly 1.9x neural per character, so cache the\n` +
+        `  rendered audio FIRST (NARRATION_AUDIO_CACHE) — otherwise the\n` +
+        `  multiplier applies to every tap instead of once per asset.\n` +
+        `  The narration cache key includes the engine, so flipping it\n` +
+        `  invalidates cleanly rather than serving stale audio.`,
+    );
   }
 
   const serbian = voices.filter((v) =>

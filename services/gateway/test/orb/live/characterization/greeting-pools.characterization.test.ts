@@ -29,9 +29,13 @@ describe('A0.2 characterization: greeting pools', () => {
       expect(SHORT_GAP_GREETING_PHRASES).toMatchSnapshot();
     });
 
+    // VTID-03681: pt/pl added. This assertion caught the change, which is
+    // exactly its job — updated to the new truth rather than relaxed to
+    // something like "contains at least these", which would have stopped it
+    // ever noticing a dropped pool again.
     it('declares the languages the orb officially supports for short-gap greetings', () => {
       expect(Object.keys(SHORT_GAP_GREETING_PHRASES).sort()).toEqual(
-        ['ar', 'de', 'en', 'es', 'fr', 'ru', 'sr', 'zh'].sort()
+        ['ar', 'de', 'en', 'es', 'fr', 'pl', 'pt', 'ru', 'sr', 'zh'].sort()
       );
     });
 

@@ -34,7 +34,7 @@ describe('VTID-03495 Polly voice resolution', () => {
   });
 
   it('resolves the supported languages with an explicit engine', () => {
-    for (const lang of ['en', 'de', 'fr', 'es', 'ar', 'zh', 'ru', 'pt', 'pl']) {
+    for (const lang of ['en', 'de', 'fr', 'es', 'ar', 'zh', 'ru', 'pt', 'pl', 'tr']) {
       const v = resolvePollyVoice(lang);
       expect(v).not.toBeNull();
       // CLAUDE.md: "IF TTS is used → THEN specify model_name explicitly."
@@ -48,6 +48,21 @@ describe('VTID-03495 Polly voice resolution', () => {
     expect(resolvePollyVoice('ru')!.engine).toBe('standard');
   });
 
+  // VTID-03719 — Turkish had NO entry here and NO entry in
+  // POLLY_UNSUPPORTED_LANGS: the exact undeclared gap the pt/pl comment
+  // above warns about. Found via a real staging run of the audio-timing test
+  // program, which would have silently tested mislabeled English audio for
+  // 'tr' had this not been fixed first. Burcu (neural), not Filiz
+  // (standard) — verified live via `aws polly describe-voices
+  // --language-code tr-TR` (both exist) and a real `synthesize-speech
+  // --engine neural --voice-id Burcu` call (real PCM bytes back).
+  it('resolves Turkish to the neural Burcu voice, not the standard-only Filiz', () => {
+    const v = resolvePollyVoice('tr')!;
+    expect(v.voiceId).toBe('Burcu');
+    expect(v.engine).toBe('neural');
+    expect(v.languageCode).toBe('tr-TR');
+  });
+
   // VTID-03578 — every RELEASE locale must resolve to a voice or be an
   // explicitly-declared gap. This is the assertion that would have caught
   // pt/pl taking the English fallback: iterating the voice table can only
@@ -56,7 +71,9 @@ describe('VTID-03495 Polly voice resolution', () => {
     // VTID-03644: ar added (9-language activation prep). Polly already had a
     // voice for it (see the resolution test above) — this list just needed
     // to catch up to GATEWAY_LOCALES.
-    const RELEASE_LOCALES = ['de', 'en', 'es', 'sr', 'fr', 'pt', 'pl', 'ru', 'zh', 'ar'];
+    // VTID-03719: tr added — ga in the frontend's LanguageContext.tsx
+    // (VTID-03701 promotion) and now resolvable here too.
+    const RELEASE_LOCALES = ['de', 'en', 'es', 'sr', 'fr', 'pt', 'pl', 'ru', 'zh', 'ar', 'tr'];
     const missing = RELEASE_LOCALES.filter(
       (l) => resolvePollyVoice(l) === null && !POLLY_UNSUPPORTED_LANGS.has(l),
     );

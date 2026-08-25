@@ -85,6 +85,13 @@ describe('buildGuidedTopicNarrationBlock — post-narration branch (content.narr
     const block = buildGuidedTopicNarrationBlock(narratedContent, 'en');
     expect(block).toContain('Speak ONLY in English');
   });
+
+  it('VTID-03686/03686-followup: instructs checking for follow-up questions before moving on from a brief "yes"', () => {
+    const de = buildGuidedTopicNarrationBlock(narratedContent, 'de');
+    expect(de.toLowerCase()).toMatch(/ja.*mach das.*okay.*rückfragen|rückfragen.*bevor/);
+    const en = buildGuidedTopicNarrationBlock(narratedContent, 'en');
+    expect(en.toLowerCase()).toMatch(/yes.*sure.*okay.*follow-up|follow-up questions before/);
+  });
 });
 
 describe('buildGuidedTopicNarrationBlock — legacy model-narrated branch (no narrationAudio)', () => {
@@ -98,5 +105,12 @@ describe('buildGuidedTopicNarrationBlock — legacy model-narrated branch (no na
     const withUndefined = buildGuidedTopicNarrationBlock(BASE_CONTENT, 'de');
     const withNull: GuidedTopicNarrationContent = { ...BASE_CONTENT, narrationAudio: null };
     expect(buildGuidedTopicNarrationBlock(withNull, 'de')).toBe(withUndefined);
+  });
+
+  it('VTID-03686/03686-followup: instructs explaining core points before moving to practice on a brief "yes"', () => {
+    const de = buildGuidedTopicNarrationBlock(BASE_CONTENT, 'de');
+    expect(de.toLowerCase()).toMatch(/ja.*mach das.*okay.*erklär mir das jetzt/);
+    const en = buildGuidedTopicNarrationBlock(BASE_CONTENT, 'en');
+    expect(en.toLowerCase()).toMatch(/yes.*sure.*okay.*explain it to me now/);
   });
 });

@@ -18,6 +18,10 @@ import {
   NovaSonicLiveClient,
   type NovaSonicLiveClientDeps,
 } from './nova-sonic-live-client';
+import {
+  CascadedLiveClient,
+  type CascadedLiveClientDeps,
+} from './cascaded-live-client';
 
 export type FactoryProviderName = Exclude<VoiceProviderName, 'livekit'>;
 
@@ -27,6 +31,8 @@ export interface UpstreamClientFactoryDeps {
    *  API-key Gemini client instead of the OAuth Vertex client. */
   geminiApiKey?: GeminiApiKeyLiveClientDeps & { useApiKeyClient?: boolean };
   nova?: NovaSonicLiveClientDeps;
+  /** VTID-03683: Transcribe -> Bedrock -> Polly, for Nova-unsupported languages. */
+  cascaded?: CascadedLiveClientDeps;
 }
 
 export function createUpstreamClient(
@@ -44,6 +50,14 @@ export function createUpstreamClient(
         throw new Error('nova_not_configured: NovaSonicLiveClientDeps required to construct the Nova client');
       }
       return new NovaSonicLiveClient(deps.nova);
+    }
+    case 'cascaded': {
+      if (!deps.cascaded) {
+        throw new Error(
+          'cascaded_not_configured: CascadedLiveClientDeps required to construct the cascaded client',
+        );
+      }
+      return new CascadedLiveClient(deps.cascaded);
     }
     default: {
       // Exhaustiveness: 'livekit' (and anything else) must never get here.

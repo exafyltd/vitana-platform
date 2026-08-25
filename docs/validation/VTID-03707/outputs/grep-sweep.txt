@@ -1,0 +1,17 @@
+=== _pickLang() usage count (expect: declaration + exactly 1 call) ===
+781:  // falling back to 'en'. Deliberately separate from _pickLang() below,
+782:  // which stays de/en-only — see the comment on _pickLang() for why the two
+908:  // _pickLang()'s comment). The label text itself is read via
+1024:  // _pickLang() is used for EXACTLY ONE thing: selecting which pre-rendered
+1030:  function _pickLang() { return (_cfg.lang || 'en').startsWith('de') ? 'de' : 'en'; }
+1246:    var clipLang = _pickLang();
+
+=== sweep for lingering hardcoded de/en caption ternaries (expect: none, except the two documented out-of-scope sites) ===
+44:    return (_cfg.lang && _cfg.lang.startsWith('de'))
+771:  // _cfg.lang.startsWith('de') ? de : en), even though _cfg.lang legitimately
+3950:      text: _cfg.lang.startsWith('de') ? 'Sprachverbindung umgestellt auf Textmodus.' : 'Voice connection switched to text mode.'
+
+=== font-size/min-height sites (expect both 19px/26px) ===
+499:      '  font-size: 19px; color: rgba(255,255,255,0.6); text-align: center;',
+500:      '  min-height: 26px; transition: opacity 0.3s;',
+3406:    status.style.cssText = 'margin-top:20px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:19px;color:rgba(255,255,255,0.6);text-align:center;min-height:26px;';

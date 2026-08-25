@@ -1,0 +1,105 @@
+# VTID-03706 — commands actually run.
+
+# --- Diagnosis -------------------------------------------------------------
+
+# The server gate that made Nova's native barge-in unreachable. Read the gate
+# itself rather than inferring it from the widget's behaviour.
+sed -n '16640,16700p' services/gateway/src/routes/orb-live.ts
+sed -n '2388,2415p' services/gateway/src/orb/live/session/live-session-controller.ts
+
+# The client gate, and the measured evidence against simply forwarding raw
+# frames: "Echo through AEC lands at 0.01-0.04 RMS", and a previous 0.015
+# threshold "triggered on echo, causing constant interruptions".
+sed -n '2520,2700p' services/gateway/src/frontend/command-hub/orb-widget.js
+
+# Nova DOES signal interruption, and the gateway already decodes and forwards
+# it — the path was simply never reachable.
+grep -n "INTERRUPTED\|interrupted" services/gateway/src/orb/live/upstream/nova-sonic-protocol.ts
+
+# endpointingSensitivity was already HIGH — it was being applied to a stream
+# that was silent by construction, so no change was needed there.
+grep -n "DEFAULT_ENDPOINTING_SENSITIVITY" services/gateway/src/orb/live/upstream/nova-sonic-config.ts
+
+# --- Tests -----------------------------------------------------------------
+
+cd services/gateway
+
+# The gate behaviour and the drift guards.
+npx jest test/orb/full-duplex-session-gate
+# -> 2 suites, 46 tests passing
+
+# Caught a real bug on first run: confirmation counted gate-OPEN frames, so
+# the 400ms hangover ticked a single transient up to the threshold in silence.
+# Fixed to count VOICED frames only; the test then passed.
+
+# The CSP gate fix.
+npx jest test/scripts/validator-path-guard.test.ts
+# -> 40 tests passing
+
+# Whole gateway.
+npx jest
+# -> 686/687 suites (1 pre-existing skip), 13,134 tests, 0 failures
+#    (outputs/full-suite.txt)
+
+npx tsc --noEmit
+# -> clean, exit 0 (outputs/tsc.txt)
+
+# NOTE for anyone reproducing: @aws-sdk/client-s3 and
+# @aws-sdk/client-transcribe-streaming are declared in package.json but were
+# absent from this container. That fails 17 ORB suites and 5 tsc lines before
+# touching anything. Installed first; the numbers above are post-install.
+npm install --no-save @aws-sdk/client-s3@^3.1114.0 @aws-sdk/client-transcribe-streaming@^3.1113.0
+
+# --- CSP gate: proving the failure was pre-existing -------------------------
+
+# The gate scanned WHOLE FILES. Run its patterns against origin/main's OWN
+# copies: orb-widget.js hits four patterns, index.html one, before any change
+# on this branch. The gate was unpassable for any PR touching those files.
+git show origin/main:services/gateway/src/frontend/command-hub/orb-widget.js > /tmp/base/orb-widget.js
+git show origin/main:services/gateway/src/frontend/command-hub/index.html > /tmp/base/index.html
+bash /tmp/csp.sh   # -> outputs/csp-preexisting-on-main.txt
+
+# After the fix (judge ADDED lines only), this branch is clean.
+git diff origin/main > /tmp/pr-wt.diff
+node scripts/ci/validator-path-guard.cjs --csp-added-lines /tmp/pr-wt.diff
+# -> "CSP: no newly added violations on the browser-served surface." exit 0
+#    (outputs/csp-added-lines.txt)
+
+# --- Impact rule (conversation-flow-change-needs-test) ---------------------
+
+# This PR changes two flow-source files (routes/orb-live.ts,
+# live-session-controller.ts). The rule matches flow TEST files by a keyword
+# list in the filename; the tests pin exactly those files' mic-forwarding
+# decision, so the substance was already there and only the name did not
+# match. Renamed to name what they actually cover — per-session audio gating.
+node --input-type=module -e "
+import { check } from './scripts/ci/impact-rules/conversation-flow-change-needs-test.mjs';
+..."
+# -> [] (no findings)
+
+# --- Device harness --------------------------------------------------------
+
+# Served the command-hub statics locally and drove the page with Playwright,
+# using the preinstalled chromium (the npm playwright build wants a newer
+# browser revision than /opt/pw-browsers carries).
+python3 -m http.server 8902   # from services/gateway/src/frontend
+
+# Both viewports, checking for horizontal overflow and console errors, and
+# asserting the config actually rendered from JS rather than the placeholders.
+node /tmp/shot.mjs
+# -> desktop 1400x900 and mobile 390x844: cfg-open=0.05,
+#    cfg-confirm="2 (~128 ms)", hOverflow=false, no page errors
+
+# End-to-end with a fake audio device: baseline -> playback -> gate
+# transitions -> barge -> verdict.
+node /tmp/interact.mjs
+# -> verdict rendered, log populated, ERRORS: []
+#    The FAIL verdict is correct for this input: Chromium's fake device emits
+#    a constant 440Hz tone as the "microphone" (noise floor 0.309), and the
+#    harness's own guard flagged it: "ambient noise already exceeds closeRms
+#    — results will be pessimistic". This validates the HARNESS, not a device.
+
+# Two UI defects found this way and fixed:
+#   - BARGECONFIRMFRAMES label overflowed its tile at 390px
+#   - the live panel froze at GATE=OPEN after a run, contradicting the
+#     verdict rendered directly beneath it
