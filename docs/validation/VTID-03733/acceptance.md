@@ -59,12 +59,15 @@ AC-3 — `_CAPTION_LOCALES` (the resolver's admit-list) includes `tr`, so
 `_resolveCaptionLocale()` actually reaches the new translations instead of
 still falling through to `en`
 
-TEST: both test files above exercise this transitively — a translation
-existing in the dictionary but absent from `_CAPTION_LOCALES` would still
-resolve to `en` at runtime, which neither test would catch on its own, so
-this was verified by direct code read (see `commands.log`) rather than by a
-new isolated test — adding one felt like testing that JavaScript array
-membership works, not this fix specifically.
+TEST: `orb-widget-caption-i18n.test.ts` — "_CAPTION_LOCALES (the resolver
+admit-list) includes tr, so _resolveCaptionLocale() actually reaches the tr
+translations instead of falling through to en" — pins the admit-list array
+literal directly (all 11 locale codes, `tr` included) and confirms
+`_resolveCaptionLocale()` walks that exact array before its `'en'` fallback,
+closing the gap the dictionary-shape tests (AC-1/AC-2) can't catch on their
+own: a translation present in a dictionary but missing from this array would
+still resolve to `en` at runtime.
+Output: outputs/targeted-tests.txt
 
 AC-4 — the fix is scoped to `orb-widget.js` only; the cache-bust `?v=`
 parameter is bumped on BOTH apps that load it (gateway's own Command Hub

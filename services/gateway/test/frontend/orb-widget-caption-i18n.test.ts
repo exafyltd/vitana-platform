@@ -183,6 +183,26 @@ describe('orb-widget caption i18n (BOOTSTRAP-ORB-CAPTION-I18N)', () => {
     }
   });
 
+  it('_CAPTION_LOCALES (the resolver admit-list) includes tr, so _resolveCaptionLocale() actually reaches the tr translations instead of falling through to en', () => {
+    // AC-3 (VTID-03733): a translation existing in a dictionary but absent
+    // from this admit-list would still resolve to 'en' at runtime — the
+    // dictionary-shape tests above can't catch that on their own, so this
+    // pins the admit-list array itself directly.
+    const declMatch = source.match(/var _CAPTION_LOCALES = (\[[^\]]*\]);/);
+    expect(declMatch).not.toBeNull();
+    const locales = declMatch![1];
+    for (const lc of CAPTION_LOCALES) {
+      expect(locales).toMatch(new RegExp(`'${lc}'`));
+    }
+    expect(CAPTION_LOCALES).toContain('tr');
+
+    // And that _resolveCaptionLocale() itself walks this exact array (not a
+    // separate hardcoded list) before falling back to 'en'.
+    const body = extractFunctionBody(source, 'function _resolveCaptionLocale(');
+    expect(body).toMatch(/_CAPTION_LOCALES\[i\]/);
+    expect(body).toMatch(/return\s+['"]en['"]/);
+  });
+
   it('.vtorb-status font-size and min-height are 19px/26px in both the inline style and the injected stylesheet', () => {
     // Inline style, set once at element creation in _renderOverlay().
     expect(source).toMatch(/status\.style\.cssText = '[^']*font-size:19px[^']*min-height:26px[^']*'/);
