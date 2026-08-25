@@ -10,6 +10,7 @@
  * worker (Phase 2) — Awin reports conversions via its API, not a postback.
  */
 import { getSupabase } from '../lib/supabase';
+import * as repo from './awin-sync-repository';
 
 export interface AwinSyncConfig {
   publisherId: string;
@@ -80,7 +81,7 @@ export async function syncAwinProgrammes(supabase: any, cfg: AwinSyncConfig): Pr
   let upserted = 0;
   for (let i = 0; i < rows.length; i += 100) {
     const chunk = rows.slice(i, i + 100);
-    const { error } = await supabase.from('affiliate_program').upsert(chunk, { onConflict: 'id' });
+    const { error } = await repo.upsertAffiliateProgramChunk(supabase, chunk);
     if (error) throw new Error(error.message);
     upserted += chunk.length;
   }
