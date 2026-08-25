@@ -24,6 +24,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { notifyUserAsync, TYPE_META } from '../services/notification-service';
 import { tt, type GatewayI18nKey } from '../i18n/catalog';
 import { getUserLocale } from '../i18n/server-locale';
+import * as repo from './celebrations-repository';
 
 const router = Router();
 // Explicit file-level auth marker for the impact-scan rule. Every route in
@@ -121,16 +122,13 @@ router.post(
     // exactly once for the lifetime of this goal).
     try {
       const since = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString();
-      const { data: prior } = await supa
-        .from('user_notifications')
-        .select('id')
-        .eq('user_id', userId)
-        .eq('tenant_id', tenantId)
-        .eq('type', spec.type)
-        .gte('created_at', since)
-        .filter('data->>dedupe_key', 'eq', dedupeKey)
-        .limit(1)
-        .maybeSingle();
+      const { data: prior } = await repo.fetchPriorCelebrationNotification(supa, {
+        userId,
+        tenantId,
+        type: spec.type,
+        sinceIso: since,
+        dedupeKey,
+      });
       if (prior) {
         return res.json({ ok: true, dispatched: 0, skipped: 'already_sent' });
       }
@@ -162,7 +160,7 @@ router.post(
     // row and the FCM/Appilix push goes out through that path exactly once.
     const meta = TYPE_META?.[spec.type as keyof typeof TYPE_META];
     try {
-      await supa.from('user_notifications').insert({
+      await repo.insertCelebrationNotification(supa, {
         user_id: userId,
         tenant_id: tenantId,
         type: spec.type,
