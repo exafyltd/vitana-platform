@@ -11,6 +11,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import * as repo from './voice-budget-watch-repository';
 
 /**
  * Character budget a user's memory is measured against. Kept in lock-step with the
@@ -109,10 +110,7 @@ export async function fetchVoiceBudgetWatch(
   const limit = Math.max(1, Math.min(500, Math.floor(opts.limit ?? 50)));
   const minPct = Math.max(0, opts.minPct ?? 10);
 
-  const { data, error } = await supabase.rpc('exec_sql', {
-    query: VOICE_BUDGET_WATCH_SQL,
-    params: [BUDGET_CAP_CHARS, minPct, limit],
-  });
+  const { data, error } = await repo.execSqlRpc(supabase, VOICE_BUDGET_WATCH_SQL, [BUDGET_CAP_CHARS, minPct, limit]);
 
   if (error) {
     throw new Error(`voice-budget-watch query failed: ${error.message ?? String(error)}`);

@@ -14,6 +14,7 @@
 
 import { getSupabase } from '../lib/supabase';
 import { isLifecycleArtifactStop } from './voice-improvement-aggregator';
+import * as repo from './voice-quality-by-provider-repository';
 
 export interface ProviderQualityRow {
   provider: string;
@@ -62,13 +63,7 @@ export async function getProviderQualityRollup(windowDays = 7): Promise<Provider
   if (!sb) return { generated_at, window_days: windowDays, rows: [] };
 
   const since = new Date(Date.now() - windowDays * 24 * 3600_000).toISOString();
-  const { data, error } = await sb
-    .from('oasis_events')
-    .select('topic, metadata, occurred_at')
-    .in('topic', ['vtid.live.session.stop', 'voice.live.session.ended'])
-    .gte('occurred_at', since)
-    .order('occurred_at', { ascending: false })
-    .limit(2000);
+  const { data, error } = await repo.fetchLiveSessionEndOasisEvents(sb, since, 2000);
   if (error || !data) return { generated_at, window_days: windowDays, rows: [] };
 
   type Bucket = {
