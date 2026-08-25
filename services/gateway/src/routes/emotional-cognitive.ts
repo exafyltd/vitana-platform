@@ -28,6 +28,7 @@ import {
   getOrbSignalContext,
   processMessageForOrb
 } from '../services/d28-emotional-cognitive-engine';
+import * as repo from './emotional-cognitive-repository';
 
 const router = Router();
 
@@ -75,7 +76,7 @@ async function getUserContext(token: string): Promise<{
 }> {
   try {
     const supabase = createUserSupabaseClient(token);
-    const { data, error } = await supabase.rpc('me_context');
+    const { data, error } = await repo.meContextRpc(supabase);
 
     if (error) {
       return { ok: false, tenant_id: null, user_id: null, active_role: null, error: error.message };
@@ -353,12 +354,7 @@ router.get('/rules', async (req: Request, res: Response) => {
       return res.status(500).json({ ok: false, error: 'SERVICE_UNAVAILABLE' });
     }
 
-    const { data, error } = await supabase
-      .from('emotional_cognitive_rules')
-      .select('rule_key, rule_version, domain, target_state, weight, decay_minutes, active')
-      .eq('active', true)
-      .order('domain')
-      .order('weight', { ascending: false });
+    const { data, error } = await repo.fetchActiveEmotionalCognitiveRules(supabase);
 
     if (error) {
       console.error(`${LOG_PREFIX} GET /rules - Error:`, error);
