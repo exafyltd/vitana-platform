@@ -28,6 +28,7 @@ import {
 } from '../middleware/auth-supabase-jwt';
 import { getSupabase } from '../lib/supabase';
 import { MEMORY_ORCHESTRATOR_EVENT_TYPES } from '../services/memory-orchestrator';
+import * as repo from './admin-memory-orchestrator-repository';
 
 const router = Router();
 // Path-scoped auth (mounted at /api/v1 — see VTID-02032 note in
@@ -59,17 +60,15 @@ router.get('/admin/memory-orchestrator/status', async (req: AuthenticatedRequest
     // oasis_events stores the event type in `topic` and the payload in
     // `metadata` (see oasis-event-service emit mapping) — verified against
     // production data 2026-07-03; `type`/`payload` columns do not exist.
-    const { data, error } = await supabase
-      .from('oasis_events')
-      .select('topic, status, metadata, created_at')
-      .in('topic', [
+    const { data, error } = await repo.fetchMemoryOrchestratorEvents(
+      supabase,
+      [
         MEMORY_ORCHESTRATOR_EVENT_TYPES.TURN,
         MEMORY_ORCHESTRATOR_EVENT_TYPES.CONTEXT_BUILT,
         MEMORY_ORCHESTRATOR_EVENT_TYPES.BYPASS_DETECTED,
-      ])
-      .gte('created_at', since)
-      .order('created_at', { ascending: false })
-      .limit(1000);
+      ],
+      since,
+    );
 
     if (error) {
       return res.status(500).json({ ok: false, error: error.message });
