@@ -674,6 +674,17 @@ export async function fetchPersonById(personId: string): Promise<SocialPerson | 
   return people.get(personId) ?? null;
 }
 
+/** Active life_compass goal (primary_goal + category) for topical boosts. */
+export async function fetchActiveLifeCompassGoal(sb: SupabaseClient, userId: string) {
+  return sb
+    .from('life_compass')
+    .select('primary_goal, category')
+    .eq('user_id', userId)
+    .eq('is_active', true)
+    .order('created_at', { ascending: false })
+    .limit(1);
+}
+
 /**
  * The viewer's own DM inbox rows (chat_messages, group messages excluded),
  * scope 'unread' | 'all', used by social-read-tools.ts's view_messages tool.
