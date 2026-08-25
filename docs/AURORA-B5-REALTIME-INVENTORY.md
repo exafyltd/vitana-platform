@@ -1,0 +1,146 @@
+# B5 — Realtime Subscription Inventory (VTID-03736)
+
+Part of `docs/SUPABASE-TO-AURORA-MIGRATION-PLAN.md`'s B5 workstream. The
+plan's own summary table (line 24) states: *"60 `.channel()` in frontend,
+19 in gateway."* This pass live-verifies both halves of that claim against
+the current `main` of each repo and produces the actual per-table breakdown
+needed to plan the replacement mechanism — the plan itself flags B5 as one
+of the three workstreams (with B3/B7) where "getting this wrong locks out
+every user or, worse, silently breaks tenant isolation," so precision here
+matters more than for a typical inventory pass.
+
+## Gateway count: plan says 19, live `main` has 0
+
+`grep -rn "\.channel(" services/ scripts/` (excluding tests) returns **zero**
+matches anywhere in this repo, and a broader sweep for `postgres_changes`
+also returns zero. Every remaining `realtime`-flavored hit in
+`services/gateway/src` is ORB's own "live voice" naming (`orb/live/...`,
+`nova-ws-facade.ts`, `vertex-live-client.ts`) — a different meaning of
+"live/realtime" entirely, not Supabase Realtime.
+
+**Conclusion: the gateway has no Supabase Realtime subscriptions today.**
+The plan's "19 in gateway" figure is stale relative to current `main` — most
+likely those call sites were already removed in an earlier, undocumented
+refactor (the gateway is a server process; a backend subscribing to its own
+database's change stream via the client-side Realtime API is an unusual
+pattern to begin with, and is not present now regardless of how it got
+there). This is a correction to the plan's headline numbers, in the same
+spirit as this session's Phase 0 correction of the "154k dropped rows"
+finding: verify the live/current state before scoping the remaining work.
+
+## Frontend count: confirmed accurate — 60 calls, 39 files
+
+`exafyltd/vitana-v1`, `src/`, current `main` (`8689211`), excluding tests:
+**60** `.channel(` call sites across **39** files — matches the plan
+exactly. Full breakdown:
+
+| File | `.channel()` calls | Kind(s) | Table(s) watched |
+|---|---|---|---|
+| `hooks/useTenantMessages.ts` | 6 | pg_changes, broadcast | `message_threads`, `messages` |
+| `hooks/useCallState.ts` | 6 | broadcast, presence | — |
+| `hooks/useUnreadSync.ts` | 3 | pg_changes, broadcast | `global_thread_participants`, `thread_participants` |
+| `hooks/useTypingIndicators.ts` | 3 | broadcast | — |
+| `components/notifications/CrossSystemNotifier.tsx` | 3 | broadcast | — |
+| `hooks/useChatUnreadCount.ts` | 2 | pg_changes | `chat_messages` |
+| `hooks/useActivityHistory.ts` | 2 | pg_changes | `ai_messages`, `user_activity_log` |
+| `hooks/useCalendarEvents.ts` | 2 | pg_changes | `calendar_events`, `calendar_invite_responses` |
+| `hooks/useWalletRealtime.ts` | 2 | pg_changes | `user_wallets`, `wallet_transactions` |
+| `hooks/useMessages.ts` | 2 | pg_changes | `message_threads`, `messages` |
+| `hooks/useGroupPosts.ts` | 1 | pg_changes | `global_messages` |
+| `hooks/useGlobalMessages.ts` | 1 | pg_changes | `chat_messages` |
+| `hooks/useContacts.ts` | 1 | pg_changes | `contacts` |
+| `hooks/useCampaignAnalytics.ts` | 1 | pg_changes | `campaign_recipients` |
+| `hooks/useBookmarks.ts` | 1 | pg_changes | `bookmarked_items` |
+| `hooks/useMessageReactions.ts` | 1 | pg_changes | `message_reactions` |
+| `hooks/useChatGroupsAsThreads.ts` | 1 | pg_changes | `chat_messages` |
+| `hooks/useFollow.ts` | 1 | pg_changes | `user_follows` |
+| `hooks/useNotifications.ts` | 1 | pg_changes | `user_notifications` |
+| `hooks/useRealtimeConnection.ts` | 1 | (generic reconnect helper, no table) | — |
+| `hooks/useEventParticipation.ts` | 1 | pg_changes | `global_event_participants` |
+| `hooks/useCart.ts` | 1 | pg_changes | `cart_items` |
+| `hooks/useProfileTheme.ts` | 1 | pg_changes | `profiles` |
+| `hooks/useUserSupplements.ts` | 1 | pg_changes | `user_supplements` |
+| `hooks/useCommunityEvents.ts` | 1 | pg_changes | `global_community_events` |
+| `hooks/useUserPresence.ts` | 1 | presence | — |
+| `hooks/useAppointmentNotifications.ts` | 1 | pg_changes | `provider_appointments` |
+| `hooks/useWebRTC.ts` | 1 | broadcast, presence | — |
+| `hooks/useAllNewsFeed.ts` | 1 | pg_changes | `media_uploads`, `profile_posts` |
+| `components/MessengerCall.tsx` | 1 | broadcast | — |
+| `components/meetups/MeetupDetailsDrawer.tsx` | 1 | pg_changes | `global_event_participants` |
+| `components/messages/CalendarInviteStatus.tsx` | 1 | pg_changes | `calendar_invite_responses` |
+| `components/diary/DiaryEntryList.tsx` | 1 | pg_changes | `diary_entries` |
+| `pages/admin/community/Events.tsx` | 1 | pg_changes | `global_community_events` |
+| `pages/admin/community/ReportedContentNew.tsx` | 1 | pg_changes | `content_reports`, `user_suspensions` |
+| `pages/admin/community/Groups.tsx` | 1 | pg_changes | `global_community_groups` |
+| `pages/admin/community/ReportedContent.tsx` | 1 | pg_changes | `content_reports` |
+| `pages/messages/GroupChat.tsx` | 1 | pg_changes | `chat_messages` |
+| `context/ProfileProvider.tsx` | 1 | pg_changes | `profiles` |
+
+## The two categories, and why they need different migration plans
+
+**`postgres_changes` (32 of 39 files, ~50 of 60 calls) — genuinely tied to
+Postgres's WAL/logical replication.** Supabase Realtime's `postgres_changes`
+feature works by having its Elixir service subscribe to the source
+database's write-ahead log via a replication slot and fan out row-level
+change events to subscribed clients. **This is the part that cannot simply
+"point at Aurora"** — it requires either (a) running a Realtime-compatible
+service (Supabase's own `realtime` is open-source and can in principle run
+against any Postgres, including Aurora, with its own replication slot) or
+(b) replacing each of these 30 distinct table subscriptions with a
+different push mechanism (a gateway-owned WebSocket/SSE layer fed by
+Aurora's own logical replication, or, for lower-frequency tables, polling).
+
+Distinct tables under `postgres_changes` (30): `message_threads`,
+`messages`, `global_thread_participants`, `thread_participants`,
+`chat_messages`, `ai_messages`, `user_activity_log`, `calendar_events`,
+`calendar_invite_responses`, `user_wallets`, `wallet_transactions`,
+`global_messages`, `contacts`, `campaign_recipients`, `bookmarked_items`,
+`message_reactions`, `user_follows`, `user_notifications`,
+`global_event_participants`, `cart_items`, `profiles`, `user_supplements`,
+`global_community_events`, `provider_appointments`, `media_uploads`,
+`profile_posts`, `diary_entries`, `content_reports`, `user_suspensions`,
+`global_community_groups`.
+
+**⚠️ Two of these tables were already flagged in B2 as not existing in
+`public` under those exact names — worth reconciling, not re-diagnosing
+here:** `user_wallets` exists (per B2's wallet-family spot-check) but is
+not the `wallet_balances` table `services/gateway` code separately expects
+— these may be two different, both-real parts of the wallet system, or one
+more sign the wallet schema is in an unsettled state. `wallet_transactions`
+was not checked directly in B2 (B2 found `wallet_ledger_entries` and
+`wallet_deposits` as siblings, not `wallet_transactions` by that exact
+name) — **flagging as unverified, not concluding either way**, since B2's
+own discipline was never to conclude "missing" without a direct live check
+and this pass didn't run one for this specific name.
+
+**`broadcast`/`presence` (7 files: `useCallState.ts`, `useTypingIndicators.ts`,
+`CrossSystemNotifier.tsx`, `useWebRTC.ts`, `MessengerCall.tsx`,
+`useUserPresence.ts`, `useRealtimeConnection.ts`) — ephemeral, DB-independent.**
+Broadcast and presence channels are pure pub/sub — no table, no WAL, no
+persistence. Typing indicators, call signaling/WebRTC negotiation, and
+online-presence tracking never touch Postgres at all. **These do not block
+on the Aurora migration in any way** — they could keep running against
+Supabase's Realtime service indefinitely as a pure message bus, or move to
+any lightweight WS relay, entirely independent of whether the underlying
+database is Supabase-hosted Postgres or Aurora. Sizing the B5 problem at
+"60 subscriptions" overstates the true Aurora-coupled surface — it's
+realistically the ~30-table `postgres_changes` list above, not all 60.
+
+## Not done in this pass
+
+- Did not check `exafyltd/vitana-mobile` for its own Realtime usage — the
+  plan's 60/19 split only names frontend + gateway; whether the mobile app
+  has independent subscriptions is unverified.
+- Did not assess per-table criticality/traffic volume (the plan's own next
+  step for B5: "assess how many are genuinely live-critical" vs. tables
+  where a client could tolerate polling instead). `chat_messages` (3
+  separate subscribing files) and `message_threads`/`messages` (paired,
+  6+2 calls) are the obvious high-traffic candidates worth a real-time
+  mechanism; single-subscriber tables like `contacts`, `cart_items`,
+  `user_supplements` are plausible polling candidates, but this is a
+  product call, not inferred here.
+- Did not investigate whether Supabase's `realtime` server is deployable
+  against Aurora directly (option (a) above) vs. needs to be replaced
+  wholesale by a gateway-owned relay (option (b)) — this is a real
+  architecture decision for whoever picks up B5 execution, not resolved by
+  an inventory pass.
