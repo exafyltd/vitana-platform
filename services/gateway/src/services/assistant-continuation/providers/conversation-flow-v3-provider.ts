@@ -37,6 +37,7 @@ import type {
 } from '../types';
 import { getSystemControl } from '../../system-controls-service';
 import { pickFlowFocus, type FlowInputs, type JourneyTopicInput } from '../../guide/conversation-flow-v3';
+import * as repo from './conversation-flow-v3-provider-repository';
 
 export const FLOW_V3_EXTRA_KEY = 'conversation_flow_v3' as const;
 export const FLOW_V3_PROVIDER_KEY = 'conversation_flow_v3' as const;
@@ -199,20 +200,12 @@ function readInputs(ctx: ContinuationDecisionContext): FlowV3Inputs | null {
 
 async function fetchHasNewMatch(supabase: SupabaseClient, userId: string): Promise<boolean> {
   try {
-    const intents = await supabase
-      .from('user_intents')
-      .select('intent_id')
-      .eq('requester_user_id', userId)
-      .limit(50);
+    const intents = await repo.fetchUserIntentIds(supabase, userId);
     if (intents.error || !intents.data || intents.data.length === 0) return false;
     const ids = (intents.data as Array<{ intent_id: string }>).map((r) => r.intent_id).filter(Boolean);
     if (ids.length === 0) return false;
     const idList = ids.map((s) => `"${s}"`).join(',');
-    const matches = await supabase
-      .from('intent_matches')
-      .select('match_id', { count: 'exact', head: true })
-      .or(`intent_a_id.in.(${idList}),intent_b_id.in.(${idList})`)
-      .eq('state', 'new');
+    const matches = await repo.countNewIntentMatches(supabase, idList);
     if (matches.error) return false;
     return (matches.count ?? 0) > 0;
   } catch {
@@ -222,23 +215,11 @@ async function fetchHasNewMatch(supabase: SupabaseClient, userId: string): Promi
 
 async function fetchNextUnlearnedTopic(supabase: SupabaseClient, userId: string): Promise<JourneyTopicInput | null> {
   try {
-    const state = await supabase
-      .from('user_guided_journey_state')
-      .select('completed_topic_ids, current_session')
-      .eq('user_id', userId)
-      .maybeSingle();
+    const state = await repo.fetchUserGuidedJourneyState(supabase, userId);
     const completed = new Set<string>((state.data?.completed_topic_ids as string[] | null | undefined) ?? []);
     const fromSession = Math.max(1, Number(state.data?.current_session ?? 1) || 1);
 
-    const topics = await supabase
-      .from('journey_checklist_topics')
-      .select('topic_id, title, display_label, short_description, vitana_voice_script, manual_path, session, position')
-      .eq('status', 'published')
-      .eq('enabled', true)
-      .gte('session', fromSession)
-      .order('session', { ascending: true })
-      .order('position', { ascending: true })
-      .limit(50);
+    const topics = await repo.fetchPublishedJourneyChecklistTopicsFromSession(supabase, fromSession);
     if (topics.error || !topics.data) return null;
 
     type Row = {
@@ -269,12 +250,7 @@ async function fetchNextUnlearnedTopic(supabase: SupabaseClient, userId: string)
 
 async function fetchSongAvailable(supabase: SupabaseClient): Promise<boolean> {
   try {
-    const res = await supabase
-      .from('media_uploads')
-      .select('id', { count: 'exact', head: true })
-      .eq('media_type', 'music')
-      .eq('status', 'approved')
-      .eq('is_public', true);
+    const res = await repo.countApprovedPublicMusicUploads(supabase);
     if (res.error) return false;
     return (res.count ?? 0) > 0;
   } catch {
