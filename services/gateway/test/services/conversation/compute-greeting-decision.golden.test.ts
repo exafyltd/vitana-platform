@@ -603,6 +603,101 @@ describe('computeGreetingDecision — VTID-03607 new-day briefing on the normal 
 });
 
 // ---------------------------------------------------------------------------
+// VTID-03724 — a tapped guided topic outranks day_close/newday_overview on
+// BOTH ladders. Live report: "tapping a session starts my new day greeting
+// overview... it does not start the session." Confirmed via oasis_events —
+// the wake-brief ranker correctly selected the guided-topic candidate
+// (winner:true, dedupe_key:"guided_topic:T001") and the session's own
+// greeting_sent event STILL reported wake_opener:"newday_overview" moments
+// later, because newday_overview never checked for a pending guided-topic
+// tap before this fix.
+// ---------------------------------------------------------------------------
+describe('computeGreetingDecision — VTID-03724 guided-topic tap outranks passive rungs', () => {
+  const collidingContext = {
+    lastFullBriefingDate: '2026-06-29', // stale → newday_overview is due
+    newdayOverview: richPayload({ messages_unread: 3 }), // has content → would fire
+    guidedTopicNarrationContent: 'Lektion: Atme langsam ein und aus.',
+    openDecision: {
+      mode: 'speak' as const,
+      source: 'wake:guided',
+      line: 'Lass uns über Atmung sprechen.',
+    },
+  };
+
+  test('normal ladder: a guided-topic tap wins over a due, content-rich newday_overview', () => {
+    const withoutGuided = computeGreetingDecision(
+      ctx({ ...collidingContext, guidedTopicNarrationContent: null }),
+    );
+    // Sanity: without the guided tap, this exact context DOES fire the
+    // briefing — proving the collision is real, not a fixture artifact.
+    expect(withoutGuided.wakeOpener).toBe('newday_overview');
+
+    const withGuided = computeGreetingDecision(ctx(collidingContext));
+    expect(withGuided.wakeOpener).toBe('override_v2');
+    expect(withGuided.directive).toContain('Lass uns über Atmung sprechen.');
+    expect(withGuided.directive).toMatch(/ONE short utterance/i);
+    // The briefing must not be silently stamped as delivered when it never
+    // spoke — a real briefing should still be owed next time.
+    expect(withGuided.effects.stampBriefingDate).toBeUndefined();
+  });
+
+  test('safe-fast ladder: same collision, same fix — this ladder had NO guided-topic handling before', () => {
+    const withoutGuided = computeGreetingDecision(
+      safeFastCtx({ ...collidingContext, guidedTopicNarrationContent: null }),
+    );
+    expect(withoutGuided.wakeOpener).toBe('safe_fast_newday_overview');
+
+    const withGuided = computeGreetingDecision(safeFastCtx(collidingContext));
+    expect(withGuided.wakeOpener).toBe('override_v2');
+    expect(withGuided.directive).toContain('Lass uns über Atmung sprechen.');
+  });
+
+  test('a guided tap with no wake-brief line yet falls through — nothing to say, so the briefing may still fire', () => {
+    // Defensive edge case: guidedTopicNarrationContent set but the wake-brief
+    // line itself hasn't resolved (openDecision silent/empty). Nothing to
+    // speak for the guided rung, so the ladder must not hang — it falls
+    // through to the next real rung instead of asserting on the same event.
+    const d = computeGreetingDecision(
+      ctx({ ...collidingContext, openDecision: { mode: 'silent', source: 'x', line: null } }),
+    );
+    expect(d.wakeOpener).not.toBe('override_v2');
+  });
+
+  test('day_close also yields to a guided-topic tap (same defect class, night window)', () => {
+    const nightCtx = ctx({
+      ...collidingContext,
+      newdayOverview: null, // isolate day_close specifically
+      localHour: 22,
+      lastDayCloseDate: null,
+      isAnonymous: false,
+    });
+    const withoutGuided = computeGreetingDecision({ ...nightCtx, guidedTopicNarrationContent: null });
+    expect(withoutGuided.wakeOpener).toBe('day_close');
+
+    const withGuided = computeGreetingDecision(nightCtx);
+    expect(withGuided.wakeOpener).toBe('override_v2');
+  });
+
+  test('anonymous sessions are unaffected — override_v2/guided rung never fires for them, same as before', () => {
+    const d = computeGreetingDecision(ctx({ ...collidingContext, isAnonymous: true }));
+    expect(d.wakeOpener).not.toBe('override_v2');
+  });
+
+  test('a genuine silent reconnect still wins over a guided tap — transport signal, not a new opening', () => {
+    const d = computeGreetingDecision(
+      ctx({ ...collidingContext, openDecision: { mode: 'silent', source: 'native_resume', line: null } }),
+    );
+    expect(d.wakeOpener).toBe('silent_reconnect');
+  });
+
+  test('no guided topic, no collision → both ladders are byte-identical to before this fix', () => {
+    const plain = { lastFullBriefingDate: '2026-06-29', newdayOverview: richPayload({ messages_unread: 3 }) };
+    expect(computeGreetingDecision(ctx(plain)).wakeOpener).toBe('newday_overview');
+    expect(computeGreetingDecision(safeFastCtx(plain)).wakeOpener).toBe('safe_fast_newday_overview');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // VTID-03628 — P0 emergency kill switch for the new-day overview rung.
 // ---------------------------------------------------------------------------
 describe('setNewdayOverviewRungEnabled — new-day overview kill switch', () => {

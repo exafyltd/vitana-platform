@@ -1188,6 +1188,7 @@ exports[`computeGreetingDecision — rung golden snapshots rung 8: override_v2 g
 {
   "diag": {
     "decision_id": null,
+    "guided_topic_outranks_passive_rungs": true,
     "lang": "en",
     "prompt_len": 258,
     "wake_opener": "override_v2",
