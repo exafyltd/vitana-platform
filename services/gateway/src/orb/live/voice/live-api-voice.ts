@@ -39,6 +39,9 @@ const LIVE_API_VOICE_FALLBACKS: Record<string, LiveApiVoiceConfig> = {
   // that would train readers to ignore the warning that matters.
   pt: { voice_name: 'Zephyr', fallback_lang: null },
   pl: { voice_name: 'Despina', fallback_lang: null },
+  // VTID-03720 — same rationale as pt/pl above: Sulafat pairs with tr the
+  // same way in LIVE_LANGUAGE_VOICE_FALLBACKS, nothing borrowed.
+  tr: { voice_name: 'Sulafat', fallback_lang: null },
 };
 
 // Dedup log lines so a hot per-session loop doesn't spam the logger.

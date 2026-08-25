@@ -53,6 +53,12 @@ const LIVE_LANGUAGE_VOICE_FALLBACKS: Record<string, string> = {
   ru: 'Gacrux',
   pt: 'Zephyr',
   pl: 'Despina',
+  // VTID-03720. Dead path in practice (Nova/cascade serve tr's actual voice,
+  // and Gemini Live is unreachable since the GCP shutdown, §2e) — added so
+  // the `?? ['en']` fallback this table's own accessor uses can't silently
+  // hand a `tr`-tagged session an English-voice-name string, the VTID-03578
+  // shape this checklist exists to prevent.
+  tr: 'Sulafat',
 };
 
 const GEMINI_TTS_VOICE_FALLBACKS: Record<string, TtsVoiceConfig> = {
@@ -70,6 +76,8 @@ const GEMINI_TTS_VOICE_FALLBACKS: Record<string, TtsVoiceConfig> = {
   // copy in the European variant: fluent, wrong, and nothing detects it.
   pt: { name: 'Kore', languageCode: 'pt-BR' },
   pl: { name: 'Kore', languageCode: 'pl-PL' },
+  // VTID-03720 — same dead-path/consistency rationale as LIVE_LANGUAGE_VOICE_FALLBACKS above.
+  tr: { name: 'Kore', languageCode: 'tr-TR' },
 };
 
 const NEURAL2_TTS_VOICE_FALLBACKS: Record<string, TtsVoiceConfig> = {

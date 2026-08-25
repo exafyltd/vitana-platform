@@ -1,0 +1,16 @@
+=== Mutation verify: remove tr from SHORT_GAP_GREETING_PHRASES (greeting-pools.ts), keep it in SUPPORTED_LIVE_LANGUAGES ===
+
+FAIL (expected): test/orb/live/language-coverage.test.ts
+  "VTID-03681: ORB live language coverage > gives every gated language its own greeting pool, in that language"
+  expect(Array.isArray(pool)).toBe(true)  -- Received: false (pool undefined for 'tr')
+
+FAIL (expected, cascading): test/orb/live/characterization/greeting-pools.characterization.test.ts
+  frozen-pool snapshot mismatch (tr entry missing)
+
+3 test suites run, 2 failed as expected, 1 unaffected (cascaded-voice.test.ts, different table).
+Restored greeting-pools.ts from backup; re-ran same 3 suites: 3/3 passed, 60/60 tests, 0 failures.
+
+This proves test/orb/live/language-coverage.test.ts's invariant loop genuinely
+detects a language admitted by SUPPORTED_LIVE_LANGUAGES but missing from a
+downstream table -- the exact VTID-03578/03681/03701 failure shape -- rather
+than passing vacuously.

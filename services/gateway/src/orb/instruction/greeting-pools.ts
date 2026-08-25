@@ -154,6 +154,19 @@ export const SHORT_GAP_GREETING_PHRASES: Record<string, string[]> = {
     "Dobrze, że wróciłeś. Pokażę ci, na jakim jesteśmy etapie.",
     "Miło cię słyszeć. Pokażę ci, co dalej.",
   ],
+  // VTID-03720 (tr as the 11th locale). Sen-form throughout, matching every
+  // other locale's rotation size (8 variants) so this table's own dedup/
+  // rotation logic behaves identically for tr.
+  tr: [
+    "Tekrar hoş geldin. Sıradaki adımını göstereyim.",
+    "Seni tekrar duymak güzel. Sıradaki adımını göstereyim.",
+    "Tekrar merhaba. Seni sıradaki adıma götüreyim.",
+    "Seni duymak güzel. Nerede olduğumuzu göstereyim.",
+    "Tekrar hoş geldin. Seni sıradakine götüreyim.",
+    "Buradayım senin için. Seni sıradaki adıma götüreyim.",
+    "Seni tekrar görmek güzel. Sıradakini göstereyim.",
+    "Tekrar hoş geldin. Sıradakini göstereyim.",
+  ],
 };
 
 /**

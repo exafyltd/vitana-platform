@@ -1,0 +1,121 @@
+# VTID-03725 — commands run, in order. 2026-08-25.
+
+# Reported live: "Turkish speaks English and Serbian doesn't say nothing at
+# all. Serbian should be wired to Nova."
+
+# --- Turkish investigation ---
+grep -rn "NOVA_SONIC_SUPPORTED_LANGUAGES" services/gateway/src/orb/
+#   -> ['en','de','fr','es'] — tr correctly absent (Nova genuinely has no
+#      Turkish voice), not the bug.
+grep -n "SUPPORTED_LIVE_LANGUAGES" services/gateway/src/orb/live/config.ts
+#   -> tr ALSO absent here — this is the real bug: normalizeLang() coerces
+#      any unlisted language straight to 'en', the identical VTID-03578/
+#      03681 pt/pl shape.
+
+# Confirmed an already-written, previously-unmerged fix exists on a
+# different branch (claude/nova-sonic-voice-provider-o0r79r, commit
+# 50ab0cd, VTID-03701) touching all 7 required tables. Applied all of it
+# to main except polly.ts (already fixed better in VTID-03719/PR #3175 —
+# Burcu neural, live-verified, vs. that commit's untested Filiz standard).
+
+git show 50ab0cd --stat
+git show 50ab0cd -- <9 files>   # full diff reviewed before applying
+
+# Applied manually via Edit (not git apply, to avoid dragging in stale
+# content that had already diverged from main — e.g. cascaded-voice.test's
+# expected list had already grown to include 'pt' since that commit was
+# written, VTID-03704):
+#   - services/gateway/src/orb/instruction/greeting-pools.ts (tr pool)
+#   - services/gateway/src/orb/live/config.ts (SUPPORTED_LIVE_LANGUAGES)
+#   - services/gateway/src/orb/live/instruction/live-system-instruction.ts (languageNames)
+#   - services/gateway/src/orb/live/upstream/cascaded-config.ts (Transcribe tr-TR)
+#   - services/gateway/src/orb/live/voice/live-api-voice.ts (LIVE_API_VOICE_FALLBACKS)
+#   - services/gateway/src/orb/live/voice/voice-mapping.ts (2 tables)
+#   - services/gateway/src/routes/orb-live.ts (nameToCode)
+#   - services/gateway/src/services/decision-contract/types.ts (SupportedLanguage enum)
+#   - services/gateway/test/orb/live/upstream/cascaded-voice.test.ts (updated
+#     expected list to ['ar','pl','pt','ru','tr','zh'] — current main's
+#     actual list, not the stale one from the unmerged commit)
+
+cd services/gateway
+npx tsc --noEmit
+#   -> clean
+
+npx jest test/orb --silent
+#   -> 2 failures: greeting-pools.characterization.test.ts (frozen snapshot
+#      + explicit language list, both need tr added — same pattern VTID-03681
+#      already established for pt/pl)
+
+# Updated the explicit list assertion, then refreshed the frozen snapshot:
+npx jest test/orb/live/characterization/greeting-pools.characterization.test.ts -u
+#   -> 1 snapshot updated
+
+npx jest test/orb --silent
+#   -> Test Suites: 183 passed, 183 total
+#   -> Tests: 6 todo, 3385 passed, 3391 total
+#   -> outputs/full-orb-suite.txt
+
+npx jest --silent   # full gateway suite, not just test/orb
+#   -> Test Suites: 1 skipped, 699 passed, 699 of 700 total (pre-existing skip)
+#   -> Tests: 29 skipped, 6 todo, 13293 passed, 13328 total
+
+npm run build
+#   -> clean
+
+# Mutation-verify test/orb/live/language-coverage.test.ts actually catches
+# a missing table (not vacuously true): removed tr from
+# SHORT_GAP_GREETING_PHRASES only (kept it in SUPPORTED_LIVE_LANGUAGES) —
+python3 -c "
+path = 'src/orb/instruction/greeting-pools.ts'
+s = open(path).read()
+import re
+s2 = re.sub(r'\n  tr: \[.*?\],\n', '\n', s, flags=re.S)
+assert s2 != s
+open(path,'w').write(s2)
+"
+npx jest test/orb/live/language-coverage.test.ts test/orb/live/characterization/greeting-pools.characterization.test.ts --silent
+#   -> 2 suites FAILED as expected (missing greeting pool for tr)
+# Restored from backup, re-ran:
+npx jest test/orb/live/language-coverage.test.ts test/orb/live/characterization/greeting-pools.characterization.test.ts test/orb/live/upstream/cascaded-voice.test.ts --silent
+#   -> 3/3 suites, 60/60 tests, 0 failures
+#   -> outputs/mutation-verify.txt
+
+# --- Live env confirmation (before assuming anything about deployed config) ---
+aws ecs describe-services --cluster Vitana-ECS-Cluster --services vitana-gateway --region eu-central-1 --query 'services[0].taskDefinition'
+aws ecs describe-task-definition --task-definition vitana-gateway:250 --region eu-central-1 --query 'taskDefinition.containerDefinitions[0].environment'
+#   -> VERTEX_LIVE_UNAVAILABLE=true, NOVA_SONIC_ENABLED=true,
+#      ORB_CASCADED_VOICE_ENABLED=true (live, not the "inert, IAM not
+#      granted" state VTID-03700/03701 documented when they were written —
+#      someone else finished that deployment step since)
+
+# --- Serbian investigation ---
+aws logs describe-log-groups --region eu-central-1 --query 'logGroups[].logGroupName' --output text | grep -i gateway
+#   -> correct staging log group is /vitana/gateway (not /ecs/vitana-gateway)
+aws logs filter-log-events --log-group-name /vitana/gateway --region eu-central-1 \
+  --start-time <6h ago ms> --filter-pattern "cascade"
+#   -> "cascaded pipeline open ... lang=pt connect_ms=4" / "lang=pl connect_ms=1"
+#      -- REAL Transcribe connections succeeding, confirms cascade IAM is
+#      actually granted and working today (not a blocker for tr going
+#      forward once deployed)
+aws logs filter-log-events --log-group-name /vitana/gateway --region eu-central-1 \
+  --start-time <24h ago ms> --filter-pattern "\"lang=tr\""
+#   -> 0 matching events — confirms Turkish never even reaches a
+#      lang-tagged session, consistent with the coercion-to-English bug
+aws logs filter-log-events --log-group-name /vitana/gateway --region eu-central-1 \
+  --start-time <24h ago ms> --filter-pattern "\"lang=sr\""
+#   -> 30 matching events, sessions ARE created and progress through
+#      greeting/wake-opener selection normally
+
+# Supabase MCP: joined session.start (lang=sr) to session.stop (audio
+# metrics) by session_id over 48h -- see acceptance.md AC-3 for the
+# audio_out:1/turn_count:0/user_stop pattern found in ~half the sample.
+# Then pulled every intermediate oasis_events row for 8 of those specific
+# session_ids to check for an explicit error/close event -- found NONE:
+# reason='no_native_nova_voice' (informational diag only) followed by
+# routine usage/diag events, then reason='user_stop' -- no nova_stream_error,
+# no close code, nothing for any existing recovery hook to fire on.
+
+grep -n "resendGreetingIfStuckAtZeroTurns" services/gateway/src/routes/orb-live.ts
+#   -> all 3 call sites are inside upstream-CLOSE handlers only -- confirmed
+#      there is no idle-timeout-based recovery path today, which is
+#      consistent with why these open-but-silent sr sessions never recover
