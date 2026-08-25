@@ -43,6 +43,7 @@ import {
   EMPTY_OVERVIEW,
   type NewDayOverviewPayload,
 } from './new-day-overview-aggregator';
+import * as repo from './new-day-return-repository';
 // PHASE 1 (conversation-flow unification, option A): the provider emits a
 // server-composed, speakable overview line (renderNewDayReturnLineWithOverview)
 // so the Vertex LLM renderer and the LiveKit deterministic session.say() render
@@ -415,10 +416,7 @@ async function stampLastSessionDate(
   todayIso: string,
 ): Promise<void> {
   try {
-    const { error } = await supabase
-      .from('user_journey')
-      .update({ last_session_date: todayIso })
-      .eq('user_id', userId);
+    const { error } = await repo.updateUserJourneyLastSessionDate(supabase, userId, todayIso);
     if (error) {
       console.warn(
         `[VTID-03164] stampLastSessionDate failed for ${userId.slice(0, 8)}: ${error.message}`,
@@ -470,11 +468,7 @@ export function makeNewDayReturnProvider(
       // ---- DB fetch: user_journey row ----
       let row: UserJourneyRow | null = null;
       try {
-        const { data, error } = await inputs.supabase
-          .from('user_journey')
-          .select('last_session_date, is_first_session')
-          .eq('user_id', inputs.userId)
-          .maybeSingle();
+        const { data, error } = await repo.fetchUserJourneyRow(inputs.supabase, inputs.userId);
         if (error) {
           return {
             providerKey: NEW_DAY_RETURN_PROVIDER_KEY,
