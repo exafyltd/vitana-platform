@@ -17,6 +17,7 @@ import {
   AuthenticatedRequest,
 } from '../middleware/auth-supabase-jwt';
 import { createClient } from '@supabase/supabase-js';
+import * as repo from './admin-users-lookup-repository';
 
 const router = Router();
 
@@ -40,12 +41,7 @@ router.get('/users/lookup', requireAdminAuth, async (req: Request, res: Response
   const limitInt = Math.min(Math.max(Number(limitParam) || 10, 1), 50);
 
   const supabase = getSupabase();
-  const { data, error } = await supabase.rpc('resolve_recipient_candidates', {
-    p_actor: identity.user_id,
-    p_token: token,
-    p_limit: limitInt,
-    p_global: true, // admin-only: cross-tenant search
-  });
+  const { data, error } = await repo.resolveRecipientCandidatesGlobal(supabase, identity.user_id, token, limitInt);
 
   if (error) {
     console.error('[VTID-01967] admin/users/lookup RPC error:', error);
