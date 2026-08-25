@@ -10036,14 +10036,38 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   // inherit a stale "reduced" instruction from a close that already recovered.
   const _dayCloseReduced = (session as any)._dayCloseReducedRetry === true;
   (session as any)._dayCloseReducedRetry = false;
+  // VTID-03727 — `_freshOpenAfterZeroTurnRecovery` only covers a SAME-session
+  // Nova-level retry (resendGreetingIfStuckAtZeroTurns). It does nothing when
+  // the CLIENT itself gives up and opens a brand-new session object seconds
+  // later (orb-widget.js's _attemptReconnect after a WS/SSE close) — the new
+  // session's own `_reconnectCount` starts at 0 so `isReconnect` reads false
+  // there, but `wakeCadenceSkip` (< ~120s since `lastSessionInfo`, see
+  // BOOTSTRAP-NOVA-GREETING-CADENCE above) still fires, because the failed
+  // prior session ended moments ago — even though NOTHING was ever actually
+  // spoken on it. Confirmed live (VTID-03727): a guided-topic tap died to
+  // nova_validation at turn_count 0, the widget reopened a fresh session
+  // ~1-3s later, and THAT session's guided-topic opener was silenced by this
+  // cadence check, falling through to newday_overview — reproducing the exact
+  // "tapping a session starts the new-day overview" defect VTID-03724 already
+  // fixed for the ladder's static ordering, via a different mechanism this
+  // time. Gated on `session.turn_count === 0` (this session's own count, not
+  // the prior one's) so a GENUINE mid-lesson reconnect — the lesson was
+  // already spoken in a prior turn of THIS session — is completely unaffected
+  // and `silent_reconnect` (compute-greeting-decision.ts rung 7) still wins,
+  // exactly as VTID-03724's AC-5 requires.
+  const _hasPendingGuidedTopicAtOpen =
+    !!(session as any).guidedTopicNarrationContent && (session.turn_count || 0) === 0;
   const _openDecision = decideOpening({
     isAnonymous: !!session.isAnonymous,
     hasResumptionHandle: !!session.resumptionHandle,
-    isReconnect: !_freshOpenAfterZeroTurnRecovery && ((session as any)._reconnectCount || 0) > 0,
+    isReconnect:
+      !_hasPendingGuidedTopicAtOpen &&
+      !_freshOpenAfterZeroTurnRecovery &&
+      ((session as any)._reconnectCount || 0) > 0,
     wakeSelectedLine: _wb?.selectedContinuation?.userFacingLine ?? null,
     wakeSelectedKind: _wb?.selectedContinuation?.kind ?? null,
     lastOpenerLine: (session as any)._lastOpenerLine ?? null,
-    wakeCadenceSkip: _cadenceBucketPre === 'reconnect',
+    wakeCadenceSkip: !_hasPendingGuidedTopicAtOpen && _cadenceBucketPre === 'reconnect',
   });
   console.log(formatOpeningDecisionLog(session.sessionId, _openDecision));
   (session as any)._openingDecision = _openDecision;

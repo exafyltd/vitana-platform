@@ -95,8 +95,12 @@ describe('ORB-CONVERSATION-LATENCY: server-driven auto-greet on upstream connect
     // can't catch "the user closed and reopened ORB" — the bucket check can.
     const idxDecide = src.indexOf('const _openDecision = decideOpening({');
     expect(idxDecide).toBeGreaterThan(-1);
-    const callBody = src.slice(idxDecide, idxDecide + 500);
-    expect(callBody).toMatch(/wakeCadenceSkip:\s*_cadenceBucketPre\s*===\s*'reconnect'/);
+    const callBody = src.slice(idxDecide, idxDecide + 700);
+    // VTID-03727 added a guided-topic override ahead of this bucket check
+    // (a pending, never-yet-spoken guided topic must not be cadence-
+    // silenced either) — match on the conjunction containing the bucket
+    // check rather than requiring it to be the whole expression.
+    expect(callBody).toMatch(/wakeCadenceSkip:[\s\S]*_cadenceBucketPre\s*===\s*'reconnect'/);
     // The bucket must be computed BEFORE the decideOpening call, not after —
     // otherwise the variable wouldn't exist to reference.
     const idxBucket = src.indexOf('const _cadenceBucketPre = describeTimeSince(');

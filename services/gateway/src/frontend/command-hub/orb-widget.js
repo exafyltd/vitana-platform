@@ -240,6 +240,16 @@
     thinkingStartTime: 0,    // When thinking started — for elapsed time display
     greetingAudioReceived: false,
     greetingComplete: false,  // True after first turn_complete — mic opens only after this
+    // VTID-03727 (Codex review fix): greetingComplete is deliberately reset to
+    // false on every reconnect (VTID-01988 mic-restart fix, several call
+    // sites) so the mic-capture gate re-arms correctly — but that makes it
+    // the WRONG signal for "has this overlay session ever produced audio",
+    // which _attemptReconnect's caption needs. A second/later reconnect
+    // attempt within the same overlay open would otherwise show 'connecting'
+    // even though the user genuinely heard Vitana speak earlier. This flag
+    // is set once true and only cleared by _hide() (a real close), never by
+    // any reconnect path.
+    _audioEverHeardThisOpen: false,
     _audioReadySignaled: false, // DEV-COMHU-0504: audio-ready ack posted once per session
 
     // VTID-03469: page-level audio unlock state. _gestureUnlockInstalled guards
@@ -2449,6 +2459,7 @@
             var _afterBeepStartMic = function () {
               if (!_s.greetingComplete) {
                 _s.greetingComplete = true;
+                _s._audioEverHeardThisOpen = true; // VTID-03727 — survives later reconnect resets
                 _startAudioCapture().catch(function (err) {
                   console.error('[VTOrb] Mic capture failed after greeting:', err);
                   _announceDisconnect('mic');
@@ -3975,6 +3986,7 @@
     _s._isReconnecting = false;
     _s.guidedAutoClose = false; // VTID-03294 (#4): clear any pending guided auto-close
     _s.guidedTopic = null; // VTID-03675: don't let a never-delivered topic leak into a later, unrelated session
+    _s._audioEverHeardThisOpen = false; // VTID-03727: this overlay session is genuinely over
     try { clearInterval(_s._recoveryWatchdog); } catch (e) { /* noop */ }
     _s._recoveryWatchdog = null;
     // VTID-03295 (X-close fix): STOP AUDIO + CLOSE THE OVERLAY SYNCHRONOUSLY, the
@@ -4086,7 +4098,24 @@
     _s._reconnectCount++;
     _s._isReconnecting = true;
     console.log('[VTOrb] _attemptReconnect: scheduled in ' + delay + 'ms (attempt ' + _s._reconnectCount + '/' + MAX_WIDGET_RECONNECTS + ')');
-    _setStatus(_caption('reconnecting'));
+    // VTID-03727: before anything has been heard (e.g. a guided-topic tap that
+    // died to nova_validation before turn 1 ever played), "reconnecting" reads
+    // as "already broken" rather than "hold on" — the exact defect VTID-03685
+    // already fixed for the WS error-frame handler and the server-side
+    // resendGreetingIfStuckAtZeroTurns retry cue (both gate on "has anything
+    // actually played yet"). This call site was never covered by that fix: it
+    // fires on every WS/SSE close this widget handles (nova_validation-driven
+    // closes included), and used to show the reconnecting caption unconditionally.
+    // Live-reported: "before it starts talking, the orb screen shows... 'One
+    // moment, I will reconnect'". Once real audio has played, a genuine
+    // reconnect cue is still correct and still shown.
+    //
+    // Codex review fix: gate on _audioEverHeardThisOpen, NOT _s.greetingComplete
+    // directly — greetingComplete is deliberately reset to false on every
+    // reconnect (VTID-01988, mic-restart) so a SECOND consecutive retry within
+    // the same overlay open would otherwise misreport 'connecting' even though
+    // the user genuinely heard Vitana speak earlier this session.
+    _setStatus(_caption(_s._audioEverHeardThisOpen ? 'reconnecting' : 'connecting'));
     _setOrbState('connecting');
 
     setTimeout(function () {
