@@ -124,23 +124,20 @@ Output: `outputs/full-regression.txt`
 
 AC-8 — mutation-verified, not asserted on faith
 
+TEST: mutation runs recorded in `commands.log` (revert → confirm expected
+subset fails → restore → confirm green, for each fix independently).
 Reverted each fix independently (scripted text replacement back to the
 pre-fix code, source otherwise untouched) and re-ran exactly the new tests
 for that fix:
 - orb-live.ts fix reverted → 4 of 5 new characterization tests failed (the
-  5th, AC-6, correctly still passed — it tests a mechanism this fix does
-  not touch). Restored → 5/5 green.
+  5th, AC-6, correctly still passed). Restored → 5/5 green.
 - orb-widget.js fix reverted → 2 of 4 new tests failed (AC-2/AC-3 correctly
-  still passed — they test invariants this fix does not touch). Restored →
-  4/4 green.
+  still passed). Restored → 4/4 green.
 - `_audioEverHeardThisOpen` gate reverted to `greetingComplete`-only → the
-  AC-7 gate-expression test failed, the other 3 in that describe block
-  correctly still passed. Restored → 4/4 green.
+  AC-7 gate-expression test failed, the other 3 correctly still passed.
+  Restored → 4/4 green.
 - `_hide()`'s reset of the new flag removed → the AC-7 "IS reset by _hide()"
   test failed, the other 3 correctly still passed. Restored → 4/4 green.
-
-TEST: mutation runs recorded in `commands.log` (revert → confirm expected
-subset fails → restore → confirm green, for each fix independently).
 
 AC-9 — no regression to the full orb + frontend widget suites, or to the
 whole gateway suite
