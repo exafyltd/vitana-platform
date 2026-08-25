@@ -20,6 +20,7 @@ import { notifyUserAsync } from './notification-service';
 import { createClient } from '@supabase/supabase-js';
 import type { MatchRow } from './intent-matcher';
 import type { IntentKind } from './intent-classifier';
+import * as repo from './intent-notifier-repository';
 
 const SUPABASE_URL = process.env.SUPABASE_URL!;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE!;
@@ -87,11 +88,7 @@ interface IntentSummary {
 
 async function readIntent(intentId: string): Promise<IntentSummary | null> {
   const supabase = getSupabase();
-  const { data } = await supabase
-    .from('user_intents')
-    .select('intent_id, requester_user_id, requester_vitana_id, tenant_id, category, title, intent_kind')
-    .eq('intent_id', intentId)
-    .maybeSingle();
+  const { data } = await repo.fetchIntentSummaryById(supabase, intentId);
   if (!data) return null;
   const d = data as any;
   return {
@@ -202,11 +199,7 @@ export async function notifyMatchSurfaced(args: NotifyArgs): Promise<void> {
  */
 export async function notifyMutualInterest(matchId: string): Promise<void> {
   const supabase = getSupabase();
-  const { data: m } = await supabase
-    .from('intent_matches')
-    .select('match_id, intent_a_id, intent_b_id, vitana_id_a, vitana_id_b, kind_pairing, score, compass_aligned')
-    .eq('match_id', matchId)
-    .maybeSingle();
+  const { data: m } = await repo.fetchIntentMatchById(supabase, matchId);
   if (!m) return;
   const match = m as any as MatchRow;
 
@@ -268,7 +261,7 @@ export async function notifyMutualInterest(matchId: string): Promise<void> {
     const seed = partnerSeek
       ? `🎉 Reciprocal interest revealed on a partner-seek match. Reply to start the conversation.`
       : `Mutual interest on a ${match.kind_pairing.split('::')[0]} intent. Reply to start the conversation.`;
-    await supabase.from('chat_messages').insert({
+    await repo.insertSeedChatMessage(supabase, {
       tenant_id: dictator.tenant_id,
       sender_id: dictator.user_id,
       receiver_id: counterparty.user_id,
