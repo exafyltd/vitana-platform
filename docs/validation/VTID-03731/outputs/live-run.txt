@@ -1,0 +1,134 @@
+Two real runs against https://preview-aws-gateway.vitanaland.com, captured honestly rather than
+edited into a single clean transcript — see commands.log for why there are two.
+
+=== RUN 1 (full 11/11 pass; the routing detail for en/de/fr scrolled past this
+    terminal's tail-100 capture window before it was redirected to a file — the
+    SUMMARY table below is complete and unedited, and the full per-language
+    detail for es through tr survived) ===
+
+=== es ===
+  routing: OK: provider=nova_sonic (native), reason=nova_forced_vertex_unavailable
+  audio:   voice=Lucia engine=neural mime=audio/pcm;rate=16000
+  audio:   audio_bytes=202560 samples=101280 declared_rate=16000Hz
+  audio:   TRUE duration (samples / declared_rate) = 6.330s
+  audio:   OK: 17.9 chars/sec — plausible human speech pacing (6-30 for lang=es)
+  audio:   OK: _pcmRateFromMime('audio/pcm;rate=16000') === 16000 (matches declared rate)
+  audio:   OK: FIXED code plays this real audio at 6.330s — correct
+  audio:   INFO: OLD buggy code would have played this at 4.220s (1.50x too fast — the "Mickey Mouse" defect, reproduced against real audio)
+  RESULT: PASS
+
+=== ar ===
+  routing: OK: provider=cascaded, reason=cascaded_language_rescue
+  audio:   voice=Hala engine=neural mime=audio/pcm;rate=16000
+  audio:   audio_bytes=204960 samples=102480 declared_rate=16000Hz
+  audio:   TRUE duration (samples / declared_rate) = 6.405s
+  audio:   OK: 11.7 chars/sec — plausible human speech pacing (6-30 for lang=ar)
+  audio:   OK: _pcmRateFromMime('audio/pcm;rate=16000') === 16000 (matches declared rate)
+  audio:   OK: FIXED code plays this real audio at 6.405s — correct
+  audio:   INFO: OLD buggy code would have played this at 4.270s (1.50x too fast — the "Mickey Mouse" defect, reproduced against real audio)
+  RESULT: PASS
+
+=== zh ===
+  routing: OK: provider=cascaded, reason=cascaded_language_rescue
+  audio:   voice=Zhiyu engine=neural mime=audio/pcm;rate=16000
+  audio:   audio_bytes=202560 samples=101280 declared_rate=16000Hz
+  audio:   TRUE duration (samples / declared_rate) = 6.330s
+  audio:   OK: 4.9 chars/sec — plausible human speech pacing (2-10 for lang=zh)
+  audio:   OK: _pcmRateFromMime('audio/pcm;rate=16000') === 16000 (matches declared rate)
+  audio:   OK: FIXED code plays this real audio at 6.330s — correct
+  audio:   INFO: OLD buggy code would have played this at 4.220s (1.50x too fast — the "Mickey Mouse" defect, reproduced against real audio)
+  RESULT: PASS
+
+=== sr ===
+  routing: OK: provider=nova_sonic (forced substitute — no Polly voice), reason=nova_forced_vertex_unavailable
+  audio:   OK (EXPECTED-FAIL): Polly correctly refuses sr with 422 — no Serbian voice in any engine
+  RESULT: PASS
+
+=== ru ===
+  routing: OK: provider=cascaded, reason=cascaded_language_rescue
+  audio:   voice=Tatyana engine=standard mime=audio/pcm;rate=16000
+  audio:   audio_bytes=206424 samples=103212 declared_rate=16000Hz
+  audio:   TRUE duration (samples / declared_rate) = 6.451s
+  audio:   OK: 16.3 chars/sec — plausible human speech pacing (6-30 for lang=ru)
+  audio:   OK: _pcmRateFromMime('audio/pcm;rate=16000') === 16000 (matches declared rate)
+  audio:   OK: FIXED code plays this real audio at 6.451s — correct
+  audio:   INFO: OLD buggy code would have played this at 4.301s (1.50x too fast — the "Mickey Mouse" defect, reproduced against real audio)
+  RESULT: PASS
+
+=== pt ===
+  routing: OK: provider=cascaded, reason=cascaded_language_rescue
+  audio:   voice=Camila engine=neural mime=audio/pcm;rate=16000
+  audio:   audio_bytes=230960 samples=115480 declared_rate=16000Hz
+  audio:   TRUE duration (samples / declared_rate) = 7.218s
+  audio:   OK: 15.0 chars/sec — plausible human speech pacing (6-30 for lang=pt)
+  audio:   OK: _pcmRateFromMime('audio/pcm;rate=16000') === 16000 (matches declared rate)
+  audio:   OK: FIXED code plays this real audio at 7.218s — correct
+  audio:   INFO: OLD buggy code would have played this at 4.812s (1.50x too fast — the "Mickey Mouse" defect, reproduced against real audio)
+  RESULT: PASS
+
+=== pl ===
+  routing: OK: provider=cascaded, reason=cascaded_language_rescue
+  audio:   voice=Ola engine=neural mime=audio/pcm;rate=16000
+  audio:   audio_bytes=222960 samples=111480 declared_rate=16000Hz
+  audio:   TRUE duration (samples / declared_rate) = 6.968s
+  audio:   OK: 15.2 chars/sec — plausible human speech pacing (6-30 for lang=pl)
+  audio:   OK: _pcmRateFromMime('audio/pcm;rate=16000') === 16000 (matches declared rate)
+  audio:   OK: FIXED code plays this real audio at 6.968s — correct
+  audio:   INFO: OLD buggy code would have played this at 4.645s (1.50x too fast — the "Mickey Mouse" defect, reproduced against real audio)
+  RESULT: PASS
+
+=== tr ===
+  routing: OK: provider=cascaded, reason=cascaded_language_rescue
+  audio:   voice=Burcu engine=neural mime=audio/pcm;rate=16000
+  audio:   audio_bytes=192960 samples=96480 declared_rate=16000Hz
+  audio:   TRUE duration (samples / declared_rate) = 6.030s
+  audio:   OK: 14.3 chars/sec — plausible human speech pacing (6-30 for lang=tr)
+  audio:   OK: _pcmRateFromMime('audio/pcm;rate=16000') === 16000 (matches declared rate)
+  audio:   OK: FIXED code plays this real audio at 6.030s — correct
+  audio:   INFO: OLD buggy code would have played this at 4.020s (1.50x too fast — the "Mickey Mouse" defect, reproduced against real audio)
+  RESULT: PASS
+
+=== SUMMARY (run 1) ===
+  en  routing=OK    audio=OK    PASS
+  de  routing=OK    audio=OK    PASS
+  fr  routing=OK    audio=OK    PASS
+  es  routing=OK    audio=OK    PASS
+  ar  routing=OK    audio=OK    PASS
+  zh  routing=OK    audio=OK    PASS
+  sr  routing=OK    audio=OK    PASS
+  ru  routing=OK    audio=OK    PASS
+  pt  routing=OK    audio=OK    PASS
+  pl  routing=OK    audio=OK    PASS
+  tr  routing=OK    audio=OK    PASS
+
+=== 11/11 languages fully passed (routing + real audio) ===
+
+
+=== RUN 2 (run immediately after run 1, same 15-minute window — demonstrates
+    /tts-pcm-diagnostic's own real rate limiter, 20 req/15min, working exactly
+    as its VTID-03716 header documents: "an unauthenticated client could
+    otherwise repeatedly submit... and rack up billing / exhaust resources".
+    Run 1 spent 11 requests (10 languages + sr's 422 probe); run 2 spent 9 more
+    before hitting the cap exactly at request #20, on pl.) ===
+
+...
+  routing: OK: provider=cascaded, reason=cascaded_language_rescue
+  audio:   FAIL: request failed — status=429 error=RATE_LIMIT_EXCEEDED
+  RESULT: FAIL
+
+=== SUMMARY (run 2) ===
+  en  routing=OK    audio=OK    PASS
+  de  routing=OK    audio=OK    PASS
+  fr  routing=OK    audio=OK    PASS
+  es  routing=OK    audio=OK    PASS
+  ar  routing=OK    audio=OK    PASS
+  zh  routing=OK    audio=OK    PASS
+  sr  routing=OK    audio=OK    PASS
+  ru  routing=OK    audio=OK    PASS
+  pt  routing=OK    audio=OK    PASS
+  pl  routing=OK    audio=FAIL  FAIL
+  tr  routing=OK    audio=FAIL  FAIL
+
+=== 9/11 languages fully passed (routing + real audio) ===
+
+FAILED: pl, tr

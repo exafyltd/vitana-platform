@@ -1,0 +1,40 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/scripts/verify-cascade-audio-timing.test.ts
+  VTID-03716 — verifyWidgetWiringIsConnected (Codex P2 fix)
+    ✓ passes against the real, currently-shipped orb-widget.js (6 ms)
+    ✓ throws if createBuffer() is regressed back to a hardcoded rate — the exact VTID-03711 defect (10 ms)
+    ✓ throws with a clear message if the assignment pattern itself is gone (refactor, not just a regression) (1 ms)
+    ✓ does not throw when createBuffer() correctly reads the parsed-rate variable under a different name
+  VTID-03719 — pacingBoundsFor (script-aware plausibility bounds)
+    ✓ uses the wider alphabetic band for Latin/Cyrillic/Arabic languages (3 ms)
+    ✓ uses a lower CJK band for zh — real Mandarin speech runs ~3-5 chars/sec
+    ✓ a real measured zh sample (4.9 chars/sec) falls inside the zh band but would have failed the alphabetic one (1 ms)
+
+PASS test/scripts/verify-all-orb-languages.test.ts
+  VTID-03731: verify-all-orb-languages coverage
+    ✓ has a test phrase for every language the live gate admits (10 ms)
+    ✓ does not carry a stale test phrase for a language the gate no longer admits (1 ms)
+    ✓ NOVA_NATIVE matches NOVA_SONIC_SUPPORTED_LANGUAGES exactly (1 ms)
+    ✓ sr is the one declared cascade-ineligible language, and is a real member of the gate (1 ms)
+
+Test Suites: 2 passed, 2 total
+Tests:       11 passed, 11 total
+Snapshots:   0 total
+Time:        1.149 s, estimated 3 s
+Ran all test suites matching /verify-all-orb-languages|verify-cascade-audio-timing/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
