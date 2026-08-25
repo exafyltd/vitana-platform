@@ -20,9 +20,17 @@ VTID-03685 fix for the WS error-frame handler and the server-side
 `resendGreetingIfStuckAtZeroTurns` retry cue (both gated on "has anything
 actually been heard yet"), this specific call site was never covered.
 
-**Fix:** gate the caption on `_s.greetingComplete` — `'connecting'`
-(the same honest label `_show()` uses for the very first attempt) before
-anything has played, `'reconnecting'` once real audio has played.
+**Fix:** gate the caption on a new `_s._audioEverHeardThisOpen` flag —
+`'connecting'` (the same honest label `_show()` uses for the very first
+attempt) before anything has played, `'reconnecting'` once real audio has
+played. **Codex review fix (P2):** the first version of this gated directly
+on `_s.greetingComplete`, which is wrong — that flag is deliberately reset
+to `false` on every reconnect (VTID-01988, mic-restart), so a SECOND
+consecutive retry within the same overlay open would misreport `'connecting'`
+even though the user genuinely heard audio earlier. `_audioEverHeardThisOpen`
+is set once true (alongside `greetingComplete`, same call site) and only
+cleared by `_hide()` — never by any reconnect path — so it survives however
+many retries happen within one overlay open.
 
 ### 2. A pending guided-topic tap silenced by an unrelated cadence heuristic
 
@@ -104,7 +112,17 @@ AC-6 — the fix does not widen scope into the unrelated rung-9
 TEST: same file, "does not touch silenceOnSkipEnabled"
 Output: `outputs/full-regression.txt`
 
-AC-7 — mutation-verified, not asserted on faith
+AC-7 — `_audioEverHeardThisOpen` (Codex P2 fix) survives multiple reconnect
+attempts within the same overlay open, unlike `greetingComplete`
+
+TEST: same file, describe block "orb-widget _audioEverHeardThisOpen
+lifecycle (VTID-03727 Codex fix)" — declared false by default, set true at
+the same call site as `greetingComplete` (never a separate/unguarded
+assignment), NOT cleared by any of the `greetingComplete = false` reconnect
+resets, and IS cleared by `_hide()`.
+Output: `outputs/full-regression.txt`
+
+AC-8 — mutation-verified, not asserted on faith
 
 Reverted each fix independently (scripted text replacement back to the
 pre-fix code, source otherwise untouched) and re-ran exactly the new tests
@@ -115,21 +133,27 @@ for that fix:
 - orb-widget.js fix reverted → 2 of 4 new tests failed (AC-2/AC-3 correctly
   still passed — they test invariants this fix does not touch). Restored →
   4/4 green.
-See `commands.log` for the exact commands.
+- `_audioEverHeardThisOpen` gate reverted to `greetingComplete`-only → the
+  AC-7 gate-expression test failed, the other 3 in that describe block
+  correctly still passed. Restored → 4/4 green.
+- `_hide()`'s reset of the new flag removed → the AC-7 "IS reset by _hide()"
+  test failed, the other 3 correctly still passed. Restored → 4/4 green.
 
-AC-8 — no regression to the full orb + frontend widget suites, or to the
+TEST: mutation runs recorded in `commands.log` (revert → confirm expected
+subset fails → restore → confirm green, for each fix independently).
+
+AC-9 — no regression to the full orb + frontend widget suites, or to the
 whole gateway suite
 
-TEST: `npx jest test/orb test/frontend` — 199/199 suites, 3477/3483 tests
+TEST: `npx jest test/orb test/frontend` — 199/199 suites, 3481/3487 tests
 passing (6 pre-existing todo), 0 failures.
 Output: `outputs/full-regression.txt`
 
-TEST: `npx jest` (entire gateway suite) — 701/702 suites (1 pre-existing
-skip), 13299/13334 tests passing (29 pre-existing skip, 6 pre-existing
-todo), 0 failures.
+TEST: `npx jest` (entire gateway suite) — full suite re-run after the Codex
+fix, 0 failures (see `outputs/full-suite.txt`).
 Output: `outputs/full-suite.txt`
 
-AC-9 — type-checks clean
+AC-10 — type-checks clean
 
 TEST: `npx tsc --noEmit` — no output, exit 0.
 Output: `outputs/tsc.txt` (empty — clean)

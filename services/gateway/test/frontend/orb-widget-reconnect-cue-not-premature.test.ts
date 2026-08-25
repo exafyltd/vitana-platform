@@ -19,10 +19,19 @@ import * as path from 'path';
 // cue (also VTID-03685's "hasHeardNothingYet" pattern),
 // _attemptReconnect() showed the 'reconnecting' caption unconditionally.
 //
-// Fix: gate the caption on _s.greetingComplete — before anything has played,
-// show 'connecting' (the same honest label _show() uses for the very first
-// attempt); once real audio has played, a genuine reconnect cue is correct
-// and unchanged.
+// Fix: gate the caption on a dedicated _s._audioEverHeardThisOpen flag —
+// before anything has played, show 'connecting' (the same honest label
+// _show() uses for the very first attempt); once real audio has played, a
+// genuine reconnect cue is correct and unchanged.
+//
+// Codex review fix (P2): the FIRST version of this fix gated directly on
+// _s.greetingComplete — but that flag is deliberately reset to false on
+// every reconnect (VTID-01988, mic-restart), so a SECOND consecutive retry
+// within the same overlay open would misreport 'connecting' even though the
+// user genuinely heard Vitana speak earlier. _audioEverHeardThisOpen is set
+// once true (alongside greetingComplete, at the same call site) and only
+// cleared by _hide() — never by any reconnect path — so it survives however
+// many retries happen within one overlay open.
 //
 // Static source check (same approach as the sibling orb-widget suites): the
 // widget is a plain browser IIFE with no export surface.
@@ -56,10 +65,13 @@ describe('orb-widget _attemptReconnect status cue (VTID-03727)', () => {
     expect(body).not.toMatch(/_setStatus\(_caption\('reconnecting'\)\);/);
   });
 
-  it('picks the caption based on whether a greeting has actually completed', () => {
+  it('picks the caption based on a dedicated flag, not greetingComplete directly', () => {
     expect(body).toMatch(
-      /_setStatus\(_caption\(_s\.greetingComplete \? 'reconnecting' : 'connecting'\)\);/,
+      /_setStatus\(_caption\(_s\._audioEverHeardThisOpen \? 'reconnecting' : 'connecting'\)\);/,
     );
+    // Regression lock for the Codex-flagged bug: greetingComplete alone is
+    // wrong here because it gets reset on every reconnect.
+    expect(body).not.toMatch(/_setStatus\(_caption\(_s\.greetingComplete \?/);
   });
 
   it('still shows a caption every time (never silently skips the status update)', () => {
@@ -73,5 +85,52 @@ describe('orb-widget _attemptReconnect status cue (VTID-03727)', () => {
     expect(body).toMatch(/if \(_s\._isOffline\)/);
     expect(body).toMatch(/if \(_s\._isReconnecting\)/);
     expect(body).toMatch(/_s\._reconnectCount >= MAX_WIDGET_RECONNECTS/);
+  });
+});
+
+describe('orb-widget _audioEverHeardThisOpen lifecycle (VTID-03727 Codex fix)', () => {
+  const source = fs.readFileSync(WIDGET_PATH, 'utf8');
+
+  it('is declared in the initial _s state, defaulting to false', () => {
+    expect(source).toMatch(/_audioEverHeardThisOpen:\s*false,/);
+  });
+
+  it('is set true at the SAME call site that sets greetingComplete true (the real "heard audio" moment)', () => {
+    const idx = source.indexOf('_afterBeepStartMic = function () {');
+    expect(idx).toBeGreaterThan(-1);
+    const block = source.slice(idx, idx + 400);
+    expect(block).toMatch(/_s\.greetingComplete = true;/);
+    expect(block).toMatch(/_s\._audioEverHeardThisOpen = true;/);
+    // greetingComplete must be set before _audioEverHeardThisOpen in the
+    // same guarded block, not by a separate/later unguarded assignment.
+    expect(block.indexOf('_s.greetingComplete = true;')).toBeLessThan(
+      block.indexOf('_s._audioEverHeardThisOpen = true;'),
+    );
+  });
+
+  it('is NOT reset by any of the reconnect paths that reset greetingComplete', () => {
+    // Every one of these existing greetingComplete=false resets (VTID-01988
+    // mic-restart, various reconnect points) must NOT also clear the new
+    // flag — that would reintroduce the exact bug this fix exists for.
+    const resetSites = [...source.matchAll(/_s\.greetingComplete = false;/g)];
+    expect(resetSites.length).toBeGreaterThan(0);
+    for (const m of resetSites) {
+      const windowAround = source.slice(Math.max(0, m.index! - 50), m.index! + 200);
+      expect(windowAround).not.toMatch(/_audioEverHeardThisOpen = false/);
+    }
+  });
+
+  it('IS reset by _hide() — a real close ends the overlay session', () => {
+    const idx = source.indexOf('function _hide() {');
+    expect(idx).toBeGreaterThan(-1);
+    const openIdx = source.indexOf('{', idx);
+    let depth = 0, end = openIdx;
+    for (let i = openIdx; i < source.length; i++) {
+      if (source[i] === '{') depth++;
+      if (source[i] === '}') depth--;
+      if (depth === 0) { end = i; break; }
+    }
+    const hideBody = source.slice(openIdx, end);
+    expect(hideBody).toMatch(/_s\._audioEverHeardThisOpen = false;/);
   });
 });
