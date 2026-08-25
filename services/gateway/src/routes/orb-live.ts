@@ -9875,7 +9875,36 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                 .from('user_journey')
                 .update({ last_full_briefing_date: _sfDecision.effects.stampBriefingDate })
                 .eq('user_id', _uidSF)
-                .then(() => {}, () => {});
+                .select('user_id')
+                .then(
+                  ({ data, error }: any) => {
+                    if (error) {
+                      console.error('[orb-live] stampBriefingDate write failed (safe_fast)', {
+                        user_id: _uidSF,
+                        value: _sfDecision.effects.stampBriefingDate,
+                        error,
+                      });
+                    } else if (!data || data.length === 0) {
+                      // PostgREST reports 0-row-matched UPDATEs as a clean
+                      // success (no `error`) — this is the case the plain
+                      // .then(() => {}, () => {}) this replaced could never
+                      // have surfaced, and is a live suspect for why the
+                      // once-per-day guard keeps reading last_full_briefing_date
+                      // as null on repeat sessions.
+                      console.error('[orb-live] stampBriefingDate write matched 0 rows (safe_fast)', {
+                        user_id: _uidSF,
+                        value: _sfDecision.effects.stampBriefingDate,
+                      });
+                    }
+                  },
+                  (err: any) => {
+                    console.error('[orb-live] stampBriefingDate write threw (safe_fast)', {
+                      user_id: _uidSF,
+                      value: _sfDecision.effects.stampBriefingDate,
+                      err,
+                    });
+                  },
+                );
             }
             // VTID-03604: same pattern for the day-close stamp.
             if (_sfDecision.effects.stampDayCloseDate && _uidSF && _supaSF) {
@@ -9884,7 +9913,30 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                 .from('user_journey')
                 .update({ last_day_close_date: _sfDecision.effects.stampDayCloseDate })
                 .eq('user_id', _uidSF)
-                .then(() => {}, () => {});
+                .select('user_id')
+                .then(
+                  ({ data, error }: any) => {
+                    if (error) {
+                      console.error('[orb-live] stampDayCloseDate write failed (safe_fast)', {
+                        user_id: _uidSF,
+                        value: _sfDecision.effects.stampDayCloseDate,
+                        error,
+                      });
+                    } else if (!data || data.length === 0) {
+                      console.error('[orb-live] stampDayCloseDate write matched 0 rows (safe_fast)', {
+                        user_id: _uidSF,
+                        value: _sfDecision.effects.stampDayCloseDate,
+                      });
+                    }
+                  },
+                  (err: any) => {
+                    console.error('[orb-live] stampDayCloseDate write threw (safe_fast)', {
+                      user_id: _uidSF,
+                      value: _sfDecision.effects.stampDayCloseDate,
+                      err,
+                    });
+                  },
+                );
             }
             // Durable recent-NBA history (conv_resume) — keep the last 8.
             if (_sfDecision.effects.recordNbaKey && _uidSF && _supaSF) {
@@ -10339,7 +10391,30 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                 .from('user_journey')
                 .update({ last_full_briefing_date: _decisionNS.effects.stampBriefingDate })
                 .eq('user_id', _syncUid!)
-                .then(() => {}, () => {});
+                .select('user_id')
+                .then(
+                  ({ data, error }: any) => {
+                    if (error) {
+                      console.error('[orb-live] stampBriefingDate write failed (normal)', {
+                        user_id: _syncUid,
+                        value: _decisionNS.effects.stampBriefingDate,
+                        error,
+                      });
+                    } else if (!data || data.length === 0) {
+                      console.error('[orb-live] stampBriefingDate write matched 0 rows (normal)', {
+                        user_id: _syncUid,
+                        value: _decisionNS.effects.stampBriefingDate,
+                      });
+                    }
+                  },
+                  (err: any) => {
+                    console.error('[orb-live] stampBriefingDate write threw (normal)', {
+                      user_id: _syncUid,
+                      value: _decisionNS.effects.stampBriefingDate,
+                      err,
+                    });
+                  },
+                );
             }
             // VTID-03604
             if (_decisionNS.effects.stampDayCloseDate) {
@@ -10348,7 +10423,30 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                 .from('user_journey')
                 .update({ last_day_close_date: _decisionNS.effects.stampDayCloseDate })
                 .eq('user_id', _syncUid!)
-                .then(() => {}, () => {});
+                .select('user_id')
+                .then(
+                  ({ data, error }: any) => {
+                    if (error) {
+                      console.error('[orb-live] stampDayCloseDate write failed (normal)', {
+                        user_id: _syncUid,
+                        value: _decisionNS.effects.stampDayCloseDate,
+                        error,
+                      });
+                    } else if (!data || data.length === 0) {
+                      console.error('[orb-live] stampDayCloseDate write matched 0 rows (normal)', {
+                        user_id: _syncUid,
+                        value: _decisionNS.effects.stampDayCloseDate,
+                      });
+                    }
+                  },
+                  (err: any) => {
+                    console.error('[orb-live] stampDayCloseDate write threw (normal)', {
+                      user_id: _syncUid,
+                      value: _decisionNS.effects.stampDayCloseDate,
+                      err,
+                    });
+                  },
+                );
             }
             if (_decisionNS.wakeOpener === 'newday_overview' && _tenantNS) {
               const _spokenNS = extractSpokenFactsFromPayload(_overviewNS);
