@@ -30,6 +30,7 @@ import {
   type WakeTransport,
 } from './timeline-events';
 import { aggregateTimeline } from './aggregate-timeline';
+import * as repo from './wake-timeline-recorder-repository';
 
 // ---------------------------------------------------------------------------
 // In-memory state
@@ -193,20 +194,17 @@ export function createWakeTimelineRecorder(
       const sb = getDb();
       if (sb) {
         try {
-          await sb.from('orb_wake_timelines').upsert(
-            {
-              session_id: state.sessionId,
-              tenant_id: state.tenantId,
-              user_id: state.userId,
-              surface: state.surface,
-              events: state.events,
-              aggregates,
-              transport: state.transport,
-              started_at: state.startedAt,
-              ended_at: state.endedAt,
-            },
-            { onConflict: 'session_id' },
-          );
+          await repo.upsertWakeTimelineSession(sb, {
+            session_id: state.sessionId,
+            tenant_id: state.tenantId,
+            user_id: state.userId,
+            surface: state.surface,
+            events: state.events,
+            aggregates,
+            transport: state.transport,
+            started_at: state.startedAt,
+            ended_at: state.endedAt,
+          });
         } catch {
           // Swallow — debugging tool must not break the wake path.
         }
@@ -220,11 +218,7 @@ export function createWakeTimelineRecorder(
       }
       const sb = getDb();
       if (!sb) return null;
-      const { data, error } = await sb
-        .from('orb_wake_timelines')
-        .select('*')
-        .eq('session_id', sessionId)
-        .maybeSingle();
+      const { data, error } = await repo.fetchWakeTimelineBySessionId(sb, sessionId);
       if (error || !data) return null;
       return rowFromDb(data);
     },
@@ -243,14 +237,11 @@ export function createWakeTimelineRecorder(
       const fromDb: WakeTimelineRow[] = [];
       if (sb) {
         try {
-          let q = sb
-            .from('orb_wake_timelines')
-            .select('*')
-            .order('started_at', { ascending: false })
-            .limit(limit);
-          if (listOpts.userId) q = q.eq('user_id', listOpts.userId);
-          if (listOpts.tenantId) q = q.eq('tenant_id', listOpts.tenantId);
-          const { data } = await q;
+          const { data } = await repo.fetchRecentWakeTimelines(sb, {
+            limit,
+            userId: listOpts.userId,
+            tenantId: listOpts.tenantId,
+          });
           if (Array.isArray(data)) {
             for (const r of data) fromDb.push(rowFromDb(r));
           }
