@@ -3545,6 +3545,42 @@
       clearTimeout(_s.audioEndGraceTimer);
       _s.audioPlaying = false;
       _s.lastAudioEndTime = Date.now();
+      // VTID-03740: everything above this comment only ever cleared the
+      // INTERNAL audioPlaying flag — it never touched .vtorb-status or the
+      // orb glow. A session whose upstream stream dies mid-turn (delivers
+      // at least one audio chunk, then goes silent before turn_complete)
+      // never gets a server turn_complete, so _waitForAudioEnd() (the only
+      // other place that resets the visible state) never runs either.
+      // Reported live: the pre-login MAXINA Intro orb visibly "spoke"
+      // (caption "Vitana priča..." + amber glow) but stayed silent, stuck
+      // that way for the rest of the session. Restore the VISIBLE state to
+      // LISTENING here too, and re-arm the mic the same way the normal
+      // turn-complete path does on a session's first turn (mic capture is
+      // started exactly once, gated on !greetingComplete, then stays open
+      // for the rest of the session under full duplex) — so recovery is
+      // actually usable, not just cosmetic. Deliberately does NOT invoke
+      // the host's turn-completion callback: this turn never genuinely
+      // completed, and telling the host it did would reproduce the
+      // VTID-03685 bug where a guided-topic "completed" drawer appeared
+      // for a lesson that was never actually delivered.
+      if (_s.voiceState === 'SPEAKING' && _s.active && !_isClosingForNav() &&
+          !_s._userRequestedClose && _s.overlayVisible) {
+        _s.voiceState = 'LISTENING';
+        // VTID-03469: while audio is blocked the overlay shows the
+        // tap-to-hear prompt — don't overwrite it with "Listening...".
+        if (!_s._audioBlocked) {
+          _setOrbState('listening');
+          _setStatus(_caption('listening'));
+        }
+        if (!_s.greetingComplete) {
+          _s.greetingComplete = true;
+          _s._audioEverHeardThisOpen = true;
+          _startAudioCapture().catch(function (err) {
+            console.error('[VTOrb] Mic capture failed after stuck-speaking recovery:', err);
+            _announceDisconnect('mic');
+          });
+        }
+      }
       try { _updateUI(); } catch (e) { /* UI optional during teardown */ }
     }
   }

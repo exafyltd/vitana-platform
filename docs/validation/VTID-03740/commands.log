@@ -1,0 +1,87 @@
+# VTID-03740 — commands actually run.
+
+# --- Investigation --------------------------------------------------------
+# Reported live, with screenshot: tapping the ORB on the pre-login MAXINA
+# Intro screen shows the "speaking" caption ("Vitana priča...") and amber
+# glow, but no audio plays and the session stays stuck that way.
+#
+# Dispatched two research agents in sequence:
+# 1. Confirmed Serbian ('sr') ORB voice is already robustly, structurally
+#    forced onto Nova Sonic at multiple independent, test-pinned layers —
+#    Polly has no Serbian voice in any engine (POLLY_UNSUPPORTED_LANGS),
+#    the cascade rescue independently refuses 'sr' derived from the same
+#    live Polly table (not a duplicated list), and Nova's own voice table
+#    falls back to the documented 'tina' substitute. No code change needed
+#    there — separate from this bug.
+# 2. Investigated the silent-but-"speaking" symptom specifically:
+
+grep -n "case 'audio': case 'audio_out':" \
+  services/gateway/src/frontend/command-hub/orb-widget.js
+#   -> confirms _setStatus(_caption('speaking')) fires on the FIRST audio
+#      chunk received, before playback or turn completion
+
+grep -n "_waitForAudioEnd" services/gateway/src/frontend/command-hub/orb-widget.js
+#   -> confirms this is the ONLY place that resets voiceState/caption/orb
+#      back to listening, and it only runs inside case 'turn_complete' —
+#      i.e. only if the SERVER sends turn_complete
+
+grep -n "function _speakingStateWatchdog" -A 20 \
+  services/gateway/src/frontend/command-hub/orb-widget.js
+#   -> confirms the pre-existing DEV-COMHU-0501 watchdog already correctly
+#      DETECTS the stall (quiet >=2s, nothing scheduled, empty queue) but
+#      only ever cleared the internal audioPlaying flag + refreshed the mic
+#      button — never touched .vtorb-status, the orb glow, voiceState, or
+#      the mic. Detecting the stall didn't fix anything visible.
+
+grep -n "function _updateUI" -A 25 \
+  services/gateway/src/frontend/command-hub/orb-widget.js
+#   -> confirms _updateUI() (called by the watchdog) only handles the mic
+#      button and FAB visibility — never the caption or orb glow.
+
+# Root cause: the watchdog already correctly detects a Nova stream that
+# delivered SOME audio then died before turn_complete, but its recovery
+# action was incomplete — internal-only, not visible/functional.
+
+# --- Fix --------------------------------------------------------------------
+# Extended _speakingStateWatchdog(): when it fires while voiceState is
+# still 'SPEAKING' (the exact stuck-caption case) and the session is
+# genuinely still active (not closing for nav, not user-closed, overlay
+# visible), it now also resets voiceState/orb-glow/caption to LISTENING
+# (skipped only when the VTID-03469 audio-blocked tap-to-hear prompt is
+# showing) and re-arms the mic exactly once, gated on !greetingComplete —
+# mirroring the existing single-start invariant for _startAudioCapture().
+# Deliberately does NOT invoke the host's turn-completion callback, since
+# this turn never genuinely completed (would reproduce the VTID-03685
+# "completed drawer for undelivered content" bug).
+
+node -c services/gateway/src/frontend/command-hub/orb-widget.js
+#   -> exit 0, syntax valid
+
+# --- Cache-bust bump (CLAUDE.md IF-THEN rule 25) -----------------------------
+
+grep -rn "orb-widget.js?v=" services/gateway/src/frontend/command-hub/index.html \
+  ../../vitana-v1/index.html 2>/dev/null
+# Both bumped from ?v=20260825-tr-captions to ?v=20260825-stuck-speaking-watchdog
+
+# --- Test ---------------------------------------------------------------------
+# New test file, following the existing orb-widget-speaking-watchdog.test.ts
+# static-source-check pattern (the widget is a plain browser IIFE with no
+# export surface):
+#   services/gateway/test/frontend/orb-widget-stuck-speaking-recovery.test.ts
+
+cd services/gateway
+npx jest --testPathPattern="orb-widget-stuck-speaking-recovery|orb-widget-speaking-watchdog"
+#   -> Test Suites: 2 passed, 2 total / Tests: 11 passed, 11 total
+#   Output: outputs/targeted-tests.txt
+
+npx tsc --noEmit
+#   -> exit 0, empty output
+#   Output: outputs/tsc.txt
+
+npx jest
+#   -> full gateway suite: 703/704 suites (1 pre-existing skip),
+#      13345/13380 tests passing, 0 failures
+#   Output: outputs/full-suite.txt
+
+# vitana-v1: only index.html's cache-bust string changed (static value,
+# no logic) — same pattern as VTID-03733's companion PR, no test needed.
