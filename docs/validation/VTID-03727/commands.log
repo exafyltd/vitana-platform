@@ -1,0 +1,165 @@
+# VTID-03727 — commands actually run.
+
+# Live report (staging, right after VTID-03724/PR #3181 shipped):
+# 1. Mic button frozen, X close button unresponsive.
+# 2. A "reconnecting" screen shown BEFORE any audio ever plays.
+# 3. Mid-session dictation interrupted by a new-day greeting.
+# Explicit instruction: root-cause both, verify visually/interactively/
+# acoustically before reporting anything back.
+
+# Self-allocated the VTID via direct Supabase RPC (gateway not reachable
+# from this session), per CLAUDE.md §4.1 procedure 2.
+supabase execute_sql --project inmkhvwdcuyhnxkgfvsb \
+  "SELECT allocate_global_vtid('claude-code', 'gateway', 'orb-widget-mic-close-button-and-reconnect-cue-regression');"
+#   -> (VTID-03727, 3727, a186abc4-6345-4052-b97d-32a398305f72)
+supabase execute_sql --project inmkhvwdcuyhnxkgfvsb \
+  "UPDATE vtid_ledger SET title=..., summary=..., status='in_progress', spec_status='approved' WHERE vtid='VTID-03727';"
+
+# --- Attempted live Playwright verification against staging (read-only:
+# sign-in via the documented test-user token, no session/session-state
+# writes attempted) — could not complete. Extensive diagnosis, not a
+# shortcut:
+#   - headless Chromium (pinned build at /opt/pw-browsers/chromium-1194)
+#     cannot complete a TLS handshake through this session's egress proxy
+#     AT ALL, even to https://example.com. net::ERR_CONNECTION_RESET,
+#     SSL error code 1 (net/socket/socket_bio_adapter.cc), 100% reproducible.
+#   - Ruled out via --log-net-log + --enable-logging=stderr and targeted
+#     flag combinations: --ignore-certificate-errors, --disable-http2,
+#     --disable-quic, --no-sandbox, --disable-features=EncryptedClientHello,
+#     PostQuantumKyber, PermuteTLSExtensions, UseDnsHttpsSvcbAlpn (singly
+#     and combined) -- none change the outcome.
+#   - curl, openssl s_client (TLS1.2 and TLS1.3), and Node's `ws` package
+#     with an explicit https-proxy-agent ALL succeed through the IDENTICAL
+#     proxy against the IDENTICAL hosts (example.com, preview-aws.
+#     vitanaland.com, preview-aws-gateway.vitanaland.com) -- isolating the
+#     failure to Chromium's own TLS stack specifically, not the proxy, not
+#     network reachability, not the destination hosts.
+#   -> Conclusion: full live-browser visual/interaction verification
+#      (screenshot the mic/close buttons, click them, observe the DOM) is
+#      NOT achievable from this sandboxed session. This is an environment
+#      limitation, disclosed explicitly rather than worked around or
+#      silently skipped.
+
+# --- Live ORB voice session verification (acoustic) -- deliberately NOT
+# attempted, on governance grounds discovered while writing this VTID:
+# this session's OWN prior work (VTID-03716, scripts/tts/
+# verify-cascade-audio-timing.ts header comment) already establishes that
+# opening a live ORB voice session "creates session state and can trigger
+# memory extraction, which is exactly the write CLAUDE.md's absolute
+# test-account rule forbids regardless of who/what opens it." That
+# precedent applies here without exception -- I do not open a live ORB
+# session (guided-topic tap or otherwise) as the test account, via
+# Playwright OR a raw WebSocket client, to manufacture verification
+# evidence. Read-only queries against oasis_events (the USER's own
+# already-reported live sessions) remain the sole live-evidence source.
+
+# Forensic evidence gathering -- read-only queries against oasis_events for
+# the exact live staging window the user reported (08:05-08:09 UTC,
+# 2026-08-25), correlated with source reading:
+supabase execute_sql --project inmkhvwdcuyhnxkgfvsb \
+  "SELECT created_at, topic, metadata->>'session_id', metadata->>'stage', ...
+   FROM oasis_events WHERE created_at BETWEEN '2026-08-25 08:05:00+00' AND '2026-08-25 08:09:00+00' ...
+   ORDER BY created_at ASC;"
+#   -> Found: guided-topic session 912f74a8 won the wake-brief ranker
+#      correctly (guided_topic_audio_bridge_sent fired), then hit
+#      nova_validation TWICE at turn_count=0 (no audio ever played), was
+#      superseded by a BRAND NEW session 06fb8ada (client-side
+#      _attemptReconnect giving up and calling _sessionStart fresh, not a
+#      same-session server retry). Session 06fb8ada never emitted
+#      guided_topic_audio_bridge_sent at all and instead delivered
+#      wake_opener=newday_overview -- the VTID-03724 symptom, reproduced
+#      via a DIFFERENT mechanism than the one VTID-03724 fixed.
+
+# Read orb-widget.js's _attemptReconnect() (line ~4063) -- confirmed it
+# unconditionally calls _setStatus(_caption('reconnecting')) before every
+# retry, regardless of _s.greetingComplete, unlike _announceDisconnect()
+# (per-reason labels) and the already-fixed VTID-03685 WS-error-frame
+# suppression ("hasHeardNothingYet" pattern). This call site was never
+# covered by that fix.
+
+# Read orb-live.ts's sendGreetingPromptToLiveAPI() _openDecision build
+# (line ~10031 pre-fix) and opening-contract.ts's decideOpening() --
+# confirmed decideOpening() returns mode:'silent' whenever isReconnect is
+# true (regardless of wakeSelectedLine) OR whenever wakeCadenceSkip is true
+# (<~120s since session.lastSessionInfo, BOOTSTRAP-NOVA-GREETING-CADENCE).
+# tryGuidedTopicRung (compute-greeting-decision.ts) composes its ENTIRE
+# spoken line from ctx.openDecision.line and only fires when
+# ctx.openDecision.mode==='speak' -- so it can be silenced by a completely
+# unrelated cadence heuristic even while ctx.guidedTopicNarrationContent is
+# present. session 06fb8ada is a BRAND NEW session object (own
+# _reconnectCount starts at 0, so isReconnect itself reads false there
+# regardless of the existing _freshOpenAfterZeroTurnRecovery flag, which is
+# scoped to SAME-session server-internal retries only) -- but
+# wakeCadenceSkip still fires, because the failed prior session (912f74a8)
+# ended only ~1-3s earlier.
+
+# Implementation:
+#  1. orb-widget.js: _attemptReconnect()'s status caption gated on
+#     _s.greetingComplete ('connecting' when nothing heard yet,
+#     'reconnecting' once real audio has played).
+#  2. orb-live.ts: new _hasPendingGuidedTopicAtOpen
+#     (!!session.guidedTopicNarrationContent && session.turn_count===0)
+#     suppresses BOTH isReconnect and wakeCadenceSkip in the
+#     sendGreetingPromptToLiveAPI() _openDecision build. Gated on THIS
+#     session's own turn_count (not the prior session's) so a genuine
+#     mid-lesson reconnect (turn_count>0) is completely unaffected --
+#     silent_reconnect (compute-greeting-decision.ts rung 7, which reads
+#     openDecision.source) still wins, per VTID-03724's AC-5.
+
+cd services/gateway
+npx tsc --noEmit
+#   -> clean, exit 0 (outputs/tsc.txt)
+
+# Updated 2 existing tests whose exact-match regexes broke against the new
+# (correct, wider) conditions -- both mechanically widened to match the
+# NEW conjunction while still asserting the pre-existing invariant:
+#  - zero-turn-greeting-recovery-not-silenced.characterization.test.ts
+#  - vertex-autogreet-on-connect.characterization.test.ts
+
+# New characterization tests (static source-check pattern, matching this
+# codebase's established approach for orb-live.ts / orb-widget.js -- both
+# too large/stateful to unit-test the WebSocket harness directly):
+#  - guided-topic-cadence-skip-not-silenced.characterization.test.ts (5 tests)
+#  - orb-widget-reconnect-cue-not-premature.test.ts (4 tests)
+
+npx jest test/orb test/frontend --silent
+#   -> Test Suites: 199 passed, 199 total
+#   -> Tests: 6 todo, 3477 passed, 3483 total
+#   -> outputs/full-regression.txt
+
+# Mutation verification -- proved the new tests actually catch the
+# regressions, not vacuous. For EACH fix: reverted the fix via a scripted
+# text replacement (source unchanged otherwise), re-ran exactly the new
+# tests for that fix, confirmed the expected subset fails, restored the
+# fix, re-confirmed green.
+#
+# orb-live.ts fix: reverted _hasPendingGuidedTopicAtOpen entirely (back to
+# the exact VTID-03724-era decideOpening() call) ->
+#   4 of 5 new tests failed (the 5th, asserting silenceOnSkipEnabled is
+#   UNTOUCHED by this fix, correctly still passed -- it tests a mechanism
+#   this fix deliberately does not touch).
+#   Restored -> 10/10 (both characterization files) passing again.
+#
+# orb-widget.js fix: reverted the ternary back to the bare
+#   _setStatus(_caption('reconnecting')); ->
+#   2 of 4 new tests failed (the "still shows a caption every time" and
+#   "reconnect loop otherwise unchanged" tests correctly still passed --
+#   they test invariants this fix does not touch).
+#   Restored -> 4/4 passing again.
+
+npx tsc --noEmit
+#   -> clean
+
+npx jest test/orb test/frontend --silent
+#   -> 199/199 suites, 3477/3483 tests passing (6 pre-existing todo)
+#   -> outputs/full-regression.txt (regenerated, post-fix)
+
+# --- NOT done from this session yet ---
+# Commit, push, open the PR, drive CI green, merge, confirm staging deploy
+# via build-info commit-hash match (the one form of live verification this
+# session CAN perform without opening a live ORB session or requiring a
+# working Chromium/proxy path), then report back to the platform owner
+# with the confirmed root causes, the fixes, and an explicit, honest
+# statement of what could and could not be verified from this session --
+# per the platform owner's own directive not to "confirm hallucinated
+# results instead of testing it visually and acoustically."

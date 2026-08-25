@@ -4086,7 +4086,18 @@
     _s._reconnectCount++;
     _s._isReconnecting = true;
     console.log('[VTOrb] _attemptReconnect: scheduled in ' + delay + 'ms (attempt ' + _s._reconnectCount + '/' + MAX_WIDGET_RECONNECTS + ')');
-    _setStatus(_caption('reconnecting'));
+    // VTID-03727: before anything has been heard (e.g. a guided-topic tap that
+    // died to nova_validation before turn 1 ever played), "reconnecting" reads
+    // as "already broken" rather than "hold on" — the exact defect VTID-03685
+    // already fixed for the WS error-frame handler and the server-side
+    // resendGreetingIfStuckAtZeroTurns retry cue (both gate on "has anything
+    // actually played yet"). This call site was never covered by that fix: it
+    // fires on every WS/SSE close this widget handles (nova_validation-driven
+    // closes included), and used to show the reconnecting caption unconditionally.
+    // Live-reported: "before it starts talking, the orb screen shows... 'One
+    // moment, I will reconnect'". Once real audio has played, a genuine
+    // reconnect cue is still correct and still shown.
+    _setStatus(_caption(_s.greetingComplete ? 'reconnecting' : 'connecting'));
     _setOrbState('connecting');
 
     setTimeout(function () {
