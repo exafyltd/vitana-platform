@@ -17,6 +17,7 @@ import {
   getViewerRelationship,
   type FieldVisibility,
 } from '../lib/account-visibility';
+import * as repo from './profile-prefs-repository';
 
 const router = Router();
 
@@ -107,12 +108,7 @@ async function patchProfileColumn(
   const supabase = getSupabase();
   if (!supabase) return res.status(500).json({ ok: false, error: 'supabase_unavailable' });
 
-  const { data, error } = await supabase
-    .from('profiles')
-    .update({ [column]: payload })
-    .eq('user_id', identity.user_id)
-    .select(column)
-    .single();
+  const { data, error } = await repo.updateProfileColumn(supabase, column, payload, identity.user_id);
 
   if (error) {
     console.error('[E2] profile-prefs update failed', error);
@@ -155,11 +151,7 @@ router.get('/profiles/me/prefs', requireAuth, requireTenant, async (req: Request
   const supabase = getSupabase();
   if (!supabase) return res.status(500).json({ ok: false, error: 'supabase_unavailable' });
 
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('partner_preferences, service_offerings, account_visibility')
-    .eq('user_id', identity.user_id)
-    .single();
+  const { data, error } = await repo.fetchOwnProfilePrefs(supabase, identity.user_id);
 
   if (error) return res.status(500).json({ ok: false, error: error.message });
 
@@ -186,11 +178,7 @@ router.get('/profiles/:vitana_id/prefs', requireAuth, requireTenant, async (req:
   const supabase = getSupabase();
   if (!supabase) return res.status(500).json({ ok: false, error: 'supabase_unavailable' });
 
-  const { data: subject, error } = await supabase
-    .from('profiles')
-    .select('user_id, partner_preferences, service_offerings, account_visibility')
-    .eq('vitana_id', rawVid)
-    .maybeSingle();
+  const { data: subject, error } = await repo.fetchProfilePrefsByVitanaId(supabase, rawVid);
 
   if (error) return res.status(500).json({ ok: false, error: error.message });
   if (!subject) return res.status(404).json({ ok: false, error: 'profile_not_found' });
