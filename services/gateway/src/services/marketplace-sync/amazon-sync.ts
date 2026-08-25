@@ -36,6 +36,7 @@ import {
   type ProductUpsert,
 } from './shared';
 import { inferSupplementAttributes } from './supplement-inference';
+import * as repo from './amazon-sync-repository';
 
 // ==================== Config ====================
 
@@ -82,11 +83,7 @@ const MARKETPLACE_MAP: Record<string, { host: string; region: string; country: s
 async function loadSourceConfigs(): Promise<AmazonSourceConfig[]> {
   const supabase = getSupabase();
   if (!supabase) return [];
-  const { data } = await supabase
-    .from('marketplace_sources_config')
-    .select('config')
-    .eq('source_network', 'amazon')
-    .eq('is_active', true);
+  const { data } = await repo.fetchActiveMarketplaceSourceConfigs(supabase, 'amazon');
   if (!data?.length) return [];
   return data
     .map((r) => r.config as AmazonSourceConfig)
@@ -358,11 +355,7 @@ async function refreshCuratedAsins(
   const supabase = getSupabase();
   if (!supabase) return { refreshed: 0, errors: 1, error_sample: [{ op: 'getitems', error: 'supabase unavailable' }] };
 
-  const { data, error } = await supabase
-    .from('products')
-    .select('id, affiliate_url')
-    .eq('source_network', 'amazon')
-    .like('source_product_id', 'amazonae-%');
+  const { data, error } = await repo.fetchCuratedAmazonAeProducts(supabase);
   if (error) return { refreshed: 0, errors: 1, error_sample: [{ op: 'getitems', error: error.message }] };
 
   // Map real ASIN → curated product id
@@ -409,10 +402,7 @@ async function refreshCuratedAsins(
       const images = primaryImages(item);
       if (images.length === 0) continue;
       // Update ONLY images — preserve curated title, EUR price, and rating.
-      const { error: upErr } = await supabase
-        .from('products')
-        .update({ images, updated_at: new Date().toISOString() })
-        .eq('id', pid);
+      const { error: upErr } = await repo.updateProductImages(supabase, pid, images, new Date().toISOString());
       if (upErr) { errors++; errorSample.push({ op: 'getitems.update', asin: item.ASIN, error: upErr.message }); }
       else refreshed++;
     }

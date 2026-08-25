@@ -30,6 +30,7 @@ import {
 } from './shared';
 import { inferSupplementAttributes } from './supplement-inference';
 import { getSupabase } from '../../lib/supabase';
+import * as repo from './rakuten-sync-repository';
 
 interface RakutenSourceConfig {
   bearer_token: string;
@@ -42,11 +43,7 @@ interface RakutenSourceConfig {
 async function loadSourceConfigs(): Promise<RakutenSourceConfig[]> {
   const supabase = getSupabase();
   if (!supabase) return [];
-  const { data } = await supabase
-    .from('marketplace_sources_config')
-    .select('config')
-    .eq('source_network', 'rakuten')
-    .eq('is_active', true);
+  const { data } = await repo.fetchActiveMarketplaceSourceConfigs(supabase, 'rakuten');
   if (!data?.length) return [];
   return data.map((r) => r.config as RakutenSourceConfig).filter((c) => c && c.bearer_token);
 }
