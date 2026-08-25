@@ -18,6 +18,7 @@ import {
 import { createClient } from '@supabase/supabase-js';
 import { tt, type GatewayI18nKey } from '../i18n/catalog';
 import { getUserLocale } from '../i18n/server-locale';
+import * as repo from './user-category-preferences-repository';
 
 const router = Router();
 
@@ -37,13 +38,7 @@ router.get('/', requireAuth, requireTenant, async (req: Request, res: Response) 
   const supabase = getSupabase();
 
   // Fetch all active categories (global + tenant-specific)
-  const { data: categories, error: catError } = await supabase
-    .from('notification_categories')
-    .select('id, type, slug, display_name, description, icon, sort_order, default_enabled')
-    .eq('is_active', true)
-    .or(`tenant_id.eq.${identity.tenant_id},tenant_id.is.null`)
-    .order('type')
-    .order('sort_order', { ascending: true });
+  const { data: categories, error: catError } = await repo.fetchActiveNotificationCategories(supabase, identity.tenant_id);
 
   if (catError) {
     console.error('[USER-CAT-PREFS] GET / categories error:', catError.message);
@@ -51,11 +46,11 @@ router.get('/', requireAuth, requireTenant, async (req: Request, res: Response) 
   }
 
   // Fetch user's existing preferences
-  const { data: userPrefs, error: prefError } = await supabase
-    .from('user_category_preferences')
-    .select('category_id, enabled')
-    .eq('user_id', identity.user_id)
-    .eq('tenant_id', identity.tenant_id);
+  const { data: userPrefs, error: prefError } = await repo.fetchUserCategoryPreferences(
+    supabase,
+    identity.user_id,
+    identity.tenant_id,
+  );
 
   if (prefError) {
     console.error('[USER-CAT-PREFS] GET / preferences error:', prefError.message);
@@ -121,32 +116,20 @@ router.put('/:categoryId', requireAuth, requireTenant, async (req: Request, res:
   const categoryId = req.params.categoryId;
 
   // Verify the category exists and is active
-  const { data: category, error: catError } = await supabase
-    .from('notification_categories')
-    .select('id')
-    .eq('id', categoryId)
-    .eq('is_active', true)
-    .single();
+  const { data: category, error: catError } = await repo.fetchActiveNotificationCategoryById(supabase, categoryId);
 
   if (catError || !category) {
     return res.status(404).json({ ok: false, error: 'CATEGORY_NOT_FOUND' });
   }
 
   // Upsert the user's preference
-  const { data, error } = await supabase
-    .from('user_category_preferences')
-    .upsert(
-      {
-        user_id: identity.user_id,
-        tenant_id: identity.tenant_id,
-        category_id: categoryId,
-        enabled,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'user_id,category_id' }
-    )
-    .select()
-    .single();
+  const { data, error } = await repo.upsertUserCategoryPreference(supabase, {
+    user_id: identity.user_id,
+    tenant_id: identity.tenant_id,
+    category_id: categoryId,
+    enabled,
+    updated_at: new Date().toISOString(),
+  });
 
   if (error) {
     console.error('[USER-CAT-PREFS] PUT /:categoryId error:', error.message);
