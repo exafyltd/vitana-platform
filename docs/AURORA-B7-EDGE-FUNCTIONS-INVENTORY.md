@@ -85,15 +85,37 @@ code, not an active bug. **CLAUDE.md's changelog entry for this is stale**
 `generate-event-image`, `generate-proactive-greeting`,
 `social-media-import`, `transcribe-audio`) are genuinely reachable, and
 this pass did not check whether they are currently succeeding or silently
-failing/falling back.** Given GCP billing was disabled 2026-08-16
-(VTID-03599/VTID-03649) per this repo's own documented history, and given
-the gateway's own §2b history shows a Google-dependent code path can fail
-**silently** for months before anyone notices (268 unnoticed
+failing/falling back** — no Supabase edge-function secrets access from
+this session, and making live billed API calls to find out was
+deliberately not attempted without explicit authorization.
+
+**Read further, these 7 split into two materially different risk tiers —
+worth not conflating:**
+
+- **6 read `GOOGLE_GEMINI_API_KEY`** (`ai-chat`, `extract-diary-insights`,
+  `generate-enhanced-recommendations`, `generate-proactive-greeting`,
+  `social-media-import`, and `transcribe-audio` partially) — the Gemini
+  **Developer API** (`generativelanguage.googleapis.com`), billed against a
+  standalone AI Studio API key. This is a **different billing mechanism**
+  than the GCP-project/Cloud-Run billing this repo's CLAUDE.md documents as
+  disabled for `lovable-vitana-vers1` — whether this specific key still has
+  credit/is still active is genuinely unverified, not assumed broken.
+- **1 (`generate-event-image`) calls Vertex AI's Imagen model directly**
+  (`https://{region}-aiplatform.googleapis.com/.../imagen-3.0-fast-
+  generate-001:predict`) using `GOOGLE_CLOUD_PROJECT_ID` +
+  `GOOGLE_CLOUD_SERVICE_ACCOUNT_JSON` — this **is** GCP-project/IAM-billed
+  infrastructure, the same mechanism the disabled-billing project used. If
+  its configured project is `lovable-vitana-vers1`, this call has very
+  likely been failing since 2026-08-16 — **this is the one to check first**,
+  and checking it only needs reading (not calling) the function's
+  configured `GOOGLE_CLOUD_PROJECT_ID`, which this session could not reach.
+
+Given the gateway's own §2b history shows a Google-dependent code path can
+fail **silently** for months before anyone notices (268 unnoticed
 Anthropic-credit-balance→Gemini fallbacks over 14 days was the exact
-precedent that produced the "never silent Google fallback" rule in the
-first place) — **this is the single highest-priority follow-up this pass
-surfaced.** Not fixed or further diagnosed here; flagged for immediate
-attention given the severity/precedent match.
+precedent that produced the "never silent Google fallback" rule) —
+`generate-event-image` in particular is the single highest-priority
+follow-up this pass surfaced. Not fixed or further diagnosed here.
 
 ## Not done in this pass
 
