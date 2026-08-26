@@ -9765,6 +9765,13 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
               lastFullBriefingDate: (session as any).lastFullBriefingDate ?? null,
               // VTID-03604
               lastDayCloseDate: (session as any).lastDayCloseDate ?? null,
+              // BOOTSTRAP-ORB-DAY-CLOSE: short opener is the permanent default
+              // (not merely a Nova-validation-block retry fallback) — the full
+              // buildDayCloseBlock's quoted-dialogue exemplars are the same
+              // shape that has repeatedly tripped Nova's content filter
+              // elsewhere in this codebase (nova-instruction-sanitizer.ts,
+              // the old guidedTeachTrigger wrapper fixed under VTID-03674).
+              dayCloseReduced: true,
               userId: _uidSF,
               todayTz: _todaySF,
               localHour: localHourInTimezone(_nowSF, _tzSF),
@@ -10043,11 +10050,13 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   // `_reconnectCount` itself (still used for MAX_RECONNECTS and elsewhere).
   const _freshOpenAfterZeroTurnRecovery = (session as any)._freshOpenAfterZeroTurnRecovery === true;
   (session as any)._freshOpenAfterZeroTurnRecovery = false;
-  // VTID-03646 follow-up — one-shot, consumed the same way as the flag
-  // above: read once for THIS rebuild, then cleared so a later, unrelated
-  // resend on the same session (a fresh day_close next night, say) does not
-  // inherit a stale "reduced" instruction from a close that already recovered.
-  const _dayCloseReduced = (session as any)._dayCloseReducedRetry === true;
+  // VTID-03646 follow-up — `_dayCloseReducedRetry` used to switch a resend to
+  // the reduced day-close opener after a Nova-validation block on the full
+  // block. BOOTSTRAP-ORB-DAY-CLOSE made the reduced opener the permanent
+  // default (`dayCloseReduced: true` on `_baseCtxSync` below), so this flag
+  // no longer changes which builder is used — still cleared here so it
+  // doesn't leak a stale value into `shouldRetryDayCloseReduced`'s
+  // `alreadyReducedThisClose` check on a later, unrelated close.
   (session as any)._dayCloseReducedRetry = false;
   // VTID-03727 — `_freshOpenAfterZeroTurnRecovery` only covers a SAME-session
   // Nova-level retry (resendGreetingIfStuckAtZeroTurns). It does nothing when
@@ -10130,7 +10139,12 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
       menuPhrases: pickShortGapGreetings(lang, 6),
       openDecision: { mode: _openDecision.mode, source: _openDecision.source, line: _openDecision.line },
       guidedTopicNarrationContent: (session as any).guidedTopicNarrationContent ?? null,
-      dayCloseReduced: _dayCloseReduced,
+      // BOOTSTRAP-ORB-DAY-CLOSE: short opener (buildDayCloseOpenerLine) is now
+      // the permanent default, not merely a Nova-validation-block retry
+      // fallback. `_dayCloseReducedRetry` (cleared above) still exists to
+      // avoid leaking stale state into `shouldRetryDayCloseReduced`, but no
+      // longer changes which builder this context resolves to.
+      dayCloseReduced: true,
       wakeBriefDecisionId: (_wb as any)?.decisionId ?? null,
       // VTID-03635 — rung 9 (silenced_on_cadence) is a SECOND, independent
       // silencing mechanism, fed by `voiceWakeBriefReason` (the wake-brief
