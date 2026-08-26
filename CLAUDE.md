@@ -375,15 +375,25 @@ await page.reload();
     `AWS-PROD-DEPLOY-GATEWAY.yml`'s default `promote-staging` mode, or
     `AWS-PROD-DEPLOY-FRONTEND.yml`/`DEPLOY.yml`'s `commit_sha` falling back to
     `github.sha`), all of which ship the ref/staging build **as a whole**,
-    not just this session's diff. **IF** this session's own commit cannot be
-    cleanly isolated from other changes already ahead of it on `main`/staging
-    (e.g. `rebuild-main` builds from source at whatever `main` HEAD is, not a
-    pinned diff) → **THEN STOP and tell the user** what else would ship
-    alongside their change, rather than treating "the deploy tool defaults to
-    `main`" as if it were authorization to ship everything on it. This does
-    not apply to a PUBLISH-button promotion — that action's entire, documented
-    purpose is promoting the full current staging build, and needs no
-    additional scoping.
+    not just this session's diff. **Pinning a commit is necessary but not
+    sufficient on its own:** every one of these deploy paths checks out (or,
+    for `promote-staging`, ships an image built from) the FULL repository
+    snapshot AT that commit, never a diff — so a pinned commit still carries
+    every commit that is already an ANCESTOR of it, including anything merged
+    to `main`/staging before this session's own work that this conversation
+    never reviewed or approved. Before dispatching, diff the pinned commit
+    against the revision **currently live in production** (its
+    `/api/v1/admin/build-info` reports the deployed commit — §15) and confirm
+    every commit in that range is either this session's own or something the
+    user has separately approved. **IF** that range contains changes this
+    session didn't produce and the user hasn't approved, and they can't be
+    excluded (no deploy path here ships a pinned diff, only a full snapshot)
+    → **THEN STOP and tell the user** exactly what else would ship alongside
+    their change, rather than treating "the commit is pinned" or "the deploy
+    tool defaults to `main`" as authorization to ship everything up to that
+    point. This does not apply to a PUBLISH-button promotion — that action's
+    entire, documented purpose is promoting the full current staging build,
+    and needs no additional scoping.
 
 ### Memory
 
@@ -1669,10 +1679,19 @@ any other work that happens to have landed on `main` or staging ahead of
 this session's commit, whether or not the user in this conversation ever
 saw or approved it. That is exactly what PUBLISH is *for* (a deliberate,
 human-operated promotion of the entire tested staging build) and exactly
-what an in-session approval is not. If this session's commit can't be
-cleanly isolated from other changes already ahead of it, stop and tell the
-user what else would ship alongside theirs rather than shipping it
-silently.
+what an in-session approval is not.
+
+**Pinning `--ref`/`expected_commit` is necessary, not sufficient.** The
+workflow checks out (or, for `promote-staging`, ships an image built from)
+the full repository snapshot AT that commit, not a diff — so a pinned
+commit still includes every ANCESTOR commit, including anything merged to
+`main`/staging before this session's own work that nobody in this
+conversation reviewed. Diff the pinned commit against what
+`/api/v1/admin/build-info` reports as currently live in production (§15)
+and confirm every commit in that range is this session's own or separately
+approved. If it isn't, and it can't be excluded — no path here ships a
+pinned diff, only a full snapshot — stop and tell the user what else would
+ship alongside theirs rather than shipping it silently.
 
 ### CSS/JS Cache-Busting
 
