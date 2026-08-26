@@ -8229,6 +8229,16 @@ async function connectToLiveAPI(
               } as any).catch(() => { /* best-effort */ });
               void rotateNovaStream?.('idle_deadline_failsafe');
             },
+            // VTID-03764 — diagnostic only. Bisects the multi-second gap
+            // between greeting_sent and audio_out_first_chunk observed on
+            // context-upgrade reconnects: does Nova stay silent for seconds,
+            // or does it respond quickly with something that isn't audio yet?
+            onFirstRawChunk: ({ byteLength }) => {
+              session.establishLatency?.mark('nova_first_raw_chunk', { byte_length: byteLength });
+            },
+            onFirstNormalizedEvent: ({ kind }) => {
+              session.establishLatency?.mark('nova_first_normalized_event', { kind });
+            },
           },
         });
 

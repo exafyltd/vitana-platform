@@ -1,0 +1,47 @@
+# VTID-03764 — commands run this session
+
+## Root-cause investigation (before this diagnostic instrumentation)
+
+Real Playwright measurements against https://preview-aws-gateway.vitanaland.com
+(staging, commit 65772496 = VTID-03741 merged), authenticated as the
+documented test user a27552a3-0257-4305-8ed0-351a80fd3701, using the real
+orb-widget.js VitanaOrb.toggle() path (same code a FAB tap runs). 20 real
+sessions total across two batches (rapid-fire, then 90s-spaced to rule out
+self-induced contention). Cross-referenced against real
+oasis_events.voice.latency.measured rows (Supabase project
+inmkhvwdcuyhnxkgfvsb) for exact server-side phase timing.
+
+Findings, in order ruled out:
+1. Hypothesis "rapid back-to-back testing causes throttling" — DISPROVEN.
+   Spaced-out sessions (90s apart) show the identical bimodal pattern.
+2. Hypothesis "large context (27502 chars) makes Nova slower" — DISPROVEN
+   as a full explanation. Both context_chars=0 and context_chars=27500+
+   groups show the same huge variance (2-13s) independently.
+3. Hypothesis "Nova connection error triggers a slow retry" — DISPROVEN.
+   Zero nova/premature-close/reconnect-failure oasis_events exist for any
+   of the 20 sessions. The "reconnect:true" mark inside voice.latency.measured
+   is a DELIBERATE code-driven context-upgrade reconnect (empty-context
+   fast connect, then reconnect once real context resolves ~150-350ms
+   later), not a failure path.
+4. Remaining, unexplained: a ~5s gap between greeting_sent (on the
+   upgraded, real-context connection) and audio_out_first_chunk, with zero
+   instrumentation inside it. This VTID adds that instrumentation.
+
+## Code changes verification
+
+$ cd services/gateway && npx tsc --noEmit -p .
+  -> clean, exit 0 (both before and after rebasing onto latest origin/main)
+
+$ npx jest test/orb/live/upstream/nova-sonic-live-client.test.ts
+  -> 28/28 passing (2 new tests for the diagnostic hooks)
+
+$ npx jest   # full gateway suite
+  -> see outputs/full-suite.txt
+
+## Branch note
+
+Same shape as VTID-03741: the designated branch's remote ref gets deleted
+by this repo's auto-delete-on-merge after each PR merges. Restarted
+claude/orb-interruption-voice-comms-x3wh7s from origin/main
+(git checkout -B ... origin/main) and reapplied this VTID's diagnostic
+changes via git stash before each push.

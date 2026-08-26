@@ -202,6 +202,26 @@ export interface NovaSonicLiveClientDeps {
   onIdleDeadlineApproaching?: (info: { msSinceLastInput: number }) => void;
   /** Audio queue high-water mark override. */
   audioHighWaterMark?: number;
+  /**
+   * VTID-03764 — diagnostic only, never on the send path. Fired ONCE per
+   * connection on the first raw eventstream chunk received from Bedrock
+   * (regardless of what it decodes to). Exists to bisect the multi-second
+   * click-to-first-audio gap observed on context-upgrade reconnects: does
+   * Nova stay silent for seconds after setup, or does it respond quickly
+   * with something that isn't audio yet (a text/tool event) while OUR OWN
+   * code is what's slow to turn that into audio the client hears? Never
+   * throws — a diagnostic callback must not risk destabilizing the stream.
+   */
+  onFirstRawChunk?: (info: { atMs: number; byteLength: number }) => void;
+  /**
+   * VTID-03764 — diagnostic only, same rationale as onFirstRawChunk. Fired
+   * ONCE per connection on the first NORMALIZED event of any kind (audio,
+   * text, toolCall, ignored, …) — distinguishes "Nova responded quickly but
+   * with something that isn't audio yet" from "the raw chunk arrived but the
+   * normalizer found nothing in it" (both look identical to onFirstRawChunk
+   * alone).
+   */
+  onFirstNormalizedEvent?: (info: { atMs: number; kind: string }) => void;
 }
 
 async function buildBedrockClient(config: NovaSonicConfig): Promise<NovaBedrockLike> {
@@ -449,6 +469,10 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
   private errorEmitted = false;
   private localCloseReason: string | undefined;
   private responseLoopDone: Promise<void> | null = null;
+  /** VTID-03764 diagnostic — set once the first raw chunk fires onFirstRawChunk. */
+  private firstRawChunkSeen = false;
+  /** VTID-03764 diagnostic — set once the first normalized event fires onFirstNormalizedEvent. */
+  private firstNormalizedEventSeen = false;
 
   private audioOutputHandler: ((e: AudioOutputEvent) => void) | null = null;
   private transcriptHandler: ((e: TranscriptEvent) => void) | null = null;
@@ -683,6 +707,14 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
           }
           continue;
         }
+        if (!this.firstRawChunkSeen) {
+          this.firstRawChunkSeen = true;
+          try {
+            this.deps.onFirstRawChunk?.({ atMs: Date.now(), byteLength: bytes.byteLength });
+          } catch {
+            /* diagnostic callback must never destabilize the stream */
+          }
+        }
         let decoded: unknown;
         try {
           decoded = JSON.parse(new TextDecoder().decode(bytes));
@@ -708,6 +740,14 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
 
   private dispatchNormalized(decoded: unknown): void {
     for (const event of this.normalizer.normalize(decoded)) {
+      if (!this.firstNormalizedEventSeen) {
+        this.firstNormalizedEventSeen = true;
+        try {
+          this.deps.onFirstNormalizedEvent?.({ atMs: Date.now(), kind: event.kind });
+        } catch {
+          /* diagnostic callback must never destabilize the stream */
+        }
+      }
       switch (event.kind) {
         case 'transcript':
           this.transcriptHandler?.({
