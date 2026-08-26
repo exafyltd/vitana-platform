@@ -1,0 +1,181 @@
+[run] mock server up on http://127.0.0.1:8721
+
+=== SCENARIO A: early nova_validation-style close at turn_count 0 ===
+  [pageA] [VTOrb] Widget version: 2026-08-25-sse-full-duplex-fix
+  [pageA] [VTOrb] Auto-detect: token=NONE, lang=en, gw=http://127.0.0.1:8721
+  [pageA] [VTOrb] _injectStyles: creating vtorb-css style tag
+  [pageA] [VTOrb] _renderOverlay: creating overlay DOM
+  [pageA] [VTOrb] Initialized — gateway: http://127.0.0.1:8721, lang: en, showFab: false, hasToken: true, forceAnonymous: false
+  [pageA] Failed to load resource: the server responded with a status of 404 (Not Found)
+  [pageA] [VTOrb] Failed to preload alert clip disconnect-mic-en: HTTP 404
+  [pageA] Failed to load resource: the server responded with a status of 404 (Not Found)
+  [pageA] [VTOrb] Failed to preload alert clip disconnect-mic-de: HTTP 404
+  [pageA] Failed to load resource: the server responded with a status of 404 (Not Found)
+  [pageA] [VTOrb] Failed to preload alert clip disconnect-network-en: HTTP 404
+  [pageA] Failed to load resource: the server responded with a status of 404 (Not Found)
+  [pageA] [VTOrb] Failed to preload alert clip disconnect-network-de: HTTP 404
+  [pageA] Failed to load resource: the server responded with a status of 404 (Not Found)
+  [pageA] [VTOrb] Failed to preload alert clip disconnect-connection-en: HTTP 404
+  [pageA] Failed to load resource: the server responded with a status of 404 (Not Found)
+  [pageA] [VTOrb] Failed to preload alert clip disconnect-connection-de: HTTP 404
+  [pageA] [VTOrb] Bootstrap prewarm requested
+  [pageA] Failed to load resource: the server responded with a status of 404 (Not Found)
+  [pageA] [VTOrb] Failed to preload alert clip disconnect-offline-en: HTTP 404
+  [pageA] Failed to load resource: the server responded with a status of 404 (Not Found)
+  [pageA] [VTOrb] Failed to preload alert clip recovery-network-de: HTTP 404
+  [pageA] Failed to load resource: the server responded with a status of 404 (Not Found)
+  [pageA] [VTOrb] Failed to preload alert clip recovery-connection-en: HTTP 404
+  [pageA] Failed to load resource: the server responded with a status of 404 (Not Found)
+  [pageA] [VTOrb] Failed to preload alert clip disconnect-offline-de: HTTP 404
+  [pageA] Failed to load resource: the server responded with a status of 404 (Not Found)
+  [pageA] [VTOrb] Failed to preload alert clip recovery-mic-en: HTTP 404
+  [pageA] Failed to load resource: the server responded with a status of 404 (Not Found)
+  [pageA] [VTOrb] Failed to preload alert clip recovery-mic-de: HTTP 404
+  [pageA] Failed to load resource: the server responded with a status of 404 (Not Found)
+  [pageA] [VTOrb] Failed to preload alert clip recovery-network-en: HTTP 404
+  [pageA] Failed to load resource: the server responded with a status of 404 (Not Found)
+  [pageA] [VTOrb] Failed to preload alert clip recovery-connection-de: HTTP 404
+  [pageA] Failed to load resource: the server responded with a status of 404 (Not Found)
+  [pageA] [VTOrb] Server transport preference: ws
+  [pageA] [VTOrb] Stopping session...
+  [pageA] [VTOrb] _show() called — gw=http://127.0.0.1:8721, _root=true
+  [pageA] [VTOrb] _injectStyles: vtorb-css already exists
+  [pageA] [VTOrb] _show: styles injected, vtorb-css in DOM=true
+  [pageA] [VTOrb] _renderOverlay: _root already exists, inDOM=true
+  [pageA] [VTOrb] _show: overlay inDOM=true, display=flex
+  [pageA] [VTOrb] Starting Gemini Live session...
+  [pageA] [VTOrb] _sessionStart: hasToken=true, lang=en, tokenSetByInit=true
+[mock] ws connect #1, scenario=early_close
+[mock] #1 recv: start
+[mock] #1 recv: audio_ready
+  [pageA] [VTOrb] audio-ready signaled (ws) for session mock-session-1
+  [pageA] [VTOrb] WS transport connected — session mock-session-1
+  screenshot: /tmp/claude-0/-home-user/b361ffa4-7ba4-575c-92cb-8e21063e6201/scratchpad/vtid-03727-e2e/artifacts/A1-opened-connecting.png
+PASS — A1: initial status is a real caption, not empty (text="Connecting...")
+[mock] #1 closed
+  [pageA] [VTOrb] _announceDisconnect: reason=connection, stage=idle
+  [pageA] [VTOrb] _announceDisconnect: suppressing spoken alert clip — nothing heard yet this open
+  [pageA] [VTOrb] _attemptReconnect: scheduled in 1500ms (attempt 1/5)
+  screenshot: /tmp/claude-0/-home-user/b361ffa4-7ba4-575c-92cb-8e21063e6201/scratchpad/vtid-03727-e2e/artifacts/A2-after-early-close.png
+PASS — A2: caption says CONNECTING (not RECONNECTING) — nothing has ever been heard yet (text="Connecting...")
+PASS — A2: caption explicitly does NOT say Reconnecting (text="Connecting...")
+PASS — A3a: mic icon ALREADY shows muted (widget auto-gates mic on disconnect, confirmed against source) (mutedIconBefore=true)
+PASS — A3b: mic button click 1 is responsive — icon flips to UNMUTED and status changes (before="Connecting..." after="Listening..." mutedIcon=false)
+  screenshot: /tmp/claude-0/-home-user/b361ffa4-7ba4-575c-92cb-8e21063e6201/scratchpad/vtid-03727-e2e/artifacts/A3-after-mic-click-1-unmuted.png
+PASS — A4: mic button click 2 is responsive — icon flips back to MUTED, caption says "Muted" (text="Muted" mutedIcon=true)
+  screenshot: /tmp/claude-0/-home-user/b361ffa4-7ba4-575c-92cb-8e21063e6201/scratchpad/vtid-03727-e2e/artifacts/A4-after-mic-click-2-muted-again.png
+  status trace A: [{"t":56,"text":""},{"t":105,"text":"Connecting..."},{"t":304,"text":"Connecting..."},{"t":1068,"text":"Listening..."},{"t":1332,"text":"Muted"}]
+  [pageA] [VTOrb] Stopping session...
+PASS — A5: X close button actually closes the overlay (visibleBefore=true visibleAfter=false)
+  screenshot: /tmp/claude-0/-home-user/b361ffa4-7ba4-575c-92cb-8e21063e6201/scratchpad/vtid-03727-e2e/artifacts/A6-after-close-click.png
+
+=== SCENARIO B: audio plays once, THEN a second close — must say Reconnecting ===
+  [pageB] [VTOrb] Widget version: 2026-08-25-sse-full-duplex-fix
+  [pageB] [VTOrb] Auto-detect: token=NONE, lang=en, gw=http://127.0.0.1:8721
+  [pageB] [VTOrb] _injectStyles: creating vtorb-css style tag
+  [pageB] [VTOrb] _renderOverlay: creating overlay DOM
+  [pageB] [VTOrb] Initialized — gateway: http://127.0.0.1:8721, lang: en, showFab: false, hasToken: true, forceAnonymous: false
+  [pageB] Failed to load resource: the server responded with a status of 404 (Not Found)
+  [pageB] [VTOrb] Failed to preload alert clip disconnect-mic-en: HTTP 404
+  [pageB] Failed to load resource: the server responded with a status of 404 (Not Found)
+  [pageB] [VTOrb] Failed to preload alert clip disconnect-mic-de: HTTP 404
+  [pageB] Failed to load resource: the server responded with a status of 404 (Not Found)
+  [pageB] [VTOrb] Failed to preload alert clip disconnect-network-en: HTTP 404
+  [pageB] Failed to load resource: the server responded with a status of 404 (Not Found)
+  [pageB] [VTOrb] Failed to preload alert clip disconnect-network-de: HTTP 404
+  [pageB] Failed to load resource: the server responded with a status of 404 (Not Found)
+  [pageB] [VTOrb] Failed to preload alert clip disconnect-connection-en: HTTP 404
+  [pageB] Failed to load resource: the server responded with a status of 404 (Not Found)
+  [pageB] [VTOrb] Failed to preload alert clip disconnect-connection-de: HTTP 404
+  [pageB] Failed to load resource: the server responded with a status of 404 (Not Found)
+  [pageB] [VTOrb] Failed to preload alert clip disconnect-offline-en: HTTP 404
+  [pageB] Failed to load resource: the server responded with a status of 404 (Not Found)
+  [pageB] [VTOrb] Failed to preload alert clip disconnect-offline-de: HTTP 404
+  [pageB] Failed to load resource: the server responded with a status of 404 (Not Found)
+  [pageB] [VTOrb] Failed to preload alert clip recovery-mic-en: HTTP 404
+  [pageB] Failed to load resource: the server responded with a status of 404 (Not Found)
+  [pageB] [VTOrb] Failed to preload alert clip recovery-mic-de: HTTP 404
+  [pageB] Failed to load resource: the server responded with a status of 404 (Not Found)
+  [pageB] [VTOrb] Failed to preload alert clip recovery-network-en: HTTP 404
+  [pageB] Failed to load resource: the server responded with a status of 404 (Not Found)
+  [pageB] [VTOrb] Failed to preload alert clip recovery-network-de: HTTP 404
+  [pageB] [VTOrb] Bootstrap prewarm requested
+  [pageB] Failed to load resource: the server responded with a status of 404 (Not Found)
+  [pageB] [VTOrb] Failed to preload alert clip recovery-connection-en: HTTP 404
+  [pageB] Failed to load resource: the server responded with a status of 404 (Not Found)
+  [pageB] [VTOrb] Failed to preload alert clip recovery-connection-de: HTTP 404
+  [pageB] [VTOrb] Server transport preference: ws
+  [pageB] [VTOrb] Stopping session...
+  [pageB] [VTOrb] _show() called — gw=http://127.0.0.1:8721, _root=true
+  [pageB] [VTOrb] _injectStyles: vtorb-css already exists
+  [pageB] [VTOrb] _show: styles injected, vtorb-css in DOM=true
+  [pageB] [VTOrb] _renderOverlay: _root already exists, inDOM=true
+  [pageB] [VTOrb] _show: overlay inDOM=true, display=flex
+  [pageB] [VTOrb] Starting Gemini Live session...
+  [pageB] [VTOrb] _sessionStart: hasToken=true, lang=en, tokenSetByInit=true
+[mock] ws connect #2, scenario=deliver_audio_then_close_again
+[mock] #2 recv: start
+[mock] #2 recv: audio_ready
+  [pageB] [VTOrb] audio-ready signaled (ws) for session mock-session-2
+  [pageB] [VTOrb] WS transport connected — session mock-session-2
+  [pageB] [VTOrb] guided teaching opener complete — continuing conversation (no auto-close)
+  [pageB] The ScriptProcessorNode is deprecated. Use AudioWorkletNode instead. (https://bit.ly/audio-worklet)
+[mock] #2 recv: audio
+  screenshot: /tmp/claude-0/-home-user/b361ffa4-7ba4-575c-92cb-8e21063e6201/scratchpad/vtid-03727-e2e/artifacts/B1-after-first-audio-turn.png
+  audio evidence: [{"sampleRate":22050,"lengthSamples":1,"peak":0,"t":68.10000000009313},{"sampleRate":44100,"lengthSamples":22050,"peak":0,"t":80.5},{"sampleRate":24000,"lengthSamples":14400,"peak":0.79998779296875,"t":105}]
+PASS — B2: at least one real (non-trivial) PCM buffer was scheduled for playback (chunks=[{"sampleRate":44100,"lengthSamples":22050,"peak":0,"t":80.5},{"sampleRate":24000,"lengthSamples":14400,"peak":0.79998779296875,"t":105}])
+PASS — B3: scheduled audio is NON-SILENT (peak amplitude clearly above 0) (maxPeak=0.79998779296875)
+  status after first turn: "Listening..."
+[mock] #2 recv: audio
+[mock] #2 recv: audio
+[mock] #2 recv: audio
+[mock] #2 recv: audio
+[mock] #2 recv: audio
+[mock] #2 recv: audio
+[mock] #2 recv: audio
+[mock] #2 recv: audio
+[mock] #2 recv: audio
+[mock] #2 recv: audio
+[mock] #2 recv: audio
+[mock] #2 recv: audio
+[mock] #2 recv: audio
+[mock] #2 recv: audio
+[mock] #2 recv: audio
+[mock] #2 recv: audio
+[mock] #2 recv: audio
+[mock] #2 recv: audio
+[mock] #2 recv: audio
+[mock] #2 recv: audio
+[mock] #2 closed
+  [pageB] [VTOrb] _announceDisconnect: reason=connection, stage=listening_user_speaking
+  [pageB] [VTOrb] _playAlert: clip not loaded yet: disconnect-connection-en
+  [pageB] [VTOrb] _attemptReconnect: scheduled in 1500ms (attempt 1/5)
+  screenshot: /tmp/claude-0/-home-user/b361ffa4-7ba4-575c-92cb-8e21063e6201/scratchpad/vtid-03727-e2e/artifacts/B4-after-second-close.png
+PASS — B5: SECOND close correctly shows RECONNECTING (audioEverHeardThisOpen survived the greetingComplete reset) (text="Reconnecting...")
+PASS — B6: second-close caption is NOT the false "Connecting..." (the exact Codex-flagged bug) (text="Reconnecting...")
+  status trace B: [{"t":23,"text":""},{"t":59,"text":"Connecting..."},{"t":95,"text":"Vitana speaking..."},{"t":1192,"text":"Listening..."},{"t":2795,"text":"Reconnecting..."}]
+PASS — B7: mic button responsive while RECONNECTING (icon flips, status changes — not frozen) (before="Reconnecting..." after="Listening..." mutedIconBefore=true mutedIconAfter=false)
+  screenshot: /tmp/claude-0/-home-user/b361ffa4-7ba4-575c-92cb-8e21063e6201/scratchpad/vtid-03727-e2e/artifacts/B8-mic-click-during-reconnect.png
+  [pageB] [VTOrb] _attemptReconnect: re-arming guided topic for resume: T_HARNESS_B
+  [pageB] [VTOrb] Starting Gemini Live session...
+  [pageB] [VTOrb] _sessionStart: hasToken=true, lang=en, tokenSetByInit=true
+[mock] ws connect #3, scenario=deliver_audio_then_close_again
+  [pageB] [VTOrb] _sessionStart: reconnect context — stage=listening_user_speaking, transcript=0 turns, conversation_id=mock-conv-2
+[mock] #3 recv: start
+[mock] #3 recv: audio_ready
+  [pageB] [VTOrb] audio-ready signaled (ws) for session mock-session-3
+  [pageB] [VTOrb] WS transport connected — session mock-session-3
+  [pageB] [VTOrb] _attemptReconnect: succeeded
+  [pageB] [VTOrb] _clearDisconnect: recovering from reason=connection
+  start payloads received: [{"connId":1,"guided_topic_id":"T_HARNESS_A"},{"connId":2,"guided_topic_id":"T_HARNESS_B"},{"connId":3,"guided_topic_id":"T_HARNESS_B"}]
+PASS — B9: the RECONNECT (3rd WS connection) resends guided_topic_id — resumes the SAME topic instead of losing it (reconnectStart={"connId":3,"msg":{"type":"start","lang":"en","voice_style":"friendly, calm, empathetic","response_modalities":["audio","text"],"vad_silence_ms":600,"client_timezone":"UTC","guided_topic_id":"T_HARNESS_B","reconnect_stage":"listening_user_speaking","conversation_id":"mock-conv-2"}})
+[mock] #3 recv: stop
+  [pageB] [VTOrb] Stopping session...
+[mock] #3 closed
+  [pageB] The ScriptProcessorNode is deprecated. Use AudioWorkletNode instead. (https://bit.ly/audio-worklet)
+PASS — B10: X close button closes overlay even mid-reconnect (visibleBefore=true visibleAfter=false)
+  screenshot: /tmp/claude-0/-home-user/b361ffa4-7ba4-575c-92cb-8e21063e6201/scratchpad/vtid-03727-e2e/artifacts/B11-closed-during-reconnect.png
+
+=== SUMMARY ===
+Total checks: see PASS/FAIL lines above
+ALL CHECKS PASSED
