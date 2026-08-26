@@ -2817,6 +2817,55 @@
           } catch (e) {
             console.error('[VTOrb] end_teaching_session handling error:', e);
           }
+        } else if (msg.directive === 'end_guided_topic_teaching') {
+          // VTID-03762: the LLM called `end_guided_topic_teaching` after
+          // finishing a "My Journey" guided-topic lesson (see
+          // guided-topic-narration-prompt.ts for why this tool exists — the
+          // GUIDE MODE block has no other exit condition). Closes the
+          // overlay so the host page's already-mounted "Well done" drawer
+          // (opened at tap time, underneath this overlay) is revealed.
+          //
+          // Codex review on this PR: end_teaching_session's fixed 500ms
+          // wait (which this originally mirrored byte-for-byte) truncates
+          // the model's own closing line whenever more than ~500ms of its
+          // audio is still scheduled/queued when the tool call arrives —
+          // setting audioPlaying=false doesn't stop new chunks either, the
+          // 'audio' handler queues them regardless. Real, fixable bug, and
+          // this file already has the right pattern for it: the `navigate`
+          // directive above polls audioPlaying/scheduledSources/audioQueue
+          // before tearing down instead of guessing a fixed delay. Reused
+          // verbatim here rather than inventing a second waiting strategy.
+          console.log('[VTOrb] orb_directive end_guided_topic_teaching (topic=' + (msg.topic_id || '<none>') + ', reason=' + (msg.reason || '<none>') + ')');
+          try {
+            var _guidedTopicId = msg.topic_id || null;
+            var _guidedTopicReason = msg.reason || null;
+            var _guidedEndAttempts = 0;
+            (function _waitForGuidedTeachingAudioDrained() {
+              setTimeout(function () {
+                var stillPlaying = _s.audioPlaying ||
+                  (_s.scheduledSources && _s.scheduledSources.length > 0) ||
+                  (_s.audioQueue && _s.audioQueue.length > 0);
+                // Hard safety cap: 30s (100 * 300ms), same as _waitForNavReady —
+                // never wait forever on a stuck/misreported audio state.
+                if (stillPlaying && _guidedEndAttempts++ < 100) {
+                  _waitForGuidedTeachingAudioDrained();
+                  return;
+                }
+                // Short grace period for the last buffer to finish cleanly,
+                // same 200ms the navigate directive uses.
+                setTimeout(function () {
+                  try { _hide(); }
+                  catch (e) { console.error('[VTOrb] _hide on end_guided_topic_teaching failed:', e); }
+                  if (typeof _cfg.onGuidedTopicTeachingEnd === 'function') {
+                    try { _cfg.onGuidedTopicTeachingEnd(_guidedTopicId, _guidedTopicReason); }
+                    catch (e) { console.error('[VTOrb] onGuidedTopicTeachingEnd handler failed:', e); }
+                  }
+                }, 200);
+              }, 300);
+            })();
+          } catch (e) {
+            console.error('[VTOrb] end_guided_topic_teaching handling error:', e);
+          }
         } else {
           console.warn('[VTOrb] Unknown orb_directive: ' + msg.directive);
         }

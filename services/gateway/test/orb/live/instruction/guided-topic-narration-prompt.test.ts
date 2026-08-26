@@ -92,6 +92,22 @@ describe('buildGuidedTopicNarrationBlock — post-narration branch (content.narr
     const en = buildGuidedTopicNarrationBlock(narratedContent, 'en');
     expect(en.toLowerCase()).toMatch(/yes.*sure.*okay.*follow-up|follow-up questions before/);
   });
+
+  // VTID-03762: the GUIDE MODE block previously had no exit condition at
+  // all — it is re-injected for the WHOLE session with no turn-count limit,
+  // so once the model finished (or, in this post-narration branch, once it
+  // finished fielding follow-ups) it free-wheeled into ordinary conversation
+  // forever. The overlay never closed, so the "Well done" drawer (already
+  // mounted underneath it since tap time) never became visible and the
+  // topic was never reachable to mark done. Fixed with a model-callable
+  // tool mirroring Teacher Mode's proven end_teaching_session pattern.
+  it('VTID-03762: instructs calling end_guided_topic_teaching once follow-ups are answered', () => {
+    const de = buildGuidedTopicNarrationBlock(narratedContent, 'de');
+    expect(de).toContain('end_guided_topic_teaching');
+    const en = buildGuidedTopicNarrationBlock(narratedContent, 'en');
+    expect(en).toContain('end_guided_topic_teaching');
+    expect(en.toLowerCase()).toMatch(/do not just keep talking|general conversation/);
+  });
 });
 
 describe('buildGuidedTopicNarrationBlock — legacy model-narrated branch (no narrationAudio)', () => {
@@ -112,5 +128,22 @@ describe('buildGuidedTopicNarrationBlock — legacy model-narrated branch (no na
     expect(de.toLowerCase()).toMatch(/ja.*mach das.*okay.*erklär mir das jetzt/);
     const en = buildGuidedTopicNarrationBlock(BASE_CONTENT, 'en');
     expect(en.toLowerCase()).toMatch(/yes.*sure.*okay.*explain it to me now/);
+  });
+
+  // VTID-03762: this is the FULL teach branch (turn-1's raw material, no
+  // Polly pre-narration) — the same missing-exit-condition problem applies
+  // here too, and it's the branch the live incident (topic T007, taught for
+  // real 44s then the session never ended) actually went through.
+  it('VTID-03762: instructs calling end_guided_topic_teaching once the topic is taught and next step proposed', () => {
+    const de = buildGuidedTopicNarrationBlock(BASE_CONTENT, 'de');
+    expect(de).toContain('end_guided_topic_teaching');
+    const en = buildGuidedTopicNarrationBlock(BASE_CONTENT, 'en');
+    expect(en).toContain('end_guided_topic_teaching');
+    expect(en.toLowerCase()).toMatch(/do not just keep talking|general conversation/);
+    // Must come AFTER the practice/next-step guidance, not before — the
+    // model should teach the material and propose next steps FIRST.
+    // BASE_CONTENT has a practice_target set, so the "GUIDE them to the
+    // practice" line is the one that must precede it.
+    expect(en.indexOf('GUIDE them to the practice')).toBeLessThan(en.indexOf('end_guided_topic_teaching'));
   });
 });
