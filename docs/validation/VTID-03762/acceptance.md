@@ -202,6 +202,130 @@ of the full-suite run in `outputs/jest-full-suite.txt`)
 
 ---
 
+## FOLLOW-UP (same VTID): client-side backstop
+
+The acceptance criteria above (AC-1 through AC-15) shipped in #3205 and
+merged. Live staging retest by the platform owner then showed the fix
+does not work in practice: the
+model never calls `end_guided_topic_teaching` — zero
+`guided_topic_teaching_ended` events across a real test session's
+`oasis_events` trace, despite the guided-topic candidate correctly winning
+on every reconnect (VTID-03746's re-arm mechanism confirmed working). The
+model drifts into unrelated general conversation ("Good afternoon! Glad to
+have you back", proposing an unrelated Vitana Index plan) with no natural
+end, reproducing the exact reported symptom this VTID exists to fix.
+Verbatim: *"nothing fixed, again the same behavior. It finishes talking
+about the session/step, and then it switches to general Vitana... and you
+cannot turn it off."*
+
+This is a genuine model-compliance gap, not a code defect in the first
+fix — the tool, dispatcher, and directive handler all work exactly as
+built and tested. The problem is that "the model will call this tool" was
+never a guaranteed mechanism, only a probable one (matching this
+codebase's own documented history of model non-compliance under similar
+conditions, e.g. VTID-03686's `switch_persona` hallucination).
+
+**Fix:** a client-side backstop that does not depend on model compliance
+at all. `GUIDED_TOPIC_BACKSTOP_MS` (5 minutes, deliberately 6-7x longer
+than VTID-03746's own measured ~44s real narrated-lesson duration, so it
+cannot become the primary "done teaching" signal VTID-03685 already
+rejected guessing at) arms a `setInterval` the moment a real topic is
+tapped (`focusGuidedTopic`), and self-closes the overlay via the same
+shared `_endGuidedTopicTeaching` helper the model-driven directive now
+also calls — so there is exactly ONE teardown implementation, not two
+diverging ones. The poll-then-hide audio-drain logic Codex flagged on the
+original PR (extracted into `_endGuidedTopicTeaching` for reuse) is
+unchanged in behavior, just shared by both callers now.
+
+AC-16 — the backstop ceiling is generous and documented (not a short/
+turn-count heuristic that could mistake mid-lesson silence for
+completion)
+
+TEST: `test/orb/live/guided-topic-teaching-complete-signal.test.ts` —
+"declares a generous, documented backstop ceiling (not a short/turn-count
+heuristic)".
+Output: `outputs/jest-vtid-03762-backstop-followup.txt`
+
+AC-17 — a real topic tap arms the backstop timer; a stale timer is
+cleared before a new one is armed (Replay re-tap safety)
+
+TEST: same file — "a real topic tap arms _guidedTopicOpenedAt..." +
+"clears any stale backstop interval before arming a new one...".
+Mutation-verified: reverting `focusGuidedTopic`'s arming block alone
+fails exactly these 2 tests plus 2 others that read the same code region
+(the backstop-check and shared-helper tests), nothing else.
+Output: `outputs/jest-vtid-03762-backstop-followup.txt`
+
+AC-18 — the backstop check compares elapsed time against the ceiling and
+calls the SAME shared teardown the model-driven directive uses, not a
+second implementation
+
+TEST: same file — "the backstop check compares elapsed time..." +
+"_endGuidedTopicTeaching is a single shared helper...". Mutation-verified:
+replacing the backstop's `_endGuidedTopicTeaching(...)` call with a direct
+`_hide()` call fails exactly these 2 tests, nothing else.
+Output: `outputs/jest-vtid-03762-backstop-followup.txt`
+
+AC-19 — a real close (`_hide()`) also cancels the backstop, so a topic
+that finishes normally never fires a stale timer later
+
+TEST: same file — "_hide() clears both _guidedTopicOpenedAt and the
+backstop interval...". Mutation-verified: reverting `_hide()`'s teardown
+block alone fails exactly this 1 test, nothing else.
+Output: `outputs/jest-vtid-03762-backstop-followup.txt`
+
+AC-20 — verified END-TO-END in a real browser, not just asserted
+statically — the backstop actually fires and closes the overlay after 5
+minutes of no model-side signal
+
+TEST: local Playwright harness (`vtid-03727-e2e/run.js`, Scenario C),
+using `page.clock.install()` + `page.clock.runFor()` to advance real
+browser timers through the 5-minute threshold without an actual 5-minute
+wait. Confirms: overlay open right after the opener turn (C1), still open
+well before 5 minutes (C2), closed after 5 minutes with no directive ever
+sent from the server (C3). Screenshot `C4-after-backstop-fired.png`
+visually confirms a closed overlay (blank page). Note:
+`page.clock.fastForward()` was tried first and does NOT reliably cascade
+the teardown's own chained `setTimeout` calls in this harness —
+`runFor()` does; this is a genuine finding about this Playwright version's
+clock API, not a workaround.
+UI: local harness run, not part of the committed test suite (scratch
+verification tooling) — see PR body for the run transcript.
+
+AC-21 — full gateway regression suite and `tsc --noEmit` remain clean
+after the backstop addition
+
+TEST: full suite re-run.
+Output: `outputs/jest-full-suite-backstop-followup.txt`,
+`outputs/tsc-check-backstop-followup.txt`,
+`outputs/node-check-backstop-followup.txt`
+
+AC-22 — the backstop diff satisfies the `gateway_backend`
+VALIDATION_PROFILE's path-ownership allowlist and introduces no new CSP
+pattern
+
+TEST: same local replication of `VALIDATOR-CHECK.yml`'s steps as AC-13/14.
+Output: `outputs/csp-gate-backstop-followup.txt`,
+`outputs/path-ownership-guard-backstop-followup.txt`
+
+### What still could NOT be verified for the backstop specifically
+
+The backstop is, by construction, only observable live after a real
+session sits stuck for 5+ minutes with the model never calling the tool —
+that is exactly the failure condition it exists to catch, so "confirming
+it against real logs" means either (a) the platform owner experiencing
+that exact stuck state again and watching the overlay self-close within 5
+minutes, or (b) a future session correlating a client-side
+`console.warn('[VTOrb] guided-topic backstop fired...')` against a
+browser console capture — this mechanism does not currently emit anything
+server-side/`oasis_events`-visible, since it is deliberately independent
+of the server/model. Flagged here rather than silently claimed as
+confirmed; this session will not report the report-of-report-of-fix as
+"done" without exactly this kind of evidence, per the explicit commitment
+made after the first fix's live-retest failure.
+
+---
+
 ## What could NOT be verified from this session, and why
 
 **No live/staging exercise of the actual fix.** Per this repo's absolute
