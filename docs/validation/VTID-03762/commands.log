@@ -127,3 +127,99 @@ node scripts/ci/validator-path-guard.cjs /tmp/changed_files_03762.txt \
 #      precedent as VTID-03746/VTID-03745 (command_hub_frontend's Build
 #      Gate requires a dist/ change and dist/ is entirely gitignored, so
 #      it is structurally unsatisfiable for any normal orb-widget.js PR).
+
+# ============================================================
+# FOLLOW-UP (same VTID) — client-side backstop
+# ============================================================
+
+# Live staging retest by the platform owner (verbatim): "nothing fixed,
+# again the same behavior. It finishes talking about the session/step,
+# and then it switches to general Vitana, general greeting: Good
+# afternoon, Jovana1 Glad to have you back, bla bla, and you cannot turn
+# it off.... So, nothing is fixed!"
+
+# Root-caused via live read-only oasis_events query (project
+# inmkhvwdcuyhnxkgfvsb) against a real reported session — zero
+# guided_topic_teaching_ended events despite the guided-topic candidate
+# correctly winning on every reconnect (confirming VTID-03746's re-arm
+# mechanism works). Also observed real Nova connection instability (6
+# upstream_closed + 2 nova_premature_close_retry + 3 upstream_error in a
+# ~90s window) compounding the visible symptom independent of this fix.
+
+# Fix: client-side backstop in orb-widget.js. Extracted the existing
+# poll-then-hide audio-drain logic (Codex's original fix) into a shared
+# _endGuidedTopicTeaching(topicId, reason) helper, used by BOTH the
+# model-driven directive handler and a new 5-minute setInterval armed in
+# focusGuidedTopic(), cleared in _hide() and re-armed on replay.
+
+node --check services/gateway/src/frontend/command-hub/orb-widget.js
+#   -> OK, exit 0 (outputs/node-check-backstop-followup.txt)
+
+npx jest test/orb/live/guided-topic-teaching-complete-signal.test.ts
+#   -> 22/22 passed (outputs/jest-vtid-03762-backstop-followup.txt)
+
+npx tsc --noEmit
+#   -> clean, no output (outputs/tsc-check-backstop-followup.txt)
+
+npx jest
+#   -> 711/712 suites passed (1 pre-existing skip), 13411/13446 tests
+#      passing, 0 failures (outputs/jest-full-suite-backstop-followup.txt)
+
+# Mutation verification (backup file, revert one region at a time via
+# manual edit, re-run this file's own suite, confirm exactly the right
+# tests fail, restore from backup, confirm byte-identical + full suite
+# green again):
+#   1. Removed focusGuidedTopic's arming block -> exactly 4 tests failed
+#      (arming, clear-stale-interval, backstop-check-body-read,
+#      shared-helper-check — all of which read that code region).
+#   2. Removed _hide()'s backstop teardown -> exactly 1 test failed
+#      (the _hide()-clears-backstop test).
+#   3. Replaced the backstop's _endGuidedTopicTeaching(...) call with a
+#      direct _hide() call (bypassing the shared helper) -> exactly 2
+#      tests failed (backstop-check "calls the shared teardown" +
+#      shared-helper-check).
+# All three restores confirmed byte-identical to the pre-mutation file
+# via diff, and full suite green again after each.
+
+# Real-browser end-to-end verification (NOT just static assertions) —
+# local Playwright harness, scratch tooling, not part of the committed
+# suite:
+#   /tmp/.../scratchpad/vtid-03727-e2e/run.js, Scenario C
+#   page.clock.install() before page.goto(), then page.clock.runFor()
+#   (NOT fastForward() — that does not reliably cascade the teardown's
+#   own chained setTimeout calls in this harness; found and fixed
+#   during this session, not assumed) to advance through the 5-minute
+#   threshold. C1 (open after opener), C2 (still open well before 5min),
+#   C3 (closed after 5min+ with no directive ever sent) — all PASS.
+#   Screenshot C4-after-backstop-fired.png visually confirms overlay
+#   closed (blank page).
+
+git fetch origin main
+git diff origin/main...HEAD -- 'services/gateway/src/frontend/' \
+  'services/gateway/dist/frontend/' > /tmp/csp_diff_03762_backstop.txt
+node scripts/ci/validator-path-guard.cjs --csp-added-lines /tmp/csp_diff_03762_backstop.txt
+#   -> "No CSP pattern hits in added lines." (outputs/csp-gate-backstop-followup.txt)
+
+git diff --name-only origin/main...HEAD > /tmp/changed_files_03762_backstop.txt
+node scripts/ci/validator-path-guard.cjs /tmp/changed_files_03762_backstop.txt \
+  gateway_backend /tmp/pr_body_profile_only_03762_backstop.txt
+#   -> "APPROVED: 2 in-remit file(s) match the gateway_backend allowlist"
+#      (outputs/path-ownership-guard-backstop-followup.txt)
+
+# VTID-03762 was already status='in_progress'/spec_status='approved' in
+# vtid_ledger (reopened after the live-retest failure, prior segment of
+# this session) — reused as-is per this repo's own established pattern
+# for a same-VTID follow-up fix, no new VTID allocated.
+
+# Original branch (claude/guided-topic-teaching-complete-vtid-03762) had
+# already merged (#3205) — restarted a fresh branch from origin/main,
+# same convention as this file's own earlier entry documents, carrying
+# the uncommitted backstop changes forward onto it. Confirmed via
+# `git diff a8079a8 origin/main -- <both touched files>` (empty) that
+# origin/main's tree for these files is byte-identical to the prior
+# merge, so the new branch's diff is purely this follow-up's own change.
+git fetch origin main
+git checkout -b claude/guided-topic-backstop-vtid-03762 origin/main
+git add services/gateway/src/frontend/command-hub/orb-widget.js \
+        services/gateway/test/orb/live/guided-topic-teaching-complete-signal.test.ts
+git commit -m "Add client-side backstop for guided-topic teaching completion (VTID-03762)"
