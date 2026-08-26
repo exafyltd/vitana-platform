@@ -49,6 +49,12 @@
 
 set -euo pipefail
 
+# AWS CLI v2 pipes JSON output through `less` by default whenever stdout is a
+# TTY (e.g. CloudShell) — every `aws ... create-*`/`describe-*` call below
+# then silently blocks the script waiting for a keypress to advance the
+# pager, which looks exactly like a hang. Disable it for this script only.
+export AWS_PAGER=""
+
 # ── Config ────────────────────────────────────────────────────
 # Deliberately VITANA_AWS_REGION, not AWS_REGION — AWS CloudShell auto-
 # exports AWS_REGION to match whichever region tab is open, which bit
