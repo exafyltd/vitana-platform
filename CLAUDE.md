@@ -357,6 +357,33 @@ await page.reload();
 23. **IF** you are tempted to manually dispatch a prod deploy workflow "to be safe" post-cutover → **THEN STOP. That is the old auto-to-prod habit. Auto = staging. Prod = PUBLISH button or escape-hatch/manual dispatch (`AWS-PROD-DEPLOY-GATEWAY.yml` etc.) only, with a recorded reason.**
 24. **IF** `worker-runner` / `orb-agent` / the autopilot executor needs a prod update → **THEN use the escape-hatch script or the relevant `AWS-PROD-DEPLOY-*.yml` workflow's manual `workflow_dispatch`. These have no staging twin, so they are manual-dispatch-only.**
 25. **IF** making frontend CSS/JS changes (Command Hub) → **THEN bump the `?v=` cache-busting parameter in index.html. Post-cutover the change auto-deploys to STAGING; it reaches prod only when PUBLISH is clicked.**
+26. **IF** a production deploy is approved WITHIN a session — i.e. the user
+    approves shipping to prod in conversation, and it is carried out via the
+    escape-hatch script or a manual `workflow_dispatch`, **not** via the
+    Command Hub PUBLISH button → **THEN that deploy is scoped exclusively to
+    the change(s) this session made, never to "whatever else is currently on
+    staging/`main`."** PUBLISH is a deliberate, human-operated decision to
+    promote the *entire* tested staging build; an in-session approval is a
+    narrower thing — consent for the specific fix this session produced, not
+    a blanket sign-off on unrelated work that happens to be sitting on
+    staging/`main` at the same moment (someone else's merged-but-unverified
+    PR, a half-finished feature flag flip, etc.). Concretely: pin the deploy
+    to this session's own commit — `publish-to-prod.sh --ref
+    <this-session's-merge-commit-SHA>`, or the `expected_commit`/`commit_sha`
+    input on the relevant `AWS-PROD-DEPLOY-*.yml` — rather than accepting the
+    tools' own defaults (`publish-to-prod.sh`'s `--ref main`,
+    `AWS-PROD-DEPLOY-GATEWAY.yml`'s default `promote-staging` mode, or
+    `AWS-PROD-DEPLOY-FRONTEND.yml`/`DEPLOY.yml`'s `commit_sha` falling back to
+    `github.sha`), all of which ship the ref/staging build **as a whole**,
+    not just this session's diff. **IF** this session's own commit cannot be
+    cleanly isolated from other changes already ahead of it on `main`/staging
+    (e.g. `rebuild-main` builds from source at whatever `main` HEAD is, not a
+    pinned diff) → **THEN STOP and tell the user** what else would ship
+    alongside their change, rather than treating "the deploy tool defaults to
+    `main`" as if it were authorization to ship everything on it. This does
+    not apply to a PUBLISH-button promotion — that action's entire, documented
+    purpose is promoting the full current staging build, and needs no
+    additional scoping.
 
 ### Memory
 
@@ -1622,6 +1649,30 @@ Merging deploys staging. Prod is a deliberate, separate, governed action
 yourself hand-dispatching `AWS-PROD-DEPLOY-GATEWAY.yml` to prod as a
 routine step rather than a deliberate, reasoned action, stop — that
 reintroduces the auto-to-prod behavior the staging-first cutover removed.
+
+### A session-approved manual prod deploy ships that session's change only (Part 1 IF-THEN 26)
+
+When the user approves a production deploy in conversation and it goes out
+via `publish-to-prod.sh` or a manual `workflow_dispatch` — **not** the
+Command Hub PUBLISH button — the approval covers this session's own
+change, not the current state of staging/`main` as a whole. Pin the ref:
+
+```
+scripts/deploy/publish-to-prod.sh --service gateway --vtid VTID-XXXXX \
+  --ref <this session's merge commit SHA> \
+  --reason "why this exceptional prod deploy is justified"
+```
+
+Leaving `--ref` at its default (`main`) or `deploy_mode` at its default
+(`promote-staging`) ships the ref/staging build **as a whole** — including
+any other work that happens to have landed on `main` or staging ahead of
+this session's commit, whether or not the user in this conversation ever
+saw or approved it. That is exactly what PUBLISH is *for* (a deliberate,
+human-operated promotion of the entire tested staging build) and exactly
+what an in-session approval is not. If this session's commit can't be
+cleanly isolated from other changes already ahead of it, stop and tell the
+user what else would ship alongside theirs rather than shipping it
+silently.
 
 ### CSS/JS Cache-Busting
 
