@@ -1,0 +1,58 @@
+diff --git a/services/gateway/src/frontend/command-hub/index.html b/services/gateway/src/frontend/command-hub/index.html
+index 5baf9d3..954afff 100644
+--- a/services/gateway/src/frontend/command-hub/index.html
++++ b/services/gateway/src/frontend/command-hub/index.html
+@@ -29,7 +29,7 @@
+   <!-- VTID-01216: Intelligence Panel containers -->
+   <div id="intel-toggle-container"></div>
+   <div id="intel-panel-container"></div>
+-  <script src="/command-hub/orb-widget.js?v=20260825-stuck-speaking-watchdog"></script>
++  <script src="/command-hub/orb-widget.js?v=20260826-mic-live-ring-removed"></script>
+   <script src="/command-hub/app.js?v=20260811-vtid-03599-usage-summary-fix2"></script>
+   <!-- VTID-01216: Intelligence Panels (Context Pack, Retrieval Trace, Tool Calls) -->
+   <script src="/command-hub/intelligence-panels.js?v=20260420-intel-showtoast-recursion-fix"></script>
+diff --git a/services/gateway/src/frontend/command-hub/orb-widget.js b/services/gateway/src/frontend/command-hub/orb-widget.js
+index 89a17ff..9dbc786 100644
+--- a/services/gateway/src/frontend/command-hub/orb-widget.js
++++ b/services/gateway/src/frontend/command-hub/orb-widget.js
+@@ -512,15 +512,10 @@
+       '.vtorb-btn-mic.vtorb-muted {',
+       '  background: rgba(239,68,68,0.2); color: #fca5a5;',
+       '}',
+-      // VTID-03706: under full duplex the mic is genuinely still open while
+-      // Vitana speaks. A ring rather than a colour swap, deliberately: the
+-      // background/colour are still assigned inline just below (legacy, "no
+-      // CSS dependency"), and an inline rule outranks a class — a colour rule
+-      // here would silently never apply. A ring also reads as "live" more
+-      // directly than a hue change, and needs no !important to win.
+-      '.vtorb-btn-mic.vtorb-mic-live {',
+-      '  box-shadow: 0 0 0 2px rgba(34,197,94,0.85), 0 0 12px rgba(34,197,94,0.45);',
+-      '}',
++      // VTID-03745: the .vtorb-mic-live class (still toggled by full-duplex
++      // state, see _updateUI) intentionally carries no visual style any
++      // more — the ring it used to draw around the mic button while Vitana
++      // spoke was reported as an unwanted visual distraction.
+       '.vtorb-btn-close {',
+       '  background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.7);',
+       '}',
+@@ -3771,15 +3766,11 @@
+       micBtn.style.background = muted ? 'rgba(239,68,68,0.2)' : 'rgba(59,130,246,0.2)';
+       micBtn.style.color = muted ? '#fca5a5' : '#93c5fd';
+       // VTID-03706: under full duplex the mic is genuinely still open while
+-      // Vitana speaks, so say so. Without this the UI is indistinguishable
+-      // from the old half-duplex behaviour and users have no way to learn
+-      // that interrupting works — a capability nobody discovers is the same
+-      // as one that doesn't exist. Applied as a CLASS (the .vtorb-mic-live
+-      // ring in _injectStyles), not an inline rule: it composes with the
+-      // legacy inline colours above instead of fighting them, and keeps this
+-      // file from adding new inline styling. Deliberately no status string —
+-      // the wording here is per-language ternaries, and a new one would ship
+-      // untranslated for every locale past de/en.
++      // Vitana speaks. This class used to drive a visual ring (removed,
++      // VTID-03745 — reported as an unwanted visual distraction); kept as a
++      // hook (currently styleless) rather than deleted outright, so a state
++      // consumer can still tell full-duplex-live apart from idle/muted
++      // without re-deriving it from _s.fullDuplex/_s.audioPlaying.
+       micBtn.classList.toggle('vtorb-mic-live', !muted && !!_s.fullDuplex && !!_s.audioPlaying);
+     }
+     // Update FAB visibility
