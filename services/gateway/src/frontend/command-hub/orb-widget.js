@@ -338,6 +338,17 @@
     // _s.guidedTopic for that one retry. Cleared only by _hide(), same
     // lifecycle as guidedTopic itself.
     _guidedTopicInFlight: null,
+    // VTID-03762: wall-clock timestamp (Date.now()) of when a guided topic
+    // was tapped, and the interval handle checking it. Backstop only — see
+    // GUIDED_TOPIC_BACKSTOP_MS below for why this exists: the model is
+    // instructed to call end_guided_topic_teaching once it's done, but
+    // live staging evidence (VTID-03762 follow-up) showed the model can
+    // simply never call it and drift into unrelated general conversation
+    // ("Good afternoon! Glad to have you back", proposing an unrelated
+    // Vitana Index plan) with no natural end. Cleared only by _hide(),
+    // same lifecycle as guidedTopic/_guidedTopicInFlight.
+    _guidedTopicOpenedAt: null,
+    _guidedTopicBackstopInterval: null,
     // VTID-02020: contextual recovery state. _preDisconnectStage captures what
     // the user was doing when the network dropped (idle / listening_user_speaking
     // / thinking / speaking) so the backend's recovery prompt can decide
@@ -2824,45 +2835,11 @@
           // GUIDE MODE block has no other exit condition). Closes the
           // overlay so the host page's already-mounted "Well done" drawer
           // (opened at tap time, underneath this overlay) is revealed.
-          //
-          // Codex review on this PR: end_teaching_session's fixed 500ms
-          // wait (which this originally mirrored byte-for-byte) truncates
-          // the model's own closing line whenever more than ~500ms of its
-          // audio is still scheduled/queued when the tool call arrives —
-          // setting audioPlaying=false doesn't stop new chunks either, the
-          // 'audio' handler queues them regardless. Real, fixable bug, and
-          // this file already has the right pattern for it: the `navigate`
-          // directive above polls audioPlaying/scheduledSources/audioQueue
-          // before tearing down instead of guessing a fixed delay. Reused
-          // verbatim here rather than inventing a second waiting strategy.
+          // Teardown itself lives in _endGuidedTopicTeaching (shared with
+          // the backstop timer — see its own comment for why both exist).
           console.log('[VTOrb] orb_directive end_guided_topic_teaching (topic=' + (msg.topic_id || '<none>') + ', reason=' + (msg.reason || '<none>') + ')');
           try {
-            var _guidedTopicId = msg.topic_id || null;
-            var _guidedTopicReason = msg.reason || null;
-            var _guidedEndAttempts = 0;
-            (function _waitForGuidedTeachingAudioDrained() {
-              setTimeout(function () {
-                var stillPlaying = _s.audioPlaying ||
-                  (_s.scheduledSources && _s.scheduledSources.length > 0) ||
-                  (_s.audioQueue && _s.audioQueue.length > 0);
-                // Hard safety cap: 30s (100 * 300ms), same as _waitForNavReady —
-                // never wait forever on a stuck/misreported audio state.
-                if (stillPlaying && _guidedEndAttempts++ < 100) {
-                  _waitForGuidedTeachingAudioDrained();
-                  return;
-                }
-                // Short grace period for the last buffer to finish cleanly,
-                // same 200ms the navigate directive uses.
-                setTimeout(function () {
-                  try { _hide(); }
-                  catch (e) { console.error('[VTOrb] _hide on end_guided_topic_teaching failed:', e); }
-                  if (typeof _cfg.onGuidedTopicTeachingEnd === 'function') {
-                    try { _cfg.onGuidedTopicTeachingEnd(_guidedTopicId, _guidedTopicReason); }
-                    catch (e) { console.error('[VTOrb] onGuidedTopicTeachingEnd handler failed:', e); }
-                  }
-                }, 200);
-              }, 300);
-            })();
+            _endGuidedTopicTeaching(msg.topic_id || null, msg.reason || null);
           } catch (e) {
             console.error('[VTOrb] end_guided_topic_teaching handling error:', e);
           }
@@ -4087,6 +4064,53 @@
     } catch (e) { /* noop */ }
   }
 
+  // VTID-03762: 5 minutes. A real narrated guided-topic lesson was measured
+  // at ~44s end-to-end on staging (VTID-03746's own live trace, 497 audio
+  // chunks); this is 6-7x that plus room for genuine follow-up Q&A and a
+  // practice hand-off. It exists ONLY as a backstop for when the model
+  // never calls end_guided_topic_teaching at all (confirmed happening live
+  // on staging, VTID-03762 follow-up) — not as the primary "teaching is
+  // done" signal. Deliberately NOT a short/turn-count heuristic: VTID-03685
+  // already rejected guessing at completion early ("would trade a definite
+  // bug for a fragile heuristic") — this only fires long after any
+  // legitimate lesson+practice conversation would have finished on its own,
+  // and only when nothing else has ended the guided-topic session by then.
+  var GUIDED_TOPIC_BACKSTOP_MS = 5 * 60 * 1000;
+  var GUIDED_TOPIC_BACKSTOP_CHECK_MS = 15000;
+
+  // VTID-03762: shared teardown for both the model-driven
+  // end_guided_topic_teaching directive and the backstop timer below —
+  // same drain-then-hide shape the `navigate` directive already uses
+  // elsewhere in this file (poll audioPlaying/scheduledSources/audioQueue
+  // instead of guessing a fixed delay, so an in-flight closing line is
+  // never truncated).
+  function _endGuidedTopicTeaching(topicId, reason) {
+    var attempts = 0;
+    (function _waitForGuidedTeachingAudioDrained() {
+      setTimeout(function () {
+        var stillPlaying = _s.audioPlaying ||
+          (_s.scheduledSources && _s.scheduledSources.length > 0) ||
+          (_s.audioQueue && _s.audioQueue.length > 0);
+        // Hard safety cap: 30s (100 * 300ms), same as _waitForNavReady —
+        // never wait forever on a stuck/misreported audio state.
+        if (stillPlaying && attempts++ < 100) {
+          _waitForGuidedTeachingAudioDrained();
+          return;
+        }
+        // Short grace period for the last buffer to finish cleanly, same
+        // 200ms the navigate directive uses.
+        setTimeout(function () {
+          try { _hide(); }
+          catch (e) { console.error('[VTOrb] _hide on end_guided_topic_teaching failed:', e); }
+          if (typeof _cfg.onGuidedTopicTeachingEnd === 'function') {
+            try { _cfg.onGuidedTopicTeachingEnd(topicId, reason); }
+            catch (e) { console.error('[VTOrb] onGuidedTopicTeachingEnd handler failed:', e); }
+          }
+        }, 200);
+      }, 300);
+    })();
+  }
+
   function _hide() {
     // VTID-03292 (#3): mark a hard user-close FIRST so any racing reconnect /
     // _sessionStart bails (see _sessionStart guard) and the overlay can't
@@ -4104,6 +4128,9 @@
     _s.guidedAutoClose = false; // VTID-03294 (#4): clear any pending guided auto-close
     _s.guidedTopic = null; // VTID-03675: don't let a never-delivered topic leak into a later, unrelated session
     _s._guidedTopicInFlight = null; // VTID-03746: same lifecycle — this overlay session is genuinely over
+    _s._guidedTopicOpenedAt = null; // VTID-03762: same lifecycle — the backstop no longer applies
+    try { clearInterval(_s._guidedTopicBackstopInterval); } catch (e) { /* noop */ }
+    _s._guidedTopicBackstopInterval = null;
     _s._audioEverHeardThisOpen = false; // VTID-03727: this overlay session is genuinely over
     try { clearInterval(_s._recoveryWatchdog); } catch (e) { /* noop */ }
     _s._recoveryWatchdog = null;
@@ -4558,6 +4585,30 @@
       // VTID-03746: separate, longer-lived record of the same topic — see
       // its declaration for why _s.guidedTopic alone isn't enough anymore.
       _s._guidedTopicInFlight = _s.guidedTopic;
+      // VTID-03762: arm the backstop — see GUIDED_TOPIC_BACKSTOP_MS's own
+      // comment for why this exists. Only for a real topic tap; a null
+      // topicId (defensive fallback path) has nothing to backstop.
+      try { clearInterval(_s._guidedTopicBackstopInterval); } catch (e) { /* noop */ }
+      _s._guidedTopicBackstopInterval = null;
+      if (_s.guidedTopic) {
+        _s._guidedTopicOpenedAt = Date.now();
+        _s._guidedTopicBackstopInterval = setInterval(function () {
+          if (!_s._guidedTopicOpenedAt) {
+            clearInterval(_s._guidedTopicBackstopInterval);
+            _s._guidedTopicBackstopInterval = null;
+            return;
+          }
+          if (Date.now() - _s._guidedTopicOpenedAt >= GUIDED_TOPIC_BACKSTOP_MS) {
+            clearInterval(_s._guidedTopicBackstopInterval);
+            _s._guidedTopicBackstopInterval = null;
+            var _stuckTopicId = _s.guidedTopic || _s._guidedTopicInFlight || null;
+            console.warn('[VTOrb] guided-topic backstop fired after ' + GUIDED_TOPIC_BACKSTOP_MS + 'ms with no end_guided_topic_teaching call (topic=' + _stuckTopicId + ') — closing overlay');
+            _endGuidedTopicTeaching(_stuckTopicId, 'backstop_timeout');
+          }
+        }, GUIDED_TOPIC_BACKSTOP_CHECK_MS);
+      } else {
+        _s._guidedTopicOpenedAt = null;
+      }
       // VTID-03294 (#4): a guided-topic open AUTO-CLOSES the overlay once Vitana
       // finishes the teaching turn (reveals the drawer's next-step buttons),
       // instead of dropping to listening. Set AFTER _s.guidedTopic; _show() does
