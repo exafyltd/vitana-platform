@@ -2817,6 +2817,29 @@
           } catch (e) {
             console.error('[VTOrb] end_teaching_session handling error:', e);
           }
+        } else if (msg.directive === 'end_guided_topic_teaching') {
+          // VTID-03762: the LLM called `end_guided_topic_teaching` after
+          // finishing a "My Journey" guided-topic lesson (see
+          // guided-topic-narration-prompt.ts for why this tool exists — the
+          // GUIDE MODE block has no other exit condition). Mirrors
+          // end_teaching_session's teardown exactly: let the queued audio
+          // finish, then close so the host page's already-mounted "Well
+          // done" drawer (opened at tap time, underneath this overlay) is
+          // revealed.
+          console.log('[VTOrb] orb_directive end_guided_topic_teaching (topic=' + (msg.topic_id || '<none>') + ', reason=' + (msg.reason || '<none>') + ')');
+          try {
+            _s.audioPlaying = false;
+            setTimeout(function() {
+              try { _hide(); }
+              catch (e) { console.error('[VTOrb] _hide on end_guided_topic_teaching failed:', e); }
+            }, 500);
+            if (typeof _cfg.onGuidedTopicTeachingEnd === 'function') {
+              try { _cfg.onGuidedTopicTeachingEnd(msg.topic_id || null, msg.reason || null); }
+              catch (e) { console.error('[VTOrb] onGuidedTopicTeachingEnd handler failed:', e); }
+            }
+          } catch (e) {
+            console.error('[VTOrb] end_guided_topic_teaching handling error:', e);
+          }
         } else {
           console.warn('[VTOrb] Unknown orb_directive: ' + msg.directive);
         }

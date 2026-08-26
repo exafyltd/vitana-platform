@@ -139,6 +139,7 @@ export function buildGuidedTopicNarrationBlock(
           content.practice_target
             ? `- Wenn die Person bereit ist, FÜHRE sie zur Übung („${content.practice_target}") — biete an, es direkt gemeinsam zu machen.`
             : '- Wenn die Person bereit ist, schlage einen konkreten nächsten Schritt vor.',
+          '- Sobald du das getan hast und die Person keine weiteren Rückfragen mehr hat, rufe das Tool end_guided_topic_teaching auf, um die Sitzung abzuschließen — sprich NICHT einfach in allgemeiner Unterhaltung weiter.',
           '',
         ].join('\n')
       : [
@@ -159,6 +160,7 @@ export function buildGuidedTopicNarrationBlock(
           content.practice_target
             ? `- Once they're ready, GUIDE them to the practice ("${content.practice_target}") — offer to do it together right now.`
             : '- Once they\'re ready, propose a concrete next step.',
+          '- Once you\'ve done that and they have no more follow-up questions, call the end_guided_topic_teaching tool to close things out — do NOT just keep talking in general conversation.',
           '',
         ].join('\n');
   }
@@ -208,6 +210,7 @@ export function buildGuidedTopicNarrationBlock(
       content.practice_target
         ? `- Wenn die Person es verstanden hat, FÜHRE sie zur Übung („${content.practice_target}") — biete an, es direkt gemeinsam zu machen.`
         : '- Wenn die Person es verstanden hat, schlage einen konkreten nächsten Schritt vor.',
+      '- Sobald du das getan hast und die Person keine weiteren Rückfragen mehr hat, rufe das Tool end_guided_topic_teaching auf, um die Sitzung abzuschließen — sprich NICHT einfach in allgemeiner Unterhaltung weiter.',
       '',
     ].join('\n');
   }
@@ -251,6 +254,7 @@ export function buildGuidedTopicNarrationBlock(
     content.practice_target
       ? `- Once they get it, GUIDE them to the practice ("${content.practice_target}") — offer to do it together right now.`
       : '- Once they get it, propose a concrete next step.',
+    '- Once you\'ve done that and they have no more follow-up questions, call the end_guided_topic_teaching tool to close things out — do NOT just keep talking in general conversation.',
     '',
   ].join('\n');
 }

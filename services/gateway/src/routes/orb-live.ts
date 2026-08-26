@@ -6528,6 +6528,41 @@ async function executeLiveApiToolInner(
         };
       }
 
+      // VTID-03762: same shape as end_teaching_session above, scoped to the
+      // guided-topic-narration flow (tapping a session/topic in "My
+      // Journey"). See live-tool-catalog.ts's declaration for why this
+      // exists — the GUIDE MODE block has no other exit condition, so
+      // without this the model free-wheels into general conversation
+      // forever and the overlay never closes to reveal the already-mounted
+      // "Well done" drawer.
+      case 'end_guided_topic_teaching': {
+        const reason = typeof args.reason === 'string' ? args.reason.trim().slice(0, 200) : '';
+        const topicId = session.guided_topic_id || null;
+        const directive = {
+          type: 'orb_directive',
+          directive: 'end_guided_topic_teaching',
+          reason: reason || 'guided_topic_taught',
+          topic_id: topicId,
+          vtid: 'VTID-03762',
+        };
+        try {
+          if (session.sseResponse) {
+            session.sseResponse.write(`data: ${JSON.stringify(directive)}\n\n`);
+          }
+          if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+            session.clientWs.send(JSON.stringify(directive));
+          }
+        } catch (err) {
+          console.warn(`[VTID-03762] end_guided_topic_teaching directive emit failed (non-fatal): ${(err as Error).message}`);
+        }
+        console.log(`[VTID-03762] end_guided_topic_teaching called: session=${session.sessionId} topic=${topicId || '<none>'} reason=${reason || '<none>'}`);
+        emitDiag(session, 'guided_topic_teaching_ended', { topic_id: topicId, reason: reason || null });
+        return {
+          success: true,
+          result: 'Guided-topic teaching is ending. The overlay is now closing so the person can continue in the app.',
+        };
+      }
+
       case 'record_journey_answer': {
         // VTID-03257 (Fix-1): Vertex parity for the journey-answer tool.
         // record_journey_answer was added to ORB_TOOL_REGISTRY by VTID-03255

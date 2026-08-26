@@ -2537,6 +2537,48 @@ export function buildLiveApiTools(
             required: [],
           },
         },
+        // VTID-03762: My Journey guided-topic termination — the same shape as
+        // end_teaching_session above, but scoped to the guided-topic-narration
+        // flow (tapping a session/topic in "My Journey"), not Teacher Mode.
+        // WHY THIS EXISTS: the GUIDE MODE system-instruction block
+        // (guided-topic-narration-prompt.ts) has no turn-count limit and no
+        // other exit condition — it is re-injected for the WHOLE session, so
+        // once the model has explained the topic and the user keeps
+        // chatting, it free-wheels into ordinary conversation forever with
+        // no signal telling either the model or the app "teaching is done".
+        // Live-reported symptom (VTID-03762): the ORB overlay never closes,
+        // so the "Well done" drawer — already mounted underneath it since
+        // the moment the topic was tapped (vitana-v1's GuidedJourneyCatalog)
+        // — never becomes visible, and the topic is never reachable to mark
+        // done via its own practice flow.
+        {
+          name: 'end_guided_topic_teaching',
+          description: [
+            'My Journey guided-topic termination: close the orb overlay after',
+            'you have finished teaching a topic the person tapped in "My',
+            'Journey" and they are ready to move on. ALWAYS call this AFTER',
+            'you have explained the topic, answered any follow-up questions,',
+            'and proposed the practice or a concrete next step — do NOT just',
+            'stop talking or drift into unrelated conversation. The overlay UI',
+            'listens for this directive and reveals the topic summary /',
+            'practice screen underneath, where the person can mark it done.',
+            '',
+            'Call this once the person confirms they understand, has no more',
+            'questions about the topic, or clearly wants to move on —',
+            'interpret IN CONTEXT, not by keyword match. Do not call this',
+            'before you have actually explained the topic\'s content.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              reason: {
+                type: 'string',
+                description: 'Short freeform reason the model is closing (e.g. "explained topic, no more questions", "user confirmed understanding"). Used for telemetry — never spoken.',
+              },
+            },
+            required: [],
+          },
+        },
         // BOOTSTRAP-VOICE-CATALOG-COMPLETE — every tool built out from the
         // Voice Tools Catalog's `status: planned` backlog + P0 community-
         // feature gaps (Superlatives, Diary, Memory, Calendar management,
