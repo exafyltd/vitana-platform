@@ -325,6 +325,19 @@
     // VTID-03294 (#4): when true, the overlay auto-closes after the first
     // (teaching) turn finishes — set by focusGuidedTopic, one-shot.
     guidedAutoClose: false,
+    // VTID-03746: remembers the guided topic for THIS overlay-open, surviving
+    // past the point where the turn-complete handler nulls _s.guidedTopic
+    // (which happens as soon as the FIRST turn finishes, on the assumption
+    // "delivered, don't re-offer" — VTID-03675). That assumption breaks when
+    // the session dies mid-lesson: live-reproduced (staging, VTID-03746) —
+    // a session taught T007 for 44 real seconds (497 audio chunks), then
+    // disconnected, and the reconnect had nothing to resume, falling through
+    // to a generic greeting instead of continuing the SAME topic. Read only
+    // by _attemptReconnect()'s retry (an unexpected-disconnect path only —
+    // a clean _hide()/_sessionStop() never reaches it) to re-arm
+    // _s.guidedTopic for that one retry. Cleared only by _hide(), same
+    // lifecycle as guidedTopic itself.
+    _guidedTopicInFlight: null,
     // VTID-02020: contextual recovery state. _preDisconnectStage captures what
     // the user was doing when the network dropped (idle / listening_user_speaking
     // / thinking / speaking) so the backend's recovery prompt can decide
@@ -1299,7 +1312,22 @@
     _setStatus(label);
     _updateUI();
 
-    _playAlert('disconnect-' + reason + '-' + clipLang);
+    // VTID-03746: this call was unconditional — it plays a spoken alert clip
+    // ("Einen Moment, ich verbinde mich neu...") on EVERY disconnect,
+    // including one at turn_count 0 before anything has ever been heard.
+    // VTID-03727 already gated the equivalent VISUAL caption in
+    // _attemptReconnect() on _audioEverHeardThisOpen; this AUDIBLE alert
+    // never got the same treatment, so a nova_validation-style early close
+    // still spoke the reconnect line before Vitana had said a single word —
+    // live-reproduced (staging, VTID-03746): "first thing i hear is: einen
+    // moment die verbindung wird wieder hergestellt". Once real audio HAS
+    // played, hearing this alert is correct — the user was mid-conversation
+    // and got cut off, so "hold on, reconnecting" is exactly right.
+    if (_s._audioEverHeardThisOpen) {
+      _playAlert('disconnect-' + reason + '-' + clipLang);
+    } else {
+      console.log('[VTOrb] _announceDisconnect: suppressing spoken alert clip — nothing heard yet this open');
+    }
 
     // VTID-01987: active 5-second health probe replaces the previous 60s
     // setTimeout. Mobile WebViews (Android Appilix, iOS WKWebView) fire
@@ -4026,6 +4054,7 @@
     _s._isReconnecting = false;
     _s.guidedAutoClose = false; // VTID-03294 (#4): clear any pending guided auto-close
     _s.guidedTopic = null; // VTID-03675: don't let a never-delivered topic leak into a later, unrelated session
+    _s._guidedTopicInFlight = null; // VTID-03746: same lifecycle — this overlay session is genuinely over
     _s._audioEverHeardThisOpen = false; // VTID-03727: this overlay session is genuinely over
     try { clearInterval(_s._recoveryWatchdog); } catch (e) { /* noop */ }
     _s._recoveryWatchdog = null;
@@ -4181,6 +4210,20 @@
       _s.greetingAudioReceived = false;
       // VTID-01988 (mic restart fix): see _resetAndReconnect for context.
       _s.greetingComplete = false;
+
+      // VTID-03746: this is an UNEXPECTED-disconnect retry (a clean X-close/
+      // _sessionStop never reaches _attemptReconnect at all — see _hide()).
+      // If a guided topic was in play THIS overlay-open but the turn-complete
+      // handler had already nulled _s.guidedTopic (the lesson was mid-way
+      // through being taught, not merely offered), restore it here so the
+      // reconnected session resumes the SAME topic instead of falling
+      // through to a generic/newday-style greeting. Live-reproduced
+      // (staging): a 44-second, 497-audio-chunk T007 teaching session
+      // disconnected mid-lesson and the reconnect had nothing to resume.
+      if (_s._guidedTopicInFlight && !_s.guidedTopic) {
+        console.log('[VTOrb] _attemptReconnect: re-arming guided topic for resume: ' + _s._guidedTopicInFlight);
+        _s.guidedTopic = _s._guidedTopicInFlight;
+      }
 
       _sessionStart().then(function () {
         _s._isReconnecting = false;
@@ -4463,6 +4506,9 @@
       // re-arms everything cleanly.
       try { _sessionStop(); } catch (e) { /* best-effort */ }
       _s.guidedTopic = (typeof topicId === 'string' && topicId) ? topicId : null;
+      // VTID-03746: separate, longer-lived record of the same topic — see
+      // its declaration for why _s.guidedTopic alone isn't enough anymore.
+      _s._guidedTopicInFlight = _s.guidedTopic;
       // VTID-03294 (#4): a guided-topic open AUTO-CLOSES the overlay once Vitana
       // finishes the teaching turn (reveals the drawer's next-step buttons),
       // instead of dropping to listening. Set AFTER _s.guidedTopic; _show() does
