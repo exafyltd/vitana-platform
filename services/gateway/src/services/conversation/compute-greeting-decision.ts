@@ -957,13 +957,31 @@ function computeNormalLadder(ctx: GreetingDecisionContext): GreetingDecision {
     // The line's SUBSTANCE is still authoritative: providers ground it in real
     // data (unread counts, index movement, calendar), so the facts are pinned
     // verbatim even though the wording is not.
+    // BOOTSTRAP-ORB-PERSONALIZED-GREETING — reported live: "a simple good
+    // morning is not enough, it must be personalized: Good morning Claudia,
+    // Good night Thomas." override_v2 is the ONLY opener most sessions ever
+    // reach (VTID-03646's own measurement: 24 of 24 wake_opener events in
+    // four days), so its old blanket "do not greet the user by name first"
+    // line — added by VTID-03646 to fix a dead-end announcement bug — is
+    // exactly what suppressed personalization for effectively every session
+    // that has a known name. Fix is conditional, not a reversal: when
+    // ctx.firstName is known, leading with a name-based greeting is now a
+    // HARD RULE; when it genuinely is not known (see compute-greeting-
+    // decision's own null-name handling elsewhere in this file), the
+    // original "do not invent one" behavior is preserved unchanged.
+    const knownFirstName =
+      typeof ctx.firstName === 'string' && ctx.firstName.trim().length > 0 ? ctx.firstName.trim() : null;
+    const nameRule = knownFirstName
+      ? `The user's name is "${knownFirstName}". HARD RULE — your very first words must be a warm, time-of-day-appropriate greeting that addresses them by that name, composed in their own language (never a bare greeting with no name, and never a different name).`
+      : `No name is known for this user right now — greet warmly without inventing or guessing one.`;
     const wakeTrigger =
       `Open the conversation from this prepared lead: "${safe}"\n` +
-      `It is a LEAD, not your whole turn. Deliver the turn in three beats, as ONE continuous piece of speech:\n` +
+      `${nameRule}\n` +
+      `The lead itself is a LEAD, not your whole turn. Deliver the turn in three beats, as ONE continuous piece of speech (the name-based greeting above comes first, then these three beats):\n` +
       `1. SUBSTANCE — say what is actually going on, not that you are about to. If the lead names something you can already tell them (their messages, their index, their calendar, what changed), tell them the substance of it now, in one or two sentences. Never announce an intention you then do not carry out in this same turn.\n` +
       `2. NEXT STEP — propose ONE concrete next step yourself. Never ask the user what they want to do, never offer a menu.\n` +
       `3. CONFIRMATION — close by asking them to confirm that one step, so they can simply say yes.\n` +
-      `Keep every concrete fact from the lead — numbers, names, dates — exactly as given, and invent nothing beyond it. Compose the wording yourself in the user's own language; do not recite the lead word for word and do not reuse phrasing from a previous session. Do not greet the user by name first; go straight into the substance. Then stop and listen.`;
+      `Keep every concrete fact from the lead — numbers, names, dates — exactly as given, and invent nothing beyond it. Compose the wording yourself in the user's own language; do not recite the lead word for word and do not reuse phrasing from a previous session. Then stop and listen.`;
     // A tapped My Journey topic is NOT a lead to build a proposal on, so it
     // deliberately does not get the three-beat contract above.
     //

@@ -1963,6 +1963,46 @@ async function emitChatSendFailure(
   }
 }
 
+// BOOTSTRAP-ORB-CHAT-SEND-TRUTHFULNESS — reported live: Vitana confirmed a
+// message was sent, but it never appeared in the sender's own chat history
+// and the receiver never got it. Investigation found a real, working
+// insert path (this function does write a real `chat_messages` row on the
+// confirmed=true call) but NO success-path telemetry at all — only
+// `emitChatSendFailure` above existed, so the ONE tool call in this whole
+// flow that most needs to be independently verifiable (did the model's
+// spoken "sent" claim correspond to a real row?) left no trace to check it
+// against. This is the missing symmetric half: emitted right after the
+// insert that produces `inserted.id`, so a reported "it said sent but
+// nothing arrived" can be checked directly against `oasis_events` instead
+// of re-deriving the whole call chain from scratch every time.
+async function emitChatSendSuccess(
+  id: OrbToolIdentity,
+  args: OrbToolArgs,
+  extra: Record<string, unknown> = {},
+): Promise<void> {
+  try {
+    const { emitOasisEvent } = await import('./oasis-event-service');
+    await emitOasisEvent({
+      vtid: 'VTID-01967',
+      type: 'voice.chat_message.send_succeeded',
+      source: 'orb-tools-shared',
+      status: 'info',
+      message: 'send_chat_message succeeded',
+      payload: {
+        recipient_user_id_arg: typeof args.recipient_user_id === 'string' ? args.recipient_user_id : null,
+        recipient_label_arg: typeof args.recipient_label === 'string' ? args.recipient_label : null,
+        ...extra,
+      },
+      actor_id: id.user_id,
+      actor_role: 'user',
+      surface: 'orb',
+      vitana_id: id.vitana_id ?? undefined,
+    });
+  } catch {
+    // OASIS failures must not break voice flow — swallow.
+  }
+}
+
 interface ValidatedRecipient {
   recipientUserId: string;
   recipientVitanaId: string | null;
@@ -2427,6 +2467,11 @@ export async function tool_send_chat_message(
         error: `I couldn't send the message just now — want me to try once more?`,
       };
     }
+
+    await emitChatSendSuccess(id, args, {
+      message_id: (inserted as { id?: string } | null)?.id ?? null,
+      recipient_user_id: recipientUserId,
+    });
 
     // VTID-02966 (Issue #3): push-notify the receiver. Mirrors chat.ts:80-135
     // exactly — same payload shape (title=sender display name, body=trimmed

@@ -241,6 +241,36 @@ describe('computeGreetingDecision — rung golden snapshots', () => {
     expect(d).toMatchSnapshot();
   });
 
+  // BOOTSTRAP-ORB-PERSONALIZED-GREETING — reported live: "a simple good
+  // morning is not enough, it must be personalized: Good morning Claudia."
+  // override_v2 is the dominant opener (24/24 sessions per VTID-03646's own
+  // measurement), so a known name must be a hard requirement here, not just
+  // on the rarely-reached safe_fast_newday rung (rung 5).
+  test('rung 8: override_v2 with a known name → HARD RULE requires a name-based greeting', () => {
+    const d = computeGreetingDecision(
+      ctx({
+        firstName: 'Claudia',
+        openDecision: { mode: 'speak', source: 'wake:teacher', line: 'Du hast 3 neue Nachrichten.' },
+      }),
+    );
+    expect(d.wakeOpener).toBe('override_v2');
+    expect(d.directive).toContain('The user\'s name is "Claudia"');
+    expect(d.directive).toMatch(/HARD RULE/);
+    expect(d.directive).not.toMatch(/Do not greet the user by name first/);
+  });
+
+  test('rung 8: override_v2 with no known name → does not invent one, no hard-rule text', () => {
+    const d = computeGreetingDecision(
+      ctx({
+        firstName: null,
+        openDecision: { mode: 'speak', source: 'wake:teacher', line: 'Du hast 3 neue Nachrichten.' },
+      }),
+    );
+    expect(d.wakeOpener).toBe('override_v2');
+    expect(d.directive).toMatch(/greet warmly without inventing or guessing one/);
+    expect(d.directive).not.toMatch(/HARD RULE/);
+  });
+
   test('rung 8: override_v2 guided-teach (narration content → SAME plain trigger as every other provider, VTID-03674)', () => {
     // VTID-03674: guided-topic candidates used to get a special "translate it
     // faithfully and completely... do NOT summarize" trigger. Live evidence
