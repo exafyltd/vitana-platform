@@ -1,0 +1,22 @@
+$ mcp__Supabase__apply_migration add_user_journey_last_day_close_date (project inmkhvwdcuyhnxkgfvsb)
+{"success":true}
+
+$ cd services/gateway && npx tsc --noEmit
+(no output — clean)
+
+$ cd services/gateway && npx jest test/orb --silent
+Test Suites: 185 passed, 185 total
+Tests:       6 todo, 3425 passed, 3431 total
+Snapshots:   10 passed, 10 total
+
+$ cd services/gateway && npx jest test/orb/live/characterization/day-close-greeting-facts-reduced-default --silent
+PASS test/orb/live/characterization/day-close-greeting-facts-reduced-default.characterization.test.ts
+  BOOTSTRAP-ORB-DAY-CLOSE — greeting-facts prefetch selects last_day_close_date again
+    ✓ the user_journey SELECT includes both last_full_briefing_date AND last_day_close_date
+    ✓ greetingLastDayCloseDate is read from the fetched row and applied onto the session
+  BOOTSTRAP-ORB-DAY-CLOSE — the reduced opener is the permanent default, not a retry-only fallback
+    ✓ the safe-fast greeting context hardcodes dayCloseReduced: true
+    ✓ the normal/sync greeting context hardcodes dayCloseReduced: true
+    ✓ the retry flag is still consumed and cleared (no stale leak into a later close)
+Test Suites: 1 passed, 1 total
+Tests:       5 passed, 5 total
