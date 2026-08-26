@@ -368,14 +368,24 @@ await page.reload();
     a blanket sign-off on unrelated work that happens to be sitting on
     staging/`main` at the same moment (someone else's merged-but-unverified
     PR, a half-finished feature flag flip, etc.). Concretely: pin the deploy
-    to this session's own commit — `publish-to-prod.sh --ref
-    <this-session's-merge-commit-SHA>`, or the `expected_commit`/`commit_sha`
-    input on the relevant `AWS-PROD-DEPLOY-*.yml` — rather than accepting the
-    tools' own defaults (`publish-to-prod.sh`'s `--ref main`,
-    `AWS-PROD-DEPLOY-GATEWAY.yml`'s default `promote-staging` mode, or
-    `AWS-PROD-DEPLOY-FRONTEND.yml`/`DEPLOY.yml`'s `commit_sha` falling back to
-    `github.sha`), all of which ship the ref/staging build **as a whole**,
-    not just this session's diff. **Pinning a commit is necessary but not
+    to this session's own commit via the `expected_commit`/`commit_sha` input
+    on the relevant `AWS-PROD-DEPLOY-*.yml` workflow's own `workflow_dispatch`
+    — rather than accepting the tools' own defaults
+    (`AWS-PROD-DEPLOY-GATEWAY.yml`'s default `promote-staging` mode with no
+    `expected_commit`, or `AWS-PROD-DEPLOY-FRONTEND.yml`/`DEPLOY.yml`'s
+    `commit_sha` falling back to `github.sha`), all of which ship the
+    ref/staging build **as a whole**, not just this session's diff. **Do not
+    use `publish-to-prod.sh`'s `--ref` for this** — it forwards straight to
+    `gh workflow run --ref`, which GitHub's `workflow_dispatch` API only
+    accepts as a branch or tag, never a raw commit SHA, so passing a commit
+    there fails outright before anything deploys; the script also wraps
+    `EXEC-DEPLOY.yml`, the GCP/Cloud Run-era workflow §9 already flags as
+    dead code (GCP is decommissioned, §1) — do not dispatch it at all, for
+    this or any other reason. Dispatch the live `AWS-PROD-DEPLOY-*.yml`
+    workflow directly instead (`gh workflow run AWS-PROD-DEPLOY-GATEWAY.yml
+    --repo exafyltd/vitana-platform -f reason="…" -f
+    expected_commit=<this-session's-merge-commit-SHA>`, or the Command Hub).
+    **Pinning a commit is necessary but not
     sufficient on its own:** every one of these deploy paths checks out (or,
     for `promote-staging`, ships an image built from) the FULL repository
     snapshot AT that commit, never a diff — so a pinned commit still carries
@@ -1645,10 +1655,12 @@ When changing code:
    deploy here.
 6. **Ship to production** — when staging is verified, click **PUBLISH** in the
    Command Hub (promotes the exact tested staging build). For the rare
-   out-of-band case, run:
+   out-of-band case, dispatch the service's `AWS-PROD-DEPLOY-*.yml` workflow
+   directly (`scripts/deploy/publish-to-prod.sh` wraps the dead GCP-era
+   `EXEC-DEPLOY.yml` — do not use it; see the subsection below):
    ```
-   scripts/deploy/publish-to-prod.sh --service gateway --vtid VTID-XXXXX \
-     --reason "why this exceptional prod deploy is justified"
+   gh workflow run AWS-PROD-DEPLOY-GATEWAY.yml --repo exafyltd/vitana-platform \
+     -f reason="why this exceptional prod deploy is justified"
    ```
 7. **Verify prod** — only after PUBLISH/escape-hatch, per §15.
 
@@ -1663,23 +1675,33 @@ reintroduces the auto-to-prod behavior the staging-first cutover removed.
 ### A session-approved manual prod deploy ships that session's change only (Part 1 IF-THEN 26)
 
 When the user approves a production deploy in conversation and it goes out
-via `publish-to-prod.sh` or a manual `workflow_dispatch` — **not** the
-Command Hub PUBLISH button — the approval covers this session's own
-change, not the current state of staging/`main` as a whole. Pin the ref:
+via a manual `workflow_dispatch` — **not** the Command Hub PUBLISH button —
+the approval covers this session's own change, not the current state of
+staging/`main` as a whole. Pin the commit on the workflow's own input:
 
 ```
-scripts/deploy/publish-to-prod.sh --service gateway --vtid VTID-XXXXX \
-  --ref <this session's merge commit SHA> \
-  --reason "why this exceptional prod deploy is justified"
+gh workflow run AWS-PROD-DEPLOY-GATEWAY.yml --repo exafyltd/vitana-platform \
+  -f reason="why this exceptional prod deploy is justified" \
+  -f expected_commit=<this session's merge commit SHA>
 ```
 
-Leaving `--ref` at its default (`main`) or `deploy_mode` at its default
-(`promote-staging`) ships the ref/staging build **as a whole** — including
-any other work that happens to have landed on `main` or staging ahead of
-this session's commit, whether or not the user in this conversation ever
-saw or approved it. That is exactly what PUBLISH is *for* (a deliberate,
-human-operated promotion of the entire tested staging build) and exactly
-what an in-session approval is not.
+**Do not use `scripts/deploy/publish-to-prod.sh` for this.** Its `--ref`
+forwards straight to `gh workflow run --ref`, which GitHub's
+`workflow_dispatch` API only accepts as a branch or tag — never a raw
+commit SHA — so passing a commit there fails before anything deploys. The
+script also wraps `EXEC-DEPLOY.yml`, the GCP/Cloud Run-era workflow §9
+already flags as dead code now that GCP is decommissioned (§1); do not
+dispatch it. Dispatch the live `AWS-PROD-DEPLOY-*.yml` workflow for the
+service directly instead, as above.
+
+Leaving `expected_commit` empty, or `deploy_mode` at its default
+(`promote-staging`) with no `expected_commit`, ships whatever staging is
+currently running **as a whole** — including any other work that happens
+to have landed on `main` or staging ahead of this session's commit, whether
+or not the user in this conversation ever saw or approved it. That is
+exactly what PUBLISH is *for* (a deliberate, human-operated promotion of
+the entire tested staging build) and exactly what an in-session approval
+is not.
 
 **Pinning `--ref`/`expected_commit` is necessary, not sufficient.** The
 workflow checks out (or, for `promote-staging`, ships an image built from)
