@@ -1,0 +1,2733 @@
+{
+  "surface": "journey-checklist",
+  "locale": "zh",
+  "source_locale": "de",
+  "generated_at": "2026-08-26T09:50:37.329Z",
+  "field_order": [
+    "display_label",
+    "short_description",
+    "explanation_what_it_is",
+    "explanation_user_benefit",
+    "explanation_when_to_use",
+    "explanation_try_this"
+  ],
+  "entries": {
+    "T002": {
+      "source_sha": "258426d4307dc970",
+      "fields": {
+        "display_label": "Maxina 社区",
+        "short_description": "出发前，先了解一下这个生态圈。",
+        "explanation_what_it_is": "Maxina 社区是你在 Vitanaland 里的专属社交圈。在这里，你会遇到一群志同道合、想要共同成长的伙伴。",
+        "explanation_user_benefit": "在这段旅程中，你永远不会孤单，还能从别人的经验中获益。这会给你归属感，也会为你每天注入新的动力。",
+        "explanation_when_to_use": "当你想和大家交流、参加活动，或者只是想找点灵感的时候，就来这里逛逛吧。",
+        "explanation_try_this": "现在就点开社区概览，轻松看看周围有什么吧。"
+      }
+    },
+    "T003": {
+      "source_sha": "d601bd33f36ab46d",
+      "fields": {
+        "display_label": "Vitana 助手",
+        "short_description": "认识一下助手和语音控制功能。",
+        "explanation_what_it_is": "我是 Vitana，你的私人助手。你可以通过 ORB 找到我，就是屏幕右下角那个小球。",
+        "explanation_user_benefit": "有了我，你几乎不用再费力打字了。直接跟我说话就行，我会帮你记住所有重要的事情。",
+        "explanation_when_to_use": "比如你想快速记录喝了一杯水，直接告诉我就好。",
+        "explanation_try_this": "现在点一下 ORB，看看有多简单。"
+      }
+    },
+    "T004": {
+      "source_sha": "11d9b7a9347532fd",
+      "fields": {
+        "display_label": "ORB 语音",
+        "short_description": "认识一下助手和语音控制功能。",
+        "explanation_what_it_is": "ORB 是屏幕右下角的那个小球。点一下它，你就可以马上跟我说话了。",
+        "explanation_user_benefit": "省去烦人的打字。告诉我你需要什么，我来帮你记录。",
+        "explanation_when_to_use": "早上起床后想快速记录第一杯水又不想打字的时候，就点一下 ORB 吧。",
+        "explanation_try_this": "现在点一下 ORB，跟我打个招呼吧。"
+      }
+    },
+    "T007": {
+      "source_sha": "7c3733a55848ebbb",
+      "fields": {
+        "display_label": "人生罗盘",
+        "short_description": "设定你的个人目标体系。",
+        "explanation_what_it_is": "人生罗盘是你未来90天最重要的目标。它为我指明方向，让我知道该如何陪伴你前行。",
+        "explanation_user_benefit": "这样我就能根据你的个人愿望精准调整所有建议。你收到的每一条提示，都会真正帮助你靠近你的大目标。",
+        "explanation_when_to_use": "当你想把全部精力集中在健康或事业等某个方面时，就可以在人生罗盘中选择一个目标。",
+        "explanation_try_this": "现在点击屏幕，打开人生罗盘，仔细看看它吧。"
+      }
+    },
+    "T008": {
+      "source_sha": "2014f4f17aa0d564",
+      "fields": {
+        "display_label": "选择目标",
+        "short_description": "设定你的个人目标体系。",
+        "explanation_what_it_is": "人生罗盘是你未来90天最重要的目标。它为我指明方向，让我们一起朝着同一个方向前进。",
+        "explanation_user_benefit": "这样我就能根据你当前的愿望精准调整所有建议。每一小步都会帮助你实现这个梦想。",
+        "explanation_when_to_use": "当你想在生活中专注于一个新领域，比如健康或事业时，就可以设定它。",
+        "explanation_try_this": "现在点击屏幕，为你的人生罗盘选择第一个方向吧。"
+      }
+    },
+    "T010": {
+      "source_sha": "a73f9506fe65a345",
+      "fields": {
+        "display_label": "提升指数",
+        "short_description": "尽早了解 Vitana Index。",
+        "explanation_what_it_is": "每当你在日常生活中做出健康的选择，你的 Vitana Index 就会随之增长。无论是喝一杯水还是出门散步，数值都会立刻更新。",
+        "explanation_user_benefit": "这样你能直接看到哪些小习惯对你最有帮助，清清楚楚地知道什么才是真正对身体好的。",
+        "explanation_when_to_use": "看看你的指数，感受一下哪怕是一小段散步或一杯水，都能让数值有所提升。",
+        "explanation_try_this": "现在打开你的 Vitana Index，看看用哪个小行动就能马上让它涨起来。"
+      }
+    },
+    "T011": {
+      "source_sha": "ff6f82a14d656bae",
+      "fields": {
+        "display_label": "五大支柱",
+        "short_description": "健康模型简单说明。",
+        "explanation_what_it_is": "在 Vitanaland，你的健康始终建立在五大支柱之上：睡眠、运动、营养、心理韧性和水分摄入。它们共同构成了你的 Vitana Index。",
+        "explanation_user_benefit": "这样一来，健康生活的目标对你来说变得既简单又可衡量。你一眼就能看出自己哪方面已经做得很好，哪方面还可以再平衡一下。",
+        "explanation_when_to_use": "最好每天都看看这个概览，检查一下生活的各个方面是否保持着良好的平衡。",
+        "explanation_try_this": "现在继续点击，在下一个页面仔细看看你的五大支柱吧。"
+      }
+    },
+    "T012": {
+      "source_sha": "e888a82b6b4f0509",
+      "fields": {
+        "display_label": "最弱支柱",
+        "short_description": "健康模型简单解读。",
+        "explanation_what_it_is": "你的最弱支柱是五大支柱中目前最需要关注的领域。我每天都会自动帮你识别出来。",
+        "explanation_user_benefit": "这样你就不用一下子把所有事情都做到完美。只要有针对性地加强这一个领域，你的 Vitana 指数就能提升得最快。",
+        "explanation_when_to_use": "每天早上查看一下你的最弱支柱，轻松确定当天的重点。",
+        "explanation_try_this": "现在点击屏幕，看看今天你的哪根支柱最弱。"
+      }
+    },
+    "T013": {
+      "source_sha": "c5e1bfb637bf13fe",
+      "fields": {
+        "display_label": "生活质量",
+        "short_description": "提升生活质量的承诺。",
+        "explanation_what_it_is": "生命罗盘是你未来九十天最重要的目标。它帮助我把你的生活质量引向正确的方向。",
+        "explanation_user_benefit": "从现在起，我所有的建议都会围绕这一个愿望来调整。这样我们不只是收集数据，而是真正改善你的生活。",
+        "explanation_when_to_use": "当你想把生活重心转向新方向时，就可以使用罗盘。",
+        "explanation_try_this": "现在点击屏幕，探索你的生命罗盘，选择你的第一个目标。"
+      }
+    },
+    "T014": {
+      "source_sha": "f942bd6bb759c4c4",
+      "fields": {
+        "display_label": "健康优先",
+        "short_description": "提升生活质量的承诺。",
+        "explanation_what_it_is": "生命罗盘是你未来90天最重要的目标。如果你在这里把健康放在首位，一切都会围绕它来安排。",
+        "explanation_user_benefit": "你不会收到随机的建议，而是专门为改善睡眠和运动量身定制的方案。每一小步都能让你明显感受到离健康生活更近了。",
+        "explanation_when_to_use": "当你想在一段忙碌之后重新关爱自己的身体时，就选择这个方向。",
+        "explanation_try_this": "现在点击屏幕，把你的生命罗盘调整到健康方向。"
+      }
+    },
+    "T015": {
+      "source_sha": "a9b992d30f2ac970",
+      "fields": {
+        "display_label": "隐私控制",
+        "short_description": "为你提供安全与掌控。",
+        "explanation_what_it_is": "隐私设置区让你完全掌控在 Vitanaland 中的个人信息。在这里，只有你能决定哪些数据保持私密，哪些可以分享。",
+        "explanation_user_benefit": "这会让你感到绝对安心，因为没有你的明确许可，什么都不会发生。你可以完全放松、毫无顾虑地使用 Vitana。",
+        "explanation_when_to_use": "当你想精确设定 Autopilot 可以使用哪些信息来为你寻找合适内容时，就来看看这个区域。",
+        "explanation_try_this": "现在打开隐私设置，看看掌控一切有多简单。"
+      }
+    },
+    "T016": {
+      "source_sha": "ff2c5e65f6d7c07f",
+      "fields": {
+        "display_label": "记忆授权",
+        "short_description": "为你提供安全与掌控。",
+        "explanation_what_it_is": "为了更好地帮助你，我会把重要的细节保存在你的记忆中。但你始终可以完全自主决定让我记住什么。",
+        "explanation_user_benefit": "这样我才能在日常生活中为「我的旅程」提供真正适合你的建议。同时，你始终对自己的数据拥有绝对的控制权。",
+        "explanation_when_to_use": "当你希望我把一个新的细节记录到记忆花园时，就使用这个功能。",
+        "explanation_try_this": "现在点击屏幕，亲自试试如何授权我记住某件事。"
+      }
+    },
+    "T017": {
+      "source_sha": "d654a2a8cb9dc45d",
+      "fields": {
+        "display_label": "档案基础",
+        "short_description": "为什么你的档案很重要。",
+        "explanation_what_it_is": "你的档案是你在 MAXINA 社区的个人主页。在这里，你可以轻松展示自己是谁、对什么感兴趣。",
+        "explanation_user_benefit": "一份完善的档案能帮助我为你找到最合适的人和机会。它让你被看见，让别人能够支持你。",
+        "explanation_when_to_use": "在请我帮你寻找合适的联系人或新机会之前，先完善你的档案。",
+        "explanation_try_this": "点击你的档案，现在就添加你的第一个兴趣。"
+      }
+    },
+    "T018": {
+      "source_sha": "a7f425fc64096fbb",
+      "fields": {
+        "display_label": "信任标识",
+        "short_description": "为什么你的档案很重要。",
+        "explanation_what_it_is": "你的档案是你在 MAXINA 社区的名片。它向别人展示你是谁、你擅长什么。",
+        "explanation_user_benefit": "一份完善的档案能直接赢得他人的信任。它帮助你找到对的人和精彩的新机会。",
+        "explanation_when_to_use": "当你想结识新朋友或在社区中更有存在感时，就来完善你的档案。",
+        "explanation_try_this": "现在点击你的档案，添加一条新信息，在社区中建立信任。"
+      }
+    },
+    "T019": {
+      "source_sha": "f2766069aaeaa451",
+      "fields": {
+        "display_label": "问问 Vitana",
+        "short_description": "你的第一批语音指令。",
+        "explanation_what_it_is": "ORB 是屏幕右下角的小圆球。点击它，我就会听你说话并回答你的问题。",
+        "explanation_user_benefit": "你不用再费力打字，只需自然地和我说话就行。这能节省你的时间，让日常生活更轻松。",
+        "explanation_when_to_use": "比如在外出时想快速记录日记，就可以使用 ORB。",
+        "explanation_try_this": "点击 ORB，现在就问我你的第一个问题。"
+      }
+    },
+    "T020": {
+      "source_sha": "70896e00a936b4da",
+      "fields": {
+        "display_label": "打开屏幕",
+        "short_description": "你的第一批语音指令。",
+        "explanation_what_it_is": "通过ORB，你可以轻松用语音在Vitanaland里导航。只要告诉我你想去哪里，我就会帮你打开对应的页面。",
+        "explanation_user_benefit": "你不用记住菜单，也不用到处找。这样既省时间，操作起来也超简单。",
+        "explanation_when_to_use": "当你想快速打开日记或生命罗盘，又不想在屏幕上翻来翻去的时候，就用这个功能吧。",
+        "explanation_try_this": "现在就点一下ORB，告诉我打开生命罗盘，试试看吧。"
+      }
+    },
+    "T021": {
+      "source_sha": "dbc233a54b2a6740",
+      "fields": {
+        "display_label": "每日节奏",
+        "short_description": "这就是你每天的开始方式。",
+        "explanation_what_it_is": "每日节奏是你在Vitanaland里的简单流程。它由一些小而可行的步骤组成，把你的健康和当天的具体行动联系起来。",
+        "explanation_user_benefit": "想要更健康地生活，你不需要一个完美的计划。这个简单的日常习惯能帮你每天轻松关注自己，完全没有压力。",
+        "explanation_when_to_use": "早上喝咖啡的时候用它来开启新的一天，晚上用它在日记里简单记录一下当天的经历。",
+        "explanation_try_this": "现在点击屏幕，体验一下你的第一个每日节奏吧。"
+      }
+    },
+    "T022": {
+      "source_sha": "0e6fee88ab72aaf2",
+      "fields": {
+        "display_label": "第一个练习",
+        "short_description": "这就是你每天的开始方式。",
+        "explanation_what_it_is": "在最初的30天里，我会在你的首页上用每日小贴士来陪伴你。就像是一次应用内的导览之旅。",
+        "explanation_user_benefit": "这样你每天都能学到一个新的实用功能，不会感到手忙脚乱。这趟探索之旅会按照你自己的节奏，轻松进行。",
+        "explanation_when_to_use": "每天早上看看你的首页，发现当天的小贴士就好。",
+        "explanation_try_this": "点击按钮，马上开始你的第一个小练习，亲自试试看吧。"
+      }
+    },
+    "T023": {
+      "source_sha": "1de7ae1968da17fe",
+      "fields": {
+        "display_label": "睡眠",
+        "short_description": "从恢复精力开始。",
+        "explanation_what_it_is": "睡眠是Vitana的五大支柱之一，是你恢复精力的基础。它是保持Vitana指数平衡的核心要素。",
+        "explanation_user_benefit": "清楚了解自己的睡眠状况，能让你知道是否真正得到了充分的休息。这样你就可以做些小调整，让自己每天都能精力满满地开始。",
+        "explanation_when_to_use": "早上醒来的时候看看这个板块，了解一下为什么你精神饱满或者还是觉得困。",
+        "explanation_try_this": "现在点击睡眠板块，仔细看看这个重要的支柱吧。"
+      }
+    },
+    "T024": {
+      "source_sha": "9ce771c3c4e982e0",
+      "fields": {
+        "display_label": "记录睡眠",
+        "short_description": "从恢复精力开始。",
+        "explanation_what_it_is": "睡眠是五大支柱之一，也是你恢复精力最重要的时间。在这里，你可以记录昨晚睡了多久、睡得怎么样。",
+        "explanation_user_benefit": "记录睡眠能让你清楚地了解夜间休息对白天状态的影响。这有助于你更好地规划自己的精力。",
+        "explanation_when_to_use": "最好每天早上一醒来就把睡眠情况记到日记里。",
+        "explanation_try_this": "现在点击屏幕，记录一下昨晚的睡眠，试试看吧。"
+      }
+    },
+    "T025": {
+      "source_sha": "e7916e143efd0682",
+      "fields": {
+        "display_label": "水分",
+        "short_description": "一个快速的健康小成就。",
+        "explanation_what_it_is": "水分是你健康的五大支柱之一。它能简单直观地告诉你，身体每天是否摄入了足够的水。",
+        "explanation_user_benefit": "喝够水能立刻让你更有精神、更清醒。这是增强体力和提升Vitana指数最简单的方法。",
+        "explanation_when_to_use": "下午感到疲倦、需要快速补充能量的时候，就来看看这个支柱吧。",
+        "explanation_try_this": "点击继续，现在就来认识一下你的水分板块吧。"
+      }
+    },
+    "T026": {
+      "source_sha": "e764152a6fe3b25e",
+      "fields": {
+        "display_label": "记录饮水",
+        "short_description": "一个快速的健康小成就。",
+        "explanation_what_it_is": "在这里记录你喝了多少水。这是一个简单的方法，帮你关注自己的水分摄入。",
+        "explanation_user_benefit": "这样你能马上看到身体是否喝够了水。这是日常生活中一个快速的小成就。",
+        "explanation_when_to_use": "比如早上起床后喝第一杯水的时候，就可以用它来记录。",
+        "explanation_try_this": "点击按钮，现在就记录你的第一杯水吧。"
+      }
+    },
+    "T027": {
+      "source_sha": "be6756a985313f97",
+      "fields": {
+        "display_label": "运动",
+        "short_description": "让运动为你注入能量。",
+        "explanation_what_it_is": "运动是你生命罗盘中的五大支柱之一。它能让你看到自己每天的活动量。",
+        "explanation_user_benefit": "规律的运动就像一台发动机，为你源源不断地输送能量。它会让你在日常生活中感觉更清醒、更有力量。",
+        "explanation_when_to_use": "当你久坐办公桌后起身去散个步时，想想这个支柱吧。",
+        "explanation_try_this": "现在点击运动区域，看看在哪里可以找到你的活动记录。"
+      }
+    },
+    "T028": {
+      "source_sha": "df83525269a41080",
+      "fields": {
+        "display_label": "记录运动",
+        "short_description": "让运动为你注入能量。",
+        "explanation_what_it_is": "在这里，你可以记录今天的运动情况。可以是散步、运动，甚至是做家务。",
+        "explanation_user_benefit": "这样你就能很快发现运动如何为你带来新鲜能量。每一步都很重要，都在增强你的健康。",
+        "explanation_when_to_use": "散完步后马上用这个功能，或者晚上放松时用都可以。",
+        "explanation_try_this": "点击按钮，现在就记录你的第一次运动吧。"
+      }
+    },
+    "T029": {
+      "source_sha": "12d145c5326d71a7",
+      "fields": {
+        "display_label": "饮食",
+        "short_description": "让饮食变得简单。",
+        "explanation_what_it_is": "饮食是你健康的五大支柱之一。在这里，你可以轻松掌握自己吃了什么。",
+        "explanation_user_benefit": "这样你就能看到你的饮食如何影响你的 Vitana 指数。它能帮助你在没有压力的情况下更好地了解自己的身体。",
+        "explanation_when_to_use": "当你想知道今天是否吃得健康均衡时，看看你的饮食支柱吧。",
+        "explanation_try_this": "现在点击屏幕，打开你的饮食支柱。"
+      }
+    },
+    "T030": {
+      "source_sha": "d51d0dba818c8c44",
+      "fields": {
+        "display_label": "饮食笔记",
+        "short_description": "让饮食变得简单。",
+        "explanation_what_it_is": "饮食笔记是一种简单的方式，让你在日记中记录饮食。你不需要计算卡路里，只需简单描述一下你吃了什么。",
+        "explanation_user_benefit": "这样你就能轻松掌握自己的饮食情况，完全没有压力。它能帮助你以简单的方式关注五大支柱中最重要的一项。",
+        "explanation_when_to_use": "最好在午餐后趁记忆还新鲜时，马上做个简短的笔记。",
+        "explanation_try_this": "现在点击屏幕，创建你的第一条饮食笔记吧。"
+      }
+    },
+    "T031": {
+      "source_sha": "51f34bd8d8e01441",
+      "fields": {
+        "display_label": "心理韧性",
+        "short_description": "强健你的内心。",
+        "explanation_what_it_is": "心理韧性是你健康的五大支柱之一。它涵盖所有对你心灵有益的事情，比如放松、专注或美好的时刻。",
+        "explanation_user_benefit": "这样你就能看到自己在内心平衡方面做得如何。你会立刻发现什么时候应该给自己多留一些时间。",
+        "explanation_when_to_use": "当你的日常生活特别忙碌，想找到让内心平静下来的方法时，看看这个区域吧。",
+        "explanation_try_this": "点击屏幕，仔细看看你的心理韧性区域。"
+      }
+    },
+    "T032": {
+      "source_sha": "12d3310cbb58eee5",
+      "fields": {
+        "display_label": "一分钟重启",
+        "short_description": "强健你的内心。",
+        "explanation_what_it_is": "一分钟暂停是一个简短的引导式心灵休息。它是一个非常简单的心理韧性练习。",
+        "explanation_user_benefit": "它能帮助你快速释放日常压力，重新集中注意力。这会立刻给你带来新鲜能量。",
+        "explanation_when_to_use": "当你感觉有点喘不过气，或者在两个约会之间想短暂地深呼吸一下时，就用它吧。",
+        "explanation_try_this": "点击一分钟暂停按钮，现在就试试这个舒缓的放松练习吧。"
+      }
+    },
+    "T033": {
+      "source_sha": "c437dbfc08b4d90b",
+      "fields": {
+        "display_label": "每日日记",
+        "short_description": "让你的记忆发挥作用。",
+        "explanation_what_it_is": "日记是你日常快速记录的地方。在这里，你可以记录所有与你的健康和五大支柱相关的重要事项。",
+        "explanation_user_benefit": "它能让你的进步变得可见，帮助你更用心地生活。你分享得越多，我就越能了解如何为你提供精准的支持。",
+        "explanation_when_to_use": "晚上用它来回顾你的一天，或者随时用它来记录一杯水或你的心情。",
+        "explanation_try_this": "现在打开日记，写下你今天的第一条简短记录吧。"
+      }
+    },
+    "T034": {
+      "source_sha": "a9187a125b8e2a38",
+      "fields": {
+        "display_label": "语音日记",
+        "short_description": "让你的记忆发挥作用。",
+        "explanation_what_it_is": "语音日记是记录你经历的最简单方式。你只需按下麦克风说话，不用费力打字。",
+        "explanation_user_benefit": "这能为你节省大量时间，而且感觉非常自然。我会立刻理解你说的话，并自动用于计算你的 Vitana 指数。",
+        "explanation_when_to_use": "运动后或短暂休息时用它，快速告诉我你刚刚做了什么。",
+        "explanation_try_this": "现在点击小麦克风，录入你的第一条语音记录吧。"
+      }
+    },
+    "T035": {
+      "source_sha": "289c24df69ec3992",
+      "fields": {
+        "display_label": "提醒",
+        "short_description": "坚持下去，贯彻到底。",
+        "explanation_what_it_is": "提醒是日常生活中的小推手。它们帮助你不忘记计划好的任务。",
+        "explanation_user_benefit": "这样你就不用什么都自己记着，能轻松保持在正轨上。它能减轻你的脑力负担，帮助你坚持下去。",
+        "explanation_when_to_use": "比如当你想每天下午喝一杯水，或者晚上写几句日记时，就用它吧。",
+        "explanation_try_this": "现在点击屏幕，打开提醒区域来了解一下吧。"
+      }
+    },
+    "T036": {
+      "source_sha": "ac3884b0d86ba97e",
+      "fields": {
+        "display_label": "设置提醒",
+        "short_description": "坚持下去，贯彻到底。",
+        "explanation_what_it_is": "设置提醒后，我会及时提醒你完成计划。这样日常生活中就不会遗漏任何事情了。",
+        "explanation_user_benefit": "这让你更容易坚持自己的好习惯。你的大脑会轻松很多，因为我来帮你记着。",
+        "explanation_when_to_use": "当你打算今晚喝杯水，但又怕在忙乱中忘记时，就创建一个提醒吧。",
+        "explanation_try_this": "现在点击屏幕，设置你的第一个提醒吧。"
+      }
+    },
+    "T037": {
+      "source_sha": "0a2ade5383d34ef0",
+      "fields": {
+        "display_label": "日历",
+        "short_description": "把计划变成固定日程。",
+        "explanation_what_it_is": "日历是你在 Vitanaland 里的个人时间规划器。在这里，你的健康计划会有一个固定的位置。",
+        "explanation_user_benefit": "当好习惯有了固定的时间，就更容易坚持下来。这样你就能轻松、稳定地在日常生活中实现你的计划。",
+        "explanation_when_to_use": "比如早上想想今天什么时候有时间散步时，就添加一个日程吧。",
+        "explanation_try_this": "现在打开日历，为你的第一个健康计划预留一些时间吧。"
+      }
+    },
+    "T038": {
+      "source_sha": "7b22720c65fc48f4",
+      "fields": {
+        "display_label": "规划行动",
+        "short_description": "把计划变成固定日程。",
+        "explanation_what_it_is": "这是一个小窗口，会直接在你当前屏幕上方打开。在这里，你可以把一个好想法变成一个计划好的行动。",
+        "explanation_user_benefit": "你不会打断思路，因为不需要离开当前屏幕。这样你就能立刻、直接地把目标付诸行动。",
+        "explanation_when_to_use": "当你想为今天晚些时候安排一件重要的事，又不想中断当前任务时，就用它吧。",
+        "explanation_try_this": "现在点击屏幕，为今天规划一个简单快速的行动吧。"
+      }
+    },
+    "T039": {
+      "source_sha": "8d0f2d24f1346b41",
+      "fields": {
+        "display_label": "未来之路",
+        "short_description": "由你决定探索的深度。",
+        "explanation_what_it_is": "Autopilot 是你的私人向导，每天为你推荐合适的任务。它以一个小飞机图标的形式等待你的决定。",
+        "explanation_user_benefit": "你完全可以自己决定走哪条路、探索多深。这样你只会选择今天真正对你有益的事情。",
+        "explanation_when_to_use": "早上用它，从容地选择今天最好的步骤，找到你自己的节奏。",
+        "explanation_try_this": "现在点击飞机图标，发现你今天的第一条路径吧。"
+      }
+    },
+    "T040": {
+      "source_sha": "1b290940a1dd310a",
+      "fields": {
+        "display_label": "商业好奇心",
+        "short_description": "由你决定探索的深度。",
+        "explanation_what_it_is": "Autopilot 是你的个人智能任务列表，通过飞机图标打开。它会为你推荐具体的步骤，但你可以自己选择真正想做的事情。",
+        "explanation_user_benefit": "它帮你省去每天的计划工作，并告诉你今天什么最能提升你的 Vitana 指数。你始终拥有完全的控制权，因为没有你的同意，什么都不会发生。",
+        "explanation_when_to_use": "最好早上用它，为你的一天选择合适的行动，然后开始行动。",
+        "explanation_try_this": "现在点击小飞机图标，查看你的第一批建议，开启你的一天吧。"
+      }
+    },
+    "T041": {
+      "source_sha": "96352872f75e37ee",
+      "fields": {
+        "display_label": "每日流程",
+        "short_description": "建立你的每日流程。",
+        "explanation_what_it_is": "你的每日节奏是一个简单的流程：发现、行动、记录到日记。这样你就能一步步建立健康的习惯。",
+        "explanation_user_benefit": "你不需要一个完美的计划就能活得更健康。这个小循环帮助你每天都能看到切实可行的进步，完全没有压力。",
+        "explanation_when_to_use": "每天早上开始这个简单的流程，带着清晰的目标轻松开启新的一天。",
+        "explanation_try_this": "点击屏幕，打开你今天的概览，试试这个流程吧。"
+      }
+    },
+    "T042": {
+      "source_sha": "b89e6b3febc90b51",
+      "fields": {
+        "display_label": "试用 Autopilot",
+        "short_description": "建立你的日常习惯。",
+        "explanation_what_it_is": "Autopilot 是你每天的智能小助手。它会自动为你推荐下一个最适合当下的小任务。",
+        "explanation_user_benefit": "你不用费心制定完美的健康计划。我来帮你搞定，只需告诉你最好的下一步就行。",
+        "explanation_when_to_use": "当你有一点空闲时间，想为健康做点好事的时候，就用 Autopilot 吧。",
+        "explanation_try_this": "点击 Autopilot，看看我今天为你准备了什么行动。"
+      }
+    },
+    "T043": {
+      "source_sha": "c9d73a8b7985f319",
+      "fields": {
+        "display_label": "完成或推迟",
+        "short_description": "建立你的日常习惯。",
+        "explanation_what_it_is": "在这里你可以决定如何处理每日任务。你可以直接完成，也可以推迟到以后。",
+        "explanation_user_benefit": "这样你就不用每天都追求完美了。我会从中学习，找到最适合你的节奏。",
+        "explanation_when_to_use": "当你规划一天、决定什么事情现在能做的时候，就用这个功能。",
+        "explanation_try_this": "现在选一个任务，决定是完成还是推迟吧。"
+      }
+    },
+    "T044": {
+      "source_sha": "5e65b33115b52351",
+      "fields": {
+        "display_label": "首页概览",
+        "short_description": "首页是你每天的控制中心。",
+        "explanation_what_it_is": "首页是你在 App 里的每日指挥中心。登录后，你会立刻看到所有重要的更新和快捷入口。",
+        "explanation_user_benefit": "它帮你节省宝贵时间，因为最重要的信息一目了然。你一眼就能看到今天的重点和你的 Vitana 指数。",
+        "explanation_when_to_use": "每天早上像看报纸一样打开首页，快速了解你的一天。",
+        "explanation_try_this": "现在点击浏览你的首页，看看今天有什么新内容。"
+      }
+    },
+    "T045": {
+      "source_sha": "92dfad06bf1346ef",
+      "fields": {
+        "display_label": "情境标签",
+        "short_description": "首页是你每天的控制中心。",
+        "explanation_what_it_is": "首页是你每天的指挥中心。在这里，你可以一目了然地看到所有重要任务、提醒和建议。",
+        "explanation_user_benefit": "你能节省时间，立刻知道下一步该做什么。这让你轻松、无压力地朝目标前进。",
+        "explanation_when_to_use": "最好每天早上第一件事就看看首页，规划你的一天。",
+        "explanation_try_this": "现在点击屏幕，探索你的个人首页吧。"
+      }
+    },
+    "T046": {
+      "source_sha": "c9ed4abea52019cb",
+      "fields": {
+        "display_label": "评估 AI 动态",
+        "short_description": "首页是你每天的控制中心。",
+        "explanation_what_it_is": "AI 动态是首页上的一个特别区域。这里有专门为你生成的个性化洞察。",
+        "explanation_user_benefit": "这里不是泛泛的资讯，而是与你的生活指南针完美匹配的建议。你能立刻知道今天哪个小改变对你最有帮助。",
+        "explanation_when_to_use": "早上喝第一杯咖啡时看看 AI 动态，找到你今天的个人重点。",
+        "explanation_try_this": "现在打开 AI 动态，给你的第一条内容评个分，让我更了解你。"
+      }
+    },
+    "T047": {
+      "source_sha": "b3e13f188afd13a1",
+      "fields": {
+        "display_label": "指数驱动因素",
+        "short_description": "让你的指数真正派上用场。",
+        "explanation_what_it_is": "指数驱动因素是日常中能改变你 Vitana 指数的具体行动。比如喝一杯水、散个步或睡个好觉。",
+        "explanation_user_benefit": "它们能告诉你哪些小改变对身体真正有益。这样你就能学会用简单的步骤提升自己的健康状态。",
+        "explanation_when_to_use": "当你在想今天做什么小事能带来最大正面效果时，就用它们。",
+        "explanation_try_this": "现在点击屏幕，看看哪些行动对你的 Vitana 指数影响最大。"
+      }
+    },
+    "T048": {
+      "source_sha": "536064349d880111",
+      "fields": {
+        "display_label": "支柱分项值",
+        "short_description": "让你的指数真正派上用场。",
+        "explanation_what_it_is": "Vitana 指数由五大支柱的数值组成：睡眠、运动、营养、心理韧性和水分。这些分项值清楚地告诉你总分是怎么来的。",
+        "explanation_user_benefit": "这样你一眼就能看出哪些方面做得不错，哪些还需要加强。这让你更容易为每天做出正确的选择。",
+        "explanation_when_to_use": "比如早上看看这些数值，了解今天是该多喝水还是多运动。",
+        "explanation_try_this": "现在点击详情页，探索你五大支柱的各项数值。"
+      }
+    },
+    "T049": {
+      "source_sha": "dbdb0e3ad55ccc22",
+      "fields": {
+        "display_label": "选择驱动因素",
+        "short_description": "让你的指数真正派上用场。",
+        "explanation_what_it_is": "你每天可以选择一个对 Vitana 指数提升最大的行动。这个行动就是你的个人驱动因素。",
+        "explanation_user_benefit": "与其想一次改变所有，不如专注于一个真正有效的任务。这样既省力，又能直接带来进步。",
+        "explanation_when_to_use": "最好起床后就做这件事，为你的一天设定一个清晰的目标。",
+        "explanation_try_this": "现在点击屏幕，选择你今天的第一个驱动因素吧。"
+      }
+    },
+    "T050": {
+      "source_sha": "8bfb839772f473bc",
+      "fields": {
+        "display_label": "睡眠趋势",
+        "short_description": "深化你的休息质量。",
+        "explanation_what_it_is": "睡眠趋势用简单清晰的方式展示你的休息状况随时间的变化。它属于睡眠支柱，是你健康的五大支柱之一。",
+        "explanation_user_benefit": "你能立刻发现睡眠规律，看看自己是否缺少重要的休息。这对保持 Vitana 指数平衡非常有帮助。",
+        "explanation_when_to_use": "早上快速看一眼，更好地理解为什么今天比平时更有精神或更疲惫。",
+        "explanation_try_this": "现在点击屏幕，发现你自己的睡眠趋势。"
+      }
+    },
+    "T051": {
+      "source_sha": "1deedfde4604f386",
+      "fields": {
+        "display_label": "睡眠计划",
+        "short_description": "深化你的休息质量。",
+        "explanation_what_it_is": "睡眠计划是你获得优质睡眠的个人指南。它属于睡眠支柱，帮助你晚上更好地放松入睡。",
+        "explanation_user_benefit": "你会带着更多能量醒来，感觉更加神清气爽。这样你就能有针对性地提升 Vitana 指数。",
+        "explanation_when_to_use": "晚上准备睡觉前快速看一眼。",
+        "explanation_try_this": "现在点击屏幕，发现你的专属睡眠计划。"
+      }
+    },
+    "T052": {
+      "source_sha": "81339f689c674bd7",
+      "fields": {
+        "display_label": "睡前提醒",
+        "short_description": "深化你的休息质量。",
+        "explanation_what_it_is": "睡前提醒是晚间的一个温馨提示。它帮助你按时放松入睡。",
+        "explanation_user_benefit": "这样你再也不会错过上床睡觉的最佳时机。你的身体能更好地恢复，第二天也会更有活力。",
+        "explanation_when_to_use": "这个提醒非常适合晚上使用，当你想结束一天、准备迎接一个好觉的时候。",
+        "explanation_try_this": "现在点击屏幕，设置并试用你的第一个睡前提醒。"
+      }
+    },
+    "T053": {
+      "source_sha": "8215cf85cdcce36a",
+      "fields": {
+        "display_label": "饮水节奏",
+        "short_description": "连接你的日常追踪器。",
+        "explanation_what_it_is": "水分支柱展示你一天中的饮水分布情况。你可以在日记中记录饮品，也可以连接追踪器。",
+        "explanation_user_benefit": "这样你能立刻看到身体是否摄入了足够的水分来保持活力。这有助于保持 Vitana 指数的平衡。",
+        "explanation_when_to_use": "最好起床后或每餐时记录你的饮品。",
+        "explanation_try_this": "点击屏幕，现在就记录你的第一杯水吧。"
+      }
+    },
+    "T054": {
+      "source_sha": "9980f16c83af9673",
+      "fields": {
+        "display_label": "饮食模式",
+        "short_description": "连接你的日常追踪器。",
+        "explanation_what_it_is": "营养是构成 Vitana 指数的五大支柱之一。这里汇集了你连接的追踪器和日记中的所有数据。",
+        "explanation_user_benefit": "这样你能轻松看到身体是否获得了一天所需的能量。这帮助你毫不费力地做出更健康的选择。",
+        "explanation_when_to_use": "晚上想检查一天饮食是否均衡时，快速看一眼这个支柱。",
+        "explanation_try_this": "现在点击营养支柱，连接你的日常追踪器。"
+      }
+    },
+    "T055": {
+      "source_sha": "241d0860c1c57a30",
+      "fields": {
+        "display_label": "运动方式",
+        "short_description": "连接你的日常追踪器。",
+        "explanation_what_it_is": "在日记中你可以记录每天的运动，也可以直接连接健身追踪器。这样你所有的活动都安全地汇集在一个地方。",
+        "explanation_user_benefit": "当我了解你的运动习惯后，就能给你更贴合日常的建议。这会让你更强壮，也能提升你的 Vitana 指数。",
+        "explanation_when_to_use": "最好在散步后或晚上使用这个功能，记录你一天的活动。",
+        "explanation_try_this": "现在点击日记，添加你今天的运动吧。"
+      }
+    },
+    "T056": {
+      "source_sha": "bff44e7050541f09",
+      "fields": {
+        "display_label": "心理平衡模式",
+        "short_description": "将内心平静与明智决策联系起来。",
+        "explanation_what_it_is": "心理健康模式展示你的内心平静如何影响日常生活。它是心理支柱的重要组成部分。",
+        "explanation_user_benefit": "你能清楚地看到，放松的心态如何帮助你做出更健康的决定。这让你对自己的身心状态更有掌控力。",
+        "explanation_when_to_use": "当你度过了不太平静的一天，想了解是什么打破了你的平衡时，就看看这个模式。",
+        "explanation_try_this": "点击屏幕，现在就发现你自己的心理模式吧。"
+      }
+    },
+    "T057": {
+      "source_sha": "d2e86629a751edee",
+      "fields": {
+        "display_label": "呼吸或冥想日志",
+        "short_description": "将内心平静与明智决策联系起来。",
+        "explanation_what_it_is": "在这里记录你的呼吸练习或冥想。这是一个简单的地方，用来保存你的宁静时刻。",
+        "explanation_user_benefit": "当你内心放松时，你会做出更清晰的决定。这会让你的心理韧性每天都在增强。",
+        "explanation_when_to_use": "当你在紧张的时刻后花五分钟深呼吸时，就在这里记录一下。",
+        "explanation_try_this": "现在点击屏幕，记录你的第一次小小呼吸练习。"
+      }
+    },
+    "T058": {
+      "source_sha": "0bb0cbb8ad830aba",
+      "fields": {
+        "display_label": "压力洞察",
+        "short_description": "将内心平静与明智决策联系起来。",
+        "explanation_what_it_is": "这个功能向你展示压力如何影响你的一天。你会发现内心平静如何帮助你做出清晰的决定。",
+        "explanation_user_benefit": "当你更好地了解自己的压力时，你可以及时休息一下。这会让你在日常生活中更加从容和有力量。",
+        "explanation_when_to_use": "在忙乱的事情之后使用它，让自己喘口气，重新理清思绪。",
+        "explanation_try_this": "现在点击屏幕，发现你关于压力的第一批洞察。"
+      }
+    },
+    "T059": {
+      "source_sha": "c190f0e6f9fbf464",
+      "fields": {
+        "display_label": "健康知识",
+        "short_description": "积累知识，不让自己感到压力。",
+        "explanation_what_it_is": "在这里你可以找到关于健康五大支柱的宝贵知识。这个区域以易懂的方式向你展示当前状态和你的 Vitana 指数。",
+        "explanation_user_benefit": "这样你可以按自己的节奏学习，不会感到不堪重负。它帮助你每天为自己的健康做出小而好的决定。",
+        "explanation_when_to_use": "当你想安静地学习一些关于身体或心理的新知识时，来看看这个区域。",
+        "explanation_try_this": "点击按钮，立即探索你的新健康学习区域。"
+      }
+    },
+    "T060": {
+      "source_sha": "c057fc339756016f",
+      "fields": {
+        "display_label": "症状和风险的边界",
+        "short_description": "积累知识，不让自己感到压力。",
+        "explanation_what_it_is": "这个区域以清晰的方式向你展示你的健康数据和可能的风险。它还会明确告诉你什么时候需要寻求专业医疗帮助。",
+        "explanation_user_benefit": "这样你可以更好地了解自己的身体，而不会感到不堪重负。你也会清楚地知道什么问题需要咨询真正的医生。",
+        "explanation_when_to_use": "当你想检查自己的健康状况或想知道是否存在真正的医疗问题时，来这里看看。",
+        "explanation_try_this": "现在点击屏幕，了解你当前的健康信息和我们的安全边界。"
+      }
+    },
+    "T061": {
+      "source_sha": "da12437489b7fc5f",
+      "fields": {
+        "display_label": "专业人士和帮助的边界",
+        "short_description": "积累知识，不让自己感到压力。",
+        "explanation_what_it_is": "Vitana 是你健康日常生活的伙伴，但不是医学专家。当涉及严重疾病、诊断或疼痛时，我会提醒你这个边界。",
+        "explanation_user_benefit": "这保护你的健康，给你安全感。你会清楚地知道可以依靠我做什么，以及什么时候需要真正医生的建议。",
+        "explanation_when_to_use": "当你通过 ORB 问我关于特定症状或治疗的问题时，我会温和地提醒你去咨询专家。",
+        "explanation_try_this": "现在点击屏幕，看一个关于这个重要边界的实际例子。"
+      }
+    },
+    "T062": {
+      "source_sha": "72e12d660a5de7bc",
+      "fields": {
+        "display_label": "生物标志物预览",
+        "short_description": "安全地探索更多健康数据。",
+        "explanation_what_it_is": "生物标志物预览是一个小窗口，直接在你当前屏幕上方打开。它向你展示健康数据的简洁概览。",
+        "explanation_user_benefit": "这样你可以安全地查看新数值，然后立即回到之前的地方继续。这帮助你更好地了解自己的身体。",
+        "explanation_when_to_use": "当你想在日常生活中快速查看健康五大支柱的详细信息时，使用这个视图。",
+        "explanation_try_this": "点击预览，现在安全地查看你的生物标志物。"
+      }
+    },
+    "T063": {
+      "source_sha": "caa96a1ae5886855",
+      "fields": {
+        "display_label": "已连接的应用",
+        "short_description": "安全地探索更多健康数据。",
+        "explanation_what_it_is": "在这里你可以将智能手表、日历或其他健康应用与 Vitana 连接。这是所有外部连接的中央安全位置。",
+        "explanation_user_benefit": "这样，你的五大支柱的重要数据会自动采集，无需你手动输入。这帮助我更好地根据你的日常生活调整建议。",
+        "explanation_when_to_use": "当你想让运动追踪器自动同步每日步数时，使用这些设置。",
+        "explanation_try_this": "查看可用应用列表，点击其中一个进行连接。"
+      }
+    },
+    "T064": {
+      "source_sha": "09d00f6e913accae",
+      "fields": {
+        "display_label": "稍后连接",
+        "short_description": "安全地探索更多健康数据。",
+        "explanation_what_it_is": "你可以稍后再将健康应用和追踪器与 Vitana 连接。这样你始终完全掌控想要分享哪些数据。",
+        "explanation_user_benefit": "你不需要立即分享所有内容就能使用 Vitana。这样你可以完全按自己的节奏，放松地决定什么时候想要更深入地了解自己的健康。",
+        "explanation_when_to_use": "当你准备好安全地添加智能手表或其他应用的精确测量数据时使用。",
+        "explanation_try_this": "点击按钮，轻松了解如何稍后安全地连接数据。"
+      }
+    },
+    "T065": {
+      "source_sha": "9076ba29115b54c0",
+      "fields": {
+        "display_label": "健康计划",
+        "short_description": "把健康变成一个计划。",
+        "explanation_what_it_is": "健康计划是你的个人指南。在这里，我们把你的健康目标转化为简单清晰的步骤。",
+        "explanation_user_benefit": "这样你永远不会感到不堪重负，而是始终清楚今天可以为自己做什么。这让每天都更容易变得更健康一点。",
+        "explanation_when_to_use": "每天早上来这里看看，获取一个小而可行的当日任务。",
+        "explanation_try_this": "现在点击屏幕，打开你的第一个健康计划，慢慢看一看。"
+      }
+    },
+    "T066": {
+      "source_sha": "41dfe49b830fa4d1",
+      "fields": {
+        "display_label": "服务中心",
+        "short_description": "把健康变成一个计划。",
+        "explanation_what_it_is": "服务中心是你健康相关事务的中央枢纽。在这里你可以查看当前状态并选择下一步。",
+        "explanation_user_benefit": "它帮助你把健康目标转化为简单的计划。这样你可以轻松增强健康的五大支柱。",
+        "explanation_when_to_use": "当你想善待自己并寻找具体活动或专业支持时使用它。",
+        "explanation_try_this": "点击继续，打开服务中心，找到你的第一步。"
+      }
+    },
+    "T067": {
+      "source_sha": "96922c4bc123144e",
+      "fields": {
+        "display_label": "计划步骤",
+        "short_description": "把健康变成一个计划。",
+        "explanation_what_it_is": "计划步骤是一个小而可行的健康任务。它帮助你轻松地将五大支柱融入日常生活。",
+        "explanation_user_benefit": "大目标往往看起来很难，但小步骤你可以轻松完成。这样你每天都能无压力地一点点改善健康。",
+        "explanation_when_to_use": "当你想善待自己时创建一个计划步骤，比如今天多喝一杯水或晚上去散步。",
+        "explanation_try_this": "点击按钮，创建你的第一个计划步骤并立即尝试。"
+      }
+    },
+    "T068": {
+      "source_sha": "170cb0e089d56deb",
+      "fields": {
+        "display_label": "记忆概览",
+        "short_description": "了解整个记忆系统。",
+        "explanation_what_it_is": "你的记忆是收集我了解到的关于你的一切的地方。这是你的个人概览，所有重要细节都安全地保存在这里。",
+        "explanation_user_benefit": "这让我感觉像一个真正了解你、理解你的助手。而且你在这里始终完全掌控我记住的内容。",
+        "explanation_when_to_use": "当你想检查我是否正确记住了你最新的计划时，打开这个概览。",
+        "explanation_try_this": "现在点击屏幕，打开你的记忆，慢慢看看。"
+      }
+    },
+    "T069": {
+      "source_sha": "4ea09197a6234f3a",
+      "fields": {
+        "display_label": "Vitana 知道什么",
+        "short_description": "了解整个记忆系统。",
+        "explanation_what_it_is": "你的记忆是 Vitana 的安全记忆库。在这里我保存你通过 ORB 告诉我的或在日记中记录的一切。",
+        "explanation_user_benefit": "这样重要的事情你只需要告诉我一次。我每天都更了解你，可以更精准地帮助你。",
+        "explanation_when_to_use": "当你想检查我已经记住了你的哪些偏好、健康目标或细节时，来这里看看。",
+        "explanation_try_this": "点击屏幕，直接看看 Vitana 已经了解你的哪些内容。"
+      }
+    },
+    "T070": {
+      "source_sha": "397764710d4d6e93",
+      "fields": {
+        "display_label": "十三个记忆类别",
+        "short_description": "了解整个记忆系统。",
+        "explanation_what_it_is": "你的记忆不只是聊天记录，而是整齐地分类到不同的生活领域。包括健康、人际关系、工作或财务等类别。",
+        "explanation_user_benefit": "这样你始终对生活中所有重要细节有清晰的概览。而且我可以给你更精准的回答。",
+        "explanation_when_to_use": "当你想专门查看为健身或重要项目记下的建议时，浏览这些类别。",
+        "explanation_try_this": "现在点击屏幕上的类别，了解这个系统。"
+      }
+    },
+    "T071": {
+      "source_sha": "ed54d8eeae37a446",
+      "fields": {
+        "display_label": "添加记忆",
+        "short_description": "记录和查找记忆。",
+        "explanation_what_it_is": "记忆花园是我记忆的核心。在这里我保存你告诉我的或安全托付给我的一切。",
+        "explanation_user_benefit": "这样我们不必每次都从头开始。我为你记住重要的细节，让你的头脑始终保持轻松。",
+        "explanation_when_to_use": "当你想记录一个有价值的想法、新计划或很棒的建议时，添加一条记忆。",
+        "explanation_try_this": "点击屏幕，现在添加你的第一条记忆。"
+      }
+    },
+    "T072": {
+      "source_sha": "f46ed99f431d72f7",
+      "fields": {
+        "display_label": "记忆时间线",
+        "short_description": "记录和查找回忆。",
+        "explanation_what_it_is": "时间线就像你记忆花园里的一本个人历史书。在这里，你可以一目了然地看到所有过去的经历和笔记。",
+        "explanation_user_benefit": "这样你就能轻松掌握自己的重要里程碑。同时，你也在帮助我更好地了解你和你的需求。",
+        "explanation_when_to_use": "当你想找某个过去的经历，或者只是想翻看那些美好时刻时，就来这里看看吧。",
+        "explanation_try_this": "点击时间线，看看你收集的那些时刻是如何排列在一起的。"
+      }
+    },
+    "T073": {
+      "source_sha": "81c49ea851e8865e",
+      "fields": {
+        "display_label": "调取记忆",
+        "short_description": "记录和查找回忆。",
+        "explanation_what_it_is": "Vitana 不仅能记住各种信息，还能快速帮你调取出来。你可以搜索任何曾经告诉过我的事情。",
+        "explanation_user_benefit": "这样你就不用费心记那么多东西，可以把脑力留给更重要的事。不管是一本书的推荐还是一个名字，我都能帮你找回来。",
+        "explanation_when_to_use": "比如当你想回忆起几个月前朋友推荐的某家餐厅时，就可以用这个功能。",
+        "explanation_try_this": "点击搜索，让我们一起调取一条旧信息吧。"
+      }
+    },
+    "T074": {
+      "source_sha": "e546ddedbde66fa1",
+      "fields": {
+        "display_label": "修正记忆",
+        "short_description": "掌控你的记忆。",
+        "explanation_what_it_is": "你对应用里的记忆拥有完全的控制权。当你的生活发生变化时，可以轻松修正这些记录。",
+        "explanation_user_benefit": "这样 Vitana 就能始终了解你的最新情况，从而给你最好、最合适的回答。",
+        "explanation_when_to_use": "比如当你有了新的睡眠目标，或者 Vitana 记错了某个细节时，就可以用这个功能。",
+        "explanation_try_this": "点击按钮，试试如何修正一条记录吧。"
+      }
+    },
+    "T075": {
+      "source_sha": "e5f2364f83008894",
+      "fields": {
+        "display_label": "记忆权限",
+        "short_description": "掌控你的记忆。",
+        "explanation_what_it_is": "在记忆花园的权限设置里，你可以精确控制我能知道和使用哪些信息。这是你专属的数据控制中心。",
+        "explanation_user_benefit": "这样你就能始终完全掌控自己的隐私。由你来决定哪些信息可以帮助我在日常生活中更好地支持你。",
+        "explanation_when_to_use": "当你想让我完全忽略某些私人话题时，就可以用这个功能。",
+        "explanation_try_this": "现在就看看你的权限设置，把它调整到让你最舒服的状态吧。"
+      }
+    },
+    "T076": {
+      "source_sha": "63be96560d86eeb9",
+      "fields": {
+        "display_label": "数据导出",
+        "short_description": "掌控你的记忆。",
+        "explanation_what_it_is": "通过数据导出，你可以下载 Vitana 了解到的关于你的所有信息。这是一个简单的工具，让你把自己的数据备份到设备上。",
+        "explanation_user_benefit": "这样你就能确信，你的记忆真正属于你自己。你可以随时保存一份收集数据的私人副本。",
+        "explanation_when_to_use": "当你想为所有笔记和经历创建一个安全备份时，就可以用这个功能。",
+        "explanation_try_this": "点击屏幕开始数据导出，看看这有多简单。"
+      }
+    },
+    "T077": {
+      "source_sha": "74256415b98474f9",
+      "fields": {
+        "display_label": "日记连续记录与奖励",
+        "short_description": "你的日记不只是写写而已。",
+        "explanation_what_it_is": "每天写一篇日记会形成连续记录。它不只是一个笔记本，更是推动你个人进步的引擎。",
+        "explanation_user_benefit": "你用得越规律，我就越了解你的习惯。你最大的奖励就是越来越精准的个性化建议。",
+        "explanation_when_to_use": "每天晚上花一小会儿写一篇日记，保持你的连续记录吧。",
+        "explanation_try_this": "打开日记，今天就开始你的第一个连续记录吧。"
+      }
+    },
+    "T078": {
+      "source_sha": "8563c7f4b28fa60d",
+      "fields": {
+        "display_label": "照片日记",
+        "short_description": "你的日记不只是写写而已。",
+        "explanation_what_it_is": "照片日记是你在 Vitanaland 里的视觉回忆相册。在这里，除了文字，你还可以轻松保存经历的照片。",
+        "explanation_user_benefit": "照片往往比文字更能捕捉情感和细节。这样你的日记会更加生动，以后回顾你的旅程时也会更加美好。",
+        "explanation_when_to_use": "当你做了一顿美味健康的饭菜，或者想记录一次美丽的自然散步时，就可以用这个功能。",
+        "explanation_try_this": "现在点击相机图标，上传你的第一张照片到日记吧。"
+      }
+    },
+    "T079": {
+      "source_sha": "c0bc184a95a2ce66",
+      "fields": {
+        "display_label": "日记助力五大支柱",
+        "short_description": "你的日记不只是写写而已。",
+        "explanation_what_it_is": "你的日记不只是记笔记的地方。每一篇日记都会直接增强你的五大支柱。",
+        "explanation_user_benefit": "这样你的小成就会立即显现出来，并计入你的 Vitana 指数。同时我也能学会给你正好需要的建议。",
+        "explanation_when_to_use": "吃完饭后简单记录一下这顿饭有多健康，就能立即填充营养支柱。",
+        "explanation_try_this": "现在点击你的日记，简单记录一下今天的感受吧。"
+      }
+    },
+    "T080": {
+      "source_sha": "2ce48ee0e3e727b6",
+      "fields": {
+        "display_label": "日历日程",
+        "short_description": "如何使用日历。",
+        "explanation_what_it_is": "Vitanaland 里的日历会简洁地展示你的日程安排。在这里，你可以一目了然地看到所有计划和提醒。",
+        "explanation_user_benefit": "这样你就能始终保持从容，对时间了然于心。这会让你一整天都感到安心。",
+        "explanation_when_to_use": "最好每天早上打开日历日程，轻松地为新的一天做好准备。",
+        "explanation_try_this": "现在点击日历，打开并了解你今天的日程概览吧。"
+      }
+    },
+    "T081": {
+      "source_sha": "3c902ecba13a1216",
+      "fields": {
+        "display_label": "创建日历事项",
+        "short_description": "如何使用日历。",
+        "explanation_what_it_is": "在这里你可以在日历中添加新的日程。这能帮助你在 Vitanaland 里规划好任务和活动。",
+        "explanation_user_benefit": "这样你就不会忘记 MAXINA 社区的重要聚会或五大支柱的时间安排。你的一天会变得清晰而从容。",
+        "explanation_when_to_use": "当你想为一个新习惯或活动预留固定时间时，就创建一个日程吧。",
+        "explanation_try_this": "现在点击屏幕，直接创建你的第一个日程吧。"
+      }
+    },
+    "T082": {
+      "source_sha": "18e942cddb4ecf58",
+      "fields": {
+        "display_label": "调整日程",
+        "short_description": "如何使用日历。",
+        "explanation_what_it_is": "有时候计划会变。在这里你可以学习如何轻松调整日历中已有的日程。",
+        "explanation_user_benefit": "这样你就能保持灵活，没有压力。是生活适应你，而不是你适应生活。",
+        "explanation_when_to_use": "当有事情打乱了计划，你想把训练或聚会改到稍后时，就可以用这个功能。",
+        "explanation_try_this": "现在点击屏幕上的日程，选择一个新的时间吧。"
+      }
+    },
+    "T083": {
+      "source_sha": "00483f1fdcb887c0",
+      "fields": {
+        "display_label": "收件箱概览",
+        "short_description": "了解收件箱和通讯功能。",
+        "explanation_what_it_is": "收件箱是你所有消息的集中地。在这里，你既能找到与 MAXINA 社区其他成员的对话，也能看到我发给你的提醒。",
+        "explanation_user_benefit": "你不用再到处找了。所有重要的信息都整齐地汇集在一个地方等着你。",
+        "explanation_when_to_use": "来这里看看是否有 MAXINA 社区的人给你发了消息，或者有新的提醒在等着你。",
+        "explanation_try_this": "现在打开你的收件箱，看看消息概览吧。"
+      }
+    },
+    "T084": {
+      "source_sha": "149c615c8692beed",
+      "fields": {
+        "display_label": "收件箱标签页",
+        "short_description": "了解收件箱和通讯功能。",
+        "explanation_what_it_is": "你的收件箱有不同的标签页，可以把活跃的消息与已处理或归档的内容分开。这样你就能始终对所有消息保持清晰的掌控。",
+        "explanation_user_benefit": "这能帮你避免混乱，确保不会遗漏任何重要提醒。你可以专注于当前最重要的事情。",
+        "explanation_when_to_use": "当你想找一条旧信息，或者想整理当前收件箱时，就可以用这些标签页。",
+        "explanation_try_this": "点击屏幕，切换不同标签页，探索你的归档吧。"
+      }
+    },
+    "T085": {
+      "source_sha": "3fb17ce9e63bfcd0",
+      "fields": {
+        "display_label": "录制语音消息",
+        "short_description": "了解收件箱和通讯功能。",
+        "explanation_what_it_is": "语音消息是一种便捷的方式，让你可以直接说出想法。用你的声音，而不用费力打字。",
+        "explanation_user_benefit": "这能帮你节省很多时间，而且感觉更加亲切。这样你就能专注于真正想表达的内容。",
+        "explanation_when_to_use": "当你在散步或者手不方便时，就录一条简短的语音消息吧。",
+        "explanation_try_this": "点击图标，现在就录制并试试你的第一条语音消息吧。"
+      }
+    },
+    "T086": {
+      "source_sha": "48c6d4f1a0e409ed",
+      "fields": {
+        "display_label": "社区中心",
+        "short_description": "从个人走向社群。",
+        "explanation_what_it_is": "社区中心是你在 MAXINA 社区的聚会点。在这里你可以看到其他人的帖子并进行交流。",
+        "explanation_user_benefit": "这样你就能建立有价值的联系，为你的目标找到支持。因为在这段旅程中，你并不孤单。",
+        "explanation_when_to_use": "当你在寻找新灵感，或者只是想看看别人在做什么时，就来这个区域吧。",
+        "explanation_try_this": "现在点击社区中心，在 MAXINA 社区里逛逛吧。"
+      }
+    },
+    "T087": {
+      "source_sha": "77fbf92e5cd56303",
+      "fields": {
+        "display_label": "今日精选与排行榜",
+        "short_description": "从自我走向社群。",
+        "explanation_what_it_is": "这是一个丰富多彩的页面，展示 MAXINA 社区里最精彩的动态。你可以在这里看到今日亮点，以及哪些成员最近特别活跃。",
+        "explanation_user_benefit": "这样你一眼就能看到今天有什么新鲜事。它能给你带来灵感，激励你也积极参与进来。",
+        "explanation_when_to_use": "当你有一些空闲时间，想看看有哪些活动或直播间正在进行时，就来这里逛逛吧。",
+        "explanation_try_this": "现在就点击精选，看看今天 MAXINA 社区里发生了什么吧。"
+      }
+    },
+    "T088": {
+      "source_sha": "fb8ec6c9c73b5c85",
+      "fields": {
+        "display_label": "全局与社区搜索",
+        "short_description": "从自我走向社群。",
+        "explanation_what_it_is": "搜索功能帮助你发现 MAXINA 社区里所有重要的内容。你可以轻松地查找感兴趣的人、内容或话题。",
+        "explanation_user_benefit": "这样你就能快速找到志同道合的朋友和精彩的新机会，帮助你建立真实的连接。",
+        "explanation_when_to_use": "当你有了新的兴趣，想找相关的帖子或志趣相投的人时，就用搜索吧。",
+        "explanation_try_this": "点击搜索框，现在就去社区里探索你感兴趣的第一个话题吧。"
+      }
+    },
+    "T089": {
+      "source_sha": "108c7ceca7ac3242",
+      "fields": {
+        "display_label": "动态标签页",
+        "short_description": "了解你的动态。",
+        "explanation_what_it_is": "动态是你今日安排的核心概览。这里清晰地展示了所有推荐和下一步行动。",
+        "explanation_user_benefit": "它帮你省去思考的麻烦，直接告诉你现在什么对你最合适。这样你就能轻松地一步步实现目标。",
+        "explanation_when_to_use": "最好早上喝咖啡时打开动态，轻松看看今天有什么安排。",
+        "explanation_try_this": "点击动态里的不同板块，现在就亲自试试吧。"
+      }
+    },
+    "T090": {
+      "source_sha": "8020f10d56be3744",
+      "fields": {
+        "display_label": "撰写帖子",
+        "short_description": "了解你的动态。",
+        "explanation_what_it_is": "在这里你可以为 MAXINA 社区撰写自己的帖子。这是你与他人分享想法或问题的地方。",
+        "explanation_user_benefit": "当你写下自己的经历时，也在整理自己的思绪。同时，你还能在旅程中获得志同道合朋友们的温暖支持。",
+        "explanation_when_to_use": "当你想庆祝一个小成就，或者需要一些建议时，就写一篇帖子吧。",
+        "explanation_try_this": "现在就点击文本框，开始撰写你的第一篇帖子吧。"
+      }
+    },
+    "T092": {
+      "source_sha": "d41b76a8698bfea2",
+      "fields": {
+        "display_label": "个人资料预览",
+        "short_description": "在联系对方之前，先了解一下对方的资料。",
+        "explanation_what_it_is": "个人资料预览是一个小窗口，会直接在你当前的屏幕上弹出。它会立即显示 MAXINA 社区中其他用户的关键信息。",
+        "explanation_user_benefit": "这样在你迈出第一步之前，就能清楚地知道对方是谁。让你在认识新朋友时更安心、更有信心。",
+        "explanation_when_to_use": "当你在 MAXINA 社区发现一张新面孔，想快速了解一下对方是谁时，就可以使用这个功能。",
+        "explanation_try_this": "现在点击显示的个人资料，试试预览功能吧。"
+      }
+    },
+    "T093": {
+      "source_sha": "fa9ccaa0c61ceaa8",
+      "fields": {
+        "display_label": "公开资料可见性",
+        "short_description": "在联系之前，先建立对资料的信任。",
+        "explanation_what_it_is": "你的公开资料是你在应用中的个人名片。它向 MAXINA 社区的其他成员展示你独特的 Vitana ID 背后的真实身份。",
+        "explanation_user_benefit": "这样一来，在别人联系你之前，你就能建立起信任。而且你可以自己决定想要展示多少个人信息。",
+        "explanation_when_to_use": "在同意新的联系请求或在社区中活跃之前，先检查一下你的可见性设置。",
+        "explanation_try_this": "点击屏幕，现在就试试设置你的资料可见性吧。"
+      }
+    },
+    "T094": {
+      "source_sha": "c4c99fb9bf3491e1",
+      "fields": {
+        "display_label": "二维码与资料分享",
+        "short_description": "在联系之前，先建立对资料的信任。",
+        "explanation_what_it_is": "通过个人二维码，你可以轻松地与他人分享你的资料。这是一种安全又简单的方式，让你在 MAXINA 社区中展示自己。",
+        "explanation_user_benefit": "用这种方式分享资料，在你们开始交流之前就能建立信任。这能帮助你从一开始就建立良好的人际关系。",
+        "explanation_when_to_use": "当你认识新朋友并想直接建立联系时，可以使用这个功能。",
+        "explanation_try_this": "现在点击屏幕，调出你的专属二维码，试试分享功能吧。"
+      }
+    },
+    "T095": {
+      "source_sha": "b73a695285710fe7",
+      "fields": {
+        "display_label": "寻找匹配",
+        "short_description": "寻找匹配是核心系统。",
+        "explanation_what_it_is": "我的任务是帮你在 MAXINA 社区中找到合适的人。我会为你推荐那些与你兴趣和目标完全契合的人。",
+        "explanation_user_benefit": "一起努力，目标更容易实现，过程也更有乐趣。你可以轻松找到新朋友、训练伙伴或同行者，他们会在你的旅程中支持你。",
+        "explanation_when_to_use": "当你需要运动动力，或者想认识志同道合的人来交流新想法时，就可以使用这个搜索功能。",
+        "explanation_try_this": "现在点击屏幕，看看我今天为你找到了谁。"
+      }
+    },
+    "T096": {
+      "source_sha": "80da825372618d46",
+      "fields": {
+        "display_label": "匹配类型",
+        "short_description": "寻找匹配是核心系统。",
+        "explanation_what_it_is": "在 MAXINA 社区中，你可以认识各种不同类型的人。从运动伙伴、朋友，到客户或商业伙伴都有。",
+        "explanation_user_benefit": "这样你就能找到在当前人生阶段最能帮助你的人。无论是为了日常生活中的动力，还是开拓新的职业道路，一起努力能收获更多。",
+        "explanation_when_to_use": "当你想找人一起锻炼，或者需要一个新项目的合作伙伴时，就可以使用这个功能。",
+        "explanation_try_this": "现在点击选项，发现有哪些精彩的相遇在等着你。"
+      }
+    },
+    "T097": {
+      "source_sha": "3d6a281206e511b9",
+      "fields": {
+        "display_label": "为什么推荐这个匹配",
+        "short_description": "寻找匹配是核心系统。",
+        "explanation_what_it_is": "对于每一个推荐的联系人，我都会告诉你为什么这个人和你很合适。我会比较你们共同的兴趣、活动和生命罗盘。",
+        "explanation_user_benefit": "这样你马上就知道可以聊什么话题，轻松打破僵局。发送第一条消息也变得简单多了。",
+        "explanation_when_to_use": "当你想给新联系人发消息，但不知道怎么开始对话时，就可以看看这个说明。",
+        "explanation_try_this": "现在点击继续，看一个示例，了解为什么会推荐这个联系人。"
+      }
+    },
+    "T098": {
+      "source_sha": "e2aefc0538794ead",
+      "fields": {
+        "display_label": "匹配列表",
+        "short_description": "如何处理匹配。",
+        "explanation_what_it_is": "匹配列表是 MAXINA 社区中的一个概览页面，为你推荐合适的人。Vitana 会挑选出与你有相似兴趣或目标的人。",
+        "explanation_user_benefit": "这样你可以轻松找到新朋友、训练伙伴，甚至商业联系人。合适的人会帮助你保持动力，实现目标。",
+        "explanation_when_to_use": "当你想找人一起完成生命罗盘中的目标时，就去看看你的匹配列表。",
+        "explanation_try_this": "现在打开你的匹配列表，看看谁可能和你很合适。"
+      }
+    },
+    "T099": {
+      "source_sha": "7e1daf41ca16ceca",
+      "fields": {
+        "display_label": "搜索匹配",
+        "short_description": "如何处理匹配。",
+        "explanation_what_it_is": "在 MAXINA 社区中，你可以有针对性地搜索与你目标相似的人。系统会帮你找到合适的同行者。",
+        "explanation_user_benefit": "这样你可以快速找到志同道合的人，他们会激励你、在旅程中支持你。你可以毫不费力地建立有价值的联系。",
+        "explanation_when_to_use": "当你希望在五大支柱中的某一项获得新鲜交流时，就可以使用这个搜索功能。",
+        "explanation_try_this": "现在点击搜索，发现你的第一批匹配推荐。"
+      }
+    },
+    "T100": {
+      "source_sha": "bea0188dd45a5bc5",
+      "fields": {
+        "display_label": "建立连接或跳过",
+        "short_description": "如何处理匹配。",
+        "explanation_what_it_is": "在 MAXINA 社区中，你可以自己决定想和谁建立联系。对于每个推荐，你只需选择是建立连接还是跳过。",
+        "explanation_user_benefit": "这样你可以完全掌控自己的社交圈。你只和那些真正对你旅程有帮助的人交流。",
+        "explanation_when_to_use": "当你在浏览新的推荐，想决定谁能成为你日常生活一部分时，就可以使用这个功能。",
+        "explanation_try_this": "现在点击屏幕，试试如何建立连接或跳过一个推荐。"
+      }
+    },
+    "T101": {
+      "source_sha": "235a0ab60755a411",
+      "fields": {
+        "display_label": "发布活动",
+        "short_description": "搜索活动并发起开放邀请。",
+        "explanation_what_it_is": "你可以在 MAXINA 社区中发起自己的活动，寻找同伴。这是一个开放的邀请，让大家一起参与日常活动。",
+        "explanation_user_benefit": "这样你可以快速为旅程中的日常计划找到伙伴。一起行动更容易保持动力，也能更快乐地实现目标。",
+        "explanation_when_to_use": "当你想在今天晚些时候去散步，想找人临时陪你时，就可以使用它。",
+        "explanation_try_this": "点击屏幕，创建你的第一个活动邀请，马上试试看。"
+      }
+    },
+    "T102": {
+      "source_sha": "6f9fcae6ed91d599",
+      "fields": {
+        "display_label": "寻找聚会",
+        "short_description": "搜索活动并发布公开请求。",
+        "explanation_what_it_is": "在MAXINA社区里，你可以轻松寻找共同活动。你只需创建一个公开邀请，其他人就可以加入你。",
+        "explanation_user_benefit": "这样你就不用独自实现健康生活的目标了。有个好伙伴陪伴，往往能给你恰到好处的动力。",
+        "explanation_when_to_use": "当你计划下午散步，想找人一起聊聊天时，就可以使用这个功能。",
+        "explanation_try_this": "点击屏幕，马上试试如何发布聚会请求吧。"
+      }
+    },
+    "T103": {
+      "source_sha": "cff97d442c624dea",
+      "fields": {
+        "display_label": "意向匹配",
+        "short_description": "搜索活动并发布公开请求。",
+        "explanation_what_it_is": "这个功能帮你在MAXINA社区里找到想做同样事情的人。你只需分享你的愿望，系统就会为你找到合适的伙伴。",
+        "explanation_user_benefit": "这样你就不用独自活动，也不用花很长时间找人陪伴了。你可以自然而然地结识与你兴趣相投的新朋友。",
+        "explanation_when_to_use": "当你想散步或运动时想要有人陪伴，但身边没有人有空时，就可以使用这个功能。",
+        "explanation_try_this": "现在点击按钮，输入你的第一个愿望，看看谁和你匹配吧。"
+      }
+    },
+    "T104": {
+      "source_sha": "dc2617f78bdfe2af",
+      "fields": {
+        "display_label": "回应匹配",
+        "short_description": "意向循环是这样运作的。",
+        "explanation_what_it_is": "MAXINA社区的匹配推荐会为你找到精彩的活动或志同道合的伙伴。它能把你的计划直接与合适的机会联系起来。",
+        "explanation_user_benefit": "你不用独自寻找点子或同伴了。这能帮你节省大量时间，还能立刻给你新的动力。",
+        "explanation_when_to_use": "当你想为自己做点什么，需要完美灵感的时候，就来看看这些推荐吧。",
+        "explanation_try_this": "点击屏幕，现在就回应你的第一个推荐吧。"
+      }
+    },
+    "T105": {
+      "source_sha": "77b8e3ccbfce55bd",
+      "fields": {
+        "display_label": "分享意向",
+        "short_description": "意向循环是这样运作的。",
+        "explanation_what_it_is": "分享意向就是告诉MAXINA社区或我，你今天想做什么。这是你旅程中下一步行动的起点。",
+        "explanation_user_benefit": "当你分享目标时，你会保持动力，让目标变得清晰可见。这样你就能快速找到合适的支持或陪伴。",
+        "explanation_when_to_use": "比如早上你想去散步，又想找人一起时，就可以这样做。",
+        "explanation_try_this": "现在点击屏幕，和我们分享你的第一个计划吧。"
+      }
+    },
+    "T106": {
+      "source_sha": "81c2d0d4b6203b84",
+      "fields": {
+        "display_label": "完成意向",
+        "short_description": "意向循环是这样运作的。",
+        "explanation_what_it_is": "当你在日常生活中完成了一个计划好的行动，你可以在应用里确认。这是成功完成计划的最后一步。",
+        "explanation_user_benefit": "每完成一步，你的进展就会立刻显现出来，还能提升你的Vitana指数。同时我也能了解哪些任务真正适合你。",
+        "explanation_when_to_use": "每当你成功完成一个小的日常任务或计划好的行动时，就可以使用这个功能。",
+        "explanation_try_this": "点击屏幕，把你的第一个计划标记为已完成吧。"
+      }
+    },
+    "T107": {
+      "source_sha": "9a52c87a66d9f8cf",
+      "fields": {
+        "display_label": "浏览群组",
+        "short_description": "了解群组。",
+        "explanation_what_it_is": "在这里你可以发现MAXINA社区里的各种群组。这里聚集着与你兴趣相投的人。",
+        "explanation_user_benefit": "你可以在这里找到志同道合的伙伴，他们会支持你实现目标。和大家一起，保持动力会容易得多。",
+        "explanation_when_to_use": "当你需要动力，或者想和真实的人交流时，就来看看这里吧。",
+        "explanation_try_this": "点击屏幕，浏览各种群组，发现新鲜事物吧。"
+      }
+    },
+    "T108": {
+      "source_sha": "854e5647152820ba",
+      "fields": {
+        "display_label": "收藏群组",
+        "short_description": "了解群组。",
+        "explanation_what_it_is": "浏览时发现了有趣的群组？通过收藏功能，你可以轻松保存MAXINA社区里的群组。",
+        "explanation_user_benefit": "这样你就不会错过感兴趣的话题了。你随时可以快速访问收藏的群组，不用再费力寻找。",
+        "explanation_when_to_use": "当你看到一个很棒的群组，想稍后再从容加入时，就可以使用这个功能。",
+        "explanation_try_this": "现在点击收藏图标，把这个群组保存起来以便日后查看吧。"
+      }
+    },
+    "T109": {
+      "source_sha": "15b0744d61906380",
+      "fields": {
+        "display_label": "群组草稿",
+        "short_description": "了解群组。",
+        "explanation_what_it_is": "群组草稿是你在MAXINA社区创建自己群组的起点。你可以在这里从容规划新空间的主题。",
+        "explanation_user_benefit": "你可以轻松找到与你兴趣完全相同的人。它帮助你建立自己的小圈子，没有压力和负担。",
+        "explanation_when_to_use": "当你有一个关于共同爱好的好点子，想先记录下来以后再用时，就可以开始创建草稿。",
+        "explanation_try_this": "现在点击屏幕，创建你第一个群组的草稿吧。"
+      }
+    },
+    "T110": {
+      "source_sha": "6fe3f0937bacb758",
+      "fields": {
+        "display_label": "群组详情",
+        "short_description": "群组是这样运作的。",
+        "explanation_what_it_is": "群组详情让你一眼就能看到某个群组的所有重要信息。在这里你可以找到成员、最新帖子和即将举行的活动。",
+        "explanation_user_benefit": "这样你就能在MAXINA社区里随时掌握最新动态，不会错过重要消息。它帮助你建立真实的联系，和大家一起为目标努力。",
+        "explanation_when_to_use": "当你想了解群组里有哪些成员、正在讨论什么话题时，就可以查看这里。",
+        "explanation_try_this": "现在点击一个群组，看看详情，从容地了解一下吧。"
+      }
+    },
+    "T111": {
+      "source_sha": "d8423d24d5f85199",
+      "fields": {
+        "display_label": "群组聊天",
+        "short_description": "群组是这样运作的。",
+        "explanation_what_it_is": "群组聊天是MAXINA社区里大家一起交流的地方。你可以在这里和整个群组分享文字、语音消息或照片。",
+        "explanation_user_benefit": "这样你就能轻松和大家保持联系。当你们分享彼此的经历和进展时，会特别有动力。",
+        "explanation_when_to_use": "当你想和群组分享你的一天，或者展示散步时拍的美照时，就可以发消息。",
+        "explanation_try_this": "现在点击群组聊天，给大家写一句简单的问候吧。"
+      }
+    },
+    "T112": {
+      "source_sha": "a873a34e300212c1",
+      "fields": {
+        "display_label": "邀请成员",
+        "short_description": "群组是这样运作的。",
+        "explanation_what_it_is": "在MAXINA社区里，你可以轻松邀请其他人加入群组。这样你们的圈子就能加入更多志趣相投的人。",
+        "explanation_user_benefit": "一起交流会更有趣，也能给你额外的动力。你的朋友就在身边，你们可以互相支持。",
+        "explanation_when_to_use": "当你希望某个熟人立刻加入你们的对话时，就可以使用这个功能。",
+        "explanation_try_this": "现在点击屏幕，试着邀请一个人加入群组吧。"
+      }
+    },
+    "T113": {
+      "source_sha": "a80144cca406288d",
+      "fields": {
+        "display_label": "挑战",
+        "short_description": "了解挑战。",
+        "explanation_what_it_is": "挑战是MAXINA社区里的共同任务。它们很有趣，通常围绕我们的五大支柱展开。",
+        "explanation_user_benefit": "和大家一起，你更容易实现目标。当你看到自己不是一个人在战斗时，会特别有动力。",
+        "explanation_when_to_use": "当你需要一点动力，比如想在日常生活中增加运动量时，就可以参加挑战。",
+        "explanation_try_this": "现在点击屏幕，选择你的第一个挑战吧。"
+      }
+    },
+    "T114": {
+      "source_sha": "23c11f011ced34dd",
+      "fields": {
+        "display_label": "挑战进度",
+        "short_description": "了解挑战。",
+        "explanation_what_it_is": "在这里你可以清楚地看到你在MAXINA社区当前挑战中的进展。这是你个人成就的专属概览。",
+        "explanation_user_benefit": "这样你永远不会失去方向，始终保持动力。你能立刻看到五大支柱的下一步是什么。",
+        "explanation_when_to_use": "比如每天晚上来看看，检查一下你离目标还有多远。",
+        "explanation_try_this": "现在点击屏幕，查看你在挑战中的进度吧。"
+      }
+    },
+    "T115": {
+      "source_sha": "8550a9eadd89f6cf",
+      "fields": {
+        "display_label": "分享成就",
+        "short_description": "了解挑战。",
+        "explanation_what_it_is": "在这里你可以和MAXINA社区分享你完成的挑战。这是展示你里程碑的简单方式。",
+        "explanation_user_benefit": "当你展示成就时，你在激励自己的同时也在鼓舞他人。你们可以互相加油打气。",
+        "explanation_when_to_use": "当你为完成一项挑战感到自豪，想要庆祝一下时，就可以使用这个功能。",
+        "explanation_try_this": "现在点击屏幕，和我们分享你的第一个成就吧。"
+      }
+    },
+    "T116": {
+      "source_sha": "40013dcc1ec206b5",
+      "fields": {
+        "display_label": "搜索活动",
+        "short_description": "发现精彩活动。",
+        "explanation_what_it_is": "活动搜索是MAXINA社区的活动日历。在这里你可以找到线上课程、工作坊和线下聚会。",
+        "explanation_user_benefit": "共同的体验让你与真实的人建立联系，带来新的动力。学习新事物、保持活力也会变得更有乐趣。",
+        "explanation_when_to_use": "周末有空想参加精彩的线上讲座或聚会时，就可以使用搜索功能。",
+        "explanation_try_this": "点击搜索，看看MAXINA社区有哪些精彩活动在等着你吧。"
+      }
+    },
+    "T117": {
+      "source_sha": "a05c64df73520c75",
+      "fields": {
+        "display_label": "活动筛选",
+        "short_description": "发现精彩活动。",
+        "explanation_what_it_is": "通过筛选功能，你可以轻松整理 MAXINA 社区中的活动和直播房间。你可以精确设置想看到的内容。",
+        "explanation_user_benefit": "这能帮助你在众多活动中快速找到适合自己的。这样你就不会再错过任何精彩的聚会了。",
+        "explanation_when_to_use": "当你想找今晚的冥想课程或临时开放的直播房间时，就可以使用筛选功能。",
+        "explanation_try_this": "点击筛选按钮，马上试试整理活动有多简单。"
+      }
+    },
+    "T118": {
+      "source_sha": "9367983af856811b",
+      "fields": {
+        "display_label": "收藏活动",
+        "short_description": "发现精彩活动。",
+        "explanation_what_it_is": "当你发现一个有趣的预定活动时，可以把它保存起来以后查看。这就像是你的私人备忘录，专门记录即将到来的直播房间。",
+        "explanation_user_benefit": "这样你就不会再错过任何期待已久的对话或课程了。你可以随时掌握自己在 MAXINA 社区中的活动安排。",
+        "explanation_when_to_use": "当你浏览日历时看到一个特别想参加的主题，就把它收藏起来吧。",
+        "explanation_try_this": "点击一个即将举行的活动，选择收藏功能，马上把它记下来。"
+      }
+    },
+    "T119": {
+      "source_sha": "6c5d460e6c9ab7b8",
+      "fields": {
+        "display_label": "活动详情",
+        "short_description": "活动详情与参与方式。",
+        "explanation_what_it_is": "这是一个小信息窗口，会在当前屏幕上方弹出。它会显示活动的所有重要信息。",
+        "explanation_user_benefit": "你可以一目了然地看到所有必要信息。这样你就能从容做出决定，而不用离开当前页面。",
+        "explanation_when_to_use": "当你在 MAXINA 社区发现一个有趣的活动，想详细了解内容时，就可以使用这个窗口。",
+        "explanation_try_this": "点击活动，马上试试信息窗口是怎么打开的。"
+      }
+    },
+    "T120": {
+      "source_sha": "225187d2538f3a5b",
+      "fields": {
+        "display_label": "免费报名",
+        "short_description": "活动详情与参与方式。",
+        "explanation_what_it_is": "通过这个功能，你可以报名参加 MAXINA 社区的免费活动。只需轻轻一点，就能确保你的名额。",
+        "explanation_user_benefit": "这样你就不会再错过任何精彩的聚会或课程了。你可以轻松认识新朋友，一起保持活力。",
+        "explanation_when_to_use": "当你看到一个有趣的活动，想立即免费参加时，就可以使用这个功能。",
+        "explanation_try_this": "现在点击报名按钮，为我们的测试活动预留你的位置吧。"
+      }
+    },
+    "T121": {
+      "source_sha": "c93e103598f18ec6",
+      "fields": {
+        "display_label": "票务安全",
+        "short_description": "活动详情与参与方式。",
+        "explanation_what_it_is": "这是一个提示页面，在你购票或参与之前显示重要信息。比如，它会提醒你可能产生的费用或公开内容。",
+        "explanation_user_benefit": "这让你每次报名都感到安心。你始终拥有完全的掌控权，不会遇到任何意外惊吓。",
+        "explanation_when_to_use": "当你正在查看一个有趣的活动并想报名时，请留意这些提示。",
+        "explanation_try_this": "点击屏幕上的活动详情，现在就试试安全提示功能。"
+      }
+    },
+    "T122": {
+      "source_sha": "20fc6f9f574706d9",
+      "fields": {
+        "display_label": "添加到日历",
+        "short_description": "将活动与计划和匹配功能关联。",
+        "explanation_what_it_is": "通过日历功能，你可以把推荐的行动和活动直接添加为固定日程。这样，一个想法就变成了真正的计划。",
+        "explanation_user_benefit": "当你把事情确定下来，在日常生活中就更容易执行。而且这也能帮助我之后为你推荐更合适的活动和联系人。",
+        "explanation_when_to_use": "当你早上发现一个不错的活动，想立即安排到下午时，就可以使用它。",
+        "explanation_try_this": "现在点击日历按钮，把你的第一个活动安排进日程吧。"
+      }
+    },
+    "T123": {
+      "source_sha": "c92d65df92a6c5d7",
+      "fields": {
+        "display_label": "活动提醒",
+        "short_description": "将活动与计划和匹配功能关联。",
+        "explanation_what_it_is": "提醒功能会在活动开始前及时通知你。它就像是你旅程中重要时刻的温柔闹钟。",
+        "explanation_user_benefit": "你可以放松心情，不再错过任何精彩活动。我会帮你记着，让你能全身心投入体验。",
+        "explanation_when_to_use": "当你想把一个活动融入日常，并且需要在合适的时间收到提示时，就可以使用它。",
+        "explanation_try_this": "点击屏幕，为你的下一个活动设置提醒吧。"
+      }
+    },
+    "T124": {
+      "source_sha": "60010b33f0e90e73",
+      "fields": {
+        "display_label": "参与者匹配",
+        "short_description": "将活动与计划和匹配功能关联。",
+        "explanation_what_it_is": "这个功能帮助你为活动找到合适的同伴。Vitana 会从 MAXINA 社区中为你推荐与你的活动相匹配的成员。",
+        "explanation_user_benefit": "这样，当你想要有人陪伴时，就不用一个人参加活动了。和志同道合的人一起体验新事物，真的特别有动力。",
+        "explanation_when_to_use": "比如当你计划去散步，想找些友善的人一起同行时，就可以使用这个功能。",
+        "explanation_try_this": "点击屏幕，马上试试寻找合适同伴的功能吧。"
+      }
+    },
+    "T125": {
+      "source_sha": "9022aa50a8acc193",
+      "fields": {
+        "display_label": "创建活动",
+        "short_description": "一步步创建活动。",
+        "explanation_what_it_is": "通过这个功能，你可以在 Vitanaland 中规划自己的活动。只需设定一个主题和时间就可以了。",
+        "explanation_user_benefit": "这样你就能轻松找到志同道合的人并进行交流。这是融入社区、成为活跃成员的最佳方式。",
+        "explanation_when_to_use": "当你想邀请 MAXINA 社区的其他成员参加一次交流聚会时，就可以使用它。",
+        "explanation_try_this": "点击屏幕，现在就创建你的第一个活动吧。"
+      }
+    },
+    "T126": {
+      "source_sha": "8b0c58a700eeb19e",
+      "fields": {
+        "display_label": "活动基础",
+        "short_description": "一步步创建活动。",
+        "explanation_what_it_is": "活动是 MAXINA 社区中你可以自己创建的计划性聚会。它把人们聚集在一起，围绕特定主题进行交流。",
+        "explanation_user_benefit": "它能帮助你找到志同道合的人，分享你自己的想法。这样你就能成为社区中的活跃一员。",
+        "explanation_when_to_use": "当你想组织一次聚会、小型讨论或与他人一起做练习时，就可以创建活动。",
+        "explanation_try_this": "现在点击屏幕，为你的第一个活动设定基本信息吧。"
+      }
+    },
+    "T127": {
+      "source_sha": "d4d49c36b35913ad",
+      "fields": {
+        "display_label": "活动草稿",
+        "short_description": "一步步创建活动。",
+        "explanation_what_it_is": "活动草稿是你在 MAXINA 社区中筹备聚会的准备工作。你可以在这里收集所有重要细节，然后再正式发布活动。",
+        "explanation_user_benefit": "你可以毫无压力地规划想法，之后随时调整。这让你能轻松自在地与他人建立联系。",
+        "explanation_when_to_use": "当你有了一个具体的未来共同活动想法时，就可以开始创建草稿。",
+        "explanation_try_this": "点击屏幕，开始你的第一个活动草稿吧。"
+      }
+    },
+    "T128": {
+      "source_sha": "a46c2a68aa69a0b1",
+      "fields": {
+        "display_label": "创建聚会",
+        "short_description": "一步步创建聚会。",
+        "explanation_what_it_is": "聚会是与 MAXINA 社区其他成员的真实见面。在这里你可以轻松规划共同活动。",
+        "explanation_user_benefit": "共同的体验既有趣又能激励你。这让你更容易保持活力和健康。",
+        "explanation_when_to_use": "当你不想独处，比如想找人一起去散步时，就可以使用这个功能。",
+        "explanation_try_this": "现在点击屏幕，直接创建你的第一个聚会吧。"
+      }
+    },
+    "T129": {
+      "source_sha": "00252943c4e6ad9d",
+      "fields": {
+        "display_label": "活动、地点和时间",
+        "short_description": "一步步创建聚会。",
+        "explanation_what_it_is": "每个聚会都需要三个重要元素：活动内容、地点和时间。在这里你可以为日历设定这些具体细节。",
+        "explanation_user_benefit": "这样每个人都能清楚知道计划是什么、什么时候开始。这让组织工作变得简单轻松。",
+        "explanation_when_to_use": "当你决定好要一起做什么，比如在公园散步时，就可以填写这些信息。",
+        "explanation_try_this": "点击屏幕，现在就填写活动内容、地点和时间吧。"
+      }
+    },
+    "T130": {
+      "source_sha": "f1bc2717149a6e4e",
+      "fields": {
+        "display_label": "邀请成员参加聚会",
+        "short_description": "一步步创建聚会。",
+        "explanation_what_it_is": "在这里你可以邀请 MAXINA 社区的其他成员参加你的聚会。这会在屏幕上弹出一个便捷的小窗口。",
+        "explanation_user_benefit": "这样你就能和很棒的人分享你的活动。共同的体验能激励你，也更有乐趣。",
+        "explanation_when_to_use": "当你的聚会规划完成，不想一个人参加时，就可以使用这个功能。",
+        "explanation_try_this": "现在点击窗口中的邀请按钮，亲自试试吧。"
+      }
+    },
+    "T131": {
+      "source_sha": "dd83ed6847b24069",
+      "fields": {
+        "display_label": "聚会详情",
+        "short_description": "如何管理聚会。",
+        "explanation_what_it_is": "这是一个小窗口，会直接在当前屏幕上方弹出。它让你一目了然地看到聚会的所有重要信息。",
+        "explanation_user_benefit": "这样你无需离开之前的页面，就能清晰地看到所有信息。你可以从容决定接下来要做什么。",
+        "explanation_when_to_use": "当你想了解更多聚会信息或确认参加时，就可以使用这个功能。",
+        "explanation_try_this": "现在点击屏幕上的一个聚会，打开详情看看吧。"
+      }
+    },
+    "T132": {
+      "source_sha": "30f850b39c8202c5",
+      "fields": {
+        "display_label": "本地聚会",
+        "short_description": "了解如何管理聚会。",
+        "explanation_what_it_is": "本地聚会是你与附近的 MAXINA 社区成员见面的活动。一个小窗口会立即显示所有重要的详细信息。",
+        "explanation_user_benefit": "这能帮助你结识新朋友，并一起践行健康的五大支柱。你可以在确认参加之前从容地查看所有信息。",
+        "explanation_when_to_use": "当你想在自己的城市里和大家一起运动或交流时，就来看看这些聚会吧。",
+        "explanation_try_this": "点击屏幕上的聚会，看看操作有多简单。"
+      }
+    },
+    "T133": {
+      "source_sha": "ba64ec9fdd91fdc0",
+      "fields": {
+        "display_label": "修改聚会",
+        "short_description": "了解如何管理聚会。",
+        "explanation_what_it_is": "在这里你可以轻松调整已计划的聚会。这是一个直接在当前屏幕上方打开的小窗口。",
+        "explanation_user_benefit": "这样当你的计划临时有变时，你可以灵活应对。你能随时掌握所有细节，在 App 里不会迷失方向。",
+        "explanation_when_to_use": "当日常生活中有事情突然插进来，你需要取消或修改已计划的聚会时，就可以使用这个功能。",
+        "explanation_try_this": "点击聚会，马上试试如何安全地修改你的参与状态。"
+      }
+    },
+    "T134": {
+      "source_sha": "e9a03d64a1172d52",
+      "fields": {
+        "display_label": "浏览直播间",
+        "short_description": "参与直播间互动。",
+        "explanation_what_it_is": "直播间是 MAXINA 社区中实时对话发生的地方。你可以把它想象成随时可以加入的开放式讨论组。",
+        "explanation_user_benefit": "直播间为你提供了与他人直接交流或聆听精彩分享的绝佳机会。这样你可以建立真实的联系，身临其境地参与其中。",
+        "explanation_when_to_use": "当你想找人聊聊，或者想随时收听一个有趣的话题时，就来看看直播间列表吧。",
+        "explanation_try_this": "点击继续，查看当前正在进行的直播间列表。"
+      }
+    },
+    "T135": {
+      "source_sha": "41a422854e554d2e",
+      "fields": {
+        "display_label": "以听众身份加入",
+        "short_description": "参与直播间互动。",
+        "explanation_what_it_is": "直播间是 MAXINA 社区中的实时对话。当你以听众身份加入时，可以轻松地在后台聆听。",
+        "explanation_user_benefit": "这样你可以从教练指导或讨论中获取宝贵的知识，而不必站在聚光灯下。此外，通过参与你还能顺便积累奖励积分。",
+        "explanation_when_to_use": "当你散步或做饭时，想从社区中获取一些灵感，就可以收听直播间。",
+        "explanation_try_this": "现在选择一个正在进行的直播间，试着以听众身份加入吧。"
+      }
+    },
+    "T136": {
+      "source_sha": "9ff456525969a841",
+      "fields": {
+        "display_label": "发言或聊天",
+        "short_description": "参与直播间互动。",
+        "explanation_what_it_is": "在 MAXINA 社区的直播间里，你不仅可以听，还可以发言或发送消息。你可以自己决定如何参与对话。",
+        "explanation_user_benefit": "这样你可以直接提问、分享经验并建立真实的联系。你会立刻融入其中。",
+        "explanation_when_to_use": "当你在问答环节有重要问题想问，或者只是想随意打个招呼时，就可以使用这个功能。",
+        "explanation_try_this": "现在点击屏幕，试试如何在直播间里发言。"
+      }
+    },
+    "T137": {
+      "source_sha": "2674b313fdd4ddad",
+      "fields": {
+        "display_label": "预约直播间",
+        "short_description": "了解如何创建直播间。",
+        "explanation_what_it_is": "直播间是与 MAXINA 社区进行真实对话的数字聚会点。你可以在这里预约一个未来日期的音频或视频聚会。",
+        "explanation_user_benefit": "这样可以给其他成员足够的时间来报名参加你的聚会。它能把简单的消息变成真正的共同体验。",
+        "explanation_when_to_use": "当你想在下周组织一场讨论或集体锻炼时，可以提前预约一个直播间。",
+        "explanation_try_this": "点击屏幕，马上试试预约直播间的功能。"
+      }
+    },
+    "T138": {
+      "source_sha": "6a12a976ed88c41d",
+      "fields": {
+        "display_label": "直播间主题和描述",
+        "short_description": "了解如何创建直播间。",
+        "explanation_what_it_is": "当你在 MAXINA 社区创建自己的直播间时，首先要给它一个清晰的标题和简短的描述。这就像是你对话房间门上的标牌。",
+        "explanation_user_benefit": "这样其他成员能立刻知道内容是什么，更容易决定是否参加。它能帮助你为你的对话找到合适的人。",
+        "explanation_when_to_use": "当你有一个好想法，想邀请其他成员来你的直播间交流时，就可以使用这个功能。",
+        "explanation_try_this": "现在点击文本框，为你的第一个直播间想一个吸引人的标题和简短描述吧。"
+      }
+    },
+    "T139": {
+      "source_sha": "3f88bf7fb67b066a",
+      "fields": {
+        "display_label": "安全开播",
+        "short_description": "了解如何创建直播间。",
+        "explanation_what_it_is": "在你开始直播之前，直播间为你提供了重要的安全功能。你可以精确控制 MAXINA 社区中谁可以收听或参与。",
+        "explanation_user_benefit": "这让你感到安心，并完全掌控你的对话。这样你可以放松地专注于交流。",
+        "explanation_when_to_use": "在开始之前检查这些选项，确保你的直播间对你来说是一个安全的空间。",
+        "explanation_try_this": "点击屏幕，了解直播间的安全设置。"
+      }
+    },
+    "T140": {
+      "source_sha": "65b3c5e6aafdb0c7",
+      "fields": {
+        "display_label": "直播间录像",
+        "short_description": "直播间的媒体生命周期。",
+        "explanation_what_it_is": "直播间录像保存了 MAXINA 社区过去的实时对话。这样你可以在事后方便地收听或观看错过的活动。",
+        "explanation_user_benefit": "你不必按照固定的时间安排你的一天。你可以在最适合自己的时候享受精彩的对话。",
+        "explanation_when_to_use": "当你错过了原来的直播时间，可以在轻松做饭或散步时收听录像。",
+        "explanation_try_this": "现在点击屏幕，发现你的第一个过往直播间录像。"
+      }
+    },
+    "T141": {
+      "source_sha": "33ac1a7987320e32",
+      "fields": {
+        "display_label": "精彩片段和瞬间",
+        "short_description": "直播间的媒体生命周期。",
+        "explanation_what_it_is": "精彩片段和瞬间是你最佳体验的短视频或音频剪辑。它们为你总结了最重要的时刻。",
+        "explanation_user_benefit": "这样你可以保存珍贵的回忆并与 MAXINA 社区分享。当你展示你的瞬间时，你会建立信任并更容易找到志同道合的人。",
+        "explanation_when_to_use": "在一次精彩对话后立即保存精彩片段，记录下重要的收获。",
+        "explanation_try_this": "点击按钮，选择并保存你的第一个瞬间。"
+      }
+    },
+    "T142": {
+      "source_sha": "1780782a9f38e251",
+      "fields": {
+        "display_label": "直播间摘要",
+        "short_description": "直播间的媒体生命周期。",
+        "explanation_what_it_is": "摘要让你一目了然地看到过往直播间讨论了什么内容。它为你简明扼要地总结了要点。",
+        "explanation_user_benefit": "你可以节省宝贵的时间，同时始终保持了解。这样你能立刻知道某个话题是否与你相关。",
+        "explanation_when_to_use": "当你错过了 MAXINA 社区的一次交流，但只有几分钟时间时，可以阅读摘要。",
+        "explanation_try_this": "现在点击一个摘要，看看捕捉对话精华有多容易。"
+      }
+    },
+    "T143": {
+      "source_sha": "6a92778ab49dc237",
+      "fields": {
+        "display_label": "媒体中心概览",
+        "short_description": "媒体中心作为独立区域。",
+        "explanation_what_it_is": "媒体中心是你在 MAXINA 社区中的媒体集中地。在这里你可以一目了然地找到视频、图片、音乐和播客。",
+        "explanation_user_benefit": "你会在这里发现激励和支持你的精彩内容。这是一个完美的区域，让你静下心来学习或放松。",
+        "explanation_when_to_use": "当你想在短暂休息时观看有趣的视频或收听播客时，就打开媒体中心吧。",
+        "explanation_try_this": "现在点击屏幕，打开媒体中心查看概览。"
+      }
+    },
+    "T144": {
+      "source_sha": "9a3b9f28705197bf",
+      "fields": {
+        "display_label": "观看短视频",
+        "short_description": "媒体中心作为独立区域。",
+        "explanation_what_it_is": "在媒体中心你可以找到我们称之为短视频的内容。它们向你展示 MAXINA 社区的精彩片段。",
+        "explanation_user_benefit": "这样你可以在几秒钟内发现新事物或获得激励。这很有趣，还能给你一天带来好的启发。",
+        "explanation_when_to_use": "当你短暂休息或只是想放松一下时，就看看短视频吧。",
+        "explanation_try_this": "现在点击一个视频，直接观看你的第一个短视频。"
+      }
+    },
+    "T145": {
+      "source_sha": "d30336fbb8747990",
+      "fields": {
+        "display_label": "保存或收藏媒体",
+        "short_description": "媒体中心作为独立区域。",
+        "explanation_what_it_is": "你可以轻松地在媒体中心保存视频、播客或图片。这样你就建立了自己的个人收藏库。",
+        "explanation_user_benefit": "当你想再次观看或收听某些内容时，不必再花时间寻找。这节省了时间，让你始终保持清晰的概览。",
+        "explanation_when_to_use": "当你看到一个有趣的视频，但正在外出，想晚上回家后再从容观看时，就可以使用这个功能。",
+        "explanation_try_this": "现在点击书签图标，保存一个内容以便稍后查看。"
+      }
+    },
+    "T146": {
+      "source_sha": "e1238619e4943798",
+      "fields": {
+        "display_label": "播放播客",
+        "short_description": "了解播客。",
+        "explanation_what_it_is": "在媒体中心有大量精彩的播客供你选择。你可以随时轻松收听。",
+        "explanation_user_benefit": "播客帮助你学习新知识或简单地放松一下。这样你就是在为你的心灵和身心健康做好事。",
+        "explanation_when_to_use": "当你轻松散步或舒适地躺在沙发上时，就听听播客吧。",
+        "explanation_try_this": "点击屏幕，马上试试如何播放播客。"
+      }
+    },
+    "T147": {
+      "source_sha": "5846777838c91725",
+      "fields": {
+        "display_label": "音频栏",
+        "short_description": "了解播客功能。",
+        "explanation_what_it_is": "音频栏是你在应用里收听精彩播客的专属空间。所有音频内容都整齐地汇集在这里，方便你随时查找。",
+        "explanation_user_benefit": "你可以放松身心，或者在不经意间学到新知识。边听边充电的感觉真的很棒。",
+        "explanation_when_to_use": "散步的时候，或者在家舒服地窝在沙发上的时候，都可以打开它。",
+        "explanation_try_this": "现在就点击音频栏，发现你的第一期播客吧。"
+      }
+    },
+    "T148": {
+      "source_sha": "aee171976d29f114",
+      "fields": {
+        "display_label": "播客日程",
+        "short_description": "了解播客功能。",
+        "explanation_what_it_is": "通过播客日程，你可以把喜欢的播客融入日常生活。只需简单设置一下，就能定时收听精彩内容。",
+        "explanation_user_benefit": "这样你就能自动保持信息灵通、充满灵感。它帮你把美好的收听时光固定安排进每一天。",
+        "explanation_when_to_use": "如果你想每天早上散步时自动播放喜欢的节目，就可以设置一个日程。",
+        "explanation_try_this": "点击屏幕，现在就创建你的第一个播客日程吧。"
+      }
+    },
+    "T149": {
+      "source_sha": "1506c5592dddfd79",
+      "fields": {
+        "display_label": "播放音乐",
+        "short_description": "了解音乐功能。",
+        "explanation_what_it_is": "在 Vitanaland 的媒体中心，你可以轻松播放音乐。这是你专属的美妙旋律空间。",
+        "explanation_user_benefit": "合适的音乐能让你心情更好、更愉悦。它会陪伴你度过每一天，配合你的心情带来舒适体验。",
+        "explanation_when_to_use": "散步时想听动感歌曲，或者晚上想放松一下的时候，就可以播放音乐。",
+        "explanation_try_this": "点击播放按钮，打开音乐播放器，开始你的第一首歌吧。"
+      }
+    },
+    "T150": {
+      "source_sha": "99571f7888bc509e",
+      "fields": {
+        "display_label": "专注音乐",
+        "short_description": "了解音乐功能。",
+        "explanation_what_it_is": "专注音乐是一个特别的音乐精选。它能帮你屏蔽周围的干扰噪音。",
+        "explanation_user_benefit": "这样你就能更轻松地工作、学习，或者单纯地放空自己。让你保持平静和专注。",
+        "explanation_when_to_use": "当你身处嘈杂的环境，想安静地完成一件事时，就可以使用它。",
+        "explanation_try_this": "点击屏幕，开始你的第一段专注音乐，深呼吸放松一下吧。"
+      }
+    },
+    "T151": {
+      "source_sha": "bf762175d30820ed",
+      "fields": {
+        "display_label": "媒体悬浮窗",
+        "short_description": "了解音乐功能。",
+        "explanation_what_it_is": "媒体悬浮窗是屏幕上的一个小型音乐播放器。即使你在应用里浏览其他内容，也能随时看到音乐播放状态。",
+        "explanation_user_benefit": "你可以随时轻松暂停播放或切换歌曲。这样就不会打断你在应用里的阅读或操作。",
+        "explanation_when_to_use": "当你边做其他事边听音乐，想快速跳过一首歌时，就可以使用这个小窗口。",
+        "explanation_try_this": "现在就点击这个小播放器，亲自试试控制功能吧。"
+      }
+    },
+    "T152": {
+      "source_sha": "cded43365b6fde38",
+      "fields": {
+        "display_label": "上传短视频",
+        "short_description": "了解如何上传媒体。",
+        "explanation_what_it_is": "通过这个功能，你可以上传短视频。这是你在 MAXINA 社区展示自己的方式。",
+        "explanation_user_benefit": "分享你的精彩瞬间或才艺，能帮你与他人建立信任。这有助于你结识有价值的新朋友。",
+        "explanation_when_to_use": "当你有一个特别的时刻或小技巧想快速分享给大家时，就可以使用它。",
+        "explanation_try_this": "现在就点击上传按钮，体验一下上传短视频有多简单吧。"
+      }
+    },
+    "T153": {
+      "source_sha": "530b07f0ba87ff90",
+      "fields": {
+        "display_label": "上传播客",
+        "short_description": "了解如何上传媒体。",
+        "explanation_what_it_is": "在 MAXINA 社区，你可以上传自己的音频内容和播客。轻松地与他人分享你的知识和故事。",
+        "explanation_user_benefit": "这能帮助你被更多人听到，在社区中建立信任。你的声音可以激励他人，创造有价值的新连接。",
+        "explanation_when_to_use": "当你有一个精彩话题，能帮助他人在自己的旅程中成长时，就可以上传一期播客。",
+        "explanation_try_this": "点击屏幕，轻松尝试一下上传播客的流程吧。"
+      }
+    },
+    "T154": {
+      "source_sha": "321140200629774e",
+      "fields": {
+        "display_label": "发布权限",
+        "short_description": "了解如何上传媒体。",
+        "explanation_what_it_is": "在你分享自己的媒体内容之前，我们需要确认发布权限。这只是为了确保这些内容确实属于你。",
+        "explanation_user_benefit": "这能保护你免受麻烦，确保 Vitanaland 里的公平互动。这样你就可以安心、放心地展示你的作品。",
+        "explanation_when_to_use": "每当你想与他人分享新的图片、视频或音频时，都需要遵守这个简单的规则。",
+        "explanation_try_this": "点击屏幕，查看简短的规则说明，并为你的第一次上传确认同意吧。"
+      }
+    },
+    "T155": {
+      "source_sha": "33f83f44e463e39d",
+      "fields": {
+        "display_label": "社区回顾",
+        "short_description": "完成社区基础内容。",
+        "explanation_what_it_is": "MAXINA社区是你在Vitanaland的社交家园。在这里，你会遇到和你一样想要提升自己、不断成长的人。",
+        "explanation_user_benefit": "在这段旅程中你不是一个人，你可以和大家交流，找到新的动力。一起保持健康和活力，真的会更有趣。",
+        "explanation_when_to_use": "当你需要建议、想参加活动，或者只是想为今天找点灵感时，就来社区看看吧。",
+        "explanation_try_this": "点击屏幕，查看社区功能的简要介绍。"
+      }
+    },
+    "T156": {
+      "source_sha": "c7b29075451256de",
+      "fields": {
+        "display_label": "选择下一个社交行动",
+        "short_description": "完成社区基础内容。",
+        "explanation_what_it_is": "现在你可以在MAXINA社区迈出第一步了。只需选择你今天想怎样和其他成员互动。",
+        "explanation_user_benefit": "这样你会保持动力，知道在这段旅程中你永远不是孤军奋战。你会很快找到志同道合的人，他们会支持你、激励你。",
+        "explanation_when_to_use": "当你达成目标想分享喜悦，或者想参加一个共同挑战时，就用这个功能吧。",
+        "explanation_try_this": "现在就在屏幕上选择你的下一个社交行动，试试看吧。"
+      }
+    },
+    "T157": {
+      "source_sha": "924a14971de05a26",
+      "fields": {
+        "display_label": "信任带来机遇",
+        "short_description": "完成社区基础设置。",
+        "explanation_what_it_is": "在 MAXINA 社区里，我会帮你精准匹配最适合你的人。可能是新朋友、健身搭档，甚至是商业伙伴。",
+        "explanation_user_benefit": "有了志同道合的伙伴，无论是健康目标还是事业发展，你都能更轻松地实现。对的连接会为你打开美好的新机遇。",
+        "explanation_when_to_use": "当你想找一个能在日常中激励你的人，或者想一起启动新项目时，就来用这个功能吧。",
+        "explanation_try_this": "点击屏幕，让我们一起看看今天社区里谁最适合你。"
+      }
+    },
+    "T159": {
+      "source_sha": "6b47c2a0c96ed263",
+      "fields": {
+        "display_label": "经济定位",
+        "short_description": "打开可选的商业之门。",
+        "explanation_what_it_is": "在 Vitanaland，不仅关乎健康，还有全新的职业机会等着你。在这里，你可以创建自己的服务，或发现令人兴奋的产品与服务。",
+        "explanation_user_benefit": "你有机会分享自己的经验，同时开拓新的事业。这样你不仅能实现个人成长，还能为自己创造可持续的收入来源。",
+        "explanation_when_to_use": "如果你想在帮助他人的旅程中顺便赚取一些收入，就打开这个板块吧。",
+        "explanation_try_this": "现在点击屏幕上的选项，了解你的职业发展机会。"
+      }
+    },
+    "T160": {
+      "source_sha": "f1a98489f6a97b90",
+      "fields": {
+        "display_label": "商业兴趣",
+        "short_description": "打开可选的商业之门。",
+        "explanation_what_it_is": "在 Vitanaland，你不仅可以改善健康，还能开辟自己的商业道路。这是你自愿踏入一个将健康与收入相结合的世界的起点。",
+        "explanation_user_benefit": "你可以帮助他人，同时一步步建立自己的收入来源。这样你不仅能实现个人成长，还能创造全新的职业机会。",
+        "explanation_when_to_use": "当你好奇如何分享自己的经验并从中获得收益时，就打开这个板块吧。",
+        "explanation_try_this": "现在点击屏幕，告诉我们你是否想了解更多关于这些商业机会的信息。"
+      }
+    },
+    "T161": {
+      "source_sha": "4d2958bf605103ae",
+      "fields": {
+        "display_label": "发现概览",
+        "short_description": "发现是搜索，不是推销。",
+        "explanation_what_it_is": "发现板块是我们的产品和服务目录，专门根据你的健康数据量身定制。这是一个展示你真正需要什么的市场，而不是单纯推销商品的地方。",
+        "explanation_user_benefit": "你可以节省宝贵的时间，因为所有推荐都是根据你的生命指南针量身定制的。这样你总能找到真正适合自己、助你前行的支持。",
+        "explanation_when_to_use": "当你想有针对性地寻找能支持当前健康状况的产品或服务时，就打开这个概览吧。",
+        "explanation_try_this": "现在打开发现板块，看看我为你准备了哪些推荐。"
+      }
+    },
+    "T162": {
+      "source_sha": "a687ba531f0d6568",
+      "fields": {
+        "display_label": "在探索中搜索",
+        "short_description": "探索是搜索，不是推销。",
+        "explanation_what_it_is": "探索区域就像一个智能搜索引擎，专门为你的健康目标服务，而不是普通的商店。在这里，你可以精准找到适合自己的服务、专家和工具。",
+        "explanation_user_benefit": "这能帮你节省大量时间，因为不会有任何强行推销。你只会找到真正能强化你五大支柱的解决方案。",
+        "explanation_when_to_use": "当你需要一个具体的解决方案时，比如一门提升心理韧性的课程，就可以使用这个搜索功能。",
+        "explanation_try_this": "现在点击搜索框，输入一个你正在关注的话题。"
+      }
+    },
+    "T163": {
+      "source_sha": "2f898d548e93124d",
+      "fields": {
+        "display_label": "为什么推荐",
+        "short_description": "探索是搜索，不是推销。",
+        "explanation_what_it_is": "每一条建议，Vitana 都会清楚告诉你为什么它适合你。没有任何隐藏的套路，每个想法背后都有清晰简单的理由。",
+        "explanation_user_benefit": "这样你就能立刻明白，某个行动如何改善你的 Vitana 指数或五大支柱中的某一项。你始终掌握主动权，也能了解什么对你的日常生活真正有益。",
+        "explanation_when_to_use": "早上在 Autopilot 中浏览建议、想要选择一项任务时，可以看看这些简短的推荐理由。",
+        "explanation_try_this": "现在点击其中一条建议，查看它的具体推荐理由。"
+      }
+    },
+    "T164": {
+      "source_sha": "3a01d95850cc7e28",
+      "fields": {
+        "display_label": "营养补充剂和产品",
+        "short_description": "更好地了解产品。",
+        "explanation_what_it_is": "在 Vitanaland，你可以发现与你健康目标完美匹配的产品和补充剂。这是你寻找有用物品的安心之地。",
+        "explanation_user_benefit": "你不用再在网上花大量时间搜索合适的东西了。你会得到清晰的建议，这些建议能真正帮助你的日常生活。",
+        "explanation_when_to_use": "当你想用合适的产品有针对性地支持你的五大支柱时，就打开这个区域。",
+        "explanation_try_this": "点击按钮，现在就查看产品和补充剂的概览。"
+      }
+    },
+    "T165": {
+      "source_sha": "ecaeb9d42d39f46d",
+      "fields": {
+        "display_label": "产品详情和适合度",
+        "short_description": "更好地了解产品。",
+        "explanation_what_it_is": "在产品详情页，你可以看到一个商品的所有重要信息。一眼就能了解产品的价格以及为什么它适合你。",
+        "explanation_user_benefit": "这样你能立刻判断一个商品是否真正支持你的健康目标。这给你安全感，帮助你做出正确的决定。",
+        "explanation_when_to_use": "当你发现一个改善睡眠的新工具，想确认它是否真的适合你时，就使用这个页面。",
+        "explanation_try_this": "点击一个产品打开详情，亲自检查它是否适合你。"
+      }
+    },
+    "T166": {
+      "source_sha": "1770c9b11a9fd9b1",
+      "fields": {
+        "display_label": "保存、心愿单或购物车",
+        "short_description": "更好地了解产品。",
+        "explanation_what_it_is": "这是你的个人购物车和收藏夹。在这里，你可以收集符合你健康目标的产品、服务和优惠。",
+        "explanation_user_benefit": "这样你就能完美掌控所有感兴趣的内容，而不必立刻做决定。你可以从容比较各种选项，保存你的最爱。",
+        "explanation_when_to_use": "当你发现一个有趣的商品，但想稍后再仔细考虑或预订时，就使用这个功能。",
+        "explanation_try_this": "现在点击屏幕，把一个商品加入收藏夹或放进购物车。"
+      }
+    },
+    "T167": {
+      "source_sha": "32228837c65fece0",
+      "fields": {
+        "display_label": "健康服务",
+        "short_description": "发现服务商。",
+        "explanation_what_it_is": "在探索区域，你可以找到专门为你量身定制的精选健康服务。这是一个真诚的、个性化的健康市场。",
+        "explanation_user_benefit": "你只会收到真正符合你生活指南针和需求的推荐。每条建议都会立刻、真诚地告诉你为什么它对你有益。",
+        "explanation_when_to_use": "当你想有针对性地为身体或心灵做些好事时，就使用这个区域。",
+        "explanation_try_this": "现在点击一个健康服务，看看为什么它正好适合你。"
+      }
+    },
+    "T168": {
+      "source_sha": "82f23b0850e94254",
+      "fields": {
+        "display_label": "服务商、医生和教练",
+        "short_description": "发现服务商。",
+        "explanation_what_it_is": "在这里，你可以找到适合你健康需求的医生、教练和专家。这是你在 Vitanaland 的个人市场。",
+        "explanation_user_benefit": "你能节省大量时间，因为你找到的正是符合你五大支柱目标的专业人士。这样你身边总有合适的支持。",
+        "explanation_when_to_use": "当你需要寻找一位教练来提升心理韧性或改善饮食时，就使用这个区域。",
+        "explanation_try_this": "在屏幕上选择一个主题，发现哪些专家可以帮助你。"
+      }
+    },
+    "T169": {
+      "source_sha": "250f1abaa76709e3",
+      "fields": {
+        "display_label": "信任服务商档案",
+        "short_description": "发现服务商。",
+        "explanation_what_it_is": "服务商档案就像我们专家的详细名片。在这里，你可以一目了然地看到医生或教练的所有重要信息。",
+        "explanation_user_benefit": "这样你就能从容决定把健康托付给谁。在预订服务之前，它给你安全感。",
+        "explanation_when_to_use": "在预约之前，查看档案以了解价格、可预约时间和详细信息。",
+        "explanation_try_this": "现在点击一个档案，看看你能发现哪些信息。"
+      }
+    },
+    "T170": {
+      "source_sha": "1ae2cb044f8ad675",
+      "fields": {
+        "display_label": "通用购物车",
+        "short_description": "安心购物。",
+        "explanation_what_it_is": "购物车是你在 Vitanaland 发现的所有物品的安全集中地。在做决定之前，你可以在这里查看所有详情和价格。",
+        "explanation_user_benefit": "你始终掌握完全的控制权，绝不会意外购买任何东西。这样你就能从容决定什么对你真正有帮助。",
+        "explanation_when_to_use": "当你发现一个有趣的商品，想安全地保存下来以便稍后决定时，就使用它。",
+        "explanation_try_this": "点击购物车，发现你的安心概览。"
+      }
+    },
+    "T171": {
+      "source_sha": "2126e413a91a4a72",
+      "fields": {
+        "display_label": "购买规则",
+        "short_description": "安心购物。",
+        "explanation_what_it_is": "购买规则是你在 Vitanaland 购物时的个人安全网。它们设定你想安全订购的内容和数量。",
+        "explanation_user_benefit": "这样你就能始终完全掌控自己的支出。你可以避免意外购买，轻松愉快地购物。",
+        "explanation_when_to_use": "在计划第一次购物之前设置这些规则，以最佳方式保护你的账户。",
+        "explanation_try_this": "点击屏幕，现在就设置你的第一条个人购买规则。"
+      }
+    },
+    "T172": {
+      "source_sha": "5b3b10723e42df66",
+      "fields": {
+        "display_label": "退款流程",
+        "short_description": "安心购物。",
+        "explanation_what_it_is": "退款流程向你清楚展示如何撤销一笔购买。这是你购物时的安全保障。",
+        "explanation_user_benefit": "你可以完全无忧地购物，因为流程始终清晰明了。这给你全方位的安全感和完全的控制权。",
+        "explanation_when_to_use": "当你不小心订错了东西，或者发现某个产品你其实不需要时，就查看这个流程。",
+        "explanation_try_this": "现在点击屏幕，试着走一遍简单的退款流程。"
+      }
+    },
+    "T173": {
+      "source_sha": "192dfc80099469b2",
+      "fields": {
+        "display_label": "钱包概览",
+        "short_description": "了解钱包和订阅状态。",
+        "explanation_what_it_is": "钱包概览展示你在 Vitanaland 拥有的一切。在这里，你可以一目了然地看到你的真实资金、余额、奖励和订阅。",
+        "explanation_user_benefit": "你随时都能完全掌控自己的财务状况。无需四处查找，几秒钟内就能了解当前状态。",
+        "explanation_when_to_use": "当你想快速查看收集了多少奖励或当前哪个订阅处于激活状态时，就打开这个概览。",
+        "explanation_try_this": "现在点击右上角的数字钱包图标，查看你的概览。"
+      }
+    },
+    "T174": {
+      "source_sha": "12ff71b108e50902",
+      "fields": {
+        "display_label": "余额、奖励、订阅",
+        "short_description": "了解钱包和订阅状态。",
+        "explanation_what_it_is": "在这里，你可以一目了然地看到你的购物积分、获得的奖励和所有正在进行的订阅。这样你就能随时清楚知道有多少余额可用。",
+        "explanation_user_benefit": "你能完全掌控自己的支出，并立刻看到你的成就获得了奖励。这帮助你明智规划，充分利用你的奖励。",
+        "explanation_when_to_use": "在购物之前，或者想查看你为健康习惯收集了多少奖励时，来这里看看。",
+        "explanation_try_this": "点击按钮，现在就探索你的积分、奖励和订阅。"
+      }
+    },
+    "T175": {
+      "source_sha": "d473b392969e0a40",
+      "fields": {
+        "display_label": "当前套餐和账单",
+        "short_description": "了解钱包和订阅状态。",
+        "explanation_what_it_is": "在这里，你可以清楚看到当前使用的套餐以及下次账单的时间。这是你在 Vitanaland 所有持续费用的安全概览。",
+        "explanation_user_benefit": "你始终完全掌控自己的订阅和支出。对你来说，永远不会有隐藏费用或意外。",
+        "explanation_when_to_use": "当你想查看当前套餐何时续期时，就打开这个页面。",
+        "explanation_try_this": "现在点击显示区域，查看你当前的套餐和账单信息。"
+      }
+    },
+    "T176": {
+      "source_sha": "03f4318983865deb",
+      "fields": {
+        "display_label": "奖励计划",
+        "short_description": "你钱包的价值层级。",
+        "explanation_what_it_is": "奖励计划是你钱包中的个人概览。在这里，你可以看到你在 Vitanaland 的日常成就如何获得奖励。",
+        "explanation_user_benefit": "它立刻向你展示，你为健康付出的努力是值得的。你可以清楚地追踪你的好决定如何为你带来宝贵的奖励。",
+        "explanation_when_to_use": "当你在 Autopilot 中养成了一个新习惯，想查看获得的代币时，就来看看这个计划。",
+        "explanation_try_this": "点击奖励区域，打开你的计划并四处看看。"
+      }
+    },
+    "T177": {
+      "source_sha": "2d0e4af4c09dbdd1",
+      "fields": {
+        "display_label": "支付方式",
+        "short_description": "你钱包里的不同价值层级。",
+        "explanation_what_it_is": "你的钱包里有多种支付方式，比如真实货币和我们的内部积分。你可以直接在App里轻松支付各种服务或产品。",
+        "explanation_user_benefit": "这样你就能清楚知道可以用什么来付款，完全掌控一切。在Vitanaland里的很多场景，你都可以自己选择使用哪种支付方式。",
+        "explanation_when_to_use": "购物前先来这里看看，确认你的积分余额是否足够支付。",
+        "explanation_try_this": "现在点击屏幕，探索你钱包里的支付方式吧。"
+      }
+    },
+    "T179": {
+      "source_sha": "619c571215bd5fca",
+      "fields": {
+        "display_label": "分享总览",
+        "short_description": "只有经过你的同意才会分享。",
+        "explanation_what_it_is": "在分享区域，你可以决定谁能看到什么。这是你管理所有想要分享的数据的个人控制中心。",
+        "explanation_user_benefit": "这样你就能安心，知道你的回忆是安全的。你完全自己决定分享什么、什么保持完全私密。",
+        "explanation_when_to_use": "当你想保留健康数据的隐私，但又想在Maxina社区展示一个漂亮的成就时，就来这里。",
+        "explanation_try_this": "现在点击屏幕，打开你的分享总览，探索你的设置吧。"
+      }
+    },
+    "T180": {
+      "source_sha": "4d6a38bc6ee78b41",
+      "fields": {
+        "display_label": "渠道连接",
+        "short_description": "只有经过你的同意才会分享。",
+        "explanation_what_it_is": "在这里你可以把其他App和设备（比如你的日历）直接连接到我。你需要为每个渠道单独明确授权数据交换。",
+        "explanation_user_benefit": "这样你就能始终完全掌控自己的隐私。你可以随时轻松断开任何连接。",
+        "explanation_when_to_use": "当你开始使用新的健身App，想让我看到你的运动数据来计算你的Vitana指数时，就用这个功能。",
+        "explanation_try_this": "点击屏幕，马上试试如何管理一个连接吧。"
+      }
+    },
+    "T181": {
+      "source_sha": "c8bc1c64984fdade",
+      "fields": {
+        "display_label": "分享授权",
+        "short_description": "只有经过你的同意才会分享。",
+        "explanation_what_it_is": "在这里你可以精确决定哪些数据可以与他人分享。这是你对所有对外信息的个人控制。",
+        "explanation_user_benefit": "你始终完全掌控自己的隐私。这样你就能确信，只有你真正想展示的内容才会对外可见。",
+        "explanation_when_to_use": "当你想自己决定哪些成就或数据在Maxina社区可见时，就用这个功能。",
+        "explanation_try_this": "现在点击屏幕，精确设置你的分享权限吧。"
+      }
+    },
+    "T182": {
+      "source_sha": "4d663aeedb7657da",
+      "fields": {
+        "display_label": "活动基础",
+        "short_description": "了解活动功能。",
+        "explanation_what_it_is": "活动是你安全地与他人分享内容或成就的工具。你始终完全掌控自己的数据。",
+        "explanation_user_benefit": "这样你就能轻松与Maxina社区建立联系或展示你的进步。你的隐私始终是我们的首要考虑。",
+        "explanation_when_to_use": "当你想骄傲地与朋友分享生命罗盘中的一个重要目标时，就用它。",
+        "explanation_try_this": "现在点击屏幕，打开你的第一个活动总览吧。"
+      }
+    },
+    "T183": {
+      "source_sha": "13d3d61c0bd0016f",
+      "fields": {
+        "display_label": "创建活动草稿",
+        "short_description": "了解活动功能。",
+        "explanation_what_it_is": "活动草稿是你准备给他人消息的安全空间。在这里你可以从容地规划想要分享的内容，然后再让它可见。",
+        "explanation_user_benefit": "你完全掌控自己的数据和消息。这样你就能在发布前轻松检查一切。",
+        "explanation_when_to_use": "当你有一个好想法或经历想与Maxina社区分享，但想先再斟酌一下文字时，就创建一个草稿。",
+        "explanation_try_this": "现在点击屏幕，和我一起开始你的第一个活动草稿吧。"
+      }
+    },
+    "T184": {
+      "source_sha": "473242454b03d784",
+      "fields": {
+        "display_label": "分发与时间安排",
+        "short_description": "了解活动功能。",
+        "explanation_what_it_is": "在这里你可以设定活动何时何地发布。你选择渠道并规划确切的时间。",
+        "explanation_user_benefit": "这样你就能在恰当的时间触达朋友或Maxina社区，而不用一直在线。一切都按你自己的时间表轻松进行。",
+        "explanation_when_to_use": "当你想在周末从容地准备好下周的帖子时，就用这个功能。",
+        "explanation_try_this": "点击屏幕，选择一个渠道，为你的草稿安排发布时间吧。"
+      }
+    },
+    "T185": {
+      "source_sha": "7de8df10cb8d3291",
+      "fields": {
+        "display_label": "分享统计",
+        "short_description": "分享时的反馈与记录。",
+        "explanation_what_it_is": "分享总览清楚地显示谁在查看你分享的数据以及用途。它就像你隐私的清晰日志。",
+        "explanation_user_benefit": "这给你安全感和安心。你始终自己决定分享什么，随时可以更改。",
+        "explanation_when_to_use": "当你想确切知道目前有哪些信息被授权用于推荐或Autopilot时，就来这里看看。",
+        "explanation_try_this": "现在点击屏幕，看看你的个人分享总览吧。"
+      }
+    },
+    "T186": {
+      "source_sha": "0293509f5cb626e4",
+      "fields": {
+        "display_label": "帖子历史",
+        "short_description": "分享时的反馈与记录。",
+        "explanation_what_it_is": "历史记录清晰地显示你迄今分享过的帖子和信息。这样你就能始终掌握自己数据的动态。",
+        "explanation_user_benefit": "你始终清楚知道你的信息发生了什么。这给你安全感和完全的掌控。",
+        "explanation_when_to_use": "当你想快速查看最近为他人开放了哪些内容时，就来这里看看。",
+        "explanation_try_this": "点击按钮，打开你的历史记录，查看过去的帖子吧。"
+      }
+    },
+    "T187": {
+      "source_sha": "150a820199458e3f",
+      "fields": {
+        "display_label": "数据授权检查",
+        "short_description": "分享时的反馈与记录。",
+        "explanation_what_it_is": "数据授权总览清楚地显示谁可以访问你的哪些信息。这是你隐私的个人控制中心。",
+        "explanation_user_benefit": "你保持完全掌控，自己决定想分享什么。这样你在Vitanaland就能始终感到安全和舒适。",
+        "explanation_when_to_use": "当你想确切检查目前为个性化推荐授权了哪些数据时，就来看看这个总览。",
+        "explanation_try_this": "点击屏幕，看看你当前的数据授权吧。"
+      }
+    },
+    "T188": {
+      "source_sha": "68cce8eeda0c1bb8",
+      "fields": {
+        "display_label": "我的商务总览",
+        "short_description": "商务中心——完全没有压力。",
+        "explanation_what_it_is": "商务中心是你在Maxina社区建立自己收入的区域。它帮助你轻松地将技能转化为真正的机会。",
+        "explanation_user_benefit": "财务自由让你的日常生活更加平静和从容。这样你不仅在健康上成长，在经济上也更加独立。",
+        "explanation_when_to_use": "当你好奇如何用自己的兴趣或服务帮助他人并赚钱时，就来这里看看。",
+        "explanation_try_this": "现在点击屏幕，完全无压力地看看你的第一个商务总览吧。"
+      }
+    },
+    "T189": {
+      "source_sha": "8e3315e08c7d5af2",
+      "fields": {
+        "display_label": "商务路径检查",
+        "short_description": "商务中心——完全没有压力。",
+        "explanation_what_it_is": "商务检查是一个小指南，帮助你了解如何在Maxina社区建立自己的收入。这完全是为你提供的自愿选项。",
+        "explanation_user_benefit": "财务独立让你在日常生活中拥有更多自由和从容。你可以在这里完全无压力地看看这条路是否适合你。",
+        "explanation_when_to_use": "当你在考虑与他人分享你的技能或热情时，就做这个检查。",
+        "explanation_try_this": "点击继续，开始你的个人商务检查吧。"
+      }
+    },
+    "T190": {
+      "source_sha": "d24c8325fa949e25",
+      "fields": {
+        "display_label": "技能总览",
+        "short_description": "商务中心——完全没有压力。",
+        "explanation_what_it_is": "技能清单是你个人资料中收集才能、兴趣和语言的地方。在这里你记录自己特别擅长的事情。",
+        "explanation_user_benefit": "当我知道你能做什么时，我就能为你推荐Maxina社区中合适的机会。这帮助你与他人分享知识，自然而然地建立起属于自己的事业。",
+        "explanation_when_to_use": "当你学到新东西或在思考如何帮助他人时，就添加一项新技能。",
+        "explanation_try_this": "现在点击屏幕，把你的第一项技能添加到列表中吧。"
+      }
+    },
+    "T191": {
+      "source_sha": "1b394b43c0ea3ffe",
+      "fields": {
+        "display_label": "商务帖子",
+        "short_description": "将你的商务与匹配功能连接。",
+        "explanation_what_it_is": "商务帖子是在Vitanaland分享你自己的服务或技能的简单方式。你创建一个小广告，它会精准地展示给合适的人。",
+        "explanation_user_benefit": "这样你就能轻松建立自己的网络，触达正在寻找你帮助的人。它把你的进步变成你和他人的机会。",
+        "explanation_when_to_use": "当你想向Maxina社区提供自己的服务、知识或合作机会时，就用这个功能。",
+        "explanation_try_this": "点击屏幕，马上试试如何创建一个新的商务帖子吧。"
+      }
+    },
+    "T192": {
+      "source_sha": "b6c874e533995451",
+      "fields": {
+        "display_label": "寻找客户",
+        "short_description": "通过匹配功能连接你的业务。",
+        "explanation_what_it_is": "这个功能将你的专业知识与MAXINA社区中合适的人连接起来。它是你的私人搜索助手，帮助你为自己的服务找到潜在客户。",
+        "explanation_user_benefit": "这样你就能更轻松地建立自己的收入来源。我会直接为你展示那些真正与你和你的才能相匹配的联系人。",
+        "explanation_when_to_use": "当你想提供一项服务或展示某项才能，并且正在寻找第一批感兴趣的人时，就可以使用它。",
+        "explanation_try_this": "点击下方按钮，立即体验如何找到新客户。"
+      }
+    },
+    "T193": {
+      "source_sha": "3ee916573f1af1b4",
+      "fields": {
+        "display_label": "匹配列表",
+        "short_description": "通过匹配功能连接你的业务。",
+        "explanation_what_it_is": "匹配列表展示了与你的目标或新服务完美契合的人。系统会自动将你们连接在一起。",
+        "explanation_user_benefit": "你不需要费力地寻找合适的联系人或客户。你可以一眼看到谁对你的想法感兴趣。",
+        "explanation_when_to_use": "当你准备好与新伙伴交流或迎接第一批客户时，就可以使用这个列表。",
+        "explanation_try_this": "现在打开你的匹配列表，看看谁已经在那里等着你了。"
+      }
+    },
+    "T194": {
+      "source_sha": "b905cd64b7c76d1f",
+      "fields": {
+        "display_label": "活动即资产",
+        "short_description": "将活动作为业务构建模块。",
+        "explanation_what_it_is": "在这里，活动不仅仅是日历上的一个日程。它是你在Vitanaland建立小型业务的宝贵构建模块。",
+        "explanation_user_benefit": "你可以用它与他人分享你的热情，并建立收入来源。这样，你的知识对你自己和他人都变得有价值。",
+        "explanation_when_to_use": "当你计划举办工作坊或聚会，并想将其保存为固定服务时，就可以使用它。",
+        "explanation_try_this": "点击屏幕，打开创建你第一个活动的区域。"
+      }
+    },
+    "T195": {
+      "source_sha": "2b2e6e0558029d37",
+      "fields": {
+        "display_label": "活动计划",
+        "short_description": "将活动作为业务构建模块。",
+        "explanation_what_it_is": "活动计划帮助你一步步组织自己的活动。它是你将想法变成真正服务的工具。",
+        "explanation_user_benefit": "你可以将你的知识或热情转化为新的收入来源。同时，由于整个规划过程变得非常简单，你还能节省大量时间。",
+        "explanation_when_to_use": "当你第一次想要举办自己的工作坊、课程或聚会时，就可以使用这个计划。",
+        "explanation_try_this": "现在在屏幕上打开你的第一个活动计划，看看规划有多简单。"
+      }
+    },
+    "T196": {
+      "source_sha": "81e773fa83ff126a",
+      "fields": {
+        "display_label": "门票销售",
+        "short_description": "将活动作为业务构建模块。",
+        "explanation_what_it_is": "门票销售是你的个人窗口，其他人可以在这里预订你活动的名额。在这里，你可以清晰地管理所有报名和收入。",
+        "explanation_user_benefit": "你可以用你的知识直接赚钱，建立自己的小型业务。Vitana会帮你处理复杂的技术问题。",
+        "explanation_when_to_use": "当你的活动计划准备好，并且你准备邀请第一批参与者时，就可以使用这个功能。",
+        "explanation_try_this": "现在点击门票销售区域，创建你的第一个门票服务。"
+      }
+    },
+    "T197": {
+      "source_sha": "902f62163992348d",
+      "fields": {
+        "display_label": "服务即产品",
+        "short_description": "理解服务即产品。",
+        "explanation_what_it_is": "服务是对你能力的清晰展示。它让其他人一目了然地知道你能为他们做什么。",
+        "explanation_user_benefit": "这样你就能把你的才能变成一项真正可预订的服务。它帮助你专业、自信地赢得第一批客户。",
+        "explanation_when_to_use": "当你准备好在Vitanaland正式提供你的知识时，就可以使用这个功能。",
+        "explanation_try_this": "点击屏幕，开始创建你的第一个服务产品。"
+      }
+    },
+    "T198": {
+      "source_sha": "1809cde07b59b2a3",
+      "fields": {
+        "display_label": "成果、目标群体、时长、价格",
+        "short_description": "理解服务即产品。",
+        "explanation_what_it_is": "一个清晰的服务向他人准确展示你提供什么。它包括成果、目标群体、时长和价格。",
+        "explanation_user_benefit": "当这四点确定后，感兴趣的人立刻就知道会得到什么。这能建立信任，并为你带来真正合适的客户。",
+        "explanation_when_to_use": "每当你有新想法并想将其变成可预订的服务时，就可以使用这四个细节。",
+        "explanation_try_this": "点击屏幕，为你的第一个服务设定这些细节。"
+      }
+    },
+    "T199": {
+      "source_sha": "ece745286a6bf468",
+      "fields": {
+        "display_label": "服务草稿",
+        "short_description": "理解服务即产品。",
+        "explanation_what_it_is": "服务草稿是你在Vitanaland创建自己服务的第一步。在这里，你可以轻松记录你的想法。",
+        "explanation_user_benefit": "你可以将你的才能转化为一项清晰的服务，让其他人容易理解和预订。这样你就能轻松地专业起步。",
+        "explanation_when_to_use": "当你有了想法，并想尽快向MAXINA社区提供时，就可以创建草稿。",
+        "explanation_try_this": "点击屏幕，现在就设计你的第一个服务。"
+      }
+    },
+    "T200": {
+      "source_sha": "19ae956b9b2253ae",
+      "fields": {
+        "display_label": "直播信任",
+        "short_description": "直播间是建立信任的模块。",
+        "explanation_what_it_is": "直播间是MAXINA社区中的数字聚会点，可以进行实时对话。你可以随时自由地收听、参与讨论或观看。",
+        "explanation_user_benefit": "通过与其他成员和专家的直接交流，这里能建立真正的信任。这是你与社区的直接连接，帮助你获得宝贵的见解。",
+        "explanation_when_to_use": "当你想要进行个人交流时，比如参加开放问答或辅导课程，就可以使用直播间。",
+        "explanation_try_this": "现在点击直播间区域，看看正在进行哪些对话。"
+      }
+    },
+    "T201": {
+      "source_sha": "4cdc97a734b1fda8",
+      "fields": {
+        "display_label": "商务直播间",
+        "short_description": "直播间是建立信任的模块。",
+        "explanation_what_it_is": "MAXINA社区中的直播对话是实时的视频或音频交流。你可以随时自由地收听、观看或与他人交谈。",
+        "explanation_user_benefit": "这帮助你建立真实的关系，并与其他成员建立直接的信任。你可以立即提问，身临其境，而不只是阅读评论。",
+        "explanation_when_to_use": "当你寻找灵感、需要快速答案或想要直接交流时，就来这里看看。",
+        "explanation_try_this": "现在点击屏幕，发现MAXINA社区中正在进行的直播对话。"
+      }
+    },
+    "T202": {
+      "source_sha": "aa5191c33c791713",
+      "fields": {
+        "display_label": "邀请他人",
+        "short_description": "直播间是建立信任的模块。",
+        "explanation_what_it_is": "你可以轻松邀请其他成员加入精彩的直播间。这就像一个简单的招手，说：快来加入吧！",
+        "explanation_user_benefit": "共同的体验能拉近彼此。你可以借此加强真实的关系，并在MAXINA社区中建立宝贵的信任。",
+        "explanation_when_to_use": "当你在听一个有趣的分享，并觉得某个朋友正好需要这些建议时，就可以这样做。",
+        "explanation_try_this": "点击邀请按钮，选择你想邀请谁加入这个对话。"
+      }
+    },
+    "T203": {
+      "source_sha": "b77ca4fcbea0b6f1",
+      "fields": {
+        "display_label": "媒体即资产",
+        "short_description": "媒体是业务构建模块。",
+        "explanation_what_it_is": "视频、图片或播客等媒体是你个人资料的宝贵组成部分。它们向MAXINA社区展示你的能力和你是谁。",
+        "explanation_user_benefit": "优质内容能建立信任，帮助你找到新联系人甚至客户。这样你就能把创意想法变成真正的价值。",
+        "explanation_when_to_use": "当你想与他人分享你的才能或知识时，可以上传一个短视频或图片。",
+        "explanation_try_this": "现在点击按钮，上传你的第一个媒体内容，了解这个功能。"
+      }
+    },
+    "T204": {
+      "source_sha": "836b9e2661a3ae31",
+      "fields": {
+        "display_label": "内容计划",
+        "short_description": "媒体是业务构建模块。",
+        "explanation_what_it_is": "内容计划帮助你有针对性地组织你在MAXINA社区中的帖子和视频。它是你通过自己的媒体获得曝光的路线图。",
+        "explanation_user_benefit": "这样你就能一步步建立信任，把你的媒体变成真正的价值。这可以帮助你找到新的职业机会甚至收入来源。",
+        "explanation_when_to_use": "当你想定期分享你的想法，建立自己的受众群体时，就可以使用内容计划。",
+        "explanation_try_this": "点击屏幕，立即设计你的第一个内容计划。"
+      }
+    },
+    "T205": {
+      "source_sha": "70f8ef1bfec3359d",
+      "fields": {
+        "display_label": "推广活动即资产",
+        "short_description": "媒体是业务构建模块。",
+        "explanation_what_it_is": "推广内容是你有针对性地用来吸引他人关注你服务的图片、视频或文字。它是你的数字工具，能把一个简单的文件变成一次小型宣传活动。",
+        "explanation_user_benefit": "这样你就能让你的知识被看见，并一步步建立自己的收入来源。你能精准触达那些正在寻找你想法的人。",
+        "explanation_when_to_use": "比如当你想邀请MAXINA社区的人参加你的新健身课程时，就可以使用这个功能。",
+        "explanation_try_this": "现在点击屏幕，为你自己的小型推广活动设置第一个内容。"
+      }
+    },
+    "T206": {
+      "source_sha": "ed0f82872b1600a7",
+      "fields": {
+        "display_label": "知识库",
+        "short_description": "只在你真正感兴趣时提供白皮书资料。",
+        "explanation_what_it_is": "知识库是我后台的大型知识档案。只有当你明确询问时，我才会与你分享其中的详细资料。",
+        "explanation_user_benefit": "这样你就不会被过多信息淹没。当你真正好奇时，才会获得更深入的知识。",
+        "explanation_when_to_use": "当你想更多了解五大支柱之一，并希望获得可靠资料时，这个功能非常适合。",
+        "explanation_try_this": "现在点击ORB，向我询问一个有趣的知识点。"
+      }
+    },
+    "T207": {
+      "source_sha": "a57799dd6999fadb",
+      "fields": {
+        "display_label": "27万亿市场",
+        "short_description": "白皮书详情仅在你真正感兴趣时展示。",
+        "explanation_what_it_is": "在 Vitanaland，不仅关乎你的健康，还有全新的机遇等着你。我们的市场将你的身心健康与精彩的可能性连接在一起。",
+        "explanation_user_benefit": "你可以发现实用的产品，之后甚至能与 Maxina 社区分享你的经验。这样，这款应用既能帮你保持健康，又能助你开创新事业。",
+        "explanation_when_to_use": "当你想寻找日常生活中有用的产品，或者想要亲自参与时，来这里看看吧。",
+        "explanation_try_this": "点击按钮，打开市场随便逛逛。"
+      }
+    },
+    "T208": {
+      "source_sha": "5066aaa7760a20b8",
+      "fields": {
+        "display_label": "简明总结",
+        "short_description": "白皮书详情仅在你真正感兴趣时展示。",
+        "explanation_what_it_is": "每日总结用最简单的方式告诉你今天什么最重要。在这里，你可以一目了然地看到当天所有的建议和洞察。",
+        "explanation_user_benefit": "这样你就能立刻明白如何强化你的五大支柱。你始终可以自己决定采纳哪些建议。",
+        "explanation_when_to_use": "最好每天晚上查看你的总结，平静地结束这一天。",
+        "explanation_try_this": "现在点击概览，发现今天属于你的洞察。"
+      }
+    },
+    "T209": {
+      "source_sha": "3eebe7946bbacfd1",
+      "fields": {
+        "display_label": "工作的未来",
+        "short_description": "AI 如何改变创造者的工作方式。",
+        "explanation_what_it_is": "工作的未来意味着人工智能将作为你的得力助手。Vitana 会帮你处理那些繁琐的日常任务。",
+        "explanation_user_benefit": "这样你能在日常生活中节省大量时间和精力，从而全身心投入到你的创意项目中。",
+        "explanation_when_to_use": "当你在做一个新想法，想让大脑专注于最重要的事情时，就用这个功能吧。",
+        "explanation_try_this": "点击屏幕，立即开启你与 AI 协作的全新工作流程。"
+      }
+    },
+    "T210": {
+      "source_sha": "6d55be8c04170361",
+      "fields": {
+        "display_label": "职业变革",
+        "short_description": "AI 如何改变创造者的工作方式。",
+        "explanation_what_it_is": "这是关于利用智能技术重新定义你的工作方式。你可以把日常任务交出去，专注于发挥自己真正的优势。",
+        "explanation_user_benefit": "你会节省宝贵的时间，压力也会大大减少。这样你就有更多空间去构思新点子、开展新项目。",
+        "explanation_when_to_use": "当日常琐事让你喘不过气来时，就用这个方法吧。",
+        "explanation_try_this": "现在开始屏幕上的练习，探索如何重新定义你的工作方式。"
+      }
+    },
+    "T211": {
+      "source_sha": "eb8c9935f5e753aa",
+      "fields": {
+        "display_label": "AI 增强技能",
+        "short_description": "AI 如何改变创造者的工作方式。",
+        "explanation_what_it_is": "AI 增强技能意味着你把人工智能当作自己工作的智能工具。Vitana 会教你如何从单纯的执行者变成聪明的创造者。",
+        "explanation_user_benefit": "你可以摆脱繁重的日常任务，让大脑轻松下来。这样你就能全力专注于真正重要的事情。",
+        "explanation_when_to_use": "当你面对复杂任务，想找到省时的聪明方法时，想想这个技巧。",
+        "explanation_try_this": "点击按钮，认识并立即尝试你的第一个 AI 增强技能。"
+      }
+    },
+    "T212": {
+      "source_sha": "8e56acf164322549",
+      "fields": {
+        "display_label": "市场规模",
+        "short_description": "帮助创造者理解市场规模。",
+        "explanation_what_it_is": "市场评估会告诉你，你的想法有多少潜在客户或合作伙伴。我会在 Maxina 社区中为你寻找合适的人。",
+        "explanation_user_benefit": "你能立刻看到你的项目是否有足够的市场兴趣。这样你就能更有信心地开始你的事业。",
+        "explanation_when_to_use": "当你计划推出新服务，想知道谁可能需要它时，就用这个功能。",
+        "explanation_try_this": "现在点击屏幕，找出谁与你的想法最匹配。"
+      }
+    },
+    "T213": {
+      "source_sha": "2d80517f1a96b6fc",
+      "fields": {
+        "display_label": "健康经济",
+        "short_description": "帮助创造者理解市场规模。",
+        "explanation_what_it_is": "健康与身心愉悦市场将你的个人成长与新的职业机会连接起来。在这里，你不仅能找到适合自己的产品，还能提供自己的服务。",
+        "explanation_user_benefit": "这能帮你分享热爱的事物，同时轻松建立可持续的收入来源。系统会从第一步就支持你。",
+        "explanation_when_to_use": "当你想以教练身份分享知识，或为他人创建自己的第一个产品时，就来这个板块看看。",
+        "explanation_try_this": "现在点击屏幕，探索健康与身心愉悦市场中属于你的潜力。"
+      }
+    },
+    "T214": {
+      "source_sha": "ee08132d10f53ea0",
+      "fields": {
+        "display_label": "行业匹配",
+        "short_description": "帮助创造者理解市场规模。",
+        "explanation_what_it_is": "在这里，我们帮你找到与你商业想法匹配的人。我会向你展示正好适合你领域的合作伙伴、客户或专家。",
+        "explanation_user_benefit": "这样你就不用孤军奋战，能快速找到合适的支持。这会为你节省宝贵时间，助你成功起步。",
+        "explanation_when_to_use": "当你想实现一个新想法，需要寻找理想的商业伙伴或第一批客户时，就用这个功能。",
+        "explanation_try_this": "点击屏幕，直接看看谁最适合你的项目。"
+      }
+    },
+    "T215": {
+      "source_sha": "fb6c93cb58e85206",
+      "fields": {
+        "display_label": "人口需求",
+        "short_description": "了解人口统计需求。",
+        "explanation_what_it_is": "人口统计需求向你解释特定年龄段人群的需求是什么。它用简单的方式告诉你，在你当前的人生阶段什么才是真正重要的。",
+        "explanation_user_benefit": "你会立刻明白哪些主题对你和你的身体现在最有价值。这能帮你把精力用在最该用的地方。",
+        "explanation_when_to_use": "当你想知道哪些新的健康习惯最适合你现在的年龄时，看看这个。",
+        "explanation_try_this": "点击屏幕，现在就了解你自己的人口统计需求。"
+      }
+    },
+    "T216": {
+      "source_sha": "cff362410d150149",
+      "fields": {
+        "display_label": "老龄化市场",
+        "short_description": "了解人口统计需求。",
+        "explanation_what_it_is": "我们的社会正在老龄化，这其实是一份美好的礼物。但这也意味着，日常健康管理比以往任何时候都更重要。",
+        "explanation_user_benefit": "当你理解了这一趋势，就能更好地规划自己的未来。你会认识到长期保持健康有多重要。",
+        "explanation_when_to_use": "当你希望多年后依然精力充沛地度过每一天时，想想这个话题。",
+        "explanation_try_this": "点击屏幕，看看这个令人兴奋的趋势。"
+      }
+    },
+    "T217": {
+      "source_sha": "94d8824d8638dde3",
+      "fields": {
+        "display_label": "需求匹配",
+        "short_description": "了解人口统计需求。",
+        "explanation_what_it_is": "Vitana 了解你的人生阶段和日常需求，会把五大支柱的所有建议精准地为你量身定制。",
+        "explanation_user_benefit": "你得到的不是泛泛的建议，而是针对你年龄和生活方式的精准帮助。这让保持健康变得容易得多。",
+        "explanation_when_to_use": "每天当你的生命指南针告诉你今天什么对你最好时，你都能从中受益。",
+        "explanation_try_this": "点击屏幕，设置你的个人需求，让 Vitana 更懂你。"
+      }
+    },
+    "T218": {
+      "source_sha": "9045ac252bb373eb",
+      "fields": {
+        "display_label": "零工凭证",
+        "short_description": "了解去中心化工作。",
+        "explanation_what_it_is": "工作凭证可靠地记录你成功完成了哪些任务。它是你在新型灵活工作模式中的数字化工作证明。",
+        "explanation_user_benefit": "这样你就能建立起值得信赖的声誉，而不必依赖某一个固定雇主。你的能力会得到公平透明的回报。",
+        "explanation_when_to_use": "每当你完成一个项目或任务时，用凭证来安全地记录你的成果。",
+        "explanation_try_this": "点击继续，看看你的第一个工作凭证会是什么样子。"
+      }
+    },
+    "T219": {
+      "source_sha": "c78226243beb9a11",
+      "fields": {
+        "display_label": "零工经济",
+        "short_description": "了解去中心化工作。",
+        "explanation_what_it_is": "Vitanaland 的自由任务市场将你的健康之旅与新的职业道路连接起来。在这里，你可以提供自己的服务，也可以发现他人发布的精彩任务。",
+        "explanation_user_benefit": "这样你就能分享知识，灵活地建立自己的收入来源。何时工作、工作多少，完全由你决定。",
+        "explanation_when_to_use": "当你想在 Maxina 社区中以教练身份帮助他人，或灵活地提供自己的技能时，就来这个板块。",
+        "explanation_try_this": "点击灵活工作市场板块，发现你的第一个机会。"
+      }
+    },
+    "T220": {
+      "source_sha": "42825f6529542240",
+      "fields": {
+        "display_label": "灵活赚钱",
+        "short_description": "了解去中心化工作。",
+        "explanation_what_it_is": "灵活赚钱让你在 Vitanaland 自主安排任务和收入。这是一种完全适应你生活的现代工作方式。",
+        "explanation_user_benefit": "你不受固定时间约束，自己决定何时行动。这样你就能重新掌控自己的日常生活，获得完全的自由。",
+        "explanation_when_to_use": "当你有空闲时间，想轻松地在任何地方赚点外快时，就用这个功能。",
+        "explanation_try_this": "点击灵活赚钱板块，看看它有多简单。"
+      }
+    },
+    "T221": {
+      "source_sha": "e3b7f549645ce3f3",
+      "fields": {
+        "display_label": "产品阶梯",
+        "short_description": "搭建你的第一个产品阶梯。",
+        "explanation_what_it_is": "Autopilot 会为你创建一份与你当天完美匹配的建议清单。这些想法像阶梯一样，按对你 Vitana 指数的重要性排序。",
+        "explanation_user_benefit": "你不用花时间纠结，同时又能完全掌控一切。只需选择今天你觉得可行的事项即可。",
+        "explanation_when_to_use": "当你有点空闲时间却不知从何开始时，就打开这个清单。",
+        "explanation_try_this": "现在从清单中选择你的第一批收藏，制定今天的计划。"
+      }
+    },
+    "T222": {
+      "source_sha": "f2c985d80bfc6b70",
+      "fields": {
+        "display_label": "建议类型",
+        "short_description": "搭建你的第一个建议阶梯。",
+        "explanation_what_it_is": "Autopilot 会为你提供各种专门针对你的生命指南针定制的建议。这是一份智能排序的每日任务清单。",
+        "explanation_user_benefit": "你不用再自己琢磨什么对你最重要了。Vitana 会帮你搞定，向你展示实现目标的最佳步骤。",
+        "explanation_when_to_use": "最好每天早上看看这些建议，轻松规划你的一天。",
+        "explanation_try_this": "现在点击上方的飞机图标，查看 Autopilot 给你的第一批任务吧。"
+      }
+    },
+    "T223": {
+      "source_sha": "c1db31053cab4ae0",
+      "fields": {
+        "display_label": "第一个建议",
+        "short_description": "搭建你的第一个建议阶梯。",
+        "explanation_what_it_is": "Autopilot 会创建一份个性化清单，列出今天对你有益的事情。你的第一个建议始终是清单最顶端最重要的任务。",
+        "explanation_user_benefit": "这样你就能立刻知道从哪里开始，才能最有效地提升你的 Vitana 指数。压力更小，不用纠结太久。",
+        "explanation_when_to_use": "每天早上起床后看看 Autopilot，发现你当天最重要的建议。",
+        "explanation_try_this": "现在点击飞机图标，看看清单上你的第一个建议吧。"
+      }
+    },
+    "T224": {
+      "source_sha": "1bb7ab146fbe3719",
+      "fields": {
+        "display_label": "销售赚钱库存",
+        "short_description": "了解销售与赚钱功能。",
+        "explanation_what_it_is": "销售库存是你的个人总览。在这里你可以找到所有可以分享的推荐和机会。",
+        "explanation_user_benefit": "它帮你把所有机会集中在一个地方。这样你随时都知道自己可以分享什么。",
+        "explanation_when_to_use": "当你想找新东西介绍给 MAXINA 社区时，就来看看你的库存吧。",
+        "explanation_try_this": "现在点击你的库存，探索你收集的推荐吧。"
+      }
+    },
+    "T225": {
+      "source_sha": "843b6098ab14bdb8",
+      "fields": {
+        "display_label": "分销链接",
+        "short_description": "了解销售与赚钱功能。",
+        "explanation_what_it_is": "你的专属邀请链接是与他人分享 Vitanaland 的简单方式。每个用户都有自己独一无二的链接。",
+        "explanation_user_benefit": "你可以帮助朋友们改善健康。同时，每次成功推荐你都会获得奖励。",
+        "explanation_when_to_use": "当朋友对你的进步感到好奇、想要一起参与时，就用你的链接吧。",
+        "explanation_try_this": "点击屏幕查看你的专属链接，马上试试吧。"
+      }
+    },
+    "T226": {
+      "source_sha": "1657a89c4fdb97cc",
+      "fields": {
+        "display_label": "佣金追踪",
+        "short_description": "了解销售与收益功能。",
+        "explanation_what_it_is": "这是一个清晰的收入和佣金概览。在这里，你可以准确看到通过推荐和销售赚取的收益。",
+        "explanation_user_benefit": "在进行我的旅程时，你可以随时掌握自己的成果。这不仅能激励你，还能让你立刻看到付出带来的回报。",
+        "explanation_when_to_use": "当你想查看这个月已经赚了多少额外收入时，可以使用这个视图。",
+        "explanation_try_this": "点击概览，立即查看你当前的佣金情况。"
+      }
+    },
+    "T227": {
+      "source_sha": "af905924b2d6d153",
+      "fields": {
+        "display_label": "推广渠道",
+        "short_description": "了解推广渠道功能。",
+        "explanation_what_it_is": "在这里，你可以设置在哪些地方发布你的成就和动态。可以是 MAXINA 社区，也可以是特定的群组。",
+        "explanation_user_benefit": "你可以精准触达那些在旅程中激励你的人，同时始终完全掌控谁能看到你的进展。",
+        "explanation_when_to_use": "当你在旅程中达成了一个特别的里程碑，想和志同道合的朋友一起庆祝时，可以使用这个设置。",
+        "explanation_try_this": "现在点击选项，查看各种渠道并设置你喜欢的选项。"
+      }
+    },
+    "T228": {
+      "source_sha": "981d74d6a8515cc6",
+      "fields": {
+        "display_label": "社交媒体渠道",
+        "short_description": "了解分享渠道。",
+        "explanation_what_it_is": "在这里你可以设置帖子和成就的展示位置。你可以选择在 Maxina 社区或其他社交网络上分享。",
+        "explanation_user_benefit": "一起庆祝成就，动力加倍。当你和志同道合的朋友分享进步时，会获得宝贵的支持和鼓励。",
+        "explanation_when_to_use": "当你达成一个里程碑，想要骄傲地与他人一起庆祝时，就来设置这个选项吧。",
+        "explanation_try_this": "点击渠道，选择你想在哪里发布下一个成就。"
+      }
+    },
+    "T229": {
+      "source_sha": "6e576623b5fe90d7",
+      "fields": {
+        "display_label": "分享文案",
+        "short_description": "了解分享渠道。",
+        "explanation_what_it_is": "在这里你可以编写和修改想要分享的文字。你可以自己撰写内容，也可以使用 Vitana 为你的成就准备的现成模板进行调整。",
+        "explanation_user_benefit": "你只需写一次文案就能分享到各个平台，省时又省力。同时，每一个字你都能完全掌控。",
+        "explanation_when_to_use": "当你达成目标，想在发布前快速给帖子加点个人风格时，就用这个功能吧。",
+        "explanation_try_this": "点击文本框，现在就写下你的第一条试发帖子吧。"
+      }
+    },
+    "T230": {
+      "source_sha": "b4e535f77473c29f",
+      "fields": {
+        "display_label": "活动数据",
+        "short_description": "教你优化活动效果。",
+        "explanation_what_it_is": "在这里，你可以清楚地看到你分享的帖子和活动的表现。这是一个简单的概览，展示你当前活动的关键数据。",
+        "explanation_user_benefit": "这样你就能立刻发现什么内容真正受到你的受众欢迎。这能帮助你不断改进未来的内容。",
+        "explanation_when_to_use": "当你完成一个新活动后，想知道触达了多少人时，就来看看这些数据吧。",
+        "explanation_try_this": "点击屏幕上的数据，马上试试这个概览功能。"
+      }
+    },
+    "T231": {
+      "source_sha": "5a9f40bbb6a2772f",
+      "fields": {
+        "display_label": "触达、点击、互动",
+        "short_description": "教你优化活动效果。",
+        "explanation_what_it_is": "在这里，你可以清楚地看到有多少人看到了你的活动，以及谁点击了它。这是一个简单的概览，帮助你了解帖子的效果。",
+        "explanation_user_benefit": "这样你就能立刻发现什么内容在 MAXINA 社区中受欢迎。你可以轻松改进内容，激励更多人。",
+        "explanation_when_to_use": "发布新帖子几天后，想看看效果如何时，就来看看这些数据吧。",
+        "explanation_try_this": "现在点击你的一个活动，仔细看看最新的点击和互动数据。"
+      }
+    },
+    "T232": {
+      "source_sha": "fc8ba900577d57a9",
+      "fields": {
+        "display_label": "优化活动",
+        "short_description": "教你优化活动效果。",
+        "explanation_what_it_is": "在这里，你可以对单个活动进行最后的润色。你可以轻松调整要分享的内容。",
+        "explanation_user_benefit": "这样你就能确保你的信息触达到合适的人群。同时，你始终对自己的数据拥有完全的控制权。",
+        "explanation_when_to_use": "当你想在分享之前再稍微调整一下草稿时，就用这个功能吧。",
+        "explanation_try_this": "点击一个活动，马上试试如何优化它。"
+      }
+    },
+    "T233": {
+      "source_sha": "3c6bb09557e65eca",
+      "fields": {
+        "display_label": "客户管理",
+        "short_description": "教你管理客户。",
+        "explanation_what_it_is": "在这里，你可以找到最适合你服务的客户。我会帮助你在 MAXINA 社区中发现合适的人，并安全地联系他们。",
+        "explanation_user_benefit": "这样你就省去了费力的搜索，轻松建立起真正的人脉网络。你可以直接触达那些你真正能帮助到的人。",
+        "explanation_when_to_use": "当你准备好接新单、寻找下一位理想客户时，就用这个功能吧。",
+        "explanation_try_this": "现在点击客户管理，让我们一起找到你的第一个合适的联系人。"
+      }
+    },
+    "T234": {
+      "source_sha": "3a24fe8f020134fd",
+      "fields": {
+        "display_label": "预约、日历、跟进",
+        "short_description": "教你管理客户。",
+        "explanation_what_it_is": "日历是你在 Vitanaland 中的个人规划工具。在这里，你可以清晰地管理你的预约、任务和健康目标。",
+        "explanation_user_benefit": "这样你就能轻松无忧，不再错过任何重要事项。你可以从容地安排日常生活，更轻松地实现目标。",
+        "explanation_when_to_use": "当你早上规划一天，或者想为五大支柱预留时间时，就用日历吧。",
+        "explanation_try_this": "现在打开日历，直接添加你今天的第一个小任务。"
+      }
+    },
+    "T235": {
+      "source_sha": "d73e8ce2236aff25",
+      "fields": {
+        "display_label": "交付清单",
+        "short_description": "教你管理客户。",
+        "explanation_what_it_is": "交付清单帮助你掌控订单进度。它是一份简单的分步指南，指导你与客户的合作。",
+        "explanation_user_benefit": "这样你就不会遗漏任何重要细节，始终提供可靠的服务。这能节省你的时间，让你感到安心踏实。",
+        "explanation_when_to_use": "每当你赢得新客户，想要顺利完成服务时，就用它吧。",
+        "explanation_try_this": "点击屏幕，打开你为客户创建的第一份交付清单。"
+      }
+    },
+    "T236": {
+      "source_sha": "f7c79a02e66820b8",
+      "fields": {
+        "display_label": "收入与提现",
+        "short_description": "了解收入与提现。",
+        "explanation_what_it_is": "这里是你在 Vitanaland 中所有收入和提现的个人概览。它简单清晰地展示你的日常行动如何获得奖励。",
+        "explanation_user_benefit": "这样你就能直观地看到，你的健康习惯正在为你带来回报。这会激励你每天坚持朝着目标前进。",
+        "explanation_when_to_use": "在充实的一天结束后，来这里看看你赢得的奖励吧。",
+        "explanation_try_this": "点击收入与提现区域，发现你的第一笔奖励。"
+      }
+    },
+    "T237": {
+      "source_sha": "7c66ef0351f58e4e",
+      "fields": {
+        "display_label": "待处理、可用、历史记录",
+        "short_description": "了解收入和提现。",
+        "explanation_what_it_is": "在这里你可以查看日常任务中积累的奖励状态。它会清楚地显示哪些还在处理中、哪些已经可用，还能让你回顾历史记录。",
+        "explanation_user_benefit": "你会立刻看到，在 Vitanaland 中你的每一步努力都能真正获得回报。这会激励你坚持下去，继续保持良好的习惯。",
+        "explanation_when_to_use": "当你想知道上一篇日记的收益是否已经可用时，来这里看看吧。",
+        "explanation_try_this": "现在点击屏幕上的概览，探索你积累的奖励吧。"
+      }
+    },
+    "T238": {
+      "source_sha": "e215e38c9b709ac6",
+      "fields": {
+        "display_label": "可提现",
+        "short_description": "了解收入和提现。",
+        "explanation_what_it_is": "提现状态会告诉你积累的收益是否已经解锁。它标志着你的奖励已经准备好可以领取了。",
+        "explanation_user_benefit": "你能立刻知道什么时候可以使用你的收益。这让你感到安心，也是对你日常坚持的奖励。",
+        "explanation_when_to_use": "当你想从 Vitanaland 提取积累的收益时，来这里查看吧。",
+        "explanation_try_this": "点击显示区域，立即查看你当前的提现状态。"
+      }
+    },
+    "T239": {
+      "source_sha": "2da3c9271194e2e0",
+      "fields": {
+        "display_label": "市场 Autopilot",
+        "short_description": "了解市场 Autopilot。",
+        "explanation_what_it_is": "市场 Autopilot 会自动为你寻找合适的优惠和产品。它将你的健康目标与 Vitanaland 中有用的服务连接起来。",
+        "explanation_user_benefit": "你不用花大量时间搜索，因为推荐给你的都是真正符合你兴趣的内容。这样你就能轻松发现改善健康甚至获得收入的新途径。",
+        "explanation_when_to_use": "当你想发现新点子、产品或职业机会，又不想自己一个个翻找时，它就是你的好帮手。",
+        "explanation_try_this": "现在点击屏幕，认识并体验你的市场 Autopilot 吧。"
+      }
+    },
+    "T240": {
+      "source_sha": "91e46eec4ec8b5dc",
+      "fields": {
+        "display_label": "机会推荐",
+        "short_description": "了解市场 Autopilot。",
+        "explanation_what_it_is": "Autopilot 会向你展示在 Vitanaland 中改善健康甚至建立收入的合适机会。它推荐的内容都与你当前的目标完美匹配。",
+        "explanation_user_benefit": "你不需要自己寻找合适的优惠或商业机会。Autopilot 会把最好的机会直接带到你面前，帮助你在健康和事业上不断成长。",
+        "explanation_when_to_use": "当你准备好迈出旅程的下一步，想要发现新的优惠或人脉时，看看这些推荐吧。",
+        "explanation_try_this": "点击当前的推荐，看看今天有哪些新机会在等着你。"
+      }
+    },
+    "T241": {
+      "source_sha": "0b538feafdf23cf1",
+      "fields": {
+        "display_label": "查看理由和权限",
+        "short_description": "了解市场 Autopilot。",
+        "explanation_what_it_is": "Autopilot 会为你推荐合适的优惠。它会清楚地告诉你为什么某个内容适合你，并且总是会征求你的许可。",
+        "explanation_user_benefit": "这样你始终对自己的数据拥有完全的控制权。你只会看到对你真正有用的机会。",
+        "explanation_when_to_use": "当你收到新推荐并想了解为什么它适合你时，关注一下这个功能。",
+        "explanation_try_this": "现在点击示例，看看它为什么被推荐给你。"
+      }
+    },
+    "T242": {
+      "source_sha": "d4715ed717e3a3c6",
+      "fields": {
+        "display_label": "负责任的推荐",
+        "short_description": "商业安全。",
+        "explanation_what_it_is": "Vitana 会向你展示与你完美匹配的优惠和机会。我们会始终透明地解释为什么向你推荐某些内容。",
+        "explanation_user_benefit": "你始终对自己的决定拥有完全的控制权。这样你就能安心、放心地探索新事物。",
+        "explanation_when_to_use": "每当 Autopilot 为你的健康或收入提供有用的建议时，你都会看到这些推荐。",
+        "explanation_try_this": "点击下一张卡片，看看一个安全的推荐是如何构建的。"
+      }
+    },
+    "T243": {
+      "source_sha": "3de27972fbcbeeed",
+      "fields": {
+        "display_label": "不做虚假承诺",
+        "short_description": "商业安全。",
+        "explanation_what_it_is": "在我们的 MAXINA 社区中，我们非常重视所有优惠的诚实性。这意味着我们严格杜绝虚假承诺或夸大宣传。",
+        "explanation_user_benefit": "这样 Vitanaland 对我们所有人来说都是一个安全、值得信赖的地方。当你提供服务或推荐时，你也能建立起真正的信任。",
+        "explanation_when_to_use": "每当你创建自己的优惠或与他人分享产品时，请牢记这个原则。",
+        "explanation_try_this": "点击屏幕，练习为社区创建一个安全、诚实的优惠。"
+      }
+    },
+    "T244": {
+      "source_sha": "a4b389aeed78e6e2",
+      "fields": {
+        "display_label": "信任与安全清单",
+        "short_description": "商业安全。",
+        "explanation_what_it_is": "信任与安全清单向你展示如何在 Vitanaland 中安全可靠地创建自己的优惠。它会一步步引导你了解所有重要规则。",
+        "explanation_user_benefit": "这样你就能确保你的业务受到良好保护且公平公正。这能在他人心中建立真正的信任，也让你自己感到安心。",
+        "explanation_when_to_use": "在你为他人发布新优惠或服务之前，快速浏览一下这个清单。",
+        "explanation_try_this": "点击清单，查看安全开展业务的第一步。"
+      }
+    },
+    "T245": {
+      "source_sha": "89c7bc3107adad2e",
+      "fields": {
+        "display_label": "七天商业冲刺",
+        "short_description": "把所学变成冲刺行动。",
+        "explanation_what_it_is": "这就是如何把新见解变成真正的成功。七天冲刺帮助你在一周内专注地实施一个新想法。",
+        "explanation_user_benefit": "你不只是学习新东西，而是直接付诸行动。这能让你快速获得可衡量的进步，朝着目标前进。",
+        "explanation_when_to_use": "当你发现一个令人兴奋的想法并想立即在实践中测试时，就开始一个冲刺吧。",
+        "explanation_try_this": "点击屏幕，规划你的第一个七天冲刺并立即开始行动。"
+      }
+    },
+    "T246": {
+      "source_sha": "91c652a2ca49a946",
+      "fields": {
+        "display_label": "Vitana 的下一个最佳步骤",
+        "short_description": "把所学变成冲刺行动。",
+        "explanation_what_it_is": "下一步功能会准确告诉你现在应该做什么。这样你的新知识就能立即转化为积极的冲刺行动。",
+        "explanation_user_benefit": "你不用浪费时间纠结下一步该怎么走。这帮助你保持专注，真正把事情做成。",
+        "explanation_when_to_use": "每当你准备好立即行动时，就使用这个推荐。",
+        "explanation_try_this": "现在点击显示的操作，开始你的第一个冲刺。"
+      }
+    },
+    "T247": {
+      "source_sha": "51af2422b588f61f",
+      "fields": {
+        "display_label": "选择冲刺指标",
+        "short_description": "把所学变成冲刺行动。",
+        "explanation_what_it_is": "在这里你可以精确地确定用什么来衡量冲刺的成功。这是你接下来几天的个人标准。",
+        "explanation_user_benefit": "这样你的进步就变得清晰可见、触手可及。这会极大地激励你，因为你能立刻看到每一个朝着正确方向迈出的小步。",
+        "explanation_when_to_use": "在冲刺开始时使用这个功能，让你的计划变得可衡量。",
+        "explanation_try_this": "现在在屏幕上选择你想用什么来衡量你的第一个冲刺。"
+      }
+    },
+    "T248": {
+      "source_sha": "be8bfaf442cba739",
+      "fields": {
+        "display_label": "完成",
+        "short_description": "完成引导，继续你的旅程。",
+        "explanation_what_it_is": "你已经成功完成了入门引导。现在「我的旅程」开始了——它是你健康生活的日常伙伴。",
+        "explanation_user_benefit": "你不需要一个完美的健康计划。一个简单的日常流程就能帮助你轻松地一步步前进。",
+        "explanation_when_to_use": "每天早上使用「我的旅程」来开启新的一天，发现今天什么对你有益。",
+        "explanation_try_this": "点击屏幕，庆祝你的完成并继续前进吧。"
+      }
+    },
+    "T249": {
+      "source_sha": "17c0e8dbd0feb160",
+      "fields": {
+        "display_label": "完整模式",
+        "short_description": "完成引导，继续你的旅程。",
+        "explanation_what_it_is": "完整访问权限为你解锁整个 Vitanaland，同时你在「我的旅程」中的当前阶段保持活跃。你的生命指南针现在为 Vitana 指明接下来 90 天的精确方向。",
+        "explanation_user_benefit": "从现在起，Vitana 会根据你真正的人生目标进行调整。这样 Autopilot 的每一个建议都完全个性化，每天都能带你更进一步。",
+        "explanation_when_to_use": "每当你的重心发生变化、想要追求一个新的重要目标时，重新设置你的生命指南针。",
+        "explanation_try_this": "点击屏幕，开启你的完整访问权限并设置你的第一个生命指南针。"
+      }
+    },
+    "T250": {
+      "source_sha": "eac7c6d457506709",
+      "fields": {
+        "display_label": "下一个里程碑",
+        "short_description": "完成引导，继续你的旅程。",
+        "explanation_what_it_is": "你的下一个里程碑展示了开始后旅程将如何继续。这是你在应用中的个人目标，你将一步步朝着它努力。",
+        "explanation_user_benefit": "这样你永远不会失去方向，每天都保持动力。你总是清楚地知道下一个小步骤是什么。",
+        "explanation_when_to_use": "当你早上思考今天想特别专注于什么时，看看你的下一个里程碑。",
+        "explanation_try_this": "现在点击屏幕，发现你旅程中的第一个新里程碑。"
+      }
+    },
+    "T251": {
+      "source_sha": "53fb95784956265b",
+      "fields": {
+        "display_label": "开启你的长寿之旅",
+        "short_description": "你的旅程从这里开始——一步一步来。",
+        "explanation_what_it_is": "这是你长寿之旅的起点——不用有压力，一步一步来就好。",
+        "explanation_user_benefit": "你会马上了解这段旅程是怎么运作的，以及如何开始。",
+        "explanation_when_to_use": "就是现在，作为你旅程的第一步。",
+        "explanation_try_this": "听听 Vitana 怎么说，然后开始你的第一次课程。"
+      }
+    },
+    "T252": {
+      "source_sha": "f3f66af2f84d14ca",
+      "fields": {
+        "display_label": "你的计划",
+        "short_description": "你的旅程会为你找到最适合的下一步。",
+        "explanation_what_it_is": "这是你的个人长期健康计划。",
+        "explanation_user_benefit": "你会始终知道下一步该做什么——以及为什么它很重要。",
+        "explanation_when_to_use": "当你想了解你的旅程是如何规划的时候。",
+        "explanation_try_this": "看看你的计划，记住你的下一步。"
+      }
+    },
+    "T253": {
+      "source_sha": "8da3d9e746a71c21",
+      "fields": {
+        "display_label": "你的第一步",
+        "short_description": "从小处开始，坚持下去——让你的旅程变成现实。",
+        "explanation_what_it_is": "一个简单明确的小行动，帮助你改善健康。",
+        "explanation_user_benefit": "把美好的想法变成真正的行动。",
+        "explanation_when_to_use": "就在今天——你的第一步可以很小。",
+        "explanation_try_this": "选一个简单的行动：多喝点水、散个短步，或者早点睡觉。"
+      }
+    },
+    "T254": {
+      "source_sha": "874b2924e859a502",
+      "fields": {
+        "display_label": "你的进度",
+        "short_description": "进步意味着坚持，而不是完美。",
+        "explanation_what_it_is": "在这里你可以看到，每次课程如何累积成真正的进步。",
+        "explanation_user_benefit": "你会发现每一次课程都是更大目标的一部分。",
+        "explanation_when_to_use": "当你想看看自己已经走了多远的时候。",
+        "explanation_try_this": "完成这次课程，看看你的进度在增长。"
+      }
+    }
+  }
+}
