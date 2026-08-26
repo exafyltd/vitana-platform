@@ -1,0 +1,1 @@
+tsc --noEmit: clean, no output, exit 0
