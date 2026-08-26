@@ -133,18 +133,46 @@ describe('VTID-03762: orb-widget.js closes the overlay on the end_guided_topic_t
     expect(source).toContain("msg.directive === 'end_guided_topic_teaching'");
   });
 
-  it('calls _hide() after a short delay, same teardown shape as end_teaching_session', () => {
+  // Codex review on this PR flagged the original fixed-500ms wait (a
+  // byte-for-byte copy of end_teaching_session's own teardown): it could
+  // truncate the model's closing line whenever more than ~500ms of audio
+  // was still scheduled/queued, and audioPlaying=false doesn't stop new
+  // chunks from being queued either. Fixed by reusing the polling pattern
+  // the `navigate` directive already uses elsewhere in this same file.
+  it('polls audioPlaying/scheduledSources/audioQueue before hiding, same pattern as the navigate directive', () => {
     const idx = source.indexOf("msg.directive === 'end_guided_topic_teaching'");
     const nextElseIdx = source.indexOf('} else {', idx);
     const block = source.slice(idx, nextElseIdx);
-    expect(block).toMatch(/setTimeout\(function\s*\(\)\s*\{[\s\S]*?_hide\(\);[\s\S]*?\},\s*500\)/);
+    expect(block).toMatch(/stillPlaying\s*=\s*_s\.audioPlaying\s*\|\|/);
+    expect(block).toContain('_s.scheduledSources && _s.scheduledSources.length > 0');
+    expect(block).toContain('_s.audioQueue && _s.audioQueue.length > 0');
   });
 
-  it('stops accepting new audio chunks before hiding (audioPlaying = false), same as end_teaching_session', () => {
+  it('has a hard safety cap so a stuck/misreported audio state cannot wait forever', () => {
     const idx = source.indexOf("msg.directive === 'end_guided_topic_teaching'");
     const nextElseIdx = source.indexOf('} else {', idx);
     const block = source.slice(idx, nextElseIdx);
-    expect(block).toMatch(/_s\.audioPlaying = false;/);
+    expect(block).toMatch(/_guidedEndAttempts\+\+\s*<\s*100/);
+  });
+
+  it('calls _hide() only after the poll resolves (audio drained or cap hit), not on a blind fixed delay', () => {
+    const idx = source.indexOf("msg.directive === 'end_guided_topic_teaching'");
+    const nextElseIdx = source.indexOf('} else {', idx);
+    const block = source.slice(idx, nextElseIdx);
+    // No longer a bare "setTimeout(..., 500)" straight to _hide() — must be
+    // gated behind the stillPlaying poll first.
+    expect(block).not.toMatch(/_hide\(\);[\s\S]{0,40}\},\s*500\)/);
+    const stillPlayingIdx = block.indexOf('stillPlaying');
+    const hideIdx = block.indexOf('_hide();');
+    expect(stillPlayingIdx).toBeGreaterThan(-1);
+    expect(hideIdx).toBeGreaterThan(stillPlayingIdx);
+  });
+
+  it('does NOT set audioPlaying=false as a way to stop new chunks — that flag does not gate the audio handler', () => {
+    const idx = source.indexOf("msg.directive === 'end_guided_topic_teaching'");
+    const nextElseIdx = source.indexOf('} else {', idx);
+    const block = source.slice(idx, nextElseIdx);
+    expect(block).not.toMatch(/_s\.audioPlaying = false;/);
   });
 
   it('fires an optional onGuidedTopicTeachingEnd host callback, without throwing if absent', () => {
