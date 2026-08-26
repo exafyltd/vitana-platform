@@ -75,6 +75,8 @@ interface FakeSetup {
 function makeClient(overrides: {
   send?: (command: unknown) => Promise<{ body?: FakeResponseBody }>;
   audioHighWaterMark?: number;
+  onFirstRawChunk?: (info: { atMs: number; byteLength: number }) => void;
+  onFirstNormalizedEvent?: (info: { atMs: number; kind: string }) => void;
 } = {}): FakeSetup {
   const body = new FakeResponseBody();
   let capturedBody: AsyncIterable<unknown> | null = null;
@@ -94,6 +96,8 @@ function makeClient(overrides: {
     createCommand: (input) => input,
     onRotationDue: rotationDue,
     audioHighWaterMark: overrides.audioHighWaterMark,
+    onFirstRawChunk: overrides.onFirstRawChunk,
+    onFirstNormalizedEvent: overrides.onFirstNormalizedEvent,
   });
 
   // Drain N events from the captured request stream.
@@ -215,6 +219,49 @@ describe('NovaSonicLiveClient', () => {
     expect(usage).toEqual([
       expect.objectContaining({ totalInputTokens: 10, totalOutputTokens: 20 }),
     ]);
+  });
+
+  it('VTID-03764: onFirstRawChunk and onFirstNormalizedEvent each fire exactly once, on the FIRST event only', async () => {
+    const rawChunks: Array<{ atMs: number; byteLength: number }> = [];
+    const normalizedEvents: Array<{ atMs: number; kind: string }> = [];
+    const { client, body } = makeClient({
+      onFirstRawChunk: (e) => rawChunks.push(e),
+      onFirstNormalizedEvent: (e) => normalizedEvents.push(e),
+    });
+    await client.connect(baseOptions());
+
+    // First event: a real audio chunk.
+    body.feed({ event: { audioOutput: { content: 'QUJD' } } });
+    await flush();
+    await flush();
+    // Second and third events: more of the same kind, and a different kind.
+    body.feed({ event: { audioOutput: { content: 'REVG' } } });
+    body.feed({ event: { textOutput: { contentId: 'u', role: 'USER', content: 'hallo' } } });
+    await flush();
+    await flush();
+
+    expect(rawChunks).toHaveLength(1);
+    expect(rawChunks[0].byteLength).toBeGreaterThan(0);
+    expect(normalizedEvents).toHaveLength(1);
+    expect(normalizedEvents[0].kind).toBe('audio');
+  });
+
+  it('VTID-03764: a throwing onFirstRawChunk/onFirstNormalizedEvent never destabilizes the stream', async () => {
+    const audio: any[] = [];
+    const { client, body } = makeClient({
+      onFirstRawChunk: () => { throw new Error('boom-raw'); },
+      onFirstNormalizedEvent: () => { throw new Error('boom-normalized'); },
+    });
+    client.onAudioOutput((e) => audio.push(e));
+    await client.connect(baseOptions());
+
+    body.feed({ event: { audioOutput: { content: 'QUJD' } } });
+    await flush();
+    await flush();
+
+    // The diagnostic hooks threw, but the real audio delivery must be unaffected.
+    expect(audio).toEqual([{ dataB64: 'QUJD', mimeType: 'audio/pcm;rate=24000' }]);
+    expect(client.getState()).toBe('open');
   });
 
   it('toolUse + TOOL contentEnd dispatches a tool call; sendToolResult correlates by callId', async () => {

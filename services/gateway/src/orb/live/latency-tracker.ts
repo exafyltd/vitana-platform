@@ -40,7 +40,12 @@ export type LatencyPhase =
   | 'upstream_connected'
   | 'context_awaited'
   | 'setup_sent'
-  | 'greeting_sent';
+  | 'greeting_sent'
+  // VTID-03764 — bisects the multi-second gap between greeting_sent and
+  // audio_out_first_chunk observed on context-upgrade reconnects. Nova-only
+  // diagnostic (see NovaSonicLiveClientDeps.onFirstRawChunk/onFirstNormalizedEvent).
+  | 'nova_first_raw_chunk'
+  | 'nova_first_normalized_event';
 
 export interface LatencyMark {
   phase: LatencyPhase;
