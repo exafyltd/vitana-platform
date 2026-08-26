@@ -1,51 +1,37 @@
 #!/usr/bin/env bash
 # ──────────────────────────────────────────────────────────────
 # AWS EventBridge Scheduler replacement for the GCP Cloud Scheduler
-# job "gateway-push-dispatch"
-# VTID: VTID-03676 (follows VTID-03656)
+# job "gateway-daily-feature-tip"
+# VTID: VTID-03744
 #
-# WHY THIS EXISTS: VTID-03656 fixed /push-dispatch's own logic (a
-# stalled scheduler no longer permanently orphans notifications) and
-# registered the job in scripts/setup-cloud-scheduler.sh — but that
-# script needs `gcloud scheduler jobs create`, and the GCP project
-# `lovable-vitana-vers1` has NO LINKED BILLING ACCOUNT (confirmed
-# 2026-08-18 via the GCP Console: "This project has no billing
-# account"). Cloud Scheduler's create API requires active billing, so
-# that fix cannot actually be deployed on GCP. Direction from the
-# platform owner: move this — and eventually everything else this
-# repo runs on GCP Cloud Scheduler — onto AWS.
+# WHY THIS EXISTS: the daily "Did You Know" News Feed card went silent
+# for 11 days (last successful run 2026-08-15 17:00 UTC). Root cause:
+# gateway-daily-feature-tip was still a GCP Cloud Scheduler job POSTing
+# to the OLD GCP Cloud Run gateway URL (gateway-q74ibpv6ia-uc.a.run.app).
+# That Cloud Run service was deleted outright 2026-08-16
+# (VTID-03599/VTID-03649), so every firing since has 404'd against a
+# host that no longer exists. Re-pointing the same GCP Cloud Scheduler
+# job at the AWS gateway URL would have "fixed" it today but left the
+# job's continued EXISTENCE dependent on a GCP project whose billing is
+# already disabled (VTID-03676's own finding: `gcloud scheduler jobs
+# create/update` fails outright with no linked billing account) — a
+# second outage of the identical shape waiting to happen the next time
+# GCP is touched. This follows the AWS-native precedent VTID-03676
+# already set for the sibling gateway-push-dispatch job
+# (scripts/aws/setup-eventbridge-push-dispatch.sh) instead: EventBridge
+# Scheduler → Lambda → HTTPS POST to the gateway. No GCP dependency left
+# for this job at all.
 #
-# SCOPE: this covers ONLY gateway-push-dispatch. scripts/setup-cloud-
-# scheduler.sh still defines ~25 other GCP Cloud Scheduler jobs that
-# are EQUALLY BROKEN by the same missing GCP billing account — those
-# need the identical AWS migration but are deliberately NOT done here.
-#
-# ARCHITECTURE, and why it changed mid-build (both found via REAL
-# ValidationExceptions against a live account, 472838866351,
-# eu-central-1, 2026-08-18):
-#
-#   Attempt 1: EventBridge Scheduler → EventBridge API destination
-#   directly (Target.Arn = the api-destination ARN). This is a common
-#   assumption (Rules and Pipes both support API destinations as
-#   targets) but Scheduler does NOT: `aws scheduler create-schedule`
-#   rejected a syntactically-correct, freshly-minted api-destination
-#   ARN with "Provided Arn is not in correct format" — not a typo, a
-#   genuine unsupported-target-type rejection. If you're tempted to
-#   "fix" this by targeting an API destination again, don't — it's
-#   been tried and confirmed unsupported.
-#
-#   Attempt 2 (this version): EventBridge Scheduler → Lambda → the
-#   Lambda does the actual HTTPS POST to the gateway. Lambda-as-
-#   Scheduler-target is a first-class, unambiguous, well-documented
-#   integration — no format guessing involved. The EventBridge
-#   connection + API destination created by attempt 1 are orphaned by
-#   this pivot (harmless, zero ongoing cost) — clean up manually if
-#   you like:
-#     aws events delete-api-destination --name vitana-push-dispatch --region eu-central-1
-#     aws events delete-connection --name vitana-push-dispatch-trigger --region eu-central-1
+# SCOPE: this covers ONLY gateway-daily-feature-tip.
+# scripts/setup-cloud-scheduler.sh still defines ~25 other GCP Cloud
+# Scheduler jobs that are EQUALLY exposed to the same "GCP project has
+# no billing account, so gcloud scheduler jobs create/update fails"
+# problem VTID-03676 found — those need the identical AWS migration but
+# are deliberately NOT done here. gateway-push-dispatch is the only
+# other one already migrated.
 #
 # Usage:
-#   ./scripts/aws/setup-eventbridge-push-dispatch.sh [--delete] [--dry-run]
+#   ./scripts/aws/setup-eventbridge-daily-feature-tip.sh [--delete] [--dry-run]
 #
 # Prerequisites:
 #   - aws CLI v2 + jq + zip, authenticated (`aws sts get-caller-identity`)
@@ -54,6 +40,11 @@
 #     lambda:UpdateFunctionCode, lambda:GetFunction,
 #     scheduler:CreateSchedule, scheduler:UpdateSchedule, scheduler:GetSchedule
 #     (+ Delete* for --delete)
+#
+# AFTER this script succeeds, retire the GCP-side job so it stops
+# firing 404s against the dead Cloud Run URL forever:
+#   gcloud scheduler jobs delete gateway-daily-feature-tip \
+#     --project=lovable-vitana-vers1 --location=us-central1 --quiet
 # ──────────────────────────────────────────────────────────────
 
 set -euo pipefail
@@ -61,24 +52,25 @@ set -euo pipefail
 # AWS CLI v2 pipes JSON output through `less` by default whenever stdout is a
 # TTY (e.g. CloudShell) — every `aws ... create-*`/`describe-*` call below
 # then silently blocks the script waiting for a keypress to advance the
-# pager, which looks exactly like a hang (VTID-03744 hit this live on the
-# sibling daily-feature-tip script). Disable it for this script only.
+# pager, which looks exactly like a hang. Disable it for this script only.
 export AWS_PAGER=""
 
 # ── Config ────────────────────────────────────────────────────
 # Deliberately VITANA_AWS_REGION, not AWS_REGION — AWS CloudShell auto-
-# exports AWS_REGION to match whichever region tab is open, which
-# silently overrode this script's eu-central-1 default on an earlier
-# run (everything got created in us-east-1 instead).
+# exports AWS_REGION to match whichever region tab is open, which bit
+# the push-dispatch migration this script mirrors (everything got
+# created in us-east-1 on an earlier run).
 REGION="${VITANA_AWS_REGION:-eu-central-1}"           # matches the rest of this repo's AWS estate (CLAUDE.md §2b)
 ACCOUNT_ID="${AWS_ACCOUNT_ID:-472838866351}"          # this repo's documented AWS account (CLAUDE.md §1b)
 GATEWAY_URL="${GATEWAY_URL:-https://gateway.vitanaland.com}"
-TARGET_PATH="/api/v1/scheduled-notifications/push-dispatch"
+TARGET_PATH="/api/v1/scheduled-notifications/daily-feature-tip"
+# Same tenant the earlier direct-DB test/publish rounds this session used.
+TENANT_ID="${DEFAULT_TENANT_ID:-2e7528b8-472a-4356-88da-0280d4639cce}"
 
-LAMBDA_NAME="vitana-push-dispatch"
-LAMBDA_EXEC_ROLE_NAME="vitana-push-dispatch-lambda-exec"
-SCHEDULE_NAME="gateway-push-dispatch"
-SCHEDULER_ROLE_NAME="vitana-scheduler-push-dispatch"
+LAMBDA_NAME="vitana-daily-feature-tip"
+LAMBDA_EXEC_ROLE_NAME="vitana-daily-feature-tip-lambda-exec"
+SCHEDULE_NAME="gateway-daily-feature-tip"
+SCHEDULER_ROLE_NAME="vitana-scheduler-daily-feature-tip"
 
 DELETE=false
 DRY_RUN=false
@@ -93,6 +85,7 @@ done
 echo "Region:       $REGION"
 echo "Account:      $ACCOUNT_ID"
 echo "Gateway:      $GATEWAY_URL$TARGET_PATH"
+echo "Tenant:       $TENANT_ID"
 echo "Delete:       $DELETE"
 echo "Dry run:      $DRY_RUN"
 echo ""
@@ -102,11 +95,10 @@ if $DELETE; then
   aws scheduler delete-schedule --name "$SCHEDULE_NAME" --region "$REGION" 2>/dev/null || true
   aws lambda delete-function --function-name "$LAMBDA_NAME" --region "$REGION" 2>/dev/null || true
   aws iam delete-role-policy --role-name "$SCHEDULER_ROLE_NAME" --policy-name "invoke-lambda-target" 2>/dev/null || true
-  aws iam delete-role-policy --role-name "$SCHEDULER_ROLE_NAME" --policy-name "invoke-api-destination" 2>/dev/null || true
   aws iam delete-role --role-name "$SCHEDULER_ROLE_NAME" 2>/dev/null || true
   aws iam detach-role-policy --role-name "$LAMBDA_EXEC_ROLE_NAME" --policy-arn "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole" 2>/dev/null || true
   aws iam delete-role --role-name "$LAMBDA_EXEC_ROLE_NAME" 2>/dev/null || true
-  echo "Done. (Any orphaned EventBridge connection/API destination from an earlier attempt are unaffected — see script header for their cleanup commands.)"
+  echo "Done."
   exit 0
 fi
 
@@ -131,7 +123,7 @@ JSON
 aws iam create-role \
   --role-name "$LAMBDA_EXEC_ROLE_NAME" \
   --assume-role-policy-document "$LAMBDA_TRUST_POLICY" \
-  --description "Execution role for vitana-push-dispatch Lambda (VTID-03676)" \
+  --description "Execution role for vitana-daily-feature-tip Lambda (VTID-03744)" \
   || echo "  (role may already exist — continuing)"
 aws iam attach-role-policy \
   --role-name "$LAMBDA_EXEC_ROLE_NAME" \
@@ -147,54 +139,49 @@ WORKDIR=$(mktemp -d)
 cat > "$WORKDIR/index.js" <<'JS'
 const https = require('https');
 
-// VTID-03676 / P1 review finding: the route processes up to 100 rows
-// sequentially, marking push_sent_at only after each row's delivery
-// completes (services/gateway/src/routes/scheduled-notifications.ts)
-// — a large backlog batch or slow FCM/Appilix calls can legitimately
-// take well over 30s. A client-side timeout that fires before the
-// gateway finishes is dangerous here, not just slow: Lambda's own
-// async-invoke error retry (plus this schedule's own RetryPolicy) can
-// then fire a SECOND request while the first is still running and
-// hasn't marked its rows sent yet, which would select the same
-// still-unmarked rows and send duplicate push notifications for them.
-// This isn't hypothetical — it's the exact shape observed live during
-// the initial backlog catch-up (VTID-03676 changelog). The old GCP
-// Cloud Scheduler job allowed 120s; matching that here with headroom
-// under the Lambda function's own 180s timeout (set in this script's
-// `--timeout 180`).
+// Deliberately NO scheduler-level retry on failure (see the schedule's
+// RetryPolicy below) — unlike push-dispatch, a redelivered
+// daily-feature-tip call is NOT a safe no-op. did_you_know_state.last_index
+// only advances AFTER a successful publish, so a retry that lands after the
+// gateway already committed the first attempt would post a SECOND "Did You
+// Know" card the same day with the NEXT tip in rotation, and fan out a
+// second round of notifications for it. One clean failure a day, surfaced
+// in CloudWatch Logs for a human to re-run manually, beats a duplicate post
+// to the whole tenant.
 exports.handler = async () => {
   const url = new URL(
     (process.env.GATEWAY_URL || 'https://gateway.vitanaland.com') +
-    '/api/v1/scheduled-notifications/push-dispatch'
+    '/api/v1/scheduled-notifications/daily-feature-tip'
   );
+  const payload = JSON.stringify({ tenant_id: process.env.TENANT_ID });
   return new Promise((resolve, reject) => {
     const req = https.request(
       {
         hostname: url.hostname,
         path: url.pathname,
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': 0 },
-        timeout: 170000,
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(payload),
+        },
+        timeout: 55000,
       },
       (res) => {
         let body = '';
         res.on('data', (chunk) => { body += chunk; });
         res.on('end', () => {
-          console.log(`push-dispatch responded ${res.statusCode}: ${body.slice(0, 500)}`);
-          // P2 review finding: a 500/503 from the gateway (e.g. a
-          // Supabase query failure) must surface as a Lambda failure,
-          // not a silent success — otherwise neither Lambda's own
-          // retry-on-error nor any future alerting can see it.
+          console.log(`daily-feature-tip responded ${res.statusCode}: ${body.slice(0, 500)}`);
           if (res.statusCode >= 200 && res.statusCode < 300) {
             resolve({ statusCode: res.statusCode, body });
           } else {
-            reject(new Error(`push-dispatch returned ${res.statusCode}: ${body.slice(0, 500)}`));
+            reject(new Error(`daily-feature-tip returned ${res.statusCode}: ${body.slice(0, 500)}`));
           }
         });
       }
     );
-    req.on('timeout', () => req.destroy(new Error('push-dispatch request timed out')));
+    req.on('timeout', () => req.destroy(new Error('daily-feature-tip request timed out')));
     req.on('error', reject);
+    req.write(payload);
     req.end();
   });
 };
@@ -209,9 +196,9 @@ if aws lambda create-function \
   --role "$LAMBDA_EXEC_ROLE_ARN" \
   --handler index.handler \
   --zip-file "fileb://$WORKDIR/function.zip" \
-  --timeout 180 \
-  --environment "Variables={GATEWAY_URL=$GATEWAY_URL}" \
-  --description "Vitana push-dispatch cron trigger (VTID-03676) — replaces the GCP Cloud Scheduler job of the same purpose" 2>&1; then
+  --timeout 60 \
+  --environment "Variables={GATEWAY_URL=$GATEWAY_URL,TENANT_ID=$TENANT_ID}" \
+  --description "Vitana daily-feature-tip cron trigger (VTID-03744) — replaces the GCP Cloud Scheduler job of the same purpose" 2>&1; then
   echo "Function created."
 else
   echo "  (create failed — updating code AND config instead, in case it already exists)"
@@ -219,19 +206,12 @@ else
     --function-name "$LAMBDA_NAME" \
     --region "$REGION" \
     --zip-file "fileb://$WORKDIR/function.zip"
-  # P2 review finding: on a rerun with a changed GATEWAY_URL (or any
-  # other config), only the code was being updated — the deployed
-  # environment/timeout/runtime silently kept whatever they were set to
-  # on first create, while the script printed the NEW gateway and
-  # claimed success. update-function-configuration must run too, and
-  # only after the code update settles (Lambda rejects a concurrent
-  # config update while one is still in progress).
   aws lambda wait function-updated --function-name "$LAMBDA_NAME" --region "$REGION"
   aws lambda update-function-configuration \
     --function-name "$LAMBDA_NAME" \
     --region "$REGION" \
-    --timeout 180 \
-    --environment "Variables={GATEWAY_URL=$GATEWAY_URL}"
+    --timeout 60 \
+    --environment "Variables={GATEWAY_URL=$GATEWAY_URL,TENANT_ID=$TENANT_ID}"
   echo "Function code and configuration updated."
 fi
 LAMBDA_ARN="arn:aws:lambda:${REGION}:${ACCOUNT_ID}:function:${LAMBDA_NAME}"
@@ -254,12 +234,8 @@ JSON
 aws iam create-role \
   --role-name "$SCHEDULER_ROLE_NAME" \
   --assume-role-policy-document "$SCHEDULER_TRUST_POLICY" \
-  --description "Allows EventBridge Scheduler to invoke the push-dispatch Lambda (VTID-03676)" \
+  --description "Allows EventBridge Scheduler to invoke the daily-feature-tip Lambda (VTID-03744)" \
   || echo "  (role may already exist — continuing)"
-
-# Clean up the stale events:InvokeApiDestination policy from the earlier
-# (unsupported) attempt, if it's still attached.
-aws iam delete-role-policy --role-name "$SCHEDULER_ROLE_NAME" --policy-name "invoke-api-destination" 2>/dev/null || true
 
 INVOKE_POLICY=$(cat <<JSON
 {
@@ -282,21 +258,24 @@ SCHEDULER_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${SCHEDULER_ROLE_NAME}"
 echo "Waiting 10s for IAM role propagation..."
 sleep 10
 
-# ── 4. EventBridge Scheduler schedule (every minute — matching the
-#      old GCP job; 1 minute is also Scheduler's floor for rate()) ──
+# ── 4. EventBridge Scheduler schedule — daily at 17:00 UTC, matching
+#      the old GCP cron "0 17 * * *". AWS cron() needs 6 fields; day-of-
+#      month and day-of-week can't both be a value, so day-of-month is
+#      "*" and day-of-week is "?" for an every-day schedule. ──
 echo "── Creating/updating schedule: $SCHEDULE_NAME"
 TARGET=$(cat <<JSON
 {
   "Arn": "${LAMBDA_ARN}",
   "RoleArn": "${SCHEDULER_ROLE_ARN}",
-  "RetryPolicy": { "MaximumRetryAttempts": 1 }
+  "RetryPolicy": { "MaximumRetryAttempts": 0 }
 }
 JSON
 )
 if aws scheduler create-schedule \
   --name "$SCHEDULE_NAME" \
   --region "$REGION" \
-  --schedule-expression "rate(1 minute)" \
+  --schedule-expression "cron(0 17 * * ? *)" \
+  --schedule-expression-timezone "UTC" \
   --flexible-time-window '{"Mode":"OFF"}' \
   --state ENABLED \
   --target "$TARGET"; then
@@ -306,7 +285,8 @@ else
   aws scheduler update-schedule \
     --name "$SCHEDULE_NAME" \
     --region "$REGION" \
-    --schedule-expression "rate(1 minute)" \
+    --schedule-expression "cron(0 17 * * ? *)" \
+    --schedule-expression-timezone "UTC" \
     --flexible-time-window '{"Mode":"OFF"}' \
     --state ENABLED \
     --target "$TARGET"
@@ -316,7 +296,7 @@ fi
 echo ""
 echo "Done. Verify with:"
 echo "  aws scheduler get-schedule --name $SCHEDULE_NAME --region $REGION --query 'State'"
-echo "  aws logs tail /aws/lambda/$LAMBDA_NAME --region $REGION --since 5m   # confirm it's actually being invoked and succeeding"
+echo "  aws logs tail /aws/lambda/$LAMBDA_NAME --region $REGION --since 5m   # after it fires at 17:00 UTC"
 echo ""
-echo "Then confirm the push notification backlog in user_notifications"
-echo "starts draining within a few minutes."
+echo "Then retire the dead GCP job so it stops 404ing forever:"
+echo "  gcloud scheduler jobs delete gateway-daily-feature-tip --project=lovable-vitana-vers1 --location=us-central1 --quiet"
