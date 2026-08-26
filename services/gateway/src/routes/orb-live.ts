@@ -350,6 +350,7 @@ import {
   newdayHasContent,
   setNewdayOverviewRungEnabled,
   setDayCloseRungEnabled,
+  tryDayCloseRung,
   type GreetingDecisionContext,
 } from '../services/conversation/compute-greeting-decision';
 
@@ -1750,6 +1751,98 @@ export function shouldRetryDayCloseReduced(args: {
     !args.alreadyReducedThisClose
   );
 }
+
+/**
+ * VTID-03743 review fix (Codex P1) — the day-close stamp write must not
+ * fire until the session has actually produced audio.
+ *
+ * Every day-close stamp call site used to write `last_day_close_date`
+ * synchronously, right after `ws.send()`'ing the greeting directive —
+ * before Nova had any chance to actually speak it. If Nova's content
+ * filter rejects the directive, or the connection dies before any audio
+ * (the same failure modes this file already discriminates via
+ * `transportHasShownLife` for `shouldRetryNovaOnPrematureClose` /
+ * `shouldFallbackToVertexOnNovaClose`), the stamp had already landed — so
+ * `tryDayCloseRung`'s own once-per-night guard
+ * (`lastDayCloseDate >= nightKey`) would suppress every later attempt
+ * THAT SAME NIGHT even though the user never heard a goodnight at all.
+ * That is the exact failure class this whole VTID chain exists to end (a
+ * "delivered" marker set before delivery is confirmed) — shipping it into
+ * day-close on the same PR that enables the rung would reproduce it in a
+ * new shape.
+ *
+ * Fix: defer the persisted write behind the SAME timeout already
+ * calibrated for "did the greeting get a response"
+ * (`getGreetingResponseTimeoutMs()`) and the SAME liveness signal already
+ * used elsewhere in this file (`session.transportHasShownLife`) — no new
+ * magic number, no new signal. `session.lastDayCloseDate` (the in-memory
+ * copy `tryDayCloseRung` reads for the REST of this same session) is
+ * likewise only updated once delivery is confirmed, so a Nova-validation
+ * retry within the same session still sees the night as undelivered and
+ * can still win the rung again.
+ */
+function schedulePersistDayCloseStamp(args: {
+  session: GeminiLiveSession;
+  supa: ReturnType<typeof getSupabase>;
+  userId: string | null;
+  stampValue: string;
+  branch: string;
+}): void {
+  const { session, supa, userId, stampValue, branch } = args;
+  if (!supa || !userId) return;
+  setTimeout(() => {
+    void (async () => {
+      if (session.transportHasShownLife !== true) {
+        emitDiag(session, 'stamp_day_close_date_write', {
+          branch,
+          result: 'skipped_no_audio_produced',
+          value: stampValue,
+        });
+        return;
+      }
+      (session as any).lastDayCloseDate = stampValue;
+      try {
+        const { data, error } = await supa
+          .from('user_journey')
+          .update({ last_day_close_date: stampValue })
+          .eq('user_id', userId)
+          .select('user_id');
+        if (error) {
+          console.error(`[orb-live] stampDayCloseDate write failed (${branch})`, {
+            user_id: userId,
+            value: stampValue,
+            error,
+          });
+          emitDiag(session, 'stamp_day_close_date_write', {
+            branch,
+            result: 'error',
+            error: String((error as any)?.message ?? error),
+          });
+        } else if (!data || data.length === 0) {
+          console.error(`[orb-live] stampDayCloseDate write matched 0 rows (${branch})`, {
+            user_id: userId,
+            value: stampValue,
+          });
+          emitDiag(session, 'stamp_day_close_date_write', { branch, result: 'zero_rows' });
+        } else {
+          emitDiag(session, 'stamp_day_close_date_write', { branch, result: 'ok', rows: data.length });
+        }
+      } catch (err) {
+        console.error(`[orb-live] stampDayCloseDate write threw (${branch})`, {
+          user_id: userId,
+          value: stampValue,
+          err,
+        });
+        emitDiag(session, 'stamp_day_close_date_write', {
+          branch,
+          result: 'threw',
+          error: String((err as any)?.message ?? err),
+        });
+      }
+    })();
+  }, getGreetingResponseTimeoutMs());
+}
+
 // VTID-03495: Polly seam for the /tts route. No-ops unless TTS_PROVIDER=polly.
 import { tryPollySynthesis } from '../services/tts/tts-provider';
 // VTID-03716: direct, unconditional Polly access for the PCM diagnostic route
@@ -9794,9 +9887,15 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
               voiceWakeBriefReason: null,
             };
 
-            // Rung-1 gather: the rich new-day overview, only when its guard passes.
+            // Rung-1 gather: the rich new-day overview, only when its guard
+            // passes AND day-close (which outranks it) would not win anyway —
+            // VTID-03743 review fix (Codex P2): day-close is eligible during
+            // its own window regardless of the morning briefing's due-ness,
+            // so without this pre-check every day-close-window session paid
+            // for a ~3.8s gather+ledger-read whose payload
+            // computeGreetingDecision was always going to discard.
             let _newdayOverviewSF: Awaited<ReturnType<typeof gatherOverviewPayload>> | null = null;
-            if (shouldAttemptNewdayOverview(_baseCtxSF) && _supaSF && _uidSF) {
+            if (shouldAttemptNewdayOverview(_baseCtxSF) && _supaSF && _uidSF && !tryDayCloseRung(_baseCtxSF)) {
               const _lastSessIsoSF = (session as any).lastSessionInfo?.time ?? null;
               const _lastSessDateSF =
                 typeof _lastSessIsoSF === 'string' && _lastSessIsoSF.length > 0
@@ -9937,34 +10036,17 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                 });
               }
             }
-            // VTID-03604: same pattern for the day-close stamp.
+            // VTID-03604: same pattern for the day-close stamp. VTID-03743
+            // review fix — deferred until delivery is confirmed, see
+            // schedulePersistDayCloseStamp's doc.
             if (_sfDecision.effects.stampDayCloseDate && _uidSF && _supaSF) {
-              (session as any).lastDayCloseDate = _sfDecision.effects.stampDayCloseDate;
-              try {
-                const { data, error } = await _supaSF
-                  .from('user_journey')
-                  .update({ last_day_close_date: _sfDecision.effects.stampDayCloseDate })
-                  .eq('user_id', _uidSF)
-                  .select('user_id');
-                if (error) {
-                  console.error('[orb-live] stampDayCloseDate write failed (safe_fast)', {
-                    user_id: _uidSF,
-                    value: _sfDecision.effects.stampDayCloseDate,
-                    error,
-                  });
-                } else if (!data || data.length === 0) {
-                  console.error('[orb-live] stampDayCloseDate write matched 0 rows (safe_fast)', {
-                    user_id: _uidSF,
-                    value: _sfDecision.effects.stampDayCloseDate,
-                  });
-                }
-              } catch (err) {
-                console.error('[orb-live] stampDayCloseDate write threw (safe_fast)', {
-                  user_id: _uidSF,
-                  value: _sfDecision.effects.stampDayCloseDate,
-                  err,
-                });
-              }
+              schedulePersistDayCloseStamp({
+                session,
+                supa: _supaSF,
+                userId: _uidSF,
+                stampValue: _sfDecision.effects.stampDayCloseDate,
+                branch: 'safe_fast',
+              });
             }
             // Durable recent-NBA history (conv_resume) — keep the last 8.
             if (_sfDecision.effects.recordNbaKey && _uidSF && _supaSF) {
@@ -10377,8 +10459,11 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             userId: _syncUid,
           };
 
-          // Real guard, single-sourced with the pure rung.
-          if (shouldAttemptNewdayOverview(_ctxNS)) {
+          // Real guard, single-sourced with the pure rung. VTID-03743 review
+          // fix (Codex P2) — see the matching comment on the safe-fast gather
+          // above: skip this same expensive gather when day-close (which
+          // outranks it) would win anyway.
+          if (shouldAttemptNewdayOverview(_ctxNS) && !tryDayCloseRung(_ctxNS)) {
             const _lastSessIsoNS = (session as any).lastSessionInfo?.time ?? null;
             const _lastSessDateNS =
               typeof _lastSessIsoNS === 'string' && _lastSessIsoNS.length > 0
@@ -10494,34 +10579,16 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                 });
               }
             }
-            // VTID-03604
+            // VTID-03604. VTID-03743 review fix — deferred until delivery is
+            // confirmed, see schedulePersistDayCloseStamp's doc.
             if (_decisionNS.effects.stampDayCloseDate) {
-              (session as any).lastDayCloseDate = _decisionNS.effects.stampDayCloseDate;
-              try {
-                const { data, error } = await _syncSupa!
-                  .from('user_journey')
-                  .update({ last_day_close_date: _decisionNS.effects.stampDayCloseDate })
-                  .eq('user_id', _syncUid!)
-                  .select('user_id');
-                if (error) {
-                  console.error('[orb-live] stampDayCloseDate write failed (normal)', {
-                    user_id: _syncUid,
-                    value: _decisionNS.effects.stampDayCloseDate,
-                    error,
-                  });
-                } else if (!data || data.length === 0) {
-                  console.error('[orb-live] stampDayCloseDate write matched 0 rows (normal)', {
-                    user_id: _syncUid,
-                    value: _decisionNS.effects.stampDayCloseDate,
-                  });
-                }
-              } catch (err) {
-                console.error('[orb-live] stampDayCloseDate write threw (normal)', {
-                  user_id: _syncUid,
-                  value: _decisionNS.effects.stampDayCloseDate,
-                  err,
-                });
-              }
+              schedulePersistDayCloseStamp({
+                session,
+                supa: _syncSupa,
+                userId: _syncUid,
+                stampValue: _decisionNS.effects.stampDayCloseDate,
+                branch: 'normal',
+              });
             }
             if (_decisionNS.wakeOpener === 'newday_overview' && _tenantNS) {
               const _spokenNS = extractSpokenFactsFromPayload(_overviewNS);
@@ -10567,13 +10634,16 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
           // shouldAttemptNewdayOverview rejected above, but the day-close rung
           // still runs inside computeGreetingDecision(_ctxNS) and outranks
           // everything below it.
+          // VTID-03743 review fix — deferred until delivery is confirmed,
+          // see schedulePersistDayCloseStamp's doc.
           if (_fallbackNS.effects.stampDayCloseDate && _syncUid && _syncSupa) {
-            (session as any).lastDayCloseDate = _fallbackNS.effects.stampDayCloseDate;
-            void _syncSupa
-              .from('user_journey')
-              .update({ last_day_close_date: _fallbackNS.effects.stampDayCloseDate })
-              .eq('user_id', _syncUid)
-              .then(() => {}, () => {});
+            schedulePersistDayCloseStamp({
+              session,
+              supa: _syncSupa,
+              userId: _syncUid,
+              stampValue: _fallbackNS.effects.stampDayCloseDate,
+              branch: 'fallback',
+            });
           }
         } catch (err: any) {
           // Never leave the user with silence because the briefing gather blew
@@ -10590,6 +10660,21 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             const _recoverNS = computeGreetingDecision(_baseCtxSync);
             if (_recoverNS.wakeOpener !== 'legacy_default') _sm.markOpeningDelivered();
             _renderSync(_recoverNS);
+            // VTID-03743 review fix — this recovery path renders through the
+            // same `_baseCtxSync` (day_close's own rung can still win here)
+            // but had no stamp write at all, which would have made day_close
+            // fire on every session that reaches this catch block. Deferred
+            // until delivery is confirmed, see schedulePersistDayCloseStamp's
+            // doc.
+            if (_recoverNS.effects.stampDayCloseDate && _syncUid && _syncSupa) {
+              schedulePersistDayCloseStamp({
+                session,
+                supa: _syncSupa,
+                userId: _syncUid,
+                stampValue: _recoverNS.effects.stampDayCloseDate,
+                branch: 'recover',
+              });
+            }
           } catch {
             /* the fallback ladder is pure; if it throws there is nothing left to try */
           }
@@ -10605,6 +10690,23 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
       _sm.markOpeningDelivered();
     }
     _renderSync(_syncDecision);
+    // VTID-03743 review fix — this is the plain ladder taken whenever the
+    // rich new-day-overview path is not even attempted (anonymous, no user
+    // id, unsupported language for THAT rung, or a silent reconnect).
+    // day_close does not share those gates, so it can still win here — and
+    // this site had no stamp write at all, meaning day_close would have
+    // fired on every session for any user who reaches this branch (e.g.
+    // every non-en/de locale). Deferred until delivery is confirmed, see
+    // schedulePersistDayCloseStamp's doc.
+    if (_syncDecision.effects.stampDayCloseDate && _syncUid && _syncSupa) {
+      schedulePersistDayCloseStamp({
+        session,
+        supa: _syncSupa,
+        userId: _syncUid,
+        stampValue: _syncDecision.effects.stampDayCloseDate,
+        branch: 'plain_sync',
+      });
+    }
     return true;
   }
 }
