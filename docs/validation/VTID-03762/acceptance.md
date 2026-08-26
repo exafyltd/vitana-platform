@@ -204,8 +204,9 @@ of the full-suite run in `outputs/jest-full-suite.txt`)
 
 ## FOLLOW-UP (same VTID): client-side backstop
 
-AC-1 through AC-15 above shipped in #3205 and merged. Live staging retest
-by the platform owner then showed the fix does not work in practice: the
+The acceptance criteria above (AC-1 through AC-15) shipped in #3205 and
+merged. Live staging retest by the platform owner then showed the fix
+does not work in practice: the
 model never calls `end_guided_topic_teaching` — zero
 `guided_topic_teaching_ended` events across a real test session's
 `oasis_events` trace, despite the guided-topic candidate correctly winning
