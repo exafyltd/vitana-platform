@@ -387,6 +387,7 @@ jobs:
                                                 "FEATURE_ORB_GREETING_TTS_BRIDGE_ENV",
                                                 "FEATURE_ORB_SAFE_FAST_GREETING_ENV",
                                                 "ORB_FULL_DUPLEX_ENABLED",
+                                                "ORB_DAY_CLOSE_RUNG_ENABLED",
                                                 "TTS_PROVIDER","TTS_POLLY_STRICT","VERTEX_LIVE_UNAVAILABLE",
                                                 "ORB_CASCADED_VOICE_ENABLED",
                                                 "BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION") | not) ]
@@ -411,6 +412,19 @@ jobs:
                           # no code revert. Exact-"true" opt-in, matching the
                           # sibling ORB kill switches — anything else is OFF.
                           {name:"ORB_FULL_DUPLEX_ENABLED", value:"true"},
+                          # BOOTSTRAP-ORB-DAY-CLOSE: enables the once-per-night
+                          # "goodnight" greeting rung (tryDayCloseRung,
+                          # compute-greeting-decision.ts). STAGING ONLY, same
+                          # pattern as FEATURE_ORB_SAFE_FAST_GREETING_ENV above
+                          # — deliberately NOT added to
+                          # AWS-PROD-DEPLOY-GATEWAY.yml. Now uses the reduced
+                          # opener (buildDayCloseOpenerLine) as the permanent
+                          # default, not the full quoted-exemplar block that
+                          # previously needed a Nova-validation-block retry to
+                          # fall back to it. Rollback is this value -> "false"
+                          # (or removal), no code revert. Exact-"true" opt-in,
+                          # matching the sibling ORB kill switches.
+                          {name:"ORB_DAY_CLOSE_RUNG_ENABLED", value:"true"},
                           {name:"TTS_PROVIDER", value:"polly"},
                           {name:"TTS_POLLY_STRICT", value:"true"},
                           {name:"VERTEX_LIVE_UNAVAILABLE", value:"true"},

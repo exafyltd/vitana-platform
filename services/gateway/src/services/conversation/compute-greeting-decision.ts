@@ -380,8 +380,18 @@ export function dayCloseNightKey(todayLocalIso: string, localHour: number): stri
  * a reconnect must stay silent, and a goodnight is loud.
  *
  * Returns null when it does not fire, so each ladder keeps its own ordering.
+ *
+ * Exported (VTID-03743 review fix, Codex P2) so the transport can cheaply
+ * pre-check "would day-close win?" BEFORE paying for the expensive
+ * new-day-overview gather (`gatherOverviewPayload` + a ledger read, up to
+ * ~3.8s combined) — this rung outranks `tryNewDayOverviewRung` on both
+ * ladders (see `computeSafeFastLadder`/the sync ladder below), so any
+ * payload gathered while day-close is eligible is guaranteed to be thrown
+ * away. This function is pure and does no I/O, so calling it twice (once
+ * as a pre-check, once for real inside `computeGreetingDecision`) costs
+ * nothing beyond the cheap comparisons it already does.
  */
-function tryDayCloseRung(ctx: GreetingDecisionContext): GreetingDecision | null {
+export function tryDayCloseRung(ctx: GreetingDecisionContext): GreetingDecision | null {
   if (!_dayCloseRungEnabled) return null;
   if (ctx.isAnonymous) return null;
   // `todayTz: ''` is the documented placeholder orb-live.ts seeds the SYNC
