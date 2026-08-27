@@ -347,6 +347,19 @@
     // _s.guidedTopic for that one retry. Cleared only by _hide(), same
     // lifecycle as guidedTopic itself.
     _guidedTopicInFlight: null,
+    // VTID-03774 (Codex review follow-up on VTID-03774's own reconnect fix):
+    // true once turn-1 audio (opener + narration bridge) has actually been
+    // delivered for the CURRENT _guidedTopicInFlight. Distinguishes "resend
+    // guided_topic_id to RESUME a lesson already in progress" from "resend
+    // it because a genuine zero-turn retry never got to speak at all"
+    // (VTID-03771's nova_validation case) — the server reads this as
+    // guided_topic_resume and skips re-synthesizing/replaying the narration
+    // audio + re-injecting the verbatim opener instruction when true, so a
+    // reconnect after real teaching has happened doesn't restart the lesson
+    // from the beginning. Same lifecycle as _guidedTopicInFlight: armed
+    // false on a fresh tap (focusGuidedTopic), flipped true at the same
+    // turn-complete point that nulls _s.guidedTopic, cleared by _hide().
+    _guidedTopicAudioDelivered: false,
     // VTID-03762: wall-clock timestamp (Date.now()) of when a guided topic
     // was tapped, and the interval handle checking it. Backstop only — see
     // GUIDED_TOPIC_BACKSTOP_MS below for why this exists: the model is
@@ -1935,6 +1948,15 @@
       }
       if (_s.guidedTopic) {
         startPayload.guided_topic_id = _s.guidedTopic;
+        // VTID-03774 (Codex review follow-up): tell the server this is a
+        // RESUME — turn-1 audio for this topic was already delivered before
+        // now — so it bundles the topic context without re-synthesizing/
+        // replaying the narration audio or re-injecting the verbatim opener
+        // instruction. Without this, every qualifying reconnect restarted
+        // the lesson from the beginning instead of continuing it.
+        if (_s._guidedTopicAudioDelivered) {
+          startPayload.guided_topic_resume = true;
+        }
       }
       // VTID-03774: diagnostic-grade logging so a FUTURE loss (if this
       // fallback somehow isn't the whole story either) is traceable from
@@ -1942,6 +1964,7 @@
       // oasis_events reconstruction. Cheap: one line, every _sessionStart.
       console.log('[VTOrb] _sessionStart: guidedTopic=' + (_s.guidedTopic || '<none>')
         + ', guidedTopicInFlight=' + (_s._guidedTopicInFlight || '<none>')
+        + ', guidedTopicAudioDelivered=' + !!_s._guidedTopicAudioDelivered
         + ', preDisconnectStage=' + (_s._preDisconnectStage || '<none>')
         + ', isReconnectAttempt=' + !!(_s._transcriptHistory && _s._transcriptHistory.length));
 
@@ -2579,6 +2602,11 @@
             if (_s.guidedAutoClose && !_s.greetingComplete) {
               _s.guidedAutoClose = false;
               _s.guidedTopic = null;
+              // VTID-03774: turn-1 audio (opener + narration bridge) has now
+              // actually been delivered — a later restored-and-resent topic
+              // must tell the server it's a RESUME, not a fresh open, so
+              // the lesson doesn't restart from the beginning.
+              _s._guidedTopicAudioDelivered = true;
               console.log('[VTOrb] guided teaching opener complete — continuing conversation (no auto-close)');
             }
             // If the overlay was closed some other way while we were waiting
@@ -4244,6 +4272,7 @@
     _s.guidedAutoClose = false; // VTID-03294 (#4): clear any pending guided auto-close
     _s.guidedTopic = null; // VTID-03675: don't let a never-delivered topic leak into a later, unrelated session
     _s._guidedTopicInFlight = null; // VTID-03746: same lifecycle — this overlay session is genuinely over
+    _s._guidedTopicAudioDelivered = false; // VTID-03774: same lifecycle
     _s._guidedTopicOpenedAt = null; // VTID-03762: same lifecycle — the backstop no longer applies
     try { clearInterval(_s._guidedTopicBackstopInterval); } catch (e) { /* noop */ }
     _s._guidedTopicBackstopInterval = null;
@@ -4701,6 +4730,9 @@
       // VTID-03746: separate, longer-lived record of the same topic — see
       // its declaration for why _s.guidedTopic alone isn't enough anymore.
       _s._guidedTopicInFlight = _s.guidedTopic;
+      // VTID-03774: a fresh tap means nothing has been delivered for THIS
+      // topic yet — reset even if a previous topic's flag was left true.
+      _s._guidedTopicAudioDelivered = false;
       // VTID-03762: arm the backstop — see GUIDED_TOPIC_BACKSTOP_MS's own
       // comment for why this exists. Only for a real topic tap; a null
       // topicId (defensive fallback path) has nothing to backstop.

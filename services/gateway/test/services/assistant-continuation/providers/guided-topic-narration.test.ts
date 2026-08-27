@@ -210,4 +210,69 @@ describe('guided-topic-narration provider', () => {
       expect(c.guidedTopicNarration.voice_script).toContain('Vitanaland');
     });
   });
+
+  describe('VTID-03774 (Codex review follow-up): isResume — a reconnect after audio was already delivered', () => {
+    // The widget only ever sets isResume when it's resending topicId for a
+    // topic whose turn-1 audio (opener + narration bridge) was already
+    // delivered before this reconnect (orb-widget.js's
+    // _guidedTopicAudioDelivered). Without this branch, that reconnect
+    // re-synthesized and replayed the FULL narration from scratch and
+    // re-injected the verbatim opener instruction — restarting/duplicating
+    // already-heard content instead of resuming.
+
+    it('still LEADS turn-1 (candidate still wins) on a resume — the topic context must not be lost', async () => {
+      mockGetOrbTopicSeed.mockResolvedValue(SEED);
+      const p = makeGuidedTopicNarrationProvider();
+      const r = await p.produce(makeCtx({ isResume: true }));
+      expect(r.status).toBe('returned');
+      expect((r.candidate as any).priority).toBe(96);
+    });
+
+    it('does NOT call Polly synthesis on a resume — nothing new to play', async () => {
+      mockGetOrbTopicSeed.mockResolvedValue(SEED);
+      const p = makeGuidedTopicNarrationProvider();
+      await p.produce(makeCtx({ isResume: true }));
+      expect(mockSynthesizeGuidedTopicNarrationAudio).not.toHaveBeenCalled();
+    });
+
+    it('userFacingLine is empty on a resume — no forced re-opener, the model resumes naturally', async () => {
+      mockGetOrbTopicSeed.mockResolvedValue(SEED);
+      const p = makeGuidedTopicNarrationProvider();
+      const r = await p.produce(makeCtx({ isResume: true }));
+      expect((r.candidate as any).userFacingLine).toBe('');
+    });
+
+    it('an empty userFacingLine still passes the framework validator (a resume candidate is not a malformed one)', async () => {
+      mockGetOrbTopicSeed.mockResolvedValue(SEED);
+      const p = makeGuidedTopicNarrationProvider();
+      const r = await p.produce(makeCtx({ isResume: true }));
+      expect(validateContinuationCandidate(r.candidate as any).ok).toBe(true);
+    });
+
+    it('narrationAudio stays null on a resume (the audio bridge already treats null as nothing-to-send)', async () => {
+      mockGetOrbTopicSeed.mockResolvedValue(SEED);
+      const p = makeGuidedTopicNarrationProvider();
+      const r = await p.produce(makeCtx({ isResume: true }));
+      expect((r.candidate as any).guidedTopicNarration.narrationAudio).toBeNull();
+    });
+
+    it('the TEACH content (topic/explanation/practice_target) is STILL bundled on a resume — only the spoken line and audio are suppressed', async () => {
+      mockGetOrbTopicSeed.mockResolvedValue(SEED);
+      const p = makeGuidedTopicNarrationProvider();
+      const r = await p.produce(makeCtx({ isResume: true }));
+      const c = (r.candidate as any).guidedTopicNarration;
+      expect(c.topic_id).toBe('T001');
+      expect(c.voice_script).toContain('Vitanaland');
+      expect(c.practice_target).toBe('community');
+    });
+
+    it('no regression: isResume=false (default/unset) behaves exactly as before — Polly is still attempted', async () => {
+      mockGetOrbTopicSeed.mockResolvedValue(SEED);
+      mockSynthesizeGuidedTopicNarrationAudio.mockResolvedValue({ audioB64: 'YQ==', sampleRateHz: 16000 });
+      const p = makeGuidedTopicNarrationProvider();
+      const r = await p.produce(makeCtx());
+      expect(mockSynthesizeGuidedTopicNarrationAudio).toHaveBeenCalled();
+      expect((r.candidate as any).userFacingLine.length).toBeGreaterThan(0);
+    });
+  });
 });

@@ -1439,6 +1439,14 @@ export async function handleLiveSessionStart(
     guided_topic_id: typeof (body as any).guided_topic_id === 'string'
       ? (body as any).guided_topic_id
       : undefined,
+    // VTID-03774 (Codex review follow-up): set by the client ONLY when it is
+    // resending guided_topic_id for a topic whose turn-1 audio (opener +
+    // narration bridge) was already delivered before this reconnect — i.e.
+    // resuming a lesson already in progress, not a first open. Distinguishes
+    // that from a genuine zero-turn retry (e.g. VTID-03771's nova_validation
+    // case), where the topic has never been heard and the full open SHOULD
+    // fire. See guided-topic-narration.ts's isResume handling.
+    guided_topic_resume: (body as any).guided_topic_resume === true,
   };
 
   // VTID-SESSION-LIMIT: Terminate any existing active sessions for this user.
@@ -1742,6 +1750,9 @@ export async function handleLiveSessionStart(
       // VTID-03290: forward the tapped Guided Journey topic so the
       // guided-topic-narration provider leads turn-1. Null for normal opens.
       guidedTopicId: (session as any).guided_topic_id ?? null,
+      // VTID-03774: forward whether this is a resume of already-delivered
+      // guided-topic content (see the field's own comment above).
+      guidedTopicResume: (session as any).guided_topic_resume === true,
       supabase: supabaseClient,
       // VTID-03085 (Lane 1): pass the compiled spine — unlocks
       // life_compass_alignment, vitana_index_pillar,

@@ -190,6 +190,100 @@ Two separate mutations, both restored after:
   Restored both mutations; re-verified `tsc --noEmit` clean and diff
   against backup was empty.
 
+## Fix 3 — Codex review follow-up (post-review, same PR)
+
+Codex bot (`chatgpt-codex-connector[bot]`) left a P1 review comment on
+`live-session-controller.ts:1820`: "Avoid restarting guided lessons on
+reconnect." Read it carefully and verified it independently before acting:
+
+  - Confirmed `guidedTopicAudioDelivered` (routes/orb-live.ts,
+    `sendGuidedTopicNarrationAudioBridge`) is a per-SESSION-OBJECT flag,
+    and a reconnect always creates a brand new session object — so its
+    "including reconnects" doc comment claim is false; it cannot prevent a
+    replay across a reconnect. Read the full function (lines 10840-10894).
+  - Confirmed `guidedTopicNarrationContent` bundling
+    (live-session-controller.ts ~1879-1889) is driven purely by the
+    candidate WINNING, independent of the `shouldInjectWakeBriefOverrideBlock`
+    gate Fix 2 touches — meaning the replay risk applies broadly to Fix 1
+    (the client resending guided_topic_id more reliably), not narrowly to
+    Fix 2's own gate.
+  - Confirmed `ws-start-adapter.ts:141` calls the exact same
+    `handleLiveSessionStart` this file exports — `live-session-controller.ts`
+    is shared session-start infrastructure for BOTH WS and SSE, not
+    SSE-only as this PR's own body originally claimed (corrected in
+    acceptance.md rather than silently left wrong).
+  - Confirmed `userFacingLine` empty string is a valid candidate shape:
+      grep -n "userFacingLine" services/assistant-continuation/types.ts
+    -> only `typeof c.userFacingLine !== 'string'` fails validation; an
+       empty string still passes for ANY candidate kind, not only the
+       special `none_with_reason` sentinel the doc comment focuses on.
+
+Implemented the isResume mechanism described in acceptance.md's "Fix 3"
+section:
+  - orb-widget.js: new `_guidedTopicAudioDelivered` flag (declared near
+    `_guidedTopicInFlight`), reset false in `focusGuidedTopic()`, flipped
+    true in the turn-complete handler at the exact point that already
+    nulls `_s.guidedTopic`, cleared in `_hide()`. `_sessionStart()` sends
+    `startPayload.guided_topic_resume = true` nested inside the existing
+    `if (_s.guidedTopic) { startPayload.guided_topic_id = ... }` block.
+  - routes/orb-live.ts: added `guided_topic_resume?: boolean;` to the
+    `GeminiLiveSession` interface (required by tsc once the session-creation
+    object literal in live-session-controller.ts set the field).
+  - orb/live/session/live-session-controller.ts: reads
+    `body.guided_topic_resume` onto the session object (defensive:
+    `=== true`, so a non-boolean/malformed value silently resolves to
+    `false`), forwards `guidedTopicResume` into `decideWakeBriefForSession`.
+  - services/wake-brief-wiring.ts: added `guidedTopicResume?: boolean` to
+    `DecideWakeBriefArgs`, forwarded into
+    `extra[GUIDED_TOPIC_NARRATION_EXTRA_KEY]` as `isResume`.
+  - services/assistant-continuation/providers/guided-topic-narration.ts:
+    added `isResume?: boolean` to the inputs type + `readInputs()`; in
+    `produce()`, skip the Polly synthesis call when `isResume` (narrationAudio
+    stays null) and compute `spokenLesson` as `''` instead of the opener/
+    post-narration line. The candidate still returns and still wins
+    (unchanged priority/dedupeKey/guidedTopicNarration bundling) — only the
+    spoken line and audio are suppressed.
+
+### Verification (run from services/gateway/)
+
+  node --check src/frontend/command-hub/orb-widget.js -> exit 0
+  npx tsc --noEmit -> exit 0 (outputs/tsc-noemit.txt, re-run after Fix 3)
+
+  npx jest test/frontend/orb-widget-guided-topic-mid-lesson-resume.test.ts \
+    test/orb/live/session/live-session-controller.test.ts \
+    test/services/assistant-continuation/providers/guided-topic-narration.test.ts --silent
+    -> 3 suites, 121 tests, 0 failures (outputs/jest-vtid-03774-suite.txt,
+       re-run after Fix 3 — includes the pre-existing tests from Fixes 1+2)
+
+  npx jest --silent
+    -> 714/715 suites (1 pre-existing skip), 13,465/13,500 tests, 0 failures
+       (outputs/jest-full-suite.txt, re-run after Fix 3 — 13,449 baseline +
+       16 new: 6 widget + 3 controller + 7 provider)
+
+### Mutation testing — Fix 3 (client, orb-widget.js)
+
+Two separate mutations, both restored after, diffed clean against backup:
+  1. Removed the `_s._guidedTopicAudioDelivered = true;` statement (+ its
+     comment) from the turn-complete handler via exact-match python
+     string-replace — exactly 1 of 24 tests failed ("is flipped true at
+     the same turn-complete point..."), the other 23 passed unaffected.
+  2. Removed the `if (_s._guidedTopicAudioDelivered) { startPayload.guided_topic_resume = true; }`
+     block from `_sessionStart()` — exactly 2 of 24 tests failed (the two
+     asserting the resume field is sent), the other 22 passed unaffected.
+
+### Mutation testing — Fix 3 (server, guided-topic-narration.ts)
+
+Two separate mutations, both restored after, diffed clean against backup:
+  1. Reverted `spokenLesson`'s ternary to unconditionally compute the
+     opener/post-narration line (dropping the `inputs.isResume ? '' : ...`
+     branch) — exactly 1 of 19 tests failed ("userFacingLine is empty on a
+     resume..."), the other 18 passed unaffected.
+  2. Reverted the Polly-synthesis guard from `if (!inputs.isResume)` to
+     `if (true)` (always synthesize) — exactly 1 of 19 tests failed ("does
+     NOT call Polly synthesis on a resume..."), the other 18 passed
+     unaffected. (Different single test than mutation 1, confirming the
+     two branches are independently covered.)
+
 ## Branch note
 
 Per this session's established procedure: the designated branch

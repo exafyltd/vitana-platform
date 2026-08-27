@@ -292,6 +292,15 @@ export interface DecideWakeBriefArgs {
    * the published KB. Undefined for normal opens.
    */
   guidedTopicId?: string | null;
+  /**
+   * VTID-03774: whether `guidedTopicId` is being resent for a topic whose
+   * turn-1 audio (opener + narration bridge) was already delivered before
+   * this reconnect — i.e. resuming a lesson already in progress, not a
+   * first open. Forwarded to guided-topic-narration so it can still win
+   * (keeping the TEACH context bundled) without re-narrating from scratch.
+   * `false`/undefined for a normal open or a genuine zero-turn retry.
+   */
+  guidedTopicResume?: boolean;
   /** journeySurface from the ClientContextEnvelope, if any. */
   envelopeJourneySurface?: string;
   /**
@@ -550,6 +559,8 @@ export async function decideWakeBriefForSession(
         lang: args.lang,
         topicId: args.guidedTopicId ?? null,
         firstName: args.firstName ?? null,
+        // VTID-03774: see this field's own doc comment above.
+        isResume: args.guidedTopicResume ?? false,
       };
       // Greeting v2: login-briefing inputs. The provider reads the 90-session
       // guided-journey state + next-session title + Life Compass + Vitana Index

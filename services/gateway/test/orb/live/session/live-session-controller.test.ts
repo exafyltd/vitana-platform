@@ -820,6 +820,41 @@ describe('A8.2.1: handleLiveSessionStart', () => {
     expect(created!.transcriptTurns[0].role).toBe('user');
   });
 
+  // VTID-03774 (Codex review follow-up): guided_topic_resume must reach the
+  // session object exactly like guided_topic_id does, so
+  // decideWakeBriefForSession (and guided-topic-narration's isResume) can
+  // read it back off `session.guided_topic_resume`.
+  it('stores guided_topic_id and guided_topic_resume on the created session', async () => {
+    configureLiveSessionController(baseDeps());
+    const req = makeReq({ body: { guided_topic_id: 'T003', guided_topic_resume: true } });
+    const res = makeRes();
+    await handleLiveSessionStart(req, res);
+    const payload = (res.json.mock.calls[0][0]) as any;
+    const created = liveSessions.get(payload.session_id);
+    expect((created as any).guided_topic_id).toBe('T003');
+    expect((created as any).guided_topic_resume).toBe(true);
+  });
+
+  it('defaults guided_topic_resume to false when the field is absent (a fresh topic tap, not a resume)', async () => {
+    configureLiveSessionController(baseDeps());
+    const req = makeReq({ body: { guided_topic_id: 'T003' } });
+    const res = makeRes();
+    await handleLiveSessionStart(req, res);
+    const payload = (res.json.mock.calls[0][0]) as any;
+    const created = liveSessions.get(payload.session_id);
+    expect((created as any).guided_topic_resume).toBe(false);
+  });
+
+  it('ignores a non-boolean guided_topic_resume (defensive against a malformed/tampered payload)', async () => {
+    configureLiveSessionController(baseDeps());
+    const req = makeReq({ body: { guided_topic_id: 'T003', guided_topic_resume: 'true' } });
+    const res = makeRes();
+    await handleLiveSessionStart(req, res);
+    const payload = (res.json.mock.calls[0][0]) as any;
+    const created = liveSessions.get(payload.session_id);
+    expect((created as any).guided_topic_resume).toBe(false);
+  });
+
   it('uses VAD silence override when supplied in valid range', async () => {
     configureLiveSessionController(baseDeps());
     const req = makeReq({ body: { vad_silence_ms: 1500 } });
