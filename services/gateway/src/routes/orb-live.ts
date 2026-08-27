@@ -9741,6 +9741,27 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
     (session as any).conversationSM ?? ((session as any).conversationSM = new ConversationStateMachine());
   if (_sm.state === 'PREWARM') _sm.transition('OPENING', 'session_start');
 
+  // VTID-03771 — a guided-topic tap must never be hijacked by the safe-fast
+  // greeting branch below. That branch builds its OWN GreetingDecisionContext
+  // (rungs: safe_fast_newday_overview / first_time_welcome / conv_resume /
+  // proactive / newday) and returns synchronously — it never reaches the
+  // "normal ladder" further down in this function, which is the ONLY place
+  // that already protects a pending guided topic via this exact same
+  // condition (see `_hasPendingGuidedTopicAtOpen` below, VTID-03727). Hoisted
+  // here so the safe-fast branch can be gated on it too. Live-reproduced on
+  // staging (topic T005, real account): a session correctly won the
+  // guided-topic candidate, got `nova_validation`-blocked, and the SAME
+  // session's internal retry (resendGreetingIfStuckAtZeroTurns ->
+  // sendGreetingPromptToLiveAPI) re-entered this function with
+  // contextReadyResolved still false — taking the safe-fast branch, which
+  // has zero awareness of `guidedTopicNarrationContent`, spoke a full
+  // new-day-overview greeting instead, and stamped the daily briefing as
+  // delivered. The real lesson never happened, so no completion signal ever
+  // fired either (no "Well Done" drawer) — reported live as "after it
+  // finished teaching, Vitana just switched to New Day greeting."
+  const _hasPendingGuidedTopicAtOpen =
+    !!(session as any).guidedTopicNarrationContent && (session.turn_count || 0) === 0;
+
   // DEV-COMHU-0513 B2 — short, audio-safe opener when the greeting is reached
   // BEFORE the deferred context resolved (fast-start + a low context-gate cap).
   // With context unresolved, session.lastSessionInfo is empty, so the temporal
@@ -9752,7 +9773,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   // a guaranteed-short verbatim opener instead, then lets the next turn carry
   // full personalization once context lands. Anonymous sessions keep their own
   // intro path untouched.
-  if ((session as any).contextReadyResolved === false && !session.isAnonymous) {
+  if ((session as any).contextReadyResolved === false && !session.isAnonymous && !_hasPendingGuidedTopicAtOpen) {
     const _safeFastLive = isFeatureLive('ORB_SAFE_FAST_GREETING');
     console.log(
       `[GREETING-CONTEXT-PENDING] session ${session.sessionId} reached greeting before context resolved (lang=${lang}, safe_fast=${_safeFastLive})`,
@@ -10209,9 +10230,9 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   // the prior one's) so a GENUINE mid-lesson reconnect — the lesson was
   // already spoken in a prior turn of THIS session — is completely unaffected
   // and `silent_reconnect` (compute-greeting-decision.ts rung 7) still wins,
-  // exactly as VTID-03724's AC-5 requires.
-  const _hasPendingGuidedTopicAtOpen =
-    !!(session as any).guidedTopicNarrationContent && (session.turn_count || 0) === 0;
+  // exactly as VTID-03724's AC-5 requires. (`_hasPendingGuidedTopicAtOpen`
+  // itself is hoisted above the safe-fast branch now — VTID-03771 — so it can
+  // gate that branch too; reused here unchanged.)
   const _openDecision = decideOpening({
     isAnonymous: !!session.isAnonymous,
     hasResumptionHandle: !!session.resumptionHandle,
