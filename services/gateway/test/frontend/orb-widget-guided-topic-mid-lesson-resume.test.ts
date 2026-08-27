@@ -181,3 +181,132 @@ describe('orb-widget _resetAndReconnect guided-topic resume + reconnect mutex (V
     expect(armIdx).toBeLessThan(settleResetIdx);
   });
 });
+
+// VTID-03774 — despite _attemptReconnect() and _resetAndReconnect() both
+// carrying the VTID-03746/03770 restore-guard, a real staging trace (topic
+// T003, real account, SSE transport) still showed a mid-lesson reconnect
+// going out with NO guided_topic_id. Server-side proof: the reconnected
+// session's wake-timeline recorded guided_topic_narration's own decision as
+// `reason:"no_topic_tapped"` — the field never reached the server, from a
+// reconnect whose disconnect-stage also came through "idle" rather than the
+// "speaking" the in-flight narration audio should have produced, i.e. this
+// particular reconnect did not visibly originate from either restore-guarded
+// caller. Rather than keep chasing which (possibly still-undiscovered)
+// caller has the gap, the restore is now ALSO applied at the one place that
+// can never be bypassed: _sessionStart() itself, immediately before the
+// field is read into the outgoing payload — structurally closing the gap
+// regardless of which function got the widget there.
+describe('orb-widget _sessionStart restores guidedTopic from _guidedTopicInFlight at the send site (VTID-03774)', () => {
+  const source = fs.readFileSync(WIDGET_PATH, 'utf8');
+  const body = extractFunctionBody(source, 'async function _sessionStart() {');
+
+  it('restores guidedTopic from _guidedTopicInFlight when guidedTopic is empty, immediately before the payload read', () => {
+    expect(body).toMatch(
+      /if \(!_s\.guidedTopic && _s\._guidedTopicInFlight\) {\s*\n[\s\S]*?_s\.guidedTopic = _s\._guidedTopicInFlight;/,
+    );
+    const restoreIdx = body.indexOf('_s.guidedTopic = _s._guidedTopicInFlight;');
+    const payloadReadIdx = body.indexOf('startPayload.guided_topic_id = _s.guidedTopic;');
+    expect(restoreIdx).toBeGreaterThan(-1);
+    expect(payloadReadIdx).toBeGreaterThan(-1);
+    expect(restoreIdx).toBeLessThan(payloadReadIdx);
+  });
+
+  it('does not touch guidedTopic when it is already set (no-op on a fresh, non-reconnect open)', () => {
+    // The guard is `!_s.guidedTopic && ...` — a truthy guidedTopic must
+    // short-circuit before ever reading _guidedTopicInFlight.
+    const restoreLineMatch = body.match(/if \(!_s\.guidedTopic && _s\._guidedTopicInFlight\) {/);
+    expect(restoreLineMatch).not.toBeNull();
+  });
+
+  it('logs the restore for future diagnosability', () => {
+    expect(body).toMatch(/restoring at send site \(VTID-03774\)/);
+  });
+
+  it('logs guidedTopic/guidedTopicInFlight/preDisconnectStage state on every _sessionStart call', () => {
+    expect(body).toMatch(/_sessionStart: guidedTopic=.*guidedTopicInFlight=.*preDisconnectStage=/s);
+  });
+
+  it('the existing _attemptReconnect/_resetAndReconnect restore-guards are unchanged (this is additive, not a replacement)', () => {
+    const attemptBody = extractFunctionBody(source, 'function _attemptReconnect() {');
+    const resetBody = extractFunctionBody(source, 'function _resetAndReconnect() {');
+    expect(attemptBody).toMatch(/if \(_s\._guidedTopicInFlight && !_s\.guidedTopic\) {/);
+    expect(resetBody).toMatch(/if \(_s\._guidedTopicInFlight && !_s\.guidedTopic\) {/);
+  });
+});
+
+// VTID-03774 (Codex review follow-up on VTID-03774's own reconnect fix) —
+// Codex flagged: once the client reliably resends guided_topic_id on ANY
+// qualifying reconnect (this file's own VTID-03774 block above), a reconnect
+// AFTER real teaching audio has already played would re-synthesize and
+// replay the FULL narration from the beginning and re-inject the verbatim
+// "say this opener" instruction — restarting/duplicating already-heard
+// content instead of resuming. Fix: a new _guidedTopicAudioDelivered flag,
+// armed false on a fresh tap and flipped true at the exact point turn-1
+// audio is known delivered (the same point that nulls _s.guidedTopic per
+// VTID-03675), sent to the server as `guided_topic_resume` whenever it's
+// true — so the server can skip re-synthesis/re-opening while still
+// bundling the topic context (see guided-topic-narration.ts's isResume).
+describe('orb-widget guided-topic resume signal — _guidedTopicAudioDelivered (VTID-03774)', () => {
+  const source = fs.readFileSync(WIDGET_PATH, 'utf8');
+
+  it('is declared in the initial _s state, defaulting to false', () => {
+    expect(source).toMatch(/_guidedTopicAudioDelivered:\s*false,/);
+  });
+
+  it('focusGuidedTopic resets it to false on every fresh tap', () => {
+    const body = extractFunctionBody(source, 'focusGuidedTopic: function (topicId) {');
+    expect(body).toMatch(/_s\._guidedTopicAudioDelivered = false;/);
+    // Must run AFTER _guidedTopicInFlight is armed, in the same fresh-tap block.
+    const inFlightIdx = body.indexOf('_s._guidedTopicInFlight = _s.guidedTopic;');
+    const resetIdx = body.indexOf('_s._guidedTopicAudioDelivered = false;');
+    expect(inFlightIdx).toBeGreaterThan(-1);
+    expect(resetIdx).toBeGreaterThan(inFlightIdx);
+  });
+
+  it('is flipped true at the same turn-complete point that nulls _s.guidedTopic', () => {
+    const idx = source.indexOf('if (_s.guidedAutoClose && !_s.greetingComplete) {');
+    expect(idx).toBeGreaterThanOrEqual(0);
+    const openIdx = source.indexOf('{', idx);
+    let depth = 0;
+    let closeIdx = -1;
+    for (let i = openIdx; i < source.length; i++) {
+      const c = source[i];
+      if (c === '{') depth++;
+      if (c === '}') depth--;
+      if (depth === 0) { closeIdx = i; break; }
+    }
+    const block = source.slice(idx, closeIdx + 1);
+    expect(block).toMatch(/_s\.guidedTopic = null/);
+    expect(block).toMatch(/_s\._guidedTopicAudioDelivered = true;/);
+  });
+
+  it('_hide() clears it — a real close ends the overlay session', () => {
+    const body = extractFunctionBody(source, 'function _hide() {');
+    expect(body).toMatch(/_s\._guidedTopicAudioDelivered = false;/);
+  });
+
+  it('_sessionStart sends guided_topic_resume only when both guidedTopic AND the delivered flag are set', () => {
+    const body = extractFunctionBody(source, 'async function _sessionStart() {');
+    expect(body).toMatch(
+      /if \(_s\.guidedTopic\) {\s*\n\s*startPayload\.guided_topic_id = _s\.guidedTopic;[\s\S]*?if \(_s\._guidedTopicAudioDelivered\) {\s*\n\s*startPayload\.guided_topic_resume = true;/,
+    );
+  });
+
+  it('the resume field is nested inside the guidedTopic block, so it can never be sent without guided_topic_id', () => {
+    const body = extractFunctionBody(source, 'async function _sessionStart() {');
+    const outerIdx = body.indexOf('if (_s.guidedTopic) {\n        startPayload.guided_topic_id');
+    expect(outerIdx).toBeGreaterThan(-1);
+    // Find the matching close brace of the outer `if (_s.guidedTopic) {` block.
+    const openIdx = body.indexOf('{', outerIdx);
+    let depth = 0;
+    let closeIdx = -1;
+    for (let i = openIdx; i < body.length; i++) {
+      const c = body[i];
+      if (c === '{') depth++;
+      if (c === '}') depth--;
+      if (depth === 0) { closeIdx = i; break; }
+    }
+    const outerBlock = body.slice(outerIdx, closeIdx + 1);
+    expect(outerBlock).toMatch(/startPayload\.guided_topic_resume = true;/);
+  });
+});

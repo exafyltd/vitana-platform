@@ -44,6 +44,7 @@ import {
   handleLiveSessionStart,
   handleLiveSessionStop,
   handleLiveStreamSend,
+  shouldInjectWakeBriefOverrideBlock,
   __resetLiveSessionControllerForTests,
   type LiveSessionControllerDeps,
 } from '../../../../src/orb/live/session/live-session-controller';
@@ -819,6 +820,41 @@ describe('A8.2.1: handleLiveSessionStart', () => {
     expect(created!.transcriptTurns[0].role).toBe('user');
   });
 
+  // VTID-03774 (Codex review follow-up): guided_topic_resume must reach the
+  // session object exactly like guided_topic_id does, so
+  // decideWakeBriefForSession (and guided-topic-narration's isResume) can
+  // read it back off `session.guided_topic_resume`.
+  it('stores guided_topic_id and guided_topic_resume on the created session', async () => {
+    configureLiveSessionController(baseDeps());
+    const req = makeReq({ body: { guided_topic_id: 'T003', guided_topic_resume: true } });
+    const res = makeRes();
+    await handleLiveSessionStart(req, res);
+    const payload = (res.json.mock.calls[0][0]) as any;
+    const created = liveSessions.get(payload.session_id);
+    expect((created as any).guided_topic_id).toBe('T003');
+    expect((created as any).guided_topic_resume).toBe(true);
+  });
+
+  it('defaults guided_topic_resume to false when the field is absent (a fresh topic tap, not a resume)', async () => {
+    configureLiveSessionController(baseDeps());
+    const req = makeReq({ body: { guided_topic_id: 'T003' } });
+    const res = makeRes();
+    await handleLiveSessionStart(req, res);
+    const payload = (res.json.mock.calls[0][0]) as any;
+    const created = liveSessions.get(payload.session_id);
+    expect((created as any).guided_topic_resume).toBe(false);
+  });
+
+  it('ignores a non-boolean guided_topic_resume (defensive against a malformed/tampered payload)', async () => {
+    configureLiveSessionController(baseDeps());
+    const req = makeReq({ body: { guided_topic_id: 'T003', guided_topic_resume: 'true' } });
+    const res = makeRes();
+    await handleLiveSessionStart(req, res);
+    const payload = (res.json.mock.calls[0][0]) as any;
+    const created = liveSessions.get(payload.session_id);
+    expect((created as any).guided_topic_resume).toBe(false);
+  });
+
   it('uses VAD silence override when supplied in valid range', async () => {
     configureLiveSessionController(baseDeps());
     const req = makeReq({ body: { vad_silence_ms: 1500 } });
@@ -1461,5 +1497,33 @@ describe('A8.2-complete: handleLiveStreamSend', () => {
     await handleLiveStreamSend(req, res);
     expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith({ ok: false, error: 'boom' });
+  });
+});
+
+describe('VTID-03774: shouldInjectWakeBriefOverrideBlock', () => {
+  it('injects on a non-reconnect open regardless of dedupeKey', () => {
+    expect(shouldInjectWakeBriefOverrideBlock(false, null)).toBe(true);
+    expect(shouldInjectWakeBriefOverrideBlock(false, 'login_briefing:steady_state')).toBe(true);
+  });
+
+  it('withholds injection on a reconnect for a non-guided-topic candidate (unchanged behavior)', () => {
+    expect(shouldInjectWakeBriefOverrideBlock(true, null)).toBe(false);
+    expect(shouldInjectWakeBriefOverrideBlock(true, 'login_briefing:steady_state')).toBe(false);
+    expect(shouldInjectWakeBriefOverrideBlock(true, 'new_day_return')).toBe(false);
+  });
+
+  it('still injects on a reconnect when the winning candidate is a guided-topic resume', () => {
+    expect(shouldInjectWakeBriefOverrideBlock(true, 'guided_topic:T003')).toBe(true);
+    expect(shouldInjectWakeBriefOverrideBlock(true, 'guided_topic:T251')).toBe(true);
+  });
+
+  it('requires an exact guided_topic: prefix — a lookalike key is not exempted', () => {
+    expect(shouldInjectWakeBriefOverrideBlock(true, 'not_guided_topic:T003')).toBe(false);
+    expect(shouldInjectWakeBriefOverrideBlock(true, 'guided_topicX:T003')).toBe(false);
+  });
+
+  it('handles undefined/empty dedupeKey on a reconnect as non-exempt', () => {
+    expect(shouldInjectWakeBriefOverrideBlock(true, undefined)).toBe(false);
+    expect(shouldInjectWakeBriefOverrideBlock(true, '')).toBe(false);
   });
 });

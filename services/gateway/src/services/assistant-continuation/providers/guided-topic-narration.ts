@@ -88,6 +88,21 @@ interface GuidedTopicNarrationInputs {
   firstName?: string | null;
   /** Curriculum line; defaults to v2. */
   curriculumVersion?: string;
+  /**
+   * VTID-03774 — Codex review follow-up on the same VTID's reconnect fix:
+   * true when the widget is resending `topicId` for a lesson whose turn-1
+   * audio (opener + Polly narration bridge) was ALREADY delivered before
+   * this reconnect, as distinct from a genuine zero-turn retry (the topic
+   * has never been heard yet — e.g. VTID-03771's nova_validation case,
+   * where the full open must still fire). Without this distinction, EVERY
+   * qualifying reconnect re-synthesizes and replays the full narration
+   * audio and re-injects the verbatim "say this opener" instruction from
+   * the beginning — restarting or duplicating content the user already
+   * heard, exactly the failure mode VTID-03746/VTID-03770/VTID-03774's own
+   * client-side restore-guards exist to route a reconnect INTO. See
+   * `produce()`'s isResume branch below.
+   */
+  isResume?: boolean;
 }
 
 function readInputs(ctx: ContinuationDecisionContext): GuidedTopicNarrationInputs | null {
@@ -104,6 +119,7 @@ function readInputs(ctx: ContinuationDecisionContext): GuidedTopicNarrationInput
     firstName: typeof obj.firstName === 'string' && obj.firstName ? obj.firstName : null,
     curriculumVersion:
       typeof obj.curriculumVersion === 'string' && obj.curriculumVersion ? obj.curriculumVersion : 'v2',
+    isResume: obj.isResume === true,
   };
 }
 
@@ -184,17 +200,30 @@ export function makeGuidedTopicNarrationProvider(): ContinuationProvider {
         narrationAudio: null,
       };
 
-      // VTID-03650: try Polly FIRST — deterministic TTS has no content-safety
-      // judgment to reject legitimate curriculum text with, unlike the two
-      // conversational models VTID-03647/03648 measured independently
-      // rejecting this exact payload. On success the lesson is delivered as
-      // pre-recorded audio (routes/orb-live.ts sends it before the live
-      // model's first turn) and the model's own turn-1 line shrinks to a
-      // short, safe post-narration follow-up.
-      const { synthesizeGuidedTopicNarrationAudio } = await import(
-        '../../tts/guided-topic-narration-audio'
-      );
-      content.narrationAudio = await synthesizeGuidedTopicNarrationAudio(content, inputs.lang);
+      // VTID-03774: on a RESUME (turn-1 audio already delivered before this
+      // reconnect — see isResume's doc comment), skip Polly synthesis
+      // entirely. There is nothing new to play: re-synthesizing here is what
+      // fed `sendGuidedTopicNarrationAudioBridge` (routes/orb-live.ts) a
+      // fresh, never-before-sent narration blob on every qualifying
+      // reconnect — that function's own one-shot guard
+      // (`guidedTopicAudioDelivered`) lives on the SESSION OBJECT, which is
+      // brand new every reconnect, so it could never actually prevent a
+      // replay. `content.narrationAudio` stays null, which the bridge
+      // already treats as "nothing to send" (a pre-existing, safe no-op
+      // path — see that function's own null-audio branch).
+      if (!inputs.isResume) {
+        // VTID-03650: try Polly FIRST — deterministic TTS has no
+        // content-safety judgment to reject legitimate curriculum text
+        // with, unlike the two conversational models VTID-03647/03648
+        // measured independently rejecting this exact payload. On success
+        // the lesson is delivered as pre-recorded audio (routes/orb-live.ts
+        // sends it before the live model's first turn) and the model's own
+        // turn-1 line shrinks to a short, safe post-narration follow-up.
+        const { synthesizeGuidedTopicNarrationAudio } = await import(
+          '../../tts/guided-topic-narration-audio'
+        );
+        content.narrationAudio = await synthesizeGuidedTopicNarrationAudio(content, inputs.lang);
+      }
 
       // VTID-03665: on Polly FAILURE, do NOT fall back to speaking the raw
       // voice_script verbatim (the pre-VTID-03650 `buildGuidedTopicSpokenLesson`
@@ -219,13 +248,27 @@ export function makeGuidedTopicNarrationProvider(): ContinuationProvider {
       const { buildGuidedTopicNarrationOpenerLine, buildGuidedTopicPostNarrationLine } = await import(
         '../../../orb/live/instruction/guided-topic-narration-prompt'
       );
-      const spokenLesson = content.narrationAudio
-        ? buildGuidedTopicPostNarrationLine(content.topic_title, inputs.lang, {
-            hasPracticeTarget: !!content.practice_target,
-          })
-        : buildGuidedTopicNarrationOpenerLine(content.topic_title, inputs.lang, {
-            firstName: inputs.firstName ?? null,
-          });
+      // VTID-03774: on a resume, no forced turn-1 line at all — an empty
+      // userFacingLine is a valid candidate shape (validateContinuationCandidate
+      // only requires it be a string) and both the WS (orb-live.ts) and SSE
+      // (live-session-controller.ts) callers already gate their "inject the
+      // verbatim opener instruction" step on `line.length > 0`, so this alone
+      // stops the opener from being re-said — the model instead just resumes
+      // the conversation naturally from `transcript_history`, the same
+      // recovery path any other mid-conversation reconnect already gets.
+      // `guidedTopicNarrationContent` is still bundled below regardless (see
+      // the candidate object), so the GUIDE-MODE teach block still reminds
+      // the model what topic it's mid-teaching — only the forced restart is
+      // suppressed, not the topic context itself.
+      const spokenLesson = inputs.isResume
+        ? ''
+        : content.narrationAudio
+          ? buildGuidedTopicPostNarrationLine(content.topic_title, inputs.lang, {
+              hasPracticeTarget: !!content.practice_target,
+            })
+          : buildGuidedTopicNarrationOpenerLine(content.topic_title, inputs.lang, {
+              firstName: inputs.firstName ?? null,
+            });
 
       const candidate = {
         id: `guided-topic-${seed.topicId}`,

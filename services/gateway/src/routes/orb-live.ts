@@ -1228,6 +1228,10 @@ export interface GeminiLiveSession {
   // When set, the guided-topic-narration provider LEADS turn-1 and Vitana
   // teaches that topic from the published KB. One-shot per session.
   guided_topic_id?: string;
+  // VTID-03774: set when `guided_topic_id` is being resent for a topic whose
+  // turn-1 audio was already delivered before this reconnect (resuming a
+  // lesson in progress) — see guided-topic-narration.ts's isResume doc.
+  guided_topic_resume?: boolean;
   // VTID-NAV: Cached memory pack from the first navigator_consult call this
   // session, with a 30s TTL — subsequent consult calls reuse it instead of
   // re-paying retrieval cost.
