@@ -48,34 +48,91 @@ matching the 87-table precedent exactly rather than introducing a second,
 less-precedented lockdown pattern (an explicit `REVOKE`) for a
 one-off inconsistency with the rest of the schema.
 
-## Flagged, not fixed — needs a closer read before any change
+## Also fixed: two more live, exploitable bugs found by reading all 9 function bodies
 
-**9 `SECURITY DEFINER` functions callable by the fully unauthenticated
-`anon` role** (of 190 total `anon_security_definer_function_executable`
-findings — these 9 are the ones whose names suggest real mutation power,
-not the routine ones):
+Read every one of the 9 `SECURITY DEFINER` functions named above (of 190
+total `anon_security_definer_function_executable` findings — these 9 were
+the ones whose names suggested real mutation power). Two were genuinely
+exploitable; both fixed immediately for the same reason as the RLS fixes
+above — narrow, unambiguous, verified-safe for the legitimate caller.
 
-- `update_user_balance(user_id_param uuid, currency_param text, amount_param numeric, operation text, p_transaction_type text, p_description text)`
-- `update_wallet_balance()`
-- `update_user_stripe_account(p_stripe_account_id text)`
-- `update_user_stripe_status(p_stripe_account_id text, p_charges_enabled boolean, p_payouts_enabled boolean)`
-- `provision_wallet_accounts()`
-- `bootstrap_admin_user(p_user_id uuid, p_user_email text)`
-- `is_exafy_admin(user_id_param uuid)`
-- `get_user_admin_status(user_id_param uuid, tenant_id_param uuid)`
-- `is_group_admin(_group_id uuid, _user_id uuid)`
+### `update_user_balance` — anonymous wallet manipulation, fixed
 
-**Being callable by `anon` is not the same as being exploitable** — a
-well-written function body derives identity from `auth.uid()` and
-rejects a null/mismatched caller regardless of who can invoke it. This
-needs each function's actual body read, specifically checking whether it
-trusts a caller-supplied ID parameter (`user_id_param`, `p_user_id`, …)
-instead of deriving identity from the session — `update_user_balance` and
-`bootstrap_admin_user` are the two names most worth checking first, given
-what they'd let an anonymous caller do if the trust check is missing or
-wrong. Not read this pass — flagging for a dedicated follow-up rather than
-rushing a read of 9 SECURITY DEFINER function bodies at the end of an
-already-long session.
+```sql
+IF auth.uid() IS NOT NULL AND auth.uid() <> user_id_param THEN
+  RAISE EXCEPTION 'Not authorized to modify another user''s wallet';
+END IF;
+```
+
+For an unauthenticated caller, `auth.uid()` is `NULL`, so
+`auth.uid() IS NOT NULL` is false and the whole guard never fires — the
+function's own stated intent ("not authorized to modify another user's
+wallet") only applied to a *different authenticated* user, never to *no*
+authentication at all. Confirmed live and exploitable, not theoretical:
+`anon` has `EXECUTE` on this function, and `public.user_wallets` holds
+**693 real rows**. Any unauthenticated caller could call
+`update_user_balance(<any real user_id>, 'EUR', 1000000, 'add')` to
+credit an arbitrary amount to any user's wallet, or `'subtract'` to debit
+one (bounded only by that user's current balance, not by caller
+identity).
+
+**Fix:** `auth.uid() IS NULL OR auth.uid() <> user_id_param` — now
+correctly rejects both "no session" and "wrong user," matching the
+function's own error message. `CREATE OR REPLACE`, changed nothing else.
+Verified live: `prosrc` now contains the corrected condition.
+
+### `update_user_stripe_status` — no identity check at all, fixed by removing public reachability
+
+```sql
+UPDATE app_users
+SET stripe_charges_enabled = p_charges_enabled, stripe_payouts_enabled = p_payouts_enabled
+WHERE stripe_account_id = p_stripe_account_id;
+```
+
+No `auth.uid()` check whatsoever — trusts the caller-supplied
+`p_stripe_account_id` alone. Its sibling, `update_user_stripe_account`,
+correctly scopes by `WHERE user_id = auth.uid()` (safe for an anonymous
+caller — `auth.uid()` is `NULL`, so the `WHERE` matches nothing), but
+this one has no equivalent scoping to add, because **it isn't supposed to
+be called by an end user at all**: its only real caller,
+`services/gateway/src/routes/stripe-connect-webhook.ts:137`, invokes it
+with a service-role token as part of processing a real Stripe Connect
+webhook. It only reached `anon`/`authenticated` because Postgres grants
+`EXECUTE` to the implicit `PUBLIC` role by default on function creation,
+and this one was never explicitly restricted — confirmed live:
+`has_function_privilege('public', ...)` was `true` before the fix.
+
+**Fix:** `REVOKE EXECUTE ... FROM PUBLIC` (an explicit per-role `REVOKE`
+alone does nothing while `PUBLIC` still grants it — confirmed by testing:
+revoking from `anon`/`authenticated` directly left `has_function_privilege`
+still `true` for both until `PUBLIC` itself was revoked), then
+`GRANT EXECUTE ... TO service_role` explicitly so the legitimate webhook
+path is unambiguous rather than relying on `service_role`'s own implicit
+privileges. Verified live: `anon`/`authenticated`/`public` all `false`,
+`service_role` still `true` — the real caller is unaffected.
+
+### The other 7 — checked, not exploitable or not real RPC surface
+
+- **`bootstrap_admin_user`** — correctly checks
+  `auth.jwt() -> 'app_metadata' ->> 'exafy_admin'`, which is `NULL` (→
+  `false`) for an anonymous caller. Safe as written.
+- **`update_user_stripe_account`** — safe by construction, see above.
+- **`is_exafy_admin`, `get_user_admin_status`, `is_group_admin`** — all
+  three are read-only boolean status checks (`SELECT EXISTS(...)`) with
+  no `auth.uid()` guard, so an anonymous caller can probe "is user X an
+  admin of tenant/group Y" for any ID they supply. Real, but a narrow
+  information-disclosure ceiling (a boolean, not a data leak or a
+  mutation) — left as-is rather than risking a behavior change to
+  functions three other code paths likely depend on being callable this
+  way, without checking every caller in a session already this long.
+- **`provision_wallet_accounts`, `update_wallet_balance`** — both
+  `RETURNS trigger`; Postgres only binds `NEW`/`OLD` inside real trigger
+  context, so calling either directly via `/rest/v1/rpc/...` errors out
+  rather than executing — the advisor's `anon_security_definer_function_executable`
+  lint doesn't distinguish trigger functions from directly-callable ones,
+  a false-positive-shaped entry for this specific lint, not a live gap.
+
+## Still flagged, not checked — the SECURITY DEFINER views
 
 **9 `SECURITY DEFINER` views** (bypass the querying user's RLS,
 lint `security_definer_view`): `user_pillar_recent_activity`,
