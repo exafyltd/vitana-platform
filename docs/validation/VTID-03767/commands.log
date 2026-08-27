@@ -1,0 +1,101 @@
+# VTID-03767 — commands actually run.
+
+# --- Root cause: where "Talk to Maxina" text actually lives -----------------
+
+grep -rn "Talk to Maxina" services/gateway/src
+#   -> services/gateway/src/data/feature-tips.ts (assistant-voice tip)
+#   -> services/gateway/src/services/recommendation-engine/analyzers/community-user-analyzer.ts (mood_support, x8 languages)
+
+grep -c "Maxina" services/gateway/src/services/recommendation-engine/analyzers/community-user-analyzer.ts
+#   -> 31 (across onboarding_maxina, onboarding_diary, set_goal, mood_support blocks)
+
+# --- Confirm the assistant persona name used everywhere else -----------------
+# (in the companion vitana-v1 repo, not this one)
+#   src/i18n/en/orbHint.json:      "tapToTalk": "Tap here to talk to Vitana"
+#   src/i18n/en/screens.json:      "vitanaSpeaking": "Vitana is speaking..."
+#   src/i18n/en/portals.json:      "partOfVitana": "Maxina is part of the VITANA ecosystem."
+#   -> confirms MAXINA = brand name, Vitana = assistant persona name, and
+#      that all 31 "Maxina" occurrences above are the persona use, not the brand.
+
+# --- Confirm feature-tips.ts only ever carried en/de -------------------------
+
+grep -n "GatewayLocale" services/gateway/src/i18n/catalog.ts | head -3
+#   -> GATEWAY_LOCALES = de, en, es, sr, fr, pt, ru, pl, zh, ar
+# feature-tips.ts's FeatureTip interface (pre-change) was `{ en: string; de: string }`
+# only — no es/sr/fr/pt/ru/pl/zh/ar keys at all.
+
+grep -n "row.feature_title\[language\]" ../../vitana-v1/src/hooks/useAllNewsFeed.ts 2>/dev/null || true
+#   (companion repo, checked out alongside this session)
+#   -> row.feature_title[language] ?? row.feature_title.en — confirms any
+#      locale other than en/de fell straight through to English.
+
+# --- Fix applied --------------------------------------------------------------
+
+# 1. feature-tips.ts: renamed "Talk to Maxina"/"Sprich mit Maxina" -> Vitana
+#    (en+de), widened FeatureTip's title/description type to
+#    `{ en, de } & Partial<Record<other GatewayLocale, string>>`, added
+#    es/sr/fr/pt/ru/pl/zh/ar translations for all 12 tips.
+# 2. community-user-analyzer.ts: replaced "Maxina" -> "Vitana" (and the
+#    Cyrillic/Arabic transliterations, "Максина"/"ماكسينا" -> "Vitana",
+#    matching how "Vitana"/"Vitana Index"/"Autopilot" are already kept as
+#    Latin-script loanwords in every non-Latin locale elsewhere in this repo)
+#    in the title/summary strings of 4 recommendation blocks x 8 languages.
+#    Left the internal `onboarding_maxina` object KEY untouched (see below).
+
+# --- Confirm the internal key is genuinely internal, not user-visible --------
+
+grep -rln "onboarding_maxina" services/gateway/src
+#   -> community-user-analyzer.ts (the key)
+#   -> wave-defaults.ts, ranking/index-pillar-weighter.ts,
+#      analyzers/index-gap-analyzer.ts, journey-calendar-mapper.ts,
+#      routes/autopilot-recommendations.ts (6 references total)
+#   -> a stored recommendation-type identifier read/written by other code
+#      paths, not text rendered to a user. Renaming it is a separate,
+#      larger, out-of-scope change (risks a live-data key mismatch);
+#      per this repo's own i18n rule internal state identifiers are not
+#      user-visible text and don't need translation/renaming here.
+
+# --- Verification -------------------------------------------------------------
+
+grep -n "Maxina\|ماكسينا\|Максин" services/gateway/src/data/feature-tips.ts services/gateway/src/services/recommendation-engine/analyzers/community-user-analyzer.ts
+#   -> only the two explanatory code comments in feature-tips.ts remain
+#      ("... never Maxina — MAXINA is the app/brand name ...",
+#      "// BOOTSTRAP-SERBIAN-NAV-I18N-ALIGN: was 'Talk to Maxina' — wrong.")
+#   -> zero occurrences left as live user-facing string content
+
+cd services/gateway && npx tsc --noEmit -p tsconfig.json
+#   -> Output: outputs/tsc.txt
+#   -> Only pre-existing repo-wide warning (tsconfig moduleResolution=node10
+#      deprecation notice), present on main regardless of this change, and
+#      unrelated to the two touched files — no errors in feature-tips.ts or
+#      community-user-analyzer.ts.
+
+python3 -c "import re; [print(k) for k in re.findall(r\"key: '([a-z-]+)'\", open('src/data/feature-tips.ts').read())]"
+#   -> 12 keys, unchanged count from before the edit (no tip added/removed)
+
+file src/services/recommendation-engine/analyzers/community-user-analyzer.ts
+#   -> confirms CRLF line endings preserved (first attempt via a Python
+#      script without newline='' accidentally normalized the whole file to
+#      LF, producing a ~1900-line diff for a 31-string change; reverted and
+#      redone preserving line endings — final diff is 64 lines across 2
+#      files)
+
+git diff --stat
+#   -> services/gateway/src/data/feature-tips.ts          | 284 +++++++++++++++++++--
+#      .../analyzers/community-user-analyzer.ts           |  64 ++---
+
+# --- What could NOT be run in this sandbox ------------------------------------
+
+# No `node_modules`, no npm registry access (403 from the proxy on any
+# `npx <pkg-not-already-cached>` install attempt) -> could not run:
+#   npm ci && npm run build   (build_gate)
+#   npx jest ...              (Gateway Jest suite)
+# Checked the one existing test that references FEATURE_TIPS instead:
+
+grep -n "FEATURE_TIPS" test/scheduled-notifications-daily-feature-tip.test.ts
+#   -> the test file mocks its own inline `FEATURE_TIPS: [{key:'tip-a',...}]`
+#      fixture — completely independent of the real content in
+#      src/data/feature-tips.ts, so this content-only change cannot affect it.
+grep -rn "community-user-analyzer\|onboarding_maxina\|mood_support" test/
+#   -> 4 files reference the module/keys by name, none assert the specific
+#      "Maxina" string literals that were changed (checked each).
