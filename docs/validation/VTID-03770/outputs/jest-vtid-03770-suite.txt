@@ -1,0 +1,51 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+PASS test/frontend/orb-widget-guided-topic-mid-lesson-resume.test.ts
+  orb-widget _announceDisconnect spoken alert gating (VTID-03746)
+    ✓ does not call _playAlert unconditionally (3 ms)
+    ✓ gates the spoken alert clip on _audioEverHeardThisOpen (1 ms)
+    ✓ still plays the alert once real audio has been heard (no regression to the normal case) (1 ms)
+    ✓ the visual status label (_setStatus) is unaffected by this gate — still set every time (1 ms)
+  orb-widget guided-topic mid-lesson resume via _guidedTopicInFlight (VTID-03746)
+    ✓ is declared in the initial _s state, defaulting to null (1 ms)
+    ✓ focusGuidedTopic arms it alongside _s.guidedTopic (3 ms)
+    ✓ is NOT cleared at the first-turn-complete point that nulls _s.guidedTopic (1 ms)
+    ✓ _attemptReconnect re-arms _s.guidedTopic from _guidedTopicInFlight only when guidedTopic was already cleared (3 ms)
+    ✓ _hide() clears _guidedTopicInFlight — a real close ends the overlay session (2 ms)
+  orb-widget _resetAndReconnect guided-topic resume + reconnect mutex (VTID-03770)
+    ✓ re-arms _s.guidedTopic from _guidedTopicInFlight only when guidedTopic was already cleared — same condition as _attemptReconnect (3 ms)
+    ✓ sets _isReconnecting = true before starting the reconnect — the health-probe watchdog's own "if (_s._isReconnecting) return;" guard is otherwise inert
+    ✓ resets _isReconnecting = false once _sessionStart() settles, on both the success and failure branch (1 ms)
+    ✓ the guided-topic re-arm runs before the _isReconnecting reset in the settle handlers (arm is a pre-start setup step, not a settle step)
+
+PASS test/frontend/orb-widget-stale-poll-generation-guard.test.ts
+  VTID-03763: _s._sessionGeneration exists and is bumped on every real session start
+    ✓ is declared on the initial _s state, starting at 0 (1 ms)
+    ✓ is incremented at the SSE session-start success site (right after _s.active = true) (1 ms)
+    ✓ is incremented at the WS session-start success site (right after _s.active = true) (1 ms)
+  VTID-03763: _waitForAudioEnd (turn_complete) bails on a stale generation before touching any _s.* state
+    ✓ captures myGen from _s._sessionGeneration at IIFE invocation (4 ms)
+    ✓ checks the generation guard as the FIRST statement in the poll tick, before the pre-existing !_s.active check (2 ms)
+    ✓ the generation guard precedes the guidedAutoClose/guidedTopic clobber this bug actually caused (1 ms)
+  VTID-03763: _waitForGoodbyeEnd (signup/login close) bails on a stale generation
+    ✓ captures myGen and checks it before either scheduled _hide()/redirect (2 ms)
+  VTID-03763: _waitForNavReady (orb_directive navigate) bails on a stale generation
+    ✓ captures myGen and checks it before tearing down audio/navigating/hiding (1 ms)
+  VTID-03763: _endGuidedTopicTeaching (VTID-03762 shared helper) bails on a stale generation
+    ✓ pins myGen at function entry, before the poll IIFE is even created (1 ms)
+    ✓ checks the generation guard before _hide() / the onGuidedTopicTeachingEnd callback (1 ms)
+
+PASS test/frontend/orb-widget-guided-topic-reconnect.test.ts
+  orb-widget guided-topic reconnect (VTID-03675)
+    ✓ reads guided_topic_id into the start payload without nulling _s.guidedTopic (2 ms)
+    ✓ a client-side reconnect (_attemptReconnect -> _sessionStart) can still see a pending guided topic (1 ms)
+    ✓ clears guidedTopic in the SAME place guidedAutoClose is cleared on a completed guided turn (1 ms)
+    ✓ _hide() also clears a never-delivered guided topic so it cannot leak into a later session
+    ✓ focusGuidedTopic still arms both flags together (unchanged contract) (1 ms)
+
+Test Suites: 3 passed, 3 total
+Tests:       28 passed, 28 total
+Snapshots:   0 total
+Time:        0.726 s, estimated 1 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
