@@ -1,0 +1,34 @@
+# VTID-03773 Phase 0 — commands run to produce this evidence pack
+
+cd services/gateway
+npx jest test/routes/admin-aurora-memory-health.test.ts
+  -> 1 suite, 6 tests, all passing (outputs/jest-run.txt)
+
+npx tsc --noEmit
+  -> clean, no output
+
+# jq syntax/behavior dry-run of the edited AWS-STAGE-DEPLOY-GATEWAY.yml
+# task-definition upsert filter, against a synthetic task-definition JSON
+# with real --arg values (no AWS credentials involved — pure jq, confirms
+# the filter is syntactically valid and produces the expected
+# AURORA_DATABASE_URL secret entry while preserving every existing
+# env var/secret). See PR #3213 description for the full command; not
+# repeated here since no AWS state was touched.
+
+# Local boot + curl proof (dummy Supabase config, no real Aurora reachable
+# from this sandbox — see outputs/curl-local-boot.txt for why that's the
+# honest limit of what this session can prove locally):
+PORT=8099 NODE_ENV=development \
+  SUPABASE_URL=http://localhost:9999 \
+  SUPABASE_SERVICE_ROLE=dummy-service-role-key-for-local-boot-test \
+  SUPABASE_JWT_SECRET=dummy-jwt-secret-for-local-boot-test \
+  SUPABASE_ANON_KEY=dummy-anon-key \
+  VTID_ALLOCATOR_ENABLED=false AUTOPILOT_LOOP_ENABLED=false \
+  npx tsx src/index.ts &
+
+curl -s -o /dev/null -w "alive: %{http_code}\n" http://localhost:8099/alive
+curl -s -w "\nHTTP_STATUS:%{http_code}\n" http://localhost:8099/api/v1/admin/aurora-memory/health
+curl -s -w "\nHTTP_STATUS:%{http_code}\n" http://localhost:8099/api/v1/admin/aurora-memory/health -H "Authorization: Bearer not-a-real-jwt"
+  -> outputs/curl-local-boot.txt
+
+pkill -f "tsx src/index.ts"
