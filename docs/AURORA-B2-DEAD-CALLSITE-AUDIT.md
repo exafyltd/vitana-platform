@@ -363,6 +363,47 @@ whether `openclaw-bridge` gets an AWS deploy pipeline built (per its own
 listed as one of the deployable services) or is retired along with
 `EXEC-DEPLOY.yml`.
 
+## Addendum 9: remaining gateway-scoped dead tables read call-site by call-site (2026-08-27)
+
+Per this doc's own "Next steps" discipline ("read each call site to
+determine truly unreachable vs. reachable-and-broken"), checked the
+tables that hadn't gotten that treatment yet.
+
+- **`autopilot_prompt_prefs`** — reachable
+  (`automation-executor.ts:51`), but deliberately safe: wrapped in
+  `try { } catch { /* Use default if table doesn't exist or query fails */ }`,
+  falls back to `DEFAULT_MAX_PROMPTS_PER_DAY`. No action needed — this is
+  the pattern every other dead call site should have and few do.
+- **`live_room_attendees`** — reachable, two call sites in `routes/live.ts`
+  (room-ended summary notification to attendees, and a second to
+  followers). Both destructure with an empty-array fallback
+  (`(attendees || [])`), so the query returning an error just means the
+  "check out the summary" notification silently never sends when a live
+  room ends. Degraded feature, not a crash — moderate severity, no data
+  loss, no money.
+- **`community_meetup_attendance`** — reachable from a **scheduled cron**
+  (`routes/scheduled-notifications.ts`, the meetup-starting-soon/now
+  reminder job). `community_meetups` (the parent table) exists; the
+  attendance/RSVP table does not, so `rsvps` is always `undefined` →
+  `rsvpList` always empty → **nobody who RSVP'd to a community meetup has
+  ever received a "starting soon" or "starting now" reminder, on any
+  meetup, ever** — the cron runs "successfully" every time and silently
+  does nothing for this specific piece. Real, ongoing, silent feature gap;
+  worth a product decision on whether meetup RSVPs still need this table
+  or the feature moved elsewhere.
+- **`creator_profiles`** — reachable, `GET /creators` under
+  `tenant-admin/community-admin`, admin-gated. Same soft-fail shape as
+  `awareness_config`: error is checked and logged
+  (`console.warn`) but the response still returns `{ok: true, creators:
+  []}` — HTTP 200, empty list, no visible failure banner. An admin viewing
+  this screen sees "no creators" rather than "this is broken."
+
+None of these are money-adjacent like `credit_wallet` (B3 addendum) —
+listed here for completeness and because two of them (the live-room and
+meetup notification gaps) are genuine, currently-live silent feature
+breakage a real user would notice as "I never get reminded," not just
+theoretical dead code.
+
 ## Next steps (not done in this pass)
 
 - For the 20 genuinely gateway-scoped dead tables (33 total, minus the 12
