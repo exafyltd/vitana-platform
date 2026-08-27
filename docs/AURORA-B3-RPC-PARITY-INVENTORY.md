@@ -483,6 +483,47 @@ captures. Recording the exact queries and null result rather than
 resolving the ambiguity either way — the Stripe-dashboard check above
 remains the actual way to answer this.
 
+### Root cause found — this is a known, already-self-documented gap, not a fresh mystery
+
+Searched `supabase/migrations/` for `credit_wallet`/`wallet_balances` and
+found the full, already-written story, which changes the framing here:
+this isn't an undiscovered defect, it's a **known, deliberately-deferred
+one** that just never got its stated follow-up done.
+
+`20260526000000_VTID_03107_wallet_reconciliation.sql` defines both
+`credit_wallet()` (exact signature match to `billing.ts`'s call site) and
+`update_wallet_balance()`, and opens with `ALTER TABLE
+public.wallet_balances ADD COLUMN ...` at line 40 — before either function
+definition. `wallet_balances` was supposed to come from an earlier
+migration, `20260318000000_vtid_01250_autopilot_automations_engine.sql`
+(`CREATE TABLE IF NOT EXISTS wallet_balances`) — but per
+`20260704060000_vtid_01250_automations_engine_safe_part.sql`'s own header
+comment, that March file **collided on its timestamp with an unrelated
+migration** (`20260318000000_fix_activate_recommendation_on_conflict.sql`)
+— Supabase's tracker keys by timestamp, only one of the two ever got
+applied, and the automations-engine half (including `wallet_balances`)
+"silently never existed on the live database."
+
+The July "safe part" migration rescued the collision-free objects
+(`automation_runs`, `referrals`, `sharing_links` — confirmed live) but
+**explicitly, deliberately excluded** `wallet_balances`/`credit_wallet`,
+with its own stated reason: `wallet_transactions` (created by the later,
+independent VTID-03107/03200 chain) already exists with an **incompatible
+schema** — verified live here: `from_user_id`, `to_user_id`,
+`from_currency`, `to_currency`, `exchange_rate` — a VTN currency-exchange
+ledger, not the credit ledger `credit_wallet()`/`update_wallet_balance()`
+were designed against. The July migration's author called this "separate
+follow-up work, not a same-day copy-paste" and left it there.
+
+**This doesn't reduce the severity of the live bug above — `credit_wallet`
+still doesn't exist and the Stripe webhook still throws on it today — but
+it means whoever picks this up isn't starting from zero.** The design
+question (which wallet ledger is canonical, and how `credit_wallet()`
+should be rewritten against `wallet_transactions`'s actual live shape) was
+already identified by name, over a month before this pass, by someone who
+made the deliberate call not to rush it. That call is still probably
+right; the follow-up just doesn't appear to have happened yet.
+
 ### What this does and doesn't change about the rest of the doc
 
 The 54 RPCs left in "Portable" and the 49 left in "Auth-dependent" after
