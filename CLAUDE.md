@@ -870,12 +870,12 @@ thresholds.
 |-------|---------|
 | `vtid_ledger` | Central VTID task tracking |
 | `oasis_events` | System-wide event log |
-| `personalization_audit` | Cross-domain personalization audit |
+| `personalization_audit` | Cross-domain personalization audit — **⚠️ does not exist in live Supabase** (`to_regclass` null, checked 2026-08-27), despite live code (`services/personalization-service.ts`, Command Hub `app.js`) referencing it. Not yet investigated for severity/reachability the way the two rows below were — flagging, not concluding. |
 | `services_catalog` | Service catalog |
 | `products_catalog` | Product catalog |
-| `d44_predictive_signals` | Proactive intervention signals |
+| `d44_predictive_signals` | Proactive intervention signals — **⚠️ does not exist in live Supabase**, confirmed reachable from a live admin screen (Intelligence → Signals) that surfaces this as a visible error. See `docs/AURORA-B2-DEAD-CALLSITE-AUDIT.md` Addendum 2. |
 | `contextual_opportunities` | D48 opportunity surfacing |
-| `risk_mitigations` | D49 risk mitigation |
+| `risk_mitigations` | D49 risk mitigation — **⚠️ does not exist in live Supabase**, route is mounted but no confirmed caller found. See `docs/AURORA-B2-DEAD-CALLSITE-AUDIT.md` Addendum 3. |
 
 ### vtid_ledger Key Columns
 | Column | Type | Values |

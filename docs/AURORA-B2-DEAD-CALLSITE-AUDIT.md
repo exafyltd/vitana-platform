@@ -324,6 +324,45 @@ authoritative risks making the wallet display worse (wrong numbers) rather
 than better (still-missing numbers). This needs a product/eng decision on
 which wallet model is canonical, not a static-analysis-driven patch.
 
+## Addendum 8: `openclaw-bridge`'s Supabase target question, resolved — the service has no live deploy target at all
+
+This doc's own open question #2 asked whether `services/openclaw-bridge`
+(12 of the 33 dead call sites — `appointments`, `assessment_responses`,
+`assessments`, `documents`, `health_reports`, `knowledge_articles`,
+`lab_results`, `tenant_integrations`, `webhooks`, `user_goals`, both
+`vtn_*` tables) might point at a different Supabase project, which would
+make "not found in `inmkhvwdcuyhnxkgfvsb`" a false signal for that subset.
+
+**Checked directly (2026-08-27):** every one of its Supabase-client
+constructors (`vitana-community.ts`, `vitana-scheduling.ts`,
+`vitana-daily.ts`, `vitana-vtn-wallet.ts`, `vitana-integrations.ts`) reads
+the generic `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE` env vars — no
+hardcoded, service-specific project reference either way, so the question
+can't be settled from the code alone. It resolves a different way:
+**`services/openclaw-bridge` has exactly one deploy path,
+`.github/workflows/EXEC-DEPLOY.yml`, and that workflow is 100% GCP Cloud
+Run** (`gcloud run services update/deploy`, `google-github-actions/setup-gcloud`,
+region `us-central1`) — already named in this repo's own CLAUDE.md §9 as
+one of the ~15 dead GCP-oriented workflow files left over from before the
+2026-08-16 GCP shutdown, "safe cleanup candidates." No `AWS-*-DEPLOY-*.yml`
+workflow references `openclaw-bridge` at all, and it is not in CLAUDE.md
+§1b's AWS-production service table (gateway, community-app,
+oasis-operator, oasis-projector, worker-runner, verification-engine,
+orb-agent, autopilot-executor — openclaw-bridge is none of these).
+
+**Conclusion: whichever Supabase project `openclaw-bridge` would point at
+is moot, because the service has had no running deployment target at all
+since GCP billing was disabled.** Its 12 "missing table" findings are real
+dead code in the sense that the code paths cannot currently execute in
+production — not because of a wrong-project false signal, but because
+there is nowhere for this service to run. This is a stronger, more
+actionable finding than the original open question anticipated: it doesn't
+need a Supabase-project check to resolve, and the next real decision is
+whether `openclaw-bridge` gets an AWS deploy pipeline built (per its own
+`CLAUDE.md` non-deployable-services framing, it currently isn't even
+listed as one of the deployable services) or is retired along with
+`EXEC-DEPLOY.yml`.
+
 ## Next steps (not done in this pass)
 
 - For the 20 genuinely gateway-scoped dead tables (33 total, minus the 12
