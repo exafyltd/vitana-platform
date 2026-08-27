@@ -85,6 +85,20 @@ production. Migrating onto it would promote silent data loss to primary.
 **Owner needs:** live AWS/DMS access. This is the first real blocker and it is
 not a code task.
 
+**2026-08-27 update — first live pass, with real AWS/DMS/Supabase access:**
+see `docs/AURORA-PHASE0-RECONCILIATION-2026-08-27.md` for the full report.
+Headline: the historical "~154k dropped applies" figure is now root-caused
+and re-measured at **225,990** (DMS's own `awsdms_validation_failures_v1`
+log), **70.8% concentrated in `oasis_events`** and confirmed there as a
+boolean NULL-vs-default coercion during full load, not row loss. Row-count
+reconciliation across all ~660 relations (both sides) is done for this
+snapshot. **Still open:** exit criterion 1 only confirmed on `oasis_events`
+(not yet on `events`, 23.9% of failures); criterion 2's checksum half;
+criterion 3 (this pass was ad hoc, not a committed re-runnable job); and
+criterion 4 is blocked behind the same Supavisor/Supabase-dashboard fix
+already flagged elsewhere in this session — CDC cannot resume, let alone
+run clean for 7 days, until a human fixes that. **Phase 0 is not closed.**
+
 ---
 
 ### Decision recorded 2026-08-04
