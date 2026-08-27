@@ -109,3 +109,34 @@ statements. Replicating `service_role`'s full-bypass-RLS access across
 mechanism, to the identity-migration risk the plan already flags for B4)
 that it deserves its own scoped decision and VTID, not something to do
 silently while verifying a mechanism works.
+
+## Addendum (VTID-03769), 2026-08-27 — grants applied and verified live
+
+`scripts/aws/setup-aurora-postgrest-grants.sh --apply` ran successfully via
+`aws rds-data execute-statement` (RDS Data API — reachable over HTTPS,
+unaffected by the VPC IPv6 gap blocking DMS's CDC connection, see
+`docs/AURORA-PHASE0-RECONCILIATION-2026-08-27.md`). All 24 statements (8
+per role × `anon`/`authenticated`/`service_role`) succeeded: `USAGE` on
+`public`/`extensions`, `ALL` on tables/sequences, `EXECUTE` on functions,
+plus matching `ALTER DEFAULT PRIVILEGES` so future tables inherit the same
+grants automatically.
+
+**Verified end-to-end, not just "no error on the GRANT statement":** opened
+an RDS Data API transaction, ran `SET ROLE authenticated;` then `SELECT
+count(*) FROM public.diary_entries;` — returned `0` (not `permission
+denied for schema public`, the failure this addendum's prior pass
+documented). Zero rows is the *correct* answer here, not a fluke: no
+`request.jwt.claim.sub` was set in this probe transaction, so
+`auth.uid()` resolves `NULL` and `diary_entries`' own RLS policy
+(`auth.uid() = user_id`) correctly excludes every row — confirming grants
+and RLS are both live and composing correctly, not that RLS is silently
+open.
+
+This closes the B4 identity/access gap for real: the `auth.uid()`
+mechanism (VTID-03768) plus these grants (VTID-03769) together mean
+Aurora's 984 existing RLS policies are now reachable and enforcing
+exactly as Supabase's do. **Still not done, deliberately:** the gateway's
+connection layer isn't wired to actually issue `SET ROLE`/set the JWT
+GUC per request in any live code path (`aurora-client.ts`'s
+`withAuroraRlsContext()` exists but nothing calls it from a route yet) —
+that's the next real step, not a config change to make silently.
