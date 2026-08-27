@@ -371,6 +371,110 @@ Two groupings stand out:
 | `vtn_spend` | 1 | ❌ missing |
 | `vtn_transfer` | 1 | ❌ missing |
 
+## Addendum (VTID-03772), 2026-08-27 — the follow-up this doc's own next-step #1 asked for, and it found a live money bug
+
+This doc's own "Next steps" #1 (below) asked for exactly this: check the
+160 RPCs in "Auth-dependent (106)" and "Portable (54)" against live
+`pg_proc`, since only the 42-item "Not found" section had actually been
+live-verified. Ran it — full existence check, all 202 gateway-called RPC
+names against live Supabase `pg_proc` (630 distinct public functions) and
+against Aurora's own `pg_proc` (565 distinct) in the same pass.
+
+**Result: 70 more RPCs, beyond the already-confirmed 36, do not exist live
+— 106 of 202 gateway-called RPCs (52%) are calling something that isn't
+there.** All 70 are new findings from sections this doc explicitly called
+unverified: 57 came from "Auth-dependent (106)" and 13 from "Portable (54)"
+— **both** static-analysis-only sections turn out to contain confirmed-dead
+entries, not just the "Not found" section's already-known 36. Verified
+with direct, targeted `pg_proc` queries (not the bulk name-list diff alone)
+for the highest-stakes ones below, to avoid the transcription-risk this
+same investigation already got burned by once this session (see the
+corrected Phase 0 report).
+
+The 70 cluster into the same "whole feature family never got a DB layer"
+shape the original 36 (`d41`/`d43`/`d44`/`d45`/`d50`) already showed:
+`alignment_*` (5), `overload_*` (7), `location_*` (6),
+`taste_*`/`taste_alignment_*` (5), `preference_*` (5), `relationship_*`
+(4), `social_*` (5), `topics_*` (5), `memory_*` extensions (7:
+`build_timeline`, `compute_quality`, `get_garden_progress`, `get_quality`,
+`get_timeline`, `retrieve`, `write_item_v2`), `longevity_*` (3), `match_*`
+(3), plus a personalization/trust cluster (`check_behavior_constraint`,
+`constraint_delete`, `constraint_set`, `get_behavior_constraints`,
+`get_correction_history`, `get_personalization_changes`, `get_trust_scores`,
+`inference_downgrade`, `inference_reinforce`, `record_match_feedback`,
+`record_user_correction`, `repair_trust`) and one ungrouped, high-stakes
+single: **`credit_wallet`.**
+
+### `credit_wallet` — a live, currently-reachable, real-money bug, not a stale/dormant one
+
+This is the one worth pulling out on its own. The original doc's own
+"Portable (54)" section listed `credit_wallet` as "portable-by-detection"
+and its own "Next steps" #3 said it was "all confirmed live" alongside
+`credit_wallet_for_earning`/`credit_deposit`/`increment_wallet_balance` —
+**that was never actually checked against live `pg_proc`; it was inferred
+from a tracked migration file existing, and that inference was wrong.**
+Direct query, this pass: `SELECT ... FROM pg_proc WHERE proname =
+'credit_wallet'` — **zero rows, any schema.** The only near-name-match is
+`credit_wallet_for_earning`, a genuinely different function
+(`p_account_id, p_amount_minor, p_currency, ...` vs. `credit_wallet`'s
+call-site shape of `p_tenant_id, p_user_id, p_amount, p_type, p_source,
+p_source_event_id, p_description`) — not a rename, not a drop-in swap.
+
+**This is reachable today, not dormant.** `routes/billing.ts`'s Stripe
+`checkout.session.completed` handler calls it for `kind === 'credit_pack'`
+purchases — real money, via a real Stripe checkout session
+(`vitana_kind: 'credit_pack'` metadata is set when the session is created,
+confirmed at a separate call site in the same file). Checked whether the
+feature is actually purchasable or just wired-but-empty, the same
+reachability question B2 already had to ask for `wallet_balances`: **live
+`credit_packs` table has 3 active rows right now** (`count(*) FILTER
+(WHERE is_active)`, exact count — not the `n_live_tup` estimate, which
+misleadingly showed 0 for this exact table earlier in this same session's
+row-count sweep, a second independent confirmation of that estimator's
+unreliability). A real customer can complete a real Stripe payment for any
+of the 3 packs today.
+
+**What happens when they do:** the handler does check the error
+(`if (error) { console.error(...); throw new Error(...) }`) — this is not
+a silently-swallowed failure the way `billing.ts`'s wallet-snapshot read
+was in B2's original addendum. It throws, which Stripe sees as a failed
+webhook delivery and retries — but every retry hits the identical
+"function does not exist" error, since this isn't transient. The customer
+is charged, Stripe's webhook delivery permanently fails, and
+`credit_wallet`'s intended effect (crediting the purchased amount) never
+happens. Loud on the backend, invisible to the paying user, who sees a
+successful payment and no error of their own.
+
+**Not fixed here, deliberately — same reasoning as B2's wallet_balances
+addendum, now with an even clearer stake.** `credit_wallet_for_earning`
+and `increment_wallet_balance` both exist but neither matches
+`credit_wallet`'s parameter shape or its `p_source_event_id`-keyed
+idempotency contract (the code comment is explicit: "source_event_id =
+session.id so re-delivery never double-credits" — a real safety property
+a substitute must preserve exactly, or a webhook retry after a partial
+fix could double-credit instead of not crediting at all). Guessing at a
+replacement for a money-crediting RPC without knowing which wallet model
+is actually canonical (still an open question per B2's own wallet-family
+finding) risks trading "no credit" for "wrong credit" or "double credit" —
+strictly worse. **This needs an explicit, human, product/eng decision on
+which RPC/schema is canonical before any code changes, and probably needs
+checking Stripe's dashboard for actual failed `checkout.session.completed`
+deliveries on `credit_pack` sessions to see if this has already affected a
+real customer** — this pass did not have Stripe API access to check that
+directly.
+
+### What this does and doesn't change about the rest of the doc
+
+The 54 RPCs left in "Portable" and the 49 left in "Auth-dependent" after
+removing this pass's 70 confirmed-dead ones are **still not fully
+live-verified** — this pass checked existence by name only, not that each
+remaining function's live body actually matches what the tracked-migration
+text describes (the original doc's own next-step #1, second half, about
+auth-dependency shape possibly drifting from tracked-migration text, is
+still open). Existence is a lower bar than correctness, but it's the bar
+that was actually still open, and closing it for 202/202 names (vs. 42/202
+before) is the real gain here.
+
 ## Next steps (not done here — needs a follow-up pass)
 
 1. **Spot-check a sample of the 106 "auth-dependent" and 54 "portable" RPCs
