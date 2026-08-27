@@ -1466,7 +1466,18 @@
     // recovery only updated the display — the mic stream stayed torn down.
     _s.greetingComplete = false;
     _s._reconnectCount = 0;
-    _s._isReconnecting = false;
+    // VTID-03770: this used to set _isReconnecting = FALSE here — the exact
+    // opposite of a re-entrancy guard. The 5s health-probe (_recoveryWatchdog,
+    // above) checks `if (_s._isReconnecting) return;` before every probe tick,
+    // but since this function never actually set the flag true, that check
+    // was inert: a SECOND probe tick landing while this function's own
+    // _sessionStart() below was still in flight (plausible under the same
+    // repeated-nova_validation-retry conditions VTID-03746/VTID-03763
+    // measured taking multiple seconds) could fire a CONCURRENT
+    // _resetAndReconnect(), racing session-start calls against each other.
+    // Now mirrors _attemptReconnect()'s own mutex: true here, reset to false
+    // once _sessionStart() actually settles (both branches below).
+    _s._isReconnecting = true;
     _s._disconnectStuck = false;
     // Keep _disconnectActive true so the UI doesn't flash to a usable state
     // before the new session lands; _clearDisconnect on success will undo it.
@@ -1474,10 +1485,33 @@
     _setOrbState('connecting');
     _setStatus(_caption('reconnecting'));
 
+    // VTID-03770: this reconnect path (the 5s health-probe watchdog, and the
+    // tap-to-reconnect stuck-state button) rebuilt the session via a plain
+    // _sessionStart() with NO restore of an in-progress guided topic — unlike
+    // its sibling _attemptReconnect(), which got exactly this guard under
+    // VTID-03746. Live-reproduced (staging, topic T005): a guided-topic
+    // session delivered its opener, entered the conversational GUIDE-MODE
+    // turn (turn_count:1, 37.7s, 335 audio chunks), then the underlying
+    // connection dropped. The reconnect that followed carried no
+    // guided_topic_id — every wake-brief candidate came back
+    // "all_sources_skipped" — so the new session fell through to a generic
+    // opener instead of resuming T005, sounding exactly like "Vitana
+    // switches on again with a proactive/New-Day-style greeting" right after
+    // a lesson was cut off. Same restore condition as _attemptReconnect:
+    // only re-arm when the topic hasn't already been cleared by a genuine
+    // close (_hide() nulls _guidedTopicInFlight; a later, unrelated reconnect
+    // in the same overlay-open has nothing left to restore).
+    if (_s._guidedTopicInFlight && !_s.guidedTopic) {
+      console.log('[VTOrb] _resetAndReconnect: re-arming guided topic for resume: ' + _s._guidedTopicInFlight);
+      _s.guidedTopic = _s._guidedTopicInFlight;
+    }
+
     _sessionStart().then(function () {
+      _s._isReconnecting = false;
       if (_s.active && _s._disconnectActive) _clearDisconnect();
     }).catch(function (err) {
       console.error('[VTOrb] _resetAndReconnect: _sessionStart failed:', err && err.message);
+      _s._isReconnecting = false;
       // Hand back to the normal scheduled reconnect loop
       _attemptReconnect();
     });

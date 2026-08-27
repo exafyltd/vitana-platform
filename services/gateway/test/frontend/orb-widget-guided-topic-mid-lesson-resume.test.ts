@@ -125,3 +125,59 @@ describe('orb-widget guided-topic mid-lesson resume via _guidedTopicInFlight (VT
     expect(body).toMatch(/_s\._guidedTopicInFlight = null;/);
   });
 });
+
+// VTID-03770 — _attemptReconnect() got the VTID-03746 restore guard above,
+// but _resetAndReconnect() (the 5s health-probe watchdog's reconnect path,
+// and the tap-to-reconnect stuck-state button) did not: it rebuilt the
+// session via a plain _sessionStart() with no restore at all. Live-
+// reproduced again (staging, topic T005, same shape as the VTID-03746 T007
+// report this file already documents above): a guided-topic session
+// delivered its opener, ran a real 37.7s/335-chunk conversational turn, the
+// underlying connection dropped, and the reconnected session carried no
+// guided_topic_id (every wake-brief candidate came back
+// "all_sources_skipped") — falling through to a generic opener instead of
+// resuming T005. Reported again, verbatim: "you can hear that sound like
+// Orb is again switched on, and it just continues with the New Day
+// Greeting."
+describe('orb-widget _resetAndReconnect guided-topic resume + reconnect mutex (VTID-03770)', () => {
+  const source = fs.readFileSync(WIDGET_PATH, 'utf8');
+  const body = extractFunctionBody(source, 'function _resetAndReconnect() {');
+
+  it('re-arms _s.guidedTopic from _guidedTopicInFlight only when guidedTopic was already cleared — same condition as _attemptReconnect', () => {
+    expect(body).toMatch(
+      /if \(_s\._guidedTopicInFlight && !_s\.guidedTopic\) {\s*\n[\s\S]*?_s\.guidedTopic = _s\._guidedTopicInFlight;/,
+    );
+    // Must run BEFORE _sessionStart() is called, not after.
+    const armIdx = body.indexOf('_s.guidedTopic = _s._guidedTopicInFlight;');
+    const startIdx = body.indexOf('_sessionStart().then(');
+    expect(armIdx).toBeGreaterThan(-1);
+    expect(startIdx).toBeGreaterThan(-1);
+    expect(armIdx).toBeLessThan(startIdx);
+  });
+
+  it('sets _isReconnecting = true before starting the reconnect — the health-probe watchdog\'s own "if (_s._isReconnecting) return;" guard is otherwise inert', () => {
+    // The old regression: this function set _isReconnecting = FALSE at its
+    // own top, so a second 5s probe tick landing while _sessionStart() was
+    // still in flight could fire a second, concurrent _resetAndReconnect().
+    expect(body).toMatch(/_s\._isReconnecting = true;/);
+    expect(body).not.toMatch(/_s\._reconnectCount = 0;\s*\n\s*_s\._isReconnecting = false;/);
+  });
+
+  it('resets _isReconnecting = false once _sessionStart() settles, on both the success and failure branch', () => {
+    const thenIdx = body.indexOf('_sessionStart().then(function () {');
+    expect(thenIdx).toBeGreaterThanOrEqual(0);
+    const thenBranch = body.slice(thenIdx, body.indexOf('.catch(function (err) {'));
+    expect(thenBranch).toMatch(/_s\._isReconnecting = false;/);
+    const catchBranch = body.slice(body.indexOf('.catch(function (err) {'));
+    expect(catchBranch).toMatch(/_s\._isReconnecting = false;/);
+  });
+
+  it('the guided-topic re-arm runs before the _isReconnecting reset in the settle handlers (arm is a pre-start setup step, not a settle step)', () => {
+    const armIdx = body.indexOf('_s.guidedTopic = _s._guidedTopicInFlight;');
+    const startIdx = body.indexOf('_sessionStart().then(');
+    const settleResetIdx = body.indexOf('_s._isReconnecting = false;', startIdx);
+    expect(armIdx).toBeGreaterThan(-1);
+    expect(settleResetIdx).toBeGreaterThan(-1);
+    expect(armIdx).toBeLessThan(settleResetIdx);
+  });
+});
