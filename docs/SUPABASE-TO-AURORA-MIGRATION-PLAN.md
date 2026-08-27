@@ -89,11 +89,14 @@ not a code task.
 see `docs/AURORA-PHASE0-RECONCILIATION-2026-08-27.md` for the full report.
 Headline: the historical "~154k dropped applies" figure is now root-caused
 and re-measured at **225,990** (DMS's own `awsdms_validation_failures_v1`
-log), **70.8% concentrated in `oasis_events`** and confirmed there as a
-boolean NULL-vs-default coercion during full load, not row loss. Row-count
-reconciliation across all ~660 relations (both sides) is done for this
-snapshot. **Still open:** exit criterion 1 only confirmed on `oasis_events`
-(not yet on `events`, 23.9% of failures); criterion 2's checksum half;
+log) — a **generalized boolean NULL/empty-string-vs-column-default
+coercion during full load**, confirmed across 12/12 sampled tables
+(99.5% of all failures) including the top two (`oasis_events` 70.8%,
+`events` 23.9%), not row loss anywhere checked. Likely the same
+full-load-transport defect as this session's separate pgvector CSV
+full-load finding on 7 other tables. Row-count reconciliation across all
+~660 relations (both sides) is done for this snapshot. **Still open:**
+13 smaller tables (0.5% of failures) not individually sampled; criterion 2's checksum half;
 criterion 3 (this pass was ad hoc, not a committed re-runnable job); and
 criterion 4 is blocked behind the same Supavisor/Supabase-dashboard fix
 already flagged elsewhere in this session — CDC cannot resume, let alone

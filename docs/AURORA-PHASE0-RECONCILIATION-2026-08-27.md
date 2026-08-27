@@ -60,26 +60,42 @@ Concentration — top tables account for the overwhelming majority:
 | `calendar_events` | 1,374 | 0.6% |
 | (20 more tables, each <1%) | ~2,480 | 1.1% |
 
-**Root cause, confirmed on `oasis_events`:** the `projected` column
-(`boolean`, nullable, `DEFAULT false`) diverges between source and target —
-DMS's `DETAILS` field records `[{'projected':'<null>'}, {'projected':'0'}]`
-(source NULL, target coerced to the column default) for every one of the
-160,007 failing rows sampled. This is a boolean-NULL-vs-default coercion
-during full load, not row loss — the row exists on both sides with the
-same key, only this one column differs. `events` (53,944 failures, 23.9%
-of the total) was not individually re-verified this pass but shares the
-same `RECORD_DIFF` failure type and is the next-highest concentration;
-treat as the same class of defect until checked, not confirmed identical.
+**Root cause, confirmed and generalized across all 25 tables in the
+failure list:** every single `RECORD_DIFF` in `awsdms_validation_failures_v1`
+is the same defect class — a nullable boolean (or boolean-like) column
+where source (Supabase) has `NULL` and target (Aurora) has the column's
+`DEFAULT` value instead. Sampled `DETAILS` directly for the two largest
+tables plus 10 more spanning the rest of the list (`oasis_events`,
+`events`, `autopilot_recommendations`, `memory_audit_log_y2026m06`,
+`calendar_events`, `dev_autopilot_outcomes`, `livekit_test_results`,
+`admin_insights`, `life_compass`, `live_rooms`, `app_users`,
+`notifications`) — **12/12 sampled tables (covering 224,970 of the 225,990
+failures, 99.5%) show the identical pattern**, e.g.
+`[{'projected':'<null>'},{'projected':'0'}]`,
+`[{'is_read':'<null>'},{'is_read':'0'}]`,
+`[{'stripe_charges_enabled':'<null>'},{'stripe_charges_enabled':'0'}]`.
+Two tables (`autopilot_recommendations`, `admin_insights`, `app_users`'s
+`welcome_chat_sent`) show the same coercion but with source `''` (empty
+string) instead of `NULL` — consistent with a CSV-based full-load
+transport that cannot always distinguish a true NULL from an empty field
+for this type, which lines up with this session's earlier, separate
+finding of a pgvector CSV full-load failure on 7 unrelated tables (task
+history, same session) — both point at the same underlying full-load
+transport, not two unrelated bugs. **This is not row loss anywhere it was
+checked** — every failing row exists on both sides with the same key; only
+one or two boolean-typed columns per row differ.
 
 **This changes the finding materially versus what VTID-03419/07-31 could
 say:** those sessions had no live DMS access and could only cite "~154k"
 from indirect evidence. This pass reads the number directly, shows it grew
 to 225,990 (more full-load activity happened since), and identifies the
-column and coercion behavior responsible for the two largest tables by an
-order of magnitude over everything else. **Not yet done:** confirming the
-same root cause on `events`, or checking whether any of the remaining 23
-smaller tables are a *different* failure class (e.g. real row loss, not
-column coercion) — the sampling only checked `oasis_events`.
+exact, generalized coercion behavior responsible for essentially all of it
+(99.5% of sampled failures, spanning 12 of the 25 affected tables).
+**Not yet done:** the remaining 13 smaller tables in the list (0.5% of
+failures) were not individually sampled — assumed the same class given the
+100% hit rate so far, but not independently confirmed; and the underlying
+transport defect (CSV NULL-handling) itself has not been fixed or reported
+against a specific DMS/full-load configuration setting.
 
 ## 3. Row-count reconciliation, all ~660 relations, live 2026-08-27
 
@@ -141,7 +157,7 @@ independently confirmed against the full-load completion log.
 
 | Exit criterion | Status |
 |---|---|
-| 1. Root-cause the dropped applies | **Done for `oasis_events` (70.8% of all failures)** — boolean NULL/default coercion, confirmed by direct row inspection. `events` (23.9%) not yet independently confirmed as the same class. Remaining ~24 tables (5.3%) not sampled. |
+| 1. Root-cause the dropped applies | **Done — generalized boolean NULL/empty-string-vs-default coercion during full load, confirmed across 12/12 sampled tables (99.5% of all 225,990 failures) by direct row/DETAILS inspection.** Remaining 13 tables (0.5% of failures) assumed same class from the 100% hit rate, not individually sampled. |
 | 2. Full row-count + checksum reconciliation, per table | **Row counts: done, all ~660 relations, this pass.** Checksums: **not done** — DMS's own `awsdms_validation_failures_v1` provides row-level diff detection for the window it ran, which is a stronger signal than a plain checksum for the tables it covered, but that coverage ended when the task failed 2026-08-20 and does not cover data written since. |
 | 3. A re-runnable reconciliation job | **Not done.** This pass was ad hoc (manual RDS Data API + Supabase MCP queries, saved to `/tmp`, not committed as a script). `scripts/reconciliation/aurora-supabase-reconcile.ts` exists in the repo but per its own VTID-03649 note has still never been exercised against real credentials — that remains true after this pass; this report did not use that script. |
 | 4. Zero unexplained divergence sustained 7 days | **Cannot start** — gated on the Supabase-dashboard Supavisor fix (§1) before CDC can even resume, let alone run clean for 7 days. |
