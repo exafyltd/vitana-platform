@@ -110,16 +110,48 @@ silently declaring the close-button half independently fixed.
   added `_s._isReconnecting = false` to both the `.then()` success branch
   and the `.catch()` failure branch of the `_sessionStart()` promise.
 
-## Verification
+## Acceptance criteria
 
-TEST: services/gateway/test/frontend/orb-widget-guided-topic-mid-lesson-resume.test.ts
-  4 new tests in a new `describe('orb-widget _resetAndReconnect guided-topic
-  resume + reconnect mutex (VTID-03770)')` block:
-  - re-arms `_s.guidedTopic` from `_guidedTopicInFlight` under the same
-    condition as `_attemptReconnect`, before `_sessionStart()`
-  - sets `_isReconnecting = true` before starting the reconnect
-  - resets `_isReconnecting = false` on both settle branches
-  - the guided-topic re-arm precedes the settle-branch reset (ordering)
+AC-1 — `_resetAndReconnect()` re-arms `_s.guidedTopic` from
+`_s._guidedTopicInFlight` when the topic was already cleared (mirrors
+`_attemptReconnect()`'s existing guard), before calling `_sessionStart()`.
+TEST: `services/gateway/test/frontend/orb-widget-guided-topic-mid-lesson-resume.test.ts`
+— "re-arms _s.guidedTopic from _guidedTopicInFlight only when guidedTopic
+was already cleared — same condition as _attemptReconnect".
+
+AC-2 — `_resetAndReconnect()` sets `_s._isReconnecting = true` before
+starting the reconnect, so the health-probe watchdog's own re-entrancy
+check is no longer inert.
+TEST: same file — "sets _isReconnecting = true before starting the
+reconnect — the health-probe watchdog's own 'if (_s._isReconnecting)
+return;' guard is otherwise inert".
+
+AC-3 — `_s._isReconnecting` is reset to `false` once `_sessionStart()`
+settles, on BOTH the success and the failure branch (no stuck-true state
+on a failed reconnect attempt).
+TEST: same file — "resets _isReconnecting = false once _sessionStart()
+settles, on both the success and the failure branch".
+
+AC-4 — the guided-topic re-arm happens as a pre-start setup step, before
+either settle branch's `_isReconnecting` reset — not interleaved with them.
+TEST: same file — "the guided-topic re-arm runs before the _isReconnecting
+reset in the settle handlers".
+
+AC-5 — the widget file remains valid JavaScript after the edit.
+TEST: `node --check services/gateway/src/frontend/command-hub/orb-widget.js`.
+
+AC-6 — full gateway regression suite is clean.
+TEST: `npx jest` (full suite, gateway repo) — 713/714 suites, 13,433/13,468
+tests passing, 0 failures.
+
+AC-7 — the gateway package typechecks cleanly.
+TEST: `npx tsc --noEmit` (from `services/gateway/`).
+
+AC-8 — both fixes are mutation-verified: reverting either one independently
+fails exactly the test(s) written to catch it and nothing else.
+TEST: see `outputs/mutation-testing-log.txt`.
+
+## Verification
 
 Mutation-tested both fixes (outputs/mutation-testing-log.txt): reverting
 either one independently fails exactly the test(s) written to catch it and
