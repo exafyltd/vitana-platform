@@ -45,3 +45,63 @@ by this repo's auto-delete-on-merge after each PR merges. Restarted
 claude/orb-interruption-voice-comms-x3wh7s from origin/main
 (git checkout -B ... origin/main) and reapplied this VTID's diagnostic
 changes via git stash before each push.
+
+## Instrumentation redesign — one-shot onFirstNormalizedEvent proved useless
+
+The first cut of this VTID's second diagnostic hook fired ONCE, on the
+very first normalized Nova event of any kind (`onFirstNormalizedEvent`).
+Deployed to staging and measured for real on the exact bimodal-slow
+sessions this VTID exists to explain:
+
+  reconnect:false sessions, both greeting_sent AND
+  nova_first_normalized_event landing at ~762-766ms into the session,
+  kind:"usage" — a connection-handshake accounting event Bedrock sends
+  BEFORE the greeting prompt is even transmitted — while total_ms for
+  those same sessions was 6.26s and 6.86s.
+
+A one-shot hook firing on a pre-greeting handshake event tells us nothing
+about the multi-second silence that follows greeting_sent. The design was
+wrong, not just imprecise: whatever happens in the gap has to be observed
+AFTER greeting_sent, and a single early snapshot can only ever catch
+whatever races there first (which is always the handshake, not the
+model's real response).
+
+Redesigned before drawing any further conclusion or writing a fix:
+
+- `onFirstNormalizedEvent` -> `onEarlyNormalizedEvent`, firing on each of
+  the first `EARLY_EVENT_CAP` (12) normalized events, not just the first.
+- `nova_first_normalized_event` (LatencyPhase) -> `nova_early_event`,
+  fired multiple times in the same voice.latency.measured event, each
+  mark's `detail` carrying `{kind, index}` so the dashboard sees a real
+  ordered timeline instead of one point.
+- `onFirstRawChunk` (byte-level, pre-normalization) kept as-is — it is
+  still a genuinely useful, distinct signal (confirms Bedrock is sending
+  bytes at all, independent of how our own normalizer classifies them).
+
+## Verification after the redesign
+
+$ cd services/gateway && npx tsc --noEmit -p .
+  -> clean, exit 0
+
+$ npx jest test/orb/live/upstream/nova-sonic-live-client.test.ts
+  -> 29/29 passing (replaces the old one-shot test with a timeline test;
+     adds a cap-enforcement assertion)
+
+$ npx jest   # full gateway suite, re-run after the redesign
+  -> 712/713 suites (1 pre-existing skip), 13,419 tests passing, 0 failures
+     (see outputs/full-suite-2.txt)
+
+## Real-time gap encountered mid-session (factual note, not a defect)
+
+The host clock jumped ~9.5 hours between tool calls during this session
+(observed going from 2026-08-26T21:57 to 2026-08-27T07:19). A background
+90s-spaced Playwright measurement run and a background jest run were both
+killed by the interruption (confirmed via `ps aux` showing neither process
+alive afterward, and the spaced-run log stopping mid-sequence after 3 of 4
+planned sessions with no completion marker). The cached Supabase auth
+token in scratchpad/auth.json also expired across the gap. Recorded here
+because it explains why the next real-traffic measurement round (deploy ->
+fresh auth token -> spaced Playwright sessions -> query
+voice.latency.measured for nova_early_event) had not yet been re-run
+before this VTID's PR was opened — that is the very next step once this
+lands on staging.
