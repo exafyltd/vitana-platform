@@ -44,3 +44,68 @@ write access to Aurora this session's read-only boundary does not have
 (see `docs/AURORA-PHASE0-RECONCILIATION-FINDINGS.md`'s Access Boundary
 section), and is real engineering work regardless, not something a sizing
 pass should attempt to shortcut.
+
+## Addendum (VTID-03768), 2026-08-27 — the mechanism above is already built and partly verified; what's actually missing is different from what the plan assumed
+
+This session has write access to Aurora (a later grant than the one the
+paragraph above refers to — see this session's earlier task history).
+Checked the specific open question directly, live, rather than repeating
+"not verified" without looking:
+
+**Already present on Aurora, and functionally correct where tested:**
+
+- `auth.uid()`, `auth.jwt()`, `auth.role()`, `auth.email()` all exist in
+  an `auth` schema on Aurora. Compared their definitions
+  (`pg_get_functiondef`) against Supabase's real ones directly — not
+  byte-identical text, but **semantically equivalent**: both read
+  `current_setting('request.jwt.claim.sub', true)` first, falling back to
+  parsing the `sub` key out of a `request.jwt.claims` JSON GUC.
+- **Live end-to-end test, this session:** `SELECT
+  set_config('request.jwt.claim.sub', '<uuid>', true), auth.uid();` —
+  `auth.uid()` correctly returned the UUID just set. The mechanism itself
+  works.
+- The Supabase role model is present: `anon`, `authenticated`,
+  `service_role` (with `rolbypassrls=true`, matching Supabase exactly —
+  confirmed the other two do NOT have that flag), and a login-capable
+  `authenticator` role (the same role PostgREST itself connects as in
+  Supabase's own architecture). A pre-provisioned secret,
+  `vitana/aurora/prod/postgrest-authenticator-uri`, holds a connection
+  string for `authenticator` against Aurora's writer endpoint — evidence
+  a PostgREST-against-Aurora deployment was at least scaffolded by an
+  earlier, undocumented effort. **Not independently exercised this pass**
+  (would need either a Data-API-compatible secret shape, which this one
+  isn't — it's a raw URI, not the `{username,password}` JSON Data API
+  requires — or direct network access this sandbox doesn't have).
+- RLS is enabled on 576 Aurora tables with 984 policies present (vs.
+  Supabase's ~1,030 total — some gap expected given CDC has been down
+  since 2026-08-20, per `docs/AURORA-PHASE0-RECONCILIATION-2026-08-27.md`;
+  not investigated further here).
+
+**What's actually missing, confirmed live:** `SET ROLE authenticated`
+(from the `vitana_admin` connection) followed by any query against
+`public.*` fails with `permission denied for schema public` —
+`authenticated` has no `GRANT USAGE ON SCHEMA public`, so it cannot reach
+a single table regardless of RLS. Checked Supabase's live grants for
+comparison: `anon`/`authenticated`/`service_role` each hold
+SELECT/INSERT/UPDATE/DELETE/etc. on 598-600 tables in production. None of
+that appears to have carried over to Aurora — expected, since DMS
+replicates table structure and data, not `GRANT` statements, which are a
+separate DDL category it was never configured to carry.
+
+**This changes the shape of what's left for B4, not just its size.** The
+plan characterized the `auth.uid()` compatibility trick as the risky,
+unverified part ("that last trick is what makes 557 policies port
+unchanged... without it they must each be rewritten"). It works, verified
+live. What remains is comparatively mechanical: replicate Supabase's
+`anon`/`authenticated`/`service_role` grant set onto Aurora (a scriptable,
+well-understood operation — Postgres's `GRANT ... ON ALL TABLES IN SCHEMA`
+plus matching `ALTER DEFAULT PRIVILEGES` for future tables), and wire the
+gateway's connection layer to `SET ROLE`/set the JWT-claim GUC per request
+the way PostgREST does.
+
+**Deliberately not done in this pass:** actually running the grant
+statements. Replicating `service_role`'s full-bypass-RLS access across
+~600 tables is a consequential enough action (parallel in kind, if not in
+mechanism, to the identity-migration risk the plan already flags for B4)
+that it deserves its own scoped decision and VTID, not something to do
+silently while verifying a mechanism works.
