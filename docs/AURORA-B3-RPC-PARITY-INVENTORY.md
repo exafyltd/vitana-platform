@@ -535,6 +535,22 @@ as proof — Stripe's own dashboard remains the authoritative source — but
 this is real, first-party evidence pointing toward "hasn't happened yet,"
 which the CloudWatch check above could only leave ambiguous.
 
+**One more schema check, kept brief since this thread is already deep:**
+`wallet_accounts` (`wallet-stripe-webhook.ts`'s actual crediting target
+via `credit_deposit`) is `user_id, currency, balance_minor` — a
+single-balance-per-currency model, not the three-bucket
+(`purchased_credits`/`reward_credits`/`cash_balance`) shape
+`billing.ts`'s `GET /me` reads from the still-missing `wallet_balances`.
+**So even confirming which webhook Stripe actually calls won't make the
+wallet balance *display* correct** — that reads from a table that doesn't
+exist regardless, per B2's original addendum. Crediting and displaying a
+wallet balance currently rest on two more incompatible schemas than
+either B2 or this addendum initially scoped. Not chased further — this is
+already the third layer of the same underlying question ("which wallet
+model is canonical") this addendum and B2's both already deferred to a
+human decision, and unraveling every remaining layer here would be
+diminishing return against the rest of this migration effort's open work.
+
 ### Root cause found — this is a known, already-self-documented gap, not a fresh mystery
 
 Searched `supabase/migrations/` for `credit_wallet`/`wallet_balances` and
