@@ -132,16 +132,77 @@ privileges. Verified live: `anon`/`authenticated`/`public` all `false`,
   lint doesn't distinguish trigger functions from directly-callable ones,
   a false-positive-shaped entry for this specific lint, not a live gap.
 
-## Still flagged, not checked — the SECURITY DEFINER views
+## Also fixed: 6 of the 9 SECURITY DEFINER views were real cross-user data leaks
 
-**9 `SECURITY DEFINER` views** (bypass the querying user's RLS,
-lint `security_definer_view`): `user_pillar_recent_activity`,
-`wearable_rollup_7d`, `intent_compass_alignment`, `user_diary_streak`,
-`intent_open_asks`, `local_heroes_weekly`, `gemini_cost_daily`,
-`agent_personas_registry`, **`stripe_subscriptions`** (the one worth
-prioritizing — money-adjacent, worth checking whether it's intentionally
-service-role-only or accidentally lets any querying user see other
-users'/tenants' subscription rows). Not checked this pass.
+Read all 9 (lint `security_definer_view` — a `SECURITY DEFINER` view runs as
+its owner, `postgres`, and silently bypasses the querying user's RLS unless
+`security_invoker = on` is set on the view itself). For each, checked
+whether the underlying table(s) actually carry restrictive RLS that the view
+was bypassing, and whether any live code depends on that bypass.
+
+**Confirmed real, exploitable cross-user leaks — fixed via
+`ALTER VIEW ... SET (security_invoker = on)`,** which makes each view
+enforce the *querying role's* RLS instead of running as `postgres`. This is
+the standard Postgres 15+ fix for this exact lint, and is zero-risk for the
+one real caller class found for each (gateway backend code, which — per
+this codebase's own established `getSupabase()` pattern, confirmed earlier
+in this doc for the two function fixes — authenticates with `service_role`,
+and `service_role` bypasses RLS unconditionally regardless of
+`security_invoker`. No frontend/`vitana-v1` call site exists for any of
+these six):
+
+| View | Base table(s) | Base table RLS | What was exposed to any anon/authenticated caller |
+|---|---|---|---|
+| `stripe_subscriptions` | `user_subscriptions` | `auth.uid() = user_id` (own row only) | Every user's subscription status, plan, `last_payment_error`, `stripe_customer_id`, tenant. **0 live rows today** (no row yet has `stripe_subscription_id` set) — dormant until the first real Stripe subscription writes one. |
+| `user_pillar_recent_activity` | `calendar_events` | `auth.uid() = user_id` (own row only) | Every user's per-pillar wellness completion counts (nutrition/sleep/exercise/mental) for the last 24h/7d — health-adjacent behavioral data, live today. |
+| `wearable_rollup_7d` | `wearable_daily_metrics` | `user_id = auth.uid()` (own row only; service_role separately allowed) | Every user's 7-day sleep minutes, HRV, resting heart rate, activity minutes — real biometric health data, live today. |
+| `intent_compass_alignment` | `user_intents`, `life_compass` | Owner-only (`auth.uid() = requester_user_id` / `= user_id`) plus narrow tenant/public-visibility carve-outs | Every user's personal life-goal category (`life_compass.primary_goal`) joined to their intents, regardless of the intent's own visibility — bypassed `user_intents`' own public/tenant visibility policy, not just ownership. |
+| `user_diary_streak` | `diary_entries` | `auth.uid() = user_id` (own row only, per-command policies) | Every user's current diary-journaling streak length and last-entry date — reveals journaling behavior/consistency for every user, not content, but still a real per-user behavioral leak. |
+| `gemini_cost_daily` | `gemini_call_log` | RLS **enabled with zero policies** (fail-closed for every non-owner role — same 87-table precedent as the RLS section above) | Internal AI-cost/ops telemetry: daily calls/tokens/latency/error+fallback counts per feature and model. **49 real rows, live today** (Apr–Jul 2026) — business-sensitive operational data (what models cost, how often they fail/fall back), not user data, but still a real live exposure to anyone unauthenticated. |
+
+Verified live after each fix: `security_invoker` reads `'on'` in
+`pg_class.reloptions` for all six.
+
+## Reviewed, left as-is — intentional by an existing policy or a genuine product-design call
+
+- **`agent_personas_registry`** (→ `agent_personas`) — the base table
+  already carries an explicit, permissive policy,
+  `agent_personas_select: (status <> 'disabled')`, with **no `auth.uid()`
+  scoping at all** — any caller, including anonymous, can already read
+  non-disabled personas directly off the table. The view (filtered to
+  `status='active'`, a subset of "not disabled") isn't bypassing a
+  restriction; it's redundant with one the schema already made
+  deliberately public. That policy does mean `system_prompt` is
+  intentionally exposed to anonymous callers today — a real product/security
+  posture, but one already baked into the table's own RLS, not something
+  this view introduced or that a `security_invoker` flip would change.
+  Flagging for awareness, not fixing unilaterally.
+- **`local_heroes_weekly`** (→ `user_reputation` + `profiles`) —
+  `user_reputation` itself is RLS-enabled with **zero policies**
+  (fail-closed, same shape as `gemini_call_log` above), so the view is a
+  real bypass in the same technical sense. But unlike `gemini_cost_daily`,
+  this reads as a plausible intentional design: a curated, rate-limited
+  "public leaderboard" view (ranked, filtered to recently-active users only,
+  exposing only `display_name`/`avatar_url`/rank/counts — no raw
+  `user_reputation` rows) sitting in front of an otherwise-locked-down base
+  table is a common and legitimate gamification pattern. Also,
+  `profiles` itself already has an `Authenticated users can view profiles:
+  true` policy with no `auth.uid()` scoping, so the identity half
+  (display_name/avatar/city) is not actually private for authenticated
+  callers regardless of this view. Left as-is rather than guessing at
+  product intent; worth a human call on whether `anon` (not just
+  `authenticated`) should see it.
+- **`intent_open_asks`** — the view's own `WHERE status='open' AND
+  visibility='public'` mirrors `user_intents`' own
+  `user_intents_public_read` RLS policy almost exactly (open/matched/engaged
+  + `visibility='public'` + active tenant membership). This is a curated
+  public-marketplace view by design, not a bypass — the one gap is it drops
+  `user_intents_public_read`'s tenant-membership check, so a caller need not
+  share a tenant with the intent's author, unlike the base policy. Given the
+  visibility is explicitly `'public'` already (the author opted into
+  public-not-tenant-scoped visibility), this reads as a narrower, not wider,
+  exposure than the base policy allows for `visibility='tenant'` rows, and
+  is very likely intentional. Left as-is.
 
 ## Everything else — routine, not urgent
 
