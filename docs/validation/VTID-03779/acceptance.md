@@ -39,15 +39,13 @@ falls back to default.
 AC-2 — A client built before its real session exists can be safely
 repointed at that session once it exists
 
-`NovaSonicLiveClient` captures four Nova-specific callbacks
-(`onRotationDue`, `onIdleDeadlineApproaching`, `onFirstRawChunk`,
-`onEarlyNormalizedEvent`) as constructor-time closures — a genuine
-correctness trap for a client constructed by the prewarm path, since the
-real `GeminiLiveSession` these closures reference does not exist yet at
-that point. `rebindSessionDeps()` repoints all four at claim time; every
-other listener (audio/transcript/turnComplete/interrupted/error/close) is
-already a plain mutable field, re-registered on every connect via the
-pre-existing `bindUpstreamSessionHandlers`, so needs no equivalent fix.
+`NovaSonicLiveClient` captures four Nova-specific callbacks as
+constructor-time closures — a correctness trap for a client constructed
+by the prewarm path, since the real session these closures reference does
+not exist yet. `rebindSessionDeps()` repoints all four at claim time;
+every other listener is already a plain mutable field, re-registered on
+every connect via the pre-existing `bindUpstreamSessionHandlers`, so
+needs no equivalent fix.
 
 TEST: `services/gateway/test/orb/live/upstream/nova-sonic-live-client.test.ts`
 — "repoints onRotationDue so the original constructor-time callback no
@@ -79,17 +77,13 @@ AC-4 — The frontend opens the WS transport and prewarms it right after
 login, before the ORB overlay is shown, and a real session tap reuses it
 
 `orb-widget.js`'s `_prewarmNovaWs()` is called from both `init()` and
-`setAuth()` — the exact same lifecycle points the pre-existing
-`_prewarmBootstrap()` (context-pack cache warm) already uses. It opens a
-WS connection, waits for the server's `connected` handshake, and sends
-`{type:'prewarm'}`. `_sessionStartWs` claims that socket (if still open and
-ready) instead of opening a fresh one, and sends `start` immediately
-instead of waiting for a `connected` message that will not arrive again on
-a reused socket. An account switch / logout (`_wipeIdentityBoundState`, the
-function `setAuth`'s identity-change branch and `clearAuth` both already
-call) closes and clears any existing prewarmed socket and bumps a
-generation counter so an in-flight prewarm handshake from the OLD identity
-can never be claimed on the NEW identity's behalf.
+`setAuth()`, the same points `_prewarmBootstrap()` already uses. It opens
+a WS connection, waits for `connected`, and sends `{type:'prewarm'}`.
+`_sessionStartWs` claims that socket instead of opening a fresh one and
+sends `start` immediately. Account switch / logout
+(`_wipeIdentityBoundState`) closes any prewarmed socket and bumps a
+generation counter so an in-flight OLD-identity handshake can never be
+claimed on the NEW identity's behalf.
 
 TEST: `services/gateway/test/frontend/orb-widget-nova-prewarm.test.ts` —
 9/9 passing, covering: the no-op guards (anonymous, active session,
