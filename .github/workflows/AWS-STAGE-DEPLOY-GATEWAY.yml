@@ -422,6 +422,24 @@ jobs:
           fi
           echo "Bedrock activation on staging: BEDROCK_ROLE_ARN=$TASK_ROLE_ARN"
 
+          # VTID-03773 -- AURORA_CA_BUNDLE_PATH points aurora-client.ts at the
+          # RDS CA bundle baked into the image (Dockerfile), so the Aurora
+          # connectivity check (routes/admin-aurora-memory-health.ts) gets a
+          # real TLS handshake instead of failing closed with a
+          # self-signed-certificate error. Caught in review (Codex, PR #3213):
+          # AURORA_DATABASE_URL alone is not sufficient -- resolveSsl()
+          # defaults to verifying against the system trust store when this is
+          # unset, and that store does not include the Amazon RDS CA.
+          #
+          # This explanation lives HERE, not inside the jq program below, on
+          # purpose -- an earlier version put it inside the single-quoted jq
+          # string with an apostrophe in the prose, which closed the bash
+          # string early and broke this step with a bare "syntax error near
+          # unexpected token" 20+ lines later. Exactly the trap this file's
+          # own note (further down, near the SEC_JWT resolution loop) already
+          # warns about for jq-embedded comments. Keep every comment about the
+          # jq body out here instead of risking it again.
+
           NEW_DEF=$(aws ecs describe-task-definition --task-definition "$TD_ARN" --query taskDefinition \
             | jq --arg IMG "$IMAGE" --arg SHA "$SHA" --arg SHORT "$SHORT" \
                  --arg NOVA_ENABLED "$NOVA_SONIC_ENABLED" \
@@ -490,15 +508,6 @@ jobs:
                           {name:"ORB_CASCADED_VOICE_ENABLED", value:"true"},
                           {name:"BEDROCK_ROLE_ARN", value:$TASK_ROLE},
                           {name:"AWS_BEDROCK_REGION", value:"eu-central-1"},
-                          # VTID-03773 — points aurora-client.ts's resolveSsl()
-                          # at the RDS CA bundle baked into the image
-                          # (Dockerfile), so the Aurora connectivity check gets
-                          # a real TLS handshake instead of failing closed with
-                          # a self-signed-certificate error. Caught in review
-                          # (Codex, PR #3213): AURORA_DATABASE_URL alone is not
-                          # sufficient — resolveSsl() defaults to verifying
-                          # against the system trust store when this is unset,
-                          # which does not include Amazon's RDS CA.
                           {name:"AURORA_CA_BUNDLE_PATH", value:"/app/certs/rds-combined-ca-bundle.pem"} ] )
                 | .containerDefinitions[0].secrets |=
                     ( [ .[] | select(.name | IN("SUPABASE_JWT_SECRET","SUPABASE_ANON_KEY",
