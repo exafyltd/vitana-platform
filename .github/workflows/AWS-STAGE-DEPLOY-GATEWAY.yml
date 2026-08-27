@@ -230,12 +230,21 @@ jobs:
           # `describe-secret` also fails the job loudly if a secret is missing,
           # which is strictly better than registering a task def that cannot
           # start and discovering it 10 minutes later via a stabilise timeout.
+          # VTID-03773 — SEC_AURORA resolves the SAME Secrets Manager entry
+          # oasis-projector already uses in production (vitana/aurora/prod/
+          # database-url), wired here so the gateway can open a connection
+          # too. Staging only, on purpose: this is Phase 0 of the memory-
+          # system rebuild — a connectivity check, nothing reads or writes
+          # through it yet (see routes/admin-aurora-memory-health.ts). No new
+          # credential is created; this only grants the STAGING task the
+          # ability to resolve a secret ARN it did not reference before.
           for pair in \
             "SEC_JWT:vitana/supabase/prod/jwt-secret" \
             "SEC_ANON:vitana/supabase/prod/anon-key" \
             "SEC_GEMINI:vitana/gateway/staging/google-gemini-api-key" \
             "SEC_OPENAI:vitana/gateway/staging/openai-api-key" \
-            "SEC_DEEPSEEK:vitana/gateway/staging/deepseek-api-key" ; do
+            "SEC_DEEPSEEK:vitana/gateway/staging/deepseek-api-key" \
+            "SEC_AURORA:vitana/aurora/prod/database-url" ; do
             VAR="${pair%%:*}"; NAME="${pair#*:}"
             ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text 2>/dev/null || true)
             if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
@@ -420,7 +429,7 @@ jobs:
                  --arg NOVA_TENANTS "$NOVA_SONIC_CANARY_TENANT_IDS" \
                  --arg SEC_JWT "$SEC_JWT" --arg SEC_ANON "$SEC_ANON" \
                  --arg SEC_GEMINI "$SEC_GEMINI" --arg SEC_OPENAI "$SEC_OPENAI" \
-                 --arg SEC_DEEPSEEK "$SEC_DEEPSEEK" \
+                 --arg SEC_DEEPSEEK "$SEC_DEEPSEEK" --arg SEC_AURORA "$SEC_AURORA" \
                  --arg TASK_ROLE "$TASK_ROLE_ARN" '
                 .containerDefinitions[0].image = $IMG
                 | .containerDefinitions[0].environment |=
@@ -436,7 +445,8 @@ jobs:
                                                 "ORB_DAY_CLOSE_RUNG_ENABLED",
                                                 "TTS_PROVIDER","TTS_POLLY_STRICT","VERTEX_LIVE_UNAVAILABLE",
                                                 "ORB_CASCADED_VOICE_ENABLED",
-                                                "BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION") | not) ]
+                                                "BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION",
+                                                "AURORA_CA_BUNDLE_PATH") | not) ]
                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
                           {name:"COMMIT_SHA", value:$SHA},
                           {name:"BUILD_INFO_MARKER", value:$SHORT},
@@ -479,17 +489,29 @@ jobs:
                           {name:"VERTEX_LIVE_UNAVAILABLE", value:"true"},
                           {name:"ORB_CASCADED_VOICE_ENABLED", value:"true"},
                           {name:"BEDROCK_ROLE_ARN", value:$TASK_ROLE},
-                          {name:"AWS_BEDROCK_REGION", value:"eu-central-1"} ] )
+                          {name:"AWS_BEDROCK_REGION", value:"eu-central-1"},
+                          # VTID-03773 — points aurora-client.ts's resolveSsl()
+                          # at the RDS CA bundle baked into the image
+                          # (Dockerfile), so the Aurora connectivity check gets
+                          # a real TLS handshake instead of failing closed with
+                          # a self-signed-certificate error. Caught in review
+                          # (Codex, PR #3213): AURORA_DATABASE_URL alone is not
+                          # sufficient — resolveSsl() defaults to verifying
+                          # against the system trust store when this is unset,
+                          # which does not include Amazon's RDS CA.
+                          {name:"AURORA_CA_BUNDLE_PATH", value:"/app/certs/rds-combined-ca-bundle.pem"} ] )
                 | .containerDefinitions[0].secrets |=
                     ( [ .[] | select(.name | IN("SUPABASE_JWT_SECRET","SUPABASE_ANON_KEY",
                                                 "GOOGLE_GEMINI_API_KEY","GEMINI_API_KEY",
-                                                "OPENAI_API_KEY","DEEPSEEK_API_KEY") | not) ]
+                                                "OPENAI_API_KEY","DEEPSEEK_API_KEY",
+                                                "AURORA_DATABASE_URL") | not) ]
                       + [ {name:"SUPABASE_JWT_SECRET",   valueFrom:$SEC_JWT},
                           {name:"SUPABASE_ANON_KEY",     valueFrom:$SEC_ANON},
                           {name:"GOOGLE_GEMINI_API_KEY", valueFrom:$SEC_GEMINI},
                           {name:"GEMINI_API_KEY",        valueFrom:$SEC_GEMINI},
                           {name:"OPENAI_API_KEY",        valueFrom:$SEC_OPENAI},
-                          {name:"DEEPSEEK_API_KEY",      valueFrom:$SEC_DEEPSEEK} ] )
+                          {name:"DEEPSEEK_API_KEY",      valueFrom:$SEC_DEEPSEEK},
+                          {name:"AURORA_DATABASE_URL",   valueFrom:$SEC_AURORA} ] )
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
