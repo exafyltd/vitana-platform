@@ -90,6 +90,47 @@ source endpoint reaching `db.inmkhvwdcuyhnxkgfvsb.supabase.co` directly.
   re-confirmed, not newly discovered, this session already reached this
   same conclusion earlier via a different path.
 
+## 1b. CDC gap confirmed broad-based, not limited to the original 3 tables
+
+Same-day follow-up, using the newly-confirmed RDS Data API access (works
+over HTTPS, unaffected by the VPC IPv6 gap blocking DMS's own connection —
+see §1). Ran identical exact `count(*)` queries against Supabase and
+Aurora for 21 more tables (not the original 3), covering a mix of
+high-write (`product_analytics_events`, `user_notifications`,
+`api_test_logs`) and low-write (`admin_insights`, `user_reputation`)
+tables:
+
+| table | Supabase | Aurora | gap |
+|---|---:|---:|---:|
+| `product_analytics_events` | 120,982 | 112,433 | 8,549 |
+| `user_notifications` | 67,945 | 63,399 | 4,546 |
+| `mem_facts` | 13,077 | 12,052 | 1,025 |
+| `memory_facts` | 11,803 | 10,856 | 947 |
+| `nav_catalog_i18n` | 3,185 | 2,281 | 904 |
+| `api_test_logs` | 18,410 | 18,066 | 344 |
+| `news_items` | 3,864 | 3,579 | 285 |
+| `product_analytics_daily_rollups` | 3,237 | 2,963 | 274 |
+| `journey_checklist_translations` | 2,542 | 2,283 | 259 |
+| `orb_wake_timelines` | 260 | 69 | 191 |
+| `voice_healing_shadow_log` | 1,189 | 1,034 | 155 |
+| `goal_plan_step_i18n` | 1,297 | 1,026 | 271 |
+| `feature_usage` | 249 | 152 | 97 |
+| `vtid_ledger` | 1,646 | 1,556 | 90 |
+| `catalog_sources` | 334 | 294 | 40 |
+| `tenant_health_index_daily` | 265 | 251 | 14 |
+| `daily_matches` | 1,430 | 1,420 | 10 |
+| `user_assistant_state` | 837 | 828 | 9 |
+| `app_users` | 206 | 198 | 8 |
+| `user_reputation` | 207 | 206 | 1 |
+| `admin_insights` | 393 | 393 | 0 |
+
+20 of 21 tables show a real, positive gap (the one exception,
+`admin_insights`, is simply low-write in this window). This is not a
+handful of hot tables — it's every actively-written table checked,
+consistent with a single systemic cause (CDC down since 2026-08-20) rather
+than per-table anomalies. Confirms the §1/§2 finding at much broader
+coverage than the original 3-table spot-check.
+
 Two tables (`conversation_messages`, `reminders`) still show `Table error`/
 `FullLoadRows: 0` in `describe-table-statistics` for the v3 task. The prior
 pass already checked these live and found both match exactly on row count
