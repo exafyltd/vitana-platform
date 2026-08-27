@@ -107,11 +107,9 @@ here:** `user_wallets` exists (per B2's wallet-family spot-check) but is
 not the `wallet_balances` table `services/gateway` code separately expects
 — these may be two different, both-real parts of the wallet system, or one
 more sign the wallet schema is in an unsettled state. `wallet_transactions`
-was not checked directly in B2 (B2 found `wallet_ledger_entries` and
-`wallet_deposits` as siblings, not `wallet_transactions` by that exact
-name) — **flagging as unverified, not concluding either way**, since B2's
-own discipline was never to conclude "missing" without a direct live check
-and this pass didn't run one for this specific name.
+was not checked directly in B2 — **checked now, 2026-08-27:
+`to_regclass('public.wallet_transactions')` resolves, it exists.** Not a
+dead subscription target.
 
 **`broadcast`/`presence` (7 files: `useCallState.ts`, `useTypingIndicators.ts`,
 `CrossSystemNotifier.tsx`, `useWebRTC.ts`, `MessengerCall.tsx`,
