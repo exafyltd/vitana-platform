@@ -385,6 +385,21 @@
     // Reset on a fresh tap (focusGuidedTopic) and on close (_hide), same
     // lifecycle as _guidedTopicInFlight.
     _guidedTopicZeroAudioFailCount: 0,
+    // VTID-03781: idempotency guard. Teaching-complete has TWO independent
+    // signals — the model calling end_guided_topic_teaching, and the
+    // GUIDED_TOPIC_BACKSTOP_MS timeout — and nothing previously stopped
+    // both from firing for the same teaching session (e.g. the model calls
+    // the tool right as the backstop's periodic check also trips, or the
+    // directive arrives twice over a flaky transport). Each firing runs
+    // _endGuidedTopicTeaching(), which drains audio then calls _hide() and
+    // the onGuidedTopicTeachingEnd host callback — a second concurrent run
+    // would fire that callback (-> completePractice()) a second time for
+    // the same topic. Set true the instant _endGuidedTopicTeaching() is
+    // entered (before any async work), so every signal after the first
+    // becomes a no-op. Reset on a fresh tap (focusGuidedTopic) — a new
+    // teaching session gets its own single completion — same lifecycle as
+    // _guidedTopicInFlight.
+    _guidedTopicTeachingEnded: false,
     // VTID-02020: contextual recovery state. _preDisconnectStage captures what
     // the user was doing when the network dropped (idle / listening_user_speaking
     // / thinking / speaking) so the backend's recovery prompt can decide
@@ -4266,6 +4281,16 @@
   // instead of guessing a fixed delay, so an in-flight closing line is
   // never truncated).
   function _endGuidedTopicTeaching(topicId, reason) {
+    // VTID-03781: idempotency guard — see _guidedTopicTeachingEnded's own
+    // declaration for why this is needed (tool-call + backstop can both
+    // fire for the same teaching session). Must be the very first thing
+    // this function does, synchronously, before any async poll starts, so
+    // a second concurrent call can never race past this check.
+    if (_s._guidedTopicTeachingEnded) {
+      console.log('[VTOrb] _endGuidedTopicTeaching: already ended this teaching session, ignoring duplicate signal (reason=' + reason + ')');
+      return;
+    }
+    _s._guidedTopicTeachingEnded = true;
     var attempts = 0;
     // VTID-03763: pin the session generation this poll belongs to at the
     // moment teaching-end was signalled — see the identical guard on
@@ -4823,6 +4848,11 @@
       // VTID-03776: a fresh tap is a clean slate for the zero-audio circuit
       // breaker too — a previous topic's failure count must not carry over.
       _s._guidedTopicZeroAudioFailCount = 0;
+      // VTID-03781: a fresh tap is a brand-new teaching session — it must
+      // get its own single completion, not inherit a previous topic's
+      // already-fired idempotency guard (which would silently no-op this
+      // topic's own, genuinely first, completion signal).
+      _s._guidedTopicTeachingEnded = false;
       // VTID-03762: arm the backstop — see GUIDED_TOPIC_BACKSTOP_MS's own
       // comment for why this exists. Only for a real topic tap; a null
       // topicId (defensive fallback path) has nothing to backstop.
