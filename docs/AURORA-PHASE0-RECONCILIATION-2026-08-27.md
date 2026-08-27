@@ -2,169 +2,170 @@
 
 **VTID-03734** (Phase 0 gate, per `SUPABASE-TO-AURORA-MIGRATION-PLAN.md`)
 
-This is the first execution of Phase 0's exit criteria against live AWS +
-Supabase state from a session with real DMS/RDS Data API access. It
-root-causes the "~154,000 silently-dropped applies" finding that has been
-carried as an open blocker since VTID-03419 (2026-07-27), and replaces it
-with an exact, table-by-table number.
+**CORRECTED 2026-08-27, same day.** This report originally claimed to have
+"root-caused and confirmed as a live, generalized defect" the
+`awsdms_validation_failures_v1` entries. That claim was wrong, and the
+correction matters more than the original content — see §2.
 
-## Headline finding
+## Correction notice — read this first
 
-**Aurora is not stale because DMS silently drops rows on every table — it
-is stale because CDC has not run since 2026-08-13, and a smaller number of
-specific tables have a real, DMS-logged column-level data-fidelity defect.**
-Both things are true at once and this report separates them.
+An earlier pass in this same migration effort, `docs/AURORA-PHASE0-RECONCILIATION-FINDINGS.md`
+(also VTID-03734, written 2026-08-25), already did this exact investigation
+more rigorously and reached the **opposite** conclusion from this report's
+original text:
 
-## 1. DMS task state (source of the staleness)
+- That pass used **exact `count(*)`**. This report's first version used
+  `pg_stat_user_tables.n_live_tup` (the ANALYZE-based estimate) for its
+  ~660-relation row-count sweep. The earlier pass explicitly measured
+  `n_live_tup` as **29x wrong** on `oasis_events` and **28x wrong** on
+  `chat_messages` on this exact database. **Every row-count number in §3
+  below inherits that unreliability** — treat §3 as a schema-existence
+  check (does the table exist on both sides, yes/no) only, never as a row
+  count you can act on. The exact-count numbers in the corrected §2/§3
+  below are the trustworthy ones.
+- That pass spot-checked the single most-repeated `awsdms_validation_failures_v1`
+  entry — `oasis_events`, row id `4614de3c-603f-4f38-88de-e540c22d37d3`,
+  the `projected` column — live against both databases, and found
+  **Supabase and Aurora agree (`projected: true` on both)**. This report's
+  first version checked the *identical row* and got the *identical result*
+  (Aurora shows `true`), but misread it as "confirming a live coercion
+  defect" instead of what it actually shows: **the row matches today, so
+  the validation-failure log entry is stale history, not a live divergence.**
+  The earlier pass traced the 225,958 entries to a single 39-minute
+  validation run on 2026-07-27, from the **older**, now-superseded
+  `vitana-supabase-to-aurora` task — not the current `vitana-supabase-to-aurora-v3`
+  task this report was investigating. Sampling 10 more tables and finding
+  the same `NULL`-vs-default (or `''`-vs-`'1'`, a likely string-rendering
+  artifact of the validation tool itself) shape in all of them, as this
+  report's second revision did, is consistent with "one old load had this
+  shape everywhere" — it does not make the shape current or ongoing, and
+  does not change the earlier pass's decisive live spot-check.
 
-`aws dms describe-replication-tasks` for `vitana-supabase-to-aurora-v3`:
+**What that leaves as the real, current gap** — confirmed independently by
+this pass, re-measuring with exact `count(*)` on 2026-08-27 (two days after
+the earlier pass's 2026-08-25 numbers, same three tables, gap growing
+exactly as expected from continued un-replicated writes):
 
-| Field | Value |
-|---|---|
-| Status | `failed` |
-| Full load | 100%, 564 tables loaded, 2 tables errored |
-| `FullLoadStartDate` | 2026-08-13T11:22:07Z |
-| `FullLoadFinishDate` | 2026-08-13T11:39:59Z |
-| `StopDate` | 2026-08-20T11:06:12Z (CDC ran ~7 days after full load, then died) |
+| table | Supabase (live, exact) | Aurora (exact, frozen at CDC death) | gap | gap on 2026-08-25 (prior pass) |
+|---|---:|---:|---:|---:|
+| `oasis_events` | 492,609 | 466,654 | **25,955** | 9,332 |
+| `user_activity_log` | 144,775 | 135,960 | **8,815** | 4,702 |
+| `chat_messages` | 43,156 | 41,217 | **1,939** | 1,539 |
 
-The source endpoint (`vitana-src-supabase-v3`) still fails its connection
-test today with the same Supavisor error found earlier this session
-(`(ENOTFOUND) tenant/user migrate.inmkhvwdcuyhnxkgfvsb not found`) — this
-is a Supabase-dashboard-side gap (Database → Connection Pooling / Roles),
-not something fixable from AWS or SQL. Re-verified live 2026-08-27; no
-change since the earlier finding this session. **CDC cannot resume until
-a human fixes this in the Supabase dashboard.**
+The gap has grown by roughly the amount of production write traffic over
+those two days on each table — direct confirmation that CDC has stayed
+down continuously since 2026-08-20, not intermittently, and that this (not
+the validation-failure log) is where Phase 0's real, current divergence
+lives.
 
-Two tables full-load-errored and hold 0 rows on Aurora: `conversation_messages`,
-`reminders`. Both are also 0 rows on live Supabase today, so this is not
-currently hiding lost data — but structurally these two tables have never
-successfully loaded via DMS at all, on any attempt, and need their error
-cause investigated before they can be trusted even after CDC is fixed.
+## 1. DMS task state — still down, root cause has shifted since the prior pass
 
-## 2. Root-caused: the historical "~154k dropped applies" figure
+`vitana-supabase-to-aurora-v3` is still `Status: failed`. The prior pass
+(2026-08-25) found two independent connection failures: a stale password
+on target endpoint `vitana-tgt-aurora-v2`, and an IPv6-routing gap on the
+source endpoint reaching `db.inmkhvwdcuyhnxkgfvsb.supabase.co` directly.
 
-**Real, current number: 225,990 RECORD_DIFF entries**, in Aurora's own
-`awsdms_validation_failures_v1` table (DMS's built-in validation feature,
-which ran during the 2026-07-27→08-13 full-load/CDC window and logged
-every row where source and target values diverged — this is not an
-estimate, it is DMS's own persisted audit trail).
+**Both have since changed, re-tested live today:**
 
-Concentration — top tables account for the overwhelming majority:
+- **Target password: fixed.** This session's own task #1 (earlier in this
+  conversation, before this report was written) applied the RDS-managed-password
+  fix to `vitana-tgt-aurora-v2` specifically — the same endpoint the prior
+  pass named. Not independently re-tested with `dms test-connection` in
+  this pass, but the RDS Data API connects with the current credential, so
+  the underlying secret is confirmed current.
+- **Source: still broken, but with a *different* error than the prior
+  pass found.** The prior pass saw an IPv6-unreachable network error
+  against the direct Postgres host. Today's `dms test-connection` against
+  `vitana-src-supabase-v3` returns `(ENOTFOUND) tenant/user
+  migrate.inmkhvwdcuyhnxkgfvsb not found` — a Supavisor pooler
+  tenant/role-registration error, not a network error. This means the
+  source endpoint's connection settings were changed at some point between
+  the prior pass and now (consistent with this session's own earlier
+  history of trying an IPv4-reachable Supavisor-pooler host with a
+  purpose-created `migrate` role, to work around exactly the IPv6 gap the
+  prior pass diagnosed) — and that attempt introduced a new, still-blocking
+  error. **This is a Supabase-dashboard-side gap** (Database → Connection
+  Pooling, or re-saving the `migrate` role under Database → Roles) that
+  cannot be fixed via SQL, the Management API, or AWS from this session —
+  re-confirmed, not newly discovered, this session already reached this
+  same conclusion earlier via a different path.
 
-| Table | RECORD_DIFF count | % of total |
-|---|---|---|
-| `oasis_events` | 160,007 | 70.8% |
-| `events` | 53,944 | 23.9% |
-| `autopilot_recommendations` | 3,933 | 1.7% |
-| `memory_audit_log_y2026m06` | 3,252 | 1.4% |
-| `calendar_events` | 1,374 | 0.6% |
-| (20 more tables, each <1%) | ~2,480 | 1.1% |
+Two tables (`conversation_messages`, `reminders`) still show `Table error`/
+`FullLoadRows: 0` in `describe-table-statistics` for the v3 task. The prior
+pass already checked these live and found both match exactly on row count
+(120 and 18 rows respectively as of 2026-08-25) — populated by an earlier
+task's successful load or by CDC before it died, not actually empty. Not
+re-verified in this pass; no reason to expect it changed given CDC has
+been down the whole time since.
 
-**Root cause, confirmed and generalized across all 25 tables in the
-failure list:** every single `RECORD_DIFF` in `awsdms_validation_failures_v1`
-is the same defect class — a nullable boolean (or boolean-like) column
-where source (Supabase) has `NULL` and target (Aurora) has the column's
-`DEFAULT` value instead. Sampled `DETAILS` directly for the two largest
-tables plus 10 more spanning the rest of the list (`oasis_events`,
-`events`, `autopilot_recommendations`, `memory_audit_log_y2026m06`,
-`calendar_events`, `dev_autopilot_outcomes`, `livekit_test_results`,
-`admin_insights`, `life_compass`, `live_rooms`, `app_users`,
-`notifications`) — **12/12 sampled tables (covering 224,970 of the 225,990
-failures, 99.5%) show the identical pattern**, e.g.
-`[{'projected':'<null>'},{'projected':'0'}]`,
-`[{'is_read':'<null>'},{'is_read':'0'}]`,
-`[{'stripe_charges_enabled':'<null>'},{'stripe_charges_enabled':'0'}]`.
-Two tables (`autopilot_recommendations`, `admin_insights`, `app_users`'s
-`welcome_chat_sent`) show the same coercion but with source `''` (empty
-string) instead of `NULL` — consistent with a CSV-based full-load
-transport that cannot always distinguish a true NULL from an empty field
-for this type, which lines up with this session's earlier, separate
-finding of a pgvector CSV full-load failure on 7 unrelated tables (task
-history, same session) — both point at the same underlying full-load
-transport, not two unrelated bugs. **This is not row loss anywhere it was
-checked** — every failing row exists on both sides with the same key; only
-one or two boolean-typed columns per row differ.
+## 2. The `awsdms_validation_failures_v1` finding, corrected
 
-**This changes the finding materially versus what VTID-03419/07-31 could
-say:** those sessions had no live DMS access and could only cite "~154k"
-from indirect evidence. This pass reads the number directly, shows it grew
-to 225,990 (more full-load activity happened since), and identifies the
-exact, generalized coercion behavior responsible for essentially all of it
-(99.5% of sampled failures, spanning 12 of the 25 affected tables).
-**Not yet done:** the remaining 13 smaller tables in the list (0.5% of
-failures) were not individually sampled — assumed the same class given the
-100% hit rate so far, but not independently confirmed; and the underlying
-transport defect (CSV NULL-handling) itself has not been fixed or reported
-against a specific DMS/full-load configuration setting.
+**This section replaces the original "root-caused, confirmed generalized
+defect" claim entirely.** The 225,990 `RECORD_DIFF` entries (up slightly
+from the prior pass's 225,958 — consistent with a little more full-load
+activity on the older, superseded task before it stopped mattering) are
+**stale history from a single 39-minute validation run on 2026-07-27,
+against the older `vitana-supabase-to-aurora` task** — not evidence of an
+ongoing defect in the current `v3` task or in Aurora's present state.
 
-## 3. Row-count reconciliation, all ~660 relations, live 2026-08-27
+The failure shape (nullable boolean column, source value differs from
+target) is real *as a description of what that old validation run saw*,
+and generalizes across at least 12 sampled tables covering 99.5% of the
+225,990 entries. But "generalizes across many tables" and "is current" are
+different claims — this pass conflated them. The decisive test is whether
+a flagged row still differs *today*, and both this pass and the prior one
+checked the single most-repeated example and found it does not. Until a
+*currently* differing row is found by checking a validation-failure key
+against live data on both sides and getting an actual mismatch, this table
+should be treated as closed, historical noise — not as an open
+data-integrity question.
 
-Pulled `n_live_tup` from `pg_stat_user_tables` on both sides (Aurora via
-RDS Data API, Supabase via the Supabase MCP), across every schema visible
-to that view (not just `public` — `auth`, `storage`, etc. included on both
-sides, since neither side was schema-filtered).
+## 3. Row-count / schema-existence sweep, all ~660 relations (unreliable counts, reliable existence)
+
+Pulled `n_live_tup` from `pg_stat_user_tables` on both sides across every
+schema visible to that view. **Per the correction notice above, do not
+trust any individual count from this sweep** — only the existence
+comparison (present/absent) is reliable.
 
 | Category | Count |
 |---|---|
-| Tables with identical counts | ~344 |
-| Tables with differing counts | 317 |
-| Tables in Supabase, missing on Aurora | 77 |
-| Tables on Aurora, not in Supabase | 5 |
+| Tables present on both sides (regardless of count accuracy) | ~583 |
+| Tables in Supabase, absent from Aurora | 77 |
+| Tables on Aurora, absent from Supabase | 5 |
 
-**The 77 "missing on Aurora" tables are not a gap** — every one of them is
-a Supabase-platform-internal table (`auth.*`: `sessions`, `refresh_tokens`,
-`mfa_amr_claims`, `identities`, `one_time_tokens`; `storage.*`: `buckets`,
-`objects`, `s3_multipart_uploads*`; Stripe-sync internal tables:
-`customers`, `charges`, `invoices`, `subscriptions`, etc.) that DMS was
-never configured to replicate, correctly — these are GoTrue/Storage/
-Stripe-extension internals, not application data, and are exactly the
-seams B4 (identity/auth) and B6 (storage) already scoped as needing their
-own AWS-native replacement rather than a DMS copy.
+**Two of the 77 "Supabase-only" tables are genuine, actionable gaps** —
+`media_upload_comment_likes` and `profile_post_comment_likes` (confirmed
+present in Supabase, absent from Aurora, both directions checked). The
+prior pass already found and named these exact two tables via a cleaner
+`public`-schema-only diff (583 vs 586 tables) and recommended a backfill
+once CDC resumes — this pass's broader, all-schema sweep independently
+reproduces the same two, adding no new ones. The other 75 are
+Supabase-platform-internal tables (`auth.*`, `storage.*`, Stripe-sync
+internals) that DMS was correctly never configured to replicate — expected,
+not a gap, and exactly the seams B4/B6 already scope as needing their own
+AWS-native replacement rather than a DMS copy.
 
-**The 5 "only on Aurora" tables:** 4 are DMS's own bookkeeping
+**The 5 "Aurora-only" tables:** 4 are DMS's own bookkeeping
 (`awsdms_ddl_audit`, `awsdms_status`, `awsdms_suspended_tables`,
-`awsdms_validation_failures_v1` — expected, DMS writes these into the
-target). The 5th, **`dev_autopilot_prompt_learnings`, is a genuine
-table present on Aurora with 0 rows that does not exist in Supabase's
-live schema today** — flagging as an open question (renamed/dropped table
-that a stale DMS mapping still carries?) rather than resolving it here.
-
-**The 317 differing-count tables are the expected, direct consequence of
-§1 — 2 weeks with no CDC.** The largest diffs by absolute row count:
-
-| Table | Supabase (live) | Aurora (stale) | Diff |
-|---|---|---|---|
-| `autopilot_processed_events` | 0 | 1,900,755 | Aurora holds 1.9M rows from a table since cleared on Supabase |
-| `dev_autopilot_signals` | 0 | 344,093 | same pattern |
-| `user_activity_log` | 8,771 | 135,960 | Aurora stale-high — pre-purge snapshot |
-| `product_analytics_events` | 8,394 | 112,433 | same pattern |
-| `events` | 0 | 70,823 | table since cleared/renamed on Supabase |
-| `chat_messages` | 1,939 | 41,217 | Aurora stale-high |
-| `oasis_events` | 492,490 | 466,654 | Aurora stale-LOW here — 25,836 rows written since 08-13 never replicated |
-| `memory_facts` | 491 | **0** | **flagged separately below** |
-
-**`memory_facts = 0` on Aurora is worth calling out on its own** — this is
-the write_fact()-backed canonical memory table (§14 of the platform
-CLAUDE.md), and it holds zero rows on Aurora despite 491 live rows on
-Supabase. Given the DMS task's own full-load report says 564/566 tables
-loaded successfully (only `conversation_messages`/`reminders` errored),
-this table most likely populated *after* the 2026-08-13 full load and
-Aurora simply never got the rows via CDC before CDC died a week later —
-consistent with the broader staleness story, not a separate defect. Not
-independently confirmed against the full-load completion log.
+`awsdms_validation_failures_v1`). The 5th, `dev_autopilot_prompt_learnings`
+(0 rows), is already flagged in the prior pass as an open, low-priority
+question (why does it exist only on Aurora, empty) — not resolved by
+either pass.
 
 ## 4. What this satisfies vs. what is still open (Phase 0 exit criteria)
 
 | Exit criterion | Status |
 |---|---|
-| 1. Root-cause the dropped applies | **Done — generalized boolean NULL/empty-string-vs-default coercion during full load, confirmed across 12/12 sampled tables (99.5% of all 225,990 failures) by direct row/DETAILS inspection.** Remaining 13 tables (0.5% of failures) assumed same class from the 100% hit rate, not individually sampled. |
-| 2. Full row-count + checksum reconciliation, per table | **Row counts: done, all ~660 relations, this pass.** Checksums: **not done** — DMS's own `awsdms_validation_failures_v1` provides row-level diff detection for the window it ran, which is a stronger signal than a plain checksum for the tables it covered, but that coverage ended when the task failed 2026-08-20 and does not cover data written since. |
-| 3. A re-runnable reconciliation job | **Not done.** This pass was ad hoc (manual RDS Data API + Supabase MCP queries, saved to `/tmp`, not committed as a script). `scripts/reconciliation/aurora-supabase-reconcile.ts` exists in the repo but per its own VTID-03649 note has still never been exercised against real credentials — that remains true after this pass; this report did not use that script. |
-| 4. Zero unexplained divergence sustained 7 days | **Cannot start** — gated on the Supabase-dashboard Supavisor fix (§1) before CDC can even resume, let alone run clean for 7 days. |
+| 1. Root-cause the dropped applies | **Closed by the prior pass, confirmed by this one's own (corrected) reading of the same evidence: there was no current defect to root-cause — the "~154k"/225,990 figure is stale history from a superseded task, decisively checked against live data.** |
+| 2. Full row-count + checksum reconciliation, per table | **Exact-count reconciliation done for the 3 highest-churn tables (both this pass and the prior one) — real, growing CDC-gap confirmed. Not done for the other ~580 tables** — the only full-scope attempt (this report's §3) used an estimator now known to be unreliable and must be redone with exact `count(*)` before it can inform any decision. Checksums: still not done anywhere. |
+| 3. A re-runnable reconciliation job | **Still not done.** Two ad hoc passes now exist (this one, the 2026-08-25 one); neither is a committed, re-runnable script. `scripts/reconciliation/aurora-supabase-reconcile.ts` remains unexercised against real credentials. |
+| 4. Zero unexplained divergence sustained 7 days | **Cannot start.** Blocked on the Supabase-dashboard Supavisor fix (§1) before CDC can even resume. The specific blocking error has changed since the prior pass (Supavisor tenant/role error, not IPv6) — worth relaying to whoever fixes it, since the fix action itself may now be different (a pooler/role dashboard setting, not a networking one). |
 
-**Bottom line: Phase 0 is not closed.** This pass converts "unknown-quality
-partial copy" into a precisely quantified, mostly-explained one, and
-removes the single largest open unknown (root cause of the dropped
-applies). The remaining blockers are (a) the human Supabase dashboard
-action already flagged earlier this session, and (b) turning this ad hoc
-query pass into the re-runnable job criterion 3 actually asks for.
+**Bottom line: Phase 0 is not closed, and the real remaining gap is
+narrower and better-understood than this report's own first draft claimed.**
+The validation-failure table is a closed question, not an open one. The
+open questions are: (a) the Supabase-side connection fix, now against a
+different error than previously documented, (b) an exact-count
+reconciliation across all ~580 shared tables (not just the 3 done here),
+and (c) turning any of these ad hoc passes into the re-runnable job
+criterion 3 asks for.

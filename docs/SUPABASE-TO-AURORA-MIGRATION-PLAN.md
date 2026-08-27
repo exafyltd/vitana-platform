@@ -85,22 +85,30 @@ production. Migrating onto it would promote silent data loss to primary.
 **Owner needs:** live AWS/DMS access. This is the first real blocker and it is
 not a code task.
 
-**2026-08-27 update — first live pass, with real AWS/DMS/Supabase access:**
-see `docs/AURORA-PHASE0-RECONCILIATION-2026-08-27.md` for the full report.
-Headline: the historical "~154k dropped applies" figure is now root-caused
-and re-measured at **225,990** (DMS's own `awsdms_validation_failures_v1`
-log) — a **generalized boolean NULL/empty-string-vs-column-default
-coercion during full load**, confirmed across 12/12 sampled tables
-(99.5% of all failures) including the top two (`oasis_events` 70.8%,
-`events` 23.9%), not row loss anywhere checked. Likely the same
-full-load-transport defect as this session's separate pgvector CSV
-full-load finding on 7 other tables. Row-count reconciliation across all
-~660 relations (both sides) is done for this snapshot. **Still open:**
-13 smaller tables (0.5% of failures) not individually sampled; criterion 2's checksum half;
-criterion 3 (this pass was ad hoc, not a committed re-runnable job); and
-criterion 4 is blocked behind the same Supavisor/Supabase-dashboard fix
-already flagged elsewhere in this session — CDC cannot resume, let alone
-run clean for 7 days, until a human fixes that. **Phase 0 is not closed.**
+**Correction, 2026-08-27 (same day, see the doc's own correction notice):**
+this update originally claimed the "~154k dropped applies" figure was
+"root-caused as a live, generalized coercion defect." That was wrong — a
+prior pass (`docs/AURORA-PHASE0-RECONCILIATION-FINDINGS.md`, 2026-08-25,
+which this update failed to check against before writing itself) already
+used exact `count(*)` (not the `n_live_tup` estimator this update's own
+sweep used, which is independently confirmed unreliable — 29x off on
+`oasis_events`) and decisively showed the 225,958/225,990-row
+`awsdms_validation_failures_v1` table is **stale history from a superseded,
+older DMS task's single 2026-07-27 validation run — not a current defect.**
+The corrected read: **the real, current, and only confirmed gap is CDC
+having been down since 2026-08-20**, measured directly on the 3
+highest-churn tables and growing day over day (`oasis_events` 25,955 rows
+behind as of 2026-08-27, up from 9,332 on 2026-08-25). See
+`docs/AURORA-PHASE0-RECONCILIATION-2026-08-27.md` for the full corrected
+report, and the 2026-08-25 doc for the original, more rigorous pass this
+one should have deferred to from the start. **Still open:** exact-count
+reconciliation across the other ~580 shared tables (only 3 done so far);
+criterion 2's checksum half; criterion 3 (both passes were ad hoc, neither
+is a committed re-runnable job); and criterion 4, blocked on a Supabase-
+dashboard Supavisor fix — the specific blocking error has itself changed
+since the 2026-08-25 pass (now a pooler tenant/role error, previously an
+IPv6 network error), worth relaying since the actual fix action may differ.
+**Phase 0 is not closed.**
 
 ---
 
