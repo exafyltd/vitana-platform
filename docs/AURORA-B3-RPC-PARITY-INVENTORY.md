@@ -463,6 +463,26 @@ deliveries on `credit_pack` sessions to see if this has already affected a
 real customer** — this pass did not have Stripe API access to check that
 directly.
 
+**Checked the prod gateway's own CloudWatch logs instead (`/vitana/gateway-awsdr`,
+confirmed via the live ECS task definition's `logConfiguration` as the
+actual log group this service writes to — not a guess) — inconclusive, not
+reassuring.** Searched 90 days (33.4M records, 3.2GB scanned) via
+CloudWatch Logs Insights for `credit_wallet RPC failed`, `credit_wallet
+failed`, `credit_pack checkout missing metadata`, and a `credit_pack`+
+`credit_paid` success pattern — **zero matches, all four.** Widened to any
+occurrence at all of `[billing]` (this route's own log prefix, guaranteed
+to appear on any request this handler processes) over the same 90 days —
+**also zero.** A follow-up 14-day sweep for bare `billing`/`stripe`/
+`checkout.session` matched only unrelated noise (an ORB tool-name array
+that happens to contain a similarly-named tool). **This does not mean no
+customer has hit the bug** — it's equally consistent with the billing
+webhook route genuinely receiving no traffic in this window (0 credit-pack
+purchases attempted at all, which the 3-active-packs fact doesn't rule
+out) as it is with some other gap in what this specific log group
+captures. Recording the exact queries and null result rather than
+resolving the ambiguity either way — the Stripe-dashboard check above
+remains the actual way to answer this.
+
 ### What this does and doesn't change about the rest of the doc
 
 The 54 RPCs left in "Portable" and the 49 left in "Auth-dependent" after
