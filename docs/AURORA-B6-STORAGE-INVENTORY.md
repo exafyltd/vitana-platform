@@ -104,3 +104,24 @@ itself.
 - Did not check whether any bucket needs versioning, lifecycle rules, or
   CDN/CloudFront fronting in its S3 form — pure inventory, no target-
   architecture design.
+
+## Execution update (VTID-03765), 2026-08-27 — public backfill complete
+
+This inventory became real execution the same session: `STORAGE_PROVIDER`
+abstraction shipped (`services/gateway/src/services/storage/storage-provider.ts`,
+default `supabase`, zero behavior change until flipped), all 19 buckets
+provisioned on S3 with matching public/private ACLs
+(`scripts/aws/setup-storage-buckets.sh`), and the public-object backfill
+(`scripts/aws/migrate-storage-to-s3.sh`) **completed: 992/992 objects
+copied, 0 failures, 0 size mismatches.** Spot-checked 3 random objects
+directly against live S3 afterward — correct `Content-Type` and non-zero
+size on each.
+
+**Still open:** the 116 private-bucket objects (`feedback-attachments`,
+`chat-attachments`, `health-reports`, `voucher-pdfs`) remain unmigrated —
+blocked on `secretsmanager:GetSecretValue` for the Supabase service-role
+key, denied by this session's current IAM grant. The migration script
+already treats this as a distinct, reported skip
+(`skipped_private_no_key`), not a silent drop. `STORAGE_PROVIDER` has not
+been flipped to `s3` anywhere — that remains a deliberate, separate
+operator action for once the private-bucket gap closes.
