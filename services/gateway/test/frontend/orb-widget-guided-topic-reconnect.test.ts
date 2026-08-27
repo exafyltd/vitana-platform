@@ -78,10 +78,20 @@ describe('orb-widget guided-topic reconnect (VTID-03675)', () => {
   });
 
   it('a client-side reconnect (_attemptReconnect -> _sessionStart) can still see a pending guided topic', () => {
-    // _attemptReconnect must not itself clear _s.guidedTopic before calling
-    // _sessionStart again — if it did, the fix above would be moot.
+    // _attemptReconnect must not clear _s.guidedTopic UNCONDITIONALLY before
+    // calling _sessionStart again — if it did, the fix above would be moot.
+    // VTID-03776 added a narrow, CONDITIONAL null (the zero-audio circuit
+    // breaker, only after repeated content-filter-driven failures with
+    // nothing ever heard — see orb-widget-guided-topic-reconnect-loop.test.ts
+    // for that invariant in full) which does not reintroduce this regression:
+    // it is reachable only inside the breaker's own guard, never bare.
     const body = extractFunctionBody(source, 'function _attemptReconnect(');
-    expect(body).not.toMatch(/_s\.guidedTopic\s*=\s*null/);
+    const nulls = [...body.matchAll(/_s\.guidedTopic\s*=\s*null/g)];
+    expect(nulls.length).toBeGreaterThan(0); // the VTID-03776 breaker must exist
+    for (const m of nulls) {
+      const before = body.slice(Math.max(0, m.index! - 500), m.index!);
+      expect(before).toMatch(/_guidedTopicZeroAudioFailCount >= 2/);
+    }
   });
 
   it('clears guidedTopic in the SAME place guidedAutoClose is cleared on a completed guided turn', () => {

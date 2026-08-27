@@ -371,6 +371,20 @@
     // same lifecycle as guidedTopic/_guidedTopicInFlight.
     _guidedTopicOpenedAt: null,
     _guidedTopicBackstopInterval: null,
+    // VTID-03776: counts consecutive reconnect attempts, while a guided topic
+    // is in flight, that produced NO audible turn at all this overlay-open
+    // (_audioEverHeardThisOpen still false). VTID-03774's own fixes made
+    // guided_topic_id correctly persist and resend across every reconnect —
+    // but when Nova's nova_validation content filter deterministically
+    // rejects that specific topic's wake-brief opener (live-reproduced:
+    // ~30 consecutive fresh sessions, ~3.4s apart, every one blocked before
+    // any turn completed), every reconnect re-requests the SAME topic,
+    // re-synthesizes/replays the full Polly narration, and gets blocked
+    // again — an audible infinite repeat with no natural exit. See
+    // _attemptReconnect() for where this increments and trips the breaker.
+    // Reset on a fresh tap (focusGuidedTopic) and on close (_hide), same
+    // lifecycle as _guidedTopicInFlight.
+    _guidedTopicZeroAudioFailCount: 0,
     // VTID-02020: contextual recovery state. _preDisconnectStage captures what
     // the user was doing when the network dropped (idle / listening_user_speaking
     // / thinking / speaking) so the backend's recovery prompt can decide
@@ -4273,6 +4287,7 @@
     _s.guidedTopic = null; // VTID-03675: don't let a never-delivered topic leak into a later, unrelated session
     _s._guidedTopicInFlight = null; // VTID-03746: same lifecycle — this overlay session is genuinely over
     _s._guidedTopicAudioDelivered = false; // VTID-03774: same lifecycle
+    _s._guidedTopicZeroAudioFailCount = 0; // VTID-03776: same lifecycle
     _s._guidedTopicOpenedAt = null; // VTID-03762: same lifecycle — the backstop no longer applies
     try { clearInterval(_s._guidedTopicBackstopInterval); } catch (e) { /* noop */ }
     _s._guidedTopicBackstopInterval = null;
@@ -4379,6 +4394,33 @@
       return;
     }
 
+    // VTID-03776: circuit breaker for a guided topic whose wake-brief opener
+    // Nova's content filter (nova_validation) deterministically rejects.
+    // Live-reproduced: ~30 consecutive fresh sessions, ~3.4s apart, EVERY one
+    // blocked before any turn completed — because VTID-03774's own fixes
+    // correctly persist/resend guided_topic_id across every reconnect, each
+    // attempt re-synthesizes and replays the full Polly narration before
+    // being blocked again, an audible infinite repeat with no natural exit.
+    // A disconnect this soon after open, with a guided topic still armed and
+    // NOTHING ever heard this overlay-open, counts as one such failure. After
+    // 2 (this connection's attempt + one retry — the same budget the server's
+    // own internal retry already gives a fresh topic), give up on THIS topic
+    // for the rest of the overlay-open so the next attempt falls through to
+    // safe generic conversation instead of repeating the doomed content.
+    // Does NOT fire once real audio has played (_audioEverHeardThisOpen) —
+    // a mid-lesson network blip must still resume the SAME topic (Fix 3,
+    // VTID-03774's guided_topic_resume signal), never drop it.
+    if (_s._guidedTopicInFlight && !_s._audioEverHeardThisOpen) {
+      _s._guidedTopicZeroAudioFailCount = (_s._guidedTopicZeroAudioFailCount || 0) + 1;
+      if (_s._guidedTopicZeroAudioFailCount >= 2) {
+        console.warn('[VTOrb] _attemptReconnect: guided topic ' + _s._guidedTopicInFlight +
+          ' failed ' + _s._guidedTopicZeroAudioFailCount + 'x with no audio ever heard — ' +
+          'dropping it for this session, falling back to generic conversation');
+        _s.guidedTopic = null;
+        _s._guidedTopicInFlight = null;
+      }
+    }
+
     if (_s._reconnectCount >= MAX_WIDGET_RECONNECTS) {
       _enterStuckState();
       return;
@@ -4449,8 +4491,22 @@
       _sessionStart().then(function () {
         _s._isReconnecting = false;
         if (_s.active) {
-          _s._reconnectCount = 0;
-          console.log('[VTOrb] _attemptReconnect: succeeded');
+          // VTID-03776: only reset the backoff budget once real audio has
+          // actually played THIS overlay-open (_audioEverHeardThisOpen) — a
+          // bare transport-level connect that dies to something like
+          // nova_validation within ~1s, before any turn completes, must NOT
+          // reset it. Resetting on `_s.active` alone made the budget
+          // meaningless for a doomed prompt: every reconnect "succeeded" at
+          // the transport layer just long enough to zero the count before
+          // the very next RECONNECT_DELAYS[0] fired, so MAX_WIDGET_RECONNECTS
+          // never actually bound anything — live-reproduced as a genuinely
+          // unbounded reconnect loop (~30+ sessions over 5+ minutes). Once
+          // audio HAS played, resetting on every reconnect is still correct —
+          // a long, healthy session shouldn't be punished for one hiccup.
+          if (_s._audioEverHeardThisOpen) {
+            _s._reconnectCount = 0;
+          }
+          console.log('[VTOrb] _attemptReconnect: succeeded (reconnectCount=' + _s._reconnectCount + ')');
           if (_s._disconnectActive) _clearDisconnect();
         } else {
           // _sessionStart returned without throwing but didn't set active
@@ -4733,6 +4789,9 @@
       // VTID-03774: a fresh tap means nothing has been delivered for THIS
       // topic yet — reset even if a previous topic's flag was left true.
       _s._guidedTopicAudioDelivered = false;
+      // VTID-03776: a fresh tap is a clean slate for the zero-audio circuit
+      // breaker too — a previous topic's failure count must not carry over.
+      _s._guidedTopicZeroAudioFailCount = 0;
       // VTID-03762: arm the backstop — see GUIDED_TOPIC_BACKSTOP_MS's own
       // comment for why this exists. Only for a real topic tap; a null
       // topicId (defensive fallback path) has nothing to backstop.
