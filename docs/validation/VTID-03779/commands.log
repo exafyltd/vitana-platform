@@ -1,0 +1,80 @@
+# VTID-03779 — commands run this session
+
+## Type check
+
+$ cd services/gateway && npx tsc --noEmit -p .
+  -> clean, exit 0
+
+## Frontend syntax check
+
+$ node --check services/gateway/src/frontend/command-hub/orb-widget.js
+  -> SYNTAX OK
+
+## Workflow YAML validity
+
+$ python3 -c "import yaml; yaml.safe_load(open('.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml'))"
+  -> YAML OK
+
+## Targeted test runs (during implementation)
+
+$ npx jest test/orb/live/upstream/nova-sonic-live-client.test.ts -t "rebindSessionDeps"
+  -> 2/2 passing (new)
+
+$ npx jest test/orb/live/upstream/nova-sonic-live-client.test.ts
+  -> 31/31 passing (full file, no regressions)
+
+$ npx jest test/orb/live/prewarm/orb-live-prewarm-wiring.test.ts
+  -> 6/6 passing (new)
+
+$ npx jest test/orb/live/upstream/nova-bedrock-factory-memo.test.ts
+  -> caught a real regression from this VTID's own change: the new
+     handleWsPrewarmMessage's `const novaCfg = ...` broke this test's
+     uniqueness anchor on the identical identifier in the real connect
+     branch, and separately the reuse branch's size pushed the anchor-to-
+     envelope-build distance past the test's fixed 2500-char window.
+     Fixed by renaming the prewarm handler's local to `novaPrewarmCfg`
+     (restores anchor uniqueness) and widening the test's window to 8000
+     chars (the underlying invariant — prep starts before the envelope
+     await — is unaffected; only the unrelated reuse branch's size changed
+     the distance). Re-run: 4/4 passing.
+
+$ npx jest test/frontend/orb-widget-nova-prewarm.test.ts
+  -> 9/9 passing (new)
+
+$ npx jest test/orb/live/upstream/staging-nova-prewarm-flag-pinned.test.ts
+  -> 3/3 passing (new)
+
+$ npx jest test/frontend/ test/orb/
+  -> 160/160 suites passing, 2061/2067 tests passing (6 pre-existing todo)
+     — confirms no regression to any existing orb-widget.js contract
+     (auth-reactive, guided-topic, full-duplex, ws-transport-default, etc.)
+     from the prewarm-socket wiring or the _wipeIdentityBoundState change.
+
+## Full suite (after all changes, including the nova-bedrock-factory-memo
+## fix and the flag-pinning test)
+
+$ npx jest --silent
+  -> Test Suites: 1 skipped, 716 passed, 716 of 717 total
+     Tests:       29 skipped, 6 todo, 13449 passed, 13484 total
+     Snapshots:   44 passed, 44 total
+
+## Rebase onto latest origin/main
+
+This branch's earlier VTID-03764 commits were already merged into main
+(same tree content, different commit hashes — confirmed with
+`git diff <local> <main>` returning empty). Reset the branch to
+`origin/main` and cherry-picked the VTID-03779 commit on top
+(`git checkout -B <branch> origin/main && git cherry-pick <sha>`) rather
+than pushing a divergent history. main had since absorbed several
+unrelated merged PRs touching the same files (orb-live.ts, orb-widget.js —
+VTID-03763/03767/03770/03771/03774/03776/03778/03781, guided-topic
+reconnect fixes). The cherry-pick auto-merged cleanly with no conflicts.
+
+$ npx tsc --noEmit -p .
+  -> clean, exit 0
+
+$ npx jest --silent
+  -> see outputs/full-suite.txt (regenerated post-rebase)
+  -> Test Suites: 1 skipped, 721 passed, 721 of 722 total
+     Tests:       29 skipped, 6 todo, 13516 passed, 13551 total
+     Snapshots:   44 passed, 44 total

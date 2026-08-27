@@ -514,6 +514,28 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
   onError(handler: (event: UpstreamErrorEvent) => void): void { this.errorHandler = handler; }
   onClose(handler: (event: UpstreamCloseEvent) => void): void { this.closeHandler = handler; }
 
+  /**
+   * VTID-03779 — a client built by the session-prewarm path (§ session
+   * pre-establishment) is constructed and connected BEFORE the real
+   * `GeminiLiveSession` it will end up serving exists. `onRotationDue` /
+   * `onIdleDeadlineApproaching` / `onFirstRawChunk` / `onEarlyNormalizedEvent`
+   * are captured as constructor-time closures over that (nonexistent) real
+   * session, so a prewarmed client that is later claimed would otherwise fire
+   * rotation/diagnostics against nothing. Called exactly once, at claim time,
+   * to repoint these four callbacks at the real session's closures — the
+   * event listeners set via onAudioOutput/onTranscript/etc. above are already
+   * plain mutable fields and need no equivalent, since the claim path
+   * re-registers them the same way any new client attach does.
+   */
+  rebindSessionDeps(next: Pick<NovaSonicLiveClientDeps,
+    'onRotationDue' | 'onIdleDeadlineApproaching' | 'onFirstRawChunk' | 'onEarlyNormalizedEvent'
+  >): void {
+    this.deps.onRotationDue = next.onRotationDue;
+    this.deps.onIdleDeadlineApproaching = next.onIdleDeadlineApproaching;
+    this.deps.onFirstRawChunk = next.onFirstRawChunk;
+    this.deps.onEarlyNormalizedEvent = next.onEarlyNormalizedEvent;
+  }
+
   async connect(options: UpstreamConnectOptions): Promise<void> {
     if (this.state !== 'idle') {
       throw new Error(`invalid_state: cannot connect from state '${this.state}'`);

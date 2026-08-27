@@ -404,6 +404,64 @@ describe('NovaSonicLiveClient', () => {
     await expect(client.connect(baseOptions())).rejects.toThrow(/nova_connect_failed/);
     expect(errors[0].code).toBe('nova_stream_error');
   });
+
+  describe('rebindSessionDeps (VTID-03779)', () => {
+    // A prewarmed client is constructed and connected before the real
+    // GeminiLiveSession it will end up serving exists, so its
+    // rotation/idle/diagnostic callbacks are closures over nothing. The
+    // claim path calls rebindSessionDeps() exactly once to repoint them at
+    // the real session — this proves the OLD closure goes dead and the NEW
+    // one takes over, not merely that the method doesn't throw.
+    it('repoints onRotationDue so the original constructor-time callback no longer fires', async () => {
+      jest.useFakeTimers();
+      try {
+        const { client, rotationDue: originalRotationDue } = makeClient();
+        await client.connect(baseOptions());
+
+        const newRotationDue = jest.fn();
+        client.rebindSessionDeps({
+          onRotationDue: newRotationDue,
+          onIdleDeadlineApproaching: jest.fn(),
+          onFirstRawChunk: jest.fn(),
+          onEarlyNormalizedEvent: jest.fn(),
+        });
+
+        jest.advanceTimersByTime(config.rotationAfterMs);
+        expect(originalRotationDue).not.toHaveBeenCalled();
+        expect(newRotationDue).toHaveBeenCalledTimes(1);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('repoints onFirstRawChunk and onEarlyNormalizedEvent so only the rebound callbacks observe post-claim traffic', async () => {
+      const originalFirstRawChunk = jest.fn();
+      const originalEarlyNormalizedEvent = jest.fn();
+      const { client, body, sentEvents } = makeClient({
+        onFirstRawChunk: originalFirstRawChunk,
+        onEarlyNormalizedEvent: originalEarlyNormalizedEvent,
+      });
+      await client.connect(baseOptions());
+      await sentEvents();
+
+      const newFirstRawChunk = jest.fn();
+      const newEarlyNormalizedEvent = jest.fn();
+      client.rebindSessionDeps({
+        onRotationDue: jest.fn(),
+        onIdleDeadlineApproaching: jest.fn(),
+        onFirstRawChunk: newFirstRawChunk,
+        onEarlyNormalizedEvent: newEarlyNormalizedEvent,
+      });
+
+      body.feed({ event: { audioOutput: { content: Buffer.from('hi').toString('base64') } } });
+      await flush();
+
+      expect(originalFirstRawChunk).not.toHaveBeenCalled();
+      expect(originalEarlyNormalizedEvent).not.toHaveBeenCalled();
+      expect(newFirstRawChunk).toHaveBeenCalledTimes(1);
+      expect(newEarlyNormalizedEvent).toHaveBeenCalledTimes(1);
+    });
+  });
 });
 
 describe('classifyNovaError', () => {
