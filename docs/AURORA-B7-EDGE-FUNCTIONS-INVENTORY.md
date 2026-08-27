@@ -136,3 +136,71 @@ follow-up this pass surfaced. Not fixed or further diagnosed here.
 - Did not scope the Lambda/ECS port itself (runtime shape, cold-start
   budget, which functions warrant a persistent ECS service vs. a Lambda) —
   pure inventory + a live-severity finding, no target-architecture design.
+
+## Addendum, 2026-08-27 — checked the invocation logs this doc flagged as not done, and the result reframes the whole B7 question
+
+This session has live Supabase log access (`query_logs`, ClickHouse SQL
+over `edge_logs`/`function_logs`). Ran exactly the check this doc's own
+"Not done" list named.
+
+**`edge_logs` over the full available 24h window: 748,348 total entries,
+738,369 of them `/rest/v1/*` (PostgREST) calls, and — checked with an
+unfiltered count, not a name-by-name search that could miss a variant
+path — exactly `0` matching `/functions/v1/*`.** That is real traffic
+volume in the window (this isn't a quiet-project false negative the way
+the credit_wallet CloudWatch check risked being), and it is a complete
+count, not a sample. No external HTTP call reached any of the 74 Supabase
+Edge Functions in the last 24 hours.
+
+**This does not mean the functions never run at all** — `function_logs`
+shows 209 `booted` events in the same window, and reading a few of them
+live shows a recurring internal test-runner (`run-uptime-checks` invoking
+`test-vertex-live` and similar diagnostic probes on a ~15-minute cadence)
+still executing on a schedule. So there is scheduled/internal invocation
+activity; there is just no evidence of real, external, frontend-driven
+traffic reaching this layer at all in a full day, for any of the 74 —
+including the 7 this doc flagged as having confirmed frontend callers
+(`ai-chat`, `extract-diary-insights`, `generate-enhanced-recommendations`,
+`generate-event-image`, `generate-proactive-greeting`,
+`social-media-import`, `transcribe-audio`). Targeted searches for
+`GOOGLE_GEMINI_API_KEY`/`generativelanguage`/`gemini-1.5`/`gemini-2` and
+for `generate-event-image` by name, specifically, also returned zero.
+
+**What this changes:** the original finding ("23 of 74 functions still
+call GCP directly, is that broken since the 2026-08-16 shutdown?") may be
+the wrong question to be asking with any urgency — if these functions
+receive essentially no real frontend traffic today, whether their GCP
+calls succeed or fail is close to moot in practice, the same way
+`google-cloud-tts` turned out to be orphaned dead code rather than a live
+bug once `useTextToSpeech.ts` was actually read. **This needs the same
+treatment `google-cloud-tts` got, at the frontend-caller level**: check
+whether `vitana-v1/src`'s call sites into `ai-chat` and the other 6 are
+still live UI paths a user can actually reach, or whether the frontend has
+already migrated off them the way TTS did and this doc's original static
+grep (which only proved "a call site exists in the source," not "a user
+can reach it today") was reading stale reachability the same way the
+`autopilot_logs`/`credit_wallet` static-migration-file reads elsewhere in
+this effort turned out to be. **Not resolved here** — this pass confirms
+the traffic pattern, not the reason for it; the next step is reading the
+frontend call sites directly, the same discipline B2/B3 already applied to
+their own dead-reference findings.
+
+**Caveat on the negative:** 24 hours is one day, not a representative
+sample of every feature's real usage cadence (a feature only used a few
+times a week wouldn't show up either) — this is suggestive and worth
+acting on, not proof these 74 functions have zero users, ever.
+
+**Followed through on `ai-chat` specifically, since it's the most central
+of the 7 — and it is NOT the `google-cloud-tts` orphaned-code story.**
+Traced its one caller (`src/services/aiVoiceService.ts`) to
+`HealthCoachChat.tsx`, which is rendered from two pages
+(`src/pages/ai/Companion.tsx`, `src/pages/Health.tsx`), both of which ARE
+lazily routed in `App.tsx` (`Companion` confirmed rendered at a live
+route; `Health` confirmed lazy-imported). **This is live, reachable,
+routed UI — not dead code the frontend already moved off of.** Combined
+with zero confirmed `/functions/v1/` traffic in the last 24h, the honest
+read is: either genuinely low same-day usage of the health-coach chat
+feature, or a real, currently-unconfirmed outage on a live user-facing AI
+chat path. This is the one worth someone actually opening the Companion
+or Health-coach chat screen to check by hand — this session has no
+browser/Playwright access to the live frontend to do that itself.
