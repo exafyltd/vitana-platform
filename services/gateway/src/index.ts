@@ -455,6 +455,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const adminMemoryBrokerRouter = require('./routes/admin-memory-broker').default;
   // BOOTSTRAP-MEMORY-ORCHESTRATOR-MANDATORY — Memory Alive/Dead status (exafy_admin only)
   const adminMemoryOrchestratorRouter = require('./routes/admin-memory-orchestrator').default;
+  // VTID-03773 Phase 0 — Aurora connectivity diagnostic for the memory rebuild (exafy_admin only)
+  const adminAuroraMemoryHealthRouter = require('./routes/admin-aurora-memory-health').default;
   // BOOTSTRAP-SOCIAL-MEMORY — Social Memory Intelligence endpoints
   const memorySocialRouter = require('./routes/memory-social').default;
   // Conversation-flow roadmap Step 4 — Command Hub "Conversation" section (READ-ONLY:
@@ -1256,6 +1258,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1', adminMemoryBrokerRouter, { owner: 'admin-memory-broker' });
   // BOOTSTRAP-MEMORY-ORCHESTRATOR-MANDATORY Memory Alive/Dead status endpoint
   mountRouterSync(app, '/api/v1', adminMemoryOrchestratorRouter, { owner: 'admin-memory-orchestrator' });
+  // VTID-03773 Phase 0 Aurora connectivity diagnostic
+  mountRouterSync(app, '/api/v1', adminAuroraMemoryHealthRouter, { owner: 'admin-aurora-memory-health' });
   // BOOTSTRAP-SOCIAL-MEMORY Social Memory Intelligence layer
   mountRouterSync(app, '/api/v1/memory/social', memorySocialRouter, { owner: 'memory-social' });
   // Conversation-flow Step 4 — read-only Command Hub Conversation section
