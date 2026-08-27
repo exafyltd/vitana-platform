@@ -8,6 +8,13 @@
  *
  * Requires `ffmpeg` + `ffprobe` to be present on PATH (installed via the
  * gateway Dockerfile's `apk add --no-cache ffmpeg`).
+ *
+ * VTID-03765: storage I/O now goes through storage-provider.ts
+ * (STORAGE_PROVIDER=supabase|s3, default supabase — no behavior change
+ * today). PURE MOVE: same operations, same bucket, same error handling.
+ * No dedicated test file exists for this module or its media-hub.ts
+ * caller — this change is validated by tsc --noEmit + the full gateway
+ * suite staying green, not by a test exercising this exact code path.
  */
 import { spawn } from 'child_process';
 import { randomUUID } from 'crypto';
@@ -15,6 +22,7 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { storageDownload, storageUpload, storagePublicUrl } from './storage/storage-provider';
 
 export interface ExtractedVideoMetadata {
   thumbnail_url: string;
@@ -125,16 +133,13 @@ export async function extractThumbnail(
   const localThumbPath = path.join(workDir, `${randomUUID()}.jpg`);
 
   try {
-    const { data: blob, error: downloadError } = await supabase.storage
-      .from('media')
-      .download(videoPath);
-    if (downloadError || !blob) {
+    const { data: bytes, error: downloadError } = await storageDownload('media', videoPath);
+    if (downloadError || !bytes) {
       throw new VideoExtractionError(
         'DOWNLOAD_FAILED',
-        `Supabase storage download failed for ${videoPath}: ${downloadError?.message ?? 'no data'}`,
+        `Storage download failed for ${videoPath}: ${downloadError?.message ?? 'no data'}`,
       );
     }
-    const bytes = Buffer.from(await blob.arrayBuffer());
     await fs.writeFile(localVideoPath, bytes);
 
     const probe = await probeVideo(localVideoPath);
@@ -165,27 +170,25 @@ export async function extractThumbnail(
     }
 
     const remoteThumbPath = thumbnailPathFor(videoPath);
-    const { error: uploadError } = await supabase.storage
-      .from('media')
-      .upload(remoteThumbPath, thumbBytes, {
-        contentType: 'image/jpeg',
-        upsert: true,
-        cacheControl: '3600',
-      });
+    const { error: uploadError } = await storageUpload('media', remoteThumbPath, thumbBytes, {
+      contentType: 'image/jpeg',
+      upsert: true,
+      cacheControl: '3600',
+    });
     if (uploadError) {
       throw new VideoExtractionError(
         'UPLOAD_FAILED',
-        `Supabase storage upload failed for ${remoteThumbPath}: ${uploadError.message}`,
+        `Storage upload failed for ${remoteThumbPath}: ${uploadError.message}`,
       );
     }
 
-    const { data: publicUrlData } = supabase.storage.from('media').getPublicUrl(remoteThumbPath);
-    if (!publicUrlData?.publicUrl) {
+    const thumbnailUrl = storagePublicUrl('media', remoteThumbPath);
+    if (!thumbnailUrl) {
       throw new VideoExtractionError('NO_PUBLIC_URL', 'getPublicUrl returned empty');
     }
 
     return {
-      thumbnail_url: publicUrlData.publicUrl,
+      thumbnail_url: thumbnailUrl,
       duration_sec: probe.durationSec,
       width: probe.width,
       height: probe.height,

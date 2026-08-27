@@ -32,6 +32,7 @@ import { promises as fs } from 'node:fs';
 import { createHash } from 'node:crypto';
 // VTID-03497: Titan seam. No-ops unless IMAGE_PROVIDER=bedrock.
 import { getImageProvider, generateTitanImage } from '../providers/titan-image';
+import { storageUpload, storagePublicUrl } from './storage/storage-provider';
 import * as repo from './intent-cover-service-repository';
 
 export type CoverTheme =
@@ -269,17 +270,13 @@ async function uploadFallbackCover(args: {
   intentId: string;
   theme: CoverTheme;
 }): Promise<string> {
-  const supabase = getSupabase();
   const file = fallbackKeyForSeed(args.theme, args.intentId);
   const localPath = path.join(fallbackDir(), file);
   const bytes = await fs.readFile(localPath);
   const remotePath = `fallback/${args.intentId}.jpg`;
-  const { error } = await supabase.storage
-    .from(BUCKET)
-    .upload(remotePath, bytes, { contentType: 'image/jpeg', upsert: true });
+  const { error } = await storageUpload(BUCKET, remotePath, bytes, { contentType: 'image/jpeg', upsert: true });
   if (error) throw new CoverGenError('storage_failed', error.message);
-  const { data } = supabase.storage.from(BUCKET).getPublicUrl(remotePath);
-  return data.publicUrl;
+  return storagePublicUrl(BUCKET, remotePath);
 }
 
 async function generateAiCover(theme: CoverTheme, gender: Gender): Promise<Buffer> {
@@ -375,16 +372,12 @@ async function generateAiCover(theme: CoverTheme, gender: Gender): Promise<Buffe
 }
 
 async function uploadAiCover(args: { intentId: string; bytes: Buffer }): Promise<string> {
-  const supabase = getSupabase();
   // Imagen returns PNG bytes by default; keep .png so the Content-Type
-  // header is correct on Supabase Storage.
+  // header is correct regardless of storage backend.
   const remotePath = `ai/${args.intentId}.png`;
-  const { error } = await supabase.storage
-    .from(BUCKET)
-    .upload(remotePath, args.bytes, { contentType: 'image/png', upsert: true });
+  const { error } = await storageUpload(BUCKET, remotePath, args.bytes, { contentType: 'image/png', upsert: true });
   if (error) throw new CoverGenError('storage_failed', error.message);
-  const { data } = supabase.storage.from(BUCKET).getPublicUrl(remotePath);
-  return data.publicUrl;
+  return storagePublicUrl(BUCKET, remotePath);
 }
 
 async function getUserGenderFromProfile(userId: string): Promise<Gender> {

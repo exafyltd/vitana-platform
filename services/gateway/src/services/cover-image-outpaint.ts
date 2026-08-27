@@ -1,6 +1,14 @@
 /**
  * VTID-02806h — Vertex Imagen outpainting for cover-photo uploads.
  *
+ * VTID-03765: storage I/O now goes through storage-provider.ts
+ * (STORAGE_PROVIDER=supabase|s3, default supabase — no behavior change
+ * today). PURE MOVE: same operations, same paths, same error handling.
+ * No dedicated test file exists for this module's storage calls — this
+ * change is validated by tsc --noEmit + the full gateway suite staying
+ * green, not by a test exercising this exact code path. Flagging honestly
+ * rather than implying coverage that doesn't exist.
+ *
  * The frontend already classifies aspect ratio and only calls this
  * service for sources NARROWER than 16:9 (portrait, square, 4:3).
  * For those it would otherwise have to letterbox-blur the side
@@ -24,7 +32,6 @@
  * Service-role IO throughout — RLS does not gate the gateway.
  */
 
-import { createClient } from '@supabase/supabase-js';
 import { GoogleAuth } from 'google-auth-library';
 import sharp from 'sharp';
 // VTID-03497: Titan seam. No-ops unless IMAGE_PROVIDER=bedrock.
@@ -34,6 +41,7 @@ import {
   outpaintTitanImage,
   titanWhiteGenerates,
 } from '../providers/titan-image';
+import { storageDownload, storageUpload, storageRemove, storagePublicUrl } from './storage/storage-provider';
 
 const BUCKET = process.env.INTENT_COVERS_BUCKET ?? 'intent-covers';
 
@@ -85,10 +93,6 @@ function getGoogleAuth(): GoogleAuth {
     });
   }
   return googleAuth;
-}
-
-function getSupabase() {
-  return createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE!);
 }
 
 /**
@@ -382,23 +386,17 @@ export async function outpaintCoverImage(args: OutpaintArgs): Promise<OutpaintRe
   assertOwnedPath(args.sourcePath, args.userId, SOURCE_PREFIXES);
   assertOwnedPath(args.targetPath, args.userId, TARGET_PREFIXES);
 
-  const supabase = getSupabase();
-
   // 1. Download source.
-  const { data: blob, error: dlErr } = await supabase.storage
-    .from(BUCKET)
-    .download(args.sourcePath);
-  if (dlErr || !blob) {
+  const { data: srcBytes, error: dlErr } = await storageDownload(BUCKET, args.sourcePath);
+  if (dlErr || !srcBytes) {
     throw new CoverOutpaintError('source_not_found', dlErr?.message ?? 'download failed');
   }
-  const arr = await blob.arrayBuffer();
-  if (arr.byteLength > MAX_SOURCE_BYTES) {
+  if (srcBytes.byteLength > MAX_SOURCE_BYTES) {
     throw new CoverOutpaintError(
       'source_too_large',
-      `source is ${arr.byteLength} bytes (max ${MAX_SOURCE_BYTES})`,
+      `source is ${srcBytes.byteLength} bytes (max ${MAX_SOURCE_BYTES})`,
     );
   }
-  const srcBytes = Buffer.from(arr);
 
   // 2. Compose 16:9 canvas + mask.
   const { canvasPng, maskPng } = await composeCanvasAndMask(srcBytes);
@@ -407,21 +405,16 @@ export async function outpaintCoverImage(args: OutpaintArgs): Promise<OutpaintRe
   const resultPng = await callImagenOutpaint(canvasPng, maskPng);
 
   // 4. Upload final.
-  const { error: upErr } = await supabase.storage
-    .from(BUCKET)
-    .upload(args.targetPath, resultPng, {
-      contentType: 'image/png',
-      upsert: true,
-    });
+  const { error: upErr } = await storageUpload(BUCKET, args.targetPath, resultPng, {
+    contentType: 'image/png',
+    upsert: true,
+  });
   if (upErr) throw new CoverOutpaintError('storage_failed', upErr.message);
 
   // 5. Best-effort delete of the staging source. A failure here is
   //    not fatal — periodic cleanup can sweep orphaned staging files.
-  await supabase.storage
-    .from(BUCKET)
-    .remove([args.sourcePath])
-    .catch(() => undefined);
+  await storageRemove(BUCKET, [args.sourcePath]).catch(() => undefined);
 
-  const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(args.targetPath);
-  return { url: urlData.publicUrl, path: args.targetPath };
+  const url = storagePublicUrl(BUCKET, args.targetPath);
+  return { url, path: args.targetPath };
 }
