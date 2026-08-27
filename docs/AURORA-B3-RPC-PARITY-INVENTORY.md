@@ -536,15 +536,35 @@ still open). Existence is a lower bar than correctness, but it's the bar
 that was actually still open, and closing it for 202/202 names (vs. 42/202
 before) is the real gain here.
 
+## Addendum (VTID-03772, continued), 2026-08-27 — item 1 below, done for all 96 live RPCs
+
+Not a sample — **all 96 RPCs confirmed to actually exist live** (202 total
+minus the 106 confirmed-dead ones from the addendum above) were checked
+against their real `pg_proc.prosrc` for `auth.uid()`/`auth.jwt()`/
+`auth.role()` references, compared against the static tracked-migration
+categorization.
+
+**Result: the static categorization holds up well.** Zero functions
+categorized "Portable" turned out to actually reference `auth.*` live
+(the risky direction — would have meant treating an auth-coupled function
+as auth-free). Two categorized "Auth-dependent"
+(`health_compute_features_daily`, `health_generate_recommendations`) don't
+actually reference `auth.*` in their live body — the safe direction of
+error (more portable than assumed, not less), and low-stakes either way
+since B4 execution will need the `auth.uid()` compatibility shim regardless.
+
+**Caveat this pass doesn't close:** a function calling a *second* function
+that itself reads `auth.uid()` isn't caught by a single-body text search —
+this checked direct references only, not the full call graph. Given the
+clean result on direct references, this is a much smaller residual risk
+than "any of these could still be wrong," but it's not zero.
+
 ## Next steps (not done here — needs a follow-up pass)
 
-1. **Spot-check a sample of the 106 "auth-dependent" and 54 "portable" RPCs
-   against live `pg_proc` bodies** — this session verified only the 42
-   not-found RPCs' existence live, not the other 160's bodies. A function
-   redefined outside this repo's tracked migrations could have a different
-   auth-dependency shape live than what the tracked-migration text shows;
-   and a function calling a *second* function that itself reads `auth.uid()`
-   won't be caught by this pass's textual, single-body search either way.
+1. ~~Spot-check a sample of the 106 "auth-dependent" and 54 "portable" RPCs
+   against live `pg_proc` bodies~~ — **done above, all 96 live RPCs, not a
+   sample.** Residual gap: transitive auth-dependency through a second
+   function call isn't caught by a single-body text search.
 2. **Decide what to do with the 36 confirmed-dead RPCs** — the `d41`/`d43`/
    `d44`/`d45`/`d50` family (30) plus `exec_sql`, `kb_search`,
    `user_preferences_get_bundle`, `vtn_reward`, `vtn_spend`, `vtn_transfer`.
