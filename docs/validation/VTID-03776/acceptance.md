@@ -138,24 +138,94 @@ fresh tap (`focusGuidedTopic`) and a real close (`_hide()`).
 
 ## Acceptance Criteria
 
-| # | Criterion | Verified by |
-|---|---|---|
-| AC-1 | `_s._guidedTopicZeroAudioFailCount` declared in initial state, default 0 | TEST: orb-widget-guided-topic-reconnect-loop.test.ts "is declared in the initial _s state, defaulting to 0" |
-| AC-2 | Reset to 0 on a fresh guided-topic tap | TEST: "is reset to 0 by focusGuidedTopic" |
-| AC-3 | Reset to 0 on `_hide()` | TEST: "is reset to 0 by _hide()" |
-| AC-4 | Counter increments only when a guided topic is in flight AND no audio heard | TEST: "increments the zero-audio fail counter only when..." |
-| AC-5 | At threshold, both `guidedTopic` and `_guidedTopicInFlight` are dropped | TEST: "drops both guidedTopic and _guidedTopicInFlight once the threshold is reached" |
-| AC-6 | Breaker check runs before the `MAX_WIDGET_RECONNECTS` stuck-state check | TEST: "the breaker check runs before the MAX_WIDGET_RECONNECTS stuck-state check" |
-| AC-7 | Breaker does not touch state once real audio has played | TEST: "does NOT touch the counter or drop the topic once real audio has played" |
-| AC-8 | `_reconnectCount` is NOT reset on bare `_s.active` | TEST: "does NOT reset _reconnectCount on bare _s.active alone" |
-| AC-9 | Reset is gated on `_s._audioEverHeardThisOpen`, nested inside the `_s.active` branch | TEST: "gates the reset on _s._audioEverHeardThisOpen, nested inside the _s.active branch" |
-| AC-10 | Success logging / disconnect-banner clearing unaffected | TEST: "still logs success and clears the disconnect banner regardless of whether the budget was reset" |
-| AC-11 | Reconnect loop otherwise unchanged (`_isOffline`/`_isReconnecting`/`MAX_WIDGET_RECONNECTS` gates intact) | TEST: "the reconnect loop itself is otherwise unchanged" |
-| AC-12 | Sibling VTID-03675 invariant updated, not weakened: `_attemptReconnect` still cannot bare-null `guidedTopic`; any null is provably inside the new breaker's own guard | TEST: orb-widget-guided-topic-reconnect.test.ts "a client-side reconnect (_attemptReconnect -> _sessionStart) can still see a pending guided topic" (updated) |
-| AC-13 | `node --check` clean | `outputs/node-check.txt` |
-| AC-14 | `tsc --noEmit` clean | `outputs/tsc-noemit.txt` |
-| AC-15 | Full gateway suite green | `outputs/jest-full-suite.txt` — 715/716 suites (1 pre-existing skip), 13476/13511 tests passing, 0 failures |
-| AC-16 | Mutation-verified, both fixes | `commands.log` — Fix A mutation fails exactly 1 test; Fix B mutation fails exactly 4 tests (3 new + the updated sibling invariant); both restores confirmed clean via `diff` |
+AC-1 — `_s._guidedTopicZeroAudioFailCount` is declared in the initial `_s`
+state, defaulting to 0.
+
+TEST: `orb-widget-guided-topic-reconnect-loop.test.ts` — "is declared in the
+initial _s state, defaulting to 0"
+
+AC-2 — Reset to 0 on a fresh guided-topic tap.
+
+TEST: same file — "is reset to 0 by focusGuidedTopic (a fresh tap is a
+clean slate)"
+
+AC-3 — Reset to 0 on `_hide()` (a real close).
+
+TEST: same file — "is reset to 0 by _hide() — a real close ends the
+overlay session"
+
+AC-4 — The zero-audio fail counter increments only when a guided topic is
+in flight AND no audio has ever been heard this overlay-open.
+
+TEST: same file — "increments the zero-audio fail counter only when a
+guided topic is in flight AND nothing has been heard yet"
+
+AC-5 — At the threshold (2), both `guidedTopic` and `_guidedTopicInFlight`
+are dropped.
+
+TEST: same file — "drops both guidedTopic and _guidedTopicInFlight once
+the threshold is reached"
+
+AC-6 — The breaker check runs before the `MAX_WIDGET_RECONNECTS`
+stuck-state check, so a dropped topic still gets a fair remaining-budget
+retry as generic conversation.
+
+TEST: same file — "the breaker check runs before the MAX_WIDGET_RECONNECTS
+stuck-state check"
+
+AC-7 — The breaker does not touch the counter or drop the topic once real
+audio has played this overlay-open (mid-lesson resume must survive).
+
+TEST: same file — "does NOT touch the counter or drop the topic once real
+audio has played"
+
+AC-8 — `_reconnectCount` is NOT reset on bare `_s.active` alone.
+
+TEST: same file — "does NOT reset _reconnectCount on bare _s.active alone"
+
+AC-9 — The reset is gated on `_s._audioEverHeardThisOpen`, nested inside
+the `_s.active` branch.
+
+TEST: same file — "gates the reset on _s._audioEverHeardThisOpen, nested
+inside the _s.active branch"
+
+AC-10 — Success logging and disconnect-banner clearing are unaffected by
+whether the budget was actually reset.
+
+TEST: same file — "still logs success and clears the disconnect banner
+regardless of whether the budget was reset"
+
+AC-11 — The reconnect loop is otherwise unchanged: `_isOffline`/
+`_isReconnecting`/`MAX_WIDGET_RECONNECTS` gates are all still intact.
+
+TEST: same file — "the reconnect loop itself is otherwise unchanged"
+
+AC-12 — The sibling VTID-03675 invariant is updated, not weakened:
+`_attemptReconnect` still cannot bare-null `guidedTopic` — any null is
+provably inside the new breaker's own `>= 2` guard.
+
+TEST: `orb-widget-guided-topic-reconnect.test.ts` — "a client-side
+reconnect (_attemptReconnect -> _sessionStart) can still see a pending
+guided topic" (updated)
+
+AC-13 — `node --check` is clean.
+
+TEST: `outputs/node-check.txt` — exit 0.
+
+AC-14 — `tsc --noEmit` is clean.
+
+TEST: `outputs/tsc-noemit.txt` — exit 0.
+
+AC-15 — The full gateway suite is green.
+
+TEST: `outputs/jest-full-suite.txt` — 715/716 suites (1 pre-existing
+skip), 13476/13511 tests passing, 0 failures.
+
+AC-16 — Both fixes are mutation-verified.
+
+TEST: `commands.log` — Fix A mutation fails exactly 1 test; Fix B mutation
+fails exactly 4 tests (3 new + the updated sibling invariant); both
+restores confirmed clean via `diff`.
 
 ## Deliberately NOT attempted
 
