@@ -483,6 +483,58 @@ captures. Recording the exact queries and null result rather than
 resolving the ambiguity either way — the Stripe-dashboard check above
 remains the actual way to answer this.
 
+### Found DB-level evidence instead, and it surfaces something bigger: a second, competing Stripe webhook path
+
+`billing.ts`'s own idempotency table, `processed_stripe_events` (every
+webhook event ID is inserted here *before* processing — "PK conflict =
+already handled") — **is completely empty, 0 rows, ever.** On its own
+this is ambiguous (a failed-processing path explicitly `DELETE`s its row
+"so retry is safer than leaving processed_stripe_events stale," so empty
+doesn't cleanly distinguish "never called" from "always failed and
+cleaned up"). But checking `stripe_webhook_events` (a *different* table)
+for corroboration surfaced something this pass hadn't found yet:
+
+**There are two entirely separate, independently-mounted Stripe webhook
+endpoints in this codebase** — `POST /api/v1/billing/webhooks/stripe`
+(`billing.ts`, the broken `credit_wallet` path this addendum is about)
+and `POST /api/v1/stripe/webhook` (`wallet-stripe-webhook.ts`, VTID-03201,
+whose own header comment calls itself **"the primary path"** for
+crediting a wallet after `checkout.session.completed`). The second one
+uses `credit_deposit` — confirmed to exist live, unlike `credit_wallet` —
+via `finalizeDeposit()`/`deposit-service.ts`, entirely independent
+machinery. Its own idempotency table, `stripe_webhook_events`, has
+exactly **one row, ever** (`source:'wallet'`,
+`event_type:'checkout.session.expired'`, 2026-07-20 — a session a
+customer started and abandoned, not a completed purchase).
+
+**This doesn't resolve the severity question, it reframes it.** Two
+readings, and this pass can't distinguish them without Stripe dashboard
+access:
+
+1. Stripe's actually-configured webhook URL is the wallet endpoint, not
+   `billing.ts`'s — in which case `billing.ts`'s entire
+   `/webhooks/stripe` route (and the `credit_wallet` bug inside it) may
+   be **unreachable from real Stripe traffic entirely**, a dead endpoint
+   rather than a live one. `processed_stripe_events`'s permanent
+   emptiness would be fully explained this way, cleanly, with no need for
+   the "always fails and self-deletes" reading.
+2. Both endpoints are configured (a real, if unusual, dual-webhook setup)
+   and `billing.ts`'s really does receive `credit_pack` events that fail
+   silently on `credit_wallet` and self-clean from
+   `processed_stripe_events`, while `wallet-stripe-webhook.ts` handles a
+   different purchase type (its "deposit" naming suggests wallet
+   top-ups generally, which may or may not be the same product surface
+   as "credit packs" — not resolved here).
+
+Either way, **`stripe_webhook_events`'s single, non-completed row is
+independently reassuring on the "has a real customer been charged and not
+credited" question** — whichever endpoint Stripe actually calls, there is
+no DB-level evidence of a single *completed* wallet-crediting checkout
+session, successful or failed, in this database's history. Not the same
+as proof — Stripe's own dashboard remains the authoritative source — but
+this is real, first-party evidence pointing toward "hasn't happened yet,"
+which the CloudWatch check above could only leave ambiguous.
+
 ### Root cause found — this is a known, already-self-documented gap, not a fresh mystery
 
 Searched `supabase/migrations/` for `credit_wallet`/`wallet_balances` and
