@@ -1908,9 +1908,42 @@
       // turn-complete handler) or the overlay is closed (_hide()) — both
       // already-existing lifecycle points for guidedAutoClose, so the two
       // flags now share one lifecycle instead of drifting apart.
+      //
+      // VTID-03774: restore from _guidedTopicInFlight HERE too, at the actual
+      // read/send site — not only in each caller (_attemptReconnect /
+      // _resetAndReconnect, VTID-03746/03770). Both callers already re-arm
+      // _s.guidedTopic from _s._guidedTopicInFlight before calling this
+      // function, and that should be sufficient — but a live staging trace
+      // (topic T003, real account, SSE transport) showed a mid-lesson
+      // reconnect still going out with NO guided_topic_id despite both flags
+      // appearing correctly armed earlier in the flow: the wake-timeline for
+      // the reconnected session recorded guided_topic_narration's own
+      // decision as `reason:"no_topic_tapped"` — proof positive the field
+      // never reached the server, from a session whose disconnect-stage also
+      // came through as "idle" rather than the "speaking" the in-flight
+      // narration audio should have produced, i.e. this reconnect did not
+      // originate from the code path the earlier restore-guards were placed
+      // in. Rather than keep chasing which caller has the gap, close it at
+      // the one place that can never be bypassed: right before the field is
+      // actually read into the outgoing payload, regardless of which
+      // function got the widget here. This does not replace the two
+      // existing restore-guards (harmless, redundant with this one) — it
+      // makes this fallback structurally impossible to route around.
+      if (!_s.guidedTopic && _s._guidedTopicInFlight) {
+        console.log('[VTOrb] _sessionStart: guidedTopic was empty but _guidedTopicInFlight=' + _s._guidedTopicInFlight + ' — restoring at send site (VTID-03774)');
+        _s.guidedTopic = _s._guidedTopicInFlight;
+      }
       if (_s.guidedTopic) {
         startPayload.guided_topic_id = _s.guidedTopic;
       }
+      // VTID-03774: diagnostic-grade logging so a FUTURE loss (if this
+      // fallback somehow isn't the whole story either) is traceable from
+      // console logs alone instead of requiring another multi-hour live
+      // oasis_events reconstruction. Cheap: one line, every _sessionStart.
+      console.log('[VTOrb] _sessionStart: guidedTopic=' + (_s.guidedTopic || '<none>')
+        + ', guidedTopicInFlight=' + (_s._guidedTopicInFlight || '<none>')
+        + ', preDisconnectStage=' + (_s._preDisconnectStage || '<none>')
+        + ', isReconnectAttempt=' + !!(_s._transcriptHistory && _s._transcriptHistory.length));
 
       // VTID-02020: when this _sessionStart is happening as part of a reconnect
       // (NOT a first-time session), send the conversation history + the

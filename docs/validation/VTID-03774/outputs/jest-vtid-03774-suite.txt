@@ -1,0 +1,126 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+PASS test/frontend/orb-widget-guided-topic-mid-lesson-resume.test.ts
+  orb-widget _announceDisconnect spoken alert gating (VTID-03746)
+    ✓ does not call _playAlert unconditionally (4 ms)
+    ✓ gates the spoken alert clip on _audioEverHeardThisOpen (2 ms)
+    ✓ still plays the alert once real audio has been heard (no regression to the normal case)
+    ✓ the visual status label (_setStatus) is unaffected by this gate — still set every time
+  orb-widget guided-topic mid-lesson resume via _guidedTopicInFlight (VTID-03746)
+    ✓ is declared in the initial _s state, defaulting to null (1 ms)
+    ✓ focusGuidedTopic arms it alongside _s.guidedTopic (1 ms)
+    ✓ is NOT cleared at the first-turn-complete point that nulls _s.guidedTopic (1 ms)
+    ✓ _attemptReconnect re-arms _s.guidedTopic from _guidedTopicInFlight only when guidedTopic was already cleared (1 ms)
+    ✓ _hide() clears _guidedTopicInFlight — a real close ends the overlay session (5 ms)
+  orb-widget _resetAndReconnect guided-topic resume + reconnect mutex (VTID-03770)
+    ✓ re-arms _s.guidedTopic from _guidedTopicInFlight only when guidedTopic was already cleared — same condition as _attemptReconnect
+    ✓ sets _isReconnecting = true before starting the reconnect — the health-probe watchdog's own "if (_s._isReconnecting) return;" guard is otherwise inert (1 ms)
+    ✓ resets _isReconnecting = false once _sessionStart() settles, on both the success and failure branch
+    ✓ the guided-topic re-arm runs before the _isReconnecting reset in the settle handlers (arm is a pre-start setup step, not a settle step) (1 ms)
+  orb-widget _sessionStart restores guidedTopic from _guidedTopicInFlight at the send site (VTID-03774)
+    ✓ restores guidedTopic from _guidedTopicInFlight when guidedTopic is empty, immediately before the payload read
+    ✓ does not touch guidedTopic when it is already set (no-op on a fresh, non-reconnect open)
+    ✓ logs the restore for future diagnosability (1 ms)
+    ✓ logs guidedTopic/guidedTopicInFlight/preDisconnectStage state on every _sessionStart call
+    ✓ the existing _attemptReconnect/_resetAndReconnect restore-guards are unchanged (this is additive, not a replacement)
+
+(node:2797) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS test/orb/live/session/live-session-controller.test.ts
+  A8.2: configureLiveSessionController
+    ✓ throws if a handler runs before configure (57 ms)
+    ✓ throws if configured twice (1 ms)
+    ✓ reset escape hatch allows reconfiguration (1 ms)
+  A8.2: cleanupExpiredSessions
+    ✓ removes sessions whose lastActivity is older than SESSION_TIMEOUT_MS (1 ms)
+    ✓ ends the SSE response on expiry (best-effort, swallows errors) (1 ms)
+    ✓ does not throw when sse.end throws (1 ms)
+  A8.2: cleanupWsSession
+    ✓ is a no-op when the sessionId is unknown (1 ms)
+    ✓ clears keepalive intervals + watchdog and removes both registry entries (3 ms)
+    ✓ skips client WS close when readyState is not OPEN (1 ms)
+    ✓ handles a session that has no liveSession (WS-only entry) (1 ms)
+  VTID-03561: cleanupWsSession emits session.stop
+    ✓ emits vtid.live.session.stop on WS teardown (the regression) (1 ms)
+    ✓ reports the LIVE session id, never the ws-<uuid> socket id
+    ✓ carries the session metrics the cost/quality consumers read (2 ms)
+    ✓ passes the caller-supplied reason through, and defaults to client_disconnect (1 ms)
+    ✓ does NOT double-emit when a stop was already emitted for the session
+    ✓ latches after emitting so a repeat teardown cannot re-emit (1 ms)
+    ✓ completes teardown even when the emit throws (1 ms)
+    ✓ reports null duration/idle for a session torn down before it started (1 ms)
+    ✓ still emits when the session never resolved an identity
+  A8.2: handleLiveStreamEndTurn
+    ✓ 400 when session_id is missing from both query and body (1 ms)
+    ✓ 404 when session is not in liveSessions (1 ms)
+    ✓ 400 when session is not active (1 ms)
+    ✓ falls back to body.session_id when query is empty
+    ✓ calls sendEndOfTurn + responds "End of turn signaled" when upstream WS is open and sendEndOfTurn returns true (1 ms)
+    ✓ responds "acknowledged (no Live API)" when no upstream WS exists
+    ✓ responds "acknowledged (no Live API)" when upstream WS is not in OPEN state (1 ms)
+    ✓ logs ownership mismatch but still processes the request (1 ms)
+  A8.2 anti-regression: orb-live.ts is a consumer of the controller
+    ✓ imports the controller (configure + cleanup helpers + end-turn handler) (2 ms)
+    ✓ calls configureLiveSessionController exactly once at module init (14 ms)
+    ✓ does NOT declare cleanupExpiredSessions / cleanupWsSession locally anymore (3 ms)
+    ✓ end-turn route is now a thin delegator (single await call) (1 ms)
+    ✓ /live/session/start route is now a thin delegator (A8.2.1) (1 ms)
+    ✓ /live/session/stop route is now a thin delegator (A8.2-complete) (1 ms)
+    ✓ /live/stream/send route is now a thin delegator (A8.2-complete) (2 ms)
+  A8.2.1: handleLiveSessionStart
+    ✓ returns 403 when validateOrigin rejects (2 ms)
+    ✓ returns 401 AUTH_TOKEN_INVALID when Bearer header present but req.identity unset
+    ✓ creates an anonymous session (no JWT) and stores it in liveSessions with a live-<uuid> session_id (4 ms)
+    ✓ respects client-requested language
+    ✓ emits OASIS vtid.live.session.start with the resolved fields (1 ms)
+    ✓ pins client-supplied conversation_id when present (1 ms)
+    ✓ marks reconnect session with resumedFromHistory when transcript_history provided (1 ms)
+    ✓ uses VAD silence override when supplied in valid range
+    ✓ does NOT terminate other sessions when identity is DEV_IDENTITY (304 ms)
+    ✓ terminates existing sessions for a real authenticated user (32 ms)
+    ✓ returns wake_brief field in meta (default null for anonymous; non-null structure when populated) (2 ms)
+    VTID-03107: voice-quota gate
+      ✓ returns 402 with structured paywall body when quota is exhausted (hard_block) (4 ms)
+      ✓ allows the session to start normally when quota is available (46 ms)
+      ✓ skips the quota check entirely for anonymous sessions (no identity) (2 ms)
+  A8.2-complete: handleLiveSessionStop
+    ✓ 400 when session_id missing (1 ms)
+    ✓ 404 when session not found (2 ms)
+    ✓ happy path: closes upstream WS, writes session_ended SSE event, marks inactive, deletes from registry, returns 200 { ok: true } (2 ms)
+    ✓ clears upstream ping + silence keepalive intervals (1 ms)
+    ✓ OASIS payload includes user/tenant from session.identity (3 ms)
+    ✓ ownership mismatch is logged but allowed through (7 ms)
+  A8.2-complete: handleLiveStreamSend
+    ✓ 400 when session_id missing (2 ms)
+    ✓ 404 when session not found
+    ✓ 400 when session not active (1 ms)
+    ✓ drops audio with reason "navigation_dispatched" when navigation is queued
+    ✓ drops audio with reason "model_speaking" while the model is producing audio
+    ✓ drops audio with reason "post_turn_cooldown" within the cooldown window (1 ms)
+    ✓ forwards audio via sendAudioToLiveAPI when upstream WS is open
+    ✓ arms the forwarding watchdog when only the USER has shown life (transport, not response) (1 ms)
+    ✓ skips the forwarding watchdog once the model has responded on this turn
+    ✓ silently returns ok:true for anonymous sessions past turn limit (VTID-ANON-NUDGE) (1 ms)
+    ✓ handles video frame: increments videoInFrames + writes video_ack via SSE
+    ✓ text path: forwards client_content turn_complete=true via upstream WS (1 ms)
+    ✓ interrupt path with model not speaking: returns was_speaking:false (no-op)
+    ✓ interrupt path with model speaking: ungates mic, sends end-of-turn, clears output buffer, writes interrupted SSE event (1 ms)
+    ✓ falls back to body.session_id when query is empty
+    ✓ 500 on uncaught throw from sendAudioToLiveAPI (1 ms)
+  VTID-03774: shouldInjectWakeBriefOverrideBlock
+    ✓ injects on a non-reconnect open regardless of dedupeKey
+    ✓ withholds injection on a reconnect for a non-guided-topic candidate (unchanged behavior) (1 ms)
+    ✓ still injects on a reconnect when the winning candidate is a guided-topic resume
+    ✓ requires an exact guided_topic: prefix — a lookalike key is not exempted
+    ✓ handles undefined/empty dedupeKey on a reconnect as non-exempt (1 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 2 passed, 2 total
+Tests:       93 passed, 93 total
+Snapshots:   0 total
+Time:        2.332 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

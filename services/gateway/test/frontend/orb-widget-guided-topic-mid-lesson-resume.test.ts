@@ -181,3 +181,55 @@ describe('orb-widget _resetAndReconnect guided-topic resume + reconnect mutex (V
     expect(armIdx).toBeLessThan(settleResetIdx);
   });
 });
+
+// VTID-03774 — despite _attemptReconnect() and _resetAndReconnect() both
+// carrying the VTID-03746/03770 restore-guard, a real staging trace (topic
+// T003, real account, SSE transport) still showed a mid-lesson reconnect
+// going out with NO guided_topic_id. Server-side proof: the reconnected
+// session's wake-timeline recorded guided_topic_narration's own decision as
+// `reason:"no_topic_tapped"` — the field never reached the server, from a
+// reconnect whose disconnect-stage also came through "idle" rather than the
+// "speaking" the in-flight narration audio should have produced, i.e. this
+// particular reconnect did not visibly originate from either restore-guarded
+// caller. Rather than keep chasing which (possibly still-undiscovered)
+// caller has the gap, the restore is now ALSO applied at the one place that
+// can never be bypassed: _sessionStart() itself, immediately before the
+// field is read into the outgoing payload — structurally closing the gap
+// regardless of which function got the widget there.
+describe('orb-widget _sessionStart restores guidedTopic from _guidedTopicInFlight at the send site (VTID-03774)', () => {
+  const source = fs.readFileSync(WIDGET_PATH, 'utf8');
+  const body = extractFunctionBody(source, 'async function _sessionStart() {');
+
+  it('restores guidedTopic from _guidedTopicInFlight when guidedTopic is empty, immediately before the payload read', () => {
+    expect(body).toMatch(
+      /if \(!_s\.guidedTopic && _s\._guidedTopicInFlight\) {\s*\n[\s\S]*?_s\.guidedTopic = _s\._guidedTopicInFlight;/,
+    );
+    const restoreIdx = body.indexOf('_s.guidedTopic = _s._guidedTopicInFlight;');
+    const payloadReadIdx = body.indexOf('startPayload.guided_topic_id = _s.guidedTopic;');
+    expect(restoreIdx).toBeGreaterThan(-1);
+    expect(payloadReadIdx).toBeGreaterThan(-1);
+    expect(restoreIdx).toBeLessThan(payloadReadIdx);
+  });
+
+  it('does not touch guidedTopic when it is already set (no-op on a fresh, non-reconnect open)', () => {
+    // The guard is `!_s.guidedTopic && ...` — a truthy guidedTopic must
+    // short-circuit before ever reading _guidedTopicInFlight.
+    const restoreLineMatch = body.match(/if \(!_s\.guidedTopic && _s\._guidedTopicInFlight\) {/);
+    expect(restoreLineMatch).not.toBeNull();
+  });
+
+  it('logs the restore for future diagnosability', () => {
+    expect(body).toMatch(/restoring at send site \(VTID-03774\)/);
+  });
+
+  it('logs guidedTopic/guidedTopicInFlight/preDisconnectStage state on every _sessionStart call', () => {
+    expect(body).toMatch(/_sessionStart: guidedTopic=.*guidedTopicInFlight=.*preDisconnectStage=/s);
+  });
+
+  it('the existing _attemptReconnect/_resetAndReconnect restore-guards are unchanged (this is additive, not a replacement)', () => {
+    const attemptBody = extractFunctionBody(source, 'function _attemptReconnect() {');
+    const resetBody = extractFunctionBody(source, 'function _resetAndReconnect() {');
+    expect(attemptBody).toMatch(/if \(_s\._guidedTopicInFlight && !_s\.guidedTopic\) {/);
+    expect(resetBody).toMatch(/if \(_s\._guidedTopicInFlight && !_s\.guidedTopic\) {/);
+  });
+});

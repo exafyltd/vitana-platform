@@ -1,0 +1,203 @@
+# VTID-03774 — commands run during investigation and verification
+
+## Investigation (read-only, live tracing)
+
+User reported: "when I select a session, it now starts immediately with a
+new day greeting, no guided topic content at all" — right after VTID-03771
+shipped and was confirmed deployed to staging.
+
+Self-allocated VTID via Supabase RPC:
+  SELECT allocate_global_vtid('claude-code', 'gateway', 'orb-live-guided-topic');
+  -> VTID-03774
+
+Queried recent oasis_events for the real account (bc34a5ca-...):
+  SELECT created_at, topic, message, left(metadata::text, 700) AS meta
+  FROM oasis_events
+  WHERE metadata->>'user_id' = 'bc34a5ca-6966-44f6-9507-3bed98e3e1d5'
+    AND created_at BETWEEN '2026-08-27 11:59:05' AND '2026-08-27 11:59:41'
+  ORDER BY created_at ASC;
+
+Found two client sessions: live-d1894cf2... (won guided-topic T003, played
+412 audio chunks / ~29s of real narration, turn_count reached 1) then
+live-2313a2e1... (superseded the first after a "connection" disconnect,
+ambient candidates all skipped, unread_messages_announce won instead).
+
+Initially misread `orb.livekit.next_action.suppressed`'s
+`suppress_reason:"all_sources_skipped"` as covering the WHOLE wake-brief
+decision. Corrected this by finding the real emitter:
+  grep -rn "next_action.suppressed\|all_sources_skipped" services --include=*.ts
+-> confirmed via services/assistant-continuation/telemetry.ts and an earlier
+changelog entry (2026-08-16 row) that `orb.livekit.next_action.*` is a
+legacy-named SHARED wake-brief telemetry prefix, but the *suppressed* event
+specifically covers only the Contextual Next Action provider's own 8
+ambient sub-sources — NOT the overall winning candidate across ALL
+providers (guided-topic-narration, Teacher, journey-guide, etc).
+
+Found the REAL per-session wake-brief decision record lives in
+`orb_wake_timelines` (services/gateway/src/services/wake-timeline/wake-timeline-recorder.ts),
+not oasis_events:
+  SELECT session_id, transport, started_at, ended_at, aggregates, events
+  FROM orb_wake_timelines
+  WHERE session_id IN ('live-d1894cf2-cee9-45c8-b381-14bbfda20eb3',
+                        'live-2313a2e1-c165-4768-94e3-f62e4f4734a6');
+
+This returned session 2's full `continuation_decision_finished.providerResults`,
+which shows definitively:
+  {"key":"guided_topic_narration","reason":"no_topic_tapped","status":"skipped","latencyMs":1}
+-> proof positive `guided_topic_id` never reached the server on this
+   reconnect's start payload.
+
+## Client-side investigation (orb-widget.js)
+
+Confirmed vitana-v1 loads the SAME orb-widget.js as the Command Hub (not a
+separate client):
+  grep -rn "orb-widget\.js\|VitanaOrb\b" /home/user/vitana-v1/src --include=*.ts --include=*.tsx -l
+
+Read _attemptReconnect(), _resetAndReconnect(), _sessionStart(), _hide(),
+_endGuidedTopicTeaching(), focusGuidedTopic(), the turn-complete handler at
+~line 2546, and the SSE es.onerror handler in full. Confirmed via grep that
+the ONLY places `_s.guidedTopic`/`_s._guidedTopicInFlight` are assigned are:
+  grep -n "_s.guidedTopic\s*=\|guidedAutoClose\s*=\s*false\|_guidedTopicInFlight" orb-widget.js
+-> focusGuidedTopic (arm), turn-complete handler (clears guidedTopic only,
+   NOT guidedTopicInFlight, by design), _hide() (clears both — real close),
+   _attemptReconnect/_resetAndReconnect (restore-guards, both present and
+   correctly ordered before _sessionStart() on static reading).
+
+Fetched the LIVE deployed widget from staging to rule out a stale/uncached
+build:
+  curl -s "https://preview-aws-gateway.vitanaland.com/command-hub/orb-widget.js" -o /tmp/live-orb-widget.js
+  diff /tmp/live-orb-widget.js services/gateway/src/frontend/command-hub/orb-widget.js
+-> identical, confirms VTID-03770's fix genuinely live.
+
+Computed RECONNECT_DELAYS[0]=1500ms and cross-checked against the observed
+~33.0s disconnect -> ~36.9s reconnect timing — consistent with
+_attemptReconnect()'s own scheduled retry (not the 5s health-probe
+watchdog, which would fire later, at ~38.0s).
+
+Noticed `session_start_received.reconnectStage:"idle"` on the SECOND
+session, which is inconsistent with `_s._preDisconnectStage` having been
+set to "speaking" by _announceDisconnect() (narration audio was actively
+playing at disconnect time) — a genuine anomaly, but chasing it further
+(would `_s.audioPlaying` even be true during Polly-bridge playback vs a
+live model turn?) did not converge on a conclusive explanation and is
+flagged as unresolved in acceptance.md rather than guessed at.
+
+Exhaustively checked and RULED OUT:
+  - A race between _attemptReconnect's scheduled retry and the 5s
+    health-probe watchdog calling _resetAndReconnect concurrently (timing
+    doesn't support the watchdog having fired yet).
+  - _endGuidedTopicTeaching() clearing state via a premature model tool-call
+    (would have called _hide(), which would have closed the overlay
+    entirely — inconsistent with the overlay staying open and a new
+    session opening with real audio).
+  - orb.destroy()/orb.init() via useOrbVoiceWidget.ts's auth-change reinit
+    effect or unmount cleanup (module-scoped `_s` is never reallocated by
+    either; _s.guidedTopic/_guidedTopicInFlight would survive a
+    destroy+reinit cycle even if one occurred).
+  - orb.updateContext() clobbering guidedTopic (vitana-v1's route-change
+    effect never sends `guided_topic_id` in its updateContext payload).
+
+Could not conclusively identify the exact caller/ordering bug from static
+analysis + oasis_events/orb_wake_timelines alone — no live-browser console
+access from this session (same standing environment limitation as
+VTID-03763). Documented as an open item in acceptance.md rather than
+claimed fixed.
+
+## Server-side investigation (live-session-controller.ts)
+
+Read wake-brief-wiring.ts in full (decideWakeBriefForSession): confirmed
+`guidedTopicId` is forwarded regardless of isReconnect, and
+guided-topic-narration gets a 10s provider timeout on any explicit
+selection (EXPLICIT_SELECTION_PROVIDER_TIMEOUT_MS) — ruling out a timeout
+explanation for the missing candidate.
+
+Read guided-topic-narration.ts's produce() in full: confirmed (per its own
+VTID-03677 comment) it no longer reads isReconnect at all — returns a
+candidate purely on topicId presence.
+
+Read live-session-controller.ts around the wake-brief decision call site
+(~line 1690-1760) and found a SEPARATE, independent defect: the injection
+of `session.wakeBriefOverrideBlock` was gated unconditionally on
+`!isReconnectStart`, with no exemption for a guided-topic winner — unlike
+orb-live.ts (WS transport), which already carries this exact exemption via
+`_hasPendingGuidedTopicAtOpen` (VTID-03727/VTID-03771):
+  grep -n "isReconnectStart\|_hasPendingGuidedTopicAtOpen" routes/orb-live.ts
+
+This is a real, independent bug (defense-in-depth fix, not proven to be
+THIS incident's specific cause, since guided_topic_narration never even
+competed here per the `no_topic_tapped` evidence) — but would matter in a
+future case where guided_topic_id DOES reach the server on a reconnect.
+
+## Implementation
+
+### Fix 1 — services/gateway/src/frontend/command-hub/orb-widget.js
+
+Inside `_sessionStart()`, immediately before
+`startPayload.guided_topic_id = _s.guidedTopic;`:
+  - Added a restore-fallback: `if (!_s.guidedTopic && _s._guidedTopicInFlight) { ... _s.guidedTopic = _s._guidedTopicInFlight; }`
+  - Added diagnostic console.log of guidedTopic/guidedTopicInFlight/
+    preDisconnectStage/isReconnectAttempt on every _sessionStart() call.
+
+### Fix 2 — services/gateway/src/orb/live/session/live-session-controller.ts
+
+  - Added `export function shouldInjectWakeBriefOverrideBlock(isReconnectStart, dedupeKey)`
+    above buildVertexWakeBriefBlock — pure predicate, returns
+    `!isReconnectStart || dedupeKey?.startsWith('guided_topic:')`.
+  - Updated the call site to use it:
+    `if (picked && line && line.length > 0 && shouldInjectWakeBriefOverrideBlock(isReconnectStart, picked.dedupeKey)) {`
+
+## Verification (run from services/gateway/)
+
+  node --check src/frontend/command-hub/orb-widget.js
+    -> exit 0 (outputs/node-check.txt)
+
+  npx tsc --noEmit
+    -> exit 0 (outputs/tsc-noemit.txt)
+
+  npx jest test/frontend/orb-widget-guided-topic-mid-lesson-resume.test.ts \
+    test/orb/live/session/live-session-controller.test.ts --silent
+    -> 2 suites, 93 tests, 0 failures (outputs/jest-vtid-03774-suite.txt)
+
+  npx jest --silent
+    -> 714/715 suites (1 pre-existing skip), 13,449/13,484 tests, 0 failures
+       (outputs/jest-full-suite.txt)
+
+### Mutation testing — Fix 1 (widget)
+
+Backed up orb-widget.js, removed exactly the new
+`if (!_s.guidedTopic && _s._guidedTopicInFlight) { ... }` block via a
+python exact-match string-replace, re-ran the target test file: 3 of 18
+tests failed (existence, no-op-when-set, log-presence — all 3 tied
+directly to the removed block), the other 15 (including the unrelated
+diagnostic-log test, which asserts a DIFFERENT log line the mutation
+didn't touch) still passed. Restored the backup, re-verified
+`node --check` clean.
+
+### Mutation testing — Fix 2 (server predicate)
+
+Two separate mutations, both restored after:
+  1. Reverted the CALL SITE back to the old inline
+     `!isReconnectStart` expression (bypassing the new predicate entirely)
+     — the 5 new predicate unit tests still passed unchanged (expected:
+     they call the exported function directly, not through the call site,
+     so this mutation only proves the call site isn't accidentally
+     duplicating logic — it does not exercise the call site itself, which
+     has no integration test given the size of the surrounding pipeline).
+  2. Reverted the PREDICATE's own body to `return !isReconnectStart;`
+     (dropping the guided-topic exemption) — exactly 1 of 5 tests failed
+     ("still injects on a reconnect when the winning candidate is a
+     guided-topic resume"), the other 4 passed unaffected.
+  Restored both mutations; re-verified `tsc --noEmit` clean and diff
+  against backup was empty.
+
+## Branch note
+
+Per this session's established procedure: the designated branch
+(`claude/my-journey-catalog-multilingual-qrwxng`) was found to contain only
+already-merged history (its VTID-03771 commit's content confirmed already
+on `main` as squash-merge `16e57b0d`, via `git diff HEAD origin/main`
+returning empty). Stashed the in-progress VTID-03774 changes
+(`git stash push -u`), reset to fresh `origin/main`
+(`git reset --hard origin/main`), then restored the stash
+(`git stash pop`) — no work was lost, and this VTID's changes now sit
+cleanly on top of the latest merged history.

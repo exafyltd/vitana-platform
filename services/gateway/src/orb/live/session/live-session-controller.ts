@@ -552,6 +552,45 @@ import { VERTEX_WAKE_BRIEF_OVERRIDE_MARKER } from '../instruction/wake-brief-mar
 // We do NOT wrap with the Say-exactly template in that case.
 const STRUCTURED_BLOCK_PREFIX = '__VTID_03167_STRUCTURED_BLOCK__\n';
 
+/**
+ * VTID-03774: whether the picked wake-brief candidate's line should be
+ * injected as the turn-1 override block. Pulled out as a pure, directly
+ * testable predicate (mirroring orb-live.ts's shouldRetryDayCloseReduced /
+ * shouldFallbackToVertexOnGuidedTopicContentFilterBlock pattern) instead of
+ * an inline `&&` chain, specifically so the guided-topic exemption below can
+ * be unit-tested against real inputs rather than only regex-matched in the
+ * source.
+ *
+ * The general rule: withhold the injection on a transport-level reconnect
+ * (isReconnectStart) — the conversation is already flowing, and re-injecting
+ * "say this line" would repeat content the ambient providers already know to
+ * self-suppress for (Teacher, journey-guide, login-briefing all read
+ * isReconnect/skipReason and stay silent on their own, per their extra.*
+ * wiring above).
+ *
+ * The exception: a winning guided-topic candidate (dedupeKey starting
+ * `guided_topic:`) is NEVER withheld, reconnect or not. Since VTID-03677
+ * guided-topic-narration no longer reads isReconnect at all — it returns a
+ * candidate purely on `topicId` presence, which the widget only ever resends
+ * while that exact topic has not yet been delivered (VTID-03675/03746). So a
+ * guided-topic win here can only mean "resume a lesson interrupted mid-way,"
+ * never "re-greet an already-flowing conversation" — the case this gate
+ * exists to prevent. Before this fix, that win was discarded anyway (the
+ * gate has no concept of WHICH candidate won, only whether one did), which
+ * silently swallowed a resumed guided-topic tap and let the model open a
+ * generic wake-brief line instead. orb-live.ts's WS transport already
+ * carries the identical exemption (`_hasPendingGuidedTopicAtOpen`,
+ * VTID-03727/03771); this SSE-transport controller is a separate code path
+ * that never got it.
+ */
+export function shouldInjectWakeBriefOverrideBlock(
+  isReconnectStart: boolean,
+  dedupeKey: string | null | undefined,
+): boolean {
+  const isPendingGuidedTopicResume = !!dedupeKey?.startsWith('guided_topic:');
+  return !isReconnectStart || isPendingGuidedTopicResume;
+}
+
 export function buildVertexWakeBriefBlock(
   line: string,
   _lang: string,
@@ -1755,7 +1794,30 @@ export async function handleLiveSessionStart(
     // no chat-ctx amnesia, no "I don't remember saying that" failure.
     const picked = wakeBriefDecision?.selectedContinuation ?? null;
     const line = picked?.userFacingLine?.trim();
-    if (picked && line && line.length > 0 && !isReconnectStart) {
+    // VTID-03774: a winning guided-topic candidate must never be withheld by
+    // the isReconnectStart skip below. That skip exists so a transport-level
+    // reconnect (network blip, mid-conversation) doesn't re-inject a wake-brief
+    // line into an already-flowing conversation — correct for the ambient
+    // providers, which is why every OTHER provider (Teacher, journey-guide,
+    // login-briefing) explicitly self-suppresses on isReconnect (see their own
+    // extra.isReconnect/skipReason wiring above). guided-topic-narration is
+    // different: since VTID-03677 it no longer reads isReconnect at all and
+    // returns its candidate purely on `topicId` presence — so on a reconnect
+    // where the widget resent guided_topic_id (a lesson interrupted mid-way,
+    // never delivered), it correctly WINS the ranking here (priority 96, the
+    // highest of any provider) but this gate then silently discarded that win
+    // anyway, because the gate has no concept of "which candidate" — it
+    // withholds ANY winner uniformly. The orb-live.ts WS path already carries
+    // this exact exemption (`_hasPendingGuidedTopicAtOpen`, VTID-03727/03771)
+    // for the identical reason; this SSE-transport controller is a separate
+    // code path that never got it. Detected via dedupeKey (`guided_topic:` —
+    // see guided-topic-narration.ts's candidate) rather than a session flag,
+    // since this controller builds a fresh session per reconnect and has no
+    // turn_count===0 concept to key off the way orb-live.ts does. Extracted
+    // as shouldInjectWakeBriefOverrideBlock() (above buildVertexWakeBriefBlock)
+    // so the exemption is a directly unit-testable pure function, not just a
+    // pattern regex-matched against the source.
+    if (picked && line && line.length > 0 && shouldInjectWakeBriefOverrideBlock(isReconnectStart, picked.dedupeKey)) {
       const block = buildVertexWakeBriefBlock(line, lang, picked.dedupeKey ?? null);
       // VTID-03101: write to a DEDICATED session field instead of mutating
       // contextInstruction. The bootstrap promise above unconditionally
