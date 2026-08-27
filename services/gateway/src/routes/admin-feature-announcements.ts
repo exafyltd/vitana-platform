@@ -6,11 +6,17 @@
  * - POST /            — Create + publish an announcement: writes the row
  *                        every tenant member's feed will read (RLS-scoped),
  *                        and fans out an in-app + push notification to every
- *                        member of the tenant, in their own locale. Pass
- *                        `recipient_ids` to scope both the row's visibility
- *                        and the notification to specific users only — a
- *                        staged test send before widening to the whole
- *                        tenant (re-POST without `recipient_ids` for that).
+ *                        member of the tenant, in their own locale — awaited
+ *                        (Promise.allSettled over notifyUser), not
+ *                        fire-and-forget, so the response only returns once
+ *                        dispatch has actually completed (VTID-03744; see
+ *                        the sibling daily-feature-tip fix, PR #2986, for
+ *                        why an un-awaited dispatch here silently drops
+ *                        recipients). Pass `recipient_ids` to scope both the
+ *                        row's visibility and the notification to specific
+ *                        users only — a staged test send before widening to
+ *                        the whole tenant (re-POST without `recipient_ids`
+ *                        for that).
  * - GET  /             — List announcements (most recent first) for admin review.
  *
  * Security:
@@ -33,7 +39,7 @@
 
 import { Router, Request, Response } from 'express';
 import { getSupabase } from '../lib/supabase';
-import { notifyUsersAsync, NotificationPayload } from '../services/notification-service';
+import { notifyUser, NotificationPayload } from '../services/notification-service';
 import { bulkGetUserLocales } from '../i18n/server-locale';
 import { tt, type GatewayLocale } from '../i18n/catalog';
 import { requireAuth, requireExafyAdmin, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
@@ -171,34 +177,49 @@ router.post('/', async (req: AuthenticatedRequest, res: Response) => {
       groups.set(lc, group);
     }
 
-    for (const [locale, userIds] of groups) {
-      const payload: NotificationPayload = {
-        title: tt('notif.feature_announcement.title', locale, { feature: pickLocale(feature_title, locale) }),
-        body: pickLocale(description, locale),
-        // Push tap lands on the News Feed (where the card itself lives) —
-        // deliberately NOT `deep_link`, which is the card's own "Try it
-        // yourself" in-app button target (e.g. /home/compose). Tapping the
-        // push should show the card first, not skip straight past it into
-        // whatever action the card's CTA performs.
-        //
-        // /home/notif, NOT /home: same feed, but deliberately excluded from
-        // useOrbFrontDoor's MAXINA_LANDING_ROUTES (vitana-v1) — a notification
-        // tap is a full page load there, which otherwise auto-opens the Orb
-        // front-door overlay on top of the card the push is about.
-        data: { url: '/home/notif', entity_id: announcementId },
-      };
-      notifyUsersAsync(userIds, tenant_id, 'feature_announcement', payload, supabase);
+    // Awaited + Promise.allSettled, not fire-and-forget: the sibling
+    // daily-feature-tip cron route (VTID-03744 / PR #2986) hit exactly this
+    // shape of bug — an un-awaited dispatch left in flight when the process
+    // was recycled right after the HTTP response, silently delivering to
+    // only a fraction of recipients (33/181 observed live). This route sends
+    // to the same scale of audience, so it gets the same fix rather than
+    // reproducing the failure the next time it's used for a full-tenant blast.
+    const dispatchResults = await Promise.allSettled(
+      [...groups.entries()].flatMap(([locale, userIds]) => {
+        const payload: NotificationPayload = {
+          title: tt('notif.feature_announcement.title', locale, { feature: pickLocale(feature_title, locale) }),
+          body: pickLocale(description, locale),
+          // Push tap lands on the News Feed (where the card itself lives) —
+          // deliberately NOT `deep_link`, which is the card's own "Try it
+          // yourself" in-app button target (e.g. /home/compose). Tapping the
+          // push should show the card first, not skip straight past it into
+          // whatever action the card's CTA performs.
+          //
+          // /home/notif, NOT /home: same feed, but deliberately excluded from
+          // useOrbFrontDoor's MAXINA_LANDING_ROUTES (vitana-v1) — a notification
+          // tap is a full page load there, which otherwise auto-opens the Orb
+          // front-door overlay on top of the card the push is about.
+          data: { url: '/home/notif', entity_id: announcementId },
+        };
+        return userIds.map((uid) => notifyUser(uid, tenant_id, 'feature_announcement', payload, supabase));
+      }),
+    );
+    const dispatched = dispatchResults.filter((r) => r.status === 'fulfilled').length;
+    const failedCount = dispatchResults.length - dispatched;
+    if (failedCount > 0) {
+      console.warn(`[${VTID}] ${failedCount}/${dispatchResults.length} notifyUser calls rejected`);
     }
 
+    // notified_at reflects dispatch actually completing, not just being scheduled.
     await repo.markFeatureAnnouncementNotified(supabase, announcementId, new Date().toISOString());
 
     console.log(
       `[${VTID}] ${isTestSend ? 'Test-published' : 'Published'} announcement ${announcementId} by ${email} ` +
-      `to ${targetUserIds.length} user(s) across ${groups.size} locale(s)`,
+      `dispatched=${dispatched}/${targetUserIds.length} across ${groups.size} locale(s)`,
     );
 
     await emitPublishEvent(
-      { announcement_id: announcementId, tenant_id, variant, test_send: isTestSend, sent_to: targetUserIds.length },
+      { announcement_id: announcementId, tenant_id, variant, test_send: isTestSend, sent_to: targetUserIds.length, dispatched },
       email,
     );
 
@@ -206,6 +227,7 @@ router.post('/', async (req: AuthenticatedRequest, res: Response) => {
       ok: true,
       announcement_id: announcementId,
       test_send: isTestSend,
+      dispatched,
       sent_to: targetUserIds.length,
       locales: [...groups.keys()],
     });

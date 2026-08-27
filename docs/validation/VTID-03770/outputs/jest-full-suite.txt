@@ -1,0 +1,42 @@
+  VTID-03741: staging pins FEATURE_LATENCY_TELEMETRY_ENV
+    ✓ upserts the flag as "staging-only" (1 ms)
+    ✓ strips the inherited value first, so a stale one cannot survive
+
+PASS test/orb/live/upstream/provider-name.test.ts
+  VOICE_PROVIDER_NAMES
+    ✓ contains exactly vertex, livekit, nova_sonic, cascaded (2 ms)
+  parseVoiceProviderName
+    ✓ accepts every canonical provider name
+    ✓ trims whitespace and lowercases before matching
+    ✓ rejects aliases and near-misses (no silent coercion) (1 ms)
+    ✓ rejects non-strings and empties
+  isVoiceProviderName
+    ✓ guards exact members only (no normalization) (1 ms)
+
+PASS test/user-journey-service.test.ts
+  ensureUserJourneyRow
+    ✓ defaults to is_first_session=true (the /me signup seeding path) (2 ms)
+    ✓ seeds is_first_session=false when explicitly requested (session-start backfill) (1 ms)
+    ✓ is idempotent: a duplicate (existing row) resolves false, never throws
+
+PASS test/services/orb-recovery-greeting-cadence.test.ts
+  ORB Recovery: quick reopen does not re-greet (cadence → policy)
+    ✓ recent turn (<5min) → policy skip (cross-surface continuation) (2 ms)
+    ✓ greeted <15min ago → policy skip (greet-once-per-window) (1 ms)
+    ✓ no prior signals (genuinely fresh) → NOT skip (greets normally) (1 ms)
+    ✓ isReconnect forces skip regardless of cadence
+
+PASS test/journey-modes-prompt.test.ts
+  buildJourneyModesSection
+    ✓ EN block names both views + the German toggle labels + the explain directive (1 ms)
+    ✓ DE block is German and carries the same facts (1 ms)
+    ✓ de-DE / de-AT region tags still get the German block (1 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 1 skipped, 713 passed, 713 of 714 total
+Tests:       29 skipped, 6 todo, 13433 passed, 13468 total
+Snapshots:   44 passed, 44 total
+Time:        67.309 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+
+[exited with code 0]

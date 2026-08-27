@@ -49,7 +49,15 @@ describe('VTID-03683: cascade language eligibility', () => {
     // has pt-BR and Polly has Camila (pt-BR), so it is eligible here. This
     // assertion is the one that proves the standing rule holds: everything Nova
     // does not cover goes to Polly, `sr` excepted because Polly cannot voice it.
-    expect(listCascadeLanguages().sort()).toEqual(['ar', 'pl', 'pt', 'ru', 'zh']);
+    //
+    // VTID-03730 — `tr` joins the same way: absent from
+    // NOVA_SONIC_SUPPORTED_LANGUAGES, has a Polly voice (Filiz, standard) and
+    // a Transcribe code (tr-TR), so it is eligible exactly like pt was.
+    const e = evaluateCascadeEligibility('tr');
+    expect(e.eligible).toBe(true);
+    expect(e.reason).toBeNull();
+    expect(e.transcribeLanguageCode).toBe('tr-TR');
+    expect(listCascadeLanguages().sort()).toEqual(['ar', 'pl', 'pt', 'ru', 'tr', 'zh']);
   });
 
   it('refuses sr, and blames POLLY — the blocker that is actually verified', () => {
@@ -144,15 +152,18 @@ describe('VTID-03683: selector routes Nova-blocked languages to the cascade', ()
     expect(d.reason).toBe('nova_forced_vertex_unavailable');
   });
 
-  it('does not claim a session that a LIVE Vertex would still have taken', () => {
-    // The cascade only rescues sessions that were going to be FORCED onto Nova.
-    // With Vertex alive, the selector's own language gate returns first and
-    // pins to Vertex — and this change deliberately does not reach past it.
-    // Whether a cascade beats a live Vertex is a separate product question;
-    // silently answering it inside a fix for the Vertex-is-dead case would be
-    // a behaviour change nobody asked for. Vertex is dead in production, so
-    // this branch is currently unreachable there — it is pinned precisely
-    // because an unreachable branch is the kind that drifts unnoticed.
+  it('VTID-03723: the cascade now rescues regardless of vertexUnavailable — there is no "live Vertex" branch left to defer to', () => {
+    // This test used to pin the OPPOSITE: with `vertexUnavailable: false`,
+    // the selector's language gate returned early and pinned to a (once-live)
+    // Vertex, and the cascade rescue was never reached — deliberately, so a
+    // cascade-vs-live-Vertex product decision wasn't silently made inside a
+    // Vertex-is-dead fix.
+    //
+    // VTID-03723 answers that question for good: Vertex is not a destination
+    // at all any more, so there is no "live Vertex" case left to preserve.
+    // Every language-blocked path — regardless of `vertexUnavailable`, which
+    // is now vestigial — checks the cascade first and forces Nova only when
+    // the cascade can't cover the language either.
     const d = selectUpstreamProvider({
       envProviderOverride: null,
       systemConfigActiveProvider: 'nova_sonic',
@@ -166,8 +177,9 @@ describe('VTID-03683: selector routes Nova-blocked languages to the cascade', ()
       },
       cascade: { enabled: true, languageSupported: true },
     } as never);
-    expect(d.provider).toBe('vertex');
-    expect(d.reason).toBe('nova_language_unsupported');
+    expect(d.provider).toBe('cascaded');
+    expect(d.provider).not.toBe('vertex');
+    expect(d.reason).toBe('cascaded_language_rescue');
   });
 
   it('never diverts a session whose language Nova DOES support', () => {

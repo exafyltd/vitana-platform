@@ -552,6 +552,45 @@ import { VERTEX_WAKE_BRIEF_OVERRIDE_MARKER } from '../instruction/wake-brief-mar
 // We do NOT wrap with the Say-exactly template in that case.
 const STRUCTURED_BLOCK_PREFIX = '__VTID_03167_STRUCTURED_BLOCK__\n';
 
+/**
+ * VTID-03774: whether the picked wake-brief candidate's line should be
+ * injected as the turn-1 override block. Pulled out as a pure, directly
+ * testable predicate (mirroring orb-live.ts's shouldRetryDayCloseReduced /
+ * shouldFallbackToVertexOnGuidedTopicContentFilterBlock pattern) instead of
+ * an inline `&&` chain, specifically so the guided-topic exemption below can
+ * be unit-tested against real inputs rather than only regex-matched in the
+ * source.
+ *
+ * The general rule: withhold the injection on a transport-level reconnect
+ * (isReconnectStart) — the conversation is already flowing, and re-injecting
+ * "say this line" would repeat content the ambient providers already know to
+ * self-suppress for (Teacher, journey-guide, login-briefing all read
+ * isReconnect/skipReason and stay silent on their own, per their extra.*
+ * wiring above).
+ *
+ * The exception: a winning guided-topic candidate (dedupeKey starting
+ * `guided_topic:`) is NEVER withheld, reconnect or not. Since VTID-03677
+ * guided-topic-narration no longer reads isReconnect at all — it returns a
+ * candidate purely on `topicId` presence, which the widget only ever resends
+ * while that exact topic has not yet been delivered (VTID-03675/03746). So a
+ * guided-topic win here can only mean "resume a lesson interrupted mid-way,"
+ * never "re-greet an already-flowing conversation" — the case this gate
+ * exists to prevent. Before this fix, that win was discarded anyway (the
+ * gate has no concept of WHICH candidate won, only whether one did), which
+ * silently swallowed a resumed guided-topic tap and let the model open a
+ * generic wake-brief line instead. orb-live.ts's WS transport already
+ * carries the identical exemption (`_hasPendingGuidedTopicAtOpen`,
+ * VTID-03727/03771); this SSE-transport controller is a separate code path
+ * that never got it.
+ */
+export function shouldInjectWakeBriefOverrideBlock(
+  isReconnectStart: boolean,
+  dedupeKey: string | null | undefined,
+): boolean {
+  const isPendingGuidedTopicResume = !!dedupeKey?.startsWith('guided_topic:');
+  return !isReconnectStart || isPendingGuidedTopicResume;
+}
+
 export function buildVertexWakeBriefBlock(
   line: string,
   _lang: string,
@@ -1107,6 +1146,7 @@ export async function handleLiveSessionStart(
     // with the heavy block, which sets the same field later.
     if (isFeatureLive('ORB_SAFE_FAST_GREETING')) {
       const _ndIdentity = bootstrapIdentity;
+      const _prefetchStartMs = Date.now();
       greetingFactsReady = (async () => {
         try {
           const { getSupabase } = await import('../../../lib/supabase');
@@ -1131,10 +1171,29 @@ export async function handleLiveSessionStart(
             // Authoritative first-time signal — a single cheap column read, in
             // the SAME parallel batch so it adds no latency. Drives the first-time
             // welcome (never "welcome back" for a brand-new user).
+            // BOOTSTRAP-ORB-NEWDAY-STAMP-DIAGNOSTIC root cause: `last_day_close_date`
+            // did not exist on the live user_journey table, so selecting it here
+            // failed THIS ENTIRE QUERY (Postgres 42703), which silently failed the
+            // `!firstSessionResult.value.error` guard below and meant
+            // last_full_briefing_date — read in the SAME query — was NEVER
+            // populated, root-causing the once-per-day briefing guard re-firing on
+            // every session. The column now exists (BOOTSTRAP-ORB-DAY-CLOSE
+            // migration add_user_journey_last_day_close_date) — see the select
+            // below.
             supa
               ? supa
                   .from('user_journey')
-                  .select('is_first_session, last_session_date, last_full_briefing_date, last_day_close_date, recent_nbas')
+                  // BOOTSTRAP-ORB-DAY-CLOSE: `last_day_close_date` is back in
+                  // this SELECT now that the column actually exists on
+                  // user_journey (migration add_user_journey_last_day_close_date).
+                  // It was dropped here under BOOTSTRAP-ORB-NEWDAY-STAMP-DIAGNOSTIC
+                  // because selecting a nonexistent column failed this ENTIRE
+                  // query (Postgres 42703), silently zeroing out
+                  // last_full_briefing_date too — do not add an unmapped
+                  // column back to this list without confirming it exists.
+                  .select(
+                    'is_first_session, last_session_date, last_full_briefing_date, last_day_close_date, recent_nbas',
+                  )
                   .eq('user_id', _ndIdentity.user_id)
                   .maybeSingle()
               : Promise.resolve(null as any),
@@ -1196,6 +1255,38 @@ export async function handleLiveSessionStart(
                 .filter((k): k is string => typeof k === 'string' && k.length > 0);
             }
           }
+          // BOOTSTRAP-ORB-NEWDAY-STAMP-DIAGNOSTIC — a diagnostic-only event
+          // (never gates behavior) reporting exactly what this query returned,
+          // so a live repro shows whether last_full_briefing_date is missing
+          // because the query errored, found no row, or genuinely read null —
+          // versus being lost downstream after a successful read. `session`
+          // does not exist yet at this point in context bootstrap, so this
+          // uses emitOasisEvent directly rather than deps.emitDiag.
+          emitOasisEvent({
+            vtid: 'BOOTSTRAP-ORB-NEWDAY-STAMP-DIAGNOSTIC',
+            type: 'orb.live.diag' as any,
+            source: 'orb-live-greeting-facts-prefetch',
+            status: 'info',
+            message: 'greeting-facts prefetch: user_journey read result',
+            payload: {
+              session_id: sessionId,
+              user_id: _ndIdentity.user_id,
+              stage: 'greeting_facts_user_journey_read',
+              elapsed_ms: Date.now() - _prefetchStartMs,
+              settled_status: firstSessionResult.status,
+              query_error:
+                firstSessionResult.status === 'fulfilled'
+                  ? (firstSessionResult.value as any)?.error ?? null
+                  : (firstSessionResult as any).reason?.message ?? String((firstSessionResult as any).reason),
+              row_found:
+                firstSessionResult.status === 'fulfilled' ? !!(firstSessionResult.value as any)?.data : null,
+              raw_last_full_briefing_date:
+                firstSessionResult.status === 'fulfilled'
+                  ? ((firstSessionResult.value as any)?.data?.last_full_briefing_date ?? null)
+                  : null,
+              resolved_greeting_last_full_briefing_date: greetingLastFullBriefingDate,
+            },
+          }).catch(() => {});
           if (
             journeyStateResult.status === 'fulfilled' &&
             journeyStateResult.value &&
@@ -1348,6 +1439,14 @@ export async function handleLiveSessionStart(
     guided_topic_id: typeof (body as any).guided_topic_id === 'string'
       ? (body as any).guided_topic_id
       : undefined,
+    // VTID-03774 (Codex review follow-up): set by the client ONLY when it is
+    // resending guided_topic_id for a topic whose turn-1 audio (opener +
+    // narration bridge) was already delivered before this reconnect — i.e.
+    // resuming a lesson already in progress, not a first open. Distinguishes
+    // that from a genuine zero-turn retry (e.g. VTID-03771's nova_validation
+    // case), where the topic has never been heard and the full open SHOULD
+    // fire. See guided-topic-narration.ts's isResume handling.
+    guided_topic_resume: (body as any).guided_topic_resume === true,
   };
 
   // VTID-SESSION-LIMIT: Terminate any existing active sessions for this user.
@@ -1651,6 +1750,9 @@ export async function handleLiveSessionStart(
       // VTID-03290: forward the tapped Guided Journey topic so the
       // guided-topic-narration provider leads turn-1. Null for normal opens.
       guidedTopicId: (session as any).guided_topic_id ?? null,
+      // VTID-03774: forward whether this is a resume of already-delivered
+      // guided-topic content (see the field's own comment above).
+      guidedTopicResume: (session as any).guided_topic_resume === true,
       supabase: supabaseClient,
       // VTID-03085 (Lane 1): pass the compiled spine — unlocks
       // life_compass_alignment, vitana_index_pillar,
@@ -1703,7 +1805,30 @@ export async function handleLiveSessionStart(
     // no chat-ctx amnesia, no "I don't remember saying that" failure.
     const picked = wakeBriefDecision?.selectedContinuation ?? null;
     const line = picked?.userFacingLine?.trim();
-    if (picked && line && line.length > 0 && !isReconnectStart) {
+    // VTID-03774: a winning guided-topic candidate must never be withheld by
+    // the isReconnectStart skip below. That skip exists so a transport-level
+    // reconnect (network blip, mid-conversation) doesn't re-inject a wake-brief
+    // line into an already-flowing conversation — correct for the ambient
+    // providers, which is why every OTHER provider (Teacher, journey-guide,
+    // login-briefing) explicitly self-suppresses on isReconnect (see their own
+    // extra.isReconnect/skipReason wiring above). guided-topic-narration is
+    // different: since VTID-03677 it no longer reads isReconnect at all and
+    // returns its candidate purely on `topicId` presence — so on a reconnect
+    // where the widget resent guided_topic_id (a lesson interrupted mid-way,
+    // never delivered), it correctly WINS the ranking here (priority 96, the
+    // highest of any provider) but this gate then silently discarded that win
+    // anyway, because the gate has no concept of "which candidate" — it
+    // withholds ANY winner uniformly. The orb-live.ts WS path already carries
+    // this exact exemption (`_hasPendingGuidedTopicAtOpen`, VTID-03727/03771)
+    // for the identical reason; this SSE-transport controller is a separate
+    // code path that never got it. Detected via dedupeKey (`guided_topic:` —
+    // see guided-topic-narration.ts's candidate) rather than a session flag,
+    // since this controller builds a fresh session per reconnect and has no
+    // turn_count===0 concept to key off the way orb-live.ts does. Extracted
+    // as shouldInjectWakeBriefOverrideBlock() (above buildVertexWakeBriefBlock)
+    // so the exemption is a directly unit-testable pure function, not just a
+    // pattern regex-matched against the source.
+    if (picked && line && line.length > 0 && shouldInjectWakeBriefOverrideBlock(isReconnectStart, picked.dedupeKey)) {
       const block = buildVertexWakeBriefBlock(line, lang, picked.dedupeKey ?? null);
       // VTID-03101: write to a DEDICATED session field instead of mutating
       // contextInstruction. The bootstrap promise above unconditionally

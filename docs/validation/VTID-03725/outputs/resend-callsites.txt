@@ -1,0 +1,75 @@
+=== grep: all resendGreetingIfStuckAtZeroTurns call sites ===
+8481:              resendGreetingIfStuckAtZeroTurns(session, 'VTID-03647-guided-topic-fallback');
+8495:          // `resendGreetingIfStuckAtZeroTurns`'s existing `alreadyRetried`
+8578:              resendGreetingIfStuckAtZeroTurns(session, 'VTID-03557-retry');
+8669:              resendGreetingIfStuckAtZeroTurns(session, 'VTID-03502-fallback');
+9238:function resendGreetingIfStuckAtZeroTurns(session: GeminiLiveSession, source: string): void {
+9323:  // resendGreetingIfStuckAtZeroTurns still recovers the greeting normally
+10018:  // bumps `_reconnectCount` before `resendGreetingIfStuckAtZeroTurns` calls
+
+=== context: line 8481 call site (inside closeEvent-driven guided-topic fallback branch) ===
+          // which tells the CLIENT to give up (`should_close: true`) rather
+          // than retry. That is what produced the user-visible loop: several
+          // "reconnecting" cues (spanning session live-bf419eed → c494ba29
+          // → 7fbd656d, each a fresh client-side restart) before finally
+          // landing back on a plain Nova conversation — measurably WORSE
+          // than the pre-03647 behavior (straight to the VTID-03557 retry,
+          // which succeeded on its first attempt in the very same incident,
+          // session live-7fbd656d). Re-enable via
+          // `ORB_GUIDED_TOPIC_VERTEX_FALLBACK_ENABLED=true` only after the
+          // Vertex-side rejection is root-caused (candidate: this exact
+          // lesson's raw `voice_script` content, since Nova and Vertex are
+          // independent implementations rejecting the identical text) —
+          // simply routing to a different provider does not fix a payload
+          // both providers reject.
+          const shouldFallbackOnGuidedTopicBlock =
+            process.env.ORB_GUIDED_TOPIC_VERTEX_FALLBACK_ENABLED === 'true' &&
+            shouldFallbackToVertexOnGuidedTopicContentFilterBlock({
+              closeReason: closeEvent.reason ?? null,
+              hasGuidedTopicRequest: !!(session as any).guidedTopicNarrationContent,
+              sessionActive: session.active,
+              initiatedLocally: closeEvent.initiatedLocally === true,
+              rotationInFlight,
+              alreadyFellBack: (session as any)._novaFallbackToVertex === true,
+            });
+          if (shouldFallbackOnGuidedTopicBlock) {
+            console.warn(
+              `[VTID-03647] Nova content filter blocked a guided-topic request for session ` +
+                `${session.sessionId} — reconnecting (VTID-03723: Vertex is not a fallback destination any more).`,
+            );
+            (session as any)._novaFallbackToVertex = true;
+            emitDiag(session, 'nova_guided_topic_content_filter_fallback', {
+              provider: 'nova_sonic',
+              reason: closeEvent.reason ?? null,
+            });
+            void emitOasisEvent({
+              type: 'orb.upstream.nova.guided_topic_content_filter_fallback',
+              vtid: 'VTID-03647',
+              payload: {
+                session_id: session.sessionId,
+                from: 'nova_sonic',
+                to: 'nova_sonic',
+                reason: closeEvent.reason ?? null,
+                status: 'warning',
+              } as any,
+            } as any).catch(() => { /* best-effort */ });
+
+            void attemptTransparentReconnect(
+              session,
+              onAudioResponse,
+              onTextResponse,
+              onError,
+              onTurnComplete,
+              onInterrupted,
+            ).then((ok) => {
+              if (!ok) {
+                console.warn(
+                  `[VTID-03647] Reconnect after guided-topic content filter block failed for session ${session.sessionId}.`,
+                );
+                emitConnectionIssue(session, 'upstream_disconnected');
+                return;
+              }
+              resendGreetingIfStuckAtZeroTurns(session, 'VTID-03647-guided-topic-fallback');
+            }).catch((e) => {
+
+=== confirms: no idle-timeout-based trigger exists for 'connection open but zero turns' ===

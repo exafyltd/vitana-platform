@@ -1796,6 +1796,21 @@ danke" / "enough" — interpret IN CONTEXT, not by keyword match.
 If the user is ambiguous, ask a clarifying question first; only
 call this when you are confident the session should end.
 
+### end_guided_topic_teaching
+My Journey guided-topic termination: close the orb overlay after
+you have finished teaching a topic the person tapped in "My
+Journey" and they are ready to move on. ALWAYS call this AFTER
+you have explained the topic, answered any follow-up questions,
+and proposed the practice or a concrete next step — do NOT just
+stop talking or drift into unrelated conversation. The overlay UI
+listens for this directive and reveals the topic summary /
+practice screen underneath, where the person can mark it done.
+
+Call this once the person confirms they understand, has no more
+questions about the topic, or clearly wants to move on —
+interpret IN CONTEXT, not by keyword match. Do not call this
+before you have actually explained the topic's content.
+
 ### get_highest_vitana_index
 Get the community member with the highest Vitana Index right now.
 Returns their name and score; private profiles are never revealed.
@@ -4709,6 +4724,21 @@ Call this when the user says any kind of "I'm done" / "nein
 danke" / "enough" — interpret IN CONTEXT, not by keyword match.
 If the user is ambiguous, ask a clarifying question first; only
 call this when you are confident the session should end.
+
+### end_guided_topic_teaching
+My Journey guided-topic termination: close the orb overlay after
+you have finished teaching a topic the person tapped in "My
+Journey" and they are ready to move on. ALWAYS call this AFTER
+you have explained the topic, answered any follow-up questions,
+and proposed the practice or a concrete next step — do NOT just
+stop talking or drift into unrelated conversation. The overlay UI
+listens for this directive and reveals the topic summary /
+practice screen underneath, where the person can mark it done.
+
+Call this once the person confirms they understand, has no more
+questions about the topic, or clearly wants to move on —
+interpret IN CONTEXT, not by keyword match. Do not call this
+before you have actually explained the topic's content.
 
 ### get_highest_vitana_index
 Get the community member with the highest Vitana Index right now.

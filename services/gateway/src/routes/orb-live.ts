@@ -350,6 +350,7 @@ import {
   newdayHasContent,
   setNewdayOverviewRungEnabled,
   setDayCloseRungEnabled,
+  tryDayCloseRung,
   type GreetingDecisionContext,
 } from '../services/conversation/compute-greeting-decision';
 
@@ -1227,6 +1228,10 @@ export interface GeminiLiveSession {
   // When set, the guided-topic-narration provider LEADS turn-1 and Vitana
   // teaches that topic from the published KB. One-shot per session.
   guided_topic_id?: string;
+  // VTID-03774: set when `guided_topic_id` is being resent for a topic whose
+  // turn-1 audio was already delivered before this reconnect (resuming a
+  // lesson in progress) — see guided-topic-narration.ts's isResume doc.
+  guided_topic_resume?: boolean;
   // VTID-NAV: Cached memory pack from the first navigator_consult call this
   // session, with a 30s TTL — subsequent consult calls reuse it instead of
   // re-paying retrieval cost.
@@ -1750,6 +1755,98 @@ export function shouldRetryDayCloseReduced(args: {
     !args.alreadyReducedThisClose
   );
 }
+
+/**
+ * VTID-03743 review fix (Codex P1) — the day-close stamp write must not
+ * fire until the session has actually produced audio.
+ *
+ * Every day-close stamp call site used to write `last_day_close_date`
+ * synchronously, right after `ws.send()`'ing the greeting directive —
+ * before Nova had any chance to actually speak it. If Nova's content
+ * filter rejects the directive, or the connection dies before any audio
+ * (the same failure modes this file already discriminates via
+ * `transportHasShownLife` for `shouldRetryNovaOnPrematureClose` /
+ * `shouldFallbackToVertexOnNovaClose`), the stamp had already landed — so
+ * `tryDayCloseRung`'s own once-per-night guard
+ * (`lastDayCloseDate >= nightKey`) would suppress every later attempt
+ * THAT SAME NIGHT even though the user never heard a goodnight at all.
+ * That is the exact failure class this whole VTID chain exists to end (a
+ * "delivered" marker set before delivery is confirmed) — shipping it into
+ * day-close on the same PR that enables the rung would reproduce it in a
+ * new shape.
+ *
+ * Fix: defer the persisted write behind the SAME timeout already
+ * calibrated for "did the greeting get a response"
+ * (`getGreetingResponseTimeoutMs()`) and the SAME liveness signal already
+ * used elsewhere in this file (`session.transportHasShownLife`) — no new
+ * magic number, no new signal. `session.lastDayCloseDate` (the in-memory
+ * copy `tryDayCloseRung` reads for the REST of this same session) is
+ * likewise only updated once delivery is confirmed, so a Nova-validation
+ * retry within the same session still sees the night as undelivered and
+ * can still win the rung again.
+ */
+function schedulePersistDayCloseStamp(args: {
+  session: GeminiLiveSession;
+  supa: ReturnType<typeof getSupabase>;
+  userId: string | null;
+  stampValue: string;
+  branch: string;
+}): void {
+  const { session, supa, userId, stampValue, branch } = args;
+  if (!supa || !userId) return;
+  setTimeout(() => {
+    void (async () => {
+      if (session.transportHasShownLife !== true) {
+        emitDiag(session, 'stamp_day_close_date_write', {
+          branch,
+          result: 'skipped_no_audio_produced',
+          value: stampValue,
+        });
+        return;
+      }
+      (session as any).lastDayCloseDate = stampValue;
+      try {
+        const { data, error } = await supa
+          .from('user_journey')
+          .update({ last_day_close_date: stampValue })
+          .eq('user_id', userId)
+          .select('user_id');
+        if (error) {
+          console.error(`[orb-live] stampDayCloseDate write failed (${branch})`, {
+            user_id: userId,
+            value: stampValue,
+            error,
+          });
+          emitDiag(session, 'stamp_day_close_date_write', {
+            branch,
+            result: 'error',
+            error: String((error as any)?.message ?? error),
+          });
+        } else if (!data || data.length === 0) {
+          console.error(`[orb-live] stampDayCloseDate write matched 0 rows (${branch})`, {
+            user_id: userId,
+            value: stampValue,
+          });
+          emitDiag(session, 'stamp_day_close_date_write', { branch, result: 'zero_rows' });
+        } else {
+          emitDiag(session, 'stamp_day_close_date_write', { branch, result: 'ok', rows: data.length });
+        }
+      } catch (err) {
+        console.error(`[orb-live] stampDayCloseDate write threw (${branch})`, {
+          user_id: userId,
+          value: stampValue,
+          err,
+        });
+        emitDiag(session, 'stamp_day_close_date_write', {
+          branch,
+          result: 'threw',
+          error: String((err as any)?.message ?? err),
+        });
+      }
+    })();
+  }, getGreetingResponseTimeoutMs());
+}
+
 // VTID-03495: Polly seam for the /tts route. No-ops unless TTS_PROVIDER=polly.
 import { tryPollySynthesis } from '../services/tts/tts-provider';
 // VTID-03716: direct, unconditional Polly access for the PCM diagnostic route
@@ -2523,6 +2620,7 @@ export function buildSpecialistLanguageDirective(lang: string | undefined): stri
   const languageNames: Record<string, string> = {
     en: 'English', de: 'German', fr: 'French', es: 'Spanish',
     ar: 'Arabic', zh: 'Chinese', ru: 'Russian', sr: 'Serbian',
+    pt: 'Brazilian Portuguese', pl: 'Polish', tr: 'Turkish',
   };
   const name = languageNames[lang || 'en'] || 'English';
   return [
@@ -6434,6 +6532,41 @@ async function executeLiveApiToolInner(
         };
       }
 
+      // VTID-03762: same shape as end_teaching_session above, scoped to the
+      // guided-topic-narration flow (tapping a session/topic in "My
+      // Journey"). See live-tool-catalog.ts's declaration for why this
+      // exists — the GUIDE MODE block has no other exit condition, so
+      // without this the model free-wheels into general conversation
+      // forever and the overlay never closes to reveal the already-mounted
+      // "Well done" drawer.
+      case 'end_guided_topic_teaching': {
+        const reason = typeof args.reason === 'string' ? args.reason.trim().slice(0, 200) : '';
+        const topicId = session.guided_topic_id || null;
+        const directive = {
+          type: 'orb_directive',
+          directive: 'end_guided_topic_teaching',
+          reason: reason || 'guided_topic_taught',
+          topic_id: topicId,
+          vtid: 'VTID-03762',
+        };
+        try {
+          if (session.sseResponse) {
+            session.sseResponse.write(`data: ${JSON.stringify(directive)}\n\n`);
+          }
+          if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+            session.clientWs.send(JSON.stringify(directive));
+          }
+        } catch (err) {
+          console.warn(`[VTID-03762] end_guided_topic_teaching directive emit failed (non-fatal): ${(err as Error).message}`);
+        }
+        console.log(`[VTID-03762] end_guided_topic_teaching called: session=${session.sessionId} topic=${topicId || '<none>'} reason=${reason || '<none>'}`);
+        emitDiag(session, 'guided_topic_teaching_ended', { topic_id: topicId, reason: reason || null });
+        return {
+          success: true,
+          result: 'Guided-topic teaching is ending. The overlay is now closing so the person can continue in the app.',
+        };
+      }
+
       case 'record_journey_answer': {
         // VTID-03257 (Fix-1): Vertex parity for the journey-answer tool.
         // record_journey_answer was added to ORB_TOOL_REGISTRY by VTID-03255
@@ -6883,7 +7016,8 @@ function detectIntentSignal(text: string): boolean {
 function buildAnonymousSystemInstruction(lang: string, voiceStyle: string, ctx?: ClientContext, conversationHistory?: string, isReconnect?: boolean): string {
   const languageNames: Record<string, string> = {
     'en': 'English', 'de': 'German', 'fr': 'French', 'es': 'Spanish',
-    'ar': 'Arabic', 'zh': 'Chinese', 'ru': 'Russian', 'sr': 'Serbian'
+    'ar': 'Arabic', 'zh': 'Chinese', 'ru': 'Russian', 'sr': 'Serbian',
+    'pt': 'Brazilian Portuguese', 'pl': 'Polish', 'tr': 'Turkish'
   };
 
   // Build context-aware greeting hints
@@ -6946,43 +7080,23 @@ ${conversationHistory}
 
 Your next message must be a direct response to whatever the visitor says next, with NO prefix acknowledgment of any pause. If the visitor says nothing, you say nothing — silence is correct here.
 ` : `
-=== FIRST MESSAGE (READ THIS SPEECH VERBATIM — DO NOT SHORTEN, SKIP, OR SUMMARIZE) ===
+=== FIRST MESSAGE (INTRODUCE VITANALAND — COMPOSE THIS FRESH, DO NOT RECITE THE MATERIAL BELOW WORD-FOR-WORD) ===
+LANGUAGE FOR THIS MESSAGE: Deliver it ENTIRELY in ${languageNames[lang] || 'English'}. The material below is English reference content, not a script to translate — compose your own sentences in ${languageNames[lang] || 'English'}, in your own natural voice, the same way you would explain it to a friend.
+
 CRITICAL RULES:
-- Your first message MUST be the COMPLETE speech below — speak ALL of it before stopping.
-- Do NOT stop after the greeting to ask a question.
-- Do NOT say "what can I do for you" or "how can I help" — the visitor has NO IDEA what you do.
-- Do NOT summarize or shorten this speech. Deliver it FULLY.
-- This is approximately 45 seconds of speaking. That is the correct length. Do NOT cut it short.
+- Cover EVERY point in the material below, in your own words — do not skip, shorten, or summarize any of it away.
+- Do NOT stop after a greeting to ask a question.
+- Do NOT say "what can I do for you" or "how can I help" — the visitor has NO IDEA what you do yet.
+- Aim for roughly 45 seconds of natural speaking — enough to properly introduce everything below, not a quick one-liner.
+- If you know the visitor's city (see CONTEXT above), open with it naturally. Otherwise just open warmly — never say a placeholder or bracket.
 
-Speak the following as your COMPLETE first message (adapt the city name naturally, but cover ALL the content — do not skip any section):
-
-${lang === 'de' ? `"""
-Hallo aus [Stadt wenn bekannt]! Mein Name ist Vitana, und ich bin bereit, dein neuer persönlicher Gesundheitsbegleiter zu werden.
-
-Lass mich dir erzählen, worum es hier geht. Du bist auf Vitanaland gelandet, der Heimat der Maxina Community. Maxina wurde rund um Mariia Maksina gegründet — sie ist eine professionelle Tänzerin, die viele Menschen bereits aus der Fernsehshow Let's Dance kennen und lieben. Die Leute kommen ursprünglich hierher, weil sie mit Mariia tanzen und Fitness machen wollen. Diese Energie und Leidenschaft ist das Herzstück von allem, was wir tun.
-
-Aber Maxina ist zu viel mehr geworden. Wir sind eine Longevity-Community von Gleichgesinnten, die das Leben gemeinsam genießen wollen. Es geht darum, an echten Events und Meetups teilzunehmen, Gesundheitserfahrungen miteinander zu teilen und Spaß mit Tanz und Fitness zu haben. Echte Menschen, die sich im echten Leben treffen — in Städten in Deutschland, Österreich und der Schweiz. Und ab Juni bis September in diesem Jahr starten wir auch auf Mallorca mit einer Maxina Experience Eventserie.
-
-Und hier ist, was für dich persönlich drin ist. Als Mitglied bekommst du Zugang zu Tanzsessions, Fitnesskursen, Wellness-Workshops, Koch-Events, Meditationsgruppen, Wander-Meetups — alles mit Menschen, die deine Leidenschaft für ein gutes Leben teilen. Dazu bekommst du mich — Vitana — als deinen persönlichen KI-Gesundheitsbegleiter. Sobald du beitrittst, merke ich mir deine Ziele, deine Vorlieben und all unsere Gespräche. Ich gebe dir persönliche Beratung zu Ernährung, Fitness, Stressmanagement, Schlaf und mentaler Gesundheit. Wir haben auch wunderschöne kuratierte Klangwelten für Fokus, Entspannung und Meditation.
-
-Unsere Vision ist einfach. Longevity bedeutet nicht nur länger zu leben — es bedeutet besser zu leben, gemeinsam. Die Zukunft von Wellness ist menschliche Verbindung, Gemeinschaft und Spaß beim Kümmern um sich selbst. Und das Beste? Der Beitritt zur Maxina Community ist komplett kostenlos.
-
-Also sag mir — was begeistert dich am meisten? Ist es Tanz, Fitness, Ernährung, Gleichgesinnte treffen, oder etwas ganz anderes?
-"""` : `"""
-Hello from [city if known]! My name is Vitana, and I am ready to become your new personal health companion.
-
-Let me tell you what this is all about. You've landed on Vitanaland, the home of the Maxina Community. Maxina was created around Mariia Maksina — she's a professional dancer that many people already know and love from the TV show Let's Dance. People originally come here because they want to dance and do fitness with Mariia. That energy and passion is the heart of everything we do.
-
-But Maxina has grown into so much more than that. We are a longevity community of like-minded people who want to enjoy life together. It's about joining real events and meetups, sharing health experiences with each other, and having fun with dance and fitness. Real people meeting in real life, in cities across Germany, Austria, and Switzerland. And from June to September this year, we are also launching on Mallorca with a Maxina Experience event series.
-
-And here is what's in it for you personally. As a member, you get access to dance sessions, fitness classes, wellness workshops, cooking events, meditation groups, hiking meetups — all with people who share your passion for living well. Plus, you get me — Vitana — as your personal AI health companion. Once you join, I will remember your goals, your preferences, and all our conversations. I give you personalized guidance on nutrition, fitness, stress management, sleep, and mental wellness. We also have beautiful curated soundscapes for focus, relaxation, and meditation.
-
-Our vision is simple. Longevity is not just about living longer — it is about living better, together. The future of wellness is human connection, community, and having fun while taking care of yourself. And the best part? Joining the Maxina Community is completely free.
-
-So tell me — what excites you most? Is it dance, fitness, nutrition, meeting like-minded people, or something else entirely?
-"""`}
-
-IMPORTANT: The speech above is your MINIMUM first message. You must NOT remove or skip any of the sections. Every paragraph above must be spoken.
+Material to introduce, in your own words (reference content — paraphrase and explain naturally, do NOT read aloud):
+- Your identity: your name is Vitana, and you are ready to become their new personal health companion.
+- Origin story: they've landed on Vitanaland, home of the Maxina Community. Maxina was created around Mariia Maksina — a professional dancer many people already know and love from the TV show Let's Dance. People originally came here because they wanted to dance and do fitness with Mariia; that energy and passion is the heart of everything.
+- What it grew into: a longevity community of like-minded people who want to enjoy life together — joining real events and meetups, sharing health experiences with each other, having fun with dance and fitness. Real people meeting in real life, in cities across Germany, Austria, and Switzerland, plus a Maxina Experience event series launching on Mallorca from June to September this year.
+- What's in it for them: as a member, dance sessions, fitness classes, wellness workshops, cooking events, meditation groups, hiking meetups — all with people who share their passion for living well. Plus you, Vitana, as their personal AI health companion: once they join, you remember their goals, preferences, and every conversation, and give personalized guidance on nutrition, fitness, stress management, sleep, and mental wellness. There are also beautiful curated soundscapes for focus, relaxation, and meditation.
+- Vision: longevity is not just about living longer — it is about living better, together. The future of wellness is human connection, community, and having fun while taking care of yourself. Joining the Maxina Community is completely free.
+- Close by asking what excites them most — dance, fitness, nutrition, meeting like-minded people, or something else entirely.
 `}
 
 === AFTER THE USER RESPONDS ===
@@ -7147,33 +7261,32 @@ async function connectToLiveAPI(
       },
     });
   } catch (e) {
-    // Voice/canary config read failure must NOT block the session start;
-    // default to Vertex so production behavior matches today.
-    console.warn(`[VTID-02976] voice/canary config read failed; falling back to vertex defaults: ${(e as Error).message}`);
+    // VTID-03723: voice/canary config read failure must NOT block the
+    // session start; default to Nova (never Vertex — it is not a
+    // destination any more, see upstream-provider-selector.ts).
+    console.warn(`[VTID-02976] voice/canary config read failed; falling back to nova_sonic defaults: ${(e as Error).message}`);
     __upstreamDecision = {
-      provider: 'vertex',
+      provider: 'nova_sonic',
       requested: null,
-      reason: 'default',
+      reason: 'vertex_removed_forced_nova',
       livekitReady: false,
       canary: false,
+      novaReady: false,
     };
   }
-  // BOOTSTRAP-NOVA-IDLE-ROTATION: a session that already exhausted its Nova
-  // rotation attempts is pinned to Vertex for the remainder of its life. This
-  // has to be applied AFTER the selector (which is stateless and would happily
-  // hand back Nova again) and BEFORE `session.upstreamProvider` is recorded,
-  // so latency attribution and the connect branch below both see the pin.
-  // Loud, never silent — CLAUDE.md "Never allow silent model fallback".
+  // BOOTSTRAP-NOVA-IDLE-ROTATION / VTID-03723: a session that already
+  // exhausted its Nova rotation attempts used to be pinned to Vertex for the
+  // remainder of its life. Vertex is not a destination any more — there is
+  // nowhere else to pin it, so the selector's own decision (still
+  // `nova_sonic`, still retried) stands. `_novaFallbackToVertex` is left set
+  // by its trigger sites purely as a re-trigger guard (see the premature-
+  // close / guided-topic-block branches below); it no longer materializes an
+  // actual Vertex connection here.
   if ((session as any)._novaFallbackToVertex && __upstreamDecision.provider === 'nova_sonic') {
     console.warn(
-      `[BOOTSTRAP-NOVA-IDLE-ROTATION] Session ${session.sessionId} is pinned to Vertex after exhausting ` +
-        `Nova rotation attempts — overriding selector decision '${__upstreamDecision.provider}'.`,
+      `[BOOTSTRAP-NOVA-IDLE-ROTATION] Session ${session.sessionId} exhausted Nova rotation attempts; ` +
+        `no Vertex fallback exists any more, retrying Nova rather than pinning to a dead provider.`,
     );
-    __upstreamDecision = {
-      ...__upstreamDecision,
-      provider: 'vertex',
-      reason: 'nova_rotation_exhausted_fallback',
-    };
   }
   console.log(
     `[VTID-02976] upstream provider selected: provider=${__upstreamDecision.provider}` +
@@ -8120,6 +8233,22 @@ async function connectToLiveAPI(
               } as any).catch(() => { /* best-effort */ });
               void rotateNovaStream?.('idle_deadline_failsafe');
             },
+            // VTID-03764 — diagnostic only. Bisects the multi-second gap
+            // between greeting_sent and audio_out_first_chunk. A one-shot
+            // "first normalized event" was tried first and found useless:
+            // real staging measurement showed it fires on a connection
+            // handshake `usage` event that arrives BEFORE the greeting
+            // prompt is even sent, telling us nothing about the silence
+            // that follows. onEarlyNormalizedEvent instead marks a short
+            // real timeline (up to EARLY_EVENT_CAP events) so a genuine gap
+            // between "Nova acked the connection" and "Nova started
+            // producing the response" is actually visible.
+            onFirstRawChunk: ({ byteLength }) => {
+              session.establishLatency?.mark('nova_first_raw_chunk', { byte_length: byteLength });
+            },
+            onEarlyNormalizedEvent: ({ kind, index }) => {
+              session.establishLatency?.mark('nova_early_event', { kind, index });
+            },
           },
         });
 
@@ -8235,17 +8364,20 @@ async function connectToLiveAPI(
             if (!session.active) return;
             console.warn(
               `[BOOTSTRAP-NOVA-IDLE-ROTATION] Nova rotation failed ${NOVA_ROTATION_MAX_ATTEMPTS}x for session ` +
-                `${session.sessionId} (reason=${reason}) — falling back to Vertex for the rest of this session.`,
+                `${session.sessionId} (reason=${reason}) — attempting a fresh reconnect ` +
+                `(VTID-03723: Vertex is not a fallback destination any more; the reconnect resolves to Nova/the cascade).`,
             );
-            // Pinned for the REST of the session, not just this attempt: if
-            // Nova could not give us a stream three times in a row, bouncing
-            // the next rotation back onto it would just repeat this.
+            // VTID-03723: `_novaFallbackToVertex` no longer pins the session
+            // to an actual Vertex connection — see the override removal at
+            // the top of connectToLiveAPI. It stays set purely as a
+            // re-trigger guard for the OTHER fallback sites below (premature
+            // close, guided-topic content-filter block) so they don't loop.
             (session as any)._novaFallbackToVertex = true;
             emitDiag(session, 'nova_fallback_to_vertex', { provider: 'nova_sonic', reason });
             void emitOasisEvent({
               type: 'orb.upstream.nova.fallback_to_vertex',
               vtid: 'BOOTSTRAP-NOVA-IDLE-ROTATION',
-              payload: { session_id: session.sessionId, from: 'nova_sonic', to: 'vertex', reason } as any,
+              payload: { session_id: session.sessionId, from: 'nova_sonic', to: 'nova_sonic', reason } as any,
             } as any).catch(() => { /* best-effort */ });
 
             let fellBack = false;
@@ -8260,28 +8392,28 @@ async function connectToLiveAPI(
               );
             } catch (e) {
               emitDiag(session, 'nova_fallback_failed', {
-                provider: 'vertex',
+                provider: 'nova_sonic',
                 reason,
                 error: (e as Error).message,
               });
             }
             if (fellBack) {
-              await novaClient.close(`${reason}_vertex_fallback`);
-              emitDiag(session, 'nova_fallback_succeeded', { provider: 'vertex', reason });
+              await novaClient.close(`${reason}_reconnect_fallback`);
+              emitDiag(session, 'nova_fallback_succeeded', { provider: 'nova_sonic', reason });
               void emitOasisEvent({
                 type: 'orb.upstream.nova.fallback_succeeded',
                 vtid: 'BOOTSTRAP-NOVA-IDLE-ROTATION',
-                payload: { session_id: session.sessionId, from: 'nova_sonic', to: 'vertex', reason } as any,
+                payload: { session_id: session.sessionId, from: 'nova_sonic', to: 'nova_sonic', reason } as any,
               } as any).catch(() => { /* best-effort */ });
             } else {
               // Nothing left to try — keep the old Nova stream so the user
               // gets whatever time remains before its deadline rather than
               // being cut off now. Its close handler surfaces the typed issue.
-              emitDiag(session, 'nova_fallback_failed', { provider: 'vertex', reason, code: 'nova_fallback_failed' });
+              emitDiag(session, 'nova_fallback_failed', { provider: 'nova_sonic', reason, code: 'nova_fallback_failed' });
               void emitOasisEvent({
                 type: 'orb.upstream.nova.fallback_failed',
                 vtid: 'BOOTSTRAP-NOVA-IDLE-ROTATION',
-                payload: { session_id: session.sessionId, from: 'nova_sonic', to: 'vertex', reason } as any,
+                payload: { session_id: session.sessionId, from: 'nova_sonic', to: 'nova_sonic', reason } as any,
               } as any).catch(() => { /* best-effort */ });
             }
           } finally {
@@ -8440,7 +8572,7 @@ async function connectToLiveAPI(
           if (shouldFallbackOnGuidedTopicBlock) {
             console.warn(
               `[VTID-03647] Nova content filter blocked a guided-topic request for session ` +
-                `${session.sessionId} — falling back to Vertex instead of retrying Nova.`,
+                `${session.sessionId} — reconnecting (VTID-03723: Vertex is not a fallback destination any more).`,
             );
             (session as any)._novaFallbackToVertex = true;
             emitDiag(session, 'nova_guided_topic_content_filter_fallback', {
@@ -8453,7 +8585,7 @@ async function connectToLiveAPI(
               payload: {
                 session_id: session.sessionId,
                 from: 'nova_sonic',
-                to: 'vertex',
+                to: 'nova_sonic',
                 reason: closeEvent.reason ?? null,
                 status: 'warning',
               } as any,
@@ -8469,14 +8601,14 @@ async function connectToLiveAPI(
             ).then((ok) => {
               if (!ok) {
                 console.warn(
-                  `[VTID-03647] Vertex fallback reconnect failed for session ${session.sessionId}.`,
+                  `[VTID-03647] Reconnect after guided-topic content filter block failed for session ${session.sessionId}.`,
                 );
                 emitConnectionIssue(session, 'upstream_disconnected');
                 return;
               }
               resendGreetingIfStuckAtZeroTurns(session, 'VTID-03647-guided-topic-fallback');
             }).catch((e) => {
-              console.warn(`[VTID-03647] Vertex fallback reconnect threw: ${(e as Error).message}`);
+              console.warn(`[VTID-03647] Reconnect after guided-topic content filter block threw: ${(e as Error).message}`);
               emitConnectionIssue(session, 'upstream_disconnected');
             });
             return;
@@ -8596,11 +8728,12 @@ async function connectToLiveAPI(
           //
           // Without this branch the code below emits connection_issue with
           // should_close:true and the user is simply left in silence — they
-          // cannot tell the session failed. Instead, pin the session to Vertex
-          // and reconnect transparently, reusing the exact machinery
+          // cannot tell the session failed. Instead, reconnect transparently
+          // (which now resolves through Nova/the cascade — VTID-03723 — never
+          // Vertex, regardless of this flag), reusing the exact machinery
           // nova_rotation_exhausted_fallback already uses.
           //
-          // Guarded on !_novaFallbackToVertex so a Vertex-side failure can
+          // Guarded on !_novaFallbackToVertex so a failed fallback attempt can
           // never bounce back here and loop.
           const novaDiedBeforeAnyAudio = shouldFallbackToVertexOnNovaClose({
             sessionActive: session.active,
@@ -8610,14 +8743,17 @@ async function connectToLiveAPI(
             alreadyFellBack: (session as any)._novaFallbackToVertex === true,
           });
 
-          // VTID-emergency-gcp-shutdown: with Vertex permanently unreachable,
-          // pinning to it and reconnecting is a guaranteed-doomed round trip
-          // that only delays the honest connection_issue signal below. Skip
-          // straight there instead of pretending a Vertex reconnect might work.
+          // VTID-emergency-gcp-shutdown / VTID-03723: `VERTEX_LIVE_UNAVAILABLE`
+          // used to gate whether this branch's reconnect landed on a real
+          // (or dead) Vertex. It no longer matters for THAT question — Vertex
+          // is not a destination the selector can return at all any more —
+          // but it is kept as the flag deciding retry-and-reconnect vs. the
+          // honest `connection_issue` signal below, which is still a real,
+          // separate UX choice unrelated to the removed Vertex destination.
           if (novaDiedBeforeAnyAudio && process.env.VERTEX_LIVE_UNAVAILABLE !== 'true') {
             console.warn(
               `[VTID-03502] Nova stream for session ${session.sessionId} closed before any audio ` +
-                `(reason=${closeEvent.reason ?? 'unknown'}, audio_out=0) — pinning to Vertex and reconnecting.`,
+                `(reason=${closeEvent.reason ?? 'unknown'}, audio_out=0) — reconnecting.`,
             );
             (session as any)._novaFallbackToVertex = true;
             emitDiag(session, 'nova_premature_close_fallback', {
@@ -8631,7 +8767,7 @@ async function connectToLiveAPI(
               payload: {
                 session_id: session.sessionId,
                 from: 'nova_sonic',
-                to: 'vertex',
+                to: 'nova_sonic',
                 reason: closeEvent.reason ?? null,
                 status: 'warning',
               } as any,
@@ -8650,17 +8786,17 @@ async function connectToLiveAPI(
                 // connection_issue path rather than leaving the user in
                 // silence with no signal at all.
                 console.warn(
-                  `[VTID-03502] Vertex fallback reconnect failed for session ${session.sessionId}.`,
+                  `[VTID-03502] Reconnect after premature close failed for session ${session.sessionId}.`,
                 );
                 emitConnectionIssue(session, 'upstream_disconnected');
                 return;
               }
               // VTID-03557 review fix: same greeting-stuck gap as the retry
               // path above — the pre-fallback Nova attempt already marked
-              // greetingSent, so the new Vertex connection needs it replayed.
+              // greetingSent, so the new connection needs it replayed.
               resendGreetingIfStuckAtZeroTurns(session, 'VTID-03502-fallback');
             }).catch((e) => {
-              console.warn(`[VTID-03502] Vertex fallback reconnect threw: ${(e as Error).message}`);
+              console.warn(`[VTID-03502] Reconnect after premature close threw: ${(e as Error).message}`);
               emitConnectionIssue(session, 'upstream_disconnected');
             });
             return;
@@ -9609,6 +9745,27 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
     (session as any).conversationSM ?? ((session as any).conversationSM = new ConversationStateMachine());
   if (_sm.state === 'PREWARM') _sm.transition('OPENING', 'session_start');
 
+  // VTID-03771 — a guided-topic tap must never be hijacked by the safe-fast
+  // greeting branch below. That branch builds its OWN GreetingDecisionContext
+  // (rungs: safe_fast_newday_overview / first_time_welcome / conv_resume /
+  // proactive / newday) and returns synchronously — it never reaches the
+  // "normal ladder" further down in this function, which is the ONLY place
+  // that already protects a pending guided topic via this exact same
+  // condition (see `_hasPendingGuidedTopicAtOpen` below, VTID-03727). Hoisted
+  // here so the safe-fast branch can be gated on it too. Live-reproduced on
+  // staging (topic T005, real account): a session correctly won the
+  // guided-topic candidate, got `nova_validation`-blocked, and the SAME
+  // session's internal retry (resendGreetingIfStuckAtZeroTurns ->
+  // sendGreetingPromptToLiveAPI) re-entered this function with
+  // contextReadyResolved still false — taking the safe-fast branch, which
+  // has zero awareness of `guidedTopicNarrationContent`, spoke a full
+  // new-day-overview greeting instead, and stamped the daily briefing as
+  // delivered. The real lesson never happened, so no completion signal ever
+  // fired either (no "Well Done" drawer) — reported live as "after it
+  // finished teaching, Vitana just switched to New Day greeting."
+  const _hasPendingGuidedTopicAtOpen =
+    !!(session as any).guidedTopicNarrationContent && (session.turn_count || 0) === 0;
+
   // DEV-COMHU-0513 B2 — short, audio-safe opener when the greeting is reached
   // BEFORE the deferred context resolved (fast-start + a low context-gate cap).
   // With context unresolved, session.lastSessionInfo is empty, so the temporal
@@ -9620,7 +9777,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   // a guaranteed-short verbatim opener instead, then lets the next turn carry
   // full personalization once context lands. Anonymous sessions keep their own
   // intro path untouched.
-  if ((session as any).contextReadyResolved === false && !session.isAnonymous) {
+  if ((session as any).contextReadyResolved === false && !session.isAnonymous && !_hasPendingGuidedTopicAtOpen) {
     const _safeFastLive = isFeatureLive('ORB_SAFE_FAST_GREETING');
     console.log(
       `[GREETING-CONTEXT-PENDING] session ${session.sessionId} reached greeting before context resolved (lang=${lang}, safe_fast=${_safeFastLive})`,
@@ -9666,7 +9823,20 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             // whether this IS a new-day return. So when facts are still pending,
             // wait once more up to a larger new-day budget. Same-day reconnects
             // whose facts already resolved skip this entirely and stay fast.
-            if (_greetingFactsReady && !(session as any).lastSessionInfo) {
+            // BOOTSTRAP-ORB-NEWDAY-STAMP-DIAGNOSTIC — this used to also require
+            // `!(session as any).lastSessionInfo`, on the theory that a set
+            // lastSessionInfo means the facts prefetch already landed. It
+            // doesn't: lastSessionInfo can be set by the separate, often-faster
+            // "heavy" bootstrap block before THIS prefetch's own promise
+            // (which alone owns lastFullBriefingDate) has resolved, so the
+            // extra wait was being skipped on the wrong signal — live staging
+            // evidence showed newday_briefing_eval reading
+            // last_full_briefing_date: null on every session, even moments
+            // after a prior session's stamp write had already committed.
+            // Racing directly against _greetingFactsReady itself is always
+            // correct and never adds latency beyond what was already budgeted:
+            // if it already resolved, Promise.race returns immediately.
+            if (_greetingFactsReady) {
               const _firstWaitMs = Number(process.env.ORB_GREETING_FACTS_WAIT_MS || 700);
               const _ndFactsWaitMs = Number(process.env.ORB_NEWDAY_FACTS_WAIT_MS || 2200);
               const _extraWaitMs = Math.max(0, _ndFactsWaitMs - _firstWaitMs);
@@ -9764,6 +9934,13 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
               lastFullBriefingDate: (session as any).lastFullBriefingDate ?? null,
               // VTID-03604
               lastDayCloseDate: (session as any).lastDayCloseDate ?? null,
+              // BOOTSTRAP-ORB-DAY-CLOSE: short opener is the permanent default
+              // (not merely a Nova-validation-block retry fallback) — the full
+              // buildDayCloseBlock's quoted-dialogue exemplars are the same
+              // shape that has repeatedly tripped Nova's content filter
+              // elsewhere in this codebase (nova-instruction-sanitizer.ts,
+              // the old guidedTeachTrigger wrapper fixed under VTID-03674).
+              dayCloseReduced: true,
               userId: _uidSF,
               todayTz: _todaySF,
               localHour: localHourInTimezone(_nowSF, _tzSF),
@@ -9786,9 +9963,15 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
               voiceWakeBriefReason: null,
             };
 
-            // Rung-1 gather: the rich new-day overview, only when its guard passes.
+            // Rung-1 gather: the rich new-day overview, only when its guard
+            // passes AND day-close (which outranks it) would not win anyway —
+            // VTID-03743 review fix (Codex P2): day-close is eligible during
+            // its own window regardless of the morning briefing's due-ness,
+            // so without this pre-check every day-close-window session paid
+            // for a ~3.8s gather+ledger-read whose payload
+            // computeGreetingDecision was always going to discard.
             let _newdayOverviewSF: Awaited<ReturnType<typeof gatherOverviewPayload>> | null = null;
-            if (shouldAttemptNewdayOverview(_baseCtxSF) && _supaSF && _uidSF) {
+            if (shouldAttemptNewdayOverview(_baseCtxSF) && _supaSF && _uidSF && !tryDayCloseRung(_baseCtxSF)) {
               const _lastSessIsoSF = (session as any).lastSessionInfo?.time ?? null;
               const _lastSessDateSF =
                 typeof _lastSessIsoSF === 'string' && _lastSessIsoSF.length > 0
@@ -9871,20 +10054,75 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             // mirror onto the session so a same-process reopen also sees it delivered.
             if (_sfDecision.effects.stampBriefingDate && _uidSF && _supaSF) {
               (session as any).lastFullBriefingDate = _sfDecision.effects.stampBriefingDate;
-              void _supaSF
-                .from('user_journey')
-                .update({ last_full_briefing_date: _sfDecision.effects.stampBriefingDate })
-                .eq('user_id', _uidSF)
-                .then(() => {}, () => {});
+              // Awaited deliberately (VTID undetermined — see BOOTSTRAP-ORB-NEWDAY-STAMP-DIAGNOSTIC):
+              // live staging repro showed the once-per-day guard re-firing on
+              // 3 consecutive sessions even after the fire-and-forget write
+              // this replaced was hardened with 0-row-match detection — the
+              // write attempts from earlier sessions in the same rapid
+              // sequence never landed before the next session's read, 45+
+              // seconds later, which rules out ordinary network latency.
+              // Awaiting here guarantees this session's own write is fully
+              // committed (or its failure is loudly logged) before the
+              // handler proceeds — it can no longer be abandoned by session
+              // teardown or an unrelated later await racing ahead of it.
+              try {
+                const { data, error } = await _supaSF
+                  .from('user_journey')
+                  .update({ last_full_briefing_date: _sfDecision.effects.stampBriefingDate })
+                  .eq('user_id', _uidSF)
+                  .select('user_id');
+                if (error) {
+                  console.error('[orb-live] stampBriefingDate write failed (safe_fast)', {
+                    user_id: _uidSF,
+                    value: _sfDecision.effects.stampBriefingDate,
+                    error,
+                  });
+                  emitDiag(session, 'stamp_briefing_date_write', {
+                    branch: 'safe_fast',
+                    result: 'error',
+                    error: String((error as any)?.message ?? error),
+                  });
+                } else if (!data || data.length === 0) {
+                  // PostgREST reports 0-row-matched UPDATEs as a clean
+                  // success (no `error`) — a live suspect for why the
+                  // once-per-day guard kept reading last_full_briefing_date
+                  // as null on repeat sessions.
+                  console.error('[orb-live] stampBriefingDate write matched 0 rows (safe_fast)', {
+                    user_id: _uidSF,
+                    value: _sfDecision.effects.stampBriefingDate,
+                  });
+                  emitDiag(session, 'stamp_briefing_date_write', { branch: 'safe_fast', result: 'zero_rows' });
+                } else {
+                  emitDiag(session, 'stamp_briefing_date_write', {
+                    branch: 'safe_fast',
+                    result: 'ok',
+                    rows: data.length,
+                  });
+                }
+              } catch (err) {
+                console.error('[orb-live] stampBriefingDate write threw (safe_fast)', {
+                  user_id: _uidSF,
+                  value: _sfDecision.effects.stampBriefingDate,
+                  err,
+                });
+                emitDiag(session, 'stamp_briefing_date_write', {
+                  branch: 'safe_fast',
+                  result: 'threw',
+                  error: String((err as any)?.message ?? err),
+                });
+              }
             }
-            // VTID-03604: same pattern for the day-close stamp.
+            // VTID-03604: same pattern for the day-close stamp. VTID-03743
+            // review fix — deferred until delivery is confirmed, see
+            // schedulePersistDayCloseStamp's doc.
             if (_sfDecision.effects.stampDayCloseDate && _uidSF && _supaSF) {
-              (session as any).lastDayCloseDate = _sfDecision.effects.stampDayCloseDate;
-              void _supaSF
-                .from('user_journey')
-                .update({ last_day_close_date: _sfDecision.effects.stampDayCloseDate })
-                .eq('user_id', _uidSF)
-                .then(() => {}, () => {});
+              schedulePersistDayCloseStamp({
+                session,
+                supa: _supaSF,
+                userId: _uidSF,
+                stampValue: _sfDecision.effects.stampDayCloseDate,
+                branch: 'safe_fast',
+              });
             }
             // Durable recent-NBA history (conv_resume) — keep the last 8.
             if (_sfDecision.effects.recordNbaKey && _uidSF && _supaSF) {
@@ -9970,20 +10208,46 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   // `_reconnectCount` itself (still used for MAX_RECONNECTS and elsewhere).
   const _freshOpenAfterZeroTurnRecovery = (session as any)._freshOpenAfterZeroTurnRecovery === true;
   (session as any)._freshOpenAfterZeroTurnRecovery = false;
-  // VTID-03646 follow-up — one-shot, consumed the same way as the flag
-  // above: read once for THIS rebuild, then cleared so a later, unrelated
-  // resend on the same session (a fresh day_close next night, say) does not
-  // inherit a stale "reduced" instruction from a close that already recovered.
-  const _dayCloseReduced = (session as any)._dayCloseReducedRetry === true;
+  // VTID-03646 follow-up — `_dayCloseReducedRetry` used to switch a resend to
+  // the reduced day-close opener after a Nova-validation block on the full
+  // block. BOOTSTRAP-ORB-DAY-CLOSE made the reduced opener the permanent
+  // default (`dayCloseReduced: true` on `_baseCtxSync` below), so this flag
+  // no longer changes which builder is used — still cleared here so it
+  // doesn't leak a stale value into `shouldRetryDayCloseReduced`'s
+  // `alreadyReducedThisClose` check on a later, unrelated close.
   (session as any)._dayCloseReducedRetry = false;
+  // VTID-03727 — `_freshOpenAfterZeroTurnRecovery` only covers a SAME-session
+  // Nova-level retry (resendGreetingIfStuckAtZeroTurns). It does nothing when
+  // the CLIENT itself gives up and opens a brand-new session object seconds
+  // later (orb-widget.js's _attemptReconnect after a WS/SSE close) — the new
+  // session's own `_reconnectCount` starts at 0 so `isReconnect` reads false
+  // there, but `wakeCadenceSkip` (< ~120s since `lastSessionInfo`, see
+  // BOOTSTRAP-NOVA-GREETING-CADENCE above) still fires, because the failed
+  // prior session ended moments ago — even though NOTHING was ever actually
+  // spoken on it. Confirmed live (VTID-03727): a guided-topic tap died to
+  // nova_validation at turn_count 0, the widget reopened a fresh session
+  // ~1-3s later, and THAT session's guided-topic opener was silenced by this
+  // cadence check, falling through to newday_overview — reproducing the exact
+  // "tapping a session starts the new-day overview" defect VTID-03724 already
+  // fixed for the ladder's static ordering, via a different mechanism this
+  // time. Gated on `session.turn_count === 0` (this session's own count, not
+  // the prior one's) so a GENUINE mid-lesson reconnect — the lesson was
+  // already spoken in a prior turn of THIS session — is completely unaffected
+  // and `silent_reconnect` (compute-greeting-decision.ts rung 7) still wins,
+  // exactly as VTID-03724's AC-5 requires. (`_hasPendingGuidedTopicAtOpen`
+  // itself is hoisted above the safe-fast branch now — VTID-03771 — so it can
+  // gate that branch too; reused here unchanged.)
   const _openDecision = decideOpening({
     isAnonymous: !!session.isAnonymous,
     hasResumptionHandle: !!session.resumptionHandle,
-    isReconnect: !_freshOpenAfterZeroTurnRecovery && ((session as any)._reconnectCount || 0) > 0,
+    isReconnect:
+      !_hasPendingGuidedTopicAtOpen &&
+      !_freshOpenAfterZeroTurnRecovery &&
+      ((session as any)._reconnectCount || 0) > 0,
     wakeSelectedLine: _wb?.selectedContinuation?.userFacingLine ?? null,
     wakeSelectedKind: _wb?.selectedContinuation?.kind ?? null,
     lastOpenerLine: (session as any)._lastOpenerLine ?? null,
-    wakeCadenceSkip: _cadenceBucketPre === 'reconnect',
+    wakeCadenceSkip: !_hasPendingGuidedTopicAtOpen && _cadenceBucketPre === 'reconnect',
   });
   console.log(formatOpeningDecisionLog(session.sessionId, _openDecision));
   (session as any)._openingDecision = _openDecision;
@@ -10033,7 +10297,12 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
       menuPhrases: pickShortGapGreetings(lang, 6),
       openDecision: { mode: _openDecision.mode, source: _openDecision.source, line: _openDecision.line },
       guidedTopicNarrationContent: (session as any).guidedTopicNarrationContent ?? null,
-      dayCloseReduced: _dayCloseReduced,
+      // BOOTSTRAP-ORB-DAY-CLOSE: short opener (buildDayCloseOpenerLine) is now
+      // the permanent default, not merely a Nova-validation-block retry
+      // fallback. `_dayCloseReducedRetry` (cleared above) still exists to
+      // avoid leaking stale state into `shouldRetryDayCloseReduced`, but no
+      // longer changes which builder this context resolves to.
+      dayCloseReduced: true,
       wakeBriefDecisionId: (_wb as any)?.decisionId ?? null,
       // VTID-03635 — rung 9 (silenced_on_cadence) is a SECOND, independent
       // silencing mechanism, fed by `voiceWakeBriefReason` (the wake-brief
@@ -10215,7 +10484,10 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
           // larger first-greeting-of-the-day budget — the same product call the
           // safe-fast path makes (richness > latency for turn 1 of the day).
           // Sessions whose facts already resolved skip this entirely.
-          if (_factsReadyNS && !(session as any).lastSessionInfo) {
+          // BOOTSTRAP-ORB-NEWDAY-STAMP-DIAGNOSTIC — see the matching comment on
+          // the safe_fast branch's identical wait above: `!lastSessionInfo` is
+          // the wrong readiness signal for THIS prefetch's own promise.
+          if (_factsReadyNS) {
             const _extraWaitMsNS = Math.max(
               0,
               Number(process.env.ORB_NEWDAY_FACTS_WAIT_MS || 2200) - _firstWaitMsNS,
@@ -10263,8 +10535,11 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             userId: _syncUid,
           };
 
-          // Real guard, single-sourced with the pure rung.
-          if (shouldAttemptNewdayOverview(_ctxNS)) {
+          // Real guard, single-sourced with the pure rung. VTID-03743 review
+          // fix (Codex P2) — see the matching comment on the safe-fast gather
+          // above: skip this same expensive gather when day-close (which
+          // outranks it) would win anyway.
+          if (shouldAttemptNewdayOverview(_ctxNS) && !tryDayCloseRung(_ctxNS)) {
             const _lastSessIsoNS = (session as any).lastSessionInfo?.time ?? null;
             const _lastSessDateNS =
               typeof _lastSessIsoNS === 'string' && _lastSessIsoNS.length > 0
@@ -10335,20 +10610,61 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
 
             if (_decisionNS.effects.stampBriefingDate) {
               (session as any).lastFullBriefingDate = _decisionNS.effects.stampBriefingDate;
-              void _syncSupa!
-                .from('user_journey')
-                .update({ last_full_briefing_date: _decisionNS.effects.stampBriefingDate })
-                .eq('user_id', _syncUid!)
-                .then(() => {}, () => {});
+              // Awaited deliberately — see the matching comment on the
+              // safe_fast branch's stampBriefingDate write above.
+              try {
+                const { data, error } = await _syncSupa!
+                  .from('user_journey')
+                  .update({ last_full_briefing_date: _decisionNS.effects.stampBriefingDate })
+                  .eq('user_id', _syncUid!)
+                  .select('user_id');
+                if (error) {
+                  console.error('[orb-live] stampBriefingDate write failed (normal)', {
+                    user_id: _syncUid,
+                    value: _decisionNS.effects.stampBriefingDate,
+                    error,
+                  });
+                  emitDiag(session, 'stamp_briefing_date_write', {
+                    branch: 'normal',
+                    result: 'error',
+                    error: String((error as any)?.message ?? error),
+                  });
+                } else if (!data || data.length === 0) {
+                  console.error('[orb-live] stampBriefingDate write matched 0 rows (normal)', {
+                    user_id: _syncUid,
+                    value: _decisionNS.effects.stampBriefingDate,
+                  });
+                  emitDiag(session, 'stamp_briefing_date_write', { branch: 'normal', result: 'zero_rows' });
+                } else {
+                  emitDiag(session, 'stamp_briefing_date_write', {
+                    branch: 'normal',
+                    result: 'ok',
+                    rows: data.length,
+                  });
+                }
+              } catch (err) {
+                console.error('[orb-live] stampBriefingDate write threw (normal)', {
+                  user_id: _syncUid,
+                  value: _decisionNS.effects.stampBriefingDate,
+                  err,
+                });
+                emitDiag(session, 'stamp_briefing_date_write', {
+                  branch: 'normal',
+                  result: 'threw',
+                  error: String((err as any)?.message ?? err),
+                });
+              }
             }
-            // VTID-03604
+            // VTID-03604. VTID-03743 review fix — deferred until delivery is
+            // confirmed, see schedulePersistDayCloseStamp's doc.
             if (_decisionNS.effects.stampDayCloseDate) {
-              (session as any).lastDayCloseDate = _decisionNS.effects.stampDayCloseDate;
-              void _syncSupa!
-                .from('user_journey')
-                .update({ last_day_close_date: _decisionNS.effects.stampDayCloseDate })
-                .eq('user_id', _syncUid!)
-                .then(() => {}, () => {});
+              schedulePersistDayCloseStamp({
+                session,
+                supa: _syncSupa,
+                userId: _syncUid,
+                stampValue: _decisionNS.effects.stampDayCloseDate,
+                branch: 'normal',
+              });
             }
             if (_decisionNS.wakeOpener === 'newday_overview' && _tenantNS) {
               const _spokenNS = extractSpokenFactsFromPayload(_overviewNS);
@@ -10394,13 +10710,16 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
           // shouldAttemptNewdayOverview rejected above, but the day-close rung
           // still runs inside computeGreetingDecision(_ctxNS) and outranks
           // everything below it.
+          // VTID-03743 review fix — deferred until delivery is confirmed,
+          // see schedulePersistDayCloseStamp's doc.
           if (_fallbackNS.effects.stampDayCloseDate && _syncUid && _syncSupa) {
-            (session as any).lastDayCloseDate = _fallbackNS.effects.stampDayCloseDate;
-            void _syncSupa
-              .from('user_journey')
-              .update({ last_day_close_date: _fallbackNS.effects.stampDayCloseDate })
-              .eq('user_id', _syncUid)
-              .then(() => {}, () => {});
+            schedulePersistDayCloseStamp({
+              session,
+              supa: _syncSupa,
+              userId: _syncUid,
+              stampValue: _fallbackNS.effects.stampDayCloseDate,
+              branch: 'fallback',
+            });
           }
         } catch (err: any) {
           // Never leave the user with silence because the briefing gather blew
@@ -10417,6 +10736,21 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             const _recoverNS = computeGreetingDecision(_baseCtxSync);
             if (_recoverNS.wakeOpener !== 'legacy_default') _sm.markOpeningDelivered();
             _renderSync(_recoverNS);
+            // VTID-03743 review fix — this recovery path renders through the
+            // same `_baseCtxSync` (day_close's own rung can still win here)
+            // but had no stamp write at all, which would have made day_close
+            // fire on every session that reaches this catch block. Deferred
+            // until delivery is confirmed, see schedulePersistDayCloseStamp's
+            // doc.
+            if (_recoverNS.effects.stampDayCloseDate && _syncUid && _syncSupa) {
+              schedulePersistDayCloseStamp({
+                session,
+                supa: _syncSupa,
+                userId: _syncUid,
+                stampValue: _recoverNS.effects.stampDayCloseDate,
+                branch: 'recover',
+              });
+            }
           } catch {
             /* the fallback ladder is pure; if it throws there is nothing left to try */
           }
@@ -10432,6 +10766,23 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
       _sm.markOpeningDelivered();
     }
     _renderSync(_syncDecision);
+    // VTID-03743 review fix — this is the plain ladder taken whenever the
+    // rich new-day-overview path is not even attempted (anonymous, no user
+    // id, unsupported language for THAT rung, or a silent reconnect).
+    // day_close does not share those gates, so it can still win here — and
+    // this site had no stamp write at all, meaning day_close would have
+    // fired on every session for any user who reaches this branch (e.g.
+    // every non-en/de locale). Deferred until delivery is confirmed, see
+    // schedulePersistDayCloseStamp's doc.
+    if (_syncDecision.effects.stampDayCloseDate && _syncUid && _syncSupa) {
+      schedulePersistDayCloseStamp({
+        session,
+        supa: _syncSupa,
+        userId: _syncUid,
+        stampValue: _syncDecision.effects.stampDayCloseDate,
+        branch: 'plain_sync',
+      });
+    }
     return true;
   }
 }
@@ -14742,7 +15093,7 @@ async function getStoredLanguagePreference(
       const nameToCode: Record<string, string> = {
         english: 'en', german: 'de', french: 'fr', spanish: 'es',
         arabic: 'ar', chinese: 'zh', russian: 'ru', serbian: 'sr',
-        portuguese: 'pt', polish: 'pl',
+        portuguese: 'pt', polish: 'pl', turkish: 'tr',
       };
       return nameToCode[storedLang] || (SUPPORTED_LIVE_LANGUAGES.includes(storedLang) ? storedLang : null);
     }
@@ -15263,7 +15614,20 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
         try {
           session.sseResponse.write(`data: ${JSON.stringify({
             type: 'live_api_ready',
-            session_id: sessionId
+            session_id: sessionId,
+            // VTID-03706 follow-up: the WS session_started handshake carries
+            // full_duplex, but this SSE handshake never did — and SSE is the
+            // widget's DEFAULT transport preference, not a rare fallback. The
+            // client-side full-duplex gate (orb-widget.js _s.fullDuplex) was
+            // structurally unreachable over SSE as a result: it stayed at its
+            // false default forever, so the mic never stayed open during
+            // playback even when ORB_FULL_DUPLEX_ENABLED=true and the SERVER
+            // side gate (live-session-controller.ts) was already applying it
+            // correctly to inbound frames. Confirmed live on staging: a real
+            // SSE session's .vtorb-mic-live class never appeared during
+            // playback before this fix, on the exact commit that shipped
+            // full duplex.
+            full_duplex: isFullDuplexEnabled(),
           })}\n\n`);
         } catch (err) {
           // SSE might be closed

@@ -1,0 +1,153 @@
+VTID-03778 — command log
+
+=== VTID allocation ===
+$ SELECT * FROM allocate_global_vtid('claude-code', 'gateway', 'orb-live');
+-> {"vtid":"VTID-03778","num":3778,"id":"65d73b3b-dc15-4f7b-9fc3-52b947b99a20"}
+
+$ UPDATE vtid_ledger SET title=..., summary=..., description=...,
+  status='in_progress', spec_status='approved' WHERE vtid='VTID-03778';
+-> {"vtid":"VTID-03778","status":"in_progress","spec_status":"approved"}
+
+=== Branch reset ===
+Designated branch claude/my-journey-catalog-multilingual-qrwxng carried
+only already-merged VTID-03776 history (squash SHA 9ee4f9e2 on main).
+$ git fetch origin main
+-> 03b67f0f..9ee4f9e2  main -> origin/main
+$ git checkout -B claude/my-journey-catalog-multilingual-qrwxng origin/main
+-> branch reset onto fresh main (9ee4f9e2)
+
+=== Live evidence gathering (Supabase MCP, project inmkhvwdcuyhnxkgfvsb) ===
+
+Query — orb.live.diag events in the 25 minutes before investigation began:
+SELECT created_at, metadata->>'session_id' AS session_id, metadata
+FROM oasis_events
+WHERE created_at > now() - interval '25 minutes' AND topic = 'orb.live.diag'
+ORDER BY created_at DESC LIMIT 40;
+-> Found session live-0df64f19-... open normally at 14:08:36, speak the
+   fallback line (greeting_sent, prompt_len:655 — VTID-03776's circuit
+   breaker working as designed), complete a turn, enter LISTENING with
+   real audio_in flowing (audio_forwarding chunk:100 at 14:09:23 — healthy,
+   not stuck). At 14:09:33.861 it closes: stage:"upstream_closed",
+   reason:"superseded_by_new_session". A new session live-029a7c08-...
+   starts essentially simultaneously (14:09:33.873) and fails within ~1s:
+   code:"nova_validation", diagnostic:"...All contents must be closed
+   before ending prompt" (a protocol-sequencing error, distinct from the
+   usual content-filter block).
+
+=== Code investigation (read, no live-browser access) ===
+
+Read services/gateway/src/routes/orb-live.ts:
+  terminateExistingSessionsForUser() (line ~1393) — confirmed this is the
+  mechanism that produces reason:"superseded_by_new_session". It sends a
+  `session_ended`/`new_session_started` message over BOTH the SSE
+  (sseResponse.write) and WS (sendWsMessage) transports before closing the
+  connection — i.e. it DOES notify the client, cleanly, before killing it.
+
+Grepped for every "type: 'session_ended'" emitter across the gateway repo:
+  - orb-live.ts:1413/1425 — terminateExistingSessionsForUser (confirmed above)
+  - orb-live.ts:12770 — POST /stop (handleLiveSessionStop's sibling route)
+  - live-session-controller.ts:2274 — handleLiveSessionStop
+Read both POST /stop handlers' docstrings/context: both are explicitly
+"explicit user-initiated stop (POST /session/stop)" responses — i.e. BOTH
+are echoes of a stop the CLIENT itself already initiated. Cross-referenced
+against orb-widget.js's _sessionStop(): it detaches SSE/WS handlers
+(onopen/onmessage/onerror = null, then close()) BEFORE POSTing /session/stop
+(comment explains this ordering exists specifically so a manual close
+can't trip auto-reconnect via onerror) — meaning by the time either of
+these two responses could arrive, the client isn't listening anymore.
+CONCLUSION: terminateExistingSessionsForUser is the only live path that
+sends 'session_ended' to a client whose handlers are still attached.
+
+Grepped orb-widget.js for `case 'session_ended'`:
+  -> single occurrence, inside _handleMessage(msg) (shared WS+SSE dispatch
+     per VTID-03471), calling _sessionStop() unconditionally.
+
+Read _sessionStop() (async function _sessionStop()) in full (~90 lines):
+  - Line 2299: `_s._userInitiatedStop = true;` — set UNCONDITIONALLY at
+    the very top, regardless of caller/reason.
+  - Confirmed via grep that _userInitiatedStop gates ~12 separate reconnect
+    checks throughout the file (all meant to mean "the user explicitly
+    left, don't background-reconnect").
+  - Confirmed _sessionStop() never touches _s.overlayVisible, _root.style,
+    or calls _setStatus()/_updateUI() with a new caption — unlike _hide(),
+    which does all of these synchronously.
+
+Read the case block immediately above session_ended in the same
+dispatcher (connection_issue/live_api_disconnected, line ~2793): its own
+PRE-EXISTING comment reads "We never auto-_sessionStop here; killing the
+orb forces a page refresh." — i.e. this exact anti-pattern was already
+named and avoided one case block up; session_ended was the one case that
+still did it.
+
+Read _hide() in full again (function _hide()): confirmed it does NOT
+check any "was this user-initiated" flag before running — sets
+_userRequestedClose=true, stops audio synchronously, sets
+overlayVisible=false + _root.style.display='none', calls _updateUI(),
+persists continuity, then calls _sessionStop() (which is fine INSIDE
+_hide() — _hide() deliberately intends a full close, not a silent
+reconnect suppression bug).
+
+=== Implementation ===
+Edited services/gateway/src/frontend/command-hub/orb-widget.js:
+  case 'session_ended': replaced `_sessionStop();` with `_hide();`,
+  with an inline comment recording the full investigation trail (why this
+  is the only reachable case, what the two compounding defects were, and
+  why the adjacent case block's own comment already named this exact
+  anti-pattern).
+
+$ node --check services/gateway/src/frontend/command-hub/orb-widget.js
+-> (no output — syntax OK)
+
+=== Tests written ===
+New file: test/frontend/orb-widget-session-ended-overlay-close.test.ts
+  (5 tests: 3 asserting the session_ended case block's new behavior,
+   2 asserting the unchanged background context — _sessionStop() still
+   sets the flag at its call site, _hide() doesn't gate on it).
+
+$ cd services/gateway && npx jest test/frontend/orb-widget-session-ended-overlay-close.test.ts
+-> Test Suites: 1 passed, 1 total
+   Tests:       5 passed, 5 total
+   (full output: outputs/jest-vtid-03778-suite.txt)
+
+=== Mutation testing ===
+$ cp src/frontend/command-hub/orb-widget.js /tmp/orb-widget-778.js.bak
+$ grep -n "console.warn('\[VTOrb\] Server ended this session" src/frontend/command-hub/orb-widget.js
+-> line 2835 (comment), line 2836 (the _hide(); call)
+$ sed -i '2836s/_hide();/_sessionStop();/' src/frontend/command-hub/orb-widget.js
+$ node --check src/frontend/command-hub/orb-widget.js
+-> syntax OK (confirms clean single-line mutation)
+$ npx jest test/frontend/orb-widget-session-ended-overlay-close.test.ts
+-> Test Suites: 1 failed, 1 total
+   Tests:       3 failed, 2 passed, 5 total
+   Failed, exactly:
+     - "does not call the old, unconditional _sessionStop() handler"
+     - "calls _hide() — the same full, honest teardown a real close uses"
+     - "is a scoped fix — the case block itself contains exactly one _hide() call"
+   Passed (unaffected, as expected):
+     - "_sessionStop() still sets _userInitiatedStop = true at its top"
+     - "_hide() itself is safe to call from a server-driven event"
+$ cp /tmp/orb-widget-778.js.bak services/gateway/src/frontend/command-hub/orb-widget.js
+   (run from repo root: cp /tmp/orb-widget-778.js.bak src/frontend/command-hub/orb-widget.js)
+$ diff /tmp/orb-widget-778.js.bak src/frontend/command-hub/orb-widget.js
+-> (no output — clean restore)
+$ node --check src/frontend/command-hub/orb-widget.js
+-> syntax OK
+
+=== Full verification ===
+$ npx tsc --noEmit
+-> (no output — clean; outputs/tsc-noemit.txt)
+
+$ npx jest (first run, via background task)
+-> Test Suites: 1 failed, 1 skipped, 715 passed, 716 of 717 total
+   Tests:       1 failed, 29 skipped, 6 todo, 13480 passed, 13516 total
+   The 1 failure was in an UNRELATED suite — a 60-second timing-sensitive
+   test ("returns deferred (NOT failed) when timeout elapses while
+   status=running", worker-orchestrator await-autopilot-execution),
+   nothing to do with this diff (orb-widget.js / ORB session handling).
+
+$ npx jest > /tmp/full-jest-run.txt 2>&1  (re-run to confirm flake)
+-> Test Suites: 1 skipped, 716 passed, 716 of 717 total
+   Tests:       29 skipped, 6 todo, 13481 passed, 13516 total
+   Snapshots:   44 passed, 44 total
+   0 failures — confirms the prior single failure was a flake, not caused
+   by this change. (full output: outputs/jest-full-suite.txt)

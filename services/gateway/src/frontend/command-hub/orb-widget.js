@@ -17,7 +17,7 @@
 (function (window) {
   'use strict';
 
-  var _WIDGET_VERSION = '2026-08-24-caption-fontsize-19px';
+  var _WIDGET_VERSION = '2026-08-25-sse-full-duplex-fix';
   console.log('[VTOrb] Widget version: ' + _WIDGET_VERSION);
 
   // BOOTSTRAP-NOVA-SONIC-VOICE: user live-test feedback 2026-07-28 — the
@@ -195,6 +195,15 @@
     // Session
     sessionId: null,
     active: false,
+    // VTID-03763: bumped every time a session actually starts (SSE or WS,
+    // including a reconnect's fresh start) — see both `_s.active = true`
+    // sites. A polling loop spawned by a PRIOR session (e.g.
+    // _waitForAudioEnd's setTimeout chain) captures this value at creation
+    // and bails before touching any _s.* state if it no longer matches,
+    // instead of relying on `_s.active` — which the NEW session has already
+    // flipped back to true by the time the stale poll's next tick fires, so
+    // it can't tell "my session ended" from "a session is active" on its own.
+    _sessionGeneration: 0,
     eventSource: null,
     // BOOTSTRAP-ORB-LATENCY-PHASE3: WebSocket transport handle (null on SSE)
     ws: null,
@@ -240,6 +249,16 @@
     thinkingStartTime: 0,    // When thinking started — for elapsed time display
     greetingAudioReceived: false,
     greetingComplete: false,  // True after first turn_complete — mic opens only after this
+    // VTID-03727 (Codex review fix): greetingComplete is deliberately reset to
+    // false on every reconnect (VTID-01988 mic-restart fix, several call
+    // sites) so the mic-capture gate re-arms correctly — but that makes it
+    // the WRONG signal for "has this overlay session ever produced audio",
+    // which _attemptReconnect's caption needs. A second/later reconnect
+    // attempt within the same overlay open would otherwise show 'connecting'
+    // even though the user genuinely heard Vitana speak earlier. This flag
+    // is set once true and only cleared by _hide() (a real close), never by
+    // any reconnect path.
+    _audioEverHeardThisOpen: false,
     _audioReadySignaled: false, // DEV-COMHU-0504: audio-ready ack posted once per session
 
     // VTID-03469: page-level audio unlock state. _gestureUnlockInstalled guards
@@ -315,6 +334,57 @@
     // VTID-03294 (#4): when true, the overlay auto-closes after the first
     // (teaching) turn finishes — set by focusGuidedTopic, one-shot.
     guidedAutoClose: false,
+    // VTID-03746: remembers the guided topic for THIS overlay-open, surviving
+    // past the point where the turn-complete handler nulls _s.guidedTopic
+    // (which happens as soon as the FIRST turn finishes, on the assumption
+    // "delivered, don't re-offer" — VTID-03675). That assumption breaks when
+    // the session dies mid-lesson: live-reproduced (staging, VTID-03746) —
+    // a session taught T007 for 44 real seconds (497 audio chunks), then
+    // disconnected, and the reconnect had nothing to resume, falling through
+    // to a generic greeting instead of continuing the SAME topic. Read only
+    // by _attemptReconnect()'s retry (an unexpected-disconnect path only —
+    // a clean _hide()/_sessionStop() never reaches it) to re-arm
+    // _s.guidedTopic for that one retry. Cleared only by _hide(), same
+    // lifecycle as guidedTopic itself.
+    _guidedTopicInFlight: null,
+    // VTID-03774 (Codex review follow-up on VTID-03774's own reconnect fix):
+    // true once turn-1 audio (opener + narration bridge) has actually been
+    // delivered for the CURRENT _guidedTopicInFlight. Distinguishes "resend
+    // guided_topic_id to RESUME a lesson already in progress" from "resend
+    // it because a genuine zero-turn retry never got to speak at all"
+    // (VTID-03771's nova_validation case) — the server reads this as
+    // guided_topic_resume and skips re-synthesizing/replaying the narration
+    // audio + re-injecting the verbatim opener instruction when true, so a
+    // reconnect after real teaching has happened doesn't restart the lesson
+    // from the beginning. Same lifecycle as _guidedTopicInFlight: armed
+    // false on a fresh tap (focusGuidedTopic), flipped true at the same
+    // turn-complete point that nulls _s.guidedTopic, cleared by _hide().
+    _guidedTopicAudioDelivered: false,
+    // VTID-03762: wall-clock timestamp (Date.now()) of when a guided topic
+    // was tapped, and the interval handle checking it. Backstop only — see
+    // GUIDED_TOPIC_BACKSTOP_MS below for why this exists: the model is
+    // instructed to call end_guided_topic_teaching once it's done, but
+    // live staging evidence (VTID-03762 follow-up) showed the model can
+    // simply never call it and drift into unrelated general conversation
+    // ("Good afternoon! Glad to have you back", proposing an unrelated
+    // Vitana Index plan) with no natural end. Cleared only by _hide(),
+    // same lifecycle as guidedTopic/_guidedTopicInFlight.
+    _guidedTopicOpenedAt: null,
+    _guidedTopicBackstopInterval: null,
+    // VTID-03776: counts consecutive reconnect attempts, while a guided topic
+    // is in flight, that produced NO audible turn at all this overlay-open
+    // (_audioEverHeardThisOpen still false). VTID-03774's own fixes made
+    // guided_topic_id correctly persist and resend across every reconnect —
+    // but when Nova's nova_validation content filter deterministically
+    // rejects that specific topic's wake-brief opener (live-reproduced:
+    // ~30 consecutive fresh sessions, ~3.4s apart, every one blocked before
+    // any turn completed), every reconnect re-requests the SAME topic,
+    // re-synthesizes/replays the full Polly narration, and gets blocked
+    // again — an audible infinite repeat with no natural exit. See
+    // _attemptReconnect() for where this increments and trips the breaker.
+    // Reset on a fresh tap (focusGuidedTopic) and on close (_hide), same
+    // lifecycle as _guidedTopicInFlight.
+    _guidedTopicZeroAudioFailCount: 0,
     // VTID-02020: contextual recovery state. _preDisconnectStage captures what
     // the user was doing when the network dropped (idle / listening_user_speaking
     // / thinking / speaking) so the backend's recovery prompt can decide
@@ -502,15 +572,10 @@
       '.vtorb-btn-mic.vtorb-muted {',
       '  background: rgba(239,68,68,0.2); color: #fca5a5;',
       '}',
-      // VTID-03706: under full duplex the mic is genuinely still open while
-      // Vitana speaks. A ring rather than a colour swap, deliberately: the
-      // background/colour are still assigned inline just below (legacy, "no
-      // CSS dependency"), and an inline rule outranks a class — a colour rule
-      // here would silently never apply. A ring also reads as "live" more
-      // directly than a hue change, and needs no !important to win.
-      '.vtorb-btn-mic.vtorb-mic-live {',
-      '  box-shadow: 0 0 0 2px rgba(34,197,94,0.85), 0 0 12px rgba(34,197,94,0.45);',
-      '}',
+      // VTID-03745: the .vtorb-mic-live class (still toggled by full-duplex
+      // state, see _updateUI) intentionally carries no visual style any
+      // more — the ring it used to draw around the mic button while Vitana
+      // spoke was reported as an unwanted visual distraction.
       '.vtorb-btn-close {',
       '  background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.7);',
       '}',
@@ -801,10 +866,23 @@
   // _cfg.lang.startsWith('de') ? de : en), even though _cfg.lang legitimately
   // carries any of the gateway's supported locales (services/gateway/src/
   // i18n/catalog.ts GATEWAY_LOCALES) and the session's actual spoken voice
-  // already speaks in that real language. This dictionary + resolver mirror
-  // that same 10-locale set so the caption layer never again silently
-  // collapses to English.
-  var _CAPTION_LOCALES = ['de', 'en', 'es', 'sr', 'fr', 'pt', 'ru', 'pl', 'zh', 'ar'];
+  // already speaks in that real language. This dictionary + resolver
+  // originally mirrored that same 10-locale set so the caption layer never
+  // again silently collapses to English.
+  //
+  // VTID-03733: `tr` was added HERE, one language ahead of GATEWAY_LOCALES
+  // (which still doesn't have it — that type drives push/email/notification
+  // text via tt(), a separate, much larger initiative, deliberately out of
+  // scope for the ORB voice work that added Turkish). Reported live:
+  // "Turkish still has English subtitles/captions under the orb unlike
+  // other languages" — VTID-03730 widened SUPPORTED_LIVE_LANGUAGES and every
+  // voice-selection table for `tr`, but this caption dictionary is a
+  // SEPARATE table this widget owns, and it was never touched — the exact
+  // same "one more table missing the language" shape as
+  // VTID-03578/03681/03719. `_CAPTION_LOCALES` and `GATEWAY_LOCALES` are
+  // therefore no longer identical sets on purpose; do not "fix" that by
+  // removing `tr` from here.
+  var _CAPTION_LOCALES = ['de', 'en', 'es', 'sr', 'fr', 'pt', 'ru', 'pl', 'zh', 'ar', 'tr'];
 
   // Resolves _cfg.lang (may be a full tag like "de-DE" or "pt-BR") to one of
   // the 10 supported caption locales via prefix match before the first '-',
@@ -833,34 +911,34 @@
     speaking: {
       en: 'Vitana speaking...', de: 'Vitana spricht...', es: 'Vitana está hablando…',
       sr: 'Vitana priča…', fr: 'Vitana parle…', pt: 'A Vitana está a falar…',
-      ru: 'Витана говорит…', pl: 'Vitana mówi…', zh: 'Vitana 正在说话…', ar: 'فيتانا تتحدث...'
+      ru: 'Витана говорит…', pl: 'Vitana mówi…', zh: 'Vitana 正在说话…', ar: 'فيتانا تتحدث...', tr: 'Vitana konuşuyor...'
     },
     listening: {
       en: 'Listening...', de: 'Ich höre zu...', es: 'Escuchando…',
       sr: 'Slušam…', fr: "J'écoute…", pt: 'A ouvir…',
-      ru: 'Слушаю…', pl: 'Słucham…', zh: '正在聆听…', ar: 'أستمع...'
+      ru: 'Слушаю…', pl: 'Słucham…', zh: '正在聆听…', ar: 'أستمع...', tr: 'Dinliyorum...'
     },
     connecting: {
       en: 'Connecting...', de: 'Verbinden...', es: 'Conectando…',
       sr: 'Povezujem se…', fr: 'Connexion…', pt: 'A ligar…',
-      ru: 'Подключение…', pl: 'Łączenie…', zh: '正在连接…', ar: 'جارٍ الاتصال...'
+      ru: 'Подключение…', pl: 'Łączenie…', zh: '正在连接…', ar: 'جارٍ الاتصال...', tr: 'Bağlanıyor...'
     },
     reconnecting: {
       en: 'Reconnecting...', de: 'Verbindung wird wiederhergestellt...', es: 'Reconectando…',
       sr: 'Ponovo se povezujem…', fr: 'Reconnexion…', pt: 'A restabelecer a ligação…',
-      ru: 'Переподключение…', pl: 'Ponowne łączenie…', zh: '正在重新连接…', ar: 'إعادة الاتصال...'
+      ru: 'Переподключение…', pl: 'Ponowne łączenie…', zh: '正在重新连接…', ar: 'إعادة الاتصال...', tr: 'Yeniden bağlanıyor...'
     },
     muted: {
       en: 'Muted', de: 'Stummgeschaltet', es: 'Silenciado',
       sr: 'Isključen zvuk', fr: 'Muet', pt: 'Silenciado',
-      ru: 'Микрофон выключен', pl: 'Wyciszono', zh: '已静音', ar: 'مكتوم الصوت'
+      ru: 'Микрофон выключен', pl: 'Wyciszono', zh: '已静音', ar: 'مكتوم الصوت', tr: 'Sessize alındı'
     },
     tapToHear: {
       en: 'Tap anywhere to hear Vitana', de: 'Tippe, um Vitana zu hören',
       es: 'Toca en cualquier lugar para escuchar a Vitana', sr: 'Dodirni bilo gde da čuješ Vitanu',
       fr: "Touche n'importe où pour entendre Vitana", pt: 'Toca em qualquer lugar para ouvir a Vitana',
       ru: 'Коснись экрана, чтобы услышать Витану', pl: 'Dotknij gdziekolwiek, aby usłyszeć Vitanę',
-      zh: '点击任意位置即可听到 Vitana 的声音', ar: 'اضغط في أي مكان لسماع فيتانا'
+      zh: '点击任意位置即可听到 Vitana 的声音', ar: 'اضغط في أي مكان لسماع فيتانا', tr: 'Vitana\'yı duymak için herhangi bir yere dokun'
     },
     idleNudge: {
       en: "I'm still listening. Tell me what you'd like to do!",
@@ -872,14 +950,14 @@
       ru: 'Я всё ещё слушаю. Скажи, что бы ты хотел сделать!',
       pl: 'Wciąż słucham. Powiedz mi, co chciałbyś zrobić!',
       zh: '我还在听哦，告诉我你想做什么吧！',
-      ar: 'ما زلت أستمع. أخبرني بما تريد فعله!'
+      ar: 'ما زلت أستمع. أخبرني بما تريد فعله!', tr: 'Hâlâ dinliyorum. Ne yapmak istediğini söyle!'
     },
     connectFailedRetrying: {
       en: "Couldn't connect. Retrying...", de: 'Verbindung fehlgeschlagen. Neuer Versuch...',
       es: 'No se pudo conectar. Reintentando…', sr: 'Povezivanje nije uspelo. Pokušavam ponovo…',
       fr: 'Échec de la connexion. Nouvelle tentative…', pt: 'Não foi possível ligar. A tentar de novo…',
       ru: 'Не удалось подключиться. Повторная попытка…', pl: 'Nie udało się połączyć. Ponawiam próbę…',
-      zh: '连接失败，正在重试…', ar: 'تعذر الاتصال. جارٍ إعادة المحاولة...'
+      zh: '连接失败，正在重试…', ar: 'تعذر الاتصال. جارٍ إعادة المحاولة...', tr: 'Bağlanılamadı. Yeniden deneniyor...'
     },
     offline: {
       en: 'You seem to be offline. Please check your internet connection.',
@@ -891,7 +969,7 @@
       ru: 'Похоже, ты офлайн. Проверь подключение к интернету.',
       pl: 'Wygląda na to, że jesteś offline. Sprawdź połączenie z internetem.',
       zh: '你似乎已离线，请检查网络连接。',
-      ar: 'يبدو أنك غير متصل بالإنترنت. يرجى التحقق من اتصالك بالإنترنت.'
+      ar: 'يبدو أنك غير متصل بالإنترنت. يرجى التحقق من اتصالك بالإنترنت.', tr: 'Çevrimdışı gibi görünüyorsun. Lütfen internet bağlantını kontrol et.'
     },
     sessionEndedBackground: {
       en: 'Session ended — app was in the background.',
@@ -903,19 +981,19 @@
       ru: 'Сессия завершена — приложение было в фоне.',
       pl: 'Sesja zakończona — aplikacja działała w tle.',
       zh: '会话已结束 — 应用在后台运行。',
-      ar: 'انتهت الجلسة — كان التطبيق يعمل في الخلفية.'
+      ar: 'انتهت الجلسة — كان التطبيق يعمل في الخلفية.', tr: 'Oturum sona erdi — uygulama arka plandaydı.'
     },
     tapToReconnect: {
       en: 'Tap the orb to reconnect', de: 'Tippen zum Neu verbinden',
       es: 'Toca la esfera para reconectar', sr: 'Dodirni orb da se ponovo povežeš',
       fr: "Touche l'orbe pour te reconnecter", pt: 'Toca na esfera para reconectar',
       ru: 'Коснись сферы, чтобы переподключиться', pl: 'Dotknij kuli, aby połączyć się ponownie',
-      zh: '点击光球即可重新连接', ar: 'اضغط على الكرة لإعادة الاتصال'
+      zh: '点击光球即可重新连接', ar: 'اضغط على الكرة لإعادة الاتصال', tr: 'Yeniden bağlanmak için küreye dokun'
     },
     textModeActive: {
       en: 'Text mode active', de: 'Textmodus aktiv', es: 'Modo texto activo',
       sr: 'Tekstualni režim aktivan', fr: 'Mode texte activé', pt: 'Modo de texto ativo',
-      ru: 'Активен текстовый режим', pl: 'Tryb tekstowy aktywny', zh: '文本模式已启用', ar: 'وضع النص مفعّل'
+      ru: 'Активен текстовый режим', pl: 'Tryb tekstowy aktywny', zh: '文本模式已启用', ar: 'وضع النص مفعّل', tr: 'Metin modu etkin'
     },
     registerFree: {
       en: 'Register for free to continue the conversation!',
@@ -927,7 +1005,7 @@
       ru: 'Зарегистрируйся бесплатно, чтобы продолжить разговор!',
       pl: 'Zarejestruj się za darmo, aby kontynuować rozmowę!',
       zh: '免费注册即可继续对话！',
-      ar: 'سجّل مجانًا لمتابعة المحادثة!'
+      ar: 'سجّل مجانًا لمتابعة المحادثة!', tr: 'Sohbete devam etmek için ücretsiz kaydol!'
     }
   };
   function _caption(key) { return _loc(_CAPTIONS[key]); }
@@ -948,7 +1026,7 @@
       ru: 'Секунду, я не слышу твой микрофон.',
       pl: 'Chwilkę, nie słyszę Twojego mikrofonu.',
       zh: '稍等，我听不到你的麦克风。',
-      ar: 'لحظة، لا أستطيع سماع الميكروفون الخاص بك.'
+      ar: 'لحظة، لا أستطيع سماع الميكروفون الخاص بك.', tr: 'Bir saniye, mikrofonunu duyamıyorum.'
     },
     network: {
       en: "One moment, we have internet issues.",
@@ -960,7 +1038,7 @@
       ru: 'Секунду, у нас проблемы с интернетом.',
       pl: 'Chwilkę, mamy problem z internetem.',
       zh: '稍等，网络出了点问题。',
-      ar: 'لحظة، لدينا مشكلة في الإنترنت.'
+      ar: 'لحظة، لدينا مشكلة في الإنترنت.', tr: 'Bir saniye, internet sorunu yaşıyoruz.'
     },
     connection: {
       en: "Hold on, I'm reconnecting. Please wait.",
@@ -972,7 +1050,7 @@
       ru: 'Подожди, я переподключаюсь.',
       pl: 'Poczekaj, łączę się ponownie.',
       zh: '请稍等，我正在重新连接。',
-      ar: 'لحظة من فضلك، أنا أعيد الاتصال.'
+      ar: 'لحظة من فضلك، أنا أعيد الاتصال.', tr: 'Bekle, yeniden bağlanıyorum. Lütfen bekle.'
     },
     offline: {
       en: "You're offline. Please wait, don't talk yet.",
@@ -984,7 +1062,7 @@
       ru: 'Ты офлайн. Подожди, пока не говори.',
       pl: 'Jesteś offline. Poczekaj, jeszcze nie mów.',
       zh: '你已离线，请稍等，先别说话。',
-      ar: 'أنت غير متصل. من فضلك انتظر ولا تتحدث بعد.'
+      ar: 'أنت غير متصل. من فضلك انتظر ولا تتحدث بعد.', tr: 'Çevrimdışısın. Lütfen bekle, henüz konuşma.'
     }
   };
 
@@ -999,7 +1077,7 @@
       ru: 'Готово, микрофон снова работает. Продолжим.',
       pl: 'Gotowe, mikrofon znów działa. Kontynuujmy.',
       zh: '好了，麦克风又能用了，我们继续吧。',
-      ar: 'تمام، الميكروفون يعمل مجددًا. لنكمل.'
+      ar: 'تمام، الميكروفون يعمل مجددًا. لنكمل.', tr: 'Tamam, mikrofon tekrar çalışıyor. Devam edelim.'
     },
     network: {
       en: "Okay, we're back online. I'm listening.",
@@ -1011,7 +1089,7 @@
       ru: 'Готово, мы снова онлайн. Я слушаю.',
       pl: 'Gotowe, znów jesteśmy online. Słucham Cię.',
       zh: '好了，我们又上线了，我在听。',
-      ar: 'تمام، نحن متصلون مجددًا. أنا أستمع.'
+      ar: 'تمام، نحن متصلون مجددًا. أنا أستمع.', tr: 'Tamam, tekrar çevrimiçiyiz. Dinliyorum.'
     },
     offline: {
       en: "Okay, we're back online. I'm listening.",
@@ -1023,7 +1101,7 @@
       ru: 'Готово, мы снова онлайн. Я слушаю.',
       pl: 'Gotowe, znów jesteśmy online. Słucham Cię.',
       zh: '好了，我们又上线了，我在听。',
-      ar: 'تمام، نحن متصلون مجددًا. أنا أستمع.'
+      ar: 'تمام، نحن متصلون مجددًا. أنا أستمع.', tr: 'Tamam, tekrar çevrimiçiyiz. Dinliyorum.'
     },
     connection: {
       en: "Okay, sorry for the interruption. I'm listening.",
@@ -1035,7 +1113,7 @@
       ru: 'Готово, извини за перерыв. Я слушаю.',
       pl: 'Gotowe, przepraszam za przerwę. Słucham Cię.',
       zh: '好了，抱歉打断了，我在听。',
-      ar: 'تمام، آسفة على المقاطعة. أنا أستمع.'
+      ar: 'تمام، آسفة على المقاطعة. أنا أستمع.', tr: 'Tamam, kesinti için üzgünüm. Dinliyorum.'
     }
   };
 
@@ -1281,7 +1359,22 @@
     _setStatus(label);
     _updateUI();
 
-    _playAlert('disconnect-' + reason + '-' + clipLang);
+    // VTID-03746: this call was unconditional — it plays a spoken alert clip
+    // ("Einen Moment, ich verbinde mich neu...") on EVERY disconnect,
+    // including one at turn_count 0 before anything has ever been heard.
+    // VTID-03727 already gated the equivalent VISUAL caption in
+    // _attemptReconnect() on _audioEverHeardThisOpen; this AUDIBLE alert
+    // never got the same treatment, so a nova_validation-style early close
+    // still spoke the reconnect line before Vitana had said a single word —
+    // live-reproduced (staging, VTID-03746): "first thing i hear is: einen
+    // moment die verbindung wird wieder hergestellt". Once real audio HAS
+    // played, hearing this alert is correct — the user was mid-conversation
+    // and got cut off, so "hold on, reconnecting" is exactly right.
+    if (_s._audioEverHeardThisOpen) {
+      _playAlert('disconnect-' + reason + '-' + clipLang);
+    } else {
+      console.log('[VTOrb] _announceDisconnect: suppressing spoken alert clip — nothing heard yet this open');
+    }
 
     // VTID-01987: active 5-second health probe replaces the previous 60s
     // setTimeout. Mobile WebViews (Android Appilix, iOS WKWebView) fire
@@ -1400,7 +1493,18 @@
     // recovery only updated the display — the mic stream stayed torn down.
     _s.greetingComplete = false;
     _s._reconnectCount = 0;
-    _s._isReconnecting = false;
+    // VTID-03770: this used to set _isReconnecting = FALSE here — the exact
+    // opposite of a re-entrancy guard. The 5s health-probe (_recoveryWatchdog,
+    // above) checks `if (_s._isReconnecting) return;` before every probe tick,
+    // but since this function never actually set the flag true, that check
+    // was inert: a SECOND probe tick landing while this function's own
+    // _sessionStart() below was still in flight (plausible under the same
+    // repeated-nova_validation-retry conditions VTID-03746/VTID-03763
+    // measured taking multiple seconds) could fire a CONCURRENT
+    // _resetAndReconnect(), racing session-start calls against each other.
+    // Now mirrors _attemptReconnect()'s own mutex: true here, reset to false
+    // once _sessionStart() actually settles (both branches below).
+    _s._isReconnecting = true;
     _s._disconnectStuck = false;
     // Keep _disconnectActive true so the UI doesn't flash to a usable state
     // before the new session lands; _clearDisconnect on success will undo it.
@@ -1408,10 +1512,33 @@
     _setOrbState('connecting');
     _setStatus(_caption('reconnecting'));
 
+    // VTID-03770: this reconnect path (the 5s health-probe watchdog, and the
+    // tap-to-reconnect stuck-state button) rebuilt the session via a plain
+    // _sessionStart() with NO restore of an in-progress guided topic — unlike
+    // its sibling _attemptReconnect(), which got exactly this guard under
+    // VTID-03746. Live-reproduced (staging, topic T005): a guided-topic
+    // session delivered its opener, entered the conversational GUIDE-MODE
+    // turn (turn_count:1, 37.7s, 335 audio chunks), then the underlying
+    // connection dropped. The reconnect that followed carried no
+    // guided_topic_id — every wake-brief candidate came back
+    // "all_sources_skipped" — so the new session fell through to a generic
+    // opener instead of resuming T005, sounding exactly like "Vitana
+    // switches on again with a proactive/New-Day-style greeting" right after
+    // a lesson was cut off. Same restore condition as _attemptReconnect:
+    // only re-arm when the topic hasn't already been cleared by a genuine
+    // close (_hide() nulls _guidedTopicInFlight; a later, unrelated reconnect
+    // in the same overlay-open has nothing left to restore).
+    if (_s._guidedTopicInFlight && !_s.guidedTopic) {
+      console.log('[VTOrb] _resetAndReconnect: re-arming guided topic for resume: ' + _s._guidedTopicInFlight);
+      _s.guidedTopic = _s._guidedTopicInFlight;
+    }
+
     _sessionStart().then(function () {
+      _s._isReconnecting = false;
       if (_s.active && _s._disconnectActive) _clearDisconnect();
     }).catch(function (err) {
       console.error('[VTOrb] _resetAndReconnect: _sessionStart failed:', err && err.message);
+      _s._isReconnecting = false;
       // Hand back to the normal scheduled reconnect loop
       _attemptReconnect();
     });
@@ -1808,9 +1935,52 @@
       // turn-complete handler) or the overlay is closed (_hide()) — both
       // already-existing lifecycle points for guidedAutoClose, so the two
       // flags now share one lifecycle instead of drifting apart.
+      //
+      // VTID-03774: restore from _guidedTopicInFlight HERE too, at the actual
+      // read/send site — not only in each caller (_attemptReconnect /
+      // _resetAndReconnect, VTID-03746/03770). Both callers already re-arm
+      // _s.guidedTopic from _s._guidedTopicInFlight before calling this
+      // function, and that should be sufficient — but a live staging trace
+      // (topic T003, real account, SSE transport) showed a mid-lesson
+      // reconnect still going out with NO guided_topic_id despite both flags
+      // appearing correctly armed earlier in the flow: the wake-timeline for
+      // the reconnected session recorded guided_topic_narration's own
+      // decision as `reason:"no_topic_tapped"` — proof positive the field
+      // never reached the server, from a session whose disconnect-stage also
+      // came through as "idle" rather than the "speaking" the in-flight
+      // narration audio should have produced, i.e. this reconnect did not
+      // originate from the code path the earlier restore-guards were placed
+      // in. Rather than keep chasing which caller has the gap, close it at
+      // the one place that can never be bypassed: right before the field is
+      // actually read into the outgoing payload, regardless of which
+      // function got the widget here. This does not replace the two
+      // existing restore-guards (harmless, redundant with this one) — it
+      // makes this fallback structurally impossible to route around.
+      if (!_s.guidedTopic && _s._guidedTopicInFlight) {
+        console.log('[VTOrb] _sessionStart: guidedTopic was empty but _guidedTopicInFlight=' + _s._guidedTopicInFlight + ' — restoring at send site (VTID-03774)');
+        _s.guidedTopic = _s._guidedTopicInFlight;
+      }
       if (_s.guidedTopic) {
         startPayload.guided_topic_id = _s.guidedTopic;
+        // VTID-03774 (Codex review follow-up): tell the server this is a
+        // RESUME — turn-1 audio for this topic was already delivered before
+        // now — so it bundles the topic context without re-synthesizing/
+        // replaying the narration audio or re-injecting the verbatim opener
+        // instruction. Without this, every qualifying reconnect restarted
+        // the lesson from the beginning instead of continuing it.
+        if (_s._guidedTopicAudioDelivered) {
+          startPayload.guided_topic_resume = true;
+        }
       }
+      // VTID-03774: diagnostic-grade logging so a FUTURE loss (if this
+      // fallback somehow isn't the whole story either) is traceable from
+      // console logs alone instead of requiring another multi-hour live
+      // oasis_events reconstruction. Cheap: one line, every _sessionStart.
+      console.log('[VTOrb] _sessionStart: guidedTopic=' + (_s.guidedTopic || '<none>')
+        + ', guidedTopicInFlight=' + (_s._guidedTopicInFlight || '<none>')
+        + ', guidedTopicAudioDelivered=' + !!_s._guidedTopicAudioDelivered
+        + ', preDisconnectStage=' + (_s._preDisconnectStage || '<none>')
+        + ', isReconnectAttempt=' + !!(_s._transcriptHistory && _s._transcriptHistory.length));
 
       // VTID-02020: when this _sessionStart is happening as part of a reconnect
       // (NOT a first-time session), send the conversation history + the
@@ -1919,6 +2089,9 @@
 
       _s.sessionId = data.session_id;
       _s.active = true;
+      // VTID-03763: this is a fresh (or reconnected) session's connection —
+      // any poll loop still ticking from a prior connection is now stale.
+      _s._sessionGeneration++;
       // DEV-COMHU-0504 — ORB Recovery 4: as soon as we have a session id, try to
       // signal audio-pipeline readiness so the backend can release the greeting
       // the moment the client can actually play it (ack-or-3s gate server-side).
@@ -2076,6 +2249,9 @@
           _s.ws = w;
           _s.sessionId = msg.session_id;
           _s.active = true;
+          // VTID-03763: this is a fresh (or reconnected) session's connection —
+          // any poll loop still ticking from a prior connection is now stale.
+          _s._sessionGeneration++;
           // VTID-03706: the SERVER decides whether this session runs full
           // duplex, so client and server can never disagree about whether
           // frames captured during playback are gated or forwarded. Absent
@@ -2264,7 +2440,19 @@
         break;
 
       case 'live_api_ready':
-        // Full voice conversation active
+        // Full voice conversation active.
+        // VTID-03706 follow-up: the WS session_started handshake sets
+        // _s.fullDuplex from msg.full_duplex, but this SSE handshake never
+        // did — and SSE is this widget's DEFAULT transport (see
+        // _sessionStart's transport preference), not a rare fallback.
+        // _s.fullDuplex stayed at its false default for every SSE session,
+        // so the mic-live UI and the full-duplex capture branch in
+        // _startAudioCapture were both structurally unreachable over SSE
+        // even with the server flag on. Mirrors the WS handler's line
+        // exactly (msg.full_duplex === true; absent/false ⇒ legacy
+        // half-duplex, unchanged).
+        _s.fullDuplex = msg.full_duplex === true;
+        _updateUI();
         break;
 
       case 'thinking':
@@ -2364,19 +2552,28 @@
         // Check all three signals: audioPlaying flag, scheduled sources, and queue.
         // audioPlaying has a 1s grace period, but we also directly check sources/queue
         // to catch edge cases where the flag lags behind reality.
-        (function _waitForAudioEnd() {
-          setTimeout(function () {
-            if (!_s.active) return; // Session ended
-            // VTID-NAV: Any close-pending state suppresses the listening transition.
-            // Covers signup close (legacy) AND navigator-driven navigation close.
-            if (_isClosingForNav()) return;
-            var stillPlaying = _s.audioPlaying ||
-              (_s.scheduledSources && _s.scheduledSources.length > 0) ||
-              (_s.audioQueue && _s.audioQueue.length > 0);
-            if (stillPlaying) {
-              _waitForAudioEnd(); // Still playing — check again in 300ms
-              return;
-            }
+        (function (myGen) {
+          // VTID-03763: myGen pins the session generation this poll belongs
+          // to (see _sessionGeneration on _s). A stale poll from a PRIOR
+          // session can survive past that session's teardown — its only
+          // other guard, `!_s.active`, is checked against shared state that
+          // the NEXT session resets to true before this poll's next tick,
+          // so it wrongly reads as "still my active session" and clobbers
+          // the new session's freshly-armed _s.guidedTopic/_s.guidedAutoClose.
+          (function _waitForAudioEnd() {
+            setTimeout(function () {
+              if (_s._sessionGeneration !== myGen) return; // stale poll from a prior session
+              if (!_s.active) return; // Session ended
+              // VTID-NAV: Any close-pending state suppresses the listening transition.
+              // Covers signup close (legacy) AND navigator-driven navigation close.
+              if (_isClosingForNav()) return;
+              var stillPlaying = _s.audioPlaying ||
+                (_s.scheduledSources && _s.scheduledSources.length > 0) ||
+                (_s.audioQueue && _s.audioQueue.length > 0);
+              if (stillPlaying) {
+                _waitForAudioEnd(); // Still playing — check again in 300ms
+                return;
+              }
             // VTID-03292 (#4): audio for this turn has drained. Notify the host
             // BEFORE the listening transition so a guided-topic flow can close
             // the overlay (revealing the drawer) instead of dropping to mic.
@@ -2419,6 +2616,11 @@
             if (_s.guidedAutoClose && !_s.greetingComplete) {
               _s.guidedAutoClose = false;
               _s.guidedTopic = null;
+              // VTID-03774: turn-1 audio (opener + narration bridge) has now
+              // actually been delivered — a later restored-and-resent topic
+              // must tell the server it's a RESUME, not a fresh open, so
+              // the lesson doesn't restart from the beginning.
+              _s._guidedTopicAudioDelivered = true;
               console.log('[VTOrb] guided teaching opener complete — continuing conversation (no auto-close)');
             }
             // If the overlay was closed some other way while we were waiting
@@ -2437,6 +2639,7 @@
             var _afterBeepStartMic = function () {
               if (!_s.greetingComplete) {
                 _s.greetingComplete = true;
+                _s._audioEverHeardThisOpen = true; // VTID-03727 — survives later reconnect resets
                 _startAudioCapture().catch(function (err) {
                   console.error('[VTOrb] Mic capture failed after greeting:', err);
                   _announceDisconnect('mic');
@@ -2490,7 +2693,8 @@
               })(15000);
             }
           }, 300);
-        })();
+          })();
+        })(_s._sessionGeneration);
         break;
 
       case 'interrupted':
@@ -2598,7 +2802,38 @@
         break;
 
       case 'session_ended':
-        _sessionStop();
+        // VTID-03778: this message is sent by exactly one live code path —
+        // terminateExistingSessionsForUser (orb-live.ts) — when the server
+        // supersedes THIS session because a newer one started for the same
+        // user. The other two server-side emitters of 'session_ended' are
+        // both echoes of a stop the CLIENT itself already POSTed via
+        // /session/stop — by the time those arrive, _sessionStop() has
+        // already detached this handler (see its own comment on why), so
+        // they never reach here in practice.
+        //
+        // _sessionStop() was the original handler. Two bugs, live-reproduced
+        // (staging, right after VTID-03776 shipped — a guided-topic session
+        // fell back to generic conversation, ran for ~57s, then got
+        // superseded): (1) _sessionStop() unconditionally sets
+        // _s._userInitiatedStop = true at its very top — mislabeling a
+        // SERVER-forced close as a user action, which then silently
+        // suppresses every later reconnect guard in this file for the rest
+        // of the overlay-open. (2) _sessionStop() only tears down session
+        // internals (mic, audio contexts, WS) — it never touches overlay
+        // visibility or the status caption. Together: the overlay froze on
+        // its last caption ("Listening...") forever, with nothing left
+        // running behind it and no code path left to recover — reported as
+        // "you cannot close it... I need to refresh to exit." The very next
+        // case above (connection_issue/live_api_disconnected) already
+        // carries this exact lesson in its own comment: "We never auto-
+        // _sessionStop here; killing the orb forces a page refresh."
+        //
+        // Fix: call _hide() instead — the same full, honest teardown a real
+        // user-initiated close uses (stops audio synchronously, closes the
+        // session, and — critically — actually hides the overlay). Reopening
+        // is one tap away; freezing behind a stale caption is not.
+        console.warn('[VTOrb] Server ended this session (superseded by a newer one) — closing overlay');
+        _hide();
         break;
 
       case 'session_limit_reached':
@@ -2609,30 +2844,38 @@
           _s.signupClosing = true;
           var redirectUrl = msg.redirect || null;
           var _signupCloseAttempts = 0;
-          (function _waitForGoodbyeEnd() {
-            setTimeout(function () {
-              var stillPlaying = _s.audioPlaying ||
-                (_s.scheduledSources && _s.scheduledSources.length > 0) ||
-                (_s.audioQueue && _s.audioQueue.length > 0);
-              // Hard safety cap: 30s (100 * 300ms) so we never get stuck waiting forever
-              if (stillPlaying && _signupCloseAttempts++ < 100) {
-                _waitForGoodbyeEnd();
-                return;
-              }
-              // Small grace period so the very last audio sample plays out cleanly
+          (function (myGen) {
+            // VTID-03763: see the identical guard on _waitForAudioEnd above —
+            // a stale poll surviving into a later session must not call
+            // _hide() (or redirect) on behalf of a session it no longer
+            // belongs to.
+            (function _waitForGoodbyeEnd() {
               setTimeout(function () {
-                _hide();
-                if (redirectUrl) {
-                  if (typeof _cfg.onSignupRedirect === 'function') {
-                    try { _cfg.onSignupRedirect(redirectUrl); } catch (e) { console.error('[VTOrb] onSignupRedirect failed:', e); }
-                  } else {
-                    // Fallback: hard navigation (works in Appilix WebView for same-origin URLs)
-                    try { window.location.href = redirectUrl; } catch (e) { console.error('[VTOrb] redirect failed:', e); }
-                  }
+                if (_s._sessionGeneration !== myGen) return; // stale poll from a prior session
+                var stillPlaying = _s.audioPlaying ||
+                  (_s.scheduledSources && _s.scheduledSources.length > 0) ||
+                  (_s.audioQueue && _s.audioQueue.length > 0);
+                // Hard safety cap: 30s (100 * 300ms) so we never get stuck waiting forever
+                if (stillPlaying && _signupCloseAttempts++ < 100) {
+                  _waitForGoodbyeEnd();
+                  return;
                 }
-              }, 600);
-            }, 300);
-          })();
+                // Small grace period so the very last audio sample plays out cleanly
+                setTimeout(function () {
+                  if (_s._sessionGeneration !== myGen) return; // stale poll from a prior session
+                  _hide();
+                  if (redirectUrl) {
+                    if (typeof _cfg.onSignupRedirect === 'function') {
+                      try { _cfg.onSignupRedirect(redirectUrl); } catch (e) { console.error('[VTOrb] onSignupRedirect failed:', e); }
+                    } else {
+                      // Fallback: hard navigation (works in Appilix WebView for same-origin URLs)
+                      try { window.location.href = redirectUrl; } catch (e) { console.error('[VTOrb] redirect failed:', e); }
+                    }
+                  }
+                }, 600);
+              }, 300);
+            })();
+          })(_s._sessionGeneration);
         } else {
           // VTID-ANON-NUDGE: Turn limit — show registration prompt
           console.log('[VTOrb] Session limit reached — prompting registration');
@@ -2687,21 +2930,28 @@
           console.log('[VTOrb] orb_directive navigate to ' + navRoute + ' (screen=' + msg.screen_id + ')');
           _s.navigationPending = true;
           var _navAttempts = 0;
-          (function _waitForNavReady() {
-            setTimeout(function () {
-              var stillPlaying = _s.audioPlaying ||
-                (_s.scheduledSources && _s.scheduledSources.length > 0) ||
-                (_s.audioQueue && _s.audioQueue.length > 0);
-              // Hard safety cap: 30s (100 * 300ms) so we never wait forever
-              if (stillPlaying && _navAttempts++ < 100) {
-                _waitForNavReady();
-                return;
-              }
-              // VTID-NAV-FAST: Short grace period (200ms instead of 600ms).
-              // The aggressive source cleanup below catches any late audio,
-              // so 200ms is enough for the last buffer to finish cleanly.
+          (function (myGen) {
+            // VTID-03763: see the identical guard on _waitForAudioEnd above —
+            // a stale poll surviving into a later session must not tear down
+            // audio/navigate/hide on behalf of a session it no longer
+            // belongs to.
+            (function _waitForNavReady() {
               setTimeout(function () {
-                // Kill any remaining scheduled sources before hide
+                if (_s._sessionGeneration !== myGen) return; // stale poll from a prior session
+                var stillPlaying = _s.audioPlaying ||
+                  (_s.scheduledSources && _s.scheduledSources.length > 0) ||
+                  (_s.audioQueue && _s.audioQueue.length > 0);
+                // Hard safety cap: 30s (100 * 300ms) so we never wait forever
+                if (stillPlaying && _navAttempts++ < 100) {
+                  _waitForNavReady();
+                  return;
+                }
+                // VTID-NAV-FAST: Short grace period (200ms instead of 600ms).
+                // The aggressive source cleanup below catches any late audio,
+                // so 200ms is enough for the last buffer to finish cleanly.
+                setTimeout(function () {
+                  if (_s._sessionGeneration !== myGen) return; // stale poll from a prior session
+                  // Kill any remaining scheduled sources before hide
                 _s.audioQueue = [];
                 if (_s.scheduledSources && _s.scheduledSources.length > 0) {
                   for (var _si = 0; _si < _s.scheduledSources.length; _si++) {
@@ -2733,8 +2983,9 @@
                   catch (e) { console.error('[VTOrb] navigation fallback failed:', e); }
                 }
               }, 200);
-            }, 300);
-          })();
+              }, 300);
+            })();
+          })(_s._sessionGeneration);
         } else if (msg.directive === 'end_teaching_session') {
           // VTID-03112 (T2 / DEV-COMHU-03115): the LLM called `end_teaching_session` after
           // delivering its farewell line. Close the overlay gracefully —
@@ -2757,6 +3008,21 @@
             }
           } catch (e) {
             console.error('[VTOrb] end_teaching_session handling error:', e);
+          }
+        } else if (msg.directive === 'end_guided_topic_teaching') {
+          // VTID-03762: the LLM called `end_guided_topic_teaching` after
+          // finishing a "My Journey" guided-topic lesson (see
+          // guided-topic-narration-prompt.ts for why this tool exists — the
+          // GUIDE MODE block has no other exit condition). Closes the
+          // overlay so the host page's already-mounted "Well done" drawer
+          // (opened at tap time, underneath this overlay) is revealed.
+          // Teardown itself lives in _endGuidedTopicTeaching (shared with
+          // the backstop timer — see its own comment for why both exist).
+          console.log('[VTOrb] orb_directive end_guided_topic_teaching (topic=' + (msg.topic_id || '<none>') + ', reason=' + (msg.reason || '<none>') + ')');
+          try {
+            _endGuidedTopicTeaching(msg.topic_id || null, msg.reason || null);
+          } catch (e) {
+            console.error('[VTOrb] end_guided_topic_teaching handling error:', e);
           }
         } else {
           console.warn('[VTOrb] Unknown orb_directive: ' + msg.directive);
@@ -3325,31 +3591,31 @@
   // remember..."). All lines now live in one pool, freshly shuffled per turn, with a
   // guard against repeating the previous turn's opening line back-to-back.
   var _THINKING_QUICK = [
-    { en: 'Let me think…', de: 'Lass mich kurz überlegen…', es: 'Déjame pensar…', sr: 'Daj da razmislim…', fr: 'Laisse-moi réfléchir…', pt: 'Deixa-me pensar…', ru: 'Дай подумать…', pl: 'Daj mi się zastanowić…', zh: '让我想想…', ar: 'دعني أفكر…' },
-    { en: 'Let me take a look…', de: 'Lass mich das kurz prüfen…', es: 'Déjame echar un vistazo…', sr: 'Daj da pogledam…', fr: 'Laisse-moi jeter un œil…', pt: 'Deixa-me dar uma vista de olhos…', ru: 'Дай взгляну…', pl: 'Daj mi rzucić okiem…', zh: '让我看看…', ar: 'دعني ألقي نظرة…' },
-    { en: 'One sec…', de: 'Eine Sekunde…', es: 'Un segundo…', sr: 'Sekundu…', fr: 'Une seconde…', pt: 'Um segundo…', ru: 'Секунду…', pl: 'Sekundkę…', zh: '一秒钟…', ar: 'لحظة واحدة…' },
-    { en: 'Alright, hang on…', de: 'Alles klar, einen Moment…', es: 'Bien, espera un momento…', sr: 'Dobro, sačekaj malo…', fr: "D'accord, attends…", pt: 'Ok, espera aí…', ru: 'Хорошо, подожди…', pl: 'Dobrze, chwileczkę…', zh: '好的，稍等一下…', ar: 'حسنًا، لحظة من فضلك…' },
-    { en: 'Let’s see…', de: 'Mal sehen…', es: 'A ver…', sr: 'Da vidimo…', fr: 'Voyons voir…', pt: 'Vamos ver…', ru: 'Посмотрим…', pl: 'Zobaczmy…', zh: '让我看看情况…', ar: 'لنرَ…' },
-    { en: 'Give me a beat…', de: 'Kurz einen Moment…', es: 'Dame un momento…', sr: 'Daj mi trenutak…', fr: 'Laisse-moi un instant…', pt: 'Dá-me só um instante…', ru: 'Дай мне момент…', pl: 'Daj mi chwilę…', zh: '给我一点时间…', ar: 'امنحني لحظة…' }
+    { en: 'Let me think…', de: 'Lass mich kurz überlegen…', es: 'Déjame pensar…', sr: 'Daj da razmislim…', fr: 'Laisse-moi réfléchir…', pt: 'Deixa-me pensar…', ru: 'Дай подумать…', pl: 'Daj mi się zastanowić…', zh: '让我想想…', ar: 'دعني أفكر…', tr: 'Bir düşüneyim…' },
+    { en: 'Let me take a look…', de: 'Lass mich das kurz prüfen…', es: 'Déjame echar un vistazo…', sr: 'Daj da pogledam…', fr: 'Laisse-moi jeter un œil…', pt: 'Deixa-me dar uma vista de olhos…', ru: 'Дай взгляну…', pl: 'Daj mi rzucić okiem…', zh: '让我看看…', ar: 'دعني ألقي نظرة…', tr: 'Bir bakayım…' },
+    { en: 'One sec…', de: 'Eine Sekunde…', es: 'Un segundo…', sr: 'Sekundu…', fr: 'Une seconde…', pt: 'Um segundo…', ru: 'Секунду…', pl: 'Sekundkę…', zh: '一秒钟…', ar: 'لحظة واحدة…', tr: 'Bir saniye…' },
+    { en: 'Alright, hang on…', de: 'Alles klar, einen Moment…', es: 'Bien, espera un momento…', sr: 'Dobro, sačekaj malo…', fr: "D'accord, attends…", pt: 'Ok, espera aí…', ru: 'Хорошо, подожди…', pl: 'Dobrze, chwileczkę…', zh: '好的，稍等一下…', ar: 'حسنًا، لحظة من فضلك…', tr: 'Tamam, bekle…' },
+    { en: 'Let’s see…', de: 'Mal sehen…', es: 'A ver…', sr: 'Da vidimo…', fr: 'Voyons voir…', pt: 'Vamos ver…', ru: 'Посмотрим…', pl: 'Zobaczmy…', zh: '让我看看情况…', ar: 'لنرَ…', tr: 'Bakalım…' },
+    { en: 'Give me a beat…', de: 'Kurz einen Moment…', es: 'Dame un momento…', sr: 'Daj mi trenutak…', fr: 'Laisse-moi un instant…', pt: 'Dá-me só um instante…', ru: 'Дай мне момент…', pl: 'Daj mi chwilę…', zh: '给我一点时间…', ar: 'امنحني لحظة…', tr: 'Bana bir an ver…' }
   ];
   var _THINKING_PRIMARY = [
-    { en: 'Checking what I remember…', de: 'Ich schau nach, was ich weiß…', es: 'Reviso lo que recuerdo…', sr: 'Proveravam šta se sećam…', fr: 'Je vérifie ce dont je me souviens…', pt: 'Estou a verificar o que sei…', ru: 'Проверяю, что я помню…', pl: 'Sprawdzam, co pamiętam…', zh: '我在回想一下…', ar: 'أتحقق مما أتذكره…' },
-    { en: 'Connecting the dots…', de: 'Ich verbinde die Punkte…', es: 'Uniendo las piezas…', sr: 'Povezujem stvari…', fr: 'Je fais le lien…', pt: 'A juntar as peças…', ru: 'Соединяю всё вместе…', pl: 'Łączę fakty…', zh: '我在把线索串起来…', ar: 'أربط الأمور ببعضها…' },
-    { en: 'Putting it all together…', de: 'Ich füg alles zusammen…', es: 'Poniendo todo junto…', sr: 'Slažem sve zajedno…', fr: 'Je mets tout en ordre…', pt: 'A juntar tudo…', ru: 'Собираю всё воедино…', pl: 'Składam to wszystko w całość…', zh: '我在整理一下…', ar: 'أجمّع كل شيء معًا…' },
-    { en: 'Just making sure I get it right…', de: 'Ich will sichergehen, dass es passt…', es: 'Solo quiero asegurarme de entenderlo bien…', sr: 'Samo hoću da budem siguran da je tačno…', fr: 'Je veux juste être sûr de bien comprendre…', pt: 'Só quero ter a certeza de que percebi bem…', ru: 'Просто хочу удостовериться, что всё правильно…', pl: 'Chcę się tylko upewnić, że dobrze rozumiem…', zh: '我想确认一下有没有理解对…', ar: 'أريد فقط التأكد من أنني فهمت الأمر بشكل صحيح…' },
-    { en: 'Almost ready ✨', de: 'Gleich fertig ✨', es: 'Casi listo ✨', sr: 'Skoro gotovo ✨', fr: 'Presque prêt ✨', pt: 'Quase pronto ✨', ru: 'Почти готово ✨', pl: 'Prawie gotowe ✨', zh: '马上就好 ✨', ar: 'على وشك الانتهاء ✨' },
-    { en: 'Still with you…', de: 'Bin noch dabei…', es: 'Sigo aquí…', sr: 'Još uvek sam tu…', fr: 'Toujours avec toi…', pt: 'Continuo aqui contigo…', ru: 'Я всё ещё здесь…', pl: 'Wciąż tu jestem…', zh: '我还在这里…', ar: 'ما زلت معك…' },
-    { en: 'Got it — here we go!', de: 'Alles klar, es geht los!', es: 'Listo, ¡allá vamos!', sr: 'Evo ga, krećemo!', fr: "C'est bon, on y va !", pt: 'Pronto, cá vamos nós!', ru: 'Готово — поехали!', pl: 'Mam to — zaczynamy!', zh: '好了，我们开始吧！', ar: 'تمام، ها نحن ننطلق!' }
+    { en: 'Checking what I remember…', de: 'Ich schau nach, was ich weiß…', es: 'Reviso lo que recuerdo…', sr: 'Proveravam šta se sećam…', fr: 'Je vérifie ce dont je me souviens…', pt: 'Estou a verificar o que sei…', ru: 'Проверяю, что я помню…', pl: 'Sprawdzam, co pamiętam…', zh: '我在回想一下…', ar: 'أتحقق مما أتذكره…', tr: 'Hatırladıklarımı kontrol ediyorum…' },
+    { en: 'Connecting the dots…', de: 'Ich verbinde die Punkte…', es: 'Uniendo las piezas…', sr: 'Povezujem stvari…', fr: 'Je fais le lien…', pt: 'A juntar as peças…', ru: 'Соединяю всё вместе…', pl: 'Łączę fakty…', zh: '我在把线索串起来…', ar: 'أربط الأمور ببعضها…', tr: 'Noktaları birleştiriyorum…' },
+    { en: 'Putting it all together…', de: 'Ich füg alles zusammen…', es: 'Poniendo todo junto…', sr: 'Slažem sve zajedno…', fr: 'Je mets tout en ordre…', pt: 'A juntar tudo…', ru: 'Собираю всё воедино…', pl: 'Składam to wszystko w całość…', zh: '我在整理一下…', ar: 'أجمّع كل شيء معًا…', tr: 'Her şeyi bir araya getiriyorum…' },
+    { en: 'Just making sure I get it right…', de: 'Ich will sichergehen, dass es passt…', es: 'Solo quiero asegurarme de entenderlo bien…', sr: 'Samo hoću da budem siguran da je tačno…', fr: 'Je veux juste être sûr de bien comprendre…', pt: 'Só quero ter a certeza de que percebi bem…', ru: 'Просто хочу удостовериться, что всё правильно…', pl: 'Chcę się tylko upewnić, że dobrze rozumiem…', zh: '我想确认一下有没有理解对…', ar: 'أريد فقط التأكد من أنني فهمت الأمر بشكل صحيح…', tr: 'Doğru anladığımdan emin oluyorum…' },
+    { en: 'Almost ready ✨', de: 'Gleich fertig ✨', es: 'Casi listo ✨', sr: 'Skoro gotovo ✨', fr: 'Presque prêt ✨', pt: 'Quase pronto ✨', ru: 'Почти готово ✨', pl: 'Prawie gotowe ✨', zh: '马上就好 ✨', ar: 'على وشك الانتهاء ✨', tr: 'Neredeyse hazır ✨' },
+    { en: 'Still with you…', de: 'Bin noch dabei…', es: 'Sigo aquí…', sr: 'Još uvek sam tu…', fr: 'Toujours avec toi…', pt: 'Continuo aqui contigo…', ru: 'Я всё ещё здесь…', pl: 'Wciąż tu jestem…', zh: '我还在这里…', ar: 'ما زلت معك…', tr: 'Hâlâ seninleyim…' },
+    { en: 'Got it — here we go!', de: 'Alles klar, es geht los!', es: 'Listo, ¡allá vamos!', sr: 'Evo ga, krećemo!', fr: "C'est bon, on y va !", pt: 'Pronto, cá vamos nós!', ru: 'Готово — поехали!', pl: 'Mam to — zaczynamy!', zh: '好了，我们开始吧！', ar: 'تمام، ها نحن ننطلق!', tr: 'Tamamdır — işte başlıyoruz!' }
   ];
   var _THINKING_ALTERNATES = [
-    { en: 'On it…', de: 'Bin dran…', es: 'Voy con eso…', sr: 'Radim na tome…', fr: "Je m'en occupe…", pt: 'Estou nisso…', ru: 'Уже занимаюсь…', pl: 'Już się tym zajmuję…', zh: '我在处理了…', ar: 'أنا أعمل على ذلك…' },
-    { en: 'Give me a tiny moment…', de: 'Gib mir einen kleinen Moment…', es: 'Dame un momentito…', sr: 'Daj mi mali trenutak…', fr: 'Laisse-moi un tout petit instant…', pt: 'Dá-me só um bocadinho…', ru: 'Дай мне буквально секунду…', pl: 'Daj mi malutką chwilkę…', zh: '再给我一小会儿…', ar: 'أمهلني لحظة صغيرة…' },
-    { en: 'Let me look into that…', de: 'Ich schau mir das an…', es: 'Voy a revisar eso…', sr: 'Da to proverim…', fr: 'Je regarde ça…', pt: 'Vou verificar isso…', ru: 'Дай-ка я это проверю…', pl: 'Sprawdzę to…', zh: '我来看看这个…', ar: 'دعني أبحث في ذلك…' },
-    { en: 'Doing a little detective work…', de: 'Ich spiel kurz Detektiv…', es: 'Haciendo un poco de trabajo detectivesco…', sr: 'Malo detektivskog posla…', fr: 'Un peu de travail de détective…', pt: 'A fazer um pouco de trabalho de detetive…', ru: 'Провожу небольшое расследование…', pl: 'Trochę detektywistycznej roboty…', zh: '我在小小地侦查一下…', ar: 'أقوم ببعض العمل التحقيقي…' },
-    { en: 'Looking in the right places…', de: 'Ich schau an den richtigen Stellen…', es: 'Buscando en los lugares correctos…', sr: 'Tražim na pravim mestima…', fr: 'Je cherche au bon endroit…', pt: 'A procurar nos sítios certos…', ru: 'Ищу в нужных местах…', pl: 'Szukam we właściwych miejscach…', zh: '我在正确的地方找找看…', ar: 'أبحث في الأماكن الصحيحة…' },
-    { en: 'Still working my magic…', de: 'Ich zaubere noch…', es: 'Sigo haciendo mi magia…', sr: 'Još uvek čarolija u toku…', fr: 'Je fais encore ma petite magie…', pt: 'Ainda a fazer a minha magia…', ru: 'Всё ещё колдую…', pl: 'Wciąż czaruję…', zh: '我还在施展我的小魔法…', ar: 'ما زلت أصنع سحري…' },
-    { en: 'One more moment…', de: 'Noch ein Moment…', es: 'Un momento más…', sr: 'Još jedan trenutak…', fr: 'Encore un instant…', pt: 'Mais um momentinho…', ru: 'Ещё чуть-чуть…', pl: 'Jeszcze chwilka…', zh: '再等一下下…', ar: 'لحظة أخرى فقط…' },
-    { en: 'Nearly there…', de: 'Fast geschafft…', es: 'Ya casi…', sr: 'Skoro sam stigao…', fr: 'Presque fini…', pt: 'Está quase…', ru: 'Почти готово…', pl: 'Już prawie…', zh: '马上就好了…', ar: 'أوشكت على الانتهاء…' }
+    { en: 'On it…', de: 'Bin dran…', es: 'Voy con eso…', sr: 'Radim na tome…', fr: "Je m'en occupe…", pt: 'Estou nisso…', ru: 'Уже занимаюсь…', pl: 'Już się tym zajmuję…', zh: '我在处理了…', ar: 'أنا أعمل على ذلك…', tr: 'Hallediyorum…' },
+    { en: 'Give me a tiny moment…', de: 'Gib mir einen kleinen Moment…', es: 'Dame un momentito…', sr: 'Daj mi mali trenutak…', fr: 'Laisse-moi un tout petit instant…', pt: 'Dá-me só um bocadinho…', ru: 'Дай мне буквально секунду…', pl: 'Daj mi malutką chwilkę…', zh: '再给我一小会儿…', ar: 'أمهلني لحظة صغيرة…', tr: 'Bana ufak bir an ver…' },
+    { en: 'Let me look into that…', de: 'Ich schau mir das an…', es: 'Voy a revisar eso…', sr: 'Da to proverim…', fr: 'Je regarde ça…', pt: 'Vou verificar isso…', ru: 'Дай-ка я это проверю…', pl: 'Sprawdzę to…', zh: '我来看看这个…', ar: 'دعني أبحث في ذلك…', tr: 'Şuna bir bakayım…' },
+    { en: 'Doing a little detective work…', de: 'Ich spiel kurz Detektiv…', es: 'Haciendo un poco de trabajo detectivesco…', sr: 'Malo detektivskog posla…', fr: 'Un peu de travail de détective…', pt: 'A fazer um pouco de trabalho de detetive…', ru: 'Провожу небольшое расследование…', pl: 'Trochę detektywistycznej roboty…', zh: '我在小小地侦查一下…', ar: 'أقوم ببعض العمل التحقيقي…', tr: 'Biraz dedektiflik yapıyorum…' },
+    { en: 'Looking in the right places…', de: 'Ich schau an den richtigen Stellen…', es: 'Buscando en los lugares correctos…', sr: 'Tražim na pravim mestima…', fr: 'Je cherche au bon endroit…', pt: 'A procurar nos sítios certos…', ru: 'Ищу в нужных местах…', pl: 'Szukam we właściwych miejscach…', zh: '我在正确的地方找找看…', ar: 'أبحث في الأماكن الصحيحة…', tr: 'Doğru yerlere bakıyorum…' },
+    { en: 'Still working my magic…', de: 'Ich zaubere noch…', es: 'Sigo haciendo mi magia…', sr: 'Još uvek čarolija u toku…', fr: 'Je fais encore ma petite magie…', pt: 'Ainda a fazer a minha magia…', ru: 'Всё ещё колдую…', pl: 'Wciąż czaruję…', zh: '我还在施展我的小魔法…', ar: 'ما زلت أصنع سحري…', tr: 'Hâlâ sihrimi konuşturuyorum…' },
+    { en: 'One more moment…', de: 'Noch ein Moment…', es: 'Un momento más…', sr: 'Još jedan trenutak…', fr: 'Encore un instant…', pt: 'Mais um momentinho…', ru: 'Ещё чуть-чуть…', pl: 'Jeszcze chwilka…', zh: '再等一下下…', ar: 'لحظة أخرى فقط…', tr: 'Bir an daha…' },
+    { en: 'Nearly there…', de: 'Fast geschafft…', es: 'Ya casi…', sr: 'Skoro sam stigao…', fr: 'Presque fini…', pt: 'Está quase…', ru: 'Почти готово…', pl: 'Już prawie…', zh: '马上就好了…', ar: 'أوشكت على الانتهاء…', tr: 'Neredeyse tamam…' }
   ];
   var _THINKING_ALL = _THINKING_QUICK.concat(_THINKING_PRIMARY, _THINKING_ALTERNATES);
 
@@ -3509,6 +3775,42 @@
       clearTimeout(_s.audioEndGraceTimer);
       _s.audioPlaying = false;
       _s.lastAudioEndTime = Date.now();
+      // VTID-03740: everything above this comment only ever cleared the
+      // INTERNAL audioPlaying flag — it never touched .vtorb-status or the
+      // orb glow. A session whose upstream stream dies mid-turn (delivers
+      // at least one audio chunk, then goes silent before turn_complete)
+      // never gets a server turn_complete, so _waitForAudioEnd() (the only
+      // other place that resets the visible state) never runs either.
+      // Reported live: the pre-login MAXINA Intro orb visibly "spoke"
+      // (caption "Vitana priča..." + amber glow) but stayed silent, stuck
+      // that way for the rest of the session. Restore the VISIBLE state to
+      // LISTENING here too, and re-arm the mic the same way the normal
+      // turn-complete path does on a session's first turn (mic capture is
+      // started exactly once, gated on !greetingComplete, then stays open
+      // for the rest of the session under full duplex) — so recovery is
+      // actually usable, not just cosmetic. Deliberately does NOT invoke
+      // the host's turn-completion callback: this turn never genuinely
+      // completed, and telling the host it did would reproduce the
+      // VTID-03685 bug where a guided-topic "completed" drawer appeared
+      // for a lesson that was never actually delivered.
+      if (_s.voiceState === 'SPEAKING' && _s.active && !_isClosingForNav() &&
+          !_s._userRequestedClose && _s.overlayVisible) {
+        _s.voiceState = 'LISTENING';
+        // VTID-03469: while audio is blocked the overlay shows the
+        // tap-to-hear prompt — don't overwrite it with "Listening...".
+        if (!_s._audioBlocked) {
+          _setOrbState('listening');
+          _setStatus(_caption('listening'));
+        }
+        if (!_s.greetingComplete) {
+          _s.greetingComplete = true;
+          _s._audioEverHeardThisOpen = true;
+          _startAudioCapture().catch(function (err) {
+            console.error('[VTOrb] Mic capture failed after stuck-speaking recovery:', err);
+            _announceDisconnect('mic');
+          });
+        }
+      }
       try { _updateUI(); } catch (e) { /* UI optional during teardown */ }
     }
   }
@@ -3699,15 +4001,11 @@
       micBtn.style.background = muted ? 'rgba(239,68,68,0.2)' : 'rgba(59,130,246,0.2)';
       micBtn.style.color = muted ? '#fca5a5' : '#93c5fd';
       // VTID-03706: under full duplex the mic is genuinely still open while
-      // Vitana speaks, so say so. Without this the UI is indistinguishable
-      // from the old half-duplex behaviour and users have no way to learn
-      // that interrupting works — a capability nobody discovers is the same
-      // as one that doesn't exist. Applied as a CLASS (the .vtorb-mic-live
-      // ring in _injectStyles), not an inline rule: it composes with the
-      // legacy inline colours above instead of fighting them, and keeps this
-      // file from adding new inline styling. Deliberately no status string —
-      // the wording here is per-language ternaries, and a new one would ship
-      // untranslated for every locale past de/en.
+      // Vitana speaks. This class used to drive a visual ring (removed,
+      // VTID-03745 — reported as an unwanted visual distraction); kept as a
+      // hook (currently styleless) rather than deleted outright, so a state
+      // consumer can still tell full-duplex-live apart from idle/muted
+      // without re-deriving it from _s.fullDuplex/_s.audioPlaying.
       micBtn.classList.toggle('vtorb-mic-live', !muted && !!_s.fullDuplex && !!_s.audioPlaying);
     }
     // Update FAB visibility
@@ -3947,6 +4245,61 @@
     } catch (e) { /* noop */ }
   }
 
+  // VTID-03762: 5 minutes. A real narrated guided-topic lesson was measured
+  // at ~44s end-to-end on staging (VTID-03746's own live trace, 497 audio
+  // chunks); this is 6-7x that plus room for genuine follow-up Q&A and a
+  // practice hand-off. It exists ONLY as a backstop for when the model
+  // never calls end_guided_topic_teaching at all (confirmed happening live
+  // on staging, VTID-03762 follow-up) — not as the primary "teaching is
+  // done" signal. Deliberately NOT a short/turn-count heuristic: VTID-03685
+  // already rejected guessing at completion early ("would trade a definite
+  // bug for a fragile heuristic") — this only fires long after any
+  // legitimate lesson+practice conversation would have finished on its own,
+  // and only when nothing else has ended the guided-topic session by then.
+  var GUIDED_TOPIC_BACKSTOP_MS = 5 * 60 * 1000;
+  var GUIDED_TOPIC_BACKSTOP_CHECK_MS = 15000;
+
+  // VTID-03762: shared teardown for both the model-driven
+  // end_guided_topic_teaching directive and the backstop timer below —
+  // same drain-then-hide shape the `navigate` directive already uses
+  // elsewhere in this file (poll audioPlaying/scheduledSources/audioQueue
+  // instead of guessing a fixed delay, so an in-flight closing line is
+  // never truncated).
+  function _endGuidedTopicTeaching(topicId, reason) {
+    var attempts = 0;
+    // VTID-03763: pin the session generation this poll belongs to at the
+    // moment teaching-end was signalled — see the identical guard on
+    // _waitForAudioEnd. Without it, a stale poll surviving into a later
+    // session could _hide() / fire onGuidedTopicTeachingEnd for a topic
+    // that isn't even the one the new session is teaching.
+    var myGen = _s._sessionGeneration;
+    (function _waitForGuidedTeachingAudioDrained() {
+      setTimeout(function () {
+        if (_s._sessionGeneration !== myGen) return; // stale poll from a prior session
+        var stillPlaying = _s.audioPlaying ||
+          (_s.scheduledSources && _s.scheduledSources.length > 0) ||
+          (_s.audioQueue && _s.audioQueue.length > 0);
+        // Hard safety cap: 30s (100 * 300ms), same as _waitForNavReady —
+        // never wait forever on a stuck/misreported audio state.
+        if (stillPlaying && attempts++ < 100) {
+          _waitForGuidedTeachingAudioDrained();
+          return;
+        }
+        // Short grace period for the last buffer to finish cleanly, same
+        // 200ms the navigate directive uses.
+        setTimeout(function () {
+          if (_s._sessionGeneration !== myGen) return; // stale poll from a prior session
+          try { _hide(); }
+          catch (e) { console.error('[VTOrb] _hide on end_guided_topic_teaching failed:', e); }
+          if (typeof _cfg.onGuidedTopicTeachingEnd === 'function') {
+            try { _cfg.onGuidedTopicTeachingEnd(topicId, reason); }
+            catch (e) { console.error('[VTOrb] onGuidedTopicTeachingEnd handler failed:', e); }
+          }
+        }, 200);
+      }, 300);
+    })();
+  }
+
   function _hide() {
     // VTID-03292 (#3): mark a hard user-close FIRST so any racing reconnect /
     // _sessionStart bails (see _sessionStart guard) and the overlay can't
@@ -3963,6 +4316,13 @@
     _s._isReconnecting = false;
     _s.guidedAutoClose = false; // VTID-03294 (#4): clear any pending guided auto-close
     _s.guidedTopic = null; // VTID-03675: don't let a never-delivered topic leak into a later, unrelated session
+    _s._guidedTopicInFlight = null; // VTID-03746: same lifecycle — this overlay session is genuinely over
+    _s._guidedTopicAudioDelivered = false; // VTID-03774: same lifecycle
+    _s._guidedTopicZeroAudioFailCount = 0; // VTID-03776: same lifecycle
+    _s._guidedTopicOpenedAt = null; // VTID-03762: same lifecycle — the backstop no longer applies
+    try { clearInterval(_s._guidedTopicBackstopInterval); } catch (e) { /* noop */ }
+    _s._guidedTopicBackstopInterval = null;
+    _s._audioEverHeardThisOpen = false; // VTID-03727: this overlay session is genuinely over
     try { clearInterval(_s._recoveryWatchdog); } catch (e) { /* noop */ }
     _s._recoveryWatchdog = null;
     // VTID-03295 (X-close fix): STOP AUDIO + CLOSE THE OVERLAY SYNCHRONOUSLY, the
@@ -4065,6 +4425,33 @@
       return;
     }
 
+    // VTID-03776: circuit breaker for a guided topic whose wake-brief opener
+    // Nova's content filter (nova_validation) deterministically rejects.
+    // Live-reproduced: ~30 consecutive fresh sessions, ~3.4s apart, EVERY one
+    // blocked before any turn completed — because VTID-03774's own fixes
+    // correctly persist/resend guided_topic_id across every reconnect, each
+    // attempt re-synthesizes and replays the full Polly narration before
+    // being blocked again, an audible infinite repeat with no natural exit.
+    // A disconnect this soon after open, with a guided topic still armed and
+    // NOTHING ever heard this overlay-open, counts as one such failure. After
+    // 2 (this connection's attempt + one retry — the same budget the server's
+    // own internal retry already gives a fresh topic), give up on THIS topic
+    // for the rest of the overlay-open so the next attempt falls through to
+    // safe generic conversation instead of repeating the doomed content.
+    // Does NOT fire once real audio has played (_audioEverHeardThisOpen) —
+    // a mid-lesson network blip must still resume the SAME topic (Fix 3,
+    // VTID-03774's guided_topic_resume signal), never drop it.
+    if (_s._guidedTopicInFlight && !_s._audioEverHeardThisOpen) {
+      _s._guidedTopicZeroAudioFailCount = (_s._guidedTopicZeroAudioFailCount || 0) + 1;
+      if (_s._guidedTopicZeroAudioFailCount >= 2) {
+        console.warn('[VTOrb] _attemptReconnect: guided topic ' + _s._guidedTopicInFlight +
+          ' failed ' + _s._guidedTopicZeroAudioFailCount + 'x with no audio ever heard — ' +
+          'dropping it for this session, falling back to generic conversation');
+        _s.guidedTopic = null;
+        _s._guidedTopicInFlight = null;
+      }
+    }
+
     if (_s._reconnectCount >= MAX_WIDGET_RECONNECTS) {
       _enterStuckState();
       return;
@@ -4074,7 +4461,24 @@
     _s._reconnectCount++;
     _s._isReconnecting = true;
     console.log('[VTOrb] _attemptReconnect: scheduled in ' + delay + 'ms (attempt ' + _s._reconnectCount + '/' + MAX_WIDGET_RECONNECTS + ')');
-    _setStatus(_caption('reconnecting'));
+    // VTID-03727: before anything has been heard (e.g. a guided-topic tap that
+    // died to nova_validation before turn 1 ever played), "reconnecting" reads
+    // as "already broken" rather than "hold on" — the exact defect VTID-03685
+    // already fixed for the WS error-frame handler and the server-side
+    // resendGreetingIfStuckAtZeroTurns retry cue (both gate on "has anything
+    // actually played yet"). This call site was never covered by that fix: it
+    // fires on every WS/SSE close this widget handles (nova_validation-driven
+    // closes included), and used to show the reconnecting caption unconditionally.
+    // Live-reported: "before it starts talking, the orb screen shows... 'One
+    // moment, I will reconnect'". Once real audio has played, a genuine
+    // reconnect cue is still correct and still shown.
+    //
+    // Codex review fix: gate on _audioEverHeardThisOpen, NOT _s.greetingComplete
+    // directly — greetingComplete is deliberately reset to false on every
+    // reconnect (VTID-01988, mic-restart) so a SECOND consecutive retry within
+    // the same overlay open would otherwise misreport 'connecting' even though
+    // the user genuinely heard Vitana speak earlier this session.
+    _setStatus(_caption(_s._audioEverHeardThisOpen ? 'reconnecting' : 'connecting'));
     _setOrbState('connecting');
 
     setTimeout(function () {
@@ -4101,11 +4505,39 @@
       // VTID-01988 (mic restart fix): see _resetAndReconnect for context.
       _s.greetingComplete = false;
 
+      // VTID-03746: this is an UNEXPECTED-disconnect retry (a clean X-close/
+      // _sessionStop never reaches _attemptReconnect at all — see _hide()).
+      // If a guided topic was in play THIS overlay-open but the turn-complete
+      // handler had already nulled _s.guidedTopic (the lesson was mid-way
+      // through being taught, not merely offered), restore it here so the
+      // reconnected session resumes the SAME topic instead of falling
+      // through to a generic/newday-style greeting. Live-reproduced
+      // (staging): a 44-second, 497-audio-chunk T007 teaching session
+      // disconnected mid-lesson and the reconnect had nothing to resume.
+      if (_s._guidedTopicInFlight && !_s.guidedTopic) {
+        console.log('[VTOrb] _attemptReconnect: re-arming guided topic for resume: ' + _s._guidedTopicInFlight);
+        _s.guidedTopic = _s._guidedTopicInFlight;
+      }
+
       _sessionStart().then(function () {
         _s._isReconnecting = false;
         if (_s.active) {
-          _s._reconnectCount = 0;
-          console.log('[VTOrb] _attemptReconnect: succeeded');
+          // VTID-03776: only reset the backoff budget once real audio has
+          // actually played THIS overlay-open (_audioEverHeardThisOpen) — a
+          // bare transport-level connect that dies to something like
+          // nova_validation within ~1s, before any turn completes, must NOT
+          // reset it. Resetting on `_s.active` alone made the budget
+          // meaningless for a doomed prompt: every reconnect "succeeded" at
+          // the transport layer just long enough to zero the count before
+          // the very next RECONNECT_DELAYS[0] fired, so MAX_WIDGET_RECONNECTS
+          // never actually bound anything — live-reproduced as a genuinely
+          // unbounded reconnect loop (~30+ sessions over 5+ minutes). Once
+          // audio HAS played, resetting on every reconnect is still correct —
+          // a long, healthy session shouldn't be punished for one hiccup.
+          if (_s._audioEverHeardThisOpen) {
+            _s._reconnectCount = 0;
+          }
+          console.log('[VTOrb] _attemptReconnect: succeeded (reconnectCount=' + _s._reconnectCount + ')');
           if (_s._disconnectActive) _clearDisconnect();
         } else {
           // _sessionStart returned without throwing but didn't set active
@@ -4382,6 +4814,39 @@
       // re-arms everything cleanly.
       try { _sessionStop(); } catch (e) { /* best-effort */ }
       _s.guidedTopic = (typeof topicId === 'string' && topicId) ? topicId : null;
+      // VTID-03746: separate, longer-lived record of the same topic — see
+      // its declaration for why _s.guidedTopic alone isn't enough anymore.
+      _s._guidedTopicInFlight = _s.guidedTopic;
+      // VTID-03774: a fresh tap means nothing has been delivered for THIS
+      // topic yet — reset even if a previous topic's flag was left true.
+      _s._guidedTopicAudioDelivered = false;
+      // VTID-03776: a fresh tap is a clean slate for the zero-audio circuit
+      // breaker too — a previous topic's failure count must not carry over.
+      _s._guidedTopicZeroAudioFailCount = 0;
+      // VTID-03762: arm the backstop — see GUIDED_TOPIC_BACKSTOP_MS's own
+      // comment for why this exists. Only for a real topic tap; a null
+      // topicId (defensive fallback path) has nothing to backstop.
+      try { clearInterval(_s._guidedTopicBackstopInterval); } catch (e) { /* noop */ }
+      _s._guidedTopicBackstopInterval = null;
+      if (_s.guidedTopic) {
+        _s._guidedTopicOpenedAt = Date.now();
+        _s._guidedTopicBackstopInterval = setInterval(function () {
+          if (!_s._guidedTopicOpenedAt) {
+            clearInterval(_s._guidedTopicBackstopInterval);
+            _s._guidedTopicBackstopInterval = null;
+            return;
+          }
+          if (Date.now() - _s._guidedTopicOpenedAt >= GUIDED_TOPIC_BACKSTOP_MS) {
+            clearInterval(_s._guidedTopicBackstopInterval);
+            _s._guidedTopicBackstopInterval = null;
+            var _stuckTopicId = _s.guidedTopic || _s._guidedTopicInFlight || null;
+            console.warn('[VTOrb] guided-topic backstop fired after ' + GUIDED_TOPIC_BACKSTOP_MS + 'ms with no end_guided_topic_teaching call (topic=' + _stuckTopicId + ') — closing overlay');
+            _endGuidedTopicTeaching(_stuckTopicId, 'backstop_timeout');
+          }
+        }, GUIDED_TOPIC_BACKSTOP_CHECK_MS);
+      } else {
+        _s._guidedTopicOpenedAt = null;
+      }
       // VTID-03294 (#4): a guided-topic open AUTO-CLOSES the overlay once Vitana
       // finishes the teaching turn (reveals the drawer's next-step buttons),
       // instead of dropping to listening. Set AFTER _s.guidedTopic; _show() does

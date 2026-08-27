@@ -215,6 +215,20 @@ describe('send_chat_message tool — server-enforced confirm gate', () => {
     // truthfully confirmed (root cause of a live "tried several times and
     // nothing worked" report). Pin that the marker is now present.
     expect(sent.text).toMatch(/^STATUS: sent\b/);
+
+    // BOOTSTRAP-ORB-CHAT-SEND-TRUTHFULNESS — reported live: Vitana said a
+    // message was sent but it never appeared in the sender's chat history
+    // or reached the receiver. The insert path was already correct, but
+    // there was no success-path telemetry at all, so a report like that
+    // could not be checked against oasis_events. Pin that a real send now
+    // emits a diagnosable success event, symmetric with the failure event
+    // this file's other tests exercise indirectly.
+    expect(emitSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'voice.chat_message.send_succeeded',
+        payload: expect.objectContaining({ message_id: 'msg-stub-id', recipient_user_id: RECIPIENT_UUID }),
+      }),
+    );
   });
 
   test('recipient resolution failures (receiver not found) still fire on the unconfirmed preview call', async () => {

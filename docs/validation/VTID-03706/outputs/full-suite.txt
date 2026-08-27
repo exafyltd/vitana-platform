@@ -1,6 +1,10 @@
-Test Suites: 1 skipped, 686 passed, 686 of 687 total
-Tests:       29 skipped, 6 todo, 13155 passed, 13190 total
+    ✓ returns deferred (NOT failed) when timeout elapses while status=running (60079 ms)
+    ✓ returns failed (NOT deferred) when execution row is missing entirely (5 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 1 skipped, 699 passed, 699 of 700 total
+Tests:       29 skipped, 6 todo, 13283 passed, 13318 total
 Snapshots:   44 passed, 44 total
-Time:        71.112 s
+Time:        62.015 s
 Ran all test suites.
 Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

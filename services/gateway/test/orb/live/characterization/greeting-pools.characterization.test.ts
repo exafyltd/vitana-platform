@@ -35,7 +35,7 @@ describe('A0.2 characterization: greeting pools', () => {
     // ever noticing a dropped pool again.
     it('declares the languages the orb officially supports for short-gap greetings', () => {
       expect(Object.keys(SHORT_GAP_GREETING_PHRASES).sort()).toEqual(
-        ['ar', 'de', 'en', 'es', 'fr', 'pl', 'pt', 'ru', 'sr', 'zh'].sort()
+        ['ar', 'de', 'en', 'es', 'fr', 'pl', 'pt', 'ru', 'sr', 'tr', 'zh'].sort()
       );
     });
 

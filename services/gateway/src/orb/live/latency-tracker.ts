@@ -40,7 +40,17 @@ export type LatencyPhase =
   | 'upstream_connected'
   | 'context_awaited'
   | 'setup_sent'
-  | 'greeting_sent';
+  | 'greeting_sent'
+  // VTID-03764 — bisects the multi-second gap between greeting_sent and
+  // audio_out_first_chunk. Nova-only diagnostic (see
+  // NovaSonicLiveClientDeps.onFirstRawChunk/onEarlyNormalizedEvent).
+  // `nova_early_event` fires multiple times (once per early Nova event, see
+  // EARLY_EVENT_CAP) — a real timeline, not a single snapshot. A one-shot
+  // "first normalized event" was tried first and found useless: real staging
+  // measurement showed it fires on a connection-handshake `usage` event that
+  // arrives BEFORE the greeting prompt is even sent.
+  | 'nova_first_raw_chunk'
+  | 'nova_early_event';
 
 export interface LatencyMark {
   phase: LatencyPhase;

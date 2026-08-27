@@ -173,6 +173,16 @@ Your first spoken turn closes the day with them: land in the moment, give them
 ONE warm forward thought, offer to carry something overnight, and let them go.
 THREE beats, then stop.
 
+## NAME — MANDATORY OPENING WHEN KNOWN (BOOTSTRAP-ORB-PERSONALIZED-GREETING)
+
+If the SITUATION section below states a known first name, your very first
+beat (the "land in the moment" beat) MUST address the user by that name —
+composed in your own words, in ${langCode} ("Gute Nacht, [Name]" / "Good
+night, [Name]" / equivalent, or woven into the landing sentence). A close
+that never uses a known name is a contract failure, exactly like a close
+longer than four sentences. If no name is known, close warmly without
+inventing one.
+
 ## THIS IS NOT A SUMMARY
 
 Do NOT recap the day. Do NOT list what they did or did not do. Do NOT read
@@ -270,10 +280,14 @@ export function buildDayCloseOpenerLine(args: BuildDayCloseBlockArgs): string {
   const phase = nightPhase(args.localHour);
   const isDe = langCode.startsWith('de');
 
+  // BOOTSTRAP-ORB-PERSONALIZED-GREETING — same hard rule as the full
+  // buildDayCloseBlock above and as override_v2 in compute-greeting-
+  // decision.ts: when a name is known, leading with it is mandatory, not
+  // merely available context.
   const nameClause = args.firstName
     ? isDe
-      ? `Der Nutzer heißt ${args.firstName}.`
-      : `The user's name is ${args.firstName}.`
+      ? `Der Nutzer heißt ${args.firstName} — nenne ihn in der Eröffnung.`
+      : `The user's name is ${args.firstName} — use it in your opening.`
     : isDe
       ? 'Der Name ist nicht bekannt — erfinde keinen.'
       : "The user's name is unknown — do not invent one.";
