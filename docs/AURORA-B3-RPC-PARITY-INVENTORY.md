@@ -590,3 +590,50 @@ than "any of these could still be wrong," but it's not zero.
    vs Aurora, is still gated on live **Aurora** access, which this session
    has not confirmed either way. Worth checking directly before assuming
    Phase 0 is still blocked the way every prior session recorded it.
+   (2026-08-27: superseded — this session got live Aurora access; see
+   `docs/AURORA-PHASE0-RECONCILIATION-2026-08-27.md`.)
+
+## Addendum (VTID-03772, continued) — the 70-dead-RPC pattern is a "D-series engine" naming convention, not scattered noise
+
+Grepped `services/gateway/src/services/d*-*-engine*.ts` for the full
+"D-series" — a sequential family of 20 numbered personalization/
+intelligence engines, `d28` through `d51`. Checked which ones' `.rpc()`
+calls resolve live:
+
+| Confirmed **missing** RPCs (whole or partial DB layer never shipped) | Confirmed **live** (DB layer real) |
+|---|---|
+| d34 (environmental/mobility: `location_get_visits`, `location_preferences_get`, `user_preferences_get_bundle`) | d28 (emotional/cognitive: `emotional_cognitive_*` all live) |
+| d41 (boundary/consent — all `d41_*` missing) | d40 (life-stage: `life_stage_*` all live) |
+| d43 (longitudinal adaptation — all `d43_*` missing) | |
+| d44 (signal detection — all `d44_*` missing; table-level gap already in B2 Addendum 2) | |
+| d45 (predictive risk — all `d45_*` missing) | |
+| d47 (social alignment — all `alignment_*` missing) | |
+| d49 (risk mitigation — table-level gap already in B2 Addendum 3) | |
+| d50 (positive-trajectory reinforcement — all `d50_*` missing) | |
+| d51 (overload detection — all `overload_*` missing) | |
+
+d32/d33/d38/d39/d42/d46/d48 call no `.rpc()` in their own files (either
+DB-free by design or reached through a different layer this grep
+wouldn't catch) — not individually confirmed either way, listed for
+completeness rather than silently omitted.
+
+**Same shape as the tables B2 already found (`d44_predictive_signals`,
+`risk_mitigations` both cited as CLAUDE.md "Core Tables" that don't
+exist), now confirmed at the RPC layer for a wider slice of the same
+D-series.** This reads as one coherent, known-shaped gap — a batch of
+personalization engines whose application code shipped ahead of their
+database layer — not 70 unrelated one-off oversights. Also explains most
+of the `location_*`/`taste_*`/`preference_*`/`relationship_*`/`social_*`/
+`topics_*`/`memory_*`-extension/`match_*`/`longevity_*` clusters from the
+addendum above: `location_*` is d34's, `taste_*` maps to d39
+(taste-alignment), `social_*` to d35, `topics_*`/`relationship_*` don't
+map to a single D-number as cleanly and may be a separate, adjacent
+subsystem — not traced further here.
+
+Confirmed reachable, not just referenced: `check_behavior_constraint`/
+`repair_trust`/`record_user_correction` (d47-adjacent trust-repair
+cluster) are called from `POST /api/v1/feedback/trust/repair`, a real,
+mounted, authenticated route (`routes/feedback-correction.ts`, mounted at
+`index.ts:1130`) — an ORB self-correction feature that would throw on
+every real invocation today, the same reachable-not-dormant shape as
+`credit_wallet` minus the money.
