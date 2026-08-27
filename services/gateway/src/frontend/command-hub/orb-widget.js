@@ -2802,7 +2802,38 @@
         break;
 
       case 'session_ended':
-        _sessionStop();
+        // VTID-03778: this message is sent by exactly one live code path —
+        // terminateExistingSessionsForUser (orb-live.ts) — when the server
+        // supersedes THIS session because a newer one started for the same
+        // user. The other two server-side emitters of 'session_ended' are
+        // both echoes of a stop the CLIENT itself already POSTed via
+        // /session/stop — by the time those arrive, _sessionStop() has
+        // already detached this handler (see its own comment on why), so
+        // they never reach here in practice.
+        //
+        // _sessionStop() was the original handler. Two bugs, live-reproduced
+        // (staging, right after VTID-03776 shipped — a guided-topic session
+        // fell back to generic conversation, ran for ~57s, then got
+        // superseded): (1) _sessionStop() unconditionally sets
+        // _s._userInitiatedStop = true at its very top — mislabeling a
+        // SERVER-forced close as a user action, which then silently
+        // suppresses every later reconnect guard in this file for the rest
+        // of the overlay-open. (2) _sessionStop() only tears down session
+        // internals (mic, audio contexts, WS) — it never touches overlay
+        // visibility or the status caption. Together: the overlay froze on
+        // its last caption ("Listening...") forever, with nothing left
+        // running behind it and no code path left to recover — reported as
+        // "you cannot close it... I need to refresh to exit." The very next
+        // case above (connection_issue/live_api_disconnected) already
+        // carries this exact lesson in its own comment: "We never auto-
+        // _sessionStop here; killing the orb forces a page refresh."
+        //
+        // Fix: call _hide() instead — the same full, honest teardown a real
+        // user-initiated close uses (stops audio synchronously, closes the
+        // session, and — critically — actually hides the overlay). Reopening
+        // is one tap away; freezing behind a stale caption is not.
+        console.warn('[VTOrb] Server ended this session (superseded by a newer one) — closing overlay');
+        _hide();
         break;
 
       case 'session_limit_reached':
