@@ -445,7 +445,8 @@ jobs:
                                                 "ORB_DAY_CLOSE_RUNG_ENABLED",
                                                 "TTS_PROVIDER","TTS_POLLY_STRICT","VERTEX_LIVE_UNAVAILABLE",
                                                 "ORB_CASCADED_VOICE_ENABLED",
-                                                "BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION") | not) ]
+                                                "BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION",
+                                                "AURORA_CA_BUNDLE_PATH") | not) ]
                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
                           {name:"COMMIT_SHA", value:$SHA},
                           {name:"BUILD_INFO_MARKER", value:$SHORT},
@@ -488,7 +489,17 @@ jobs:
                           {name:"VERTEX_LIVE_UNAVAILABLE", value:"true"},
                           {name:"ORB_CASCADED_VOICE_ENABLED", value:"true"},
                           {name:"BEDROCK_ROLE_ARN", value:$TASK_ROLE},
-                          {name:"AWS_BEDROCK_REGION", value:"eu-central-1"} ] )
+                          {name:"AWS_BEDROCK_REGION", value:"eu-central-1"},
+                          # VTID-03773 — points aurora-client.ts's resolveSsl()
+                          # at the RDS CA bundle baked into the image
+                          # (Dockerfile), so the Aurora connectivity check gets
+                          # a real TLS handshake instead of failing closed with
+                          # a self-signed-certificate error. Caught in review
+                          # (Codex, PR #3213): AURORA_DATABASE_URL alone is not
+                          # sufficient — resolveSsl() defaults to verifying
+                          # against the system trust store when this is unset,
+                          # which does not include Amazon's RDS CA.
+                          {name:"AURORA_CA_BUNDLE_PATH", value:"/app/certs/rds-combined-ca-bundle.pem"} ] )
                 | .containerDefinitions[0].secrets |=
                     ( [ .[] | select(.name | IN("SUPABASE_JWT_SECRET","SUPABASE_ANON_KEY",
                                                 "GOOGLE_GEMINI_API_KEY","GEMINI_API_KEY",

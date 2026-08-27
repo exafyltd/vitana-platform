@@ -32,3 +32,14 @@ curl -s -w "\nHTTP_STATUS:%{http_code}\n" http://localhost:8099/api/v1/admin/aur
   -> outputs/curl-local-boot.txt
 
 pkill -f "tsx src/index.ts"
+
+# Post-review fix (Codex, PR #3213): AURORA_CA_BUNDLE_PATH was missing, so
+# resolveSsl() would fail TLS verification against RDS even with an open
+# network path. Verified the exact URL the new Dockerfile step downloads is
+# real and reachable (no Docker daemon in this sandbox to build the image
+# end-to-end):
+curl -fsSL -o /tmp/rds-bundle-test.pem \
+  "https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem" --max-time 15
+wc -c /tmp/rds-bundle-test.pem   # -> 165408
+head -c 80 /tmp/rds-bundle-test.pem   # -> "-----BEGIN CERTIFICATE-----..."
+  -> outputs/rds-ca-bundle-fetch-check.txt

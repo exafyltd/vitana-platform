@@ -58,6 +58,9 @@ TEST: `test/routes/admin-aurora-memory-health.test.ts` mocks
 new one) — the suite is inert unless the route genuinely imports from there,
 which it does (`services/gateway/src/routes/admin-aurora-memory-health.ts`).
 
+AC-4b — **Added after Codex review on this PR flagged a real gap (P1):** `AURORA_DATABASE_URL` alone is not sufficient for the connectivity check to reach its `reachable:true` outcome. `aurora-client.ts`'s `resolveSsl()` defaults to `rejectUnauthorized: true` verified against the SYSTEM trust store when `AURORA_CA_BUNDLE_PATH` is unset, and that verification fails against RDS's certificate by design (the module's own header comment says so). Without it, even an open security group and valid credentials would return `503 auth_or_tls`, not the actual Phase-0 answer. Fixed two ways: the gateway `Dockerfile` now downloads the RDS combined CA bundle at build time (the identical URL `scripts/db-i18n/seed-aurora.sh` already uses for the manual bastion flow) to `/app/certs/rds-combined-ca-bundle.pem`, and the staging deploy workflow sets `AURORA_CA_BUNDLE_PATH` to that path.
+TEST: `outputs/rds-ca-bundle-fetch-check.txt` — the exact URL the Dockerfile downloads was independently confirmed live (165KB real PEM bundle, not an error page) from this session. Honest limit: this sandbox has no Docker daemon, so the full `docker build` with this step has not been exercised locally — the real build happens in CI on the next push, which is the first end-to-end confirmation.
+
 AC-4 — Staging's gateway task definition gains `AURORA_DATABASE_URL`
 (pointed at the same `vitana/aurora/prod/database-url` Secrets Manager entry
 `oasis-projector` already uses in production), and nothing else on the task

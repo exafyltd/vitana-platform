@@ -1,0 +1,26 @@
+Verification that the exact URL the Dockerfile now downloads at build time
+is real and reachable — run directly from this session (no Docker daemon
+available in this sandbox to do a full image build; see acceptance.md for
+the honest limit this leaves).
+
+$ curl -fsSL -o /tmp/rds-bundle-test.pem \
+    "https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem" \
+    --max-time 15 && wc -c /tmp/rds-bundle-test.pem && head -c 80 /tmp/rds-bundle-test.pem
+
+165408 /tmp/rds-bundle-test.pem
+-----BEGIN CERTIFICATE-----
+MIID/jCCAuagAwIBAgIQdOCSuA9psBpQd8EI368/0DANBgkqhkiG...
+
+Confirms: the URL resolves, serves a real 165KB PEM certificate bundle (not
+an error page or redirect), and is the identical URL
+scripts/db-i18n/seed-aurora.sh already uses in this repo for the same
+purpose (grep confirmed before writing the Dockerfile change).
+
+NOT verified here: an actual `docker build` of the gateway image with this
+step included — this sandbox has the `docker` CLI but no daemon
+(`/var/run/docker.sock` does not exist), so the Dockerfile change is
+syntax-reviewed and the download step's URL is independently confirmed
+live, but the full image build has not been exercised locally. The real
+build happens in GitHub Actions (`AWS-STAGE-DEPLOY-GATEWAY.yml`'s
+"Build and push image" step) on the next push to main, which is the first
+point this can be confirmed end-to-end.
