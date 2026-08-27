@@ -99,3 +99,60 @@ grep -n "FEATURE_TIPS" test/scheduled-notifications-daily-feature-tip.test.ts
 grep -rn "community-user-analyzer\|onboarding_maxina\|mood_support" test/
 #   -> 4 files reference the module/keys by name, none assert the specific
 #      "Maxina" string literals that were changed (checked each).
+
+# --- Real CI caught a third copy of the bug, missed by the sandbox checks ----
+
+# First push's `validate-pr` run (after allocating VTID-03767) surfaced this
+# from the real Gateway Jest job:
+#   FAIL test/autopilot-onboarding-seed-bundle.test.ts
+#   day0 template onboarding_maxina matches the seeded row field-for-field
+#   Expected: "Say hello to Vitana"
+#   Received: "Say hello to Maxina"
+
+grep -n "Say hello to Maxina\|onboarding_maxina" supabase/migrations/*.sql
+#   -> supabase/migrations/20260607000000_BOOTSTRAP_seed_community_onboarding_autopilot.sql:97
+#   -> seed_community_onboarding_autopilot(): a Postgres function fired by an
+#      AFTER INSERT trigger on public.user_tenants for EVERY new community
+#      member — hardcodes the day0 onboarding bundle, including the wrong
+#      "Say hello to Maxina" / "Your AI companion Maxina..." row. This one
+#      was live in production, not just test-side content.
+
+# Never edit an already-applied migration file in place. New migration
+# instead, CREATE OR REPLACE FUNCTION with only the two text values fixed:
+
+diff <(sed -n '/VALUES/,/^  )/p' supabase/migrations/20260607000000_BOOTSTRAP_seed_community_onboarding_autopilot.sql) \
+     <(sed -n '/VALUES/,/^  )/p' supabase/migrations/20260827090000_vtid_03767_fix_seed_community_onboarding_autopilot.sql)
+#   -> Output: outputs/seed-migration-diff.txt — single-line diff, every
+#      other row/field byte-for-byte identical.
+
+# The test's own file-finder only picks ONE file by suffix match via raw
+# readdirSync (order not guaranteed / not chronological) — unsafe now that a
+# second, superseding migration exists. Fixed loadSeedMigration() to sort
+# matches and read the LAST (chronologically latest, since migrations are
+# timestamp-prefixed) one. New migration filename kept ending in
+# `_seed_community_onboarding_autopilot.sql` on purpose so the (now-fixed)
+# finder's suffix filter still matches it.
+
+python3 -c "
+import re
+sql = open('../../supabase/migrations/20260827090000_vtid_03767_fix_seed_community_onboarding_autopilot.sql', encoding='utf-8').read()
+pattern = re.compile(r\"\('(onboarding_[a-z0-9_]+)',\s*'((?:[^']|'')*)',\s*'((?:[^']|'')*)',\s*'([a-z]+)',\s*'([a-z]+)',\s*(\d+),\s*(\d+),\s*(\d+)\)\")
+rows = {m.group(1): m.groups() for m in pattern.finditer(sql)}
+print('onboarding_maxina row:', rows.get('onboarding_maxina'))
+print('row count:', len(rows))
+"
+#   -> Output: outputs/seed-migration-parse.txt
+#   -> onboarding_maxina row: ('onboarding_maxina', 'Say hello to Vitana',
+#      'Your AI companion Vitana is ready to get to know you. Start a
+#      conversation!', 'community', 'medium', '7', '1', '60')
+#   -> row count: 8 (unchanged from before — no row added/removed)
+
+# Same regex the test itself uses, re-run by hand against the new file to
+# confirm the parse matches STAGE_TEMPLATES.day0's onboarding_maxina entry
+# (title: 'Say hello to Vitana', summary: 'Your AI companion Vitana is
+# ready to get to know you. Start a conversation!', domain: community,
+# priority: medium, impact_score: 7, effort_score: 1,
+# time_estimate_seconds: 60 — exact match, confirmed by inspection).
+
+cd services/gateway && npx tsc --noEmit -p tsconfig.json
+#   -> clean (same pre-existing warning only) after the test file edit, too.

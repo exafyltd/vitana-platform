@@ -66,7 +66,36 @@ Result: only the pre-existing, repo-wide `moduleResolution=node10`
 deprecation notice (present on `main` regardless of this change) — zero
 errors attributable to either touched file.
 
-AC-4 — File-format hygiene: no incidental diff noise
+AC-4 — The live production seed (not just the TS content) says Vitana too
+
+TEST: `services/gateway/test/autopilot-onboarding-seed-bundle.test.ts`, all
+cases — this test parses `supabase/migrations/*_seed_community_onboarding_autopilot.sql`
+and asserts every day0 row matches `STAGE_TEMPLATES.day0` in
+`community-user-analyzer.ts` field-for-field. It caught a THIRD copy of this
+same bug this VTID's first commit missed: `seed_community_onboarding_autopilot()`
+— a Postgres function fired by an `AFTER INSERT` trigger on
+`public.user_tenants` for every new community member — hardcoded
+`'Say hello to Maxina'` / `'Your AI companion Maxina is ready to get to know
+you...'` directly into its `INSERT ... VALUES` bundle. Unlike the other two
+fixes in this VTID, this one was live and ongoing: every new signup got the
+wrong name inserted into their own onboarding Autopilot recommendations.
+Output: `outputs/seed-migration-parse.txt`, `outputs/seed-migration-diff.txt`
+
+Fixed via a NEW migration
+(`20260827090000_vtid_03767_fix_seed_community_onboarding_autopilot.sql`)
+that does `CREATE OR REPLACE FUNCTION public.seed_community_onboarding_autopilot`
+with the corrected two text values — never editing the original, already-applied
+migration file in place. Every other field of every other row is byte-for-byte
+unchanged (see `outputs/seed-migration-diff.txt` — a single-line diff).
+
+The test's own `loadSeedMigration()` helper only ever looked at ONE file
+matching `*_seed_community_onboarding_autopilot.sql` via raw `readdirSync`
+order — not safe once a second, superseding migration exists. Fixed to sort
+matching filenames and read the chronologically LATEST one (the timestamp
+prefix is exactly the property Supabase orders migration application by),
+so this is now safe for future follow-up migrations too, not just this one.
+
+AC-5 — File-format hygiene: no incidental diff noise
 
 TEST: manual `file <path>` + `git diff --stat` check (see `commands.log`)
 Output: `outputs/tsc.txt` (diff stat), verified inline
@@ -88,7 +117,20 @@ string replacement, no line-ending drift).
 | Stray "Maxina" in touched files | 0 (outside explanatory comments) |
 | `FEATURE_TIPS` key count | 12 → 12 (unchanged) |
 | CRLF preserved on `community-user-analyzer.ts` | confirmed |
-| Existing test coverage referencing these files | 5 test files checked; none pin the changed string literals, none require updating |
+| `autopilot-onboarding-seed-bundle.test.ts` | caught the seed-migration copy of this bug (real CI run, see AC-4); fixed |
+| Other existing test coverage referencing these files | 4 more test files checked; none pin the changed string literals, none require updating |
+
+**Correction, made honest rather than silently fixed:** the first commit on
+this VTID claimed "no test pins the specific Maxina strings that were
+changed" — true for `feature-tips.ts` and the 4 direct callers of
+`community-user-analyzer.ts`, but wrong for the seed migration's copy of the
+same content: `autopilot-onboarding-seed-bundle.test.ts` DOES pin it, by
+parity rather than by literal string match, and it failed on the very first
+real CI run of this PR (`services/gateway/test/autopilot-onboarding-seed-bundle.test.ts`
+— "day0 template onboarding_maxina matches the seeded row field-for-field",
+`Expected: "Say hello to Vitana"`, `Received: "Say hello to Maxina"`). That
+failure is what surfaced AC-4 above; this sandbox's static-only verification
+(no `node_modules`, no live DB) could not have caught it on its own.
 
 ## What this VTID does NOT cover, and why
 

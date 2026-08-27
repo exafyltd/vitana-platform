@@ -1,0 +1,4 @@
+8c8
+<       ('onboarding_maxina',           'Say hello to Maxina',           'Your AI companion Maxina is ready to get to know you. Start a conversation!',            'community', 'medium', 7, 1,  60),
+---
+>       ('onboarding_maxina',           'Say hello to Vitana',           'Your AI companion Vitana is ready to get to know you. Start a conversation!',            'community', 'medium', 7, 1,  60),
