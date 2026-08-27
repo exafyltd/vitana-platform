@@ -195,6 +195,15 @@
     // Session
     sessionId: null,
     active: false,
+    // VTID-03763: bumped every time a session actually starts (SSE or WS,
+    // including a reconnect's fresh start) — see both `_s.active = true`
+    // sites. A polling loop spawned by a PRIOR session (e.g.
+    // _waitForAudioEnd's setTimeout chain) captures this value at creation
+    // and bails before touching any _s.* state if it no longer matches,
+    // instead of relying on `_s.active` — which the NEW session has already
+    // flipped back to true by the time the stale poll's next tick fires, so
+    // it can't tell "my session ended" from "a session is active" on its own.
+    _sessionGeneration: 0,
     eventSource: null,
     // BOOTSTRAP-ORB-LATENCY-PHASE3: WebSocket transport handle (null on SSE)
     ws: null,
@@ -1976,6 +1985,9 @@
 
       _s.sessionId = data.session_id;
       _s.active = true;
+      // VTID-03763: this is a fresh (or reconnected) session's connection —
+      // any poll loop still ticking from a prior connection is now stale.
+      _s._sessionGeneration++;
       // DEV-COMHU-0504 — ORB Recovery 4: as soon as we have a session id, try to
       // signal audio-pipeline readiness so the backend can release the greeting
       // the moment the client can actually play it (ack-or-3s gate server-side).
@@ -2133,6 +2145,9 @@
           _s.ws = w;
           _s.sessionId = msg.session_id;
           _s.active = true;
+          // VTID-03763: this is a fresh (or reconnected) session's connection —
+          // any poll loop still ticking from a prior connection is now stale.
+          _s._sessionGeneration++;
           // VTID-03706: the SERVER decides whether this session runs full
           // duplex, so client and server can never disagree about whether
           // frames captured during playback are gated or forwarded. Absent
@@ -2433,19 +2448,28 @@
         // Check all three signals: audioPlaying flag, scheduled sources, and queue.
         // audioPlaying has a 1s grace period, but we also directly check sources/queue
         // to catch edge cases where the flag lags behind reality.
-        (function _waitForAudioEnd() {
-          setTimeout(function () {
-            if (!_s.active) return; // Session ended
-            // VTID-NAV: Any close-pending state suppresses the listening transition.
-            // Covers signup close (legacy) AND navigator-driven navigation close.
-            if (_isClosingForNav()) return;
-            var stillPlaying = _s.audioPlaying ||
-              (_s.scheduledSources && _s.scheduledSources.length > 0) ||
-              (_s.audioQueue && _s.audioQueue.length > 0);
-            if (stillPlaying) {
-              _waitForAudioEnd(); // Still playing — check again in 300ms
-              return;
-            }
+        (function (myGen) {
+          // VTID-03763: myGen pins the session generation this poll belongs
+          // to (see _sessionGeneration on _s). A stale poll from a PRIOR
+          // session can survive past that session's teardown — its only
+          // other guard, `!_s.active`, is checked against shared state that
+          // the NEXT session resets to true before this poll's next tick,
+          // so it wrongly reads as "still my active session" and clobbers
+          // the new session's freshly-armed _s.guidedTopic/_s.guidedAutoClose.
+          (function _waitForAudioEnd() {
+            setTimeout(function () {
+              if (_s._sessionGeneration !== myGen) return; // stale poll from a prior session
+              if (!_s.active) return; // Session ended
+              // VTID-NAV: Any close-pending state suppresses the listening transition.
+              // Covers signup close (legacy) AND navigator-driven navigation close.
+              if (_isClosingForNav()) return;
+              var stillPlaying = _s.audioPlaying ||
+                (_s.scheduledSources && _s.scheduledSources.length > 0) ||
+                (_s.audioQueue && _s.audioQueue.length > 0);
+              if (stillPlaying) {
+                _waitForAudioEnd(); // Still playing — check again in 300ms
+                return;
+              }
             // VTID-03292 (#4): audio for this turn has drained. Notify the host
             // BEFORE the listening transition so a guided-topic flow can close
             // the overlay (revealing the drawer) instead of dropping to mic.
@@ -2560,7 +2584,8 @@
               })(15000);
             }
           }, 300);
-        })();
+          })();
+        })(_s._sessionGeneration);
         break;
 
       case 'interrupted':
@@ -2679,30 +2704,38 @@
           _s.signupClosing = true;
           var redirectUrl = msg.redirect || null;
           var _signupCloseAttempts = 0;
-          (function _waitForGoodbyeEnd() {
-            setTimeout(function () {
-              var stillPlaying = _s.audioPlaying ||
-                (_s.scheduledSources && _s.scheduledSources.length > 0) ||
-                (_s.audioQueue && _s.audioQueue.length > 0);
-              // Hard safety cap: 30s (100 * 300ms) so we never get stuck waiting forever
-              if (stillPlaying && _signupCloseAttempts++ < 100) {
-                _waitForGoodbyeEnd();
-                return;
-              }
-              // Small grace period so the very last audio sample plays out cleanly
+          (function (myGen) {
+            // VTID-03763: see the identical guard on _waitForAudioEnd above —
+            // a stale poll surviving into a later session must not call
+            // _hide() (or redirect) on behalf of a session it no longer
+            // belongs to.
+            (function _waitForGoodbyeEnd() {
               setTimeout(function () {
-                _hide();
-                if (redirectUrl) {
-                  if (typeof _cfg.onSignupRedirect === 'function') {
-                    try { _cfg.onSignupRedirect(redirectUrl); } catch (e) { console.error('[VTOrb] onSignupRedirect failed:', e); }
-                  } else {
-                    // Fallback: hard navigation (works in Appilix WebView for same-origin URLs)
-                    try { window.location.href = redirectUrl; } catch (e) { console.error('[VTOrb] redirect failed:', e); }
-                  }
+                if (_s._sessionGeneration !== myGen) return; // stale poll from a prior session
+                var stillPlaying = _s.audioPlaying ||
+                  (_s.scheduledSources && _s.scheduledSources.length > 0) ||
+                  (_s.audioQueue && _s.audioQueue.length > 0);
+                // Hard safety cap: 30s (100 * 300ms) so we never get stuck waiting forever
+                if (stillPlaying && _signupCloseAttempts++ < 100) {
+                  _waitForGoodbyeEnd();
+                  return;
                 }
-              }, 600);
-            }, 300);
-          })();
+                // Small grace period so the very last audio sample plays out cleanly
+                setTimeout(function () {
+                  if (_s._sessionGeneration !== myGen) return; // stale poll from a prior session
+                  _hide();
+                  if (redirectUrl) {
+                    if (typeof _cfg.onSignupRedirect === 'function') {
+                      try { _cfg.onSignupRedirect(redirectUrl); } catch (e) { console.error('[VTOrb] onSignupRedirect failed:', e); }
+                    } else {
+                      // Fallback: hard navigation (works in Appilix WebView for same-origin URLs)
+                      try { window.location.href = redirectUrl; } catch (e) { console.error('[VTOrb] redirect failed:', e); }
+                    }
+                  }
+                }, 600);
+              }, 300);
+            })();
+          })(_s._sessionGeneration);
         } else {
           // VTID-ANON-NUDGE: Turn limit — show registration prompt
           console.log('[VTOrb] Session limit reached — prompting registration');
@@ -2757,21 +2790,28 @@
           console.log('[VTOrb] orb_directive navigate to ' + navRoute + ' (screen=' + msg.screen_id + ')');
           _s.navigationPending = true;
           var _navAttempts = 0;
-          (function _waitForNavReady() {
-            setTimeout(function () {
-              var stillPlaying = _s.audioPlaying ||
-                (_s.scheduledSources && _s.scheduledSources.length > 0) ||
-                (_s.audioQueue && _s.audioQueue.length > 0);
-              // Hard safety cap: 30s (100 * 300ms) so we never wait forever
-              if (stillPlaying && _navAttempts++ < 100) {
-                _waitForNavReady();
-                return;
-              }
-              // VTID-NAV-FAST: Short grace period (200ms instead of 600ms).
-              // The aggressive source cleanup below catches any late audio,
-              // so 200ms is enough for the last buffer to finish cleanly.
+          (function (myGen) {
+            // VTID-03763: see the identical guard on _waitForAudioEnd above —
+            // a stale poll surviving into a later session must not tear down
+            // audio/navigate/hide on behalf of a session it no longer
+            // belongs to.
+            (function _waitForNavReady() {
               setTimeout(function () {
-                // Kill any remaining scheduled sources before hide
+                if (_s._sessionGeneration !== myGen) return; // stale poll from a prior session
+                var stillPlaying = _s.audioPlaying ||
+                  (_s.scheduledSources && _s.scheduledSources.length > 0) ||
+                  (_s.audioQueue && _s.audioQueue.length > 0);
+                // Hard safety cap: 30s (100 * 300ms) so we never wait forever
+                if (stillPlaying && _navAttempts++ < 100) {
+                  _waitForNavReady();
+                  return;
+                }
+                // VTID-NAV-FAST: Short grace period (200ms instead of 600ms).
+                // The aggressive source cleanup below catches any late audio,
+                // so 200ms is enough for the last buffer to finish cleanly.
+                setTimeout(function () {
+                  if (_s._sessionGeneration !== myGen) return; // stale poll from a prior session
+                  // Kill any remaining scheduled sources before hide
                 _s.audioQueue = [];
                 if (_s.scheduledSources && _s.scheduledSources.length > 0) {
                   for (var _si = 0; _si < _s.scheduledSources.length; _si++) {
@@ -2803,8 +2843,9 @@
                   catch (e) { console.error('[VTOrb] navigation fallback failed:', e); }
                 }
               }, 200);
-            }, 300);
-          })();
+              }, 300);
+            })();
+          })(_s._sessionGeneration);
         } else if (msg.directive === 'end_teaching_session') {
           // VTID-03112 (T2 / DEV-COMHU-03115): the LLM called `end_teaching_session` after
           // delivering its farewell line. Close the overlay gracefully —
@@ -4086,8 +4127,15 @@
   // never truncated).
   function _endGuidedTopicTeaching(topicId, reason) {
     var attempts = 0;
+    // VTID-03763: pin the session generation this poll belongs to at the
+    // moment teaching-end was signalled — see the identical guard on
+    // _waitForAudioEnd. Without it, a stale poll surviving into a later
+    // session could _hide() / fire onGuidedTopicTeachingEnd for a topic
+    // that isn't even the one the new session is teaching.
+    var myGen = _s._sessionGeneration;
     (function _waitForGuidedTeachingAudioDrained() {
       setTimeout(function () {
+        if (_s._sessionGeneration !== myGen) return; // stale poll from a prior session
         var stillPlaying = _s.audioPlaying ||
           (_s.scheduledSources && _s.scheduledSources.length > 0) ||
           (_s.audioQueue && _s.audioQueue.length > 0);
@@ -4100,6 +4148,7 @@
         // Short grace period for the last buffer to finish cleanly, same
         // 200ms the navigate directive uses.
         setTimeout(function () {
+          if (_s._sessionGeneration !== myGen) return; // stale poll from a prior session
           try { _hide(); }
           catch (e) { console.error('[VTOrb] _hide on end_guided_topic_teaching failed:', e); }
           if (typeof _cfg.onGuidedTopicTeachingEnd === 'function') {
