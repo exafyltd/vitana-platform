@@ -110,6 +110,25 @@ since the 2026-08-25 pass (now a pooler tenant/role error, previously an
 IPv6 network error), worth relaying since the actual fix action may differ.
 **Phase 0 is not closed.**
 
+**2026-08-28 update:** the "only 3 done so far" row-count gap above is
+closed — this session ran the exact-count comparison across **all 581
+shared tables** (HTTPS-based: RDS Data API + Supabase `execute_sql`, no
+raw-Postgres access needed). 500/581 match exactly; 79 are the same
+CDC-down gap, now precisely quantified per-table; 2 (`voice_healing_history`,
+`thread_presence`/`community_search_history`, negative deltas) are a new,
+flagged-not-resolved anomaly (Aurora ahead of Supabase, likely un-replicated
+Supabase-side deletes). **One real defect found and fixed, live, verified:**
+`memory_audit_log`'s 13 monthly partitions existed on Aurora with real data
+but were never `ATTACH PARTITION`ed to the parent (a `created_at`
+`timestamptz` vs `timestamptz(6)` typmod mismatch blocked it) — parent
+silently returned 0 rows instead of 9,000+. Fixed both the type mismatch
+and the attachment on all 13; parent now correctly reports 9,734 rows.
+Full detail in `docs/AURORA-PHASE0-RECONCILIATION-2026-08-27.md`'s
+"Addendum, 2026-08-28" section. Checksums (criterion 2's other half),
+criterion 3 (re-runnable job), and criterion 4 (still blocked on the same
+Supabase-dashboard fix) remain open — **Phase 0 is still not closed**, but
+its scope is now precisely bounded rather than partially unmeasured.
+
 ---
 
 ### Decision recorded 2026-08-04
