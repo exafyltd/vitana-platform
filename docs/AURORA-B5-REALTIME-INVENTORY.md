@@ -259,3 +259,34 @@ string."** That cost is a real input to the option (a) vs (b) call, not a
 reason to default to (b) — a gateway-owned relay for 3 hot tables is its
 own real build, not obviously cheaper than one reboot plus running an
 existing, battle-tested open-source service.
+
+## Addendum, 2026-08-28 — `exafyltd/vitana-mobile` checked: zero Supabase usage, out of scope
+
+This doc's own "Not done in this pass" section (above) flagged that
+`exafyltd/vitana-mobile` was never checked for independent Realtime
+subscriptions. Checked directly this session (the repo is a local clone,
+one commit, `pushed_at: 2025-10-22` — effectively unmaintained relative to
+this migration's timeline).
+
+**Zero `supabase_flutter` usage of any kind.** `pubspec.yaml` doesn't even
+depend on the package; `grep -rn ".channel(" lib/` and `grep -rn
+"Supabase\.instance" lib/` both return zero hits. The app is Firebase-based
+(`firebase_core`, `firebase_auth`, `google_sign_in`), not Supabase-based.
+**This closes the gap with a real answer, not just "checked and found
+nothing to check"** — there is no Realtime surface in this app to migrate,
+full stop. Confirmed a `supabase/migrations/` directory exists in the repo
+root (one file, `20251022_oasis_ai_models.sql`) — a leftover from local
+Supabase CLI scaffolding, not evidence of a running client integration.
+
+**Unrelated but important finding from the same pass, flagged separately
+in conversation (not detailed here — no secret material belongs in a
+docs file):** this repo has a live-looking GCP service-account private key
+hardcoded in source (`lib/modules/home/mixins/speech_recogination_mixin.dart`,
+committed since 2025-10-22), authenticating Google Cloud Speech-to-Text
+under a GCP project (`vitana-435310`) this migration effort's docs have
+never named — a different project than the decommissioned
+`lovable-vitana-vers1`. Out of scope for B5 and out of scope for this
+session to remediate (needs GCP console access to rotate/revoke), but
+recorded here so the "vitana-mobile: not checked" gap doesn't get closed
+without this surfacing. See conversation history for the disclosure to the
+platform owner.

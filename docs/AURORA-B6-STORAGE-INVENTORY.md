@@ -125,3 +125,13 @@ already treats this as a distinct, reported skip
 (`skipped_private_no_key`), not a silent drop. `STORAGE_PROVIDER` has not
 been flipped to `s3` anywhere — that remains a deliberate, separate
 operator action for once the private-bucket gap closes.
+
+## Addendum, 2026-08-28 — `exafyltd/vitana-mobile` checked: zero Storage usage, out of scope
+
+Same gap this doc flagged for B5, closed the same way: `exafyltd/vitana-mobile`
+has zero `supabase_flutter` dependency at all (no `.storage.from(`, no
+`Supabase.instance` anywhere in `lib/`) — it's a Firebase-based app, not a
+Supabase consumer. Nothing to migrate here for Storage either. See the B5
+doc's matching addendum for the one unrelated finding from the same pass
+(a hardcoded GCP credential in that repo, flagged separately to the
+platform owner, not detailed here).
