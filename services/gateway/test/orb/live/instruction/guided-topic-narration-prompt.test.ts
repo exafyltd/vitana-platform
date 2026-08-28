@@ -11,6 +11,8 @@
  */
 
 import {
+  buildGuidedTopicNarrationOpenerLine,
+  buildGuidedTopicSpokenLesson,
   buildGuidedTopicPostNarrationLine,
   buildGuidedTopicNarrationBlock,
 } from '../../../../src/orb/live/instruction/guided-topic-narration-prompt';
@@ -227,5 +229,65 @@ describe('buildGuidedTopicNarrationBlock — legacy model-narrated branch (no na
     // BASE_CONTENT has a practice_target set, so the "GUIDE them to the
     // practice" line is the one that must precede it.
     expect(en.indexOf('GUIDE them to the practice')).toBeLessThan(en.indexOf('end_guided_topic_teaching'));
+  });
+});
+
+// VTID-03790 — live diff of a real blocked (guided) vs succeeding (ordinary)
+// session's literal Nova system-instruction text (via the VTID-03787
+// nova_instruction_debug_dump diag stage) found a pattern unique to the
+// guided path and not covered by VTID-03785/03786: the topic title and
+// practice target were wrapped in German guillemet quotes (or, in English,
+// plain straight quotes) inside text that `buildVertexWakeBriefBlock`
+// (live-session-controller.ts) ALSO wraps in an outer straight-quote
+// "SPOKEN FIRST UTTERANCE — REQUIRED VERBATIM" template — producing doubly
+// nested quotation. This matches a documented Nova content-filter
+// sensitivity to persona-voiced quoted dialogue/exemplars (the same class
+// nova-instruction-sanitizer.ts already strips from the IDENTITY LOCK block,
+// and the same class day-close's buildDayCloseOpenerLine rewrite avoided).
+// Fix: drop the quote marks entirely — spoken/instructional text reads fine
+// without them, and the topic title / practice target / short exemplar
+// response words no longer wrap in ANY quote character (guillemet or
+// straight), on either language branch.
+describe('VTID-03790: no nested quotation marks around dynamic content (Nova content-filter fix)', () => {
+  const NO_QUOTE_CHARS = /["„”]/;
+
+  it('buildGuidedTopicNarrationOpenerLine never quotes the topic title', () => {
+    expect(buildGuidedTopicNarrationOpenerLine('Was ist Vitanaland', 'de')).not.toMatch(NO_QUOTE_CHARS);
+    expect(buildGuidedTopicNarrationOpenerLine('Was ist Vitanaland', 'en')).not.toMatch(NO_QUOTE_CHARS);
+  });
+
+  it('buildGuidedTopicSpokenLesson fallback (no voice_script) never quotes the topic title', () => {
+    const noScript: GuidedTopicNarrationContent = { ...BASE_CONTENT, voice_script: '' };
+    expect(buildGuidedTopicSpokenLesson(noScript, 'de')).not.toMatch(NO_QUOTE_CHARS);
+    expect(buildGuidedTopicSpokenLesson(noScript, 'en')).not.toMatch(NO_QUOTE_CHARS);
+  });
+
+  it('buildGuidedTopicPostNarrationLine never quotes the topic title (this is the literal SPOKEN FIRST UTTERANCE text)', () => {
+    expect(buildGuidedTopicPostNarrationLine('Was ist Vitanaland', 'de', { hasPracticeTarget: true })).not.toMatch(NO_QUOTE_CHARS);
+    expect(buildGuidedTopicPostNarrationLine('Was ist Vitanaland', 'de', { hasPracticeTarget: false })).not.toMatch(NO_QUOTE_CHARS);
+    expect(buildGuidedTopicPostNarrationLine('Was ist Vitanaland', 'en', { hasPracticeTarget: true })).not.toMatch(NO_QUOTE_CHARS);
+    expect(buildGuidedTopicPostNarrationLine('Was ist Vitanaland', 'en', { hasPracticeTarget: false })).not.toMatch(NO_QUOTE_CHARS);
+  });
+
+  it('buildGuidedTopicNarrationBlock (post-narration branch) never quotes topic title, practice target, or the ja/mach das/okay exemplars', () => {
+    const narratedContent: GuidedTopicNarrationContent = {
+      ...BASE_CONTENT,
+      narrationAudio: { audioB64: 'YQ==', sampleRateHz: 16000 },
+    };
+    expect(buildGuidedTopicNarrationBlock(narratedContent, 'de')).not.toMatch(NO_QUOTE_CHARS);
+    expect(buildGuidedTopicNarrationBlock(narratedContent, 'en')).not.toMatch(NO_QUOTE_CHARS);
+  });
+
+  it('buildGuidedTopicNarrationBlock (legacy teach branch) never quotes topic title, practice target, or the yes/sure/okay exemplars', () => {
+    expect(buildGuidedTopicNarrationBlock(BASE_CONTENT, 'de')).not.toMatch(NO_QUOTE_CHARS);
+    expect(buildGuidedTopicNarrationBlock(BASE_CONTENT, 'en')).not.toMatch(NO_QUOTE_CHARS);
+  });
+
+  it('still names the topic and practice target after the quote marks are removed (meaning preserved)', () => {
+    const de = buildGuidedTopicNarrationBlock(BASE_CONTENT, 'de');
+    expect(de).toContain(BASE_CONTENT.topic_title);
+    expect(de).toContain(BASE_CONTENT.practice_target);
+    const postLine = buildGuidedTopicPostNarrationLine('Was ist Vitanaland', 'de', { hasPracticeTarget: true });
+    expect(postLine).toContain('Was ist Vitanaland');
   });
 });
