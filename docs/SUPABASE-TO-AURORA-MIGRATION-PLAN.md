@@ -269,13 +269,31 @@ cheaply by providing a compatible `auth.uid()` function in Aurora reading from a
 session GUC set per connection. That last trick is what makes 557 policies port
 unchanged; without it they must each be rewritten.
 
-**B5 — Realtime.** 79 subscriptions. Assess how many are genuinely live-critical
-vs. polling that could be simplified before rebuilding them.
+**B5 — Realtime.** 79 subscriptions (live-corrected to 60 in-frontend /
+39 files, gateway has zero — see `docs/AURORA-B5-REALTIME-INVENTORY.md`).
+Live Aurora write-activity data narrows the "how many are genuinely
+live-critical" question to 3 tables (`user_activity_log`,
+`user_notifications`, `chat_messages`) out of 30 — see the doc's 2026-08-28
+addenda, which also live-verify that Supabase's own `realtime` server
+cannot attach to Aurora today (`wal_level=replica`,
+`rds.logical_replication=off`) without a cluster reboot. Mechanism choice
+(reboot + run `realtime` vs. a gateway-owned relay) for those 3 tables is
+still an open decision, not resolved by either inventory pass.
 
 **B6 — Storage.** 23 call sites → S3. Smallest workstream.
 
-**B7 — Edge functions.** 74 Deno functions → Lambda/ECS. Independent of the DB
-work and can proceed in parallel.
+**B7 — Edge functions.** 74 Deno functions → Lambda/ECS
+(`docs/AURORA-B7-EDGE-FUNCTIONS-INVENTORY.md`). First real cut shipped: a
+gateway-owned Bedrock bridge (`POST /api/v1/ai-bridge/generate`,
+vitana-platform PR #3087) plus a drop-in `_shared/bedrock-bridge-client.ts`
+(vitana-v1 PR #1051) closes the 23-of-74-functions "calls Gemini/Vertex
+directly" violation for the 6 frontend-reachable, `gemini-client.ts`-based
+functions without needing Lambda (IAM-denied to this session) — wired
+behind an `AI_BRIDGE_PROVIDER` flag on one function
+(`generate-enhanced-recommendations`) so far, defaulting to unchanged
+behavior. Remaining: the other 5 functions, plus the 2
+`generateEmbedding`-dependent functions and `generate-event-image`'s
+Vertex Imagen call, neither of which this bridge covers.
 
 **B8 — Cutover + rollback.** Per Phase 4 below.
 
