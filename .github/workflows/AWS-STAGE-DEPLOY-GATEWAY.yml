@@ -431,6 +431,22 @@ jobs:
         # "off" (or removal), no code revert -- with the flag off,
         # handleWsPrewarmMessage returns immediately and every session
         # takes the unmodified cold-connect path.
+        # VTID-03791 — FEATURE_ORB_WS_TRANSPORT_ENV pinned to "staging-only"
+        # here too. Live verification of VTID-03779 (real Playwright taps
+        # against this same staging stack) found the prewarm handshake
+        # completing correctly (prewarm sent -> prewarm_ready ack) but the
+        # reuse branch never actually engaging on a default tap: GET
+        # /live/transport (orb-live.ts) told every browser to use SSE
+        # because this flag was unset (isFeatureLive default is "off"), and
+        # SSE sessions never call _sessionStartWs at all -- the prewarmed
+        # Nova connection just sat unclaimed until its 90s TTL expired. This
+        # flag is VTID-03471's own (pre-existing, unrelated) transport
+        # kill switch; pinning it here does not change any code, it only
+        # makes WS the transport real staging taps get, so VTID-03779's
+        # prewarm/reuse mechanism is no longer dormant behind a config gap.
+        # Rollback is this value -> "off" (or removal); with it off every
+        # session reverts to the pre-VTID-03471 SSE downstream, byte-for-
+        # byte, same as before either of these VTIDs existed.
         # VTID-03706 — ORB full-duplex voice: the mic stays
         # open while Vitana speaks so the native Nova Sonic
         # barge-in can fire. STAGING ONLY. Deliberately not
@@ -518,6 +534,7 @@ jobs:
                                                 "FEATURE_ORB_FAST_START_ENV",
                                                 "FEATURE_ORB_BRAIN_CACHE_ENV",
                                                 "FEATURE_ORB_NOVA_PREWARM_ENV",
+                                                "FEATURE_ORB_WS_TRANSPORT_ENV",
                                                 "ORB_FULL_DUPLEX_ENABLED",
                                                 "ORB_DAY_CLOSE_RUNG_ENABLED",
                                                 "ORB_LOG_NOVA_INSTRUCTION_DEBUG",
@@ -539,6 +556,7 @@ jobs:
                           {name:"FEATURE_ORB_FAST_START_ENV", value:"staging+prod"},
                           {name:"FEATURE_ORB_BRAIN_CACHE_ENV", value:"staging+prod"},
                           {name:"FEATURE_ORB_NOVA_PREWARM_ENV", value:"staging-only"},
+                          {name:"FEATURE_ORB_WS_TRANSPORT_ENV", value:"staging-only"},
                           {name:"ORB_FULL_DUPLEX_ENABLED", value:"true"},
                           {name:"ORB_DAY_CLOSE_RUNG_ENABLED", value:"true"},
                           {name:"ORB_LOG_NOVA_INSTRUCTION_DEBUG", value:"true"},
