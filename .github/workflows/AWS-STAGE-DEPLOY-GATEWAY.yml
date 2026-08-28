@@ -418,6 +418,19 @@ jobs:
         # own note (further down, near the SEC_JWT resolution loop) already
         # warns about for jq-embedded comments. Keep every comment about the
         # jq body out here instead of risking it again.
+        # VTID-03779 — Nova session pre-establishment ("warm start"): the
+        # widget opens the WS transport and asks the gateway to warm a real
+        # Nova Sonic connection (real system instruction, real tool
+        # catalog) right after login, before the ORB overlay is ever
+        # shown; a real session tap then claims that already-open
+        # connection instead of cold-connecting. STAGING ONLY, same
+        # pattern as FEATURE_ORB_SAFE_FAST_GREETING_ENV above -- deliberately
+        # NOT added to AWS-PROD-DEPLOY-GATEWAY.yml yet: this needs a real
+        # staging measurement against the <3s cold-start / ~1.5s warm-start
+        # targets before prod is a question. Rollback is this value ->
+        # "off" (or removal), no code revert -- with the flag off,
+        # handleWsPrewarmMessage returns immediately and every session
+        # takes the unmodified cold-connect path.
         # VTID-03706 — ORB full-duplex voice: the mic stays
         # open while Vitana speaks so the native Nova Sonic
         # barge-in can fire. STAGING ONLY. Deliberately not
@@ -504,6 +517,7 @@ jobs:
                                                 "FEATURE_LATENCY_TELEMETRY_ENV",
                                                 "FEATURE_ORB_FAST_START_ENV",
                                                 "FEATURE_ORB_BRAIN_CACHE_ENV",
+                                                "FEATURE_ORB_NOVA_PREWARM_ENV",
                                                 "ORB_FULL_DUPLEX_ENABLED",
                                                 "ORB_DAY_CLOSE_RUNG_ENABLED",
                                                 "ORB_LOG_NOVA_INSTRUCTION_DEBUG",
@@ -524,6 +538,7 @@ jobs:
                           {name:"FEATURE_LATENCY_TELEMETRY_ENV", value:"staging-only"},
                           {name:"FEATURE_ORB_FAST_START_ENV", value:"staging+prod"},
                           {name:"FEATURE_ORB_BRAIN_CACHE_ENV", value:"staging+prod"},
+                          {name:"FEATURE_ORB_NOVA_PREWARM_ENV", value:"staging-only"},
                           {name:"ORB_FULL_DUPLEX_ENABLED", value:"true"},
                           {name:"ORB_DAY_CLOSE_RUNG_ENABLED", value:"true"},
                           {name:"ORB_LOG_NOVA_INSTRUCTION_DEBUG", value:"true"},

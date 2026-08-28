@@ -207,6 +207,14 @@
     eventSource: null,
     // BOOTSTRAP-ORB-LATENCY-PHASE3: WebSocket transport handle (null on SSE)
     ws: null,
+    // VTID-03779: a WS socket opened EARLY (login/setAuth, before the ORB
+    // overlay ever shows) on which a 'prewarm' message was sent. Kept fully
+    // separate from `ws` until _sessionStartWs claims it — nothing else in
+    // the widget should ever read/write these three fields.
+    prewarmWs: null,
+    prewarmWsReady: false,
+    _prewarmWsInFlight: false,
+    _prewarmWsGen: 0,
 
     // Audio capture (16kHz mic)
     captureCtx: null,
@@ -1280,6 +1288,72 @@
       .catch(function () { /* best-effort — never surfaces */ });
   }
 
+  // VTID-03779: open the WS transport EARLY (right after login, before the
+  // ORB overlay is ever shown) and ask the gateway to warm a real Nova Sonic
+  // connection on it — full persona + full tool catalog, the exact expensive
+  // payload a cold session-start otherwise pays for at tap time. When the
+  // user later taps ORB, _sessionStartWs reuses THIS already-open socket
+  // instead of opening a fresh one, so the 'start' message lands on a
+  // connection the server has already upgraded to a live Nova stream (see
+  // consumePrewarmedNovaSession server-side).
+  //
+  // Deliberately isolated from `_s.ws` until the moment of reuse: any
+  // failure here (auth race, network blip, the server-side feature flag
+  // being off, the prewarm going unclaimed past its TTL) just means
+  // _sessionStartWs falls through to its normal cold-connect path — zero
+  // behavior change for every case this doesn't apply to. Guarded by
+  // _prewarmWsInFlight so overlapping init()/setAuth() calls never open a
+  // second socket, and safe to call again after a prior prewarm was already
+  // claimed or dropped (prewarmWs is null in both cases).
+  function _prewarmNovaWs() {
+    if (!_cfg.token) return; // anonymous — nothing to warm, matches _prewarmBootstrap
+    if (_s.active || _s.ws) return; // a real session is already running/starting
+    if (_s._prewarmWsInFlight) return;
+    if (_s.prewarmWs && _s.prewarmWs.readyState === 1) return; // already warm/warming
+    var url = _cfg.gw.replace(/^http/, 'ws') + '/api/v1/orb/live/ws';
+    url += '?token=' + encodeURIComponent(_cfg.token);
+    var myGen = _s._prewarmWsGen;
+    var w;
+    try { w = new WebSocket(url); } catch (e) { return; }
+    _s._prewarmWsInFlight = true;
+    function stale() { return _s._prewarmWsGen !== myGen; }
+    function drop() {
+      if (stale()) return; // superseded by a newer identity — that gen already cleaned up
+      _s._prewarmWsInFlight = false;
+      if (_s.prewarmWs === w) { _s.prewarmWs = null; _s.prewarmWsReady = false; }
+    }
+    w.onmessage = function (event) {
+      if (stale()) { try { w.close(); } catch (e) { /* noop */ } return; } // identity changed mid-handshake — never claim on its behalf
+      var msg;
+      try { msg = JSON.parse(event.data); } catch (e) { return; }
+      if (msg.type === 'connected') {
+        _s._prewarmWsInFlight = false;
+        _s.prewarmWs = w;
+        // Codex review (PR #3218): prewarmWsReady must NOT flip true here —
+        // this only means the message was SENT, not that the server has
+        // actually finished the real Nova connect() and registered it
+        // (registerPrewarmedNovaSession, several seconds away). Marking
+        // ready this early let a 'start' racing in during that window
+        // reuse a socket with nothing behind it server-side yet, silently
+        // falling to a cold connect while orphaning the in-flight prewarm.
+        // Wait for the server's own 'prewarm_ready' ack below instead.
+        try { w.send(JSON.stringify({ type: 'prewarm' })); }
+        catch (e) { drop(); }
+        return;
+      }
+      if (msg.type === 'prewarm_ready') {
+        if (_s.prewarmWs === w) _s.prewarmWsReady = true;
+        return;
+      }
+      // Any other message arriving before this socket is claimed by a real
+      // session start is unexpected — there is no active session for it to
+      // belong to yet, so it is deliberately ignored rather than routed
+      // into _handleMessage.
+    };
+    w.onclose = drop;
+    w.onerror = drop;
+  }
+
   // Play a cached alert clip. Returns the BufferSource so the caller can chain
   // an onended handler (used by _clearDisconnect to ring the ready beep after
   // the recovery phrase). Returns null if the clip is missing — caller is
@@ -2212,10 +2286,22 @@
   // post-handshake traffic funnels into the shared _handleMessage.
   function _sessionStartWs(startPayload) {
     return new Promise(function (resolve, reject) {
-      var url = _cfg.gw.replace(/^http/, 'ws') + '/api/v1/orb/live/ws';
-      if (_cfg.token) url += '?token=' + encodeURIComponent(_cfg.token);
+      // VTID-03779: claim an already-open, already-prewarmed socket if one
+      // is available instead of opening a fresh connection — this is the
+      // "cold start becomes a warm start" reuse point. Any prewarm
+      // bookkeeping is cleared unconditionally below so a later prewarm
+      // attempt never mistakes a socket now owned by a real session for a
+      // still-available prewarm candidate.
+      var reused = !!(_s.prewarmWs && _s.prewarmWsReady && _s.prewarmWs.readyState === 1);
       var w;
-      try { w = new WebSocket(url); } catch (e) { return reject(e); }
+      if (reused) {
+        w = _s.prewarmWs;
+      } else {
+        var url = _cfg.gw.replace(/^http/, 'ws') + '/api/v1/orb/live/ws';
+        if (_cfg.token) url += '?token=' + encodeURIComponent(_cfg.token);
+        try { w = new WebSocket(url); } catch (e) { return reject(e); }
+      }
+      if (_s.prewarmWs === w) { _s.prewarmWs = null; _s.prewarmWsReady = false; }
       var settled = false;
       // Same 8s start budget as the SSE fetch (VTID-01987 rationale).
       var startTimer = setTimeout(function () {
@@ -2302,6 +2388,16 @@
         _attemptReconnect();
       };
       w.onerror = function () { /* onclose carries the recovery decision */ };
+
+      // VTID-03779: a reused socket already completed the 'connected'
+      // handshake during prewarm — that message will never arrive again on
+      // THIS socket, so send 'start' immediately instead of waiting for it.
+      // A fresh socket is unaffected: it waits for 'connected' exactly as
+      // before (see the onmessage handler above).
+      if (reused) {
+        try { w.send(JSON.stringify(Object.assign({ type: 'start' }, startPayload))); }
+        catch (e) { /* onclose covers */ }
+      }
     });
   }
 
@@ -4088,6 +4184,25 @@
     _s.conversationId = null;
     _s._preDisconnectStage = null;
     _s._reconnectCount = 0;
+    // VTID-03779: a prewarmed WS socket is authenticated as, and carries a
+    // Nova session built for, whichever identity was current when it was
+    // opened. Account switch / logout must never let the NEXT identity's
+    // session reuse a socket opened (and prewarmed server-side) under the
+    // PREVIOUS one — close it outright rather than leave it for
+    // _sessionStartWs to find. Bumping the generation counter also
+    // invalidates a prewarm attempt that is still mid-handshake (before its
+    // own 'connected' message arrives): _prewarmNovaWs captures the
+    // generation it started with and checks it before ever writing to
+    // _s.prewarmWs, so a late-arriving handshake from the OLD identity can
+    // no longer stomp over whatever the NEW identity's own prewarm sets.
+    _s._prewarmWsGen = (_s._prewarmWsGen || 0) + 1;
+    if (_s.prewarmWs) {
+      try { _s.prewarmWs.onopen = null; _s.prewarmWs.onmessage = null; _s.prewarmWs.onerror = null; _s.prewarmWs.onclose = null; } catch (e) { /* noop */ }
+      try { _s.prewarmWs.close(); } catch (e) { /* noop */ }
+    }
+    _s.prewarmWs = null;
+    _s.prewarmWsReady = false;
+    _s._prewarmWsInFlight = false;
   }
 
   function _refreshToken() {
@@ -4795,6 +4910,11 @@
       // orb tap skips the 400-800ms context build on the
       // click-to-first-audio path. Anonymous = server-side no-op.
       _prewarmBootstrap();
+      // VTID-03779: also open (and prewarm) the WS transport itself, so a
+      // cold start becomes a warm one — see _prewarmNovaWs's own comment.
+      // No-op for anonymous callers and whenever the WS transport isn't in
+      // play; the real session start falls back to a cold connect either way.
+      _prewarmNovaWs();
       // VTID-03471: resolve the server's transport preference (kill switch)
       // in parallel with the prewarm. Unauthenticated, so anonymous sessions
       // get it too.
@@ -4851,6 +4971,14 @@
       // BOOTSTRAP-ORB-LATENCY-PHASE2: warm the (possibly new) identity's
       // bootstrap context so the next orb tap starts fast.
       _prewarmBootstrap();
+      // VTID-03779 (Codex review, PR #3218): also (re-)warm the Nova
+      // socket here, not just in init(). A host following the documented
+      // reactive-auth pattern calls init() BEFORE login resolves — that
+      // call's own _prewarmNovaWs() is a no-op (no token yet) — so setAuth
+      // is the ONLY place the Nova prewarm ever actually fires for that
+      // flow. Missing this meant the standard reactive-login path never
+      // warmed a connection at all.
+      _prewarmNovaWs();
     },
 
     // DEV-COMHU-0502: explicit logout / account-switch / "start over". Tears

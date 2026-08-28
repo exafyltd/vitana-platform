@@ -1863,7 +1863,9 @@ import {
   logNovaSonicVoiceFallbackOnce,
 } from '../orb/live/voice/nova-sonic-voice';
 import type { VoiceProviderName } from '../orb/live/upstream/provider-name';
-import { prewarmNovaSonicBedrock } from '../orb/live/upstream/nova-sonic-live-client';
+import { prewarmNovaSonicBedrock, NovaSonicLiveClient } from '../orb/live/upstream/nova-sonic-live-client';
+import { consumePrewarmedNovaSession, registerPrewarmedNovaSession } from '../orb/live/prewarm/nova-session-prewarm';
+import { getUserLocale } from '../i18n/server-locale';
 import { sanitizeInstructionForNova } from '../orb/live/upstream/nova-instruction-sanitizer';
 import { startNovaSonicKeepWarm, startNovaSonicModelWarm } from '../orb/live/upstream/nova-sonic-keepwarm';
 import { createUpstreamClient } from '../orb/live/upstream/upstream-client-factory';
@@ -8137,56 +8139,178 @@ async function connectToLiveAPI(
         // still resolves the client itself, so correctness does not depend
         // on this finishing, or finishing first.
         void prewarmNovaSonicBedrock(novaCfg).catch(() => false);
-        const envelope = (await buildOrbVertexSetupEnvelope()) as { setup?: Record<string, any> };
-        const setup = envelope.setup ?? {};
-        // Nova's RAI content filter rejects the stream over the IDENTITY
-        // LOCK block's impersonation-denial list (measured via bisect) —
-        // swap it for the Nova-safe equivalent. Vertex is untouched.
-        const { text: novaSystemInstruction, replaced: novaLockReplaced } =
-          sanitizeInstructionForNova(setup.system_instruction?.parts?.[0]?.text ?? '');
-        if (novaLockReplaced) {
-          emitDiag(session, 'nova_instruction_sanitized', { provider: 'nova_sonic', block: 'identity_lock' });
-        }
-        const novaTools: Array<Record<string, unknown>> = Array.isArray(setup.tools)
-          ? (setup.tools as Array<Record<string, unknown>>)
-          : [];
-        const novaPersona = ((session as any).activePersona as string) || 'vitana';
-        // VTID-03682: was `resolveNovaSonicVoice(...) ?? 'tina'`. That `??`
-        // silently served Nova's GERMAN voice to every language with no native
-        // Nova voice (ru, pl, sr, ar, zh) — no log, no telemetry, nothing a
-        // reader or a dashboard could see. Same shape as VTID-03578's
-        // `?? POLLY_VOICES['en']`. The voice served is UNCHANGED; the
-        // substitution is now observable.
-        const novaVoiceResolution = resolveNovaSonicVoiceOrFallback({
-          language: session.lang || 'en',
-          persona: novaPersona,
-        });
-        const novaVoice = novaVoiceResolution.voice;
-        if (novaVoiceResolution.fallback) {
-          logNovaSonicVoiceFallbackOnce(session.lang || 'en', novaVoice);
-          // Per-session diag as well as the once-per-process log: the log says
-          // "this deployment substitutes for Russian", the diag says how often
-          // and for whom, which is what makes the rate measurable.
-          //
-          // LATCHED PER SESSION, and the latch is load-bearing: this function is
-          // re-entered by `attemptTransparentReconnect()` — for a genuine
-          // reconnect AND for every planned Nova stream rotation
-          // (`_novaRotationInFlight`), which is routine, not exceptional. Without
-          // the latch a single Russian session emits one row per rotation, so a
-          // metric meant to count AFFECTED SESSIONS would instead count
-          // reconnects and read high for reasons unrelated to language coverage.
-          // That is the same defect this VTID exists to remove — a signal that
-          // does not mean what its name says — reintroduced one layer up.
-          if (!(session as any)._novaVoiceFallbackDiagEmitted) {
-            (session as any)._novaVoiceFallbackDiagEmitted = true;
-            emitDiag(session, 'nova_voice_fallback', {
+
+        // Rotation (Bedrock caps a bidirectional stream at 8 minutes): open
+        // the REPLACEMENT stream first (same connect path → same context/
+        // history rebuild + persona voice re-resolution), switch the session
+        // to it, then close the old stream. The browser WS/SSE stays
+        // connected and no greeting replays (greetingSent remains true).
+        let rotateNovaStream: ((reason: NovaRotationReason) => Promise<void>) | null = null;
+
+        // These four close over `session`/`rotateNovaStream` only — identical
+        // regardless of whether novaClient below is freshly constructed or a
+        // reused warm-started one, so they are declared once and either
+        // handed to createUpstreamClient's constructor-time deps (cold path)
+        // or spliced into an already-built client via rebindSessionDeps
+        // (warm path, see VTID-03779 below).
+        const handleNovaRotationDue = () => {
+          void rotateNovaStream?.('provider_stream_rotation');
+        };
+        // BOOTSTRAP-NOVA-IDLE-ROTATION: the fail-safe. Fires only when input
+        // has genuinely stopped reaching Bedrock for ~240s, which in a
+        // healthy session never happens (the 250ms silence keepalive keeps
+        // the clock pinned). Same open-before-close swap as the wall-clock
+        // rotation — the only difference is why it ran.
+        const handleNovaIdleDeadlineApproaching = ({ msSinceLastInput }: { msSinceLastInput: number }) => {
+          console.warn(
+            `[BOOTSTRAP-NOVA-IDLE-ROTATION] Session ${session.sessionId} has accepted no input for ` +
+              `${Math.round(msSinceLastInput / 1000)}s — approaching Bedrock's ~295s idle deadline. ` +
+              `Rotating pre-emptively. If this fires in production the silence keepalive has stopped ` +
+              `feeding frames; that is the real bug to chase, this is only the backstop.`,
+          );
+          emitDiag(session, 'nova_idle_deadline_approaching', {
+            provider: 'nova_sonic',
+            ms_since_last_input: msSinceLastInput,
+          });
+          void emitOasisEvent({
+            type: 'orb.upstream.nova.idle_deadline_approaching',
+            vtid: 'BOOTSTRAP-NOVA-IDLE-ROTATION',
+            payload: {
+              session_id: session.sessionId,
               provider: 'nova_sonic',
-              lang: session.lang || 'en',
-              voice: novaVoice,
-              reason: 'no_native_nova_voice',
-            });
+              ms_since_last_input: msSinceLastInput,
+            } as any,
+          } as any).catch(() => { /* best-effort */ });
+          void rotateNovaStream?.('idle_deadline_failsafe');
+        };
+        // VTID-03764 — diagnostic only. Bisects the multi-second gap between
+        // greeting_sent and audio_out_first_chunk. A one-shot "first
+        // normalized event" was tried first and found useless: real staging
+        // measurement showed it fires on a connection handshake `usage`
+        // event that arrives BEFORE the greeting prompt is even sent,
+        // telling us nothing about the silence that follows.
+        // onEarlyNormalizedEvent instead marks a short real timeline (up to
+        // EARLY_EVENT_CAP events) so a genuine gap between "Nova acked the
+        // connection" and "Nova started producing the response" is
+        // actually visible.
+        const handleNovaFirstRawChunk = ({ byteLength }: { byteLength: number }) => {
+          session.establishLatency?.mark('nova_first_raw_chunk', { byte_length: byteLength });
+        };
+        const handleNovaEarlyNormalizedEvent = ({ kind, index }: { kind: string; index: number }) => {
+          session.establishLatency?.mark('nova_early_event', { kind, index });
+        };
+
+        // VTID-03779 — session pre-establishment ("warm start"). Real staging
+        // measurement (VTID-03764) found authenticated sessions pay ~5s of
+        // Nova connect+setup time that anonymous sessions (near-zero context,
+        // a 1-2 tool catalog instead of the full authenticated set) don't —
+        // the gap tracks with the size of the system instruction + tool
+        // catalog Nova has to process at connect time. A client warmed at
+        // login (before the ORB overlay was ever opened, see the `prewarm`
+        // WS message handler) already has the REAL system instruction and
+        // REAL tool catalog sent — claiming it here skips that cost entirely
+        // instead of trimming the catalog, which would risk silently making
+        // a real tool uncallable. Keyed by user_id, not this session_id,
+        // because the prewarm ran before this session existed. Falls straight
+        // through to the unmodified cold-connect path whenever there is
+        // nothing to claim (never prewarmed, expired, already claimed by a
+        // race, or the connection died while it waited) — zero behavior
+        // change for every session this doesn't apply to.
+        const prewarmedNova = session.identity?.user_id
+          ? consumePrewarmedNovaSession(session.identity.user_id)
+          : null;
+        const reusedWarmNova = !!prewarmedNova;
+
+        let novaSystemInstruction: string;
+        let novaTools: Array<Record<string, unknown>>;
+        let novaVoice: string;
+        let novaClient: UpstreamLiveClient;
+
+        if (prewarmedNova) {
+          novaSystemInstruction = prewarmedNova.systemInstruction;
+          novaTools = prewarmedNova.tools;
+          novaVoice = prewarmedNova.voiceId;
+          novaClient = prewarmedNova.client;
+          // The prewarmed client's four Nova-specific callbacks were bound at
+          // construction time to a placeholder — this session did not exist
+          // yet. Repoint them at the real ones now; bindUpstreamSessionHandlers
+          // below (unchanged, runs on both paths) already handles every other
+          // listener (audio/transcript/turnComplete/interrupted/error/close),
+          // since those are plain mutable fields re-registered on every call,
+          // not constructor closures.
+          (novaClient as NovaSonicLiveClient).rebindSessionDeps({
+            onRotationDue: handleNovaRotationDue,
+            onIdleDeadlineApproaching: handleNovaIdleDeadlineApproaching,
+            onFirstRawChunk: handleNovaFirstRawChunk,
+            onEarlyNormalizedEvent: handleNovaEarlyNormalizedEvent,
+          });
+          emitDiag(session, 'nova_warm_start_claimed', {
+            provider: 'nova_sonic',
+            prewarm_age_ms: Date.now() - prewarmedNova.createdAt,
+          });
+        } else {
+          const envelope = (await buildOrbVertexSetupEnvelope()) as { setup?: Record<string, any> };
+          const setup = envelope.setup ?? {};
+          // Nova's RAI content filter rejects the stream over the IDENTITY
+          // LOCK block's impersonation-denial list (measured via bisect) —
+          // swap it for the Nova-safe equivalent. Vertex is untouched.
+          const { text: sanitizedInstruction, replaced: novaLockReplaced } =
+            sanitizeInstructionForNova(setup.system_instruction?.parts?.[0]?.text ?? '');
+          novaSystemInstruction = sanitizedInstruction;
+          if (novaLockReplaced) {
+            emitDiag(session, 'nova_instruction_sanitized', { provider: 'nova_sonic', block: 'identity_lock' });
           }
+          novaTools = Array.isArray(setup.tools) ? (setup.tools as Array<Record<string, unknown>>) : [];
+          const novaPersona = ((session as any).activePersona as string) || 'vitana';
+          // VTID-03682: was `resolveNovaSonicVoice(...) ?? 'tina'`. That `??`
+          // silently served Nova's GERMAN voice to every language with no native
+          // Nova voice (ru, pl, sr, ar, zh) — no log, no telemetry, nothing a
+          // reader or a dashboard could see. Same shape as VTID-03578's
+          // `?? POLLY_VOICES['en']`. The voice served is UNCHANGED; the
+          // substitution is now observable.
+          const novaVoiceResolution = resolveNovaSonicVoiceOrFallback({
+            language: session.lang || 'en',
+            persona: novaPersona,
+          });
+          novaVoice = novaVoiceResolution.voice;
+          if (novaVoiceResolution.fallback) {
+            logNovaSonicVoiceFallbackOnce(session.lang || 'en', novaVoice);
+            // Per-session diag as well as the once-per-process log: the log says
+            // "this deployment substitutes for Russian", the diag says how often
+            // and for whom, which is what makes the rate measurable.
+            //
+            // LATCHED PER SESSION, and the latch is load-bearing: this function is
+            // re-entered by `attemptTransparentReconnect()` — for a genuine
+            // reconnect AND for every planned Nova stream rotation
+            // (`_novaRotationInFlight`), which is routine, not exceptional. Without
+            // the latch a single Russian session emits one row per rotation, so a
+            // metric meant to count AFFECTED SESSIONS would instead count
+            // reconnects and read high for reasons unrelated to language coverage.
+            // That is the same defect this VTID exists to remove — a signal that
+            // does not mean what its name says — reintroduced one layer up.
+            if (!(session as any)._novaVoiceFallbackDiagEmitted) {
+              (session as any)._novaVoiceFallbackDiagEmitted = true;
+              emitDiag(session, 'nova_voice_fallback', {
+                provider: 'nova_sonic',
+                lang: session.lang || 'en',
+                voice: novaVoice,
+                reason: 'no_native_nova_voice',
+              });
+            }
+          }
+
+          novaClient = createUpstreamClient('nova_sonic', {
+            nova: {
+              config: novaCfg,
+              voiceId: novaVoice,
+              onRotationDue: handleNovaRotationDue,
+              onIdleDeadlineApproaching: handleNovaIdleDeadlineApproaching,
+              onFirstRawChunk: handleNovaFirstRawChunk,
+              onEarlyNormalizedEvent: handleNovaEarlyNormalizedEvent,
+            },
+          });
         }
+
         // Stashed for the connect_failed OASIS payload — makes a rejected
         // envelope diagnosable without server-log access.
         (session as any)._novaInstructionChars = novaSystemInstruction.length;
@@ -8204,6 +8328,10 @@ async function connectToLiveAPI(
         // ordinary (succeeding) session line-for-line. Gated behind
         // ORB_LOG_NOVA_INSTRUCTION_DEBUG (staging-only, never prod) because
         // the full text includes the user's memory/personalization context.
+        // Placed here (after novaSystemInstruction is assigned on both the
+        // cold-connect and VTID-03779 warm-start-reuse paths) rather than at
+        // its original position further up, which predated the warm-start
+        // branch and would otherwise read the variable before assignment.
         if (process.env.ORB_LOG_NOVA_INSTRUCTION_DEBUG === 'true') {
           emitDiag(session, 'nova_instruction_debug_dump', {
             provider: 'nova_sonic',
@@ -8213,66 +8341,6 @@ async function connectToLiveAPI(
             guided_topic_id: (session as any).guided_topic_id ?? null,
           });
         }
-
-        // Rotation (Bedrock caps a bidirectional stream at 8 minutes): open
-        // the REPLACEMENT stream first (same connect path → same context/
-        // history rebuild + persona voice re-resolution), switch the session
-        // to it, then close the old stream. The browser WS/SSE stays
-        // connected and no greeting replays (greetingSent remains true).
-        let rotateNovaStream: ((reason: NovaRotationReason) => Promise<void>) | null = null;
-
-        const novaClient = createUpstreamClient('nova_sonic', {
-          nova: {
-            config: novaCfg,
-            voiceId: novaVoice,
-            onRotationDue: () => {
-              void rotateNovaStream?.('provider_stream_rotation');
-            },
-            // BOOTSTRAP-NOVA-IDLE-ROTATION: the fail-safe. Fires only when
-            // input has genuinely stopped reaching Bedrock for ~240s, which
-            // in a healthy session never happens (the 250ms silence keepalive
-            // keeps the clock pinned). Same open-before-close swap as the
-            // wall-clock rotation — the only difference is why it ran.
-            onIdleDeadlineApproaching: ({ msSinceLastInput }) => {
-              console.warn(
-                `[BOOTSTRAP-NOVA-IDLE-ROTATION] Session ${session.sessionId} has accepted no input for ` +
-                  `${Math.round(msSinceLastInput / 1000)}s — approaching Bedrock's ~295s idle deadline. ` +
-                  `Rotating pre-emptively. If this fires in production the silence keepalive has stopped ` +
-                  `feeding frames; that is the real bug to chase, this is only the backstop.`,
-              );
-              emitDiag(session, 'nova_idle_deadline_approaching', {
-                provider: 'nova_sonic',
-                ms_since_last_input: msSinceLastInput,
-              });
-              void emitOasisEvent({
-                type: 'orb.upstream.nova.idle_deadline_approaching',
-                vtid: 'BOOTSTRAP-NOVA-IDLE-ROTATION',
-                payload: {
-                  session_id: session.sessionId,
-                  provider: 'nova_sonic',
-                  ms_since_last_input: msSinceLastInput,
-                } as any,
-              } as any).catch(() => { /* best-effort */ });
-              void rotateNovaStream?.('idle_deadline_failsafe');
-            },
-            // VTID-03764 — diagnostic only. Bisects the multi-second gap
-            // between greeting_sent and audio_out_first_chunk. A one-shot
-            // "first normalized event" was tried first and found useless:
-            // real staging measurement showed it fires on a connection
-            // handshake `usage` event that arrives BEFORE the greeting
-            // prompt is even sent, telling us nothing about the silence
-            // that follows. onEarlyNormalizedEvent instead marks a short
-            // real timeline (up to EARLY_EVENT_CAP events) so a genuine gap
-            // between "Nova acked the connection" and "Nova started
-            // producing the response" is actually visible.
-            onFirstRawChunk: ({ byteLength }) => {
-              session.establishLatency?.mark('nova_first_raw_chunk', { byte_length: byteLength });
-            },
-            onEarlyNormalizedEvent: ({ kind, index }) => {
-              session.establishLatency?.mark('nova_early_event', { kind, index });
-            },
-          },
-        });
 
         rotateNovaStream = async (reason: NovaRotationReason) => {
           if (!session.active) return;
@@ -8850,29 +8918,32 @@ async function connectToLiveAPI(
         session.upstreamClient = novaClient;
         session.upstreamProvider = 'nova_sonic';
         const novaConnectStart = Date.now();
-        await novaClient.connect({
-          model: novaCfg.modelId,
-          voiceName: novaVoice,
-          responseModalities: session.responseModalities.includes('audio') ? ['audio'] : ['text'],
-          vadSilenceMs: session.vadSilenceMs,
-          systemInstruction: novaSystemInstruction,
-          // VTID-VOICE-NOVA-ROTATION: without this, a rotation's rebuilt
-          // instruction (fresh-connect size + up to ~4000 chars of
-          // conversation-history fallback, since Nova has no native
-          // resumption) risked tripping Bedrock's nova_validation rejection
-          // on the single oversized textInput — silently abandoning the
-          // rotation and riding the old stream to its 8-minute hard
-          // disconnect. See nova-sonic-config.ts's instructionChunkBytes doc.
-          systemInstructionChunkBytes: novaCfg.instructionChunkBytes || undefined,
-          tools: novaTools,
-          connectTimeoutMs: novaCfg.connectTimeoutMs,
-        });
+        if (!reusedWarmNova) {
+          await novaClient.connect({
+            model: novaCfg.modelId,
+            voiceName: novaVoice,
+            responseModalities: session.responseModalities.includes('audio') ? ['audio'] : ['text'],
+            vadSilenceMs: session.vadSilenceMs,
+            systemInstruction: novaSystemInstruction,
+            // VTID-VOICE-NOVA-ROTATION: without this, a rotation's rebuilt
+            // instruction (fresh-connect size + up to ~4000 chars of
+            // conversation-history fallback, since Nova has no native
+            // resumption) risked tripping Bedrock's nova_validation rejection
+            // on the single oversized textInput — silently abandoning the
+            // rotation and riding the old stream to its 8-minute hard
+            // disconnect. See nova-sonic-config.ts's instructionChunkBytes doc.
+            systemInstructionChunkBytes: novaCfg.instructionChunkBytes || undefined,
+            tools: novaTools,
+            connectTimeoutMs: novaCfg.connectTimeoutMs,
+          });
+        }
         setupComplete = true;
         clearTimeout(connectionTimeout);
-        session.establishLatency?.mark('upstream_connected');
+        session.establishLatency?.mark('upstream_connected', reusedWarmNova ? { reused_warm_start: true } : undefined);
         console.log(
           `[BOOTSTRAP-NOVA-SONIC-VOICE] Nova stream open for session ${session.sessionId}: ` +
-            `model=${novaCfg.modelId} region=${novaCfg.region} voice=${novaVoice} connect_ms=${Date.now() - novaConnectStart}`,
+            `model=${novaCfg.modelId} region=${novaCfg.region} voice=${novaVoice} ` +
+            `connect_ms=${reusedWarmNova ? 0 : Date.now() - novaConnectStart} reused_warm_start=${reusedWarmNova}`,
         );
         void emitOasisEvent({
           type: 'orb.upstream.nova.connect_succeeded',
@@ -8883,7 +8954,8 @@ async function connectToLiveAPI(
             model: novaCfg.modelId,
             region: novaCfg.region,
             voice: novaVoice,
-            connect_ms: Date.now() - novaConnectStart,
+            connect_ms: reusedWarmNova ? 0 : Date.now() - novaConnectStart,
+            reused_warm_start: reusedWarmNova,
             status: 'success',
           } as any,
         } as any).catch(() => { /* best-effort */ });
@@ -16488,7 +16560,7 @@ router.get('/health', async (_req: Request, res: Response) => {
  * VTID-01224: Added auth_token for server-verified identity
  */
 interface WsClientMessage {
-  type: 'start' | 'audio' | 'video' | 'text' | 'end_turn' | 'stop' | 'ping' | 'interrupt' | 'audio_ready';
+  type: 'start' | 'audio' | 'video' | 'text' | 'end_turn' | 'stop' | 'ping' | 'interrupt' | 'audio_ready' | 'prewarm';
   // Text message fields
   text?: string;
   // Start message fields
@@ -16727,6 +16799,16 @@ async function handleWsClientMessage(clientSession: WsClientSession, message: Ws
       await handleWsStartMessage(clientSession, message);
       break;
 
+    case 'prewarm':
+      // VTID-03779 — fire-and-forget: the frontend sends this right after
+      // login, before the ORB overlay is ever opened. Never blocks, never
+      // errors back to the client (a failed/skipped prewarm is invisible —
+      // the real 'start' just falls through to its normal cold-connect path).
+      void handleWsPrewarmMessage(clientSession).catch((err: any) => {
+        console.warn(`[VTID-03779] prewarm failed for ${clientSession.sessionId}: ${err?.message}`);
+      });
+      break;
+
     case 'audio':
       if (!liveSession || !liveSession.active) {
         sendWsMessage(clientWs, { type: 'error', message: 'No active session. Send "start" first.' });
@@ -16823,6 +16905,127 @@ async function handleWsClientMessage(clientSession: WsClientSession, message: Ws
     default:
       sendWsMessage(clientWs, { type: 'error', message: `Unknown message type: ${message.type}` });
   }
+}
+
+/**
+ * VTID-03779 — session pre-establishment ("warm start"). Opens a REAL Nova
+ * Sonic connection with the real tool catalog + a persona/rules system
+ * instruction, as soon as an authenticated WebSocket connects (the frontend
+ * sends 'prewarm' right after login, before the ORB overlay is ever shown),
+ * so that a later `handleWsStartMessage` on the SAME socket can claim it via
+ * `consumePrewarmedNovaSession` instead of paying the connect+setup cost
+ * VTID-03764 measured at ~5s for authenticated sessions.
+ *
+ * Deliberately narrow scope, on purpose:
+ *   - Does NOT run context bootstrap, wake-brief candidate selection, journey
+ *     guidance, guided-topic narration, the voice quota gate, or session-limit
+ *     checks — those decide WHAT Vitana says and consume real usage/quota;
+ *     running them for a prewarm that might never be claimed would silently
+ *     charge a user a voice session they never opened. All of that still runs
+ *     at real `start` time, unchanged, exactly as before this VTID.
+ *   - The system instruction built here carries the STATIC persona/behavioral
+ *     rules and the REAL tool catalog, but NOT the personalized memory/brain
+ *     bootstrap context (`session.contextInstruction` in the cold path) —
+ *     building that requires the real context-assembly pipeline, which is
+ *     tightly coupled to an already-created session. A warm-started turn's
+ *     system instruction is therefore slightly less rich than a fully cold
+ *     one — the SAME degraded-but-functional shape the cold path already
+ *     produces today when `contextReadyPromise` times out (see
+ *     `context_awaited: {timed_out:true}` in voice.latency.measured), not a
+ *     new quality tier. The actual GREETING TEXT (what Vitana says first) is
+ *     decided fresh at real start time regardless, via the unchanged
+ *     wake-brief pipeline — personalization surfaces there, unaffected.
+ */
+async function handleWsPrewarmMessage(clientSession: WsClientSession): Promise<void> {
+  if (!isFeatureLive('ORB_NOVA_PREWARM')) return;
+  const userId = clientSession.identity?.user_id;
+  if (!userId) return; // Anonymous sessions already meet the latency target — nothing to warm.
+  if (clientSession.liveSession?.active) return; // A real session is already running on this socket.
+
+  // Named distinctly from the connect branch's own `novaCfg` — that
+  // identifier is used as a uniqueness anchor by
+  // nova-bedrock-factory-memo.test.ts to locate the real connect branch,
+  // and a second match would break that anchor.
+  const novaPrewarmCfg = getNovaSonicConfig(process.env);
+  const supabase = getSupabase();
+  if (!supabase) return; // No DB — same "can't prewarm" outcome as any other failure below.
+  const [lang, activeRole] = await Promise.all([
+    getUserLocale(supabase, userId),
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('user_tenants')
+          .select('active_role')
+          .eq('user_id', userId)
+          .eq('is_primary', true)
+          .maybeSingle();
+        return (data as { active_role?: string | null } | null)?.active_role ?? null;
+      } catch {
+        return null;
+      }
+    })(),
+  ]);
+
+  const { text: novaSystemInstruction, replaced: novaLockReplaced } = sanitizeInstructionForNova(
+    buildLiveSystemInstruction(
+      lang,
+      'friendly, calm, empathetic',
+      buildPersonaBehavioralRule('vitana'),
+      activeRole,
+    ),
+  );
+  if (novaLockReplaced) {
+    // No real GeminiLiveSession exists yet to attach emitDiag's per-session
+    // counters to — this is rare enough (only fires when the IDENTITY LOCK
+    // block needed Nova-safe sanitization) that a console line is enough;
+    // the real session's own connect path still emits its usual diagnostics.
+    console.log(`[VTID-03779] prewarm instruction sanitized for identity_lock (user ${userId.substring(0, 8)}...)`);
+  }
+  const novaTools = buildLiveApiTools('authenticated', undefined, activeRole || undefined) as Array<Record<string, unknown>>;
+  const novaVoiceResolution = resolveNovaSonicVoiceOrFallback({ language: lang, persona: 'vitana' });
+  const novaVoice = novaVoiceResolution.voice;
+
+  const novaClient = new NovaSonicLiveClient({
+    config: novaPrewarmCfg,
+    voiceId: novaVoice,
+    // Rebound to the real session's closures at claim time
+    // (rebindSessionDeps) — see that method's own doc comment for why these
+    // four specifically need it and the rest of the client's listeners don't.
+  });
+
+  try {
+    await novaClient.connect({
+      model: novaPrewarmCfg.modelId,
+      voiceName: novaVoice,
+      responseModalities: ['audio'],
+      vadSilenceMs: getVadSilenceDurationMs(),
+      systemInstruction: novaSystemInstruction,
+      systemInstructionChunkBytes: novaPrewarmCfg.instructionChunkBytes || undefined,
+      tools: novaTools,
+      connectTimeoutMs: novaPrewarmCfg.connectTimeoutMs,
+    });
+  } catch (err: any) {
+    console.warn(`[VTID-03779] prewarm connect failed for user ${userId}: ${err?.message}`);
+    void novaClient.close('prewarm_connect_failed').catch(() => { /* best-effort */ });
+    return;
+  }
+
+  registerPrewarmedNovaSession(userId, {
+    client: novaClient,
+    systemInstruction: novaSystemInstruction,
+    tools: novaTools,
+    voiceId: novaVoice,
+    lang,
+  });
+  console.log(`[VTID-03779] Nova session prewarmed for user ${userId.substring(0, 8)}... (lang=${lang})`);
+  // Codex review (PR #3218): the client must not treat the socket as
+  // warm-claimable merely because it SENT 'prewarm' — the real Nova
+  // connect() above can take several seconds, and a 'start' arriving on
+  // this socket before this point would find nothing in the registry yet
+  // (registerPrewarmedNovaSession above hasn't run) and cold-connect
+  // anyway, orphaning the prewarmed client this handler just built. This
+  // ack is the client's actual "safe to reuse now" signal.
+  sendWsMessage(clientSession.clientWs, { type: 'prewarm_ready' });
 }
 
 /**
