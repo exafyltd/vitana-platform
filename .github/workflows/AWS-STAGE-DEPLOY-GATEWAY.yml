@@ -181,6 +181,278 @@ jobs:
           NOVA_SONIC_ENABLED: ${{ inputs.nova_sonic_enabled || vars.AWS_STAGE_NOVA_SONIC_ENABLED || 'true' }}
           NOVA_SONIC_CANARY_USER_IDS: ${{ inputs.nova_canary_user_ids || vars.AWS_STAGE_NOVA_SONIC_CANARY_USER_IDS || 'a27552a3-0257-4305-8ed0-351a80fd3701,c5a4daf9-190a-4a9e-9638-d6b32f85244a,a2c6ba7e-2ad4-48af-8253-9fe34d0f9232,0adc6ff6-acb0-4dca-99d0-295211a40e3e' }}
           NOVA_SONIC_CANARY_TENANT_IDS: ${{ inputs.nova_canary_tenant_ids || vars.AWS_STAGE_NOVA_SONIC_CANARY_TENANT_IDS || '00000000-0000-0000-0000-000000000001' }}
+        # NOTE (VTID-03788): the comments below were relocated OUT of the run:
+        # script below. That block's run: value had grown to 25,111 characters
+        # (only ~7,400 of it is actual bash -- the rest was accumulated comments),
+        # and GitHub Actions hard-rejects a workflow file whose run: value exceeds
+        # its internal expression-length limit ("Invalid workflow file: ...
+        # Exceeded max expression length 21000") -- confirmed live via the real
+        # Actions API (workflow_dispatch), not assumed: every push/dispatch of
+        # this workflow failed with 0 jobs from the moment this step crossed
+        # that boundary. Comments are bash no-ops wherever they live, so moving
+        # them here (a plain YAML comment, outside the run: block scalar) is a
+        # pure relocation -- nothing lost, nothing below changes what runs.
+        # Original relative order preserved.
+        #
+        # Swap image + re-stamp commit env vars; preserve everything else
+        # (env block, secrets, resources). upsert semantics for the three
+        # stamp vars so first-run task defs without them still work.
+        # BOOTSTRAP-NOVA-SONIC-VOICE: the five Nova vars are upserted on
+        # EVERY deploy so a canary flip (or rollback to disabled/empty) is
+        # exactly one variable change + one dispatch. Never AWS access keys
+        # here — Nova auth is the task role via the SDK default chain.
+        #
+        # BOOTSTRAP-NOVA-SONIC-VOICE: FEATURE_ORB_GREETING_TTS_BRIDGE_ENV
+        # is upserted to "off" below (2026-07-28, disabled) -- rejected on
+        # product grounds (voice mismatch: the Cloud TTS bridge phrase is
+        # never the same voice as the live upstream). See STAGE-DEPLOY.yml
+        # for the full rationale. Explicitly set to "off" (not removed) so
+        # it cannot silently drift back to a stale "staging-only" value
+        # left on the task definition from before.
+        #
+        # VTID-03646 follow-up -- FEATURE_ORB_SAFE_FAST_GREETING_ENV is
+        # upserted to "staging-only" below. Checked live in this repo: it
+        # is set on neither AWS gateway task def (only the dead GCP
+        # STAGE-DEPLOY.yml ever set it), so the whole greeting-facts
+        # prefetch this flag gates -- first name, last-session info,
+        # lastFullBriefingDate, lastDayCloseDate, recentNbaKeys, the
+        # proactive line -- has been dead on AWS staging AND prod both,
+        # not staging-only as VTID-03646's own PR body assumed. Wiring it
+        # here, staging only, on purpose -- this repo's prod lever is a
+        # deliberate separate action (PUBLISH / manual dispatch, see
+        # AWS-PROD-DEPLOY-GATEWAY.yml), never a side effect of a push, and
+        # this workflow only ever runs on push.
+        #
+        # VTID-03513: resolve the FULL secret ARNs before rewriting the task
+        # definition. ECS `valueFrom` requires the complete ARN INCLUDING the
+        # six-character random suffix Secrets Manager appends
+        # (…jwt-secret-AbCdEf). A name-only ARN is accepted by the CLI's
+        # --secret-id but NOT by ECS, which reports it as
+        # ResourceNotFoundException — indistinguishable at a glance from a
+        # secret that genuinely does not exist. Constructing these by string
+        # concatenation is therefore wrong; they must be looked up.
+        #
+        # `describe-secret` also fails the job loudly if a secret is missing,
+        # which is strictly better than registering a task def that cannot
+        # start and discovering it 10 minutes later via a stabilise timeout.
+        # VTID-03773 — SEC_AURORA resolves the SAME Secrets Manager entry
+        # oasis-projector already uses in production (vitana/aurora/prod/
+        # database-url), wired here so the gateway can open a connection
+        # too. Staging only, on purpose: this is Phase 0 of the memory-
+        # system rebuild — a connectivity check, nothing reads or writes
+        # through it yet (see routes/admin-aurora-memory-health.ts). No new
+        # credential is created; this only grants the STAGING task the
+        # ability to resolve a secret ARN it did not reference before.
+        # VTID-03513: the `secrets` block is now UPSERTED here, not cloned
+        # blindly from the previous task definition.
+        #
+        # WHY. This deploy mutates the previous task def in place, so whatever
+        # `secrets` it carried got copied forward on every run — including a
+        # wrong one. Between 2026-08-02 and 2026-08-06 six entries pointed at
+        # `vitana/gateway/prod/*`, a namespace that does not exist in Secrets
+        # Manager (the real ones are `vitana/supabase/prod/*` and
+        # `vitana/gateway/staging/*`). ECS cannot start a task whose secret it
+        # cannot fetch, so every deploy died with
+        #   ResourceInitializationError: ... ResourceNotFoundException
+        # then `aws ecs wait services-stable` timed out after 10 min and the
+        # job failed. NINE consecutive deploys failed that way and AWS staging
+        # served 503 for four days. Nothing alarmed, because the workflow
+        # failing red *is* the only signal and nobody was reading it.
+        #
+        # The reference was invisible in code review: task-def secret wiring
+        # lived ONLY in live AWS state, never in this repo. Pinning it here
+        # makes it reviewable, and makes a bad hand-edit self-correcting on the
+        # next deploy instead of permanent.
+        #
+        # SUPABASE_JWT_SECRET / SUPABASE_ANON_KEY deliberately point at
+        # `vitana/supabase/prod/*` — the same secrets prod uses — because AWS
+        # staging talks to the PROD Supabase project (see SUPABASE_URL and
+        # SUPABASE_SERVICE_ROLE, which already do). A JWT secret from a
+        # different project would fail to validate those tokens: the deploy
+        # would go green and every login would break. Verified 2026-08-06 that
+        # `vitana/gateway/staging/supabase-jwt-secret` holds an identical
+        # value (sha256 match), so this is consistent either way.
+        #
+        # NOTE: comments inside the jq program string below (the single
+        # quoted block starting on the next line) must never contain an
+        # apostrophe -- it is bash single-quoted, so a stray "'" closes
+        # the string early and breaks the whole command (bit us once,
+        # see PR #2978's failed AWS deploy run).
+        #
+        # That applies to jq COMMENTS too, which is why the note below lives
+        # out here rather than beside the pair it describes: a `#` comment
+        # inside the program is still inside the shell's single-quoted
+        # string, so one apostrophe in a word like "isn't" silently ends the
+        # program 20 lines early. Keep the jq body free of prose.
+        #
+        # VTID-03578 — TTS_PROVIDER=polly, AWS STAGING ONLY, so the switch is
+        # exercised somewhere real before it reaches prod.
+        #
+        # Deliberately NOT set in STAGE-DEPLOY.yml (GCP Cloud Run staging):
+        # Polly authenticates through the ECS task role and a Cloud Run
+        # instance carries no AWS credentials at all, so every call there
+        # would throw, return null, and fall back to Google. That looks like
+        # "Polly is broken" when the truth is "Polly was never reachable from
+        # that host" — a test that teaches the wrong lesson is worse than no
+        # test.
+        #
+        # Requires polly:SynthesizeSpeech on the gateway task role. Without
+        # it, synthesis still succeeds via the Google fallback and logs
+        # `[TTS] FALLBACK polly→google` — grep that line to tell a missing
+        # IAM grant apart from a working switch, because the user-visible
+        # behaviour is identical either way.
+        # VTID-03708 — VERTEX_LIVE_UNAVAILABLE + TTS_POLLY_STRICT on
+        # STAGING, upserted below.
+        #
+        # Live task-def audit (read-only aws ecs describe-task-definition,
+        # 2026-08-23) found VERTEX_LIVE_UNAVAILABLE unset here while prod
+        # already carries it true. That is not a cosmetic gap: with the
+        # flag unset, the selector still believes Vertex is a live
+        # fallback, so the VTID-03703 fix never actually engages on
+        # staging. Walk the real branch: for a Nova-unsupported language
+        # (ru/pl/ar/zh), `if (languageBlocked and not vertexDead) return
+        # {provider:vertex}` fires and returns BEFORE the cascade is ever
+        # consulted -- vertexDead reads false here, so it returns vertex,
+        # and Vertex is permanently dead (GCP shutdown). Those sessions die
+        # with the exact upstream-1007 close VTID-03703 exists to prevent,
+        # even though ORB_CASCADED_VOICE_ENABLED is already true here --
+        # the cascade flag being on does nothing while this one is unset.
+        #
+        # VTID-03720 -- "ORB_CASCADED_VOICE_ENABLED is already true here"
+        # was an observation of LIVE AWS STATE, not something this file
+        # guaranteed. The var was in NEITHER the strip list NOR the re-add
+        # list, so it was merely PRESERVED from whatever the previous task
+        # definition happened to carry -- the exact shape VTID-03513 cost
+        # four days for, and unverifiable from the repo. Reported live:
+        # pl/pt still answered in English on staging for hours. That is the
+        # cascade-off branch exactly -- `tryCascadeRescue()` returns null
+        # unless the value is the string 'true', control falls to
+        # `nova_forced_vertex_unavailable`, Nova is forced to carry a
+        # language it cannot speak, and answers in English in a
+        # language-flavoured voice (pt -> carolina, pl -> tina).
+        #
+        # It is now UPSERTED to "true" below, like every other var here, so
+        # staging genuinely exercises Transcribe->Bedrock->Polly. Verified
+        # by running the real decision functions: pl -> Ola/pl-PL,
+        # pt -> Camila/pt-BR, ru/ar/zh all eligible; only sr is refused
+        # (no_polly_voice, Polly has no Serbian voice in any engine).
+        #
+        # TTS_POLLY_STRICT was unset here too (prod has it true). Without
+        # it an unservable TTS request tries to fall back to Google, which
+        # no longer exists, instead of failing fast.
+        #
+        # VTID-03741 — FEATURE_ORB_FAST_START_ENV / FEATURE_ORB_BRAIN_CACHE_ENV,
+        # pinned here to match AWS-PROD-DEPLOY-GATEWAY.yml.
+        #
+        # AWS-PROD-DEPLOY-GATEWAY.yml already pins both of these to the exact
+        # string "staging+prod" (BOOTSTRAP-ORB-FASTSTART-DRIFT / VTID-03504) --
+        # its own comment there records that FEATURE_ORB_FAST_START_ENV missing
+        # measured a 9.5s cold authenticated start, past the widget 8s fetch
+        # abort, and that FEATURE_ORB_BRAIN_CACHE_ENV missing measured a 2.0s
+        # p50 brain build degrading to 17.4s p50 / 119.7s max under stacked
+        # reconnects on 2026-08-05. Neither var was ever set anywhere in THIS
+        # (staging) workflow -- confirmed by reading it, not assumed -- so
+        # whatever the staging task def actually runs today is inherited from
+        # whatever a manual edit or an earlier build happened to leave, exactly
+        # the class of gap VTID-03513 cost four days for elsewhere in this
+        # file. That prod comment also warns not to add a flag here without
+        # first checking GET /api/v1/admin/feature-flags on the live stack --
+        # this session has no AWS/admin credentials to do that read, so this
+        # is deliberately NOT presented as a confirmed measurement the way the
+        # prod entry is. The judgment call: these two flags are pure
+        # deferral/caching mechanisms (they reorder and de-dupe existing
+        # bootstrap work, they do not add new behaviour), already proven safe
+        # in prod for weeks, and staging existing specifically to catch a
+        # regression before prod makes leaving this undetermined the worse
+        # risk, not the safer one -- especially for a VTID whose whole point
+        # is reducing the exact click-to-first-audio delay this flag exists
+        # to prevent. Pinning to the SAME value prod already runs, so staging
+        # and prod stop being two different unverified guesses.
+        #
+        # VTID-03741 — FEATURE_LATENCY_TELEMETRY_ENV, STAGING ONLY.
+        #
+        # LatencyTracker (services/gateway/src/orb/live/latency-tracker.ts)
+        # already exists and already marks the exact click-to-first-audio
+        # breakdown this VTID needs a real baseline for (upstream_connected,
+        # context_awaited, setup_sent, greeting_sent, audio_out_first_chunk),
+        # emitted as voice.latency.measured OASIS events. It was never set on
+        # either AWS gateway task def, so isFeatureLive resolves the code
+        # default (off) and the tracker has been a no-op on staging and prod
+        # both this whole time — the exact same shape as the
+        # FEATURE_ORB_SAFE_FAST_GREETING gap two rows above. Turning it on
+        # here, staging only, gives real per-session numbers to measure the
+        # wake-brief-ranker parallelization (same VTID) against, instead of
+        # relying on log-line spot checks.
+        #
+        # VTID-03580 — BEDROCK_ROLE_ARN on STAGING, so staging can verify the
+        # thing it exists to verify.
+        #
+        # Measured 2026-08-11: this var was set on `vitana-gateway-awsdr`
+        # (prod) and on NOTHING else. `bedrockAdapter.isAvailable()` is a bare
+        # `Boolean(process.env.BEDROCK_ROLE_ARN)`, so with it unset the router
+        # SKIPS bedrock and serves the stage's fallback — quietly, and with no
+        # `llm.call.failed` event, because no call is ever attempted. Staging
+        # was therefore answering every backend stage on DeepSeek while prod
+        # answered on Claude, and the staging-first workflow (§16) would have
+        # certified a Claude routing change it never once exercised.
+        #
+        # Both services already run as the SAME task role
+        # (`vitana-ecs-task-role`), so this grants no new access — it only
+        # stops staging pretending the adapter is unconfigured. Resolved from
+        # the task definition rather than hardcoded, so it cannot drift from
+        # whatever role the service actually assumes.
+        # VTID-03773 -- AURORA_CA_BUNDLE_PATH points aurora-client.ts at the
+        # RDS CA bundle baked into the image (Dockerfile), so the Aurora
+        # connectivity check (routes/admin-aurora-memory-health.ts) gets a
+        # real TLS handshake instead of failing closed with a
+        # self-signed-certificate error. Caught in review (Codex, PR #3213):
+        # AURORA_DATABASE_URL alone is not sufficient -- resolveSsl()
+        # defaults to verifying against the system trust store when this is
+        # unset, and that store does not include the Amazon RDS CA.
+        #
+        # This explanation lives HERE, not inside the jq program below, on
+        # purpose -- an earlier version put it inside the single-quoted jq
+        # string with an apostrophe in the prose, which closed the bash
+        # string early and broke this step with a bare "syntax error near
+        # unexpected token" 20+ lines later. Exactly the trap this file's
+        # own note (further down, near the SEC_JWT resolution loop) already
+        # warns about for jq-embedded comments. Keep every comment about the
+        # jq body out here instead of risking it again.
+        # VTID-03706 — ORB full-duplex voice: the mic stays
+        # open while Vitana speaks so the native Nova Sonic
+        # barge-in can fire. STAGING ONLY. Deliberately not
+        # added to AWS-PROD-DEPLOY-GATEWAY.yml: this changes
+        # live audio behaviour for every voice session and
+        # needs real-device echo verification (see
+        # /command-hub/orb-voice-bench.html) before prod is
+        # even a question. Rollback is this value -> "false",
+        # no code revert. Exact-"true" opt-in, matching the
+        # sibling ORB kill switches — anything else is OFF.
+        # BOOTSTRAP-ORB-DAY-CLOSE: enables the once-per-night
+        # "goodnight" greeting rung (tryDayCloseRung,
+        # compute-greeting-decision.ts). STAGING ONLY, same
+        # pattern as FEATURE_ORB_SAFE_FAST_GREETING_ENV above
+        # — deliberately NOT added to
+        # AWS-PROD-DEPLOY-GATEWAY.yml. Now uses the reduced
+        # opener (buildDayCloseOpenerLine) as the permanent
+        # default, not the full quoted-exemplar block that
+        # previously needed a Nova-validation-block retry to
+        # fall back to it. Rollback is this value -> "false"
+        # (or removal), no code revert. Exact-"true" opt-in,
+        # matching the sibling ORB kill switches.
+        # VTID-03787 — diagnostic-only, STAGING ONLY, never
+        # AWS-PROD-DEPLOY-GATEWAY.yml. Dumps the literal
+        # Nova system-instruction text (includes real user
+        # memory and personalization context) to an
+        # oasis_events diag stage right before every Nova
+        # connect, so a real blocked guided-topic session
+        # can be diffed against a real succeeding ordinary
+        # one. Exact-"true" opt-in; remove once the diff
+        # investigation concludes. VTID-03788 — no
+        # apostrophes in this comment block, on purpose:
+        # see the note near SEC_JWT above, this is the
+        # SECOND time an apostrophe here broke the
+        # surrounding single-quoted bash string to 0 jobs.
         run: |
           set -e
           IMAGE="${{ steps.build.outputs.image }}"
@@ -189,55 +461,6 @@ jobs:
           TD_ARN=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
             --query 'services[0].taskDefinition' --output text)
           echo "Current task definition: $TD_ARN"
-          # Swap image + re-stamp commit env vars; preserve everything else
-          # (env block, secrets, resources). upsert semantics for the three
-          # stamp vars so first-run task defs without them still work.
-          # BOOTSTRAP-NOVA-SONIC-VOICE: the five Nova vars are upserted on
-          # EVERY deploy so a canary flip (or rollback to disabled/empty) is
-          # exactly one variable change + one dispatch. Never AWS access keys
-          # here — Nova auth is the task role via the SDK default chain.
-          #
-          # BOOTSTRAP-NOVA-SONIC-VOICE: FEATURE_ORB_GREETING_TTS_BRIDGE_ENV
-          # is upserted to "off" below (2026-07-28, disabled) -- rejected on
-          # product grounds (voice mismatch: the Cloud TTS bridge phrase is
-          # never the same voice as the live upstream). See STAGE-DEPLOY.yml
-          # for the full rationale. Explicitly set to "off" (not removed) so
-          # it cannot silently drift back to a stale "staging-only" value
-          # left on the task definition from before.
-          #
-          # VTID-03646 follow-up -- FEATURE_ORB_SAFE_FAST_GREETING_ENV is
-          # upserted to "staging-only" below. Checked live in this repo: it
-          # is set on neither AWS gateway task def (only the dead GCP
-          # STAGE-DEPLOY.yml ever set it), so the whole greeting-facts
-          # prefetch this flag gates -- first name, last-session info,
-          # lastFullBriefingDate, lastDayCloseDate, recentNbaKeys, the
-          # proactive line -- has been dead on AWS staging AND prod both,
-          # not staging-only as VTID-03646's own PR body assumed. Wiring it
-          # here, staging only, on purpose -- this repo's prod lever is a
-          # deliberate separate action (PUBLISH / manual dispatch, see
-          # AWS-PROD-DEPLOY-GATEWAY.yml), never a side effect of a push, and
-          # this workflow only ever runs on push.
-          #
-          # VTID-03513: resolve the FULL secret ARNs before rewriting the task
-          # definition. ECS `valueFrom` requires the complete ARN INCLUDING the
-          # six-character random suffix Secrets Manager appends
-          # (…jwt-secret-AbCdEf). A name-only ARN is accepted by the CLI's
-          # --secret-id but NOT by ECS, which reports it as
-          # ResourceNotFoundException — indistinguishable at a glance from a
-          # secret that genuinely does not exist. Constructing these by string
-          # concatenation is therefore wrong; they must be looked up.
-          #
-          # `describe-secret` also fails the job loudly if a secret is missing,
-          # which is strictly better than registering a task def that cannot
-          # start and discovering it 10 minutes later via a stabilise timeout.
-          # VTID-03773 — SEC_AURORA resolves the SAME Secrets Manager entry
-          # oasis-projector already uses in production (vitana/aurora/prod/
-          # database-url), wired here so the gateway can open a connection
-          # too. Staging only, on purpose: this is Phase 0 of the memory-
-          # system rebuild — a connectivity check, nothing reads or writes
-          # through it yet (see routes/admin-aurora-memory-health.ts). No new
-          # credential is created; this only grants the STAGING task the
-          # ability to resolve a secret ARN it did not reference before.
           for pair in \
             "SEC_JWT:vitana/supabase/prod/jwt-secret" \
             "SEC_ANON:vitana/supabase/prod/anon-key" \
@@ -255,165 +478,6 @@ jobs:
             export "$VAR"
             echo "  resolved $NAME"
           done
-
-          # VTID-03513: the `secrets` block is now UPSERTED here, not cloned
-          # blindly from the previous task definition.
-          #
-          # WHY. This deploy mutates the previous task def in place, so whatever
-          # `secrets` it carried got copied forward on every run — including a
-          # wrong one. Between 2026-08-02 and 2026-08-06 six entries pointed at
-          # `vitana/gateway/prod/*`, a namespace that does not exist in Secrets
-          # Manager (the real ones are `vitana/supabase/prod/*` and
-          # `vitana/gateway/staging/*`). ECS cannot start a task whose secret it
-          # cannot fetch, so every deploy died with
-          #   ResourceInitializationError: ... ResourceNotFoundException
-          # then `aws ecs wait services-stable` timed out after 10 min and the
-          # job failed. NINE consecutive deploys failed that way and AWS staging
-          # served 503 for four days. Nothing alarmed, because the workflow
-          # failing red *is* the only signal and nobody was reading it.
-          #
-          # The reference was invisible in code review: task-def secret wiring
-          # lived ONLY in live AWS state, never in this repo. Pinning it here
-          # makes it reviewable, and makes a bad hand-edit self-correcting on the
-          # next deploy instead of permanent.
-          #
-          # SUPABASE_JWT_SECRET / SUPABASE_ANON_KEY deliberately point at
-          # `vitana/supabase/prod/*` — the same secrets prod uses — because AWS
-          # staging talks to the PROD Supabase project (see SUPABASE_URL and
-          # SUPABASE_SERVICE_ROLE, which already do). A JWT secret from a
-          # different project would fail to validate those tokens: the deploy
-          # would go green and every login would break. Verified 2026-08-06 that
-          # `vitana/gateway/staging/supabase-jwt-secret` holds an identical
-          # value (sha256 match), so this is consistent either way.
-          #
-          # NOTE: comments inside the jq program string below (the single
-          # quoted block starting on the next line) must never contain an
-          # apostrophe -- it is bash single-quoted, so a stray "'" closes
-          # the string early and breaks the whole command (bit us once,
-          # see PR #2978's failed AWS deploy run).
-          #
-          # That applies to jq COMMENTS too, which is why the note below lives
-          # out here rather than beside the pair it describes: a `#` comment
-          # inside the program is still inside the shell's single-quoted
-          # string, so one apostrophe in a word like "isn't" silently ends the
-          # program 20 lines early. Keep the jq body free of prose.
-          #
-          # VTID-03578 — TTS_PROVIDER=polly, AWS STAGING ONLY, so the switch is
-          # exercised somewhere real before it reaches prod.
-          #
-          # Deliberately NOT set in STAGE-DEPLOY.yml (GCP Cloud Run staging):
-          # Polly authenticates through the ECS task role and a Cloud Run
-          # instance carries no AWS credentials at all, so every call there
-          # would throw, return null, and fall back to Google. That looks like
-          # "Polly is broken" when the truth is "Polly was never reachable from
-          # that host" — a test that teaches the wrong lesson is worse than no
-          # test.
-          #
-          # Requires polly:SynthesizeSpeech on the gateway task role. Without
-          # it, synthesis still succeeds via the Google fallback and logs
-          # `[TTS] FALLBACK polly→google` — grep that line to tell a missing
-          # IAM grant apart from a working switch, because the user-visible
-          # behaviour is identical either way.
-          # VTID-03708 — VERTEX_LIVE_UNAVAILABLE + TTS_POLLY_STRICT on
-          # STAGING, upserted below.
-          #
-          # Live task-def audit (read-only aws ecs describe-task-definition,
-          # 2026-08-23) found VERTEX_LIVE_UNAVAILABLE unset here while prod
-          # already carries it true. That is not a cosmetic gap: with the
-          # flag unset, the selector still believes Vertex is a live
-          # fallback, so the VTID-03703 fix never actually engages on
-          # staging. Walk the real branch: for a Nova-unsupported language
-          # (ru/pl/ar/zh), `if (languageBlocked and not vertexDead) return
-          # {provider:vertex}` fires and returns BEFORE the cascade is ever
-          # consulted -- vertexDead reads false here, so it returns vertex,
-          # and Vertex is permanently dead (GCP shutdown). Those sessions die
-          # with the exact upstream-1007 close VTID-03703 exists to prevent,
-          # even though ORB_CASCADED_VOICE_ENABLED is already true here --
-          # the cascade flag being on does nothing while this one is unset.
-          #
-          # VTID-03720 -- "ORB_CASCADED_VOICE_ENABLED is already true here"
-          # was an observation of LIVE AWS STATE, not something this file
-          # guaranteed. The var was in NEITHER the strip list NOR the re-add
-          # list, so it was merely PRESERVED from whatever the previous task
-          # definition happened to carry -- the exact shape VTID-03513 cost
-          # four days for, and unverifiable from the repo. Reported live:
-          # pl/pt still answered in English on staging for hours. That is the
-          # cascade-off branch exactly -- `tryCascadeRescue()` returns null
-          # unless the value is the string 'true', control falls to
-          # `nova_forced_vertex_unavailable`, Nova is forced to carry a
-          # language it cannot speak, and answers in English in a
-          # language-flavoured voice (pt -> carolina, pl -> tina).
-          #
-          # It is now UPSERTED to "true" below, like every other var here, so
-          # staging genuinely exercises Transcribe->Bedrock->Polly. Verified
-          # by running the real decision functions: pl -> Ola/pl-PL,
-          # pt -> Camila/pt-BR, ru/ar/zh all eligible; only sr is refused
-          # (no_polly_voice, Polly has no Serbian voice in any engine).
-          #
-          # TTS_POLLY_STRICT was unset here too (prod has it true). Without
-          # it an unservable TTS request tries to fall back to Google, which
-          # no longer exists, instead of failing fast.
-          #
-          # VTID-03741 — FEATURE_ORB_FAST_START_ENV / FEATURE_ORB_BRAIN_CACHE_ENV,
-          # pinned here to match AWS-PROD-DEPLOY-GATEWAY.yml.
-          #
-          # AWS-PROD-DEPLOY-GATEWAY.yml already pins both of these to the exact
-          # string "staging+prod" (BOOTSTRAP-ORB-FASTSTART-DRIFT / VTID-03504) --
-          # its own comment there records that FEATURE_ORB_FAST_START_ENV missing
-          # measured a 9.5s cold authenticated start, past the widget 8s fetch
-          # abort, and that FEATURE_ORB_BRAIN_CACHE_ENV missing measured a 2.0s
-          # p50 brain build degrading to 17.4s p50 / 119.7s max under stacked
-          # reconnects on 2026-08-05. Neither var was ever set anywhere in THIS
-          # (staging) workflow -- confirmed by reading it, not assumed -- so
-          # whatever the staging task def actually runs today is inherited from
-          # whatever a manual edit or an earlier build happened to leave, exactly
-          # the class of gap VTID-03513 cost four days for elsewhere in this
-          # file. That prod comment also warns not to add a flag here without
-          # first checking GET /api/v1/admin/feature-flags on the live stack --
-          # this session has no AWS/admin credentials to do that read, so this
-          # is deliberately NOT presented as a confirmed measurement the way the
-          # prod entry is. The judgment call: these two flags are pure
-          # deferral/caching mechanisms (they reorder and de-dupe existing
-          # bootstrap work, they do not add new behaviour), already proven safe
-          # in prod for weeks, and staging existing specifically to catch a
-          # regression before prod makes leaving this undetermined the worse
-          # risk, not the safer one -- especially for a VTID whose whole point
-          # is reducing the exact click-to-first-audio delay this flag exists
-          # to prevent. Pinning to the SAME value prod already runs, so staging
-          # and prod stop being two different unverified guesses.
-          #
-          # VTID-03741 — FEATURE_LATENCY_TELEMETRY_ENV, STAGING ONLY.
-          #
-          # LatencyTracker (services/gateway/src/orb/live/latency-tracker.ts)
-          # already exists and already marks the exact click-to-first-audio
-          # breakdown this VTID needs a real baseline for (upstream_connected,
-          # context_awaited, setup_sent, greeting_sent, audio_out_first_chunk),
-          # emitted as voice.latency.measured OASIS events. It was never set on
-          # either AWS gateway task def, so isFeatureLive resolves the code
-          # default (off) and the tracker has been a no-op on staging and prod
-          # both this whole time — the exact same shape as the
-          # FEATURE_ORB_SAFE_FAST_GREETING gap two rows above. Turning it on
-          # here, staging only, gives real per-session numbers to measure the
-          # wake-brief-ranker parallelization (same VTID) against, instead of
-          # relying on log-line spot checks.
-          #
-          # VTID-03580 — BEDROCK_ROLE_ARN on STAGING, so staging can verify the
-          # thing it exists to verify.
-          #
-          # Measured 2026-08-11: this var was set on `vitana-gateway-awsdr`
-          # (prod) and on NOTHING else. `bedrockAdapter.isAvailable()` is a bare
-          # `Boolean(process.env.BEDROCK_ROLE_ARN)`, so with it unset the router
-          # SKIPS bedrock and serves the stage's fallback — quietly, and with no
-          # `llm.call.failed` event, because no call is ever attempted. Staging
-          # was therefore answering every backend stage on DeepSeek while prod
-          # answered on Claude, and the staging-first workflow (§16) would have
-          # certified a Claude routing change it never once exercised.
-          #
-          # Both services already run as the SAME task role
-          # (`vitana-ecs-task-role`), so this grants no new access — it only
-          # stops staging pretending the adapter is unconfigured. Resolved from
-          # the task definition rather than hardcoded, so it cannot drift from
-          # whatever role the service actually assumes.
           TASK_ROLE_ARN=$(aws ecs describe-task-definition --task-definition "$TD_ARN" \
             --query 'taskDefinition.taskRoleArn' --output text)
           if [ -z "$TASK_ROLE_ARN" ] || [ "$TASK_ROLE_ARN" = "None" ]; then
@@ -421,25 +485,6 @@ jobs:
             exit 1
           fi
           echo "Bedrock activation on staging: BEDROCK_ROLE_ARN=$TASK_ROLE_ARN"
-
-          # VTID-03773 -- AURORA_CA_BUNDLE_PATH points aurora-client.ts at the
-          # RDS CA bundle baked into the image (Dockerfile), so the Aurora
-          # connectivity check (routes/admin-aurora-memory-health.ts) gets a
-          # real TLS handshake instead of failing closed with a
-          # self-signed-certificate error. Caught in review (Codex, PR #3213):
-          # AURORA_DATABASE_URL alone is not sufficient -- resolveSsl()
-          # defaults to verifying against the system trust store when this is
-          # unset, and that store does not include the Amazon RDS CA.
-          #
-          # This explanation lives HERE, not inside the jq program below, on
-          # purpose -- an earlier version put it inside the single-quoted jq
-          # string with an apostrophe in the prose, which closed the bash
-          # string early and broke this step with a bare "syntax error near
-          # unexpected token" 20+ lines later. Exactly the trap this file's
-          # own note (further down, near the SEC_JWT resolution loop) already
-          # warns about for jq-embedded comments. Keep every comment about the
-          # jq body out here instead of risking it again.
-
           NEW_DEF=$(aws ecs describe-task-definition --task-definition "$TD_ARN" --query taskDefinition \
             | jq --arg IMG "$IMAGE" --arg SHA "$SHA" --arg SHORT "$SHORT" \
                  --arg NOVA_ENABLED "$NOVA_SONIC_ENABLED" \
@@ -479,43 +524,8 @@ jobs:
                           {name:"FEATURE_LATENCY_TELEMETRY_ENV", value:"staging-only"},
                           {name:"FEATURE_ORB_FAST_START_ENV", value:"staging+prod"},
                           {name:"FEATURE_ORB_BRAIN_CACHE_ENV", value:"staging+prod"},
-                          # VTID-03706 — ORB full-duplex voice: the mic stays
-                          # open while Vitana speaks so the native Nova Sonic
-                          # barge-in can fire. STAGING ONLY. Deliberately not
-                          # added to AWS-PROD-DEPLOY-GATEWAY.yml: this changes
-                          # live audio behaviour for every voice session and
-                          # needs real-device echo verification (see
-                          # /command-hub/orb-voice-bench.html) before prod is
-                          # even a question. Rollback is this value -> "false",
-                          # no code revert. Exact-"true" opt-in, matching the
-                          # sibling ORB kill switches — anything else is OFF.
                           {name:"ORB_FULL_DUPLEX_ENABLED", value:"true"},
-                          # BOOTSTRAP-ORB-DAY-CLOSE: enables the once-per-night
-                          # "goodnight" greeting rung (tryDayCloseRung,
-                          # compute-greeting-decision.ts). STAGING ONLY, same
-                          # pattern as FEATURE_ORB_SAFE_FAST_GREETING_ENV above
-                          # — deliberately NOT added to
-                          # AWS-PROD-DEPLOY-GATEWAY.yml. Now uses the reduced
-                          # opener (buildDayCloseOpenerLine) as the permanent
-                          # default, not the full quoted-exemplar block that
-                          # previously needed a Nova-validation-block retry to
-                          # fall back to it. Rollback is this value -> "false"
-                          # (or removal), no code revert. Exact-"true" opt-in,
-                          # matching the sibling ORB kill switches.
                           {name:"ORB_DAY_CLOSE_RUNG_ENABLED", value:"true"},
-                          # VTID-03787 — diagnostic-only, STAGING ONLY, never
-                          # AWS-PROD-DEPLOY-GATEWAY.yml. Dumps the literal
-                          # Nova system-instruction text (includes real user
-                          # memory and personalization context) to an
-                          # oasis_events diag stage right before every Nova
-                          # connect, so a real blocked guided-topic session
-                          # can be diffed against a real succeeding ordinary
-                          # one. Exact-"true" opt-in; remove once the diff
-                          # investigation concludes. VTID-03788 — no
-                          # apostrophes in this comment block, on purpose:
-                          # see the note near SEC_JWT above, this is the
-                          # SECOND time an apostrophe here broke the
-                          # surrounding single-quoted bash string to 0 jobs.
                           {name:"ORB_LOG_NOVA_INSTRUCTION_DEBUG", value:"true"},
                           {name:"TTS_PROVIDER", value:"polly"},
                           {name:"TTS_POLLY_STRICT", value:"true"},
@@ -546,7 +556,6 @@ jobs:
           echo "Waiting for service to stabilize (up to ~10 min)…"
           aws ecs wait services-stable --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}"
           echo "Service stable on $NEW_ARN"
-
       - name: Smoke — env=staging + deployed commit live
         run: |
           set -e
