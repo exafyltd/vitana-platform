@@ -218,3 +218,44 @@ at all today.
 hot tables. That remains the real architecture call the prior pass named,
 now scoped to 3 tables instead of "60 subscriptions" or "30 tables," which
 is a materially smaller decision to make and to get wrong.
+
+## Addendum, 2026-08-28 — option (a) feasibility check: NOT viable today, live-verified
+
+The prior addendum narrowed the decision but not, deliberately, which side
+of it to take. One half of that decision — "can Supabase's own `realtime`
+server even attach to Aurora as-is" — is a yes/no engineering fact, not a
+product judgment call, so it's checked here rather than left open.
+
+**Answer: no, not without a cluster-level change.** Queried Aurora's live
+`pg_settings` directly (`vitana` database):
+
+| Setting | Live value | Needed for logical replication |
+|---|---|---|
+| `wal_level` | `replica` | must be `logical` |
+| `rds.logical_replication` | `off` | must be `1`/`on` (this is the RDS/Aurora parameter-group knob that gates `wal_level=logical` — Aurora doesn't take a plain `wal_level` override) |
+| `max_replication_slots` | `20` | already sufficient |
+| `max_wal_senders` | `20` | already sufficient |
+
+Supabase's `realtime` server subscribes to `postgres_changes` via a logical
+replication slot against a publication (`supabase_realtime`) — mechanically
+identical to how DMS's own CDC leg reads Supabase's source database. With
+`wal_level=replica`, Postgres cannot create a logical replication slot at
+all (`ERROR: logical decoding requires wal_level >= logical` is the exact
+failure this would hit). The cluster's DB cluster parameter group is
+`vitana-aurora-pg17-prod` (engine 17.4, `available`) — `rds.logical_replication`
+lives there, confirmed via `aws rds describe-db-clusters`, read-only.
+
+**This is not a small flip.** `rds.logical_replication` is a *static*
+Aurora parameter — changing it requires a full cluster reboot to take
+effect, which briefly interrupts every connection this migration effort's
+own DMS task, the RDS Data API access this session uses, and (if this
+cluster is serving anything else already) any other consumer. It is also,
+per this repo's own CLAUDE.md governance, a production infrastructure
+change requiring its own VTID and is deliberately NOT made here — this
+addendum only establishes the fact needed to make that decision correctly:
+**option (a) is available, but its true cost includes "reboot
+`vitana-aurora-prod`," not just "point `realtime` at a new connection
+string."** That cost is a real input to the option (a) vs (b) call, not a
+reason to default to (b) — a gateway-owned relay for 3 hot tables is its
+own real build, not obviously cheaper than one reboot plus running an
+existing, battle-tested open-source service.
