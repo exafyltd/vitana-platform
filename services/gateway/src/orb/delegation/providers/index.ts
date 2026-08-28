@@ -6,10 +6,12 @@
  * read from this registry — adding a new provider is a single new file plus
  * a one-line import.
  *
- * Note: the scaffolding ships with three empty-stub providers (openai,
- * anthropic, google-ai). Their `call()` methods throw with a clear
- * `scaffold_not_wired` error. Phase 7 replaces the stubs with real
- * implementations.
+ * Note (corrected 2026-08-28, see docs/GATEWAY-GOOGLE-DEPENDENCY-AUDIT-2026-08-28.md):
+ * this comment previously said openai/anthropic/google-ai were empty stubs
+ * throwing `scaffold_not_wired`. That's no longer true of any of the three —
+ * all three `call()` methods make real API calls. `google-ai` in particular
+ * is a live, reachable ORB tool (`consult_external_ai`) using the connecting
+ * user's own BYOK Google AI Studio key, not a platform credential.
  */
 import type { DelegationProviderId, ProviderAdapter } from '../types';
 
