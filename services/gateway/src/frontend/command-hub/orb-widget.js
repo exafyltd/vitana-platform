@@ -4631,11 +4631,24 @@
     // points) for a lesson that was never delivered — live-reproduced on
     // staging via the VTID-03782 circuit breaker path (2 consecutive
     // zero-audio nova_validation failures -> stuck here -> backstop still
-    // fired ~5 min later). Cancelling it here covers every current and
-    // future path into this shared stuck state, not just that one.
-    _s._guidedTopicOpenedAt = null;
-    try { clearInterval(_s._guidedTopicBackstopInterval); } catch (e) { /* noop */ }
-    _s._guidedTopicBackstopInterval = null;
+    // fired ~5 min later).
+    //
+    // Codex review (same PR): only safe to cancel when the topic has
+    // actually been DROPPED (the circuit breaker nulls _guidedTopicInFlight
+    // before calling here). MAX_WIDGET_RECONNECTS exhaustion does NOT null
+    // it, and _resetAndReconnect() (the tap-to-reconnect handler and the
+    // health-probe watchdog) explicitly re-arms _s.guidedTopic from
+    // _guidedTopicInFlight to RESUME the same lesson — cancelling the
+    // backstop unconditionally would strip the resumed session of the only
+    // protection against the model never calling end_guided_topic_teaching
+    // after reconnecting, exactly the unbounded-conversation defect
+    // VTID-03762 exists to prevent. Gate on _guidedTopicInFlight being
+    // already null (genuinely dropped, nothing left to resume).
+    if (!_s._guidedTopicInFlight) {
+      _s._guidedTopicOpenedAt = null;
+      try { clearInterval(_s._guidedTopicBackstopInterval); } catch (e) { /* noop */ }
+      _s._guidedTopicBackstopInterval = null;
+    }
     _setOrbState('error');
     _setStatus(_caption('tapToReconnect'));
     _updateUI();

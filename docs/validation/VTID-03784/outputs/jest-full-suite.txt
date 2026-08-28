@@ -1,62 +1,62 @@
-  B0d.3 — wake timeline event constants are locked
-    ✓ contains exactly the 16 locked event names in the documented order (1 ms)
-    ✓ isWakeTimelineEventName accepts every locked name (1 ms)
-    ✓ isWakeTimelineEventName rejects unknown names (1 ms)
+    ✓ awards +2 on first listen and is idempotent on replay (2 ms)
+    ✓ sums distinct topics into the engagement bonus (1 ms)
+    ✓ clamps the bonus to the maximum
+    ✓ returns 0 bonus for an unknown user
 
   console.log
     ✅ Test setup loaded - fetch mocked, env vars set
 
       at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
 
-PASS test/services/orb-session-state.test.ts
-  readOrbSessionState
-    ✓ returns the value when present and not expired (1 ms)
-    ✓ returns null when expired
-    ✓ fails open (null) on error or missing identity (1 ms)
-  writeOrbSessionState
-    ✓ upserts with a computed expires_at from ttlMinutes (1 ms)
-    ✓ defaults a non-positive ttl to 15 minutes (1 ms)
-    ✓ returns ok=false on missing identity
-  clearOrbSessionState
-    ✓ deletes without throwing
+PASS test/services/assistant-continuation/providers/next-action/source-gate.test.ts
+  buildSourceFlagKey
+    ✓ reminder_due → voice.next_action.reminder_due.enabled (1 ms)
+    ✓ continuity_promise_owed → voice.next_action.continuity_promise_owed.enabled
+  isNextActionSourceEnabled
+    ✓ absent row → enabled (default-true safety) (1 ms)
+    ✓ row enabled=true → enabled
+    ✓ row enabled=false → disabled
+    ✓ getSystemControl throws → enabled (never silence by default) (1 ms)
+  withFlagGate
+    ✓ passes through when enabled (1 ms)
+    ✓ returns feature_disabled when disabled (does NOT invoke underlying produce) (1 ms)
+    ✓ preserves key + serves passthrough (1 ms)
 
   console.log
     ✅ Test setup loaded - fetch mocked, env vars set
 
       at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
 
-PASS test/orb/instruction/first-time-welcome.test.ts
-  buildFirstTimeWelcomeLine — first-time onboarding welcome
-    ✓ localizes de and never uses returning-user framing (2 ms)
-    ✓ localizes en and never uses returning-user framing
-    ✓ localizes es and never uses returning-user framing (2 ms)
-    ✓ localizes sr and never uses returning-user framing
-    ✓ DE introduces Vitana, frames the journey, and offers the first session
-    ✓ falls back to EN for unsupported languages (still a first-time welcome, not "welcome back")
-    ✓ omits the name cleanly when none is known
+PASS test/orb/live/instruction/bootstrap-cap.test.ts
+  bootstrap context cap (Phase A — BOOTSTRAP-orb-bootstrap-cap)
+    ✓ passes an under-cap bootstrap through unchanged (2 ms)
+    ✓ passes a bootstrap exactly at the cap through unchanged (1 ms)
+    ✓ handles empty / falsy input without throwing (1 ms)
+    ✓ trims a 50 KB bootstrap to the cap and appends the sentinel (1 ms)
+    ✓ preserves the wake-brief override sentinel (it lives at the top) after trim (1 ms)
+    ✓ respects a custom max argument (1 ms)
 
   console.log
     ✅ Test setup loaded - fetch mocked, env vars set
 
       at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
 
-PASS test/economic-axis.test.ts
-  deriveEconomicAxis
-    ✓ returns 'marketplace' for marketplace source_type (1 ms)
-    ✓ returns "find_match" for known match-related source_refs (1 ms)
-    ✓ marketplace source_type wins over a find_match source_ref
-    ✓ returns "none" for unrelated source types (1 ms)
-    ✓ returns "none" for community source with unmapped source_ref (1 ms)
-    ✓ returns "none" for match-looking source_refs outside community sources
-    ✓ returns "none" for null/undefined inputs (1 ms)
-    ✓ returns "none" for empty strings
+PASS test/services/voice-tool-router-candidate.test.ts
+  predictVoiceToolRoute — W2 shadow stub (echoes primaryTool)
+    ✓ resolves to exactly the given primaryTool (1 ms)
+    ✓ echoes a different primaryTool unchanged for a different call
+    ✓ ignores transcript content entirely — output tracks primaryTool, not any tool name mentioned in the transcript (1 ms)
+    ✓ does not alter case, whitespace, or otherwise transform the tool name
+    ✓ handles an empty transcript
+    ✓ handles an empty primaryTool string without substituting a default (1 ms)
+    ✓ returns a Promise that resolves (not a bare synchronous value)
 
 A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
 Test Suites: 1 skipped, 720 passed, 720 of 721 total
-Tests:       29 skipped, 6 todo, 13507 passed, 13542 total
+Tests:       29 skipped, 6 todo, 13509 passed, 13544 total
 Snapshots:   44 passed, 44 total
-Time:        73.482 s
+Time:        69.123 s, estimated 70 s
 Ran all test suites.
 Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
 
-(full log truncated to tail; full run: 720/721 suites passing (1 pre-existing skip), 13507/13542 tests passing (29 skipped, 6 todo), 0 failures)
+(full log truncated to tail; full run after Codex follow-up fix: 720/721 suites passing (1 pre-existing skip), 13509/13544 tests passing (29 skipped, 6 todo), 0 failures)

@@ -20,6 +20,17 @@ import * as path from 'path';
 // does — covering every current and future path into this shared stuck
 // state, not just the circuit breaker.
 //
+// Codex review (same PR) caught a real regression in the first version:
+// the cancellation must be gated on _guidedTopicInFlight being null. The
+// circuit breaker nulls it before calling _enterStuckState() (topic
+// genuinely dropped — safe to cancel). MAX_WIDGET_RECONNECTS exhaustion
+// does NOT null it, and _resetAndReconnect() (the tap-to-reconnect handler
+// / health-probe watchdog) explicitly re-arms _s.guidedTopic from it to
+// RESUME the same lesson — an unconditional cancel would strip that
+// resumed session of the only protection against the model never calling
+// end_guided_topic_teaching again, i.e. exactly the unbounded-conversation
+// defect VTID-03762 was built to prevent.
+//
 // Static source checks — same pattern as the sibling guided-topic suites
 // (the widget is a plain browser IIFE with no export surface).
 
@@ -54,6 +65,25 @@ describe('orb-widget _enterStuckState cancels the guided-topic backstop (VTID-03
   it('cancels the backstop interval and nulls the handle', () => {
     expect(body).toMatch(/clearInterval\(_s\._guidedTopicBackstopInterval\)/);
     expect(body).toMatch(/_s\._guidedTopicBackstopInterval = null;/);
+  });
+
+  // Codex review finding on this PR: the cancellation must not run when a
+  // guided topic is still in flight and could be resumed on reconnect —
+  // doing so unconditionally would remove the resumed lesson's only
+  // completion backstop.
+  it('gates the cancellation on _guidedTopicInFlight being null — does not strip the backstop from a resumable lesson', () => {
+    const gateIdx = body.indexOf('if (!_s._guidedTopicInFlight) {');
+    expect(gateIdx).toBeGreaterThanOrEqual(0);
+    const openedAtIdx = body.indexOf('_s._guidedTopicOpenedAt = null;', gateIdx);
+    const intervalClearIdx = body.indexOf('clearInterval(_s._guidedTopicBackstopInterval)', gateIdx);
+    expect(openedAtIdx).toBeGreaterThan(gateIdx);
+    expect(intervalClearIdx).toBeGreaterThan(gateIdx);
+  });
+
+  it('_resetAndReconnect re-arms a still-in-flight guided topic on resume — the exact case the gate must protect', () => {
+    const resumeFnBody = extractFunctionBody(source, 'function _resetAndReconnect() {');
+    expect(resumeFnBody).toMatch(/if \(_s\._guidedTopicInFlight && !_s\.guidedTopic\) \{/);
+    expect(resumeFnBody).toMatch(/_s\.guidedTopic = _s\._guidedTopicInFlight;/);
   });
 
   it('still sets the tap-to-reconnect UI state (unchanged behavior)', () => {

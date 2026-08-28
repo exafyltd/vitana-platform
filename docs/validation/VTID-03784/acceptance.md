@@ -112,6 +112,54 @@ AC-9 — The full gateway suite is green.
 
 TEST: `outputs/jest-full-suite.txt`.
 
+## Codex review finding — addressed before merge
+
+Automated review on this PR (chatgpt-codex-connector), P2: "Preserve the
+backstop for resumable guided lessons." When `MAX_WIDGET_RECONNECTS` is
+exhausted after a guided lesson has already produced audio,
+`_guidedTopicInFlight` remains set (unlike the circuit breaker, which
+explicitly nulls it before calling `_enterStuckState()`) — and
+`_resetAndReconnect()` (the tap-to-reconnect handler and the health-probe
+watchdog) explicitly re-arms `_s.guidedTopic` from it to resume the SAME
+lesson. Cancelling the backstop unconditionally, as the first version of
+this fix did, would strip that resumed session of its only protection
+against the model never calling `end_guided_topic_teaching` again after
+reconnecting — reproducing the exact unbounded-conversation defect
+VTID-03762 was built to prevent, for a genuinely different reason than
+VTID-03784's own bug.
+
+Verified against the code before fixing (not just the review's claim):
+read `_resetAndReconnect()` (lines ~1479-1553) and confirmed
+`if (_s._guidedTopicInFlight && !_s.guidedTopic) { _s.guidedTopic =
+_s._guidedTopicInFlight; }` — a real, reachable resume path, and the
+circuit breaker's own explicit null of both `_s.guidedTopic` and
+`_s._guidedTopicInFlight` (VTID-03782) confirmed it, and only it,
+represents a genuinely dropped topic with nothing left to resume.
+
+**Fix:** the cancellation in `_enterStuckState()` is now gated on
+`!_s._guidedTopicInFlight` — cancels only when the topic has actually been
+dropped (the circuit breaker case, VTID-03784's own bug), leaves the
+backstop running when a topic could still be resumed (the
+`MAX_WIDGET_RECONNECTS` case Codex caught).
+
+AC-10 — The backstop cancellation only runs when `_guidedTopicInFlight` is
+null.
+
+TEST: `orb-widget-guided-topic-backstop-stuck-state.test.ts` — "gates the
+cancellation on _guidedTopicInFlight being null — does not strip the
+backstop from a resumable lesson"
+
+AC-11 — `_resetAndReconnect()`'s resume path (the exact case the gate
+protects) is independently confirmed present and unchanged.
+
+TEST: same file — "_resetAndReconnect re-arms a still-in-flight guided
+topic on resume — the exact case the gate must protect"
+
+Mutation-verified alongside the other AC's (see `commands.log`): removing
+the gate (`if (!_s._guidedTopicInFlight)` → `if (true)`) fails exactly this
+one new test; the 6 others in the same file, plus all 24 pre-existing
+sibling tests, stay green.
+
 ## Deliberately NOT attempted
 
 - **No change to `onGuidedTopicTeachingEnd`/`completePractice` on the host

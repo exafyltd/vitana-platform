@@ -94,12 +94,12 @@ $ npx jest test/frontend/orb-widget-guided-topic-backstop-stuck-state.test.ts te
 Test Suites: 3 passed, 3 total
 Tests:       24 passed, 24 total
 
-## Type check
+## Type check (before Codex follow-up)
 
 $ npx tsc --noEmit
 (clean, no output, exit 0)
 
-## Full gateway suite
+## Full gateway suite (before Codex follow-up)
 
 $ npx jest
 (see outputs/jest-full-suite.txt for tail summary)
@@ -108,3 +108,58 @@ $ npx jest
 
 Registered VTID-03784 in ALLOWED_VTID_PATTERN with a comment block
 matching the established pattern used for every prior VTID in this chain.
+
+## Codex review follow-up
+
+PR review (P2): unconditional backstop cancellation in _enterStuckState()
+strips protection from a resumable guided lesson (MAX_WIDGET_RECONNECTS
+path, _resetAndReconnect() re-arms _guidedTopicInFlight). Verified against
+the code (read _resetAndReconnect(), confirmed the resume branch is real
+and reachable) before fixing.
+
+Edited src/frontend/command-hub/orb-widget.js: wrapped the 3 cancellation
+lines in `if (!_s._guidedTopicInFlight) { ... }`.
+
+$ node --check src/frontend/command-hub/orb-widget.js
+SYNTAX_OK
+
+Updated test/frontend/orb-widget-guided-topic-backstop-stuck-state.test.ts:
+added "gates the cancellation on _guidedTopicInFlight being null..." and
+"_resetAndReconnect re-arms a still-in-flight guided topic on resume...".
+
+$ npx jest test/frontend/orb-widget-guided-topic-backstop-stuck-state.test.ts test/frontend/orb-widget-guided-topic-circuit-breaker-stop.test.ts test/frontend/orb-widget-guided-topic-reconnect-loop.test.ts test/frontend/orb-widget-guided-topic-reconnect.test.ts
+PASS — Test Suites: 4 passed, 4 total / Tests: 31 passed, 31 total
+
+### Mutation testing (follow-up)
+
+$ cp src/frontend/command-hub/orb-widget.js /tmp/orb-widget-784-followup.js.bak
+$ grep -n "if (!_s._guidedTopicInFlight) {" src/frontend/command-hub/orb-widget.js
+4647:    if (!_s._guidedTopicInFlight) {
+$ sed -i "4647s/.*/    if (true) {  \/\/ mutation: gate removed/" src/frontend/command-hub/orb-widget.js
+$ node --check src/frontend/command-hub/orb-widget.js
+SYNTAX_OK
+
+$ npx jest test/frontend/orb-widget-guided-topic-backstop-stuck-state.test.ts
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 6 passed, 7 total
+✕ gates the cancellation on _guidedTopicInFlight being null — does not strip the backstop from a resumable lesson
+
+Exactly the 1 test directly asserting the gate fails; the 6 others in the
+same file stay green.
+
+$ cp /tmp/orb-widget-784-followup.js.bak src/frontend/command-hub/orb-widget.js
+$ diff /tmp/orb-widget-784-followup.js.bak src/frontend/command-hub/orb-widget.js && echo CLEAN_RESTORE
+CLEAN_RESTORE
+$ node --check src/frontend/command-hub/orb-widget.js && echo SYNTAX_OK
+SYNTAX_OK
+$ npx jest test/frontend/orb-widget-guided-topic-backstop-stuck-state.test.ts test/frontend/orb-widget-guided-topic-circuit-breaker-stop.test.ts test/frontend/orb-widget-guided-topic-reconnect-loop.test.ts test/frontend/orb-widget-guided-topic-reconnect.test.ts
+Test Suites: 4 passed, 4 total
+Tests:       31 passed, 31 total
+
+### Type check + full suite (after Codex follow-up)
+
+$ npx tsc --noEmit
+(clean, no output, exit 0)
+
+$ npx jest
+(see outputs/jest-full-suite.txt — re-generated after the follow-up fix)
