@@ -16753,9 +16753,20 @@ async function handleWebSocketConnection(ws: WebSocket, req: IncomingMessage): P
     }
   });
 
-  // VTID-STREAM-KEEPALIVE: Server-side ping to prevent Cloud Run ALB idle timeout.
-  // The SSE path has a 30s heartbeat, but the WS path had nothing — idle connections
-  // were silently terminated by the load balancer after ~60s of no data.
+  // VTID-STREAM-KEEPALIVE: Server-side ping to prevent load-balancer idle
+  // timeout. The SSE path has a 30s heartbeat, but the WS path had nothing —
+  // idle connections were silently terminated after ~60s of no data.
+  //
+  // VTID-03794: this comment named Cloud Run — GCP is decommissioned and the
+  // live infra is `vitana-alb-prod`'s AWS ALB, whose *default* idle timeout
+  // is also 60s. Live-reproduced on staging with a real client-level
+  // WebSocket close-event hook (not inferred from server logs): three
+  // healthy sessions each died at 1005/wasClean=true almost exactly 58-60s
+  // after connecting, on a plain top-level tab with no iframe involved. A
+  // ping every 30s only gives ONE chance to land inside that ~60s window
+  // before the timer expires — tightened to 10s for real margin against a
+  // dropped/delayed ping or pong, regardless of what turns out to be
+  // actually counting as "activity" on whichever proxy sits in front.
   const clientPingInterval = setInterval(() => {
     if (ws.readyState === WebSocket.OPEN) {
       try {
@@ -16766,7 +16777,7 @@ async function handleWebSocketConnection(ws: WebSocket, req: IncomingMessage): P
     } else {
       clearInterval(clientPingInterval);
     }
-  }, 30_000);
+  }, 10_000);
 
   // Handle client disconnect
   ws.on('close', (code, reason) => {
