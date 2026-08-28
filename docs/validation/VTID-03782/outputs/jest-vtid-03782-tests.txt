@@ -1,0 +1,57 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/frontend/orb-widget-guided-topic-reconnect-loop.test.ts
+  orb-widget _s._guidedTopicZeroAudioFailCount lifecycle (VTID-03776)
+    ✓ is declared in the initial _s state, defaulting to 0 (3 ms)
+    ✓ is reset to 0 by focusGuidedTopic (a fresh tap is a clean slate) (3 ms)
+    ✓ is reset to 0 by _hide() — a real close ends the overlay session (3 ms)
+  orb-widget _attemptReconnect guided-topic circuit breaker (VTID-03776 Fix B)
+    ✓ increments the zero-audio fail counter only when a guided topic is in flight AND nothing has been heard yet (1 ms)
+    ✓ drops both guidedTopic and _guidedTopicInFlight once the threshold is reached (4 ms)
+    ✓ the breaker check runs before the MAX_WIDGET_RECONNECTS stuck-state check (3 ms)
+    ✓ does NOT fall through to a fresh reconnect once the breaker trips — it stops immediately instead (3 ms)
+    ✓ does NOT touch the counter or drop the topic once real audio has played (mid-lesson resume must survive) (2 ms)
+  orb-widget _attemptReconnect backoff-budget reset (VTID-03776 Fix A)
+    ✓ does NOT reset _reconnectCount on bare _s.active alone (2 ms)
+    ✓ gates the reset on _s._audioEverHeardThisOpen, nested inside the _s.active branch (2 ms)
+    ✓ still logs success and clears the disconnect banner regardless of whether the budget was reset (2 ms)
+    ✓ the reconnect loop itself is otherwise unchanged — still gated by _isOffline/_isReconnecting/MAX_WIDGET_RECONNECTS (3 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/frontend/orb-widget-guided-topic-reconnect.test.ts
+  orb-widget guided-topic reconnect (VTID-03675)
+    ✓ reads guided_topic_id into the start payload without nulling _s.guidedTopic (4 ms)
+    ✓ a client-side reconnect (_attemptReconnect -> _sessionStart) can still see a pending guided topic (1 ms)
+    ✓ clears guidedTopic in the SAME place guidedAutoClose is cleared on a completed guided turn (1 ms)
+    ✓ _hide() also clears a never-delivered guided topic so it cannot leak into a later session
+    ✓ focusGuidedTopic still arms both flags together (unchanged contract) (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/frontend/orb-widget-guided-topic-circuit-breaker-stop.test.ts
+  orb-widget guided-topic circuit breaker stops honestly instead of falling through (VTID-03782)
+    ✓ still drops guidedTopic and _guidedTopicInFlight once the threshold is reached (unchanged) (1 ms)
+    ✓ calls _enterStuckState() after dropping the topic (1 ms)
+    ✓ returns immediately after _enterStuckState() — does not fall through to the normal reconnect scheduling below
+    ✓ does not increment _reconnectCount or schedule a delayed reconnect once the breaker has stopped the attempt (1 ms)
+    ✓ _enterStuckState remains the exact same function MAX_WIDGET_RECONNECTS exhaustion uses — no new UI invented (1 ms)
+
+Test Suites: 3 passed, 3 total
+Tests:       22 passed, 22 total
+Snapshots:   0 total
+Time:        1.336 s
+Ran all test suites matching /test\/frontend\/orb-widget-guided-topic-circuit-breaker-stop.test.ts|test\/frontend\/orb-widget-guided-topic-reconnect-loop.test.ts|test\/frontend\/orb-widget-guided-topic-reconnect.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

@@ -4471,9 +4471,17 @@
       if (_s._guidedTopicZeroAudioFailCount >= 2) {
         console.warn('[VTOrb] _attemptReconnect: guided topic ' + _s._guidedTopicInFlight +
           ' failed ' + _s._guidedTopicZeroAudioFailCount + 'x with no audio ever heard — ' +
-          'dropping it for this session, falling back to generic conversation');
+          'dropping it and stopping instead of silently opening unrelated conversation');
         _s.guidedTopic = null;
         _s._guidedTopicInFlight = null;
+        // VTID-03782: used to fall through to the normal reconnect below,
+        // which silently opened unrelated conversation with no end signal
+        // possible (see this VTID's own test file for the live evidence).
+        // Stop honestly via the same tap-to-reconnect state
+        // MAX_WIDGET_RECONNECTS already uses, instead of degrading into an
+        // unbounded chat the person can't distinguish from their lesson.
+        _enterStuckState();
+        return;
       }
     }
 

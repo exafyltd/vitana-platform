@@ -1,0 +1,134 @@
+VTID-03782 — command log
+
+=== VTID allocation ===
+$ SELECT * FROM allocate_global_vtid('claude-code', 'gateway', 'orb-live');
+-> {"vtid":"VTID-03782","num":3782,"id":"1d695bc2-aaa6-48b0-b6d4-d0077e890ccd"}
+
+$ UPDATE vtid_ledger SET title=..., summary=..., description=...,
+  status='in_progress', spec_status='approved' WHERE vtid='VTID-03782';
+-> {"vtid":"VTID-03782","status":"in_progress","spec_status":"approved"}
+
+=== Branch reset ===
+$ git fetch origin main
+-> 61260897..1f4e019a  main -> origin/main (includes this session's own
+   VTID-03781 merge, plus an unrelated VTID-03773 fix from elsewhere)
+$ git checkout -B claude/my-journey-catalog-multilingual-qrwxng origin/main
+-> branch reset onto fresh main (1f4e019a)
+
+=== Live evidence gathering (Supabase MCP, project inmkhvwdcuyhnxkgfvsb) ===
+
+Query 1 — recent orb.live.diag/vtid.live.* events (last 30 min):
+Found session live-1fb2773f-... speaking a single continuous turn that
+grew to output_speech_tokens:3562 with no intervening turn_complete, then
+closing 45s later with reason:"client_disconnect". A reconnect
+(live-91e60959) opened with greeting_sent prompt_len:655 (no guided-topic
+tag), hit nova_validation immediately, retried once, then was closed by
+the user (reason:"user_stop").
+
+Query 2 — targeted query for wake_opener/guided_topic on both session
+ids: found live-1fb2773f's own orb.live.diag entry carries
+wake_opener:"conv_resume", nba:"next_session", nba_domain:"journey",
+bucket:"reconnect" — NOT the guided-topic-narration provider's
+override_v2 wake_opener shape.
+
+Query 3 — 90-minute window of vtid.live.session.start +
+orb.livekit.next_action.* events filtered for guided_topic/wake_opener,
+for the same user. Reconstructed the full burst for topic T009:
+  08:01:58.094 - T009 candidate wins, session live-27563f89 starts
+  08:02:02.041 - T009 candidate wins AGAIN (a reconnect), session
+                 live-1774aa92 starts
+  08:02:06.601 - session live-1fb2773f starts — NO guided-topic candidate
+                 event for this session anywhere in the window; its own
+                 diag trace (Query 2) confirms conv_resume/next_session
+                 won instead.
+
+Cross-referenced against services/gateway/src/frontend/command-hub/orb-widget.js
+_attemptReconnect()'s VTID-03776 zero-audio circuit breaker
+(lines ~4453-4478 pre-fix): confirmed it increments
+_guidedTopicZeroAudioFailCount on each disconnect-before-audio, and at
+>=2 drops _s.guidedTopic/_s._guidedTopicInFlight — exactly 2 reconnects
+(27563f89 -> 1774aa92) before the 3rd (1fb2773f) opened generic, matching
+the observed sequence precisely.
+
+=== Root cause confirmed ===
+The breaker's own comment said "the next attempt falls through to safe
+generic conversation" — this session start (1fb2773f) IS that fallthrough,
+and the "generic conversation" it fell through to spoke one very long,
+unbroken turn with no natural end and no completion signal reachable
+(the guided-topic system instruction, which alone makes
+end_guided_topic_teaching relevant, was never injected for this session).
+
+=== Implementation ===
+Edited services/gateway/src/frontend/command-hub/orb-widget.js:
+  _attemptReconnect()'s circuit-breaker block now calls _enterStuckState()
+  and returns immediately after dropping the topic, instead of falling
+  through to the normal reconnect scheduling below.
+
+$ node --check services/gateway/src/frontend/command-hub/orb-widget.js
+-> (no output — syntax OK)
+
+Edited scripts/ci/command-hub-ownership-guard.js: registered VTID-03782.
+$ node --check scripts/ci/command-hub-ownership-guard.js
+-> (no output — syntax OK)
+
+=== Tests written / updated ===
+New file: test/frontend/orb-widget-guided-topic-circuit-breaker-stop.test.ts
+  (5 tests: drop-still-happens, _enterStuckState called, immediate return,
+   no budget consumed, _enterStuckState is the same single function used
+   elsewhere — no new UI invented)
+
+Updated: test/frontend/orb-widget-guided-topic-reconnect-loop.test.ts
+  — the old test asserting the breaker "still gets a fair remaining-budget
+  retry" described behavior this VTID deliberately removes; replaced with
+  an assertion of the new (stop-immediately) behavior, with a comment
+  explaining why the old expectation is superseded.
+
+Initial run caught two PRE-EXISTING tests broken by an overly long inline
+comment shifting fixed-window string slices
+(orb-widget-guided-topic-reconnect-loop.test.ts's 400-char window,
+orb-widget-guided-topic-reconnect.test.ts's 500-char lookback) — not a
+logic break, a comment-length collision. Fixed by trimming the inline
+comment to a few lines (moved the full rationale into this VTID's own new
+test file's header comment and acceptance.md instead).
+
+$ cd services/gateway && npx jest test/frontend/orb-widget-guided-topic-circuit-breaker-stop.test.ts test/frontend/orb-widget-guided-topic-reconnect-loop.test.ts test/frontend/orb-widget-guided-topic-reconnect.test.ts
+-> Test Suites: 3 passed, 3 total
+   Tests:       22 passed, 22 total
+   (full output: outputs/jest-vtid-03782-tests.txt)
+
+=== Mutation testing ===
+$ cp src/frontend/command-hub/orb-widget.js /tmp/orb-widget-782.js.bak
+$ grep -n "_enterStuckState();" src/frontend/command-hub/orb-widget.js
+-> line 4483 (new, inside the breaker block), line 4489 (pre-existing,
+   MAX_WIDGET_RECONNECTS)
+$ sed -i '4483s/.*/        \/\/ mutation: _enterStuckState removed/' src/frontend/command-hub/orb-widget.js
+$ sed -i '4484s/.*/        \/\/ mutation: return removed/' src/frontend/command-hub/orb-widget.js
+$ node --check src/frontend/command-hub/orb-widget.js
+-> syntax OK (confirms clean two-line mutation)
+$ npx jest test/frontend/orb-widget-guided-topic-circuit-breaker-stop.test.ts test/frontend/orb-widget-guided-topic-reconnect-loop.test.ts
+-> Test Suites: 2 failed, 2 total
+   Tests:       3 failed, 14 passed, 17 total
+   Failed, exactly:
+     - "calls _enterStuckState() after dropping the topic"
+     - "returns immediately after _enterStuckState() — does not fall
+        through to the normal reconnect scheduling below"
+     - "does NOT fall through to a fresh reconnect once the breaker
+        trips — it stops immediately instead"
+   Passed (unaffected, as expected): all other tests in both files,
+   including "still drops guidedTopic..." (the drop itself is untouched
+   by this mutation) and every VTID-03776 Fix A/lifecycle test.
+$ cp /tmp/orb-widget-782.js.bak src/frontend/command-hub/orb-widget.js
+$ diff /tmp/orb-widget-782.js.bak src/frontend/command-hub/orb-widget.js
+-> (no output — clean restore)
+$ node --check src/frontend/command-hub/orb-widget.js
+-> syntax OK
+$ npx jest test/frontend/orb-widget-guided-topic-circuit-breaker-stop.test.ts test/frontend/orb-widget-guided-topic-reconnect-loop.test.ts test/frontend/orb-widget-guided-topic-reconnect.test.ts
+-> Test Suites: 3 passed, 3 total
+   Tests:       22 passed, 22 total
+
+=== Full verification ===
+$ npx tsc --noEmit
+-> (no output — clean; outputs/tsc-noemit.txt)
+
+$ npx jest
+-> (see outputs/jest-full-suite.txt for the tail summary)
