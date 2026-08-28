@@ -1,27 +1,52 @@
 /**
- * VTID-03788 — regression guard for a defect class that has now broken
- * AWS-STAGE-DEPLOY-GATEWAY.yml's task-definition-update step TWICE:
- * an apostrophe inside a `run: |` step's embedded jq program prematurely
- * closes the surrounding single-quoted bash string. The file's own inline
- * comment (near the SEC_JWT resolution loop) already names the first
- * incident; VTID-03787's own diagnostic-instrumentation flag comment
- * reproduced it a second time — a fresh "user's" in a comment that lives
- * INSIDE the jq single-quoted program, not outside it like the file's own
- * warning says to keep it.
+ * VTID-03788 — regression guard, corrected mid-investigation.
  *
- * Real cost: every push-triggered staging deploy on the VTID-03787 branch
- * (4 consecutive runs, including the eventual merge to main) failed with
- * 0 jobs / a bash syntax error, silently — GitHub Actions reports this as
- * workflow run failure with no job ever created, easy to miss unless you
- * go looking. Staging kept serving a stale commit the whole time with no
- * loud signal pointing at the actual cause.
+ * First hypothesis (real, but NOT the actual blocking cause): an apostrophe
+ * inside a `run: |` step's embedded jq program prematurely closes the
+ * surrounding single-quoted bash string. The file's own inline comment
+ * (near the SEC_JWT resolution loop) already names one incident of this;
+ * VTID-03787's own diagnostic-instrumentation flag comment reproduced it a
+ * second time. `bash -n` on the extracted step confirmed a real syntax
+ * error, so this was fixed and is still guarded below.
  *
- * This test doesn't just re-check the specific broken line — it parses
- * EVERY `run:` step in EVERY job of both gateway deploy workflows with a
- * real YAML parser (js-yaml, already a dependency) and shells each one out
- * to `bash -n`, so any future step anywhere in these files with a genuine
- * bash syntax error (this class or any other) fails CI loudly instead of
- * silently killing every job in the run.
+ * Fixing that did NOT resolve the actual outage — a THIRD push (the
+ * VTID-03788 fix itself) still failed with the identical 0-jobs signature.
+ * Root-caused via the real GitHub Actions API (a direct workflow_dispatch
+ * call returns the raw parse error, not just a webhook summary):
+ * `Invalid Argument - failed to parse workflow: (Line: 184, Col: 14):
+ * Exceeded max expression length 21000`. GitHub Actions hard-rejects a
+ * workflow file whose `run:` step value is too large — a real, undocumented
+ * (in this repo) limit that the "Register task-definition revision" step
+ * had been creeping toward for a long time (255 lines of comments vs. ~100
+ * lines of actual bash) and finally crossed once VTID-03787's own comment
+ * was added. Confirmed empirically, not just theorized: dispatching the
+ * exact last-known-good commit (whose same step measured 23,981 characters)
+ * via a throwaway branch parsed and queued successfully; the failing
+ * version measured 25,111. Fixed by relocating every comment out of the
+ * `run:` block into plain YAML comments above it (a pure relocation — bash
+ * ignores comments regardless of position, so this changes nothing about
+ * what runs; verified line-for-line identical executable content and
+ * complete comment-text preservation before this test was written).
+ *
+ * Real cost: every push/dispatch of this workflow across the VTID-03787 and
+ * first VTID-03788 fix attempt (5 consecutive runs, including two separate
+ * merges to main) failed with 0 jobs — GitHub Actions reports this as a
+ * workflow run failure with no job ever created and no check-run failure
+ * message reaching the PR's own CI (the PR's CI never runs THIS workflow —
+ * it only runs on push to main / dispatch — so a green PR merge gave zero
+ * signal that the actual deploy pipeline was broken). Staging kept serving
+ * a stale commit the whole time.
+ *
+ * This test file parses EVERY `run:` step in EVERY job of both gateway
+ * deploy workflows with a real YAML parser (js-yaml, already a dependency):
+ *  - shells each one out to `bash -n`, so a genuine bash syntax error (the
+ *    apostrophe class or any other) fails CI loudly instead of silently
+ *    killing every job in the run;
+ *  - asserts every step's `run:` value stays under a conservative size cap,
+ *    so this specific "grew past GitHub's real limit" class cannot recur
+ *    silently either — the cap (20,000 chars) sits safely under the
+ *    confirmed-working 23,981 measurement, not just under the confirmed-
+ *    broken 25,111 one.
  */
 
 import * as fs from 'fs';
@@ -88,6 +113,21 @@ describe('VTID-03788: every run: step in the gateway deploy workflows is valid b
       }
 
       expect(failures).toEqual([]);
+    });
+
+    // VTID-03788 — the actual defect: GitHub Actions rejects the WHOLE
+    // workflow file (0 jobs, no per-job CI signal) once a single step's
+    // run: value gets too large. 20,000 is chosen deliberately under the
+    // empirically-CONFIRMED-WORKING 23,981-char measurement (not just under
+    // the confirmed-broken 25,111), so this cap can never itself be the
+    // thing that makes a legitimately-sized step fail.
+    it(`${workflowName}: no single run: step exceeds 20,000 characters (GitHub Actions workflow-file size limit)`, () => {
+      const steps = bashSteps(workflowPath);
+      const oversized = steps
+        .map((s) => ({ ...s, chars: s.run.length }))
+        .filter((s) => s.chars > 20_000);
+
+      expect(oversized.map((s) => `job "${s.jobId}" step "${s.stepName}": ${s.chars} chars`)).toEqual([]);
     });
   }
 
