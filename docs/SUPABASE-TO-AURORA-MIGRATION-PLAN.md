@@ -292,9 +292,16 @@ functions without needing Lambda (IAM-denied to this session) — wired
 behind an `AI_BRIDGE_PROVIDER` flag on 4 of those 6 functions so far
 (`generate-enhanced-recommendations`, `generate-proactive-greeting`,
 `extract-diary-insights`, `social-media-import`), defaulting to unchanged
-behavior. Remaining: `ai-chat` (1300+ lines, SSE streaming via a
-hand-built fetch rather than `gemini-client.ts` — deserves its own pass,
-not a rushed swap) and `transcribe-audio` (sends raw audio bytes to
+behavior. `ai-chat` turned out to have THREE separate Gemini-touching code
+paths, not one: its two isolated non-streaming `generateContent()` calls
+(post-stream translation, background insight extraction) are now wired
+the same way; its streaming chat response (a raw fetch directly to
+Gemini's SSE endpoint, entangled with per-sentence TTS triggering) and its
+non-streaming fallback (routed through Lovable's own AI gateway, itself
+pointed at `google/gemini-2.5-flash` — a third distinct integration) are
+deliberately untouched, needing real Bedrock streaming support this
+session has no safe way to build and verify against a live chat feature.
+Remaining: `transcribe-audio` (sends raw audio bytes to
 Gemini's multimodal endpoint — this bridge is text-only, so Bedrock/Claude
 has no drop-in path here; needs Amazon Transcribe instead, separate work).
 Also untouched: the 2 `generateEmbedding`-dependent functions and
