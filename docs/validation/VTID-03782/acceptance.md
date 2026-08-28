@@ -124,6 +124,56 @@ AC-10 — The full gateway suite is green.
 
 TEST: `outputs/jest-full-suite.txt`.
 
+## Codex review finding — addressed before merge
+
+Automated review on this PR (chatgpt-codex-connector) flagged a real gap in
+the initial fix, P1: `_enterStuckState()` alone does not stop *automatic*
+recovery. `_resetAndReconnect()`'s own pre-existing comment confirms
+`_disconnectActive` is deliberately left `true` after entering a stuck
+state so the 5-second `_recoveryWatchdog` health-probe (armed by
+`_announceDisconnect()`) can auto-recover once the gateway answers again —
+correct behavior for the original `MAX_WIDGET_RECONNECTS` (real network
+outage) case, but wrong for this breaker: it trips while the gateway is
+fully reachable (Nova's content filter rejected the content, not a dropped
+connection), so the watchdog's next probe would succeed within ~5 seconds
+and call `_resetAndReconnect()` automatically — silently reopening the
+exact unrelated conversation this fix exists to prevent, merely delayed by
+a few seconds instead of happening immediately.
+
+Verified against the code before fixing (not just the review's claim):
+read `_announceDisconnect()`/`_recoveryWatchdog` (lines ~1308-1433) and
+`_resetAndReconnect()` (lines ~1479-1553, whose own comment literally says
+"Keep `_disconnectActive` true so the UI doesn't flash to a usable state
+before the new session lands") — confirmed the watchdog is real, already
+armed by the time this breaker runs, and untouched by the original fix.
+
+**Fix:** the breaker now cancels `_recoveryWatchdog` and clears
+`_disconnectActive` before calling `_enterStuckState()`, so only an
+explicit tap (still gated on `_disconnectStuck`, which `_enterStuckState()`
+already sets) can resume from this stop. `_enterStuckState()` itself and
+the `MAX_WIDGET_RECONNECTS` call site are deliberately left untouched —
+their existing auto-recover-on-reachable behavior is correct for a real
+network outage and is not this VTID's bug to fix.
+
+AC-11 — The breaker cancels the recovery watchdog and clears
+`_disconnectActive` before entering the stuck state, so an automatic
+health-probe cannot silently undo the stop.
+
+TEST: `orb-widget-guided-topic-circuit-breaker-stop.test.ts` — "cancels
+the recovery watchdog and clears _disconnectActive before entering the
+stuck state"
+
+AC-12 — The manual tap-to-reconnect path still works after
+`_disconnectActive` is cleared (the tap handler ORs it with
+`_disconnectStuck`, which `_enterStuckState()` sets).
+
+TEST: same file — "the manual tap-to-reconnect path still works with
+_disconnectActive cleared (gated on _disconnectStuck too)"
+
+Mutation-verified alongside the other AC's (see `commands.log`): removing
+the watchdog-cancel + `_disconnectActive` clear fails exactly this one new
+test; the 6 others in the same file stay green.
+
 ## Deliberately NOT attempted
 
 - **No change to what candidate wins when a guided topic is dropped.**

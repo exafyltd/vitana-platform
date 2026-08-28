@@ -1,9 +1,9 @@
-=== npx jest (full gateway suite) — tail summary ===
+=== npx jest (full gateway suite, re-run after Codex-review fix) — tail summary ===
 
 A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
 Test Suites: 1 skipped, 719 passed, 719 of 720 total
-Tests:       29 skipped, 6 todo, 13498 passed, 13533 total
+Tests:       29 skipped, 6 todo, 13500 passed, 13535 total
 Snapshots:   44 passed, 44 total
-Time:        84.889 s
+Time:        68.429 s, estimated 81 s
 Ran all test suites.
 Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

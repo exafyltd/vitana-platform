@@ -96,6 +96,38 @@ describe('orb-widget guided-topic circuit breaker stops honestly instead of fall
     expect(block).not.toMatch(/RECONNECT_DELAYS/);
   });
 
+  // Codex review finding on this PR: _enterStuckState() alone does not stop
+  // automatic recovery. _resetAndReconnect()'s own comment confirms
+  // _disconnectActive is deliberately left true so the 5s _recoveryWatchdog
+  // health-probe can auto-recover once the gateway answers again — correct
+  // for a real network outage, but this breaker trips on a REACHABLE
+  // gateway (nova_validation, not a dropped connection), so the probe would
+  // succeed within ~5s and silently call _resetAndReconnect() anyway,
+  // reopening the exact unrelated conversation the stop exists to prevent.
+  it('cancels the recovery watchdog and clears _disconnectActive before entering the stuck state', () => {
+    const block = breakerBlock();
+    expect(block).toMatch(/clearInterval\(_s\._recoveryWatchdog\)/);
+    expect(block).toMatch(/_s\._recoveryWatchdog = null;/);
+    expect(block).toMatch(/_s\._disconnectActive = false;/);
+    // Must happen BEFORE _enterStuckState() — no window where the watchdog
+    // could still be armed while the UI already shows the stuck state.
+    const watchdogIdx = block.indexOf('_s._recoveryWatchdog = null;');
+    const disconnectIdx = block.indexOf('_s._disconnectActive = false;');
+    const stuckIdx = block.indexOf('_enterStuckState();');
+    expect(watchdogIdx).toBeGreaterThanOrEqual(0);
+    expect(disconnectIdx).toBeGreaterThan(watchdogIdx);
+    expect(stuckIdx).toBeGreaterThan(disconnectIdx);
+  });
+
+  it('the manual tap-to-reconnect path still works with _disconnectActive cleared (gated on _disconnectStuck too)', () => {
+    // _enterStuckState() sets _disconnectStuck = true; the tap handler must
+    // OR the two flags so clearing _disconnectActive here doesn't also
+    // disable the manual retry this whole mechanism exists to offer.
+    const stuckStateBody = extractFunctionBody(source, 'function _enterStuckState() {');
+    expect(stuckStateBody).toMatch(/_s\._disconnectStuck = true;/);
+    expect(source).toMatch(/_s\._disconnectActive \|\| _s\._disconnectStuck/);
+  });
+
   it('_enterStuckState remains the exact same function MAX_WIDGET_RECONNECTS exhaustion uses — no new UI invented', () => {
     // Only one function named _enterStuckState should exist in the file;
     // both call sites must reference it, not a topic-specific variant.

@@ -132,3 +132,87 @@ $ npx tsc --noEmit
 
 $ npx jest
 -> (see outputs/jest-full-suite.txt for the tail summary)
+
+=== Codex review finding, addressed before merge ===
+
+Automated PR review (chatgpt-codex-connector, P1) on
+services/gateway/src/frontend/command-hub/orb-widget.js:4484:
+"Cancel automatic recovery when the topic breaker trips" — claimed
+_enterStuckState() alone does not stop the 5s _recoveryWatchdog
+health-probe (armed earlier by _announceDisconnect()), which would call
+_resetAndReconnect() automatically once the (fully reachable) gateway
+answers, undoing this fix within ~5s.
+
+Verified against the code before acting (not just the claim):
+$ grep -n "_recoveryWatchdog|function _announceDisconnect|function _resetAndReconnect|_disconnectActive" src/frontend/command-hub/orb-widget.js
+-> confirmed _recoveryWatchdog is a real setInterval (armed in
+   _announceDisconnect, ~line 1402) that calls _resetAndReconnect() on a
+   successful health probe (~line 1425) whenever _s._disconnectActive is
+   still true; confirmed _resetAndReconnect()'s own comment (~line 1524)
+   says it deliberately relies on _disconnectActive staying true for this
+   exact auto-recovery to work; confirmed _enterStuckState() (the function
+   this VTID's fix calls) never touches _disconnectActive or the watchdog
+   interval at all.
+
+Finding confirmed real and applicable to this breaker (unlike
+MAX_WIDGET_RECONNECTS' own use of _enterStuckState(), which fires on a
+genuine unreachable-network condition where auto-recovery is desired,
+this breaker fires while the gateway IS reachable — nova_validation
+rejected content, not a dropped connection — so the same auto-recovery
+is actively wrong here).
+
+=== Follow-up fix ===
+Edited services/gateway/src/frontend/command-hub/orb-widget.js: the
+breaker block now cancels _recoveryWatchdog and clears
+_s._disconnectActive before calling _enterStuckState(), so only an
+explicit tap (still gated on _disconnectStuck) can resume. Deliberately
+scoped to this call site only — _enterStuckState() itself and the
+MAX_WIDGET_RECONNECTS call site are untouched, preserving their existing,
+correct auto-recover-on-reachable behavior for real network outages.
+
+$ node --check src/frontend/command-hub/orb-widget.js
+-> (no output — syntax OK)
+
+Added 2 new tests to orb-widget-guided-topic-circuit-breaker-stop.test.ts:
+  - "cancels the recovery watchdog and clears _disconnectActive before
+     entering the stuck state"
+  - "the manual tap-to-reconnect path still works with _disconnectActive
+     cleared (gated on _disconnectStuck too)"
+
+$ npx jest test/frontend/orb-widget-guided-topic-circuit-breaker-stop.test.ts test/frontend/orb-widget-guided-topic-reconnect-loop.test.ts test/frontend/orb-widget-guided-topic-reconnect.test.ts
+-> Test Suites: 3 passed, 3 total
+   Tests:       24 passed, 24 total
+
+=== Mutation testing (follow-up fix) ===
+$ cp src/frontend/command-hub/orb-widget.js /tmp/orb-widget-782b.js.bak
+$ grep -n "_s._disconnectActive = false;" src/frontend/command-hub/orb-widget.js
+-> line 4498 (the new one, inside the breaker block)
+$ sed -i '4496s/.*/        \/\/ mutation: clearInterval removed/' src/frontend/command-hub/orb-widget.js
+$ sed -i '4497s/.*/        \/\/ mutation: recoveryWatchdog null removed/' src/frontend/command-hub/orb-widget.js
+$ sed -i '4498s/.*/        \/\/ mutation: disconnectActive=false removed/' src/frontend/command-hub/orb-widget.js
+$ node --check src/frontend/command-hub/orb-widget.js
+-> syntax OK (confirms clean three-line mutation)
+$ npx jest test/frontend/orb-widget-guided-topic-circuit-breaker-stop.test.ts
+-> Test Suites: 1 failed, 1 total
+   Tests:       1 failed, 6 passed, 7 total
+   Failed, exactly: "cancels the recovery watchdog and clears
+     _disconnectActive before entering the stuck state"
+   Passed (unaffected, as expected): all 6 other tests in the same file,
+   including the "manual tap-to-reconnect path still works" test (that
+   assertion is about _enterStuckState()'s own body + the tap handler's
+   OR condition, neither of which this mutation touches).
+$ cp /tmp/orb-widget-782b.js.bak src/frontend/command-hub/orb-widget.js
+$ diff /tmp/orb-widget-782b.js.bak src/frontend/command-hub/orb-widget.js
+-> (no output — clean restore)
+$ node --check src/frontend/command-hub/orb-widget.js
+-> syntax OK
+$ npx jest test/frontend/orb-widget-guided-topic-circuit-breaker-stop.test.ts test/frontend/orb-widget-guided-topic-reconnect-loop.test.ts test/frontend/orb-widget-guided-topic-reconnect.test.ts
+-> Test Suites: 3 passed, 3 total
+   Tests:       24 passed, 24 total
+
+=== Full re-verification after Codex-review fix ===
+$ npx tsc --noEmit
+-> (no output — clean; outputs/tsc-noemit.txt, re-captured)
+
+$ npx jest
+-> (see outputs/jest-full-suite.txt for the tail summary, re-captured)
