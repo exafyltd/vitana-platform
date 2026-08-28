@@ -1,0 +1,62 @@
+    ✓ excludes endpoints that already have a matching capability:service:live_probe contract (1 ms)
+    ✓ does NOT exclude when only the capability matches but service or contract_type differ (dedupe is the full triple)
+    ✓ every gap carries the four fields the LLM needs to write both the test + the allowlist entry (1 ms)
+    ✓ returns an empty list when every endpoint is already covered (1 ms)
+    ✓ sorts gaps deterministically by endpoint path (so the cockpit renders consistently)
+    ✓ is pure — same inputs produce same outputs across invocations (1 ms)
+  scanMissingContracts(service)
+    ✓ namespaces capability slugs with the worker_runner_ prefix when service=worker-runner
+    ✓ worker-runner /alive does NOT collide with gateway /alive (different services in the dedupe triple)
+    ✓ default service argument is gateway (backward compat with PR-L2 callers)
+  scanMissingContractsAgainstLiveRegistry (M1)
+    ✓ walks BOTH gateway and worker-runner endpoint maps + sorts by endpoint path (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb/orb-widget-fab-size-cross-repo-parity.test.ts
+  BOOTSTRAP-ORB-WIDGET-CONSISTENCY-AUDIT — FAB size literals vitana-v1 depends on
+    ✓ desktop FAB is 64px — if this changes, update exafyltd/vitana-v1: src/pages/IntroExperience.orb-placement.test.ts (WIDGET_BASE_DESKTOP / WIDGET_BASE_MOBILE) must be updated to match. (1 ms)
+    ✓ the sub-600px breakpoint sets the FAB to 56px — if this changes, update exafyltd/vitana-v1: src/pages/IntroExperience.orb-placement.test.ts (WIDGET_BASE_DESKTOP / WIDGET_BASE_MOBILE) must be updated to match. (1 ms)
+    ✓ the mobile breakpoint itself is 600px — if this changes, update exafyltd/vitana-v1: src/pages/IntroExperience.orb-placement.test.ts (WIDGET_BASE_DESKTOP / WIDGET_BASE_MOBILE) must be updated to match.
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/services/assistant-continuation/providers/new-day-overview-plan-phase.test.ts
+  VTID-03184 plan_phase branching — buildNewDayOverviewBlock
+    ✓ default_active: keeps the "Tag X von Y" starter-plan + wave framing (1 ms)
+    ✓ default_finished_no_goal: invites the first personalized goal, no "X of Y" cap (1 ms)
+    ✓ on_personalized_goal: drops the 90-day frame and anchors on the goal arc (1 ms)
+    ✓ on_personalized_goal: surfaces a past deadline gently (never as failure)
+
+PASS test/services/orb-session-state.test.ts
+  readOrbSessionState
+    ✓ returns the value when present and not expired (1 ms)
+    ✓ returns null when expired
+    ✓ fails open (null) on error or missing identity (1 ms)
+  writeOrbSessionState
+    ✓ upserts with a computed expires_at from ttlMinutes (1 ms)
+    ✓ defaults a non-positive ttl to 15 minutes
+    ✓ returns ok=false on missing identity
+  clearOrbSessionState
+    ✓ deletes without throwing (1 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 1 skipped, 720 passed, 720 of 721 total
+Tests:       29 skipped, 6 todo, 13512 passed, 13547 total
+Snapshots:   44 passed, 44 total
+Time:        78.341 s
+Ran all test suites.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+
+(full log truncated to tail; full run: 720/721 suites passing (1 pre-existing skip), 13512/13547 tests passing (29 skipped, 6 todo), 0 failures)

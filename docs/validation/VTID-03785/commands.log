@@ -1,0 +1,182 @@
+VTID-03785 — commands.log
+==========================
+
+## Investigation — live oasis_events queries against inmkhvwdcuyhnxkgfvsb
+
+$ -- traced the live "Tap the orb to reconnect" report for topic T003
+SELECT created_at, topic, message, metadata FROM oasis_events
+WHERE created_at > now() - interval '20 minutes'
+  AND (topic ILIKE '%live.session%' OR topic ILIKE '%guided_topic%' OR topic ILIKE '%live.diag%' OR topic ILIKE '%next_action%')
+ORDER BY created_at ASC LIMIT 200;
+-- found: guided_topic_audio_bridge_sent (T003) fires, then within ~200ms
+-- upstream_error code=nova_validation, twice per session, across 2
+-- consecutive client sessions (repeated narration, then stuck state).
+
+$ -- checked T003's own content for anything obviously unusual
+SELECT topic_id, title, display_label, guided_practice_target,
+  practice_action_type, safety_level, business_gate,
+  char_length(vitana_voice_script), vitana_voice_script
+FROM journey_checklist_topics WHERE topic_id = 'T003';
+-- title is NULL (display_label='Vitana Assistentin' used instead, code
+-- already handles this correctly via seed.displayLabel) — ruled out a
+-- literal "null" string in the prompt.
+
+$ -- per-topic block-rate breakdown (7 days)
+WITH topic_sessions AS (
+  SELECT metadata->>'session_id' as session_id, metadata->>'topic_id' as topic_id
+  FROM oasis_events
+  WHERE topic = 'orb.live.diag' AND metadata->>'stage' = 'guided_topic_audio_bridge_sent'
+    AND created_at > now() - interval '7 days'
+),
+errors AS (
+  SELECT metadata->>'session_id' as session_id, count(*) as block_count
+  FROM oasis_events
+  WHERE topic = 'orb.live.diag' AND metadata->>'code' = 'nova_validation'
+    AND created_at > now() - interval '7 days'
+  GROUP BY 1
+)
+SELECT ts.topic_id, count(DISTINCT ts.session_id) as total_guided_sessions,
+  count(DISTINCT ts.session_id) FILTER (WHERE e.block_count > 0) as sessions_with_block,
+  sum(coalesce(e.block_count,0)) as total_blocks
+FROM topic_sessions ts LEFT JOIN errors e ON e.session_id = ts.session_id
+GROUP BY 1 ORDER BY total_blocks DESC;
+-- EVERY sampled topic (T001-T009, T015, T251) shows 100% of its sessions
+-- blocked — not one topic, systemic to the guided-topic path.
+
+$ -- decisive comparison: guided-narration sessions vs ordinary sessions
+WITH all_sessions AS (
+  SELECT metadata->>'session_id' as session_id,
+    bool_or(metadata->>'stage' = 'guided_topic_audio_bridge_sent') as had_narration_bridge
+  FROM oasis_events
+  WHERE topic = 'orb.live.diag' AND created_at > now() - interval '7 days'
+    AND metadata->>'session_id' IS NOT NULL
+  GROUP BY 1
+),
+errors AS (
+  SELECT metadata->>'session_id' as session_id
+  FROM oasis_events
+  WHERE topic = 'orb.live.diag' AND metadata->>'code' = 'nova_validation'
+    AND created_at > now() - interval '7 days'
+)
+SELECT s.had_narration_bridge, count(*) as total_sessions,
+  count(*) FILTER (WHERE e.session_id IS NOT NULL) as sessions_blocked,
+  round(100.0 * count(*) FILTER (WHERE e.session_id IS NOT NULL) / count(*), 1) as pct_blocked
+FROM all_sessions s LEFT JOIN errors e ON e.session_id = s.session_id
+GROUP BY 1;
+-- had_narration_bridge=false: 561 sessions, 202 blocked (36.0%)
+-- had_narration_bridge=true:  158 sessions, 158 blocked (100.0%)
+-- DECISIVE: guided-topic-narration sessions are blocked deterministically,
+-- not just flaky like ordinary sessions.
+
+## Code reading
+
+Read src/orb/live/upstream/nova-instruction-sanitizer.ts — confirmed its
+own header comment documents the EXACT trigger pattern class already
+measured by live bisect: "the IDENTITY LOCK block's persona-impersonation
+denial list... trips the filter". Confirmed its scope is ONLY the
+`=== IDENTITY LOCK ===` marker-delimited block — no coverage of the
+guided-topic block.
+
+Read src/orb/live/instruction/guided-topic-narration-prompt.ts's
+buildGuidedTopicNarrationBlock POST-LESSON branch (content.narrationAudio
+set — the branch every live sample takes, since Polly has succeeded
+158/158 recently). Found two patterns matching already-proven trigger
+classes: the self-referential voice-denial "you did NOT narrate it
+yourself" (parallels the IDENTITY LOCK persona-denial-list shape), and
+quoted example questions "What do you want?" / "How can I help you?"
+(parallels the day_close quoted-dialogue-exemplar pattern the
+2026-08-20 VTID-03646 changelog row already found and fixed for the same
+filter).
+
+## Fix applied
+
+Edited src/orb/live/instruction/guided-topic-narration-prompt.ts:
+  - POST-LESSON branch (DE+EN): removed self-referential voice-denial
+    opening sentence and "as if you hadn't already explained it" clause;
+    removed quoted "What do you want?"/"How can I help you?" examples.
+  - Legacy (non-narrated) branch (DE+EN): removed the same quoted-question
+    pattern from its analogous bullet, preventively.
+
+$ npx tsc --noEmit
+(clean, no output, exit 0)
+
+## Test file updated
+
+Edited test/orb/live/instruction/guided-topic-narration-prompt.test.ts:
+  - Updated "tells the model NOT to re-narrate the lesson" regex to match
+    new wording.
+  - Added "VTID-03785: does NOT use a self-referential voice-denial
+    phrase" (post-narration branch).
+  - Added "VTID-03785: does NOT quote hypothetical spoken example phrases"
+    (post-narration branch AND legacy branch, 2 separate tests).
+
+$ npx jest test/orb/live/instruction/guided-topic-narration-prompt.test.ts
+PASS — Test Suites: 1 passed, 1 total / Tests: 18 passed, 18 total
+
+$ grep -rl "did NOT narrate|NICHT selbst vorgetragen|What do you want\?|Was möchtest du" .
+-- checked golden/characterization snapshots for collateral matches;
+-- confirmed unrelated (different provider, new-day-overview-prompt.ts).
+
+$ npx jest test/orb
+PASS — Test Suites: 191 passed, 191 total / Tests: 3484 passed (6 todo), 3490 total
+
+## Mutation testing (pattern 1 — self-referential voice-denial)
+
+$ cp src/orb/live/instruction/guided-topic-narration-prompt.ts /tmp/guided-topic-narration-prompt-785.ts.bak
+$ grep -n "was just delivered to the person as a pre-recorded audio narration and does not need to be repeated" src/orb/live/instruction/guided-topic-narration-prompt.ts
+151:          `The lesson on "${content.topic_title}" was just delivered to the person as a pre-recorded audio narration and does not need to be repeated.`,
+$ sed -i '151s/.../`The lesson on "${content.topic_title}" was JUST played to the person as a pre-recorded audio narration — you did NOT narrate it yourself and do NOT need to repeat it.`,/'
+$ npx tsc --noEmit
+(clean, exit 0)
+$ npx jest test/orb/live/instruction/guided-topic-narration-prompt.test.ts
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 17 passed, 18 total
+✕ VTID-03785: does NOT use a self-referential voice-denial phrase ("you did NOT narrate it yourself")
+
+Exactly the 1 test directly asserting the fix fails; 17 others stay green.
+
+$ cp /tmp/guided-topic-narration-prompt-785.ts.bak src/orb/live/instruction/guided-topic-narration-prompt.ts
+$ diff /tmp/guided-topic-narration-prompt-785.ts.bak src/orb/live/instruction/guided-topic-narration-prompt.ts && echo CLEAN_RESTORE
+CLEAN_RESTORE
+$ npx jest test/orb/live/instruction/guided-topic-narration-prompt.test.ts
+Test Suites: 1 passed, 1 total / Tests: 18 passed, 18 total
+
+## Mutation testing (pattern 2 — quoted example questions)
+
+$ grep -n "Skip generic opening questions" src/orb/live/instruction/guided-topic-narration-prompt.ts
+155:          '- Skip generic opening questions — you already KNOW what this was just about.',
+243:    '- Skip generic opening questions — you know what this is about: this topic.',
+$ sed -i '155s/.../'"'"'- Don\'"'"'t ask "What do you want?" or "How can I help you?" — you KNOW what this was just about.'"'"',/'
+$ npx tsc --noEmit
+(clean, exit 0)
+$ npx jest test/orb/live/instruction/guided-topic-narration-prompt.test.ts
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 17 passed, 18 total
+✕ VTID-03785: does NOT quote hypothetical spoken example phrases ("What do you want?") (post-narration branch)
+
+Exactly the 1 test directly asserting this fix fails; 17 others (including
+the OTHER VTID-03785 test for pattern 1, and the legacy-branch quoted-
+question test) stay green — confirms the two regression guards are
+independent and each targets its own fix precisely.
+
+$ cp /tmp/guided-topic-narration-prompt-785.ts.bak src/orb/live/instruction/guided-topic-narration-prompt.ts
+$ diff /tmp/guided-topic-narration-prompt-785.ts.bak src/orb/live/instruction/guided-topic-narration-prompt.ts && echo CLEAN_RESTORE
+CLEAN_RESTORE
+$ npx tsc --noEmit
+(clean, exit 0)
+$ npx jest test/orb/live/instruction/guided-topic-narration-prompt.test.ts
+Test Suites: 1 passed, 1 total / Tests: 18 passed, 18 total
+
+## Full gateway suite
+
+$ npx jest
+(see outputs/jest-full-suite.txt for tail summary — 720/721 suites,
+1 pre-existing skip, 13512/13547 tests passing, 0 failures)
+
+## Governance
+
+command-hub-ownership-guard.js was NOT touched — its PROTECTED_PATH is
+scoped to services/gateway/src/frontend/command-hub/, and this VTID's
+changes are entirely under src/orb/live/instruction/ and its test — outside
+that guard's scope, confirmed by reading the guard's own PROTECTED_PATH
+constant before deciding not to register.
