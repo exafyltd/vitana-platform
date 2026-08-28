@@ -3732,8 +3732,19 @@
       var drift = Date.now() - scheduledAt - BG_CHECK_MS;
       if (drift > BG_KILL_DRIFT_MS) {
         console.warn('[VTOrb] Background watchdog: timer drifted ' + drift + 'ms — app was backgrounded, ending session');
+        // VTID-03783: this used to call _sessionStop() directly — the same
+        // anti-pattern VTID-03778 already fixed for the session_ended
+        // message handler in this file. _sessionStop() tears down media/SSE
+        // but never touches overlay visibility, so the overlay froze on
+        // this caption forever with no working close path (live-reported:
+        // "Session ended — app was in the background", X unresponsive).
+        // _hide() is the same full, honest teardown every other close path
+        // uses — it actually hides the overlay. Deliberately does NOT use
+        // the guided-topic completion teardown: a background-kill is not a
+        // reliable "the lesson finished" signal (the app may have been
+        // backgrounded mid-sentence), so this must not auto-mark a step done.
         _setStatus(_caption('sessionEndedBackground'));
-        _sessionStop();
+        _hide();
         return;
       }
       // VTID-CODEX-REVIEW: gate on overlayVisible, not _s.active. _sessionStart's
