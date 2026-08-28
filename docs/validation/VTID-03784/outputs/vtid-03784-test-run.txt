@@ -1,0 +1,22 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/frontend/orb-widget-guided-topic-backstop-stuck-state.test.ts
+  orb-widget _enterStuckState cancels the guided-topic backstop (VTID-03784)
+    ✓ clears _guidedTopicOpenedAt (5 ms)
+    ✓ cancels the backstop interval and nulls the handle (4 ms)
+    ✓ still sets the tap-to-reconnect UI state (unchanged behavior) (5 ms)
+    ✓ the guided-topic circuit breaker call site no longer needs its own duplicate cancellation — _enterStuckState covers it (7 ms)
+    ✓ MAX_WIDGET_RECONNECTS exhaustion also stops via the same _enterStuckState — same protection, no separate mechanism (6 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       5 passed, 5 total
+Snapshots:   0 total
+Time:        1.177 s
+Ran all test suites matching /test\/frontend\/orb-widget-guided-topic-backstop-stuck-state.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

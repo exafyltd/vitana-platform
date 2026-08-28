@@ -4622,6 +4622,20 @@
     console.warn('[VTOrb] _enterStuckState: reconnect budget exhausted — switching to tap-to-reconnect');
     _s._isReconnecting = false;
     _s._disconnectStuck = true;
+    // VTID-03784: the VTID-03762 guided-topic backstop timer is armed in
+    // focusGuidedTopic() and, until now, was only ever cancelled by _hide()
+    // — which no path into this stuck state calls (the overlay stays up so
+    // the user can tap to retry). Left running, the backstop fires 5
+    // minutes later and calls _endGuidedTopicTeaching('backstop_timeout'),
+    // awarding false step-completion credit (Well-done drawer, +index
+    // points) for a lesson that was never delivered — live-reproduced on
+    // staging via the VTID-03782 circuit breaker path (2 consecutive
+    // zero-audio nova_validation failures -> stuck here -> backstop still
+    // fired ~5 min later). Cancelling it here covers every current and
+    // future path into this shared stuck state, not just that one.
+    _s._guidedTopicOpenedAt = null;
+    try { clearInterval(_s._guidedTopicBackstopInterval); } catch (e) { /* noop */ }
+    _s._guidedTopicBackstopInterval = null;
     _setOrbState('error');
     _setStatus(_caption('tapToReconnect'));
     _updateUI();
