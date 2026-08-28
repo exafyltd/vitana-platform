@@ -1,0 +1,39 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb/live/instruction/guided-topic-narration-prompt.test.ts
+  buildGuidedTopicPostNarrationLine
+    ✓ mentions the topic and offers questions + practice in German (3 ms)
+    ✓ mentions the topic and offers questions + practice in English (1 ms)
+    ✓ drops the practice offer when there is no practice target (1 ms)
+    ✓ is short — a native-audio-safe direct turn, not an instructional paragraph (1 ms)
+  buildGuidedTopicNarrationBlock — post-narration branch (content.narrationAudio set)
+    ✓ never includes the raw voice_script text once the audio bridge already spoke it (1 ms)
+    ✓ never includes the raw explanation fields either (1 ms)
+    ✓ still names the topic and practice target so follow-up guidance works
+    ✓ tells the model NOT to re-narrate the lesson (1 ms)
+    ✓ VTID-03785: does NOT use a self-referential voice-denial phrase ("you did NOT narrate it yourself")
+    ✓ VTID-03785: does NOT quote hypothetical spoken example phrases ("What do you want?") (1 ms)
+    ✓ respects the requested language independent of the German-authored content
+    ✓ VTID-03786: does NOT assert this mode overrides/takes precedence over every other rule (6 ms)
+    ✓ VTID-03686/03686-followup: instructs checking for follow-up questions before moving on from a brief "yes"
+    ✓ VTID-03762: instructs calling end_guided_topic_teaching once follow-ups are answered
+  buildGuidedTopicNarrationBlock — legacy model-narrated branch (no narrationAudio)
+    ✓ still includes the paraphrase-material block unchanged when Polly did not deliver audio (1 ms)
+    ✓ behaves identically whether narrationAudio is undefined or explicitly null (1 ms)
+    ✓ VTID-03785: does NOT quote hypothetical spoken example phrases ("What do you want?") (1 ms)
+    ✓ VTID-03786: does NOT assert this mode overrides/takes precedence over every other rule
+    ✓ VTID-03686/03686-followup: instructs explaining core points before moving to practice on a brief "yes" (1 ms)
+    ✓ VTID-03762: instructs calling end_guided_topic_teaching once the topic is taught and next step proposed (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       20 passed, 20 total
+Snapshots:   0 total
+Time:        0.592 s, estimated 1 s
+Ran all test suites matching /test\/orb\/live\/instruction\/guided-topic-narration-prompt.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

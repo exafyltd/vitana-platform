@@ -1,0 +1,20 @@
+    ✓ de-DE / de-AT region tags still get the German block (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/user-journey-service.test.ts
+  ensureUserJourneyRow
+    ✓ defaults to is_first_session=true (the /me signup seeding path) (1 ms)
+    ✓ seeds is_first_session=false when explicitly requested (session-start backfill) (10 ms)
+    ✓ is idempotent: a duplicate (existing row) resolves false, never throws
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 1 skipped, 720 passed, 720 of 721 total
+Tests:       29 skipped, 6 todo, 13514 passed, 13549 total
+Snapshots:   44 passed, 44 total
+Time:        64.506 s, estimated 65 s
+Ran all test suites.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

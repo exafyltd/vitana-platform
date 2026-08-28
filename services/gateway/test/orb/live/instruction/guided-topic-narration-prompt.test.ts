@@ -117,6 +117,28 @@ describe('buildGuidedTopicNarrationBlock — post-narration branch (content.narr
     expect(block).toContain('Speak ONLY in English');
   });
 
+  // VTID-03786 — live retest of VTID-03785 (6 real staging sessions across 4
+  // topics, post-deploy) found nova_validation STILL blocked 100% of guided
+  // sessions, unchanged from the pre-fix rate. Direct inspection of the
+  // deployed builder output for a real topic (T003) confirmed the two
+  // VTID-03785 patterns were genuinely gone, so the trigger lives elsewhere.
+  // The one phrase common to every branch and unique to guided-topic
+  // sessions (ordinary sessions, which succeed at the ~36% ambient baseline,
+  // never carry it) is an authority-override assertion — "OVERRIDES every
+  // generic greeting/opening rule" / "hat Vorrang vor JEDER generischen
+  // Begrüßungs- oder Eröffnungsregel" — structurally the same
+  // override/jailbreak-shaped directive class Bedrock's filter is trained to
+  // flag, distinct from the two VTID-03785 patterns.
+  it('VTID-03786: does NOT assert this mode overrides/takes precedence over every other rule', () => {
+    const de = buildGuidedTopicNarrationBlock(narratedContent, 'de');
+    expect(de).not.toMatch(/hat Vorrang vor JEDER/);
+    const en = buildGuidedTopicNarrationBlock(narratedContent, 'en');
+    expect(en).not.toMatch(/OVERRIDES every/);
+    // Intent preserved: still pins the language for the whole session.
+    expect(de).toMatch(/für die GANZE Sitzung/);
+    expect(en).toMatch(/for the WHOLE session/);
+  });
+
   it('VTID-03686/03686-followup: instructs checking for follow-up questions before moving on from a brief "yes"', () => {
     const de = buildGuidedTopicNarrationBlock(narratedContent, 'de');
     expect(de.toLowerCase()).toMatch(/ja.*mach das.*okay.*rückfragen|rückfragen.*bevor/);
@@ -168,6 +190,19 @@ describe('buildGuidedTopicNarrationBlock — legacy model-narrated branch (no na
     expect(en).not.toMatch(/"What do you want\?"/);
     expect(en).not.toMatch(/"How can I help you\?"/);
     expect(en).not.toMatch(/"Where should we start\?"/);
+  });
+
+  // VTID-03786 — same authority-override pattern as the post-narration
+  // branch (see its own VTID-03786 test). This branch currently sees no
+  // live traffic, but carries the identical phrase and would reproduce this
+  // defect the moment Polly synthesis ever fails for a topic.
+  it('VTID-03786: does NOT assert this mode overrides/takes precedence over every other rule', () => {
+    const de = buildGuidedTopicNarrationBlock(BASE_CONTENT, 'de');
+    expect(de).not.toMatch(/hat Vorrang vor JEDER/);
+    const en = buildGuidedTopicNarrationBlock(BASE_CONTENT, 'en');
+    expect(en).not.toMatch(/OVERRIDES every/);
+    expect(de).toMatch(/für die GANZE Sitzung/);
+    expect(en).toMatch(/for the WHOLE session/);
   });
 
   it('VTID-03686/03686-followup: instructs explaining core points before moving to practice on a brief "yes"', () => {

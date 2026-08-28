@@ -1,0 +1,161 @@
+VTID-03786 — commands.log
+==========================
+
+## Live-browser attempt (failed — environment limitation, not a code issue)
+
+Attempted a real Playwright/Chromium session against
+https://preview-aws.vitanaland.com to visually retest VTID-03785. Every
+navigation attempt failed:
+
+  net::ERR_CONNECTION_RESET
+
+Tried, in order, none changed the outcome:
+  - explicit `proxy: { server: 'http://127.0.0.1:40877' }` launch option
+  - `--proxy-server=http://127.0.0.1:40877` chromium arg
+  - `--ignore-certificate-errors` + `ignoreHTTPSErrors: true`
+  - `--no-sandbox --disable-setuid-sandbox`
+  - `--disable-ipv6`
+  - Chromium netlog capture (--log-net-log) confirmed the CONNECT request
+    reaches the proxy (`CONNECT preview-aws.vitanaland.com:443 HTTP/1.1`)
+    but the connection resets immediately after, with no relay-failure
+    entry recorded on the proxy's own /__agentproxy/status endpoint.
+
+Isolated: a raw Node `net`+`tls` socket manually doing the identical
+CONNECT tunnel + TLS handshake through the SAME proxy port reaches the
+SAME host fine (real 200 response, real page content, cert CN=vitanaland.com)
+— ruling out a network-wide block on the host and confirming this is
+specific to headless Chromium's own connection in this sandbox.
+
+## Pivot: drive the real gateway SSE live-session API directly
+
+Read live-session-controller.ts / orb-live.ts to confirm POST
+/api/v1/orb/live/session/start + GET /api/v1/orb/live/stream is a plain
+HTTPS request/SSE pair (not a WebSocket upgrade), and that GET
+/live/stream's connectToLiveAPI() call is what actually opens the real
+Nova connection carrying the full assembled system instruction (guided-
+topic block included) — confirmed via `router.get('/live/stream', ...)`
+at orb-live.ts:15382, `connectToLiveAPI(...)` call at :15544.
+
+Built retest-vtid-03785-api.mjs (raw net/tls CONNECT-tunnel HTTP client +
+SSE reader, no browser) to:
+  1. Sign in as e2e-test@vitana.dev via Supabase REST (documented test user).
+  2. POST /api/v1/orb/live/session/start with {lang:'de', guided_topic_id}.
+  3. GET /api/v1/orb/live/stream, watch SSE frames for 25s.
+
+## Sanity check — ordinary (non-guided) session
+
+$ node /tmp/retest-ordinary.mjs
+Result: succeeded cleanly. output_transcript (4 segments, real German),
+258 real audio chunks, turn_complete. Confirms the harness itself is
+correct — the guided-topic failures below are real, not a harness bug.
+
+## Guided-topic retest #1 — T003 (immediately post VTID-03785 deploy)
+
+$ node retest-vtid-03785-api.mjs T003
+session_id=live-3f8db156-8f48-4f94-a4d1-f38ffbd8c7ec
+SSE: live_api_ready -> error("Live API connection error") -> reconnected
+  -> error again -> connection_issue(upstream_disconnected)
+
+$ -- cross-checked via oasis_events (Supabase MCP execute_sql)
+SELECT ... FROM oasis_events WHERE metadata->>'session_id' = '<above>' ...
+-> two `code:nova_validation, stage:upstream_error` events, both:
+   diagnostic: "This request has been blocked by our content filters."
+-> confirmed guided_topic_audio_bridge_sent fired first (Polly succeeded),
+   confirmed greeting_sent (prompt_len:322, wake_opener:override_v2) fired
+   ~10ms before each nova_validation block.
+
+## Guided-topic retest #2-5 — T001, T002, T004, T003 again
+
+$ for t in T001 T002 T004 T003; do node retest-vtid-03785-api.mjs "$t"; done
+Result: ALL FOUR blocked, identical shape (error -> reconnected -> error
+-> connection_issue), across 4 different topic contents.
+
+$ -- aggregate check via oasis_events
+WITH topic_sessions AS (... guided_topic_audio_bridge_sent since deploy ...)
+-- 6 guided-topic sessions since VTID-03785 deployed, 6 blocked (100%).
+-- IDENTICAL to the pre-fix 158/158 rate.
+
+## Direct inspection of the deployed (fixed) builder output
+
+Confirmed via `npx tsx` running the ACTUAL
+buildGuidedTopicNarrationBlock/buildGuidedTopicNarrationOpenerLine against
+real T003 content pulled from journey_checklist_topics:
+  - VTID-03785's two removed patterns: confirmed absent (7/7 risky-pattern
+    regexes all report "absent (good)").
+  - So VTID-03785 shipped correctly; the trigger is elsewhere.
+
+## Root-cause narrowing
+
+Read the full buildGuidedTopicNarrationBlock source (all 4 branches).
+Found a phrase common to literally all 4 (and unique to the guided-topic
+path — never present in an ordinary session's system instruction, which
+succeeds at the ~36% ambient baseline, not 100%):
+
+  DE: "...hat Vorrang vor JEDER generischen Begrüßungs- oder
+       Eröffnungsregel."
+  EN: "...OVERRIDES every generic greeting/opening rule."
+
+An "overrides/takes precedence over every other rule" assertion is
+structurally the same shape as a prompt-injection/jailbreak directive.
+
+## Fix applied
+
+Edited src/orb/live/instruction/guided-topic-narration-prompt.ts — removed
+the override/precedence clause from all 4 branches, kept the operative
+intent (language pin + whole-session scope) as a plain declarative.
+
+$ npx tsc --noEmit
+(clean, exit 0)
+
+## Test file updated
+
+Added "VTID-03786: does NOT assert this mode overrides/takes precedence
+over every other rule" to both the post-narration and legacy describe
+blocks in guided-topic-narration-prompt.test.ts (20 tests total, up from
+18).
+
+$ npx jest test/orb/live/instruction/guided-topic-narration-prompt.test.ts
+PASS — Test Suites: 1 passed / Tests: 20 passed, 20 total
+
+## Mutation testing (DE)
+
+$ cp src/orb/live/instruction/guided-topic-narration-prompt.ts /tmp/gtnp-786.ts.bak
+-- reverted line 128 to reintroduce "und hat Vorrang vor JEDER..."
+$ npx tsc --noEmit    (clean)
+$ npx jest test/orb/live/instruction/guided-topic-narration-prompt.test.ts
+Tests: 1 failed, 19 passed, 20 total
+  ✕ VTID-03786: does NOT assert this mode overrides/takes precedence over
+    every other rule (post-narration branch)
+-- restored from backup
+$ diff /tmp/gtnp-786.ts.bak src/orb/live/instruction/guided-topic-narration-prompt.ts
+CLEAN_RESTORE
+
+## Mutation testing (EN)
+
+-- reverted line 149 to reintroduce "and OVERRIDES every generic
+   greeting/opening rule"
+$ npx jest test/orb/live/instruction/guided-topic-narration-prompt.test.ts
+Tests: 1 failed, 19 passed, 20 total
+  ✕ VTID-03786: does NOT assert this mode overrides/takes precedence over
+    every other rule (post-narration branch)
+-- restored from backup
+$ diff /tmp/gtnp-786.ts.bak src/orb/live/instruction/guided-topic-narration-prompt.ts
+CLEAN_RESTORE
+$ npx tsc --noEmit    (clean)
+$ npx jest test/orb/live/instruction/guided-topic-narration-prompt.test.ts
+PASS — 20/20
+
+## Full suites
+
+$ npx jest test/orb
+PASS — 191/191 suites, 3486/3492 tests passing (6 pre-existing todo)
+
+$ npx jest
+PASS — 720/721 suites (1 pre-existing skip), 13514/13549 tests passing,
+       0 failures
+
+## Governance
+
+command-hub-ownership-guard.js NOT touched — same reasoning as VTID-03785,
+this VTID's changes are entirely under src/orb/live/instruction/ and its
+test, outside that guard's PROTECTED_PATH scope.
