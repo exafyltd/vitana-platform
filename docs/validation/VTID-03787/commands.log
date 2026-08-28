@@ -1,0 +1,98 @@
+VTID-03787 — commands.log
+==========================
+
+## Why this VTID exists
+
+VTID-03785 and VTID-03786 (both merged, both deployed to staging, both
+mutation-tested) removed every known instance of two "risky phrase"
+pattern classes from the guided-topic system-instruction path across all
+3 injection points found (guided-topic-narration-prompt.ts,
+live-session-controller.ts's buildVertexWakeBriefBlock, orb-livekit.ts's
+firstTurnSuppressionDirective — the last two found via a Codex P1 review
+finding, verified against the code before fixing).
+
+Live re-test after VTID-03786 deployed (6 real sessions, 6 different
+topics, via the raw-TLS-over-proxy-tunnel SSE harness against real
+staging):
+
+  T001, T002, T003, T004, T005, T251: 6/6 BLOCKED
+
+Cross-checked via oasis_events — all 12 events (6 sessions x 2 attempts
+each) identical:
+  code: nova_validation
+  diagnostic: "This request has been blocked by our content filters."
+
+Also ruled out tool declarations as the differentiator: `novaTools` is
+derived from the same `buildLiveApiTools()` output used for every
+authenticated session (guided or not) — confirmed by reading orb-live.ts
+directly (novaTools <- setup.tools <- buildLiveApiTools(...), same call
+site both session types share).
+
+Conclusion: the "risky phrase" theory is falsified as the sole cause.
+Rather than guess a 4th pattern, get real data.
+
+## Investigation into a raw-log path (ruled out)
+
+$ which aws && aws sts get-caller-identity
+-- no AWS CLI in this session, no way to tail CloudWatch logs directly.
+
+## Diagnostic instrumentation added
+
+Read orb-live.ts around line 8145 (novaSystemInstruction computation) —
+confirmed this is the exact literal string passed to
+`novaClient.connect({ systemInstruction: novaSystemInstruction, ... })`
+a few lines later (line 8836), and that `_novaInstructionChars` /
+`_novaToolEntryCount` are already stashed here for the connect_failed
+OASIS payload (a payload that does NOT fire on the nova_validation path
+we're chasing — confirmed empty via a live query for
+orb.live.connection_failed in this exact window).
+
+Added a gated emitDiag('nova_instruction_debug_dump', {...}) call right
+after novaSystemInstruction is computed, carrying the full text,
+instruction_chars, has_guided_topic, guided_topic_id. Gated behind
+`process.env.ORB_LOG_NOVA_INSTRUCTION_DEBUG === 'true'`.
+
+$ npx tsc --noEmit
+(clean, exit 0)
+
+## Deploy workflow wiring
+
+Added ORB_LOG_NOVA_INSTRUCTION_DEBUG to AWS-STAGE-DEPLOY-GATEWAY.yml's
+strip list AND re-add list (value:"true"), same established pattern as
+ORB_FULL_DUPLEX_ENABLED / ORB_DAY_CLOSE_RUNG_ENABLED. Deliberately did
+NOT touch AWS-PROD-DEPLOY-GATEWAY.yml — the dumped text carries the real
+user's memory/personalization context.
+
+$ python3 -c "import yaml; yaml.safe_load(open('.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml'))"
+YAML_OK
+
+## New test file
+
+test/orb/live/upstream/staging-nova-instruction-debug-flag-pinned.test.ts
+(mirrors the established staging-*-flag-pinned.test.ts pattern already
+used for FEATURE_LATENCY_TELEMETRY_ENV / ORB_CASCADED_VOICE_ENABLED):
+  - staging upserts the flag as exact "true"
+  - the strip-first pattern is present (no stale-value survival)
+  - prod NEVER sets this flag
+  - orb-live.ts gates on the exact 'true' string check
+  - orb-live.ts emits the literal novaSystemInstruction text on the
+    documented diag stage
+
+$ npx jest test/orb/live/upstream/staging-nova-instruction-debug-flag-pinned.test.ts
+PASS — 5/5
+
+## Full suites
+
+$ npx jest test/orb
+PASS — 192/192 suites, 3496/3502 tests passing (6 pre-existing todo)
+
+$ npx jest
+PASS — 721/722 suites (1 pre-existing skip), 13524/13559 tests passing,
+       0 failures
+
+## Governance
+
+command-hub-ownership-guard.js NOT touched — same reasoning as
+VTID-03785/03786, changes are entirely under
+services/gateway/src/routes/orb-live.ts, its test, and the staging deploy
+workflow — outside that guard's PROTECTED_PATH scope.

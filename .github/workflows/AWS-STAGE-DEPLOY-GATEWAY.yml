@@ -461,6 +461,7 @@ jobs:
                                                 "FEATURE_ORB_BRAIN_CACHE_ENV",
                                                 "ORB_FULL_DUPLEX_ENABLED",
                                                 "ORB_DAY_CLOSE_RUNG_ENABLED",
+                                                "ORB_LOG_NOVA_INSTRUCTION_DEBUG",
                                                 "TTS_PROVIDER","TTS_POLLY_STRICT","VERTEX_LIVE_UNAVAILABLE",
                                                 "ORB_CASCADED_VOICE_ENABLED",
                                                 "BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION",
@@ -502,6 +503,16 @@ jobs:
                           # (or removal), no code revert. Exact-"true" opt-in,
                           # matching the sibling ORB kill switches.
                           {name:"ORB_DAY_CLOSE_RUNG_ENABLED", value:"true"},
+                          # VTID-03787 — diagnostic-only, STAGING ONLY, never
+                          # AWS-PROD-DEPLOY-GATEWAY.yml. Dumps the literal
+                          # Nova system-instruction text (includes the user's
+                          # memory/personalization context) to an oasis_events
+                          # diag stage right before every Nova connect, so a
+                          # real blocked guided-topic session can be diffed
+                          # against a real succeeding ordinary one. Exact-
+                          # "true" opt-in; remove once the diff investigation
+                          # concludes.
+                          {name:"ORB_LOG_NOVA_INSTRUCTION_DEBUG", value:"true"},
                           {name:"TTS_PROVIDER", value:"polly"},
                           {name:"TTS_POLLY_STRICT", value:"true"},
                           {name:"VERTEX_LIVE_UNAVAILABLE", value:"true"},
