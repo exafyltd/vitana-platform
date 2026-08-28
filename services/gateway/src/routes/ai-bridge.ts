@@ -138,6 +138,11 @@ function toGeminiShapedResponse(
 }
 
 router.post('/generate', requireServiceOrAdmin, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: a stateless LLM call-through, no DB write and no
+  // state transition — same category as the vcaop FHIR-authorize leg
+  // (docs/validation/VTID-03605/acceptance.md), which "only runs discovery
+  // and returns a URL, no state change." OASIS is for state transitions and
+  // decisions, not every request (CLAUDE.md §6).
   const body = req.body as BridgeGenerateRequestBody;
 
   if (!Array.isArray(body?.messages) || body.messages.length === 0) {

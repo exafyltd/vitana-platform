@@ -63,3 +63,29 @@ Output: `outputs/env-example-aurora-section.txt`
 OASIS_IMPACT: no — this increment is CI/lockfile hygiene and documentation
 only; `getAuroraPool()` remains unwired and unconfigured, no runtime
 behavior changes, so there is no state transition for OASIS to record.
+
+---
+
+# Aurora migration B7 — AI Bridge route (VTID-03764 chain)
+
+Filed under this VTID because the Evidence Pack Gate keys off the PR
+title's VTID, same reason as the section above — this is a separate,
+later increment on the same PR (Aurora migration B7: closing the
+"23-of-74 edge functions call Gemini/Vertex directly" violation named in
+`docs/AURORA-B7-EDGE-FUNCTIONS-INVENTORY.md`), not new Aurora-identity
+work.
+
+AC-5 — A new gateway route exists for the Bedrock bridge, correctly
+auth-gated, and is mounted where the route-mount evidence gate expects
+
+ROUTE_MOUNT: `services/gateway/src/routes/ai-bridge.ts` → `router.post('/generate', requireServiceOrAdmin, ...)`; mounted in `services/gateway/src/index.ts` via `mountRouterSync(app, '/api/v1/ai-bridge', aiBridgeRouter, { owner: 'ai-bridge' })`.
+FINAL_URL: `POST {gateway}/api/v1/ai-bridge/generate`
+CURL_PROOF: this is a service-to-service route (Supabase edge functions → gateway), never called by an end user, so there is no production traffic to point at pre-merge — same shape as VTID-03605's FHIR callback evidence above ("after merge-to-main auto-deploys staging"). Once staging picks up this commit: `curl -s -o /dev/null -w "%{http_code} %{content_type}" -X POST https://preview-aws-gateway.vitanaland.com/api/v1/ai-bridge/generate -H "Content-Type: application/json" -d '{}'` must return `401 application/json...` (`{"ok":false,"error":"missing bearer token"}` — auth required, route exists), NOT `404 text/html`. With a valid `GATEWAY_SERVICE_TOKEN` bearer and an empty `messages` array, the same endpoint must return `400 application/json` (`{"ok":false,"error":"messages must be a non-empty array"}`), confirming request validation runs past the auth gate. Local equivalent, run this session (not a substitute for the staging check above, but confirms the route exists and both gates fire before any deploy): `services/gateway/test/ai-bridge.test.ts` boots the router directly via `express()`+`supertest` and asserts exactly these two response shapes (10/10 passing — see the Test Suite Summary check on this PR's own CI run).
+
+AC-6 — The route makes no DB write and has no state transition to record
+
+`invokeBedrock()` (existing, unmodified — `services/gateway/src/providers/bedrock.ts`) makes a single stateless call to Bedrock and returns its response; nothing is written to Supabase/Aurora, no OASIS-worthy decision is made. Marked `// impact-allow-no-oasis` in the handler body, same category as VTID-03605's FHIR-authorize leg noted above ("only runs discovery and returns a URL, no state change").
+
+TEST: `services/gateway/test/ai-bridge.test.ts` — 10 tests covering auth gating (401 with no token, JWT path never touched when the service token matches), request-shape validation (400s), Gemini→Bedrock request translation (system-turn splitting, tool-schema translation, option forwarding/defaulting), and Bedrock→Gemini response translation (text and functionCall shapes) plus a `not_configured` error surfaced as 502.
+
+OASIS_IMPACT: no — see AC-6.
