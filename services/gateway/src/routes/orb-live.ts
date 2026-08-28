@@ -1864,7 +1864,7 @@ import {
 } from '../orb/live/voice/nova-sonic-voice';
 import type { VoiceProviderName } from '../orb/live/upstream/provider-name';
 import { prewarmNovaSonicBedrock, NovaSonicLiveClient } from '../orb/live/upstream/nova-sonic-live-client';
-import { consumePrewarmedNovaSession, registerPrewarmedNovaSession } from '../orb/live/prewarm/nova-session-prewarm';
+import { consumePrewarmedNovaSession, registerPrewarmedNovaSession, hasLivePrewarmedNovaSession } from '../orb/live/prewarm/nova-session-prewarm';
 import { getUserLocale } from '../i18n/server-locale';
 import { sanitizeInstructionForNova } from '../orb/live/upstream/nova-instruction-sanitizer';
 import { startNovaSonicKeepWarm, startNovaSonicModelWarm } from '../orb/live/upstream/nova-sonic-keepwarm';
@@ -16941,6 +16941,19 @@ async function handleWsPrewarmMessage(clientSession: WsClientSession): Promise<v
   const userId = clientSession.identity?.user_id;
   if (!userId) return; // Anonymous sessions already meet the latency target — nothing to warm.
   if (clientSession.liveSession?.active) return; // A real session is already running on this socket.
+
+  // BOOTSTRAP-NOVA-PREWARM-REGISTRY-HARDEN: a still-open, unclaimed prewarm
+  // already exists for this user (another tab/frame — confirmed live via
+  // /admin/device-preview, which iframes the app for the same logged-in
+  // user — or a redundant re-init on this same tab). Claiming is by
+  // user_id, not by socket (consumePrewarmedNovaSession), so THIS socket
+  // can safely be told it's reuse-eligible without opening a second,
+  // redundant Nova connection that registerPrewarmedNovaSession would only
+  // discard anyway. Ack immediately and skip the expensive connect.
+  if (hasLivePrewarmedNovaSession(userId)) {
+    sendWsMessage(clientSession.clientWs, { type: 'prewarm_ready' });
+    return;
+  }
 
   // Named distinctly from the connect branch's own `novaCfg` — that
   // identifier is used as a uniqueness anchor by

@@ -88,11 +88,44 @@ export function discardPrewarmedNovaSession(userId: string, reason: string): voi
 }
 
 /**
+ * True when a still-open, unclaimed prewarm already exists for this user.
+ * Callers can use this to skip the expensive connect() + system-instruction
+ * assembly entirely on a redundant prewarm attempt (see BOOTSTRAP-NOVA-
+ * PREWARM-REGISTRY-HARDEN) instead of paying that cost only to have
+ * `registerPrewarmedNovaSession` discard the result.
+ */
+export function hasLivePrewarmedNovaSession(userId: string): boolean {
+  const existing = prewarmedByUserId.get(userId);
+  return !!existing && existing.client.getState() === 'open';
+}
+
+/**
  * Register an already-connected Nova client as this user's prewarmed
  * session. Arms the idle-keepalive (so Bedrock's no-audio close never fires
  * while nobody has claimed it) and the TTL expiry.
+ *
+ * BOOTSTRAP-NOVA-PREWARM-REGISTRY-HARDEN: if a still-open, unclaimed entry
+ * is already registered for this user, KEEP it and close/discard `base`
+ * instead of the reverse. This used to unconditionally replace the existing
+ * entry — safe for the intended "stale prewarm, page refresh" case, but a
+ * real, reproducible failure mode for the case this registry's own header
+ * comment already names as accepted risk (two browser tabs/frames for the
+ * same user — confirmed live via /admin/device-preview, which iframes the
+ * app for the same logged-in user, and independently plausible from a
+ * widget re-init firing a second prewarm before the first settled): each
+ * new attempt reset the "ready" clock to zero, so a real tap could arrive
+ * while the CURRENT attempt's ~5-8s connect was still in flight even though
+ * an earlier attempt had already finished and was sitting there unclaimed.
+ * Measured on staging: 11 successful prewarms in 45 minutes for two users,
+ * zero claims, ever. Claiming is by user_id (see consumePrewarmedNovaSession),
+ * not by socket/tab, so keeping the OLDER entry is always safe — whichever
+ * tab's real session-start arrives first still claims correctly.
  */
 export function registerPrewarmedNovaSession(userId: string, base: PrewarmedNovaSessionBase): void {
+  if (hasLivePrewarmedNovaSession(userId)) {
+    void base.client.close('prewarm_superseded_kept_existing').catch(() => { /* best-effort */ });
+    return;
+  }
   discardPrewarmedNovaSession(userId, 'superseded_by_new_prewarm');
 
   const keepaliveTimer = setInterval(() => {
