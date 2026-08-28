@@ -47,16 +47,36 @@ shutdown) whenever OpenAI's embedding call fails, for *every* memory/
 semantic-search write and query path in the gateway (`intent-embedding.ts`,
 `memory-broker.ts`, `navigation-catalog.ts`, `routes/semantic-memory.ts`,
 `routes/admin-embeddings-backfill.ts`, plus every `write_fact()` call via
-`generateFactEmbeddingAsync()`). **This is the most consequential finding**
-— it's live, unflagged, and would actually work today if
-`GOOGLE_GEMINI_API_KEY` still holds a valid key, meaning the platform may
-already be quietly depending on Google for embeddings without anyone
-choosing that. Fixing it needs a Bedrock/Titan-embeddings fallback this
-codebase doesn't have yet (Titan's embedding dimension doesn't match the
-existing `vector(1536)`/`vector(768)` columns either — a real migration
-question, not a one-line swap). **Not fixed in this pass** — flagging for
-a deliberate follow-up, the same reasoning this whole migration effort has
-applied to every non-trivial provider swap.
+`generateFactEmbeddingAsync()`). **This was the most consequential
+finding** — it was live, unflagged, and would have actually worked if
+`GOOGLE_GEMINI_API_KEY` still held a valid key.
+
+**✅ `embedding-service.ts` FIXED, same day.** The "Titan's dimension
+doesn't match" concern is true of Titan Text Embeddings **V2**
+(`amazon.titan-embed-text-v2:0`, 256/512/1024-dim only) but **not V1**
+(`amazon.titan-embed-text-v1`), which has always emitted a fixed 1536-dim
+vector — verified live against the real Bedrock API in `eu-central-1`
+2026-08-28 (`aws bedrock-runtime invoke-model`, real `embedding.length`
+checked), an exact match for `memory_items.embedding vector(1536)` with
+zero migration. New `providers/titan-embedding.ts` (same deliberate-opt-in
+shape as `titan-image.ts`/`providers/bedrock.ts`: dormant, `not_configured`,
+until `BEDROCK_ROLE_ARN` is set — no new flag to remember to flip once it
+is). `embedding-service.ts`'s fallback order is now OpenAI → Titan/Bedrock
+→ Gemini (last resort only, logged as an `error`-severity
+`embedding.google_fallback_used` incident with `policy_violation:true`
+per NEVER-27/IF-THEN-29, not the old `warning`-severity routine-fallback
+event). 18 new/updated tests, full gateway suite re-run clean (719/720
+suites, 13,510 passing). See the CHANGE LOG entry for this VTID.
+
+**`memory-facts-service.ts` NOT fixed the same way — genuinely can't be.**
+Its `memory_facts.embedding` column is a **fixed vector(768)** (confirmed
+via `pg_attribute.atttypmod`, per its own header comment) — neither Titan
+V1 (1536) nor V2 (256/512/1024) matches 768. Closing this one needs a human
+decision (migrate the column to a Titan-compatible width and re-embed every
+existing row, or accept a quality-degrading truncation), not a code-only
+swap. Left the Gemini fallback in place but changed it from a silent
+`console.warn` to the same `error`-severity `embedding.google_fallback_used`
+incident event as above, so it's now visible/alertable rather than quiet.
 
 **3. `orb/delegation/providers/google-ai.ts` — ORB's `consult_external_ai`
 voice tool, real and wired, despite a stale comment calling it an "empty

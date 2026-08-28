@@ -87,16 +87,21 @@ describe('embedding telemetry records the provider (VTID-03579)', () => {
     expect(ev!.payload).toHaveProperty('latency_ms');
   });
 
-  it('names provider, model AND dimensions when Gemini serves the fallback', async () => {
+  it('names provider, model AND dimensions when Gemini serves the fallback (last resort, BEDROCK_ROLE_ARN unset so Titan is not_configured)', async () => {
     openaiOk = false;
 
     const r = await generateEmbedding('alpha');
     expect(r.ok).toBe(true);
 
-    const ev = emitted.find((e) => e.type === 'embedding.fallback_used');
+    // GATEWAY-GOOGLE-DEPENDENCY-AUDIT-2026-08-28: Gemini is now the LAST
+    // resort behind Titan/Bedrock, and a successful Google fallback is an
+    // incident ('embedding.google_fallback_used', status 'error'), not
+    // routine degradation ('embedding.fallback_used', status 'warning').
+    const ev = emitted.find((e) => e.type === 'embedding.google_fallback_used');
     expect(ev).toBeDefined();
     expect(ev!.payload.provider).toBe('gemini');
     expect(ev!.payload.model).toBeTruthy();
+    expect(ev!.payload.policy_violation).toBe(true);
     // Dimensions specifically: a Gemini vector that happens to be 1536 long
     // inserts into the same column as an OpenAI one without error, so the
     // dimension is the only thing distinguishing "compatible shape" from
@@ -104,6 +109,7 @@ describe('embedding telemetry records the provider (VTID-03579)', () => {
     // Recording it is what makes the ambiguity auditable later.
     expect(ev!.payload.dimensions).toBe(1536);
     expect(ev!.payload).toHaveProperty('openai_error');
+    expect(ev!.payload).toHaveProperty('titan_error');
   });
 
   it('does not emit a fallback event when OpenAI succeeds', async () => {

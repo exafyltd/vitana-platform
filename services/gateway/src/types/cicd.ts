@@ -458,6 +458,7 @@ export type CicdEventType =
   | 'memory.read.requested'
   | 'memory.read.completed'
   | 'embedding.fallback_used'
+  | 'embedding.google_fallback_used'
   | 'embedding.all_providers_failed'
   | 'embedding.batch_generated'
   | 'embedding.pipeline.batch_completed'

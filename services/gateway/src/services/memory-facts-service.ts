@@ -716,6 +716,17 @@ async function callGeminiForFactEmbeddings(texts: string[]): Promise<FactEmbeddi
  * vector(768) column. OpenAI (requested at native 768d) primary, Gemini
  * text-embedding-004 (native 768d) fallback. Exported for AP-0910's batch
  * backfill; also used internally by generateFactEmbeddingAsync below.
+ *
+ * GATEWAY-GOOGLE-DEPENDENCY-AUDIT-2026-08-28 finding #1/#2 flagged this
+ * alongside embedding-service.ts's Gemini fallback (VTID-01184, now fixed —
+ * see providers/titan-embedding.ts), but this one could NOT get the same
+ * Bedrock/Titan fix: Titan Text Embeddings V1 is fixed at 1536-dim, and V2
+ * only offers 256/512/1024 — none match this column's fixed 768. Closing
+ * this one for real needs a human decision (migrate memory_facts.embedding
+ * to a Titan-compatible width and re-embed every existing row, or accept a
+ * quality-degrading truncation), not a code-only swap — so the Gemini
+ * fallback stays, but is now logged as the policy incident it is (NEVER-27
+ * / IF-THEN-29) instead of a silent console.warn.
  */
 export async function generateFactEmbeddings(texts: string[]): Promise<FactEmbeddingBatchResult> {
   if (texts.length === 0) return { ok: true, embeddings: [] };
@@ -723,7 +734,24 @@ export async function generateFactEmbeddings(texts: string[]): Promise<FactEmbed
   if (openai.ok) return openai;
   console.warn(`[${VTID}] OpenAI fact-embedding failed, trying Gemini: ${openai.error}`);
   const gemini = await callGeminiForFactEmbeddings(texts);
-  if (gemini.ok) return gemini;
+  if (gemini.ok) {
+    console.error(`[${VTID}] GOOGLE FALLBACK USED (policy violation, no Bedrock/Titan equivalent for the fixed 768-dim column): ${gemini.model}`);
+    await emitOasisEvent({
+      vtid: VTID,
+      type: 'embedding.google_fallback_used',
+      source: 'memory-facts-service',
+      status: 'error',
+      message: `POLICY VIOLATION: used Gemini fallback for fact-embedding generation (${gemini.model}) — OpenAI failed and no Bedrock/Titan model matches the fixed 768-dim column`,
+      payload: {
+        policy_violation: true,
+        openai_error: openai.error,
+        provider: 'gemini',
+        model: gemini.model,
+        count: texts.length,
+      },
+    }).catch(() => {});
+    return gemini;
+  }
   return { ok: false, error: `OpenAI: ${openai.error}; Gemini: ${gemini.error}` };
 }
 
