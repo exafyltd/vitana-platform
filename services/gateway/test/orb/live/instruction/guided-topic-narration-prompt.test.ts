@@ -76,14 +76,67 @@ describe('buildGuidedTopicNarrationBlock — post-narration branch (content.narr
 
   it('tells the model NOT to re-narrate the lesson', () => {
     const de = buildGuidedTopicNarrationBlock(narratedContent, 'de');
-    expect(de.toLowerCase()).toMatch(/nicht (selbst )?vorgetragen|nicht wiederholen/);
+    expect(de.toLowerCase()).toMatch(/nicht erneut vor|nicht wiederholt werden/);
     const en = buildGuidedTopicNarrationBlock(narratedContent, 'en');
-    expect(en.toLowerCase()).toMatch(/did not narrate|not repeat|already narrated/);
+    expect(en.toLowerCase()).toMatch(/does not need to be repeated|don't re-narrate/);
+  });
+
+  // VTID-03785 — live oasis_events data showed guided-topic narration
+  // sessions (this exact branch) blocked on Nova's nova_validation content
+  // filter 158/158 = 100% of the time over 7 days, vs 36% for ordinary
+  // sessions. Two phrasing patterns in this block independently match
+  // patterns already PROVEN to trip this same filter elsewhere in this
+  // codebase: a self-referential voice-denial assertion ("you did NOT
+  // narrate it yourself") matching the IDENTITY LOCK persona-denial-list
+  // shape nova-instruction-sanitizer.ts already has to rewrite, and quoted
+  // hypothetical spoken example phrases ("What do you want?") matching the
+  // quoted-dialogue-exemplar shape VTID-03674's day_close fix already
+  // proved trips this filter. Neither pattern was covered by the existing
+  // sanitizer (scoped only to the IDENTITY LOCK block). These are
+  // regression guards against reintroducing either pattern class.
+  it('VTID-03785: does NOT use a self-referential voice-denial phrase ("you did NOT narrate it yourself")', () => {
+    const de = buildGuidedTopicNarrationBlock(narratedContent, 'de');
+    expect(de).not.toMatch(/NICHT selbst vorgetragen/);
+    expect(de).not.toMatch(/als hättest du sie noch nicht erklärt/);
+    const en = buildGuidedTopicNarrationBlock(narratedContent, 'en');
+    expect(en).not.toMatch(/you did NOT narrate it yourself/);
+    expect(en).not.toMatch(/as if you hadn't already explained it/);
+  });
+
+  it('VTID-03785: does NOT quote hypothetical spoken example phrases ("What do you want?")', () => {
+    const de = buildGuidedTopicNarrationBlock(narratedContent, 'de');
+    expect(de).not.toMatch(/„Was möchtest du\?"/);
+    expect(de).not.toMatch(/„Wie kann ich dir helfen\?"/);
+    const en = buildGuidedTopicNarrationBlock(narratedContent, 'en');
+    expect(en).not.toMatch(/"What do you want\?"/);
+    expect(en).not.toMatch(/"How can I help you\?"/);
   });
 
   it('respects the requested language independent of the German-authored content', () => {
     const block = buildGuidedTopicNarrationBlock(narratedContent, 'en');
     expect(block).toContain('Speak ONLY in English');
+  });
+
+  // VTID-03786 — live retest of VTID-03785 (6 real staging sessions across 4
+  // topics, post-deploy) found nova_validation STILL blocked 100% of guided
+  // sessions, unchanged from the pre-fix rate. Direct inspection of the
+  // deployed builder output for a real topic (T003) confirmed the two
+  // VTID-03785 patterns were genuinely gone, so the trigger lives elsewhere.
+  // The one phrase common to every branch and unique to guided-topic
+  // sessions (ordinary sessions, which succeed at the ~36% ambient baseline,
+  // never carry it) is an authority-override assertion — "OVERRIDES every
+  // generic greeting/opening rule" / "hat Vorrang vor JEDER generischen
+  // Begrüßungs- oder Eröffnungsregel" — structurally the same
+  // override/jailbreak-shaped directive class Bedrock's filter is trained to
+  // flag, distinct from the two VTID-03785 patterns.
+  it('VTID-03786: does NOT assert this mode overrides/takes precedence over every other rule', () => {
+    const de = buildGuidedTopicNarrationBlock(narratedContent, 'de');
+    expect(de).not.toMatch(/hat Vorrang vor JEDER/);
+    const en = buildGuidedTopicNarrationBlock(narratedContent, 'en');
+    expect(en).not.toMatch(/OVERRIDES every/);
+    // Intent preserved: still pins the language for the whole session.
+    expect(de).toMatch(/für die GANZE Sitzung/);
+    expect(en).toMatch(/for the WHOLE session/);
   });
 
   it('VTID-03686/03686-followup: instructs checking for follow-up questions before moving on from a brief "yes"', () => {
@@ -121,6 +174,35 @@ describe('buildGuidedTopicNarrationBlock — legacy model-narrated branch (no na
     const withUndefined = buildGuidedTopicNarrationBlock(BASE_CONTENT, 'de');
     const withNull: GuidedTopicNarrationContent = { ...BASE_CONTENT, narrationAudio: null };
     expect(buildGuidedTopicNarrationBlock(withNull, 'de')).toBe(withUndefined);
+  });
+
+  // VTID-03785 — same quoted-example-phrase pattern as the post-narration
+  // branch (see its own VTID-03785 tests). This branch currently sees no
+  // live traffic (Polly has succeeded 158/158 recently, so this branch
+  // never runs) — fixed preventively so the same defect doesn't resurface
+  // the moment Polly synthesis ever fails for a topic.
+  it('VTID-03785: does NOT quote hypothetical spoken example phrases ("What do you want?")', () => {
+    const de = buildGuidedTopicNarrationBlock(BASE_CONTENT, 'de');
+    expect(de).not.toMatch(/„Was möchtest du\?"/);
+    expect(de).not.toMatch(/„Wie kann ich dir helfen\?"/);
+    expect(de).not.toMatch(/„Womit fangen wir an\?"/);
+    const en = buildGuidedTopicNarrationBlock(BASE_CONTENT, 'en');
+    expect(en).not.toMatch(/"What do you want\?"/);
+    expect(en).not.toMatch(/"How can I help you\?"/);
+    expect(en).not.toMatch(/"Where should we start\?"/);
+  });
+
+  // VTID-03786 — same authority-override pattern as the post-narration
+  // branch (see its own VTID-03786 test). This branch currently sees no
+  // live traffic, but carries the identical phrase and would reproduce this
+  // defect the moment Polly synthesis ever fails for a topic.
+  it('VTID-03786: does NOT assert this mode overrides/takes precedence over every other rule', () => {
+    const de = buildGuidedTopicNarrationBlock(BASE_CONTENT, 'de');
+    expect(de).not.toMatch(/hat Vorrang vor JEDER/);
+    const en = buildGuidedTopicNarrationBlock(BASE_CONTENT, 'en');
+    expect(en).not.toMatch(/OVERRIDES every/);
+    expect(de).toMatch(/für die GANZE Sitzung/);
+    expect(en).toMatch(/for the WHOLE session/);
   });
 
   it('VTID-03686/03686-followup: instructs explaining core points before moving to practice on a brief "yes"', () => {

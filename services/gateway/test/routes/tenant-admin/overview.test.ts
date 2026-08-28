@@ -343,6 +343,30 @@ describe('Tenant Admin Overview Routes', () => {
     expect(chainFor('oasis_events').limit).toHaveBeenCalledWith(50); // default limit
   });
 
+  it('GET /activity excludes nova_instruction_debug_dump diag rows even without a tenant_id (VTID-03787)', async () => {
+    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    chainFor('oasis_events').mockResolvedValueOnce({
+      data: [
+        { id: 'e1', metadata: { tenant_id: TENANT_A }, created_at: '2026-08-28T10:00:00Z' },
+        {
+          id: 'e2',
+          metadata: { stage: 'nova_instruction_debug_dump', instruction_text: 'user memory: ...' },
+          created_at: '2026-08-28T09:00:00Z',
+        },
+        { id: 'e3', metadata: {}, created_at: '2026-08-28T08:00:00Z' }, // ordinary global event, still included
+      ],
+      error: null,
+    });
+
+    const res = await request(app)
+      .get(`/api/v1/admin/tenants/${TENANT_A}/overview/activity`)
+      .set('Authorization', 'Bearer token');
+
+    expect(res.status).toBe(200);
+    const ids = res.body.events.map((e: any) => e.id);
+    expect(ids).toEqual(['e1', 'e3']); // e2's raw instruction text never reaches a tenant admin
+  });
+
   it('GET /activity caps limit at 200', async () => {
     mockVerifiedJwt(tenantAdminClaims(TENANT_A));
     chainFor('oasis_events').mockResolvedValueOnce({ data: [], error: null });

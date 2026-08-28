@@ -622,16 +622,16 @@ turns, do not append clarifying questions:
   "${safe}"
 
 Rules:
-  - Do NOT say "Wie kann ich dir helfen?" / "How can I help?" / "Was steht an?"
-    / "Was liegt an?" / any standalone offer-to-help phrasing.
+  - Do NOT use a standalone generic offer-to-help greeting instead of the
+    line above.
   - Do NOT pick a phrase from the "SHORT-GAP GREETING PHRASES" section —
     that section is SUPPRESSED for this turn.
   - Do NOT introduce yourself or list features.
   - The line above already contains both the greeting AND the proactive
     invitation. After speaking it, stop and wait for the user's reply.${dedupeLine}
 
-This block OVERRIDES every other greeting rule in this prompt for the
-first turn only. Subsequent turns follow the normal conversation flow.`;
+This is your first spoken turn this session. Subsequent turns follow the
+normal conversation flow.`;
 }
 
 export async function handleLiveSessionStart(

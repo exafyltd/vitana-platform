@@ -3816,8 +3816,19 @@
       var drift = Date.now() - scheduledAt - BG_CHECK_MS;
       if (drift > BG_KILL_DRIFT_MS) {
         console.warn('[VTOrb] Background watchdog: timer drifted ' + drift + 'ms — app was backgrounded, ending session');
+        // VTID-03783: this used to call _sessionStop() directly — the same
+        // anti-pattern VTID-03778 already fixed for the session_ended
+        // message handler in this file. _sessionStop() tears down media/SSE
+        // but never touches overlay visibility, so the overlay froze on
+        // this caption forever with no working close path (live-reported:
+        // "Session ended — app was in the background", X unresponsive).
+        // _hide() is the same full, honest teardown every other close path
+        // uses — it actually hides the overlay. Deliberately does NOT use
+        // the guided-topic completion teardown: a background-kill is not a
+        // reliable "the lesson finished" signal (the app may have been
+        // backgrounded mid-sentence), so this must not auto-mark a step done.
         _setStatus(_caption('sessionEndedBackground'));
-        _sessionStop();
+        _hide();
         return;
       }
       // VTID-CODEX-REVIEW: gate on overlayVisible, not _s.active. _sessionStart's
@@ -4574,9 +4585,33 @@
       if (_s._guidedTopicZeroAudioFailCount >= 2) {
         console.warn('[VTOrb] _attemptReconnect: guided topic ' + _s._guidedTopicInFlight +
           ' failed ' + _s._guidedTopicZeroAudioFailCount + 'x with no audio ever heard — ' +
-          'dropping it for this session, falling back to generic conversation');
+          'dropping it and stopping instead of silently opening unrelated conversation');
         _s.guidedTopic = null;
         _s._guidedTopicInFlight = null;
+        // VTID-03782: used to fall through to the normal reconnect below,
+        // which silently opened unrelated conversation with no end signal
+        // possible (see this VTID's own test file for the live evidence).
+        // Stop honestly via the same tap-to-reconnect state
+        // MAX_WIDGET_RECONNECTS already uses, instead of degrading into an
+        // unbounded chat the person can't distinguish from their lesson.
+        //
+        // Codex review (same PR): _enterStuckState() alone is not enough
+        // here. _resetAndReconnect()'s own comment confirms _disconnectActive
+        // is deliberately left true so the 5s _recoveryWatchdog health-probe
+        // can auto-recover once the gateway answers again — correct for a
+        // real network outage, but this breaker trips on a REACHABLE
+        // gateway (nova_validation rejected the content, not a dropped
+        // connection), so that probe would succeed within ~5s and silently
+        // call _resetAndReconnect() on our behalf — reopening the exact
+        // unrelated conversation this stop exists to prevent, just delayed.
+        // Cancel the watchdog and clear _disconnectActive so only an
+        // explicit tap (gated on _disconnectStuck, already set by
+        // _enterStuckState()) can resume from here.
+        try { clearInterval(_s._recoveryWatchdog); } catch (e) { /* noop */ }
+        _s._recoveryWatchdog = null;
+        _s._disconnectActive = false;
+        _enterStuckState();
+        return;
       }
     }
 
@@ -4690,6 +4725,33 @@
     console.warn('[VTOrb] _enterStuckState: reconnect budget exhausted — switching to tap-to-reconnect');
     _s._isReconnecting = false;
     _s._disconnectStuck = true;
+    // VTID-03784: the VTID-03762 guided-topic backstop timer is armed in
+    // focusGuidedTopic() and, until now, was only ever cancelled by _hide()
+    // — which no path into this stuck state calls (the overlay stays up so
+    // the user can tap to retry). Left running, the backstop fires 5
+    // minutes later and calls _endGuidedTopicTeaching('backstop_timeout'),
+    // awarding false step-completion credit (Well-done drawer, +index
+    // points) for a lesson that was never delivered — live-reproduced on
+    // staging via the VTID-03782 circuit breaker path (2 consecutive
+    // zero-audio nova_validation failures -> stuck here -> backstop still
+    // fired ~5 min later).
+    //
+    // Codex review (same PR): only safe to cancel when the topic has
+    // actually been DROPPED (the circuit breaker nulls _guidedTopicInFlight
+    // before calling here). MAX_WIDGET_RECONNECTS exhaustion does NOT null
+    // it, and _resetAndReconnect() (the tap-to-reconnect handler and the
+    // health-probe watchdog) explicitly re-arms _s.guidedTopic from
+    // _guidedTopicInFlight to RESUME the same lesson — cancelling the
+    // backstop unconditionally would strip the resumed session of the only
+    // protection against the model never calling end_guided_topic_teaching
+    // after reconnecting, exactly the unbounded-conversation defect
+    // VTID-03762 exists to prevent. Gate on _guidedTopicInFlight being
+    // already null (genuinely dropped, nothing left to resume).
+    if (!_s._guidedTopicInFlight) {
+      _s._guidedTopicOpenedAt = null;
+      try { clearInterval(_s._guidedTopicBackstopInterval); } catch (e) { /* noop */ }
+      _s._guidedTopicBackstopInterval = null;
+    }
     _setOrbState('error');
     _setStatus(_caption('tapToReconnect'));
     _updateUI();

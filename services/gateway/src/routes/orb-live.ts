@@ -8316,6 +8316,32 @@ async function connectToLiveAPI(
         (session as any)._novaInstructionChars = novaSystemInstruction.length;
         (session as any)._novaToolEntryCount = novaTools.length;
 
+        // VTID-03787 — diagnostic-only, staging-gated: VTID-03785/03786 both
+        // removed specific "risky phrase" patterns from the guided-topic
+        // system-instruction path on the theory that Nova's nova_validation
+        // content filter reacted to them. Both shipped correctly (mutation-
+        // verified) and BOTH left the live block rate unchanged at 100%
+        // across 6 different topics post-deploy — falsifying that theory as
+        // the (sole) cause. Rather than guess a fourth phrase pattern blind,
+        // dump the ACTUAL literal instruction text Nova receives so a real
+        // guided-topic (blocked) session can be diffed against a real
+        // ordinary (succeeding) session line-for-line. Gated behind
+        // ORB_LOG_NOVA_INSTRUCTION_DEBUG (staging-only, never prod) because
+        // the full text includes the user's memory/personalization context.
+        // Placed here (after novaSystemInstruction is assigned on both the
+        // cold-connect and VTID-03779 warm-start-reuse paths) rather than at
+        // its original position further up, which predated the warm-start
+        // branch and would otherwise read the variable before assignment.
+        if (process.env.ORB_LOG_NOVA_INSTRUCTION_DEBUG === 'true') {
+          emitDiag(session, 'nova_instruction_debug_dump', {
+            provider: 'nova_sonic',
+            instruction_chars: novaSystemInstruction.length,
+            instruction_text: novaSystemInstruction,
+            has_guided_topic: !!(session as any).guidedTopicNarrationContent,
+            guided_topic_id: (session as any).guided_topic_id ?? null,
+          });
+        }
+
         rotateNovaStream = async (reason: NovaRotationReason) => {
           if (!session.active) return;
           // A wall-clock rotation and an idle fail-safe can in principle come

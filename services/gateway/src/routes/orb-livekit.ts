@@ -1886,12 +1886,13 @@ router.get(
 The client app plays the opening line for this session before you receive
 control. You MUST NOT produce an opening utterance, greeting, or
 proactive offer on your first turn — the user has already heard it.
-Do NOT introduce yourself, do NOT list features, do NOT ask "How can I
-help?", and do NOT repeat or paraphrase any greeting. Remain silent and
-WAIT for the user to speak. Only then respond normally.
+Do NOT introduce yourself, do NOT list features, do NOT use a standalone
+generic offer-to-help greeting, and do NOT repeat or paraphrase any
+greeting. Remain silent and WAIT for the user to speak. Only then respond
+normally.
 
-This block OVERRIDES every other greeting rule in this prompt for the
-first turn only. Subsequent turns follow the normal conversation flow.`;
+This is your first spoken turn this session. Subsequent turns follow the
+normal conversation flow.`;
         const vitanaBehavioralRule = buildPersonaBehavioralRule('vitana');
         // Marker at the HEAD so capBootstrapContext (head-preserving) can never
         // trim it away, regardless of bootstrap size.
