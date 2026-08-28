@@ -289,11 +289,17 @@ vitana-platform PR #3087) plus a drop-in `_shared/bedrock-bridge-client.ts`
 (vitana-v1 PR #1051) closes the 23-of-74-functions "calls Gemini/Vertex
 directly" violation for the 6 frontend-reachable, `gemini-client.ts`-based
 functions without needing Lambda (IAM-denied to this session) — wired
-behind an `AI_BRIDGE_PROVIDER` flag on one function
-(`generate-enhanced-recommendations`) so far, defaulting to unchanged
-behavior. Remaining: the other 5 functions, plus the 2
-`generateEmbedding`-dependent functions and `generate-event-image`'s
-Vertex Imagen call, neither of which this bridge covers.
+behind an `AI_BRIDGE_PROVIDER` flag on 4 of those 6 functions so far
+(`generate-enhanced-recommendations`, `generate-proactive-greeting`,
+`extract-diary-insights`, `social-media-import`), defaulting to unchanged
+behavior. Remaining: `ai-chat` (1300+ lines, SSE streaming via a
+hand-built fetch rather than `gemini-client.ts` — deserves its own pass,
+not a rushed swap) and `transcribe-audio` (sends raw audio bytes to
+Gemini's multimodal endpoint — this bridge is text-only, so Bedrock/Claude
+has no drop-in path here; needs Amazon Transcribe instead, separate work).
+Also untouched: the 2 `generateEmbedding`-dependent functions and
+`generate-event-image`'s Vertex Imagen call, neither of which this bridge
+covers.
 
 **B8 — Cutover + rollback.** Per Phase 4 below.
 
