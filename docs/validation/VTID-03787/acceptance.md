@@ -72,6 +72,22 @@ AC-5 — Full `test/orb` sweep and full gateway suite both green.
 
 TEST: `outputs/jest-full-suite.txt`.
 
+## OASIS impact
+
+OASIS_PROOF: adds one new diag stage, `nova_instruction_debug_dump`, emitted
+via the existing `emitDiag(session, stage, metadata)` helper (same call
+shape every other `orb.live.diag` stage in this file already uses — see
+`nova_validation`/`connect_failed` sites in `orb-live.ts`) immediately
+after `novaSystemInstruction` is computed. No new topic, no schema change,
+no new table — it is a plain `oasis_events` row with
+`topic:'orb.live.diag'`, `metadata->>'stage'='nova_instruction_debug_dump'`.
+Gated behind `ORB_LOG_NOVA_INSTRUCTION_DEBUG==='true'`, unset in prod, so it
+never fires there. Not yet observed firing against live traffic — that is
+the very next step once this deploys to staging (see "Deliberately NOT
+attempted" below); the proof at this stage is the code path itself and the
+pinning test asserting the emission call exists (`staging-nova-instruction-debug-flag-pinned.test.ts`,
+"emits the literal novaSystemInstruction text on the diag stage").
+
 ## Deliberately NOT attempted
 
 - **No fix.** This is diagnostic-only, matching this codebase's own
