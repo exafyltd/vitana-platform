@@ -142,3 +142,79 @@ realistically the ~30-table `postgres_changes` list above, not all 60.
   wholesale by a gateway-owned relay (option (b)) — this is a real
   architecture decision for whoever picks up B5 execution, not resolved by
   an inventory pass.
+
+## Addendum (VTID-03764 chain), 2026-08-28 — per-table criticality, live-measured
+
+The prior pass explicitly deferred "assess how many are genuinely
+live-critical" as a product call. It doesn't have to be a guess: Aurora
+(DMS-replicated from Supabase) already carries real write-activity signal
+per table, queryable read-only via the RDS Data API (`aws rds-data
+execute-statement`, HTTPS — the same access path B4/Phase 0 established;
+no IAM-denied service needed). Queried directly against the `vitana`
+database (**not** `postgres` — the default database on this cluster has
+zero tables in `public`; the real 586-table schema lives in `vitana`) for
+all 30 `postgres_changes` tables named above: `n_live_tup` and
+`n_tup_ins+n_tup_upd+n_tup_del` from `pg_stat_user_tables`.
+
+**Caveat before reading the numbers:** CDC has been down since 2026-08-20
+(`docs/AURORA-PHASE0-RECONCILIATION-2026-08-27.md`), so these are frozen at
+whatever DMS had replicated by then, not live-to-the-minute — but relative
+ordering across tables (which is all this triage needs) is unaffected by a
+uniform staleness cutoff.
+
+| Table | Live rows | Write activity (ins+upd+del) | Tier |
+|---|---:|---:|---|
+| `user_activity_log` | 135,960 | 135,960 | **Hot** |
+| `user_notifications` | 63,399 | 67,249 | **Hot** |
+| `chat_messages` | 41,217 | 41,255 | **Hot** |
+| `user_wallets` | 690 | 690 | Warm |
+| `ai_messages` | 530 | 530 | Warm |
+| `global_messages` | 375 | 375 | Warm |
+| `diary_entries` | 252 | 252 | Warm |
+| `message_reactions` | 237 | 237 | Warm |
+| `profiles` | 205 | 209 | Warm |
+| `profile_posts` | 179 | 317 | Warm |
+| `user_follows` | 138 | 138 | Cool |
+| `global_community_events` | 123 | 123 | Cool |
+| `global_thread_participants` | 118 | 125 | Cool |
+| `wallet_transactions` | 85 | 85 | Cool |
+| `media_uploads` | 44 | 44 | Cool |
+| `calendar_invite_responses` | 35 | 35 | Cool |
+| `global_event_participants` | 18 | 18 | Cool |
+| `cart_items` | 13 | 13 | Cool |
+| `messages` | 12 | 12 | Cool |
+| `thread_participants` | 10 | 10 | Cool |
+| `message_threads` | 5 | 5 | Cool |
+| `bookmarked_items` | 5 | 5 | Cool |
+| `provider_appointments` | 4 | 4 | Cool |
+| `user_supplements` | 2 | 2 | Cool |
+| `contacts` | 2 | 2 | Cool |
+| `global_community_groups` | 1 | 1 | Cool |
+| `calendar_events` | 0 (dead tuples only) | 4,482 | Cool — churny but tiny live set |
+| `campaign_recipients` | 0 | 0 | Cool — unused/empty |
+| `content_reports` | 0 | 0 | Cool — unused/empty |
+| `user_suspensions` | 0 | 0 | Cool — unused/empty |
+
+**This corrects, not just extends, the prior pass's inference.** The prior
+pass flagged `message_threads`/`messages` (6+2 subscribing calls across two
+files) as an "obvious high-traffic candidate" by subscriber-count — but the
+real data shows both tables are nearly empty (12 and 5 rows respectively).
+`chat_messages` — 3 subscribing files, the same tier the prior pass put it
+in — is genuinely hot, 3-4 orders of magnitude above every table below the
+top three. Subscriber/file count and actual write volume are not the same
+signal, and this session's access to live Aurora stats settles which one
+matters for B5 sequencing: **`user_activity_log`, `user_notifications`, and
+`chat_messages` are the three tables where a genuine push mechanism
+(Supabase-`realtime`-on-Aurora or a gateway relay) earns its cost first.**
+Every other table in this list is a plausible polling-interval candidate
+(seconds-to-minutes, not milliseconds) given how rarely rows actually
+change, and the four zero/near-zero rows (`campaign_recipients`,
+`content_reports`, `user_suspensions`, and effectively `calendar_events`,
+which has live writes but zero live rows) may not need a live subscription
+at all today.
+
+**Still not decided here, deliberately:** which mechanism — Supabase's own
+`realtime` pointed at Aurora, or a gateway-owned relay — serves the three
+hot tables. That remains the real architecture call the prior pass named,
+now scoped to 3 tables instead of "60 subscriptions" or "30 tables," which
+is a materially smaller decision to make and to get wrong.
