@@ -154,6 +154,91 @@ $ npx jest
 PASS — 720/721 suites (1 pre-existing skip), 13514/13549 tests passing,
        0 failures
 
+## Follow-up: Codex P1 finding on PR #3225, addressed before merge
+
+Codex review comment (chatgpt-codex-connector[bot]):
+  "For the raw SSE flow used to reproduce this incident, a winning
+  guided-topic candidate is always wrapped by buildVertexWakeBriefBlock,
+  whose output still says 'This block OVERRIDES every other greeting
+  rule' (live-session-controller.ts:613-634), and orb-live.ts:7722-7780
+  concatenates that block into the same system instruction as this
+  revised block. LiveKit similarly appends the same phrase at
+  orb-livekit.ts:1882-1894."
+
+Verified directly against the code before fixing:
+$ grep -n "buildVertexWakeBriefBlock\|OVERRIDES every other" \
+  src/orb/live/session/live-session-controller.ts
+-- confirmed: buildVertexWakeBriefBlock (line 594) returns a block
+   containing "This block OVERRIDES every other greeting rule..." AND
+   quoted examples 'Do NOT say "Wie kann ich dir helfen?" / "How can I
+   help?" / ...' — BOTH trigger-pattern classes VTID-03785 already fixed
+   elsewhere, present in ONE block.
+$ -- confirmed shouldInjectWakeBriefOverrideBlock(isReconnectStart, dedupeKey)
+   returns `!isReconnectStart || isPendingGuidedTopicResume` — true for
+   EVERY fresh session with a wake-brief winner, not just guided-topic
+   ones. Explains why an ordinary session in the live retest ALSO likely
+   carried this block yet still succeeded (consistent with the known
+   ~36% ambient baseline — not 0% — this block class is a plausible
+   contributor there too, not exclusively a guided-topic defect).
+$ -- confirmed session.wakeBriefOverrideBlock is concatenated into the
+   same system-instruction string as session.guidedTopicNarrationContent
+   in orb-live.ts (~line 7722-7781, read directly).
+$ -- read orb-livekit.ts:1882-1894, confirmed firstTurnSuppressionDirective
+   carries the identical two-pattern combo for the LiveKit transport.
+
+Fixed both:
+  - live-session-controller.ts: buildVertexWakeBriefBlock — removed the
+    override/precedence sentence and the 4 quoted example phrases.
+  - orb-livekit.ts: firstTurnSuppressionDirective — removed the override/
+    precedence sentence and the 1 quoted example phrase.
+
+$ npx tsc --noEmit
+(clean, exit 0)
+
+Added tests to vertex-wake-brief-override.characterization.test.ts:
+  - buildVertexWakeBriefBlock: does NOT assert override, does NOT quote
+    examples, still instructs the verbatim first-turn line.
+  - orb-livekit.ts source: does NOT assert override, does NOT quote the
+    "How can I help?" example.
+
+$ npx jest test/orb/live/characterization/vertex-wake-brief-override.characterization.test.ts
+PASS — 9/9 (was 5/5 before this follow-up; 4 new)
+
+## Mutation testing (buildVertexWakeBriefBlock)
+
+$ cp src/orb/live/session/live-session-controller.ts /tmp/lsc-786.ts.bak
+-- reverted the quoted-examples + override sentence back to original
+$ npx jest test/orb/live/characterization/vertex-wake-brief-override.characterization.test.ts
+Tests: 2 failed, 7 passed, 9 total
+  ✕ does NOT quote hypothetical spoken example phrases
+  ✕ (override assertion — matched via the same failing block text)
+-- restored from backup
+$ diff /tmp/lsc-786.ts.bak src/orb/live/session/live-session-controller.ts
+CLEAN_RESTORE
+
+## Mutation testing (orb-livekit.ts firstTurnSuppressionDirective)
+
+$ cp src/routes/orb-livekit.ts /tmp/livekit-786.ts.bak
+-- reverted to original quoted "How can I help?" + override sentence
+$ npx jest test/orb/live/characterization/vertex-wake-brief-override.characterization.test.ts
+Tests: 2 failed, 7 passed, 9 total
+  ✕ does NOT assert the directive overrides every other rule
+  ✕ does NOT quote a hypothetical "How can I help?" example
+-- restored from backup
+$ diff /tmp/livekit-786.ts.bak src/routes/orb-livekit.ts
+CLEAN_RESTORE
+$ npx tsc --noEmit
+(clean, exit 0)
+
+## Full suites (after follow-up fix)
+
+$ npx jest test/orb
+PASS — 191/191 suites, 3491/3497 tests passing (6 pre-existing todo)
+
+$ npx jest
+PASS — 720/721 suites (1 pre-existing skip), 13519/13554 tests passing,
+       0 failures
+
 ## Governance
 
 command-hub-ownership-guard.js NOT touched — same reasoning as VTID-03785,

@@ -6,34 +6,90 @@ ts-jest[config] (WARN)
 
       at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
 
+  console.warn
+    [VTID-01225] Cognee Extractor URL not configured - extraction disabled
+
+      138 |
+      139 |     if (!this.enabled) {
+    > 140 |       console.warn('[VTID-01225] Cognee Extractor URL not configured - extraction disabled');
+          |               ^
+      141 |     } else {
+      142 |       console.log(`[VTID-01225] Cognee Extractor Client initialized: ${this.baseUrl}`);
+      143 |     }
+
+      at new CogneeExtractorClient (src/services/cognee-extractor-client.ts:140:15)
+      at Object.<anonymous> (src/services/cognee-extractor-client.ts:1143:38)
+      at Object.<anonymous> (src/orb/live/session/live-session-controller.ts:106:1)
+      at Object.<anonymous> (test/orb/live/characterization/vertex-wake-brief-override.characterization.test.ts:31:1)
+
+  console.warn
+    [VTID-01225] Config warning: COGNEE_EXTRACTOR_URL is not set - extraction will be disabled
+
+      152 |   static validateConfig(): void {
+      153 |     if (!process.env.COGNEE_EXTRACTOR_URL) {
+    > 154 |       console.warn('[VTID-01225] Config warning: COGNEE_EXTRACTOR_URL is not set - extraction will be disabled');
+          |               ^
+      155 |     }
+      156 |     if (!process.env.SUPABASE_URL) {
+      157 |       console.warn('[VTID-01225] Config warning: SUPABASE_URL is not set - persistence will fail');
+
+      at Function.validateConfig (src/services/cognee-extractor-client.ts:154:15)
+      at new CogneeExtractorClient (src/services/cognee-extractor-client.ts:145:27)
+      at Object.<anonymous> (src/services/cognee-extractor-client.ts:1143:38)
+      at Object.<anonymous> (src/orb/live/session/live-session-controller.ts:106:1)
+      at Object.<anonymous> (test/orb/live/characterization/vertex-wake-brief-override.characterization.test.ts:31:1)
+
+(node:2504) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS test/orb/live/characterization/vertex-wake-brief-override.characterization.test.ts
+  VTID-03101: GeminiLiveSession declares wakeBriefOverrideBlock
+    ✓ orb-live.ts declares the dedicated wakeBriefOverrideBlock field on the session interface (10 ms)
+  VTID-03101: controller writes the override to the dedicated field (not contextInstruction)
+    ✓ writes the picked block to session.wakeBriefOverrideBlock (4 ms)
+    ✓ does NOT mutate session.contextInstruction with the override block
+  VTID-03101: setup-message builder reads both fields when rendering system_instruction
+    ✓ orb-live.ts concatenates session.wakeBriefOverrideBlock into the bootstrap arg passed to buildLiveSystemInstruction (1 ms)
+  VTID-03786: buildVertexWakeBriefBlock does not carry known Nova-filter trigger patterns
+    ✓ does NOT assert this block overrides every other rule
+    ✓ does NOT quote hypothetical spoken example phrases (1 ms)
+    ✓ still instructs the model to speak the wake-brief line verbatim as its first turn
+  VTID-03786: LiveKit first-turn suppression directive does not carry known Nova-filter trigger patterns
+    ✓ orb-livekit.ts does NOT assert the directive overrides every other rule (1 ms)
+    ✓ orb-livekit.ts does NOT quote a hypothetical "How can I help?" example (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
 PASS test/orb/live/instruction/guided-topic-narration-prompt.test.ts
   buildGuidedTopicPostNarrationLine
-    ✓ mentions the topic and offers questions + practice in German (3 ms)
+    ✓ mentions the topic and offers questions + practice in German (1 ms)
     ✓ mentions the topic and offers questions + practice in English (1 ms)
     ✓ drops the practice offer when there is no practice target (1 ms)
-    ✓ is short — a native-audio-safe direct turn, not an instructional paragraph (1 ms)
+    ✓ is short — a native-audio-safe direct turn, not an instructional paragraph
   buildGuidedTopicNarrationBlock — post-narration branch (content.narrationAudio set)
     ✓ never includes the raw voice_script text once the audio bridge already spoke it (1 ms)
-    ✓ never includes the raw explanation fields either (1 ms)
-    ✓ still names the topic and practice target so follow-up guidance works
-    ✓ tells the model NOT to re-narrate the lesson (1 ms)
-    ✓ VTID-03785: does NOT use a self-referential voice-denial phrase ("you did NOT narrate it yourself")
+    ✓ never includes the raw explanation fields either
+    ✓ still names the topic and practice target so follow-up guidance works (1 ms)
+    ✓ tells the model NOT to re-narrate the lesson
+    ✓ VTID-03785: does NOT use a self-referential voice-denial phrase ("you did NOT narrate it yourself") (1 ms)
     ✓ VTID-03785: does NOT quote hypothetical spoken example phrases ("What do you want?") (1 ms)
     ✓ respects the requested language independent of the German-authored content
-    ✓ VTID-03786: does NOT assert this mode overrides/takes precedence over every other rule (6 ms)
-    ✓ VTID-03686/03686-followup: instructs checking for follow-up questions before moving on from a brief "yes"
-    ✓ VTID-03762: instructs calling end_guided_topic_teaching once follow-ups are answered
+    ✓ VTID-03786: does NOT assert this mode overrides/takes precedence over every other rule (1 ms)
+    ✓ VTID-03686/03686-followup: instructs checking for follow-up questions before moving on from a brief "yes" (1 ms)
+    ✓ VTID-03762: instructs calling end_guided_topic_teaching once follow-ups are answered (1 ms)
   buildGuidedTopicNarrationBlock — legacy model-narrated branch (no narrationAudio)
     ✓ still includes the paraphrase-material block unchanged when Polly did not deliver audio (1 ms)
-    ✓ behaves identically whether narrationAudio is undefined or explicitly null (1 ms)
+    ✓ behaves identically whether narrationAudio is undefined or explicitly null
     ✓ VTID-03785: does NOT quote hypothetical spoken example phrases ("What do you want?") (1 ms)
     ✓ VTID-03786: does NOT assert this mode overrides/takes precedence over every other rule
     ✓ VTID-03686/03686-followup: instructs explaining core points before moving to practice on a brief "yes" (1 ms)
     ✓ VTID-03762: instructs calling end_guided_topic_teaching once the topic is taught and next step proposed (1 ms)
 
-Test Suites: 1 passed, 1 total
-Tests:       20 passed, 20 total
+Test Suites: 2 passed, 2 total
+Tests:       29 passed, 29 total
 Snapshots:   0 total
-Time:        0.592 s, estimated 1 s
-Ran all test suites matching /test\/orb\/live\/instruction\/guided-topic-narration-prompt.test.ts/i.
+Time:        1.326 s
+Ran all test suites matching /test\/orb\/live\/characterization\/vertex-wake-brief-override.characterization.test.ts|test\/orb\/live\/instruction\/guided-topic-narration-prompt.test.ts/i.
 Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

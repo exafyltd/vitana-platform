@@ -127,6 +127,46 @@ is not the whole story.
 
 TEST: `commands.log` — full live SQL/session trace.
 
+## Follow-up (Codex P1 finding, addressed before merge)
+
+Codex reviewed PR #3225 and correctly found that the fix above was
+incomplete: `buildVertexWakeBriefBlock` (`live-session-controller.ts`,
+injected into the SAME assembled Nova system instruction via
+`session.wakeBriefOverrideBlock`, concatenated in `orb-live.ts`) still
+carried `"This block OVERRIDES every other greeting rule..."` — and this
+block fires for **nearly every fresh (non-reconnect) session with a
+wake-brief winner**, not just guided-topic ones
+(`shouldInjectWakeBriefOverrideBlock` returns true whenever
+`!isReconnectStart`). It additionally carried quoted hypothetical spoken
+examples (`"Wie kann ich dir helfen?"` / `"How can I help?"`) — the exact
+other trigger-pattern class VTID-03785 already found and removed
+elsewhere. A structurally identical directive existed a third time in
+`orb-livekit.ts` (LiveKit transport, `firstTurnSuppressionDirective`).
+
+This explains why the original guided-topic-only fix alone would not have
+closed the gap: even with the guided-topic block's own copy removed, the
+SAME risky phrasing pattern remained present via the wake-brief override
+block that guided-topic sessions ALSO carry (their wake-brief winner is
+the guided-topic-narration provider itself).
+
+**Fix:** removed the override/precedence assertion and the quoted example
+phrases from both `buildVertexWakeBriefBlock` and `orb-livekit.ts`'s
+`firstTurnSuppressionDirective`, preserving operative intent (speak the
+required line as the first turn; don't offer a generic greeting).
+
+New tests added to `vertex-wake-brief-override.characterization.test.ts`:
+- `buildVertexWakeBriefBlock` no longer asserts override/precedence, no
+  longer quotes hypothetical examples, still instructs the verbatim
+  first-turn line.
+- `orb-livekit.ts`'s directive no longer carries either pattern.
+
+Mutation-tested independently: reverting either file's fix fails exactly
+the 2 tests that assert it, 7 others in the same file stay green. Clean
+restore confirmed via `diff` after each.
+
+Full gateway suite re-run after this fix: 720/721 suites (1 pre-existing
+skip), 13519/13554 tests passing, 0 failures; `tsc --noEmit` clean.
+
 ## Deliberately NOT attempted
 
 - **Not yet independently re-confirmed against live Nova traffic with
