@@ -22,6 +22,12 @@ import { getSupabase } from '../../lib/supabase';
 const router = Router({ mergeParams: true });
 const VTID = 'TENANT-OVERVIEW';
 
+// VTID-03787: orb.live.diag stages that carry a raw literal payload (full
+// Nova system-instruction text, including the user's memory/personalization
+// context) rather than the booleans/counts every other diag stage carries.
+// Never tenant-facing, regardless of whether metadata.tenant_id is set.
+const SENSITIVE_DIAG_STAGES = new Set(['nova_instruction_debug_dump']);
+
 // Simple in-memory cache for summary (60s TTL)
 let summaryCache: { tenantId: string; data: any; ts: number } | null = null;
 const CACHE_TTL_MS = 60_000;
@@ -180,6 +186,12 @@ router.get('/activity', requireTenantAdmin, async (req: AuthenticatedRequest, re
     // Client-side filter by tenant (oasis_events doesn't have tenant_id column)
     const tenantEvents = (data || []).filter((e: any) => {
       const meta = e.metadata || {};
+      // VTID-03787: diag stages that embed raw user memory/personalization
+      // text (not just booleans/counts like every other orb.live.diag stage)
+      // never carry tenant_id, which otherwise means "global" below — that
+      // would surface another user's raw context to any tenant admin here.
+      // Excluded outright regardless of tenant_id, not just defaulted away.
+      if (SENSITIVE_DIAG_STAGES.has(meta.stage)) return false;
       return meta.tenant_id === tenantId || !meta.tenant_id; // include tenant-specific + global
     });
 
