@@ -922,7 +922,7 @@ thresholds.
 | `products_catalog` | Product catalog |
 | `d44_predictive_signals` | Proactive intervention signals — **⚠️ does not exist in live Supabase**, confirmed reachable from a live admin screen (Intelligence → Signals) that surfaces this as a visible error. See `docs/AURORA-B2-DEAD-CALLSITE-AUDIT.md` Addendum 2. |
 | `contextual_opportunities` | D48 opportunity surfacing |
-| `risk_mitigations` | D49 risk mitigation — **⚠️ does not exist in live Supabase**, route is mounted but no confirmed caller found. See `docs/AURORA-B2-DEAD-CALLSITE-AUDIT.md` Addendum 3. |
+| `risk_mitigations` | D49 risk mitigation — **⚠️ does not exist in live Supabase**, route is mounted but no confirmed caller found — same "registered but never invoked" shape confirmed for the `AP-0710` monetization-vulnerability automation. See `docs/AURORA-B2-DEAD-CALLSITE-AUDIT.md` Addendum 3 and Addendum 10. |
 
 ### vtid_ledger Key Columns
 | Column | Type | Values |

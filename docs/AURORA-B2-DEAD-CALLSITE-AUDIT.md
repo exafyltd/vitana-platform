@@ -404,22 +404,82 @@ meetup notification gaps) are genuine, currently-live silent feature
 breakage a real user would notice as "I never get reminded," not just
 theoretical dead code.
 
+## Addendum 10: the remaining 7 gateway-scoped tables read — all already safe or already covered, closing out Addendum 9's list
+
+Finished the call-site read Addendum 9 left open, for the 7 gateway-scoped
+tables that hadn't been individually checked yet. **None of these needed a
+fix or even a new finding** — every one is either already deliberately
+safe-by-design (matching the `autopilot_prompt_prefs`/`life_compass_active_view`
+pattern) or already covered by an earlier addendum in this doc:
+
+- **`adaptation_plans`** — `services/guide/adaptation-applier.ts`'s own
+  header comment states this is the receiving half of a D43 write-path
+  that "hasn't been wired up yet." Explicitly checks for the
+  relation-does-not-exist error and returns `{applied: 0, reason:
+  'no_plans_table'}` rather than failing silently or loudly. No action.
+- **`conversation_threads`** — `gemini-operator.ts`'s `resolveThreadUserId()`
+  swallows the lookup failure and its caller's own comment says this is
+  "Phase 1," falling back to an aggregate shape until orb-live wires up
+  real thread→user attachment. Self-documented placeholder, not a bug.
+- **`d28_emotional_signals`** (+ sibling `monetization_signals`) —
+  `wallet-payments-repository.ts`'s own header comment already says
+  "KNOWN GAP (pre-existing): neither table was ever deployed — both
+  queries always no-op." Traced the consumer anyway since one of the two
+  signals gates an `is_vulnerable` flag on monetization automation (a
+  real ethical-risk shape if it were live) — but the automation that
+  reads it, `AP-0710 "Monetization Readiness Scoring"`
+  (`automation-registry.ts`), triggers on event topic
+  `automation.monetization.check`, which **nothing in `services/gateway/src`
+  ever emits**. Same "registered but never invoked" shape as
+  `risk_mitigations` — a real gap in the code, zero live blast radius
+  today because nothing reaches it.
+- **`life_compass_active_view`** — `matchmaker-agent.ts` wraps the read in
+  `try/catch` with an explicit "table may not exist on every env" comment.
+  Already safe.
+- **`match_targets`**, **`user_match_preferences`** — both part of the
+  gateway matchmaking subsystem Addendum 4 already identified as likely
+  superseded by the frontend's edge-function-based matching feature. No
+  new finding; grouped with `matches_daily` under that addendum's existing
+  conclusion.
+- **`relationships`** — `voice-tools/superlatives-repository.ts` runs a
+  deliberate two-column-name probe sequence (`to_user_id` then
+  `followee_id`) for a "most-followed" voice-tool ranking, and when both
+  probes come back empty falls through to a typed `{ok: false, error:
+  'no_followers_data'}` response rather than a crash or a silent wrong
+  answer. This is the loud-failure pattern the rest of this doc treats as
+  acceptable (contrast `wallet_balances`' silent `{data: undefined}`).
+
+**This closes the "read each call site" next step for all 20 gateway-scoped
+tables** (13 read across Addenda 2/3/4/5/6/7/9 plus the `wallet_balances`
+addendum, 7 more here). Final tally across the full 33: 2 confirmed live,
+silently-broken bugs (`wallet_balances`, `community_group_members`, both
+needing a product decision before any fix); 2 confirmed-mounted-but-
+unreachable (`risk_mitigations`, and now `d28_emotional_signals`'
+`AP-0710` consumer); 2 degraded-but-live features worth a product call
+(`live_room_attendees`, `community_meetup_attendance`); 1 admin-facing
+soft-fail (`creator_profiles`); the matchmaking trio
+(`matches_daily`/`match_targets`/`user_match_preferences`) reads as one
+superseded-subsystem finding, not three; and the remainder
+(`adaptation_plans`, `conversation_threads`, `life_compass_active_view`,
+`awareness_config`/`awareness_config_audit`) are self-documented,
+deliberately-guarded placeholders needing no action.
+
 ## Next steps (not done in this pass)
 
-- For the 20 genuinely gateway-scoped dead tables (33 total, minus the 12
-  that live in `services/openclaw-bridge` — the 9 listed plus `user_goals`
-  and both `vtn_*` tables — minus `media`, which is very likely a Storage-
-  API false positive rather than a real dead table reference), read each
-  call site to determine: truly unreachable (dead route, disabled feature flag,
-  never-invoked function) vs. reachable-and-broken (a real production bug
-  masked by an error path nobody noticed — the `awsdms_validation_failures_v1`
-  and `n_live_tup` lessons from Phase 0 both showed that "nobody's
-  complained" and "definitely fine" are not the same thing).
 - Confirm or rule out openclaw-bridge's Supabase target before treating its
-  9-12 "missing" tables as real findings.
+  9-12 "missing" tables as real findings — **partially answered by
+  Addendum 8**: the service has no live deploy target at all, so this is
+  lower priority than it looked.
 - Reconcile `CLAUDE.md` §3's Core Tables list against live schema reality
-  for `d44_predictive_signals` and `risk_mitigations` specifically.
+  for `d44_predictive_signals` and `risk_mitigations` specifically — done
+  for `d44_predictive_signals`/`personalization_audit` in this session's
+  CLAUDE.md pass; `risk_mitigations` still needs the same inline
+  annotation.
 - Decide, table by table, whether a dead call site should be deleted
   (never getting an Aurora equivalent) or is a known-incomplete feature
   that still needs its storage layer built — that decision is product/
-  engineering-owned, not something to infer from absence alone.
+  engineering-owned, not something to infer from absence alone. The two
+  live-money/live-notification bugs (`wallet_balances`,
+  `community_group_members`) are the ones actually worth a human's time
+  first; everything else in this doc is either already safe or already
+  unreachable.
