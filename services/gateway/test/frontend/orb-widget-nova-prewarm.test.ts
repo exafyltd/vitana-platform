@@ -41,17 +41,28 @@ describe('VTID-03779 orb-widget Nova session prewarm', () => {
     expect(body).toMatch(/if \(_s\.prewarmWs && _s\.prewarmWs\.readyState === 1\) return;/);
   });
 
-  it('_prewarmNovaWs only marks the socket ready — and sends the prewarm message — after the server\'s connected handshake', () => {
+  it('_prewarmNovaWs sends the prewarm message on the connected handshake, but only marks the socket ready on the server\'s prewarm_ready ack', () => {
     const body = extractFunctionBody(source, 'function _prewarmNovaWs()');
     expect(body).toMatch(/msg\.type === 'connected'/);
     const connectedBranch = body.match(/if \(msg\.type === 'connected'\) \{[\s\S]*?\n\s*\}/)?.[0];
     expect(connectedBranch).toBeDefined();
     expect(connectedBranch).toMatch(/w\.send\(JSON\.stringify\(\{ type: 'prewarm' \}\)\)/);
-    expect(connectedBranch).toMatch(/_s\.prewarmWsReady = true/);
+    // Codex review (PR #3218): setting ready here — merely having SENT
+    // 'prewarm' — let a 'start' race in before the server's real (multi-
+    // second) Nova connect() finished, reusing a socket with nothing
+    // registered behind it yet. Readiness must wait for an explicit ack.
+    expect(connectedBranch).not.toMatch(/_s\.prewarmWsReady = true/);
     // Never sent before 'connected' — the whole point is reusing an already
     // upgraded, already-authenticated socket, not a bare freshly-opened one.
     const beforeConnected = body.slice(0, body.indexOf("msg.type === 'connected'"));
     expect(beforeConnected).not.toContain("type: 'prewarm'");
+  });
+
+  it('_prewarmNovaWs only flips ready on the server\'s prewarm_ready ack, and only for the socket that is still current', () => {
+    const body = extractFunctionBody(source, 'function _prewarmNovaWs()');
+    const readyBranch = body.match(/if \(msg\.type === 'prewarm_ready'\) \{[\s\S]*?\n\s*\}/)?.[0];
+    expect(readyBranch).toBeDefined();
+    expect(readyBranch).toMatch(/if \(_s\.prewarmWs === w\) _s\.prewarmWsReady = true;/);
   });
 
   it('a closed/errored prewarm socket clears its own bookkeeping so a later attempt is not blocked forever', () => {
@@ -92,9 +103,14 @@ describe('VTID-03779 orb-widget Nova session prewarm', () => {
     expect(initWindow).toMatch(/_prewarmBootstrap\(\);/);
     expect(initWindow).toMatch(/_prewarmNovaWs\(\);/);
 
-    // setAuth() calls it after the existing bootstrap prewarm.
+    // setAuth() calls it after the existing bootstrap prewarm. This is NOT
+    // redundant with init()'s own call: the documented reactive-auth
+    // pattern calls init() BEFORE login resolves, where _prewarmNovaWs()
+    // is a no-op (no token yet) — so setAuth is the only place the Nova
+    // prewarm ever actually fires for that flow (Codex review, PR #3218).
     const setAuthBody = extractFunctionBody(source, 'setAuth: function (token)');
     expect(setAuthBody).toMatch(/_prewarmBootstrap\(\);/);
+    expect(setAuthBody).toMatch(/_prewarmNovaWs\(\);/);
   });
 
   it('_sessionStartWs reuses an open, ready prewarmed socket instead of opening a fresh one', () => {

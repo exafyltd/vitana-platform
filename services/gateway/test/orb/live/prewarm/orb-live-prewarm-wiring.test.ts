@@ -48,6 +48,20 @@ describe('VTID-03779 orb-live.ts prewarm wiring', () => {
     expect(fn).toMatch(/registerPrewarmedNovaSession\(/);
   });
 
+  it('handleWsPrewarmMessage only tells the client it is safe to reuse the socket AFTER registration succeeds (Codex review, PR #3218)', () => {
+    const fn = code.match(/async function handleWsPrewarmMessage\([\s\S]*?\n\}/)?.[0];
+    expect(fn).toBeDefined();
+    // Sending 'prewarm_ready' before registerPrewarmedNovaSession would let
+    // a 'start' racing in on the same socket find nothing registered yet
+    // and cold-connect anyway, orphaning the prewarm this handler just
+    // built — the ack must come strictly after registration.
+    const registerAt = fn!.indexOf('registerPrewarmedNovaSession(');
+    const ackAt = fn!.indexOf("type: 'prewarm_ready'");
+    expect(registerAt).toBeGreaterThan(-1);
+    expect(ackAt).toBeGreaterThan(registerAt);
+    expect(fn).toMatch(/sendWsMessage\(clientSession\.clientWs,\s*\{\s*type:\s*'prewarm_ready'\s*\}\)/);
+  });
+
   it('connectToLiveAPI claims a prewarmed client by user_id before falling back to a cold connect', () => {
     expect(code).toMatch(
       /const prewarmedNova = session\.identity\?\.user_id\s*\n\s*\? consumePrewarmedNovaSession\(session\.identity\.user_id\)/,

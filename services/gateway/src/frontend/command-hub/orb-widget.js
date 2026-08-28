@@ -1329,8 +1329,20 @@
       if (msg.type === 'connected') {
         _s._prewarmWsInFlight = false;
         _s.prewarmWs = w;
-        try { w.send(JSON.stringify({ type: 'prewarm' })); _s.prewarmWsReady = true; }
+        // Codex review (PR #3218): prewarmWsReady must NOT flip true here —
+        // this only means the message was SENT, not that the server has
+        // actually finished the real Nova connect() and registered it
+        // (registerPrewarmedNovaSession, several seconds away). Marking
+        // ready this early let a 'start' racing in during that window
+        // reuse a socket with nothing behind it server-side yet, silently
+        // falling to a cold connect while orphaning the in-flight prewarm.
+        // Wait for the server's own 'prewarm_ready' ack below instead.
+        try { w.send(JSON.stringify({ type: 'prewarm' })); }
         catch (e) { drop(); }
+        return;
+      }
+      if (msg.type === 'prewarm_ready') {
+        if (_s.prewarmWs === w) _s.prewarmWsReady = true;
         return;
       }
       // Any other message arriving before this socket is claimed by a real
@@ -4959,6 +4971,14 @@
       // BOOTSTRAP-ORB-LATENCY-PHASE2: warm the (possibly new) identity's
       // bootstrap context so the next orb tap starts fast.
       _prewarmBootstrap();
+      // VTID-03779 (Codex review, PR #3218): also (re-)warm the Nova
+      // socket here, not just in init(). A host following the documented
+      // reactive-auth pattern calls init() BEFORE login resolves — that
+      // call's own _prewarmNovaWs() is a no-op (no token yet) — so setAuth
+      // is the ONLY place the Nova prewarm ever actually fires for that
+      // flow. Missing this meant the standard reactive-login path never
+      // warmed a connection at all.
+      _prewarmNovaWs();
     },
 
     // DEV-COMHU-0502: explicit logout / account-switch / "start over". Tears

@@ -111,3 +111,29 @@ documenting the var in `services/gateway/.env.example` with its default.
 $ npx tsc --noEmit -p . && npx jest --silent
   -> clean; Test Suites: 1 skipped, 721 passed, 721 of 722 total
      Tests:       29 skipped, 6 todo, 13516 passed, 13551 total
+
+## Codex review findings on PR #3218, both confirmed and fixed
+
+1. **P1 — setAuth() never called _prewarmNovaWs()**, only init() did. The
+   documented reactive-auth pattern (DEV-COMHU-0502) calls init() BEFORE
+   login resolves, where the Nova prewarm is a no-op (no token yet) —
+   meaning the standard login flow never warmed a connection at all. Fixed
+   by adding the same `_prewarmNovaWs();` call to setAuth(), right after
+   its existing `_prewarmBootstrap();`.
+2. **P1 — prewarmWsReady was set immediately after SENDING 'prewarm'**, not
+   after the server actually finished the multi-second Nova connect() and
+   registered it. A 'start' racing in during that window would reuse the
+   socket, find nothing registered server-side yet, and cold-connect
+   anyway — orphaning the in-flight prewarm as a wasted duplicate Nova
+   connection. Fixed with a real ack: `handleWsPrewarmMessage` now sends
+   `{type:'prewarm_ready'}` strictly after `registerPrewarmedNovaSession`
+   succeeds; the client only flips `prewarmWsReady` on receiving that ack,
+   not on merely sending 'prewarm'.
+
+Both fixes are small and local, per the drive-to-green rules for bot
+findings. 3 tests updated/added on the frontend side, 1 new backend test
+(`prewarm_ready` sent strictly after registration).
+
+$ npx tsc --noEmit -p . && npx jest --silent
+  -> clean; Test Suites: 1 skipped, 726 passed, 726 of 727 total
+     Tests:       29 skipped, 6 todo, 13564 passed, 13599 total

@@ -17018,6 +17018,14 @@ async function handleWsPrewarmMessage(clientSession: WsClientSession): Promise<v
     lang,
   });
   console.log(`[VTID-03779] Nova session prewarmed for user ${userId.substring(0, 8)}... (lang=${lang})`);
+  // Codex review (PR #3218): the client must not treat the socket as
+  // warm-claimable merely because it SENT 'prewarm' — the real Nova
+  // connect() above can take several seconds, and a 'start' arriving on
+  // this socket before this point would find nothing in the registry yet
+  // (registerPrewarmedNovaSession above hasn't run) and cold-connect
+  // anyway, orphaning the prewarmed client this handler just built. This
+  // ack is the client's actual "safe to reuse now" signal.
+  sendWsMessage(clientSession.clientWs, { type: 'prewarm_ready' });
 }
 
 /**
