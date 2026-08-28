@@ -88,6 +88,20 @@ attempted" below); the proof at this stage is the code path itself and the
 pinning test asserting the emission call exists (`staging-nova-instruction-debug-flag-pinned.test.ts`,
 "emits the literal novaSystemInstruction text on the diag stage").
 
+AC-6 — The new diagnostic diag stage's raw payload (literal user memory/
+personalization text) never reaches a tenant admin via GET
+/api/v1/admin/tenants/:tenantId/overview/activity, regardless of whether
+metadata.tenant_id is set on the emitting side (it never is, for any
+orb.live.diag stage — a pre-existing repo-wide pattern this PR does not
+change, but this is the first diag stage whose payload is dangerous under
+that pattern). Caught by Codex review (P1) on PR #3226; verified against
+the actual code before fixing, not taken on faith. See commands.log
+"Follow-up (Codex P1 finding, addressed before merge)" for the full trace.
+
+TEST: `overview.test.ts` — "GET /activity excludes
+nova_instruction_debug_dump diag rows even without a tenant_id
+(VTID-03787)", mutation-verified.
+
 ## Deliberately NOT attempted
 
 - **No fix.** This is diagnostic-only, matching this codebase's own

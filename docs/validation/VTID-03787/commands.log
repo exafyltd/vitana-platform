@@ -90,6 +90,53 @@ $ npx jest
 PASS — 721/722 suites (1 pre-existing skip), 13524/13559 tests passing,
        0 failures
 
+## Follow-up (Codex P1 finding, addressed before merge)
+
+Codex review on PR #3226 flagged: the new `nova_instruction_debug_dump`
+diag row carries the full literal Nova instruction text (real user memory/
+personalization context) but, like every orb.live.diag stage, never sets
+metadata.tenant_id. tenant-admin/overview.ts's GET /activity endpoint
+treats any oasis_events row with no tenant_id as "global" and includes it
+for every tenant admin — so this stage's raw payload could reach a tenant
+admin who isn't the session's own user.
+
+Verified directly against the code before acting (not blindly trusted):
+  - Read tenant-admin/overview.ts:171-186 — confirmed the exact filter
+    `meta.tenant_id === tenantId || !meta.tenant_id` (no tenant_id ->
+    included for everyone).
+  - Read emitDiag() (orb-live.ts:15000) — confirmed NO orb.live.diag stage
+    ever sets tenant_id; this is a pre-existing, repo-wide pattern, not
+    something unique to this PR. But every other diag stage carries only
+    booleans/counts/reasons — this is the first to carry raw literal user
+    context, which is what makes the gap actually dangerous here.
+  - Checked GET /alerts (overview.ts:193-217): filters status IN
+    (error,critical); emitLiveSessionEvent defaults status to 'info' for
+    diag events (orb-live.ts:14974) — confirmed /alerts is NOT a leak path
+    for this stage.
+
+Fix: tenant-admin/overview.ts's GET /activity now excludes any oasis_events
+row whose metadata.stage is in a new SENSITIVE_DIAG_STAGES set (currently
+just 'nova_instruction_debug_dump'), BEFORE the tenant_id check — closes
+the leak regardless of whether tenant_id is ever set on the emitting side.
+
+New test: "GET /activity excludes nova_instruction_debug_dump diag rows
+even without a tenant_id (VTID-03787)".
+
+$ npx jest test/routes/tenant-admin/overview.test.ts
+PASS — 15/15 (was 14/14 before this fix)
+
+Mutation-verified: removed the SENSITIVE_DIAG_STAGES check, re-ran —
+new test fails exactly as expected (e2 leaks into tenant admin's
+activity feed), confirming the test pins real behavior. Restored,
+re-ran clean.
+
+$ npx tsc --noEmit
+(clean, exit 0)
+
+$ npx jest
+PASS — 721/722 suites (1 pre-existing skip), 13525/13560 tests passing
+       (13525 vs the prior row's 13524 — the +1 new test), 0 failures
+
 ## Governance
 
 command-hub-ownership-guard.js NOT touched — same reasoning as
