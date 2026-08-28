@@ -1333,6 +1333,13 @@ CALL THIS WHEN the user says any of:
   - "Note that I …" / "Note for today: …"
   - "Just had …" — even casual mentions
 
+ONE CALL PER DICTATION (VTID-03793): if one continuous turn
+reports several things (a meal AND water AND coffee), that is
+still ONE diary entry. Wait for the user to finish, then call
+this ONCE with everything combined in raw_text. Do NOT call it
+once per sentence/fact — that fragments one dictation into
+several duplicate-looking Daily Diary entries.
+
 IMPORTANT: pass the user's VERBATIM words as raw_text. The
 gateway runs a pattern-matching extractor on the text to detect
 water (1L → 1000ml), meals (breakfast / lunch / Frühstück /
@@ -14155,6 +14162,13 @@ CALL THIS WHEN the user says any of:
      dinner / workout / walk / run / sleep / meditation]"
   - "Note that I …" / "Note for today: …"
   - "Just had …" — even casual mentions
+
+ONE CALL PER DICTATION (VTID-03793): if one continuous turn
+reports several things (a meal AND water AND coffee), that is
+still ONE diary entry. Wait for the user to finish, then call
+this ONCE with everything combined in raw_text. Do NOT call it
+once per sentence/fact — that fragments one dictation into
+several duplicate-looking Daily Diary entries.
 
 IMPORTANT: pass the user's VERBATIM words as raw_text. The
 gateway runs a pattern-matching extractor on the text to detect
