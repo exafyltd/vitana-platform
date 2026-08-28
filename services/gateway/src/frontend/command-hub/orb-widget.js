@@ -4471,9 +4471,33 @@
       if (_s._guidedTopicZeroAudioFailCount >= 2) {
         console.warn('[VTOrb] _attemptReconnect: guided topic ' + _s._guidedTopicInFlight +
           ' failed ' + _s._guidedTopicZeroAudioFailCount + 'x with no audio ever heard — ' +
-          'dropping it for this session, falling back to generic conversation');
+          'dropping it and stopping instead of silently opening unrelated conversation');
         _s.guidedTopic = null;
         _s._guidedTopicInFlight = null;
+        // VTID-03782: used to fall through to the normal reconnect below,
+        // which silently opened unrelated conversation with no end signal
+        // possible (see this VTID's own test file for the live evidence).
+        // Stop honestly via the same tap-to-reconnect state
+        // MAX_WIDGET_RECONNECTS already uses, instead of degrading into an
+        // unbounded chat the person can't distinguish from their lesson.
+        //
+        // Codex review (same PR): _enterStuckState() alone is not enough
+        // here. _resetAndReconnect()'s own comment confirms _disconnectActive
+        // is deliberately left true so the 5s _recoveryWatchdog health-probe
+        // can auto-recover once the gateway answers again — correct for a
+        // real network outage, but this breaker trips on a REACHABLE
+        // gateway (nova_validation rejected the content, not a dropped
+        // connection), so that probe would succeed within ~5s and silently
+        // call _resetAndReconnect() on our behalf — reopening the exact
+        // unrelated conversation this stop exists to prevent, just delayed.
+        // Cancel the watchdog and clear _disconnectActive so only an
+        // explicit tap (gated on _disconnectStuck, already set by
+        // _enterStuckState()) can resume from here.
+        try { clearInterval(_s._recoveryWatchdog); } catch (e) { /* noop */ }
+        _s._recoveryWatchdog = null;
+        _s._disconnectActive = false;
+        _enterStuckState();
+        return;
       }
     }
 
