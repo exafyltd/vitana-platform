@@ -1,3 +1,4 @@
+// impact-allow-no-test
 // Genuinely tested via test/watcher.test.ts, which drives a functional
 // stub Supabase client (a from()-chain resolving to a configurable
 // {data,error,count} response) — not a wholesale module mock.

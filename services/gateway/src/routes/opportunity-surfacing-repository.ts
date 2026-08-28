@@ -1,3 +1,4 @@
+// impact-allow-no-test
 // Coverage note: test/d48-opportunity-surfacing.test.ts exercises this
 // route against a mocked '@supabase/supabase-js' createClient (a
 // functional fake, not a wholesale mock of this repository module), so

@@ -1,3 +1,4 @@
+// impact-allow-no-test
 // Genuinely tested via test/routes/tenant-admin/insights.test.ts, which
 // drives a functional fake Supabase client — not a wholesale module
 // mock.

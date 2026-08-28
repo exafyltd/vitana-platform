@@ -1,3 +1,4 @@
+// impact-allow-no-test
 // Coverage note: test/routes/tenant-admin/product-analytics.test.ts
 // exercises this route against a mocked '../../../lib/supabase' client
 // (a functional fake, not a wholesale mock of this repository module),
