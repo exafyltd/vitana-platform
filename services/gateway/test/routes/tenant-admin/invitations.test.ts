@@ -272,6 +272,28 @@ describe('Tenant Admin Invitations Routes', () => {
     expect(chain.insert).not.toHaveBeenCalled();
   });
 
+  it('POST / returns 500 (not a silent duplicate-invite risk) when the existing-invitation check errors', async () => {
+    // Previously: an unchecked `{data}`-only destructure meant a failed
+    // existing-invitation lookup resolved `existing` to undefined, so the
+    // handler proceeded as if no pending invitation existed — risking a
+    // duplicate invitation record/email for someone already invited.
+    // Uses a non-PGRST116 code: PGRST116 ("no rows") is .single()'s normal,
+    // expected shape for "not yet invited" and must NOT be treated as an error
+    // (see the two POST / success tests above, which rely on exactly that).
+    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    const chain = chainFor('tenant_invitations');
+    chain.mockResolvedValueOnce({ data: null, error: { code: '500', message: 'lookup failed' } });
+
+    const res = await request(app)
+      .post(`/api/v1/admin/tenants/${TENANT_A}/invitations`)
+      .set('Authorization', 'Bearer token')
+      .send({ email: 'dupe@example.com' });
+
+    expect(res.status).toBe(500);
+    expect(res.body.ok).toBe(false);
+    expect(chain.insert).not.toHaveBeenCalled();
+  });
+
   it('POST / returns 503 when the DB client is unavailable', async () => {
     mockVerifiedJwt(tenantAdminClaims(TENANT_A));
     mockGetSupabase.mockReturnValue(null as any);

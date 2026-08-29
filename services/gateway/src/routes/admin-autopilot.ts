@@ -341,7 +341,8 @@ router.get('/recommendations', requireTenantAdmin, async (req: Request, res: Res
     const { status, domain, risk_level } = req.query;
 
     // Get tenant settings for filtering
-    const { data: settings } = await repo.fetchSettingsForRecommendations(supabase, tenantId);
+    const { data: settings, error: settingsErr } = await repo.fetchSettingsForRecommendations(supabase, tenantId);
+    if (settingsErr) throw settingsErr;
 
     // If autopilot is disabled for this tenant, return empty
     if (settings && !settings.enabled) {
@@ -373,7 +374,8 @@ router.get('/recommendations/summary', requireTenantAdmin, async (req: Request, 
     const supabase = getSupabase();
     if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
-    const { data: settings } = await repo.fetchSettingsForRecommendations(supabase, tenantId);
+    const { data: settings, error: settingsErr } = await repo.fetchSettingsForRecommendations(supabase, tenantId);
+    if (settingsErr) throw settingsErr;
 
     if (settings && !settings.enabled) {
       return res.json({ ok: true, data: { new: 0, activated: 0, rejected: 0, snoozed: 0, total: 0 } });
@@ -415,12 +417,14 @@ router.get('/waves', requireTenantAdmin, async (req: Request, res: Response) => 
     if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
     // Get tenant wave_config overrides
-    const { data: settings } = await repo.fetchSettingsWaveConfig(supabase, tenantId);
+    const { data: settings, error: settingsErr } = await repo.fetchSettingsWaveConfig(supabase, tenantId);
+    if (settingsErr) throw settingsErr;
 
     const overrides: Record<string, Partial<WaveDefinition>> = settings?.wave_config || {};
 
     // Get tenant bindings for automation status
-    const { data: bindings } = await repo.fetchBindingsForWaves(supabase, tenantId);
+    const { data: bindings, error: bindingsErr } = await repo.fetchBindingsForWaves(supabase, tenantId);
+    if (bindingsErr) throw bindingsErr;
 
     const bindingMap = new Map((bindings || []).map((b: any) => [b.automation_id, b.enabled]));
     const registryMap = new Map(AUTOMATION_REGISTRY.map(a => [a.id, a]));
@@ -476,7 +480,8 @@ router.patch('/waves/:waveId', requireTenantAdmin, async (req: Request, res: Res
     if (typeof enabled !== 'boolean') return res.status(400).json({ ok: false, error: 'MISSING_ENABLED' });
 
     // Get or create settings
-    let { data: settings } = await repo.fetchSettingsWaveConfig(supabase, tenantId);
+    let { data: settings, error: settingsErr } = await repo.fetchSettingsWaveConfig(supabase, tenantId);
+    if (settingsErr) throw settingsErr;
 
     if (!settings) {
       await repo.insertSettingsMinimal(supabase, tenantId);

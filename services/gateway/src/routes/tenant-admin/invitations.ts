@@ -38,8 +38,14 @@ router.post('/', requireTenantAdmin, async (req: AuthenticatedRequest, res: Resp
 
     const grantRoles = Array.isArray(roles) && roles.length > 0 ? roles : ['community'];
 
-    // Check for existing pending invitation for this email+tenant
-    const { data: existing } = await repo.fetchExistingPendingInvitation(supabase, tenantId, email.toLowerCase().trim());
+    // Check for existing pending invitation for this email+tenant.
+    // .single() reports PGRST116 ("no rows") for the normal "not yet
+    // invited" case — that is not a failure, only a genuine error is.
+    const { data: existing, error: existingErr } = await repo.fetchExistingPendingInvitation(supabase, tenantId, email.toLowerCase().trim());
+    if (existingErr && existingErr.code !== 'PGRST116') {
+      console.error(`[${VTID}] Existing-invitation check error:`, existingErr.message);
+      return res.status(500).json({ ok: false, error: existingErr.message });
+    }
 
     if (existing) {
       return res.status(409).json({

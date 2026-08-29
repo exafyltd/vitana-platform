@@ -37,7 +37,8 @@ router.get('/documents', requireTenantAdmin, async (req: AuthenticatedRequest, r
     const q = (req.query.q as string || '').trim();
 
     // Get opt-out IDs for this tenant
-    const { data: optouts } = await repo.fetchOptoutDocumentIds(supabase, tenantId);
+    const { data: optouts, error: optoutsErr } = await repo.fetchOptoutDocumentIds(supabase, tenantId);
+    if (optoutsErr) return res.status(500).json({ ok: false, error: optoutsErr.message });
     const optoutIds = new Set((optouts || []).map((o: any) => o.document_id));
 
     // Fetch tenant docs + baseline docs
@@ -222,12 +223,15 @@ router.get('/search', requireTenantAdmin, async (req: AuthenticatedRequest, res:
     if (!q) return res.status(400).json({ ok: false, error: 'QUERY_REQUIRED' });
 
     // Simple text search — tenant docs first, then baseline
-    const { data: tenantDocs } = await repo.searchTenantDocs(supabase, tenantId, q);
+    const { data: tenantDocs, error: tenantDocsErr } = await repo.searchTenantDocs(supabase, tenantId, q);
+    if (tenantDocsErr) return res.status(500).json({ ok: false, error: tenantDocsErr.message });
 
-    const { data: baselineDocs } = await repo.searchBaselineDocs(supabase, q);
+    const { data: baselineDocs, error: baselineDocsErr } = await repo.searchBaselineDocs(supabase, q);
+    if (baselineDocsErr) return res.status(500).json({ ok: false, error: baselineDocsErr.message });
 
     // Filter out opted-out baseline docs
-    const { data: optouts } = await repo.fetchOptoutDocumentIds(supabase, tenantId);
+    const { data: optouts, error: optoutsErr } = await repo.fetchOptoutDocumentIds(supabase, tenantId);
+    if (optoutsErr) return res.status(500).json({ ok: false, error: optoutsErr.message });
     const optoutIds = new Set((optouts || []).map((o: any) => o.document_id));
 
     const filteredBaseline = (baselineDocs || []).filter((d: any) => !optoutIds.has(d.id));

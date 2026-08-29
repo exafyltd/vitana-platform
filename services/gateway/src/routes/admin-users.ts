@@ -75,7 +75,12 @@ async function verifyAdminAccess(
     const supabase = getSupabase();
     if (!supabase) return { ok: false, status: 503, error: 'DB_UNAVAILABLE' };
 
-    const { data: membership } = await repo.fetchTenantAdminMembership(supabase, authData.user.id, tenantId);
+    const { data: membership, error: membershipErr } = await repo.fetchTenantAdminMembership(supabase, authData.user.id, tenantId);
+    if (membershipErr) {
+      // Fail closed either way (unchanged) — logged so a real DB error isn't
+      // mistaken for the caller genuinely lacking admin access.
+      console.warn(`[${VTID}] Tenant admin membership check error:`, membershipErr.message);
+    }
 
     if (!membership || membership.active_role !== 'admin') {
       return { ok: false, status: 403, error: 'FORBIDDEN' };
@@ -250,7 +255,12 @@ router.get('/:userId', async (req: Request, res: Response) => {
 
     // Batch 1.B1: tenant admins can only view users who belong to their tenant
     if (auth.scoped_tenant_id) {
-      const { data: memberCheck } = await repo.fetchTenantMembershipCheck(supabase, userId, auth.scoped_tenant_id);
+      const { data: memberCheck, error: memberCheckErr } = await repo.fetchTenantMembershipCheck(supabase, userId, auth.scoped_tenant_id);
+      if (memberCheckErr) {
+        // Fail closed either way (unchanged) — logged so a real DB error
+        // isn't mistaken for the user genuinely not belonging to the tenant.
+        console.warn(`[${VTID}] Tenant membership check error:`, memberCheckErr.message);
+      }
       if (!memberCheck) {
         return res.status(404).json({ ok: false, error: 'USER_NOT_FOUND' });
       }

@@ -74,7 +74,11 @@ router.get('/current', requireTenantAdmin, async (req: AuthenticatedRequest, res
 
   const today = new Date().toISOString().slice(0, 10);
   try {
-    const { data } = await repo.fetchTenantHealthIndexCurrent(supabase, tenantId, today);
+    const { data, error } = await repo.fetchTenantHealthIndexCurrent(supabase, tenantId, today);
+    if (error) {
+      console.warn(`[${VTID}] current query failed: ${error.message}`);
+      return res.status(500).json({ ok: false, error: error.message });
+    }
     return res.json({ ok: true, tenant_id: tenantId, current: data ?? null });
   } catch (err: any) {
     return res.status(500).json({ ok: false, error: err?.message || 'UNKNOWN' });

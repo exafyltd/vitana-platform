@@ -121,14 +121,16 @@ router.get('/at-risk', requireTenantAdmin, async (req: AuthenticatedRequest, res
     const tenantId = req.params.tenantId || (req as any).targetTenantId;
 
     // Get all tenant members with their app_users info
-    const { data: members } = await repo.fetchTenantMembers(supabase, tenantId);
+    const { data: members, error: membersErr } = await repo.fetchTenantMembers(supabase, tenantId);
+    if (membersErr) throw membersErr;
 
     if (!members || members.length === 0) {
       return res.json({ ok: true, at_risk: [], count: 0 });
     }
 
     const userIds = members.map((m: any) => m.user_id);
-    const { data: users } = await repo.fetchAppUsersByIds(supabase, userIds);
+    const { data: users, error: usersErr } = await repo.fetchAppUsersByIds(supabase, userIds);
+    if (usersErr) throw usersErr;
 
     // "At-risk" heuristic: user hasn't updated their profile in 14+ days
     // (proxy for activity — real activity tracking needs session telemetry)
