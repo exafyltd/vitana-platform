@@ -174,11 +174,18 @@ async function runReferralReward(ctx: AutomationContext) {
 
   const rewardConfig = REWARD_TABLE['referral_completed'];
 
-  await repo.incrementWalletBalance(supabase, {
+  // increment_wallet_balance is confirmed live (unlike credit_wallet — see
+  // AURORA-B3-RPC-PARITY-INVENTORY.md), but supabase-js's .rpc() still
+  // resolves normally with an {error} field on a Postgres-level failure
+  // rather than throwing, so a failure here was previously invisible.
+  const { error: walletErr } = await repo.incrementWalletBalance(supabase, {
     p_user_id: referrer_id,
     p_currency_type: 'CREDITS',
     p_amount: rewardConfig.amount,
   });
+  if (walletErr) {
+    ctx.log(`increment_wallet_balance RPC returned an error for referral reward (referrer=${referrer_id}): ${walletErr.message}`);
+  }
 
   await ctx.emitEvent('autopilot.sharing.referral_completed', {
     referrer_id, referred_id, reward: rewardConfig.amount,

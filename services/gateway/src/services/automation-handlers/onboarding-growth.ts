@@ -91,14 +91,24 @@ async function runOrbGuidedOnboarding(ctx: AutomationContext) {
   // Credit onboarding welcome bonus (small amount to introduce wallet).
   // credit_wallet() RPC does not exist live; increment_wallet_balance()
   // does (writes to user_wallets, no idempotency key of its own).
+  //
+  // supabase-js's .rpc() resolves normally with an {error} field on a
+  // Postgres-level failure rather than throwing — the catch below only
+  // ever sees a network-layer rejection — so the error field must be
+  // checked explicitly, and actionsTaken/the success log must not fire
+  // unless the credit actually happened.
   try {
-    await repo.creditWalletBalance(supabase, {
+    const { error: walletErr } = await repo.creditWalletBalance(supabase, {
       p_user_id: userId,
       p_currency_type: 'CREDITS',
       p_amount: REWARD_TABLE['complete_onboarding'].amount,
     });
-    actionsTaken++;
-    ctx.log(`Credited welcome bonus to user ${userId.slice(0, 8)}…`);
+    if (walletErr) {
+      ctx.log(`Wallet credit failed for user ${userId.slice(0, 8)}…: ${walletErr.message}`);
+    } else {
+      actionsTaken++;
+      ctx.log(`Credited welcome bonus to user ${userId.slice(0, 8)}…`);
+    }
   } catch (err: any) {
     ctx.log(`Wallet credit skipped (${err.message})`);
   }

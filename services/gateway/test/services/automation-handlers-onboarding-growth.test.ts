@@ -134,7 +134,38 @@ describe('runOrbGuidedOnboarding (AP-1301)', () => {
     const result = await handler(ctx);
     expect(notify).toHaveBeenCalledTimes(1);
     expect(supabase.rpc).toHaveBeenCalledWith('increment_wallet_balance', expect.objectContaining({ p_user_id: 'u1' }));
+    expect(ctx.log).toHaveBeenCalledWith(expect.stringContaining('Credited welcome bonus'));
     expect(result.usersAffected).toBe(1);
+  });
+
+  it('on an increment_wallet_balance RPC error: logs the failure instead of a false success message, and does not count it as an action taken', async () => {
+    const supabase = makeFakeSupabase({
+      app_users: [{ data: { display_name: 'Alex', created_at: new Date().toISOString() }, error: null }],
+      user_interests: [{ count: 0, data: [], error: null }],
+    });
+    supabase.rpc = jest.fn(async () => ({ data: null, error: { message: 'connection terminated' } }));
+    const { ctx, notify } = makeCtx(supabase, { user_id: 'u1' });
+    const handler = getHandler('runOrbGuidedOnboarding')!;
+
+    const resultWithError = await handler(ctx);
+
+    expect(ctx.log).toHaveBeenCalledWith(expect.stringContaining('Wallet credit failed for user'));
+    expect(ctx.log).toHaveBeenCalledWith(expect.stringContaining('connection terminated'));
+    expect(ctx.log).not.toHaveBeenCalledWith(expect.stringContaining('Credited welcome bonus'));
+
+    // Compare actionsTaken against the identical happy-path run (both hit
+    // the same generatePersonalRecommendations() catch branch in this test
+    // env) — the bug this fix closes: actionsTaken used to be incremented
+    // unconditionally even though the credit never happened.
+    const supabaseOk = makeFakeSupabase({
+      app_users: [{ data: { display_name: 'Alex', created_at: new Date().toISOString() }, error: null }],
+      user_interests: [{ count: 0, data: [], error: null }],
+    });
+    const { ctx: ctxOk } = makeCtx(supabaseOk, { user_id: 'u1' });
+    const resultOk = await handler(ctxOk);
+
+    expect(resultWithError.actionsTaken).toBe(resultOk.actionsTaken - 1);
+    expect(notify).toHaveBeenCalledTimes(1);
   });
 });
 

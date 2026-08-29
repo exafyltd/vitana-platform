@@ -1090,6 +1090,21 @@ differently-named alias for either of the other two.
   `.rpc()`-doesn't-throw gap as §1's diary-streak/milestone call sites, on
   a third RPC entirely.
 
+**✅ Fixed 2026-08-29 (both call sites).** Lower priority than §1's three
+sites — `increment_wallet_balance` is confirmed live, not confirmed dead,
+so this was defensive hardening against a failure mode this pass could
+not rule out, not a fix for observed-broken behavior. `sharing-growth.ts`
+now destructures `error` and logs it via `ctx.log` when present (return
+shape/notify/emitEvent timing unchanged — the ordering concern noted above,
+that the user-facing announcement already fired before this line, is a
+separate, unaddressed design question, not something a log line can fix).
+`onboarding-growth.ts` now checks `error` explicitly: the success log and
+`actionsTaken++` only fire when the credit actually succeeded; a Postgres-
+level error logs `Wallet credit failed for user ...: <message>` instead of
+the previous unconditional "Credited welcome bonus" claim. New tests in
+`services/gateway/test/services/automation-handlers-sharing-growth.test.ts`
+and `...-onboarding-growth.test.ts` pin both.
+
 ### 5. `vtn_reward` / `vtn_spend` / `vtn_transfer` (confirmed dead) — correctly handled at the call site, unreachable in production regardless
 
 Full read of `services/openclaw-bridge/src/skills/vitana-vtn-wallet.ts`
