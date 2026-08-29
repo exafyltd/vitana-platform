@@ -31,6 +31,7 @@ import { getUserRoutines } from './pattern-extractor';
 import { countActiveUsageDays } from './active-usage';
 import { buildJourneyV2Awareness } from './awareness-extensions';
 import { getJourneyState } from '../journey/user-journey-service';
+import * as repo from './awareness-context-repository';
 import type {
   UserAwareness,
   TenureStage,
@@ -291,13 +292,7 @@ async function fetchActiveGoal(
   supabase: ReturnType<typeof getSupabase>,
 ): Promise<AwarenessGoal | null> {
   if (!supabase) return null;
-  const { data } = await supabase
-    .from('life_compass')
-    .select('id, primary_goal, category, created_at')
-    .eq('user_id', userId)
-    .eq('is_active', true)
-    .order('created_at', { ascending: false })
-    .limit(1);
+  const { data } = await repo.fetchActiveLifeCompassGoal(supabase, userId, 1);
   if (!data || !data.length) return null;
   const row = data[0] as { id: string; primary_goal: string; category: string; created_at: string };
   // Heuristic for is_system_seeded: the canonical default (longevity category +
@@ -324,38 +319,11 @@ async function fetchRecentActivitySummary(
   const in24hIso = new Date(Date.now() + 86400000).toISOString();
 
   const [openRecsRes, activatedRecsRes, dismissedRecsRes, overdueRes, upcomingRes] = await Promise.all([
-    supabase
-      .from('autopilot_recommendations')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .eq('status', 'new'),
-    supabase
-      .from('autopilot_recommendations')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .eq('status', 'activated')
-      .gte('updated_at', sevenDaysAgoIso),
-    supabase
-      .from('autopilot_recommendations')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .eq('status', 'rejected')
-      .gte('updated_at', sevenDaysAgoIso),
-    supabase
-      .from('calendar_events')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .eq('event_type', 'autopilot')
-      .eq('status', 'scheduled')
-      .lt('start_time', nowIso),
-    supabase
-      .from('calendar_events')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .eq('event_type', 'autopilot')
-      .eq('status', 'scheduled')
-      .gt('start_time', nowIso)
-      .lt('start_time', in24hIso),
+    repo.countRecsByStatus(supabase, userId, 'new'),
+    repo.countRecsByStatusSince(supabase, userId, 'activated', sevenDaysAgoIso),
+    repo.countRecsByStatusSince(supabase, userId, 'rejected', sevenDaysAgoIso),
+    repo.countOverdueAutopilotEvents(supabase, userId, nowIso),
+    repo.countUpcomingAutopilotEvents(supabase, userId, nowIso, in24hIso),
   ]);
 
   return {
