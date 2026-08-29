@@ -744,6 +744,23 @@ export async function handleLiveSessionStart(
           .filter((t: any) => t && (t.role === 'user' || t.role === 'assistant') && typeof t.text === 'string')
           .slice(-20)
       : [];
+  // VTID-03794: the client only ever attaches `reconnect_stage` at all when
+  // orb-widget.js's _announceDisconnect() has actually run (hasStage ||
+  // hasHistory in _sessionStart's payload builder) — a genuine first-time
+  // open never sends this field. So its mere PRESENCE is itself reliable
+  // reconnect evidence, independent of what value it normalizes to.
+  // Collapsing "field absent" and "field explicitly 'idle'" into the same
+  // normalized value (below) previously fed straight into isReconnectStart,
+  // so a real reconnect whose disconnect happened during silence — a
+  // legitimate, common case, not an edge case — normalized to
+  // reconnectStage==='idle' and, whenever transcript_history also happened
+  // to be empty, was indistinguishable from a brand-new session. Live
+  // reproduced: a 2-minute, multi-turn conversation disconnected (ALB-style
+  // idle-timeout close, code 1005) and silently reconnected into
+  // wake_opener:safe_fast_newday_overview — a "new day" opener re-run
+  // seconds into an ongoing conversation — instead of the VTID-02020
+  // contextual recovery prompt this whole payload exists to trigger.
+  const clientReportedReconnect = typeof (body as any).reconnect_stage === 'string';
   const reconnectStage: 'idle' | 'listening_user_speaking' | 'thinking' | 'speaking' =
     typeof (body as any).reconnect_stage === 'string'
     && ((body as any).reconnect_stage === 'idle' || (body as any).reconnect_stage === 'listening_user_speaking'
@@ -753,7 +770,7 @@ export async function handleLiveSessionStart(
   const incomingConversationId: string | null =
     typeof (body as any).conversation_id === 'string' && (body as any).conversation_id.length > 0
       ? (body as any).conversation_id : null;
-  const isReconnectStart = reconnectTranscriptHistory.length > 0 || reconnectStage !== 'idle';
+  const isReconnectStart = reconnectTranscriptHistory.length > 0 || reconnectStage !== 'idle' || clientReportedReconnect;
   const resolvedConversationId = incomingConversationId || randomUUID();
   if (isReconnectStart) {
     console.log(`[VTID-02020] Reconnect session start: stage=${reconnectStage}, history=${reconnectTranscriptHistory.length} turns, conversation_id=${resolvedConversationId} (incoming=${!!incomingConversationId})`);
