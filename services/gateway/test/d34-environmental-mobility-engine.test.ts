@@ -1,3 +1,9 @@
+const mockFetchUserPreferencesBundle = jest.fn();
+jest.mock('../src/services/d34-environmental-mobility-engine-repository', () => ({
+  ...jest.requireActual('../src/services/d34-environmental-mobility-engine-repository'),
+  fetchUserPreferencesBundle: (...args: unknown[]) => mockFetchUserPreferencesBundle(...args),
+}));
+
 import {
   resolveLocationContext,
   buildMobilityProfile,
@@ -311,6 +317,54 @@ describe('VTID-01128: Mobility Profile Building', () => {
 
     expect(result.distance_tolerance).toBe('very_local');
     expect(result.inferred_from).toContain('availability_effort');
+  });
+});
+
+describe('fetchUserPreferencesBundle error handling (docs/AURORA-B3-DEAD-RPC-CALLSITE-AUDIT.md finding 4)', () => {
+  const fakeSupabase = {} as any;
+  let warnSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+  });
+
+  test('on the RPC returning {error} (the user_preferences_get_bundle-does-not-exist shape): logs it, and the confidence boost is skipped exactly as before', async () => {
+    mockFetchUserPreferencesBundle.mockResolvedValue({
+      data: null,
+      error: { message: 'function user_preferences_get_bundle() does not exist' },
+    });
+
+    // No explicit_mobility -> confidence starts at 0, so the
+    // `profile.confidence < 70` guard lets this branch run.
+    const result = await buildMobilityProfile(fakeSupabase);
+
+    // The bug this fix closes: this failure used to produce zero console
+    // output of any kind — the `if (!error && ...)` guard simply evaluated
+    // false and the catch block (the only prior log site) never fires
+    // since .rpc()/.from() resolves rather than throws.
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('fetchUserPreferencesBundle error'),
+      'function user_preferences_get_bundle() does not exist',
+    );
+    // Unchanged: no preference data means no confidence boost.
+    expect(result.inferred_from).not.toContain('health_activity');
+  });
+
+  test('on a successful fetch: logs nothing, and a real preference still boosts confidence', async () => {
+    mockFetchUserPreferencesBundle.mockResolvedValue({
+      data: { ok: true, preferences: [{ category: 'health', key: 'activity_intensity', value: 'high' }] },
+      error: null,
+    });
+
+    const result = await buildMobilityProfile(fakeSupabase);
+
+    expect(warnSpy).not.toHaveBeenCalled();
+    expect(result.inferred_from).toContain('health_activity');
   });
 });
 

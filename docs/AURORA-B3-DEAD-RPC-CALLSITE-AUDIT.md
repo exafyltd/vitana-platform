@@ -228,6 +228,19 @@ signal), but it's worth naming as the quietest failure mode found in this
 whole pass — quieter even than the d41 case above, which at least logs a
 `console.warn` two layers down.
 
+**✅ Fixed 2026-08-29.** Added an explicit `if (error) console.warn(...)`
+branch right after the destructure, logging the error message before the
+existing `if (!error && ...)` guard runs. The confidence-boost behavior is
+byte-for-byte unchanged — this closes only the "zero console output"
+observability gap. (The sibling "visit history patterns" block a few
+lines below has the identical shape but was deliberately left alone:
+`analyzeVisitDistances()` is a stub that always returns `{avgDistance:
+null}`, so that whole branch can never do anything regardless of whether
+the RPC succeeds — a self-documented placeholder, not a live silent-error
+bug, per this doc's own severity framing elsewhere.) New tests in
+`services/gateway/test/d34-environmental-mobility-engine.test.ts` pin the
+error-logged and success-still-works paths.
+
 ### 5. `d43`'s `getEvolutionState()` has its own, smaller, likely-moot silent swallow
 
 `GET /api/v1/longitudinal/state` is loud overall (`detectDrift()`'s own

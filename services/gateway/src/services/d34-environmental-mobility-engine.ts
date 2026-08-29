@@ -423,6 +423,14 @@ export async function buildMobilityProfile(
   if (supabase && profile.confidence < 70) {
     try {
       const { data, error } = await repo.fetchUserPreferencesBundle(supabase);
+      if (error) {
+        // supabase-js resolves normally with {error} on a Postgres-level
+        // failure (e.g. a missing RPC) rather than throwing, so the catch
+        // below never sees this — was previously zero console output of
+        // any kind (see docs/AURORA-B3-DEAD-RPC-CALLSITE-AUDIT.md finding
+        // 4). Confidence boost is unaffected — logging only.
+        console.warn(`${LOG_PREFIX} fetchUserPreferencesBundle error:`, error.message);
+      }
       if (!error && data?.ok && data.preferences) {
         const prefs = data.preferences;
 
