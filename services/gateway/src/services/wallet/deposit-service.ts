@@ -253,12 +253,27 @@ export async function markDepositTerminal(
   });
 }
 
+export interface DepositLookupResult {
+  deposit: WalletDeposit | null;
+  /** True only on a genuine query failure — distinct from "not found". */
+  error?: boolean;
+}
+
 export async function getDepositForUser(
   depositId: string,
   userId: string
-): Promise<WalletDeposit | null> {
+): Promise<DepositLookupResult> {
   const supabase = getSupabase();
-  if (!supabase) return null;
-  const { data } = await repo.fetchWalletDepositForUser(supabase, depositId, userId);
-  return (data as WalletDeposit | null) ?? null;
+  if (!supabase) return { deposit: null };
+  const { data, error } = await repo.fetchWalletDepositForUser(supabase, depositId, userId);
+  if (error) {
+    // A Postgres-level failure here previously returned null,
+    // indistinguishable from "this deposit doesn't exist" — the caller
+    // (GET /wallet/deposits/:id) then told a user polling the status of
+    // their own just-completed, already-paid Stripe deposit "404 NOT_FOUND",
+    // misleading them about the state of their own money.
+    console.error(`[wallet/deposit] getDepositForUser query failed for deposit=${depositId} user=${userId}:`, error.message);
+    return { deposit: null, error: true };
+  }
+  return { deposit: (data as WalletDeposit | null) ?? null };
 }
