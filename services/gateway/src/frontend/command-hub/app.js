@@ -23016,6 +23016,18 @@ function renderMemoryGardenView() {
         return container;
     }
 
+    // VTID-01086: memory_get_garden_progress RPC does not exist live —
+    // every fetch falls into the backend's _placeholder branch, returning
+    // an ok:true, all-zero response indistinguishable from a genuinely
+    // empty Memory Garden. Without this banner an admin sees "0 memories
+    // stored" for every single user with no indication the data is fake.
+    if (state.memoryGarden.progress?._placeholder) {
+        var placeholderBanner = document.createElement('div');
+        placeholderBanner.className = 'admin-not-wired-banner';
+        placeholderBanner.innerHTML = '<span class="admin-not-wired-icon">⚠️</span> Memory Garden data unavailable — the memory_get_garden_progress database function is not deployed. The counts below are placeholder zeros, not this user\'s real data.';
+        container.appendChild(placeholderBanner);
+    }
+
     // Main content area
     var mainContent = document.createElement('div');
     mainContent.className = 'memory-garden-main';

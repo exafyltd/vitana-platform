@@ -194,11 +194,29 @@ The `_placeholder: true` flag means this is not silent in the strict sense
 — a careful caller *can* detect it. But it is a 200-OK, `ok:true` response
 that looks, to any consumer that doesn't specifically check for
 `_placeholder`, exactly like "you have a completely empty Memory Garden in
-every one of 13 categories." Whether the frontend's Memory Garden screen
-checks for this flag was not verified here (out of this repo's scope) —
-flagging it as the kind of response shape that invites exactly the
-"quietly wrong instead of loudly broken" bug class this whole audit exists
-to catch.
+every one of 13 categories."
+
+**✅ Fixed 2026-08-29 — confirmed live and real, not hypothetical.**
+Checked both candidate callers: `vitana-v1`'s member-facing frontend has
+no call site for this route at all (searched `src/**` — only a different
+`/api/v1/memory/diary/sync-index` call exists), but the gateway's own
+**Command Hub admin frontend** (`services/gateway/src/frontend/command-hub/
+app.js`, `fetchMemoryGardenProgress()`/`renderMemoryGardenView()`,
+VTID-01086) does call it, and merged the response straight into
+`state.memoryGarden.progress` without checking `_placeholder` — rendering
+"0 memories stored" across all 13 categories for **every** user an admin
+looks up, indistinguishable from a genuinely empty garden. Confirmed live
+via `pg_proc` that `memory_get_garden_progress` still does not exist, so
+this branch fires on every single call, not occasionally.
+
+Added a visible warning banner (reusing the pre-existing, previously
+unused `.admin-not-wired-banner` CSS class) when `_placeholder` is
+present, rendered above the still-unchanged all-zero category cards —
+this makes the fake data visible rather than replacing or hiding it (the
+placeholder response itself, and the backend RPC-missing branch, are
+unchanged; this is an observability fix only). New source-level test:
+`services/gateway/test/command-hub/memory-garden-placeholder-banner.test.ts`
+(this file, `app.js`, had zero prior test coverage of any kind).
 
 ### 4. D34 (environmental/mobility inference) silently drops a preference-based confidence boost, with literally no log line at all
 
