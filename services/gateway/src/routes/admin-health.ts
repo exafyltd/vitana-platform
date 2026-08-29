@@ -195,66 +195,68 @@ router.get('/orb-session-state-health', requireAdminAuth, (_req: AuthenticatedRe
  * Admin-gated: even read-only, this executes a live query against
  * production data infrastructure and echoes DB role/session state.
  */
-router.get(
-  '/aurora-rls-health',
-  requireAdminAuth,
-  async (req: AuthenticatedRequest, res: Response) => {
-    const pool = getAuroraPool();
-    if (!pool) {
-      return res.status(200).json({
-        ok: true,
-        configured: false,
-        message: 'AURORA_DATABASE_URL not set — expected until B4/B8 cutover.',
-      });
-    }
+// Kept on one line through `requireAdminAuth` on purpose, same as
+// /orb-session-state-health above: the impact-scan rule
+// `new-route-without-auth-middleware` matches the added `router.<verb>(`
+// line and looks for an auth name on that same line, so a split-argument
+// style reads as unauthenticated to it. The gate is real either way; this
+// just lets the scanner see it.
+router.get('/aurora-rls-health', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const pool = getAuroraPool();
+  if (!pool) {
+    return res.status(200).json({
+      ok: true,
+      configured: false,
+      message: 'AURORA_DATABASE_URL not set — expected until B4/B8 cutover.',
+    });
+  }
 
-    const callerUserId = req.identity?.user_id ?? null;
-    const callerRole = req.identity?.role ?? null;
+  const callerUserId = req.identity?.user_id ?? null;
+  const callerRole = req.identity?.role ?? null;
 
-    try {
-      const check = await withAuroraRlsContext(
-        { claims: req.auth_raw_claims ?? null, role: callerRole },
-        async (client) => {
-          const roleRow = await client.query(
-            'SELECT current_user AS db_user, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user',
-          );
-          const uidRow = await client.query('SELECT auth.uid() AS resolved_uid');
-          return {
-            db_user: roleRow.rows[0]?.db_user ?? null,
-            rolsuper: roleRow.rows[0]?.rolsuper ?? null,
-            rolbypassrls: roleRow.rows[0]?.rolbypassrls ?? null,
-            resolved_uid: uidRow.rows[0]?.resolved_uid ?? null,
-          };
-        },
-      );
+  try {
+    const check = await withAuroraRlsContext(
+      { claims: req.auth_raw_claims ?? null, role: callerRole },
+      async (client) => {
+        const roleRow = await client.query(
+          'SELECT current_user AS db_user, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user',
+        );
+        const uidRow = await client.query('SELECT auth.uid() AS resolved_uid');
+        return {
+          db_user: roleRow.rows[0]?.db_user ?? null,
+          rolsuper: roleRow.rows[0]?.rolsuper ?? null,
+          rolbypassrls: roleRow.rows[0]?.rolbypassrls ?? null,
+          resolved_uid: uidRow.rows[0]?.resolved_uid ?? null,
+        };
+      },
+    );
 
-      // The two invariants this endpoint exists to catch: the pooled login
-      // role must not silently bypass RLS, and auth.uid() must resolve to
-      // exactly the caller's own id — not null (claims not reaching the
-      // session GUC) and not someone else's (a cross-request context leak,
-      // which for a pooled connection is the scariest possible failure
-      // mode this check could catch).
-      const uidMatches = callerUserId !== null && check.resolved_uid === callerUserId;
-      const ok = check.rolsuper !== true && check.rolbypassrls !== true && uidMatches;
+    // The two invariants this endpoint exists to catch: the pooled login
+    // role must not silently bypass RLS, and auth.uid() must resolve to
+    // exactly the caller's own id — not null (claims not reaching the
+    // session GUC) and not someone else's (a cross-request context leak,
+    // which for a pooled connection is the scariest possible failure
+    // mode this check could catch).
+    const uidMatches = callerUserId !== null && check.resolved_uid === callerUserId;
+    const ok = check.rolsuper !== true && check.rolbypassrls !== true && uidMatches;
 
-      return res.status(ok ? 200 : 503).json({
-        ok,
-        configured: true,
-        env: VITANA_ENV,
-        db_user: check.db_user,
-        rolsuper: check.rolsuper,
-        rolbypassrls: check.rolbypassrls,
-        auth_uid_matches_caller: uidMatches,
-      });
-    } catch (err) {
-      return res.status(503).json({
-        ok: false,
-        configured: true,
-        env: VITANA_ENV,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  },
-);
+    return res.status(ok ? 200 : 503).json({
+      ok,
+      configured: true,
+      env: VITANA_ENV,
+      db_user: check.db_user,
+      rolsuper: check.rolsuper,
+      rolbypassrls: check.rolbypassrls,
+      auth_uid_matches_caller: uidMatches,
+    });
+  } catch (err) {
+    return res.status(503).json({
+      ok: false,
+      configured: true,
+      env: VITANA_ENV,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+});
 
 export default router;
