@@ -15,6 +15,7 @@ import { getSupabase } from '../../lib/supabase';
 import { notifyUser } from '../notification-service';
 import { buildMorningBrief } from './morning-brief-generator';
 import { recordTouch } from './presence-pacer';
+import * as repo from './morning-brief-scheduler-repository';
 
 const LOG_PREFIX = '[VTID-01949:MorningBrief]';
 
@@ -95,12 +96,7 @@ async function runTick(): Promise<void> {
   // AND do not already have a morning_brief touch logged for today.
   const since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
-  const { data: candidates, error: candErr } = await supabase
-    .from('oasis_events')
-    .select('metadata')
-    .eq('topic', 'orb.session.started')
-    .gte('created_at', since)
-    .limit(10000);
+  const { data: candidates, error: candErr } = await repo.fetchRecentOrbSessionStartedEvents(supabase, since, 10000);
 
   if (candErr) {
     console.warn(`${LOG_PREFIX} candidate query failed:`, candErr.message);
@@ -120,11 +116,7 @@ async function runTick(): Promise<void> {
   }
 
   // Filter out users who already got a morning_brief today
-  const { data: alreadySent } = await supabase
-    .from('user_proactive_touches')
-    .select('user_id')
-    .eq('surface', 'morning_brief')
-    .gte('sent_at', `${todayIso}T00:00:00Z`);
+  const { data: alreadySent } = await repo.fetchUsersAlreadySentMorningBriefToday(supabase, `${todayIso}T00:00:00Z`);
 
   const sentSet = new Set<string>((alreadySent || []).map((r: any) => r.user_id));
   const todo = Array.from(userIds).filter((id) => !sentSet.has(id));
@@ -136,10 +128,7 @@ async function runTick(): Promise<void> {
   console.log(`${LOG_PREFIX} dispatching to ${todo.length} user(s)`);
 
   // Look up user_name + tenant_id in a single query
-  const { data: users } = await supabase
-    .from('app_users')
-    .select('user_id, tenant_id, display_name')
-    .in('user_id', todo);
+  const { data: users } = await repo.fetchUsersForMorningBrief(supabase, todo);
 
   let sent = 0;
   let skipped = 0;
