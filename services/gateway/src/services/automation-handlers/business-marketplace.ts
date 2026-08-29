@@ -7,6 +7,7 @@
 
 import { AutomationContext } from '../../types/automations';
 import { registerHandler } from '../automation-executor';
+import * as repo from './business-marketplace-repository';
 
 // ── AP-1101: Service Listing Publication & Distribution ──────
 async function runServiceListingDistribution(ctx: AutomationContext) {
@@ -16,11 +17,7 @@ async function runServiceListingDistribution(ctx: AutomationContext) {
 
   const { supabase, tenantId } = ctx;
 
-  const { data: service } = await supabase
-    .from('services_catalog')
-    .select('name, service_type, topic_keys')
-    .eq('id', service_id)
-    .maybeSingle();
+  const { data: service } = await repo.fetchServiceCatalogSummary(supabase, service_id);
 
   if (!service) return { usersAffected: 0, actionsTaken: 0 };
 
@@ -28,14 +25,7 @@ async function runServiceListingDistribution(ctx: AutomationContext) {
   const topicKeys = service.topic_keys || [];
   if (!topicKeys.length) return { usersAffected: 0, actionsTaken: 1 };
 
-  const { data: matchingUsers } = await supabase
-    .from('user_topic_profile')
-    .select('user_id, score')
-    .eq('tenant_id', tenantId)
-    .in('topic_key', topicKeys)
-    .gte('score', 60)
-    .order('score', { ascending: false })
-    .limit(50);
+  const { data: matchingUsers } = await repo.fetchTopicMatchedUsers(supabase, tenantId, topicKeys, 60, 50);
 
   let usersAffected = 0;
   const uniqueUsers = new Set<string>();
@@ -45,7 +35,7 @@ async function runServiceListingDistribution(ctx: AutomationContext) {
     uniqueUsers.add(match.user_id);
 
     // Create relationship edge for discovery
-    await supabase.from('relationship_edges').upsert({
+    await repo.upsertServiceRelationshipEdge(supabase, {
       tenant_id: tenantId,
       user_id: match.user_id,
       target_type: 'service',
@@ -53,7 +43,7 @@ async function runServiceListingDistribution(ctx: AutomationContext) {
       relationship_type: 'saved',
       strength: Math.round(match.score * 0.5),
       context: JSON.stringify({ origin: 'autopilot_marketplace' }),
-    }, { onConflict: 'tenant_id,user_id,target_type,target_id' });
+    });
 
     usersAffected++;
   }
@@ -73,22 +63,13 @@ async function runProductAiPicksMatching(ctx: AutomationContext) {
 
   const { supabase, tenantId } = ctx;
 
-  const { data: product } = await supabase
-    .from('products_catalog')
-    .select('name, product_type, topic_keys')
-    .eq('id', product_id)
-    .maybeSingle();
+  const { data: product } = await repo.fetchProductCatalogSummary(supabase, product_id);
 
   if (!product) return { usersAffected: 0, actionsTaken: 0 };
 
   // Find users with matching recommendations
   const topicKeys = product.topic_keys || [];
-  const { data: matchingRecs } = await supabase
-    .from('recommendations')
-    .select('user_id')
-    .eq('tenant_id', tenantId)
-    .overlaps('pillar', topicKeys)
-    .limit(50);
+  const { data: matchingRecs } = await repo.fetchRecommendationsByPillarOverlap(supabase, tenantId, topicKeys, 50);
 
   let usersAffected = 0;
   for (const rec of matchingRecs || []) {
@@ -118,24 +99,19 @@ async function runClientServiceMatching(ctx: AutomationContext) {
 
   const { supabase, tenantId } = ctx;
 
-  const { data: services } = await supabase
-    .from('services_catalog')
-    .select('id, name, service_type, provider_name, topic_keys')
-    .eq('tenant_id', tenantId)
-    .eq('service_type', service_type || 'coach')
-    .limit(3);
+  const { data: services } = await repo.fetchServicesByType(supabase, tenantId, service_type || 'coach', 3);
 
   if (!services?.length) return { usersAffected: 0, actionsTaken: 0 };
 
   // Track user interest
   for (const service of services) {
-    await supabase.from('user_offers_memory').upsert({
+    await repo.upsertUserOfferMemory(supabase, {
       tenant_id: tenantId,
       user_id,
       target_type: 'service',
       target_id: service.id,
       state: 'viewed',
-    }, { onConflict: 'tenant_id,user_id,target_type,target_id' });
+    });
   }
 
   await ctx.emitEvent('autopilot.marketplace.client_matched', { user_id, matches: services.length });
@@ -151,24 +127,11 @@ async function runPostServiceOutcomeTracking(ctx: AutomationContext) {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
 
-  const { data: recentUses } = await supabase
-    .from('user_offers_memory')
-    .select('user_id, target_id, target_type')
-    .eq('tenant_id', tenantId)
-    .eq('state', 'used')
-    .eq('target_type', 'service')
-    .gte('updated_at', eightDaysAgo)
-    .lte('updated_at', sevenDaysAgo)
-    .limit(50);
+  const { data: recentUses } = await repo.fetchUsedOffersInWindow(supabase, tenantId, 'service', eightDaysAgo, sevenDaysAgo, 50);
 
   for (const usage of recentUses || []) {
     // Check if outcome already recorded
-    const { count } = await supabase
-      .from('usage_outcomes')
-      .select('id', { count: 'exact', head: true })
-      .eq('tenant_id', tenantId)
-      .eq('user_id', usage.user_id)
-      .eq('target_id', usage.target_id);
+    const { count } = await repo.countExistingOutcome(supabase, tenantId, usage.user_id, usage.target_id);
 
     if ((count || 0) > 0) continue;
 
@@ -210,22 +173,10 @@ async function runProductReviewFollowUp(ctx: AutomationContext) {
   const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
   const fifteenDaysAgo = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString();
 
-  const { data: productUses } = await supabase
-    .from('user_offers_memory')
-    .select('user_id, target_id')
-    .eq('tenant_id', tenantId)
-    .eq('state', 'used')
-    .eq('target_type', 'product')
-    .gte('updated_at', fifteenDaysAgo)
-    .lte('updated_at', fourteenDaysAgo)
-    .limit(50);
+  const { data: productUses } = await repo.fetchUsedOffersInWindow(supabase, tenantId, 'product', fifteenDaysAgo, fourteenDaysAgo, 50);
 
   for (const usage of productUses || []) {
-    const { data: product } = await supabase
-      .from('products_catalog')
-      .select('name')
-      .eq('id', usage.target_id)
-      .maybeSingle();
+    const { data: product } = await repo.fetchProductName(supabase, usage.target_id);
 
     ctx.notify(usage.user_id, 'orb_proactive_message', {
       title: 'How Is It Working?',
@@ -248,21 +199,11 @@ async function runCrossSellServiceToProductBuyers(ctx: AutomationContext) {
 
   const { supabase, tenantId } = ctx;
 
-  const { data: product } = await supabase
-    .from('products_catalog')
-    .select('topic_keys')
-    .eq('id', product_id)
-    .maybeSingle();
+  const { data: product } = await repo.fetchProductTopicKeys(supabase, product_id);
 
   if (!product?.topic_keys?.length) return { usersAffected: 0, actionsTaken: 0 };
 
-  const { data: services } = await supabase
-    .from('services_catalog')
-    .select('id, name, service_type')
-    .eq('tenant_id', tenantId)
-    .overlaps('topic_keys', product.topic_keys)
-    .limit(1)
-    .maybeSingle();
+  const { data: services } = await repo.fetchServiceByTopicOverlap(supabase, tenantId, product.topic_keys, 1);
 
   if (!services) return { usersAffected: 0, actionsTaken: 0 };
 
@@ -294,13 +235,7 @@ async function runCreatorAnalyticsGrowthTips(ctx: AutomationContext) {
 
   const windowStart = new Date(Date.now() - CREATOR_ANALYTICS_WINDOW_DAYS * 86_400_000).toISOString();
 
-  const { data: rooms } = await supabase
-    .from('live_rooms')
-    .select('id, host_user_id, price_cents, capacity, created_at')
-    .eq('tenant_id', tenantId)
-    .not('host_user_id', 'is', null)
-    .gte('created_at', windowStart)
-    .limit(1000);
+  const { data: rooms } = await repo.fetchRecentHostedRooms(supabase, tenantId, windowStart, 1000);
 
   const roomsByHost = new Map<string, Array<{ id: string; price_cents: number | null; capacity: number | null }>>();
   for (const room of rooms || []) {
@@ -310,30 +245,18 @@ async function runCreatorAnalyticsGrowthTips(ctx: AutomationContext) {
   }
   if (roomsByHost.size === 0) return { usersAffected: 0, actionsTaken: 0 };
 
-  const { data: hostUsers } = await supabase
-    .from('app_users')
-    .select('user_id, vitana_id')
-    .in('user_id', [...roomsByHost.keys()]);
+  const { data: hostUsers } = await repo.fetchVitanaIdsForUsers(supabase, [...roomsByHost.keys()]);
   const vitanaIdByHost = new Map((hostUsers || []).map((u: any) => [u.user_id, u.vitana_id]));
 
   for (const [hostId, hostRooms] of roomsByHost) {
     const roomIds = hostRooms.map((r) => r.id);
 
-    const { count: attendeeCount } = await supabase
-      .from('live_room_attendance')
-      .select('id', { count: 'exact', head: true })
-      .in('live_room_id', roomIds)
-      .gte('joined_at', windowStart);
+    const { count: attendeeCount } = await repo.countAttendanceForRooms(supabase, roomIds, windowStart);
 
     const vitanaId = vitanaIdByHost.get(hostId);
     let revenueCents = 0;
     if (vitanaId) {
-      const { data: payments } = await supabase
-        .from('service_payments')
-        .select('amount_cents')
-        .eq('payee_vitana_id', vitanaId)
-        .in('state', ['captured', 'released'])
-        .gte('created_at', windowStart);
+      const { data: payments } = await repo.fetchServicePaymentsForPayee(supabase, vitanaId, ['captured', 'released'], windowStart);
       revenueCents = (payments || []).reduce((sum: number, p: any) => sum + (p.amount_cents || 0), 0);
     }
 
@@ -376,12 +299,7 @@ async function runSeasonalTrendingRecommendations(ctx: AutomationContext) {
 
   const windowStart = new Date(Date.now() - TRENDING_WINDOW_DAYS * 86_400_000).toISOString();
 
-  const { data: rooms } = await supabase
-    .from('live_rooms')
-    .select('category, topic_keys')
-    .eq('tenant_id', tenantId)
-    .gte('created_at', windowStart)
-    .limit(5000);
+  const { data: rooms } = await repo.fetchRoomCategoriesInWindow(supabase, tenantId, windowStart, 5000);
 
   const countByTopic = new Map<string, number>();
   for (const room of rooms || []) {
@@ -398,12 +316,7 @@ async function runSeasonalTrendingRecommendations(ctx: AutomationContext) {
     .map(([topic]) => topic);
   if (trending.length === 0) return { usersAffected: 0, actionsTaken: 0 };
 
-  const { data: hostRows } = await supabase
-    .from('live_rooms')
-    .select('host_user_id')
-    .eq('tenant_id', tenantId)
-    .not('host_user_id', 'is', null)
-    .limit(5000);
+  const { data: hostRows } = await repo.fetchRoomHostIds(supabase, tenantId, 5000);
   const hostIds: string[] = [...new Set<string>((hostRows || []).map((r: any) => r.host_user_id))].slice(0, TRENDING_MAX_CREATORS_NOTIFIED);
 
   const trendingLabel = trending.map((t) => t.replace(/-/g, ' ')).join(', ');
