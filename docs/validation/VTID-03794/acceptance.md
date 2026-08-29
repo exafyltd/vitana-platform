@@ -46,7 +46,7 @@ first-time open." Whenever `transcript_history` also happened to be empty
 for that specific request, `isReconnectStart` came out false and the
 session was treated as brand new.
 
-## AC-1 — WS keepalive ping tightened + re-documented for AWS
+AC-1 — WS keepalive ping tightened + re-documented for AWS
 
 `orb-live.ts`'s `clientPingInterval` changed from 30s to 10s, and its
 comment updated from "Cloud Run ALB" (GCP is decommissioned) to the real
@@ -55,11 +55,14 @@ interval gives at most one ping inside a 60s window before the timer
 expires; 10s gives real margin regardless of what turns out to actually be
 counted as "activity" by whichever proxy sits in front.
 
-No test pins the literal interval value (none existed pinning the old 30s
-either) — this is a tuning change to an existing, already-tested keepalive
-mechanism, not new logic.
+TEST: `services/gateway/test/orb/live/session/live-session-controller.test.ts`
+— `clears upstream ping + silence keepalive intervals` (pre-existing,
+re-run clean) exercises the same `clientPingInterval`/`setInterval`
+lifecycle this change tunes. No test pins the literal interval value
+(none existed pinning the old 30s either) — this is a tuning change to an
+existing, already-tested keepalive mechanism, not new logic.
 
-## AC-2 — reconnect during silence no longer collapses into a first-time open
+AC-2 — reconnect during silence no longer collapses into a first-time open
 
 `isReconnectStart` now also treats `typeof body.reconnect_stage ===
 'string'` (the field's mere presence) as reconnect evidence, independent
