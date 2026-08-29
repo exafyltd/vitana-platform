@@ -169,8 +169,17 @@ acceptRouter.post('/accept/:token', requireAuth, async (req: AuthenticatedReques
 
     const userId = req.identity!.user_id;
 
-    // Ensure user has a user_tenants row for this tenant
-    const { data: existingMembership } = await repo.fetchUserTenantMembership(supabase, userId, invitation.tenant_id);
+    // Ensure user has a user_tenants row for this tenant.
+    // .single() reports PGRST116 ("no rows") for the normal "not yet a
+    // member" case — that is not a failure, only a genuine error is. A
+    // real error here must not fall through to the (!existingMembership)
+    // branch below, which would insert a fresh row and reset active_role
+    // even for a user who already has a membership.
+    const { data: existingMembership, error: existingMembershipErr } = await repo.fetchUserTenantMembership(supabase, userId, invitation.tenant_id);
+    if (existingMembershipErr && existingMembershipErr.code !== 'PGRST116') {
+      console.error(`[${VTID}] Existing-membership check error:`, existingMembershipErr.message);
+      return res.status(500).json({ ok: false, error: existingMembershipErr.message });
+    }
 
     if (!existingMembership) {
       // Create membership with the first offered role as active_role

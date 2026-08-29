@@ -624,7 +624,17 @@ async function getUserPrefs(
   tenantId: string,
   supabase: SupabaseClient<any, any, any>
 ): Promise<UserPrefs | null> {
-  const { data } = await repo.fetchUserNotificationPreferences(supabase, userId, tenantId);
+  const { data, error } = await repo.fetchUserNotificationPreferences(supabase, userId, tenantId);
+  // .single() reports PGRST116 ("no rows") for the normal "user has never
+  // set preferences yet" case — not a failure. A genuine error is logged:
+  // callers treat a null return identically to "no prefs row" and fall
+  // back to permissive defaults (push on, not DND), so a real DB error
+  // here could silently push-notify a user who has actually opted out or
+  // is in a DND window — deliberately not changed to fail-closed without
+  // real traffic data on how often this path actually errors.
+  if (error && error.code !== 'PGRST116') {
+    console.warn('[notification-service] getUserPrefs query error (falling back to permissive defaults):', error.message);
+  }
   return data as UserPrefs | null;
 }
 
