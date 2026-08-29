@@ -387,12 +387,26 @@ record of the plan's original, more cautious posture.
    which underlying driver motivated it.
 3. **Who has live AWS/DMS access** to close the Phase 0 gate? No session so far
    has had it.
-   → Partially answered: this session (2026-08-25) has live read-only AWS
-   CLI + Supabase MCP access — see `docs/AURORA-PHASE0-RECONCILIATION-
-   FINDINGS.md`. Read access is not write access: an explicit IAM
-   permissions-boundary deny blocks Secrets Manager writes and DMS endpoint
-   mutation from this session, so the CDC-down gap that Phase 0 found
-   still needs a session/person with write access to actually close.
+   → Partially answered, and re-verified 2026-08-29 with a materially
+   different result than the 2026-08-25 answer: this session has live AWS
+   CLI (DMS/RDS Data API/most of Secrets Manager) + Supabase MCP SQL
+   access — broader than 2026-08-25's own recorded finding (the Aurora
+   master-password secret that was explicit-denied then reads cleanly
+   now). Precisely quantified the cost of the gap this time instead of
+   describing it qualitatively: CDC has been down 9 days (since
+   2026-08-20), and Aurora is now measurably 5-9% behind Supabase on the
+   three hottest tables (`oasis_events`, `chat_messages`,
+   `user_notifications`) — see `docs/AURORA-PHASE0-RECONCILIATION-
+   FINDINGS.md`'s 2026-08-29 addenda for the exact counts and the
+   platform-owner-authorized fix attempt. **Still not closeable from this
+   session**, but the blocker is narrower than "no write access" now:
+   this identity has **zero EC2/VPC permissions at all** (not a boundary
+   deny — no grant exists), which rules out the IPv6-egress fix, and the
+   Supabase-side pooler/tenant registry fix needs Supabase dashboard/
+   Management API access this session's tools don't reach — DMS
+   endpoint/Secrets Manager mutation itself was never actually tested
+   against a concrete corrected value, because neither fix path produced
+   one this session could safely apply.
 4. **Is there a deadline** this is working back from?
    → **Answered: 20 September 2026** — Supabase (including Auth) fully
    disconnected from production and downgraded to the free plan by that
