@@ -14,6 +14,42 @@ const path = require('path');
 
 const PROTECTED_PATH = 'services/gateway/src/frontend/command-hub/';
 // VTID-0302: Original guard VTID
+// VTID-03763: orb-widget.js only — a monotonic _s._sessionGeneration
+//             counter, bumped on every real session start (SSE + WS),
+//             threaded through the four setTimeout-chained polling loops
+//             (_waitForAudioEnd, _waitForGoodbyeEnd, _waitForNavReady,
+//             _endGuidedTopicTeaching) that previously used only
+//             `!_s.active` as a staleness guard — a stale poll from a
+//             prior session could survive into a fresh session (which
+//             flips _s.active back to true before the stale poll's next
+//             tick) and clobber the new session's just-armed
+//             _s.guidedTopic before it ever reached the server. Branch:
+//             claude/my-journey-catalog-multilingual-qrwxng
+// VTID-03762: orb-widget.js only — adds client-side handling for the new
+//             end_guided_topic_teaching orb_directive (closes the overlay
+//             the same way end_teaching_session already does), so the
+//             "Well done" drawer underneath becomes reachable again once
+//             the model signals guided-topic teaching is actually done.
+//             Branch: claude/guided-topic-teaching-complete-vtid-03762
+// VTID-03746: orb-widget.js only — two more targeted ORB-voice reconnect
+//             defects, live-reproduced on staging after VTID-03727 shipped:
+//             an unconditional spoken "reconnecting" alert clip (audible
+//             counterpart to VTID-03727's visual caption gate, never
+//             applied to the audio alert), and a guided topic losing itself
+//             on a mid-lesson disconnect (the turn-complete handler nulls
+//             _s.guidedTopic on first-turn-complete per VTID-03675, so a
+//             later disconnect had nothing to resume). Branch:
+//             claude/orb-guided-topic-resume-and-alert-gate-vtid-03746
+// VTID-03745: orb-widget.js only — removed the .vtorb-btn-mic.vtorb-mic-live
+//             box-shadow (the full-duplex "mic live" ring VTID-03706 added),
+//             reported as an unwanted visual distraction. CSS-only; the
+//             class-toggle logic itself is untouched.
+// VTID-03727: orb-widget.js only — two targeted ORB-voice reconnect defects
+//             (premature "reconnecting" caption before anything has been
+//             heard; a pending guided-topic tap losing to newday_overview
+//             via decideOpening's cadence-skip heuristic). Root-caused via
+//             live oasis_events, same class of fix as VTID-03685/VTID-03706
+//             below. Branch: claude/orb-reconnect-cue-and-guided-topic-cadence-vtid-03727
 // VTID-03706: ORB full-duplex voice — the mic stays open while Vitana speaks so
 //             Nova Sonic's native barge-in can fire. Touches orb-widget.js
 //             (capture gate + mic-live ring) and adds orb-voice-bench.{html,js,css},
@@ -293,7 +329,108 @@ const PROTECTED_PATH = 'services/gateway/src/frontend/command-hub/';
 //             follow immediately. No pre-existing VTID covers it — same
 //             registration route as the BOOTSTRAP-ORB-* entries above.
 //             Branch: claude/orb-unread-messages-proactive-nav
-const ALLOWED_VTID_PATTERN = /VTID-03706|VTID-03599|VTID-03649|VTID-03685|VTID-03686|DEV-COMHU-\d+|BOOTSTRAP-ORB-FASTSTART-DRIFT|BOOTSTRAP-ORB-BARGEIN|BOOTSTRAP-ORB-UNREAD-MESSAGES-NAV|orb-unread-messages-proactive-nav|orb-bargein-fix|VTID-03606|nova2sonic-german-speed|VTID-03471|VTID-03469|VTID-03455|VTID-03451|VTID-03449|VTID-03440|memory-orchestrator-mandatory|orb-widget-background-watchdog|BOOTSTRAP-PUBLISH-STALENESS-FIX|command-hub-publish-refresh|VTID-03098|fix-vitana-overlay-audio|VTID-03087|VTID-02868|VTID-02867|VTID-02866|VTID-02865|VTID-02859|VTID-02858|VTID-02857|VTID-02856|VTID-02733|VTID-02710|VTID-02036|VTID-02035|VTID-02034|VTID-02032|VTID-02031|VTID-02029|VTID-02021|VTID-02020|VTID-01999|VTID-01981|VTID-01991|VTID-01987|VTID-01988|VTID-0302|VTID-0539|VTID-0541|VTID-0542|VTID-0600|VTID-0601|VTID-01001|VTID-01002|VTID-01003|VTID-01005|VTID-01006|VTID-01009|VTID-01010|VTID-01012|VTID-01013|VTID-01014|VTID-01015|VTID-01016|VTID-01017|VTID-01019|VTID-01021|VTID-01022|VTID-01025|VTID-01027|VTID-01028|VTID-01030|VTID-01034|VTID-0135|VTID-01037|VTID-01038|VTID-01039|VTID-01041|VTID-01042|VTID-01043|VTID-01044|VTID-01045|VTID-01049|VTID-01052|VTID-01055|VTID-01064|VTID-01066|VTID-01067|VTID-01069|VTID-01079|VTID-01086|VTID-01109|VTID-01111|VTID-01122|VTID-01150|VTID-01155|VTID-01156|VTID-01154|VTID-01168|VTID-01171|VTID-01172|VTID-01173|VTID-01174|VTID-01180|VTID-01181|VTID-01186|VTID-01188|VTID-01189|VTID-01194|VTID-01195|VTID-01196|VTID-01208|VTID-01209|VTID-01210|VTID-01211|VTID-01214|VTID-01216|VTID-01218A|VTID-01218B|VTID-01218E|VTID-01221|VTID-01225|VTID-01229|VTID-01260|VTID-ORBC|VTID-VOICE-INIT|SPEC-01|global-vtid-allocator|vtid-ledger-visibility|add-conversation-summary|editable-scheduled-card-title|unified-language-selector|fix-stt-abort-error|fix-tts-feedback|compact-cards-date-filter|gateway-me-context-api|delete-scheduled-tasks|fix-ghost-cards|security-audit-review|fix-vtid-board-mapping|orb-conversation-stream|orb-presence-layer|auto-growing-chatbox|memory-garden-ui-depth|debug-orb-memory|debug-command-hub-vtids|remove-deleted-task|runner-execution-bridge|gemini-live-multimodal-tts|remove-legacy-tasks-fetch|global-top-navigation|github-approvals-feed|approval-auto-deploy|wire-profile-modal-api|dev-users-access-toggle|agents-ui-orchestrator-apis|agents-control-plane-pipelines|autopilot-event-loop|add-arming-panel|replace-dev-identity-jwt|fix-validation|unified-spec-generation|infinite-scroll-list|fix-vtid-ledger-layout|fix-login-ui-update|command-hub-admin-screens|fetch-user-profile|document-agent-setup|task-pipeline-status-view|fix-live-ticker-formatting|fix-page-scrolling|document-operator-features|fix-duplicate-formatRelativeTime|unified-conversation-intelligence|sync-orb-autopilot|fix-fragmentation-integration|cognee-vitana-integration|vtid-01229-execution-pipeline-fix|vtid-orbc|clarify-oasis-user-identification|fix-vitana-voice-init/i;
+// VTID-03770: orb-widget.js only — _resetAndReconnect() (the 5s
+//             health-probe watchdog's reconnect path, and the
+//             tap-to-reconnect stuck-state button) never restored an
+//             in-progress guided topic before rebuilding the session,
+//             unlike its sibling _attemptReconnect() (VTID-03746). Added
+//             the identical restore guard, plus fixed an _isReconnecting
+//             mutex inversion in the same function (it set the flag false
+//             instead of true, making the watchdog's own re-entrancy check
+//             inert). Branch: claude/my-journey-catalog-multilingual-qrwxng
+// VTID-03778: orb-widget.js only — after VTID-03776's own circuit breaker
+//             correctly fell back to safe generic conversation, the
+//             session later got superseded server-side
+//             (terminateExistingSessionsForUser) while the user's tab was
+//             actively listening. The client's `case 'session_ended':`
+//             handler called _sessionStop(), which unconditionally sets
+//             _s._userInitiatedStop=true (mislabeling a server-forced
+//             close as a user action) and never touches overlay
+//             visibility — freezing the widget on a stale "Listening"
+//             caption forever, reported as "you cannot close it... I need
+//             to refresh to exit." Fix: that case now calls _hide()
+//             instead, the same full teardown a real close uses. Branch:
+//             claude/my-journey-catalog-multilingual-qrwxng
+// VTID-03776: orb-widget.js only — a real regression from VTID-03774's own
+//             fixes: a guided-topic tap now correctly resends
+//             guided_topic_id on every reconnect, so a topic whose opener
+//             Nova's nova_validation content filter deterministically
+//             blocks (live-confirmed: ~30 consecutive fresh sessions, 100%
+//             blocked) loops forever — every reconnect resets the widget's
+//             own backoff budget on bare transport-active, before the
+//             MAX_WIDGET_RECONNECTS ceiling could ever apply. Fix: only
+//             reset the budget once real audio has played
+//             (_audioEverHeardThisOpen), plus a circuit breaker that drops
+//             a guided topic after 2 zero-audio failures so the next
+//             attempt falls through to safe generic conversation. Branch:
+//             claude/my-journey-catalog-multilingual-qrwxng
+// VTID-03774: orb-widget.js only — a live staging trace showed a mid-lesson
+//             reconnect still losing guided_topic_id despite the
+//             VTID-03746/VTID-03770 restore-guards in _attemptReconnect()/
+//             _resetAndReconnect() (the exact caller-ordering bug could not
+//             be conclusively identified without live-browser console
+//             access). _sessionStart() now ALSO restores _s.guidedTopic
+//             from _s._guidedTopicInFlight immediately before the payload
+//             read — the one point every caller must pass through —
+//             plus diagnostic logging for future traceability. Branch:
+//             claude/my-journey-catalog-multilingual-qrwxng
+// VTID-03781: orb-widget.js only — full lifecycle audit of the My Journey
+//             guided-topic teaching session against a detailed spec. Found
+//             the state machine already mostly correct (VTID-03762/03763/
+//             03771/03774/03776/03778); the one real gap was no idempotency
+//             guard against duplicate completion signals (model tool call
+//             + 5-minute backstop both firing for the same teaching
+//             session). Added _guidedTopicTeachingEnded, checked/set as the
+//             first statement in _endGuidedTopicTeaching(), reset only on a
+//             fresh focusGuidedTopic() tap. Branch:
+//             claude/my-journey-catalog-multilingual-qrwxng
+// VTID-03779: orb-widget.js — session pre-establishment ("warm start") for
+//             ORB voice. Opens the WS transport and sends a new 'prewarm'
+//             message right after login/setAuth, before the ORB overlay is
+//             ever shown, so a real session tap can reuse an already-warm
+//             Nova Sonic connection instead of cold-connecting
+//             (_prewarmNovaWs, _sessionStartWs's reuse branch,
+//             _wipeIdentityBoundState's teardown of a stale prewarmed
+//             socket on account switch/logout). Backend-gated on
+//             FEATURE_ORB_NOVA_PREWARM_ENV (staging-only, off by default).
+//             Branch: claude/orb-interruption-voice-comms-x3wh7s
+// VTID-03782: orb-widget.js only — live-reported "Vitana starts reading a
+//             script and never finishes." Root cause: the VTID-03776
+//             zero-audio circuit breaker correctly drops a guided topic
+//             after 2 nova_validation failures, but then silently fell
+//             through to a normal reconnect, landing on an unrelated,
+//             unbounded generic-conversation candidate with no completion
+//             signal possible. Fix: call the existing _enterStuckState()
+//             (tap-to-reconnect) instead of falling through. Branch:
+//             claude/my-journey-catalog-multilingual-qrwxng
+// VTID-03783: orb-widget.js only — live-reported: after teaching finished,
+//             the overlay froze on "Session ended — app was in the
+//             background." with an apparently-unresponsive X button, no
+//             Well-done drawer, step not marked done. Root cause:
+//             _startBackgroundWatchdog()'s kill branch called
+//             _sessionStop() directly — the same anti-pattern VTID-03778
+//             already fixed for the session_ended message handler in this
+//             file. _sessionStop() tears down media/SSE but never touches
+//             overlay visibility, so the overlay stayed on-screen forever.
+//             Fix: call _hide() instead, the same full teardown every
+//             other close path uses. Deliberately does NOT call
+//             _endGuidedTopicTeaching() — a background-kill is not a
+//             reliable "lesson finished" signal. Branch:
+//             claude/my-journey-catalog-multilingual-qrwxng
+// VTID-03784: orb-widget.js only — live-reported (with screenshots) right
+//             after VTID-03783 shipped: tapped a My Journey step, hit the
+//             VTID-03782 circuit breaker's "Tap the orb to reconnect"
+//             stuck state, then ~5 minutes later — untouched — the
+//             Well-done drawer appeared and the step was marked done, even
+//             though the lesson was never delivered. Root cause: the
+//             VTID-03762 5-minute backstop timer (armed in
+//             focusGuidedTopic()) was only ever cancelled by _hide(), and
+//             no path into the shared _enterStuckState() calls _hide() (the
+//             overlay deliberately stays up for a retry). Fix:
+//             _enterStuckState() itself now cancels the backstop, covering
+//             both the circuit breaker and MAX_WIDGET_RECONNECTS
+//             exhaustion. Branch: claude/my-journey-catalog-multilingual-qrwxng
+const ALLOWED_VTID_PATTERN = /VTID-03784|VTID-03783|VTID-03782|VTID-03779|VTID-03781|VTID-03778|VTID-03776|VTID-03774|VTID-03770|VTID-03763|VTID-03762|VTID-03746|VTID-03745|VTID-03727|VTID-03706|VTID-03599|VTID-03649|VTID-03685|VTID-03686|DEV-COMHU-\d+|BOOTSTRAP-ORB-FASTSTART-DRIFT|BOOTSTRAP-ORB-BARGEIN|BOOTSTRAP-ORB-UNREAD-MESSAGES-NAV|orb-unread-messages-proactive-nav|orb-bargein-fix|VTID-03606|nova2sonic-german-speed|VTID-03471|VTID-03469|VTID-03455|VTID-03451|VTID-03449|VTID-03440|memory-orchestrator-mandatory|orb-widget-background-watchdog|BOOTSTRAP-PUBLISH-STALENESS-FIX|command-hub-publish-refresh|VTID-03098|fix-vitana-overlay-audio|VTID-03087|VTID-02868|VTID-02867|VTID-02866|VTID-02865|VTID-02859|VTID-02858|VTID-02857|VTID-02856|VTID-02733|VTID-02710|VTID-02036|VTID-02035|VTID-02034|VTID-02032|VTID-02031|VTID-02029|VTID-02021|VTID-02020|VTID-01999|VTID-01981|VTID-01991|VTID-01987|VTID-01988|VTID-0302|VTID-0539|VTID-0541|VTID-0542|VTID-0600|VTID-0601|VTID-01001|VTID-01002|VTID-01003|VTID-01005|VTID-01006|VTID-01009|VTID-01010|VTID-01012|VTID-01013|VTID-01014|VTID-01015|VTID-01016|VTID-01017|VTID-01019|VTID-01021|VTID-01022|VTID-01025|VTID-01027|VTID-01028|VTID-01030|VTID-01034|VTID-0135|VTID-01037|VTID-01038|VTID-01039|VTID-01041|VTID-01042|VTID-01043|VTID-01044|VTID-01045|VTID-01049|VTID-01052|VTID-01055|VTID-01064|VTID-01066|VTID-01067|VTID-01069|VTID-01079|VTID-01086|VTID-01109|VTID-01111|VTID-01122|VTID-01150|VTID-01155|VTID-01156|VTID-01154|VTID-01168|VTID-01171|VTID-01172|VTID-01173|VTID-01174|VTID-01180|VTID-01181|VTID-01186|VTID-01188|VTID-01189|VTID-01194|VTID-01195|VTID-01196|VTID-01208|VTID-01209|VTID-01210|VTID-01211|VTID-01214|VTID-01216|VTID-01218A|VTID-01218B|VTID-01218E|VTID-01221|VTID-01225|VTID-01229|VTID-01260|VTID-ORBC|VTID-VOICE-INIT|SPEC-01|global-vtid-allocator|vtid-ledger-visibility|add-conversation-summary|editable-scheduled-card-title|unified-language-selector|fix-stt-abort-error|fix-tts-feedback|compact-cards-date-filter|gateway-me-context-api|delete-scheduled-tasks|fix-ghost-cards|security-audit-review|fix-vtid-board-mapping|orb-conversation-stream|orb-presence-layer|auto-growing-chatbox|memory-garden-ui-depth|debug-orb-memory|debug-command-hub-vtids|remove-deleted-task|runner-execution-bridge|gemini-live-multimodal-tts|remove-legacy-tasks-fetch|global-top-navigation|github-approvals-feed|approval-auto-deploy|wire-profile-modal-api|dev-users-access-toggle|agents-ui-orchestrator-apis|agents-control-plane-pipelines|autopilot-event-loop|add-arming-panel|replace-dev-identity-jwt|fix-validation|unified-spec-generation|infinite-scroll-list|fix-vtid-ledger-layout|fix-login-ui-update|command-hub-admin-screens|fetch-user-profile|document-agent-setup|task-pipeline-status-view|fix-live-ticker-formatting|fix-page-scrolling|document-operator-features|fix-duplicate-formatRelativeTime|unified-conversation-intelligence|sync-orb-autopilot|fix-fragmentation-integration|cognee-vitana-integration|vtid-01229-execution-pipeline-fix|vtid-orbc|clarify-oasis-user-identification|fix-vitana-voice-init/i;
 
 function getChangedFiles() {
   try {

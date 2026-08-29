@@ -1,0 +1,198 @@
+diff --git a/services/gateway/src/routes/admin-feature-announcements.ts b/services/gateway/src/routes/admin-feature-announcements.ts
+index 5faa6fa..00cb61f 100644
+--- a/services/gateway/src/routes/admin-feature-announcements.ts
++++ b/services/gateway/src/routes/admin-feature-announcements.ts
+@@ -6,11 +6,17 @@
+  * - POST /            — Create + publish an announcement: writes the row
+  *                        every tenant member's feed will read (RLS-scoped),
+  *                        and fans out an in-app + push notification to every
+- *                        member of the tenant, in their own locale. Pass
+- *                        `recipient_ids` to scope both the row's visibility
+- *                        and the notification to specific users only — a
+- *                        staged test send before widening to the whole
+- *                        tenant (re-POST without `recipient_ids` for that).
++ *                        member of the tenant, in their own locale — awaited
++ *                        (Promise.allSettled over notifyUser), not
++ *                        fire-and-forget, so the response only returns once
++ *                        dispatch has actually completed (VTID-03744; see
++ *                        the sibling daily-feature-tip fix, PR #2986, for
++ *                        why an un-awaited dispatch here silently drops
++ *                        recipients). Pass `recipient_ids` to scope both the
++ *                        row's visibility and the notification to specific
++ *                        users only — a staged test send before widening to
++ *                        the whole tenant (re-POST without `recipient_ids`
++ *                        for that).
+  * - GET  /             — List announcements (most recent first) for admin review.
+  *
+  * Security:
+@@ -33,7 +39,7 @@
+ 
+ import { Router, Request, Response } from 'express';
+ import { getSupabase } from '../lib/supabase';
+-import { notifyUsersAsync, NotificationPayload } from '../services/notification-service';
++import { notifyUser, NotificationPayload } from '../services/notification-service';
+ import { bulkGetUserLocales } from '../i18n/server-locale';
+ import { tt, type GatewayLocale } from '../i18n/catalog';
+ import { requireAuth, requireExafyAdmin, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+@@ -177,25 +183,40 @@ router.post('/', async (req: AuthenticatedRequest, res: Response) => {
+       groups.set(lc, group);
+     }
+ 
+-    for (const [locale, userIds] of groups) {
+-      const payload: NotificationPayload = {
+-        title: tt('notif.feature_announcement.title', locale, { feature: pickLocale(feature_title, locale) }),
+-        body: pickLocale(description, locale),
+-        // Push tap lands on the News Feed (where the card itself lives) —
+-        // deliberately NOT `deep_link`, which is the card's own "Try it
+-        // yourself" in-app button target (e.g. /home/compose). Tapping the
+-        // push should show the card first, not skip straight past it into
+-        // whatever action the card's CTA performs.
+-        //
+-        // /home/notif, NOT /home: same feed, but deliberately excluded from
+-        // useOrbFrontDoor's MAXINA_LANDING_ROUTES (vitana-v1) — a notification
+-        // tap is a full page load there, which otherwise auto-opens the Orb
+-        // front-door overlay on top of the card the push is about.
+-        data: { url: '/home/notif', entity_id: announcementId },
+-      };
+-      notifyUsersAsync(userIds, tenant_id, 'feature_announcement', payload, supabase);
++    // Awaited + Promise.allSettled, not fire-and-forget: the sibling
++    // daily-feature-tip cron route (VTID-03744 / PR #2986) hit exactly this
++    // shape of bug — an un-awaited dispatch left in flight when the process
++    // was recycled right after the HTTP response, silently delivering to
++    // only a fraction of recipients (33/181 observed live). This route sends
++    // to the same scale of audience, so it gets the same fix rather than
++    // reproducing the failure the next time it's used for a full-tenant blast.
++    const dispatchResults = await Promise.allSettled(
++      [...groups.entries()].flatMap(([locale, userIds]) => {
++        const payload: NotificationPayload = {
++          title: tt('notif.feature_announcement.title', locale, { feature: pickLocale(feature_title, locale) }),
++          body: pickLocale(description, locale),
++          // Push tap lands on the News Feed (where the card itself lives) —
++          // deliberately NOT `deep_link`, which is the card's own "Try it
++          // yourself" in-app button target (e.g. /home/compose). Tapping the
++          // push should show the card first, not skip straight past it into
++          // whatever action the card's CTA performs.
++          //
++          // /home/notif, NOT /home: same feed, but deliberately excluded from
++          // useOrbFrontDoor's MAXINA_LANDING_ROUTES (vitana-v1) — a notification
++          // tap is a full page load there, which otherwise auto-opens the Orb
++          // front-door overlay on top of the card the push is about.
++          data: { url: '/home/notif', entity_id: announcementId },
++        };
++        return userIds.map((uid) => notifyUser(uid, tenant_id, 'feature_announcement', payload, supabase));
++      }),
++    );
++    const dispatched = dispatchResults.filter((r) => r.status === 'fulfilled').length;
++    const failedCount = dispatchResults.length - dispatched;
++    if (failedCount > 0) {
++      console.warn(`[${VTID}] ${failedCount}/${dispatchResults.length} notifyUser calls rejected`);
+     }
+ 
++    // notified_at reflects dispatch actually completing, not just being scheduled.
+     await supabase
+       .from('feature_announcements')
+       .update({ notified_at: new Date().toISOString() })
+@@ -203,11 +224,11 @@ router.post('/', async (req: AuthenticatedRequest, res: Response) => {
+ 
+     console.log(
+       `[${VTID}] ${isTestSend ? 'Test-published' : 'Published'} announcement ${announcementId} by ${email} ` +
+-      `to ${targetUserIds.length} user(s) across ${groups.size} locale(s)`,
++      `dispatched=${dispatched}/${targetUserIds.length} across ${groups.size} locale(s)`,
+     );
+ 
+     await emitPublishEvent(
+-      { announcement_id: announcementId, tenant_id, variant, test_send: isTestSend, sent_to: targetUserIds.length },
++      { announcement_id: announcementId, tenant_id, variant, test_send: isTestSend, sent_to: targetUserIds.length, dispatched },
+       email,
+     );
+ 
+@@ -215,6 +236,7 @@ router.post('/', async (req: AuthenticatedRequest, res: Response) => {
+       ok: true,
+       announcement_id: announcementId,
+       test_send: isTestSend,
++      dispatched,
+       sent_to: targetUserIds.length,
+       locales: [...groups.keys()],
+     });
+diff --git a/services/gateway/test/admin-feature-announcements.test.ts b/services/gateway/test/admin-feature-announcements.test.ts
+index 8a6e704..83aa8ac 100644
+--- a/services/gateway/test/admin-feature-announcements.test.ts
++++ b/services/gateway/test/admin-feature-announcements.test.ts
+@@ -16,7 +16,7 @@ import express from 'express';
+ import request from 'supertest';
+ 
+ let mockSupabase: any;
+-const notifyUsersAsyncMock = jest.fn();
++const notifyUserMock = jest.fn();
+ const bulkGetUserLocalesMock = jest.fn();
+ 
+ // Mirrors the real two-stage contract: requireAuth verifies the token and
+@@ -48,7 +48,7 @@ jest.mock('../src/middleware/auth-supabase-jwt', () => ({
+ jest.mock('../src/lib/supabase', () => ({ getSupabase: () => mockSupabase }));
+ 
+ jest.mock('../src/services/notification-service', () => ({
+-  notifyUsersAsync: (...args: any[]) => notifyUsersAsyncMock(...args),
++  notifyUser: (...args: any[]) => notifyUserMock(...args),
+ }));
+ 
+ jest.mock('../src/i18n/server-locale', () => ({
+@@ -105,7 +105,8 @@ const VALID_BODY = {
+ };
+ 
+ beforeEach(() => {
+-  notifyUsersAsyncMock.mockClear();
++  notifyUserMock.mockReset();
++  notifyUserMock.mockResolvedValue({ pushed: true, inapp: true });
+   bulkGetUserLocalesMock.mockReset();
+   bulkGetUserLocalesMock.mockResolvedValue(new Map());
+   mockSupabase = makeFakeSupabase({ insertResult: { data: { id: 'ann-1' }, error: null } });
+@@ -159,11 +160,11 @@ describe('POST /api/v1/admin/feature-announcements — happy paths', () => {
+       .send(VALID_BODY);
+ 
+     expect(r.status).toBe(200);
+-    expect(r.body).toMatchObject({ ok: true, announcement_id: 'ann-1', test_send: false, sent_to: 2 });
+-    // One notifyUsersAsync call per locale group (de: [u1], en: [u2]).
+-    expect(notifyUsersAsyncMock).toHaveBeenCalledTimes(2);
+-    const calledUserIdGroups = notifyUsersAsyncMock.mock.calls.map((c: any[]) => c[0]);
+-    expect(calledUserIdGroups.flat().sort()).toEqual(['u1', 'u2']);
++    expect(r.body).toMatchObject({ ok: true, announcement_id: 'ann-1', test_send: false, sent_to: 2, dispatched: 2 });
++    // One notifyUser call per recipient (awaited, not fire-and-forget).
++    expect(notifyUserMock).toHaveBeenCalledTimes(2);
++    const calledUserIds = notifyUserMock.mock.calls.map((c: any[]) => c[0]);
++    expect(calledUserIds.sort()).toEqual(['u1', 'u2']);
+   });
+ 
+   it('staged test send scopes to recipient_ids and skips the tenant-wide lookup', async () => {
+@@ -175,9 +176,29 @@ describe('POST /api/v1/admin/feature-announcements — happy paths', () => {
+       .send({ ...VALID_BODY, recipient_ids: ['me-1'] });
+ 
+     expect(r.status).toBe(200);
+-    expect(r.body).toMatchObject({ ok: true, test_send: true, sent_to: 1 });
+-    expect(notifyUsersAsyncMock).toHaveBeenCalledTimes(1);
+-    expect(notifyUsersAsyncMock.mock.calls[0][0]).toEqual(['me-1']);
++    expect(r.body).toMatchObject({ ok: true, test_send: true, sent_to: 1, dispatched: 1 });
++    expect(notifyUserMock).toHaveBeenCalledTimes(1);
++    expect(notifyUserMock.mock.calls[0][0]).toEqual('me-1');
++  });
++
++  it('one rejected notifyUser call does not block or miscount the others (Promise.allSettled)', async () => {
++    mockSupabase = makeFakeSupabase({
++      insertResult: { data: { id: 'ann-1' }, error: null },
++      membersResult: { data: [{ user_id: 'u1' }, { user_id: 'u2' }], error: null },
++    });
++    bulkGetUserLocalesMock.mockResolvedValue(new Map([['u1', 'de'], ['u2', 'en']]));
++    notifyUserMock.mockImplementation((userId: string) =>
++      userId === 'u1' ? Promise.reject(new Error('boom')) : Promise.resolve({ pushed: true, inapp: true }),
++    );
++
++    const r = await request(makeApp())
++      .post('/api/v1/admin/feature-announcements')
++      .set('Authorization', 'Bearer admin')
++      .send(VALID_BODY);
++
++    expect(r.status).toBe(200);
++    expect(r.body).toMatchObject({ ok: true, sent_to: 2, dispatched: 1 });
++    expect(notifyUserMock).toHaveBeenCalledTimes(2);
+   });
+ });
+ 

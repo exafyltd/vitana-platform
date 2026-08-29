@@ -28,6 +28,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { buildVertexWakeBriefBlock } from '../../../../src/orb/live/session/live-session-controller';
 
 const ORB_LIVE_PATH = path.resolve(__dirname, '../../../../src/routes/orb-live.ts');
 const CONTROLLER_PATH = path.resolve(
@@ -72,5 +73,59 @@ describe('VTID-03101: setup-message builder reads both fields when rendering sys
     // the session — otherwise the override never reaches Gemini even when
     // the controller stored it.
     expect(orbLiveSource).toMatch(/session\.wakeBriefOverrideBlock\s*\|\|\s*''/);
+  });
+});
+
+// VTID-03786 (Codex P1 finding on PR #3225) — this block is injected into
+// the SAME assembled Nova system instruction as buildGuidedTopicNarrationBlock
+// (concatenated in orb-live.ts, both flow through session.wakeBriefOverrideBlock
+// / session.guidedTopicNarrationContent into the same setup-message string).
+// It fires for nearly every fresh (non-reconnect) session with a wake-brief
+// winner — not just guided-topic ones — since shouldInjectWakeBriefOverrideBlock
+// returns true whenever !isReconnectStart. It independently carried BOTH
+// trigger-pattern classes VTID-03785/03786 already found and removed
+// elsewhere: an "OVERRIDES every other rule" authority-override assertion,
+// and quoted hypothetical spoken example phrases ("Wie kann ich dir
+// helfen?" / "How can I help?"). Fixing only the guided-topic-narration copy
+// (VTID-03786's original scope) left this — the copy that actually fires on
+// literally every fresh session — untouched, which is why a live re-test
+// after that fix alone still showed nova_validation blocking guided-topic
+// sessions unchanged.
+describe('VTID-03786: buildVertexWakeBriefBlock does not carry known Nova-filter trigger patterns', () => {
+  it('does NOT assert this block overrides every other rule', () => {
+    const block = buildVertexWakeBriefBlock('Hallo, hier ist dein Update.', 'de', null);
+    expect(block).not.toMatch(/OVERRIDES every other/);
+  });
+
+  it('does NOT quote hypothetical spoken example phrases', () => {
+    const block = buildVertexWakeBriefBlock('Hallo, hier ist dein Update.', 'de', null);
+    expect(block).not.toMatch(/"Wie kann ich dir helfen\?"/);
+    expect(block).not.toMatch(/"How can I help\?"/);
+    expect(block).not.toMatch(/"Was steht an\?"/);
+    expect(block).not.toMatch(/"Was liegt an\?"/);
+  });
+
+  it('still instructs the model to speak the wake-brief line verbatim as its first turn', () => {
+    const block = buildVertexWakeBriefBlock('Hallo, hier ist dein Update.', 'de', null);
+    expect(block).toContain('Hallo, hier ist dein Update.');
+    expect(block).toMatch(/first spoken turn/i);
+  });
+});
+
+describe('VTID-03786: LiveKit first-turn suppression directive does not carry known Nova-filter trigger patterns', () => {
+  it('orb-livekit.ts does NOT assert the directive overrides every other rule', () => {
+    const livekitSource = fs.readFileSync(
+      path.resolve(__dirname, '../../../../src/routes/orb-livekit.ts'),
+      'utf8',
+    );
+    expect(livekitSource).not.toMatch(/OVERRIDES every other greeting rule/);
+  });
+
+  it('orb-livekit.ts does NOT quote a hypothetical "How can I help?" example', () => {
+    const livekitSource = fs.readFileSync(
+      path.resolve(__dirname, '../../../../src/routes/orb-livekit.ts'),
+      'utf8',
+    );
+    expect(livekitSource).not.toMatch(/"How can I\nhelp\?"|"How can I help\?"/);
   });
 });

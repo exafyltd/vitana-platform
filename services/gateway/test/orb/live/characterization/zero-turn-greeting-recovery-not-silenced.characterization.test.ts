@@ -65,12 +65,16 @@ describe('VTID-03634 — zero-turn-recovery resend is never silenced as a reconn
     // user actually experienced mid-conversation) is not also silenced.
     expect(orbLive).toMatch(/\(session as any\)\._freshOpenAfterZeroTurnRecovery = false;/);
 
-    // isReconnect must be suppressed by the override, not just logged.
+    // isReconnect must be suppressed by the override, not just logged. VTID-
+    // 03727 added a second suppression (a pending guided topic this session
+    // hasn't spoken yet) ahead of this one — both must independently be able
+    // to force isReconnect false, so match on the conjunction containing this
+    // flag rather than requiring it to be the first term.
     const openDecisionStart = orbLive.indexOf('const _openDecision = decideOpening({', idx);
     expect(openDecisionStart).toBeGreaterThan(-1);
-    const openDecisionBlock = orbLive.slice(openDecisionStart, openDecisionStart + 400);
+    const openDecisionBlock = orbLive.slice(openDecisionStart, openDecisionStart + 600);
     expect(openDecisionBlock).toMatch(
-      /isReconnect:\s*!_freshOpenAfterZeroTurnRecovery\s*&&\s*\(\(session as any\)\._reconnectCount \|\| 0\) > 0/,
+      /isReconnect:[\s\S]*!_freshOpenAfterZeroTurnRecovery\s*&&\s*\(\(session as any\)\._reconnectCount \|\| 0\) > 0/,
     );
   });
 

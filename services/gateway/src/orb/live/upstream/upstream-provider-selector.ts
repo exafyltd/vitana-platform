@@ -90,6 +90,13 @@ export type SelectionReason =
   // separately from the canary reason so dashboards can tell a 4-user canary
   // from the whole user base.
   | 'nova_global_enabled'
+  // VTID-03723 — VERTEX IS REMOVED AS A DESTINATION. Every branch that used to
+  // pin to Vertex now resolves to Nova, or to the Polly cascade when Nova
+  // cannot speak the session language. These two reasons name that
+  // substitution so telemetry says WHY a session landed where it did instead
+  // of silently reporting the old vertex reason against a non-vertex provider.
+  | 'vertex_removed_forced_nova'
+  | 'vertex_removed_cascaded'
   | 'nova_disabled'               // nova requested but disabled/not-ready → vertex
   | 'nova_not_allowlisted'        // nova gate on but identity not in allowlist → vertex
   | 'nova_language_unsupported'   // session language outside en/de/fr/es → vertex
@@ -303,6 +310,50 @@ function isIdentityAllowlisted(
  * The caller is responsible for emitting an OASIS event based on the
  * returned decision (see `connectToLiveAPI`).
  */
+/**
+ * VTID-03723 — resolve a decision WITHOUT Vertex, which no longer exists.
+ *
+ * Vertex Live died with the GCP project (billing disabled 2026-08-16). The
+ * selector nevertheless kept `vertex` as the destination of ELEVEN branches,
+ * including `default` and `system_config_vertex` — and staging's
+ * `voice.active_provider` row still said `vertex`, so EVERY pre-login session
+ * short-circuited to the Gemini live client at the very top of this function,
+ * before the language gate or the cascade were ever consulted.
+ *
+ * Measured: `orb.upstream.cascaded.*` has NEVER fired — not one success, not
+ * one failure — while `/api/v1/orb/health` reported
+ * `model: gemini-2.0-flash-exp`. Polish and Portuguese therefore got a
+ * correct-sounding per-language Gemini VOICE speaking ENGLISH, for weeks, and
+ * every fix aimed at Nova or the cascade was landing on a path no session took.
+ *
+ * The standing rule is unambiguous (CLAUDE.md, IF-THEN 27): there is no
+ * sanctioned Google dependency left at all. So this is not a routing
+ * preference — Vertex is not a destination any more.
+ *
+ * Order is the whole point: cascade FIRST when Nova cannot speak the language,
+ * because forcing Polish onto Nova is what produced English in the first place.
+ */
+function resolveWithoutVertex(
+  ctx: UpstreamSelectorContext,
+  requested: UpstreamProviderName | null,
+  error?: string,
+): UpstreamSelectionDecision {
+  const languageBlocked = ctx.nova ? ctx.nova.languageSupported !== true : false;
+  const rescue = tryCascadeRescue(ctx, languageBlocked);
+  if (rescue) {
+    return { ...rescue, requested, reason: 'vertex_removed_cascaded' };
+  }
+  return {
+    provider: 'nova_sonic',
+    requested,
+    reason: 'vertex_removed_forced_nova',
+    livekitReady: false,
+    canary: false,
+    novaReady: ctx.nova?.enabled === true,
+    ...(error ? { error } : {}),
+  };
+}
+
 export function selectUpstreamProvider(
   ctx: UpstreamSelectorContext,
 ): UpstreamSelectionDecision {
@@ -314,16 +365,12 @@ export function selectUpstreamProvider(
       ? ctx.systemConfigActiveProvider
       : null;
 
-  // Highest-priority signal: env override. `ORB_LIVE_PROVIDER=vertex` is
-  // the emergency rollback — it beats every canary including Nova's.
+  // VTID-03723: `ORB_LIVE_PROVIDER=vertex` used to be the emergency
+  // rollback to Vertex — it beat every canary including Nova's. Vertex no
+  // longer exists as a destination, so this "rollback" now lands on
+  // Nova/the cascade like every other path in this function.
   if (envChoice === 'vertex') {
-    return {
-      provider: 'vertex',
-      requested: 'vertex',
-      reason: 'env_explicit_vertex',
-      livekitReady: false,
-      canary: false,
-    };
+    return resolveWithoutVertex(ctx, 'vertex');
   }
   if (envChoice === 'livekit') {
     return evaluateLiveKitRequest(ctx, 'livekit', 'env_explicit_livekit');
@@ -332,20 +379,22 @@ export function selectUpstreamProvider(
     return evaluateNovaRequest(ctx, 'env_explicit_nova_sonic');
   }
   // BOOTSTRAP-NOVA-SONIC-VOICE: a NON-EMPTY unknown provider string is a
-  // validation failure, pinned to the default provider — never a silent
-  // fall-through to whatever the DB row says.
+  // validation failure. VTID-03723: no longer pinned to Vertex — forced to
+  // Nova/the cascade instead, same as every other branch here. `reason`
+  // stays `provider_invalid` (a config error, not a routing substitution)
+  // even though the destination is now resolved by resolveWithoutVertex().
   if (
     typeof ctx.envProviderOverride === 'string' &&
     ctx.envProviderOverride.trim().length > 0 &&
     envChoice === null
   ) {
     return {
-      provider: 'vertex',
-      requested: null,
+      ...resolveWithoutVertex(
+        ctx,
+        null,
+        'Unknown ORB_LIVE_PROVIDER value; pinning away from dead Vertex.',
+      ),
       reason: 'provider_invalid',
-      livekitReady: false,
-      canary: false,
-      error: 'Unknown ORB_LIVE_PROVIDER value; pinning to Vertex.',
     };
   }
 
@@ -358,30 +407,28 @@ export function selectUpstreamProvider(
     // a vertex DB flag for THIS identity only — the shared system_config
     // row is not environment-isolated between AWS and GCP staging, so the
     // canary must not depend on flipping it.
+    //
+    // VTID-03723 — root cause of the pl/pt English-speaking incident:
+    // staging's `voice.active_provider` row said `vertex`, and this branch
+    // used to short-circuit straight to a (now-dead) Vertex connect before
+    // Nova/the cascade were ever consulted. `evaluateNovaCanary` already
+    // forces through when it applies; the fallback below is a second,
+    // defense-in-depth guarantee that this branch can never return
+    // `provider: 'vertex'` either.
     const novaCanary = evaluateNovaCanary(ctx);
     if (novaCanary) return novaCanary;
-    return {
-      provider: 'vertex',
-      requested: 'vertex',
-      reason: 'system_config_vertex',
-      livekitReady: false,
-      canary: false,
-    };
+    return resolveWithoutVertex(ctx, 'vertex');
   }
   if (sysChoice === 'livekit') {
     return evaluateLiveKitRequest(ctx, 'livekit', 'system_config_livekit');
   }
 
-  // Nothing requested → Nova canary, else default.
+  // Nothing requested → Nova canary, else Nova/cascade (VTID-03723: no
+  // longer Vertex — this was the `default` reason's old destination and is
+  // the exact path every pre-login session takes).
   const novaCanary = evaluateNovaCanary(ctx);
   if (novaCanary) return novaCanary;
-  return {
-    provider: 'vertex',
-    requested: null,
-    reason: 'default',
-    livekitReady: false,
-    canary: false,
-  };
+  return resolveWithoutVertex(ctx, null);
 }
 
 /**
@@ -422,37 +469,26 @@ function evaluateNovaRequest(
   happyReason: 'env_explicit_nova_sonic' | 'system_config_nova_sonic',
 ): UpstreamSelectionDecision {
   const nova = ctx.nova;
-  const vertexDead = ctx.vertexUnavailable === true;
 
   if (!nova || nova.enabled !== true) {
-    // VTID-03703: Nova itself isn't ready. Vertex is dead — never pin there.
+    // VTID-03703 / VTID-03723: Nova itself isn't ready. Vertex is not a
+    // destination any more — always force through, never pin to Vertex.
     // `nova.languageSupported` is computed independently of `nova.enabled`
     // by the caller (session language vs Nova's supported set), so it is
     // still meaningful here even though Nova is off; `nova` can also be
     // fully absent (no context at all), in which case cascade eligibility
     // can't be assessed and Nova is forced through blind.
-    if (vertexDead) {
-      const languageBlocked = nova ? nova.languageSupported !== true : false;
-      const rescue = tryCascadeRescue(ctx, languageBlocked);
-      if (rescue) return rescue;
-      return {
-        provider: 'nova_sonic',
-        requested: 'nova_sonic',
-        reason: 'nova_forced_vertex_unavailable',
-        livekitReady: false,
-        canary: false,
-        novaReady: false,
-        error: 'Nova Sonic disabled/not-ready and Vertex is unavailable; forcing Nova rather than a dead Vertex connect.',
-      };
-    }
+    const languageBlocked = nova ? nova.languageSupported !== true : false;
+    const rescue = tryCascadeRescue(ctx, languageBlocked);
+    if (rescue) return rescue;
     return {
-      provider: 'vertex',
+      provider: 'nova_sonic',
       requested: 'nova_sonic',
-      reason: 'nova_disabled',
+      reason: 'nova_forced_vertex_unavailable',
       livekitReady: false,
       canary: false,
       novaReady: false,
-      error: 'Nova Sonic requested but disabled or not ready; pinning to Vertex.',
+      error: 'Nova Sonic disabled/not-ready; Vertex no longer exists as a destination. Forcing Nova regardless.',
     };
   }
 
@@ -460,42 +496,14 @@ function evaluateNovaRequest(
   const languageBlocked = nova.languageSupported !== true;
   const identityBlocked = nova.identityAllowed !== true;
 
-  if (runtimeBlocked && !vertexDead) {
-    return {
-      provider: 'vertex',
-      requested: 'nova_sonic',
-      reason: 'nova_runtime_unsupported',
-      livekitReady: false,
-      canary: false,
-      novaReady: false,
-      error: 'Nova Sonic requires the AWS ECS runtime (HTTP/2 bidirectional stream); pinning to Vertex.',
-    };
-  }
-  if (languageBlocked && !vertexDead) {
-    return {
-      provider: 'vertex',
-      requested: 'nova_sonic',
-      reason: 'nova_language_unsupported',
-      livekitReady: false,
-      canary: false,
-      novaReady: false,
-      error: 'Session language is outside the Nova canary set; pinning to Vertex.',
-    };
-  }
-  // VTID-03703: `identityAllowed` reflects deliberate canary/allowlist
-  // policy, not a Nova capability gap — but Vertex being permanently dead
-  // outranks that policy. Force through rather than pin to Vertex.
-  if (identityBlocked && !vertexDead) {
-    return {
-      provider: 'vertex',
-      requested: 'nova_sonic',
-      reason: 'nova_not_allowlisted',
-      livekitReady: false,
-      canary: true,
-      novaReady: false,
-      error: 'Session identity is not on the Nova canary allowlist; pinning to Vertex.',
-    };
-  }
+  // VTID-03723: the three `&& !vertexDead` early-returns to `provider:
+  // 'vertex'` that used to live here (runtime/language/identity blocked)
+  // are gone — Vertex is not a destination any more, so every one of these
+  // gates now falls through to the same forced Nova/cascade resolution
+  // below regardless of which gate blocked. `identityAllowed` reflects
+  // deliberate canary/allowlist policy, not a Nova capability gap, but a
+  // policy gate outranking "there is no other destination" no longer makes
+  // sense once that other destination is permanently gone.
   const forced = runtimeBlocked || languageBlocked || identityBlocked;
   const rescue = tryCascadeRescue(ctx, languageBlocked);
   if (rescue) return rescue;
@@ -519,13 +527,13 @@ function evaluateNovaCanary(
   ctx: UpstreamSelectorContext,
 ): UpstreamSelectionDecision | null {
   const nova = ctx.nova;
-  const vertexDead = ctx.vertexUnavailable === true;
 
   if (!nova || nova.enabled !== true) {
-    // VTID-03703: returning null here means "fall through to the caller's
-    // normal Vertex path" — exactly the silent Vertex hand-off that must
-    // never happen once Vertex is dead. Cascade first, then force Nova.
-    if (!vertexDead) return null;
+    // VTID-03703 / VTID-03723: this used to return `null` (meaning "fall
+    // through to the caller's normal Vertex path") whenever Vertex wasn't
+    // yet known-dead — exactly the silent Vertex hand-off that must never
+    // happen now that Vertex is not a destination at all. Cascade first,
+    // then force Nova, unconditionally.
     const languageBlocked = nova ? nova.languageSupported !== true : false;
     const rescue = tryCascadeRescue(ctx, languageBlocked);
     if (rescue) return { ...rescue, requested: null };
@@ -541,13 +549,12 @@ function evaluateNovaCanary(
 
   const runtimeBlocked = nova.runtime !== undefined && nova.runtime !== 'aws-ecs';
   const languageBlocked = nova.languageSupported !== true;
-  if ((runtimeBlocked || languageBlocked) && !vertexDead) return null;
 
-  // VTID-03703: identity/allowlist gating is policy, not a Nova capability
-  // gap, but a dead Vertex outranks that policy — force through instead of
-  // falling back to the (dead) default path.
+  // VTID-03723: identity/allowlist gating is policy, not a Nova capability
+  // gap, but a permanently-gone Vertex outranks that policy — force through
+  // instead of returning `null` to fall back to a (now nonexistent) Vertex
+  // default path.
   const identityBlocked = nova.identityAllowed !== true;
-  if (identityBlocked && !vertexDead) return null;
 
   // VTID-03501: a globally-promoted session is NOT a canary session. Reporting
   // `canary: true` for the whole user base would make every canary-scoped
@@ -572,16 +579,19 @@ function evaluateLiveKitRequest(
   requested: UpstreamProviderName,
   happyReason: SelectionReason,
 ): UpstreamSelectionDecision {
+  // VTID-03723: every branch below used to pin to Vertex when the LiveKit
+  // request couldn't be satisfied. Vertex is not a destination any more —
+  // each now resolves via resolveWithoutVertex() (Nova, or the cascade when
+  // Nova can't speak the session language), with the original `livekitReady`
+  // / `canary` telemetry flags preserved since those describe the LiveKit
+  // gate outcome, not the routing substitution.
   const missing = livekitCredsMissing(ctx.livekitCredentials);
   if (missing.length > 0) {
-    return {
-      provider: 'vertex',
+    return resolveWithoutVertex(
+      ctx,
       requested,
-      reason: 'livekit_config_invalid',
-      livekitReady: false,
-      canary: false,
-      error: `LiveKit credentials missing: ${missing.join(', ')}`,
-    };
+      `LiveKit credentials missing: ${missing.join(', ')}`,
+    );
   }
 
   // Creds are valid. Check the L2.1 canary gate.
@@ -597,32 +607,31 @@ function evaluateLiveKitRequest(
         canary: true,
       };
     }
-    // Canary enabled but identity not allowlisted → pinned to vertex with
-    // a distinct reason so the cockpit can distinguish "I'm running canary
-    // but this user isn't in" from "canary is off entirely."
+    // Canary enabled but identity not allowlisted → forced to Nova/cascade,
+    // `canary: true` preserved so the cockpit can distinguish "I'm running
+    // canary but this user isn't in" from "canary is off entirely."
     return {
-      provider: 'vertex',
-      requested,
-      reason: 'canary_not_allowlisted',
-      livekitReady: false,
-      canary: true,
-      error:
+      ...resolveWithoutVertex(
+        ctx,
+        requested,
         'LiveKit requested with valid creds and canary enabled, but the ' +
-        'session identity is not in the canary allowlist. Pinning to Vertex. ' +
-        `Would-have-selected reason: ${happyReason}.`,
+          'session identity is not in the canary allowlist. ' +
+          `Would-have-selected reason: ${happyReason}.`,
+      ),
+      canary: true,
     };
   }
 
-  // Canary not enabled (or unconfigured) → L1 pin holds.
+  // Canary not enabled (or unconfigured) → the L1 pin used to hold here
+  // (routing to Vertex). `livekitReady: true` preserved — creds ARE valid,
+  // it's only the canary gate that's closed.
   return {
-    provider: 'vertex',
-    requested,
-    reason: 'pinned_to_vertex_l1',
-    livekitReady: true,
-    canary: false,
-    error:
+    ...resolveWithoutVertex(
+      ctx,
+      requested,
       'LiveKit upstream client not enabled outside the canary gate; ' +
-      'pinning to Vertex. ' +
-      `Would-have-selected reason: ${happyReason}.`,
+        `Would-have-selected reason: ${happyReason}.`,
+    ),
+    livekitReady: true,
   };
 }

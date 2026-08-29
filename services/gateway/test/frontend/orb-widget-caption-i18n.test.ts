@@ -12,12 +12,20 @@ import * as path from 'path';
 // small set of fixed status phrases, not spoken text.
 //
 // Fix: a centralized _CAPTIONS dictionary + _resolveCaptionLocale()/_loc()/
-// _caption() resolver mirroring the gateway's own canonical locale set
-// (services/gateway/src/i18n/catalog.ts GATEWAY_LOCALES: de, en, es, sr,
-// fr, pt, ru, pl, zh, ar). _pickLang() (de/en-only) is kept, but scoped to
-// exactly one remaining use: selecting the pre-rendered disconnect-alert
-// MP3 clip id (_ALERT_CLIPS only has -en/-de files) — widening it would
-// silently request a nonexistent MP3 for 8 of 10 locales.
+// _caption() resolver originally mirroring the gateway's own canonical
+// locale set (services/gateway/src/i18n/catalog.ts GATEWAY_LOCALES: de, en,
+// es, sr, fr, pt, ru, pl, zh, ar). _pickLang() (de/en-only) is kept, but
+// scoped to exactly one remaining use: selecting the pre-rendered
+// disconnect-alert MP3 clip id (_ALERT_CLIPS only has -en/-de files) —
+// widening it would silently request a nonexistent MP3 for the other
+// locales.
+//
+// VTID-03733 — `tr` added on top, one locale ahead of GATEWAY_LOCALES on
+// purpose (see orb-widget.js's own comment on _CAPTION_LOCALES): reported
+// live as "Turkish still has English subtitles/captions under the orb
+// unlike other languages" after VTID-03730 added Turkish to ORB voice
+// itself — this dictionary is a separate table that VTID-03730 never
+// touched, the same missed-one-more-table shape as VTID-03578/03681/03719.
 //
 // Static source checks (same approach as the sibling orb-widget suites):
 // the widget is a plain browser IIFE with no export surface, so the
@@ -28,7 +36,7 @@ const WIDGET_PATH = path.resolve(
   '../../src/frontend/command-hub/orb-widget.js',
 );
 
-const CAPTION_LOCALES = ['en', 'de', 'es', 'sr', 'fr', 'pt', 'ru', 'pl', 'zh', 'ar'];
+const CAPTION_LOCALES = ['en', 'de', 'es', 'sr', 'fr', 'pt', 'ru', 'pl', 'zh', 'ar', 'tr'];
 
 function extractFunctionBody(source: string, signature: string): string {
   const sigIdx = source.indexOf(signature);
@@ -108,7 +116,7 @@ describe('orb-widget caption i18n (BOOTSTRAP-ORB-CAPTION-I18N)', () => {
     // pattern under-counts.
     const Q = `(?:'[^']*'|"[^"]*")`;
     const entryPattern = new RegExp(
-      `\\{ en: ${Q}, de: ${Q}, es: ${Q}, sr: ${Q}, fr: ${Q}, pt: ${Q}, ru: ${Q}, pl: ${Q}, zh: ${Q}, ar: ${Q} \\}`,
+      `\\{ en: ${Q}, de: ${Q}, es: ${Q}, sr: ${Q}, fr: ${Q}, pt: ${Q}, ru: ${Q}, pl: ${Q}, zh: ${Q}, ar: ${Q}, tr: ${Q} \\}`,
       'g',
     );
     const pairs = source.match(entryPattern) || [];
@@ -173,6 +181,26 @@ describe('orb-widget caption i18n (BOOTSTRAP-ORB-CAPTION-I18N)', () => {
         expect(val).not.toBe(en);
       }
     }
+  });
+
+  it('_CAPTION_LOCALES (the resolver admit-list) includes tr, so _resolveCaptionLocale() actually reaches the tr translations instead of falling through to en', () => {
+    // AC-3 (VTID-03733): a translation existing in a dictionary but absent
+    // from this admit-list would still resolve to 'en' at runtime — the
+    // dictionary-shape tests above can't catch that on their own, so this
+    // pins the admit-list array itself directly.
+    const declMatch = source.match(/var _CAPTION_LOCALES = (\[[^\]]*\]);/);
+    expect(declMatch).not.toBeNull();
+    const locales = declMatch![1];
+    for (const lc of CAPTION_LOCALES) {
+      expect(locales).toMatch(new RegExp(`'${lc}'`));
+    }
+    expect(CAPTION_LOCALES).toContain('tr');
+
+    // And that _resolveCaptionLocale() itself walks this exact array (not a
+    // separate hardcoded list) before falling back to 'en'.
+    const body = extractFunctionBody(source, 'function _resolveCaptionLocale(');
+    expect(body).toMatch(/_CAPTION_LOCALES\[i\]/);
+    expect(body).toMatch(/return\s+['"]en['"]/);
   });
 
   it('.vtorb-status font-size and min-height are 19px/26px in both the inline style and the injected stylesheet', () => {

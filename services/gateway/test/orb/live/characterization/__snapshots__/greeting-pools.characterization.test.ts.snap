@@ -92,6 +92,16 @@ exports[`A0.2 characterization: greeting pools SHORT_GAP_GREETING_PHRASES (froze
     "Поздрав. Како могу да те подржим данас?",
     "Лепо што си се вратио. Како могу да помогнем?",
   ],
+  "tr": [
+    "Tekrar hoş geldin. Sıradaki adımını göstereyim.",
+    "Seni tekrar duymak güzel. Bir sonraki adıma bakalım.",
+    "Merhaba yine. Seni bir sonraki adıma götüreyim.",
+    "Buradayım, senin için. Sıradaki adımı göstereyim.",
+    "Tekrar hoş geldin. Nerede kaldığımızı gösterebilirim.",
+    "Seni tekrar görmek güzel. Sırada ne var, göstereyim.",
+    "Merhaba. Bugün sana nasıl yardımcı olabilirim?",
+    "Tekrar hoş geldin. Devam edelim mi?",
+  ],
   "zh": [
     "欢迎回来。我能为你做什么？",
     "很高兴再次听到你。需要我帮什么忙吗？",

@@ -380,8 +380,18 @@ export function dayCloseNightKey(todayLocalIso: string, localHour: number): stri
  * a reconnect must stay silent, and a goodnight is loud.
  *
  * Returns null when it does not fire, so each ladder keeps its own ordering.
+ *
+ * Exported (VTID-03743 review fix, Codex P2) so the transport can cheaply
+ * pre-check "would day-close win?" BEFORE paying for the expensive
+ * new-day-overview gather (`gatherOverviewPayload` + a ledger read, up to
+ * ~3.8s combined) — this rung outranks `tryNewDayOverviewRung` on both
+ * ladders (see `computeSafeFastLadder`/the sync ladder below), so any
+ * payload gathered while day-close is eligible is guaranteed to be thrown
+ * away. This function is pure and does no I/O, so calling it twice (once
+ * as a pre-check, once for real inside `computeGreetingDecision`) costs
+ * nothing beyond the cheap comparisons it already does.
  */
-function tryDayCloseRung(ctx: GreetingDecisionContext): GreetingDecision | null {
+export function tryDayCloseRung(ctx: GreetingDecisionContext): GreetingDecision | null {
   if (!_dayCloseRungEnabled) return null;
   if (ctx.isAnonymous) return null;
   // `todayTz: ''` is the documented placeholder orb-live.ts seeds the SYNC
@@ -649,8 +659,76 @@ function tryNewDayOverviewRung(
 const SHORT_GAP_OPENER_INTENT =
   "Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself, never ask what they want. Compose this sentence yourself, in the user's own language, in your own words. There is no approved phrasing to reproduce and nothing to recite — do not reuse wording you or another session has used before; vary it every single time.";
 
+/**
+ * VTID-03724 — an explicit, deliberate guided-topic tap (a My Journey session
+ * the user just tapped) must outrank every PASSIVE/ambient opener on BOTH
+ * ladders — day_close, newday_overview, and everything the safe-fast ladder
+ * tries before it ever reaches override_v2.
+ *
+ * Root cause this fixes: `override_v2` (rung 8 of the normal ladder) was the
+ * ONLY rung that ever consulted `ctx.guidedTopicNarrationContent`, and
+ * `newday_overview` (rung 7b, ABOVE it) was placed there under the reasoning
+ * "the wake-brief's one-liner is what the user has been getting INSTEAD of
+ * their briefing" (VTID-03607) — i.e. a passive nudge competing for
+ * attention with a real briefing. That reasoning never accounted for the
+ * SAME slot sometimes carrying a deliberate user action instead of a passive
+ * nudge. Once VTID-03646 fixed `newday_overview`'s guard to actually be
+ * reachable (it had been permanently guard-rejected in production before
+ * that), it started firing on essentially every user's first session of the
+ * day — and silently swallowing any guided-topic tap that happened to land
+ * there, because nothing upstream of override_v2 ever looked.
+ *
+ * Confirmed live via `oasis_events` (VTID-03724): the wake-brief ranker
+ * correctly selected the guided-topic candidate
+ * (`orb.livekit.next_action.candidate`, `winner:true`,
+ * `dedupe_key:"guided_topic:T001"`) and the session's own `greeting_sent`
+ * event STILL reported `wake_opener:"newday_overview"` moments later — the
+ * tapped session was never spoken; the daily briefing was, instead.
+ *
+ * The safe-fast ladder had ZERO guided-topic awareness before this — not
+ * even the (broken) priority order the normal ladder had. Extracted as one
+ * shared rung, reusing rung 8's exact directive-composition logic, so both
+ * ladders can never drift apart on this again (the same anti-drift
+ * reasoning `tryDayCloseRung`/`tryNewDayOverviewRung` are already extracted
+ * for).
+ */
+function tryGuidedTopicRung(ctx: GreetingDecisionContext): GreetingDecision | null {
+  if (!ctx.guidedTopicNarrationContent || ctx.isAnonymous) return null;
+  const od = ctx.openDecision;
+  const wakeOverrideLine = od.mode === 'speak' ? (od.line ?? '').trim() : '';
+  if (wakeOverrideLine.length === 0) return null;
+
+  const safe = wakeOverrideLine.replace(/"/g, '\\"');
+  // Same plain "say this one line, then stop and listen" shape rung 8 uses
+  // for a guided candidate (VTID-03674) — the teaching itself happens on
+  // turns 2+ from the GUIDE-MODE system-instruction block; turn 1 only opens.
+  const guidedTrigger =
+    `Open by saying this prepared line, in the user's own language: "${safe}"\n` +
+    `Keep it to ONE short utterance. Do not add a greeting before it, do not add a question after it, and do not turn it into something else. Then stop and listen.`;
+
+  return {
+    wakeOpener: 'override_v2',
+    directive: guidedTrigger,
+    diag: {
+      lang: ctx.lang,
+      prompt_len: guidedTrigger.length,
+      wake_opener: 'override_v2',
+      decision_id: ctx.wakeBriefDecisionId || null,
+      guided_topic_outranks_passive_rungs: true,
+    },
+    effects: { markGreetingSent: true, armWatchdog: true },
+  };
+}
+
 // --- SAFE-FAST ladder (rungs 1–6) ------------------------------------------
 function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
+  // VTID-03724 — a tapped guided topic outranks every rung below, including
+  // the day-close/newday-overview rungs this ladder is about to try. See
+  // tryGuidedTopicRung's own comment for the full root-cause trace. This
+  // ladder previously had no guided-topic handling at all.
+  const guidedFast = tryGuidedTopicRung(ctx);
+  if (guidedFast) return guidedFast;
+
   // VTID-03604 — the day-close outranks every morning rung, on BOTH ladders.
   // At 00:15 the calendar date has rolled and the morning briefing believes it
   // is owed; it is not. Ending a day is not starting one.
@@ -818,6 +896,15 @@ function computeNormalLadder(ctx: GreetingDecisionContext): GreetingDecision {
     };
   }
 
+  // VTID-03724 — a tapped guided topic outranks day_close/newday_overview,
+  // below silent_reconnect (a genuine transport reconnect still stays
+  // silent — the lesson was already spoken in a prior turn). See
+  // tryGuidedTopicRung's own comment for the full root-cause trace: this is
+  // the exact defect reported live ("tapping a session starts the new-day
+  // overview instead").
+  const guidedNormal = tryGuidedTopicRung(ctx);
+  if (guidedNormal) return guidedNormal;
+
   // VTID-03604 — day-close, below silent_reconnect (a reconnect stays silent,
   // and a goodnight is loud) and above every morning rung.
   const dayCloseSync = tryDayCloseRung(ctx);
@@ -870,13 +957,31 @@ function computeNormalLadder(ctx: GreetingDecisionContext): GreetingDecision {
     // The line's SUBSTANCE is still authoritative: providers ground it in real
     // data (unread counts, index movement, calendar), so the facts are pinned
     // verbatim even though the wording is not.
+    // BOOTSTRAP-ORB-PERSONALIZED-GREETING — reported live: "a simple good
+    // morning is not enough, it must be personalized: Good morning Claudia,
+    // Good night Thomas." override_v2 is the ONLY opener most sessions ever
+    // reach (VTID-03646's own measurement: 24 of 24 wake_opener events in
+    // four days), so its old blanket "do not greet the user by name first"
+    // line — added by VTID-03646 to fix a dead-end announcement bug — is
+    // exactly what suppressed personalization for effectively every session
+    // that has a known name. Fix is conditional, not a reversal: when
+    // ctx.firstName is known, leading with a name-based greeting is now a
+    // HARD RULE; when it genuinely is not known (see compute-greeting-
+    // decision's own null-name handling elsewhere in this file), the
+    // original "do not invent one" behavior is preserved unchanged.
+    const knownFirstName =
+      typeof ctx.firstName === 'string' && ctx.firstName.trim().length > 0 ? ctx.firstName.trim() : null;
+    const nameRule = knownFirstName
+      ? `The user's name is "${knownFirstName}". HARD RULE — your very first words must be a warm, time-of-day-appropriate greeting that addresses them by that name, composed in their own language (never a bare greeting with no name, and never a different name).`
+      : `No name is known for this user right now — greet warmly without inventing or guessing one.`;
     const wakeTrigger =
       `Open the conversation from this prepared lead: "${safe}"\n` +
-      `It is a LEAD, not your whole turn. Deliver the turn in three beats, as ONE continuous piece of speech:\n` +
+      `${nameRule}\n` +
+      `The lead itself is a LEAD, not your whole turn. Deliver the turn in three beats, as ONE continuous piece of speech (the name-based greeting above comes first, then these three beats):\n` +
       `1. SUBSTANCE — say what is actually going on, not that you are about to. If the lead names something you can already tell them (their messages, their index, their calendar, what changed), tell them the substance of it now, in one or two sentences. Never announce an intention you then do not carry out in this same turn.\n` +
       `2. NEXT STEP — propose ONE concrete next step yourself. Never ask the user what they want to do, never offer a menu.\n` +
       `3. CONFIRMATION — close by asking them to confirm that one step, so they can simply say yes.\n` +
-      `Keep every concrete fact from the lead — numbers, names, dates — exactly as given, and invent nothing beyond it. Compose the wording yourself in the user's own language; do not recite the lead word for word and do not reuse phrasing from a previous session. Do not greet the user by name first; go straight into the substance. Then stop and listen.`;
+      `Keep every concrete fact from the lead — numbers, names, dates — exactly as given, and invent nothing beyond it. Compose the wording yourself in the user's own language; do not recite the lead word for word and do not reuse phrasing from a previous session. Then stop and listen.`;
     // A tapped My Journey topic is NOT a lead to build a proposal on, so it
     // deliberately does not get the three-beat contract above.
     //

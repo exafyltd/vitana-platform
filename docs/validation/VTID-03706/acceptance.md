@@ -235,3 +235,50 @@ them.
 The sweep also reports it as NEWS if an expected-fail locale starts
 passing, because a provider being added would otherwise look identical to
 the gap persisting.
+
+---
+
+## Follow-up (2026-08-25) — SSE transport never received the flag at all
+
+**Reported live**, after the above shipped to staging: "not only is it not
+possible to interrupt the conversation flow, but it's also repeating the new
+day greeting several times." The second half traced to an unrelated,
+pre-existing production bug in the wake-retrigger path (SSE, `surface:
+orb_wake`, two independent sessions 92s apart) — separate from this VTID, not
+touched here. The first half traced back to this feature.
+
+Reproduced directly against `preview-aws.vitanaland.com` (Playwright, real
+Polly/Nova audio, `--use-fake-device-for-media-stream`, polling the actual
+`.vtorb-btn-mic` DOM class every 500ms during "Vitana speaking..."): the
+`vtorb-mic-live` class never appeared across a 10s window on a real session.
+Intercepting the raw session-start message (monkey-patched `EventSource`)
+confirmed why: the widget's default transport is SSE (`[VTOrb] Server
+transport preference: sse` — logged on every run here, and matching the
+`transport:"sse"` field on the real production sessions found via
+`oasis_events` for this same report), and SSE never sends a
+`session_started`-typed message at all — it sends `ready` / `live_api_ready`
+/ `audio` / `output_transcript`. AC-2/AC-3's `full_duplex` field had only
+ever been wired into the WS `session_started` handshake
+(`orb-live.ts:16725`, `orb-widget.js`'s `_sessionStartWs` handler). The
+server-side gate in `live-session-controller.ts` (§AC-1-AC-7) was already
+applying full duplex correctly to *inbound* frames regardless of transport —
+this gap was purely "the client never learned the flag was on," so it never
+kept *sending* frames during playback on the transport almost everyone uses.
+
+AC-10 — The SSE transport learns full_duplex the same way WS does
+
+TEST: `full-duplex-sse-live-api-ready.test.ts` — "includes full_duplex: isFullDuplexEnabled() in the live_api_ready SSE payload"
+TEST: `full-duplex-session-gate.widget-parity.test.ts` — "reads full duplex on BOTH transports, not just WS"
+Output: `outputs/sse-full-duplex-mutation-proof.txt`
+
+Mutation-verified: both tests fail against the pre-fix source (reverted to
+`origin/main`) and pass against the fix — `outputs/sse-full-duplex-mutation-proof.txt`
+shows both runs. The widget-parity test also asserts the assignment appears
+in exactly 2 places (the WS handler and the SSE `live_api_ready` case) so a
+future edit can't silently lose either transport's wiring again.
+
+**Not yet re-verified live** — the fix is applied and tested here but staging
+has not yet been redeployed with it; that is the next step after this PR
+merges (§16 staging-first: merge → auto-deploy staging → re-run the same
+Playwright reproduction against `preview-aws.vitanaland.com` and confirm
+`.vtorb-mic-live` now appears during playback on a real SSE session).

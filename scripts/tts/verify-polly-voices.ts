@@ -32,6 +32,11 @@ const EXPECTED: Record<string, { voiceId: string; engine: string; languageCode: 
   ar: { voiceId: 'Hala', engine: 'neural', languageCode: 'ar-AE' },
   zh: { voiceId: 'Zhiyu', engine: 'neural', languageCode: 'cmn-CN' },
   ru: { voiceId: 'Tatyana', engine: 'standard', languageCode: 'ru-RU' },
+  // VTID-03719 — Burcu (neural), not the standard-only Filiz. Verified live
+  // via a real `describe-voices`/`synthesize-speech` call against tr-TR;
+  // matches POLLY_VOICES.tr in polly.ts exactly (pt/pl share this script's
+  // pre-existing gap of never having been added here, not introduced now).
+  tr: { voiceId: 'Burcu', engine: 'neural', languageCode: 'tr-TR' },
 };
 
 const SERBIAN_PREFIXES = ['sr'];

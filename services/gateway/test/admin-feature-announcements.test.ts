@@ -16,7 +16,7 @@ import express from 'express';
 import request from 'supertest';
 
 let mockSupabase: any;
-const notifyUsersAsyncMock = jest.fn();
+const notifyUserMock = jest.fn();
 const bulkGetUserLocalesMock = jest.fn();
 
 // Mirrors the real two-stage contract: requireAuth verifies the token and
@@ -48,7 +48,7 @@ jest.mock('../src/middleware/auth-supabase-jwt', () => ({
 jest.mock('../src/lib/supabase', () => ({ getSupabase: () => mockSupabase }));
 
 jest.mock('../src/services/notification-service', () => ({
-  notifyUsersAsync: (...args: any[]) => notifyUsersAsyncMock(...args),
+  notifyUser: (...args: any[]) => notifyUserMock(...args),
 }));
 
 jest.mock('../src/i18n/server-locale', () => ({
@@ -105,7 +105,8 @@ const VALID_BODY = {
 };
 
 beforeEach(() => {
-  notifyUsersAsyncMock.mockClear();
+  notifyUserMock.mockReset();
+  notifyUserMock.mockResolvedValue({ pushed: true, inapp: true });
   bulkGetUserLocalesMock.mockReset();
   bulkGetUserLocalesMock.mockResolvedValue(new Map());
   mockSupabase = makeFakeSupabase({ insertResult: { data: { id: 'ann-1' }, error: null } });
@@ -159,11 +160,11 @@ describe('POST /api/v1/admin/feature-announcements — happy paths', () => {
       .send(VALID_BODY);
 
     expect(r.status).toBe(200);
-    expect(r.body).toMatchObject({ ok: true, announcement_id: 'ann-1', test_send: false, sent_to: 2 });
-    // One notifyUsersAsync call per locale group (de: [u1], en: [u2]).
-    expect(notifyUsersAsyncMock).toHaveBeenCalledTimes(2);
-    const calledUserIdGroups = notifyUsersAsyncMock.mock.calls.map((c: any[]) => c[0]);
-    expect(calledUserIdGroups.flat().sort()).toEqual(['u1', 'u2']);
+    expect(r.body).toMatchObject({ ok: true, announcement_id: 'ann-1', test_send: false, sent_to: 2, dispatched: 2 });
+    // One notifyUser call per recipient (awaited, not fire-and-forget).
+    expect(notifyUserMock).toHaveBeenCalledTimes(2);
+    const calledUserIds = notifyUserMock.mock.calls.map((c: any[]) => c[0]);
+    expect(calledUserIds.sort()).toEqual(['u1', 'u2']);
   });
 
   it('staged test send scopes to recipient_ids and skips the tenant-wide lookup', async () => {
@@ -175,9 +176,29 @@ describe('POST /api/v1/admin/feature-announcements — happy paths', () => {
       .send({ ...VALID_BODY, recipient_ids: ['me-1'] });
 
     expect(r.status).toBe(200);
-    expect(r.body).toMatchObject({ ok: true, test_send: true, sent_to: 1 });
-    expect(notifyUsersAsyncMock).toHaveBeenCalledTimes(1);
-    expect(notifyUsersAsyncMock.mock.calls[0][0]).toEqual(['me-1']);
+    expect(r.body).toMatchObject({ ok: true, test_send: true, sent_to: 1, dispatched: 1 });
+    expect(notifyUserMock).toHaveBeenCalledTimes(1);
+    expect(notifyUserMock.mock.calls[0][0]).toEqual('me-1');
+  });
+
+  it('one rejected notifyUser call does not block or miscount the others (Promise.allSettled)', async () => {
+    mockSupabase = makeFakeSupabase({
+      insertResult: { data: { id: 'ann-1' }, error: null },
+      membersResult: { data: [{ user_id: 'u1' }, { user_id: 'u2' }], error: null },
+    });
+    bulkGetUserLocalesMock.mockResolvedValue(new Map([['u1', 'de'], ['u2', 'en']]));
+    notifyUserMock.mockImplementation((userId: string) =>
+      userId === 'u1' ? Promise.reject(new Error('boom')) : Promise.resolve({ pushed: true, inapp: true }),
+    );
+
+    const r = await request(makeApp())
+      .post('/api/v1/admin/feature-announcements')
+      .set('Authorization', 'Bearer admin')
+      .send(VALID_BODY);
+
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ ok: true, sent_to: 2, dispatched: 1 });
+    expect(notifyUserMock).toHaveBeenCalledTimes(2);
   });
 });
 
