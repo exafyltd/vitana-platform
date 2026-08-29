@@ -22,16 +22,42 @@
  * verifyAndExtractIdentity() (middleware/auth-supabase-jwt.ts) for its own
  * purposes.
  *
- * Two things this depends on that are NOT yet true and must be checked
- * before this is wired to a real route:
- *   1. The Aurora login role this pool connects as must NOT be superuser
- *      and must NOT have BYPASSRLS — if it does, every RLS policy is
- *      silently skipped regardless of anything below, because BYPASSRLS
- *      wins before any policy or SET ROLE is even considered.
- *   2. That login role must be GRANTed membership in anon/authenticated/
- *      service_role (0000_auth_roles.sql's trailing GRANT, currently
- *      commented out pending the real role name) or `SET LOCAL ROLE
- *      authenticated` fails with "permission denied to set role".
+ * Two things this used to depend on, now VERIFIED against live Aurora
+ * (VTID-03768/VTID-03769, 2026-08-27 — see docs/AURORA-B4-SIZING-REFRESH.md's
+ * two addenda for the full transcript):
+ *   1. The `authenticator` role (login-capable, the same role name/purpose
+ *      PostgREST itself connects as against Supabase) has rolsuper=false
+ *      and rolbypassrls=false, and is GRANTed membership in anon/
+ *      authenticated/service_role — confirmed live via pg_roles. Only
+ *      `service_role` itself has BYPASSRLS (matching Supabase exactly),
+ *      so a connection authenticating as `authenticator` and doing
+ *      `SET LOCAL ROLE authenticated` is subject to RLS as expected.
+ *   2. `SET LOCAL ROLE authenticated`/`anon`/`service_role` no longer fails
+ *      with "permission denied to set role" — 0000_auth_roles.sql's
+ *      trailing GRANT (this file's comment above) has been applied for
+ *      real against `authenticator` (not left commented out).
+ *      `scripts/aws/setup-aurora-postgrest-grants.sh --apply` additionally
+ *      closed a THIRD gap the original two-item list above didn't know to
+ *      list: `authenticated`/`anon`/`service_role` had no `GRANT USAGE ON
+ *      SCHEMA public` at all (DMS carries table structure/data, not GRANT
+ *      DDL), so even a correctly-SET-ROLE'd connection got "permission
+ *      denied for schema public" on every query regardless of RLS. Fixed
+ *      and verified end-to-end: a real `SET ROLE authenticated` + `SELECT
+ *      count(*) FROM public.diary_entries` inside one RDS Data API
+ *      transaction returned `0` (not an error) with no
+ *      `request.jwt.claim.sub` set — i.e. RLS correctly excluded every row
+ *      rather than either erroring or (worse) silently returning all of
+ *      them.
+ *
+ * Caveat this verification does NOT close: everything above was exercised
+ * over the RDS Data API (HTTPS) from a sandboxed session with no VPC
+ * route to Aurora's raw Postgres port. This module's own `pg.Pool` /
+ * `AURORA_DATABASE_URL` code path — the actual transport a real gateway
+ * route would use — has never itself been exercised end-to-end from any
+ * Claude Code session for that same network reason. The DB-side mechanism
+ * is proven; this file's own `pg.Pool` call site touching it is not, yet.
+ * Wiring `withAuroraRlsContext()` into an actual route remains the open
+ * item (tracked in the VTID-03769 commit message and the B4-sizing doc).
  */
 
 import { Pool, PoolClient } from 'pg';
