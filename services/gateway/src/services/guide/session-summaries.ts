@@ -14,6 +14,7 @@
 import { getSupabase } from '../../lib/supabase';
 import { callViaRouter } from '../llm-router'; // VTID-03579: provider from llm_routing_policy, never hardcoded
 import { emitGuideTelemetry } from './guide-telemetry';
+import * as repo from './session-summaries-repository';
 
 const LOG_PREFIX = '[Guide:session-summaries]';
 const MAX_SUMMARY_CHARS = 600;
@@ -72,12 +73,7 @@ export async function getRecentSessionSummaries(
   const supabase = getSupabase();
   if (!supabase) return [];
 
-  const { data, error } = await supabase
-    .from('user_session_summaries')
-    .select('session_id, channel, summary, themes, turn_count, duration_ms, ended_at')
-    .eq('user_id', userId)
-    .order('ended_at', { ascending: false })
-    .limit(Math.max(1, Math.min(limit, 10)));
+  const { data, error } = await repo.fetchRecentSessionSummaries(supabase, userId, Math.max(1, Math.min(limit, 10)));
 
   if (error) {
     console.warn(`${LOG_PREFIX} read failed:`, error.message);
@@ -114,19 +110,16 @@ export async function recordSessionSummary(
   }
   const themes = extractThemes(input.transcript_turns);
 
-  const { error } = await supabase.from('user_session_summaries').upsert(
-    {
-      user_id: input.user_id,
-      session_id: input.session_id,
-      channel: input.channel,
-      summary,
-      themes,
-      turn_count: input.transcript_turns.length,
-      duration_ms: input.duration_ms ?? null,
-      ended_at: new Date().toISOString(),
-    },
-    { onConflict: 'user_id,session_id' },
-  );
+  const { error } = await repo.upsertSessionSummary(supabase, {
+    user_id: input.user_id,
+    session_id: input.session_id,
+    channel: input.channel,
+    summary,
+    themes,
+    turn_count: input.transcript_turns.length,
+    duration_ms: input.duration_ms ?? null,
+    ended_at: new Date().toISOString(),
+  });
 
   if (error) {
     console.warn(`${LOG_PREFIX} write failed:`, error.message);
@@ -274,13 +267,7 @@ export async function getSessionsTodayAndYesterday(
   if (!window) return empty;
 
   // Pull a small range covering both yesterday and today; bucket in JS.
-  const { data, error } = await supabase
-    .from('user_session_summaries')
-    .select('session_id, channel, summary, themes, turn_count, duration_ms, ended_at')
-    .eq('user_id', userId)
-    .gte('ended_at', window.yesterday_start_utc)
-    .lt('ended_at', window.today_end_utc)
-    .order('ended_at', { ascending: true });
+  const { data, error } = await repo.fetchSessionSummariesInWindow(supabase, userId, window.yesterday_start_utc, window.today_end_utc);
 
   if (error || !data) {
     if (error) console.warn(`${LOG_PREFIX} getSessionsTodayAndYesterday read failed: ${error.message}`);
