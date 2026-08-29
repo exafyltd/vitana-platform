@@ -204,3 +204,76 @@ feature, or a real, currently-unconfirmed outage on a live user-facing AI
 chat path. This is the one worth someone actually opening the Companion
 or Health-coach chat screen to check by hand — this session has no
 browser/Playwright access to the live frontend to do that itself.
+
+## Addendum, 2026-08-29 (VTID-TBD) — `generate-event-image` traced: live, reachable, and NOT silently failing
+
+This doc's own §"Followed through on `ai-chat`" section named
+`generate-event-image` as the single highest-priority function still
+needing this trace, since — unlike the other 6 Gemini-Developer-API
+functions — it calls **Vertex AI's Imagen model directly** on
+`GOOGLE_CLOUD_PROJECT_ID`/`GOOGLE_CLOUD_SERVICE_ACCOUNT_JSON`, i.e. the
+same GCP-project/IAM-billed infrastructure confirmed disabled for
+`lovable-vitana-vers1` on 2026-08-16. Did the same static-reachability
+trace `ai-chat` got, in `exafyltd/vitana-v1`.
+
+**Verdict: live, reachable UI a real user can hit today — not orphaned
+code.** The feature is a community-event cover-image generator
+(`global_community_events` table — this is community events, not live
+rooms or calendar, despite the ambiguous "event" name).
+
+**Function behavior** (`supabase/functions/generate-event-image/index.ts`):
+reads `GOOGLE_CLOUD_PROJECT_ID`, `GOOGLE_CLOUD_REGION` (default
+`us-central1`), `GOOGLE_CLOUD_SERVICE_ACCOUNT_JSON`; mints its own Google
+OAuth2 JWT and calls `imagen-3.0-fast-generate-001:predict` on
+`{region}-aiplatform.googleapis.com`. **Every failure path throws** —
+missing creds (~line 169-171), OAuth token exchange failure (~244-248),
+Imagen HTTP error (~280-290), missing image data (~298-301) — and the
+top-level `catch` (~354-375) returns a non-2xx JSON error response
+(`{success:false, error:"..."}`, mapped to 429/402/500), never a silent
+200-with-placeholder. This is the opposite failure shape from the
+"silent Google fallback" pattern the platform CLAUDE.md's §2b history
+warns about.
+
+**Call sites, both surfacing the error to the user, not swallowing it:**
+- `src/components/EditMeetupPopup.tsx:196` (`handleGenerateImage`) — on
+  error sets `generationError` state and fires a
+  `notifyError('toasts.common.generationFailed')` toast (~218-246).
+- `src/components/CreateEventPopup.tsx:308` (auto-generate-on-create) —
+  on error shows one of several destructive toasts (rate-limit / credits
+  / permission / generic "imageGenFailed") chosen by matching on the
+  error message text (~332-344).
+
+**Route trace:** both components render inside
+`src/pages/community/EventsAndMeetups.tsx` (~51-58, mounted ~1142/1162),
+which is lazily imported in `App.tsx:220` and mounted at the auth-guarded
+`/comm/events-meetups` route (`App.tsx:1127-1131`) — confirmed live and
+reachable. `CreateEventPopup` has a second independent live call path via
+`src/pages/BusinessHub.tsx` (imported line 15, rendered lines 409/577).
+
+**The actual live-severity finding, sharper than "is this broken":** if
+this project's billing really is disabled, the failure IS visible to the
+user today — but very likely **mis-attributed**. A Vertex 403 from a
+billing-disabled project would plausibly match the `.includes('quota')`/
+credits-style checks in `CreateEventPopup.tsx`'s error-message matching,
+surfacing as "AI credits required" or a quota toast rather than anything
+pointing at GCP infrastructure being off. An event still saves
+successfully without its AI cover image either way (graceful degradation
+at the data layer) — this is a real UX papercut on a live, routed
+feature, not silent data loss, but the error message a user or on-call
+engineer sees would send them chasing the wrong cause (a credits/billing
+UI problem) instead of the real one (a decommissioned GCP project).
+**Not verified here whether the configured project is actually
+`lovable-vitana-vers1`** — this session could not read the live
+`GOOGLE_CLOUD_PROJECT_ID` env var on the deployed function, the same gap
+this doc's original finding flagged. That one remaining check — reading
+the deployed function's env var, or just trying to create/edit a
+community event with image generation and reading the resulting toast —
+is what would convert this from "likely broken, confirmed live" to
+"confirmed broken."
+
+**Not done here:** wiring this to the existing Bedrock bridge pattern
+(the gateway already has a Titan-image adapter per CLAUDE.md §2d,
+`services/gateway/src/providers/titan-image.ts`) — that would need a new
+image-generation bridge route analogous to `POST /api/v1/ai-bridge/generate`
+(the text bridge B7's earlier rows built), not a drop-in reuse of it, and
+is scoped as separate follow-on work, not assumed done by this trace.
