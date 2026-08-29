@@ -68,6 +68,7 @@ import {
 // (this builder) and consumer (orb-live.ts decomposeInstructionSections) agree
 // on one constant.
 import { BOOTSTRAP_CONTEXT_START_MARKER } from './instruction-budget';
+import { containsGuidedTopicNarrationBlock } from './guided-topic-narration-prompt';
 
 type TemporalBucket = 'reconnect' | 'recent' | 'same_day' | 'today' | 'yesterday' | 'week' | 'long' | 'first';
 
@@ -644,6 +645,36 @@ stop and re-anchor: "I'm Vitana." Then continue.
 
 `;
 
+  // VTID-03795 — is a guided-topic teaching block active for this session?
+  //
+  // Measured on real staging traffic (VTID-03787 instruction dumps): a
+  // guided-topic session assembles ~34,206 UTF-8 bytes vs ~31,594 for an
+  // ordinary one. Every dumped session at/above ~32,768 bytes was rejected by
+  // Nova (2/2), every session below it saw only the ~13% ambient block rate
+  // (32/37 clean) — with a clean gap between the largest clean sample (32,431)
+  // and the smallest blocked one (33,766). `enforceInstructionBudget` cannot
+  // rescue this: it may only drop `bootstrap`/`history`/`specialist`, all of
+  // which are ALREADY dropped on these sessions, after which it documents
+  // itself as returning the over-budget text as-is ("best-effort send /
+  // fail-open") — so an over-budget guided session ships a payload that is
+  // then reliably refused.
+  //
+  // The ~3,850 bytes of generic GUIDED JOURNEY scaffold below are exactly the
+  // overage, and in this branch they are not merely redundant but WRONG: they
+  // instruct the model to call narrate_guided_session and speak the returned
+  // script "word for word", while the guided-topic block simultaneously says
+  // the lesson was already narrated and must NOT be repeated. A tapped My
+  // Journey topic is also deliberately scoped to that ONE topic (the block
+  // ends by calling end_guided_topic_teaching rather than drifting into
+  // general conversation), so coaching the model to offer other sessions
+  // works against the intended scope too.
+  //
+  // Replaced — not deleted — with a one-line form that keeps the tool
+  // reachable if the user explicitly asks for a different session, and scopes
+  // the "speak it in full" rule to a script fetched DURING this conversation
+  // so it can no longer contradict the already-narrated lesson.
+  const guidedTopicNarrationActive = containsGuidedTopicNarrationBlock(bootstrapContext);
+
   let instruction = `${roleHeader}${vitanaIdHeader}${nameHeader}${VITANA_IDENTITY_LOCK}${voiceLiveConfig.base_identity || 'You are Vitana, an AI health companion assistant powered by Gemini Live.'}
 
 LANGUAGE: Respond ONLY in ${languageNames[lang] || 'English'}. Do NOT mix languages, do NOT switch to English, regardless of what other personas in the transcript said in other languages.
@@ -686,7 +717,7 @@ PROACTIVE LEADERSHIP — RULE 0 (ABSOLUTE, EVERY TURN, NO EXCEPTIONS, ALL TENURE
   If a proposal fits NONE of these three — you cannot speak it, no tool executes it, and there is no screen to guide them through — DO NOT MAKE THE OFFER. Propose something you can actually deliver instead.
   HARD RULE: once the user accepts an offer you made, you MUST fulfill it in that class. NEVER respond to an accepted offer with "I can't do that" / "das kann ich (gerade) nicht" / "ich habe dafür noch keine Funktion" — if you said it, you already committed to one of the three classes above; deliver it. A TALK offer ("lass uns eine Atemübung machen — soll ich?") is fulfilled by immediately narrating the exercise aloud once they say yes, not by looking for a breathing-exercise tool.
 
-GUIDED JOURNEY — A COHERENT THROUGH-LINE (for first-time and new users):
+${guidedTopicNarrationActive ? `GUIDED JOURNEY: this session is scoped to the ONE topic below — do not offer or start another session. If the user explicitly asks for a different one, call narrate_guided_session and speak only that newly fetched script.` : `GUIDED JOURNEY — A COHERENT THROUGH-LINE (for first-time and new users):
 - Vitanaland has a GUIDED JOURNEY: an ordered catalog of sessions that teaches the user how to use the system, one step at a time. It is ONE good option to lead with for a new user — not the only one.
 - FLEXIBLE WORDING — ABSOLUTE: never speak a fixed, memorised greeting. Vary your phrasing every single conversation. NEVER open two conversations with the same sentence. (You may also lead with a concrete deliverable step like setting their goal or showing their Vitana Index — whatever fits, freshly worded.)
 - AVAILABILITY: the journey only works if it has content. When you offer to start/continue it and call narrate_guided_session, the tool tells you what's there. If it returns "degraded"/no script (the curriculum isn't available), do NOT keep insisting on "session one" and do NOT claim the user finished everything — pivot to another concrete, deliverable step (set their goal, show their Index) in your own fresh words.
@@ -695,7 +726,7 @@ GUIDED JOURNEY — A COHERENT THROUGH-LINE (for first-time and new users):
 - WHEN THE USER ASKS FOR A SPECIFIC SESSION ("play session 15", "spiel mir Session 3 vor", "repeat session two"): call **narrate_guided_session with session_number** set to that number — it plays the FIRST topic of that session and tells you how many topics remain. Speak the script IN FULL, then offer the next topic; on their "yes"/"mehr" call narrate_guided_session(session_number) again for the next topic. A session has 2–3 topics — go through them one by one. NEVER say "I can't play a specific session".
 - WHEN THE USER NAMES A TOPIC ("play the topic about the Vitana Index", "das Thema Schlaf", "the five pillars topic"): call **narrate_guided_session with topic_query** set to their words — it matches that exact topic across all 254. Speak the returned script IN FULL.
 - WHEN THE USER ASKS ABOUT A SESSION (its TITLE or what it covers — "what is the title of session 1?", "was ist Session 3?", "wie heißt die erste Session?", "which session covers sleep?"): call **narrate_guided_session with session_number (and info_only: true)**, or with topic_query+info_only for a named topic. Answer with the EXACT session_title the tool returns. You do NOT know session titles on your own — NEVER guess one, and NEVER name a Journey Foundation step ("Vitana Index", "Life Compass", "Profile", etc.) as a session's title; those are setup steps, not curriculum sessions. After stating the real title, offer to play it.
-- COHERENCE — pick ONE thing and stay with it across a turn. NEVER jump between unrelated proposals in consecutive turns (the forbidden pattern: "let's set your goal" → then "let's look at your profile" → then opening Community Members). If you proposed something and they said yes, deliver THAT — do not switch subject mid-flow.
+- COHERENCE — pick ONE thing and stay with it across a turn. NEVER jump between unrelated proposals in consecutive turns (the forbidden pattern: "let's set your goal" → then "let's look at your profile" → then opening Community Members). If you proposed something and they said yes, deliver THAT — do not switch subject mid-flow.`}
 
 GREETING RULES (CRITICAL):
 ${isReconnect

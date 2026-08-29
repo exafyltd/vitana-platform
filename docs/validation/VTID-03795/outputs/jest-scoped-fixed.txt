@@ -1,0 +1,87 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.warn
+    [VTID-01225] Cognee Extractor URL not configured - extraction disabled
+
+      138 |
+      139 |     if (!this.enabled) {
+    > 140 |       console.warn('[VTID-01225] Cognee Extractor URL not configured - extraction disabled');
+          |               ^
+      141 |     } else {
+      142 |       console.log(`[VTID-01225] Cognee Extractor Client initialized: ${this.baseUrl}`);
+      143 |     }
+
+      at new CogneeExtractorClient (src/services/cognee-extractor-client.ts:140:15)
+      at Object.<anonymous> (src/services/cognee-extractor-client.ts:1143:38)
+      at Object.<anonymous> (src/routes/orb-live.ts:156:1)
+      at Object.<anonymous> (src/orb/live/instruction/live-system-instruction.ts:47:1)
+      at Object.<anonymous> (test/orb/live/instruction/guided-topic-journey-scaffold-suppression.test.ts:45:1)
+
+  console.warn
+    [VTID-01225] Config warning: COGNEE_EXTRACTOR_URL is not set - extraction will be disabled
+
+      152 |   static validateConfig(): void {
+      153 |     if (!process.env.COGNEE_EXTRACTOR_URL) {
+    > 154 |       console.warn('[VTID-01225] Config warning: COGNEE_EXTRACTOR_URL is not set - extraction will be disabled');
+          |               ^
+      155 |     }
+      156 |     if (!process.env.SUPABASE_URL) {
+      157 |       console.warn('[VTID-01225] Config warning: SUPABASE_URL is not set - persistence will fail');
+
+      at Function.validateConfig (src/services/cognee-extractor-client.ts:154:15)
+      at new CogneeExtractorClient (src/services/cognee-extractor-client.ts:145:27)
+      at Object.<anonymous> (src/services/cognee-extractor-client.ts:1143:38)
+      at Object.<anonymous> (src/routes/orb-live.ts:156:1)
+      at Object.<anonymous> (src/orb/live/instruction/live-system-instruction.ts:47:1)
+      at Object.<anonymous> (test/orb/live/instruction/guided-topic-journey-scaffold-suppression.test.ts:45:1)
+
+  console.log
+    [VTID-ORBC] Vertex config at startup: PROJECT_ID=lovable-vitana-vers1, LOCATION=us-central1
+
+      at Object.<anonymous> (src/routes/orb-live.ts:1924:9)
+
+  console.log
+    [VTID-01155] Google Cloud TTS client initialized
+
+      at Object.<anonymous> (src/routes/orb-live.ts:1931:11)
+
+  console.log
+    [VTID-01219] Google Auth client initialized for Live API
+
+      at Object.<anonymous> (src/routes/orb-live.ts:1955:11)
+
+  console.log
+    [VTID-01219] ORB Voice startup validation passed — Live API ready
+
+      at src/routes/orb-live.ts:1980:13
+
+  console.log
+    [VTID-INSTANT-FEEDBACK] Chime PCM generated: 9600 samples, 19200 bytes, 25600 b64 chars
+
+      at generateChimePcm (src/routes/orb-live.ts:2174:11)
+
+(node:3077) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS test/orb/live/instruction/guided-topic-journey-scaffold-suppression.test.ts
+  VTID-03795: containsGuidedTopicNarrationBlock
+    ✓ is false for empty / null / undefined / unrelated text (4 ms)
+    ✓ detects EVERY branch buildGuidedTopicNarrationBlock can emit (heading drift guard) (1 ms)
+  VTID-03795: GUIDED JOURNEY scaffold suppression
+    ✓ drops the generic block (and its contradictory directive) on a guided-topic session (6 ms)
+    ✓ keeps narrate_guided_session reachable — capability is scoped, not removed (1 ms)
+    ✓ leaves the FULL block completely intact on a non-guided session (1 ms)
+    ✓ leaves the rest of the prompt untouched in BOTH cases (3 ms)
+    ✓ sheds enough bytes to clear the measured overage (>= 3,000) (2 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       7 passed, 7 total
+Snapshots:   0 total
+Time:        2.119 s
+Ran all test suites matching /test\/orb\/live\/instruction\/guided-topic-journey-scaffold-suppression.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
