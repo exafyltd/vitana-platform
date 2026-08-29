@@ -350,3 +350,38 @@ MCP tool used here — to inspect and refresh the `migrate` role's Supavisor
 pooler registration for path (b). Reported back to the platform owner in
 the same terms as this addendum, in-conversation, rather than claiming
 either fix was applied.
+
+## Addendum, 2026-08-29 (continued) — exact current gap size, since this session does have live read access to both sides
+
+While diagnosing the above, this session had — for the first time in this
+doc's own history — live, working **read** access to both sides at once
+(Supabase via `mcp__Supabase__execute_sql`; Aurora via the RDS Data API
+against `vitana-aurora-prod`'s `vitana` database, using the
+`vitana/aurora/prod/claude-readonly` secret). Re-ran this doc's own
+exact-`count(*)` methodology (§"Methodology note" above — never
+`n_live_tup`) on the same 3 hot tables the B5 Realtime doc identified as
+the only ones with meaningful live write-activity, to quantify the actual
+cost of CDC being down rather than leaving it as a qualitative "some
+rows are missing":
+
+| Table | Supabase (source, live) | Aurora (target) | Missing in Aurora |
+|---|---|---|---|
+| `oasis_events` | 514,621 | 466,654 | **47,967 (9.3%)** |
+| `chat_messages` | 43,257 | 41,217 | **2,040 (4.7%)** |
+| `user_notifications` | 70,008 | 63,399 | **6,609 (9.4%)** |
+
+**The gap has a precise start, not just "some time ago":** Aurora's
+newest `oasis_events` row is timestamped `2026-08-20 09:58:52`, and DMS's
+own `ReplicationTaskStats.StopDate` for the last attempt is
+`2026-08-20T11:06:12Z` — consistent with each other. Today is 2026-08-29,
+so **CDC has been silently accumulating this gap for 9 days**, and every
+day it stays down before either fix above lands adds roughly another
+day's worth on top of the ~5-9%/9-day rate above (not linear/guaranteed,
+but the closest read-only estimate available). Against the platform
+owner's own 20 September full-Supabase-shutdown deadline (~3 weeks from
+today), this means: **if the replication fix isn't unblocked soon, Aurora
+will not be a safe cutover target on that date** — it would be missing a
+compounding fraction of exactly the write-heavy, user-facing tables
+(events, chat, notifications) the B5 Realtime doc already flagged as the
+ones that matter most. This is the concrete, current-dollar cost of the
+access gap documented immediately above, not a hypothetical.
