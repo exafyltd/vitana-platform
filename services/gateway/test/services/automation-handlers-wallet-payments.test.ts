@@ -21,7 +21,10 @@ registerWalletPaymentsHandlers();
 
 const SRC = path.join(__dirname, '..', '..', 'src', 'services', 'automation-handlers', 'wallet-payments.ts');
 
-function makeFakeSupabase(resultsByTable: Record<string, Array<{ data?: any; count?: number; error?: any }>>) {
+function makeFakeSupabase(
+  resultsByTable: Record<string, Array<{ data?: any; count?: number; error?: any }>>,
+  rpcResults: Record<string, { data?: any; error?: any }> = {},
+) {
   const cursors: Record<string, number> = {};
   return {
     from(table: string) {
@@ -49,6 +52,9 @@ function makeFakeSupabase(resultsByTable: Record<string, Array<{ data?: any; cou
         then: (resolve: any) => Promise.resolve(result).then(resolve),
       };
       return chain;
+    },
+    rpc(name: string) {
+      return Promise.resolve(rpcResults[name] ?? { data: null, error: null });
     },
   };
 }
@@ -153,6 +159,79 @@ describe('runSpendingInsights (AP-0712)', () => {
     const { ctx, notify } = makeCtx(supabase, {}, [{ user_id: 'u1', active_role: 'community' }]);
     const handler = getHandler('runSpendingInsights')!;
     const result = await handler(ctx);
+    expect(notify).not.toHaveBeenCalled();
+    expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
+  });
+});
+
+describe('runWalletCreditReward (AP-0708) — credit_wallet error handling', () => {
+  // 2026-08-29 fix (AURORA-B3-RPC-PARITY-INVENTORY.md addendum): credit_wallet
+  // is a confirmed-dead RPC. supabase-js's .rpc() resolves normally with an
+  // {error} field on a Postgres-level failure rather than throwing, so this
+  // handler used to silently report a successful action even when nothing
+  // was credited. These tests pin the corrected, honest behavior.
+
+  it('on the RPC returning {error}: logs it via ctx.log, does not notify or emit, and reports zero actions', async () => {
+    const supabase = makeFakeSupabase({}, {
+      credit_wallet: { data: null, error: { message: 'function credit_wallet(...) does not exist' } },
+    });
+    const { ctx, notify } = makeCtx(supabase, { user_id: 'u1', reward_type: 'product_review' });
+    const handler = getHandler('runWalletCreditReward')!;
+
+    const result = await handler(ctx);
+
+    expect(ctx.log).toHaveBeenCalledWith(
+      expect.stringContaining('credit_wallet RPC returned an error for product_review/u1'),
+    );
+    expect(ctx.log).toHaveBeenCalledWith(expect.stringContaining('function credit_wallet(...) does not exist'));
+    expect(notify).not.toHaveBeenCalled();
+    expect(ctx.emitEvent).not.toHaveBeenCalled();
+    // The bug this fix closes: this used to unconditionally return
+    // { usersAffected: 1, actionsTaken: 1 } regardless of whether the
+    // credit actually happened.
+    expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
+  });
+
+  it('on a duplicate reward: logs it and reports zero actions (unchanged behavior)', async () => {
+    const supabase = makeFakeSupabase({}, {
+      credit_wallet: { data: { duplicate: true }, error: null },
+    });
+    const { ctx, notify } = makeCtx(supabase, { user_id: 'u1', reward_type: 'product_review' });
+    const handler = getHandler('runWalletCreditReward')!;
+
+    const result = await handler(ctx);
+
+    expect(ctx.log).toHaveBeenCalledWith(expect.stringContaining('Duplicate reward blocked: product_review for u1'));
+    expect(notify).not.toHaveBeenCalled();
+    expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
+  });
+
+  it('on a successful credit: notifies, emits the event, and reports one action', async () => {
+    const supabase = makeFakeSupabase({}, {
+      credit_wallet: { data: { ok: true, balance: 125 }, error: null },
+    });
+    const { ctx, notify } = makeCtx(supabase, { user_id: 'u1', reward_type: 'product_review' });
+    const handler = getHandler('runWalletCreditReward')!;
+
+    const result = await handler(ctx);
+
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(ctx.emitEvent).toHaveBeenCalledWith(
+      'autopilot.wallet.credits_awarded',
+      expect.objectContaining({ user_id: 'u1', reward_type: 'product_review', amount: 25, balance: 125 }),
+    );
+    expect(result).toEqual({ usersAffected: 1, actionsTaken: 1 });
+  });
+
+  it('returns zero actions immediately for an unknown reward_type, without calling credit_wallet', async () => {
+    const supabase = makeFakeSupabase({}, {
+      credit_wallet: { data: { ok: true, balance: 1 }, error: null },
+    });
+    const { ctx, notify } = makeCtx(supabase, { user_id: 'u1', reward_type: 'not_a_real_reward' });
+    const handler = getHandler('runWalletCreditReward')!;
+
+    const result = await handler(ctx);
+
     expect(notify).not.toHaveBeenCalled();
     expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
   });

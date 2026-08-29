@@ -106,7 +106,13 @@ async function runWalletCreditReward(ctx: AutomationContext) {
   const { supabase, tenantId } = ctx;
   const sourceEventId = event_id || `${reward_type}_${user_id}_${Date.now()}`;
 
-  const { data } = await repo.creditWallet(supabase, {
+  // credit_wallet's error field must be checked explicitly: supabase-js's
+  // .rpc() resolves normally with {error} on a Postgres-level failure (e.g.
+  // credit_wallet not existing) rather than throwing, so a failed credit
+  // otherwise looks identical to `result` being undefined below — and this
+  // handler used to report a successful user-affecting action regardless
+  // (see AURORA-B3-RPC-PARITY-INVENTORY.md's 2026-08-29 addendum).
+  const { data, error } = await repo.creditWallet(supabase, {
     p_tenant_id: tenantId,
     p_user_id: user_id,
     p_amount: rewardConfig.amount,
@@ -115,6 +121,10 @@ async function runWalletCreditReward(ctx: AutomationContext) {
     p_source_event_id: sourceEventId,
     p_description: rewardConfig.description,
   });
+
+  if (error) {
+    ctx.log(`credit_wallet RPC returned an error for ${reward_type}/${user_id}: ${error.message}`);
+  }
 
   const result = data as CreditWalletResult;
 
@@ -133,9 +143,13 @@ async function runWalletCreditReward(ctx: AutomationContext) {
     await ctx.emitEvent('autopilot.wallet.credits_awarded', {
       user_id, reward_type, amount: rewardConfig.amount, balance: result.balance,
     });
+
+    return { usersAffected: 1, actionsTaken: 1 };
   }
 
-  return { usersAffected: 1, actionsTaken: 1 };
+  // Neither duplicate nor ok — the credit did not happen. Report it
+  // honestly instead of claiming a successful user-affecting action.
+  return { usersAffected: 0, actionsTaken: 0 };
 }
 
 // ── AP-0710: Monetization Readiness Scoring ─────────────────

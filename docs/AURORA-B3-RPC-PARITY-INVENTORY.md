@@ -868,6 +868,26 @@ every AP-0708 run through this path is logged by the automation executor
 as one successful user-affecting action even when the credit never
 happened and nothing was sent.
 
+**✅ Fixed 2026-08-29 (all three of 1a/1b/1c).** Each now destructures
+`error` from its `repo.creditWallet(...)`/`repo.creditWalletForMilestone(...)`
+call and logs it loudly (`console.error`/`ctx.log`, matching each file's
+own logging convention) instead of letting it disappear into an
+unreachable `catch {}` or an unchecked `data`. **1c** additionally now
+returns `{ usersAffected: 0, actionsTaken: 0 }` when the credit neither
+succeeded nor was a duplicate, instead of unconditionally claiming one
+successful action. None of the three change what happens on success, and
+1a/1b's "the streak/achievement record still writes regardless of the
+credit outcome" behavior is deliberately left as-is — the underlying
+product decision (what replaces the dead `credit_wallet` RPC; whether the
+four wallet ledgers should unify) is still open and still reserved for a
+human, per this addendum's own framing above. New tests:
+`services/gateway/test/diary-streak-celebrator.test.ts` (new file, was
+zero coverage), `services/gateway/test/milestone-service.test.ts` (new
+file, was zero coverage), and a new `describe('runWalletCreditReward
+(AP-0708) ...')` block added to the existing
+`services/gateway/test/services/automation-handlers-wallet-payments.test.ts`.
+Full gateway suite verified green after each of the three commits.
+
 ### 2. `debit_wallet_for_spend` / `credit_wallet_for_earning` (confirmed live) — well-designed, and one real non-atomic-sequence bug
 
 Read `supabase/migrations/20260601000000_VTID_03249_wallet_spend_earning.sql`
