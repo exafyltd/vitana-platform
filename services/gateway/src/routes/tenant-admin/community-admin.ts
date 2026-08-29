@@ -162,6 +162,7 @@ router.get('/memberships', requireTenantAdmin, async (req: AuthenticatedRequest,
     const { data, error } = await repo.fetchRecentCommunityMemberships(supabase, limit);
 
     if (error) {
+      console.warn('[COMMUNITY-ADMIN] community_memberships query error:', error.message);
       return res.json({ ok: true, memberships: [], error: error.message });
     }
 

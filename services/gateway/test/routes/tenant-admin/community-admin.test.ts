@@ -330,12 +330,13 @@ describe('Community Admin routes', () => {
     expect(res.body).toEqual({ ok: true, creators: [{ id: 'c1' }], count: 1 });
   });
 
-  it('GET /memberships degrades to empty list on error', async () => {
+  it('GET /memberships degrades to empty list on error and logs it (matching its /creators, /groups, /live-rooms siblings)', async () => {
     mockVerifiedJwt(tenantAdminClaims(TENANT_A));
     chainFor('community_memberships').mockResolvedValue({
       data: null,
       error: { message: 'nope' },
     });
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
 
     const res = await request(app)
       .get(url(TENANT_A, '/memberships'))
@@ -343,6 +344,11 @@ describe('Community Admin routes', () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true, memberships: [], error: 'nope' });
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[COMMUNITY-ADMIN] community_memberships query error:',
+      'nope',
+    );
+    warnSpy.mockRestore();
   });
 
   // --- GET /stats ---

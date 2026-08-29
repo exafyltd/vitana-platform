@@ -413,7 +413,9 @@ tables that hadn't gotten that treatment yet.
   `awareness_config`: error is checked and logged
   (`console.warn`) but the response still returns `{ok: true, creators:
   []}` — HTTP 200, empty list, no visible failure banner. An admin viewing
-  this screen sees "no creators" rather than "this is broken."
+  this screen sees "no creators" rather than "this is broken." **✅ Fixed
+  2026-08-29 — see the new addendum below; this was a real, confirmed-live
+  bug, not just theoretical.**
 
 None of these are money-adjacent like `credit_wallet` (B3 addendum) —
 listed here for completeness and because two of them (the live-room and
@@ -517,3 +519,72 @@ deliberately-guarded placeholders needing no action.
   `community_group_members`) are the ones actually worth a human's time
   first; everything else in this doc is either already safe or already
   unreachable.
+
+## Addendum 11: `creator_profiles`/`GET /creators` — confirmed a real, live bug in `vitana-v1`, not the Command Hub; fixed, and the same shape closed across its 3 siblings
+
+Followed up on Addendum 2's flag that `creator_profiles`'s soft-fail
+"returns `{ok:true, creators:[]}` with no visible failure banner" — the
+open question was whether any admin UI actually calls `GET /creators` and
+ignores the embedded `error`, the same way Memory Garden's Command Hub
+caller ignored its `_placeholder` flag (see
+`docs/AURORA-B3-DEAD-RPC-CALLSITE-AUDIT.md`).
+
+**The caller is not in the Command Hub at all** — a grep across
+`services/gateway/src/frontend/command-hub/app.js` for `/creators`,
+`fetchCreators`, `renderCreators` found nothing. The real caller is in
+`exafyltd/vitana-v1`: `src/hooks/useAdminCommunity.ts`'s
+`useCommunityCreators()`, consumed by `src/pages/admin/community/
+Creators.tsx` — a genuine, rendered admin screen ("Community → Creators"),
+not a dead route.
+
+**Confirmed live 2026-08-29:** `to_regclass('public.creator_profiles')`
+returns `null` — the table does not exist — so `GET /creators` fails on
+every single call. `useCommunityCreators()` did `return json.creators ||
+[]` with no check of `json.error`, and its OWN try/catch additionally
+swallowed any error `adminFetch()` itself threw (an expired session, a
+network failure, a non-2xx status) into the same empty array. `Creators.tsx`
+rendered `AdminEmptyState` — "There are no community creators yet." — with
+zero indication anything had failed, exactly the Memory Garden bug's shape,
+one repo over.
+
+**The same hook file has the identical bug in 3 more places** —
+`useCommunityGroups()`/`GroupsNew.tsx`, `useCommunityLiveRooms()`/
+`LiveRooms.tsx`, and (already partially built, see below)
+`useCommunityMeetups()`/`Meetups.tsx`. All four gateway routes
+(`/meetups`, `/groups`, `/live-rooms`, `/creators`) report a Supabase
+failure identically: HTTP 200, `{ok:true, <key>:[], error:"<message>"}`.
+Interestingly, `Meetups.tsx` already destructured `isError`/`error` from
+its `useQuery` and rendered a distinct failure message — but
+`useCommunityMeetups()`'s own queryFn never threw on `json.error`, so that
+branch was dead code, unreachable for this exact failure shape (it would
+only fire for adminFetch's own thrown errors, which the try/catch was ALSO
+swallowing). The intent was already half-built; nothing was calling it.
+
+**Fix (`exafyltd/vitana-v1`):** all four hooks in `useAdminCommunity.ts`
+now `throw new Error(json.error)` when the field is present, and the
+try/catch that discarded adminFetch's own thrown errors is removed —
+both failure classes now surface through react-query's `isError`/`error`
+instead of resolving to a confidently-empty array. `Creators.tsx`,
+`GroupsNew.tsx`, and `LiveRooms.tsx` gained the same `isError` branch
+`Meetups.tsx` already had (three new DE/EN i18n keys:
+`failedLoadCreatorsValue0`, `failedLoadGroupsValue0`,
+`failedLoadLiveRoomsValue0`, per this repo's i18n hard rule). Pinned at
+the source level (`useAdminCommunity.error-surfacing.test.ts`, matching
+this repo's own `useTenant.error-logging.test.ts` precedent) and
+mutation-verified — reverting the `throw` fails exactly the 4 tests that
+assert it. Full `vitest run`: 32/32 suites, 195/195 tests, `tsc --noEmit`
+clean.
+
+**`/memberships`, checked as part of the same sweep, is the OTHER
+shape — no live bug, because no caller exists at all.** Grepped
+`exafyltd/vitana-v1` for `community/memberships` and for any
+`useCommunityMemberships`-style hook: nothing. `community_memberships`
+(the table) does exist live (confirmed via `to_regclass`, unlike
+`creator_profiles`), and the route itself works — it is simply never
+invoked from any UI, the same "registered but never invoked" shape
+already confirmed for `risk_mitigations`/`AP-0710` (Addendum 3). Its only
+defect was cosmetic: unlike its three siblings, it never logged the
+Supabase error via `console.warn` on failure — added for consistency
+(`services/gateway/test/routes/tenant-admin/community-admin.test.ts`'s
+existing `/memberships` error test now also asserts the log call). No
+frontend fix needed here since there is no frontend to fix.
