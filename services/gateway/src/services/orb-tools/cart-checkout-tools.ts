@@ -587,7 +587,16 @@ export async function tool_set_shopping_budget(args: OrbToolArgs, id: OrbToolIde
     const currency = (userRow as { currency_preference?: string | null } | null)?.currency_preference || DEFAULT_CURRENCY;
 
     if (clear) {
-      const { data: existing } = await repo.fetchUserLimitationsExists(sb, id.user_id);
+      const { data: existing, error: existsErr } = await repo.fetchUserLimitationsExists(sb, id.user_id);
+      if (existsErr) {
+        // A Postgres-level failure here previously resolved to `existing`
+        // being falsy — indistinguishable from "genuinely no budget set" —
+        // so a user who explicitly has a cap configured and asks to clear
+        // it was confidently told they don't have one, and the cap
+        // silently remained in effect unchanged.
+        console.error(`[cart-checkout-tools] fetchUserLimitationsExists error for user=${id.user_id}: ${existsErr.message}`);
+        return { ok: false, error: "Couldn't check your current shopping budget due to a database error — try again." };
+      }
       if (!existing) {
         return { ok: true, result: { cleared: false }, text: "You don't have a monthly shopping budget set." };
       }
