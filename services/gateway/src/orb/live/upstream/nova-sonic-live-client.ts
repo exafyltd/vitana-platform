@@ -202,7 +202,34 @@ export interface NovaSonicLiveClientDeps {
   onIdleDeadlineApproaching?: (info: { msSinceLastInput: number }) => void;
   /** Audio queue high-water mark override. */
   audioHighWaterMark?: number;
+  /**
+   * VTID-03764 — diagnostic only, never on the send path. Fired ONCE per
+   * connection on the first raw eventstream chunk received from Bedrock
+   * (regardless of what it decodes to). Exists to bisect the multi-second
+   * click-to-first-audio gap observed on context-upgrade reconnects: does
+   * Nova stay silent for seconds after setup, or does it respond quickly
+   * with something that isn't audio yet (a text/tool event) while OUR OWN
+   * code is what's slow to turn that into audio the client hears? Never
+   * throws — a diagnostic callback must not risk destabilizing the stream.
+   */
+  onFirstRawChunk?: (info: { atMs: number; byteLength: number }) => void;
+  /**
+   * VTID-03764 follow-up — diagnostic only, same rationale as onFirstRawChunk.
+   * A single one-shot "first normalized event" turned out to be USELESS for
+   * bisecting the click-to-first-audio gap: real staging measurement showed
+   * it fires on a connection-handshake `usage` accounting event that arrives
+   * BEFORE the greeting prompt is even sent — telling us nothing about the
+   * multi-second silence that follows. Fires instead for each of the first
+   * `EARLY_EVENT_CAP` normalized events of ANY kind (audio, text, toolCall,
+   * usage, ignored, …), building a real early timeline instead of one
+   * snapshot, so a genuine gap between "Nova acked the connection" and
+   * "Nova started producing the response" is actually visible.
+   */
+  onEarlyNormalizedEvent?: (info: { atMs: number; kind: string; index: number }) => void;
 }
+
+/** VTID-03764 follow-up — cap on onEarlyNormalizedEvent firings per connection. */
+export const EARLY_EVENT_CAP = 12;
 
 async function buildBedrockClient(config: NovaSonicConfig): Promise<NovaBedrockLike> {
   // Lazy imports keep Bedrock/HTTP2 out of the require graph for GCP
@@ -449,6 +476,10 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
   private errorEmitted = false;
   private localCloseReason: string | undefined;
   private responseLoopDone: Promise<void> | null = null;
+  /** VTID-03764 diagnostic — set once the first raw chunk fires onFirstRawChunk. */
+  private firstRawChunkSeen = false;
+  /** VTID-03764 follow-up diagnostic — count of onEarlyNormalizedEvent firings so far. */
+  private earlyNormalizedEventCount = 0;
 
   private audioOutputHandler: ((e: AudioOutputEvent) => void) | null = null;
   private transcriptHandler: ((e: TranscriptEvent) => void) | null = null;
@@ -482,6 +513,28 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
   }
   onError(handler: (event: UpstreamErrorEvent) => void): void { this.errorHandler = handler; }
   onClose(handler: (event: UpstreamCloseEvent) => void): void { this.closeHandler = handler; }
+
+  /**
+   * VTID-03779 — a client built by the session-prewarm path (§ session
+   * pre-establishment) is constructed and connected BEFORE the real
+   * `GeminiLiveSession` it will end up serving exists. `onRotationDue` /
+   * `onIdleDeadlineApproaching` / `onFirstRawChunk` / `onEarlyNormalizedEvent`
+   * are captured as constructor-time closures over that (nonexistent) real
+   * session, so a prewarmed client that is later claimed would otherwise fire
+   * rotation/diagnostics against nothing. Called exactly once, at claim time,
+   * to repoint these four callbacks at the real session's closures — the
+   * event listeners set via onAudioOutput/onTranscript/etc. above are already
+   * plain mutable fields and need no equivalent, since the claim path
+   * re-registers them the same way any new client attach does.
+   */
+  rebindSessionDeps(next: Pick<NovaSonicLiveClientDeps,
+    'onRotationDue' | 'onIdleDeadlineApproaching' | 'onFirstRawChunk' | 'onEarlyNormalizedEvent'
+  >): void {
+    this.deps.onRotationDue = next.onRotationDue;
+    this.deps.onIdleDeadlineApproaching = next.onIdleDeadlineApproaching;
+    this.deps.onFirstRawChunk = next.onFirstRawChunk;
+    this.deps.onEarlyNormalizedEvent = next.onEarlyNormalizedEvent;
+  }
 
   async connect(options: UpstreamConnectOptions): Promise<void> {
     if (this.state !== 'idle') {
@@ -683,6 +736,14 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
           }
           continue;
         }
+        if (!this.firstRawChunkSeen) {
+          this.firstRawChunkSeen = true;
+          try {
+            this.deps.onFirstRawChunk?.({ atMs: Date.now(), byteLength: bytes.byteLength });
+          } catch {
+            /* diagnostic callback must never destabilize the stream */
+          }
+        }
         let decoded: unknown;
         try {
           decoded = JSON.parse(new TextDecoder().decode(bytes));
@@ -708,6 +769,14 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
 
   private dispatchNormalized(decoded: unknown): void {
     for (const event of this.normalizer.normalize(decoded)) {
+      if (this.earlyNormalizedEventCount < EARLY_EVENT_CAP) {
+        const index = this.earlyNormalizedEventCount++;
+        try {
+          this.deps.onEarlyNormalizedEvent?.({ atMs: Date.now(), kind: event.kind, index });
+        } catch {
+          /* diagnostic callback must never destabilize the stream */
+        }
+      }
       switch (event.kind) {
         case 'transcript':
           this.transcriptHandler?.({

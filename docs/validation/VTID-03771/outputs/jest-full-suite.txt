@@ -1,0 +1,42 @@
+
+PASS test/services/wake-timeline/reliability-cohort-analysis.test.ts
+  R0 — analyzeReliabilityCohort
+    ✓ returns zero counts on an empty cohort (2 ms)
+    ✓ counts happy-path sessions correctly (1 ms)
+    ✓ counts mixed cohort drop-off correctly (1 ms)
+    ✓ computes unknown_pct correctly when some disconnects lack a reason (1 ms)
+    ✓ tallies continuation outcomes by kind
+    ✓ captures none_with_reason_breakdown when wake aggregate carries it (1 ms)
+    ✓ picks one happy + one failed session id for evidence
+    ✓ names the first missing stage on a failed session
+    ✓ computes p50/p90/p99 deterministically on fixed inputs (2 ms)
+
+PASS test/unit/services/memory-facts.test.ts
+  Memory Facts Service
+    ✓ upserts a memory fact with default provenance_source if not provided (1 ms)
+    ✓ upserts a memory fact with provided provenance_source (1 ms)
+    ✓ returns error if supabase fails
+
+PASS test/worker-orchestrator-await-autopilot.test.ts (62.912 s)
+  POST /api/v1/worker/orchestrator/await-autopilot-execution — auth
+    ✓ 400 when vtid is missing (88 ms)
+    ✓ 400 when autopilot_execution_id is missing (6 ms)
+    ✓ 401 when worker_id is missing (4 ms)
+    ✓ 401 when worker is NOT in worker_registry (4 ms)
+    ✓ 403 when worker does not hold the claim (4 ms)
+    ✓ 403 when claim has expired (claim_expires_at in the past) (3 ms)
+  POST /api/v1/worker/orchestrator/await-autopilot-execution — four-state contract
+    ✓ returns completed with files_changed from PR diff when status=completed (5 ms)
+    ✓ returns pr_ready with files when status=ci (PR opened, CI in flight) (4 ms)
+    ✓ returns failed when status=failed (11 ms)
+    ✓ returns deferred (NOT failed) when timeout elapses while status=running (60068 ms)
+    ✓ returns failed (NOT deferred) when execution row is missing entirely (8 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 1 skipped, 714 passed, 714 of 715 total
+Tests:       29 skipped, 6 todo, 13439 passed, 13474 total
+Snapshots:   44 passed, 44 total
+Time:        64.141 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+
+[exited with code 0]

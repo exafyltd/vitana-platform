@@ -1,0 +1,125 @@
+VTID-03783 — commands.log
+==========================
+
+## Investigation
+
+$ grep -n "sessionEndedBackground" src/frontend/command-hub/orb-widget.js
+(located locale key + call site in _startBackgroundWatchdog())
+
+$ grep -n "function _startBackgroundWatchdog" src/frontend/command-hub/orb-widget.js
+(read full function body — found the _sessionStop() call in the
+drift > BG_KILL_DRIFT_MS branch)
+
+$ grep -n "function _hide\(\)" src/frontend/command-hub/orb-widget.js
+(read _hide() — confirmed unconditional, safe to call post-_sessionStop())
+
+$ grep -n "closeBtn.addEventListener" src/frontend/command-hub/orb-widget.js
+(confirmed X button is unconditionally bound to _hide, no gating)
+
+## Fix applied
+
+Edited src/frontend/command-hub/orb-widget.js:
+  _startBackgroundWatchdog()'s kill branch — replaced
+    _sessionStop();
+  with
+    _hide();
+  plus an explanatory comment (see acceptance.md "Fix" section for full
+  text). Deliberately did NOT add an _endGuidedTopicTeaching() call.
+
+$ node --check src/frontend/command-hub/orb-widget.js
+SYNTAX_OK
+
+## Test file updated
+
+Edited test/frontend/orb-widget-background-watchdog.test.ts:
+  - Changed "ends the session instead of leaving it running..." assertion
+    from /_sessionStop\(\)/ to /_hide\(\)/ — NOTE: this original edit was
+    superseded; the final test suite keeps that test asserting _hide()
+    presence broadly and adds a NEW, more precise test (below) that scopes
+    the assertion to the kill block specifically and also asserts the
+    absence of a bare _sessionStop() call there.
+  - Added: "calls _hide() — the same full, honest teardown a real close
+    uses — not the bare _sessionStop() that leaves the overlay frozen"
+  - Added: "does NOT call _endGuidedTopicTeaching() — a background-kill
+    must not auto-mark a step done"
+
+$ npx jest test/frontend/orb-widget-background-watchdog.test.ts
+PASS — Test Suites: 1 passed, 1 total / Tests: 8 passed, 8 total
+
+## Self-inflicted false failure, diagnosed and fixed
+
+First version of the new "does NOT call _endGuidedTopicTeaching()" test
+failed against the FIXED source, because my own inline source comment in
+orb-widget.js literally contained the substring "_endGuidedTopicTeaching():"
+(with trailing paren), matching the test's /_endGuidedTopicTeaching\(/
+regex. Not a real function call — a false failure caused by my own
+comment wording.
+
+Fix: reworded the source comment to "Deliberately does NOT use the
+guided-topic completion teardown:" (removing the literal
+"_endGuidedTopicTeaching(" substring).
+
+$ npx jest test/frontend/orb-widget-background-watchdog.test.ts
+PASS — Test Suites: 1 passed, 1 total / Tests: 8 passed, 8 total
+
+## Mutation testing
+
+$ cp src/frontend/command-hub/orb-widget.js /tmp/orb-widget-783.js.bak
+
+$ grep -n "_setStatus(_caption('sessionEndedBackground'));" src/frontend/command-hub/orb-widget.js
+3746:        _setStatus(_caption('sessionEndedBackground'));
+
+$ sed -n '3744,3748p' src/frontend/command-hub/orb-widget.js
+(previewed exact content before mutating — line 3747 contained "_hide();")
+
+$ sed -i "3747s/.*/        _sessionStop(); \/\/ mutation: restored old anti-pattern/" src/frontend/command-hub/orb-widget.js
+
+$ sed -n '3744,3748p' src/frontend/command-hub/orb-widget.js
+(confirmed mutation applied cleanly — line 3747 now reads
+"_sessionStop(); // mutation: restored old anti-pattern")
+
+$ node --check src/frontend/command-hub/orb-widget.js
+SYNTAX_OK
+
+$ npx jest test/frontend/orb-widget-background-watchdog.test.ts
+Test Suites: 1 failed, 1 total / Tests: 1 failed, 7 passed, 8 total
+
+$ npx jest test/frontend/orb-widget-background-watchdog.test.ts 2>&1 | grep -E "✓|✕"
+✓ detects backgrounding via setTimeout drift, not the Visibility API (8 ms)
+✓ ends the session instead of leaving it running when backgrounding is detected (4 ms)
+✕ calls _hide() — the same full, honest teardown a real close uses — not the bare _sessionStop() that leaves the overlay frozen (7 ms)
+✓ does NOT call _endGuidedTopicTeaching() — a background-kill must not auto-mark a step done (4 ms)
+✓ reschedules itself while the overlay is open, not gated on _s.active (4 ms)
+✓ uses a 5s check interval and a 30s kill threshold (2 ms)
+✓ _stopBackgroundWatchdog clears the timer (4 ms)
+✓ starts on overlay open (_show) and stops on session teardown (_sessionStop) (6 ms)
+
+Exactly 1 test fails (the one directly asserting the fix); 7 pass
+unaffected. Matches the established mutation-testing success criteria
+used for every prior VTID in this chain.
+
+## Restore
+
+$ cp /tmp/orb-widget-783.js.bak src/frontend/command-hub/orb-widget.js
+$ diff /tmp/orb-widget-783.js.bak src/frontend/command-hub/orb-widget.js && echo CLEAN_RESTORE
+CLEAN_RESTORE
+$ node --check src/frontend/command-hub/orb-widget.js && echo SYNTAX_OK
+SYNTAX_OK
+$ npx jest test/frontend/orb-widget-background-watchdog.test.ts
+PASS — Test Suites: 1 passed, 1 total / Tests: 8 passed, 8 total
+
+## Type check
+
+$ npx tsc --noEmit
+(clean, no output, exit 0)
+
+## Full gateway suite
+
+$ npx jest
+(see outputs/jest-full-suite.txt for tail summary)
+
+## Governance — command-hub-ownership-guard.js
+
+Registered VTID-03783 in ALLOWED_VTID_PATTERN with a comment block
+matching the established pattern used for every prior VTID in this chain
+(VTID-03781, VTID-03782, etc.) — see the diff in this PR.

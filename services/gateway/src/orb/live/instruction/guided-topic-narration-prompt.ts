@@ -35,8 +35,8 @@ export function buildGuidedTopicNarrationOpenerLine(
   const name = (opts?.firstName || '').trim();
   const greet = name ? `Hey ${name}! ` : '';
   return isDe
-    ? `${greet}Lass uns über „${topicTitle}" sprechen — ich erklär dir, worum es geht und wie es dir hilft.`
-    : `${greet}Let's talk about "${topicTitle}" — I'll walk you through what it is and how it helps you.`;
+    ? `${greet}Lass uns über ${topicTitle} sprechen — ich erklär dir, worum es geht und wie es dir hilft.`
+    : `${greet}Let's talk about ${topicTitle} — I'll walk you through what it is and how it helps you.`;
 }
 
 /**
@@ -66,7 +66,7 @@ export function buildGuidedTopicSpokenLesson(
   if (!body) {
     const exp = content.explanation || { whatItIs: null, userBenefit: null, whenToUse: null, tryThis: null };
     const parts: string[] = [];
-    parts.push(isDe ? `Lass uns über „${content.topic_title}" sprechen.` : `Let's talk about "${content.topic_title}".`);
+    parts.push(isDe ? `Lass uns über ${content.topic_title} sprechen.` : `Let's talk about ${content.topic_title}.`);
     if (exp.whatItIs) parts.push(exp.whatItIs);
     if (exp.userBenefit) parts.push(exp.userBenefit);
     if (exp.tryThis) parts.push(exp.tryThis);
@@ -93,12 +93,12 @@ export function buildGuidedTopicPostNarrationLine(
   const isDe = (lang || 'en').toLowerCase().startsWith('de');
   if (isDe) {
     return opts?.hasPracticeTarget
-      ? `So, das war „${topicTitle}". Hast du Fragen dazu, oder sollen wir direkt gemeinsam loslegen?`
-      : `So, das war „${topicTitle}". Hast du Fragen dazu?`;
+      ? `So, das war ${topicTitle}. Hast du Fragen dazu, oder sollen wir direkt gemeinsam loslegen?`
+      : `So, das war ${topicTitle}. Hast du Fragen dazu?`;
   }
   return opts?.hasPracticeTarget
-    ? `So, that was "${topicTitle}". Any questions about it, or should we jump straight into practicing it together?`
-    : `So, that was "${topicTitle}". Any questions about it?`;
+    ? `So, that was ${topicTitle}. Any questions about it, or should we jump straight into practicing it together?`
+    : `So, that was ${topicTitle}. Any questions about it?`;
 }
 
 /**
@@ -125,40 +125,42 @@ export function buildGuidedTopicNarrationBlock(
           '',
           '## GUIDE-MODUS (NACH DER LEKTION) — die Lektion wurde bereits per Audio vorgetragen',
           '',
-          'SPRACHE: Sprich AUSSCHLIESSLICH auf Deutsch. Dieser Modus gilt für die GANZE Sitzung und hat Vorrang vor JEDER generischen Begrüßungs- oder Eröffnungsregel.',
+          'SPRACHE: Sprich AUSSCHLIESSLICH auf Deutsch, für die GANZE Sitzung.',
           '',
-          `Die Lektion zu „${content.topic_title}" wurde der Person GERADE als vorab aufgenommene Audio-Lektion vorgespielt — du hast sie NICHT selbst vorgetragen und musst sie NICHT wiederholen.`,
+          `Die Lektion zu ${content.topic_title} wurde der Person GERADE als vorab aufgenommene Audio-Lektion vorgespielt und muss nicht wiederholt werden.`,
           '',
           'Wichtig, für die GANZE Sitzung:',
-          '- Trage die Lektion nicht erneut vor und fasse sie nicht zusammen, als hättest du sie noch nicht erklärt.',
-          '- Frag nicht „Was möchtest du?" oder „Wie kann ich dir helfen?" — du weißt, worum es gerade ging.',
-          '- Wenn die Person kurz mit „ja", „mach das" oder „okay" antwortet, prüfe zuerst, ob sie noch Rückfragen hat, bevor du zu einer anderen Aktion übergehst.',
+          '- Trage die Lektion nicht erneut vor und fasse sie nicht zusammen — geh direkt zu Rückfragen oder dem nächsten Schritt über.',
+          '- Überspring generische Eröffnungsfragen — du weißt, worum es gerade ging.',
+          '- Wenn die Person kurz mit Ja, Mach das oder Okay antwortet, prüfe zuerst, ob sie noch Rückfragen hat, bevor du zu einer anderen Aktion übergehst.',
           '',
           'So führst du:',
           '- Beantworte Rückfragen zur Lektion natürlich und knapp.',
           content.practice_target
-            ? `- Wenn die Person bereit ist, FÜHRE sie zur Übung („${content.practice_target}") — biete an, es direkt gemeinsam zu machen.`
+            ? `- Wenn die Person bereit ist, FÜHRE sie zur Übung (${content.practice_target}) — biete an, es direkt gemeinsam zu machen.`
             : '- Wenn die Person bereit ist, schlage einen konkreten nächsten Schritt vor.',
+          '- Sobald du das getan hast und die Person keine weiteren Rückfragen mehr hat, rufe das Tool end_guided_topic_teaching auf, um die Sitzung abzuschließen — sprich NICHT einfach in allgemeiner Unterhaltung weiter.',
           '',
         ].join('\n')
       : [
           '',
           '## GUIDE MODE (POST-LESSON) — the lesson was already narrated via audio',
           '',
-          `LANGUAGE: Speak ONLY in ${LOCALE_ENGLISH_NAME[resolveLocaleStrict(lang) ?? 'en'] || 'English'}. This mode applies to the WHOLE session and OVERRIDES every generic greeting/opening rule.`,
+          `LANGUAGE: Speak ONLY in ${LOCALE_ENGLISH_NAME[resolveLocaleStrict(lang) ?? 'en'] || 'English'}, for the WHOLE session.`,
           '',
-          `The lesson on "${content.topic_title}" was JUST played to the person as a pre-recorded audio narration — you did NOT narrate it yourself and do NOT need to repeat it.`,
+          `The lesson on ${content.topic_title} was just delivered to the person as a pre-recorded audio narration and does not need to be repeated.`,
           '',
           'Important, for the WHOLE session:',
-          '- Don\'t re-narrate or summarize the lesson as if you hadn\'t already explained it.',
-          '- Don\'t ask "What do you want?" or "How can I help you?" — you KNOW what this was just about.',
-          '- If they respond with a brief "yes", "sure", or "okay", check first whether they have follow-up questions before moving on to anything else.',
+          '- Don\'t re-narrate or summarize the lesson — move straight to follow-up questions or the next step.',
+          '- Skip generic opening questions — you already KNOW what this was just about.',
+          '- If they respond with a brief yes, sure, or okay, check first whether they have follow-up questions before moving on to anything else.',
           '',
           'How to lead:',
           '- Answer follow-up questions about the lesson naturally and concisely.',
           content.practice_target
-            ? `- Once they're ready, GUIDE them to the practice ("${content.practice_target}") — offer to do it together right now.`
+            ? `- Once they're ready, GUIDE them to the practice (${content.practice_target}) — offer to do it together right now.`
             : '- Once they\'re ready, propose a concrete next step.',
+          '- Once you\'ve done that and they have no more follow-up questions, call the end_guided_topic_teaching tool to close things out — do NOT just keep talking in general conversation.',
           '',
         ].join('\n');
   }
@@ -189,14 +191,14 @@ export function buildGuidedTopicNarrationBlock(
       '',
       '## GUIDE-MODUS (LEHREN) — du STELLST dieses Thema VOR und LEHRST es',
       '',
-      'SPRACHE: Sprich AUSSCHLIESSLICH auf Deutsch — auch wenn frühere Anweisungen Englisch enthalten. Dieser GUIDE-MODUS gilt für die GANZE Sitzung und hat Vorrang vor JEDER generischen Begrüßungs- oder Eröffnungsregel.',
+      'SPRACHE: Sprich AUSSCHLIESSLICH auf Deutsch — auch wenn frühere Anweisungen Englisch enthalten. Dieser GUIDE-MODUS gilt für die GANZE Sitzung.',
       '',
-      `Die Person hat in „Meine Reise" das Thema „${content.topic_title}" angetippt, um es von dir erklärt zu bekommen. Stell es vor und LEHRE es — proaktiv, in EIGENEN Worten.`,
+      `Die Person hat in Meine Reise das Thema ${content.topic_title} angetippt, um es von dir erklärt zu bekommen. Stell es vor und LEHRE es — proaktiv, in EIGENEN Worten.`,
       '',
       'Wichtig — für die GANZE Sitzung:',
-      '- Frag nicht „Was möchtest du?" / „Wie kann ich dir helfen?" / „Womit fangen wir an?" — du weißt, worum es geht: dieses Thema.',
+      '- Überspring generische Eröffnungsfragen — du weißt, worum es geht: dieses Thema.',
       '- Das Skript nicht vorlesen, Wort für Wort. Nutze es als Grundlage und erkläre es natürlich, im Gespräch.',
-      '- Ein kurzes „ja", „mach das" oder „okay" der Person direkt nach deiner Eröffnungszeile heißt „erklär mir das jetzt" — nicht „spring zum nächsten Schritt". Erkläre zuerst die Kernpunkte aus dem Lehrmaterial unten, in eigenen Worten, bevor du zur Übung überleitest oder etwas anderes vorschlägst.',
+      '- Ein kurzes Ja, Mach das oder Okay der Person direkt nach deiner Eröffnungszeile bedeutet erklär mir das jetzt — nicht spring zum nächsten Schritt. Erkläre zuerst die Kernpunkte aus dem Lehrmaterial unten, in eigenen Worten, bevor du zur Übung überleitest oder etwas anderes vorschlägst.',
       '',
       `THEMA: ${content.topic_title}`,
       'Lehrmaterial (paraphrasieren, NICHT vorlesen):',
@@ -206,8 +208,9 @@ export function buildGuidedTopicNarrationBlock(
       '- Stell das Thema in 1–2 Sätzen vor, dann erkläre es klar und konkret in eigenen Worten.',
       '- Halte es im Gespräch: kurze Abschnitte, prüfe das Verständnis, geh auf Rückfragen ein.',
       content.practice_target
-        ? `- Wenn die Person es verstanden hat, FÜHRE sie zur Übung („${content.practice_target}") — biete an, es direkt gemeinsam zu machen.`
+        ? `- Wenn die Person es verstanden hat, FÜHRE sie zur Übung (${content.practice_target}) — biete an, es direkt gemeinsam zu machen.`
         : '- Wenn die Person es verstanden hat, schlage einen konkreten nächsten Schritt vor.',
+      '- Sobald du das getan hast und die Person keine weiteren Rückfragen mehr hat, rufe das Tool end_guided_topic_teaching auf, um die Sitzung abzuschließen — sprich NICHT einfach in allgemeiner Unterhaltung weiter.',
       '',
     ].join('\n');
   }
@@ -232,14 +235,14 @@ export function buildGuidedTopicNarrationBlock(
     '',
     '## GUIDE MODE (TEACH) — you INTRODUCE this topic and TEACH it',
     '',
-    `LANGUAGE: Speak ONLY in ${langName}. The teaching material below may be written in German — translate and deliver everything in ${langName}, and do NOT switch to German (or any other language) at any point in this session. This GUIDE MODE applies to the WHOLE session and OVERRIDES every generic greeting/opening rule.`,
+    `LANGUAGE: Speak ONLY in ${langName}. The teaching material below may be written in German — translate and deliver everything in ${langName}, and do NOT switch to German (or any other language) at any point in this session. This GUIDE MODE applies to the WHOLE session.`,
     '',
-    `The person tapped the topic "${content.topic_title}" in "My Journey" to have you explain it. Introduce it and TEACH it — proactively, in your OWN words.`,
+    `The person tapped the topic ${content.topic_title} in My Journey to have you explain it. Introduce it and TEACH it — proactively, in your OWN words.`,
     '',
     'Important — for the WHOLE session:',
-    '- Don\'t ask "What do you want?" / "How can I help you?" / "Where should we start?" — you know what this is about: this topic.',
+    '- Skip generic opening questions — you know what this is about: this topic.',
     '- Don\'t read the script word-for-word. Use it as the basis and explain it naturally, conversationally.',
-    '- A brief "yes", "sure", or "okay" from the person right after your opening line means "explain it to me now" — not "skip to the next step". Explain the core points from the teaching material below, in your own words, before moving on to practice or anything else.',
+    '- A brief yes, sure, or okay from the person right after your opening line means explain it to me now — not skip to the next step. Explain the core points from the teaching material below, in your own words, before moving on to practice or anything else.',
     '',
     `TOPIC: ${content.topic_title}`,
     'Teaching material (paraphrase, do NOT read aloud):',
@@ -249,8 +252,9 @@ export function buildGuidedTopicNarrationBlock(
     '- Introduce the topic in 1–2 sentences, then explain it clearly and concretely in your own words.',
     '- Keep it conversational: short chunks, check understanding, answer follow-ups.',
     content.practice_target
-      ? `- Once they get it, GUIDE them to the practice ("${content.practice_target}") — offer to do it together right now.`
+      ? `- Once they get it, GUIDE them to the practice (${content.practice_target}) — offer to do it together right now.`
       : '- Once they get it, propose a concrete next step.',
+    '- Once you\'ve done that and they have no more follow-up questions, call the end_guided_topic_teaching tool to close things out — do NOT just keep talking in general conversation.',
     '',
   ].join('\n');
 }

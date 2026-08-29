@@ -1,0 +1,93 @@
+# VTID-03725 — commands run for the Serbian ORB voice diagnosis
+
+## 1. Confirm sr routing is not a code defect
+
+Read (no command, source review):
+  services/gateway/src/orb/live/upstream/upstream-provider-selector.ts
+  services/gateway/src/orb/live/upstream/cascaded-config.ts
+
+Re-ran the pre-existing test oracle rather than trusting the source read
+alone:
+
+  cd services/gateway
+  npx jest test/orb/live/upstream/cascaded-voice.test.ts \
+    test/orb/live/language-coverage.test.ts --silent
+  # => 2 passed, 2 total / 24 passed, 24 total (see outputs/targeted-tests.txt)
+
+## 2. Confirm Turkish is genuinely fixed on main (VTID-03730), not just claimed
+
+  git fetch origin main
+  git log --oneline origin/main -5
+  git show 86b71bb --stat
+  git show 86b71bb | grep -i "serbian\|'sr'"
+  # => confirms 86b71bb (#3187) shipped a complete, independent tr fix
+  #    across the same 7-table seam this session had also found, with a
+  #    different specific voice-id per table; confirms it did NOT include
+  #    a Serbian live-telemetry investigation (only re-confirmed the
+  #    existing sr-stays-on-Nova/Polly-blocks architecture via a
+  #    SERBIAN_PREFIXES constant + one test).
+
+## 3. Live telemetry: does Serbian actually reach Nova, and what happens
+
+Queried Supabase (project inmkhvwdcuyhnxkgfvsb) `oasis_events` via the
+Supabase REST/RPC path available to this session — read-only, no writes.
+`vtid.live.session.start` carries `lang`; the paired
+`vtid.live.session.stop` does not, so the two are joined by `session_id`.
+
+Conceptual query (executed via the Supabase MCP/REST query interface, not
+raw psql — no direct Postgres port is reachable from this session):
+
+  WITH starts AS (
+    SELECT metadata->>'session_id' AS session_id,
+           metadata->>'lang'       AS lang,
+           created_at              AS started_at
+    FROM oasis_events
+    WHERE topic = 'vtid.live.session.start'
+      AND metadata->>'lang' = 'sr'
+      AND created_at > now() - interval '7 days'
+  ),
+  stops AS (
+    SELECT metadata->>'session_id'      AS session_id,
+           metadata->>'turn_count'      AS turn_count,
+           metadata->>'audio_out_chunks' AS audio_out_chunks,
+           metadata->>'reason'          AS reason,
+           metadata->>'code'            AS code,
+           metadata->>'diagnostic'      AS diagnostic
+    FROM oasis_events
+    WHERE topic = 'vtid.live.session.stop'
+  )
+  SELECT s.session_id, s.started_at, t.turn_count, t.audio_out_chunks,
+         t.reason, t.code, t.diagnostic
+  FROM starts s JOIN stops t USING (session_id)
+  ORDER BY s.started_at DESC;
+
+Result: 20 rows. See outputs/serbian-telemetry-notes.md for the aggregate
+breakdown and interpretation (raw rows omitted — they carry real
+`session_id`s and are not committed verbatim).
+
+## 4. Confirm no idle-timeout recovery path exists today
+
+  grep -n "resendGreetingIfStuckAtZeroTurns" services/gateway/src/routes/orb-live.ts
+  sed -n '8420,8482p' services/gateway/src/routes/orb-live.ts
+  # => all 3 real call sites sit inside closeEvent-driven reconnect
+  #    branches; none fires from an open-but-silent connection.
+  # (see outputs/resend-callsites.txt)
+
+## 5. IAM inspection attempted, confirmed blocked (informational only —
+##    not load-bearing for this diagnosis, recorded for completeness)
+
+  aws iam list-role-policies --role-name vitana-ecs-task-role
+  aws iam list-attached-role-policies --role-name vitana-ecs-task-role
+  # => AccessDenied: explicit deny in permissions boundary
+  #    (claude-code-aws-agent-boundary denies all iam:* on any resource).
+  # Did not block this diagnosis — no IAM read was actually needed; the
+  # cascade's Transcribe IAM grant was independently confirmed working via
+  # real CloudWatch log lines showing successful Transcribe connections
+  # (lang=pt connect_ms=4, lang=pl connect_ms=1), and that finding is
+  # unrelated to Serbian, which cannot use the cascade at all (no Polly
+  # voice) regardless of any IAM grant.
+
+## 6. No regression check
+
+  git diff --stat origin/main...HEAD
+  # => only docs/validation/VTID-03725/** changed (see outputs/diff-stat.txt)

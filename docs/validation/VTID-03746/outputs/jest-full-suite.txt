@@ -1,0 +1,10 @@
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 1 skipped, 710 passed, 710 of 711 total
+Tests:       29 skipped, 6 todo, 13387 passed, 13422 total
+Snapshots:   44 passed, 44 total
+Time:        62.055 s, estimated 64 s
+Ran all test suites.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+
+[exited with code 0]

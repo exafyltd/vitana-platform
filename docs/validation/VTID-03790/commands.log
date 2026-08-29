@@ -1,0 +1,111 @@
+VTID-03790 — commands.log
+==========================
+
+## Background: the live diff that motivated this VTID
+
+Ran two real live sessions against staging (preview-aws-gateway.vitanaland.com)
+as the documented e2e-test@vitana.dev account (see platform CLAUDE.md's
+sanctioned testing exception): one with guided_topic_id set (blocked by
+nova_validation, matching every prior report in the VTID-03674->03786
+chain), one an ordinary open (succeeded). Pulled both sessions'
+nova_instruction_debug_dump diag events (VTID-03787 instrumentation,
+metadata->>'stage'='nova_instruction_debug_dump') from oasis_events and
+diffed the literal instruction_text between them.
+
+Finding: the guided session's instruction carried a
+"SPOKEN FIRST UTTERANCE — REQUIRED VERBATIM" block (from
+buildVertexWakeBriefBlock, live-session-controller.ts) containing:
+
+  "So, das war „Was ist Vitanaland". Hast du Fragen dazu, oder sollen wir
+  direkt gemeinsam loslegen?"
+
+-- German guillemet quotes around the dynamic topic title, nested inside the
+wrapper's own outer straight quotes. The GUIDE-MODUS block repeated the
+pattern around practice_target and the „ja"/„mach das"/„okay" exemplar
+words. Reported plainly to the user with this exact evidence; user replied
+"Go ahead and build the fix."
+
+## Locating every site
+
+$ grep -rn '„' services/gateway/src/orb/live/instruction/guided-topic-narration-prompt.ts
+-> 7 sites across 4 functions (buildGuidedTopicNarrationOpenerLine,
+   buildGuidedTopicSpokenLesson, buildGuidedTopicPostNarrationLine,
+   buildGuidedTopicNarrationBlock x2 branches)
+
+Confirmed English branches carry the structurally identical defect (plain
+straight quotes, nested inside buildVertexWakeBriefBlock's own outer
+straight-quote wrapper) via direct read of live-session-controller.ts:580-644.
+
+## Fix
+
+Removed every guillemet/straight-quote wrap around dynamic content (topic
+title, practice_target, short exemplar words) across all 4 functions x both
+language branches. Practice-target references kept their existing plain
+parentheses (`(${content.practice_target})`) with only the quote marks
+inside them removed. One minor grammar adjustment (German "heißt" ->
+"bedeutet") to keep the sentence readable once the surrounding quotes were
+gone.
+
+$ grep -n '„|”|"\$\{' services/gateway/src/orb/live/instruction/guided-topic-narration-prompt.ts
+(no matches -- confirms every nested-quote site is gone)
+
+## New regression tests
+
+Added `describe('VTID-03790: no nested quotation marks around dynamic
+content (Nova content-filter fix)')` to
+test/orb/live/instruction/guided-topic-narration-prompt.test.ts -- 6 new
+tests: one per builder function (opener line, spoken-lesson fallback,
+post-narration line, narration block x2 branches) asserting no `"`/`„`/`"`
+character appears in the output, plus one meaning-preservation test
+confirming the topic title/practice target are still present as plain text.
+
+$ cd services/gateway && npx jest test/orb/live/instruction/guided-topic-narration-prompt.test.ts
+PASS -- 26/26 (20 pre-existing + 6 new)
+(outputs/jest-scoped-fixed.txt)
+
+## Mutation verification
+
+$ git stash push -- services/gateway/src/orb/live/instruction/guided-topic-narration-prompt.ts
+$ npx jest test/orb/live/instruction/guided-topic-narration-prompt.test.ts
+FAIL -- 5/26 failing (exactly the 5 new assertion-bearing VTID-03790 tests;
+        the 6th new test, meaning-preservation, still passes since it only
+        checks substring presence), 21/26 still passing (all pre-existing
+        tests, including VTID-03785/03786's own regression guards, untouched)
+(outputs/jest-mutation-prefix-file.txt)
+
+$ git stash pop
+(fix restored; git status confirms only the intended 2 files modified)
+
+## Full verification
+
+$ npx tsc --noEmit
+(clean, exit 0)
+(outputs/tsc-noemit.txt)
+
+$ npx jest
+PASS -- 722/723 suites (1 pre-existing skip), 13538/13573 tests passing
+        (13532 before this VTID's +6 new tests), 0 failures
+(outputs/jest-full-suite.txt)
+
+## Governance
+
+command-hub-ownership-guard.js NOT touched -- changes are a
+services/gateway/src/orb/live/instruction/*.ts file and its test, outside
+PROTECTED_PATH scope.
+
+VTID-03790 self-allocated and set to status='in_progress'/
+spec_status='approved' earlier in this session (confirmed live via a
+direct vtid_ledger read before starting this evidence pack) -- the user's
+"Go ahead and build the fix" instruction is the explicit consent for this
+work per IF-THEN rule 5.
+
+## Branch hygiene
+
+Original WIP was on claude/vtid-03788b-run-block-size-fix (the already-
+merged VTID-03789 branch). Per this session's established pattern, moved
+the WIP onto a fresh branch cut from a freshly-fetched origin/main
+(93e428e6, confirmed the VTID-03789 merge commit) via:
+  git stash push -u
+  git checkout -b claude/vtid-03790-nested-quote-fix origin/main
+  git stash pop
+-- avoids carrying stale pre-squash commits into this PR's diff.

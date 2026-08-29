@@ -1324,6 +1324,13 @@ export function buildLiveApiTools(
             '  - "Note that I …" / "Note for today: …"',
             '  - "Just had …" — even casual mentions',
             '',
+            'ONE CALL PER DICTATION (VTID-03793): if one continuous turn',
+            'reports several things (a meal AND water AND coffee), that is',
+            'still ONE diary entry. Wait for the user to finish, then call',
+            'this ONCE with everything combined in raw_text. Do NOT call it',
+            'once per sentence/fact — that fragments one dictation into',
+            'several duplicate-looking Daily Diary entries.',
+            '',
             'IMPORTANT: pass the user\'s VERBATIM words as raw_text. The',
             'gateway runs a pattern-matching extractor on the text to detect',
             'water (1L → 1000ml), meals (breakfast / lunch / Frühstück /',
@@ -2532,6 +2539,48 @@ export function buildLiveApiTools(
               reason: {
                 type: 'string',
                 description: 'Short freeform reason the model is closing (e.g. "user said nein danke", "user signaled they are tired"). Used for telemetry — never spoken.',
+              },
+            },
+            required: [],
+          },
+        },
+        // VTID-03762: My Journey guided-topic termination — the same shape as
+        // end_teaching_session above, but scoped to the guided-topic-narration
+        // flow (tapping a session/topic in "My Journey"), not Teacher Mode.
+        // WHY THIS EXISTS: the GUIDE MODE system-instruction block
+        // (guided-topic-narration-prompt.ts) has no turn-count limit and no
+        // other exit condition — it is re-injected for the WHOLE session, so
+        // once the model has explained the topic and the user keeps
+        // chatting, it free-wheels into ordinary conversation forever with
+        // no signal telling either the model or the app "teaching is done".
+        // Live-reported symptom (VTID-03762): the ORB overlay never closes,
+        // so the "Well done" drawer — already mounted underneath it since
+        // the moment the topic was tapped (vitana-v1's GuidedJourneyCatalog)
+        // — never becomes visible, and the topic is never reachable to mark
+        // done via its own practice flow.
+        {
+          name: 'end_guided_topic_teaching',
+          description: [
+            'My Journey guided-topic termination: close the orb overlay after',
+            'you have finished teaching a topic the person tapped in "My',
+            'Journey" and they are ready to move on. ALWAYS call this AFTER',
+            'you have explained the topic, answered any follow-up questions,',
+            'and proposed the practice or a concrete next step — do NOT just',
+            'stop talking or drift into unrelated conversation. The overlay UI',
+            'listens for this directive and reveals the topic summary /',
+            'practice screen underneath, where the person can mark it done.',
+            '',
+            'Call this once the person confirms they understand, has no more',
+            'questions about the topic, or clearly wants to move on —',
+            'interpret IN CONTEXT, not by keyword match. Do not call this',
+            'before you have actually explained the topic\'s content.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              reason: {
+                type: 'string',
+                description: 'Short freeform reason the model is closing (e.g. "explained topic, no more questions", "user confirmed understanding"). Used for telemetry — never spoken.',
               },
             },
             required: [],

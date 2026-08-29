@@ -65,6 +65,7 @@ const TRANSCRIBE_LANGUAGE_CODES: Record<string, LanguageCode> = {
   pt: 'pt-BR',
   ru: 'ru-RU',
   pl: 'pl-PL',
+  tr: 'tr-TR',
   zh: 'zh-CN',
   // Polly's Arabic voice (Hala) is ar-AE; Transcribe's Gulf Arabic is also
   // ar-AE, so these agree. Modern Standard (ar-SA) exists on Transcribe but

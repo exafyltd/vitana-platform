@@ -1,0 +1,59 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+PASS test/frontend/orb-widget-stale-poll-generation-guard.test.ts
+  VTID-03763: _s._sessionGeneration exists and is bumped on every real session start
+    ✓ is declared on the initial _s state, starting at 0 (5 ms)
+    ✓ is incremented at the SSE session-start success site (right after _s.active = true) (2 ms)
+    ✓ is incremented at the WS session-start success site (right after _s.active = true) (1 ms)
+  VTID-03763: _waitForAudioEnd (turn_complete) bails on a stale generation before touching any _s.* state
+    ✓ captures myGen from _s._sessionGeneration at IIFE invocation (2 ms)
+    ✓ checks the generation guard as the FIRST statement in the poll tick, before the pre-existing !_s.active check (1 ms)
+    ✓ the generation guard precedes the guidedAutoClose/guidedTopic clobber this bug actually caused
+  VTID-03763: _waitForGoodbyeEnd (signup/login close) bails on a stale generation
+    ✓ captures myGen and checks it before either scheduled _hide()/redirect (6 ms)
+  VTID-03763: _waitForNavReady (orb_directive navigate) bails on a stale generation
+    ✓ captures myGen and checks it before tearing down audio/navigating/hiding (1 ms)
+  VTID-03763: _endGuidedTopicTeaching (VTID-03762 shared helper) bails on a stale generation
+    ✓ pins myGen at function entry, before the poll IIFE is even created (1 ms)
+    ✓ checks the generation guard before _hide() / the onGuidedTopicTeachingEnd callback (1 ms)
+
+(node:3991) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS test/orb/live/guided-topic-teaching-complete-signal.test.ts
+  VTID-03762: end_guided_topic_teaching tool declaration
+    ✓ is present in the authenticated tool catalog, right after end_teaching_session (6 ms)
+    ✓ is NOT present for an anonymous session (matches every other authenticated-only tool)
+    ✓ takes an optional freeform "reason" parameter, same shape as end_teaching_session (2 ms)
+    ✓ description tells the model to call it AFTER teaching, not before (2 ms)
+  VTID-03762: orb-live.ts dispatcher handles end_guided_topic_teaching
+    ✓ has a case body for end_guided_topic_teaching
+    ✓ emits an orb_directive with directive:'end_guided_topic_teaching' over both SSE and WS (1 ms)
+    ✓ includes the active guided_topic_id in the directive payload (for the client + telemetry)
+    ✓ never throws on a transport write failure — the directive emit is wrapped in try/catch (1 ms)
+    ✓ always returns success:true (best-effort, matching end_teaching_session) (1 ms)
+  VTID-03762: orb-widget.js closes the overlay on the end_guided_topic_teaching directive
+    ✓ handles msg.directive === 'end_guided_topic_teaching' (1 ms)
+    ✓ polls audioPlaying/scheduledSources/audioQueue before hiding, same pattern as the navigate directive (1 ms)
+    ✓ has a hard safety cap so a stuck/misreported audio state cannot wait forever
+    ✓ calls _hide() only after the poll resolves (audio drained or cap hit), not on a blind fixed delay (1 ms)
+    ✓ does NOT set audioPlaying=false as a way to stop new chunks — that flag does not gate the audio handler (1 ms)
+    ✓ fires an optional onGuidedTopicTeachingEnd host callback, without throwing if absent
+    ✓ does not disturb the existing end_teaching_session branch (Teacher Mode unaffected)
+  VTID-03762 follow-up: client-side backstop when the model never calls the tool
+    ✓ declares a generous, documented backstop ceiling (not a short/turn-count heuristic) (1 ms)
+    ✓ a real topic tap arms _guidedTopicOpenedAt and starts the backstop interval (1 ms)
+    ✓ clears any stale backstop interval before arming a new one (Replay re-tap safety)
+    ✓ the backstop check compares elapsed time against GUIDED_TOPIC_BACKSTOP_MS and calls the shared teardown (1 ms)
+    ✓ _hide() clears both _guidedTopicOpenedAt and the backstop interval — a real close ends the backstop too (1 ms)
+    ✓ _endGuidedTopicTeaching is a single shared helper used by both the directive handler and the backstop (12 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 2 passed, 2 total
+Tests:       32 passed, 32 total
+Snapshots:   0 total
+Time:        2.815 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

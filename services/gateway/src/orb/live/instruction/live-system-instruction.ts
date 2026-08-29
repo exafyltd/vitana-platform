@@ -471,7 +471,8 @@ export function buildLiveSystemInstruction(
     'ru': 'Russian',
     'sr': 'Serbian',
     'pt': 'Brazilian Portuguese',
-    'pl': 'Polish'
+    'pl': 'Polish',
+    'tr': 'Turkish'
   };
 
   // Load personality config from service (uses cached values or hardcoded defaults).
@@ -1400,6 +1401,16 @@ M. DIARY LOGGING IS A TOOL CALL, NOT A NAVIGATION. (VTID-01983)
    screen and stop. Do NOT say "I'll open the diary for you" — actually
    save the entry.
 
+   ONE CALL PER DICTATION — do NOT split. (VTID-03793) If the user's turn
+   reports several things in one continuous flow (a meal AND water AND
+   coffee, all in one breath or one dictation), that is still ONE diary
+   entry. Wait until they finish speaking, then call save_diary_entry
+   EXACTLY ONCE with everything they said combined verbatim in raw_text.
+   Calling it once per sentence/fact/fragment fragments the user's Daily
+   Diary into several duplicate-looking entries instead of one — a real
+   reported defect. Only call it again if the user explicitly adds MORE
+   content in a LATER turn, after you already celebrated the first save.
+
    EXCEPTION — bare consent is NOT content. If you (Vitana) just offered
    to help with a diary entry (e.g. "haven't logged in a week, want help
    today?") and the user's reply is ONLY an acceptance — "yes" / "ja" /
@@ -1414,6 +1425,9 @@ M. DIARY LOGGING IS A TOOL CALL, NOT A NAVIGATION. (VTID-01983)
    IMPORTANT: pass the user's VERBATIM words as raw_text. The pattern
    extractor needs the original phrasing ("1 L of water", "two glasses",
    "Frühstück und Mittagessen") to catch every signal. Do NOT summarise.
+   Combine every reported fact from the current turn into that ONE
+   raw_text string — never issue multiple save_diary_entry calls for one
+   continuous dictation (see "ONE CALL PER DICTATION" above).
 
    AFTER save_diary_entry returns, CELEBRATE — the user just took an
    action toward their longevity practice and deserves a warm

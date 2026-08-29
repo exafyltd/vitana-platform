@@ -10,6 +10,7 @@ import {
   warmNovaSonicConnection,
   warmNovaSonicModelExecution,
   __setSharedBedrockClientForTests,
+  EARLY_EVENT_CAP as EARLY_EVENT_CAP_TEST,
   type NovaBedrockLike,
 } from '../../../../src/orb/live/upstream/nova-sonic-live-client';
 import { getNovaSonicConfig } from '../../../../src/orb/live/upstream/nova-sonic-config';
@@ -75,6 +76,8 @@ interface FakeSetup {
 function makeClient(overrides: {
   send?: (command: unknown) => Promise<{ body?: FakeResponseBody }>;
   audioHighWaterMark?: number;
+  onFirstRawChunk?: (info: { atMs: number; byteLength: number }) => void;
+  onEarlyNormalizedEvent?: (info: { atMs: number; kind: string; index: number }) => void;
 } = {}): FakeSetup {
   const body = new FakeResponseBody();
   let capturedBody: AsyncIterable<unknown> | null = null;
@@ -94,6 +97,8 @@ function makeClient(overrides: {
     createCommand: (input) => input,
     onRotationDue: rotationDue,
     audioHighWaterMark: overrides.audioHighWaterMark,
+    onFirstRawChunk: overrides.onFirstRawChunk,
+    onEarlyNormalizedEvent: overrides.onEarlyNormalizedEvent,
   });
 
   // Drain N events from the captured request stream.
@@ -217,6 +222,70 @@ describe('NovaSonicLiveClient', () => {
     ]);
   });
 
+  it('VTID-03764: onFirstRawChunk fires exactly once, on the FIRST raw chunk only', async () => {
+    const rawChunks: Array<{ atMs: number; byteLength: number }> = [];
+    const { client, body } = makeClient({
+      onFirstRawChunk: (e) => rawChunks.push(e),
+    });
+    await client.connect(baseOptions());
+
+    body.feed({ event: { audioOutput: { content: 'QUJD' } } });
+    await flush();
+    await flush();
+    body.feed({ event: { audioOutput: { content: 'REVG' } } });
+    await flush();
+    await flush();
+
+    expect(rawChunks).toHaveLength(1);
+    expect(rawChunks[0].byteLength).toBeGreaterThan(0);
+  });
+
+  it('VTID-03764 follow-up: onEarlyNormalizedEvent reports a real timeline, not one snapshot, capped at EARLY_EVENT_CAP', async () => {
+    const events: Array<{ atMs: number; kind: string; index: number }> = [];
+    const { client, body } = makeClient({
+      onEarlyNormalizedEvent: (e) => events.push(e),
+    });
+    await client.connect(baseOptions());
+
+    // A `usage` handshake ack arriving before anything else is exactly the
+    // real pattern this test pins: a one-shot "first event" hook would have
+    // reported ONLY this and nothing about what follows.
+    body.feed({ event: { usageEvent: { totalInputTokens: 0, totalOutputTokens: 0, details: { total: {} } } } });
+    body.feed({ event: { audioOutput: { content: 'QUJD' } } });
+    body.feed({ event: { textOutput: { contentId: 'u', role: 'USER', content: 'hallo' } } });
+    await flush();
+    await flush();
+
+    expect(events.map((e) => e.kind)).toEqual(['usage', 'audio', 'transcript']);
+    expect(events.map((e) => e.index)).toEqual([0, 1, 2]);
+
+    // Feed well past the cap — firings must stop exactly at the cap.
+    for (let i = 0; i < EARLY_EVENT_CAP_TEST; i++) {
+      body.feed({ event: { audioOutput: { content: 'QUJD' } } });
+    }
+    await flush();
+    await flush();
+    expect(events.length).toBe(EARLY_EVENT_CAP_TEST);
+  });
+
+  it('VTID-03764: a throwing onFirstRawChunk/onEarlyNormalizedEvent never destabilizes the stream', async () => {
+    const audio: any[] = [];
+    const { client, body } = makeClient({
+      onFirstRawChunk: () => { throw new Error('boom-raw'); },
+      onEarlyNormalizedEvent: () => { throw new Error('boom-early'); },
+    });
+    client.onAudioOutput((e) => audio.push(e));
+    await client.connect(baseOptions());
+
+    body.feed({ event: { audioOutput: { content: 'QUJD' } } });
+    await flush();
+    await flush();
+
+    // The diagnostic hooks threw, but the real audio delivery must be unaffected.
+    expect(audio).toEqual([{ dataB64: 'QUJD', mimeType: 'audio/pcm;rate=24000' }]);
+    expect(client.getState()).toBe('open');
+  });
+
   it('toolUse + TOOL contentEnd dispatches a tool call; sendToolResult correlates by callId', async () => {
     const { client, body, sentEvents } = makeClient();
     const toolCalls: any[] = [];
@@ -334,6 +403,64 @@ describe('NovaSonicLiveClient', () => {
     client.onError((e) => errors.push(e));
     await expect(client.connect(baseOptions())).rejects.toThrow(/nova_connect_failed/);
     expect(errors[0].code).toBe('nova_stream_error');
+  });
+
+  describe('rebindSessionDeps (VTID-03779)', () => {
+    // A prewarmed client is constructed and connected before the real
+    // GeminiLiveSession it will end up serving exists, so its
+    // rotation/idle/diagnostic callbacks are closures over nothing. The
+    // claim path calls rebindSessionDeps() exactly once to repoint them at
+    // the real session — this proves the OLD closure goes dead and the NEW
+    // one takes over, not merely that the method doesn't throw.
+    it('repoints onRotationDue so the original constructor-time callback no longer fires', async () => {
+      jest.useFakeTimers();
+      try {
+        const { client, rotationDue: originalRotationDue } = makeClient();
+        await client.connect(baseOptions());
+
+        const newRotationDue = jest.fn();
+        client.rebindSessionDeps({
+          onRotationDue: newRotationDue,
+          onIdleDeadlineApproaching: jest.fn(),
+          onFirstRawChunk: jest.fn(),
+          onEarlyNormalizedEvent: jest.fn(),
+        });
+
+        jest.advanceTimersByTime(config.rotationAfterMs);
+        expect(originalRotationDue).not.toHaveBeenCalled();
+        expect(newRotationDue).toHaveBeenCalledTimes(1);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('repoints onFirstRawChunk and onEarlyNormalizedEvent so only the rebound callbacks observe post-claim traffic', async () => {
+      const originalFirstRawChunk = jest.fn();
+      const originalEarlyNormalizedEvent = jest.fn();
+      const { client, body, sentEvents } = makeClient({
+        onFirstRawChunk: originalFirstRawChunk,
+        onEarlyNormalizedEvent: originalEarlyNormalizedEvent,
+      });
+      await client.connect(baseOptions());
+      await sentEvents();
+
+      const newFirstRawChunk = jest.fn();
+      const newEarlyNormalizedEvent = jest.fn();
+      client.rebindSessionDeps({
+        onRotationDue: jest.fn(),
+        onIdleDeadlineApproaching: jest.fn(),
+        onFirstRawChunk: newFirstRawChunk,
+        onEarlyNormalizedEvent: newEarlyNormalizedEvent,
+      });
+
+      body.feed({ event: { audioOutput: { content: Buffer.from('hi').toString('base64') } } });
+      await flush();
+
+      expect(originalFirstRawChunk).not.toHaveBeenCalled();
+      expect(originalEarlyNormalizedEvent).not.toHaveBeenCalled();
+      expect(newFirstRawChunk).toHaveBeenCalledTimes(1);
+      expect(newEarlyNormalizedEvent).toHaveBeenCalledTimes(1);
+    });
   });
 });
 

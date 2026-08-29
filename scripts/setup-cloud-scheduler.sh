@@ -253,8 +253,16 @@ DIRECT_JOBS=(
 TENANT_DIRECT_JOBS=(
   "daily-recompute|0 2 * * *|UTC|/api/v1/scheduler/daily-recompute"
   "daily-pace-notifications|0 * * * *|UTC|/api/v1/scheduled-notifications/daily-pace-notifications"
-  # BOOTSTRAP-DAILY-FEATURE-TIP: automatic once-a-day "Did You Know" card.
-  "daily-feature-tip|0 17 * * *|UTC|/api/v1/scheduled-notifications/daily-feature-tip"
+  # BOOTSTRAP-DAILY-FEATURE-TIP / VTID-03744: daily-feature-tip REMOVED from
+  # here. This GCP job silently 404'd for 11 days (2026-08-16 → 2026-08-26)
+  # once the GCP Cloud Run gateway it POSTed to was deleted — re-pointing it
+  # at the AWS gateway would only reproduce the same class of outage the next
+  # time GCP is touched (its project has no linked billing account at all,
+  # per VTID-03676). Migrated to AWS EventBridge Scheduler + Lambda instead,
+  # matching the gateway-push-dispatch precedent:
+  #   scripts/aws/setup-eventbridge-daily-feature-tip.sh
+  # If you're tempted to re-add it here: don't — retire the AWS version
+  # first, or you'll end up with the job firing from two places.
   # VTID-03604: nightly goodnight push, same hourly-UTC-tick / per-user-
   # local-hour pattern as daily-pace-notifications — fires every hour, the
   # endpoint dispatches only to users whose local hour == 22 and who did not

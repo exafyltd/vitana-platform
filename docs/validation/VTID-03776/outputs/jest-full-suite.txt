@@ -1,0 +1,62 @@
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/services/conversation/new-facts-detector.test.ts
+  detectNewFacts
+    ✓ counts fresh facts and returns a capped sample (1 ms)
+    ✓ excludes plumbing keys like preferred_language
+    ✓ clamps the cutoff to the 7-day lookback cap
+    ✓ filters superseded rows and tenant-scopes when given (1 ms)
+    ✓ returns zero on query error and on missing inputs
+  learning-surfaced stamp
+    ✓ markLearningSurfaced upserts the signal row (1 ms)
+    ✓ readLearningSurfacedAt returns the stamp or null (1 ms)
+
+PASS test/services/assistant-continuation/providers/next-action/per-source-emit.test.ts
+  emitPerSourceCandidates
+    ✓ emits one row per source result (2 ms)
+    ✓ tags winner=true only on the winning source (1 ms)
+    ✓ returned row carries priority + confidence + dedupe_key (1 ms)
+    ✓ skipped row carries skipped_reason and null priority (1 ms)
+    ✓ empty candidates array → no emits
+    ✓ never throws — even with garbage candidates (1 ms)
+
+PASS test/orb/live/ws-tenant-fallback.test.ts
+  WS tenant fallback — source-level wall
+    ✓ the SSE /live/stream route has the tenant fallback (reference implementation) (2 ms)
+    ✓ the WebSocket connection handler applies the SAME fallback when tenant_id is missing (1 ms)
+    ✓ the WS session start is handed the (possibly-fallback-resolved) identity variable (1 ms)
+    ✓ the shared controller re-applies the tenant fallback, so the WS hand-off is belt-and-braces
+  lookupPrimaryTenant — behavior (previously untested)
+    ✓ is defined with a primary-tenant-first, any-tenant-fallback contract (16 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/services/wake-timeline/timeline-events.test.ts
+  B0d.3 — wake timeline event constants are locked
+    ✓ contains exactly the 16 locked event names in the documented order (1 ms)
+    ✓ isWakeTimelineEventName accepts every locked name (1 ms)
+    ✓ isWakeTimelineEventName rejects unknown names
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 1 skipped, 715 passed, 715 of 716 total
+Tests:       29 skipped, 6 todo, 13476 passed, 13511 total
+Snapshots:   44 passed, 44 total
+Time:        79.314 s
+Ran all test suites.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+
+[exited with code 0]

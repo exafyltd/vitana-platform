@@ -1,0 +1,101 @@
+# VTID-03771 — commands run during investigation and verification
+
+## Investigation (read-only, live oasis_events tracing)
+
+User reported the exact VTID-03763/03770-shaped symptom recurring live on
+staging, right after VTID-03770 shipped and was confirmed deployed. Queried
+live `oasis_events` (Supabase MCP, read-only SELECT) for a real tap made
+during this session, topic T005, real account bc34a5ca-6966-44f6-9507-
+3bed98e3e1d5:
+
+  - Confirmed the guided-topic candidate won the wake-brief ranker
+    (dedupe_key:"guided_topic:T005", winner:true) — the tap itself worked.
+  - Confirmed a `nova_validation` content-filter block on the FIRST
+    attempt, still turn_count:0.
+  - Confirmed the SAME session's internal retry
+    (nova_premature_close_retry -> greeting_recovery) fired next — this is
+    resendGreetingIfStuckAtZeroTurns, NOT a client-side reconnect (ruled
+    out VTID-03746/VTID-03770's code paths as the cause — those are
+    client-triggered new-session-start functions; this defect is a
+    same-session, server-internal retry).
+  - Critically found `stage=newday_briefing_eval` then
+    `stage=stamp_briefing_date_write` inside THIS retry's diag trace —
+    stages that only exist inside the "safe fast greeting" branch's
+    new-day-overview evaluation, never inside guided-topic delivery. This
+    is what confirmed the retry substituted a daily briefing for the
+    guided topic, rather than losing/dropping the topic silently.
+  - Confirmed via a second, later live tap (same session continuing) that
+    audio_out grew to 394 chunks on a single turn (the daily-briefing
+    content, not T005) and then the session idled indefinitely — turn_count
+    stuck at 1, audio_out never advancing again despite 2+ minutes of
+    continuous vtid.live.audio.in.chunk events from the user.
+
+Traced the code path via grep + Read:
+  grep -n "resendGreetingIfStuckAtZeroTurns\|nova_premature_close_retry\|greeting_recovery" src/routes/orb-live.ts
+  grep -n "function sendGreetingPromptToLiveAPI\|decideOpening(" src/routes/orb-live.ts
+  grep -n "newday_briefing_eval\|stamp_briefing_date_write\|guided_topic_id" src/routes/orb-live.ts
+
+Read `sendGreetingPromptToLiveAPI` (orb-live.ts:9714 onward) end-to-end.
+Confirmed via a brace-matching awk script that the safe-fast `if` block
+(starting at the `contextReadyResolved === false` condition) spans through
+a `return true;` statement BEFORE the normal ladder's `_hasPendingGuided-
+TopicAtOpen` computation and `decideOpening()` call — i.e. once the
+safe-fast branch's condition is met, the function returns without ever
+reaching the guided-topic protection that already exists further down
+(VTID-03727):
+
+  awk 'NR==9755{depth=0} NR>=9755{for(i=1;i<=length($0);i++){c=substr($0,i,1); \
+    if(c=="{")depth++; if(c=="}"){depth--; if(depth==0 && NR>9755){print NR; exit}}}}' \
+    src/routes/orb-live.ts
+
+## Implementation
+
+Edits to `services/gateway/src/routes/orb-live.ts`:
+  - Hoisted `const _hasPendingGuidedTopicAtOpen = !!(session as
+    any).guidedTopicNarrationContent && (session.turn_count || 0) === 0;`
+    from its original site (just before the normal ladder's
+    `decideOpening()` call) to immediately before the safe-fast branch's
+    `if` statement.
+  - Added `&& !_hasPendingGuidedTopicAtOpen` to the safe-fast branch's `if`
+    condition (previously only `contextReadyResolved === false &&
+    !session.isAnonymous`).
+  - Removed the now-duplicate declaration at the original site, replacing
+    it with a one-line comment noting the flag is reused from the hoisted
+    declaration above (a literal duplicate `const` in the same function
+    scope would not compile).
+
+## Verification (run from services/gateway/)
+
+  node --check src/routes/orb-live.ts
+    → exit 0 (outputs/node-check.txt)
+
+  npx jest test/orb/live/characterization/safe-fast-greeting-respects-pending-guided-topic.characterization.test.ts \
+    test/orb/live/characterization/guided-topic-cadence-skip-not-silenced.characterization.test.ts --silent
+    → 2 suites, 11 tests, 0 failures (outputs/jest-vtid-03771-suite.txt)
+
+  npx jest --silent
+    → 714/715 suites (1 pre-existing skip), 13,439/13,474 tests, 0 failures
+      (outputs/jest-full-suite.txt)
+
+  npx tsc --noEmit
+    → exit 0 (outputs/tsc-noemit.txt)
+
+### Mutation testing
+
+Backed up orb-live.ts, removed exactly the new
+`&& !_hasPendingGuidedTopicAtOpen` guard from the safe-fast `if`
+condition (verified via python string-replace with an exact-match
+assertion), re-ran the target test file: exactly 1 test failed (the
+assertion checking for that guard's presence), the other 5 tests in the
+same file still passed. Restored the backup, re-verified `tsc --noEmit`
+clean.
+
+## Branch note
+
+Per this session's established procedure: the designated branch
+(`claude/my-journey-catalog-multilingual-qrwxng`) was found to contain only
+already-merged history (its prior VTID-03770 commits are present on `main`
+as squash-merge `09c0fe5a`, confirmed via `git log --oneline origin/main`
+and `git merge-base`). Reset to fresh `origin/main`
+(`git reset --hard origin/main`) before starting this VTID's work — no
+unmerged content was lost.

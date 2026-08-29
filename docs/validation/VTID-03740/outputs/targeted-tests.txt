@@ -1,0 +1,36 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/frontend/orb-widget-stuck-speaking-recovery.test.ts
+  orb-widget stuck-speaking recovery (VTID-03740)
+    ✓ resets the visible voiceState/orb/caption back to listening when the watchdog fires while stuck in SPEAKING (2 ms)
+    ✓ guards the recovery on session-active / not-closing-for-nav / not-user-closed / overlay-visible, matching the normal turn-complete path
+    ✓ does not overwrite the tap-to-hear prompt when audio is blocked (VTID-03469)
+    ✓ re-arms the mic exactly once, gated on !greetingComplete, mirroring the normal first-turn mic-start invariant (1 ms)
+    ✓ never fires _cfg.onTurnComplete — this turn did not genuinely complete, and reporting it as complete would reproduce the VTID-03685 "completed" drawer bug for undelivered content
+    ✓ still clears the internal audioPlaying flag and refreshes the mic-button UI regardless of the recovery branch (unchanged DEV-COMHU-0501 behavior)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/frontend/orb-widget-speaking-watchdog.test.ts
+  orb-widget cross-provider speaking-state watchdog (DEV-COMHU-0501)
+    ✓ defines _speakingStateWatchdog gating on quiet + no sources + empty queue (2 ms)
+    ✓ uses a 2-second quiet window
+    ✓ stamps lastAudioReceivedAt on every inbound audio frame
+    ✓ starts the watchdog on SSE open and stops it on session stop
+    ✓ emits a session-shape diagnostic line on session open
+
+Test Suites: 2 passed, 2 total
+Tests:       11 passed, 11 total
+Snapshots:   0 total
+Time:        0.439 s, estimated 1 s
+Ran all test suites matching /orb-widget-stuck-speaking-recovery|orb-widget-speaking-watchdog/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

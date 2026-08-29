@@ -31,7 +31,7 @@ import {
 } from '../../../../src/orb/live/voice/nova-sonic-voice';
 
 /** Every language the product ships or is preparing to ship. */
-const ALL_LANGUAGES = ['de', 'en', 'es', 'fr', 'pt', 'pl', 'ru', 'sr', 'ar', 'zh'];
+const ALL_LANGUAGES = ['de', 'en', 'es', 'fr', 'pt', 'pl', 'ru', 'sr', 'ar', 'zh', 'tr'];
 
 /** Polly has no Serbian voice in any engine (verified against the live API). */
 const NO_POLLY_VOICE = ['sr'];
@@ -100,7 +100,7 @@ describe('VTID-03704: voice routing policy', () => {
       // ru/pl/ar/zh/sr are absent from Nova's voice table entirely, so a
       // substitution here is honest. Anything else reporting fallback=true
       // means a voice entry was dropped, not that Nova lacks the voice.
-      for (const lang of ['ru', 'pl', 'ar', 'zh', 'sr']) {
+      for (const lang of ['ru', 'pl', 'ar', 'zh', 'sr', 'tr']) {
         expect(resolveNovaSonicVoiceOrFallback({ language: lang }).fallback).toBe(true);
       }
       for (const lang of ['en', 'de', 'fr', 'es', 'pt']) {

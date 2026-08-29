@@ -292,6 +292,15 @@ export interface DecideWakeBriefArgs {
    * the published KB. Undefined for normal opens.
    */
   guidedTopicId?: string | null;
+  /**
+   * VTID-03774: whether `guidedTopicId` is being resent for a topic whose
+   * turn-1 audio (opener + narration bridge) was already delivered before
+   * this reconnect — i.e. resuming a lesson already in progress, not a
+   * first open. Forwarded to guided-topic-narration so it can still win
+   * (keeping the TEACH context bundled) without re-narrating from scratch.
+   * `false`/undefined for a normal open or a genuine zero-turn retry.
+   */
+  guidedTopicResume?: boolean;
   /** journeySurface from the ClientContextEnvelope, if any. */
   envelopeJourneySurface?: string;
   /**
@@ -550,6 +559,8 @@ export async function decideWakeBriefForSession(
         lang: args.lang,
         topicId: args.guidedTopicId ?? null,
         firstName: args.firstName ?? null,
+        // VTID-03774: see this field's own doc comment above.
+        isResume: args.guidedTopicResume ?? false,
       };
       // Greeting v2: login-briefing inputs. The provider reads the 90-session
       // guided-journey state + next-session title + Life Compass + Vitana Index
@@ -601,6 +612,23 @@ export async function decideWakeBriefForSession(
   // the one the user just asked for. So we skip rotation entirely on explicit
   // opens and honor the tapped candidate at its true priority.
   const isExplicitSelection = !!(args.guidedTopicId || args.journeyFocusStep);
+
+  // Codex review fix (VTID-03741 follow-up): decideContinuation's parallel
+  // ranker now bounds every provider with a per-provider timeout
+  // (DEFAULT_PROVIDER_TIMEOUT_MS, 800ms) — sized for the passive/ambient
+  // providers, which do a handful of fast indexed reads. guided-topic-narration
+  // additionally awaits real Polly synthesis on a cache miss
+  // (synthesizeGuidedTopicNarrationAudio in its produce()), which can plausibly
+  // exceed 800ms for a cold lesson, and it MUST win turn 1 on an explicit tap
+  // (see isExplicitSelection above). A timeout there does not just slow the
+  // turn down — it silently drops the explicitly-requested candidate, and a
+  // lower-priority provider opens a generic conversation instead: the exact
+  // "tapping a lesson opens small talk" defect the VTID-03644->03686 chain
+  // fought to fix. Give explicit-selection turns a generous ceiling instead of
+  // the ambient default — this still bounds a genuinely hung Supabase/Polly
+  // call, it just does not mistake a slow cache-miss synthesis for one.
+  const EXPLICIT_SELECTION_PROVIDER_TIMEOUT_MS = 10_000;
+
   let storedRecentOpeners: string[] = [];
   if (args.supabase && args.userId) {
     try {
@@ -633,6 +661,7 @@ export async function decideWakeBriefForSession(
   const decision = await decideContinuation({
     surface: 'orb_wake',
     recentlyServedDedupeKeys,
+    ...(isExplicitSelection ? { providerTimeoutMs: EXPLICIT_SELECTION_PROVIDER_TIMEOUT_MS } : {}),
     context: {
       sessionId: args.sessionId,
       userId: args.userId ?? undefined,
