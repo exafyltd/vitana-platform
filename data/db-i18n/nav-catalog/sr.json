@@ -1,0 +1,2093 @@
+{
+  "surface": "nav-catalog",
+  "locale": "sr",
+  "source_locale": "de",
+  "generated_at": "2026-08-29T12:30:44.125Z",
+  "field_order": [
+    "title",
+    "description",
+    "when_to_visit"
+  ],
+  "entries": {
+    "003c68a2-d838-4bb9-8fab-9fb67a5d22fe": {
+      "source_sha": "aeba7587fe4420ad",
+      "fields": {
+        "title": "Vitana indeks",
+        "description": "Tvoj Vitana indeks rezultat — metrika dugovečnosti zasnovana na 5 stubova (ishrana, hidratacija, kretanje, san, mentalno zdravlje).",
+        "when_to_visit": "Kada korisnik pita za svoj Vitana indeks, rezultat dugovečnosti, zdravstveni rezultat, 5 stubova ili zdravstveni trend."
+      }
+    },
+    "00c9d190-586e-4c48-8058-07dc0e63062b": {
+      "source_sha": "905c7353539e9715",
+      "fields": {
+        "title": "Zdravstveni suplementi",
+        "description": "Tab Suplementi u sekciji Zdravlje — prati dijetetske suplemente, vitamine i minerale koje uzimaš.",
+        "when_to_visit": "Kada korisnik pita za tab Suplementi na ekranu Zdravlje, \"suplementi u sekciji zdravlje\", \"zdravstveni suplementi\" ili želi da otvori suplemente u sekciji zdravlje — i kada želi da vidi, prati, beleži ili upravlja SOPSTVENIM dijetetskim suplementima, svojim stekom suplemenata ili vitaminima i mineralima koje uzima. Ovo je praćenje suplemenata na ekranu Zdravlje, NE kupovina na tržištu."
+      }
+    },
+    "00e4f4b6-d501-4376-a6be-30cd840b9d10": {
+      "source_sha": "c8c66260585988ea",
+      "fields": {
+        "title": "Ponude i popusti",
+        "description": "Članske ponude, popusti i specijalne akcije.",
+        "when_to_visit": "Kada korisnik pita za ponude, popuste, promocije ili šta je na sniženju."
+      }
+    },
+    "00fa1b7e-ac50-48be-854d-94b53720fe03": {
+      "source_sha": "9957c50850cdf7e5",
+      "fields": {
+        "title": "Podsetnici",
+        "description": "Tvoji zakazani podsetnici — kompletna lista, sa opcijama za dodavanje, izmenu i brisanje.",
+        "when_to_visit": "Kada korisnik pita za listu podsetnika, sve podsetnike, \"pokaži mi moje podsetnike\" ili želi da upravlja zakazanim podsetnicima."
+      }
+    },
+    "01a443d7-9af8-497e-85dc-2ed1935fd116": {
+      "source_sha": "19269f9fb2830106",
+      "fields": {
+        "title": "Istorija porudžbina",
+        "description": "Tvoje prošle i završene porudžbine.",
+        "when_to_visit": "Kada korisnik pita za tab \"Istorija\" u Moje porudžbine, svoju istoriju porudžbina, prošle porudžbine, završene porudžbine ili već isporučene porudžbine."
+      }
+    },
+    "01a7cfd2-963b-47d8-ac26-52f72e0d13c4": {
+      "source_sha": "158297559e0d8dd7",
+      "fields": {
+        "title": "Moji oglasi",
+        "description": "Tvoji aktivni poslovni oglasi na MAXINA.",
+        "when_to_visit": "Kada korisnik pita za svoje oglase, poslovne oglase, objavljene usluge, šta je komercijalno objavio ili želi da upravlja svojim javnim poslovnim objavama."
+      }
+    },
+    "02ab328d-0751-42c5-9b72-875f1cad71d7": {
+      "source_sha": "f5bd893f7b02fa27",
+      "fields": {
+        "title": "AI pratilac",
+        "description": "Razgovaraj sa Vitana u fokusiranom prikazu pratioca.",
+        "when_to_visit": "Kada korisnik želi da otvori AI pratioca, Vitana prikaz pratioca, da priča sa Vitana u tekstualnom režimu ili da vodi duži razgovor van ORB-a."
+      }
+    },
+    "03fa2849-a654-4561-8d7d-83b7ed2ed2f7": {
+      "source_sha": "9f10942ca8a06a74",
+      "fields": {
+        "title": "Bezbednost naloga",
+        "description": "Upravljaj lozinkom i bezbednošću naloga.",
+        "when_to_visit": "Kada korisnik pita za tab Bezbednost u podešavanjima privatnosti — bezbednost naloga, lozinka ili dvofaktorska autentifikacija."
+      }
+    },
+    "04fe7625-5f97-4dbb-ac54-70850ea2824c": {
+      "source_sha": "afb26d902c90f2df",
+      "fields": {
+        "title": "Razgovaraj sa Vitana",
+        "description": "Pošalji povratne informacije, prijavi problem ili pošalji poruku Vitana timu.",
+        "when_to_visit": "Kada korisnik želi da pošalje povratne informacije, prijavi grešku, pošalje poruku Vitana ili razgovara sa timom."
+      }
+    },
+    "079f5996-c2d0-4349-a3cd-feb2f97a2610": {
+      "source_sha": "e782de321c9d2737",
+      "fields": {
+        "title": "Suplementi",
+        "description": "Odabrani suplementi za dugovečnost i wellness.",
+        "when_to_visit": "Kada korisnik želi da pregleda, vidi ili kupi suplemente, vitamine, minerale ili nutriceutike na tržištu — da istraži dostupne proizvode, brendove ili ponude. NE za praćenje suplemenata koje sam uzima (to je lični tab za praćenje, ne prodavnica)."
+      }
+    },
+    "0863af10-2be3-4f39-b358-7f2166e8e17b": {
+      "source_sha": "9f10942ca8a06a74",
+      "fields": {
+        "title": "Bezbednost naloga",
+        "description": "Upravljaj lozinkom i bezbednošću naloga.",
+        "when_to_visit": "Kada korisnik pita za tab bezbednost u privatnosti — bezbednost naloga, lozinka ili dvofaktorska autentifikacija."
+      }
+    },
+    "0aa38ad1-7d8a-4825-8d00-3941b595ef77": {
+      "source_sha": "4701f806cea7ebde",
+      "fields": {
+        "title": "Podaci i saglasnost",
+        "description": "Upravljaj kojim podacima deliš i svojim preferencama saglasnosti.",
+        "when_to_visit": "Kada korisnik pita za saglasnost za deljenje podataka, koji podaci se dele, dozvole za podatke ili podešavanja saglasnosti."
+      }
+    },
+    "0d1917fb-789d-494e-bf0c-cc364f863cf2": {
+      "source_sha": "961008b2873e4075",
+      "fields": {
+        "title": "Stubovi zdravlja",
+        "description": "Temelji tvoje dugovečnosti — ishrana, fitnes, san, stres i više.",
+        "when_to_visit": "Kada korisnik pita za stubove zdravlja, temelje dugovečnosti, osnovne oblasti zdravlja, stub ishrane, stub fitnesa, stub sna ili upravljanje stresom."
+      }
+    },
+    "0db6ca96-a501-4e23-99e0-a74a1b3825ff": {
+      "source_sha": "e7b3fa7b1e0082c1",
+      "fields": {
+        "title": "Podeli",
+        "description": "Podeli MAXINA zajednicu sa prijateljima i zaradi nagrade.",
+        "when_to_visit": "Kada korisnik pita za deljenje, preporuke, pozivanje prijatelja ili kako da preporuči zajednicu drugima."
+      }
+    },
+    "0e4de277-ff6b-472e-b5cb-6403d7028c43": {
+      "source_sha": "5953b2310bf06537",
+      "fields": {
+        "title": "Moji suplementi (Biologija)",
+        "description": "Tab sa suplementima u okviru Moje biologije — dodaci ishrani u tvom biološkom profilu.",
+        "when_to_visit": "Kada korisnik traži svoje suplemente u okviru Moje biologije, tab sa suplementima u Mojoj biologiji ili suplemente vezane za svoju biologiju."
+      }
+    },
+    "0f409079-24d4-4f79-a79b-e6697429efce": {
+      "source_sha": "9f1e56fdfdabe775",
+      "fields": {
+        "title": "Detalji poslednjeg rezultata testa",
+        "description": "Panel sa detaljima za najnoviji pojedinačni rezultat testa.",
+        "when_to_visit": "Kada korisnik želi panel sa detaljima za JEDAN SPECIFIČAN najnoviji rezultat testa (ne prikaz trendova)."
+      }
+    },
+    "0f61f73b-584d-49b3-9290-8ae9217a348b": {
+      "source_sha": "1d03631c3e970942",
+      "fields": {
+        "title": "Edukativni video snimci",
+        "description": "Tab sa video snimcima u okviru zdravstvene edukacije i resursa.",
+        "when_to_visit": "Kada korisnik traži edukativne video snimke o zdravlju, tab sa video snimcima u okviru edukacije ili video snimke za učenje o zdravlju."
+      }
+    },
+    "103610ef-eca7-4cd8-a9ef-496e3f151d98": {
+      "source_sha": "d3a29583e0a700ca",
+      "fields": {
+        "title": "Društveni nalozi",
+        "description": "Poveži i upravljaj svojim nalozima na društvenim mrežama.",
+        "when_to_visit": "Kada korisnik pita za društvene naloge, povezivanje društvenih mreža, Instagram, Facebook ili povezivanje drugih društvenih platformi."
+      }
+    },
+    "11292ebb-491b-4e22-b6d0-8a2789b98750": {
+      "source_sha": "d721102a1cad390b",
+      "fields": {
+        "title": "Wellness usluge",
+        "description": "Wellness usluge koje nudi MAXINA zajednica.",
+        "when_to_visit": "Kada korisnik pita za wellness usluge, masažu, spa, oporavak ili tretmane koje može da rezerviše."
+      }
+    },
+    "1138c946-95cf-4d83-a49e-ac50adcb5aa7": {
+      "source_sha": "bff8f56cbcb8ed83",
+      "fields": {
+        "title": "Preporuke za prodaju",
+        "description": "Preporuke koje zarađuješ kroz preprodaju u svom MAXINA biznisu.",
+        "when_to_visit": "Kada korisnik pita za tab \"Preporuke\" u Business Hub prodaji ili Business Hub Sales preporuke — preporuke koje pripadaju njegovoj sopstvenoj preprodaji u Business Hub-u."
+      }
+    },
+    "114e1143-7c6c-4398-a6c4-f2b80017e1d5": {
+      "source_sha": "84258a6d9786ad46",
+      "fields": {
+        "title": "Pijaca",
+        "description": "MAXINA pijaca — kupuj i prodaj komercijalne namere iz zajednice.",
+        "when_to_visit": "Kada korisnik želi da otvori pijacu, pregleda komercijalne namere, nešto kupi ili proda ili vidi šta zajednica prodaje."
+      }
+    },
+    "12298016-0a45-4b5e-9c51-4bd131256952": {
+      "source_sha": "c9736d6d6c379351",
+      "fields": {
+        "title": "Poslovne prilike",
+        "description": "Nove poslovne prilike i lidovi koji odgovaraju tvojim uslugama.",
+        "when_to_visit": "Kada korisnik pita za poslovne prilike, lidove, nove klijente ili koji posao je stigao."
+      }
+    },
+    "1266ee7a-e0bb-4351-a229-788516a27b07": {
+      "source_sha": "ee6970e175e30e06",
+      "fields": {
+        "title": "Detalji grupe",
+        "description": "Određena grupa zajednice — njeni članovi, objave i događaji.",
+        "when_to_visit": "Kada korisnik želi da otvori određenu grupu po ID-u ili imenu, da vidi grupu ili pregleda detalje grupe."
+      }
+    },
+    "12eb827f-95f1-5fb0-bda9-d9ca2aba85cb": {
+      "source_sha": "4a3e310994e2560c",
+      "fields": {
+        "title": "Moji planovi",
+        "description": "Personalizovani zdravstveni planovi oko tvojih ciljeva — ishrana, fitnes, san, stres.",
+        "when_to_visit": "Kada korisnik pita za svoje zdravstvene planove, plan ishrane, plan fitnesa, lični program ili šta treba da radi za svoje ciljeve."
+      }
+    },
+    "16a08da1-9227-5415-858a-7db4703ae022": {
+      "source_sha": "d68213a45c6a8433",
+      "fields": {
+        "title": "Pretplate",
+        "description": "Tvoje aktivne pretplate i usluge koje plaćaš.",
+        "when_to_visit": "Kada korisnik pita za pretplate, ponavljajuća plaćanja, šta plaća ili želi da otkaže ili upravlja pretplatom."
+      }
+    },
+    "17100496-7f04-51d3-8932-b2f8584ce3f5": {
+      "source_sha": "d721102a1cad390b",
+      "fields": {
+        "title": "Wellness usluge",
+        "description": "Wellness usluge koje nudi MAXINA zajednica.",
+        "when_to_visit": "Kada korisnik pita za wellness usluge, masažu, spa, oporavak ili tretmane koje može da zakaže."
+      }
+    },
+    "18bc8bcf-4fcb-406c-942a-d5d0ecc0f18f": {
+      "source_sha": "fa80b43bbbbac882",
+      "fields": {
+        "title": "Zajednica",
+        "description": "MAXINA centar zajednice — događaji, sobe uživo, mediji i grupe.",
+        "when_to_visit": "Kada korisnik generalno pita za zajednicu, želi da istraži funkcije zajednice ili ne zna gde da pronađe društvene sadržaje."
+      }
+    },
+    "18f0a112-95a7-4398-9cbd-c903a0a22e61": {
+      "source_sha": "dd22afdd669d96a8",
+      "fields": {
+        "title": "Distribucija",
+        "description": "Prati kako se tvoj deljeni sadržaj distribuira i prima.",
+        "when_to_visit": "Kada korisnik pita za distribuciju, kako se njegov sadržaj širi, doseg ili analitiku deljenja."
+      }
+    },
+    "1adb4c47-9c29-4139-8f0a-b9c5540248e0": {
+      "source_sha": "8f5b9beff43e120f",
+      "fields": {
+        "title": "Podeli i zaradi",
+        "description": "Podeli Discover proizvode i zaradi nagrade.",
+        "when_to_visit": "Kada korisnik pita za tab \"Podeli i zaradi\" u Discover-u, Discover sekciju za deljenje i zaradu ili za deljenje Discover proizvoda sa marketplace-a kako bi zaradio nagrade."
+      }
+    },
+    "1b834543-4be4-42c8-a92d-26060faf9d6e": {
+      "source_sha": "0c02c902c941e65f",
+      "fields": {
+        "title": "Način plaćanja",
+        "description": "Upravljaj svojim načinom plaćanja.",
+        "when_to_visit": "Kada korisnik pita za tab način plaćanja u naplati — način plaćanja, sačuvana kartica ili kako plaća."
+      }
+    },
+    "1bdb110d-54be-41b3-be27-5c6cdc260c37": {
+      "source_sha": "aa5d91925bd25e25",
+      "fields": {
+        "title": "Planovi spavanja",
+        "description": "Tab za spavanje u okviru zdravstvenih planova.",
+        "when_to_visit": "Kada korisnik pita za planove spavanja, tab za spavanje u planovima ili svoj plan spavanja."
+      }
+    },
+    "1c6bf120-1bdb-44e9-bd1a-3f25ca6b72b3": {
+      "source_sha": "a7515c9de0ae2e65",
+      "fields": {
+        "title": "Pronađi partnera",
+        "description": "Objedinjena pretraga plesnih i fitnes partnera — sortirani mečevi.",
+        "when_to_visit": "Kada korisnik želi plesnog partnera, fitnes partnera ili partner meč, ili želi da otvori pretragu partnera."
+      }
+    },
+    "1e805a08-6100-4c20-ad24-2feb7481f7e2": {
+      "source_sha": "4025dacd79656dc6",
+      "fields": {
+        "title": "Vidljivost profila",
+        "description": "Prekidači vidljivosti po sekcijama za tvoj profil — kontroliši ko šta vidi.",
+        "when_to_visit": "Kada korisnik pita za vidljivost profila, ko može da vidi njegov profil, šta je javno prikazano ili želi da sakrije deo profila."
+      }
+    },
+    "1f13b910-4d0a-4ed8-96d5-04aba4574d27": {
+      "source_sha": "723924fb5220e3a3",
+      "fields": {
+        "title": "Prihodi",
+        "description": "Pregled prihoda za tvoj MAXINA biznis u tabu Uvidi.",
+        "when_to_visit": "Kada korisnik pita za tab \"Prihodi\" u Business Hub uvidima ili Business Hub Insights zarade — pregled prihoda sopstvenog biznisa."
+      }
+    },
+    "20673ca9-816e-4139-aa27-cc0497475bb7": {
+      "source_sha": "9e222869f090435c",
+      "fields": {
+        "title": "Jezik i region",
+        "description": "Jezik aplikacije i region.",
+        "when_to_visit": "Kada korisnik pita za podešavanja jezika i regiona — jezik aplikacije, region ili lokalizacija."
+      }
+    },
+    "214fd446-10ba-4b78-abcf-2875fc513c99": {
+      "source_sha": "6376eec5f938206b",
+      "fields": {
+        "title": "Moji događaji",
+        "description": "Događaji, kursevi i sesije koje organizuješ ili nudiš kao pružalac usluga u svom MAXINA biznisu.",
+        "when_to_visit": "Kada korisnik pita za tab \"Moji događaji\" u Business Hub uslugama, Business Hub Services događaje ili događaje, kurseve i sesije koje organizuje ili nudi kao pružalac usluga u sopstvenom biznisu."
+      }
+    },
+    "230e2278-a71d-4b1b-bebf-9988c3c45887": {
+      "source_sha": "1048dbff42a2320f",
+      "fields": {
+        "title": "Istraži",
+        "description": "Pregledaj suplemente, wellness usluge, lekare, ponude i još mnogo toga.",
+        "when_to_visit": "Kada korisnik želi da pregleda, istražuje ili kupuje proizvode i usluge na MAXINA tržištu."
+      }
+    },
+    "234fe8dd-d573-48b6-8658-d57c0a941cf8": {
+      "source_sha": "74c9367ab8f6aa10",
+      "fields": {
+        "title": "Following feed zajednice",
+        "description": "Tab „Pratim\" u sekciji događaja i druženja — tvoj feed zajednice sa događajima, objavama i novostima od članova i grupa koje pratiš (Following).",
+        "when_to_visit": "Kada korisnik pita za tab „Pratim\" u sekciji događaja i druženja, za Following, za događaje od osoba koje prati, za osobe ili grupe koje prati, ili za feed zajednice sa objavama i novostima."
+      }
+    },
+    "23ee8b4e-0de1-5a3e-9a33-b65894c091ce": {
+      "source_sha": "91103055956cb0dd",
+      "fields": {
+        "title": "Moji klijenti",
+        "description": "Upravljaj klijentima svog MAXINA biznisa.",
+        "when_to_visit": "Kada korisnik pita o svojim klijentima, mušterijama, koga opslužuje ili kako da upravlja odnosima sa klijentima u biznisu."
+      }
+    },
+    "254742d3-1856-4b8b-b81a-b2691b2988fd": {
+      "source_sha": "68e6769236d8440c",
+      "fields": {
+        "title": "Zdravstvena stanja",
+        "description": "Prati i upravljaj svojim zdravstvenim stanjima.",
+        "when_to_visit": "Kada korisnik pita za svoja zdravstvena stanja, hronične bolesti, dijagnoze, zdravstvene rizike ili zdravstvene probleme kojima upravlja."
+      }
+    },
+    "28fb12d8-e817-4fe2-97df-720d971de839": {
+      "source_sha": "6408409b26adb8a1",
+      "fields": {
+        "title": "Inspiracija",
+        "description": "Inspirativne poruke i saveti za wellness od Vitana.",
+        "when_to_visit": "Kada korisnik traži inspiraciju, motivacione poruke, savete za wellness ili dnevnu motivaciju."
+      }
+    },
+    "2946fd3f-c652-5181-a375-e3960590b5d4": {
+      "source_sha": "9bd8a76c8a7c160f",
+      "fields": {
+        "title": "Podešavanja privatnosti",
+        "description": "Upravljaj time koje podatke Vitana čuva i šta se deli sa zajednicom.",
+        "when_to_visit": "Kada korisnik pita za podešavanja privatnosti, kontrolu podataka, šta se deli, saglasnost ili želi da promeni svoje preference privatnosti."
+      }
+    },
+    "2a1ca4d8-59b0-4b57-98d9-c979bcf0badf": {
+      "source_sha": "bbfb6e1126d54c4a",
+      "fields": {
+        "title": "Uslovi korišćenja",
+        "description": "Uslovi korišćenja i pravne informacije.",
+        "when_to_visit": "Kada korisnik pita za uslove korišćenja, opšte uslove, pravne uslove ili korisnički ugovor."
+      }
+    },
+    "2b052733-4dff-4489-951b-5c9a4495c8e4": {
+      "source_sha": "a28d4f56c54e081b",
+      "fields": {
+        "title": "AI konektori",
+        "description": "Poveži AI provajdere i aplikacije sa svojim nalogom.",
+        "when_to_visit": "Kada korisnik pita za AI konektore, AI tab povezanih aplikacija ili povezivanje AI aplikacije ili AI provajdera (OpenAI, Claude, Gemini)."
+      }
+    },
+    "2d7233c0-8bd5-4fe6-8feb-99442a5b3202": {
+      "source_sha": "7811b32fe36b54dd",
+      "fields": {
+        "title": "Tok unosa za jedan dan",
+        "description": "Fokusirani tok unosa za određeni pojedinačni dan.",
+        "when_to_visit": "Kada korisnik izričito želi namenski korak unosa za jedan dan (ne opšti prikaz dnevnika)."
+      }
+    },
+    "2dae3b6a-d075-414f-944e-93e824918772": {
+      "source_sha": "4d00fa2ca16a16a4",
+      "fields": {
+        "title": "Detalji meča",
+        "description": "Određeni meč između dva člana zajednice na osnovu zajedničkih interesovanja.",
+        "when_to_visit": "Kada korisnik želi da vidi određeni meč, pita za detalje nekog od svojih mečeva ili želi da otvori meč po ID-u."
+      }
+    },
+    "2e4538a5-d6a2-481b-9e46-64a4edc9b016": {
+      "source_sha": "e031d0ed92eedb82",
+      "fields": {
+        "title": "Dnevnik",
+        "description": "Tvoji dnevni unosi u dnevnik — beleži misli, raspoloženja i razmišljanja.",
+        "when_to_visit": "Kada korisnik želi da napiše unos u dnevnik, otvori zdravstveni dnevnik, zabeleži kako se oseća, vodi dnevnik o svom danu ili otvori svoj dnevnik."
+      }
+    },
+    "2fa79e93-3fcc-545e-9d34-7efbc04875e5": {
+      "source_sha": "f803b94dca9d3cad",
+      "fields": {
+        "title": "Earthlinks portal",
+        "description": "Registracija i prijava za Earthlinks zakupca.",
+        "when_to_visit": "Kada korisnik pomene Earthlinks i želi da se registruje ili prijavi."
+      }
+    },
+    "30f828c1-daf5-5562-a0b9-9f18e1c53816": {
+      "source_sha": "e02379bcaee68dcb",
+      "fields": {
+        "title": "Prijava",
+        "description": "Opšti ekran za prijavu i registraciju.",
+        "when_to_visit": "Kada korisnik želi opšti ekran za prijavu bez specifičnog konteksta zakupca."
+      }
+    },
+    "328bec6a-8575-449f-9ec9-89ec70acf9a7": {
+      "source_sha": "b38e82e237da5bde",
+      "fields": {
+        "title": "Deljenje podataka",
+        "description": "Kontroliši koji podaci se dele.",
+        "when_to_visit": "Kada korisnik pita za tab Deljenje podataka u Privatnosti — deljenje podataka, koji podaci se dele ili saglasnost za deljenje podataka."
+      }
+    },
+    "338c566a-bec4-46e1-99c0-1576c5311b40": {
+      "source_sha": "b0ebb8dc27b9695b",
+      "fields": {
+        "title": "Uvidi u nagrade",
+        "description": "Tab za uvide u okviru nagrada novčanika — uvidi kako da zaradiš više.",
+        "when_to_visit": "Kada korisnik pita za uvide u nagrade, tab za uvide u nagradama ili savete kako da zaradi više nagrada."
+      }
+    },
+    "33c71456-fb59-4cf2-86a2-c2182ef5aafb": {
+      "source_sha": "9e222869f090435c",
+      "fields": {
+        "title": "Jezik i region",
+        "description": "Jezik aplikacije i region.",
+        "when_to_visit": "Kada korisnik pita za tab jezik i region u podešavanjima — jezik aplikacije, region ili lokalne postavke."
+      }
+    },
+    "33da1f6b-27fd-420d-a888-e8f1dbea7c62": {
+      "source_sha": "bf1a3dd69d7b6031",
+      "fields": {
+        "title": "Računi i potvrde",
+        "description": "Tvoji računi i potvrde.",
+        "when_to_visit": "Kada korisnik pita za tab računi i potvrde u naplati — računi, potvrde ili istorija plaćanja."
+      }
+    },
+    "33f47c7e-d533-4a95-98fb-20bebe2ca981": {
+      "source_sha": "f53262670e5daa2d",
+      "fields": {
+        "title": "Autopilot podešavanja",
+        "description": "Konfiguriši Autopilot — učestalost preporuka, koje kategorije se prikazuju i vreme mirovanja.",
+        "when_to_visit": "Kada korisnik pita za Autopilot podešavanja, Autopilot preference, kako da konfiguriše preporuke ili želi da promeni ponašanje Autopilot-a."
+      }
+    },
+    "347ac3b5-99bb-463b-84c6-a77c6fbe32aa": {
+      "source_sha": "e7b3fa7b1e0082c1",
+      "fields": {
+        "title": "Deljenje",
+        "description": "Podeli Maxina Community sa prijateljima i osvoji nagrade.",
+        "when_to_visit": "Kada korisnik pita za deljenje, preporuke, pozivanje prijatelja ili kako da preporuči zajednicu."
+      }
+    },
+    "3483e0e8-770b-5021-8d5c-ccc559a4a65e": {
+      "source_sha": "bdf924974a365677",
+      "fields": {
+        "title": "Suplementi",
+        "description": "Odabrani suplementi za dugovečnost i wellness.",
+        "when_to_visit": "Kada korisnik pita za suplemente, vitamine, minerale, nutriceutike ili šta treba da uzima za svoje zdravlje."
+      }
+    },
+    "35943f07-47ef-4292-935b-986db8bcef7c": {
+      "source_sha": "cdc73456d747d1e7",
+      "fields": {
+        "title": "Proaktivno govorenje",
+        "description": "Proaktivni tab asistenta — kontroliši kada Vitana sama progovori.",
+        "when_to_visit": "Kada korisnik pita za proaktivni tab asistenta, proaktivno govorenje ili kada treba da se Vitana sama javi."
+      }
+    },
+    "35b811f8-ce5e-4d39-8e8c-d92cfec50135": {
+      "source_sha": "85c5473fc0ff0ce1",
+      "fields": {
+        "title": "Vesti iz zajednice",
+        "description": "Tab zajednice u okviru vesti — ažuriranja i objave iz MAXINA zajednice.",
+        "when_to_visit": "Kada korisnik želi da vidi tab zajednice u vestima, vesti iz zajednice, ažuriranja zajednice ili novosti iz zajednice."
+      }
+    },
+    "37f93997-f66c-4a2c-bc6a-4b3ea0470178": {
+      "source_sha": "0dbe346cb377b8ea",
+      "fields": {
+        "title": "Podrška",
+        "description": "Dobij pomoć, kontaktiraj podršku ili prijavi problem.",
+        "when_to_visit": "Kada korisnik generalno pita za pomoć, podršku, kako da kontaktira tim, prijavi grešku ili mu treba pomoć, bez navođenja određene oblasti podrške."
+      }
+    },
+    "37fca1cb-daa9-4be7-88ba-5ddbba6a2095": {
+      "source_sha": "f2646e774a37b1ca",
+      "fields": {
+        "title": "Zdravstveni konektori",
+        "description": "Poveži integracije zdravstvenih i laboratorijskih aplikacija.",
+        "when_to_visit": "Kada korisnik pita za tab zdravstvenih konektora u povezanim aplikacijama ili povezivanje zdravstvene ili laboratorijske aplikacije (Apple Health, Oura, laboratorijski provajder) kao integraciju."
+      }
+    },
+    "38c43a6f-99f8-4cbe-91e3-0e5a4ea4db02": {
+      "source_sha": "004ca71448bca761",
+      "fields": {
+        "title": "Alkalma portal",
+        "description": "Registracija i prijava za Alkalma tenant.",
+        "when_to_visit": "Kada korisnik pomene Alkalma i želi da se registruje ili prijavi."
+      }
+    },
+    "38fa0090-e7bb-513c-90e3-2e7756738db5": {
+      "source_sha": "cc0efffd1e1dee07",
+      "fields": {
+        "title": "Politika privatnosti",
+        "description": "Javna politika privatnosti.",
+        "when_to_visit": "Kada korisnik pita o privatnosti, obradi podataka ili koje podatke Vitana prikuplja."
+      }
+    },
+    "3c5fb4a9-0fb4-521d-b6c8-824faf9fb5bd": {
+      "source_sha": "c8c66260585988ea",
+      "fields": {
+        "title": "Ponude i popusti",
+        "description": "Članske ponude, popusti i specijalne akcije.",
+        "when_to_visit": "Kada korisnik pita za ponude, popuste, promocije ili šta je na sniženju."
+      }
+    },
+    "3e95be46-6816-4ac5-a175-1ec06e8dfcb4": {
+      "source_sha": "f803b94dca9d3cad",
+      "fields": {
+        "title": "Earthlinks portal",
+        "description": "Registracija i prijava za Earthlinks tenant.",
+        "when_to_visit": "Kada korisnik pomene Earthlinks i želi da se registruje ili prijavi."
+      }
+    },
+    "3ed08cd7-f9b8-40aa-b744-a324b469acbb": {
+      "source_sha": "bfb06419bd1b5ab0",
+      "fields": {
+        "title": "AI izbor",
+        "description": "Preporuke proizvoda i usluga koje bira veštačka inteligencija — tab Predlozi u Discover.",
+        "when_to_visit": "Kada korisnik pita za AI izbor tab u Discover, tab Predlozi, AI preporuke, personalizovane predloge, birane savete ili želi da zna šta mu veštačka inteligencija preporučuje."
+      }
+    },
+    "3ed54bce-4705-4908-9b2d-ee010ae0686c": {
+      "source_sha": "4511ea35fda273af",
+      "fields": {
+        "title": "Vremenska linija",
+        "description": "Hronološka vremenska linija tvojih sećanja i interakcija.",
+        "when_to_visit": "Kada korisnik želi da vidi svoju vremensku liniju, liniju sećanja, istoriju interakcija ili hronološki prikaz sećanja."
+      }
+    },
+    "3f0c369d-e6ed-59f3-8efe-bdeccb8d8c31": {
+      "source_sha": "bac1ad3dc1dc61df",
+      "fields": {
+        "title": "Sobe uživo",
+        "description": "Audio i video sobe uživo gde se članovi zajednice sastaju u realnom vremenu.",
+        "when_to_visit": "Kada korisnik pita o sobama uživo, audio uživo, video uživo, razgovorima u realnom vremenu, onlajn pozivima zajednice ili virtuelnim susretima koji se upravo dešavaju."
+      }
+    },
+    "3f67ec35-713d-4cbf-af28-42e569f05b3e": {
+      "source_sha": "e4f85db4a2c69cb9",
+      "fields": {
+        "title": "Vitanaland početna",
+        "description": "Javna glavna ulazna tačka u Vitanaland i Maxina Community.",
+        "when_to_visit": "Kada korisnik želi nazad na početak, na početnu stranicu, glavnu stranicu sajta ili da ponovo čuje uvod."
+      }
+    },
+    "40c60192-6dae-471b-9cd6-a48e3d7471b6": {
+      "source_sha": "158297559e0d8dd7",
+      "fields": {
+        "title": "Moji oglasi",
+        "description": "Tvoji aktivni poslovni oglasi na MAXINA.",
+        "when_to_visit": "Kada korisnik pita za svoje oglase, poslovne oglase, objavljene usluge, šta je komercijalno objavio ili želi da upravlja svojim javnim poslovnim objavama."
+      }
+    },
+    "42e23e9c-67fe-4917-b234-a2a586be9782": {
+      "source_sha": "7da536534d9822b3",
+      "fields": {
+        "title": "Moji klijenti",
+        "description": "Upravljaj klijentima svog MAXINA biznisa.",
+        "when_to_visit": "Kada korisnik pita za tab \"Klijenti\" u sekciji uvida svog Business Hub-a, svoje klijente, mušterije, koga opslužuje ili kako da upravlja odnosima sa klijentima u biznisu."
+      }
+    },
+    "4322284a-c083-45a6-a5a8-89b78dd399d3": {
+      "source_sha": "de7a6188f6c8a7f4",
+      "fields": {
+        "title": "Poruke",
+        "description": "Tvoje direktne poruke i razgovori sa članovima zajednice.",
+        "when_to_visit": "Kada korisnik želi da otvori poruke, direktne poruke, razgovore ili da piše direktno drugom članu."
+      }
+    },
+    "43aa841d-78b1-4949-a1c5-bb0a7d836c86": {
+      "source_sha": "36c61ab44ee39787",
+      "fields": {
+        "title": "Moja biologija",
+        "description": "Prati svoje biomarkere, laboratorijske rezultate i lične zdravstvene indikatore sa trendovima tokom vremena.",
+        "when_to_visit": "Kada korisnik pita za svoju biologiju, biomarkere, laboratorijske rezultate, krvne vrednosti, zdravstvene indikatore, telesni sastav ili želi da prati svoje lične zdravstvene podatke i trendove."
+      }
+    },
+    "44c33035-f42f-496b-8432-073382048b3d": {
+      "source_sha": "85c5473fc0ff0ce1",
+      "fields": {
+        "title": "Vesti zajednice",
+        "description": "Tab zajednice u feedu vesti — novosti i objave iz MAXINA zajednice.",
+        "when_to_visit": "Kada korisnik želi da vidi tab zajednice u feedu vesti, vesti iz zajednice, novosti zajednice ili šta ima novo u zajednici."
+      }
+    },
+    "4589d192-d9f2-4368-b558-fe006a237c29": {
+      "source_sha": "88a74453d190d378",
+      "fields": {
+        "title": "Moje porudžbine",
+        "description": "Tvoje porudžbine — aktivne i prošle.",
+        "when_to_visit": "Kada korisnik pita za svoje porudžbine, moje porudžbine, status porudžbine, isporuke ili šta je kupio."
+      }
+    },
+    "469ac396-8547-5ff9-b8ab-8b873eb0f969": {
+      "source_sha": "980817d902be78a6",
+      "fields": {
+        "title": "Vrt sećanja",
+        "description": "Tvoja lična memorija — sve što Vitana zna o tebi.",
+        "when_to_visit": "Kada korisnik pita za svoj vrt sećanja, šta Vitana zna o njemu, svoje lične zapise ili želi da upravlja svojom memorijom."
+      }
+    },
+    "46a5d938-6cb7-48f5-b573-42e2e6c19cff": {
+      "source_sha": "11a202318f43a8cc",
+      "fields": {
+        "title": "Dnevni pregled",
+        "description": "Tvoj AI-generisani dnevni pregled zdravlja, aktivnosti i istaknutih stvari iz zajednice.",
+        "when_to_visit": "Kada korisnik pita za svoj dnevni pregled, dnevni izveštaj ili šta se danas desilo."
+      }
+    },
+    "487fc3fb-a054-4807-93cd-1a5fb1630d18": {
+      "source_sha": "c1aed0cd7d7b0c70",
+      "fields": {
+        "title": "Aktivne porudžbine",
+        "description": "Tvoje aktivne i porudžbine u toku.",
+        "when_to_visit": "Kada korisnik pita za tab \"Aktivno\" u Moje porudžbine, svoje aktivne porudžbine, porudžbine u toku, otvorene porudžbine ili isporuke na čekanju."
+      }
+    },
+    "4c336b51-3f7c-409a-8e48-9ba5e0229c29": {
+      "source_sha": "f4a7ab407e96491f",
+      "fields": {
+        "title": "Prijave grešaka",
+        "description": "Prijavi grešku ili predlog za poboljšanje korisničkog iskustva iz svog dnevnika.",
+        "when_to_visit": "Kada korisnik pita za tab \"Prijave grešaka\" u dnevniku, želi da prijavi grešku, zabeleži problem u aplikaciji ili predloži poboljšanje korisničkog iskustva iz dnevnika."
+      }
+    },
+    "4c773720-39e4-4a72-b6c1-4f8db722414b": {
+      "source_sha": "99caa1940ab7f398",
+      "fields": {
+        "title": "Akcije novčanika",
+        "description": "Akcije novčanika — slanje, zahtevanje, razmena, kupovina kredita i tokena, dodavanje novca, povlačenje.",
+        "when_to_visit": "Kada korisnik pita za tab \"Akcije\" u novčaniku, akcije novčanika, slanje ili zahtevanje plaćanja, razmenu valute, kupovinu kredita ili tokena, dodavanje novca ili povlačenje iz svog novčanika."
+      }
+    },
+    "4cc3a101-18fc-41b5-8326-085f5aa4ec1f": {
+      "source_sha": "d7d2d3667235e74b",
+      "fields": {
+        "title": "Planovi treninga",
+        "description": "Tab za trening u okviru zdravstvenih planova.",
+        "when_to_visit": "Kada korisnik pita za planove treninga, tab za trening u planovima ili svoj plan vežbanja/treninga."
+      }
+    },
+    "4d5ea1e5-fe38-4364-8cea-c7b7a8708960": {
+      "source_sha": "ee6970e175e30e06",
+      "fields": {
+        "title": "Detalji grupe",
+        "description": "Određena grupa u zajednici — njeni članovi, objave i događaji.",
+        "when_to_visit": "Kada korisnik želi da otvori određenu grupu po ID-u ili imenu, da vidi grupu ili da pogleda detalje grupe."
+      }
+    },
+    "4dedb731-ac6e-4d8b-803c-7e032c44a0bd": {
+      "source_sha": "9aa202f436995f5d",
+      "fields": {
+        "title": "Pomoć zajednice",
+        "description": "Dobij pomoć od drugih članova — grupe zajednice i forumi.",
+        "when_to_visit": "Kada korisnik pita za pomoć zajednice, pomoć od drugih korisnika, grupe za podršku zajednice ili korisničke forume."
+      }
+    },
+    "50a82263-eb3e-4c63-b58f-dd346905593b": {
+      "source_sha": "2b2cff328d1c6b56",
+      "fields": {
+        "title": "Konektori za mejl i kalendar",
+        "description": "Poveži mejl i kalendar aplikacije.",
+        "when_to_visit": "Kada korisnik pita za konektore za mejl i kalendar, tab produktivnosti u povezanim aplikacijama ili povezivanje mejl ili kalendar integracije (Gmail, Google Calendar, Outlook)."
+      }
+    },
+    "50bfd44a-bd83-4952-9e8d-f45f8edfd62c": {
+      "source_sha": "9bb5446f7211a27a",
+      "fields": {
+        "title": "Obaveštenja",
+        "description": "Upravljaj svojim preferencama za obaveštenja.",
+        "when_to_visit": "Kada korisnik pita za podešavanja obaveštenja, push obaveštenja, email obaveštenja ili želi da uključi ili isključi obaveštenja."
+      }
+    },
+    "52e8358b-0794-5cb2-ac33-d0ca17c12452": {
+      "source_sha": "1316fac0d90ee9ab",
+      "fields": {
+        "title": "AI pratilac",
+        "description": "Ćaskaj sa Vitana u fokusiranom prikazu pratioca.",
+        "when_to_visit": "Kada korisnik želi da otvori poseban Vitana čet, prikaz AI pratioca ili vodi duži razgovor van ORB-a."
+      }
+    },
+    "535d7082-6a0d-4173-b394-51852e172c27": {
+      "source_sha": "4fc59531e14929af",
+      "fields": {
+        "title": "Grupe",
+        "description": "Pregledaj i pridruži se grupama MAXINA zajednice.",
+        "when_to_visit": "Kada korisnik pita za grupe u zajednici, želi da se pridruži grupi, koje grupe postoje ili želi da vidi svoje grupe."
+      }
+    },
+    "5378f930-94c6-4cb7-9511-2d409ad50d06": {
+      "source_sha": "1f5ebbfc5910fa07",
+      "fields": {
+        "title": "Vidljivost",
+        "description": "Kontroliši ko može da vidi tvoj profil.",
+        "when_to_visit": "Kada korisnik pita za tab vidljivost profila u privatnosti — ko može da vidi njegov profil ili skrivanje profila."
+      }
+    },
+    "538ad2e6-82b5-4243-9453-34e80f3b460e": {
+      "source_sha": "83bb50951e683f76",
+      "fields": {
+        "title": "Članstvo",
+        "description": "Tab za članstvo u okviru stanja tvog novčanika.",
+        "when_to_visit": "Kada korisnik pita za svoje članstvo, status članstva ili tab za članstvo u novčaniku."
+      }
+    },
+    "53d10b78-aced-41fc-90de-3de0eabed5b1": {
+      "source_sha": "93cc4ff1fb2559b6",
+      "fields": {
+        "title": "Preglednik određene sobe uživo",
+        "description": "Stranica za pregledanje određene audio ili video sobe uživo prema roomId.",
+        "when_to_visit": "Kada pozivalac ima određeni roomId i treba da otvori stranicu za pregledanje."
+      }
+    },
+    "54626359-a8da-42cb-819f-d2e5c59e28d3": {
+      "source_sha": "14a08c7e3aebc518",
+      "fields": {
+        "title": "Otvoreni zahtevi",
+        "description": "Objave širom zajednice bez pronađenog para, koje traže partnera ili pomoćnika.",
+        "when_to_visit": "Kada korisnik pita o \"otvorenim zahtevima\", \"šta zajednica traži\", \"objavama bez para\" ili \"kome treba pomoć\"."
+      }
+    },
+    "54c051b3-9ebb-4366-9a63-afef7b1b593c": {
+      "source_sha": "24115fcdd7fc3d8d",
+      "fields": {
+        "title": "Preference",
+        "description": "Tvoje lične preference za iskustvo u aplikaciji.",
+        "when_to_visit": "Kada korisnik želi da promeni svoje preference, prilagodi aplikaciju, podesi postavke ili personalizuje svoje iskustvo."
+      }
+    },
+    "55ff6402-2614-445d-a34b-834241ba1ca4": {
+      "source_sha": "b68d66fc1e5a866c",
+      "fields": {
+        "title": "Pridruži se Maxina Community",
+        "description": "Registracija i prijava za Maxina Community na Vitanaland.",
+        "when_to_visit": "Kada korisnik želi da se registruje, prijavi, pridruži zajednici, napravi nalog ili se uloguje na Maxina."
+      }
+    },
+    "560b693d-a20f-427e-a07d-6230404b8144": {
+      "source_sha": "bd38e930484c5d49",
+      "fields": {
+        "title": "Nagrade za preporuke",
+        "description": "Tab za preporuke u okviru nagrada novčanika — nagrade od preporuka.",
+        "when_to_visit": "Kada korisnik pita za nagrade za preporuke, tab za preporuke u nagradama ili nagrade od pozivanja prijatelja."
+      }
+    },
+    "560efcf3-db9a-4533-8a48-044db3e9ea6d": {
+      "source_sha": "aa413e69ed447620",
+      "fields": {
+        "title": "Podkasti",
+        "description": "Podkasti i audio epizode zajednice.",
+        "when_to_visit": "Kada korisnik pita za podkaste, tab za podkaste ili audio epizode u Media Hub-u."
+      }
+    },
+    "56a64360-8b5d-4f31-97cf-1a550ac0a1b2": {
+      "source_sha": "bfb06419bd1b5ab0",
+      "fields": {
+        "title": "AI izbor",
+        "description": "AI odabrane preporuke proizvoda i usluga — tab sa predlozima u Istraži.",
+        "when_to_visit": "Kada korisnik pita za AI izbor tab u Istraži, tab sa predlozima, AI preporuke, personalizovane predloge, odabrane savete ili želi da zna šta mu AI preporučuje."
+      }
+    },
+    "57072d78-74af-466e-998d-2cbe72137e22": {
+      "source_sha": "93cc4ff1fb2559b6",
+      "fields": {
+        "title": "Pregled određene sobe uživo",
+        "description": "Stranica za gledanje određene audio ili video sobe uživo prema roomId.",
+        "when_to_visit": "Kada pozivalac ima određeni roomId i treba da otvori stranicu za gledanje."
+      }
+    },
+    "5829cc65-e496-41a8-9ff1-51014c8d39e1": {
+      "source_sha": "df225106c20d13cc",
+      "fields": {
+        "title": "Ostali konektori",
+        "description": "Ostali konektori i integracije.",
+        "when_to_visit": "Kada korisnik pita za tab \"Ostalo\" u konektorima povezanih aplikacija ili druge integracije."
+      }
+    },
+    "594d38ab-b0f0-47ec-b83c-28bafee22eb4": {
+      "source_sha": "3a2c1f139ad82533",
+      "fields": {
+        "title": "AI uvidi",
+        "description": "Personalizovani uvidi iz tvojih zdravstvenih podataka i aktivnosti.",
+        "when_to_visit": "Kada korisnik pita za uvide, obrasce, trendove ili želi da zna šta je AI naučio o njemu."
+      }
+    },
+    "5dfd2c41-0fdb-4872-9a7a-8889ebac3714": {
+      "source_sha": "14a08c7e3aebc518",
+      "fields": {
+        "title": "Otvoreni zahtevi",
+        "description": "Objave iz cele zajednice bez pronađenog para, koje traže partnera ili pomoćnika.",
+        "when_to_visit": "Kada korisnik pita za \"otvorene zahteve\", \"šta traži zajednica\", \"objave bez para\" ili \"kome treba pomoć\"."
+      }
+    },
+    "5ea6de71-f8f0-475c-904e-8c0fc4f43636": {
+      "source_sha": "84258a6d9786ad46",
+      "fields": {
+        "title": "Tržište",
+        "description": "MAXINA tržište — kupuj i prodaj komercijalne namere iz zajednice.",
+        "when_to_visit": "Kada korisnik želi da otvori tržište, pregleda komercijalne namere, kupi ili proda nešto ili vidi šta zajednica prodaje."
+      }
+    },
+    "5fb32da5-0d15-4924-8e94-b4fe0143748a": {
+      "source_sha": "57e05181acc53a38",
+      "fields": {
+        "title": "Današnji događaji",
+        "description": "Događaji i druženja u zajednici koji se održavaju danas.",
+        "when_to_visit": "Kada korisnik pita koji događaji su danas, za današnje događaje ili tab „Danas\"."
+      }
+    },
+    "60cfc219-6486-400d-8579-39b67b458782": {
+      "source_sha": "9e0bd3b375526da4",
+      "fields": {
+        "title": "Predstojeći događaji",
+        "description": "Predstojeći događaji i druženja u zajednici na kojima možeš da učestvuješ.",
+        "when_to_visit": "Kada korisnik pita za predstojeće događaje, nadolazeća dešavanja, tab \"Predstojeći\" ili buduće događaje i druženja."
+      }
+    },
+    "61535fd3-0634-4e60-9f09-dc406ff4ff53": {
+      "source_sha": "1f06d33ed964eea2",
+      "fields": {
+        "title": "Stanje i pogodnosti",
+        "description": "Tvoje trenutno MAXINA stanje i pogodnosti otključane na tvom nivou.",
+        "when_to_visit": "Kada korisnik pita za svoje stanje, saldo, pogodnosti, nivo ili šta je otključao."
+      }
+    },
+    "62cf9915-c542-4e40-a4d4-d9077d1f8bc0": {
+      "source_sha": "9bd8a76c8a7c160f",
+      "fields": {
+        "title": "Podešavanja privatnosti",
+        "description": "Upravljaj kojim podacima Vitana čuva i šta se deli sa zajednicom.",
+        "when_to_visit": "Kada korisnik pita za podešavanja privatnosti, kontrolu podataka, šta se deli, saglasnost ili želi da promeni svoje preference privatnosti."
+      }
+    },
+    "640746cc-7f0d-4219-b023-ee0912f0e237": {
+      "source_sha": "24115fcdd7fc3d8d",
+      "fields": {
+        "title": "Preference",
+        "description": "Tvoje lične preference za iskustvo u aplikaciji.",
+        "when_to_visit": "Kada korisnik želi da promeni svoje preference, prilagodi aplikaciju, podesi postavke ili personalizuje svoje iskustvo."
+      }
+    },
+    "65211ac5-2554-488f-a4ae-ececa62a9a0a": {
+      "source_sha": "ffa86195b6c72a26",
+      "fields": {
+        "title": "Edukativni podkasti",
+        "description": "Tab sa podkastima u okviru Zdravstvene edukacije i resursa.",
+        "when_to_visit": "Kada korisnik traži zdravstvene edukativne podkaste, tab sa podkastima u edukaciji ili audio sadržaje za učenje o zdravlju."
+      }
+    },
+    "65d24ad5-2d2a-4591-b73c-6e1ce42f8284": {
+      "source_sha": "b5cd6fb642fcbb3e",
+      "fields": {
+        "title": "Pretraga",
+        "description": "Globalna pretraga kroz celu MAXINA aplikaciju — članovi, sadržaj, usluge, proizvodi.",
+        "when_to_visit": "Kada korisnik želi da pretražuje aplikaciju, pronađe nešto određeno, potraži člana, nađe sadržaj ili otvori globalnu pretragu."
+      }
+    },
+    "66e568f7-c218-4c07-8c08-cad024cc2fb1": {
+      "source_sha": "b4369583abde280b",
+      "fields": {
+        "title": "Isplate za kreatore",
+        "description": "Tvoje isplate za kreatore i isplate zarade.",
+        "when_to_visit": "Kada korisnik pita za tab isplate za kreatore u naplati — isplate za kreatore, isplate zarade ili da bude plaćen kao kreator."
+      }
+    },
+    "66ff5873-000a-4251-aaa2-300a392d8e67": {
+      "source_sha": "72b7c521eb9fa59d",
+      "fields": {
+        "title": "Analitika",
+        "description": "Tvoji uvidi u Business Hub-u — performanse, klijenti, rezervacije, promet, prihodi i rast tvog MAXINA biznisa.",
+        "when_to_visit": "Kada korisnik pita za tab \"Uvidi\" u Business Hub-u, Business Hub uvide, sekciju uvida u Business Hub-u, svoje biznis uvide, biznis analitiku, performanse svog biznisa, promet, rezervacije ili metrike performansi za svoje usluge."
+      }
+    },
+    "6735c423-5ab3-4ac8-b1fe-f80a60d574f3": {
+      "source_sha": "2d8d2e989e198e27",
+      "fields": {
+        "title": "Članak vesti",
+        "description": "Detaljan prikaz članka o dugovečnosti.",
+        "when_to_visit": "Kada korisnik želi da pročita određeni članak vesti po ID-u, otvori vest ili vidi ceo članak koji je čitao."
+      }
+    },
+    "67841bf1-e825-4ea0-8ffd-89091cd74e6b": {
+      "source_sha": "597f11e5b7771d07",
+      "fields": {
+        "title": "Članovi zajednice",
+        "description": "Pregledaj imenik članova MAXINA zajednice.",
+        "when_to_visit": "Kada korisnik pita za imenik članova, članove zajednice, ko je u zajednici ili želi da pregleda profile članova."
+      }
+    },
+    "67ad5e75-0116-4bd2-9652-3f3b72b358a4": {
+      "source_sha": "a7515c9de0ae2e65",
+      "fields": {
+        "title": "Pronađi partnera",
+        "description": "Objedinjena pretraga plesnog i fitnes partnera — rangirani parovi.",
+        "when_to_visit": "Kada korisnik želi plesnog partnera, fitnes partnera ili par, ili želi da otvori pretragu partnera."
+      }
+    },
+    "6907264f-78be-43d5-a138-18900a3facf6": {
+      "source_sha": "f8b2f92b7d5296cc",
+      "fields": {
+        "title": "Akcije",
+        "description": "Akcije i specijalne ponude koje sprovodiš za prodaju u svom MAXINA biznisu.",
+        "when_to_visit": "Kada korisnik pita za tab \"Akcije\" u Business Hub prodaji, Business Hub Sales promocije ili akcije i specijalne ponude koje sprovodi za sopstvenu prodaju u biznisu."
+      }
+    },
+    "69329a51-8b9d-4886-907b-b88f0d3b3e09": {
+      "source_sha": "6b8b0389d72b3374",
+      "fields": {
+        "title": "Otkrivanje grupa",
+        "description": "Tab za otkrivanje u okviru grupa — preporučene grupe kojima možeš da se pridružiš.",
+        "when_to_visit": "Kada korisnik želi da otkrije grupe, pronađe nove grupe, preporučene grupe ili tab za otkrivanje u grupama."
+      }
+    },
+    "6a389e2a-b2de-496e-9bd7-82471e40e35c": {
+      "source_sha": "7811b32fe36b54dd",
+      "fields": {
+        "title": "Tok unosa za jedan dan",
+        "description": "Fokusirani tok unosa za određeni pojedinačni dan.",
+        "when_to_visit": "Kada korisnik izričito želi namenski korak unosa za jedan dan (ne opšti prikaz dnevnika)."
+      }
+    },
+    "6b41d481-dd29-437f-a1af-f64114d8d17c": {
+      "source_sha": "3e636f7b53134409",
+      "fields": {
+        "title": "Prodaja",
+        "description": "Tvoja sekcija prodaje u Business Hub-u — prodaj svoje usluge i izgradi novi izvor prihoda u MAXINA zajednici.",
+        "when_to_visit": "Kada korisnik pita za tab \"Prodaja\", sekciju prodaje u Business Hub-u ili svoju prodaju, ili kako da zaradi novac, generiše prihod, izgradi dodatni prihod, monetizuje svoje veštine, monetizuje koučing, monetizuje fitnes, monetizuje svoju ekspertizu, prodaje usluge, postane plaćeni kreator, izgradi novi izvor prihoda ili želi da zarađuje sa MAXINA zajednicom."
+      }
+    },
+    "6cc471df-ba41-5af2-a311-42c076f5c701": {
+      "source_sha": "a8952c068a56e92f",
+      "fields": {
+        "title": "Novčanik",
+        "description": "Tvoj MAXINA novčanik — stanje, pretplate i nagrade.",
+        "when_to_visit": "Kada korisnik želi da otvori novčanik, vidi stanje na računu, proveri šta ima ili istraži deo sa novčanikom."
+      }
+    },
+    "6d79a307-11eb-49c0-8f50-4ba8fd080e31": {
+      "source_sha": "b38e82e237da5bde",
+      "fields": {
+        "title": "Deljenje podataka",
+        "description": "Kontroliši koji podaci se dele.",
+        "when_to_visit": "Kada korisnik pita za tab deljenje podataka u privatnosti — deljenje podataka, koji podaci se dele ili saglasnost za deljenje podataka."
+      }
+    },
+    "6f65b09e-f352-5420-8b54-014607826d84": {
+      "source_sha": "4360a6a30a1148cc",
+      "fields": {
+        "title": "Podsetnici",
+        "description": "Podsetnici koje je Vitana podesila za tebe.",
+        "when_to_visit": "Kada korisnik pita za svoje podsetnike, na šta ga je Vitana podsetila ili želi da vidi zakazana obaveštenja."
+      }
+    },
+    "7013c375-7d90-5e26-a5ed-2e768b70cc4a": {
+      "source_sha": "3065af6203789f93",
+      "fields": {
+        "title": "Prodaj i zarađuj",
+        "description": "Izgradi novi izvor prihoda prodajom svojih usluga i zarađivanjem nagrada u MAXINA zajednici.",
+        "when_to_visit": "Kada korisnik pita kako da zaradi novac, ostvari prihod, izgradi dodatni prihod, monetizuje svoje veštine, monetizuje koučing, monetizuje fitnes, monetizuje svoju ekspertizu, prodaje usluge, postane plaćeni kreator, izgradi novi izvor prihoda ili želi da zarađuje sa MAXINA zajednicom."
+      }
+    },
+    "7096ae3d-9df9-41b8-a720-23a292d059d6": {
+      "source_sha": "7abab8bdb7f48fe4",
+      "fields": {
+        "title": "Detalji proizvoda",
+        "description": "Stranica sa detaljima za određeni proizvod.",
+        "when_to_visit": "Kada korisnik želi da otvori određeni proizvod po ID-u, vidi detalje proizvoda ili pročita o određenom artiklu."
+      }
+    },
+    "70c24bd7-5612-5bac-8edd-c71d732635b7": {
+      "source_sha": "183650a5bd506b94",
+      "fields": {
+        "title": "Zdravlje",
+        "description": "Tvoj lični centar za zdravlje — biologija, planovi i edukacija.",
+        "when_to_visit": "Kada korisnik generalno pita za svoje zdravlje, dugovečnost, wellness ili želi da istraži funkcije vezane za zdravlje."
+      }
+    },
+    "71f6a06c-c574-4c93-a7dc-90c24f165fdf": {
+      "source_sha": "d8a4d8da60166667",
+      "fields": {
+        "title": "Sve vesti",
+        "description": "Feed vesti sa svim izvorima — vesti o dugovečnosti i vesti zajednice zajedno.",
+        "when_to_visit": "Kada korisnik želi tab sve vesti, sve vesti, svaki izvor vesti ili vesti o dugovečnosti i vesti zajednice zajedno u jednom feedu."
+      }
+    },
+    "73f1f5c6-bb8a-55e2-a175-e9e75e0cdbd7": {
+      "source_sha": "36c61ab44ee39787",
+      "fields": {
+        "title": "Moja biologija",
+        "description": "Prati svoje biomarkere, laboratorijske rezultate i lične zdravstvene indikatore sa trendovima tokom vremena.",
+        "when_to_visit": "Kada korisnik pita za svoju biologiju, biomarkere, laboratorijske rezultate, krvnu sliku, zdravstvene indikatore, telesni sastav ili želi da prati svoje lične zdravstvene podatke i trendove."
+      }
+    },
+    "75f8eed2-75a9-4ca8-9d78-23cf2a711cd4": {
+      "source_sha": "cf8e2d0021aca010",
+      "fields": {
+        "title": "Moj profil",
+        "description": "Tvoj lični profil — ime, slika, biografija i detalji naloga.",
+        "when_to_visit": "Kada korisnik želi da otvori profil, vidi profil, uredi profil, pregleda nalog, lične podatke, o meni ili korisnički profil."
+      }
+    },
+    "764dbd23-12de-4c44-b2f1-30530ab1c27d": {
+      "source_sha": "0877683b6e19abce",
+      "fields": {
+        "title": "Medicinske usluge",
+        "description": "Tab Medicinske usluge u centru zdravstvenih usluga.",
+        "when_to_visit": "Kada korisnik pita za medicinske usluge, usluge lekara ili klinike, ili tab Medicinske usluge u centru zdravstvenih usluga."
+      }
+    },
+    "7899350d-d02b-4466-821c-8766ad663578": {
+      "source_sha": "4d00fa2ca16a16a4",
+      "fields": {
+        "title": "Detalji para",
+        "description": "Određeni par između dva člana zajednice na osnovu preklapajućih potreba.",
+        "when_to_visit": "Kada korisnik želi da vidi određeni par, pita za detalje jednog od svojih parova ili želi da otvori par prema ID-u."
+      }
+    },
+    "790556fd-f38a-4f08-b74f-6d2e99715ec4": {
+      "source_sha": "0dbe346cb377b8ea",
+      "fields": {
+        "title": "Podrška",
+        "description": "Dobij pomoć, kontaktiraj podršku ili prijavi problem.",
+        "when_to_visit": "Kada korisnik generalno pita za pomoć, podršku, kako da kontaktira tim, prijavi grešku ili treba mu pomoć, bez navođenja određene oblasti podrške."
+      }
+    },
+    "7a61224a-810a-457a-997b-de887960e700": {
+      "source_sha": "2d8d2e989e198e27",
+      "fields": {
+        "title": "Članak vesti",
+        "description": "Detaljan prikaz Longevity članka.",
+        "when_to_visit": "Kada korisnik želi da pročita određeni članak po ID-u, otvori vest ili vidi ceo članak koji je čitao."
+      }
+    },
+    "7aaa590b-d3f9-4f9b-bd10-61dce21ee5de": {
+      "source_sha": "9957c50850cdf7e5",
+      "fields": {
+        "title": "Podsetnici",
+        "description": "Tvoji zakazani podsetnici — kompletna lista, sa kontrolama za dodavanje, izmenu i brisanje.",
+        "when_to_visit": "Kada korisnik pita za listu podsetnika, sve podsetnike, \"pokaži mi moje podsetnike\" ili želi da upravlja zakazanim podsetnicima."
+      }
+    },
+    "7ac28357-6ff3-4654-83ed-b7c2353ea3cf": {
+      "source_sha": "cc2bd66ea7b0c28f",
+      "fields": {
+        "title": "Događaji i druženja",
+        "description": "Predstojeći događaji MAXINA zajednice, lična okupljanja i druženja.",
+        "when_to_visit": "Kada korisnik pita o događajima i druženjima, ekranu za događaje i druženja, manifestacijama, zakazanim susretima, plesnim događajima, wellness radionicama ili aktivnostima zajednice na kojima može da učestvuje. Podrazumevano otvara Hot tab."
+      }
+    },
+    "7bfe3b24-70dd-453d-8bbb-2256d3f20d1e": {
+      "source_sha": "3a2c1f139ad82533",
+      "fields": {
+        "title": "AI uvidi",
+        "description": "Personalizovani uvidi iz tvojih zdravstvenih podataka i aktivnosti.",
+        "when_to_visit": "Kada korisnik pita za uvide, obrasce, trendove ili želi da zna šta je AI naučio o njemu."
+      }
+    },
+    "7d6ee82b-c8bd-402a-ba11-bb58d1af671e": {
+      "source_sha": "9d5721f2addd14d4",
+      "fields": {
+        "title": "Izgled",
+        "description": "Dizajn, boje i tamni režim.",
+        "when_to_visit": "Kada korisnik pita za tab izgled u podešavanjima — dizajn, tamni režim, boje ili kako aplikacija izgleda."
+      }
+    },
+    "7e61b476-e2c1-4914-a229-72eaba4f1cb9": {
+      "source_sha": "dd22afdd669d96a8",
+      "fields": {
+        "title": "Distribucija",
+        "description": "Prati kako se tvoj deljeni sadržaj distribuira i prima.",
+        "when_to_visit": "Kada korisnik pita za distribuciju, kako se njegov sadržaj širi, doseg ili analitiku deljenja."
+      }
+    },
+    "7f53603a-2fc2-4298-80ec-9031725881a9": {
+      "source_sha": "c9736d6d6c379351",
+      "fields": {
+        "title": "Poslovne prilike",
+        "description": "Nove poslovne prilike i lidovi koji odgovaraju tvojim uslugama.",
+        "when_to_visit": "Kada korisnik pita za poslovne prilike, lidove, nove klijente ili koji posao je stigao."
+      }
+    },
+    "7f58a662-9529-568e-bbda-4db88d883fda": {
+      "source_sha": "4e67c8e1a59e56bf",
+      "fields": {
+        "title": "Edukacija i nauka",
+        "description": "Zdravstvena edukacija i nauka o dugovečnosti iz Vitana baze znanja.",
+        "when_to_visit": "Kada korisnik želi da nauči nešto o zdravlju, čita o nauci dugovečnosti ili traži edukativne sadržaje o wellnessu."
+      }
+    },
+    "80c0659a-9931-45fd-a9c0-8c2af2ad17b7": {
+      "source_sha": "8f5b9beff43e120f",
+      "fields": {
+        "title": "Podeli i zaradi",
+        "description": "Podeli Discover proizvode i zaradi nagrade.",
+        "when_to_visit": "Kada korisnik pita za tab \"Podeli i zaradi\" u Discover-u, Discover sekciju za deljenje i zaradu ili za deljenje Discover proizvoda sa tržišta kako bi zaradio nagrade."
+      }
+    },
+    "81019d74-0860-5cee-a613-a9b59bba5561": {
+      "source_sha": "3dc6db11beeed1c5",
+      "fields": {
+        "title": "Centar zdravstvenih usluga",
+        "description": "Pronađi i zakaži zdravstvene usluge kod pružalaca u MAXINA zajednici.",
+        "when_to_visit": "Kada korisnik pita gde može da nađe zdravstvene usluge, kako da zakaže termin kod praktičara ili želi da pregleda zdravstvene stručnjake."
+      }
+    },
+    "81bc391b-b711-4e34-85e5-1da0f8b4f611": {
+      "source_sha": "8699e7d18e250bd9",
+      "fields": {
+        "title": "Profil pružaoca usluga",
+        "description": "Stranica profila za određenog pružaoca usluga.",
+        "when_to_visit": "Kada korisnik želi da otvori određeni profil pružaoca usluga, vidi profil kouča ili lekara ili pronađe pružaoca usluga po ID-u."
+      }
+    },
+    "81c4af67-d838-4724-91fb-2eb8f0a6adec": {
+      "source_sha": "f5de92c3f2acb439",
+      "fields": {
+        "title": "Dozvole za memoriju",
+        "description": "Kontroliši šta Vitana pamti i ko može da vidi tvoja sećanja.",
+        "when_to_visit": "Kada korisnik pita za dozvole za memoriju, šta Vitana sme da pamti, privatnost memorije ili ko ima pristup njegovim sećanjima."
+      }
+    },
+    "81fc1c2d-bca3-4cc6-be84-9e97c7d6d4f9": {
+      "source_sha": "2daf710f7a46b377",
+      "fields": {
+        "title": "Arhivirane poruke",
+        "description": "Poruke koje si arhivirao.",
+        "when_to_visit": "Kada korisnik pita za arhivirane poruke, stare poruke ili poruke koje je sačuvao ili odbacio."
+      }
+    },
+    "82413dad-62a5-4344-be99-f44e2d4ec8a2": {
+      "source_sha": "6cb8b020d56ee50b",
+      "fields": {
+        "title": "Javni profil",
+        "description": "Javni profil člana zajednice.",
+        "when_to_visit": "Kada korisnik želi da otvori profil drugog člana, vidi javnu stranicu člana zajednice, potraži nekoga po @vitana_id ili pogleda korisničko ime."
+      }
+    },
+    "8343cc16-fb4e-4e9f-85d4-ea995af0ddba": {
+      "source_sha": "0c166351b51b504d",
+      "fields": {
+        "title": "Konektori i povezane aplikacije",
+        "description": "Konektori ka aplikacijama trećih strana i integracije povezane sa tvojim nalogom.",
+        "when_to_visit": "Kada korisnik pita za konektore, konektor, povezane aplikacije, integracije aplikacija, veze sa trećim stranama, povezane usluge ili povezivanje eksterne aplikacije."
+      }
+    },
+    "85374691-c4b7-5bf4-9baf-7a4d70e0ef1c": {
+      "source_sha": "7cfedb1858e325f3",
+      "fields": {
+        "title": "Biznis centar",
+        "description": "Tvoj centar za izgradnju biznisa i ostvarivanje prihoda u MAXINA zajednici.",
+        "when_to_visit": "Kada korisnik pita kako da izgradi biznis, postane kreator, postane pružalac usluga ili monetizuje svoje veštine u MAXINA zajednici."
+      }
+    },
+    "8702b903-8a2e-4e64-b073-61c497fdcf61": {
+      "source_sha": "4401d661a459b886",
+      "fields": {
+        "title": "Korpa",
+        "description": "Artikli u tvojoj korpi, spremni za plaćanje.",
+        "when_to_visit": "Kada korisnik želi da otvori korpu, vidi šta je u korpi, pređe na plaćanje ili proveri svoju korpu."
+      }
+    },
+    "872fdc30-0202-4fc0-8fd8-19058b21c5cd": {
+      "source_sha": "7ec3041e2ca6405c",
+      "fields": {
+        "title": "Priseti se i pretraži",
+        "description": "Pretraži svoja sećanja i prošle razgovore.",
+        "when_to_visit": "Kada korisnik želi da pretraži svoja sećanja, pronađe nešto što je rekao, nađe prošli razgovor ili potraži nešto što Vitana pamti."
+      }
+    },
+    "87bf15e9-c5b6-4c2e-befc-3d52a1480eec": {
+      "source_sha": "0d96bc9f0ebf682d",
+      "fields": {
+        "title": "Glas",
+        "description": "Glasovni tab AI asistenta — podešavanja glasa i tvoje Voice-First ORB iskustvo.",
+        "when_to_visit": "Kada korisnik pita za glasovni tab asistenta, podešavanja glasa, glasovnu AI ili želi da podesi glasovnog asistenta."
+      }
+    },
+    "89975567-1e43-4e4c-8295-b27405d7a60e": {
+      "source_sha": "93b1388fb4bf8055",
+      "fields": {
+        "title": "Česta pitanja",
+        "description": "Često postavljana pitanja, članci za pomoć i baza znanja.",
+        "when_to_visit": "Kada korisnik pita za FAQ, često postavljana pitanja, članke za pomoć, bazu znanja, česta pitanja ili uputstva."
+      }
+    },
+    "89cbf8ca-952b-4d7a-a43f-c545bf3dd2f0": {
+      "source_sha": "81e158405f3d5709",
+      "fields": {
+        "title": "Detalji kampanje",
+        "description": "Detaljan prikaz pojedinačne kampanje deljenja — doseg, performanse i sadržaj.",
+        "when_to_visit": "Kada korisnik želi da otvori određenu kampanju deljenja, detalje kampanje ili performanse pojedinačne kampanje."
+      }
+    },
+    "8a881371-8f59-431f-aac7-302c6fbc927e": {
+      "source_sha": "4701f806cea7ebde",
+      "fields": {
+        "title": "Podaci i saglasnost",
+        "description": "Upravljaj kojim podacima deliš i svojim podešavanjima saglasnosti.",
+        "when_to_visit": "Kada korisnik pita za saglasnost za deljenje podataka, koji podaci se dele, dozvole za podatke ili podešavanja saglasnosti."
+      }
+    },
+    "8c779ec1-f2e1-42cb-923f-a4f4fe2bfcc1": {
+      "source_sha": "4a3e310994e2560c",
+      "fields": {
+        "title": "Moji planovi",
+        "description": "Personalizovani zdravstveni planovi oko tvojih ciljeva — ishrana, fitnes, san, stres.",
+        "when_to_visit": "Kada korisnik pita za svoje zdravstvene planove, plan ishrane, plan fitnesa, lični program ili šta treba da radi za svoje ciljeve."
+      }
+    },
+    "8e332739-6e7f-47e7-84e1-8dd5d2f1b892": {
+      "source_sha": "cf8e2d0021aca010",
+      "fields": {
+        "title": "Moj profil",
+        "description": "Tvoj lični profil — ime, fotografija, biografija i detalji naloga.",
+        "when_to_visit": "Kada korisnik želi da otvori svoj profil, vidi svoj profil, izmeni svoj profil, pregleda svoj nalog, lične informacije, o meni ili korisnički profil."
+      }
+    },
+    "8fe3651b-b81e-43d2-ac55-7eb5325ac6b4": {
+      "source_sha": "d13a078d4d7f4d14",
+      "fields": {
+        "title": "Primljeno — Ćaskanje i poruke",
+        "description": "Poruke, ćaskanja i razgovori sa članovima zajednice.",
+        "when_to_visit": "Kada korisnik pita za primljeno, inbox, poruke, ćaskanje, ćaskanja, istoriju ćaskanja, mesindžer, tekstualne poruke, razgovore, istoriju poruka, direktne poruke, pisanje članovima, komunikaciju sa zajednicom, obaveštenja ili želi da pročita svoje poruke."
+      }
+    },
+    "921f97cc-8147-44aa-90da-a24cd3825bac": {
+      "source_sha": "a8952c068a56e92f",
+      "fields": {
+        "title": "Novčanik",
+        "description": "Tvoj MAXINA novčanik — stanje, pretplate i nagrade.",
+        "when_to_visit": "Kada korisnik želi da otvori svoj novčanik, vidi svoje stanje, proveri šta ima, ili da istraži sekciju novčanika."
+      }
+    },
+    "93408376-a310-444c-a877-d1b91effcb45": {
+      "source_sha": "0b3febab02c90e9c",
+      "fields": {
+        "title": "Kampanje",
+        "description": "Tvoje aktivne kampanje deljenja i njihove performanse.",
+        "when_to_visit": "Kada korisnik pita za svoje kampanje deljenja, kampanje preporuka, performanse kampanja ili rezultate kampanja."
+      }
+    },
+    "93f7d6f2-78eb-4908-b673-bb2ecc24cc38": {
+      "source_sha": "215e6c0ab287fb44",
+      "fields": {
+        "title": "Moji intenti",
+        "description": "Tvoje sopstvene objave i zahtevi u zajednici.",
+        "when_to_visit": "Kada korisnik pita za \"moje intente\", \"moje objave\", \"moje zahteve\", \"šta sam objavio\" ili želi da vidi ili upravlja svojim objavama u zajednici."
+      }
+    },
+    "94834c30-82fb-4fa6-a710-28f365de85e4": {
+      "source_sha": "fe3f0d085959a699",
+      "fields": {
+        "title": "Aktivnost novčanika",
+        "description": "Tvoja aktivnost novčanika i istorija transakcija.",
+        "when_to_visit": "Kada korisnik pita za tab \"Aktivnost\" u novčaniku, svoju aktivnost novčanika, transakcije novčanika, istoriju transakcija ili nedavna kretanja u novčaniku."
+      }
+    },
+    "96a20669-a03b-479d-b57b-a59dc04d3ec8": {
+      "source_sha": "78c0694996e34593",
+      "fields": {
+        "title": "AI izbor popusta",
+        "description": "Tab za AI izbor u okviru popusta i ponuda — popusti koje je AI izabrao za tebe.",
+        "when_to_visit": "Kada korisnik pita za AI izbor popusta, personalizovane popuste ili tab za AI izbor u popustima i ponudama."
+      }
+    },
+    "97bb5415-af7a-477b-b8db-670590af879a": {
+      "source_sha": "93798ab9455b25d4",
+      "fields": {
+        "title": "Akcije",
+        "description": "Preporučene akcije i zadaci za tebe danas.",
+        "when_to_visit": "Kada korisnik pita šta treba da uradi danas, koje akcije ga čekaju ili koje zadatke ima."
+      }
+    },
+    "9a1f0199-40e9-4456-8621-ef937b1c6854": {
+      "source_sha": "597f11e5b7771d07",
+      "fields": {
+        "title": "Članovi zajednice",
+        "description": "Pregledaj direktorijum članova MAXINA zajednice.",
+        "when_to_visit": "Kada korisnik pita o direktorijumu članova, članovima zajednice, ko je u zajednici ili želi da pregleda profile članova."
+      }
+    },
+    "9b3e8c52-923c-5d8b-b7c7-934586f118b3": {
+      "source_sha": "786c9f1246e5d74d",
+      "fields": {
+        "title": "Biznis analitika",
+        "description": "Pokazatelji performansi za tvoj MAXINA biznis — rezervacije, prihod, rast.",
+        "when_to_visit": "Kada korisnik pita o performansama svog biznisa, prihodu, rezervacijama, pokazateljima rasta ili analitici za svoje usluge."
+      }
+    },
+    "9c44d06b-7caf-4317-a5fb-b5e9a73bd33c": {
+      "source_sha": "4511ea35fda273af",
+      "fields": {
+        "title": "Vremenska linija",
+        "description": "Hronološka vremenska linija tvojih sećanja i interakcija.",
+        "when_to_visit": "Kada korisnik želi da vidi svoju vremensku liniju, liniju sećanja, istoriju interakcija ili hronološki prikaz memorije."
+      }
+    },
+    "9c7147a1-c7a4-4a43-8380-6a50609c39c5": {
+      "source_sha": "24a0ea66d0b66830",
+      "fields": {
+        "title": "Podešavanja",
+        "description": "Podešavanja tvog naloga.",
+        "when_to_visit": "Kada korisnik želi da otvori svoja podešavanja, otvori ekran podešavanja ili upravlja svojim nalogom."
+      }
+    },
+    "9d5ecb59-8a54-4ffc-99a7-189e43f7d1ad": {
+      "source_sha": "b75699d3bebb982a",
+      "fields": {
+        "title": "Tenant i uloga",
+        "description": "Promeni svoju aktivnu ulogu u trenutnom tenantu — Zajednica, Profesionalac, Osoblje, Admin.",
+        "when_to_visit": "Kada korisnik želi da promeni ulogu, postane admin/profesionalac/osoblje ili pita za svoju ulogu u tenantu."
+      }
+    },
+    "9e8d90fd-d512-47b1-816b-547060bee990": {
+      "source_sha": "cc0efffd1e1dee07",
+      "fields": {
+        "title": "Politika privatnosti",
+        "description": "Javna politika privatnosti.",
+        "when_to_visit": "Kada korisnik pita za privatnost, obradu podataka ili koje podatke Vitana prikuplja."
+      }
+    },
+    "9f1f8d7a-8d26-4bfc-adcf-d50b256c5b64": {
+      "source_sha": "7ec3041e2ca6405c",
+      "fields": {
+        "title": "Priseti se i pretraži",
+        "description": "Pretraži svoja sećanja i prošle razgovore.",
+        "when_to_visit": "Kada korisnik želi da pretraži svoja sećanja, pronađe nešto što je rekao, nađe prošli razgovor ili potraži nešto što Vitana pamti."
+      }
+    },
+    "9f340dc9-27c0-4e82-b8e6-986060866742": {
+      "source_sha": "b5cd6fb642fcbb3e",
+      "fields": {
+        "title": "Pretraga",
+        "description": "Globalna pretraga kroz celu MAXINA aplikaciju — članovi, sadržaj, usluge, proizvodi.",
+        "when_to_visit": "Kada korisnik želi da pretražuje aplikaciju, pronađe nešto određeno, potraži člana, nađe sadržaj ili otvori globalnu pretragu."
+      }
+    },
+    "a0f1cc13-afa9-4c61-9bc9-0b91c7acfb7d": {
+      "source_sha": "88a74453d190d378",
+      "fields": {
+        "title": "Moje porudžbine",
+        "description": "Tvoje porudžbine — aktivne i prošle.",
+        "when_to_visit": "Kada korisnik pita za svoje porudžbine, moje porudžbine, status porudžbine, dostave ili šta je kupio."
+      }
+    },
+    "a1b7c9d0-4e5f-4a6b-9c8d-1e2f3a4b5c6d": {
+      "source_sha": "9e6d89f14f77ef95",
+      "fields": {
+        "title": "Moje putovanje",
+        "description": "Tvoj Autopilot kontrolni panel — 90-dnevno putovanje pripremljeno za tebe: talasi, prekretnice i preporučene akcije, usklađene sa tvojim kalendarom. Postoje dva prikaza između kojih korisnik može da se prebacuje: VOĐENO putovanje (\"uvod\", korak po korak, jedna sesija za drugom) i PUNA VERZIJA (cela aplikacija, sve odjednom).",
+        "when_to_visit": "Kada korisnik želi da otvori moje putovanje, vidi moje putovanje, Autopilot putovanje, moje 90-dnevno putovanje, 90-dnevni plan, Autopilot kontrolni panel, moj plan, ili šta je danas na redu na mom putovanju. TAKOĐE kada korisnik pomene jedan od dva PRIKAZA svog putovanja po imenu — VOĐENO putovanje / vođena journey / \"uvod\", ILI PUNA VERZIJA / cela aplikacija / puna verzija — ili želi da se prebaci između vođenog i punog prikaza svog putovanja. TAKOĐE kada korisnik pita za SESIJE SOPSTVENE Journey — npr. \"sledeća sesija mog putovanja\", \"moja journey sesija\", \"ekran sa sesijama mog vođenog putovanja\" — to su razgovori korak po korak UNUTAR njegovog sopstvenog 90-dnevnog putovanja, NE sesije/kursevi koje nudi kao provajder drugima (to je Business Hub). Ovo NIJE korisnički profil — \"moje putovanje\" znači Autopilot kontrolni panel."
+      }
+    },
+    "a1bde34f-dd04-4446-ab69-1717a3d33233": {
+      "source_sha": "d68213a45c6a8433",
+      "fields": {
+        "title": "Pretplate",
+        "description": "Tvoje aktivne pretplate i usluge za koje plaćaš.",
+        "when_to_visit": "Kada korisnik pita za svoje pretplate, ponavljajuća plaćanja, za šta plaća ili želi da otkaže ili upravlja pretplatom."
+      }
+    },
+    "a31fa534-90f5-4d5c-9ce8-8d5bc377c778": {
+      "source_sha": "bbfb6e1126d54c4a",
+      "fields": {
+        "title": "Uslovi korišćenja",
+        "description": "Uslovi korišćenja i pravne informacije.",
+        "when_to_visit": "Kada korisnik pita za uslove korišćenja, opšte uslove, pravne odredbe ili korisnički ugovor."
+      }
+    },
+    "a34071ad-dc0a-43ea-a3d9-97fd18d3c805": {
+      "source_sha": "9e0bd3b375526da4",
+      "fields": {
+        "title": "Predstojeći događaji",
+        "description": "Predstojeći događaji i druženja u zajednici na kojima možeš da učestvuješ.",
+        "when_to_visit": "Kada korisnik pita za predstojeće događaje, nadolazeće događaje, tab \"Predstojeći\" ili buduća okupljanja i druženja."
+      }
+    },
+    "a3bb7470-1dad-4961-8d30-dc24df217e04": {
+      "source_sha": "dcb609be1b6aa400",
+      "fields": {
+        "title": "Medicinsko",
+        "description": "Tvoja medicinska dokumentacija — otpremi i pregledaj lekarske izveštaje i medicinska dokumenta.",
+        "when_to_visit": "Kada korisnik pita za tab \"Medicinsko\" na ekranu Zdravlje, svoju medicinsku dokumentaciju, lekarske izveštaje ili otpremanje lekarskog izveštaja."
+      }
+    },
+    "a4810a8c-b092-496e-b886-8c850e134820": {
+      "source_sha": "90bc4723ffed9954",
+      "fields": {
+        "title": "Paketi usluga",
+        "description": "Paketi usluga koje nudiš u svom MAXINA biznisu.",
+        "when_to_visit": "Kada korisnik pita za tab \"Paketi\" u Business Hub uslugama, Business Hub Services pakete, svoje pakete usluga ili paketne ponude koje prodaje u svom biznisu."
+      }
+    },
+    "a4aadc19-fefd-44ed-982f-b235342ea867": {
+      "source_sha": "4e67c8e1a59e56bf",
+      "fields": {
+        "title": "Edukacija i nauka",
+        "description": "Zdravstvena edukacija i nauka o dugovečnosti iz Vitana baze znanja.",
+        "when_to_visit": "Kada korisnik želi da nauči nešto o zdravlju, da čita o nauci dugovečnosti ili traži edukativne sadržaje o wellness-u."
+      }
+    },
+    "a825a933-6855-490a-a7f4-f27241a5b52e": {
+      "source_sha": "f5de92c3f2acb439",
+      "fields": {
+        "title": "Dozvole za čuvanje",
+        "description": "Kontroliši šta Vitana pamti i ko može da vidi tvoja sećanja.",
+        "when_to_visit": "Kada korisnik pita za dozvole za čuvanje, šta Vitana sme da pamti, privatnost sećanja ili ko ima pristup njegovim sećanjima."
+      }
+    },
+    "a85569eb-0581-4222-a22c-37819c7a0f0c": {
+      "source_sha": "9e37e89112323150",
+      "fields": {
+        "title": "Konektori za društvene mreže",
+        "description": "Poveži svoje naloge na društvenim mrežama kao integracije.",
+        "when_to_visit": "Kada korisnik pita za tab konektora za društvene mreže u povezanim aplikacijama ili povezivanje naloga na društvenim mrežama (LinkedIn, Instagram, X) kao integraciju."
+      }
+    },
+    "ab1e6ddd-bff5-49a1-9587-fad7221fb065": {
+      "source_sha": "aabe5f13dc43ca6c",
+      "fields": {
+        "title": "Planovi hidratacije",
+        "description": "Tab za hidrataciju u okviru zdravstvenih planova.",
+        "when_to_visit": "Kada korisnik pita za planove hidratacije, tab za hidrataciju u planovima ili svoj plan unosa vode/pijenja."
+      }
+    },
+    "acc0453e-f3e6-4263-b32f-92e0ee1a6158": {
+      "source_sha": "2daf710f7a46b377",
+      "fields": {
+        "title": "Arhivirane poruke",
+        "description": "Poruke koje si arhivirao/la.",
+        "when_to_visit": "Kada korisnik pita za arhivirane poruke, stare poruke ili poruke koje je sačuvao ili odbacio."
+      }
+    },
+    "b0868bda-8a81-5216-a5ac-34d10cc55db9": {
+      "source_sha": "fb197ea4e8f3a7dd",
+      "fields": {
+        "title": "Preporuke",
+        "description": "Personalizovane AI preporuke za zdravlje, zajednicu i sadržaj.",
+        "when_to_visit": "Kada korisnik pita za preporuke, predloge šta da radi ili želi da vidi Vitana personalizovani izbor za njega."
+      }
+    },
+    "b090d6cc-9110-4dd5-b9ab-abd40230f9ff": {
+      "source_sha": "008ee6ae6669998e",
+      "fields": {
+        "title": "Longevity vesti",
+        "description": "Tvoj početni feed vesti — aktuelne Longevity vesti, istraživanja i članci, odabrani za tebe.",
+        "when_to_visit": "Kada korisnik želi vesti, Longevity vesti, najnovije vesti, feed vesti, novosti o dugovečnosti, članke, novosti iz istraživanja ili jednostavno početnu stranicu."
+      }
+    },
+    "b3584c4b-2498-4220-8c34-08ceafd383c7": {
+      "source_sha": "23bdc154e73b46fa",
+      "fields": {
+        "title": "Vitana ćaskanje",
+        "description": "Poseban interfejs za ćaskanje — fokusirani prozor za razgovor sa Vitana, van ORB-a.",
+        "when_to_visit": "Kada korisnik izričito želi da ćaska sa Vitana u tekstualnom prozoru, otvori prikaz za ćaskanje ili vodi duži pisani razgovor. Preferiraj AI.OVERVIEW za opšte zahteve tipa \"AI asistent\"."
+      }
+    },
+    "b4c1e075-e37d-51b2-991e-0140cff26a04": {
+      "source_sha": "38e9a03d5005c922",
+      "fields": {
+        "title": "Dnevnik",
+        "description": "Tvoji svakodnevni unosi u dnevnik — beleži misli, raspoloženja i razmišljanja.",
+        "when_to_visit": "Kada korisnik želi da napiše unos u dnevnik, zabeleži kako se oseća, vodi dnevnik o svom danu ili otvori svoj dnevnik."
+      }
+    },
+    "b4e8c9f6-68a7-53c3-b1a0-45218ecfb159": {
+      "source_sha": "fa80b43bbbbac882",
+      "fields": {
+        "title": "Zajednica",
+        "description": "MAXINA centar zajednice — događaji, sobe uživo, mediji i grupe.",
+        "when_to_visit": "Kada korisnik generalno pita o zajednici, želi da istraži funkcije zajednice ili ne zna gde da pronađe društvene sadržaje."
+      }
+    },
+    "b574c1c8-076c-4a5a-8120-ddf51a83f10d": {
+      "source_sha": "946eb50fc3d3740b",
+      "fields": {
+        "title": "Kategorije",
+        "description": "Pregledaj Discover po kategoriji.",
+        "when_to_visit": "Kada korisnik pita za tab Kategorije u Discover-u, želi da pregleda Discover po kategoriji ili da vidi sve kategorije na tržištu."
+      }
+    },
+    "b7265d29-3b4b-4ba1-91c1-a6c7968b2c68": {
+      "source_sha": "42e4012bbd967677",
+      "fields": {
+        "title": "Lekari i koučevi",
+        "description": "Pronađi lekare, koučeve i zdravstvene stručnjake.",
+        "when_to_visit": "Kada korisnik pita za lekare, koučeve, praktičare, specijaliste ili želi da pronađe zdravstvenog stručnjaka."
+      }
+    },
+    "b8c8bff5-a40c-48c3-98e2-6fe3f00bd0f1": {
+      "source_sha": "19c02729e0ea2f20",
+      "fields": {
+        "title": "Moje karte",
+        "description": "Karte koje si kupio za događaje i druženja.",
+        "when_to_visit": "Kada korisnik pita za svoje karte, moje karte, karte za događaje ili kupljene karte."
+      }
+    },
+    "ba6f5ec4-1ba3-46e2-8d1b-035ee87559f0": {
+      "source_sha": "57e05181acc53a38",
+      "fields": {
+        "title": "Današnji događaji",
+        "description": "Događaji i druženja u zajednici koji se održavaju danas.",
+        "when_to_visit": "Kada korisnik pita koji događaji su danas, traži današnje događaje ili tab \"Danas\"."
+      }
+    },
+    "baac1f15-7b41-413a-b1f1-a988ee77b3eb": {
+      "source_sha": "bac1ad3dc1dc61df",
+      "fields": {
+        "title": "Sobe uživo",
+        "description": "Audio i video sobe uživo gde se članovi zajednice sastaju u realnom vremenu.",
+        "when_to_visit": "Kada korisnik pita o sobama uživo, audio uživo, video uživo, razgovorima u realnom vremenu, online pozivima zajednice ili virtuelnim susretima koji se trenutno održavaju."
+      }
+    },
+    "badcfb76-ec0d-4c88-a32c-4c8bfb9e2d3e": {
+      "source_sha": "afb26d902c90f2df",
+      "fields": {
+        "title": "Razgovaraj sa Vitana",
+        "description": "Pošalji povratne informacije, prijavi problem ili pošalji poruku Vitana timu.",
+        "when_to_visit": "Kada korisnik želi da pošalje povratne informacije, prijavi grešku, pošalje poruku Vitana ili razgovara sa timom."
+      }
+    },
+    "bd2ee37f-7c70-44c6-ac05-410de3f8a8be": {
+      "source_sha": "616dcceec22657b3",
+      "fields": {
+        "title": "Naplata",
+        "description": "Tvoji podaci o naplati i troškovi pretplate.",
+        "when_to_visit": "Kada korisnik pita za karticu naplata u podešavanjima, naplatu, troškove ili pregled naplate."
+      }
+    },
+    "bd6bf093-4761-4c5e-8192-f259dd14c968": {
+      "source_sha": "23bdc154e73b46fa",
+      "fields": {
+        "title": "Vitana ćaskanje",
+        "description": "Namenski interfejs za ćaskanje — fokusirani prozor za razgovor sa Vitana, van ORB-a.",
+        "when_to_visit": "Kada korisnik izričito želi da ćaska sa Vitana u tekstualnom prozoru, da otvori prikaz za ćaskanje ili da vodi duži kucani razgovor. Preferiraj AI.OVERVIEW za opšti upit \"AI asistent\"."
+      }
+    },
+    "be3a865a-0aad-5262-aeeb-28984a98a88c": {
+      "source_sha": "004ca71448bca761",
+      "fields": {
+        "title": "Alkalma portal",
+        "description": "Registracija i prijava za Alkalma zakupca.",
+        "when_to_visit": "Kada korisnik pomene Alkalma i želi da se registruje ili prijavi."
+      }
+    },
+    "bf095b1b-0782-4f44-884c-8552007c4420": {
+      "source_sha": "0c166351b51b504d",
+      "fields": {
+        "title": "Konektori i povezane aplikacije",
+        "description": "Konektori ka aplikacijama trećih strana i integracije povezane sa tvojim nalogom.",
+        "when_to_visit": "Kada korisnik pita za konektore, konektor, povezane aplikacije, integracije aplikacija, veze sa trećim stranama, povezane servise ili povezivanje eksterne aplikacije."
+      }
+    },
+    "bf455900-3851-57c0-954c-8315ed4a466c": {
+      "source_sha": "eeba368dae725704",
+      "fields": {
+        "title": "AI fid",
+        "description": "Personalizovani tok sadržaja, preporuka i uvida koje bira veštačka inteligencija.",
+        "when_to_visit": "Kada korisnik pita šta ima novo, šta se dešava ili želi da vidi svoj personalizovani AI fid."
+      }
+    },
+    "bf5f32ad-0f43-4515-9277-4773d7662de1": {
+      "source_sha": "338a3c18c0f41592",
+      "fields": {
+        "title": "Zdravstvena ograničenja",
+        "description": "Unesi zdravstvena ograničenja (alergije, povrede, bolesti) kako bi preporuke bile bezbedne.",
+        "when_to_visit": "Kada korisnik želi da unese zdravstvena ograničenja, doda alergije, označi povredu ili zabeleži stanja koja utiču na preporuke."
+      }
+    },
+    "c24c3a81-f3a3-4705-a1b1-081755dd09b5": {
+      "source_sha": "4401d661a459b886",
+      "fields": {
+        "title": "Korpa",
+        "description": "Artikli u tvojoj korpi, spremni za plaćanje.",
+        "when_to_visit": "Kada korisnik želi da otvori korpu, vidi šta je u korpi, ode na kasu ili proveri svoju korpu."
+      }
+    },
+    "c2b5e217-2f2c-4549-866c-ec88db206cc3": {
+      "source_sha": "b75699d3bebb982a",
+      "fields": {
+        "title": "Tenant i uloga",
+        "description": "Promeni svoju aktivnu ulogu u trenutnom tenantu — Community, Professional, Staff, Admin.",
+        "when_to_visit": "Kada korisnik želi da promeni ulogu, postane Admin/Professional/Staff ili pita za svoju ulogu u tenantu."
+      }
+    },
+    "c3f61fa9-6034-47d4-a0c9-a43945c1cc22": {
+      "source_sha": "56d23c1f4f909bd9",
+      "fields": {
+        "title": "Pozovi prijatelje",
+        "description": "Pozovi prijatelje u MAXINA zajednicu i zaradi nagrade za preporuke.",
+        "when_to_visit": "Kada korisnik želi da pozove prijatelje, pošalje pozivnicu, podeli link za pozivnicu ili preporuči nekoga za MAXINA."
+      }
+    },
+    "c57e0246-2653-4112-9936-3690cc45696b": {
+      "source_sha": "731a452067f19b42",
+      "fields": {
+        "title": "Prodavnica",
+        "description": "Video-commerce prodavnica — video snimci proizvoda koje možeš kupiti sa MAXINA marketplace-a.",
+        "when_to_visit": "Kada korisnik želi da otvori prodavnicu, video prodavnicu, video snimke za kupovinu ili da pregleda proizvode putem video-commerce-a."
+      }
+    },
+    "c7ca2b46-3c3e-40d0-b029-d05133597d8e": {
+      "source_sha": "e7b19ba632121d4c",
+      "fields": {
+        "title": "Fitnes konektori",
+        "description": "Poveži fitnes aplikacije i nosive uređaje.",
+        "when_to_visit": "Kada korisnik pita za tab fitnes konektora u povezanim aplikacijama ili povezivanje fitnes aplikacije ili nosivog uređaja (Strava, Garmin, Fitbit)."
+      }
+    },
+    "c854e253-48a4-4d5a-93c5-6fd356c6f06c": {
+      "source_sha": "616dcceec22657b3",
+      "fields": {
+        "title": "Naplata",
+        "description": "Tvoji podaci o naplati i troškovi pretplate.",
+        "when_to_visit": "Kada korisnik pita za tab naplata u podešavanjima, naplatu, troškove ili pregled naplate."
+      }
+    },
+    "c875d8ac-0d7c-429f-a2fd-3af17f3b76f7": {
+      "source_sha": "d2fb3dff8306e887",
+      "fields": {
+        "title": "Jezičke i AI preference",
+        "description": "Jezičke i AI preference za Vitana ORB.",
+        "when_to_visit": "Kada korisnik pita za ORB jezičke preference ili želi da prilagodi Vitana glas (NE opšta podešavanja privatnosti/obaveštenja)."
+      }
+    },
+    "c9abcd62-59cd-5266-bbfb-5b393632b9e8": {
+      "source_sha": "6fbcac6ee7c06705",
+      "fields": {
+        "title": "Nagrade i provizije",
+        "description": "Provizije i nagrade koje si zaradio deljenjem platforme i brigom o klijentima.",
+        "when_to_visit": "Kada korisnik pita za provizije, zaradu od preporuka, nagrade, isplate, koliko je zaradio ili koliko je napravio deljenjem ili prodajom u zajednici."
+      }
+    },
+    "cb93317e-9dda-505e-a177-0d8d5ee331e4": {
+      "source_sha": "1048dbff42a2320f",
+      "fields": {
+        "title": "Istraži",
+        "description": "Pregledaj suplemente, wellness usluge, lekare, ponude i još mnogo toga.",
+        "when_to_visit": "Kada korisnik želi da pregleda, istraži ili kupi proizvode i usluge na MAXINA tržištu."
+      }
+    },
+    "ce97762d-6bbc-4a77-8275-764ff0f67331": {
+      "source_sha": "bc3752492d950ead",
+      "fields": {
+        "title": "Sačuvani popusti",
+        "description": "Tab za sačuvano u okviru popusta i ponuda — popusti koje si sačuvao.",
+        "when_to_visit": "Kada korisnik pita za svoje sačuvane popuste, zabeležene ponude ili tab za sačuvano u popustima i ponudama."
+      }
+    },
+    "cf009723-36c3-4116-a467-8d95ae1151ad": {
+      "source_sha": "5ee9cfc07b1249e3",
+      "fields": {
+        "title": "Tokeni",
+        "description": "Tab za tokene u okviru stanja tvog novčanika.",
+        "when_to_visit": "Kada korisnik pita za svoje tokene, stanje tokena ili tab za tokene u novčaniku."
+      }
+    },
+    "d0bb74e0-8f8e-4c17-846e-31b43f0c6691": {
+      "source_sha": "aa413e69ed447620",
+      "fields": {
+        "title": "Podkasti",
+        "description": "Podkasti i audio epizode zajednice.",
+        "when_to_visit": "Kada korisnik traži podkaste, tab za podkaste ili audio epizode u Media Hub-u."
+      }
+    },
+    "d2c8571b-2b82-5d2d-b270-0c93b8da09af": {
+      "source_sha": "b68d66fc1e5a866c",
+      "fields": {
+        "title": "Pridruži se MAXINA zajednici",
+        "description": "Registracija i prijava za MAXINA zajednicu na Vitanaland.",
+        "when_to_visit": "Kada korisnik želi da se registruje, prijavi, pridruži zajednici, napravi nalog ili da se uloguje na MAXINA."
+      }
+    },
+    "d38d69c0-700c-43b5-b3e4-724800b43717": {
+      "source_sha": "f3ce9c8d1fd807fb",
+      "fields": {
+        "title": "Kontaktiraj podršku",
+        "description": "Obrati se timu za podršku — snimi poruku, pošalji tiket ili nam piši.",
+        "when_to_visit": "Kada korisnik želi da kontaktira podršku, pošalje tiket za podršku, prijavi grešku, pošalje poruku timu ili zatraži povratni poziv."
+      }
+    },
+    "d4f9ba66-1cf8-5aaa-a5be-63719728fa49": {
+      "source_sha": "ccadb6fe19a92b1a",
+      "fields": {
+        "title": "Medija centar",
+        "description": "Video snimci, podkasti i muzika zajednice.",
+        "when_to_visit": "Kada korisnik pita o video snimcima, podkastima, muzici, snimcima ili želi da pregleda medijske sadržaje zajednice."
+      }
+    },
+    "d56ab603-3033-4eee-8247-e192c67f5ff1": {
+      "source_sha": "cd258c7cd7314294",
+      "fields": {
+        "title": "Moji omiks podaci",
+        "description": "Tab Omiks u okviru Moje biologije — tvoji genomski i omiks podaci.",
+        "when_to_visit": "Kada korisnik traži svoje omiks podatke, genomiku, DNK podatke ili tab Omiks u Mojoj biologiji."
+      }
+    },
+    "d68691c6-b257-43c8-b7a4-4c67cc8c2c65": {
+      "source_sha": "fb197ea4e8f3a7dd",
+      "fields": {
+        "title": "Preporuke",
+        "description": "Personalizovane AI preporuke za zdravlje, zajednicu i sadržaj.",
+        "when_to_visit": "Kada korisnik pita za preporuke, predloge, šta bi trebalo da radi, ili želi da vidi Vitana personalizovani izbor za njega."
+      }
+    },
+    "d705e453-7344-5cfc-bad8-9eb78e471c8d": {
+      "source_sha": "1f06d33ed964eea2",
+      "fields": {
+        "title": "Stanje i pogodnosti",
+        "description": "Tvoje trenutno MAXINA stanje i pogodnosti otključane na tvom nivou.",
+        "when_to_visit": "Kada korisnik pita za stanje, sredstva na računu, pogodnosti, nivo ili šta je otključao."
+      }
+    },
+    "d7a81e94-4763-4fdb-a904-f1681e1f4aaa": {
+      "source_sha": "5f4f1548a85b061b",
+      "fields": {
+        "title": "Preporuke",
+        "description": "Tab Preporuke u asistentu — preporuke i nagrade iz asistenta.",
+        "when_to_visit": "Kada korisnik pita za tab Preporuke u asistentu, preporuke asistenta ili nagrade za preporuke u asistentu."
+      }
+    },
+    "d7c52b0c-3560-4df8-82b8-e173944a1d13": {
+      "source_sha": "5850ccf2df445f1d",
+      "fields": {
+        "title": "Muzika",
+        "description": "Muzika zajednice.",
+        "when_to_visit": "Kada korisnik pita za muziku, pesme ili numere u Media Hub-u."
+      }
+    },
+    "d7e9f4fe-8a66-4af5-8244-83a132de85c7": {
+      "source_sha": "1fe22cf7ea0e4aa2",
+      "fields": {
+        "title": "Popularni popusti",
+        "description": "Tab za trendove u okviru popusta i ponuda.",
+        "when_to_visit": "Kada korisnik pita za popularne popuste, omiljene ponude ili tab za trendove u popustima i ponudama."
+      }
+    },
+    "d912e70b-f633-4ed8-95e7-0f6509ba30ea": {
+      "source_sha": "3d105200a69d3dd6",
+      "fields": {
+        "title": "Moje partnerske objave",
+        "description": "Tvoje sopstvene objave za plesne i fitnes partnere.",
+        "when_to_visit": "Kada korisnik pita za \"moje partnerske objave\", \"moje plesne objave\", \"moje fitnes objave\" ili \"šta sam objavio da pronađem partnera\"."
+      }
+    },
+    "d9d5336a-c213-452d-bfd5-d05df86e5ae0": {
+      "source_sha": "718bbe7eac3f6c8b",
+      "fields": {
+        "title": "Optimizacija",
+        "description": "Tab za optimizaciju u okviru stanja tvog novčanika — načini da optimizuješ svoje stanje.",
+        "when_to_visit": "Kada korisnik želi da optimizuje svoj novčanik, pita za tab za optimizaciju novčanika ili savete za optimizaciju stanja."
+      }
+    },
+    "da69c4da-ad69-470f-afdc-4640660bcaff": {
+      "source_sha": "961008b2873e4075",
+      "fields": {
+        "title": "Stubovi zdravlja",
+        "description": "Temelji tvoje dugovečnosti — ishrana, fitnes, san, stres i više.",
+        "when_to_visit": "Kada korisnik pita za stubove zdravlja, temelje dugovečnosti, osnovne oblasti zdravlja, stub ishrane, stub fitnesa, stub sna ili upravljanje stresom."
+      }
+    },
+    "db28dfcb-a278-401f-8512-cf4e9c7df670": {
+      "source_sha": "7abab8bdb7f48fe4",
+      "fields": {
+        "title": "Detalji proizvoda",
+        "description": "Stranica sa detaljima za određeni proizvod.",
+        "when_to_visit": "Kada korisnik želi da otvori određeni proizvod po ID-u, vidi detalje proizvoda ili pročita o određenom artiklu."
+      }
+    },
+    "dcc8f661-6400-5ef1-83c5-42b7d722b504": {
+      "source_sha": "42e4012bbd967677",
+      "fields": {
+        "title": "Lekari i koučevi",
+        "description": "Pronađi lekare, koučeve i zdravstvene praktičare.",
+        "when_to_visit": "Kada korisnik pita za lekare, koučeve, praktičare, specijaliste ili želi da nađe zdravstvenog stručnjaka."
+      }
+    },
+    "dd66baa1-0107-45ee-83c1-8f24be427ccc": {
+      "source_sha": "68e6769236d8440c",
+      "fields": {
+        "title": "Zdravstvena stanja",
+        "description": "Prati i upravljaj svojim zdravstvenim stanjima.",
+        "when_to_visit": "Kada korisnik pita za svoja zdravstvena stanja, hronične bolesti, dijagnoze, zdravstvene rizike ili zdravstvene probleme kojima upravlja."
+      }
+    },
+    "e0194c6c-9b04-5878-b93a-fa70acae988e": {
+      "source_sha": "c802a82bf1d78979",
+      "fields": {
+        "title": "Prijemno sanduče",
+        "description": "Poruke, podsetnici i inspiracija koji su ti dostavljeni.",
+        "when_to_visit": "Kada korisnik pita za svoje prijemno sanduče, poruke, obaveštenja ili želi da vidi šta mu je poslato."
+      }
+    },
+    "e1311a31-51f4-4cbe-9bb0-64395019070a": {
+      "source_sha": "183650a5bd506b94",
+      "fields": {
+        "title": "Zdravlje",
+        "description": "Tvoj lični centar za zdravlje — biologija, planovi i edukacija.",
+        "when_to_visit": "Kada korisnik generalno pita o svom zdravlju, dugovečnosti, wellness-u ili želi da istraži zdravstvene funkcije."
+      }
+    },
+    "e1cb4a5c-1a79-45fa-bc23-3ba9944ed087": {
+      "source_sha": "577ed48d6e77a0ea",
+      "fields": {
+        "title": "Profil sa sidrom podudaranja",
+        "description": "Javni profil člana zajednice, usidren na specifičnu podudarenu nameru.",
+        "when_to_visit": "Kada korisnik želi da otvori profil nekoga s kim se podudario, vidi profil sa istaknutom podudarenom objavom ili skoči sa obaveštenja o podudaranju na profil druge strane."
+      }
+    },
+    "e47bd312-00ab-46ac-a2e3-5d03f4b17ae5": {
+      "source_sha": "461f11d5b277457c",
+      "fields": {
+        "title": "Trenutni plan",
+        "description": "Tvoj trenutni plan i nivo članstva.",
+        "when_to_visit": "Kada korisnik pita za tab trenutni plan u naplati — njegov trenutni plan, nivo članstva ili nadogradnja plana."
+      }
+    },
+    "e4c82121-6a26-469f-a167-f272e68ded49": {
+      "source_sha": "8699e7d18e250bd9",
+      "fields": {
+        "title": "Profil pružaoca usluga",
+        "description": "Stranica profila za određenog pružaoca usluga.",
+        "when_to_visit": "Kada korisnik želi da otvori određeni profil pružaoca usluga, vidi profil kouča ili lekara ili potraži pružaoca usluga po ID-u."
+      }
+    },
+    "e4fac5c5-d2df-4814-b3eb-e55465705fde": {
+      "source_sha": "4fc59531e14929af",
+      "fields": {
+        "title": "Grupe",
+        "description": "Pregledaj i pridruži se MAXINA grupama zajednice.",
+        "when_to_visit": "Kada korisnik pita za grupe zajednice, pridruživanje grupi, koje grupe su dostupne ili želi da vidi svoje grupe."
+      }
+    },
+    "e5307f20-3ae0-588e-8cb4-bff619a35877": {
+      "source_sha": "e4f85db4a2c69cb9",
+      "fields": {
+        "title": "Vitanaland početna stranica",
+        "description": "Javni glavni ulaz u Vitanaland i MAXINA zajednicu.",
+        "when_to_visit": "Kada korisnik želi da se vrati na početak, na početnu stranicu, na glavnu stranicu sajta ili da ponovo čuje uvod."
+      }
+    },
+    "e8d953cf-21cd-4379-9961-6cda1f5266f0": {
+      "source_sha": "1e5a7c8850f33947",
+      "fields": {
+        "title": "AI asistent",
+        "description": "Pregled funkcija tvog AI asistenta.",
+        "when_to_visit": "Kada korisnik pita za AI asistenta, AI funkcije ili želi da istraži šta AI može da uradi."
+      }
+    },
+    "e963d45f-135f-4142-afaa-3f665770d58d": {
+      "source_sha": "338a3c18c0f41592",
+      "fields": {
+        "title": "Zdravstvena ograničenja",
+        "description": "Unesi zdravstvena ograničenja (alergije, povrede, oboljenja) kako bi preporuke ostale bezbedne.",
+        "when_to_visit": "Kada korisnik želi da zabeleži zdravstvena ograničenja, unese alergije, označi povredu ili evidentira stanja koja utiču na preporuke."
+      }
+    },
+    "eb219d3e-ad4e-429c-91df-854bf6ca0dd6": {
+      "source_sha": "b820f825a7fc16b9",
+      "fields": {
+        "title": "Autopilot konektori",
+        "description": "Poveži Autopilot agent integracije.",
+        "when_to_visit": "Kada korisnik pita za tab Autopilot konektora u povezanim aplikacijama ili povezivanje agent ili Autopilot integracije."
+      }
+    },
+    "ebd49241-444a-4f43-b56c-f5a616f108f5": {
+      "source_sha": "fd1240f038c0e8de",
+      "fields": {
+        "title": "Zdravstveni treker",
+        "description": "Prati svoje dnevne zdravstvene navike i kretanje Vitana indeksa.",
+        "when_to_visit": "Kada korisnik želi da otvori zdravstveni treker, zabeleži zdravstvenu naviku, prati vodu/san/aktivnost/korake, unese svoje korake ili vidi današnji treker."
+      }
+    },
+    "eda1671a-5dc0-435c-9ce6-d0f27dfa6b09": {
+      "source_sha": "c6b765ca7c593d92",
+      "fields": {
+        "title": "Moji mečevi",
+        "description": "Tvoji trenutni mečevi za plesne i fitnes partnere.",
+        "when_to_visit": "Kada korisnik pita za \"moje mečeve\", \"pokaži moje mečeve\", \"ko se mečuje sa mnom\" ili \"koga je Vitana pronašla za mene\"."
+      }
+    },
+    "ef21b99b-c513-4475-a9f6-4bdaa4cf7fc5": {
+      "source_sha": "5850ccf2df445f1d",
+      "fields": {
+        "title": "Muzika",
+        "description": "Muzika zajednice.",
+        "when_to_visit": "Kada korisnik traži muziku, pesme ili numere u Media Hub-u."
+      }
+    },
+    "ef2662e6-04b9-48f5-b763-68439f3248bd": {
+      "source_sha": "cb6dfa335f6823a8",
+      "fields": {
+        "title": "Autopilot i automatizacija",
+        "description": "Autopilot tab asistenta — automatizacije koje Vitana izvršava umesto tebe.",
+        "when_to_visit": "Kada korisnik pita za Autopilot tab asistenta, podešavanja automatizacije ili šta Vitana automatski radi umesto njega."
+      }
+    },
+    "f0537830-762e-4ac4-a462-80b1e33202c1": {
+      "source_sha": "6408409b26adb8a1",
+      "fields": {
+        "title": "Inspiracija",
+        "description": "Inspirativne poruke i wellness saveti od Vitana.",
+        "when_to_visit": "Kada korisnik pita za inspiraciju, motivacione poruke, wellness savete ili dnevnu motivaciju."
+      }
+    },
+    "f0da66ca-28fd-49de-b3d7-999b3581658a": {
+      "source_sha": "1e5a7c8850f33947",
+      "fields": {
+        "title": "AI asistent",
+        "description": "Pregled funkcija tvog AI asistenta.",
+        "when_to_visit": "Kada korisnik pita za AI asistenta, AI funkcije ili želi da istraži šta AI može."
+      }
+    },
+    "f272adb5-9c4d-47ae-832a-0490893f23ac": {
+      "source_sha": "16a5fd497acfd6df",
+      "fields": {
+        "title": "Planovi ishrane",
+        "description": "Tab za ishranu u okviru zdravstvenih planova.",
+        "when_to_visit": "Kada korisnik pita za planove ishrane, tab za ishranu u planovima ili svoj plan dijete/ishrane."
+      }
+    },
+    "f41a2860-6f1f-4917-ae0d-38f2858d03ae": {
+      "source_sha": "f75765a4a2303670",
+      "fields": {
+        "title": "AI",
+        "description": "AI tab asistenta — tvoj tekstualni AI asistent i njegova podešavanja.",
+        "when_to_visit": "Kada korisnik pita za AI tab asistenta, tekstualnog asistenta ili podešavanja AI asistenta."
+      }
+    },
+    "f49334db-c28b-40c8-bec5-77e4600334b6": {
+      "source_sha": "215e6c0ab287fb44",
+      "fields": {
+        "title": "Moji intenti",
+        "description": "Tvoje sopstvene objave i zahtevi u zajednici.",
+        "when_to_visit": "Kada korisnik pita o \"mojim intentima\", \"mojim objavama\", \"mojim zahtevima\", \"šta sam objavio\" ili želi da vidi ili upravlja svojim objavama u zajednici."
+      }
+    },
+    "f4e531c2-4b72-53c4-a051-1440d0ed11e0": {
+      "source_sha": "6767592eaccca7fe",
+      "fields": {
+        "title": "Događaji i druženja",
+        "description": "Predstojeći MAXINA događaji zajednice, lična okupljanja i susreti.",
+        "when_to_visit": "Kada korisnik pita o predstojećim događajima, druženjima, manifestacijama, zakazanim susretima, plesnim večerima, velnes radionicama ili aktivnostima zajednice kojima može da prisustvuje."
+      }
+    },
+    "f522cb61-8bb5-4ad3-ac9d-7ccc78aabde0": {
+      "source_sha": "6fbcac6ee7c06705",
+      "fields": {
+        "title": "Nagrade i provizije",
+        "description": "Provizije i nagrade koje si zaradio deljenjem platforme i brigom o klijentima.",
+        "when_to_visit": "Kada korisnik pita za provizije, zaradu od preporuka, nagrade, isplate, koliko je zaradio ili koliko je napravio deljenjem ili prodajom u zajednici."
+      }
+    },
+    "f5231603-9eaa-428f-931c-0192b62a79a2": {
+      "source_sha": "946eb50fc3d3740b",
+      "fields": {
+        "title": "Kategorije",
+        "description": "Pregledaj Discover po kategorijama.",
+        "when_to_visit": "Kada korisnik pita za tab Kategorije u Discover, želi da pregleda Discover po kategorijama ili da vidi sve kategorije na marketplace-u."
+      }
+    },
+    "f5c9144c-9aae-40fc-aaeb-be8cb320208a": {
+      "source_sha": "9e6d89f14f77ef95",
+      "fields": {
+        "title": "Moje putovanje",
+        "description": "Tvoj Autopilot kontrolni panel — 90-dnevno putovanje pripremljeno za tebe: talasi, prekretnice i preporučene akcije, usklađene sa tvojim kalendarom. Postoje dva prikaza između kojih korisnik može da se prebacuje: VOĐENO putovanje (\"uvod\", korak po korak, jedna sesija za drugom) i PUNA VERZIJA (cela aplikacija, sve odjednom).",
+        "when_to_visit": "Kada korisnik želi da otvori moje putovanje, vidi moje putovanje, Autopilot putovanje, moje 90-dnevno putovanje, 90-dnevni plan, Autopilot kontrolni panel, moj plan, ili šta je danas na redu na mom putovanju. TAKOĐE kada korisnik pomene jedan od dva PRIKAZA svog putovanja po imenu — VOĐENO putovanje / vođena journey / \"uvod\", ILI PUNA VERZIJA / cela aplikacija / puna verzija — ili želi da se prebaci između vođenog i punog prikaza svog putovanja. TAKOĐE kada korisnik pita za SESIJE SOPSTVENE Journey — npr. \"sledeća sesija mog putovanja\", \"moja journey sesija\", \"ekran sa sesijama mog vođenog putovanja\" — to su razgovori korak po korak UNUTAR njegovog sopstvenog 90-dnevnog putovanja, NE sesije/kursevi koje nudi kao provajder drugima (to je Business Hub). Ovo NIJE korisnički profil — \"moje putovanje\" znači Autopilot kontrolni panel."
+      }
+    },
+    "f6c0ecda-c145-41ff-a430-31bb73a4c5f6": {
+      "source_sha": "2917eabc21ae7955",
+      "fields": {
+        "title": "Odgovarajući članovi",
+        "description": "Članovi koje ti matchmaker predlaže na osnovu tvojih ciljeva i interesovanja.",
+        "when_to_visit": "Kada korisnik pita ko mu odgovara, o svojim parovima, predloženim osobama, ljudima za povezivanje ili rezultatima matchmaker-a."
+      }
+    },
+    "f77d1927-c8fd-514b-b075-0bbf4b1023d6": {
+      "source_sha": "087196bf3c889dd0",
+      "fields": {
+        "title": "Podešavanja",
+        "description": "Podešavanja tvog naloga i preference.",
+        "when_to_visit": "Kada korisnik želi da otvori podešavanja, promeni preference ili upravlja svojim nalogom."
+      }
+    },
+    "f7862e6f-2f7f-4d25-a222-95df0472f7be": {
+      "source_sha": "7b88c97e3eea0bf0",
+      "fields": {
+        "title": "Nagrade na čekanju",
+        "description": "Tab za nagrade na čekanju u novčaniku — nagrade koje još nisu dodeljene.",
+        "when_to_visit": "Kada korisnik pita za nagrade na čekanju, tab za čekanje u nagradama ili nagrade koje još nisu dodeljene."
+      }
+    },
+    "f78f48ce-d839-4f3f-bf6b-810acd520f29": {
+      "source_sha": "04aa246c63e9c173",
+      "fields": {
+        "title": "Kontekst",
+        "description": "Tvoj lični kontekst — ono što Vitana zna o tvojoj trenutnoj situaciji.",
+        "when_to_visit": "Kada korisnik pita za svoj kontekst, trenutnu situaciju ili šta Vitana trenutno zna o njemu."
+      }
+    },
+    "f8ab853a-5c0e-4fe7-9e8e-6a2fee2c6e53": {
+      "source_sha": "4025dacd79656dc6",
+      "fields": {
+        "title": "Vidljivost profila",
+        "description": "Prekidači vidljivosti po sekcijama za tvoj profil — kontroliši ko šta vidi.",
+        "when_to_visit": "Kada korisnik pita za vidljivost profila, ko može da vidi njegov profil, šta se javno prikazuje ili želi da sakrije deo profila."
+      }
+    },
+    "f90efb98-2472-4ea0-bc81-a1f0fab150c2": {
+      "source_sha": "11a202318f43a8cc",
+      "fields": {
+        "title": "Dnevni pregled",
+        "description": "Tvoj AI-generisani dnevni pregled zdravlja, aktivnosti i istaknutog iz zajednice.",
+        "when_to_visit": "Kada korisnik pita za svoj dnevni pregled, dnevni izveštaj ili šta se danas desilo."
+      }
+    },
+    "faa68542-60b7-4811-aba3-288cb4b593f1": {
+      "source_sha": "26daf96050b7de65",
+      "fields": {
+        "title": "Mentalni planovi",
+        "description": "Tab za mentalno zdravlje u okviru zdravstvenih planova — planovi za mentalno blagostanje.",
+        "when_to_visit": "Kada korisnik pita za planove mentalnog zdravlja, tab za mentalno zdravlje u planovima ili svoj plan svesnosti/mentalnog zdravlja."
+      }
+    },
+    "fb65d40b-f2b8-5b23-a31a-0df35c6b22c6": {
+      "source_sha": "9bb5446f7211a27a",
+      "fields": {
+        "title": "Obaveštenja",
+        "description": "Upravljaj svojim preferencama za obaveštenja.",
+        "when_to_visit": "Kada korisnik pita za podešavanja obaveštenja, push obaveštenja, mejl podsetke ili želi da uključi ili isključi obaveštenja."
+      }
+    },
+    "fb786c84-121e-43a8-aa2c-af317c7038e0": {
+      "source_sha": "ed4700f2140c87ea",
+      "fields": {
+        "title": "Moje usluge",
+        "description": "Upravljaj uslugama koje nudiš MAXINA zajednici — koučing, kursevi, sesije, proizvodi.",
+        "when_to_visit": "Kada korisnik pita o tabu \"Usluge\" u Business Hub-u, uslugama Business Hub-a, svojim uslugama, ili želi da upravlja svojim uslugama, kreira novu uslugu, postavi ponudu za koučing ili podesi kurseve i sesije."
+      }
+    },
+    "fc0ed8aa-7d2b-4a87-bd5f-586078f415b4": {
+      "source_sha": "730096e1efffe4bc",
+      "fields": {
+        "title": "Rast",
+        "description": "Metrike rasta za tvoj MAXINA biznis u tabu Uvidi.",
+        "when_to_visit": "Kada korisnik pita za tab \"Rast\" u Business Hub uvidima ili Business Hub Insights rast — metrike rasta i trendove sopstvenog biznisa."
+      }
+    },
+    "fcbe2cdd-4dc7-411f-ba9e-c574d002a141": {
+      "source_sha": "221f4b6554f28f8f",
+      "fields": {
+        "title": "Konektori za muziku i video",
+        "description": "Poveži integracije muzičkih i video aplikacija.",
+        "when_to_visit": "Kada korisnik pita za konektore za muziku i video, medijski tab u povezanim aplikacijama ili povezivanje muzičke ili video integracije (Spotify, YouTube, Apple Music)."
+      }
+    },
+    "fce8cf77-23fe-5816-b881-b64dc8b36d85": {
+      "source_sha": "7a346b0f1422ffa6",
+      "fields": {
+        "title": "Moje usluge",
+        "description": "Upravljaj uslugama koje nudiš MAXINA zajednici — koučing, kursevi, sesije, proizvodi.",
+        "when_to_visit": "Kada korisnik želi da upravlja svojim uslugama, kreira novu uslugu, postavi ponudu koučinga ili podesi kurseve i sesije."
+      }
+    },
+    "fe181875-c532-45c1-8b03-64becf4717db": {
+      "source_sha": "6cb8b020d56ee50b",
+      "fields": {
+        "title": "Javni profil",
+        "description": "Javni profil člana zajednice.",
+        "when_to_visit": "Kada korisnik želi da otvori profil drugog člana, vidi javnu stranicu člana zajednice, pronađe nekoga po @vitana_id ili pogleda korisničko ime."
+      }
+    },
+    "fe9470e6-d03c-4472-b925-437dcd13efed": {
+      "source_sha": "0b3febab02c90e9c",
+      "fields": {
+        "title": "Kampanje",
+        "description": "Tvoje aktivne kampanje deljenja i njihove performanse.",
+        "when_to_visit": "Kada korisnik pita za svoje kampanje deljenja, kampanje preporuka, performanse kampanja ili rezultate kampanja."
+      }
+    }
+  }
+}
