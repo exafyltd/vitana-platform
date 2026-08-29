@@ -226,12 +226,15 @@ router.post('/:id/test', async (req: AuthenticatedRequest, res: Response) => {
   };
 
   // Look up the admin's tenant_id from user_tenants
-  const { data: tenantRow } = await supabase
+  const { data: tenantRow, error: tenantRowErr } = await supabase
     .from('user_tenants')
     .select('tenant_id')
     .eq('user_id', identity.user_id)
     .limit(1)
     .single();
+  if (tenantRowErr && tenantRowErr.code !== 'PGRST116') {
+    console.warn(`[${VTID}] Admin tenant_id lookup error (test send falls back to placeholder tenant):`, tenantRowErr.message);
+  }
 
   const tenantId = tenantRow?.tenant_id || '00000000-0000-0000-0000-000000000000';
 
