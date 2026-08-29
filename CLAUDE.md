@@ -917,7 +917,7 @@ thresholds.
 |-------|---------|
 | `vtid_ledger` | Central VTID task tracking |
 | `oasis_events` | System-wide event log |
-| `personalization_audit` | Cross-domain personalization audit — **⚠️ does not exist in live Supabase** (`to_regclass` null, checked 2026-08-27), despite live code (`services/personalization-service.ts`, Command Hub `app.js`) referencing it. Not yet investigated for severity/reachability the way the two rows below were — flagging, not concluding. |
+| `personalization_audit` | Cross-domain personalization audit — **⚠️ confirmed still missing in live Supabase** (`to_regclass` null, re-checked 2026-08-29). **Investigated 2026-08-29: reachable but NOT a silent-failure bug.** The one real call site (`writePersonalizationAudit()` in `personalization-service.ts`, invoked fire-and-forget from `GET /api/v1/personalization/snapshot`) already checks `response.ok` and logs loudly via `console.error` on failure, and the route never awaits it (`.catch(err => console.warn(...))`) — so every snapshot request logs a write failure but the user-facing response is unaffected. The two `app.js`/`app.js.backup*` hits are static Command Hub schema-catalog metadata, not live queries. Net: a known, correctly-degrading gap in the audit trail, not a confidently-wrong response — building the table (or retiring the audit feature) is a product decision, not a bug fix. |
 | `services_catalog` | Service catalog |
 | `products_catalog` | Product catalog |
 | `d44_predictive_signals` | Proactive intervention signals — **⚠️ does not exist in live Supabase**, confirmed reachable from a live admin screen (Intelligence → Signals) that surfaces this as a visible error. See `docs/AURORA-B2-DEAD-CALLSITE-AUDIT.md` Addendum 2. |
