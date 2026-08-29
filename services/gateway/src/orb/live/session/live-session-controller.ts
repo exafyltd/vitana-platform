@@ -605,6 +605,62 @@ export function buildVertexWakeBriefBlock(
   // quotes in it can't break the surrounding instruction block.
   const safe = line.replace(/`/g, "'").replace(/\r?\n/g, ' ').trim();
   const dedupeLine = dedupeKey ? `\nDedupe key: ${dedupeKey} (do NOT repeat after this turn).` : '';
+
+  // VTID-03797 — guided-topic sessions get a COMPOSITIONAL block, never the
+  // verbatim one below.
+  //
+  // Measured on staging 2026-08-29, after the turn-1 trigger was already made
+  // compositional: guided sessions on Nova were STILL blocked 6/6
+  // (`nova_validation`, "blocked by our content filters"), while the ordinary
+  // control worked with a LARGER instruction (31,186 vs 30,178 chars — which
+  // also re-kills size as a factor), and the same guided topics worked on the
+  // cascade upstream. The German session was rejected BEFORE `greeting_sent`
+  // ever fired, so the rejected payload is the SETUP — this block — not the
+  // turn-1 trigger.
+  //
+  // What is left in the setup that only guided sessions carry is this block's
+  // verbatim command ("MUST be EXACTLY this text. Copy these characters
+  // letter-for-letter; do not paraphrase, do not translate, do not shorten...")
+  // wrapped around a quoted sentence — the same forced-reproduction-fenced-by-
+  // prohibitions shape VTID-03674 and VTID-03797 already removed from the two
+  // trigger copies. This is the third copy, and the only one still reaching
+  // Nova on a guided session.
+  //
+  // Scoped to guided ONLY, deliberately: non-guided override_v2 sessions carry
+  // this identical block and succeed ~50% of the time, so it is not fatal on
+  // its own and softening it for everyone would change a working path for no
+  // measured reason. It would also risk the regression VTID-03079/03097 exist
+  // to prevent — a soft "speak this verbatim" being lost to the SHORT-GAP
+  // GREETING PHRASES pool. The marker below still suppresses that pool, so
+  // that protection is retained here in full.
+  //
+  // No line is quoted at all on this path. The guided turn-1 trigger already
+  // tells the model to compose its own opener, and the GUIDE MODE block names
+  // the topic — so the sentence is redundant as well as risky, and omitting it
+  // satisfies NEVER-rule 41 (write the INTENT, never the finished sentence).
+  if (dedupeKey?.startsWith('guided_topic:')) {
+    return `\n\n${VERTEX_WAKE_BRIEF_OVERRIDE_MARKER}
+
+## SPOKEN FIRST UTTERANCE — GUIDED TOPIC (VTID-03797)
+
+The person has just listened to a short pre-recorded audio lesson on the
+topic named in the GUIDE MODE section, so they have already heard it.
+
+Open with ONE short, warm sentence in the user's own language: acknowledge
+that the lesson just finished and invite any questions about it. Compose
+that sentence yourself, in your own words.
+
+Rules:
+  - Do NOT use a standalone generic offer-to-help greeting.
+  - Do NOT pick a phrase from the "SHORT-GAP GREETING PHRASES" section —
+    that section is SUPPRESSED for this turn.
+  - Do NOT introduce yourself or list features.
+  - Do NOT re-deliver or summarise the lesson — it was already narrated.
+  - After speaking, stop and wait for the user's reply.${dedupeLine}
+
+This is your first spoken turn this session. Subsequent turns follow the
+GUIDE MODE section.`;
+  }
   // VTID-03097: hard-instruction format. Earlier soft-instruction
   // ("Speak this VERBATIM") was being lost to the SHORT-GAP GREETING
   // PHRASES pool injection in live-system-instruction.ts:253. The
