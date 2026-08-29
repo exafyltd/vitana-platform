@@ -127,13 +127,15 @@ router.get('/:id', async (req: Request, res: Response) => {
     const tenantId = tenant.id || tenant.tenant_id;
 
     // Get members — flat query, then lookup user emails separately
-    const { data: memberships } = await repo.fetchTenantMemberships(supabase, tenantId);
+    const { data: memberships, error: membershipsErr } = await repo.fetchTenantMemberships(supabase, tenantId);
+    if (membershipsErr) throw membershipsErr;
 
     // Get user details for members
     const userIds = (memberships || []).map((m: any) => m.user_id);
     let usersMap: Record<string, any> = {};
     if (userIds.length > 0) {
-      const { data: users } = await repo.fetchAppUsersByIds(supabase, userIds);
+      const { data: users, error: usersErr } = await repo.fetchAppUsersByIds(supabase, userIds);
+      if (usersErr) throw usersErr;
       (users || []).forEach((u: any) => {
         usersMap[u.user_id] = u;
       });

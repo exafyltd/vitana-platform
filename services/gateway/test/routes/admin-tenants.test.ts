@@ -248,6 +248,43 @@ describe('admin-tenants routes', () => {
     });
   });
 
+  it('GET /:id returns 500 (not user_count:0/status:Empty) when the memberships lookup errors', async () => {
+    // Previously: an unchecked `{data}`-only destructure meant a query
+    // error resolved `memberships` to undefined, reporting a false
+    // "user_count: 0, status: Empty" for a tenant that may be fully
+    // active - misleading a governance decision (e.g. "safe to deactivate").
+    mockAuthedUser(EXAFY_ADMIN);
+    chainFor('tenants').mockResolvedValueOnce({
+      data: { id: 't1', name: 'Acme', slug: 'acme', created_at: 'c1', updated_at: 'u1' },
+      error: null,
+    });
+    chainFor('user_tenants').mockResolvedValue({ data: null, error: { message: 'memberships lookup failed' } });
+
+    const res = await request(app).get('/t1').set('Authorization', 'Bearer admin-token');
+
+    expect(res.status).toBe(500);
+    expect(res.body.ok).toBe(false);
+    expect(chainFor('app_users').select).not.toHaveBeenCalled();
+  });
+
+  it('GET /:id returns 500 when the app_users lookup errors', async () => {
+    mockAuthedUser(EXAFY_ADMIN);
+    chainFor('tenants').mockResolvedValueOnce({
+      data: { id: 't1', name: 'Acme', slug: 'acme', created_at: 'c1', updated_at: 'u1' },
+      error: null,
+    });
+    chainFor('user_tenants').mockResolvedValue({
+      data: [{ user_id: 'u1', active_role: 'admin', is_primary: true }],
+      error: null,
+    });
+    chainFor('app_users').mockResolvedValue({ data: null, error: { message: 'app_users lookup failed' } });
+
+    const res = await request(app).get('/t1').set('Authorization', 'Bearer admin-token');
+
+    expect(res.status).toBe(500);
+    expect(res.body.ok).toBe(false);
+  });
+
   it('GET /:id falls back to slug lookup when id lookup fails', async () => {
     mockAuthedUser(EXAFY_ADMIN);
     // First .single() (by id) fails; second (by slug) succeeds
