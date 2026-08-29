@@ -149,7 +149,15 @@ export async function runAwinOrderSync(lookbackDays = 30): Promise<AwinOrderSync
       continue;
     }
 
-    const { data: click } = await repo.fetchProductClickByClickId(supabase, clickId);
+    const { data: click, error: clickErr } = await repo.fetchProductClickByClickId(supabase, clickId);
+    if (clickErr) {
+      // A Postgres-level failure here resolves normally rather than
+      // throwing, so it was previously indistinguishable from "genuinely
+      // no matching click" (an intended, documented skip) — a transient
+      // DB blip would silently and permanently drop a real affiliate
+      // sale's attribution and commission credit for this sync run.
+      console.error(`[awin-order-sync] fetchProductClickByClickId failed for clickRef=${clickId}:`, clickErr.message);
+    }
     if (!click) {
       unattributed++;
       continue;
