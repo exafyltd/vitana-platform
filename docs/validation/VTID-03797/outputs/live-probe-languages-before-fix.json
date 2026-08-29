@@ -1,0 +1,34 @@
+[
+  {
+    "label": "guided T001 fr (nova)",
+    "verdict": "BLOCKED",
+    "sid": "live-2ed554f2-59d3-44f0-bc29-d1702c1e243c",
+    "audio": 2,
+    "err": 2,
+    "errCodes": []
+  },
+  {
+    "label": "guided T001 es (nova)",
+    "verdict": "BLOCKED",
+    "sid": "live-a765af69-12d4-4fa0-baf4-938f4d4487fd",
+    "audio": 2,
+    "err": 2,
+    "errCodes": []
+  },
+  {
+    "label": "guided T001 ru (cascade)",
+    "verdict": "WORKS",
+    "sid": "live-6ffeb0aa-f6bc-4dff-b4db-4da442ee734c",
+    "audio": 10,
+    "err": 0,
+    "errCodes": []
+  },
+  {
+    "label": "guided T001 pl (cascade)",
+    "verdict": "WORKS",
+    "sid": "live-9074c886-e7d7-430e-a89b-f7cfabda52bc",
+    "audio": 9,
+    "err": 0,
+    "errCodes": []
+  }
+]
