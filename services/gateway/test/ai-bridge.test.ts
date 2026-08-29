@@ -26,6 +26,15 @@ jest.mock('../src/providers/bedrock', () => {
   };
 });
 
+const mockGenerateTitanImage = jest.fn();
+jest.mock('../src/providers/titan-image', () => {
+  const actual = jest.requireActual('../src/providers/titan-image');
+  return {
+    ...actual,
+    generateTitanImage: (...args: unknown[]) => mockGenerateTitanImage(...args),
+  };
+});
+
 // Deterministic JWT path — every test here exercises the service-token leg,
 // so the admin-JWT fallback should never even be reached.
 jest.mock('../src/middleware/auth-supabase-jwt', () => ({
@@ -242,5 +251,146 @@ describe('POST /api/v1/ai-bridge/generate', () => {
 
     expect(res.status).toBe(200);
     expect(spy).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /api/v1/ai-bridge/generate-image', () => {
+  const ORIGINAL_TOKEN = process.env.GATEWAY_SERVICE_TOKEN;
+
+  beforeEach(() => {
+    process.env.GATEWAY_SERVICE_TOKEN = 'test-service-token';
+    mockGenerateTitanImage.mockReset();
+  });
+
+  afterAll(() => {
+    if (ORIGINAL_TOKEN === undefined) delete process.env.GATEWAY_SERVICE_TOKEN;
+    else process.env.GATEWAY_SERVICE_TOKEN = ORIGINAL_TOKEN;
+  });
+
+  it('rejects a request with no auth (401), never calling Titan', async () => {
+    const res = await request(buildApp())
+      .post('/api/v1/ai-bridge/generate-image')
+      .send({ prompt: 'a sunset' });
+    expect(res.status).toBe(401);
+    expect(mockGenerateTitanImage).not.toHaveBeenCalled();
+  });
+
+  it('rejects a missing/empty prompt (400), never calling Titan', async () => {
+    const res = await request(buildApp())
+      .post('/api/v1/ai-bridge/generate-image')
+      .set('Authorization', 'Bearer test-service-token')
+      .send({ prompt: '  ' });
+    expect(res.status).toBe(400);
+    expect(mockGenerateTitanImage).not.toHaveBeenCalled();
+  });
+
+  it('defaults width/height to 1280x720 when unset', async () => {
+    mockGenerateTitanImage.mockResolvedValue({
+      ok: true,
+      pngBytes: Buffer.from('fake-png'),
+      model: 'amazon.titan-image-generator-v2:0',
+      upstream_ms: 42,
+    });
+
+    await request(buildApp())
+      .post('/api/v1/ai-bridge/generate-image')
+      .set('Authorization', 'Bearer test-service-token')
+      .send({ prompt: 'a wellness event photo' });
+
+    expect(mockGenerateTitanImage).toHaveBeenCalledWith({
+      prompt: 'a wellness event photo',
+      width: 1280,
+      height: 720,
+      negativePrompt: undefined,
+    });
+  });
+
+  it('forwards caller-supplied width/height/negativePrompt', async () => {
+    mockGenerateTitanImage.mockResolvedValue({
+      ok: true,
+      pngBytes: Buffer.from('fake-png'),
+      model: 'amazon.titan-image-generator-v2:0',
+      upstream_ms: 10,
+    });
+
+    await request(buildApp())
+      .post('/api/v1/ai-bridge/generate-image')
+      .set('Authorization', 'Bearer test-service-token')
+      .send({ prompt: 'a beach', width: 1024, height: 1024, negativePrompt: 'no text' });
+
+    expect(mockGenerateTitanImage).toHaveBeenCalledWith({
+      prompt: 'a beach',
+      width: 1024,
+      height: 1024,
+      negativePrompt: 'no text',
+    });
+  });
+
+  it('returns base64 image bytes on success', async () => {
+    mockGenerateTitanImage.mockResolvedValue({
+      ok: true,
+      pngBytes: Buffer.from('fake-png-bytes'),
+      model: 'amazon.titan-image-generator-v2:0',
+      upstream_ms: 7,
+    });
+
+    const res = await request(buildApp())
+      .post('/api/v1/ai-bridge/generate-image')
+      .set('Authorization', 'Bearer test-service-token')
+      .send({ prompt: 'a sunset' });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      ok: true,
+      imageBase64: Buffer.from('fake-png-bytes').toString('base64'),
+      model: 'amazon.titan-image-generator-v2:0',
+      upstream_ms: 7,
+    });
+  });
+
+  it('maps not_configured to 503', async () => {
+    mockGenerateTitanImage.mockResolvedValue({
+      ok: false,
+      error: 'not_configured',
+      message: 'BEDROCK_ROLE_ARN not set',
+    });
+
+    const res = await request(buildApp())
+      .post('/api/v1/ai-bridge/generate-image')
+      .set('Authorization', 'Bearer test-service-token')
+      .send({ prompt: 'a sunset' });
+
+    expect(res.status).toBe(503);
+    expect(res.body).toEqual({ ok: false, error: 'not_configured', message: 'BEDROCK_ROLE_ARN not set' });
+  });
+
+  it('maps blocked to 422', async () => {
+    mockGenerateTitanImage.mockResolvedValue({
+      ok: false,
+      error: 'blocked',
+      message: 'content policy violation',
+    });
+
+    const res = await request(buildApp())
+      .post('/api/v1/ai-bridge/generate-image')
+      .set('Authorization', 'Bearer test-service-token')
+      .send({ prompt: 'a sunset' });
+
+    expect(res.status).toBe(422);
+  });
+
+  it('maps invoke_failed/empty_output to 502', async () => {
+    mockGenerateTitanImage.mockResolvedValue({
+      ok: false,
+      error: 'invoke_failed',
+      message: 'timeout',
+    });
+
+    const res = await request(buildApp())
+      .post('/api/v1/ai-bridge/generate-image')
+      .set('Authorization', 'Bearer test-service-token')
+      .send({ prompt: 'a sunset' });
+
+    expect(res.status).toBe(502);
   });
 });

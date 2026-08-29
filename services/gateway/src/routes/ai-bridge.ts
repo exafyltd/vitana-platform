@@ -39,6 +39,7 @@
 
 import { Router, Request, Response } from 'express';
 import { invokeBedrock, type BedrockContentBlock, type BedrockTool } from '../providers/bedrock';
+import { generateTitanImage } from '../providers/titan-image';
 import { requireServiceOrAdmin } from '../middleware/require-service-or-admin';
 
 const router = Router();
@@ -176,6 +177,67 @@ router.post('/generate', requireServiceOrAdmin, async (req: Request, res: Respon
   }
 
   res.status(200).json(toGeminiShapedResponse(result.text, result.toolCall));
+});
+
+/**
+ * Image generation leg of the same bridge (Aurora migration B7,
+ * AURORA-B7-EDGE-FUNCTIONS-INVENTORY.md's 2026-08-29 addendum). Vertex
+ * Imagen has no Anthropic/Claude equivalent, so this doesn't reuse
+ * `/generate` — it puts the gateway's existing Titan Image adapter
+ * (`providers/titan-image.ts`, VTID-03497) behind the same
+ * service-to-service auth as the text leg, so an edge function needing an
+ * AI-generated image (e.g. `generate-event-image`) gets a one-line-swap
+ * bridge the same way the six Gemini-text functions did.
+ *
+ * Response shape is intentionally its own thing (`imageBase64`), not
+ * Gemini/Imagen-shaped — there is no existing "any image-bridge caller"
+ * convention to stay compatible with the way `/generate`'s Gemini shape
+ * serves `extractTextFromResponse`/`extractFunctionCall`. The one known
+ * caller decodes `imageBase64` directly.
+ */
+router.post('/generate-image', requireServiceOrAdmin, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: a stateless image-generation call-through, no DB
+  // write and no state transition of its own — same category as
+  // `/generate` above.
+  const body = req.body as {
+    prompt?: string;
+    width?: number;
+    height?: number;
+    negativePrompt?: string;
+  };
+
+  if (!body?.prompt || typeof body.prompt !== 'string' || body.prompt.trim().length === 0) {
+    res.status(400).json({ ok: false, error: 'prompt must be a non-empty string' });
+    return;
+  }
+
+  const width = typeof body.width === 'number' && body.width > 0 ? body.width : 1280;
+  const height = typeof body.height === 'number' && body.height > 0 ? body.height : 720;
+
+  const result = await generateTitanImage({
+    prompt: body.prompt,
+    width,
+    height,
+    negativePrompt: body.negativePrompt,
+  });
+
+  if (!result.ok) {
+    // not_configured (BEDROCK_ROLE_ARN unset) is a deployment-state gap, not
+    // an upstream failure — distinct status so a caller can tell "Bedrock
+    // isn't wired here yet" apart from "Bedrock answered with a refusal/
+    // error". `blocked` (Titan's own content-policy signal) is a request
+    // the caller should not blindly retry, hence 422 rather than 502.
+    const status = result.error === 'not_configured' ? 503 : result.error === 'blocked' ? 422 : 502;
+    res.status(status).json({ ok: false, error: result.error, message: result.message });
+    return;
+  }
+
+  res.status(200).json({
+    ok: true,
+    imageBase64: result.pngBytes.toString('base64'),
+    model: result.model,
+    upstream_ms: result.upstream_ms,
+  });
 });
 
 export default router;
