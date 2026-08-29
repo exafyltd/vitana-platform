@@ -705,3 +705,470 @@ mounted, authenticated route (`routes/feedback-correction.ts`, mounted at
 `index.ts:1130`) — an ORB self-correction feature that would throw on
 every real invocation today, the same reachable-not-dormant shape as
 `credit_wallet` minus the money.
+
+## Addendum, 2026-08-29, VTID-TBD — money-adjacent RPC diff-level read (Next Steps item 3)
+
+The follow-up Next Steps item 3 (above) asked for a full diff-level read —
+"like B1 gave `spend-service.ts`/`payments-stripe-webhook.ts`" — of
+`credit_wallet`, `debit_wallet_for_spend`, `credit_wallet_for_earning`,
+`credit_deposit`, `increment_wallet_balance`, and the confirmed-dead
+`vtn_reward`/`vtn_spend`/`vtn_transfer`, before anyone touches these call
+sites. This is that read. Every call site below was opened and read in
+full (not just grepped); every SQL function body quoted below was read
+from the actual migration file, not inferred from a comment. No code was
+changed, nothing was deleted, nothing was deployed, and no live database
+was queried — this pass had no live Supabase/AWS credentials, same
+standing caveat as most sessions in this migration effort. Existence
+(live vs. dead) is **trusted from the 2026-08-27 addenda above**, which
+did have live `pg_proc` access, and is **not** re-verified here except
+where noted.
+
+**Builds on, does not repeat, the 2026-08-27 `credit_wallet`/Stripe-webhook
+finding above.** That finding covered exactly one of `credit_wallet`'s
+four call sites (`routes/billing.ts`'s Stripe webhook) in depth. This pass
+covers the other three, plus every other money-adjacent RPC named in Next
+Steps item 3, and finds new, independent, higher-severity bugs in two of
+them.
+
+### 0. Four incompatible wallet ledgers, not one — worth naming up front
+
+Reading every money RPC's SQL body and call sites surfaces a fact scattered
+across this doc's prior addenda but never stated as a single list. This
+codebase has **four separate, schema-incompatible wallet systems**, built
+at different times, none of which the RPC-existence check alone would
+reveal as distinct:
+
+| # | Tables | RPCs | Status | Used by |
+|---|---|---|---|---|
+| 1 | `wallet_balances` (3-bucket: purchased/reward/cash) + `wallet_transactions` (`tenant_id,user_id,amount,type,source,source_event_id`) | `credit_wallet()` | **Dead** — `wallet_balances` never shipped (migration timestamp collision, per the 2026-08-27 addendum's root-cause section) | Diary streaks, milestones, AP-0708 engagement rewards, Stripe `credit_pack` purchases |
+| 2 | `wallet_accounts` (`user_id,currency,balance_minor`) + `wallet_ledger_entries` (append-only, `UNIQUE(reference_type,reference_id,entry_type)`) | `debit_wallet_for_spend()`, `credit_wallet_for_earning()`, `credit_deposit()` | **Live**, transactional, well-designed (§2/§3 below) | Universal cart checkout, Vitanaland Marketplace, recommendation commissions, real Stripe deposits, the ORB `send_funds` voice tool |
+| 3 | `user_wallets` (`user_id,currency_type,balance`) | `increment_wallet_balance()` | **Live**, untracked in migrations, no idempotency key of its own | Referral rewards, onboarding welcome bonus, and (per `credit_deposit`'s July bridge migration) the actual table `vitana-v1`'s wallet UI reads for USD |
+| 4 | `vtn_wallets` + `vtn_transactions` (`from_user_id`/`to_user_id`/exchange-rate shape, per the base doc's own note) | `vtn_reward()`, `vtn_spend()`, `vtn_transfer()` | **Dead**, and the service that calls them has no live deploy at all (§5) | `services/openclaw-bridge` only |
+
+Ledger #1 and #4 are dead. Ledger #2 is the one genuinely solid piece of
+money infrastructure in this list. Ledger #3 is live but thin (see §4).
+None of the four are aware of each other at the schema level — a user's
+"wallet balance" depends entirely on which of four disconnected tables the
+feature they're using happens to read.
+
+### 1. `credit_wallet` (confirmed dead) — the other three call sites
+
+`grep -rn ".rpc(['\"]credit_wallet"` finds four repository wrapper
+functions, matching the base doc's "4 calls" count for this RPC:
+
+| # | File:line | Caller | Trigger |
+|---|---|---|---|
+| 1 | `services/diary-streak-celebrator-repository.ts:56` → called from `services/diary-streak-celebrator.ts:82` | Diary save flow | Every diary entry that crosses a 3/7/14/30-day streak |
+| 2 | `services/milestone-service-repository.ts:109` → called from `services/milestone-service.ts:442` and `:526` | `scanUserMilestones()` / `checkMilestonesForAction()` | Any of ~13 lifetime milestones (first diary, first connection, onboarding complete, etc.) |
+| 3 | `services/automation-handlers/wallet-payments-repository.ts:40` → called from `services/automation-handlers/wallet-payments.ts:109` (`runWalletCreditReward`, automation **AP-0708**) | Autopilot/automation engine | `reward_type` engagement triggers routed through the automation executor |
+| 4 | `routes/billing-repository.ts:176` → called from `routes/billing.ts:797` | Stripe `checkout.session.completed` webhook | Real `credit_pack` purchases |
+
+Call site 4 is the one the 2026-08-27 addendum already investigated in
+full (throws loud, Stripe retries and fails identically forever). Call
+sites 1–3 were not previously examined — all three assume `.rpc()`
+**throws** on a Postgres-level error and wrap the call in `try/catch`, but
+supabase-js v2's `.rpc()` does **not** throw on a Postgres error (`function
+credit_wallet(...) does not exist`, permission denied, business-logic
+error) — it resolves normally to `{ data: null, error: {...} }`. It only
+rejects the promise on a network-layer failure (DNS, timeout, fetch
+reject). Confirmed by grep: `.throwOnError()` does not appear anywhere in
+`services/gateway/src` — nothing in this codebase opts into throw-on-error
+semantics. The three call sites that *do* handle this RPC correctly
+(`routes/billing.ts:797` above, and `spend-earning-service.ts`/
+`deposit-service.ts` in §2/§3 below) all explicitly destructure `{ error
+}` and act on it themselves — which is exactly what you'd have to do if
+`.rpc()` doesn't throw, and is corroborating evidence for the claim, not
+just library-documentation trust.
+
+**1a. `diary-streak-celebrator.ts:81-96` — silent swallow, and the user is
+told a lie.**
+
+```ts
+try {
+  await repo.creditWallet(admin, { p_tenant_id: tenantId, p_user_id: userId,
+    p_amount: tier.reward, p_type: 'reward', p_source: 'diary_streak', ... });
+} catch (walletErr: any) {
+  console.warn(`[diary-streak] credit_wallet failed: ${walletErr?.message ?? walletErr}`);
+}
+```
+
+Since `credit_wallet` doesn't exist, this `await` resolves normally with
+an ignored `{error}` — the `catch` block is unreachable for this failure,
+so **not even the `console.warn` fires**. Nothing distinguishes "credit
+worked" from "table doesn't exist" at this call site; execution falls
+straight through. Two lines later (`diary-streak-celebrator.ts:120-128`),
+unconditionally and regardless of the above:
+
+```ts
+notifyUserAsync(userId, tenantId, 'diary_streak_milestone', {
+  title: `${tier.days}-day diary streak!`,
+  body: `${tier.message} +${tier.reward} VTN credited.`,
+  ...
+}, admin);
+```
+
+**Every user who hits a 3/7/14/30-day diary streak gets a push
+notification/toast claiming their VTN was credited — 10/20/40/80 VTN
+respectively — and it never is, with zero trace in any log.** This is
+worse than the Stripe webhook bug: that one at least fails loudly on the
+backend, even though the user isn't told. This one actively tells the
+user something false.
+
+**1b. `milestone-service.ts:441-454` and `:525-538` — same swallow pattern,
+plus a permanently-wrong achievement record.**
+
+```ts
+try {
+  await repo.creditWalletForMilestone(supabase, { p_tenant_id: tenantId,
+    p_user_id: userId, p_amount: def.reward, p_type: 'reward',
+    p_source: 'milestone', ... });
+} catch {
+  // Idempotent — duplicate source_event_id is fine
+}
+```
+
+Identical shape — an empty `catch` that can never fire for this failure
+mode, so the comment's own reasoning ("idempotent, duplicate is fine") is
+moot; the RPC never even runs successfully once, dead or duplicate. Both
+call sites are reached from `ALL_CHECKERS`, which cover ~13 milestones
+(`onboarding_complete`: 50, `diary_streak_30`: 100, `first_health_check`:
+25, etc. — `services/milestone-service.ts:39-152`) with reward amounts up
+to 100. **Before** the credit attempt, `recordMilestone()`
+(`milestone-service.ts:189-218`) already wrote the achievement into
+`autopilot_recommendations` with `metadata.reward: def.reward` and
+`status: 'completed'` — this record is written unconditionally, so it
+permanently claims a reward was granted regardless of whether the credit
+call that follows it two lines later ever succeeds. Whether the frontend's
+achievement UI actually renders `metadata.reward` to the user was not
+checked here (out of this repo's scope, same caveat the base doc's dead-
+RPC-callsite audit already applies elsewhere) — but the *data* itself is
+already wrong at the point of writing, independent of how it's displayed.
+
+**1c. `automation-handlers/wallet-payments.ts:109-138` (`runWalletCreditReward`,
+AP-0708) — the one call site that checks the result, and it changes the
+failure mode without fixing it.**
+
+```ts
+const { data } = await repo.creditWallet(supabase, { ...rewardConfig });
+const result = data as CreditWalletResult;
+if (result?.duplicate) { ... }
+if (result?.ok) { ctx.notify(...); await ctx.emitEvent(...); }
+return { usersAffected: 1, actionsTaken: 1 };
+```
+
+This destructures `data` (correctly, unlike 1a/1b) — but never looks at
+`error`. Since `credit_wallet` doesn't exist, `data` resolves to `null`
+and `result` to `undefined`; both `result?.duplicate` and `result?.ok` are
+falsy, so **neither branch runs** — no notification, no OASIS event. This
+is a strictly better failure mode than 1a/1b (nobody is told a false
+"credited" message), but it is still silent at the automation-tracking
+layer: `return { usersAffected: 1, actionsTaken: 1 }` executes
+unconditionally on the last line, regardless of the branch outcome, so
+every AP-0708 run through this path is logged by the automation executor
+as one successful user-affecting action even when the credit never
+happened and nothing was sent.
+
+### 2. `debit_wallet_for_spend` / `credit_wallet_for_earning` (confirmed live) — well-designed, and one real non-atomic-sequence bug
+
+Read `supabase/migrations/20260601000000_VTID_03249_wallet_spend_earning.sql`
+in full — both are `SECURITY DEFINER` PL/pgSQL functions, no
+`auth.uid()`/`auth.jwt()` reference (confirms the "Portable" classification
+is correct), each a single self-contained transaction: `SELECT ... FOR
+UPDATE` on `wallet_accounts` to serialize concurrent movement on one
+account, a ledger insert into `wallet_ledger_entries` guarded by
+`UNIQUE(reference_type, reference_id, entry_type)` for idempotency (an
+`EXCEPTION WHEN unique_violation` branch turns a retried delivery into a
+clean `duplicate:true` response instead of a 500), then the cached-balance
+`UPDATE`. `debit_wallet_for_spend` additionally checks
+`balance_minor < amount_minor` **before** the ledger insert and returns a
+typed `INSUFFICIENT_BALANCE` error rather than letting a `CHECK` constraint
+throw a raw SQL error. No sign-flip, unit-mismatch, or missing-idempotency
+defect found in either body.
+
+The idempotency key (`reference_type, reference_id, entry_type`) is a
+table-wide `UNIQUE`, not scoped by `account_id` — verified against the
+table DDL in `20260529000000_VTID_03200_wallet_stripe_deposits.sql:163`.
+This is safe in practice (reference IDs are UUIDs from application code;
+an accidental collision across two unrelated accounts would need a UUID
+collision) but is worth naming since it means idempotency is enforced
+*globally*, not per-account — a caller reusing a `reference_id` for a
+*different* account and a *different* `entry_type` combination than
+intended would not be caught by this constraint.
+
+**Call sites — three are single-RPC-per-request and correctly checked:**
+- `services/checkout/checkout-service.ts:311-333` — universal cart
+  checkout debit. Checks `debit.ok`, distinguishes `INSUFFICIENT_BALANCE`
+  from a generic `WALLET_DEBIT_FAILED`, leaves pending orders reapable on
+  failure. No money moved on error.
+- `routes/wallet-admin.ts:88-131` — two admin-only endpoints
+  (`POST /wallet/admin/spend`, `POST /wallet/admin/credit`), each a single
+  RPC call, `requireExafyAdmin`-gated, checks `result.ok` and maps the
+  typed error to an HTTP status.
+- `services/recommendation-commissions/credit-recommender.ts:106-128` —
+  commission payout to a recommender. Checks `creditResult.ok`; on failure
+  writes a `status:'failed'` row to its own ledger table instead of
+  silently dropping the payout, and on success records the real
+  `wallet_ledger_entry_id` for traceability.
+
+**One call site is a genuine, non-atomic, two-RPC application-level saga —
+and it has a real bug in its own compensation logic.**
+`services/orb-tools/wallet-payments-tools.ts`'s `send_funds` ORB voice
+tool (a peer-to-peer transfer) debits the sender via
+`debit_wallet_for_spend` and credits the recipient via
+`credit_wallet_for_earning` as **two separate RPC calls, two separate
+transactions** — there is no single atomic `vtn_transfer`-style RPC doing
+both sides at once (unlike ledger #4's `vtn_transfer`, which per its own
+comment "Execute transfer via RPC (atomic)" was *designed* to be one
+transaction, but doesn't exist — see §5). The code is aware this is a
+saga, not a single transaction: it generates one `transferId`, uses it as
+`reference_id` for the debit, the same `reference_id` for the credit
+(safe — different `entry_type`s: `service_spend` vs. `earning_credit`, so
+the two inserts don't collide on the `UNIQUE` constraint above), and
+implements manual compensation for two distinct failure points:
+
+1. **Recipient account can't be created** (`wallet-payments-tools.ts:420-441`):
+   ```ts
+   if (createErr || !created) {
+     // Compensate: the debit succeeded but we can't deliver — refund the sender.
+     await creditWalletForEarning({ account_id: senderAccount.id, amount_minor: amountMinor,
+       currency, reference_type: 'manual', reference_id: `${transferId}-refund`, ... });
+     return { ok: true, result: { sent: false, error_code: 'RECIPIENT_ACCOUNT_FAILED', refunded: true },
+       text: `I couldn't set up ${recipientDisplay}'s wallet account, so I've refunded your ... back.` };
+   }
+   ```
+   **The refund's own result is never checked** — `await
+   creditWalletForEarning({...})` at line 428 discards the return value
+   entirely (no `const refund =`), yet the function unconditionally
+   returns `refunded: true` and tells the user, in the assistant's own
+   voice, "I've refunded your [amount] back." **Concrete failure
+   scenario:** the sender's wallet account transitions to `frozen` in the
+   moment between the debit (line 401) and this compensating refund (a
+   real, if narrow, race — nothing in this code holds a lock across the
+   two RPC calls), or the refund RPC hits a transient `RPC_FAILED`
+   (network blip, DB connection reset). `credit_wallet_for_earning`
+   returns `{ok:false, error:'ACCOUNT_NOT_ACTIVE'}` (or `RPC_FAILED`) —
+   silently, because the result is discarded — and the sender is charged
+   for a transfer that never completed and never gets refunded, while
+   being explicitly told the opposite by the assistant. This is a real
+   fund-loss bug, not a hypothetical: the money is provably gone (the
+   debit succeeded and is confirmed via its own checked `debit.ok`) and
+   the only correction path silently no-ops.
+2. **Recipient credit itself fails** (`wallet-payments-tools.ts:454-476`) —
+   by contrast, this second compensation path is written correctly: `const
+   refund = await creditWalletForEarning({...})`, then `if (refund.ok)`
+   reports the refund succeeded, **else** returns `ok:false` with an
+   explicit "needs manual reconciliation — reference `<transferId>`"
+   message rather than falsely claiming success. This is exactly the
+   pattern path 1 above is missing.
+
+Neither path is covered by `services/gateway/test/wave1-voice-tools-flow.test.ts`
+(the file that specifically tests `send_funds`) — that suite covers the
+no-confirm preview, the full debit-then-credit happy path, and "debit
+fails → credit never called," but has no test for either
+`RECIPIENT_ACCOUNT_FAILED` or a failed second-leg credit, so this bug (and
+the correctly-written sibling path next to it) are both unexercised by any
+test today.
+
+### 3. `credit_deposit` (confirmed live) — well-designed, correctly called, and quietly resolves part of an earlier addendum's open question
+
+Two tracked definitions exist for `credit_deposit`; per this doc's stated
+method (most recent wins), the live one is
+`20260720090000_bridge_credit_deposit_into_legacy_user_wallets.sql`, which
+`CREATE OR REPLACE`s the original
+`20260529000000_VTID_03200_wallet_stripe_deposits.sql` version. Both share
+the same transactional shape as §2 (`SELECT ... FOR UPDATE` on
+`wallet_deposits`, an idempotent "already succeeded" fast path, ledger
+insert, balance update, deposit status flip) — no `auth.*` reference in
+either version, no correctness defect found. The July version adds one
+thing, in the **same transaction** as everything else (not a second
+application-level call):
+
+```sql
+IF v_deposit.currency = 'USD' THEN
+  INSERT INTO user_wallets (user_id, currency_type, balance)
+  VALUES (v_deposit.user_id, 'USD', v_deposit.amount_minor / 100.0)
+  ON CONFLICT (user_id, currency_type)
+  DO UPDATE SET balance = user_wallets.balance + EXCLUDED.balance, updated_at = now();
+END IF;
+```
+
+Per its own header comment, this exists because `vitana-v1`'s
+`useWallet.ts` wallet UI reads balance from `user_wallets` (ledger #3
+above), not from `wallet_accounts` (ledger #2) that `credit_deposit`
+actually credits — without this bridge, a real Stripe deposit would land
+in `wallet_accounts` and never appear in the balance the user sees. **This
+is worth connecting to the 2026-08-27 addendum's open question above**
+("even confirming which webhook Stripe actually calls won't make the
+wallet balance *display* correct — that reads from a table that doesn't
+exist [`wallet_balances`] regardless"): that finding was about
+`billing.ts`'s `GET /me` route specifically, which is a *different* read
+path than `useWallet.ts`. This bridge migration means at least the
+Stripe-deposit-via-`wallet-stripe-webhook.ts` → `credit_deposit` path
+(ledger #2, the confirmed-primary path per that addendum) **does**
+correctly reach the balance a real user's wallet screen shows, for USD —
+one fewer broken link than the prior addendum's framing implied, though
+EUR deposits are explicitly left `wallet_accounts`-only per the comment
+("no EUR concept in the legacy table") and `billing.ts`'s own `GET /me`
+(reading the still-missing `wallet_balances`) remains broken regardless,
+exactly as already found.
+
+The one call site — `services/wallet/deposit-service.ts:217-238`
+(`finalizeDeposit`, invoked from `wallet-stripe-webhook.ts`'s webhook
+handler) — destructures `{data, error}` and throws a typed
+`DepositServiceError('CREDIT_DEPOSIT_RPC_FAILED', ...)` on error, correctly
+propagating to the webhook's own retry/failure handling. No swallow, no
+compensation needed (single RPC, single transaction, nothing to roll
+back).
+
+### 4. `increment_wallet_balance` (confirmed live, no tracked migration) — thin, no idempotency key, and one call site skips error handling entirely
+
+No `CREATE FUNCTION` for this name exists anywhere in
+`supabase/migrations/` — confirmed again here with the same grep pattern
+the base doc used, same result (zero matches). Per the 2026-08-27
+addendum this RPC is nonetheless confirmed live in `pg_proc`; its body
+cannot be read from this repo (untracked, live-only), so its transactional
+behavior, locking, and error surface are **unverified from source** — only
+inferable from the two call sites' own code comments, which state plainly
+it "writes to `user_wallets`" and has "no idempotency key of its own."
+
+Both call sites are one-line repository wrappers with matching param
+shapes (`p_user_id, p_currency_type, p_amount`) — a third, distinct param
+shape from both `credit_wallet` (`p_tenant_id, p_user_id, p_amount, p_type,
+p_source, p_source_event_id, p_description`) and
+`debit_wallet_for_spend`/`credit_wallet_for_earning`
+(`p_account_id, p_amount_minor, p_currency, p_reference_type,
+p_reference_id, ...`) — confirming, independent of the SQL body being
+unreadable, that this is a genuinely separate ledger (#3 above), not a
+differently-named alias for either of the other two.
+
+- **`services/automation-handlers/sharing-growth.ts:177-181`
+  (`runReferralReward`, automation **AP-0405**)** —
+  `await repo.incrementWalletBalance(supabase, {...});` with **no
+  destructuring at all**, not even inside a `try/catch`. The call site's
+  own comment (lines 147-152) states the self-guard is that the referral
+  status-transition `UPDATE` (`updateReferralToSignedUp`) must have
+  actually affected a row before this line is reached — a real, sound
+  duplicate-credit guard — but it says nothing about whether the credit
+  *itself* succeeds. If `increment_wallet_balance` ever returns an
+  `error` (a shape this pass cannot rule out without its SQL body — e.g.
+  a missing `user_wallets` row for a user who signed up before the row
+  was backfilled), the referrer is still told "Your Friend Joined!" via
+  the immediately-preceding `ctx.notify()` (line 169) and the automation
+  still emits `autopilot.sharing.referral_completed` with the reward
+  amount (line 183) — both already executed *before* this line, so this
+  particular ordering means a credit failure here doesn't even get a
+  chance to suppress the user-facing announcement, unlike diary streaks
+  where the notify comes after.
+- **`services/automation-handlers/onboarding-growth.ts:94-104`
+  (welcome bonus, automation **AP-1301**)** — wrapped in `try/catch`, same
+  as diary streaks/milestones: `actionsTaken++` and `ctx.log("Credited
+  welcome bonus...")` both execute unconditionally right after the
+  `await`, since a Postgres-level RPC error resolves normally rather than
+  throwing. The `catch` block (`ctx.log("Wallet credit skipped
+  (...)")`\`) is reachable only for a network-layer failure, not a
+  same-shape "RPC returned an error field" failure — the same
+  `.rpc()`-doesn't-throw gap as §1's diary-streak/milestone call sites, on
+  a third RPC entirely.
+
+### 5. `vtn_reward` / `vtn_spend` / `vtn_transfer` (confirmed dead) — correctly handled at the call site, unreachable in production regardless
+
+Full read of `services/openclaw-bridge/src/skills/vitana-vtn-wallet.ts`
+(the only place these three names appear anywhere in this repository,
+confirmed by a repo-wide grep, not just `services/gateway/src` — the same
+methodology gap the base doc's own dead-RPC-callsite audit already flagged
+in its item 7). All three actions (`transfer`, `reward`, `spend`) are
+short and uniform: build args, call the RPC, `const { data, error } =
+await supabase.rpc(...)`, `if (error) throw new Error(...)`, then (only on
+success) append an audit row to `autopilot_logs`.
+
+**On today's status quo, per the task's own framing ("document precisely
+what currently happens on every call today"):** every call to `reward()`,
+`spend()`, or `transfer()` throws synchronously, immediately, before
+anything else in the function runs. This is the **opposite** of a silent
+swallow — it is loud, and it is correct error handling *for the RPC call
+itself*. Two things distinguish this from being simply "safe":
+
+1. **`transfer()` does an un-atomic pre-check read before the atomic RPC.**
+   Lines 124-137 `SELECT balance, frozen FROM vtn_wallets ... .single()`
+   and reject with `wallet_frozen_or_not_found`/`insufficient_balance`
+   *before* calling `vtn_transfer`. This is a read-then-decide pattern
+   with no lock held across it — a real TOCTOU gap if two concurrent
+   transfers both pass this check against the same stale balance — but it
+   is moot in practice today, since the RPC after it always fails
+   (function does not exist) and no money-moving statement in this file
+   ever executes. Recording it here anyway, since the task asks for the
+   full status quo, not just the reachable part.
+2. **No corruption risk on failure, unlike `wallet-payments-tools.ts`'s
+   `send_funds` (§2 above), because the RPC throws *before* any
+   compensating/audit write, not after a partial state change.** In all
+   three actions, `autopilot_logs` insert (the only write in each
+   function) sits *after* the `if (error) throw` line — so the throw
+   short-circuits execution before that insert ever runs. There is no
+   sender-debited-but-recipient-never-credited state possible here,
+   because unlike the gateway's own `send_funds` tool, `vtn_transfer` was
+   *designed* to be one atomic RPC doing both legs — its own inline
+   comment says so explicitly ("Execute transfer via RPC (atomic)") — so
+   there was never a two-step application-level sequence to leave
+   half-finished. The dead RPC fails cleanly, not partially.
+
+**Reachability, confirmed independently here rather than only cited from
+the dead-callsite audit:** `services/openclaw-bridge` is not listed among
+the four services `.github/workflows/EXEC-DEPLOY.yml`'s own header
+comment names as deployable (`gateway`, `oasis-operator`,
+`oasis-projector`, `vitana-verification-engine`) — but the workflow's
+`service` input is free-text, not an enum, and the workflow body does have
+one `openclaw-bridge`-specific branch (`EXEC-DEPLOY.yml:456`, an
+internal-ingress health-check skip), meaning a manual dispatch naming
+`openclaw-bridge` would be accepted rather than rejected outright. That
+dispatch would still fail today regardless: the entire job runs
+`google-github-actions/setup-gcloud@v2` against GCP project
+`lovable-vitana-vers1` (`EXEC-DEPLOY.yml:83,122-124`), and GCP billing on
+that project has been disabled since 2026-08-16 (CLAUDE.md §1). So the
+correct, precise statement is not "this service has never been deployed"
+but **"this service's only deploy path names a specific GCP project whose
+billing is off, so any deploy attempt — dispatched today or at any point
+since 2026-08-16 — fails before a container ever starts."** Confirms and
+sharpens `AURORA-B3-DEAD-RPC-CALLSITE-AUDIT.md`'s finding of the same
+shape (citing `AURORA-B2-DEAD-CALLSITE-AUDIT.md` Addendum 8) with the
+actual workflow lines behind it.
+
+### 6. Atomicity summary across all eight names
+
+| RPC(s) | Atomic unit | Non-atomic application-level sequence found? |
+|---|---|---|
+| `credit_wallet` | Single RPC, single transaction (per its own SQL) | No — every call site invokes it exactly once per business event |
+| `debit_wallet_for_spend` + `credit_wallet_for_earning` | Each is its own single-RPC transaction | **Yes — `send_funds` (§2)**, a genuine two-RPC saga with one correctly-compensated failure path and one incorrectly-compensated one (real bug, above) |
+| `credit_deposit` | Single RPC, single transaction (now including the `user_wallets` bridge in the same transaction) | No |
+| `increment_wallet_balance` | Single RPC (body unverified — untracked) | No — both call sites invoke it exactly once |
+| `vtn_reward` / `vtn_spend` / `vtn_transfer` | Each intended as its own single, atomic RPC (per source comment) | No — never reaches a second call, because the first one always throws |
+
+Only one genuine non-atomic multi-RPC money sequence exists across all
+eight names, and it is the one this pass found a real, unexercised bug in.
+
+### What this addendum does and doesn't establish
+
+Verified by reading: every call site listed above, both `credit_wallet`
+migration definitions, both `credit_deposit` migration definitions, the
+full `debit_wallet_for_spend`/`credit_wallet_for_earning` migration, and
+`EXEC-DEPLOY.yml`'s relevant lines. **Not verified:** `increment_wallet_balance`'s
+actual SQL body (genuinely untracked, not just unread — this pass cannot
+say more about its transactional safety than the call sites' own comments
+claim); whether `vitana-v1`'s achievement/Memory-Garden-adjacent UI
+actually renders the `metadata.reward` field written by
+`milestone-service.ts` (flagged, not confirmed, per §1b); whether any real
+user has actually hit the `diary-streak`/`milestone`/`send_funds`-refund
+bugs found here (no live logs or Stripe/production access from this
+session — same posture as the rest of this migration effort). This is
+still a static-analysis-plus-SQL-read pass, not a live-traffic
+confirmation; the diary-streak, milestone, and `send_funds`-refund
+findings above are, however, deterministic code-logic bugs independent of
+any live-traffic question — they do not need production evidence to be
+true, only the source lines cited.
+
+No VTID is attached (see the header above). Whoever picks this up should
+allocate one before making any code change, per standing rule 2b/§4.1 —
+and per the base doc's own Next Steps item 3, deciding what (if anything)
+replaces `credit_wallet`/`vtn_reward`/`vtn_spend`/`vtn_transfer`, and
+whether ledgers #1/#3/#4 above should be unified into #2 rather than
+patched individually, remains a product decision this document is not
+positioned to make.
