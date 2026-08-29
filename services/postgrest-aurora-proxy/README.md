@@ -3,6 +3,46 @@
 Built 2026-08-12, in response to the explicit direction: get Aurora serving
 **staging** first (tested, then a separate approval gate for production).
 
+## Correction notice, 2026-08-29 — read this before "Why this exists" below
+
+This file's own framing — **"Option A instead, staging-scoped"**, "keep
+Supabase Auth (GoTrue) as the identity source per the standing 'Supabase
+is auth-only' rule" — describes a decision that has since been
+**superseded**. `docs/SUPABASE-TO-AURORA-MIGRATION-PLAN.md` was updated
+2026-08-25 with a platform-owner directive to migrate off Supabase
+**entirely, including Auth** ("move everything from Supabase to AWS and
+Aurora. Also the Auth server... this is final decision"), with a hard
+20 September 2026 deadline. That plan's own Phase 1 note is explicit:
+**"rules out Option A by construction: self-hosting the Supabase stack
+(even on AWS/Aurora) is still running Supabase, not shutting it down, and
+does not touch GoTrue/Auth at all."** The successor is Option B — auth
+moves to Cognito or a self-issued-JWT service, not to a self-hosted
+GoTrue anywhere, staging included.
+
+This does **not** mean this build was wasted: the PostgREST-on-Aurora
+mechanism it stands up (the `authenticator` role, the `auth.uid()`/
+`auth.jwt()` shim, `SET ROLE`/`request.jwt.claims` per request) is the
+same RLS-compatibility trick Option B's own B4 workstream depends on
+regardless of what eventually issues the JWT — see
+`services/gateway/src/services/aurora-client.ts` and PR #3087, where that
+exact mechanism has since been verified live (VTID-03768/VTID-03769) via
+a different transport (RDS Data API, not this proxy). What's dead
+specifically is this doc's "**keep Supabase Auth, forever**" premise, not
+the plumbing built to hold that door open — flagging so nobody reads
+"staging-scoped Option A" below as a still-live target to finish deploying
+as-is.
+
+**Also stale as of the same date: the "blocking item 1" below (the
+`authenticator` login role) is already resolved.** That role exists on
+Aurora today — created by a later, undocumented effort — and its
+connection URI is already stored in Secrets Manager exactly where this
+doc anticipated (`vitana/aurora/prod/postgrest-authenticator-uri`,
+confirmed present 2026-08-29). Re-verify against live AWS state before
+treating any "blocking"/"remaining steps" section below as current;
+Aurora's live role/grant state has moved since 2026-08-12 in ways this
+file was never updated to reflect (see `docs/AURORA-B4-SIZING-REFRESH.md`'s
+VTID-03768/VTID-03769 addenda for what's now actually verified).
+
 ## Why this exists
 
 `docs/SUPABASE-TO-AURORA-MIGRATION-PLAN.md`'s headline finding still holds:
