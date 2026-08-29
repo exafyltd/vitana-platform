@@ -277,3 +277,40 @@ is what would convert this from "likely broken, confirmed live" to
 image-generation bridge route analogous to `POST /api/v1/ai-bridge/generate`
 (the text bridge B7's earlier rows built), not a drop-in reuse of it, and
 is scoped as separate follow-on work, not assumed done by this trace.
+
+## Addendum, 2026-08-29 — B7's Bedrock-bridge wiring for the confirmed-reachable set is now done, except transcribe-audio
+
+Follow-through on this doc's own "Not done here" notes, closing the loop
+across both repos:
+
+- **`generate-event-image`** now has the image-generation bridge route this
+  section flagged as missing: `POST /api/v1/ai-bridge/generate-image`
+  (`services/gateway/src/routes/ai-bridge.ts`, reusing
+  `providers/titan-image.ts`), and the edge function itself selects it via
+  the same `AI_BRIDGE_PROVIDER` secret the other 5 functions below use,
+  defaulting to `'vertex'` (unchanged behavior) — see
+  `_shared/bedrock-bridge-client.ts`'s new `generateImage()`.
+- **All 6 of the 7 confirmed-reachable Gemini-dependent functions this
+  doc named are now Bedrock-bridge-capable**: `ai-chat`,
+  `extract-diary-insights`, `generate-enhanced-recommendations`,
+  `generate-event-image`, `generate-proactive-greeting`,
+  `social-media-import`. Each defaults to its original Google provider
+  (`'gemini'`/`'vertex'`) — flipping `AI_BRIDGE_PROVIDER` to `'bedrock'` on
+  the deployed function is a separate, later decision (needs confirming
+  the flip is actually safe/desired for live traffic on each), not done or
+  assumed here.
+- **`transcribe-audio` deliberately still NOT wired** — it sends raw audio
+  bytes to Gemini's multimodal endpoint directly; this codebase's Bedrock
+  provider has no audio-input path, so this needs Amazon Transcribe, a
+  separate and larger piece of work, not a drop-in swap. Still open.
+- **The remaining ~12 Gemini-referencing functions with no confirmed
+  frontend caller** (`analyze-patterns`, `analyze-situation`,
+  `analyze-visual-context`, `extract-user-interests`,
+  `generate-maxina-summer-events`, `generate-memory-embedding`,
+  `generate-proactive-message`, `generate-recommendations`,
+  `linkedin-import`, `search-memories`, `test-api-integration`,
+  `vertex-live`, `vitanaland-live`) are deliberately left unwired — this
+  doc's own reasoning above (near-zero `/functions/v1/*` traffic in the
+  24h window checked) argues for confirming reachability before spending
+  more effort here, the same discipline B2/B3 applied to their own
+  dead-reference findings, not for wiring everything defensively.
