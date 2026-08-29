@@ -23,6 +23,7 @@ import { getSupabase } from '../lib/supabase';
 import { withGeminiLog } from './gemini-call-log';
 import { callClaudeText, CLAUDE_SONNET_4_6 } from './claude-text-client';
 import type { MatchRow } from './intent-matcher';
+import * as repo from './matchmaker-agent-repository';
 
 const PRIMARY_MODEL = CLAUDE_SONNET_4_6;
 
@@ -119,12 +120,11 @@ async function markRecommendationStatus(intentId: string, status: 'pending' | 'r
   const supabase = getSupabase();
   if (!supabase) return;
   try {
-    await supabase
-      .from('intent_match_recommendations')
-      .upsert(
-        { intent_id: intentId, status, updated_at: new Date().toISOString() } as any,
-        { onConflict: 'intent_id' }
-      );
+    await repo.upsertIntentMatchRecommendation(supabase, {
+      intent_id: intentId,
+      status,
+      updated_at: new Date().toISOString(),
+    } as any);
   } catch { /* best-effort */ }
 }
 
@@ -132,26 +132,21 @@ async function persistRecommendation(intentId: string, result: MatchmakerResult,
   const supabase = getSupabase();
   if (!supabase) return;
   try {
-    await supabase
-      .from('intent_match_recommendations')
-      .upsert(
-        {
-          intent_id: intentId,
-          status: 'complete',
-          mode: result.mode,
-          pool_size: result.pool_size,
-          candidates: result.candidates as any,
-          counter_questions: result.counter_questions as any,
-          voice_readback: result.voice_readback,
-          reasoning_summary: result.reasoning_summary,
-          used_fallback: result.used_fallback,
-          model: PRIMARY_MODEL,
-          latency_ms: latencyMs,
-          computed_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        } as any,
-        { onConflict: 'intent_id' }
-      );
+    await repo.upsertIntentMatchRecommendation(supabase, {
+      intent_id: intentId,
+      status: 'complete',
+      mode: result.mode,
+      pool_size: result.pool_size,
+      candidates: result.candidates as any,
+      counter_questions: result.counter_questions as any,
+      voice_readback: result.voice_readback,
+      reasoning_summary: result.reasoning_summary,
+      used_fallback: result.used_fallback,
+      model: PRIMARY_MODEL,
+      latency_ms: latencyMs,
+      computed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    } as any);
   } catch { /* best-effort */ }
 }
 
@@ -159,18 +154,13 @@ async function markRecommendationError(intentId: string, error: string, latencyM
   const supabase = getSupabase();
   if (!supabase) return;
   try {
-    await supabase
-      .from('intent_match_recommendations')
-      .upsert(
-        {
-          intent_id: intentId,
-          status: 'error',
-          error: error.slice(0, 1000),
-          latency_ms: latencyMs,
-          updated_at: new Date().toISOString(),
-        } as any,
-        { onConflict: 'intent_id' }
-      );
+    await repo.upsertIntentMatchRecommendation(supabase, {
+      intent_id: intentId,
+      status: 'error',
+      error: error.slice(0, 1000),
+      latency_ms: latencyMs,
+      updated_at: new Date().toISOString(),
+    } as any);
   } catch { /* best-effort */ }
 }
 
@@ -195,21 +185,14 @@ async function persistProfileFallbackMatches(intentId: string, result: Matchmake
   if (fallbackRows.length === 0) return;
 
   // Look up user_ids for the vitana_ids.
-  const { data: profs } = await supabase
-    .from('profiles')
-    .select('user_id, vitana_id')
-    .in('vitana_id', fallbackRows.map((f) => f.vitana_id));
+  const { data: profs } = await repo.fetchProfilesByVitanaIds(supabase, fallbackRows.map((f) => f.vitana_id));
 
   const vidToUid = new Map<string, string>(
     ((profs as any[]) || []).map((p) => [String(p.vitana_id), String(p.user_id)])
   );
 
   // Pull source for vitana_id_a + intent_kind.
-  const { data: src } = await supabase
-    .from('user_intents')
-    .select('requester_vitana_id, intent_kind')
-    .eq('intent_id', intentId)
-    .maybeSingle();
+  const { data: src } = await repo.fetchIntentRequesterAndKind(supabase, intentId);
   const vitanaIdA = (src as any)?.requester_vitana_id as string | null;
   const intentKind = (src as any)?.intent_kind as string | null;
 
@@ -235,9 +218,7 @@ async function persistProfileFallbackMatches(intentId: string, result: Matchmake
 
   if (rows.length === 0) return;
   try {
-    await supabase
-      .from('intent_matches')
-      .upsert(rows, { onConflict: 'intent_a_id,external_target_kind,external_target_id', ignoreDuplicates: true });
+    await repo.upsertProfileFallbackMatches(supabase, rows);
   } catch (err: any) {
     console.warn(`[VTID-DANCE-D11.E] profile_match persist failed: ${err.message}`);
   }
@@ -317,44 +298,22 @@ async function loadContext(intentId: string): Promise<{ source: SourceIntent; re
   const supabase = getSupabase();
   if (!supabase) return null;
 
-  const { data: srcRow } = await supabase
-    .from('user_intents')
-    .select('intent_id, intent_kind, category, title, scope, kind_payload, requester_user_id, requester_vitana_id, tenant_id')
-    .eq('intent_id', intentId)
-    .maybeSingle();
+  const { data: srcRow } = await repo.fetchSourceIntent(supabase, intentId);
   if (!srcRow) return null;
   const source = srcRow as any as SourceIntent;
 
-  const { data: profileRow } = await supabase
-    .from('profiles')
-    .select('vitana_id, display_name, city, registration_seq, dance_preferences')
-    .eq('user_id', source.requester_user_id)
-    .maybeSingle();
+  const { data: profileRow } = await repo.fetchRequesterProfile(supabase, source.requester_user_id);
 
   // Best-effort fetches — silent on error.
   let lifeCompassCategory: string | null = null;
   try {
-    const { data } = await supabase
-      .from('life_compass_active_view')
-      .select('category')
-      .eq('user_id', source.requester_user_id)
-      .maybeSingle();
+    const { data } = await repo.fetchLifeCompassCategory(supabase, source.requester_user_id);
     lifeCompassCategory = ((data as any)?.category as string) ?? null;
   } catch { /* table may not exist on every env */ }
 
-  const { data: recentIntents } = await supabase
-    .from('user_intents')
-    .select('intent_kind, title, created_at')
-    .eq('requester_user_id', source.requester_user_id)
-    .order('created_at', { ascending: false })
-    .limit(10);
+  const { data: recentIntents } = await repo.fetchRecentIntents(supabase, source.requester_user_id, 10);
 
-  const { data: recentOutcomes } = await supabase
-    .from('intent_matches')
-    .select('kind_pairing, state, vitana_id_b')
-    .eq('vitana_id_a', source.requester_vitana_id ?? '')
-    .order('created_at', { ascending: false })
-    .limit(20);
+  const { data: recentOutcomes } = await repo.fetchRecentMatchOutcomes(supabase, source.requester_vitana_id ?? '', 20);
 
   return {
     source,
@@ -383,12 +342,7 @@ async function loadSqlCandidates(intentId: string): Promise<SqlCandidate[]> {
   const supabase = getSupabase();
   if (!supabase) return [];
 
-  const { data: matches } = await supabase
-    .from('intent_matches')
-    .select('match_id, intent_a_id, intent_b_id, vitana_id_a, vitana_id_b, score, kind_pairing, state')
-    .eq('intent_a_id', intentId)
-    .order('score', { ascending: false })
-    .limit(20);
+  const { data: matches } = await repo.fetchSqlMatchesForIntent(supabase, intentId, 20);
   if (!matches || matches.length === 0) return [];
 
   const intentBIds = (matches as any[]).map((m) => m.intent_b_id).filter(Boolean) as string[];
@@ -398,10 +352,7 @@ async function loadSqlCandidates(intentId: string): Promise<SqlCandidate[]> {
   let profileMap: Record<string, any> = {};
 
   if (intentBIds.length > 0) {
-    const { data: intents } = await supabase
-      .from('user_intents')
-      .select('intent_id, intent_kind, category, title, scope, kind_payload, requester_user_id, requester_vitana_id, tenant_id')
-      .in('intent_id', intentBIds);
+    const { data: intents } = await repo.fetchIntentsByIds(supabase, intentBIds);
     intentMap = Object.fromEntries(((intents as any[]) || []).map((r) => [r.intent_id, r]));
     for (const r of (intents as any[]) || []) {
       if (r.requester_user_id) userIds.push(r.requester_user_id);
@@ -409,10 +360,7 @@ async function loadSqlCandidates(intentId: string): Promise<SqlCandidate[]> {
   }
 
   if (userIds.length > 0) {
-    const { data: profs } = await supabase
-      .from('profiles')
-      .select('user_id, display_name, city, dance_preferences')
-      .in('user_id', userIds);
+    const { data: profs } = await repo.fetchProfilesByUserIds(supabase, userIds);
     profileMap = Object.fromEntries(((profs as any[]) || []).map((r) => [r.user_id, r]));
   }
 
@@ -435,11 +383,7 @@ async function loadSqlCandidates(intentId: string): Promise<SqlCandidate[]> {
 async function probePoolSize(source: SourceIntent): Promise<number> {
   const supabase = getSupabase();
   if (!supabase) return 0;
-  const { count } = await supabase
-    .from('user_intents')
-    .select('intent_id', { count: 'exact', head: true })
-    .neq('requester_user_id', source.requester_user_id)
-    .in('status', ['open', 'matched', 'engaged']);
+  const { count } = await repo.countOpenIntentsExcludingUser(supabase, source.requester_user_id, ['open', 'matched', 'engaged']);
   return count ?? 0;
 }
 
@@ -454,12 +398,7 @@ async function loadProfileFallback(
     ?? (source.category && source.category.startsWith('dance.') ? source.category.split('.').pop() ?? null : null);
 
   // Pull profiles that have ANY dance preferences set, prioritising same variety.
-  const { data: profs } = await supabase
-    .from('profiles')
-    .select('user_id, vitana_id, display_name, city, dance_preferences')
-    .neq('user_id', source.requester_user_id)
-    .not('dance_preferences', 'eq', '{}')
-    .limit(20);
+  const { data: profs } = await repo.fetchProfilesWithDancePreferences(supabase, source.requester_user_id, 20);
   const list = ((profs as any[]) || []).filter((p) => {
     const v = p.dance_preferences?.varieties;
     return Array.isArray(v) && v.length > 0;
