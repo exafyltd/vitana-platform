@@ -290,3 +290,84 @@ session to remediate (needs GCP console access to rotate/revoke), but
 recorded here so the "vitana-mobile: not checked" gap doesn't get closed
 without this surfacing. See conversation history for the disclosure to the
 platform owner.
+
+## Addendum, 2026-08-29 — the option (a) vs (b) decision is not actually open: the plan's own Phase 1 choice already settles it
+
+The prior addendum ended with "Still not decided here, deliberately: which
+mechanism ... serves the three hot tables." Re-reading
+`docs/SUPABASE-TO-AURORA-MIGRATION-PLAN.md`'s own Phase 1 section shows
+this framing undersells how far the decision already goes — it isn't a
+fresh architecture call B5 gets to make independently, it's an instance of
+a strategic choice the platform owner already made in writing on
+2026-08-25, before this doc's own criticality addenda even existed:
+
+> **DECIDED 2026-08-25: Option B.** The platform owner's standing directive
+> — full migration off Supabase, **including the Auth server**, ending in
+> Supabase being fully disconnected and downgraded to its free plan by
+> 20 September 2026 — rules out Option A by construction: self-hosting the
+> Supabase stack (even on AWS/Aurora) is still running Supabase, not
+> shutting it down...
+
+Option (a) here — "run Supabase's own open-source `realtime` binary,
+pointed at Aurora, indefinitely, in production" — **is Option A's approach,
+applied to exactly one of the five Supabase components the Phase 1 decision
+already rejected wholesale.** It is not materially different from "self-host
+GoTrue against Aurora," which the same decision explicitly named and ruled
+out. Running a Supabase-authored server as a permanent piece of production
+infrastructure fails the stated success criterion — "Supabase fully
+disconnected... downgraded to free plan" — exactly as much whether the
+component in question is Auth, Realtime, or anything else in the stack. The
+fact that `realtime` is open-source and can technically be self-hosted
+doesn't exempt it from a decision framed around *ownership*, not licensing.
+
+**Conclusion: option (b) — a gateway-owned relay for the 3 hot tables
+(`user_activity_log`, `user_notifications`, `chat_messages`) — is the only
+choice consistent with the decision already on record.** This isn't a new
+judgment call; it's applying the existing Option B decision to the one place
+B5's own prior addenda had left it looking like an open architecture
+question. No further sign-off is needed to say *which side* of the
+mechanism choice is correct — only the actual build is separate, VTID-gated
+execution work.
+
+**One nuance the prior addendum's framing obscures, worth carrying into
+that execution work:** the prior addendum's "true cost of option (a)
+includes a cluster reboot" finding (`wal_level=replica` →`logical`,
+`rds.logical_replication` off →on) is **not specific to running Supabase's
+binary** — it is a precondition of *logical replication itself*. A
+gateway-owned relay built the "obvious" way (subscribing to Aurora's WAL via
+its own replication slot, the same mechanism DMS and Supabase's `realtime`
+both use) would need the **identical** reboot; choosing (b) over (a) does
+not, by itself, avoid it. Two real paths forward for the gateway relay,
+genuinely different in cost:
+
+1. **Gateway-owned logical-replication consumer** (e.g. via `pg_logical` /
+   a Node client subscribing to a publication) — architecturally the
+   closest to what `realtime` already does, but still needs the same
+   `rds.logical_replication=on` reboot as option (a), so it does not dodge
+   that cost, only the "running Supabase's own binary" objection.
+2. **Gateway-owned polling relay** for just these 3 tables — short-interval
+   `SELECT ... WHERE updated_at > $last_poll` (or an equivalent
+   append-only/sequence-cursor read for `chat_messages`/`user_activity_log`,
+   which look insert-heavy per the write-activity numbers above) fanned out
+   to subscribed WebSocket/SSE clients from the gateway. Avoids the reboot
+   entirely — the real reason this is worth calling out as its own option,
+   not a lesser version of (1). At "Hot" tier write volumes (135k/67k/41k
+   lifetime writes, not per-second), a poll interval in the low seconds is
+   very likely tolerable for all three use cases (activity log, in-app
+   notifications, chat) without the user-facing latency cost that would
+   matter for something like collaborative cursors — but this is an
+   assumption to validate against actual UX expectations before building,
+   not a fact this pass measured.
+
+Recommendation for whoever picks up B5 execution: **start with the polling
+relay (path 2)** for the 3 hot tables — it is buildable and shippable
+without any production infrastructure change (no VTID-gated reboot, no
+governance sign-off beyond the relay code itself), fully consistent with
+the Option B decision, and can be upgraded to logical-replication-based
+push later (still gated on the same reboot decision, now isolated to one
+clearly-scoped follow-up) if polling latency proves genuinely insufficient
+once real usage is observed. This also sequences cleanly with B4 — a
+gateway-owned relay needs to know which tenant/user each Aurora row belongs
+to in order to fan out only to authorized subscribers, i.e. it needs the
+same identity/session context B4 is already building, rather than
+re-deriving RLS-equivalent authorization logic a second time.
