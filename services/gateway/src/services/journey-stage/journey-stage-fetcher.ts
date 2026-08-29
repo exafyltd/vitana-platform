@@ -23,6 +23,7 @@ import type {
   UserActiveDaysAggregate,
   VitanaIndexLatestRow,
 } from './types';
+import * as repo from './journey-stage-fetcher-repository';
 
 export interface JourneyStageFetcher {
   fetchAppUser(args: { userId: string }): Promise<{
@@ -61,11 +62,7 @@ export function createSupabaseJourneyStageFetcher(
       const sb = getDb();
       if (!sb) return { ok: false, row: null, reason: 'supabase_unconfigured' };
       try {
-        const { data, error } = await sb
-          .from('app_users')
-          .select('user_id, created_at')
-          .eq('user_id', args.userId)
-          .maybeSingle();
+        const { data, error } = await repo.fetchAppUserById(sb, args.userId);
         if (error) return { ok: false, row: null, reason: error.message };
         if (!data) return { ok: true, row: null };
         return { ok: true, row: mapAppUserRow(data) };
@@ -88,12 +85,7 @@ export function createSupabaseJourneyStageFetcher(
         // Aggregation lives in JS — Supabase JS client doesn't expose
         // a uniform COUNT(*) helper without an RPC, and we already need
         // last_active_date which is the head of the sorted set.
-        const { data, error } = await sb
-          .from('user_active_days')
-          .select('active_date')
-          .eq('user_id', args.userId)
-          .order('active_date', { ascending: false })
-          .limit(1000);
+        const { data, error } = await repo.fetchUserActiveDays(sb, args.userId, 1000);
         if (error) {
           return {
             ok: false,
@@ -126,13 +118,7 @@ export function createSupabaseJourneyStageFetcher(
       const sb = getDb();
       if (!sb) return { ok: false, rows: [], reason: 'supabase_unconfigured' };
       try {
-        const { data, error } = await sb
-          .from('vitana_index_scores')
-          .select('date, score_total')
-          .eq('tenant_id', args.tenantId)
-          .eq('user_id', args.userId)
-          .order('date', { ascending: false })
-          .limit(limit);
+        const { data, error } = await repo.fetchVitanaIndexHistory(sb, args.tenantId, args.userId, limit);
         if (error) return { ok: false, rows: [], reason: error.message };
         const rows = Array.isArray(data) ? data : [];
         return { ok: true, rows: rows.map(mapVitanaIndexRow) };
