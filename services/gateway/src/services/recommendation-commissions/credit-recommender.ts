@@ -57,7 +57,16 @@ export async function creditRecommenderForOrder(orderId: string): Promise<Credit
   }
 
   // Idempotency check — a re-pull of the same conversion must not double-credit.
-  const { data: existing } = await repo.fetchExistingRecommendationCommission(supabase, orderId);
+  // A Postgres-level failure here resolves normally rather than throwing, so
+  // it would otherwise silently bypass this guard and fall through to a
+  // real credit attempt — the underlying credit_wallet_for_earning ledger
+  // UNIQUE constraint prevents an actual double-payment (see
+  // AURORA-B3-RPC-PARITY-INVENTORY.md), but the failure itself was
+  // previously invisible.
+  const { data: existing, error: existingErr } = await repo.fetchExistingRecommendationCommission(supabase, orderId);
+  if (existingErr) {
+    console.warn(`[credit-recommender] fetchExistingRecommendationCommission error for order=${orderId}: ${existingErr.message}`);
+  }
   if (existing) return { ok: true, status: 'already_credited' };
 
   const { data: recommendation } = await repo.fetchProductRecommendationForCommission(
@@ -127,7 +136,7 @@ export async function creditRecommenderForOrder(orderId: string): Promise<Credit
     return { ok: false, status: 'failed', message: creditResult.error };
   }
 
-  await repo.insertRecommendationCommission(supabase, {
+  const { error: recordErr } = await repo.insertRecommendationCommission(supabase, {
     product_recommendation_id: recommendation.id,
     product_order_id: orderId,
     recommender_user_id: recommendation.user_id,
@@ -138,6 +147,17 @@ export async function creditRecommenderForOrder(orderId: string): Promise<Credit
     wallet_ledger_entry_id: creditResult.ledger_entry_id ?? null,
     status: 'credited',
   });
+  if (recordErr) {
+    // The wallet was already credited above (or was a no-op duplicate per
+    // the ledger's own UNIQUE constraint) — this insert only records that
+    // fact. Its result was previously fully discarded, so a failure here
+    // (e.g. this row already exists from a prior successful run, if the
+    // idempotency check above ever missed it) was invisible, and the
+    // function still reports 'credited' below regardless. Logging only —
+    // not changing the returned status, which stays accurate for the
+    // wallet-credit outcome that actually matters.
+    console.warn(`[credit-recommender] insertRecommendationCommission (credited) error for order=${orderId}: ${recordErr.message}`);
+  }
 
   await repo.incrementProductRecommendationStats(supabase, {
     p_recommendation_id: recommendation.id,
