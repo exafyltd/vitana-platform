@@ -425,7 +425,7 @@ export async function tool_send_funds(
       const { data: created, error: createErr } = await repo.insertWalletAccount(sb, recipientUserId, currency);
       if (createErr || !created) {
         // Compensate: the debit succeeded but we can't deliver — refund the sender.
-        await creditWalletForEarning({
+        const refund = await creditWalletForEarning({
           account_id: senderAccount.id,
           amount_minor: amountMinor,
           currency,
@@ -433,10 +433,19 @@ export async function tool_send_funds(
           reference_id: `${transferId}-refund`,
           description: `Refund: could not create ${recipientDisplay}'s wallet account`,
         });
+        if (refund.ok) {
+          return {
+            ok: true,
+            result: { sent: false, error_code: 'RECIPIENT_ACCOUNT_FAILED', refunded: true },
+            text: `I couldn't set up ${recipientDisplay}'s wallet account, so I've refunded your ${fmtMinor(amountMinor, currency)} back.`,
+          };
+        }
+        // Debit succeeded, recipient account creation failed, AND the
+        // compensating refund failed. Same discipline as the credit-failure
+        // branch below: never claim a refund happened when it didn't.
         return {
-          ok: true,
-          result: { sent: false, error_code: 'RECIPIENT_ACCOUNT_FAILED', refunded: true },
-          text: `I couldn't set up ${recipientDisplay}'s wallet account, so I've refunded your ${fmtMinor(amountMinor, currency)} back.`,
+          ok: false,
+          error: `Couldn't set up ${recipientDisplay}'s wallet account, and the automatic refund also failed (${refund.error}). This needs manual reconciliation — reference ${transferId}.`,
         };
       }
       recipientAccount = created as typeof senderAccount;

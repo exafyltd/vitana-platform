@@ -157,6 +157,91 @@ describe('send_funds — the only voice tool allowed to move real money', () => 
     expect(r.result.error_code).toBe('INSUFFICIENT_BALANCE');
     expect(creditWalletForEarning).not.toHaveBeenCalled();
   });
+
+  function makeSbWithWalletAccountInsert(insertResult: { data: unknown; error: unknown }) {
+    const from = jest.fn((table: string) => {
+      if (table === 'app_users') {
+        return {
+          select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: recipientRow, error: null }) }) }),
+        };
+      }
+      if (table === 'wallet_accounts') {
+        return {
+          insert: () => ({ select: () => ({ single: () => Promise.resolve(insertResult) }) }),
+        };
+      }
+      throw new Error(`unexpected table in this test: ${table}`);
+    });
+    const rpc = jest.fn((fn: string) => {
+      if (fn === 'resolve_recipient_candidates') {
+        return Promise.resolve({
+          data: [{ user_id: RECIPIENT_UUID, vitana_id: 'alex1', display_name: 'Alex', score: 0.97 }],
+          error: null,
+        });
+      }
+      throw new Error(`unexpected rpc in this test: ${fn}`);
+    });
+    return { from, rpc } as any;
+  }
+
+  test('recipient account creation fails, refund succeeds: honestly reports refunded:true', async () => {
+    jest.doMock('../src/services/wallet/balance-service', () => ({
+      getAccountsForUser: jest
+        .fn()
+        .mockResolvedValueOnce([senderAccount]) // sender
+        .mockResolvedValueOnce([]), // recipient has no active account yet
+    }));
+    const debitWalletForSpend = jest.fn().mockResolvedValue({ ok: true, duplicate: false, balance_minor: 2500, currency: 'EUR' });
+    const creditWalletForEarning = jest.fn().mockResolvedValue({ ok: true, duplicate: false, balance_minor: 5000, currency: 'EUR' });
+    jest.doMock('../src/services/wallet/spend-earning-service', () => ({ debitWalletForSpend, creditWalletForEarning }));
+
+    const { dispatchOrbTool: dispatch } = require('../src/services/orb-tools-shared');
+    const sb = makeSbWithWalletAccountInsert({ data: null, error: { message: 'insert failed' } });
+    const r: any = await dispatch(
+      'send_funds',
+      { amount: 25, recipient_user_id: RECIPIENT_UUID, currency: 'EUR', confirm: true },
+      ID,
+      sb,
+    );
+
+    expect(r.ok).toBe(true);
+    expect(r.result.sent).toBe(false);
+    expect(r.result.error_code).toBe('RECIPIENT_ACCOUNT_FAILED');
+    expect(r.result.refunded).toBe(true);
+    expect(creditWalletForEarning).toHaveBeenCalledTimes(1);
+    expect(creditWalletForEarning.mock.calls[0][0].reference_id).toBe(
+      `${debitWalletForSpend.mock.calls[0][0].reference_id}-refund`,
+    );
+  });
+
+  test('recipient account creation fails AND the compensating refund also fails: never claims refunded:true (VTID-TBD, AURORA-B3-RPC-PARITY-INVENTORY.md addendum 2026-08-29)', async () => {
+    jest.doMock('../src/services/wallet/balance-service', () => ({
+      getAccountsForUser: jest
+        .fn()
+        .mockResolvedValueOnce([senderAccount]) // sender
+        .mockResolvedValueOnce([]), // recipient has no active account yet
+    }));
+    const debitWalletForSpend = jest.fn().mockResolvedValue({ ok: true, duplicate: false, balance_minor: 2500, currency: 'EUR' });
+    const creditWalletForEarning = jest.fn().mockResolvedValue({ ok: false, error: 'ACCOUNT_NOT_ACTIVE' });
+    jest.doMock('../src/services/wallet/spend-earning-service', () => ({ debitWalletForSpend, creditWalletForEarning }));
+
+    const { dispatchOrbTool: dispatch } = require('../src/services/orb-tools-shared');
+    const sb = makeSbWithWalletAccountInsert({ data: null, error: { message: 'insert failed' } });
+    const r: any = await dispatch(
+      'send_funds',
+      { amount: 25, recipient_user_id: RECIPIENT_UUID, currency: 'EUR', confirm: true },
+      ID,
+      sb,
+    );
+
+    // The real bug this pins: the sender was debited, the recipient account
+    // could not be created, AND the refund itself failed — this must never
+    // be reported as ok:true/refunded:true (a lie), and must never be a
+    // silently-discarded refund result (the bug before this fix).
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/manual reconciliation/i);
+    expect(r.error).toMatch(/ACCOUNT_NOT_ACTIVE/);
+  });
 });
 
 describe('start_checkout — payment policy: never charges by voice', () => {
