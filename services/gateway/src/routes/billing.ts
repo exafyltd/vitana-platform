@@ -846,7 +846,22 @@ async function handleSubscriptionUpserted(stripeSub: Stripe.Subscription): Promi
   let planKey = stripeSub.metadata?.vitana_plan_key ?? 'free';
   let priceKey = stripeSub.metadata?.vitana_price_key ?? null;
   if (stripePriceId) {
-    const { data } = await repo.fetchPlanPriceByStripePriceId(sb(), stripePriceId);
+    const { data, error: priceErr } = await repo.fetchPlanPriceByStripePriceId(sb(), stripePriceId);
+    if (priceErr) {
+      // A Postgres-level failure here (RLS/permission change, table issue)
+      // resolves normally rather than throwing, so this previously fell
+      // through to the `vitana_plan_key` metadata fallback (often 'free' —
+      // e.g. a Stripe-customer-portal-initiated plan change carries no
+      // custom metadata) with zero trace, silently persisting the wrong
+      // plan_key for a real subscriber via upsertUserSubscriptionFromStripe
+      // below. Logging loudly so a wrong-plan support ticket is traceable;
+      // the fallback behavior itself is deliberately unchanged — retrying
+      // here would hit the pre-existing processed_stripe_events idempotency
+      // insert (already written before this function runs), which would
+      // silently no-op Stripe's retry anyway, a separate design question
+      // out of scope for this fix.
+      console.error(`${LOG_PREFIX} fetchPlanPriceByStripePriceId error for price=${stripePriceId}: ${priceErr.message}`);
+    }
     if (data) {
       planKey = (data.plan_key as string) || planKey;
       priceKey = (data.price_key as string) || priceKey;
