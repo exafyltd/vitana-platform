@@ -1045,11 +1045,59 @@ back).
 No `CREATE FUNCTION` for this name exists anywhere in
 `supabase/migrations/` — confirmed again here with the same grep pattern
 the base doc used, same result (zero matches). Per the 2026-08-27
-addendum this RPC is nonetheless confirmed live in `pg_proc`; its body
-cannot be read from this repo (untracked, live-only), so its transactional
-behavior, locking, and error surface are **unverified from source** — only
-inferable from the two call sites' own code comments, which state plainly
-it "writes to `user_wallets`" and has "no idempotency key of its own."
+addendum this RPC is nonetheless confirmed live in `pg_proc`.
+
+**✅ Body read live 2026-08-29 (`pg_get_functiondef`) — no longer
+unverified.** Confirms every prior inference exactly, and settles the one
+open question (transactional safety):
+
+```sql
+CREATE OR REPLACE FUNCTION public.increment_wallet_balance(p_user_id uuid, p_currency_type text, p_amount numeric)
+ RETURNS numeric
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  new_balance numeric;
+BEGIN
+  IF p_amount <= 0 THEN
+    RAISE EXCEPTION 'Amount must be positive';
+  END IF;
+  IF p_user_id IS NULL THEN
+    RAISE EXCEPTION 'User ID is required';
+  END IF;
+  INSERT INTO public.user_wallets (user_id, currency_type, balance, updated_at)
+  VALUES (p_user_id, UPPER(p_currency_type), p_amount, NOW())
+  ON CONFLICT (user_id, currency_type)
+  DO UPDATE SET
+    balance = user_wallets.balance + EXCLUDED.balance,
+    updated_at = NOW()
+  RETURNING balance INTO new_balance;
+  RETURN new_balance;
+END;
+$function$
+```
+
+- **Transactionally safe as a single statement** — the `INSERT ... ON
+  CONFLICT ... DO UPDATE SET balance = user_wallets.balance + EXCLUDED.balance`
+  is one atomic upsert; Postgres serializes concurrent callers on the same
+  `(user_id, currency_type)` row, so there is no lost-update race between
+  two simultaneous credits for the same user/currency.
+- **No idempotency key of its own — now confirmed from the body, not
+  just inferred**: no `reference_id`/`source_event_id` parameter, no
+  ledger/audit insert, nothing that could de-duplicate a retried call.
+  This is a genuine gap (a network timeout where the caller can't tell if
+  the credit landed really can double-credit on retry) — but it is a
+  design/product question (add an idempotency parameter? wrap callers in
+  their own dedup?), not something the 2026-08-29 error-visibility fixes
+  to its two call sites attempted to solve, and still isn't solved here.
+- **`RAISE EXCEPTION` on invalid input is a real Postgres error**,
+  confirming the two call sites' `error` field can legitimately be
+  non-null for reasons beyond "the RPC doesn't exist" (e.g. a caller ever
+  passing `p_amount <= 0` or a null user id) — the same `error` field
+  `sharing-growth.ts`/`onboarding-growth.ts` were fixed to log this session
+  now has a second real reason to fire, not just a network blip.
 
 Both call sites are one-line repository wrappers with matching param
 shapes (`p_user_id, p_currency_type, p_amount`) — a third, distinct param
