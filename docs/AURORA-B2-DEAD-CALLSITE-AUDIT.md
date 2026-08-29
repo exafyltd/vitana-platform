@@ -324,6 +324,23 @@ authoritative risks making the wallet display worse (wrong numbers) rather
 than better (still-missing numbers). This needs a product/eng decision on
 which wallet model is canonical, not a static-analysis-driven patch.
 
+**✅ Partially fixed 2026-08-29 — the silence, not the schema gap.** All
+three `wallet_balances` call sites (`routes/billing.ts`'s `GET /me`,
+`routes/automations.ts`'s `GET /wallet/balance`, and
+`entitlement-service.ts`'s `readWalletBuckets`) now log the RPC error via
+`console.error` when present, instead of silently discarding it (the first
+two didn't even destructure `error`; the third destructured it but only
+ever used it as a boolean short-circuit, never logged). **The underlying
+schema gap is deliberately NOT fixed** — every response still falls back
+to an all-zero wallet exactly as before; which table/column mapping is
+canonical remains the open product/eng decision described above. This
+closes the "indistinguishable from a genuinely empty wallet" observability
+gap only. New tests: `services/gateway/test/routes/
+automations-wallet-balance.test.ts` (new file), `services/gateway/test/
+routes/billing-me-wallet.test.ts` (new file), `services/gateway/test/
+services/entitlement-service.test.ts` (new file — this service had zero
+prior coverage).
+
 ## Addendum 8: `openclaw-bridge`'s Supabase target question, resolved — the service has no live deploy target at all
 
 This doc's own open question #2 asked whether `services/openclaw-bridge`

@@ -197,8 +197,23 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
       readUserSubscription(identity.tenant_id, identity.user_id),
     ]);
 
-    // Wallet snapshot (post-§M three-bucket schema)
-    const { data: wallet } = await repo.fetchWalletBalances(sb(), { tenantId: identity.tenant_id, userId: identity.user_id });
+    // Wallet snapshot (post-§M three-bucket schema).
+    //
+    // wallet_balances does not exist in live Supabase (confirmed via
+    // AURORA-B2-DEAD-CALLSITE-AUDIT.md's addendum — no live table carries
+    // this three-bucket column shape under any name). supabase-js resolves
+    // normally with an {error} field on a "relation does not exist" failure
+    // rather than throwing, so this previously silently returned undefined
+    // and rendered every user's wallet as all-zero with no trace anywhere.
+    // Logging the error (without inventing a substitute table/column
+    // mapping — that's a product/eng decision this fix does not make) at
+    // least makes the failure loud instead of indistinguishable from a
+    // genuinely empty wallet, per this codebase's own "never silence
+    // errors" rule.
+    const { data: wallet, error: walletErr } = await repo.fetchWalletBalances(sb(), { tenantId: identity.tenant_id, userId: identity.user_id });
+    if (walletErr) {
+      console.error(`${LOG_PREFIX} fetchWalletBalances error (wallet will render as all-zero): ${walletErr.message}`);
+    }
 
     // Usage rollup for the 6 metered features (only for current plan).
     // Post rolling-windows migration (20260526100000), Free tier carries

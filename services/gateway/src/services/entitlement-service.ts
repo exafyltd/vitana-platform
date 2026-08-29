@@ -376,6 +376,14 @@ async function readWalletBuckets(
   const sb = client();
   const { data, error } = await repo.fetchWalletBalances(sb, tenantId, userId);
 
+  if (error) {
+    // wallet_balances does not exist in live Supabase (confirmed via
+    // AURORA-B2-DEAD-CALLSITE-AUDIT.md's addendum) — every call here fails
+    // this way today. Logging so the failure is loud instead of
+    // indistinguishable from a genuinely empty wallet; the all-zero
+    // fallback is unchanged.
+    console.error(`[entitlement-service] readWalletBuckets error (buckets will render as all-zero): ${error.message}`);
+  }
   if (error || !data) {
     return { purchased_credits: 0, reward_credits: 0, cash_balance: 0 };
   }

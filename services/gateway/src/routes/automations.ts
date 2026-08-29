@@ -171,7 +171,19 @@ router.get('/wallet/balance', async (req: Request, res: Response) => {
   const supa = await getServiceClient();
   if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
 
-  const { data } = await repo.fetchWalletBalance(supa, tenantId, userId);
+  // wallet_balances does not exist in live Supabase (confirmed via
+  // AURORA-B2-DEAD-CALLSITE-AUDIT.md's addendum). supabase-js resolves
+  // normally with an {error} field on a "relation does not exist" failure
+  // rather than throwing, so this previously silently returned undefined
+  // and rendered every user's balance as all-zero with no trace anywhere.
+  // Logging the error makes the failure loud instead of indistinguishable
+  // from a genuinely empty wallet; the response shape is unchanged — which
+  // substitute table/column mapping is canonical is a product/eng decision
+  // this fix does not make.
+  const { data, error: walletErr } = await repo.fetchWalletBalance(supa, tenantId, userId);
+  if (walletErr) {
+    console.error(`[automations] fetchWalletBalance error (balance will render as all-zero): ${walletErr.message}`);
+  }
 
   return res.json({
     ok: true,
