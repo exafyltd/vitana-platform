@@ -675,7 +675,16 @@ router.post('/rooms/:id/end', async (req: Request, res: Response) => {
       const { data: room } = await repo.fetchLiveRoomTitleTenantUser(supa, roomId);
 
       if (room?.tenant_id) {
-        const { data: attendees } = await repo.fetchLiveRoomAttendeesExcluding(supa, roomId, room.user_id || '');
+        // live_room_attendees does not exist in live Supabase (confirmed
+        // via AURORA-B2-DEAD-CALLSITE-AUDIT.md's Addendum 9) — this always
+        // fails today, so the "check out the summary" notification never
+        // sends. Logging so that's loud instead of indistinguishable from
+        // "nobody attended"; the empty-array fallback (and the underlying
+        // missing-table product decision) is deliberately unchanged.
+        const { data: attendees, error: attendeesErr } = await repo.fetchLiveRoomAttendeesExcluding(supa, roomId, room.user_id || '');
+        if (attendeesErr) {
+          console.warn(`[Notifications] fetchLiveRoomAttendeesExcluding error (room_ended_summary will not send): ${attendeesErr.message}`);
+        }
 
         const attendeeIds = (attendees || []).map((a: any) => a.user_id);
         if (attendeeIds.length > 0) {
@@ -1627,8 +1636,16 @@ router.post('/rooms/:id/sessions', sessionCreateLimiter, async (req: Request, re
       const { data: room } = await repo.fetchLiveRoomTitleTenant(supa, roomId);
 
       if (room?.tenant_id) {
-        // Get attendees who previously joined this room (potential followers)
-        const { data: followers } = await repo.fetchLiveRoomAttendeesExcluding(supa, roomId, hostId);
+        // Get attendees who previously joined this room (potential followers).
+        // live_room_attendees does not exist in live Supabase (confirmed via
+        // AURORA-B2-DEAD-CALLSITE-AUDIT.md's Addendum 9) — this always fails
+        // today, so the "starting soon" follower notification never sends.
+        // Logging so that's loud instead of indistinguishable from "no
+        // followers"; the empty-array fallback is deliberately unchanged.
+        const { data: followers, error: followersErr } = await repo.fetchLiveRoomAttendeesExcluding(supa, roomId, hostId);
+        if (followersErr) {
+          console.warn(`[Notifications] fetchLiveRoomAttendeesExcluding error (live_room_starting will not send): ${followersErr.message}`);
+        }
 
         const followerIds = (followers || []).map((f: any) => f.user_id);
         if (followerIds.length > 0) {

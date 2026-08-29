@@ -421,6 +421,23 @@ meetup notification gaps) are genuine, currently-live silent feature
 breakage a real user would notice as "I never get reminded," not just
 theoretical dead code.
 
+**✅ Partially fixed 2026-08-29 — `live_room_attendees`'s silence, not the
+missing table.** Both `routes/live.ts` call sites (room-ended summary,
+starting-soon follower notify) now destructure `error` from
+`repo.fetchLiveRoomAttendeesExcluding(...)` and log it via `console.warn`
+when present. The empty-array fallback — and therefore the actual
+notifications never sending — is deliberately UNCHANGED; whether this
+feature gets a real table or is retired is still the open product call
+described above. `routes/live.ts` (2300+ lines, no existing test harness)
+is pinned at the source level via a new
+`test/routes/live-attendees-error-logging.test.ts`, matching this
+codebase's established pattern for large/stateful modules impractical to
+fully route-test. `community_meetup_attendance` is left unfixed — unlike
+this one, its notification code doesn't even reach a query result to log
+(the parent table exists but the attendance/RSVP table doesn't, per the
+finding above), so there's no equivalent one-line observability fix
+available without inventing the missing schema.
+
 ## Addendum 10: the remaining 7 gateway-scoped tables read — all already safe or already covered, closing out Addendum 9's list
 
 Finished the call-site read Addendum 9 left open, for the 7 gateway-scoped
