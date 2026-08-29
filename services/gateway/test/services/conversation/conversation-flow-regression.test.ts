@@ -234,8 +234,17 @@ describe('VTID-03646 C — override_v2 delivers, proposes, and asks', () => {
       openDecision: { mode: 'speak', source: 'wake:guided', line: 'Lektion: Atme langsam ein und aus.' },
     });
     expect(d.wakeOpener).toBe('override_v2');
-    expect(d.directive).toContain('Lektion: Atme langsam ein und aus.');
-    expect(d.directive).toMatch(/ONE short utterance/i);
+    // VTID-03797 RE-RECORDED DELIBERATELY. This asserted the lesson line was
+    // embedded VERBATIM and that the directive commanded "ONE short utterance"
+    // — i.e. a verbatim-reproduction directive. That template is the defect:
+    // guided sessions were blocked by Nova 93/93 over 30 days (zero ever
+    // spoke), across three topics and two languages, while an ordinary control
+    // in the same run completed its turn. This test's OWN invariant — guided
+    // does not get the three-beat proposal contract — is unchanged and still
+    // asserted on the two lines below.
+    expect(d.directive).toMatch(/Compose that sentence yourself/i);
+    expect(d.directive).toMatch(/ONE short, warm sentence/i);
+    expect(d.directive).not.toContain('Lektion: Atme langsam ein und aus.');
     expect(d.directive).not.toMatch(/NEXT STEP/);
     expect(d.directive).not.toMatch(/CONFIRMATION/);
     // VTID-03674's removed wrapper must not come back by any route.

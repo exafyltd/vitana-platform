@@ -1,0 +1,112 @@
+VTID-03797 — commands.log
+==========================
+
+## 1. Determinism established (30d)
+
+  (Supabase) guided sessions = those with guided_topic_audio_bridge_sent
+  -> guided_sessions_30d = 93
+  -> hit_nova_validation  = 93   (100%)
+  -> ever_spoke_or_completed_turn = 0
+
+Contrast: override_v2 NON-guided = 26 sessions, 13 clean (50%); ambient
+(none) = 268 sessions, 92 blocked (~34%).
+
+## 2. Live isolation probe (this VTID, against staging)
+
+  node probe.mjs   (5 real sessions, e2e-test@vitana.dev, staging)
+  guided T001 de   BLOCKED  audio=2   err=2
+  guided T001 en   BLOCKED  audio=2   err=2
+  guided T100 de   BLOCKED  audio=2   err=2
+  guided T200 de   BLOCKED  audio=2   err=2
+  ORDINARY de      WORKS    audio=493 err=0
+  => 3 topics x 2 languages all blocked; control completed its turn.
+     Structural, not topic content, not language.
+  (outputs/live-probe-before-fix.json)
+
+## 3. What nova_validation actually is
+
+$ grep -n "nova_validation" src/orb/live/upstream/nova-sonic-live-client.ts
+-> :80  if (name === 'ValidationException' || status === 400) return 'nova_validation';
+   i.e. ANY ValidationException or HTTP 400 maps to this label.
+
+$ full diagnostic (untruncated) for the blocked session
+-> "RequestId=... : Error(s):\nError 1 : This request has been blocked by our
+   content filters."  — in THIS case genuinely a guardrail, no field detail.
+
+Also ruled out oversize: DEFAULT_INSTRUCTION_CHUNK_BYTES = 4_000
+(nova-sonic-config.ts:152) chunks the system instruction, and the greeting is
+only 319 chars.
+
+## 4. The guided-only difference in the greeting payload
+
+$ read src/services/conversation/compute-greeting-decision.ts
+-> wakeTrigger  (non-guided): "...Compose the wording yourself ... do not
+                               recite the lead word for word"      -> passes
+-> guidedTrigger (guided):    "Open by saying this prepared line: "<safe>"
+                               ... do not turn it into something else"
+                                                                   -> 0/93
+A verbatim-reproduction directive fenced by prohibitions. Matches the
+Vertex-worked / Nova-broke report: Bedrock guardrail, no Vertex equivalent.
+VTID-03674 removed the HARSHER wrapper but replaced it with a milder VERBATIM
+one, which is why that fix did not move the number.
+
+## 5. SECOND DEFECT — two copies, and the live path was the other one
+
+$ grep -n "guidedTrigger" src/services/conversation/compute-greeting-decision.ts
+-> ~705 tryGuidedTopicRung   (copy A)
+-> ~1082 rung 8              (copy B)
+Byte-identical copies under a comment claiming the ladders "can never drift
+apart on this again".
+
+PRODUCTION USES COPY A: every blocked session's greeting_sent carries
+`guided_topic_outranks_passive_rungs: true`, set only by tryGuidedTopicRung.
+Proven live: after editing copy B only, `jest -t "guided-teach"` still PASSED
+against the OLD string — the edit was invisible to the live path.
+
+## 6. Fix
+
+Extracted ONE `buildGuidedTopicOpenTrigger()`; both ladders call it. Template
+describes the opening and interpolates NOTHING (no topic title, no practice
+target, no per-language text) — the GUIDE MODE block already names them. That
+is what makes it correct for all 254 topics and every locale with no table to
+keep in sync.
+
+$ npx tsc --noEmit                      -> clean
+$ grep -rn "do not turn it into something else" src/  -> only inside a comment
+
+## 7. Tests re-recorded deliberately (4 assertions, 2 files)
+
+Each pinned the OLD verbatim behaviour as correct; each now asserts the NEW
+invariant instead (line must NOT be embedded), with reasoning inline:
+  - golden: rung 8 guided-teach   (/ONE short utterance/ -> compositional +
+                                   explicit not.toMatch of both old phrases)
+  - golden: normal ladder collision  (toContain -> not.toContain)
+  - golden: safe-fast ladder collision (toContain -> not.toContain)
+            + NEW anti-drift assertion: both ladders emit the IDENTICAL
+              directive (toBe), so copy-drift cannot recur
+  - conversation-flow-regression: guided does not get three-beat contract
+Every pre-existing invariant in those tests (guided WINS the collision, no
+NEXT STEP/CONFIRMATION, no fluent/translate, briefing not stamped) is
+unchanged and still passing.
+
+$ npx jest test/services/conversation/compute-greeting-decision.golden.test.ts
+PASS -- 59/59, 1 snapshot re-recorded (only the guided directive changed;
+        confirmed the old wording is gone from the .snap and the new is in)
+
+## 8. Full verification
+
+$ npx tsc --noEmit   -> clean            (outputs/tsc-noemit.txt)
+$ npx jest           -> 728/729 suites (1 pre-existing skip),
+                        13,584/13,619 passing, 44/44 snapshots, 0 failures
+                        (outputs/jest-full-suite.txt)
+
+## 9. Still to do (not claimed as done)
+
+Deploy + live re-run. Size was already disproven (VTID-03795) and this changes
+ONLY the greeting directive, so the next guided session is a clean single-
+variable isolation either way.
+
+Separately flagged, NOT fixed here: NOVA_SONIC_SUPPORTED_LANGUAGES =
+['en','de','fr','es'] (nova-sonic-config.ts:71). This fix is language-
+independent by construction but cannot alone deliver 11 languages; the
+cascaded path (cascaded-config.ts) is unverified in this VTID.

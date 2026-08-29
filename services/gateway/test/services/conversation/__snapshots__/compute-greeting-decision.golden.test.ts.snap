@@ -1200,11 +1200,12 @@ exports[`computeGreetingDecision — rung golden snapshots rung 8: override_v2 g
     "decision_id": null,
     "guided_topic_outranks_passive_rungs": true,
     "lang": "en",
-    "prompt_len": 258,
+    "prompt_len": 364,
     "wake_opener": "override_v2",
   },
-  "directive": "Open by saying this prepared line, in the user's own language: "Lektion: Atme langsam ein und aus."
-Keep it to ONE short utterance. Do not add a greeting before it, do not add a question after it, and do not turn it into something else. Then stop and listen.",
+  "directive": "The person has just listened to a short pre-recorded audio lesson on the topic named in the GUIDE MODE section, so they have already heard it.
+Open with ONE short, warm sentence in the user's own language: acknowledge that the lesson just finished and invite any questions they have about it.
+Compose that sentence yourself in your own words. Then stop and listen.",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,
