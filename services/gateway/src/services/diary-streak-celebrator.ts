@@ -78,8 +78,20 @@ export async function celebrateDiaryStreak(
     }
 
     // Wallet credit — mirror the autopilot onboarding pattern.
+    //
+    // credit_wallet is best-effort — wallet may dedup on p_source_event_id
+    // (idempotent) or be temporarily unavailable. Streak event/notification
+    // still fire regardless (see AURORA-B3-RPC-PARITY-INVENTORY.md's
+    // 2026-08-29 addendum: whether the notification should keep claiming
+    // "credited" when this RPC fails is a product decision, not fixed
+    // here). What IS fixed here: supabase-js's .rpc() resolves normally
+    // with an {error} field on a Postgres-level failure — it does NOT
+    // throw — so the `catch` below was previously unreachable for
+    // credit_wallet not existing, and the failure was completely invisible
+    // in logs. Checking `error` explicitly makes it loud, per this
+    // codebase's own "never silence errors" rule.
     try {
-      await repo.creditWallet(admin, {
+      const { error: walletErr } = await repo.creditWallet(admin, {
         p_tenant_id: tenantId,
         p_user_id: userId,
         p_amount: tier.reward,
@@ -88,10 +100,11 @@ export async function celebrateDiaryStreak(
         p_source_event_id: `diary_streak_${userId}_${tier.days}_${new Date().toISOString().slice(0, 10)}`,
         p_description: `Diary ${tier.days}-day streak`,
       });
+      if (walletErr) {
+        console.error(`[diary-streak] credit_wallet RPC returned an error: ${walletErr.message}`);
+      }
     } catch (walletErr: any) {
-      // credit_wallet is best-effort — wallet may dedup on
-      // p_source_event_id (idempotent) or be temporarily unavailable.
-      // Streak event still fires regardless.
+      // Network-layer failure (the only case .rpc() actually rejects for).
       console.warn(`[diary-streak] credit_wallet failed: ${walletErr?.message ?? walletErr}`);
     }
 
