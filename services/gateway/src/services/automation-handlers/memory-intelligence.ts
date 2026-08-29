@@ -17,6 +17,7 @@ import {
 } from '../conversation/new-facts-detector';
 import { SIGNAL_GREETING_FACTS, parseFacts } from '../conversation/greeting-facts-ledger';
 import { getUserTimezone, userLocalHour } from '../daily-pace-service';
+import * as repo from './memory-intelligence-repository';
 
 // ── AP-0901: Memory-Informed Matching ───────────────────────
 // On a positive match reaction, look up the user's most recent self-facts
@@ -28,22 +29,10 @@ async function runMemoryInformedMatching(ctx: AutomationContext) {
 
   const { supabase, tenantId } = ctx;
 
-  const { data: match } = await supabase
-    .from('daily_matches')
-    .select('id')
-    .eq('id', matchId)
-    .maybeSingle();
+  const { data: match } = await repo.fetchDailyMatchById(supabase, matchId);
   if (!match) return { usersAffected: 0, actionsTaken: 0 };
 
-  const { data: facts } = await supabase
-    .from('memory_facts')
-    .select('fact_value')
-    .eq('tenant_id', tenantId)
-    .eq('user_id', userId)
-    .eq('entity', 'self')
-    .is('superseded_at', null)
-    .order('extracted_at', { ascending: false })
-    .limit(3);
+  const { data: facts } = await repo.fetchRecentSelfFactValues(supabase, tenantId, userId, 3);
 
   if (!facts?.length) return { usersAffected: 0, actionsTaken: 0 };
 
@@ -76,12 +65,7 @@ async function runFactExtractionAudit(ctx: AutomationContext) {
   const { supabase, tenantId } = ctx;
   const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
 
-  const { count: factCount } = await supabase
-    .from('memory_facts')
-    .select('id', { count: 'exact', head: true })
-    .eq('tenant_id', tenantId)
-    .eq('user_id', userId)
-    .gte('extracted_at', tenMinutesAgo);
+  const { count: factCount } = await repo.countRecentFactsForUser(supabase, tenantId, userId, tenMinutesAgo);
 
   if ((factCount || 0) > 0) return { usersAffected: 0, actionsTaken: 0 };
 
@@ -111,14 +95,7 @@ async function runSemanticMemoryContextForAutopilot(ctx: AutomationContext) {
 
   const { supabase, tenantId } = ctx;
 
-  const { data: facts } = await supabase
-    .from('memory_facts')
-    .select('fact_key, fact_value')
-    .eq('tenant_id', tenantId)
-    .eq('user_id', userId)
-    .is('superseded_at', null)
-    .order('extracted_at', { ascending: false })
-    .limit(CONTEXT_FACTS_LIMIT);
+  const { data: facts } = await repo.fetchRecentActiveFacts(supabase, tenantId, userId, CONTEXT_FACTS_LIMIT);
 
   ctx.run.metadata = {
     ...ctx.run.metadata,
@@ -139,11 +116,7 @@ async function runKnowledgeBaseContextForSuggestions(ctx: AutomationContext) {
 
   const { supabase } = ctx;
 
-  const { data: docs } = await supabase
-    .from('knowledge_docs')
-    .select('id, title, path')
-    .overlaps('tags', topicTags)
-    .limit(1);
+  const { data: docs } = await repo.fetchKnowledgeDocByTags(supabase, topicTags, 1);
 
   if (!docs?.length) return { usersAffected: 0, actionsTaken: 0 };
 
@@ -170,12 +143,7 @@ async function runRoutinePatternExtraction(ctx: AutomationContext) {
   const { supabase } = ctx;
   const sinceIso = new Date(Date.now() - ROUTINE_EXTRACT_LOOKBACK_DAYS * 86_400_000).toISOString();
 
-  const { data: rows, error } = await supabase
-    .from('calendar_events')
-    .select('user_id')
-    .gte('start_time', sinceIso)
-    .not('user_id', 'is', null)
-    .limit(ROUTINE_EXTRACT_EVENT_SCAN_LIMIT);
+  const { data: rows, error } = await repo.fetchCalendarEventUserIdsSince(supabase, sinceIso, ROUTINE_EXTRACT_EVENT_SCAN_LIMIT);
 
   if (error) {
     ctx.log(`calendar_events scan failed: ${error.message}`);
@@ -237,13 +205,7 @@ async function runDailyLearningDigest(ctx: AutomationContext) {
   const sinceIso = new Date(nowMs - LEARNING_DIGEST_WINDOW_MS).toISOString();
 
   // One query shrinks the fan-out to users who actually learned something.
-  const { data: factRows, error } = await supabase
-    .from('memory_facts')
-    .select('user_id')
-    .eq('tenant_id', tenantId)
-    .is('superseded_at', null)
-    .gt('extracted_at', sinceIso)
-    .limit(5000);
+  const { data: factRows, error } = await repo.fetchUserIdsWithRecentFacts(supabase, tenantId, sinceIso, 5000);
   if (error) {
     ctx.log(`memory_facts scan failed: ${error.message}`);
     return { usersAffected: 0, actionsTaken: 0 };
@@ -268,13 +230,7 @@ async function runDailyLearningDigest(ctx: AutomationContext) {
       if (userLocalHour(nowUtc, tz) !== LEARNING_DIGEST_LOCAL_HOUR) continue;
 
       // Guard 1: greeting already surfaced learning in a session today (3e wins).
-      const { data: ledgerRow } = await supabase
-        .from('user_assistant_state')
-        .select('value')
-        .eq('tenant_id', tenantId)
-        .eq('user_id', userId)
-        .eq('signal_name', SIGNAL_GREETING_FACTS)
-        .maybeSingle();
+      const { data: ledgerRow } = await repo.fetchAssistantStateSignal(supabase, tenantId, userId, SIGNAL_GREETING_FACTS);
       const spokenAt = ledgerRow
         ? parseFacts((ledgerRow as { value: unknown }).value).facts_learned?.spoken_at
         : undefined;
@@ -328,12 +284,7 @@ const ROUTINE_KIND_TO_PREF: Record<string, { factKey: string; metaField: string 
 async function runBehaviorPreferenceInference(ctx: AutomationContext) {
   const { supabase, tenantId } = ctx;
 
-  const { data: routines, error } = await supabase
-    .from('user_routines')
-    .select('user_id, routine_kind, confidence, metadata')
-    .gte('confidence', BEHAVIOR_PREF_MIN_ROUTINE_CONFIDENCE)
-    .order('confidence', { ascending: false })
-    .limit(3000);
+  const { data: routines, error } = await repo.fetchHighConfidenceRoutines(supabase, BEHAVIOR_PREF_MIN_ROUTINE_CONFIDENCE, 3000);
   if (error) {
     ctx.log(`user_routines scan failed: ${error.message}`);
     return { usersAffected: 0, actionsTaken: 0 };
@@ -354,13 +305,7 @@ async function runBehaviorPreferenceInference(ctx: AutomationContext) {
   if (userIds.length === 0) return { usersAffected: 0, actionsTaken: 0 };
 
   // Skip identical current facts — no daily supersession churn.
-  const { data: existingRows } = await supabase
-    .from('memory_facts')
-    .select('user_id, fact_key, fact_value')
-    .eq('tenant_id', tenantId)
-    .in('user_id', userIds)
-    .like('fact_key', 'user_preference_%')
-    .is('superseded_at', null);
+  const { data: existingRows } = await repo.fetchExistingPreferenceFacts(supabase, tenantId, userIds);
   const existing = new Map<string, string>();
   for (const row of (existingRows || []) as Array<{ user_id: string; fact_key: string; fact_value: string }>) {
     existing.set(`${row.user_id}:${row.fact_key}`, row.fact_value);
@@ -372,7 +317,7 @@ async function runBehaviorPreferenceInference(ctx: AutomationContext) {
     let wroteAny = false;
     for (const [factKey, value] of derived.get(userId)!) {
       if (existing.get(`${userId}:${factKey}`) === value) continue;
-      const { error: rpcErr } = await supabase.rpc('write_fact', {
+      const { error: rpcErr } = await repo.rpcWriteFact(supabase, {
         p_tenant_id: tenantId,
         p_user_id: userId,
         p_fact_key: factKey,
@@ -446,13 +391,7 @@ async function runRelationshipGraphProjection(ctx: AutomationContext) {
   const usersTouched = new Set<string>();
 
   // ---- 1. Disclosed persons from memory_facts ----
-  const { data: facts, error: factsErr } = await supabase
-    .from('memory_facts')
-    .select('user_id, fact_key, fact_value, extracted_at')
-    .eq('tenant_id', tenantId)
-    .is('superseded_at', null)
-    .like('fact_key', '%name%')
-    .limit(GRAPH_PROJECT_MAX_FACTS_PER_RUN);
+  const { data: facts, error: factsErr } = await repo.fetchNameFactsForGraphProjection(supabase, tenantId, GRAPH_PROJECT_MAX_FACTS_PER_RUN);
   if (factsErr) {
     ctx.log(`person-fact scan failed: ${factsErr.message}`);
   }
@@ -465,32 +404,21 @@ async function runRelationshipGraphProjection(ctx: AutomationContext) {
 
       // Node: one 'person' node per (owner, name) — owner-scoped so two
       // users' "Maria" never merge.
-      const { data: existingNode } = await supabase
-        .from('relationship_nodes')
-        .select('id')
-        .eq('tenant_id', tenantId)
-        .eq('node_type', 'person')
-        .eq('title', name)
-        .eq('metadata->>owner_user_id', fact.user_id)
-        .maybeSingle();
+      const { data: existingNode } = await repo.fetchExistingPersonNode(supabase, tenantId, name, fact.user_id);
       let nodeId = (existingNode as { id?: string } | null)?.id ?? null;
       if (!nodeId) {
-        const { data: inserted, error: insErr } = await supabase
-          .from('relationship_nodes')
-          .insert({
-            tenant_id: tenantId,
-            node_type: 'person',
-            title: name,
-            domain: 'community',
-            metadata: {
-              owner_user_id: fact.user_id,
-              relation,
-              fact_key: fact.fact_key,
-              origin: 'memory_facts_projection',
-            },
-          })
-          .select('id')
-          .single();
+        const { data: inserted, error: insErr } = await repo.insertPersonNode(supabase, {
+          tenant_id: tenantId,
+          node_type: 'person',
+          title: name,
+          domain: 'community',
+          metadata: {
+            owner_user_id: fact.user_id,
+            relation,
+            fact_key: fact.fact_key,
+            origin: 'memory_facts_projection',
+          },
+        });
         if (insErr || !inserted) {
           ctx.log(`node insert failed for ${fact.fact_key}: ${insErr?.message}`);
           continue;
@@ -509,23 +437,11 @@ async function runRelationshipGraphProjection(ctx: AutomationContext) {
       // enter the connected set. The REAL relation (spouse/friend/…)
       // travels in metadata.relation; last_interaction_at tracks the fact's
       // recency so Loop 13's decay stays honest.
-      const { data: existingEdge } = await supabase
-        .from('relationship_edges')
-        .select('id')
-        .eq('tenant_id', tenantId)
-        .eq('source_type', 'person')
-        .eq('source_id', fact.user_id)
-        .eq('target_type', 'person')
-        .eq('target_id', nodeId)
-        .eq('edge_type', 'suggested')
-        .maybeSingle();
+      const { data: existingEdge } = await repo.fetchExistingSuggestedEdge(supabase, tenantId, fact.user_id, nodeId);
       if (existingEdge) {
-        await supabase
-          .from('relationship_edges')
-          .update({ last_interaction_at: fact.extracted_at || nowIso, updated_at: nowIso })
-          .eq('id', (existingEdge as { id: string }).id);
+        await repo.updateEdgeLastInteraction(supabase, (existingEdge as { id: string }).id, fact.extracted_at || nowIso, nowIso);
       } else {
-        const { error: edgeErr } = await supabase.from('relationship_edges').insert({
+        const { error: edgeErr } = await repo.insertRelationshipEdge(supabase, {
           tenant_id: tenantId,
           source_type: 'person',
           source_id: fact.user_id,
@@ -549,10 +465,7 @@ async function runRelationshipGraphProjection(ctx: AutomationContext) {
   }
 
   // ---- 2. Mutual follows → person↔person 'connected' edges ----
-  const { data: follows, error: followErr } = await supabase
-    .from('user_follows')
-    .select('follower_id, following_id')
-    .limit(GRAPH_PROJECT_MAX_FOLLOWS);
+  const { data: follows, error: followErr } = await repo.fetchFollowPairs(supabase, GRAPH_PROJECT_MAX_FOLLOWS);
   if (followErr) {
     ctx.log(`user_follows scan failed: ${followErr.message}`);
   } else {
@@ -567,18 +480,9 @@ async function runRelationshipGraphProjection(ctx: AutomationContext) {
       if (a > b) continue; // handle each mutual pair once; write both directions below
       for (const [src, tgt] of [[a, b], [b, a]] as Array<[string, string]>) {
         try {
-          const { data: existing } = await supabase
-            .from('relationship_edges')
-            .select('id')
-            .eq('tenant_id', tenantId)
-            .eq('source_type', 'person')
-            .eq('source_id', src)
-            .eq('target_type', 'person')
-            .eq('target_id', tgt)
-            .eq('edge_type', 'connected')
-            .maybeSingle();
+          const { data: existing } = await repo.fetchExistingConnectedEdge(supabase, tenantId, src, tgt);
           if (existing) continue;
-          const { error: edgeErr } = await supabase.from('relationship_edges').insert({
+          const { error: edgeErr } = await repo.insertRelationshipEdge(supabase, {
             tenant_id: tenantId,
             source_type: 'person',
             source_id: src,
@@ -621,13 +525,7 @@ const EMBED_BACKFILL_BATCH = 100;
 async function runMemoryEmbeddingBackfill(ctx: AutomationContext) {
   const { supabase, tenantId } = ctx;
 
-  const { data: rows, error } = await supabase
-    .from('memory_facts')
-    .select('id, fact_key, fact_value')
-    .eq('tenant_id', tenantId)
-    .is('superseded_at', null)
-    .is('embedding', null)
-    .limit(EMBED_BACKFILL_BATCH);
+  const { data: rows, error } = await repo.fetchFactsMissingEmbedding(supabase, tenantId, EMBED_BACKFILL_BATCH);
   if (error) {
     ctx.log(`backlog scan failed: ${error.message}`);
     return { usersAffected: 0, actionsTaken: 0 };
@@ -657,14 +555,11 @@ async function runMemoryEmbeddingBackfill(ctx: AutomationContext) {
   for (let i = 0; i < rows.length; i++) {
     const vec = batch.embeddings[i];
     if (!Array.isArray(vec)) continue;
-    const { error: upErr } = await supabase
-      .from('memory_facts')
-      .update({
-        embedding: JSON.stringify(vec),
-        embedding_model: batch.model || 'text-embedding-3-small',
-        embedding_updated_at: nowIso,
-      })
-      .eq('id', (rows[i] as { id: string }).id);
+    const { error: upErr } = await repo.updateFactEmbedding(supabase, (rows[i] as { id: string }).id, {
+      embedding: JSON.stringify(vec),
+      embedding_model: batch.model || 'text-embedding-3-small',
+      embedding_updated_at: nowIso,
+    });
     if (upErr) {
       ctx.log(`embedding store failed for ${(rows[i] as { id: string }).id}: ${upErr.message}`);
       continue;
@@ -705,12 +600,7 @@ async function runUserModelSynthesis(ctx: AutomationContext) {
   const { supabase, tenantId } = ctx;
   const runStartMs = Date.now();
 
-  const { data: factRows, error } = await supabase
-    .from('memory_facts')
-    .select('user_id')
-    .eq('tenant_id', tenantId)
-    .is('superseded_at', null)
-    .limit(10000);
+  const { data: factRows, error } = await repo.fetchAllActiveFactUserIds(supabase, tenantId, 10000);
   if (error) {
     ctx.log(`fact scan failed: ${error.message}`);
     return { usersAffected: 0, actionsTaken: 0 };
@@ -769,13 +659,7 @@ async function runHealthCorrelationInsights(ctx: AutomationContext) {
   const now = Date.now();
   const since14d = new Date(now - 14 * 86_400_000).toISOString().slice(0, 10);
 
-  const { data: scoreRows, error } = await supabase
-    .from('vitana_index_scores')
-    .select('user_id, date, score_sleep, score_nutrition, score_exercise, score_hydration, score_mental')
-    .eq('tenant_id', tenantId)
-    .gte('date', since14d)
-    .order('date', { ascending: true })
-    .limit(10000);
+  const { data: scoreRows, error } = await repo.fetchRecentIndexScores(supabase, tenantId, since14d, 10000);
   if (error) {
     ctx.log(`index scan failed: ${error.message}`);
     return { usersAffected: 0, actionsTaken: 0 };
@@ -789,7 +673,7 @@ async function runHealthCorrelationInsights(ctx: AutomationContext) {
   }
 
   const writeInsight = async (userId: string, key: string, value: string) => {
-    const { error: rpcErr } = await supabase.rpc('write_fact', {
+    const { error: rpcErr } = await repo.rpcWriteFact(supabase, {
       p_tenant_id: tenantId,
       p_user_id: userId,
       p_fact_key: key,
@@ -843,11 +727,7 @@ async function runHealthCorrelationInsights(ctx: AutomationContext) {
   // R2 — diary lapse: entries in the previous week but none in the last one.
   const since7dIso = new Date(now - 7 * 86_400_000).toISOString();
   const since14dIso = new Date(now - 14 * 86_400_000).toISOString();
-  const { data: diaryRows } = await supabase
-    .from('diary_entries')
-    .select('user_id, created_at')
-    .gte('created_at', since14dIso)
-    .limit(5000);
+  const { data: diaryRows } = await repo.fetchRecentDiaryEntries(supabase, since14dIso, 5000);
   const diaryByUser = new Map<string, { recent: number; prior: number }>();
   for (const row of (diaryRows || []) as Array<{ user_id: string; created_at: string }>) {
     if (!row.user_id) continue;
@@ -901,13 +781,7 @@ async function runOwnPostMemoryCapture(ctx: AutomationContext) {
   const { supabase, tenantId } = ctx;
   const sinceIso = new Date(Date.now() - OWN_POST_CAPTURE_WINDOW_MS).toISOString();
 
-  const { data: posts, error } = await supabase
-    .from('profile_posts')
-    .select('id, user_id, content, created_at')
-    .gte('created_at', sinceIso)
-    .neq('moderation_status', 'rejected')
-    .order('created_at', { ascending: true })
-    .limit(OWN_POST_CAPTURE_MAX_PER_RUN);
+  const { data: posts, error } = await repo.fetchRecentPostsForCapture(supabase, sinceIso, OWN_POST_CAPTURE_MAX_PER_RUN);
   if (error) {
     ctx.log(`profile_posts scan failed: ${error.message}`);
     return { usersAffected: 0, actionsTaken: 0 };
@@ -920,11 +794,7 @@ async function runOwnPostMemoryCapture(ctx: AutomationContext) {
 
   // Dedup against posts already mirrored (overlap window re-scans them).
   const postIds = candidates.map((p) => p.id);
-  const { data: existingRows } = await supabase
-    .from('memory_items')
-    .select('content_json')
-    .eq('tenant_id', tenantId)
-    .filter('content_json->>post_id', 'in', `(${postIds.join(',')})`);
+  const { data: existingRows } = await repo.fetchMirroredPostIds(supabase, tenantId, postIds);
   const alreadyMirrored = new Set(
     ((existingRows || []) as Array<{ content_json: any }>)
       .map((r) => r.content_json?.post_id)
