@@ -420,3 +420,32 @@ hypothesis rather than leaving three unexplained negative deltas.
 
 Criteria 1 and 3 are unchanged from the sections above — this addendum
 only advances criterion 2, and only the row-count half of it.
+
+## Addendum, 2026-08-29 — spot-check confirms CDC is still down, unchanged root cause
+
+Re-checked the two highest-churn tables from §1's original table via the
+same RDS Data API path (`oasis_events`, `user_notifications`), to confirm
+whether anything about the standing blocker (Supabase-dashboard Supavisor
+fix, outside this session's reach — criterion 4 above) had changed in the
+two days since the 2026-08-28 addendum.
+
+| Table | Aurora (frozen, exact) | Supabase (live, exact) | gap | gap on 2026-08-28 |
+|---|---:|---:|---:|---:|
+| `oasis_events` | 466,654 | 510,474 | **43,820** | 43,044 |
+| `user_notifications` | 63,399 | 69,386 | **5,987** | 5,987 |
+
+**Aurora's counts are byte-identical to the 2026-08-28 addendum's own
+recorded values** — the strongest evidence yet that CDC really is fully
+stopped, not merely slow: a live-but-lagging pipe would show *some*
+Aurora-side movement over two days, and shows none. The gap growth itself
+is unremarkable and consistent with normal day-to-day write-volume
+variance (`oasis_events` grew far faster 08-27→08-28 than 08-28→08-29;
+`user_notifications` didn't grow at all in this window, plausibly just a
+quiet stretch, not investigated further).
+
+**Nothing about the root cause or the fix action has changed.** No AWS
+console/CLI access exists from this session to touch the DMS replication
+instance's VPC egress or the Supabase-dashboard Supavisor pooler/role
+setting that §1 already identified as the two blocking pieces — this
+addendum only re-confirms the blocker is still exactly where it was, so
+nobody re-diagnoses from scratch on the next pass.
