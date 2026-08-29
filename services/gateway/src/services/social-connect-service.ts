@@ -18,6 +18,7 @@
  */
 
 import { SupabaseClient } from '@supabase/supabase-js';
+import * as repo from './social-connect-repository';
 
 const APP_URL = process.env.APP_URL || 'https://vitana.app';
 const GATEWAY_URL = process.env.GATEWAY_PUBLIC_URL || process.env.APP_URL || 'https://vitana.app';
@@ -558,30 +559,26 @@ export async function storeSocialConnection(
     ? new Date(Date.now() + tokens.expires_in * 1000).toISOString()
     : null;
 
-  const { data, error } = await supabase
-    .from('social_connections')
-    .upsert({
-      tenant_id: tenantId,
-      user_id: userId,
-      provider,
-      provider_user_id: profile.provider_user_id,
-      provider_username: profile.username,
-      display_name: profile.display_name,
-      avatar_url: profile.avatar_url,
-      profile_url: profile.profile_url,
-      access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token || null,
-      token_expires_at: tokenExpiresAt,
-      scopes: PROVIDER_CONFIGS[provider].scopes,
-      profile_data: profile.raw,
-      enrichment_status: 'pending',
-      connected_at: new Date().toISOString(),
-      disconnected_at: null,
-      is_active: true,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'tenant_id,user_id,provider' })
-    .select('id')
-    .single();
+  const { data, error } = await repo.upsertSocialConnection(supabase, {
+    tenant_id: tenantId,
+    user_id: userId,
+    provider,
+    provider_user_id: profile.provider_user_id,
+    provider_username: profile.username,
+    display_name: profile.display_name,
+    avatar_url: profile.avatar_url,
+    profile_url: profile.profile_url,
+    access_token: tokens.access_token,
+    refresh_token: tokens.refresh_token || null,
+    token_expires_at: tokenExpiresAt,
+    scopes: PROVIDER_CONFIGS[provider].scopes,
+    profile_data: profile.raw,
+    enrichment_status: 'pending',
+    connected_at: new Date().toISOString(),
+    disconnected_at: null,
+    is_active: true,
+    updated_at: new Date().toISOString(),
+  });
 
   if (error) {
     console.error(`[SocialConnect] Store connection error:`, error.message);
@@ -599,16 +596,7 @@ export async function disconnectSocialAccount(
   userId: string,
   provider: SocialProvider,
 ): Promise<{ ok: boolean; error?: string }> {
-  const { error } = await supabase
-    .from('social_connections')
-    .update({
-      is_active: false,
-      disconnected_at: new Date().toISOString(),
-      access_token: null,
-      refresh_token: null,
-    })
-    .eq('user_id', userId)
-    .eq('provider', provider);
+  const { error } = await repo.deactivateSocialConnection(supabase, userId, provider, new Date().toISOString());
 
   if (error) return { ok: false, error: error.message };
   return { ok: true };
@@ -629,12 +617,7 @@ export async function getUserConnections(
   enrichment_status: string;
   connected_at: string;
 }>> {
-  const { data } = await supabase
-    .from('social_connections')
-    .select('provider, provider_username, display_name, avatar_url, profile_url, enrichment_status, connected_at')
-    .eq('user_id', userId)
-    .eq('is_active', true)
-    .order('connected_at', { ascending: false });
+  const { data } = await repo.fetchUserActiveConnections(supabase, userId);
 
   return (data || []).map((c: any) => ({
     provider: c.provider,
@@ -673,28 +656,19 @@ export async function enrichProfileFromSocial(
 ): Promise<{ ok: boolean; enrichments: string[]; error?: string }> {
   const enrichments: string[] = [];
 
-  const { data: conn } = await supabase
-    .from('social_connections')
-    .select('*')
-    .eq('id', connectionId)
-    .eq('user_id', userId)
-    .maybeSingle();
+  const { data: conn } = await repo.fetchConnectionById(supabase, connectionId, userId);
 
   if (!conn || !conn.is_active) {
     return { ok: false, enrichments, error: 'Connection not found or inactive' };
   }
 
-  await supabase.from('social_connections')
-    .update({ enrichment_status: 'enriching', updated_at: new Date().toISOString() })
-    .eq('id', connectionId);
+  await repo.updateConnectionEnrichmentStatus(supabase, connectionId, 'enriching', new Date().toISOString());
 
   try {
     // ── 1. Fetch fresh profile ──────────────────────────────────
     const profile = await fetchSocialProfile(conn.provider, conn.access_token);
     if (!profile) {
-      await supabase.from('social_connections')
-        .update({ enrichment_status: 'failed', updated_at: new Date().toISOString() })
-        .eq('id', connectionId);
+      await repo.updateConnectionEnrichmentStatus(supabase, connectionId, 'failed', new Date().toISOString());
       return { ok: false, enrichments, error: 'Failed to fetch social profile' };
     }
 
@@ -702,11 +676,7 @@ export async function enrichProfileFromSocial(
     const media = await fetchProviderMedia(conn.provider, conn.access_token);
 
     // ── 3. Get current Vitana profile ───────────────────────────
-    const { data: vitanaUser } = await supabase
-      .from('app_users')
-      .select('display_name, avatar_url, bio')
-      .eq('user_id', userId)
-      .maybeSingle();
+    const { data: vitanaUser } = await repo.fetchAppUserProfileFields(supabase, userId);
 
     const profileUpdates: Record<string, string> = {};
 
@@ -731,7 +701,7 @@ export async function enrichProfileFromSocial(
     // Apply profile updates
     if (Object.keys(profileUpdates).length > 0) {
       profileUpdates.updated_at = new Date().toISOString();
-      await supabase.from('app_users').update(profileUpdates).eq('user_id', userId);
+      await repo.updateAppUserProfile(supabase, userId, profileUpdates);
     }
 
     // ── 7. Store ALL scraped data as memory facts ───────────────
@@ -760,13 +730,13 @@ export async function enrichProfileFromSocial(
     }
 
     for (const fact of facts) {
-      await supabase.from('memory_facts').upsert({
+      await repo.upsertMemoryFactSimple(supabase, {
         user_id: userId,
         key: fact.key,
         value: fact.value,
         source: `social_${conn.provider}`,
         updated_at: new Date().toISOString(),
-      }, { onConflict: 'user_id,key' });
+      });
     }
     if (facts.length > 0) enrichments.push('memory_facts');
 
@@ -774,32 +744,32 @@ export async function enrichProfileFromSocial(
     const extractedTopics = extractInterestsFromProfile(profile, media);
     if (extractedTopics.length > 0) {
       for (const topic of extractedTopics) {
-        await supabase.from('user_topic_profile').upsert({
+        await repo.upsertUserTopicProfile(supabase, {
           tenant_id: tenantId,
           user_id: userId,
           topic_key: topic.key,
           score: topic.score,
           source_weights: { [`social_${conn.provider}`]: topic.score },
           updated_at: new Date().toISOString(),
-        }, { onConflict: 'tenant_id,user_id,topic_key' });
+        });
       }
       enrichments.push(`topics:${extractedTopics.map(t => t.key).join(',')}`);
     }
 
     // ── 9. Store media URLs for gallery ─────────────────────────
     if (media.length > 0) {
-      await supabase.from('memory_facts').upsert({
+      await repo.upsertMemoryFactSimple(supabase, {
         user_id: userId,
         key: `social_media_${conn.provider}`,
         value: JSON.stringify(media.slice(0, 20)), // top 20 media items
         source: `social_${conn.provider}`,
         updated_at: new Date().toISOString(),
-      }, { onConflict: 'user_id,key' });
+      });
       enrichments.push(`media:${media.length}`);
     }
 
     // ── 10. Mark enrichment complete ────────────────────────────
-    await supabase.from('social_connections').update({
+    await repo.updateConnectionEnrichmentComplete(supabase, connectionId, {
       enrichment_status: 'completed',
       enrichment_data: {
         enrichments,
@@ -819,15 +789,13 @@ export async function enrichProfileFromSocial(
       profile_data: profile.raw,
       last_enriched_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-    }).eq('id', connectionId);
+    });
 
     console.log(`[SocialConnect] Enriched ${conn.provider} for ${userId.slice(0, 8)}…: ${enrichments.join(', ')}`);
     return { ok: true, enrichments };
 
   } catch (err: any) {
-    await supabase.from('social_connections')
-      .update({ enrichment_status: 'failed', updated_at: new Date().toISOString() })
-      .eq('id', connectionId);
+    await repo.updateConnectionEnrichmentStatus(supabase, connectionId, 'failed', new Date().toISOString());
     return { ok: false, enrichments, error: err.message };
   }
 }
@@ -1025,12 +993,7 @@ export async function getSharePrefs(
   share_to_providers: string[];
   share_visibility: string;
 }> {
-  const { data } = await supabase
-    .from('social_share_prefs')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('tenant_id', tenantId)
-    .maybeSingle();
+  const { data } = await repo.fetchSharePrefs(supabase, userId, tenantId);
 
   return {
     auto_share_enabled: data?.auto_share_enabled ?? true,
@@ -1054,12 +1017,12 @@ export async function updateSharePrefs(
     share_visibility?: string;
   },
 ): Promise<{ ok: boolean }> {
-  await supabase.from('social_share_prefs').upsert({
+  await repo.upsertSharePrefs(supabase, {
     tenant_id: tenantId,
     user_id: userId,
     ...prefs,
     updated_at: new Date().toISOString(),
-  }, { onConflict: 'tenant_id,user_id' });
+  });
 
   return { ok: true };
 }
@@ -1086,12 +1049,7 @@ export async function shareMilestoneToSocial(
   }
 
   // Get active connections for the providers user wants to share to
-  const { data: connections } = await supabase
-    .from('social_connections')
-    .select('id, provider, access_token, provider_username')
-    .eq('user_id', userId)
-    .eq('is_active', true)
-    .in('provider', prefs.share_to_providers);
+  const { data: connections } = await repo.fetchActiveConnectionsForProviders(supabase, userId, prefs.share_to_providers);
 
   if (!connections?.length) {
     return { shared: [], skipped: [], notify_instead: true };
@@ -1102,7 +1060,7 @@ export async function shareMilestoneToSocial(
 
   for (const conn of connections) {
     // Log the share attempt
-    const { data: logEntry } = await supabase.from('social_share_log').insert({
+    const { data: logEntry } = await repo.insertShareLogEntry(supabase, {
       tenant_id: tenantId,
       user_id: userId,
       provider: conn.provider,
@@ -1110,7 +1068,7 @@ export async function shareMilestoneToSocial(
       content_ref: milestone.id,
       share_url: shareUrl,
       share_status: 'pending',
-    }).select('id').single();
+    });
 
     try {
       // Provider-specific posting
@@ -1119,24 +1077,18 @@ export async function shareMilestoneToSocial(
       if (posted) {
         shared.push(conn.provider);
         if (logEntry?.id) {
-          await supabase.from('social_share_log')
-            .update({ share_status: 'posted', posted_at: new Date().toISOString() })
-            .eq('id', logEntry.id);
+          await repo.updateShareLogStatus(supabase, logEntry.id, { share_status: 'posted', posted_at: new Date().toISOString() });
         }
       } else {
         skipped.push(conn.provider);
         if (logEntry?.id) {
-          await supabase.from('social_share_log')
-            .update({ share_status: 'failed', error_message: 'Post API returned false' })
-            .eq('id', logEntry.id);
+          await repo.updateShareLogStatus(supabase, logEntry.id, { share_status: 'failed', error_message: 'Post API returned false' });
         }
       }
     } catch (err: any) {
       skipped.push(conn.provider);
       if (logEntry?.id) {
-        await supabase.from('social_share_log')
-          .update({ share_status: 'failed', error_message: err.message })
-          .eq('id', logEntry.id);
+        await repo.updateShareLogStatus(supabase, logEntry.id, { share_status: 'failed', error_message: err.message });
       }
     }
   }
