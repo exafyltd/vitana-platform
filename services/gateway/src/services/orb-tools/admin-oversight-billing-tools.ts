@@ -216,9 +216,18 @@ async function resolveWalletAccountId(
   sb: SupabaseClient,
   userId: string,
   currency: string,
-): Promise<string | null> {
-  const { data } = await repo.fetchActiveWalletAccountId(sb, userId, currency);
-  return (data as { id?: string } | null)?.id ?? null;
+): Promise<{ accountId: string | null; error?: string }> {
+  const { data, error } = await repo.fetchActiveWalletAccountId(sb, userId, currency);
+  if (error) {
+    // A Postgres-level failure here previously returned `null`,
+    // indistinguishable from "genuinely no active account" — the caller
+    // then told the admin operator "that user has no active wallet
+    // account," a confidently wrong claim that could lead to provisioning
+    // a duplicate account. Surface the error distinctly instead.
+    console.error(`[admin-wallet] fetchActiveWalletAccountId error for user=${userId} currency=${currency}: ${error.message}`);
+    return { accountId: null, error: error.message };
+  }
+  return { accountId: (data as { id?: string } | null)?.id ?? null };
 }
 
 async function adjustWallet(args: OrbToolArgs, id: OrbToolIdentity, sb: SupabaseClient, direction: 'credit' | 'spend'): Promise<OrbToolResult> {
@@ -232,7 +241,8 @@ async function adjustWallet(args: OrbToolArgs, id: OrbToolIdentity, sb: Supabase
   if (!targetUserId || !WALLET_CURRENCIES.has(currency) || !Number.isInteger(amountMinor) || amountMinor <= 0) {
     return { ok: false, error: `admin_${direction === 'credit' ? 'credit' : 'debit'}_wallet requires user_id, currency (EUR or USD), and a positive integer amount_minor.` };
   }
-  const accountId = await resolveWalletAccountId(sb, targetUserId, currency);
+  const { accountId, error: lookupErr } = await resolveWalletAccountId(sb, targetUserId, currency);
+  if (lookupErr) return { ok: false, error: `Could not look up that user's ${currency} wallet account due to a database error — try again, or check server logs before assuming no account exists.` };
   if (!accountId) return { ok: true, result: { adjusted: false, reason: 'no_wallet_account' }, text: `That user has no active ${currency} wallet account.` };
   if (args.confirm !== true) {
     return {
