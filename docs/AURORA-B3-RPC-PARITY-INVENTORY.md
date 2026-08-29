@@ -1222,7 +1222,7 @@ actual workflow lines behind it.
 | `credit_wallet` | Single RPC, single transaction (per its own SQL) | No — every call site invokes it exactly once per business event |
 | `debit_wallet_for_spend` + `credit_wallet_for_earning` | Each is its own single-RPC transaction | **Yes — `send_funds` (§2)**, a genuine two-RPC saga with one correctly-compensated failure path and one incorrectly-compensated one (real bug, above) |
 | `credit_deposit` | Single RPC, single transaction (now including the `user_wallets` bridge in the same transaction) | No |
-| `increment_wallet_balance` | Single RPC (body unverified — untracked) | No — both call sites invoke it exactly once |
+| `increment_wallet_balance` | Single RPC, single atomic `INSERT...ON CONFLICT` upsert (body confirmed live 2026-08-29, §4) | No — both call sites invoke it exactly once |
 | `vtn_reward` / `vtn_spend` / `vtn_transfer` | Each intended as its own single, atomic RPC (per source comment) | No — never reaches a second call, because the first one always throws |
 
 Only one genuine non-atomic multi-RPC money sequence exists across all
