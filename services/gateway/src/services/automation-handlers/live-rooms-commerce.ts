@@ -7,6 +7,7 @@
 
 import { AutomationContext } from '../../types/automations';
 import { registerHandler } from '../automation-executor';
+import * as repo from './live-rooms-commerce-repository';
 
 // ── AP-1201: Paid Live Room Setup ───────────────────────────
 async function runPaidLiveRoomSetup(ctx: AutomationContext) {
@@ -27,11 +28,7 @@ async function runLiveRoomBookingPayment(ctx: AutomationContext) {
 
   const { supabase, tenantId } = ctx;
 
-  const { data: room } = await supabase
-    .from('live_rooms')
-    .select('title, starts_at')
-    .eq('id', room_id)
-    .maybeSingle();
+  const { data: room } = await repo.fetchRoomTitleAndStart(supabase, room_id);
 
   ctx.notify(user_id, 'orb_proactive_message', {
     title: 'Session Booked!',
@@ -54,11 +51,7 @@ async function runLiveRoomFreeToUpSell(ctx: AutomationContext) {
 
   // live_room_attendance has no "attended" boolean — a row's existence IS
   // the attendance signal (VTID-01250 schema-drift cleanup).
-  const { data: frequentAttendees } = await supabase
-    .from('live_room_attendance')
-    .select('user_id')
-    .eq('tenant_id', tenantId)
-    .gte('joined_at', thirtyDays);
+  const { data: frequentAttendees } = await repo.fetchRecentAttendeeUserIds(supabase, tenantId, thirtyDays);
 
   // Count per user
   const userCounts: Record<string, number> = {};
@@ -70,12 +63,7 @@ async function runLiveRoomFreeToUpSell(ctx: AutomationContext) {
     if (count < 3) continue;
 
     // Find paid services with live room delivery
-    const { data: paidServices } = await supabase
-      .from('services_catalog')
-      .select('id, name, service_type')
-      .eq('tenant_id', tenantId)
-      .limit(1)
-      .maybeSingle();
+    const { data: paidServices } = await repo.fetchAnyTenantService(supabase, tenantId, 1);
 
     if (!paidServices) continue;
 
@@ -101,42 +89,24 @@ async function runGroupSessionAutoFill(ctx: AutomationContext) {
   const now = new Date();
   const in72h = new Date(now.getTime() + 72 * 60 * 60 * 1000);
 
-  const { data: sessions } = await supabase
-    .from('live_room_sessions')
-    .select('id, room_id, max_participants, topic_keys')
-    .eq('tenant_id', tenantId)
-    .eq('status', 'scheduled')
-    .gte('starts_at', now.toISOString())
-    .lte('starts_at', in72h.toISOString());
+  const { data: sessions } = await repo.fetchScheduledSessionsInWindow(supabase, tenantId, now.toISOString(), in72h.toISOString());
 
   for (const session of sessions || []) {
     if (!session.max_participants) continue;
 
-    const { count: booked } = await supabase
-      .from('live_room_attendance')
-      .select('id', { count: 'exact', head: true })
-      .eq('live_room_id', session.room_id);
+    const { count: booked } = await repo.countAttendanceForRoom(supabase, session.room_id);
 
     const fillRate = (booked || 0) / session.max_participants;
     if (fillRate >= 0.5) continue;
 
-    const { data: room } = await supabase
-      .from('live_rooms')
-      .select('title, topic_keys')
-      .eq('id', session.room_id)
-      .maybeSingle();
+    const { data: room } = await repo.fetchRoomTitleAndTopics(supabase, session.room_id);
 
     // Find topic-aligned users
     const topics = room?.topic_keys || session.topic_keys || [];
     if (!topics.length) continue;
 
     // user_topic_profile doesn't exist; user_interests is the real table.
-    const { data: matchingUsers } = await supabase
-      .from('user_interests')
-      .select('user_id')
-      .in('interest', topics)
-      .gte('confidence_score', 50)
-      .limit(20);
+    const { data: matchingUsers } = await repo.fetchInterestedUsers(supabase, topics, 50, 20);
 
     const spots = session.max_participants - (booked || 0);
     for (const user of (matchingUsers || []).slice(0, spots)) {
@@ -161,16 +131,9 @@ async function runPostSessionRevenueReport(ctx: AutomationContext) {
 
   const { supabase, tenantId } = ctx;
 
-  const { count: attendees } = await supabase
-    .from('live_room_attendance')
-    .select('id', { count: 'exact', head: true })
-    .eq('live_room_id', room_id);
+  const { count: attendees } = await repo.countAttendanceForRoom(supabase, room_id);
 
-  const { data: room } = await supabase
-    .from('live_rooms')
-    .select('title')
-    .eq('id', room_id)
-    .maybeSingle();
+  const { data: room } = await repo.fetchRoomTitle(supabase, room_id);
 
   ctx.notify(host_id, 'orb_proactive_message', {
     title: 'Session Complete!',
@@ -194,12 +157,7 @@ async function runRecurringSessionAutoSchedule(ctx: AutomationContext) {
   const thirtyDays = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
   // Find hosts who've held 3+ sessions
-  const { data: rooms } = await supabase
-    .from('live_rooms')
-    .select('host_user_id, topic_keys')
-    .eq('tenant_id', tenantId)
-    .eq('status', 'ended')
-    .gte('created_at', thirtyDays);
+  const { data: rooms } = await repo.fetchEndedRoomsSince(supabase, tenantId, thirtyDays);
 
   const hostCounts: Record<string, number> = {};
   for (const room of rooms || []) {
@@ -230,12 +188,7 @@ async function runConsultationMatching(ctx: AutomationContext) {
 
   const { supabase, tenantId } = ctx;
 
-  const { data: services } = await supabase
-    .from('services_catalog')
-    .select('id, name, service_type, provider_name')
-    .eq('tenant_id', tenantId)
-    .eq('service_type', service_type || 'doctor')
-    .limit(3);
+  const { data: services } = await repo.fetchServicesByTypeWithProvider(supabase, tenantId, service_type || 'doctor', 3);
 
   if (!services?.length) return { usersAffected: 0, actionsTaken: 0 };
 
@@ -262,17 +215,10 @@ async function runFreeTrialSessionSuggestion(ctx: AutomationContext) {
 
   // Find creators who onboarded 7+ days ago but have 0 sessions.
   // app_users' primary key is user_id, not id.
-  const { data: creators } = await supabase
-    .from('app_users')
-    .select('user_id, display_name')
-    .eq('stripe_charges_enabled', true)
-    .lte('stripe_onboarded_at', sevenDaysAgo);
+  const { data: creators } = await repo.fetchOnboardedCreators(supabase, sevenDaysAgo);
 
   for (const creator of creators || []) {
-    const { count: sessionCount } = await supabase
-      .from('live_rooms')
-      .select('id', { count: 'exact', head: true })
-      .eq('host_user_id', creator.user_id);
+    const { count: sessionCount } = await repo.countRoomsByHost(supabase, creator.user_id);
 
     if ((sessionCount || 0) > 0) continue;
 
@@ -308,20 +254,10 @@ async function runSessionHighlightClipsForMarketing(ctx: AutomationContext) {
 
   const { supabase, tenantId } = ctx;
 
-  const { data: room } = await supabase
-    .from('live_rooms')
-    .select('title, host_user_id')
-    .eq('id', roomId)
-    .maybeSingle();
+  const { data: room } = await repo.fetchRoomTitleAndHost(supabase, roomId);
   if (!room?.host_user_id) return { usersAffected: 0, actionsTaken: 0 };
 
-  const { data: highlights } = await supabase
-    .from('live_highlights')
-    .select('highlight_type, text')
-    .eq('tenant_id', tenantId)
-    .eq('live_room_id', roomId)
-    .order('created_at', { ascending: false })
-    .limit(5);
+  const { data: highlights } = await repo.fetchRecentHighlights(supabase, tenantId, roomId, 5);
   if (!highlights?.length) return { usersAffected: 0, actionsTaken: 0 };
 
   const preview = highlights.map((h: any) => h.text).slice(0, 2).join(' · ');
@@ -363,13 +299,7 @@ async function runLiveRoomRevenueOptimizationTips(ctx: AutomationContext) {
 
   const windowStart = new Date(Date.now() - REVENUE_TIP_WINDOW_DAYS * 86_400_000).toISOString();
 
-  const { data: rooms } = await supabase
-    .from('live_rooms')
-    .select('id, host_user_id, price_cents, capacity')
-    .eq('tenant_id', tenantId)
-    .not('host_user_id', 'is', null)
-    .gte('created_at', windowStart)
-    .limit(2000);
+  const { data: rooms } = await repo.fetchRecentHostedRoomsWithPricing(supabase, tenantId, windowStart, 2000);
 
   const roomsByHost = new Map<string, any[]>();
   for (const room of rooms || []) {
@@ -378,20 +308,14 @@ async function runLiveRoomRevenueOptimizationTips(ctx: AutomationContext) {
     roomsByHost.set(room.host_user_id, list);
   }
 
-  const { data: hostUsers } = await supabase
-    .from('app_users')
-    .select('user_id, vitana_id')
-    .in('user_id', [...roomsByHost.keys()]);
+  const { data: hostUsers } = await repo.fetchVitanaIdsForUsers(supabase, [...roomsByHost.keys()]);
   const vitanaIdByHost = new Map((hostUsers || []).map((u: any) => [u.user_id, u.vitana_id]));
 
   for (const [hostId, hostRooms] of roomsByHost) {
     if (hostRooms.length < REVENUE_TIP_MIN_SESSIONS) continue;
 
     const roomIds = hostRooms.map((r: any) => r.id);
-    const { count: attendeeCount } = await supabase
-      .from('live_room_attendance')
-      .select('id', { count: 'exact', head: true })
-      .in('live_room_id', roomIds);
+    const { count: attendeeCount } = await repo.countAttendanceForRoomIds(supabase, roomIds);
 
     const totalCapacity = hostRooms.reduce((s: number, r: any) => s + (r.capacity || 0), 0);
     const fillRate = totalCapacity > 0 ? (attendeeCount || 0) / totalCapacity : null;
@@ -399,12 +323,7 @@ async function runLiveRoomRevenueOptimizationTips(ctx: AutomationContext) {
     const vitanaId = vitanaIdByHost.get(hostId);
     let revenueCents = 0;
     if (vitanaId) {
-      const { data: payments } = await supabase
-        .from('service_payments')
-        .select('amount_cents')
-        .eq('payee_vitana_id', vitanaId)
-        .in('state', ['captured', 'released'])
-        .gte('created_at', windowStart);
+      const { data: payments } = await repo.fetchServicePaymentsForPayee(supabase, vitanaId, ['captured', 'released'], windowStart);
       revenueCents = (payments || []).reduce((s: number, p: any) => s + (p.amount_cents || 0), 0);
     }
 
