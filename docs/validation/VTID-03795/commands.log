@@ -1,0 +1,168 @@
+VTID-03795 — commands.log
+==========================
+
+## Step 1 — kill the obvious hypothesis before writing code
+
+The candidate carried over from VTID-03790 was the
+`<<VERTEX_WAKE_BRIEF_OVERRIDE_ACTIVE>>` sentinel leaking into model-facing
+text. Tested against 14 days of real telemetry FIRST:
+
+  (Supabase) greeting_sent wake_opener x nova_validation outcome
+  -> override_v2 : 26 sessions, 13 blocked, 13 CLEAN  (50% succeed)
+  -> (none)      : 268 sessions, 92 blocked, 176 clean (~34% ambient)
+
+override_v2 sessions carry the marker AND the SPOKEN FIRST UTTERANCE block and
+succeed half the time => neither is a sufficient cause. HYPOTHESIS KILLED. No
+code was written for it.
+
+## Step 2 — size correlation
+
+  (Supabase) bucket every nova_instruction_debug_dump (7d) by instruction_chars
+             against nova_validation outcome
+  -> >= 32768 : 2 sessions, 2 BLOCKED (100%), range 33766-33778
+  -> <  32768 : 37 sessions, 5 blocked (13.5%), max clean 32431
+
+Clean gap: nothing between 32,431 (clean) and 33,766 (blocked). 13.5% matches
+the documented ambient block rate.
+
+  (Supabase) octet_length of the two directly-compared sessions
+  -> GUIDED   (blocked) 34,206 bytes  (+3,486 over 30,720 / +1,438 over 32,768)
+  -> GUIDED retry       34,162 bytes
+  -> ORDINARY (clean)   31,594 bytes  (+874 over 30,720 / -1,174 under 32,768)
+
+## Step 3 — why the guard did not save it
+
+$ read services/gateway/src/orb/live/instruction/instruction-budget.ts
+-> INSTRUCTION_TOTAL_BYTE_BUDGET = 30_720
+-> DROP_ORDER  = ['bootstrap','history','specialist']
+-> PRESERVED   = ['scaffold','override']
+-> contract: "if the preserved-only assembly still exceeds the budget the
+   over-budget text is returned as-is (failing loudly via totalBytesAfter >
+   budget for the caller to log)"
+
+$ read services/gateway/src/routes/orb-live.ts:7871-7920
+-> logs stillOverBudget then SENDS ANYWAY (fail-open), console.warn only.
+
+Both live dumps already contained "[bootstrap context omitted...]" => the guard
+had already trimmed everything it is allowed to. Confirms it cannot rescue this.
+
+## Step 4 — measure the blocks
+
+  (Supabase) octet_length of each marker-delimited block in the blocked prompt
+  -> GUIDED JOURNEY        3,847 bytes
+  -> PROACTIVE LEADERSHIP  6,845 bytes
+  -> SPOKEN FIRST UTTER.     998 bytes
+  -> GUIDE-MODUS           1,099 bytes
+
+GUIDED JOURNEY (3,847) > the 3,486 needed to clear the guard's own budget.
+
+$ read live-system-instruction.ts:689-698
+-> contains "PLAYING A SESSION = SPEAKING ITS SCRIPT ALOUD ... your ENTIRE
+   spoken turn must BE that script, spoken word for word"
+   -- directly contradicts GUIDE-MODUS's "wurde bereits per Audio vorgetragen
+   ... Trage die Lektion nicht erneut vor".
+
+## Step 5 — verify the wiring assumption BEFORE trusting the fix
+
+Critical: if the guided block were appended AFTER buildLiveSystemInstruction
+runs, a bootstrapContext-based detector would always return false and the fix
+would be inert.
+
+$ grep -rn "buildGuidedTopicNarrationBlock" src/ | grep -v prompt.ts
+-> src/routes/orb-live.ts:7777      (inside a + chain)
+-> src/routes/orb-livekit.ts:1920
+
+$ read src/routes/orb-live.ts:7755-7804
+-> the concatenation ending at 7781 is the 3rd positional argument; line 7782
+   is session.active_role (param 4 = activeRole). CONFIRMED: the guided block
+   IS inside bootstrapContext at call time.
+
+## Step 6 — cycle check before adding the import
+
+$ grep -n "live-system-instruction" src/i18n/catalog.ts \
+      src/services/assistant-continuation/providers/guided-topic-narration.ts
+-> NO CYCLE (neither imports it; the provider import is `import type`, erased)
+
+## Step 7 — the fix
+
+- guided-topic-narration-prompt.ts: exported
+  GUIDED_TOPIC_NARRATION_BLOCK_HEADINGS + containsGuidedTopicNarrationBlock().
+- live-system-instruction.ts: computed `guidedTopicNarrationActive` from
+  bootstrapContext; the GUIDED JOURNEY block is now a ternary — compact
+  one-line form when guided, the FULL original block otherwise (byte-identical
+  to before for every non-guided session).
+
+$ npx tsc --noEmit
+(clean, exit 0)
+
+## Step 8 — measurement
+
+$ npx jest (throwaway measurement test, deleted after)
+=== VTID-03795 MEASUREMENT ===
+ordinary scaffold : 166389 bytes
+guided   scaffold : 162783 bytes
+SAVED             : 3606 bytes
+
+Applied to the real blocked session: 34,206 - 3,606 = ~30,600 bytes
+  vs ~32,768 hard limit : -2,168  (UNDER)
+  vs  30,720 own budget : -120    (UNDER)
+
+(The 166 KB harness totals include the AVAILABLE TOOLS prose that production
+omits via omitToolsProse; the 3,606-byte DELTA is the transferable number.)
+
+## Step 9 — tests
+
+$ npx jest test/orb/live/instruction/guided-topic-journey-scaffold-suppression.test.ts
+PASS -- 7/7
+(outputs/jest-scoped-fixed.txt)
+
+## Step 10 — mutation verification
+
+Forced the branch off, restoring pre-fix behavior:
+  const guidedTopicNarrationActive = false; void containsGuidedTopicNarrationBlock;
+
+$ npx jest test/orb/live/instruction/guided-topic-journey-scaffold-suppression.test.ts
+FAIL -- 3 failed, 4 passed
+  - "drops the generic block (and its contradictory directive)"  FAILS
+  - "keeps narrate_guided_session reachable"                     FAILS
+  - "sheds enough bytes (>= 3,000)"                              FAILS, saved = -16
+  The 4 that still pass are the detector unit tests and the
+  no-collateral-damage tests, which correctly do not depend on the branch.
+(outputs/jest-mutation-fix-disabled.txt)
+
+$ cp /tmp/lsi.backup.ts src/.../live-system-instruction.ts
+$ diff -> RESTORED_CLEAN
+$ npx jest <scoped> -> 7/7 PASS
+$ npx tsc --noEmit -> TSC CLEAN
+
+## Step 11 — full verification
+
+$ npx tsc --noEmit
+(clean, exit 0)  (outputs/tsc-noemit.txt)
+
+$ npx jest
+PASS -- 728/729 suites (1 pre-existing skip), 13,584/13,619 tests passing
+        (13,577 before this VTID's +7), 44/44 snapshots, 0 failures
+(outputs/jest-full-suite.txt)
+
+All 44 snapshots and every pre-existing golden/prompt-content test pass
+UNMODIFIED -- the strongest available evidence of no collateral damage.
+
+## Governance
+
+command-hub-ownership-guard.js NOT touched -- changes are under
+services/gateway/src/orb/live/instruction/ and its test, outside
+PROTECTED_PATH scope.
+
+VTID-03795 self-allocated via allocate_global_vtid('claude-code','gateway',
+'orb-live-instruction') and set status='in_progress'/spec_status='approved';
+the user's "fix what's not fixed" instruction is the explicit consent per
+IF-THEN rule 5.
+
+## Still to do (not claimed as done)
+
+The decisive live re-run. The fix preserves every byte of guided-topic CONTENT
+and changes only SIZE, so the next real guided session is a clean experiment:
+- instruction_chars must drop below 32,768, and
+- the session must actually complete without nova_validation.
+If it still blocks, size was not the cause and that will be reported as such.
