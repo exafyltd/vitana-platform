@@ -35,6 +35,7 @@ import {
   RESPONSIBILITY_NUDGE_KEY,
 } from './speech-intent';
 import type { ProactivePause, UserAwareness } from './types';
+import * as repo from './conversation-focus-repository';
 
 const LOG_PREFIX = '[Guide:conversation-focus]';
 
@@ -308,23 +309,7 @@ async function fetchCalendarEvent(
 ): Promise<CalendarEventLite | null> {
   const supabase = getSupabase();
   if (!supabase) return null;
-  const nowIso = new Date().toISOString();
-  let query = supabase
-    .from('calendar_events')
-    .select('id, title, start_time, duration_minutes')
-    .eq('user_id', userId)
-    .eq('event_type', 'autopilot')
-    .eq('status', 'scheduled');
-  if (which === 'overdue') {
-    query = query.lt('start_time', nowIso).order('start_time', { ascending: false });
-  } else {
-    const in24hIso = new Date(Date.now() + 86_400_000).toISOString();
-    query = query
-      .gt('start_time', nowIso)
-      .lt('start_time', in24hIso)
-      .order('start_time', { ascending: true });
-  }
-  const { data, error } = await query.limit(1);
+  const { data, error } = await repo.fetchOverdueOrUpcomingAutopilotEvent(supabase, userId, which);
   if (error || !data || data.length === 0) return null;
   return data[0] as CalendarEventLite;
 }
@@ -338,13 +323,7 @@ interface RecommendationLite {
 async function fetchTopRecommendation(userId: string): Promise<RecommendationLite | null> {
   const supabase = getSupabase();
   if (!supabase) return null;
-  const { data, error } = await supabase
-    .from('autopilot_recommendations')
-    .select('id, title, summary, priority')
-    .eq('user_id', userId)
-    .eq('status', 'new')
-    .order('priority', { ascending: false })
-    .limit(1);
+  const { data, error } = await repo.fetchTopNewAutopilotRecommendation(supabase, userId);
   if (error || !data || data.length === 0) return null;
   return data[0] as RecommendationLite;
 }
