@@ -295,3 +295,58 @@ to match, or (b) add IPv6 egress to `vpc-05958f035e596fe64` (Egress-Only
 Internet Gateway + route table + security group allowance) so the direct
 `db.<ref>.supabase.co` endpoints become reachable again, whichever is
 lower-risk given who's driving it.
+
+## Addendum, 2026-08-29 (continued) — platform owner authorized both fixes; both are blocked by hard IAM/tool limits, not caution
+
+Asked the platform owner directly which of the two candidate fixes above
+to attempt. Answer: attempt both. Investigated both immediately, in order
+of what this session's actual AWS/Supabase access could reach — **neither
+is executable from this session, and both hit a genuine capability wall,
+not a judgment call this session talked itself out of:**
+
+**(a) IPv6 egress on `vpc-05958f035e596fe64` — no EC2 permission at all.**
+`aws ec2 describe-vpcs`/`describe-subnets`/`describe-route-tables` all
+fail with *"not authorized to perform: ec2:DescribeX because no
+identity-based policy allows the ec2:DescribeX action"* — this is a
+missing grant, not a boundary deny (contrast with the Secrets Manager
+denials below, which name an explicit deny). There is no EC2/VPC access
+of any kind on `claude-code-aws-agent`, read or write. This path needs
+someone with EC2 permissions on this identity (or a different identity
+entirely) — it cannot be worked around from here.
+
+**(b) Correcting `vitana-src-supabase-v3`'s pooler login — no way to
+determine or verify the correct value.** Confirmed via `mcp__Supabase__execute_sql`
+that the `migrate` role genuinely exists (`rolcanlogin=true,
+rolreplication=true`) and the project ref/region embedded in the pooler
+hostname (`aws-0-eu-north-1.pooler.supabase.com`) are correct per
+`mcp__Supabase__get_project`. The failure — Supavisor's *"tenant/user...
+not found"* — is the pooler's own tenant/role registry rejecting a login
+that should exist; nothing exposed via SQL on the tenant database (no
+`pgbouncer.*` config table, no equivalent) can read or refresh that
+registry, and Supabase's dashboard/Management API (where this would
+actually be checked or fixed) is not a surface this session has tool
+access to. Also checked whether a **different**, definitely-poolable
+login (`postgres.inmkhvwdcuyhnxkgfvsb`) could be substituted instead —
+ruled out as not worth attempting: DMS's stored password for this
+endpoint is `migrate`'s (write-only, unreadable), switching only the
+username while keeping that password would almost certainly authenticate
+as the wrong role/wrong password combination, and there is no
+Supabase-side secret this session can read to get `postgres`'s real
+credential either (`vitana/supabase/prod/database-url` and every other
+`vitana/supabase/prod/*` secret checked — `service-role-key`, `anon-key`,
+`url`, `jwt-secret` — all return an explicit-deny, consistent with the
+prior session's original finding for the Supabase side specifically,
+**unlike** the Aurora-side secrets which this session found newly
+readable). Attempting a blind `modify-endpoint` with a guessed
+username/password combination would not have a realistic chance of
+working and was not attempted.
+
+**Net: this session confirmed the diagnosis precisely (both root causes
+are now known, not just suspected) but cannot execute either fix with
+the access it has.** What would unblock it: EC2 read+write on this AWS
+identity (or a different identity/session with it) for path (a), or
+Supabase dashboard/Management API access — not just the SQL-execution
+MCP tool used here — to inspect and refresh the `migrate` role's Supavisor
+pooler registration for path (b). Reported back to the platform owner in
+the same terms as this addendum, in-conversation, rather than claiming
+either fix was applied.
