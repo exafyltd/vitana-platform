@@ -21,6 +21,7 @@
 import { createHash } from 'crypto';
 import { getSupabase } from '../lib/supabase';
 import { emitOasisEvent } from './oasis-event-service';
+import * as repo from './consent-gate-repository';
 
 // ==================== Types ====================
 
@@ -92,13 +93,7 @@ export async function createPendingAction(input: CreateActionInput): Promise<Pen
   if (!supabase) return null;
 
   // Check if user has a blanket grant for this action type (skip consent)
-  const { data: perm } = await supabase
-    .from('user_action_permissions')
-    .select('granted')
-    .eq('user_id', input.user_id)
-    .eq('action_type', input.action_type)
-    .eq('granted', true)
-    .maybeSingle();
+  const { data: perm } = await repo.fetchBlanketGrant(supabase, input.user_id, input.action_type);
 
   // Purchase + post actions ALWAYS require consent regardless of grants
   const requiresConsent =
@@ -108,28 +103,24 @@ export async function createPendingAction(input: CreateActionInput): Promise<Pen
 
   const expiresAt = new Date(Date.now() + (input.expires_minutes ?? 10) * 60 * 1000).toISOString();
 
-  const { data, error } = await supabase
-    .from('pending_connector_actions')
-    .insert({
-      tenant_id: input.tenant_id,
-      user_id: input.user_id,
-      connector_id: input.connector_id ?? null,
-      capability: input.capability,
-      action_type: input.action_type,
-      preview_title: input.preview_title,
-      preview_description: input.preview_description ?? null,
-      preview_data: input.preview_data ?? {},
-      args: input.args,
-      requested_by: input.requested_by,
-      state: requiresConsent ? 'pending' : 'approved',
-      expires_at: expiresAt,
-      reversible: input.reversible ?? false,
-      vtid: input.vtid ?? null,
-      recommendation_id: input.recommendation_id ?? null,
-      product_id: input.product_id ?? null,
-    })
-    .select('id, state, action_type, preview_title, preview_description, preview_data, requested_by, requested_at, expires_at, connector_id, product_id')
-    .single();
+  const { data, error } = await repo.insertPendingAction(supabase, {
+    tenant_id: input.tenant_id,
+    user_id: input.user_id,
+    connector_id: input.connector_id ?? null,
+    capability: input.capability,
+    action_type: input.action_type,
+    preview_title: input.preview_title,
+    preview_description: input.preview_description ?? null,
+    preview_data: input.preview_data ?? {},
+    args: input.args,
+    requested_by: input.requested_by,
+    state: requiresConsent ? 'pending' : 'approved',
+    expires_at: expiresAt,
+    reversible: input.reversible ?? false,
+    vtid: input.vtid ?? null,
+    recommendation_id: input.recommendation_id ?? null,
+    product_id: input.product_id ?? null,
+  });
 
   if (error || !data) {
     console.error('[consent-gate] createPendingAction failed:', error?.message);
@@ -165,24 +156,16 @@ export async function approvePendingAction(actionId: string, userId: string): Pr
   const supabase = getSupabase();
   if (!supabase) return { ok: false, error: 'DB unavailable' };
 
-  const { data: action, error: fetchErr } = await supabase
-    .from('pending_connector_actions')
-    .select('id, user_id, tenant_id, state, expires_at, action_type, args')
-    .eq('id', actionId)
-    .eq('user_id', userId)
-    .single();
+  const { data: action, error: fetchErr } = await repo.fetchPendingActionForApproval(supabase, actionId, userId);
 
   if (fetchErr || !action) return { ok: false, error: 'Action not found' };
   if (action.state !== 'pending') return { ok: false, error: `Action is ${action.state}, not pending` };
   if (new Date(action.expires_at) < new Date()) {
-    await supabase.from('pending_connector_actions').update({ state: 'expired' }).eq('id', actionId);
+    await repo.markActionExpired(supabase, actionId);
     return { ok: false, error: 'Action expired' };
   }
 
-  await supabase
-    .from('pending_connector_actions')
-    .update({ state: 'approved', approved_at: new Date().toISOString() })
-    .eq('id', actionId);
+  await repo.markActionApproved(supabase, actionId, new Date().toISOString());
 
   // Execute
   const result = await executeAction(actionId, userId, action.tenant_id);
@@ -193,21 +176,13 @@ export async function denyPendingAction(actionId: string, userId: string): Promi
   const supabase = getSupabase();
   if (!supabase) return { ok: false };
 
-  await supabase
-    .from('pending_connector_actions')
-    .update({ state: 'denied', denied_at: new Date().toISOString() })
-    .eq('id', actionId)
-    .eq('user_id', userId);
+  await repo.markActionDenied(supabase, actionId, userId, new Date().toISOString());
 
   // Audit log
-  const { data: action } = await supabase
-    .from('pending_connector_actions')
-    .select('tenant_id, action_type, capability, args, preview_title, requested_by, requested_at, vtid, recommendation_id, product_id')
-    .eq('id', actionId)
-    .single();
+  const { data: action } = await repo.fetchActionForAudit(supabase, actionId);
 
   if (action) {
-    await supabase.from('action_ledger').insert({
+    await repo.insertActionLedgerEntry(supabase, {
       tenant_id: action.tenant_id,
       user_id: userId,
       action_id: actionId,
@@ -240,13 +215,7 @@ export async function denyPendingAction(actionId: string, userId: string): Promi
 export async function getUserPendingActions(userId: string): Promise<PendingAction[]> {
   const supabase = getSupabase();
   if (!supabase) return [];
-  const { data } = await supabase
-    .from('pending_connector_actions')
-    .select('id, state, action_type, preview_title, preview_description, preview_data, requested_by, requested_at, expires_at, connector_id, product_id')
-    .eq('user_id', userId)
-    .eq('state', 'pending')
-    .order('requested_at', { ascending: false })
-    .limit(10);
+  const { data } = await repo.fetchUserPendingActionsList(supabase, userId, 10);
   return (data ?? []) as PendingAction[];
 }
 
@@ -256,26 +225,19 @@ async function executeAction(actionId: string, userId: string, tenantId: string)
   const supabase = getSupabase();
   if (!supabase) return { ok: false, error: 'DB unavailable' };
 
-  const { data: action } = await supabase
-    .from('pending_connector_actions')
-    .select('*')
-    .eq('id', actionId)
-    .single();
+  const { data: action } = await repo.fetchFullPendingAction(supabase, actionId);
   if (!action) return { ok: false, error: 'Action not found' };
 
-  await supabase
-    .from('pending_connector_actions')
-    .update({ state: 'executing' })
-    .eq('id', actionId);
+  await repo.markActionExecuting(supabase, actionId);
 
   const executor = EXECUTORS.get(action.action_type as ActionType);
   if (!executor) {
-    await supabase
-      .from('pending_connector_actions')
-      .update({ state: 'failed', error: `No executor for ${action.action_type}`, failed_at: new Date().toISOString() })
-      .eq('id', actionId);
+    await repo.markActionFailed(supabase, actionId, {
+      error: `No executor for ${action.action_type}`,
+      failed_at: new Date().toISOString(),
+    });
 
-    await supabase.from('action_ledger').insert({
+    await repo.insertActionLedgerEntry(supabase, {
       tenant_id: tenantId,
       user_id: userId,
       action_id: actionId,
@@ -301,28 +263,20 @@ async function executeAction(actionId: string, userId: string, tenantId: string)
     });
 
     if (result.ok) {
-      await supabase
-        .from('pending_connector_actions')
-        .update({
-          state: 'executed',
-          result: result.result ?? {},
-          external_id: result.external_id ?? null,
-          reversal_handle: result.reversal_handle ?? null,
-          executed_at: new Date().toISOString(),
-        })
-        .eq('id', actionId);
+      await repo.markActionExecuted(supabase, actionId, {
+        result: result.result ?? {},
+        external_id: result.external_id ?? null,
+        reversal_handle: result.reversal_handle ?? null,
+        executed_at: new Date().toISOString(),
+      });
     } else {
-      await supabase
-        .from('pending_connector_actions')
-        .update({
-          state: 'failed',
-          error: result.error ?? 'Unknown error',
-          failed_at: new Date().toISOString(),
-        })
-        .eq('id', actionId);
+      await repo.markActionFailed(supabase, actionId, {
+        error: result.error ?? 'Unknown error',
+        failed_at: new Date().toISOString(),
+      });
     }
 
-    await supabase.from('action_ledger').insert({
+    await repo.insertActionLedgerEntry(supabase, {
       tenant_id: tenantId,
       user_id: userId,
       action_id: actionId,
@@ -359,10 +313,7 @@ async function executeAction(actionId: string, userId: string, tenantId: string)
     return { ok: result.ok, error: result.error };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    await supabase
-      .from('pending_connector_actions')
-      .update({ state: 'failed', error: message, failed_at: new Date().toISOString() })
-      .eq('id', actionId);
+    await repo.markActionFailed(supabase, actionId, { error: message, failed_at: new Date().toISOString() });
     return { ok: false, error: message };
   }
 }
@@ -372,11 +323,6 @@ async function executeAction(actionId: string, userId: string, tenantId: string)
 export async function expirePendingActions(): Promise<number> {
   const supabase = getSupabase();
   if (!supabase) return 0;
-  const { data } = await supabase
-    .from('pending_connector_actions')
-    .update({ state: 'expired' })
-    .eq('state', 'pending')
-    .lt('expires_at', new Date().toISOString())
-    .select('id');
+  const { data } = await repo.bulkExpirePendingActions(supabase, new Date().toISOString());
   return data?.length ?? 0;
 }
