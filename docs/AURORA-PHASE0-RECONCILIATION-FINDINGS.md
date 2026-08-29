@@ -218,3 +218,80 @@ follows is a diagnosis and a recommended fix, not a fix already applied.
    than assuming a green DMS status means caught up.
 7. Only once the above holds for the 7-day window the plan's own Phase 0
    exit criteria calls for should Phase 0 be considered closed.
+
+## Addendum, 2026-08-29 — access re-verified live (broader than the prior finding assumed), replication still down, root cause now precisely isolated
+
+This session's AWS identity is the same `claude-code-aws-agent` the section
+above names, but **the explicit-deny this doc previously reported no
+longer reproduces**: `aws secretsmanager get-secret-value --secret-id
+vitana/aurora/prod/master-password` succeeded just now (returned the
+secret's `Name` cleanly). Whether the boundary policy was loosened
+between sessions or the prior finding was scoped to a narrower action
+than tested here is not established — flagging the discrepancy rather
+than assuming either explanation. **Not tested: whether write access
+(`ModifyReplicationInstance`, VPC/route-table edits, DMS
+`modify-endpoint`) is now available too** — deliberately not attempted
+without checking in first, per below.
+
+**Live status, checked just now (all read-only: `describe-replication-tasks`,
+`describe-connections`, `dms test-connection`, `describe-replication-instances`,
+Supabase `get_project`):**
+
+- `vitana-supabase-to-aurora-v3` (the CDC task) is still `failed`:
+  *"Last Error Task '...' was stopped after 9 recovery attempts Stop
+  Reason FATAL_ERROR."* Not recovered since the last row in this doc.
+- **The doc's own recommended fix (#2 above — repoint the source at the
+  connection pooler for an IPv4 path) was already attempted** — the task's
+  source endpoint, `vitana-src-supabase-v3`, is in fact configured against
+  `aws-0-eu-north-1.pooler.supabase.com:5432` with username
+  `migrate.inmkhvwdcuyhnxkgfvsb` (Supavisor's `role.project_ref` format) —
+  but a fresh `test-connection` against it fails differently now:
+  `FATAL: (ENOTFOUND) tenant/user migrate.inmkhvwdcuyhnxkgfvsb not found`.
+  The pooler itself no longer recognizes this project's tenant/role
+  combination. Confirmed via `mcp__Supabase__get_project` that the
+  project ref (`inmkhvwdcuyhnxkgfvsb`) and region (`eu-north-1`) in that
+  hostname are still correct — this isn't a stale project reference, the
+  pooler is rejecting a login it should recognize. Root cause not
+  determined from the AWS side alone (only reachable by checking the
+  project's current pooler/connection settings in the Supabase dashboard
+  or an equivalent management-API surface this session doesn't have
+  tool access to).
+- **The other 3 source endpoints all confirm the IPv6 diagnosis exactly**,
+  tested fresh: `vitana-source-supabase`, `vitana-supabase-source-autopilot`,
+  and `vitana-supabase-source-fullload` all resolve
+  `db.inmkhvwdcuyhnxkgfvsb.supabase.co` to an IPv6-only address
+  (`2a05:d016:...`) and fail with `dial tcp [2a05:...]:5432: connect:
+  network is unreachable`. `vitana-dms-prod` (the replication instance) is
+  `PubliclyAccessible: true` in VPC `vpc-05958f035e596fe64` — consistent
+  with an IPv4-only public route (no IPv6 CIDR/egress on the VPC, subnets,
+  or route table), not fixable by anything short of an actual VPC
+  networking change.
+- Target-side is fine: both `vitana-tgt-aurora-v2` and
+  `vitana-target-aurora-prod` test `successful`.
+
+**Net effect: every one of the 4 source-endpoint configurations DMS
+currently has on file for this project fails for one of two independent
+reasons — 3 for IPv6 unreachability, 1 (the one actually wired to the
+failed task) for a pooler-side rejection that isn't a DMS/AWS-config
+problem at all.** There is currently no working path from AWS's side into
+Supabase for this replication task.
+
+**Deliberately not attempted from here, and why:** fixing either failure
+mode is a real infrastructure change to a live, production data-migration
+pipeline — VPC/route-table IPv6 egress affects every resource in that
+subnet, not just this DMS instance, and a corrected pooler username/mode
+would need confirming against Supabase's actual current pooler
+configuration (unreachable from this session's tool access) before being
+applied to the live source endpoint. Given this session just found it has
+materially broader AWS access than the last time this was checked, and
+given the platform owner's own standing rule that infrastructure mutation
+gets a VTID and explicit governance rather than being inferred from a
+general "keep working" mandate, this was raised as a question rather than
+acted on unilaterally — see the session's own chat log for how this was
+put to the platform owner. **Fix candidates for whoever picks this up:**
+(a) confirm the Supabase project's current pooler connection string in
+the dashboard and correct `vitana-src-supabase-v3`'s username/port/mode
+to match, or (b) add IPv6 egress to `vpc-05958f035e596fe64` (Egress-Only
+Internet Gateway + route table + security group allowance) so the direct
+`db.<ref>.supabase.co` endpoints become reachable again, whichever is
+lower-risk given who's driving it.
