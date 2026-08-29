@@ -116,11 +116,14 @@ does NOT get the three-beat proposal contract, still never reintroduces the
 
 TEST: same files — those assertions are unchanged and passing.
 
-AC-5 — `tsc --noEmit` clean. TEST: `outputs/tsc-noemit.txt`.
+AC-5 — `tsc --noEmit` clean.
 
-AC-6 — Full gateway suite green. TEST: `outputs/jest-full-suite.txt` — 728/729
-suites (1 pre-existing skip), 13,584/13,619 passing, 44/44 snapshots, 0
-failures.
+TEST: `outputs/tsc-noemit.txt`.
+
+AC-6 — Full gateway suite green.
+
+TEST: `outputs/jest-full-suite.txt` — 728/729 suites (1 pre-existing skip),
+13,584/13,619 passing, 44/44 snapshots, 0 failures.
 
 ## Deliberately re-recorded, not worked around
 
