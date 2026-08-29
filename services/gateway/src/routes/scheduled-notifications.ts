@@ -30,6 +30,7 @@ import {
   type SkipReason,
 } from '../services/daily-pace-service';
 import { FEATURE_TIPS } from '../data/feature-tips';
+import * as repo from './scheduled-notifications-repository';
 
 const router = Router();
 
@@ -50,13 +51,7 @@ async function getActiveUsers(supabase: any, tenantId: string): Promise<Array<{ 
   const PAGE_SIZE = 1000;
   const users: Array<{ user_id: string }> = [];
   for (let offset = 0; ; offset += PAGE_SIZE) {
-    const { data } = await supabase
-      .from('user_tenants')
-      .select('user_id')
-      .eq('tenant_id', tenantId)
-      .eq('is_primary', true)
-      .order('user_id', { ascending: true })
-      .range(offset, offset + PAGE_SIZE - 1);
+    const { data } = await repo.fetchActiveUsersPage(supabase, { tenantId, offset, pageSize: PAGE_SIZE });
     const page = data || [];
     users.push(...page);
     if (page.length < PAGE_SIZE) break;
@@ -114,13 +109,7 @@ async function findRecentlyNotified(
   const CHUNK = 500;
   for (let i = 0; i < userIds.length; i += CHUNK) {
     const chunk = userIds.slice(i, i + CHUNK);
-    const { data, error } = await supa
-      .from('user_notifications')
-      .select('user_id')
-      .eq('tenant_id', tenantId)
-      .eq('type', type)
-      .gte('created_at', since)
-      .in('user_id', chunk);
+    const { data, error } = await repo.fetchRecentlyNotifiedChunk(supa, { tenantId, type, since, userIdChunk: chunk });
 
     if (error) {
       console.warn(`[Scheduled] ${type} idempotency lookup failed, sending anyway: ${error.message}`);
@@ -319,13 +308,13 @@ interface BriefingContext {
 
 async function gatherBriefingContext(supa: any, userId: string, tenantId: string): Promise<BriefingContext> {
   const [factsResult, healthResult, diaryResult, matchResult, recResult, connResult, streakResult] = await Promise.all([
-    supa.from('memory_facts').select('fact_key, fact_value').eq('user_id', userId).in('fact_key', ['display_name', 'name', 'preferred_language']),
-    supa.from('vitana_index_scores').select('score_total').eq('user_id', userId).order('created_at', { ascending: false }).limit(2),
-    supa.from('memory_items').select('tags, metadata').eq('user_id', userId).eq('item_type', 'diary').order('created_at', { ascending: false }).limit(1),
-    supa.from('matches_daily').select('id', { count: 'exact', head: true }).eq('user_id', userId).eq('tenant_id', tenantId).is('feedback', null),
-    supa.from('autopilot_recommendations').select('id', { count: 'exact', head: true }).eq('status', 'new').or(`user_id.is.null,user_id.eq.${userId}`),
-    supa.from('relationship_edges').select('id', { count: 'exact', head: true }).eq('user_id', userId).eq('tenant_id', tenantId).eq('target_type', 'person').eq('relationship_type', 'connected'),
-    supa.from('memory_items').select('created_at').eq('user_id', userId).eq('item_type', 'diary').order('created_at', { ascending: false }).limit(14),
+    repo.fetchBriefingFacts(supa, userId),
+    repo.fetchBriefingHealthScores(supa, userId),
+    repo.fetchBriefingLatestDiaryEntry(supa, userId),
+    repo.fetchBriefingPendingMatchCount(supa, { userId, tenantId }),
+    repo.fetchBriefingNewRecCount(supa, userId),
+    repo.fetchBriefingConnectionCount(supa, { userId, tenantId }),
+    repo.fetchBriefingDiaryStreakEntries(supa, userId),
   ]);
 
   // Parse facts
@@ -620,7 +609,7 @@ router.post('/daily-pace-notifications', async (req: Request, res: Response) => 
         // Without it, the dispatch cron would deliver a second push within
         // 30 seconds. notifyUserAsync below writes its own canonical row;
         // /push-dispatch skips both.
-        await supa.from('user_notifications').insert({
+        await repo.insertDailyPacePreNotification(supa, {
           user_id,
           tenant_id: tenantId,
           type: 'daily_pace_check',
@@ -766,30 +755,22 @@ router.post('/daily-feature-tip', async (req: Request, res: Response) => {
 
   try {
     // 1. Advance the rotation for this tenant.
-    const { data: state } = await supa
-      .from('did_you_know_state')
-      .select('last_index')
-      .eq('tenant_id', tenantId)
-      .maybeSingle();
+    const { data: state } = await repo.fetchDidYouKnowState(supa, tenantId);
     const lastIndex = (state as { last_index?: number } | null)?.last_index ?? -1;
     const nextIndex = (lastIndex + 1) % FEATURE_TIPS.length;
     const tip = FEATURE_TIPS[nextIndex];
 
     // 2. Publish the tenant-wide "did-you-know-feature" card. NULL
     //    target_user_ids → every tenant member's feed reads it (RLS-scoped).
-    const { data: inserted, error: insertError } = await supa
-      .from('feature_announcements')
-      .insert({
-        tenant_id: tenantId,
-        variant: 'did-you-know-feature',
-        feature_title: tip.title,
-        description: tip.description,
-        deep_link: tip.deepLink,
-        created_by: 'scheduled:daily-feature-tip',
-        target_user_ids: null,
-      })
-      .select('id')
-      .single();
+    const { data: inserted, error: insertError } = await repo.insertFeatureAnnouncement(supa, {
+      tenant_id: tenantId,
+      variant: 'did-you-know-feature',
+      feature_title: tip.title,
+      description: tip.description,
+      deep_link: tip.deepLink,
+      created_by: 'scheduled:daily-feature-tip',
+      target_user_ids: null,
+    });
 
     if (insertError || !inserted) {
       console.error('[Scheduled] daily_feature_tip insert error:', insertError?.message);
@@ -838,13 +819,8 @@ router.post('/daily-feature-tip', async (req: Request, res: Response) => {
 
     // 4. Advance rotation state for next time, and record when dispatch
     //    actually finished (not when the row was first inserted).
-    await supa
-      .from('did_you_know_state')
-      .upsert({ tenant_id: tenantId, last_index: nextIndex, updated_at: new Date().toISOString() });
-    await supa
-      .from('feature_announcements')
-      .update({ notified_at: new Date().toISOString() })
-      .eq('id', announcementId);
+    await repo.upsertDidYouKnowState(supa, { tenantId, lastIndex: nextIndex, updatedAt: new Date().toISOString() });
+    await repo.markFeatureAnnouncementNotified(supa, { announcementId, notifiedAt: new Date().toISOString() });
 
     console.log(`[Scheduled] daily_feature_tip → tip=${tip.key} dispatched=${dispatched} users`);
 
@@ -970,20 +946,15 @@ router.post('/meetup-reminders', async (req: Request, res: Response) => {
   let dispatched = 0;
 
   // Meetups starting in ~15 minutes (meetup_starting_soon)
-  const { data: soonMeetups } = await supa
-    .from('community_meetups')
-    .select('id, title, starts_at')
-    .eq('tenant_id', tenantId)
-    .gte('starts_at', now.toISOString())
-    .lte('starts_at', in15min.toISOString());
+  const { data: soonMeetups } = await repo.fetchMeetupsStartingBetween(supa, {
+    tenantId,
+    from: now.toISOString(),
+    to: in15min.toISOString(),
+  });
 
   for (const meetup of soonMeetups || []) {
     // Get RSVP'd users
-    const { data: rsvps } = await supa
-      .from('community_meetup_attendance')
-      .select('user_id')
-      .eq('meetup_id', meetup.id)
-      .eq('status', 'rsvp');
+    const { data: rsvps } = await repo.fetchMeetupRsvps(supa, meetup.id);
 
     const rsvpList = (rsvps || []) as Array<{ user_id: string }>;
     const locales = await bulkGetUserLocales(supa, rsvpList.map((r) => r.user_id));
@@ -999,19 +970,14 @@ router.post('/meetup-reminders', async (req: Request, res: Response) => {
   }
 
   // Meetups starting in ~5 minutes (meetup_starting_now)
-  const { data: nowMeetups } = await supa
-    .from('community_meetups')
-    .select('id, title, starts_at')
-    .eq('tenant_id', tenantId)
-    .gte('starts_at', now.toISOString())
-    .lte('starts_at', in5min.toISOString());
+  const { data: nowMeetups } = await repo.fetchMeetupsStartingBetween(supa, {
+    tenantId,
+    from: now.toISOString(),
+    to: in5min.toISOString(),
+  });
 
   for (const meetup of nowMeetups || []) {
-    const { data: rsvps } = await supa
-      .from('community_meetup_attendance')
-      .select('user_id')
-      .eq('meetup_id', meetup.id)
-      .eq('status', 'rsvp');
+    const { data: rsvps } = await repo.fetchMeetupRsvps(supa, meetup.id);
 
     const rsvpList = (rsvps || []) as Array<{ user_id: string }>;
     const locales = await bulkGetUserLocales(supa, rsvpList.map((r) => r.user_id));
@@ -1057,13 +1023,10 @@ router.post('/upcoming-events', async (req: Request, res: Response) => {
   // Calendar events: fetch every user's events for today in one query so we
   // don't N+1 per user. Sort ascending so each user's first scheduled event
   // surfaces first.
-  const { data: events, error } = await supa
-    .from('calendar_events')
-    .select('id, user_id, title, start_time, status')
-    .neq('status', 'cancelled')
-    .gte('start_time', todayStart.toISOString())
-    .lte('start_time', todayEnd.toISOString())
-    .order('start_time', { ascending: true });
+  const { data: events, error } = await repo.fetchTodaysCalendarEvents(supa, {
+    todayStart: todayStart.toISOString(),
+    todayEnd: todayEnd.toISOString(),
+  });
 
   if (error) {
     console.error('[Scheduled] upcoming-events query error:', error.message);
@@ -1111,13 +1074,11 @@ router.post('/recommendation-expiry', async (req: Request, res: Response) => {
   // Find recommendations expiring in the next 24 hours
   const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-  const { data: expiring } = await supa
-    .from('autopilot_recommendations')
-    .select('id, user_id, title')
-    .eq('tenant_id', tenantId)
-    .eq('status', 'pending')
-    .lte('expires_at', tomorrow.toISOString())
-    .gte('expires_at', new Date().toISOString());
+  const { data: expiring } = await repo.fetchExpiringRecommendations(supa, {
+    tenantId,
+    tomorrow: tomorrow.toISOString(),
+    now: new Date().toISOString(),
+  });
 
   const expiringList = (expiring || []) as Array<{ id: string; user_id: string; title: string | null }>;
   const expiringLocales = await bulkGetUserLocales(supa, expiringList.map((r) => r.user_id));
@@ -1147,22 +1108,14 @@ router.post('/signal-cleanup', async (req: Request, res: Response) => {
   if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
 
   // Find active signals that have expired
-  const { data: expired } = await supa
-    .from('d44_predictive_signals')
-    .select('id, user_id')
-    .eq('tenant_id', tenantId)
-    .eq('status', 'active')
-    .lte('expires_at', new Date().toISOString());
+  const { data: expired } = await repo.fetchActiveExpiredSignals(supa, { tenantId, now: new Date().toISOString() });
 
   const expiredList = (expired || []) as Array<{ id: string; user_id: string }>;
   const sigLocales = await bulkGetUserLocales(supa, expiredList.map((s) => s.user_id));
   let cleaned = 0;
   for (const signal of expiredList) {
     // Mark as expired
-    await supa
-      .from('d44_predictive_signals')
-      .update({ status: 'expired' })
-      .eq('id', signal.id);
+    await repo.markSignalExpired(supa, signal.id);
 
     const lc = sigLocales.get(signal.user_id);
     // Silent notification (no push, in-app only for audit)
@@ -1219,14 +1172,7 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
   const LOOKBACK_MS = 48 * 60 * 60 * 1000; // 48h — see VTID-03656 comment above
   const lookbackCutoff = new Date(Date.now() - LOOKBACK_MS).toISOString();
 
-  const { data: pending, error } = await supa
-    .from('user_notifications')
-    .select('id, user_id, tenant_id, type, title, body, data, channel, priority, created_at')
-    .is('push_sent_at', null)
-    .in('channel', ['push', 'push_and_inapp'])
-    .gte('created_at', lookbackCutoff)
-    .order('created_at', { ascending: true })
-    .limit(100);
+  const { data: pending, error } = await repo.fetchPendingPushNotifications(supa, lookbackCutoff);
 
   if (error) {
     console.error('[PushDispatch] Query error:', error.message);
@@ -1255,18 +1201,14 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
   for (const notif of pending) {
     try {
       // Check user preferences (DND, category toggles, push_enabled)
-      const { data: prefs } = await supa
-        .from('user_notification_preferences')
-        .select('*')
-        .eq('user_id', notif.user_id)
-        .eq('tenant_id', notif.tenant_id)
-        .maybeSingle();
+      const { data: prefs } = await repo.fetchUserNotificationPreferences(supa, {
+        userId: notif.user_id,
+        tenantId: notif.tenant_id,
+      });
 
       // If push disabled globally, skip push but still mark as handled
       if (prefs?.push_enabled === false) {
-        await supa.from('user_notifications')
-          .update({ push_sent_at: new Date().toISOString() })
-          .eq('id', notif.id);
+        await repo.markNotificationPushSent(supa, notif.id, new Date().toISOString());
         skipped++;
         continue;
       }
@@ -1279,9 +1221,7 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
         const end = prefs.dnd_end_time;
         const inDnd = start > end ? (hhmm >= start || hhmm < end) : (hhmm >= start && hhmm < end);
         if (inDnd) {
-          await supa.from('user_notifications')
-            .update({ push_sent_at: new Date().toISOString() })
-            .eq('id', notif.id);
+          await repo.markNotificationPushSent(supa, notif.id, new Date().toISOString());
           skipped++;
           continue;
         }
@@ -1340,18 +1280,14 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
       }
 
       // Mark as dispatched
-      await supa.from('user_notifications')
-        .update({ push_sent_at: new Date().toISOString() })
-        .eq('id', notif.id);
+      await repo.markNotificationPushSent(supa, notif.id, new Date().toISOString());
 
       if (sent > 0 || appilixSent) dispatched++;
       else skipped++; // No device tokens found and Appilix not configured
     } catch (err: any) {
       console.error(`[PushDispatch] Failed for notification ${notif.id}:`, err.message || err);
       // Still mark as sent to avoid infinite retries
-      await supa.from('user_notifications')
-        .update({ push_sent_at: new Date().toISOString() })
-        .eq('id', notif.id);
+      await repo.markNotificationPushSent(supa, notif.id, new Date().toISOString());
       skipped++;
     }
   }
@@ -1375,35 +1311,21 @@ router.post('/recommendation-cleanup', async (_req: Request, res: Response) => {
     let stalePurged = 0;
 
     // 1. Expire recommendations past their expires_at
-    const { count: expiredCount } = await supa
-      .from('autopilot_recommendations')
-      .update({ status: 'rejected', updated_at: now })
-      .eq('status', 'new')
-      .not('expires_at', 'is', null)
-      .lt('expires_at', now);
+    const { count: expiredCount } = await repo.expireOverdueRecommendations(supa, now);
     expired = expiredCount || 0;
 
     // 2. Unsnoze past-due snoozed recommendations
-    const { count: unsnoozedCount } = await supa
-      .from('autopilot_recommendations')
-      .update({ status: 'new', snoozed_until: null, updated_at: now })
-      .eq('status', 'snoozed')
-      .lt('snoozed_until', now);
+    const { count: unsnoozedCount } = await repo.unsnoozeOverdueRecommendations(supa, now);
     unsnoozed = unsnoozedCount || 0;
 
     // 3. Purge stale seed data (no fingerprint, >30 days old)
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-    const { count: staleCount } = await supa
-      .from('autopilot_recommendations')
-      .update({ status: 'rejected', updated_at: now })
-      .eq('status', 'new')
-      .is('fingerprint', null)
-      .lt('created_at', thirtyDaysAgo);
+    const { count: staleCount } = await repo.purgeStaleRecommendationSeeds(supa, { now, thirtyDaysAgo });
     stalePurged = staleCount || 0;
 
     // 4. Try RPC cleanup if available
     try {
-      await supa.rpc('cleanup_expired_autopilot_recommendations');
+      await repo.rpcCleanupExpiredAutopilotRecommendations(supa);
     } catch {
       // RPC may not exist yet
     }
@@ -1438,9 +1360,9 @@ router.post('/reminders-tick', async (_req: Request, res: Response) => {
     // Atomic claim + mark dispatching. Look-ahead window: 15s. Limit batch
     // size to avoid runaway under load — operators should run this every
     // 30s so the worst-case fire latency stays under ~30s late / ~15s early.
-    const { data: claimed, error: claimErr } = await supa.rpc('reminders_claim_due', {
-      p_lookahead_seconds: 15,
-      p_limit: 200,
+    const { data: claimed, error: claimErr } = await repo.rpcClaimDueReminders(supa, {
+      lookaheadSeconds: 15,
+      limit: 200,
     });
 
     // RPC may not exist on older DBs — fall back to a non-atomic UPDATE for
@@ -1449,16 +1371,11 @@ router.post('/reminders-tick', async (_req: Request, res: Response) => {
     let rows: any[] = [];
     if (claimErr) {
       const lookahead = new Date(Date.now() + 15_000).toISOString();
-      const { data: fallback, error: fallbackErr } = await supa
-        .from('reminders')
-        .update({
-          status: 'dispatching',
-          dispatch_started_at: new Date().toISOString(),
-        })
-        .eq('status', 'pending')
-        .lte('next_fire_at', lookahead)
-        .select('*')
-        .limit(200);
+      const { data: fallback, error: fallbackErr } = await repo.fallbackClaimDueReminders(supa, {
+        lookahead,
+        dispatchStartedAt: new Date().toISOString(),
+        limit: 200,
+      });
       if (fallbackErr) {
         console.error('[reminders-tick] claim fallback failed:', fallbackErr.message);
         return res.status(500).json({ ok: false, error: fallbackErr.message });
@@ -1479,13 +1396,7 @@ router.post('/reminders-tick', async (_req: Request, res: Response) => {
       try {
         // Mark fired — this triggers pg_notify('reminder_fired', ...) for any
         // SSE pod that is LISTENing. PR-2 wires the listener.
-        const { error: fireErr } = await supa
-          .from('reminders')
-          .update({
-            status: 'fired',
-            fired_at: new Date().toISOString(),
-          })
-          .eq('id', row.id);
+        const { error: fireErr } = await repo.markReminderFired(supa, { reminderId: row.id, firedAt: new Date().toISOString() });
         if (fireErr) {
           console.error(`[reminders-tick] mark fired failed for ${row.id}:`, fireErr.message);
           failed++;
@@ -1548,12 +1459,7 @@ router.post('/reminders-sweeper', async (_req: Request, res: Response) => {
     const cutoff = new Date(Date.now() - 2 * 60 * 1000).toISOString();
 
     // First find stuck rows so we can decide attempts++ vs 'failed' per row.
-    const { data: stuck, error: queryErr } = await supa
-      .from('reminders')
-      .select('id, dispatch_attempts')
-      .eq('status', 'dispatching')
-      .lt('dispatch_started_at', cutoff)
-      .limit(500);
+    const { data: stuck, error: queryErr } = await repo.fetchStuckDispatchingReminders(supa, { cutoff, limit: 500 });
     if (queryErr) throw new Error(queryErr.message);
     if (!stuck?.length) {
       return res.status(200).json({ ok: true, recovered: 0, failed: 0 });
@@ -1564,14 +1470,7 @@ router.post('/reminders-sweeper', async (_req: Request, res: Response) => {
     for (const r of stuck) {
       const attempts = (r.dispatch_attempts || 0) + 1;
       const newStatus = attempts >= 5 ? 'failed' : 'pending';
-      const { error: updErr } = await supa
-        .from('reminders')
-        .update({
-          status: newStatus,
-          dispatch_attempts: attempts,
-          dispatch_started_at: null,
-        })
-        .eq('id', r.id);
+      const { error: updErr } = await repo.updateReminderRecoveryStatus(supa, { reminderId: r.id, newStatus, attempts });
       if (updErr) {
         console.error(`[reminders-sweeper] update ${r.id} failed:`, updErr.message);
         continue;
@@ -1648,13 +1547,10 @@ async function scheduleReminderFcmPush(
     // reminder for the account that left a shared phone still buzzes it.
     let appilixSent = false;
     const appilixSuppressed = await isSignedOutOnAllKnownDevices(row.user_id, supa);
-    const { count: nativeMobileCount } = await supa
-      .from('user_device_tokens')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', row.user_id)
-      .eq('tenant_id', row.tenant_id)
-      .is('revoked_at', null)
-      .like('device_label', 'Appilix %');
+    const { count: nativeMobileCount } = await repo.countAppilixNativeDeviceTokens(supa, {
+      userId: row.user_id,
+      tenantId: row.tenant_id,
+    });
     if (!nativeMobileCount && !appilixSuppressed) {
       appilixSent = await sendAppilixPush(row.user_id, payload);
     }
@@ -1667,11 +1563,7 @@ async function scheduleReminderFcmPush(
     // unacked. The SSE flow may still race-deliver later — that's fine, the
     // overlay's seen-set dedups so the user never sees the same fire twice.
     if (fcmSent > 0 || appilixSent) {
-      await supa
-        .from('reminders')
-        .update({ delivery_via: 'fcm' })
-        .eq('id', row.id)
-        .is('acked_at', null);
+      await repo.markReminderDeliveredViaFcm(supa, row.id);
     }
 
     try {
@@ -1771,11 +1663,7 @@ router.post('/night-push', async (req: Request, res: Response) => {
       // no dayCloseNightKey rollover math needed the way the ORB rung has.
       const nightKey = todayInTimezone(nowUtc, tz);
 
-      const { data: journeyRow } = await supa
-        .from('user_journey')
-        .select('last_day_close_date, last_night_push_date')
-        .eq('user_id', user_id)
-        .maybeSingle();
+      const { data: journeyRow } = await repo.fetchUserJourneyNightDates(supa, user_id);
       const lastClose = (journeyRow as { last_day_close_date?: string | null } | null)?.last_day_close_date ?? null;
       const lastPush = (journeyRow as { last_night_push_date?: string | null } | null)?.last_night_push_date ?? null;
 
@@ -1798,10 +1686,7 @@ router.post('/night-push', async (req: Request, res: Response) => {
       // Stamp FIRST, dispatch second — same ordering rationale as
       // /daily-pace-notifications: a same-hour retry must see the stamp
       // before it can double-send, not after.
-      await supa
-        .from('user_journey')
-        .update({ last_night_push_date: nightKey })
-        .eq('user_id', user_id);
+      await repo.updateLastNightPushDate(supa, { userId: user_id, nightKey });
 
       notifyUserAsync(
         user_id,
