@@ -1,0 +1,15 @@
+$ git diff origin/main...HEAD --stat
+ CLAUDE.md                               |  2 +-
+ scripts/aws/verify-aws-production.sh    | 21 +++++++++------------
+ services/gateway/src/middleware/cors.ts | 10 +++++++---
+ 3 files changed, 17 insertions(+), 16 deletions(-)
+
+$ bash -n scripts/aws/verify-aws-production.sh
+(exit 0 — valid bash syntax)
+
+$ grep -n "dr-gateway" services/gateway/src/middleware/cors.ts
+42:  "https://dr-gateway.vitanaland.com",    // Legacy ALB alias — canonical production gateway is gateway.vitanaland.com
+
+$ grep -n "gateway.vitanaland.com" services/gateway/src/middleware/cors.ts
+11:  "https://gateway.vitanaland.com",        // Cloudflare-fronted custom gateway domain (BOOTSTRAP-CLOUDFLARE-GATEWAY-DOMAIN)
+42:  "https://dr-gateway.vitanaland.com",    // Legacy ALB alias — canonical production gateway is gateway.vitanaland.com
