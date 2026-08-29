@@ -435,11 +435,21 @@ export async function scanUserMilestones(
     await recordMilestone(supabase, userId, tenantId, milestoneId);
     await emitMilestoneEvent(userId, tenantId, milestoneId);
 
-    // Credit wallet reward if applicable
+    // Credit wallet reward if applicable.
+    //
+    // credit_wallet is best-effort — a duplicate p_source_event_id is
+    // idempotent and fine to ignore. But supabase-js's .rpc() resolves
+    // normally with an {error} field on a Postgres-level failure — it
+    // does NOT throw — so the old empty `catch {}` here was unreachable
+    // for that case and the failure was completely invisible in logs
+    // (AURORA-B3-RPC-PARITY-INVENTORY.md's 2026-08-29 addendum). Checking
+    // `error` explicitly makes it loud, per this codebase's own "never
+    // silence errors" rule, without changing whether the milestone is
+    // recorded (that stays a product decision, not fixed here).
     const def = MILESTONES[milestoneId];
     if (def && def.reward > 0) {
       try {
-        await repo.creditWalletForMilestone(supabase, {
+        const { error: walletErr } = await repo.creditWalletForMilestone(supabase, {
           p_tenant_id: tenantId,
           p_user_id: userId,
           p_amount: def.reward,
@@ -448,8 +458,12 @@ export async function scanUserMilestones(
           p_source_event_id: `milestone_${milestoneId}_${userId}`,
           p_description: def.celebration,
         });
-      } catch {
-        // Idempotent — duplicate source_event_id is fine
+        if (walletErr) {
+          console.error(`[MilestoneService] credit_wallet RPC returned an error for ${milestoneId}: ${walletErr.message}`);
+        }
+      } catch (walletErr: any) {
+        // Network-layer failure (the only case .rpc() actually rejects for).
+        console.warn(`[MilestoneService] credit_wallet failed for ${milestoneId}: ${walletErr?.message ?? walletErr}`);
       }
     }
   }
@@ -520,10 +534,12 @@ export async function checkMilestonesForAction(
     await recordMilestone(supabase, userId, tenantId, milestoneId);
     await emitMilestoneEvent(userId, tenantId, milestoneId);
 
+    // See the identical wallet-credit block above (scanUserMilestones) for
+    // why `error` is checked explicitly rather than relying on `catch`.
     const def = MILESTONES[milestoneId];
     if (def && def.reward > 0) {
       try {
-        await repo.creditWalletForMilestone(supabase, {
+        const { error: walletErr } = await repo.creditWalletForMilestone(supabase, {
           p_tenant_id: tenantId,
           p_user_id: userId,
           p_amount: def.reward,
@@ -532,8 +548,11 @@ export async function checkMilestonesForAction(
           p_source_event_id: `milestone_${milestoneId}_${userId}`,
           p_description: def.celebration,
         });
-      } catch {
-        // Idempotent
+        if (walletErr) {
+          console.error(`[MilestoneService] credit_wallet RPC returned an error for ${milestoneId}: ${walletErr.message}`);
+        }
+      } catch (walletErr: any) {
+        console.warn(`[MilestoneService] credit_wallet failed for ${milestoneId}: ${walletErr?.message ?? walletErr}`);
       }
     }
   }
