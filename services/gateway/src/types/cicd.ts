@@ -380,6 +380,8 @@ export type CicdEventType =
   | 'd41.action.allowed'
   | 'd41.vulnerability.detected'
   | 'd41.vulnerability.cleared'
+  | 'd41.boundary.rpc_error_default'
+  | 'd41.consent.rpc_error_default'
   // VTID-01136: D42 Cross-Domain Context Fusion Events
   | 'd42.priorities.resolved'
   | 'd42.priorities.failed'

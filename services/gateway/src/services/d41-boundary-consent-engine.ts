@@ -177,7 +177,18 @@ export async function getPersonalBoundaries(
 
     if (result.error) {
       console.warn(`${LOG_PREFIX} RPC error (get_boundaries):`, result.error.message);
-      // Return defaults on error
+      // Return defaults on error — the direction is safe (protective, not
+      // permissive) so this stays non-fatal, but a console.warn alone is
+      // never aggregated/alerted on, so a user's real boundaries silently
+      // going inert inside ORB could run indefinitely with nobody noticing.
+      await emitOasisEvent({
+        vtid: VTID,
+        type: 'd41.boundary.rpc_error_default',
+        source: 'gateway-d41',
+        status: 'warning',
+        message: `get_boundaries RPC failed; serving DEFAULT_BOUNDARIES instead of the user's real boundaries`,
+        payload: { error: result.error.message },
+      }).catch(() => { /* never let telemetry block the safe default */ });
       return {
         ok: true,
         boundaries: DEFAULT_BOUNDARIES
@@ -314,6 +325,16 @@ export async function getConsentBundle(
 
     if (result.error) {
       console.warn(`${LOG_PREFIX} RPC error (get_consent):`, result.error.message);
+      // Same reasoning as getPersonalBoundaries above: the fallback stance
+      // is safe (protective), but invisible without an aggregatable signal.
+      await emitOasisEvent({
+        vtid: VTID,
+        type: 'd41.consent.rpc_error_default',
+        source: 'gateway-d41',
+        status: 'warning',
+        message: `get_consent RPC failed; serving an empty protective-stance consent bundle instead of the user's real consent preferences`,
+        payload: { error: result.error.message },
+      }).catch(() => { /* never let telemetry block the safe default */ });
       return {
         ok: true,
         consent_bundle: {
