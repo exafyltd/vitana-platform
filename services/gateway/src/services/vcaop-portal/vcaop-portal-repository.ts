@@ -98,13 +98,11 @@ export async function updateManifestStatus(supabase: SupabaseClient, manifestId:
 // ==================== partner_tenant ====================
 
 export async function fetchPartnerTenantByTenantAndName(supabase: SupabaseClient, tenantId: string, name: string) {
-  const { data } = await supabase.from('partner_tenant').select('id').eq('tenant_id', tenantId).eq('name', name).maybeSingle();
-  return data ?? null;
+  return supabase.from('partner_tenant').select('id').eq('tenant_id', tenantId).eq('name', name).maybeSingle();
 }
 
 export async function fetchPartnerTenantByOwnerAndName(supabase: SupabaseClient, ownerUserId: string, name: string) {
-  const { data } = await supabase.from('partner_tenant').select('id').eq('owner_user_id', ownerUserId).eq('name', name).maybeSingle();
-  return data ?? null;
+  return supabase.from('partner_tenant').select('id').eq('owner_user_id', ownerUserId).eq('name', name).maybeSingle();
 }
 
 export async function insertPartnerTenant(supabase: SupabaseClient, row: Record<string, unknown>) {

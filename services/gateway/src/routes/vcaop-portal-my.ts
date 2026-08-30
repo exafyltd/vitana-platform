@@ -238,7 +238,10 @@ router.post('/connections', async (req: Request, res: Response) => {
 
   // One partner_tenant row per (owner, business name) — a merchant's own
   // business, distinct from any admin-seeded partner with the same name.
-  const existingPartner = await repo.fetchPartnerTenantByOwnerAndName(supabase, owner, name);
+  // A lookup error must not fall through as "doesn't exist yet" — that
+  // would create a duplicate partner_tenant row for the same owner+name.
+  const { data: existingPartner, error: existingPartnerErr } = await repo.fetchPartnerTenantByOwnerAndName(supabase, owner, name);
+  if (existingPartnerErr) return res.status(500).json({ ok: false, error: existingPartnerErr.message });
   let partnerId = existingPartner?.id;
   if (!partnerId) {
     partnerId = randomUUID();

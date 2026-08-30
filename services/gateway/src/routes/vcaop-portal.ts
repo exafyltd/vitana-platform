@@ -191,8 +191,11 @@ router.post('/connections', async (req: Request, res: Response) => {
   const tenant = tenantId(req);
   const now = new Date().toISOString();
 
-  // One partner_tenant row per (tenant, business name).
-  const existingPartner = await repo.fetchPartnerTenantByTenantAndName(supabase, tenant, name);
+  // One partner_tenant row per (tenant, business name). A lookup error here
+  // must not fall through as "doesn't exist yet" — that would create a
+  // duplicate partner_tenant row and violate the one-per-name invariant.
+  const { data: existingPartner, error: existingPartnerErr } = await repo.fetchPartnerTenantByTenantAndName(supabase, tenant, name);
+  if (existingPartnerErr) return res.status(500).json({ ok: false, error: existingPartnerErr.message });
   let partnerId = existingPartner?.id;
   if (!partnerId) {
     partnerId = randomUUID();

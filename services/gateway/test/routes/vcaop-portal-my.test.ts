@@ -97,6 +97,25 @@ describe('ownership scoping', () => {
     expect(inserted[0].owner_user_id).toBe('merchant-3');
     expect(inserted[0].owner_email).toBe('real@owner.test');
   });
+
+  test('500 (not a silent duplicate-create) when the existing-partner lookup errors', async () => {
+    asMerchant('merchant-4', 'owner4@example.test');
+    const insertCalls: any[] = [];
+    const tables: Record<string, any> = {
+      partner_tenant: {
+        ...tableStub({ data: null, error: { message: 'connection reset' } }),
+        insert: jest.fn((row: any) => { insertCalls.push(row); return Promise.resolve({ error: null }); }),
+      },
+    };
+    (getSupabase as jest.Mock).mockReturnValue({ from: jest.fn((t: string) => tables[t] ?? tableStub({})) });
+    const res = await request(app).post('/api/v1/vcaop/portal/my/connections').send({
+      name: 'My Shop', connector_id: 'shopify', provider_id: 'shopify',
+    });
+    expect(res.status).toBe(500);
+    // The one-per-(owner, name) invariant: a lookup error must never be
+    // treated as "doesn't exist yet" and silently create a duplicate row.
+    expect(insertCalls).toHaveLength(0);
+  });
 });
 
 describe('authority boundaries', () => {

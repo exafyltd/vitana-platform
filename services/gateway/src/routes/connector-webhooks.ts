@@ -107,7 +107,16 @@ router.post('/webhook/:connectorId', async (req: Request, res: Response) => {
 
       // Find or create user_connection row
       let userConnectionId: string | null = null;
-      const { data: conn } = await repo.fetchUserConnectionForWebhook(supabase, userId, connector.id);
+      const { data: conn, error: connErr } = await repo.fetchUserConnectionForWebhook(supabase, userId, connector.id);
+      if (connErr) {
+        // A real DB error here must NOT be treated the same as "no
+        // connection row" — that silently drops tenantId, which makes every
+        // downstream `if (tenantId)` upsert (sleep/activity/workout data) a
+        // silent no-op while `persisted++` below still counts the event and
+        // the webhook acks 200, so the provider never retries. Throw so the
+        // existing per-event catch below counts it as skipped instead.
+        throw connErr;
+      }
       if (conn) userConnectionId = conn.id;
       const tenantId = conn?.tenant_id;
 
