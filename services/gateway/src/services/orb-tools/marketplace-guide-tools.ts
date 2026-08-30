@@ -880,7 +880,14 @@ export async function tool_get_marketplace_context(
 
     let budgetCapCents: number | null = null;
     try {
-      const { data } = await repo.fetchUserBudgetMonthlyCapCents(sb, id.user_id);
+      const { data, error } = await repo.fetchUserBudgetMonthlyCapCents(sb, id.user_id);
+      if (error) {
+        // Advisory-only (real checkout enforcement lives elsewhere, already
+        // verified clean) — a real DB error is kept non-fatal here on
+        // purpose, but logged so it isn't silently indistinguishable from
+        // "user genuinely has no budget cap set."
+        console.error(`[get_marketplace_context] budget cap lookup failed for user=${id.user_id}: ${error.message}`);
+      }
       budgetCapCents = (data as { budget_monthly_cap_cents?: number | null } | null)?.budget_monthly_cap_cents ?? null;
     } catch {
       /* budget cap is optional context */

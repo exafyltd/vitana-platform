@@ -114,12 +114,18 @@ function parseDateArg(raw: unknown): string {
 /** Tenant resolution mirrors voice-tools/health-log.ts (user_tenants, zero-UUID fallback). */
 async function resolveHealthTenantId(id: OrbToolIdentity, sb: SupabaseClient): Promise<string> {
   if (id.tenant_id) return id.tenant_id;
-  try {
-    const { data } = await repo.fetchTenantIdForUser(sb, id.user_id);
-    return (data as { tenant_id?: string } | null)?.tenant_id ?? DEFAULT_TENANT_ID;
-  } catch {
-    return DEFAULT_TENANT_ID;
+  const { data, error } = await repo.fetchTenantIdForUser(sb, id.user_id);
+  if (error) {
+    // A real DB error here must NOT fall through to DEFAULT_TENANT_ID the
+    // same way "user genuinely has no tenant row" does — every caller
+    // writes health data (meals/vitals/mood/biomarkers) keyed on this
+    // tenant id, so a transient failure would otherwise silently upsert
+    // real health data under the wrong (zero-UUID) tenant. Every call site
+    // already wraps this in try/catch and reports {ok:false, error}, so
+    // throwing is safe.
+    throw error;
   }
+  return (data as { tenant_id?: string } | null)?.tenant_id ?? DEFAULT_TENANT_ID;
 }
 
 const PILLAR_SCORE_COLUMN: Record<PillarKey, string> = {
@@ -207,7 +213,8 @@ export async function tool_log_meal(args: OrbToolArgs, id: OrbToolIdentity, sb: 
     // includes 'meal_log'; diary-health-extractor.ts documents it the same way) —
     // read-modify-write so multiple meals in a day accumulate rather than overwrite.
     const tenantId = await resolveHealthTenantId(id, sb);
-    const { data: existing } = await repo.fetchHealthFeatureValue(sb, tenantId, id.user_id, date, 'meal_log');
+    const { data: existing, error: existingErr } = await repo.fetchHealthFeatureValue(sb, tenantId, id.user_id, date, 'meal_log');
+    if (existingErr) throw existingErr; // must not be indistinguishable from "no meals logged yet today" — would silently reset the day's count instead of accumulating
     const newCount = (Number((existing as { feature_value?: number } | null)?.feature_value) || 0) + 1;
 
     const out = await upsertHealthFeatureAndRecompute(sb, id, {
