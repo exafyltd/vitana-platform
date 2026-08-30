@@ -285,7 +285,10 @@ async function checkProfileComplete(ctx: CheckContext): Promise<string | null> {
 
   if (!user?.display_name || !user?.avatar_url) return null;
 
-  const { count: interestCount } = await repo.countUserTopicProfileRows(ctx.supabase, ctx.tenantId, ctx.userId);
+  const { count: interestCount, error: interestErr } = await repo.countUserTopicProfileRows(ctx.supabase, ctx.tenantId, ctx.userId);
+  if (interestErr) {
+    console.warn(`[milestone-service] countUserTopicProfileRows failed (profile_complete cannot be evaluated): ${interestErr.message}`);
+  }
 
   if ((interestCount || 0) === 0) return null;
 

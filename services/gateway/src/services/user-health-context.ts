@@ -313,6 +313,9 @@ export async function getUserHealthContext(
     // user_topic_profile — affinity signals (optional source; the table may
     // not exist in all environments — a failed read is non-fatal)
     {
+      if (topicsRes?.error) {
+        console.warn(`[user-health-context] fetchUserTopicProfile failed (topic_affinity omitted): ${topicsRes.error.message}`);
+      }
       const topics = topicsRes?.data;
       if (topics) {
         for (const t of topics) {

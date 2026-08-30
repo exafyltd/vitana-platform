@@ -25,7 +25,10 @@ async function runServiceListingDistribution(ctx: AutomationContext) {
   const topicKeys = service.topic_keys || [];
   if (!topicKeys.length) return { usersAffected: 0, actionsTaken: 1 };
 
-  const { data: matchingUsers } = await repo.fetchTopicMatchedUsers(supabase, tenantId, topicKeys, 60, 50);
+  const { data: matchingUsers, error: matchingUsersErr } = await repo.fetchTopicMatchedUsers(supabase, tenantId, topicKeys, 60, 50);
+  if (matchingUsersErr) {
+    console.warn(`[business-marketplace] fetchTopicMatchedUsers failed (no users notified this run): ${matchingUsersErr.message}`);
+  }
 
   let usersAffected = 0;
   const uniqueUsers = new Set<string>();

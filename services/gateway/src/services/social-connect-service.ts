@@ -744,7 +744,7 @@ export async function enrichProfileFromSocial(
     const extractedTopics = extractInterestsFromProfile(profile, media);
     if (extractedTopics.length > 0) {
       for (const topic of extractedTopics) {
-        await repo.upsertUserTopicProfile(supabase, {
+        const { error: topicErr } = await repo.upsertUserTopicProfile(supabase, {
           tenant_id: tenantId,
           user_id: userId,
           topic_key: topic.key,
@@ -752,6 +752,9 @@ export async function enrichProfileFromSocial(
           source_weights: { [`social_${conn.provider}`]: topic.score },
           updated_at: new Date().toISOString(),
         });
+        if (topicErr) {
+          console.warn(`[social-connect-service] upsertUserTopicProfile failed for topic=${topic.key}: ${topicErr.message}`);
+        }
       }
       enrichments.push(`topics:${extractedTopics.map(t => t.key).join(',')}`);
     }

@@ -96,4 +96,24 @@ describe('checkMilestonesForAction("profile_updated") — wallet credit error ha
     expect(result).toEqual([]);
     expect(mockCreditWalletForMilestone).not.toHaveBeenCalled();
   });
+
+  it('on countUserTopicProfileRows returning {error} (the user_topic_profile-does-not-exist shape, docs/AURORA-B2-DEAD-CALLSITE-AUDIT.md Addendum 5): logs via console.warn instead of silently treating the count as zero', async () => {
+    mockCountUserTopicProfileRows.mockResolvedValue({
+      count: null,
+      error: { message: 'relation "user_topic_profile" does not exist' },
+    });
+
+    const result = await checkMilestonesForAction(SB, 'u1', 't1', 'profile_updated');
+
+    // Documented, unchanged behavior: an errored/zero count still means the
+    // milestone is not (yet) newly achieved this call — this fix only adds
+    // visibility, it does not fabricate a count.
+    expect(result).toEqual([]);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('countUserTopicProfileRows failed'),
+    );
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('relation "user_topic_profile" does not exist'),
+    );
+  });
 });
