@@ -168,7 +168,8 @@ async function handleWalletEvent(event: Stripe.Event): Promise<void> {
       const pi = event.data.object as Stripe.PaymentIntent;
       const supabase = getSupabase();
       if (!supabase) return;
-      const { data: deposit } = await repo.fetchWalletDepositByPaymentIntentId(supabase, pi.id);
+      const { data: deposit, error: depositErr } = await repo.fetchWalletDepositByPaymentIntentId(supabase, pi.id);
+      if (depositErr) throw depositErr;
       if (!deposit) {
         console.log(`[wallet-webhook] payment_intent.succeeded ${pi.id} has no matching deposit; skipping`);
         return;
@@ -184,7 +185,8 @@ async function handleWalletEvent(event: Stripe.Event): Promise<void> {
       const pi = event.data.object as Stripe.PaymentIntent;
       const supabase = getSupabase();
       if (!supabase) return;
-      const { data: deposit } = await repo.fetchWalletDepositByPaymentIntentId(supabase, pi.id);
+      const { data: deposit, error: depositErr } = await repo.fetchWalletDepositByPaymentIntentId(supabase, pi.id);
+      if (depositErr) throw depositErr;
       if (deposit) {
         const reason = pi.last_payment_error?.code || pi.last_payment_error?.type || 'payment_intent_failed';
         await markDepositTerminal((deposit as { id: string }).id, 'failed', reason);

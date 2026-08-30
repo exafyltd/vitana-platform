@@ -51,7 +51,20 @@ async function getActiveUsers(supabase: any, tenantId: string): Promise<Array<{ 
   const PAGE_SIZE = 1000;
   const users: Array<{ user_id: string }> = [];
   for (let offset = 0; ; offset += PAGE_SIZE) {
-    const { data } = await repo.fetchActiveUsersPage(supabase, { tenantId, offset, pageSize: PAGE_SIZE });
+    const { data, error } = await repo.fetchActiveUsersPage(supabase, { tenantId, offset, pageSize: PAGE_SIZE });
+    if (error) {
+      // Deliberately does not throw: these 9 call sites have no top-level
+      // error-catching middleware, and a hung/unhandled-rejection cron
+      // request risks a Scheduler timeout+retry double-send (see the
+      // VTID-03487 comment above) — worse than the partial page this
+      // already degrades to. Logged loudly so a mid-pagination DB error is
+      // at least visible instead of silently read as "reached the end of
+      // this tenant's users."
+      console.error(
+        `[scheduled-notifications] getActiveUsers query failed for tenant=${tenantId} offset=${offset}: ${error.message} — returning ${users.length} user(s) collected so far, possibly a partial list`,
+      );
+      break;
+    }
     const page = data || [];
     users.push(...page);
     if (page.length < PAGE_SIZE) break;
