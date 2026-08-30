@@ -842,6 +842,9 @@ export async function getEvolutionState(authToken?: string): Promise<GetEvolutio
     }
 
     const { data: pendingPlans, error: planError } = await repo.fetchD43PendingAdaptations(supabase, 5);
+    if (planError) {
+      console.warn(`[D43] fetchD43PendingAdaptations failed (non-fatal, falls back to []): ${planError.message}`);
+    }
 
     // Find last major change
     const majorEvents = driftResult.events.filter(e => e.magnitude >= 60);
