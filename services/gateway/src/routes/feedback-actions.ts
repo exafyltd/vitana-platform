@@ -72,8 +72,13 @@ const DuplicateSchema = z.object({ duplicate_of: z.string().uuid() });
 // On router failure each helper falls back to a clearly-labelled placeholder
 // so the supervisor can still move the ticket forward.
 async function loadTicketSnapshot(id: string) {
-  const { data } = await repo.fetchTicketSnapshot(getServiceClient(), id);
-  return data;
+  // Propagate `error` rather than discarding it — every caller used to
+  // treat a bare null `data` as "ticket truly doesn't exist" (404), which
+  // is indistinguishable from a real DB error and misleads on-call
+  // debugging into thinking the ticket is gone rather than the DB being
+  // unreachable.
+  const { data, error } = await repo.fetchTicketSnapshot(getServiceClient(), id);
+  return { data, error };
 }
 
 adminRouter.post('/tickets/:id/draft-answer', async (req: Request, res: Response) => {
@@ -81,7 +86,8 @@ adminRouter.post('/tickets/:id/draft-answer', async (req: Request, res: Response
   const actor = decodeJwtSub(token);
   const v = DraftSchema.safeParse(req.body); if (!v.success) return res.status(400).json({ ok: false });
 
-  const snap = await loadTicketSnapshot(req.params.id);
+  const { data: snap, error: snapErr } = await loadTicketSnapshot(req.params.id);
+  if (snapErr) return res.status(500).json({ ok: false, error: 'SNAPSHOT_LOOKUP_FAILED', details: snapErr.message });
   if (!snap) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
 
   const { llmDraftSageAnswer } = await import('../services/feedback-llm-resolvers');
@@ -102,7 +108,8 @@ adminRouter.post('/tickets/:id/draft-spec', async (req: Request, res: Response) 
   const actor = decodeJwtSub(token);
   const v = DraftSchema.safeParse(req.body); if (!v.success) return res.status(400).json({ ok: false });
 
-  const snap = await loadTicketSnapshot(req.params.id);
+  const { data: snap, error: snapErr } = await loadTicketSnapshot(req.params.id);
+  if (snapErr) return res.status(500).json({ ok: false, error: 'SNAPSHOT_LOOKUP_FAILED', details: snapErr.message });
   if (!snap) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
 
   const { llmDraftDevonSpec } = await import('../services/feedback-llm-resolvers');
@@ -123,7 +130,8 @@ adminRouter.post('/tickets/:id/draft-resolution', async (req: Request, res: Resp
   const actor = decodeJwtSub(token);
   const v = DraftSchema.safeParse(req.body); if (!v.success) return res.status(400).json({ ok: false });
 
-  const snap = await loadTicketSnapshot(req.params.id);
+  const { data: snap, error: snapErr } = await loadTicketSnapshot(req.params.id);
+  if (snapErr) return res.status(500).json({ ok: false, error: 'SNAPSHOT_LOOKUP_FAILED', details: snapErr.message });
   if (!snap) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
 
   const resolver = snap.kind === 'marketplace_claim' ? 'atlas' : 'mira';

@@ -130,3 +130,83 @@ describe('creditRecommenderForOrder — successful-credit path error handling', 
     expect(result).toEqual({ ok: true, status: 'already_credited' });
   });
 });
+
+describe('creditRecommenderForOrder — swallowed-error fixes (BOOTSTRAP-AURORA-CUTOVER)', () => {
+  let errorSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockGetSupabase.mockReturnValue(SB);
+    mockFetchProductOrderForCommission.mockResolvedValue({ data: ORDER, error: null });
+    mockFetchExistingRecommendationCommission.mockResolvedValue({ data: null, error: null });
+    mockFetchProductRecommendationForCommission.mockResolvedValue({ data: { id: 'rec-1', user_id: 'recommender-1' }, error: null });
+    mockFetchMerchantCommissionEligibility.mockResolvedValue({
+      data: { recommendation_commission_eligible: true, recommendation_commission_rate_override: 0.5 },
+      error: null,
+    });
+    mockFetchRecommenderWalletAccount.mockResolvedValue({ data: { id: 'acct-1' }, error: null });
+    mockCreditWalletForEarning.mockResolvedValue({ ok: true, ledger_entry_id: 'ledger-1' });
+    mockInsertRecommendationCommission.mockResolvedValue({ error: null });
+    mockIncrementProductRecommendationStats.mockResolvedValue({ error: null });
+    errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    errorSpy.mockRestore();
+  });
+
+  it('fetchProductRecommendationForCommission error: does NOT report skipped_no_recommendation (indistinguishable from "no recommendation exists"), logs and reports failed instead', async () => {
+    mockFetchProductRecommendationForCommission.mockResolvedValue({
+      data: null,
+      error: { message: 'connection terminated unexpectedly' },
+    });
+
+    const result = await creditRecommenderForOrder('order-1');
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('fetchProductRecommendationForCommission error for order=order-1: connection terminated unexpectedly'),
+    );
+    expect(result).toEqual({ ok: false, status: 'failed', message: 'RECOMMENDATION_LOOKUP_FAILED' });
+    expect(mockFetchMerchantCommissionEligibility).not.toHaveBeenCalled();
+    expect(mockInsertRecommendationCommission).not.toHaveBeenCalled();
+  });
+
+  it('fetchMerchantCommissionEligibility error: does NOT write a permanent skipped_ineligible row, logs and reports failed instead', async () => {
+    mockFetchMerchantCommissionEligibility.mockResolvedValue({
+      data: null,
+      error: { message: 'connection terminated unexpectedly' },
+    });
+
+    const result = await creditRecommenderForOrder('order-1');
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('fetchMerchantCommissionEligibility error for order=order-1: connection terminated unexpectedly'),
+    );
+    expect(result).toEqual({ ok: false, status: 'failed', message: 'MERCHANT_LOOKUP_FAILED' });
+    expect(mockInsertRecommendationCommission).not.toHaveBeenCalled();
+  });
+
+  it('fetchRecommenderWalletAccount error: reports a distinct DB-failure message rather than RECOMMENDER_WALLET_NOT_FOUND', async () => {
+    mockFetchRecommenderWalletAccount.mockResolvedValue({
+      data: null,
+      error: { message: 'connection terminated unexpectedly' },
+    });
+
+    const result = await creditRecommenderForOrder('order-1');
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('fetchRecommenderWalletAccount error for order=order-1: connection terminated unexpectedly'),
+    );
+    expect(result).toEqual({ ok: false, status: 'failed', message: 'RECOMMENDER_WALLET_LOOKUP_FAILED' });
+    expect(mockCreditWalletForEarning).not.toHaveBeenCalled();
+  });
+
+  it('fetchRecommenderWalletAccount genuinely-not-found (no error) still reports RECOMMENDER_WALLET_NOT_FOUND (unchanged)', async () => {
+    mockFetchRecommenderWalletAccount.mockResolvedValue({ data: null, error: null });
+
+    const result = await creditRecommenderForOrder('order-1');
+
+    expect(errorSpy).not.toHaveBeenCalled();
+    expect(result).toEqual({ ok: false, status: 'failed', message: 'RECOMMENDER_WALLET_NOT_FOUND' });
+  });
+});

@@ -108,10 +108,14 @@ router.get('/tickets/:id', async (req: Request, res: Response) => {
     return res.status(404).json({ ok: false, error: 'NOT_FOUND', details: error?.message });
   }
 
-  const { data: handoffs } = await repo.fetchFeedbackHandoffEventsForTicket(supabase, id);
+  const { data: handoffs, error: handoffsErr } = await repo.fetchFeedbackHandoffEventsForTicket(supabase, id);
+  if (handoffsErr) console.error(`[feedback-admin] fetchFeedbackHandoffEventsForTicket error for ticket=${id}: ${handoffsErr.message}`);
 
   const { data: similar } = ticket.duplicate_of
-    ? await repo.fetchSimilarTicketById(supabase, ticket.duplicate_of).then(r => ({ data: r.data ? [r.data] : [] }))
+    ? await repo.fetchSimilarTicketById(supabase, ticket.duplicate_of).then(r => {
+        if (r.error) console.error(`[feedback-admin] fetchSimilarTicketById error for ticket=${ticket.duplicate_of}: ${r.error.message}`);
+        return { data: r.data ? [r.data] : [] };
+      })
     : { data: [] };
 
   return res.json({ ok: true, ticket, handoffs: handoffs ?? [], similar: similar ?? [] });
@@ -153,16 +157,20 @@ router.get('/kpis', async (req: Request, res: Response) => {
 
   // Total counts by status
   const window30dIso = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
-  const { data: byStatus } = await repo.fetchFeedbackTicketsByStatusWindow(supabase, window30dIso);
+  const { data: byStatus, error: byStatusErr } = await repo.fetchFeedbackTicketsByStatusWindow(supabase, window30dIso);
+  if (byStatusErr) console.error(`[feedback-admin] fetchFeedbackTicketsByStatusWindow error: ${byStatusErr.message}`);
 
-  const { data: byKind } = await repo.fetchFeedbackTicketsByKindWindow(supabase, window30dIso);
+  const { data: byKind, error: byKindErr } = await repo.fetchFeedbackTicketsByKindWindow(supabase, window30dIso);
+  if (byKindErr) console.error(`[feedback-admin] fetchFeedbackTicketsByKindWindow error: ${byKindErr.message}`);
 
-  const { data: byResolver } = await repo.fetchFeedbackTicketsByResolverWindow(supabase, window30dIso);
+  const { data: byResolver, error: byResolverErr } = await repo.fetchFeedbackTicketsByResolverWindow(supabase, window30dIso);
+  if (byResolverErr) console.error(`[feedback-admin] fetchFeedbackTicketsByResolverWindow error: ${byResolverErr.message}`);
 
-  const { data: handoffCount } = await repo.fetchHandoffCountByAgentWindow(
+  const { data: handoffCount, error: handoffCountErr } = await repo.fetchHandoffCountByAgentWindow(
     supabase,
     new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString(),
   );
+  if (handoffCountErr) console.error(`[feedback-admin] fetchHandoffCountByAgentWindow error: ${handoffCountErr.message}`);
 
   const tally = (rows: Array<Record<string, unknown>> | null, col: string): Record<string, number> => {
     const t: Record<string, number> = {};
@@ -224,7 +232,8 @@ router.get('/tenants/:tenantId/tickets', async (req: Request, res: Response) => 
   const uniqueVitanaIds = [...new Set(tickets.map(t => t.vitana_id).filter((v): v is string => !!v))];
   let profilesByVitanaId: Record<string, { avatar_url: string | null; display_name: string | null }> = {};
   if (uniqueVitanaIds.length > 0) {
-    const { data: profiles } = await repo.fetchProfilesByVitanaIds(supabase, uniqueVitanaIds);
+    const { data: profiles, error: profilesErr } = await repo.fetchProfilesByVitanaIds(supabase, uniqueVitanaIds);
+    if (profilesErr) console.error(`[feedback-admin] fetchProfilesByVitanaIds error: ${profilesErr.message}`);
     for (const p of profiles ?? []) {
       const r = p as { vitana_id: string; avatar_url: string | null; display_name: string | null };
       profilesByVitanaId[r.vitana_id] = {

@@ -69,13 +69,26 @@ export async function creditRecommenderForOrder(orderId: string): Promise<Credit
   }
   if (existing) return { ok: true, status: 'already_credited' };
 
-  const { data: recommendation } = await repo.fetchProductRecommendationForCommission(
+  const { data: recommendation, error: recommendationErr } = await repo.fetchProductRecommendationForCommission(
     supabase,
     order.attribution_recommendation_id,
   );
+  if (recommendationErr) {
+    console.error(`[credit-recommender] fetchProductRecommendationForCommission error for order=${orderId}: ${recommendationErr.message}`);
+    return { ok: false, status: 'failed', message: 'RECOMMENDATION_LOOKUP_FAILED' };
+  }
   if (!recommendation) return { ok: true, status: 'skipped_no_recommendation' };
 
-  const { data: merchant } = await repo.fetchMerchantCommissionEligibility(supabase, order.merchant_id);
+  const { data: merchant, error: merchantErr } = await repo.fetchMerchantCommissionEligibility(supabase, order.merchant_id);
+  if (merchantErr) {
+    // A real DB error here must NOT be evaluated as "merchant not eligible" —
+    // that branch below permanently writes a skipped_ineligible row keyed on
+    // product_order_id, which the idempotency check above treats as final
+    // regardless of stored status, blocking any future reprocessing of a
+    // transient DB blip. Bail before eligibility is even considered.
+    console.error(`[credit-recommender] fetchMerchantCommissionEligibility error for order=${orderId}: ${merchantErr.message}`);
+    return { ok: false, status: 'failed', message: 'MERCHANT_LOOKUP_FAILED' };
+  }
 
   const currency = (order.currency ?? 'EUR').toUpperCase();
   const rate = merchant?.recommendation_commission_rate_override ?? (await loadDefaultRate(supabase));
@@ -107,7 +120,11 @@ export async function creditRecommenderForOrder(orderId: string): Promise<Credit
     return { ok: true, status: 'skipped_no_recommendation', message: 'non-positive payout or unsupported currency' };
   }
 
-  const { data: account } = await repo.fetchRecommenderWalletAccount(supabase, recommendation.user_id, currency);
+  const { data: account, error: accountErr } = await repo.fetchRecommenderWalletAccount(supabase, recommendation.user_id, currency);
+  if (accountErr) {
+    console.error(`[credit-recommender] fetchRecommenderWalletAccount error for order=${orderId}: ${accountErr.message}`);
+    return { ok: false, status: 'failed', message: 'RECOMMENDER_WALLET_LOOKUP_FAILED' };
+  }
   if (!account) {
     return { ok: false, status: 'failed', message: 'RECOMMENDER_WALLET_NOT_FOUND' };
   }

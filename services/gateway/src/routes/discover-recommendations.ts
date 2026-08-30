@@ -49,8 +49,14 @@ router.post('/recommendations', async (req: Request, res: Response) => {
   const { data: product, error: productErr } = await repo.fetchActiveProductForRecommendation(supabase, product_id);
   if (productErr || !product) return res.status(404).json({ ok: false, error: 'PRODUCT_NOT_FOUND' });
 
-  // Find-or-create — one recommendation per (user, product).
-  const { data: existing } = await repo.fetchExistingRecommendation(supabase, userId, product_id);
+  // Find-or-create — one recommendation per (user, product). A DB error here
+  // must not fall through to create: this is find-or-create, and treating a
+  // failed lookup as "not found" would mint a second recommendation + sharing
+  // link for a pair that may already have one.
+  const { data: existing, error: existingErr } = await repo.fetchExistingRecommendation(supabase, userId, product_id);
+  if (existingErr) {
+    return res.status(500).json({ ok: false, error: 'EXISTING_RECOMMENDATION_LOOKUP_FAILED', message: existingErr.message });
+  }
 
   let recommendationId: string;
   if (existing) {

@@ -29,7 +29,15 @@ export async function recordJourneySessionSummary(
     const doneNow = doneKeys(snapshot.foundation_steps);
 
     // Diff against the last session update to isolate "newly completed".
-    const { data: last } = await repo.fetchLatestJourneySessionUpdate(client, userId);
+    const { data: last, error: lastErr } = await repo.fetchLatestJourneySessionUpdate(client, userId);
+    if (lastErr) {
+      // A real DB error here must NOT be treated as "no prior summary" —
+      // that would make `previouslyDone` empty and `newlyCompleted` become
+      // the user's ENTIRE journey history, writing a wrong "you just
+      // completed: [everything]" summary from a corrupted baseline.
+      console.error(`[VTID-03255] fetchLatestJourneySessionUpdate error for user=${userId}: ${lastErr.message}`);
+      return;
+    }
     const previouslyDone = new Set<string>(
       ((last?.completed_steps as string[] | undefined) ?? []),
     );

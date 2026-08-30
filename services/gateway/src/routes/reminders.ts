@@ -333,7 +333,8 @@ router.post('/:id/snooze', async (req: Request, res: Response) => {
     const minutes = Math.max(1, Math.min(parseInt(String(req.body?.minutes ?? '10'), 10) || 10, 24 * 60));
     const newTime = new Date(Date.now() + minutes * 60_000).toISOString();
 
-    const { data: row } = await repo.fetchReminderSnoozeCount(admin, req.params.id, userId);
+    const { data: row, error: rowErr } = await repo.fetchReminderSnoozeCount(admin, req.params.id, userId);
+    if (rowErr) throw new Error(rowErr.message);
     if (!row) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
 
     const { data, error } = await repo.updateReminderSnooze(admin, req.params.id, userId, {

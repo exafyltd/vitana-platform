@@ -172,7 +172,17 @@ export async function creditAwinConversions(supabase: any, cfg: AwinTxConfig): P
     const credit = mapAwinTransaction(tx);
     if (!credit) continue;
 
-    const { data: map } = await repo.fetchSubidMapEntry(supabase, credit.subId);
+    const { data: map, error: mapErr } = await repo.fetchSubidMapEntry(supabase, credit.subId);
+    if (mapErr) {
+      // A real DB error here must NOT be counted as unattributed — that bucket
+      // means "no subid mapping exists" (organic/other), and this transaction's
+      // real attribution status is simply unknown this pull. Leaving it out of
+      // both counters (rather than guessing) means the NEXT pull (this loop is
+      // idempotent, keyed by commissionId) gets a fair, un-poisoned retry as
+      // long as the transaction is still inside the lookback window.
+      console.error(`[awin-conversions] fetchSubidMapEntry error for subId=${credit.subId} tx=${credit.txId}: ${mapErr.message}`);
+      continue;
+    }
     if (!map) { unattributed++; continue; }
     attributed++;
 
