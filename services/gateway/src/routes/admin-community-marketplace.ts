@@ -97,7 +97,8 @@ router.patch('/listings/:id', async (req: Request, res: Response) => {
   for (const k of allowed) if (k in req.body) patch[k] = req.body[k];
   if (Object.keys(patch).length === 0) return res.status(400).json({ ok: false, error: 'no_allowed_fields' });
 
-  const { data: existing } = await repo.fetchListingForAdminEdit(supabase, id, getTenantId(req));
+  const { data: existing, error: existingErr } = await repo.fetchListingForAdminEdit(supabase, id, getTenantId(req));
+  if (existingErr) return res.status(500).json({ ok: false, error: existingErr.message });
   if (!existing) return res.status(404).json({ ok: false, error: 'listing_not_found' });
 
   if (typeof patch.status === 'string') {
@@ -236,7 +237,16 @@ router.post('/sellers/:userId/suspend', async (req: Request, res: Response) => {
   });
   if (upsertErr) return res.status(500).json({ ok: false, error: upsertErr.message });
 
-  const { data: rows } = await repo.fetchActiveListingsForSeller(supabase, userId, tenantId);
+  const { data: rows, error: rowsErr } = await repo.fetchActiveListingsForSeller(supabase, userId, tenantId);
+  if (rowsErr) {
+    // The suspension record itself already committed above — this only
+    // affects whether the seller's currently-active listings also get
+    // pulled down. Logged loudly rather than silently reporting
+    // listings_suspended:0 as if the seller genuinely had none: an admin
+    // relying on that count to confirm a bad actor's listings are hidden
+    // would otherwise be told everything is handled when it isn't.
+    console.error(`[admin-community-marketplace] active-listings lookup failed while suspending seller=${userId}: ${rowsErr.message}`);
+  }
 
   if (rows && rows.length > 0) {
     await repo.bulkUpdateListings(supabase, rows.map((r) => r.id), { status: 'suspended', requires_admin_review: false });
@@ -248,10 +258,11 @@ router.post('/sellers/:userId/suspend', async (req: Request, res: Response) => {
   await emitAdminActivity(req, 'community_marketplace.admin.seller_suspended', 'Admin suspended a seller', {
     seller_user_id: userId,
     listings_suspended: rows?.length ?? 0,
+    listings_lookup_failed: !!rowsErr,
     reason: reason?.trim() ?? null,
   });
 
-  res.status(201).json({ ok: true, listings_suspended: rows?.length ?? 0 });
+  res.status(201).json({ ok: true, listings_suspended: rows?.length ?? 0, listings_lookup_failed: !!rowsErr });
 });
 
 router.delete('/sellers/:userId/suspend', async (req: Request, res: Response) => {
