@@ -37,7 +37,13 @@ function getUser(req: Request): { user_id: string; tenant_id: string | null } | 
 async function resolveTenantId(userId: string): Promise<string | null> {
   const supabase = getSupabase();
   if (!supabase) return null;
-  const { data } = await repo.fetchActivePrimaryTenant(supabase, userId);
+  const { data, error } = await repo.fetchActivePrimaryTenant(supabase, userId);
+  if (error) {
+    // Non-fatal by design — the sole caller already treats a null tenant
+    // as a 400. Logged so a real DB failure here isn't silently
+    // indistinguishable from a user who genuinely has no active tenant.
+    console.error(`[wearables] resolveTenantId lookup failed for user=${userId}: ${error.message}`);
+  }
   return data?.tenant_id ?? null;
 }
 
@@ -48,11 +54,18 @@ router.get('/providers', async (req: Request, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
-  const { data: registry } = await repo.fetchWearableConnectorRegistry(supabase);
+  const { data: registry, error: registryErr } = await repo.fetchWearableConnectorRegistry(supabase);
+  if (registryErr) return res.status(500).json({ ok: false, error: registryErr.message });
 
   let userConnections: Array<{ connector_id: string; is_active: boolean; last_sync_at: string | null; display_name: string | null }> = [];
   if (user) {
-    const { data: connections } = await repo.fetchUserWearableConnections(supabase, user.user_id);
+    const { data: connections, error: connectionsErr } = await repo.fetchUserWearableConnections(supabase, user.user_id);
+    if (connectionsErr) {
+      // Non-fatal: the provider catalog itself is still valid — degrade to
+      // "nothing shows as connected" rather than fail the whole page, but
+      // log so a real error isn't silently read as "user has no connections".
+      console.error(`[wearables] user connections lookup failed for user=${user.user_id}: ${connectionsErr.message}`);
+    }
     userConnections = connections ?? [];
   }
   const connectionMap = new Map(userConnections.filter((c) => c.is_active).map((c) => [c.connector_id, c]));

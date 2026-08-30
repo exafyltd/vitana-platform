@@ -55,7 +55,8 @@ router.get('/callback', async (req: Request, res: Response) => { // public-route
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'database unavailable' });
 
-  const { data: rec } = await repo.fetchIntegrationManifestById(supabase, decoded.manifestId);
+  const { data: rec, error: recErr } = await repo.fetchIntegrationManifestById(supabase, decoded.manifestId);
+  if (recErr) return res.status(500).json({ ok: false, error: recErr.message });
   if (!rec || rec.connector_id !== 'smart_fhir') {
     return res.status(404).json({ ok: false, error: 'connection not found' });
   }
