@@ -306,7 +306,10 @@ router.post('/groups/:id/join', async (req: Request, res: Response) => {
           }
 
           // Notify other group members
-          const { data: members } = await repo.fetchGroupMembersExcluding(supa, groupId, joinerId);
+          const { data: members, error: membersErr } = await repo.fetchGroupMembersExcluding(supa, groupId, joinerId);
+          if (membersErr) {
+            console.error(`[community] fetchGroupMembersExcluding failed for group=${groupId}: ${membersErr.message}`);
+          }
 
           const memberIds = (members || [])
             .map((m: any) => m.user_id)
