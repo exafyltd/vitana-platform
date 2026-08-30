@@ -323,7 +323,10 @@ async function runLiveRoomRevenueOptimizationTips(ctx: AutomationContext) {
     const vitanaId = vitanaIdByHost.get(hostId);
     let revenueCents = 0;
     if (vitanaId) {
-      const { data: payments } = await repo.fetchServicePaymentsForPayee(supabase, vitanaId, ['captured', 'released'], windowStart);
+      const { data: payments, error: paymentsErr } = await repo.fetchServicePaymentsForPayee(supabase, vitanaId, ['captured', 'released'], windowStart);
+      if (paymentsErr) {
+        console.error(`[live-rooms-commerce] fetchServicePaymentsForPayee failed for host=${hostId}, omitting revenue line to avoid understating real earnings: ${paymentsErr.message}`);
+      }
       revenueCents = (payments || []).reduce((s: number, p: any) => s + (p.amount_cents || 0), 0);
     }
 

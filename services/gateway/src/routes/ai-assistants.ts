@@ -302,7 +302,11 @@ router.post('/apikey/:provider', async (req: AuthenticatedRequest, res: Response
   const key_last4 = apiKey.slice(-4);
 
   // Upsert connection
-  const { data: existing } = await repo.fetchExistingApiKeyConnection(supabase, tenantId, userId, provider);
+  const { data: existing, error: existingErr } = await repo.fetchExistingApiKeyConnection(supabase, tenantId, userId, provider);
+  if (existingErr) {
+    console.error(`${LOG_PREFIX} POST /apikey/${provider} existing-connection lookup err`, existingErr.message);
+    return res.status(500).json({ ok: false, error: existingErr.message });
+  }
 
   let connectionId: string;
   if (existing?.id) {

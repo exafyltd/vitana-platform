@@ -207,7 +207,10 @@ export async function loadMarketplacePrefs(
 ): Promise<MarketplacePrefs> {
   const prefs = emptyPrefs();
   try {
-    const { data } = await repo.fetchMarketplacePrefFacts(sb, tenantId, userId, MARKETPLACE_PREF_KEYS);
+    const { data, error } = await repo.fetchMarketplacePrefFacts(sb, tenantId, userId, MARKETPLACE_PREF_KEYS);
+    if (error) {
+      console.error(`[marketplace-va-shared] fetchMarketplacePrefFacts failed for user=${userId} (dietary/exclusion prefs omitted this call): ${error.message}`);
+    }
     for (const row of (data as Array<{ fact_key: string; fact_value: string }>) ?? []) {
       const v = (row.fact_value ?? '').trim();
       if (!v) continue;

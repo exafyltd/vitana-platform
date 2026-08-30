@@ -78,3 +78,38 @@ describe('tool_set_shopping_budget — clear path, fetchUserLimitationsExists er
     expect((result.result as { cleared: boolean }).cleared).toBe(true);
   });
 });
+
+describe('tool_set_shopping_budget — currency-preference fetch error handling', () => {
+  let errorSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    errorSpy.mockRestore();
+  });
+
+  it('logs via console.error when fetchAppUserCurrencyPreference errors, and still completes using the DEFAULT_CURRENCY display fallback (unchanged behavior — the stored cap itself is currency-agnostic)', async () => {
+    mockFetchAppUserCurrencyPreference.mockResolvedValue({
+      data: null,
+      error: { message: 'connection reset' },
+    });
+    mockFetchUserLimitationsExists.mockResolvedValue({ data: null, error: null });
+
+    const result = await tool_set_shopping_budget({ clear: true }, ID, SB);
+
+    expect(result.ok).toBe(true);
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('fetchAppUserCurrencyPreference error for user=u1'));
+  });
+
+  it('logs nothing on a successful currency lookup', async () => {
+    mockFetchAppUserCurrencyPreference.mockResolvedValue({ data: { currency_preference: 'EUR' }, error: null });
+    mockFetchUserLimitationsExists.mockResolvedValue({ data: null, error: null });
+
+    await tool_set_shopping_budget({ clear: true }, ID, SB);
+
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+});

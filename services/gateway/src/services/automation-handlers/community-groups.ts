@@ -384,7 +384,11 @@ async function runAutoCreateGroupFromInterestCluster(ctx: AutomationContext) {
     if (groupsCreated >= INTEREST_CLUSTER_MAX_NEW_GROUPS) break;
     if (userIds.length < INTEREST_CLUSTER_MIN_USERS) continue;
 
-    const { data: existingGroup } = await repo.fetchExistingGroupByCategory(supabase, interest);
+    const { data: existingGroup, error: existingGroupErr } = await repo.fetchExistingGroupByCategory(supabase, interest);
+    if (existingGroupErr) {
+      console.error(`[community-groups] fetchExistingGroupByCategory failed for interest=${interest}, skipping to avoid a duplicate group: ${existingGroupErr.message}`);
+      continue;
+    }
     if (existingGroup) continue;
 
     const displayName = interest.replace(/(^|\s)\S/g, (c: string) => c.toUpperCase());
@@ -567,7 +571,11 @@ async function runCrossGroupIntroduction(ctx: AutomationContext) {
       for (const g of groupsA) if (groupsB.has(g)) shared++;
       if (shared < CROSS_GROUP_MIN_SHARED_GROUPS) continue;
 
-      const { data: existingEdge } = await repo.fetchExistingConnectionEdge(supabase, tenantId, userA, userB);
+      const { data: existingEdge, error: existingEdgeErr } = await repo.fetchExistingConnectionEdge(supabase, tenantId, userA, userB);
+      if (existingEdgeErr) {
+        console.error(`[community-groups] fetchExistingConnectionEdge failed for pair=${userA},${userB}, skipping to avoid re-notifying an already-introduced pair: ${existingEdgeErr.message}`);
+        continue;
+      }
       if (existingEdge && existingEdge.length > 0) continue;
 
       introduced.add(pairKey);
@@ -635,7 +643,11 @@ async function runGroupCreationFromMatchCluster(ctx: AutomationContext) {
     if (groupsCreated >= MATCH_CLUSTER_MAX_NEW_GROUPS) break;
 
     // Skip if these three already share a group.
-    const { data: sharedMemberships } = await repo.fetchSharedMemberships(supabase, [userA, userB, userC]);
+    const { data: sharedMemberships, error: sharedMembershipsErr } = await repo.fetchSharedMemberships(supabase, [userA, userB, userC]);
+    if (sharedMembershipsErr) {
+      console.error(`[community-groups] fetchSharedMemberships failed for triangle=${userA},${userB},${userC}, skipping to avoid a duplicate group: ${sharedMembershipsErr.message}`);
+      continue;
+    }
 
     const groupCounts = new Map<string, number>();
     for (const m of sharedMemberships || []) {

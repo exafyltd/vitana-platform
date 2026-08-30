@@ -225,7 +225,15 @@ async function executeAction(actionId: string, userId: string, tenantId: string)
   const supabase = getSupabase();
   if (!supabase) return { ok: false, error: 'DB unavailable' };
 
-  const { data: action } = await repo.fetchFullPendingAction(supabase, actionId);
+  const { data: action, error: fetchErr } = await repo.fetchFullPendingAction(supabase, actionId);
+  if (fetchErr) {
+    console.error(`[consent-gate] fetchFullPendingAction failed for action=${actionId} right after approval — marking failed instead of leaving it stranded in 'approved': ${fetchErr.message}`);
+    await repo.markActionFailed(supabase, actionId, {
+      error: `Failed to load approved action for execution: ${fetchErr.message}`,
+      failed_at: new Date().toISOString(),
+    });
+    return { ok: false, error: 'Failed to load action for execution' };
+  }
   if (!action) return { ok: false, error: 'Action not found' };
 
   await repo.markActionExecuting(supabase, actionId);

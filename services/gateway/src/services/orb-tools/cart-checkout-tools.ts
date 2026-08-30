@@ -583,7 +583,13 @@ export async function tool_set_shopping_budget(args: OrbToolArgs, id: OrbToolIde
   const clear = args.clear === true;
 
   try {
-    const { data: userRow } = await repo.fetchAppUserCurrencyPreference(sb, id.user_id);
+    const { data: userRow, error: currencyErr } = await repo.fetchAppUserCurrencyPreference(sb, id.user_id);
+    if (currencyErr) {
+      // Display-only fallback: the stored budget cap itself doesn't take a
+      // currency argument, so this only risks the spoken/returned
+      // confirmation text showing the wrong currency symbol.
+      console.error(`[cart-checkout-tools] fetchAppUserCurrencyPreference error for user=${id.user_id}, defaulting to ${DEFAULT_CURRENCY} for display: ${currencyErr.message}`);
+    }
     const currency = (userRow as { currency_preference?: string | null } | null)?.currency_preference || DEFAULT_CURRENCY;
 
     if (clear) {

@@ -138,6 +138,63 @@ describe('runSubscriptionExpiryWarning (AP-0704)', () => {
     expect(notify).not.toHaveBeenCalled();
     expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
   });
+
+  it('sends zero warnings and logs loudly when fetchExpiringSubscriptions errors, instead of treating the tenant as having no expiring subscriptions', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const supabase = makeFakeSupabase({
+      user_subscriptions: [{ data: null, error: { message: 'connection reset' } }],
+    });
+    const { ctx, notify } = makeCtx(supabase);
+    const handler = getHandler('runSubscriptionExpiryWarning')!;
+    const result = await handler(ctx);
+    expect(notify).not.toHaveBeenCalled();
+    expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('fetchExpiringSubscriptions failed'));
+    errorSpy.mockRestore();
+  });
+
+  it('skips a user (does not re-warn) when the cooldown check errors, instead of failing open', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const inTwoDays = new Date(Date.now() + 2 * 86_400_000).toISOString();
+    const supabase = makeFakeSupabase({
+      user_subscriptions: [{ data: [{ user_id: 'u1', plan_key: 'pro', current_period_end: inTwoDays }], error: null }],
+      user_notifications: [{ data: null, error: { message: 'connection reset' } }],
+    });
+    const { ctx, notify } = makeCtx(supabase);
+    const handler = getHandler('runSubscriptionExpiryWarning')!;
+    const result = await handler(ctx);
+    expect(notify).not.toHaveBeenCalled();
+    expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('fetchRecentExpiryWarning failed'));
+    errorSpy.mockRestore();
+  });
+});
+
+describe('runCreatorStripeOnboarding (AP-0706)', () => {
+  it('does not send a false "already onboarded" or a false onboarding nudge when fetchStripeAccountStatus errors', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const supabase = makeFakeSupabase({
+      app_users: [{ data: null, error: { message: 'connection reset' } }],
+    });
+    const { ctx, notify } = makeCtx(supabase, { user_id: 'u1' });
+    const handler = getHandler('runCreatorStripeOnboarding')!;
+    const result = await handler(ctx);
+    expect(notify).not.toHaveBeenCalled();
+    expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('fetchStripeAccountStatus failed'));
+    errorSpy.mockRestore();
+  });
+
+  it('nudges a creator who has no Stripe account yet, on a successful lookup', async () => {
+    const supabase = makeFakeSupabase({
+      app_users: [{ data: { stripe_account_id: null, stripe_charges_enabled: false }, error: null }],
+    });
+    const { ctx, notify } = makeCtx(supabase, { user_id: 'u1' });
+    const handler = getHandler('runCreatorStripeOnboarding')!;
+    const result = await handler(ctx);
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ usersAffected: 1, actionsTaken: 1 });
+  });
 });
 
 describe('runSpendingInsights (AP-0712)', () => {

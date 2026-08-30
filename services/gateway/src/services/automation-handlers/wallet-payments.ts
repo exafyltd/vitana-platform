@@ -49,7 +49,11 @@ async function runCreatorStripeOnboarding(ctx: AutomationContext) {
   const { supabase, tenantId } = ctx;
 
   // Check if user already has Stripe account
-  const { data: user } = await repo.fetchStripeAccountStatus(supabase, userId);
+  const { data: user, error: userErr } = await repo.fetchStripeAccountStatus(supabase, userId);
+  if (userErr) {
+    console.error(`[wallet-payments] fetchStripeAccountStatus failed for user=${userId}, skipping to avoid a false onboarding nudge: ${userErr.message}`);
+    return { usersAffected: 0, actionsTaken: 0 };
+  }
 
   if (user?.stripe_charges_enabled) {
     ctx.log('Creator already has Stripe Connect enabled');
@@ -242,12 +246,20 @@ async function runSubscriptionExpiryWarning(ctx: AutomationContext) {
   const now = new Date();
   const windowEnd = new Date(now.getTime() + EXPIRY_WARNING_WINDOW_DAYS * 86_400_000);
 
-  const { data: expiring } = await repo.fetchExpiringSubscriptions(supabase, tenantId, now.toISOString(), windowEnd.toISOString());
+  const { data: expiring, error: expiringErr } = await repo.fetchExpiringSubscriptions(supabase, tenantId, now.toISOString(), windowEnd.toISOString());
+  if (expiringErr) {
+    console.error(`[wallet-payments] fetchExpiringSubscriptions failed for tenant=${tenantId}, no expiry warnings sent this run: ${expiringErr.message}`);
+    return { usersAffected: 0, actionsTaken: 0 };
+  }
 
   const cooldownCutoff = new Date(now.getTime() - EXPIRY_WARNING_COOLDOWN_DAYS * 86_400_000).toISOString();
 
   for (const sub of expiring || []) {
-    const { data: recentWarning } = await repo.fetchRecentExpiryWarning(supabase, sub.user_id, cooldownCutoff);
+    const { data: recentWarning, error: recentWarningErr } = await repo.fetchRecentExpiryWarning(supabase, sub.user_id, cooldownCutoff);
+    if (recentWarningErr) {
+      console.error(`[wallet-payments] fetchRecentExpiryWarning failed for user=${sub.user_id}, skipping to avoid re-warning within the cooldown: ${recentWarningErr.message}`);
+      continue;
+    }
     if (recentWarning && recentWarning.length > 0) continue;
 
     const daysLeft = Math.max(1, Math.ceil((new Date(sub.current_period_end).getTime() - now.getTime()) / 86_400_000));
