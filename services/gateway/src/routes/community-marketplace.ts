@@ -314,7 +314,14 @@ router.post('/listings', async (req: Request, res: Response) => {
   const { data: suspension } = await repo.checkSellerSuspended(supabase, userId);
   if (suspension) return res.status(403).json({ ok: false, error: 'seller_suspended' });
 
-  const { data: profile } = await supabase.from('profiles').select('verification_status').eq('user_id', userId).maybeSingle();
+  const { data: profile, error: profileErr } = await supabase.from('profiles').select('verification_status').eq('user_id', userId).maybeSingle();
+  if (profileErr) {
+    // Non-fatal by design: falls through to sellerVerificationStatus=null,
+    // which runModerationCheck already treats as unverified (fail-closed —
+    // the more restrictive outcome). Logged so a real DB failure here isn't
+    // silently indistinguishable from a seller who genuinely isn't verified.
+    console.error(`[community-marketplace] verification_status lookup failed for user=${userId}: ${profileErr.message}`);
+  }
 
   let moderation;
   try {
@@ -430,7 +437,11 @@ router.patch('/listings/:id', async (req: Request, res: Response) => {
     const category = await repo.fetchCategory(supabase, merged.category);
     if (!category) return res.status(400).json({ ok: false, error: 'invalid_category' });
 
-    const { data: profile } = await supabase.from('profiles').select('verification_status').eq('user_id', userId).maybeSingle();
+    const { data: profile, error: profileErr } = await supabase.from('profiles').select('verification_status').eq('user_id', userId).maybeSingle();
+    if (profileErr) {
+      // Same fail-closed-by-default reasoning as POST /listings above.
+      console.error(`[community-marketplace] verification_status lookup failed for user=${userId}: ${profileErr.message}`);
+    }
 
     let moderation;
     try {

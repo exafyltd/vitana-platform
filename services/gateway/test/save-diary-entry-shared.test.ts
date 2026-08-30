@@ -56,6 +56,7 @@ interface DbCall {
 function makeStubSupabase(opts: {
   diaryInsertError?: { message: string } | null;
   preIndexRow?: Record<string, number> | null;
+  preIndexError?: { message: string } | null;
   rpcReturn?: { data: unknown; error?: { message: string } | null };
 }) {
   const calls: DbCall[] = [];
@@ -76,7 +77,7 @@ function makeStubSupabase(opts: {
               eq: () => ({
                 maybeSingle: async () => {
                   calls.push({ table, op: 'select' });
-                  return { data: opts.preIndexRow ?? null, error: null };
+                  return { data: opts.preIndexRow ?? null, error: opts.preIndexError ?? null };
                 },
               }),
             }),
@@ -311,5 +312,29 @@ describe('VTID-03042 — save_diary_entry lifted to shared dispatcher', () => {
       sb as never,
     );
     expect(result.ok).toBe(true);
+  });
+
+  test('10. pre-recompute Index lookup error is logged, not silently treated as no-baseline', async () => {
+    const sb = makeStubSupabase({
+      preIndexRow: null,
+      preIndexError: { message: 'connection reset' },
+      rpcReturn: { data: { ok: true, score_total: 50 } },
+    });
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const result = await tool_save_diary_entry(
+      { raw_text: 'Slept eight hours and had a big salad for lunch.' },
+      identity,
+      sb as never,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok !== true) return;
+    // Still degrades gracefully — no baseline means no delta is reported,
+    // never a fabricated one — but the failure must not be silent.
+    const r = result.result as { index_delta: unknown };
+    expect(r.index_delta).toBeNull();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('pre-recompute Index lookup failed'),
+    );
+    warnSpy.mockRestore();
   });
 });

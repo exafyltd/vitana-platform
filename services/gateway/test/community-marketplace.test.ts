@@ -295,6 +295,41 @@ describe('POST /listings', () => {
       expect.objectContaining({ type: 'community_marketplace.listing.created' })
     );
   });
+
+  it('logs loudly (not silently) when the verification_status lookup errors, and still fails closed as unverified', async () => {
+    const GATED_CATEGORY = { ...ACTIVE_CATEGORY, key: 'health-coaching', requires_verified_provider: true };
+    tableHandlers.community_listing_categories = () => ({ data: GATED_CATEGORY, error: null });
+    tableHandlers.community_marketplace_seller_suspensions = () => ({ data: null, error: null });
+    tableHandlers.profiles = () => ({ data: null, error: { message: 'connection reset' } });
+    let insertedRow: any = null;
+    tableHandlers.community_listings = ({ op, args }: any) => {
+      if (op === 'insert') {
+        insertedRow = args[0];
+        return { data: { id: 'listing-1', status: insertedRow.status, images: [], seller_user_id: 'seller-1' }, error: null };
+      }
+      return { data: null, error: null };
+    };
+    tableHandlers.listing_status_history = () => ({ data: null, error: null });
+
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const r = await request(makeApp())
+      .post('/api/v1/community-marketplace/listings')
+      .set('Authorization', 'Bearer seller-1')
+      .send({ ...VALID_LISTING_BODY, category: 'health-coaching' });
+
+    expect(r.status).toBe(201);
+    // Fail-closed: a lookup error is treated the same as "not verified" —
+    // a provider-gated category still requires admin review, never silently
+    // treated as if the seller were verified.
+    expect(insertedRow.status).toBe('draft');
+    expect(insertedRow.requires_admin_review).toBe(true);
+    expect(insertedRow.auto_check_reasons).toContain('unverified_provider_for_gated_category');
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('verification_status lookup failed'),
+    );
+    errorSpy.mockRestore();
+  });
 });
 
 describe('PATCH /listings/:id', () => {
