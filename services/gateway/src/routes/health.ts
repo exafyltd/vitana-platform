@@ -869,7 +869,10 @@ router.get('/baseline-survey/status', async (req: Request, res: Response) => {
 
     let hasScore = false;
     if (admin) {
-      const { data: score } = await repo.fetchVitanaIndexScoreExistsForUser(admin, userId);
+      const { data: score, error: scoreErr } = await repo.fetchVitanaIndexScoreExistsForUser(admin, userId);
+      if (scoreErr) {
+        return res.status(500).json({ ok: false, error: scoreErr.message });
+      }
       hasScore = !!score;
     }
 

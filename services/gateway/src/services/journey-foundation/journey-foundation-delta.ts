@@ -85,9 +85,20 @@ async function ensureRow(
   client: SupabaseClient,
   userId: string,
 ): Promise<JourneyFoundationRow> {
-  const { data } = await repo.fetchJourneyFoundationRow(client, userId);
+  const { data, error } = await repo.fetchJourneyFoundationRow(client, userId);
+  if (error) {
+    // Must NOT fall through to "row doesn't exist yet" — that would attempt
+    // an INSERT against a row that may genuinely already exist (failing on
+    // the unique user_id constraint, itself unchecked below) and then
+    // return a fabricated blank row as if it were the user's real state.
+    // applyJourneyAnswer would then persist writes (current_next_step, etc.)
+    // computed from that fake blank state over the user's real progress.
+    // Both callers already wrap this in try/catch, so throwing is safe.
+    throw error;
+  }
   if (data) return data as JourneyFoundationRow;
-  const { data: inserted } = await repo.insertJourneyFoundationRow(client, userId);
+  const { data: inserted, error: insertErr } = await repo.insertJourneyFoundationRow(client, userId);
+  if (insertErr) throw insertErr;
   return (
     (inserted as JourneyFoundationRow) ?? {
       user_id: userId,

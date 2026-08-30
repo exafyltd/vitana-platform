@@ -63,11 +63,18 @@ export async function fetchActiveCategories(supabase: Supabase, listingKind?: 'p
 }
 
 export async function fetchCategory(supabase: Supabase, key: string): Promise<ModerationCategoryInfo | null> {
-  const { data } = await supabase!
+  const { data, error } = await supabase!
     .from('community_listing_categories')
     .select('key, listing_kind, is_prohibited, requires_verified_provider, requires_admin_review_always, is_active')
     .eq('key', key)
     .maybeSingle();
+  if (error) {
+    // Both call sites already fail closed on a null return (400
+    // invalid_category), which is the safe outcome for a real DB error
+    // too — but logged so a spike of "invalid category" reports isn't
+    // silently indistinguishable from an actual DB failure.
+    console.error(`[community-marketplace] fetchCategory query failed for key=${key}: ${error.message}`);
+  }
   if (!data || !data.is_active) return null;
   return {
     key: data.key,

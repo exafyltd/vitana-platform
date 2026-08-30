@@ -227,7 +227,8 @@ router.get('/listings/by-seller/:vitanaId', async (req: Request, res: Response) 
   // If the viewer has blocked this seller, return an empty list rather than
   // a 403/404 — same silent-exclusion posture as GET /listings, so visiting
   // the profile directly can't be used to confirm a block exists.
-  const { data: block } = await repo.checkSellerBlocked(supabase, viewerId, subject.user_id);
+  const { data: block, error: blockErr } = await repo.checkSellerBlocked(supabase, viewerId, subject.user_id);
+  if (blockErr) return res.status(500).json({ ok: false, error: blockErr.message });
   if (block) return res.json({ ok: true, listings: [] });
 
   const { data, error } = await repo.fetchListingsBySeller(supabase, tenantId, subject.user_id);
@@ -250,7 +251,8 @@ router.get('/listings/:id', async (req: Request, res: Response) => {
   const isOwner = row.seller_user_id === viewerId;
   if (!isOwner) {
     if (!['active', 'paused', 'sold'].includes(row.status)) return res.status(404).json({ ok: false, error: 'listing_not_found' });
-    const { data: block } = await repo.checkSellerBlocked(supabase, viewerId, row.seller_user_id);
+    const { data: block, error: blockErr } = await repo.checkSellerBlocked(supabase, viewerId, row.seller_user_id);
+    if (blockErr) return res.status(500).json({ ok: false, error: blockErr.message });
     if (block) return res.status(404).json({ ok: false, error: 'listing_not_found' });
   }
 
@@ -311,7 +313,8 @@ router.post('/listings', async (req: Request, res: Response) => {
   // (see admin-community-marketplace.ts POST /sellers/:userId/suspend) can't
   // create new listings — checked here rather than via RLS since this route
   // uses the service-role client throughout.
-  const { data: suspension } = await repo.checkSellerSuspended(supabase, userId);
+  const { data: suspension, error: suspensionErr } = await repo.checkSellerSuspended(supabase, userId);
+  if (suspensionErr) return res.status(500).json({ ok: false, error: suspensionErr.message });
   if (suspension) return res.status(403).json({ ok: false, error: 'seller_suspended' });
 
   const { data: profile, error: profileErr } = await supabase.from('profiles').select('verification_status').eq('user_id', userId).maybeSingle();

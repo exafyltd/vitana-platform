@@ -177,6 +177,17 @@ describe('GET /listings/:id', () => {
     expect(r.status).toBe(200);
     expect(r.body.listing).toMatchObject({ id: 'listing-1', seller: { user_id: 'seller-1', display_name: 'Seller One' } });
   });
+
+  it('500 (not a silent unblocked reveal) when the seller-block check errors', async () => {
+    tableHandlers.community_listings = () => ({ data: { id: 'listing-1', seller_user_id: 'seller-1', status: 'active', view_count: 0, images: [] }, error: null });
+    tableHandlers.community_listing_seller_blocks = () => ({ data: null, error: { message: 'connection reset' } });
+
+    const r = await request(makeApp())
+      .get('/api/v1/community-marketplace/listings/listing-1')
+      .set('Authorization', 'Bearer buyer-1');
+
+    expect(r.status).toBe(500);
+  });
 });
 
 describe('GET /listings/by-seller/:vitanaId (Chunk 8 — profile Business tab)', () => {
@@ -216,6 +227,18 @@ describe('GET /listings/by-seller/:vitanaId (Chunk 8 — profile Business tab)',
     expect(r.body).toMatchObject({ ok: true, listings: [] });
   });
 
+  it('500 (not a silent unblocked reveal) when the seller-block check errors', async () => {
+    tableHandlers.profiles = () => ({ data: { user_id: 'seller-1' }, error: null });
+    tableHandlers.global_community_profiles = () => ({ data: { is_visible: true }, error: null });
+    tableHandlers.community_listing_seller_blocks = () => ({ data: null, error: { message: 'connection reset' } });
+
+    const r = await request(makeApp())
+      .get('/api/v1/community-marketplace/listings/by-seller/seller-one')
+      .set('Authorization', 'Bearer buyer-1');
+
+    expect(r.status).toBe(500);
+  });
+
   it('200 with the seller’s active listings, no owner-only fields', async () => {
     tableHandlers.profiles = () => ({ data: { user_id: 'seller-1' }, error: null });
     tableHandlers.global_community_profiles = () => ({ data: { is_visible: true }, error: null });
@@ -247,6 +270,18 @@ describe('POST /listings', () => {
     expect(r.body.ok).toBe(false);
   });
 
+  it('500 (not a silent suspension bypass) when the seller-suspension check errors', async () => {
+    tableHandlers.community_listing_categories = () => ({ data: ACTIVE_CATEGORY, error: null });
+    tableHandlers.community_marketplace_seller_suspensions = () => ({ data: null, error: { message: 'connection reset' } });
+
+    const r = await request(makeApp())
+      .post('/api/v1/community-marketplace/listings')
+      .set('Authorization', 'Bearer seller-1')
+      .send(VALID_LISTING_BODY);
+
+    expect(r.status).toBe(500);
+  });
+
   it('403 when the seller is suspended (BOOTSTRAP-COMMUNITY-MARKETPLACE Chunk 7)', async () => {
     tableHandlers.community_listing_categories = () => ({ data: ACTIVE_CATEGORY, error: null });
     tableHandlers.community_marketplace_seller_suspensions = () => ({ data: { seller_user_id: 'seller-1' }, error: null });
@@ -258,6 +293,21 @@ describe('POST /listings', () => {
 
     expect(r.status).toBe(403);
     expect(r.body.error).toBe('seller_suspended');
+  });
+
+  it('logs loudly (not silently) when the category lookup errors, still 400s (unchanged fail-closed default)', async () => {
+    tableHandlers.community_listing_categories = () => ({ data: null, error: { message: 'connection reset' } });
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const r = await request(makeApp())
+      .post('/api/v1/community-marketplace/listings')
+      .set('Authorization', 'Bearer seller-1')
+      .send(VALID_LISTING_BODY);
+
+    expect(r.status).toBe(400);
+    expect(r.body.error).toBe('invalid_category');
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('fetchCategory query failed'));
+    errorSpy.mockRestore();
   });
 
   it('400 when the category is prohibited', async () => {
