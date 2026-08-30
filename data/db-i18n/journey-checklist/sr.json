@@ -1,0 +1,2766 @@
+{
+  "surface": "journey-checklist",
+  "locale": "sr",
+  "source_locale": "de",
+  "generated_at": "2026-08-30T13:24:08.107Z",
+  "field_order": [
+    "display_label",
+    "short_description",
+    "explanation_what_it_is",
+    "explanation_user_benefit",
+    "explanation_when_to_use",
+    "explanation_try_this"
+  ],
+  "entries": {
+    "T001": {
+      "source_sha": "20a465a8192e8122",
+      "fields": {
+        "display_label": "Šta je Vitanaland",
+        "short_description": "Razumi ekosistem pre nego što počneš.",
+        "explanation_what_it_is": "Vitanaland je tvoj novi digitalni svet za zdravlje i lični rast. To je velika platforma na kojoj ja, tvoja asistentkinja Vitana, živim.",
+        "explanation_user_benefit": "Ovde imaš svoj siguran prostor da u miru radiš na svojim ciljevima. Nikada nisi sam/sama, jer je i tvoja MAXINA zajednica ovde kod kuće.",
+        "explanation_when_to_use": "Dolaziš u Vitanaland kad god ti treba podrška u svakodnevici ili želiš da se povežeš sa drugima.",
+        "explanation_try_this": "Tapni sada na Dalje da vidiš kako me možeš pozvati preko ORB u bilo kom trenutku."
+      }
+    },
+    "T002": {
+      "source_sha": "258426d4307dc970",
+      "fields": {
+        "display_label": "MAXINA zajednica",
+        "short_description": "Razumi ekosistem pre nego što počneš.",
+        "explanation_what_it_is": "MAXINA zajednica je tvoja lična mreža unutar Vitanaland. Ovde se sreću ljudi koji žele zajedno da rastu.",
+        "explanation_user_benefit": "Na svom putovanju nikada nisi sam/sama i imaš koristi od iskustva drugih. To ti daje osećaj zajedništva i novu motivaciju za svaki dan.",
+        "explanation_when_to_use": "Posećuješ ovaj deo kada želiš da se povežeš sa drugima, učestvuješ na događajima ili jednostavno pokupiš malo inspiracije.",
+        "explanation_try_this": "Tapni sada na pregled zajednice i razgledaj se u miru."
+      }
+    },
+    "T003": {
+      "source_sha": "d601bd33f36ab46d",
+      "fields": {
+        "display_label": "Vitana asistentkinja",
+        "short_description": "Upoznaj asistentkinju i glasovnu kontrolu.",
+        "explanation_what_it_is": "Ja sam Vitana, tvoja lična asistentkinja. Možeš me kontaktirati preko ORB, to je mala kugla dole desno na tvom ekranu.",
+        "explanation_user_benefit": "Sa mnom skoro ništa više ne moraš naporno kucati. Jednostavno razgovaraj sa mnom, a ja ću zapamtiti sve važno za tebe.",
+        "explanation_when_to_use": "Kada, na primer, želiš brzo da zabeležiš popijenu čašu vode, samo mi reci.",
+        "explanation_try_this": "Tapni sada na ORB i pogledaj koliko je to jednostavno."
+      }
+    },
+    "T004": {
+      "source_sha": "11d9b7a9347532fd",
+      "fields": {
+        "display_label": "ORB glas",
+        "short_description": "Upoznaj asistentkinju i glasovnu kontrolu.",
+        "explanation_what_it_is": "ORB je mala kugla dole desno na tvom ekranu. Kada tapneš na nju, možeš odmah da razgovaraš sa mnom.",
+        "explanation_user_benefit": "Uštediš sebi dosadno kucanje. Samo mi reci šta ti treba, a ja ću to uneti za tebe.",
+        "explanation_when_to_use": "Tapni na ORB kada želiš brzo da zabeležiš svoju prvu čašu vode posle buđenja, bez kucanja.",
+        "explanation_try_this": "Tapni sada na ORB i samo mi kratko reci Zdravo."
+      }
+    },
+    "T006": {
+      "source_sha": "841eb16b05aff936",
+      "fields": {
+        "display_label": "Sesije korišćenja",
+        "short_description": "90 sesija, slobodno preskakanje i vežbe jednostavno objašnjene.",
+        "explanation_what_it_is": "Moje putovanje se sastoji od 90 kratkih stanica koje ti pokazuju Vitanaland. Možeš jednostavno da skočiš na nove teme ili da otključaš stanice direktno kroz isprobavanje.",
+        "explanation_user_benefit": "To ti daje potpunu slobodu da učiš sopstvenim tempom. Baviš se samo onim što ti zaista pomaže u svakodnevnom životu.",
+        "explanation_when_to_use": "Otvori pregled kad god si radoznao/radoznala šta je sledeći korak.",
+        "explanation_try_this": "Tapni na Moje putovanje i otkrij svoje predstojeće stanice."
+      }
+    },
+    "T007": {
+      "source_sha": "7c3733a55848ebbb",
+      "fields": {
+        "display_label": "Životni kompas",
+        "short_description": "Postavi svoj lični sistem ciljeva.",
+        "explanation_what_it_is": "Životni kompas je tvoj najvažniji cilj za narednih 90 dana. On određuje pravac u kojem ću te voditi.",
+        "explanation_user_benefit": "Zahvaljujući tome, mogu sve predloge prilagoditi tačno tvojoj ličnoj želji. Dobijaš samo savete koji te zaista približavaju tvom velikom cilju.",
+        "explanation_when_to_use": "Izaberi cilj u Životnom kompasu kada želiš da se potpuno fokusiraš na svoje zdravlje ili karijeru, na primer.",
+        "explanation_try_this": "Dodirni sada ekran i otvori Životni kompas da ga detaljnije pogledaš."
+      }
+    },
+    "T008": {
+      "source_sha": "2014f4f17aa0d564",
+      "fields": {
+        "display_label": "Izaberi cilj",
+        "short_description": "Postavi svoj lični sistem ciljeva.",
+        "explanation_what_it_is": "Životni kompas je tvoj najvažniji cilj za narednih 90 dana. On mi tačno pokazuje pravac u kojem zajedno želimo da idemo.",
+        "explanation_user_benefit": "Zahvaljujući tome, prilagođavam sve savete tačno tvojim trenutnim željama. Svaki mali korak ti tada pomaže da ostvariš upravo taj san.",
+        "explanation_when_to_use": "Podešavaš ga uvek kada želiš da se u životu fokusiraš na novu oblast, kao što su tvoje zdravlje ili karijera.",
+        "explanation_try_this": "Dodirni sada ekran i izaberi prvi pravac za svoj Životni kompas."
+      }
+    },
+    "T010": {
+      "source_sha": "a73f9506fe65a345",
+      "fields": {
+        "display_label": "Poboljšaj indeks",
+        "short_description": "Upoznaj Vitana Index na vreme.",
+        "explanation_what_it_is": "Tvoj Vitana Index raste sa svakom zdravom odlukom koju donosiš u svakodnevici. Bez obzira da li popiješ čašu vode ili prošetaš, broj se odmah prilagođava.",
+        "explanation_user_benefit": "Tako odmah vidiš koje male navike tebi lično najviše donose. Pokazuje ti crno na belo šta tvom telu zaista prija.",
+        "explanation_when_to_use": "Pogledaj svoj indeks da vidiš kako već kratka šetnja ili čaša vode poboljšava tvoj broj.",
+        "explanation_try_this": "Otvori sada svoj Vitana Index i otkrij kojom malom akcijom možeš odmah da ga podigneš."
+      }
+    },
+    "T011": {
+      "source_sha": "ff6f82a14d656bae",
+      "fields": {
+        "display_label": "Pet stubova",
+        "short_description": "Zdravstveni model jednostavno objašnjen.",
+        "explanation_what_it_is": "Tvoje zdravlje u Vitanaland se uvek oslanja na pet stubova: san, kretanje, ishrana, mentalna snaga i hidratacija. Svi zajedno čine tvoj Vitana Index.",
+        "explanation_user_benefit": "Tako cilj da živiš zdravije za tebe postaje divno jednostavan i merljiv. Na prvi pogled vidiš gde si već jak i gde još možeš nešto da uravnotežiš.",
+        "explanation_when_to_use": "Koristi ovaj pregled najbolje svakodnevno, da proveriš da li su tvoje različite životne oblasti dobro uravnotežene.",
+        "explanation_try_this": "Tapni sada dalje da detaljnije pogledaš svojih pet stubova na sledećem ekranu."
+      }
+    },
+    "T012": {
+      "source_sha": "e888a82b6b4f0509",
+      "fields": {
+        "display_label": "Najslabiji stub",
+        "short_description": "Model zdravlja jednostavno objašnjen.",
+        "explanation_what_it_is": "Tvoj najslabiji stub je oblast od pet stubova kojoj trenutno treba najviše pažnje. Prepoznajem to automatski za tebe svakog dana.",
+        "explanation_user_benefit": "Tako ne moraš sve odjednom da uradiš savršeno. Ako ciljano ojačaš ovu jednu oblast, tvoj Vitana Index će najbrže rasti.",
+        "explanation_when_to_use": "Proveri ujutru svoj najslabiji stub da sasvim opušteno odrediš fokus za taj dan.",
+        "explanation_try_this": "Dodirni sada ekran da saznaš koji je tvoj najslabiji stub danas."
+      }
+    },
+    "T013": {
+      "source_sha": "c5e1bfb637bf13fe",
+      "fields": {
+        "display_label": "Kvalitet života",
+        "short_description": "Obećanje boljeg kvaliteta života.",
+        "explanation_what_it_is": "Životni kompas je tvoj najvažniji cilj za narednih devedeset dana. Pomaže mi da usmeram tvoj kvalitet života u pravom smeru.",
+        "explanation_user_benefit": "Svi moji saveti se od sada prilagođavaju ovoj jednoj želji. Tako ne skupljamo samo podatke, već primetno poboljšavamo tvoj život.",
+        "explanation_when_to_use": "Koristiš kompas kad god želiš da na neko vreme usmeriš fokus u životu na nešto novo.",
+        "explanation_try_this": "Dodirni sada ekran da otkriješ svoj lični životni kompas i izabereš svoj prvi cilj."
+      }
+    },
+    "T014": {
+      "source_sha": "f942bd6bb759c4c4",
+      "fields": {
+        "display_label": "Zdravlje na prvom mestu",
+        "short_description": "Obećanje boljeg kvaliteta života.",
+        "explanation_what_it_is": "Životni kompas je tvoj najvažniji cilj za narednih 90 dana. Ako ovde staviš svoje zdravlje u centar, sve se prema tome usklađuje.",
+        "explanation_user_benefit": "Ne dobijaš nasumične savete, već precizne predloge za više sna i kretanja. Tako te svaki mali korak primetno približava zdravom životu.",
+        "explanation_when_to_use": "Biraš ovo usmerenje kada želiš da svom telu ponovo posvetiš punu pažnju nakon napornog perioda.",
+        "explanation_try_this": "Dodirni sada ekran i usmeri svoj životni kompas ka zdravlju."
+      }
+    },
+    "T015": {
+      "source_sha": "a9b992d30f2ac970",
+      "fields": {
+        "display_label": "Kontrola privatnosti",
+        "short_description": "Sigurnost i kontrola za tebe.",
+        "explanation_what_it_is": "Oblast privatnosti ti daje potpunu kontrolu nad tvojim ličnim informacijama u Vitanaland. Ovde samo ti određuješ koji podaci ostaju privatni, a koji se mogu deliti.",
+        "explanation_user_benefit": "To ti daje potpuno siguran osećaj, jer se nikada ništa ne dešava bez tvoje izričite dozvole. Možeš da koristiš Vitana potpuno opušteno i bez briga.",
+        "explanation_when_to_use": "Pogledaj ovu oblast kada želiš tačno da odrediš koje informacije Autopilot sme da koristi da bi pronašao odgovarajuće ponude za tebe.",
+        "explanation_try_this": "Otvori sada podešavanja privatnosti i pogledaj kako lako možeš sve da kontrolišeš."
+      }
+    },
+    "T016": {
+      "source_sha": "ff2c5e65f6d7c07f",
+      "fields": {
+        "display_label": "Dozvola za pamćenje",
+        "short_description": "Sigurnost i kontrola za tebe.",
+        "explanation_what_it_is": "Da bih te pravilno podržala, čuvam važne detalje u tvojim sećanjima. Ti pritom uvek sam odlučuješ šta smem da zapamtim.",
+        "explanation_user_benefit": "Time dobijem mogućnost da ti u svakodnevici dajem zaista odgovarajuće predloge za Moje putovanje. Istovremeno uvek zadržavaš apsolutnu kontrolu nad svojim podacima.",
+        "explanation_when_to_use": "Koristiš ovu funkciju kad god treba da dodam novi detalj o tebi u vrt sećanja.",
+        "explanation_try_this": "Dodirni sada ekran da sam probaš kako mi daješ dozvolu za pamćenje."
+      }
+    },
+    "T017": {
+      "source_sha": "d654a2a8cb9dc45d",
+      "fields": {
+        "display_label": "Osnove profila",
+        "short_description": "Zašto je tvoj profil važan.",
+        "explanation_what_it_is": "Tvoj profil je tvoj lični dom u MAXINA zajednici. Ovde jednostavno pokazuješ ko si i šta te zanima.",
+        "explanation_user_benefit": "Popunjen profil mi pomaže da pronađem savršene ljude i mogućnosti za tebe. Čini te vidljivim kako bi te drugi mogli podržati.",
+        "explanation_when_to_use": "Popuni svoj profil pre nego što me zamoliš da tražim odgovarajuće kontakte ili nove mogućnosti za tebe.",
+        "explanation_try_this": "Dodirni svoj profil i odmah dodaj svoje prvo interesovanje."
+      }
+    },
+    "T018": {
+      "source_sha": "a7f425fc64096fbb",
+      "fields": {
+        "display_label": "Signal poverenja",
+        "short_description": "Zašto je tvoj profil važan.",
+        "explanation_what_it_is": "Tvoj profil je tvoja vizit karta u MAXINA zajednici. Pokazuje drugima ko si i u čemu si dobar.",
+        "explanation_user_benefit": "Dobro popunjen profil odmah stvara poverenje kod drugih. Pomaže ti da pronađeš prave ljude i sjajne nove prilike.",
+        "explanation_when_to_use": "Ažuriraš svoj profil kad god želiš da uspostaviš nove kontakte ili postaneš vidljiviji u zajednici.",
+        "explanation_try_this": "Dodirni sada svoj profil i dodaj novu informaciju da izgradiš poverenje u zajednici."
+      }
+    },
+    "T019": {
+      "source_sha": "f2766069aaeaa451",
+      "fields": {
+        "display_label": "Pitaj Vitana",
+        "short_description": "Tvoje prve glasovne komande.",
+        "explanation_what_it_is": "ORB je mala okrugla kugla dole desno na tvom ekranu. Kada je dodirneš, slušam te i odgovaram na tvoja pitanja.",
+        "explanation_user_benefit": "Ne moraš više naporno da kucaš, već možeš jednostavno sasvim prirodno da razgovaraš sa mnom. To ti štedi vreme i olakšava svakodnevicu.",
+        "explanation_when_to_use": "Koristi ORB na primer kada si u pokretu i želiš brzo nešto da upišeš u svoj dnevnik.",
+        "explanation_try_this": "Dodirni ORB i odmah mi postavi svoje prvo pitanje."
+      }
+    },
+    "T020": {
+      "source_sha": "70896e00a936b4da",
+      "fields": {
+        "display_label": "Otvori ekran",
+        "short_description": "Tvoje prve glasovne komande.",
+        "explanation_what_it_is": "Sa ORB možeš jednostavno glasom da se krećeš kroz Vitanaland. Samo mi reci gde želiš da ideš, a ja ću otvoriti pravu stranicu za tebe.",
+        "explanation_user_benefit": "Ne moraš da pamtiš menije niti dugo da tražiš. To ti štedi vreme i čini korišćenje lakim kao igra.",
+        "explanation_when_to_use": "Koristi ovo kada želiš brzo da otvoriš svoj dnevnik ili životni kompas, bez traženja po ekranu.",
+        "explanation_try_this": "Dodirni odmah ORB i reci mi da otvorim životni kompas da probaš."
+      }
+    },
+    "T021": {
+      "source_sha": "dbc233a54b2a6740",
+      "fields": {
+        "display_label": "Dnevni ritam",
+        "short_description": "Ovako izgleda tvoj dnevni početak.",
+        "explanation_what_it_is": "Dnevni ritam je tvoj jednostavan tok ovde u Vitanaland. Sastoji se od malih, ostvarivih koraka koji povezuju tvoje zdravlje sa konkretnim akcijama za dan.",
+        "explanation_user_benefit": "Ne treba ti savršen plan da bi živeo zdravije. Ova jednostavna rutina ti pomaže da svakog dana paziš na sebe potpuno bez stresa.",
+        "explanation_when_to_use": "Koristi ovaj tok ujutru uz kafu da započneš dan, i uveče da kratko zabeležiš svoja iskustva u dnevnik.",
+        "explanation_try_this": "Dodirni sada ekran da probaš svoj prvi dnevni ritam."
+      }
+    },
+    "T022": {
+      "source_sha": "0e6fee88ab72aaf2",
+      "fields": {
+        "display_label": "Prva vežba",
+        "short_description": "Ovako izgleda tvoj dnevni početak.",
+        "explanation_what_it_is": "U prvih 30 dana pratim te malim, dnevnim savetima na tvojoj početnoj stranici. To je kao vođena tura kroz aplikaciju.",
+        "explanation_user_benefit": "Tako svakog dana upoznaješ novu, korisnu funkciju, a da se ne osećaš preopterećeno. Tura otkrivanja se pritom sasvim opušteno prilagođava tvom sopstvenom tempu.",
+        "explanation_when_to_use": "Jednostavno svakog jutra pogledaj svoju početnu stranicu da otkriješ svoj kratki savet za dan.",
+        "explanation_try_this": "Dodirni dugme da odmah započneš svoju prvu malu vežbu i sam probaš."
+      }
+    },
+    "T023": {
+      "source_sha": "1de7ae1968da17fe",
+      "fields": {
+        "display_label": "San",
+        "short_description": "Započni sa svojim oporavkom.",
+        "explanation_what_it_is": "San je jedan od pet stubova u Vitana i čini temelj tvog oporavka. On je centralni gradivni element za održavanje tvog Vitana Index u ravnoteži.",
+        "explanation_user_benefit": "Dobar pregled tvog sna ti pokazuje da li se zaista dovoljno oporavljaš. Tako možeš prilagoditi male stvari da započneš dan sa mnogo više energije.",
+        "explanation_when_to_use": "Gledaš ovu oblast kada se ujutru probudiš i želiš da razumeš zašto si pun energije ili se još uvek osećaš umorno.",
+        "explanation_try_this": "Dodirni sada oblast sna da detaljnije pogledaš ovaj važan stub."
+      }
+    },
+    "T024": {
+      "source_sha": "9ce771c3c4e982e0",
+      "fields": {
+        "display_label": "Beleži san",
+        "short_description": "Započni sa svojim oporavkom.",
+        "explanation_what_it_is": "San je jedan od pet stubova i najvažnije vreme za tvoj oporavak. Ovde unosiš koliko dugo i koliko dobro si spavao tokom noći.",
+        "explanation_user_benefit": "Kada beležiš svoj san, tačno razumeš kako tvoj noćni odmor utiče na tvoj dan. To ti pomaže da bolje planiraš svoju energiju.",
+        "explanation_when_to_use": "Najbolje je da uneseš svoj san svakog jutra odmah nakon buđenja u svoj dnevnik.",
+        "explanation_try_this": "Dodirni sada ekran i unesi svoj san od sinoć da probaš."
+      }
+    },
+    "T025": {
+      "source_sha": "e7916e143efd0682",
+      "fields": {
+        "display_label": "Tečnost",
+        "short_description": "Brzi zdravstveni uspeh.",
+        "explanation_what_it_is": "Tečnost je jedan od pet stubova za tvoje zdravlje. Jednostavno ti pokazuje da li tvoje telo svakog dana dobija dovoljno vode.",
+        "explanation_user_benefit": "Dovoljno vode ti odmah daje više energije i pomaže ti da budeš budniji. To je najjednostavniji način da ojačaš svoje telo i svoj Vitana Index.",
+        "explanation_when_to_use": "Pogledaj ovaj stub kada popodne postaneš umoran i treba ti brzi energetski podsticaj.",
+        "explanation_try_this": "Dodirni dalje da sada upoznaš svoju oblast za tečnost."
+      }
+    },
+    "T026": {
+      "source_sha": "e764152a6fe3b25e",
+      "fields": {
+        "display_label": "Beleži vodu",
+        "short_description": "Brzi zdravstveni uspeh.",
+        "explanation_what_it_is": "Ovde unosiš koliko vode si popio. To je jednostavan način da pratiš svoj unos tečnosti.",
+        "explanation_user_benefit": "Tako odmah vidiš da li tvoje telo ima dovoljno vode. To je brzo iskustvo uspeha za tvoju svakodnevicu.",
+        "explanation_when_to_use": "Koristi to na primer odmah nakon buđenja, kada popiješ svoju prvu čašu vode.",
+        "explanation_try_this": "Dodirni dugme i unesi sada svoju prvu vodu."
+      }
+    },
+    "T027": {
+      "source_sha": "be6756a985313f97",
+      "fields": {
+        "display_label": "Kretanje",
+        "short_description": "Poveži kretanje sa energijom.",
+        "explanation_what_it_is": "Kretanje je jedan od pet stubova u tvom životnom kompasu. Pokazuje ti koliko si aktivan/aktivna svakog dana.",
+        "explanation_user_benefit": "Redovna aktivnost je kao motor koji ti daje novu energiju. Zahvaljujući tome osećaš se budnije i snažnije u svakodnevici.",
+        "explanation_when_to_use": "Seti se ovog stuba kada nakon dugog sedenja za stolom kreneš u osvežavajuću šetnju.",
+        "explanation_try_this": "Tapni sada na oblast za kretanje i pogledaj gde možeš pronaći svoje aktivnosti."
+      }
+    },
+    "T028": {
+      "source_sha": "df83525269a41080",
+      "fields": {
+        "display_label": "Evidentiraj kretanje",
+        "short_description": "Poveži kretanje sa energijom.",
+        "explanation_what_it_is": "Ovde unosiš kako si se danas kretao/kretala. To može biti šetnja, sport ili čak neki kućni poslovi.",
+        "explanation_user_benefit": "Tako brzo uočavaš kako ti kretanje daje svežu energiju. Svaki korak se računa i jača tvoje blagostanje.",
+        "explanation_when_to_use": "Koristi ovu funkciju odmah nakon kratke šetnje ili sasvim opušteno uveče.",
+        "explanation_try_this": "Tapni na dugme i unesi sada svoje prvo kretanje."
+      }
+    },
+    "T029": {
+      "source_sha": "12d145c5326d71a7",
+      "fields": {
+        "display_label": "Ishrana",
+        "short_description": "Održavaj ishranu jednostavnom.",
+        "explanation_what_it_is": "Ishrana je jedan od pet stubova za tvoje zdravlje. Ovde jednostavno pratiš pregled onoga što jedeš.",
+        "explanation_user_benefit": "Tako vidiš kako tvoji obroci utiču na tvoj Vitana indeks. To ti pomaže da bez stresa bolje razumeš svoje telo.",
+        "explanation_when_to_use": "Pogledaj svoj stub ishrane kada želiš da znaš da li si danas već jeo/jela dobro i uravnoteženo.",
+        "explanation_try_this": "Tapni sada na ekran i otvori svoj stub ishrane."
+      }
+    },
+    "T030": {
+      "source_sha": "d51d0dba818c8c44",
+      "fields": {
+        "display_label": "Beleška o obroku",
+        "short_description": "Održavaj ishranu jednostavnom.",
+        "explanation_what_it_is": "Beleška o obroku je jednostavan način da zabeležiš svoju hranu u dnevnik. Ne moraš da brojiš kalorije, samo kratko opišeš svoje jelo.",
+        "explanation_user_benefit": "Tako sasvim opušteno pratiš svoju ishranu, bez stresa. Na jednostavan način ti pomaže da imaš na oku jedan od najvažnijih od pet stubova.",
+        "explanation_when_to_use": "Najbolje je da napraviš kratku belešku odmah nakon ručka, dok je sećanje još sveže.",
+        "explanation_try_this": "Tapni sada na ekran i napravi svoju prvu belešku o obroku."
+      }
+    },
+    "T031": {
+      "source_sha": "51f34bd8d8e01441",
+      "fields": {
+        "display_label": "Mentalna snaga",
+        "short_description": "Ojačaj svoj um.",
+        "explanation_what_it_is": "Mentalna snaga je jedan od pet stubova za tvoje blagostanje. Obuhvata sve što prija tvom umu, kao što su opuštanje, fokus ili lepi trenuci.",
+        "explanation_user_benefit": "Tako prepoznaješ koliko dobro vodiš računa o svojoj unutrašnjoj ravnoteži. Odmah vidiš kada bi trebalo da odvojiš više vremena za sebe.",
+        "explanation_when_to_use": "Pogledaj ovu oblast kada ti je svakodnevica posebno stresna i tražiš načine da se iznutra smiriš.",
+        "explanation_try_this": "Tapni na ekran da detaljnije pogledaš oblast za svoju mentalnu snagu."
+      }
+    },
+    "T032": {
+      "source_sha": "12d3310cbb58eee5",
+      "fields": {
+        "display_label": "Jednominutni reset",
+        "short_description": "Ojačaj svoj um.",
+        "explanation_what_it_is": "Jednominutna pauza je kratka, vođena pauza za tvoj um. To je sasvim jednostavna vežba za tvoju mentalnu snagu.",
+        "explanation_user_benefit": "Pomaže ti da munjevito oslobodiš stres u svakodnevici i ponovo se fokusiraš. To ti odmah daje svežu energiju.",
+        "explanation_when_to_use": "Koristi je kada ti sve postane malo previše ili kada želiš da kratko predahneš između dva sastanka.",
+        "explanation_try_this": "Tapni na dugme za jednominutnu pauzu i odmah isprobaj ovo blagotvorno opuštanje."
+      }
+    },
+    "T033": {
+      "source_sha": "c437dbfc08b4d90b",
+      "fields": {
+        "display_label": "Dnevni dnevnik",
+        "short_description": "Učini svoja sećanja korisnim.",
+        "explanation_what_it_is": "Dnevnik je tvoje mesto za brze beleške u svakodnevici. Ovde možeš da uneseš sve što je važno za tvoje zdravlje i pet stubova.",
+        "explanation_user_benefit": "Čini tvoj napredak vidljivim i pomaže ti da živiš svesnije. Što više podeliš, to bolje učim kako da te precizno podržim.",
+        "explanation_when_to_use": "Koristi ga uveče da razmisliš o svom danu, ili usput, da zabeležiš čašu vode ili svoje raspoloženje.",
+        "explanation_try_this": "Otvori sada dnevnik i napiši svoj prvi kratak unos za danas."
+      }
+    },
+    "T034": {
+      "source_sha": "a9187a125b8e2a38",
+      "fields": {
+        "display_label": "Glasovni dnevnik",
+        "short_description": "Učini svoja sećanja korisnim.",
+        "explanation_what_it_is": "Glasovni dnevnik je najjednostavniji način da zabeležiš svoja iskustva. Samo pritisneš mikrofon i govoriš, umesto da naporno kucaš.",
+        "explanation_user_benefit": "To ti štedi mnogo vremena i deluje potpuno prirodno. Odmah razumem tvoje reči i automatski ih koristim za tvoj Vitana indeks.",
+        "explanation_when_to_use": "Koristi ga odmah nakon treninga ili u kratkoj pauzi, da mi brzo kažeš šta si upravo radio/radila.",
+        "explanation_try_this": "Tapni sada na mali mikrofon i snimi svoj prvi unos."
+      }
+    },
+    "T035": {
+      "source_sha": "289c24df69ec3992",
+      "fields": {
+        "display_label": "Podsetnici",
+        "short_description": "Istraji i sprovedi do kraja.",
+        "explanation_what_it_is": "Podsetnici su mali podsticaji u svakodnevici. Pomažu ti da ne zaboraviš planirane zadatke.",
+        "explanation_user_benefit": "Tako ne moraš sve sam/sama da pamtiš i ostaješ opušteno na pravom putu. To rasterećuje tvoju glavu i pomaže ti da istraješ.",
+        "explanation_when_to_use": "Koristi ih kada, na primer, želiš da svakog popodneva popiješ čašu vode ili uveče kratko pišeš u dnevnik.",
+        "explanation_try_this": "Tapni sada na ekran da otvoriš oblast za podsetnike i upoznaš je."
+      }
+    },
+    "T036": {
+      "source_sha": "ac3884b0d86ba97e",
+      "fields": {
+        "display_label": "Postavi podsetnik",
+        "short_description": "Istraji i sprovedi do kraja.",
+        "explanation_what_it_is": "Postavljanjem podsetnika određuješ da te na vreme podsetim na tvoje namere. Tako više ništa ne gubi u svakodnevici.",
+        "explanation_user_benefit": "To ti mnogo olakšava da istraješ u svojim dobrim namerama. Tvoja glava postaje slobodna jer ja preuzimam pamćenje umesto tebe.",
+        "explanation_when_to_use": "Napravi podsetnik kada planiraš da večeras popiješ čašu vode, ali se plašiš da ćeš to zaboraviti u gužvi.",
+        "explanation_try_this": "Tapni sada na ekran i postavi svoj prvi podsetnik."
+      }
+    },
+    "T037": {
+      "source_sha": "0a2ade5383d34ef0",
+      "fields": {
+        "display_label": "Kalendar",
+        "short_description": "Pretvori namere u fiksne termine.",
+        "explanation_what_it_is": "Kalendar je tvoj lični planer vremena u Vitanaland. Ovde tvoje zdrave namere dobijaju svoje stalno mesto.",
+        "explanation_user_benefit": "Dobre namere lakše postaju navika kada imaju fiksno vreme. Tako svoje planove sprovodiš sasvim opušteno i sigurno u svakodnevici.",
+        "explanation_when_to_use": "Unesi termin kada, na primer, ujutru razmišljaš kada danas imaš vremena za šetnju.",
+        "explanation_try_this": "Otvori sada kalendar i odmah rezerviši malo vremena za svoju prvu zdravu nameru."
+      }
+    },
+    "T038": {
+      "source_sha": "7b22720c65fc48f4",
+      "fields": {
+        "display_label": "Planiraj akciju",
+        "short_description": "Pretvori namere u fiksne termine.",
+        "explanation_what_it_is": "Ovo je mali prozor koji se otvara direktno preko tvog trenutnog ekrana. Ovde pretvaraš dobru nameru u planiranu akciju.",
+        "explanation_user_benefit": "Ne gubiš nit jer ne moraš da napuštaš trenutni ekran. Tako svoje ciljeve odmah i bez zaobilaznica sprovodiš u delo.",
+        "explanation_when_to_use": "Koristi ga kada želiš da odrediš nešto važno za kasnije tog dana, bez prekidanja trenutnog zadatka.",
+        "explanation_try_this": "Tapni sada na ekran i planiraj malu, brzu akciju za danas."
+      }
+    },
+    "T039": {
+      "source_sha": "8d0f2d24f1346b41",
+      "fields": {
+        "display_label": "Putevi budućnosti",
+        "short_description": "Ti biraš koliko duboko ideš.",
+        "explanation_what_it_is": "Autopilot je tvoj lični vodič koji ti svaki dan predlaže odgovarajuće zadatke. Čeka kao mala ikonica aviona na tvoje odluke.",
+        "explanation_user_benefit": "Ti sam/sama odlučuješ kojim putevima ideš i koliko duboko želiš da zaroniš. Tako sebi zadaješ samo ono što ti danas zaista prija.",
+        "explanation_when_to_use": "Koristi ga ujutru da u miru izabereš najbolje korake za svoj dan i pronađeš sopstveni tempo.",
+        "explanation_try_this": "Tapni sada na ikonicu aviona i otkrij svoje prve staze za danas."
+      }
+    },
+    "T040": {
+      "source_sha": "1b290940a1dd310a",
+      "fields": {
+        "display_label": "Poslovna radoznalost",
+        "short_description": "Ti biraš koliko duboko ideš.",
+        "explanation_what_it_is": "Autopilot je tvoja lična, inteligentna lista zadataka koju pozivaš preko ikonice aviona. Predlaže ti konkretne korake, ali ti sam/sama biraš šta od toga zaista želiš da uradiš.",
+        "explanation_user_benefit": "To ti skida svakodnevno planiranje sa leđa i pokazuje ti tačno šta danas najviše jača tvoj Vitana indeks. Pri tom uvek zadržavaš punu kontrolu, jer se ništa ne dešava bez tvog odobrenja.",
+        "explanation_when_to_use": "Najbolje ga koristi ujutru da izabereš odgovarajuće akcije za svoj dan i kreneš.",
+        "explanation_try_this": "Tapni sada na malu ikonicu aviona da vidiš svoje prve predloge i započneš svoj dan."
+      }
+    },
+    "T041": {
+      "source_sha": "96352872f75e37ee",
+      "fields": {
+        "display_label": "Dnevna rutina",
+        "short_description": "Uspostavi svoju dnevnu rutinu.",
+        "explanation_what_it_is": "Tvoj dnevni ritam je jednostavan tok koji se sastoji od otkrivanja, delovanja i unošenja u dnevnik. Tako korak po korak gradiš zdravu rutinu.",
+        "explanation_user_benefit": "Ne treba ti savršen plan da bi živeo/živela zdravije. Ovaj mali ciklus ti pomaže da svakog dana bez stresa vidiš ostvariv napredak.",
+        "explanation_when_to_use": "Započni ovaj jednostavan tok svakog jutra da opušteno uđeš u dan sa jasnim ciljem.",
+        "explanation_try_this": "Tapni na ekran da otvoriš svoj današnji pregled i isprobaš rutinu."
+      }
+    },
+    "T042": {
+      "source_sha": "b89e6b3febc90b51",
+      "fields": {
+        "display_label": "Testiraj Autopilot",
+        "short_description": "Uspostavi svoju dnevnu rutinu.",
+        "explanation_what_it_is": "Autopilot je tvoj inteligentni pratilac kroz dan. Automatski ti predlaže sledeći mali zadatak koji ti upravo sada savršeno odgovara.",
+        "explanation_user_benefit": "Ne moraš da smišljaš savršen zdravstveni plan. Ja preuzimam taj posao umesto tebe i jednostavno ti uvek pokazujem najbolji sledeći korak.",
+        "explanation_when_to_use": "Koristi Autopilot kad god imaš malu pauzu i želiš da uradiš nešto dobro za svoje zdravlje.",
+        "explanation_try_this": "Tapni na Autopilot i pogledaj koju sam akciju danas pripremio za tebe."
+      }
+    },
+    "T043": {
+      "source_sha": "c9d73a8b7985f319",
+      "fields": {
+        "display_label": "Završi ili odloži",
+        "short_description": "Uspostavi svoju dnevnu rutinu.",
+        "explanation_what_it_is": "Ovde odlučuješ kako da se nosiš sa svojim dnevnim zadacima. Možeš ih odmah završiti ili jednostavno odložiti.",
+        "explanation_user_benefit": "To ti skida pritisak da svaki dan sve bude savršeno. Pri tom učim koji ritam ti najbolje odgovara.",
+        "explanation_when_to_use": "Koristi ovu funkciju kada planiraš svoj dan i odlučuješ šta je trenutno izvodljivo.",
+        "explanation_try_this": "Izaberi sada jedan zadatak i odluči da li želiš da ga završiš ili odložiš."
+      }
+    },
+    "T044": {
+      "source_sha": "5e65b33115b52351",
+      "fields": {
+        "display_label": "Pregled početne stranice",
+        "short_description": "Početna stranica je tvoj dnevni kontrolni centar.",
+        "explanation_what_it_is": "Početna stranica je tvoj dnevni komandni centar u aplikaciji. Ovde odmah nakon prijave vidiš sve važne novosti i prečice.",
+        "explanation_user_benefit": "Štedi ti dragoceno vreme jer su najvažnije informacije odmah vidljive. Na prvi pogled prepoznaješ šta je danas prioritet i kako stoji tvoj Vitana Index.",
+        "explanation_when_to_use": "Otvori početnu stranicu svakog jutra kao dobre novine, da se ukratko prijaviš u svoj dan.",
+        "explanation_try_this": "Tapkaj sada kroz svoju početnu stranicu i pogledaj šta ima novog danas."
+      }
+    },
+    "T045": {
+      "source_sha": "92dfad06bf1346ef",
+      "fields": {
+        "display_label": "Kontekst tab",
+        "short_description": "Početna stranica je tvoj dnevni kontrolni centar.",
+        "explanation_what_it_is": "Početna stranica je tvoj komandni centar za svaki dan. Ovde na jednom mestu pronalaziš sve važne zadatke, podsetnike i preporuke.",
+        "explanation_user_benefit": "Štediš vreme i odmah vidiš šta je sledeće na redu. To ti pomaže da radiš na svojim ciljevima bez velikog napora ili stresa.",
+        "explanation_when_to_use": "Najbolje je da svakog jutra prvo pogledaš svoju početnu stranicu kako bi isplanirao dan.",
+        "explanation_try_this": "Tapni sada na ekran i istraži svoju ličnu početnu stranicu."
+      }
+    },
+    "T046": {
+      "source_sha": "c9ed4abea52019cb",
+      "fields": {
+        "display_label": "Proceni AI feed",
+        "short_description": "Početna stranica je tvoj dnevni kontrolni centar.",
+        "explanation_what_it_is": "AI feed je poseban deo na tvojoj početnoj stranici. Ovde pronalaziš lične uvide koji su generisani specijalno za tebe.",
+        "explanation_user_benefit": "Umesto opštih vesti, ovde dobijaš savete koji tačno odgovaraju tvom životnom kompasu. Tako odmah znaš koja mala promena ti danas donosi najviše.",
+        "explanation_when_to_use": "Pogledaj ujutru uz prvu kafu svoj AI feed da pronađeš svoj lični fokus za dan.",
+        "explanation_try_this": "Otvori sada AI feed i oceni svoj prvi post, kako bih te još bolje upoznao."
+      }
+    },
+    "T047": {
+      "source_sha": "b3e13f188afd13a1",
+      "fields": {
+        "display_label": "Pokretači indeksa",
+        "short_description": "Tako tvoj indeks postaje konkretno upotrebljiv.",
+        "explanation_what_it_is": "Pokretači indeksa su konkretne akcije u svakodnevici koje menjaju tvoj Vitana Index. Tu spadaju na primer čaša vode, šetnja ili dobar san.",
+        "explanation_user_benefit": "Pokazuju ti tačno koje male promene zaista prijaju tvom telu. Tako učiš kojim jednostavnim koracima najbolje poboljšavaš svoje blagostanje.",
+        "explanation_when_to_use": "Koristiš ih kad god razmišljaš koja mala akcija bi danas napravila najveću pozitivnu razliku za tebe.",
+        "explanation_try_this": "Tapni sada na ekran i otkrij koje akcije najviše pokreću tvoj Vitana Index."
+      }
+    },
+    "T048": {
+      "source_sha": "536064349d880111",
+      "fields": {
+        "display_label": "Vrednosti stubova",
+        "short_description": "Tako tvoj indeks postaje konkretno upotrebljiv.",
+        "explanation_what_it_is": "Vitana Index se sastoji od vrednosti za tvojih pet stubova: san, kretanje, ishrana, mentalna snaga i hidratacija. Ove pojedinačne vrednosti ti pokazuju tačno kako se formira tvoja ukupna vrednost.",
+        "explanation_user_benefit": "Tako na prvi pogled vidiš gde si već na dobrom putu i koja oblast još treba pomoć. To ti olakšava donošenje prave odluke za tvoj dan.",
+        "explanation_when_to_use": "Pogledaj vrednosti na primer ujutru, da vidiš da li danas treba posebno da paziš na vodu ili više na kretanje.",
+        "explanation_try_this": "Tapni sada na detaljan prikaz da istražiš pojedinačne vrednosti svojih pet stubova."
+      }
+    },
+    "T049": {
+      "source_sha": "dbdb0e3ad55ccc22",
+      "fields": {
+        "display_label": "Izaberi pokretač",
+        "short_description": "Tako tvoj indeks postaje konkretno upotrebljiv.",
+        "explanation_what_it_is": "Možeš svakog dana ciljano izabrati akciju koja najviše poboljšava tvoj Vitana Index. Ta akcija je tvoj lični pokretač.",
+        "explanation_user_benefit": "Umesto da pokušavaš da promeniš sve odjednom, fokusiraš se na jedan jedini, delotvoran zadatak. To štedi energiju i direktno te vodi napred.",
+        "explanation_when_to_use": "Najbolje je da to uradiš odmah nakon buđenja, da postaviš jasan cilj za svoj dan.",
+        "explanation_try_this": "Tapni sada na ekran i izaberi svoj prvi pokretač za danas."
+      }
+    },
+    "T050": {
+      "source_sha": "8bfb839772f473bc",
+      "fields": {
+        "display_label": "Trend spavanja",
+        "short_description": "Produbi svoj odmor.",
+        "explanation_what_it_is": "Trend spavanja ti jednostavno i jasno pokazuje kako se tvoj odmor razvija tokom vremena. Pripada oblasti sna, jednom od pet stubova tvog zdravlja.",
+        "explanation_user_benefit": "Odmah prepoznaješ obrasce u svojim noćima i vidiš da li ti možda nedostaje važan odmor. To ti enormno pomaže da održiš svoj Vitana Index u balansu.",
+        "explanation_when_to_use": "Baci ujutru kratak pogled na to, da bolje razumeš zašto se danas osećaš svežije ili umornije nego inače.",
+        "explanation_try_this": "Tapni sada na ekran i otkrij svoj lični trend spavanja."
+      }
+    },
+    "T051": {
+      "source_sha": "1deedfde4604f386",
+      "fields": {
+        "display_label": "Plan spavanja",
+        "short_description": "Produbi svoj odmor.",
+        "explanation_what_it_is": "Plan spavanja je tvoj lični vodič za odmoran san. Pripada stubu sna i pomaže ti da uveče lakše dođeš do mira.",
+        "explanation_user_benefit": "Budiš se ujutru sa više energije i osećaš se znatno svežije. Tako ciljano jačaš svoj Vitana Index.",
+        "explanation_when_to_use": "Baci uveče kratak pogled na to, pre nego što se spremiš za spavanje.",
+        "explanation_try_this": "Tapni sada na ekran da otkriješ svoj lični plan spavanja."
+      }
+    },
+    "T052": {
+      "source_sha": "81339f689c674bd7",
+      "fields": {
+        "display_label": "Podsetnik za spavanje",
+        "short_description": "Produbi svoj odmor.",
+        "explanation_what_it_is": "Tvoj podsetnik za spavanje je nežna napomena uveče. Pomaže ti da na vreme dođeš do odmora.",
+        "explanation_user_benefit": "Tako nikada više nećeš propustiti savršen trenutak da odeš na spavanje. Tvoje telo se može bolje oporaviti i svežije započinješ novi dan.",
+        "explanation_when_to_use": "Ovaj podsetnik je idealan uveče, kada želiš opušteno da završiš dan i pripremiš se za odmoran san.",
+        "explanation_try_this": "Tapni sada na ekran da podesiš i isprobaš svoj prvi podsetnik za spavanje."
+      }
+    },
+    "T053": {
+      "source_sha": "8215cf85cdcce36a",
+      "fields": {
+        "display_label": "Ritam hidratacije",
+        "short_description": "Poveži svoje dnevne trackere.",
+        "explanation_what_it_is": "Stub hidratacije ti pokazuje koliko dobro piješ tokom dana. Možeš jednostavno unositi svoja pića u dnevnik ili povezati tracker.",
+        "explanation_user_benefit": "Tako odmah vidiš da li tvoje telo dobija dovoljno vode da ostane fit. To ti pomaže da održiš svoj Vitana Index u ravnoteži.",
+        "explanation_when_to_use": "Najbolje je da unosiš svoja pića odmah nakon buđenja ili uz svaki obrok.",
+        "explanation_try_this": "Tapni na ekran i unesi sada odmah svoju prvu čašu vode."
+      }
+    },
+    "T054": {
+      "source_sha": "9980f16c83af9673",
+      "fields": {
+        "display_label": "Obrazac ishrane",
+        "short_description": "Poveži svoje dnevne trackere.",
+        "explanation_what_it_is": "Tvoja ishrana je jedan od pet stubova koji čine tvoj Vitana Index. Ovde se spajaju svi podaci iz tvojih povezanih trackera i tvog dnevnika.",
+        "explanation_user_benefit": "Tako lako vidiš da li tvoje telo dobija pravu energiju za dan. To ti pomaže da donosiš zdravije odluke bez velikog napora.",
+        "explanation_when_to_use": "Baci kratak pogled na ovaj stub kada uveče želiš da proveriš koliko je tvoj dan bio uravnotežen.",
+        "explanation_try_this": "Tapni sada na stub ishrane da povežeš svoje dnevne trackere."
+      }
+    },
+    "T055": {
+      "source_sha": "241d0860c1c57a30",
+      "fields": {
+        "display_label": "Stil kretanja",
+        "short_description": "Poveži svoje dnevne trackere.",
+        "explanation_what_it_is": "U dnevniku možeš unositi svoje dnevno kretanje ili direktno povezati svoje fitness trackere. Tako prikupljaš sve svoje aktivnosti na jednom sigurnom mestu.",
+        "explanation_user_benefit": "Kada znam kako se krećeš, dajem ti prikladnije savete za tvoju svakodnevicu. To te jača i poboljšava tvoj lični Vitana Index.",
+        "explanation_when_to_use": "Najbolje je da koristiš ovu funkciju odmah nakon šetnje ili uveče, da zabeležiš svoje dnevne aktivnosti.",
+        "explanation_try_this": "Tapni sada na dnevnik i dodaj svoje današnje kretanje."
+      }
+    },
+    "T056": {
+      "source_sha": "bff44e7050541f09",
+      "fields": {
+        "display_label": "Obrazac mentalne ravnoteže",
+        "short_description": "Poveži unutrašnji mir sa dobrim odlukama.",
+        "explanation_what_it_is": "Obrazac mentalnog blagostanja ti pokazuje kako tvoj unutrašnji mir utiče na tvoju svakodnevicu. To je vredan deo tvog mentalnog stuba.",
+        "explanation_user_benefit": "Jasno prepoznaješ kako ti opušten um pomaže da donosiš zdravije odluke. To ti daje više kontrole nad tvojim blagostanjem.",
+        "explanation_when_to_use": "Pogledaj ovaj obrazac kada si imao nemiran dan i želiš da razumeš šta narušava tvoju ravnotežu.",
+        "explanation_try_this": "Tapni na ekran i otkrij sada svoje lične mentalne obrasce."
+      }
+    },
+    "T057": {
+      "source_sha": "d2e86629a751edee",
+      "fields": {
+        "display_label": "Dnevnik disanja ili meditacije",
+        "short_description": "Poveži unutrašnji mir sa dobrim odlukama.",
+        "explanation_what_it_is": "Ovde beležiš svoje vežbe disanja ili meditacije. To je jednostavno mesto za tvoje trenutke mira.",
+        "explanation_user_benefit": "Kada si iznutra opušten/a, donosiš mnogo jasnije odluke. To svakodnevno dodatno gradi tvoju mentalnu snagu.",
+        "explanation_when_to_use": "Unesi nešto ovde kada si nakon napornog trenutka jednostavno pet minuta duboko disao/la.",
+        "explanation_try_this": "Dodirni sada ekran i unesi svoju prvu malu vežbu disanja."
+      }
+    },
+    "T058": {
+      "source_sha": "0bb0cbb8ad830aba",
+      "fields": {
+        "display_label": "Uvid u stres",
+        "short_description": "Poveži unutrašnji mir sa dobrim odlukama.",
+        "explanation_what_it_is": "Ova funkcija ti pokazuje kako stres utiče na tvoj dan. Prepoznaješ kako ti unutrašnji mir pomaže pri jasnim odlukama.",
+        "explanation_user_benefit": "Kada bolje razumeš svoj stres, možeš na vreme da napraviš pauzu. To ti daje više smirenosti i snage za svakodnevicu.",
+        "explanation_when_to_use": "Koristi ovo nakon užurbanog događaja da kratko predahneš i ponovo dobiješ bistru glavu.",
+        "explanation_try_this": "Dodirni sada ekran da otkriješ svoje prve uvide o stresu."
+      }
+    },
+    "T059": {
+      "source_sha": "c190f0e6f9fbf464",
+      "fields": {
+        "display_label": "Zdravstveno znanje",
+        "short_description": "Gradi znanje bez preopterećenja.",
+        "explanation_what_it_is": "Ovde pronalaziš dragoceno znanje o pet stubova tvog zdravlja. Ovaj deo ti na lako razumljiv način pokazuje tvoje trenutno stanje i tvoj Vitana Index.",
+        "explanation_user_benefit": "Tako učiš sopstvenim tempom, bez osećaja preopterećenosti. Pomaže ti da svaki dan donosiš male, dobre odluke za svoje blagostanje.",
+        "explanation_when_to_use": "Pogledaj ovaj deo kada želiš u miru da naučiš nešto novo o svom telu ili umu.",
+        "explanation_try_this": "Jednostavno dodirni dugme da odmah sam/a istražiš svoj novi prostor za učenje o zdravlju."
+      }
+    },
+    "T060": {
+      "source_sha": "c057fc339756016f",
+      "fields": {
+        "display_label": "Granice kod tegoba i rizika",
+        "short_description": "Gradi znanje bez preopterećenja.",
+        "explanation_what_it_is": "Ovaj deo ti prikazuje tvoje zdravstvene podatke i moguće rizike potpuno pregledno. Takođe jasno pokazuje kada je potrebna profesionalna medicinska pomoć.",
+        "explanation_user_benefit": "Tako bolje razumeš svoje telo bez osećaja preopterećenosti. Osim toga, uvek tačno znaš kod kojih pitanja je pravi lekar važan.",
+        "explanation_when_to_use": "Pogledaj ovde kada želiš da proveriš svoje zdravstveno stanje ili da saznaš da li postoji pravi medicinski problem.",
+        "explanation_try_this": "Dodirni sada ekran da upoznaš svoje trenutne zdravstvene informacije i naše sigurne granice."
+      }
+    },
+    "T061": {
+      "source_sha": "da12437489b7fc5f",
+      "fields": {
+        "display_label": "Granica prema stručnjacima i pomoći",
+        "short_description": "Gradi znanje bez preopterećenja.",
+        "explanation_what_it_is": "Vitana je tvoja pratilja za zdrav svakodnevni život, ali nije medicinski stručnjak. Kod ozbiljnih bolesti, dijagnoza ili bolova ukazujem ti na ovu granicu.",
+        "explanation_user_benefit": "To štiti tvoje zdravlje i daje ti osećaj sigurnosti. Tačno znaš na šta možeš da se osloniš kod mene i kada je savet pravog lekara neophodan.",
+        "explanation_when_to_use": "Kada me preko ORB pitaš o određenim simptomima ili tretmanima, nežno te podsećam da potražiš stručnjaka.",
+        "explanation_try_this": "Dodirni sada ekran da vidiš primer ove važne granice u praksi."
+      }
+    },
+    "T062": {
+      "source_sha": "72e12d660a5de7bc",
+      "fields": {
+        "display_label": "Pregled biomarkera",
+        "short_description": "Sigurno otkrij više zdravstvenih podataka.",
+        "explanation_what_it_is": "Pregled biomarkera je mali prozor koji se otvara direktno iznad tvog trenutnog ekrana. Pokazuje ti kompaktan pregled tvojih zdravstvenih podataka.",
+        "explanation_user_benefit": "Tako možeš sigurno da proveriš nove vrednosti i odmah nastaviš tamo gde si bio/la. To ti pomaže da još bolje razumeš svoje telo.",
+        "explanation_when_to_use": "Koristiš ovaj prikaz kada u svakodnevici želiš brzo da pogledaš detalje o pet stubova tvog zdravlja.",
+        "explanation_try_this": "Dodirni pregled da sada sigurno pogledaš svoje biomarkere."
+      }
+    },
+    "T063": {
+      "source_sha": "caa96a1ae5886855",
+      "fields": {
+        "display_label": "Povezane aplikacije",
+        "short_description": "Sigurno otkrij više zdravstvenih podataka.",
+        "explanation_what_it_is": "Ovde možeš da povežeš svoj pametni sat, kalendar ili druge zdravstvene aplikacije sa Vitana. Ovo je centralno i sigurno mesto za sve eksterne veze.",
+        "explanation_user_benefit": "Tako se važni podaci za tvojih pet stubova automatski prikupljaju, bez potrebe da bilo šta kucaš. To mi pomaže da još bolje prilagodim svoje savete tvom svakodnevnom životu.",
+        "explanation_when_to_use": "Koristi ova podešavanja kada, na primer, želiš da se tvoji dnevni koraci automatski prenose sa tvog fitnes trakera.",
+        "explanation_try_this": "Pogledaj listu mogućih aplikacija i dodirni jednu od njih da je povežeš."
+      }
+    },
+    "T064": {
+      "source_sha": "09d00f6e913accae",
+      "fields": {
+        "display_label": "Poveži kasnije",
+        "short_description": "Sigurno otkrij više zdravstvenih podataka.",
+        "explanation_what_it_is": "Možeš jednostavno da povežeš svoje zdravstvene aplikacije i trakere sa Vitana u nekom kasnijem trenutku. Tako u svakom momentu imaš potpunu kontrolu nad tim koje podatke želiš da deliš.",
+        "explanation_user_benefit": "Ne moraš odmah sve da odobriš da bi koristio/la Vitana. Tako potpuno opušteno, sopstvenim tempom, odlučuješ kada želiš dublje uvide u svoje zdravlje.",
+        "explanation_when_to_use": "Tačno onda kada se osećaš spremno da sigurno dodaš precizna merenja sa svog pametnog sata ili drugih aplikacija.",
+        "explanation_try_this": "Dodirni dugme da u miru pogledaš kako možeš kasnije sigurno da povežeš podatke."
+      }
+    },
+    "T065": {
+      "source_sha": "9076ba29115b54c0",
+      "fields": {
+        "display_label": "Zdravstveni planovi",
+        "short_description": "Pretvori zdravlje u plan.",
+        "explanation_what_it_is": "Zdravstveni planovi su tvoj lični vodič. Ovde pretvaramo tvoje zdravstvene ciljeve u jednostavne i jasne korake.",
+        "explanation_user_benefit": "Tako nikada nisi preopterećen/a, već uvek tačno znaš šta danas možeš da uradiš za sebe. To olakšava da svaki dan živiš malo zdravije.",
+        "explanation_when_to_use": "Pogledaj ovde svakog jutra da dobiješ mali i ostvariv zadatak za taj dan.",
+        "explanation_try_this": "Dodirni sada ekran da otvoriš svoj prvi zdravstveni plan i u miru ga pogledaš."
+      }
+    },
+    "T067": {
+      "source_sha": "96922c4bc123144e",
+      "fields": {
+        "display_label": "Korak plana",
+        "short_description": "Pretvori zdravlje u plan.",
+        "explanation_what_it_is": "Korak plana je mali, ostvariv zadatak za tvoje zdravlje. Pomaže ti da pet stubova lako ugradiš u svoju svakodnevicu.",
+        "explanation_user_benefit": "Veliki ciljevi često deluju teško, ali male korake ostvaruješ bez napora. Tako svaki dan malo više poboljšavaš svoje blagostanje, bez stresa.",
+        "explanation_when_to_use": "Kreiraj korak plana kada želiš da uradiš nešto dobro za sebe, kao što je danas popiti čašu vode više ili uveče prošetati.",
+        "explanation_try_this": "Dodirni dugme da kreiraš svoj prvi korak plana i odmah ga isprobaš."
+      }
+    },
+    "T068": {
+      "source_sha": "170cb0e089d56deb",
+      "fields": {
+        "display_label": "Pregled memorije",
+        "short_description": "Upoznaj ceo sistem memorije.",
+        "explanation_what_it_is": "Tvoja sećanja su mesto gde se prikuplja sve što naučim o tebi. To je tvoj lični pregled u kojem se svi važni detalji sigurno čuvaju.",
+        "explanation_user_benefit": "Zahvaljujući tome, deluje kao da sam prava asistentkinja koja te zaista poznaje i razume. Osim toga, ovde u svakom trenutku imaš potpunu kontrolu nad onim što pamtim.",
+        "explanation_when_to_use": "Otvori ovaj pregled kada želiš da proveriš da li sam pravilno zapamtila tvoju najnoviju nameru.",
+        "explanation_try_this": "Dodirni sada ekran da otvoriš svoja sećanja i u miru razgledaš."
+      }
+    },
+    "T069": {
+      "source_sha": "4ea09197a6234f3a",
+      "fields": {
+        "display_label": "Šta Vitana zna",
+        "short_description": "Upoznaj ceo sistem memorije.",
+        "explanation_what_it_is": "Tvoja sećanja su sigurna memorija Vitana. Ovde čuvam sve što mi kažeš preko ORB ili zabeležiš u dnevniku.",
+        "explanation_user_benefit": "Tako mi važne stvari moraš reći samo jednom. Svakim danom te bolje upoznajem i mogu ti preciznije pomoći.",
+        "explanation_when_to_use": "Pogledaj ovde kada želiš da proveriš koje preferencije, zdravstvene ciljeve ili detalje sam već zapamtila o tebi.",
+        "explanation_try_this": "Dodirni ekran da odmah vidiš šta Vitana već sve zna o tebi."
+      }
+    },
+    "T070": {
+      "source_sha": "397764710d4d6e93",
+      "fields": {
+        "display_label": "Trinaest kategorija memorije",
+        "short_description": "Upoznaj ceo sistem memorije.",
+        "explanation_what_it_is": "Tvoja sećanja nisu samo istorija ćaskanja, već su uredno sortirana u različite životne oblasti. Tu spadaju kategorije kao što su zdravlje, odnosi, posao ili finansije.",
+        "explanation_user_benefit": "Tako uvek imaš jasan pregled svih važnih detalja iz svog života. Osim toga, tako ti mogu dati mnogo preciznije odgovore.",
+        "explanation_when_to_use": "Pregledaj kategorije kada želiš ciljano da proveriš koje savete si zapamtio/la za svoju kondiciju ili važan projekat.",
+        "explanation_try_this": "Dodirni sada kategorije na svom ekranu da upoznaš sistem."
+      }
+    },
+    "T071": {
+      "source_sha": "ed54d8eeae37a446",
+      "fields": {
+        "display_label": "Dodaj sećanje",
+        "short_description": "Zabeleži i pronađi sećanja.",
+        "explanation_what_it_is": "Vrt sećanja je srce moje memorije. Ovde čuvam sve što mi ispričaš ili mi sigurno poveriš.",
+        "explanation_user_benefit": "Tako ne moramo svaki put da počinjemo ispočetka. Pamtim važne detalje za tebe, da ti uvek imaš glavu lepo slobodnu.",
+        "explanation_when_to_use": "Dodaj sećanje kada želiš da sačuvaš vrednu misao, novu nameru ili sjajnu preporuku.",
+        "explanation_try_this": "Dodirni ekran i dodaj sada svoje prvo sećanje."
+      }
+    },
+    "T072": {
+      "source_sha": "f46ed99f431d72f7",
+      "fields": {
+        "display_label": "Vremenska linija sećanja",
+        "short_description": "Čuvaj i pronalazi uspomene.",
+        "explanation_what_it_is": "Vremenska linija je kao lična knjiga istorije u tvom vrtu sećanja. Ovde možeš da vidiš sva svoja prošla iskustva i beleške pregledno na jednom mestu.",
+        "explanation_user_benefit": "Tako lako zadržavaš pregled nad svojim važnim prekretnicama. Istovremeno mi pomažeš da te i tvoje potrebe sve bolje razumem.",
+        "explanation_when_to_use": "Navrati ovde kada tražiš neko određeno iskustvo iz prošlosti ili jednostavno želiš da prelistaš lepe trenutke.",
+        "explanation_try_this": "Tapni na vremensku liniju i otkrij kako su tvoji sakupljeni trenuci tamo poređani."
+      }
+    },
+    "T073": {
+      "source_sha": "81c49ea851e8865e",
+      "fields": {
+        "display_label": "Prizivanje sećanja",
+        "short_description": "Čuvaj i pronalazi uspomene.",
+        "explanation_what_it_is": "Vitana ne pamti samo činjenice, već ih može i munjevito prizvati za tebe. Možeš ciljano da tražiš stvari koje si mi nekada ispričao/la.",
+        "explanation_user_benefit": "Tako moraš manje da pamtiš i imaš glavu slobodnu za važnije stvari. Bilo da je u pitanju preporuka za knjigu ili neko ime, ja ću ponovo pronaći tu informaciju za tebe.",
+        "explanation_when_to_use": "Koristi ovo kada želiš da se setiš, na primer, određenog restorana koji ti je prijatelj preporučio pre nekoliko meseci.",
+        "explanation_try_this": "Tapni na pretragu i hajde zajedno da prizovemo neku staru informaciju."
+      }
+    },
+    "T074": {
+      "source_sha": "e546ddedbde66fa1",
+      "fields": {
+        "display_label": "Ispravljanje sećanja",
+        "short_description": "Zadrži kontrolu nad svojim pamćenjem.",
+        "explanation_what_it_is": "Imaš potpunu kontrolu nad svojim sećanjima u aplikaciji. Ako se nešto u tvom životu promeni, možeš sasvim jednostavno da ispraviš unose.",
+        "explanation_user_benefit": "Tako je Vitana uvek u toku sa najnovijim informacijama o tebi. Na taj način dobijaš uvek najbolje i najprikladnije odgovore.",
+        "explanation_when_to_use": "Koristi ovo, na primer, kada imaš novi cilj za spavanje ili je Vitana zapamtila pogrešan detalj.",
+        "explanation_try_this": "Tapni na dugme i odmah isprobaj kako da ispraviš neki unos."
+      }
+    },
+    "T075": {
+      "source_sha": "e5f2364f83008894",
+      "fields": {
+        "display_label": "Dozvole za pamćenje",
+        "short_description": "Zadrži kontrolu nad svojim pamćenjem.",
+        "explanation_what_it_is": "U dozvolama tvog vrta sećanja tačno određuješ šta smem da znam i koristim. To je tvoj lični kontrolni centar za tvoje podatke.",
+        "explanation_user_benefit": "Tako uvek zadržavaš potpunu kontrolu nad svojom privatnošću. Ti sam/a odlučuješ koje informacije treba da mi pomognu da te bolje podržavam u svakodnevici.",
+        "explanation_when_to_use": "Koristi ovo kada želiš da odrediš da određene lične teme treba potpuno da ignorišem.",
+        "explanation_try_this": "Pogledaj sada svoje dozvole i prilagodi ih onako kako se osećaš najugodnije."
+      }
+    },
+    "T076": {
+      "source_sha": "63be96560d86eeb9",
+      "fields": {
+        "display_label": "Izvoz podataka",
+        "short_description": "Zadrži kontrolu nad svojim pamćenjem.",
+        "explanation_what_it_is": "Sa izvozom podataka možeš da preuzmeš sve što je Vitana naučila o tebi. To je jednostavan alat za čuvanje tvojih sopstvenih podataka na tvom uređaju.",
+        "explanation_user_benefit": "Tako uvek imaš sigurnost da tvoja sećanja zaista pripadaju tebi. Možeš u bilo kom trenutku da sačuvaš privatnu kopiju svojih sakupljenih podataka.",
+        "explanation_when_to_use": "Koristi ovu funkciju kada želiš da napraviš sopstvenu rezervnu kopiju svih svojih beleški i iskustava radi sigurnosti.",
+        "explanation_try_this": "Tapni na ekran da pokreneš izvoz podataka i vidiš koliko je to jednostavno."
+      }
+    },
+    "T077": {
+      "source_sha": "74256415b98474f9",
+      "fields": {
+        "display_label": "Serija dnevnika i nagrade",
+        "short_description": "Tvoj dnevnik je više od pisanja.",
+        "explanation_what_it_is": "Dnevni unos u dnevnik gradi neprekidnu seriju. To nije samo beležnica, već motor za tvoj lični napredak.",
+        "explanation_user_benefit": "Što redovnije ga koristiš, to bolje upoznajem tvoje navike. Tvoja najveća nagrada su uvek sve preciznije preporuke za tebe.",
+        "explanation_when_to_use": "Odvoji svako veče kratak trenutak za unos, kako bi održao/la svoju seriju.",
+        "explanation_try_this": "Otvori dnevnik i započni danas svoju prvu seriju."
+      }
+    },
+    "T078": {
+      "source_sha": "8563c7f4b28fa60d",
+      "fields": {
+        "display_label": "Foto-dnevnik",
+        "short_description": "Tvoj dnevnik je više od pisanja.",
+        "explanation_what_it_is": "Foto-dnevnik je tvoj vizuelni album uspomena u Vitanaland-u. Ovde možeš pored svojih tekstova sasvim jednostavno da čuvaš i slike svojih iskustava.",
+        "explanation_user_benefit": "Slike često hvataju više osećanja i detalja nego samo reči. Tako činiš svoje unose živopisnijim i možeš kasnije još lepše da se osvrneš na svoje putovanje.",
+        "explanation_when_to_use": "Koristi ga kada si skuvao/la odličan zdrav obrok ili želiš da sačuvaš predivan šetnju u prirodi.",
+        "explanation_try_this": "Tapni sada na simbol kamere i otpremi svoju prvu fotografiju u dnevnik."
+      }
+    },
+    "T079": {
+      "source_sha": "c0bc184a95a2ce66",
+      "fields": {
+        "display_label": "Pojačanje stubova kroz dnevnik",
+        "short_description": "Tvoj dnevnik je više od pisanja.",
+        "explanation_what_it_is": "Tvoj dnevnik je više od mesta za tvoje beleške. Svaki unos tamo direktno jača tvojih pet stubova.",
+        "explanation_user_benefit": "Tvoji mali uspesi tako postaju odmah vidljivi i ulivaju se u tvoj Vitana Index. Osim toga, tako učim da ti dam upravo one savete koji su ti trenutno potrebni.",
+        "explanation_when_to_use": "Zabeleži nakon jela ukratko koliko je tvoj obrok bio zdrav, da odmah napuniš stub za ishranu.",
+        "explanation_try_this": "Tapni sada na svoj dnevnik i kratko zabeleži kako se danas osećaš."
+      }
+    },
+    "T080": {
+      "source_sha": "2ce48ee0e3e727b6",
+      "fields": {
+        "display_label": "Kalendar-agenda",
+        "short_description": "Kako da koristiš kalendar.",
+        "explanation_what_it_is": "Kalendar u Vitanaland-u ti sasvim jednostavno prikazuje tvoj dnevni raspored. Ovde pronalaziš sve svoje planove i podsetnike na jedan pogled.",
+        "explanation_user_benefit": "Tako uvek zadržavaš mir i pregled nad svojim vremenom. To ti daje siguran osećaj za ceo dan.",
+        "explanation_when_to_use": "Otvori svoju kalendar-agendu najbolje ujutru, da se opušteno uskladiš sa svojim danom.",
+        "explanation_try_this": "Tapni sada na kalendar da otvoriš i upoznaš svoj današnji pregled."
+      }
+    },
+    "T081": {
+      "source_sha": "3c902ecba13a1216",
+      "fields": {
+        "display_label": "Kreiranje unosa u kalendar",
+        "short_description": "Kako da koristiš kalendar.",
+        "explanation_what_it_is": "Ovde možeš da unosiš nove termine u svoj kalendar. To ti pomaže da čvrsto isplaniraš svoje zadatke i aktivnosti u Vitanaland-u.",
+        "explanation_user_benefit": "Tako ne zaboravljaš važne susrete iz Maxina-Community ili vremena za svojih pet stubova. Tvoj dan dobija jasnu i opuštenu strukturu.",
+        "explanation_when_to_use": "Kreiraj termin kada želiš da blokiraš određeno vreme za novu naviku ili događaj.",
+        "explanation_try_this": "Tapni sada na ekran da odmah kreiraš svoj prvi termin."
+      }
+    },
+    "T082": {
+      "source_sha": "18e942cddb4ecf58",
+      "fields": {
+        "display_label": "Pomeranje termina",
+        "short_description": "Kako da koristiš kalendar.",
+        "explanation_what_it_is": "Ponekad se tvoji planovi promene. Ovde učiš kako da sasvim jednostavno pomeriš postojeći termin u svom kalendaru.",
+        "explanation_user_benefit": "Tako ostaješ divno fleksibilan/na i nemaš stres. Tvoja svakodnevica se prilagođava tebi, a ne obrnuto.",
+        "explanation_when_to_use": "Koristi ovo kada ti nešto iskrsne i želiš jednostavno da odložiš planirani trening ili susret za kasnije.",
+        "explanation_try_this": "Tapni sada na termin na ekranu i izaberi novo vreme."
+      }
+    },
+    "T083": {
+      "source_sha": "00483f1fdcb887c0",
+      "fields": {
+        "display_label": "Pregled prijemnog sandučeta",
+        "short_description": "Upoznaj prijemno sanduče i komunikaciju.",
+        "explanation_what_it_is": "Prijemno sanduče je tvoje centralno sabirno mesto za sve poruke. Ovde pronalaziš razgovore sa drugim članovima Maxina-Community kao i podsetnike od mene.",
+        "explanation_user_benefit": "Ne moraš više da tražiš na različitim mestima. Sve što je važno za tebe čeka te pregledno objedinjeno na tačno jednom mestu.",
+        "explanation_when_to_use": "Navrati ovde da vidiš da li ti je neko iz Maxina-Community pisao ili je spreman novi podsetnik.",
+        "explanation_try_this": "Otvori sada svoje prijemno sanduče i baci prvi pogled na pregled svojih poruka."
+      }
+    },
+    "T084": {
+      "source_sha": "149c615c8692beed",
+      "fields": {
+        "display_label": "Kartice prijemnog sandučeta",
+        "short_description": "Upoznaj prijemno sanduče i komunikaciju.",
+        "explanation_what_it_is": "Tvoje prijemno sanduče ima različite kartice za razdvajanje aktivnih poruka od već završenih ili arhiviranih stvari. Tako uvek zadržavaš pregled nad svim pristiglim porukama.",
+        "explanation_user_benefit": "To te štiti od haosa i brine se da nijedan važan podsetnik ne bude izgubljen. Možeš da se potpuno koncentrišeš na ono što je trenutno na redu.",
+        "explanation_when_to_use": "Koristi ove oblasti kada tražiš neku stariju informaciju ili želiš da središ svoje trenutno prijemno sanduče.",
+        "explanation_try_this": "Tapni na ekran da pređeš između kartica i otkriješ svoju arhivu."
+      }
+    },
+    "T085": {
+      "source_sha": "3fb17ce9e63bfcd0",
+      "fields": {
+        "display_label": "Kreiranje glasovne beleške",
+        "short_description": "Upoznaj prijemno sanduče i komunikaciju.",
+        "explanation_what_it_is": "Glasovna poruka je udoban način da jednostavno izgovoriš svoje misli. Za to koristiš svoj glas, umesto da naporno kucaš tekst.",
+        "explanation_user_benefit": "To ti štedi mnogo vremena i oseća se mnogo ličnije. Tako možeš da se potpuno koncentrišeš na ono što zapravo želiš da kažeš.",
+        "explanation_when_to_use": "Jednostavno snimi kratku poruku kada upravo šetaš ili nemaš slobodne ruke.",
+        "explanation_try_this": "Tapni na simbol da sada snimiš i isprobaš svoju prvu glasovnu poruku."
+      }
+    },
+    "T086": {
+      "source_sha": "48c6d4f1a0e409ed",
+      "fields": {
+        "display_label": "Centar zajednice",
+        "short_description": "Od pojedinca do zajednice.",
+        "explanation_what_it_is": "Oblast zajednice je tvoje mesto susreta u Maxina-Community. Ovde možeš da vidiš objave drugih i da razmenjuješ iskustva.",
+        "explanation_user_benefit": "Tako uspostavljaš vredne kontakte i pronalaziš podršku za svoje ciljeve. Na svom putovanju naime nisi sam/a.",
+        "explanation_when_to_use": "Koristi ovu oblast kada tražiš nove ideje ili jednostavno želiš da vidiš šta drugi trenutno rade.",
+        "explanation_try_this": "Tapni sada na oblast zajednice i razgledaj se u Maxina-Community."
+      }
+    },
+    "T087": {
+      "source_sha": "77fbf92e5cd56303",
+      "fields": {
+        "display_label": "Dnevni naglasci i rang-liste",
+        "short_description": "Od mene do zajednice.",
+        "explanation_what_it_is": "Ovo je šareni pregled najuzbudljivijih događaja u MAXINA zajednici. Ovde vidiš dnevne naglaske i koji su članovi trenutno posebno aktivni.",
+        "explanation_user_benefit": "Tako jednim pogledom vidiš gde se danas nešto dešava. To ti donosi svežu inspiraciju i motiviše te da i sam postaneš aktivan.",
+        "explanation_when_to_use": "Navrati ovde kada imaš malo slobodnog vremena i želiš da saznaš koji događaji ili sobe uživo upravo počinju.",
+        "explanation_try_this": "Tapni sada na naglaske da vidiš šta se danas dešava u MAXINA zajednici."
+      }
+    },
+    "T088": {
+      "source_sha": "fb8ec6c9c73b5c85",
+      "fields": {
+        "display_label": "Globalna i pretraga zajednice",
+        "short_description": "Od mene do zajednice.",
+        "explanation_what_it_is": "Pretraga ti pomaže da otkriješ sve važno u MAXINA zajednici. Pomoću nje možeš jednostavno da pretražuješ osobe, sadržaje ili teme.",
+        "explanation_user_benefit": "Tako brzo pronalaziš istomišljenike i uzbudljive nove mogućnosti. Pomaže ti da izgradiš prave veze.",
+        "explanation_when_to_use": "Koristi pretragu kada imaš novo interesovanje i želiš da pronađeš objave ili ljude koji ti odgovaraju.",
+        "explanation_try_this": "Tapni na polje za pretragu i otkrij odmah svoju prvu temu u zajednici."
+      }
+    },
+    "T089": {
+      "source_sha": "108c7ceca7ac3242",
+      "fields": {
+        "display_label": "Tabovi fida",
+        "short_description": "Upoznaj fid.",
+        "explanation_what_it_is": "Fid je tvoj centralni pregled za današnji dan. Ovde vidiš sve preporuke i sledeće korake pregledno raspoređene.",
+        "explanation_user_benefit": "On ti olakšava razmišljanje i pokazuje ti tačno šta je sada najbolje za tebe. Tako dostižeš svoje ciljeve opušteno, korak po korak.",
+        "explanation_when_to_use": "Najbolje je da otvoriš fid ujutru uz kafu, da opušteno vidiš šta te danas čeka.",
+        "explanation_try_this": "Tapni na različite oblasti u fidu i isprobaj to odmah sam."
+      }
+    },
+    "T090": {
+      "source_sha": "8020f10d56be3744",
+      "fields": {
+        "display_label": "Kreiraj objavu",
+        "short_description": "Upoznaj fid.",
+        "explanation_what_it_is": "Ovde možeš da pišeš sopstvene objave za MAXINA zajednicu. To je tvoje mesto da podeliš misli ili pitanja sa drugima.",
+        "explanation_user_benefit": "Kada zapišeš svoja iskustva, sređuješ sopstvene misli. Istovremeno dobijaš divnu podršku od istomišljenika na svom putovanju.",
+        "explanation_when_to_use": "Napiši objavu kada želiš da proslaviš mali uspeh ili ti treba savet.",
+        "explanation_try_this": "Tapni sada na tekstualno polje da kreiraš svoju prvu objavu."
+      }
+    },
+    "T091": {
+      "source_sha": "b9c3d581d43b4602",
+      "fields": {
+        "display_label": "Reaguj bezbedno",
+        "short_description": "Upoznaj fid.",
+        "explanation_what_it_is": "Fid u MAXINA zajednici je mesto gde vidiš objave drugih članova. Ovde možeš da razmenjuješ mišljenja u zaštićenom i pozitivnom okruženju.",
+        "explanation_user_benefit": "Na putu kroz Moje putovanje nikada nisi sam. Kada bezbedno reaguješ na druge, skupiš novu motivaciju i istovremeno podržavaš druge.",
+        "explanation_when_to_use": "Otvori fid kada imaš malu pauzu i želiš da se inspirišeš iskustvima drugih.",
+        "explanation_try_this": "Tapni na reakciju ispod objave i isprobaj to odmah."
+      }
+    },
+    "T092": {
+      "source_sha": "d41b76a8698bfea2",
+      "fields": {
+        "display_label": "Pregled profila",
+        "short_description": "Poverenje u profil pre nego što uspostaviš kontakt.",
+        "explanation_what_it_is": "Pregled profila je mali prozor koji se otvara direktno preko tvog trenutnog ekrana. Odmah ti pokazuje najvažnije informacije o drugoj osobi iz MAXINA zajednice.",
+        "explanation_user_benefit": "Tako uvek tačno znaš s kim imaš posla pre nego što napraviš prvi korak. To ti daje dobar osećaj i sigurnost pri upoznavanju.",
+        "explanation_when_to_use": "Koristi ovu funkciju kada otkriješ novo lice u MAXINA zajednici i želiš nakratko da pogledaš ko je to zapravo.",
+        "explanation_try_this": "Tapni sada na prikazani profil da jednostavno isprobaš pregled."
+      }
+    },
+    "T093": {
+      "source_sha": "fa9ccaa0c61ceaa8",
+      "fields": {
+        "display_label": "Vidljivost javnog profila",
+        "short_description": "Poverenje u profil pre nego što uspostaviš kontakt.",
+        "explanation_what_it_is": "Tvoj javni profil je tvoja lična vizit-karta u aplikaciji. On pokazuje drugim članovima MAXINA zajednice ko se krije iza tvog jedinstvenog Vitana ID-a.",
+        "explanation_user_benefit": "Tako od samog početka gradiš poverenje, čak i pre nego što te neko kontaktira. Pri tom sam odlučuješ koliko želiš da otkriješ o sebi.",
+        "explanation_when_to_use": "Proveri svoja podešavanja vidljivosti pre nego što prihvatiš nove zahteve za kontakt ili postaneš aktivan u zajednici.",
+        "explanation_try_this": "Tapni na ekran da sada isprobaš i podesiš vidljivost svog profila."
+      }
+    },
+    "T094": {
+      "source_sha": "c4c99fb9bf3491e1",
+      "fields": {
+        "display_label": "QR kod i deljenje profila",
+        "short_description": "Poverenje u profil pre nego što uspostaviš kontakt.",
+        "explanation_what_it_is": "Pomoću ličnog QR koda možeš jednostavno da podeliš svoj profil sa drugim ljudima. Tako se predstavljaš MAXINA zajednici sigurno i nekomplikovano.",
+        "explanation_user_benefit": "Kada podeliš svoj profil na ovaj način, odmah stvaraš poverenje, čak i pre nego što započnete razgovor. Pomaže ti da od samog početka izgradiš dobre veze.",
+        "explanation_when_to_use": "Koristi ovu funkciju kada upoznaješ nekoga novog i želiš da se direktno povežeš.",
+        "explanation_try_this": "Tapni sada na ekran da pozoveš svoj QR kod i isprobaš deljenje."
+      }
+    },
+    "T095": {
+      "source_sha": "b73a695285710fe7",
+      "fields": {
+        "display_label": "Pronađi match",
+        "short_description": "Pronalaženje matcha kao centralni sistem.",
+        "explanation_what_it_is": "Moj zadatak je da te povežem sa odgovarajućim ljudima u MAXINA zajednici. Pokazujem ti osobe koje tačno odgovaraju tvojim interesovanjima i ciljevima.",
+        "explanation_user_benefit": "Zajedno se ciljevi postižu mnogo lakše i sa više radosti. Tako nekomplikovano pronalaziš nove prijatelje, partnere za trening ili saputnike koji te podržavaju na tvom putu.",
+        "explanation_when_to_use": "Koristi ovu pretragu kada ti, na primer, treba motivacija za sport ili želiš da upoznaš istomišljenike za nove ideje.",
+        "explanation_try_this": "Tapni sada na ekran da vidiš koga sam danas pronašao za tebe."
+      }
+    },
+    "T096": {
+      "source_sha": "80da825372618d46",
+      "fields": {
+        "display_label": "Tipovi matcheva",
+        "short_description": "Pronalaženje matcha kao centralni sistem.",
+        "explanation_what_it_is": "U MAXINA zajednici možeš da upoznaš sasvim različite vrste ljudi. To se kreće od sportskih partnera i prijatelja do klijenata ili poslovnih partnera.",
+        "explanation_user_benefit": "Tako pronalaziš tačno onu osobu koja ti pomaže u trenutnoj životnoj fazi. Bilo za više motivacije u svakodnevici ili za nove poslovne puteve, zajedno postižete više.",
+        "explanation_when_to_use": "Koristi ovu funkciju kada, na primer, tražiš nekoga za zajednički trening ili ti treba partner za novi projekat.",
+        "explanation_try_this": "Tapni sada na izbor i otkrij koja te divna poznanstva čekaju."
+      }
+    },
+    "T097": {
+      "source_sha": "3d6a281206e511b9",
+      "fields": {
+        "display_label": "Zašto ovaj match",
+        "short_description": "Pronalaženje matcha kao centralni sistem.",
+        "explanation_what_it_is": "Pokazujem ti za svaki predloženi kontakt tačno zašto ta osoba dobro odgovara tebi. Za to upoređujem zajednička interesovanja, aktivnosti i vaš životni kompas.",
+        "explanation_user_benefit": "Tako odmah znaš o čemu možete da pričate i led je odmah probijen. To čini prvi korak za poruku mnogo lakšim.",
+        "explanation_when_to_use": "Koristi ovo objašnjenje uvek kada želiš da pišeš novom kontaktu, ali ne znaš tačno kako da započneš razgovor.",
+        "explanation_try_this": "Tapni sada na dalje da pogledaš primer i razumeš zašto je ovaj kontakt predložen."
+      }
+    },
+    "T098": {
+      "source_sha": "e2aefc0538794ead",
+      "fields": {
+        "display_label": "Lista matcheva",
+        "short_description": "Kako da postupaš sa matchevima.",
+        "explanation_what_it_is": "Lista matcheva je pregled u MAXINA zajednici na kojem ti se predlažu odgovarajući ljudi. Vitana za to bira osobe koje imaju slična interesovanja ili ciljeve kao ti.",
+        "explanation_user_benefit": "Tako lako pronalaziš nove prijatelje, partnere za trening ili čak poslovne kontakte. Pravi ljudi ti pomažu da ostaneš motivisan i da postigneš svoje ciljeve.",
+        "explanation_when_to_use": "Pogledaj svoju listu matcheva kada tražiš nekoga ko će zajedno sa tobom raditi na tvojim ciljevima u životnom kompasu.",
+        "explanation_try_this": "Otvori sada svoju listu matcheva i pogledaj ko bi mogao dobro da ti odgovara."
+      }
+    },
+    "T099": {
+      "source_sha": "7e1daf41ca16ceca",
+      "fields": {
+        "display_label": "Pretraži matcheve",
+        "short_description": "Kako da postupaš sa matchevima.",
+        "explanation_what_it_is": "U MAXINA zajednici možeš ciljano da tražiš osobe koje imaju slične ciljeve kao ti. Sistem ti pomaže da pronađeš odgovarajuće saputnike.",
+        "explanation_user_benefit": "Tako brzo pronalaziš istomišljenike koji te motivišu i podržavaju na tvom putovanju. Uspostavljaš vredne kontakte potpuno bez napora.",
+        "explanation_when_to_use": "Koristi ovu pretragu kada želiš svežu razmenu za jedan od svojih pet stubova.",
+        "explanation_try_this": "Tapni sada na pretragu da otkriješ svoje prve odgovarajuće predloge."
+      }
+    },
+    "T100": {
+      "source_sha": "bea0188dd45a5bc5",
+      "fields": {
+        "display_label": "Poveži se ili odbij",
+        "short_description": "Kako da postupaš sa matchevima.",
+        "explanation_what_it_is": "U MAXINA zajednici sam odlučuješ s kim želiš da uspostaviš kontakt. Za svaki predlog jednostavno biraš da li želiš da se povežeš ili da ga preskočiš.",
+        "explanation_user_benefit": "Tako zadržavaš punu kontrolu nad svojom mrežom. Razmenjuješ se samo sa ljudima koji ti zaista pomažu na tvom putovanju.",
+        "explanation_when_to_use": "Koristi ovo kada gledaš nove ljude i želiš da odlučiš ko će postati deo tvoje svakodnevice.",
+        "explanation_try_this": "Tapni sada na ekran i isprobaj kako da se povežeš ili odbiješ predlog."
+      }
+    },
+    "T101": {
+      "source_sha": "235a0ab60755a411",
+      "fields": {
+        "display_label": "Objavi aktivnost",
+        "short_description": "Traži aktivnosti i postavljaj otvorene zahteve.",
+        "explanation_what_it_is": "Možeš da predložiš sopstvene aktivnosti u MAXINA zajednici i tražiš saučesnike. To je otvoreni poziv za zajednička iskustva u svakodnevici.",
+        "explanation_user_benefit": "Tako brzo pronalaziš društvo za svoje dnevne planove iz svog putovanja. Zajedno se mnogo lakše motivišete i postižete svoje ciljeve sa više radosti.",
+        "explanation_when_to_use": "Koristi to kada želiš da prošetaš kasnije tokom dana i još tražiš nekoga ko će te spontano pratiti.",
+        "explanation_try_this": "Tapni na ekran da kreiraš svoj prvi poziv za aktivnost i odmah to isprobaš."
+      }
+    },
+    "T102": {
+      "source_sha": "6f9fcae6ed91d599",
+      "fields": {
+        "display_label": "Traži susrete",
+        "short_description": "Pretraživanje aktivnosti i postavljanje otvorenih zahteva.",
+        "explanation_what_it_is": "U Maxina zajednici možeš lako da tražiš zajedničke aktivnosti. Pri tome kreiraš otvoreni poziv za druge koji ti se mogu pridružiti.",
+        "explanation_user_benefit": "Tako ne moraš sam da postigneš svoje ciljeve za zdrav svakodnevni život. Prijatno društvo ti često daje upravo pravu motivaciju.",
+        "explanation_when_to_use": "Koristi ovu funkciju kada planiraš popodnevnu šetnju i voleo bi da se pritom sa nekim porazgovaraš.",
+        "explanation_try_this": "Tapni na ekran i odmah isprobaj kako da postaviš zahtev za susret."
+      }
+    },
+    "T103": {
+      "source_sha": "cff97d442c624dea",
+      "fields": {
+        "display_label": "Podudaranja namera",
+        "short_description": "Pretraživanje aktivnosti i postavljanje otvorenih zahteva.",
+        "explanation_what_it_is": "Ova funkcija te povezuje sa ljudima u Maxina zajednici koji žele da rade isto što i ti. Jednostavno podeliš svoju želju, a sistem pronalazi odgovarajuće partnere za tebe.",
+        "explanation_user_benefit": "Tako ne moraš sam da obavljaš svoje aktivnosti ili dugo da tražiš društvo. Sasvim prirodno uspostavljaš nove kontakte koji tačno odgovaraju tvojim interesovanjima.",
+        "explanation_when_to_use": "Koristi ovo onih dana kada imaš želju za društvom tokom šetnje ili sporta, ali ne poznaješ nikoga ko trenutno ima vremena.",
+        "explanation_try_this": "Tapni sada na dugme da uneseš svoju prvu želju i vidiš ko ti odgovara."
+      }
+    },
+    "T104": {
+      "source_sha": "dc2617f78bdfe2af",
+      "fields": {
+        "display_label": "Odgovori na podudaranje",
+        "short_description": "Kako funkcioniše ciklus namera.",
+        "explanation_what_it_is": "Odgovarajući predlog iz Maxina zajednice te povezuje sa sjajnim aktivnostima ili istomišljenicima. On povezuje ono što planiraš direktno sa pravom prilikom.",
+        "explanation_user_benefit": "Ne moraš sam da tražiš ideje ili saradnike. To ti štedi mnogo vremena i odmah ti daje novu motivaciju.",
+        "explanation_when_to_use": "Pogledaj ove predloge kada želiš nešto da uradiš za sebe i treba ti savršena inspiracija za to.",
+        "explanation_try_this": "Tapni na ekran i odgovori sada na svoj prvi predlog."
+      }
+    },
+    "T105": {
+      "source_sha": "77b8e3ccbfce55bd",
+      "fields": {
+        "display_label": "Podeli nameru",
+        "short_description": "Kako funkcioniše ciklus namera.",
+        "explanation_what_it_is": "Kada deliš plan, kažeš Maxina zajednici ili meni šta danas želiš da započneš. To je startni signal za tvoju sledeću akciju na tvom putovanju.",
+        "explanation_user_benefit": "Kada podeliš svoje ciljeve, ostaješ motivisan i činiš ih vidljivim. Tako brzo pronalaziš odgovarajuću podršku ili društvo.",
+        "explanation_when_to_use": "Uradi to na primer ujutru, kada želiš da ideš u šetnju i još tražiš nekoga ko će ti se pridružiti.",
+        "explanation_try_this": "Tapni sada na ekran i podeli svoj prvi plan sa nama."
+      }
+    },
+    "T106": {
+      "source_sha": "81c2d0d4b6203b84",
+      "fields": {
+        "display_label": "Ispuni nameru",
+        "short_description": "Kako funkcioniše ciklus namera.",
+        "explanation_what_it_is": "Kada sprovodiš planiranu akciju u svom svakodnevnom životu, potvrđuješ to u aplikaciji. To je poslednji korak da uspešno završiš svoj plan.",
+        "explanation_user_benefit": "Svaki završen korak čini tvoj napredak odmah vidljivim i poboljšava tvoj Vitana Index. Osim toga, tako učim koji zadaci ti zaista odgovaraju.",
+        "explanation_when_to_use": "Koristiš ovu funkciju uvek kada si uspešno završio mali svakodnevni zadatak ili planiranu akciju.",
+        "explanation_try_this": "Tapni na ekran da označiš svoj prvi plan kao završen."
+      }
+    },
+    "T107": {
+      "source_sha": "9a52c87a66d9f8cf",
+      "fields": {
+        "display_label": "Pregledaj grupe",
+        "short_description": "Upoznaj grupe.",
+        "explanation_what_it_is": "Ovde možeš da otkriješ različite grupe u Maxina zajednici. To je mesto puno ljudi koji dele tvoja interesovanja.",
+        "explanation_user_benefit": "Tamo pronalaziš istomišljenike koji te podržavaju u tvojim ciljevima. Zajedno sa drugima je mnogo lakše ostati motivisan.",
+        "explanation_when_to_use": "Pogledaj ovaj deo kada tražiš motivaciju ili želiš da se povežeš sa pravim ljudima.",
+        "explanation_try_this": "Tapni na ekran i pregledaj različite grupe da otkriješ nešto novo."
+      }
+    },
+    "T108": {
+      "source_sha": "854e5647152820ba",
+      "fields": {
+        "display_label": "Sačuvaj grupu",
+        "short_description": "Upoznaj grupe.",
+        "explanation_what_it_is": "Otkrio si zanimljivu grupu dok si pregledao? Sa funkcijom čuvanja možeš jednostavno da zapamtiš grupe u Maxina zajednici.",
+        "explanation_user_benefit": "Tako ne gubiš iz vida zanimljive teme. Možeš u svakom trenutku brzo ponovo da pristupiš svojim omiljenim grupama, bez dugog traženja.",
+        "explanation_when_to_use": "Koristi ovu funkciju kada vidiš sjajnu grupu kojoj možda želiš da se pridružiš tek kasnije na miru.",
+        "explanation_try_this": "Tapni sada na simbol za čuvanje da zapamtiš ovu grupu za kasnije."
+      }
+    },
+    "T109": {
+      "source_sha": "15b0744d61906380",
+      "fields": {
+        "display_label": "Nacrt grupe",
+        "short_description": "Upoznaj grupe.",
+        "explanation_what_it_is": "Nacrt grupe je startni signal za tvoju sopstvenu grupu u Maxina zajednici. Ovde na miru planiraš o čemu će se raditi u tvom novom prostoru.",
+        "explanation_user_benefit": "Možeš jednostavno da pronađeš ljude koji dele tačno tvoja interesovanja. Pomaže ti da izgradiš svoju malu mrežu, bez stresa ili pritiska.",
+        "explanation_when_to_use": "Započni nacrt kada imaš lepu ideju za zajednički hobi i želiš da je sačuvaš za kasnije.",
+        "explanation_try_this": "Tapni sada na ekran da kreiraš nacrt za svoju prvu sopstvenu grupu."
+      }
+    },
+    "T110": {
+      "source_sha": "6fe3f0937bacb758",
+      "fields": {
+        "display_label": "Detalji grupe",
+        "short_description": "Kako funkcioniše u grupi.",
+        "explanation_what_it_is": "Detalji grupe ti pokazuju sve važno o određenoj grupi na jedan pogled. Ovde pronalaziš članove, aktuelne objave i predstojeće događaje.",
+        "explanation_user_benefit": "Tako u Maxina zajednici uvek ostaješ u toku i ne propuštaš važne novosti. Pomaže ti da uspostaviš prave kontakte i da zajedno sa drugima radiš na svojim ciljevima.",
+        "explanation_when_to_use": "Koristi ovaj prikaz kada želiš da saznaš ko je deo grupe i koje teme se tamo trenutno diskutuju.",
+        "explanation_try_this": "Tapni sada na grupu da pogledaš detalje i na miru se razgledaš."
+      }
+    },
+    "T111": {
+      "source_sha": "d8423d24d5f85199",
+      "fields": {
+        "display_label": "Grupni čet",
+        "short_description": "Kako funkcioniše u grupi.",
+        "explanation_what_it_is": "Grupni čet je zajedničko mesto za poruke u Maxina zajednici. Ovde deliš tekstove, glasovne poruke ili fotografije sa celom svojom grupom.",
+        "explanation_user_benefit": "Tako lako ostaješ u kontaktu sa drugima. Neverovatno motiviše kada delite svoja iskustva i napredak jedni sa drugima.",
+        "explanation_when_to_use": "Napiši poruku kada želiš da ispričaš grupi o svom danu ili da pokažeš lepu fotografiju sa šetnje.",
+        "explanation_try_this": "Tapni sada na grupni čet i napiši mali pozdrav drugima."
+      }
+    },
+    "T112": {
+      "source_sha": "a873a34e300212c1",
+      "fields": {
+        "display_label": "Pozovi članove",
+        "short_description": "Kako funkcioniše u grupi.",
+        "explanation_what_it_is": "U Maxina zajednici možeš jednostavno da pozivaš druge ljude u grupu. Tako vaš krug raste sa ljudima koji imaju ista interesovanja.",
+        "explanation_user_benefit": "Zajedno je razmena mnogo zabavnija i dodatno te motiviše. Imaš svoje prijatelje direktno uz sebe i možete se međusobno podržavati.",
+        "explanation_when_to_use": "Koristi ovu funkciju kada želiš da poznanik odmah postane deo vašeg razgovora.",
+        "explanation_try_this": "Tapni sada na ekran da probno pozivaš nekoga u grupu."
+      }
+    },
+    "T113": {
+      "source_sha": "a80144cca406288d",
+      "fields": {
+        "display_label": "Izazovi",
+        "short_description": "Upoznaj izazove.",
+        "explanation_what_it_is": "Izazovi su zajednički zadaci u Maxina zajednici. Zabavni su i često se vrte oko naših pet stubova.",
+        "explanation_user_benefit": "Zajedno sa drugima mnogo lakše postižeš svoje ciljeve. Neverovatno te motiviše kada vidiš da nisi sam.",
+        "explanation_when_to_use": "Učestvuješ kada ti treba mali motivacioni podsticaj, na primer da uneseš više kretanja u svoj svakodnevni život.",
+        "explanation_try_this": "Tapni sada na ekran i izaberi svoj prvi izazov."
+      }
+    },
+    "T114": {
+      "source_sha": "23c11f011ced34dd",
+      "fields": {
+        "display_label": "Napredak izazova",
+        "short_description": "Upoznaj izazove.",
+        "explanation_what_it_is": "Ovde vidiš tačno koliko si daleko stigao u svojim aktuelnim izazovima u Maxina zajednici. To je tvoj lični pregled tvog dosadašnjeg uspeha.",
+        "explanation_user_benefit": "Tako nikada ne gubiš pregled i uvek ostaješ motivisan. Odmah vidiš šta je tvoj sledeći korak za pet stubova.",
+        "explanation_when_to_use": "Pogledaj ovde na primer svako veče da proveriš koliko si se već približio svom cilju.",
+        "explanation_try_this": "Tapni sada na ekran da pogledaš svoj napredak u izazovima."
+      }
+    },
+    "T115": {
+      "source_sha": "8550a9eadd89f6cf",
+      "fields": {
+        "display_label": "Podeli uspeh",
+        "short_description": "Upoznaj izazove.",
+        "explanation_what_it_is": "Ovde možeš da podeliš svoje savladane izazove sa Maxina zajednicom. To je jednostavan način da učiniš svoje prekretnice vidljivim.",
+        "explanation_user_benefit": "Kada pokazuješ svoje uspehe, motivišeš sebe i inspirišeš druge. Tako se divno možete međusobno bodriti.",
+        "explanation_when_to_use": "Koristi ovu mogućnost tačno onda kada si ponosan na završeni izazov i želiš to da proslaviš.",
+        "explanation_try_this": "Tapni sada na ekran i podeli svoj prvi uspeh sa nama."
+      }
+    },
+    "T116": {
+      "source_sha": "40013dcc1ec206b5",
+      "fields": {
+        "display_label": "Traži događaje",
+        "short_description": "Otkrij događaje.",
+        "explanation_what_it_is": "Pretraga događaja je kalendar Maxina zajednice za sve događaje. Ovde pronalaziš onlajn kurseve, radionice i susrete uživo.",
+        "explanation_user_benefit": "Zajednička iskustva te povezuju sa pravim ljudima i donose novu motivaciju. Tako je još veće zadovoljstvo učiti novo i ostati aktivan.",
+        "explanation_when_to_use": "Koristi pretragu jednostavno kada imaš vremena vikendom i želiš da učestvuješ na zanimljivom onlajn predavanju ili susretu.",
+        "explanation_try_this": "Tapni na pretragu i otkrij koji te uzbudljivi događaji čekaju u Maxina zajednici."
+      }
+    },
+    "T117": {
+      "source_sha": "a05c64df73520c75",
+      "fields": {
+        "display_label": "Filter događaja",
+        "short_description": "Otkrij događaje.",
+        "explanation_what_it_is": "Pomoću filtera možeš jednostavno sortirati događaje i live sobe u MAXINA zajednici. Tako podešavaš tačno ono što želiš da vidiš.",
+        "explanation_user_benefit": "Ovo ti pomaže da u velikom izboru termina odmah pronađeš ono pravo za sebe. Tako više nećeš propustiti nijedan uzbudljiv susret.",
+        "explanation_when_to_use": "Koristi filtere kada ciljano tražiš meditaciju za večeras ili spontanu live sobu.",
+        "explanation_try_this": "Tapni na filtere i odmah isprobaj kako lako možeš sortirati događaje."
+      }
+    },
+    "T118": {
+      "source_sha": "9367983af856811b",
+      "fields": {
+        "display_label": "Sačuvaj događaj",
+        "short_description": "Otkrij događaje.",
+        "explanation_what_it_is": "Kada pronađeš zanimljiv planirani događaj, možeš ga sačuvati za kasnije. To je kao tvoja lična beleška za predstojeće live sobe.",
+        "explanation_user_benefit": "Tako nikada više nećeš propustiti razgovor ili kurs na koji se raduješ. Uvek ćeš imati pregled svojih planiranih aktivnosti u MAXINA zajednici.",
+        "explanation_when_to_use": "Sačuvaj događaj kad god dok pregledaš kalendar vidiš temu na kojoj obavezno želiš da budeš uživo.",
+        "explanation_try_this": "Tapni na predstojeći događaj i izaberi funkciju čuvanja da ga odmah zabeležiš."
+      }
+    },
+    "T119": {
+      "source_sha": "6c5d460e6c9ab7b8",
+      "fields": {
+        "display_label": "Detalji događaja",
+        "short_description": "Detalji događaja i učešće.",
+        "explanation_what_it_is": "Ovo je mali info prozor koji se otvara preko tvog trenutnog ekrana. Prikazuje ti sve važne detalje o događaju.",
+        "explanation_user_benefit": "Odmah vidiš sve potrebne informacije na jednom mestu. Tako možeš u miru da odlučiš, bez napuštanja trenutne stranice.",
+        "explanation_when_to_use": "Koristi ovaj prozor kada otkriješ zanimljiv događaj u MAXINA zajednici i želiš tačno da znaš o čemu se radi.",
+        "explanation_try_this": "Tapni na događaj i odmah isprobaj kako se otvara info prozor."
+      }
+    },
+    "T120": {
+      "source_sha": "225187d2538f3a5b",
+      "fields": {
+        "display_label": "Besplatna prijava",
+        "short_description": "Detalji događaja i učešće.",
+        "explanation_what_it_is": "Pomoću ove funkcije možeš se prijaviti za besplatne događaje u MAXINA zajednici. Jedan kratak klik je dovoljan da sigurno rezervišeš svoje mesto.",
+        "explanation_user_benefit": "Tako više nećeš propustiti nijedan uzbudljiv susret ili kurs. Možeš potpuno opušteno upoznati nove ljude i zajedno ostati aktivni.",
+        "explanation_when_to_use": "Koristi ovo kada vidiš zanimljiv događaj i želiš odmah da učestvuješ bez troškova.",
+        "explanation_try_this": "Tapni sada na dugme za prijavu da rezervišeš svoje mesto za naš test događaj."
+      }
+    },
+    "T121": {
+      "source_sha": "c93e103598f18ec6",
+      "fields": {
+        "display_label": "Sigurnost karte",
+        "short_description": "Detalji događaja i učešće.",
+        "explanation_what_it_is": "Ovo je pregled koji ti pokazuje važne napomene pre nego što rezervišeš kartu ili učestvuješ. Na primer, upozorava te na moguće troškove ili javne sadržaje.",
+        "explanation_user_benefit": "To ti daje siguran osećaj pri svakoj prijavi. Uvek imaš potpunu kontrolu i nema neprijatnih iznenađenja.",
+        "explanation_when_to_use": "Obraćaš pažnju na ove napomene kada upravo gledaš zanimljiv događaj i želiš da se prijaviš.",
+        "explanation_try_this": "Tapni na detalje događaja na ekranu da sada isprobaš prikaz sigurnosti."
+      }
+    },
+    "T122": {
+      "source_sha": "20fc6f9f574706d9",
+      "fields": {
+        "display_label": "Dodaj u kalendar",
+        "short_description": "Poveži događaje sa planiranjem i uparivanjem.",
+        "explanation_what_it_is": "Pomoću funkcije kalendara možeš preporučene akcije i događaje direktno uneti kao fiksni termin. Tako od ideje nastaje pravi plan.",
+        "explanation_user_benefit": "Kada sebi nešto čvrsto zacrtaš, mnogo lakše to sprovodiš u svakodnevici. Osim toga, to mi pomaže da ti kasnije predložim tačno odgovarajuće događaje i kontakte.",
+        "explanation_when_to_use": "Koristi ovo kada ujutru otkriješ dobru akciju i želiš je odmah zakazati za popodne.",
+        "explanation_try_this": "Tapni sada na dugme kalendara da zakažeš svoj prvi događaj."
+      }
+    },
+    "T123": {
+      "source_sha": "c92d65df92a6c5d7",
+      "fields": {
+        "display_label": "Podsetnici za događaje",
+        "short_description": "Poveži događaje sa planiranjem i uparivanjem.",
+        "explanation_what_it_is": "Podsetnici te na vreme obaveštavaju o predstojećim događajima. Oni su tvoj nežni alarm za važne trenutke na tvom putovanju.",
+        "explanation_user_benefit": "Imaš slobodnu glavu i više ne propuštaš nijednu uzbudljivu aktivnost. Ja mislim umesto tebe, da se ti možeš potpuno fokusirati na doživljaj.",
+        "explanation_when_to_use": "Koristi ih kada želiš da ugradiš događaj u svoju svakodnevicu i treba ti obaveštenje u tačno pravo vreme.",
+        "explanation_try_this": "Tapni na ekran da postaviš podsetnik za svoj sledeći događaj."
+      }
+    },
+    "T124": {
+      "source_sha": "60010b33f0e90e73",
+      "fields": {
+        "display_label": "Uparivanje učesnika",
+        "short_description": "Poveži događaje sa planiranjem i uparivanjem.",
+        "explanation_what_it_is": "Ova funkcija ti pomaže da pronađeš odgovarajuće pratioce za svoje događaje. Vitana ti predlaže članove iz MAXINA zajednice koji dobro odgovaraju tvom događaju.",
+        "explanation_user_benefit": "Tako nikada ne moraš sam da radiš svoje aktivnosti, ako tražiš društvo. Neverovatno motiviše doživljavati nove stvari zajedno sa istomišljenicima.",
+        "explanation_when_to_use": "Koristi ovu funkciju kada na primer planiraš šetnju i još tražiš fine ljude koji bi te pratili.",
+        "explanation_try_this": "Tapni na ekran da odmah sam isprobaš pronalaženje odgovarajućih pratilaca."
+      }
+    },
+    "T125": {
+      "source_sha": "9022aa50a8acc193",
+      "fields": {
+        "display_label": "Kreiraj događaj",
+        "short_description": "Kreiraj događaj korak po korak.",
+        "explanation_what_it_is": "Pomoću ove funkcije planiraš sopstvene događaje u Vitanaland. Jednostavno odrediš temu i vreme.",
+        "explanation_user_benefit": "Tako možeš lako pronaći istomišljenike i razmenjivati iskustva. To je najbolji način da postaneš aktivan deo zajednice.",
+        "explanation_when_to_use": "Koristi ovo kada želiš da pozoveš druge članove MAXINA zajednice na zajedničku raspravu.",
+        "explanation_try_this": "Tapni na ekran da sada kreiraš svoj prvi sopstveni događaj."
+      }
+    },
+    "T126": {
+      "source_sha": "8b0c58a700eeb19e",
+      "fields": {
+        "display_label": "Osnove događaja",
+        "short_description": "Kreiraj događaj korak po korak.",
+        "explanation_what_it_is": "Događaj je planirana aktivnost u MAXINA zajednici koju možeš sam kreirati. Okuplja ljude da razmenjuju mišljenja o određenoj temi.",
+        "explanation_user_benefit": "Pomaže ti da pronađeš istomišljenike i podeliš sopstvene ideje. Tako postaješ aktivan deo zajednice.",
+        "explanation_when_to_use": "Kreiraj događaj kada želiš da planiraš susret, malu diskusiju ili zajedničku vežbu sa drugima.",
+        "explanation_try_this": "Tapni sada na ekran da postaviš osnove za svoj prvi sopstveni događaj."
+      }
+    },
+    "T127": {
+      "source_sha": "d4d49c36b35913ad",
+      "fields": {
+        "display_label": "Nacrt događaja",
+        "short_description": "Kreiraj događaj korak po korak.",
+        "explanation_what_it_is": "Nacrt događaja je tvoja priprema za sopstveni susret u MAXINA zajednici. Tu prikupljaš sve važne detalje pre nego što događaj postane zvanično vidljiv.",
+        "explanation_user_benefit": "Možeš planirati svoju ideju potpuno bez pritiska i kasnije je bilo kada prilagoditi. Olakšava ti da sigurno i opušteno stupiš u kontakt sa drugima.",
+        "explanation_when_to_use": "Započni nacrt kada imaš konkretnu ideju za buduću zajedničku aktivnost.",
+        "explanation_try_this": "Tapni na ekran da započneš svoj prvi nacrt događaja."
+      }
+    },
+    "T128": {
+      "source_sha": "a46c2a68aa69a0b1",
+      "fields": {
+        "display_label": "Kreiraj susret",
+        "short_description": "Kreiraj susret korak po korak.",
+        "explanation_what_it_is": "Meetup je pravi susret sa drugim ljudima iz MAXINA zajednice. Ovde možeš jednostavno planirati zajedničke aktivnosti.",
+        "explanation_user_benefit": "Zajednička iskustva su zabavna i motivišu te. Tako ti je mnogo lakše da zajedno ostaneš aktivan i zdrav.",
+        "explanation_when_to_use": "Koristi ovu funkciju kada ne želiš da budeš sam i na primer tražiš društvo za svoju sledeću šetnju.",
+        "explanation_try_this": "Tapni sada na ekran da direktno kreiraš svoj prvi sopstveni susret."
+      }
+    },
+    "T129": {
+      "source_sha": "00252943c4e6ad9d",
+      "fields": {
+        "display_label": "Aktivnost, mesto i vreme",
+        "short_description": "Kreiraj susret korak po korak.",
+        "explanation_what_it_is": "Svaki susret treba tri važne stvari: aktivnost, mesto i vreme. Ovde određuješ tačno te detalje za svoj kalendar.",
+        "explanation_user_benefit": "Tako svi tačno znaju šta je planirano i kada počinje. To čini organizaciju potpuno jednostavnom i bez stresa za tebe.",
+        "explanation_when_to_use": "Koristi ove podatke čim se odlučiš za zajedničko iskustvo poput šetnje u parku.",
+        "explanation_try_this": "Tapni na ekran da sada uneseš aktivnost, mesto i vreme."
+      }
+    },
+    "T130": {
+      "source_sha": "f1bc2717149a6e4e",
+      "fields": {
+        "display_label": "Pozovi članove na susret",
+        "short_description": "Kreiraj susret korak po korak.",
+        "explanation_what_it_is": "Ovde pozivaš druge članove MAXINA zajednice na svoj susret. To se dešava u praktičnom malom prozoru direktno na tvom ekranu.",
+        "explanation_user_benefit": "Tako možeš deliti svoje aktivnosti sa divnim ljudima. Zajednička iskustva te motivišu i jednostavno su zabavnija.",
+        "explanation_when_to_use": "Koristi ovu mogućnost čim je tvoj susret potpuno isplaniran i ne želiš da ostaneš sam.",
+        "explanation_try_this": "Tapni sada na dugme za pozivanje u prozoru i isprobaj to direktno sam."
+      }
+    },
+    "T131": {
+      "source_sha": "dd83ed6847b24069",
+      "fields": {
+        "display_label": "Detalji susreta",
+        "short_description": "Kako da upravljaš susretima.",
+        "explanation_what_it_is": "Ovo je mali prozor koji se otvara direktno preko tvog trenutnog ekrana. Prikazuje ti sve važne detalje o susretu na jednom mestu.",
+        "explanation_user_benefit": "Tako imaš sve informacije pregledno pred sobom, bez napuštanja prethodne stranice. Možeš u miru da odlučiš koje korake ćeš sledeće preduzeti.",
+        "explanation_when_to_use": "Koristi ovaj pregled kada želiš da saznaš više o susretu ili da potvrdiš svoje učešće.",
+        "explanation_try_this": "Tapni sada na susret na svom ekranu da otvoriš detalje."
+      }
+    },
+    "T132": {
+      "source_sha": "30f850b39c8202c5",
+      "fields": {
+        "display_label": "Lokalni susret",
+        "short_description": "Kako da upravljaš susretima.",
+        "explanation_what_it_is": "Lokalni susret je okupljanje u tvojoj blizini sa drugima iz MAXINA zajednice. Mali prozor ti odmah prikazuje sve važne detalje o tome.",
+        "explanation_user_benefit": "Ovo ti pomaže da uspostaviš nove kontakte i da zajedno radiš na pet stubova zdravlja. Možeš sve u miru da proveriš pre nego što se prijaviš.",
+        "explanation_when_to_use": "Pogledaj ove susrete kada imaš želju za zajedničkim vežbanjem ili razmenom iskustava u svom gradu.",
+        "explanation_try_this": "Tapni na susret na svom ekranu i pogledaj kako jednostavno to funkcioniše."
+      }
+    },
+    "T133": {
+      "source_sha": "ba64ec9fdd91fdc0",
+      "fields": {
+        "display_label": "Izmena susreta",
+        "short_description": "Kako da upravljaš susretima.",
+        "explanation_what_it_is": "Ovde možeš svoje planirane susrete sasvim jednostavno da prilagodiš. To je mali prozor koji se otvara direktno preko tvog trenutnog ekrana.",
+        "explanation_user_benefit": "Tako ostaješ fleksibilan kada ti se planovi iznenada promene. Imaš sve detalje na oku i nikada ne gubiš orijentaciju u aplikaciji.",
+        "explanation_when_to_use": "Koristi ovu funkciju kada ti u svakodnevici nešto iskrsne i moraš da otkažeš ili izmeniš planirani susret.",
+        "explanation_try_this": "Tapni na susret i odmah isprobaj kako možeš sigurno da izmeniš svoju prijavu."
+      }
+    },
+    "T134": {
+      "source_sha": "e9a03d64a1172d52",
+      "fields": {
+        "display_label": "Pretraživanje live soba",
+        "short_description": "Pridruži se live sobama.",
+        "explanation_what_it_is": "Live sobe su mesta u MAXINA zajednici gde se razgovori odvijaju u realnom vremenu. Možeš to zamisliti kao otvorene diskusione grupe kojima se možeš pridružiti u bilo kom trenutku.",
+        "explanation_user_benefit": "One ti nude sjajnu mogućnost da se direktno razmenjuješ sa drugima ili da doživiš inspirativna predavanja. Tako uspostavljaš prave kontakte i u samom si središtu dešavanja.",
+        "explanation_when_to_use": "Jednostavno pogledaj pregled kada ti je do društva ili želiš spontano da čuješ nešto o zanimljivoj temi.",
+        "explanation_try_this": "Tapni na dalje da bi video listu trenutno otvorenih live soba."
+      }
+    },
+    "T135": {
+      "source_sha": "41a422854e554d2e",
+      "fields": {
+        "display_label": "Pridruži se kao slušalac",
+        "short_description": "Pridruži se live sobama.",
+        "explanation_what_it_is": "Live soba je razgovor u realnom vremenu u MAXINA zajednici. Kada se pridružiš kao slušalac, možeš sasvim opušteno da slušaš u pozadini.",
+        "explanation_user_benefit": "Tako možeš da poneseš dragoceno znanje iz koučinga ili diskusija, a da sam ne budeš u centru pažnje. Osim toga, svojim učešćem usput sakupljaš i bodove za nagrade.",
+        "explanation_when_to_use": "Slušaj live sobu kada tokom šetnje ili kuvanja jednostavno tražiš malo inspiracije iz zajednice.",
+        "explanation_try_this": "Izaberi sada aktivnu live sobu i jednostavno se pridruži kao slušalac."
+      }
+    },
+    "T136": {
+      "source_sha": "9ff456525969a841",
+      "fields": {
+        "display_label": "Govori ili ćaskaj",
+        "short_description": "Pridruži se live sobama.",
+        "explanation_what_it_is": "U live sobama MAXINA zajednice možeš ne samo da slušaš, već i da učestvuješ u razgovoru ili pišeš poruke. Sam odlučuješ kako želiš da se uključiš u konverzaciju.",
+        "explanation_user_benefit": "Tako možeš direktno da postavljaš pitanja, deliš svoja iskustva i uspostavljaš prave veze. Odmah si usred dešavanja.",
+        "explanation_when_to_use": "Koristi ovu funkciju kada želiš da postaviš važno pitanje tokom sesije pitanja i odgovora ili jednostavno spontano da pozdraviš.",
+        "explanation_try_this": "Tapni sada na ekran i isprobaj kako da se oglasiš u live sobi."
+      }
+    },
+    "T137": {
+      "source_sha": "2674b313fdd4ddad",
+      "fields": {
+        "display_label": "Planiranje live sobe",
+        "short_description": "Kako da kreiraš live sobu.",
+        "explanation_what_it_is": "Live soba je digitalno mesto okupljanja za prave razgovore sa MAXINA zajednicom. Ovde možeš da zakažeš audio ili video susret za neki budući datum.",
+        "explanation_user_benefit": "Tako daješ drugim članovima dovoljno vremena da se prijave za tvoj susret. Pretvara obične poruke u pravo, zajedničko iskustvo.",
+        "explanation_when_to_use": "Planiraj sobu unapred kada sledeće nedelje želiš da organizuješ diskusionu grupu ili zajednički trening.",
+        "explanation_try_this": "Tapni na ekran da odmah isprobaš planiranje live sobe."
+      }
+    },
+    "T138": {
+      "source_sha": "6a12a976ed88c41d",
+      "fields": {
+        "display_label": "Tema i opis sobe",
+        "short_description": "Kako da kreiraš live sobu.",
+        "explanation_what_it_is": "Kada otvoriš sopstvenu live sobu u MAXINA zajednici, prvo joj daješ jasan naslov i kratak opis. To je kao natpis na vratima tvog razgovora.",
+        "explanation_user_benefit": "Tako drugi članovi odmah znaju o čemu se radi i lakše mogu da odluče da li žele da učestvuju. Pomaže ti da pronađeš baš prave ljude za svoj razgovor.",
+        "explanation_when_to_use": "Koristi ovo kada imaš lepu ideju i želiš da pozoveš druge članove na razmenu u svoju live sobu.",
+        "explanation_try_this": "Tapni sada na tekstualno polje i smisli zanimljiv naslov i kratak opis za svoju prvu live sobu."
+      }
+    },
+    "T139": {
+      "source_sha": "3f88bf7fb67b066a",
+      "fields": {
+        "display_label": "Sigurno idi uživo",
+        "short_description": "Kako da kreiraš live sobu.",
+        "explanation_what_it_is": "Pre nego što kreneš sa emitovanjem, tvoja live soba ti nudi važne bezbednosne funkcije. Ti određuješ tačno ko u MAXINA zajednici sme da sluša ili učestvuje.",
+        "explanation_user_benefit": "To ti daje dobar osećaj i punu kontrolu nad svojim razgovorom. Tako se možeš opušteno fokusirati na razmenu.",
+        "explanation_when_to_use": "Proveri ove opcije direktno pre početka, kako bi tvoja live soba ostala zaštićeno mesto za tebe.",
+        "explanation_try_this": "Tapni na ekran da se upoznaš sa bezbednosnim podešavanjima za svoju live sobu."
+      }
+    },
+    "T140": {
+      "source_sha": "65b3c5e6aafdb0c7",
+      "fields": {
+        "display_label": "Snimci live soba",
+        "short_description": "Životni ciklus medija u live sobi.",
+        "explanation_what_it_is": "Snimci live soba čuvaju prošle live razgovore iz MAXINA zajednice. Tako možeš propuštene događaje sasvim udobno naknadno da slušaš ili gledaš.",
+        "explanation_user_benefit": "Ne moraš da planiraš svoj dan prema fiksnim terminima. Možeš da uživaš u inspirativnim razgovorima tačno onda kada ti najviše odgovara.",
+        "explanation_when_to_use": "Slušaj snimak dok opušteno kuvaš ili šetaš, jer si propustio originalni live termin.",
+        "explanation_try_this": "Tapni sada na ekran i otkrij svoj prvi snimak prošle live sobe."
+      }
+    },
+    "T141": {
+      "source_sha": "33ac1a7987320e32",
+      "fields": {
+        "display_label": "Istaknuto i momenti",
+        "short_description": "Životni ciklus medija u live sobi.",
+        "explanation_what_it_is": "Istaknuto i momenti su kratki video ili audio klipovi tvojih najboljih iskustava. Oni ti sažimaju najvažnije trenutke.",
+        "explanation_user_benefit": "Tako možeš da sačuvaš dragocene uspomene i podeliš ih sa MAXINA zajednicom. Kada pokazuješ svoje momente, gradiš poverenje i lakše pronalaziš istomišljenike.",
+        "explanation_when_to_use": "Sačuvaj istaknuto odmah nakon uzbudljivog razgovora, da bi zabeležio važan uvid.",
+        "explanation_try_this": "Tapni na dugme da izabereš i sačuvaš svoj prvi moment."
+      }
+    },
+    "T142": {
+      "source_sha": "1780782a9f38e251",
+      "fields": {
+        "display_label": "Rezimei soba",
+        "short_description": "Životni ciklus medija u live sobi.",
+        "explanation_what_it_is": "Rezime ti na prvi pogled pokazuje o čemu se razgovaralo u prošloj live sobi. Sažima ti najvažnije tačke u kompaktnom obliku.",
+        "explanation_user_benefit": "Štediš dragoceno vreme, a ipak si uvek odlično informisan. Tako odmah znaš da li je neka tema bila relevantna za tebe.",
+        "explanation_when_to_use": "Pročitaj rezime kada si propustio razmenu u MAXINA zajednici, ali imaš samo nekoliko minuta vremena.",
+        "explanation_try_this": "Tapni sada na rezime i otkrij kako lako možeš da uhvatiš najbolje ideje iz razgovora."
+      }
+    },
+    "T143": {
+      "source_sha": "6a92778ab49dc237",
+      "fields": {
+        "display_label": "Pregled Media Hub-a",
+        "short_description": "Media Hub kao poseban prostor.",
+        "explanation_what_it_is": "Media Hub je tvoje centralno mesto za medije u MAXINA zajednici. Ovde pronalaziš video snimke, slike, muziku i podkaste na jednom mestu.",
+        "explanation_user_benefit": "Tamo otkrivаš uzbudljive sadržaje koji te inspirišu i podržavaju. To je savršen prostor za učenje u miru ili opuštanje.",
+        "explanation_when_to_use": "Otvori Media Hub kada želiš da pogledaš zanimljiv video ili slušaš podkast tokom kratke pauze.",
+        "explanation_try_this": "Tapni sada na ekran da otvoriš Media Hub i pogledaš pregled."
+      }
+    },
+    "T144": {
+      "source_sha": "9a3b9f28705197bf",
+      "fields": {
+        "display_label": "Gledanje kratkih videa",
+        "short_description": "Media Hub kao poseban prostor.",
+        "explanation_what_it_is": "U Media Hub-u pronalaziš kratke video snimke koje zovemo Shorts. Oni ti pokazuju uzbudljive uvide u MAXINA zajednicu.",
+        "explanation_user_benefit": "Tako možeš za nekoliko sekundi da otkriješ nešto novo ili da se motivišeš. To je zabavno i daje ti dobre impulse za tvoj dan.",
+        "explanation_when_to_use": "Pogledaj kratak video kada praviš malu pauzu ili jednostavno želiš nakratko da se opustiš.",
+        "explanation_try_this": "Tapni sada na video da odmah pogledaš svoj prvi Short."
+      }
+    },
+    "T145": {
+      "source_sha": "d30336fbb8747990",
+      "fields": {
+        "display_label": "Čuvanje ili označavanje medija",
+        "short_description": "Media Hub kao poseban prostor.",
+        "explanation_what_it_is": "Možeš video snimke, podkaste ili slike u Media Hub-u sasvim jednostavno da sačuvaš. Tako praviš svoju ličnu biblioteku.",
+        "explanation_user_benefit": "Ne moraš više dugo da tražiš kada želiš nešto ponovo da pogledaš ili slušaš. To štedi vreme i uvek imaš pregled.",
+        "explanation_when_to_use": "Koristi ovu funkciju kada vidiš zanimljiv video, ali si trenutno u pokretu i radije bi ga pogledao uveče u miru.",
+        "explanation_try_this": "Tapni sada na oznaku da sačuvaš objavu za kasnije."
+      }
+    },
+    "T146": {
+      "source_sha": "e1238619e4943798",
+      "fields": {
+        "display_label": "Puštanje podkasta",
+        "short_description": "Upoznaj podkaste.",
+        "explanation_what_it_is": "U Media Hub-u postoji veliki izbor uzbudljivih podkasta za tebe. Možeš ih slušati u bilo kom trenutku sasvim jednostavno.",
+        "explanation_user_benefit": "Podkasti ti pomažu da naučiš nešto novo ili jednostavno da se opustiš. Tako činiš nešto dobro za svoj um i svoje blagostanje.",
+        "explanation_when_to_use": "Slušaj podkast dok opušteno šetaš ili udobno ležiš na sofi.",
+        "explanation_try_this": "Tapni na ekran i odmah isprobaj kako da pustiš podkast."
+      }
+    },
+    "T147": {
+      "source_sha": "5846777838c91725",
+      "fields": {
+        "display_label": "Audio traka",
+        "short_description": "Upoznaj podkaste.",
+        "explanation_what_it_is": "Audio traka je tvoje mesto za zanimljive podkaste u aplikaciji. Ovde ćeš naći sve audio sadržaje pregledno na jednom mestu.",
+        "explanation_user_benefit": "Možeš da se opustiš ili usput naučiš nešto novo. Jednostavno prija da napuniš baterije dok slušaš.",
+        "explanation_when_to_use": "Otvori je kada ideš u šetnju ili kada udobno ležiš kod kuće na kauču.",
+        "explanation_try_this": "Dodirni sada audio traku i otkrij svoj prvi podkast."
+      }
+    },
+    "T148": {
+      "source_sha": "aee171976d29f114",
+      "fields": {
+        "display_label": "Podkast rutina",
+        "short_description": "Upoznaj podkaste.",
+        "explanation_what_it_is": "Sa podkast rutinom povezuješ svoje omiljene podkaste čvrsto sa svojom svakodnevicom. Jednostavno podesiš kada želiš redovno da slušaš zanimljive teme.",
+        "explanation_user_benefit": "Tako ostaneš potpuno automatski informisan i inspirisan. Pomaže ti da lepe trenutke slušanja čvrsto uplaniš u svoj dan.",
+        "explanation_when_to_use": "Podesi rutinu ako, na primer, želiš da svakog jutra tokom šetnje automatski slušaš svoju omiljenu emisiju.",
+        "explanation_try_this": "Dodirni ekran da odmah kreiraš svoju prvu podkast rutinu."
+      }
+    },
+    "T149": {
+      "source_sha": "1506c5592dddfd79",
+      "fields": {
+        "display_label": "Puštanje muzike",
+        "short_description": "Upoznaj muziku.",
+        "explanation_what_it_is": "U Media Hub-u u Vitanaland možeš jednostavno da puštaš muziku. To je tvoj lični prostor za lepe zvuke i melodije.",
+        "explanation_user_benefit": "Prava muzika ti pomaže da se osećaš bolje i da dobiješ dobro raspoloženje. Prijatno te prati kroz dan, u skladu sa tvojim raspoloženjem.",
+        "explanation_when_to_use": "Pusti muziku kada želiš da slušaš motivišuće pesme tokom šetnje ili kada uveče jednostavno želiš da se opustiš.",
+        "explanation_try_this": "Dodirni dugme za reprodukciju da otvoriš muzički plejer i pustiš svoju prvu pesmu."
+      }
+    },
+    "T150": {
+      "source_sha": "99571f7888bc509e",
+      "fields": {
+        "display_label": "Fokus muzika",
+        "short_description": "Upoznaj muziku.",
+        "explanation_what_it_is": "Fokus muzika je poseban izbor muzike. Pomaže ti da isključiš ometajuće zvukove.",
+        "explanation_user_benefit": "Tako možeš lakše da radiš, učiš ili jednostavno da se isključiš. Ostaneš mirniji i fokusiraniji.",
+        "explanation_when_to_use": "Koristi je kada si na bučnom mestu i želiš da u miru završiš neki zadatak.",
+        "explanation_try_this": "Dodirni ekran da pustiš svoju prvu fokus muziku i duboko udahneš."
+      }
+    },
+    "T151": {
+      "source_sha": "bf762175d30820ed",
+      "fields": {
+        "display_label": "Medijski overlay",
+        "short_description": "Upoznaj muziku.",
+        "explanation_what_it_is": "Medijski overlay je mali muzički plejer na tvom ekranu. Pomoću njega uvek imaš svoju muziku na oku, čak i kada gledaš druge stvari u aplikaciji.",
+        "explanation_user_benefit": "Možeš u svakom trenutku lako da pauziraš reprodukciju ili da promeniš pesmu. Tako tvoje čitanje ili rad u aplikaciji neće biti ometani.",
+        "explanation_when_to_use": "Koristi ovaj mali prikaz kada usput slušaš muziku i želiš brzo da preskočiš pesmu.",
+        "explanation_try_this": "Dodirni sada mali muzički plejer da sam isprobaš kontrole."
+      }
+    },
+    "T152": {
+      "source_sha": "cded43365b6fde38",
+      "fields": {
+        "display_label": "Otpremanje short-a",
+        "short_description": "Kako otpremaš medije.",
+        "explanation_what_it_is": "Sa ovom funkcijom možeš da otpremaš kratke video snimke, takozvane short-ove. To je tvoj način da postaneš vidljiv u MAXINA zajednici.",
+        "explanation_user_benefit": "Kada deliš svoje trenutke ili talente, gradiš poverenje sa drugima. To ti pomaže da uspostaviš vredne nove kontakte.",
+        "explanation_when_to_use": "Koristi ovo kada imaš poseban trenutak ili kratak savet koji želiš brzo da podeliš sa drugima.",
+        "explanation_try_this": "Dodirni sada dugme za otpremanje i isprobaj kako lako možeš da otpremiš kratak video."
+      }
+    },
+    "T153": {
+      "source_sha": "530b07f0ba87ff90",
+      "fields": {
+        "display_label": "Otpremanje podkasta",
+        "short_description": "Kako otpremaš medije.",
+        "explanation_what_it_is": "U MAXINA zajednici možeš da otpremaš svoje audio sadržaje i podkaste. Tako jednostavno deliš svoje znanje i svoje priče sa drugima.",
+        "explanation_user_benefit": "To ti pomaže da budeš saslušan i da gradiš poverenje u zajednici. Tvoj glas može da inspiriše druge i stvori nove, vredne kontakte.",
+        "explanation_when_to_use": "Otpremi epizodu podkasta kada imaš zanimljivu temu koja može da podrži druge na njihovom putu.",
+        "explanation_try_this": "Dodirni sada ekran da na zabavan način isprobaš otpremanje podkasta."
+      }
+    },
+    "T154": {
+      "source_sha": "321140200629774e",
+      "fields": {
+        "display_label": "Prava objavljivanja",
+        "short_description": "Kako otpremaš medije.",
+        "explanation_what_it_is": "Pre nego što podeliš svoje medije, razjašnjavamo prava objavljivanja. Jednostavno se radi o tome da se osigura da ti sadržaji zaista pripadaju tebi.",
+        "explanation_user_benefit": "To te štiti od problema i obezbeđuje fer odnose u Vitanaland. Tako možeš potpuno opušteno i sigurno da pokazuješ svoja dela.",
+        "explanation_when_to_use": "Ovo jednostavno pravilo poštuješ uvek kada želiš da podeliš novu sliku, video ili audio zapis sa drugima.",
+        "explanation_try_this": "Dodirni ekran da pogledaš kratka pravila i potvrdiš ih za svoje prvo otpremanje."
+      }
+    },
+    "T155": {
+      "source_sha": "33f83f44e463e39d",
+      "fields": {
+        "display_label": "Pregled zajednice",
+        "short_description": "Završi osnove zajednice.",
+        "explanation_what_it_is": "MAXINA zajednica je tvoj socijalni dom u Vitanaland. Ovde srećeš druge ljude koji, baš kao i ti, žele da rade na sebi i da rastu.",
+        "explanation_user_benefit": "Nisi sam na svom putu, već možeš da razmenjuješ iskustva i pronađeš novu motivaciju. Zajedno je jednostavno mnogo zabavnije ostati zdrav i aktivan.",
+        "explanation_when_to_use": "Poseti zajednicu kada tražiš savet, želiš da učestvuješ na nekom događaju ili ti jednostavno treba inspiracija za tvoj dan.",
+        "explanation_try_this": "Dodirni ekran da pogledaš kratak pregled funkcija tvoje zajednice."
+      }
+    },
+    "T156": {
+      "source_sha": "c7b29075451256de",
+      "fields": {
+        "display_label": "Izaberi sledeću društvenu akciju",
+        "short_description": "Završi osnove zajednice.",
+        "explanation_what_it_is": "Sada možeš da napraviš svoj prvi korak u MAXINA zajednici. Jednostavno biraš kako danas želiš da stupiš u kontakt sa drugim članovima.",
+        "explanation_user_benefit": "Tako ostaneš motivisan i znaš da na svom putu nikada nisi sam. Brzo pronalaziš istomišljenike koji te podržavaju i inspirišu.",
+        "explanation_when_to_use": "Koristi ovo kada nakon postizanja cilja želiš da podeliš svoju radost ili da učestvuješ u zajedničkom izazovu.",
+        "explanation_try_this": "Izaberi sada na ekranu svoju sledeću društvenu akciju i odmah je isprobaj."
+      }
+    },
+    "T157": {
+      "source_sha": "924a14971de05a26",
+      "fields": {
+        "display_label": "Od poverenja do prilike",
+        "short_description": "Završi osnove zajednice.",
+        "explanation_what_it_is": "U MAXINA zajednici te ciljano povezujem sa ljudima koji ti savršeno odgovaraju. To mogu biti novi prijatelji, partneri za trening ili čak poslovni kontakti.",
+        "explanation_user_benefit": "Zajedno postižeš svoje ciljeve mnogo lakše, bilo da se radi o zdravlju ili poslu. Prave veze ti otvaraju divne nove prilike.",
+        "explanation_when_to_use": "Koristi ovu funkciju kada tražiš nekoga ko te motiviše u svakodnevici ili sa kim želiš da pokreneš novi projekat.",
+        "explanation_try_this": "Dodirni ekran i hajde zajedno da vidimo ko ti danas u zajednici dobro odgovara."
+      }
+    },
+    "T158": {
+      "source_sha": "84b7dceac4294857",
+      "fields": {
+        "display_label": "Izbor puta",
+        "short_description": "Otvori opciona poslovna vrata.",
+        "explanation_what_it_is": "Ovde odlučuješ kako tvoj put u Vitanaland nastavlja dalje. Biraš da li želiš da se fokusiraš samo na svoje zdravlje ili želiš da otkriješ i poslovne mogućnosti.",
+        "explanation_user_benefit": "Tako je tvoje iskustvo prilagođeno tačno tvojim ciljevima. Vidiš samo teme koje te zaista zanimaju.",
+        "explanation_when_to_use": "Donesi ovu odluku upravo sada, da optimalno podesiš Moje putovanje za sebe.",
+        "explanation_try_this": "Dodirni sada svoju željenu opciju na ekranu da odrediš svoj lični put."
+      }
+    },
+    "T159": {
+      "source_sha": "6b47c2a0c96ed263",
+      "fields": {
+        "display_label": "Ekonomsko pozicioniranje",
+        "short_description": "Otvori opciona poslovna vrata.",
+        "explanation_what_it_is": "U Vitanaland se ne radi samo o zdravlju, već i o novim poslovnim prilikama. Ovde možeš da kreiraš sopstvene ponude ili da otkriješ zanimljive usluge.",
+        "explanation_user_benefit": "Imaš mogućnost da preneseš svoja iskustva i usput izgradiš nešto novo. Tako rasteš ne samo lično, već sebi stvaraš i održiv prihod.",
+        "explanation_when_to_use": "Ako imaš želju da podržiš druge na njihovom putu i pritom možda nešto zaradiš, otvori ovaj deo.",
+        "explanation_try_this": "Dodirni sada izbor na ekranu da upoznaš svoje poslovne mogućnosti."
+      }
+    },
+    "T160": {
+      "source_sha": "f1a98489f6a97b90",
+      "fields": {
+        "display_label": "Poslovno interesovanje",
+        "short_description": "Otvori opciona poslovna vrata.",
+        "explanation_what_it_is": "U Vitanaland možeš ne samo da uradiš nešto za svoje zdravlje, već i da kreneš sopstvenim poslovnim putem. Ovo je tvoj dobrovoljni ulaz u svet gde se blagostanje i prihod spajaju.",
+        "explanation_user_benefit": "Možeš da pomažeš drugim ljudima i pritom korak po korak gradiš sopstveni prihod. Tako rasteš ne samo lično, već sebi stvaraš i nove poslovne prilike.",
+        "explanation_when_to_use": "Otvori ovaj deo čim postaneš radoznao kako možeš da deliš svoja iskustva i pritom zarađuješ.",
+        "explanation_try_this": "Dodirni sada ekran i pokaži nam da li želiš da saznaš više o ovim poslovnim mogućnostima."
+      }
+    },
+    "T161": {
+      "source_sha": "4d2958bf605103ae",
+      "fields": {
+        "display_label": "Pregled Otkrij",
+        "short_description": "Otkrij je pretraga, ne prodaja.",
+        "explanation_what_it_is": "Deo Otkrij je naš katalog proizvoda i usluga koji su tačno usklađeni sa tvojim zdravstvenim podacima. To je tržište koje ti pokazuje šta ti zaista treba, a ne samo ono što treba da se proda.",
+        "explanation_user_benefit": "Štediš dragoceno vreme jer su sve preporuke direktno prilagođene tvom Životnom kompasu. Tako uvek pronalaziš tačno onu podršku koja te lično vodi napred.",
+        "explanation_when_to_use": "Otvori ovaj pregled kada ciljano tražiš ponude ili proizvode koji podržavaju tvoje trenutno zdravlje.",
+        "explanation_try_this": "Otvori sada deo Otkrij i pogledaj koje sam preporuke pripremio za tebe."
+      }
+    },
+    "T162": {
+      "source_sha": "a687ba531f0d6568",
+      "fields": {
+        "display_label": "Pretraživanje u Otkrij",
+        "short_description": "Otkrij je pretraga, ne prodaja.",
+        "explanation_what_it_is": "Sekcija Otkrij je kao pametna pretraga za tvoje zdravstvene ciljeve, a ne obična prodavnica. Ovde ciljanim pretragama pronalaziš ponude, stručnjake i pomagala koja savršeno odgovaraju tebi.",
+        "explanation_user_benefit": "To ti štedi mnogo vremena jer ti se ništa ne nameće. Umesto toga pronalaziš upravo ona rešenja koja jačaju tvojih pet stubova.",
+        "explanation_when_to_use": "Koristi ovu pretragu kada ti treba konkretno rešenje, kao na primer kurs za tvoju mentalnu snagu.",
+        "explanation_try_this": "Dodirni sada polje za pretragu i unesi temu koja te trenutno zanima."
+      }
+    },
+    "T163": {
+      "source_sha": "2f898d548e93124d",
+      "fields": {
+        "display_label": "Zašto je preporučeno",
+        "short_description": "Otkrij je pretraga, ne prodaja.",
+        "explanation_what_it_is": "Kod svakog predloga Vitana ti tačno pokazuje zašto je izabran baš za tebe. Nema skrivenih trikova, već jasno i jednostavno obrazloženje za svaku ideju.",
+        "explanation_user_benefit": "Tako uvek odmah razumeš kako određena akcija poboljšava tvoj Vitana indeks ili jedan od pet stubova. Zadržavaš potpunu kontrolu i učiš šta ti zaista prija u svakodnevici.",
+        "explanation_when_to_use": "Pogledaj kratko obrazloženje kada ujutru pregledaš svoje predloge u Autopilot i želiš da se odlučiš za neki zadatak.",
+        "explanation_try_this": "Dodirni sada jedan od predloga da vidiš tačno obrazloženje za njega."
+      }
+    },
+    "T164": {
+      "source_sha": "3a01d95850cc7e28",
+      "fields": {
+        "display_label": "Suplementi i proizvodi",
+        "short_description": "Bolje razumi proizvode.",
+        "explanation_what_it_is": "U Vitanaland možeš da otkriješ proizvode i suplemente koji tačno odgovaraju tvojim zdravstvenim ciljevima. To je tvoje sigurno mesto za pronalaženje korisnih artikala.",
+        "explanation_user_benefit": "Ne moraš više dugo da pretražuješ internet u potrazi za pravim stvarima. Dobijaš jasne predloge koji ti zaista mogu pomoći u svakodnevici.",
+        "explanation_when_to_use": "Otvori ovu sekciju kada želiš ciljano da podržiš svojih pet stubova odgovarajućim proizvodima.",
+        "explanation_try_this": "Dodirni dugme da sada pogledaš pregled proizvoda i suplemenata."
+      }
+    },
+    "T165": {
+      "source_sha": "ecaeb9d42d39f46d",
+      "fields": {
+        "display_label": "Detalji proizvoda i prikladnost",
+        "short_description": "Bolje razumi proizvode.",
+        "explanation_what_it_is": "Na stranici sa detaljima proizvoda vidiš sve važne informacije o ponudi. Ovde na prvi pogled saznaješ koliko proizvod košta i zašto ti odgovara.",
+        "explanation_user_benefit": "Tako odmah prepoznaješ da li ponuda zaista podržava tvoje zdravstvene ciljeve. To ti daje sigurnost i pomaže ti da doneseš pravu odluku.",
+        "explanation_when_to_use": "Koristi ovaj prikaz uvek kada otkriješ novo pomagalo za bolji san i želiš da proveriš da li ti zaista odgovara.",
+        "explanation_try_this": "Dodirni proizvod da otvoriš detalje i sam proveri da li je pogodan za tebe."
+      }
+    },
+    "T166": {
+      "source_sha": "1770c9b11a9fd9b1",
+      "fields": {
+        "display_label": "Sačuvaj, lista želja ili korpa",
+        "short_description": "Bolje razumi proizvode.",
+        "explanation_what_it_is": "Ovo je tvoja lična korpa i lista omiljenih. Ovde sakupljaš proizvode, usluge i ponude koje odgovaraju tvojim zdravstvenim ciljevima.",
+        "explanation_user_benefit": "Tako imaš savršen pregled svega što te zanima, bez potrebe da odmah donosiš odluku. Možeš u miru da uporediš ponude i sačuvaš svoje favorite.",
+        "explanation_when_to_use": "Koristi ovu funkciju kada otkriješ zanimljivu ponudu, ali želiš da razmisliš o njoj ili je rezervišeš tek kasnije.",
+        "explanation_try_this": "Dodirni sada ekran da staviš ponudu na svoju listu omiljenih ili u korpu."
+      }
+    },
+    "T167": {
+      "source_sha": "32228837c65fece0",
+      "fields": {
+        "display_label": "Velnes usluge",
+        "short_description": "Otkrij pružaoce usluga.",
+        "explanation_what_it_is": "U sekciji Otkrij pronalaziš odabrane velnes ponude koje su prilagođene baš tebi. To je iskren, lični marketplace za tvoje zdravlje.",
+        "explanation_user_benefit": "Dobijaš samo preporuke koje zaista odgovaraju tvom životnom kompasu i tvojim potrebama. Kod svakog predloga odmah i iskreno vidiš zašto ti prija.",
+        "explanation_when_to_use": "Koristi ovu sekciju kada želiš ciljano da priuštiš sebi nešto dobro za telo ili um.",
+        "explanation_try_this": "Dodirni sada velnes ponudu da vidiš zašto baš tebi odgovara."
+      }
+    },
+    "T168": {
+      "source_sha": "82f23b0850e94254",
+      "fields": {
+        "display_label": "Pružaoci usluga, lekari i koučevi",
+        "short_description": "Otkrij pružaoce usluga.",
+        "explanation_what_it_is": "Ovde pronalaziš odgovarajuće lekare, koučeve i stručnjake za tvoje zdravlje. To je tvoj lični marketplace u Vitanaland.",
+        "explanation_user_benefit": "Štediš mnogo vremena jer pronalaziš tačno one stručnjake koji odgovaraju tvojim ciljevima kod pet stubova. Tako uvek imaš pravu podršku uz sebe.",
+        "explanation_when_to_use": "Koristi ovu sekciju kada, na primer, tražiš kouča da poboljšaš svoju mentalnu snagu ili ishranu.",
+        "explanation_try_this": "Izaberi temu na ekranu i otkrij koji stručnjaci ti mogu pomoći."
+      }
+    },
+    "T169": {
+      "source_sha": "250f1abaa76709e3",
+      "fields": {
+        "display_label": "Poverenje u profil pružaoca",
+        "short_description": "Otkrij pružaoce usluga.",
+        "explanation_what_it_is": "Profil pružaoca je kao detaljna vizit-karta za naše stručnjake. Ovde na prvi pogled vidiš sve važne informacije o lekarima ili koučevima.",
+        "explanation_user_benefit": "Tako možeš u miru da odlučiš kome poveravaš svoje zdravlje. To ti daje sigurnost pre nego što rezervišeš uslugu.",
+        "explanation_when_to_use": "Pogledaj profil pre nego što zakažeš termin, da proveriš cene, dostupnost i detalje.",
+        "explanation_try_this": "Dodirni sada profil i pogledaj koje informacije tamo možeš da otkriješ."
+      }
+    },
+    "T170": {
+      "source_sha": "1ae2cb044f8ad675",
+      "fields": {
+        "display_label": "Univerzalna korpa",
+        "short_description": "Kupuj bezbedno.",
+        "explanation_what_it_is": "Korpa je tvoje sigurno mesto za sakupljanje svega što otkriješ u Vitanaland. Ovde imaš sve detalje i cene na uvidu pre nego što doneseš odluku.",
+        "explanation_user_benefit": "Zadržavaš potpunu kontrolu i nikada slučajno ne kupiš nešto. Tako u miru odlučuješ šta ti zaista pomaže.",
+        "explanation_when_to_use": "Koristi je uvek kada pronađeš zanimljivu ponudu i želiš da je sigurno zapamtiš za kasniju odluku.",
+        "explanation_try_this": "Dodirni korpu i otkrij svoj siguran pregled."
+      }
+    },
+    "T171": {
+      "source_sha": "2126e413a91a4a72",
+      "fields": {
+        "display_label": "Pravila kupovine",
+        "short_description": "Kupuj bezbedno.",
+        "explanation_what_it_is": "Pravila kupovine su tvoje lične sigurnosne mreže pri kupovini u Vitanaland. Ona određuju šta i koliko želiš sigurno da naručiš.",
+        "explanation_user_benefit": "Tako uvek zadržavaš potpunu kontrolu nad svojim troškovima. Zaštićen si od slučajnih kupovina i kupuješ potpuno opušteno.",
+        "explanation_when_to_use": "Podesi ova pravila pre nego što planiraš svoju prvu kupovinu, da optimalno osiguraš svoj nalog.",
+        "explanation_try_this": "Dodirni ekran i podesi sada svoje prvo lično pravilo kupovine."
+      }
+    },
+    "T172": {
+      "source_sha": "5b3b10723e42df66",
+      "fields": {
+        "display_label": "Put do povraćaja novca",
+        "short_description": "Kupuj bezbedno.",
+        "explanation_what_it_is": "Put do povraćaja novca ti tačno pokazuje kako možeš da poništiš kupovinu. To je tvoja sigurnosna mreža pri kupovini.",
+        "explanation_user_benefit": "Možeš potpuno bezbrižno da kupuješ jer je proces uvek jasno definisan. To ti daje potpuno siguran osećaj i punu kontrolu.",
+        "explanation_when_to_use": "Pogledaj ovaj put kada si slučajno naručio pogrešnu stvar ili ti proizvod ipak ne treba.",
+        "explanation_try_this": "Dodirni sada ekran da probaš jednostavan put do povraćaja novca."
+      }
+    },
+    "T173": {
+      "source_sha": "192dfc80099469b2",
+      "fields": {
+        "display_label": "Pregled novčanika",
+        "short_description": "Razumi novčanik i status pretplate.",
+        "explanation_what_it_is": "Pregled novčanika ti pokazuje sve što poseduješ u Vitanaland. Ovde na prvi pogled vidiš svoj pravi novac, svoja sredstva, svoje nagrade i svoje pretplate.",
+        "explanation_user_benefit": "U svakom trenutku zadržavaš potpunu kontrolu nad svojim finansijama. Umesto dugog traženja, sagledavaš svoje trenutno stanje za nekoliko sekundi.",
+        "explanation_when_to_use": "Otvori ovaj pregled kada želiš brzo da proveriš koliko nagrada si sakupio ili koja pretplata je trenutno aktivna.",
+        "explanation_try_this": "Dodirni sada ikonu za svoj digitalni novčanik gore desno i pogledaj svoj pregled."
+      }
+    },
+    "T174": {
+      "source_sha": "12ff71b108e50902",
+      "fields": {
+        "display_label": "Sredstva, nagrade, pretplate",
+        "short_description": "Razumi novčanik i status pretplate.",
+        "explanation_what_it_is": "Ovde na prvi pogled vidiš svoja sredstva za kupovinu, svoje zarađene nagrade i sve aktivne pretplate. Tako uvek tačno znaš koja sredstva su ti na raspolaganju.",
+        "explanation_user_benefit": "Zadržavaš potpunu kontrolu nad svojim troškovima i odmah vidiš kada si nagrađen za svoje uspehe. To ti pomaže da pametno planiraš i optimalno iskoristiš svoje nagrade.",
+        "explanation_when_to_use": "Navrati ovde pre nego što nešto kupiš ili da proveriš koje nagrade si sakupio za svoje zdrave navike.",
+        "explanation_try_this": "Dodirni dugme da sada sam istraziš svoja sredstva, nagrade i pretplate."
+      }
+    },
+    "T175": {
+      "source_sha": "d473b392969e0a40",
+      "fields": {
+        "display_label": "Trenutni plan i naplata",
+        "short_description": "Razumi novčanik i status pretplate.",
+        "explanation_what_it_is": "Ovde tačno vidiš koju tarifu trenutno koristiš i kada je sledeća naplata. To je tvoj siguran pregled svih tekućih troškova u Vitanaland.",
+        "explanation_user_benefit": "Uvek zadržavaš potpunu kontrolu nad svojom pretplatom i troškovima. Tako za tebe nikada nema skrivenih troškova ili iznenađenja.",
+        "explanation_when_to_use": "Otvori ovaj prikaz kada želiš da proveriš kada se tvoja trenutna tarifa obnavlja.",
+        "explanation_try_this": "Dodirni sada prikaz da pogledaš svoju trenutnu tarifu i naplatu."
+      }
+    },
+    "T176": {
+      "source_sha": "03f4318983865deb",
+      "fields": {
+        "display_label": "Program nagrada",
+        "short_description": "Nivoi vrednosti tvog novčanika.",
+        "explanation_what_it_is": "Program nagrada je tvoj lični pregled u tvom novčaniku. Ovde vidiš kako si nagrađen za svoje svakodnevne uspehe u Vitanaland.",
+        "explanation_user_benefit": "Odmah ti pokazuje da se tvoj trud za zdravlje isplati. Možeš tačno da pratiš kako ti dobre odluke donose vredne nagrade.",
+        "explanation_when_to_use": "Pogledaj ovaj program kada si savladao novu naviku u Autopilot i želiš da vidiš svoje zarađene tokene.",
+        "explanation_try_this": "Dodirni sekciju Nagrade da otvoriš svoj program i razgledaš se."
+      }
+    },
+    "T177": {
+      "source_sha": "2d0e4af4c09dbdd1",
+      "fields": {
+        "display_label": "Načini plaćanja",
+        "short_description": "Nivoi vrednosti tvog novčanika.",
+        "explanation_what_it_is": "U tvom novčaniku postoje različiti načini plaćanja kao što su pravi novac i naši interni krediti. Njima plaćaš usluge ili proizvode potpuno jednostavno direktno u aplikaciji.",
+        "explanation_user_benefit": "Tako tačno znaš čime možeš da platiš i imaš potpunu kontrolu. Za mnoge stvari u Vitanaland možeš sam da odlučiš koji metod koristiš.",
+        "explanation_when_to_use": "Pogledaj ovde pre nego što nešto kupiš, da proveriš da li ti je stanje kredita dovoljno za kupovinu.",
+        "explanation_try_this": "Dodirni sada ekran da otkriješ svoje načine plaćanja u novčaniku."
+      }
+    },
+    "T179": {
+      "source_sha": "619c571215bd5fca",
+      "fields": {
+        "display_label": "Pregled deljenja",
+        "short_description": "Deljenje se dešava samo uz tvoj pristanak.",
+        "explanation_what_it_is": "U odeljku Deljenje ti određuješ ko šta sme da vidi. To je tvoj lični kontrolni centar za sve podatke koje želiš da podeliš.",
+        "explanation_user_benefit": "Tako uvek imaš dobar osećaj da su tvoja sećanja bezbedna. Ti sam odlučuješ šta deliš, a šta ostaje potpuno privatno.",
+        "explanation_when_to_use": "Koristi ovaj odeljak kada želiš da svoje zdravstvene podatke zadržiš za sebe, ali da pokažeš lep uspeh u MAXINA zajednici.",
+        "explanation_try_this": "Dodirni sada ekran da otvoriš svoj pregled deljenja i otkriješ svoja podešavanja."
+      }
+    },
+    "T180": {
+      "source_sha": "4d6a38bc6ee78b41",
+      "fields": {
+        "display_label": "Povezivanje kanala",
+        "short_description": "Deljenje se dešava samo uz tvoj pristanak.",
+        "explanation_what_it_is": "Ovde povezuješ druge aplikacije i uređaje, kao na primer svoj kalendar, direktno sa mnom. Pri tome za svaki kanal pojedinačno daješ svoju izričitu dozvolu za razmenu podataka.",
+        "explanation_user_benefit": "Tako uvek zadržavaš apsolutnu kontrolu nad svojom privatnošću. Svaku vezu možeš u svakom trenutku potpuno jednostavno prekinuti.",
+        "explanation_when_to_use": "Koristi ovu funkciju kada, na primer, koristiš novu fitnes aplikaciju i želiš da mi dozvoliš da vidim tvoje kretanje za tvoj Vitana Index.",
+        "explanation_try_this": "Dodirni ekran i odmah isprobaj kako možeš da upravljaš vezom."
+      }
+    },
+    "T181": {
+      "source_sha": "c8bc1c64984fdade",
+      "fields": {
+        "display_label": "Pristanak za deljenje",
+        "short_description": "Deljenje se dešava samo uz tvoj pristanak.",
+        "explanation_what_it_is": "Ovde tačno odlučuješ koji od tvojih podataka smeju da se dele sa drugima. To je tvoja lična kontrola za sve što ide napolje.",
+        "explanation_user_benefit": "Uvek zadržavaš potpunu kontrolu nad svojom privatnošću. Tako si uvek siguran da napolje dospeva samo ono što zaista želiš da pokažeš.",
+        "explanation_when_to_use": "Koristi ovu funkciju kada sam želiš da odrediš koji od tvojih uspeha ili podataka treba da budu vidljivi u MAXINA zajednici.",
+        "explanation_try_this": "Dodirni sada ekran da tačno podesiš svoja odobrenja za deljenje."
+      }
+    },
+    "T182": {
+      "source_sha": "4d663aeedb7657da",
+      "fields": {
+        "display_label": "Osnove kampanja",
+        "short_description": "Upoznaj kampanje.",
+        "explanation_what_it_is": "Kampanja je tvoj alat za bezbedno deljenje sadržaja ili uspeha sa drugima. Pri tome uvek zadržavaš potpunu kontrolu nad svojim podacima.",
+        "explanation_user_benefit": "Tako se lako možeš povezati sa MAXINA zajednicom ili pokazati svoj napredak. Tvoja privatnost je za nas uvek na prvom mestu.",
+        "explanation_when_to_use": "Koristi to kada želiš ponosno da podeliš važan cilj iz svog životnog kompasa sa prijateljima.",
+        "explanation_try_this": "Dodirni sada ekran da otvoriš svoj prvi pregled kampanja."
+      }
+    },
+    "T183": {
+      "source_sha": "13d3d61c0bd0016f",
+      "fields": {
+        "display_label": "Kreiranje nacrta kampanje",
+        "short_description": "Upoznaj kampanje.",
+        "explanation_what_it_is": "Nacrt kampanje je tvoj siguran prostor za pripremu poruka za druge. Ovde u miru planiraš šta želiš da podeliš pre nego što postane vidljivo.",
+        "explanation_user_benefit": "Zadržavaš apsolutnu kontrolu nad svojim podacima i porukama. Tako možeš sve potpuno opušteno da proveriš pre nego što nešto objaviš.",
+        "explanation_when_to_use": "Napravi nacrt kada imaš lepu ideju ili doživljaj koji želiš da podeliš sa MAXINA zajednicom, ali želiš još jednom da razmisliš o tekstu.",
+        "explanation_try_this": "Dodirni sada ekran da zajedno sa mnom započneš svoj prvi nacrt kampanje."
+      }
+    },
+    "T184": {
+      "source_sha": "473242454b03d784",
+      "fields": {
+        "display_label": "Distribucija i raspored",
+        "short_description": "Upoznaj kampanje.",
+        "explanation_what_it_is": "Ovde određuješ kada i gde će tvoje kampanje biti objavljene. Biraš svoje kanale i planiraš tačno vreme.",
+        "explanation_user_benefit": "Tako dosežeš svoje prijatelje ili MAXINA zajednicu u pravo vreme, bez potrebe da stalno budeš online. Sve teče potpuno opušteno prema tvom rasporedu.",
+        "explanation_when_to_use": "Koristi ovu funkciju kada vikendom želiš u miru da pripremiš svoje objave za narednu nedelju.",
+        "explanation_try_this": "Dodirni ekran, izaberi kanal i isplaniraj objavljivanje za svoj nacrt."
+      }
+    },
+    "T185": {
+      "source_sha": "7de8df10cb8d3291",
+      "fields": {
+        "display_label": "Statistike deljenja",
+        "short_description": "Povratne informacije i dokaz pri deljenju.",
+        "explanation_what_it_is": "Pregled odobrenja ti tačno pokazuje ko vidi tvoje podeljene podatke i za šta se koriste. To je kao jasan protokol za tvoju privatnost.",
+        "explanation_user_benefit": "To ti daje sigurnost i dobar osećaj. Ti uvek sam odlučuješ šta se deli i možeš sve u svakom trenutku da promeniš.",
+        "explanation_when_to_use": "Pogledaj ovde kada želiš tačno da znaš koje informacije su trenutno odobrene za preporuke ili Autopilot.",
+        "explanation_try_this": "Dodirni sada ekran da pogledaš svoj lični pregled odobrenja."
+      }
+    },
+    "T186": {
+      "source_sha": "0293509f5cb626e4",
+      "fields": {
+        "display_label": "Istorija objava",
+        "short_description": "Povratne informacije i dokaz pri deljenju.",
+        "explanation_what_it_is": "Istorija ti pregledno pokazuje koje objave i informacije si do sada delio. Tako uvek imaš pregled nad svojim podacima.",
+        "explanation_user_benefit": "Uvek tačno znaš šta se dešava sa tvojim informacijama. To ti daje siguran osećaj i potpunu kontrolu.",
+        "explanation_when_to_use": "Pogledaj ovde kada želiš kratko da proveriš koje sadržaje si nedavno odobrio za druge.",
+        "explanation_try_this": "Dodirni dugme da otvoriš svoju istoriju i pogledaš svoje prošle objave."
+      }
+    },
+    "T187": {
+      "source_sha": "150a820199458e3f",
+      "fields": {
+        "display_label": "Provera odobrenja podataka",
+        "short_description": "Povratne informacije i dokaz pri deljenju.",
+        "explanation_what_it_is": "Pregled tvojih odobrenja podataka ti tačno pokazuje ko sme da pristupi kojim tvojim informacijama. To je tvoj lični kontrolni centar za tvoju privatnost.",
+        "explanation_user_benefit": "Zadržavaš potpunu kontrolu i sam odlučuješ šta želiš da podeliš. Tako se u Vitanaland uvek možeš osećati sigurno i prijatno.",
+        "explanation_when_to_use": "Pogledaj ovaj pregled kada želiš tačno da proveriš koje podatke si trenutno odobrio za lične preporuke.",
+        "explanation_try_this": "Dodirni ekran da jednostavno pogledaš svoja trenutna odobrenja podataka."
+      }
+    },
+    "T188": {
+      "source_sha": "68cce8eeda0c1bb8",
+      "fields": {
+        "display_label": "Pregled Moj biznis",
+        "short_description": "Biznis hab – potpuno bez pritiska.",
+        "explanation_what_it_is": "Biznis hab je tvoj prostor za izgradnju sopstvenog prihoda u MAXINA zajednici. Pomaže ti da svoje veštine potpuno jednostavno pretvoriš u prave mogućnosti.",
+        "explanation_user_benefit": "Finansijska sloboda ti daje više mira i opuštenosti u svakodnevnom životu. Tako ne rasteš samo zdravstveno, već si i ekonomski nezavisniji.",
+        "explanation_when_to_use": "Navrati ovde kada si radoznao kako možeš da podržiš druge svojim interesovanjima ili uslugama i pri tome zaradiš novac.",
+        "explanation_try_this": "Dodirni sada ekran da potpuno neobavezno pogledaš svoj prvi biznis pregled."
+      }
+    },
+    "T189": {
+      "source_sha": "8e3315e08c7d5af2",
+      "fields": {
+        "display_label": "Provera biznis puta",
+        "short_description": "Biznis hab – potpuno bez pritiska.",
+        "explanation_what_it_is": "Biznis provera je mala orijentacija kako možeš da izgradiš sopstveni prihod u MAXINA zajednici. To je potpuno dobrovoljna ponuda za tebe.",
+        "explanation_user_benefit": "Finansijska nezavisnost ti daje više slobode i opuštenosti u svakodnevici. Ovde možeš potpuno neobavezno da saznaš da li ti ovaj put odgovara.",
+        "explanation_when_to_use": "Uradi proveru kada razmišljaš o tome da podeliš svoje veštine ili strasti sa drugima.",
+        "explanation_try_this": "Dodirni dalje da započneš svoju ličnu biznis proveru."
+      }
+    },
+    "T190": {
+      "source_sha": "d24c8325fa949e25",
+      "fields": {
+        "display_label": "Pregled veština",
+        "short_description": "Biznis hab – potpuno bez pritiska.",
+        "explanation_what_it_is": "Inventar veština je mesto u tvom profilu gde sakupljaš svoje talente, interesovanja i jezike. Ovde beležiš u čemu si posebno dobar.",
+        "explanation_user_benefit": "Kada znam šta umeš, mogu ti predložiti odgovarajuće mogućnosti u MAXINA zajednici. To ti pomaže da podeliš svoje znanje sa drugima i sasvim prirodno izgradiš nešto za sebe.",
+        "explanation_when_to_use": "Unesi novu veštinu čim naučiš nešto novo ili razmišljaš o tome kako bi mogao da pomogneš drugima.",
+        "explanation_try_this": "Dodirni sada ekran i dodaj svoju prvu veštinu na listu."
+      }
+    },
+    "T191": {
+      "source_sha": "1b394b43c0ea3ffe",
+      "fields": {
+        "display_label": "Biznis objava",
+        "short_description": "Poveži svoj biznis sa uparivanjem.",
+        "explanation_what_it_is": "Biznis objava je jednostavan način da podeliš svoje ponude ili veštine u Vitanaland. Njome kreiraš mali oglas koji se prikazuje tačno pravim ljudima.",
+        "explanation_user_benefit": "Tako možeš potpuno lako da izgradiš sopstvenu mrežu i dosegneš ljude koji traže baš tvoju podršku. To pretvara tvoj napredak u priliku za tebe i druge.",
+        "explanation_when_to_use": "Koristi ovu funkciju kada želiš da ponudiš MAXINA zajednici sopstvenu uslugu, svoje znanje ili partnerstvo.",
+        "explanation_try_this": "Dodirni ekran i odmah isprobaj kako da napraviš novu biznis objavu."
+      }
+    },
+    "T192": {
+      "source_sha": "b6c874e533995451",
+      "fields": {
+        "display_label": "Pronalaženje klijenata",
+        "short_description": "Poveži svoj biznis sa matching-om.",
+        "explanation_what_it_is": "Ova funkcija povezuje tvoje znanje sa pravim ljudima u MAXINA zajednici. To je tvoj lični pomoćnik za pretragu, koji ti pomaže da otkriješ klijente za svoje ponude.",
+        "explanation_user_benefit": "Tako mnogo lakše gradiš sopstveni prihod. Pokazujem ti direktno kontakte koji zaista odgovaraju tebi i tvojim talentima.",
+        "explanation_when_to_use": "Koristi ovo kada želiš da ponudiš uslugu ili talenat i tražiš prve zainteresovane.",
+        "explanation_try_this": "Tapni na dugme ispod da odmah isprobaš kako pronalaziš nove klijente."
+      }
+    },
+    "T193": {
+      "source_sha": "3ee916573f1af1b4",
+      "fields": {
+        "display_label": "Match lista",
+        "short_description": "Poveži svoj biznis sa matching-om.",
+        "explanation_what_it_is": "Match lista je pregled ljudi koji savršeno odgovaraju tvojim ciljevima ili tvojoj novoj ponudi. Sistem vas potpuno automatski povezuje.",
+        "explanation_user_benefit": "Ne moraš naporno da tražiš prave kontakte ili klijente. Odmah vidiš na prvi pogled ko je zainteresovan za tvoje ideje.",
+        "explanation_when_to_use": "Koristi ovu listu kada si spreman da se povežeš sa novim partnerima ili da pozdraviš svoje prve klijente.",
+        "explanation_try_this": "Otvori sada svoju Match listu i otkrij ko te tamo već čeka."
+      }
+    },
+    "T194": {
+      "source_sha": "b905cd64b7c76d1f",
+      "fields": {
+        "display_label": "Event kao asset",
+        "short_description": "Eventi kao biznis elementi.",
+        "explanation_what_it_is": "Event je ovde više od samo termina u kalendaru. To je vredan element za tvoj sopstveni mali biznis u Vitanaland-u.",
+        "explanation_user_benefit": "Time možeš da podeliš svoju strast sa drugima i izgradiš prihod. Tako tvoje sopstveno znanje postaje vredno za tebe i druge.",
+        "explanation_when_to_use": "Koristiš ovo kada, na primer, planiraš radionicu ili zajednički susret i želiš da ga sačuvaš kao stalnu ponudu.",
+        "explanation_try_this": "Tapni na ekran da otvoriš prostor za svoj prvi sopstveni event."
+      }
+    },
+    "T195": {
+      "source_sha": "2b2e6e0558029d37",
+      "fields": {
+        "display_label": "Event plan",
+        "short_description": "Eventi kao biznis elementi.",
+        "explanation_what_it_is": "Event plan ti pomaže da organizuješ sopstvene događaje korak po korak. To je tvoj alat da od ideje napraviš pravu ponudu.",
+        "explanation_user_benefit": "Pretvaraš svoje znanje ili strast u novi izvor prihoda. Istovremeno štediš mnogo vremena jer celo planiranje postaje potpuno jednostavno.",
+        "explanation_when_to_use": "Koristi plan kada prvi put želiš da organizuješ sopstvenu radionicu, kurs ili susret.",
+        "explanation_try_this": "Otvori sada svoj prvi event plan na ekranu i pogledaj koliko je planiranje lako."
+      }
+    },
+    "T196": {
+      "source_sha": "81e773fa83ff126a",
+      "fields": {
+        "display_label": "Prodaja karata",
+        "short_description": "Eventi kao biznis elementi.",
+        "explanation_what_it_is": "Prodaja karata je tvoj lični šalter gde drugi mogu da rezervišu mesta za tvoj event. Ovde upravljaš svim prijavama i prihodima potpuno pregledno.",
+        "explanation_user_benefit": "Možeš da zaradiš novac direktno sa svojim znanjem i izgradiš sopstveni mali biznis. Vitana ti preuzima komplikovanu tehniku.",
+        "explanation_when_to_use": "Koristi ovu funkciju čim tvoj event plan bude gotov i budeš spreman da pozoveš prve učesnike.",
+        "explanation_try_this": "Tapni sada na prostor za prodaju karata da kreiraš svoju prvu ponudu karata."
+      }
+    },
+    "T197": {
+      "source_sha": "902f62163992348d",
+      "fields": {
+        "display_label": "Usluga kao ponuda",
+        "short_description": "Razumevanje usluga kao ponuda.",
+        "explanation_what_it_is": "Usluga je jasna ponuda tvojih veština. Ona drugima jednostavno pokazuje šta možeš da uradiš za njih.",
+        "explanation_user_benefit": "Tako od svog talenta praviš pravu uslugu koja se može rezervisati. Pomaže ti da profesionalno i sigurno dobiješ svoje prve klijente.",
+        "explanation_when_to_use": "Koristiš ovu funkciju čim budeš spreman da zvanično ponudiš svoje znanje u Vitanaland-u.",
+        "explanation_try_this": "Tapni na ekran i započni sa svojom prvom ponudom usluge."
+      }
+    },
+    "T198": {
+      "source_sha": "1809cde07b59b2a3",
+      "fields": {
+        "display_label": "Rezultat, ciljna grupa, trajanje, cena",
+        "short_description": "Razumevanje usluga kao ponuda.",
+        "explanation_what_it_is": "Jasna ponuda drugima tačno pokazuje šta nudiš. Sastoji se od rezultata, ciljne grupe, trajanja i cene.",
+        "explanation_user_benefit": "Kada ove četiri tačke budu utvrđene, zainteresovani odmah znaju na čemu su. To stvara poverenje i donosi ti tačno prave klijente.",
+        "explanation_when_to_use": "Koristi ova četiri detalja uvek kada imaš novu ideju i želiš da od nje napraviš uslugu koja se može rezervisati.",
+        "explanation_try_this": "Tapni na ekran i odredi detalje za svoju prvu ponudu."
+      }
+    },
+    "T199": {
+      "source_sha": "ece745286a6bf468",
+      "fields": {
+        "display_label": "Nacrt usluge",
+        "short_description": "Razumevanje usluga kao ponuda.",
+        "explanation_what_it_is": "Nacrt usluge je prvi korak ka tvojoj sopstvenoj ponudi u Vitanaland-u. Ovde jednostavno zapisuješ svoju ideju.",
+        "explanation_user_benefit": "Pretvaraš svoj talenat u jasnu uslugu koju drugi lako razumeju i mogu da rezervišu. Tako možeš potpuno jednostavno profesionalno da počneš.",
+        "explanation_when_to_use": "Praviš nacrt čim imaš ideju i želiš da je uskoro ponudiš MAXINA zajednici.",
+        "explanation_try_this": "Tapni na ekran da sada napraviš nacrt svoje prve usluge."
+      }
+    },
+    "T200": {
+      "source_sha": "19ae956b9b2253ae",
+      "fields": {
+        "display_label": "Live poverenje",
+        "short_description": "Live sobe kao elementi poverenja.",
+        "explanation_what_it_is": "Live sobe su digitalna mesta okupljanja u MAXINA zajednici gde se razgovori odvijaju u realnom vremenu. Možeš tamo u svakom trenutku spontano da slušaš, učestvuješ ili gledaš.",
+        "explanation_user_benefit": "Ovde nastaje pravo poverenje kroz direktnu razmenu sa drugim članovima i stručnjacima. To je tvoja direktna veza sa zajednicom za sticanje vrednih uvida.",
+        "explanation_when_to_use": "Koristi live sobu kada tražiš lični kontakt, na primer na otvorenom Q&A ili coaching-u.",
+        "explanation_try_this": "Tapni sada na prostor za live sobe i otkrij koji razgovori se trenutno odvijaju."
+      }
+    },
+    "T201": {
+      "source_sha": "4cdc97a734b1fda8",
+      "fields": {
+        "display_label": "Business live soba",
+        "short_description": "Live sobe kao elementi poverenja.",
+        "explanation_what_it_is": "Live razgovor u MAXINA zajednici je direktna video ili audio razmena u realnom vremenu. Možeš tamo u svakom trenutku spontano da slušaš, gledaš ili razgovaraš sa drugim ljudima.",
+        "explanation_user_benefit": "To ti pomaže da izgradiš prave odnose i stekneš direktno poverenje sa drugim članovima. Možeš odmah da postavljaš pitanja i si usred dešavanja, umesto da samo čitaš komentare.",
+        "explanation_when_to_use": "Navrati ovde kada tražiš inspiraciju, trebaš brze odgovore ili želiš direktnu razmenu.",
+        "explanation_try_this": "Tapni sada na ekran da otkriješ koji live razgovori se trenutno odvijaju u MAXINA zajednici."
+      }
+    },
+    "T202": {
+      "source_sha": "aa5191c33c791713",
+      "fields": {
+        "display_label": "Pozivanje ljudi",
+        "short_description": "Live sobe kao elementi poverenja.",
+        "explanation_what_it_is": "Možeš potpuno jednostavno da pozoveš druge članove u uzbudljive live sobe. To je kao kratko mahanje koje kaže: Dođi i pridruži se!",
+        "explanation_user_benefit": "Zajednička iskustva povezuju. Time jačaš prave odnose i gradiš vredno poverenje unutar MAXINA zajednice.",
+        "explanation_when_to_use": "Uradi to uvek kada slušaš zanimljivo predavanje i misliš da bi prijatelj upravo sada mogao dobro da iskoristi ove savete.",
+        "explanation_try_this": "Tapni na dugme za pozivanje i izaberi koga želiš da pozoveš u ovaj razgovor."
+      }
+    },
+    "T203": {
+      "source_sha": "b77ca4fcbea0b6f1",
+      "fields": {
+        "display_label": "Mediji kao asset",
+        "short_description": "Mediji kao biznis element.",
+        "explanation_what_it_is": "Mediji poput videa, slika ili podkasta su vredni elementi za tvoj profil. Oni pokazuju MAXINA zajednici šta umeš i ko si.",
+        "explanation_user_benefit": "Dobar sadržaj stvara poverenje i pomaže ti da pronađeš nove kontakte ili čak klijente. Tako od svojih kreativnih ideja praviš pravu vrednost.",
+        "explanation_when_to_use": "Otpremi kratak video ili sliku kada želiš da podeliš svoj talenat ili znanje sa drugima.",
+        "explanation_try_this": "Tapni sada na dugme da otpremiš svoj prvi medijski sadržaj i upoznaš funkciju."
+      }
+    },
+    "T204": {
+      "source_sha": "836b9e2661a3ae31",
+      "fields": {
+        "display_label": "Content plan",
+        "short_description": "Mediji kao biznis element.",
+        "explanation_what_it_is": "Content plan ti pomaže da ciljano organizuješ svoje objave i videe u MAXINA zajednici. To je tvoj vodič da postaneš vidljiv sa sopstvenim medijima.",
+        "explanation_user_benefit": "Tako korak po korak gradiš poverenje i od svojih medija praviš prave vrednosti. To ti može pomoći da pronađeš nove poslovne prilike ili čak prihod.",
+        "explanation_when_to_use": "Koristi content plan kada želiš redovno da deliš svoje ideje da bi izgradio sopstvenu publiku.",
+        "explanation_try_this": "Tapni na ekran i odmah napravi nacrt svog prvog content plana."
+      }
+    },
+    "T205": {
+      "source_sha": "70f8ef1bfec3359d",
+      "fields": {
+        "display_label": "Kampanja kao asset",
+        "short_description": "Mediji kao biznis element.",
+        "explanation_what_it_is": "Sadržaj kampanje je slika, video ili tekst koji ciljano koristiš da skreneš pažnju drugih na svoje ponude. To je tvoj digitalni alat da od jednostavne datoteke napraviš malu reklamnu akciju.",
+        "explanation_user_benefit": "Tako činiš svoje znanje vidljivim i možeš korak po korak da izgradiš sopstveni prihod. Dosežeš tačno prave ljude koji traže tvoje ideje.",
+        "explanation_when_to_use": "Kada, na primer, želiš da pozoveš ljude iz MAXINA zajednice na svoj novi fitnes kurs, koristiš upravo ovu funkciju.",
+        "explanation_try_this": "Tapni sada na ekran i podesi svoj prvi sadržaj za svoju malu kampanju."
+      }
+    },
+    "T206": {
+      "source_sha": "ed0f82872b1600a7",
+      "fields": {
+        "display_label": "Banka činjenica",
+        "short_description": "Whitepaper činjenice samo uz pravo interesovanje.",
+        "explanation_what_it_is": "Banka činjenica je moja velika arhiva znanja u pozadini. Delim detaljne činjenice iz nje samo sa tobom kada izričito pitaš za njih.",
+        "explanation_user_benefit": "Tako nikada nećeš biti preplavljen previše informacija. Dobijaš dublje znanje tačno onda kada si zaista radoznao.",
+        "explanation_when_to_use": "Ovo je savršeno za trenutke kada želiš da saznaš više o jednom od pet stubova i želiš utemeljene činjenice.",
+        "explanation_try_this": "Tapni sada na ORB i pitaj me za zanimljivu činjenicu."
+      }
+    },
+    "T207": {
+      "source_sha": "a57799dd6999fadb",
+      "fields": {
+        "display_label": "Tržište od 27 biliona",
+        "short_description": "Činjenice iz bele knjige tek kad postoji pravo interesovanje.",
+        "explanation_what_it_is": "U Vitanaland-u nije reč samo o tvom zdravlju, već i o novim prilikama. Naše tržište povezuje tvoje blagostanje sa uzbudljivim mogućnostima.",
+        "explanation_user_benefit": "Možeš otkriti korisne proizvode ili kasnije čak podeliti svoja iskustva sa Maxina zajednicom. Tako ti aplikacija pomaže da živiš zdravo i izgradiš nešto novo za sebe.",
+        "explanation_when_to_use": "Razgledaj se ovde kada tražiš korisne ponude za svakodnevicu ili želiš sam da se aktiviraš.",
+        "explanation_try_this": "Tapni na dugme da otvoriš tržište i malo se razgledaš."
+      }
+    },
+    "T208": {
+      "source_sha": "5066aaa7760a20b8",
+      "fields": {
+        "display_label": "Jednostavan pregled",
+        "short_description": "Činjenice iz bele knjige tek kad postoji pravo interesovanje.",
+        "explanation_what_it_is": "Dnevni pregled ti jednostavno pokazuje šta je danas važno. Ovde na prvi pogled vidiš sve preporuke i uvide za tvoj dan.",
+        "explanation_user_benefit": "Tako odmah razumeš kako možeš ojačati svojih pet stubova. Pri tom uvek sam odlučuješ koje savete želiš da prihvatiš.",
+        "explanation_when_to_use": "Najbolje je da svako veče pogledaš svoj pregled kako bi u miru zaključio dan.",
+        "explanation_try_this": "Tapni sada na pregled i otkrij svoje današnje uvide."
+      }
+    },
+    "T209": {
+      "source_sha": "3eebe7946bbacfd1",
+      "fields": {
+        "display_label": "Budućnost rada",
+        "short_description": "Kako veštačka inteligencija menja rad za stvaraoce.",
+        "explanation_what_it_is": "Budućnost rada znači da ti veštačka inteligencija stoji uz bok kao stvaraocu. Vitana pri tom preuzima dosadne rutinske zadatke umesto tebe.",
+        "explanation_user_benefit": "Time štediš ogromno mnogo vremena i mentalne energije u svakodnevici. Tako se možeš potpuno posvetiti svojim kreativnim projektima.",
+        "explanation_when_to_use": "Koristi ovu podršku uvek kada radiš na novoj ideji i želiš da ti glava bude slobodna za ono bitno.",
+        "explanation_try_this": "Tapni na ekran da odmah pokreneš svoj novi radni tok sa veštačkom inteligencijom."
+      }
+    },
+    "T210": {
+      "source_sha": "6d55be8c04170361",
+      "fields": {
+        "display_label": "Promena poslova",
+        "short_description": "Kako veštačka inteligencija menja rad za stvaraoce.",
+        "explanation_what_it_is": "Reč je o tome da preoblikuješ svoj rad koristeći pametnu tehnologiju. Tako možeš prepustiti rutinske zadatke i fokusirati se na svoje prave snage.",
+        "explanation_user_benefit": "Štediš dragoceno vreme i imaš znatno manje stresa. Time dobijaš prostor za nove ideje i projekte.",
+        "explanation_when_to_use": "Koristi ovaj pristup uvek kada ti rutinski zadaci prerastu preko glave.",
+        "explanation_try_this": "Pokreni sada vežbu na ekranu i otkrij kako možeš preoblikovati svoj rad."
+      }
+    },
+    "T211": {
+      "source_sha": "eb8c9935f5e753aa",
+      "fields": {
+        "display_label": "Veštine pojačane veštačkom inteligencijom",
+        "short_description": "Kako veštačka inteligencija menja rad za stvaraoce.",
+        "explanation_what_it_is": "Veštine proširene veštačkom inteligencijom znače da koristiš veštačku inteligenciju kao pametan alat za sopstveni rad. Vitana ti pokazuje kako time od pukog radnika postaješ pametan stvaralac.",
+        "explanation_user_benefit": "Skidaš sa sebe naporne rutinske zadatke i oslobađaš glavu. Tako se možeš potpuno posvetiti onome što ti je zaista važno.",
+        "explanation_when_to_use": "Seti se ovog metoda kada stojiš pred složenim zadatkom i tražiš pametne načine da uštediš vreme.",
+        "explanation_try_this": "Tapni na dugme da upoznaš svoju prvu veštinu proširenu veštačkom inteligencijom i odmah je isprobaš."
+      }
+    },
+    "T212": {
+      "source_sha": "8e56acf164322549",
+      "fields": {
+        "display_label": "Veličina tržišta",
+        "short_description": "Razumi veličine tržišta za stvaraoce.",
+        "explanation_what_it_is": "Procena tržišta ti pokazuje koliko potencijalnih kupaca ili partnera postoji za tvoju ideju. Za to tražim u Maxina zajednici ljude koji ti odgovaraju.",
+        "explanation_user_benefit": "Odmah vidiš da li postoji dovoljno interesovanja za tvoj projekat. Tako možeš pokrenuti svoj posao sa sigurnim osećajem.",
+        "explanation_when_to_use": "Koristi ovo kada planiraš novu uslugu i želiš da znaš kome bi mogla zatrebati.",
+        "explanation_try_this": "Tapni sada na ekran i otkrij ko odgovara tvojoj ideji."
+      }
+    },
+    "T213": {
+      "source_sha": "2d80517f1a96b6fc",
+      "fields": {
+        "display_label": "Velnes ekonomija",
+        "short_description": "Razumi veličine tržišta za stvaraoce.",
+        "explanation_what_it_is": "Tržište zdravlja i blagostanja povezuje tvoj lični razvoj sa novim profesionalnim prilikama. Ovde ne pronalaziš samo proizvode za sebe, već možeš i nuditi sopstvene usluge.",
+        "explanation_user_benefit": "To ti pomaže da podeliš svoju strast i usput izgradiš održivi prihod. Sistem te podržava od prvog koraka.",
+        "explanation_when_to_use": "Koristiš ovu oblast kada, na primer, želiš da preneseš svoje znanje kao kouč ili kreiraš prve sopstvene ponude za druge.",
+        "explanation_try_this": "Tapni sada na ekran da istražiš potencijal za tebe na tržištu zdravlja i blagostanja."
+      }
+    },
+    "T214": {
+      "source_sha": "ee08132d10f53ea0",
+      "fields": {
+        "display_label": "Usklađenost sa industrijom",
+        "short_description": "Razumi veličine tržišta za stvaraoce.",
+        "explanation_what_it_is": "Ovde te povezujemo sa pravim ljudima za tvoje poslovne ideje. Pokazujem ti partnere, kupce ili stručnjake koji tačno odgovaraju tvojoj oblasti.",
+        "explanation_user_benefit": "Tako ne moraš kretati sam, već brzo pronalaziš pravu podršku. To ti štedi dragoceno vreme i pomaže ti u uspešnoj izgradnji.",
+        "explanation_when_to_use": "Koristi ovu funkciju kada želiš da realizuješ novu ideju i za to tražiš idealnog poslovnog partnera ili prve kupce.",
+        "explanation_try_this": "Tapni na ekran da odmah vidiš ko najbolje odgovara tvom projektu."
+      }
+    },
+    "T215": {
+      "source_sha": "fb6c93cb58e85206",
+      "fields": {
+        "display_label": "Demografska potražnja",
+        "short_description": "Razumi demografsku potražnju.",
+        "explanation_what_it_is": "Demografska potreba ti objašnjava koje potrebe imaju ljudi u određenim starosnim grupama. Jednostavno ti pokazuje šta je zaista važno u tvojoj trenutnoj životnoj fazi.",
+        "explanation_user_benefit": "Odmah razumeš koje teme su sada najvrednije za tebe i tvoje telo. To ti pomaže da uložiš energiju tačno kako treba.",
+        "explanation_when_to_use": "Baci pogled na ovo kada se pitaš koje nove zdrave navike najbolje odgovaraju tvom sadašnjem uzrastu.",
+        "explanation_try_this": "Tapni na ekran da sada upoznaš svoju demografsku potrebu."
+      }
+    },
+    "T216": {
+      "source_sha": "cff362410d150149",
+      "fields": {
+        "display_label": "Tržište starenja",
+        "short_description": "Razumi demografsku potražnju.",
+        "explanation_what_it_is": "Naše društvo postaje sve starije, a to je zapravo divan poklon. Ali to takođe znači da je svakodnevna briga o zdravlju danas važnija nego ikad.",
+        "explanation_user_benefit": "Kada razumeš ovaj razvoj, možeš mnogo bolje oblikovati sopstvenu budućnost. Shvataš koliko je važno ostati dugo zdrav.",
+        "explanation_when_to_use": "Razmisli o ovoj temi kada želiš da i za mnogo godina još uvek pun energije savladavaš svakodnevicu.",
+        "explanation_try_this": "Tapni na ekran da baciš pogled na ovaj uzbudljiv razvoj."
+      }
+    },
+    "T217": {
+      "source_sha": "94d8824d8638dde3",
+      "fields": {
+        "display_label": "Usklađenost sa potražnjom",
+        "short_description": "Razumi demografsku potražnju.",
+        "explanation_what_it_is": "Vitana razume tvoju ličnu životnu fazu i tvoje svakodnevne zahteve. Usklađuje sve savete za pet stubova tačno prema tebi.",
+        "explanation_user_benefit": "Ne dobijaš opšte savete, već tačno onu pomoć koja ti treba u tvom uzrastu i svakodnevici. To ti mnogo olakšava da ostaneš zdrav.",
+        "explanation_when_to_use": "Imaš koristi od ovoga svakog dana kada ti životni kompas tačno pokazuje šta ti danas najviše prija.",
+        "explanation_try_this": "Tapni na ekran da podesiš svoje lične potrebe i prilagodiš Vitana sebi."
+      }
+    },
+    "T218": {
+      "source_sha": "9045ac252bb373eb",
+      "fields": {
+        "display_label": "Dokaz o poslu",
+        "short_description": "Razumi decentralizovani rad.",
+        "explanation_what_it_is": "Dokaz o radu pouzdano pokazuje koje zadatke si uspešno završio. To je tvoja digitalna potvrda za obavljeni posao u novom, fleksibilnom svetu rada.",
+        "explanation_user_benefit": "Time gradiš pouzdanu reputaciju bez zavisnosti od jednog stalnog poslodavca. Tako si uvek pošteno i transparentno nagrađen za svoje veštine.",
+        "explanation_when_to_use": "Koristiš dokaz uvek kada završiš projekat ili zadatak, da bi sigurno zabeležio svoj učinak.",
+        "explanation_try_this": "Tapni na Dalje i otkrij kako bi tvoj prvi dokaz o radu mogao izgledati."
+      }
+    },
+    "T219": {
+      "source_sha": "c78226243beb9a11",
+      "fields": {
+        "display_label": "Gig ekonomija",
+        "short_description": "Razumi decentralizovani rad.",
+        "explanation_what_it_is": "Tržište slobodnih poslova u Vitanaland-u povezuje tvoje zdravstveno putovanje sa novim profesionalnim putevima. Ovde možeš nuditi sopstvene usluge ili pronaći uzbudljive zadatke od drugih.",
+        "explanation_user_benefit": "Tako možeš deliti svoje znanje i fleksibilno graditi sopstveni prihod. Pri tom potpuno sam odlučuješ kada i koliko želiš da radiš.",
+        "explanation_when_to_use": "Koristi ovu oblast kada želiš da pomažeš drugima u Maxina zajednici kao kouč ili fleksibilno nudiš svoje veštine.",
+        "explanation_try_this": "Tapni na oblast za fleksibilno tržište rada i otkrij svoju prvu priliku."
+      }
+    },
+    "T220": {
+      "source_sha": "42825f6529542240",
+      "fields": {
+        "display_label": "Fleksibilna zarada",
+        "short_description": "Razumi decentralizovani rad.",
+        "explanation_what_it_is": "Kod fleksibilne zarade možeš u Vitanaland-u sam raspoređivati svoje zadatke i prihod. To je moderan način rada koji se potpuno prilagođava tvom životu.",
+        "explanation_user_benefit": "Nisi vezan za fiksno radno vreme i sam odlučuješ kada ćeš biti aktivan. Tako vraćaš potpunu kontrolu i slobodu nad svojom svakodnevicom.",
+        "explanation_when_to_use": "Koristi to jednostavno kada imaš slobodan sat i želiš opušteno da zaradiš nešto extra sa bilo kog mesta.",
+        "explanation_try_this": "Tapni na oblast za fleksibilnu zaradu i pogledaj kako jednostavno funkcioniše."
+      }
+    },
+    "T221": {
+      "source_sha": "e3b7f549645ce3f3",
+      "fields": {
+        "display_label": "Lestvica ponuda",
+        "short_description": "Izgradi svoju prvu lestvicu ponuda.",
+        "explanation_what_it_is": "Autopilot ti kreira listu predloga koji tačno odgovaraju tvom danu. Ove ideje su poređane kao na lestvici prema njihovoj važnosti za tvoj Vitana Index.",
+        "explanation_user_benefit": "Štediš sebi dugo razmišljanje, a ipak uvek zadržavaš potpunu kontrolu. Jednostavno izaberi ono što ti se danas čini izvodljivim.",
+        "explanation_when_to_use": "Otvori ovu listu uvek kada imaš malo vremena za sebe i ne znaš odakle da počneš.",
+        "explanation_try_this": "Izaberi sada svoje prve favorite sa liste i izgradi svoj plan za danas."
+      }
+    },
+    "T222": {
+      "source_sha": "f2c985d80bfc6b70",
+      "fields": {
+        "display_label": "Vrste ponuda",
+        "short_description": "Napravi svoju prvu lestvicu ponuda.",
+        "explanation_what_it_is": "Autopilot ti nudi različite vrste predloga koji su tačno prilagođeni tvom životnom kompasu. To je inteligentna, sortirana lista sa zadacima za tvoj dan.",
+        "explanation_user_benefit": "Više ne moraš sam da razmišljaš šta je trenutno najvažnije za tebe. Vitana preuzima to umesto tebe i pokazuje ti najbolje korake da postigneš svoje ciljeve.",
+        "explanation_when_to_use": "Najbolje je da svakog jutra pogledaš ove predloge kako bi potpuno opušteno isplanirao svoj dan.",
+        "explanation_try_this": "Tapni sada gore na simbol aviona da pogledaš svoje prve zadatke od Autopilota."
+      }
+    },
+    "T223": {
+      "source_sha": "c1db31053cab4ae0",
+      "fields": {
+        "display_label": "Prva ponuda",
+        "short_description": "Napravi svoju prvu lestvicu ponuda.",
+        "explanation_what_it_is": "Autopilot kreira personalnu listu stvari koje će ti danas prijati. Tvoja prva ponuda je uvek najvažniji zadatak na samom vrhu ove liste.",
+        "explanation_user_benefit": "Tako uvek odmah znaš čime je najbolje da počneš kako bi poboljšao svoj Vitana indeks. Imaš manje stresa i ne moraš dugo da razmišljaš.",
+        "explanation_when_to_use": "Svakog jutra nakon buđenja pogledaj Autopilot da otkriješ svoju najvažniju ponudu za taj dan.",
+        "explanation_try_this": "Tapni sada na simbol aviona i pogledaj svoju prvu ponudu na listi."
+      }
+    },
+    "T224": {
+      "source_sha": "1bb7ab146fbe3719",
+      "fields": {
+        "display_label": "Inventar prodaje i zarade",
+        "short_description": "Upoznaj prodaju i zaradu.",
+        "explanation_what_it_is": "Inventar prodaje je tvoj lični pregled. Ovde pronalaziš sve preporuke i mogućnosti koje možeš da ponudiš.",
+        "explanation_user_benefit": "Pomaže ti da sve svoje šanse prikupiš na jednom mestu. Tako uvek tačno znaš šta trenutno možeš da podeliš.",
+        "explanation_when_to_use": "Pogledaj svoj inventar kada tražiš nove stvari koje želiš da predstaviš MAXINA zajednici.",
+        "explanation_try_this": "Tapni sada na svoj inventar i otkrij svoje prikupljene preporuke."
+      }
+    },
+    "T225": {
+      "source_sha": "843b6098ab14bdb8",
+      "fields": {
+        "display_label": "Link za preprodaju",
+        "short_description": "Upoznaj prodaju i zaradu.",
+        "explanation_what_it_is": "Tvoj lični link za pozivanje je jednostavan način da podeliš Vitanaland sa drugima. Svaki korisnik ima svoj jedinstveni link.",
+        "explanation_user_benefit": "Pomažeš svojim prijateljima da poboljšaju svoje zdravlje. Istovremeno, bićeš nagrađen za svaku uspešnu preporuku.",
+        "explanation_when_to_use": "Koristi svoj link uvek kada su prijatelji radoznali o tvom napretku i žele i sami da učestvuju.",
+        "explanation_try_this": "Tapni na ekran da pogledaš svoj lični link i odmah ga isprobaš."
+      }
+    },
+    "T226": {
+      "source_sha": "1657a89c4fdb97cc",
+      "fields": {
+        "display_label": "Praćenje provizija",
+        "short_description": "Upoznaj prodaju i zaradu.",
+        "explanation_what_it_is": "Ovo je jasan pregled tvojih prihoda i provizija. Ovde tačno vidiš šta si zaradio kroz svoje preporuke i prodaje.",
+        "explanation_user_benefit": "Uvek imaš svoje uspehe na oku dok prolaziš kroz Moje putovanje. To te motiviše i odmah ti pokazuje kako se tvoj trud isplati.",
+        "explanation_when_to_use": "Koristi ovaj prikaz kada želiš da vidiš koliko si već zaradio ovog meseca.",
+        "explanation_try_this": "Tapni na pregled da sada otkriješ svoje trenutne provizije."
+      }
+    },
+    "T227": {
+      "source_sha": "af905924b2d6d153",
+      "fields": {
+        "display_label": "Reklamni kanali",
+        "short_description": "Upoznaj reklamne kanale.",
+        "explanation_what_it_is": "Ovde određuješ na kojim mestima će tvoji uspesi i objave biti objavljeni. To može biti MAXINA zajednica ili određena grupa.",
+        "explanation_user_benefit": "Dosežeš tačno one ljude koji te motivišu na tvom putu. Pri tome uvek zadržavaš punu kontrolu nad tim ko vidi tvoj napredak.",
+        "explanation_when_to_use": "Koristi ovu postavku kada si postigao poseban miljokaz na svom putovanju i želiš da ga proslaviš sa istomišljenicima.",
+        "explanation_try_this": "Tapni sada na izbor da pogledaš različite kanale i odrediš svoje favorite."
+      }
+    },
+    "T228": {
+      "source_sha": "981d74d6a8515cc6",
+      "fields": {
+        "display_label": "Kanali društvenih mreža",
+        "short_description": "Upoznaj reklamne kanale.",
+        "explanation_what_it_is": "Ovde određuješ gde će tvoje objave i uspesi biti vidljivi. Imaš izbor između MAXINA zajednice i drugih društvenih mreža.",
+        "explanation_user_benefit": "Zajednički uspesi dvostruko motivišu. Kada deliš svoj napredak sa istomišljenicima, to ti daje vrednu podršku.",
+        "explanation_when_to_use": "Koristi ovu postavku čim postigneš miljokaz i ponosno želiš da ga proslaviš sa drugima.",
+        "explanation_try_this": "Tapni na kanale i izaberi gde želiš da objaviš svoj sledeći uspeh."
+      }
+    },
+    "T229": {
+      "source_sha": "6e576623b5fe90d7",
+      "fields": {
+        "display_label": "Tekst za deljenje",
+        "short_description": "Upoznaj reklamne kanale.",
+        "explanation_what_it_is": "Ovde pišeš i uređuješ tekstove koje želiš da podeliš sa drugima. Možeš da sastaviš sopstvene poruke ili da prilagodiš gotove nacrte od Vitana za svoje uspehe.",
+        "explanation_user_benefit": "Štediš mnogo vremena jer svoj tekst treba da napišeš samo jednom da bi ga podelio svuda. Istovremeno uvek zadržavaš punu kontrolu nad svakom rečju.",
+        "explanation_when_to_use": "Koristi ga kada si postigao cilj i želiš da brzo lično prilagodiš reči svoje objave pre nego što bude objavljena.",
+        "explanation_try_this": "Tapni na polje za tekst i sada sastavi svoju prvu probnu objavu."
+      }
+    },
+    "T230": {
+      "source_sha": "b4e535f77473c29f",
+      "fields": {
+        "display_label": "Pokazatelji kampanje",
+        "short_description": "Tako optimizuješ kampanje.",
+        "explanation_what_it_is": "Ovde tačno vidiš kako se tvoje podeljene objave i akcije pokazuju. To je jednostavan pregled najvažnijih brojeva tvoje trenutne kampanje.",
+        "explanation_user_benefit": "Tako odmah prepoznaješ šta se tvojoj publici zaista dopada. To ti pomaže da dalje poboljšaš svoje buduće sadržaje.",
+        "explanation_when_to_use": "Pogledaj ove brojeve kada nakon nove akcije želiš da znaš koliko si ljudi dosegao.",
+        "explanation_try_this": "Tapni na brojeve na ekranu i odmah isprobaj ovaj pregled."
+      }
+    },
+    "T231": {
+      "source_sha": "5a9f40bbb6a2772f",
+      "fields": {
+        "display_label": "Doseg, klikovi, interakcija",
+        "short_description": "Tako optimizuješ kampanje.",
+        "explanation_what_it_is": "Ovde tačno vidiš koliko je ljudi tvoja kampanja dosegla i ko klikće na nju. To je tvoj jednostavan pregled za uspeh tvojih objava.",
+        "explanation_user_benefit": "Tako odmah prepoznaješ šta se MAXINA zajednici dopada. Možeš lako da poboljšaš svoje sadržaje i tako inspirišeš još više ljudi.",
+        "explanation_when_to_use": "Baci pogled na ove brojeve kada nakon nekoliko dana želiš da proveriš kako se tvoja najnovija objava pokazuje.",
+        "explanation_try_this": "Tapni sada na jednu od svojih kampanja da detaljnije pogledaš trenutne klikove i reakcije."
+      }
+    },
+    "T232": {
+      "source_sha": "fc8ba900577d57a9",
+      "fields": {
+        "display_label": "Poboljšanje kampanje",
+        "short_description": "Tako optimizuješ kampanje.",
+        "explanation_what_it_is": "Ovde možeš da daš poslednji dodir pojedinačnoj kampanji. Jednostavno prilagođavaš koji sadržaji se dele.",
+        "explanation_user_benefit": "Tako osiguravaš da tvoja poruka dosegne prave ljude. Pri tome uvek zadržavaš punu kontrolu nad svojim podacima.",
+        "explanation_when_to_use": "Koristi ovu funkciju kada želiš da malo prilagodiš nacrt pre nego što ga podeliš sa drugima.",
+        "explanation_try_this": "Tapni na kampanju i odmah isprobaj kako možeš da je poboljšaš."
+      }
+    },
+    "T233": {
+      "source_sha": "3c6bb09557e65eca",
+      "fields": {
+        "display_label": "Upravljanje klijentima",
+        "short_description": "Tako organizuješ svoje klijente.",
+        "explanation_what_it_is": "Ovde pronalaziš tačno prave klijente za svoju ponudu. Pomažem ti da otkriješ odgovarajuće ljude u MAXINA zajednici i da ih bezbedno kontaktiraš.",
+        "explanation_user_benefit": "Tako štediš mukotrpnu pretragu i lako gradiš pravu mrežu. Direktno dosežeš ljude kojima zaista možeš da pomogneš.",
+        "explanation_when_to_use": "Koristi ovu funkciju kada si spreman za nove poslove i tražiš svog sledećeg idealnog klijenta.",
+        "explanation_try_this": "Tapni sada na upravljanje klijentima i hajde zajedno da potražimo tvoj prvi odgovarajući kontakt."
+      }
+    },
+    "T234": {
+      "source_sha": "3a24fe8f020134fd",
+      "fields": {
+        "display_label": "Rezervacija, kalendar, praćenje",
+        "short_description": "Tako organizuješ svoje klijente.",
+        "explanation_what_it_is": "Kalendar je tvoj lični planer u Vitanaland. Ovde organizuješ svoje termine, zadatke i zdravstvene ciljeve potpuno pregledno.",
+        "explanation_user_benefit": "Tako imaš slobodnu glavu i ne propuštaš više važne planove. Možeš opušteno da strukturiraš svoju svakodnevicu i mnogo lakše postižeš svoje ciljeve.",
+        "explanation_when_to_use": "Koristi kalendar kada ujutru planiraš svoj dan ili želiš da rezervišeš vreme za svojih pet stubova.",
+        "explanation_try_this": "Otvori sada kalendar i odmah unesi svoj prvi mali zadatak za danas."
+      }
+    },
+    "T235": {
+      "source_sha": "d73e8ce2236aff25",
+      "fields": {
+        "display_label": "Kontrolna lista isporuke",
+        "short_description": "Tako organizuješ svoje klijente.",
+        "explanation_what_it_is": "Kontrolna lista isporuke ti pomaže da zadržiš pregled nad svojim poslovima. To je jednostavno uputstvo korak po korak za saradnju sa tvojim klijentima.",
+        "explanation_user_benefit": "Tako ne zaboravljaš važne detalje i uvek pružaš pouzdanu uslugu. To ti štedi vreme i daje ti potpuno siguran osećaj.",
+        "explanation_when_to_use": "Koristi je uvek kada si dobio novog klijenta i želiš da nesmetano sprovodiš svoju uslugu.",
+        "explanation_try_this": "Tapni na ekran da otvoriš svoju prvu kontrolnu listu isporuke za klijenta."
+      }
+    },
+    "T236": {
+      "source_sha": "f7c79a02e66820b8",
+      "fields": {
+        "display_label": "Prihodi i isplate",
+        "short_description": "Upoznaj prihode i isplate.",
+        "explanation_what_it_is": "Ovde pronalaziš svoj lični pregled svih prihoda i isplata u Vitanaland. Jednostavno i jasno ti pokazuje kako se tvoje dnevne akcije nagrađuju.",
+        "explanation_user_benefit": "Tako direktno vidiš da se tvoja zdrava rutina isplati. To te motiviše da svaki dan ostaješ na putu ka svojim ciljevima.",
+        "explanation_when_to_use": "Pogledaj ovde nakon uspešnog dana da se obradoješ svojim zarađenim nagradama.",
+        "explanation_try_this": "Tapni na oblast za prihode i isplate da otkriješ svoje prve nagrade."
+      }
+    },
+    "T237": {
+      "source_sha": "7c66ef0351f58e4e",
+      "fields": {
+        "display_label": "Na čekanju, dostupno, istorija",
+        "short_description": "Upoznaj se sa prihodima i isplatama.",
+        "explanation_what_it_is": "Ovde vidiš status svojih sakupljenih nagrada iz dnevnih zadataka. Pokazuje ti tačno šta je još na čekanju ili već dostupno, i pruža ti uvid u tvoju istoriju.",
+        "explanation_user_benefit": "Odmah vidiš da se tvoji aktivni koraci u Vitanaland bukvalno isplate. To te motiviše da istraješ i nastaviš da neguješ svoje navike.",
+        "explanation_when_to_use": "Pogledaj ovde kada želiš da znaš da li je zarada za tvoj poslednji unos u dnevnik već dostupna.",
+        "explanation_try_this": "Tapni sada na pregled na ekranu i istraži svoje sakupljene nagrade."
+      }
+    },
+    "T238": {
+      "source_sha": "e215e38c9b709ac6",
+      "fields": {
+        "display_label": "Spremno za isplatu",
+        "short_description": "Upoznaj se sa prihodima i isplatama.",
+        "explanation_what_it_is": "Spremnost za isplatu ti pokazuje da li su tvoji sakupljeni prihodi otključani. Označava trenutak kada su tvoje nagrade spremne za preuzimanje.",
+        "explanation_user_benefit": "Odmah prepoznaješ kada možeš da iskoristiš svoje prihode. To ti daje osećaj sigurnosti i nagrađuje tvoju dnevnu rutinu.",
+        "explanation_when_to_use": "Ovde proveriš čim želiš da isplatiš svoje sakupljene prihode iz Vitanaland.",
+        "explanation_try_this": "Tapni na prikaz da odmah proveriš svoju trenutnu spremnost za isplatu."
+      }
+    },
+    "T239": {
+      "source_sha": "2da3c9271194e2e0",
+      "fields": {
+        "display_label": "Autopilot za marketplace",
+        "short_description": "Upoznaj Autopilot za marketplace.",
+        "explanation_what_it_is": "Autopilot za marketplace potpuno samostalno traži odgovarajuće ponude i proizvode za tebe. Povezuje tvoje zdravstvene ciljeve sa korisnim uslugama u Vitanaland.",
+        "explanation_user_benefit": "Štediš vreme jer ti se predlažu samo stvari koje zaista odgovaraju tvojim interesovanjima. Tako lako otkrivаš nove načine za svoje zdravlje ili čak za sopstveni prihod.",
+        "explanation_when_to_use": "Savršen je kada želiš da otkriješ nove ideje, proizvode ili poslovne prilike, bez potrebe da sam sve pretražuješ.",
+        "explanation_try_this": "Tapni sada na ekran da upoznaš i isprobaš svoj Autopilot za marketplace."
+      }
+    },
+    "T240": {
+      "source_sha": "91e46eec4ec8b5dc",
+      "fields": {
+        "display_label": "Predlozi prilika",
+        "short_description": "Upoznaj Autopilot za marketplace.",
+        "explanation_what_it_is": "Autopilot ti pokazuje odgovarajuće mogućnosti kako možeš u Vitanaland da poboljšaš svoje zdravlje ili čak izgradiš prihod. Predlaže ti stvari koje tačno odgovaraju tvojim trenutnim ciljevima.",
+        "explanation_user_benefit": "Ne moraš sam da tražiš odgovarajuće ponude ili poslovne prilike. Autopilot donosi najbolje mogućnosti direktno do tebe, kako bi mogao da napreduješ zdravstveno i profesionalno.",
+        "explanation_when_to_use": "Pogledaj predloge kada si spreman za sledeći korak na svom putovanju i želiš da otkriješ nove ponude ili kontakte.",
+        "explanation_try_this": "Tapni na trenutne predloge i otkrij koje nove prilike te danas čekaju."
+      }
+    },
+    "T241": {
+      "source_sha": "0b538feafdf23cf1",
+      "fields": {
+        "display_label": "Proveri obrazloženje i prava",
+        "short_description": "Upoznaj Autopilot za marketplace.",
+        "explanation_what_it_is": "Autopilot ti predlaže odgovarajuće ponude. Pokazuje ti tačno zašto nešto odgovara tebi i uvek traži tvoju dozvolu.",
+        "explanation_user_benefit": "Tako uvek zadržavaš potpunu kontrolu nad svojim podacima. Prikazuju ti se samo prilike koje su zaista korisne za tebe.",
+        "explanation_when_to_use": "Obraćaš pažnju na ovo kada dobiješ novu preporuku i želiš da razumeš zašto je dobra za tebe.",
+        "explanation_try_this": "Tapni sada na primer i pogledaj zašto je izabran baš za tebe."
+      }
+    },
+    "T242": {
+      "source_sha": "d4715ed717e3a3c6",
+      "fields": {
+        "display_label": "Odgovorne preporuke",
+        "short_description": "Sigurnost u poslovanju.",
+        "explanation_what_it_is": "Vitana ti pokazuje ponude i mogućnosti koje tačno odgovaraju tebi. Pri tome uvek potpuno transparentno objašnjavamo zašto ti nešto preporučujemo.",
+        "explanation_user_benefit": "Uvek zadržavaš potpunu kontrolu nad svojim odlukama. Tako možeš sigurno i potpuno mirno da otkrivаš nove stvari.",
+        "explanation_when_to_use": "Vidiš ove preporuke uvek kada Autopilot ima korisnu ideju za tvoje zdravlje ili prihod.",
+        "explanation_try_this": "Tapni na sledeću karticu i pogledaj kako je izgrađena sigurna preporuka."
+      }
+    },
+    "T243": {
+      "source_sha": "3de27972fbcbeeed",
+      "fields": {
+        "display_label": "Bez lažnih obećanja",
+        "short_description": "Sigurnost u poslovanju.",
+        "explanation_what_it_is": "U našoj MAXINA zajednici pridajemo veliki značaj iskrenosti kod svih ponuda. To znači da se strogo uzdržavamo od lažnih obećanja ili preteranih tvrdnji.",
+        "explanation_user_benefit": "Tako Vitanaland ostaje sigurno i pouzdano mesto za sve nas. Time gradiš pravo poverenje kada nudiš usluge ili preporuke.",
+        "explanation_when_to_use": "Poštuj ovaj princip uvek kada praviš sopstvenu ponudu ili deliš proizvod sa drugima.",
+        "explanation_try_this": "Tapni na ekran da vežbaš kreiranje sigurne i iskrene ponude za zajednicu."
+      }
+    },
+    "T244": {
+      "source_sha": "a4b389aeed78e6e2",
+      "fields": {
+        "display_label": "Kontrolna lista poverenja i sigurnosti",
+        "short_description": "Sigurnost u poslovanju.",
+        "explanation_what_it_is": "Kontrolna lista poverenja i sigurnosti ti pokazuje kako da u Vitanaland sigurno i pouzdano kreiraš sopstvene ponude. Vodi te korak po korak kroz sva važna pravila.",
+        "explanation_user_benefit": "Tako uvek znaš da je tvoje poslovanje dobro zaštićeno i fer. To stvara pravo poverenje kod drugih i daje ti osećaj sigurnosti.",
+        "explanation_when_to_use": "Prođi kroz ovu listu uvek kratko pre nego što aktiviraš novu ponudu ili uslugu za druge.",
+        "explanation_try_this": "Tapni na kontrolnu listu i pogledaj prve korake za svoje sigurno poslovanje."
+      }
+    },
+    "T245": {
+      "source_sha": "89c7bc3107adad2e",
+      "fields": {
+        "display_label": "Sedmodnevni poslovni sprint",
+        "short_description": "Pretvori naučeno u sprint.",
+        "explanation_what_it_is": "Ovako pretvaraš nova saznanja u prave uspehe. Sedmodnevni sprint ti pomaže da fokusirano sprovodiš novu ideju tokom jedne nedelje.",
+        "explanation_user_benefit": "Umesto da samo naučiš nešto novo, odmah prelaziš na akciju. To ti donosi brz i merljiv napredak ka tvojim ciljevima.",
+        "explanation_when_to_use": "Započni sprint čim otkriješ uzbudljivu ideju i želiš odmah da je testiraš u praksi.",
+        "explanation_try_this": "Tapni na ekran da isplaniraš svoj prvi sedmodnevni sprint i odmah kreneš."
+      }
+    },
+    "T246": {
+      "source_sha": "91c652a2ca49a946",
+      "fields": {
+        "display_label": "Vitanin sledeći najbolji korak",
+        "short_description": "Pretvori naučeno u sprint.",
+        "explanation_what_it_is": "Funkcija za tvoj sledeći korak ti pokazuje tačno šta sada treba da uradiš. Tako tvoje novo znanje odmah postaje aktivan sprint.",
+        "explanation_user_benefit": "Ne gubiš vreme razmišljajući kako dalje. To ti pomaže da zadržiš fokus i zaista sprovedeš stvari.",
+        "explanation_when_to_use": "Koristi ovu preporuku uvek kada si spreman da odmah kreneš.",
+        "explanation_try_this": "Tapni sada na prikazanu akciju da započneš svoj prvi sprint."
+      }
+    },
+    "T247": {
+      "source_sha": "51af2422b588f61f",
+      "fields": {
+        "display_label": "Izaberi metriku sprinta",
+        "short_description": "Pretvori naučeno u sprint.",
+        "explanation_what_it_is": "Ovde tačno određuješ čime ćeš meriti svoj uspeh u sprintu. To je tvoje lično merilo za naredne dane.",
+        "explanation_user_benefit": "Tako činiš svoj napredak jasno vidljivim i opipljivim. To te neverovatno motiviše jer odmah prepoznaješ svaki mali korak u pravom smeru.",
+        "explanation_when_to_use": "Koristiš ovu funkciju uvek direktno na početku sprinta, da bi svoj plan učinio merljivim.",
+        "explanation_try_this": "Izaberi sada na ekranu čime želiš da meriš svoj prvi sprint."
+      }
+    },
+    "T248": {
+      "source_sha": "be8bfaf442cba739",
+      "fields": {
+        "display_label": "Završetak",
+        "short_description": "Završi bez gubitka putovanja.",
+        "explanation_what_it_is": "Uspešno si završio uvod. Sada počinje Moje putovanje, tvoj dnevni pratilac za zdrav život.",
+        "explanation_user_benefit": "Ne treba ti savršen plan za svoje zdravlje. Mala, dnevna rutina ti pomaže da sasvim opušteno napreduješ korak po korak.",
+        "explanation_when_to_use": "Koristi Moje putovanje svakog jutra da započneš svoj dan i saznaš šta ti danas prija.",
+        "explanation_try_this": "Tapni na ekran da proslaviš svoj završetak i odmah nastaviš dalje."
+      }
+    },
+    "T249": {
+      "source_sha": "17c0e8dbd0feb160",
+      "fields": {
+        "display_label": "Pun režim",
+        "short_description": "Završi bez gubitka putovanja.",
+        "explanation_what_it_is": "Pun pristup ti otključava ceo Vitanaland, dok tvoja trenutna etapa u Moje putovanje ostaje aktivna. Tvoj životni kompas sada daje Vitana tačan pravac za tvojih sledećih 90 dana.",
+        "explanation_user_benefit": "Vitana se od sada prilagođava tvojim pravim životnim ciljevima. Tako svaki predlog od Autopilot postaje apsolutno lični i vodi te svakog dana korak dalje.",
+        "explanation_when_to_use": "Podešavaš svoj životni kompas uvek iznova kada se tvoj fokus promeni i želiš da pratiš novi, snažan cilj.",
+        "explanation_try_this": "Tapni na ekran da pokreneš svoj pun pristup i podeš svoj prvi životni kompas."
+      }
+    },
+    "T250": {
+      "source_sha": "eac7c6d457506709",
+      "fields": {
+        "display_label": "Sledeća prekretnica",
+        "short_description": "Završi bez gubitka putovanja.",
+        "explanation_what_it_is": "Tvoja sledeća prekretnica ti pokazuje kako tvoje putovanje nastavlja nakon starta. To je tvoj lični cilj u aplikaciji, ka kojem radiš korak po korak.",
+        "explanation_user_benefit": "Tako nikada ne gubiš crvenu nit i ostaješ motivisan svakog dana. Uvek tačno znaš koji mali korak ti sledeći pomaže.",
+        "explanation_when_to_use": "Pogledaj svoju sledeću prekretnicu kada ujutru razmišljaš na šta želiš da se danas posebno fokusiraš.",
+        "explanation_try_this": "Tapni sada na ekran da otkriješ svoju prvu novu prekretnicu za dalje putovanje."
+      }
+    },
+    "T251": {
+      "source_sha": "53fb95784956265b",
+      "fields": {
+        "display_label": "Započni svoje putovanje dugovečnosti",
+        "short_description": "Ovde počinje tvoje putovanje – korak po korak.",
+        "explanation_what_it_is": "Početak tvog putovanja dugovečnosti – bez pritiska, korak po korak.",
+        "explanation_user_benefit": "Odmah ćeš znati kako tvoje putovanje funkcioniše i kako da počneš.",
+        "explanation_when_to_use": "Odmah sada, kao prvi korak tvog putovanja.",
+        "explanation_try_this": "Saslušaj Vitana i nakon toga započni svoju prvu sesiju."
+      }
+    },
+    "T252": {
+      "source_sha": "f3f66af2f84d14ca",
+      "fields": {
+        "display_label": "Tvoj plan",
+        "short_description": "Tako tvoje putovanje pronalazi prave sledeće korake za tebe.",
+        "explanation_what_it_is": "Tvoj lični plan za dugoročno zdravlje.",
+        "explanation_user_benefit": "Uvek znaš koji je tvoj sledeći korak – i zašto je važan.",
+        "explanation_when_to_use": "Kada želiš da razumeš kako je tvoje putovanje strukturirano.",
+        "explanation_try_this": "Pogledaj svoj plan i zapamti svoj sledeći korak."
+      }
+    },
+    "T253": {
+      "source_sha": "8da3d9e746a71c21",
+      "fields": {
+        "display_label": "Tvoj prvi korak",
+        "short_description": "Počni malo, nastavi dalje – tako tvoje putovanje postaje stvarno.",
+        "explanation_what_it_is": "Mala, jasna akcija koja podržava tvoje zdravlje.",
+        "explanation_user_benefit": "Od dobrih namera nastaje pravi pokret.",
+        "explanation_when_to_use": "Danas – tvoj prvi korak sme biti mali.",
+        "explanation_try_this": "Izaberi jednostavnu akciju: više vode, kratka šetnja ili ranije u krevet."
+      }
+    },
+    "T254": {
+      "source_sha": "874b2924e859a502",
+      "fields": {
+        "display_label": "Tvoj napredak",
+        "short_description": "Napredak znači istrajati, ne biti savršen.",
+        "explanation_what_it_is": "Tako vidiš kako tvoje sesije postaju pravi napredak.",
+        "explanation_user_benefit": "Shvataš da je svaka sesija deo nečeg većeg.",
+        "explanation_when_to_use": "Kada želiš da vidiš koliko si već napredovao/la.",
+        "explanation_try_this": "Završi ovu sesiju i gledaj kako tvoj napredak raste."
+      }
+    }
+  }
+}
