@@ -122,13 +122,20 @@ router.post(
     // exactly once for the lifetime of this goal).
     try {
       const since = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString();
-      const { data: prior } = await repo.fetchPriorCelebrationNotification(supa, {
+      const { data: prior, error: priorErr } = await repo.fetchPriorCelebrationNotification(supa, {
         userId,
         tenantId,
         type: spec.type,
         sinceIso: since,
         dedupeKey,
       });
+      if (priorErr) {
+        // supabase-js resolves normally with {data:null, error} — it does
+        // not throw, so the catch block below never saw this case. Same
+        // accepted fail-open outcome (don't block a legitimate push on a
+        // dedupe-read failure), just now actually logged like its sibling.
+        console.warn(`[celebrations] dedupe read failed for ${userId.slice(0, 8)}: ${priorErr.message}`);
+      }
       if (prior) {
         return res.json({ ok: true, dispatched: 0, skipped: 'already_sent' });
       }

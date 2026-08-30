@@ -4572,10 +4572,20 @@ export async function tool_save_diary_entry(
   // 4) Recompute Index.
   let pillars_after: Record<string, number> | null = null;
   try {
-    const { data: rec } = await sb.rpc('health_compute_vitana_index_for_user', {
+    const { data: rec, error: rpcErr } = await sb.rpc('health_compute_vitana_index_for_user', {
       p_user_id: identity.user_id,
       p_date: entryDate,
     });
+    if (rpcErr) {
+      // supabase-js resolves normally with {data:null, error} on an RPC
+      // failure — it does not throw, so the surrounding try/catch alone
+      // never saw this. Non-fatal by design (pillars_after simply stays
+      // null, same as any other no-recompute case), but logged so a real
+      // RPC failure isn't silently indistinguishable from one.
+      console.warn(
+        `[save_diary_entry] Index recompute RPC failed (non-fatal): ${rpcErr.message}`,
+      );
+    }
     const r = rec as { ok?: boolean; [k: string]: unknown } | null;
     if (r && r.ok !== false) {
       pillars_after = {

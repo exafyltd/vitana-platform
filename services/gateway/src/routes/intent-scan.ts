@@ -35,16 +35,18 @@ router.get('/intent-scan', requireAuth, requireTenant, async (req: Request, res:
   if (!supabase) return res.status(500).json({ ok: false, error: 'supabase_unavailable' });
 
   // 1. Compatible kinds for this kind.
-  const { data: compatRows } = await repo.fetchCompatibleIntentKinds(supabase, intentKind);
+  const { data: compatRows, error: compatErr } = await repo.fetchCompatibleIntentKinds(supabase, intentKind);
+  if (compatErr) console.error(`[intent-scan] fetchCompatibleIntentKinds failed for kind=${intentKind}: ${compatErr.message}`);
   const compatibleKinds: string[] = ((compatRows as any[]) || []).map((r) => r.kind_b);
   if (compatibleKinds.length === 0) compatibleKinds.push(intentKind);
 
   // 2. Open compatible intents.
-  const { data: intents } = await repo.fetchOpenCompatibleIntents(supabase, {
+  const { data: intents, error: intentsErr } = await repo.fetchOpenCompatibleIntents(supabase, {
     compatibleKinds,
     requesterUserId: identity.user_id,
     categoryPrefix,
   });
+  if (intentsErr) console.error(`[intent-scan] fetchOpenCompatibleIntents failed for kind=${intentKind}: ${intentsErr.message}`);
   let intentsList = ((intents as any[]) || []);
 
   // Variety filter applied in TS so we can match either kind_payload.dance.variety OR category suffix.
@@ -58,7 +60,8 @@ router.get('/intent-scan', requireAuth, requireTenant, async (req: Request, res:
   // 3. Dance-pref community members (when this is a dance scan).
   let memberMatches: any[] = [];
   if (categoryPrefix?.startsWith('dance.') || variety) {
-    const { data: profs } = await repo.fetchDancePrefProfiles(supabase, identity.user_id);
+    const { data: profs, error: profsErr } = await repo.fetchDancePrefProfiles(supabase, identity.user_id);
+    if (profsErr) console.error(`[intent-scan] fetchDancePrefProfiles failed for user=${identity.user_id}: ${profsErr.message}`);
     memberMatches = ((profs as any[]) || []).filter((p) => {
       const v = p.dance_preferences?.varieties;
       if (!Array.isArray(v) || v.length === 0) return false;

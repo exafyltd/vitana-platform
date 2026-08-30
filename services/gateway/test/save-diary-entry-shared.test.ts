@@ -337,4 +337,26 @@ describe('VTID-03042 — save_diary_entry lifted to shared dispatcher', () => {
     );
     warnSpy.mockRestore();
   });
+
+  test('11. Index recompute RPC error is logged, not silently indistinguishable from a no-op recompute', async () => {
+    const sb = makeStubSupabase({
+      preIndexRow: null,
+      rpcReturn: { data: null, error: { message: 'function health_compute_vitana_index_for_user does not exist' } },
+    });
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const result = await tool_save_diary_entry(
+      { raw_text: 'Went for a run and had a healthy breakfast.' },
+      identity,
+      sb as never,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok !== true) return;
+    const r = result.result as { pillars_after: unknown; index_delta: unknown };
+    expect(r.pillars_after).toBeNull();
+    expect(r.index_delta).toBeNull();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Index recompute RPC failed'),
+    );
+    warnSpy.mockRestore();
+  });
 });
