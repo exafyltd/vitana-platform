@@ -967,7 +967,10 @@ router.post('/meetup-reminders', async (req: Request, res: Response) => {
 
   for (const meetup of soonMeetups || []) {
     // Get RSVP'd users
-    const { data: rsvps } = await repo.fetchMeetupRsvps(supa, meetup.id);
+    const { data: rsvps, error: rsvpsErr } = await repo.fetchMeetupRsvps(supa, meetup.id);
+    if (rsvpsErr) {
+      console.warn(`[scheduled-notifications] fetchMeetupRsvps failed for meetup=${meetup.id} (meetup_starting_soon): ${rsvpsErr.message}`);
+    }
 
     const rsvpList = (rsvps || []) as Array<{ user_id: string }>;
     const locales = await bulkGetUserLocales(supa, rsvpList.map((r) => r.user_id));
@@ -990,7 +993,10 @@ router.post('/meetup-reminders', async (req: Request, res: Response) => {
   });
 
   for (const meetup of nowMeetups || []) {
-    const { data: rsvps } = await repo.fetchMeetupRsvps(supa, meetup.id);
+    const { data: rsvps, error: rsvpsErr } = await repo.fetchMeetupRsvps(supa, meetup.id);
+    if (rsvpsErr) {
+      console.warn(`[scheduled-notifications] fetchMeetupRsvps failed for meetup=${meetup.id} (meetup_starting_now): ${rsvpsErr.message}`);
+    }
 
     const rsvpList = (rsvps || []) as Array<{ user_id: string }>;
     const locales = await bulkGetUserLocales(supa, rsvpList.map((r) => r.user_id));
