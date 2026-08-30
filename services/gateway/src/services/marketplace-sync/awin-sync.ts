@@ -103,7 +103,8 @@ const DEFAULT_SHIPS_TO_REGIONS = ['EU', 'UK', 'US', 'MENA', 'GLOBAL'];
 async function loadSourceConfigs(): Promise<AwinSourceConfig[]> {
   const supabase = getSupabase();
   if (!supabase) return [];
-  const { data } = await repo.fetchActiveMarketplaceSourceConfigs(supabase, 'awin');
+  const { data, error } = await repo.fetchActiveMarketplaceSourceConfigs(supabase, 'awin');
+  if (error) throw error; // must not be indistinguishable from "no feeds configured" — caller reports it as a real failure
   if (!data?.length) return [];
   return data
     .map((r) => r.config as AwinSourceConfig)

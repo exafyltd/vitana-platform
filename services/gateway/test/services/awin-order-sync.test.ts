@@ -104,3 +104,23 @@ describe('runAwinOrderSync — fetchProductClickByClickId error handling', () =>
     expect(result.attributed).toBe(1);
   });
 });
+
+describe('runAwinOrderSync — source-config lookup error handling', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockGetSupabase.mockReturnValue(SB);
+  });
+
+  it('rejects (not a silent "not configured" skip) when the source-config lookup errors', async () => {
+    mockFetchActiveAwinSourceConfig.mockResolvedValue({
+      data: null,
+      error: { message: 'connection reset' },
+    });
+
+    // Previously this fell through to loadAwinOrderSyncConfig() returning
+    // null (config?.api_token on an undefined `data`), reported identically
+    // to "Awin isn't configured for this tenant" — silently skipping order/
+    // commission polling for the period on a transient DB blip.
+    await expect(runAwinOrderSync(7)).rejects.toMatchObject({ message: 'connection reset' });
+  });
+});

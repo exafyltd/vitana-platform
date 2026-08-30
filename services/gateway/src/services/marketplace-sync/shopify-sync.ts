@@ -53,7 +53,15 @@ async function loadShopConfigs(): Promise<ShopifyShopConfig[]> {
   // 1. Check DB-managed configs
   const supabase = getSupabase();
   if (supabase) {
-    const { data } = await repo.fetchActiveMarketplaceSourceConfigs(supabase, 'shopify');
+    const { data, error } = await repo.fetchActiveMarketplaceSourceConfigs(supabase, 'shopify');
+    if (error) {
+      // Unlike the other providers, this one has a legitimate secondary
+      // source (the SHOPIFY_SHOPS env var) below — falling through to it
+      // is by design, not just an error default, so this stays non-fatal.
+      // Logged so a real DB failure isn't silently indistinguishable from
+      // "no DB-managed configs, using env fallback".
+      console.error(`[shopify-sync] source-config lookup failed, falling back to SHOPIFY_SHOPS env var: ${error.message}`);
+    }
     if (data && data.length > 0) {
       return data
         .map((r) => r.config as ShopifyShopConfig)

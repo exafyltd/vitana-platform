@@ -43,7 +43,8 @@ interface RakutenSourceConfig {
 async function loadSourceConfigs(): Promise<RakutenSourceConfig[]> {
   const supabase = getSupabase();
   if (!supabase) return [];
-  const { data } = await repo.fetchActiveMarketplaceSourceConfigs(supabase, 'rakuten');
+  const { data, error } = await repo.fetchActiveMarketplaceSourceConfigs(supabase, 'rakuten');
+  if (error) throw error; // must not be indistinguishable from "no feeds configured" — caller reports it as a real failure
   if (!data?.length) return [];
   return data.map((r) => r.config as RakutenSourceConfig).filter((c) => c && c.bearer_token);
 }

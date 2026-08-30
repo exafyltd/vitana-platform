@@ -78,7 +78,8 @@ function dateParam(d: Date): string {
 async function loadAwinOrderSyncConfig(): Promise<AwinOrderSyncConfig | null> {
   const supabase = getSupabase();
   if (!supabase) return null;
-  const { data } = await repo.fetchActiveAwinSourceConfig(supabase);
+  const { data, error } = await repo.fetchActiveAwinSourceConfig(supabase);
+  if (error) throw error; // must not be indistinguishable from "not configured" — caller reports it as a real failure
   const config = data?.config as { api_token?: string; publisher_id?: string } | undefined;
   if (!config?.api_token || !config?.publisher_id) return null;
   return { publisherId: config.publisher_id, apiToken: config.api_token };

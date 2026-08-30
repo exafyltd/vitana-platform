@@ -83,7 +83,8 @@ const MARKETPLACE_MAP: Record<string, { host: string; region: string; country: s
 async function loadSourceConfigs(): Promise<AmazonSourceConfig[]> {
   const supabase = getSupabase();
   if (!supabase) return [];
-  const { data } = await repo.fetchActiveMarketplaceSourceConfigs(supabase, 'amazon');
+  const { data, error } = await repo.fetchActiveMarketplaceSourceConfigs(supabase, 'amazon');
+  if (error) throw error; // must not be indistinguishable from "no feeds configured" — caller reports it as a real failure
   if (!data?.length) return [];
   return data
     .map((r) => r.config as AmazonSourceConfig)
