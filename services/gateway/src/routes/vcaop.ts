@@ -138,7 +138,8 @@ router.post('/affiliate-link', async (req: Request, res: Response) => {
   const productUrl = String(req.body?.productUrl || '').trim();
   if (!programId) return res.status(400).json({ ok: false, error: 'affiliateProgramId required' });
 
-  const { data: prog } = await repo.fetchAffiliateProgramById(supabase, programId);
+  const { data: prog, error: progErr } = await repo.fetchAffiliateProgramById(supabase, programId);
+  if (progErr) return res.status(500).json({ ok: false, error: progErr.message });
   if (!prog) return res.status(404).json({ ok: false, error: 'program not found' });
 
   const subId = subIdFor(uid, programId);
@@ -194,7 +195,8 @@ router.post('/commissions/:id/confirm', async (req: Request, res: Response) => {
   const supabase = db(res); if (!supabase) return;
   const postbackRef = String(req.body?.postbackRef || '');
   if (!postbackRef) return res.status(400).json({ ok: false, error: 'postbackRef required' });
-  const { data: c } = await repo.fetchCommissionEventById(supabase, req.params.id);
+  const { data: c, error: cErr } = await repo.fetchCommissionEventById(supabase, req.params.id);
+  if (cErr) return res.status(500).json({ ok: false, error: cErr.message });
   if (!c) return res.status(404).json({ ok: false, error: 'commission not found' });
   if (c.status !== 'pending') return res.status(409).json({ ok: false, error: `commission is '${c.status}', not pending` });
   const now = new Date().toISOString();
@@ -231,7 +233,8 @@ router.post('/onboarding/batch', async (req: Request, res: Response) => {
   // One query for all requested providers (previously one select per id),
   // then per-table batch inserts in FK order: provider_account →
   // provisioning_job → human_task.
-  const { data: provRows } = await repo.fetchProvidersForOnboarding(supabase, ids);
+  const { data: provRows, error: provErr } = await repo.fetchProvidersForOnboarding(supabase, ids);
+  if (provErr) return res.status(500).json({ ok: false, error: provErr.message });
   const now = new Date().toISOString();
   let queued = 0, humanTasks = 0;
   const accountRows: any[] = [];
@@ -265,7 +268,8 @@ router.post('/onboarding/batch', async (req: Request, res: Response) => {
 router.post('/tasks/:id/complete', async (req: Request, res: Response) => {
   if (!isAdmin(req)) return res.status(403).json({ ok: false, error: 'forbidden' });
   const supabase = db(res); if (!supabase) return;
-  const { data: task } = await repo.fetchHumanTaskById(supabase, req.params.id);
+  const { data: task, error: taskErr } = await repo.fetchHumanTaskById(supabase, req.params.id);
+  if (taskErr) return res.status(500).json({ ok: false, error: taskErr.message });
   if (!task) return res.status(404).json({ ok: false, error: 'task not found' });
   const now = new Date().toISOString();
   await repo.updateHumanTaskCompleted(supabase, req.params.id, now);

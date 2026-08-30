@@ -221,7 +221,16 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
     // monthly-only (other columns NULL). We surface all configured windows so
     // the UI shows "5h resets in 2h" + "Weekly resets Mon" side-by-side
     // (Codex/Claude pattern).
-    const { data: entitlementRows } = await repo.fetchFeatureEntitlements(sb(), plan.plan_key);
+    const { data: entitlementRows, error: entitlementRowsErr } = await repo.fetchFeatureEntitlements(sb(), plan.plan_key);
+    if (entitlementRowsErr) {
+      // Display-only (this route is not the enforcement path — see the
+      // sibling rpcGetFeatureUsage*/rpcGetFeatureUsage calls below, none of
+      // which gate access elsewhere). A real DB error here previously
+      // rendered indistinguishably from "no metered features configured"
+      // (usage renders empty/"unlimited"), so log it loudly rather than
+      // restructure the response shape.
+      console.error(`${LOG_PREFIX} fetchFeatureEntitlements error (usage will render empty): ${entitlementRowsErr.message}`);
+    }
 
     type EntitlementRow = {
       feature_key: string;
@@ -258,12 +267,13 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
         const windows: WindowSnapshot[] = [];
 
         if (row.window_5h_quota != null) {
-          const { data: w } = await repo.rpcGetFeatureUsageInWindow(sb(), {
+          const { data: w, error: wErr } = await repo.rpcGetFeatureUsageInWindow(sb(), {
             tenantId: identity.tenant_id,
             userId: identity.user_id,
             featureKey: row.feature_key,
             windowSeconds: SECONDS_5H,
           });
+          if (wErr) console.error(`${LOG_PREFIX} rpcGetFeatureUsageInWindow(5h) error for feature=${row.feature_key} (usage will render as 0/unused): ${wErr.message}`);
           windows.push({
             name: 'window_5h',
             used: (w as { used?: number })?.used ?? 0,
@@ -273,12 +283,13 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
         }
 
         if (row.weekly_quota != null) {
-          const { data: w } = await repo.rpcGetFeatureUsageInWindow(sb(), {
+          const { data: w, error: wErr } = await repo.rpcGetFeatureUsageInWindow(sb(), {
             tenantId: identity.tenant_id,
             userId: identity.user_id,
             featureKey: row.feature_key,
             windowSeconds: SECONDS_WEEK,
           });
+          if (wErr) console.error(`${LOG_PREFIX} rpcGetFeatureUsageInWindow(weekly) error for feature=${row.feature_key} (usage will render as 0/unused): ${wErr.message}`);
           windows.push({
             name: 'weekly',
             used: (w as { used?: number })?.used ?? 0,
@@ -288,12 +299,13 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
         }
 
         // Monthly always present
-        const { data: m } = await repo.rpcGetFeatureUsage(sb(), {
+        const { data: m, error: mErr } = await repo.rpcGetFeatureUsage(sb(), {
           tenantId: identity.tenant_id,
           userId: identity.user_id,
           featureKey: row.feature_key,
           windowSeconds: row.window_seconds,
         });
+        if (mErr) console.error(`${LOG_PREFIX} rpcGetFeatureUsage(monthly) error for feature=${row.feature_key} (usage will render as 0/unused): ${mErr.message}`);
         windows.push({
           name: 'monthly',
           used: (m as { used?: number })?.used ?? 0,
@@ -415,8 +427,17 @@ router.post('/checkout/subscription', requireAuth, async (req: AuthenticatedRequ
   try {
     const customerId = await ensureStripeCustomer(identity.tenant_id, identity.user_id, identity.email);
 
-    // Look up trial_days from the plan
-    const { data: planRow } = await repo.fetchSubscriptionPlanTrialDays(sb(), price.plan_key);
+    // Look up trial_days from the plan. A real DB error here must NOT
+    // silently proceed with trialDays=0 (`?? 0` cannot tell "no trial
+    // configured" from "the lookup failed") — that would charge the
+    // customer immediately instead of honoring a trial their plan is
+    // configured to offer. Fail the checkout attempt cleanly before any
+    // Stripe session is created, rather than risk a billing-correctness bug.
+    const { data: planRow, error: planErr } = await repo.fetchSubscriptionPlanTrialDays(sb(), price.plan_key);
+    if (planErr) {
+      console.error(`${LOG_PREFIX} /checkout/subscription trial_days lookup failed: ${planErr.message}`);
+      return res.status(500).json({ ok: false, error: 'TRIAL_LOOKUP_FAILED', vtid: VTID });
+    }
     const trialDays = (planRow as { trial_days?: number })?.trial_days ?? 0;
 
     const session = await getStripe().checkout.sessions.create({
@@ -1012,7 +1033,11 @@ router.post(
     }
 
     // Validate plan exists
-    const { data: planRow } = await repo.fetchPlanByKey(sb(), grantsPlan);
+    const { data: planRow, error: planRowErr } = await repo.fetchPlanByKey(sb(), grantsPlan);
+    if (planRowErr) {
+      console.error(`${LOG_PREFIX} admin/redemption-codes/generate fetchPlanByKey error: ${planRowErr.message}`);
+      return res.status(500).json({ ok: false, error: 'PLAN_LOOKUP_FAILED', message: planRowErr.message });
+    }
     if (!planRow) {
       return res.status(400).json({ ok: false, error: 'PLAN_NOT_FOUND', plan_key: grantsPlan });
     }
@@ -1156,7 +1181,8 @@ router.get(
       const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
       // 1. Active subscriptions joined with their monthly price for MRR/ARR
-      const { data: activeSubs } = await repo.fetchActiveOrTrialingSubscriptions(supabase);
+      const { data: activeSubs, error: activeSubsErr } = await repo.fetchActiveOrTrialingSubscriptions(supabase);
+      if (activeSubsErr) console.error(`${LOG_PREFIX} admin/metrics fetchActiveOrTrialingSubscriptions error: ${activeSubsErr.message}`);
 
       const planCounts: Record<string, number> = {};
       const trialingCount: Record<string, number> = {};
@@ -1172,7 +1198,8 @@ router.get(
       );
 
       // Read monthly prices per plan to compute MRR
-      const { data: prices } = await repo.fetchActiveMonthlyPlanPrices(supabase);
+      const { data: prices, error: pricesErr } = await repo.fetchActiveMonthlyPlanPrices(supabase);
+      if (pricesErr) console.error(`${LOG_PREFIX} admin/metrics fetchActiveMonthlyPlanPrices error: ${pricesErr.message}`);
       const monthlyPriceCents: Record<string, number> = {};
       ((prices as Array<{ plan_key: string; billing_interval: string; price_cents: number }>) || []).forEach(
         (p) => {
@@ -1187,14 +1214,16 @@ router.get(
       });
 
       // 2. Paywall funnel (last 30d)
-      const { data: paywallEvents } = await repo.fetchPaywallFunnelSince(supabase, since30d);
+      const { data: paywallEvents, error: paywallEventsErr } = await repo.fetchPaywallFunnelSince(supabase, since30d);
+      if (paywallEventsErr) console.error(`${LOG_PREFIX} admin/metrics fetchPaywallFunnelSince error: ${paywallEventsErr.message}`);
       const funnel: Record<string, number> = {};
       ((paywallEvents as Array<{ action: string }>) || []).forEach((row) => {
         funnel[row.action] = (funnel[row.action] || 0) + 1;
       });
 
       // 3. Code redemptions by campaign (last 30d)
-      const { data: redemptions } = await repo.fetchRedemptionsSince(supabase, since30d);
+      const { data: redemptions, error: redemptionsErr } = await repo.fetchRedemptionsSince(supabase, since30d);
+      if (redemptionsErr) console.error(`${LOG_PREFIX} admin/metrics fetchRedemptionsSince error: ${redemptionsErr.message}`);
       const redemptionsByCampaign: Record<string, { count: number; grant_value_cents: number }> = {};
       ((redemptions as Array<{ campaign: string; grant_value_cents: number }>) || []).forEach((row) => {
         const c = redemptionsByCampaign[row.campaign] || { count: 0, grant_value_cents: 0 };
@@ -1204,7 +1233,8 @@ router.get(
       });
 
       // 4. Voice degrade events (last 7d)
-      const { data: degradeEvents } = await repo.fetchVoiceDegradeEventsSince(supabase, since7d);
+      const { data: degradeEvents, error: degradeEventsErr } = await repo.fetchVoiceDegradeEventsSince(supabase, since7d);
+      if (degradeEventsErr) console.error(`${LOG_PREFIX} admin/metrics fetchVoiceDegradeEventsSince error: ${degradeEventsErr.message}`);
       const voiceDegradeCount7d = (degradeEvents as Array<unknown>)?.length ?? 0;
 
       // 5. Marketing budget remaining

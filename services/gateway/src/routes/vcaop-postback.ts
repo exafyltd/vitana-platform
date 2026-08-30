@@ -62,7 +62,20 @@ async function handle(req: Request, res: Response): Promise<void> {
   const now = new Date().toISOString();
 
   // Resolve the member from the subid (reverse attribution).
-  const { data: map } = await repo.fetchSubidMap(supabase, subId);
+  const { data: map, error: mapErr } = await repo.fetchSubidMap(supabase, subId);
+
+  if (mapErr) {
+    // A real DB error is NOT the same as "subid not found" — do not respond
+    // 202 here (that tells the affiliate network "done, don't retry", which
+    // is wrong for a retryable failure and would permanently lose a real
+    // conversion's commission with no trace). Respond 5xx so the network's
+    // own retry logic kicks in, and log at error level (not the misleading
+    // "subid not found" warning below) so this is distinguishable from
+    // genuine unattributed traffic.
+    console.error('[vcaop-postback] fetchSubidMap DB error', { subId, orderId, error: mapErr.message });
+    res.status(503).json({ ok: false, error: 'database unavailable' });
+    return;
+  }
 
   if (!map) {
     // Park unattributed postbacks (never error a retry storm); flag for reconciliation.
