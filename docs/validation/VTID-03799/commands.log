@@ -78,3 +78,34 @@ UPDATE vtid_ledger SET title = '...', status = 'in_progress', spec_status = 'app
 node scripts/ci/validator-path-guard.cjs /tmp/changed_files.txt gateway_backend /tmp/pr_body.txt
 node scripts/ci/command-hub-ownership-guard.js
 npx jest test/ci/
+
+## Live probe against staging b4a48529 (follow-up round)
+
+# convergence first — an earlier round read 7 new / 8 old (mixed builds)
+for i in $(seq 1 12); do curl -s ".../api/v1/admin/build-info?r=$i"; done
+# -> CONVERGED 12/12 on b4a4852975074b86d36867af3e17006cd6b994ba
+
+# grep the DEPLOYED bundle, not the repo source
+curl -s "https://preview-aws-gateway.vitanaland.com/command-hub/orb-widget.js" -o deployed-widget.js
+grep -c "function _shouldResumeGuidedTopic()" deployed-widget.js   # 1
+grep -c "if (_shouldResumeGuidedTopic())"     deployed-widget.js   # 3
+grep -c "overlay_closed_after_delivery"       deployed-widget.js   # 1
+
+# the finding: read-vs-assigned diff on host callbacks
+grep -oE "_cfg\.on[A-Za-z]+"  deployed-widget.js | sort -u   # 9 callbacks read
+grep -oE "opts\.on[A-Za-z]+"  deployed-widget.js | sort -u   # only 6 assigned
+# dropped: onGuidedTopicTeachingEnd, onTeachingSessionEnd, onTurnComplete
+grep -n "Object.assign(_cfg\|_cfg\[\|for (var k in opts" deployed-widget.js  # none
+
+# the host really does pass it
+grep -n "onGuidedTopicTeachingEnd" /home/user/vitana-v1/src/hooks/useOrbVoiceWidget.ts
+grep -n "orb.init(navOpts)" /home/user/vitana-v1/src/hooks/useOrbVoiceWidget.ts
+
+## Verification of the follow-up fix
+
+npx jest test/frontend/orb-widget-host-callbacks.test.ts   # 5 passed
+npx tsc --noEmit                                           # clean
+npx jest                                                   # 732/733 suites, 13,626 passing, 0 failures
+
+# mutation D — remove the onGuidedTopicTeachingEnd wiring (the live defect)
+# -> 3 failed, 2 passed. The 2 passing are the demonstrated blind spot.
