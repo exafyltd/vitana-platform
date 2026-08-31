@@ -85,3 +85,18 @@ git push --force-with-lease -u origin claude/my-journey-catalog-multilingual-qrw
 
 # REJECTED: missing docs/validation/VTID-03800/commands.log
 # Fixed by adding this file. My omission, not a gate defect.
+
+## 8. validate-pr exit 40 — acceptance.md ACs were in a markdown table
+
+# REJECTED: acceptance.md has no AC- entries
+# The Acceptance Mapping Gate matches ^AC-\d+ at line start and requires a
+# ^(TEST:|CURL:|UI:) line within the next 12. My ACs were table rows
+# (| AC-1 | ... |) so they never matched, and the TEST: tokens sat at the
+# top of the file rather than beside each AC. Restructured; the gate's own
+# parser was then run locally before pushing:
+
+VTID=VTID-03800 python3 -  # (the workflow's exact script, inlined)
+# -> Acceptance mapping OK (12 AC entries), exit=0
+
+# Lesson for the next pack in this chain: run the gate's parser, don't just
+# eyeball the file. Two format rejections in a row cost two CI cycles.
