@@ -4965,6 +4965,31 @@
       // VTID-NAV: Vitana Navigator close-and-navigate callback. Host React Router
       // hooks pass a function here that calls navigate(url) for SPA transitions.
       if (typeof opts.onNavigationRequest === 'function') _cfg.onNavigationRequest = opts.onNavigationRequest;
+      // VTID-03799 (live-probe finding): these three were READ by the widget
+      // but never copied out of `opts`, so `_cfg.onGuidedTopicTeachingEnd` was
+      // permanently undefined and BOTH of its fire sites — VTID-03762/03763's
+      // teaching-end signal and VTID-03799's close-after-delivery crediting —
+      // were structurally unreachable in the real app.
+      //
+      // That is the second half of "no Well Done drawer": vitana-v1's
+      // useOrbVoiceWidget.ts does pass `onGuidedTopicTeachingEnd` inside
+      // navOpts to `orb.init(navOpts)` (it dispatches the
+      // `vitana:guided-topic-teaching-complete` event GuidedJourneyCatalog
+      // listens for), and init() dropped it on the floor. Confirmed against
+      // the DEPLOYED bundle, not just this source.
+      //
+      // Caught by a live browser probe, not by tests: the widget's suites are
+      // static source checks, so they assert a fire site EXISTS and can never
+      // notice that nothing populates `_cfg`. `orb-widget-host-callbacks.test.ts`
+      // now closes that class by diffing every `_cfg.onX` read against the
+      // `opts.onX` assignments here.
+      //
+      // `onTeachingSessionEnd` and `onTurnComplete` are wired for the same
+      // reason and are zero-behaviour-change today: each only fires when a
+      // host explicitly passes a function, and no host passes either.
+      if (typeof opts.onGuidedTopicTeachingEnd === 'function') _cfg.onGuidedTopicTeachingEnd = opts.onGuidedTopicTeachingEnd;
+      if (typeof opts.onTeachingSessionEnd === 'function') _cfg.onTeachingSessionEnd = opts.onTeachingSessionEnd;
+      if (typeof opts.onTurnComplete === 'function') _cfg.onTurnComplete = opts.onTurnComplete;
       // VTID-NAV: Optional initial context — current page + recent routes — so
       // the very first session has Navigator context even before any route
       // change has been observed by the React Router listener.

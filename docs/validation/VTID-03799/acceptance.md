@@ -41,13 +41,36 @@ TEST: `outputs/jest-mutation-A-teaching-blind-rearm.txt` (3 failed), `outputs/je
 
 AC-8 — `tsc --noEmit` clean and the full gateway suite green.
 
-TEST: `outputs/jest-full-suite.txt` — 731/732 suites (1 pre-existing skip), 13,621 passing, 44/44 snapshots, 0 failures.
+TEST: `outputs/jest-full-suite-host-callbacks.txt` — 732/733 suites (1 pre-existing skip), 13,626 passing, 44/44 snapshots, 0 failures.
+
+AC-9 — Every host callback the widget reads from `_cfg` is wired from `opts`
+in `init()`. Found by the live probe: `onGuidedTopicTeachingEnd` was read at
+two fire sites and never assigned, so the crediting path — AC-4's — was
+unreachable in the real app regardless of the rest of this VTID.
+
+TEST: `orb-widget-host-callbacks.test.ts` — all five tests; "every callback the widget reads is assignable from opts" is the class-level diff guard.
+
+AC-10 — Mutation-verified: removing the wiring fails the guard.
+
+TEST: `outputs/jest-mutation-D-host-callback-unwired.txt` — 3 of 5 failed. The two that still pass are the point: "still reads … at both fire sites" cannot detect the defect, which is exactly the blind spot in static-source testing that let this ship.
+
+## Live probe result — staging b4a48529
+
+Recorded in `outputs/live-probe-host-callback-drop.txt`.
+
+The replay fix **is** deployed (verified by grepping the deployed bundle, not
+this repo). The probe then found a second, independent defect underneath it:
+`init()` dropped `onGuidedTopicTeachingEnd`, which `vitana-v1` genuinely
+passes, so the Well Done drawer could never open even with the replay loop
+fixed. Fixing the loop alone would have produced a partially-working feature
+and a report of success that the user's next tap would have contradicted.
 
 ## Honest caveat
 
-This is verified by unit tests and mutation testing, not yet against live
-traffic. The live confirmation is a real My Journey tap on staging: the lesson
-plays **once**, the close button works on the first press, and the Well Done
-drawer opens. That has not happened yet and will be reported as measured,
-either way — the same treatment VTID-03797's first attempt got when it was
-disproven.
+The replay loop, the close behaviour, and the crediting call are verified by
+unit tests, mutation testing, and a deployed-artifact check. What is **still
+not** verified is the end-to-end user experience — a real My Journey tap
+where the lesson plays once, the close works first press, and the drawer
+actually appears. Driving that to completion writes journey progress for the
+account, which the standing rule forbids, so it needs either a human on a real
+device or an isolated environment. Reported as a blocker, not routed around.
