@@ -16767,12 +16767,40 @@ async function handleWebSocketConnection(ws: WebSocket, req: IncomingMessage): P
   // before the timer expires — tightened to 10s for real margin against a
   // dropped/delayed ping or pong, regardless of what turns out to be
   // actually counting as "activity" on whichever proxy sits in front.
+  // VTID-03800: the ping above is a protocol-level control frame. Browsers
+  // answer it in the network layer and it NEVER surfaces to `onmessage`, so
+  // it keeps proxies happy but is completely invisible to the client.
+  //
+  // The widget's own watchdog (`orb-widget.js`, WATCHDOG_TIMEOUT = 30_000)
+  // resets only from `onmessage`, and its comment asserts "Server now sends
+  // data heartbeats every 10s that trigger onmessage" — true of the SSE path
+  // (`startSseHeartbeat` writes a data MESSAGE, deliberately not an SSE
+  // comment) and false here. So on WS, 30s of application silence read as a
+  // dead connection on a perfectly healthy socket.
+  //
+  // That is not a rare edge: after a guided-topic lesson finishes, the model
+  // is done speaking and the user is listening, so neither side sends
+  // anything. Measured on staging 2026-08-31 — seven consecutive sessions,
+  // each `turns=1`, each torn down 33.8-34.2s after `turn_complete`
+  // (30s watchdog + up to 5s poll granularity) and immediately restarted,
+  // replaying the whole lesson via `guided_topic_audio_bridge_sent` every
+  // cycle. Any client-side timer that waits longer than 30s — including
+  // GUIDED_TOPIC_IDLE_MS — is structurally unreachable until this is fixed.
+  //
+  // Send a real data heartbeat on the same cadence, in the SAME shape SSE
+  // already uses ({type:'heartbeat', ts}), which the widget already handles
+  // (`case 'heartbeat':`) and which resets the watchdog via `onmessage`.
   const clientPingInterval = setInterval(() => {
     if (ws.readyState === WebSocket.OPEN) {
       try {
         ws.ping();
       } catch (e) {
         // socket may be closing — ignore
+      }
+      try {
+        ws.send(JSON.stringify({ type: 'heartbeat', ts: Date.now() }));
+      } catch (e) {
+        // socket may be closing — ignore; the close handler clears this timer
       }
     } else {
       clearInterval(clientPingInterval);
