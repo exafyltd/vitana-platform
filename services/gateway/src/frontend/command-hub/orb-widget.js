@@ -378,6 +378,12 @@
     // Vitana Index plan) with no natural end. Cleared only by _hide(),
     // same lifecycle as guidedTopic/_guidedTopicInFlight.
     _guidedTopicOpenedAt: null,
+    // VTID-03800: wall-clock of the last sign of life in a guided session —
+    // model audio, a completed turn, or the user speaking. The backstop is
+    // now IDLE-based off this rather than a fixed countdown from the tap
+    // (see GUIDED_TOPIC_IDLE_MS), so "the lesson finished" means "the
+    // conversation actually went quiet", not "N seconds have elapsed".
+    _guidedTopicLastActivityAt: null,
     _guidedTopicBackstopInterval: null,
     // VTID-03776: counts consecutive reconnect attempts, while a guided topic
     // is in flight, that produced NO audible turn at all this overlay-open
@@ -2623,6 +2629,7 @@
 
       case 'audio':
       case 'audio_out':
+        _touchGuidedTopicActivity(); // VTID-03800: the model is speaking — not idle
         if (_s.interruptPending) break;
         // VTID-NAV: Once a navigation is queued, drop all further audio
         // chunks. The model should have stopped speaking but late audio
@@ -2661,6 +2668,7 @@
         break;
 
       case 'turn_complete':
+        _touchGuidedTopicActivity(); // VTID-03800: a turn just landed — not idle
         // VTID-NAV-HOTFIX: Only reset the scheduling cursor if no audio is
         // still scheduled. Otherwise next-turn chunks schedule at `now` via
         // _processQueue's `lastScheduledEnd < now` check and play on top of
@@ -3207,6 +3215,7 @@
         break;
 
       case 'input_transcript':
+        _touchGuidedTopicActivity(); // VTID-03800: the USER is speaking — never time them out mid-thought
         // VTID-TRANSCRIPT-FIX: Buffer user transcript fragments, display on turn_complete
         if (msg.text) {
           _s._inputTranscriptBuffer = (_s._inputTranscriptBuffer || '') + msg.text;
@@ -4439,7 +4448,41 @@
   // legitimate lesson+practice conversation would have finished on its own,
   // and only when nothing else has ended the guided-topic session by then.
   var GUIDED_TOPIC_BACKSTOP_MS = 5 * 60 * 1000;
-  var GUIDED_TOPIC_BACKSTOP_CHECK_MS = 15000;
+  var GUIDED_TOPIC_BACKSTOP_CHECK_MS = 5000;
+
+  // VTID-03800: the ABSOLUTE ceiling above is unchanged, but it is no longer
+  // the only trigger — it was far too slow to be the thing that opens the
+  // Well Done drawer, so in practice nothing ever opened it automatically.
+  //
+  // Simply shortening the absolute timer is the wrong fix and would have
+  // broken lessons: it counts from the TAP, so a short fixed value fires
+  // mid-lesson. Measured on staging, topic T004 (2026-08-31 12:23): that
+  // session was still actively conversing 68s after the tap — turns at
+  // +11s, +40s, +55s, +68s. A 60s fixed backstop would have cut it off
+  // between the third and fourth turn. That is precisely the failure
+  // VTID-03680 (auto-close cut the lesson short) and VTID-03784 (false
+  // completion) already cost this chain.
+  //
+  // So the trigger is IDLE, not elapsed: fire once the conversation has
+  // actually gone quiet for this long. Model audio, a completed turn, and
+  // the user speaking all count as life and reset it (_touchGuidedTopicActivity).
+  //
+  // 45s is deliberately longer than a thinking pause: after the lesson the
+  // model typically asks "any questions?", and a user composing a reply is
+  // not a finished lesson. Anything the user says resets it anyway, so the
+  // cost of it being slightly long is a few extra seconds of silence, while
+  // the cost of it being short is amputating a live lesson.
+  var GUIDED_TOPIC_IDLE_MS = 45 * 1000;
+
+  // VTID-03800: idle only starts counting once turn-1 audio has actually
+  // been delivered. Before that, silence means "still connecting /
+  // synthesising narration", not "finished" — without this guard a slow
+  // Polly render or a Nova reconnect would look exactly like a completed
+  // lesson and auto-complete a topic the user never heard (VTID-03784).
+  function _touchGuidedTopicActivity() {
+    if (!_s._guidedTopicOpenedAt) return; // no guided topic in flight
+    _s._guidedTopicLastActivityAt = Date.now();
+  }
 
   // VTID-03762: shared teardown for both the model-driven
   // end_guided_topic_teaching directive and the backstop timer below —
@@ -4542,6 +4585,7 @@
     _s._guidedTopicAudioDelivered = false; // VTID-03774: same lifecycle
     _s._guidedTopicZeroAudioFailCount = 0; // VTID-03776: same lifecycle
     _s._guidedTopicOpenedAt = null; // VTID-03762: same lifecycle — the backstop no longer applies
+    _s._guidedTopicLastActivityAt = null; // VTID-03800: same lifecycle as the backstop it drives
     try { clearInterval(_s._guidedTopicBackstopInterval); } catch (e) { /* noop */ }
     _s._guidedTopicBackstopInterval = null;
     _s._audioEverHeardThisOpen = false; // VTID-03727: this overlay session is genuinely over
@@ -5159,18 +5203,31 @@
       _s._guidedTopicBackstopInterval = null;
       if (_s.guidedTopic) {
         _s._guidedTopicOpenedAt = Date.now();
+        _s._guidedTopicLastActivityAt = Date.now(); // VTID-03800: idle clock starts with the tap
         _s._guidedTopicBackstopInterval = setInterval(function () {
           if (!_s._guidedTopicOpenedAt) {
             clearInterval(_s._guidedTopicBackstopInterval);
             _s._guidedTopicBackstopInterval = null;
             return;
           }
-          if (Date.now() - _s._guidedTopicOpenedAt >= GUIDED_TOPIC_BACKSTOP_MS) {
+          var _now = Date.now();
+          var _elapsed = _now - _s._guidedTopicOpenedAt;
+          // VTID-03800: idle is only meaningful once the lesson has actually
+          // been heard — see GUIDED_TOPIC_IDLE_MS. Until then only the
+          // absolute ceiling can fire, exactly as before this change.
+          var _idle = (_s._guidedTopicAudioDelivered && _s._guidedTopicLastActivityAt)
+            ? (_now - _s._guidedTopicLastActivityAt)
+            : 0;
+          var _idleFired = _idle >= GUIDED_TOPIC_IDLE_MS;
+          var _ceilingFired = _elapsed >= GUIDED_TOPIC_BACKSTOP_MS;
+          if (_idleFired || _ceilingFired) {
             clearInterval(_s._guidedTopicBackstopInterval);
             _s._guidedTopicBackstopInterval = null;
             var _stuckTopicId = _s.guidedTopic || _s._guidedTopicInFlight || null;
-            console.warn('[VTOrb] guided-topic backstop fired after ' + GUIDED_TOPIC_BACKSTOP_MS + 'ms with no end_guided_topic_teaching call (topic=' + _stuckTopicId + ') — closing overlay');
-            _endGuidedTopicTeaching(_stuckTopicId, 'backstop_timeout');
+            var _reason = _idleFired ? 'idle_after_lesson' : 'backstop_timeout';
+            console.warn('[VTOrb] guided-topic ' + _reason + ' fired (topic=' + _stuckTopicId
+              + ', idle=' + _idle + 'ms, elapsed=' + _elapsed + 'ms) with no end_guided_topic_teaching call — closing overlay');
+            _endGuidedTopicTeaching(_stuckTopicId, _reason);
           }
         }, GUIDED_TOPIC_BACKSTOP_CHECK_MS);
       } else {
