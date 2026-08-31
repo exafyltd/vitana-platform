@@ -1,0 +1,87 @@
+# VTID-03800 — commands run
+
+## 1. Allocate the VTID (before touching code, per §4.1)
+
+curl -s -X POST "https://gateway.vitanaland.com/api/v1/vtid/allocate" \
+  -H "Content-Type: application/json" \
+  -d '{"source":"claude-code","layer":"frontend","module":"orb-widget"}'
+# -> {"ok":true,"vtid":"VTID-03800","num":3800,...}
+# then UPDATE vtid_ledger SET title=..., status='in_progress', spec_status='approved'
+
+## 2. Root-cause from live telemetry (read-only, production oasis_events)
+
+SELECT created_at, topic,
+       coalesce(metadata->>'session_id', meta->>'session_id') AS sid,
+       coalesce(metadata->>'reason', meta->>'reason')        AS reason,
+       coalesce(metadata->>'turn_count', meta->>'turn_count') AS turns
+FROM oasis_events
+WHERE created_at > now() - interval '60 minutes'
+  AND topic IN ('vtid.live.session.start','vtid.live.session.stop')
+ORDER BY created_at ASC;
+# -> 8 sessions in 9 minutes, every one turns=1, every one client_disconnect
+
+SELECT created_at, coalesce(metadata->>'stage', meta->>'stage') AS stage,
+       coalesce(metadata->>'reason', meta->>'reason') AS reason
+FROM oasis_events
+WHERE topic='orb.live.diag'
+  AND created_at BETWEEN '2026-08-31 13:30:30+00' AND '2026-08-31 13:31:15+00'
+ORDER BY created_at ASC;
+# -> guided_topic_audio_bridge_sent on EVERY restarted session (the replay)
+# -> turn_complete 13:30:36.34 -> upstream_closed 13:31:10.14  = +33.8s
+# -> turn_complete 13:31:14.44 -> upstream_closed 13:31:48.60  = +34.2s
+#    (widget WATCHDOG_TIMEOUT 30_000 + up to 5s poll granularity)
+
+## 3. Locate the defect
+
+grep -nE "WATCHDOG|_resetWatchdog|clientLastActivityAt" \
+  services/gateway/src/frontend/command-hub/orb-widget.js
+grep -rn "heartbeat" services/gateway/src/routes/orb-live.ts
+grep -rn -A 22 "export function startSseHeartbeat" services/gateway/src --include=*.ts
+# -> WS path sends ws.ping() (control frame, never reaches onmessage);
+#    SSE path sends a data MESSAGE via startSseHeartbeat. Widget resets the
+#    watchdog only from onmessage. Widget already handles case 'heartbeat':.
+
+## 4. Verify
+
+cd services/gateway
+node --check src/frontend/command-hub/orb-widget.js      # WIDGET OK
+npx tsc --noEmit                                          # clean
+npx jest test/frontend/guided-topic-ws-heartbeat-and-one-shot.test.ts
+# -> 14 passed, 14 total
+npx jest test/frontend/ test/orb/live/guided-topic-teaching-complete-signal.test.ts
+# -> 29 suites, 251 passed
+npx jest
+# -> 734/735 suites (1 pre-existing skip), 13,652 passed, 0 failures
+
+node scripts/ci/command-hub-ownership-guard.js            # FAILED (VTID unregistered)
+PR_TITLE="fix(orb): WS heartbeat must reach onmessage; narrated guided topic is one-shot (VTID-03800)" \
+  node scripts/ci/command-hub-ownership-guard.js          # PASSED (after registering)
+
+## 5. Mutation verification — each guard disabled independently, suite must go red
+
+# A — drop the data heartbeat, keep only ws.ping()          -> 4 failed, 10 passed
+# B — drop the _guidedTopicNarrated conjunct                -> 1 failed, 13 passed
+# C — never set the flag from the source tag                -> 1 failed, 13 passed
+# D — drop the fresh-tap reset                              -> 1 failed, 13 passed
+# E — ungate the terminal close (VTID-03685/03680 regression)
+#     npx jest test/frontend/orb-widget-guided-teaching-no-premature-close.test.ts
+#                                                            -> 1 failed, 2 passed
+# baseline / restored after each                            -> 14 passed, 14 total
+
+## 6. Ship
+
+git add -A && git commit   # 7c2f1ecf
+git push -u origin claude/my-journey-catalog-multilingual-qrwxng
+# PR #3248 opened -> mergeable_state: dirty, 0 checks.
+# Branch still carried e9e12625, whose squash a60efc28 is already on main.
+git fetch origin main
+git checkout -B claude/my-journey-catalog-multilingual-qrwxng origin/main
+git cherry-pick 7c2f1ecf     # clean: 12 files, 517 insertions -> c560ba9b
+cd services/gateway && node --check ... && npx tsc --noEmit && npx jest
+# re-verified on the new base: 734/735 suites, 13,652 passed, 0 failures
+git push --force-with-lease -u origin claude/my-journey-catalog-multilingual-qrwxng
+
+## 7. validate-pr exit 32 — this file was missing from the evidence pack
+
+# REJECTED: missing docs/validation/VTID-03800/commands.log
+# Fixed by adding this file. My omission, not a gate defect.
