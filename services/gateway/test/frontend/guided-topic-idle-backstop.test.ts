@@ -1,5 +1,5 @@
 /**
- * VTID-03800 — the guided-topic backstop fires on IDLE, not on elapsed time,
+ * VTID-03799 — the guided-topic backstop fires on IDLE, not on elapsed time,
  * so the Well Done drawer opens by itself once the lesson actually ends.
  *
  * Why it is idle and not simply a shorter timer:
@@ -44,7 +44,7 @@ function extractFunctionBody(src: string, signature: string): string {
   throw new Error(`unclosed: ${signature}`);
 }
 
-describe('VTID-03800 guided-topic idle backstop', () => {
+describe('VTID-03799 guided-topic idle backstop', () => {
   it('declares an idle window distinct from the absolute ceiling', () => {
     expect(source).toMatch(/var GUIDED_TOPIC_IDLE_MS = 45 \* 1000;/);
     // the ceiling is unchanged — idle is additive, not a replacement

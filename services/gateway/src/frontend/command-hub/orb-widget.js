@@ -368,6 +368,16 @@
     // false on a fresh tap (focusGuidedTopic), flipped true at the same
     // turn-complete point that nulls _s.guidedTopic, cleared by _hide().
     _guidedTopicAudioDelivered: false,
+    // VTID-03800: true once an 'audio' frame tagged
+    // `source:'guided_topic_narration'` has arrived, i.e. the WHOLE authored
+    // lesson was delivered as pre-rendered Polly audio rather than taught
+    // conversationally across turns 2+ (the VTID-03665 Polly-failure
+    // fallback). This is the sole discriminator between the two, and it
+    // gates the one-shot terminal close at turn-1 complete — without it that
+    // close would fire on the fallback path too and cut a live lesson short,
+    // which is VTID-03680 exactly. Same lifecycle as _guidedTopicInFlight:
+    // false on a fresh tap, cleared by _hide().
+    _guidedTopicNarrated: false,
     // VTID-03762: wall-clock timestamp (Date.now()) of when a guided topic
     // was tapped, and the interval handle checking it. Backstop only — see
     // GUIDED_TOPIC_BACKSTOP_MS below for why this exists: the model is
@@ -378,7 +388,7 @@
     // Vitana Index plan) with no natural end. Cleared only by _hide(),
     // same lifecycle as guidedTopic/_guidedTopicInFlight.
     _guidedTopicOpenedAt: null,
-    // VTID-03800: wall-clock of the last sign of life in a guided session —
+    // VTID-03799: wall-clock of the last sign of life in a guided session —
     // model audio, a completed turn, or the user speaking. The backstop is
     // now IDLE-based off this rather than a fixed countdown from the tap
     // (see GUIDED_TOPIC_IDLE_MS), so "the lesson finished" means "the
@@ -2629,7 +2639,19 @@
 
       case 'audio':
       case 'audio_out':
-        _touchGuidedTopicActivity(); // VTID-03800: the model is speaking — not idle
+        _touchGuidedTopicActivity(); // VTID-03799: the model is speaking — not idle
+        // VTID-03800: the Polly narration bridge arrives as an ordinary
+        // 'audio' frame tagged `source:'guided_topic_narration'` (see
+        // sendGuidedTopicNarrationAudioBridge in orb-live.ts). That tag is
+        // the ONLY way the client can tell "the whole authored lesson was
+        // just delivered as pre-rendered audio" from "Polly failed, so this
+        // is the short opener and the model will teach across turns 2+"
+        // (the VTID-03665 fallback). The lesson is one-shot ONLY in the
+        // first case — closing after turn 1 in the second would amputate a
+        // live lesson, which is exactly VTID-03680.
+        if (msg.source === 'guided_topic_narration') {
+          _s._guidedTopicNarrated = true;
+        }
         if (_s.interruptPending) break;
         // VTID-NAV: Once a navigation is queued, drop all further audio
         // chunks. The model should have stopped speaking but late audio
@@ -2668,7 +2690,7 @@
         break;
 
       case 'turn_complete':
-        _touchGuidedTopicActivity(); // VTID-03800: a turn just landed — not idle
+        _touchGuidedTopicActivity(); // VTID-03799: a turn just landed — not idle
         // VTID-NAV-HOTFIX: Only reset the scheduling cursor if no audio is
         // still scheduled. Otherwise next-turn chunks schedule at `now` via
         // _processQueue's `lastScheduledEnd < now` check and play on top of
@@ -2782,6 +2804,44 @@
               _s.guidedAutoClose = false;
               _s.guidedTopic = null;
               console.log('[VTOrb] guided teaching opener complete — continuing conversation (no auto-close)');
+            }
+            // VTID-03800: a NARRATED guided topic is one-shot and terminal.
+            //
+            // Requested directly by the platform owner after a staging test
+            // that replayed the lesson three times and then looped the
+            // new-day greeting: "one guided-topic content and then Well Done
+            // drawer opens, and that's it."
+            //
+            // This deliberately re-adds an auto-close that VTID-03685
+            // removed — but ONLY for the narrated path, which did not exist
+            // in its present form when that decision was made. VTID-03685
+            // removed it because turn 1 was then just a SHORT OPENER and the
+            // real teaching happened across turns 2+; closing there cut the
+            // lesson off (VTID-03680). With the Polly bridge, turn 1 IS the
+            // whole authored lesson — the narration audio has already played
+            // in full by the time we get here — so there is nothing left to
+            // amputate. `_guidedTopicNarrated` is what keeps those two cases
+            // apart: unset (Polly failed) falls through to the unchanged
+            // conversational behaviour above.
+            //
+            // Known, accepted trade-off: on the narrated path the user
+            // cannot ask a follow-up question — the session ends when the
+            // narration does. The drawer's own Replay / Start Practice
+            // buttons are the continuation instead.
+            if (
+              _s._guidedTopicInFlight &&
+              _s._guidedTopicNarrated &&
+              !_s._guidedTopicTeachingEnded
+            ) {
+              var _narratedTopicId = _s._guidedTopicInFlight;
+              console.log('[VTOrb] guided narration complete — ending teaching (one-shot): ' + _narratedTopicId);
+              // Ends teaching, credits completion, and hides the overlay so
+              // the Well Done drawer underneath is revealed. Routed through
+              // the ONE shared teardown rather than a second copy of it, so
+              // the completion signal, flag clearing and backstop-interval
+              // cleanup cannot drift from the other end paths.
+              _endGuidedTopicTeaching(_narratedTopicId, 'narration_complete');
+              return;
             }
             // If the overlay was closed some other way while we were waiting
             // for audio to drain (user pressed X, session torn down), stop
@@ -3215,7 +3275,7 @@
         break;
 
       case 'input_transcript':
-        _touchGuidedTopicActivity(); // VTID-03800: the USER is speaking — never time them out mid-thought
+        _touchGuidedTopicActivity(); // VTID-03799: the USER is speaking — never time them out mid-thought
         // VTID-TRANSCRIPT-FIX: Buffer user transcript fragments, display on turn_complete
         if (msg.text) {
           _s._inputTranscriptBuffer = (_s._inputTranscriptBuffer || '') + msg.text;
@@ -4450,7 +4510,7 @@
   var GUIDED_TOPIC_BACKSTOP_MS = 5 * 60 * 1000;
   var GUIDED_TOPIC_BACKSTOP_CHECK_MS = 5000;
 
-  // VTID-03800: the ABSOLUTE ceiling above is unchanged, but it is no longer
+  // VTID-03799: the ABSOLUTE ceiling above is unchanged, but it is no longer
   // the only trigger — it was far too slow to be the thing that opens the
   // Well Done drawer, so in practice nothing ever opened it automatically.
   //
@@ -4474,7 +4534,7 @@
   // the cost of it being short is amputating a live lesson.
   var GUIDED_TOPIC_IDLE_MS = 45 * 1000;
 
-  // VTID-03800: idle only starts counting once turn-1 audio has actually
+  // VTID-03799: idle only starts counting once turn-1 audio has actually
   // been delivered. Before that, silence means "still connecting /
   // synthesising narration", not "finished" — without this guard a slow
   // Polly render or a Nova reconnect would look exactly like a completed
@@ -4583,9 +4643,10 @@
     _s.guidedTopic = null; // VTID-03675: don't let a never-delivered topic leak into a later, unrelated session
     _s._guidedTopicInFlight = null; // VTID-03746: same lifecycle — this overlay session is genuinely over
     _s._guidedTopicAudioDelivered = false; // VTID-03774: same lifecycle
+    _s._guidedTopicNarrated = false; // VTID-03800: same lifecycle — a later topic must re-earn this
     _s._guidedTopicZeroAudioFailCount = 0; // VTID-03776: same lifecycle
     _s._guidedTopicOpenedAt = null; // VTID-03762: same lifecycle — the backstop no longer applies
-    _s._guidedTopicLastActivityAt = null; // VTID-03800: same lifecycle as the backstop it drives
+    _s._guidedTopicLastActivityAt = null; // VTID-03799: same lifecycle as the backstop it drives
     try { clearInterval(_s._guidedTopicBackstopInterval); } catch (e) { /* noop */ }
     _s._guidedTopicBackstopInterval = null;
     _s._audioEverHeardThisOpen = false; // VTID-03727: this overlay session is genuinely over
@@ -5188,6 +5249,10 @@
       // VTID-03774: a fresh tap means nothing has been delivered for THIS
       // topic yet — reset even if a previous topic's flag was left true.
       _s._guidedTopicAudioDelivered = false;
+      // VTID-03800: likewise — this topic must earn its own narration flag,
+      // or a previous topic's leftover true would terminally close this one
+      // at turn 1 before its lesson had been delivered.
+      _s._guidedTopicNarrated = false;
       // VTID-03776: a fresh tap is a clean slate for the zero-audio circuit
       // breaker too — a previous topic's failure count must not carry over.
       _s._guidedTopicZeroAudioFailCount = 0;
@@ -5203,7 +5268,7 @@
       _s._guidedTopicBackstopInterval = null;
       if (_s.guidedTopic) {
         _s._guidedTopicOpenedAt = Date.now();
-        _s._guidedTopicLastActivityAt = Date.now(); // VTID-03800: idle clock starts with the tap
+        _s._guidedTopicLastActivityAt = Date.now(); // VTID-03799: idle clock starts with the tap
         _s._guidedTopicBackstopInterval = setInterval(function () {
           if (!_s._guidedTopicOpenedAt) {
             clearInterval(_s._guidedTopicBackstopInterval);
@@ -5212,7 +5277,7 @@
           }
           var _now = Date.now();
           var _elapsed = _now - _s._guidedTopicOpenedAt;
-          // VTID-03800: idle is only meaningful once the lesson has actually
+          // VTID-03799: idle is only meaningful once the lesson has actually
           // been heard — see GUIDED_TOPIC_IDLE_MS. Until then only the
           // absolute ceiling can fire, exactly as before this change.
           var _idle = (_s._guidedTopicAudioDelivered && _s._guidedTopicLastActivityAt)
