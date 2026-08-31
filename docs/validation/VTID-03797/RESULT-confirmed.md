@@ -80,12 +80,42 @@ SHORT-GAP GREETING PHRASES pool is retained in full on the guided path.
 
 ## Language coverage after this fix
 
+All eleven languages are now **individually measured**, not reasoned about.
+
 | languages | route | guided topics |
 |---|---|---|
 | en, de, fr, es | Nova speech-to-speech | **working** (measured) |
-| ru, pl | cascade | **working** (measured) |
-| ar, pt, tr, zh | cascade — same path, same code | expected working, **not individually probed** |
-| sr | none | **no voice at all** — Polly has no Serbian voice in any engine |
+| ru, pl, ar, pt, tr, zh | cascade | **working** (measured) |
+| sr | neither | **fails silently** — see below |
+
+10 of 11 confirmed working. Each cascade language shows the full clean
+lifecycle in `oasis_events` — `guided_topic_audio_bridge_sent` →
+`greeting_sent` → `model_start_speaking` → `turn_complete`, zero
+`upstream_error`.
+
+### Serbian fails SILENTLY — worse than a missing voice
+
+Previously recorded only as "Polly has no Serbian voice". The live probe shows
+what a user actually experiences, which is a distinct and worse defect:
+
+```
+guided_topic_audio_bridge_sent  0   <- Polly cannot synthesize Serbian
+nova_voice_fallback             1   <- falls back to Nova
+greeting_sent                   1
+model_start_speaking            0   <- never speaks
+turn_complete                   0
+upstream_error                  0   <- and never errors either
+```
+
+The cascade correctly refuses Serbian (`no_polly_voice`), so the session falls
+back to Nova, which cannot speak Serbian. It then closes **without producing
+audio and without raising an error** — the user taps a lesson, hears nothing,
+and is shown no failure. A silent failure is harder to diagnose and worse to
+experience than an honest "voice is not available in Serbian yet".
+
+Fixing the *voice* needs a third TTS provider. Fixing the *silence* — surfacing
+an honest unsupported-language message instead of nothing — is a smaller,
+separate piece of work and is NOT done here.
 
 ## Still open — not fixed by this, and each needs its own decision
 
@@ -95,7 +125,9 @@ SHORT-GAP GREETING PHRASES pool is retained in full on the guided path.
    its own workflow says needs Transcribe + Polly IAM confirmed first.
 2. **This fix is on staging only.** Production still runs the old code and will
    still block every guided topic until it is promoted.
-3. **Serbian** needs a third TTS provider or an accepted product gap.
+3. **Serbian** needs a third TTS provider for a voice, and separately needs its
+   silent failure replaced with an honest message (see above).
 4. **`tr` has 252 checklist rows, not 254** — two short.
-5. `ar`, `pt`, `tr`, `zh` were not individually probed — reasoned to be covered
-   (same cascade code path as the ru/pl that were measured), not demonstrated.
+
+(A fifth item — that `ar`/`pt`/`tr`/`zh` were reasoned-covered rather than
+probed — is now closed: all four were individually measured and pass.)
