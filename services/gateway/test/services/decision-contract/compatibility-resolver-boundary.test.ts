@@ -31,6 +31,10 @@ const D39_ROUTE_PATH = join(
   __dirname,
   '../../../src/routes/taste-alignment.ts',
 );
+const RESOLVER_REPOSITORY_PATH = join(
+  __dirname,
+  '../../../src/services/decision-contract/compatibility-resolver-repository.ts',
+);
 
 describe('VTID-03171 D39 PR 5c — compatibility resolver boundary', () => {
   describe('resolver lives at the canonical path', () => {
@@ -107,7 +111,13 @@ describe('VTID-03171 D39 PR 5c — compatibility resolver boundary', () => {
     });
 
     it('resolver reads from decision_compatibility_score', () => {
-      expect(resolverSrc).toMatch(/\.from\(\s*['"]decision_compatibility_score['"]\s*\)/);
+      // Aurora migration B1 (VTID-03702) moved the raw `.from(...)` call
+      // into a same-module repository companion file — the resolver's
+      // fetchAll() now calls repo.fetchAllDecisionCompatibilityScores()
+      // instead of querying inline. The scope-discipline guard follows
+      // the query to wherever it actually lives.
+      const repoSrc = readFileSync(RESOLVER_REPOSITORY_PATH, 'utf8');
+      expect(resolverSrc + repoSrc).toMatch(/\.from\(\s*['"]decision_compatibility_score['"]\s*\)/);
     });
 
     it('resolver does NOT import any D39 service code (no upstream coupling)', () => {

@@ -19,6 +19,7 @@ import {
   fetchPeople,
   fetchEventTitles,
 } from './social-memory-repository';
+import * as repo from './community-activity-builder-repository';
 
 /** Recent visible activity of ONE person. */
 export async function buildPersonActivity(
@@ -33,20 +34,8 @@ export async function buildPersonActivity(
   if (supabase && person) {
     const [posts, participations, groupJoins] = await Promise.all([
       fetchPersonPosts(personId, 5),
-      supabase
-        .from('global_event_participants')
-        .select('event_id, registered_at')
-        .eq('user_id', personId)
-        .gte('registered_at', since)
-        .order('registered_at', { ascending: false })
-        .limit(5),
-      supabase
-        .from('global_community_group_members')
-        .select('group_id, joined_at')
-        .eq('user_id', personId)
-        .gte('joined_at', since)
-        .order('joined_at', { ascending: false })
-        .limit(5),
+      repo.fetchPersonEventParticipations(supabase, personId, since, 5),
+      repo.fetchPersonGroupJoins(supabase, personId, since, 5),
     ]);
 
     for (const p of posts) {
@@ -71,10 +60,10 @@ export async function buildPersonActivity(
     }
 
     if ((groupJoins.data || []).length > 0) {
-      const { data: groups } = await supabase
-        .from('global_community_groups')
-        .select('id, name')
-        .in('id', (groupJoins.data || []).map((g) => g.group_id));
+      const { data: groups } = await repo.fetchCommunityGroupNames(
+        supabase,
+        (groupJoins.data || []).map((g) => g.group_id),
+      );
       const nameById = new Map((groups || []).map((g: any) => [g.id, g.name]));
       for (const g of groupJoins.data || []) {
         items.push({
@@ -107,22 +96,8 @@ export async function buildNetworkDigest(
 
   if (supabase && ids.length > 0) {
     const [posts, participations] = await Promise.all([
-      supabase
-        .from('profile_posts')
-        .select('id, user_id, content, created_at')
-        .in('user_id', ids)
-        .eq('is_public', true)
-        .neq('moderation_status', 'rejected')
-        .gte('created_at', since)
-        .order('created_at', { ascending: false })
-        .limit(15),
-      supabase
-        .from('global_event_participants')
-        .select('event_id, user_id, registered_at')
-        .in('user_id', ids)
-        .gte('registered_at', since)
-        .order('registered_at', { ascending: false })
-        .limit(15),
+      repo.fetchNetworkVisiblePosts(supabase, ids, since, 15),
+      repo.fetchNetworkEventParticipations(supabase, ids, since, 15),
     ]);
 
     const authorIds = new Set<string>([

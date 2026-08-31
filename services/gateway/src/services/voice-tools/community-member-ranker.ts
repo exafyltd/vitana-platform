@@ -44,6 +44,7 @@ import {
   getTopInPillar,
   getMemberByRegistration,
 } from './superlatives';
+import * as repo from './community-member-ranker-repository';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -265,19 +266,12 @@ async function buildCandidatePool(
   excludedVitanaIds: string[],
 ): Promise<{ pool: Candidate[]; viewerCity: string | null; viewerCountry: string | null }> {
   // Visible users only
-  const { data: visibleRows } = await sb
-    .from('global_community_profiles')
-    .select('user_id')
-    .eq('is_visible', true);
+  const { data: visibleRows } = await repo.fetchVisibleProfileUserIds(sb);
   const visibleSet = new Set<string>((visibleRows || []).map((r: any) => String(r.user_id)));
   visibleSet.delete(viewerUserId); // user shouldn't search up themselves
 
   // Viewer's own city/country (for near_me modifier)
-  const { data: viewerProfRow } = await sb
-    .from('profiles')
-    .select('city, country')
-    .eq('user_id', viewerUserId)
-    .maybeSingle();
+  const { data: viewerProfRow } = await repo.fetchViewerCityCountry(sb, viewerUserId);
   const viewerCity    = (viewerProfRow as any)?.city ?? null;
   const viewerCountry = (viewerProfRow as any)?.country ?? null;
 
@@ -287,14 +281,8 @@ async function buildCandidatePool(
   }
   const visibleIds = Array.from(visibleSet);
   const [{ data: users }, { data: profs }] = await Promise.all([
-    sb
-      .from('app_users')
-      .select('user_id, display_name, vitana_id')
-      .in('user_id', visibleIds),
-    sb
-      .from('profiles')
-      .select('user_id, full_name, display_name, handle, city, country, registration_seq')
-      .in('user_id', visibleIds),
+    repo.fetchUsersByIds(sb, visibleIds),
+    repo.fetchProfilesByIds(sb, visibleIds),
   ]);
   const profMap = new Map<string, any>((profs || []).map((p: any) => [String(p.user_id), p]));
 
@@ -494,11 +482,7 @@ async function tier1ExactMatch(
   };
 
   // (a) service_offerings — JSONB::text ILIKE
-  const { data: svcRows } = await sb
-    .from('profiles')
-    .select('user_id, service_offerings')
-    .filter('service_offerings::text', 'ilike', kwLike)
-    .limit(50);
+  const { data: svcRows } = await repo.searchServiceOfferingsByKeyword(sb, kwLike);
   for (const r of svcRows || []) {
     const uid = String((r as any).user_id);
     const so  = (r as any).service_offerings || {};
@@ -513,12 +497,7 @@ async function tier1ExactMatch(
   }
 
   // (b) memory_facts — fact_key or fact_value
-  const { data: factRows } = await sb
-    .from('memory_facts')
-    .select('user_id, fact_key, fact_value, provenance_source')
-    .or(`fact_key.ilike.${kwLike},fact_value.ilike.${kwLike}`)
-    .in('provenance_source', ['user_stated', 'assistant_inferred'])
-    .limit(50);
+  const { data: factRows } = await repo.searchMemoryFactsByKeyword(sb, kwLike);
   for (const r of factRows || []) {
     const uid = String((r as any).user_id);
     const stated = (r as any).provenance_source === 'user_stated';
@@ -526,11 +505,7 @@ async function tier1ExactMatch(
   }
 
   // (c) health_features_daily — feature_key
-  const { data: actRows } = await sb
-    .from('health_features_daily')
-    .select('user_id, feature_key')
-    .ilike('feature_key', kwLike)
-    .limit(200);
+  const { data: actRows } = await repo.searchHealthFeaturesByKeyword(sb, kwLike);
   const actCounts = new Map<string, number>();
   for (const r of actRows || []) {
     const uid = String((r as any).user_id);
@@ -541,18 +516,10 @@ async function tier1ExactMatch(
   }
 
   // (d) community_groups via topic_key + community_group_members
-  const { data: grpRows } = await sb
-    .from('community_groups')
-    .select('id, name, topic_key')
-    .or(`topic_key.ilike.${kwLike},name.ilike.${kwLike}`)
-    .limit(20);
+  const { data: grpRows } = await repo.searchGroupsByTopicOrName(sb, kwLike);
   const grpIds = (grpRows || []).map((g: any) => g.id);
   if (grpIds.length > 0) {
-    const { data: memRows } = await sb
-      .from('community_group_members')
-      .select('user_id, group_id')
-      .in('group_id', grpIds)
-      .limit(500);
+    const { data: memRows } = await repo.fetchGroupMembersByGroupIds(sb, grpIds);
     for (const r of memRows || []) {
       const uid = String((r as any).user_id);
       const grp = (grpRows || []).find((g: any) => g.id === (r as any).group_id);
@@ -576,11 +543,7 @@ async function tier3Teaching(
 ): Promise<ScoredHit | null> {
   const ids = new Set(pool.map(c => c.user_id));
   // Service offerings whose category contains teaching/coaching/mentoring
-  const { data: rows } = await sb
-    .from('profiles')
-    .select('user_id, service_offerings')
-    .or('service_offerings::text.ilike.%teaching%,service_offerings::text.ilike.%coaching%,service_offerings::text.ilike.%mentoring%,service_offerings::text.ilike.%instructor%')
-    .limit(100);
+  const { data: rows } = await repo.searchTeachingServiceOfferings(sb);
 
   let best: ScoredHit | null = null;
   let bestYears = -1;
@@ -613,12 +576,7 @@ async function tier3Teaching(
     }
 
     // Years of experience boost from memory_facts
-    const { data: yearsRow } = await sb
-      .from('memory_facts')
-      .select('fact_key, fact_value')
-      .eq('user_id', uid)
-      .ilike('fact_key', 'years_experience_%')
-      .limit(5);
+    const { data: yearsRow } = await repo.fetchYearsExperienceFacts(sb, uid);
     const years = (yearsRow || []).reduce((mx: number, r: any) => {
       const n = Number(String(r.fact_value).match(/\d+/)?.[0] || 0);
       return n > mx ? n : mx;
@@ -643,11 +601,7 @@ async function tier3Expertise(
 ): Promise<ScoredHit | null> {
   const ids = new Set(pool.map(c => c.user_id));
   // (a) service_offerings in education.* category
-  const { data: eduRows } = await sb
-    .from('profiles')
-    .select('user_id, service_offerings')
-    .filter('service_offerings::text', 'ilike', '%education%')
-    .limit(50);
+  const { data: eduRows } = await repo.searchEducationServiceOfferings(sb);
   let best: ScoredHit | null = null;
   for (const r of eduRows || []) {
     const uid = String((r as any).user_id);
@@ -667,11 +621,7 @@ async function tier3Expertise(
   }
 
   // (b) memory_facts expert_in_* / certified_* / degree_*
-  const { data: factRows } = await sb
-    .from('memory_facts')
-    .select('user_id, fact_key, fact_value')
-    .or('fact_key.ilike.expert_in_%,fact_key.ilike.certified_%,fact_key.ilike.degree_%')
-    .limit(100);
+  const { data: factRows } = await repo.searchExpertiseFacts(sb);
   for (const r of factRows || []) {
     const uid = String((r as any).user_id);
     if (!ids.has(uid)) continue;
@@ -699,12 +649,7 @@ async function tier3Motivation(
   const ids = new Set(pool.map(c => c.user_id));
   // Vitana Index 30-day delta proxy: latest two index rows per user.
   const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  const { data } = await sb
-    .from('vitana_index_scores')
-    .select('user_id, score_total, date')
-    .gte('date', since)
-    .order('date', { ascending: false })
-    .limit(2000);
+  const { data } = await repo.fetchRecentIndexScoresSince(sb, since);
   if (!data || data.length === 0) return null;
   const byUser = new Map<string, Array<{ score: number; date: string }>>();
   for (const r of data) {
@@ -742,18 +687,10 @@ async function tier3Entertainment(
   pool: Candidate[],
 ): Promise<ScoredHit | null> {
   const ids = new Set(pool.map(c => c.user_id));
-  const { data: grpRows } = await sb
-    .from('community_groups')
-    .select('id, name, topic_key')
-    .or('topic_key.ilike.%entertainment%,topic_key.ilike.%fun%,topic_key.ilike.%music%,topic_key.ilike.%comedy%,topic_key.ilike.%dance%,name.ilike.%entertainment%,name.ilike.%comedy%')
-    .limit(20);
+  const { data: grpRows } = await repo.searchEntertainmentGroups(sb);
   const grpIds = (grpRows || []).map((g: any) => g.id);
   if (grpIds.length === 0) return null;
-  const { data: memRows } = await sb
-    .from('community_group_members')
-    .select('user_id, group_id')
-    .in('group_id', grpIds)
-    .limit(500);
+  const { data: memRows } = await repo.fetchGroupMembersByGroupIds(sb, grpIds);
   const counts = new Map<string, number>();
   for (const r of memRows || []) {
     const uid = String((r as any).user_id);
@@ -782,12 +719,7 @@ async function tier3Conversation(
   pool: Candidate[],
 ): Promise<ScoredHit | null> {
   const ids = new Set(pool.map(c => c.user_id));
-  const { data } = await sb
-    .from('vitana_index_scores')
-    .select('user_id, score_mental, date')
-    .order('score_mental', { ascending: false })
-    .order('date', { ascending: false })
-    .limit(50);
+  const { data } = await repo.fetchTopMentalPillarScores(sb);
   if (!data || data.length === 0) return null;
   const seen = new Set<string>();
   for (const r of data) {
@@ -812,11 +744,7 @@ async function tier3Generic(
   if (!keyword) return null;
   const ids = new Set(pool.map(c => c.user_id));
   const kwLike = `%${keyword}%`;
-  const { data } = await sb
-    .from('app_users')
-    .select('user_id, bio')
-    .ilike('bio', kwLike)
-    .limit(50);
+  const { data } = await repo.searchBioByKeyword(sb, kwLike);
   for (const r of data || []) {
     const uid = String((r as any).user_id);
     if (!ids.has(uid)) continue;
@@ -1300,11 +1228,7 @@ function makeSoftFloor(
 
 async function joinedPhraseFor(sb: SupabaseClient, userId: string): Promise<string> {
   try {
-    const { data } = await sb
-      .from('app_users')
-      .select('created_at')
-      .eq('user_id', userId)
-      .maybeSingle();
+    const { data } = await repo.fetchUserCreatedAt(sb, userId);
     const createdAt = (data as any)?.created_at;
     if (!createdAt) return 'recently';
     const days = (Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60 * 24);

@@ -28,6 +28,7 @@ import {
   type CapabilityCatalogRow,
   type AwarenessLedgerRow,
 } from '../../services/assistant-continuation/providers/teacher/feature-discovery-teacher';
+import * as repo from './teacher-content-resolver-repository';
 
 export interface TeacherModeContent {
   /** The capability the wake-brief decider picked for this session. */
@@ -105,10 +106,7 @@ export async function resolveTeacherModeContent(
   // catalog-shape fields.
   let activeRawRow: Record<string, unknown> | null = null;
   try {
-    const cap = await inputs.supabase
-      .from('system_capabilities')
-      .select('capability_key, display_name, description, manual_path, enabled, pedagogical_order, teacher_intro_de, teacher_intro_en')
-      .eq('enabled', true);
+    const cap = await repo.fetchEnabledSystemCapabilities(inputs.supabase);
     if (cap.error || !Array.isArray(cap.data)) {
       return null;
     }
@@ -147,11 +145,7 @@ export async function resolveTeacherModeContent(
         ? [trimmed, trimmed.replace(/^\//, '')]
         : [trimmed, '/' + trimmed];
       for (const p of variants) {
-        const docs = await inputs.supabase
-          .from('knowledge_docs')
-          .select('content')
-          .eq('path', p)
-          .maybeSingle();
+        const docs = await repo.fetchKnowledgeDocByPath(inputs.supabase, p);
         if (!docs.error && docs.data) {
           const raw = (docs.data as { content?: string | null }).content;
           if (typeof raw === 'string' && raw.length > 0) {
@@ -174,11 +168,7 @@ export async function resolveTeacherModeContent(
   // so the order matches the curriculum.
   let ledger: AwarenessLedgerRow[] = [];
   try {
-    const led = await inputs.supabase
-      .from('user_capability_awareness')
-      .select('capability_key, awareness_state, dismiss_count, last_introduced_at')
-      .eq('tenant_id', inputs.tenantId)
-      .eq('user_id', inputs.userId);
+    const led = await repo.fetchUserCapabilityAwarenessLedger(inputs.supabase, inputs.tenantId, inputs.userId);
     if (!led.error && Array.isArray(led.data)) {
       ledger = led.data as AwarenessLedgerRow[];
     }

@@ -17,6 +17,7 @@
 import { Router, Request, Response } from 'express';
 import { randomUUID, createHash, timingSafeEqual } from 'crypto';
 import { getSupabase } from '../lib/supabase';
+import * as repo from './vcaop-postback-repository';
 
 const router = Router();
 
@@ -61,15 +62,24 @@ async function handle(req: Request, res: Response): Promise<void> {
   const now = new Date().toISOString();
 
   // Resolve the member from the subid (reverse attribution).
-  const { data: map } = await supabase
-    .from('subid_map')
-    .select('user_id, tenant_id, affiliate_program_id, network')
-    .eq('sub_id', subId)
-    .maybeSingle();
+  const { data: map, error: mapErr } = await repo.fetchSubidMap(supabase, subId);
+
+  if (mapErr) {
+    // A real DB error is NOT the same as "subid not found" — do not respond
+    // 202 here (that tells the affiliate network "done, don't retry", which
+    // is wrong for a retryable failure and would permanently lose a real
+    // conversion's commission with no trace). Respond 5xx so the network's
+    // own retry logic kicks in, and log at error level (not the misleading
+    // "subid not found" warning below) so this is distinguishable from
+    // genuine unattributed traffic.
+    console.error('[vcaop-postback] fetchSubidMap DB error', { subId, orderId, error: mapErr.message });
+    res.status(503).json({ ok: false, error: 'database unavailable' });
+    return;
+  }
 
   if (!map) {
     // Park unattributed postbacks (never error a retry storm); flag for reconciliation.
-    await supabase.from('oasis_events').insert({
+    await repo.insertOasisEvent(supabase, {
       id: randomUUID(), service: 'vcaop', source: 'vcaop',
       type: 'vcaop.postback.unattributed', topic: 'vcaop.postback.unattributed',
       status: 'warning', message: 'affiliate postback subid not found',
@@ -86,18 +96,18 @@ async function handle(req: Request, res: Response): Promise<void> {
   const rewardId = 'rw_' + fp.slice(0, 24);
   const reward = +(commission * MEMBER_SHARE).toFixed(4);
 
-  await supabase.from('commission_event').upsert({
+  await repo.upsertCommissionEvent(supabase, {
     id: commissionId, affiliate_program_id: programId, sub_id: subId, user_id: map.user_id,
     merchant: String(p.merchant || map.network || 'admitad'), order_ref: orderId,
     gross_commission: +commission.toFixed(4), currency, status: state, postback_ref: orderId, updated_at: now,
-  }, { onConflict: 'id' });
+  });
 
-  await supabase.from('rewards_ledger').upsert({
+  await repo.upsertRewardsLedgerEntry(supabase, {
     id: rewardId, user_id: map.user_id, commission_event_id: commissionId,
     amount: reward, currency, state, updated_at: now,
-  }, { onConflict: 'id' });
+  });
 
-  await supabase.from('oasis_events').insert({
+  await repo.insertOasisEvent(supabase, {
     id: randomUUID(), service: 'vcaop', source: 'vcaop',
     type: `vcaop.reward.${state}`, topic: `vcaop.reward.${state}`,
     status: state === 'reversed' ? 'warning' : 'success', message: `admitad postback ${state}`,

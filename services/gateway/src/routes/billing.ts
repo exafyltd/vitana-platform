@@ -46,6 +46,7 @@ import {
   recordPaywallEvent,
   type WalletBucket,
 } from '../services/entitlement-service';
+import * as repo from './billing-repository';
 
 const VTID = 'VTID-03107';
 const LOG_PREFIX = '[billing]';
@@ -120,12 +121,7 @@ interface UserSubscriptionRow {
 }
 
 async function readPriceByKey(priceKey: string): Promise<PriceRow | null> {
-  const { data, error } = await sb()
-    .from('subscription_plan_prices')
-    .select('price_key, plan_key, billing_interval, price_cents, currency, stripe_price_id')
-    .eq('price_key', priceKey)
-    .eq('is_active', true)
-    .maybeSingle();
+  const { data, error } = await repo.fetchActivePriceByKey(sb(), priceKey);
   if (error) {
     console.error(`${LOG_PREFIX} readPriceByKey error: ${error.message}`);
     return null;
@@ -134,12 +130,7 @@ async function readPriceByKey(priceKey: string): Promise<PriceRow | null> {
 }
 
 async function readPackByKey(packKey: string): Promise<PackRow | null> {
-  const { data, error } = await sb()
-    .from('credit_packs')
-    .select('pack_key, display_name, credits, bonus_credits, price_cents, currency, stripe_price_id')
-    .eq('pack_key', packKey)
-    .eq('is_active', true)
-    .maybeSingle();
+  const { data, error } = await repo.fetchActiveCreditPackByKey(sb(), packKey);
   if (error) {
     console.error(`${LOG_PREFIX} readPackByKey error: ${error.message}`);
     return null;
@@ -151,12 +142,7 @@ async function readUserSubscription(
   tenantId: string,
   userId: string
 ): Promise<UserSubscriptionRow | null> {
-  const { data, error } = await sb()
-    .from('user_subscriptions')
-    .select('*')
-    .eq('tenant_id', tenantId)
-    .eq('user_id', userId)
-    .maybeSingle();
+  const { data, error } = await repo.fetchUserSubscription(sb(), { tenantId, userId });
   if (error) {
     console.error(`${LOG_PREFIX} readUserSubscription error: ${error.message}`);
     return null;
@@ -185,19 +171,14 @@ async function ensureStripeCustomer(
 
   // Upsert user_subscriptions to remember the customer_id even before they
   // actually subscribe to anything. plan_key='free' / status='free' as default.
-  await sb()
-    .from('user_subscriptions')
-    .upsert(
-      {
-        tenant_id: tenantId,
-        user_id: userId,
-        plan_key: sub?.plan_key ?? 'free',
-        status: sub?.status ?? 'free',
-        stripe_customer_id: customer.id,
-        metadata: { ...(sub?.metadata ?? {}), source: sub?.metadata?.source ?? 'free_default' },
-      },
-      { onConflict: 'tenant_id,user_id' }
-    );
+  await repo.upsertUserSubscriptionCustomerId(sb(), {
+    tenant_id: tenantId,
+    user_id: userId,
+    plan_key: sub?.plan_key ?? 'free',
+    status: sub?.status ?? 'free',
+    stripe_customer_id: customer.id,
+    metadata: { ...(sub?.metadata ?? {}), source: sub?.metadata?.source ?? 'free_default' },
+  });
   return customer.id;
 }
 
@@ -216,13 +197,23 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
       readUserSubscription(identity.tenant_id, identity.user_id),
     ]);
 
-    // Wallet snapshot (post-§M three-bucket schema)
-    const { data: wallet } = await sb()
-      .from('wallet_balances')
-      .select('purchased_credits, reward_credits, cash_balance, balance')
-      .eq('tenant_id', identity.tenant_id)
-      .eq('user_id', identity.user_id)
-      .maybeSingle();
+    // Wallet snapshot (post-§M three-bucket schema).
+    //
+    // wallet_balances does not exist in live Supabase (confirmed via
+    // AURORA-B2-DEAD-CALLSITE-AUDIT.md's addendum — no live table carries
+    // this three-bucket column shape under any name). supabase-js resolves
+    // normally with an {error} field on a "relation does not exist" failure
+    // rather than throwing, so this previously silently returned undefined
+    // and rendered every user's wallet as all-zero with no trace anywhere.
+    // Logging the error (without inventing a substitute table/column
+    // mapping — that's a product/eng decision this fix does not make) at
+    // least makes the failure loud instead of indistinguishable from a
+    // genuinely empty wallet, per this codebase's own "never silence
+    // errors" rule.
+    const { data: wallet, error: walletErr } = await repo.fetchWalletBalances(sb(), { tenantId: identity.tenant_id, userId: identity.user_id });
+    if (walletErr) {
+      console.error(`${LOG_PREFIX} fetchWalletBalances error (wallet will render as all-zero): ${walletErr.message}`);
+    }
 
     // Usage rollup for the 6 metered features (only for current plan).
     // Post rolling-windows migration (20260526100000), Free tier carries
@@ -230,10 +221,16 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
     // monthly-only (other columns NULL). We surface all configured windows so
     // the UI shows "5h resets in 2h" + "Weekly resets Mon" side-by-side
     // (Codex/Claude pattern).
-    const { data: entitlementRows } = await sb()
-      .from('feature_entitlements')
-      .select('feature_key, quota, window_seconds, window_5h_quota, weekly_quota, unit, behavior_on_exceed')
-      .eq('plan_key', plan.plan_key);
+    const { data: entitlementRows, error: entitlementRowsErr } = await repo.fetchFeatureEntitlements(sb(), plan.plan_key);
+    if (entitlementRowsErr) {
+      // Display-only (this route is not the enforcement path — see the
+      // sibling rpcGetFeatureUsage*/rpcGetFeatureUsage calls below, none of
+      // which gate access elsewhere). A real DB error here previously
+      // rendered indistinguishably from "no metered features configured"
+      // (usage renders empty/"unlimited"), so log it loudly rather than
+      // restructure the response shape.
+      console.error(`${LOG_PREFIX} fetchFeatureEntitlements error (usage will render empty): ${entitlementRowsErr.message}`);
+    }
 
     type EntitlementRow = {
       feature_key: string;
@@ -270,12 +267,13 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
         const windows: WindowSnapshot[] = [];
 
         if (row.window_5h_quota != null) {
-          const { data: w } = await sb().rpc('fn_get_feature_usage_in_window', {
-            p_tenant_id: identity.tenant_id,
-            p_user_id: identity.user_id,
-            p_feature_key: row.feature_key,
-            p_window_seconds: SECONDS_5H,
+          const { data: w, error: wErr } = await repo.rpcGetFeatureUsageInWindow(sb(), {
+            tenantId: identity.tenant_id,
+            userId: identity.user_id,
+            featureKey: row.feature_key,
+            windowSeconds: SECONDS_5H,
           });
+          if (wErr) console.error(`${LOG_PREFIX} rpcGetFeatureUsageInWindow(5h) error for feature=${row.feature_key} (usage will render as 0/unused): ${wErr.message}`);
           windows.push({
             name: 'window_5h',
             used: (w as { used?: number })?.used ?? 0,
@@ -285,12 +283,13 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
         }
 
         if (row.weekly_quota != null) {
-          const { data: w } = await sb().rpc('fn_get_feature_usage_in_window', {
-            p_tenant_id: identity.tenant_id,
-            p_user_id: identity.user_id,
-            p_feature_key: row.feature_key,
-            p_window_seconds: SECONDS_WEEK,
+          const { data: w, error: wErr } = await repo.rpcGetFeatureUsageInWindow(sb(), {
+            tenantId: identity.tenant_id,
+            userId: identity.user_id,
+            featureKey: row.feature_key,
+            windowSeconds: SECONDS_WEEK,
           });
+          if (wErr) console.error(`${LOG_PREFIX} rpcGetFeatureUsageInWindow(weekly) error for feature=${row.feature_key} (usage will render as 0/unused): ${wErr.message}`);
           windows.push({
             name: 'weekly',
             used: (w as { used?: number })?.used ?? 0,
@@ -300,12 +299,13 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
         }
 
         // Monthly always present
-        const { data: m } = await sb().rpc('fn_get_feature_usage', {
-          p_tenant_id: identity.tenant_id,
-          p_user_id: identity.user_id,
-          p_feature_key: row.feature_key,
-          p_window_seconds: row.window_seconds,
+        const { data: m, error: mErr } = await repo.rpcGetFeatureUsage(sb(), {
+          tenantId: identity.tenant_id,
+          userId: identity.user_id,
+          featureKey: row.feature_key,
+          windowSeconds: row.window_seconds,
         });
+        if (mErr) console.error(`${LOG_PREFIX} rpcGetFeatureUsage(monthly) error for feature=${row.feature_key} (usage will render as 0/unused): ${mErr.message}`);
         windows.push({
           name: 'monthly',
           used: (m as { used?: number })?.used ?? 0,
@@ -341,13 +341,11 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
     const yearStart = new Date();
     yearStart.setUTCMonth(0, 1);
     yearStart.setUTCHours(0, 0, 0, 0);
-    const { data: earnTx } = await sb()
-      .from('wallet_transactions')
-      .select('amount, created_at')
-      .eq('tenant_id', identity.tenant_id)
-      .eq('user_id', identity.user_id)
-      .eq('type', 'earning')
-      .gte('created_at', yearStart.toISOString());
+    const { data: earnTx } = await repo.fetchYearEarningTransactions(sb(), {
+      tenantId: identity.tenant_id,
+      userId: identity.user_id,
+      yearStart: yearStart.toISOString(),
+    });
     const yearEarnedCents = ((earnTx as Array<{ amount: number }>) ?? []).reduce(
       (sum, t) => sum + (t.amount > 0 ? t.amount : 0),
       0
@@ -429,12 +427,17 @@ router.post('/checkout/subscription', requireAuth, async (req: AuthenticatedRequ
   try {
     const customerId = await ensureStripeCustomer(identity.tenant_id, identity.user_id, identity.email);
 
-    // Look up trial_days from the plan
-    const { data: planRow } = await sb()
-      .from('subscription_plans')
-      .select('trial_days')
-      .eq('plan_key', price.plan_key)
-      .maybeSingle();
+    // Look up trial_days from the plan. A real DB error here must NOT
+    // silently proceed with trialDays=0 (`?? 0` cannot tell "no trial
+    // configured" from "the lookup failed") — that would charge the
+    // customer immediately instead of honoring a trial their plan is
+    // configured to offer. Fail the checkout attempt cleanly before any
+    // Stripe session is created, rather than risk a billing-correctness bug.
+    const { data: planRow, error: planErr } = await repo.fetchSubscriptionPlanTrialDays(sb(), price.plan_key);
+    if (planErr) {
+      console.error(`${LOG_PREFIX} /checkout/subscription trial_days lookup failed: ${planErr.message}`);
+      return res.status(500).json({ ok: false, error: 'TRIAL_LOOKUP_FAILED', vtid: VTID });
+    }
     const trialDays = (planRow as { trial_days?: number })?.trial_days ?? 0;
 
     const session = await getStripe().checkout.sessions.create({
@@ -627,10 +630,10 @@ router.post('/redeem', requireAuth, async (req: AuthenticatedRequest, res: Respo
   }
 
   try {
-    const { data, error } = await sb().rpc('fn_redeem_code', {
-      p_tenant_id: identity.tenant_id,
-      p_user_id: identity.user_id,
-      p_code: code.trim(),
+    const { data, error } = await repo.rpcRedeemCode(sb(), {
+      tenantId: identity.tenant_id,
+      userId: identity.user_id,
+      code: code.trim(),
     });
     if (error) {
       console.error(`${LOG_PREFIX} fn_redeem_code error: ${error.message}`);
@@ -673,13 +676,7 @@ router.post('/redeem', requireAuth, async (req: AuthenticatedRequest, res: Respo
 
 router.get('/founding-status', async (_req: Request, res: Response) => {
   try {
-    const { data, error } = await sb()
-      .from('redemption_codes')
-      .select('code, max_uses, uses_count, is_active, expires_at, campaign, metadata')
-      .eq('campaign', 'founding_500')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const { data, error } = await repo.fetchLatestFoundingCampaignCode(sb());
 
     if (error) {
       console.warn(`${LOG_PREFIX} /founding-status query error: ${error.message}`);
@@ -752,9 +749,7 @@ router.post('/webhooks/stripe', async (req: Request, res: Response) => {
   }
 
   // Idempotency: insert event.id into processed_stripe_events; PK conflict = already handled
-  const { error: idemErr } = await sb()
-    .from('processed_stripe_events')
-    .insert({ event_id: event.id, event_type: event.type });
+  const { error: idemErr } = await repo.insertProcessedStripeEvent(sb(), { eventId: event.id, eventType: event.type });
   if (idemErr) {
     // PK collision: this event was already processed. Acknowledge and skip.
     if (idemErr.code === '23505' || /duplicate key/i.test(idemErr.message)) {
@@ -794,7 +789,7 @@ router.post('/webhooks/stripe', async (req: Request, res: Response) => {
     console.error(`${LOG_PREFIX} Webhook processing crash: ${message}`);
     // We've already inserted the event_id; Stripe will retry on 5xx. Allowing
     // retry is safer than leaving processed_stripe_events stale.
-    await sb().from('processed_stripe_events').delete().eq('event_id', event.id);
+    await repo.deleteProcessedStripeEvent(sb(), event.id);
     return res.status(500).json({ error: 'Webhook processing failed' });
   }
 });
@@ -835,14 +830,14 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promis
 
     // Idempotent credit via the existing credit_wallet RPC. source_event_id =
     // session.id so re-delivery never double-credits.
-    const { error } = await sb().rpc('credit_wallet', {
-      p_tenant_id: tenantId,
-      p_user_id: userId,
-      p_amount: credits,
-      p_type: 'purchase',
-      p_source: `credit_pack:${packKey}`,
-      p_source_event_id: session.id,
-      p_description: `Stripe credit pack purchase: ${packKey} (${credits} credits)`,
+    const { error } = await repo.rpcCreditWallet(sb(), {
+      tenantId,
+      userId,
+      amount: credits,
+      type: 'purchase',
+      source: `credit_pack:${packKey}`,
+      sourceEventId: session.id,
+      description: `Stripe credit pack purchase: ${packKey} (${credits} credits)`,
     });
     if (error) {
       console.error(`${LOG_PREFIX} credit_wallet RPC failed: ${error.message}`);
@@ -872,11 +867,22 @@ async function handleSubscriptionUpserted(stripeSub: Stripe.Subscription): Promi
   let planKey = stripeSub.metadata?.vitana_plan_key ?? 'free';
   let priceKey = stripeSub.metadata?.vitana_price_key ?? null;
   if (stripePriceId) {
-    const { data } = await sb()
-      .from('subscription_plan_prices')
-      .select('plan_key, price_key')
-      .eq('stripe_price_id', stripePriceId)
-      .maybeSingle();
+    const { data, error: priceErr } = await repo.fetchPlanPriceByStripePriceId(sb(), stripePriceId);
+    if (priceErr) {
+      // A Postgres-level failure here (RLS/permission change, table issue)
+      // resolves normally rather than throwing, so this previously fell
+      // through to the `vitana_plan_key` metadata fallback (often 'free' —
+      // e.g. a Stripe-customer-portal-initiated plan change carries no
+      // custom metadata) with zero trace, silently persisting the wrong
+      // plan_key for a real subscriber via upsertUserSubscriptionFromStripe
+      // below. Logging loudly so a wrong-plan support ticket is traceable;
+      // the fallback behavior itself is deliberately unchanged — retrying
+      // here would hit the pre-existing processed_stripe_events idempotency
+      // insert (already written before this function runs), which would
+      // silently no-op Stripe's retry anyway, a separate design question
+      // out of scope for this fix.
+      console.error(`${LOG_PREFIX} fetchPlanPriceByStripePriceId error for price=${stripePriceId}: ${priceErr.message}`);
+    }
     if (data) {
       planKey = (data.plan_key as string) || planKey;
       priceKey = (data.price_key as string) || priceKey;
@@ -899,43 +905,38 @@ async function handleSubscriptionUpserted(stripeSub: Stripe.Subscription): Promi
   const periodEnd = periodEndUnix ? new Date(periodEndUnix * 1000).toISOString() : null;
   const trialEnd = stripeSub.trial_end ? new Date(stripeSub.trial_end * 1000).toISOString() : null;
 
-  await sb()
-    .from('user_subscriptions')
-    .upsert(
-      {
-        tenant_id: tenantId,
-        user_id: userId,
-        plan_key: planKey,
-        price_key: priceKey,
-        status: stripeSub.status,
-        stripe_customer_id: stripeSub.customer as string,
-        stripe_subscription_id: stripeSub.id,
-        current_period_start: periodStart,
-        current_period_end: periodEnd,
-        cancel_at_period_end: stripeSub.cancel_at_period_end,
-        trial_end: trialEnd,
-        last_payment_error: null,
-        metadata: { source: 'stripe' },
-      },
-      { onConflict: 'tenant_id,user_id' }
-    );
+  await repo.upsertUserSubscriptionFromStripe(sb(), {
+    tenant_id: tenantId,
+    user_id: userId,
+    plan_key: planKey,
+    price_key: priceKey,
+    status: stripeSub.status,
+    stripe_customer_id: stripeSub.customer as string,
+    stripe_subscription_id: stripeSub.id,
+    current_period_start: periodStart,
+    current_period_end: periodEnd,
+    cancel_at_period_end: stripeSub.cancel_at_period_end,
+    trial_end: trialEnd,
+    last_payment_error: null,
+    metadata: { source: 'stripe' },
+  });
 }
 
 async function handleSubscriptionDeleted(stripeSub: Stripe.Subscription): Promise<void> {
   const userId = stripeSub.metadata?.vitana_user_id;
   const tenantId = stripeSub.metadata?.vitana_tenant_id;
   if (!userId || !tenantId) return;
-  await sb()
-    .from('user_subscriptions')
-    .update({
+  await repo.updateUserSubscriptionStatus(sb(), {
+    tenantId,
+    userId,
+    patch: {
       status: 'canceled',
       plan_key: 'free',
       price_key: null,
       cancel_at_period_end: false,
       metadata: { source: 'stripe', last_event: 'subscription.deleted' },
-    })
-    .eq('tenant_id', tenantId)
-    .eq('user_id', userId);
+    },
+  });
 }
 
 // Helper: pull (user_id, tenant_id) out of an invoice. Stripe SDK v18 changed
@@ -976,11 +977,11 @@ async function resolveInvoiceIdentity(
 async function handleInvoicePaid(invoice: Stripe.Invoice): Promise<void> {
   const { userId, tenantId } = await resolveInvoiceIdentity(invoice);
   if (!userId || !tenantId) return;
-  await sb()
-    .from('user_subscriptions')
-    .update({ status: 'active', last_payment_error: null })
-    .eq('tenant_id', tenantId)
-    .eq('user_id', userId);
+  await repo.updateUserSubscriptionStatus(sb(), {
+    tenantId,
+    userId,
+    patch: { status: 'active', last_payment_error: null },
+  });
 }
 
 async function handleInvoiceFailed(invoice: Stripe.Invoice): Promise<void> {
@@ -988,11 +989,11 @@ async function handleInvoiceFailed(invoice: Stripe.Invoice): Promise<void> {
   if (!userId || !tenantId) return;
   const inv = invoice as Stripe.Invoice & { last_finalization_error?: { message?: string } };
   const lastError = inv.last_finalization_error?.message ?? 'Payment failed';
-  await sb()
-    .from('user_subscriptions')
-    .update({ status: 'past_due', last_payment_error: lastError })
-    .eq('tenant_id', tenantId)
-    .eq('user_id', userId);
+  await repo.updateUserSubscriptionStatus(sb(), {
+    tenantId,
+    userId,
+    patch: { status: 'past_due', last_payment_error: lastError },
+  });
 }
 
 // =============================================================================
@@ -1032,11 +1033,11 @@ router.post(
     }
 
     // Validate plan exists
-    const { data: planRow } = await sb()
-      .from('subscription_plans')
-      .select('plan_key')
-      .eq('plan_key', grantsPlan)
-      .maybeSingle();
+    const { data: planRow, error: planRowErr } = await repo.fetchPlanByKey(sb(), grantsPlan);
+    if (planRowErr) {
+      console.error(`${LOG_PREFIX} admin/redemption-codes/generate fetchPlanByKey error: ${planRowErr.message}`);
+      return res.status(500).json({ ok: false, error: 'PLAN_LOOKUP_FAILED', message: planRowErr.message });
+    }
     if (!planRow) {
       return res.status(400).json({ ok: false, error: 'PLAN_NOT_FOUND', plan_key: grantsPlan });
     }
@@ -1071,7 +1072,7 @@ router.post(
       });
     }
 
-    const { error } = await sb().from('redemption_codes').insert(inserts);
+    const { error } = await repo.insertRedemptionCodes(sb(), inserts);
     if (error) {
       console.error(`${LOG_PREFIX} admin generate codes failed: ${error.message}`);
       return res.status(500).json({ ok: false, error: 'INSERT_FAILED', message: error.message });
@@ -1107,20 +1108,12 @@ router.get(
     const offset = Math.max(0, parseInt((req.query.offset as string) || '0', 10) || 0);
     const includeCodes = String(req.query.include_codes ?? 'false') === 'true';
 
-    let query = sb()
-      .from('redemption_codes')
-      .select('code, campaign, grants_plan, grant_duration_days, max_uses, uses_count, expires_at, is_active, created_at, created_by, metadata')
-      .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1);
-    if (campaign) {
-      query = query.eq('campaign', campaign);
-    }
-    const { data, error } = await query;
+    const { data, error } = await repo.listRedemptionCodes(sb(), { campaign, offset, limit });
     if (error) {
       return res.status(500).json({ ok: false, error: 'QUERY_FAILED', message: error.message });
     }
 
-    const rows = (data || []).map((row) => {
+    const rows = (data || []).map((row: any) => {
       if (!includeCodes) {
         // Redact the code; show only a hash-prefix so the admin can match to CSV
         const r = row as Record<string, unknown>;
@@ -1151,12 +1144,7 @@ router.patch(
     if (isActive === null) {
       return res.status(400).json({ ok: false, error: 'MISSING_IS_ACTIVE' });
     }
-    const { data, error } = await sb()
-      .from('redemption_codes')
-      .update({ is_active: isActive })
-      .eq('code', codeParam)
-      .select('code, is_active')
-      .maybeSingle();
+    const { data, error } = await repo.updateRedemptionCodeActive(sb(), { code: codeParam, isActive });
     if (error) {
       return res.status(500).json({ ok: false, error: 'UPDATE_FAILED', message: error.message });
     }
@@ -1193,10 +1181,8 @@ router.get(
       const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
       // 1. Active subscriptions joined with their monthly price for MRR/ARR
-      const { data: activeSubs } = await supabase
-        .from('user_subscriptions')
-        .select('plan_key, price_key, status')
-        .in('status', ['active', 'trialing', 'past_due']);
+      const { data: activeSubs, error: activeSubsErr } = await repo.fetchActiveOrTrialingSubscriptions(supabase);
+      if (activeSubsErr) console.error(`${LOG_PREFIX} admin/metrics fetchActiveOrTrialingSubscriptions error: ${activeSubsErr.message}`);
 
       const planCounts: Record<string, number> = {};
       const trialingCount: Record<string, number> = {};
@@ -1212,11 +1198,8 @@ router.get(
       );
 
       // Read monthly prices per plan to compute MRR
-      const { data: prices } = await supabase
-        .from('subscription_plan_prices')
-        .select('plan_key, billing_interval, price_cents')
-        .eq('billing_interval', 'month')
-        .eq('is_active', true);
+      const { data: prices, error: pricesErr } = await repo.fetchActiveMonthlyPlanPrices(supabase);
+      if (pricesErr) console.error(`${LOG_PREFIX} admin/metrics fetchActiveMonthlyPlanPrices error: ${pricesErr.message}`);
       const monthlyPriceCents: Record<string, number> = {};
       ((prices as Array<{ plan_key: string; billing_interval: string; price_cents: number }>) || []).forEach(
         (p) => {
@@ -1231,20 +1214,16 @@ router.get(
       });
 
       // 2. Paywall funnel (last 30d)
-      const { data: paywallEvents } = await supabase
-        .from('paywall_events')
-        .select('action')
-        .gte('created_at', since30d);
+      const { data: paywallEvents, error: paywallEventsErr } = await repo.fetchPaywallFunnelSince(supabase, since30d);
+      if (paywallEventsErr) console.error(`${LOG_PREFIX} admin/metrics fetchPaywallFunnelSince error: ${paywallEventsErr.message}`);
       const funnel: Record<string, number> = {};
       ((paywallEvents as Array<{ action: string }>) || []).forEach((row) => {
         funnel[row.action] = (funnel[row.action] || 0) + 1;
       });
 
       // 3. Code redemptions by campaign (last 30d)
-      const { data: redemptions } = await supabase
-        .from('redemption_redemptions')
-        .select('campaign, grant_value_cents')
-        .gte('redeemed_at', since30d);
+      const { data: redemptions, error: redemptionsErr } = await repo.fetchRedemptionsSince(supabase, since30d);
+      if (redemptionsErr) console.error(`${LOG_PREFIX} admin/metrics fetchRedemptionsSince error: ${redemptionsErr.message}`);
       const redemptionsByCampaign: Record<string, { count: number; grant_value_cents: number }> = {};
       ((redemptions as Array<{ campaign: string; grant_value_cents: number }>) || []).forEach((row) => {
         const c = redemptionsByCampaign[row.campaign] || { count: 0, grant_value_cents: 0 };
@@ -1254,21 +1233,14 @@ router.get(
       });
 
       // 4. Voice degrade events (last 7d)
-      const { data: degradeEvents } = await supabase
-        .from('paywall_events')
-        .select('id')
-        .eq('action', 'degraded')
-        .eq('feature_key', 'voice_live_minutes')
-        .gte('created_at', since7d);
+      const { data: degradeEvents, error: degradeEventsErr } = await repo.fetchVoiceDegradeEventsSince(supabase, since7d);
+      if (degradeEventsErr) console.error(`${LOG_PREFIX} admin/metrics fetchVoiceDegradeEventsSince error: ${degradeEventsErr.message}`);
       const voiceDegradeCount7d = (degradeEvents as Array<unknown>)?.length ?? 0;
 
       // 5. Marketing budget remaining
       let budgetRemainingCents: number | null = null;
       try {
-        const { data: budgetRow } = await supabase
-          .from('tenant_settings')
-          .select('feature_flags')
-          .maybeSingle();
+        const { data: budgetRow } = await repo.fetchTenantSettingsFeatureFlags(supabase);
         const flags = (budgetRow as { feature_flags?: Record<string, unknown> } | null)?.feature_flags;
         const val = flags?.marketing_budget_eur_remaining_cents;
         if (typeof val === 'number') budgetRemainingCents = val;

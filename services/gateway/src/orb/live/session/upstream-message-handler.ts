@@ -70,6 +70,7 @@ import {
 import { addTurn as addSessionTurn } from '../../../services/session-memory-buffer';
 import { addTurnRedis } from '../../../services/redis-turn-buffer';
 import { getSupabase } from '../../../lib/supabase';
+import * as repo from './upstream-message-handler-repository';
 import { VITANA_BOT_USER_ID } from '../../../lib/vitana-bot';
 import { notifyUserAsync } from '../../../services/notification-service';
 
@@ -120,7 +121,7 @@ export async function bridgeVoiceTranscript(
   const MAX_ATTEMPTS = 2;
   let lastError: string | undefined;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const { error } = await bridgeSupabase.from('chat_messages').insert(row);
+    const { error } = await repo.insertChatMessage(bridgeSupabase, row);
     if (!error) return true;
     lastError = error.message;
     console.warn(`[VTID-CHAT-BRIDGE] ${direction} transcript write attempt ${attempt}/${MAX_ATTEMPTS} failed for session ${sessionId}: ${error.message}`);

@@ -8,6 +8,7 @@
 
 import { AutomationContext } from '../../types/automations';
 import { registerHandler } from '../automation-executor';
+import * as repo from './engagement-events-repository';
 
 // =============================================================================
 // AP-0300: Events & Live Rooms
@@ -61,15 +62,7 @@ async function runGoTogetherMatch(ctx: AutomationContext) {
   const { supabase, tenantId } = ctx;
 
   // Check if connections are attending
-  const { data: connections } = await supabase
-    .from('relationship_edges')
-    .select('target_id')
-    .eq('tenant_id', tenantId)
-    .eq('source_type', 'person')
-    .eq('source_id', user_id)
-    .eq('target_type', 'person')
-    .eq('edge_type', 'connected')
-    .limit(10);
+  const { data: connections } = await repo.fetchUserConnectionEdges(supabase, tenantId, user_id, 10);
 
   const connectionIds = (connections || []).map((c: any) => c.target_id);
   if (!connectionIds.length) {
@@ -81,16 +74,10 @@ async function runGoTogetherMatch(ctx: AutomationContext) {
     return { usersAffected: 1, actionsTaken: 1 };
   }
 
-  const { data: attendingConnections } = await supabase
-    .from('global_event_participants')
-    .select('user_id')
-    .eq('event_id', event_id)
-    .in('user_id', connectionIds)
-    .eq('status', 'attending');
+  const { data: attendingConnections } = await repo.fetchAttendingConnectionsForEvent(supabase, event_id, connectionIds);
 
   if (attendingConnections?.length) {
-    const { data: friend } = await supabase
-      .from('app_users').select('display_name').eq('user_id', attendingConnections[0].user_id).maybeSingle();
+    const { data: friend } = await repo.fetchUserDisplayName(supabase, attendingConnections[0].user_id);
 
     ctx.notify(user_id, 'event_match_suggested', {
       title: 'Go Together!',
@@ -131,19 +118,10 @@ async function runPostEventFeedback(ctx: AutomationContext) {
   const windowStart = new Date(Date.now() - POST_EVENT_WINDOW_END_HOURS * 3_600_000).toISOString();
   const windowEnd = new Date(Date.now() - POST_EVENT_WINDOW_START_HOURS * 3_600_000).toISOString();
 
-  const { data: endedEvents } = await supabase
-    .from('global_community_events')
-    .select('id, title')
-    .gte('end_time', windowStart)
-    .lte('end_time', windowEnd)
-    .limit(POST_EVENT_MAX_EVENTS);
+  const { data: endedEvents } = await repo.fetchEndedEventsInWindow(supabase, windowStart, windowEnd, POST_EVENT_MAX_EVENTS);
 
   for (const event of endedEvents || []) {
-    const { data: attendees } = await supabase
-      .from('global_event_participants')
-      .select('user_id')
-      .eq('event_id', event.id)
-      .eq('status', 'attending');
+    const { data: attendees } = await repo.fetchAttendingParticipants(supabase, event.id);
 
     for (const att of attendees || []) {
       ctx.notify(att.user_id, 'orb_proactive_message', {
@@ -167,19 +145,10 @@ async function runNoShowFollowUp(ctx: AutomationContext) {
   const windowStart = new Date(Date.now() - NO_SHOW_WINDOW_END_HOURS * 3_600_000).toISOString();
   const windowEnd = new Date(Date.now() - NO_SHOW_WINDOW_START_HOURS * 3_600_000).toISOString();
 
-  const { data: endedEvents } = await supabase
-    .from('global_community_events')
-    .select('id, title')
-    .gte('end_time', windowStart)
-    .lte('end_time', windowEnd)
-    .limit(POST_EVENT_MAX_EVENTS);
+  const { data: endedEvents } = await repo.fetchEndedEventsInWindow(supabase, windowStart, windowEnd, POST_EVENT_MAX_EVENTS);
 
   for (const event of endedEvents || []) {
-    const { data: registered } = await supabase
-      .from('global_event_participants')
-      .select('user_id')
-      .eq('event_id', event.id)
-      .eq('status', 'attending');
+    const { data: registered } = await repo.fetchAttendingParticipants(supabase, event.id);
 
     for (const reg of registered || []) {
       ctx.notify(reg.user_id, 'orb_proactive_message', {
@@ -207,13 +176,7 @@ async function runTrendingEventsDigest(ctx: AutomationContext) {
   const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
   // Find upcoming events with highest registration count
-  const { data: events } = await supabase
-    .from('global_community_events')
-    .select('id, title, start_time, participant_count')
-    .gte('start_time', now.toISOString())
-    .lte('start_time', nextWeek.toISOString())
-    .order('participant_count', { ascending: false })
-    .limit(10);
+  const { data: events } = await repo.fetchTrendingUpcomingEvents(supabase, now.toISOString(), nextWeek.toISOString(), 10);
 
   if (!events?.length || (events[0].participant_count || 0) === 0) {
     return { usersAffected: 0, actionsTaken: 0 };
@@ -226,11 +189,7 @@ async function runTrendingEventsDigest(ctx: AutomationContext) {
   const users = await ctx.queryTargetUsers('user_id, active_role');
 
   for (const { user_id } of users.slice(0, 100)) {
-    const { count: alreadyRegistered } = await supabase
-      .from('global_event_participants')
-      .select('id', { count: 'exact', head: true })
-      .eq('event_id', topEvent.id)
-      .eq('user_id', user_id);
+    const { count: alreadyRegistered } = await repo.countUserRegisteredForEvent(supabase, topEvent.id, user_id);
 
     if ((alreadyRegistered || 0) > 0) continue;
 
@@ -274,14 +233,7 @@ async function runHostNightConcierge(ctx: AutomationContext) {
 
   // Upcoming events inside the concierge window, soonest first. global_community_events
   // has no tenant_id — the global community is shared — so we scan across all of them.
-  const { data: events } = await supabase
-    .from('global_community_events')
-    .select('id, title, start_time, participant_count, max_participants, created_by, slug')
-    .gte('start_time', leadCutoff)
-    .lte('start_time', horizonCutoff)
-    .not('created_by', 'is', null)
-    .order('start_time', { ascending: true })
-    .limit(500);
+  const { data: events } = await repo.fetchUpcomingEventsForConcierge(supabase, leadCutoff, horizonCutoff, 500);
 
   const handledHosts = new Set<string>();
   let scanned = 0;
@@ -301,14 +253,7 @@ async function runHostNightConcierge(ctx: AutomationContext) {
 
     // Cooldown: skip (and stop considering this host this run) if they were
     // already concierged recently for any event.
-    const { data: recentNudge } = await supabase
-      .from('user_notifications')
-      .select('id')
-      .eq('user_id', ev.created_by)
-      .eq('type', 'orb_proactive_message')
-      .contains('data', { automation_id: 'AP-0309' })
-      .gte('created_at', cooldownCutoff)
-      .limit(1);
+    const { data: recentNudge } = await repo.fetchRecentConciergeNudge(supabase, ev.created_by, cooldownCutoff);
     if (recentNudge && recentNudge.length > 0) {
       handledHosts.add(ev.created_by);
       continue;
@@ -365,14 +310,7 @@ async function runEventSeriesAutoSuggestion(ctx: AutomationContext) {
   const now = new Date();
   const cooldownCutoff = new Date(now.getTime() - SERIES_COOLDOWN_DAYS * 86_400_000).toISOString();
 
-  const { data: pastEvents } = await supabase
-    .from('global_community_events')
-    .select('id, title, created_by, participant_count, end_time')
-    .lt('end_time', now.toISOString())
-    .gte('participant_count', SERIES_MIN_PAST_PARTICIPANTS)
-    .not('created_by', 'is', null)
-    .order('end_time', { ascending: false })
-    .limit(200);
+  const { data: pastEvents } = await repo.fetchPastPopularEvents(supabase, now.toISOString(), SERIES_MIN_PAST_PARTICIPANTS, 200);
 
   const handledHosts = new Set<string>();
   let suggestionsSent = 0;
@@ -383,20 +321,10 @@ async function runEventSeriesAutoSuggestion(ctx: AutomationContext) {
     handledHosts.add(event.created_by);
 
     // Skip if this host already has an upcoming event scheduled.
-    const { count: upcomingCount } = await supabase
-      .from('global_community_events')
-      .select('id', { count: 'exact', head: true })
-      .eq('created_by', event.created_by)
-      .gt('start_time', now.toISOString());
+    const { count: upcomingCount } = await repo.countUpcomingEventsByCreator(supabase, event.created_by, now.toISOString());
     if ((upcomingCount || 0) > 0) continue;
 
-    const { data: recentSuggestion } = await supabase
-      .from('user_notifications')
-      .select('id')
-      .eq('user_id', event.created_by)
-      .contains('data', { automation_id: 'AP-0306' })
-      .gte('created_at', cooldownCutoff)
-      .limit(1);
+    const { data: recentSuggestion } = await repo.fetchRecentSeriesSuggestion(supabase, event.created_by, cooldownCutoff);
     if (recentSuggestion && recentSuggestion.length > 0) continue;
 
     ctx.notify(event.created_by, 'orb_proactive_message', {
@@ -436,32 +364,17 @@ async function runLiveRoomFromTrendingChatTopic(ctx: AutomationContext) {
   const windowStart = new Date(Date.now() - LIVE_ROOM_SPIKE_WINDOW_HOURS * 3_600_000).toISOString();
   const cooldownCutoff = new Date(Date.now() - LIVE_ROOM_SUGGESTION_COOLDOWN_DAYS * 86_400_000).toISOString();
 
-  const { data: groups } = await supabase
-    .from('global_community_groups')
-    .select('id, name, created_by, chat_thread_id')
-    .not('chat_thread_id', 'is', null)
-    .not('created_by', 'is', null)
-    .limit(500);
+  const { data: groups } = await repo.fetchGroupsWithChatThreadForTrending(supabase, 500);
 
   let suggestionsSent = 0;
   for (const group of groups || []) {
     if (suggestionsSent >= LIVE_ROOM_SUGGESTION_MAX) break;
 
-    const { count: messageCount } = await supabase
-      .from('global_messages')
-      .select('id', { count: 'exact', head: true })
-      .eq('thread_id', group.chat_thread_id)
-      .gte('created_at', windowStart);
+    const { count: messageCount } = await repo.countRecentGroupMessages(supabase, group.chat_thread_id, windowStart);
 
     if ((messageCount || 0) < LIVE_ROOM_SPIKE_MIN_MESSAGES) continue;
 
-    const { data: recentSuggestion } = await supabase
-      .from('user_notifications')
-      .select('id')
-      .eq('user_id', group.created_by)
-      .contains('data', { automation_id: 'AP-0307', group_id: group.id })
-      .gte('created_at', cooldownCutoff)
-      .limit(1);
+    const { data: recentSuggestion } = await repo.fetchRecentLiveRoomSuggestion(supabase, group.created_by, group.id, cooldownCutoff);
     if (recentSuggestion && recentSuggestion.length > 0) continue;
 
     ctx.notify(group.created_by, 'orb_proactive_message', {
@@ -496,25 +409,12 @@ async function runGroupOutingBuilder(ctx: AutomationContext) {
 
   const { supabase, tenantId } = ctx;
 
-  const { data: connections } = await supabase
-    .from('relationship_edges')
-    .select('target_id')
-    .eq('tenant_id', tenantId)
-    .eq('source_type', 'person')
-    .eq('source_id', user_id)
-    .eq('target_type', 'person')
-    .eq('edge_type', 'connected')
-    .limit(50);
+  const { data: connections } = await repo.fetchUserConnectionEdges(supabase, tenantId, user_id, 50);
 
   const connectionIds = (connections || []).map((c: any) => c.target_id);
   if (connectionIds.length < GROUP_OUTING_MIN_FRIENDS) return { usersAffected: 0, actionsTaken: 0 };
 
-  const { data: attendingConnections } = await supabase
-    .from('global_event_participants')
-    .select('user_id')
-    .eq('event_id', event_id)
-    .in('user_id', connectionIds)
-    .eq('status', 'attending');
+  const { data: attendingConnections } = await repo.fetchAttendingConnectionsForEvent(supabase, event_id, connectionIds);
 
   const attendingCount = attendingConnections?.length || 0;
   if (attendingCount < GROUP_OUTING_MIN_FRIENDS) return { usersAffected: 0, actionsTaken: 0 };
@@ -595,29 +495,16 @@ async function runDormantUserReEngagement(ctx: AutomationContext) {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
   // Find users with no recent notifications read (proxy for inactivity)
-  const { data: users } = await supabase
-    .from('user_tenants')
-    .select('user_id')
-    .eq('tenant_id', tenantId)
-    .eq('is_primary', true);
+  const { data: users } = await repo.fetchPrimaryTenantUsers(supabase, tenantId);
 
   for (const { user_id } of users || []) {
     // Check for recent activity (unread notifications as proxy)
-    const { count: recentActivity } = await supabase
-      .from('user_notifications')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', user_id)
-      .not('read_at', 'is', null)
-      .gte('read_at', sevenDaysAgo);
+    const { count: recentActivity } = await repo.countRecentReadNotifications(supabase, user_id, sevenDaysAgo);
 
     if ((recentActivity || 0) > 0) continue;
 
     // Get what they missed
-    const { count: pendingMatches } = await supabase
-      .from('daily_matches')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', user_id)
-      .gte('created_at', sevenDaysAgo);
+    const { count: pendingMatches } = await repo.countRecentDailyMatches(supabase, user_id, sevenDaysAgo);
 
     if ((pendingMatches || 0) === 0) continue;
 
@@ -730,13 +617,7 @@ async function runConversationContinuityNudge(ctx: AutomationContext) {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
   // Get recent active conversations that went quiet
-  const { data: recentConvos } = await supabase
-    .from('chat_messages')
-    .select('sender_id, receiver_id')
-    .eq('tenant_id', tenantId)
-    .gte('created_at', sevenDaysAgo)
-    .lte('created_at', threeDaysAgo)
-    .limit(50);
+  const { data: recentConvos } = await repo.fetchQuietConversations(supabase, tenantId, sevenDaysAgo, threeDaysAgo, 50);
 
   const nudgedPairs = new Set<string>();
 
@@ -745,20 +626,19 @@ async function runConversationContinuityNudge(ctx: AutomationContext) {
     if (nudgedPairs.has(pairKey)) continue;
 
     // Check if conversation went quiet
-    const { count: recentMsgs } = await supabase
-      .from('chat_messages')
-      .select('id', { count: 'exact', head: true })
-      .eq('tenant_id', tenantId)
-      .or(`sender_id.eq.${msg.sender_id},sender_id.eq.${msg.receiver_id}`)
-      .or(`receiver_id.eq.${msg.sender_id},receiver_id.eq.${msg.receiver_id}`)
-      .gte('created_at', threeDaysAgo);
+    const { count: recentMsgs } = await repo.countRecentMessagesBetweenPair(
+      supabase,
+      tenantId,
+      msg.sender_id,
+      msg.receiver_id,
+      threeDaysAgo,
+    );
 
     if ((recentMsgs || 0) > 0) continue;
 
     nudgedPairs.add(pairKey);
 
-    const { data: peer } = await supabase
-      .from('app_users').select('display_name').eq('user_id', msg.receiver_id).maybeSingle();
+    const { data: peer } = await repo.fetchUserDisplayName(supabase, msg.receiver_id);
 
     ctx.notify(msg.sender_id, 'conversation_followup_reminder', {
       title: 'Continue the Conversation',
@@ -786,12 +666,7 @@ async function runMilestoneScanner(ctx: AutomationContext) {
   // Get recently active users (logged in within last 24h — proxy via notification reads)
   const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
-  const { data: activeUsers } = await supabase
-    .from('user_tenants')
-    .select('user_id')
-    .eq('tenant_id', tenantId)
-    .eq('is_primary', true)
-    .limit(100);
+  const { data: activeUsers } = await repo.fetchPrimaryTenantUsersLimited(supabase, tenantId, 100);
 
   let scanUserMilestones: typeof import('../milestone-service').scanUserMilestones;
   try {
@@ -879,24 +754,12 @@ async function runFriendsChallengeSocialStreak(ctx: AutomationContext) {
   for (const { user_id } of users) {
     if (notifiedPairs.size >= STREAK_MAX_PAIRS_PER_RUN) break;
 
-    const { data: myStreak } = await supabase
-      .from('user_diary_streak')
-      .select('current_streak_days, last_day')
-      .eq('user_id', user_id)
-      .maybeSingle();
+    const { data: myStreak } = await repo.fetchUserStreak(supabase, user_id);
 
     if (!myStreak || (myStreak.current_streak_days || 0) < STREAK_MIN_DAYS) continue;
     if (!isStreakActive(myStreak.last_day)) continue;
 
-    const { data: edges } = await supabase
-      .from('relationship_edges')
-      .select('target_id')
-      .eq('tenant_id', tenantId)
-      .eq('source_type', 'person')
-      .eq('source_id', user_id)
-      .eq('target_type', 'person')
-      .eq('edge_type', 'connected')
-      .limit(50);
+    const { data: edges } = await repo.fetchUserConnectionEdges(supabase, tenantId, user_id, 50);
 
     for (const edge of edges || []) {
       if (notifiedPairs.size >= STREAK_MAX_PAIRS_PER_RUN) break;
@@ -904,23 +767,13 @@ async function runFriendsChallengeSocialStreak(ctx: AutomationContext) {
       const pairKey = [user_id, friendId].sort().join('-');
       if (notifiedPairs.has(pairKey)) continue;
 
-      const { data: friendStreak } = await supabase
-        .from('user_diary_streak')
-        .select('current_streak_days, last_day')
-        .eq('user_id', friendId)
-        .maybeSingle();
+      const { data: friendStreak } = await repo.fetchUserStreak(supabase, friendId);
 
       if (!friendStreak || (friendStreak.current_streak_days || 0) < STREAK_MIN_DAYS) continue;
       if (!isStreakActive(friendStreak.last_day)) continue;
 
       const cooldownCutoff = new Date(Date.now() - STREAK_COOLDOWN_DAYS * 86_400_000).toISOString();
-      const { data: recentNudge } = await supabase
-        .from('user_notifications')
-        .select('id')
-        .eq('user_id', user_id)
-        .contains('data', { automation_id: 'AP-0511', pair_key: pairKey })
-        .gte('created_at', cooldownCutoff)
-        .limit(1);
+      const { data: recentNudge } = await repo.fetchRecentStreakNudge(supabase, user_id, pairKey, cooldownCutoff);
       if (recentNudge && recentNudge.length > 0) continue;
 
       notifiedPairs.add(pairKey);

@@ -40,6 +40,7 @@ import {
   type SocialProvider,
 } from '../social-connect-service';
 import { invalidateUserLocale } from '../../i18n/server-locale';
+import * as repo from './feedback-settings-tools-repository';
 
 type Handler = (
   args: OrbToolArgs,
@@ -199,29 +200,25 @@ async function createTypedTicket(
 
     // Unrouted path — mirrors executeReportToSpecialist's insert shape when
     // no specialist is enabled (VTID-03044: support/marketplace/account).
-    const { data: created, error: insertError } = await sb
-      .from('feedback_tickets')
-      .insert({
-        user_id: id.user_id,
-        vitana_id: id.vitana_id ?? null,
-        kind,
-        status: 'new',
-        raw_transcript: summary,
-        intake_messages: [
-          { agent: 'vitana', role: 'user', content: summary, ts: new Date().toISOString() },
-        ],
-        structured_fields: {
-          specialist_hint: null,
-          voice_origin: true,
-          source: TICKET_SOURCE,
-          ...extraFields,
-        },
-        screen_path: screenPath,
-        resolver_agent: null,
-        triaged_at: null,
-      })
-      .select('id, ticket_number')
-      .single();
+    const { data: created, error: insertError } = await repo.insertUnroutedFeedbackTicket(sb, {
+      user_id: id.user_id,
+      vitana_id: id.vitana_id ?? null,
+      kind,
+      status: 'new',
+      raw_transcript: summary,
+      intake_messages: [
+        { agent: 'vitana', role: 'user', content: summary, ts: new Date().toISOString() },
+      ],
+      structured_fields: {
+        specialist_hint: null,
+        voice_origin: true,
+        source: TICKET_SOURCE,
+        ...extraFields,
+      },
+      screen_path: screenPath,
+      resolver_agent: null,
+      triaged_at: null,
+    });
 
     if (insertError || !created) {
       return {
@@ -338,13 +335,7 @@ export async function tool_list_my_tickets(
     return { ok: false, error: 'list_my_tickets requires an authenticated user.' };
   }
   try {
-    const { data, error } = await sb
-      .from('feedback_tickets')
-      .select('id, ticket_number, kind, status, created_at')
-      .eq('user_id', id.user_id)
-      .not('status', 'in', `(${CLOSED_STATUSES.join(',')})`)
-      .order('created_at', { ascending: false })
-      .limit(8);
+    const { data, error } = await repo.fetchOpenFeedbackTickets(sb, id.user_id, CLOSED_STATUSES);
     if (error) {
       return { ok: false, error: `Could not load tickets: ${error.message}` };
     }
@@ -431,14 +422,7 @@ export async function tool_set_language(
     // Primary store: user_preferences.stt_language — the column the frontend
     // Language picker writes and the gateway i18n resolver reads as its live
     // fallback. UNIQUE(user_id) → upsert.
-    const { error: prefError } = await sb.from('user_preferences').upsert(
-      {
-        user_id: id.user_id,
-        stt_language: lang.full,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'user_id' },
-    );
+    const { error: prefError } = await repo.upsertLanguagePreference(sb, id.user_id, lang.full, new Date().toISOString());
     if (prefError) {
       return { ok: false, error: `Could not save language: ${prefError.message}` };
     }
@@ -448,10 +432,7 @@ export async function tool_set_language(
     // for runtime resolution.
     let appUsersUpdated = true;
     try {
-      const { error: appUserError } = await sb
-        .from('app_users')
-        .update({ locale: short, updated_at: new Date().toISOString() })
-        .eq('user_id', id.user_id);
+      const { error: appUserError } = await repo.updateUserLocale(sb, id.user_id, short, new Date().toISOString());
       if (appUserError) appUsersUpdated = false;
     } catch {
       appUsersUpdated = false;
@@ -549,9 +530,7 @@ export async function tool_set_voice_preferences(
       changes.push(`tone "${tone}"`);
     }
 
-    const { error } = await sb
-      .from('user_preferences')
-      .upsert(update, { onConflict: 'user_id' });
+    const { error } = await repo.upsertVoicePreferences(sb, update);
     if (error) {
       return { ok: false, error: `Could not save voice preferences: ${error.message}` };
     }
@@ -606,12 +585,7 @@ async function loadAiConnections(
   sb: SupabaseClient,
   userId: string,
 ): Promise<Array<{ connector_id: string; connected_at: string | null }>> {
-  const { data, error } = await sb
-    .from('user_connections')
-    .select('connector_id, connected_at')
-    .eq('user_id', userId)
-    .eq('category', 'ai_assistant')
-    .eq('is_active', true);
+  const { data, error } = await repo.fetchActiveAiConnections(sb, userId);
   if (error) return [];
   return (data ?? []) as Array<{ connector_id: string; connected_at: string | null }>;
 }
@@ -700,13 +674,7 @@ export async function tool_disconnect_app(
     //    reads for read_email / play_music etc.) — reuse the exact service
     //    function the settings route (POST /social/disconnect/:provider) uses.
     if ((SUPPORTED_PROVIDERS as string[]).includes(provider)) {
-      const { data: socialRow } = await sb
-        .from('social_connections')
-        .select('id')
-        .eq('user_id', id.user_id)
-        .eq('provider', provider)
-        .eq('is_active', true)
-        .maybeSingle();
+      const { data: socialRow } = await repo.fetchActiveSocialConnectionRow(sb, id.user_id, provider);
       if (socialRow) {
         const result = await disconnectSocialAccount(sb, id.user_id, provider as SocialProvider);
         if (!result.ok) {
@@ -724,34 +692,16 @@ export async function tool_disconnect_app(
 
     // 2) AI assistant connection — same soft-disconnect + credential purge
     //    the settings route (DELETE /api/v1/ai-assistants/:provider) performs.
-    const { data: aiRow } = await sb
-      .from('user_connections')
-      .select('id')
-      .eq('user_id', id.user_id)
-      .eq('connector_id', provider)
-      .eq('category', 'ai_assistant')
-      .eq('is_active', true)
-      .maybeSingle();
+    const { data: aiRow } = await repo.fetchActiveAiConnectionRow(sb, id.user_id, provider);
     if (aiRow) {
-      const { error: updErr } = await sb
-        .from('user_connections')
-        .update({ is_active: false, disconnected_at: new Date().toISOString() })
-        .eq('id', (aiRow as { id: string }).id);
+      const { error: updErr } = await repo.deactivateAiConnection(sb, (aiRow as { id: string }).id, new Date().toISOString());
       if (updErr) {
         return { ok: false, error: `Could not disconnect ${display}: ${updErr.message}` };
       }
       // Purge the stored API key (overwrite with zero bytes, keep the row
       // for audit) — mirrors the ai-assistants disconnect route.
       try {
-        await sb
-          .from('ai_assistant_credentials')
-          .update({
-            encrypted_key: `\\x${'00'.repeat(32)}`,
-            encryption_iv: `\\x${'00'.repeat(12)}`,
-            encryption_tag: `\\x${'00'.repeat(16)}`,
-            last_verify_status: 'purged',
-          })
-          .eq('connection_id', (aiRow as { id: string }).id);
+        await repo.purgeAiAssistantCredential(sb, (aiRow as { id: string }).id);
       } catch {
         /* row stays disconnected even if the purge write fails */
       }

@@ -19,6 +19,7 @@
 
 import { getSupabase } from '../../lib/supabase';
 import { emitGuideTelemetry } from './guide-telemetry';
+import * as repo from './pattern-extractor-repository';
 
 const LOG_PREFIX = '[Guide:pattern-extractor]';
 const MIN_EVIDENCE = 3; // need at least 3 occurrences before claiming a pattern
@@ -58,13 +59,7 @@ export async function getUserRoutines(userId: string, limit: number = 8): Promis
   const supabase = getSupabase();
   if (!supabase) return [];
 
-  const { data, error } = await supabase
-    .from('user_routines')
-    .select('routine_kind, routine_key, title, summary, evidence_count, confidence, metadata, first_observed, last_observed')
-    .eq('user_id', userId)
-    .gte('confidence', MIN_CONFIDENCE)
-    .order('confidence', { ascending: false })
-    .limit(limit);
+  const { data, error } = await repo.fetchUserRoutines(supabase, userId, MIN_CONFIDENCE, limit);
 
   if (error) {
     console.warn(`${LOG_PREFIX} read failed:`, error.message);
@@ -97,11 +92,7 @@ export async function extractPatternsForUser(userId: string): Promise<ExtractRes
   // NOTE: no time_slot column here — the live calendar_events table does
   // not have one, and PostgREST rejects the whole select when any column
   // is missing (verified against production schema 2026-07-05).
-  const { data: events, error } = await supabase
-    .from('calendar_events')
-    .select('id, start_time, completion_status, status, event_type, wellness_tags')
-    .eq('user_id', userId)
-    .gte('start_time', sinceIso);
+  const { data: events, error } = await repo.fetchCalendarEventsSince(supabase, userId, sinceIso);
 
   if (error || !events) {
     console.warn(`${LOG_PREFIX} fetch events failed for ${userId.substring(0, 8)}:`, error?.message);
@@ -218,21 +209,18 @@ export async function extractPatternsForUser(userId: string): Promise<ExtractRes
   // Persist (upsert) — idempotent on (user_id, routine_kind, routine_key)
   let written = 0;
   for (const r of routines) {
-    const { error: upsertErr } = await supabase.from('user_routines').upsert(
-      {
-        user_id: userId,
-        routine_kind: r.routine_kind,
-        routine_key: r.routine_key,
-        title: r.title,
-        summary: r.summary,
-        evidence_count: r.evidence_count,
-        confidence: r.confidence,
-        metadata: r.metadata,
-        last_observed: r.last_observed,
-        updated_at: r.last_observed,
-      },
-      { onConflict: 'user_id,routine_kind,routine_key' },
-    );
+    const { error: upsertErr } = await repo.upsertUserRoutine(supabase, {
+      user_id: userId,
+      routine_kind: r.routine_kind,
+      routine_key: r.routine_key,
+      title: r.title,
+      summary: r.summary,
+      evidence_count: r.evidence_count,
+      confidence: r.confidence,
+      metadata: r.metadata,
+      last_observed: r.last_observed,
+      updated_at: r.last_observed,
+    });
     if (upsertErr) {
       console.warn(`${LOG_PREFIX} upsert ${r.routine_kind}:${r.routine_key} failed:`, upsertErr.message);
       continue;

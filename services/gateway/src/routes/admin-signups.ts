@@ -21,6 +21,7 @@ import { getSupabase } from '../lib/supabase';
 import { requireExafyAdmin, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { notifyUserAsync } from '../services/notification-service';
 import { dispatchEvent } from '../services/automation-executor';
+import * as repo from '../services/admin-signups/admin-signups-repository';
 
 const router = Router();
 const VTID = 'ADMIN-SIGNUPS';
@@ -36,23 +37,13 @@ router.get('/', requireExafyAdmin, async (req: AuthenticatedRequest, res: Respon
   const offset = parseInt(offsetStr as string) || 0;
 
   try {
-    let query = supabase
-      .from('signup_funnel')
-      .select('*')
-      .order('started_at', { ascending: false })
-      .range(offset, offset + limit - 1);
-
-    if (stage && typeof stage === 'string') {
-      query = query.eq('funnel_stage', stage);
-    }
-    if (tenant_id && typeof tenant_id === 'string') {
-      query = query.eq('tenant_id', tenant_id);
-    }
-    if (search && typeof search === 'string') {
-      query = query.or(`email.ilike.%${search}%,display_name.ilike.%${search}%`);
-    }
-
-    const { data, error } = await query;
+    const { data, error } = await repo.fetchSignupFunnel(supabase, {
+      stage: stage && typeof stage === 'string' ? stage : undefined,
+      tenantId: tenant_id && typeof tenant_id === 'string' ? tenant_id : undefined,
+      search: search && typeof search === 'string' ? search : undefined,
+      offset,
+      limit,
+    });
     if (error) {
       console.error(`[${VTID}] GET / error:`, error.message);
       return res.status(500).json({ ok: false, error: error.message });
@@ -78,16 +69,11 @@ router.get('/stats', requireExafyAdmin, async (req: AuthenticatedRequest, res: R
     const since = new Date(Date.now() - dayWindow * 86400000).toISOString();
 
     // Get all attempts within window
-    let query = supabase
-      .from('signup_attempts')
-      .select('status, tenant_id')
-      .gte('started_at', since);
-
-    if (tenant_id && typeof tenant_id === 'string') {
-      query = query.eq('tenant_id', tenant_id);
-    }
-
-    const { data: attempts, error } = await query;
+    const { data: attempts, error } = await repo.fetchAttemptsStatsWindow(
+      supabase,
+      since,
+      tenant_id && typeof tenant_id === 'string' ? tenant_id : undefined,
+    );
     if (error) {
       console.error(`[${VTID}] GET /stats error:`, error.message);
       return res.status(500).json({ ok: false, error: error.message });
@@ -105,11 +91,10 @@ router.get('/stats', requireExafyAdmin, async (req: AuthenticatedRequest, res: R
     };
 
     // Also get total registered users from app_users
-    let usersQuery = supabase.from('app_users').select('user_id', { count: 'exact', head: true });
-    if (tenant_id && typeof tenant_id === 'string') {
-      usersQuery = usersQuery.eq('tenant_id', tenant_id);
-    }
-    const { count: totalUsers } = await usersQuery;
+    const { count: totalUsers } = await repo.countRegisteredUsers(
+      supabase,
+      tenant_id && typeof tenant_id === 'string' ? tenant_id : undefined,
+    );
 
     return res.json({
       ok: true,
@@ -133,20 +118,12 @@ router.get('/attempts', requireExafyAdmin, async (req: AuthenticatedRequest, res
   const offset = parseInt(offsetStr as string) || 0;
 
   try {
-    let query = supabase
-      .from('signup_attempts')
-      .select('*', { count: 'exact' })
-      .order('started_at', { ascending: false })
-      .range(offset, offset + limit - 1);
-
-    if (status && typeof status === 'string') {
-      query = query.eq('status', status);
-    }
-    if (search && typeof search === 'string') {
-      query = query.ilike('email', `%${search}%`);
-    }
-
-    const { data, error, count } = await query;
+    const { data, error, count } = await repo.fetchAttempts(supabase, {
+      status: status && typeof status === 'string' ? status : undefined,
+      search: search && typeof search === 'string' ? search : undefined,
+      offset,
+      limit,
+    });
     if (error) {
       console.error(`[${VTID}] GET /attempts error:`, error.message);
       return res.status(500).json({ ok: false, error: error.message });
@@ -172,18 +149,14 @@ router.post('/log-attempt', async (req: Request, res: Response) => {
   }
 
   try {
-    const { data, error } = await supabase
-      .from('signup_attempts')
-      .insert({
-        email: email.trim().toLowerCase(),
-        tenant_id,
-        status: 'started',
-        metadata: metadata || {},
-        ip_address: req.ip || null,
-        user_agent: req.headers['user-agent'] || null,
-      })
-      .select('id')
-      .single();
+    const { data, error } = await repo.insertSignupAttempt(supabase, {
+      email: email.trim().toLowerCase(),
+      tenant_id,
+      status: 'started',
+      metadata: metadata || {},
+      ip_address: req.ip || null,
+      user_agent: req.headers['user-agent'] || null,
+    });
 
     if (error) {
       console.error(`[${VTID}] POST /log-attempt error:`, error.message);
@@ -219,10 +192,7 @@ router.post('/log-result', async (req: Request, res: Response) => {
     if (auth_user_id) updateData.auth_user_id = auth_user_id;
     if (status === 'onboarded' || status === 'abandoned') updateData.completed_at = new Date().toISOString();
 
-    const { error } = await supabase
-      .from('signup_attempts')
-      .update(updateData)
-      .eq('id', attempt_id);
+    const { error } = await repo.updateSignupAttempt(supabase, attempt_id, updateData);
 
     if (error) {
       console.error(`[${VTID}] POST /log-result error:`, error.message);
@@ -234,11 +204,7 @@ router.post('/log-result', async (req: Request, res: Response) => {
       const tenantId = process.env.DEFAULT_TENANT_ID;
       if (tenantId) {
         // Look up referral/shared_link source from signup_attempts
-        const { data: attempt } = await supabase
-          .from('signup_attempts')
-          .select('referral_code, utm_source, utm_campaign')
-          .eq('id', attempt_id)
-          .maybeSingle();
+        const { data: attempt } = await repo.fetchAttemptReferralInfo(supabase, attempt_id);
 
         dispatchEvent(tenantId, 'user.signup.completed', {
           user_id: auth_user_id,
@@ -281,31 +247,23 @@ router.post('/:id/invite', requireExafyAdmin, async (req: AuthenticatedRequest, 
 
   try {
     // Get the signup attempt
-    const { data: attempt, error: fetchError } = await supabase
-      .from('signup_attempts')
-      .select('*')
-      .eq('id', id)
-      .single();
+    const { data: attempt, error: fetchError } = await repo.fetchAttemptById(supabase, id);
 
     if (fetchError || !attempt) {
       return res.status(404).json({ ok: false, error: 'ATTEMPT_NOT_FOUND' });
     }
 
     // Create invitation record
-    const { data: invitation, error: insertError } = await supabase
-      .from('onboarding_invitations')
-      .insert({
-        tenant_id: attempt.tenant_id,
-        signup_attempt_id: id,
-        target_user_id: attempt.auth_user_id || null,
-        email: attempt.email,
-        invited_by: req.identity!.user_id,
-        type: type || 'email',
-        status: 'sent',
-        message: message || 'We noticed you started signing up for Vitana. Would you like help completing your registration?',
-      })
-      .select('id')
-      .single();
+    const { data: invitation, error: insertError } = await repo.insertOnboardingInvitation(supabase, {
+      tenant_id: attempt.tenant_id,
+      signup_attempt_id: id,
+      target_user_id: attempt.auth_user_id || null,
+      email: attempt.email,
+      invited_by: req.identity!.user_id,
+      type: type || 'email',
+      status: 'sent',
+      message: message || 'We noticed you started signing up for Vitana. Would you like help completing your registration?',
+    });
 
     if (insertError) {
       console.error(`[${VTID}] POST /:id/invite insert error:`, insertError.message);
@@ -346,11 +304,7 @@ router.post('/:id/repair', requireExafyAdmin, async (req: AuthenticatedRequest, 
 
   try {
     // Get the signup attempt
-    const { data: attempt, error: fetchError } = await supabase
-      .from('signup_attempts')
-      .select('*')
-      .eq('id', id)
-      .single();
+    const { data: attempt, error: fetchError } = await repo.fetchAttemptById(supabase, id);
 
     if (fetchError || !attempt) {
       return res.status(404).json({ ok: false, error: 'ATTEMPT_NOT_FOUND' });
@@ -361,33 +315,21 @@ router.post('/:id/repair', requireExafyAdmin, async (req: AuthenticatedRequest, 
     }
 
     // Check if app_users row exists
-    const { data: existingUser } = await supabase
-      .from('app_users')
-      .select('user_id')
-      .eq('user_id', attempt.auth_user_id)
-      .single();
+    const { data: existingUser } = await repo.fetchAppUserByUserId(supabase, attempt.auth_user_id);
 
     if (existingUser) {
       // Check user_tenants
-      const { data: existingMembership } = await supabase
-        .from('user_tenants')
-        .select('tenant_id')
-        .eq('user_id', attempt.auth_user_id)
-        .eq('tenant_id', attempt.tenant_id)
-        .single();
+      const { data: existingMembership } = await repo.fetchUserTenantMembership(supabase, attempt.auth_user_id, attempt.tenant_id);
 
       if (existingMembership) {
         // Update signup attempt to onboarded
-        await supabase
-          .from('signup_attempts')
-          .update({ status: 'onboarded', completed_at: new Date().toISOString() })
-          .eq('id', id);
+        await repo.updateSignupAttempt(supabase, id, { status: 'onboarded', completed_at: new Date().toISOString() });
 
         return res.json({ ok: true, message: 'User already fully provisioned', repaired: false });
       }
 
       // Create missing tenant membership
-      await supabase.from('user_tenants').insert({
+      await repo.insertUserTenant(supabase, {
         tenant_id: attempt.tenant_id,
         user_id: attempt.auth_user_id,
         active_role: 'community',
@@ -399,14 +341,14 @@ router.post('/:id/repair', requireExafyAdmin, async (req: AuthenticatedRequest, 
       const email = authUser?.user?.email || attempt.email;
 
       // Create app_users row
-      await supabase.from('app_users').insert({
+      await repo.insertAppUser(supabase, {
         user_id: attempt.auth_user_id,
         email,
         tenant_id: attempt.tenant_id,
       });
 
       // Create user_tenants row
-      await supabase.from('user_tenants').insert({
+      await repo.insertUserTenant(supabase, {
         tenant_id: attempt.tenant_id,
         user_id: attempt.auth_user_id,
         active_role: 'community',
@@ -415,10 +357,7 @@ router.post('/:id/repair', requireExafyAdmin, async (req: AuthenticatedRequest, 
     }
 
     // Update signup attempt status
-    await supabase
-      .from('signup_attempts')
-      .update({ status: 'onboarded', completed_at: new Date().toISOString() })
-      .eq('id', id);
+    await repo.updateSignupAttempt(supabase, id, { status: 'onboarded', completed_at: new Date().toISOString() });
 
     console.log(`[${VTID}] Repaired provisioning for ${attempt.email} by ${req.identity!.email || 'unknown'}`);
 
@@ -440,17 +379,11 @@ router.get('/invitations', requireExafyAdmin, async (req: AuthenticatedRequest, 
   const offset = parseInt(offsetStr as string) || 0;
 
   try {
-    let query = supabase
-      .from('onboarding_invitations')
-      .select('*', { count: 'exact' })
-      .order('sent_at', { ascending: false })
-      .range(offset, offset + limit - 1);
-
-    if (status && typeof status === 'string') {
-      query = query.eq('status', status);
-    }
-
-    const { data, error, count } = await query;
+    const { data, error, count } = await repo.fetchInvitations(supabase, {
+      status: status && typeof status === 'string' ? status : undefined,
+      offset,
+      limit,
+    });
     if (error) {
       console.error(`[${VTID}] GET /invitations error:`, error.message);
       return res.status(500).json({ ok: false, error: error.message });

@@ -3,6 +3,7 @@ import { getSupabase } from '../lib/supabase';
 import { RuleMatcher, EvaluationEngine, EnforcementExecutor, ViolationGenerator, OasisPipeline } from '../validator-core';
 import { RuleDTO, EvaluationDTO, ViolationDTO, ProposalDTO, FeedEntry, EvaluationSummary, ProposalTimelineEvent } from '../types/governance';
 import { getGovernanceHistory, GovernanceHistoryEvent, GOVERNANCE_EVENT_TYPES } from '../services/oasis-event-service';
+import * as repo from './governance-controller-repository';
 
 // Removed unsafe module-load createClient - now using getSupabase() in methods
 
@@ -80,11 +81,7 @@ export class GovernanceController {
             }
 
             // Fetch active governance rules for deploy actions
-            const { data: rules, error: rulesError } = await supabase
-                .from('governance_rules')
-                .select('*')
-                .eq('tenant_id', tenantId)
-                .eq('is_active', true);
+            const { data: rules, error: rulesError } = await repo.fetchActiveGovernanceRules(supabase, tenantId);
 
             if (rulesError) {
                 console.error('[VTID-0407] Error fetching governance rules:', rulesError);
@@ -338,18 +335,7 @@ export class GovernanceController {
             }
 
             // VTID-0409: Fetch all governance rules with category join
-            const { data: rules, error: rulesError } = await supabase
-                .from('governance_rules')
-                .select(`
-                    *,
-                    governance_categories (
-                        name,
-                        code,
-                        description
-                    )
-                `)
-                .eq('tenant_id', tenantId)
-                .order('rule_id', { ascending: true });
+            const { data: rules, error: rulesError } = await repo.fetchGovernanceRulesWithCategories(supabase, tenantId);
 
             if (rulesError) {
                 console.error('[VTID-0409] Error fetching rules for categories:', rulesError);
@@ -476,24 +462,14 @@ export class GovernanceController {
                 });
             }
 
-            let query = supabase
-                .from('governance_rules')
-                .select(`
-                    *,
-                    governance_categories (
-                        name,
-                        code
-                    )
-                `)
-                .eq('tenant_id', tenantId)
-                .order('rule_id', { ascending: true });
+            let query = repo.buildRulesQuery(supabase, tenantId);
 
             // Apply level filter at DB level if provided
             if (level) {
                 query = query.eq('level', level as string);
             }
 
-            const { data: rules, error } = await query;
+            const { data: rules, error } = (await query) as { data: any[] | null; error: any };
 
             if (error) {
                 console.error('Error fetching rules:', error);
@@ -603,17 +579,7 @@ export class GovernanceController {
                     message: 'Governance storage is temporarily unavailable'
                 });
             }
-            const { data: rules, error } = await supabase
-                .from('governance_rules')
-                .select(`
-                    *,
-                    governance_categories (
-                        name
-                    )
-                `)
-                .eq('tenant_id', tenantId)
-                .eq('logic->>rule_code', ruleCode)
-                .limit(1);
+            const { data: rules, error } = await repo.fetchGovernanceRuleByCode(supabase, tenantId, ruleCode);
 
             if (error) {
                 console.error('Error fetching rule:', error);
@@ -640,12 +606,7 @@ export class GovernanceController {
             }
 
             // Fetch recent evaluations
-            const { data: evaluations } = await supabase
-                .from('governance_evaluations')
-                .select('*')
-                .eq('rule_id', rule.id)
-                .order('evaluated_at', { ascending: false })
-                .limit(5);
+            const { data: evaluations } = await repo.fetchRecentGovernanceEvaluations(supabase, rule.id, 5);
 
             const lastEvaluations: EvaluationSummary[] = (evaluations || []).map((ev: any) => ({
                 timestamp: ev.evaluated_at,
@@ -690,11 +651,7 @@ export class GovernanceController {
                     message: 'Governance storage is temporarily unavailable'
                 });
             }
-            let query = supabase
-                .from('governance_proposals')
-                .select('*')
-                .eq('tenant_id', tenantId)
-                .order('created_at', { ascending: false });
+            let query = repo.buildProposalsQuery(supabase, tenantId);
 
             if (status) {
                 query = query.eq('status', status as string);
@@ -780,12 +737,7 @@ export class GovernanceController {
             // Fetch original rule if ruleCode provided and type is Change/Deprecate
             let originalRule = null;
             if (ruleCode && (type === 'Change Rule' || type === 'Deprecate Rule')) {
-                const { data: rules } = await supabase
-                    .from('governance_rules')
-                    .select('*')
-                    .eq('tenant_id', tenantId)
-                    .eq('logic->>rule_code', ruleCode)
-                    .limit(1);
+                const { data: rules } = await repo.fetchGovernanceRuleByCodeRaw(supabase, tenantId, ruleCode);
 
                 if (rules && rules.length > 0) {
                     const rule = rules[0];
@@ -799,22 +751,18 @@ export class GovernanceController {
             }
 
             // Insert proposal
-            const { data: proposal, error } = await supabase
-                .from('governance_proposals')
-                .insert({
-                    tenant_id: tenantId,
-                    proposal_id: proposalId,
-                    type,
-                    rule_code: ruleCode || null,
-                    status: initialStatus,
-                    created_by: createdBy,
-                    original_rule: originalRule,
-                    proposed_rule: proposedRule,
-                    rationale,
-                    timeline
-                })
-                .select()
-                .single();
+            const { data: proposal, error } = await repo.insertGovernanceProposal(supabase, {
+                tenant_id: tenantId,
+                proposal_id: proposalId,
+                type,
+                rule_code: ruleCode || null,
+                status: initialStatus,
+                created_by: createdBy,
+                original_rule: originalRule,
+                proposed_rule: proposedRule,
+                rationale,
+                timeline
+            });
 
             if (error) {
                 console.error('Error creating proposal:', error);
@@ -881,12 +829,7 @@ export class GovernanceController {
             }
 
             // Fetch current proposal
-            const { data: currentProposal, error: fetchError } = await supabase
-                .from('governance_proposals')
-                .select('*')
-                .eq('tenant_id', tenantId)
-                .eq('proposal_id', proposalId)
-                .single();
+            const { data: currentProposal, error: fetchError } = await repo.fetchGovernanceProposalById(supabase, tenantId, proposalId);
 
             if (fetchError || !currentProposal) {
                 return res.status(404).json({ error: `Proposal ${proposalId} not found` });
@@ -919,15 +862,10 @@ export class GovernanceController {
             ];
 
             // Update proposal
-            const { data: updatedProposal, error: updateError } = await supabase
-                .from('governance_proposals')
-                .update({
-                    status,
-                    timeline: newTimeline
-                })
-                .eq('proposal_id', proposalId)
-                .select()
-                .single();
+            const { data: updatedProposal, error: updateError } = await repo.updateGovernanceProposal(supabase, proposalId, {
+                status,
+                timeline: newTimeline
+            });
 
             if (updateError) {
                 console.error('Error updating proposal:', updateError);
@@ -984,11 +922,7 @@ export class GovernanceController {
             }
 
             // VTID-0406: Query oasis_events for governance.evaluate events
-            let query = supabase
-                .from('oasis_events')
-                .select('*')
-                .eq('topic', 'governance.evaluate')
-                .order('created_at', { ascending: false });
+            let query = repo.buildEvaluationsQuery(supabase);
 
             // Apply filters
             if (from) {
@@ -1091,16 +1025,7 @@ export class GovernanceController {
                     message: 'Governance storage is temporarily unavailable'
                 });
             }
-            const { data: violations, error } = await supabase
-                .from('governance_violations')
-                .select(`
-                    *,
-                    governance_rules (
-                        logic
-                    )
-                `)
-                .eq('tenant_id', tenantId)
-                .order('created_at', { ascending: false });
+            const { data: violations, error } = await repo.fetchGovernanceViolations(supabase, tenantId);
 
             if (error) {
                 console.error('Error fetching violations:', error);
@@ -1152,13 +1077,7 @@ export class GovernanceController {
                     error: 'SUPABASE_CONFIG_ERROR',
                     message: 'Governance storage is temporarily unavailable'
                 });
-            } const { data: events, error } = await supabase
-                .from('oasis_events_v1')
-                .select('*')
-                .eq('tenant', 'SYSTEM')
-                .or('task_type.like.%governance%,notes.like.%governance%')
-                .order('created_at', { ascending: false })
-                .limit(50);
+            } const { data: events, error } = await repo.fetchGovernanceFeedEvents(supabase, 50);
 
             if (error) {
                 console.error('Error fetching feed:', error);
@@ -1209,12 +1128,7 @@ export class GovernanceController {
             });
         }
 
-        const { data, error } = await supabase
-            .from('governance_enforcements')
-            .select('*')
-            .eq('tenant_id', tenantId)
-            .order('executed_at', { ascending: false })
-            .limit(50);
+        const { data, error } = await repo.fetchGovernanceEnforcements(supabase, tenantId, 50);
 
         if (error) return res.status(500).json({ error: error.message });
         res.json(data);
@@ -1232,12 +1146,7 @@ export class GovernanceController {
             });
         }
 
-        const { data, error } = await supabase
-            .from('oasis_events')
-            .select('*')
-            .eq('service', 'governance') // Filter by service
-            .order('created_at', { ascending: false })
-            .limit(100);
+        const { data, error } = await repo.fetchGovernanceLogs(supabase, 100);
 
         if (error) return res.status(500).json({ error: error.message });
         res.json(data);

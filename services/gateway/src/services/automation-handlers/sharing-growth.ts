@@ -8,6 +8,7 @@
 import { randomUUID } from 'crypto';
 import { AutomationContext, REWARD_TABLE } from '../../types/automations';
 import { registerHandler } from '../automation-executor';
+import * as repo from './sharing-growth-repository';
 
 const APP_URL = process.env.APP_URL || 'https://vitana.app';
 const VITANA_BOT_USER_ID = process.env.VITANA_BOT_USER_ID || '00000000-0000-0000-0000-000000000000';
@@ -29,22 +30,14 @@ async function generateWhatsAppEventLink(ctx: AutomationContext) {
 
   const { supabase, tenantId } = ctx;
 
-  const { data: event } = await supabase
-    .from('global_community_events')
-    .select('title, start_time')
-    .eq('id', event_id)
-    .maybeSingle();
+  const { data: event } = await repo.fetchEventForShare(supabase, event_id);
 
   if (!event) return { usersAffected: 0, actionsTaken: 0 };
 
-  const { count: rsvpCount } = await supabase
-    .from('global_event_participants')
-    .select('id', { count: 'exact', head: true })
-    .eq('event_id', event_id)
-    .eq('status', 'attending');
+  const { count: rsvpCount } = await repo.fetchEventRsvpCount(supabase, event_id);
 
   const shortCode = generateShortCode();
-  await supabase.from('sharing_links').insert({
+  await repo.insertSharingLink(supabase, {
     tenant_id: tenantId,
     user_id,
     target_type: 'event',
@@ -79,21 +72,14 @@ async function generateWhatsAppGroupInvite(ctx: AutomationContext) {
 
   const { supabase, tenantId } = ctx;
 
-  const { data: group } = await supabase
-    .from('global_community_groups')
-    .select('name, category')
-    .eq('id', group_id)
-    .maybeSingle();
+  const { data: group } = await repo.fetchGroupForShare(supabase, group_id);
 
   if (!group) return { usersAffected: 0, actionsTaken: 0 };
 
-  const { count: memberCount } = await supabase
-    .from('global_community_group_members')
-    .select('id', { count: 'exact', head: true })
-    .eq('group_id', group_id);
+  const { count: memberCount } = await repo.fetchGroupMemberCount(supabase, group_id);
 
   const shortCode = generateShortCode();
-  await supabase.from('sharing_links').insert({
+  await repo.insertSharingLink(supabase, {
     tenant_id: tenantId,
     user_id,
     target_type: 'group',
@@ -125,7 +111,7 @@ async function runInviteAfterPositive(ctx: AutomationContext) {
 
   // Generate referral link
   const shortCode = generateShortCode();
-  await supabase.from('sharing_links').insert({
+  await repo.insertSharingLink(supabase, {
     tenant_id: tenantId,
     user_id: userId,
     target_type: 'profile',
@@ -137,7 +123,7 @@ async function runInviteAfterPositive(ctx: AutomationContext) {
   });
 
   // Create referral record
-  await supabase.from('referrals').insert({
+  await repo.insertReferral(supabase, {
     tenant_id: tenantId,
     referrer_id: userId,
     source: 'direct',
@@ -171,22 +157,14 @@ async function runReferralReward(ctx: AutomationContext) {
 
   const { supabase, tenantId } = ctx;
 
-  const { data: updatedReferrals } = await supabase.from('referrals')
-    .update({ referred_id, status: 'signed_up' })
-    .eq('tenant_id', tenantId)
-    .eq('referrer_id', referrer_id)
-    .eq('status', 'created')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .select('id');
+  const { data: updatedReferrals } = await repo.updateReferralToSignedUp(supabase, tenantId, referrer_id, referred_id);
 
   if (!updatedReferrals?.length) {
     // Already processed (or no matching referral) — don't double-credit.
     return { usersAffected: 0, actionsTaken: 0 };
   }
 
-  const { data: referred } = await supabase
-    .from('app_users').select('display_name').eq('user_id', referred_id).maybeSingle();
+  const { data: referred } = await repo.fetchUserDisplayName(supabase, referred_id);
 
   ctx.notify(referrer_id, 'orb_proactive_message', {
     title: 'Your Friend Joined!',
@@ -196,11 +174,18 @@ async function runReferralReward(ctx: AutomationContext) {
 
   const rewardConfig = REWARD_TABLE['referral_completed'];
 
-  await supabase.rpc('increment_wallet_balance', {
+  // increment_wallet_balance is confirmed live (unlike credit_wallet — see
+  // AURORA-B3-RPC-PARITY-INVENTORY.md), but supabase-js's .rpc() still
+  // resolves normally with an {error} field on a Postgres-level failure
+  // rather than throwing, so a failure here was previously invisible.
+  const { error: walletErr } = await repo.incrementWalletBalance(supabase, {
     p_user_id: referrer_id,
     p_currency_type: 'CREDITS',
     p_amount: rewardConfig.amount,
   });
+  if (walletErr) {
+    ctx.log(`increment_wallet_balance RPC returned an error for referral reward (referrer=${referrer_id}): ${walletErr.message}`);
+  }
 
   await ctx.emitEvent('autopilot.sharing.referral_completed', {
     referrer_id, referred_id, reward: rewardConfig.amount,
@@ -221,18 +206,10 @@ async function runEventCountdownSharePrompt(ctx: AutomationContext) {
   const in48h = new Date(now.getTime() + 48 * 60 * 60 * 1000);
   const in46h = new Date(now.getTime() + 46 * 60 * 60 * 1000);
 
-  const { data: events } = await supabase
-    .from('global_community_events')
-    .select('id, title')
-    .gte('start_time', in46h.toISOString())
-    .lte('start_time', in48h.toISOString());
+  const { data: events } = await repo.fetchUpcomingEventsInWindow(supabase, in46h.toISOString(), in48h.toISOString());
 
   for (const event of events || []) {
-    const { data: attendees, count } = await supabase
-      .from('global_event_participants')
-      .select('user_id', { count: 'exact' })
-      .eq('event_id', event.id)
-      .eq('status', 'attending');
+    const { data: attendees, count } = await repo.fetchEventAttendees(supabase, event.id);
 
     if ((count || 0) < 5) continue;
 
@@ -263,7 +240,7 @@ async function runViralLoopOnboarding(ctx: AutomationContext) {
   const { supabase, tenantId } = ctx;
 
   // Auto-connect referrer and referred
-  await supabase.from('relationship_edges').upsert({
+  await repo.upsertRelationshipEdge(supabase, {
     tenant_id: tenantId,
     source_type: 'person',
     source_id: referred_id,
@@ -272,15 +249,15 @@ async function runViralLoopOnboarding(ctx: AutomationContext) {
     edge_type: 'connected',
     strength: 30,
     metadata: { origin: 'referral' },
-  }, { onConflict: 'tenant_id,source_type,source_id,target_type,target_id,edge_type' });
+  });
 
   // If target is an event, auto-register.
   if (target_type === 'event' && target_id) {
-    await supabase.from('global_event_participants').upsert({
+    await repo.upsertEventParticipant(supabase, {
       event_id: target_id,
       user_id: referred_id,
       status: 'attending',
-    }, { onConflict: 'event_id,user_id' });
+    });
   }
 
   // Notify referrer
@@ -312,28 +289,17 @@ async function runSocialMediaEventCardGenerator(ctx: AutomationContext) {
 
   const since = new Date(Date.now() - EVENT_CARD_LOOKBACK_MINUTES * 60 * 1000).toISOString();
 
-  const { data: events } = await supabase
-    .from('global_community_events')
-    .select('id, title, start_time, created_by, participant_count, slug')
-    .not('created_by', 'is', null)
-    .gte('created_at', since)
-    .limit(200);
+  const { data: events } = await repo.fetchRecentEventsWithCreator(supabase, since);
 
   let cardsGenerated = 0;
   for (const event of events || []) {
     if (cardsGenerated >= EVENT_CARD_MAX_PER_RUN) break;
 
-    const { data: existingCard } = await supabase
-      .from('sharing_links')
-      .select('id')
-      .eq('target_type', 'event')
-      .eq('target_id', event.id)
-      .eq('utm_campaign', 'event_social_card')
-      .limit(1);
+    const { data: existingCard } = await repo.fetchExistingSocialCard(supabase, event.id);
     if (existingCard && existingCard.length > 0) continue;
 
     const shortCode = generateShortCode();
-    await supabase.from('sharing_links').insert({
+    await repo.insertSharingLink(supabase, {
       tenant_id: tenantId,
       user_id: event.created_by,
       target_type: 'event',
@@ -376,11 +342,7 @@ async function runAutoPostCommunityHighlights(ctx: AutomationContext) {
 
   const weekAgo = new Date(Date.now() - HIGHLIGHTS_WINDOW_DAYS * 86_400_000).toISOString();
 
-  const { data: newMemberships } = await supabase
-    .from('global_community_group_members')
-    .select('group_id')
-    .gte('joined_at', weekAgo)
-    .limit(5000);
+  const { data: newMemberships } = await repo.fetchNewGroupMemberships(supabase, weekAgo);
 
   const groupCounts = new Map<string, number>();
   for (const m of newMemberships || []) groupCounts.set(m.group_id, (groupCounts.get(m.group_id) || 0) + 1);
@@ -393,19 +355,12 @@ async function runAutoPostCommunityHighlights(ctx: AutomationContext) {
 
   let topGroupName: string | null = null;
   if (topGroupId) {
-    const { data: g } = await supabase.from('global_community_groups').select('name').eq('id', topGroupId).maybeSingle();
+    const { data: g } = await repo.fetchGroupName(supabase, topGroupId);
     topGroupName = g?.name || null;
   }
 
   const in14d = new Date(Date.now() + 14 * 86_400_000).toISOString();
-  const { data: topEvent } = await supabase
-    .from('global_community_events')
-    .select('id, title, participant_count')
-    .gte('start_time', new Date().toISOString())
-    .lte('start_time', in14d)
-    .order('participant_count', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const { data: topEvent } = await repo.fetchTopUpcomingEvent(supabase, new Date().toISOString(), in14d);
 
   if (!topGroupName && !topEvent) return { usersAffected: 0, actionsTaken: 0 };
 
@@ -414,7 +369,7 @@ async function runAutoPostCommunityHighlights(ctx: AutomationContext) {
   if (topEvent) highlightParts.push(`"${topEvent.title}" has ${topEvent.participant_count || 0} people going`);
 
   const shortCode = generateShortCode();
-  await supabase.from('sharing_links').insert({
+  await repo.insertSharingLink(supabase, {
     tenant_id: tenantId,
     user_id: VITANA_BOT_USER_ID,
     target_type: topEvent ? 'event' : 'group',
@@ -451,19 +406,15 @@ async function runUserProfileShareCard(ctx: AutomationContext) {
 
   const { supabase, tenantId } = ctx;
 
-  const { data: user } = await supabase
-    .from('app_users').select('display_name').eq('user_id', userId).maybeSingle();
+  const { data: user } = await repo.fetchUserDisplayName(supabase, userId);
   if (!user) return { usersAffected: 0, actionsTaken: 0 };
 
-  const { count: interestCount } = await supabase
-    .from('user_interests').select('id', { count: 'exact', head: true }).eq('user_id', userId);
+  const { count: interestCount } = await repo.countUserInterests(supabase, userId);
 
-  const { count: connectionCount } = await supabase
-    .from('relationship_edges').select('id', { count: 'exact', head: true })
-    .eq('tenant_id', tenantId).eq('source_type', 'person').eq('source_id', userId).eq('target_type', 'person');
+  const { count: connectionCount } = await repo.countUserConnections(supabase, tenantId, userId);
 
   const shortCode = generateShortCode();
-  await supabase.from('sharing_links').insert({
+  await repo.insertSharingLink(supabase, {
     tenant_id: tenantId, user_id: userId, target_type: 'profile', target_id: userId,
     short_code: shortCode, utm_source: 'social', utm_medium: 'share', utm_campaign: 'profile_share_card',
   });
@@ -497,14 +448,10 @@ async function runWeeklyRecapShare(ctx: AutomationContext) {
 
   for (const { user_id } of users) {
     const [matchesRes, messagesRes, eventsRes, groupsRes] = await Promise.all([
-      supabase.from('daily_matches').select('id', { count: 'exact', head: true })
-        .eq('user_id', user_id).gte('created_at', weekAgo).not('viewed_at', 'is', null),
-      supabase.from('chat_messages').select('id', { count: 'exact', head: true })
-        .eq('tenant_id', tenantId).eq('sender_id', user_id).gte('created_at', weekAgo),
-      supabase.from('global_event_participants').select('id', { count: 'exact', head: true })
-        .eq('user_id', user_id).gte('registered_at', weekAgo),
-      supabase.from('global_community_group_members').select('id', { count: 'exact', head: true })
-        .eq('user_id', user_id).gte('joined_at', weekAgo),
+      repo.countUserMatchesViewed(supabase, user_id, weekAgo),
+      repo.countUserMessagesSent(supabase, tenantId, user_id, weekAgo),
+      repo.countUserEventsJoined(supabase, user_id, weekAgo),
+      repo.countUserGroupsJoined(supabase, user_id, weekAgo),
     ]);
     const matchesViewed = matchesRes.count;
     const messagesSent = messagesRes.count;
@@ -515,7 +462,7 @@ async function runWeeklyRecapShare(ctx: AutomationContext) {
     if (total === 0) continue;
 
     const shortCode = generateShortCode();
-    await supabase.from('sharing_links').insert({
+    await repo.insertSharingLink(supabase, {
       tenant_id: tenantId, user_id, target_type: 'profile', target_id: user_id,
       short_code: shortCode, utm_source: 'social', utm_medium: 'share', utm_campaign: 'weekly_recap',
     });
@@ -557,19 +504,16 @@ async function runBringYourCircleInviteWave(ctx: AutomationContext) {
 
   const { supabase, tenantId } = ctx;
 
-  const { data: match } = await supabase.from('daily_matches').select('user_id').eq('id', matchId).maybeSingle();
+  const { data: match } = await repo.fetchMatchUser(supabase, matchId);
   if (!match?.user_id) return { usersAffected: 0, actionsTaken: 0 };
   const userId = match.user_id;
 
   const cooldownCutoff = new Date(Date.now() - CIRCLE_WAVE_COOLDOWN_DAYS * 86_400_000).toISOString();
-  const { data: recentWave } = await supabase
-    .from('user_notifications').select('id')
-    .eq('user_id', userId).contains('data', { automation_id: 'AP-0411' })
-    .gte('created_at', cooldownCutoff).limit(1);
+  const { data: recentWave } = await repo.fetchRecentInviteWave(supabase, userId, cooldownCutoff);
   if (recentWave && recentWave.length > 0) return { usersAffected: 0, actionsTaken: 0 };
 
   const shortCode = generateShortCode();
-  await supabase.from('sharing_links').insert({
+  await repo.insertSharingLink(supabase, {
     tenant_id: tenantId, user_id: userId, target_type: 'profile', target_id: userId,
     short_code: shortCode, utm_source: 'vitana', utm_medium: 'referral', utm_campaign: 'circle_invite_wave',
   });
@@ -600,7 +544,7 @@ async function runProgressToStoryShare(ctx: AutomationContext) {
   const { supabase, tenantId } = ctx;
 
   const shortCode = generateShortCode();
-  await supabase.from('sharing_links').insert({
+  await repo.insertSharingLink(supabase, {
     tenant_id: tenantId, user_id: userId, target_type: 'profile', target_id: userId,
     short_code: shortCode, utm_source: 'social', utm_medium: 'share', utm_campaign: 'milestone_story',
   });

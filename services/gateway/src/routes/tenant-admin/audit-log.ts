@@ -12,6 +12,7 @@ import { Router, Response } from 'express';
 import { requireTenantAdmin } from '../../middleware/require-tenant-admin';
 import { AuthenticatedRequest } from '../../middleware/auth-supabase-jwt';
 import { getSupabase } from '../../lib/supabase';
+import * as repo from './audit-log-repository';
 
 const router = Router({ mergeParams: true });
 
@@ -25,16 +26,7 @@ router.get('/actions', requireTenantAdmin, async (req: AuthenticatedRequest, res
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
     const action = (req.query.action as string || '').trim();
 
-    let query = supabase
-      .from('tenant_admin_audit_log')
-      .select('*')
-      .eq('tenant_id', tenantId)
-      .order('created_at', { ascending: false })
-      .limit(limit);
-
-    if (action) query = query.eq('action', action);
-
-    const { data, error } = await query;
+    const { data, error } = await repo.fetchTenantAdminAuditLog(supabase, { tenantId, limit, action });
     if (error) return res.status(500).json({ ok: false, error: error.message });
 
     return res.json({ ok: true, actions: data || [] });
@@ -52,12 +44,7 @@ router.get('/access', requireTenantAdmin, async (req: AuthenticatedRequest, res:
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
 
     // Query OASIS events for auth-related topics
-    const { data, error } = await supabase
-      .from('oasis_events')
-      .select('*')
-      .in('topic', ['auth.login', 'auth.logout', 'auth.signup', 'role.changed'])
-      .order('created_at', { ascending: false })
-      .limit(limit);
+    const { data, error } = await repo.fetchAuthOasisEvents(supabase, limit);
 
     if (error) return res.status(500).json({ ok: false, error: error.message });
 

@@ -15,6 +15,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import * as repo from './orb-session-state-repository';
 
 export type OrbSessionStateKey =
   | 'continuity'
@@ -29,8 +30,6 @@ export interface OrbSessionStateRecord<T = unknown> {
   value: T;
   expiresAtMs: number;
 }
-
-const TABLE = 'orb_session_state';
 
 // ---------------------------------------------------------------------------
 // VTID-03485 — write/read health tracking.
@@ -231,12 +230,7 @@ export async function readOrbSessionState<T = unknown>(
 ): Promise<OrbSessionStateRecord<T> | null> {
   if (!userId || !key) return null;
   try {
-    const { data, error } = await supabase
-      .from(TABLE)
-      .select('value, expires_at')
-      .eq('user_id', userId)
-      .eq('key', key)
-      .maybeSingle();
+    const { data, error } = await repo.fetchOrbSessionStateValue(supabase, userId, key);
     // A genuine query error and a legitimately absent row both return null to
     // the caller, but they mean opposite things for health: "no row yet" is the
     // normal first-session case, "relation does not exist" is an outage. Only
@@ -270,12 +264,13 @@ export async function writeOrbSessionState(
   const expiresIso = new Date(nowMs + ttl * 60_000).toISOString();
   const updatedIso = new Date(nowMs).toISOString();
   try {
-    const { error } = await supabase
-      .from(TABLE)
-      .upsert(
-        { user_id: userId, key, value, expires_at: expiresIso, updated_at: updatedIso },
-        { onConflict: 'user_id,key' },
-      );
+    const { error } = await repo.upsertOrbSessionStateValue(supabase, {
+      user_id: userId,
+      key,
+      value,
+      expires_at: expiresIso,
+      updated_at: updatedIso,
+    });
     if (error) {
       recordFailure('write', error.message, nowMs);
       return { ok: false, reason: error.message };
@@ -298,7 +293,7 @@ export async function clearOrbSessionState(
   if (!userId || !key) return { ok: false, reason: 'missing_identity_or_key' };
   try {
     const nowMs = Date.now();
-    const { error } = await supabase.from(TABLE).delete().eq('user_id', userId).eq('key', key);
+    const { error } = await repo.deleteOrbSessionStateValue(supabase, userId, key);
     if (error) {
       recordFailure('clear', error.message, nowMs);
       return { ok: false, reason: error.message };

@@ -38,6 +38,7 @@ import {
   type OAuthReturnMode,
   type GoogleSubService,
 } from '../services/social-connect-service';
+import * as repo from './social-connect-repository';
 
 const router = Router();
 const LOG_PREFIX = '[SocialConnect]';
@@ -350,13 +351,7 @@ router.post('/enrich/:provider', async (req: Request, res: Response) => {
   if (!supabase) return res.status(503).json({ ok: false, error: 'Service unavailable' });
 
   // Find the connection
-  const { data: conn } = await supabase
-    .from('social_connections')
-    .select('id')
-    .eq('user_id', user.userId)
-    .eq('provider', provider)
-    .eq('is_active', true)
-    .maybeSingle();
+  const { data: conn } = await repo.fetchActiveSocialConnectionId(supabase, user.userId, provider);
 
   if (!conn) {
     return res.status(404).json({ ok: false, error: `No active ${provider} connection found` });
@@ -433,13 +428,7 @@ router.get('/:provider/profile-summary', async (req: Request, res: Response) => 
   if (!supabase) return res.status(503).json({ ok: false, error: 'Service unavailable' });
 
   const provider = req.params.provider;
-  const { data: connection, error } = await supabase
-    .from('social_connections')
-    .select('provider, provider_username, display_name, avatar_url, profile_url, enrichment_data, enrichment_status, last_enriched_at')
-    .eq('user_id', user.userId)
-    .eq('provider', provider)
-    .eq('is_active', true)
-    .maybeSingle();
+  const { data: connection, error } = await repo.fetchSocialConnectionProfileSummary(supabase, user.userId, provider);
 
   if (error) return res.status(500).json({ ok: false, error: error.message });
   if (!connection) return res.status(404).json({ ok: false, error: 'Connection not found' });
@@ -488,13 +477,7 @@ router.get('/google/verify', async (req: Request, res: Response) => {
   const supabase = await getServiceClient();
   if (!supabase) return res.status(503).json({ ok: false, error: 'Service unavailable' });
 
-  const { data: conn } = await supabase
-    .from('social_connections')
-    .select('id, access_token, refresh_token, token_expires_at, scopes, provider_username, connected_at')
-    .eq('user_id', user.userId)
-    .eq('provider', 'google')
-    .eq('is_active', true)
-    .maybeSingle();
+  const { data: conn } = await repo.fetchActiveGoogleConnection(supabase, user.userId);
 
   if (!conn || !conn.access_token) {
     return res.status(404).json({ ok: false, error: 'No active Google connection for this user' });
@@ -527,14 +510,7 @@ router.get('/google/verify', async (req: Request, res: Response) => {
           token = refreshJson.access_token;
           tokenRefreshed = true;
           const newExpiry = new Date(Date.now() + (refreshJson.expires_in ?? 3600) * 1000).toISOString();
-          await supabase
-            .from('social_connections')
-            .update({
-              access_token: token,
-              token_expires_at: newExpiry,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', conn.id);
+          await repo.updateSocialConnectionAccessToken(supabase, conn.id, token, newExpiry, new Date().toISOString());
           conn.token_expires_at = newExpiry;
           console.log(`[SocialConnect] Refreshed google access_token for user ${user.userId.slice(0, 8)}…, new expiry ${newExpiry}`);
         } else {

@@ -11,6 +11,7 @@
 
 import { AutomationContext } from '../../types/automations';
 import { registerHandler } from '../automation-executor';
+import * as repo from './business-opportunity-repository';
 
 // ── AP-1501: Marketplace Gap Detection ───────────────────────
 // Compares community-group interest (member_count by category) against
@@ -22,11 +23,7 @@ const GAP_MIN_GROUP_MEMBERS = 10;
 async function runMarketplaceGapDetection(ctx: AutomationContext) {
   const { supabase, tenantId } = ctx;
 
-  const { data: groups } = await supabase
-    .from('global_community_groups')
-    .select('category, member_count')
-    .not('category', 'is', null)
-    .limit(500);
+  const { data: groups } = await repo.fetchCommunityGroupsDemand(supabase, 500);
 
   const demandByCategory = new Map<string, number>();
   for (const g of groups || []) {
@@ -35,12 +32,7 @@ async function runMarketplaceGapDetection(ctx: AutomationContext) {
   }
 
   const since = new Date(Date.now() - GAP_SUPPLY_WINDOW_DAYS * 86_400_000).toISOString();
-  const { data: rooms } = await supabase
-    .from('live_rooms')
-    .select('category')
-    .eq('tenant_id', tenantId)
-    .gte('created_at', since)
-    .limit(1000);
+  const { data: rooms } = await repo.fetchLiveRoomsCategorySupply(supabase, tenantId, since, 1000);
 
   const supplyByCategory = new Map<string, number>();
   for (const r of rooms || []) {
@@ -85,11 +77,7 @@ async function runRevenueOpportunityAlert(ctx: AutomationContext) {
   let usersAffected = 0;
   let actionsTaken = 0;
 
-  const { data: creators } = await supabase
-    .from('app_users')
-    .select('user_id, vitana_id')
-    .eq('stripe_charges_enabled', true)
-    .limit(500);
+  const { data: creators } = await repo.fetchStripeEnabledCreatorsWithVitanaId(supabase, 500);
 
   const now = new Date();
   const sevenDaysAgo = new Date(now.getTime() - 7 * 86_400_000).toISOString();
@@ -98,19 +86,14 @@ async function runRevenueOpportunityAlert(ctx: AutomationContext) {
   for (const creator of creators || []) {
     if (!creator.vitana_id) continue;
 
-    const { data: recentPayments } = await supabase
-      .from('service_payments')
-      .select('amount_cents')
-      .eq('payee_vitana_id', creator.vitana_id)
-      .in('state', ['captured', 'released'])
-      .gte('created_at', sevenDaysAgo);
-    const { data: priorPayments } = await supabase
-      .from('service_payments')
-      .select('amount_cents')
-      .eq('payee_vitana_id', creator.vitana_id)
-      .in('state', ['captured', 'released'])
-      .gte('created_at', fourteenDaysAgo)
-      .lt('created_at', sevenDaysAgo);
+    const { data: recentPayments } = await repo.fetchServicePaymentsForPayee(supabase, creator.vitana_id, ['captured', 'released'], sevenDaysAgo);
+    const { data: priorPayments } = await repo.fetchServicePaymentsForPayee(
+      supabase,
+      creator.vitana_id,
+      ['captured', 'released'],
+      fourteenDaysAgo,
+      sevenDaysAgo,
+    );
 
     const recentTotal = (recentPayments || []).reduce((sum: number, p: any) => sum + (p.amount_cents || 0), 0);
     const priorTotal = (priorPayments || []).reduce((sum: number, p: any) => sum + (p.amount_cents || 0), 0);
@@ -143,34 +126,20 @@ const DEMAND_MIN_GROUP_MEMBERS = 10;
 async function runServiceDemandMatching(ctx: AutomationContext) {
   const { supabase, tenantId } = ctx;
 
-  const { data: groups } = await supabase
-    .from('global_community_groups')
-    .select('category, member_count')
-    .not('category', 'is', null)
-    .order('member_count', { ascending: false })
-    .limit(20);
+  const { data: groups } = await repo.fetchTopCommunityGroupsByMembers(supabase, 20);
 
   const topCategories = (groups || [])
     .filter((g: any) => (g.member_count || 0) >= DEMAND_MIN_GROUP_MEMBERS)
     .map((g: any) => (g.category || '').toLowerCase());
   if (!topCategories.length) return { usersAffected: 0, actionsTaken: 0 };
 
-  const { data: creators } = await supabase
-    .from('app_users')
-    .select('user_id')
-    .eq('stripe_charges_enabled', true)
-    .limit(500);
+  const { data: creators } = await repo.fetchStripeEnabledCreatorUserIds(supabase, 500);
 
   let usersAffected = 0;
   let actionsTaken = 0;
 
   for (const creator of creators || []) {
-    const { data: ownRooms } = await supabase
-      .from('live_rooms')
-      .select('category')
-      .eq('tenant_id', tenantId)
-      .eq('host_user_id', creator.user_id)
-      .limit(20);
+    const { data: ownRooms } = await repo.fetchOwnLiveRoomCategories(supabase, tenantId, creator.user_id, 20);
     const ownCategories = new Set((ownRooms || []).map((r: any) => (r.category || '').toLowerCase()));
 
     const unservedDemand = topCategories.find((cat: string) => !ownCategories.has(cat));
@@ -201,11 +170,7 @@ async function runBusinessSetupCoach(ctx: AutomationContext) {
 
   const { supabase, tenantId } = ctx;
 
-  const { data: user } = await supabase
-    .from('app_users')
-    .select('stripe_charges_enabled')
-    .eq('user_id', userId)
-    .maybeSingle();
+  const { data: user } = await repo.fetchAppUserStripeStatus(supabase, userId);
 
   if (!user?.stripe_charges_enabled) {
     ctx.notify(userId, 'orb_proactive_message', {
@@ -216,11 +181,7 @@ async function runBusinessSetupCoach(ctx: AutomationContext) {
     return { usersAffected: 1, actionsTaken: 1 };
   }
 
-  const { count: roomCount } = await supabase
-    .from('live_rooms')
-    .select('id', { count: 'exact', head: true })
-    .eq('tenant_id', tenantId)
-    .eq('host_user_id', userId);
+  const { count: roomCount } = await repo.countHostedLiveRooms(supabase, tenantId, userId);
 
   if (!roomCount) {
     ctx.notify(userId, 'orb_proactive_message', {
@@ -242,18 +203,10 @@ async function runIncomeGrowthTips(ctx: AutomationContext) {
   let usersAffected = 0;
   let actionsTaken = 0;
 
-  const { data: creators } = await supabase
-    .from('app_users')
-    .select('user_id')
-    .eq('stripe_charges_enabled', true)
-    .limit(500);
+  const { data: creators } = await repo.fetchStripeEnabledCreatorUserIds(supabase, 500);
 
   for (const creator of creators || []) {
-    const { count: roomCount } = await supabase
-      .from('live_rooms')
-      .select('id', { count: 'exact', head: true })
-      .eq('tenant_id', tenantId)
-      .eq('host_user_id', creator.user_id);
+    const { count: roomCount } = await repo.countHostedLiveRooms(supabase, tenantId, creator.user_id);
 
     let tip: string;
     if (!roomCount) {

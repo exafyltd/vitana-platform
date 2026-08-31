@@ -349,8 +349,6 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const autonomyPulseRouter = require('./routes/autonomy-pulse').default;
   // Autonomy Trace — unified timeline of autonomous work-in-flight + history
   const autonomyTraceRouter = require('./routes/autonomy-trace').default;
-  // BOOTSTRAP-AWS-STAGING-VALIDATION: TEMPORARY — AI Studio ListModels debug proxy
-  const debugAiStudioModelsRouter = require('./routes/debug-ai-studio-models').default;
   // VTID-01250: Social Connect (AP-1305/AP-1306)
   const socialConnectRouter = require('./routes/social-connect').default;
   // Intelligent Calendar — Phase 1: Backend Calendar API
@@ -496,6 +494,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const automationsRouter = require('./routes/automations').default;
   // Self-Healing System — Autonomous detection, diagnosis, fix, and verification pipeline
   const selfHealingRouter = require('./routes/self-healing').default;
+  // Aurora migration B7: Gemini-shaped facade over Bedrock, for vitana-v1
+  // edge functions being ported off direct Google calls (VTID-03764 chain).
+  const aiBridgeRouter = require('./routes/ai-bridge').default;
   // PR-I (VTID-02949): operator-armed canary for end-to-end self-healing
   // smoke tests. Replaces the original PR-A canary (which mounted at `/`
   // and tripped diagnosis into proposing edits to index.ts). New canary
@@ -804,9 +805,6 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/dev-autopilot', devAutopilotRouter, { owner: 'dev-autopilot' });
   mountRouterSync(app, '/api/v1/autonomy', autonomyPulseRouter, { owner: 'autonomy-pulse' });
   mountRouterSync(app, '/api/v1/autonomy', autonomyTraceRouter, { owner: 'autonomy-trace' });
-
-  // BOOTSTRAP-AWS-STAGING-VALIDATION: TEMPORARY — remove once AI_STUDIO_LIVE_MODEL is confirmed
-  mountRouterSync(app, '/api/v1', debugAiStudioModelsRouter, { owner: 'debug-ai-studio-models' });
 
   // VTID-01250: Social Connect — OAuth, profile enrichment, auto-share (AP-1305/AP-1306)
   mountRouterSync(app, '/api/v1/social-accounts', socialConnectRouter, { owner: 'social-connect' });
@@ -1305,6 +1303,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // canary's route file from ENDPOINT_FILE_MAP. This is what unblocks
   // the autopilot bridge from proposing edits to index.ts.
   mountRouterSync(app, '/api/v1/canary-target', canaryTargetRouter, { owner: 'self-healing' });
+  // Aurora migration B7: Bedrock bridge for vitana-v1 edge functions.
+  mountRouterSync(app, '/api/v1/ai-bridge', aiBridgeRouter, { owner: 'ai-bridge' });
 
   // VTID-02031: Ops Action Required — pull surface for Command Hub Overview
   mountRouterSync(app, '/api/v1/ops/action-required', opsActionRequiredRouter, { owner: 'ops-action-required' });

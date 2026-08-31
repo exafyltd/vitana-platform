@@ -4581,12 +4581,21 @@ export async function tool_save_diary_entry(
   }
 
   // 2) Pre-recompute Index for delta math.
-  const { data: beforeRow } = await sb
+  const { data: beforeRow, error: beforeErr } = await sb
     .from('vitana_index_scores')
     .select('score_total, score_nutrition, score_hydration, score_exercise, score_sleep, score_mental')
     .eq('user_id', identity.user_id)
     .eq('date', entryDate)
     .maybeSingle();
+  if (beforeErr) {
+    // Non-fatal by design (see the index_delta comment below) — a query
+    // error is treated the same as "no baseline yet" so we honestly report
+    // no delta rather than fabricate one. Logged so a real DB failure here
+    // isn't indistinguishable from the legitimate first-entry-of-the-day case.
+    console.warn(
+      `[save_diary_entry] pre-recompute Index lookup failed (non-fatal, no delta will be reported): ${beforeErr.message}`,
+    );
+  }
   const before = beforeRow as Record<string, number | null> | null;
 
   // 3) Extract health features + persist.
@@ -4610,10 +4619,20 @@ export async function tool_save_diary_entry(
   // 4) Recompute Index.
   let pillars_after: Record<string, number> | null = null;
   try {
-    const { data: rec } = await sb.rpc('health_compute_vitana_index_for_user', {
+    const { data: rec, error: rpcErr } = await sb.rpc('health_compute_vitana_index_for_user', {
       p_user_id: identity.user_id,
       p_date: entryDate,
     });
+    if (rpcErr) {
+      // supabase-js resolves normally with {data:null, error} on an RPC
+      // failure — it does not throw, so the surrounding try/catch alone
+      // never saw this. Non-fatal by design (pillars_after simply stays
+      // null, same as any other no-recompute case), but logged so a real
+      // RPC failure isn't silently indistinguishable from one.
+      console.warn(
+        `[save_diary_entry] Index recompute RPC failed (non-fatal): ${rpcErr.message}`,
+      );
+    }
     const r = rec as { ok?: boolean; [k: string]: unknown } | null;
     if (r && r.ok !== false) {
       pillars_after = {

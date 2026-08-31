@@ -34,6 +34,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { randomUUID } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
+import * as repo from './d46-anticipatory-guidance-engine-repository';
 import {
   SignalDomain,
   GuidanceMode,
@@ -166,10 +167,7 @@ async function getClientWithContext(authToken?: string): Promise<{
 
   // Bootstrap dev context if needed
   if (useDevIdentity) {
-    const { error: bootstrapError } = await supabase.rpc('dev_bootstrap_request_context', {
-      p_tenant_id: DEV_IDENTITY.TENANT_ID,
-      p_active_role: 'developer'
-    });
+    const { error: bootstrapError } = await repo.bootstrapDevRequestContext(supabase, DEV_IDENTITY.TENANT_ID);
     if (bootstrapError) {
       console.warn(`${LOG_PREFIX} Bootstrap context failed (non-fatal):`, bootstrapError.message);
     }
@@ -951,9 +949,7 @@ async function storeGuidanceItems(
       updated_at: now
     }));
 
-    const { error } = await supabase
-      .from('anticipatory_guidance')
-      .insert(records);
+    const { error } = await repo.insertAnticipatoryGuidanceRecords(supabase, records);
 
     if (error) {
       console.warn(`${LOG_PREFIX} Failed to store guidance items:`, error.message);
@@ -978,25 +974,12 @@ export async function getGuidanceHistory(
       return { ok: false, error: clientError || 'SERVICE_UNAVAILABLE' };
     }
 
-    let query = supabase
-      .from('anticipatory_guidance')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(request.limit);
-
-    if (request.domains && request.domains.length > 0) {
-      query = query.in('domain', request.domains);
-    }
-
-    if (request.status && request.status.length > 0) {
-      query = query.in('status', request.status);
-    }
-
-    if (request.since) {
-      query = query.gte('created_at', request.since);
-    }
-
-    const { data, error } = await query;
+    const { data, error } = await repo.fetchGuidanceHistory(supabase, {
+      limit: request.limit,
+      domains: request.domains,
+      status: request.status,
+      since: request.since,
+    });
 
     if (error) {
       console.error(`${LOG_PREFIX} Error fetching guidance history:`, error);
@@ -1059,12 +1042,7 @@ export async function recordGuidanceInteraction(
       updateData.dismissed_at = now;
     }
 
-    const { data, error } = await supabase
-      .from('anticipatory_guidance')
-      .update(updateData)
-      .eq('id', request.guidance_id)
-      .select('domain, guidance_mode')
-      .single();
+    const { data, error } = await repo.updateGuidanceInteraction(supabase, request.guidance_id, updateData);
 
     if (error) {
       console.error(`${LOG_PREFIX} Error recording interaction:`, error);

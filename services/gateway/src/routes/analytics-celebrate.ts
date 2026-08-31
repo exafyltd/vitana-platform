@@ -16,6 +16,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { getSupabase } from '../lib/supabase';
+import * as repo from './analytics-celebrate-repository';
 
 const router = Router();
 const LOG_PREFIX = '[Analytics:Celebrate]';
@@ -57,7 +58,7 @@ router.post('/celebrate', async (req: Request, res: Response) => {
     null;
 
   try {
-    const { error } = await supa.from('analytics_celebrate_events').insert({
+    const { error } = await repo.insertAnalyticsCelebrateEvent(supa, {
       user_id: userId,
       tenant_id: tenantId,
       kind: body.kind,

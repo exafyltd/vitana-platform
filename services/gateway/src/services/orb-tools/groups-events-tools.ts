@@ -16,6 +16,7 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
+import * as repo from './groups-events-tools-repository';
 
 type Handler = (args: OrbToolArgs, id: OrbToolIdentity, sb: SupabaseClient) => Promise<OrbToolResult>;
 
@@ -69,11 +70,7 @@ function navDirective(
 async function resolveTenantId(id: OrbToolIdentity, sb: SupabaseClient): Promise<string | null> {
   if (id.tenant_id) return id.tenant_id;
   try {
-    const { data } = await sb
-      .from('app_users')
-      .select('tenant_id')
-      .eq('user_id', id.user_id)
-      .maybeSingle();
+    const { data } = await repo.fetchUserTenantId(sb, id.user_id);
     return (data as { tenant_id?: string | null } | null)?.tenant_id ?? null;
   } catch {
     return null;
@@ -102,12 +99,7 @@ async function resolveGroup(sb: SupabaseClient, rawId: unknown, rawQuery: unknow
   const query = String(rawQuery ?? '').trim();
 
   if (UUID_RE.test(groupId)) {
-    const { data, error } = await sb
-      .from('global_community_groups')
-      .select(GROUP_COLS)
-      .eq('id', groupId)
-      .eq('status', 'approved')
-      .maybeSingle();
+    const { data, error } = await repo.fetchGroupById(sb, groupId);
     if (error) return { kind: 'error', message: error.message };
     if (!data) return { kind: 'none', query: groupId };
     return { kind: 'one', group: data as GroupRow };
@@ -115,13 +107,7 @@ async function resolveGroup(sb: SupabaseClient, rawId: unknown, rawQuery: unknow
 
   if (!query) return { kind: 'none', query: '' };
 
-  const { data, error } = await sb
-    .from('global_community_groups')
-    .select(GROUP_COLS)
-    .eq('status', 'approved')
-    .ilike('name', `%${query}%`)
-    .order('member_count', { ascending: false })
-    .limit(5);
+  const { data, error } = await repo.searchGroupsByName(sb, query);
   if (error) return { kind: 'error', message: error.message };
   const groups = (data as GroupRow[]) ?? [];
   if (groups.length === 0) return { kind: 'none', query };
@@ -138,16 +124,9 @@ async function ensureMembership(
   userId: string,
   role: string,
 ): Promise<{ already: boolean; error?: string }> {
-  const { data: existing } = await sb
-    .from('global_community_group_members')
-    .select('id')
-    .eq('group_id', groupId)
-    .eq('user_id', userId)
-    .maybeSingle();
+  const { data: existing } = await repo.fetchMembership(sb, groupId, userId);
   if (existing) return { already: true };
-  const { error } = await sb
-    .from('global_community_group_members')
-    .insert({ group_id: groupId, user_id: userId, role });
+  const { error } = await repo.insertMembership(sb, groupId, userId, role);
   if (error) {
     if ((error as { code?: string }).code === '23505') return { already: true };
     return { already: false, error: error.message };
@@ -169,7 +148,7 @@ async function resolveMember(
   | { kind: 'none' }
   | { kind: 'error'; message: string }
 > {
-  const { data, error } = await sb.rpc('resolve_recipient_candidates', {
+  const { data, error } = await repo.resolveRecipientCandidates(sb, {
     p_actor: actorUserId,
     p_token: spoken,
     p_limit: 3,
@@ -208,12 +187,7 @@ export async function tool_list_my_groups(
   const gate = authGate('list_my_groups', id);
   if (gate) return gate;
   try {
-    const { data: memberships, error: mErr } = await sb
-      .from('global_community_group_members')
-      .select('group_id, role, joined_at')
-      .eq('user_id', id.user_id)
-      .order('joined_at', { ascending: false })
-      .limit(25);
+    const { data: memberships, error: mErr } = await repo.fetchUserGroupMemberships(sb, id.user_id);
     if (mErr) return { ok: false, error: mErr.message };
 
     const rows = (memberships as Array<{ group_id: string; role: string; joined_at: string }>) ?? [];
@@ -221,10 +195,7 @@ export async function tool_list_my_groups(
 
     const found = new Map<string, GroupRow & { role: string }>();
     if (rows.length > 0) {
-      const { data: groups, error: gErr } = await sb
-        .from('global_community_groups')
-        .select(GROUP_COLS)
-        .in('id', rows.map((r) => r.group_id));
+      const { data: groups, error: gErr } = await repo.fetchGroupsByIds(sb, rows.map((r) => r.group_id));
       if (gErr) return { ok: false, error: gErr.message };
       for (const g of (groups as GroupRow[]) ?? []) {
         found.set(g.id, { ...g, role: roleByGroup.get(g.id) ?? 'member' });
@@ -233,11 +204,7 @@ export async function tool_list_my_groups(
 
     // Groups the user created count as theirs even without a membership row
     // (mirrors the frontend's useUserGroups merge).
-    const { data: created } = await sb
-      .from('global_community_groups')
-      .select(GROUP_COLS)
-      .eq('created_by', id.user_id)
-      .eq('status', 'approved');
+    const { data: created } = await repo.fetchGroupsCreatedBy(sb, id.user_id);
     for (const g of (created as GroupRow[]) ?? []) {
       if (!found.has(g.id)) found.set(g.id, { ...g, role: 'admin' });
     }
@@ -298,18 +265,14 @@ export async function tool_create_group(
     };
   }
   try {
-    const { data: group, error } = await sb
-      .from('global_community_groups')
-      .insert({
-        name,
-        description: description || null,
-        is_public: isPublic,
-        created_by: id.user_id,
-        status: 'approved',
-        member_count: 0,
-      })
-      .select('id, name')
-      .single();
+    const { data: group, error } = await repo.insertGroup(sb, {
+      name,
+      description: description || null,
+      is_public: isPublic,
+      created_by: id.user_id,
+      status: 'approved',
+      member_count: 0,
+    });
     if (error || !group) {
       return { ok: false, error: error?.message ?? 'group insert failed' };
     }
@@ -471,12 +434,7 @@ export async function tool_invite_to_group(
     // guess a private group's name could insert an invitation as themselves,
     // and accept_invitation would then join the invitee — letting outsiders
     // grow membership of groups they were never part of.
-    const { data: callerMembership, error: callerMembershipErr } = await sb
-      .from('global_community_group_members')
-      .select('id')
-      .eq('group_id', group.id)
-      .eq('user_id', id.user_id)
-      .maybeSingle();
+    const { data: callerMembership, error: callerMembershipErr } = await repo.fetchMembership(sb, group.id, id.user_id);
     if (callerMembershipErr) return { ok: false, error: callerMembershipErr.message };
     if (!callerMembership) {
       return {
@@ -513,12 +471,7 @@ export async function tool_invite_to_group(
     }
 
     // Already a member? Say so instead of inviting.
-    const { data: existingMember } = await sb
-      .from('global_community_group_members')
-      .select('id')
-      .eq('group_id', group.id)
-      .eq('user_id', inviteeId)
-      .maybeSingle();
+    const { data: existingMember } = await repo.fetchMembership(sb, group.id, inviteeId);
     if (existingMember) {
       return {
         ok: true,
@@ -527,7 +480,7 @@ export async function tool_invite_to_group(
       };
     }
 
-    const { error: insErr } = await sb.from('community_group_invitations').insert({
+    const { error: insErr } = await repo.insertGroupInvitation(sb, {
       tenant_id: tenantId,
       group_id: group.id,
       invited_by: id.user_id,
@@ -571,21 +524,12 @@ async function fetchPendingInvitations(
   sb: SupabaseClient,
   userId: string,
 ): Promise<{ invitations: InvitationRow[]; groupNames: Map<string, string> } | { error: string }> {
-  const { data, error } = await sb
-    .from('community_group_invitations')
-    .select('id, group_id, invited_by, message, created_at')
-    .eq('invited_user_id', userId)
-    .eq('status', 'pending')
-    .order('created_at', { ascending: false })
-    .limit(10);
+  const { data, error } = await repo.fetchPendingInvitationsForUser(sb, userId);
   if (error) return { error: error.message };
   const invitations = (data as InvitationRow[]) ?? [];
   const groupNames = new Map<string, string>();
   if (invitations.length > 0) {
-    const { data: groups } = await sb
-      .from('global_community_groups')
-      .select('id, name')
-      .in('id', invitations.map((i) => i.group_id));
+    const { data: groups } = await repo.fetchGroupNamesByIds(sb, invitations.map((i) => i.group_id));
     for (const g of (groups as Array<{ id: string; name: string }>) ?? []) {
       groupNames.set(g.id, g.name);
     }
@@ -658,11 +602,10 @@ async function respondToInvitation(
       };
     }
 
-    const { error: updErr } = await sb
-      .from('community_group_invitations')
-      .update({ status: action === 'accept' ? 'accepted' : 'declined', responded_at: new Date().toISOString() })
-      .eq('id', target.id)
-      .eq('invited_user_id', id.user_id);
+    const { error: updErr } = await repo.updateInvitationStatus(sb, target.id, id.user_id, {
+      status: action === 'accept' ? 'accepted' : 'declined',
+      responded_at: new Date().toISOString(),
+    });
     if (updErr) return { ok: false, error: updErr.message };
 
     if (action === 'decline') {
@@ -735,11 +678,7 @@ async function resolveUpcomingEvent(sb: SupabaseClient, rawId: unknown, rawQuery
   const query = String(rawQuery ?? '').trim();
 
   if (UUID_RE.test(eventId)) {
-    const { data, error } = await sb
-      .from('global_community_events')
-      .select(EVENT_COLS)
-      .eq('id', eventId)
-      .maybeSingle();
+    const { data, error } = await repo.fetchEventById(sb, eventId);
     if (error) return { kind: 'error', message: error.message };
     if (!data) return { kind: 'none', query: eventId };
     return { kind: 'one', event: data as EventRow };
@@ -747,13 +686,7 @@ async function resolveUpcomingEvent(sb: SupabaseClient, rawId: unknown, rawQuery
 
   if (!query) return { kind: 'none', query: '' };
 
-  const { data, error } = await sb
-    .from('global_community_events')
-    .select(EVENT_COLS)
-    .gte('start_time', new Date().toISOString())
-    .ilike('title', `%${query}%`)
-    .order('start_time', { ascending: true })
-    .limit(5);
+  const { data, error } = await repo.searchUpcomingEventsByTitle(sb, query);
   if (error) return { kind: 'error', message: error.message };
   const events = (data as EventRow[]) ?? [];
   if (events.length === 0) return { kind: 'none', query };
@@ -800,12 +733,7 @@ export async function tool_rsvp_event(
     }
     const event = resolved.event;
 
-    const { data: existing } = await sb
-      .from('global_event_participants')
-      .select('id, status')
-      .eq('event_id', event.id)
-      .eq('user_id', id.user_id)
-      .maybeSingle();
+    const { data: existing } = await repo.fetchEventParticipation(sb, event.id, id.user_id);
     if (existing && (existing as { status?: string }).status === 'attending') {
       return {
         ok: true,
@@ -825,18 +753,13 @@ export async function tool_rsvp_event(
 
     // Same write contract as the frontend's useEventParticipation hook:
     // upsert on (event_id, user_id) with status 'attending'.
-    const { error: upErr } = await sb
-      .from('global_event_participants')
-      .upsert({ event_id: event.id, user_id: id.user_id, status: 'attending' }, { onConflict: 'event_id,user_id' });
+    const { error: upErr } = await repo.upsertEventParticipation(sb, { event_id: event.id, user_id: id.user_id, status: 'attending' });
     if (upErr) return { ok: false, error: upErr.message };
 
     // Sync participant_count on the event row (best-effort, like the UI).
     if (!existing) {
       try {
-        await sb
-          .from('global_community_events')
-          .update({ participant_count: count + 1 })
-          .eq('id', event.id);
+        await repo.updateEventParticipantCount(sb, event.id, count + 1);
       } catch {
         /* count sync is cosmetic — never fail the RSVP for it */
       }
@@ -868,23 +791,14 @@ export async function tool_cancel_rsvp(
   try {
     // Start from the user's own attending rows — cancellation only ever
     // targets the caller's RSVPs.
-    const { data: parts, error: pErr } = await sb
-      .from('global_event_participants')
-      .select('event_id')
-      .eq('user_id', id.user_id)
-      .eq('status', 'attending');
+    const { data: parts, error: pErr } = await repo.fetchUserAttendingEventIds(sb, id.user_id);
     if (pErr) return { ok: false, error: pErr.message };
     const eventIds = ((parts as Array<{ event_id: string }>) ?? []).map((p) => p.event_id);
     if (eventIds.length === 0) {
       return { ok: true, result: { cancelled: false }, text: "You don't have any event RSVPs to cancel." };
     }
 
-    const { data: events, error: eErr } = await sb
-      .from('global_community_events')
-      .select(EVENT_COLS)
-      .in('id', eventIds)
-      .gte('start_time', new Date().toISOString())
-      .order('start_time', { ascending: true });
+    const { data: events, error: eErr } = await repo.fetchEventsByIdsUpcoming(sb, eventIds);
     if (eErr) return { ok: false, error: eErr.message };
     let mine = (events as EventRow[]) ?? [];
     if (UUID_RE.test(eventIdArg)) {
@@ -921,19 +835,12 @@ export async function tool_cancel_rsvp(
       };
     }
 
-    const { error: delErr } = await sb
-      .from('global_event_participants')
-      .delete()
-      .eq('event_id', event.id)
-      .eq('user_id', id.user_id);
+    const { error: delErr } = await repo.deleteEventParticipation(sb, event.id, id.user_id);
     if (delErr) return { ok: false, error: delErr.message };
 
     try {
       const count = Number(event.participant_count) || 0;
-      await sb
-        .from('global_community_events')
-        .update({ participant_count: Math.max(0, count - 1) })
-        .eq('id', event.id);
+      await repo.updateEventParticipantCount(sb, event.id, Math.max(0, count - 1));
     } catch {
       /* count sync is cosmetic */
     }
@@ -960,12 +867,7 @@ export async function tool_list_upcoming_meetups(
   const gate = authGate('list_upcoming_meetups', id);
   if (gate) return gate;
   try {
-    const { data, error } = await sb
-      .from('global_community_events')
-      .select(EVENT_COLS)
-      .gte('start_time', new Date().toISOString())
-      .order('start_time', { ascending: true })
-      .limit(8);
+    const { data, error } = await repo.fetchUpcomingEvents(sb, 8);
     if (error) return { ok: false, error: error.message };
     const events = (data as EventRow[]) ?? [];
     if (events.length === 0) {
@@ -979,11 +881,7 @@ export async function tool_list_upcoming_meetups(
     // Optional proximity: the user's home city (same source search_events uses).
     let homeCity = '';
     try {
-      const { data: locRow } = await sb
-        .from('location_preferences')
-        .select('home_city')
-        .eq('user_id', id.user_id)
-        .maybeSingle();
+      const { data: locRow } = await repo.fetchUserHomeCity(sb, id.user_id);
       homeCity = ((locRow as { home_city?: string | null } | null)?.home_city ?? '').trim();
     } catch {
       /* best-effort — proceed without proximity */
@@ -992,12 +890,7 @@ export async function tool_list_upcoming_meetups(
     // Mark which ones the user is already attending.
     const attending = new Set<string>();
     try {
-      const { data: parts } = await sb
-        .from('global_event_participants')
-        .select('event_id')
-        .eq('user_id', id.user_id)
-        .eq('status', 'attending')
-        .in('event_id', events.map((e) => e.id));
+      const { data: parts } = await repo.fetchUserAttendingAmong(sb, id.user_id, events.map((e) => e.id));
       for (const p of (parts as Array<{ event_id: string }>) ?? []) attending.add(p.event_id);
     } catch {
       /* attendance markers are best-effort */
@@ -1065,25 +958,11 @@ export async function tool_join_live_room(
   try {
     let rooms: LiveRoomRow[] = [];
     if (UUID_RE.test(roomIdArg)) {
-      const { data, error } = await sb
-        .from('live_rooms')
-        .select('id, title, starts_at, status')
-        .eq('tenant_id', id.tenant_id)
-        .eq('id', roomIdArg)
-        .in('status', ['scheduled', 'live'])
-        .maybeSingle();
+      const { data, error } = await repo.fetchLiveRoomById(sb, id.tenant_id, roomIdArg);
       if (error) return { ok: false, error: error.message };
       if (data) rooms = [data as LiveRoomRow];
     } else {
-      let q = sb
-        .from('live_rooms')
-        .select('id, title, starts_at, status')
-        .eq('tenant_id', id.tenant_id)
-        .in('status', ['scheduled', 'live'])
-        .order('starts_at', { ascending: true })
-        .limit(5);
-      if (query) q = q.ilike('title', `%${query}%`);
-      const { data, error } = await q;
+      const { data, error } = await repo.searchLiveRoomsQuery(sb, id.tenant_id, query);
       if (error) return { ok: false, error: error.message };
       rooms = (data as LiveRoomRow[]) ?? [];
     }

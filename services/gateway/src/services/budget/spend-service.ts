@@ -17,6 +17,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import * as repo from './spend-service-repository';
 
 export const VTID = 'VTID-03260';
 
@@ -39,13 +40,7 @@ export async function getMonthlySpend(
 
   const monthStart = startOfMonthIso();
 
-  const { data, error } = await supabase
-    .from('product_orders')
-    .select('amount_cents')
-    .eq('user_id', userId)
-    .eq('currency', currency)
-    .eq('state', 'converted')
-    .gte('purchased_at', monthStart);
+  const { data, error } = await repo.fetchConvertedProductOrderAmounts(supabase, userId, currency, monthStart);
 
   if (error) {
     console.error(`[${VTID}] getMonthlySpend failed for user ${userId}:`, error.message);

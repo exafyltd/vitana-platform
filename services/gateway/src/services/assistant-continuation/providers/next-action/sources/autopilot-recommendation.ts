@@ -27,6 +27,7 @@ import type {
   ScoredCandidate,
   NextActionConfidence,
 } from '../types';
+import * as repo from './autopilot-recommendation-repository';
 
 const KEY = 'autopilot_recommendation' as const;
 
@@ -45,17 +46,7 @@ export async function produceAutopilotRecommendation(
   try {
     // Order: high confidence first, then most recent. The composer
     // breaks ties; this source just supplies one candidate.
-    const { data, error } = await ctx.supabase
-      .from('autopilot_recommendations')
-      .select('id, title, summary, confidence, last_seen_at, created_at, domain')
-      .eq('user_id', ctx.userId)
-      .eq('status', 'new')
-      // Drop milestone celebrations — those have their own surface.
-      .neq('source_type', 'milestone')
-      .order('confidence', { ascending: false, nullsFirst: false })
-      .order('last_seen_at', { ascending: false, nullsFirst: false })
-      .order('created_at', { ascending: false })
-      .limit(1);
+    const { data, error } = await repo.fetchTopAutopilotRecommendation(ctx.supabase, ctx.userId);
     if (error) {
       return { source: KEY, candidate: null, skippedReason: 'source_unavailable' };
     }

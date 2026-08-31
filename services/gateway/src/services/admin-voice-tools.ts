@@ -20,6 +20,7 @@ import { getSupabase } from '../lib/supabase';
 import { fetchAdminBriefingBlock, isAdminRole } from './admin-scanners/briefing';
 import { computeTenantHealthIndex } from './admin-health-index';
 import { emitOasisEvent } from './oasis-event-service';
+import * as repo from './admin-voice-tools-repository';
 
 const LOG_PREFIX = '[admin-voice]';
 
@@ -75,11 +76,7 @@ export async function handleAdminKpiSnapshot(
   const supabase = getSupabase();
   if (!supabase) return { success: false, result: '', error: 'db_unavailable' };
   try {
-    const { data, error } = await supabase
-      .from('tenant_kpi_current')
-      .select('kpi, generated_at')
-      .eq('tenant_id', ctx.tenantId)
-      .maybeSingle();
+    const { data, error } = await repo.fetchTenantKpiCurrent(supabase, ctx.tenantId);
     if (error) return { success: false, result: '', error: error.message };
     if (!data) return { success: true, result: 'No KPI snapshot yet — the worker may not have ticked for this tenant.' };
 
@@ -121,13 +118,7 @@ export async function handleAdminInsightDetail(
     return { success: false, result: '', error: 'provide_insight_id_or_natural_key' };
   }
   try {
-    let q = supabase
-      .from('admin_insights')
-      .select('id, scanner, natural_key, domain, title, description, severity, status, recommended_action, context, confidence_score, autonomy_level, created_at, snoozed_until')
-      .eq('tenant_id', ctx.tenantId);
-    if (args.insight_id) q = q.eq('id', args.insight_id);
-    else q = q.eq('natural_key', args.natural_key as string);
-    const { data, error } = await q.maybeSingle();
+    const { data, error } = await repo.fetchInsightDetail(supabase, ctx.tenantId, args);
     if (error) return { success: false, result: '', error: error.message };
     if (!data) return { success: false, result: '', error: 'insight_not_found' };
     return {
@@ -159,13 +150,7 @@ async function transitionInsight(
       update.resolved_by = ctx.userId;
       update.resolved_via = 'voice';
     }
-    const { data, error } = await supabase
-      .from('admin_insights')
-      .update(update)
-      .eq('tenant_id', ctx.tenantId)
-      .eq('id', insightId)
-      .select('id, status, title')
-      .maybeSingle();
+    const { data, error } = await repo.updateInsightStatus(supabase, ctx.tenantId, insightId, update);
     if (error) return { success: false, result: '', error: error.message };
     if (!data) return { success: false, result: '', error: 'insight_not_found' };
 
@@ -230,12 +215,7 @@ export async function handleAdminHistory(
   const days = Math.max(7, Math.min(90, args.days ?? 30));
   const startDate = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
   try {
-    const { data, error } = await supabase
-      .from('tenant_kpi_daily')
-      .select('snapshot_date, kpi')
-      .eq('tenant_id', ctx.tenantId)
-      .gte('snapshot_date', startDate)
-      .order('snapshot_date', { ascending: false });
+    const { data, error } = await repo.fetchTenantKpiDailyHistory(supabase, ctx.tenantId, startDate);
     if (error) return { success: false, result: '', error: error.message };
     const rows = data ?? [];
     const summary = rows.map((r: any) => {

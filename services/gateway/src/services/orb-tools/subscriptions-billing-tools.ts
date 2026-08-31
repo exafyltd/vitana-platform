@@ -16,6 +16,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
 import { gatewayApiCall } from './developer-tools';
+import * as repo from './subscriptions-billing-tools-repository';
 
 type Handler = (
   args: OrbToolArgs,
@@ -57,8 +58,8 @@ export const get_my_subscription: Handler = async (_args, id) => {
 export const compare_subscription_plans: Handler = async (_args, id, sb) => {
   if (!id.user_id) return { ok: false, error: 'compare_subscription_plans requires an authenticated user.' };
   const [plansRes, pricesRes] = await Promise.all([
-    sb.from('subscription_plans').select('plan_key, display_name, description'),
-    sb.from('subscription_plan_prices').select('plan_key, price_key, billing_interval, price_cents, currency'),
+    repo.fetchSubscriptionPlans(sb),
+    repo.fetchSubscriptionPlanPrices(sb),
   ]);
   if (plansRes.error) return { ok: false, error: `compare_subscription_plans failed: ${plansRes.error.message}` };
   const plans = (plansRes.data ?? []) as Array<{ plan_key: string; display_name?: string }>;

@@ -22,6 +22,7 @@ import { notifyUserAsync } from '../services/notification-service';
 import { generatePersonalRecommendations } from '../services/recommendation-engine';
 import { sendWelcomeChatMessages } from '../services/welcome-chat-service';
 import { addUserToSystemGroups } from '../services/community-group-enrollment';
+import * as repo from './auth-repository';
 
 const router = Router();
 
@@ -171,11 +172,7 @@ router.post('/login', async (req: Request, res: Response) => {
     if (supabase && authData.user?.id) {
       try {
         // First try app_users table
-        const { data: profileData, error: profileError } = await supabase
-          .from('app_users')
-          .select('display_name, bio, avatar_url:profile->>avatar_url')
-          .eq('user_id', authData.user.id)
-          .single();
+        const { data: profileData, error: profileError } = await repo.fetchLoginProfile(supabase, authData.user.id);
 
         if (!profileError && profileData) {
           profile = {
@@ -190,11 +187,7 @@ router.post('/login', async (req: Request, res: Response) => {
 
         // If no avatar, try users table (vitana-v1 compatibility)
         if (!profile.avatar_url) {
-          const { data: usersData, error: usersError } = await supabase
-            .from('users')
-            .select('display_name, avatar_url')
-            .eq('id', authData.user.id)
-            .single();
+          const { data: usersData, error: usersError } = await repo.fetchUsersTableProfile(supabase, authData.user.id);
 
           if (!usersError && usersData) {
             if (!profile.display_name && usersData.display_name) {
@@ -222,20 +215,11 @@ router.post('/login', async (req: Request, res: Response) => {
     if (supabase && authData.user?.id) {
       const uid = authData.user.id;
       // Resolve tenant_id from memberships
-      const { data: tenantRow } = await supabase
-        .from('user_tenants')
-        .select('tenant_id')
-        .eq('user_id', uid)
-        .eq('is_primary', true)
-        .single();
+      const { data: tenantRow } = await repo.fetchPrimaryTenantMembership(supabase, uid);
       const tid = tenantRow?.tenant_id;
       if (tid) {
         // Only send welcome if user has never received it
-        const { count } = await supabase
-          .from('user_notifications')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', uid)
-          .eq('type', 'welcome_to_vitana');
+        const { count } = await repo.countWelcomeNotifications(supabase, uid);
         if (count === 0) {
           notifyUserAsync(uid, tid, 'welcome_to_vitana', {
             title: 'Welcome to Vitana!',
@@ -472,11 +456,7 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
     try {
       // Fetch user profile from app_users — vitana_id is mirrored here by the
       // Release A trigger profiles_vitana_id_mirror_trigger.
-      const { data: profileData, error: profileError } = await supabase
-        .from('app_users')
-        .select('display_name, bio, vitana_id, avatar_url:profile->>avatar_url')
-        .eq('user_id', identity.user_id)
-        .single();
+      const { data: profileData, error: profileError } = await repo.fetchMeProfile(supabase, identity.user_id);
 
       if (!profileError && profileData) {
         profile = {
@@ -491,11 +471,7 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
       // on profiles (not mirrored). Parallel fetch — null-tolerant (columns
       // may not exist before Release A / v2 backfill).
       try {
-        const { data: lockData } = await supabase
-          .from('profiles')
-          .select('vitana_id_locked, vitana_id, registration_seq')
-          .eq('user_id', identity.user_id)
-          .maybeSingle();
+        const { data: lockData } = await repo.fetchProfilesVitanaIdLock(supabase, identity.user_id);
         if (lockData) {
           profile.vitana_id_locked = (lockData as any).vitana_id_locked === true;
           if (!profile.vitana_id && (lockData as any).vitana_id) {
@@ -517,11 +493,7 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
       // moments after login.
       if (!profile.avatar_url) {
         try {
-          const { data: usersData } = await supabase
-            .from('users')
-            .select('display_name, avatar_url')
-            .eq('id', identity.user_id)
-            .single();
+          const { data: usersData } = await repo.fetchUsersTableProfile(supabase, identity.user_id);
           if (usersData) {
             if (!profile.display_name && usersData.display_name) {
               profile.display_name = usersData.display_name;
@@ -551,10 +523,7 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
       }
 
       // Fetch user memberships from user_tenants
-      const { data: membershipData, error: membershipError } = await supabase
-        .from('user_tenants')
-        .select('tenant_id, active_role, is_primary')
-        .eq('user_id', identity.user_id);
+      const { data: membershipData, error: membershipError } = await repo.fetchUserMemberships(supabase, identity.user_id);
 
       if (!membershipError && membershipData) {
         memberships = membershipData.map((m: any) => ({
@@ -580,12 +549,7 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
         );
 
         // Resolve default tenant (oldest)
-        const { data: tenantRow } = await supabase
-          .from('tenants')
-          .select('tenant_id')
-          .order('created_at', { ascending: true })
-          .limit(1)
-          .single();
+        const { data: tenantRow } = await repo.fetchOldestTenant(supabase);
 
         const defaultTenantId = tenantRow?.tenant_id as string | undefined;
 
@@ -594,19 +558,12 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
             ? identity.email.split('@')[0]
             : 'User';
 
-          const { data: newProfile, error: provErr } = await supabase
-            .from('app_users')
-            .upsert(
-              {
-                user_id: identity.user_id,
-                email: identity.email,
-                display_name: displayName,
-                tenant_id: defaultTenantId || null,
-              },
-              { onConflict: 'user_id' }
-            )
-            .select('display_name, avatar_url, bio')
-            .single();
+          const { data: newProfile, error: provErr } = await repo.upsertAppUserProvision(supabase, {
+            user_id: identity.user_id,
+            email: identity.email,
+            display_name: displayName,
+            tenant_id: defaultTenantId || null,
+          });
 
           if (!provErr && newProfile) {
             profile = {
@@ -621,19 +578,12 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
         }
 
         if (missingMembership && defaultTenantId) {
-          const { data: newMembership, error: memErr } = await supabase
-            .from('user_tenants')
-            .upsert(
-              {
-                tenant_id: defaultTenantId,
-                user_id: identity.user_id,
-                active_role: 'community',
-                is_primary: true,
-              },
-              { onConflict: 'tenant_id,user_id' }
-            )
-            .select('tenant_id, active_role, is_primary')
-            .single();
+          const { data: newMembership, error: memErr } = await repo.upsertUserTenantProvision(supabase, {
+            tenant_id: defaultTenantId,
+            user_id: identity.user_id,
+            active_role: 'community',
+            is_primary: true,
+          });
 
           if (!memErr && newMembership) {
             memberships = [
@@ -778,11 +728,7 @@ router.put('/profile', requireAuth, async (req: AuthenticatedRequest, res: Respo
     updates.updated_at = new Date().toISOString();
 
     // Try UPDATE first (the row should exist from GET /me auto-provision)
-    const { data, error } = await supabase
-      .from('app_users')
-      .update(updates)
-      .eq('user_id', identity.user_id)
-      .select('display_name, bio, avatar_url:profile->>avatar_url');
+    const { data, error } = await repo.updateAppUserProfile(supabase, identity.user_id, updates);
 
     if (error) {
       console.error(`[VTID-01867] Profile update failed: ${error.message} (code=${error.code})`);
@@ -797,11 +743,7 @@ router.put('/profile', requireAuth, async (req: AuthenticatedRequest, res: Respo
         email: identity.email || 'unknown@example.com',
         ...updates,
       };
-      const { data: insertedData, error: insertError } = await supabase
-        .from('app_users')
-        .insert(insertPayload)
-        .select('display_name, bio, avatar_url:profile->>avatar_url')
-        .single();
+      const { data: insertedData, error: insertError } = await repo.insertAppUserProfile(supabase, insertPayload);
 
       if (insertError) {
         console.error(`[VTID-01867] Profile insert failed: ${insertError.message}`);

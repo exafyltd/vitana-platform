@@ -64,6 +64,7 @@ import {
   TrendAnalysis,
   LongitudinalSignalBundle
 } from '../types/longitudinal-adaptation';
+import * as repo from './d50-positive-trajectory-reinforcement-engine-repository';
 
 // =============================================================================
 // VTID-01144: Constants
@@ -167,10 +168,7 @@ async function getClientWithContext(authToken?: string): Promise<{
 
   // Bootstrap dev context if needed
   if (useDevIdentity) {
-    const { error: bootstrapError } = await supabase.rpc('dev_bootstrap_request_context', {
-      p_tenant_id: DEV_IDENTITY.TENANT_ID,
-      p_active_role: 'developer'
-    });
+    const { error: bootstrapError } = await repo.bootstrapDevRequestContext(supabase, DEV_IDENTITY.TENANT_ID, 'developer');
     if (bootstrapError) {
       console.warn(`${LOG_PREFIX} Bootstrap context failed (non-fatal):`, bootstrapError.message);
     }
@@ -317,9 +315,7 @@ async function getLastReinforcementInfo(
   trajectoryType: TrajectoryType
 ): Promise<{ lastDate: Date | null; daysSince: number | null }> {
   try {
-    const { data, error } = await supabase.rpc('d50_get_last_reinforcement', {
-      p_trajectory_type: trajectoryType
-    });
+    const { data, error } = await repo.getLastReinforcement(supabase, trajectoryType);
 
     if (error || !data?.found) {
       return { lastDate: null, daysSince: null };
@@ -707,7 +703,7 @@ export async function generateReinforcement(
     }
 
     // Check daily limit
-    const { data: todayCount, error: countError } = await supabase.rpc('d50_count_today_reinforcements');
+    const { data: todayCount, error: countError } = await repo.countTodayReinforcements(supabase);
     if (!countError && todayCount >= REINFORCEMENT_THRESHOLDS.MAX_DAILY_REINFORCEMENTS) {
       return {
         ok: false,
@@ -787,7 +783,7 @@ export async function generateReinforcement(
         }
       : {};
 
-    const { data: storeResult, error: storeError } = await supabase.rpc('d50_store_reinforcement', {
+    const { data: storeResult, error: storeError } = await repo.storeReinforcement(supabase, {
       p_trajectory_type: reinforcement.trajectory_type,
       p_confidence: reinforcement.confidence,
       p_what_is_working: reinforcement.what_is_working,
@@ -860,9 +856,7 @@ export async function markDelivered(
       return { ok: false, error: clientError || 'SERVICE_UNAVAILABLE' };
     }
 
-    const { data, error } = await supabase.rpc('d50_mark_delivered', {
-      p_reinforcement_id: reinforcementId
-    });
+    const { data, error } = await repo.markReinforcementDelivered(supabase, reinforcementId);
 
     if (error) {
       return { ok: false, error: error.message };
@@ -902,10 +896,7 @@ export async function dismissReinforcement(
       return { ok: false, error: clientError || 'SERVICE_UNAVAILABLE' };
     }
 
-    const { data, error } = await supabase.rpc('d50_dismiss_reinforcement', {
-      p_reinforcement_id: request.reinforcement_id,
-      p_reason: request.reason || null
-    });
+    const { data, error } = await repo.dismissReinforcementRpc(supabase, request.reinforcement_id, request.reason || null);
 
     if (error) {
       return { ok: false, error: error.message };
@@ -950,7 +941,7 @@ export async function getReinforcementHistory(
       return { ok: false, error: clientError || 'SERVICE_UNAVAILABLE' };
     }
 
-    const { data, error } = await supabase.rpc('d50_get_recent_reinforcements', {
+    const { data, error } = await repo.getRecentReinforcements(supabase, {
       p_trajectory_types: request.trajectory_types || null,
       p_include_dismissed: request.include_dismissed,
       p_limit: request.limit

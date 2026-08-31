@@ -21,6 +21,7 @@
  */
 
 import type { UserAwareness } from './types';
+import * as repo from './initiative-registry-repository';
 
 const LOG_PREFIX = '[Guide:initiative-registry]';
 
@@ -179,13 +180,7 @@ export const INITIATIVE_REGISTRY: ProactiveInitiative[] = [
         const { getSupabase } = await import('../../lib/supabase');
         const supabase = getSupabase();
         if (!supabase) return null;
-        const { data, error } = await supabase
-          .from('autopilot_recommendations')
-          .select('id, title, summary, priority')
-          .eq('user_id', ctx.user_id)
-          .in('status', ['new', 'pending'])
-          .order('priority', { ascending: false })
-          .limit(1);
+        const { data, error } = await repo.fetchTopOpenAutopilotRecommendation(supabase, ctx.user_id);
         if (error || !data || data.length === 0) return null;
         const top = data[0] as { id: string; title: string; summary?: string; priority?: number };
         return {
@@ -235,13 +230,7 @@ export const INITIATIVE_REGISTRY: ProactiveInitiative[] = [
         // For v1 we just pick the most recently-created node's owner as a
         // simple proxy — a "longest-dormant" query needs a chat-history
         // join we'd want to push behind a view in a follow-up.
-        const { data, error } = await supabase
-          .from('relationship_nodes')
-          .select('id, display_name, metadata')
-          .eq('owner_user_id', ctx.user_id)
-          .eq('node_type', 'person')
-          .order('updated_at', { ascending: true })
-          .limit(1);
+        const { data, error } = await repo.fetchMostDormantConnectionNode(supabase, ctx.user_id);
         if (error || !data || data.length === 0) return null;
         const node = data[0] as {
           id: string;

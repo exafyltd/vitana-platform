@@ -25,6 +25,7 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { emitOasisEvent } from './oasis-event-service';
 import { notifyUserAsync } from './notification-service';
+import * as repo from './diary-streak-celebrator-repository';
 
 export interface StreakCelebration {
   current_streak_days: number;
@@ -54,11 +55,7 @@ export async function celebrateDiaryStreak(
   tenantId: string,
 ): Promise<StreakCelebration | null> {
   try {
-    const { data: streakRow } = await admin
-      .from('user_diary_streak')
-      .select('current_streak_days, last_day')
-      .eq('user_id', userId)
-      .maybeSingle();
+    const { data: streakRow } = await repo.fetchUserDiaryStreak(admin, userId);
 
     const streak = Number((streakRow as any)?.current_streak_days ?? 0);
     if (streak <= 0) return null;
@@ -72,14 +69,7 @@ export async function celebrateDiaryStreak(
     // length today, skip. Cheap dedup query (filter in last 25 hours so a
     // single-day duplicate never re-fires).
     const since = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
-    const { data: existing } = await admin
-      .from('oasis_events')
-      .select('id')
-      .eq('topic', 'diary.streak_celebrated')
-      .gte('created_at', since)
-      .filter('metadata->>user_id', 'eq', userId)
-      .filter('metadata->>streak_days', 'eq', String(tier.days))
-      .limit(1);
+    const { data: existing } = await repo.fetchExistingStreakCelebrationEvent(admin, userId, tier.days, since);
     if (Array.isArray(existing) && existing.length > 0) {
       // Already celebrated this tier today — skip the credit + event but
       // still return the payload so voice/toast can mention it idly if
@@ -88,8 +78,20 @@ export async function celebrateDiaryStreak(
     }
 
     // Wallet credit — mirror the autopilot onboarding pattern.
+    //
+    // credit_wallet is best-effort — wallet may dedup on p_source_event_id
+    // (idempotent) or be temporarily unavailable. Streak event/notification
+    // still fire regardless (see AURORA-B3-RPC-PARITY-INVENTORY.md's
+    // 2026-08-29 addendum: whether the notification should keep claiming
+    // "credited" when this RPC fails is a product decision, not fixed
+    // here). What IS fixed here: supabase-js's .rpc() resolves normally
+    // with an {error} field on a Postgres-level failure — it does NOT
+    // throw — so the `catch` below was previously unreachable for
+    // credit_wallet not existing, and the failure was completely invisible
+    // in logs. Checking `error` explicitly makes it loud, per this
+    // codebase's own "never silence errors" rule.
     try {
-      await admin.rpc('credit_wallet', {
+      const { error: walletErr } = await repo.creditWallet(admin, {
         p_tenant_id: tenantId,
         p_user_id: userId,
         p_amount: tier.reward,
@@ -98,10 +100,11 @@ export async function celebrateDiaryStreak(
         p_source_event_id: `diary_streak_${userId}_${tier.days}_${new Date().toISOString().slice(0, 10)}`,
         p_description: `Diary ${tier.days}-day streak`,
       });
+      if (walletErr) {
+        console.error(`[diary-streak] credit_wallet RPC returned an error: ${walletErr.message}`);
+      }
     } catch (walletErr: any) {
-      // credit_wallet is best-effort — wallet may dedup on
-      // p_source_event_id (idempotent) or be temporarily unavailable.
-      // Streak event still fires regardless.
+      // Network-layer failure (the only case .rpc() actually rejects for).
       console.warn(`[diary-streak] credit_wallet failed: ${walletErr?.message ?? walletErr}`);
     }
 

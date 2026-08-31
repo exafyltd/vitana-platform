@@ -18,6 +18,7 @@
 
 import { Router, Request, Response } from 'express';
 import { createUserSupabaseClient } from '../lib/supabase-user';
+import * as repo from './autopilot-prompts-repository';
 import {
   UpdatePrefsRequestSchema,
   GeneratePromptsRequestSchema,
@@ -71,7 +72,7 @@ async function getUserContext(req: Request): Promise<{
     const supabase = createUserSupabaseClient(token);
 
     // Call me_context RPC to get user identity
-    const { data, error } = await supabase.rpc('me_context');
+    const { data, error } = await repo.fetchMeContext(supabase);
 
     if (error) {
       console.warn(`[${VTID}] me_context RPC error:`, error.message);

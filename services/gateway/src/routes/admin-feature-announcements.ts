@@ -44,6 +44,7 @@ import { bulkGetUserLocales } from '../i18n/server-locale';
 import { tt, type GatewayLocale } from '../i18n/catalog';
 import { requireAuth, requireExafyAdmin, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import * as repo from './admin-feature-announcements-repository';
 
 const router = Router();
 const VTID = 'ADMIN-FEATURE-ANNOUNCEMENTS';
@@ -129,19 +130,15 @@ router.post('/', async (req: AuthenticatedRequest, res: Response) => {
     //    (RLS-scoped to their own tenant_id via user_tenants) unless this is
     //    a staged test send, in which case target_user_ids restricts SELECT
     //    (and the notification fan-out below) to just those users.
-    const { data: inserted, error: insertError } = await supabase
-      .from('feature_announcements')
-      .insert({
-        tenant_id,
-        variant,
-        feature_title,
-        description,
-        deep_link,
-        created_by: email,
-        target_user_ids: isTestSend ? recipient_ids : null,
-      })
-      .select('id')
-      .single();
+    const { data: inserted, error: insertError } = await repo.insertFeatureAnnouncement(supabase, {
+      tenant_id,
+      variant,
+      feature_title,
+      description,
+      deep_link,
+      created_by: email,
+      target_user_ids: isTestSend ? recipient_ids : null,
+    });
 
     if (insertError || !inserted) {
       console.error(`[${VTID}] insert failed:`, insertError?.message);
@@ -154,10 +151,7 @@ router.post('/', async (req: AuthenticatedRequest, res: Response) => {
     if (isTestSend) {
       targetUserIds = recipient_ids as string[];
     } else {
-      const { data: members, error: membersError } = await supabase
-        .from('user_tenants')
-        .select('user_id')
-        .eq('tenant_id', tenant_id);
+      const { data: members, error: membersError } = await repo.fetchTenantMemberUserIds(supabase, tenant_id);
 
       if (membersError) {
         console.error(`[${VTID}] members lookup error:`, membersError.message);
@@ -217,10 +211,7 @@ router.post('/', async (req: AuthenticatedRequest, res: Response) => {
     }
 
     // notified_at reflects dispatch actually completing, not just being scheduled.
-    await supabase
-      .from('feature_announcements')
-      .update({ notified_at: new Date().toISOString() })
-      .eq('id', announcementId);
+    await repo.markFeatureAnnouncementNotified(supabase, announcementId, new Date().toISOString());
 
     console.log(
       `[${VTID}] ${isTestSend ? 'Test-published' : 'Published'} announcement ${announcementId} by ${email} ` +
@@ -255,15 +246,10 @@ router.get('/', async (req: Request, res: Response) => {
   const { tenant_id } = req.query;
 
   try {
-    let query = supabase
-      .from('feature_announcements')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(50);
-    if (tenant_id && typeof tenant_id === 'string') {
-      query = query.eq('tenant_id', tenant_id);
-    }
-    const { data, error } = await query;
+    const { data, error } = await repo.listFeatureAnnouncements(
+      supabase,
+      tenant_id && typeof tenant_id === 'string' ? tenant_id : undefined,
+    );
     if (error) {
       console.error(`[${VTID}] GET / error:`, error.message);
       return res.status(500).json({ ok: false, error: error.message });

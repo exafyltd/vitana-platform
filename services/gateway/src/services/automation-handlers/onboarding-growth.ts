@@ -11,6 +11,7 @@
 import { randomUUID } from 'crypto';
 import { AutomationContext, REWARD_TABLE } from '../../types/automations';
 import { registerHandler } from '../automation-executor';
+import * as repo from './onboarding-growth-repository';
 
 const APP_URL = process.env.APP_URL || 'https://vitana.app';
 const VITANA_BOT_USER_ID = process.env.VITANA_BOT_USER_ID || '00000000-0000-0000-0000-000000000000';
@@ -31,28 +32,17 @@ async function runOrbGuidedOnboarding(ctx: AutomationContext) {
   let actionsTaken = 0;
 
   // Gather user context for personalized welcome
-  const { data: user } = await supabase
-    .from('app_users')
-    .select('display_name, language, created_at')
-    .eq('user_id', userId)
-    .maybeSingle();
+  const { data: user } = await repo.fetchUserBasics(supabase, userId);
 
   const displayName = user?.display_name || '';
   const firstName = displayName.split(' ')[0] || 'there';
 
   // Check if user has any interests set. Real schema: user_topic_profile was
   // never deployed; user_interests (no tenant_id column) is the live table.
-  const { count: interestCount } = await supabase
-    .from('user_interests')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', userId);
+  const { count: interestCount } = await repo.countUserInterests(supabase, userId);
 
   // Check if user has an avatar
-  const { data: profile } = await supabase
-    .from('app_users')
-    .select('avatar_url:profile->>avatar_url')
-    .eq('user_id', userId)
-    .maybeSingle();
+  const { data: profile } = await repo.fetchUserAvatarUrl(supabase, userId);
 
   const hasAvatar = !!profile?.avatar_url;
   const hasInterests = (interestCount || 0) > 0;
@@ -101,14 +91,24 @@ async function runOrbGuidedOnboarding(ctx: AutomationContext) {
   // Credit onboarding welcome bonus (small amount to introduce wallet).
   // credit_wallet() RPC does not exist live; increment_wallet_balance()
   // does (writes to user_wallets, no idempotency key of its own).
+  //
+  // supabase-js's .rpc() resolves normally with an {error} field on a
+  // Postgres-level failure rather than throwing — the catch below only
+  // ever sees a network-layer rejection — so the error field must be
+  // checked explicitly, and actionsTaken/the success log must not fire
+  // unless the credit actually happened.
   try {
-    await supabase.rpc('increment_wallet_balance', {
+    const { error: walletErr } = await repo.creditWalletBalance(supabase, {
       p_user_id: userId,
       p_currency_type: 'CREDITS',
       p_amount: REWARD_TABLE['complete_onboarding'].amount,
     });
-    actionsTaken++;
-    ctx.log(`Credited welcome bonus to user ${userId.slice(0, 8)}…`);
+    if (walletErr) {
+      ctx.log(`Wallet credit failed for user ${userId.slice(0, 8)}…: ${walletErr.message}`);
+    } else {
+      actionsTaken++;
+      ctx.log(`Credited welcome bonus to user ${userId.slice(0, 8)}…`);
+    }
   } catch (err: any) {
     ctx.log(`Wallet credit skipped (${err.message})`);
   }
@@ -141,12 +141,7 @@ async function runStarterPackDelivery(ctx: AutomationContext) {
   // 1. Find user's interests for group matching. Real schema:
   // user_topic_profile was never deployed; user_interests(interest,
   // confidence_score) is the live table.
-  const { data: userInterests } = await supabase
-    .from('user_interests')
-    .select('interest')
-    .eq('user_id', userId)
-    .order('confidence_score', { ascending: false })
-    .limit(5);
+  const { data: userInterests } = await repo.fetchTopUserInterestNames(supabase, userId, 5);
 
   const interestKeys = (userInterests || []).map((t: any) => (t.interest || '').toLowerCase()).filter(Boolean);
 
@@ -159,12 +154,7 @@ async function runStarterPackDelivery(ctx: AutomationContext) {
   // single `category` text column (not a topic_keys array), no tenant_id.
   let matchedGroupsCount = 0;
   if (interestKeys.length > 0) {
-    const { data: matchedGroups } = await supabase
-      .from('global_community_groups')
-      .select('id, name, category')
-      .eq('status', 'active')
-      .in('category', interestKeys)
-      .limit(3);
+    const { data: matchedGroups } = await repo.fetchMatchedActiveGroups(supabase, interestKeys);
 
     for (const group of matchedGroups || []) {
       ctx.notify(userId, 'group_recommended', {
@@ -183,13 +173,7 @@ async function runStarterPackDelivery(ctx: AutomationContext) {
   const now = new Date();
   const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-  const { data: upcomingEvents } = await supabase
-    .from('global_community_events')
-    .select('id, title, start_time')
-    .gte('start_time', now.toISOString())
-    .lte('start_time', weekFromNow.toISOString())
-    .order('start_time', { ascending: true })
-    .limit(3);
+  const { data: upcomingEvents } = await repo.fetchUpcomingEventsInWindow(supabase, now.toISOString(), weekFromNow.toISOString());
 
   if (upcomingEvents?.length) {
     const eventCount = upcomingEvents.length;
@@ -235,10 +219,7 @@ async function runContactBookSyncAndInvite(ctx: AutomationContext) {
   // 1. Find existing users by email. app_users' primary key is user_id, not id.
   let existingUserIds: string[] = [];
   if (emails.length > 0) {
-    const { data: existingByEmail } = await supabase
-      .from('app_users')
-      .select('user_id, email')
-      .in('email', emails);
+    const { data: existingByEmail } = await repo.fetchUsersByEmails(supabase, emails);
 
     existingUserIds = (existingByEmail || []).map((u: any) => u.user_id);
 
@@ -258,7 +239,7 @@ async function runContactBookSyncAndInvite(ctx: AutomationContext) {
       // relationship_type/context), unique on (tenant_id, source_type,
       // source_id, target_type, target_id, edge_type).
       for (const contactUserId of existingUserIds.slice(0, 10)) {
-        await supabase.from('relationship_edges').upsert({
+        await repo.upsertSuggestedConnectionEdge(supabase, {
           tenant_id: tenantId,
           source_type: 'person',
           source_id: userId,
@@ -267,7 +248,7 @@ async function runContactBookSyncAndInvite(ctx: AutomationContext) {
           edge_type: 'suggested',
           strength: 40,
           metadata: { origin: 'contact_sync' },
-        }, { onConflict: 'tenant_id,source_type,source_id,target_type,target_id,edge_type' });
+        });
         actionsTaken++;
       }
     }
@@ -275,7 +256,7 @@ async function runContactBookSyncAndInvite(ctx: AutomationContext) {
 
   // 2. Generate invite links for non-existing contacts
   const existingEmails = new Set(
-    (await supabase.from('app_users').select('email').in('email', emails))?.data?.map((u: any) => u.email?.toLowerCase()) || []
+    (await repo.fetchExistingEmails(supabase, emails))?.data?.map((u: any) => u.email?.toLowerCase()) || []
   );
 
   const newContacts = contacts.filter(c => c.email && !existingEmails.has(c.email.toLowerCase()));
@@ -283,7 +264,7 @@ async function runContactBookSyncAndInvite(ctx: AutomationContext) {
 
   if (inviteCount > 0) {
     const shortCode = randomUUID().replace(/-/g, '').substring(0, 8);
-    await supabase.from('sharing_links').insert({
+    await repo.insertSharingLink(supabase, {
       tenant_id: tenantId,
       user_id: userId,
       target_type: 'profile',
@@ -330,20 +311,12 @@ async function runSocialProofNotification(ctx: AutomationContext) {
   let actionsTaken = 0;
 
   // Get new user's display name. app_users' primary key is user_id, not id.
-  const { data: newUser } = await supabase
-    .from('app_users')
-    .select('display_name, email')
-    .eq('user_id', newUserId)
-    .maybeSingle();
+  const { data: newUser } = await repo.fetchUserNameAndEmail(supabase, newUserId);
 
   const newUserName = newUser?.display_name || 'Someone new';
 
   // 1. Find users who referred this person
-  const { data: referrals } = await supabase
-    .from('referrals')
-    .select('referrer_id')
-    .eq('tenant_id', tenantId)
-    .eq('referred_id', newUserId);
+  const { data: referrals } = await repo.fetchReferralsForUser(supabase, tenantId, newUserId);
 
   for (const ref of referrals || []) {
     ctx.notify(ref.referrer_id, 'orb_proactive_message', {
@@ -361,12 +334,7 @@ async function runSocialProofNotification(ctx: AutomationContext) {
     // Skip common public email domains
     const publicDomains = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'icloud.com', 'protonmail.com'];
     if (domain && !publicDomains.includes(domain)) {
-      const { data: colleagues } = await supabase
-        .from('app_users')
-        .select('user_id')
-        .like('email', `%@${domain}`)
-        .neq('user_id', newUserId)
-        .limit(10);
+      const { data: colleagues } = await repo.fetchColleaguesByDomain(supabase, domain, newUserId);
 
       for (const colleague of colleagues || []) {
         ctx.notify(colleague.user_id, 'orb_suggestion', {
@@ -384,15 +352,7 @@ async function runSocialProofNotification(ctx: AutomationContext) {
   // syncs, AP-1303). Real schema: relationship_edges is source_type/
   // source_id/target_type/target_id/edge_type — the syncing user is
   // source_id, the found contact is target_id.
-  const { data: priorSuggestions } = await supabase
-    .from('relationship_edges')
-    .select('source_id')
-    .eq('tenant_id', tenantId)
-    .eq('source_type', 'person')
-    .eq('target_type', 'person')
-    .eq('target_id', newUserId)
-    .eq('edge_type', 'suggested')
-    .limit(20);
+  const { data: priorSuggestions } = await repo.fetchPriorConnectionSuggestions(supabase, tenantId, newUserId);
 
   for (const suggestion of priorSuggestions || []) {
     ctx.notify(suggestion.source_id, 'orb_proactive_message', {
@@ -432,27 +392,12 @@ async function runContactActivityDigest(ctx: AutomationContext) {
     // Check that user has connections. Real schema: relationship_edges is
     // source_type/source_id/target_type/target_id/edge_type (not
     // user_id/relationship_type).
-    const { count: connectionCount } = await supabase
-      .from('relationship_edges')
-      .select('id', { count: 'exact', head: true })
-      .eq('tenant_id', tenantId)
-      .eq('source_type', 'person')
-      .eq('source_id', user_id)
-      .eq('target_type', 'person')
-      .eq('edge_type', 'connected');
+    const { count: connectionCount } = await repo.countConnectionCount(supabase, tenantId, user_id);
 
     if ((connectionCount || 0) < 1) continue;
 
     // Get connected user IDs
-    const { data: connections } = await supabase
-      .from('relationship_edges')
-      .select('target_id')
-      .eq('tenant_id', tenantId)
-      .eq('source_type', 'person')
-      .eq('source_id', user_id)
-      .eq('target_type', 'person')
-      .eq('edge_type', 'connected')
-      .limit(50);
+    const { data: connections } = await repo.fetchConnectedUserIds(supabase, tenantId, user_id, 50);
 
     const connectedIds = (connections || []).map((c: any) => c.target_id);
     if (connectedIds.length === 0) continue;
@@ -462,18 +407,9 @@ async function runContactActivityDigest(ctx: AutomationContext) {
     // (global_community_group_members, no tenant_id); community_meetup_attendance
     // was never deployed (global_event_participants, no tenant_id, filter by
     // registered_at not created_at).
-    const { count: groupJoins } = await supabase
-      .from('global_community_group_members')
-      .select('id', { count: 'exact', head: true })
-      .in('user_id', connectedIds)
-      .gte('joined_at', sevenDaysAgo);
+    const { count: groupJoins } = await repo.countGroupJoinsAmong(supabase, connectedIds, sevenDaysAgo);
 
-    const { count: eventRsvps } = await supabase
-      .from('global_event_participants')
-      .select('id', { count: 'exact', head: true })
-      .in('user_id', connectedIds)
-      .eq('status', 'attending')
-      .gte('registered_at', sevenDaysAgo);
+    const { count: eventRsvps } = await repo.countEventRsvpsAmong(supabase, connectedIds, sevenDaysAgo);
 
     const totalActivity = (groupJoins || 0) + (eventRsvps || 0);
     if (totalActivity === 0) continue;
@@ -523,20 +459,12 @@ async function runSocialAccountConnect(ctx: AutomationContext) {
 
   for (const { user_id } of users.slice(0, 50)) {
     // Check if user has any social connections
-    const { count: socialCount } = await supabase
-      .from('social_connections')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', user_id)
-      .eq('is_active', true);
+    const { count: socialCount } = await repo.countActiveSocialConnections(supabase, user_id);
 
     if ((socialCount || 0) > 0) continue;
 
     // Check account age (only nudge users who've been around 3+ days)
-    const { data: appUser } = await supabase
-      .from('app_users')
-      .select('created_at')
-      .eq('user_id', user_id)
-      .maybeSingle();
+    const { data: appUser } = await repo.fetchUserCreatedAt(supabase, user_id);
 
     if (!appUser?.created_at) continue;
     const daysSinceSignup = (Date.now() - new Date(appUser.created_at).getTime()) / (1000 * 60 * 60 * 24);
@@ -556,12 +484,7 @@ async function runSocialAccountConnect(ctx: AutomationContext) {
   }
 
   // Also re-trigger enrichment for connections stuck in 'pending'
-  const { data: pendingConns } = await supabase
-    .from('social_connections')
-    .select('id, user_id')
-    .eq('enrichment_status', 'pending')
-    .eq('is_active', true)
-    .limit(20);
+  const { data: pendingConns } = await repo.fetchPendingSocialConnections(supabase, 20);
 
   if (pendingConns?.length) {
     try {

@@ -191,4 +191,44 @@ describe('POST /daily-feature-tip', () => {
     expect(r.status).toBe(500);
     expect(r.body.ok).toBe(false);
   });
+
+  it('logs loudly (not silently) when getActiveUsers\' member-page query errors', async () => {
+    // Previously: an unchecked `{data}`-only destructure meant a query
+    // error resolved to an empty page, which the pagination loop treated
+    // identically to "reached the end of this tenant's users" — every
+    // scheduled notification fan-out silently sent to a partial (here,
+    // empty) user set with zero indication anything had failed.
+    mockSupabase = makeFakeSupabase({
+      lastIndex: 0,
+      insertResult: { data: { id: 'ann-1' }, error: null },
+      members: [],
+    });
+    // Override the user_tenants leg specifically to return an error.
+    const originalFrom = mockSupabase.from;
+    mockSupabase.from = (table: string) => {
+      if (table === 'user_tenants') {
+        const chain: any = {};
+        chain.select = () => chain;
+        chain.eq = () => chain;
+        chain.order = () => chain;
+        chain.range = () => chain;
+        return Object.assign(chain, {
+          then: (resolve: any) => resolve({ data: null, error: { message: 'page query failed' } }),
+        });
+      }
+      return originalFrom(table);
+    };
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const r = await request(makeApp())
+      .post('/api/v1/scheduled-notifications/daily-feature-tip')
+      .send({ tenant_id: 'tenant-1' });
+
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ ok: true, dispatched: 0 });
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('getActiveUsers query failed'),
+    );
+    errorSpy.mockRestore();
+  });
 });

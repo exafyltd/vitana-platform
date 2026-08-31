@@ -10,6 +10,7 @@
 import { Router, Request, Response } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import * as repo from './intent-categories-repository';
 
 const router = Router();
 
@@ -24,12 +25,7 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
   const kind = req.query.kind as string | undefined;
   const supabase = getSupabase();
 
-  let q = supabase
-    .from('intent_categories')
-    .select('kind_key, category_key, parent_key, label, sort_order, active')
-    .eq('active', true)
-    .order('kind_key', { ascending: true })
-    .order('sort_order', { ascending: true });
+  let q = repo.buildIntentCategoriesQuery(supabase);
 
   if (kind) q = q.eq('kind_key', kind);
 

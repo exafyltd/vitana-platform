@@ -26,6 +26,7 @@
 
 import { SupabaseClient } from '@supabase/supabase-js';
 import type { CommunityUserSignal } from './community-user-analyzer';
+import * as repo from './life-compass-analyzer-repository';
 
 export interface LifeCompassAnalysisResult {
   ok: boolean;
@@ -109,13 +110,7 @@ export async function analyzeLifeCompass(
   supabase: SupabaseClient,
 ): Promise<LifeCompassAnalysisResult> {
   try {
-    const { data, error } = await supabase
-      .from('life_compass')
-      .select('primary_goal, category')
-      .eq('user_id', userId)
-      .eq('is_active', true)
-      .order('created_at', { ascending: false })
-      .limit(1);
+    const { data, error } = await repo.fetchActiveLifeCompassGoal(supabase, userId);
 
     if (error) {
       return { ok: false, signals: [], active_goal: null, error: error.message };

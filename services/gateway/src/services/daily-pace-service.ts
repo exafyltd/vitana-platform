@@ -31,6 +31,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { resolveUserTimezone } from './guide/user-timezone';
+import * as repo from './daily-pace-service-repository';
 
 export type PaceTone = 'on_track' | 'slightly_behind' | 'falling_behind';
 
@@ -144,9 +145,7 @@ export async function getUserTimezone(
   // client bypasses RLS, so an unscoped lookup could pick up the same
   // user_id from another tenant if the same UUID is used cross-tenant).
   try {
-    let q = supa.from('app_users').select('timezone').eq('user_id', userId);
-    if (tenantId) q = q.eq('tenant_id', tenantId);
-    const { data } = await q.maybeSingle();
+    const { data } = await repo.fetchAppUserTimezone(supa, userId, tenantId);
     const tz = (data as { timezone?: string | null } | null)?.timezone ?? null;
     if (tz && isValidTimezone(tz)) return tz;
   } catch {
@@ -158,11 +157,7 @@ export async function getUserTimezone(
   //    only. Adding .eq('tenant_id', …) here would silently 400 and the
   //    DB layer would return null instead of the real timezone.
   try {
-    const { data } = await supa
-      .from('user_preferences')
-      .select('timezone')
-      .eq('user_id', userId)
-      .maybeSingle();
+    const { data } = await repo.fetchUserPreferencesTimezone(supa, userId);
     const tz = (data as { timezone?: string | null } | null)?.timezone ?? null;
     if (tz && isValidTimezone(tz)) return tz;
   } catch {
@@ -171,16 +166,7 @@ export async function getUserTimezone(
 
   // 3. memory_facts where fact_key='timezone' (tenant-scoped same as above)
   try {
-    let q = supa
-      .from('memory_facts')
-      .select('fact_value')
-      .eq('user_id', userId)
-      .eq('fact_key', 'timezone');
-    if (tenantId) q = q.eq('tenant_id', tenantId);
-    const { data } = await q
-      .order('updated_at', { ascending: false, nullsFirst: false })
-      .limit(1)
-      .maybeSingle();
+    const { data } = await repo.fetchTimezoneMemoryFact(supa, userId, tenantId);
     const tz = (data as { fact_value?: string | null } | null)?.fact_value ?? null;
     if (tz && isValidTimezone(tz)) return tz;
   } catch {
@@ -214,15 +200,7 @@ async function alreadySentToday(
   const todayLocal = userLocalDate(nowUtc, tz);
 
   try {
-    const { data } = await supa
-      .from('user_notifications')
-      .select('id, created_at')
-      .eq('user_id', userId)
-      .eq('tenant_id', tenantId)
-      .eq('type', 'daily_pace_check')
-      .gte('created_at', windowStart)
-      .order('created_at', { ascending: false })
-      .limit(10);
+    const { data } = await repo.fetchRecentDailyPaceNotifications(supa, userId, tenantId, windowStart);
     const rows = (data || []) as Array<{ created_at: string }>;
     // Any row whose user-local-day matches today's user-local-day means we
     // already sent today. This is robust against offset weirdness — we
@@ -288,12 +266,7 @@ export async function computePaceDecision(
   //    enough on its own. An earlier .eq('tenant_id', …) here caused
   //    PostgREST to 400, the destructured `data` came back null, and
   //    everyone was silently skipped with skipReason='no_goal'.
-  const { data: goal } = await supa
-    .from('life_compass')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('is_active', true)
-    .maybeSingle();
+  const { data: goal } = await repo.fetchActiveLifeCompassGoalId(supa, userId);
   if (!goal) {
     return {
       shouldNotify: false,
@@ -305,12 +278,7 @@ export async function computePaceDecision(
   }
 
   // 3. Push must not be globally muted
-  const { data: prefs } = await supa
-    .from('user_notification_preferences')
-    .select('push_enabled')
-    .eq('user_id', userId)
-    .eq('tenant_id', tenantId)
-    .maybeSingle();
+  const { data: prefs } = await repo.fetchNotificationPushEnabled(supa, userId, tenantId);
   // Treat anything falsy as muted to mirror notifyUser's semantics
   // (notification-service.ts: `!prefs.push_enabled`). Without this, a user
   // with prefs row but push_enabled=NULL would be counted as dispatched here
@@ -335,11 +303,7 @@ export async function computePaceDecision(
 
   // `autopilot_recommendations` has no tenant_id column (schema confirmed
   // June 2026); same silent-skip trap as life_compass if we filter on it.
-  const { count: surfaced7d } = await supa
-    .from('autopilot_recommendations')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', userId)
-    .gte('created_at', windowStart);
+  const { count: surfaced7d } = await repo.countAutopilotRecommendationsInWindow(supa, userId, windowStart);
   const surfaced = surfaced7d || 0;
 
   if (surfaced < MIN_SURFACED_FOR_NOTIFY) {
@@ -368,12 +332,7 @@ export async function computePaceDecision(
 
   // 6. activated_7d (same window, status=activated)
   // No tenant_id column on autopilot_recommendations (see surfaced7d note).
-  const { count: activated7d } = await supa
-    .from('autopilot_recommendations')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', userId)
-    .eq('status', 'activated')
-    .gte('created_at', windowStart);
+  const { count: activated7d } = await repo.countAutopilotRecommendationsInWindow(supa, userId, windowStart, 'activated');
   const activated = activated7d || 0;
 
   const { tone, ratio } = bucketPace(activated, surfaced);

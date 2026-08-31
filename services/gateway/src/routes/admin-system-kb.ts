@@ -24,6 +24,7 @@
 import { Router, Response } from 'express';
 import { requireAuth, requireExafyAdmin, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { getSupabase } from '../lib/supabase';
+import * as repo from './admin-system-kb-repository';
 
 const router = Router();
 
@@ -42,23 +43,7 @@ router.get('/docs', async (req: AuthenticatedRequest, res: Response) => {
   const q = (req.query.q as string | undefined)?.trim();
 
   try {
-    let query = supabase
-      .from('knowledge_docs')
-      .select('id, title, path, tags, word_count, source_type, created_at, updated_at')
-      .order('path', { ascending: true });
-
-    if (pathPrefix) {
-      query = query.like('path', `${pathPrefix}%`);
-    }
-    if (tag) {
-      query = query.contains('tags', [tag]);
-    }
-    if (q) {
-      // Full-text on title + content via tsvector if available; fall back to ilike.
-      query = query.or(`title.ilike.%${q}%,path.ilike.%${q}%`);
-    }
-
-    const { data, error } = await query.limit(500);
+    const { data, error } = await repo.fetchKnowledgeDocsList(supabase, { pathPrefix, tag, q });
     if (error) {
       console.error('[admin-system-kb] list error:', error.message);
       return res.status(400).json({ ok: false, error: error.message });
@@ -77,11 +62,7 @@ router.get('/docs/:id', async (req: AuthenticatedRequest, res: Response) => {
   }
   const id = req.params.id;
   try {
-    const { data, error } = await supabase
-      .from('knowledge_docs')
-      .select('id, title, path, content, tags, source_type, word_count, created_at, updated_at')
-      .eq('id', id)
-      .maybeSingle();
+    const { data, error } = await repo.fetchKnowledgeDocById(supabase, id);
     if (error) {
       return res.status(400).json({ ok: false, error: error.message });
     }
@@ -116,12 +97,7 @@ router.put('/docs/:id', async (req: AuthenticatedRequest, res: Response) => {
   }
 
   try {
-    const { data, error } = await supabase
-      .from('knowledge_docs')
-      .update(updates)
-      .eq('id', id)
-      .select('id, title, path, content, tags, word_count, source_type, created_at, updated_at')
-      .maybeSingle();
+    const { data, error } = await repo.updateKnowledgeDoc(supabase, id, updates);
     if (error) {
       console.error('[admin-system-kb] update error:', error.message);
       return res.status(400).json({ ok: false, error: error.message });
@@ -154,13 +130,7 @@ router.put('/baseline-docs/:id', async (req: AuthenticatedRequest, res: Response
   }
 
   try {
-    const { data, error } = await supabase
-      .from('kb_documents')
-      .update(updates)
-      .eq('id', id)
-      .is('tenant_id', null) // enforce baseline scope
-      .select('*')
-      .maybeSingle();
+    const { data, error } = await repo.updateBaselineKbDocument(supabase, id, updates);
     if (error) {
       console.error('[admin-system-kb] baseline update error:', error.message);
       return res.status(400).json({ ok: false, error: error.message });

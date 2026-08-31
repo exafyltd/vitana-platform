@@ -21,6 +21,7 @@ import {
   AuthenticatedRequest,
 } from '../middleware/auth-supabase-jwt';
 import { createClient } from '@supabase/supabase-js';
+import * as repo from './notifications-repository';
 
 const router = Router();
 
@@ -58,12 +59,7 @@ router.post('/token', requireAuth, requireTenant, async (req: Request, res: Resp
   // So: revoke every OTHER account's claim on this device first, then take it.
   // Order matters — user_device_tokens_one_active_owner allows only one active
   // row per token, and doing this the other way round transiently violates it.
-  const { error: revokeError } = await supabase
-    .from('user_device_tokens')
-    .update({ revoked_at: new Date().toISOString(), revoked_reason: 'taken_over' })
-    .eq('fcm_token', fcm_token)
-    .neq('user_id', identity.user_id)
-    .is('revoked_at', null);
+  const { error: revokeError } = await repo.revokeOtherAccountsDeviceToken(supabase, fcm_token, identity.user_id);
 
   if (revokeError) {
     // Don't take the device over on a half-applied state — the unique index
@@ -73,21 +69,13 @@ router.post('/token', requireAuth, requireTenant, async (req: Request, res: Resp
     return res.status(500).json({ ok: false, error: revokeError.message });
   }
 
-  const { error } = await supabase
-    .from('user_device_tokens')
-    .upsert(
-      {
-        user_id: identity.user_id,
-        tenant_id: identity.tenant_id,
-        fcm_token,
-        device_label: device_label || null,
-        updated_at: new Date().toISOString(),
-        // Re-claim after a previous sign-out/takeover on this same device.
-        revoked_at: null,
-        revoked_reason: null,
-      },
-      { onConflict: 'user_id,fcm_token' }
-    );
+  const { error } = await repo.upsertDeviceToken(supabase, {
+    user_id: identity.user_id,
+    tenant_id: identity.tenant_id,
+    fcm_token,
+    device_label: device_label || null,
+    updated_at: new Date().toISOString(),
+  });
 
   if (error) {
     console.error('[Notifications] Token upsert error:', error);
@@ -110,13 +98,7 @@ router.post('/token', requireAuth, requireTenant, async (req: Request, res: Resp
   // so the blast radius is one account and it self-heals as people open the
   // app. Best-effort: a failure here must not fail the registration.
   const staleCutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-  const { error: pruneError } = await supabase
-    .from('user_device_tokens')
-    .update({ revoked_at: new Date().toISOString(), revoked_reason: 'stale' })
-    .eq('user_id', identity.user_id)
-    .neq('fcm_token', fcm_token)
-    .lt('updated_at', staleCutoff)
-    .is('revoked_at', null);
+  const { error: pruneError } = await repo.pruneStaleDeviceTokens(supabase, identity.user_id, fcm_token, staleCutoff);
 
   if (pruneError) {
     console.warn('[Notifications] Stale token prune failed:', pruneError.message);
@@ -143,12 +125,7 @@ router.delete('/token', requireAuth, async (req: Request, res: Response) => {
   // from "never registered a device token at all" (→ still needs the legacy
   // Appilix user_identity fallback, e.g. an iOS shell that never captured one).
   const supabase = getSupabase();
-  await supabase
-    .from('user_device_tokens')
-    .update({ revoked_at: new Date().toISOString(), revoked_reason: 'signed_out' })
-    .eq('user_id', identity.user_id)
-    .eq('fcm_token', fcm_token)
-    .is('revoked_at', null);
+  await repo.revokeOwnDeviceTokenOnSignOut(supabase, identity.user_id, fcm_token);
 
   res.json({ ok: true });
 });
@@ -163,13 +140,7 @@ router.get('/', requireAuth, requireTenant, async (req: Request, res: Response) 
   const offset = Math.max(Number(req.query.offset) || 0, 0);
 
   const supabase = getSupabase();
-  const { data, error } = await supabase
-    .from('user_notifications')
-    .select('*')
-    .eq('user_id', identity.user_id)
-    .eq('tenant_id', identity.tenant_id)
-    .order('created_at', { ascending: false })
-    .range(offset, offset + limit - 1);
+  const { data, error } = await repo.fetchNotificationHistory(supabase, identity.user_id, identity.tenant_id, offset, limit);
 
   if (error) {
     return res.status(500).json({ ok: false, error: error.message });
@@ -185,12 +156,7 @@ router.get('/unread-count', requireAuth, requireTenant, async (req: Request, res
   if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
 
   const supabase = getSupabase();
-  const { count, error } = await supabase
-    .from('user_notifications')
-    .select('*', { count: 'exact', head: true })
-    .eq('user_id', identity.user_id)
-    .eq('tenant_id', identity.tenant_id)
-    .is('read_at', null);
+  const { count, error } = await repo.countUnreadNotifications(supabase, identity.user_id, identity.tenant_id);
 
   if (error) {
     return res.status(500).json({ ok: false, error: error.message });
@@ -206,11 +172,7 @@ router.post('/:id/read', requireAuth, async (req: Request, res: Response) => {
   if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
 
   const supabase = getSupabase();
-  const { error } = await supabase
-    .from('user_notifications')
-    .update({ read_at: new Date().toISOString() })
-    .eq('id', req.params.id)
-    .eq('user_id', identity.user_id);
+  const { error } = await repo.markNotificationRead(supabase, req.params.id, identity.user_id, new Date().toISOString());
 
   if (error) {
     return res.status(500).json({ ok: false, error: error.message });
@@ -226,12 +188,7 @@ router.post('/mark-all-read', requireAuth, requireTenant, async (req: Request, r
   if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
 
   const supabase = getSupabase();
-  const { error } = await supabase
-    .from('user_notifications')
-    .update({ read_at: new Date().toISOString() })
-    .eq('user_id', identity.user_id)
-    .eq('tenant_id', identity.tenant_id)
-    .is('read_at', null);
+  const { error } = await repo.markAllNotificationsRead(supabase, identity.user_id, identity.tenant_id, new Date().toISOString());
 
   if (error) {
     return res.status(500).json({ ok: false, error: error.message });
@@ -247,11 +204,7 @@ router.delete('/:id', requireAuth, async (req: Request, res: Response) => {
   if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
 
   const supabase = getSupabase();
-  const { error } = await supabase
-    .from('user_notifications')
-    .delete()
-    .eq('id', req.params.id)
-    .eq('user_id', identity.user_id);
+  const { error } = await repo.deleteNotification(supabase, req.params.id, identity.user_id);
 
   if (error) {
     return res.status(500).json({ ok: false, error: error.message });
@@ -279,20 +232,7 @@ router.delete('/', requireAuth, requireTenant, async (req: Request, res: Respons
     .filter(Boolean);
 
   const supabase = getSupabase();
-  let query = supabase
-    .from('user_notifications')
-    .delete()
-    .eq('user_id', identity.user_id)
-    .eq('tenant_id', identity.tenant_id);
-
-  if (readOnly) {
-    query = query.not('read_at', 'is', null);
-  }
-  if (types.length > 0) {
-    query = query.in('type', types);
-  }
-
-  const { error } = await query;
+  const { error } = await repo.deleteNotifications(supabase, identity.user_id, identity.tenant_id, { readOnly, types });
 
   if (error) {
     return res.status(500).json({ ok: false, error: error.message });

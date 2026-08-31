@@ -16,6 +16,7 @@
 
 import { getSupabase } from '../../lib/supabase';
 import type { WalletCurrency } from '../../types/wallet';
+import * as repo from './spend-earning-service-repository';
 
 export type SpendEarningReferenceType =
   | 'cart_checkout'
@@ -88,7 +89,7 @@ export async function debitWalletForSpend(input: SpendInput): Promise<WalletMove
     return { ok: false, error: 'INVALID_AMOUNT' };
   }
 
-  const { data, error } = await supabase.rpc('debit_wallet_for_spend', {
+  const { data, error } = await repo.debitWalletForSpendRpc(supabase, {
     p_account_id: input.account_id,
     p_amount_minor: input.amount_minor,
     p_currency: input.currency,
@@ -115,7 +116,7 @@ export async function creditWalletForEarning(input: EarningInput): Promise<Walle
     return { ok: false, error: 'INVALID_AMOUNT' };
   }
 
-  const { data, error } = await supabase.rpc('credit_wallet_for_earning', {
+  const { data, error } = await repo.creditWalletForEarningRpc(supabase, {
     p_account_id: input.account_id,
     p_amount_minor: input.amount_minor,
     p_currency: input.currency,

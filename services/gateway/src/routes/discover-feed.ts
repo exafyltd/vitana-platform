@@ -21,6 +21,7 @@ import { getUserHealthContext, type UserHealthContext } from '../services/user-h
 import { applyUserLimitations, type FilterableProduct } from '../services/limitations-filter';
 import { rankFeedProducts, type FeedConfig } from '../services/feed-ranker';
 import * as jose from 'jose';
+import * as repo from './discover-feed-repository';
 
 const router = Router();
 
@@ -112,14 +113,7 @@ router.get('/feed', async (req: Request, res: Response) => {
 
   // Resolve feed config: tenant-specific > platform-wide > GLOBAL × stage fallback
   let feedConfig: FeedConfig | null = null;
-  const { data: configRows } = await supabase
-    .from('default_feed_config')
-    .select(
-      'id, tenant_id, region_group, lifecycle_stage, featured_product_ids, category_mix, max_products_per_merchant, max_products_per_category, starter_conditions, personalization_weight_override, diversity_rules, notes'
-    )
-    .in('region_group', [regionGroup, 'GLOBAL'])
-    .eq('lifecycle_stage', lifecycleStage)
-    .eq('is_active', true);
+  const { data: configRows } = await repo.fetchDefaultFeedConfig(supabase, { regionGroup, lifecycleStage });
 
   if (configRows?.length) {
     // Prefer tenant-specific, then platform-default for region, then GLOBAL fallback
@@ -143,13 +137,10 @@ router.get('/feed', async (req: Request, res: Response) => {
   }
 
   // Candidate fetch
-  let candidateQuery = supabase
-    .from('products')
-    .select(
-      'id, title, description, description_long, brand, category, subcategory, price_cents, currency, compare_at_price_cents, images, affiliate_url, availability, rating, review_count, origin_country, origin_region, merchant_id, ingredients_primary, health_goals, dietary_tags, reward_preview, contains_allergens, contraindicated_with_conditions, contraindicated_with_medications, ships_to_countries, ships_to_regions, excluded_from_regions, dosage, serving_size, servings_per_container, evidence_links, safety_notes'
-    )
-    .eq('is_active', true)
-    .eq('availability', 'in_stock');
+  let candidateQuery = repo.buildCandidateProductsFeedQuery(
+    supabase,
+    'id, title, description, description_long, brand, category, subcategory, price_cents, currency, compare_at_price_cents, images, affiliate_url, availability, rating, review_count, origin_country, origin_region, merchant_id, ingredients_primary, health_goals, dietary_tags, reward_preview, contains_allergens, contraindicated_with_conditions, contraindicated_with_medications, ships_to_countries, ships_to_regions, excluded_from_regions, dosage, serving_size, servings_per_container, evidence_links, safety_notes',
+  );
 
   if (category) candidateQuery = candidateQuery.eq('category', category);
 

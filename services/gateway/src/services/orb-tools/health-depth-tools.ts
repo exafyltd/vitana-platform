@@ -85,6 +85,7 @@ import {
   PILLAR_KEYS,
   type PillarKey,
 } from '../../lib/vitana-pillars';
+import * as repo from './health-depth-tools-repository';
 
 type Handler = (args: OrbToolArgs, id: OrbToolIdentity, sb: SupabaseClient) => Promise<OrbToolResult>;
 
@@ -113,17 +114,18 @@ function parseDateArg(raw: unknown): string {
 /** Tenant resolution mirrors voice-tools/health-log.ts (user_tenants, zero-UUID fallback). */
 async function resolveHealthTenantId(id: OrbToolIdentity, sb: SupabaseClient): Promise<string> {
   if (id.tenant_id) return id.tenant_id;
-  try {
-    const { data } = await sb
-      .from('user_tenants')
-      .select('tenant_id')
-      .eq('user_id', id.user_id)
-      .limit(1)
-      .maybeSingle();
-    return (data as { tenant_id?: string } | null)?.tenant_id ?? DEFAULT_TENANT_ID;
-  } catch {
-    return DEFAULT_TENANT_ID;
+  const { data, error } = await repo.fetchTenantIdForUser(sb, id.user_id);
+  if (error) {
+    // A real DB error here must NOT fall through to DEFAULT_TENANT_ID the
+    // same way "user genuinely has no tenant row" does — every caller
+    // writes health data (meals/vitals/mood/biomarkers) keyed on this
+    // tenant id, so a transient failure would otherwise silently upsert
+    // real health data under the wrong (zero-UUID) tenant. Every call site
+    // already wraps this in try/catch and reports {ok:false, error}, so
+    // throwing is safe.
+    throw error;
   }
+  return (data as { tenant_id?: string } | null)?.tenant_id ?? DEFAULT_TENANT_ID;
 }
 
 const PILLAR_SCORE_COLUMN: Record<PillarKey, string> = {
@@ -157,52 +159,30 @@ async function upsertHealthFeatureAndRecompute(
 ): Promise<{ ok: true; pillarScoreAfter: number | null; totalAfter: number | null; indexDelta: number | null } | { ok: false; error: string }> {
   const tenantId = await resolveHealthTenantId(id, sb);
 
-  const { data: prevRow } = await sb
-    .from('vitana_index_scores')
-    .select('score_total')
-    .eq('user_id', id.user_id)
-    .eq('date', opts.date)
-    .maybeSingle();
+  const { data: prevRow } = await repo.fetchVitanaIndexScoreTotal(sb, id.user_id, opts.date);
   const prevTotal = (prevRow as { score_total?: number } | null)?.score_total ?? null;
 
-  const { error: featErr } = await sb.from('health_features_daily').upsert(
-    {
-      tenant_id: tenantId,
-      user_id: id.user_id,
-      date: opts.date,
-      feature_key: opts.featureKey,
-      feature_value: opts.value,
-      feature_unit: opts.unit,
-      sample_count: 1,
-      confidence: 0.85,
-      metadata: opts.metadata,
-    },
-    { onConflict: 'tenant_id,user_id,date,feature_key' },
-  );
+  const { error: featErr } = await repo.upsertHealthFeatureDaily(sb, {
+    tenant_id: tenantId,
+    user_id: id.user_id,
+    date: opts.date,
+    feature_key: opts.featureKey,
+    feature_value: opts.value,
+    feature_unit: opts.unit,
+    sample_count: 1,
+    confidence: 0.85,
+    metadata: opts.metadata,
+  });
   if (featErr) return { ok: false, error: `feature_write_failed: ${featErr.message}` };
 
   // Mark manual-entry integration connected (mirrors logHealthSignal / manual/log).
   try {
-    await sb.from('user_integrations').upsert(
-      {
-        user_id: id.user_id,
-        integration_id: 'manual-entry',
-        status: 'connected',
-        connected_at: new Date().toISOString(),
-        last_sync_at: new Date().toISOString(),
-        metadata: { source: 'voice_tool' },
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'user_id,integration_id' },
-    );
+    await repo.upsertUserIntegrationManualEntry(sb, id.user_id);
   } catch {
     /* non-fatal — mirrors health-log.ts */
   }
 
-  const { data: newRow } = await sb.rpc('health_compute_vitana_index_for_user', {
-    p_user_id: id.user_id,
-    p_date: opts.date,
-  });
+  const { data: newRow } = await repo.computeVitanaIndexForUser(sb, id.user_id, opts.date);
   const r = newRow as Record<string, unknown> | null;
   const newTotal = typeof r?.score_total === 'number' ? r.score_total : null;
   const pillarCol = PILLAR_SCORE_COLUMN[opts.pillar];
@@ -233,14 +213,8 @@ export async function tool_log_meal(args: OrbToolArgs, id: OrbToolIdentity, sb: 
     // includes 'meal_log'; diary-health-extractor.ts documents it the same way) —
     // read-modify-write so multiple meals in a day accumulate rather than overwrite.
     const tenantId = await resolveHealthTenantId(id, sb);
-    const { data: existing } = await sb
-      .from('health_features_daily')
-      .select('feature_value')
-      .eq('tenant_id', tenantId)
-      .eq('user_id', id.user_id)
-      .eq('date', date)
-      .eq('feature_key', 'meal_log')
-      .maybeSingle();
+    const { data: existing, error: existingErr } = await repo.fetchHealthFeatureValue(sb, tenantId, id.user_id, date, 'meal_log');
+    if (existingErr) throw existingErr; // must not be indistinguishable from "no meals logged yet today" — would silently reset the day's count instead of accumulating
     const newCount = (Number((existing as { feature_value?: number } | null)?.feature_value) || 0) + 1;
 
     const out = await upsertHealthFeatureAndRecompute(sb, id, {
@@ -327,7 +301,7 @@ export async function tool_log_vitals(args: OrbToolArgs, id: OrbToolIdentity, sb
       logged.push(`diastolic ${diastolic}`);
     }
     if (wearableRows.length > 0) {
-      const { error: wErr } = await sb.from('wearable_samples').insert(wearableRows);
+      const { error: wErr } = await repo.insertWearableSamples(sb, wearableRows);
       if (wErr) return { ok: false, error: `wearable_write_failed: ${wErr.message}` };
     }
 
@@ -414,19 +388,10 @@ export async function tool_log_biomarker(args: OrbToolArgs, id: OrbToolIdentity,
     // current_tenant_id()), so we insert directly with the service-role `sb`
     // using the identical column shape (lab_reports -> biomarker_results).
     const tenantId = await resolveHealthTenantId(id, sb);
-    const { data: labReport, error: labErr } = await sb
-      .from('lab_reports')
-      .insert({
-        tenant_id: tenantId,
-        user_id: id.user_id,
-        source: 'voice',
-        report_date: todayIso(),
-      })
-      .select('id')
-      .single();
+    const { data: labReport, error: labErr } = await repo.insertLabReport(sb, tenantId, id.user_id, todayIso());
     if (labErr || !labReport) return { ok: false, error: labErr?.message ?? 'lab_reports insert failed' };
 
-    const { error: bmErr } = await sb.from('biomarker_results').insert({
+    const { error: bmErr } = await repo.insertBiomarkerResult(sb, {
       tenant_id: tenantId,
       user_id: id.user_id,
       lab_report_id: (labReport as { id: string }).id,
@@ -468,12 +433,7 @@ export async function tool_get_health_trends(args: OrbToolArgs, id: OrbToolIdent
     // Same table + shape as vitana-v1's useVitanaIndexHistory.ts / useVitanaIndex.ts
     // and user-context-profiler.ts's fetchVitanaIndex — trend math matches the
     // My Journey trajectory card exactly.
-    const { data, error } = await sb
-      .from('vitana_index_scores')
-      .select('date, score_total, score_nutrition, score_hydration, score_exercise, score_sleep, score_mental')
-      .eq('user_id', id.user_id)
-      .gte('date', fromDate)
-      .order('date', { ascending: true });
+    const { data, error } = await repo.fetchVitanaIndexScoresHistory(sb, id.user_id, fromDate);
     if (error) return { ok: false, error: error.message };
     const rows = (data as Array<Record<string, number | string>>) ?? [];
     if (rows.length === 0) {
@@ -532,11 +492,7 @@ export async function tool_get_health_streaks(_args: OrbToolArgs, id: OrbToolIde
     // Diary streak: real view (20260427090000_user_diary_streak_view.sql).
     let diaryStreak = 0;
     try {
-      const { data } = await sb
-        .from('user_diary_streak')
-        .select('current_streak_days')
-        .eq('user_id', id.user_id)
-        .maybeSingle();
+      const { data } = await repo.fetchDiaryStreak(sb, id.user_id);
       diaryStreak = Number((data as { current_streak_days?: number } | null)?.current_streak_days) || 0;
     } catch {
       /* view may be absent in some envs — non-fatal */
@@ -547,7 +503,7 @@ export async function tool_get_health_streaks(_args: OrbToolArgs, id: OrbToolIde
     const pillarStreaks: Partial<Record<PillarKey, number>> = {};
     for (const pillar of PILLAR_KEYS) {
       try {
-        const { data } = await sb.rpc('vitana_pillar_streak_days', { p_user_id: id.user_id, p_pillar_key: pillar });
+        const { data } = await repo.fetchPillarStreakDays(sb, id.user_id, pillar);
         pillarStreaks[pillar] = Number(data) || 0;
       } catch {
         pillarStreaks[pillar] = 0;
@@ -601,14 +557,7 @@ export async function tool_get_lab_results(args: OrbToolArgs, id: OrbToolIdentit
   const limit = typeof args.limit === 'number' ? Math.min(25, Math.max(1, Math.round(args.limit))) : 10;
 
   try {
-    let q = sb
-      .from('biomarker_results')
-      .select('name, biomarker_code, value, unit, ref_range_low, ref_range_high, status, measured_at')
-      .eq('user_id', id.user_id)
-      .order('measured_at', { ascending: false })
-      .limit(limit);
-    if (query) q = q.or(`name.ilike.%${query}%,biomarker_code.ilike.%${query}%`);
-    const { data, error } = await q;
+    const { data, error } = await repo.fetchBiomarkerResults(sb, id.user_id, limit, query);
     if (error) return { ok: false, error: error.message };
     const rows = (data as Array<Record<string, unknown>>) ?? [];
     if (rows.length === 0) {
@@ -676,23 +625,16 @@ export async function tool_generate_health_plan(args: OrbToolArgs, id: OrbToolId
     // upserted the same way the generate-personalized-plan edge function does
     // (onConflict user_id,plan_type) — but ai_generated:false since the
     // gateway cannot reach the Lovable-AI-backed edge function (see file header).
-    const { data: saved, error } = await sb
-      .from('user_health_plans')
-      .upsert(
-        {
-          user_id: id.user_id,
-          plan_type: pillar,
-          plan_data: planData,
-          ai_generated: false,
-          generated_at: new Date().toISOString(),
-          active: true,
-          adherence_score: 0,
-          last_updated: new Date().toISOString(),
-        },
-        { onConflict: 'user_id,plan_type' },
-      )
-      .select('id, plan_type')
-      .single();
+    const { data: saved, error } = await repo.upsertHealthPlan(sb, {
+      user_id: id.user_id,
+      plan_type: pillar,
+      plan_data: planData,
+      ai_generated: false,
+      generated_at: new Date().toISOString(),
+      active: true,
+      adherence_score: 0,
+      last_updated: new Date().toISOString(),
+    });
     if (error || !saved) return { ok: false, error: error?.message ?? 'user_health_plans upsert failed' };
 
     return {
@@ -713,12 +655,7 @@ export async function tool_list_my_health_plans(_args: OrbToolArgs, id: OrbToolI
   const gate = authGate('list_my_health_plans', id);
   if (gate) return gate;
   try {
-    const { data, error } = await sb
-      .from('user_health_plans')
-      .select('id, plan_type, ai_generated, adherence_score, active, created_at')
-      .eq('user_id', id.user_id)
-      .eq('active', true)
-      .order('created_at', { ascending: false });
+    const { data, error } = await repo.fetchActiveHealthPlans(sb, id.user_id);
     if (error) return { ok: false, error: error.message };
     const rows = (data as Array<Record<string, unknown>>) ?? [];
     if (rows.length === 0) {
@@ -746,14 +683,7 @@ export async function tool_get_health_plan_progress(args: OrbToolArgs, id: OrbTo
   const planId = String(args.plan_id ?? '').trim();
 
   try {
-    let planQuery = sb
-      .from('user_health_plans')
-      .select('id, plan_type, adherence_score, created_at')
-      .eq('user_id', id.user_id)
-      .eq('active', true);
-    if (planId) planQuery = planQuery.eq('id', planId);
-    else if (planType) planQuery = planQuery.eq('plan_type', planType);
-    const { data: plans, error: planErr } = await planQuery.order('created_at', { ascending: false }).limit(5);
+    const { data: plans, error: planErr } = await repo.fetchHealthPlansForProgress(sb, id.user_id, planId || undefined, planType || undefined);
     if (planErr) return { ok: false, error: planErr.message };
     const candidates = (plans as Array<Record<string, unknown>>) ?? [];
     if (candidates.length === 0) {
@@ -769,13 +699,7 @@ export async function tool_get_health_plan_progress(args: OrbToolArgs, id: OrbTo
     const plan = candidates[0] as { id: string; plan_type: string; adherence_score: number | null };
 
     // plan_adherence_logs — same table useHealthPlans.ts's logAdherence writes to.
-    const { data: logs, error: logErr } = await sb
-      .from('plan_adherence_logs')
-      .select('completed, logged_at')
-      .eq('plan_id', plan.id)
-      .eq('user_id', id.user_id)
-      .order('logged_at', { ascending: false })
-      .limit(30);
+    const { data: logs, error: logErr } = await repo.fetchPlanAdherenceLogs(sb, plan.id, id.user_id);
     if (logErr) return { ok: false, error: logErr.message };
     const logRows = (logs as Array<{ completed: boolean; logged_at: string }>) ?? [];
     const completedCount = logRows.filter((l) => l.completed).length;
@@ -913,14 +837,7 @@ export async function tool_get_next_best_action(_args: OrbToolArgs, id: OrbToolI
     // Same table + ranking approach tool_create_index_improvement_plan and
     // tool_activate_recommendation already use — so the returned id can be
     // handed straight to activate_recommendation.
-    const { data } = await sb
-      .from('autopilot_recommendations')
-      .select('id, title, summary, action_description, contribution_vector, priority')
-      .eq('user_id', id.user_id)
-      .in('status', ['pending', 'new', 'snoozed'])
-      .not('contribution_vector', 'is', null)
-      .order('priority', { ascending: false })
-      .limit(50);
+    const { data } = await repo.fetchNextBestActionCandidates(sb, id.user_id);
 
     const ranked = ((data as Array<Record<string, unknown>>) ?? [])
       .map((r) => {

@@ -31,6 +31,7 @@ import { Router, Response } from 'express';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { getJourneyState } from '../services/journey/user-journey-service';
+import * as repo from './landing-route-repository';
 
 const router = Router();
 
@@ -54,13 +55,7 @@ function flagEnabled(): boolean {
 
 async function getActiveRole(client: SupabaseClient, userId: string): Promise<string | null> {
   try {
-    const { data } = await client
-      .from('user_tenants')
-      .select('active_role, is_primary')
-      .eq('user_id', userId)
-      .order('is_primary', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const { data } = await repo.fetchPrimaryUserTenantRole(client, userId);
     return (data?.active_role as string | undefined) ?? null;
   } catch {
     return null;

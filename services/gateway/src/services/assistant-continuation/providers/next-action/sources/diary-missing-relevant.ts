@@ -38,6 +38,7 @@ import type {
   NextActionSourceResult,
   ScoredCandidate,
 } from '../types';
+import * as repo from './diary-missing-relevant-repository';
 
 const KEY = 'diary_missing_relevant' as const;
 
@@ -54,11 +55,7 @@ export async function produceDiaryMissingRelevant(
 ): Promise<NextActionSourceResult> {
   let row: DiaryStreakLike | null = null;
   try {
-    const { data, error } = await ctx.supabase
-      .from('user_diary_streak')
-      .select('current_streak_days, last_day, longest_streak_days')
-      .eq('user_id', ctx.userId)
-      .maybeSingle();
+    const { data, error } = await repo.fetchUserDiaryStreak(ctx.supabase, ctx.userId);
     if (error) {
       if (/relation .* does not exist/i.test(error.message)) {
         return { source: KEY, candidate: null, skippedReason: 'feature_disabled' };

@@ -17,6 +17,7 @@
 import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import { createUserSupabaseClient } from '../lib/supabase-user';
+import * as repo from './longevity-repository';
 
 const router = Router();
 
@@ -46,7 +47,7 @@ async function getUserContext(token: string): Promise<{
 }> {
   try {
     const supabase = createUserSupabaseClient(token);
-    const { data, error } = await supabase.rpc('me_context');
+    const { data, error } = await repo.fetchMeContext(supabase);
 
     if (error) {
       return { ok: false, tenant_id: null, user_id: null, active_role: null, error: error.message };
@@ -170,10 +171,7 @@ router.post('/compute/daily', async (req: Request, res: Response) => {
   try {
     const supabase = createUserSupabaseClient(token);
 
-    const { data, error } = await supabase.rpc('longevity_compute_daily', {
-      p_user_id: null, // Use current user from auth context
-      p_date: targetDate,
-    });
+    const { data, error } = await repo.computeLongevityDaily(supabase, targetDate);
 
     if (error) {
       console.error(`[${VTID}] POST /compute/daily - RPC error:`, error.message);
@@ -330,10 +328,7 @@ router.get('/daily', async (req: Request, res: Response) => {
   try {
     const supabase = createUserSupabaseClient(token);
 
-    const { data, error } = await supabase.rpc('longevity_get_daily', {
-      p_from: fromDate,
-      p_to: toDate || null,
-    });
+    const { data, error } = await repo.fetchLongevityDaily(supabase, fromDate, toDate || null);
 
     if (error) {
       console.error(`[${VTID}] GET /daily - RPC error:`, error.message);
@@ -417,9 +412,7 @@ router.get('/daily/:date/explain', async (req: Request, res: Response) => {
   try {
     const supabase = createUserSupabaseClient(token);
 
-    const { data, error } = await supabase.rpc('longevity_explain_daily', {
-      p_date: date,
-    });
+    const { data, error } = await repo.explainLongevityDaily(supabase, date);
 
     if (error) {
       console.error(`[${VTID}] GET /daily/:date/explain - RPC error:`, error.message);

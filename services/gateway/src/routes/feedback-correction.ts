@@ -21,6 +21,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import * as repo from './feedback-correction-repository';
 import {
   FEEDBACK_TYPES,
   AFFECTED_COMPONENTS,
@@ -213,17 +214,15 @@ router.post('/correction', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // 5. Call record_user_correction RPC
-    const { data, error } = await supabase.rpc('record_user_correction', {
-      p_payload: {
-        feedback_type,
-        content,
-        context,
-        affected_component,
-        affected_item_id: affected_item_id || null,
-        affected_item_type: affected_item_type || null,
-        session_id: session_id || null,
-        source,
-      },
+    const { data, error } = await repo.recordUserCorrection(supabase, {
+      feedback_type,
+      content,
+      context,
+      affected_component,
+      affected_item_id: affected_item_id || null,
+      affected_item_type: affected_item_type || null,
+      session_id: session_id || null,
+      source,
     });
 
     if (error) {
@@ -367,11 +366,7 @@ router.get('/history', async (req: Request, res: Response) => {
   try {
     const supabase = createUserSupabaseClient(token);
 
-    const { data, error } = await supabase.rpc('get_correction_history', {
-      p_limit: limit,
-      p_offset: offset,
-      p_feedback_type: feedback_type || null,
-    });
+    const { data, error } = await repo.getCorrectionHistory(supabase, limit, offset, feedback_type || null);
 
     if (error) {
       if (error.message.includes('function') && error.message.includes('does not exist')) {
@@ -427,7 +422,7 @@ router.get('/trust', async (req: Request, res: Response) => {
   try {
     const supabase = createUserSupabaseClient(token);
 
-    const { data, error } = await supabase.rpc('get_trust_scores');
+    const { data, error } = await repo.getTrustScores(supabase);
 
     if (error) {
       if (error.message.includes('function') && error.message.includes('does not exist')) {
@@ -504,12 +499,10 @@ router.post('/trust/repair', async (req: Request, res: Response) => {
   try {
     const supabase = createUserSupabaseClient(token);
 
-    const { data, error } = await supabase.rpc('repair_trust', {
-      p_payload: {
-        component,
-        correction_id: correction_id || null,
-        repair_action,
-      },
+    const { data, error } = await repo.repairTrust(supabase, {
+      component,
+      correction_id: correction_id || null,
+      repair_action,
     });
 
     if (error) {
@@ -605,9 +598,7 @@ router.get('/constraints', async (req: Request, res: Response) => {
   try {
     const supabase = createUserSupabaseClient(token);
 
-    const { data, error } = await supabase.rpc('get_behavior_constraints', {
-      p_constraint_type: constraint_type || null,
-    });
+    const { data, error } = await repo.getBehaviorConstraints(supabase, constraint_type || null);
 
     if (error) {
       if (error.message.includes('function') && error.message.includes('does not exist')) {
@@ -675,10 +666,7 @@ router.post('/constraints/check', async (req: Request, res: Response) => {
   try {
     const supabase = createUserSupabaseClient(token);
 
-    const { data, error } = await supabase.rpc('check_behavior_constraint', {
-      p_constraint_type: constraint_type,
-      p_constraint_key: constraint_key,
-    });
+    const { data, error } = await repo.checkBehaviorConstraint(supabase, constraint_type, constraint_key);
 
     if (error) {
       if (error.message.includes('function') && error.message.includes('does not exist')) {

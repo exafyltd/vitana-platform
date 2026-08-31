@@ -9,6 +9,7 @@
 
 import { AutomationContext } from '../../types/automations';
 import { registerHandler } from '../automation-executor';
+import * as repo from './personalization-engines-repository';
 
 // ── AP-0801: Social Comfort-Aware Suggestions ───────────────
 // No 'social.suggestion.requested'-style event is ever dispatched (same gap
@@ -29,23 +30,15 @@ async function runSocialComfortAwareSuggestions(ctx: AutomationContext) {
   const cooldownCutoff = new Date(Date.now() - SOCIAL_COMFORT_COOLDOWN_DAYS * 86_400_000).toISOString();
 
   for (const { user_id } of users) {
-    const { data: recentSuggestion } = await supabase
-      .from('user_notifications')
-      .select('id')
-      .eq('user_id', user_id)
-      .contains('data', { automation_id: 'AP-0801' })
-      .gte('created_at', cooldownCutoff)
-      .limit(1);
+    const { data: recentSuggestion } = await repo.fetchRecentAutomationSuggestion(
+      supabase,
+      user_id,
+      'AP-0801',
+      cooldownCutoff,
+    );
     if (recentSuggestion && recentSuggestion.length > 0) continue;
 
-    const { count: connectionCount } = await supabase
-      .from('relationship_edges')
-      .select('id', { count: 'exact', head: true })
-      .eq('tenant_id', tenantId)
-      .eq('source_type', 'person')
-      .eq('source_id', user_id)
-      .eq('target_type', 'person')
-      .eq('edge_type', 'connected');
+    const { count: connectionCount } = await repo.countUserConnections(supabase, tenantId, user_id);
 
     const isLowComfort = (connectionCount || 0) < SOCIAL_COMFORT_LOW_THRESHOLD;
 
@@ -81,13 +74,11 @@ async function runTasteAlignedEventRecommendations(ctx: AutomationContext) {
   const now = new Date();
   const lookahead = new Date(now.getTime() + TASTE_EVENT_LOOKAHEAD_DAYS * 86_400_000);
 
-  const { data: events } = await supabase
-    .from('global_community_events')
-    .select('id, title, event_type, start_time')
-    .gte('start_time', now.toISOString())
-    .lte('start_time', lookahead.toISOString())
-    .not('event_type', 'is', null)
-    .limit(100);
+  const { data: events } = await repo.fetchUpcomingCommunityEventsByType(
+    supabase,
+    now.toISOString(),
+    lookahead.toISOString(),
+  );
 
   if (!events?.length) return { usersAffected: 0, actionsTaken: 0 };
 
@@ -95,25 +86,19 @@ async function runTasteAlignedEventRecommendations(ctx: AutomationContext) {
   const cooldownCutoff = new Date(now.getTime() - TASTE_SUGGESTION_COOLDOWN_DAYS * 86_400_000).toISOString();
 
   for (const { user_id } of users) {
-    const { data: interests } = await supabase
-      .from('user_interests')
-      .select('interest')
-      .eq('user_id', user_id)
-      .order('confidence_score', { ascending: false })
-      .limit(10);
+    const { data: interests } = await repo.fetchTopUserInterests(supabase, user_id);
     const interestSet = new Set((interests || []).map((i: any) => (i.interest || '').toLowerCase()));
     if (interestSet.size === 0) continue;
 
     const match = events.find((e: any) => interestSet.has((e.event_type || '').toLowerCase()));
     if (!match) continue;
 
-    const { data: recentSuggestion } = await supabase
-      .from('user_notifications')
-      .select('id')
-      .eq('user_id', user_id)
-      .contains('data', { automation_id: 'AP-0802' })
-      .gte('created_at', cooldownCutoff)
-      .limit(1);
+    const { data: recentSuggestion } = await repo.fetchRecentAutomationSuggestion(
+      supabase,
+      user_id,
+      'AP-0802',
+      cooldownCutoff,
+    );
     if (recentSuggestion && recentSuggestion.length > 0) continue;
 
     ctx.notify(user_id, 'orb_suggestion', {
@@ -143,16 +128,13 @@ async function runOpportunitySurfacingAutomation(ctx: AutomationContext) {
   const now = new Date();
   const soon = new Date(now.getTime() + OPPORTUNITY_EXPIRY_WINDOW_HOURS * 3_600_000);
 
-  const { data: opportunities } = await supabase
-    .from('contextual_opportunities')
-    .select('id, user_id, title, why_now, expires_at')
-    .eq('tenant_id', tenantId)
-    .is('dismissed_at', null)
-    .is('engaged_at', null)
-    .not('expires_at', 'is', null)
-    .gte('expires_at', now.toISOString())
-    .lte('expires_at', soon.toISOString())
-    .limit(OPPORTUNITY_MAX_PER_RUN);
+  const { data: opportunities } = await repo.fetchExpiringUnengagedOpportunities(
+    supabase,
+    tenantId,
+    now.toISOString(),
+    soon.toISOString(),
+    OPPORTUNITY_MAX_PER_RUN,
+  );
 
   for (const opp of opportunities || []) {
     ctx.notify(opp.user_id, 'orb_suggestion', {
@@ -182,12 +164,7 @@ async function runLifeStageAwareCommunication(ctx: AutomationContext) {
   const users = await ctx.queryTargetUsers();
 
   for (const { user_id } of users) {
-    const { data: user } = await supabase
-      .from('app_users')
-      .select('lifecycle_stage')
-      .eq('user_id', user_id)
-      .eq('tenant_id', tenantId)
-      .maybeSingle();
+    const { data: user } = await repo.fetchUserLifecycleStage(supabase, user_id, tenantId);
 
     if (!user?.lifecycle_stage) continue;
 
@@ -236,11 +213,7 @@ async function runOverloadDetectionThrottle(ctx: AutomationContext) {
   const { supabase } = ctx;
   const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
-  const { count } = await supabase
-    .from('user_notifications')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', userId)
-    .gte('created_at', oneDayAgo);
+  const { count } = await repo.countUserNotificationsSince(supabase, userId, oneDayAgo);
 
   const isOverloaded = (count || 0) >= OVERLOAD_MAX_NOTIFICATIONS_PER_DAY;
 

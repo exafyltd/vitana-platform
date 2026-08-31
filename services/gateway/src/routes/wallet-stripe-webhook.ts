@@ -27,6 +27,7 @@ import { getSupabase } from '../lib/supabase';
 import { getWalletStripe, getWalletWebhookSecret } from '../services/wallet/stripe-client';
 import { decodeCheckoutMetadata } from '../services/wallet/checkout-metadata';
 import { finalizeDeposit, markDepositTerminal } from '../services/wallet/deposit-service';
+import * as repo from './wallet-stripe-webhook-repository';
 
 const router = Router();
 
@@ -71,14 +72,12 @@ router.post('/webhook/wallet', async (req: Request, res: Response) => {
   // Idempotency gate 1: insert into stripe_webhook_events. unique(stripe_event_id)
   // makes a redelivery fail with code 23505 — we return 200 immediately so Stripe
   // stops retrying. The event was already processed.
-  const { error: insertErr } = await supabase
-    .from('stripe_webhook_events')
-    .insert({
-      stripe_event_id: event.id,
-      event_type: event.type,
-      source: 'wallet',
-      payload: event as unknown as Record<string, unknown>,
-    });
+  const { error: insertErr } = await repo.insertStripeWebhookEvent(supabase, {
+    stripe_event_id: event.id,
+    event_type: event.type,
+    source: 'wallet',
+    payload: event as unknown as Record<string, unknown>,
+  });
 
   if (insertErr) {
     const code = (insertErr as { code?: string }).code;
@@ -169,11 +168,8 @@ async function handleWalletEvent(event: Stripe.Event): Promise<void> {
       const pi = event.data.object as Stripe.PaymentIntent;
       const supabase = getSupabase();
       if (!supabase) return;
-      const { data: deposit } = await supabase
-        .from('wallet_deposits')
-        .select('id')
-        .eq('stripe_payment_intent_id', pi.id)
-        .maybeSingle();
+      const { data: deposit, error: depositErr } = await repo.fetchWalletDepositByPaymentIntentId(supabase, pi.id);
+      if (depositErr) throw depositErr;
       if (!deposit) {
         console.log(`[wallet-webhook] payment_intent.succeeded ${pi.id} has no matching deposit; skipping`);
         return;
@@ -189,11 +185,8 @@ async function handleWalletEvent(event: Stripe.Event): Promise<void> {
       const pi = event.data.object as Stripe.PaymentIntent;
       const supabase = getSupabase();
       if (!supabase) return;
-      const { data: deposit } = await supabase
-        .from('wallet_deposits')
-        .select('id')
-        .eq('stripe_payment_intent_id', pi.id)
-        .maybeSingle();
+      const { data: deposit, error: depositErr } = await repo.fetchWalletDepositByPaymentIntentId(supabase, pi.id);
+      if (depositErr) throw depositErr;
       if (deposit) {
         const reason = pi.last_payment_error?.code || pi.last_payment_error?.type || 'payment_intent_failed';
         await markDepositTerminal((deposit as { id: string }).id, 'failed', reason);
@@ -206,13 +199,7 @@ async function handleWalletEvent(event: Stripe.Event): Promise<void> {
 async function markEventProcessed(stripeEventId: string, error: string | null): Promise<void> {
   const supabase = getSupabase();
   if (!supabase) return;
-  await supabase
-    .from('stripe_webhook_events')
-    .update({
-      processed_at: new Date().toISOString(),
-      processing_error: error,
-    })
-    .eq('stripe_event_id', stripeEventId);
+  await repo.updateStripeWebhookEventProcessed(supabase, stripeEventId, new Date().toISOString(), error);
 }
 
 export default router;

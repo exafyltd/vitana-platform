@@ -29,6 +29,7 @@ import { emitOasisEvent } from '../services/oasis-event-service';
 import { notifyUserAsync, notifyUsersAsync } from '../services/notification-service';
 import { dispatchEvent } from '../services/automation-executor';
 import { requireAuth, requireTenant, type AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import * as repo from './community-repository';
 
 const router = Router();
 
@@ -156,9 +157,7 @@ router.post('/groups', async (req: Request, res: Response) => {
   try {
     const supabase = createUserSupabaseClient(token);
 
-    const { data, error } = await supabase.rpc('community_create_group', {
-      p_payload: validation.data
-    });
+    const { data, error } = await repo.createCommunityGroupRpc(supabase, validation.data);
 
     if (error) {
       if (error.message.includes('function') && error.message.includes('does not exist')) {
@@ -239,9 +238,7 @@ router.post('/groups/:id/join', async (req: Request, res: Response) => {
   try {
     const supabase = createUserSupabaseClient(token);
 
-    const { data, error } = await supabase.rpc('community_join_group', {
-      p_group_id: groupId
-    });
+    const { data, error } = await repo.joinCommunityGroupRpc(supabase, groupId);
 
     if (error) {
       if (error.message.includes('function') && error.message.includes('does not exist')) {
@@ -296,11 +293,7 @@ router.post('/groups/:id/join', async (req: Request, res: Response) => {
         const supa = createClient(supabaseUrl, serviceKey);
 
         // Get group details
-        const { data: group } = await supa
-          .from('community_groups')
-          .select('name, tenant_id, created_by')
-          .eq('id', groupId)
-          .single();
+        const { data: group } = await repo.fetchGroupNameTenantCreator(supa, groupId);
 
         if (group?.tenant_id) {
           // Notify group owner/creator
@@ -313,11 +306,10 @@ router.post('/groups/:id/join', async (req: Request, res: Response) => {
           }
 
           // Notify other group members
-          const { data: members } = await supa
-            .from('community_group_members')
-            .select('user_id')
-            .eq('group_id', groupId)
-            .neq('user_id', joinerId);
+          const { data: members, error: membersErr } = await repo.fetchGroupMembersExcluding(supa, groupId, joinerId);
+          if (membersErr) {
+            console.error(`[community] fetchGroupMembersExcluding failed for group=${groupId}: ${membersErr.message}`);
+          }
 
           const memberIds = (members || [])
             .map((m: any) => m.user_id)
@@ -346,7 +338,7 @@ router.post('/groups/:id/join', async (req: Request, res: Response) => {
         import('../services/milestone-service').then(async ({ checkMilestonesForAction }) => {
           const { createClient } = await import('@supabase/supabase-js');
           const svc = createClient(_supaUrl, _svcKey);
-          const { data: grp } = await svc.from('community_groups').select('tenant_id').eq('id', groupId).maybeSingle();
+          const { data: grp } = await repo.fetchGroupTenantId(svc, groupId);
           if (grp?.tenant_id) await checkMilestonesForAction(svc, _uid, grp.tenant_id, 'group_joined');
         }).catch(() => {});
       }
@@ -450,11 +442,7 @@ router.post('/global-groups/:id/join', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // Confirm the group exists (and is visible under RLS) before joining.
-    const { data: group, error: groupErr } = await supabase
-      .from('global_community_groups')
-      .select('id, name')
-      .eq('id', groupId)
-      .maybeSingle();
+    const { data: group, error: groupErr } = await repo.fetchGlobalGroupById(supabase, groupId);
     if (groupErr) {
       return res.status(502).json({ ok: false, error: groupErr.message });
     }
@@ -463,19 +451,12 @@ router.post('/global-groups/:id/join', async (req: Request, res: Response) => {
     }
 
     // Idempotent membership: only insert if not already a member.
-    const { data: existing } = await supabase
-      .from('global_community_group_members')
-      .select('id')
-      .eq('group_id', groupId)
-      .eq('user_id', userId)
-      .maybeSingle();
+    const { data: existing } = await repo.fetchGlobalGroupMembership(supabase, groupId, userId);
 
     let alreadyMember = !!existing;
 
     if (!existing) {
-      const { error: insErr } = await supabase
-        .from('global_community_group_members')
-        .insert({ group_id: groupId, user_id: userId, role: 'member' });
+      const { error: insErr } = await repo.insertGlobalGroupMembership(supabase, groupId, userId);
       if (insErr) {
         // Unique-violation => raced with a concurrent join; treat as success.
         if (insErr.code === '23505') {
@@ -555,9 +536,7 @@ router.post('/meetups', async (req: Request, res: Response) => {
   try {
     const supabase = createUserSupabaseClient(token);
 
-    const { data, error } = await supabase.rpc('community_create_meetup', {
-      p_payload: validation.data
-    });
+    const { data, error } = await repo.createCommunityMeetupRpc(supabase, validation.data);
 
     if (error) {
       if (error.message.includes('function') && error.message.includes('does not exist')) {
@@ -643,10 +622,7 @@ router.post('/recommendations/recompute', async (req: Request, res: Response) =>
   try {
     const supabase = createUserSupabaseClient(token);
 
-    const { data, error } = await supabase.rpc('community_recompute_recommendations', {
-      p_user_id: null, // Will use auth.uid() in RPC
-      p_date: validation.data.date || null
-    });
+    const { data, error } = await repo.recomputeCommunityRecommendationsRpc(supabase, validation.data.date || null);
 
     if (error) {
       if (error.message.includes('function') && error.message.includes('does not exist')) {
@@ -728,11 +704,7 @@ router.get('/recommendations', async (req: Request, res: Response) => {
   try {
     const supabase = createUserSupabaseClient(token);
 
-    const { data, error } = await supabase.rpc('community_get_recommendations', {
-      p_user_id: null, // Will use auth.uid() in RPC
-      p_date: date || null,
-      p_type: type || null
-    });
+    const { data, error } = await repo.getCommunityRecommendationsRpc(supabase, date || null, type || null);
 
     if (error) {
       if (error.message.includes('function') && error.message.includes('does not exist')) {
@@ -813,9 +785,7 @@ router.get('/recommendations/:id/explain', async (req: Request, res: Response) =
   try {
     const supabase = createUserSupabaseClient(token);
 
-    const { data, error } = await supabase.rpc('community_get_recommendation_explain', {
-      p_recommendation_id: recommendationId
-    });
+    const { data, error } = await repo.getCommunityRecommendationExplainRpc(supabase, recommendationId);
 
     if (error) {
       if (error.message.includes('function') && error.message.includes('does not exist')) {
@@ -903,28 +873,20 @@ router.post('/groups/:id/invite', async (req: Request, res: Response) => {
     const supa = createClient(url, key);
 
     // Get group details and verify it exists
-    const { data: group } = await supa
-      .from('community_groups')
-      .select('id, name, tenant_id')
-      .eq('id', groupId)
-      .single();
+    const { data: group } = await repo.fetchGroupForInvite(supa, groupId);
 
     if (!group) {
       return res.status(404).json({ ok: false, error: 'GROUP_NOT_FOUND' });
     }
 
     // Insert invitation (will fail on unique constraint if duplicate pending exists)
-    const { data: invitation, error: insertErr } = await supa
-      .from('community_group_invitations')
-      .insert({
-        tenant_id: group.tenant_id,
-        group_id: groupId,
-        invited_by: inviterId,
-        invited_user_id: invitedUserId,
-        message: inviteMessage || null,
-      })
-      .select('id')
-      .single();
+    const { data: invitation, error: insertErr } = await repo.insertGroupInvitation(supa, {
+      tenant_id: group.tenant_id,
+      group_id: groupId,
+      invited_by: inviterId,
+      invited_user_id: invitedUserId,
+      message: inviteMessage || null,
+    });
 
     if (insertErr) {
       if (insertErr.message?.includes('unique') || insertErr.code === '23505') {
@@ -980,11 +942,7 @@ router.post('/invitations/:id/accept', async (req: Request, res: Response) => {
     const supa = createClient(url, key);
 
     // Fetch the invitation
-    const { data: inv } = await supa
-      .from('community_group_invitations')
-      .select('id, group_id, tenant_id, invited_user_id, status')
-      .eq('id', invitationId)
-      .single();
+    const { data: inv } = await repo.fetchInvitationForAccept(supa, invitationId);
 
     if (!inv) {
       return res.status(404).json({ ok: false, error: 'INVITATION_NOT_FOUND' });
@@ -997,16 +955,11 @@ router.post('/invitations/:id/accept', async (req: Request, res: Response) => {
     }
 
     // Update invitation status
-    await supa
-      .from('community_group_invitations')
-      .update({ status: 'accepted', responded_at: new Date().toISOString() })
-      .eq('id', invitationId);
+    await repo.updateInvitationStatus(supa, invitationId, 'accepted', new Date().toISOString());
 
     // Join the group via RPC (uses user token for proper RLS context)
     const userSupa = createUserSupabaseClient(token);
-    const { data: joinResult, error: joinErr } = await userSupa.rpc('community_join_group', {
-      p_group_id: inv.group_id,
-    });
+    const { data: joinResult, error: joinErr } = await repo.joinCommunityGroupRpc(userSupa, inv.group_id);
 
     if (joinErr && !joinErr.message?.includes('ALREADY_MEMBER')) {
       console.error(`[${VTID}] join after accept error:`, joinErr.message);
@@ -1057,11 +1010,7 @@ router.post('/invitations/:id/decline', async (req: Request, res: Response) => {
     const { createClient } = await import('@supabase/supabase-js');
     const supa = createClient(url, key);
 
-    const { data: inv } = await supa
-      .from('community_group_invitations')
-      .select('id, invited_user_id, status')
-      .eq('id', invitationId)
-      .single();
+    const { data: inv } = await repo.fetchInvitationForDecline(supa, invitationId);
 
     if (!inv) {
       return res.status(404).json({ ok: false, error: 'INVITATION_NOT_FOUND' });
@@ -1073,10 +1022,7 @@ router.post('/invitations/:id/decline', async (req: Request, res: Response) => {
       return res.status(409).json({ ok: false, error: 'INVITATION_ALREADY_RESPONDED' });
     }
 
-    await supa
-      .from('community_group_invitations')
-      .update({ status: 'declined', responded_at: new Date().toISOString() })
-      .eq('id', invitationId);
+    await repo.updateInvitationStatus(supa, invitationId, 'declined', new Date().toISOString());
 
     await emitCommunityEvent(
       'community.group.invitation.declined',

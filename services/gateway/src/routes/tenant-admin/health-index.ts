@@ -15,6 +15,7 @@ import { requireTenantAdmin } from '../../middleware/require-tenant-admin';
 import { AuthenticatedRequest } from '../../middleware/auth-supabase-jwt';
 import { getSupabase } from '../../lib/supabase';
 import { storeTenantHealthIndex } from '../../services/admin-health-index';
+import * as repo from './health-index-repository';
 
 const router = Router({ mergeParams: true });
 const VTID = 'BOOTSTRAP-ADMIN-GG';
@@ -30,12 +31,7 @@ router.get('/', requireTenantAdmin, async (req: AuthenticatedRequest, res: Respo
   const startDate = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
 
   try {
-    const { data, error } = await supabase
-      .from('tenant_health_index_daily')
-      .select('snapshot_date, score, components, computed_at, source_version')
-      .eq('tenant_id', tenantId)
-      .gte('snapshot_date', startDate)
-      .order('snapshot_date', { ascending: false });
+    const { data, error } = await repo.fetchTenantHealthIndexHistory(supabase, tenantId, startDate);
     if (error) {
       console.warn(`[${VTID}] history query failed: ${error.message}`);
       return res.status(500).json({ ok: false, error: error.message });
@@ -78,14 +74,11 @@ router.get('/current', requireTenantAdmin, async (req: AuthenticatedRequest, res
 
   const today = new Date().toISOString().slice(0, 10);
   try {
-    const { data } = await supabase
-      .from('tenant_health_index_daily')
-      .select('snapshot_date, score, components, computed_at, source_version')
-      .eq('tenant_id', tenantId)
-      .lte('snapshot_date', today)
-      .order('snapshot_date', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const { data, error } = await repo.fetchTenantHealthIndexCurrent(supabase, tenantId, today);
+    if (error) {
+      console.warn(`[${VTID}] current query failed: ${error.message}`);
+      return res.status(500).json({ ok: false, error: error.message });
+    }
     return res.json({ ok: true, tenant_id: tenantId, current: data ?? null });
   } catch (err: any) {
     return res.status(500).json({ ok: false, error: err?.message || 'UNKNOWN' });

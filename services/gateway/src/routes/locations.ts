@@ -24,6 +24,7 @@ import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import * as repo from './locations-repository';
 
 const router = Router();
 
@@ -295,13 +296,11 @@ export async function processLocationMentionsFromDiary(
   for (const mention of mentions) {
     try {
       // Create or find the location
-      const { data: locationData, error: locationError } = await supabase.rpc('location_add', {
-        p_payload: {
-          name: mention.name,
-          location_type: mention.location_type,
-          privacy_level: 'private',
-          topic_keys: mention.topic_keys
-        }
+      const { data: locationData, error: locationError } = await repo.locationAddRpc(supabase, {
+        name: mention.name,
+        location_type: mention.location_type,
+        privacy_level: 'private',
+        topic_keys: mention.topic_keys
       });
 
       if (locationError) {
@@ -315,13 +314,11 @@ export async function processLocationMentionsFromDiary(
         }
 
         // Create a visit record
-        const { data: visitData, error: visitError } = await supabase.rpc('location_checkin', {
-          p_payload: {
-            location_id: locationData.id,
-            visit_time: visitTime,
-            visit_type: 'diary_mention',
-            notes: `Mentioned in diary: "${mention.raw_match}"`
-          }
+        const { data: visitData, error: visitError } = await repo.locationCheckinRpc(supabase, {
+          location_id: locationData.id,
+          visit_time: visitTime,
+          visit_type: 'diary_mention',
+          notes: `Mentioned in diary: "${mention.raw_match}"`
         });
 
         if (visitError) {
@@ -395,9 +392,7 @@ router.post('/', async (req: Request, res: Response) => {
   try {
     const supabase = createUserSupabaseClient(token);
 
-    const { data, error } = await supabase.rpc('location_add', {
-      p_payload: validation.data
-    });
+    const { data, error } = await repo.locationAddRpc(supabase, validation.data);
 
     if (error) {
       console.error('[VTID-01091] location_add RPC error:', error.message);
@@ -478,11 +473,9 @@ router.post('/:id/checkin', async (req: Request, res: Response) => {
   try {
     const supabase = createUserSupabaseClient(token);
 
-    const { data, error } = await supabase.rpc('location_checkin', {
-      p_payload: {
-        location_id: locationId,
-        ...validation.data
-      }
+    const { data, error } = await repo.locationCheckinRpc(supabase, {
+      location_id: locationId,
+      ...validation.data
     });
 
     if (error) {
@@ -577,7 +570,7 @@ router.get('/visits', async (req: Request, res: Response) => {
   try {
     const supabase = createUserSupabaseClient(token);
 
-    const { data, error } = await supabase.rpc('location_get_visits', {
+    const { data, error } = await repo.getLocationVisitsRpc(supabase, {
       p_from: from || null,
       p_to: to || null,
       p_limit: limit
@@ -683,7 +676,7 @@ discoveryRouter.get('/nearby', async (req: Request, res: Response) => {
   try {
     const supabase = createUserSupabaseClient(token);
 
-    const { data, error } = await supabase.rpc('location_nearby_discovery', {
+    const { data, error } = await repo.nearbyLocationDiscoveryRpc(supabase, {
       p_lat: lat || null,
       p_lng: lng || null,
       p_radius_km: radius_km,
@@ -756,7 +749,7 @@ locationPrefsRouter.get('/prefs', async (req: Request, res: Response) => {
   try {
     const supabase = createUserSupabaseClient(token);
 
-    const { data, error } = await supabase.rpc('location_preferences_get');
+    const { data, error } = await repo.getLocationPreferencesRpc(supabase);
 
     if (error) {
       console.error('[VTID-01091] location_preferences_get RPC error:', error.message);
@@ -811,9 +804,7 @@ locationPrefsRouter.post('/prefs', async (req: Request, res: Response) => {
   try {
     const supabase = createUserSupabaseClient(token);
 
-    const { data, error } = await supabase.rpc('location_preferences_set', {
-      p_payload: validation.data
-    });
+    const { data, error } = await repo.setLocationPreferencesRpc(supabase, validation.data);
 
     if (error) {
       console.error('[VTID-01091] location_preferences_set RPC error:', error.message);

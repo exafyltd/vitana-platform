@@ -29,6 +29,7 @@ import {
   writePersonalizationAudit,
   HealthScores
 } from '../services/personalization-service';
+import * as repo from './personalization-repository';
 
 const router = Router();
 
@@ -67,7 +68,7 @@ async function getUserContext(token: string): Promise<{
 }> {
   try {
     const supabase = createUserSupabaseClient(token);
-    const { data, error } = await supabase.rpc('me_context');
+    const { data, error } = await repo.fetchMeContext(supabase);
 
     if (error) {
       return { ok: false, tenant_id: null, user_id: null, active_role: null, error: error.message };
@@ -102,11 +103,7 @@ async function getHealthScores(token: string, date?: string): Promise<{
     const targetDate = date || new Date().toISOString().split('T')[0];
 
     // Get current scores
-    const { data: currentData, error: currentError } = await supabase
-      .from('vitana_index_scores')
-      .select('score_total, score_physical, score_mental, score_nutritional, score_social, score_environmental')
-      .eq('date', targetDate)
-      .single();
+    const { data: currentData, error: currentError } = await repo.fetchVitanaIndexScoresForDate(supabase, targetDate);
 
     if (currentError && currentError.code !== 'PGRST116') {
       console.warn(`[${VTID}] Error fetching current scores:`, currentError.message);
@@ -117,11 +114,7 @@ async function getHealthScores(token: string, date?: string): Promise<{
     previousDate.setDate(previousDate.getDate() - 1);
     const previousDateStr = previousDate.toISOString().split('T')[0];
 
-    const { data: previousData, error: previousError } = await supabase
-      .from('vitana_index_scores')
-      .select('score_total, score_physical, score_mental, score_nutritional, score_social, score_environmental')
-      .eq('date', previousDateStr)
-      .single();
+    const { data: previousData, error: previousError } = await repo.fetchVitanaIndexScoresForDate(supabase, previousDateStr);
 
     if (previousError && previousError.code !== 'PGRST116') {
       console.warn(`[${VTID}] Error fetching previous scores:`, previousError.message);

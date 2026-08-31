@@ -7,6 +7,7 @@
 
 import { AutomationContext } from '../../types/automations';
 import { registerHandler } from '../automation-executor';
+import * as repo from './connect-people-repository';
 
 const VITANA_BOT_USER_ID = process.env.VITANA_BOT_USER_ID || '00000000-0000-0000-0000-000000000000';
 
@@ -24,32 +25,18 @@ async function runDailyMatchDelivery(ctx: AutomationContext) {
   startOfToday.setHours(0, 0, 0, 0);
 
   // Get all active users
-  const { data: users } = await supabase
-    .from('user_tenants')
-    .select('user_id')
-    .eq('tenant_id', tenantId)
-    .eq('is_primary', true);
+  const { data: users } = await repo.fetchPrimaryTenantUsers(supabase, tenantId);
 
   for (const { user_id } of users || []) {
     // autopilot_prompt_prefs was never deployed; user_notification_preferences
     // is the live opt-out table (push_enabled + match_notifications gate
     // match-related pushes; row absence means defaults, i.e. enabled).
-    const { data: prefs } = await supabase
-      .from('user_notification_preferences')
-      .select('push_enabled, match_notifications')
-      .eq('tenant_id', tenantId)
-      .eq('user_id', user_id)
-      .maybeSingle();
+    const { data: prefs } = await repo.fetchNotificationPrefs(supabase, tenantId, user_id);
 
     if (prefs?.push_enabled === false || prefs?.match_notifications === false) continue;
 
     // Check if daily matches exist
-    const { count } = await supabase
-      .from('daily_matches')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', user_id)
-      .gte('created_at', startOfToday.toISOString())
-      .is('viewed_at', null);
+    const { count } = await repo.countTodaysUnviewedMatches(supabase, user_id, startOfToday.toISOString());
 
     if (!count || count === 0) continue;
 
@@ -78,42 +65,21 @@ async function runSharedInterestNudge(ctx: AutomationContext) {
   let actionsTaken = 0;
 
   // Find users with few connections
-  const { data: users } = await supabase
-    .from('user_tenants')
-    .select('user_id')
-    .eq('tenant_id', tenantId)
-    .eq('is_primary', true);
+  const { data: users } = await repo.fetchPrimaryTenantUsers(supabase, tenantId);
 
   for (const { user_id } of users || []) {
     // Count connections
-    const { count: connectionCount } = await supabase
-      .from('relationship_edges')
-      .select('id', { count: 'exact', head: true })
-      .eq('tenant_id', tenantId)
-      .eq('source_type', 'person')
-      .eq('source_id', user_id)
-      .eq('edge_type', 'connected');
+    const { count: connectionCount } = await repo.countUserConnections(supabase, tenantId, user_id);
 
     if ((connectionCount || 0) >= 3) continue;
 
     // Find top match
-    const { data: topMatch } = await supabase
-      .from('daily_matches')
-      .select('matched_user_id, match_score')
-      .eq('user_id', user_id)
-      .order('match_score', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const { data: topMatch } = await repo.fetchTopMatch(supabase, user_id);
 
     if (!topMatch) continue;
 
     // Get shared topic
-    const { data: userInterests } = await supabase
-      .from('user_interests')
-      .select('interest, confidence_score')
-      .eq('user_id', user_id)
-      .order('confidence_score', { ascending: false })
-      .limit(3);
+    const { data: userInterests } = await repo.fetchTopUserInterests(supabase, user_id, 3);
 
     const sharedTopic = userInterests?.[0]?.interest || 'wellness';
 
@@ -144,41 +110,21 @@ async function runMutualAcceptIntroduction(ctx: AutomationContext) {
   const { supabase, tenantId } = ctx;
 
   // Check if both sides accepted
-  const { data: match } = await supabase
-    .from('daily_matches')
-    .select('user_id, matched_user_id')
-    .eq('id', matchId)
-    .maybeSingle();
+  const { data: match } = await repo.fetchMatchById(supabase, matchId);
 
   if (!match) return { usersAffected: 0, actionsTaken: 0 };
 
   const otherUserId = match.user_id === userId ? match.matched_user_id : match.user_id;
 
   // Check if other user also accepted (look for reciprocal match)
-  const { data: reciprocal } = await supabase
-    .from('daily_matches')
-    .select('id')
-    .eq('user_id', otherUserId)
-    .eq('matched_user_id', userId)
-    .eq('action', 'accepted')
-    .maybeSingle();
+  const { data: reciprocal } = await repo.fetchReciprocalAcceptedMatch(supabase, otherUserId, userId);
 
   if (!reciprocal) return { usersAffected: 0, actionsTaken: 0 };
 
   // Get shared topics
-  const { data: userInterests } = await supabase
-    .from('user_interests')
-    .select('interest')
-    .eq('user_id', userId)
-    .order('confidence_score', { ascending: false })
-    .limit(5);
+  const { data: userInterests } = await repo.fetchUserInterestNames(supabase, userId, 5);
 
-  const { data: otherInterests } = await supabase
-    .from('user_interests')
-    .select('interest')
-    .eq('user_id', otherUserId)
-    .order('confidence_score', { ascending: false })
-    .limit(5);
+  const { data: otherInterests } = await repo.fetchUserInterestNames(supabase, otherUserId, 5);
 
   const userInterestSet = new Set((userInterests || []).map((t: any) => t.interest));
   const shared = (otherInterests || []).filter((t: any) => userInterestSet.has(t.interest));
@@ -186,11 +132,7 @@ async function runMutualAcceptIntroduction(ctx: AutomationContext) {
   const topicName = sharedTopic.replace(/-/g, ' ');
 
   // Get other user's display name (app_users' primary key is user_id, not id)
-  const { data: otherUser } = await supabase
-    .from('app_users')
-    .select('display_name')
-    .eq('user_id', otherUserId)
-    .maybeSingle();
+  const { data: otherUser } = await repo.fetchUserDisplayName(supabase, otherUserId);
 
   const otherName = otherUser?.display_name || 'your match';
 
@@ -208,7 +150,7 @@ async function runMutualAcceptIntroduction(ctx: AutomationContext) {
   });
 
   // Create relationship edge
-  await supabase.from('relationship_edges').upsert({
+  await repo.upsertConnectionEdge(supabase, {
     tenant_id: tenantId,
     source_type: 'person',
     source_id: userId,
@@ -217,7 +159,7 @@ async function runMutualAcceptIntroduction(ctx: AutomationContext) {
     edge_type: 'connected',
     strength: 50,
     metadata: { origin: 'autopilot_match', topic: sharedTopic },
-  }, { onConflict: 'tenant_id,source_type,source_id,target_type,target_id,edge_type' });
+  });
 
   await ctx.emitEvent('autopilot.connect.introduction_sent', {
     user_id: userId,
@@ -241,35 +183,19 @@ async function runFirstConversationStarter(ctx: AutomationContext) {
   const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
   const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
 
-  const { data: recentEdges } = await supabase
-    .from('relationship_edges')
-    .select('source_id, target_id, metadata')
-    .eq('tenant_id', tenantId)
-    .eq('source_type', 'person')
-    .eq('target_type', 'person')
-    .eq('edge_type', 'connected')
-    .gte('created_at', sixHoursAgo)
-    .lte('created_at', twoHoursAgo)
-    .limit(50);
+  const { data: recentEdges } = await repo.fetchRecentConnectedEdges(supabase, tenantId, sixHoursAgo, twoHoursAgo);
 
   for (const edge of recentEdges || []) {
     const metadata = typeof edge.metadata === 'string' ? JSON.parse(edge.metadata) : edge.metadata;
     if (metadata?.origin !== 'autopilot_match') continue;
 
     // Check if any messages exchanged
-    const { count } = await supabase
-      .from('chat_messages')
-      .select('id', { count: 'exact', head: true })
-      .eq('tenant_id', tenantId)
-      .or(`sender_id.eq.${edge.source_id},sender_id.eq.${edge.target_id}`)
-      .or(`receiver_id.eq.${edge.source_id},receiver_id.eq.${edge.target_id}`)
-      .limit(1);
+    const { count } = await repo.countMessagesBetween(supabase, tenantId, edge.source_id, edge.target_id);
 
     if ((count || 0) > 0) continue;
 
     const topic = metadata?.topic || 'wellness';
-    const { data: targetUser } = await supabase
-      .from('app_users').select('display_name').eq('user_id', edge.target_id).maybeSingle();
+    const { data: targetUser } = await repo.fetchUserDisplayName(supabase, edge.target_id);
 
     ctx.notify(edge.source_id, 'conversation_followup_reminder', {
       title: 'Start a Conversation',
@@ -293,21 +219,11 @@ async function runGroupRecommendationPush(ctx: AutomationContext) {
   let usersAffected = 0;
   let actionsTaken = 0;
 
-  const { data: users } = await supabase
-    .from('user_tenants')
-    .select('user_id')
-    .eq('tenant_id', tenantId)
-    .eq('is_primary', true);
+  const { data: users } = await repo.fetchPrimaryTenantUsers(supabase, tenantId);
 
   for (const { user_id } of users || []) {
     // Get group recommendations
-    const { data: recs } = await supabase
-      .from('group_recommendations')
-      .select('id, group_id, match_score')
-      .eq('user_id', user_id)
-      .eq('is_dismissed', false)
-      .order('match_score', { ascending: false })
-      .limit(3);
+    const { data: recs } = await repo.fetchGroupRecommendations(supabase, user_id);
 
     if (!recs?.length) continue;
 
@@ -359,14 +275,7 @@ async function runPeopleYouKnowSocialProof(ctx: AutomationContext) {
   // target_id/edge_type (NOT user_id/relationship_type — several other
   // already-shipped handlers in this file/domain still use that stale
   // column set and silently no-op; see PR discussion for the wider finding).
-  const { data: connections } = await supabase
-    .from('relationship_edges')
-    .select('target_id')
-    .eq('tenant_id', tenantId)
-    .eq('source_type', 'person')
-    .eq('source_id', userId)
-    .eq('target_type', 'person')
-    .eq('edge_type', 'connected');
+  const { data: connections } = await repo.fetchConnectionTargetIds(supabase, tenantId, userId);
 
   const connectionIds = (connections || []).map((c: any) => c.target_id);
   if (connectionIds.length === 0) return { usersAffected: 0, actionsTaken: 0 };
@@ -375,21 +284,14 @@ async function runPeopleYouKnowSocialProof(ctx: AutomationContext) {
   // deployed — global_community_groups/global_community_group_members is
   // the real, live groups schema (no tenant_id; the global community is
   // shared across tenants).
-  const { data: members } = await supabase
-    .from('global_community_group_members')
-    .select('user_id')
-    .eq('group_id', groupId)
-    .in('user_id', connectionIds);
+  const { data: members } = await repo.fetchGroupMembersAmong(supabase, groupId, connectionIds);
 
   const knownMemberIds = (members || []).map((m: any) => m.user_id);
   if (knownMemberIds.length === 0) return { usersAffected: 0, actionsTaken: 0 };
 
   // app_users' primary key is user_id, not id (a mistake repeated across
   // several already-shipped automation handlers — see PR discussion).
-  const { data: knownUsers } = await supabase
-    .from('app_users')
-    .select('display_name')
-    .in('user_id', knownMemberIds.slice(0, 3));
+  const { data: knownUsers } = await repo.fetchUserDisplayNamesIn(supabase, knownMemberIds.slice(0, 3));
 
   const names = (knownUsers || []).map((u: any) => u.display_name).filter(Boolean);
   const body = names.length > 0
@@ -421,14 +323,7 @@ async function runOpportunitySocialLayer(ctx: AutomationContext) {
 
   const { supabase, tenantId } = ctx;
 
-  const { data: connections } = await supabase
-    .from('relationship_edges')
-    .select('target_id')
-    .eq('tenant_id', tenantId)
-    .eq('source_type', 'person')
-    .eq('source_id', userId)
-    .eq('target_type', 'person')
-    .eq('edge_type', 'connected');
+  const { data: connections } = await repo.fetchConnectionTargetIds(supabase, tenantId, userId);
 
   const connectionIds = (connections || []).map((c: any) => c.target_id);
   if (connectionIds.length === 0) return { usersAffected: 0, actionsTaken: 0 };
@@ -437,14 +332,7 @@ async function runOpportunitySocialLayer(ctx: AutomationContext) {
   // status is 'active' | 'dismissed' | 'engaged' | 'expired' — 'engaged' is
   // the ContextualOpportunityRecord value for acted-on (see
   // types/opportunity-surfacing.ts).
-  const { data: peerOpportunities, count } = await supabase
-    .from('contextual_opportunities')
-    .select('id, user_id', { count: 'exact' })
-    .eq('tenant_id', tenantId)
-    .eq('opportunity_type', opportunityType)
-    .in('user_id', connectionIds)
-    .in('status', ['active', 'engaged'])
-    .limit(10);
+  const { data: peerOpportunities, count } = await repo.fetchPeerOpportunities(supabase, tenantId, opportunityType, connectionIds);
 
   if (!count || count === 0) return { usersAffected: 0, actionsTaken: 0 };
 

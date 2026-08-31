@@ -31,6 +31,7 @@ import { Router, Request, Response } from 'express';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabase } from '../lib/supabase';
 import { VITANA_ENV } from '../env';
+import * as repo from './supervisor-summary-repository';
 
 const router = Router();
 
@@ -84,13 +85,7 @@ async function buildDatasetSection(
   supabase: SupabaseClient,
   sinceIso: string,
 ): Promise<Record<string, unknown>> {
-  const { data, error } = await supabase
-    .from('oasis_events')
-    .select('id, created_at, metadata')
-    .eq('topic', 'dataset.extraction.completed')
-    .gte('created_at', sinceIso)
-    .order('created_at', { ascending: false })
-    .limit(500);
+  const { data, error } = await repo.fetchDatasetExtractionEvents(supabase, sinceIso);
   if (error) return { available: false, error: error.message };
 
   const rows = (data ?? []) as OasisEventRow[];
@@ -125,11 +120,7 @@ async function buildShadowSection(
   supabase: SupabaseClient,
   sinceIso: string,
 ): Promise<Record<string, unknown>> {
-  const { count, error } = await supabase
-    .from('oasis_events')
-    .select('id', { count: 'exact', head: true })
-    .eq('topic', 'eval.shadow.compared')
-    .gte('created_at', sinceIso);
+  const { count, error } = await repo.countShadowComparedEvents(supabase, sinceIso);
   if (error) return { available: false, error: error.message };
   const total = count ?? 0;
   return {
@@ -144,12 +135,7 @@ async function buildFinetuneSection(
 ): Promise<Record<string, unknown>> {
   // Latest fine-tune result per target — not window-bounded, because runs are
   // infrequent and the supervisor wants the most recent regardless of age.
-  const { data, error } = await supabase
-    .from('oasis_events')
-    .select('id, created_at, metadata')
-    .eq('topic', 'finetune.training.completed')
-    .order('created_at', { ascending: false })
-    .limit(100);
+  const { data, error } = await repo.fetchFinetuneCompletedEvents(supabase);
   if (error) return { available: false, error: error.message };
 
   const rows = (data ?? []) as OasisEventRow[];
@@ -187,18 +173,7 @@ async function buildCanarySection(
   supabase: SupabaseClient,
 ): Promise<Record<string, unknown>> {
   // Latest canary lifecycle event across the four production.canary.* topics.
-  const topics = [
-    'production.canary.requested',
-    'production.canary.started',
-    'production.canary.promoted',
-    'production.canary.aborted',
-  ];
-  const { data, error } = await supabase
-    .from('oasis_events')
-    .select('id, topic, created_at, metadata')
-    .in('topic', topics)
-    .order('created_at', { ascending: false })
-    .limit(1);
+  const { data, error } = await repo.fetchLatestCanaryLifecycleEvent(supabase);
   if (error) return { available: false, error: error.message };
 
   const rows = (data ?? []) as OasisEventRow[];
@@ -219,13 +194,7 @@ async function buildAutoPromoteSection(
   supabase: SupabaseClient,
   sinceIso: string,
 ): Promise<Record<string, unknown>> {
-  const { data, error } = await supabase
-    .from('oasis_events')
-    .select('id, topic, created_at, metadata')
-    .in('topic', ['auto_promote.proposed', 'auto_promote.rejected'])
-    .gte('created_at', sinceIso)
-    .order('created_at', { ascending: false })
-    .limit(50);
+  const { data, error } = await repo.fetchAutoPromoteEvents(supabase, sinceIso);
   if (error) return { available: false, error: error.message };
 
   const rows = (data ?? []) as OasisEventRow[];
@@ -252,11 +221,7 @@ async function buildBacklogSection(
   // Cleanup/backlog size = pending, non-terminal dev-autopilot tasks in the
   // ledger. Read-only count; the actual drain plan is produced by the
   // backlog-drain-plan script (we do not execute or rank here).
-  const { count, error } = await supabase
-    .from('vtid_ledger')
-    .select('vtid', { count: 'exact', head: true })
-    .eq('status', 'pending')
-    .eq('is_terminal', false);
+  const { count, error } = await repo.countPendingBacklogTasks(supabase);
   if (error) return { available: false, error: error.message };
   const pending = count ?? 0;
   return {

@@ -30,6 +30,7 @@ import type {
   ConceptMasteryRow,
   DykCardSeenRow,
 } from './types';
+import * as repo from './concept-mastery-fetcher-repository';
 
 export interface ConceptMasteryFetcher {
   listConceptState(args: {
@@ -69,18 +70,7 @@ export function createSupabaseConceptMasteryFetcher(
         };
       }
       try {
-        const { data, error } = await sb
-          .from('user_assistant_state')
-          .select(
-            'signal_name, value, count, confidence, source, last_seen_at',
-          )
-          .eq('tenant_id', args.tenantId)
-          .eq('user_id', args.userId)
-          .or(
-            "signal_name.like.concept_explained:%,signal_name.like.concept_mastery:%,signal_name.like.dyk_card_seen:%",
-          )
-          .order('last_seen_at', { ascending: false })
-          .limit(limit);
+        const { data, error } = await repo.fetchConceptMasteryState(sb, args.tenantId, args.userId, limit);
         if (error) {
           return {
             ok: false,

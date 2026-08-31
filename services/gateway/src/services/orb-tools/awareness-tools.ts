@@ -25,6 +25,7 @@ import {
 } from '../d33-availability-readiness-engine';
 import { computeContext } from '../d34-environmental-mobility-engine';
 import type { TimeContextSignals, AvailabilityReadinessBundle } from '../../types/availability-readiness';
+import * as repo from './awareness-tools-repository';
 
 type Handler = (args: OrbToolArgs, id: OrbToolIdentity, sb: SupabaseClient) => Promise<OrbToolResult>;
 
@@ -81,13 +82,7 @@ async function resolveUserTimezone(
   const explicit = typeof args.timezone === 'string' ? args.timezone.trim() : '';
   if (explicit && isValidTimezone(explicit)) return explicit;
   try {
-    const { data } = await sb
-      .from('reminders')
-      .select('user_tz')
-      .eq('user_id', id.user_id)
-      .eq('tenant_id', id.tenant_id)
-      .order('created_at', { ascending: false })
-      .limit(1);
+    const { data } = await repo.fetchLatestReminderTimezone(sb, id.user_id as string, id.tenant_id as string);
     const tz = data?.[0]?.user_tz;
     if (typeof tz === 'string' && tz && tz !== 'UTC' && isValidTimezone(tz)) return tz;
   } catch {
@@ -160,15 +155,7 @@ async function fetchCalendarWindow(
   try {
     const fromIso = new Date(now.getTime() - 2 * 60 * 60 * 1000).toISOString();
     const toIso = new Date(now.getTime() + CALENDAR_HORIZON_HOURS * 60 * 60 * 1000).toISOString();
-    const { data, error } = await sb
-      .from('calendar_events')
-      .select('id, title, start_time, end_time, event_type')
-      .eq('user_id', userId)
-      .eq('status', 'scheduled')
-      .gte('start_time', fromIso)
-      .lte('start_time', toIso)
-      .order('start_time', { ascending: true })
-      .limit(20);
+    const { data, error } = await repo.fetchCalendarWindowEvents(sb, userId, fromIso, toIso);
     if (error || !Array.isArray(data)) return empty;
 
     const rows = data as CalendarEventLite[];
@@ -245,17 +232,9 @@ export async function tool_get_emotional_state(
     const nowMs = Date.now();
 
     // 1) Real source: latest non-decayed D28 signal bundle for this user.
-    const { data: signalRows, error: signalErr } = await sb
-      .from('emotional_cognitive_signals')
-      .select(
-        'emotional_states, cognitive_states, engagement_level, engagement_confidence, ' +
-          'urgency_detected, hesitation_detected, created_at, decay_at',
-      )
-      .eq('tenant_id', id.tenant_id)
-      .eq('user_id', id.user_id)
-      .eq('decayed', false)
-      .order('created_at', { ascending: false })
-      .limit(1);
+    const { data: signalRows, error: signalErr } = await repo.fetchLatestEmotionalCognitiveSignal(
+      sb, id.tenant_id as string, id.user_id as string,
+    );
     if (signalErr) {
       return { ok: false, error: `get_emotional_state failed: ${signalErr.message}` };
     }
@@ -297,14 +276,7 @@ export async function tool_get_emotional_state(
 
     // 2) Best-effort fallback: recent diary moods/energy (real user data).
     const sinceDate = new Date(nowMs - 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    const { data: diaryRows } = await sb
-      .from('memory_diary_entries')
-      .select('mood, energy_level, entry_date')
-      .eq('tenant_id', id.tenant_id)
-      .eq('user_id', id.user_id)
-      .gte('entry_date', sinceDate)
-      .order('entry_date', { ascending: false })
-      .limit(5);
+    const { data: diaryRows } = await repo.fetchRecentDiaryMoods(sb, id.tenant_id as string, id.user_id as string, sinceDate);
     const withMood = (diaryRows ?? []).filter(
       (d) => (typeof d.mood === 'string' && d.mood.trim() !== '') || typeof d.energy_level === 'number',
     );
@@ -443,15 +415,9 @@ export async function tool_get_availability(
     // Reminders due soon (real "active timers"): pending, next 4 hours.
     let remindersDue: Array<{ action_text: string | null; next_fire_at: string }> = [];
     try {
-      const { data } = await sb
-        .from('reminders')
-        .select('action_text, next_fire_at')
-        .eq('user_id', id.user_id)
-        .eq('tenant_id', id.tenant_id)
-        .eq('status', 'pending')
-        .lte('next_fire_at', new Date(now.getTime() + 4 * 60 * 60 * 1000).toISOString())
-        .order('next_fire_at', { ascending: true })
-        .limit(5);
+      const { data } = await repo.fetchRemindersDueSoon(
+        sb, id.user_id as string, id.tenant_id as string, new Date(now.getTime() + 4 * 60 * 60 * 1000).toISOString(),
+      );
       remindersDue = Array.isArray(data) ? data : [];
     } catch {
       /* reminders are additive context */
@@ -551,16 +517,7 @@ export async function tool_get_environmental_context(
     // (memory_facts.user_residence, written by the Cognee extractor).
     let residence: string | null = null;
     try {
-      const { data } = await sb
-        .from('memory_facts')
-        .select('fact_value')
-        .eq('tenant_id', id.tenant_id)
-        .eq('user_id', id.user_id)
-        .eq('fact_key', 'user_residence')
-        .eq('entity', 'self')
-        .is('superseded_by', null)
-        .order('extracted_at', { ascending: false })
-        .limit(1);
+      const { data } = await repo.fetchLatestActiveFactValue(sb, id.tenant_id as string, id.user_id as string, 'user_residence');
       const v = data?.[0]?.fact_value;
       residence = typeof v === 'string' && v.trim() !== '' ? v.trim() : null;
     } catch {
@@ -704,14 +661,7 @@ export async function tool_get_life_stage_context(
     // 1) Latest valid D40 assessment.
     let assessment: LifeStageAssessmentRow | null = null;
     try {
-      const { data } = await sb
-        .from('life_stage_assessments')
-        .select('phase, phase_confidence, stability_level, transition_flag, transition_type')
-        .eq('tenant_id', id.tenant_id)
-        .eq('user_id', id.user_id)
-        .eq('valid', true)
-        .order('created_at', { ascending: false })
-        .limit(1);
+      const { data } = await repo.fetchLatestValidLifeStageAssessment(sb, id.tenant_id as string, id.user_id as string);
       assessment = (data as LifeStageAssessmentRow[] | null)?.[0] ?? null;
     } catch {
       /* assessment is one of several sources */
@@ -720,14 +670,7 @@ export async function tool_get_life_stage_context(
     // 2) Active D40 goals (top priority first).
     let goals: Array<{ category: string; description: string }> = [];
     try {
-      const { data } = await sb
-        .from('life_stage_goals')
-        .select('category, description, priority')
-        .eq('tenant_id', id.tenant_id)
-        .eq('user_id', id.user_id)
-        .eq('status', 'active')
-        .order('priority', { ascending: false })
-        .limit(3);
+      const { data } = await repo.fetchActiveLifeStageGoals(sb, id.tenant_id as string, id.user_id as string);
       goals = Array.isArray(data) ? data : [];
     } catch {
       /* goals optional */
@@ -736,13 +679,7 @@ export async function tool_get_life_stage_context(
     // 3) Active Life Compass (primary long-term goal + category).
     let compass: LifeCompassRow | null = null;
     try {
-      const { data } = await sb
-        .from('life_compass')
-        .select('primary_goal, category')
-        .eq('user_id', id.user_id)
-        .eq('is_active', true)
-        .order('created_at', { ascending: false })
-        .limit(1);
+      const { data } = await repo.fetchActiveLifeCompass(sb, id.user_id as string);
       compass = (data as LifeCompassRow[] | null)?.[0] ?? null;
     } catch {
       /* compass optional */
@@ -751,11 +688,7 @@ export async function tool_get_life_stage_context(
     // 4) Community tenure from app_users.created_at.
     let tenure: string | null = null;
     try {
-      const { data } = await sb
-        .from('app_users')
-        .select('created_at')
-        .eq('user_id', id.user_id)
-        .limit(1);
+      const { data } = await repo.fetchAppUserCreatedAt(sb, id.user_id as string);
       if (data?.[0]?.created_at) tenure = tenurePhrase(String(data[0].created_at));
     } catch {
       /* tenure optional */
@@ -764,16 +697,7 @@ export async function tool_get_life_stage_context(
     // 5) Age band from the user's stated birthday (memory_facts.user_birthday).
     let ageBand: string | null = null;
     try {
-      const { data } = await sb
-        .from('memory_facts')
-        .select('fact_value')
-        .eq('tenant_id', id.tenant_id)
-        .eq('user_id', id.user_id)
-        .eq('fact_key', 'user_birthday')
-        .eq('entity', 'self')
-        .is('superseded_by', null)
-        .order('extracted_at', { ascending: false })
-        .limit(1);
+      const { data } = await repo.fetchLatestActiveFactValue(sb, id.tenant_id as string, id.user_id as string, 'user_birthday');
       const v = data?.[0]?.fact_value;
       if (typeof v === 'string' && v.trim() !== '') ageBand = ageBandPhrase(v.trim());
     } catch {

@@ -1,0 +1,62 @@
+worker_processes 1;
+events { worker_connections 1024; }
+
+http {
+    resolver 169.254.169.253 valid=10s;
+
+    # Everything under /auth/v1/* goes straight to real Supabase (GoTrue).
+    # Per standing rule: Supabase is auth-only from here on; the REST data
+    # API in front of Aurora is what this proxy exists to provide.
+    upstream supabase_auth {
+        server ${SUPABASE_AUTH_HOST}:443;
+        keepalive 8;
+    }
+
+    # PostgREST sidecar in the same ECS task, loopback only.
+    upstream postgrest_local {
+        server 127.0.0.1:3000;
+        keepalive 16;
+    }
+
+    server {
+        listen 8080;
+
+        # --- Auth passthrough: real Supabase GoTrue, unchanged ---
+        location /auth/v1/ {
+            proxy_pass https://supabase_auth/auth/v1/;
+            proxy_set_header Host ${SUPABASE_AUTH_HOST};
+            proxy_ssl_server_name on;
+            proxy_ssl_name ${SUPABASE_AUTH_HOST};
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header X-Real-IP $remote_addr;
+        }
+
+        # --- RPC calls: /rest/v1/rpc/<fn> -> PostgREST's /rpc/<fn> ---
+        location /rest/v1/rpc/ {
+            rewrite ^/rest/v1/rpc/(.*)$ /rpc/$1 break;
+            proxy_pass http://postgrest_local;
+            proxy_set_header Connection "";
+            proxy_http_version 1.1;
+        }
+
+        # --- Table calls: /rest/v1/<table> -> PostgREST's /<table> ---
+        location /rest/v1/ {
+            rewrite ^/rest/v1/(.*)$ /$1 break;
+            proxy_pass http://postgrest_local;
+            proxy_set_header Connection "";
+            proxy_http_version 1.1;
+        }
+
+        location /alive {
+            return 200 "ok\n";
+            add_header Content-Type text/plain;
+        }
+
+        # Anything else (realtime, storage) is NOT implemented yet — fail
+        # loudly rather than silently 404 through to nowhere.
+        location / {
+            return 501 '{"error":"not_implemented","message":"This proxy only serves /auth/v1 (passthrough) and /rest/v1 (PostgREST-on-Aurora). Realtime/Storage are not part of this build."}';
+            add_header Content-Type application/json;
+        }
+    }
+}

@@ -62,6 +62,7 @@ import { runFullQualityCheck } from './spec-quality-agent';
 // BOOTSTRAP-VOICE-DEMO: real heartbeats so the agents dashboard shows
 // gemini-operator as healthy whenever it's actually called.
 import { recordAgentHeartbeat } from '../routes/agents-registry';
+import * as repo from './gemini-operator-repository';
 
 // Environment config
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -4343,28 +4344,16 @@ async function executeSearchMarketplaceProducts(
       if (!healthGoals?.length) healthGoals = mapping.recommended_health_goals;
     }
 
-    let query = supabase
-      .from('products')
-      .select(
-        'id, title, description, brand, category, price_cents, currency, images, affiliate_url, rating, review_count, origin_country, origin_region, merchant_id, ingredients_primary, health_goals, dietary_tags, reward_preview, contains_allergens, contraindicated_with_conditions, contraindicated_with_medications, ships_to_countries, ships_to_regions, excluded_from_regions'
-      )
-      .eq('is_active', true)
-      .eq('availability', 'in_stock');
-
-    if (args.q) {
-      const sanitizedQ = args.q.replace(/[&|!<>()]/g, ' ').trim();
-      if (sanitizedQ) query = query.textSearch('search_text', sanitizedQ, { config: 'simple', type: 'websearch' });
-    }
-    if (args.category) query = query.eq('category', args.category);
-    if (args.form) query = query.eq('form', args.form);
-    if (healthGoals?.length) query = query.overlaps('health_goals', healthGoals);
-    if (ingredientsAny?.length) query = query.overlaps('ingredients_primary', ingredientsAny);
-    if (args.dietary_tags?.length) query = query.contains('dietary_tags', args.dietary_tags);
-    if (args.price_max_cents !== undefined) query = query.lte('price_cents', args.price_max_cents);
-
-    query = query.order('rating', { ascending: false, nullsFirst: false }).limit(limit * 3);
-
-    const { data: rows, error } = await query;
+    const { data: rows, error } = await repo.searchMarketplaceProducts(supabase, {
+      q: args.q,
+      category: args.category,
+      form: args.form,
+      healthGoals,
+      ingredientsAny,
+      dietary_tags: args.dietary_tags,
+      price_max_cents: args.price_max_cents,
+      orderLimit: limit * 3,
+    });
     if (error) return { ok: false, error: error.message };
 
     const items = (rows ?? []) as Array<{ id: string; title: string; price_cents: number | null; currency: string | null; rating: number | null; ingredients_primary: string[]; origin_country: string | null; origin_region: string | null; contains_allergens: string[]; contraindicated_with_conditions: string[]; contraindicated_with_medications: string[]; ships_to_countries: string[] | null; ships_to_regions: string[] | null; excluded_from_regions: string[]; dietary_tags: string[] }>;
@@ -4429,15 +4418,7 @@ async function executeOpenDiscoverFeed(
     if (!supabase) return { ok: false, error: 'Supabase unavailable' };
 
     const limit = Math.min(Math.max(args.limit ?? 10, 1), 30);
-    let query = supabase
-      .from('products')
-      .select('id, title, price_cents, currency, rating, origin_country, images, category, brand, reward_preview')
-      .eq('is_active', true)
-      .eq('availability', 'in_stock');
-    if (args.category) query = query.eq('category', args.category);
-    query = query.order('rating', { ascending: false, nullsFirst: false }).limit(limit);
-
-    const { data, error } = await query;
+    const { data, error } = await repo.fetchDiscoverFeed(supabase, args.category, limit);
     if (error) return { ok: false, error: error.message };
 
     return {
@@ -4487,13 +4468,8 @@ async function executeGetWearableMetrics(
     const limit = Math.min(Math.max(args.days ?? 7, 1), 30);
 
     const [rollupResp, recentResp] = await Promise.all([
-      supabase.from('wearable_rollup_7d').select('*').eq('user_id', threadUserId).maybeSingle(),
-      supabase
-        .from('wearable_daily_metrics')
-        .select('metric_date, provider, sleep_minutes, sleep_deep_minutes, hrv_avg_ms, resting_hr, active_minutes, workout_count, steps')
-        .eq('user_id', threadUserId)
-        .order('metric_date', { ascending: false })
-        .limit(limit),
+      repo.fetchWearableRollup7d(supabase, threadUserId),
+      repo.fetchRecentWearableDailyMetrics(supabase, threadUserId, limit),
     ]);
 
     if (rollupResp.error) return { ok: false, error: rollupResp.error.message };
@@ -4516,11 +4492,7 @@ async function resolveThreadUserId(threadId: string): Promise<string | null> {
     const { getSupabase } = await import('../lib/supabase');
     const supabase = getSupabase();
     if (!supabase) return null;
-    const { data } = await supabase
-      .from('conversation_threads')
-      .select('user_id')
-      .eq('thread_id', threadId)
-      .maybeSingle();
+    const { data } = await repo.fetchConversationThreadUserId(supabase, threadId);
     return (data?.user_id as string | undefined) ?? null;
   } catch {
     return null;

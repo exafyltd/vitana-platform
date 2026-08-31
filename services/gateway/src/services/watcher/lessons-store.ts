@@ -16,6 +16,7 @@
  */
 
 import { getSupabase } from '../../lib/supabase';
+import * as repo from './lessons-store-repository';
 import type {
   LessonRow,
   LessonStage,
@@ -87,13 +88,12 @@ export async function upsertLesson(input: {
   try {
     const now = new Date().toISOString();
 
-    const { data: existing } = await sb
-      .from('watcher_lessons')
-      .select('id, frequency, evidence_step_ids')
-      .eq('stage', input.stage)
-      .eq('pattern_type', input.pattern_type)
-      .eq('pattern_key', pattern_key)
-      .maybeSingle();
+    const { data: existing } = await repo.fetchExistingLesson(
+      sb,
+      input.stage,
+      input.pattern_type,
+      pattern_key,
+    );
 
     if (existing) {
       // Increment by the number of steps in THIS batch, not by one.
@@ -114,32 +114,29 @@ export async function upsertLesson(input: {
       const merged = [...new Set([...prior, ...(input.evidence_step_ids ?? [])])]
         .slice(-MAX_EVIDENCE_IDS);
 
-      const { error } = await sb
-        .from('watcher_lessons')
-        .update({
-          frequency,
-          confidence: confidenceForFrequency(frequency),
-          evidence_step_ids: merged,
-          last_seen_at: now,
-          // Scope is refreshed on recurrence, not just on insert — VTID-03534.
-          //
-          // The distiller is the authority on what a lesson's retrieval scope
-          // should be, and that definition can change (it just did). Without
-          // this, a row written under the old definition is found by
-          // (stage, pattern_type, pattern_key), has its frequency and evidence
-          // updated, and keeps its stale scope forever — so a scope fix would
-          // only ever apply to patterns never seen before, silently leaving
-          // every already-known pattern unreachable for good. The 34 rows the
-          // VTID-03531 backfill produced are exactly those, and they cover the
-          // highest-frequency patterns, i.e. most of the value.
-          scope: input.scope ?? {},
-          // The lesson TEXT is refreshed but the example is not: the first
-          // example is as representative as the fiftieth, and churning it
-          // would make the row look freshly-edited to a human reviewer on
-          // every recurrence.
-          lesson: input.lesson.slice(0, 500),
-        })
-        .eq('id', existing.id as string);
+      const { error } = await repo.updateExistingLesson(sb, existing.id as string, {
+        frequency,
+        confidence: confidenceForFrequency(frequency),
+        evidence_step_ids: merged,
+        last_seen_at: now,
+        // Scope is refreshed on recurrence, not just on insert — VTID-03534.
+        //
+        // The distiller is the authority on what a lesson's retrieval scope
+        // should be, and that definition can change (it just did). Without
+        // this, a row written under the old definition is found by
+        // (stage, pattern_type, pattern_key), has its frequency and evidence
+        // updated, and keeps its stale scope forever — so a scope fix would
+        // only ever apply to patterns never seen before, silently leaving
+        // every already-known pattern unreachable for good. The 34 rows the
+        // VTID-03531 backfill produced are exactly those, and they cover the
+        // highest-frequency patterns, i.e. most of the value.
+        scope: input.scope ?? {},
+        // The lesson TEXT is refreshed but the example is not: the first
+        // example is as representative as the fiftieth, and churning it
+        // would make the row look freshly-edited to a human reviewer on
+        // every recurrence.
+        lesson: input.lesson.slice(0, 500),
+      });
 
       if (error) {
         console.warn(`${LOG_PREFIX} recurrence update failed:`, error.message);
@@ -149,7 +146,7 @@ export async function upsertLesson(input: {
     }
 
     const firstSeenCount = Math.max(1, (input.evidence_step_ids ?? []).length);
-    const { error } = await sb.from('watcher_lessons').insert({
+    const { error } = await repo.insertNewLesson(sb, {
       stage: input.stage,
       pattern_type: input.pattern_type,
       pattern_key,
@@ -194,18 +191,15 @@ export async function recordRecurrence(lessonId: string): Promise<void> {
   const sb = getSupabase();
   if (!sb) return;
   try {
-    const { data } = await sb
-      .from('watcher_lessons')
-      .select('frequency, confidence')
-      .eq('id', lessonId)
-      .maybeSingle();
+    const { data } = await repo.fetchLessonFrequency(sb, lessonId);
     if (!data) return;
     const frequency = (data.frequency as number) + 1;
     const confidence = confidenceForFrequency(frequency);
-    await sb
-      .from('watcher_lessons')
-      .update({ frequency, confidence, last_seen_at: new Date().toISOString() })
-      .eq('id', lessonId);
+    await repo.updateLessonRecurrence(sb, lessonId, {
+      frequency,
+      confidence,
+      last_seen_at: new Date().toISOString(),
+    });
   } catch (err) {
     console.warn(`${LOG_PREFIX} recurrence failed:`, err);
   }
@@ -244,15 +238,8 @@ export async function loadLessons(
   if (!sb) return [];
   try {
     const since = new Date(Date.now() - LESSON_WINDOW_DAYS * 86400_000).toISOString();
-    const { data, error } = await sb
-      .from('watcher_lessons')
-      .select('id, stage, pattern_type, pattern_key, scope, lesson, example_message, mitigation_note, frequency, confidence, status, last_seen_at')
-      // 'any' lessons apply at every stage; that is what the value is for.
-      .in('stage', [stage, 'any'])
-      .eq('status', 'active')
-      .gte('last_seen_at', since)
-      .order('last_seen_at', { ascending: false })
-      .limit(limit);
+    // 'any' lessons apply at every stage; that is what the value is for.
+    const { data, error } = await repo.fetchActiveLessonsForStages(sb, [stage, 'any'], since, limit);
     if (error || !data) return [];
 
     const quarantineCutoff = Date.now() - SINGLETON_QUARANTINE_DAYS * 86400_000;
@@ -274,11 +261,7 @@ export async function loadRules(stage: LessonStage): Promise<RuleRow[]> {
   const sb = getSupabase();
   if (!sb) return [];
   try {
-    const { data, error } = await sb
-      .from('watcher_rules')
-      .select('rule_key, source_ref, stage, trigger, reminder, severity, enabled')
-      .in('stage', [stage, 'any'])
-      .eq('enabled', true);
+    const { data, error } = await repo.fetchEnabledRulesForStages(sb, [stage, 'any']);
     if (error || !data) return [];
     return data as RuleRow[];
   } catch (err) {

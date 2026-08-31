@@ -27,6 +27,7 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import type { CommunityUserSignal } from './community-user-analyzer';
 import { PILLAR_KEYS, PILLAR_ACTION_TEMPLATES, type PillarKey } from '../../../lib/vitana-pillars';
+import * as repo from './index-gap-analyzer-repository';
 
 export interface IndexGapAnalysisResult {
   ok: boolean;
@@ -68,12 +69,7 @@ export async function analyzeIndexGaps(
 ): Promise<IndexGapAnalysisResult> {
   try {
     // Latest pillar-agent output per pillar.
-    const { data, error } = await supabase
-      .from('vitana_pillar_agent_outputs')
-      .select('pillar, subscore_baseline, subscore_completions, subscore_data, subscore_streak, date')
-      .eq('user_id', userId)
-      .order('date', { ascending: false })
-      .limit(20);
+    const { data, error } = await repo.fetchRecentPillarAgentOutputs(supabase, userId);
     if (error) return { ok: false, signals: [], error: error.message };
 
     const rows = (data ?? []) as (PillarAgentOutputRow & { date: string })[];
@@ -146,12 +142,7 @@ export async function analyzeIndexGaps(
     const mentalOut = latestByPillar.get('mental');
     if (mentalOut && mentalOut.subscore_completions < 10) {
       const since = new Date(Date.now() - 7 * 86400000).toISOString();
-      const { data: recent } = await supabase
-        .from('calendar_events')
-        .select('source_ref, source_ref_id')
-        .eq('user_id', userId)
-        .eq('completion_status', 'completed')
-        .gte('completed_at', since);
+      const { data: recent } = await repo.fetchCompletedCalendarEventsSince(supabase, userId, since);
       const completedRefs = new Set<string>(
         ((recent ?? []) as { source_ref?: string | null }[])
           .map(r => r.source_ref ?? '')

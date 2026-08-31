@@ -41,6 +41,7 @@ import {
 } from '../types/opportunity-surfacing';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { createClient } from '@supabase/supabase-js';
+import * as repo from './opportunity-surfacing-repository';
 
 const router = Router();
 const LOG_PREFIX = '[D48-Routes]';
@@ -296,27 +297,14 @@ router.get('/history', async (req: Request, res: Response) => {
     const types = req.query.types ? (req.query.types as string).split(',') : null;
     const since = req.query.since as string || null;
 
-    let query = supabase
-      .from('contextual_opportunities')
-      .select('*')
-      .eq('tenant_id', userContext.tenantId)
-      .eq('user_id', userContext.userId)
-      .order('created_at', { ascending: false })
-      .limit(limit);
-
-    if (statuses) {
-      query = query.in('status', statuses);
-    }
-
-    if (types) {
-      query = query.in('opportunity_type', types);
-    }
-
-    if (since) {
-      query = query.gte('created_at', since);
-    }
-
-    const { data, error } = await query;
+    const { data, error } = await repo.fetchContextualOpportunitiesHistory(supabase, {
+      tenantId: userContext.tenantId,
+      userId: userContext.userId,
+      limit,
+      statuses,
+      types,
+      since,
+    });
 
     if (error) {
       return res.status(500).json({
@@ -375,12 +363,11 @@ router.get('/stats', async (req: Request, res: Response) => {
     const since = sinceParam || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
     // Get counts by status
-    const { data: opportunities, error } = await supabase
-      .from('contextual_opportunities')
-      .select('status, opportunity_type, priority_domain')
-      .eq('tenant_id', userContext.tenantId)
-      .eq('user_id', userContext.userId)
-      .gte('created_at', since);
+    const { data: opportunities, error } = await repo.fetchContextualOpportunitiesForStats(supabase, {
+      tenantId: userContext.tenantId,
+      userId: userContext.userId,
+      sinceIso: since,
+    });
 
     if (error) {
       return res.status(500).json({

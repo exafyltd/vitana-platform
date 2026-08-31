@@ -11,6 +11,7 @@
  */
 import { getSupabase } from '../../lib/supabase';
 import type { AdminScanner, InsightDraft } from './types';
+import * as repo from './content-moderation-repository';
 
 const LOG_PREFIX = '[admin-scanner:content_moderation]';
 const QUEUE_SIZE_THRESHOLD = 10;
@@ -33,11 +34,7 @@ export const contentModerationScanner: AdminScanner = {
 
     // 1. Queue size
     try {
-      const { count } = await supabase
-        .from('media_uploads')
-        .select('id', { count: 'exact', head: true })
-        .eq('tenant_id', tenantId)
-        .eq('status', 'pending');
+      const { count } = await repo.countPendingMediaUploads(supabase, tenantId);
       if (count !== null && count >= QUEUE_SIZE_THRESHOLD) {
         insights.push({
           natural_key: 'moderation_queue_size',
@@ -63,14 +60,7 @@ export const contentModerationScanner: AdminScanner = {
 
     // 2. Queue oldest — anything pending > 48h
     try {
-      const { data } = await supabase
-        .from('media_uploads')
-        .select('id, created_at, media_type')
-        .eq('tenant_id', tenantId)
-        .eq('status', 'pending')
-        .lt('created_at', hours48)
-        .order('created_at', { ascending: true })
-        .limit(5);
+      const { data } = await repo.fetchOldestPendingMediaUploads(supabase, tenantId, hours48);
       if (data && data.length > 0) {
         insights.push({
           natural_key: 'moderation_sla_breach',
@@ -96,12 +86,7 @@ export const contentModerationScanner: AdminScanner = {
 
     // 3. Flagged cluster — new flagged items in last 24h
     try {
-      const { count } = await supabase
-        .from('media_uploads')
-        .select('id', { count: 'exact', head: true })
-        .eq('tenant_id', tenantId)
-        .eq('status', 'flagged')
-        .gte('updated_at', d1);
+      const { count } = await repo.countRecentlyFlaggedMediaUploads(supabase, tenantId, d1);
       if (count !== null && count >= FLAGGED_CLUSTER_THRESHOLD) {
         insights.push({
           natural_key: 'moderation_flagged_cluster_24h',

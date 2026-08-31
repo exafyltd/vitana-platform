@@ -25,6 +25,7 @@ import { requireTenantAdmin } from '../../middleware/require-tenant-admin';
 import { AuthenticatedRequest } from '../../middleware/auth-supabase-jwt';
 import { getSupabase } from '../../lib/supabase';
 import { emitOasisEvent } from '../../services/oasis-event-service';
+import * as repo from './insights-repository';
 
 const router = Router({ mergeParams: true });
 const VTID = 'BOOTSTRAP-ADMIN-BB-CC';
@@ -52,26 +53,14 @@ router.get('/', requireTenantAdmin, async (req: AuthenticatedRequest, res: Respo
   const limitRaw = Number(req.query.limit ?? 50);
   const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, Math.floor(limitRaw))) : 50;
 
-  let query = supabase
-    .from('admin_insights')
-    .select('*')
-    .eq('tenant_id', tenantId)
-    .order('severity', { ascending: true })
-    .order('created_at', { ascending: false })
-    .limit(limit);
-
-  if (statusParam === 'all') {
-    // no status filter
-  } else if (statusParam) {
-    query = query.eq('status', statusParam);
-  } else {
-    query = query.in('status', ['open', 'pending_approval']);
-  }
-  if (domain) query = query.eq('domain', domain);
-  if (severity) query = query.eq('severity', severity);
-  if (scanner) query = query.eq('scanner', scanner);
-
-  const { data, error } = await query;
+  const { data, error } = await repo.listAdminInsights(supabase, {
+    tenantId,
+    statusParam,
+    domain,
+    severity,
+    scanner,
+    limit,
+  });
   if (error) {
     console.warn(`[${VTID}] list failed: ${error.message}`);
     return res.status(500).json({ ok: false, error: error.message });
@@ -95,12 +84,7 @@ router.get('/:id', requireTenantAdmin, async (req: AuthenticatedRequest, res: Re
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(400).json({ ok: false, error: 'TENANT_ID_REQUIRED' });
 
-  const { data, error } = await supabase
-    .from('admin_insights')
-    .select('*')
-    .eq('tenant_id', tenantId)
-    .eq('id', req.params.id)
-    .maybeSingle();
+  const { data, error } = await repo.fetchAdminInsightById(supabase, tenantId, req.params.id);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   if (!data) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
   return res.json({ ok: true, insight: data });
@@ -118,18 +102,12 @@ async function resolveInsight(
   if (!tenantId) return res.status(400).json({ ok: false, error: 'TENANT_ID_REQUIRED' });
   const actorId = getActorId(req);
 
-  const { data, error } = await supabase
-    .from('admin_insights')
-    .update({
-      status: newStatus,
-      resolved_at: new Date().toISOString(),
-      resolved_by: actorId,
-      resolved_via: resolvedVia,
-    })
-    .eq('tenant_id', tenantId)
-    .eq('id', req.params.id)
-    .select()
-    .single();
+  const { data, error } = await repo.updateAdminInsightStatus(supabase, tenantId, req.params.id, {
+    status: newStatus,
+    resolved_at: new Date().toISOString(),
+    resolved_by: actorId,
+    resolved_via: resolvedVia,
+  });
 
   if (error) {
     console.warn(`[${VTID}] ${newStatus} failed: ${error.message}`);
@@ -180,18 +158,12 @@ router.post('/:id/snooze', requireTenantAdmin, async (req: AuthenticatedRequest,
   const hours = Number.isFinite(hoursRaw) ? Math.max(1, Math.min(24 * 30, Math.floor(hoursRaw))) : 24;
   const snoozedUntil = new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
 
-  const { data, error } = await supabase
-    .from('admin_insights')
-    .update({
-      status: 'snoozed',
-      snoozed_until: snoozedUntil,
-      resolved_by: actorId,
-      resolved_via: 'console',
-    })
-    .eq('tenant_id', tenantId)
-    .eq('id', req.params.id)
-    .select()
-    .single();
+  const { data, error } = await repo.updateAdminInsightStatus(supabase, tenantId, req.params.id, {
+    status: 'snoozed',
+    snoozed_until: snoozedUntil,
+    resolved_by: actorId,
+    resolved_via: 'console',
+  });
 
   if (error) return res.status(500).json({ ok: false, error: error.message });
   if (!data) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });

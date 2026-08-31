@@ -50,6 +50,7 @@ import type {
   AssistantContinuation,
 } from '../../types';
 import { renderGoalCompletionLine } from './content';
+import * as repo from './index-repository';
 
 export const GOAL_COMPLETION_PROVIDER_KEY = 'goal_completion_inquiry' as const;
 export const GOAL_COMPLETION_EXTRA_KEY = 'goalCompletionInquiry' as const;
@@ -151,12 +152,7 @@ export function makeGoalCompletionInquiryProvider(
       // ---- DB fetch: active life_compass row ----
       let row: LifeCompassRow | null = null;
       try {
-        const { data, error } = await inputs.supabase
-          .from('life_compass')
-          .select('id, primary_goal, target_date, is_active')
-          .eq('user_id', inputs.userId)
-          .eq('is_active', true)
-          .maybeSingle();
+        const { data, error } = await repo.fetchActiveLifeCompassGoal(inputs.supabase, inputs.userId);
         if (error) {
           return {
             providerKey: GOAL_COMPLETION_PROVIDER_KEY,

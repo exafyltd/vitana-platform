@@ -15,6 +15,7 @@ import { Router, Response } from 'express';
 import { requireTenantAdmin } from '../../middleware/require-tenant-admin';
 import { AuthenticatedRequest } from '../../middleware/auth-supabase-jwt';
 import { getSupabase } from '../../lib/supabase';
+import * as repo from './community-admin-repository';
 
 const router = Router({ mergeParams: true });
 
@@ -28,11 +29,7 @@ router.get('/meetups', requireTenantAdmin, async (req: AuthenticatedRequest, res
     const limit = Math.min(parseInt(req.query.limit as string) || 100, 500);
 
     // Get events sorted by start_time (next upcoming first)
-    const { data: events, error } = await supabase
-      .from('global_community_events')
-      .select('*')
-      .order('start_time', { ascending: true })
-      .limit(limit);
+    const { data: events, error } = await repo.fetchUpcomingCommunityEvents(supabase, limit);
 
     if (error) {
       console.warn('[COMMUNITY-ADMIN] global_community_events query error:', error.message);
@@ -45,20 +42,14 @@ router.get('/meetups', requireTenantAdmin, async (req: AuthenticatedRequest, res
 
     // Get organizer profiles
     const organizerIds = [...new Set(events.map((e: any) => e.created_by).filter(Boolean))];
-    const { data: profiles } = await supabase
-      .from('app_users')
-      .select('user_id, email, display_name, avatar_url:profile->>avatar_url')
-      .in('user_id', organizerIds);
+    const { data: profiles } = await repo.fetchAppUserProfilesByIds(supabase, organizerIds);
 
     const profileMap: Record<string, any> = {};
     (profiles || []).forEach((p: any) => { profileMap[p.user_id] = p; });
 
     // Get ticket info per event
     const eventIds = events.map((e: any) => e.id);
-    const { data: tickets } = await supabase
-      .from('event_ticket_types')
-      .select('event_id, name, price, currency, quantity_available, quantity_sold')
-      .in('event_id', eventIds);
+    const { data: tickets } = await repo.fetchTicketTypesByEventIds(supabase, eventIds);
 
     const ticketMap: Record<string, any[]> = {};
     (tickets || []).forEach((t: any) => {
@@ -88,10 +79,7 @@ router.delete('/meetups/:id', requireTenantAdmin, async (req: AuthenticatedReque
     const supabase = getSupabase();
     if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
-    const { error } = await supabase
-      .from('global_community_events')
-      .delete()
-      .eq('id', req.params.id);
+    const { error } = await repo.deleteCommunityEvent(supabase, req.params.id);
 
     if (error) return res.status(500).json({ ok: false, error: error.message });
     return res.json({ ok: true });
@@ -108,11 +96,7 @@ router.get('/groups', requireTenantAdmin, async (req: AuthenticatedRequest, res:
 
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
 
-    const { data, error } = await supabase
-      .from('global_community_groups')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(limit);
+    const { data, error } = await repo.fetchRecentCommunityGroups(supabase, limit);
 
     if (error) {
       console.warn('[COMMUNITY-ADMIN] global_community_groups query error:', error.message);
@@ -133,11 +117,7 @@ router.get('/live-rooms', requireTenantAdmin, async (req: AuthenticatedRequest, 
 
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
 
-    const { data, error } = await supabase
-      .from('live_rooms')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(limit);
+    const { data, error } = await repo.fetchRecentLiveRooms(supabase, limit);
 
     if (error) {
       console.warn('[COMMUNITY-ADMIN] live_rooms query error:', error.message);
@@ -158,11 +138,7 @@ router.get('/creators', requireTenantAdmin, async (req: AuthenticatedRequest, re
 
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
 
-    const { data, error } = await supabase
-      .from('creator_profiles')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(limit);
+    const { data, error } = await repo.fetchRecentCreatorProfiles(supabase, limit);
 
     if (error) {
       console.warn('[COMMUNITY-ADMIN] creator_profiles query error:', error.message);
@@ -183,13 +159,10 @@ router.get('/memberships', requireTenantAdmin, async (req: AuthenticatedRequest,
 
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
 
-    const { data, error } = await supabase
-      .from('community_memberships')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(limit);
+    const { data, error } = await repo.fetchRecentCommunityMemberships(supabase, limit);
 
     if (error) {
+      console.warn('[COMMUNITY-ADMIN] community_memberships query error:', error.message);
       return res.json({ ok: true, memberships: [], error: error.message });
     }
 
@@ -206,10 +179,10 @@ router.get('/stats', requireTenantAdmin, async (req: AuthenticatedRequest, res: 
     if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
     const [meetups, groups, rooms, memberships] = await Promise.all([
-      supabase.from('global_community_events').select('id', { count: 'exact', head: true }),
-      supabase.from('global_community_groups').select('id', { count: 'exact', head: true }),
-      supabase.from('live_rooms').select('id', { count: 'exact', head: true }),
-      supabase.from('global_community_group_members').select('id', { count: 'exact', head: true }),
+      repo.countCommunityEvents(supabase),
+      repo.countCommunityGroups(supabase),
+      repo.countLiveRooms(supabase),
+      repo.countCommunityGroupMembers(supabase),
     ]);
 
     return res.json({

@@ -15,6 +15,7 @@
 
 import * as admin from 'firebase-admin';
 import { SupabaseClient } from '@supabase/supabase-js';
+import * as repo from './notification-service-repository';
 
 // Initialize Firebase Admin (once)
 if (!admin.apps.length) {
@@ -282,17 +283,12 @@ export async function sendPushToUser(
   supabase: SupabaseClient<any, any, any>,
   opts?: { excludeAppilixTagged?: boolean }
 ): Promise<number> {
-  const { data: tokens } = await supabase
-    .from('user_device_tokens')
-    .select('fcm_token, device_label')
-    .eq('user_id', userId)
-    .eq('tenant_id', tenantId)
-    // Only devices this user still OWNS (VTID-03481). A revoked row means the
-    // device was taken over by another account, or the user signed out on it —
-    // pushing there would buzz a phone that now belongs to someone else, which
-    // is how one device ended up receiving the same post notification once per
-    // account that had ever signed in on it.
-    .is('revoked_at', null);
+  // Only devices this user still OWNS (VTID-03481). A revoked row means the
+  // device was taken over by another account, or the user signed out on it —
+  // pushing there would buzz a phone that now belongs to someone else, which
+  // is how one device ended up receiving the same post notification once per
+  // account that had ever signed in on it.
+  const { data: tokens } = await repo.fetchLiveDeviceTokensForUser(supabase, userId, tenantId);
 
   if (!tokens?.length) return 0;
 
@@ -317,11 +313,10 @@ export async function sendPushToUser(
     } else {
       // FCM rejected the token as unregistered/invalid — it is dead for every
       // owner, so revoke it outright rather than scoping to this user.
-      await supabase
-        .from('user_device_tokens')
-        .update({ revoked_at: new Date().toISOString(), revoked_reason: 'fcm_invalid' })
-        .eq('fcm_token', fcm_token)
-        .is('revoked_at', null);
+      await repo.revokeDeviceToken(supabase, fcm_token, {
+        revoked_at: new Date().toISOString(),
+        revoked_reason: 'fcm_invalid',
+      });
     }
   }
   return sent;
@@ -347,10 +342,7 @@ export async function isSignedOutOnAllKnownDevices(
   userId: string,
   supabase: SupabaseClient<any, any, any>
 ): Promise<boolean> {
-  const { data, error } = await supabase
-    .from('user_device_tokens')
-    .select('revoked_at')
-    .eq('user_id', userId);
+  const { data, error } = await repo.fetchDeviceTokenRevocationStates(supabase, userId);
 
   // On a query error, fail OPEN (deliver). A missed notification is worse than
   // a duplicate one, and the token takeover already removes most duplicates.
@@ -389,10 +381,7 @@ export async function hasLostDeviceToAnotherAccount(
   userId: string,
   supabase: SupabaseClient<any, any, any>
 ): Promise<boolean> {
-  const { data, error } = await supabase
-    .from('user_device_tokens')
-    .select('fcm_token, device_label, revoked_at')
-    .eq('user_id', userId);
+  const { data, error } = await repo.fetchAllDeviceTokensForUser(supabase, userId);
   if (error || !data?.length) return false;
 
   type Row = { fcm_token: string; device_label: string | null; revoked_at: string | null };
@@ -412,13 +401,7 @@ export async function hasLostDeviceToAnotherAccount(
     .map((r) => r.fcm_token);
   if (!lostNativeTokens.length) return false;
 
-  const { data: heldByOthers, error: othersErr } = await supabase
-    .from('user_device_tokens')
-    .select('fcm_token')
-    .in('fcm_token', lostNativeTokens)
-    .neq('user_id', userId)
-    .is('revoked_at', null)
-    .limit(1);
+  const { data: heldByOthers, error: othersErr } = await repo.fetchLiveDeviceTokensHeldByOthers(supabase, lostNativeTokens, userId);
   if (othersErr) return false;
   return !!heldByOthers?.length;
 }
@@ -570,10 +553,7 @@ async function getCategoryCache(
     return categoryCache;
   }
 
-  const { data, error } = await supabase
-    .from('notification_categories')
-    .select('id, mapped_types, default_enabled, is_active')
-    .eq('is_active', true);
+  const { data, error } = await repo.fetchActiveNotificationCategories(supabase);
 
   const cache = new Map<string, CategoryCacheEntry>();
   if (!error && data) {
@@ -613,12 +593,7 @@ async function checkDynamicCategoryPreference(
     if (!entry) return { suppressed: false };
 
     // Check user's preference for this category
-    const { data: userPref } = await supabase
-      .from('user_category_preferences')
-      .select('enabled')
-      .eq('user_id', userId)
-      .eq('category_id', entry.categoryId)
-      .maybeSingle();
+    const { data: userPref } = await repo.fetchUserCategoryPreference(supabase, userId, entry.categoryId);
 
     const enabled = userPref ? userPref.enabled : entry.defaultEnabled;
 
@@ -649,12 +624,17 @@ async function getUserPrefs(
   tenantId: string,
   supabase: SupabaseClient<any, any, any>
 ): Promise<UserPrefs | null> {
-  const { data } = await supabase
-    .from('user_notification_preferences')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('tenant_id', tenantId)
-    .single();
+  const { data, error } = await repo.fetchUserNotificationPreferences(supabase, userId, tenantId);
+  // .single() reports PGRST116 ("no rows") for the normal "user has never
+  // set preferences yet" case — not a failure. A genuine error is logged:
+  // callers treat a null return identically to "no prefs row" and fall
+  // back to permissive defaults (push on, not DND), so a real DB error
+  // here could silently push-notify a user who has actually opted out or
+  // is in a DND window — deliberately not changed to fail-closed without
+  // real traffic data on how often this path actually errors.
+  if (error && error.code !== 'PGRST116') {
+    console.warn('[notification-service] getUserPrefs query error (falling back to permissive defaults):', error.message);
+  }
   return data as UserPrefs | null;
 }
 
@@ -758,9 +738,7 @@ export async function notifyUser(
     if (shouldSendPush) {
       insertData.push_sent_at = new Date().toISOString();
     }
-    const { data: inserted, error } = await supabase.from('user_notifications')
-      .insert(insertData)
-      .select('id').single();
+    const { data: inserted, error } = await repo.insertUserNotification(supabase, insertData);
     if (error) {
       console.error(`[Notifications] inapp write failed for ${type}:`, error.message);
     } else {

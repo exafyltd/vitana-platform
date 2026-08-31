@@ -48,6 +48,7 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
+import * as repo from './events-tickets-tools-repository';
 
 type Handler = (args: OrbToolArgs, id: OrbToolIdentity, sb: SupabaseClient) => Promise<OrbToolResult>;
 
@@ -144,24 +145,13 @@ async function resolveMyEvent(
   const query = String(rawQuery ?? '').trim();
 
   if (UUID_RE.test(eventId)) {
-    let q = sb.from('global_community_events').select(MY_EVENT_COLS).eq('id', eventId).eq('created_by', userId);
-    if (eventTypeFilter) q = q.eq('event_type', eventTypeFilter);
-    const { data, error } = await q.maybeSingle();
+    const { data, error } = await repo.fetchMyEventById(sb, eventId, userId, eventTypeFilter);
     if (error) return { kind: 'error', message: error.message };
     if (!data) return { kind: 'none', query: eventId };
     return { kind: 'one', event: data as MyEventRow };
   }
 
-  let q = sb
-    .from('global_community_events')
-    .select(MY_EVENT_COLS)
-    .eq('created_by', userId)
-    .gte('start_time', new Date().toISOString())
-    .order('start_time', { ascending: true })
-    .limit(10);
-  if (eventTypeFilter) q = q.eq('event_type', eventTypeFilter);
-  if (query) q = q.ilike('title', `%${query}%`);
-  const { data, error } = await q;
+  const { data, error } = await repo.searchMyUpcomingEvents(sb, userId, query, eventTypeFilter);
   if (error) return { kind: 'error', message: error.message };
   const events = (data as MyEventRow[]) ?? [];
   if (events.length === 0) return { kind: 'none', query };
@@ -192,7 +182,7 @@ async function resolveAnyUpcomingEvent(sb: SupabaseClient, rawId: unknown, rawQu
   const query = String(rawQuery ?? '').trim();
 
   if (UUID_RE.test(eventId)) {
-    const { data, error } = await sb.from('global_community_events').select(ANY_EVENT_COLS).eq('id', eventId).maybeSingle();
+    const { data, error } = await repo.fetchAnyEventById(sb, eventId);
     if (error) return { kind: 'error', message: error.message };
     if (!data) return { kind: 'none', query: eventId };
     return { kind: 'one', event: data as AnyEventRow };
@@ -200,13 +190,7 @@ async function resolveAnyUpcomingEvent(sb: SupabaseClient, rawId: unknown, rawQu
 
   if (!query) return { kind: 'none', query: '' };
 
-  const { data, error } = await sb
-    .from('global_community_events')
-    .select(ANY_EVENT_COLS)
-    .gte('start_time', new Date().toISOString())
-    .ilike('title', `%${query}%`)
-    .order('start_time', { ascending: true })
-    .limit(5);
+  const { data, error } = await repo.searchAnyUpcomingEventsByTitle(sb, query);
   if (error) return { kind: 'error', message: error.message };
   const events = (data as AnyEventRow[]) ?? [];
   if (events.length === 0) return { kind: 'none', query };
@@ -235,12 +219,7 @@ async function resolveMember(
   | { kind: 'none' }
   | { kind: 'error'; message: string }
 > {
-  const { data, error } = await sb.rpc('resolve_recipient_candidates', {
-    p_actor: actorUserId,
-    p_token: spoken,
-    p_limit: 3,
-    p_global: true,
-  });
+  const { data, error } = await repo.resolveRecipientCandidatesForEvent(sb, actorUserId, spoken);
   if (error) return { kind: 'error', message: error.message };
   const candidates = (data || []) as Array<{
     user_id: string;
@@ -307,24 +286,20 @@ async function createOwnedEvent(
   }
 
   try {
-    const { data: event, error } = await sb
-      .from('global_community_events')
-      .insert({
-        title,
-        description: description || null,
-        event_type: eventType,
-        location: location || null,
-        virtual_link: virtualLink || null,
-        start_time: startTime,
-        end_time: endTime || null,
-        max_participants: maxParticipants,
-        image_url: imageUrl || null,
-        metadata: {},
-        created_by: id.user_id,
-        participant_count: 0,
-      })
-      .select('id, title, start_time')
-      .single();
+    const { data: event, error } = await repo.insertCommunityEvent(sb, {
+      title,
+      description: description || null,
+      event_type: eventType,
+      location: location || null,
+      virtual_link: virtualLink || null,
+      start_time: startTime,
+      end_time: endTime || null,
+      max_participants: maxParticipants,
+      image_url: imageUrl || null,
+      metadata: {},
+      created_by: id.user_id,
+      participant_count: 0,
+    });
     if (error || !event) {
       return { ok: false, error: error?.message ?? `${kindLabel} insert failed` };
     }
@@ -432,11 +407,7 @@ async function updateOwnedEvent(
       };
     }
 
-    const { error: updErr } = await sb
-      .from('global_community_events')
-      .update(patch)
-      .eq('id', event.id)
-      .eq('created_by', id.user_id);
+    const { error: updErr } = await repo.updateOwnedEventPatch(sb, event.id, id.user_id, patch);
     if (updErr) return { ok: false, error: updErr.message };
 
     const newTitle = (patch.title as string | undefined) ?? event.title;
@@ -505,11 +476,7 @@ export async function tool_cancel_my_event(args: OrbToolArgs, id: OrbToolIdentit
       };
     }
 
-    const { error: delErr } = await sb
-      .from('global_community_events')
-      .delete()
-      .eq('id', event.id)
-      .eq('created_by', id.user_id);
+    const { error: delErr } = await repo.deleteOwnedEvent(sb, event.id, id.user_id);
     if (delErr) return { ok: false, error: delErr.message };
 
     return {
@@ -583,31 +550,21 @@ export async function tool_invite_to_event(args: OrbToolArgs, id: OrbToolIdentit
       return { ok: false, error: 'You cannot invite yourself to an event.' };
     }
 
-    const { error: upErr } = await sb.from('event_attendees').upsert(
-      {
-        event_id: event.id,
-        user_id: inviteeId,
-        response: 'pending',
-        invited_by: id.user_id,
-        metadata: { channel: 'voice' },
-      },
-      { onConflict: 'event_id,user_id', ignoreDuplicates: false },
-    );
+    const { error: upErr } = await repo.upsertEventAttendeeInvite(sb, {
+      event_id: event.id,
+      user_id: inviteeId,
+      response: 'pending',
+      invited_by: id.user_id,
+      metadata: { channel: 'voice' },
+    });
     if (upErr) return { ok: false, error: upErr.message };
 
     // Best-effort invite_analytics bump — cosmetic engagement counter, mirrors
     // useEventInvites.ts; never fails the invite itself.
     try {
-      const { data: existing } = await sb
-        .from('invite_analytics')
-        .select('sent_count')
-        .eq('event_id', event.id)
-        .eq('channel', 'voice')
-        .maybeSingle();
+      const { data: existing } = await repo.fetchInviteAnalyticsSentCount(sb, event.id, 'voice');
       const newCount = (Number((existing as { sent_count?: number } | null)?.sent_count) || 0) + 1;
-      await sb
-        .from('invite_analytics')
-        .upsert({ event_id: event.id, channel: 'voice', sent_count: newCount }, { onConflict: 'event_id,channel' });
+      await repo.upsertInviteAnalyticsSentCount(sb, event.id, 'voice', newCount);
     } catch {
       /* analytics is best-effort */
     }
@@ -667,12 +624,7 @@ export async function tool_buy_event_ticket(args: OrbToolArgs, id: OrbToolIdenti
     }
     const event = resolved.event;
 
-    const { data: types, error: tErr } = await sb
-      .from('event_ticket_types')
-      .select('id, event_id, name, price, currency, quantity_available, quantity_sold, is_active, sale_start_date, sale_end_date')
-      .eq('event_id', event.id)
-      .eq('is_active', true)
-      .order('sort_order', { ascending: true });
+    const { data: types, error: tErr } = await repo.fetchActiveTicketTypesForEvent(sb, event.id);
     if (tErr) return { ok: false, error: tErr.message };
     const ticketTypes = (types as TicketTypeRow[]) ?? [];
     if (ticketTypes.length === 0) {
@@ -790,15 +742,7 @@ export async function tool_list_my_event_tickets(
   const gate = authGate('list_my_event_tickets', id);
   if (gate) return gate;
   try {
-    const { data, error } = await sb
-      .from('event_ticket_purchases')
-      .select(
-        'id, event_id, quantity, total_amount, currency, status, ticket_number, checked_in_at, ticket_type:event_ticket_types(name), event:global_community_events(title, start_time, location)',
-      )
-      .eq('buyer_id', id.user_id)
-      .eq('status', 'completed')
-      .order('created_at', { ascending: false })
-      .limit(10);
+    const { data, error } = await repo.fetchMyCompletedTicketPurchases(sb, id.user_id);
     if (error) return { ok: false, error: error.message };
     const rows = (data as unknown as MyTicketRow[]) ?? [];
     if (rows.length === 0) {
@@ -907,11 +851,7 @@ export async function tool_get_event_attendees(args: OrbToolArgs, id: OrbToolIde
     }
     const event = resolved.event;
 
-    const { data: parts, error: pErr } = await sb
-      .from('global_event_participants')
-      .select('user_id')
-      .eq('event_id', event.id)
-      .eq('status', 'attending');
+    const { data: parts, error: pErr } = await repo.fetchAttendingParticipantIds(sb, event.id);
     if (pErr) return { ok: false, error: pErr.message };
     const userIds = ((parts as Array<{ user_id: string }>) ?? []).map((p) => p.user_id);
     if (userIds.length === 0) {
@@ -922,10 +862,7 @@ export async function tool_get_event_attendees(args: OrbToolArgs, id: OrbToolIde
       };
     }
 
-    const { data: users, error: uErr } = await sb
-      .from('app_users')
-      .select('user_id, display_name, vitana_id')
-      .in('user_id', userIds);
+    const { data: users, error: uErr } = await repo.fetchAppUsersByIds(sb, userIds);
     if (uErr) return { ok: false, error: uErr.message };
     const names = ((users as Array<{ user_id: string; display_name: string | null; vitana_id: string | null }>) ?? []).map(
       (u) => u.display_name || u.vitana_id || 'a member',

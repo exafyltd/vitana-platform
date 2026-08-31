@@ -17,6 +17,7 @@ const TEST_TENANT_ID = '22222222-2222-2222-2222-222222222222';
 
 // In-memory store for the supabase mock. Each test resets it.
 const store: { user_notifications: Array<any> } = { user_notifications: [] };
+let dedupeReadError: { message: string } | null = null;
 
 const notifyUserAsyncMock = jest.fn();
 const emitOasisMock = jest.fn().mockResolvedValue({ ok: true });
@@ -38,6 +39,7 @@ function makeSupaMock() {
       limit() { return chain; },
       async maybeSingle() {
         if (table !== 'user_notifications') return { data: null, error: null };
+        if (dedupeReadError) return { data: null, error: dedupeReadError };
         const dedupeKey = payloadFilter?.val;
         const hit = store.user_notifications.find(
           (r) =>
@@ -102,6 +104,7 @@ function makeApp() {
 describe('POST /api/v1/celebrations/dispatch', () => {
   beforeEach(() => {
     store.user_notifications = [];
+    dedupeReadError = null;
     notifyUserAsyncMock.mockClear();
     emitOasisMock.mockClear();
   });
@@ -195,5 +198,19 @@ describe('POST /api/v1/celebrations/dispatch', () => {
       category: 'growth',
     });
     expect(store.user_notifications[0].push_sent_at).toBeTruthy();
+  });
+
+  it('logs the dedupe-read failure (not just proceeding silently) while still dispatching the push', async () => {
+    dedupeReadError = { message: 'connection reset' };
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const res = await request(makeApp())
+      .post('/api/v1/celebrations/dispatch')
+      .send({ kind: 'daily_goal', dedupe_key: '2026-06-05' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.dispatched).toBe(1); // unchanged accepted fail-open outcome
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('dedupe read failed'));
+    warnSpy.mockRestore();
   });
 });

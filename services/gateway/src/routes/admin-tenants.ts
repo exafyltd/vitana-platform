@@ -12,6 +12,7 @@
 import { Router, Request, Response } from 'express';
 import { getSupabase } from '../lib/supabase';
 import { createUserSupabaseClient } from '../lib/supabase-user';
+import * as repo from './admin-tenants-repository';
 
 const router = Router();
 const VTID = 'ADMIN-TENANTS';
@@ -59,19 +60,9 @@ router.get('/', async (req: Request, res: Response) => {
 
     const query = (req.query.query as string || '').trim();
 
-    // Flat queries — no nested PostgREST relations
-    let tenantsQuery = supabase
-      .from('tenants')
-      .select('*')
-      .order('name', { ascending: true });
-
-    if (query) {
-      tenantsQuery = tenantsQuery.ilike('name', `%${query}%`);
-    }
-
     const [tenantsResult, membershipsResult] = await Promise.all([
-      tenantsQuery,
-      supabase.from('user_tenants').select('tenant_id'),
+      repo.fetchTenantsList(supabase, query || undefined),
+      repo.fetchAllTenantMemberships(supabase),
     ]);
 
     if (tenantsResult.error) {
@@ -121,11 +112,11 @@ router.get('/:id', async (req: Request, res: Response) => {
     const { id } = req.params;
 
     // tenants' PK column is `tenant_id`, not `id` — see admin_tenants schema note
-    let tenantResult = await supabase.from('tenants').select('*').eq('tenant_id', id).single();
+    let tenantResult = await repo.fetchTenantById(supabase, id);
 
     // If that fails, try slug as fallback
     if (tenantResult.error) {
-      tenantResult = await supabase.from('tenants').select('*').eq('slug', id).single();
+      tenantResult = await repo.fetchTenantBySlug(supabase, id);
     }
 
     if (tenantResult.error || !tenantResult.data) {
@@ -136,19 +127,15 @@ router.get('/:id', async (req: Request, res: Response) => {
     const tenantId = tenant.id || tenant.tenant_id;
 
     // Get members — flat query, then lookup user emails separately
-    const { data: memberships } = await supabase
-      .from('user_tenants')
-      .select('*')
-      .eq('tenant_id', tenantId);
+    const { data: memberships, error: membershipsErr } = await repo.fetchTenantMemberships(supabase, tenantId);
+    if (membershipsErr) throw membershipsErr;
 
     // Get user details for members
     const userIds = (memberships || []).map((m: any) => m.user_id);
     let usersMap: Record<string, any> = {};
     if (userIds.length > 0) {
-      const { data: users } = await supabase
-        .from('app_users')
-        .select('user_id, email, display_name')
-        .in('user_id', userIds);
+      const { data: users, error: usersErr } = await repo.fetchAppUsersByIds(supabase, userIds);
+      if (usersErr) throw usersErr;
       (users || []).forEach((u: any) => {
         usersMap[u.user_id] = u;
       });

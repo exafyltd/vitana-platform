@@ -1,6 +1,7 @@
 import { getSupabase } from '../lib/supabase';
 
 import { GovernanceRule } from '../types/governance';
+import * as repo from './rule-matcher-repository';
 
 // Removed top-level createClient
 
@@ -14,11 +15,7 @@ export class RuleMatcher {
             return [];
         }
 
-        const { data, error } = await supabase
-            .from('governance_rules')
-            .select('*')
-            .eq('is_active', true)
-            .eq('tenant_id', tenantId);
+        const { data, error } = await repo.fetchActiveGovernanceRules(supabase, tenantId);
 
         if (error) {
             console.error('Error fetching rules:', error);

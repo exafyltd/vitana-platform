@@ -26,6 +26,7 @@
  */
 
 import { getSupabase } from '../../../lib/supabase';
+import * as repo from './livekit-agent-config-repository';
 
 export interface LiveKitAgentReadiness {
   enabled: boolean;
@@ -87,11 +88,7 @@ export async function getLiveKitAgentReadiness(
 
   let sysEnabled = false;
   try {
-    const { data, error } = await sb
-      .from('system_config')
-      .select('key, value')
-      .eq('key', AGENT_ENABLED_KEY)
-      .maybeSingle();
+    const { data, error } = await repo.fetchLiveKitAgentSystemConfig(sb, AGENT_ENABLED_KEY);
     if (!error && data) {
       sysEnabled = asBool((data as { value: unknown }).value);
     }

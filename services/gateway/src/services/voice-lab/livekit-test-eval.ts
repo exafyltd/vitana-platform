@@ -28,6 +28,7 @@ import { randomUUID } from 'crypto';
 
 import { getSupabase } from '../../lib/supabase';
 import type { SupabaseIdentity } from '../../middleware/auth-supabase-jwt';
+import * as repo from './livekit-test-eval-repository';
 
 // NB: `buildBootstrapContextPack` / `buildLiveApiTools` (from routes/orb-live)
 // AND `buildLiveSystemInstruction` (from orb/live/instruction/, which itself
@@ -271,8 +272,6 @@ async function resolveDryRunIdentity(
     app_users?: { email?: string | null; vitana_id?: string | null } | null;
   };
 
-  const SELECT = 'user_id, tenant_id, active_role, app_users(email, vitana_id)';
-
   const apply = (row: Row): void => {
     userId = row.user_id ?? userId;
     if (!tenantId) tenantId = row.tenant_id ?? null;
@@ -284,37 +283,18 @@ async function resolveDryRunIdentity(
   const sb = getSupabase();
   if (sb && (!tenantId || !vitanaId || !email)) {
     // Tier 1: by user_id, preferring primary membership when multi-tenant.
-    const t1 = await sb
-      .from('user_tenants')
-      .select(SELECT)
-      .eq('user_id', requestedUserId)
-      .order('is_primary', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const t1 = await repo.fetchUserTenantByUserId(sb, requestedUserId);
     if (t1.data) apply(t1.data as unknown as Row);
 
     // Tier 2: by canonical email on the embedded app_users.
     if (!tenantId) {
-      const t2 = await sb
-        .from('user_tenants')
-        .select(SELECT)
-        .eq('app_users.email', FALLBACK_TEST_EMAIL)
-        .not('app_users', 'is', null)
-        .order('is_primary', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const t2 = await repo.fetchUserTenantByEmail(sb, FALLBACK_TEST_EMAIL);
       if (t2.data) apply(t2.data as unknown as Row);
     }
 
     // Tier 3: any user with a vitana_id (oldest created_at on user_tenants).
     if (!tenantId) {
-      const t3 = await sb
-        .from('user_tenants')
-        .select(SELECT)
-        .not('app_users.vitana_id', 'is', null)
-        .order('created_at', { ascending: true })
-        .limit(1)
-        .maybeSingle();
+      const t3 = await repo.fetchUserTenantWithAnyVitanaId(sb);
       if (t3.data) apply(t3.data as unknown as Row);
     }
   }

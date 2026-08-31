@@ -40,11 +40,14 @@ const SEALED_FILES = [
 const CAPPED_FILES: Array<{ file: string; maxCallSites: number; note: string }> = [
   {
     file: 'routes/tenant-specialists.ts',
-    maxCallSites: 24,
+    maxCallSites: 0,
     note:
       'Tenant specialist CONFIG (overlay, KB, keywords, connections, audit) is ' +
-      'migrated to tenant-specialists-repository. The remaining calls are the ' +
-      'customer feedback/ticket lifecycle — a different bounded context, next slice.',
+      'migrated to tenant-specialists-repository, and the customer feedback/ ' +
+      'ticket lifecycle is migrated to tenant-specialists-tickets-repository ' +
+      '(VTID-03702). All .from() call sites are gone; the file still imports ' +
+      'createClient directly for its local getServiceClient() helper, so it ' +
+      'is not yet eligible for SEALED_FILES.',
   },
 ];
 
