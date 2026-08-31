@@ -280,7 +280,16 @@ describe('VTID-03762 follow-up: client-side backstop when the model never calls 
     expect(clearIdx).toBeLessThan(armIdx);
   });
 
-  it('the backstop check compares elapsed time against GUIDED_TOPIC_BACKSTOP_MS and calls the shared teardown', () => {
+  // RE-RECORDED (VTID-03800). This pinned the literal
+  // `Date.now() - _s._guidedTopicOpenedAt >= GUIDED_TOPIC_BACKSTOP_MS`.
+  // The 5-minute ceiling still exists and is still measured from the tap —
+  // but it is no longer the ONLY trigger: an IDLE trigger was added so the
+  // Well Done drawer opens by itself once the conversation actually goes
+  // quiet, which the 5-minute ceiling was far too slow to ever do.
+  // The invariant this test exists for — the ceiling is measured from the
+  // tap and routes through the one shared teardown — is asserted below and
+  // is unchanged.
+  it('the backstop check still measures the ceiling from the tap and calls the shared teardown', () => {
     const idx = source.indexOf('_s._guidedTopicBackstopInterval = setInterval(function () {');
     expect(idx).toBeGreaterThan(-1);
     const openIdx = source.indexOf('{', source.indexOf('function () {', idx));
@@ -292,8 +301,13 @@ describe('VTID-03762 follow-up: client-side backstop when the model never calls 
       if (depth === 0) { closeIdx = i; break; }
     }
     const body = source.slice(idx, closeIdx + 1);
-    expect(body).toMatch(/Date\.now\(\) - _s\._guidedTopicOpenedAt >= GUIDED_TOPIC_BACKSTOP_MS/);
-    expect(body).toMatch(/_endGuidedTopicTeaching\(_stuckTopicId, 'backstop_timeout'\)/);
+    // the ceiling: still elapsed-since-tap, still compared to the same constant
+    expect(body).toMatch(/_elapsed = _now - _s\._guidedTopicOpenedAt/);
+    expect(body).toMatch(/_ceilingFired = _elapsed >= GUIDED_TOPIC_BACKSTOP_MS/);
+    // both triggers route through the one shared teardown, with the reason
+    // naming which fired — 'backstop_timeout' is still the ceiling's reason.
+    expect(body).toMatch(/_reason = _idleFired \? 'idle_after_lesson' : 'backstop_timeout'/);
+    expect(body).toMatch(/_endGuidedTopicTeaching\(_stuckTopicId, _reason\)/);
   });
 
   it('_hide() clears both _guidedTopicOpenedAt and the backstop interval — a real close ends the backstop too', () => {
