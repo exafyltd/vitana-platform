@@ -80,10 +80,20 @@ describe('orb-widget _enterStuckState cancels the guided-topic backstop (VTID-03
     expect(intervalClearIdx).toBeGreaterThan(gateIdx);
   });
 
+  // RE-RECORDED (VTID-03799): the literal re-arm condition asserted here
+  // moved into _shouldResumeGuidedTopic(), which additionally refuses to
+  // resume a lesson that has already finished teaching. The case this test
+  // protects is unchanged — a still-in-flight, not-yet-taught topic must
+  // still be re-armed on resume, so cancelling its backstop would strip a
+  // live lesson of its only completion guarantee.
   it('_resetAndReconnect re-arms a still-in-flight guided topic on resume — the exact case the gate must protect', () => {
     const resumeFnBody = extractFunctionBody(source, 'function _resetAndReconnect() {');
-    expect(resumeFnBody).toMatch(/if \(_s\._guidedTopicInFlight && !_s\.guidedTopic\) \{/);
+    expect(resumeFnBody).toMatch(/if \(_shouldResumeGuidedTopic\(\)\) \{/);
     expect(resumeFnBody).toMatch(/_s\.guidedTopic = _s\._guidedTopicInFlight;/);
+    // The predicate still requires an in-flight topic — the precondition
+    // this suite's gate reasons about.
+    const pred = extractFunctionBody(source, 'function _shouldResumeGuidedTopic() {');
+    expect(pred).toMatch(/if \(!_s\._guidedTopicInFlight\) return false;/);
   });
 
   it('still sets the tap-to-reconnect UI state (unchanged behavior)', () => {
