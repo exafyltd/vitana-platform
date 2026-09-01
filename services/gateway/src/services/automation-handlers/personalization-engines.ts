@@ -30,12 +30,16 @@ async function runSocialComfortAwareSuggestions(ctx: AutomationContext) {
   const cooldownCutoff = new Date(Date.now() - SOCIAL_COMFORT_COOLDOWN_DAYS * 86_400_000).toISOString();
 
   for (const { user_id } of users) {
-    const { data: recentSuggestion } = await repo.fetchRecentAutomationSuggestion(
+    const { data: recentSuggestion, error: recentSuggestionErr } = await repo.fetchRecentAutomationSuggestion(
       supabase,
       user_id,
       'AP-0801',
       cooldownCutoff,
     );
+    if (recentSuggestionErr) {
+      console.error(`[personalization-engines] fetchRecentAutomationSuggestion(AP-0801) failed for user=${user_id}, skipping to avoid re-suggesting within the cooldown: ${recentSuggestionErr.message}`);
+      continue;
+    }
     if (recentSuggestion && recentSuggestion.length > 0) continue;
 
     const { count: connectionCount } = await repo.countUserConnections(supabase, tenantId, user_id);
@@ -93,12 +97,16 @@ async function runTasteAlignedEventRecommendations(ctx: AutomationContext) {
     const match = events.find((e: any) => interestSet.has((e.event_type || '').toLowerCase()));
     if (!match) continue;
 
-    const { data: recentSuggestion } = await repo.fetchRecentAutomationSuggestion(
+    const { data: recentSuggestion, error: recentSuggestionErr } = await repo.fetchRecentAutomationSuggestion(
       supabase,
       user_id,
       'AP-0802',
       cooldownCutoff,
     );
+    if (recentSuggestionErr) {
+      console.error(`[personalization-engines] fetchRecentAutomationSuggestion(AP-0802) failed for user=${user_id}, skipping to avoid re-suggesting within the cooldown: ${recentSuggestionErr.message}`);
+      continue;
+    }
     if (recentSuggestion && recentSuggestion.length > 0) continue;
 
     ctx.notify(user_id, 'orb_suggestion', {

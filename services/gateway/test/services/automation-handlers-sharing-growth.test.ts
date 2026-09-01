@@ -249,4 +249,19 @@ describe('runSocialMediaEventCardGenerator (AP-0403)', () => {
     expect(notify).not.toHaveBeenCalled();
     expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
   });
+
+  it('skips (does not duplicate a sharing link) when fetchExistingSocialCard errors', async () => {
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const supabase = makeFakeSupabase({
+      global_community_events: [{ data: [{ id: 'e1', title: 'Sunset Run', start_time: new Date().toISOString(), created_by: 'u1', participant_count: 4, slug: 'sunset-run' }], error: null }],
+      sharing_links: [{ data: null, error: { message: 'db timeout' } }],
+    });
+    const { ctx, notify } = makeCtx(supabase);
+    const handler = getHandler('runSocialMediaEventCardGenerator')!;
+    const result = await handler(ctx);
+    expect(notify).not.toHaveBeenCalled();
+    expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('fetchExistingSocialCard failed'));
+    consoleErrorSpy.mockRestore();
+  });
 });

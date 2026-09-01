@@ -305,7 +305,10 @@ async function runBehaviorPreferenceInference(ctx: AutomationContext) {
   if (userIds.length === 0) return { usersAffected: 0, actionsTaken: 0 };
 
   // Skip identical current facts — no daily supersession churn.
-  const { data: existingRows } = await repo.fetchExistingPreferenceFacts(supabase, tenantId, userIds);
+  const { data: existingRows, error: existingRowsErr } = await repo.fetchExistingPreferenceFacts(supabase, tenantId, userIds);
+  if (existingRowsErr) {
+    console.error(`[memory-intelligence] fetchExistingPreferenceFacts failed, every fact will be rewritten this run instead of skipping unchanged ones: ${existingRowsErr.message}`);
+  }
   const existing = new Map<string, string>();
   for (const row of (existingRows || []) as Array<{ user_id: string; fact_key: string; fact_value: string }>) {
     existing.set(`${row.user_id}:${row.fact_key}`, row.fact_value);
@@ -404,7 +407,11 @@ async function runRelationshipGraphProjection(ctx: AutomationContext) {
 
       // Node: one 'person' node per (owner, name) — owner-scoped so two
       // users' "Maria" never merge.
-      const { data: existingNode } = await repo.fetchExistingPersonNode(supabase, tenantId, name, fact.user_id);
+      const { data: existingNode, error: existingNodeErr } = await repo.fetchExistingPersonNode(supabase, tenantId, name, fact.user_id);
+      if (existingNodeErr) {
+        ctx.log(`existing-node lookup failed for ${fact.fact_key}, skipping to avoid a duplicate person node: ${existingNodeErr.message}`);
+        continue;
+      }
       let nodeId = (existingNode as { id?: string } | null)?.id ?? null;
       if (!nodeId) {
         const { data: inserted, error: insErr } = await repo.insertPersonNode(supabase, {
@@ -437,7 +444,11 @@ async function runRelationshipGraphProjection(ctx: AutomationContext) {
       // enter the connected set. The REAL relation (spouse/friend/…)
       // travels in metadata.relation; last_interaction_at tracks the fact's
       // recency so Loop 13's decay stays honest.
-      const { data: existingEdge } = await repo.fetchExistingSuggestedEdge(supabase, tenantId, fact.user_id, nodeId);
+      const { data: existingEdge, error: existingEdgeErr } = await repo.fetchExistingSuggestedEdge(supabase, tenantId, fact.user_id, nodeId);
+      if (existingEdgeErr) {
+        ctx.log(`existing-edge lookup failed for ${fact.fact_key}, skipping to avoid a duplicate suggested edge: ${existingEdgeErr.message}`);
+        continue;
+      }
       if (existingEdge) {
         await repo.updateEdgeLastInteraction(supabase, (existingEdge as { id: string }).id, fact.extracted_at || nowIso, nowIso);
       } else {
@@ -480,7 +491,11 @@ async function runRelationshipGraphProjection(ctx: AutomationContext) {
       if (a > b) continue; // handle each mutual pair once; write both directions below
       for (const [src, tgt] of [[a, b], [b, a]] as Array<[string, string]>) {
         try {
-          const { data: existing } = await repo.fetchExistingConnectedEdge(supabase, tenantId, src, tgt);
+          const { data: existing, error: existingErr } = await repo.fetchExistingConnectedEdge(supabase, tenantId, src, tgt);
+          if (existingErr) {
+            ctx.log(`existing-connected-edge lookup failed for ${src}->${tgt}, skipping to avoid a duplicate edge: ${existingErr.message}`);
+            continue;
+          }
           if (existing) continue;
           const { error: edgeErr } = await repo.insertRelationshipEdge(supabase, {
             tenant_id: tenantId,

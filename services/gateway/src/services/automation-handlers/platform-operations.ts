@@ -109,7 +109,11 @@ async function runServiceErrorRateAlert(ctx: AutomationContext) {
   const opsUsers = await ctx.queryTargetUsers();
   for (const [service, info] of breaches) {
     // Per-service cooldown via automation_runs.metadata so ops isn't re-paged every cycle.
-    const { data: recentAlert } = await repo.fetchRecentServiceAlertRun(supabase, service, cooldownCutoff);
+    const { data: recentAlert, error: recentAlertErr } = await repo.fetchRecentServiceAlertRun(supabase, service, cooldownCutoff);
+    if (recentAlertErr) {
+      console.error(`[platform-operations] fetchRecentServiceAlertRun failed for service=${service}, skipping to avoid re-paging ops every cycle: ${recentAlertErr.message}`);
+      continue;
+    }
     if (recentAlert && recentAlert.length > 0) continue;
 
     for (const { user_id } of opsUsers) {

@@ -38,7 +38,11 @@ async function runSmartEventCreation(ctx: AutomationContext) {
 
     if (!topInterest?.interest) continue;
 
-    const { data: recentSuggestion } = await repo.fetchRecentAutomationSuggestion(supabase, user_id, 'AP-1401', cooldownCutoff);
+    const { data: recentSuggestion, error: recentSuggestionErr } = await repo.fetchRecentAutomationSuggestion(supabase, user_id, 'AP-1401', cooldownCutoff);
+    if (recentSuggestionErr) {
+      console.error(`[event-meetup-initiative] fetchRecentAutomationSuggestion failed for user=${user_id}, skipping to avoid re-suggesting within the cooldown: ${recentSuggestionErr.message}`);
+      continue;
+    }
     if (recentSuggestion && recentSuggestion.length > 0) continue;
 
     ctx.notify(user_id, 'orb_suggestion', {
@@ -113,7 +117,11 @@ async function runAutoInvitationSender(ctx: AutomationContext) {
     );
 
     for (const conn of connections || []) {
-      const { data: existing } = await repo.fetchEventParticipant(supabase, event.id, conn.target_id);
+      const { data: existing, error: existingErr } = await repo.fetchEventParticipant(supabase, event.id, conn.target_id);
+      if (existingErr) {
+        console.error(`[event-meetup-initiative] fetchEventParticipant failed for event=${event.id}, user=${conn.target_id}, skipping to avoid re-inviting an already-invited connection: ${existingErr.message}`);
+        continue;
+      }
       if (existing && existing.length > 0) continue;
 
       ctx.notify(conn.target_id, 'orb_suggestion', {

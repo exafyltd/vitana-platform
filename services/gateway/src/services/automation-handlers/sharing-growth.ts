@@ -295,7 +295,11 @@ async function runSocialMediaEventCardGenerator(ctx: AutomationContext) {
   for (const event of events || []) {
     if (cardsGenerated >= EVENT_CARD_MAX_PER_RUN) break;
 
-    const { data: existingCard } = await repo.fetchExistingSocialCard(supabase, event.id);
+    const { data: existingCard, error: existingCardErr } = await repo.fetchExistingSocialCard(supabase, event.id);
+    if (existingCardErr) {
+      console.error(`[sharing-growth] fetchExistingSocialCard failed for event=${event.id}, skipping to avoid a duplicate sharing link: ${existingCardErr.message}`);
+      continue;
+    }
     if (existingCard && existingCard.length > 0) continue;
 
     const shortCode = generateShortCode();

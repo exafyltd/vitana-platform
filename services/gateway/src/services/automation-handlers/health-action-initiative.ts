@@ -29,10 +29,18 @@ async function runLabTestKitOrdering(ctx: AutomationContext) {
   const cooldownCutoff = new Date(Date.now() - LAB_KIT_COOLDOWN_DAYS * 86_400_000).toISOString();
 
   for (const { user_id } of users) {
-    const { count: orderCount } = await repo.countLabTestOrdersForUser(supabase, user_id);
+    const { count: orderCount, error: orderCountErr } = await repo.countLabTestOrdersForUser(supabase, user_id);
+    if (orderCountErr) {
+      console.error(`[health-action-initiative] countLabTestOrdersForUser failed for user=${user_id}, skipping to avoid re-suggesting a lab test the user may have already ordered: ${orderCountErr.message}`);
+      continue;
+    }
     if (orderCount && orderCount > 0) continue;
 
-    const { data: recentSuggestion } = await repo.fetchRecentAutomationSuggestion(supabase, user_id, 'AP-1601', cooldownCutoff);
+    const { data: recentSuggestion, error: recentSuggestionErr } = await repo.fetchRecentAutomationSuggestion(supabase, user_id, 'AP-1601', cooldownCutoff);
+    if (recentSuggestionErr) {
+      console.error(`[health-action-initiative] fetchRecentAutomationSuggestion failed for user=${user_id}, skipping to avoid re-suggesting within the cooldown: ${recentSuggestionErr.message}`);
+      continue;
+    }
     if (recentSuggestion && recentSuggestion.length > 0) continue;
 
     ctx.notify(user_id, 'orb_suggestion', {
