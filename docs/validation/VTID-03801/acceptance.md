@@ -96,10 +96,40 @@ TEST: `test/orb/live/characterization/tool-catalog.characterization.test.ts`
 TEST: `npx tsc --noEmit`
 Output: outputs/tsc.txt
 
-AC-6 — no regression to the existing gateway test suite or type-checking
+AC-6 — goal-plan clarifying questions and prompts are generated in the
+user's real language for EVERY registered gateway locale, not just
+de/en/es/sr — a Codex review finding on this PR: `goal-planner-service.ts`
+carried its own 4-entry `LANGUAGE_NAMES` map that silently fell back to
+English for tr (and every other locale added since VTID-03509/03569/03644),
+and worse, `seedGoalPlanSourceCache()` then persisted that English result
+keyed by the user's real locale, so `localizeGoalPlan()` treated it as an
+already-translated cache hit — the English plan would stick permanently.
+Replaced the local map with the shared, exhaustive `LOCALE_ENGLISH_NAME`
+(catalog.ts) so a future locale addition is automatically covered here too.
 
-TEST: `npx jest` (full suite — 735/736 suites, 1 pre-existing skip,
-13,660/13,695 tests passing, 0 failures)
+TEST: `test/services/journey/goal-planner-service.test.ts` — unaffected
+(no hardcoded language-name assertions); `tsc --noEmit` fails loudly if
+`LOCALE_ENGLISH_NAME` is ever missing an entry for a registered locale
+(exhaustive `Record<GatewayLocale,string>`)
+Output: outputs/tsc.txt, outputs/targeted-tests.txt
+
+AC-7 — the daily "Did You Know" feature-tip content (`FEATURE_TIPS`) has a
+real Turkish title and description for all 12 curated tips, not an English
+fallback — a second Codex review finding: the type is
+`Partial<Record<OtherLocale,string>>`, so `tsc` does not fail loudly on a
+missing locale here the way the exhaustive catalog maps do, and
+`POST /daily-feature-tip`'s `text[locale] ?? text.en` would have silently
+served English to every Turkish user, every day, with no error anywhere.
+
+TEST: `test/data/feature-tips.locale-coverage.test.ts` (new) — "every tip
+has a title and description for every registered gateway locale" / "every
+non-English value is genuinely translated, not a copy of English"
+Output: outputs/targeted-tests.txt
+
+AC-8 — no regression to the existing gateway test suite or type-checking
+
+TEST: `npx jest` (full suite — 736/737 suites, 1 pre-existing skip,
+13,662/13,697 tests passing, 0 failures)
 Output: outputs/full-suite.txt
 TEST: `npx tsc --noEmit`
 Output: outputs/tsc.txt

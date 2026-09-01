@@ -62,15 +62,47 @@ npx jest -u test/orb/live/characterization/tool-catalog.characterization.test.ts
 #    specifically for this):
 #    test/routes/user-category-preferences.locale.test.ts
 
+# --- Codex review findings on PR #3250, both fixed same VTID -----------------
+#
+# P1: goal-planner-service.ts carried its own 4-entry LANGUAGE_NAMES map
+# (de/en/es/sr only) that silently fell back to English for tr — and worse,
+# seedGoalPlanSourceCache() persisted that English result keyed by the
+# user's real locale, so a later correct translation attempt would see it
+# as an already-cached hit and never fire. Replaced the local map with the
+# shared, exhaustive LOCALE_ENGLISH_NAME from catalog.ts:
+grep -n "LANGUAGE_NAMES\[locale\]" services/gateway/src/services/journey/goal-planner-service.ts
+#   -> 2 call sites, both replaced with LOCALE_ENGLISH_NAME[locale]
+npx tsc --noEmit
+#   -> 2 new errors: `locale` (from getUserLocale(...).catch(() => 'en'))
+#      widened to plain `string`, not assignable as an index into the
+#      exhaustive Record<GatewayLocale,string>. Fixed by typing the catch
+#      fallback explicitly: `.catch((): GatewayLocale => 'en')`.
+npx tsc --noEmit
+#   -> clean.
+
+# P2: FEATURE_TIPS (src/data/feature-tips.ts) title/description type is
+# Partial<Record<OtherLocale,string>> — Partial, so tsc does NOT fail
+# loudly on a locale missing here the way the exhaustive catalog maps do.
+# All 12 curated tips were missing 'tr' entirely; added real Turkish
+# title+description translations (informal sen-form) to all 12, plus a new
+# regression test asserting full GATEWAY_LOCALES coverage for every tip so
+# this can't silently recur for a future locale:
+grep -c "tr: '" services/gateway/src/data/feature-tips.ts
+#   -> 24 (12 titles + 12 descriptions)
+
 # --- Verification ------------------------------------------------------------
 npx jest test/i18n/catalog-coverage.test.ts \
          test/journey-checklist-translations.test.ts \
          test/orb/live/characterization/tool-catalog.characterization.test.ts \
-         test/routes/user-category-preferences.locale.test.ts
+         test/routes/user-category-preferences.locale.test.ts \
+         test/data/feature-tips.locale-coverage.test.ts \
+         test/services/journey/goal-planner-service.test.ts \
+         test/scheduled-notifications-daily-feature-tip.test.ts
+#   -> 7 suites, 78 tests passing.
 #   -> 4 suites, 68 tests passing. (outputs/targeted-tests.txt)
 
 npx jest
-#   -> 735/736 suites (1 pre-existing skip), 13660/13695 tests passing,
+#   -> 736/737 suites (1 pre-existing skip), 13662/13697 tests passing,
 #      0 failures. Rebased onto origin/main (4851335b, includes VTID-03800)
 #      after discovering the branch had originally been cut from a stale
 #      base; re-ran full suite + tsc against the correct base before
