@@ -41,6 +41,7 @@ const LANGUAGE_NAMES: Record<GatewayLocale, string> = {
   // zh-CN and which no register or coverage check would notice.
   zh: 'Simplified Chinese (简体中文)',
   ar: 'Arabic (العربية)',
+  tr: 'Turkish (Türkçe)',
 };
 
 // Per-language register hints. Friendly informal tone, mirrors the brand voice.
@@ -61,6 +62,7 @@ const REGISTER_HINTS: Partial<Record<GatewayLocale, string>> = {
   // this hint is appended to the language directive and an LLM drifting to
   // Traditional mid-response is the failure this pair of lines prevents.
   zh: 'Use 你/你的 (ordinary second person), NOT the polite 您. Write in Simplified Chinese only. Friendly, direct register.',
+  tr: 'Use sen-form (informal), NOT siz-form. Friendly, casual register.',
 };
 
 // Per-language compound-word rules (German is the only language with this

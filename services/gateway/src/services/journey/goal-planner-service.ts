@@ -13,18 +13,25 @@ import { callViaRouter } from '../llm-router';
 import { bulkCreateCalendarEvents } from '../calendar-service';
 import { getUserLocale } from '../../i18n/server-locale';
 import { seedGoalPlanSourceCache } from './goal-plan-i18n';
+import { LOCALE_ENGLISH_NAME, type GatewayLocale } from '../../i18n/catalog';
 import type { CreateCalendarEventInput } from '../../types/calendar';
 
 const LOG = '[VTID-03152 goal-planner]';
 
 // Localized question generation — broad goals ask the user to clarify in their
 // own language so a German user never sees English questions.
-const LANGUAGE_NAMES: Record<string, string> = {
-  de: 'German',
-  en: 'English',
-  es: 'Spanish',
-  sr: 'Serbian',
-};
+//
+// VTID-03801 — this used to be its OWN four-entry map (de/en/es/sr only),
+// which silently fell back to English for every locale added to
+// GatewayLocale since (fr/pt/ru/pl/zh/ar, and now tr). Falling back here is
+// not just a wrong-language plan: seedGoalPlanSourceCache() below persists
+// the English result keyed by the user's real locale, and localizeGoalPlan()
+// treats that row as an already-translated cache hit — so the English plan
+// sticks permanently, never retried. Using the shared, exhaustive
+// LOCALE_ENGLISH_NAME (catalog.ts) instead of a local copy means a locale
+// added to GatewayLocale is automatically covered here too — no fifth copy
+// of the same map to fall out of sync (the exact failure mode VTID-03644
+// already named across five other copies).
 
 // Intent gloss for the canonical Life Compass preset categories. The presets
 // store only a short title + category (the rich description lives in the
@@ -245,8 +252,8 @@ export async function clarifyGoalIfNeeded(client: SupabaseClient, userId: string
   const goal = await fetchActiveGoal(client, userId);
   if (!goal) return { hasGoal: false, specific: true, questions: [] };
 
-  const locale = await getUserLocale(client, userId).catch(() => 'en');
-  const language = LANGUAGE_NAMES[locale] ?? 'English';
+  const locale = await getUserLocale(client, userId).catch((): GatewayLocale => 'en');
+  const language = LOCALE_ENGLISH_NAME[locale] ?? 'English';
   const target =
     goal.target_value != null && goal.target_unit ? `${goal.target_value} ${goal.target_unit}` : 'unspecified';
 
@@ -355,8 +362,8 @@ export async function generateGoalPlan(
     return null;
   }
 
-  const locale = await getUserLocale(client, userId).catch(() => 'en');
-  const language = LANGUAGE_NAMES[locale] ?? 'English';
+  const locale = await getUserLocale(client, userId).catch((): GatewayLocale => 'en');
+  const language = LOCALE_ENGLISH_NAME[locale] ?? 'English';
 
   console.log(
     `${LOG} generate requested user=${userId} goal="${goal.primary_goal}" deadline=${goal.target_date} answers=${answers?.length ?? 0} locale=${locale}`,
