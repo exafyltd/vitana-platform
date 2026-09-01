@@ -311,7 +311,11 @@ async function runCommunityWellnessEventSuggestion(ctx: AutomationContext) {
     const { data: attending } = await repo.fetchEventAttendance(supabase, wellnessEvent.id, user_id);
     if (attending && attending.length > 0) continue;
 
-    const { data: recentSuggestion } = await repo.fetchRecentAutomationSuggestion(supabase, user_id, 'AP-0605', cooldownCutoff);
+    const { data: recentSuggestion, error: recentSuggestionErr } = await repo.fetchRecentAutomationSuggestion(supabase, user_id, 'AP-0605', cooldownCutoff);
+    if (recentSuggestionErr) {
+      console.error(`[health-wellness] fetchRecentAutomationSuggestion failed for user=${user_id}, skipping to avoid re-suggesting within the cooldown: ${recentSuggestionErr.message}`);
+      continue;
+    }
     if (recentSuggestion && recentSuggestion.length > 0) continue;
 
     ctx.notify(user_id, 'orb_suggestion', {

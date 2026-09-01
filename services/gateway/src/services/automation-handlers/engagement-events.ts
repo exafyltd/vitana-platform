@@ -253,7 +253,11 @@ async function runHostNightConcierge(ctx: AutomationContext) {
 
     // Cooldown: skip (and stop considering this host this run) if they were
     // already concierged recently for any event.
-    const { data: recentNudge } = await repo.fetchRecentConciergeNudge(supabase, ev.created_by, cooldownCutoff);
+    const { data: recentNudge, error: recentNudgeErr } = await repo.fetchRecentConciergeNudge(supabase, ev.created_by, cooldownCutoff);
+    if (recentNudgeErr) {
+      console.error(`[engagement-events] fetchRecentConciergeNudge failed for host=${ev.created_by}, skipping to avoid re-concierging within the cooldown: ${recentNudgeErr.message}`);
+      continue;
+    }
     if (recentNudge && recentNudge.length > 0) {
       handledHosts.add(ev.created_by);
       continue;
@@ -324,7 +328,11 @@ async function runEventSeriesAutoSuggestion(ctx: AutomationContext) {
     const { count: upcomingCount } = await repo.countUpcomingEventsByCreator(supabase, event.created_by, now.toISOString());
     if ((upcomingCount || 0) > 0) continue;
 
-    const { data: recentSuggestion } = await repo.fetchRecentSeriesSuggestion(supabase, event.created_by, cooldownCutoff);
+    const { data: recentSuggestion, error: recentSuggestionErr } = await repo.fetchRecentSeriesSuggestion(supabase, event.created_by, cooldownCutoff);
+    if (recentSuggestionErr) {
+      console.error(`[engagement-events] fetchRecentSeriesSuggestion failed for host=${event.created_by}, skipping to avoid re-suggesting within the cooldown: ${recentSuggestionErr.message}`);
+      continue;
+    }
     if (recentSuggestion && recentSuggestion.length > 0) continue;
 
     ctx.notify(event.created_by, 'orb_proactive_message', {
@@ -374,7 +382,11 @@ async function runLiveRoomFromTrendingChatTopic(ctx: AutomationContext) {
 
     if ((messageCount || 0) < LIVE_ROOM_SPIKE_MIN_MESSAGES) continue;
 
-    const { data: recentSuggestion } = await repo.fetchRecentLiveRoomSuggestion(supabase, group.created_by, group.id, cooldownCutoff);
+    const { data: recentSuggestion, error: recentSuggestionErr } = await repo.fetchRecentLiveRoomSuggestion(supabase, group.created_by, group.id, cooldownCutoff);
+    if (recentSuggestionErr) {
+      console.error(`[engagement-events] fetchRecentLiveRoomSuggestion failed for group=${group.id}, skipping to avoid re-suggesting within the cooldown: ${recentSuggestionErr.message}`);
+      continue;
+    }
     if (recentSuggestion && recentSuggestion.length > 0) continue;
 
     ctx.notify(group.created_by, 'orb_proactive_message', {
@@ -773,7 +785,11 @@ async function runFriendsChallengeSocialStreak(ctx: AutomationContext) {
       if (!isStreakActive(friendStreak.last_day)) continue;
 
       const cooldownCutoff = new Date(Date.now() - STREAK_COOLDOWN_DAYS * 86_400_000).toISOString();
-      const { data: recentNudge } = await repo.fetchRecentStreakNudge(supabase, user_id, pairKey, cooldownCutoff);
+      const { data: recentNudge, error: recentNudgeErr } = await repo.fetchRecentStreakNudge(supabase, user_id, pairKey, cooldownCutoff);
+      if (recentNudgeErr) {
+        console.error(`[engagement-events] fetchRecentStreakNudge failed for pair=${pairKey}, skipping to avoid re-nudging within the cooldown: ${recentNudgeErr.message}`);
+        continue;
+      }
       if (recentNudge && recentNudge.length > 0) continue;
 
       notifiedPairs.add(pairKey);
