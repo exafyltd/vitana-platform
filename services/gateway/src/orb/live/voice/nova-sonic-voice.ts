@@ -32,6 +32,11 @@
  * note on `resolveNovaSonicVoice` for why collapsing them regressed `pt` to a
  * German voice.
  *
+ * VTID-03803 — `fr`/`es` join `pt` on the same routing/voice
+ * split for the identical reason (reported live: Spanish/French Orb
+ * conversation answering in English). Both KEEP their Nova voice entries
+ * (`ambre`/`lupe`) here for the same reason `pt` kept `carolina`.
+ *
  * A `null` result means Nova publishes no voice for the language at all
  * (`ru`/`pl`/`ar`/`zh`/`sr`). That is a real runtime path, not a
  * programming error: `sr` stays on Nova permanently because Polly has no
