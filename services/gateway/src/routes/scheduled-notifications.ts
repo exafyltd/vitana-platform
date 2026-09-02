@@ -1041,10 +1041,10 @@ router.post('/meetup-reminders', async (req: Request, res: Response) => {
 // in-flight crons, not just future UI (defense-in-depth, per this repo's
 // own "assume multiple gates are intentional" convention).
 // =============================================================================
-// public-route — invoked internally by the AP-1700 automation-registry
-// heartbeat (runEventGameEndingSoon) via GATEWAY_INTERNAL_URL, not exposed
-// publicly by design; same pattern as meetup-reminders/upcoming-events.
-router.post('/event-game-ending-soon', async (req: Request, res: Response) => {
+// Invoked internally by the AP-1700 automation-registry heartbeat
+// (runEventGameEndingSoon) via GATEWAY_INTERNAL_URL, not exposed publicly by
+// design; same pattern as meetup-reminders/upcoming-events.
+router.post('/event-game-ending-soon', async (req: Request, res: Response) => { // public-route
   // impact-allow-no-oasis — fan-out only, no state transition (event_games
   // itself is never written here). Mirrors /upcoming-events' own reasoning
   // for the same "read + notify, nothing mutated" shape.
@@ -1108,10 +1108,10 @@ router.post('/event-game-ending-soon', async (req: Request, res: Response) => {
 // already enforced inline, at award time, by every DB trigger regardless of
 // whether or when this handler ever runs.
 // =============================================================================
-// public-route — invoked internally by the AP-1701 automation-registry
-// heartbeat (runEventGameEnded) via GATEWAY_INTERNAL_URL, not exposed
-// publicly by design; same pattern as meetup-reminders/upcoming-events.
-router.post('/event-game-ended', async (req: Request, res: Response) => {
+// Invoked internally by the AP-1701 automation-registry heartbeat
+// (runEventGameEnded) via GATEWAY_INTERNAL_URL, not exposed publicly by
+// design; same pattern as meetup-reminders/upcoming-events.
+router.post('/event-game-ended', async (req: Request, res: Response) => { // public-route
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
