@@ -1,4 +1,4 @@
-# BOOTSTRAP-NOVA-ESFR-CASCADE — Spanish/French ORB voice answering in English
+# VTID-03803 — Spanish/French ORB voice answering in English
 
 User-reported live: "Spanish and French general Orb communication is in
 English. Investigate why and fix it! All other languages are correct!"
@@ -82,7 +82,7 @@ AC-1 — `fr`/`es` are no longer classified as Nova-native
 
 TEST: `test/orb/live/upstream/nova-sonic-config.test.ts` — "accepts en/de
 incl. regional tags" / "rejects everything else, including fr/es
-(BOOTSTRAP-NOVA-ESFR-CASCADE)"
+(VTID-03803)"
 Output: outputs/targeted-tests.txt
 
 AC-2 — `fr`/`es` are now cascade-eligible, with the correct Transcribe

@@ -233,7 +233,7 @@ describe('isNovaSonicLanguageSupported', () => {
       expect(isNovaSonicLanguageSupported(l)).toBe(true);
     }
   });
-  it('rejects everything else, including fr/es (BOOTSTRAP-NOVA-ESFR-CASCADE)', () => {
+  it('rejects everything else, including fr/es (VTID-03803)', () => {
     // fr/es were found live-answering in English despite being "Nova-native"
     // on paper — same defect class as pt (VTID-03704) — and now route
     // through the Polly cascade instead. This assertion is the one that

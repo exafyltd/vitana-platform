@@ -80,7 +80,7 @@ describe('VTID-03721: cascade health payload', () => {
       expect(langs.ru).toBe('cascade:ru-RU');
       expect(langs.ar).toBe('cascade:ar-AE');
       expect(langs.zh).toBe('cascade:zh-CN');
-      // BOOTSTRAP-NOVA-ESFR-CASCADE — fr/es join pt: found live-answering in
+      // VTID-03803 — fr/es join pt: found live-answering in
       // English despite being "Nova-native" on paper, removed from
       // NOVA_SONIC_SUPPORTED_LANGUAGES, and now cascade-eligible.
       expect(langs.fr).toBe('cascade:fr-FR');

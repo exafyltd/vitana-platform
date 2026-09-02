@@ -113,7 +113,7 @@ const TEST_PHRASES: Record<string, string> = {
 // which fails LOUDLY (not silently adapts) if this literal and the live
 // decision route ever disagree about which languages are Nova-native.
 //
-// BOOTSTRAP-NOVA-ESFR-CASCADE — `fr`/`es` removed, same reason `pt` was
+// VTID-03803 — `fr`/`es` removed, same reason `pt` was
 // never in this set: each was found live-answering in English despite
 // being "Nova-native" on paper, and now routes through the Polly cascade
 // like `pt` does.

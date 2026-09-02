@@ -57,7 +57,7 @@ describe('VTID-03683: cascade language eligibility', () => {
     expect(e.eligible).toBe(true);
     expect(e.reason).toBeNull();
     expect(e.transcribeLanguageCode).toBe('tr-TR');
-    // BOOTSTRAP-NOVA-ESFR-CASCADE — `fr`/`es` join the same way: reported live
+    // VTID-03803 — `fr`/`es` join the same way: reported live
     // answering in English despite being "Nova-native" on paper (same defect
     // class as `pt`), removed from NOVA_SONIC_SUPPORTED_LANGUAGES, and both
     // already have a Polly voice (Lea/Lucia) and a Transcribe code

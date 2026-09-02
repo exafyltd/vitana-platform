@@ -65,7 +65,7 @@ export const NOVA_SONIC_REGION = 'eu-north-1' as const;
 // covers `pt` via Transcribe `pt-BR` + Polly `Camila` (pt-BR, matching this
 // app's Brazilian catalog).
 //
-// BOOTSTRAP-NOVA-ESFR-CASCADE — `fr` and `es` REMOVED for the identical
+// VTID-03803 — `fr` and `es` REMOVED for the identical
 // reason as `pt` above, not a new failure mode. Reported live: "Spanish and
 // French general Orb communication is in English. All other languages are
 // correct!" — i.e. de/en (also Nova-native) worked, es/fr did not, even

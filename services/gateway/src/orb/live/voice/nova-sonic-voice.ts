@@ -32,7 +32,7 @@
  * note on `resolveNovaSonicVoice` for why collapsing them regressed `pt` to a
  * German voice.
  *
- * BOOTSTRAP-NOVA-ESFR-CASCADE — `fr`/`es` join `pt` on the same routing/voice
+ * VTID-03803 — `fr`/`es` join `pt` on the same routing/voice
  * split for the identical reason (reported live: Spanish/French Orb
  * conversation answering in English). Both KEEP their Nova voice entries
  * (`ambre`/`lupe`) here for the same reason `pt` kept `carolina`.
