@@ -37,6 +37,7 @@
 
 import {
   selectUpstreamProvider,
+  deriveVoiceRuntimeHealthy,
   type UpstreamSelectorContext,
 } from '../../../../src/orb/live/upstream/upstream-provider-selector';
 
@@ -635,5 +636,51 @@ describe('VTID-03723: Vertex is never a destination, and the cascade rescues Nov
     // cannot forbid a valid union member from being returned.
     const decisionShapeIncludesVertex: 'vertex' | 'nova_sonic' | 'cascaded' | 'livekit' = 'vertex';
     expect(['vertex', 'nova_sonic', 'cascaded', 'livekit']).toContain(decisionShapeIncludesVertex);
+  });
+});
+
+describe('deriveVoiceRuntimeHealthy (BOOTSTRAP-ORB-HEALTH-NOVA-READY / VTID-03802)', () => {
+  const allReady = { vertexReady: true, livekitReady: true, novaReady: true, cascadeReady: true };
+  const allDown = { vertexReady: false, livekitReady: false, novaReady: false, cascadeReady: false };
+
+  it('nova_sonic reads novaReady, not livekitReady', () => {
+    // This is the literal regression: real production traffic resolves to
+    // 'nova_sonic' with livekitReady=false (LiveKit isn't in use) while Nova
+    // itself is fully configured and ready — the old inline expression
+    // (`provider === 'vertex' ? vertexReady : livekitReady`) reported this
+    // as unhealthy.
+    expect(
+      deriveVoiceRuntimeHealthy('nova_sonic', { ...allDown, novaReady: true }),
+    ).toBe(true);
+    expect(
+      deriveVoiceRuntimeHealthy('nova_sonic', { ...allReady, novaReady: false }),
+    ).toBe(false);
+  });
+
+  it('cascaded reads cascadeReady', () => {
+    expect(
+      deriveVoiceRuntimeHealthy('cascaded', { ...allDown, cascadeReady: true }),
+    ).toBe(true);
+    expect(
+      deriveVoiceRuntimeHealthy('cascaded', { ...allReady, cascadeReady: false }),
+    ).toBe(false);
+  });
+
+  it('vertex reads vertexReady (unchanged behavior)', () => {
+    expect(
+      deriveVoiceRuntimeHealthy('vertex', { ...allDown, vertexReady: true }),
+    ).toBe(true);
+    expect(
+      deriveVoiceRuntimeHealthy('vertex', { ...allReady, vertexReady: false }),
+    ).toBe(false);
+  });
+
+  it('livekit reads livekitReady (unchanged behavior)', () => {
+    expect(
+      deriveVoiceRuntimeHealthy('livekit', { ...allDown, livekitReady: true }),
+    ).toBe(true);
+    expect(
+      deriveVoiceRuntimeHealthy('livekit', { ...allReady, livekitReady: false }),
+    ).toBe(false);
   });
 });
