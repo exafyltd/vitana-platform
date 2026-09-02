@@ -66,3 +66,78 @@ grep -n "upstream-provider-selector\.ts\|routes/orb-live\.ts" /tmp/tsc-full.txt 
 # "Gateway (Jest, ~7.5k tests)" CI check run are the first real
 # compile+test execution of this change, in GitHub Actions (which has npm
 # registry access) — watched to green after push.
+
+## 6. Root-cause the actual live-session failure (production, read-only,
+##    via the already-connected Supabase MCP — mcp__Supabase__execute_sql
+##    against project inmkhvwdcuyhnxkgfvsb)
+
+# Aggregate: does each session (grouped by session_id over the last 48h)
+# ever reach model_start_speaking / produce audio_out bytes?
+WITH sess AS (
+  SELECT
+    coalesce(metadata->>'session_id', meta->>'session_id') AS sid,
+    min(created_at) FILTER (WHERE topic = 'vtid.live.session.start') AS started_at,
+    max((coalesce(metadata->>'audio_out', meta->>'audio_out'))::int) AS max_audio_out,
+    coalesce(bool_or(coalesce(metadata->>'code', meta->>'code') = 'nova_validation'), false) AS hit_nova_validation
+  FROM oasis_events
+  WHERE created_at > now() - interval '48 hours'
+    AND coalesce(metadata->>'session_id', meta->>'session_id') IS NOT NULL
+  GROUP BY 1
+)
+SELECT
+  count(*) FILTER (WHERE started_at IS NOT NULL) AS real_sessions,
+  count(*) FILTER (WHERE started_at IS NOT NULL AND coalesce(max_audio_out,0) > 0) AS produced_audio,
+  count(*) FILTER (WHERE started_at IS NOT NULL AND coalesce(max_audio_out,0) = 0) AS zero_audio,
+  count(*) FILTER (WHERE started_at IS NOT NULL AND coalesce(max_audio_out,0) = 0 AND hit_nova_validation) AS zero_audio_nova_validation,
+  count(*) FILTER (WHERE started_at IS NOT NULL AND coalesce(max_audio_out,0) = 0 AND NOT hit_nova_validation) AS zero_audio_other
+FROM sess;
+# -> real_sessions=64, produced_audio=42, zero_audio=22,
+#    zero_audio_nova_validation=12, zero_audio_other=10
+
+# Drilled into the 10 "zero_audio_other" sessions — every one has
+# transport:"sse" and this exact event sequence, then nothing:
+SELECT created_at, topic, message, status, actor_id, service, metadata, meta
+FROM oasis_events
+WHERE coalesce(metadata->>'session_id', meta->>'session_id') = '<one of the 10>'
+ORDER BY created_at ASC;
+# -> orb.session.identity.resolved (auth_valid:true)
+#    -> vtid.live.session.start (transport:"sse")
+#    -> orb.live.context.bootstrap ("Context bootstrap complete: Nms")
+#    -> [90-145s of NOTHING]
+#    -> vtid.live.session.stop (reason:"idle_no_engagement",
+#       turn_count:0, audio_in_chunks:0, audio_out_chunks:0)
+# One instance carried actor_id=a27552a3-0257-4305-8ed0-351a80fd3701
+# (the documented test user), origin=https://vitanaland.com, a real
+# iPhone Safari user agent — a genuine production session, not a bot/probe.
+
+# 8/10 confirmed via a batched query (session ids from the drill-down above).
+
+## 7. Trace the code path from context-bootstrap to the actual upstream connect
+
+grep -n "orb.live.context.bootstrap" services/gateway/src/orb/live/session/live-session-controller.ts
+grep -n "'/live/stream'" services/gateway/src/routes/orb-live.ts
+# -> GET /live/stream (orb-live.ts:15477) awaits sendGreetingAudioBridge(session)
+#    BEFORE the connectToLiveAPI(...) call that actually opens the upstream
+#    (Nova) connection and sends the greeting.
+
+grep -n "export async function sendGreetingAudioBridge" services/gateway/src/routes/orb-live.ts
+# -> calls synthesizeGreetingBridgeAudioPcm(text, lang)
+
+grep -n "export async function synthesizeGreetingBridgeAudioPcm" -A 60 services/gateway/src/services/tts/greeting-bridge-tts.ts
+# -> tries Polly first (tryPollySynthesis); on null, fell through to
+#    `await bridgeTtsClient.synthesizeSpeech(request)` — a live Google
+#    Cloud TTS call. GCP is fully decommissioned (CLAUDE.md §1/§2c) — this
+#    call cannot succeed, and nothing in this code path applies a timeout,
+#    so an unreachable call there hangs the awaiting caller indefinitely.
+
+## 8. Fix + test
+
+# Removed the Google Cloud TTS fallback entirely — Polly failure now
+# returns null immediately (services/gateway/src/services/tts/greeting-bridge-tts.ts).
+# Added greeting-bridge-tts.test.ts coverage for both the Polly-success and
+# Polly-failure-returns-null-without-Google paths.
+
+cd services/gateway && tsc --noEmit -p tsconfig.json --ignoreDeprecations 6.0 2>&1 \
+  | grep -E "greeting-bridge-tts\.ts|orb-live\.ts\(1594"
+# -> only pre-existing "Cannot find name 'Buffer'" noise (no @types/node in
+#    this sandbox — see outputs/tsc-manual-check.txt); no new errors.
