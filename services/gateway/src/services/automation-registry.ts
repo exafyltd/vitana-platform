@@ -237,6 +237,24 @@ const EVENTS_LIVE_ROOMS: AutomationDefinition[] = [
     handler: 'runGraduatedReminders',
   },
   {
+    // Maxina Longevity Game (event-specific, temporary — see gateway
+    // CLAUDE.md changelog for the wider feature). 5-minute heartbeat so the
+    // handler's own ~11-minute lookahead window reliably catches the
+    // "10 minutes left" mark without needing a separate infra cron.
+    id: 'AP-1700', name: 'Event Game — Ending Soon', domain: 'events-live-rooms',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 5 },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runEventGameEndingSoon',
+  },
+  {
+    id: 'AP-1701', name: 'Event Game — Ended', domain: 'events-live-rooms',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 5 },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runEventGameEnded',
+  },
+  {
     id: 'AP-0303', name: '"Go Together" Event Match', domain: 'events-live-rooms',
     status: 'IMPLEMENTED', priority: 'P0', triggerType: 'event',
     triggerConfig: { eventTopic: 'match.daily.event' },

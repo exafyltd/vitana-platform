@@ -47,6 +47,12 @@ export type GatewayI18nKey =
   | 'notif.meetup_starting_now.body'
   | 'notif.event_today.title'
   | 'notif.event_today.body'
+  // Maxina Longevity Game (event-specific) — the two notifications that must
+  // reach a closed app; join/post confirmations stay client-side toasts.
+  | 'notif.event_game_ending_soon.title'
+  | 'notif.event_game_ending_soon.body'
+  | 'notif.event_game_results_ready.title'
+  | 'notif.event_game_results_ready.body'
   | 'notif.recommendation_expiring.title'
   | 'notif.recommendation_expiring.body'
   | 'notif.signal_expired.title'
