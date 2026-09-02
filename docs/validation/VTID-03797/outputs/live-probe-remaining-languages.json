@@ -1,0 +1,50 @@
+[
+  {
+    "label": "guided T001 ar (cascade)",
+    "verdict": "WORKS",
+    "sid": "live-e2f75d43-aeef-4e26-a26a-7b5cd658ad50",
+    "audio": 8,
+    "err": 0,
+    "errCodes": []
+  },
+  {
+    "label": "guided T001 pt (cascade)",
+    "verdict": "WORKS",
+    "sid": "live-beee026e-988b-4019-b1a8-d940070fccda",
+    "audio": 9,
+    "err": 0,
+    "errCodes": []
+  },
+  {
+    "label": "guided T001 tr (cascade)",
+    "verdict": "WORKS",
+    "sid": "live-3672d16e-a587-4978-ba4d-417dda2c05a3",
+    "audio": 8,
+    "err": 0,
+    "errCodes": []
+  },
+  {
+    "label": "guided T001 zh (cascade)",
+    "verdict": "WORKS",
+    "sid": "live-40fdfc0b-a5a8-41b4-b2b7-b1ea9dc5564e",
+    "audio": 7,
+    "err": 0,
+    "errCodes": []
+  },
+  {
+    "label": "guided T001 sr (KNOWN GAP)",
+    "verdict": "BLOCKED",
+    "sid": "live-16387427-f0f1-4b28-9920-c769b94a98c4",
+    "audio": 1,
+    "err": 0,
+    "errCodes": []
+  },
+  {
+    "label": "guided T001 de (control)",
+    "verdict": "WORKS",
+    "sid": "live-5d1fcfa1-52ee-4f13-b13d-bcfa8808180b",
+    "audio": 49,
+    "err": 0,
+    "errCodes": []
+  }
+]

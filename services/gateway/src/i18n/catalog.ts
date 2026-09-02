@@ -15,11 +15,11 @@
 // see a problem, while Spanish users got English push notifications on their
 // lock screen. Locale files are now `Partial<LocaleCatalog>` and a genuinely
 // missing key falls back visibly (see `tt`), so coverage is measurable.
-export type GatewayLocale = 'de' | 'en' | 'es' | 'sr' | 'fr' | 'pt' | 'ru' | 'pl' | 'zh' | 'ar';
+export type GatewayLocale = 'de' | 'en' | 'es' | 'sr' | 'fr' | 'pt' | 'ru' | 'pl' | 'zh' | 'ar' | 'tr';
 
 /** Every locale the gateway can emit. Order is not significant. */
 export const GATEWAY_LOCALES: readonly GatewayLocale[] = [
-  'de', 'en', 'es', 'sr', 'fr', 'pt', 'ru', 'pl', 'zh', 'ar',
+  'de', 'en', 'es', 'sr', 'fr', 'pt', 'ru', 'pl', 'zh', 'ar', 'tr',
 ] as const;
 
 export const GATEWAY_DEFAULT_LOCALE: GatewayLocale = 'de';
@@ -198,6 +198,16 @@ import zhJson from './locales/zh.json';
 // coverage reads honestly as 0% and every key falls back to EN/DE via tt()
 // until real translations land through the normal audit workflow.
 import arJson from './locales/ar.json';
+// VTID-03801 — 'tr' is a live GA locale in vitana-v1 but was never added to
+// the GATEWAY's separate catalog, exactly the ar/VTID-03645 gap repeating: a
+// user selecting Turkish saw German on Settings → Notifications (this catalog
+// has no 'tr' entry, so `tt()` falls back to DE/EN) and the My Journey list
+// silently fell back to German too — not because journey_checklist_translations
+// lacked Turkish rows (it has 252/254), but because `?locale=tr` was rejected
+// outright by every route that validates against GATEWAY_LOCALES before ever
+// reaching the DB. Unlike 'ar', this one ships translated from day one rather
+// than starting empty — see tr.json (full 114/114 key parity with DE).
+import trJson from './locales/tr.json';
 
 // DE and EN are the two locales that must be complete: DE is the default and
 // EN is the universal fallback, so between them every key is always resolvable.
@@ -217,6 +227,7 @@ const RU: Partial<LocaleCatalog> = ruJson;
 const PL: Partial<LocaleCatalog> = plJson;
 const ZH: Partial<LocaleCatalog> = zhJson;
 const AR: Partial<LocaleCatalog> = arJson;
+const TR: Partial<LocaleCatalog> = trJson;
 
 const CATALOGS: Record<GatewayLocale, Partial<LocaleCatalog>> = {
   de: DE,
@@ -229,6 +240,7 @@ const CATALOGS: Record<GatewayLocale, Partial<LocaleCatalog>> = {
   pl: PL,
   zh: ZH,
   ar: AR,
+  tr: TR,
 };
 
 /**
@@ -308,6 +320,10 @@ const LANGUAGE_NAME_TO_LOCALE: Record<string, GatewayLocale> = {
   arabic: 'ar',
   arabisch: 'ar',
   'العربية': 'ar',
+  turkish: 'tr',
+  turkisch: 'tr',
+  turkce: 'tr',
+  'türkçe': 'tr',
 };
 
 /**
@@ -330,6 +346,7 @@ export const LOCALE_ENGLISH_NAME: Record<GatewayLocale, string> = {
   pl: 'Polish',
   zh: 'Chinese (Simplified)',
   ar: 'Arabic',
+  tr: 'Turkish',
 };
 
 /**
@@ -346,6 +363,7 @@ export const LOCALE_INFORMAL_HINT: Partial<Record<GatewayLocale, string>> = {
   pt: ' Use the informal tu-form (European Portuguese, never você/o senhor).',
   ru: ' Use the informal ты-form (never вы).',
   pl: ' Use the informal ty-form (never Pan/Pani).',
+  tr: ' Use the informal sen-form (never siz).',
 };
 
 /**

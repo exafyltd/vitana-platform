@@ -1,0 +1,112 @@
+# VTID-03801 — commands actually run.
+
+# --- Investigation --------------------------------------------------------
+# User reported (two screenshots): Chinese Notification Settings and
+# Turkish My Journey both showing German content despite the language
+# switch. Dispatched a research agent for file:line evidence, then
+# personally re-verified every claim by reading the actual source before
+# writing any fix.
+
+grep -n "resolveLocale" services/gateway/src/routes/journey-checklist.ts
+#   -> confirmed the established `?locale=` override pattern already used
+#      by My Journey's own route.
+
+grep -n "'de' | 'en' | 'es' | 'sr'" services/gateway/src/i18n/catalog.ts
+#   -> confirmed GatewayLocale had no 'tr' member at all.
+
+# Direct DB check (read-only) confirmed journey_checklist_translations
+# already had 252/254 tr rows — i.e. this was a registration bug, not a
+# missing-content bug, unlike ar (VTID-03644) which shipped genuinely
+# empty.
+
+grep -n "GatewayLocale" services/gateway/src/routes/user-category-preferences.ts
+#   -> confirmed the route had no ?locale= handling of any kind, unlike
+#      journey-checklist.ts.
+
+# --- Fix -------------------------------------------------------------------
+
+# 1. Registered 'tr' as a first-class GatewayLocale.
+#    - src/i18n/catalog.ts: added 'tr' to the GatewayLocale union and
+#      GATEWAY_LOCALES array, imported/registered tr.json, added
+#      LANGUAGE_NAME_TO_LOCALE / LOCALE_ENGLISH_NAME / LOCALE_INFORMAL_HINT
+#      entries.
+#    - src/i18n/locales/tr.json (new): full 114/114-key Turkish
+#      translation, informal sen-form register, verified against de.json
+#      key-for-key via a diff script (zero missing, zero extra keys).
+
+# 2. Added the ?locale= override to the category-preferences route,
+#    mirroring journey-checklist.ts's resolveLocale():
+#    - src/routes/user-category-preferences.ts: new exported
+#      resolveRequestedLocale(), used ahead of getUserLocale().
+
+# 3. Fixed the two resulting tsc failures — exhaustive
+#    Record<GatewayLocale,...> maps that fail the build when a new locale
+#    is added without a corresponding entry:
+cd services/gateway
+npx tsc --noEmit
+#   -> 2 errors: llm-locale.ts (LANGUAGE_NAMES / REGISTER_HINTS),
+#      feedback-settings-tools.ts (SUPPORTED_LANGUAGES). Added 'tr'
+#      entries to both.
+npx tsc --noEmit
+#   -> clean. (outputs/tsc.txt)
+
+# 4. Updated 3 pre-existing tests that hardcoded the 10-locale set:
+#    - test/i18n/catalog-coverage.test.ts
+#    - test/journey-checklist-translations.test.ts
+#    - test/orb/live/characterization/tool-catalog.characterization.test.ts
+#      (snapshot regenerated via `npx jest -u` — the set_language tool's
+#      enum legitimately changed)
+npx jest -u test/orb/live/characterization/tool-catalog.characterization.test.ts
+
+# 5. New test for the route-level fix (resolveRequestedLocale exported
+#    specifically for this):
+#    test/routes/user-category-preferences.locale.test.ts
+
+# --- Codex review findings on PR #3250, both fixed same VTID -----------------
+#
+# P1: goal-planner-service.ts carried its own 4-entry LANGUAGE_NAMES map
+# (de/en/es/sr only) that silently fell back to English for tr — and worse,
+# seedGoalPlanSourceCache() persisted that English result keyed by the
+# user's real locale, so a later correct translation attempt would see it
+# as an already-cached hit and never fire. Replaced the local map with the
+# shared, exhaustive LOCALE_ENGLISH_NAME from catalog.ts:
+grep -n "LANGUAGE_NAMES\[locale\]" services/gateway/src/services/journey/goal-planner-service.ts
+#   -> 2 call sites, both replaced with LOCALE_ENGLISH_NAME[locale]
+npx tsc --noEmit
+#   -> 2 new errors: `locale` (from getUserLocale(...).catch(() => 'en'))
+#      widened to plain `string`, not assignable as an index into the
+#      exhaustive Record<GatewayLocale,string>. Fixed by typing the catch
+#      fallback explicitly: `.catch((): GatewayLocale => 'en')`.
+npx tsc --noEmit
+#   -> clean.
+
+# P2: FEATURE_TIPS (src/data/feature-tips.ts) title/description type is
+# Partial<Record<OtherLocale,string>> — Partial, so tsc does NOT fail
+# loudly on a locale missing here the way the exhaustive catalog maps do.
+# All 12 curated tips were missing 'tr' entirely; added real Turkish
+# title+description translations (informal sen-form) to all 12, plus a new
+# regression test asserting full GATEWAY_LOCALES coverage for every tip so
+# this can't silently recur for a future locale:
+grep -c "tr: '" services/gateway/src/data/feature-tips.ts
+#   -> 24 (12 titles + 12 descriptions)
+
+# --- Verification ------------------------------------------------------------
+npx jest test/i18n/catalog-coverage.test.ts \
+         test/journey-checklist-translations.test.ts \
+         test/orb/live/characterization/tool-catalog.characterization.test.ts \
+         test/routes/user-category-preferences.locale.test.ts \
+         test/data/feature-tips.locale-coverage.test.ts \
+         test/services/journey/goal-planner-service.test.ts \
+         test/scheduled-notifications-daily-feature-tip.test.ts
+#   -> 7 suites, 78 tests passing.
+#   -> 4 suites, 68 tests passing. (outputs/targeted-tests.txt)
+
+npx jest
+#   -> 736/737 suites (1 pre-existing skip), 13662/13697 tests passing,
+#      0 failures. Rebased onto origin/main (4851335b, includes VTID-03800)
+#      after discovering the branch had originally been cut from a stale
+#      base; re-ran full suite + tsc against the correct base before
+#      pushing. (outputs/full-suite.txt)
+
+npx tsc --noEmit
+#   -> clean. (outputs/tsc.txt)

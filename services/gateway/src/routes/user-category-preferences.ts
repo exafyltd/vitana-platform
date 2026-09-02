@@ -16,7 +16,7 @@ import {
   AuthenticatedRequest,
 } from '../middleware/auth-supabase-jwt';
 import { createClient } from '@supabase/supabase-js';
-import { tt, type GatewayI18nKey } from '../i18n/catalog';
+import { tt, type GatewayI18nKey, type GatewayLocale, GATEWAY_LOCALES } from '../i18n/catalog';
 import { getUserLocale } from '../i18n/server-locale';
 
 const router = Router();
@@ -26,6 +26,20 @@ function getSupabase() {
     process.env.SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE!
   );
+}
+
+// VTID-03801 — mirrors journey-checklist.ts's resolveLocale(): an explicit
+// `?locale=` (the live UI language, authoritative) wins over the stored
+// profile locale. Without this, a language switch shows the new language
+// everywhere in the app EXCEPT this screen until getUserLocale()'s 5-minute
+// in-process cache happens to expire — the frontend writes stt_language
+// directly via Supabase and never invalidates the gateway's cache, so a
+// Chinese-selecting user kept seeing German category labels/descriptions
+// here for up to 5 minutes (sometimes longer, since the cache is keyed
+// per-gateway-instance and any request within the window re-reads it).
+export function resolveRequestedLocale(req: Request): GatewayLocale | null {
+  const raw = String(req.query.locale ?? '').slice(0, 5).toLowerCase().split('-')[0];
+  return (GATEWAY_LOCALES as readonly string[]).includes(raw) ? (raw as GatewayLocale) : null;
 }
 
 // ── GET / — Get categories with user preference state ───────
@@ -69,8 +83,10 @@ router.get('/', requireAuth, requireTenant, async (req: Request, res: Response) 
   }
 
   // Resolve the user's preferred locale once. Used to translate
-  // display_name + description for every category row. Falls back to DE.
-  const locale = await getUserLocale(supabase, identity.user_id);
+  // display_name + description for every category row. An explicit
+  // `?locale=` (the live UI language) wins over the cached stored
+  // preference; falls back to DE if neither resolves.
+  const locale = resolveRequestedLocale(req) ?? (await getUserLocale(supabase, identity.user_id));
 
   // Group categories by type, merging in the user's preference state.
   // Translate display_name + description on the fly via the gateway catalog:
