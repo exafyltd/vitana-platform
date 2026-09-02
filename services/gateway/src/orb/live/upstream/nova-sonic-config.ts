@@ -65,10 +65,42 @@ export const NOVA_SONIC_REGION = 'eu-north-1' as const;
 // covers `pt` via Transcribe `pt-BR` + Polly `Camila` (pt-BR, matching this
 // app's Brazilian catalog).
 //
+// BOOTSTRAP-NOVA-ESFR-CASCADE — `fr` and `es` REMOVED for the identical
+// reason as `pt` above, not a new failure mode. Reported live: "Spanish and
+// French general Orb communication is in English. All other languages are
+// correct!" — i.e. de/en (also Nova-native) worked, es/fr did not, even
+// though the system instruction already correctly composes "Respond ONLY in
+// French"/"Respond ONLY in Spanish" (`languageNames` in
+// `live-system-instruction.ts` already has both) and Nova's own documented
+// language table lists French and Spanish exactly like German and English.
+// That is the same gap the `pt` note above already names: documentation (and
+// even a valid, accepted voiceId) describes what the MODEL is capable of, not
+// what it reliably does for THIS account on a given turn. There is no
+// narrower fix available here than the one already proven for `pt` — Nova
+// gives no per-language reliability knob to tune, only the binary of routing
+// through it or not. `fr`/`es` now fall through to the same cascade `pt`
+// uses: Transcribe has `fr-FR`/`es-ES`, Polly has `Lea`/`Lucia`, so both are
+// cascade-eligible with no gap. Their `NOVA_VOICES` entries (`ambre`/`lupe`)
+// are deliberately KEPT, exactly as `pt` kept `carolina` — see the note on
+// `resolveNovaSonicVoice` in `nova-sonic-voice.ts` for why emptying a voice
+// entry when a language is rerouted is its own, separate regression.
+//
+// ⚠️ THIS ALONE DOES NOT FIX THE REPORT YET. `tryCascadeRescue()`
+// (`upstream-provider-selector.ts`) only diverts a language once
+// `ORB_CASCADED_VOICE_ENABLED` is exactly `'true'` on the live task
+// definition — confirmed via production `oasis_events` to have ZERO
+// `cascaded_language_rescue` events in the last 30 days, i.e. still off
+// since the 2026-08-24 chipmunk-audio rollback (VTID-03683/03703). Until that
+// flag is deliberately re-enabled, `fr`/`es` (like `pt` and every other
+// cascade-eligible language today) still transit raw Nova via
+// `nova_forced_vertex_unavailable`, unchanged from before this fix — see
+// VTID-03683's task-tracking items for that separate, already-pending,
+// deliberately-gated production decision.
+//
 // `sr` is deliberately NOT in this list and deliberately NOT cascaded: Polly
 // has no Serbian voice in any engine, so Serbian stays on Nova with a
 // substituted voice rather than being routed somewhere that would also fail.
-export const NOVA_SONIC_SUPPORTED_LANGUAGES = ['en', 'de', 'fr', 'es'] as const;
+export const NOVA_SONIC_SUPPORTED_LANGUAGES = ['en', 'de'] as const;
 export type NovaSonicLanguage = (typeof NOVA_SONIC_SUPPORTED_LANGUAGES)[number];
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;

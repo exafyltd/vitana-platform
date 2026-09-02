@@ -5,9 +5,14 @@
  * WHY THIS PIPELINE EXISTS
  * ------------------------
  * Amazon Nova Sonic — the speech-to-speech model every ORB session runs on
- * since the GCP shutdown — supports exactly `en de fr es pt`
- * (`NOVA_SONIC_SUPPORTED_LANGUAGES`). It cannot speak Russian, Polish,
- * Serbian, Arabic or Chinese at all.
+ * since the GCP shutdown — is ROUTED to only `en de` today
+ * (`NOVA_SONIC_SUPPORTED_LANGUAGES`). AWS's own documentation lists French,
+ * Spanish and Portuguese as supported too, but each was found live-answering
+ * in English despite that (`pt`: VTID-03704; `fr`/`es`:
+ * BOOTSTRAP-NOVA-ESFR-CASCADE) and was moved here instead — "documented"
+ * and "reliable for this account" are not the same claim (§2b's Bedrock
+ * profile lesson, restated for language instead of model access). It cannot
+ * speak Russian, Polish, Serbian, Arabic or Chinese at all.
  *
  * Those languages reach it anyway. `upstream-provider-selector.ts` reads:
  *

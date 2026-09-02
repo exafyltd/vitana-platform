@@ -80,6 +80,11 @@ describe('VTID-03721: cascade health payload', () => {
       expect(langs.ru).toBe('cascade:ru-RU');
       expect(langs.ar).toBe('cascade:ar-AE');
       expect(langs.zh).toBe('cascade:zh-CN');
+      // BOOTSTRAP-NOVA-ESFR-CASCADE — fr/es join pt: found live-answering in
+      // English despite being "Nova-native" on paper, removed from
+      // NOVA_SONIC_SUPPORTED_LANGUAGES, and now cascade-eligible.
+      expect(langs.fr).toBe('cascade:fr-FR');
+      expect(langs.es).toBe('cascade:es-ES');
     });
 
     it('reports Serbian as refused, naming Polly as the real blocker', () => {
@@ -92,7 +97,7 @@ describe('VTID-03721: cascade health payload', () => {
 
     it('reports Nova-native languages as refused for that reason', () => {
       const langs = buildCascadeHealthPayload(ON).languages as Record<string, string>;
-      for (const l of ['en', 'de', 'fr', 'es']) {
+      for (const l of ['en', 'de']) {
         expect(langs[l]).toBe('no:nova_supports_natively');
       }
     });

@@ -57,7 +57,20 @@ describe('VTID-03683: cascade language eligibility', () => {
     expect(e.eligible).toBe(true);
     expect(e.reason).toBeNull();
     expect(e.transcribeLanguageCode).toBe('tr-TR');
-    expect(listCascadeLanguages().sort()).toEqual(['ar', 'pl', 'pt', 'ru', 'tr', 'zh']);
+    // BOOTSTRAP-NOVA-ESFR-CASCADE — `fr`/`es` join the same way: reported live
+    // answering in English despite being "Nova-native" on paper (same defect
+    // class as `pt`), removed from NOVA_SONIC_SUPPORTED_LANGUAGES, and both
+    // already have a Polly voice (Lea/Lucia) and a Transcribe code
+    // (fr-FR/es-ES), so they are eligible with no gap to fill first.
+    const fr = evaluateCascadeEligibility('fr');
+    expect(fr.eligible).toBe(true);
+    expect(fr.reason).toBeNull();
+    expect(fr.transcribeLanguageCode).toBe('fr-FR');
+    const es = evaluateCascadeEligibility('es');
+    expect(es.eligible).toBe(true);
+    expect(es.reason).toBeNull();
+    expect(es.transcribeLanguageCode).toBe('es-ES');
+    expect(listCascadeLanguages().sort()).toEqual(['ar', 'es', 'fr', 'pl', 'pt', 'ru', 'tr', 'zh']);
   });
 
   it('refuses sr, and blames POLLY — the blocker that is actually verified', () => {

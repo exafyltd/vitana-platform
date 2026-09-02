@@ -112,7 +112,12 @@ const TEST_PHRASES: Record<string, string> = {
 // cross-check against — see the assertion in `checkRouting()` below,
 // which fails LOUDLY (not silently adapts) if this literal and the live
 // decision route ever disagree about which languages are Nova-native.
-const NOVA_NATIVE = new Set(['en', 'de', 'fr', 'es']);
+//
+// BOOTSTRAP-NOVA-ESFR-CASCADE — `fr`/`es` removed, same reason `pt` was
+// never in this set: each was found live-answering in English despite
+// being "Nova-native" on paper, and now routes through the Polly cascade
+// like `pt` does.
+const NOVA_NATIVE = new Set(['en', 'de']);
 
 // The one declared gap: Polly has no Serbian voice in any engine. Not a
 // silent skip — every other language MUST produce real audio, `sr` MUST
