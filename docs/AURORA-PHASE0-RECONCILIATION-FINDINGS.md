@@ -385,3 +385,83 @@ compounding fraction of exactly the write-heavy, user-facing tables
 (events, chat, notifications) the B5 Realtime doc already flagged as the
 ones that matter most. This is the concrete, current-dollar cost of the
 access gap documented immediately above, not a hypothetical.
+
+## Addendum, 2026-09-02 (VTID-03804) — both root causes independently re-confirmed live, 13 days on; gap re-measured; no new access
+
+This session has the same `claude-code-aws-agent` AWS identity plus live
+Supabase MCP tool access (`execute_sql`, `list_projects`, `query_logs`).
+Re-ran the whole diagnosis from scratch rather than trusting the prior
+addenda, and it reproduces exactly.
+
+**Caught and reverted a near-regression first.** The live source endpoint
+(`vitana-src-supabase-v3`) was still pointed at
+`aws-0-eu-north-1.pooler.supabase.com` — this session initially "corrected"
+it to `aws-0-eu-central-1.pooler.supabase.com`, matching a stale comment in
+`services/postgrest-aurora-proxy/cloudshell-fix-dms-source-dns.sh` (written
+before the 2026-08-29 addenda above existed). **That would have been wrong**:
+`mcp__Supabase__list_projects` confirms the project's real region is
+`eu-north-1`, matching what the 2026-08-29 addendum already established via
+`mcp__Supabase__get_project`. Reverted back to `eu-north-1` before doing
+anything else. Lesson for whoever reads this next: trust this doc's own
+live-verified findings over the older, unrevised comment in that script.
+
+**Both regions tested fresh against the pooler, both fail identically.**
+`dms test-connection` against `eu-north-1` (the confirmed-correct region)
+fails with the same `FATAL: (ENOTFOUND) tenant/user
+migrate.inmkhvwdcuyhnxkgfvsb not found` as `eu-central-1` did. Confirmed via
+`mcp__Supabase__query_logs` that Supavisor is rejecting these connection
+attempts in real time (log lines timestamped within seconds of each
+`test-connection` call), while PostgREST traffic on the same project serves
+normally throughout — this is an isolated Supavisor tenant-registry problem,
+not a project-wide outage, and not something SQL access can see into or fix
+(no `pgbouncer.*`-equivalent config table exists on this project either).
+`migrate`'s role attributes were re-checked directly via SQL and are fine
+(`rolcanlogin=true, rolreplication=true, rolvaliduntil=null,
+rolconnlimit=20`) — the failure is entirely on Supavisor's side, upstream of
+Postgres itself.
+
+**Neither fix path is available to this session — re-confirmed, not just
+re-asserted.** `aws ec2 describe-vpcs`/`describe-subnets` against
+`vpc-05958f035e596fe64` both fail with `UnauthorizedOperation: ... because no
+identity-based policy allows the ec2:DescribeX action` (a missing grant, not
+just a boundary deny). Went one step further than the prior addendum and
+checked whether this identity could self-escalate: `iam:GetUser`,
+`iam:ListAttachedUserPolicies`, and `iam:ListUserPolicies` on
+`claude-code-aws-agent` all fail with an **explicit deny in a permissions
+boundary** (`arn:aws:iam::472838866351:policy/claude-code-aws-agent-boundary`)
+— IAM self-inspection is deliberately walled off, not merely under-granted,
+so this is a hard stop and was not worked around. On the Supabase side, no
+Management API or dashboard-equivalent tool is exposed via the MCP surface
+available here (`execute_sql`/`list_projects`/`get_project`/`query_logs`/
+`get_advisors`/etc. — nothing that reaches connection-pooling settings).
+
+**Gap re-measured, same 3 tables, same exact-`count(*)` method — Aurora is
+still frozen at the exact moment CDC died:**
+
+| Table | Aurora (frozen, `MAX(created_at)`) | Supabase now (2026-09-02) | Aurora now | Missing now |
+|---|---|---|---|---|
+| `oasis_events` | `2026-08-20 09:58:52` | 501,927 | 466,654 (unchanged) | **35,273 (7.0%)** |
+| `chat_messages` | `2026-08-20 07:46:13` | 43,327 | 41,217 (unchanged) | **2,110 (4.9%)** |
+| `user_notifications` | `2026-08-20 07:46:13` | 71,654 | 63,399 (unchanged) | **8,255 (11.5%)** |
+
+Aurora's row counts for all three tables are byte-identical to the
+2026-08-29 addendum's numbers — independent confirmation that CDC has not
+moved a single row in the 13 days since it died, not just "probably still
+down." (`oasis_events`'s missing-percentage looks lower than the 08-29
+snapshot only because the live table itself shrank — 514,621 → 501,927 —
+consistent with a retention/prune job running on Supabase; `chat_messages`
+and `user_notifications` grew as expected and their absolute gaps widened.)
+
+**Net, 18 days before the 20 September deadline: this is now a
+three-times-confirmed hard blocker, not an open investigation.** Continuing
+to re-diagnose it from this session's access level is no longer useful — the
+finding is stable across three independent passes (2026-08-29 twice,
+2026-09-02 once). What unblocks it is unchanged: (a) an AWS identity with
+`ec2:*Vpc*`/`ec2:*Subnet*`/`ec2:*RouteTable*` permissions for IPv6 egress on
+`vpc-05958f035e596fe64`, or (b) Supabase dashboard/Management API access to
+inspect and re-register the `migrate` role's Supavisor pooler tenant. Logged
+as **VTID-03804** (`in_progress`, self-allocated per standing rule — the
+platform owner's "continue migrations" instruction in this conversation is
+the direct-instruction trigger for `spec_status=approved`). Reported to the
+platform owner in the same conversation this addendum was written in, in the
+same terms, rather than claiming either fix landed.
