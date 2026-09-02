@@ -717,6 +717,30 @@ describe('VTID-01144: D50 Positive Trajectory Reinforcement Engine', () => {
 
         expect(response.status).not.toBe(401);
       });
+
+      it('fails closed (does not exceed the daily cap) when countTodayReinforcements errors', async () => {
+        // A previous version of this code treated an RPC error from the
+        // daily-count check as "count is 0" (`if (!countError && count >= MAX)`),
+        // which meant an errored count check silently bypassed the daily
+        // reinforcement cap instead of blocking it.
+        mockRpc.mockImplementation((funcName: string) => {
+          if (funcName === 'd50_count_today_reinforcements') {
+            return Promise.resolve({ data: null, error: { message: 'relation does not exist' } });
+          }
+          return Promise.resolve({ data: { ok: true }, error: null });
+        });
+
+        const response = await request(app)
+          .post('/api/v1/reinforcement/generate')
+          .send({});
+
+        expect(response.status).toBe(400);
+        expect(response.body.ok).toBe(false);
+        expect(response.body.delivered).toBe(false);
+        // Must not have reached storeReinforcement -- proves the cap check
+        // short-circuited the request rather than silently falling through.
+        expect(mockRpc).not.toHaveBeenCalledWith('d50_store_reinforcement', expect.anything());
+      });
     });
 
     describe('POST /:id/dismiss', () => {

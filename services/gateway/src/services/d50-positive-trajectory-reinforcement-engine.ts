@@ -704,7 +704,15 @@ export async function generateReinforcement(
 
     // Check daily limit
     const { data: todayCount, error: countError } = await repo.countTodayReinforcements(supabase);
-    if (!countError && todayCount >= REINFORCEMENT_THRESHOLDS.MAX_DAILY_REINFORCEMENTS) {
+    if (countError) {
+      console.error(`${LOG_PREFIX} countTodayReinforcements failed, skipping to avoid exceeding the daily reinforcement cap: ${countError.message}`);
+      return {
+        ok: false,
+        delivered: false,
+        error: countError.message
+      };
+    }
+    if (todayCount >= REINFORCEMENT_THRESHOLDS.MAX_DAILY_REINFORCEMENTS) {
       return {
         ok: false,
         delivered: false,

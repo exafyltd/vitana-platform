@@ -1255,3 +1255,81 @@ replaces `credit_wallet`/`vtn_reward`/`vtn_spend`/`vtn_transfer`, and
 whether ledgers #1/#3/#4 above should be unified into #2 rather than
 patched individually, remains a product decision this document is not
 positioned to make.
+
+## Addendum, 2026-09-02 — Next Steps item 2, the D-series dead-RPC call sites
+
+Confirmed each of the 5 "D-series engine" call sites (item 2 of the base
+doc's Next Steps — the 30-RPC `d41`/`d43`/`d44`/`d45`/`d50` family) is a
+**live, mounted, reachable** API endpoint, not dormant code: every one of
+`boundary-consent.ts` (`/api/v1/boundaries`, `/api/v1/actions`),
+`longitudinal-adaptation.ts` (`/api/v1/longitudinal`),
+`signal-detection.ts` (`/api/v1/predictive-signals`),
+`predictive-forecasting.ts` (`/api/v1/forecast` — the base doc's own "no
+importer found" note for `d45` was a grep miss, not a real finding; a
+route does mount it), and `positive-trajectory-reinforcement.ts`
+(`/api/v1/reinforcement`) is `require()`'d and `mountRouterSync`'d in
+`index.ts`. Every request to these RPCs fails right now in production —
+this matches CLAUDE.md §3's own live note that `d44_predictive_signals`
+"does not exist in live Supabase, confirmed reachable from a live admin
+screen (Intelligence → Signals) that surfaces this as a visible error."
+
+**Per-engine error-handling audit (the actual ask — is each call site
+safe or silently wrong):**
+
+- **`d41-boundary-consent-engine.ts`** — deliberately well-designed for
+  exactly this failure mode. The two GET paths (`fetchPersonalBoundaries`,
+  `fetchConsentBundle`) catch the RPC error, log via `console.warn`,
+  **emit an OASIS event** (`d41.boundary.rpc_error_default`), and return a
+  documented safe default ("the direction is safe — protective, not
+  permissive"). The three write paths (`setPersonalBoundaryRpc`,
+  `setConsentRpc`, `revokeConsentRpc`) correctly propagate the RPC error as
+  `ok:false` → HTTP 500. Net effect: `GET /boundaries`/`GET /consent`
+  silently report "no boundaries set" instead of erroring (a real product
+  gap — the feature never got its DB layer migrated — but not a code
+  correctness bug), while any attempt to actually **set** a boundary or
+  consent fails loudly, as it should. No fix needed.
+- **`d44-signal-detection-engine.ts`** — every exported function
+  (`createSignal`, `getActiveSignals`, `getSignalDetails`,
+  `acknowledgeSignal`, `dismissSignal`, `recordIntervention`,
+  `getSignalStats`) checks `if (error)` and returns `ok:false` with the
+  real error message; `getSignalDetails` additionally degrades gracefully
+  on its two secondary lookups (evidence/history) without hiding the
+  primary signal error. No fix needed.
+- **`d43-longitudinal-adaptation-engine.ts`** — 9 `repo.` calls, 9 matching
+  `if (error)`/`if (...Error)` checks. No fix needed.
+- **`d50-positive-trajectory-reinforcement-engine.ts`** — **one real bug,
+  fixed this session.** `generateReinforcement()`'s daily-cap check read
+  `const { data: todayCount, error: countError } =
+  await repo.countTodayReinforcements(supabase); if (!countError &&
+  todayCount >= MAX_DAILY_REINFORCEMENTS) { reject }` — inverted from the
+  d41/d44 pattern above: here an RPC **error** (which `d50_count_today_
+  reinforcements` being dead guarantees, whenever this DB layer gets
+  migrated back) made `!countError` false, which **skipped the daily-cap
+  rejection entirely** rather than blocking it, letting `generateReinforcement`
+  proceed as if `todayCount` were 0 regardless of the real count. Today
+  this is masked by `d50_store_reinforcement` also being dead (the write
+  fails right after, so no reinforcement is actually created either way)
+  — but the cap-bypass is real and would start mattering the moment either
+  RPC comes back without the other, or once B4/B3 migration restores this
+  family. Fixed to check `countError` first and fail closed (`ok:false`,
+  logged) before ever evaluating the threshold — same "log the error and
+  don't skip the safety check" fix shape used throughout this session's
+  swallowed-error sweep. 1 new test (`d50-positive-trajectory-
+  reinforcement.test.ts`, "fails closed... when countTodayReinforcements
+  errors"), mutation-verified (reverting the fix makes the test fail:
+  `expected 400, received 201`). `tsc --noEmit` clean.
+- **`d34-environmental-mobility-engine.ts`** (touches `user_preferences_
+  get_bundle`, also dead) — uses the *opposite*, safe shape of the same
+  idiom 4 times: `if (!error && data?.ok && data.preferences) { use it }`
+  — an error means the data is simply **not used** (falls through to
+  whatever default follows), not that a safety check is skipped. No fix
+  needed; flagged only so the pattern isn't confused with d50's.
+
+**Net for the base doc's Next Steps item 2:** of the 5 D-series call sites,
+4 were already correct (2 read-degrades-safely, 2 write-fails-loudly, all
+consistent with this repo's own conventions) and 1 had a real,
+now-fixed latent bug. None needed call-site *removal* — every one already
+degrades or fails in a defensible way once its dead RPC is called; the
+open item is still the product decision the base doc already named
+(rebuild the DB layer for these 5 features, or retire them), not a code
+safety problem.
