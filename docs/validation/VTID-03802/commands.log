@@ -1,0 +1,68 @@
+# VTID-03802 — commands run
+
+## 1. Allocate the VTID (before touching code, per §4.1)
+
+curl -s -X POST "https://gateway.vitanaland.com/api/v1/vtid/allocate" \
+  -H "Content-Type: application/json" \
+  -d '{"source":"claude-code","layer":"backend","module":"orb-live-health"}'
+# -> {"ok":true,"vtid":"VTID-03802","num":3802,"id":"a733a6ae-46a9-4c4b-93ce-0e3904f005a8"}
+
+## 2. Establish what's actually live in production, read-only (per the
+##    original task: investigate "general Orb communication doesn't work at
+##    all in any language, it's just connecting all the time")
+
+curl -s "https://gateway.vitanaland.com/api/v1/admin/build-info"
+# -> {"ok":true,"env":"production","git_commit":"4851335b9dfd4fc...",...}
+# Confirms prod already carries the VTID-03800 WS-heartbeat fix — the
+# closest historical match for "connecting all the time" — ruling it out.
+
+curl -s "https://gateway.vitanaland.com/command-hub/orb-widget.js" -o /tmp/prod-orb-widget.js
+diff -q /tmp/prod-orb-widget.js services/gateway/src/frontend/command-hub/orb-widget.js
+# -> IDENTICAL. Deployed widget matches this repo byte-for-byte.
+
+curl -s "https://gateway.vitanaland.com/api/v1/orb/nova-sonic/health"
+# -> {"ok":true,"configured":true,"enabled":true,"ready":true,...,"issues":[]}
+
+curl -s "https://gateway.vitanaland.com/api/v1/orb/health"
+# -> ..."voice_runtime":{"active_provider":"nova_sonic",
+#      "provider_reason":"nova_forced_vertex_unavailable","healthy":false,...}
+# DISCREPANCY: same moment, same resolved provider, two endpoints disagree.
+
+## 3. Locate the defect
+
+grep -n "voiceRuntimeHealthy" services/gateway/src/routes/orb-live.ts
+# -> const voiceRuntimeHealthy = activeProvider === 'vertex' ? vertexReady : livekitReady;
+# Written when 'vertex'/'livekit' were the only two provider values
+# selectUpstreamProvider() could return. VTID-03723 (already merged) added
+# 'nova_sonic'/'cascaded' as real destinations but this call site was never
+# updated.
+
+grep -n "export type UpstreamProviderName" services/gateway/src/orb/live/upstream/upstream-provider-selector.ts
+grep -n "'nova_sonic'" services/gateway/src/orb/live/upstream/provider-name.ts
+
+## 4. Fix
+
+# Extracted deriveVoiceRuntimeHealthy() into upstream-provider-selector.ts
+# (pure, independently testable); wired GET /api/v1/orb/health to use it,
+# reading getNovaSonicConfig(process.env).ready for nova_sonic and
+# isCascadeEnabled() for cascaded.
+
+## 5. Verification available in this sandbox
+
+# No network access to the npm registry (npm ci / npm install -> 403), no
+# pre-existing node_modules, so the project's own jest/tsc could not run
+# here. Used the globally-installed TypeScript compiler as a partial check:
+cd services/gateway
+tsc --noEmit -p tsconfig.json --ignoreDeprecations 6.0 2>&1 > /tmp/tsc-full.txt
+grep -n "upstream-provider-selector\.ts\|routes/orb-live\.ts" /tmp/tsc-full.txt \
+  | grep -v "Cannot find module\|Cannot find name 'console'\|Cannot find name 'process'\|Cannot find name 'crypto'"
+# -> every remaining error is pre-existing missing-@types/node/Express-stub
+#    noise unrelated to the ~25 lines this PR touches (see
+#    outputs/tsc-manual-check.txt for the exact filtered list); none
+#    reference deriveVoiceRuntimeHealthy or the voiceRuntimeHealthy
+#    assignment this PR added.
+
+# The gateway's own Build Gate (npm ci && npm run build) and the
+# "Gateway (Jest, ~7.5k tests)" CI check run are the first real
+# compile+test execution of this change, in GitHub Actions (which has npm
+# registry access) — watched to green after push.
