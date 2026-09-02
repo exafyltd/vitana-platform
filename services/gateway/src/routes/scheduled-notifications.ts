@@ -1041,7 +1041,13 @@ router.post('/meetup-reminders', async (req: Request, res: Response) => {
 // in-flight crons, not just future UI (defense-in-depth, per this repo's
 // own "assume multiple gates are intentional" convention).
 // =============================================================================
+// public-route — invoked internally by the AP-1700 automation-registry
+// heartbeat (runEventGameEndingSoon) via GATEWAY_INTERNAL_URL, not exposed
+// publicly by design; same pattern as meetup-reminders/upcoming-events.
 router.post('/event-game-ending-soon', async (req: Request, res: Response) => {
+  // impact-allow-no-oasis — fan-out only, no state transition (event_games
+  // itself is never written here). Mirrors /upcoming-events' own reasoning
+  // for the same "read + notify, nothing mutated" shape.
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
@@ -1102,6 +1108,9 @@ router.post('/event-game-ending-soon', async (req: Request, res: Response) => {
 // already enforced inline, at award time, by every DB trigger regardless of
 // whether or when this handler ever runs.
 // =============================================================================
+// public-route — invoked internally by the AP-1701 automation-registry
+// heartbeat (runEventGameEnded) via GATEWAY_INTERNAL_URL, not exposed
+// publicly by design; same pattern as meetup-reminders/upcoming-events.
 router.post('/event-game-ended', async (req: Request, res: Response) => {
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
@@ -1148,6 +1157,32 @@ router.post('/event-game-ended', async (req: Request, res: Response) => {
       { url: '/community/event-game', event_game_id: game.id, entity_id: game.id },
       () => ({ name: game.name }),
     );
+  }
+
+  // Record the status='live'->'ended' transition — a real state change, not
+  // a poll (matches the emitOasisEvent pattern used elsewhere in this file,
+  // e.g. daily-pace-notifications). Best-effort — never fail the response
+  // if the OASIS write fails, and only fires when a game actually
+  // transitioned in this call (the UPDATE...RETURNING is what makes that
+  // exact, not an approximation).
+  for (const game of justEnded || []) {
+    try {
+      const { emitOasisEvent } = await import('../services/oasis-event-service');
+      await emitOasisEvent({
+        type: 'event_game.lifecycle.ended' as any,
+        source: 'gateway',
+        // VTID format is VTID-\d{4,5} per CLAUDE.md §4; no real VTID is bound
+        // to this feature yet (this session had no live network access to
+        // self-allocate one — see the PR body), so use the BOOTSTRAP- prefix
+        // accepted by the OASIS validator and the AUTO-DEPLOY regex.
+        vtid: 'BOOTSTRAP-MAXINA-EVENT-GAME',
+        status: 'info',
+        message: `event_game ${game.id} (${game.name}) transitioned live -> ended`,
+        payload: { event_game_id: game.id, tenant_id: tenantId },
+      } as any);
+    } catch (oasisErr: any) {
+      console.warn('[Scheduled] event_game_ended OASIS emit failed:', oasisErr?.message);
+    }
   }
 
   console.log(`[Scheduled] event_game_ended → ${(justEnded || []).length} games ended, ${dispatched} notifications`);
