@@ -1,0 +1,153 @@
+VTID-03781 — command log
+
+=== VTID allocation ===
+$ SELECT * FROM allocate_global_vtid('claude-code', 'gateway', 'orb-live');
+-> {"vtid":"VTID-03781","num":3781,"id":"8d1ebff3-f5cb-4795-9279-3f4df4e7d8fc"}
+(Note: VTID-03780 was already taken by the time this ran — 03781 is the
+real allocated id; all code comments and PR references use VTID-03781.)
+
+$ UPDATE vtid_ledger SET title=..., summary=..., description=...,
+  status='in_progress', spec_status='approved' WHERE vtid='VTID-03781';
+-> {"vtid":"VTID-03781","status":"in_progress","spec_status":"approved"}
+
+=== Branch state ===
+Designated branch claude/my-journey-catalog-multilingual-qrwxng was already
+reset onto fresh origin/main (61260897, this session's own VTID-03778
+merge) from the prior VTID in this same session — confirmed via git status
+(clean) before starting.
+
+=== Investigation (read, no live-browser access) ===
+
+Traced the full My Journey guided-topic teaching lifecycle end to end:
+  - services/gateway/src/orb/live/tools/live-tool-catalog.ts — the
+    end_guided_topic_teaching tool declaration + description (instructs
+    the model to call it after teaching, not before).
+  - services/gateway/src/routes/orb-live.ts:6542 — the server case
+    handler, emits an orb_directive over SSE+WS, logs, emits an
+    orb.live.diag event.
+  - services/gateway/src/frontend/command-hub/orb-widget.js —
+    _endGuidedTopicTeaching() (shared teardown for both the directive
+    handler and the backstop timer), GUIDED_TOPIC_BACKSTOP_MS (5 min
+    safety net), focusGuidedTopic() (tears down any prior session
+    synchronously via _sessionStop() before arming a new topic, clears any
+    prior backstop interval before arming a new one), _hide() (X button /
+    every close path — stops audio + hides overlay synchronously, no
+    user-gesture-flag gate), _s._sessionGeneration (staleness guard on the
+    async drain poll).
+  - services/gateway/src/orb/live/instruction/guided-topic-narration-prompt.ts
+    — buildGuidedTopicNarrationBlock(): confirmed the GUIDE MODE system
+    instruction already explicitly tells the model, in both languages and
+    both narrated/non-narrated branches, to call end_guided_topic_teaching
+    once done and NOT drift into general conversation.
+  - vitana-v1/src/hooks/useOrbVoiceWidget.ts — onGuidedTopicTeachingEnd
+    relayed as a window CustomEvent (vitana:guided-topic-teaching-complete)
+    in BOTH navOpts call sites (main init + auth-change reinit).
+  - vitana-v1/src/components/journey/GuidedJourneyCatalog.tsx (via its own
+    VTID-03763 test file) — listens for that event and calls
+    completePractice(topicId) — the EXISTING, step-scoped manual "Mark as
+    Done" logic, not a session-wide or new competing implementation.
+
+Read the existing test files documenting each of the above as already
+shipped and tested: test/orb/live/guided-topic-teaching-complete-signal.test.ts
+(VTID-03762/03763), useOrbVoiceWidget.teaching-complete.test.ts,
+GuidedJourneyCatalog.teaching-complete.test.tsx (both VTID-03763).
+
+Read docs/validation/VTID-03778/{acceptance.md,commands.log} and the
+VTID-03778 test file to confirm the most recent prior fix (overlay froze
+on server-initiated session_ended) is intact post-merge.
+
+=== Gap found ===
+
+Grepped for an idempotency guard around _endGuidedTopicTeaching (e.g.
+_guidedTopicTeachingEndInFlight or similar) — none exists. Two independent
+completion signals (model tool call via the directive; the 5-minute
+backstop timer) both call the same _endGuidedTopicTeaching() function with
+nothing serializing them — a genuine, if narrow, race: the model calling
+the tool right as the backstop's periodic 15s check also trips, or a
+duplicate directive over a flaky transport. Each entry independently
+drains audio then calls _hide() + fires onGuidedTopicTeachingEnd ->
+completePractice(topicId) a second time for the same topic.
+
+Also checked whether end_teaching_session's server-side
+`(session as any).teacherModeEnded = true;` pattern (Teacher Mode, a
+sibling feature) was worth mirroring for guided-topic teaching, to reject
+new AI turns server-side after completion:
+$ grep -rn "teacherModeEnded" services/gateway/src
+-> only ONE occurrence (the assignment itself) — nothing in the codebase
+   ever reads this flag. It is dead state in the sibling feature, not a
+   proven protective mechanism. Not copied — see acceptance.md's
+   "Deliberately NOT attempted" section for the reasoning.
+
+=== Implementation ===
+
+Edited services/gateway/src/frontend/command-hub/orb-widget.js:
+  1. Declared _guidedTopicTeachingEnded: false in the widget's state
+     object, alongside the sibling guided-topic lifecycle flags.
+  2. _endGuidedTopicTeaching(topicId, reason): added the guard check +
+     set as the first synchronous statement, before `var attempts = 0;`
+     and before any setTimeout is scheduled.
+  3. focusGuidedTopic(topicId): reset _s._guidedTopicTeachingEnded = false
+     alongside the other fresh-tap resets (audio-delivered flag,
+     zero-audio-fail counter).
+
+$ node --check src/frontend/command-hub/orb-widget.js
+-> (no output — syntax OK)
+
+Edited scripts/ci/command-hub-ownership-guard.js: added VTID-03781 to
+ALLOWED_VTID_PATTERN (this PR touches orb-widget.js again).
+$ node --check scripts/ci/command-hub-ownership-guard.js
+-> (no output — syntax OK)
+
+=== Tests written ===
+New file: test/frontend/orb-widget-guided-topic-completion-idempotency.test.ts
+  (5 static-source-check tests, same established pattern as the sibling
+   guided-topic-teaching-complete-signal.test.ts and
+   orb-widget-session-ended-overlay-close.test.ts suites — the widget is
+   a plain browser IIFE with no export surface.)
+
+$ cd services/gateway && npx jest test/frontend/orb-widget-guided-topic-completion-idempotency.test.ts test/orb/live/guided-topic-teaching-complete-signal.test.ts
+-> Test Suites: 2 passed, 2 total
+   Tests:       27 passed, 27 total
+   (full output: outputs/jest-vtid-03762-sibling.txt)
+
+=== Mutation testing ===
+$ cp src/frontend/command-hub/orb-widget.js /tmp/orb-widget-781.js.bak
+$ grep -n "_s._guidedTopicTeachingEnded = true;" src/frontend/command-hub/orb-widget.js
+-> line 4293
+$ sed -i '4293s/.*/    \/\/ VTID-03781 mutation test: guard-set removed/' src/frontend/command-hub/orb-widget.js
+$ node --check src/frontend/command-hub/orb-widget.js
+-> syntax OK (confirms clean single-line mutation)
+$ npx jest test/frontend/orb-widget-guided-topic-completion-idempotency.test.ts
+-> Test Suites: 1 failed, 1 total
+   Tests:       2 failed, 3 passed, 5 total
+   Failed, exactly:
+     - "_endGuidedTopicTeaching() checks the guard and returns before any
+        async work if already ended"
+     - "the guard set happens unconditionally on entry — not nested inside
+        the audio-drain poll"
+   Passed (unaffected, as expected):
+     - "declares the _guidedTopicTeachingEnded state flag, defaulting false"
+     - "focusGuidedTopic() resets the guard for a fresh tap..."
+     - "_hide() does not also reset the guard mid-teaching..."
+$ cp /tmp/orb-widget-781.js.bak src/frontend/command-hub/orb-widget.js
+$ diff /tmp/orb-widget-781.js.bak src/frontend/command-hub/orb-widget.js
+-> (no output — clean restore)
+$ node --check src/frontend/command-hub/orb-widget.js
+-> syntax OK
+$ npx jest test/frontend/orb-widget-guided-topic-completion-idempotency.test.ts
+-> Test Suites: 1 passed, 1 total
+   Tests:       5 passed, 5 total
+
+=== Full verification ===
+$ npx tsc --noEmit
+-> (no output — clean; outputs/tsc-noemit.txt)
+
+$ npx jest
+-> Test Suites: 1 skipped, 717 passed, 718 total
+   Tests:       29 skipped, 6 todo, 13486 passed, 13521 total
+   Snapshots:   44 passed, 44 total
+   Time:        71.72s
+   0 failures. (full run's tail summary: outputs/jest-full-suite.txt —
+   the complete raw log was ~5MB and trimmed to its final summary lines
+   for the evidence pack; the run itself was captured in full in this
+   session's own background task output before trimming.)

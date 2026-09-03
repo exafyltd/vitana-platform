@@ -1,0 +1,109 @@
+# VTID-03733 — commands actually run.
+
+# --- Investigation --------------------------------------------------------
+# Reported live: "Turkish still has English subtitles/captions under the
+# orb unlike other languages." Dispatched a research agent to find the
+# root cause across both vitana-v1 and vitana-platform before writing any
+# code. It found: no live transcript in this widget (deliberately removed);
+# the ".vtorb-status" text is a small set of fixed status phrases, resolved
+# per-language via _resolveCaptionLocale()/_loc()/_caption() against a
+# {en,de,es,sr,fr,pt,ru,pl,zh,ar} dictionary set — no `tr` entry anywhere,
+# so every Turkish session fell through to the `en` default.
+
+grep -n "_CAPTION_LOCALES\|_resolveCaptionLocale" \
+  services/gateway/src/frontend/command-hub/orb-widget.js
+#   -> confirmed: _CAPTION_LOCALES (the admit-list) had no 'tr'.
+
+# Verified the true scope with two independent counts, since a naive grep
+# on one quote style under-counts (some phrases use double-quoted en:/fr:
+# fields because the English/French text itself contains an apostrophe):
+
+grep -c "ar: '" services/gateway/src/frontend/command-hub/orb-widget.js
+#   -> 42 (every phrase object's LAST field, always single-quoted — Arabic
+#      text never contains a Latin apostrophe, so this is a reliable count
+#      regardless of any other field's quote style)
+
+# Confirmed the full set: _CAPTIONS (13 keys) + _DISCONNECT_LABELS (4) +
+# _RECOVERY_LABELS (4) + _THINKING_QUICK(6)/_PRIMARY(7)/_ALTERNATES(8) = 42.
+# Also confirmed the "thinking" filler pool (_THINKING_ALL) renders through
+# the SAME _loc()/_resolveCaptionLocale() resolver as everything else
+# (_setStatus(_loc(queue[0])) in _startThinkingProgress()) — so it was
+# equally broken for Turkish, not just the smaller CAPTIONS/DISCONNECT/
+# RECOVERY dictionaries a narrower read might have stopped at.
+
+# --- Fix --------------------------------------------------------------------
+# Wrote a small Python script (not committed — one-shot) that, for each of
+# the 42 phrase objects, looked up its unique `ar:` field value in a
+# hand-written EN->TR translation table and inserted `, tr: '<value>'`
+# immediately after the ar: field. Chosen over 42 individual Edit calls for
+# the same reason the codebase's own bulk-translation tooling exists:
+# mechanical, verifiable, and the diff is trivially auditable (one `tr:`
+# field appended per line, nothing else touched). Verified zero unmatched
+# ar: values (42/42 matched) before writing the file.
+#
+# Also added 'tr' to _CAPTION_LOCALES (the resolver's admit-list) — without
+# this the new translations would exist but _resolveCaptionLocale() would
+# still never select them.
+
+node -c services/gateway/src/frontend/command-hub/orb-widget.js
+#   -> exit 0 — syntax valid. One translation (tapToHear) contains a Turkish
+#      apostrophe ("Vitana'yı") — confirmed it was correctly escaped to
+#      \' by the insertion script, not left as a raw quote that would have
+#      broken the enclosing single-quoted string.
+
+grep -c "tr: '" services/gateway/src/frontend/command-hub/orb-widget.js
+#   -> 42 — matches the ar: count exactly.
+
+# --- Cache-bust bump (CLAUDE.md IF-THEN rule 25) -----------------------------
+
+grep -rn "orb-widget.js?v=" services/gateway/ vitana-v1/ 2>/dev/null
+#   -> 4 references; 2 are dist/ build outputs (git-ignored, confirmed via
+#      `git check-ignore -v`, not touched), 2 are source:
+#      services/gateway/src/frontend/command-hub/index.html
+#      vitana-v1/index.html (loads the SAME gateway-hosted script — its own
+#      comment says the ?v= bump "forces browsers to refetch instead of
+#      serving the cached prod widget", so both needed bumping, not just
+#      the gateway repo's own Command Hub page)
+# Both bumped to ?v=20260825-tr-captions.
+
+# --- Test updates -------------------------------------------------------------
+# Two existing test files independently pin the exact 10-locale shape of
+# these dictionaries via strict-order regexes — both needed updating to
+# 11-locale (adding `, tr: ${Q}`) or they would have failed against the fix:
+#   services/gateway/test/frontend/orb-widget-caption-i18n.test.ts
+#   services/gateway/test/frontend/orb-widget-thinking-messages.test.ts
+
+cd services/gateway
+npx jest --testPathPattern="orb-widget-caption-i18n|orb-widget-thinking-messages"
+#   -> Test Suites: 2 passed, 2 total / Tests: 15 passed, 15 total
+#   Output: outputs/targeted-tests.txt
+
+npx tsc --noEmit
+#   -> exit 0, empty output
+#   Output: outputs/tsc.txt
+
+npx jest
+#   -> full gateway suite
+#   Output: outputs/full-suite.txt
+
+# --- CI follow-up: two VALIDATOR-CHECK gates rejected the first push -------
+# (1) Path Ownership Guard (VTID-0302): touching
+#     services/gateway/src/frontend/command-hub/* requires a DEV-COMHU-*
+#     marker in the branch name or PR title. Neither carried one — fixed by
+#     retitling the PR to append "(DEV-COMHU-03733)" (the guard's
+#     ALLOWED_VTID_PATTERN accepts the generic `DEV-COMHU-\d+` shape, not
+#     just its explicit legacy allowlist).
+# (2) Acceptance Mapping Gate: AC-3 above had prose explaining why no
+#     isolated test was added, but no literal TEST:/CURL:/UI: line within
+#     12 lines of the AC-3 heading — the gate's regex requirement, not a
+#     judgment call. Rather than just satisfying the gate syntactically,
+#     added a real test that pins _CAPTION_LOCALES itself (the admit-list
+#     array literal) and _resolveCaptionLocale()'s walk-then-fallback shape
+#     — closing the actual gap AC-3 flagged (a dictionary entry present but
+#     the locale absent from the admit-list would still silently resolve to
+#     'en'), not just adding a token to pass CI.
+
+npx jest --testPathPattern="orb-widget-caption-i18n|orb-widget-thinking-messages"
+#   -> Test Suites: 2 passed, 2 total / Tests: 16 passed, 16 total (was 15;
+#      +1 new AC-3 test)
+#   Output: outputs/targeted-tests.txt (re-run, overwrites the above)

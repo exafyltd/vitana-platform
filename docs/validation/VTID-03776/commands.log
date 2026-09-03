@@ -1,0 +1,197 @@
+VTID-03776 — command log
+
+=== VTID allocation ===
+$ SELECT * FROM allocate_global_vtid('claude-code', 'gateway', 'orb-live');
+-> {"vtid":"VTID-03776","num":3776,"id":"aacc1f82-f1ea-4050-bf38-58621d483bd1"}
+
+$ UPDATE vtid_ledger SET title=..., summary=..., description=...,
+  status='in_progress', spec_status='approved' WHERE vtid='VTID-03776';
+-> {"vtid":"VTID-03776","status":"in_progress","spec_status":"approved"}
+
+=== Branch reset ===
+Designated branch claude/my-journey-catalog-multilingual-qrwxng carried
+only already-merged VTID-03774 history (squash SHA 03b67f0f on main).
+$ git fetch origin main
+-> 16e57b0d..03b67f0f  main -> origin/main
+$ git checkout -B claude/my-journey-catalog-multilingual-qrwxng origin/main
+-> branch reset onto fresh main (03b67f0f)
+
+=== Live evidence gathering (Supabase MCP, project inmkhvwdcuyhnxkgfvsb) ===
+
+Query 1 — orb_wake_timelines recent activity (ruled out as the wrong table
+for this specific investigation; no guided_topic sessions in the sampled
+window landed there with useful detail):
+SELECT session_id, transport, started_at, updated_at, ended_at,
+  jsonb_array_length(events) AS event_count, aggregates
+FROM orb_wake_timelines WHERE updated_at > now() - interval '40 minutes'
+ORDER BY updated_at DESC LIMIT 20;
+
+Query 2 — oasis_events guided_topic session counts, grouped:
+SELECT metadata->>'session_id' AS session_id, event, count(*) AS cnt,
+  min(created_at) AS first_at, max(created_at) AS last_at
+FROM oasis_events
+WHERE created_at > now() - interval '90 minutes'
+  AND (topic ILIKE '%guided%' OR event ILIKE '%guided%'
+       OR message ILIKE '%guided%' OR metadata::text ILIKE '%guided_topic%')
+GROUP BY 1,2 ORDER BY first_at ASC LIMIT 100;
+-> Result: ~55 distinct session_id rows, each with cnt=1, spaced ~3.4-4.5s
+   apart continuously from 13:25:45 to 13:30:44 UTC (5+ minutes). This is
+   the key finding: a brand-new session, not a retry within one session,
+   roughly every 3.4 seconds, for the entire window.
+
+Query 3 — the actual topic/dedupe_key + session_id detail for the same
+window:
+SELECT created_at, topic, status, message,
+  metadata->>'session_id' AS session_id,
+  metadata->>'guided_topic_id' AS guided_topic_id,
+  metadata->>'guided_topic_resume' AS guided_topic_resume,
+  metadata->>'reason' AS reason, metadata->>'dedupe_key' AS dedupe_key
+FROM oasis_events
+WHERE created_at > now() - interval '90 minutes'
+  AND metadata::text ILIKE '%guided_topic%'
+ORDER BY created_at ASC LIMIT 60;
+-> Confirms every candidate/suggested event pair carries
+   dedupe_key:"guided_topic:T003", and each is immediately followed
+   (~500ms later) by a fresh orb.live.diag event under a BRAND NEW
+   session_id.
+
+Query 4 — full orb.live.diag metadata for the first 3 session_ids in the
+loop:
+SELECT created_at, metadata FROM oasis_events
+WHERE created_at > now() - interval '90 minutes' AND topic = 'orb.live.diag'
+  AND metadata->>'session_id' IN (
+    'live-a0fd7ada-0093-416d-8ac1-cd55520b3cb1',
+    'live-0039d86f-d20e-4e1a-8fbf-0dd9b62acb5a',
+    'live-1fba821e-3ef9-4bc1-a7a1-fa15bbeb8ad5')
+ORDER BY created_at ASC LIMIT 30;
+-> Per-session sequence confirmed identical across all 3 sampled sessions:
+   guided_topic_audio_bridge_sent(T003) -> nova_instruction_sanitized ->
+   usage_totals -> speaking(greeting_sent:true) ->
+   upstream_error(code:nova_validation, "blocked by our content filters")
+   -> upstream_closed(reason:nova_validation) ->
+   nova_premature_close_retry -> upstream_error(nova_validation, 2nd time)
+   -> upstream_closed(nova_validation, 2nd time). Session ends; next
+   session_id begins ~3.4s later.
+
+=== Code investigation (read, no live-browser access) ===
+Read services/gateway/src/orb/live/session/live-session-controller.ts
+  (session object literal — guided_topic_id/guided_topic_resume storage,
+  confirmed correct from VTID-03774, unrelated to this loop).
+Read services/gateway/src/frontend/command-hub/orb-widget.js:
+  - grep for _attemptReconnect / _hide / reconnectTimer / MAX_WIDGET_RECONNECTS
+  - read _attemptReconnect() in full (~90 lines)
+  - read _hide() in full
+  - read _sessionStart()'s early _userRequestedClose guard
+  - grep for _userRequestedClose vs _userInitiatedStop (confirmed two
+    distinct flags, both correctly honored across the relevant guard sites)
+  - grep for a dedicated "connecting" ambient sound loop mechanism ->
+    none found; the reported "Connecting sound... non-stop" is the
+    guided-topic Polly narration itself replaying every ~3.4s, not a
+    separate UI chime
+  - grep for the close-button DOM binding (`closeBtn.addEventListener`) ->
+    confirmed a single, one-time addEventListener call, not re-attached
+    per render
+  - read _playAudio()'s guard (`if (_s._userInitiatedStop || !_s.overlayVisible) return;`)
+    -> confirmed late-arriving audio after a close is correctly dropped
+
+Root cause isolated: `_attemptReconnect()`'s success handler
+`if (_s.active) { _s._reconnectCount = 0; ... }` resets the backoff budget
+on bare transport-active, not on real audio heard — defeating
+MAX_WIDGET_RECONNECTS/RECONNECT_DELAYS entirely once a guided topic's
+opener is deterministically content-filter-blocked (a scenario only
+reachable, in practice, since VTID-03774's own fixes started correctly
+persisting guided_topic_id across every reconnect).
+
+=== Implementation ===
+Edited services/gateway/src/frontend/command-hub/orb-widget.js:
+  1. Added _guidedTopicZeroAudioFailCount: 0 to initial _s state.
+  2. Reset it in focusGuidedTopic() (fresh tap).
+  3. Reset it in _hide() (real close).
+  4. Fix B: in _attemptReconnect(), before the MAX_WIDGET_RECONNECTS check,
+     added the zero-audio circuit breaker (increments on a guided-topic
+     zero-audio disconnect; drops guidedTopic/_guidedTopicInFlight at >=2).
+  5. Fix A: in _attemptReconnect()'s _sessionStart().then() success
+     handler, gated `_s._reconnectCount = 0` on `_s._audioEverHeardThisOpen`
+     instead of resetting unconditionally inside `if (_s.active)`.
+
+$ node --check services/gateway/src/frontend/command-hub/orb-widget.js
+-> (no output — syntax OK)
+
+=== Tests written ===
+New file: test/frontend/orb-widget-guided-topic-reconnect-loop.test.ts
+  (12 tests: 3 lifecycle, 4 Fix-B breaker, 4 Fix-A budget-reset behavioral,
+   1 "reconnect loop otherwise unchanged" regression guard).
+
+Updated: test/frontend/orb-widget-guided-topic-reconnect.test.ts
+  "a client-side reconnect (_attemptReconnect -> _sessionStart) can still
+  see a pending guided topic" — old assertion (`_attemptReconnect` body
+  must never contain `_s.guidedTopic = null`) no longer holds now that
+  Fix B legitimately, conditionally nulls it. Updated to assert any such
+  null is provably inside the breaker's own `>= 2` guard (500-char lookback
+  window, sized to the actual console.warn message length between the gate
+  and the assignment).
+
+$ cd services/gateway && npx jest \
+  test/frontend/orb-widget-guided-topic-reconnect-loop.test.ts \
+  test/frontend/orb-widget-reconnect-cue-not-premature.test.ts \
+  test/frontend/orb-widget-guided-topic-mid-lesson-resume.test.ts \
+  test/frontend/orb-widget-guided-topic-reconnect.test.ts \
+  test/frontend/orb-widget-failed-start-recovery.test.ts \
+  test/frontend/orb-widget-audio-ready.test.ts \
+  test/frontend/orb-widget-auth-reactive.test.ts
+-> Test Suites: 7 passed, 7 total
+   Tests:       68 passed, 68 total
+   (full output: outputs/jest-vtid-03776-suite.txt)
+
+=== Mutation testing ===
+
+--- Fix A mutation ---
+$ python3 -c "... replace the _audioEverHeardThisOpen-gated reset with
+  the old unconditional '_s._reconnectCount = 0;' ..."
+-> mutated Fix A
+$ npx jest <same 7 files>
+-> Test Suites: 1 failed, 6 passed, 7 total
+   Tests:       1 failed, 67 passed, 68 total
+   Failed: exactly "gates the reset on _s._audioEverHeardThisOpen, nested
+   inside the _s.active branch" — no other test affected.
+$ cp /tmp/orb-widget.js.bak services/gateway/src/frontend/command-hub/orb-widget.js
+$ diff /tmp/orb-widget.js.bak services/gateway/src/frontend/command-hub/orb-widget.js
+-> (no output — clean restore)
+$ node --check services/gateway/src/frontend/command-hub/orb-widget.js
+-> OK
+
+--- Fix B mutation ---
+$ sed -i '4413,4422d' services/gateway/src/frontend/command-hub/orb-widget.js
+  (deleted the entire `if (_s._guidedTopicInFlight && !_s._audioEverHeardThisOpen) { ... }`
+  block by exact line range, verified against `sed -n` output before deleting)
+$ node --check services/gateway/src/frontend/command-hub/orb-widget.js
+-> syntax OK (confirms clean line-range deletion, no dangling braces)
+$ npx jest <same 7 files>
+-> Test Suites: 2 failed, 5 passed, 7 total
+   Tests:       4 failed, 64 passed, 68 total
+   Failed, exactly:
+     - "increments the zero-audio fail counter only when a guided topic is
+       in flight AND nothing has been heard yet"
+     - "drops both guidedTopic and _guidedTopicInFlight once the threshold
+       is reached"
+     - "the breaker check runs before the MAX_WIDGET_RECONNECTS stuck-state
+       check, so a dropped topic still gets a fair remaining-budget retry"
+     - "a client-side reconnect (_attemptReconnect -> _sessionStart) can
+       still see a pending guided topic" (the updated sibling VTID-03675
+       test, correctly reacting to the breaker's absence)
+   No other test affected.
+$ cp /tmp/orb-widget.js.bak services/gateway/src/frontend/command-hub/orb-widget.js
+$ diff /tmp/orb-widget.js.bak services/gateway/src/frontend/command-hub/orb-widget.js
+-> (no output — clean restore)
+$ node --check services/gateway/src/frontend/command-hub/orb-widget.js
+-> syntax OK
+
+=== Full verification ===
+$ npx tsc --noEmit
+-> (no output — clean; outputs/tsc-noemit.txt)
+
+$ npx jest
+-> Test Suites: 1 skipped, 715 passed, 715 of 716 total
+   Tests:       29 skipped, 6 todo, 13476 passed, 13511 total
+   Snapshots:   44 passed, 44 total
+   (full output: outputs/jest-full-suite.txt)

@@ -1,0 +1,72 @@
+# VTID-03723 — commands actually run.
+
+# --- Why this exists -------------------------------------------------------
+#
+# Reported live, repeatedly, on staging: Polish and Portuguese sessions spoke
+# the correct-accent voice but the WORDS were English. Every prior fix in
+# this chain (VTID-03711 PCM rate, VTID-03720 cascade flag, VTID-03721 cascade
+# health endpoint, VTID-03722 cascade turn boundary) was real and individually
+# verified — and none of it moved the symptom, because none of those code
+# paths were ever reached.
+
+# --- Root cause, confirmed live against staging -----------------------------
+
+curl -s "https://preview-aws-gateway.vitanaland.com/api/v1/orb/health"
+#   -> {"model":"gemini-2.0-flash-exp","transport":"SSE","gemini_configured":true,...}
+#   Decisive: a live session is instantiating the Gemini/Vertex client, not
+#   Nova and not the cascade — despite Vertex being permanently dead since
+#   the GCP shutdown (2026-08-16).
+
+curl -s "https://preview-aws-gateway.vitanaland.com/api/v1/orb/active-provider"
+#   -> {"active_provider":"vertex","effectiveProvider":"vertex","reason":"default_vertex",...}
+#   staging's voice.active_provider system_config row is 'vertex'.
+
+# Cross-checked: has the cascade EVER fired, on any session, ever?
+#   SELECT count(*) FROM oasis_events WHERE type LIKE 'orb.upstream.cascaded.%'
+#   -> 0 (read-only query against production, prior session)
+#   Zero successes AND zero failures — not "rarely used", structurally
+#   unreachable, because selectUpstreamProvider() returned {provider:'vertex'}
+#   before the cascade (or Nova) was ever consulted.
+
+# --- Source-level confirmation: count the vertex return sites ---------------
+
+grep -c "provider: 'vertex'" \
+  services/gateway/src/orb/live/upstream/upstream-provider-selector.ts
+#   -> 11 (before this fix)
+
+grep -c "provider: 'vertex'" \
+  services/gateway/src/orb/live/upstream/upstream-provider-selector.ts
+#   -> 0 (after this fix — see the diff)
+
+# Two more hardcoded sites found OUTSIDE the selector that would have
+# defeated the fix even with the selector corrected:
+grep -n "provider: 'vertex'" services/gateway/src/routes/orb-live.ts
+#   -> (before) L7137 config-read-failure catch-block default
+#   -> (before) L7157 idle-Nova-rotation-exhaustion override
+#   -> (after)  0 matches for an unconditional provider:'vertex' assignment
+#      (the remaining 'vertex' occurrences are diagnostic labels in gated
+#      Nova-retry branches, corrected to 'nova_sonic' to match reality)
+
+# --- Targeted test run (selector + 3 sibling suites + Voice Lab bench) -----
+
+npx jest --testPathPattern="upstream-provider-selector|vertex-unavailable-forces-nova|nova-global-promotion|cascaded-voice|nova-sonic-test-runner"
+#   -> Test Suites: 5 passed, 5 total
+#      Tests:       99 passed, 99 total
+#   Output: outputs/targeted-tests.txt
+
+# --- Full gateway build + orb suite -----------------------------------------
+
+npx tsc --noEmit
+#   -> exit 0, empty output
+#   Output: outputs/tsc.txt
+
+npx jest --testPathPattern="orb"
+#   -> Test Suites: 201 passed, 201 total
+#      Tests: 1 skipped, 6 todo, 3713 passed, 3720 total
+#   Output: outputs/orb-suite.txt
+
+# --- Full repo-wide test run (services/gateway) -----------------------------
+# (already run once before writing the evidence pack; not re-captured to file
+#  since it duplicates the orb-suite run at 201/201 of the 695 total suites —
+#  see the PR body's Testing section for the full-repo number: 694/695 suites,
+#  13210/13245 tests, 1 pre-existing unrelated skip)

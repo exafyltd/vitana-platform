@@ -49,12 +49,14 @@ const TENANT_UUID = '22222222-2222-4222-8222-222222222222';
 
 interface DbCall {
   table: string;
-  op: 'insert' | 'select' | 'rpc';
+  op: 'insert' | 'select' | 'rpc' | 'update';
   payload?: unknown;
 }
 
 function makeStubSupabase(opts: {
   diaryInsertError?: { message: string } | null;
+  diaryUpdateError?: { message: string } | null;
+  recentDiaryEntry?: { id: string; text: string; created_at: string } | null;
   preIndexRow?: Record<string, number> | null;
   rpcReturn?: { data: unknown; error?: { message: string } | null };
 }) {
@@ -67,6 +69,26 @@ function makeStubSupabase(opts: {
             calls.push({ table, op: 'insert', payload: row });
             return { error: opts.diaryInsertError ?? null };
           },
+          select: (_cols: string) => ({
+            eq: (_c1: string, _v1: unknown) => ({
+              eq: (_c2: string, _v2: unknown) => ({
+                order: (_col: string, _order: unknown) => ({
+                  limit: (_n: number) => ({
+                    maybeSingle: async () => {
+                      calls.push({ table, op: 'select' });
+                      return { data: opts.recentDiaryEntry ?? null, error: null };
+                    },
+                  }),
+                }),
+              }),
+            }),
+          }),
+          update: (patch: Record<string, unknown>) => ({
+            eq: async (_col: string, _val: unknown) => {
+              calls.push({ table, op: 'update', payload: patch });
+              return { error: opts.diaryUpdateError ?? null };
+            },
+          }),
         };
       }
       if (table === 'vitana_index_scores') {
@@ -296,6 +318,99 @@ describe('VTID-03042 — save_diary_entry lifted to shared dispatcher', () => {
     const r = result.result as { index_delta: { total: number } | null };
     expect(r.index_delta?.total).toBe(12);            // 212 - 200, real change
     expect(result.text).toMatch(/moved up 12/);
+  });
+
+  // VTID-03793 — one continuous voice dictation must land as ONE diary
+  // entry even when Nova Sonic calls save_diary_entry multiple times for
+  // it (one per clause/fact). This is the deterministic server-side
+  // backstop for that model-compliance gap.
+  describe('VTID-03793 — coalesce rapid-fire voice diary fragments', () => {
+    test('12. a second voice call within the coalesce window UPDATES the recent row instead of inserting a new one', async () => {
+      const sb = makeStubSupabase({
+        recentDiaryEntry: {
+          id: 'entry-1',
+          text: 'und ich habe kartoffelpüree mit zwei eiern gegessen',
+          created_at: new Date(Date.now() - 5_000).toISOString(), // 5s ago
+        },
+        preIndexRow: null,
+        rpcReturn: { data: { ok: true, score_total: 50 } },
+      });
+      const result = await tool_save_diary_entry(
+        { raw_text: 'was natürlich zu wenig ist' },
+        identity,
+        sb as never,
+      );
+      expect(result.ok).toBe(true);
+      if (result.ok !== true) return;
+      // Never a fresh insert — the fragment must be merged into entry-1.
+      expect(sb._calls.some((c) => c.table === 'diary_entries' && c.op === 'insert')).toBe(false);
+      const updateCall = sb._calls.find((c) => c.table === 'diary_entries' && c.op === 'update');
+      expect(updateCall).toBeDefined();
+      const patch = updateCall?.payload as { text: string };
+      expect(patch.text).toBe(
+        'und ich habe kartoffelpüree mit zwei eiern gegessen was natürlich zu wenig ist',
+      );
+      const r = result.result as { diary_entry_written: boolean };
+      expect(r.diary_entry_written).toBe(true);
+    });
+
+    test('13. a voice call OUTSIDE the coalesce window inserts a new row instead of merging', async () => {
+      const sb = makeStubSupabase({
+        recentDiaryEntry: {
+          id: 'entry-old',
+          text: 'yesterday-ish fragment',
+          created_at: new Date(Date.now() - 5 * 60_000).toISOString(), // 5 min ago
+        },
+        preIndexRow: null,
+        rpcReturn: { data: { ok: true, score_total: 50 } },
+      });
+      const result = await tool_save_diary_entry(
+        { raw_text: 'a brand new unrelated diary thought' },
+        identity,
+        sb as never,
+      );
+      expect(result.ok).toBe(true);
+      expect(sb._calls.some((c) => c.table === 'diary_entries' && c.op === 'insert')).toBe(true);
+      expect(sb._calls.some((c) => c.table === 'diary_entries' && c.op === 'update')).toBe(false);
+    });
+
+    test('14. no prior voice entry at all inserts a fresh row (no crash on null recent entry)', async () => {
+      const sb = makeStubSupabase({
+        recentDiaryEntry: null,
+        preIndexRow: null,
+        rpcReturn: { data: { ok: true, score_total: 50 } },
+      });
+      const result = await tool_save_diary_entry(
+        { raw_text: 'the very first diary entry ever for this user' },
+        identity,
+        sb as never,
+      );
+      expect(result.ok).toBe(true);
+      expect(sb._calls.some((c) => c.table === 'diary_entries' && c.op === 'insert')).toBe(true);
+    });
+
+    test('15. a coalesce-update failure is non-fatal — RPC still runs, result still ok', async () => {
+      const sb = makeStubSupabase({
+        recentDiaryEntry: {
+          id: 'entry-1',
+          text: 'first fragment',
+          created_at: new Date(Date.now() - 1_000).toISOString(),
+        },
+        diaryUpdateError: { message: 'RLS denied' },
+        preIndexRow: null,
+        rpcReturn: { data: { ok: true, score_total: 50 } },
+      });
+      const result = await tool_save_diary_entry(
+        { raw_text: 'second fragment' },
+        identity,
+        sb as never,
+      );
+      expect(result.ok).toBe(true);
+      if (result.ok !== true) return;
+      const r = result.result as { diary_entry_written: boolean };
+      expect(r.diary_entry_written).toBe(false);
+      expect(sb._calls.some((c) => c.op === 'rpc')).toBe(true); // still called
+    });
   });
 
   test('7. registered in ORB_TOOL_REGISTRY and routes via dispatchOrbTool', async () => {

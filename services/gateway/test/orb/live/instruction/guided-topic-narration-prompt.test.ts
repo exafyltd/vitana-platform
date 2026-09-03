@@ -11,6 +11,8 @@
  */
 
 import {
+  buildGuidedTopicNarrationOpenerLine,
+  buildGuidedTopicSpokenLesson,
   buildGuidedTopicPostNarrationLine,
   buildGuidedTopicNarrationBlock,
 } from '../../../../src/orb/live/instruction/guided-topic-narration-prompt';
@@ -76,9 +78,40 @@ describe('buildGuidedTopicNarrationBlock — post-narration branch (content.narr
 
   it('tells the model NOT to re-narrate the lesson', () => {
     const de = buildGuidedTopicNarrationBlock(narratedContent, 'de');
-    expect(de.toLowerCase()).toMatch(/nicht (selbst )?vorgetragen|nicht wiederholen/);
+    expect(de.toLowerCase()).toMatch(/nicht erneut vor|nicht wiederholt werden/);
     const en = buildGuidedTopicNarrationBlock(narratedContent, 'en');
-    expect(en.toLowerCase()).toMatch(/did not narrate|not repeat|already narrated/);
+    expect(en.toLowerCase()).toMatch(/does not need to be repeated|don't re-narrate/);
+  });
+
+  // VTID-03785 — live oasis_events data showed guided-topic narration
+  // sessions (this exact branch) blocked on Nova's nova_validation content
+  // filter 158/158 = 100% of the time over 7 days, vs 36% for ordinary
+  // sessions. Two phrasing patterns in this block independently match
+  // patterns already PROVEN to trip this same filter elsewhere in this
+  // codebase: a self-referential voice-denial assertion ("you did NOT
+  // narrate it yourself") matching the IDENTITY LOCK persona-denial-list
+  // shape nova-instruction-sanitizer.ts already has to rewrite, and quoted
+  // hypothetical spoken example phrases ("What do you want?") matching the
+  // quoted-dialogue-exemplar shape VTID-03674's day_close fix already
+  // proved trips this filter. Neither pattern was covered by the existing
+  // sanitizer (scoped only to the IDENTITY LOCK block). These are
+  // regression guards against reintroducing either pattern class.
+  it('VTID-03785: does NOT use a self-referential voice-denial phrase ("you did NOT narrate it yourself")', () => {
+    const de = buildGuidedTopicNarrationBlock(narratedContent, 'de');
+    expect(de).not.toMatch(/NICHT selbst vorgetragen/);
+    expect(de).not.toMatch(/als hättest du sie noch nicht erklärt/);
+    const en = buildGuidedTopicNarrationBlock(narratedContent, 'en');
+    expect(en).not.toMatch(/you did NOT narrate it yourself/);
+    expect(en).not.toMatch(/as if you hadn't already explained it/);
+  });
+
+  it('VTID-03785: does NOT quote hypothetical spoken example phrases ("What do you want?")', () => {
+    const de = buildGuidedTopicNarrationBlock(narratedContent, 'de');
+    expect(de).not.toMatch(/„Was möchtest du\?"/);
+    expect(de).not.toMatch(/„Wie kann ich dir helfen\?"/);
+    const en = buildGuidedTopicNarrationBlock(narratedContent, 'en');
+    expect(en).not.toMatch(/"What do you want\?"/);
+    expect(en).not.toMatch(/"How can I help you\?"/);
   });
 
   it('respects the requested language independent of the German-authored content', () => {
@@ -86,11 +119,49 @@ describe('buildGuidedTopicNarrationBlock — post-narration branch (content.narr
     expect(block).toContain('Speak ONLY in English');
   });
 
+  // VTID-03786 — live retest of VTID-03785 (6 real staging sessions across 4
+  // topics, post-deploy) found nova_validation STILL blocked 100% of guided
+  // sessions, unchanged from the pre-fix rate. Direct inspection of the
+  // deployed builder output for a real topic (T003) confirmed the two
+  // VTID-03785 patterns were genuinely gone, so the trigger lives elsewhere.
+  // The one phrase common to every branch and unique to guided-topic
+  // sessions (ordinary sessions, which succeed at the ~36% ambient baseline,
+  // never carry it) is an authority-override assertion — "OVERRIDES every
+  // generic greeting/opening rule" / "hat Vorrang vor JEDER generischen
+  // Begrüßungs- oder Eröffnungsregel" — structurally the same
+  // override/jailbreak-shaped directive class Bedrock's filter is trained to
+  // flag, distinct from the two VTID-03785 patterns.
+  it('VTID-03786: does NOT assert this mode overrides/takes precedence over every other rule', () => {
+    const de = buildGuidedTopicNarrationBlock(narratedContent, 'de');
+    expect(de).not.toMatch(/hat Vorrang vor JEDER/);
+    const en = buildGuidedTopicNarrationBlock(narratedContent, 'en');
+    expect(en).not.toMatch(/OVERRIDES every/);
+    // Intent preserved: still pins the language for the whole session.
+    expect(de).toMatch(/für die GANZE Sitzung/);
+    expect(en).toMatch(/for the WHOLE session/);
+  });
+
   it('VTID-03686/03686-followup: instructs checking for follow-up questions before moving on from a brief "yes"', () => {
     const de = buildGuidedTopicNarrationBlock(narratedContent, 'de');
     expect(de.toLowerCase()).toMatch(/ja.*mach das.*okay.*rückfragen|rückfragen.*bevor/);
     const en = buildGuidedTopicNarrationBlock(narratedContent, 'en');
     expect(en.toLowerCase()).toMatch(/yes.*sure.*okay.*follow-up|follow-up questions before/);
+  });
+
+  // VTID-03762: the GUIDE MODE block previously had no exit condition at
+  // all — it is re-injected for the WHOLE session with no turn-count limit,
+  // so once the model finished (or, in this post-narration branch, once it
+  // finished fielding follow-ups) it free-wheeled into ordinary conversation
+  // forever. The overlay never closed, so the "Well done" drawer (already
+  // mounted underneath it since tap time) never became visible and the
+  // topic was never reachable to mark done. Fixed with a model-callable
+  // tool mirroring Teacher Mode's proven end_teaching_session pattern.
+  it('VTID-03762: instructs calling end_guided_topic_teaching once follow-ups are answered', () => {
+    const de = buildGuidedTopicNarrationBlock(narratedContent, 'de');
+    expect(de).toContain('end_guided_topic_teaching');
+    const en = buildGuidedTopicNarrationBlock(narratedContent, 'en');
+    expect(en).toContain('end_guided_topic_teaching');
+    expect(en.toLowerCase()).toMatch(/do not just keep talking|general conversation/);
   });
 });
 
@@ -107,10 +178,116 @@ describe('buildGuidedTopicNarrationBlock — legacy model-narrated branch (no na
     expect(buildGuidedTopicNarrationBlock(withNull, 'de')).toBe(withUndefined);
   });
 
+  // VTID-03785 — same quoted-example-phrase pattern as the post-narration
+  // branch (see its own VTID-03785 tests). This branch currently sees no
+  // live traffic (Polly has succeeded 158/158 recently, so this branch
+  // never runs) — fixed preventively so the same defect doesn't resurface
+  // the moment Polly synthesis ever fails for a topic.
+  it('VTID-03785: does NOT quote hypothetical spoken example phrases ("What do you want?")', () => {
+    const de = buildGuidedTopicNarrationBlock(BASE_CONTENT, 'de');
+    expect(de).not.toMatch(/„Was möchtest du\?"/);
+    expect(de).not.toMatch(/„Wie kann ich dir helfen\?"/);
+    expect(de).not.toMatch(/„Womit fangen wir an\?"/);
+    const en = buildGuidedTopicNarrationBlock(BASE_CONTENT, 'en');
+    expect(en).not.toMatch(/"What do you want\?"/);
+    expect(en).not.toMatch(/"How can I help you\?"/);
+    expect(en).not.toMatch(/"Where should we start\?"/);
+  });
+
+  // VTID-03786 — same authority-override pattern as the post-narration
+  // branch (see its own VTID-03786 test). This branch currently sees no
+  // live traffic, but carries the identical phrase and would reproduce this
+  // defect the moment Polly synthesis ever fails for a topic.
+  it('VTID-03786: does NOT assert this mode overrides/takes precedence over every other rule', () => {
+    const de = buildGuidedTopicNarrationBlock(BASE_CONTENT, 'de');
+    expect(de).not.toMatch(/hat Vorrang vor JEDER/);
+    const en = buildGuidedTopicNarrationBlock(BASE_CONTENT, 'en');
+    expect(en).not.toMatch(/OVERRIDES every/);
+    expect(de).toMatch(/für die GANZE Sitzung/);
+    expect(en).toMatch(/for the WHOLE session/);
+  });
+
   it('VTID-03686/03686-followup: instructs explaining core points before moving to practice on a brief "yes"', () => {
     const de = buildGuidedTopicNarrationBlock(BASE_CONTENT, 'de');
     expect(de.toLowerCase()).toMatch(/ja.*mach das.*okay.*erklär mir das jetzt/);
     const en = buildGuidedTopicNarrationBlock(BASE_CONTENT, 'en');
     expect(en.toLowerCase()).toMatch(/yes.*sure.*okay.*explain it to me now/);
+  });
+
+  // VTID-03762: this is the FULL teach branch (turn-1's raw material, no
+  // Polly pre-narration) — the same missing-exit-condition problem applies
+  // here too, and it's the branch the live incident (topic T007, taught for
+  // real 44s then the session never ended) actually went through.
+  it('VTID-03762: instructs calling end_guided_topic_teaching once the topic is taught and next step proposed', () => {
+    const de = buildGuidedTopicNarrationBlock(BASE_CONTENT, 'de');
+    expect(de).toContain('end_guided_topic_teaching');
+    const en = buildGuidedTopicNarrationBlock(BASE_CONTENT, 'en');
+    expect(en).toContain('end_guided_topic_teaching');
+    expect(en.toLowerCase()).toMatch(/do not just keep talking|general conversation/);
+    // Must come AFTER the practice/next-step guidance, not before — the
+    // model should teach the material and propose next steps FIRST.
+    // BASE_CONTENT has a practice_target set, so the "GUIDE them to the
+    // practice" line is the one that must precede it.
+    expect(en.indexOf('GUIDE them to the practice')).toBeLessThan(en.indexOf('end_guided_topic_teaching'));
+  });
+});
+
+// VTID-03790 — live diff of a real blocked (guided) vs succeeding (ordinary)
+// session's literal Nova system-instruction text (via the VTID-03787
+// nova_instruction_debug_dump diag stage) found a pattern unique to the
+// guided path and not covered by VTID-03785/03786: the topic title and
+// practice target were wrapped in German guillemet quotes (or, in English,
+// plain straight quotes) inside text that `buildVertexWakeBriefBlock`
+// (live-session-controller.ts) ALSO wraps in an outer straight-quote
+// "SPOKEN FIRST UTTERANCE — REQUIRED VERBATIM" template — producing doubly
+// nested quotation. This matches a documented Nova content-filter
+// sensitivity to persona-voiced quoted dialogue/exemplars (the same class
+// nova-instruction-sanitizer.ts already strips from the IDENTITY LOCK block,
+// and the same class day-close's buildDayCloseOpenerLine rewrite avoided).
+// Fix: drop the quote marks entirely — spoken/instructional text reads fine
+// without them, and the topic title / practice target / short exemplar
+// response words no longer wrap in ANY quote character (guillemet or
+// straight), on either language branch.
+describe('VTID-03790: no nested quotation marks around dynamic content (Nova content-filter fix)', () => {
+  const NO_QUOTE_CHARS = /["„”]/;
+
+  it('buildGuidedTopicNarrationOpenerLine never quotes the topic title', () => {
+    expect(buildGuidedTopicNarrationOpenerLine('Was ist Vitanaland', 'de')).not.toMatch(NO_QUOTE_CHARS);
+    expect(buildGuidedTopicNarrationOpenerLine('Was ist Vitanaland', 'en')).not.toMatch(NO_QUOTE_CHARS);
+  });
+
+  it('buildGuidedTopicSpokenLesson fallback (no voice_script) never quotes the topic title', () => {
+    const noScript: GuidedTopicNarrationContent = { ...BASE_CONTENT, voice_script: '' };
+    expect(buildGuidedTopicSpokenLesson(noScript, 'de')).not.toMatch(NO_QUOTE_CHARS);
+    expect(buildGuidedTopicSpokenLesson(noScript, 'en')).not.toMatch(NO_QUOTE_CHARS);
+  });
+
+  it('buildGuidedTopicPostNarrationLine never quotes the topic title (this is the literal SPOKEN FIRST UTTERANCE text)', () => {
+    expect(buildGuidedTopicPostNarrationLine('Was ist Vitanaland', 'de', { hasPracticeTarget: true })).not.toMatch(NO_QUOTE_CHARS);
+    expect(buildGuidedTopicPostNarrationLine('Was ist Vitanaland', 'de', { hasPracticeTarget: false })).not.toMatch(NO_QUOTE_CHARS);
+    expect(buildGuidedTopicPostNarrationLine('Was ist Vitanaland', 'en', { hasPracticeTarget: true })).not.toMatch(NO_QUOTE_CHARS);
+    expect(buildGuidedTopicPostNarrationLine('Was ist Vitanaland', 'en', { hasPracticeTarget: false })).not.toMatch(NO_QUOTE_CHARS);
+  });
+
+  it('buildGuidedTopicNarrationBlock (post-narration branch) never quotes topic title, practice target, or the ja/mach das/okay exemplars', () => {
+    const narratedContent: GuidedTopicNarrationContent = {
+      ...BASE_CONTENT,
+      narrationAudio: { audioB64: 'YQ==', sampleRateHz: 16000 },
+    };
+    expect(buildGuidedTopicNarrationBlock(narratedContent, 'de')).not.toMatch(NO_QUOTE_CHARS);
+    expect(buildGuidedTopicNarrationBlock(narratedContent, 'en')).not.toMatch(NO_QUOTE_CHARS);
+  });
+
+  it('buildGuidedTopicNarrationBlock (legacy teach branch) never quotes topic title, practice target, or the yes/sure/okay exemplars', () => {
+    expect(buildGuidedTopicNarrationBlock(BASE_CONTENT, 'de')).not.toMatch(NO_QUOTE_CHARS);
+    expect(buildGuidedTopicNarrationBlock(BASE_CONTENT, 'en')).not.toMatch(NO_QUOTE_CHARS);
+  });
+
+  it('still names the topic and practice target after the quote marks are removed (meaning preserved)', () => {
+    const de = buildGuidedTopicNarrationBlock(BASE_CONTENT, 'de');
+    expect(de).toContain(BASE_CONTENT.topic_title);
+    expect(de).toContain(BASE_CONTENT.practice_target);
+    const postLine = buildGuidedTopicPostNarrationLine('Was ist Vitanaland', 'de', { hasPracticeTarget: true });
+    expect(postLine).toContain('Was ist Vitanaland');
   });
 });

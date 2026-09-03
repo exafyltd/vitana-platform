@@ -133,3 +133,62 @@ describe('VTID-03630 — the short-gap opener no longer hands the model a VERBAT
     expect(wakeBrief).toContain('INTENT: briefly and warmly acknowledge');
   });
 });
+
+describe('VTID-03742 — the anonymous MAXINA Intro speech is composed fresh, not recited from a fixed script', () => {
+  // buildAnonymousSystemInstruction's FIRST MESSAGE block used to hand the
+  // model a literal, hand-authored ~45-second script in exactly two
+  // languages (German and English), wrapped as "READ THIS SPEECH VERBATIM —
+  // DO NOT SHORTEN, SKIP, OR SUMMARIZE". Any OTHER language selected the
+  // English script while a separate LANGUAGE line said "Respond ONLY in
+  // {language}" — a live full-recitation-translation demand, the exact
+  // instruction shape VTID-03674 already proved trips Nova's content filter.
+  // Reported live: an anonymous Serbian session showed the "speaking"
+  // caption with no audio (VTID-03740) — traced to this rung.
+  //
+  // Fix mirrors the proven pattern from buildGuidedTopicNarrationBlock
+  // (guided-topic-narration-prompt.ts): hand the model English-authored
+  // MATERIAL and instruct it to compose the delivery fresh in the target
+  // language, in its own words — applied uniformly to every language,
+  // including German/English (which also got a finished script before,
+  // just one that happened to already match their spoken language).
+
+  it('the old literal German and English scripts are gone, in full', () => {
+    expect(orbLive).not.toContain('Hallo aus [Stadt wenn bekannt]!');
+    expect(orbLive).not.toContain('Lass mich dir erzählen, worum es hier geht.');
+    expect(orbLive).not.toContain('Hello from [city if known]!');
+    expect(orbLive).not.toContain("Let me tell you what this is all about.");
+    expect(orbLive).not.toMatch(/READ THIS SPEECH VERBATIM/);
+    expect(orbLive).not.toMatch(/\$\{lang === 'de' \? `"""\s*\nHallo aus/);
+  });
+
+  it('the anonymous intro now hands the model material to paraphrase, not a script to recite', () => {
+    expect(orbLive).toMatch(
+      /FIRST MESSAGE \(INTRODUCE VITANALAND — COMPOSE THIS FRESH, DO NOT RECITE THE MATERIAL BELOW WORD-FOR-WORD\)/,
+    );
+    expect(orbLive).toMatch(/Material to introduce, in your own words/);
+    expect(orbLive).toMatch(/paraphrase and explain naturally, do NOT read aloud/);
+  });
+
+  it('the language directive is explicit that the material is reference content, not a translation target', () => {
+    expect(orbLive).toMatch(
+      /The material below is English reference content, not a script to translate/,
+    );
+  });
+
+  it('every required talking point survives as material, not as finished prose', () => {
+    const talkingPoints = [
+      /Mariia Maksina/,
+      /Let's Dance/,
+      /Germany, Austria, and Switzerland/,
+      /Mallorca/,
+      /dance sessions, fitness classes, wellness workshops, cooking events, meditation groups, hiking meetups/,
+      /personal AI health companion/,
+      /curated soundscapes/,
+      /completely free/,
+      /what excites them most/,
+    ];
+    for (const point of talkingPoints) {
+      expect(orbLive).toMatch(point);
+    }
+  });
+});

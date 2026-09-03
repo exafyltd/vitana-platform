@@ -53,6 +53,9 @@ const LIVE_LANGUAGE_VOICE_FALLBACKS: Record<string, string> = {
   ru: 'Gacrux',
   pt: 'Zephyr',
   pl: 'Despina',
+  // VTID-03730 — parity with the pt/pl addition above; distinct voice, not
+  // reused from another language.
+  tr: 'Umbriel',
 };
 
 const GEMINI_TTS_VOICE_FALLBACKS: Record<string, TtsVoiceConfig> = {
@@ -70,6 +73,7 @@ const GEMINI_TTS_VOICE_FALLBACKS: Record<string, TtsVoiceConfig> = {
   // copy in the European variant: fluent, wrong, and nothing detects it.
   pt: { name: 'Kore', languageCode: 'pt-BR' },
   pl: { name: 'Kore', languageCode: 'pl-PL' },
+  tr: { name: 'Kore', languageCode: 'tr-TR' },
 };
 
 const NEURAL2_TTS_VOICE_FALLBACKS: Record<string, TtsVoiceConfig> = {
@@ -96,6 +100,12 @@ const NEURAL2_TTS_VOICE_FALLBACKS: Record<string, TtsVoiceConfig> = {
   // the live Cloud TTS API.
   pt: { name: 'pt-BR-Wavenet-A', languageCode: 'pt-BR' },
   pl: { name: 'pl-PL-Wavenet-A', languageCode: 'pl-PL' },
+  // VTID-03730 — same "trap stays armed otherwise" reasoning as pt/pl above.
+  // Also NOT added to NEURAL2_ENABLED_LANGUAGES_FALLBACK below, matching the
+  // pt/pl precedent exactly: that array is a single seeded DB row the
+  // fallback here cannot override, and the better default for an unlisted
+  // language is `getGeminiTtsVoice()`, not a new Google Cloud TTS voice.
+  tr: { name: 'tr-TR-Wavenet-A', languageCode: 'tr-TR' },
 };
 
 // VTID-03681 — deliberately NOT widened to pt/pl, and this one is different

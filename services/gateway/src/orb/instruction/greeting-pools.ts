@@ -154,6 +154,17 @@ export const SHORT_GAP_GREETING_PHRASES: Record<string, string[]> = {
     "Dobrze, że wróciłeś. Pokażę ci, na jakim jesteśmy etapie.",
     "Miło cię słyszeć. Pokażę ci, co dalej.",
   ],
+  // Informal "sen" register throughout, per the same brand-voice rule.
+  tr: [
+    "Tekrar hoş geldin. Sıradaki adımını göstereyim.",
+    "Seni tekrar duymak güzel. Bir sonraki adıma bakalım.",
+    "Merhaba yine. Seni bir sonraki adıma götüreyim.",
+    "Buradayım, senin için. Sıradaki adımı göstereyim.",
+    "Tekrar hoş geldin. Nerede kaldığımızı gösterebilirim.",
+    "Seni tekrar görmek güzel. Sırada ne var, göstereyim.",
+    "Merhaba. Bugün sana nasıl yardımcı olabilirim?",
+    "Tekrar hoş geldin. Devam edelim mi?",
+  ],
 };
 
 /**

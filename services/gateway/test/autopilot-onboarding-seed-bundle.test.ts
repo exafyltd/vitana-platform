@@ -10,8 +10,15 @@
  * (source_ref, title, summary, domain, risk_level=priority, impact, effort,
  * time_estimate) EXACTLY.
  *
- * If you change day0 in community-user-analyzer.ts, update the migration's
- * VALUES list (or add a new migration) so this test passes.
+ * If you change day0 in community-user-analyzer.ts, add a NEW migration file
+ * (filename also ending in `_seed_community_onboarding_autopilot.sql`, so this
+ * test's finder still matches it) with `CREATE OR REPLACE FUNCTION
+ * public.seed_community_onboarding_autopilot` carrying the updated VALUES list
+ * — never edit an already-applied migration file in place. Multiple matching
+ * files are expected over time (VTID-03767 added the second one); this test
+ * always reads the CHRONOLOGICALLY LATEST one (sorted by the timestamp
+ * filename prefix, which is how Supabase orders migration application) since
+ * that is the function definition actually in effect.
  */
 
 import * as fs from 'fs';
@@ -20,11 +27,13 @@ import { STAGE_TEMPLATES, t } from '../src/services/recommendation-engine/analyz
 
 function loadSeedMigration(): string {
   const migDir = path.resolve(__dirname, '../../../supabase/migrations');
-  const file = fs
+  const files = fs
     .readdirSync(migDir)
-    .find((f) => f.endsWith('_seed_community_onboarding_autopilot.sql'));
-  expect(file).toBeDefined();
-  return fs.readFileSync(path.join(migDir, file as string), 'utf8');
+    .filter((f) => f.endsWith('_seed_community_onboarding_autopilot.sql'))
+    .sort();
+  expect(files.length).toBeGreaterThan(0);
+  const file = files[files.length - 1];
+  return fs.readFileSync(path.join(migDir, file), 'utf8');
 }
 
 interface SeededRow {

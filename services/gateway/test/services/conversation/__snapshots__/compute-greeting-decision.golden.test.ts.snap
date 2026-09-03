@@ -675,7 +675,7 @@ exports[`computeGreetingDecision — rung golden snapshots rung 1: safe_fast_new
       "messages_unread": 0,
       "reminders_today": 0,
     },
-    "prompt_len": 14484,
+    "prompt_len": 15039,
     "wake_opener": "safe_fast_newday_overview",
   },
   "directive": "
@@ -764,10 +764,15 @@ are NOT fixed wording. Compose every sentence freshly, in your own words,
 differently from any previous greeting. Copying an example phrase verbatim
 two days in a row is a contract failure.
 
-1. WARMTH BEFORE FACTS. Open with the time-of-day salutation in
-   de + the user's first name (if known) + ONE warmth
-   clause ("schön, dass du wieder da bist" / "glad to have you back"
-   / equivalent). NEVER go from the salutation straight into a stat.
+1. WARMTH BEFORE FACTS — NAME IS MANDATORY WHEN KNOWN (BOOTSTRAP-ORB-
+   PERSONALIZED-GREETING). Open with the time-of-day salutation in
+   de + the user's first name, WHEN nameLine above provides
+   one, + ONE warmth clause ("schön, dass du wieder da bist" / "glad
+   to have you back" / equivalent). A bare "Guten Morgen" / "Good
+   morning" with no name, when a name IS known, is a CONTRACT
+   FAILURE — see the HARD RULES section below. When no name is known,
+   greet warmly without inventing one (do not guess a name). NEVER go
+   from the salutation straight into a stat.
 
 2. JOURNEY CONTEXT FIRST — BRANCH ON \`journey.plan_phase\`. If
    \`journey\` is present, anchor the greeting in the user's journey
@@ -912,6 +917,10 @@ into the two paragraphs:
 
 ## HARD RULES (NEVER VIOLATE)
 
+  - NEVER omit the user's first name from the opening salutation when
+    nameLine above provides one (Rule 1) — "Guten Morgen" / "Good
+    morning" alone is a contract failure if a name is known; never
+    invent one if it is not.
   - NEVER recite signals as a bulleted list. Speak in flowing paragraphs.
   - NEVER fabricate names, titles, or counts not in the payload.
   - NEVER use the word "overview" / "Übersicht" / "Zusammenfassung"
@@ -1167,15 +1176,16 @@ exports[`computeGreetingDecision — rung golden snapshots rung 8: override_v2 (
   "diag": {
     "decision_id": "wb-123",
     "lang": "de",
-    "prompt_len": 1074,
+    "prompt_len": 1329,
     "wake_opener": "override_v2",
   },
   "directive": "Open the conversation from this prepared lead: "Heute ist dein 12. Tag — bleiben wir dran."
-It is a LEAD, not your whole turn. Deliver the turn in three beats, as ONE continuous piece of speech:
+The user's name is "Dragan". HARD RULE — your very first words must be a warm, time-of-day-appropriate greeting that addresses them by that name, composed in their own language (never a bare greeting with no name, and never a different name).
+The lead itself is a LEAD, not your whole turn. Deliver the turn in three beats, as ONE continuous piece of speech (the name-based greeting above comes first, then these three beats):
 1. SUBSTANCE — say what is actually going on, not that you are about to. If the lead names something you can already tell them (their messages, their index, their calendar, what changed), tell them the substance of it now, in one or two sentences. Never announce an intention you then do not carry out in this same turn.
 2. NEXT STEP — propose ONE concrete next step yourself. Never ask the user what they want to do, never offer a menu.
 3. CONFIRMATION — close by asking them to confirm that one step, so they can simply say yes.
-Keep every concrete fact from the lead — numbers, names, dates — exactly as given, and invent nothing beyond it. Compose the wording yourself in the user's own language; do not recite the lead word for word and do not reuse phrasing from a previous session. Do not greet the user by name first; go straight into the substance. Then stop and listen.",
+Keep every concrete fact from the lead — numbers, names, dates — exactly as given, and invent nothing beyond it. Compose the wording yourself in the user's own language; do not recite the lead word for word and do not reuse phrasing from a previous session. Then stop and listen.",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,
@@ -1188,12 +1198,14 @@ exports[`computeGreetingDecision — rung golden snapshots rung 8: override_v2 g
 {
   "diag": {
     "decision_id": null,
+    "guided_topic_outranks_passive_rungs": true,
     "lang": "en",
-    "prompt_len": 258,
+    "prompt_len": 364,
     "wake_opener": "override_v2",
   },
-  "directive": "Open by saying this prepared line, in the user's own language: "Lektion: Atme langsam ein und aus."
-Keep it to ONE short utterance. Do not add a greeting before it, do not add a question after it, and do not turn it into something else. Then stop and listen.",
+  "directive": "The person has just listened to a short pre-recorded audio lesson on the topic named in the GUIDE MODE section, so they have already heard it.
+Open with ONE short, warm sentence in the user's own language: acknowledge that the lesson just finished and invite any questions they have about it.
+Compose that sentence yourself in your own words. Then stop and listen.",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,
@@ -1342,7 +1354,7 @@ exports[`computeGreetingDecision — spoken-facts ledger continuity (#2835) newd
       "messages_unread": 3,
       "reminders_today": 0,
     },
-    "prompt_len": 16051,
+    "prompt_len": 16606,
     "wake_opener": "safe_fast_newday_overview",
   },
   "directive": "
@@ -1447,10 +1459,15 @@ are NOT fixed wording. Compose every sentence freshly, in your own words,
 differently from any previous greeting. Copying an example phrase verbatim
 two days in a row is a contract failure.
 
-1. WARMTH BEFORE FACTS. Open with the time-of-day salutation in
-   de + the user's first name (if known) + ONE warmth
-   clause ("schön, dass du wieder da bist" / "glad to have you back"
-   / equivalent). NEVER go from the salutation straight into a stat.
+1. WARMTH BEFORE FACTS — NAME IS MANDATORY WHEN KNOWN (BOOTSTRAP-ORB-
+   PERSONALIZED-GREETING). Open with the time-of-day salutation in
+   de + the user's first name, WHEN nameLine above provides
+   one, + ONE warmth clause ("schön, dass du wieder da bist" / "glad
+   to have you back" / equivalent). A bare "Guten Morgen" / "Good
+   morning" with no name, when a name IS known, is a CONTRACT
+   FAILURE — see the HARD RULES section below. When no name is known,
+   greet warmly without inventing one (do not guess a name). NEVER go
+   from the salutation straight into a stat.
 
 2. JOURNEY CONTEXT FIRST — BRANCH ON \`journey.plan_phase\`. If
    \`journey\` is present, anchor the greeting in the user's journey
@@ -1595,6 +1612,10 @@ into the two paragraphs:
 
 ## HARD RULES (NEVER VIOLATE)
 
+  - NEVER omit the user's first name from the opening salutation when
+    nameLine above provides one (Rule 1) — "Guten Morgen" / "Good
+    morning" alone is a contract failure if a name is known; never
+    invent one if it is not.
   - NEVER recite signals as a bulleted list. Speak in flowing paragraphs.
   - NEVER fabricate names, titles, or counts not in the payload.
   - NEVER use the word "overview" / "Übersicht" / "Zusammenfassung"

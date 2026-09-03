@@ -1,0 +1,74 @@
+[
+  {
+    "label": "guided T001 de",
+    "verdict": "WORKS",
+    "sid": "live-ed086907-bfc3-4993-9511-07dc769d03ee",
+    "audio": 49,
+    "err": 0,
+    "errCodes": []
+  },
+  {
+    "label": "guided T001 en",
+    "verdict": "WORKS",
+    "sid": "live-6db7e8ae-090d-4282-81f9-d3a32ad60062",
+    "audio": 68,
+    "err": 0,
+    "errCodes": []
+  },
+  {
+    "label": "guided T100 de",
+    "verdict": "WORKS",
+    "sid": "live-a2d95150-9cd4-40ff-91bd-956bf0a50314",
+    "audio": 46,
+    "err": 0,
+    "errCodes": []
+  },
+  {
+    "label": "guided T200 de",
+    "verdict": "WORKS",
+    "sid": "live-829379fe-5667-4d5a-89fa-bc1882e3525a",
+    "audio": 62,
+    "err": 0,
+    "errCodes": []
+  },
+  {
+    "label": "ORDINARY de (control)",
+    "verdict": "WORKS",
+    "sid": "live-4e44177d-5f64-498a-9b2a-5e7a9d989ee2",
+    "audio": 87,
+    "err": 0,
+    "errCodes": []
+  },
+  {
+    "label": "guided T001 fr (nova)",
+    "verdict": "WORKS",
+    "sid": "live-795de4f2-9b69-43b3-b773-0f1ed29d14bc",
+    "audio": 40,
+    "err": 0,
+    "errCodes": []
+  },
+  {
+    "label": "guided T001 es (nova)",
+    "verdict": "WORKS",
+    "sid": "live-73bf407f-5ec5-4da3-9ac0-4dd599b30e44",
+    "audio": 91,
+    "err": 0,
+    "errCodes": []
+  },
+  {
+    "label": "guided T001 ru (cascade)",
+    "verdict": "WORKS",
+    "sid": "live-4838fa58-c655-496e-b717-01031083d018",
+    "audio": 9,
+    "err": 0,
+    "errCodes": []
+  },
+  {
+    "label": "guided T001 pl (cascade)",
+    "verdict": "WORKS",
+    "sid": "live-ee9282b0-89d8-4fa5-a9c5-d72838bd82c5",
+    "audio": 7,
+    "err": 0,
+    "errCodes": []
+  }
+]

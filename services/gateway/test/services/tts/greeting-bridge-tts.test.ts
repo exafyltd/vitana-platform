@@ -1,11 +1,25 @@
 /**
  * BOOTSTRAP-NOVA-SONIC-VOICE: greeting bridge TTS synthesis — WAV-header
- * stripping (the one nontrivial pure logic here; synthesis itself needs a
- * live GCP client and is exercised on staging, not in unit tests) and the
- * empty-text fast-path guard.
+ * stripping (the one nontrivial pure logic here) and the empty-text
+ * fast-path guard.
+ *
+ * BOOTSTRAP-ORB-GREETING-BRIDGE-NO-GOOGLE (VTID-03802): also pins that a
+ * Polly failure returns null immediately rather than falling through to a
+ * live Google Cloud TTS call — GCP is decommissioned, so that fallback used
+ * to hang the entire SSE session-start path (see the function's own doc
+ * comment for the production evidence).
  */
 
+jest.mock('../../../src/services/tts/tts-provider', () => ({
+  ...jest.requireActual('../../../src/services/tts/tts-provider'),
+  tryPollySynthesis: jest.fn(),
+}));
+jest.mock('../../../src/services/voice-config', () => ({
+  getVoiceConfig: jest.fn().mockResolvedValue({ tts: { speaking_rate: 1.0 } }),
+}));
+
 import { stripWavHeaderIfPresent, synthesizeGreetingBridgeAudioPcm } from '../../../src/services/tts/greeting-bridge-tts';
+import { tryPollySynthesis } from '../../../src/services/tts/tts-provider';
 
 function buildWavBuffer(pcmBytes: Buffer): Buffer {
   const header = Buffer.alloc(44);
@@ -44,8 +58,36 @@ describe('stripWavHeaderIfPresent', () => {
 });
 
 describe('synthesizeGreetingBridgeAudioPcm', () => {
+  beforeEach(() => {
+    (tryPollySynthesis as jest.Mock).mockReset();
+  });
+
   it('returns null for empty text without attempting synthesis', async () => {
     expect(await synthesizeGreetingBridgeAudioPcm('', 'en')).toBeNull();
     expect(await synthesizeGreetingBridgeAudioPcm('   ', 'en')).toBeNull();
+    expect(tryPollySynthesis).not.toHaveBeenCalled();
+  });
+
+  it('returns the Polly result when Polly serves the request', async () => {
+    (tryPollySynthesis as jest.Mock).mockResolvedValue({
+      audioB64: 'abc123',
+      sampleRateHz: 16000,
+      voice: 'Vicki',
+      languageCode: 'de-DE',
+      provider: 'polly',
+    });
+    const result = await synthesizeGreetingBridgeAudioPcm('Hallo', 'de');
+    expect(result).toEqual({ audioB64: 'abc123', sampleRateHz: 16000 });
+  });
+
+  // BOOTSTRAP-ORB-GREETING-BRIDGE-NO-GOOGLE (VTID-03802): the literal
+  // regression this test exists to catch — before this fix, a null from
+  // Polly fell through to a live `bridgeTtsClient.synthesizeSpeech()` call
+  // against Google Cloud TTS, which is decommissioned and hung the entire
+  // SSE session-start path with no error and no timeout.
+  it('returns null (never calls out to Google) when Polly cannot serve the request', async () => {
+    (tryPollySynthesis as jest.Mock).mockResolvedValue(null);
+    const result = await synthesizeGreetingBridgeAudioPcm('Hello', 'sr');
+    expect(result).toBeNull();
   });
 });

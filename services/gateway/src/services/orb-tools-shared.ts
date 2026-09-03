@@ -1963,6 +1963,46 @@ async function emitChatSendFailure(
   }
 }
 
+// BOOTSTRAP-ORB-CHAT-SEND-TRUTHFULNESS — reported live: Vitana confirmed a
+// message was sent, but it never appeared in the sender's own chat history
+// and the receiver never got it. Investigation found a real, working
+// insert path (this function does write a real `chat_messages` row on the
+// confirmed=true call) but NO success-path telemetry at all — only
+// `emitChatSendFailure` above existed, so the ONE tool call in this whole
+// flow that most needs to be independently verifiable (did the model's
+// spoken "sent" claim correspond to a real row?) left no trace to check it
+// against. This is the missing symmetric half: emitted right after the
+// insert that produces `inserted.id`, so a reported "it said sent but
+// nothing arrived" can be checked directly against `oasis_events` instead
+// of re-deriving the whole call chain from scratch every time.
+async function emitChatSendSuccess(
+  id: OrbToolIdentity,
+  args: OrbToolArgs,
+  extra: Record<string, unknown> = {},
+): Promise<void> {
+  try {
+    const { emitOasisEvent } = await import('./oasis-event-service');
+    await emitOasisEvent({
+      vtid: 'VTID-01967',
+      type: 'voice.chat_message.send_succeeded',
+      source: 'orb-tools-shared',
+      status: 'info',
+      message: 'send_chat_message succeeded',
+      payload: {
+        recipient_user_id_arg: typeof args.recipient_user_id === 'string' ? args.recipient_user_id : null,
+        recipient_label_arg: typeof args.recipient_label === 'string' ? args.recipient_label : null,
+        ...extra,
+      },
+      actor_id: id.user_id,
+      actor_role: 'user',
+      surface: 'orb',
+      vitana_id: id.vitana_id ?? undefined,
+    });
+  } catch {
+    // OASIS failures must not break voice flow — swallow.
+  }
+}
+
 interface ValidatedRecipient {
   recipientUserId: string;
   recipientVitanaId: string | null;
@@ -2427,6 +2467,11 @@ export async function tool_send_chat_message(
         error: `I couldn't send the message just now — want me to try once more?`,
       };
     }
+
+    await emitChatSendSuccess(id, args, {
+      message_id: (inserted as { id?: string } | null)?.id ?? null,
+      recipient_user_id: recipientUserId,
+    });
 
     // VTID-02966 (Issue #3): push-notify the receiver. Mirrors chat.ts:80-135
     // exactly — same payload shape (title=sender display name, body=trimmed
@@ -4467,19 +4512,66 @@ export async function tool_save_diary_entry(
 
   // 1) diary_entries insert — best-effort. If it fails we still proceed with
   // the extractor/index so the Index reflects the user's words.
+  //
+  // VTID-03793 — coalesce split voice-dictation fragments into one entry.
+  // Nova Sonic is instructed (rule M / this tool's own description) to call
+  // save_diary_entry ONCE per dictation with everything the user said
+  // combined — but a live report showed one continuous dictation landing as
+  // 7-8 separate calls, one per clause, because prompt compliance alone is
+  // not guaranteed (ALWAYS rule 8: assume defense-in-depth). As a
+  // deterministic backstop, if this user's last VOICE diary fragment landed
+  // within DIARY_VOICE_COALESCE_WINDOW_MS, append to that same row instead
+  // of creating a new one — so the Daily Diary shows one entry per
+  // dictation regardless of how many tool calls the model actually made.
+  const DIARY_VOICE_COALESCE_WINDOW_MS = Number(
+    process.env.DIARY_VOICE_COALESCE_WINDOW_MS ?? 60_000,
+  );
+
   let diary_entry_written = true;
   try {
-    const { error: insertErr } = await sb.from('diary_entries').insert({
-      user_id: identity.user_id,
-      text: rawText,
-      source: 'voice',
-      tags: ['diary', 'voice', 'orb'],
-    });
-    if (insertErr) {
-      diary_entry_written = false;
-      console.warn(
-        `[save_diary_entry] diary_entries insert failed (non-fatal): ${insertErr.message}`,
-      );
+    const { data: recentEntryRaw } = await sb
+      .from('diary_entries')
+      .select('id, text, created_at')
+      .eq('user_id', identity.user_id)
+      .eq('source', 'voice')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const recentEntry = recentEntryRaw as
+      | { id: string; text: string; created_at: string }
+      | null;
+    const recentAgeMs = recentEntry
+      ? Date.now() - new Date(recentEntry.created_at).getTime()
+      : Infinity;
+    const shouldCoalesce =
+      !!recentEntry && recentAgeMs >= 0 && recentAgeMs <= DIARY_VOICE_COALESCE_WINDOW_MS;
+
+    if (shouldCoalesce && recentEntry) {
+      const mergedText = `${recentEntry.text} ${rawText}`.trim();
+      const { error: updateErr } = await sb
+        .from('diary_entries')
+        .update({ text: mergedText, updated_at: new Date().toISOString() })
+        .eq('id', recentEntry.id);
+      if (updateErr) {
+        diary_entry_written = false;
+        console.warn(
+          `[save_diary_entry] diary_entries coalesce-update failed (non-fatal): ${updateErr.message}`,
+        );
+      }
+    } else {
+      const { error: insertErr } = await sb.from('diary_entries').insert({
+        user_id: identity.user_id,
+        text: rawText,
+        source: 'voice',
+        tags: ['diary', 'voice', 'orb'],
+      });
+      if (insertErr) {
+        diary_entry_written = false;
+        console.warn(
+          `[save_diary_entry] diary_entries insert failed (non-fatal): ${insertErr.message}`,
+        );
+      }
     }
   } catch (insertErr) {
     diary_entry_written = false;

@@ -1,0 +1,13 @@
+$ python3 -c "import re; [print(k) for k in re.findall(r\"key: '([a-z-]+)'\", open('src/data/feature-tips.ts').read())]"
+vitana-index
+autopilot
+live-rooms
+meetups
+daily-diary
+matches
+find-partner
+my-business
+memory-timeline
+assistant-voice
+discover
+wallet

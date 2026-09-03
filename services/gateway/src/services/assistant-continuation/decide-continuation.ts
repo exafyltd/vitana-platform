@@ -80,10 +80,28 @@ export interface DecideContinuationOptions {
   recentlyServedDedupeKeys?: ReadonlyArray<string>;
   /** Penalty applied to a recently-served candidate's effective priority. */
   recencyPenalty?: number;
+  /**
+   * VTID-03741 — per-provider timeout in ms for the parallel ranker.
+   * Defaults to DEFAULT_PROVIDER_TIMEOUT_MS. Tests pass a small value to
+   * exercise the timeout path without a real slow provider.
+   */
+  providerTimeoutMs?: number;
 }
 
 /** Default soft penalty — large enough to flip ties between same-tier providers. */
 export const DEFAULT_RECENCY_PENALTY = 30;
+
+/**
+ * VTID-03741 — per-provider timeout for the parallel ranker below. Real
+ * providers observed 55-350ms in production (oasis_events); this leaves
+ * generous headroom while still bounding the worst case now that a hung
+ * provider can no longer stall every provider after it in a serial chain.
+ * Env-tunable so an incident can raise/lower it without a redeploy.
+ */
+export const DEFAULT_PROVIDER_TIMEOUT_MS = (() => {
+  const raw = Number(process.env.WAKE_BRIEF_PROVIDER_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : 800;
+})();
 
 /**
  * VTID-03301 — effective priority after the rotation penalty. The exact opener
@@ -124,11 +142,17 @@ export async function decideContinuation(
   };
 
   const providers = registry.forSurface(opts.surface);
-  const results: ProviderResult[] = [];
-
-  for (const provider of providers) {
-    results.push(await invokeProviderSafely(provider, fullContext, now));
-  }
+  // VTID-03741: providers are already isolated (invokeProviderSafely never
+  // throws, each does its own independent read) and selection below is
+  // priority-based, not first-to-finish — so running them concurrently
+  // instead of one-await-at-a-time is a pure latency win with no change to
+  // *which* candidate wins. Promise.all preserves input order, so `results`
+  // still lines up 1:1 with `providers` for the registration-order tie-break
+  // in the ranker below, exactly as the old sequential loop did.
+  const providerTimeoutMs = opts.providerTimeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS;
+  const results: ProviderResult[] = await Promise.all(
+    providers.map((provider) => invokeProviderWithTimeout(provider, fullContext, now, providerTimeoutMs)),
+  );
 
   // Rank: only `returned` candidates are eligible. Stable sort by descending
   // EFFECTIVE priority (base priority minus the VTID-03301 rotation penalty for
@@ -289,4 +313,34 @@ async function invokeProviderSafely(
       reason: err instanceof Error ? err.message : String(err),
     };
   }
+}
+
+/**
+ * VTID-03741 — races a provider against a timeout so one slow/hung provider
+ * can no longer inflate (or, worse, indefinitely stall) the now-parallel
+ * ranker. `invokeProviderSafely` never rejects (everything is caught
+ * internally), so the loser of the race is simply abandoned — it keeps
+ * running in the background and its eventual result is discarded, never
+ * surfacing as an unhandled rejection.
+ */
+function invokeProviderWithTimeout(
+  provider: ContinuationProvider,
+  ctx: ContinuationDecisionContext,
+  now: () => Date,
+  timeoutMs: number,
+): Promise<ProviderResult> {
+  const providerPromise = invokeProviderSafely(provider, ctx, now);
+  const timeoutPromise = new Promise<ProviderResult>((resolve) => {
+    setTimeout(
+      () =>
+        resolve({
+          providerKey: provider.key,
+          status: 'errored',
+          latencyMs: timeoutMs,
+          reason: 'provider_timeout',
+        }),
+      timeoutMs,
+    ).unref?.();
+  });
+  return Promise.race([providerPromise, timeoutPromise]);
 }

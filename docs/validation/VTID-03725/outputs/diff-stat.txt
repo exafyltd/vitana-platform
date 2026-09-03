@@ -1,0 +1,7 @@
+ docs/validation/VTID-03725/acceptance.md           | 125 +++++++++++++++++++++
+ docs/validation/VTID-03725/commands.log            |  93 +++++++++++++++
+ docs/validation/VTID-03725/outputs/diff-stat.txt   |   0
+ .../VTID-03725/outputs/resend-callsites.txt        |  75 +++++++++++++
+ .../VTID-03725/outputs/serbian-telemetry-notes.md  |  61 ++++++++++
+ .../VTID-03725/outputs/targeted-tests.txt          |  44 ++++++++
+ 6 files changed, 398 insertions(+)

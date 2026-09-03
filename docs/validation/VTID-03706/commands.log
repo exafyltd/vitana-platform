@@ -103,3 +103,44 @@ node /tmp/interact.mjs
 #   - BARGECONFIRMFRAMES label overflowed its tile at 390px
 #   - the live panel froze at GATE=OPEN after a run, contradicting the
 #     verdict rendered directly beneath it
+
+# ============================================================
+# Follow-up (2026-08-25) — SSE transport never received full_duplex
+# ============================================================
+
+# Reproduced live against real staging before writing any fix, to confirm
+# the report rather than guess at it:
+#   node /tmp/orb-duplex-check.mjs   (Playwright + real Chromium against
+#     preview-aws.vitanaland.com, --use-fake-device-for-media-stream,
+#     --ssl-version-max=tls1.2 to work around a proxy/Chromium TLS
+#     handshake incompatibility in this sandbox)
+# -> polled .vtorb-btn-mic classList every 500ms for 10s during "Vitana
+#    speaking...": vtorb-mic-live NEVER appeared. audioPlaying stayed false
+#    in the diagnostic snapshot too, but status text confirmed real audio.
+
+#   node /tmp/orb-sse-intercept.mjs  (monkey-patched EventSource, logged
+#     every SSE message type received)
+# -> 407 real messages, types: ready, live_api_ready, audio (x100s),
+#    output_transcript. Zero "session_started" messages — confirms SSE
+#    uses a different handshake vocabulary than WS entirely.
+
+grep -n "full_duplex" services/gateway/src/frontend/command-hub/orb-widget.js
+# -> only inside `msg.type === 'session_started'` (WS-only) before the fix.
+
+# Fix: add full_duplex to the live_api_ready SSE payload (orb-live.ts) and
+# read it in _handleMessage's 'live_api_ready' case (orb-widget.js).
+
+cd services/gateway
+npx jest test/orb/full-duplex-sse-live-api-ready.test.ts test/orb/full-duplex-session-gate.widget-parity.test.ts
+# -> 32/32 passing (see outputs/sse-full-duplex-mutation-proof.txt for the
+#    before/after mutation run)
+
+npx jest test/orb/
+# -> 134/134 suites, 1848/1854 tests (6 pre-existing todo)
+
+npx tsc --noEmit
+# -> clean (outputs/tsc.txt)
+
+npx jest
+# -> 699/700 suites (1 pre-existing skip), 13283/13318 tests
+#    (outputs/full-suite.txt)
