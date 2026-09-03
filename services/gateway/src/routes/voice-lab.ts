@@ -59,7 +59,7 @@ import { getLiveKitCanaryConfig } from '../orb/live/upstream/livekit-canary-conf
 import { getVoiceConfig } from '../services/voice-config';
 // VTID-03729: the /nova/decision probe below must mirror orb-live.ts's real
 // cascade wiring (BOOTSTRAP-CASCADE-WIRING seam 1) or it cannot ever report
-// cascaded_language_rescue for pl/pt/ru/ar/zh.
+// cascaded_language_rescue for pl/pt/ru/ar/zh/tr/fr/es.
 import { isCascadeEnabled, isCascadeLanguageSupported } from '../orb/live/upstream/cascaded-config';
 
 const router = Router();

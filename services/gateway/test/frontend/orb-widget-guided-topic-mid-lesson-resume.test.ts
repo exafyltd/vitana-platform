@@ -107,17 +107,38 @@ describe('orb-widget guided-topic mid-lesson resume via _guidedTopicInFlight (VT
     expect(block).not.toMatch(/_guidedTopicInFlight/);
   });
 
-  it('_attemptReconnect re-arms _s.guidedTopic from _guidedTopicInFlight only when guidedTopic was already cleared', () => {
+  // RE-RECORDED (VTID-03799). This assertion used to pin the literal
+  // condition `if (_s._guidedTopicInFlight && !_s.guidedTopic)`. That
+  // condition was correct but INCOMPLETE — it never asked whether the lesson
+  // had already finished, so a post-lesson reconnect re-armed the topic and
+  // replayed the whole narration (live, T005, staging 2026-08-31). Both of
+  // its conjuncts now live inside _shouldResumeGuidedTopic() alongside the
+  // missing teaching-ended check, and the test below pins them there, so
+  // this re-record relocates the guard without weakening it.
+  it('_attemptReconnect re-arms _s.guidedTopic from _guidedTopicInFlight only when _shouldResumeGuidedTopic() allows it', () => {
     const body = extractFunctionBody(source, 'function _attemptReconnect() {');
     expect(body).toMatch(
-      /if \(_s\._guidedTopicInFlight && !_s\.guidedTopic\) {\s*\n[\s\S]*?_s\.guidedTopic = _s\._guidedTopicInFlight;/,
+      /if \(_shouldResumeGuidedTopic\(\)\) {\s*\n[\s\S]*?_s\.guidedTopic = _s\._guidedTopicInFlight;/,
     );
+    // The superseded literal must not survive anywhere in this function —
+    // a second, ungated re-arm would reopen the replay loop.
+    expect(body).not.toMatch(/if \(_s\._guidedTopicInFlight && !_s\.guidedTopic\)/);
     // Must run BEFORE _sessionStart() is called in the retry, not after.
     const armIdx = body.indexOf('_s.guidedTopic = _s._guidedTopicInFlight;');
     const startIdx = body.indexOf('_sessionStart().then(');
     expect(armIdx).toBeGreaterThan(-1);
     expect(startIdx).toBeGreaterThan(-1);
     expect(armIdx).toBeLessThan(startIdx);
+  });
+
+  // The guard the three call sites delegate to. This is where the two
+  // conjuncts the old literal spelled out now live — asserted here so the
+  // re-records above cannot quietly stand on a predicate that dropped one.
+  it('_shouldResumeGuidedTopic() keeps both original conjuncts and adds the teaching-ended check', () => {
+    const pred = extractFunctionBody(source, 'function _shouldResumeGuidedTopic() {');
+    expect(pred).toMatch(/if \(!_s\._guidedTopicInFlight\) return false;/); // nothing to resume
+    expect(pred).toMatch(/if \(_s\.guidedTopic\) return false;/);           // already armed
+    expect(pred).toMatch(/if \(_s\._guidedTopicTeachingEnded\) return false;/); // lesson is over
   });
 
   it('_hide() clears _guidedTopicInFlight — a real close ends the overlay session', () => {
@@ -143,10 +164,16 @@ describe('orb-widget _resetAndReconnect guided-topic resume + reconnect mutex (V
   const source = fs.readFileSync(WIDGET_PATH, 'utf8');
   const body = extractFunctionBody(source, 'function _resetAndReconnect() {');
 
-  it('re-arms _s.guidedTopic from _guidedTopicInFlight only when guidedTopic was already cleared — same condition as _attemptReconnect', () => {
+  // RE-RECORDED (VTID-03799) — see the note on the _attemptReconnect test
+  // above. "Same condition as _attemptReconnect" is now literally true by
+  // construction: both call the one predicate rather than each spelling the
+  // condition out, which is what let the teaching-ended check go missing
+  // from all three copies at once.
+  it('re-arms _s.guidedTopic from _guidedTopicInFlight only when _shouldResumeGuidedTopic() allows it — same predicate as _attemptReconnect', () => {
     expect(body).toMatch(
-      /if \(_s\._guidedTopicInFlight && !_s\.guidedTopic\) {\s*\n[\s\S]*?_s\.guidedTopic = _s\._guidedTopicInFlight;/,
+      /if \(_shouldResumeGuidedTopic\(\)\) {\s*\n[\s\S]*?_s\.guidedTopic = _s\._guidedTopicInFlight;/,
     );
+    expect(body).not.toMatch(/if \(_s\._guidedTopicInFlight && !_s\.guidedTopic\)/);
     // Must run BEFORE _sessionStart() is called, not after.
     const armIdx = body.indexOf('_s.guidedTopic = _s._guidedTopicInFlight;');
     const startIdx = body.indexOf('_sessionStart().then(');
@@ -200,10 +227,18 @@ describe('orb-widget _sessionStart restores guidedTopic from _guidedTopicInFligh
   const source = fs.readFileSync(WIDGET_PATH, 'utf8');
   const body = extractFunctionBody(source, 'async function _sessionStart() {');
 
-  it('restores guidedTopic from _guidedTopicInFlight when guidedTopic is empty, immediately before the payload read', () => {
+  // RE-RECORDED (VTID-03799): the send-site literal
+  // `if (!_s.guidedTopic && _s._guidedTopicInFlight)` is the same guard as
+  // the other two, written in the other order, and it too never asked
+  // whether the lesson was already over. This site is the one that can
+  // never be bypassed, so it is also the one that replayed the narration on
+  // every post-lesson reconnect. The ordering requirement below — restore
+  // BEFORE the payload read — is unchanged and still the point of the test.
+  it('restores guidedTopic from _guidedTopicInFlight via _shouldResumeGuidedTopic(), immediately before the payload read', () => {
     expect(body).toMatch(
-      /if \(!_s\.guidedTopic && _s\._guidedTopicInFlight\) {\s*\n[\s\S]*?_s\.guidedTopic = _s\._guidedTopicInFlight;/,
+      /if \(_shouldResumeGuidedTopic\(\)\) {\s*\n[\s\S]*?_s\.guidedTopic = _s\._guidedTopicInFlight;/,
     );
+    expect(body).not.toMatch(/if \(!_s\.guidedTopic && _s\._guidedTopicInFlight\)/);
     const restoreIdx = body.indexOf('_s.guidedTopic = _s._guidedTopicInFlight;');
     const payloadReadIdx = body.indexOf('startPayload.guided_topic_id = _s.guidedTopic;');
     expect(restoreIdx).toBeGreaterThan(-1);
@@ -212,10 +247,10 @@ describe('orb-widget _sessionStart restores guidedTopic from _guidedTopicInFligh
   });
 
   it('does not touch guidedTopic when it is already set (no-op on a fresh, non-reconnect open)', () => {
-    // The guard is `!_s.guidedTopic && ...` — a truthy guidedTopic must
-    // short-circuit before ever reading _guidedTopicInFlight.
-    const restoreLineMatch = body.match(/if \(!_s\.guidedTopic && _s\._guidedTopicInFlight\) {/);
-    expect(restoreLineMatch).not.toBeNull();
+    // Unchanged invariant, now enforced inside the predicate: a truthy
+    // guidedTopic must short-circuit before _guidedTopicInFlight is read.
+    const pred = extractFunctionBody(source, 'function _shouldResumeGuidedTopic() {');
+    expect(pred).toMatch(/if \(_s\.guidedTopic\) return false;/);
   });
 
   it('logs the restore for future diagnosability', () => {
@@ -226,11 +261,15 @@ describe('orb-widget _sessionStart restores guidedTopic from _guidedTopicInFligh
     expect(body).toMatch(/_sessionStart: guidedTopic=.*guidedTopicInFlight=.*preDisconnectStage=/s);
   });
 
-  it('the existing _attemptReconnect/_resetAndReconnect restore-guards are unchanged (this is additive, not a replacement)', () => {
+  it('the existing _attemptReconnect/_resetAndReconnect restore-guards are still present (this is additive, not a replacement)', () => {
+    // RE-RECORDED (VTID-03799): all three sites now share one predicate, so
+    // "the other two are unchanged" is asserted as "the other two still
+    // guard their re-arm at all" — the property this test exists for. A
+    // site that lost its guard entirely still fails here.
     const attemptBody = extractFunctionBody(source, 'function _attemptReconnect() {');
     const resetBody = extractFunctionBody(source, 'function _resetAndReconnect() {');
-    expect(attemptBody).toMatch(/if \(_s\._guidedTopicInFlight && !_s\.guidedTopic\) {/);
-    expect(resetBody).toMatch(/if \(_s\._guidedTopicInFlight && !_s\.guidedTopic\) {/);
+    expect(attemptBody).toMatch(/if \(_shouldResumeGuidedTopic\(\)\) {/);
+    expect(resetBody).toMatch(/if \(_shouldResumeGuidedTopic\(\)\) {/);
   });
 });
 
@@ -263,10 +302,20 @@ describe('orb-widget guided-topic resume signal — _guidedTopicAudioDelivered (
     expect(resetIdx).toBeGreaterThan(inFlightIdx);
   });
 
-  it('is flipped true at the same turn-complete point that nulls _s.guidedTopic', () => {
-    const idx = source.indexOf('if (_s.guidedAutoClose && !_s.greetingComplete) {');
-    expect(idx).toBeGreaterThanOrEqual(0);
-    const openIdx = source.indexOf('{', idx);
+  // RE-RECORDED (VTID-03799). This used to require the flag be flipped
+  // INSIDE the `if (_s.guidedAutoClose && !_s.greetingComplete)` block — and
+  // that nesting was the bug. guidedAutoClose is a one-shot: it is cleared
+  // on the first turn-complete and re-armed only by a fresh tap, so every
+  // LATER turn-complete left the delivered flag unset. A reconnect after the
+  // lesson then told the server "fresh open" instead of "resume", which is
+  // what replayed the entire Polly narration (live, T005, 2026-08-31).
+  // The flag is still flipped at the same turn-complete point, immediately
+  // before that block — just no longer gated by a one-shot that has nothing
+  // to do with whether audio was delivered.
+  it('is flipped true at the turn-complete point, on its own condition, OUTSIDE the one-shot guidedAutoClose block', () => {
+    const autoCloseIdx = source.indexOf('if (_s.guidedAutoClose && !_s.greetingComplete) {');
+    expect(autoCloseIdx).toBeGreaterThanOrEqual(0);
+    const openIdx = source.indexOf('{', autoCloseIdx);
     let depth = 0;
     let closeIdx = -1;
     for (let i = openIdx; i < source.length; i++) {
@@ -275,9 +324,20 @@ describe('orb-widget guided-topic resume signal — _guidedTopicAudioDelivered (
       if (c === '}') depth--;
       if (depth === 0) { closeIdx = i; break; }
     }
-    const block = source.slice(idx, closeIdx + 1);
-    expect(block).toMatch(/_s\.guidedTopic = null/);
-    expect(block).toMatch(/_s\._guidedTopicAudioDelivered = true;/);
+    const autoCloseBlock = source.slice(autoCloseIdx, closeIdx + 1);
+
+    // The auto-close block still nulls guidedTopic (VTID-03675, unchanged)
+    // and must NOT be what governs the delivered flag any more.
+    expect(autoCloseBlock).toMatch(/_s\.guidedTopic = null/);
+    expect(autoCloseBlock).not.toMatch(/_guidedTopicAudioDelivered/);
+
+    // The flag has its own gate — a guided topic is in flight and turn-1
+    // audio just finished — and it sits immediately before the auto-close.
+    const flagIdx = source.indexOf(
+      'if (_s._guidedTopicInFlight && !_s.greetingComplete) {\n              _s._guidedTopicAudioDelivered = true;',
+    );
+    expect(flagIdx).toBeGreaterThanOrEqual(0);
+    expect(flagIdx).toBeLessThan(autoCloseIdx);
   });
 
   it('_hide() clears it — a real close ends the overlay session', () => {

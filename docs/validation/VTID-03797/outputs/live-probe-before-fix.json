@@ -1,0 +1,37 @@
+[
+  {
+    "label": "guided T001 de",
+    "verdict": "BLOCKED",
+    "sid": "live-6e92aef1-1dd7-45de-9071-b75615fb1409",
+    "audio": 2,
+    "err": 2
+  },
+  {
+    "label": "guided T001 en",
+    "verdict": "BLOCKED",
+    "sid": "live-4a9906f3-1438-44e0-b74c-61d58da39fb0",
+    "audio": 2,
+    "err": 2
+  },
+  {
+    "label": "guided T100 de",
+    "verdict": "BLOCKED",
+    "sid": "live-56ad55fd-33d2-427d-92de-96095692315d",
+    "audio": 2,
+    "err": 2
+  },
+  {
+    "label": "guided T200 de",
+    "verdict": "BLOCKED",
+    "sid": "live-223f5652-969b-49e3-a4d8-29d7f4c6b7ae",
+    "audio": 2,
+    "err": 2
+  },
+  {
+    "label": "ORDINARY de (control)",
+    "verdict": "WORKS",
+    "sid": "live-4255f0fd-f524-4414-bdcc-9ab541f42b2d",
+    "audio": 493,
+    "err": 0
+  }
+]

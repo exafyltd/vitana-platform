@@ -22,6 +22,7 @@
 
 import { Pool, type PoolClient, type PoolConfig } from 'pg';
 import { readFileSync, existsSync } from 'node:fs';
+import { rootCertificates } from 'node:tls';
 
 export class AuroraConfigError extends Error {
   constructor(message: string) {
@@ -70,7 +71,37 @@ function redact(url: string): string {
  * for a module whose entire substance is SQL means untested. Pointing it at a
  * remote host with `sslmode=disable` still throws: the rule permits a
  * developer's own machine, never plaintext across a network.
+ *
+ * WHY THE RDS BUNDLE ALONE IS NOT ENOUGH FOR AN RDS PROXY TARGET
+ * (VTID-03773, live staging finding 2026-08-29)
+ *
+ * `AURORA_DATABASE_URL` in production/staging points at the RDS Proxy
+ * endpoint (`vitana-rds-proxy-prod...rds.amazonaws.com`), not the Aurora
+ * cluster endpoint directly. A live connection attempt against a correctly
+ * configured `AURORA_CA_BUNDLE_PATH` (confirmed present, confirmed
+ * containing the exact `Amazon RDS eu-central-1 Root CA RSA2048 G1` cert
+ * matching the cluster's own `CACertificateIdentifier`) still failed TLS
+ * verification with "unable to get local issuer certificate" — proving the
+ * proxy's presented certificate chain does not terminate solely in the
+ * RDS-instance CA hierarchy the downloadable bundle covers. RDS Proxy
+ * terminates TLS itself and its certificate can chain to a different,
+ * publicly-trusted root than the database engine's own certificate.
+ *
+ * Node's `tls`/`pg` `ca` option **replaces** the default trusted CA store
+ * rather than adding to it — passing only the RDS bundle silently drops
+ * every public root Node normally trusts, which is exactly the root the
+ * proxy's chain may need. The fix is to verify against the UNION of both:
+ * the RDS bundle (needed for a direct-to-instance connection, and for any
+ * RDS-specific intermediate) plus Node's own built-in trusted roots
+ * (`tls.rootCertificates`, needed for the proxy's publicly-chained
+ * certificate). This is not a relaxation of verification — `rejectUnauthorized`
+ * stays `true` and an unmatched chain still fails loudly; it only restores
+ * the trust anchors that a naive custom `ca` value would otherwise remove.
  */
+function splitPemCertificates(bundle: string): string[] {
+  const matches = bundle.match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g);
+  return matches ?? [];
+}
 function allowsPlaintext(url: string): boolean {
   try {
     const u = new URL(url);
@@ -101,7 +132,18 @@ function resolveSsl(env: NodeJS.ProcessEnv): PoolConfig['ssl'] {
           'Download the RDS CA bundle (rds-combined-ca-bundle.pem) and mount it on the task.',
       );
     }
-    return { ca: readFileSync(caPath, 'utf8'), rejectUnauthorized: true };
+    const bundleCerts = splitPemCertificates(readFileSync(caPath, 'utf8'));
+    if (bundleCerts.length === 0) {
+      throw new AuroraConfigError(
+        `AURORA_CA_BUNDLE_PATH is set to ${JSON.stringify(caPath)} but the file contains no ` +
+          'PEM certificates. Re-download the RDS CA bundle — a truncated or HTML error-page ' +
+          'download would land here otherwise.',
+      );
+    }
+    // Union with Node's built-in trusted roots, not a replacement of them —
+    // see the comment above `splitPemCertificates` for why an RDS-only bundle
+    // is insufficient when the target is an RDS Proxy endpoint.
+    return { ca: [...bundleCerts, ...rootCertificates], rejectUnauthorized: true };
   }
   if ((env.AURORA_SSL_INSECURE ?? '').trim().toLowerCase() === 'true') {
     console.warn(

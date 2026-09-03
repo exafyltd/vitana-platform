@@ -118,14 +118,18 @@ describe('curriculum locale surface (VTID-03509)', () => {
     // Guards both directions: a locale added to the gateway without a curriculum
     // decision, and a release locale quietly dropped.
     // VTID-03569 added zh; VTID-03644 added ar (the 9-language activation prep
-    // — de plus 9 non-German locales). Each addition is a deliberate CURRICULUM
-    // DECISION when a locale reaches the gateway, and the decision is: serve it.
-    // ar behaves exactly like fr/pt/ru/pl/zh did on arrival — zero rows in
-    // journey_checklist_translations, so the curriculum degrades to the authored
-    // German source rather than erroring or refusing the request. Serving German
-    // to an ar reader is the honest failure; refusing the request is not.
+    // — de plus 9 non-German locales). VTID-03801 added tr — not a curriculum
+    // gap this time, journey_checklist_translations already had 252/254 tr
+    // rows; the bug was that GATEWAY_LOCALES had no 'tr' entry at all, so
+    // `?locale=tr` was rejected before the DB was ever consulted. Each
+    // addition is a deliberate CURRICULUM DECISION when a locale reaches the
+    // gateway, and the decision is: serve it. ar behaves exactly like
+    // fr/pt/ru/pl/zh did on arrival — zero rows in journey_checklist_translations,
+    // so the curriculum degrades to the authored German source rather than
+    // erroring or refusing the request. Serving German to an ar reader is the
+    // honest failure; refusing the request is not.
     expect([...GATEWAY_LOCALES].sort()).toEqual(
-      ['ar', 'de', 'en', 'es', 'fr', 'pl', 'pt', 'ru', 'sr', 'zh'],
+      ['ar', 'de', 'en', 'es', 'fr', 'pl', 'pt', 'ru', 'sr', 'tr', 'zh'],
     );
   });
 

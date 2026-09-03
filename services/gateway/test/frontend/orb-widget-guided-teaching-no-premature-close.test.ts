@@ -54,21 +54,41 @@ describe('orb-widget guided teaching does not close before it starts (VTID-03685
     expect(block).not.toMatch(/_sessionStop\(\)/);
   });
 
-  it('falls through to the normal listening transition instead of returning early', () => {
-    // The regression was a `return` right after the guided branch, which
-    // skipped the mic-arming code below entirely. There must be no bare
-    // `return` between the guided-open branch and the beep/mic-start logic.
+  it('a NON-narrated guided open still falls through to the listening transition', () => {
+    // The VTID-03685 regression was a `return` right after the guided branch,
+    // which skipped the mic-arming code below entirely and killed the lesson
+    // after the opener.
+    //
+    // VTID-03800 re-recorded this deliberately. There is now a SECOND early
+    // return here — the one-shot terminal close for a topic whose whole
+    // authored lesson was already delivered as pre-rendered Polly audio. That
+    // is a real behaviour change, requested by the platform owner after a
+    // staging session replayed the lesson three times.
+    //
+    // What this test still protects, and why it is not weakened: the new
+    // return is GATED ON `_guidedTopicNarrated`. On the Polly-failure path
+    // (VTID-03665) turn 1 is only a short opener and the teaching happens
+    // across turns 2+, so that path must still fall through — an ungated
+    // return would reintroduce VTID-03685/VTID-03680 exactly. So: the count
+    // may be two, but the second one must carry that gate.
     const startIdx = source.indexOf("if (_s.guidedAutoClose && !_s.greetingComplete) {");
     const micStartIdx = source.indexOf('_afterBeepStartMic', startIdx);
     expect(startIdx).toBeGreaterThanOrEqual(0);
     expect(micStartIdx).toBeGreaterThan(startIdx);
     const between = source.slice(startIdx, micStartIdx);
-    // The ONLY early return allowed in this stretch is the pre-existing
-    // "overlay already torn down some other way" guard, which is unrelated
-    // to the guided-open branch and must stay.
+
     const returns = between.match(/\breturn;/g) || [];
-    expect(returns.length).toBe(1);
+    expect(returns.length).toBe(2);
+
+    // (a) the pre-existing "overlay already torn down some other way" guard
     expect(between).toMatch(/if \(!_s\.active \|\| _s\._userRequestedClose \|\| !_s\.overlayVisible\) return;/);
+
+    // (b) the narrated one-shot close — and it MUST be conditioned on the
+    // narration flag, never on _guidedTopicInFlight alone.
+    expect(between).toMatch(/_s\._guidedTopicNarrated &&/);
+    const narratedIdx = between.indexOf('_s._guidedTopicNarrated &&');
+    const closeIdx = between.indexOf("_endGuidedTopicTeaching(_narratedTopicId, 'narration_complete');");
+    expect(closeIdx).toBeGreaterThan(narratedIdx);
   });
 
   it('still clears guidedAutoClose/guidedTopic so a later reconnect does not resend a delivered topic', () => {
