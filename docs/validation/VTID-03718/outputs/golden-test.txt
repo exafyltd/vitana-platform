@@ -1,0 +1,85 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/services/conversation/compute-greeting-decision.golden.test.ts
+  computeGreetingDecision — rung golden snapshots
+    ✓ rung 1: safe_fast_newday_overview (briefing due, rich payload) (6 ms)
+    ✓ rung 2: safe_fast_first_time_welcome (never-onboarded, no prior session) (1 ms)
+    ✓ rung 3: conv_resume (same-day reopen, recency register + NBA) (2 ms)
+    ✓ rung 4: safe_fast_proactive (pre-fetched proactive line) (1 ms)
+    ✓ rung 5: safe_fast_newday (bare localized name greeting on a new day) (1 ms)
+    ✓ rung 6: safe_fast_pending_context (generic short menu) (1 ms)
+    ✓ rung 7: silent_reconnect (native resume opening decision) (1 ms)
+    ✓ rung 8: override_v2 (wake-brief selected line, used as the turn lead) (3 ms)
+    ✓ rung 8: override_v2 guided-teach (narration content → SAME plain trigger as every other provider, VTID-03674) (1 ms)
+    ✓ rung 9: silenced_on_cadence (cadence-class wake-brief skip) (1 ms)
+    ✓ legacy default: authenticated recency-bucket menu (1 ms)
+    ✓ legacy default: anonymous intro speech (1 ms)
+    ✓ legacy default: anonymous intro speech is never the English fallback for lang=en
+    ✓ legacy default: anonymous intro speech is never the English fallback for lang=de (1 ms)
+    ✓ legacy default: anonymous intro speech is never the English fallback for lang=fr
+    ✓ legacy default: anonymous intro speech is never the English fallback for lang=es
+    ✓ legacy default: anonymous intro speech is never the English fallback for lang=ar (1 ms)
+    ✓ legacy default: anonymous intro speech is never the English fallback for lang=zh
+    ✓ legacy default: anonymous intro speech is never the English fallback for lang=ru
+    ✓ legacy default: anonymous intro speech is never the English fallback for lang=sr (1 ms)
+    ✓ legacy default: anonymous intro speech is never the English fallback for lang=pt
+    ✓ legacy default: anonymous intro speech is never the English fallback for lang=pl (1 ms)
+  computeGreetingDecision — language axis
+    ✓ legacy default — lang=de, bucket=long
+    ✓ safe_fast_newday name greeting — lang=de (1 ms)
+    ✓ legacy default — lang=en, bucket=long
+    ✓ safe_fast_newday name greeting — lang=en
+  computeGreetingDecision — recency bucket axis (legacy ladder)
+    ✓ bucket=reconnect (1 ms)
+    ✓ bucket=recent
+    ✓ bucket=same_day
+    ✓ bucket=today (1 ms)
+    ✓ bucket=yesterday
+    ✓ bucket=week
+    ✓ bucket=long
+    ✓ bucket=first (1 ms)
+    ✓ legacy apology branch: wasFailure + reconnect (lang=de — VTID-03556 regression)
+    ✓ legacy apology branch: wasFailure + reconnect (lang=en) (1 ms)
+    ✓ legacy apology branch: wasFailure + recent (lang=fr)
+    ✓ legacy apology branch falls back to English for an unknown lang
+  computeGreetingDecision — current-screen awareness
+    ✓ conv_resume on /matches → screen-completion NBA (1 ms)
+    ✓ conv_resume on /diary → screen-completion NBA (1 ms)
+    ✓ conv_resume on /vitana-index → screen-completion NBA (1 ms)
+    ✓ conv_resume on /chat → screen-completion NBA
+    ✓ legacy default carries the screenHint for a known route
+  computeGreetingDecision — matrix axis collapse
+    ✓ role-invariance: community ≡ admin ≡ developer for identical context (2 ms)
+    ✓ first-time vs returning diverge on the same recency
+  computeGreetingDecision — determinism
+    ✓ same context → identical decision (no hidden clock/random/IO) (1 ms)
+  computeGreetingDecision — spoken-facts ledger continuity (#2835)
+    ✓ conv_resume with a populated ledger → unchanged/changed deltas + previous-utterance (1 ms)
+    ✓ newday_overview with a populated ledger → continuity-aware briefing (1 ms)
+    ✓ empty ledger ≡ no ledger (all facts read as new; byte-identical directive) (1 ms)
+    ✓ deterministic under injected nowIso (no wall-clock leak) (1 ms)
+  computeGreetingDecision — VTID-03607 new-day briefing on the normal ladder
+    ✓ briefing due + rich payload + context resolved → newday_overview, not override_v2
+    ✓ the briefing outranks a wake-brief line that would otherwise fire rung 8 (1 ms)
+    ✓ a silent reconnect still wins — a briefing is the loudest thing to say into one
+    ✓ already briefed today → does NOT fire again (once per calendar day)
+    ✓ no payload gathered → normal ladder is byte-identical to before
+    ✓ an empty payload (nothing worth saying) does not hijack the turn (1 ms)
+    ✓ both ladders produce the SAME directive for the same payload — one implementation (3 ms)
+  setNewdayOverviewRungEnabled — new-day overview kill switch
+    ✓ defaults to enabled — unchanged behaviour for any caller that never touches the switch (1 ms)
+    ✓ disabling makes BOTH ladders fall through to a later rung instead of failing
+    ✓ re-enabling restores the rung for the identical context (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       60 passed, 60 total
+Snapshots:   34 passed, 34 total
+Time:        0.521 s, estimated 1 s
+Ran all test suites matching /test\/services\/conversation\/compute-greeting-decision.golden.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
