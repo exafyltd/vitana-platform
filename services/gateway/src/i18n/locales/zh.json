@@ -1,4 +1,8 @@
 {
+  "notif.event_game_ending_soon.title": "🚨 还剩10分钟！",
+  "notif.event_game_ending_soon.body": "{name} 即将结束——抓紧最后的得分机会！",
+  "notif.event_game_results_ready.title": "🏆 游戏结束了",
+  "notif.event_game_results_ready.body": "{name} 已结束——查看你的成绩。",
   "notif.morning_briefing.title": "你的晨间简报",
   "notif.morning_briefing.body": "看看今天有什么在等着你。",
   "notif.diary_reminder.title": "日记提醒",

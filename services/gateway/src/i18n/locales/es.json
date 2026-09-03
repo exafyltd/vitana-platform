@@ -1,4 +1,8 @@
 {
+  "notif.event_game_ending_soon.title": "🚨 10 minutes left!",
+  "notif.event_game_ending_soon.body": "{name} is ending soon — grab those last points!",
+  "notif.event_game_results_ready.title": "🏆 The game is over",
+  "notif.event_game_results_ready.body": "{name} has ended — see your result.",
   "notif.morning_briefing.title": "Tu resumen matutino",
   "notif.morning_briefing.body": "Mira lo que te espera hoy.",
   "notif.diary_reminder.title": "Recordatorio del diario",
