@@ -1569,6 +1569,7 @@ import { GeminiApiKeyLiveClient } from '../orb/live/upstream/gemini-api-key-live
 // decision. L1 always pins to Vertex; L2 (canary) will honor LiveKit.
 import {
   selectUpstreamProvider,
+  deriveVoiceRuntimeHealthy,
   type UpstreamSelectionDecision,
 } from '../orb/live/upstream/upstream-provider-selector';
 // L2.1 (VTID-02980): LiveKit internal-canary config reader. Reads
@@ -16459,9 +16460,27 @@ router.get('/health', async (_req: Request, res: Response) => {
   // available — these are the exact gates getAccessToken()/connectToLiveAPI
   // enforce, so the probe now agrees with what real sessions experience.
   const vertexReady = !!VERTEX_PROJECT_ID && !!googleAuth;
-  // The voice runtime is GREEN only when the ACTIVELY-SELECTED provider is
-  // ready — not when some unrelated module flag happens to be set.
-  const voiceRuntimeHealthy = activeProvider === 'vertex' ? vertexReady : livekitReady;
+  // BOOTSTRAP-ORB-HEALTH-NOVA-READY (VTID-03802): this used to be
+  // `activeProvider === 'vertex' ? vertexReady : livekitReady` — written back
+  // when 'vertex' and 'livekit' were the only two provider values this
+  // selector could ever return. VTID-03723 added `nova_sonic` (and
+  // `cascaded`) as real, everyday destinations — selectUpstreamProvider()
+  // now resolves ordinary sessions to 'nova_sonic' via
+  // `nova_forced_vertex_unavailable`/`nova_global_enabled` — but this line
+  // was never updated, so it fell into the `: livekitReady` branch and
+  // reported `healthy: false` for every Nova session regardless of Nova's
+  // actual readiness. Confirmed live 2026-09-02: `/api/v1/orb/nova-sonic/health`
+  // reported `ready:true, issues:[]` for the SAME moment this probe reported
+  // `voice_runtime.healthy:false` — two endpoints disagreeing about the same
+  // fact, and this one (the System Overview ORB card's single source of
+  // truth, per the comment above) was the wrong one. See
+  // `deriveVoiceRuntimeHealthy` for the readiness projection per provider.
+  const voiceRuntimeHealthy = deriveVoiceRuntimeHealthy(activeProvider, {
+    vertexReady,
+    livekitReady,
+    novaReady: getNovaSonicConfig(process.env).ready,
+    cascadeReady: isCascadeEnabled(),
+  });
 
   return res.status(200).json({
     ok: true,
