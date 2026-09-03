@@ -4512,19 +4512,66 @@ export async function tool_save_diary_entry(
 
   // 1) diary_entries insert — best-effort. If it fails we still proceed with
   // the extractor/index so the Index reflects the user's words.
+  //
+  // VTID-03793 — coalesce split voice-dictation fragments into one entry.
+  // Nova Sonic is instructed (rule M / this tool's own description) to call
+  // save_diary_entry ONCE per dictation with everything the user said
+  // combined — but a live report showed one continuous dictation landing as
+  // 7-8 separate calls, one per clause, because prompt compliance alone is
+  // not guaranteed (ALWAYS rule 8: assume defense-in-depth). As a
+  // deterministic backstop, if this user's last VOICE diary fragment landed
+  // within DIARY_VOICE_COALESCE_WINDOW_MS, append to that same row instead
+  // of creating a new one — so the Daily Diary shows one entry per
+  // dictation regardless of how many tool calls the model actually made.
+  const DIARY_VOICE_COALESCE_WINDOW_MS = Number(
+    process.env.DIARY_VOICE_COALESCE_WINDOW_MS ?? 60_000,
+  );
+
   let diary_entry_written = true;
   try {
-    const { error: insertErr } = await sb.from('diary_entries').insert({
-      user_id: identity.user_id,
-      text: rawText,
-      source: 'voice',
-      tags: ['diary', 'voice', 'orb'],
-    });
-    if (insertErr) {
-      diary_entry_written = false;
-      console.warn(
-        `[save_diary_entry] diary_entries insert failed (non-fatal): ${insertErr.message}`,
-      );
+    const { data: recentEntryRaw } = await sb
+      .from('diary_entries')
+      .select('id, text, created_at')
+      .eq('user_id', identity.user_id)
+      .eq('source', 'voice')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const recentEntry = recentEntryRaw as
+      | { id: string; text: string; created_at: string }
+      | null;
+    const recentAgeMs = recentEntry
+      ? Date.now() - new Date(recentEntry.created_at).getTime()
+      : Infinity;
+    const shouldCoalesce =
+      !!recentEntry && recentAgeMs >= 0 && recentAgeMs <= DIARY_VOICE_COALESCE_WINDOW_MS;
+
+    if (shouldCoalesce && recentEntry) {
+      const mergedText = `${recentEntry.text} ${rawText}`.trim();
+      const { error: updateErr } = await sb
+        .from('diary_entries')
+        .update({ text: mergedText, updated_at: new Date().toISOString() })
+        .eq('id', recentEntry.id);
+      if (updateErr) {
+        diary_entry_written = false;
+        console.warn(
+          `[save_diary_entry] diary_entries coalesce-update failed (non-fatal): ${updateErr.message}`,
+        );
+      }
+    } else {
+      const { error: insertErr } = await sb.from('diary_entries').insert({
+        user_id: identity.user_id,
+        text: rawText,
+        source: 'voice',
+        tags: ['diary', 'voice', 'orb'],
+      });
+      if (insertErr) {
+        diary_entry_written = false;
+        console.warn(
+          `[save_diary_entry] diary_entries insert failed (non-fatal): ${insertErr.message}`,
+        );
+      }
     }
   } catch (insertErr) {
     diary_entry_written = false;

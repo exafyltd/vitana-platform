@@ -54,9 +54,17 @@ describe('orb-widget keep_orb_open on navigate (BOOTSTRAP-ORB-UNREAD-MESSAGES-NA
     // or the reset were dropped, audio after a keep-open navigate would be
     // silently swallowed forever — the exact regression this suite exists to
     // catch, mirrored from the widget's own inline comment at the call site.
+    // VTID-03800: this used to slice a fixed 700 characters after the case
+    // label, which silently made the assertion a function of how much COMMENT
+    // sat above the guard — adding an explanatory comment to the handler
+    // pushed the guard out of the window and failed a test about code that
+    // had not changed. Bound the search by the handler's own extent instead,
+    // so it tracks the structure it is actually asserting about.
     const idx = source.indexOf("case 'audio':");
     expect(idx).toBeGreaterThanOrEqual(0);
-    const nearby = source.slice(idx, idx + 700);
-    expect(nearby).toMatch(/if \(_s\.navigationPending\) break;/);
+    const nextCase = source.indexOf("\n      case '", idx + 'case \'audio\':'.length + 1);
+    expect(nextCase).toBeGreaterThan(idx);
+    const handler = source.slice(idx, nextCase);
+    expect(handler).toMatch(/if \(_s\.navigationPending\) break;/);
   });
 });

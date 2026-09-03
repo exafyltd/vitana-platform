@@ -14,6 +14,42 @@ import type { GuidedTopicNarrationContent } from '../../../services/assistant-co
 import { LOCALE_ENGLISH_NAME, resolveLocaleStrict } from '../../../i18n/catalog';
 
 /**
+ * VTID-03795 — the four headings `buildGuidedTopicNarrationBlock` can emit
+ * (de/en x post-narration/legacy-teach). Exported so the system-instruction
+ * builder can DETECT that a guided-topic teaching block is present in the
+ * bootstrap region without re-declaring these strings a second time.
+ *
+ * Why a detector at all: when this block is active the session's lesson has
+ * either already been narrated (post-narration branch) or is about to be
+ * taught conversationally from the material (legacy branch). Either way the
+ * generic "GUIDED JOURNEY" scaffold block — which instructs the model to call
+ * narrate_guided_session and speak the returned script WORD FOR WORD — is both
+ * redundant and DIRECTLY CONTRADICTORY with this block's "do not re-narrate"
+ * rule, and costs ~3,850 UTF-8 bytes of a hard ~32 KB setup budget. See
+ * `live-system-instruction.ts`.
+ *
+ * `guided-topic-narration-prompt.headings-parity.test.ts` asserts every branch
+ * of `buildGuidedTopicNarrationBlock` really does emit one of these, so a
+ * heading rename cannot silently turn the detector into a no-op (the same
+ * drift-guard pattern VTID-03706 and VTID-03696 both needed).
+ */
+export const GUIDED_TOPIC_NARRATION_BLOCK_HEADINGS = [
+  '## GUIDE-MODUS (NACH DER LEKTION)',
+  '## GUIDE MODE (POST-LESSON)',
+  '## GUIDE-MODUS (LEHREN)',
+  '## GUIDE MODE (TEACH)',
+] as const;
+
+/**
+ * True when `text` carries a guided-topic teaching block (any language, any
+ * branch). Pure string check — no I/O, safe on empty/undefined input.
+ */
+export function containsGuidedTopicNarrationBlock(text: string | null | undefined): boolean {
+  if (!text) return false;
+  return GUIDED_TOPIC_NARRATION_BLOCK_HEADINGS.some((heading) => text.includes(heading));
+}
+
+/**
  * The SPOKEN opener LINE. CRITICAL transport constraint (same as the journey
  * guide): on LiveKit the Python agent plays this via `session.say()` LITERALLY —
  * no LLM translation — and on Vertex it is wrapped "speak verbatim". So it MUST
