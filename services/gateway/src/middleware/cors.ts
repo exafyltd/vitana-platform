@@ -29,13 +29,17 @@ const ALLOWED_ORIGINS = [
   // above for the GCP staging domains).
   "https://preview-aws.vitanaland.com",                        // AWS staging frontend
   "https://preview-aws-gateway.vitanaland.com",                // AWS staging gateway (Command Hub)
-  // VTID-03398: AWS production (DR) stack. Same reasoning as the AWS
+  // VTID-03398: AWS production stack. Same reasoning as the AWS
   // staging entries above — without these, the cors callback errors and
   // Express answers with an HTML 500 instead of a JSON response, which
   // breaks login (this exact failure mode already happened twice before:
   // GCP staging, then AWS staging).
-  "https://dr-app.vitanaland.com",                             // AWS production DR frontend (community-app-awsdr)
-  "https://dr-gateway.vitanaland.com",                         // AWS production DR gateway (Command Hub same-origin POSTs)
+  // gateway.vitanaland.com is already listed above (line 11) as the canonical production URL.
+  // dr-app / dr-gateway are kept here as legacy ALB aliases — removing them
+  // could break any existing request that still reaches those hostnames via
+  // the ALB, but they are not canonical and should not be used as targets.
+  "https://dr-app.vitanaland.com",                             // Legacy ALB alias — canonical production frontend is vitanaland.com
+  "https://dr-gateway.vitanaland.com",                         // Legacy ALB alias — canonical production gateway is gateway.vitanaland.com
 ];
 
 // VTID-01226: Dynamic origin patterns for Lovable-hosted frontends

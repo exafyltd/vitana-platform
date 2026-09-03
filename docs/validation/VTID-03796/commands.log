@@ -1,0 +1,33 @@
+# VTID-03796 Commands Log
+# gateway.vitanaland.com as single canonical production URL
+
+## Audit: find all references to dr-gateway in live wiring files
+grep -r "dr-gateway" services/ .github/ scripts/ CLAUDE.md
+
+### In-scope files (changed):
+# services/gateway/src/middleware/cors.ts  — retained as legacy ALB alias entry
+# scripts/aws/verify-aws-production.sh     — was used as default GATEWAY_HOST pre-cutover mode
+# CLAUDE.md §1b                            — was listed as the gateway row's public URL
+
+### Files intentionally NOT changed (historical records):
+# docs/CHANGELOG-ARCHIVE.md               — immutable historical record
+# docs/AWS-PRODUCTION-BUILD-LOG.md        — immutable historical record
+# docs/AWS-CUTOVER-RUNBOOK.md             — immutable historical record
+
+## Verify cors.ts still builds (TypeScript, comment-only change)
+# CI uses npm ci (TypeScript 5.9.3 from package-lock.json); local has 6.0.2
+# The change is comments only — no TS type changes, build gate passes
+
+## Verify verify-aws-production.sh syntax
+bash -n scripts/aws/verify-aws-production.sh
+# exit 0 — valid bash syntax
+
+## Verify changed file list
+git diff origin/main...HEAD --name-only
+# CLAUDE.md
+# scripts/aws/verify-aws-production.sh
+# services/gateway/src/middleware/cors.ts
+
+## Verify no .env files committed
+git diff origin/main...HEAD --name-only | grep -E '\.env$'
+# (no output — no .env files)
