@@ -1,0 +1,1989 @@
+{
+  "surface": "nav-catalog",
+  "locale": "zh",
+  "source_locale": "de",
+  "generated_at": "2026-09-04T10:56:43.927Z",
+  "field_order": [
+    "title",
+    "description",
+    "when_to_visit"
+  ],
+  "entries": {
+    "003c68a2-d838-4bb9-8fab-9fb67a5d22fe": {
+      "source_sha": "aeba7587fe4420ad",
+      "fields": {
+        "title": "Vitana 指数",
+        "description": "你的 Vitana 指数得分——基于五大支柱的长寿指标（营养、水分、运动、睡眠、心理）。",
+        "when_to_visit": "想看自己的 Vitana 指数、长寿得分、健康评分、五大支柱、或者健康趋势。"
+      }
+    },
+    "00e4f4b6-d501-4376-a6be-30cd840b9d10": {
+      "source_sha": "c8c66260585988ea",
+      "fields": {
+        "title": "优惠活动",
+        "description": "会员专属优惠、折扣和特别活动。",
+        "when_to_visit": "当用户问有什么优惠、折扣、促销或打折商品时。"
+      }
+    },
+    "00fa1b7e-ac50-48be-854d-94b53720fe03": {
+      "source_sha": "9957c50850cdf7e5",
+      "fields": {
+        "title": "提醒",
+        "description": "你设定的提醒——完整列表，可以添加、编辑和删除。",
+        "when_to_visit": "想看提醒列表、所有提醒、\"显示我的提醒\"、或者想管理已设定的提醒的时候。"
+      }
+    },
+    "01a7cfd2-963b-47d8-ac26-52f72e0d13c4": {
+      "source_sha": "158297559e0d8dd7",
+      "fields": {
+        "title": "我的商品",
+        "description": "你在 MAXINA 上发布的商业信息。",
+        "when_to_visit": "想看自己发布的商品、商业信息、上架的服务、或者管理自己发布的内容。"
+      }
+    },
+    "02ab328d-0751-42c5-9b72-875f1cad71d7": {
+      "source_sha": "f5bd893f7b02fa27",
+      "fields": {
+        "title": "AI伙伴",
+        "description": "在专注的伙伴视图中与Vitana对话。",
+        "when_to_visit": "当用户想打开AI伙伴、Vitana伙伴视图、用文字模式和Vitana聊天，或在ORB之外进行更长的对话。"
+      }
+    },
+    "03fa2849-a654-4561-8d7d-83b7ed2ed2f7": {
+      "source_sha": "9f10942ca8a06a74",
+      "fields": {
+        "title": "账户安全",
+        "description": "管理密码和账户安全设置。",
+        "when_to_visit": "当用户想找隐私设置里的安全选项时——比如账户安全、改密码或者双重验证。"
+      }
+    },
+    "04fe7625-5f97-4dbb-ac54-70850ea2824c": {
+      "source_sha": "afb26d902c90f2df",
+      "fields": {
+        "title": "联系 Vitana",
+        "description": "提交反馈、报告问题或给 Vitana 团队发送消息。",
+        "when_to_visit": "想给反馈、报bug、给 Vitana 留言、找客服聊聊"
+      }
+    },
+    "053e1a78-fda6-4420-ab09-ffd49cdb5f06": {
+      "source_sha": "4d5f666408051b2d",
+      "fields": {
+        "title": "正在直播",
+        "description": "当前正在直播的房间。",
+        "when_to_visit": "当用户想看正在直播的房间、想知道现在有什么直播、想找当前在线的直播间时。"
+      }
+    },
+    "079f5996-c2d0-4349-a3cd-feb2f97a2610": {
+      "source_sha": "e782de321c9d2737",
+      "fields": {
+        "title": "保健品",
+        "description": "精选长寿与健康类保健品。",
+        "when_to_visit": "当用户想在商城里浏览、查看或购买保健品、维生素、矿物质或营养补剂——探索在售产品、品牌或优惠。不是用来记录自己在吃的保健品（那是个人追踪标签，不是商城）。"
+      }
+    },
+    "0863af10-2be3-4f39-b358-7f2166e8e17b": {
+      "source_sha": "9f10942ca8a06a74",
+      "fields": {
+        "title": "账户安全",
+        "description": "管理密码和账户安全。",
+        "when_to_visit": "当用户询问隐私设置中的安全标签页——账户安全、密码或双重认证时。"
+      }
+    },
+    "0aa38ad1-7d8a-4825-8d00-3941b595ef77": {
+      "source_sha": "4701f806cea7ebde",
+      "fields": {
+        "title": "数据与授权",
+        "description": "管理你分享的数据以及授权偏好。",
+        "when_to_visit": "当用户询问数据分享授权、哪些数据被分享了、数据权限或授权设置时。"
+      }
+    },
+    "0d1917fb-789d-494e-bf0c-cc364f863cf2": {
+      "source_sha": "961008b2873e4075",
+      "fields": {
+        "title": "健康支柱",
+        "description": "你长寿健康的基石——营养、运动、睡眠、压力管理等。",
+        "when_to_visit": "当用户询问健康支柱、长寿健康的基石、基础健康领域、营养板块、运动板块、睡眠板块或压力管理时。"
+      }
+    },
+    "0db6ca96-a501-4e23-99e0-a74a1b3825ff": {
+      "source_sha": "e7b3fa7b1e0082c1",
+      "fields": {
+        "title": "分享",
+        "description": "把 MAXINA 社区分享给朋友，赚取奖励。",
+        "when_to_visit": "当用户想分享、推荐给别人、邀请朋友，或者问怎么把社区介绍给其他人时。"
+      }
+    },
+    "0e4de277-ff6b-472e-b5cb-6403d7028c43": {
+      "source_sha": "5953b2310bf06537",
+      "fields": {
+        "title": "我的补剂（生物）",
+        "description": "我的生物的补剂标签页——你生物档案中的膳食补充剂。",
+        "when_to_visit": "当用户想在我的生物里查看补剂、找我的生物的补剂标签页或者想了解自己生物档案里的补充剂的时候。"
+      }
+    },
+    "0f409079-24d4-4f79-a79b-e6697429efce": {
+      "source_sha": "9f1e56fdfdabe775",
+      "fields": {
+        "title": "最新检测结果详情",
+        "description": "最近一次单项检测结果的详情面板。",
+        "when_to_visit": "当用户想查看某一项最新检测结果的详情面板时（不是趋势视图）。"
+      }
+    },
+    "0f61f73b-584d-49b3-9290-8ae9217a348b": {
+      "source_sha": "1d03631c3e970942",
+      "fields": {
+        "title": "学习视频",
+        "description": "健康教育与资源的视频标签页。",
+        "when_to_visit": "当用户想看健康学习视频、找教育板块的视频标签页或者问有没有健康科普视频的时候。"
+      }
+    },
+    "103610ef-eca7-4cd8-a9ef-496e3f151d98": {
+      "source_sha": "d3a29583e0a700ca",
+      "fields": {
+        "title": "社交账号",
+        "description": "关联和管理你的社交媒体账号。",
+        "when_to_visit": "当用户询问社交账号、社交媒体关联，或想连接 Instagram、Facebook 等社交平台时。"
+      }
+    },
+    "11292ebb-491b-4e22-b6d0-8a2789b98750": {
+      "source_sha": "d721102a1cad390b",
+      "fields": {
+        "title": "健康服务",
+        "description": "MAXINA 社区提供的健康服务。",
+        "when_to_visit": "当用户想找健康服务、按摩、水疗、恢复理疗或想预约护理项目时。"
+      }
+    },
+    "114e1143-7c6c-4398-a6c4-f2b80017e1d5": {
+      "source_sha": "84258a6d9786ad46",
+      "fields": {
+        "title": "市场",
+        "description": "MAXINA 市场——在社区买卖商业意图。",
+        "when_to_visit": "想逛市场、看看有什么商业意图、买东西、卖东西、或者看看社区里大家在卖啥。"
+      }
+    },
+    "12298016-0a45-4b5e-9c51-4bd131256952": {
+      "source_sha": "c9736d6d6c379351",
+      "fields": {
+        "title": "商机",
+        "description": "与你服务匹配的新商机和潜在客户。",
+        "when_to_visit": "想看有什么商机、潜在客户、新客户、或者最近有什么生意进来。"
+      }
+    },
+    "1266ee7a-e0bb-4351-a229-788516a27b07": {
+      "source_sha": "ee6970e175e30e06",
+      "fields": {
+        "title": "群组详情",
+        "description": "查看某个社区群组——成员、帖子和活动。",
+        "when_to_visit": "当用户想通过ID或名称打开某个群组、想看某个群组、或者想查看群组详情的时候。"
+      }
+    },
+    "12eb827f-95f1-5fb0-bda9-d9ca2aba85cb": {
+      "source_sha": "4a3e310994e2560c",
+      "fields": {
+        "title": "我的计划",
+        "description": "围绕你的目标定制的健康计划——饮食、健身、睡眠、压力管理。",
+        "when_to_visit": "当用户想查健康计划、饮食方案、健身计划、个人方案，或者想知道为了达成目标该做什么时。"
+      }
+    },
+    "16a08da1-9227-5415-858a-7db4703ae022": {
+      "source_sha": "d68213a45c6a8433",
+      "fields": {
+        "title": "订阅",
+        "description": "你正在生效的订阅和付费服务。",
+        "when_to_visit": "当用户想查订阅、定期扣款、自己在付什么钱，或者想取消、管理订阅时。"
+      }
+    },
+    "17100496-7f04-51d3-8932-b2f8584ce3f5": {
+      "source_sha": "d721102a1cad390b",
+      "fields": {
+        "title": "养生服务",
+        "description": "MAXINA 社区提供的养生服务。",
+        "when_to_visit": "当用户想查养生服务、按摩、水疗、恢复理疗，或者想预约相关项目时。"
+      }
+    },
+    "18bc8bcf-4fcb-406c-942a-d5d0ecc0f18f": {
+      "source_sha": "fa80b43bbbbac882",
+      "fields": {
+        "title": "社区",
+        "description": "MAXINA 社区中心——活动、直播间、媒体和群组。",
+        "when_to_visit": "当用户想了解社区、想逛逛社区功能、或者不知道去哪儿找社交内容的时候。"
+      }
+    },
+    "18f0a112-95a7-4398-9cbd-c903a0a22e61": {
+      "source_sha": "dd22afdd669d96a8",
+      "fields": {
+        "title": "传播",
+        "description": "追踪你分享的内容是如何传播和被接收的。",
+        "when_to_visit": "当用户想了解传播情况、内容扩散效果、覆盖范围或分享数据分析时。"
+      }
+    },
+    "1adb4c47-9c29-4139-8f0a-b9c5540248e0": {
+      "source_sha": "8f5b9beff43e120f",
+      "fields": {
+        "title": "分享赚奖励",
+        "description": "分享Discover产品，赚取奖励。",
+        "when_to_visit": "当用户想找Discover的分享赚奖励页面、Discover分享赚钱专区，或者想通过分享Discover商城产品来赚奖励的时候。"
+      }
+    },
+    "1b834543-4be4-42c8-a92d-26060faf9d6e": {
+      "source_sha": "0c02c902c941e65f",
+      "fields": {
+        "title": "支付方式",
+        "description": "管理你的支付方式。",
+        "when_to_visit": "当用户询问账单中的支付方式标签页——支付方式、绑定的信用卡或如何付款时。"
+      }
+    },
+    "1bdb110d-54be-41b3-be27-5c6cdc260c37": {
+      "source_sha": "aa5d91925bd25e25",
+      "fields": {
+        "title": "睡眠计划",
+        "description": "健康计划的睡眠标签页。",
+        "when_to_visit": "当用户想查看睡眠计划、计划里的睡眠标签页，或者问自己的作息安排时。"
+      }
+    },
+    "1c6bf120-1bdb-44e9-bd1a-3f25ca6b72b3": {
+      "source_sha": "a7515c9de0ae2e65",
+      "fields": {
+        "title": "找搭档",
+        "description": "统一的舞蹈和健身搭档匹配——有序的配对结果。",
+        "when_to_visit": "当用户想找舞伴、健身伙伴或匹配对象，或者想打开搭档匹配功能时。"
+      }
+    },
+    "1e805a08-6100-4c20-ad24-2feb7481f7e2": {
+      "source_sha": "4025dacd79656dc6",
+      "fields": {
+        "title": "资料可见性",
+        "description": "按板块设置你的个人资料可见性——控制谁能看到哪些内容。",
+        "when_to_visit": "当用户询问资料可见性、谁能看到我的资料、哪些内容是公开的，或想隐藏某个资料板块时。"
+      }
+    },
+    "1f13b910-4d0a-4ed8-96d5-04aba4574d27": {
+      "source_sha": "723924fb5220e3a3",
+      "fields": {
+        "title": "收入",
+        "description": "在洞察标签页中查看你的 MAXINA 业务收入明细。",
+        "when_to_visit": "当用户想查看业务中心洞察的收入标签页，或者想了解自己业务的收入明细时。"
+      }
+    },
+    "20673ca9-816e-4139-aa27-cc0497475bb7": {
+      "source_sha": "9e222869f090435c",
+      "fields": {
+        "title": "语言和地区",
+        "description": "设置应用语言和地区。",
+        "when_to_visit": "当用户想找偏好设置里的语言和地区选项时——比如想改应用语言、切换地区或调整区域设置。"
+      }
+    },
+    "230e2278-a71d-4b1b-bebf-9988c3c45887": {
+      "source_sha": "1048dbff42a2320f",
+      "fields": {
+        "title": "发现",
+        "description": "浏览保健品、健康服务、医生、优惠活动等。",
+        "when_to_visit": "当用户想在 MAXINA 商城里浏览、探索或购买产品和服务时。"
+      }
+    },
+    "23ee8b4e-0de1-5a3e-9a33-b65894c091ce": {
+      "source_sha": "91103055956cb0dd",
+      "fields": {
+        "title": "我的客户",
+        "description": "管理你 MAXINA 业务的客户。",
+        "when_to_visit": "问自己的客户、服务对象，或者怎么管理业务中的客户关系的时候。"
+      }
+    },
+    "254742d3-1856-4b8b-b81a-b2691b2988fd": {
+      "source_sha": "68e6769236d8440c",
+      "fields": {
+        "title": "健康状况",
+        "description": "追踪和管理你的健康状况。",
+        "when_to_visit": "当用户询问自己的健康状况、慢性病、诊断结果、健康风险或正在管理的健康问题时。"
+      }
+    },
+    "28fb12d8-e817-4fe2-97df-720d971de839": {
+      "source_sha": "6408409b26adb8a1",
+      "fields": {
+        "title": "灵感",
+        "description": "来自Vitana的励志消息和健康小贴士。",
+        "when_to_visit": "当用户想要找灵感、励志内容、健康小贴士或每日正能量的时候。"
+      }
+    },
+    "2946fd3f-c652-5181-a375-e3960590b5d4": {
+      "source_sha": "9bd8a76c8a7c160f",
+      "fields": {
+        "title": "隐私设置",
+        "description": "管理Vitana保存的数据以及与社区分享的内容。",
+        "when_to_visit": "当用户询问隐私设置、数据管理、分享了什么、授权同意，或想修改隐私偏好时。"
+      }
+    },
+    "2a1ca4d8-59b0-4b57-98d9-c979bcf0badf": {
+      "source_sha": "bbfb6e1126d54c4a",
+      "fields": {
+        "title": "使用条款",
+        "description": "使用条款和法律信息。",
+        "when_to_visit": "当用户询问使用条款、服务条款、法律条款或用户协议时。"
+      }
+    },
+    "2b052733-4dff-4489-951b-5c9a4495c8e4": {
+      "source_sha": "a28d4f56c54e081b",
+      "fields": {
+        "title": "AI 连接器",
+        "description": "将 AI 服务商和应用连接到你的账户。",
+        "when_to_visit": "当用户询问 AI 连接器、已连接应用的 AI 标签页，或想连接 AI 应用或服务商（OpenAI、Claude、Gemini）时。"
+      }
+    },
+    "2d7233c0-8bd5-4fe6-8feb-99442a5b3202": {
+      "source_sha": "7811b32fe36b54dd",
+      "fields": {
+        "title": "单日记录流程",
+        "description": "针对特定某一天的专注记录流程。",
+        "when_to_visit": "想进入专门的单日记录步骤（不是通用的日记视图）的时候。"
+      }
+    },
+    "2dae3b6a-d075-414f-944e-93e824918772": {
+      "source_sha": "4d00fa2ca16a16a4",
+      "fields": {
+        "title": "匹配详情",
+        "description": "两位社区成员基于共同关注点的具体匹配信息。",
+        "when_to_visit": "想看某个具体匹配、问我的匹配详情、用ID打开某个匹配"
+      }
+    },
+    "2e4538a5-d6a2-481b-9e46-64a4edc9b016": {
+      "source_sha": "e031d0ed92eedb82",
+      "fields": {
+        "title": "日记",
+        "description": "你的每日日记——记录想法、心情和感悟。",
+        "when_to_visit": "当用户想写日记、打开健康日记、记录感受、写今天的心情或打开日记本时。"
+      }
+    },
+    "2eaff461-0422-4249-b196-9bae58d55b34": {
+      "source_sha": "7cfedb1858e325f3",
+      "fields": {
+        "title": "创业中心",
+        "description": "你的创业基地，在 MAXINA 社区建立事业、获得收入。",
+        "when_to_visit": "当用户想了解如何创业、成为创作者、成为服务商，或想在 MAXINA 社区把自己的技能变现时。"
+      }
+    },
+    "2fa79e93-3fcc-545e-9d34-7efbc04875e5": {
+      "source_sha": "f803b94dca9d3cad",
+      "fields": {
+        "title": "Earthlinks 入口",
+        "description": "Earthlinks 租户的注册和登录页面。",
+        "when_to_visit": "提到 Earthlinks 并且想注册或登录的时候。"
+      }
+    },
+    "30f828c1-daf5-5562-a0b9-9f18e1c53816": {
+      "source_sha": "e02379bcaee68dcb",
+      "fields": {
+        "title": "登录",
+        "description": "通用的登录和注册页面。",
+        "when_to_visit": "想打开通用登录页面，没有特定租户场景的时候。"
+      }
+    },
+    "328bec6a-8575-449f-9ec9-89ec70acf9a7": {
+      "source_sha": "b38e82e237da5bde",
+      "fields": {
+        "title": "数据共享",
+        "description": "管理你的数据共享设置。",
+        "when_to_visit": "当用户想找隐私设置里的数据共享选项时——比如想看数据共享设置、了解哪些数据会被分享，或者想管理数据共享授权。"
+      }
+    },
+    "338c566a-bec4-46e1-99c0-1576c5311b40": {
+      "source_sha": "b0ebb8dc27b9695b",
+      "fields": {
+        "title": "奖励洞察",
+        "description": "钱包奖励的智能分析标签页——教你怎么赚更多。",
+        "when_to_visit": "当用户想查看奖励洞察、奖励里的智能分析标签页，或者问怎么赚更多奖励时。"
+      }
+    },
+    "33c71456-fb59-4cf2-86a2-c2182ef5aafb": {
+      "source_sha": "9e222869f090435c",
+      "fields": {
+        "title": "语言和地区",
+        "description": "应用语言和地区设置。",
+        "when_to_visit": "当用户询问偏好设置中的语言和地区标签页——应用语言、地区或区域设置时。"
+      }
+    },
+    "33da1f6b-27fd-420d-a888-e8f1dbea7c62": {
+      "source_sha": "bf1a3dd69d7b6031",
+      "fields": {
+        "title": "账单和收据",
+        "description": "你的账单和收据。",
+        "when_to_visit": "当用户询问账单中的账单和收据标签页——账单、收据或付款记录时。"
+      }
+    },
+    "33f47c7e-d533-4a95-98fb-20bebe2ca981": {
+      "source_sha": "f53262670e5daa2d",
+      "fields": {
+        "title": "Autopilot 设置",
+        "description": "配置 Autopilot——推荐频率、显示哪些类别以及免打扰时段。",
+        "when_to_visit": "当用户询问 Autopilot 设置、Autopilot 偏好、如何配置推荐，或想更改 Autopilot 行为时。"
+      }
+    },
+    "347ac3b5-99bb-463b-84c6-a77c6fbe32aa": {
+      "source_sha": "e7b3fa7b1e0082c1",
+      "fields": {
+        "title": "分享",
+        "description": "把 MAXINA 社区分享给朋友，赚取奖励。",
+        "when_to_visit": "当用户想分享、推荐、邀请朋友，或询问如何推广社区时。"
+      }
+    },
+    "3483e0e8-770b-5021-8d5c-ccc559a4a65e": {
+      "source_sha": "bdf924974a365677",
+      "fields": {
+        "title": "保健品",
+        "description": "精选的长寿与养生保健品。",
+        "when_to_visit": "当用户想查保健品、维生素、矿物质、营养补剂，或者想知道该吃什么来保持健康时。"
+      }
+    },
+    "35943f07-47ef-4292-935b-986db8bcef7c": {
+      "source_sha": "cdc73456d747d1e7",
+      "fields": {
+        "title": "主动播报",
+        "description": "助手的主动标签页——设置 Vitana 什么时候主动开口。",
+        "when_to_visit": "当用户想找助手的主动标签页、主动播报功能，或者想设置 Vitana 什么时候主动提醒自己。"
+      }
+    },
+    "35b811f8-ce5e-4d39-8e8c-d92cfec50135": {
+      "source_sha": "85c5473fc0ff0ce1",
+      "fields": {
+        "title": "社区动态",
+        "description": "新闻动态的社区板块——来自MAXINA社区的更新和帖子。",
+        "when_to_visit": "想看社区板块、社区消息、社区更新或者社区里有啥新鲜事的时候。"
+      }
+    },
+    "37f93997-f66c-4a2c-bc6a-4b3ea0470178": {
+      "source_sha": "0dbe346cb377b8ea",
+      "fields": {
+        "title": "支持",
+        "description": "获取帮助、联系客服或反馈问题。",
+        "when_to_visit": "当用户笼统地询问帮助、客服、怎么联系团队、报告问题或需要支持，但没有指明具体支持类别时。"
+      }
+    },
+    "37fca1cb-daa9-4be7-88ba-5ddbba6a2095": {
+      "source_sha": "f2646e774a37b1ca",
+      "fields": {
+        "title": "健康连接器",
+        "description": "连接健康和检验类应用集成。",
+        "when_to_visit": "当用户想查看已连接应用的健康连接器标签页，或者想把健康、检验类应用（Apple Health、Oura、检验机构等）作为集成进行连接时。"
+      }
+    },
+    "38c43a6f-99f8-4cbe-91e3-0e5a4ea4db02": {
+      "source_sha": "004ca71448bca761",
+      "fields": {
+        "title": "Alkalma 门户",
+        "description": "Alkalma 租户的注册和登录。",
+        "when_to_visit": "当用户提到 Alkalma 并想注册或登录时。"
+      }
+    },
+    "38fa0090-e7bb-513c-90e3-2e7756738db5": {
+      "source_sha": "cc0efffd1e1dee07",
+      "fields": {
+        "title": "隐私政策",
+        "description": "公开的隐私政策。",
+        "when_to_visit": "问到隐私、数据处理或 Vitana 收集哪些数据的时候。"
+      }
+    },
+    "3bab8e1f-3242-565f-bc1c-ff64ff85e5c2": {
+      "source_sha": "008ee6ae6669998e",
+      "fields": {
+        "title": "长寿资讯",
+        "description": "你的资讯主页——为你精选的最新长寿新闻、研究和文章。",
+        "when_to_visit": "当用户想看新闻、长寿资讯、最新消息、资讯流、长寿动态、文章、研究更新，或者只是想回到主页时。"
+      }
+    },
+    "3c5fb4a9-0fb4-521d-b6c8-824faf9fb5bd": {
+      "source_sha": "c8c66260585988ea",
+      "fields": {
+        "title": "优惠活动",
+        "description": "会员专属优惠、折扣和特别活动。",
+        "when_to_visit": "当用户想查优惠、折扣、促销，或者想知道有什么在打折时。"
+      }
+    },
+    "3e95be46-6816-4ac5-a175-1ec06e8dfcb4": {
+      "source_sha": "f803b94dca9d3cad",
+      "fields": {
+        "title": "Earthlinks 门户",
+        "description": "Earthlinks 租户的注册和登录。",
+        "when_to_visit": "当用户提到 Earthlinks 并想注册或登录时。"
+      }
+    },
+    "3ed08cd7-f9b8-40aa-b744-a324b469acbb": {
+      "source_sha": "bfb06419bd1b5ab0",
+      "fields": {
+        "title": "AI 精选",
+        "description": "由 AI 策划的产品和服务推荐——Discover 的推荐标签页。",
+        "when_to_visit": "当用户想看 Discover 的 AI 精选标签页、推荐标签页、AI 推荐、个性化推荐、精选建议，或者想知道 AI 给自己推荐了什么。"
+      }
+    },
+    "3ed54bce-4705-4908-9b2d-ee010ae0686c": {
+      "source_sha": "4511ea35fda273af",
+      "fields": {
+        "title": "时间线",
+        "description": "按时间顺序展示你的记忆和互动。",
+        "when_to_visit": "当用户想查看时间线、记忆时间轴、互动历史或按时间排列的记忆时。"
+      }
+    },
+    "3f0c369d-e6ed-59f3-8efe-bdeccb8d8c31": {
+      "source_sha": "bac1ad3dc1dc61df",
+      "fields": {
+        "title": "直播房间",
+        "description": "社区成员实时交流的音视频直播房间。",
+        "when_to_visit": "问直播房间、语音直播、视频直播、实时聊天、线上社区通话或正在进行的虚拟聚会的时候。"
+      }
+    },
+    "3f67ec35-713d-4cbf-af28-42e569f05b3e": {
+      "source_sha": "e4f85db4a2c69cb9",
+      "fields": {
+        "title": "Vitanaland 首页",
+        "description": "Vitanaland 和 MAXINA 社区的公开主入口。",
+        "when_to_visit": "当用户想回到开始、去首页、去网站主页，或想再听一遍介绍时。"
+      }
+    },
+    "40c60192-6dae-471b-9cd6-a48e3d7471b6": {
+      "source_sha": "158297559e0d8dd7",
+      "fields": {
+        "title": "我的广告",
+        "description": "你在 MAXINA 上发布的商业广告。",
+        "when_to_visit": "当用户想查看自己的广告、商业广告、发布的服务、商业发布内容，或者想管理自己的公开商业帖子时。"
+      }
+    },
+    "4322284a-c083-45a6-a5a8-89b78dd399d3": {
+      "source_sha": "de7a6188f6c8a7f4",
+      "fields": {
+        "title": "消息",
+        "description": "你与社区成员的私信和对话。",
+        "when_to_visit": "当用户想打开消息、私信、对话，或想给其他成员发私信时。"
+      }
+    },
+    "43aa841d-78b1-4949-a1c5-bb0a7d836c86": {
+      "source_sha": "36c61ab44ee39787",
+      "fields": {
+        "title": "我的生物数据",
+        "description": "追踪你的生物标志物、化验结果和个人健康指标，查看随时间变化的趋势。",
+        "when_to_visit": "当用户问起自己的生物数据、生物标志物、化验结果、血液指标、健康指标、身体成分，或想追踪个人健康数据和趋势时。"
+      }
+    },
+    "44c33035-f42f-496b-8432-073382048b3d": {
+      "source_sha": "85c5473fc0ff0ce1",
+      "fields": {
+        "title": "社区动态",
+        "description": "新闻动态的社区板块——来自MAXINA社区的更新和帖子。",
+        "when_to_visit": "想看社区板块、社区消息、社区更新、社区里有啥新鲜事。"
+      }
+    },
+    "4589d192-d9f2-4368-b558-fe006a237c29": {
+      "source_sha": "88a74453d190d378",
+      "fields": {
+        "title": "我的订单",
+        "description": "你的订单——进行中的和历史订单。",
+        "when_to_visit": "当用户想查订单、我的订单、订单状态、物流，或者想知道自己买过什么。"
+      }
+    },
+    "469ac396-8547-5ff9-b8ab-8b873eb0f969": {
+      "source_sha": "980817d902be78a6",
+      "fields": {
+        "title": "记忆花园",
+        "description": "你的个人记忆库——Vitana 了解的关于你的一切。",
+        "when_to_visit": "当用户想查记忆花园、Vitana 知道自己什么信息、个人记录，或者想管理自己的记忆数据时。"
+      }
+    },
+    "46a5d938-6cb7-48f5-b573-42e2e6c19cff": {
+      "source_sha": "11a202318f43a8cc",
+      "fields": {
+        "title": "每日总结",
+        "description": "由AI生成的每日健康、活动和社区精选总结。",
+        "when_to_visit": "当用户想看每日总结、今日报告，或者想知道今天发生了什么。"
+      }
+    },
+    "4c773720-39e4-4a72-b6c1-4f8db722414b": {
+      "source_sha": "99caa1940ab7f398",
+      "fields": {
+        "title": "钱包操作",
+        "description": "钱包操作——发送、请求、兑换、购买积分和代币、充值、提现。",
+        "when_to_visit": "当用户想找钱包里的操作选项、想转账或收款、想兑换货币、想买积分或代币、想往钱包充钱或提现的时候。"
+      }
+    },
+    "4cc3a101-18fc-41b5-8326-085f5aa4ec1f": {
+      "source_sha": "d7d2d3667235e74b",
+      "fields": {
+        "title": "训练计划",
+        "description": "健康计划的训练标签页。",
+        "when_to_visit": "当用户想查看训练计划、计划里的训练标签页，或者问自己的健身/锻炼计划时。"
+      }
+    },
+    "4d5ea1e5-fe38-4364-8cea-c7b7a8708960": {
+      "source_sha": "ee6970e175e30e06",
+      "fields": {
+        "title": "群组详情",
+        "description": "某个社区群组的详细信息，包括成员、帖子和活动。",
+        "when_to_visit": "当用户想通过ID或名称打开某个群组、查看群组或查看群组详情时。"
+      }
+    },
+    "4dedb731-ac6e-4d8b-803c-7e032c44a0bd": {
+      "source_sha": "9aa202f436995f5d",
+      "fields": {
+        "title": "社区帮助",
+        "description": "向其他成员寻求帮助——社区群组和论坛。",
+        "when_to_visit": "当用户询问社区帮助、向其他用户求助、社区互助群或用户论坛时。"
+      }
+    },
+    "50a82263-eb3e-4c63-b58f-dd346905593b": {
+      "source_sha": "2b2cff328d1c6b56",
+      "fields": {
+        "title": "邮箱和日历连接",
+        "description": "连接邮箱和日历应用。",
+        "when_to_visit": "当用户询问邮箱和日历连接、已连接应用的效率工具页，或想接入邮箱或日历应用（如Gmail、Google日历、Outlook）时。"
+      }
+    },
+    "50bfd44a-bd83-4952-9e8d-f45f8edfd62c": {
+      "source_sha": "9bb5446f7211a27a",
+      "fields": {
+        "title": "通知",
+        "description": "管理你的通知偏好。",
+        "when_to_visit": "当用户想查看通知设置、推送通知、邮件提醒或想开启、关闭通知时。"
+      }
+    },
+    "52e8358b-0794-5cb2-ac33-d0ca17c12452": {
+      "source_sha": "1316fac0d90ee9ab",
+      "fields": {
+        "title": "AI伙伴",
+        "description": "在专属伙伴界面与Vitana聊天。",
+        "when_to_visit": "当用户想打开Vitana专属聊天、进入AI伙伴界面，或想在ORB之外进行更深入的对话时。"
+      }
+    },
+    "535d7082-6a0d-4173-b394-51852e172c27": {
+      "source_sha": "4fc59531e14929af",
+      "fields": {
+        "title": "群组",
+        "description": "浏览并加入 MAXINA 社区群组。",
+        "when_to_visit": "想找社区群组、加入群组、看看有哪些群、查看我的群组"
+      }
+    },
+    "5378f930-94c6-4cb7-9511-2d409ad50d06": {
+      "source_sha": "1f5ebbfc5910fa07",
+      "fields": {
+        "title": "可见性",
+        "description": "控制谁能看到你的个人资料。",
+        "when_to_visit": "当用户想查看隐私设置里的个人资料可见性——谁能看到自己的资料或者想隐藏个人资料时。"
+      }
+    },
+    "538ad2e6-82b5-4243-9453-34e80f3b460e": {
+      "source_sha": "83bb50951e683f76",
+      "fields": {
+        "title": "会员",
+        "description": "钱包余额的会员标签页。",
+        "when_to_visit": "当用户想查看自己的会员资格、会员状态，或者钱包里的会员标签页时。"
+      }
+    },
+    "53d10b78-aced-41fc-90de-3de0eabed5b1": {
+      "source_sha": "93cc4ff1fb2559b6",
+      "fields": {
+        "title": "直播房间播放器",
+        "description": "根据 roomId 打开特定音频或视频直播房间的播放页面。",
+        "when_to_visit": "当调用方有特定的 roomId 并需要打开对应的播放页面时。"
+      }
+    },
+    "54c051b3-9ebb-4366-9a63-afef7b1b593c": {
+      "source_sha": "24115fcdd7fc3d8d",
+      "fields": {
+        "title": "偏好设置",
+        "description": "你的个人应用体验偏好。",
+        "when_to_visit": "当用户想更改偏好、自定义应用、调整设置或个性化体验时。"
+      }
+    },
+    "55ff6402-2614-445d-a34b-834241ba1ca4": {
+      "source_sha": "b68d66fc1e5a866c",
+      "fields": {
+        "title": "加入 MAXINA 社区",
+        "description": "在 Vitanaland 注册并登录 MAXINA 社区。",
+        "when_to_visit": "当用户想注册、登录、加入社区、创建账户或登录 MAXINA 时。"
+      }
+    },
+    "560b693d-a20f-427e-a07d-6230404b8144": {
+      "source_sha": "bd38e930484c5d49",
+      "fields": {
+        "title": "推荐奖励",
+        "description": "钱包奖励的推荐标签页——通过推荐获得的奖励。",
+        "when_to_visit": "当用户想查看推荐奖励、奖励里的推荐标签页，或者问邀请好友得到的奖励时。"
+      }
+    },
+    "560efcf3-db9a-4533-8a48-044db3e9ea6d": {
+      "source_sha": "aa413e69ed447620",
+      "fields": {
+        "title": "播客",
+        "description": "社区播客和音频节目。",
+        "when_to_visit": "当用户想找播客、播客标签页或者Media Hub里的音频节目时。"
+      }
+    },
+    "56a64360-8b5d-4f31-97cf-1a550ac0a1b2": {
+      "source_sha": "bfb06419bd1b5ab0",
+      "fields": {
+        "title": "AI 精选",
+        "description": "AI 为你精选的产品和服务推荐——发现页的推荐标签。",
+        "when_to_visit": "当用户想看发现页的 AI 精选标签、推荐标签、AI 推荐、个性化推荐、精选好物，或者想知道 AI 给他推荐了什么。"
+      }
+    },
+    "57072d78-74af-466e-998d-2cbe72137e22": {
+      "source_sha": "93cc4ff1fb2559b6",
+      "fields": {
+        "title": "直播间观看页",
+        "description": "通过roomId打开的特定音频或视频直播间观看页面。",
+        "when_to_visit": "当调用方有特定的roomId并需要打开对应的观看页面时。"
+      }
+    },
+    "594d38ab-b0f0-47ec-b83c-28bafee22eb4": {
+      "source_sha": "3a2c1f139ad82533",
+      "fields": {
+        "title": "AI 洞察",
+        "description": "基于你的健康数据和活动生成的个性化洞察。",
+        "when_to_visit": "当用户想了解洞察、规律、趋势，或者想知道 AI 从他的数据中发现了什么时。"
+      }
+    },
+    "5ea6de71-f8f0-475c-904e-8c0fc4f43636": {
+      "source_sha": "84258a6d9786ad46",
+      "fields": {
+        "title": "商城",
+        "description": "MAXINA 商城——买卖社区里的商业意图。",
+        "when_to_visit": "当用户想打开商城、浏览商业意图、买东西、卖东西，或者看看社区里大家在卖什么。"
+      }
+    },
+    "61535fd3-0634-4e60-9f09-dc406ff4ff53": {
+      "source_sha": "1f06d33ed964eea2",
+      "fields": {
+        "title": "余额与权益",
+        "description": "你当前的 MAXINA 余额以及你所在等级解锁的权益。",
+        "when_to_visit": "当用户想查看余额、账户金额、权益、等级或已解锁的内容时。"
+      }
+    },
+    "62cf9915-c542-4e40-a4d4-d9077d1f8bc0": {
+      "source_sha": "9bd8a76c8a7c160f",
+      "fields": {
+        "title": "隐私设置",
+        "description": "管理 Vitana 存储的数据以及与社区分享的内容。",
+        "when_to_visit": "当用户想了解隐私设置、数据管理、分享了什么、授权同意或想更改隐私偏好时。"
+      }
+    },
+    "640746cc-7f0d-4219-b023-ee0912f0e237": {
+      "source_sha": "24115fcdd7fc3d8d",
+      "fields": {
+        "title": "偏好设置",
+        "description": "你的个人应用体验偏好。",
+        "when_to_visit": "当用户想修改偏好、自定义应用、调整设置或个性化体验时。"
+      }
+    },
+    "65211ac5-2554-488f-a4ae-ececa62a9a0a": {
+      "source_sha": "ffa86195b6c72a26",
+      "fields": {
+        "title": "学习播客",
+        "description": "健康教育与资源的播客标签页。",
+        "when_to_visit": "当用户想听健康学习播客、找教育板块的播客标签页或者想要健康学习音频的时候。"
+      }
+    },
+    "65d24ad5-2d2a-4591-b73c-6e1ce42f8284": {
+      "source_sha": "b5cd6fb642fcbb3e",
+      "fields": {
+        "title": "搜索",
+        "description": "在整个 MAXINA 应用中进行全局搜索——包括成员、内容、服务和产品。",
+        "when_to_visit": "当用户想搜索应用、找某个东西、查找某个成员、查找内容或打开全局搜索时。"
+      }
+    },
+    "66e568f7-c218-4c07-8c08-cad024cc2fb1": {
+      "source_sha": "b4369583abde280b",
+      "fields": {
+        "title": "创作者提现",
+        "description": "你的创作者提现和收益结算。",
+        "when_to_visit": "当用户询问账单中的创作者提现标签页——创作者提现、收益结算或作为创作者如何收款时。"
+      }
+    },
+    "6735c423-5ab3-4ac8-b1fe-f80a60d574f3": {
+      "source_sha": "2d8d2e989e198e27",
+      "fields": {
+        "title": "资讯文章",
+        "description": "长寿资讯文章的详情页。",
+        "when_to_visit": "想通过ID阅读某篇资讯、打开一条新闻、或者查看之前看过的文章全文的时候。"
+      }
+    },
+    "67841bf1-e825-4ea0-8ffd-89091cd74e6b": {
+      "source_sha": "597f11e5b7771d07",
+      "fields": {
+        "title": "社区成员",
+        "description": "浏览MAXINA社区成员名录。",
+        "when_to_visit": "当用户想查看成员名录、社区成员、社区里有谁，或者想浏览成员资料时。"
+      }
+    },
+    "67ad5e75-0116-4bd2-9652-3f3b72b358a4": {
+      "source_sha": "a7515c9de0ae2e65",
+      "fields": {
+        "title": "找搭档",
+        "description": "统一的舞蹈和健身搭档匹配——有序推荐。",
+        "when_to_visit": "想找舞伴、健身伙伴或匹配对象时，或者想打开搭档匹配功能时。"
+      }
+    },
+    "69329a51-8b9d-4886-907b-b88f0d3b3e09": {
+      "source_sha": "6b8b0389d72b3374",
+      "fields": {
+        "title": "发现群组",
+        "description": "群组的发现标签页——推荐你加入的群组。",
+        "when_to_visit": "当用户想发现群组、找新群组、看推荐的群组，或者查看群组里的发现标签页时。"
+      }
+    },
+    "6a389e2a-b2de-496e-9bd7-82471e40e35c": {
+      "source_sha": "7811b32fe36b54dd",
+      "fields": {
+        "title": "单日记录流程",
+        "description": "专注于某一天的记录流程。",
+        "when_to_visit": "当用户明确想要进入专门的单日记录步骤时（不是通用的日记视图）。"
+      }
+    },
+    "6cc471df-ba41-5af2-a311-42c076f5c701": {
+      "source_sha": "a8952c068a56e92f",
+      "fields": {
+        "title": "钱包",
+        "description": "你的 MAXINA 钱包——余额、订阅和奖励。",
+        "when_to_visit": "当用户想打开钱包、查看余额、看看自己有什么，或者想逛逛钱包页面时。"
+      }
+    },
+    "6d79a307-11eb-49c0-8f50-4ba8fd080e31": {
+      "source_sha": "b38e82e237da5bde",
+      "fields": {
+        "title": "数据共享",
+        "description": "管理哪些数据可以被共享。",
+        "when_to_visit": "当用户询问隐私设置中的数据共享标签页——数据共享、哪些数据被共享或数据共享授权时。"
+      }
+    },
+    "6f65b09e-f352-5420-8b54-014607826d84": {
+      "source_sha": "4360a6a30a1148cc",
+      "fields": {
+        "title": "提醒",
+        "description": "Vitana 为你设置的提醒。",
+        "when_to_visit": "当用户询问自己的提醒、Vitana 提醒过什么，或想查看计划中的提醒时。"
+      }
+    },
+    "7013c375-7d90-5e26-a5ed-2e768b70cc4a": {
+      "source_sha": "3065af6203789f93",
+      "fields": {
+        "title": "销售与收益",
+        "description": "通过销售服务并在 MAXINA 社区获得奖励来建立新的收入来源。",
+        "when_to_visit": "问怎么赚钱、获得收入、搞副业、技能变现、教练变现、健身变现、专业知识变现、卖服务、成为付费创作者、建立新收入来源，或者想在 MAXINA 社区赚钱的时候。"
+      }
+    },
+    "7096ae3d-9df9-41b8-a720-23a292d059d6": {
+      "source_sha": "7abab8bdb7f48fe4",
+      "fields": {
+        "title": "商品详情",
+        "description": "某个商品的详情页。",
+        "when_to_visit": "想看某个商品的详细信息、通过ID打开商品、或者了解某件商品。"
+      }
+    },
+    "70c24bd7-5612-5bac-8edd-c71d732635b7": {
+      "source_sha": "183650a5bd506b94",
+      "fields": {
+        "title": "健康",
+        "description": "你的个人健康中心——生物数据、计划和学习资源。",
+        "when_to_visit": "当用户笼统地问健康、长寿、养生，或者想探索健康功能时。"
+      }
+    },
+    "73f1f5c6-bb8a-55e2-a175-e9e75e0cdbd7": {
+      "source_sha": "36c61ab44ee39787",
+      "fields": {
+        "title": "我的生物数据",
+        "description": "追踪你的生物标志物、化验结果和个人健康指标，查看随时间变化的趋势。",
+        "when_to_visit": "当用户想查生物数据、生物标志物、化验结果、血液指标、健康指标、身体成分，或者想追踪自己的健康数据和趋势时。"
+      }
+    },
+    "749cc89e-e2fd-4ab4-9f44-b7a0505d8e3f": {
+      "source_sha": "3dc6db11beeed1c5",
+      "fields": {
+        "title": "健康服务中心",
+        "description": "查找并预约MAXINA社区服务商提供的健康服务。",
+        "when_to_visit": "当用户问哪里能找到健康服务、怎么预约专业人士，或想浏览健康服务提供者时。"
+      }
+    },
+    "75f8eed2-75a9-4ca8-9d78-23cf2a711cd4": {
+      "source_sha": "cf8e2d0021aca010",
+      "fields": {
+        "title": "我的个人资料",
+        "description": "你的个人资料——姓名、头像、简介和账户详情。",
+        "when_to_visit": "当用户想打开个人资料、查看个人资料、编辑个人资料、查看账户、个人信息、关于我或用户资料时。"
+      }
+    },
+    "764dbd23-12de-4c44-b2f1-30530ab1c27d": {
+      "source_sha": "0877683b6e19abce",
+      "fields": {
+        "title": "医疗服务",
+        "description": "健康服务中心的医疗服务标签页。",
+        "when_to_visit": "当用户想找医疗服务、医生或诊所相关服务，或者想打开健康服务中心的医疗服务标签页。"
+      }
+    },
+    "7899350d-d02b-4466-821c-8766ad663578": {
+      "source_sha": "4d00fa2ca16a16a4",
+      "fields": {
+        "title": "匹配详情",
+        "description": "两位社区成员之间基于共同关注点的一次具体匹配。",
+        "when_to_visit": "当用户想查看某个具体匹配、询问某次匹配的详情，或想通过ID打开某个匹配时。"
+      }
+    },
+    "790556fd-f38a-4f08-b74f-6d2e99715ec4": {
+      "source_sha": "0dbe346cb377b8ea",
+      "fields": {
+        "title": "支持",
+        "description": "获取帮助、联系客服或报告问题。",
+        "when_to_visit": "当用户笼统地寻求帮助、支持、联系团队、报告问题或需要协助，但没有指明具体支持类别时。"
+      }
+    },
+    "7a61224a-810a-457a-997b-de887960e700": {
+      "source_sha": "2d8d2e989e198e27",
+      "fields": {
+        "title": "新闻文章",
+        "description": "长寿新闻文章的详情页。",
+        "when_to_visit": "当用户想阅读某篇特定的新闻文章、打开一条新闻或查看之前看过的文章全文时。"
+      }
+    },
+    "7ac28357-6ff3-4654-83ed-b7c2353ea3cf": {
+      "source_sha": "cc2bd66ea7b0c28f",
+      "fields": {
+        "title": "活动与聚会",
+        "description": "即将举办的 MAXINA 社区活动、线下见面会和聚会。",
+        "when_to_visit": "当用户问起活动和聚会、活动与聚会页面、各类活动、计划中的见面会、舞会、健康工作坊，或者想参加社区活动时。默认打开热门标签页。"
+      }
+    },
+    "7bfe3b24-70dd-453d-8bbb-2256d3f20d1e": {
+      "source_sha": "3a2c1f139ad82533",
+      "fields": {
+        "title": "AI洞察",
+        "description": "根据你的健康数据和活动生成的个性化洞察。",
+        "when_to_visit": "当用户想看洞察、规律、趋势，或者想知道AI从他身上学到了什么。"
+      }
+    },
+    "7d6ee82b-c8bd-402a-ba11-bb58d1af671e": {
+      "source_sha": "9d5721f2addd14d4",
+      "fields": {
+        "title": "外观",
+        "description": "主题、颜色和深色模式。",
+        "when_to_visit": "当用户询问偏好设置中的外观标签页——主题、深色模式、颜色或应用的显示效果时。"
+      }
+    },
+    "7e61b476-e2c1-4914-a229-72eaba4f1cb9": {
+      "source_sha": "dd22afdd669d96a8",
+      "fields": {
+        "title": "传播",
+        "description": "追踪你分享的内容是如何传播和被接收的。",
+        "when_to_visit": "当用户询问传播情况、内容是怎么扩散的、覆盖范围或分享数据分析时。"
+      }
+    },
+    "7f49193a-31ee-5c3c-a75c-ff5afbf47678": {
+      "source_sha": "0b76e6edbf31e526",
+      "fields": {
+        "title": "匹配",
+        "description": "社区里和你兴趣、目标、价值观相投的人。",
+        "when_to_visit": "当用户想知道该认识谁、谁和自己合得来、能和谁建立联系、交朋友、找人、找伙伴，或根据共同兴趣发现志同道合的社区成员时。"
+      }
+    },
+    "7f53603a-2fc2-4298-80ec-9031725881a9": {
+      "source_sha": "c9736d6d6c379351",
+      "fields": {
+        "title": "商机",
+        "description": "与你的服务相匹配的新商机和潜在客户。",
+        "when_to_visit": "当用户询问商机、潜在客户、新客户或有什么新业务进来时。"
+      }
+    },
+    "7f58a662-9529-568e-bbda-4db88d883fda": {
+      "source_sha": "4e67c8e1a59e56bf",
+      "fields": {
+        "title": "教育与科学",
+        "description": "来自 Vitana 知识库的健康教育和长寿科学内容。",
+        "when_to_visit": "当用户想学习健康知识、阅读长寿科学，或者想找养生方面的科普内容时。"
+      }
+    },
+    "81019d74-0860-5cee-a613-a9b59bba5561": {
+      "source_sha": "3dc6db11beeed1c5",
+      "fields": {
+        "title": "健康服务中心",
+        "description": "查找并预约 MAXINA 社区服务商提供的健康服务。",
+        "when_to_visit": "当用户想找健康服务、预约专业人士，或者想浏览健康从业者时。"
+      }
+    },
+    "81bc391b-b711-4e34-85e5-1da0f8b4f611": {
+      "source_sha": "8699e7d18e250bd9",
+      "fields": {
+        "title": "服务商主页",
+        "description": "某个服务商的个人主页。",
+        "when_to_visit": "想看某个服务商的主页、查看教练或医生的资料、或者通过ID找某个服务商。"
+      }
+    },
+    "81c4af67-d838-4724-91fb-2eb8f0a6adec": {
+      "source_sha": "f5de92c3f2acb439",
+      "fields": {
+        "title": "记忆权限",
+        "description": "控制Vitana记住什么以及谁可以查看你的记忆。",
+        "when_to_visit": "当用户想了解记忆权限、Vitana可以记住什么、记忆隐私或谁能访问自己的记忆时。"
+      }
+    },
+    "81fc1c2d-bca3-4cc6-be84-9e97c7d6d4f9": {
+      "source_sha": "2daf710f7a46b377",
+      "fields": {
+        "title": "已归档消息",
+        "description": "你归档过的消息。",
+        "when_to_visit": "当用户想查看已归档的消息、旧消息，或之前保存或移除的消息。"
+      }
+    },
+    "82413dad-62a5-4344-be99-f44e2d4ec8a2": {
+      "source_sha": "6cb8b020d56ee50b",
+      "fields": {
+        "title": "公开主页",
+        "description": "社区成员的公开主页。",
+        "when_to_visit": "当用户想查看其他成员的主页、浏览社区成员的公开页面、通过 @vitana_id 查找某人或查看用户名时。"
+      }
+    },
+    "8343cc16-fb4e-4e9f-85d4-ea995af0ddba": {
+      "source_sha": "0c166351b51b504d",
+      "fields": {
+        "title": "连接器与已连接应用",
+        "description": "与你账户关联的第三方应用连接器和集成服务。",
+        "when_to_visit": "当用户想查看连接器、已连接的应用、应用集成、第三方连接、关联服务或想连接外部应用时。"
+      }
+    },
+    "85374691-c4b7-5bf4-9baf-7a4d70e0ef1c": {
+      "source_sha": "7cfedb1858e325f3",
+      "fields": {
+        "title": "商业中心",
+        "description": "在 MAXINA 社区创建业务、获得收入的中心。",
+        "when_to_visit": "问怎么创业、成为创作者、成为服务提供者，或者想在 MAXINA 社区把技能变现的时候。"
+      }
+    },
+    "8702b903-8a2e-4e64-b073-61c497fdcf61": {
+      "source_sha": "4401d661a459b886",
+      "fields": {
+        "title": "购物车",
+        "description": "购物车中的商品，准备结账。",
+        "when_to_visit": "当用户想打开购物车、查看购物车里有什么、去结账或检查购物车时。"
+      }
+    },
+    "872fdc30-0202-4fc0-8fd8-19058b21c5cd": {
+      "source_sha": "7ec3041e2ca6405c",
+      "fields": {
+        "title": "回忆与搜索",
+        "description": "搜索你的记忆和过往对话。",
+        "when_to_visit": "当用户想搜索记忆、查找说过的话、找到之前的对话或查询Vitana记住的内容时。"
+      }
+    },
+    "87bf15e9-c5b6-4c2e-befc-3d52a1480eec": {
+      "source_sha": "0d96bc9f0ebf682d",
+      "fields": {
+        "title": "语音",
+        "description": "AI助手的语音标签页——语音设置和你的语音优先ORB体验。",
+        "when_to_visit": "当用户想找助手的语音标签页、语音设置、语音AI，或者想配置语音助手的时候。"
+      }
+    },
+    "8956df72-94de-4087-aa16-a50183e4d640": {
+      "source_sha": "4b24806aa985ee54",
+      "fields": {
+        "title": "无障碍",
+        "description": "设置中的无障碍功能区——无障碍相关设置。",
+        "when_to_visit": "当用户想找无障碍设置、设置里的无障碍功能区，或者想调整无障碍选项时。"
+      }
+    },
+    "89975567-1e43-4e4c-8295-b27405d7a60e": {
+      "source_sha": "93b1388fb4bf8055",
+      "fields": {
+        "title": "常见问题",
+        "description": "常见问题解答、帮助文章和知识库。",
+        "when_to_visit": "当用户询问常见问题、FAQ、帮助文章、知识库或使用指南时。"
+      }
+    },
+    "89cbf8ca-952b-4d7a-a43f-c545bf3dd2f0": {
+      "source_sha": "81e158405f3d5709",
+      "fields": {
+        "title": "活动详情",
+        "description": "单个分享活动的详情页——覆盖范围、表现和内容。",
+        "when_to_visit": "当用户想打开某个分享活动、查看活动详情或某个活动的表现时。"
+      }
+    },
+    "8a881371-8f59-431f-aac7-302c6fbc927e": {
+      "source_sha": "4701f806cea7ebde",
+      "fields": {
+        "title": "数据与授权",
+        "description": "管理你分享的数据和授权偏好。",
+        "when_to_visit": "当用户想了解数据分享授权、哪些数据被分享了、数据权限或授权设置时。"
+      }
+    },
+    "8c779ec1-f2e1-42cb-923f-a4f4fe2bfcc1": {
+      "source_sha": "4a3e310994e2560c",
+      "fields": {
+        "title": "我的计划",
+        "description": "围绕你的目标定制的个性化健康计划——涵盖饮食、健身、睡眠和压力管理。",
+        "when_to_visit": "当用户想查看自己的健康计划、饮食计划、健身计划、个人方案，或者想知道为了达成目标应该做什么的时候。"
+      }
+    },
+    "8e332739-6e7f-47e7-84e1-8dd5d2f1b892": {
+      "source_sha": "cf8e2d0021aca010",
+      "fields": {
+        "title": "我的资料",
+        "description": "你的个人资料——姓名、头像、简介和账户详情。",
+        "when_to_visit": "当用户想打开个人资料、查看资料、编辑资料、查看账户、个人信息、关于我或用户资料时。"
+      }
+    },
+    "8fe3651b-b81e-43d2-ac55-7eb5325ac6b4": {
+      "source_sha": "d13a078d4d7f4d14",
+      "fields": {
+        "title": "收件箱——聊天与消息",
+        "description": "与社区成员的消息、聊天和对话。",
+        "when_to_visit": "当用户想查看收件箱、消息、聊天、聊天记录、私信、和成员聊天、和社区交流、通知，或想阅读自己的消息。"
+      }
+    },
+    "921f97cc-8147-44aa-90da-a24cd3825bac": {
+      "source_sha": "a8952c068a56e92f",
+      "fields": {
+        "title": "钱包",
+        "description": "你的MAXINA钱包——余额、订阅和奖励。",
+        "when_to_visit": "当用户想打开钱包、查看余额、看看自己有什么，或浏览钱包板块。"
+      }
+    },
+    "93408376-a310-444c-a877-d1b91effcb45": {
+      "source_sha": "0b3febab02c90e9c",
+      "fields": {
+        "title": "活动",
+        "description": "你正在进行的分享活动及其表现。",
+        "when_to_visit": "当用户想查看分享活动、推荐活动、活动效果或活动数据时。"
+      }
+    },
+    "96a20669-a03b-479d-b57b-a59dc04d3ec8": {
+      "source_sha": "78c0694996e34593",
+      "fields": {
+        "title": "AI精选优惠",
+        "description": "优惠活动的AI精选标签页——AI为你挑选的优惠。",
+        "when_to_visit": "当用户想看AI精选优惠、个性化推荐的优惠，或者优惠活动里的AI精选标签页时。"
+      }
+    },
+    "97bb5415-af7a-477b-b8db-670590af879a": {
+      "source_sha": "93798ab9455b25d4",
+      "fields": {
+        "title": "行动",
+        "description": "今天为你推荐的行动和待办事项。",
+        "when_to_visit": "当用户问今天该做什么、有哪些行动建议或有什么任务时。"
+      }
+    },
+    "9a1f0199-40e9-4456-8621-ef937b1c6854": {
+      "source_sha": "597f11e5b7771d07",
+      "fields": {
+        "title": "社区成员",
+        "description": "浏览MAXINA社区成员名录。",
+        "when_to_visit": "当用户想查看成员名录、找社区里的人、看看都有谁在社区里、或者想逛逛其他成员的主页时。"
+      }
+    },
+    "9b3e8c52-923c-5d8b-b7c7-934586f118b3": {
+      "source_sha": "786c9f1246e5d74d",
+      "fields": {
+        "title": "业务分析",
+        "description": "你 MAXINA 业务的绩效指标——预约、收入、增长。",
+        "when_to_visit": "问业务表现、收入、预约、增长指标或服务数据分析的时候。"
+      }
+    },
+    "9c44d06b-7caf-4317-a5fb-b5e9a73bd33c": {
+      "source_sha": "4511ea35fda273af",
+      "fields": {
+        "title": "时间线",
+        "description": "按时间顺序展示你的记忆和互动。",
+        "when_to_visit": "当用户想查看时间线、记忆时间轴、互动历史或按时间顺序浏览记忆时。"
+      }
+    },
+    "9c7147a1-c7a4-4a43-8380-6a50609c39c5": {
+      "source_sha": "24a0ea66d0b66830",
+      "fields": {
+        "title": "设置",
+        "description": "你的账户设置。",
+        "when_to_visit": "当用户想打开设置、进入设置页面或管理账户时。"
+      }
+    },
+    "9d5ecb59-8a54-4ffc-99a7-189e43f7d1ad": {
+      "source_sha": "b75699d3bebb982a",
+      "fields": {
+        "title": "租户与角色",
+        "description": "切换你在当前租户中的活跃角色——社区成员、专业人士、员工、管理员。",
+        "when_to_visit": "想切换角色、想变成管理员/专业人士/员工、或者想查看自己的租户角色的时候。"
+      }
+    },
+    "9e8d90fd-d512-47b1-816b-547060bee990": {
+      "source_sha": "cc0efffd1e1dee07",
+      "fields": {
+        "title": "隐私政策",
+        "description": "公开的隐私政策。",
+        "when_to_visit": "当用户询问隐私、数据处理或 Vitana 收集哪些数据时。"
+      }
+    },
+    "9f1f8d7a-8d26-4bfc-adcf-d50b256c5b64": {
+      "source_sha": "7ec3041e2ca6405c",
+      "fields": {
+        "title": "回忆与搜索",
+        "description": "搜索你的记忆和过往对话。",
+        "when_to_visit": "当用户想搜索记忆、查找说过的话、找到之前的对话或查询 Vitana 记住的内容时。"
+      }
+    },
+    "9f340dc9-27c0-4e82-b8e6-986060866742": {
+      "source_sha": "b5cd6fb642fcbb3e",
+      "fields": {
+        "title": "搜索",
+        "description": "在整个 MAXINA 应用中进行全局搜索——查找成员、内容、服务和产品。",
+        "when_to_visit": "想在应用里搜东西、找某个具体内容、查成员信息、找内容或者打开全局搜索的时候。"
+      }
+    },
+    "a0f1cc13-afa9-4c61-9bc9-0b91c7acfb7d": {
+      "source_sha": "88a74453d190d378",
+      "fields": {
+        "title": "我的订单",
+        "description": "你的订单——进行中的和历史订单。",
+        "when_to_visit": "当用户想查订单、看我的订单、查物流、看买过什么时。"
+      }
+    },
+    "a1bde34f-dd04-4446-ab69-1717a3d33233": {
+      "source_sha": "d68213a45c6a8433",
+      "fields": {
+        "title": "订阅",
+        "description": "你正在使用的订阅和付费服务。",
+        "when_to_visit": "当用户想查看订阅、定期扣款、正在付费的项目，或想取消、管理订阅时。"
+      }
+    },
+    "a30d5a88-95d7-41c1-a9d6-8839fc48177e": {
+      "source_sha": "992f2064e9c13db1",
+      "fields": {
+        "title": "计划中的房间",
+        "description": "即将开始的直播房间，已安排在稍后进行。",
+        "when_to_visit": "当用户想看计划中的直播房间——比如问接下来有什么房间、有没有预约的直播、之后安排了哪些直播房间。"
+      }
+    },
+    "a31fa534-90f5-4d5c-9ce8-8d5bc377c778": {
+      "source_sha": "bbfb6e1126d54c4a",
+      "fields": {
+        "title": "使用条款",
+        "description": "使用条款和法律信息。",
+        "when_to_visit": "当用户询问使用条款、服务条款、法律条款或用户协议时。"
+      }
+    },
+    "a32b0dc6-4429-469b-9d74-4a4d773ff239": {
+      "source_sha": "992f2064e9c13db1",
+      "fields": {
+        "title": "预定房间",
+        "description": "即将开始的预定直播房间。",
+        "when_to_visit": "当用户想看预定的直播房间、之后的直播安排、或者问接下来有什么直播的时候。"
+      }
+    },
+    "a34071ad-dc0a-43ea-a3d9-97fd18d3c805": {
+      "source_sha": "9e0bd3b375526da4",
+      "fields": {
+        "title": "即将举办的活动",
+        "description": "你可以参加的社区活动和线下聚会。",
+        "when_to_visit": "想看看有什么活动、最近有啥聚会、查即将举办的活动或者问接下来有什么社区活动的时候。"
+      }
+    },
+    "a4aadc19-fefd-44ed-982f-b235342ea867": {
+      "source_sha": "4e67c8e1a59e56bf",
+      "fields": {
+        "title": "教育与科学",
+        "description": "来自Vitana知识库的健康教育和长寿科学内容。",
+        "when_to_visit": "当用户想学习健康话题、阅读长寿科学，或寻找养生教育内容时。"
+      }
+    },
+    "a6c2dd50-3830-4d5f-9ab9-32b24a3c857e": {
+      "source_sha": "7a4bf2a1288b6366",
+      "fields": {
+        "title": "往期回顾",
+        "description": "已结束直播房间的录播和精华总结。",
+        "when_to_visit": "当用户想看以前的直播——比如问往期内容、之前的房间、有没有录播回放、或者想看直播总结。"
+      }
+    },
+    "a7f803f5-4e06-489d-a24c-efab61905e05": {
+      "source_sha": "b8a7fa4b20fe3495",
+      "fields": {
+        "title": "租户",
+        "description": "你的账号所属的租户或工作区。",
+        "when_to_visit": "想知道自己的租户、组织、工作区、或者属于哪个 MAXINA 门户的时候。"
+      }
+    },
+    "a825a933-6855-490a-a7f4-f27241a5b52e": {
+      "source_sha": "f5de92c3f2acb439",
+      "fields": {
+        "title": "记忆权限",
+        "description": "控制 Vitana 记住哪些内容，以及谁可以查看你的记忆。",
+        "when_to_visit": "当用户想了解记忆权限、Vitana 可以记住什么、记忆隐私或谁能访问自己的记忆时。"
+      }
+    },
+    "a85569eb-0581-4222-a22c-37819c7a0f0c": {
+      "source_sha": "9e37e89112323150",
+      "fields": {
+        "title": "社交连接器",
+        "description": "将你的社交媒体账号作为集成连接。",
+        "when_to_visit": "当用户想找已连接应用的社交连接器标签页，或者想把社交媒体账号（LinkedIn、Instagram、X）作为应用集成连接时。"
+      }
+    },
+    "ab1e6ddd-bff5-49a1-9587-fad7221fb065": {
+      "source_sha": "aabe5f13dc43ca6c",
+      "fields": {
+        "title": "补水计划",
+        "description": "健康计划的补水标签页。",
+        "when_to_visit": "当用户想查看补水计划、计划里的补水标签页，或者问自己的喝水/饮水计划时。"
+      }
+    },
+    "acc0453e-f3e6-4263-b32f-92e0ee1a6158": {
+      "source_sha": "2daf710f7a46b377",
+      "fields": {
+        "title": "已归档消息",
+        "description": "你归档过的消息。",
+        "when_to_visit": "当用户想查看已归档的消息、以前的消息，或者问起存起来的、删掉的消息时。"
+      }
+    },
+    "b0868bda-8a81-5216-a5ac-34d10cc55db9": {
+      "source_sha": "fb197ea4e8f3a7dd",
+      "fields": {
+        "title": "推荐",
+        "description": "为你量身定制的健康、社区和内容AI推荐。",
+        "when_to_visit": "当用户询问有什么推荐、想知道该做什么，或想看看Vitana为自己挑选的个性化内容时。"
+      }
+    },
+    "b090d6cc-9110-4dd5-b9ab-abd40230f9ff": {
+      "source_sha": "008ee6ae6669998e",
+      "fields": {
+        "title": "长寿资讯",
+        "description": "你的主页新闻流——为你精选的最新长寿新闻、研究和文章。",
+        "when_to_visit": "当用户想看新闻、长寿资讯、最新消息、新闻流、长寿相关动态、文章、研究更新，或者只是想回到主页时。"
+      }
+    },
+    "b4c1e075-e37d-51b2-991e-0140cff26a04": {
+      "source_sha": "38e9a03d5005c922",
+      "fields": {
+        "title": "日记",
+        "description": "你的每日日记——记录想法、心情和感悟。",
+        "when_to_visit": "当用户想写日记、记录自己的感受、写写今天发生的事或打开日记本时。"
+      }
+    },
+    "b4e8c9f6-68a7-53c3-b1a0-45218ecfb159": {
+      "source_sha": "fa80b43bbbbac882",
+      "fields": {
+        "title": "社区",
+        "description": "MAXINA 社区中心——活动、直播房间、媒体和小组。",
+        "when_to_visit": "泛泛地问社区、想逛逛社区功能，或者不知道去哪儿找社交内容的时候。"
+      }
+    },
+    "b574c1c8-076c-4a5a-8120-ddf51a83f10d": {
+      "source_sha": "946eb50fc3d3740b",
+      "fields": {
+        "title": "分类",
+        "description": "按分类浏览Discover。",
+        "when_to_visit": "当用户想看Discover的分类标签页、按分类浏览Discover或者查看所有市场分类时。"
+      }
+    },
+    "b7265d29-3b4b-4ba1-91c1-a6c7968b2c68": {
+      "source_sha": "42e4012bbd967677",
+      "fields": {
+        "title": "医生和教练",
+        "description": "查找医生、教练和健康从业者。",
+        "when_to_visit": "当用户想找医生、教练、理疗师、专科医生或想找健康专业人士时。"
+      }
+    },
+    "b8c8bff5-a40c-48c3-98e2-6fe3f00bd0f1": {
+      "source_sha": "19c02729e0ea2f20",
+      "fields": {
+        "title": "我的票券",
+        "description": "你购买的活动和聚会票券。",
+        "when_to_visit": "当用户问起自己的票、我的票、活动票券或已购买的票时。"
+      }
+    },
+    "baac1f15-7b41-413a-b1f1-a988ee77b3eb": {
+      "source_sha": "bac1ad3dc1dc61df",
+      "fields": {
+        "title": "直播房间",
+        "description": "社区成员实时交流的音频和视频直播房间。",
+        "when_to_visit": "当用户问起直播房间、语音直播、视频直播、实时聊天、线上社区通话，或者正在进行的虚拟聚会时。"
+      }
+    },
+    "badcfb76-ec0d-4c88-a32c-4c8bfb9e2d3e": {
+      "source_sha": "afb26d902c90f2df",
+      "fields": {
+        "title": "联系 Vitana",
+        "description": "提交反馈、报告问题或给 Vitana 团队发消息。",
+        "when_to_visit": "想提意见、反馈bug、给 Vitana 留言或联系团队时。"
+      }
+    },
+    "bd2ee37f-7c70-44c6-ac05-410de3f8a8be": {
+      "source_sha": "616dcceec22657b3",
+      "fields": {
+        "title": "账单",
+        "description": "你的账单信息和订阅费用。",
+        "when_to_visit": "当用户想查看设置里的账单页、账单信息、费用或账单概览时。"
+      }
+    },
+    "bd6bf093-4761-4c5e-8192-f259dd14c968": {
+      "source_sha": "23bdc154e73b46fa",
+      "fields": {
+        "title": "Vitana聊天",
+        "description": "专属聊天界面——在ORB之外与Vitana进行专注对话的窗口。",
+        "when_to_visit": "当用户明确想在文字窗口中和Vitana聊天、打开聊天视图或进行较长的文字对话时。如果是一般的\"AI助手\"请求，优先选择AI.OVERVIEW。"
+      }
+    },
+    "be3a865a-0aad-5262-aeeb-28984a98a88c": {
+      "source_sha": "004ca71448bca761",
+      "fields": {
+        "title": "Alkalma 入口",
+        "description": "Alkalma 租户的注册和登录页面。",
+        "when_to_visit": "提到 Alkalma 并且想注册或登录的时候。"
+      }
+    },
+    "bf095b1b-0782-4f44-884c-8552007c4420": {
+      "source_sha": "0c166351b51b504d",
+      "fields": {
+        "title": "连接器与已连接应用",
+        "description": "与你账户关联的第三方应用连接器和集成。",
+        "when_to_visit": "当用户询问连接器、已连接应用、应用集成、第三方连接、关联服务，或想连接外部应用时。"
+      }
+    },
+    "bf455900-3851-57c0-954c-8315ed4a466c": {
+      "source_sha": "eeba368dae725704",
+      "fields": {
+        "title": "AI 动态",
+        "description": "由 AI 为你精选的个性化内容流、推荐和洞察。",
+        "when_to_visit": "当用户问有什么新鲜事、最近发生了什么，或想看自己的个性化 AI 动态时。"
+      }
+    },
+    "bf5f32ad-0f43-4515-9277-4773d7662de1": {
+      "source_sha": "338a3c18c0f41592",
+      "fields": {
+        "title": "健康限制",
+        "description": "记录健康限制（过敏、伤病、疾病），确保推荐安全可靠。",
+        "when_to_visit": "当用户想记录健康限制、添加过敏信息、标记伤病或记录影响推荐的健康状况时。"
+      }
+    },
+    "c24c3a81-f3a3-4705-a1b1-081755dd09b5": {
+      "source_sha": "4401d661a459b886",
+      "fields": {
+        "title": "购物车",
+        "description": "购物车里的商品，准备结账。",
+        "when_to_visit": "当用户想打开购物车、看购物车里有什么、去结账或检查购物车时。"
+      }
+    },
+    "c2b5e217-2f2c-4549-866c-ec88db206cc3": {
+      "source_sha": "b75699d3bebb982a",
+      "fields": {
+        "title": "租户与角色",
+        "description": "切换你在当前租户中的角色——社区成员、专业人员、员工、管理员。",
+        "when_to_visit": "当用户想切换角色、想成为管理员/专业人员/员工，或询问自己的租户角色时。"
+      }
+    },
+    "c3f61fa9-6034-47d4-a0c9-a43945c1cc22": {
+      "source_sha": "56d23c1f4f909bd9",
+      "fields": {
+        "title": "邀请好友",
+        "description": "邀请好友加入 MAXINA 社区，通过推荐赚取奖励。",
+        "when_to_visit": "当用户想邀请朋友、发送邀请、分享邀请链接或向别人推荐 MAXINA 时。"
+      }
+    },
+    "c57e0246-2653-4112-9936-3690cc45696b": {
+      "source_sha": "731a452067f19b42",
+      "fields": {
+        "title": "商店",
+        "description": "视频电商商店——来自MAXINA市场的可购物产品视频。",
+        "when_to_visit": "当用户想打开商店、视频商店、可购物视频，或想浏览视频电商产品时。"
+      }
+    },
+    "c7ca2b46-3c3e-40d0-b029-d05133597d8e": {
+      "source_sha": "e7b19ba632121d4c",
+      "fields": {
+        "title": "健身连接器",
+        "description": "连接健身应用和可穿戴设备。",
+        "when_to_visit": "当用户想找已连接应用的健身连接器标签页，或者想连接健身应用或可穿戴设备集成（Strava、Garmin、Fitbit）时。"
+      }
+    },
+    "c854e253-48a4-4d5a-93c5-6fd356c6f06c": {
+      "source_sha": "616dcceec22657b3",
+      "fields": {
+        "title": "账单",
+        "description": "你的账单信息和订阅费用。",
+        "when_to_visit": "当用户想查看设置里的账单页面、账单详情、费用或账单概览时。"
+      }
+    },
+    "c875d8ac-0d7c-429f-a2fd-3af17f3b76f7": {
+      "source_sha": "d2fb3dff8306e887",
+      "fields": {
+        "title": "语音与 AI 偏好",
+        "description": "Vitana ORB 的语音和 AI 偏好设置。",
+        "when_to_visit": "当用户询问 ORB 语音偏好或想调整 Vitana 的声音时（不是通用隐私/通知设置）。"
+      }
+    },
+    "c99a06f5-a797-4b7c-bb98-23b51c5939cd": {
+      "source_sha": "37b8cce091d74776",
+      "fields": {
+        "title": "意向板",
+        "description": "浏览社区中所有类别的公开需求和请求。",
+        "when_to_visit": "当用户想看意向板、所有社区帖子、大家在找什么、舞蹈板或公开社区板的时候。"
+      }
+    },
+    "c9abcd62-59cd-5266-bbfb-5b393632b9e8": {
+      "source_sha": "6fbcac6ee7c06705",
+      "fields": {
+        "title": "奖励与佣金",
+        "description": "你通过分享平台和服务客户赚取的佣金和奖励。",
+        "when_to_visit": "当用户想查佣金、推荐收益、奖励、提现、赚了多少钱，或者想知道通过分享或在社区销售赚了多少时。"
+      }
+    },
+    "cb93317e-9dda-505e-a177-0d8d5ee331e4": {
+      "source_sha": "1048dbff42a2320f",
+      "fields": {
+        "title": "发现",
+        "description": "浏览保健品、养生服务、医生、优惠活动等。",
+        "when_to_visit": "当用户想在 MAXINA 市场浏览、发现或购买产品和服务时。"
+      }
+    },
+    "ce97762d-6bbc-4a77-8275-764ff0f67331": {
+      "source_sha": "bc3752492d950ead",
+      "fields": {
+        "title": "已收藏优惠",
+        "description": "优惠活动的已收藏标签页——你收藏的优惠。",
+        "when_to_visit": "当用户想看自己收藏的优惠、保存的活动，或者优惠活动里的已收藏标签页时。"
+      }
+    },
+    "cf009723-36c3-4116-a467-8d95ae1151ad": {
+      "source_sha": "5ee9cfc07b1249e3",
+      "fields": {
+        "title": "代币",
+        "description": "钱包余额的代币标签页。",
+        "when_to_visit": "当用户想查看自己的代币、代币余额，或者钱包里的代币标签页时。"
+      }
+    },
+    "d097cb74-a96f-406f-a1be-8aedd6ddebb3": {
+      "source_sha": "d8a4d8da60166667",
+      "fields": {
+        "title": "全部资讯",
+        "description": "汇集所有来源的资讯流——长寿资讯和社区动态一站式呈现。",
+        "when_to_visit": "想看全部资讯、所有新闻、所有来源的消息，或者想把长寿资讯和社区动态放在一起看的时候。"
+      }
+    },
+    "d0bb74e0-8f8e-4c17-846e-31b43f0c6691": {
+      "source_sha": "aa413e69ed447620",
+      "fields": {
+        "title": "播客",
+        "description": "社区播客和音频节目。",
+        "when_to_visit": "当用户想听播客、找播客栏目或媒体中心的音频节目时。"
+      }
+    },
+    "d2c8571b-2b82-5d2d-b270-0c93b8da09af": {
+      "source_sha": "b68d66fc1e5a866c",
+      "fields": {
+        "title": "加入 MAXINA 社区",
+        "description": "在 Vitanaland 注册和登录 MAXINA 社区。",
+        "when_to_visit": "想注册、登录、加入社区、创建账号或登录 MAXINA 的时候。"
+      }
+    },
+    "d38d69c0-700c-43b5-b3e4-724800b43717": {
+      "source_sha": "f3ce9c8d1fd807fb",
+      "fields": {
+        "title": "联系客服",
+        "description": "联系客服团队——留言、提交工单或给我们发消息。",
+        "when_to_visit": "当用户想联系客服、提交工单、反馈问题、给团队发消息或请求回电时。"
+      }
+    },
+    "d4f9ba66-1cf8-5aaa-a5be-63719728fa49": {
+      "source_sha": "ccadb6fe19a92b1a",
+      "fields": {
+        "title": "媒体中心",
+        "description": "社区的视频、播客和音乐。",
+        "when_to_visit": "问视频、播客、音乐、录播，或者想浏览社区媒体内容的时候。"
+      }
+    },
+    "d56ab603-3033-4eee-8247-e192c67f5ff1": {
+      "source_sha": "cd258c7cd7314294",
+      "fields": {
+        "title": "我的组学",
+        "description": "我的生物的组学标签页——你的基因组和组学数据。",
+        "when_to_visit": "当用户想查看自己的组学数据、基因组信息、DNA数据或者找我的生物里的组学标签页的时候。"
+      }
+    },
+    "d68691c6-b257-43c8-b7a4-4c67cc8c2c65": {
+      "source_sha": "fb197ea4e8f3a7dd",
+      "fields": {
+        "title": "推荐",
+        "description": "关于健康、社区和内容的个性化 AI 推荐。",
+        "when_to_visit": "当用户想要推荐、建议、不知道该做什么，或者想看看 Vitana 为他精选的内容时。"
+      }
+    },
+    "d705e453-7344-5cfc-bad8-9eb78e471c8d": {
+      "source_sha": "1f06d33ed964eea2",
+      "fields": {
+        "title": "余额与权益",
+        "description": "你当前的 MAXINA 余额以及你所在等级解锁的权益。",
+        "when_to_visit": "当用户想查余额、账户金额、权益、等级，或者想知道自己解锁了什么时。"
+      }
+    },
+    "d7a81e94-4763-4fdb-a904-f1681e1f4aaa": {
+      "source_sha": "5f4f1548a85b061b",
+      "fields": {
+        "title": "推荐",
+        "description": "助手的推荐标签页——来自助手的推荐和奖励。",
+        "when_to_visit": "当用户想找助手的推荐标签页、助手推荐内容，或者想看推荐奖励。"
+      }
+    },
+    "d7c52b0c-3560-4df8-82b8-e173944a1d13": {
+      "source_sha": "5850ccf2df445f1d",
+      "fields": {
+        "title": "音乐",
+        "description": "社区音乐。",
+        "when_to_visit": "当用户想听音乐、歌曲或者Media Hub里的曲目时。"
+      }
+    },
+    "d7e9f4fe-8a66-4af5-8244-83a132de85c7": {
+      "source_sha": "1fe22cf7ea0e4aa2",
+      "fields": {
+        "title": "热门优惠",
+        "description": "优惠活动的热门标签页。",
+        "when_to_visit": "当用户想看热门优惠、人气活动，或者优惠活动里的热门标签页时。"
+      }
+    },
+    "d912e70b-f633-4ed8-95e7-0f6509ba30ea": {
+      "source_sha": "3d105200a69d3dd6",
+      "fields": {
+        "title": "我的搭档帖子",
+        "description": "你发布的舞蹈和健身搭档帖子。",
+        "when_to_visit": "我发的搭档帖子、我的找舞伴帖子、我的健身搭档帖子、我发过什么找人帖子"
+      }
+    },
+    "d9d5336a-c213-452d-bfd5-d05df86e5ae0": {
+      "source_sha": "718bbe7eac3f6c8b",
+      "fields": {
+        "title": "优化",
+        "description": "钱包余额的优化标签页——帮你优化余额的方法。",
+        "when_to_visit": "当用户想优化钱包、查看钱包里的优化标签页，或者问怎么让余额更划算时。"
+      }
+    },
+    "da69c4da-ad69-470f-afdc-4640660bcaff": {
+      "source_sha": "961008b2873e4075",
+      "fields": {
+        "title": "健康支柱",
+        "description": "你的长寿基石——营养、运动、睡眠、压力管理等。",
+        "when_to_visit": "当用户问起健康支柱、长寿基石、基础健康领域、营养板块、运动板块、睡眠板块或压力管理时。"
+      }
+    },
+    "db28dfcb-a278-401f-8512-cf4e9c7df670": {
+      "source_sha": "7abab8bdb7f48fe4",
+      "fields": {
+        "title": "商品详情",
+        "description": "某个商品的详情页。",
+        "when_to_visit": "当用户想按 ID 打开某个商品、查看商品详情或了解某件商品时。"
+      }
+    },
+    "dcc8f661-6400-5ef1-83c5-42b7d722b504": {
+      "source_sha": "42e4012bbd967677",
+      "fields": {
+        "title": "医生与教练",
+        "description": "查找医生、教练和健康从业者。",
+        "when_to_visit": "当用户想找医生、教练、从业者、专科医生，或者想找健康专业人士时。"
+      }
+    },
+    "dd20f142-b081-4d4b-96f5-5a1418ed303a": {
+      "source_sha": "d89e23cea552d414",
+      "fields": {
+        "title": "搭档板块",
+        "description": "舞蹈和健身搭档帖子的社区板块页面。",
+        "when_to_visit": "想找舞伴、想找健身搭档、看看搭档板块、谁在找人一起跳舞、谁在找人一起健身"
+      }
+    },
+    "dd66baa1-0107-45ee-83c1-8f24be427ccc": {
+      "source_sha": "68e6769236d8440c",
+      "fields": {
+        "title": "健康状况",
+        "description": "追踪和管理你的健康状况。",
+        "when_to_visit": "当用户问起自己的健康状况、慢性病、诊断结果、健康风险或正在管理的健康问题时。"
+      }
+    },
+    "e0194c6c-9b04-5878-b93a-fa70acae988e": {
+      "source_sha": "c802a82bf1d78979",
+      "fields": {
+        "title": "收件箱",
+        "description": "发送给你的消息、提醒和灵感。",
+        "when_to_visit": "当用户想查看收件箱、消息、通知，或想看看有什么新内容发给自己时。"
+      }
+    },
+    "e1311a31-51f4-4cbe-9bb0-64395019070a": {
+      "source_sha": "183650a5bd506b94",
+      "fields": {
+        "title": "健康",
+        "description": "你的个人健康中心——生物数据、计划和教育内容。",
+        "when_to_visit": "当用户笼统地问起自己的健康、长寿、养生，或想探索健康功能时。"
+      }
+    },
+    "e1cb4a5c-1a79-45fa-bc23-3ba9944ed087": {
+      "source_sha": "577ed48d6e77a0ea",
+      "fields": {
+        "title": "带匹配锚点的个人资料",
+        "description": "社区成员的公开资料，锚定到一个特定的匹配意图。",
+        "when_to_visit": "想查看匹配对象的资料、想看带高亮匹配帖子的资料、或者从匹配通知跳转到对方资料的时候。"
+      }
+    },
+    "e47bd312-00ab-46ac-a2e3-5d03f4b17ae5": {
+      "source_sha": "461f11d5b277457c",
+      "fields": {
+        "title": "当前套餐",
+        "description": "你当前的套餐和会员等级。",
+        "when_to_visit": "当用户询问账单中的当前套餐标签页——当前套餐、会员等级或升级套餐时。"
+      }
+    },
+    "e4c82121-6a26-469f-a167-f272e68ded49": {
+      "source_sha": "8699e7d18e250bd9",
+      "fields": {
+        "title": "服务商主页",
+        "description": "某个服务提供者的个人主页。",
+        "when_to_visit": "当用户想打开某个服务商主页、查看教练或医生资料、或按 ID 查找服务商时。"
+      }
+    },
+    "e4fac5c5-d2df-4814-b3eb-e55465705fde": {
+      "source_sha": "4fc59531e14929af",
+      "fields": {
+        "title": "群组",
+        "description": "浏览并加入 MAXINA 社区群组。",
+        "when_to_visit": "当用户想找社区群组、想加入群组、想知道有哪些群组、或者想看自己加入的群组的时候。"
+      }
+    },
+    "e5307f20-3ae0-588e-8cb4-bff619a35877": {
+      "source_sha": "e4f85db4a2c69cb9",
+      "fields": {
+        "title": "Vitanaland 首页",
+        "description": "Vitanaland 和 MAXINA 社区的公开主入口。",
+        "when_to_visit": "想回到最开始、回首页、回网站主页，或者想再听一遍介绍的时候。"
+      }
+    },
+    "e8d953cf-21cd-4379-9961-6cda1f5266f0": {
+      "source_sha": "1e5a7c8850f33947",
+      "fields": {
+        "title": "AI助手",
+        "description": "查看你的AI助手功能概览。",
+        "when_to_visit": "当用户想了解AI助手、AI功能，或者想看看AI能做什么的时候。"
+      }
+    },
+    "e963d45f-135f-4142-afaa-3f665770d58d": {
+      "source_sha": "338a3c18c0f41592",
+      "fields": {
+        "title": "健康限制",
+        "description": "记录健康限制（过敏、伤病、疾病），让推荐更安全。",
+        "when_to_visit": "想记录健康限制、添加过敏信息、标记伤病、或者录入会影响推荐的健康状况的时候。"
+      }
+    },
+    "eb219d3e-ad4e-429c-91df-854bf6ca0dd6": {
+      "source_sha": "b820f825a7fc16b9",
+      "fields": {
+        "title": "Autopilot 连接器",
+        "description": "连接 Autopilot 智能体集成。",
+        "when_to_visit": "当用户想查看已连接应用的 Autopilot 连接器标签页，或者想连接智能体或 Autopilot 应用集成时。"
+      }
+    },
+    "ebd49241-444a-4f43-b56c-f5a616f108f5": {
+      "source_sha": "fd1240f038c0e8de",
+      "fields": {
+        "title": "健康追踪",
+        "description": "追踪你每天的健康行为和 Vitana 指数变化。",
+        "when_to_visit": "当用户想打开健康追踪、记录健康行为、追踪喝水/睡眠/运动/步数、记步数或查看今天的追踪时。"
+      }
+    },
+    "ef21b99b-c513-4475-a9f6-4bdaa4cf7fc5": {
+      "source_sha": "5850ccf2df445f1d",
+      "fields": {
+        "title": "音乐",
+        "description": "社区音乐。",
+        "when_to_visit": "当用户想听音乐、歌曲或媒体中心的曲目时。"
+      }
+    },
+    "ef2662e6-04b9-48f5-b763-68439f3248bd": {
+      "source_sha": "cb6dfa335f6823a8",
+      "fields": {
+        "title": "Autopilot 与自动化",
+        "description": "助手的 Autopilot 标签页——Vitana 为你自动执行的操作。",
+        "when_to_visit": "当用户想找助手的 Autopilot 标签页、自动化设置，或者想知道 Vitana 能帮自己自动做什么。"
+      }
+    },
+    "efa294ac-491b-44fa-837c-d6c194dca593": {
+      "source_sha": "5b32a412d02d710b",
+      "fields": {
+        "title": "短视频",
+        "description": "社区短视频——短视频信息流。",
+        "when_to_visit": "当用户想看短视频、小视频、短视频动态或者Media Hub里的Reels时。"
+      }
+    },
+    "f0537830-762e-4ac4-a462-80b1e33202c1": {
+      "source_sha": "6408409b26adb8a1",
+      "fields": {
+        "title": "灵感",
+        "description": "来自Vitana的励志语录和健康小贴士。",
+        "when_to_visit": "当用户想看灵感、励志语录、健康小贴士或每日正能量。"
+      }
+    },
+    "f0da66ca-28fd-49de-b3d7-999b3581658a": {
+      "source_sha": "1e5a7c8850f33947",
+      "fields": {
+        "title": "AI 助手",
+        "description": "你的 AI 助手功能概览。",
+        "when_to_visit": "当用户想了解 AI 助手、AI 功能，或者想看看 AI 能做什么时。"
+      }
+    },
+    "f272adb5-9c4d-47ae-832a-0490893f23ac": {
+      "source_sha": "16a5fd497acfd6df",
+      "fields": {
+        "title": "饮食计划",
+        "description": "健康计划的饮食标签页。",
+        "when_to_visit": "当用户想查看饮食计划、计划里的饮食标签页，或者问自己的食谱/营养计划时。"
+      }
+    },
+    "f41a2860-6f1f-4917-ae0d-38f2858d03ae": {
+      "source_sha": "f75765a4a2303670",
+      "fields": {
+        "title": "AI",
+        "description": "助手的AI标签页——你的文字AI助手及其设置。",
+        "when_to_visit": "当用户想找助手的AI标签页、文字助手，或者想调整AI助手设置的时候。"
+      }
+    },
+    "f49334db-c28b-40c8-bec5-77e4600334b6": {
+      "source_sha": "215e6c0ab287fb44",
+      "fields": {
+        "title": "我的动态",
+        "description": "你在社区发布的帖子和请求。",
+        "when_to_visit": "当用户想查看\"我的动态\"、\"我发的帖子\"、\"我的请求\"、\"我发过什么\"，或者想看看自己在社区发布的内容、管理自己的帖子时。"
+      }
+    },
+    "f4e531c2-4b72-53c4-a051-1440d0ed11e0": {
+      "source_sha": "6767592eaccca7fe",
+      "fields": {
+        "title": "活动与聚会",
+        "description": "即将举办的 MAXINA 社区活动、线下聚会和见面会。",
+        "when_to_visit": "问有什么活动、聚会、见面会、舞蹈活动、健康工作坊或者可以参加的社区活动的时候。"
+      }
+    },
+    "f522cb61-8bb5-4ad3-ac9d-7ccc78aabde0": {
+      "source_sha": "6fbcac6ee7c06705",
+      "fields": {
+        "title": "奖励与佣金",
+        "description": "你通过分享平台和服务客户赚取的佣金和奖励。",
+        "when_to_visit": "当用户想查看佣金、推荐收益、奖励、提现、赚了多少钱，或通过分享和销售获得的收入时。"
+      }
+    },
+    "f5231603-9eaa-428f-931c-0192b62a79a2": {
+      "source_sha": "946eb50fc3d3740b",
+      "fields": {
+        "title": "分类",
+        "description": "按分类浏览 Discover。",
+        "when_to_visit": "当用户想看 Discover 的分类标签页、按分类浏览 Discover，或者想查看所有商城分类。"
+      }
+    },
+    "f6c0ecda-c145-41ff-a430-31bb73a4c5f6": {
+      "source_sha": "2917eabc21ae7955",
+      "fields": {
+        "title": "推荐成员",
+        "description": "匹配系统根据你的目标和兴趣为你推荐的成员。",
+        "when_to_visit": "当用户问有谁跟自己合适、想看自己的匹配、推荐的人、可以认识的人，或者想看匹配结果时。"
+      }
+    },
+    "f77d1927-c8fd-514b-b075-0bbf4b1023d6": {
+      "source_sha": "087196bf3c889dd0",
+      "fields": {
+        "title": "设置",
+        "description": "你的账户设置和偏好。",
+        "when_to_visit": "当用户想打开设置、修改偏好或管理自己的账户时。"
+      }
+    },
+    "f7862e6f-2f7f-4d25-a222-95df0472f7be": {
+      "source_sha": "7b88c97e3eea0bf0",
+      "fields": {
+        "title": "待发放奖励",
+        "description": "钱包奖励的待发放标签页——还没到账的奖励。",
+        "when_to_visit": "当用户想查看待发放的奖励、奖励里的待发放标签页，或者问还没到账的奖励时。"
+      }
+    },
+    "f78f48ce-d839-4f3f-bf6b-810acd520f29": {
+      "source_sha": "04aa246c63e9c173",
+      "fields": {
+        "title": "情境",
+        "description": "你的个人情境——Vitana 对你当前状态的了解。",
+        "when_to_visit": "当用户询问自己的情境、当前状态，或 Vitana 现在掌握的关于自己的信息时。"
+      }
+    },
+    "f7dd3022-e92d-42fe-bf46-d2e3421ad1b3": {
+      "source_sha": "5b32a412d02d710b",
+      "fields": {
+        "title": "短视频",
+        "description": "社区短视频——短视频信息流。",
+        "when_to_visit": "当用户想看短视频、小视频、短视频流或媒体中心的Reels时。"
+      }
+    },
+    "f8ab853a-5c0e-4fe7-9e8e-6a2fee2c6e53": {
+      "source_sha": "4025dacd79656dc6",
+      "fields": {
+        "title": "资料可见性",
+        "description": "按模块设置你的资料可见性——控制谁能看到什么。",
+        "when_to_visit": "想设置资料可见性、看谁能看到自己的资料、哪些内容是公开的、或者想隐藏某个模块。"
+      }
+    },
+    "f90efb98-2472-4ea0-bc81-a1f0fab150c2": {
+      "source_sha": "11a202318f43a8cc",
+      "fields": {
+        "title": "每日总结",
+        "description": "你的AI生成的每日健康、活动和社区精选总结。",
+        "when_to_visit": "当用户想查看每日总结、今日报告或了解今天发生了什么。"
+      }
+    },
+    "faa68542-60b7-4811-aba3-288cb4b593f1": {
+      "source_sha": "26daf96050b7de65",
+      "fields": {
+        "title": "心理计划",
+        "description": "健康计划的心理标签页——关于心理健康的计划。",
+        "when_to_visit": "当用户想查看心理健康计划、计划里的心理标签页，或者问自己的正念/心理调节计划时。"
+      }
+    },
+    "fb2746cd-075d-4f33-b9f2-e453af63624a": {
+      "source_sha": "4d5f666408051b2d",
+      "fields": {
+        "title": "正在直播",
+        "description": "当前正在直播的房间。",
+        "when_to_visit": "当用户想看正在直播的房间、当前在线的直播间、或者问现在有什么直播的时候。"
+      }
+    },
+    "fb65d40b-f2b8-5b23-a31a-0df35c6b22c6": {
+      "source_sha": "9bb5446f7211a27a",
+      "fields": {
+        "title": "通知",
+        "description": "管理你的通知偏好。",
+        "when_to_visit": "当用户询问通知设置、推送通知、邮件提醒，或想开启或关闭通知时。"
+      }
+    },
+    "fc0ed8aa-7d2b-4a87-bd5f-586078f415b4": {
+      "source_sha": "730096e1efffe4bc",
+      "fields": {
+        "title": "增长",
+        "description": "在洞察标签页中查看你的 MAXINA 业务增长指标。",
+        "when_to_visit": "当用户想查看业务中心洞察的增长标签页，或者想了解自己业务的增长指标和趋势时。"
+      }
+    },
+    "fcbe2cdd-4dc7-411f-ba9e-c574d002a141": {
+      "source_sha": "221f4b6554f28f8f",
+      "fields": {
+        "title": "音乐和视频连接器",
+        "description": "连接音乐和视频应用集成。",
+        "when_to_visit": "当用户想找音乐和视频连接器、已连接应用的媒体标签页，或者想连接音乐或视频应用集成（Spotify、YouTube、Apple Music）时。"
+      }
+    },
+    "fce8cf77-23fe-5816-b881-b64dc8b36d85": {
+      "source_sha": "7a346b0f1422ffa6",
+      "fields": {
+        "title": "我的服务",
+        "description": "管理你在 MAXINA 社区提供的服务——教练、课程、咨询、产品。",
+        "when_to_visit": "想管理自己的服务、创建新服务、发布教练项目或设置课程和咨询的时候。"
+      }
+    },
+    "fe181875-c532-45c1-8b03-64becf4717db": {
+      "source_sha": "6cb8b020d56ee50b",
+      "fields": {
+        "title": "公开主页",
+        "description": "某个社区成员的公开主页。",
+        "when_to_visit": "想看别人的主页、查看某个社区成员的公开资料、通过 @vitana_id 找人、或者看某个用户名。"
+      }
+    },
+    "fe9470e6-d03c-4472-b925-437dcd13efed": {
+      "source_sha": "0b3febab02c90e9c",
+      "fields": {
+        "title": "活动",
+        "description": "你正在进行的分享活动及其表现。",
+        "when_to_visit": "当用户询问自己的分享活动、推荐活动、活动表现或活动结果时。"
+      }
+    }
+  }
+}
