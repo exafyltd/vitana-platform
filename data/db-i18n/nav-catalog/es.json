@@ -1,0 +1,2181 @@
+{
+  "surface": "nav-catalog",
+  "locale": "es",
+  "source_locale": "de",
+  "generated_at": "2026-09-06T09:30:18.856Z",
+  "field_order": [
+    "title",
+    "description",
+    "when_to_visit"
+  ],
+  "entries": {
+    "00c9d190-586e-4c48-8058-07dc0e63062b": {
+      "source_sha": "905c7353539e9715",
+      "fields": {
+        "title": "Suplementos de salud",
+        "description": "La pestaña de suplementos en el área de salud — registra los suplementos alimenticios, vitaminas y minerales que tomas.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña de suplementos en la pantalla de salud, \"suplementos en el área de salud\", \"suplementos de salud\" o quiere abrir suplementos en el área de salud — y cuando quiere ver, registrar, anotar o gestionar SUS PROPIOS suplementos alimenticios, su stack de suplementos o las vitaminas y minerales que toma. Este es el registro de suplementos de la pantalla de salud, NO la compra en el marketplace."
+      }
+    },
+    "00e4f4b6-d501-4376-a6be-30cd840b9d10": {
+      "source_sha": "c8c66260585988ea",
+      "fields": {
+        "title": "Ofertas y promociones",
+        "description": "Ofertas para miembros, descuentos y promociones especiales.",
+        "when_to_visit": "Cuando preguntes por ofertas, descuentos, promociones o qué está en oferta."
+      }
+    },
+    "00fa1b7e-ac50-48be-854d-94b53720fe03": {
+      "source_sha": "9957c50850cdf7e5",
+      "fields": {
+        "title": "Recordatorios",
+        "description": "Tus recordatorios programados — la lista completa, con controles para añadir, editar y eliminar.",
+        "when_to_visit": "Cuando preguntes por la lista de recordatorios, todos tus recordatorios, \"muéstrame mis recordatorios\", o quieras gestionar los recordatorios programados."
+      }
+    },
+    "01a443d7-9af8-497e-85dc-2ed1935fd116": {
+      "source_sha": "19269f9fb2830106",
+      "fields": {
+        "title": "Historial de pedidos",
+        "description": "Tus pedidos anteriores y completados.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña \"Historial\" de Mis pedidos, su historial de pedidos, pedidos anteriores, pedidos completados o pedidos ya entregados."
+      }
+    },
+    "01a7cfd2-963b-47d8-ac26-52f72e0d13c4": {
+      "source_sha": "158297559e0d8dd7",
+      "fields": {
+        "title": "Mis anuncios",
+        "description": "Tus anuncios comerciales activos en MAXINA.",
+        "when_to_visit": "Cuando preguntes por tus anuncios, anuncios comerciales, servicios publicados, qué has publicado comercialmente, o quieras gestionar tus publicaciones de negocio."
+      }
+    },
+    "02ab328d-0751-42c5-9b72-875f1cad71d7": {
+      "source_sha": "f5bd893f7b02fa27",
+      "fields": {
+        "title": "Compañero de IA",
+        "description": "Habla con Vitana en una vista de compañero enfocada.",
+        "when_to_visit": "Cuando el usuario quiere abrir el compañero de IA, la vista de compañero de Vitana, hablar con Vitana en modo texto o tener una conversación más larga fuera del ORB."
+      }
+    },
+    "03fa2849-a654-4561-8d7d-83b7ed2ed2f7": {
+      "source_sha": "9f10942ca8a06a74",
+      "fields": {
+        "title": "Seguridad de la cuenta",
+        "description": "Gestiona tu contraseña y la seguridad de tu cuenta.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña de seguridad en privacidad — seguridad de la cuenta, contraseña o autenticación en dos pasos."
+      }
+    },
+    "04fe7625-5f97-4dbb-ac54-70850ea2824c": {
+      "source_sha": "afb26d902c90f2df",
+      "fields": {
+        "title": "Hablar con Vitana",
+        "description": "Envía comentarios, reporta problemas o envía un mensaje al equipo de Vitana.",
+        "when_to_visit": "Cuando quieres dar feedback, reportar un bug, enviar un mensaje a Vitana o hablar con el equipo."
+      }
+    },
+    "053e1a78-fda6-4420-ab09-ffd49cdb5f06": {
+      "source_sha": "4d5f666408051b2d",
+      "fields": {
+        "title": "En vivo ahora",
+        "description": "Salas en vivo que están transmitiendo en este momento.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña \"En vivo ahora\" de las salas en vivo — salas que están en directo, transmitiendo actualmente o sucediendo justo ahora."
+      }
+    },
+    "079f5996-c2d0-4349-a3cd-feb2f97a2610": {
+      "source_sha": "e782de321c9d2737",
+      "fields": {
+        "title": "Suplementos",
+        "description": "Suplementos curados para longevidad y bienestar.",
+        "when_to_visit": "Cuando quieras explorar, ver o comprar suplementos, vitaminas, minerales o nutracéuticos en el marketplace — explorar productos disponibles, marcas u ofertas. NO para hacer seguimiento de los suplementos que tomas (eso es la pestaña de seguimiento personal, no la tienda)."
+      }
+    },
+    "0863af10-2be3-4f39-b358-7f2166e8e17b": {
+      "source_sha": "9f10942ca8a06a74",
+      "fields": {
+        "title": "Seguridad de la cuenta",
+        "description": "Gestiona tu contraseña y la seguridad de tu cuenta.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña de seguridad en privacidad — seguridad de la cuenta, contraseña o autenticación en dos pasos."
+      }
+    },
+    "0aa38ad1-7d8a-4825-8d00-3941b595ef77": {
+      "source_sha": "4701f806cea7ebde",
+      "fields": {
+        "title": "Datos y consentimiento",
+        "description": "Gestiona qué datos compartes y tus preferencias de consentimiento.",
+        "when_to_visit": "Cuando el usuario pregunta por consentimiento de datos, qué datos se comparten, permisos de datos o ajustes de consentimiento."
+      }
+    },
+    "0d1917fb-789d-494e-bf0c-cc364f863cf2": {
+      "source_sha": "961008b2873e4075",
+      "fields": {
+        "title": "Pilares de salud",
+        "description": "Los pilares fundamentales de tu longevidad — nutrición, ejercicio, sueño, estrés y más.",
+        "when_to_visit": "Cuando el usuario pregunta por pilares de salud, los fundamentos de la longevidad, áreas básicas de salud, pilar de nutrición, pilar de ejercicio, pilar de sueño o manejo del estrés."
+      }
+    },
+    "0db6ca96-a501-4e23-99e0-a74a1b3825ff": {
+      "source_sha": "e7b3fa7b1e0082c1",
+      "fields": {
+        "title": "Compartir",
+        "description": "Comparte la comunidad Maxina con amigos y gana recompensas.",
+        "when_to_visit": "Cuando el usuario pregunta por compartir, referidos, invitar amigos o cómo recomendar la comunidad."
+      }
+    },
+    "0e4de277-ff6b-472e-b5cb-6403d7028c43": {
+      "source_sha": "5953b2310bf06537",
+      "fields": {
+        "title": "Mis suplementos (biología)",
+        "description": "La pestaña de suplementos de Mi biología — los suplementos alimenticios en tu perfil biológico.",
+        "when_to_visit": "Cuando preguntes por tus suplementos dentro de Mi biología, la pestaña de suplementos de Mi biología o suplementos relacionados con tu biología."
+      }
+    },
+    "0f409079-24d4-4f79-a79b-e6697429efce": {
+      "source_sha": "9f1e56fdfdabe775",
+      "fields": {
+        "title": "Detalle del último resultado de prueba",
+        "description": "Panel de detalle para el resultado de prueba individual más reciente.",
+        "when_to_visit": "Cuando quieras ver el panel de detalle de UN resultado de prueba específico más reciente (no la vista de tendencias)."
+      }
+    },
+    "0f61f73b-584d-49b3-9290-8ae9217a348b": {
+      "source_sha": "1d03631c3e970942",
+      "fields": {
+        "title": "Videos educativos",
+        "description": "La pestaña de videos de educación y recursos de salud.",
+        "when_to_visit": "Cuando preguntes por videos educativos de salud, la pestaña de videos de educación o videos de aprendizaje sobre salud."
+      }
+    },
+    "103610ef-eca7-4cd8-a9ef-496e3f151d98": {
+      "source_sha": "d3a29583e0a700ca",
+      "fields": {
+        "title": "Cuentas sociales",
+        "description": "Vincula y gestiona tus cuentas de redes sociales.",
+        "when_to_visit": "Cuando preguntes por cuentas sociales, vincular redes sociales, conectar Instagram, Facebook u otras plataformas sociales."
+      }
+    },
+    "11292ebb-491b-4e22-b6d0-8a2789b98750": {
+      "source_sha": "d721102a1cad390b",
+      "fields": {
+        "title": "Servicios de bienestar",
+        "description": "Servicios de bienestar ofrecidos por la comunidad de MAXINA.",
+        "when_to_visit": "Cuando preguntes por servicios de bienestar, masajes, spa, recuperación o tratamientos que puedas reservar."
+      }
+    },
+    "1138c946-95cf-4d83-a49e-ac50adcb5aa7": {
+      "source_sha": "bff8f56cbcb8ed83",
+      "fields": {
+        "title": "Recomendaciones de ventas",
+        "description": "Recomendaciones que ganas a través de la reventa de tu MAXINA Business.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña \"Recomendaciones\" de ventas del Business Hub o las recomendaciones de ventas del Business Hub — las recomendaciones que pertenecen a sus propias ventas de revendedor en el Business Hub."
+      }
+    },
+    "114e1143-7c6c-4398-a6c4-f2b80017e1d5": {
+      "source_sha": "84258a6d9786ad46",
+      "fields": {
+        "title": "Mercado",
+        "description": "El mercado de MAXINA — compra y vende intents comerciales de la comunidad.",
+        "when_to_visit": "Cuando quieras abrir el mercado, explorar intents comerciales, comprar o vender algo, o ver qué ofrece la comunidad."
+      }
+    },
+    "12298016-0a45-4b5e-9c51-4bd131256952": {
+      "source_sha": "c9736d6d6c379351",
+      "fields": {
+        "title": "Oportunidades de negocio",
+        "description": "Nuevas oportunidades de negocio y leads que coinciden con tus servicios.",
+        "when_to_visit": "Cuando preguntes por oportunidades de negocio, leads, nuevos clientes o qué negocios han llegado."
+      }
+    },
+    "1266ee7a-e0bb-4351-a229-788516a27b07": {
+      "source_sha": "ee6970e175e30e06",
+      "fields": {
+        "title": "Detalle del grupo",
+        "description": "Un grupo específico de la comunidad — sus miembros, publicaciones y eventos.",
+        "when_to_visit": "Cuando el usuario quiera abrir un grupo específico por ID o nombre, ver un grupo o consultar los detalles de un grupo."
+      }
+    },
+    "12eb827f-95f1-5fb0-bda9-d9ca2aba85cb": {
+      "source_sha": "4a3e310994e2560c",
+      "fields": {
+        "title": "Mis planes",
+        "description": "Planes de salud personalizados según tus objetivos — nutrición, fitness, sueño, estrés.",
+        "when_to_visit": "Cuando preguntes por tus planes de salud, tu plan de nutrición, tu plan de fitness, tu programa personal o qué deberías hacer para alcanzar tus objetivos."
+      }
+    },
+    "16a08da1-9227-5415-858a-7db4703ae022": {
+      "source_sha": "d68213a45c6a8433",
+      "fields": {
+        "title": "Suscripciones",
+        "description": "Tus suscripciones activas y los servicios por los que pagas.",
+        "when_to_visit": "Cuando preguntes por tus suscripciones, pagos recurrentes, por qué estás pagando o quieras cancelar o gestionar una suscripción."
+      }
+    },
+    "17100496-7f04-51d3-8932-b2f8584ce3f5": {
+      "source_sha": "d721102a1cad390b",
+      "fields": {
+        "title": "Servicios de bienestar",
+        "description": "Servicios de bienestar ofrecidos por la comunidad MAXINA.",
+        "when_to_visit": "Cuando preguntes por servicios de bienestar, masajes, spa, recuperación o tratamientos que puedas reservar."
+      }
+    },
+    "18bc8bcf-4fcb-406c-942a-d5d0ecc0f18f": {
+      "source_sha": "fa80b43bbbbac882",
+      "fields": {
+        "title": "Comunidad",
+        "description": "El centro de la comunidad MAXINA — eventos, salas en vivo, medios y grupos.",
+        "when_to_visit": "Cuando el usuario pregunte en general por la comunidad, quiera explorar funciones de comunidad o no sepa dónde encontrar contenido social."
+      }
+    },
+    "18f0a112-95a7-4398-9cbd-c903a0a22e61": {
+      "source_sha": "dd22afdd669d96a8",
+      "fields": {
+        "title": "Distribución",
+        "description": "Sigue cómo se distribuye y recibe tu contenido compartido.",
+        "when_to_visit": "Cuando el usuario pregunta por distribución, cómo se difunde su contenido, alcance o analíticas de compartir."
+      }
+    },
+    "1adb4c47-9c29-4139-8f0a-b9c5540248e0": {
+      "source_sha": "8f5b9beff43e120f",
+      "fields": {
+        "title": "Comparte y gana",
+        "description": "Comparte productos de Discover y gana recompensas.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña \"Comparte y gana\" de Discover, la sección de compartir y ganar de Discover, o por compartir productos del marketplace de Discover para ganar recompensas."
+      }
+    },
+    "1b834543-4be4-42c8-a92d-26060faf9d6e": {
+      "source_sha": "0c02c902c941e65f",
+      "fields": {
+        "title": "Método de pago",
+        "description": "Gestiona tu método de pago.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña de método de pago en facturación — método de pago, tarjeta guardada o cómo paga."
+      }
+    },
+    "1bdb110d-54be-41b3-be27-5c6cdc260c37": {
+      "source_sha": "aa5d91925bd25e25",
+      "fields": {
+        "title": "Planes de sueño",
+        "description": "La pestaña de sueño de los planes de salud.",
+        "when_to_visit": "Cuando preguntas por planes de sueño, la pestaña de sueño de los planes o tu plan de descanso."
+      }
+    },
+    "1c6bf120-1bdb-44e9-bd1a-3f25ca6b72b3": {
+      "source_sha": "a7515c9de0ae2e65",
+      "fields": {
+        "title": "Buscar pareja",
+        "description": "Búsqueda unificada de parejas de baile y fitness — matches ordenados.",
+        "when_to_visit": "Cuando quieres una pareja de baile, un compañero de fitness, un match de pareja o abrir la búsqueda de parejas."
+      }
+    },
+    "1e805a08-6100-4c20-ad24-2feb7481f7e2": {
+      "source_sha": "4025dacd79656dc6",
+      "fields": {
+        "title": "Visibilidad del perfil",
+        "description": "Controles de visibilidad por sección para tu perfil — decide quién ve qué.",
+        "when_to_visit": "Cuando el usuario pregunta por la visibilidad del perfil, quién puede ver su perfil, qué se muestra públicamente o quiere ocultar una sección del perfil."
+      }
+    },
+    "1f13b910-4d0a-4ed8-96d5-04aba4574d27": {
+      "source_sha": "723924fb5220e3a3",
+      "fields": {
+        "title": "Ingresos",
+        "description": "Desglose de ingresos de tu MAXINA Business en la pestaña de estadísticas.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña \"Ingresos\" de estadísticas del Business Hub o los ingresos de estadísticas del Business Hub — el desglose de ingresos de su propio negocio."
+      }
+    },
+    "20673ca9-816e-4139-aa27-cc0497475bb7": {
+      "source_sha": "9e222869f090435c",
+      "fields": {
+        "title": "Idioma y región",
+        "description": "Idioma de la app y región.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña de idioma y región en las preferencias — idioma de la app, región o configuración regional."
+      }
+    },
+    "214fd446-10ba-4b78-abcf-2875fc513c99": {
+      "source_sha": "6376eec5f938206b",
+      "fields": {
+        "title": "Mis eventos",
+        "description": "Los eventos, cursos y sesiones que organizas u ofreces como proveedor en tu MAXINA Business.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña \"Mis eventos\" de los servicios del Business Hub, los eventos de servicios del Business Hub, o los eventos, cursos y sesiones que organiza u ofrece como proveedor en su propio negocio."
+      }
+    },
+    "230e2278-a71d-4b1b-bebf-9988c3c45887": {
+      "source_sha": "1048dbff42a2320f",
+      "fields": {
+        "title": "Descubrir",
+        "description": "Explora suplementos, servicios de bienestar, médicos, ofertas y más.",
+        "when_to_visit": "Cuando quieras explorar, descubrir o comprar productos y servicios en el marketplace de MAXINA."
+      }
+    },
+    "234fe8dd-d573-48b6-8658-d57c0a941cf8": {
+      "source_sha": "74c9367ab8f6aa10",
+      "fields": {
+        "title": "Feed de comunidad siguiendo",
+        "description": "La pestaña \"Siguiendo\" de eventos y encuentros — tu feed de comunidad con eventos, publicaciones y novedades de miembros y grupos que sigues.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña \"Siguiendo\" de eventos y encuentros, por following, por eventos de personas que sigue, por las personas o grupos que sigue, o por el feed de comunidad con publicaciones y novedades."
+      }
+    },
+    "23ee8b4e-0de1-5a3e-9a33-b65894c091ce": {
+      "source_sha": "91103055956cb0dd",
+      "fields": {
+        "title": "Mis clientes",
+        "description": "Gestiona los clientes de tu negocio MAXINA.",
+        "when_to_visit": "Cuando preguntes por tus clientes, a quién atiendes o cómo gestionar las relaciones con clientes en tu negocio."
+      }
+    },
+    "254742d3-1856-4b8b-b81a-b2691b2988fd": {
+      "source_sha": "68e6769236d8440c",
+      "fields": {
+        "title": "Condiciones de salud",
+        "description": "Sigue y gestiona tus condiciones de salud.",
+        "when_to_visit": "Cuando el usuario pregunta por sus condiciones de salud, enfermedades crónicas, diagnósticos, riesgos de salud o problemas de salud que está manejando."
+      }
+    },
+    "28fb12d8-e817-4fe2-97df-720d971de839": {
+      "source_sha": "6408409b26adb8a1",
+      "fields": {
+        "title": "Inspiración",
+        "description": "Mensajes inspiradores y consejos de bienestar de Vitana.",
+        "when_to_visit": "Cuando el usuario pregunta por inspiración, mensajes motivacionales, consejos de bienestar o motivación diaria."
+      }
+    },
+    "2946fd3f-c652-5181-a375-e3960590b5d4": {
+      "source_sha": "9bd8a76c8a7c160f",
+      "fields": {
+        "title": "Ajustes de privacidad",
+        "description": "Gestiona qué datos guarda Vitana y qué se comparte con la comunidad.",
+        "when_to_visit": "Cuando preguntes por ajustes de privacidad, control de datos, qué se comparte, consentimiento o quieras cambiar tus preferencias de privacidad."
+      }
+    },
+    "2a1ca4d8-59b0-4b57-98d9-c979bcf0badf": {
+      "source_sha": "bbfb6e1126d54c4a",
+      "fields": {
+        "title": "Términos de uso",
+        "description": "Términos de uso e información legal.",
+        "when_to_visit": "Cuando preguntas por los términos de uso, condiciones generales, términos legales o el acuerdo de usuario."
+      }
+    },
+    "2b052733-4dff-4489-951b-5c9a4495c8e4": {
+      "source_sha": "a28d4f56c54e081b",
+      "fields": {
+        "title": "Conectores de IA",
+        "description": "Conecta proveedores de IA y apps con tu cuenta.",
+        "when_to_visit": "Cuando el usuario pregunta por los conectores de IA, la pestaña de IA en apps conectadas o cómo conectar una app o proveedor de IA (OpenAI, Claude, Gemini)."
+      }
+    },
+    "2d7233c0-8bd5-4fe6-8feb-99442a5b3202": {
+      "source_sha": "7811b32fe36b54dd",
+      "fields": {
+        "title": "Flujo de registro de un día",
+        "description": "Un flujo de registro enfocado para un día específico.",
+        "when_to_visit": "Cuando quieras específicamente el paso dedicado de registro de un solo día (no la vista general del diario)."
+      }
+    },
+    "2dae3b6a-d075-414f-944e-93e824918772": {
+      "source_sha": "4d00fa2ca16a16a4",
+      "fields": {
+        "title": "Detalle del match",
+        "description": "Un match específico entre dos miembros de la comunidad basado en intereses coincidentes.",
+        "when_to_visit": "Cuando quieres ver un match específico, pides los detalles de uno de tus matches o quieres abrir un match por ID."
+      }
+    },
+    "2e4538a5-d6a2-481b-9e46-64a4edc9b016": {
+      "source_sha": "e031d0ed92eedb82",
+      "fields": {
+        "title": "Diario",
+        "description": "Tus entradas diarias de diario — registra pensamientos, estados de ánimo y reflexiones.",
+        "when_to_visit": "Cuando el usuario quiere escribir una entrada de diario, abrir el diario de salud, registrar cómo se siente, hacer journaling de su día o abrir su diario."
+      }
+    },
+    "2fa79e93-3fcc-545e-9d34-7efbc04875e5": {
+      "source_sha": "f803b94dca9d3cad",
+      "fields": {
+        "title": "Portal Earthlinks",
+        "description": "Registro e inicio de sesión para el tenant Earthlinks.",
+        "when_to_visit": "Cuando menciones Earthlinks y quieras registrarte o iniciar sesión."
+      }
+    },
+    "30f828c1-daf5-5562-a0b9-9f18e1c53816": {
+      "source_sha": "e02379bcaee68dcb",
+      "fields": {
+        "title": "Iniciar sesión",
+        "description": "Pantalla general de inicio de sesión y registro.",
+        "when_to_visit": "Cuando quieras una pantalla de inicio de sesión general sin contexto de tenant específico."
+      }
+    },
+    "328bec6a-8575-449f-9ec9-89ec70acf9a7": {
+      "source_sha": "b38e82e237da5bde",
+      "fields": {
+        "title": "Compartir datos",
+        "description": "Controla qué datos se comparten.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña de compartir datos en privacidad — compartir datos, qué datos se comparten o el consentimiento para compartir datos."
+      }
+    },
+    "338c566a-bec4-46e1-99c0-1576c5311b40": {
+      "source_sha": "b0ebb8dc27b9695b",
+      "fields": {
+        "title": "Insights de recompensas",
+        "description": "La pestaña de inteligencia de las recompensas del monedero — consejos para ganar más.",
+        "when_to_visit": "Cuando preguntas por insights de recompensas, la pestaña de inteligencia de recompensas o consejos para ganar más recompensas."
+      }
+    },
+    "33c71456-fb59-4cf2-86a2-c2182ef5aafb": {
+      "source_sha": "9e222869f090435c",
+      "fields": {
+        "title": "Idioma y región",
+        "description": "Idioma y región de la app.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña de idioma y región en preferencias — idioma de la app, región o configuración regional."
+      }
+    },
+    "33da1f6b-27fd-420d-a888-e8f1dbea7c62": {
+      "source_sha": "bf1a3dd69d7b6031",
+      "fields": {
+        "title": "Facturas y recibos",
+        "description": "Tus facturas y recibos.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña de facturas y recibos en facturación — facturas, recibos o historial de pagos."
+      }
+    },
+    "33f47c7e-d533-4a95-98fb-20bebe2ca981": {
+      "source_sha": "f53262670e5daa2d",
+      "fields": {
+        "title": "Ajustes de Autopilot",
+        "description": "Configura Autopilot — frecuencia de recomendaciones, qué categorías se muestran y horarios de descanso.",
+        "when_to_visit": "Cuando preguntes por los ajustes de Autopilot, preferencias de Autopilot, cómo configurar las recomendaciones o quieras cambiar el comportamiento de Autopilot."
+      }
+    },
+    "347ac3b5-99bb-463b-84c6-a77c6fbe32aa": {
+      "source_sha": "e7b3fa7b1e0082c1",
+      "fields": {
+        "title": "Compartir",
+        "description": "Comparte la comunidad MAXINA con amigos y gana recompensas.",
+        "when_to_visit": "Cuando el usuario pregunta por compartir, recomendaciones, invitar amigos o cómo recomendar la comunidad."
+      }
+    },
+    "3483e0e8-770b-5021-8d5c-ccc559a4a65e": {
+      "source_sha": "bdf924974a365677",
+      "fields": {
+        "title": "Suplementos",
+        "description": "Suplementos seleccionados para longevidad y bienestar.",
+        "when_to_visit": "Cuando preguntes por suplementos, vitaminas, minerales, nutracéuticos o qué deberías tomar para tu salud."
+      }
+    },
+    "34f3cc0d-c4c2-4d1a-846c-e9de28c3335c": {
+      "source_sha": "7a4bf2a1288b6366",
+      "fields": {
+        "title": "Sesiones pasadas",
+        "description": "Grabaciones y resúmenes de salas en vivo finalizadas.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña de pasadas de las salas en vivo — sesiones pasadas, salas anteriores, grabaciones o resúmenes de salas en vivo finalizadas."
+      }
+    },
+    "35943f07-47ef-4292-935b-986db8bcef7c": {
+      "source_sha": "cdc73456d747d1e7",
+      "fields": {
+        "title": "Habla proactiva",
+        "description": "La pestaña proactiva del asistente — controla cuándo Vitana habla por iniciativa propia.",
+        "when_to_visit": "Cuando preguntes por la pestaña proactiva del asistente, el habla proactiva o cuándo Vitana debe hablarte por su cuenta."
+      }
+    },
+    "35b811f8-ce5e-4d39-8e8c-d92cfec50135": {
+      "source_sha": "85c5473fc0ff0ce1",
+      "fields": {
+        "title": "Noticias de la comunidad",
+        "description": "La pestaña de comunidad del feed de noticias — actualizaciones y publicaciones de la comunidad de MAXINA.",
+        "when_to_visit": "Cuando el usuario quiere la pestaña de comunidad del feed de noticias, noticias de la comunidad, actualizaciones de la comunidad o novedades del feed de la comunidad."
+      }
+    },
+    "37f93997-f66c-4a2c-bc6a-4b3ea0470178": {
+      "source_sha": "0dbe346cb377b8ea",
+      "fields": {
+        "title": "Soporte",
+        "description": "Obtén ayuda, contacta con soporte o reporta un problema.",
+        "when_to_visit": "Cuando preguntes de forma general por ayuda, soporte, cómo contactar al equipo, reportar un error o necesites asistencia sin mencionar un área de soporte específica."
+      }
+    },
+    "37fca1cb-daa9-4be7-88ba-5ddbba6a2095": {
+      "source_sha": "f2646e774a37b1ca",
+      "fields": {
+        "title": "Conectores de salud",
+        "description": "Conecta integraciones de aplicaciones de salud y laboratorio.",
+        "when_to_visit": "Cuando preguntes por la pestaña de conectores de salud de las apps conectadas o quieras conectar una app de salud o laboratorio (Apple Health, Oura, un proveedor de laboratorio) como integración."
+      }
+    },
+    "38c43a6f-99f8-4cbe-91e3-0e5a4ea4db02": {
+      "source_sha": "004ca71448bca761",
+      "fields": {
+        "title": "Portal Alkalma",
+        "description": "Registro e inicio de sesión para el tenant Alkalma.",
+        "when_to_visit": "Cuando el usuario menciona Alkalma y quiere registrarse o iniciar sesión."
+      }
+    },
+    "38fa0090-e7bb-513c-90e3-2e7756738db5": {
+      "source_sha": "cc0efffd1e1dee07",
+      "fields": {
+        "title": "Política de privacidad",
+        "description": "Política de privacidad pública.",
+        "when_to_visit": "Cuando preguntes sobre privacidad, tratamiento de datos o qué datos recopila Vitana."
+      }
+    },
+    "3c5fb4a9-0fb4-521d-b6c8-824faf9fb5bd": {
+      "source_sha": "c8c66260585988ea",
+      "fields": {
+        "title": "Ofertas y promociones",
+        "description": "Ofertas para miembros, descuentos y promociones especiales.",
+        "when_to_visit": "Cuando preguntes por ofertas, descuentos, promociones o qué está en oferta."
+      }
+    },
+    "3e95be46-6816-4ac5-a175-1ec06e8dfcb4": {
+      "source_sha": "f803b94dca9d3cad",
+      "fields": {
+        "title": "Portal Earthlinks",
+        "description": "Registro e inicio de sesión para el tenant Earthlinks.",
+        "when_to_visit": "Cuando el usuario menciona Earthlinks y quiere registrarse o iniciar sesión."
+      }
+    },
+    "3ed08cd7-f9b8-40aa-b744-a324b469acbb": {
+      "source_sha": "bfb06419bd1b5ab0",
+      "fields": {
+        "title": "Selección IA",
+        "description": "Recomendaciones de productos y servicios curadas por IA — la pestaña de sugerencias de Discover.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña AI Picks de Discover, la pestaña de sugerencias, recomendaciones de IA, sugerencias personalizadas, consejos curados o quiere saber qué le recomienda la IA."
+      }
+    },
+    "3ed54bce-4705-4908-9b2d-ee010ae0686c": {
+      "source_sha": "4511ea35fda273af",
+      "fields": {
+        "title": "Línea de tiempo",
+        "description": "Una línea de tiempo cronológica de tus recuerdos e interacciones.",
+        "when_to_visit": "Cuando el usuario quiere ver su línea de tiempo, cronología de recuerdos, historial de interacciones o vista cronológica de su memoria."
+      }
+    },
+    "3f0c369d-e6ed-59f3-8efe-bdeccb8d8c31": {
+      "source_sha": "bac1ad3dc1dc61df",
+      "fields": {
+        "title": "Salas en vivo",
+        "description": "Salas de audio y video en vivo donde los miembros de la comunidad se reúnen en tiempo real.",
+        "when_to_visit": "Cuando preguntes por salas en vivo, audio en directo, video en directo, conversaciones en tiempo real, llamadas de la comunidad o reuniones virtuales que estén ocurriendo ahora."
+      }
+    },
+    "3f67ec35-713d-4cbf-af28-42e569f05b3e": {
+      "source_sha": "e4f85db4a2c69cb9",
+      "fields": {
+        "title": "Inicio de Vitanaland",
+        "description": "El punto de entrada público principal a Vitanaland y la comunidad MAXINA.",
+        "when_to_visit": "Cuando el usuario quiere volver al inicio, ir a la página principal, a la página de inicio del sitio o escuchar la introducción de nuevo."
+      }
+    },
+    "40c60192-6dae-471b-9cd6-a48e3d7471b6": {
+      "source_sha": "158297559e0d8dd7",
+      "fields": {
+        "title": "Mis anuncios",
+        "description": "Tus anuncios de negocio activos en MAXINA.",
+        "when_to_visit": "Cuando el usuario pregunta por sus anuncios, anuncios de negocio, servicios publicados, qué ha publicado comercialmente o quiere gestionar sus publicaciones de negocio públicas."
+      }
+    },
+    "42e23e9c-67fe-4917-b234-a2a586be9782": {
+      "source_sha": "7da536534d9822b3",
+      "fields": {
+        "title": "Mis clientes",
+        "description": "Gestiona los clientes de tu negocio en MAXINA.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña \"Clientes\" en la sección de estadísticas de su Business Hub, sus clientes, a quién atiende o cómo gestionar las relaciones con clientes en el negocio."
+      }
+    },
+    "4322284a-c083-45a6-a5a8-89b78dd399d3": {
+      "source_sha": "de7a6188f6c8a7f4",
+      "fields": {
+        "title": "Mensajes",
+        "description": "Tus mensajes directos y conversaciones con miembros de la comunidad.",
+        "when_to_visit": "Cuando quieras abrir mensajes, mensajes directos, conversaciones o escribirle directamente a otro miembro."
+      }
+    },
+    "43aa841d-78b1-4949-a1c5-bb0a7d836c86": {
+      "source_sha": "36c61ab44ee39787",
+      "fields": {
+        "title": "Mi biología",
+        "description": "Haz seguimiento de tus biomarcadores, resultados de laboratorio e indicadores de salud personales con tendencias a lo largo del tiempo.",
+        "when_to_visit": "Cuando el usuario pregunte por su biología, biomarcadores, resultados de laboratorio, valores sanguíneos, indicadores de salud, composición corporal o quiera hacer seguimiento de sus datos de salud personales y tendencias."
+      }
+    },
+    "44c33035-f42f-496b-8432-073382048b3d": {
+      "source_sha": "85c5473fc0ff0ce1",
+      "fields": {
+        "title": "Noticias de la comunidad",
+        "description": "La pestaña de comunidad del feed de noticias — actualizaciones y publicaciones de la comunidad de MAXINA.",
+        "when_to_visit": "Cuando quieras la pestaña de comunidad del feed de noticias, noticias de la comunidad, actualizaciones de la comunidad o novedades del feed de la comunidad."
+      }
+    },
+    "4589d192-d9f2-4368-b558-fe006a237c29": {
+      "source_sha": "88a74453d190d378",
+      "fields": {
+        "title": "Mis pedidos",
+        "description": "Tus pedidos — activos y anteriores.",
+        "when_to_visit": "Cuando el usuario pregunta por sus pedidos, mis pedidos, el estado de un pedido, entregas o qué ha comprado."
+      }
+    },
+    "46a5d938-6cb7-48f5-b573-42e2e6c19cff": {
+      "source_sha": "11a202318f43a8cc",
+      "fields": {
+        "title": "Resumen diario",
+        "description": "Tu resumen diario generado por IA sobre salud, actividad y destacados de la comunidad.",
+        "when_to_visit": "Cuando el usuario pregunta por su resumen diario, su informe del día o qué pasó hoy."
+      }
+    },
+    "487fc3fb-a054-4807-93cd-1a5fb1630d18": {
+      "source_sha": "c1aed0cd7d7b0c70",
+      "fields": {
+        "title": "Pedidos activos",
+        "description": "Tus pedidos activos y en curso.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña \"Activos\" de Mis pedidos, sus pedidos activos, pedidos en curso, pedidos abiertos o entregas pendientes."
+      }
+    },
+    "4c336b51-3f7c-409a-8e48-9ba5e0229c29": {
+      "source_sha": "f4a7ab407e96491f",
+      "fields": {
+        "title": "Reportes de errores",
+        "description": "Reporta un error o una mejora de experiencia de usuario desde tu diario.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña \"Reportes de errores\" en el diario, quiere reportar un error, registrar un problema de la app o sugerir una mejora de experiencia de usuario desde el diario."
+      }
+    },
+    "4c773720-39e4-4a72-b6c1-4f8db722414b": {
+      "source_sha": "99caa1940ab7f398",
+      "fields": {
+        "title": "Acciones del monedero",
+        "description": "Acciones del monedero — enviar, solicitar, intercambiar, comprar créditos y tokens, añadir dinero, retirar.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña \"Acciones\" del monedero, acciones del monedero, enviar o solicitar un pago, intercambiar moneda, comprar créditos o tokens, añadir dinero o retirar de su monedero."
+      }
+    },
+    "4cc3a101-18fc-41b5-8326-085f5aa4ec1f": {
+      "source_sha": "d7d2d3667235e74b",
+      "fields": {
+        "title": "Planes de entrenamiento",
+        "description": "La pestaña de entrenamiento de los planes de salud.",
+        "when_to_visit": "Cuando preguntas por planes de entrenamiento, la pestaña de entrenamiento de los planes o tu plan de ejercicio o workout."
+      }
+    },
+    "4d3daadd-e091-462f-965f-8e5e5606c02a": {
+      "source_sha": "74c9367ab8f6aa10",
+      "fields": {
+        "title": "Feed de comunidad Siguiendo",
+        "description": "La pestaña \"Siguiendo\" de Eventos y Quedadas — tu feed de comunidad con eventos, publicaciones y novedades de miembros y grupos que sigues.",
+        "when_to_visit": "Cuando preguntas por la pestaña \"Siguiendo\" de Eventos y Quedadas, por siguiendo, por eventos de personas que sigues, por las personas o grupos que sigues, o por el feed de comunidad con publicaciones y novedades."
+      }
+    },
+    "4d5ea1e5-fe38-4364-8cea-c7b7a8708960": {
+      "source_sha": "ee6970e175e30e06",
+      "fields": {
+        "title": "Detalle del grupo",
+        "description": "Un grupo específico de la comunidad — sus miembros, publicaciones y eventos.",
+        "when_to_visit": "Cuando quieres abrir un grupo específico por ID o nombre, ver un grupo o consultar los detalles de un grupo."
+      }
+    },
+    "4dedb731-ac6e-4d8b-803c-7e032c44a0bd": {
+      "source_sha": "9aa202f436995f5d",
+      "fields": {
+        "title": "Ayuda de la comunidad",
+        "description": "Recibe ayuda de otros miembros — grupos y foros de la comunidad.",
+        "when_to_visit": "Cuando el usuario pregunta por ayuda de la comunidad, ayuda de otros usuarios, grupos de soporte de la comunidad o foros de usuarios."
+      }
+    },
+    "50a82263-eb3e-4c63-b58f-dd346905593b": {
+      "source_sha": "2b2cff328d1c6b56",
+      "fields": {
+        "title": "Conectores de correo y calendario",
+        "description": "Conecta aplicaciones de correo electrónico y calendario.",
+        "when_to_visit": "Cuando preguntes por los conectores de correo y calendario, la pestaña de productividad de las apps conectadas o quieras conectar una integración de correo o calendario (Gmail, Google Calendar, Outlook)."
+      }
+    },
+    "50bfd44a-bd83-4952-9e8d-f45f8edfd62c": {
+      "source_sha": "9bb5446f7211a27a",
+      "fields": {
+        "title": "Notificaciones",
+        "description": "Gestiona tus preferencias de notificaciones.",
+        "when_to_visit": "Cuando el usuario pregunta por ajustes de notificaciones, notificaciones push, alertas por correo o quiere activar o desactivar notificaciones."
+      }
+    },
+    "52e8358b-0794-5cb2-ac33-d0ca17c12452": {
+      "source_sha": "1316fac0d90ee9ab",
+      "fields": {
+        "title": "Compañero IA",
+        "description": "Chatea con Vitana en una vista de compañero enfocada.",
+        "when_to_visit": "Cuando quieras abrir el chat dedicado de Vitana, la vista de compañero IA o tener una conversación más larga fuera del ORB."
+      }
+    },
+    "535d7082-6a0d-4173-b394-51852e172c27": {
+      "source_sha": "4fc59531e14929af",
+      "fields": {
+        "title": "Grupos",
+        "description": "Explora y únete a grupos de la comunidad MAXINA.",
+        "when_to_visit": "Cuando preguntas por grupos de la comunidad, unirte a un grupo, qué grupos hay disponibles o quieres ver tus grupos."
+      }
+    },
+    "5378f930-94c6-4cb7-9511-2d409ad50d06": {
+      "source_sha": "1f5ebbfc5910fa07",
+      "fields": {
+        "title": "Visibilidad",
+        "description": "Controla quién puede ver tu perfil.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña de visibilidad del perfil en privacidad — quién puede ver su perfil u ocultar su perfil."
+      }
+    },
+    "538ad2e6-82b5-4243-9453-34e80f3b460e": {
+      "source_sha": "83bb50951e683f76",
+      "fields": {
+        "title": "Membresía",
+        "description": "La pestaña de membresía de tu saldo del monedero.",
+        "when_to_visit": "Cuando preguntas por tu membresía, el estado de tu suscripción o la pestaña de membresía del monedero."
+      }
+    },
+    "53d10b78-aced-41fc-90de-3de0eabed5b1": {
+      "source_sha": "93cc4ff1fb2559b6",
+      "fields": {
+        "title": "Visor de sala en vivo específica",
+        "description": "Página del visor para una sala de audio o video en vivo específica mediante roomId.",
+        "when_to_visit": "Cuando quien llama tiene un roomId específico y necesita abrir una página de visor."
+      }
+    },
+    "54626359-a8da-42cb-819f-d2e5c59e28d3": {
+      "source_sha": "14a08c7e3aebc518",
+      "fields": {
+        "title": "Solicitudes abiertas",
+        "description": "Publicaciones de la comunidad sin match que buscan un compañero o ayudante.",
+        "when_to_visit": "Cuando el usuario pregunta por \"solicitudes abiertas\", \"qué busca la comunidad\", \"publicaciones sin match\" o \"quién necesita ayuda\"."
+      }
+    },
+    "54c051b3-9ebb-4366-9a63-afef7b1b593c": {
+      "source_sha": "24115fcdd7fc3d8d",
+      "fields": {
+        "title": "Preferencias",
+        "description": "Tus preferencias personales para la experiencia en la app.",
+        "when_to_visit": "Cuando el usuario quiere cambiar sus preferencias, personalizar la app, ajustar configuraciones o personalizar su experiencia."
+      }
+    },
+    "55ff6402-2614-445d-a34b-834241ba1ca4": {
+      "source_sha": "b68d66fc1e5a866c",
+      "fields": {
+        "title": "Unirse a la comunidad MAXINA",
+        "description": "Registro e inicio de sesión para la comunidad MAXINA en Vitanaland.",
+        "when_to_visit": "Cuando el usuario quiere registrarse, iniciar sesión, unirse a la comunidad, crear una cuenta o entrar en MAXINA."
+      }
+    },
+    "560b693d-a20f-427e-a07d-6230404b8144": {
+      "source_sha": "bd38e930484c5d49",
+      "fields": {
+        "title": "Recompensas por referidos",
+        "description": "La pestaña de referidos de las recompensas del monedero — recompensas por invitar amigos.",
+        "when_to_visit": "Cuando preguntas por recompensas por referidos, la pestaña de referidos de recompensas o recompensas por invitaciones."
+      }
+    },
+    "56a64360-8b5d-4f31-97cf-1a550ac0a1b2": {
+      "source_sha": "bfb06419bd1b5ab0",
+      "fields": {
+        "title": "Selección IA",
+        "description": "Recomendaciones de productos y servicios curadas por IA — la pestaña de sugerencias de Descubrir.",
+        "when_to_visit": "Cuando preguntes por la pestaña de selección IA de Descubrir, la pestaña de sugerencias, recomendaciones de IA, sugerencias personalizadas, consejos curados o quieras saber qué te recomienda la IA."
+      }
+    },
+    "57072d78-74af-466e-998d-2cbe72137e22": {
+      "source_sha": "93cc4ff1fb2559b6",
+      "fields": {
+        "title": "Visor de sala en vivo específica",
+        "description": "Página del visor para una sala de audio o video en vivo específica por roomId.",
+        "when_to_visit": "Cuando tienes una roomId específica y necesitas abrir una página de visor."
+      }
+    },
+    "5829cc65-e496-41a8-9ff1-51014c8d39e1": {
+      "source_sha": "df225106c20d13cc",
+      "fields": {
+        "title": "Más conectores",
+        "description": "Más conectores e integraciones.",
+        "when_to_visit": "Cuando preguntes por la pestaña \"Más\" de conectores en las apps conectadas u otras integraciones."
+      }
+    },
+    "594d38ab-b0f0-47ec-b83c-28bafee22eb4": {
+      "source_sha": "3a2c1f139ad82533",
+      "fields": {
+        "title": "Insights de IA",
+        "description": "Información personalizada a partir de tus datos de salud y actividades.",
+        "when_to_visit": "Cuando el usuario pregunta por insights, patrones, tendencias o quiere saber qué ha aprendido la IA sobre él."
+      }
+    },
+    "5dfd2c41-0fdb-4872-9a7a-8889ebac3714": {
+      "source_sha": "14a08c7e3aebc518",
+      "fields": {
+        "title": "Solicitudes abiertas",
+        "description": "Publicaciones de toda la comunidad sin match que buscan una pareja o ayudante.",
+        "when_to_visit": "Cuando preguntas por \"solicitudes abiertas\", \"qué busca la comunidad\", \"publicaciones sin match\" o \"quién necesita ayuda\"."
+      }
+    },
+    "5ea6de71-f8f0-475c-904e-8c0fc4f43636": {
+      "source_sha": "84258a6d9786ad46",
+      "fields": {
+        "title": "Marketplace",
+        "description": "El marketplace de MAXINA — compra y vende intents comerciales de la comunidad.",
+        "when_to_visit": "Cuando quieras abrir el marketplace, explorar intents comerciales, comprar o vender algo, o ver qué vende la comunidad."
+      }
+    },
+    "5fb32da5-0d15-4924-8e94-b4fe0143748a": {
+      "source_sha": "57e05181acc53a38",
+      "fields": {
+        "title": "Eventos de hoy",
+        "description": "Eventos y encuentros de la comunidad que tienen lugar hoy.",
+        "when_to_visit": "Cuando el usuario pregunta qué eventos hay hoy, por los eventos de hoy o la pestaña \"Hoy\"."
+      }
+    },
+    "60cfc219-6486-400d-8579-39b67b458782": {
+      "source_sha": "9e0bd3b375526da4",
+      "fields": {
+        "title": "Próximos eventos",
+        "description": "Próximos eventos y encuentros de la comunidad en los que puedes participar.",
+        "when_to_visit": "Cuando el usuario pregunta por próximos eventos, eventos que vienen, la pestaña \"Próximos\" o futuros eventos y encuentros."
+      }
+    },
+    "61535fd3-0634-4e60-9f09-dc406ff4ff53": {
+      "source_sha": "1f06d33ed964eea2",
+      "fields": {
+        "title": "Saldo y beneficios",
+        "description": "Tu saldo actual de MAXINA y los beneficios desbloqueados en tu nivel.",
+        "when_to_visit": "Cuando el usuario pregunta por su saldo, su balance, sus beneficios, su nivel o lo que tiene desbloqueado."
+      }
+    },
+    "62cf9915-c542-4e40-a4d4-d9077d1f8bc0": {
+      "source_sha": "9bd8a76c8a7c160f",
+      "fields": {
+        "title": "Ajustes de privacidad",
+        "description": "Gestiona qué datos guarda Vitana y qué se comparte con la comunidad.",
+        "when_to_visit": "Cuando el usuario pregunta por ajustes de privacidad, control de datos, qué se comparte, consentimiento o quiere cambiar sus preferencias de privacidad."
+      }
+    },
+    "640746cc-7f0d-4219-b023-ee0912f0e237": {
+      "source_sha": "24115fcdd7fc3d8d",
+      "fields": {
+        "title": "Preferencias",
+        "description": "Tus preferencias personales para la experiencia en la app.",
+        "when_to_visit": "Cuando el usuario quiere cambiar sus preferencias, personalizar la app, ajustar configuraciones o personalizar su experiencia."
+      }
+    },
+    "65211ac5-2554-488f-a4ae-ececa62a9a0a": {
+      "source_sha": "ffa86195b6c72a26",
+      "fields": {
+        "title": "Podcasts educativos",
+        "description": "La pestaña de podcasts de educación y recursos de salud.",
+        "when_to_visit": "Cuando preguntes por podcasts educativos de salud, la pestaña de podcasts de educación o audio de aprendizaje sobre salud."
+      }
+    },
+    "65d24ad5-2d2a-4591-b73c-6e1ce42f8284": {
+      "source_sha": "b5cd6fb642fcbb3e",
+      "fields": {
+        "title": "Buscar",
+        "description": "Búsqueda global en toda la app de MAXINA — miembros, contenido, servicios, productos.",
+        "when_to_visit": "Cuando quieras buscar en la app, encontrar algo específico, buscar un miembro, encontrar contenido o abrir la búsqueda global."
+      }
+    },
+    "66e568f7-c218-4c07-8c08-cad024cc2fb1": {
+      "source_sha": "b4369583abde280b",
+      "fields": {
+        "title": "Pagos a creadores",
+        "description": "Tus pagos como creador y cobro de ganancias.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña de pagos a creadores en facturación — pagos a creadores, cobro de ganancias o cómo cobrar como creador."
+      }
+    },
+    "6735c423-5ab3-4ac8-b1fe-f80a60d574f3": {
+      "source_sha": "2d8d2e989e198e27",
+      "fields": {
+        "title": "Artículo de noticias",
+        "description": "Vista detallada de un artículo de noticias sobre longevidad.",
+        "when_to_visit": "Cuando quieras leer un artículo de noticias específico por ID, abrir una noticia o ver el artículo completo que estabas leyendo."
+      }
+    },
+    "67841bf1-e825-4ea0-8ffd-89091cd74e6b": {
+      "source_sha": "597f11e5b7771d07",
+      "fields": {
+        "title": "Miembros de la comunidad",
+        "description": "Explora el directorio de miembros de la comunidad MAXINA.",
+        "when_to_visit": "Cuando preguntas por el directorio de miembros, los miembros de la comunidad, quién está en la comunidad o quieres explorar perfiles de miembros."
+      }
+    },
+    "67ad5e75-0116-4bd2-9652-3f3b72b358a4": {
+      "source_sha": "a7515c9de0ae2e65",
+      "fields": {
+        "title": "Encontrar pareja",
+        "description": "Búsqueda unificada de pareja de baile y fitness — matches ordenados.",
+        "when_to_visit": "Cuando el usuario quiere encontrar una pareja de baile, un compañero de fitness, un match de pareja o abrir la búsqueda de parejas."
+      }
+    },
+    "6907264f-78be-43d5-a138-18900a3facf6": {
+      "source_sha": "f8b2f92b7d5296cc",
+      "fields": {
+        "title": "Promociones",
+        "description": "Promociones y ofertas especiales que realizas para las ventas de tu MAXINA Business.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña \"Promociones\" de ventas del Business Hub, las promociones de ventas del Business Hub, o las promociones y ofertas especiales que realiza para las ventas de su propio negocio."
+      }
+    },
+    "69329a51-8b9d-4886-907b-b88f0d3b3e09": {
+      "source_sha": "6b8b0389d72b3374",
+      "fields": {
+        "title": "Descubrir grupos",
+        "description": "La pestaña de descubrir de los grupos — grupos recomendados para unirte.",
+        "when_to_visit": "Cuando quieres descubrir grupos, encontrar grupos nuevos, ver grupos recomendados o ir a la pestaña de descubrir grupos."
+      }
+    },
+    "6a389e2a-b2de-496e-9bd7-82471e40e35c": {
+      "source_sha": "7811b32fe36b54dd",
+      "fields": {
+        "title": "Flujo de registro de un día",
+        "description": "Un flujo de registro enfocado para un día específico.",
+        "when_to_visit": "Cuando el usuario quiera expresamente el paso dedicado de registro de un solo día (no la vista general del diario)."
+      }
+    },
+    "6b41d481-dd29-437f-a1af-f64114d8d17c": {
+      "source_sha": "3e636f7b53134409",
+      "fields": {
+        "title": "Ventas",
+        "description": "Tu área de ventas en el Business Hub — vende tus servicios y construye una nueva fuente de ingresos en la comunidad MAXINA.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña \"Ventas\", el área de ventas del Business Hub o sus ventas, o cómo ganar dinero, generar ingresos, crear un ingreso extra, monetizar sus habilidades, monetizar coaching, monetizar fitness, monetizar su experiencia, vender servicios, convertirse en creador de pago, crear una nueva fuente de ingresos o ganar dinero con la comunidad MAXINA."
+      }
+    },
+    "6cc471df-ba41-5af2-a311-42c076f5c701": {
+      "source_sha": "a8952c068a56e92f",
+      "fields": {
+        "title": "Billetera",
+        "description": "Tu billetera de MAXINA — saldo, suscripciones y recompensas.",
+        "when_to_visit": "Cuando quieras abrir tu billetera, ver tu saldo, revisar lo que tienes o explorar la sección de billetera."
+      }
+    },
+    "6d79a307-11eb-49c0-8f50-4ba8fd080e31": {
+      "source_sha": "b38e82e237da5bde",
+      "fields": {
+        "title": "Compartir datos",
+        "description": "Controla qué datos se comparten.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña de compartir datos en privacidad — compartir datos, qué datos se comparten o el consentimiento para compartir datos."
+      }
+    },
+    "6f65b09e-f352-5420-8b54-014607826d84": {
+      "source_sha": "4360a6a30a1148cc",
+      "fields": {
+        "title": "Recordatorios",
+        "description": "Recordatorios que Vitana ha programado para ti.",
+        "when_to_visit": "Cuando preguntes por tus recordatorios, de qué te ha recordado Vitana o quieras ver los avisos programados."
+      }
+    },
+    "7013c375-7d90-5e26-a5ed-2e768b70cc4a": {
+      "source_sha": "3065af6203789f93",
+      "fields": {
+        "title": "Vender y ganar",
+        "description": "Construye una nueva fuente de ingresos vendiendo tus servicios y ganando recompensas en la comunidad MAXINA.",
+        "when_to_visit": "Cuando preguntes cómo ganar dinero, generar ingresos, crear un ingreso extra, monetizar tus habilidades, monetizar coaching, monetizar fitness, monetizar tu experiencia, vender servicios, convertirte en creador de pago, construir una nueva fuente de ingresos o ganar dinero con la comunidad MAXINA."
+      }
+    },
+    "706847a4-36e8-4670-8230-dd04e24b9962": {
+      "source_sha": "a0ef3e99c413967d",
+      "fields": {
+        "title": "Programas de bienestar",
+        "description": "La pestaña «Programas de bienestar» en el centro de servicios de salud.",
+        "when_to_visit": "Cuando preguntes por programas de bienestar, ofertas de bienestar o la pestaña «Programas de bienestar» en el centro de servicios de salud."
+      }
+    },
+    "7096ae3d-9df9-41b8-a720-23a292d059d6": {
+      "source_sha": "7abab8bdb7f48fe4",
+      "fields": {
+        "title": "Detalle del producto",
+        "description": "Página de detalle de un producto específico.",
+        "when_to_visit": "Cuando quieras abrir un producto específico por ID, ver los detalles de un producto o leer sobre un artículo en particular."
+      }
+    },
+    "70c24bd7-5612-5bac-8edd-c71d732635b7": {
+      "source_sha": "183650a5bd506b94",
+      "fields": {
+        "title": "Salud",
+        "description": "Tu centro de salud personal — biología, planes y educación.",
+        "when_to_visit": "Cuando preguntes en general sobre tu salud, longevidad, bienestar o quieras explorar funciones de salud."
+      }
+    },
+    "71f6a06c-c574-4c93-a7dc-90c24f165fdf": {
+      "source_sha": "d8a4d8da60166667",
+      "fields": {
+        "title": "Todas las noticias",
+        "description": "El feed de noticias con todas las fuentes — noticias de longevidad y de la comunidad juntas.",
+        "when_to_visit": "Cuando el usuario quiere la pestaña de todas las noticias, todas las noticias, todas las fuentes de noticias o noticias de longevidad y comunidad juntas en un feed."
+      }
+    },
+    "73f1f5c6-bb8a-55e2-a175-e9e75e0cdbd7": {
+      "source_sha": "36c61ab44ee39787",
+      "fields": {
+        "title": "Mi biología",
+        "description": "Sigue tus biomarcadores, resultados de laboratorio e indicadores de salud personales con tendencias a lo largo del tiempo.",
+        "when_to_visit": "Cuando preguntes por tu biología, biomarcadores, resultados de laboratorio, análisis de sangre, indicadores de salud, composición corporal o quieras seguir tus datos y tendencias de salud personales."
+      }
+    },
+    "75f8eed2-75a9-4ca8-9d78-23cf2a711cd4": {
+      "source_sha": "cf8e2d0021aca010",
+      "fields": {
+        "title": "Mi perfil",
+        "description": "Tu perfil personal — nombre, foto, biografía y detalles de la cuenta.",
+        "when_to_visit": "Cuando el usuario quiere abrir su perfil, ver su perfil, editar su perfil, ver su cuenta, información personal, sobre mí o perfil de usuario."
+      }
+    },
+    "764dbd23-12de-4c44-b2f1-30530ab1c27d": {
+      "source_sha": "0877683b6e19abce",
+      "fields": {
+        "title": "Servicios médicos",
+        "description": "La pestaña «Servicios médicos» en el centro de servicios de salud.",
+        "when_to_visit": "Cuando preguntes por servicios médicos, servicios de médicos o clínicas, o la pestaña «Servicios médicos» en el centro de servicios de salud."
+      }
+    },
+    "7899350d-d02b-4466-821c-8766ad663578": {
+      "source_sha": "4d00fa2ca16a16a4",
+      "fields": {
+        "title": "Detalle del match",
+        "description": "Un match específico entre dos miembros de la comunidad basado en inquietudes coincidentes.",
+        "when_to_visit": "Cuando el usuario quiere ver un match específico, pregunta por los detalles de uno de sus matches o quiere abrir un match por ID."
+      }
+    },
+    "790556fd-f38a-4f08-b74f-6d2e99715ec4": {
+      "source_sha": "0dbe346cb377b8ea",
+      "fields": {
+        "title": "Soporte",
+        "description": "Obtén ayuda, contacta con soporte o reporta un problema.",
+        "when_to_visit": "Cuando el usuario pregunta de forma general por ayuda, soporte, cómo contactar al equipo, reportar un error o necesita asistencia sin mencionar un área de soporte específica."
+      }
+    },
+    "7a61224a-810a-457a-997b-de887960e700": {
+      "source_sha": "2d8d2e989e198e27",
+      "fields": {
+        "title": "Artículo de noticias",
+        "description": "Vista detallada de un artículo de noticias de longevidad.",
+        "when_to_visit": "Cuando quieras leer un artículo de noticias específico por ID, abrir una noticia o ver el artículo completo que estabas leyendo."
+      }
+    },
+    "7aaa590b-d3f9-4f9b-bd10-61dce21ee5de": {
+      "source_sha": "9957c50850cdf7e5",
+      "fields": {
+        "title": "Recordatorios",
+        "description": "Tus recordatorios programados — la lista completa, con controles para añadir, editar y eliminar.",
+        "when_to_visit": "Cuando el usuario pregunte por la lista de recordatorios, todos los recordatorios, \"muéstrame mis recordatorios\" o quiera gestionar los recordatorios programados."
+      }
+    },
+    "7ac28357-6ff3-4654-83ed-b7c2353ea3cf": {
+      "source_sha": "cc2bd66ea7b0c28f",
+      "fields": {
+        "title": "Eventos y encuentros",
+        "description": "Próximos eventos de la comunidad MAXINA, encuentros presenciales y reuniones.",
+        "when_to_visit": "Cuando el usuario pregunta en general por eventos y encuentros, la pantalla de eventos y encuentros, actividades programadas, quedadas, eventos de baile, talleres de bienestar o actividades comunitarias en las que participar. Abre por defecto la pestaña Hot."
+      }
+    },
+    "7bfe3b24-70dd-453d-8bbb-2256d3f20d1e": {
+      "source_sha": "3a2c1f139ad82533",
+      "fields": {
+        "title": "Estadísticas de IA",
+        "description": "Estadísticas personalizadas a partir de tus datos de salud y actividades.",
+        "when_to_visit": "Cuando el usuario pregunta por estadísticas, patrones, tendencias o quiere saber qué ha aprendido la IA sobre él."
+      }
+    },
+    "7d6ee82b-c8bd-402a-ba11-bb58d1af671e": {
+      "source_sha": "9d5721f2addd14d4",
+      "fields": {
+        "title": "Apariencia",
+        "description": "Diseño, colores y modo oscuro.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña de apariencia en preferencias — diseño, modo oscuro, colores o cómo se ve la app."
+      }
+    },
+    "7e61b476-e2c1-4914-a229-72eaba4f1cb9": {
+      "source_sha": "dd22afdd669d96a8",
+      "fields": {
+        "title": "Distribución",
+        "description": "Sigue cómo se distribuyen y reciben tus contenidos compartidos.",
+        "when_to_visit": "Cuando el usuario pregunta por distribución, cómo se difunden sus contenidos, alcance o analíticas de compartir."
+      }
+    },
+    "7f53603a-2fc2-4298-80ec-9031725881a9": {
+      "source_sha": "c9736d6d6c379351",
+      "fields": {
+        "title": "Oportunidades de negocio",
+        "description": "Nuevas oportunidades de negocio y leads que encajan con tus servicios.",
+        "when_to_visit": "Cuando el usuario pregunta por oportunidades de negocio, leads, nuevos clientes o qué negocio ha llegado."
+      }
+    },
+    "7f58a662-9529-568e-bbda-4db88d883fda": {
+      "source_sha": "4e67c8e1a59e56bf",
+      "fields": {
+        "title": "Educación y ciencia",
+        "description": "Educación en salud y ciencia de la longevidad de la base de conocimiento de Vitana.",
+        "when_to_visit": "Cuando quieras aprender sobre un tema de salud, leer sobre ciencia de la longevidad o busques contenido educativo sobre bienestar."
+      }
+    },
+    "80c0659a-9931-45fd-a9c0-8c2af2ad17b7": {
+      "source_sha": "8f5b9beff43e120f",
+      "fields": {
+        "title": "Comparte y gana",
+        "description": "Comparte productos de Discover y gana recompensas.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña \"Comparte y gana\" de Discover, la sección de compartir y ganar de Discover o quiere compartir productos del marketplace de Discover para ganar recompensas."
+      }
+    },
+    "81019d74-0860-5cee-a613-a9b59bba5561": {
+      "source_sha": "3dc6db11beeed1c5",
+      "fields": {
+        "title": "Centro de servicios de salud",
+        "description": "Encuentra y reserva servicios de salud con proveedores de la comunidad MAXINA.",
+        "when_to_visit": "Cuando preguntes dónde encontrar servicios de salud, cómo reservar una sesión con un profesional o quieras explorar profesionales de la salud."
+      }
+    },
+    "81bc391b-b711-4e34-85e5-1da0f8b4f611": {
+      "source_sha": "8699e7d18e250bd9",
+      "fields": {
+        "title": "Perfil del proveedor",
+        "description": "Página de perfil de un proveedor de servicios específico.",
+        "when_to_visit": "Cuando quieras abrir el perfil de un proveedor específico, ver el perfil de un coach o médico, o buscar un proveedor de servicios por ID."
+      }
+    },
+    "81c4af67-d838-4724-91fb-2eb8f0a6adec": {
+      "source_sha": "f5de92c3f2acb439",
+      "fields": {
+        "title": "Permisos de memoria",
+        "description": "Controla qué recuerda Vitana y quién puede ver tus recuerdos.",
+        "when_to_visit": "Cuando el usuario pregunta por permisos de memoria, qué puede recordar Vitana, privacidad de memoria o quién tiene acceso a sus recuerdos."
+      }
+    },
+    "81fc1c2d-bca3-4cc6-be84-9e97c7d6d4f9": {
+      "source_sha": "2daf710f7a46b377",
+      "fields": {
+        "title": "Mensajes archivados",
+        "description": "Mensajes que has archivado.",
+        "when_to_visit": "Cuando el usuario pregunta por mensajes archivados, mensajes antiguos o mensajes que ha guardado o descartado."
+      }
+    },
+    "82413dad-62a5-4344-be99-f44e2d4ec8a2": {
+      "source_sha": "6cb8b020d56ee50b",
+      "fields": {
+        "title": "Perfil público",
+        "description": "El perfil público de un miembro de la comunidad.",
+        "when_to_visit": "Cuando quieras abrir el perfil de otro miembro, ver la página pública de alguien de la comunidad, buscar a alguien por su @vitana_id o ver un nombre de usuario."
+      }
+    },
+    "8343cc16-fb4e-4e9f-85d4-ea995af0ddba": {
+      "source_sha": "0c166351b51b504d",
+      "fields": {
+        "title": "Conectores y apps vinculadas",
+        "description": "Conectores a apps de terceros e integraciones vinculadas a tu cuenta.",
+        "when_to_visit": "Cuando el usuario pregunta por conectores, un conector, apps conectadas, integraciones de apps, conexiones de terceros, servicios vinculados o conectar una app externa."
+      }
+    },
+    "85374691-c4b7-5bf4-9baf-7a4d70e0ef1c": {
+      "source_sha": "7cfedb1858e325f3",
+      "fields": {
+        "title": "Centro de negocios",
+        "description": "Tu hub para construir un negocio y generar ingresos en la comunidad MAXINA.",
+        "when_to_visit": "Cuando preguntes cómo construir un negocio, convertirte en creador, ser proveedor de servicios o monetizar tus habilidades en la comunidad MAXINA."
+      }
+    },
+    "8702b903-8a2e-4e64-b073-61c497fdcf61": {
+      "source_sha": "4401d661a459b886",
+      "fields": {
+        "title": "Carrito",
+        "description": "Artículos en tu carrito, listos para pagar.",
+        "when_to_visit": "Cuando quieras abrir el carrito, ver qué hay en el carrito, ir a pagar o revisar tu carrito."
+      }
+    },
+    "872fdc30-0202-4fc0-8fd8-19058b21c5cd": {
+      "source_sha": "7ec3041e2ca6405c",
+      "fields": {
+        "title": "Recordar y buscar",
+        "description": "Busca en tus recuerdos y conversaciones pasadas.",
+        "when_to_visit": "Cuando el usuario quiere buscar en sus recuerdos, encontrar algo que dijo, localizar una conversación pasada o buscar algo que Vitana recuerda."
+      }
+    },
+    "87bf15e9-c5b6-4c2e-befc-3d52a1480eec": {
+      "source_sha": "0d96bc9f0ebf682d",
+      "fields": {
+        "title": "Voz",
+        "description": "La pestaña de voz del asistente de IA — ajustes de voz y tu experiencia de ORB con voz primero.",
+        "when_to_visit": "Cuando preguntes por la pestaña de voz del asistente, ajustes de voz, IA de voz o quieras configurar el asistente de voz."
+      }
+    },
+    "8956df72-94de-4087-aa16-a50183e4d640": {
+      "source_sha": "4b24806aa985ee54",
+      "fields": {
+        "title": "Accesibilidad",
+        "description": "La sección de accesibilidad en los ajustes — configuración de accesibilidad.",
+        "when_to_visit": "Cuando el usuario pregunta por los ajustes de accesibilidad, la sección de accesibilidad en los ajustes o quiere modificar las opciones de accesibilidad."
+      }
+    },
+    "89975567-1e43-4e4c-8295-b27405d7a60e": {
+      "source_sha": "93b1388fb4bf8055",
+      "fields": {
+        "title": "Preguntas frecuentes",
+        "description": "Preguntas frecuentes, artículos de ayuda y base de conocimientos.",
+        "when_to_visit": "Cuando el usuario pregunta por preguntas frecuentes, artículos de ayuda, base de conocimientos, dudas comunes o guías."
+      }
+    },
+    "89cbf8ca-952b-4d7a-a43f-c545bf3dd2f0": {
+      "source_sha": "81e158405f3d5709",
+      "fields": {
+        "title": "Detalle de campaña",
+        "description": "La vista detallada de una campaña de compartir individual — alcance, rendimiento y contenidos.",
+        "when_to_visit": "Cuando el usuario quiere abrir una campaña de compartir específica, los detalles de una campaña o el rendimiento de una campaña individual."
+      }
+    },
+    "8a881371-8f59-431f-aac7-302c6fbc927e": {
+      "source_sha": "4701f806cea7ebde",
+      "fields": {
+        "title": "Datos y consentimiento",
+        "description": "Gestiona qué datos compartes y tus preferencias de consentimiento.",
+        "when_to_visit": "Cuando el usuario pregunta por consentimiento de datos, qué datos se comparten, permisos de datos o configuración de consentimiento."
+      }
+    },
+    "8c779ec1-f2e1-42cb-923f-a4f4fe2bfcc1": {
+      "source_sha": "4a3e310994e2560c",
+      "fields": {
+        "title": "Mis planes",
+        "description": "Planes de salud personalizados en torno a tus objetivos — nutrición, fitness, sueño, estrés.",
+        "when_to_visit": "Cuando el usuario pregunte por sus planes de salud, su plan de nutrición, su plan de fitness, su programa personal o qué debería hacer para alcanzar sus objetivos."
+      }
+    },
+    "8e332739-6e7f-47e7-84e1-8dd5d2f1b892": {
+      "source_sha": "cf8e2d0021aca010",
+      "fields": {
+        "title": "Mi perfil",
+        "description": "Tu perfil personal — nombre, foto, biografía y detalles de la cuenta.",
+        "when_to_visit": "Cuando el usuario quiere abrir su perfil, ver su perfil, editar su perfil, ver su cuenta, información personal, sobre mí o perfil de usuario."
+      }
+    },
+    "8fe3651b-b81e-43d2-ac55-7eb5325ac6b4": {
+      "source_sha": "d13a078d4d7f4d14",
+      "fields": {
+        "title": "Bandeja de entrada — Chat y mensajes",
+        "description": "Mensajes, chats y conversaciones con miembros de la comunidad.",
+        "when_to_visit": "Cuando el usuario pregunta por bandeja de entrada, inbox, mensajes, chat, chats, historial de chat, messenger, mensajes de texto, conversaciones, historial de mensajes, mensajes directos, escribir a miembros, comunicarse con la comunidad, notificaciones o quiere leer sus mensajes."
+      }
+    },
+    "93408376-a310-444c-a877-d1b91effcb45": {
+      "source_sha": "0b3febab02c90e9c",
+      "fields": {
+        "title": "Campañas",
+        "description": "Tus campañas de compartir activas y su rendimiento.",
+        "when_to_visit": "Cuando el usuario pregunta por sus campañas de compartir, campañas de referidos, rendimiento de campañas o resultados de campañas."
+      }
+    },
+    "93f7d6f2-78eb-4908-b673-bb2ecc24cc38": {
+      "source_sha": "215e6c0ab287fb44",
+      "fields": {
+        "title": "Mis Intents",
+        "description": "Tus propias publicaciones y solicitudes en la comunidad.",
+        "when_to_visit": "Cuando preguntas por \"mis intents\", \"mis publicaciones\", \"mis solicitudes\", \"lo que he publicado\" o quieres ver o gestionar tus propias publicaciones en la comunidad."
+      }
+    },
+    "94834c30-82fb-4fa6-a710-28f365de85e4": {
+      "source_sha": "fe3f0d085959a699",
+      "fields": {
+        "title": "Actividad del monedero",
+        "description": "Tu actividad del monedero e historial de transacciones.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña \"Actividad\" del monedero, su actividad del monedero, transacciones del monedero, historial de transacciones o los movimientos recientes del monedero."
+      }
+    },
+    "965592fe-dbc0-4e35-8648-196711cc3766": {
+      "source_sha": "e7379c845ced71d6",
+      "fields": {
+        "title": "Eventos en tendencia",
+        "description": "Eventos y encuentros destacados y en tendencia de la comunidad MAXINA.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña \"Hot\" de eventos y encuentros, eventos en tendencia, eventos populares, eventos destacados o los mejores eventos de la comunidad."
+      }
+    },
+    "96a20669-a03b-479d-b57b-a59dc04d3ec8": {
+      "source_sha": "78c0694996e34593",
+      "fields": {
+        "title": "Ofertas seleccionadas por IA",
+        "description": "La pestaña de selección IA de Ofertas y promociones — ofertas elegidas por la IA para ti.",
+        "when_to_visit": "Cuando preguntas por ofertas seleccionadas por IA, ofertas personalizadas o la pestaña de selección IA de Ofertas y promociones."
+      }
+    },
+    "97bb5415-af7a-477b-b8db-670590af879a": {
+      "source_sha": "93798ab9455b25d4",
+      "fields": {
+        "title": "Acciones",
+        "description": "Acciones y tareas recomendadas para ti hoy.",
+        "when_to_visit": "Cuando preguntes qué deberías hacer hoy, qué acciones tienes pendientes o cuáles son tus tareas."
+      }
+    },
+    "9a1f0199-40e9-4456-8621-ef937b1c6854": {
+      "source_sha": "597f11e5b7771d07",
+      "fields": {
+        "title": "Miembros de la comunidad",
+        "description": "Explora el directorio de miembros de la comunidad MAXINA.",
+        "when_to_visit": "Cuando el usuario pregunta por el directorio de miembros, los miembros de la comunidad, quién está en la comunidad o quiere explorar perfiles de miembros."
+      }
+    },
+    "9b3e8c52-923c-5d8b-b7c7-934586f118b3": {
+      "source_sha": "786c9f1246e5d74d",
+      "fields": {
+        "title": "Analíticas de negocio",
+        "description": "Métricas de rendimiento de tu negocio MAXINA: reservas, ingresos, crecimiento.",
+        "when_to_visit": "Cuando preguntes por el rendimiento de tu negocio, ingresos, reservas, métricas de crecimiento o analíticas de tus servicios."
+      }
+    },
+    "9c44d06b-7caf-4317-a5fb-b5e9a73bd33c": {
+      "source_sha": "4511ea35fda273af",
+      "fields": {
+        "title": "Línea de tiempo",
+        "description": "Una línea de tiempo cronológica de tus recuerdos e interacciones.",
+        "when_to_visit": "Cuando el usuario quiere ver su línea de tiempo, cronología de recuerdos, historial de interacciones o vista cronológica de memoria."
+      }
+    },
+    "9c7147a1-c7a4-4a43-8380-6a50609c39c5": {
+      "source_sha": "24a0ea66d0b66830",
+      "fields": {
+        "title": "Ajustes",
+        "description": "Los ajustes de tu cuenta.",
+        "when_to_visit": "Cuando el usuario quiere abrir sus ajustes, ir a la pantalla de configuración o gestionar su cuenta."
+      }
+    },
+    "9cb4eb7e-eec4-45e0-97bd-9a457b95193a": {
+      "source_sha": "885626c7d76dc69c",
+      "fields": {
+        "title": "Solicitudes abiertas",
+        "description": "La vista \"Abiertas\" del marketplace — solicitudes y ofertas abiertas para todos.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña \"Abiertas\" del marketplace, solicitudes abiertas del marketplace u ofertas abiertas en general."
+      }
+    },
+    "9d5ecb59-8a54-4ffc-99a7-189e43f7d1ad": {
+      "source_sha": "b75699d3bebb982a",
+      "fields": {
+        "title": "Tenant y rol",
+        "description": "Cambia tu rol activo en el tenant actual — Comunidad, Profesional, Staff, Admin.",
+        "when_to_visit": "Cuando quieras cambiar de rol, convertirte en Admin/Profesional/Staff, o preguntes por tu rol en el tenant."
+      }
+    },
+    "9e8d90fd-d512-47b1-816b-547060bee990": {
+      "source_sha": "cc0efffd1e1dee07",
+      "fields": {
+        "title": "Política de privacidad",
+        "description": "Política de privacidad pública.",
+        "when_to_visit": "Cuando el usuario pregunta por privacidad, tratamiento de datos o qué datos recopila Vitana."
+      }
+    },
+    "9f1f8d7a-8d26-4bfc-adcf-d50b256c5b64": {
+      "source_sha": "7ec3041e2ca6405c",
+      "fields": {
+        "title": "Recordar y buscar",
+        "description": "Busca en tus recuerdos y conversaciones pasadas.",
+        "when_to_visit": "Cuando el usuario quiere buscar en sus recuerdos, encontrar algo que dijo, localizar una conversación pasada o buscar algo que Vitana recuerda."
+      }
+    },
+    "9f340dc9-27c0-4e82-b8e6-986060866742": {
+      "source_sha": "b5cd6fb642fcbb3e",
+      "fields": {
+        "title": "Buscar",
+        "description": "Búsqueda global en toda la app de MAXINA — miembros, contenido, servicios, productos.",
+        "when_to_visit": "Cuando el usuario quiere buscar en la app, encontrar algo específico, buscar un miembro, encontrar contenido o abrir la búsqueda global."
+      }
+    },
+    "a0f1cc13-afa9-4c61-9bc9-0b91c7acfb7d": {
+      "source_sha": "88a74453d190d378",
+      "fields": {
+        "title": "Mis pedidos",
+        "description": "Tus pedidos — activos y anteriores.",
+        "when_to_visit": "Cuando preguntes por tus pedidos, mis pedidos, estado del pedido, envíos o lo que has comprado."
+      }
+    },
+    "a1b7c9d0-4e5f-4a6b-9c8d-1e2f3a4b5c6d": {
+      "source_sha": "9e6d89f14f77ef95",
+      "fields": {
+        "title": "Mi viaje",
+        "description": "Tu panel de Autopilot — el viaje de 90 días preparado para ti: oleadas, hitos y acciones recomendadas, adaptados a tu calendario. Hay dos vistas entre las que puedes alternar: el viaje GUIADO (la \"introducción\", paso a paso, una sesión a la vez) y la versión COMPLETA (la app completa, todo de una vez).",
+        "when_to_visit": "Cuando el usuario quiere abrir mi viaje, ver mi viaje, el viaje de Autopilot, mi viaje de 90 días, el plan de 90 días, el panel de Autopilot, mi plan, o qué toca hoy en su viaje. TAMBIÉN cuando el usuario menciona una de las dos VISTAS de su viaje por nombre — el viaje GUIADO / la journey guiada / la \"introducción\", O la versión COMPLETA / la app completa / la versión completa — o quiere cambiar entre la vista guiada y la completa de su viaje. TAMBIÉN cuando el usuario pregunta por las SESIONES DE SU PROPIO viaje — por ejemplo \"la siguiente sesión de mi viaje\", \"mi sesión de la journey\", \"la pantalla con las sesiones de mi journey guiada\" — estas son las conversaciones paso a paso DENTRO de su propio viaje de 90 días, NO sesiones o cursos que ofrece como proveedor para otros (eso es el Business Hub). Esto NO es el perfil del usuario — \"mi viaje\" significa el panel de Autopilot."
+      }
+    },
+    "a1bde34f-dd04-4446-ab69-1717a3d33233": {
+      "source_sha": "d68213a45c6a8433",
+      "fields": {
+        "title": "Suscripciones",
+        "description": "Tus suscripciones activas y los servicios por los que pagas.",
+        "when_to_visit": "Cuando el usuario pregunta por sus suscripciones, pagos recurrentes, por qué está pagando o quiere cancelar o gestionar una suscripción."
+      }
+    },
+    "a30d5a88-95d7-41c1-a9d6-8839fc48177e": {
+      "source_sha": "992f2064e9c13db1",
+      "fields": {
+        "title": "Salas programadas",
+        "description": "Próximas salas en vivo programadas para más tarde.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña \"Programadas\" de las salas en vivo — próximas salas, sesiones programadas o salas en vivo para más tarde."
+      }
+    },
+    "a31fa534-90f5-4d5c-9ce8-8d5bc377c778": {
+      "source_sha": "bbfb6e1126d54c4a",
+      "fields": {
+        "title": "Términos de uso",
+        "description": "Términos de uso e información legal.",
+        "when_to_visit": "Cuando el usuario pregunta por términos de uso, condiciones legales, términos y condiciones o el acuerdo de usuario."
+      }
+    },
+    "a32b0dc6-4429-469b-9d74-4a4d773ff239": {
+      "source_sha": "992f2064e9c13db1",
+      "fields": {
+        "title": "Salas programadas",
+        "description": "Próximas salas en vivo programadas para más tarde.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña de programadas de las salas en vivo — próximas salas, sesiones programadas o salas en vivo programadas para después."
+      }
+    },
+    "a34071ad-dc0a-43ea-a3d9-97fd18d3c805": {
+      "source_sha": "9e0bd3b375526da4",
+      "fields": {
+        "title": "Próximos eventos",
+        "description": "Próximos eventos y encuentros de la comunidad en los que puedes participar.",
+        "when_to_visit": "Cuando el usuario pregunta por próximos eventos, eventos que vienen, la pestaña de próximos o futuros eventos y encuentros."
+      }
+    },
+    "a3bb7470-1dad-4961-8d30-dc24df217e04": {
+      "source_sha": "dcb609be1b6aa400",
+      "fields": {
+        "title": "Médico",
+        "description": "Tus registros médicos — sube y consulta informes médicos y documentos clínicos.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña \"Médico\" en la pantalla de salud, sus registros médicos, informes médicos o subir un informe médico."
+      }
+    },
+    "a4810a8c-b092-496e-b886-8c850e134820": {
+      "source_sha": "90bc4723ffed9954",
+      "fields": {
+        "title": "Paquetes de servicios",
+        "description": "Paquetes de servicios agrupados que ofreces en tu MAXINA Business.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña \"Paquetes\" de los servicios del Business Hub, los paquetes de servicios del Business Hub, sus paquetes de servicios o las ofertas agrupadas que vende en su negocio."
+      }
+    },
+    "a4aadc19-fefd-44ed-982f-b235342ea867": {
+      "source_sha": "4e67c8e1a59e56bf",
+      "fields": {
+        "title": "Educación y ciencia",
+        "description": "Educación en salud y ciencia de la longevidad de la base de conocimiento de Vitana.",
+        "when_to_visit": "Cuando el usuario quiera aprender sobre un tema de salud, leer sobre ciencia de la longevidad o busque contenido educativo sobre bienestar."
+      }
+    },
+    "a6c2dd50-3830-4d5f-9ab9-32b24a3c857e": {
+      "source_sha": "7a4bf2a1288b6366",
+      "fields": {
+        "title": "Sesiones pasadas",
+        "description": "Grabaciones y resúmenes de salas en vivo finalizadas.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña \"Pasadas\" de las salas en vivo — sesiones pasadas, salas anteriores, grabaciones o resúmenes de salas en vivo finalizadas."
+      }
+    },
+    "a825a933-6855-490a-a7f4-f27241a5b52e": {
+      "source_sha": "f5de92c3f2acb439",
+      "fields": {
+        "title": "Permisos de memoria",
+        "description": "Controla qué recuerda Vitana y quién puede ver tus recuerdos.",
+        "when_to_visit": "Cuando el usuario pregunta por permisos de memoria, qué puede recordar Vitana, privacidad de la memoria o quién tiene acceso a sus recuerdos."
+      }
+    },
+    "a85569eb-0581-4222-a22c-37819c7a0f0c": {
+      "source_sha": "9e37e89112323150",
+      "fields": {
+        "title": "Conectores sociales",
+        "description": "Conecta tus cuentas de redes sociales como integraciones.",
+        "when_to_visit": "Cuando preguntes por la pestaña de conectores sociales de las apps conectadas o quieras conectar una cuenta de redes sociales (LinkedIn, Instagram, X) como integración."
+      }
+    },
+    "ab1e6ddd-bff5-49a1-9587-fad7221fb065": {
+      "source_sha": "aabe5f13dc43ca6c",
+      "fields": {
+        "title": "Planes de hidratación",
+        "description": "La pestaña de hidratación de los planes de salud.",
+        "when_to_visit": "Cuando preguntas por planes de hidratación, la pestaña de hidratación de los planes o tu plan de agua o bebida."
+      }
+    },
+    "acc0453e-f3e6-4263-b32f-92e0ee1a6158": {
+      "source_sha": "2daf710f7a46b377",
+      "fields": {
+        "title": "Mensajes archivados",
+        "description": "Mensajes que has archivado.",
+        "when_to_visit": "Cuando el usuario pregunta por mensajes archivados, mensajes antiguos o mensajes que ha guardado o descartado."
+      }
+    },
+    "b0868bda-8a81-5216-a5ac-34d10cc55db9": {
+      "source_sha": "fb197ea4e8f3a7dd",
+      "fields": {
+        "title": "Recomendaciones",
+        "description": "Recomendaciones personalizadas de IA para salud, comunidad y contenido.",
+        "when_to_visit": "Cuando preguntes por recomendaciones, sugerencias, qué deberías hacer o quieras ver las selecciones personalizadas de Vitana para ti."
+      }
+    },
+    "b090d6cc-9110-4dd5-b9ab-abd40230f9ff": {
+      "source_sha": "008ee6ae6669998e",
+      "fields": {
+        "title": "Noticias de Longevity",
+        "description": "Tu feed de noticias en inicio — noticias actuales de longevidad, investigación y artículos, curados para ti.",
+        "when_to_visit": "Cuando quieras noticias, noticias de longevidad, últimas noticias, el feed de noticias, novedades sobre longevidad, artículos, actualizaciones de investigación o simplemente la página de inicio."
+      }
+    },
+    "b3584c4b-2498-4220-8c34-08ceafd383c7": {
+      "source_sha": "23bdc154e73b46fa",
+      "fields": {
+        "title": "Chat de Vitana",
+        "description": "La interfaz de chat dedicada — una ventana de conversación enfocada con Vitana, fuera del ORB.",
+        "when_to_visit": "Cuando quieras chatear con Vitana en una ventana de texto, abrir la vista de chat o tener una conversación escrita más larga. Prefiere AI.OVERVIEW para solicitudes generales de \"asistente de IA\"."
+      }
+    },
+    "b4c1e075-e37d-51b2-991e-0140cff26a04": {
+      "source_sha": "38e9a03d5005c922",
+      "fields": {
+        "title": "Diario",
+        "description": "Tus entradas diarias del diario — registra pensamientos, estados de ánimo y reflexiones.",
+        "when_to_visit": "Cuando quieras escribir una entrada en tu diario, registrar cómo te sientes, hacer journaling de tu día o abrir tu diario."
+      }
+    },
+    "b4e8c9f6-68a7-53c3-b1a0-45218ecfb159": {
+      "source_sha": "fa80b43bbbbac882",
+      "fields": {
+        "title": "Comunidad",
+        "description": "El hub de la comunidad MAXINA: eventos, salas en vivo, contenido multimedia y grupos.",
+        "when_to_visit": "Cuando preguntes por la comunidad en general, quieras explorar funciones de la comunidad o no sepas dónde encontrar contenido social."
+      }
+    },
+    "b574c1c8-076c-4a5a-8120-ddf51a83f10d": {
+      "source_sha": "946eb50fc3d3740b",
+      "fields": {
+        "title": "Categorías",
+        "description": "Explora Discover por categoría.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña de categorías de Discover, quiere explorar Discover por categoría o ver todas las categorías del marketplace."
+      }
+    },
+    "b7265d29-3b4b-4ba1-91c1-a6c7968b2c68": {
+      "source_sha": "42e4012bbd967677",
+      "fields": {
+        "title": "Médicos y coaches",
+        "description": "Encuentra médicos, coaches y profesionales de la salud.",
+        "when_to_visit": "Cuando preguntes por médicos, coaches, profesionales, especialistas o quieras encontrar un profesional de la salud."
+      }
+    },
+    "b8c8bff5-a40c-48c3-98e2-6fe3f00bd0f1": {
+      "source_sha": "19c02729e0ea2f20",
+      "fields": {
+        "title": "Mis entradas",
+        "description": "Las entradas que has comprado para eventos y meetups.",
+        "when_to_visit": "Cuando el usuario pregunte por sus entradas, mis entradas, entradas de eventos o las entradas que ha comprado."
+      }
+    },
+    "ba6087cd-eb63-462a-8437-9586da2005f4": {
+      "source_sha": "7f6a3d3ad4324d28",
+      "fields": {
+        "title": "Soporte de seguros",
+        "description": "La pestaña «Soporte de seguros» en el centro de servicios de salud.",
+        "when_to_visit": "Cuando preguntes por soporte de seguros, ayuda con el seguro médico o la pestaña «Soporte de seguros» en el centro de servicios de salud."
+      }
+    },
+    "ba6f5ec4-1ba3-46e2-8d1b-035ee87559f0": {
+      "source_sha": "57e05181acc53a38",
+      "fields": {
+        "title": "Eventos de hoy",
+        "description": "Eventos y encuentros de la comunidad que ocurren hoy.",
+        "when_to_visit": "Cuando el usuario pregunta qué eventos hay hoy, por los eventos de hoy o la pestaña de hoy."
+      }
+    },
+    "baac1f15-7b41-413a-b1f1-a988ee77b3eb": {
+      "source_sha": "bac1ad3dc1dc61df",
+      "fields": {
+        "title": "Salas en vivo",
+        "description": "Salas de audio y video en vivo donde los miembros de la comunidad se reúnen en tiempo real.",
+        "when_to_visit": "Cuando el usuario pregunta por salas en vivo, audio en vivo, video en vivo, conversaciones en tiempo real, llamadas comunitarias en línea o encuentros virtuales que están ocurriendo ahora."
+      }
+    },
+    "badcfb76-ec0d-4c88-a32c-4c8bfb9e2d3e": {
+      "source_sha": "afb26d902c90f2df",
+      "fields": {
+        "title": "Hablar con Vitana",
+        "description": "Dar feedback, reportar problemas o enviar un mensaje al equipo de Vitana.",
+        "when_to_visit": "Cuando el usuario quiere dar feedback, reportar un bug, enviar un mensaje a Vitana o hablar con el equipo."
+      }
+    },
+    "bd2ee37f-7c70-44c6-ac05-410de3f8a8be": {
+      "source_sha": "616dcceec22657b3",
+      "fields": {
+        "title": "Facturación",
+        "description": "Tu información de facturación y costos de suscripción.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña de facturación en ajustes, la facturación, los costos o su resumen de facturación."
+      }
+    },
+    "bd6bf093-4761-4c5e-8192-f259dd14c968": {
+      "source_sha": "23bdc154e73b46fa",
+      "fields": {
+        "title": "Chat de Vitana",
+        "description": "La interfaz de chat dedicada — una ventana de conversación enfocada con Vitana, fuera del ORB.",
+        "when_to_visit": "Cuando el usuario quiere explícitamente chatear con Vitana en una ventana de texto, abrir la vista de chat o tener una conversación escrita más larga. Prefiere AI.OVERVIEW para la consulta general de \"asistente de IA\"."
+      }
+    },
+    "be3a865a-0aad-5262-aeeb-28984a98a88c": {
+      "source_sha": "004ca71448bca761",
+      "fields": {
+        "title": "Portal Alkalma",
+        "description": "Registro e inicio de sesión para el tenant Alkalma.",
+        "when_to_visit": "Cuando menciones Alkalma y quieras registrarte o iniciar sesión."
+      }
+    },
+    "bf095b1b-0782-4f44-884c-8552007c4420": {
+      "source_sha": "0c166351b51b504d",
+      "fields": {
+        "title": "Conectores y apps vinculadas",
+        "description": "Conectores a apps de terceros e integraciones vinculadas a tu cuenta.",
+        "when_to_visit": "Cuando preguntes por conectores, un conector, apps conectadas, integraciones de apps, conexiones de terceros, servicios vinculados o cómo conectar una app externa."
+      }
+    },
+    "bf455900-3851-57c0-954c-8315ed4a466c": {
+      "source_sha": "eeba368dae725704",
+      "fields": {
+        "title": "Feed de IA",
+        "description": "Un stream personalizado de contenido, recomendaciones e insights curados por IA.",
+        "when_to_visit": "Cuando preguntes qué hay de nuevo, qué está pasando o quieras ver tu feed personalizado de IA."
+      }
+    },
+    "bf5f32ad-0f43-4515-9277-4773d7662de1": {
+      "source_sha": "338a3c18c0f41592",
+      "fields": {
+        "title": "Restricciones de salud",
+        "description": "Registra restricciones de salud (alergias, lesiones, enfermedades) para que las recomendaciones sean seguras.",
+        "when_to_visit": "Cuando el usuario quiere registrar restricciones de salud, añadir alergias, marcar una lesión o registrar condiciones que afecten las recomendaciones."
+      }
+    },
+    "c24c3a81-f3a3-4705-a1b1-081755dd09b5": {
+      "source_sha": "4401d661a459b886",
+      "fields": {
+        "title": "Carrito",
+        "description": "Artículos en tu carrito, listos para pagar.",
+        "when_to_visit": "Cuando quieras abrir el carrito, ver qué hay en el carrito, ir a pagar o revisar tu carrito."
+      }
+    },
+    "c2b5e217-2f2c-4549-866c-ec88db206cc3": {
+      "source_sha": "b75699d3bebb982a",
+      "fields": {
+        "title": "Tenant y rol",
+        "description": "Cambia tu rol activo en el tenant actual — Community, Professional, Staff, Admin.",
+        "when_to_visit": "Cuando el usuario quiere cambiar de rol, ser Admin/Professional/Staff o pregunta por su rol en el tenant."
+      }
+    },
+    "c3f61fa9-6034-47d4-a0c9-a43945c1cc22": {
+      "source_sha": "56d23c1f4f909bd9",
+      "fields": {
+        "title": "Invitar amigos",
+        "description": "Invita amigos a la comunidad MAXINA y gana recompensas por tus recomendaciones.",
+        "when_to_visit": "Cuando el usuario quiere invitar amigos, enviar una invitación, compartir un enlace de invitación o recomendar a alguien a MAXINA."
+      }
+    },
+    "c4aee100-be27-405c-ad60-2a70983dc87d": {
+      "source_sha": "93f5bd163695e61d",
+      "fields": {
+        "title": "Mi marketplace",
+        "description": "La vista \"Mías\" del marketplace — tus propias solicitudes, ofertas y anuncios.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña \"Mías\" del marketplace, sus propias solicitudes, ofertas o anuncios del marketplace."
+      }
+    },
+    "c57e0246-2653-4112-9936-3690cc45696b": {
+      "source_sha": "731a452067f19b42",
+      "fields": {
+        "title": "Tienda",
+        "description": "La tienda de video-commerce — videos de productos comprables del marketplace de MAXINA.",
+        "when_to_visit": "Cuando el usuario quiera abrir la tienda, la tienda de videos, videos comprables o explorar productos a través de video-commerce."
+      }
+    },
+    "c7ca2b46-3c3e-40d0-b029-d05133597d8e": {
+      "source_sha": "e7b19ba632121d4c",
+      "fields": {
+        "title": "Conectores de fitness",
+        "description": "Conecta aplicaciones de fitness y wearables.",
+        "when_to_visit": "Cuando preguntes por la pestaña de conectores de fitness de las apps conectadas o quieras conectar una integración de app de fitness o wearable (Strava, Garmin, Fitbit)."
+      }
+    },
+    "c854e253-48a4-4d5a-93c5-6fd356c6f06c": {
+      "source_sha": "616dcceec22657b3",
+      "fields": {
+        "title": "Facturación",
+        "description": "Tu información de facturación y costos de suscripción.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña de facturación en ajustes, la facturación, los costos o su resumen de facturación."
+      }
+    },
+    "c875d8ac-0d7c-429f-a2fd-3af17f3b76f7": {
+      "source_sha": "d2fb3dff8306e887",
+      "fields": {
+        "title": "Preferencias de voz e IA",
+        "description": "Preferencias de voz e IA para el Vitana ORB.",
+        "when_to_visit": "Cuando preguntes por las preferencias de voz del ORB o quieras personalizar la voz de Vitana (NO ajustes generales de privacidad o notificaciones)."
+      }
+    },
+    "c9abcd62-59cd-5266-bbfb-5b393632b9e8": {
+      "source_sha": "6fbcac6ee7c06705",
+      "fields": {
+        "title": "Recompensas y comisiones",
+        "description": "Comisiones y recompensas que has ganado compartiendo la plataforma y atendiendo clientes.",
+        "when_to_visit": "Cuando preguntes por comisiones, ingresos por referidos, recompensas, pagos, cuánto has ganado o cuánto has hecho compartiendo o vendiendo en la comunidad."
+      }
+    },
+    "cafc3d1f-3e03-45e8-a952-9cb1533605d0": {
+      "source_sha": "c2db0a52d1338eaa",
+      "fields": {
+        "title": "Todas las salas",
+        "description": "Todas las salas en vivo — en directo ahora y programadas — en una lista.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña \"Todas las salas\" de las salas en vivo o quiere ver todas las salas en vivo (en directo y programadas) juntas."
+      }
+    },
+    "cb562477-782f-43fa-8bdb-2f1933f34d97": {
+      "source_sha": "e7379c845ced71d6",
+      "fields": {
+        "title": "Eventos destacados",
+        "description": "Eventos y encuentros destacados y en tendencia de la comunidad de MAXINA.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña de destacados de eventos y encuentros, eventos en tendencia, eventos populares, eventos destacados o los mejores eventos de la comunidad."
+      }
+    },
+    "cb93317e-9dda-505e-a177-0d8d5ee331e4": {
+      "source_sha": "1048dbff42a2320f",
+      "fields": {
+        "title": "Descubrir",
+        "description": "Explora suplementos, servicios de bienestar, médicos, ofertas y más.",
+        "when_to_visit": "Cuando quieras explorar, descubrir o comprar productos y servicios en el marketplace de MAXINA."
+      }
+    },
+    "ce31ff4e-5af3-4816-9653-d83363ec5670": {
+      "source_sha": "c2db0a52d1338eaa",
+      "fields": {
+        "title": "Todas las salas",
+        "description": "Todas las salas en vivo — en vivo ahora y programadas — en una lista.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña de todas las salas de las salas en vivo o quiere ver todas las salas en vivo (en vivo y programadas) juntas."
+      }
+    },
+    "ce97762d-6bbc-4a77-8275-764ff0f67331": {
+      "source_sha": "bc3752492d950ead",
+      "fields": {
+        "title": "Ofertas guardadas",
+        "description": "La pestaña de guardados de Ofertas y promociones — ofertas que has guardado.",
+        "when_to_visit": "Cuando preguntas por tus ofertas guardadas, promociones que guardaste o la pestaña de guardados de Ofertas y promociones."
+      }
+    },
+    "d097cb74-a96f-406f-a1be-8aedd6ddebb3": {
+      "source_sha": "d8a4d8da60166667",
+      "fields": {
+        "title": "Todas las noticias",
+        "description": "El feed de noticias con todas las fuentes — noticias de longevidad y de la comunidad juntas.",
+        "when_to_visit": "Cuando quieras la pestaña «Todas las noticias», todas las noticias, cualquier fuente de noticias o noticias de longevidad y comunidad juntas en un feed."
+      }
+    },
+    "d2c8571b-2b82-5d2d-b270-0c93b8da09af": {
+      "source_sha": "b68d66fc1e5a866c",
+      "fields": {
+        "title": "Unirse a la comunidad MAXINA",
+        "description": "Registro e inicio de sesión para la comunidad MAXINA en Vitanaland.",
+        "when_to_visit": "Cuando quieras registrarte, iniciar sesión, unirte a la comunidad, crear una cuenta o entrar a MAXINA."
+      }
+    },
+    "d38d69c0-700c-43b5-b3e4-724800b43717": {
+      "source_sha": "f3ce9c8d1fd807fb",
+      "fields": {
+        "title": "Contactar soporte",
+        "description": "Comunícate con el equipo de soporte — graba un mensaje, envía un ticket o escríbenos.",
+        "when_to_visit": "Cuando el usuario quiere contactar soporte, enviar un ticket de soporte, reportar un error, enviar un mensaje al equipo o solicitar que lo llamen."
+      }
+    },
+    "d4f9ba66-1cf8-5aaa-a5be-63719728fa49": {
+      "source_sha": "ccadb6fe19a92b1a",
+      "fields": {
+        "title": "Centro multimedia",
+        "description": "Videos, podcasts y música de la comunidad.",
+        "when_to_visit": "Cuando preguntes por videos, podcasts, música, grabaciones o quieras explorar contenido multimedia de la comunidad."
+      }
+    },
+    "d56ab603-3033-4eee-8247-e192c67f5ff1": {
+      "source_sha": "cd258c7cd7314294",
+      "fields": {
+        "title": "Mis ómicas",
+        "description": "La pestaña de ómicas de Mi biología — tus datos genómicos y ómicos.",
+        "when_to_visit": "Cuando preguntes por tus ómicas, genómica, datos de ADN o la pestaña de ómicas en Mi biología."
+      }
+    },
+    "d68691c6-b257-43c8-b7a4-4c67cc8c2c65": {
+      "source_sha": "fb197ea4e8f3a7dd",
+      "fields": {
+        "title": "Recomendaciones",
+        "description": "Recomendaciones de IA personalizadas para salud, comunidad y contenido.",
+        "when_to_visit": "Cuando el usuario pregunta por recomendaciones, sugerencias, qué debería hacer o quiere ver la selección personalizada de Vitana para él."
+      }
+    },
+    "d705e453-7344-5cfc-bad8-9eb78e471c8d": {
+      "source_sha": "1f06d33ed964eea2",
+      "fields": {
+        "title": "Saldo y beneficios",
+        "description": "Tu saldo actual de MAXINA y los beneficios desbloqueados en tu nivel.",
+        "when_to_visit": "Cuando preguntes por tu saldo, tus beneficios, tu nivel o lo que tienes desbloqueado."
+      }
+    },
+    "d7a81e94-4763-4fdb-a904-f1681e1f4aaa": {
+      "source_sha": "5f4f1548a85b061b",
+      "fields": {
+        "title": "Recomendaciones",
+        "description": "La pestaña de recomendaciones del asistente — recomendaciones y recompensas del asistente.",
+        "when_to_visit": "Cuando preguntes por la pestaña de recomendaciones del asistente, recomendaciones del asistente o recompensas por recomendaciones en el asistente."
+      }
+    },
+    "d7c52b0c-3560-4df8-82b8-e173944a1d13": {
+      "source_sha": "5850ccf2df445f1d",
+      "fields": {
+        "title": "Música",
+        "description": "Música de la comunidad.",
+        "when_to_visit": "Cuando el usuario pregunta por música, canciones o tracks en el Media Hub."
+      }
+    },
+    "d7e9f4fe-8a66-4af5-8244-83a132de85c7": {
+      "source_sha": "1fe22cf7ea0e4aa2",
+      "fields": {
+        "title": "Ofertas en tendencia",
+        "description": "La pestaña de tendencias de Ofertas y promociones.",
+        "when_to_visit": "Cuando preguntas por ofertas en tendencia, promociones populares o la pestaña de tendencias de Ofertas y promociones."
+      }
+    },
+    "d912e70b-f633-4ed8-95e7-0f6509ba30ea": {
+      "source_sha": "3d105200a69d3dd6",
+      "fields": {
+        "title": "Mis publicaciones de pareja",
+        "description": "Tus propias publicaciones de parejas de baile y fitness.",
+        "when_to_visit": "Cuando preguntas por \"mis publicaciones de pareja\", \"mis publicaciones de baile\", \"mis publicaciones de fitness\" o \"lo que he publicado para encontrar pareja\"."
+      }
+    },
+    "d9d5336a-c213-452d-bfd5-d05df86e5ae0": {
+      "source_sha": "718bbe7eac3f6c8b",
+      "fields": {
+        "title": "Optimización",
+        "description": "La pestaña de optimización de tu saldo del monedero — formas de optimizar tu saldo.",
+        "when_to_visit": "Cuando quieres optimizar tu monedero, preguntas por la pestaña de optimización del monedero o consejos para mejorar tu saldo."
+      }
+    },
+    "da69c4da-ad69-470f-afdc-4640660bcaff": {
+      "source_sha": "961008b2873e4075",
+      "fields": {
+        "title": "Pilares de salud",
+        "description": "Los pilares fundamentales de tu longevidad — nutrición, fitness, sueño, estrés y más.",
+        "when_to_visit": "Cuando el usuario pregunte por los pilares de salud, los fundamentos de la longevidad, áreas básicas de salud, pilar de nutrición, pilar de fitness, pilar de sueño o manejo del estrés."
+      }
+    },
+    "db28dfcb-a278-401f-8512-cf4e9c7df670": {
+      "source_sha": "7abab8bdb7f48fe4",
+      "fields": {
+        "title": "Detalle del producto",
+        "description": "Página de detalle de un producto específico.",
+        "when_to_visit": "Cuando quieras abrir un producto específico por ID, ver los detalles del producto o leer sobre un artículo en particular."
+      }
+    },
+    "dcc8f661-6400-5ef1-83c5-42b7d722b504": {
+      "source_sha": "42e4012bbd967677",
+      "fields": {
+        "title": "Médicos y coaches",
+        "description": "Encuentra médicos, coaches y profesionales de la salud.",
+        "when_to_visit": "Cuando preguntes por médicos, coaches, profesionales, especialistas o quieras encontrar un experto en salud."
+      }
+    },
+    "dd66baa1-0107-45ee-83c1-8f24be427ccc": {
+      "source_sha": "68e6769236d8440c",
+      "fields": {
+        "title": "Condiciones de salud",
+        "description": "Haz seguimiento y gestiona tus condiciones de salud.",
+        "when_to_visit": "Cuando el usuario pregunte por sus condiciones de salud, enfermedades crónicas, diagnósticos, riesgos de salud o problemas de salud que está gestionando."
+      }
+    },
+    "dde76086-a748-483f-a412-743fdcf1dcf2": {
+      "source_sha": "de8f2ab4699dc691",
+      "fields": {
+        "title": "Mis servicios",
+        "description": "La pestaña «Mis servicios» en el centro de servicios de salud — los servicios de salud que utilizas.",
+        "when_to_visit": "Cuando preguntes por tus propios servicios de salud, «Mis servicios» o la pestaña correspondiente en el centro de servicios de salud."
+      }
+    },
+    "e0194c6c-9b04-5878-b93a-fa70acae988e": {
+      "source_sha": "c802a82bf1d78979",
+      "fields": {
+        "title": "Bandeja de entrada",
+        "description": "Mensajes, recordatorios e inspiración que te han enviado.",
+        "when_to_visit": "Cuando preguntes por tu bandeja de entrada, mensajes, notificaciones o quieras ver lo que te han enviado."
+      }
+    },
+    "e1311a31-51f4-4cbe-9bb0-64395019070a": {
+      "source_sha": "183650a5bd506b94",
+      "fields": {
+        "title": "Salud",
+        "description": "Tu centro de salud personal — biología, planes y educación.",
+        "when_to_visit": "Cuando el usuario pregunte en general por su salud, longevidad, bienestar o quiera explorar funciones de salud."
+      }
+    },
+    "e1cb4a5c-1a79-45fa-bc23-3ba9944ed087": {
+      "source_sha": "577ed48d6e77a0ea",
+      "fields": {
+        "title": "Perfil con ancla de match",
+        "description": "El perfil público de un miembro de la comunidad, anclado a un intent específico con el que hiciste match.",
+        "when_to_visit": "Cuando quieras abrir el perfil de alguien con quien hiciste match, ver un perfil con el post del match destacado, o ir desde una notificación de match al perfil de la otra persona."
+      }
+    },
+    "e47bd312-00ab-46ac-a2e3-5d03f4b17ae5": {
+      "source_sha": "461f11d5b277457c",
+      "fields": {
+        "title": "Plan actual",
+        "description": "Tu plan actual y tu nivel de membresía.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña de plan actual en facturación — su plan actual, su nivel de membresía o mejorar su plan."
+      }
+    },
+    "e4c82121-6a26-469f-a167-f272e68ded49": {
+      "source_sha": "8699e7d18e250bd9",
+      "fields": {
+        "title": "Perfil del proveedor",
+        "description": "Página de perfil de un proveedor de servicios específico.",
+        "when_to_visit": "Cuando quieras abrir el perfil de un proveedor específico, ver el perfil de un coach o médico, o buscar un proveedor de servicios por ID."
+      }
+    },
+    "e4fac5c5-d2df-4814-b3eb-e55465705fde": {
+      "source_sha": "4fc59531e14929af",
+      "fields": {
+        "title": "Grupos",
+        "description": "Explora y únete a grupos de la comunidad MAXINA.",
+        "when_to_visit": "Cuando el usuario pregunte por grupos de la comunidad, unirse a un grupo, qué grupos hay disponibles o quiera ver sus grupos."
+      }
+    },
+    "e5307f20-3ae0-588e-8cb4-bff619a35877": {
+      "source_sha": "e4f85db4a2c69cb9",
+      "fields": {
+        "title": "Página de inicio de Vitanaland",
+        "description": "El punto de entrada público principal a Vitanaland y la comunidad MAXINA.",
+        "when_to_visit": "Cuando quieras volver al inicio, a la página principal del sitio o escuchar de nuevo la introducción."
+      }
+    },
+    "e8d953cf-21cd-4379-9961-6cda1f5266f0": {
+      "source_sha": "1e5a7c8850f33947",
+      "fields": {
+        "title": "Asistente de IA",
+        "description": "Resumen de las funciones de tu asistente de IA.",
+        "when_to_visit": "Cuando el usuario pregunta por el asistente de IA, las funciones de IA o quiere explorar qué puede hacer la IA."
+      }
+    },
+    "e963d45f-135f-4142-afaa-3f665770d58d": {
+      "source_sha": "338a3c18c0f41592",
+      "fields": {
+        "title": "Restricciones de salud",
+        "description": "Registra restricciones de salud (alergias, lesiones, condiciones) para que las recomendaciones sean seguras.",
+        "when_to_visit": "Cuando quieras registrar restricciones de salud, guardar alergias, marcar una lesión o registrar condiciones que afecten las recomendaciones."
+      }
+    },
+    "eb219d3e-ad4e-429c-91df-854bf6ca0dd6": {
+      "source_sha": "b820f825a7fc16b9",
+      "fields": {
+        "title": "Conectores de Autopilot",
+        "description": "Conecta integraciones de agentes de Autopilot.",
+        "when_to_visit": "Cuando preguntes por la pestaña de conectores de Autopilot de las apps conectadas o quieras conectar una integración de agente o app de Autopilot."
+      }
+    },
+    "ebd49241-444a-4f43-b56c-f5a616f108f5": {
+      "source_sha": "fd1240f038c0e8de",
+      "fields": {
+        "title": "Seguimiento de salud",
+        "description": "Registra tus hábitos de salud diarios y los movimientos de tu índice Vitana.",
+        "when_to_visit": "Cuando quieras abrir el seguimiento de salud, registrar un hábito de salud, hacer seguimiento de agua/sueño/ejercicio/pasos, anotar tus pasos o ver el seguimiento de hoy."
+      }
+    },
+    "eda1671a-5dc0-435c-9ce6-d0f27dfa6b09": {
+      "source_sha": "c6b765ca7c593d92",
+      "fields": {
+        "title": "Mis matches",
+        "description": "Tus matches actuales de parejas de baile y fitness.",
+        "when_to_visit": "Cuando preguntas por \"mis matches\", \"muéstrame mis matches\", \"quién hace match conmigo\" o \"a quién ha encontrado Vitana para mí\"."
+      }
+    },
+    "ef21b99b-c513-4475-a9f6-4bdaa4cf7fc5": {
+      "source_sha": "5850ccf2df445f1d",
+      "fields": {
+        "title": "Música",
+        "description": "Música de la comunidad.",
+        "when_to_visit": "Cuando el usuario pregunta por música, canciones o tracks en el Media Hub."
+      }
+    },
+    "ef2662e6-04b9-48f5-b763-68439f3248bd": {
+      "source_sha": "cb6dfa335f6823a8",
+      "fields": {
+        "title": "Autopilot y automatización",
+        "description": "La pestaña de Autopilot del asistente — automatizaciones que Vitana ejecuta por ti.",
+        "when_to_visit": "Cuando preguntes por la pestaña de Autopilot del asistente, ajustes de automatización o qué automatiza Vitana por ti."
+      }
+    },
+    "f0537830-762e-4ac4-a462-80b1e33202c1": {
+      "source_sha": "6408409b26adb8a1",
+      "fields": {
+        "title": "Inspiración",
+        "description": "Mensajes inspiradores y consejos de bienestar de Vitana.",
+        "when_to_visit": "Cuando el usuario pregunta por inspiración, mensajes motivacionales, consejos de bienestar o motivación diaria."
+      }
+    },
+    "f0da66ca-28fd-49de-b3d7-999b3581658a": {
+      "source_sha": "1e5a7c8850f33947",
+      "fields": {
+        "title": "Asistente de IA",
+        "description": "Resumen de las funciones de tu asistente de IA.",
+        "when_to_visit": "Cuando el usuario pregunta por el asistente de IA, funciones de IA o quiere explorar qué puede hacer la IA."
+      }
+    },
+    "f272adb5-9c4d-47ae-832a-0490893f23ac": {
+      "source_sha": "16a5fd497acfd6df",
+      "fields": {
+        "title": "Planes de alimentación",
+        "description": "La pestaña de alimentación de los planes de salud.",
+        "when_to_visit": "Cuando preguntas por planes de alimentación, la pestaña de alimentación de los planes o tu plan de dieta o nutrición."
+      }
+    },
+    "f41a2860-6f1f-4917-ae0d-38f2858d03ae": {
+      "source_sha": "f75765a4a2303670",
+      "fields": {
+        "title": "IA",
+        "description": "La pestaña de IA del asistente — tu asistente de IA por texto y sus ajustes.",
+        "when_to_visit": "Cuando preguntes por la pestaña de IA del asistente, el asistente de texto o los ajustes del asistente de IA."
+      }
+    },
+    "f49334db-c28b-40c8-bec5-77e4600334b6": {
+      "source_sha": "215e6c0ab287fb44",
+      "fields": {
+        "title": "Mis intents",
+        "description": "Tus propias publicaciones y solicitudes en la comunidad.",
+        "when_to_visit": "Cuando el usuario pregunta por \"mis intents\", \"mis publicaciones\", \"mis solicitudes\", \"lo que he publicado\" o quiere ver o gestionar sus propias publicaciones en la comunidad."
+      }
+    },
+    "f4e531c2-4b72-53c4-a051-1440d0ed11e0": {
+      "source_sha": "6767592eaccca7fe",
+      "fields": {
+        "title": "Eventos y encuentros",
+        "description": "Próximos eventos de la comunidad MAXINA, encuentros presenciales y reuniones.",
+        "when_to_visit": "Cuando preguntes por próximos eventos, encuentros, quedadas, reuniones programadas, eventos de baile, talleres de bienestar o actividades de la comunidad a las que puedas asistir."
+      }
+    },
+    "f522cb61-8bb5-4ad3-ac9d-7ccc78aabde0": {
+      "source_sha": "6fbcac6ee7c06705",
+      "fields": {
+        "title": "Recompensas y comisiones",
+        "description": "Comisiones y recompensas que has ganado al compartir la plataforma y atender clientes.",
+        "when_to_visit": "Cuando el usuario pregunta por comisiones, ingresos por referidos, recompensas, pagos, cuánto ha ganado o cuánto ha generado compartiendo o vendiendo en la comunidad."
+      }
+    },
+    "f5231603-9eaa-428f-931c-0192b62a79a2": {
+      "source_sha": "946eb50fc3d3740b",
+      "fields": {
+        "title": "Categorías",
+        "description": "Explora Discover por categoría.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña Categorías de Discover, quiere explorar Discover por categoría o ver todas las categorías del marketplace."
+      }
+    },
+    "f5c9144c-9aae-40fc-aaeb-be8cb320208a": {
+      "source_sha": "9e6d89f14f77ef95",
+      "fields": {
+        "title": "Mi viaje",
+        "description": "Tu panel de Autopilot — el viaje de 90 días preparado para ti: oleadas, hitos y acciones recomendadas, adaptados a tu calendario. Hay dos vistas entre las que puedes alternar: el viaje GUIADO (la \"introducción\", paso a paso, una sesión a la vez) y la versión COMPLETA (la app completa, todo de una vez).",
+        "when_to_visit": "Cuando el usuario quiere abrir mi viaje, ver mi viaje, el viaje de Autopilot, mi viaje de 90 días, el plan de 90 días, el panel de Autopilot, mi plan, o qué toca hoy en su viaje. TAMBIÉN cuando el usuario menciona una de las dos VISTAS de su viaje por nombre — el viaje GUIADO / la journey guiada / la \"introducción\", O la versión COMPLETA / la app completa / la versión completa — o quiere cambiar entre la vista guiada y la completa de su viaje. TAMBIÉN cuando el usuario pregunta por las SESIONES DE SU PROPIO viaje — por ejemplo \"la siguiente sesión de mi viaje\", \"mi sesión de la journey\", \"la pantalla con las sesiones de mi journey guiada\" — estas son las conversaciones paso a paso DENTRO de su propio viaje de 90 días, NO sesiones o cursos que ofrece como proveedor para otros (eso es el Business Hub). Esto NO es el perfil del usuario — \"mi viaje\" significa el panel de Autopilot."
+      }
+    },
+    "f6c0ecda-c145-41ff-a430-31bb73a4c5f6": {
+      "source_sha": "2917eabc21ae7955",
+      "fields": {
+        "title": "Miembros compatibles",
+        "description": "Miembros que el matchmaker te sugiere según tus objetivos e intereses.",
+        "when_to_visit": "Cuando el usuario pregunta quién es compatible con él, por sus matches, personas sugeridas, gente con quien conectar o los resultados del matchmaker."
+      }
+    },
+    "f77d1927-c8fd-514b-b075-0bbf4b1023d6": {
+      "source_sha": "087196bf3c889dd0",
+      "fields": {
+        "title": "Ajustes",
+        "description": "Los ajustes y preferencias de tu cuenta.",
+        "when_to_visit": "Cuando quieras abrir tus ajustes, cambiar preferencias o gestionar tu cuenta."
+      }
+    },
+    "f7862e6f-2f7f-4d25-a222-95df0472f7be": {
+      "source_sha": "7b88c97e3eea0bf0",
+      "fields": {
+        "title": "Recompensas pendientes",
+        "description": "La pestaña de pendientes de las recompensas del monedero — recompensas aún no acreditadas.",
+        "when_to_visit": "Cuando preguntas por recompensas pendientes, la pestaña de pendientes de recompensas o recompensas que aún no te han dado."
+      }
+    },
+    "f78f48ce-d839-4f3f-bf6b-810acd520f29": {
+      "source_sha": "04aa246c63e9c173",
+      "fields": {
+        "title": "Contexto",
+        "description": "Tu contexto personal — lo que Vitana sabe sobre tu situación actual.",
+        "when_to_visit": "Cuando preguntes por tu contexto, tu situación actual o lo que Vitana sabe de ti en este momento."
+      }
+    },
+    "f8ab853a-5c0e-4fe7-9e8e-6a2fee2c6e53": {
+      "source_sha": "4025dacd79656dc6",
+      "fields": {
+        "title": "Visibilidad del perfil",
+        "description": "Controles de visibilidad por sección para tu perfil — decide quién ve qué.",
+        "when_to_visit": "Cuando preguntes por la visibilidad de tu perfil, quién puede ver tu perfil, qué se muestra públicamente, o quieras ocultar una sección del perfil."
+      }
+    },
+    "f90efb98-2472-4ea0-bc81-a1f0fab150c2": {
+      "source_sha": "11a202318f43a8cc",
+      "fields": {
+        "title": "Resumen diario",
+        "description": "Tu resumen diario generado por IA sobre salud, actividad y destacados de la comunidad.",
+        "when_to_visit": "Cuando el usuario pregunta por su resumen diario, su informe del día o qué ha pasado hoy."
+      }
+    },
+    "faa68542-60b7-4811-aba3-288cb4b593f1": {
+      "source_sha": "26daf96050b7de65",
+      "fields": {
+        "title": "Planes mentales",
+        "description": "La pestaña mental de los planes de salud — planes para el bienestar mental.",
+        "when_to_visit": "Cuando preguntas por planes de salud mental, la pestaña mental de los planes o tu plan de mindfulness o bienestar mental."
+      }
+    },
+    "fb2746cd-075d-4f33-b9f2-e453af63624a": {
+      "source_sha": "4d5f666408051b2d",
+      "fields": {
+        "title": "En vivo ahora",
+        "description": "Salas en vivo que están transmitiendo en este momento.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña de en vivo ahora de las salas en vivo — salas que están en vivo, transmitiendo actualmente o sucediendo justo ahora."
+      }
+    },
+    "fb65d40b-f2b8-5b23-a31a-0df35c6b22c6": {
+      "source_sha": "9bb5446f7211a27a",
+      "fields": {
+        "title": "Notificaciones",
+        "description": "Gestiona tus preferencias de notificaciones.",
+        "when_to_visit": "Cuando preguntes por ajustes de notificaciones, notificaciones push, alertas por correo o quieras activar o desactivar notificaciones."
+      }
+    },
+    "fb786c84-121e-43a8-aa2c-af317c7038e0": {
+      "source_sha": "ed4700f2140c87ea",
+      "fields": {
+        "title": "Mis servicios",
+        "description": "Gestiona los servicios que ofreces a la comunidad MAXINA: coaching, cursos, sesiones, productos.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña \"Servicios\" en el Business Hub, los servicios del Business Hub, sus servicios, o quiere gestionar sus servicios, crear un nuevo servicio, publicar una oferta de coaching o configurar cursos y sesiones."
+      }
+    },
+    "fc0ed8aa-7d2b-4a87-bd5f-586078f415b4": {
+      "source_sha": "730096e1efffe4bc",
+      "fields": {
+        "title": "Crecimiento",
+        "description": "Métricas de crecimiento de tu MAXINA Business en la pestaña de estadísticas.",
+        "when_to_visit": "Cuando el usuario pregunta por la pestaña \"Crecimiento\" de estadísticas del Business Hub o el crecimiento de estadísticas del Business Hub — las métricas de crecimiento y tendencias de su propio negocio."
+      }
+    },
+    "fcbe2cdd-4dc7-411f-ba9e-c574d002a141": {
+      "source_sha": "221f4b6554f28f8f",
+      "fields": {
+        "title": "Conectores de música y vídeo",
+        "description": "Conecta integraciones de aplicaciones de música y vídeo.",
+        "when_to_visit": "Cuando preguntes por los conectores de música y vídeo, la pestaña de medios de las apps conectadas o quieras conectar una integración de música o vídeo (Spotify, YouTube, Apple Music)."
+      }
+    },
+    "fce8cf77-23fe-5816-b881-b64dc8b36d85": {
+      "source_sha": "7a346b0f1422ffa6",
+      "fields": {
+        "title": "Mis servicios",
+        "description": "Gestiona los servicios que ofreces a la comunidad MAXINA: coaching, cursos, sesiones, productos.",
+        "when_to_visit": "Cuando quieras gestionar tus servicios, crear un nuevo servicio, publicar una oferta de coaching o configurar cursos y sesiones."
+      }
+    },
+    "fe181875-c532-45c1-8b03-64becf4717db": {
+      "source_sha": "6cb8b020d56ee50b",
+      "fields": {
+        "title": "Perfil público",
+        "description": "El perfil público de un miembro de la comunidad.",
+        "when_to_visit": "Cuando quieras abrir el perfil de otro miembro, ver la página pública de alguien de la comunidad, buscar a alguien por @vitana_id o ver un nombre de usuario."
+      }
+    },
+    "fe9470e6-d03c-4472-b925-437dcd13efed": {
+      "source_sha": "0b3febab02c90e9c",
+      "fields": {
+        "title": "Campañas",
+        "description": "Tus campañas de compartir activas y su rendimiento.",
+        "when_to_visit": "Cuando el usuario pregunta por sus campañas de compartir, campañas de referidos, rendimiento de campañas o resultados de campañas."
+      }
+    }
+  }
+}
