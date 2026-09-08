@@ -17,6 +17,8 @@ stop sites, where the field would always read `false`/meaningless.
 
 TEST: `grep -n "sse_ever_attached" services/gateway/src/routes/orb-live.ts services/gateway/src/orb/live/session/live-session-controller.ts` — see `outputs/brace-and-field-checks.txt`. 3 read sites total, matching the 3 named above; neither WS-only stop site (orb-live.ts's `transport: 'websocket'` block, live-session-controller.ts's `ws.on('close')` handler) appears in the results.
 
+OASIS_PROOF: `sse_ever_attached` is a new field on the existing `vtid.live.session.stop` OASIS event payload (topic/schema unchanged, no new event type). See AC-2's grep evidence above for the three emission sites that now carry it.
+
 AC-3 — The one genuinely behavior-affecting-looking change in a
 conversation-flow file (`live-session-controller.ts`) is in fact
 behavior-free (a telemetry-payload field addition only), and is marked as
