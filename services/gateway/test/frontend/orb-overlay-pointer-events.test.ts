@@ -23,6 +23,16 @@
  * `pointer-events` is inherited but a descendant may opt back in — the same
  * escape Radix's own dialog overlay uses (`pointerEvents: "auto"`).
  *
+ * WHERE the declaration lives is itself pinned below. It is in the
+ * `.vtorb-overlay` rule in _injectStyles(), NOT in the `_root.style.cssText`
+ * inline string, for two reasons: the stylesheet is where the rest of the
+ * overlay's box/appearance already lives (the inline string only mirrors it),
+ * and the repo's CSP gate rejects new inline-style manipulation on the
+ * browser-served surface (ALWAYS 36 / NEVER 24). Inheritance — not
+ * specificity — is what is being blocked, so any rule matching the overlay
+ * stops it; the two rules apply to different elements (body vs. this root)
+ * and never compete.
+ *
  * Static source checks — the widget is a plain IIFE with no export surface.
  * The behavioural proof (a real browser, real hit-testing via
  * document.elementFromPoint) is in outputs/pointer-events-hit-test.txt; jsdom
@@ -37,8 +47,21 @@ const WIDGET_PATH = path.resolve(
 );
 const source = fs.readFileSync(WIDGET_PATH, 'utf8');
 
+/**
+ * The body of the injected `.vtorb-overlay` rule — the declarations between
+ * that selector and its closing brace, as they appear in _injectStyles()'s
+ * array of CSS-text lines.
+ */
+function overlayCssRule(): string {
+  const start = source.indexOf("'.vtorb-overlay {'");
+  expect(start).toBeGreaterThanOrEqual(0);
+  const end = source.indexOf("'}'", start);
+  expect(end).toBeGreaterThan(start);
+  return source.slice(start, end);
+}
+
 /** The overlay root's inline style declaration. */
-function overlayRootStyle(): string {
+function overlayRootInlineStyle(): string {
   const marker = '_root.style.cssText = ';
   const idx = source.indexOf(marker);
   expect(idx).toBeGreaterThanOrEqual(0);
@@ -47,17 +70,28 @@ function overlayRootStyle(): string {
 }
 
 describe('VTID-03808 ORB overlay survives a modal dialog behind it', () => {
-  it('declares pointer-events:auto on the overlay root', () => {
-    expect(overlayRootStyle()).toMatch(/pointer-events:auto;/);
+  it('declares pointer-events:auto on the overlay', () => {
+    expect(overlayCssRule()).toMatch(/pointer-events:\s*auto;/);
   });
 
-  it('declares it on the ROOT, not on an inner element', () => {
+  it('declares it on the rule that matches the ROOT, not an inner element', () => {
     // Re-enabling deeper down would leave the backdrop dead and make only
     // some taps land — the root is the one element that covers the viewport.
-    const style = overlayRootStyle();
-    expect(style).toMatch(/position:fixed/);
-    expect(style).toMatch(/z-index:9500/);
-    expect(style).toMatch(/pointer-events:auto/);
+    // `.vtorb-overlay` is the class _renderOverlay assigns to `_root`.
+    expect(source).toMatch(/_root\.className = 'vtorb-overlay';/);
+    const rule = overlayCssRule();
+    expect(rule).toMatch(/position: fixed/);
+    expect(rule).toMatch(/z-index: 9500/);
+    expect(rule).toMatch(/pointer-events:\s*auto;/);
+  });
+
+  it('keeps the declaration out of the inline cssText (CSP surface)', () => {
+    // Not a style preference: the CSP gate rejects added lines matching
+    // /\.style\b/ on the browser-served surface, so putting it back inline
+    // makes this change unshippable. The stylesheet is equally effective —
+    // what is being blocked is inheritance from document.body, not a
+    // specificity contest with another rule on this same element.
+    expect(overlayRootInlineStyle()).not.toMatch(/pointer-events/);
   });
 
   it('keeps the close button wired unconditionally — it was never disabled', () => {
@@ -70,8 +104,8 @@ describe('VTID-03808 ORB overlay survives a modal dialog behind it', () => {
   it('does not gate the overlay on any guided-topic state', () => {
     // The overlay must be closeable during teaching exactly as at any other
     // time. If a future change makes interactivity conditional, this fails.
-    const style = overlayRootStyle();
-    expect(style).not.toMatch(/guidedTopic/);
-    expect(style).not.toMatch(/pointer-events:none/);
+    const rule = overlayCssRule();
+    expect(rule).not.toMatch(/guidedTopic/);
+    expect(rule).not.toMatch(/pointer-events:\s*none/);
   });
 });

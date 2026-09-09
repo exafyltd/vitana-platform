@@ -78,13 +78,40 @@ coordinates. That is the report, reproduced.
 
 ## Fix
 
-`pointer-events:auto` on the ORB overlay root. A descendant may opt back in even
-under an ancestor set to `none` — the same escape Radix's own dialog overlay
-uses (`pointerEvents: "auto"` in `@radix-ui/react-dialog`).
+`pointer-events: auto` on the ORB overlay — in the `.vtorb-overlay` rule that
+`_injectStyles()` writes, which is the class `_renderOverlay()` assigns to
+`_root`. A descendant may opt back in even under an ancestor set to `none` —
+the same escape Radix's own dialog overlay uses (`pointerEvents: "auto"` in
+`@radix-ui/react-dialog`).
 
 One declaration, no behavioural branch, no new state. The overlay is a
 top-level surface of its own and should be interactive regardless of what is
 mounted behind it.
+
+### Why the stylesheet and not the inline `cssText`
+
+The root also carries an inline `_root.style.cssText` that duplicates most of
+what the stylesheet rule already says. The declaration deliberately does not go
+there:
+
+- The repo's **CSP gate rejects it**. `validator-path-guard.cjs` scans added
+  lines on the browser-served surface for `/\.style\b/`, so editing that line
+  fails `validate-pr` with exit 50 — confirmed live on the first push of this
+  branch, and mutation-verified afterwards (`outputs/csp-gate.txt`). ALWAYS 36 /
+  NEVER 24 are the rules behind it.
+- It is **equally effective**. What blocks the overlay is INHERITANCE from
+  `document.body`, not a specificity contest on this element — the two rules
+  match different elements and never compete. Declaring the property on any
+  rule that matches the overlay stops the inheritance.
+- It is the **better home** regardless: the stylesheet is where the rest of the
+  overlay's box and appearance already live, and the inline string only mirrors
+  them.
+
+The inline block's comment claims it "guarantees the overlay works even if CSS
+injection fails". That is already not true for visibility — `_show()` reveals
+the overlay by adding `.vtorb-visible`, a class-only rule, so a failed
+`_injectStyles()` leaves the overlay permanently `display:none` and clickability
+is moot. Nothing real is lost by putting the property with its siblings.
 
 ## Rejected alternatives
 

@@ -60,3 +60,95 @@ PR_TITLE="fix(orb): overlay must stay clickable under a modal drawer (VTID-03808
 test -f docs/validation/VTID-03808/{acceptance.md,commands.log} && test -d .../outputs
 VTID=VTID-03808 python3 -  # the Acceptance Mapping Gate's exact script, inlined
 # -> Acceptance mapping OK, exit=0
+
+================================================================================
+ROUND 2 — CI rejected the inline form; declaration moved to the stylesheet
+================================================================================
+
+PR #3264 opened. 20 of 21 checks green; `validate-pr` FAILED with exit 50:
+
+    REJECTED: CSP pattern hit in an added line :: /\.style\b/
+      .style
+
+The CSP gate (VTID-03714) scans lines `git diff` reports as ADDED on the
+browser-served surface. The fix edited the `_root.style.cssText = ...` line, so
+that line came through as added and matched `/\.style\b/`. Not a false positive
+on untouched content — the rule (ALWAYS 36 / NEVER 24, no inline CSS) genuinely
+bites this edit.
+
+Resolution: move the declaration into the `.vtorb-overlay` rule in
+`_injectStyles()`, which is the class `_renderOverlay()` already assigns to
+`_root`, and revert the inline string to its original bytes.
+
+Equally effective, and not a workaround: what is blocked is INHERITANCE from
+`document.body`, not a specificity contest on this element. The two rules match
+different elements and never compete. It is also the better home — the
+stylesheet already carries the overlay's box and appearance, and the inline
+string only mirrors it.
+
+$ node --check services/gateway/src/frontend/command-hub/orb-widget.js
+PARSE OK
+
+$ npx jest test/frontend/orb-overlay-pointer-events.test.ts
+  ✓ declares pointer-events:auto on the overlay
+  ✓ declares it on the rule that matches the ROOT, not an inner element
+  ✓ keeps the declaration out of the inline cssText (CSP surface)
+  ✓ keeps the close button wired unconditionally — it was never disabled
+  ✓ does not gate the overlay on any guided-topic state
+Tests: 5 passed, 5 total
+
+--- CSP gate, real diff ---
+$ git diff origin/main -- 'services/gateway/src/frontend/' 'services/gateway/dist/frontend/' > csp_diff.txt
+$ node scripts/ci/validator-path-guard.cjs --csp-added-lines csp_diff.txt
+No CSP pattern hits in added lines.   exit=0
+
+--- CSP gate, mutation check (the inline form must STILL be rejected) ---
+$ printf '+++ b/.../orb-widget.js\n+    _root.style.cssText = "pointer-events:auto;";\n' > csp_mutant.txt
+$ node scripts/ci/validator-path-guard.cjs --csp-added-lines csp_mutant.txt
+REJECTED: CSP pattern hit in an added line :: /\.style\b/   exit=1
+
+So the new test ("keeps the declaration out of the inline cssText") pins a real
+shippability constraint, not a style preference. Recorded in outputs/csp-gate.txt.
+
+--- Behavioural proof RE-RUN in the shipped form ---
+The probe previously applied `pointer-events:auto` as an inline style. Rewritten
+to apply it through a `.vtorb-overlay` stylesheet rule, exactly as
+`_injectStyles()` writes it, so the evidence exercises what actually deploys.
+
+$ node docs/validation/VTID-03808/outputs/pointer-events-hit-test.probe.mjs
+BEFORE (.vtorb-overlay declares no pointer-events — shipped behaviour):
+  computed pointer-events on X : none
+  element at the X's centre    : HTML
+  close handler actually ran   : false
+AFTER  (.vtorb-overlay { pointer-events: auto } — the fix, as shipped):
+  computed pointer-events on X : auto
+  element at the X's centre    : close
+  close handler actually ran   : true
+VERDICT
+  reproduces the report (X unreachable before) : true
+  fix makes the X reachable (handler runs)     : true
+PROBE_EXIT=0
+
+(run from services/../e2e so `playwright` resolves — it is not a dependency of
+the repo root. executablePath pinned to /opt/pw-browsers/chromium-1194, per the
+environment's standing instruction never to run `playwright install`.)
+
+--- Full re-verification on the current base ---
+$ npx tsc --noEmit                     -> clean (exit 0)
+$ npx jest
+Test Suites: 1 skipped, 737 passed, 737 of 738 total
+Tests:       29 skipped, 6 todo, 13673 passed, 13708 total
+
+NOTE: these counts are HIGHER than round 1's (735/736, 13,656) because `main`
+moved between rounds. Round 1's numbers were correct when measured; the
+acceptance.md figures were updated to the current measurement rather than left
+to read as if nothing had changed underneath them.
+
+--- Gate parsers run LOCALLY before pushing (round 1 cost two CI cycles to
+--- format rejections; not repeating that) ---
+$ <the workflow's own acceptance parser, verbatim>
+Acceptance mapping OK (7 AC entries)
+$ evidence paths: root-cause.md OK, acceptance.md OK, commands.log OK, outputs OK
+$ PR_TITLE="fix(orb): overlay must stay clickable under a modal drawer (VTID-03808)" \
+    node scripts/ci/command-hub-ownership-guard.js
+Guard check PASSED.   exit=0
