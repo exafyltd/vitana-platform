@@ -1,0 +1,6 @@
+Test Suites: 1 skipped, 735 passed, 735 of 736 total
+Tests:       29 skipped, 6 todo, 13656 passed, 13691 total
+Snapshots:   44 passed, 44 total
+Time:        73.433 s, estimated 88 s
+Ran all test suites.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

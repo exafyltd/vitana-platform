@@ -1,0 +1,15 @@
+=== VTID-03808: is the ORB close button reachable behind a modal drawer? ===
+
+BEFORE (no pointer-events on overlay root — shipped behaviour):
+  computed pointer-events on X : none
+  element at the X's centre    : HTML
+  close handler actually ran   : false
+
+AFTER  (pointer-events:auto on overlay root — the fix):
+  computed pointer-events on X : auto
+  element at the X's centre    : close
+  close handler actually ran   : true
+
+VERDICT
+  reproduces the report (X unreachable before) : true
+  fix makes the X reachable (handler runs)     : true

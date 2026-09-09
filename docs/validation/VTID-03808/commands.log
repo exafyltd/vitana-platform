@@ -1,0 +1,62 @@
+# VTID-03808 — commands run
+
+## 1. Allocate the VTID (before touching code, per §4.1)
+
+curl -s -X POST "https://gateway.vitanaland.com/api/v1/vtid/allocate" \
+  -H "Content-Type: application/json" \
+  -d '{"source":"claude-code","layer":"frontend","module":"orb-widget"}'
+# -> {"ok":true,"vtid":"VTID-03808","num":3808,...}
+# then UPDATE vtid_ledger SET title=..., status='in_progress', spec_status='approved'
+
+## 2. Rule out the obvious before hunting
+
+grep -n "_userRequestedClose|closeBtn|onClose" orb-widget.js
+# -> closeBtn.addEventListener('click', _hide) — unconditional, never disabled
+grep -n "pointerEvents|\.disabled\s*=|opacity" orb-widget.js
+# -> only the auras, already pointer-events:none (they cannot intercept)
+sed -n '4596,4700p' orb-widget.js
+# -> _hide() is fully try/catch'd and stops audio synchronously (VTID-03295)
+# Conclusion: the handler is fine. Nothing reaches it.
+
+## 3. Find what is actually swallowing the tap
+
+# The overlay is appended to document.body, outside React. What is on body?
+grep -n "activateOrb|setOpenTopic" vitana-v1/src/components/journey/GuidedJourneyCatalog.tsx
+# -> 260: activateOrb(topic.topicId)   then   269: setOpenTopic(topic)
+# -> 279: activateOrb(firstTopic...)   then   283: setOpenTopic(firstTopic)
+#    i.e. a drawer is opened right behind the ORB and stays open all lesson
+
+grep -n "Drawer|modal" vitana-v1/src/components/ui/drawer.tsx
+# -> vaul DrawerPrimitive.Root — modal by DEFAULT
+
+python3 -c "read react-remove-scroll/dist/es2015/SideEffect.js around 'pointer-events'"
+# -> .block-interactivity-<id> { pointer-events: none; }   applied to document.body
+#    .allow-interactivity-<id> { pointer-events: all;  }   applied to the drawer only
+# The widget root is in the blocked subtree and outside the allowed one.
+
+## 4. Prove it in a real browser (jsdom cannot hit-test pointer-events)
+
+node docs/validation/VTID-03808/outputs/pointer-events-hit-test.probe.mjs
+# BEFORE: computed=none, elementFromPoint at the X's centre = HTML, handler ran = false
+# AFTER : computed=auto, elementFromPoint at the X's centre = close, handler ran = true
+# VERDICT: reproduces the report AND confirms the fix
+
+## 5. Verify
+
+cd services/gateway
+node --check src/frontend/command-hub/orb-widget.js      # WIDGET OK
+npx tsc --noEmit                                          # clean
+npx jest test/frontend/orb-overlay-pointer-events.test.ts # 4 passed, 4 total
+npx jest
+# -> 735/736 suites (1 pre-existing skip), 13,656 passed, 0 failures
+
+node scripts/ci/command-hub-ownership-guard.js            # FAILED (VTID unregistered)
+PR_TITLE="fix(orb): overlay must stay clickable under a modal drawer (VTID-03808)" \
+  node scripts/ci/command-hub-ownership-guard.js          # PASSED (after registering)
+
+## 6. Evidence-pack gates — run the workflow's own parsers, do not eyeball
+# (VTID-03800 cost two CI cycles to exit 32 then exit 40 for want of this)
+
+test -f docs/validation/VTID-03808/{acceptance.md,commands.log} && test -d .../outputs
+VTID=VTID-03808 python3 -  # the Acceptance Mapping Gate's exact script, inlined
+# -> Acceptance mapping OK, exit=0
