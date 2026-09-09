@@ -493,10 +493,36 @@
       '}',
 
       // --- Overlay ---
+      //
+      // VTID-03808: `pointer-events: auto` below is LOAD-BEARING, not cosmetic.
+      //
+      // This overlay's root is appended to document.body, outside any React
+      // portal. The guided-topic flow (GuidedJourneyCatalog handleTopicClick /
+      // handleSessionClick) calls activateOrb() and THEN setOpenTopic(), so a
+      // vaul <Drawer> — modal by DEFAULT — is open behind the ORB from the
+      // moment a lesson starts until it ends. vaul's modal mode uses
+      // react-remove-scroll, which injects:
+      //   .block-interactivity-<id> { pointer-events: none; }  -> document.body
+      //   .allow-interactivity-<id> { pointer-events: all;  }  -> the drawer only
+      // The root sits inside the blocked subtree and outside the allowed one,
+      // and `pointer-events` is INHERITED — so without this declaration every
+      // tap on the overlay (the X, the mic button, the orb itself) is swallowed
+      // by the browser before any listener runs.
+      //
+      // Reported as "I cannot close the Orb when Vitana is teaching... it should
+      // be enabled", and the symptom is NOTHING AT ALL happening, because no
+      // handler is ever reached. There was never anything to debug in _hide().
+      //
+      // Declaring the property on any rule that matches the overlay stops the
+      // inheritance — the same escape Radix's own dialog overlay uses
+      // (`pointerEvents: "auto"`). Do not "simplify" it away, and do not fix a
+      // future variant by making the drawer non-modal: that would drop its
+      // focus trap and scroll lock for every other consumer of that primitive.
       '.vtorb-overlay {',
       '  position: fixed; inset: 0; z-index: 9500;',
       '  display: none; align-items: center; justify-content: center; flex-direction: column;',
       '  background: rgba(10, 12, 20, 0.92); backdrop-filter: blur(24px);',
+      '  pointer-events: auto;',
       '}',
       '.vtorb-overlay.vtorb-visible { display: flex; }',
 
@@ -4089,6 +4115,12 @@
     _root.setAttribute('role', 'dialog');
     _root.setAttribute('aria-modal', 'true');
     // CRITICAL: Inline styles guarantee overlay works even if CSS injection fails
+    //
+    // VTID-03808: the overlay's `pointer-events: auto` deliberately does NOT
+    // live on this line — it belongs to the `.vtorb-overlay` rule in
+    // _injectStyles(), where the reasoning is recorded in full. It is
+    // load-bearing, not cosmetic: without it every tap on this overlay is
+    // swallowed while a modal dialog is open behind it.
     _root.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:9500;display:none;align-items:center;justify-content:center;flex-direction:column;background:rgba(10,12,20,0.92);backdrop-filter:blur(24px);';
 
     // ORB shell
