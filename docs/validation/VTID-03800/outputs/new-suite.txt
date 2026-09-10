@@ -1,0 +1,16 @@
+PASS test/frontend/guided-topic-ws-heartbeat-and-one-shot.test.ts
+    ✓ sends a data heartbeat, not only a protocol ping (3 ms)
+    ✓ keeps the protocol ping as well — proxies need it, clients cannot see it (2 ms)
+    ✓ uses the same shape SSE already sends, which the widget already handles
+    ✓ heartbeats on the same 10s cadence as the ping it rides with (1 ms)
+    ✓ a send failure cannot kill the session (1 ms)
+    ✓ records that the authored lesson was delivered as pre-rendered audio (1 ms)
+    ✓ ends teaching at turn-1 complete ONLY when it was actually narrated (1 ms)
+    ✓ routes the close through the one shared teardown, not a second copy (1 ms)
+    ✓ the shared teardown still hides the overlay and credits completion (1 ms)
+    ✓ cannot replay: the shared teardown marks teaching ended synchronously (1 ms)
+    ✓ does not fall through to the conversational path once it has closed (1 ms)
+    ✓ is declared in the initial state
+    ✓ resets on a fresh tap — a previous topic must not close this one early (2 ms)
+    ✓ is cleared by _hide, same lifecycle as _guidedTopicInFlight (1 ms)
+Tests:       14 passed, 14 total

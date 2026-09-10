@@ -53,7 +53,13 @@ describe('L-02: Bedrock client factory memoization', () => {
     expect(src.split(anchor).length - 1).toBe(1); // stays unique
     const novaBranch = src.indexOf(anchor);
     expect(novaBranch).toBeGreaterThan(-1);
-    const window = src.slice(novaBranch, novaBranch + 2500);
+    // VTID-03779 inserted the session-prewarm reuse branch (claim-or-cold-
+    // connect, plus its doc comment) between the cfg declaration and the
+    // envelope build, widening the gap — 2500 chars no longer reaches the
+    // envelope build. Widened rather than narrowing the assertion; the
+    // invariant under test (prep starts before the envelope await) is
+    // unaffected by that unrelated branch.
+    const window = src.slice(novaBranch, novaBranch + 8000);
 
     const prewarmAt = window.indexOf('prewarmNovaSonicBedrock(novaCfg)');
     const envelopeAt = window.indexOf('await buildOrbVertexSetupEnvelope()');

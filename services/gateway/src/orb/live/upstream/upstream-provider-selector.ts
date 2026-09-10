@@ -635,3 +635,47 @@ function evaluateLiveKitRequest(
     livekitReady: true,
   };
 }
+
+/**
+ * BOOTSTRAP-ORB-HEALTH-NOVA-READY (VTID-03802): readiness projection for a
+ * resolved provider, factored out of `GET /api/v1/orb/health` so it is
+ * independently testable without spinning up the whole route.
+ *
+ * `GET /api/v1/orb/health` used to compute this inline as
+ * `provider === 'vertex' ? vertexReady : livekitReady` — written back when
+ * 'vertex' and 'livekit' were the only two values `selectUpstreamProvider()`
+ * could return. VTID-03723 added `nova_sonic` and `cascaded` as the
+ * everyday destinations for ordinary sessions, but that inline expression
+ * was never updated: any session resolving to `nova_sonic` (nearly all of
+ * them, post-VTID-03723) fell into the `: livekitReady` branch and reported
+ * `healthy: false` regardless of Nova's actual readiness — confirmed live
+ * 2026-09-02, where `/api/v1/orb/nova-sonic/health` reported
+ * `ready:true, issues:[]` at the same moment this probe reported
+ * `voice_runtime.healthy:false` for the identical resolved provider.
+ *
+ * Each branch routes to the readiness signal that actually describes that
+ * provider — `nova_sonic` to Nova's own config-derived `ready` flag,
+ * `cascaded` to whether the cascade pipeline is switched on, `vertex`/
+ * `livekit` unchanged from before.
+ */
+export function deriveVoiceRuntimeHealthy(
+  activeProvider: UpstreamProviderName,
+  readiness: {
+    vertexReady: boolean;
+    livekitReady: boolean;
+    novaReady: boolean;
+    cascadeReady: boolean;
+  },
+): boolean {
+  switch (activeProvider) {
+    case 'vertex':
+      return readiness.vertexReady;
+    case 'nova_sonic':
+      return readiness.novaReady;
+    case 'cascaded':
+      return readiness.cascadeReady;
+    case 'livekit':
+    default:
+      return readiness.livekitReady;
+  }
+}

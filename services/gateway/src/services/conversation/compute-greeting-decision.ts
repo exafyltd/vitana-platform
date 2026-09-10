@@ -692,19 +692,61 @@ const SHORT_GAP_OPENER_INTENT =
  * reasoning `tryDayCloseRung`/`tryNewDayOverviewRung` are already extracted
  * for).
  */
+/**
+ * VTID-03797 — the ONE turn-1 trigger for a tapped Guided Journey topic.
+ *
+ * WHY THIS IS NOT A "SAY THIS LINE" TEMPLATE ANY MORE. Guided-topic sessions
+ * were blocked by Nova 93/93 over 30 days, with ZERO ever reaching
+ * model_start_speaking or turn_complete — deterministic, against the ~34%
+ * ambient rate every other rung sees. A live probe across three topics
+ * (T001/T100/T200) and two languages (de/en) blocked all of them while an
+ * ordinary control in the same run produced 493 audio chunks and completed its
+ * turn, so the trigger was structural: not topic text, not language.
+ *
+ * The structural difference was this template's KIND. `wakeTrigger` (rung 8,
+ * non-guided) quotes its lead but then says "Compose the wording yourself ...
+ * do not recite the lead word for word" — and passes at the ambient rate. The
+ * guided template said "say this prepared line ... do not turn it into
+ * something else": a directive to reproduce supplied text VERBATIM wrapped in
+ * a stack of prohibitions. That is the shape Bedrock's guardrail treats as
+ * injection-like, which is why this worked on Vertex (no such guardrail) and
+ * broke on Nova. VTID-03674 already found the pattern and removed the older,
+ * more forceful wrapper — but replaced it with a milder VERBATIM one, so the
+ * class survived and the block never moved.
+ *
+ * Describing the opening instead also satisfies NEVER-rule 41 / §13b (write
+ * the INTENT in English; never hand the model a finished spoken sentence).
+ *
+ * ALL 254 TOPICS, EVERY LANGUAGE, ONE STRING: the topic and its practice
+ * target are deliberately NOT interpolated — the GUIDE MODE block already
+ * names both in the system instruction. So this carries no per-topic and no
+ * per-language text, which is precisely why there is no table to keep in sync
+ * and no locale that can be missed (the defect VTID-03644 hit with five
+ * diverging copies of a language map).
+ *
+ * The teaching still happens on turns 2+ from the GUIDE-MODE block
+ * (VTID-03686's "explain before you skip ahead" rule is untouched); turn 1
+ * only opens, hence one short utterance.
+ */
+export function buildGuidedTopicOpenTrigger(): string {
+  return (
+    `The person has just listened to a short pre-recorded audio lesson on the topic named in the GUIDE MODE section, so they have already heard it.\n` +
+    `Open with ONE short, warm sentence in the user's own language: acknowledge that the lesson just finished and invite any questions they have about it.\n` +
+    `Compose that sentence yourself in your own words. Then stop and listen.`
+  );
+}
+
 function tryGuidedTopicRung(ctx: GreetingDecisionContext): GreetingDecision | null {
   if (!ctx.guidedTopicNarrationContent || ctx.isAnonymous) return null;
   const od = ctx.openDecision;
   const wakeOverrideLine = od.mode === 'speak' ? (od.line ?? '').trim() : '';
   if (wakeOverrideLine.length === 0) return null;
 
-  const safe = wakeOverrideLine.replace(/"/g, '\\"');
-  // Same plain "say this one line, then stop and listen" shape rung 8 uses
-  // for a guided candidate (VTID-03674) — the teaching itself happens on
-  // turns 2+ from the GUIDE-MODE system-instruction block; turn 1 only opens.
-  const guidedTrigger =
-    `Open by saying this prepared line, in the user's own language: "${safe}"\n` +
-    `Keep it to ONE short utterance. Do not add a greeting before it, do not add a question after it, and do not turn it into something else. Then stop and listen.`;
+  // VTID-03797 — ONE shared builder (see buildGuidedTopicOpenTrigger). This
+  // rung is the one production actually reaches for a guided tap: the live
+  // blocked sessions' `greeting_sent` all carry
+  // `guided_topic_outranks_passive_rungs: true`, which only this rung sets.
+  const guidedTrigger = buildGuidedTopicOpenTrigger();
 
   return {
     wakeOpener: 'override_v2',
@@ -999,9 +1041,45 @@ function computeNormalLadder(ctx: GreetingDecisionContext): GreetingDecision {
     // confirmation before it has taught anything — precisely the skip-ahead
     // VTID-03686 had to forbid in the GUIDE-MODE block one day earlier. The
     // actual teaching happens on turns 2+ from that block; turn 1 only opens.
-    const guidedTrigger =
-      `Open by saying this prepared line, in the user's own language: "${safe}"\n` +
-      `Keep it to ONE short utterance. Do not add a greeting before it, do not add a question after it, and do not turn it into something else. Then stop and listen.`;
+    // VTID-03797 — the guided trigger must DESCRIBE the opening, never hand the
+    // model a line to reproduce verbatim.
+    //
+    // Measured: guided-topic sessions are 93/93 blocked by Nova over 30 days
+    // (identified by `guided_topic_audio_bridge_sent`), with ZERO ever reaching
+    // model_start_speaking or turn_complete — a deterministic failure, unlike
+    // the ~34% ambient rate every other rung sees. A live probe across three
+    // different topics (T001/T100/T200) and two languages (de/en) blocked all
+    // five guided opens while an ordinary control in the same run produced 493
+    // audio chunks and completed its turn, so the trigger is structural, not
+    // topic text and not language.
+    //
+    // What is structurally guided-only in the GREETING payload is this
+    // template's KIND. `wakeTrigger` above quotes its lead but then explicitly
+    // instructs "Compose the wording yourself ... do not recite the lead word
+    // for word" — and passes at the ambient rate. This one said "say this
+    // prepared line ... do not turn it into something else": a directive to
+    // reproduce supplied text verbatim, wrapped in a stack of prohibitions.
+    // That is the shape Bedrock's guardrail treats as injection-like, and it
+    // is why the platform worked on Vertex (no such guardrail) and broke on
+    // Nova. VTID-03674 already identified the pattern and removed the older,
+    // more forceful wrapper — but replaced it with a milder VERBATIM wrapper,
+    // so the class survived and the block never moved.
+    //
+    // It also violates NEVER-rule 41 / §13b: a spoken sentence must never be
+    // handed to the model as finished text; write the INTENT in English and
+    // let the model compose. Doing that here is what makes this work for every
+    // language and all 254 topics at once — nothing per-language and nothing
+    // per-topic is pinned, so there is no table to keep in sync.
+    //
+    // The teaching itself still happens on turns 2+ from the GUIDE-MODE block
+    // (VTID-03686's "explain before you skip ahead" rule is unchanged); turn 1
+    // only opens, which is why this stays one short utterance.
+    // VTID-03797 — the SAME shared builder `tryGuidedTopicRung` uses. These
+    // two ladders previously held byte-identical COPIES of this template; the
+    // surrounding comment claimed they "can never drift apart on this again",
+    // which duplication cannot actually guarantee. A test now asserts both
+    // ladders emit the identical guided directive.
+    const guidedTrigger = buildGuidedTopicOpenTrigger();
     const wakePrompt = ctx.guidedTopicNarrationContent ? guidedTrigger : wakeTrigger;
     // BOOTSTRAP-ORB-UNREAD-MESSAGES-NAV — the reported bug: override_v2 would
     // say "let me show you your new messages" and then just listen, because

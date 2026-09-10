@@ -1,0 +1,74 @@
+[
+  {
+    "label": "guided T001 de",
+    "verdict": "BLOCKED",
+    "sid": "live-19b81fb7-0c0e-41ec-bbf4-6dcf5e44b263",
+    "audio": 2,
+    "err": 2,
+    "errCodes": []
+  },
+  {
+    "label": "guided T001 en",
+    "verdict": "BLOCKED",
+    "sid": "live-f465e69a-44b5-4594-8cfe-97d9c5f6b688",
+    "audio": 2,
+    "err": 2,
+    "errCodes": []
+  },
+  {
+    "label": "guided T100 de",
+    "verdict": "BLOCKED",
+    "sid": "live-86c4d440-dd6d-45d5-829b-54ec7da9f189",
+    "audio": 2,
+    "err": 2,
+    "errCodes": []
+  },
+  {
+    "label": "guided T200 de",
+    "verdict": "BLOCKED",
+    "sid": "live-c1165590-8bf1-49c4-b662-e6399d3d6550",
+    "audio": 2,
+    "err": 2,
+    "errCodes": []
+  },
+  {
+    "label": "ORDINARY de (control)",
+    "verdict": "WORKS",
+    "sid": "live-1b8e9c57-f2ec-482f-89a9-d514732795c2",
+    "audio": 95,
+    "err": 0,
+    "errCodes": []
+  },
+  {
+    "label": "guided T001 fr (nova)",
+    "verdict": "BLOCKED",
+    "sid": "live-db9e78d9-4e2c-4e9c-a10a-e5e1c30fd2d0",
+    "audio": 2,
+    "err": 2,
+    "errCodes": []
+  },
+  {
+    "label": "guided T001 es (nova)",
+    "verdict": "BLOCKED",
+    "sid": "live-bbca0696-4516-4856-998d-76d64a7708e4",
+    "audio": 2,
+    "err": 2,
+    "errCodes": []
+  },
+  {
+    "label": "guided T001 ru (cascade)",
+    "verdict": "WORKS",
+    "sid": "live-78b10786-ed91-40b2-8486-624e082b2b8c",
+    "audio": 9,
+    "err": 0,
+    "errCodes": []
+  },
+  {
+    "label": "guided T001 pl (cascade)",
+    "verdict": "WORKS",
+    "sid": "live-648d6dfa-2035-4567-8b7e-21bef9eac2de",
+    "audio": 7,
+    "err": 0,
+    "errCodes": []
+  }
+]

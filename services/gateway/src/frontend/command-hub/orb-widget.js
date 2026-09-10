@@ -207,6 +207,14 @@
     eventSource: null,
     // BOOTSTRAP-ORB-LATENCY-PHASE3: WebSocket transport handle (null on SSE)
     ws: null,
+    // VTID-03779: a WS socket opened EARLY (login/setAuth, before the ORB
+    // overlay ever shows) on which a 'prewarm' message was sent. Kept fully
+    // separate from `ws` until _sessionStartWs claims it — nothing else in
+    // the widget should ever read/write these three fields.
+    prewarmWs: null,
+    prewarmWsReady: false,
+    _prewarmWsInFlight: false,
+    _prewarmWsGen: 0,
 
     // Audio capture (16kHz mic)
     captureCtx: null,
@@ -360,6 +368,16 @@
     // false on a fresh tap (focusGuidedTopic), flipped true at the same
     // turn-complete point that nulls _s.guidedTopic, cleared by _hide().
     _guidedTopicAudioDelivered: false,
+    // VTID-03800: true once an 'audio' frame tagged
+    // `source:'guided_topic_narration'` has arrived, i.e. the WHOLE authored
+    // lesson was delivered as pre-rendered Polly audio rather than taught
+    // conversationally across turns 2+ (the VTID-03665 Polly-failure
+    // fallback). This is the sole discriminator between the two, and it
+    // gates the one-shot terminal close at turn-1 complete — without it that
+    // close would fire on the fallback path too and cut a live lesson short,
+    // which is VTID-03680 exactly. Same lifecycle as _guidedTopicInFlight:
+    // false on a fresh tap, cleared by _hide().
+    _guidedTopicNarrated: false,
     // VTID-03762: wall-clock timestamp (Date.now()) of when a guided topic
     // was tapped, and the interval handle checking it. Backstop only — see
     // GUIDED_TOPIC_BACKSTOP_MS below for why this exists: the model is
@@ -370,6 +388,12 @@
     // Vitana Index plan) with no natural end. Cleared only by _hide(),
     // same lifecycle as guidedTopic/_guidedTopicInFlight.
     _guidedTopicOpenedAt: null,
+    // VTID-03799: wall-clock of the last sign of life in a guided session —
+    // model audio, a completed turn, or the user speaking. The backstop is
+    // now IDLE-based off this rather than a fixed countdown from the tap
+    // (see GUIDED_TOPIC_IDLE_MS), so "the lesson finished" means "the
+    // conversation actually went quiet", not "N seconds have elapsed".
+    _guidedTopicLastActivityAt: null,
     _guidedTopicBackstopInterval: null,
     // VTID-03776: counts consecutive reconnect attempts, while a guided topic
     // is in flight, that produced NO audible turn at all this overlay-open
@@ -385,6 +409,21 @@
     // Reset on a fresh tap (focusGuidedTopic) and on close (_hide), same
     // lifecycle as _guidedTopicInFlight.
     _guidedTopicZeroAudioFailCount: 0,
+    // VTID-03781: idempotency guard. Teaching-complete has TWO independent
+    // signals — the model calling end_guided_topic_teaching, and the
+    // GUIDED_TOPIC_BACKSTOP_MS timeout — and nothing previously stopped
+    // both from firing for the same teaching session (e.g. the model calls
+    // the tool right as the backstop's periodic check also trips, or the
+    // directive arrives twice over a flaky transport). Each firing runs
+    // _endGuidedTopicTeaching(), which drains audio then calls _hide() and
+    // the onGuidedTopicTeachingEnd host callback — a second concurrent run
+    // would fire that callback (-> completePractice()) a second time for
+    // the same topic. Set true the instant _endGuidedTopicTeaching() is
+    // entered (before any async work), so every signal after the first
+    // becomes a no-op. Reset on a fresh tap (focusGuidedTopic) — a new
+    // teaching session gets its own single completion — same lifecycle as
+    // _guidedTopicInFlight.
+    _guidedTopicTeachingEnded: false,
     // VTID-02020: contextual recovery state. _preDisconnectStage captures what
     // the user was doing when the network dropped (idle / listening_user_speaking
     // / thinking / speaking) so the backend's recovery prompt can decide
@@ -454,10 +493,36 @@
       '}',
 
       // --- Overlay ---
+      //
+      // VTID-03808: `pointer-events: auto` below is LOAD-BEARING, not cosmetic.
+      //
+      // This overlay's root is appended to document.body, outside any React
+      // portal. The guided-topic flow (GuidedJourneyCatalog handleTopicClick /
+      // handleSessionClick) calls activateOrb() and THEN setOpenTopic(), so a
+      // vaul <Drawer> — modal by DEFAULT — is open behind the ORB from the
+      // moment a lesson starts until it ends. vaul's modal mode uses
+      // react-remove-scroll, which injects:
+      //   .block-interactivity-<id> { pointer-events: none; }  -> document.body
+      //   .allow-interactivity-<id> { pointer-events: all;  }  -> the drawer only
+      // The root sits inside the blocked subtree and outside the allowed one,
+      // and `pointer-events` is INHERITED — so without this declaration every
+      // tap on the overlay (the X, the mic button, the orb itself) is swallowed
+      // by the browser before any listener runs.
+      //
+      // Reported as "I cannot close the Orb when Vitana is teaching... it should
+      // be enabled", and the symptom is NOTHING AT ALL happening, because no
+      // handler is ever reached. There was never anything to debug in _hide().
+      //
+      // Declaring the property on any rule that matches the overlay stops the
+      // inheritance — the same escape Radix's own dialog overlay uses
+      // (`pointerEvents: "auto"`). Do not "simplify" it away, and do not fix a
+      // future variant by making the drawer non-modal: that would drop its
+      // focus trap and scroll lock for every other consumer of that primitive.
       '.vtorb-overlay {',
       '  position: fixed; inset: 0; z-index: 9500;',
       '  display: none; align-items: center; justify-content: center; flex-direction: column;',
       '  background: rgba(10, 12, 20, 0.92); backdrop-filter: blur(24px);',
+      '  pointer-events: auto;',
       '}',
       '.vtorb-overlay.vtorb-visible { display: flex; }',
 
@@ -1265,6 +1330,72 @@
       .catch(function () { /* best-effort — never surfaces */ });
   }
 
+  // VTID-03779: open the WS transport EARLY (right after login, before the
+  // ORB overlay is ever shown) and ask the gateway to warm a real Nova Sonic
+  // connection on it — full persona + full tool catalog, the exact expensive
+  // payload a cold session-start otherwise pays for at tap time. When the
+  // user later taps ORB, _sessionStartWs reuses THIS already-open socket
+  // instead of opening a fresh one, so the 'start' message lands on a
+  // connection the server has already upgraded to a live Nova stream (see
+  // consumePrewarmedNovaSession server-side).
+  //
+  // Deliberately isolated from `_s.ws` until the moment of reuse: any
+  // failure here (auth race, network blip, the server-side feature flag
+  // being off, the prewarm going unclaimed past its TTL) just means
+  // _sessionStartWs falls through to its normal cold-connect path — zero
+  // behavior change for every case this doesn't apply to. Guarded by
+  // _prewarmWsInFlight so overlapping init()/setAuth() calls never open a
+  // second socket, and safe to call again after a prior prewarm was already
+  // claimed or dropped (prewarmWs is null in both cases).
+  function _prewarmNovaWs() {
+    if (!_cfg.token) return; // anonymous — nothing to warm, matches _prewarmBootstrap
+    if (_s.active || _s.ws) return; // a real session is already running/starting
+    if (_s._prewarmWsInFlight) return;
+    if (_s.prewarmWs && _s.prewarmWs.readyState === 1) return; // already warm/warming
+    var url = _cfg.gw.replace(/^http/, 'ws') + '/api/v1/orb/live/ws';
+    url += '?token=' + encodeURIComponent(_cfg.token);
+    var myGen = _s._prewarmWsGen;
+    var w;
+    try { w = new WebSocket(url); } catch (e) { return; }
+    _s._prewarmWsInFlight = true;
+    function stale() { return _s._prewarmWsGen !== myGen; }
+    function drop() {
+      if (stale()) return; // superseded by a newer identity — that gen already cleaned up
+      _s._prewarmWsInFlight = false;
+      if (_s.prewarmWs === w) { _s.prewarmWs = null; _s.prewarmWsReady = false; }
+    }
+    w.onmessage = function (event) {
+      if (stale()) { try { w.close(); } catch (e) { /* noop */ } return; } // identity changed mid-handshake — never claim on its behalf
+      var msg;
+      try { msg = JSON.parse(event.data); } catch (e) { return; }
+      if (msg.type === 'connected') {
+        _s._prewarmWsInFlight = false;
+        _s.prewarmWs = w;
+        // Codex review (PR #3218): prewarmWsReady must NOT flip true here —
+        // this only means the message was SENT, not that the server has
+        // actually finished the real Nova connect() and registered it
+        // (registerPrewarmedNovaSession, several seconds away). Marking
+        // ready this early let a 'start' racing in during that window
+        // reuse a socket with nothing behind it server-side yet, silently
+        // falling to a cold connect while orphaning the in-flight prewarm.
+        // Wait for the server's own 'prewarm_ready' ack below instead.
+        try { w.send(JSON.stringify({ type: 'prewarm' })); }
+        catch (e) { drop(); }
+        return;
+      }
+      if (msg.type === 'prewarm_ready') {
+        if (_s.prewarmWs === w) _s.prewarmWsReady = true;
+        return;
+      }
+      // Any other message arriving before this socket is claimed by a real
+      // session start is unexpected — there is no active session for it to
+      // belong to yet, so it is deliberately ignored rather than routed
+      // into _handleMessage.
+    };
+    w.onclose = drop;
+    w.onerror = drop;
+  }
+
   // Play a cached alert clip. Returns the BufferSource so the caller can chain
   // an onended handler (used by _clearDisconnect to ring the ready beep after
   // the recovery phrase). Returns null if the clip is missing — caller is
@@ -1458,6 +1589,35 @@
     _setStatus(_caption('listening'));
   }
 
+  // VTID-03799: the SINGLE authority on "may this guided topic be (re)sent?".
+  //
+  // Three independent call sites restore _s.guidedTopic from
+  // _s._guidedTopicInFlight on a reconnect — _resetAndReconnect (VTID-03770),
+  // _attemptReconnect (VTID-03746), and the _sessionStart send site
+  // (VTID-03774). Each was added separately, each checked only
+  // "in-flight AND not already armed", and none of them knew whether the
+  // lesson had already FINISHED. Resuming is right when the connection drops
+  // mid-lesson — that is the bug all three were built for. It is wrong once
+  // teaching is over, and nothing encoded the difference.
+  //
+  // Live-reproduced (staging, topic T005, 2026-08-31): the lesson played and
+  // completed, the server closed the idle session (ws_session_cleanup), the
+  // reconnect re-armed T005, and the FULL Polly narration replayed — three
+  // times, ~2s after each close, before falling through to a new-day
+  // greeting. The overlay could not be closed because every close was
+  // followed by a fresh session carrying the topic again.
+  //
+  // _guidedTopicTeachingEnded already existed for exactly this question
+  // (VTID-03781) and was never consulted by any of the three guards. It is
+  // now the authority, in ONE place, so a fourth reconnect path cannot
+  // reintroduce the loop by forgetting to ask.
+  function _shouldResumeGuidedTopic() {
+    if (!_s._guidedTopicInFlight) return false;      // nothing to resume
+    if (_s.guidedTopic) return false;                 // already armed
+    if (_s._guidedTopicTeachingEnded) return false;   // lesson is over — never replay
+    return true;
+  }
+
   // BOOTSTRAP-ORB-MODERN-RECOVERY: full session teardown + fresh start. Used
   // by the orb-tap handler when the user taps an orb that's stuck on the
   // disconnect display, and by the 60s watchdog as a last-resort recovery.
@@ -1528,7 +1688,7 @@
     // only re-arm when the topic hasn't already been cleared by a genuine
     // close (_hide() nulls _guidedTopicInFlight; a later, unrelated reconnect
     // in the same overlay-open has nothing left to restore).
-    if (_s._guidedTopicInFlight && !_s.guidedTopic) {
+    if (_shouldResumeGuidedTopic()) {
       console.log('[VTOrb] _resetAndReconnect: re-arming guided topic for resume: ' + _s._guidedTopicInFlight);
       _s.guidedTopic = _s._guidedTopicInFlight;
     }
@@ -1956,7 +2116,7 @@
       // function got the widget here. This does not replace the two
       // existing restore-guards (harmless, redundant with this one) — it
       // makes this fallback structurally impossible to route around.
-      if (!_s.guidedTopic && _s._guidedTopicInFlight) {
+      if (_shouldResumeGuidedTopic()) {
         console.log('[VTOrb] _sessionStart: guidedTopic was empty but _guidedTopicInFlight=' + _s._guidedTopicInFlight + ' — restoring at send site (VTID-03774)');
         _s.guidedTopic = _s._guidedTopicInFlight;
       }
@@ -2197,10 +2357,22 @@
   // post-handshake traffic funnels into the shared _handleMessage.
   function _sessionStartWs(startPayload) {
     return new Promise(function (resolve, reject) {
-      var url = _cfg.gw.replace(/^http/, 'ws') + '/api/v1/orb/live/ws';
-      if (_cfg.token) url += '?token=' + encodeURIComponent(_cfg.token);
+      // VTID-03779: claim an already-open, already-prewarmed socket if one
+      // is available instead of opening a fresh connection — this is the
+      // "cold start becomes a warm start" reuse point. Any prewarm
+      // bookkeeping is cleared unconditionally below so a later prewarm
+      // attempt never mistakes a socket now owned by a real session for a
+      // still-available prewarm candidate.
+      var reused = !!(_s.prewarmWs && _s.prewarmWsReady && _s.prewarmWs.readyState === 1);
       var w;
-      try { w = new WebSocket(url); } catch (e) { return reject(e); }
+      if (reused) {
+        w = _s.prewarmWs;
+      } else {
+        var url = _cfg.gw.replace(/^http/, 'ws') + '/api/v1/orb/live/ws';
+        if (_cfg.token) url += '?token=' + encodeURIComponent(_cfg.token);
+        try { w = new WebSocket(url); } catch (e) { return reject(e); }
+      }
+      if (_s.prewarmWs === w) { _s.prewarmWs = null; _s.prewarmWsReady = false; }
       var settled = false;
       // Same 8s start budget as the SSE fetch (VTID-01987 rationale).
       var startTimer = setTimeout(function () {
@@ -2287,6 +2459,16 @@
         _attemptReconnect();
       };
       w.onerror = function () { /* onclose carries the recovery decision */ };
+
+      // VTID-03779: a reused socket already completed the 'connected'
+      // handshake during prewarm — that message will never arrive again on
+      // THIS socket, so send 'start' immediately instead of waiting for it.
+      // A fresh socket is unaffected: it waits for 'connected' exactly as
+      // before (see the onmessage handler above).
+      if (reused) {
+        try { w.send(JSON.stringify(Object.assign({ type: 'start' }, startPayload))); }
+        catch (e) { /* onclose covers */ }
+      }
     });
   }
 
@@ -2483,6 +2665,19 @@
 
       case 'audio':
       case 'audio_out':
+        _touchGuidedTopicActivity(); // VTID-03799: the model is speaking — not idle
+        // VTID-03800: the Polly narration bridge arrives as an ordinary
+        // 'audio' frame tagged `source:'guided_topic_narration'` (see
+        // sendGuidedTopicNarrationAudioBridge in orb-live.ts). That tag is
+        // the ONLY way the client can tell "the whole authored lesson was
+        // just delivered as pre-rendered audio" from "Polly failed, so this
+        // is the short opener and the model will teach across turns 2+"
+        // (the VTID-03665 fallback). The lesson is one-shot ONLY in the
+        // first case — closing after turn 1 in the second would amputate a
+        // live lesson, which is exactly VTID-03680.
+        if (msg.source === 'guided_topic_narration') {
+          _s._guidedTopicNarrated = true;
+        }
         if (_s.interruptPending) break;
         // VTID-NAV: Once a navigation is queued, drop all further audio
         // chunks. The model should have stopped speaking but late audio
@@ -2521,6 +2716,7 @@
         break;
 
       case 'turn_complete':
+        _touchGuidedTopicActivity(); // VTID-03799: a turn just landed — not idle
         // VTID-NAV-HOTFIX: Only reset the scheduling cursor if no audio is
         // still scheduled. Otherwise next-turn chunks schedule at `now` via
         // _processQueue's `lastScheduledEnd < now` check and play on top of
@@ -2613,15 +2809,65 @@
             // no reliable signal yet for "the model decided teaching is
             // done" to auto-trigger it, and guessing at one here would
             // trade a definite bug for a fragile heuristic.
+            // VTID-03774: turn-1 audio (opener + narration bridge) has now
+            // actually been delivered — a later restored-and-resent topic
+            // must tell the server it's a RESUME, not a fresh open, so
+            // the lesson doesn't restart from the beginning.
+            //
+            // VTID-03799: this MUST NOT live inside the guidedAutoClose
+            // branch below. guidedAutoClose is a one-shot — cleared on the
+            // first turn-complete and re-armed only by a fresh tap — so any
+            // turn-complete after the first left this flag unset, and the
+            // next reconnect then told the server "fresh open" instead of
+            // "resume". That is what replayed the entire Polly lesson on
+            // T005 (staging, 2026-08-31). The condition that actually
+            // governs it is "a guided topic is in flight and its turn-1
+            // audio just finished", which is what is checked here.
+            if (_s._guidedTopicInFlight && !_s.greetingComplete) {
+              _s._guidedTopicAudioDelivered = true;
+            }
             if (_s.guidedAutoClose && !_s.greetingComplete) {
               _s.guidedAutoClose = false;
               _s.guidedTopic = null;
-              // VTID-03774: turn-1 audio (opener + narration bridge) has now
-              // actually been delivered — a later restored-and-resent topic
-              // must tell the server it's a RESUME, not a fresh open, so
-              // the lesson doesn't restart from the beginning.
-              _s._guidedTopicAudioDelivered = true;
               console.log('[VTOrb] guided teaching opener complete — continuing conversation (no auto-close)');
+            }
+            // VTID-03800: a NARRATED guided topic is one-shot and terminal.
+            //
+            // Requested directly by the platform owner after a staging test
+            // that replayed the lesson three times and then looped the
+            // new-day greeting: "one guided-topic content and then Well Done
+            // drawer opens, and that's it."
+            //
+            // This deliberately re-adds an auto-close that VTID-03685
+            // removed — but ONLY for the narrated path, which did not exist
+            // in its present form when that decision was made. VTID-03685
+            // removed it because turn 1 was then just a SHORT OPENER and the
+            // real teaching happened across turns 2+; closing there cut the
+            // lesson off (VTID-03680). With the Polly bridge, turn 1 IS the
+            // whole authored lesson — the narration audio has already played
+            // in full by the time we get here — so there is nothing left to
+            // amputate. `_guidedTopicNarrated` is what keeps those two cases
+            // apart: unset (Polly failed) falls through to the unchanged
+            // conversational behaviour above.
+            //
+            // Known, accepted trade-off: on the narrated path the user
+            // cannot ask a follow-up question — the session ends when the
+            // narration does. The drawer's own Replay / Start Practice
+            // buttons are the continuation instead.
+            if (
+              _s._guidedTopicInFlight &&
+              _s._guidedTopicNarrated &&
+              !_s._guidedTopicTeachingEnded
+            ) {
+              var _narratedTopicId = _s._guidedTopicInFlight;
+              console.log('[VTOrb] guided narration complete — ending teaching (one-shot): ' + _narratedTopicId);
+              // Ends teaching, credits completion, and hides the overlay so
+              // the Well Done drawer underneath is revealed. Routed through
+              // the ONE shared teardown rather than a second copy of it, so
+              // the completion signal, flag clearing and backstop-interval
+              // cleanup cannot drift from the other end paths.
+              _endGuidedTopicTeaching(_narratedTopicId, 'narration_complete');
+              return;
             }
             // If the overlay was closed some other way while we were waiting
             // for audio to drain (user pressed X, session torn down), stop
@@ -3055,6 +3301,7 @@
         break;
 
       case 'input_transcript':
+        _touchGuidedTopicActivity(); // VTID-03799: the USER is speaking — never time them out mid-thought
         // VTID-TRANSCRIPT-FIX: Buffer user transcript fragments, display on turn_complete
         if (msg.text) {
           _s._inputTranscriptBuffer = (_s._inputTranscriptBuffer || '') + msg.text;
@@ -3717,8 +3964,19 @@
       var drift = Date.now() - scheduledAt - BG_CHECK_MS;
       if (drift > BG_KILL_DRIFT_MS) {
         console.warn('[VTOrb] Background watchdog: timer drifted ' + drift + 'ms — app was backgrounded, ending session');
+        // VTID-03783: this used to call _sessionStop() directly — the same
+        // anti-pattern VTID-03778 already fixed for the session_ended
+        // message handler in this file. _sessionStop() tears down media/SSE
+        // but never touches overlay visibility, so the overlay froze on
+        // this caption forever with no working close path (live-reported:
+        // "Session ended — app was in the background", X unresponsive).
+        // _hide() is the same full, honest teardown every other close path
+        // uses — it actually hides the overlay. Deliberately does NOT use
+        // the guided-topic completion teardown: a background-kill is not a
+        // reliable "the lesson finished" signal (the app may have been
+        // backgrounded mid-sentence), so this must not auto-mark a step done.
         _setStatus(_caption('sessionEndedBackground'));
-        _sessionStop();
+        _hide();
         return;
       }
       // VTID-CODEX-REVIEW: gate on overlayVisible, not _s.active. _sessionStart's
@@ -3857,6 +4115,12 @@
     _root.setAttribute('role', 'dialog');
     _root.setAttribute('aria-modal', 'true');
     // CRITICAL: Inline styles guarantee overlay works even if CSS injection fails
+    //
+    // VTID-03808: the overlay's `pointer-events: auto` deliberately does NOT
+    // live on this line — it belongs to the `.vtorb-overlay` rule in
+    // _injectStyles(), where the reasoning is recorded in full. It is
+    // load-bearing, not cosmetic: without it every tap on this overlay is
+    // swallowed while a modal dialog is open behind it.
     _root.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:9500;display:none;align-items:center;justify-content:center;flex-direction:column;background:rgba(10,12,20,0.92);backdrop-filter:blur(24px);';
 
     // ORB shell
@@ -4062,6 +4326,25 @@
     _s.conversationId = null;
     _s._preDisconnectStage = null;
     _s._reconnectCount = 0;
+    // VTID-03779: a prewarmed WS socket is authenticated as, and carries a
+    // Nova session built for, whichever identity was current when it was
+    // opened. Account switch / logout must never let the NEXT identity's
+    // session reuse a socket opened (and prewarmed server-side) under the
+    // PREVIOUS one — close it outright rather than leave it for
+    // _sessionStartWs to find. Bumping the generation counter also
+    // invalidates a prewarm attempt that is still mid-handshake (before its
+    // own 'connected' message arrives): _prewarmNovaWs captures the
+    // generation it started with and checks it before ever writing to
+    // _s.prewarmWs, so a late-arriving handshake from the OLD identity can
+    // no longer stomp over whatever the NEW identity's own prewarm sets.
+    _s._prewarmWsGen = (_s._prewarmWsGen || 0) + 1;
+    if (_s.prewarmWs) {
+      try { _s.prewarmWs.onopen = null; _s.prewarmWs.onmessage = null; _s.prewarmWs.onerror = null; _s.prewarmWs.onclose = null; } catch (e) { /* noop */ }
+      try { _s.prewarmWs.close(); } catch (e) { /* noop */ }
+    }
+    _s.prewarmWs = null;
+    _s.prewarmWsReady = false;
+    _s._prewarmWsInFlight = false;
   }
 
   function _refreshToken() {
@@ -4257,7 +4540,41 @@
   // legitimate lesson+practice conversation would have finished on its own,
   // and only when nothing else has ended the guided-topic session by then.
   var GUIDED_TOPIC_BACKSTOP_MS = 5 * 60 * 1000;
-  var GUIDED_TOPIC_BACKSTOP_CHECK_MS = 15000;
+  var GUIDED_TOPIC_BACKSTOP_CHECK_MS = 5000;
+
+  // VTID-03799: the ABSOLUTE ceiling above is unchanged, but it is no longer
+  // the only trigger — it was far too slow to be the thing that opens the
+  // Well Done drawer, so in practice nothing ever opened it automatically.
+  //
+  // Simply shortening the absolute timer is the wrong fix and would have
+  // broken lessons: it counts from the TAP, so a short fixed value fires
+  // mid-lesson. Measured on staging, topic T004 (2026-08-31 12:23): that
+  // session was still actively conversing 68s after the tap — turns at
+  // +11s, +40s, +55s, +68s. A 60s fixed backstop would have cut it off
+  // between the third and fourth turn. That is precisely the failure
+  // VTID-03680 (auto-close cut the lesson short) and VTID-03784 (false
+  // completion) already cost this chain.
+  //
+  // So the trigger is IDLE, not elapsed: fire once the conversation has
+  // actually gone quiet for this long. Model audio, a completed turn, and
+  // the user speaking all count as life and reset it (_touchGuidedTopicActivity).
+  //
+  // 45s is deliberately longer than a thinking pause: after the lesson the
+  // model typically asks "any questions?", and a user composing a reply is
+  // not a finished lesson. Anything the user says resets it anyway, so the
+  // cost of it being slightly long is a few extra seconds of silence, while
+  // the cost of it being short is amputating a live lesson.
+  var GUIDED_TOPIC_IDLE_MS = 45 * 1000;
+
+  // VTID-03799: idle only starts counting once turn-1 audio has actually
+  // been delivered. Before that, silence means "still connecting /
+  // synthesising narration", not "finished" — without this guard a slow
+  // Polly render or a Nova reconnect would look exactly like a completed
+  // lesson and auto-complete a topic the user never heard (VTID-03784).
+  function _touchGuidedTopicActivity() {
+    if (!_s._guidedTopicOpenedAt) return; // no guided topic in flight
+    _s._guidedTopicLastActivityAt = Date.now();
+  }
 
   // VTID-03762: shared teardown for both the model-driven
   // end_guided_topic_teaching directive and the backstop timer below —
@@ -4266,6 +4583,16 @@
   // instead of guessing a fixed delay, so an in-flight closing line is
   // never truncated).
   function _endGuidedTopicTeaching(topicId, reason) {
+    // VTID-03781: idempotency guard — see _guidedTopicTeachingEnded's own
+    // declaration for why this is needed (tool-call + backstop can both
+    // fire for the same teaching session). Must be the very first thing
+    // this function does, synchronously, before any async poll starts, so
+    // a second concurrent call can never race past this check.
+    if (_s._guidedTopicTeachingEnded) {
+      console.log('[VTOrb] _endGuidedTopicTeaching: already ended this teaching session, ignoring duplicate signal (reason=' + reason + ')');
+      return;
+    }
+    _s._guidedTopicTeachingEnded = true;
     var attempts = 0;
     // VTID-03763: pin the session generation this poll belongs to at the
     // moment teaching-end was signalled — see the identical guard on
@@ -4314,12 +4641,44 @@
     _s._disconnectActive = false;
     _s._disconnectStuck = false;
     _s._isReconnecting = false;
+    // VTID-03799: a guided lesson that ACTUALLY PLAYED and is now being closed
+    // is a completed lesson — credit it before the flags below are cleared.
+    //
+    // Everything downstream of completion (the "Well done!" drawer,
+    // completePractice, the Index reward) hangs off onGuidedTopicTeachingEnd,
+    // which until now could only be reached by the model choosing to call
+    // end_guided_topic_teaching, or by the 5-minute backstop. Live
+    // (staging, T005, 2026-08-31): the tool was never called, the session was
+    // closed server-side long before the backstop, and _hide() wiped the
+    // flags — so the drawer never opened and the step was never marked done,
+    // even though the user had heard the whole lesson. That covers BOTH the
+    // X button and a server-ended session, since both land here.
+    //
+    // Gated on _guidedTopicAudioDelivered deliberately: it is only true once
+    // turn-1 audio actually finished, so closing a lesson that never played
+    // (a failed open, an instant dismiss) does NOT mark the step complete.
+    // That is the same false-completion VTID-03784 had to remove, and this
+    // must not reintroduce it from the other direction.
+    //
+    // _endGuidedTopicTeaching() sets _guidedTopicTeachingEnded BEFORE it calls
+    // _hide(), so when the model's own tool call is what got us here this is
+    // already true and nothing double-fires.
+    var _pendingGuidedCompletion = null;
+    if (_s._guidedTopicInFlight && _s._guidedTopicAudioDelivered && !_s._guidedTopicTeachingEnded) {
+      _pendingGuidedCompletion = _s._guidedTopicInFlight;
+      _s._guidedTopicTeachingEnded = true;
+      console.log('[VTOrb] _hide: guided lesson ' + _pendingGuidedCompletion +
+        ' was delivered and is being closed — crediting completion (VTID-03799)');
+    }
+
     _s.guidedAutoClose = false; // VTID-03294 (#4): clear any pending guided auto-close
     _s.guidedTopic = null; // VTID-03675: don't let a never-delivered topic leak into a later, unrelated session
     _s._guidedTopicInFlight = null; // VTID-03746: same lifecycle — this overlay session is genuinely over
     _s._guidedTopicAudioDelivered = false; // VTID-03774: same lifecycle
+    _s._guidedTopicNarrated = false; // VTID-03800: same lifecycle — a later topic must re-earn this
     _s._guidedTopicZeroAudioFailCount = 0; // VTID-03776: same lifecycle
     _s._guidedTopicOpenedAt = null; // VTID-03762: same lifecycle — the backstop no longer applies
+    _s._guidedTopicLastActivityAt = null; // VTID-03799: same lifecycle as the backstop it drives
     try { clearInterval(_s._guidedTopicBackstopInterval); } catch (e) { /* noop */ }
     _s._guidedTopicBackstopInterval = null;
     _s._audioEverHeardThisOpen = false; // VTID-03727: this overlay session is genuinely over
@@ -4354,6 +4713,19 @@
     _sessionStop();
     _restoreSoundscape();
     if (_cfg.onClose) try { _cfg.onClose(); } catch (e) { /* ignore */ }
+
+    // VTID-03799: fire the delivered-lesson completion AFTER teardown, so the
+    // "Well done!" drawer opens over a closed overlay rather than racing it.
+    // Deferred a tick for the same reason _endGuidedTopicTeaching waits for
+    // its audio drain — the host's handler navigates/opens UI, and doing that
+    // synchronously inside _hide() would run it mid-teardown.
+    if (_pendingGuidedCompletion && typeof _cfg.onGuidedTopicTeachingEnd === 'function') {
+      var _completedTopicId = _pendingGuidedCompletion;
+      setTimeout(function () {
+        try { _cfg.onGuidedTopicTeachingEnd(_completedTopicId, 'overlay_closed_after_delivery'); }
+        catch (e) { console.error('[VTOrb] onGuidedTopicTeachingEnd (overlay close) handler failed:', e); }
+      }, 0);
+    }
   }
 
   // DEV-COMHU-0503: intentional forget — logout / account switch / "start over".
@@ -4446,9 +4818,33 @@
       if (_s._guidedTopicZeroAudioFailCount >= 2) {
         console.warn('[VTOrb] _attemptReconnect: guided topic ' + _s._guidedTopicInFlight +
           ' failed ' + _s._guidedTopicZeroAudioFailCount + 'x with no audio ever heard — ' +
-          'dropping it for this session, falling back to generic conversation');
+          'dropping it and stopping instead of silently opening unrelated conversation');
         _s.guidedTopic = null;
         _s._guidedTopicInFlight = null;
+        // VTID-03782: used to fall through to the normal reconnect below,
+        // which silently opened unrelated conversation with no end signal
+        // possible (see this VTID's own test file for the live evidence).
+        // Stop honestly via the same tap-to-reconnect state
+        // MAX_WIDGET_RECONNECTS already uses, instead of degrading into an
+        // unbounded chat the person can't distinguish from their lesson.
+        //
+        // Codex review (same PR): _enterStuckState() alone is not enough
+        // here. _resetAndReconnect()'s own comment confirms _disconnectActive
+        // is deliberately left true so the 5s _recoveryWatchdog health-probe
+        // can auto-recover once the gateway answers again — correct for a
+        // real network outage, but this breaker trips on a REACHABLE
+        // gateway (nova_validation rejected the content, not a dropped
+        // connection), so that probe would succeed within ~5s and silently
+        // call _resetAndReconnect() on our behalf — reopening the exact
+        // unrelated conversation this stop exists to prevent, just delayed.
+        // Cancel the watchdog and clear _disconnectActive so only an
+        // explicit tap (gated on _disconnectStuck, already set by
+        // _enterStuckState()) can resume from here.
+        try { clearInterval(_s._recoveryWatchdog); } catch (e) { /* noop */ }
+        _s._recoveryWatchdog = null;
+        _s._disconnectActive = false;
+        _enterStuckState();
+        return;
       }
     }
 
@@ -4514,7 +4910,7 @@
       // through to a generic/newday-style greeting. Live-reproduced
       // (staging): a 44-second, 497-audio-chunk T007 teaching session
       // disconnected mid-lesson and the reconnect had nothing to resume.
-      if (_s._guidedTopicInFlight && !_s.guidedTopic) {
+      if (_shouldResumeGuidedTopic()) {
         console.log('[VTOrb] _attemptReconnect: re-arming guided topic for resume: ' + _s._guidedTopicInFlight);
         _s.guidedTopic = _s._guidedTopicInFlight;
       }
@@ -4562,6 +4958,33 @@
     console.warn('[VTOrb] _enterStuckState: reconnect budget exhausted — switching to tap-to-reconnect');
     _s._isReconnecting = false;
     _s._disconnectStuck = true;
+    // VTID-03784: the VTID-03762 guided-topic backstop timer is armed in
+    // focusGuidedTopic() and, until now, was only ever cancelled by _hide()
+    // — which no path into this stuck state calls (the overlay stays up so
+    // the user can tap to retry). Left running, the backstop fires 5
+    // minutes later and calls _endGuidedTopicTeaching('backstop_timeout'),
+    // awarding false step-completion credit (Well-done drawer, +index
+    // points) for a lesson that was never delivered — live-reproduced on
+    // staging via the VTID-03782 circuit breaker path (2 consecutive
+    // zero-audio nova_validation failures -> stuck here -> backstop still
+    // fired ~5 min later).
+    //
+    // Codex review (same PR): only safe to cancel when the topic has
+    // actually been DROPPED (the circuit breaker nulls _guidedTopicInFlight
+    // before calling here). MAX_WIDGET_RECONNECTS exhaustion does NOT null
+    // it, and _resetAndReconnect() (the tap-to-reconnect handler and the
+    // health-probe watchdog) explicitly re-arms _s.guidedTopic from
+    // _guidedTopicInFlight to RESUME the same lesson — cancelling the
+    // backstop unconditionally would strip the resumed session of the only
+    // protection against the model never calling end_guided_topic_teaching
+    // after reconnecting, exactly the unbounded-conversation defect
+    // VTID-03762 exists to prevent. Gate on _guidedTopicInFlight being
+    // already null (genuinely dropped, nothing left to resume).
+    if (!_s._guidedTopicInFlight) {
+      _s._guidedTopicOpenedAt = null;
+      try { clearInterval(_s._guidedTopicBackstopInterval); } catch (e) { /* noop */ }
+      _s._guidedTopicBackstopInterval = null;
+    }
     _setOrbState('error');
     _setStatus(_caption('tapToReconnect'));
     _updateUI();
@@ -4679,6 +5102,31 @@
       // VTID-NAV: Vitana Navigator close-and-navigate callback. Host React Router
       // hooks pass a function here that calls navigate(url) for SPA transitions.
       if (typeof opts.onNavigationRequest === 'function') _cfg.onNavigationRequest = opts.onNavigationRequest;
+      // VTID-03799 (live-probe finding): these three were READ by the widget
+      // but never copied out of `opts`, so `_cfg.onGuidedTopicTeachingEnd` was
+      // permanently undefined and BOTH of its fire sites — VTID-03762/03763's
+      // teaching-end signal and VTID-03799's close-after-delivery crediting —
+      // were structurally unreachable in the real app.
+      //
+      // That is the second half of "no Well Done drawer": vitana-v1's
+      // useOrbVoiceWidget.ts does pass `onGuidedTopicTeachingEnd` inside
+      // navOpts to `orb.init(navOpts)` (it dispatches the
+      // `vitana:guided-topic-teaching-complete` event GuidedJourneyCatalog
+      // listens for), and init() dropped it on the floor. Confirmed against
+      // the DEPLOYED bundle, not just this source.
+      //
+      // Caught by a live browser probe, not by tests: the widget's suites are
+      // static source checks, so they assert a fire site EXISTS and can never
+      // notice that nothing populates `_cfg`. `orb-widget-host-callbacks.test.ts`
+      // now closes that class by diffing every `_cfg.onX` read against the
+      // `opts.onX` assignments here.
+      //
+      // `onTeachingSessionEnd` and `onTurnComplete` are wired for the same
+      // reason and are zero-behaviour-change today: each only fires when a
+      // host explicitly passes a function, and no host passes either.
+      if (typeof opts.onGuidedTopicTeachingEnd === 'function') _cfg.onGuidedTopicTeachingEnd = opts.onGuidedTopicTeachingEnd;
+      if (typeof opts.onTeachingSessionEnd === 'function') _cfg.onTeachingSessionEnd = opts.onTeachingSessionEnd;
+      if (typeof opts.onTurnComplete === 'function') _cfg.onTurnComplete = opts.onTurnComplete;
       // VTID-NAV: Optional initial context — current page + recent routes — so
       // the very first session has Navigator context even before any route
       // change has been observed by the React Router listener.
@@ -4708,6 +5156,11 @@
       // orb tap skips the 400-800ms context build on the
       // click-to-first-audio path. Anonymous = server-side no-op.
       _prewarmBootstrap();
+      // VTID-03779: also open (and prewarm) the WS transport itself, so a
+      // cold start becomes a warm one — see _prewarmNovaWs's own comment.
+      // No-op for anonymous callers and whenever the WS transport isn't in
+      // play; the real session start falls back to a cold connect either way.
+      _prewarmNovaWs();
       // VTID-03471: resolve the server's transport preference (kill switch)
       // in parallel with the prewarm. Unauthenticated, so anonymous sessions
       // get it too.
@@ -4764,6 +5217,14 @@
       // BOOTSTRAP-ORB-LATENCY-PHASE2: warm the (possibly new) identity's
       // bootstrap context so the next orb tap starts fast.
       _prewarmBootstrap();
+      // VTID-03779 (Codex review, PR #3218): also (re-)warm the Nova
+      // socket here, not just in init(). A host following the documented
+      // reactive-auth pattern calls init() BEFORE login resolves — that
+      // call's own _prewarmNovaWs() is a no-op (no token yet) — so setAuth
+      // is the ONLY place the Nova prewarm ever actually fires for that
+      // flow. Missing this meant the standard reactive-login path never
+      // warmed a connection at all.
+      _prewarmNovaWs();
     },
 
     // DEV-COMHU-0502: explicit logout / account-switch / "start over". Tears
@@ -4820,9 +5281,18 @@
       // VTID-03774: a fresh tap means nothing has been delivered for THIS
       // topic yet — reset even if a previous topic's flag was left true.
       _s._guidedTopicAudioDelivered = false;
+      // VTID-03800: likewise — this topic must earn its own narration flag,
+      // or a previous topic's leftover true would terminally close this one
+      // at turn 1 before its lesson had been delivered.
+      _s._guidedTopicNarrated = false;
       // VTID-03776: a fresh tap is a clean slate for the zero-audio circuit
       // breaker too — a previous topic's failure count must not carry over.
       _s._guidedTopicZeroAudioFailCount = 0;
+      // VTID-03781: a fresh tap is a brand-new teaching session — it must
+      // get its own single completion, not inherit a previous topic's
+      // already-fired idempotency guard (which would silently no-op this
+      // topic's own, genuinely first, completion signal).
+      _s._guidedTopicTeachingEnded = false;
       // VTID-03762: arm the backstop — see GUIDED_TOPIC_BACKSTOP_MS's own
       // comment for why this exists. Only for a real topic tap; a null
       // topicId (defensive fallback path) has nothing to backstop.
@@ -4830,18 +5300,31 @@
       _s._guidedTopicBackstopInterval = null;
       if (_s.guidedTopic) {
         _s._guidedTopicOpenedAt = Date.now();
+        _s._guidedTopicLastActivityAt = Date.now(); // VTID-03799: idle clock starts with the tap
         _s._guidedTopicBackstopInterval = setInterval(function () {
           if (!_s._guidedTopicOpenedAt) {
             clearInterval(_s._guidedTopicBackstopInterval);
             _s._guidedTopicBackstopInterval = null;
             return;
           }
-          if (Date.now() - _s._guidedTopicOpenedAt >= GUIDED_TOPIC_BACKSTOP_MS) {
+          var _now = Date.now();
+          var _elapsed = _now - _s._guidedTopicOpenedAt;
+          // VTID-03799: idle is only meaningful once the lesson has actually
+          // been heard — see GUIDED_TOPIC_IDLE_MS. Until then only the
+          // absolute ceiling can fire, exactly as before this change.
+          var _idle = (_s._guidedTopicAudioDelivered && _s._guidedTopicLastActivityAt)
+            ? (_now - _s._guidedTopicLastActivityAt)
+            : 0;
+          var _idleFired = _idle >= GUIDED_TOPIC_IDLE_MS;
+          var _ceilingFired = _elapsed >= GUIDED_TOPIC_BACKSTOP_MS;
+          if (_idleFired || _ceilingFired) {
             clearInterval(_s._guidedTopicBackstopInterval);
             _s._guidedTopicBackstopInterval = null;
             var _stuckTopicId = _s.guidedTopic || _s._guidedTopicInFlight || null;
-            console.warn('[VTOrb] guided-topic backstop fired after ' + GUIDED_TOPIC_BACKSTOP_MS + 'ms with no end_guided_topic_teaching call (topic=' + _stuckTopicId + ') — closing overlay');
-            _endGuidedTopicTeaching(_stuckTopicId, 'backstop_timeout');
+            var _reason = _idleFired ? 'idle_after_lesson' : 'backstop_timeout';
+            console.warn('[VTOrb] guided-topic ' + _reason + ' fired (topic=' + _stuckTopicId
+              + ', idle=' + _idle + 'ms, elapsed=' + _elapsed + 'ms) with no end_guided_topic_teaching call — closing overlay');
+            _endGuidedTopicTeaching(_stuckTopicId, _reason);
           }
         }, GUIDED_TOPIC_BACKSTOP_CHECK_MS);
       } else {

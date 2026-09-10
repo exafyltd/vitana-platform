@@ -42,7 +42,7 @@ describe('GET /api/v1/admin/aurora-rls-health', () => {
     mockCallerUserId = 'user-abc-123';
   });
 
-  it('reports configured:false when AURORA_DATABASE_URL is unset, without touching withAuroraRlsContext', async () => {
+  it('reports configured:false when AURORA_RLS_DATABASE_URL is unset, without touching withAuroraRlsContext', async () => {
     mockGetAuroraPool.mockReturnValue(null);
 
     const res = await request(app).get('/api/v1/admin/aurora-rls-health');

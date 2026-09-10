@@ -1,0 +1,38 @@
+$ cd services/gateway && npx jest test/save-diary-entry-shared.test.ts --silent
+PASS test/save-diary-entry-shared.test.ts
+Test Suites: 1 passed, 1 total
+Tests:       15 passed, 15 total
+(full output: ./outputs/jest-save-diary-entry.txt)
+(exit 0)
+
+$ npx jest test/orb/live/characterization/ --silent
+PASS (31 suites)
+Test Suites: 31 passed, 31 total
+Tests:       320 passed, 320 total
+Snapshots:   9 passed, 9 total
+(full output: ./outputs/jest-characterization.txt)
+(exit 0)
+
+$ npx jest test/orb/live/ test/save-diary-entry-shared.test.ts --silent
+Test Suites: 109 passed, 109 total
+Tests:       1452 passed, 1452 total
+Snapshots:   9 passed, 9 total
+(exit 0)
+
+$ npx jest --silent   (full gateway suite)
+Test Suites: 1 skipped, 727 passed, 727 of 728 total
+Tests:       29 skipped, 6 todo, 13577 passed, 13612 total
+Snapshots:   44 passed, 44 total
+Time:        92.242 s
+(1 skipped suite is pre-existing, unrelated to this change)
+(exit 0)
+
+$ npx tsc --noEmit
+(no output — 0 errors)
+(full output: ./outputs/tsc-noemit.txt)
+(exit 0)
+
+$ npm run build
+> tsc && npm run copy-frontend && npm run copy-data
+(completed cleanly, dist/ is gitignored per services/gateway/.gitignore)
+(exit 0)

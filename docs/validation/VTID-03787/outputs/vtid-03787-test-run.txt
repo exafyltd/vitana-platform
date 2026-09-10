@@ -1,0 +1,23 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb/live/upstream/staging-nova-instruction-debug-flag-pinned.test.ts
+  VTID-03787: staging pins ORB_LOG_NOVA_INSTRUCTION_DEBUG, prod never does
+    ✓ upserts the flag as exact-"true" on staging (3 ms)
+    ✓ strips the inherited value first, so a stale one cannot survive (1 ms)
+    ✓ is NEVER set on the prod deploy workflow — the dumped text carries user context (1 ms)
+  VTID-03787: orb-live.ts gates the instruction dump behind the exact-"true" env check
+    ✓ reads process.env.ORB_LOG_NOVA_INSTRUCTION_DEBUG === 'true' before emitting (1 ms)
+    ✓ emits the literal novaSystemInstruction text on the diag stage nova_instruction_debug_dump (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       5 passed, 5 total
+Snapshots:   0 total
+Time:        0.597 s, estimated 1 s
+Ran all test suites matching /test\/orb\/live\/upstream\/staging-nova-instruction-debug-flag-pinned.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

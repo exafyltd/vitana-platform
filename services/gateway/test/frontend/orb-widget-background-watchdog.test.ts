@@ -41,7 +41,35 @@ describe('orb-widget background/idle watchdog (mobile overheating fix)', () => {
 
   it('ends the session instead of leaving it running when backgrounding is detected', () => {
     const body = extractFunctionBody(source, 'function _startBackgroundWatchdog()');
-    expect(body).toMatch(/_sessionStop\(\)/);
+    expect(body).toMatch(/_hide\(\)/);
+  });
+
+  // VTID-03783: this used to call _sessionStop() directly — the same
+  // anti-pattern VTID-03778 already fixed for the session_ended message
+  // handler in this file. _sessionStop() tears down media/SSE but never
+  // touches overlay visibility, so the overlay froze on the
+  // sessionEndedBackground caption forever with an unresponsive close
+  // button. Live-reported: "Session ended — app was in the background",
+  // X unresponsive, no Well-done drawer, step not marked done.
+  it('calls _hide() — the same full, honest teardown a real close uses — not the bare _sessionStop() that leaves the overlay frozen', () => {
+    const body = extractFunctionBody(source, 'function _startBackgroundWatchdog()');
+    const killIdx = body.indexOf('drift > BG_KILL_DRIFT_MS');
+    expect(killIdx).toBeGreaterThanOrEqual(0);
+    const blockEnd = body.indexOf('return;', killIdx);
+    expect(blockEnd).toBeGreaterThan(killIdx);
+    const killBlock = body.slice(killIdx, blockEnd);
+    expect(killBlock).not.toMatch(/^\s*_sessionStop\(\);?\s*$/m);
+    expect(killBlock).toMatch(/_hide\(\);/);
+  });
+
+  it('does NOT call _endGuidedTopicTeaching() — a background-kill must not auto-mark a step done', () => {
+    // A background suspension is not a reliable "the lesson finished"
+    // signal (the app may have been backgrounded mid-sentence). Marking a
+    // step done here would be inventing a completion the spec explicitly
+    // forbids: "user manually closes != teaching successfully completed
+    // unless product logic explicitly defines it that way."
+    const body = extractFunctionBody(source, 'function _startBackgroundWatchdog()');
+    expect(body).not.toMatch(/_endGuidedTopicTeaching\(/);
   });
 
   it('reschedules itself while the overlay is open, not gated on _s.active', () => {

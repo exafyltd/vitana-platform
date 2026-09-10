@@ -37,9 +37,14 @@ import zh from '../../src/i18n/locales/zh.json';
 // this is not treated the same as the other 8 by the coverage/fidelity/
 // placeholder suites.
 import ar from '../../src/i18n/locales/ar.json';
+// VTID-03801 — 'tr' registered AND fully translated from day one (unlike
+// 'ar' above): the gap this locale fixed was never missing content, it was
+// missing REGISTRATION (GATEWAY_LOCALES had no 'tr' entry, so `?locale=tr`
+// was rejected outright before ever reaching a translation). See tr.json.
+import tr from '../../src/i18n/locales/tr.json';
 
 const RAW: Record<GatewayLocale, Record<string, string>> = {
-  de, en, es, sr, fr, pt, ru, pl, zh, ar,
+  de, en, es, sr, fr, pt, ru, pl, zh, ar, tr,
 };
 
 const KEYS = Object.keys(de) as GatewayI18nKey[];
@@ -66,13 +71,14 @@ function placeholders(s: string): string[] {
 }
 
 describe('gateway i18n catalog coverage', () => {
-  it('ships all 10 registered locales', () => {
-    // zh added VTID-03569; ar added VTID-03644. This assertion is deliberately
-    // an exact list rather than a count: it is the one place a locale silently
-    // disappearing from GATEWAY_LOCALES — and therefore falling back to German
-    // for every push notification — would be caught.
+  it('ships all 11 registered locales', () => {
+    // zh added VTID-03569; ar added VTID-03644; tr added VTID-03801. This
+    // assertion is deliberately an exact list rather than a count: it is the
+    // one place a locale silently disappearing from GATEWAY_LOCALES — and
+    // therefore falling back to German for every push notification — would
+    // be caught.
     expect([...GATEWAY_LOCALES].sort()).toEqual(
-      ['ar', 'de', 'en', 'es', 'fr', 'pl', 'pt', 'ru', 'sr', 'zh'],
+      ['ar', 'de', 'en', 'es', 'fr', 'pl', 'pt', 'ru', 'sr', 'tr', 'zh'],
     );
   });
 
@@ -101,7 +107,7 @@ describe('gateway i18n catalog fidelity', () => {
   // The `{ ...EN }` bug. A translated locale shares SOME strings with English
   // legitimately — 'Vitana' is 'Vitana' everywhere, and emoji-only values are
   // identical by design. What is not legitimate is the vast majority matching.
-  const TRANSLATED: GatewayLocale[] = ['de', 'es', 'sr', 'fr', 'pt', 'ru', 'pl', 'zh'];
+  const TRANSLATED: GatewayLocale[] = ['de', 'es', 'sr', 'fr', 'pt', 'ru', 'pl', 'zh', 'tr'];
 
   it.each(TRANSLATED)('%s is not a copy of the English catalog', (locale) => {
     const identical = KEYS.filter((k) => RAW[locale][k] === en[k]);

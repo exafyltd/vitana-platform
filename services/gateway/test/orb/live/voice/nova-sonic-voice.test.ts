@@ -6,9 +6,12 @@ import { resolveNovaSonicVoice } from '../../../../src/orb/live/voice/nova-sonic
 
 describe('resolveNovaSonicVoice', () => {
   it('maps Vitana (feminine default) per language', () => {
-    // EN reuses the DE voice (tina) — user live-test verdict 2026-07-28:
-    // Nova's native EN voice (tiffany) sounded bad, tina sounded good.
-    expect(resolveNovaSonicVoice({ language: 'en', persona: 'vitana' })).toBe('tina');
+    // VTID-03809 — EN uses `amy` (Nova 2 Sonic's native en-GB voice).
+    // History: user live-test verdict 2026-07-28 rejected native `tiffany`
+    // (en-US) and settled on `tina` (DE) reused for EN, at the cost of a
+    // German accent on English speech; a later listener disliked that and
+    // this swapped it for `amy` instead — untried in this app before now.
+    expect(resolveNovaSonicVoice({ language: 'en', persona: 'vitana' })).toBe('amy');
     expect(resolveNovaSonicVoice({ language: 'de', persona: 'vitana' })).toBe('tina');
     expect(resolveNovaSonicVoice({ language: 'fr', persona: 'vitana' })).toBe('ambre');
     expect(resolveNovaSonicVoice({ language: 'es', persona: 'vitana' })).toBe('lupe');
@@ -22,7 +25,7 @@ describe('resolveNovaSonicVoice', () => {
   // deleted test would let the split come back unnoticed.
   it('ignores persona — every persona gets the same female voice', () => {
     for (const persona of ['vitana', 'devon', 'atlas', 'sage', 'mira', 'zzz']) {
-      expect(resolveNovaSonicVoice({ language: 'en', persona })).toBe('tina');
+      expect(resolveNovaSonicVoice({ language: 'en', persona })).toBe('amy');
       expect(resolveNovaSonicVoice({ language: 'de', persona })).toBe('tina');
       expect(resolveNovaSonicVoice({ language: 'fr', persona })).toBe('ambre');
       expect(resolveNovaSonicVoice({ language: 'es', persona })).toBe('lupe');
@@ -40,17 +43,17 @@ describe('resolveNovaSonicVoice', () => {
 
   it('sage and mira use feminine voices', () => {
     expect(resolveNovaSonicVoice({ language: 'de', persona: 'sage' })).toBe('tina');
-    expect(resolveNovaSonicVoice({ language: 'en', persona: 'mira' })).toBe('tina');
+    expect(resolveNovaSonicVoice({ language: 'en', persona: 'mira' })).toBe('amy');
   });
 
   it('unknown/absent persona falls back to the feminine voice', () => {
     expect(resolveNovaSonicVoice({ language: 'de' })).toBe('tina');
-    expect(resolveNovaSonicVoice({ language: 'en', persona: 'zzz' })).toBe('tina');
+    expect(resolveNovaSonicVoice({ language: 'en', persona: 'zzz' })).toBe('amy');
   });
 
   it('handles regional tags and casing', () => {
     expect(resolveNovaSonicVoice({ language: 'de-DE', persona: 'devon' })).toBe('tina');
-    expect(resolveNovaSonicVoice({ language: 'EN_us', persona: 'vitana' })).toBe('tina');
+    expect(resolveNovaSonicVoice({ language: 'EN_us', persona: 'vitana' })).toBe('amy');
   });
 
   it('returns null for languages outside the Nova canary (callers must have fallen back)', () => {

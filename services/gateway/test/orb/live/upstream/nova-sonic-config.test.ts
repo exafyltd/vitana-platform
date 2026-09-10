@@ -228,13 +228,18 @@ describe('parseUuidAllowlist', () => {
 });
 
 describe('isNovaSonicLanguageSupported', () => {
-  it('accepts the four canary languages incl. regional tags', () => {
-    for (const l of ['en', 'de', 'fr', 'es', 'de-DE', 'en_US', 'FR']) {
+  it('accepts en/de incl. regional tags', () => {
+    for (const l of ['en', 'de', 'de-DE', 'en_US']) {
       expect(isNovaSonicLanguageSupported(l)).toBe(true);
     }
   });
-  it('rejects everything else', () => {
-    for (const l of ['sr', 'ru', 'zh', 'ar', '', undefined, null]) {
+  it('rejects everything else, including fr/es (VTID-03803)', () => {
+    // fr/es were found live-answering in English despite being "Nova-native"
+    // on paper — same defect class as pt (VTID-03704) — and now route
+    // through the Polly cascade instead. This assertion is the one that
+    // would go GREEN again if someone re-added them here without also
+    // re-litigating whether Nova's language reliability actually improved.
+    for (const l of ['fr', 'es', 'FR', 'es-ES', 'sr', 'ru', 'zh', 'ar', '', undefined, null]) {
       expect(isNovaSonicLanguageSupported(l as any)).toBe(false);
     }
   });
@@ -275,7 +280,7 @@ describe('buildNovaSonicHealthPayload', () => {
       model: 'amazon.nova-2-sonic-v1:0',
       region: 'eu-north-1',
       credential_source: 'ecs_task_role',
-      supported_languages: ['en', 'de', 'fr', 'es'],
+      supported_languages: ['en', 'de'],
       canary_user_count: 0,
       canary_tenant_count: 0,
       // VTID-03501: global promotion flag. Additive; false by default, so a

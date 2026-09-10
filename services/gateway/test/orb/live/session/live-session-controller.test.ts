@@ -820,6 +820,47 @@ describe('A8.2.1: handleLiveSessionStart', () => {
     expect(created!.transcriptTurns[0].role).toBe('user');
   });
 
+  // VTID-03794: live-reproduced on staging. A healthy, multi-turn
+  // conversation disconnected (server-observed `client_disconnect`, an ALB
+  // idle-timeout close, not a user action) during a quiet moment between
+  // turns. orb-widget.js correctly detects this and sends
+  // `reconnect_stage: 'idle'` on the reconnect's start payload (a disconnect
+  // during silence is a real, common case, not a bug on the client) — but
+  // whenever `transcript_history` also happened to be empty for that
+  // request, the OLD formula (`transcript_history.length > 0 ||
+  // reconnect_stage !== 'idle'`) could not tell "explicitly idle, sent by a
+  // reconnecting client" apart from "field absent, a brand-new session" —
+  // both normalize to the same `reconnectStage==='idle'` value. The result:
+  // a mid-conversation reconnect got treated as a first-time open and
+  // relit a full wake-brief greeting (observed: `wake_opener:
+  // safe_fast_newday_overview`, a "new day" opener) instead of the
+  // VTID-02020 contextual recovery prompt this payload exists to trigger.
+  it('marks reconnect session with resumedFromHistory when reconnect_stage is explicitly "idle" and transcript_history is empty', async () => {
+    configureLiveSessionController(baseDeps());
+    const req = makeReq({
+      body: {
+        reconnect_stage: 'idle',
+        transcript_history: [],
+      },
+    });
+    const res = makeRes();
+    await handleLiveSessionStart(req, res);
+    const payload = (res.json.mock.calls[0][0]) as any;
+    const created = liveSessions.get(payload.session_id);
+    expect((created as any).resumedFromHistory).toBe(true);
+    expect((created as any).reconnectStage).toBe('idle');
+  });
+
+  it('does NOT mark a brand-new session (no reconnect_stage field at all) as resumedFromHistory', async () => {
+    configureLiveSessionController(baseDeps());
+    const req = makeReq({ body: {} });
+    const res = makeRes();
+    await handleLiveSessionStart(req, res);
+    const payload = (res.json.mock.calls[0][0]) as any;
+    const created = liveSessions.get(payload.session_id);
+    expect((created as any).resumedFromHistory).toBeUndefined();
+  });
+
   // VTID-03774 (Codex review follow-up): guided_topic_resume must reach the
   // session object exactly like guided_topic_id does, so
   // decideWakeBriefForSession (and guided-topic-narration's isResume) can

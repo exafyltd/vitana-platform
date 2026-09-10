@@ -1,0 +1,111 @@
+# VTID-03799 — commands run, in order
+
+## Reproduction / diagnosis (read-only against staging telemetry)
+
+# Live trace of the reported session (topic T005, staging, 2026-08-31).
+# Read-only SELECT against oasis_events; no writes, no test content created.
+SELECT type, status, message, payload, created_at
+  FROM oasis_events
+ WHERE created_at > now() - interval '2 hours'
+   AND (payload->>'guided_topic_id' = 'T005' OR message ILIKE '%guided%')
+ ORDER BY created_at;
+
+## Source reading
+
+grep -n "_shouldResumeGuidedTopic\|_s.guidedTopic = _s._guidedTopicInFlight\|_guidedTopicAudioDelivered\|guidedAutoClose" \
+  services/gateway/src/frontend/command-hub/orb-widget.js
+
+## Verification
+
+cd services/gateway
+
+node --check src/frontend/command-hub/orb-widget.js
+# -> WIDGET PARSES OK
+
+npx tsc --noEmit
+# -> clean (exit 0)
+
+npx jest test/frontend/guided-topic-replay-loop.test.ts \
+         test/frontend/orb-widget-guided-topic-mid-lesson-resume.test.ts \
+         test/frontend/orb-widget-guided-topic-backstop-stuck-state.test.ts
+# -> 3 suites passed, 46 tests passed
+# -> outputs/jest-guided-topic-suites.txt
+
+npx jest
+# -> Test Suites: 1 skipped, 731 passed, 731 of 732 total
+# -> Tests: 29 skipped, 6 todo, 13621 passed, 13656 total
+# -> Snapshots: 44 passed, 44 total
+# -> outputs/jest-full-suite.txt
+
+## Mutation verification (each defect reintroduced individually, then reverted)
+
+# A — restore the teaching-blind literal at the _sessionStart re-arm site
+#     `if (_shouldResumeGuidedTopic())` -> `if (!_s.guidedTopic && _s._guidedTopicInFlight)`
+# -> Tests: 3 failed, 43 passed, 46 total
+# -> outputs/jest-mutation-A-teaching-blind-rearm.txt
+
+# B — re-nest the delivered flag inside the one-shot guidedAutoClose block
+# -> Tests: 3 failed, 43 passed, 46 total
+# -> outputs/jest-mutation-B-delivered-flag-renested.txt
+
+# C — neuter the completion crediting: `if (false && _s._guidedTopicInFlight && ...)`
+# -> FIRST RUN: 46 passed — the mutation was NOT caught. The assertion matched a
+#    substring of the condition, so a disabled gate passed. Real hole in this
+#    VTID's own tests, found by running the mutation rather than assuming it.
+#    Assertion tightened to pin the whole condition anchored on `if (` and `) {`.
+# -> RE-RUN: Tests: 1 failed, 13 passed, 14 total
+# -> outputs/jest-mutation-C-no-completion-crediting.txt
+
+# widget restored from backup and re-verified clean after every mutation
+npx jest test/frontend/
+# -> 25 suites passed, 198 tests passed
+
+## Governance
+
+# VTID allocated through the gateway allocator (the ledger had no VTID-03799;
+# the number in the code comments was NOT fabricated after this call).
+curl -s -X POST "https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate" \
+  -H "Content-Type: application/json" \
+  -d '{"source":"claude-code","layer":"frontend","module":"orb-widget-guided-topic"}'
+# -> {"ok":true,"vtid":"VTID-03799","num":3799,"id":"cc0a968c-..."}  HTTP 201
+
+# title/summary set, status=in_progress, spec_status=approved (§4.1 step 4)
+UPDATE vtid_ledger SET title = '...', status = 'in_progress', spec_status = 'approved'
+ WHERE vtid = 'VTID-03799';
+
+## CI gates reproduced locally before re-pushing
+
+node scripts/ci/validator-path-guard.cjs /tmp/changed_files.txt gateway_backend /tmp/pr_body.txt
+node scripts/ci/command-hub-ownership-guard.js
+npx jest test/ci/
+
+## Live probe against staging b4a48529 (follow-up round)
+
+# convergence first — an earlier round read 7 new / 8 old (mixed builds)
+for i in $(seq 1 12); do curl -s ".../api/v1/admin/build-info?r=$i"; done
+# -> CONVERGED 12/12 on b4a4852975074b86d36867af3e17006cd6b994ba
+
+# grep the DEPLOYED bundle, not the repo source
+curl -s "https://preview-aws-gateway.vitanaland.com/command-hub/orb-widget.js" -o deployed-widget.js
+grep -c "function _shouldResumeGuidedTopic()" deployed-widget.js   # 1
+grep -c "if (_shouldResumeGuidedTopic())"     deployed-widget.js   # 3
+grep -c "overlay_closed_after_delivery"       deployed-widget.js   # 1
+
+# the finding: read-vs-assigned diff on host callbacks
+grep -oE "_cfg\.on[A-Za-z]+"  deployed-widget.js | sort -u   # 9 callbacks read
+grep -oE "opts\.on[A-Za-z]+"  deployed-widget.js | sort -u   # only 6 assigned
+# dropped: onGuidedTopicTeachingEnd, onTeachingSessionEnd, onTurnComplete
+grep -n "Object.assign(_cfg\|_cfg\[\|for (var k in opts" deployed-widget.js  # none
+
+# the host really does pass it
+grep -n "onGuidedTopicTeachingEnd" /home/user/vitana-v1/src/hooks/useOrbVoiceWidget.ts
+grep -n "orb.init(navOpts)" /home/user/vitana-v1/src/hooks/useOrbVoiceWidget.ts
+
+## Verification of the follow-up fix
+
+npx jest test/frontend/orb-widget-host-callbacks.test.ts   # 5 passed
+npx tsc --noEmit                                           # clean
+npx jest                                                   # 732/733 suites, 13,626 passing, 0 failures
+
+# mutation D — remove the onGuidedTopicTeachingEnd wiring (the live defect)
+# -> 3 failed, 2 passed. The 2 passing are the demonstrated blind spot.

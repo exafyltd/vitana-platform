@@ -1,0 +1,97 @@
+VTID-03788 — commands.log
+==========================
+
+## Discovery
+
+After PR #3226 (VTID-03787) merged (sha 4a88b1dc), sampled staging
+build-info 20x over ~60s — every sample still reported the PRE-merge
+commit 005cd4be.
+
+$ (via GitHub Actions MCP) list_workflow_runs AWS-STAGE-DEPLOY-GATEWAY.yml
+-> last 5 runs: 4 consecutive "failure" (7370c289, e174d85a, 2ba5d7bf,
+   4a88b1dc), then "success" for the prior commit 005cd4be.
+
+$ (via GitHub Actions MCP) list_workflow_jobs for run 33174044946 (the
+  4a88b1dc merge-commit run)
+-> {"jobs":{"total_count":0,"jobs":[]}}
+   Same result for the very first run (33172965619, commit 7370c289).
+   0 jobs = failed before any job step executed.
+
+## Root-cause isolation
+
+Extracted the "Register task-definition revision + roll the service"
+step's `run: |` script (the block from `NEW_DEF=$(aws ecs
+describe-task-definition` through `echo "Service stable on $NEW_ARN"`)
+via a small python script, stripped YAML indentation, wrote to
+/tmp/extracted_step.sh, ran:
+
+$ bash -n /tmp/extracted_step.sh
+/tmp/extracted_step.sh: line 87: syntax error near unexpected token `|'
+/tmp/extracted_step.sh: line 87: `      | .containerDefinitions[0].secrets |='
+
+Read the surrounding jq program (lines ~443-536 of the workflow file) —
+confirmed my own VTID-03787 comment block (added for
+ORB_LOG_NOVA_INSTRUCTION_DEBUG) lived INSIDE the single-quoted jq
+program passed to `jq`, and contained the text "the user's memory and
+personalization context" — the apostrophe in "user's" closes the
+enclosing bash single-quote early.
+
+Confirmed this is a known, previously-hit defect class: lines 434-441 of
+the SAME file (pre-existing, from an earlier VTID) explicitly document an
+identical incident and instruct that jq-program comments must live
+OUTSIDE the single-quoted string, specifically to avoid this. My comment
+violated that documented rule.
+
+## Fix
+
+Edited .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml — reworded the
+ORB_LOG_NOVA_INSTRUCTION_DEBUG comment to remove the apostrophe ("the
+user's" -> "real user"), and added an explicit line-item warning inside
+the comment itself flagging this as the second incident of the class.
+
+$ bash -n /tmp/extracted_step2.sh   (re-extracted after the fix)
+(clean, exit 0)
+
+## New regression test
+
+Added services/gateway/test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts
+— parses both AWS-STAGE-DEPLOY-GATEWAY.yml and AWS-PROD-DEPLOY-GATEWAY.yml
+with js-yaml, extracts every job's every `run:` step, shells each out to
+`bash -n`, plus a narrower test isolating the task-def-update step's jq
+program and asserting no apostrophe survives in it.
+
+$ npx jest test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts
+PASS — 5/5
+
+## Mutation verification
+
+Reintroduced the exact bug (swapped "real user" back to "the user's") in
+the live workflow file, re-ran:
+
+$ npx jest test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts
+FAIL — 2/5 (the bash -n step test + the apostrophe-absence test), 3/5
+       still passing (PROD workflow tests + sanity checks, correctly
+       unaffected by a STAGE-only mutation)
+
+Restored from /tmp/stage-workflow.bak, diffed clean (RESTORED_CLEAN),
+re-ran:
+
+$ npx jest test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts
+PASS — 5/5
+
+## Full verification
+
+$ npx tsc --noEmit
+(clean, exit 0)
+
+$ npx jest
+PASS — 722/723 suites (1 pre-existing skip), 13530/13565 tests passing
+       (13525 before this VTID's +5 new tests), 0 failures
+
+## Governance
+
+command-hub-ownership-guard.js NOT touched — changes are a test file and
+a .github/workflows/*.yml file, outside PROTECTED_PATH scope.
+
+No application runtime code touched (CI/deploy-pipeline fix only) — no
+OASIS event/schema impact.

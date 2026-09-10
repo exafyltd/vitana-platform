@@ -545,7 +545,11 @@ export async function runNovaSonicTestSuite(options: {
     const ok =
       resolveNovaSonicVoice({ language: 'de', persona: 'vitana' }) === 'tina' &&
       resolveNovaSonicVoice({ language: 'de', persona: 'devon' }) === 'tina' &&
-      resolveNovaSonicVoice({ language: 'en', persona: 'atlas' }) === 'tina' &&
+      // VTID-03809 — en changed from `tina` (German, reused after `tiffany`
+      // was rejected on a 07-28 live listen) to `amy` (Nova 2 Sonic's native
+      // en-GB voice), after a later listener disliked the German accent on
+      // English speech. Still persona-independent, like every other language.
+      resolveNovaSonicVoice({ language: 'en', persona: 'atlas' }) === 'amy' &&
       resolveNovaSonicVoice({ language: 'fr', persona: 'devon' }) === 'ambre' &&
       resolveNovaSonicVoice({ language: 'es', persona: 'devon' }) === 'lupe' &&
       resolveNovaSonicVoice({ language: 'pt', persona: 'vitana' }) === 'carolina' &&
@@ -557,7 +561,7 @@ export async function runNovaSonicTestSuite(options: {
       // `tina` substitution via resolveNovaSonicVoiceOrFallback, same as sr.
       resolveNovaSonicVoice({ language: 'tr', persona: 'vitana' }) === null;
     return ok
-      ? { status: 'pass', detail: 'de/en→tina, fr→ambre, es→lupe, pt→carolina (persona-independent); sr/tr→null' }
+      ? { status: 'pass', detail: 'de→tina, en→amy, fr→ambre, es→lupe, pt→carolina (persona-independent); sr/tr→null' }
       : { status: 'fail', detail: 'unexpected voice mapping' };
   }));
 

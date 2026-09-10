@@ -1,0 +1,137 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb/live/voice/voice-routing-policy.test.ts
+  VTID-03704: voice routing policy
+    rule 1 — not on Nova means Polly, except Serbian
+      ✓ routes every non-Nova language to the cascade unless Polly cannot voice it (6 ms)
+      ✓ never cascades a language Nova already speaks — speech-to-speech wins (1 ms)
+      ✓ keeps Serbian on Nova and blames Polly, the blocker that is real (1 ms)
+      ✓ leaves no language with no route at all (1 ms)
+    rule 1b — rerouting a language must not change how it SOUNDS
+      ✓ keeps a real Nova voice for a cascade-routed language Nova can still voice (1 ms)
+      ✓ only reports a substitution when Nova genuinely has no voice (17 ms)
+    rule 2 — one female voice per language, persona-independent
+      ✓ resolves the same voice for every persona, in every Nova language
+      ✓ resolves the same voice with no persona at all — the anonymous case
+      ✓ never resolves one of the retired masculine voice ids (4 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb/live/upstream/nova-sonic-config.test.ts
+  getNovaSonicConfig
+    ✓ defaults to disabled with pinned region/model (2 ms)
+    ✓ maxTokens is env-tunable and invalid values are a typed issue
+    ✓ is ready when enabled with a clean environment (1 ms)
+    ✓ a mismatched region/model override fails readiness with typed issues
+    ✓ invalid allowlist entries fail readiness rather than broadening access
+    ✓ non-numeric timers fail readiness with typed issues (1 ms)
+    ✓ VTID-03557: streamInactivityTimeoutMs defaults to 300s (AWS sample value), independent of connectTimeoutMs
+    ✓ streamInactivityTimeoutMs is env-tunable and invalid values are a typed issue, without affecting connectTimeoutMs (1 ms)
+    ✓ keep-warm accepts 0 as an explicit disable (no issue) (1 ms)
+    ✓ model-execution warm-up is env-tunable and accepts 0 as an explicit disable
+    ✓ instruction chunk size is env-tunable and accepts 0 as an explicit disable
+    ✓ non-numeric instruction chunk size fails readiness with a typed issue (1 ms)
+    ✓ defaults to HIGH — the ~1.75s MEDIUM pre-inference wait cannot fit a 2-3s target
+    ✓ endpointing sensitivity is env-tunable (case-insensitive), incl. away from the default (1 ms)
+    ✓ an invalid endpointing sensitivity fails readiness with a typed issue and keeps the safe default
+  parseUuidAllowlist
+    ✓ trims, lowercases, drops empties (1 ms)
+    ✓ returns empty set for blank input
+    ✓ returns null on any invalid entry (1 ms)
+  isNovaSonicLanguageSupported
+    ✓ accepts en/de incl. regional tags
+    ✓ rejects everything else, including fr/es (VTID-03803) (1 ms)
+  isNovaSonicIdentityAllowed
+    ✓ allows a listed user or tenant (case-insensitive) (1 ms)
+    ✓ denies unlisted identities and anonymous sessions
+    ✓ empty allowlists allow NOBODY
+  buildNovaSonicHealthPayload
+    ✓ reports a disabled-but-clean configuration (1 ms)
+    ✓ reports counts and typed issues without leaking allowlist contents or secrets (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb/live/upstream/cascaded-voice.test.ts
+  VTID-03683: cascade language eligibility
+    ✓ REFUSES every language Nova speaks natively (1 ms)
+    ✓ takes exactly the languages Nova cannot speak AND both AWS services can (2 ms)
+    ✓ refuses sr, and blames POLLY — the blocker that is actually verified (1 ms)
+    ✓ derives coverage from Polly rather than restating it (1 ms)
+    ✓ normalises locale tags and refuses unknown languages (1 ms)
+  VTID-03683: activation gate is off by default
+    ✓ is off unless the value is exactly "true" (1 ms)
+  VTID-03683: selector routes Nova-blocked languages to the cascade
+    ✓ without the flag, behaviour is byte-for-byte the old forced-Nova path
+    ✓ with the flag on and the language covered, it routes to the cascade (1 ms)
+    ✓ with the flag on but the language NOT covered (sr), it does not divert
+    ✓ VTID-03723: the cascade now rescues regardless of vertexUnavailable — there is no "live Vertex" branch left to defer to (1 ms)
+    ✓ never diverts a session whose language Nova DOES support
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb/routes/session-start-voice-telemetry.test.ts
+  VTID-03704: session-start voice telemetry
+    ✓ records the Nova voice that actually speaks (2 ms)
+    ✓ records whether the language is on Nova at all (1 ms)
+    ✓ resolves the Nova voice through the fallback-REPORTING resolver (1 ms)
+    ✓ keeps the legacy live-api voice field rather than silently replacing it (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/scripts/verify-all-orb-languages.test.ts
+  VTID-03731: verify-all-orb-languages coverage
+    ✓ has a test phrase for every language the live gate admits (3 ms)
+    ✓ does not carry a stale test phrase for a language the gate no longer admits (1 ms)
+    ✓ NOVA_NATIVE matches NOVA_SONIC_SUPPORTED_LANGUAGES exactly
+    ✓ sr is the one declared cascade-ineligible language, and is a real member of the gate
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb/live/upstream/cascade-health-payload.test.ts
+  VTID-03721: cascade health payload
+    ✓ reports the Transcribe region it would actually use (1 ms)
+    ✓ leaks no credentials
+    effective — the field that actually answers the question
+      ✓ is true only when BOTH flags are set (1 ms)
+      ✓ is false when the cascade flag is on but Vertex is not marked dead (1 ms)
+      ✓ is false when the cascade flag is absent
+    the flag is exact-string, and the payload must say so honestly
+      ✓ treats "TRUE" as OFF, matching isCascadeEnabled() (1 ms)
+      ✓ treats "True" as OFF, matching isCascadeEnabled()
+      ✓ treats "1" as OFF, matching isCascadeEnabled()
+      ✓ treats "yes" as OFF, matching isCascadeEnabled()
+      ✓ treats "on" as OFF, matching isCascadeEnabled() (1 ms)
+      ✓ treats "" as OFF, matching isCascadeEnabled()
+      ✓ accepts the exact string with surrounding whitespace trimmed
+    per-language verdicts come from the real routing functions
+      ✓ reports the languages the cascade rescues, with their Transcribe codes (1 ms)
+      ✓ reports Serbian as refused, naming Polly as the real blocker
+      ✓ reports Nova-native languages as refused for that reason
+
+Test Suites: 6 passed, 6 total
+Tests:       68 passed, 68 total
+Snapshots:   0 total
+Time:        1.976 s
+Ran all test suites matching /test\/orb\/live\/upstream\/nova-sonic-config.test.ts|test\/orb\/live\/upstream\/cascaded-voice.test.ts|test\/orb\/live\/voice\/voice-routing-policy.test.ts|test\/scripts\/verify-all-orb-languages.test.ts|test\/orb\/routes\/session-start-voice-telemetry.test.ts|test\/orb\/live\/upstream\/cascade-health-payload.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

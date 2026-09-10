@@ -1,0 +1,27 @@
+# VTID-03798 — commands run to produce this evidence pack
+
+# 1. Real, live evidence gathered BEFORE this fix (see
+#    outputs/before-fix-live-staging-evidence.txt for full detail/output):
+#    - Logged in as e2e-test@vitana.dev via real Supabase Auth REST call
+#    - Called GET /api/v1/admin/aurora-memory/health on
+#      preview-aws-gateway.vitanaland.com with the real token
+#    - Inspected live ECS task definition (boto3 ecs.describe_task_definition)
+#    - Inspected live Aurora cluster CA identifier (boto3 rds.describe_db_instances)
+#    - Re-downloaded and inspected the RDS combined CA bundle, confirmed it
+#      contains the matching "Amazon RDS eu-central-1 Root CA RSA2048 G1" cert
+
+# 2. Unit tests for the fix
+cd services/gateway
+npx jest test/db-i18n/aurora-client.test.ts test/routes/admin-aurora-memory-health.test.ts
+  -> 2 suites, 17 tests, all passing (outputs/jest-run.txt)
+
+npx jest test/db-i18n
+  -> 3 of 4 suites run (1 skipped, no local Postgres), 81 passed, 22 skipped, 0 failed
+
+# 3. Type check
+npx tsc --noEmit
+  -> clean, no output (outputs/tsc-noemit.txt)
+
+# Next step, NOT run here (needs this PR merged + staging deploy first):
+#   Re-run the exact same login + curl from step 1 against
+#   preview-aws-gateway.vitanaland.com and confirm reachable:true.

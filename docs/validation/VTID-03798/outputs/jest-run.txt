@@ -1,0 +1,117 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=user-1
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:204:15)
+
+  console.warn
+    [VTID-01157] Access denied: user user-1 is not exafy_admin
+
+      329 |
+      330 |   if (!req.identity.exafy_admin) {
+    > 331 |     console.warn(
+          |             ^
+      332 |       `[VTID-01157] Access denied: user ${req.identity.user_id} is not exafy_admin`
+      333 |     );
+      334 |     res.status(403).json({
+
+      at requireExafyAdmin (src/middleware/auth-supabase-jwt.ts:331:13)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at requireAuth (src/middleware/auth-supabase-jwt.ts:280:3)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=admin-1
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:204:15)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=admin-1
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:204:15)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=admin-1
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:204:15)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=admin-1
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:204:15)
+
+PASS test/routes/admin-aurora-memory-health.test.ts
+  admin gate
+    ✓ returns 401 with no Authorization header, and never touches Aurora (26 ms)
+    ✓ returns 403 for a non-admin caller, and never touches Aurora (36 ms)
+  GET /admin/aurora-memory/health (authenticated admin)
+    ✓ reports not configured when AURORA_DATABASE_URL is unset (7 ms)
+    ✓ reports reachable=true with latency and db_time on a real round trip (5 ms)
+    ✓ classifies a connection timeout as a network failure, not auth/TLS (4 ms)
+    ✓ classifies a TLS/certificate rejection as auth_or_tls, not network (4 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.warn
+    [aurora] AURORA_SSL_INSECURE=true — TLS certificate verification is DISABLED. Acceptable only for a migration rehearsal; set AURORA_CA_BUNDLE_PATH for real use.
+
+      147 |   }
+      148 |   if ((env.AURORA_SSL_INSECURE ?? '').trim().toLowerCase() === 'true') {
+    > 149 |     console.warn(
+          |             ^
+      150 |       '[aurora] AURORA_SSL_INSECURE=true — TLS certificate verification is DISABLED. ' +
+      151 |         'Acceptable only for a migration rehearsal; set AURORA_CA_BUNDLE_PATH for real use.',
+      152 |     );
+
+      at resolveSsl (src/services/db-i18n/aurora-client.ts:149:13)
+      at resolveAuroraConfig (src/services/db-i18n/aurora-client.ts:169:40)
+      at Object.<anonymous> (test/db-i18n/aurora-client.test.ts:63:36)
+
+  console.warn
+    [aurora] sslmode=disable on a loopback host — plaintext connection (local/test only).
+
+      122 | function resolveSsl(env: NodeJS.ProcessEnv): PoolConfig['ssl'] {
+      123 |   if (allowsPlaintext((env.AURORA_DATABASE_URL ?? '').trim())) {
+    > 124 |     console.warn('[aurora] sslmode=disable on a loopback host — plaintext connection (local/test only).');
+          |             ^
+      125 |     return false;
+      126 |   }
+      127 |   const caPath = (env.AURORA_CA_BUNDLE_PATH ?? '').trim();
+
+      at resolveSsl (src/services/db-i18n/aurora-client.ts:124:13)
+      at resolveAuroraConfig (src/services/db-i18n/aurora-client.ts:169:40)
+      at Object.<anonymous> (test/db-i18n/aurora-client.test.ts:71:36)
+
+PASS test/db-i18n/aurora-client.test.ts
+  resolveAuroraConfig / resolveSsl
+    ✓ throws when AURORA_DATABASE_URL is unset (8 ms)
+    ✓ throws when AURORA_DATABASE_URL is not a postgres(ql):// URL (1 ms)
+    ✓ verifies against the system default trust store when nothing is set (1 ms)
+    ✓ redacts the password in describe() (1 ms)
+    ✓ AURORA_SSL_INSECURE=true skips verification when no CA bundle is set (4 ms)
+    ✓ honours sslmode=disable on a loopback host (2 ms)
+    ✓ refuses sslmode=disable against a non-loopback host, even with a CA bundle set (1 ms)
+    ✓ throws AuroraConfigError when AURORA_CA_BUNDLE_PATH points at a missing file (1 ms)
+    ✓ throws AuroraConfigError when the bundle file contains no PEM certificates (2 ms)
+    ✓ unions the CA bundle certs with tls.rootCertificates, not replacing them (23 ms)
+    ✓ does not throw AuroraConfigError:not-configured when a CA bundle IS set (configured:true path) (1 ms)
+
+Test Suites: 2 passed, 2 total
+Tests:       17 passed, 17 total
+Snapshots:   0 total
+Time:        0.993 s, estimated 1 s
+Ran all test suites matching /test\/db-i18n\/aurora-client.test.ts|test\/routes\/admin-aurora-memory-health.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

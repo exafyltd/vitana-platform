@@ -1,0 +1,187 @@
+VTID-03789 — commands.log
+==========================
+
+## Discovery: VTID-03788's fix did not resolve the outage
+
+After merging PR #3227 (VTID-03788, commit 44511707), sampled staging
+build-info repeatedly — still serving the stale pre-VTID-03787 commit.
+
+$ (GitHub Actions MCP) list_workflow_runs AWS-STAGE-DEPLOY-GATEWAY.yml
+-> latest run (33179324287, commit 44511707): completed, conclusion:
+   "failure", created_at == updated_at (0 duration)
+$ (GitHub Actions MCP) list_workflow_jobs for that run_id
+-> {"jobs":{"total_count":0,"jobs":[]}}
+   Identical signature to every prior failing run.
+
+## Root-cause isolation (real API, not scraping)
+
+WebFetch on the run's own page reported "(Line: 184, Col: 14): Exceeded
+max expression length 21000" — but WebFetch proved unreliable moments
+earlier on a different page for this same investigation (returned check
+names inconsistent with this repo's real CI), so this was NOT trusted on
+its own.
+
+Verified authoritatively via the real GitHub Actions API:
+
+$ (GitHub Actions MCP) actions_run_trigger run_workflow
+    workflow_id=AWS-STAGE-DEPLOY-GATEWAY.yml ref=main
+-> Error: "Invalid Argument - failed to parse workflow: (Line: 184, Col:
+   14): Exceeded max expression length 21000"
+
+This is the real API's own structured error, confirming the WebFetch
+report was accurate, and confirming the failure is a STATIC file-level
+parse issue (workflow_dispatch has no github.event.head_commit context at
+all, yet fails identically to push) -- not something specific to push-event
+context data.
+
+## Reconciling against the "last known good" commit
+
+Installed actionlint (real, authoritative GH Actions static analyzer) via
+`go install github.com/rhysd/actionlint/cmd/actionlint@latest`:
+
+$ /tmp/gobin/actionlint .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml
+(clean, no output, exit 0) -- confirms no OTHER structural issue.
+
+Measured the "Register task-definition revision" step's run: block (line
+184 to end of step) via a small python script:
+  - Failing commit (44511707): 25,111 raw characters
+  - Last-known-good commit (005cd4be, before any VTID-03787/03788 edits):
+    23,981 raw characters
+
+23,981 is ALREADY close to "21000" as a raw measurement, which seemed to
+contradict a flat 21,000-char cutoff (that commit's deploy demonstrably
+succeeded earlier this session). Resolved empirically rather than by
+further guessing at GitHub's exact algorithm:
+
+$ git branch -f claude/tmp-vtid03788-probe 005cd4bebab90e...
+$ git push origin claude/tmp-vtid03788-probe --force-with-lease
+$ (GitHub Actions MCP) actions_run_trigger run_workflow
+    workflow_id=AWS-STAGE-DEPLOY-GATEWAY.yml ref=claude/tmp-vtid03788-probe
+-> {"message":"Workflow run has been queued", "status":"204 No Content"}
+   (ACCEPTED -- no parse error, unlike main's current commit)
+
+Confirmed: the exact last-known-good file content parses fine via
+workflow_dispatch. Cancelled the resulting run (pointless real redeploy of
+stale code) and deleted the throwaway branch:
+
+$ (GitHub Actions MCP) actions_run_trigger cancel_workflow_run run_id=...
+-> {"message":"Workflow run has been cancelled"}
+$ git push origin --delete claude/tmp-vtid03788-probe
+   (remote delete returned 403 -- harmless, branch already force-updated
+   away from any meaningful ref; local branch deleted)
+
+This definitively isolates the boundary between 23,981 (passes) and
+25,111 (fails) raw characters for this exact construct.
+
+## Reconciling the exact numbers
+
+The regression test (see below) measures `run:` step length via js-yaml's
+PARSED value (indentation-stripped, block-scalar-folded), not raw source
+text. For the failing commit, js-yaml reports 21,485 characters for this
+step -- just over the real "21000" limit named in the API error, and much
+closer to the raw-text discrepancy than my raw-line measurement suggested
+(YAML block-scalar folding strips the ~10-space-per-line indentation
+overhead, ~3,600 characters across ~360 lines). This is consistent and
+resolves the apparent contradiction: GitHub's real limit applies to the
+parsed/folded value, which is also the correct metric the new regression
+test uses (js-yaml's own `step.run.length`), not a raw-text proxy.
+
+## Composition of the oversized step
+
+$ python3 (measure comment vs code chars in the run: block)
+-> Total block: 365 lines / 25,111 raw chars
+   Comment/blank lines: 263 lines / 17,683 chars
+   Code lines: 102 lines / 7,413 chars
+
+70% of the block's size was pure documentation accumulated across many
+prior VTIDs (VTID-03513, VTID-03646, VTID-03773, BOOTSTRAP-NOVA-SONIC-
+VOICE, VTID-03706, VTID-03787/03788), left inline as the step grew.
+
+## Fix: relocate comments out of the run: block
+
+Wrote a python script to:
+  1. Extract every comment-only line from inside the run: block (checked
+     first: no code line ends in a line-continuation backslash `\`
+     immediately followed by a comment/blank line, so stripping comments
+     cannot break any multi-line bash construct).
+  2. Reinsert them as plain YAML comments immediately BEFORE `run: |`
+     (same step, same indent level as `env:`/`run:` keys) -- i.e. outside
+     the block scalar entirely, so they no longer count toward its size.
+  3. Rebuild the run: block from ONLY the original code lines, in original
+     order.
+
+First attempt placed the relocated comments AFTER `run: |` by mistake --
+still inside the block scalar, which broke YAML parsing (confirmed via
+`python3 -c "import yaml; yaml.safe_load(...)"` raising a ParserError).
+Restored from backup and redid it correctly, placing the comment block
+BEFORE `run: |`.
+
+$ python3 -c "import yaml; yaml.safe_load(open('.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml'))"
+YAML_OK
+
+$ /tmp/gobin/actionlint .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml
+ACTIONLINT_OK (clean)
+
+New run: block size: 7,413 characters (was 25,111 raw / 21,485 parsed).
+
+## Verification: pure relocation, zero behavior change
+
+$ python3 (compare the 102 code lines before vs after, by exact line index)
+-> before code lines: 102, after code lines: 102
+   IDENTICAL
+
+$ python3 (compare the 259 comment lines before vs after, ignoring the
+  13-line new relocation-explainer header)
+-> before comment count: 259, after (excluding new header): 259
+   IDENTICAL_SET
+
+$ bash -n /tmp/new_run_block.sh   (the new run: block, de-indented)
+(clean, exit 0)
+
+## New/updated regression test
+
+Rewrote the docstring of
+services/gateway/test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts
+to record BOTH the apostrophe defect (VTID-03787/03788, still guarded) AND
+the true root cause (this VTID) with the full investigation trail. Added a
+new test per workflow file: "no single run: step exceeds 20,000 characters
+(GitHub Actions workflow-file size limit)" -- reads js-yaml's own parsed
+`step.run.length`, the same metric GitHub's real limit applies to. The
+20,000 cap is chosen under the CONFIRMED-WORKING 23,981 raw measurement
+(itself well above whatever the true parsed-value boundary is), not just
+under the confirmed-broken one.
+
+$ npx jest test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts
+PASS -- 7/7
+
+## Mutation verification
+
+Restored the pre-relocation (broken, 25,111-char) file, re-ran:
+
+$ npx jest test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts
+FAIL -- 1/7 (exactly the new size-cap test, reporting 21,485 chars for the
+       task-definition-update step), 6/7 still passing.
+
+Restored the fixed file, diffed clean (RESTORED_CLEAN), re-ran:
+
+$ npx jest test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts
+PASS -- 7/7
+
+## Full verification
+
+$ npx tsc --noEmit
+(clean, exit 0)
+
+$ npx jest
+PASS -- 722/723 suites (1 pre-existing skip), 13532/13567 tests passing
+        (13530 before this VTID's +2 new tests), 0 failures
+
+## Governance
+
+command-hub-ownership-guard.js NOT touched -- changes are a .github/
+workflows/*.yml file and its test, outside PROTECTED_PATH scope.
+
+Terminalized VTID-03788 as success (its own fix was real and correct) with
+metadata noting a follow-up (this VTID) was required for the actual root
+cause -- not re-litigating or reverting that work, it remains part of the
+final good state alongside this fix.

@@ -1,0 +1,45 @@
+Local gateway boot + curl proof, captured 2026-08-27, this session's sandbox.
+Cannot reach real Supabase or Aurora from here (SUPABASE_URL pointed at a
+dummy localhost:9999 that refuses connections on purpose, and no
+AURORA_DATABASE_URL was set) — the point of this run is only to prove the
+new route mounts at the expected path and that requireAuth/requireExafyAdmin
+actually gate it, end to end, through a real running Express app and real
+`jose` JWT verification code, not a supertest-mocked one.
+
+Command:
+  PORT=8099 NODE_ENV=development \
+  SUPABASE_URL=http://localhost:9999 \
+  SUPABASE_SERVICE_ROLE=dummy-service-role-key-for-local-boot-test \
+  SUPABASE_JWT_SECRET=dummy-jwt-secret-for-local-boot-test \
+  SUPABASE_ANON_KEY=dummy-anon-key \
+  VTID_ALLOCATOR_ENABLED=false AUTOPILOT_LOOP_ENABLED=false \
+  npx tsx src/index.ts
+
+$ curl -s -o /dev/null -w "alive: %{http_code}\n" http://localhost:8099/alive
+alive: 200
+
+$ curl -s -w "\nHTTP_STATUS:%{http_code}\n" http://localhost:8099/api/v1/admin/aurora-memory/health
+{"ok":false,"error":"UNAUTHENTICATED","message":"Missing or invalid Authorization header. Expected: Bearer <token>"}
+HTTP_STATUS:401
+
+$ curl -s -w "\nHTTP_STATUS:%{http_code}\n" http://localhost:8099/api/v1/admin/aurora-memory/health \
+    -H "Authorization: Bearer not-a-real-jwt"
+{"ok":false,"error":"UNAUTHENTICATED","message":"Invalid or expired token"}
+HTTP_STATUS:401
+
+Confirms: the route is genuinely mounted at
+GET /api/v1/admin/aurora-memory/health (not a supertest fixture — a real
+listening HTTP server), and the admin auth gate rejects both no-token and
+garbage-token requests before ever reaching the Aurora connectivity check,
+matching the mocked-auth unit tests in
+test/routes/admin-aurora-memory-health.test.ts.
+
+Deliberately NOT captured here: a 200 "reachable" response. That needs a
+real AURORA_DATABASE_URL and real Secrets Manager access this sandbox does
+not have (no AWS CLI at all — see VTID-03773's Phase 0 notes). The
+reachable/not-configured/network-failure/auth-or-tls-failure branches are
+covered instead by the four mocked cases in
+test/routes/admin-aurora-memory-health.test.ts (outputs/jest-run.txt), and
+the real "is Aurora actually reachable from staging" answer is the whole
+point of this VTID and is captured after this PR merges and staging
+auto-deploys (see acceptance.md AC-2).

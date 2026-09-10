@@ -1,0 +1,10 @@
+    ✓ the structured-block bypass still wins over both branches (1 ms)
+      ✕ does NOT command verbatim reproduction (4 ms)
+      ✕ does NOT embed the provider line as a quoted sentence (1 ms)
+      ✕ tells the model to compose the opener itself (1 ms)
+      ✓ still suppresses the SHORT-GAP GREETING PHRASES pool (1 ms)
+      ✕ still carries the dedupe key and the no-relesson rule (1 ms)
+      ✓ keeps the verbatim directive exactly as before (1 ms)
+      ✓ applies to a null dedupe key too (1 ms)
+      ✓ does not accidentally match a key that merely contains the prefix
+Tests:       4 failed, 5 passed, 9 total

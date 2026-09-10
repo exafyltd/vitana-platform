@@ -111,12 +111,30 @@ describe('orb-widget _attemptReconnect guided-topic circuit breaker (VTID-03776 
     expect(window).toMatch(/_s\._guidedTopicInFlight = null;/);
   });
 
-  it('the breaker check runs before the MAX_WIDGET_RECONNECTS stuck-state check, so a dropped topic still gets a fair remaining-budget retry', () => {
+  it('the breaker check runs before the MAX_WIDGET_RECONNECTS stuck-state check', () => {
     const breakerIdx = body.indexOf('_guidedTopicZeroAudioFailCount = (_s._guidedTopicZeroAudioFailCount');
     const stuckIdx = body.indexOf('_s._reconnectCount >= MAX_WIDGET_RECONNECTS');
     expect(breakerIdx).toBeGreaterThan(-1);
     expect(stuckIdx).toBeGreaterThan(-1);
     expect(breakerIdx).toBeLessThan(stuckIdx);
+  });
+
+  // VTID-03782: superseded expectation. This used to assert the tripped
+  // breaker "still gets a fair remaining-budget retry" by falling through
+  // to the normal reconnect below — live evidence showed that fallthrough
+  // landed on an unrelated, unbounded generic-conversation candidate with
+  // no natural end, which the user could not distinguish from the Journey
+  // session still running. See orb-widget-guided-topic-circuit-breaker-stop.test.ts
+  // for the current behavior: the breaker now stops via _enterStuckState()
+  // instead of consuming reconnect budget on a topic already given up on.
+  it('does NOT fall through to a fresh reconnect once the breaker trips — it stops immediately instead', () => {
+    const gateIdx = body.indexOf('if (_s._guidedTopicZeroAudioFailCount >= 2) {');
+    const stuckIdx = body.indexOf('_s._reconnectCount >= MAX_WIDGET_RECONNECTS');
+    expect(gateIdx).toBeGreaterThan(-1);
+    expect(stuckIdx).toBeGreaterThan(-1);
+    const window = body.slice(gateIdx, stuckIdx);
+    expect(window).toMatch(/_enterStuckState\(\);/);
+    expect(window).toMatch(/_enterStuckState\(\);\s*\n\s*return;/);
   });
 
   it('does NOT touch the counter or drop the topic once real audio has played (mid-lesson resume must survive)', () => {

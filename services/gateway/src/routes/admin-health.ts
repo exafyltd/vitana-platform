@@ -170,7 +170,7 @@ router.get('/orb-session-state-health', requireAdminAuth, (_req: AuthenticatedRe
  * Exists because `withAuroraRlsContext()` (services/aurora-client.ts) has
  * had its DB-side prerequisites (role model, grants, the auth.uid() shim)
  * verified live via the RDS Data API — a different transport from the
- * `pg.Pool`/`AURORA_DATABASE_URL` connection this codebase's own gateway
+ * `pg.Pool`/`AURORA_RLS_DATABASE_URL` connection this codebase's own gateway
  * routes actually use — but the pg.Pool path itself has never been
  * exercised end-to-end from any Claude Code session, since this sandbox
  * has no VPC route to Aurora's Postgres port. This endpoint is that
@@ -184,7 +184,7 @@ router.get('/orb-session-state-health', requireAdminAuth, (_req: AuthenticatedRe
  *
  * `configured:false` (200) is the expected, safe state everywhere today —
  * mirrors getAuroraPool()'s own "expected until B4/B8 cutover" comment.
- * Once AURORA_DATABASE_URL is set somewhere, this starts actually
+ * Once AURORA_RLS_DATABASE_URL is set somewhere, this starts actually
  * exercising the connection using the CALLING ADMIN's own identity (their
  * already-verified JWT claims/role), so a real auth.uid() mismatch or an
  * unexpectedly-bypassrls login role fails loudly (503) instead of being
@@ -207,7 +207,7 @@ router.get('/aurora-rls-health', requireAdminAuth, async (req: AuthenticatedRequ
     return res.status(200).json({
       ok: true,
       configured: false,
-      message: 'AURORA_DATABASE_URL not set — expected until B4/B8 cutover.',
+      message: 'AURORA_RLS_DATABASE_URL not set — expected until B4/B8 cutover.',
     });
   }
 

@@ -1,0 +1,68 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=user-1
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:204:15)
+
+  console.warn
+    [VTID-01157] Access denied: user user-1 is not exafy_admin
+
+      329 |
+      330 |   if (!req.identity.exafy_admin) {
+    > 331 |     console.warn(
+          |             ^
+      332 |       `[VTID-01157] Access denied: user ${req.identity.user_id} is not exafy_admin`
+      333 |     );
+      334 |     res.status(403).json({
+
+      at requireExafyAdmin (src/middleware/auth-supabase-jwt.ts:331:13)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at requireAuth (src/middleware/auth-supabase-jwt.ts:280:3)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=admin-1
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:204:15)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=admin-1
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:204:15)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=admin-1
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:204:15)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=admin-1
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:204:15)
+
+PASS test/routes/admin-aurora-memory-health.test.ts
+  admin gate
+    ✓ returns 401 with no Authorization header, and never touches Aurora (25 ms)
+    ✓ returns 403 for a non-admin caller, and never touches Aurora (38 ms)
+  GET /admin/aurora-memory/health (authenticated admin)
+    ✓ reports not configured when AURORA_DATABASE_URL is unset (9 ms)
+    ✓ reports reachable=true with latency and db_time on a real round trip (6 ms)
+    ✓ classifies a connection timeout as a network failure, not auth/TLS (6 ms)
+    ✓ classifies a TLS/certificate rejection as auth_or_tls, not network (5 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       6 passed, 6 total
+Snapshots:   0 total
+Time:        0.79 s, estimated 2 s
+Ran all test suites matching /test\/routes\/admin-aurora-memory-health.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

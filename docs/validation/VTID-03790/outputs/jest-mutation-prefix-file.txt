@@ -1,0 +1,172 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+FAIL test/orb/live/instruction/guided-topic-narration-prompt.test.ts
+  buildGuidedTopicPostNarrationLine
+    ✓ mentions the topic and offers questions + practice in German (3 ms)
+    ✓ mentions the topic and offers questions + practice in English
+    ✓ drops the practice offer when there is no practice target (1 ms)
+    ✓ is short — a native-audio-safe direct turn, not an instructional paragraph
+  buildGuidedTopicNarrationBlock — post-narration branch (content.narrationAudio set)
+    ✓ never includes the raw voice_script text once the audio bridge already spoke it (1 ms)
+    ✓ never includes the raw explanation fields either (1 ms)
+    ✓ still names the topic and practice target so follow-up guidance works (1 ms)
+    ✓ tells the model NOT to re-narrate the lesson
+    ✓ VTID-03785: does NOT use a self-referential voice-denial phrase ("you did NOT narrate it yourself")
+    ✓ VTID-03785: does NOT quote hypothetical spoken example phrases ("What do you want?")
+    ✓ respects the requested language independent of the German-authored content (1 ms)
+    ✓ VTID-03786: does NOT assert this mode overrides/takes precedence over every other rule (4 ms)
+    ✓ VTID-03686/03686-followup: instructs checking for follow-up questions before moving on from a brief "yes" (1 ms)
+    ✓ VTID-03762: instructs calling end_guided_topic_teaching once follow-ups are answered
+  buildGuidedTopicNarrationBlock — legacy model-narrated branch (no narrationAudio)
+    ✓ still includes the paraphrase-material block unchanged when Polly did not deliver audio
+    ✓ behaves identically whether narrationAudio is undefined or explicitly null
+    ✓ VTID-03785: does NOT quote hypothetical spoken example phrases ("What do you want?")
+    ✓ VTID-03786: does NOT assert this mode overrides/takes precedence over every other rule (1 ms)
+    ✓ VTID-03686/03686-followup: instructs explaining core points before moving to practice on a brief "yes"
+    ✓ VTID-03762: instructs calling end_guided_topic_teaching once the topic is taught and next step proposed (1 ms)
+  VTID-03790: no nested quotation marks around dynamic content (Nova content-filter fix)
+    ✕ buildGuidedTopicNarrationOpenerLine never quotes the topic title (1 ms)
+    ✕ buildGuidedTopicSpokenLesson fallback (no voice_script) never quotes the topic title
+    ✕ buildGuidedTopicPostNarrationLine never quotes the topic title (this is the literal SPOKEN FIRST UTTERANCE text)
+    ✕ buildGuidedTopicNarrationBlock (post-narration branch) never quotes topic title, practice target, or the ja/mach das/okay exemplars (1 ms)
+    ✕ buildGuidedTopicNarrationBlock (legacy teach branch) never quotes topic title, practice target, or the yes/sure/okay exemplars
+    ✓ still names the topic and practice target after the quote marks are removed (meaning preserved)
+
+  ● VTID-03790: no nested quotation marks around dynamic content (Nova content-filter fix) › buildGuidedTopicNarrationOpenerLine never quotes the topic title
+
+    expect(received).not.toMatch(expected)
+
+    Expected pattern: not /["„”]/
+    Received string:      "Lass uns über „Was ist Vitanaland\" sprechen — ich erklär dir, worum es geht und wie es dir hilft."
+
+      253 |
+      254 |   it('buildGuidedTopicNarrationOpenerLine never quotes the topic title', () => {
+    > 255 |     expect(buildGuidedTopicNarrationOpenerLine('Was ist Vitanaland', 'de')).not.toMatch(NO_QUOTE_CHARS);
+          |                                                                                 ^
+      256 |     expect(buildGuidedTopicNarrationOpenerLine('Was ist Vitanaland', 'en')).not.toMatch(NO_QUOTE_CHARS);
+      257 |   });
+      258 |
+
+      at Object.<anonymous> (test/orb/live/instruction/guided-topic-narration-prompt.test.ts:255:81)
+
+  ● VTID-03790: no nested quotation marks around dynamic content (Nova content-filter fix) › buildGuidedTopicSpokenLesson fallback (no voice_script) never quotes the topic title
+
+    expect(received).not.toMatch(expected)
+
+    Expected pattern: not /["„”]/
+    Received string:      "Lass uns über „Vitanaland\" sprechen. Eine Community Du lernst Schau rein"
+
+      259 |   it('buildGuidedTopicSpokenLesson fallback (no voice_script) never quotes the topic title', () => {
+      260 |     const noScript: GuidedTopicNarrationContent = { ...BASE_CONTENT, voice_script: '' };
+    > 261 |     expect(buildGuidedTopicSpokenLesson(noScript, 'de')).not.toMatch(NO_QUOTE_CHARS);
+          |                                                              ^
+      262 |     expect(buildGuidedTopicSpokenLesson(noScript, 'en')).not.toMatch(NO_QUOTE_CHARS);
+      263 |   });
+      264 |
+
+      at Object.<anonymous> (test/orb/live/instruction/guided-topic-narration-prompt.test.ts:261:62)
+
+  ● VTID-03790: no nested quotation marks around dynamic content (Nova content-filter fix) › buildGuidedTopicPostNarrationLine never quotes the topic title (this is the literal SPOKEN FIRST UTTERANCE text)
+
+    expect(received).not.toMatch(expected)
+
+    Expected pattern: not /["„”]/
+    Received string:      "So, das war „Was ist Vitanaland\". Hast du Fragen dazu, oder sollen wir direkt gemeinsam loslegen?"
+
+      264 |
+      265 |   it('buildGuidedTopicPostNarrationLine never quotes the topic title (this is the literal SPOKEN FIRST UTTERANCE text)', () => {
+    > 266 |     expect(buildGuidedTopicPostNarrationLine('Was ist Vitanaland', 'de', { hasPracticeTarget: true })).not.toMatch(NO_QUOTE_CHARS);
+          |                                                                                                            ^
+      267 |     expect(buildGuidedTopicPostNarrationLine('Was ist Vitanaland', 'de', { hasPracticeTarget: false })).not.toMatch(NO_QUOTE_CHARS);
+      268 |     expect(buildGuidedTopicPostNarrationLine('Was ist Vitanaland', 'en', { hasPracticeTarget: true })).not.toMatch(NO_QUOTE_CHARS);
+      269 |     expect(buildGuidedTopicPostNarrationLine('Was ist Vitanaland', 'en', { hasPracticeTarget: false })).not.toMatch(NO_QUOTE_CHARS);
+
+      at Object.<anonymous> (test/orb/live/instruction/guided-topic-narration-prompt.test.ts:266:108)
+
+  ● VTID-03790: no nested quotation marks around dynamic content (Nova content-filter fix) › buildGuidedTopicNarrationBlock (post-narration branch) never quotes topic title, practice target, or the ja/mach das/okay exemplars
+
+    expect(received).not.toMatch(expected)
+
+    Expected pattern: not /["„”]/
+    Received string:      "
+    ## GUIDE-MODUS (NACH DER LEKTION) — die Lektion wurde bereits per Audio vorgetragen
+
+    SPRACHE: Sprich AUSSCHLIESSLICH auf Deutsch, für die GANZE Sitzung.
+
+    Die Lektion zu „Vitanaland\" wurde der Person GERADE als vorab aufgenommene Audio-Lektion vorgespielt und muss nicht wiederholt werden.
+
+    Wichtig, für die GANZE Sitzung:
+    - Trage die Lektion nicht erneut vor und fasse sie nicht zusammen — geh direkt zu Rückfragen oder dem nächsten Schritt über.
+    - Überspring generische Eröffnungsfragen — du weißt, worum es gerade ging.
+    - Wenn die Person kurz mit „ja\", „mach das\" oder „okay\" antwortet, prüfe zuerst, ob sie noch Rückfragen hat, bevor du zu einer anderen Aktion übergehst.
+
+    So führst du:
+    - Beantworte Rückfragen zur Lektion natürlich und knapp.
+    - Wenn die Person bereit ist, FÜHRE sie zur Übung („community\") — biete an, es direkt gemeinsam zu machen.
+    - Sobald du das getan hast und die Person keine weiteren Rückfragen mehr hat, rufe das Tool end_guided_topic_teaching auf, um die Sitzung abzuschließen — sprich NICHT einfach in allgemeiner Unterhaltung weiter.
+    "
+
+      275 |       narrationAudio: { audioB64: 'YQ==', sampleRateHz: 16000 },
+      276 |     };
+    > 277 |     expect(buildGuidedTopicNarrationBlock(narratedContent, 'de')).not.toMatch(NO_QUOTE_CHARS);
+          |                                                                       ^
+      278 |     expect(buildGuidedTopicNarrationBlock(narratedContent, 'en')).not.toMatch(NO_QUOTE_CHARS);
+      279 |   });
+      280 |
+
+      at Object.<anonymous> (test/orb/live/instruction/guided-topic-narration-prompt.test.ts:277:71)
+
+  ● VTID-03790: no nested quotation marks around dynamic content (Nova content-filter fix) › buildGuidedTopicNarrationBlock (legacy teach branch) never quotes topic title, practice target, or the yes/sure/okay exemplars
+
+    expect(received).not.toMatch(expected)
+
+    Expected pattern: not /["„”]/
+    Received string:      "
+    ## GUIDE-MODUS (LEHREN) — du STELLST dieses Thema VOR und LEHRST es
+
+    SPRACHE: Sprich AUSSCHLIESSLICH auf Deutsch — auch wenn frühere Anweisungen Englisch enthalten. Dieser GUIDE-MODUS gilt für die GANZE Sitzung.
+
+    Die Person hat in „Meine Reise\" das Thema „Vitanaland\" angetippt, um es von dir erklärt zu bekommen. Stell es vor und LEHRE es — proaktiv, in EIGENEN Worten.
+
+    Wichtig — für die GANZE Sitzung:
+    - Überspring generische Eröffnungsfragen — du weißt, worum es geht: dieses Thema.
+    - Das Skript nicht vorlesen, Wort für Wort. Nutze es als Grundlage und erkläre es natürlich, im Gespräch.
+    - Ein kurzes „ja\", „mach das\" oder „okay\" der Person direkt nach deiner Eröffnungszeile heißt „erklär mir das jetzt\" — nicht „spring zum nächsten Schritt\". Erkläre zuerst die Kernpunkte aus dem Lehrmaterial unten, in eigenen Worten, bevor du zur Übung überleitest oder etwas anderes vorschlägst.
+
+    THEMA: Vitanaland
+    Lehrmaterial (paraphrasieren, NICHT vorlesen):
+    - Skript: Vitanaland ist deine Langlebigkeits-Community und hilft dir dabei, gesünder zu leben.
+    - Was es ist: Eine Community
+    - Dein Nutzen: Du lernst
+    - Wann es hilft: Täglich
+    - Probier das: Schau rein
+
+    So führst du:
+    - Stell das Thema in 1–2 Sätzen vor, dann erkläre es klar und konkret in eigenen Worten.
+    - Halte es im Gespräch: kurze Abschnitte, prüfe das Verständnis, geh auf Rückfragen ein.
+    - Wenn die Person es verstanden hat, FÜHRE sie zur Übung („community\") — biete an, es direkt gemeinsam zu machen.
+    - Sobald du das getan hast und die Person keine weiteren Rückfragen mehr hat, rufe das Tool end_guided_topic_teaching auf, um die Sitzung abzuschließen — sprich NICHT einfach in allgemeiner Unterhaltung weiter.
+    "
+
+      280 |
+      281 |   it('buildGuidedTopicNarrationBlock (legacy teach branch) never quotes topic title, practice target, or the yes/sure/okay exemplars', () => {
+    > 282 |     expect(buildGuidedTopicNarrationBlock(BASE_CONTENT, 'de')).not.toMatch(NO_QUOTE_CHARS);
+          |                                                                    ^
+      283 |     expect(buildGuidedTopicNarrationBlock(BASE_CONTENT, 'en')).not.toMatch(NO_QUOTE_CHARS);
+      284 |   });
+      285 |
+
+      at Object.<anonymous> (test/orb/live/instruction/guided-topic-narration-prompt.test.ts:282:68)
+
+Test Suites: 1 failed, 1 total
+Tests:       5 failed, 21 passed, 26 total
+Snapshots:   0 total
+Time:        0.508 s, estimated 1 s
+Ran all test suites matching /test\/orb\/live\/instruction\/guided-topic-narration-prompt.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

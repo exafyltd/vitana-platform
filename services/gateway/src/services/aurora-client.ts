@@ -8,11 +8,22 @@
  * auth.jwt()/auth.role()/auth.email() shims, copied byte-for-byte from
  * production via pg_get_functiondef()).
  *
- * NOT WIRED INTO ANY ROUTE YET. This module existing changes nothing at
- * runtime — same deliberate-opt-in shape as TTS_PROVIDER/IMAGE_PROVIDER/
- * BEDROCK_ROLE_ARN elsewhere in this codebase. getAuroraPool() returns null
- * until AURORA_DATABASE_URL is set, mirroring getSupabase()'s null-tolerant
+ * Wired into exactly one route (GET /api/v1/admin/aurora-rls-health,
+ * VTID-03591) and nowhere else. getAuroraPool() returns null until
+ * AURORA_RLS_DATABASE_URL is set, mirroring getSupabase()'s null-tolerant
  * pattern in lib/supabase.ts.
+ *
+ * VTID-03813/2026-09-10 — deliberately a DIFFERENT env var from
+ * AURORA_DATABASE_URL (services/db-i18n/aurora-client.ts, VTID-03517/03773).
+ * That module's connection string resolves to the `vitana_admin` secret
+ * (`vitana/aurora/prod/database-url`) — a superuser-class login role, correct
+ * for its own DB-content-i18n writes but WRONG here: this module's entire
+ * purpose is proving RLS composes correctly for a non-superuser role, and a
+ * superuser connection would make the health check permanently report
+ * "unsafe" regardless of whether RLS actually works. AURORA_RLS_DATABASE_URL
+ * points instead at the unprivileged `authenticator` role
+ * (`vitana/aurora/prod/postgrest-authenticator-uri`), verified live
+ * (VTID-03769) to have rolsuper=false/rolbypassrls=false.
  *
  * How PostgREST does this (what we're reproducing): on every request it
  * opens a transaction, runs `SET LOCAL ROLE <jwt role>` and
@@ -52,7 +63,7 @@
  * Caveat this verification does NOT close: everything above was exercised
  * over the RDS Data API (HTTPS) from a sandboxed session with no VPC
  * route to Aurora's raw Postgres port. This module's own `pg.Pool` /
- * `AURORA_DATABASE_URL` code path — the actual transport a real gateway
+ * `AURORA_RLS_DATABASE_URL` code path — the actual transport a real gateway
  * route would use — has never itself been exercised end-to-end from any
  * Claude Code session for that same network reason. The DB-side mechanism
  * is proven; this file's own `pg.Pool` call site touching it is not, yet.
@@ -62,6 +73,38 @@
 
 import { Pool, PoolClient } from 'pg';
 import type { JWTPayload } from 'jose';
+import { readFileSync, existsSync } from 'node:fs';
+import { rootCertificates } from 'node:tls';
+
+/**
+ * TLS for Aurora/RDS Proxy. Mirrors the fix in
+ * services/db-i18n/aurora-client.ts (VTID-03798, live staging finding
+ * 2026-08-29): `AURORA_DATABASE_URL`/`AURORA_RLS_DATABASE_URL` both point at
+ * the RDS Proxy endpoint, not the Aurora cluster directly, and the proxy's
+ * certificate chain does not terminate solely in the RDS CA bundle — it can
+ * chain through a publicly-trusted root too. A naive `ca: [bundle]` REPLACES
+ * Node's default trust store rather than extending it, which silently drops
+ * that public root. Verifying against the union of the RDS bundle (needed
+ * for a direct-to-instance connection) and Node's own `tls.rootCertificates`
+ * (needed for the proxy's chain) fixes this without weakening verification —
+ * `rejectUnauthorized` stays true either way. Falling back to
+ * `rejectUnauthorized: false` (this module's original shape before this
+ * fix) was a real bug: it accepts ANY certificate, defeating TLS entirely.
+ */
+function splitPemCertificates(bundle: string): string[] {
+  const matches = bundle.match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g);
+  return matches ?? [];
+}
+
+function resolveAuroraSsl(): { rejectUnauthorized: true; ca: string[] } | undefined {
+  if (process.env.AURORA_SSL === 'false') return undefined;
+  const caPath = (process.env.AURORA_CA_BUNDLE_PATH ?? '').trim();
+  const bundleCerts = caPath && existsSync(caPath) ? splitPemCertificates(readFileSync(caPath, 'utf8')) : [];
+  if (caPath && bundleCerts.length === 0) {
+    console.warn(`[Aurora] AURORA_CA_BUNDLE_PATH="${caPath}" set but no PEM certificates found in it — verifying against Node's built-in roots only.`);
+  }
+  return { rejectUnauthorized: true, ca: [...bundleCerts, ...rootCertificates] };
+}
 
 let pool: Pool | null = null;
 let poolInitAttempted = false;
@@ -79,9 +122,9 @@ export function getAuroraPool(): Pool | null {
   if (poolInitAttempted) return null; // don't retry-construct every call once we know it's unconfigured
   poolInitAttempted = true;
 
-  const connectionString = process.env.AURORA_DATABASE_URL;
+  const connectionString = process.env.AURORA_RLS_DATABASE_URL;
   if (!connectionString) {
-    console.warn('[Aurora] AURORA_DATABASE_URL not set — Aurora client unavailable (expected until B4/B8 cutover).');
+    console.warn('[Aurora] AURORA_RLS_DATABASE_URL not set — Aurora client unavailable (expected until B4/B8 cutover).');
     return null;
   }
 
@@ -90,7 +133,7 @@ export function getAuroraPool(): Pool | null {
     // ECS Fargate reaches Aurora over the VPC directly (unlike this Claude
     // session's sandbox, which has no VPC route and had to use RDS Data API
     // for read-only investigation instead).
-    ssl: process.env.AURORA_SSL === 'false' ? undefined : { rejectUnauthorized: false },
+    ssl: resolveAuroraSsl(),
     max: Number(process.env.AURORA_POOL_MAX || 10),
     idleTimeoutMillis: 30_000,
   });
@@ -130,7 +173,7 @@ export async function withAuroraRlsContext<T>(
 ): Promise<T> {
   const p = getAuroraPool();
   if (!p) {
-    throw new Error('[Aurora] getAuroraPool() returned null — AURORA_DATABASE_URL not configured');
+    throw new Error('[Aurora] getAuroraPool() returned null — AURORA_RLS_DATABASE_URL not configured');
   }
 
   const client = await p.connect();
@@ -174,7 +217,7 @@ export async function withAuroraRlsContext<T>(
 export async function auroraServiceQuery<T = any>(sql: string, params?: any[]): Promise<T[]> {
   const p = getAuroraPool();
   if (!p) {
-    throw new Error('[Aurora] getAuroraPool() returned null — AURORA_DATABASE_URL not configured');
+    throw new Error('[Aurora] getAuroraPool() returned null — AURORA_RLS_DATABASE_URL not configured');
   }
   const { rows } = await p.query(sql, params);
   return rows;

@@ -296,10 +296,26 @@ describe('computeGreetingDecision — rung golden snapshots', () => {
     // proposal contract non-guided openers now get — and none of the
     // "translate it faithfully / fluent <language>" phrasing that tripped
     // Nova's content filter may reappear.
-    expect(d.directive).toMatch(/ONE short utterance/i);
+    // VTID-03797 RE-RECORDED DELIBERATELY. This previously pinned "ONE short
+    // utterance", the wording of a template that told the model to reproduce a
+    // supplied line VERBATIM. That template is the defect: guided sessions were
+    // blocked by Nova 93/93 over 30 days (zero ever spoke), across three topics
+    // and two languages, while an ordinary control in the same run completed
+    // its turn. A verbatim-reproduction directive wrapped in prohibitions is
+    // the shape Bedrock's guardrail treats as injection-like — which is why
+    // this worked on Vertex and broke on Nova. VTID-03674 removed the older,
+    // harsher wrapper but replaced it with a milder VERBATIM one, so the class
+    // survived. What is pinned now is the compositional shape.
+    expect(d.directive).toMatch(/Compose that sentence yourself/i);
+    expect(d.directive).toMatch(/ONE short, warm sentence/i);
+    // Still NOT the three-beat proposal contract (a tapped topic opens; it
+    // does not propose a next step before teaching — VTID-03686).
     expect(d.directive).not.toMatch(/NEXT STEP/);
     expect(d.directive).not.toContain('fluent');
     expect(d.directive).not.toContain('translate');
+    // The new invariant: never command verbatim reproduction again.
+    expect(d.directive).not.toMatch(/say(ing)? this prepared line/i);
+    expect(d.directive).not.toMatch(/do not turn it into something else/i);
     expect(d).toMatchSnapshot();
   });
 
@@ -664,8 +680,13 @@ describe('computeGreetingDecision — VTID-03724 guided-topic tap outranks passi
 
     const withGuided = computeGreetingDecision(ctx(collidingContext));
     expect(withGuided.wakeOpener).toBe('override_v2');
-    expect(withGuided.directive).toContain('Lass uns über Atmung sprechen.');
-    expect(withGuided.directive).toMatch(/ONE short utterance/i);
+    // VTID-03797 RE-RECORDED: this asserted the provider's spoken line was
+    // embedded VERBATIM in the directive — the exact defect (see the rung-8
+    // guided-teach test above). The load-bearing invariant of VTID-03724 is
+    // that the guided tap WINS this collision, which is asserted on the line
+    // above and is unchanged; the directive is now compositional.
+    expect(withGuided.directive).toMatch(/Compose that sentence yourself/i);
+    expect(withGuided.directive).not.toContain('Lass uns über Atmung sprechen.');
     // The briefing must not be silently stamped as delivered when it never
     // spoke — a real briefing should still be owed next time.
     expect(withGuided.effects.stampBriefingDate).toBeUndefined();
@@ -679,7 +700,18 @@ describe('computeGreetingDecision — VTID-03724 guided-topic tap outranks passi
 
     const withGuided = computeGreetingDecision(safeFastCtx(collidingContext));
     expect(withGuided.wakeOpener).toBe('override_v2');
-    expect(withGuided.directive).toContain('Lass uns über Atmung sprechen.');
+    // VTID-03797 RE-RECORDED (same reason as the normal-ladder test above).
+    expect(withGuided.directive).toMatch(/Compose that sentence yourself/i);
+    expect(withGuided.directive).not.toContain('Lass uns über Atmung sprechen.');
+
+    // VTID-03797 ANTI-DRIFT: both ladders must emit the IDENTICAL guided
+    // directive. They previously held byte-identical COPIES of the template
+    // while a comment claimed they "can never drift apart on this again" —
+    // and they did drift the moment one copy was edited (the live path is
+    // tryGuidedTopicRung, so editing the rung-8 copy alone changed nothing in
+    // production). One shared builder now backs both; this pins that.
+    const normalLadder = computeGreetingDecision(ctx(collidingContext));
+    expect(withGuided.directive).toBe(normalLadder.directive);
   });
 
   test('a guided tap with no wake-brief line yet falls through — nothing to say, so the briefing may still fire', () => {

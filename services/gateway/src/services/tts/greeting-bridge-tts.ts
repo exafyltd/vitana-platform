@@ -1,31 +1,25 @@
 /**
  * BOOTSTRAP-NOVA-SONIC-VOICE: greeting AUDIO bridge — TTS synthesis.
  *
- * Separate `TextToSpeechClient` instance from the one `routes/orb-live.ts`
- * uses for `/tts` (that one is module-private there) — Google's TTS client
- * is stateless/ADC-backed, so a second instance is safe and keeps this
- * module import-cycle-free from the route file.
+ * Requests LINEAR16 PCM so the output drops straight into the EXISTING PCM
+ * playback pipeline the live greeting audio already uses (orb-widget.js's
+ * `_processQueue`) — no client-side changes, no risk of two audio elements
+ * racing/overlapping.
  *
- * Requests LINEAR16 @ 24kHz (not MP3) so the output drops straight into the
- * EXISTING PCM playback pipeline the live greeting audio already uses
- * (orb-widget.js's `_processQueue`) — no client-side changes, no risk of
- * two audio elements racing/overlapping.
+ * BOOTSTRAP-ORB-GREETING-BRIDGE-NO-GOOGLE (VTID-03802): this module used to
+ * hold its own `TextToSpeechClient` and fall through to a live Google Cloud
+ * TTS call whenever Polly could not serve a request. GCP is fully
+ * decommissioned (VTID-03599/VTID-03649) — see
+ * `synthesizeGreetingBridgeAudioPcm`'s doc comment for why that fallback was
+ * removed rather than fixed to work around a dead host.
  */
 
-import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
-import { getNeural2TtsVoice, getGeminiTtsVoice, isNeural2EnabledFor } from '../../orb/live/voice/voice-mapping';
 import { getVoiceConfig } from '../voice-config';
 // VTID-03495: Polly seam. No-ops unless TTS_PROVIDER=polly.
-import { tryPollySynthesis, GOOGLE_PCM_SAMPLE_RATE_HZ } from './tts-provider';
+import { tryPollySynthesis } from './tts-provider';
+import { POLLY_PCM_SAMPLE_RATE_HZ } from './polly';
 
-let bridgeTtsClient: TextToSpeechClient | null = null;
-try {
-  bridgeTtsClient = new TextToSpeechClient();
-} catch (err) {
-  console.warn('[GREETING-BRIDGE-TTS] Failed to initialize TTS client:', (err as Error).message);
-}
-
-export const GREETING_BRIDGE_PCM_SAMPLE_RATE_HZ = GOOGLE_PCM_SAMPLE_RATE_HZ;
+export const GREETING_BRIDGE_PCM_SAMPLE_RATE_HZ = POLLY_PCM_SAMPLE_RATE_HZ;
 
 /**
  * Result of a greeting-bridge synthesis.
@@ -44,9 +38,36 @@ export interface GreetingBridgeAudio {
 }
 
 /**
- * Synthesize `text` to base64 LINEAR16 PCM mono. Returns null on any
- * failure (missing client, API error, empty response) — this is a UX
+ * Synthesize `text` to base64 LINEAR16 PCM mono via Polly. Returns null on
+ * any failure (unsupported language, API error, empty text) — this is a UX
  * enhancement, never allowed to block or fail the real greeting path.
+ *
+ * BOOTSTRAP-ORB-GREETING-BRIDGE-NO-GOOGLE (VTID-03802): the Google Cloud TTS
+ * fallback below this comment used to run when Polly could not serve a
+ * request (unsupported language, or a Polly API error with
+ * `TTS_POLLY_STRICT` unset/false). GCP has been fully decommissioned since
+ * VTID-03599/VTID-03649 — billing disabled, the project deleted — so that
+ * fallback no longer degrades gracefully to a slower/different provider, it
+ * reaches for a host that cannot answer. This function is called from
+ * `sendGreetingAudioBridge()`, which the SSE `/live/stream` handler `await`s
+ * BEFORE opening the real upstream (Nova) connection — so a hang here stalls
+ * the entire session before a single diagnostic event is emitted, before
+ * `connectToLiveAPI` is ever called, and before any error reaches the
+ * client. Confirmed live 2026-09-02 via `oasis_events`: multiple production
+ * SSE sessions show `orb.session.identity.resolved` →
+ * `vtid.live.session.start` → `orb.live.context.bootstrap` (all within
+ * milliseconds) followed by total silence — zero further `orb.live.diag`
+ * events of any kind — until an unrelated `idle_no_engagement` watchdog
+ * closes the session 90-145s later. That is exactly the reported symptom
+ * ("just connecting all the time"), and exactly the shape a hung `await`
+ * with no timeout and no error would produce. Per CLAUDE.md's own standing
+ * rule ("if you find a live reference to a GCP host, treat it as dead code
+ * to be removed on sight, not as a fallback target"), the Google branch is
+ * removed rather than reached for. `TTS_POLLY_STRICT` already made this
+ * exact skip explicit and intentional for Serbian; it is now the ONLY
+ * behavior for any Polly failure — a lost bridge phrase (this function's
+ * whole output is a nicety, not the real greeting) beats a session that
+ * never connects.
  */
 export async function synthesizeGreetingBridgeAudioPcm(
   text: string,
@@ -54,8 +75,6 @@ export async function synthesizeGreetingBridgeAudioPcm(
 ): Promise<GreetingBridgeAudio | null> {
   if (!text || text.trim().length === 0) return null;
 
-  // VTID-03495: Polly first when configured; falls through to Google below
-  // (logged) when Polly can't serve it and strict mode is off.
   const vcForPolly = await getVoiceConfig();
   const polly = await tryPollySynthesis({
     text,
@@ -69,48 +88,10 @@ export async function synthesizeGreetingBridgeAudioPcm(
     return { audioB64: polly.audioB64, sampleRateHz: polly.sampleRateHz };
   }
 
-  if (!bridgeTtsClient) return null;
-
-  try {
-    const useNeural2 = isNeural2EnabledFor(lang);
-    const voiceConfig = useNeural2 ? getNeural2TtsVoice(lang) : getGeminiTtsVoice(lang);
-    const voiceParams: Record<string, unknown> = {
-      languageCode: voiceConfig.languageCode,
-      name: voiceConfig.name,
-    };
-    if (!useNeural2) {
-      voiceParams.modelName = 'gemini-2.5-flash-tts';
-    }
-
-    const vc = await getVoiceConfig();
-    const request: protos.google.cloud.texttospeech.v1.ISynthesizeSpeechRequest = {
-      input: { text },
-      voice: voiceParams,
-      audioConfig: {
-        audioEncoding: 'LINEAR16' as any,
-        sampleRateHertz: GREETING_BRIDGE_PCM_SAMPLE_RATE_HZ,
-        speakingRate: vc.tts.speaking_rate,
-        pitch: 0,
-      },
-    };
-
-    const [response] = await bridgeTtsClient.synthesizeSpeech(request);
-    if (!response.audioContent) return null;
-
-    // LINEAR16 output from Cloud TTS includes a 44-byte WAV header (RIFF/fmt/data
-    // chunks) even though we asked for raw PCM — the playback pipeline expects
-    // headerless PCM samples (it wraps the bytes in its own AudioBuffer), so the
-    // header must be stripped or every bridge phrase would open with ~2.5ms of
-    // header-as-noise and a WAV-chunk-sized DC click.
-    const raw = Buffer.isBuffer(response.audioContent)
-      ? response.audioContent
-      : Buffer.from(response.audioContent as Uint8Array);
-    const pcm = stripWavHeaderIfPresent(raw);
-    return { audioB64: pcm.toString('base64'), sampleRateHz: GREETING_BRIDGE_PCM_SAMPLE_RATE_HZ };
-  } catch (err) {
-    console.warn('[GREETING-BRIDGE-TTS] Synthesis failed:', (err as Error).message);
-    return null;
-  }
+  // Polly did not serve this request (unsupported language, or an API
+  // error under non-strict mode) — no bridge phrase this session. Falling
+  // through to Google Cloud TTS here would call a decommissioned service.
+  return null;
 }
 
 /** Cloud TTS LINEAR16 responses are WAV-wrapped; strip the RIFF header if present. */
