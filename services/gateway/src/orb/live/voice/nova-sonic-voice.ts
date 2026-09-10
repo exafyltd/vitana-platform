@@ -4,10 +4,18 @@
  *
  * Nova has its OWN voice catalog — Gemini voice IDs (`Kore`, `Charon`,
  * `Aoede`, …) must never be passed to Nova. The ones this file names are:
- *   en → tina   (user live-test verdict 2026-07-28: en's native `tiffany`
- *                sounded bad; `tina` — Nova's DE voice — sounds good and is
- *                reused for EN content too, at the cost of a German accent
- *                on English speech)
+ *   en → amy   (VTID-03809 — user live-test verdict 2026-07-28 rejected en's
+ *               native `tiffany` and settled on `tina` (Nova's DE voice)
+ *               reused for EN, at the cost of a German accent on English
+ *               speech. A later listener disliked that German-accented
+ *               English and asked for an alternative; `amy` — Nova 2 Sonic's
+ *               native en-GB voice, confirmed in AWS's own Nova 2 voice
+ *               catalog docs — is untried in this app and swaps the German
+ *               accent for a British one instead. `tiffany`/`matthew` (en-US)
+ *               were not reconsidered: tiffany already lost the 07-28 test,
+ *               and matthew is masculine, excluded by the VTID-03704
+ *               female-only rule below. Needs the same kind of live listen
+ *               `tina` got before this is treated as final.)
  *   de → tina
  *   fr → ambre
  *   es → lupe
@@ -46,7 +54,7 @@
  */
 
 const NOVA_VOICES = {
-  en: 'tina',
+  en: 'amy',
   de: 'tina',
   fr: 'ambre',
   es: 'lupe',
@@ -129,9 +137,8 @@ export function resolveNovaSonicVoice(query: NovaSonicVoiceQuery): NovaSonicVoic
  * Serbian is a real compromise, and it is chosen deliberately rather than
  * inherited: Nova publishes no voice for those languages, so there is nothing
  * better to switch to, and `pl`/`sr` are confirmed working with it in
- * production. `tina` is also already the house voice for English (see the
- * header note — the native `tiffany` was rejected on a live listen), so this
- * is the same substitution the product already ships knowingly for `en`.
+ * production. `tina` is also `de`'s own native voice (see the header note),
+ * so the substitution reuses a voice this product already ships knowingly.
  */
 export const NOVA_SONIC_FALLBACK_VOICE: NovaSonicVoiceId = 'tina';
 

@@ -1,0 +1,103 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb/live/voice/voice-routing-policy.test.ts
+  VTID-03704: voice routing policy
+    rule 1 — not on Nova means Polly, except Serbian
+      ✓ routes every non-Nova language to the cascade unless Polly cannot voice it (5 ms)
+      ✓ never cascades a language Nova already speaks — speech-to-speech wins (1 ms)
+      ✓ keeps Serbian on Nova and blames Polly, the blocker that is real (2 ms)
+      ✓ leaves no language with no route at all (1 ms)
+    rule 1b — rerouting a language must not change how it SOUNDS
+      ✓ keeps a real Nova voice for a cascade-routed language Nova can still voice (1 ms)
+      ✓ only reports a substitution when Nova genuinely has no voice (6 ms)
+    rule 2 — one female voice per language, persona-independent
+      ✓ resolves the same voice for every persona, in every Nova language
+      ✓ resolves the same voice with no persona at all — the anonymous case
+      ✓ never resolves one of the retired masculine voice ids (14 ms)
+
+PASS test/orb/live/voice/nova-sonic-voice-fallback.test.ts
+  VTID-03682: Nova voice fallback is explicit
+    ✓ reports fallback=true for every language with no native Nova voice (5 ms)
+    ✓ reports fallback=false for languages Nova has a real voice for (9 ms)
+    ✓ does NOT change which voice is served — pl and sr work today on tina
+    ✓ preserves the null contract of the underlying resolver (1 ms)
+    ✓ logs the substitution once per language, not once per session (1 ms)
+    ✓ normalises locale tags so ru-RU does not log twice (1 ms)
+    ✓ the call site no longer uses a bare ?? fallback (10 ms)
+    ✓ latches the diag per session — connectToLiveAPI is re-entered on every reconnect AND rotation (3 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb/live/voice/nova-sonic-voice.test.ts
+  resolveNovaSonicVoice
+    ✓ maps Vitana (feminine default) per language (1 ms)
+    ✓ ignores persona — every persona gets the same female voice (2 ms)
+    ✓ never returns one of the retired masculine voices (1 ms)
+    ✓ sage and mira use feminine voices
+    ✓ unknown/absent persona falls back to the feminine voice (1 ms)
+    ✓ handles regional tags and casing
+    ✓ returns null for languages outside the Nova canary (callers must have fallen back) (1 ms)
+    ✓ keeps carolina for pt — the cascade gate is inert until IAM lands
+    ✓ never substitutes a German voice for Portuguese (1 ms)
+    ✓ still refuses the languages Nova genuinely does not speak
+    ✓ never returns a Gemini voice ID (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb/routes/session-start-voice-telemetry.test.ts
+  VTID-03704: session-start voice telemetry
+    ✓ records the Nova voice that actually speaks (2 ms)
+    ✓ records whether the language is on Nova at all (1 ms)
+    ✓ resolves the Nova voice through the fallback-REPORTING resolver (1 ms)
+    ✓ keeps the legacy live-api voice field rather than silently replacing it (1 ms)
+
+(node:1319) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS test/services/voice-lab/nova-sonic-test-runner.test.ts
+  runNovaSonicTestSuite
+    ✓ offline tier passes on a clean environment; live probe skips by default (10 ms)
+    ✓ live probe requested but Nova disabled → typed SKIP, no stream opened (2 ms)
+    ✓ config issues surface as a failed readiness check (1 ms)
+    ✓ records recent runs (ring buffer) (1 ms)
+  probeLiveClient — second-turn completion is required, never a silent pass
+    ✓ both turns complete → pass, with the second turn timed separately (2 ms)
+    ✓ stream closes after turn 1 → FAIL, not a pass with second_turn_ms=-1
+    ✓ stream errors after turn 1 → FAIL with the error code surfaced
+    ✓ sendTextTurn refuses the second turn (stream not open) → FAIL, return value not ignored (1 ms)
+    ✓ no second turn requested → single-turn behavior unchanged (still passes)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 5 passed, 5 total
+Tests:       41 passed, 41 total
+Snapshots:   0 total
+Time:        2.014 s
+Ran all test suites matching /test\/orb\/live\/voice\/nova-sonic-voice.test.ts|test\/orb\/live\/voice\/nova-sonic-voice-fallback.test.ts|test\/orb\/live\/voice\/voice-routing-policy.test.ts|test\/orb\/routes\/session-start-voice-telemetry.test.ts|test\/services\/voice-lab\/nova-sonic-test-runner.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
