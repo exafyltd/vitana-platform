@@ -35,6 +35,15 @@ jest.mock('../src/providers/titan-image', () => {
   };
 });
 
+const mockTranscribeAudioClip = jest.fn();
+jest.mock('../src/services/transcribe-audio-bridge', () => {
+  const actual = jest.requireActual('../src/services/transcribe-audio-bridge');
+  return {
+    ...actual,
+    transcribeAudioClip: (...args: unknown[]) => mockTranscribeAudioClip(...args),
+  };
+});
+
 // Deterministic JWT path — every test here exercises the service-token leg,
 // so the admin-JWT fallback should never even be reached.
 jest.mock('../src/middleware/auth-supabase-jwt', () => ({
@@ -392,5 +401,115 @@ describe('POST /api/v1/ai-bridge/generate-image', () => {
       .send({ prompt: 'a sunset' });
 
     expect(res.status).toBe(502);
+  });
+});
+
+describe('POST /api/v1/ai-bridge/transcribe', () => {
+  const ORIGINAL_TOKEN = process.env.GATEWAY_SERVICE_TOKEN;
+
+  beforeEach(() => {
+    process.env.GATEWAY_SERVICE_TOKEN = 'test-service-token';
+    mockTranscribeAudioClip.mockReset();
+  });
+
+  afterAll(() => {
+    if (ORIGINAL_TOKEN === undefined) delete process.env.GATEWAY_SERVICE_TOKEN;
+    else process.env.GATEWAY_SERVICE_TOKEN = ORIGINAL_TOKEN;
+  });
+
+  it('rejects a request with no auth (401), never calling Transcribe', async () => {
+    const res = await request(buildApp())
+      .post('/api/v1/ai-bridge/transcribe')
+      .send({ audioBase64: Buffer.from('fake-audio').toString('base64'), language: 'en' });
+    expect(res.status).toBe(401);
+    expect(mockTranscribeAudioClip).not.toHaveBeenCalled();
+  });
+
+  it('rejects a missing audioBase64 (400), never calling Transcribe', async () => {
+    const res = await request(buildApp())
+      .post('/api/v1/ai-bridge/transcribe')
+      .set('Authorization', 'Bearer test-service-token')
+      .send({ language: 'en' });
+    expect(res.status).toBe(400);
+    expect(mockTranscribeAudioClip).not.toHaveBeenCalled();
+  });
+
+  it('rejects a missing language (400), never calling Transcribe', async () => {
+    const res = await request(buildApp())
+      .post('/api/v1/ai-bridge/transcribe')
+      .set('Authorization', 'Bearer test-service-token')
+      .send({ audioBase64: Buffer.from('fake-audio').toString('base64') });
+    expect(res.status).toBe(400);
+    expect(mockTranscribeAudioClip).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid base64 (400), never calling Transcribe', async () => {
+    const res = await request(buildApp())
+      .post('/api/v1/ai-bridge/transcribe')
+      .set('Authorization', 'Bearer test-service-token')
+      .send({ audioBase64: '   ', language: 'en' });
+    expect(res.status).toBe(400);
+    expect(mockTranscribeAudioClip).not.toHaveBeenCalled();
+  });
+
+  it('decodes the base64 body and forwards bytes/language/mimeType to the bridge', async () => {
+    mockTranscribeAudioClip.mockResolvedValue({ transcript: 'hello world', languageCode: 'en-US' });
+    const audioBytes = Buffer.from('fake-audio-bytes');
+
+    await request(buildApp())
+      .post('/api/v1/ai-bridge/transcribe')
+      .set('Authorization', 'Bearer test-service-token')
+      .send({ audioBase64: audioBytes.toString('base64'), language: 'en', mimeType: 'audio/webm' });
+
+    expect(mockTranscribeAudioClip).toHaveBeenCalledTimes(1);
+    const [forwardedBytes, forwardedLang, forwardedMime] = mockTranscribeAudioClip.mock.calls[0];
+    expect(Buffer.compare(forwardedBytes, audioBytes)).toBe(0);
+    expect(forwardedLang).toBe('en');
+    expect(forwardedMime).toBe('audio/webm');
+  });
+
+  it('returns the transcript on success', async () => {
+    mockTranscribeAudioClip.mockResolvedValue({ transcript: 'guten tag', languageCode: 'de-DE' });
+
+    const res = await request(buildApp())
+      .post('/api/v1/ai-bridge/transcribe')
+      .set('Authorization', 'Bearer test-service-token')
+      .send({ audioBase64: Buffer.from('fake-audio').toString('base64'), language: 'de' });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      ok: true,
+      transcript: 'guten tag',
+      language: 'de-DE',
+      provider: 'aws-transcribe',
+    });
+  });
+
+  it('maps TranscribeBridgeError UNSUPPORTED_LANGUAGE to 422', async () => {
+    const { TranscribeBridgeError } = jest.requireActual('../src/services/transcribe-audio-bridge');
+    mockTranscribeAudioClip.mockRejectedValue(
+      new TranscribeBridgeError('UNSUPPORTED_LANGUAGE', 'Amazon Transcribe has no streaming language code for "xx"'),
+    );
+
+    const res = await request(buildApp())
+      .post('/api/v1/ai-bridge/transcribe')
+      .set('Authorization', 'Bearer test-service-token')
+      .send({ audioBase64: Buffer.from('fake-audio').toString('base64'), language: 'xx' });
+
+    expect(res.status).toBe(422);
+    expect(res.body.ok).toBe(false);
+    expect(res.body.error).toBe('unsupported_language');
+  });
+
+  it('maps any other thrown error to 502', async () => {
+    mockTranscribeAudioClip.mockRejectedValue(new Error('ffmpeg exit 1'));
+
+    const res = await request(buildApp())
+      .post('/api/v1/ai-bridge/transcribe')
+      .set('Authorization', 'Bearer test-service-token')
+      .send({ audioBase64: Buffer.from('fake-audio').toString('base64'), language: 'en' });
+
+    expect(res.status).toBe(502);
+    expect(res.body).toEqual({ ok: false, error: 'transcription_failed', message: 'ffmpeg exit 1' });
   });
 });

@@ -89,3 +89,29 @@ AC-6 — The route makes no DB write and has no state transition to record
 TEST: `services/gateway/test/ai-bridge.test.ts` — 10 tests covering auth gating (401 with no token, JWT path never touched when the service token matches), request-shape validation (400s), Gemini→Bedrock request translation (system-turn splitting, tool-schema translation, option forwarding/defaulting), and Bedrock→Gemini response translation (text and functionCall shapes) plus a `not_configured` error surfaced as 502.
 
 OASIS_IMPACT: no — see AC-6.
+
+---
+
+## Addendum, 2026-09-10 (VTID-03815 continuation) — the `/transcribe` leg (B7's `transcribe-audio`)
+
+Evidence filed here for the same reason the 2026-08-23 increment above was:
+the Evidence Pack Gate keys strictly off the PR title's VTID (VTID-03591),
+and this is a later increment on the same PR, not new Aurora-identity work.
+
+AC-7 — A new gateway route exists for the Amazon Transcribe bridge,
+correctly auth-gated, and is mounted where the route-mount evidence gate
+expects
+
+ROUTE_MOUNT: `services/gateway/src/routes/ai-bridge.ts` → `router.post('/transcribe', requireServiceOrAdmin, ...)`; mounted the same way AC-5's `/generate` is, via `mountRouterSync(app, '/api/v1/ai-bridge', aiBridgeRouter, { owner: 'ai-bridge' })` in `services/gateway/src/index.ts` (no separate mount call needed — same router instance).
+FINAL_URL: `POST {gateway}/api/v1/ai-bridge/transcribe`
+CURL_PROOF: same shape as AC-5's `/generate` — a service-to-service route (Supabase edge function → gateway) never called by an end user, so there is no production traffic to point at pre-merge, and this branch has never been merged to `main` (`AWS-STAGE-DEPLOY-GATEWAY.yml` only auto-deploys staging on push to `main`), so there is no live URL this session can curl at all yet — stated plainly rather than inventing a result, per this gate's own stated purpose (VTID-03696: "a gate that can only be passed by making something up launders a guess into a green check, which is worse than not having the gate"). Once staging picks up this commit: `curl -s -o /dev/null -w "%{http_code} %{content_type}" -X POST https://preview-aws-gateway.vitanaland.com/api/v1/ai-bridge/transcribe -H "Content-Type: application/json" -d '{}'` must return `401 application/json...` (auth required, route exists), NOT `404 text/html`. With a valid `GATEWAY_SERVICE_TOKEN` bearer and no `audioBase64`, the same endpoint must return `400 application/json` (`{"ok":false,"error":"audioBase64 must be a non-empty string"}`), confirming request validation runs past the auth gate. Local equivalent, run this session (not a substitute for the staging check above, but confirms the route exists and both gates fire before any deploy): `services/gateway/test/ai-bridge.test.ts`'s `POST /api/v1/ai-bridge/transcribe` block boots the router directly via `express()`+`supertest` and asserts exactly these two response shapes (8/8 passing).
+
+AC-8 — The route makes no DB write and has no state transition to record
+
+`transcribeAudioClip()` (`services/gateway/src/services/transcribe-audio-bridge.ts`) decodes the audio via a local `ffmpeg` subprocess and makes a single stateless call to Amazon Transcribe streaming, returning the transcript; nothing is written to Supabase/Aurora, no OASIS-worthy decision is made. Marked `// impact-allow-no-oasis` in the handler body, same category as AC-6.
+
+TEST: `services/gateway/test/ai-bridge.test.ts` — 8 new tests covering auth gating (401 with no token), request-shape validation (400s for missing/invalid `audioBase64`/`language`), base64 decode + forwarding of bytes/language/mimeType to the bridge, the success response shape, and error mapping (`UNSUPPORTED_LANGUAGE` → 422, any other thrown error → 502). Full gateway suite re-run after this addition: 835/836 suites (1 pre-existing skip), 14,319 tests passing, 0 failures; `tsc --noEmit` clean.
+
+**Not independently confirmed against live traffic** — same honest caveat as most of this PR's own changelog: the next real signal is a staging deploy actually exercising the ffmpeg-decode + Transcribe-streaming path end-to-end (this sandbox has no `ffmpeg` binary and no AWS Transcribe network access to test that leg directly).
+
+OASIS_IMPACT: no — see AC-8.

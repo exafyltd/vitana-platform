@@ -40,6 +40,7 @@
 import { Router, Request, Response } from 'express';
 import { invokeBedrock, type BedrockContentBlock, type BedrockTool } from '../providers/bedrock';
 import { generateTitanImage } from '../providers/titan-image';
+import { transcribeAudioClip, TranscribeBridgeError } from '../services/transcribe-audio-bridge';
 import { requireServiceOrAdmin } from '../middleware/require-service-or-admin';
 
 const router = Router();
@@ -238,6 +239,70 @@ router.post('/generate-image', requireServiceOrAdmin, async (req: Request, res: 
     model: result.model,
     upstream_ms: result.upstream_ms,
   });
+});
+
+/**
+ * Speech-to-text leg of the same bridge (Aurora migration B7,
+ * AURORA-B7-EDGE-FUNCTIONS-INVENTORY.md's "Remaining: transcribe-audio"
+ * item). Neither Bedrock nor Titan does audio transcription, so this is a
+ * third, independent adapter (services/transcribe-audio-bridge.ts) over
+ * Amazon Transcribe — reusing the language-code table and region resolution
+ * this codebase's ORB cascaded-voice pipeline already built and verified
+ * (orb/live/upstream/cascaded-config.ts, VTID-03683), not a fourth copy of
+ * it. Response shape is its own thing (`transcript`), matching
+ * `/generate-image`'s precedent of not forcing a Gemini-shaped response onto
+ * a leg Gemini's own shape never covered for this either (Gemini's
+ * multimodal transcription response is `candidates[0].content.parts[].text`,
+ * which the vitana-v1 caller already extracts into a plain string before
+ * this bridge is ever involved).
+ */
+router.post('/transcribe', requireServiceOrAdmin, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: a stateless transcription call-through, no DB
+  // write and no state transition of its own — same category as
+  // `/generate`/`/generate-image` above.
+  const body = req.body as { audioBase64?: string; language?: string; mimeType?: string };
+
+  if (!body?.audioBase64 || typeof body.audioBase64 !== 'string' || body.audioBase64.trim().length === 0) {
+    res.status(400).json({ ok: false, error: 'audioBase64 must be a non-empty string' });
+    return;
+  }
+  if (!body?.language || typeof body.language !== 'string') {
+    res.status(400).json({ ok: false, error: 'language must be provided' });
+    return;
+  }
+
+  let audioBytes: Buffer;
+  try {
+    audioBytes = Buffer.from(body.audioBase64, 'base64');
+  } catch {
+    res.status(400).json({ ok: false, error: 'audioBase64 is not valid base64' });
+    return;
+  }
+  if (audioBytes.byteLength === 0) {
+    res.status(400).json({ ok: false, error: 'audioBase64 decoded to zero bytes' });
+    return;
+  }
+
+  try {
+    const result = await transcribeAudioClip(audioBytes, body.language, body.mimeType);
+    res.status(200).json({
+      ok: true,
+      transcript: result.transcript,
+      language: result.languageCode,
+      provider: 'aws-transcribe',
+    });
+  } catch (err) {
+    if (err instanceof TranscribeBridgeError && err.code === 'UNSUPPORTED_LANGUAGE') {
+      // 422: the caller's request was well-formed but this language cannot
+      // be served — distinct from a transient upstream failure (502) so a
+      // retry-with-backoff caller doesn't waste an attempt on a language
+      // that will never succeed.
+      res.status(422).json({ ok: false, error: 'unsupported_language', message: err.message });
+      return;
+    }
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(502).json({ ok: false, error: 'transcription_failed', message });
+  }
 });
 
 export default router;

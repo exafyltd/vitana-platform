@@ -308,24 +308,35 @@ vitana-platform PR #3087) plus a drop-in `_shared/bedrock-bridge-client.ts`
 (vitana-v1 PR #1051) closes the 23-of-74-functions "calls Gemini/Vertex
 directly" violation for the 6 frontend-reachable, `gemini-client.ts`-based
 functions without needing Lambda (IAM-denied to this session) — wired
-behind an `AI_BRIDGE_PROVIDER` flag on 4 of those 6 functions so far
+behind an `AI_BRIDGE_PROVIDER` flag on all 6 of those functions now
 (`generate-enhanced-recommendations`, `generate-proactive-greeting`,
-`extract-diary-insights`, `social-media-import`), defaulting to unchanged
-behavior. `ai-chat` turned out to have THREE separate Gemini-touching code
+`extract-diary-insights`, `social-media-import`, `ai-chat` (partial, see
+below), `transcribe-audio`), each defaulting to unchanged behavior.
+`generate-event-image`'s Vertex Imagen call is wired too (merged
+independently into `main`, `AI_BRIDGE_PROVIDER` defaulting to `'vertex'`
+there specifically since Imagen still works and Bedrock/Titan is the
+opt-in). `ai-chat` turned out to have THREE separate Gemini-touching code
 paths, not one: its two isolated non-streaming `generateContent()` calls
-(post-stream translation, background insight extraction) are now wired
-the same way; its streaming chat response (a raw fetch directly to
-Gemini's SSE endpoint, entangled with per-sentence TTS triggering) and its
+(post-stream translation, background insight extraction) are wired the
+same way; its streaming chat response (a raw fetch directly to Gemini's
+SSE endpoint, entangled with per-sentence TTS triggering) and its
 non-streaming fallback (routed through Lovable's own AI gateway, itself
 pointed at `google/gemini-2.5-flash` — a third distinct integration) are
 deliberately untouched, needing real Bedrock streaming support this
 session has no safe way to build and verify against a live chat feature.
-Remaining: `transcribe-audio` (sends raw audio bytes to
-Gemini's multimodal endpoint — this bridge is text-only, so Bedrock/Claude
-has no drop-in path here; needs Amazon Transcribe instead, separate work).
-Also untouched: the 2 `generateEmbedding`-dependent functions and
-`generate-event-image`'s Vertex Imagen call, neither of which this bridge
-covers.
+`transcribe-audio` (VTID-03815 continuation, 2026-09-10): a THIRD,
+independent bridge adapter — neither Bedrock nor Titan does audio
+transcription — over Amazon Transcribe (`POST /api/v1/ai-bridge/transcribe`,
+`services/gateway/src/services/transcribe-audio-bridge.ts`), reusing the
+language-code table the ORB cascaded-voice pipeline already built
+(`orb/live/upstream/cascaded-config.ts`, VTID-03683) rather than a fourth
+copy of it. Decodes the browser's arbitrary MediaRecorder container
+(webm/opus, mp4/aac, etc.) to 16kHz mono PCM via `ffmpeg` (already on the
+gateway's PATH), then feeds the whole clip through Transcribe streaming as
+a short-lived single-shot stream. Still untouched: the 2
+`generateEmbedding`-dependent functions (no Bedrock embedding endpoint
+exists in this codebase's provider yet) and `ai-chat`'s streaming/
+Lovable-gateway legs above.
 
 **B8 — Cutover + rollback.** Per Phase 4 below.
 
