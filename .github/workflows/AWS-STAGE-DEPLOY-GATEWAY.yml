@@ -235,7 +235,8 @@ jobs:
             "SEC_ANON:vitana/supabase/prod/anon-key" \
             "SEC_GEMINI:vitana/gateway/staging/google-gemini-api-key" \
             "SEC_OPENAI:vitana/gateway/staging/openai-api-key" \
-            "SEC_DEEPSEEK:vitana/gateway/staging/deepseek-api-key" ; do
+            "SEC_DEEPSEEK:vitana/gateway/staging/deepseek-api-key" \
+            "SEC_AURORA:vitana/aurora/prod/postgrest-authenticator-uri" ; do
             VAR="${pair%%:*}"; NAME="${pair#*:}"
             ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text 2>/dev/null || true)
             if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
@@ -413,6 +414,33 @@ jobs:
           fi
           echo "Bedrock activation on staging: BEDROCK_ROLE_ARN=$TASK_ROLE_ARN"
 
+          # VTID-03591/B4 — AURORA_DATABASE_URL on STAGING, so the already-built
+          # and already-tested GET /api/v1/admin/aurora-rls-health endpoint
+          # (services/aurora-client.ts's withAuroraRlsContext(), wired into a
+          # real route by VTID-03591 commit 5cbf8178) gets exercised for the
+          # first time over its real transport (pg.Pool/Postgres wire protocol)
+          # instead of only the RDS Data API a sandboxed session can reach.
+          # getAuroraPool() treats this as optional (returns null when unset),
+          # so leaving it unset anywhere is always the safe fallback — this
+          # only ever turns the diagnostic ON, never off by omission.
+          #
+          # Points at the ONE Aurora cluster that exists (`vitana-aurora-prod`
+          # — confirmed via `aws rds describe-db-clusters`, no separate staging
+          # cluster) via the pre-provisioned `authenticator` role secret
+          # (`vitana/aurora/prod/postgrest-authenticator-uri`) — the same
+          # unprivileged, non-BYPASSRLS login role PostgREST itself would use,
+          # verified live in VTID-03769 to have `rolsuper=false`/
+          # `rolbypassrls=false`. This is not a new access grant or a new data
+          # exposure: staging already reads/writes the same production
+          # Supabase project (CLAUDE.md, `vitana-v1`'s "gateway-staging runs
+          # against prod Supabase too"), and B1's repository seams still route
+          # every real business call through supabase-js regardless — this
+          # var only lights up one read-only, admin-gated diagnostic route.
+          # Deliberately NOT added to AWS-PROD-DEPLOY-GATEWAY.yml — promoting
+          # this to prod is a separate, later, human decision. $SEC_AURORA
+          # is resolved above in the same describe-secret loop as the other
+          # per-deploy secrets, not re-resolved here.
+
           NEW_DEF=$(aws ecs describe-task-definition --task-definition "$TD_ARN" --query taskDefinition \
             | jq --arg IMG "$IMAGE" --arg SHA "$SHA" --arg SHORT "$SHORT" \
                  --arg NOVA_ENABLED "$NOVA_SONIC_ENABLED" \
@@ -420,7 +448,7 @@ jobs:
                  --arg NOVA_TENANTS "$NOVA_SONIC_CANARY_TENANT_IDS" \
                  --arg SEC_JWT "$SEC_JWT" --arg SEC_ANON "$SEC_ANON" \
                  --arg SEC_GEMINI "$SEC_GEMINI" --arg SEC_OPENAI "$SEC_OPENAI" \
-                 --arg SEC_DEEPSEEK "$SEC_DEEPSEEK" \
+                 --arg SEC_DEEPSEEK "$SEC_DEEPSEEK" --arg SEC_AURORA "$SEC_AURORA" \
                  --arg TASK_ROLE "$TASK_ROLE_ARN" '
                 .containerDefinitions[0].image = $IMG
                 | .containerDefinitions[0].environment |=
@@ -483,13 +511,15 @@ jobs:
                 | .containerDefinitions[0].secrets |=
                     ( [ .[] | select(.name | IN("SUPABASE_JWT_SECRET","SUPABASE_ANON_KEY",
                                                 "GOOGLE_GEMINI_API_KEY","GEMINI_API_KEY",
-                                                "OPENAI_API_KEY","DEEPSEEK_API_KEY") | not) ]
+                                                "OPENAI_API_KEY","DEEPSEEK_API_KEY",
+                                                "AURORA_DATABASE_URL") | not) ]
                       + [ {name:"SUPABASE_JWT_SECRET",   valueFrom:$SEC_JWT},
                           {name:"SUPABASE_ANON_KEY",     valueFrom:$SEC_ANON},
                           {name:"GOOGLE_GEMINI_API_KEY", valueFrom:$SEC_GEMINI},
                           {name:"GEMINI_API_KEY",        valueFrom:$SEC_GEMINI},
                           {name:"OPENAI_API_KEY",        valueFrom:$SEC_OPENAI},
-                          {name:"DEEPSEEK_API_KEY",      valueFrom:$SEC_DEEPSEEK} ] )
+                          {name:"DEEPSEEK_API_KEY",      valueFrom:$SEC_DEEPSEEK},
+                          {name:"AURORA_DATABASE_URL",   valueFrom:$SEC_AURORA} ] )
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \

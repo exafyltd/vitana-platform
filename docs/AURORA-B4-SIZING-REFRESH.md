@@ -140,3 +140,57 @@ connection layer isn't wired to actually issue `SET ROLE`/set the JWT
 GUC per request in any live code path (`aurora-client.ts`'s
 `withAuroraRlsContext()` exists but nothing calls it from a route yet) —
 that's the next real step, not a config change to make silently.
+
+## Addendum (VTID-03591), 2026-08-29 — the route above exists now: `GET /api/v1/admin/aurora-rls-health`
+
+The "next real step" this doc named above is done. Commit `5cbf8178`
+("feat(admin): wire Aurora RLS shim into a real diagnostic route") added
+`GET /api/v1/admin/aurora-rls-health` to `routes/admin-health.ts`, calling
+`withAuroraRlsContext()` with the calling admin's own verified JWT
+claims/role — exactly the missing wiring. 7 tests cover it end-to-end
+(`test/routes/admin-aurora-rls-health.test.ts`): `configured:false` when
+`AURORA_DATABASE_URL` is unset, the success path, and 503 for each of the
+three failure modes the endpoint exists to catch (BYPASSRLS/superuser
+login role, `auth.uid()` not resolving to the caller, `auth.uid()`
+resolving to someone ELSE's id — a pooled-connection context leak).
+Deliberately diagnostic-only: no business route reads/writes through
+Aurora yet, this only proves or disproves the shim would work.
+
+**What was still actually missing, found 2026-09-10:** `AURORA_DATABASE_URL`
+was never set on either the staging or prod gateway task definition —
+confirmed by grepping both `AWS-STAGE-DEPLOY-GATEWAY.yml` and
+`AWS-PROD-DEPLOY-GATEWAY.yml` for `AURORA`, zero hits in either. So the
+route above has been live in the image since 2026-08-29 but every real
+invocation has always short-circuited to `configured:false` —
+`getAuroraPool()` never had a connection string to try. The pg.Pool/raw-
+Postgres-wire transport this route (and every future real business route)
+would use has therefore *still* never been exercised end-to-end from
+anywhere — only the RDS Data API (HTTPS, a completely different transport)
+has been proven live, per this doc's own 2026-08-27 addendum above.
+
+**Fixed same pass:** wired `AURORA_DATABASE_URL` into
+`AWS-STAGE-DEPLOY-GATEWAY.yml` (staging only) as an upserted `secrets`
+entry, sourced from the pre-provisioned `vitana/aurora/prod/
+postgrest-authenticator-uri` secret — the same unprivileged `authenticator`
+role verified in the 2026-08-27 addendum to have `rolsuper=false`/
+`rolbypassrls=false`. Only one Aurora cluster exists in this account
+(`vitana-aurora-prod`, confirmed via `aws rds describe-db-clusters` —
+no separate staging cluster), so this points staging at the same cluster
+prod would eventually use — not a new exposure, since staging already
+reads/writes the same production Supabase project today (`vitana-v1`
+CLAUDE.md: "gateway-staging runs against prod Supabase too"), and B1's
+repository seams still route every real business call through
+supabase-js regardless of this change. Validated the task-definition jq
+upsert filter against a synthetic task-def JSON (correct upsert, existing
+secrets/env vars preserved) since this session cannot dispatch the deploy
+workflow itself to observe a real rollout. Deliberately **not** added to
+`AWS-PROD-DEPLOY-GATEWAY.yml` — promoting to prod is a separate, later,
+human decision, same pattern as every other staging-only flag in that
+workflow.
+
+**Still not done, and now the actual next step:** watching the next
+staging deploy's `/api/v1/admin/aurora-rls-health` response flip from
+`configured:false` to a real `ok`/503 verdict — that is the first live
+confirmation the pg.Pool transport works at all, which no session so far
+has been able to observe directly (no VPC route from any Claude Code
+sandbox to Aurora's Postgres port, per this doc's earlier caveats).
