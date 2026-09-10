@@ -1333,3 +1333,37 @@ degrades or fails in a defensible way once its dead RPC is called; the
 open item is still the product decision the base doc already named
 (rebuild the DB layer for these 5 features, or retire them), not a code
 safety problem.
+
+## Addendum, 2026-09-10, VTID-03812 — the last 2 of 36, `exec_sql` and `kb_search`
+
+Closes out the base doc's Next Steps item 2 in full. Every other name on
+the 36-confirmed-dead list has now been audited across this doc's
+addenda: the 30-RPC D-series family (above), `vtn_reward`/`vtn_spend`/
+`vtn_transfer` (2026-08-29 addendum), and `user_preferences_get_bundle`
+(covered as part of `d34`'s audit above). These are the final two
+ungrouped singles.
+
+- **`exec_sql`** — one call site, `voice-budget-watch-repository.ts`'s
+  `execSqlRpc()`, called from `voice-budget-watch.ts`'s
+  `fetchVoiceBudgetWatch()`. On RPC error it `throw`s; the one caller,
+  `routes/voice-budget-watch.ts` (`GET /api/v1/admin/voice-budget-watch`,
+  a real, mounted, admin-only observability route), wraps the call in
+  `try/catch` and returns HTTP 500 with the real error message. **No fix
+  needed** — the dead RPC means this admin route is currently broken, but
+  it fails loudly and correctly rather than silently.
+- **`kb_search`** — one call site, `services/openclaw-bridge/src/skills/
+  vitana-knowledge.ts`'s `actions.search()`. Already defensively written
+  for exactly this failure: on RPC error it falls back to a real `ilike`
+  query against `knowledge_articles` and only throws if that fallback
+  ALSO errors, tagging the response `method:'fallback'` vs `'semantic'`
+  so a caller can tell which path served the result. **No fix needed** —
+  the dead RPC means knowledge search runs in basic-ILIKE mode instead of
+  semantic search, a real product degradation but not a silent-wrong-
+  answer bug.
+
+**Net: all 36 confirmed-dead RPCs from the base doc's Next Steps item 2
+are now individually audited.** Zero needed call-site removal or a
+fail-open fix beyond the one already applied to `d50`. The remaining open
+item across all 36 is unchanged from what the base doc already said: a
+product decision on whether to rebuild each feature's DB layer or retire
+it, not a code-safety follow-up.
