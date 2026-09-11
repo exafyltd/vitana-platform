@@ -304,13 +304,19 @@ consistent with the decision on record. Recommended starting point: a
 short-interval polling relay (no reboot needed, buildable now) rather than
 a logical-replication consumer (same reboot cost as running `realtime`
 itself), upgradable later if polling latency proves insufficient.
-**Execution started 2026-09-11** (VTID-03815 continuation): the polling
-relay for the first and simplest of the 3 tables, `user_notifications`
-(`GET /api/v1/realtime/user-notifications/stream`), is built, unit-tested,
-and merged behind `FEATURE_REALTIME_RELAY_USER_NOTIFICATIONS_ENV` — off
-everywhere today, no frontend consumer wired up yet. `user_activity_log`
-and `chat_messages` remain unbuilt; see
-`AURORA-B5-REALTIME-INVENTORY.md`'s matching 2026-09-11 addendum.
+**Execution started 2026-09-11** (VTID-03815 continuation): 2 of the 3
+tables now have a polling relay — `user_notifications`
+(`GET /api/v1/realtime/user-notifications/stream`) and `user_activity_log`
+(`GET /api/v1/realtime/user-activity-log/stream`), sharing one generic
+cursor-poller (`services/gateway/src/services/realtime/generic-cursor-relay.ts`)
+since both are "row ownership by column equality" — built, unit-tested,
+and merged behind their own independent feature flags
+(`FEATURE_REALTIME_RELAY_USER_NOTIFICATIONS_ENV`/
+`FEATURE_REALTIME_RELAY_USER_ACTIVITY_LOG_ENV`) — both off everywhere
+today, no frontend consumer wired up yet. `chat_messages` remains
+unbuilt and deliberately won't reuse the generic module — it needs
+thread/group membership authorization, not row ownership; see
+`AURORA-B5-REALTIME-INVENTORY.md`'s matching 2026-09-11 addenda.
 
 **B6 — Storage.** 23 call sites → S3. Smallest workstream.
 

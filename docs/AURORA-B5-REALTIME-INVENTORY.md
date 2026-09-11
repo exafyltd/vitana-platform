@@ -431,3 +431,53 @@ oversight here.
   pre-existing skip), 14,331 tests passing, 0 failures; `tsc --noEmit`
   clean. Flipping the flag on and confirming a real poll cycle against
   live Aurora/Supabase data is the next real step, not assumed done here.
+
+## Execution update, 2026-09-11 continued — `user_activity_log` added; the poller generalized rather than copy-pasted a second time
+
+Immediately after the addendum above, added the second of the 3 hot
+tables: `user_activity_log`. Its ownership model is even simpler than
+`user_notifications`' — confirmed against both the read side
+(`user-context-profiler-repository.ts`'s `fetchActivityLogRows()`) and the
+write side (`timeline-projector.ts`'s `writeTimelineRow()`): the table has
+**no `tenant_id` column at all**, so `user_id` alone is the full
+authorization key.
+
+**Refactor, not a second hand-copy:** `user-notifications-poller.ts` and
+`user-notifications-relay-repository.ts` from the previous addendum are
+**deleted**. Their cursor/polling/error-handling logic was byte-for-byte
+what `user_activity_log` needed too, differing only in the table name and
+which columns form the ownership filter — copying the whole file a second
+time would have created the exact "five copies of the same table diverge"
+failure shape this repo's own CLAUDE.md CHANGE LOG already names twice
+(VTID-03644's language map, VTID-03696's workflow `paths:` list). Replaced
+with one generic module,
+`services/gateway/src/services/realtime/generic-cursor-relay.ts`:
+`RelayTableConfig` takes a table name and a `filters` map of column→value
+equality checks (`is(col, null)` when a filter value is `null`, `eq()`
+otherwise), and `fetchRowsSinceCursor`/`pollRowsOnce`/`startRowPolling`
+are unchanged in behavior from the table-specific versions, just
+parameterized. `realtime-relay.ts`'s two routes now share one
+`streamTable()` handler factory, differing only in their feature-flag
+name, SSE `event:` name, and `buildConfig(identity)` closure.
+
+**This generalization is scoped to "row ownership by column equality"
+specifically — `chat_messages` will NOT fit it.** Thread/group membership
+is a join, not a column match, so `chat_messages` needs its own
+authorization logic layered on top (or instead of) this module when it's
+built; forcing it through `RelayTableConfig.filters` would be the wrong
+abstraction, not a shortcut.
+
+**New:** `GET /api/v1/realtime/user-activity-log/stream`, same
+`requireAuth`+`requireTenant` gating, scoped to `identity.user_id` only
+(no tenant filter — there is no tenant column to filter on), gated by
+its own independent flag `FEATURE_REALTIME_RELAY_USER_ACTIVITY_LOG_ENV`
+(also unset everywhere today) so the two tables can graduate to
+staging/prod independently of each other.
+
+16 tests now (up from the prior addendum's 12 — the generic module's own
+test file plus a parameterized `describe.each` route test covering both
+endpoints identically). Full gateway suite re-run: 837/838 suites (1
+pre-existing skip), 14,335 tests passing, 0 failures; `tsc --noEmit`
+clean. `chat_messages` remains the one hot table with no relay at all —
+the next real B5 step, and the one this module's own scoping note above
+says needs a different approach, not an extension of this one.

@@ -143,3 +143,40 @@ TEST: `services/gateway/test/services/realtime/user-notifications-relay-reposito
 **Not independently confirmed against live traffic** — same honest caveat as every increment in this PR: this session has no live Supabase/Aurora credentials to exercise a real poll cycle end-to-end. The feature flag ships off specifically so this gap doesn't matter until someone deliberately flips it after confirming the route on staging first.
 
 OASIS_IMPACT: no — see AC-10.
+
+---
+
+## Addendum, 2026-09-11 continued — `user_activity_log` relay added; AC-10's cited test files renamed by a same-day refactor
+
+**Correction to AC-10 above:** its `TEST:` line cites
+`user-notifications-relay-repository.test.ts` and
+`user-notifications-poller.test.ts` by name. Both files were deleted the
+same day, in the very next commit on this PR — their logic was
+generalized into `generic-cursor-relay.ts`/`generic-cursor-relay.test.ts`
+once a second table (`user_activity_log`) needed the identical
+cursor/polling logic (see `AURORA-B5-REALTIME-INVENTORY.md`'s matching
+addendum for why this was a refactor, not a second hand-copy). AC-10's
+own behavioral claims (no DB write, read-only, `impact-allow-no-oasis`)
+are unaffected and still hold — only the specific file names it cites are
+now stale. Not rewriting AC-9/AC-10 in place, to keep this evidence pack's
+own history intact; recorded here instead, the same correction-by-addendum
+pattern this PR already used for the `AURORA_DATABASE_URL`→
+`AURORA_RLS_DATABASE_URL` rename.
+
+AC-11 — A second new gateway route exists for `user_activity_log`,
+correctly auth-gated, feature-flagged off, sharing the same route-mount
+call as AC-9
+
+ROUTE_MOUNT: `services/gateway/src/routes/realtime-relay.ts` → `router.get('/user-activity-log/stream', requireAuth, requireTenant, ...)`; same `mountRouterSync(app, '/api/v1/realtime', realtimeRelayRouter, ...)` call as AC-9 (one router, two routes — no separate mount needed).
+FINAL_URL: `GET {gateway}/api/v1/realtime/user-activity-log/stream`
+CURL_PROOF: same shape and same honest gap as AC-9 — this branch has never merged to `main`, no live staging URL exists to curl yet. Once staging picks it up, with `FEATURE_REALTIME_RELAY_USER_ACTIVITY_LOG_ENV` left unset: `curl -s -o /dev/null -w "%{http_code} %{content_type}" https://preview-aws-gateway.vitanaland.com/api/v1/realtime/user-activity-log/stream -H "Authorization: Bearer <valid-jwt>"` must return `404 application/json` (`{"ok":false,"error":"not_enabled"}`) — the expected passing result, flag ships off by design. Local equivalent run this session: `services/gateway/test/routes/realtime-relay.test.ts`'s parameterized `describe.each` block covers this path identically to AC-9's (2/2 passing for this route).
+
+AC-12 — The `user_activity_log` route makes no DB write and has no state transition to record
+
+Read-only, same posture as AC-10 — `user_activity_log` has no `tenant_id` column at all (confirmed against both `user-context-profiler-repository.ts`'s `fetchActivityLogRows()` read side and `timeline-projector.ts`'s `writeTimelineRow()` write side), so this route's `RelayTableConfig.filters` is `{ user_id }` only, no tenant scoping to get wrong. Marked `// impact-allow-no-oasis` in the shared `streamTable()` handler factory, covering both AC-9's and this route.
+
+TEST: `services/gateway/test/services/realtime/generic-cursor-relay.test.ts` (12 tests — query scoping including the `is(col, null)` branch, cursor filter shape with/without a tie-break id, ordering/limit, poll cursor-advance/error/stop semantics) and `services/gateway/test/routes/realtime-relay.test.ts`'s parameterized suite (4 tests total, 2 per route). Full gateway suite re-run: 837/838 suites (1 pre-existing skip), 14,335 tests passing, 0 failures; `tsc --noEmit` clean.
+
+**Not independently confirmed against live traffic** — same caveat as AC-9/AC-10, unchanged by this addition.
+
+OASIS_IMPACT: no — see AC-12.

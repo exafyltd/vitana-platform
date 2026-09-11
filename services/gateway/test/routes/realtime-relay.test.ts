@@ -20,7 +20,10 @@ jest.mock('@supabase/supabase-js', () => ({
 import { isFeatureLive } from '../../src/services/feature-flags';
 import realtimeRelayRouter from '../../src/routes/realtime-relay';
 
-describe('GET /realtime/user-notifications/stream', () => {
+describe.each([
+  { path: '/realtime/user-notifications/stream', flag: 'REALTIME_RELAY_USER_NOTIFICATIONS' },
+  { path: '/realtime/user-activity-log/stream', flag: 'REALTIME_RELAY_USER_ACTIVITY_LOG' },
+])('GET $path', ({ path, flag }) => {
   let app: Express;
 
   beforeEach(() => {
@@ -32,16 +35,16 @@ describe('GET /realtime/user-notifications/stream', () => {
   it('returns 404 not_enabled when the feature flag is off, without opening an SSE stream', async () => {
     (isFeatureLive as jest.Mock).mockReturnValue(false);
 
-    const res = await request(app).get('/realtime/user-notifications/stream');
+    const res = await request(app).get(path);
 
     expect(res.status).toBe(404);
     expect(res.body).toEqual({ ok: false, error: 'not_enabled' });
     expect(res.headers['content-type']).not.toMatch(/text\/event-stream/);
   });
 
-  it('checks the flag before doing anything auth-scoped, so a disabled flag never touches identity', async () => {
+  it('checks the correct per-table flag before doing anything auth-scoped', async () => {
     (isFeatureLive as jest.Mock).mockReturnValue(false);
-    await request(app).get('/realtime/user-notifications/stream');
-    expect(isFeatureLive).toHaveBeenCalledWith('REALTIME_RELAY_USER_NOTIFICATIONS');
+    await request(app).get(path);
+    expect(isFeatureLive).toHaveBeenCalledWith(flag);
   });
 });
