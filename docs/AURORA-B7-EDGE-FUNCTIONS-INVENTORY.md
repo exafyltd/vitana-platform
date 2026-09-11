@@ -299,10 +299,29 @@ across both repos:
   the deployed function is a separate, later decision (needs confirming
   the flip is actually safe/desired for live traffic on each), not done or
   assumed here.
-- **`transcribe-audio` deliberately still NOT wired** — it sends raw audio
-  bytes to Gemini's multimodal endpoint directly; this codebase's Bedrock
-  provider has no audio-input path, so this needs Amazon Transcribe, a
-  separate and larger piece of work, not a drop-in swap. Still open.
+- **`transcribe-audio` — closed 2026-09-11 (VTID-03815 continuation).** It
+  sent raw audio bytes to Gemini's multimodal endpoint directly, and this
+  codebase's Bedrock provider indeed has no audio-input path — Amazon
+  Transcribe was the separate, larger piece of work this addendum
+  originally flagged as still needed. Built it: a new
+  `services/gateway/src/services/transcribe-audio-bridge.ts` normalizes
+  whatever container format the browser's `MediaRecorder` produced to
+  16kHz mono PCM via an `ffmpeg` subprocess (same pattern as
+  `video-thumbnail-service.ts`), then streams it through
+  `@aws-sdk/client-transcribe-streaming`'s `StartStreamTranscriptionCommand`
+  in one-shot "batch" mode (the whole clip as a single chunked stream, not
+  the session-oriented `TranscribeStreamSession` class ORB voice already
+  uses for incrementally-arriving audio — wrong shape for a single
+  recorded clip). New `POST /api/v1/ai-bridge/transcribe` route in
+  `ai-bridge.ts`; `_shared/bedrock-bridge-client.ts` gained
+  `transcribeAudio()`; the edge function now branches on
+  `AI_BRIDGE_PROVIDER==='bedrock'` exactly like its 6 siblings, defaulting
+  to `'gemini'` (unchanged behavior until the secret is flipped). All 7 of
+  the confirmed-reachable Gemini-dependent functions this doc named are
+  now Bedrock-bridge-capable — this closes B7's last remaining gap in
+  that set. Flipping `AI_BRIDGE_PROVIDER` to `'bedrock'` for
+  `transcribe-audio` is, same as the other 6, a separate later decision,
+  not done here.
 - **The remaining ~12 Gemini-referencing functions with no confirmed
   frontend caller** (`analyze-patterns`, `analyze-situation`,
   `analyze-visual-context`, `extract-user-interests`,
