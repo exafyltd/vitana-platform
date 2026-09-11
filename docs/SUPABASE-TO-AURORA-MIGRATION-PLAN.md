@@ -288,6 +288,21 @@ cheaply by providing a compatible `auth.uid()` function in Aurora reading from a
 session GUC set per connection. That last trick is what makes 557 policies port
 unchanged; without it they must each be rewritten.
 
+**Re-verified live 2026-09-11 (VTID-03815 continuation), against live
+Supabase via MCP — both counts have grown, as expected on a live
+production system that hasn't stopped taking real traffic while this
+migration remains unexecuted:** `auth.users` is now **209** (was 199 as
+of this doc's 2026-08-04 header date), and `pg_policies` in `public` now
+shows **638** policies referencing `auth.uid()` (up from 557), **65**
+referencing `auth.jwt()` (not previously broken out separately here),
+across **1,039 total policies** on **327 distinct tables**. This is drift
+from continued production use, not a data-quality problem — but it does
+mean B4's actual scope is ~15% larger than this section's original count,
+and will keep growing every day execution is deferred. The `auth.uid()`
+compatibility-shim approach this section recommends is unaffected by the
+count itself (it's a mechanism, not a per-policy rewrite), so the growth
+doesn't change B4's design — only its stakes for delaying further.
+
 **B5 — Realtime.** 79 subscriptions (live-corrected to 60 in-frontend /
 39 files, gateway has zero — see `docs/AURORA-B5-REALTIME-INVENTORY.md`).
 Live Aurora write-activity data narrows the "how many are genuinely
