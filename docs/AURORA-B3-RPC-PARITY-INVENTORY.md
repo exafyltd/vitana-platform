@@ -1412,3 +1412,19 @@ closing paragraph, is the product decision — what (if anything) replaces
 the dead `credit_wallet`/`vtn_*` RPCs, and whether wallet ledgers #1/#3/#4
 should unify into #2 — which is explicitly reserved for a human, not a
 code-audit follow-up.
+
+## Addendum, 2026-09-11 (VTID-03815 continuation) — full 202-name re-check, two weeks later: exactly 106, byte-for-byte identical
+
+Extracted all 202 RPC names this doc's own tables list and batch-checked
+every one against live Supabase `pg_proc` in a single query (via Supabase
+MCP), rather than spot-checking individual entries. **Result: exactly 106
+still missing — the identical count from the 2026-08-27 addendum, and,
+name-for-name, the identical set** (diffed the returned list against the
+70-name cluster breakdown plus the original 36 named in this doc; no
+additions, no removals). Unlike the RLS-policy/user-count/edge-log
+numbers this session re-verified elsewhere today (all of which grew, as
+expected on a live system), this specific defect surface is completely
+static — nobody has added or removed any of these 106 functions in the
+intervening two weeks. That's consistent with the closing paragraph
+above: what's left is a human product decision, not ongoing code churn,
+so a flat count here is the expected signal, not a surprising one.
