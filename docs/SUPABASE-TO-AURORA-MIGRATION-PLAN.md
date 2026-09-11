@@ -295,9 +295,15 @@ live-critical" question to 3 tables (`user_activity_log`,
 `user_notifications`, `chat_messages`) out of 30 — see the doc's 2026-08-28
 addenda, which also live-verify that Supabase's own `realtime` server
 cannot attach to Aurora today (`wal_level=replica`,
-`rds.logical_replication=off`) without a cluster reboot. Mechanism choice
-(reboot + run `realtime` vs. a gateway-owned relay) for those 3 tables is
-still an open decision, not resolved by either inventory pass.
+`rds.logical_replication=off`) without a cluster reboot. **Decided
+2026-08-29** (`AURORA-B5-REALTIME-INVENTORY.md`'s own addendum): running
+Supabase's `realtime` binary against Aurora is Option A's approach applied
+to one component, which this doc's own Option B decision (below) already
+rules out — a gateway-owned relay for those 3 tables is the only choice
+consistent with the decision on record. Recommended starting point: a
+short-interval polling relay (no reboot needed, buildable now) rather than
+a logical-replication consumer (same reboot cost as running `realtime`
+itself), upgradable later if polling latency proves insufficient.
 
 **B6 — Storage.** 23 call sites → S3. Smallest workstream.
 
