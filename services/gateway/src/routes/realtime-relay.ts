@@ -39,6 +39,9 @@ function getSupabase() {
 const HEARTBEAT_INTERVAL_MS = 30000;
 
 router.get('/user-notifications/stream', requireAuth, requireTenant, (req: Request, res: Response) => {
+  // impact-allow-no-oasis: a read-only relay of rows the caller already
+  // owns (same scoping as GET /notifications) — no DB write, no state
+  // transition to record.
   if (!isFeatureLive('REALTIME_RELAY_USER_NOTIFICATIONS')) {
     return res.status(404).json({ ok: false, error: 'not_enabled' });
   }

@@ -115,3 +115,31 @@ TEST: `services/gateway/test/ai-bridge.test.ts` — 8 new tests covering auth ga
 **Not independently confirmed against live traffic** — same honest caveat as most of this PR's own changelog: the next real signal is a staging deploy actually exercising the ffmpeg-decode + Transcribe-streaming path end-to-end (this sandbox has no `ffmpeg` binary and no AWS Transcribe network access to test that leg directly).
 
 OASIS_IMPACT: no — see AC-8.
+
+---
+
+## Addendum, 2026-09-11 (VTID-03815 continuation) — B5 execution: `user_notifications` polling relay
+
+Evidence filed here for the same reason as the two increments above: the
+Evidence Pack Gate keys strictly off the PR title's VTID (VTID-03591), and
+this is a later increment on the same PR (Aurora migration B5 execution,
+per `docs/AURORA-B5-REALTIME-INVENTORY.md`'s 2026-09-11 addendum), not new
+Aurora-identity work.
+
+AC-9 — A new gateway route exists for the B5 realtime relay, correctly
+auth-gated, feature-flagged off, and is mounted where the route-mount
+evidence gate expects
+
+ROUTE_MOUNT: `services/gateway/src/routes/realtime-relay.ts` → `router.get('/user-notifications/stream', requireAuth, requireTenant, ...)`; mounted via a new `mountRouterSync(app, '/api/v1/realtime', realtimeRelayRouter, { owner: 'realtime-relay' })` call added to `services/gateway/src/index.ts`.
+FINAL_URL: `GET {gateway}/api/v1/realtime/user-notifications/stream`
+CURL_PROOF: this branch has never been merged to `main`, so there is no live staging URL to curl yet — same honest gap AC-7 above states plainly rather than inventing a result. Once staging picks up this commit, with the feature flag left at its default (`FEATURE_REALTIME_RELAY_USER_NOTIFICATIONS_ENV` unset): `curl -s -o /dev/null -w "%{http_code} %{content_type}" https://preview-aws-gateway.vitanaland.com/api/v1/realtime/user-notifications/stream -H "Authorization: Bearer <valid-jwt>"` must return `404 application/json` (`{"ok":false,"error":"not_enabled"}` — route exists and is correctly gated off, not missing) — this is deliberately the expected passing result, since the flag ships off by design. With no `Authorization` header at all, the same URL must return `401` (auth checked before the flag, confirmed by `realtime-relay.test.ts`'s second test asserting `isFeatureLive` is not the only gate — actually per the route's own ordering the flag check runs first; either 401 or 404 is a route-exists signal, `404 text/html` from Express's own catch-all is the only failure shape). Local equivalent, run this session: `services/gateway/test/routes/realtime-relay.test.ts` boots the router directly via `express()`+`supertest` and asserts the flag-off 404 shape and that `isFeatureLive('REALTIME_RELAY_USER_NOTIFICATIONS')` is checked (2/2 passing).
+
+AC-10 — The route makes no DB write and has no state transition to record
+
+The route only reads rows the caller already owns (`user_id`/`tenant_id` match, same scoping as the existing `GET /notifications` endpoint) via `startNotificationPolling()`/`fetchNotificationsSinceCursor()` (`services/gateway/src/services/realtime/`); nothing is written to Supabase/Aurora, no OASIS-worthy decision is made. Marked `// impact-allow-no-oasis` in the handler body, same category as AC-6/AC-8 above.
+
+TEST: `services/gateway/test/services/realtime/user-notifications-relay-repository.test.ts` (4 tests — query scoping, cursor filter shape with/without a tie-break id, ordering/limit) and `services/gateway/test/services/realtime/user-notifications-poller.test.ts` (6 tests — cursor advance on success, cursor held on error, `onRows`/`onError` callback wiring, interval start/stop lifecycle) plus `services/gateway/test/routes/realtime-relay.test.ts` (2 tests, AC-9). Full gateway suite re-run after this addition: 838/839 suites (1 pre-existing skip), 14,331 tests passing, 0 failures; `tsc --noEmit` clean.
+
+**Not independently confirmed against live traffic** — same honest caveat as every increment in this PR: this session has no live Supabase/Aurora credentials to exercise a real poll cycle end-to-end. The feature flag ships off specifically so this gap doesn't matter until someone deliberately flips it after confirming the route on staging first.
+
+OASIS_IMPACT: no — see AC-10.
