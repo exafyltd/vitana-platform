@@ -180,3 +180,25 @@ TEST: `services/gateway/test/services/realtime/generic-cursor-relay.test.ts` (12
 **Not independently confirmed against live traffic** — same caveat as AC-9/AC-10, unchanged by this addition.
 
 OASIS_IMPACT: no — see AC-12.
+
+---
+
+## Addendum, 2026-09-11 continued — `chat_messages` relay: the third and last of B5's live-critical tables
+
+AC-13 — A third new gateway route exists for `chat_messages`, correctly
+auth-gated, feature-flagged off, sharing the same route-mount call as
+AC-9/AC-11
+
+ROUTE_MOUNT: `services/gateway/src/routes/realtime-relay.ts` → `router.get('/chat-messages/stream', requireAuth, requireTenant, ...)`; same `mountRouterSync(app, '/api/v1/realtime', realtimeRelayRouter, ...)` call as AC-9/AC-11 (one router, three routes).
+FINAL_URL: `GET {gateway}/api/v1/realtime/chat-messages/stream`
+CURL_PROOF: same shape and same honest gap as AC-9/AC-11 — no live staging URL exists yet, this branch has never merged to `main`. Once staging picks it up, with `FEATURE_REALTIME_RELAY_CHAT_MESSAGES_ENV` left unset: `curl -s -o /dev/null -w "%{http_code} %{content_type}" https://preview-aws-gateway.vitanaland.com/api/v1/realtime/chat-messages/stream -H "Authorization: Bearer <valid-jwt>"` must return `404 application/json` (`{"ok":false,"error":"not_enabled"}`) — the expected passing result, flag ships off by design. Local equivalent run this session: `services/gateway/test/routes/realtime-relay.test.ts`'s parameterized `describe.each` block now covers all 3 routes identically (2/2 passing for this one).
+
+AC-14 — The `chat_messages` route makes no DB write and has no state transition to record, and its authorization model was confirmed against the real schema, not assumed
+
+Read-only, same `impact-allow-no-oasis` posture as AC-10/AC-12, in the shared route factory. Unlike the other two tables, `chat_messages` shares one table between direct messages (`sender_id`/`receiver_id`) and group messages (`group_id`, visible via `chat_group_members` membership) — confirmed directly against `chat-repository.ts`'s and `chat-groups-repository.ts`'s existing, already-shipped read queries before writing a single line of the relay, not inferred from the table/column names alone. This is why `chat_messages` uses its own poller (`chat-messages-poller.ts`/`chat-messages-relay-repository.ts`) instead of `generic-cursor-relay.ts` — a membership JOIN is not a column-equality filter, and `generic-cursor-relay.ts`'s own module doc already says forcing it through that shape would be the wrong abstraction.
+
+TEST: `services/gateway/test/services/realtime/chat-messages-relay-repository.test.ts` (7 tests — group-id lookup, visibility-clause shape with/without groups, cursor tie-break ANDed with the visibility filter, ordering/limit) and `chat-messages-poller.test.ts` (6 tests — cursor advance, group-lookup-failure short-circuit before the message query ever runs, message-query-failure handling, interval start/stop) plus `realtime-relay.test.ts`'s 3-route parameterized suite (6 tests total, 2 per route). Full gateway suite re-run: 839/840 suites (1 pre-existing skip), 14,350 tests passing, 0 failures; `tsc --noEmit` clean.
+
+**Not independently confirmed against live traffic** — same caveat as every increment in this PR; this closes the code-side B5 execution, not the live-verification gap.
+
+OASIS_IMPACT: no — see AC-14.

@@ -23,6 +23,7 @@ import realtimeRelayRouter from '../../src/routes/realtime-relay';
 describe.each([
   { path: '/realtime/user-notifications/stream', flag: 'REALTIME_RELAY_USER_NOTIFICATIONS' },
   { path: '/realtime/user-activity-log/stream', flag: 'REALTIME_RELAY_USER_ACTIVITY_LOG' },
+  { path: '/realtime/chat-messages/stream', flag: 'REALTIME_RELAY_CHAT_MESSAGES' },
 ])('GET $path', ({ path, flag }) => {
   let app: Express;
 

@@ -304,19 +304,24 @@ consistent with the decision on record. Recommended starting point: a
 short-interval polling relay (no reboot needed, buildable now) rather than
 a logical-replication consumer (same reboot cost as running `realtime`
 itself), upgradable later if polling latency proves insufficient.
-**Execution started 2026-09-11** (VTID-03815 continuation): 2 of the 3
-tables now have a polling relay — `user_notifications`
+**Execution complete 2026-09-11** (VTID-03815 continuation): all 3 tables
+now have a polling relay — `user_notifications`
 (`GET /api/v1/realtime/user-notifications/stream`) and `user_activity_log`
-(`GET /api/v1/realtime/user-activity-log/stream`), sharing one generic
-cursor-poller (`services/gateway/src/services/realtime/generic-cursor-relay.ts`)
-since both are "row ownership by column equality" — built, unit-tested,
-and merged behind their own independent feature flags
+(`GET /api/v1/realtime/user-activity-log/stream`) share one generic
+cursor-poller (`services/gateway/src/services/realtime/generic-cursor-relay.ts`,
+"row ownership by column equality"); `chat_messages`
+(`GET /api/v1/realtime/chat-messages/stream`) has its own purpose-built
+poller instead, since it needs thread/group-membership authorization
+(a JOIN against `chat_group_members`), not row ownership — confirmed
+against the real schema rather than assumed. All three are built,
+unit-tested, and merged behind their own independent feature flags
 (`FEATURE_REALTIME_RELAY_USER_NOTIFICATIONS_ENV`/
-`FEATURE_REALTIME_RELAY_USER_ACTIVITY_LOG_ENV`) — both off everywhere
-today, no frontend consumer wired up yet. `chat_messages` remains
-unbuilt and deliberately won't reuse the generic module — it needs
-thread/group membership authorization, not row ownership; see
-`AURORA-B5-REALTIME-INVENTORY.md`'s matching 2026-09-11 addenda.
+`FEATURE_REALTIME_RELAY_USER_ACTIVITY_LOG_ENV`/
+`FEATURE_REALTIME_RELAY_CHAT_MESSAGES_ENV`) — all off everywhere today,
+no frontend consumer wired up yet, and no live exercise against real
+Supabase/Aurora data (no live credentials this session). See
+`AURORA-B5-REALTIME-INVENTORY.md`'s 2026-09-11 addenda for the full
+build record.
 
 **B6 — Storage.** 23 call sites → S3. Smallest workstream.
 

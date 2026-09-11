@@ -481,3 +481,65 @@ pre-existing skip), 14,335 tests passing, 0 failures; `tsc --noEmit`
 clean. `chat_messages` remains the one hot table with no relay at all —
 the next real B5 step, and the one this module's own scoping note above
 says needs a different approach, not an extension of this one.
+
+## Execution update, 2026-09-11 continued — all 3 hot tables now have a relay: `chat_messages` shipped, flagged off
+
+Closes out B5's own live-critical-table list. `chat_messages` shares one
+table between two conversation shapes, confirmed directly against the
+existing read paths rather than assumed: `chat-repository.ts` (direct
+messages: `sender_id`/`receiver_id` columns, `group_id` NULL) and
+`chat-groups-repository.ts` (group messages: `group_id` set, visibility
+via `chat_group_members` membership — a JOIN, not a column match). This is
+exactly the shape the previous addendum's scoping note predicted would
+not fit `generic-cursor-relay.ts`, confirmed rather than just assumed —
+so it did not go through that module.
+
+**New, purpose-built module** (`services/gateway/src/services/realtime/
+chat-messages-relay-repository.ts` + `chat-messages-poller.ts`):
+
+- `fetchUserGroupIds()` — the caller's current `chat_group_members` rows.
+  **Re-fetched on every poll tick**, not cached for the connection's
+  lifetime, so a mid-session group join/leave is honored without
+  requiring a reconnect — a real design choice, not an oversight; the
+  extra query is cheap (indexed lookup by `user_id`) against the
+  correctness cost of a stale membership snapshot.
+- `fetchChatMessagesSinceCursor()` — visibility is `sender_id.eq.<me>
+  OR receiver_id.eq.<me> OR group_id.in.(<my current groups>)`, ANDed
+  (via a second, separate `.or()` call — Supabase/PostgREST ANDs multiple
+  top-level filters together) with the same `created_at`/`id` cursor
+  tie-break the generic module uses, so no message is skipped or
+  duplicated across polls here either.
+- `pollChatMessagesOnce()` short-circuits and reports the error (cursor
+  held, same "retry the same window" posture as every other poller in
+  this migration) if the group-membership lookup itself fails, without
+  ever reaching the message query — a stale/wrong membership list would
+  be a worse failure than no messages this tick.
+
+**New route:** `GET /api/v1/realtime/chat-messages/stream`, same
+`requireAuth`+`requireTenant` gating, gated by its own independent
+`FEATURE_REALTIME_RELAY_CHAT_MESSAGES_ENV` (unset everywhere today).
+`realtime-relay.ts`'s SSE boilerplate (headers, the `connected` event,
+heartbeat, `req.on('close')` cleanup) was also extracted into one
+`openSseStream()` helper at this point — with three routes now needing
+the identical wiring, copying it a third time would have been the same
+mistake the generic-poller refactor already fixed once for the polling
+logic itself.
+
+**All 3 tables `AURORA-B5-REALTIME-INVENTORY.md` identified as
+genuinely live-critical now have a relay, all flagged off.** Total: 15
+new tests for this increment (7 repository, 6 poller, 2 route) — 31
+realtime-relay tests overall. Full gateway suite re-run: 839/840 suites
+(1 pre-existing skip), 14,350 tests passing, 0 failures; `tsc --noEmit`
+clean.
+
+**Still explicitly not done:** no frontend consumer for any of the 3
+routes (same gap named in the first addendum, unchanged); no live
+exercise against real Supabase/Aurora data (this session has no live
+Supabase credentials this pass); and the mechanism itself is still
+unproven under real production message/notification/activity volume —
+polling at a 3s interval per open connection is a reasonable starting
+point per the base doc's own sizing numbers (135k/67k/41k lifetime writes
+across the 3 tables, not per-second), but that is a documented assumption
+to validate, not a measured fact. Flipping any of the three flags on
+staging and confirming a real poll cycle end-to-end is the next real
+step for whoever picks this up next.
