@@ -459,3 +459,68 @@ the live blocker for CDC.** The next unblock is EC2 read-only permissions
 on this or a scoped role, to actually inspect why a publicly-accessible DMS
 instance cannot resolve a public hostname — a request has been made to the
 platform owner for this and is pending as of this addendum.
+
+## Addendum, 2026-09-11 continued — `ci_vital_systems_health()` has been silently reporting a real GA-locale content gap since it shipped, and nobody had invoked it to read the answer
+
+VTID-03666/03679 built `ci_vital_systems_health()` specifically to catch a
+`status='ga'` locale whose `journey_checklist_translations`/
+`nav_catalog_i18n` rows are partial — the exact failure class that
+previously shipped German content silently inside an otherwise-translated
+UI (VTID-03519). This session ran it live for the first time this doc's
+history shows (`select ci_vital_systems_health();`, via Supabase MCP) and
+it reports a real, currently-live gap that was previously undocumented
+anywhere in this repo:
+
+```json
+"journey_checklist_incomplete_ga_locales": [
+  {"locale": "tr", "complete_rows": 253, "expected": 254}
+],
+"nav_catalog_incomplete_ga_locales": [
+  {"locale": "tr", "complete_rows": 282, "expected": 291},
+  {"locale": "zh", "complete_rows": 289, "expected": 291},
+  {"locale": "ar", "complete_rows": 290, "expected": 291}
+]
+```
+
+Traced to exact rows (via existence joins against the canonical `en` key
+set, not just bare counts, matching the RPC's own per-field-completeness
+logic):
+
+- `journey_checklist_translations`: topic `T178` has no `tr` row at all.
+- `nav_catalog_i18n`: catalog id `766473da-bf54-4340-b76d-f7e61dbff7e0` has
+  no row for `ar`, `tr`, **or** `zh` simultaneously (plausibly added after
+  those three locales' last translation pass); `tr` is additionally
+  missing 8 more catalog ids
+  (`2eaff461-0422-4249-b196-9bae58d55b34`,
+  `3bab8e1f-3242-565f-bc1c-ff64ff85e5c2`,
+  `a7f803f5-4e06-489d-a24c-efab61905e05`,
+  `c588bc7c-4066-4165-b67a-7c7e56b53615`,
+  `c99a06f5-a797-4b7c-bb98-23b51c5939cd`,
+  `efa294ac-491b-44fa-837c-d6c194dca593`,
+  `f7dd3022-e92d-42fe-bf46-d2e3421ad1b3`,
+  `f8764dac-0399-4f53-9757-f77cdca3104f`); `zh` is additionally missing
+  `ad180ad8-f58d-49fb-847d-60da8361098f`.
+
+**Effect for a real user:** a Turkish, Chinese, or Arabic user hitting one
+of these specific My Journey topics / nav catalog entries falls back to
+whatever `applyTranslations()`/the nav equivalent does for a missing row —
+per VTID-03519/VTID-03666's own established pattern, that means German (or
+English) content rendering inside an otherwise-translated Turkish/Chinese/
+Arabic UI, silently, with no error surfaced client-side. This session did
+not verify the exact fallback string this produces in the live frontend —
+that's `applyTranslations()`'s own per-field null-coalesce behavior in
+`services/gateway/src/services/guided-journey/checklist-service.ts`,
+unchanged by this finding.
+
+**Not a regression from this session's work, and not a bug in the RPC
+itself** — `ar` was confirmed genuinely fully-populated (291/291) as of
+the 2026-08-18 changelog note that first introduced this RPC, so either
+new nav content was added after that GA translation pass without a
+corresponding `tr`/`zh`/`ar` follow-up pass, or `tr` (a locale that
+2026-08-18 note never row-counted at all, unlike `de`) was incomplete from
+the start and simply never surfaced because nobody had run this RPC and
+read its output until now. **This is a content gap for a human/
+translation-pipeline follow-up to close** (the missing keys are named
+above), not a schema or migration defect — flagging here rather than
+fixing, since it is a content-quality item orthogonal to the Aurora/AWS
+migration this doc otherwise tracks.
