@@ -135,3 +135,95 @@ Supabase consumer. Nothing to migrate here for Storage either. See the B5
 doc's matching addendum for the one unrelated finding from the same pass
 (a hardcoded GCP credential in that repo, flagged separately to the
 platform owner, not detailed here).
+
+## Addendum, 2026-09-11, VTID-03815 continuation — the "not found" grep pattern was too narrow; edge functions were never checked either
+
+This doc's own "Not done in this pass" list named two real gaps: it never
+grepped `supabase/functions/*`, and its frontend/gateway counts came from
+a single-line `\.storage\.from\(` pattern. Both turned out to matter.
+
+**The single-line pattern undercounts real call sites, because the common
+style in this codebase chains `.storage` and `.from(...)` across two
+lines:**
+
+```ts
+const { data, error } = await supabaseAdmin.storage
+  .from("voucher-pdfs")
+  .upload(...);
+```
+
+Re-grepping `vitana-v1/src` for the bare `\.storage\b` token (not
+`\.storage\.from\(` on one line) finds **34 files**, not 15, and **73**
+raw `.storage` occurrences, not "19 call sites" — the original count was a
+real undercount, not a rounding difference. (Gateway's own count is now
+*lower* than B6's original "4 files," but for a good reason, not a miss:
+the 2026-08-27 `STORAGE_PROVIDER` execution update above already moved
+`video-thumbnail-service.ts`/`cover-image-outpaint.ts` off raw
+`.storage.*` calls onto `storageDownload`/`storageUpload`/`storageRemove`/
+`storagePublicUrl` wrappers in `storage-provider.ts` — confirmed by
+reading both files directly. `intent-cover-service.ts`'s Storage calls
+went the same way. This is the migration abstraction working as intended,
+not a coverage gap.)
+
+**Re-running the same broadened grep against `supabase/functions/*`
+(never checked before) finds 5 more real call sites**, resolving several
+of the "not found in either repo's grep" buckets from the table above:
+
+| File | Bucket(s) | What it does |
+|---|---|---|
+| `extract-video-meta/index.ts` | `media` | download source video, upload thumbnail, get public URL |
+| `generate-event-image/index.ts` | `covers` | upload + public URL for AI-generated event covers |
+| `generate-maxina-summer-events/index.ts` | `event-images` | upload + public URL for AI-generated event images |
+| `voucher-download-pdf/index.ts` | `voucher-pdfs` | upload regenerated PDF + create a 1h signed URL |
+| `request-account-deletion/index.ts` | `avatars`, `diary-photos`, `chat-attachments`, `media-uploads`, `voucher-pdfs`, `stream-recordings`, `event-images` (a hardcoded `USER_STORAGE_BUCKETS` list) | lists and deletes every file under `{userId}/` across all 7 buckets on account deletion |
+
+A second broadened grep of `vitana-v1/src` for the same "not found" bucket
+name strings (not just `.storage.from(`) finds 4 more frontend files using
+the same two-line chain pattern: `MobileHealthMedicalTab.tsx`,
+`HealthReportUploadSheet.tsx`, `MyBiology.tsx` (all three → `health-reports`)
+and `CampaignDialog.tsx` (→ `campaign-images`).
+
+**Resolved — real code references now confirmed for 6 of the original 9
+"not found" buckets:** `chat-attachments`, `event-images`, `voucher-pdfs`,
+`health-reports`, `campaign-images` (via `.storage` client calls), and
+`default-images` (referenced, but only as a hardcoded public-URL string —
+`https://inmkhvwdcuyhnxkgfvsb.supabase.co/storage/v1/object/public/default-images/...`
+in `og-campaign/index.ts`, three times — not a `.storage.from()` client
+call at all. This is its own, narrower migration hazard: that literal
+Supabase host is baked into an edge function's source, so it will keep
+resolving to the *old* Supabase bucket after an S3 cutover unless this
+specific string is also updated — a `.storage.from()` call site would
+follow whatever `STORAGE_PROVIDER` resolves to automatically, a hardcoded
+URL will not).
+
+**Still genuinely unreferenced by any application code in either repo, any
+edge function, or the mobile app** (already ruled out in the addendum
+above): `media-podcasts`, `media-music`, `media-videos`, `media-thumbnails`.
+Found the likely explanation this time, rather than leaving it as an open
+question: `vitana-v1/supabase/migrations/20251013140256_eef15fd0-214d-
+4804-aaac-056ddaaf3d8b.sql` creates all four buckets plus a full set of
+per-bucket RLS policies (owner-scoped upload/update/delete, public read) —
+the DB layer for a "media library" feature (music/podcasts/video/thumbnails)
+was fully provisioned and then never consumed by any application code this
+pass can find, the same "DB shipped ahead of the app layer" shape this
+migration effort's D-series RPC findings (`AURORA-B3-RPC-PARITY-
+INVENTORY.md`) already document repeatedly elsewhere. **`community-
+marketplace-listings`** has no migration hit either — it is the one bucket
+in the original list with zero trace anywhere except its own existence in
+live `storage.buckets`, and is the most likely genuinely-abandoned one of
+the four.
+
+**Net effect on the S3 migration:** the real, code-reachable call-site
+surface for B6 is larger than originally scoped — at least 5 edge
+functions plus ~4 additional frontend files, on top of the 23 already
+counted — and the private-bucket backfill blocker already flagged above
+(`chat-attachments`, `health-reports`, `voucher-pdfs` all IAM-blocked)
+now has confirmed, real consumers waiting on it, not just orphaned data.
+No `STORAGE_PROVIDER`-equivalent abstraction exists in `supabase/functions/*`
+today — each edge function calls the Supabase JS client's `.storage`
+directly, so migrating these 5 functions to S3 needs either a Deno-side
+storage-provider shim mirroring the gateway's, or leaving edge functions
+on Supabase Storage past cutover as a deliberately scoped exception (a
+product/architecture decision, not something this pass should decide
+unilaterally). No code changed in this addendum — inventory only, same
+posture as the rest of B6.
