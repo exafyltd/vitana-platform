@@ -160,3 +160,30 @@ error message says so explicitly. Also unverified: whether the reused
 `AWS_STAGING_ACCESS_KEY_ID` identity actually holds `rds-data:ExecuteStatement`
 on the cluster — the workflow distinguishes that failure mode from a real
 drift finding in its own output.
+
+## Addendum, 2026-09-11 (VTID-03815 continuation) — the mirror has held: 0 drift today, but the FK count this section's headline number is built on has grown
+
+**Good news first, checked live via Supabase MCP:** `auth.users` and
+`public.app_users` are **currently perfectly in sync — 209 rows each, 0
+`auth.users` rows missing an `app_users` counterpart.** The 2026-09-10 fix
+(VTID-03811, 208/208) has held for at least a day without a fresh
+recurrence — real evidence the mirror isn't drifting on its own between
+manual checks, at least not yet, though the drift-alert workflow still
+can't run on a schedule until this branch merges (`schedule` triggers
+only fire from the default branch).
+
+**The section's headline number has grown, re-measured with a more
+reliable method than this addendum's own first attempt:** an
+`information_schema.constraint_column_usage`-based query returned a
+suspicious `0`, which turned out to be that view's own known unreliability
+for cross-schema foreign keys, not a real finding — switched to direct
+`pg_constraint`/`pg_class`/`pg_namespace` introspection instead, which is
+immune to that quirk. Result: **127 FKs into `auth.users` across 116
+distinct tables** (was 116 FKs / 105 tables in this doc's original
+measurement) — both counts grew by exactly 11, consistent with 11 new
+tables each picking up one new FK since this doc was written, rather than
+existing tables gaining additional FKs. FKs into `public.app_users` (the
+mirror) are unchanged at **18**. This doesn't change the doc's
+recommendation — the `auth.users` FK count growing over time is exactly
+the cost-of-delay dynamic B4 sizing already established elsewhere in this
+migration's docs, not a new risk shape.
