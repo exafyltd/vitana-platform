@@ -1,0 +1,137 @@
+name: Alert — app_users Identity Drift (Supabase vs Aurora)
+
+# VTID-03815 continuation (Aurora migration B4).
+#
+# WHY THIS EXISTS: docs/AURORA-EXCEPT-AUTH-ASSESSMENT.md's Option-1
+# recommendation (promote app_users to the identity anchor once auth leaves
+# Supabase) names its own prerequisite explicitly: "a guaranteed-delivery
+# sync... plus a monitor that alarms on any drift — the lesson from
+# VTID-03480." That lesson is not hypothetical here: this exact table
+# drifted for real. A live comparison this session ran on 2026-09-10
+# (VTID-03811) found 10 app_users rows out of sync between Supabase and
+# Aurora, fixed by hand, with no alert anywhere that would have caught it
+# happening or would catch it recurring. This workflow is that monitor.
+#
+# WHY COUNT, NOT A FULL CHECKSUM: docs/AURORA-B4-SIZING-REFRESH.md's own
+# 105-table FK analysis is what makes app_users specifically worth watching
+# on a schedule rather than only reconciling by hand occasionally — 116
+# foreign keys ultimately trace back to a user row existing on both sides.
+# A per-row checksum (the existing
+# services/gateway/scripts/reconciliation/aurora-supabase-reconcile.ts
+# tool) is the right instrument for a deep one-off audit, but needs a raw
+# Postgres connection to BOTH databases — unavailable to a GitHub-hosted
+# runner (Aurora sits inside a VPC; see docs/AURORA-PHASE0-RECONCILIATION-
+# 2026-08-27.md's IPv6/Supavisor findings) and expensive to run on every
+# tick besides. A row-count comparison over HTTPS-only transports (Aurora
+# via RDS Data API, Supabase via PostgREST) is available from anywhere,
+# including a GitHub runner, and a genuine drift shows up as a widening
+# count gap long before anyone would notice it by hand.
+#
+# WHAT THIS DOES NOT DO: identify WHICH rows differ, or repair anything.
+# It is a smoke alarm, not a fix — the same posture as
+# ALERT-PUSH-DISPATCH-HEALTH.yml and ALERT-OASIS-LEDGER-INTEGRITY.yml.
+#
+# UNVERIFIED FROM THIS SESSION: whether the AWS_STAGING_ACCESS_KEY_ID/
+# AWS_STAGING_SECRET_ACCESS_KEY identity this workflow reuses (already
+# used by AWS-STAGE-DEPLOY-GATEWAY.yml/I18N-DB-SEED.yml for ECS/ECR work)
+# also carries rds-data:ExecuteStatement on vitana-aurora-prod and
+# secretsmanager:GetSecretValue on vitana/aurora/prod/claude-readonly (the
+# read-only secret this session used directly). If not, the "Query Aurora"
+# step below fails with AccessDenied — a distinct, actionable signal
+# ("grant this workflow's identity RDS Data API access"), not a false
+# drift alarm. Confirm on the first real run.
+
+on:
+  schedule:
+    - cron: '0 6 * * *'   # once/day — identity drift is not a minutes-scale signal
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # A handful of rows apart is expected transient lag if CDC is healthy;
+  # docs/AURORA-PHASE0-RECONCILIATION-2026-08-27.md's own CDC-down finding
+  # means this will likely alarm on the FIRST run, correctly — the gap is
+  # real and already known, just never alerted on before this workflow.
+  DRIFT_THRESHOLD: '3'
+  AWS_REGION: 'eu-central-1'
+  AURORA_CLUSTER_ARN: 'arn:aws:rds:eu-central-1:472838866351:cluster:vitana-aurora-prod'
+  AURORA_SECRET_ARN: 'arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/aurora/prod/claude-readonly-ZJGHXq'
+  AURORA_DATABASE_NAME: 'vitana'
+
+jobs:
+  app-users-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_STAGING_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_STAGING_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Query Aurora app_users count (RDS Data API)
+        id: aurora
+        run: |
+          set -euo pipefail
+          RESULT=$(aws rds-data execute-statement \
+            --resource-arn "$AURORA_CLUSTER_ARN" \
+            --secret-arn "$AURORA_SECRET_ARN" \
+            --database "$AURORA_DATABASE_NAME" \
+            --sql "SELECT count(*) FROM public.app_users;" \
+            --output json 2>&1) || {
+              echo "::error::RDS Data API call failed — this workflow's AWS identity likely lacks rds-data:ExecuteStatement on $AURORA_CLUSTER_ARN or secretsmanager:GetSecretValue on $AURORA_SECRET_ARN. Not a drift finding — a permissions gap to fix first. Raw error:"
+              echo "$RESULT"
+              exit 1
+            }
+          COUNT=$(echo "$RESULT" | node -e '
+            const d = JSON.parse(require("fs").readFileSync(0, "utf8"));
+            const v = d.records?.[0]?.[0];
+            const n = v?.longValue ?? v?.stringValue;
+            if (n === undefined) { console.error("Unexpected RDS Data API shape: " + JSON.stringify(d)); process.exit(1); }
+            console.log(n);
+          ')
+          echo "aurora_count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "Aurora app_users count: $COUNT"
+
+      - name: Query Supabase app_users count (PostgREST)
+        id: supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE:-}" ]; then
+            echo "::error::SUPABASE_URL / SUPABASE_SERVICE_ROLE secrets are not set on this repo."
+            exit 1
+          fi
+          # count=exact + limit=0 (via Range) returns just the header, no rows —
+          # cheapest possible way to ask PostgREST "how many rows total".
+          HEADERS=$(curl -sS -D - -o /dev/null \
+            "${SUPABASE_URL%/}/rest/v1/app_users?select=id" \
+            -H "apikey: $SUPABASE_SERVICE_ROLE" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE" \
+            -H "Prefer: count=exact" \
+            -H "Range: 0-0")
+          COUNT=$(echo "$HEADERS" | grep -i '^content-range:' | sed -E 's#.*/([0-9]+).*#\1#' | tr -d '\r')
+          if [ -z "$COUNT" ]; then
+            echo "::error::Could not parse Content-Range from PostgREST response:"
+            echo "$HEADERS"
+            exit 1
+          fi
+          echo "supabase_count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "Supabase app_users count: $COUNT"
+
+      - name: Evaluate drift
+        run: |
+          set -euo pipefail
+          AURORA="${{ steps.aurora.outputs.aurora_count }}"
+          SUPABASE="${{ steps.supabase.outputs.supabase_count }}"
+          DIFF=$(( SUPABASE > AURORA ? SUPABASE - AURORA : AURORA - SUPABASE ))
+          echo "supabase=$SUPABASE aurora=$AURORA diff=$DIFF threshold=$DRIFT_THRESHOLD"
+          if [ "$DIFF" -gt "$DRIFT_THRESHOLD" ]; then
+            echo "::error::app_users identity drift: Supabase=$SUPABASE Aurora=$AURORA (diff=$DIFF, threshold=$DRIFT_THRESHOLD). See docs/AURORA-EXCEPT-AUTH-ASSESSMENT.md and docs/AURORA-PHASE0-RECONCILIATION-2026-08-27.md — likely cause is the known-down DMS CDC replication, not a new defect. Fix: reconcile the two tables (the manual method used for VTID-03811 is the current playbook until a guaranteed-delivery sync exists), then re-run this workflow to confirm it clears."
+            exit 1
+          fi
+          echo "app_users drift within normal bounds."
