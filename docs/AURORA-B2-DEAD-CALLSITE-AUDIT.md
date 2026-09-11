@@ -626,3 +626,24 @@ this session invented would be exactly the kind of unverified assumption
 CLAUDE.md's "never assume context that is not verified" rule exists to
 prevent, on a table that already has 10 real production rows depending on
 whatever the real answer turns out to be.
+
+## Addendum 13 (VTID-03815 continuation), 2026-09-11 — closing out the last "Next steps" item: `risk_mitigations`'s CLAUDE.md annotation
+
+The "Next steps" list above (2026-08-27) named one remaining item: give
+`risk_mitigations` the same inline CLAUDE.md §3 annotation
+`d44_predictive_signals`/`personalization_audit` already got. Checked the
+live file rather than assuming it was still open — it isn't. CLAUDE.md's
+Core Tables entry for `risk_mitigations` already reads *"does not exist in
+live Supabase, route is mounted but no confirmed caller found — same
+'registered but never invoked' shape confirmed for the AP-0710
+monetization-vulnerability automation. See ... Addendum 3 and Addendum
+10"* — done by an earlier commit (`00c77e5e`, "finish B2 dead-call-site
+read-through, close out remaining 7 tables"), just never marked closed
+here. **All three "Next steps" items from the 2026-08-27 list are now
+resolved**: openclaw-bridge's deploy target (Addendum 8), the
+`risk_mitigations` annotation (this addendum), and the table-by-table
+delete-vs-build decision, which — as the list itself said — is correctly
+left to a human for `wallet_balances`/`community_group_members` and
+whichever of the remaining dead tables a product owner decides to revisit.
+No code or further doc changes needed; this closes the audit's own
+tracking list.
