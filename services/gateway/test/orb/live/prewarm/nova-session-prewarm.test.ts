@@ -11,6 +11,7 @@ import {
   registerPrewarmedNovaSession,
   consumePrewarmedNovaSession,
   discardPrewarmedNovaSession,
+  hasLivePrewarmedNovaSession,
   __clearAllPrewarmedNovaSessionsForTest,
   __prewarmedNovaSessionCountForTest,
 } from '../../../../src/orb/live/prewarm/nova-session-prewarm';
@@ -84,16 +85,68 @@ describe('VTID-03779 nova-session-prewarm registry', () => {
     expect(client.close).toHaveBeenCalledWith('prewarm_claim_found_dead');
   });
 
-  it('registering a second prewarm for the same user discards (and closes) the first', () => {
+  // BOOTSTRAP-NOVA-PREWARM-REGISTRY-HARDEN: registering a SECOND prewarm
+  // while the first is still open and unclaimed now KEEPS the first and
+  // discards the second — the reverse of the original behavior. Measured
+  // live: two tabs/frames for the same user (confirmed via
+  // /admin/device-preview, which iframes the app for the same logged-in
+  // user) each prewarm independently, and the old "last wins" rule kept
+  // resetting the ready clock so a real tap could arrive mid-connect on
+  // the newest attempt even though an earlier one had already finished.
+  it('registering a second prewarm while the first is still open KEEPS the first and closes the second', () => {
     const first = makeFakeClient('open');
     const second = makeFakeClient('open');
     registerPrewarmedNovaSession('user-1', baseEntry(first));
     registerPrewarmedNovaSession('user-1', baseEntry(second));
 
-    expect(first.close).toHaveBeenCalledWith('superseded_by_new_prewarm');
+    expect(second.close).toHaveBeenCalledWith('prewarm_superseded_kept_existing');
+    expect(first.close).not.toHaveBeenCalled();
     expect(__prewarmedNovaSessionCountForTest()).toBe(1);
     const claimed = consumePrewarmedNovaSession('user-1');
+    expect(claimed?.client).toBe(first);
+  });
+
+  it('registering a second prewarm DOES replace a dead (closed) first entry', () => {
+    const first = makeFakeClient('open');
+    const second = makeFakeClient('open');
+    registerPrewarmedNovaSession('user-1', baseEntry(first));
+    first.__setState('closed'); // died between prewarm and the second attempt
+
+    registerPrewarmedNovaSession('user-1', baseEntry(second));
+
+    expect(first.close).toHaveBeenCalledWith('superseded_by_new_prewarm');
+    expect(second.close).not.toHaveBeenCalled();
+    const claimed = consumePrewarmedNovaSession('user-1');
     expect(claimed?.client).toBe(second);
+  });
+
+  describe('hasLivePrewarmedNovaSession', () => {
+    it('is false when nothing is registered for the user', () => {
+      expect(hasLivePrewarmedNovaSession('user-1')).toBe(false);
+    });
+
+    it('is true once a still-open entry is registered', () => {
+      registerPrewarmedNovaSession('user-1', baseEntry(makeFakeClient('open')));
+      expect(hasLivePrewarmedNovaSession('user-1')).toBe(true);
+    });
+
+    it('is false once the entry has been claimed', () => {
+      registerPrewarmedNovaSession('user-1', baseEntry(makeFakeClient('open')));
+      consumePrewarmedNovaSession('user-1');
+      expect(hasLivePrewarmedNovaSession('user-1')).toBe(false);
+    });
+
+    it('is false when the registered entry has died', () => {
+      const client = makeFakeClient('open');
+      registerPrewarmedNovaSession('user-1', baseEntry(client));
+      client.__setState('closed');
+      expect(hasLivePrewarmedNovaSession('user-1')).toBe(false);
+    });
+
+    it('does not affect a different user\'s entry', () => {
+      registerPrewarmedNovaSession('user-1', baseEntry(makeFakeClient('open')));
+      expect(hasLivePrewarmedNovaSession('user-2')).toBe(false);
+    });
   });
 
   it('discardPrewarmedNovaSession closes and removes a pending entry, is a no-op if none exists', () => {

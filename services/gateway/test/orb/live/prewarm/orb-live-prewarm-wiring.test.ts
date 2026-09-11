@@ -48,15 +48,44 @@ describe('VTID-03779 orb-live.ts prewarm wiring', () => {
     expect(fn).toMatch(/registerPrewarmedNovaSession\(/);
   });
 
+  // BOOTSTRAP-NOVA-PREWARM-REGISTRY-HARDEN: a second prewarm attempt for a
+  // user who already has a live, unclaimed entry (another tab/frame, a
+  // redundant re-init) must ack immediately and skip the expensive
+  // connect+Supabase work entirely — that work would only be thrown away by
+  // registerPrewarmedNovaSession's own hardened dedup anyway.
+  it('handleWsPrewarmMessage acks immediately and skips the expensive connect when a live prewarm already exists for the user', () => {
+    const fn = code.match(/async function handleWsPrewarmMessage\([\s\S]*?\n\}/)?.[0];
+    expect(fn).toBeDefined();
+    expect(fn).toMatch(/hasLivePrewarmedNovaSession\(userId\)/);
+    const gateAt = fn!.indexOf('hasLivePrewarmedNovaSession(userId)');
+    const cfgAt = fn!.indexOf('getNovaSonicConfig(process.env)');
+    const activeCheckAt = fn!.indexOf('clientSession.liveSession?.active');
+    // Ordering: identity/active-session guards first, then the live-prewarm
+    // early-bail, then (only on a miss) the real connect setup.
+    expect(activeCheckAt).toBeGreaterThan(-1);
+    expect(gateAt).toBeGreaterThan(activeCheckAt);
+    expect(cfgAt).toBeGreaterThan(gateAt);
+    // The early-bail branch itself acks and returns without registering a
+    // second entry.
+    const earlyBailBranch = fn!.slice(gateAt, cfgAt);
+    expect(earlyBailBranch).toMatch(/sendWsMessage\(clientSession\.clientWs,\s*\{\s*type:\s*'prewarm_ready'\s*\}\)/);
+    expect(earlyBailBranch).toMatch(/return;/);
+    expect(earlyBailBranch).not.toMatch(/registerPrewarmedNovaSession\(/);
+  });
+
   it('handleWsPrewarmMessage only tells the client it is safe to reuse the socket AFTER registration succeeds (Codex review, PR #3218)', () => {
     const fn = code.match(/async function handleWsPrewarmMessage\([\s\S]*?\n\}/)?.[0];
     expect(fn).toBeDefined();
     // Sending 'prewarm_ready' before registerPrewarmedNovaSession would let
     // a 'start' racing in on the same socket find nothing registered yet
     // and cold-connect anyway, orphaning the prewarm this handler just
-    // built — the ack must come strictly after registration.
+    // built — the ack must come strictly after registration. Search from
+    // registerAt onward: the function's FIRST 'prewarm_ready' occurrence is
+    // now the BOOTSTRAP-NOVA-PREWARM-REGISTRY-HARDEN early-bail ack (a
+    // separate, deliberately-before-registration case covered by its own
+    // test above) — this test is specifically about the post-register ack.
     const registerAt = fn!.indexOf('registerPrewarmedNovaSession(');
-    const ackAt = fn!.indexOf("type: 'prewarm_ready'");
+    const ackAt = fn!.indexOf("type: 'prewarm_ready'", registerAt);
     expect(registerAt).toBeGreaterThan(-1);
     expect(ackAt).toBeGreaterThan(registerAt);
     expect(fn).toMatch(/sendWsMessage\(clientSession\.clientWs,\s*\{\s*type:\s*'prewarm_ready'\s*\}\)/);
