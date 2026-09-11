@@ -1,12 +1,14 @@
 /**
  * VTID-03765 — Amazon S3 object storage provider (Aurora/AWS migration, B6).
  *
- * Mirrors the exact 4-operation surface the gateway's Supabase Storage call
- * sites actually use (confirmed via a full grep sweep across
- * video-thumbnail-service.ts, intent-cover-service.ts, cover-image-
- * outpaint.ts — see docs/AURORA-B6-STORAGE-INVENTORY.md): download, upload,
- * remove, and public-URL construction. Nothing else — this is not a general
- * S3 SDK wrapper.
+ * Originally mirrored the exact 4-operation surface the gateway's own
+ * Supabase Storage call sites used (download, upload, remove, public-URL —
+ * confirmed via a grep sweep across video-thumbnail-service.ts,
+ * intent-cover-service.ts, cover-image-outpaint.ts). `s3List` (VTID-03815,
+ * B6 edge-function gap addendum) is the fifth, added for the gateway-owned
+ * storage-bridge route's `request-account-deletion` (vitana-v1) consumer,
+ * which needs to enumerate a user's files before deleting them — still not
+ * a general S3 SDK wrapper, just the specific ops real callers need.
  *
  * Bucket naming: Supabase bucket `<name>` maps to S3 bucket
  * `vitana-storage-<name>` (see scripts/aws/setup-storage-buckets.sh, which
@@ -19,6 +21,7 @@ import {
   GetObjectCommand,
   PutObjectCommand,
   DeleteObjectsCommand,
+  ListObjectsV2Command,
 } from '@aws-sdk/client-s3';
 
 const REGION = process.env.AWS_S3_STORAGE_REGION || process.env.AWS_REGION || 'eu-central-1';
@@ -73,6 +76,39 @@ export async function s3Remove(bucket: string, paths: string[]): Promise<{ error
     return { error: null };
   } catch (err) {
     return { error: err instanceof Error ? err : new Error(String(err)) };
+  }
+}
+
+/**
+ * Lists object keys directly under `prefix` (which callers pass as
+ * e.g. `"<userId>/"`), returning `name`s relative to that prefix — matching
+ * Supabase Storage's `.list()` shape exactly (`{name: string}[]`) so
+ * `storage-provider.ts`'s `storageList` can hand back the identical shape
+ * regardless of which backend answered. S3 has no folder concept — this
+ * uses `Delimiter: '/'` so a nested "subfolder" isn't silently flattened
+ * into the same listing (Supabase's own `.list()` is also non-recursive by
+ * default, so this preserves that behavior rather than changing it).
+ */
+export async function s3List(
+  bucket: string,
+  prefix: string,
+  limit = 1000,
+): Promise<{ data: { name: string }[] | null; error: Error | null }> {
+  const normalizedPrefix = prefix.endsWith('/') ? prefix : `${prefix}/`;
+  try {
+    const out = await getClient().send(new ListObjectsV2Command({
+      Bucket: s3BucketName(bucket),
+      Prefix: normalizedPrefix,
+      Delimiter: '/',
+      MaxKeys: limit,
+    }));
+    const names = (out.Contents ?? [])
+      .map((obj) => obj.Key ?? '')
+      .filter((key) => key.length > normalizedPrefix.length)
+      .map((key) => key.slice(normalizedPrefix.length));
+    return { data: names.map((name) => ({ name })), error: null };
+  } catch (err) {
+    return { data: null, error: err instanceof Error ? err : new Error(String(err)) };
   }
 }
 

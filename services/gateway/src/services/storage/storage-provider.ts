@@ -22,7 +22,7 @@
  */
 
 import { getSupabase } from '../../lib/supabase';
-import { s3Download, s3Upload, s3Remove, s3PublicUrl } from '../../providers/s3-storage';
+import { s3Download, s3Upload, s3Remove, s3PublicUrl, s3List } from '../../providers/s3-storage';
 
 export type StorageProviderName = 'supabase' | 's3';
 
@@ -77,4 +77,25 @@ export function storagePublicUrl(bucket: string, path: string): string {
   const supabase = getSupabase();
   if (!supabase) throw new Error('Supabase client unavailable');
   return supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+}
+
+/**
+ * Lists object names directly under `prefix` (one level, non-recursive —
+ * matching Supabase Storage's own `.list()` semantics, which this mirrors).
+ * Returned `name`s are relative to `prefix`, same as Supabase's shape, so a
+ * caller building `${prefix}/${entry.name}` behaves identically regardless
+ * of provider — see `request-account-deletion` (vitana-v1) for the one
+ * caller this exists for (VTID-03815, B6 edge-function gap).
+ */
+export async function storageList(
+  bucket: string,
+  prefix: string,
+  opts: { limit?: number } = {},
+): Promise<{ data: { name: string }[] | null; error: Error | null }> {
+  if (getStorageProvider() === 's3') return s3List(bucket, prefix, opts.limit);
+  const supabase = getSupabase();
+  if (!supabase) return { data: null, error: new Error('Supabase client unavailable') };
+  const { data, error } = await supabase.storage.from(bucket).list(prefix, { limit: opts.limit ?? 1000 });
+  if (error) return { data: null, error: new Error(error.message) };
+  return { data: (data ?? []).map((f: { name: string }) => ({ name: f.name })), error: null };
 }

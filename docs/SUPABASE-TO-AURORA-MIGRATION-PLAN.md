@@ -323,7 +323,20 @@ Supabase/Aurora data (no live credentials this session). See
 `AURORA-B5-REALTIME-INVENTORY.md`'s 2026-09-11 addenda for the full
 build record.
 
-**B6 — Storage.** 23 call sites → S3. Smallest workstream.
+**B6 — Storage.** Originally scoped as 23 call sites → S3, smallest
+workstream; the real surface turned out larger once edge functions were
+checked (never done in the original pass) — see
+`AURORA-B6-STORAGE-INVENTORY.md`'s 2026-09-11 addenda. Gateway's own call
+sites are done (`STORAGE_PROVIDER` seam, VTID-03765, public-bucket
+backfill complete). A gateway-owned `storage-bridge` route (2026-09-11,
+VTID-03815 continuation) now covers 3 of the 5 identified edge-function
+call sites (`generate-event-image`, `generate-maxina-summer-events`,
+`request-account-deletion`) the same way `ai-bridge` covers B7's LLM
+calls — one storage call point on the gateway, no per-function AWS
+credential. `extract-video-meta` (video-download body-size mismatch) and
+`voucher-download-pdf` (needs `@aws-sdk/s3-request-presigner`, not yet a
+dependency) remain genuinely unsolved. No vitana-v1-side client/wiring
+shipped yet — gateway route only.
 
 **B7 — Edge functions.** 74 Deno functions → Lambda/ECS
 (`docs/AURORA-B7-EDGE-FUNCTIONS-INVENTORY.md`). First real cut shipped: a

@@ -234,3 +234,71 @@ on Supabase Storage past cutover as a deliberately scoped exception (a
 product/architecture decision, not something this pass should decide
 unilaterally). No code changed in this addendum — inventory only, same
 posture as the rest of B6.
+
+## Execution update, 2026-09-11 continued — a gateway-owned storage-bridge route, not a Deno-side S3 client
+
+The previous addendum's own "needs a Deno-side storage-provider shim
+mirroring the gateway's" framing turned out to be the wrong shape once
+actually scoped: it would mean an AWS SDK dependency and IAM-role
+credential distributed to five Deno edge-function runtimes, exactly the
+per-function-credential problem B7's `ai-bridge` route already solved
+once for LLM calls (one Bedrock call point on the gateway, edge functions
+call it as a service instead of holding their own credential). Built the
+same pattern for storage: `services/gateway/src/routes/storage-bridge.ts`
+(4 handlers — `/upload`, `/remove`, `/public-url`, `/list`, all
+`requireServiceOrAdmin`), backed by `storage-provider.ts`'s existing
+`storageUpload`/`storageRemove`/`storagePublicUrl` plus a new
+`storageList` (and `s3-storage.ts`'s new `s3List`) added in this same
+pass. See `docs/validation/VTID-03591/acceptance.md` AC-15/AC-16 for the
+full route-mount evidence.
+
+**Deliberately not the full 5-function surface — two real gaps left open,
+not faked:**
+- **No `/download`.** The gateway's `express.json({ limit: '2mb' })` is
+  the wrong transport for `extract-video-meta`'s whole-source-video
+  downloads (base64 overhead on top of an unbounded file size). That
+  function is not wired to this bridge at all — `storage-provider.ts`'s
+  own header comment rules out mixing backends per-call, so partially
+  wiring one function's upload/public-url legs while leaving its download
+  on direct Supabase would violate that principle, not honor it.
+- **No `/signed-url`.** `voucher-download-pdf` needs a signed URL for a
+  private bucket, which needs `@aws-sdk/s3-request-presigner` — not a
+  dependency this codebase has today. A one-line `package.json` add, but
+  a real dependency-surface decision left to whoever wires that function,
+  rather than bundled into this route's first cut.
+
+**Fully covered, confirmed against each function's real `.storage.*` call
+shape in `exafyltd/vitana-v1` before writing this route** (not inferred
+from the bucket-name table alone): `generate-event-image` and
+`generate-maxina-summer-events` (upload + public-url), and
+`request-account-deletion` (list + remove — its real
+`USER_STORAGE_BUCKETS`/`.list(userId, {limit:1000})`/`.remove(filePaths)`
+shape is exactly what `storageList`'s `{name}` return shape and
+`storageRemove`'s path-array signature were built to match).
+
+**A real bug was caught by this route's own test before shipping:**
+`Buffer.from(str, 'base64')` in Node never throws on malformed input — it
+silently decodes whatever valid base64 characters it finds and drops the
+rest, so a try/catch around the decode (the same shape `ai-bridge.ts`'s
+`/transcribe` route already uses for `audioBase64`) never actually
+catches anything; garbage input would otherwise upload silently-corrupted
+bytes instead of being rejected. Fixed in `storage-bridge.ts` with an
+actual base64-charset regex check before decoding. `ai-bridge.ts`'s own
+`/transcribe` route was NOT touched — this is a pre-existing latent gap
+there too, flagged here rather than silently fixed in a file this pass
+had no other reason to touch.
+
+23 new tests in `storage-bridge.test.ts` plus 15 new tests in
+`storage-provider.test.ts` (`storageList`/`s3List` — S3 prefix-stripping,
+folder-marker filtering, empty-prefix handling, provider-routing gating,
+Supabase-unconfigured fail-closed). Full gateway suite re-run: 840/841
+suites (1 pre-existing skip), 14,373 tests passing, 0 failures;
+`tsc --noEmit` clean.
+
+**Still open:** no vitana-v1-side client or edge-function wiring yet —
+this ships the gateway route only, same "gateway route first, edge-
+function client second" sequencing B7's `ai-bridge` used across two
+separate steps. No live exercise against real Supabase/S3 (no credentials
+this session). `extract-video-meta`'s download leg and
+`voucher-download-pdf`'s signed-url leg remain genuinely unsolved, not
+just unwired.

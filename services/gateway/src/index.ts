@@ -498,6 +498,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // Aurora migration B7: Gemini-shaped facade over Bedrock, for vitana-v1
   // edge functions being ported off direct Google calls (VTID-03764 chain).
   const aiBridgeRouter = require('./routes/ai-bridge').default;
+  // Aurora migration B6: object-storage facade for vitana-v1 edge functions
+  // that call Supabase Storage directly (VTID-03815 continuation).
+  const storageBridgeRouter = require('./routes/storage-bridge').default;
   // PR-I (VTID-02949): operator-armed canary for end-to-end self-healing
   // smoke tests. Replaces the original PR-A canary (which mounted at `/`
   // and tripped diagnosis into proposing edits to index.ts). New canary
@@ -1310,6 +1313,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/canary-target', canaryTargetRouter, { owner: 'self-healing' });
   // Aurora migration B7: Bedrock bridge for vitana-v1 edge functions.
   mountRouterSync(app, '/api/v1/ai-bridge', aiBridgeRouter, { owner: 'ai-bridge' });
+  // Aurora migration B6: object-storage bridge for vitana-v1 edge functions.
+  mountRouterSync(app, '/api/v1/storage-bridge', storageBridgeRouter, { owner: 'storage-bridge' });
 
   // VTID-02031: Ops Action Required — pull surface for Command Hub Overview
   mountRouterSync(app, '/api/v1/ops/action-required', opsActionRequiredRouter, { owner: 'ops-action-required' });

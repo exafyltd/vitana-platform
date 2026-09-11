@@ -10,7 +10,7 @@
  * this codebase applies to every other provider seam.
  */
 
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 
 jest.mock('@aws-sdk/client-s3', () => {
   const send = jest.fn();
@@ -19,6 +19,7 @@ jest.mock('@aws-sdk/client-s3', () => {
     GetObjectCommand: jest.fn((input) => ({ __type: 'GetObjectCommand', input })),
     PutObjectCommand: jest.fn((input) => ({ __type: 'PutObjectCommand', input })),
     DeleteObjectsCommand: jest.fn((input) => ({ __type: 'DeleteObjectsCommand', input })),
+    ListObjectsV2Command: jest.fn((input) => ({ __type: 'ListObjectsV2Command', input })),
   };
 });
 
@@ -26,13 +27,14 @@ jest.mock('../../src/lib/supabase', () => ({
   getSupabase: jest.fn(),
 }));
 
-import { s3BucketName, s3PublicUrl, s3Download, s3Upload, s3Remove } from '../../src/providers/s3-storage';
+import { s3BucketName, s3PublicUrl, s3Download, s3Upload, s3Remove, s3List } from '../../src/providers/s3-storage';
 import {
   getStorageProvider,
   storageDownload,
   storageUpload,
   storageRemove,
   storagePublicUrl,
+  storageList,
 } from '../../src/services/storage/storage-provider';
 import { getSupabase } from '../../src/lib/supabase';
 
@@ -135,6 +137,40 @@ describe('VTID-03765 s3Download/s3Upload/s3Remove — error shape, not thrown ex
     const { error } = await s3Remove('avatars', ['a.png']);
     expect(error?.message).toBe('AccessDenied');
   });
+
+  it('s3List strips the prefix so names match Supabase .list() shape', async () => {
+    mockSend().mockResolvedValueOnce({
+      Contents: [{ Key: 'user123/a.png' }, { Key: 'user123/b.png' }],
+    });
+    const { data, error } = await s3List('avatars', 'user123');
+    expect(error).toBeNull();
+    expect(data).toEqual([{ name: 'a.png' }, { name: 'b.png' }]);
+    expect(ListObjectsV2Command).toHaveBeenCalledWith(
+      expect.objectContaining({ Bucket: 'vitana-storage-avatars', Prefix: 'user123/', Delimiter: '/' }),
+    );
+  });
+
+  it('s3List filters out a key exactly equal to the prefix (the "folder marker" object)', async () => {
+    mockSend().mockResolvedValueOnce({
+      Contents: [{ Key: 'user123/' }, { Key: 'user123/a.png' }],
+    });
+    const { data } = await s3List('avatars', 'user123/');
+    expect(data).toEqual([{ name: 'a.png' }]);
+  });
+
+  it('s3List returns an empty array (not null) when the prefix has no objects', async () => {
+    mockSend().mockResolvedValueOnce({ Contents: [] });
+    const { data, error } = await s3List('avatars', 'nobody');
+    expect(error).toBeNull();
+    expect(data).toEqual([]);
+  });
+
+  it('s3List surfaces a rejected list as an error, not a throw', async () => {
+    mockSend().mockRejectedValueOnce(new Error('AccessDenied'));
+    const { data, error } = await s3List('avatars', 'user123');
+    expect(data).toBeNull();
+    expect(error?.message).toBe('AccessDenied');
+  });
 });
 
 describe('VTID-03765 storage-provider.ts routing — supabase vs s3 selected correctly', () => {
@@ -176,5 +212,35 @@ describe('VTID-03765 storage-provider.ts routing — supabase vs s3 selected cor
     expect(rm.error?.message).toMatch(/Supabase client unavailable/);
 
     expect(() => storagePublicUrl('avatars', 'a.png')).toThrow(/Supabase client unavailable/);
+  });
+
+  it('storageList routes to S3 when STORAGE_PROVIDER=s3, never touching Supabase', async () => {
+    process.env.STORAGE_PROVIDER = 's3';
+    mockSend().mockResolvedValueOnce({ Contents: [{ Key: 'u1/a.png' }] });
+    const { data, error } = await storageList('avatars', 'u1');
+    expect(error).toBeNull();
+    expect(data).toEqual([{ name: 'a.png' }]);
+    expect(getSupabase).not.toHaveBeenCalled();
+  });
+
+  it('storageList routes to Supabase by default and normalizes the {name} shape, never touching S3', async () => {
+    delete process.env.STORAGE_PROVIDER;
+    const send = mockSend();
+    const list = jest.fn().mockResolvedValue({ data: [{ name: 'a.png', id: 'x' }], error: null });
+    (getSupabase as jest.Mock).mockReturnValue({ storage: { from: () => ({ list }) } });
+
+    const { data, error } = await storageList('avatars', 'u1');
+    expect(error).toBeNull();
+    expect(data).toEqual([{ name: 'a.png' }]);
+    expect(list).toHaveBeenCalledWith('u1', { limit: 1000 });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('storageList fails closed with a clear error when Supabase is unconfigured', async () => {
+    delete process.env.STORAGE_PROVIDER;
+    (getSupabase as jest.Mock).mockReturnValue(null);
+    const { data, error } = await storageList('avatars', 'u1');
+    expect(data).toBeNull();
+    expect(error?.message).toMatch(/Supabase client unavailable/);
   });
 });

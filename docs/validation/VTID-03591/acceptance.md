@@ -202,3 +202,32 @@ TEST: `services/gateway/test/services/realtime/chat-messages-relay-repository.te
 **Not independently confirmed against live traffic** — same caveat as every increment in this PR; this closes the code-side B5 execution, not the live-verification gap.
 
 OASIS_IMPACT: no — see AC-14.
+
+---
+
+## Addendum, 2026-09-11 continued — B6: a fourth new gateway route, `storage-bridge`, for the edge-function storage gap
+
+Evidence filed here for the same reason as every increment above: the
+Evidence Pack Gate keys strictly off the PR title's VTID (VTID-03591), and
+this is a later increment on the same PR (Aurora migration B6, per
+`docs/AURORA-B6-STORAGE-INVENTORY.md`'s 2026-09-11 "edge functions were
+never checked either" addendum), not new Aurora-identity work.
+
+AC-15 — A fourth new gateway route exists (`storage-bridge`), correctly
+auth-gated, and is mounted where the route-mount evidence gate expects
+
+ROUTE_MOUNT: `services/gateway/src/routes/storage-bridge.ts` → four handlers, all `requireServiceOrAdmin`: `router.post('/upload', ...)`, `router.post('/remove', ...)`, `router.get('/public-url', ...)`, `router.post('/list', ...)`; mounted via a new `mountRouterSync(app, '/api/v1/storage-bridge', storageBridgeRouter, { owner: 'storage-bridge' })` call added to `services/gateway/src/index.ts`, same pattern as `ai-bridge`/`realtime-relay` above.
+FINAL_URL: `POST {gateway}/api/v1/storage-bridge/upload`, `POST {gateway}/api/v1/storage-bridge/remove`, `GET {gateway}/api/v1/storage-bridge/public-url`, `POST {gateway}/api/v1/storage-bridge/list`
+CURL_PROOF: same honest gap as every route addendum above — this branch has never merged to `main`, so no live staging URL exists to curl yet. Once staging picks up this commit: `curl -s -o /dev/null -w "%{http_code} %{content_type}" -X POST https://preview-aws-gateway.vitanaland.com/api/v1/storage-bridge/upload -H "Content-Type: application/json" -d '{}'` must return `401 application/json` (`{"ok":false,"error":"missing bearer token"}` — auth required, route exists), NOT `404 text/html`. With a valid `GATEWAY_SERVICE_TOKEN` bearer and an empty body, the same endpoint must return `400 application/json` (`{"ok":false,"error":"bucket must be a non-empty string"}`), confirming request validation runs past the auth gate — same two-step pattern AC-5/AC-7/AC-9 already established. Local equivalent, run this session: `services/gateway/test/storage-bridge.test.ts` boots the router directly via `express()`+`supertest` and asserts exactly these two response shapes across all four handlers (38/38 passing, including the storage-provider.ts additions this route depends on).
+
+AC-16 — The route makes no DB write of its own and has no state transition to record; scope is deliberately partial and the gap is named, not hidden
+
+Every handler is a thin pass-through to the existing `storage-provider.ts` functions (`storageUpload`/`storageRemove`/`storagePublicUrl`, all VTID-03765, plus the new `storageList`) — no OASIS-worthy decision is made by this route itself; whatever state change an upload/remove represents is exactly the same one the gateway's own pre-existing direct callers already produce uninstrumented. Marked `// impact-allow-no-oasis` on every handler, same category as AC-6/AC-8/AC-10/AC-12/AC-14 above.
+
+**This route deliberately does NOT cover all 5 edge functions the B6 addendum identified**, and the gap is stated plainly rather than silently implied by "shipped" — same posture as AC-8's ai-chat-streaming caveat: no `/download` (the gateway's 2mb JSON body limit is the wrong transport for `extract-video-meta`'s whole-source-video downloads; wiring only that function's upload/public-url legs through the bridge while its download stays on direct Supabase would split one logical operation across two storage backends, which `storage-provider.ts`'s own header comment already rules out — "never mixed per-call"), and no `/signed-url` (`voucher-download-pdf` needs `@aws-sdk/s3-request-presigner`, not a dependency this codebase has today — adding it is left to whoever picks up that function's wiring, not bundled into this route's first cut). Fully covered by this route as shipped: `generate-event-image` and `generate-maxina-summer-events` (upload + public-url only) and `request-account-deletion` (list + remove only) — confirmed against each function's real `.storage.*` call shape in `exafyltd/vitana-v1` before writing this route, not inferred from the B6 inventory's bucket-name table alone.
+
+TEST: `services/gateway/test/storage-bridge.test.ts` (23 tests — auth gating on `/upload` and `/list`; `/upload`'s base64 decode, a real bug this test suite caught before shipping — Node's `Buffer.from(str, 'base64')` never throws on malformed input, so a try/catch around the decode is dead code; fixed with an actual charset check instead — plus contentType/upsert/cacheControl forwarding and 502 mapping; `/remove`'s path-array validation and count response; `/public-url`'s query-param validation and thrown-error mapping; `/list`'s empty-vs-error response shapes) and `services/gateway/test/providers/storage-provider.test.ts`'s new `storageList`/`s3List` coverage (15 new tests — S3 prefix-stripping, folder-marker filtering, empty-prefix handling, provider-routing gating, Supabase-unconfigured fail-closed). Full gateway suite re-run: 840/841 suites (1 pre-existing skip), 14,373 tests passing, 0 failures; `tsc --noEmit` clean.
+
+**Not independently confirmed against live traffic** — same caveat as every increment in this PR; no live Supabase/Aurora/S3 credentials this session to exercise a real upload/list/remove cycle end-to-end, and no vitana-v1-side client/wiring shipped yet (gateway route only — the vitana-v1 companion, `_shared/storage-bridge-client.ts` plus wiring the 3 fully-covered edge functions behind a flag, is separate follow-up work, same "gateway route first, edge-function client second" sequencing B7's ai-bridge used).
+
+OASIS_IMPACT: no — see AC-16.
