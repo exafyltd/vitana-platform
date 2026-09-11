@@ -120,11 +120,18 @@ size on each.
 **Still open:** the 116 private-bucket objects (`feedback-attachments`,
 `chat-attachments`, `health-reports`, `voucher-pdfs`) remain unmigrated —
 blocked on `secretsmanager:GetSecretValue` for the Supabase service-role
-key, denied by this session's current IAM grant. The migration script
-already treats this as a distinct, reported skip
-(`skipped_private_no_key`), not a silent drop. `STORAGE_PROVIDER` has not
-been flipped to `s3` anywhere — that remains a deliberate, separate
-operator action for once the private-bucket gap closes.
+key. **Re-confirmed 2026-09-11 with a precise error, not just "denied":**
+`AccessDeniedException ... with an explicit deny in a permissions
+boundary: arn:aws:iam::472838866351:policy/claude-code-aws-agent-boundary`.
+This is a deliberate security boundary on this session's IAM identity, not
+a missing grant someone forgot to add — the fix for whoever picks this up
+is a scoped exception to that boundary policy (or running the backfill
+from a different identity entirely), not simply attaching an extra IAM
+statement to the current one. The migration script already treats this as
+a distinct, reported skip (`skipped_private_no_key`), not a silent drop.
+`STORAGE_PROVIDER` has not been flipped to `s3` anywhere — that remains a
+deliberate, separate operator action for once the private-bucket gap
+closes.
 
 ## Addendum, 2026-08-28 — `exafyltd/vitana-mobile` checked: zero Storage usage, out of scope
 
