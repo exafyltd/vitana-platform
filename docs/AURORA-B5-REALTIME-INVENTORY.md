@@ -543,3 +543,59 @@ across the 3 tables, not per-second), but that is a documented assumption
 to validate, not a measured fact. Flipping any of the three flags on
 staging and confirming a real poll cycle end-to-end is the next real
 step for whoever picks this up next.
+
+## Execution update, 2026-09-11 continued — a first frontend consumer now exists in `exafyltd/vitana-v1` (built, tested, NOT wired into any component)
+
+Closes part of the "no frontend consumer exists yet" gap the first
+addendum named, for exactly one of the 3 routes:
+`GET /api/v1/realtime/user-notifications/stream`. The other two
+(`user-activity-log`, `chat-messages`) still have zero frontend code —
+this is a first consumer, not a completion of this line item.
+
+**`vitana-v1` additions** (same branch, `claude/aws-supabase-aurora-cutover-oxdie9`):
+
+- `src/lib/sse-relay-client.ts` — a fetch-based SSE reader
+  (`consumeSseRelay(url, jwt, opts)` + `parseSseChunk()`). Deliberately
+  NOT `new EventSource(url)`: EventSource cannot send a custom
+  `Authorization` header, and this route is `requireAuth`-gated on a
+  bearer JWT, the same compromise `reminders.ts`'s own `/stream` route
+  already documents (it falls back to `?user_id=` instead — this client
+  takes the header route instead of following that precedent, since the
+  gateway route here was built expecting `Authorization: Bearer`, not a
+  query param). Parses `id:`/`event:`/`data:` framing, comment/heartbeat
+  lines (`:`-prefixed), multi-line `data:` fields, and chunk boundaries
+  that split an event across two reads — including CRLF-terminated input,
+  which the first version of this parser did NOT handle correctly (see
+  below).
+- `src/hooks/useUserNotificationsRealtimeRelay.ts` — wraps the client in
+  a reconnect loop (5s fixed backoff) and exposes
+  `'idle'|'connecting'|'connected'|'error'`. **Not called from
+  `useNotifications.ts` or any other component** — the backend flag is
+  unset everywhere, so wiring it in today would just retry a 404 forever
+  for zero benefit. Swapping it in for the existing Supabase Realtime
+  `postgres_changes` subscription is a separate, later decision that
+  needs the backend flag flipped and live-verified on staging FIRST, per
+  this doc's own "next real step" above.
+- 15 new vitest tests across both files (11 for the parser/client, 4 for
+  the hook — connect/disconnect, event filtering, abort-on-unmount).
+  `vitana-v1` full suite: 88/88 files, 413/413 tests passing;
+  `tsc --noEmit` clean.
+
+**A real bug was caught before shipping, by the CRLF-tolerance test
+itself:** `parseSseChunk`'s first version split on a literal `'\n\n'`
+substring, which never occurs in a CRLF-terminated stream (`'\r\n\r\n'`
+has no bare `'\n\n'` inside it) — so a CRLF-framed SSE response would
+never have parsed a single event. Fixed by normalizing all line endings
+to `\n` before splitting, rather than weakening the test to dodge CRLF
+input. This gateway's own SSE writer (`openSseStream()`, above) emits
+LF-only today, so the bug was latent, not live — but the SSE spec permits
+either terminator, and a proxy/CDN in front of the gateway rewriting line
+endings was exactly the kind of failure this test was written to rule
+out before it could happen silently in production.
+
+**Still not done:** the other 2 relay routes have no frontend consumer at
+all; the backend flags are still unset everywhere (unchanged); and this
+hook itself has never been exercised against a live SSE stream — the
+mock in its test suite stands in for `consumeSseRelay`, so the parser's
+correctness against real gateway output is unverified until the backend
+flag is flipped on staging and someone points a real browser at it.
