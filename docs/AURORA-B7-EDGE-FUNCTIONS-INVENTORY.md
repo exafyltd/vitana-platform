@@ -333,3 +333,69 @@ across both repos:
   24h window checked) argues for confirming reachability before spending
   more effort here, the same discipline B2/B3 applied to their own
   dead-reference findings, not for wiring everything defensively.
+
+## Addendum, 2026-09-11, VTID-03815 continuation — the embedding gap is one decision, not two functions, and it's a data migration, not a bridge
+
+The migration plan's own Phase 3b text lists "the 2 `generateEmbedding`-
+dependent functions (no Bedrock embedding endpoint exists in this
+codebase's provider yet)" as still-untouched B7 work, worded as if it were
+the same shape as the transcribe-audio gap just closed above (build an
+adapter, wire a flag, done). Read the actual call graph and the schema
+before assuming that: **it is not that shape, and the blocker is a data
+migration decision, not a missing adapter.**
+
+**Correction to "2 functions" — it's 4, all converging on 1 model call.**
+`generate-memory-embedding` (`_shared/gemini-client.ts`'s
+`generateEmbedding()`, model `text-embedding-004`) is called directly by
+`search-memories` (query-side) and invoked as a sub-function
+(`supabase.functions.invoke('generate-memory-embedding', ...)`) by both
+`extract-diary-insights` and `ai-chat` — i.e. `generate-memory-embedding`
+IS reachable today, indirectly, through two of the functions this doc
+already confirmed have live, routed frontend callers. Listing it among
+the "no confirmed caller" dozen above is misleading on a strict frontend-
+grep basis; it undercounts real reachability the same way B6's storage
+grep undercounted real call sites (see that doc's own 2026-09-11
+addendum). All four functions ultimately depend on the exact same
+`generateEmbedding()` call — this is one decision to make, not two (or
+four) independent ports.
+
+**Why it's not a drop-in swap: the target column is a fixed-dimension
+pgvector type, and no Bedrock embedding model matches it natively.**
+`ai_memory.embedding` is `vector(768)`
+(`supabase/migrations/20251007183237_...sql`, comment: *"768 dimensions
+from text-embedding-3-small"* — itself a stale comment, since the actual
+runtime model is Gemini's `text-embedding-004`, not OpenAI's
+`text-embedding-3-small`; both happen to default to 768 dims, which is
+presumably why nobody caught the mismatch). Amazon Bedrock's embedding
+models do not offer 768 as an output size: **Titan Embeddings G1 – Text**
+is fixed at 1536; **Titan Text Embeddings V2** is configurable but only to
+256, 512, or 1024; **Cohere Embed v3** (also on Bedrock) is 1024. None of
+the three produce a 768-dimensional vector, and pgvector's `vector(768)`
+column type rejects any other dimension outright at insert time — this
+would fail loudly, not silently corrupt data, but it means there is no
+"just call the new API instead" fix available.
+
+**What a real fix requires, and why it's a product/data decision, not a
+code task:** switching the embedding model means either (a) migrating the
+column to a new dimension and **re-embedding every existing row** so old
+and new embeddings stay comparable under `<=>` (cosine distance) —
+`match_ai_memories`'s similarity search silently returns nonsense if the
+column mixes vectors from two different models/dimensions, since
+"distance" between embeddings from different model families isn't
+meaningful even when the raw dimension happens to match — or (b) running
+two embedding columns/models side by side during a transition window.
+Neither is a "drop-in swap," both need someone to decide the re-embedding
+cost/downtime is worth it, and neither should be started without live
+access to size `count(*) from ai_memory where embedding is not null`
+first — unavailable to this session (no live Supabase credentials this
+pass, per this whole migration effort's standing caveat).
+
+**Recommendation, not a decision:** if these 4 functions/call sites need
+to leave Gemini before Supabase is fully disconnected, the pragmatic
+scoped option is keeping Gemini (or any provider) as the *embedding-only*
+exception past the general LLM-provider cutover — CLAUDE.md's own
+Bedrock-only rule (§2b) governs LLM *routing*, not necessarily every
+embedding call, and an embedding endpoint is infrastructurally different
+from a chat completion. That is a call for the platform owner, not this
+document. No code changed here — this addendum only sharpens what the
+plan's existing "still untouched" line actually means.
