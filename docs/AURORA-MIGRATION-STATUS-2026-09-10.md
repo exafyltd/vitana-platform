@@ -325,3 +325,58 @@ with names and evidence instead of an approximate count, exactly what is
 running and what state it's actually in. No action taken on any of the 27
 July-9-batch services (none stopped, none modified) — read-only
 investigation only.
+
+## Addendum, 2026-09-11 continued — this is a credentials-exposure finding, not just a naming/governance one
+
+Checked task-definition `secrets` (not just `environment`, which was as far
+as the `auth-proxy` writeup above went) for six of the Group B services —
+`vitana-conductor`, `vitana-planner-core`, `vitana-worker-core`,
+`vitana-validator-core`, `vitana-qa-agent`, `vitana-crewai-kb-agent`,
+`vitana-oasis-approval`. **Every single one carries the exact same three
+secrets:** `DB_PASSWORD` (the RDS-managed master password for
+`vitana-aurora-prod`, ARN
+`rds!cluster-eba8a4f2-3caa-4f11-88f0-c3102c3c176a-QR8ox2`),
+`SUPABASE_URL`, and **`SUPABASE_SERVICE_ROLE`** — the production Supabase
+service-role key, which bypasses RLS entirely and has unrestricted
+read/write on every table in the production database. This is the exact
+same secret this session was denied when attempting the B6 private-storage
+backfill (`vitana/supabase/prod/service-role-key`, blocked by an explicit
+IAM permissions-boundary deny on this session's own identity) — meaning
+**these 19+ unsourced, undocumented, ungoverned services hold a
+higher-privilege credential to the production database than this Claude
+Code session itself is permitted to use.**
+
+**What is and isn't established:** the `environment` block on
+`vitana-conductor`/`vitana-planner-core`/`vitana-worker-core`/
+`vitana-validator-core` also points `DB_HOST`/`DB_READER_HOST` at the real
+`vitana-aurora-prod` RDS Proxy/reader endpoints and `REDIS_HOST` at
+`vitana-redis-prod`, with `ENV=prod`. `vitana-qa-agent` is the one
+exception found so far — its `DB_HOST`/`DB_READER_HOST`/`REDIS_HOST` point
+at a **previously undocumented standalone RDS instance,
+`vitana-postgres-staging`** (confirmed live via `aws rds
+describe-db-instances`: engine `postgres`, status `available` — this is
+NOT part of the `vitana-aurora-prod` Aurora cluster and appears nowhere in
+CLAUDE.md), with `ENV=staging`. This session did **not** confirm these
+processes actually issue any Supabase or Aurora queries — the log content
+read for `vitana-conductor` (above) was gunicorn/uvicorn INFO-level
+startup output only, with no visible query activity, and this pass did
+not attempt to trace outbound network calls, enable RDS/Supabase
+data-plane audit logging, or inspect the container image's actual code.
+**Holding a valid, wired, production-grade credential is the confirmed
+fact; whether it is being actively exercised is not.**
+
+**Why this matters regardless of that distinction:** an unaccounted-for
+service holding the production service-role key is a real security-hygiene
+gap on its own terms — if these processes are ever compromised, misused,
+or simply behave unexpectedly, nothing about their current dormant-looking
+log output prevents them from reading or writing arbitrary rows in
+production Supabase, RLS notwithstanding. This is a materially different,
+more urgent framing than "unexplained infrastructure cost," and is worth
+surfacing to the platform owner as its own item, separate from the
+broader governance/cost question above — specifically: whether this
+credential exposure is intentional (a real, deliberate multi-agent
+pipeline someone built and forgot to document) or an oversight from the
+2026-07-09 provisioning event that should prompt rotating
+`vitana/supabase/prod/service-role-key` once these services are
+understood or decommissioned. Not resolved here — flagging with the exact
+evidence rather than either alarming unnecessarily or under-stating it.
