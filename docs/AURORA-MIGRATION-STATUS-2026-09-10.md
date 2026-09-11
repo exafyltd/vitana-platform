@@ -158,3 +158,64 @@ them on:**
   `app_users` finding shows can reach double digits within a month) risks
   exactly the "confidently wrong" failures CLAUDE.md's Never-rules exist to
   prevent.
+
+## Addendum, 2026-09-11, VTID-03815 continuation — `vitana-auth-proxy` resolved: confirmed orphaned, not usable B4 progress
+
+§2 above flagged `vitana-auth-proxy` as possibly-real, out-of-band B4
+(identity) work, and asked the platform owner to say what it is. This
+session has live AWS credentials again — checked directly rather than
+leaving it as an open question a second time.
+
+**Confirmed orphaned — three independent signals, not one:**
+
+1. **No ingress path exists at all.** `aws ecs describe-services` shows
+   `loadBalancers: []` (no ALB target group — confirmed separately that no
+   `elbv2` target group with "auth" in its name exists anywhere in this
+   account) and `serviceRegistries: []` (no Cloud Map / internal service
+   discovery either). `assignPublicIp: DISABLED` on a private-subnet
+   Fargate task with neither of those wired means **no other AWS resource,
+   gateway included, has any DNS name or IP address to reach this service
+   with.** It cannot be receiving real traffic from anything in this
+   account, regardless of what code is inside it.
+2. **`createdAt: 2026-07-09 13:25:07 UTC`** — this is not an approximate
+   match, it is the exact date of the "unexplained 2026-07-09
+   bulk-provisioning event" CLAUDE.md's own AWS-prod hard-rules section
+   already names as the source of "~17-22 still-unexplained mystery
+   services" (same event `orb-agent`'s pre-existing infrastructure traces
+   back to). This is one more instance of that event, not a separate,
+   deliberate B4 effort.
+3. **Its logs confirm it does nothing after boot.** `/vitana/auth-proxy`'s
+   log group has one stream per task run; every stream's first and last
+   event timestamp are within ~1 second of each other, across every run
+   checked (2026-07-22 through 2026-09-10, 5+ restarts) — meaning each
+   container logs exactly two lines (`@supabase/supabase-js`'s Node 18
+   deprecation warning, then a bare `"Auth Proxy started"`) and then never
+   logs again for the rest of its lifetime, sometimes days. No access
+   logs, no request logs, no errors — consistent with a service that never
+   receives a single inbound request, matching finding 1 above rather than
+   contradicting it.
+
+**What it has, for the record, in case it's ever revived deliberately:**
+real credentials for both databases this migration cares about —
+`SUPABASE_URL`/`SUPABASE_SERVICE_ROLE` (Secrets Manager) and Aurora
+(`DB_HOST` → the RDS Proxy endpoint, `DB_READER_HOST` → the Aurora reader,
+`DB_PASSWORD` → the RDS-managed rotation secret) plus Redis — a
+credentials shape that DOES look like it was intended for something
+identity/proxy-shaped bridging the two databases. That plausible intent is
+exactly why this needed confirming rather than assuming either way: it
+looked like it could have been real B4 progress, and it looked like it
+could have been an abandoned mystery service, and only checking reachability
+and logs (not just credentials) could tell the two apart.
+
+**Conclusion: do not treat this as existing B4 progress, do not extend it,
+and do not route any real traffic at it.** It has no source in either
+tracked repo (unchanged from §2's original finding), no way to receive
+traffic today, and no evidence it has ever processed a single request
+since it was created. Per CLAUDE.md's own hard rule ("a live AWS resource
+[is not] governed just because it exists... extending to a new service
+needs its own VTID"), reviving it would need its source recovered or
+rewritten from scratch, its own VTID, and a real ALB/service-discovery
+wiring decision — not a resumption of unknown prior work. No action taken
+on the service itself (not stopped, not modified) — this addendum is
+read-only investigation, the same posture as the rest of this migration
+effort's live-infrastructure checks.
