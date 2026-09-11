@@ -295,10 +295,81 @@ Supabase-unconfigured fail-closed). Full gateway suite re-run: 840/841
 suites (1 pre-existing skip), 14,373 tests passing, 0 failures;
 `tsc --noEmit` clean.
 
-**Still open:** no vitana-v1-side client or edge-function wiring yet —
-this ships the gateway route only, same "gateway route first, edge-
-function client second" sequencing B7's `ai-bridge` used across two
-separate steps. No live exercise against real Supabase/S3 (no credentials
-this session). `extract-video-meta`'s download leg and
+**Still open at this point:** no vitana-v1-side client or edge-function
+wiring yet — this ships the gateway route only, same "gateway route
+first, edge-function client second" sequencing B7's `ai-bridge` used
+across two separate steps. No live exercise against real Supabase/S3 (no
+credentials this session). `extract-video-meta`'s download leg and
 `voucher-download-pdf`'s signed-url leg remain genuinely unsolved, not
 just unwired.
+
+## Execution update, 2026-09-11 continued — both remaining gaps closed; all 5 edge functions now wired end-to-end
+
+Closes both items the previous update left open, in the same pass.
+
+**`/signed-url` (gateway side):** added `@aws-sdk/s3-request-presigner`
+(a real dependency add, declared via `DEPENDENCY_CHANGE:` — see
+`docs/validation/VTID-03591/acceptance.md` AC-18) and
+`storage-provider.ts`'s new `storageSignedUrl` (Supabase
+`createSignedUrl()` or S3 presigning). This closes `voucher-download-pdf`
+directly (it just needs a link to hand the user) and closes
+`extract-video-meta`'s download gap **without** a byte-proxying
+`/download` route: the function now asks for a signed URL and `fetch()`s
+the video itself, so the bytes never pass through the gateway's 2mb JSON
+body limit at all — the constraint that made a `/download` route the
+wrong shape in the first place stops applying once bytes never need to
+be JSON-wrapped. `extract-video-meta`'s three storage calls (download,
+thumbnail upload, thumbnail public-url) move to the bridge together under
+one flag check, not leg-by-leg, honoring `storage-provider.ts`'s own
+"never mixed per-call" rule.
+
+**Real dependency-alignment bug caught before shipping:** adding
+`s3-request-presigner` alone broke `tsc --noEmit` with a genuine
+structural type error — the newly-installed presigner's bundled
+`@smithy/types` (4.18.0) didn't match the already-installed
+`@aws-sdk/client-s3`'s (4.16.1), so `getSignedUrl(client, command, opts)`
+rejected the `S3Client` instance as an incompatible `Client` type. Not a
+false positive: two different `@smithy/types` resolutions genuinely can't
+type-check against each other. Fixed by bumping `@aws-sdk/client-s3` to
+the same release line (`^3.1130.0`), not by casting around it.
+`pnpm-lock.yaml` regenerated with `pnpm@9.0.0` via `corepack prepare
+pnpm@9.0.0 --activate` (matching this repo's pinned `packageManager` —
+the locally-installed pnpm was 10.33.0) and reverified with
+`pnpm install --frozen-lockfile`, the actual command CI runs.
+
+**vitana-v1 side:** new `supabase/functions/_shared/storage-bridge-client.ts`
+mirrors `bedrock-bridge-client.ts`'s exact auth/fetch pattern
+(`GATEWAY_SERVICE_TOKEN` bearer) — `uploadFile`/`removeFiles`/
+`getPublicUrl`/`listFiles`/`getSignedUrl`. All 5 identified edge functions
+wired behind their OWN `STORAGE_BRIDGE_PROVIDER` secret (per-function
+opt-in, mirroring `AI_BRIDGE_PROVIDER`'s shape — not a single global
+switch), default `supabase` everywhere, unchanged behavior:
+
+| Function | Bridge ops used |
+|---|---|
+| `generate-event-image` | upload + public-url |
+| `generate-maxina-summer-events` | upload + public-url |
+| `request-account-deletion` | list + remove |
+| `voucher-download-pdf` | upload + signed-url |
+| `extract-video-meta` | signed-url (read) + upload + public-url |
+
+14 new tests in `src/lib/storage-bridge-client.test.ts` (provider gating,
+a base64 round-trip test including a >1-chunk input — the chunked
+`bytesToBase64` helper needed this to catch a boundary bug, though none
+was found — and each wrapper's request shape/URL/error forwarding). Full
+vitana-v1 suite: 89/89 files, 427/427 tests passing;
+`tsc --noEmit -p tsconfig.app.json` clean for every file this pass
+touched (the edge functions themselves aren't covered by this tsconfig —
+`include` is `["src"]` only — so their Deno-specific syntax was never
+type-checked by tsc in the first place, same as every other edge function
+in this repo; the shared client IS checked, transitively, via the Vitest
+file's import).
+
+**This closes B6's code-side edge-function gap completely — 5 of 5
+functions covered.** Still open: no live exercise against a real
+Supabase/S3 bucket from any session (no credentials), so
+`extract-video-meta`'s signed-URL-fetch path in particular is unverified
+against real object bytes; and the `STORAGE_BRIDGE_PROVIDER`/
+`STORAGE_PROVIDER`/`AI_BRIDGE_PROVIDER` flags are all still `off`
+everywhere — flipping any of them is a live-traffic decision for later,
+not something this pass should decide.

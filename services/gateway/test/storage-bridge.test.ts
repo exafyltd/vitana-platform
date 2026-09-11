@@ -21,12 +21,14 @@ const mockStorageUpload = jest.fn();
 const mockStorageRemove = jest.fn();
 const mockStoragePublicUrl = jest.fn();
 const mockStorageList = jest.fn();
+const mockStorageSignedUrl = jest.fn();
 
 jest.mock('../src/services/storage/storage-provider', () => ({
   storageUpload: (...args: unknown[]) => mockStorageUpload(...args),
   storageRemove: (...args: unknown[]) => mockStorageRemove(...args),
   storagePublicUrl: (...args: unknown[]) => mockStoragePublicUrl(...args),
   storageList: (...args: unknown[]) => mockStorageList(...args),
+  storageSignedUrl: (...args: unknown[]) => mockStorageSignedUrl(...args),
 }));
 
 // Deterministic JWT path — every test here exercises the service-token leg.
@@ -247,5 +249,61 @@ describe('POST /api/v1/storage-bridge/list', () => {
       .send({ bucket: 'avatars', prefix: 'u1' });
     expect(res.status).toBe(502);
     expect(res.body).toEqual({ ok: false, error: 'list_failed', message: 'AccessDenied' });
+  });
+});
+
+describe('POST /api/v1/storage-bridge/signed-url', () => {
+  beforeEach(() => {
+    process.env.GATEWAY_SERVICE_TOKEN = 'test-service-token';
+    jest.clearAllMocks();
+  });
+  const auth = () => ({ Authorization: 'Bearer test-service-token' });
+
+  it('rejects an unauthenticated request with 401, never calling storageSignedUrl', async () => {
+    const res = await request(buildApp())
+      .post('/api/v1/storage-bridge/signed-url')
+      .send({ bucket: 'voucher-pdfs', path: 'x.pdf' });
+    expect(res.status).toBe(401);
+    expect(mockStorageSignedUrl).not.toHaveBeenCalled();
+  });
+
+  it('returns the url and echoes the resolved expiresInSeconds', async () => {
+    mockStorageSignedUrl.mockResolvedValueOnce({ url: 'https://signed.example/x.pdf', error: null });
+    const res = await request(buildApp())
+      .post('/api/v1/storage-bridge/signed-url')
+      .set(auth())
+      .send({ bucket: 'voucher-pdfs', path: 'x.pdf', expiresInSeconds: 60 });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true, url: 'https://signed.example/x.pdf', expiresInSeconds: 60 });
+    expect(mockStorageSignedUrl).toHaveBeenCalledWith('voucher-pdfs', 'x.pdf', 60);
+  });
+
+  it('defaults expiresInSeconds to 3600 when omitted or invalid', async () => {
+    mockStorageSignedUrl.mockResolvedValueOnce({ url: 'https://signed.example/x.pdf', error: null });
+    const res = await request(buildApp())
+      .post('/api/v1/storage-bridge/signed-url')
+      .set(auth())
+      .send({ bucket: 'voucher-pdfs', path: 'x.pdf', expiresInSeconds: -5 });
+    expect(res.status).toBe(200);
+    expect(mockStorageSignedUrl).toHaveBeenCalledWith('voucher-pdfs', 'x.pdf', 3600);
+  });
+
+  it('400s when path is missing, without calling storageSignedUrl', async () => {
+    const res = await request(buildApp())
+      .post('/api/v1/storage-bridge/signed-url')
+      .set(auth())
+      .send({ bucket: 'voucher-pdfs' });
+    expect(res.status).toBe(400);
+    expect(mockStorageSignedUrl).not.toHaveBeenCalled();
+  });
+
+  it('502s with a stable error code when storageSignedUrl fails', async () => {
+    mockStorageSignedUrl.mockResolvedValueOnce({ url: null, error: new Error('AccessDenied') });
+    const res = await request(buildApp())
+      .post('/api/v1/storage-bridge/signed-url')
+      .set(auth())
+      .send({ bucket: 'voucher-pdfs', path: 'x.pdf' });
+    expect(res.status).toBe(502);
+    expect(res.body).toEqual({ ok: false, error: 'signed_url_failed', message: 'AccessDenied' });
   });
 });

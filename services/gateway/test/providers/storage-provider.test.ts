@@ -27,7 +27,12 @@ jest.mock('../../src/lib/supabase', () => ({
   getSupabase: jest.fn(),
 }));
 
-import { s3BucketName, s3PublicUrl, s3Download, s3Upload, s3Remove, s3List } from '../../src/providers/s3-storage';
+const mockGetSignedUrl = jest.fn();
+jest.mock('@aws-sdk/s3-request-presigner', () => ({
+  getSignedUrl: (...args: unknown[]) => mockGetSignedUrl(...args),
+}));
+
+import { s3BucketName, s3PublicUrl, s3Download, s3Upload, s3Remove, s3List, s3SignedUrl } from '../../src/providers/s3-storage';
 import {
   getStorageProvider,
   storageDownload,
@@ -35,6 +40,7 @@ import {
   storageRemove,
   storagePublicUrl,
   storageList,
+  storageSignedUrl,
 } from '../../src/services/storage/storage-provider';
 import { getSupabase } from '../../src/lib/supabase';
 
@@ -173,6 +179,29 @@ describe('VTID-03765 s3Download/s3Upload/s3Remove — error shape, not thrown ex
   });
 });
 
+describe('VTID-03815 s3SignedUrl — presigned GET URL, works for private buckets', () => {
+  afterEach(() => jest.clearAllMocks());
+
+  it('returns {url, error:null} on success and passes expiresIn through', async () => {
+    mockGetSignedUrl.mockResolvedValueOnce('https://signed.example/voucher-pdfs/x.pdf?sig=abc');
+    const { url, error } = await s3SignedUrl('voucher-pdfs', 'x.pdf', 900);
+    expect(error).toBeNull();
+    expect(url).toBe('https://signed.example/voucher-pdfs/x.pdf?sig=abc');
+    expect(mockGetSignedUrl).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ input: expect.objectContaining({ Bucket: 'vitana-storage-voucher-pdfs', Key: 'x.pdf' }) }),
+      { expiresIn: 900 },
+    );
+  });
+
+  it('surfaces a rejected presign as an error, not a throw', async () => {
+    mockGetSignedUrl.mockRejectedValueOnce(new Error('AccessDenied'));
+    const { url, error } = await s3SignedUrl('voucher-pdfs', 'x.pdf', 900);
+    expect(url).toBeNull();
+    expect(error?.message).toBe('AccessDenied');
+  });
+});
+
 describe('VTID-03765 storage-provider.ts routing — supabase vs s3 selected correctly', () => {
   const original = process.env.STORAGE_PROVIDER;
   afterEach(() => {
@@ -242,5 +271,44 @@ describe('VTID-03765 storage-provider.ts routing — supabase vs s3 selected cor
     const { data, error } = await storageList('avatars', 'u1');
     expect(data).toBeNull();
     expect(error?.message).toMatch(/Supabase client unavailable/);
+  });
+
+  it('storageSignedUrl routes to S3 when STORAGE_PROVIDER=s3, never touching Supabase', async () => {
+    process.env.STORAGE_PROVIDER = 's3';
+    mockGetSignedUrl.mockResolvedValueOnce('https://signed.example/x');
+    const { url, error } = await storageSignedUrl('voucher-pdfs', 'x.pdf', 900);
+    expect(error).toBeNull();
+    expect(url).toBe('https://signed.example/x');
+    expect(getSupabase).not.toHaveBeenCalled();
+  });
+
+  it('storageSignedUrl routes to Supabase createSignedUrl by default, never touching S3', async () => {
+    delete process.env.STORAGE_PROVIDER;
+    const createSignedUrl = jest.fn().mockResolvedValue({ data: { signedUrl: 'https://supabase.example/x' }, error: null });
+    (getSupabase as jest.Mock).mockReturnValue({ storage: { from: () => ({ createSignedUrl }) } });
+
+    const { url, error } = await storageSignedUrl('voucher-pdfs', 'x.pdf', 900);
+    expect(error).toBeNull();
+    expect(url).toBe('https://supabase.example/x');
+    expect(createSignedUrl).toHaveBeenCalledWith('x.pdf', 900);
+    expect(mockGetSignedUrl).not.toHaveBeenCalled();
+  });
+
+  it('storageSignedUrl fails closed with a clear error when Supabase is unconfigured', async () => {
+    delete process.env.STORAGE_PROVIDER;
+    (getSupabase as jest.Mock).mockReturnValue(null);
+    const { url, error } = await storageSignedUrl('voucher-pdfs', 'x.pdf', 900);
+    expect(url).toBeNull();
+    expect(error?.message).toMatch(/Supabase client unavailable/);
+  });
+
+  it('storageSignedUrl surfaces a Supabase createSignedUrl error rather than a null-data crash', async () => {
+    delete process.env.STORAGE_PROVIDER;
+    const createSignedUrl = jest.fn().mockResolvedValue({ data: null, error: { message: 'object not found' } });
+    (getSupabase as jest.Mock).mockReturnValue({ storage: { from: () => ({ createSignedUrl }) } });
+
+    const { url, error } = await storageSignedUrl('voucher-pdfs', 'missing.pdf', 900);
+    expect(url).toBeNull();
+    expect(error?.message).toBe('object not found');
   });
 });

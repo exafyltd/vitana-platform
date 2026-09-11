@@ -5,10 +5,15 @@
  * Supabase Storage call sites used (download, upload, remove, public-URL —
  * confirmed via a grep sweep across video-thumbnail-service.ts,
  * intent-cover-service.ts, cover-image-outpaint.ts). `s3List` (VTID-03815,
- * B6 edge-function gap addendum) is the fifth, added for the gateway-owned
+ * B6 edge-function gap addendum) added a fifth, for the gateway-owned
  * storage-bridge route's `request-account-deletion` (vitana-v1) consumer,
- * which needs to enumerate a user's files before deleting them — still not
- * a general S3 SDK wrapper, just the specific ops real callers need.
+ * which needs to enumerate a user's files before deleting them. `s3SignedUrl`
+ * (same VTID, same addendum's follow-up) is the sixth — a presigned GET URL
+ * unlocks two more edge functions the storage-bridge route originally left
+ * unsolved: `voucher-download-pdf` needs a signed link to hand the user, and
+ * `extract-video-meta` can fetch its source video directly from a signed URL
+ * instead of proxying the bytes through the gateway's 2mb JSON body limit —
+ * still not a general S3 SDK wrapper, just the specific ops real callers need.
  *
  * Bucket naming: Supabase bucket `<name>` maps to S3 bucket
  * `vitana-storage-<name>` (see scripts/aws/setup-storage-buckets.sh, which
@@ -23,6 +28,7 @@ import {
   DeleteObjectsCommand,
   ListObjectsV2Command,
 } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 const REGION = process.env.AWS_S3_STORAGE_REGION || process.env.AWS_REGION || 'eu-central-1';
 let client: S3Client | null = null;
@@ -109,6 +115,30 @@ export async function s3List(
     return { data: names.map((name) => ({ name })), error: null };
   } catch (err) {
     return { data: null, error: err instanceof Error ? err : new Error(String(err)) };
+  }
+}
+
+/**
+ * A time-limited, pre-signed GET URL — works for both public and private
+ * buckets (unlike `s3PublicUrl`, which is only meaningful for a public
+ * bucket's policy). Mirrors Supabase Storage's `.createSignedUrl()` return
+ * shape (`{url, error}` rather than `{data, error}` — no other caller here
+ * needs a `data` wrapper around a single string).
+ */
+export async function s3SignedUrl(
+  bucket: string,
+  path: string,
+  expiresInSeconds: number,
+): Promise<{ url: string | null; error: Error | null }> {
+  try {
+    const url = await getSignedUrl(
+      getClient(),
+      new GetObjectCommand({ Bucket: s3BucketName(bucket), Key: path }),
+      { expiresIn: expiresInSeconds },
+    );
+    return { url, error: null };
+  } catch (err) {
+    return { url: null, error: err instanceof Error ? err : new Error(String(err)) };
   }
 }
 

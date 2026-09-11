@@ -233,3 +233,83 @@ TEST: `services/gateway/test/storage-bridge.test.ts` (23 tests — auth gating o
 **Not independently confirmed against live traffic** — same caveat as every increment in this PR; no live Supabase/Aurora/S3 credentials this session to exercise a real upload/list/remove cycle end-to-end, and no vitana-v1-side client/wiring shipped yet (gateway route only — the vitana-v1 companion, `_shared/storage-bridge-client.ts` plus wiring the 3 fully-covered edge functions behind a flag, is separate follow-up work, same "gateway route first, edge-function client second" sequencing B7's ai-bridge used).
 
 OASIS_IMPACT: no — see AC-16.
+
+---
+
+## Addendum, 2026-09-11 continued — `/signed-url` closes both gaps AC-16 named; vitana-v1 client + all 5 edge functions wired
+
+The previous AC (AC-16) named two open gaps and left them for follow-up
+work. Both are closed in this same increment, immediately after:
+`@aws-sdk/s3-request-presigner` added as a dependency (declared below) and
+a fifth handler,
+`storage-provider.ts`'s new `storageSignedUrl` (Supabase `createSignedUrl()`
+or S3 presigning, selected the same way every other op here is) backing it.
+
+**Why this also closes `extract-video-meta`'s `/download` gap without a
+byte-proxying route:** rather than add a route that streams a whole video
+through the gateway's 2mb JSON body limit, `extract-video-meta` now asks
+`/signed-url` for a time-limited GET link and `fetch()`s the video bytes
+itself — the bytes never touch the gateway. Its thumbnail upload and
+public-url legs move to the bridge in the SAME code path (one
+`useBridge` flag gating all three of that function's storage calls), so
+`storage-provider.ts`'s "never mixed per-call" rule is honored, not
+sidestepped, for this function too.
+
+AC-17 — A fifth handler exists on the same `storage-bridge` route,
+correctly auth-gated, closing the two gaps AC-16 named
+
+ROUTE_MOUNT: `services/gateway/src/routes/storage-bridge.ts` → `router.post('/signed-url', requireServiceOrAdmin, ...)`; same `mountRouterSync(app, '/api/v1/storage-bridge', storageBridgeRouter, ...)` call as AC-15 (one router, five handlers now — no separate mount needed).
+FINAL_URL: `POST {gateway}/api/v1/storage-bridge/signed-url`
+CURL_PROOF: same honest gap as every route addendum above — this branch has never merged to `main`, so no live staging URL exists to curl yet. Once staging picks it up: `curl -s -o /dev/null -w "%{http_code} %{content_type}" -X POST https://preview-aws-gateway.vitanaland.com/api/v1/storage-bridge/signed-url -H "Content-Type: application/json" -d '{}'` must return `401 application/json` (auth required, route exists), NOT `404 text/html`. With a valid bearer and an empty body, the same endpoint must return `400 application/json` (`{"ok":false,"error":"bucket must be a non-empty string"}`).
+
+TEST: `services/gateway/test/storage-bridge.test.ts`'s `POST /api/v1/storage-bridge/signed-url` block (5 tests — auth gating, url+expiresInSeconds response shape, default-expiry fallback on an omitted/invalid value, path validation, 502 mapping) plus `services/gateway/test/providers/storage-provider.test.ts`'s new `storageSignedUrl`/`s3SignedUrl` coverage (6 tests — S3 presign success/failure, Supabase createSignedUrl success/failure/unconfigured, provider-routing gating). Full gateway suite re-run: 840/841 suites (1 pre-existing skip), 14,384 tests passing, 0 failures; `tsc --noEmit` clean.
+
+AC-18 — The route makes no DB write of its own and has no state transition to record; the dependency add is declared, not silently bundled
+
+Same `impact-allow-no-oasis` posture as AC-16 (pure URL generation, no object read/write). `@aws-sdk/s3-request-presigner@^3.1130.0` added to `services/gateway/package.json` — a sibling AWS SDK v3 package to the already-present `@aws-sdk/client-s3`, needed because presigning requires the same `@smithy` middleware stack as the client itself. Bumped `@aws-sdk/client-s3` to `^3.1130.0` too (from `^3.1114.0`) in the same commit — the two packages' bundled `@smithy/types` versions must match, confirmed the hard way: `tsc --noEmit` failed with a real structural-type mismatch (`HandlerExecutionContext` from two different `@smithy/types` resolutions) until both were aligned to the same release line. `pnpm-lock.yaml` regenerated with `pnpm@9.0.0` (via `corepack prepare pnpm@9.0.0 --activate`, matching this repo's pinned `packageManager`) and reverified with `pnpm install --frozen-lockfile` (the actual command `TEST-SUITE.yml` runs); `package-lock.json` synced via `npm install --package-lock-only` for consistency, though CI reads only the pnpm lockfile (AC-3 above).
+
+DEPENDENCY_CHANGE: added `@aws-sdk/s3-request-presigner@^3.1130.0`; bumped `@aws-sdk/client-s3` `^3.1114.0` → `^3.1130.0` (version-alignment fix, not a new capability) — both in `services/gateway/package.json`/`pnpm-lock.yaml`/`package-lock.json`.
+
+TEST: see AC-17.
+
+**Not independently confirmed against live traffic** — same caveat as every increment in this PR. **This closes the code-side B6 edge-function gap entirely** — all 5 identified functions now have a bridge path, gateway-side.
+
+OASIS_IMPACT: no — see AC-18.
+
+---
+
+## Addendum, 2026-09-11 continued — `exafyltd/vitana-v1` companion: all 5 edge functions wired behind `STORAGE_BRIDGE_PROVIDER`
+
+Not gateway code, so no new gate applies here, but recorded for the same
+completeness reason every other companion-repo increment in this pack is:
+`supabase/functions/_shared/storage-bridge-client.ts` (new) mirrors
+`bedrock-bridge-client.ts`'s exact auth/fetch pattern
+(`GATEWAY_SERVICE_TOKEN` bearer, `denoEnv()`/`gatewayBaseUrl()` helpers) —
+`uploadFile`/`removeFiles`/`getPublicUrl`/`listFiles`/`getSignedUrl`, each a
+thin fetch wrapper over the gateway's 5 storage-bridge handlers.
+
+Each of the 5 edge functions reads its OWN `STORAGE_BRIDGE_PROVIDER` secret
+independently (mirroring `AI_BRIDGE_PROVIDER`'s per-function-secret shape,
+not a single global switch) — default `supabase` on all 5, unchanged
+behavior: `generate-event-image`, `generate-maxina-summer-events` (upload +
+public-url), `request-account-deletion` (list + remove),
+`voucher-download-pdf` (upload + signed-url), `extract-video-meta`
+(signed-url read + upload + public-url, all three gated by one `useBridge`
+flag per the "never mixed per-call" reasoning above).
+
+14 new tests in `src/lib/storage-bridge-client.test.ts` (same test-location
+rationale as `bedrock-bridge-client.test.ts` — this module lives under the
+untested `supabase/functions/_shared` Deno tree, imported directly into a
+Vitest suite instead of left unverified): provider-gating, base64
+round-trip including a >1-chunk input, and each of the 5 wrapper functions'
+request shape, URL, and error-status forwarding. Full vitana-v1 suite:
+89/89 files, 427/427 tests passing; `npx tsc --noEmit -p tsconfig.app.json`
+clean for every file this pass touched (the repo's pre-existing, unrelated
+Lucide-icon-prop and `BookmarkItemType` errors are untouched by this
+change — confirmed by name-filtering the output against the files this
+pass edited).
+
+**Not independently confirmed against live traffic** — same caveat as the
+gateway-side addenda. `extract-video-meta`'s bridge path in particular
+(signed-URL fetch of a real video) has never been exercised against a real
+Supabase/S3 bucket from this session.

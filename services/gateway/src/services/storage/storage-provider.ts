@@ -22,7 +22,7 @@
  */
 
 import { getSupabase } from '../../lib/supabase';
-import { s3Download, s3Upload, s3Remove, s3PublicUrl, s3List } from '../../providers/s3-storage';
+import { s3Download, s3Upload, s3Remove, s3PublicUrl, s3List, s3SignedUrl } from '../../providers/s3-storage';
 
 export type StorageProviderName = 'supabase' | 's3';
 
@@ -98,4 +98,26 @@ export async function storageList(
   const { data, error } = await supabase.storage.from(bucket).list(prefix, { limit: opts.limit ?? 1000 });
   if (error) return { data: null, error: new Error(error.message) };
   return { data: (data ?? []).map((f: { name: string }) => ({ name: f.name })), error: null };
+}
+
+/**
+ * A time-limited GET URL that works for a PRIVATE bucket, unlike
+ * `storagePublicUrl` (which only makes sense for a public bucket's ACL).
+ * Unlocks two edge functions the storage-bridge route's first cut left
+ * unsolved (VTID-03815, B6 edge-function gap follow-up):
+ * `voucher-download-pdf` needs a signed link to hand the user, and
+ * `extract-video-meta` can fetch its source video directly from this URL
+ * instead of proxying bytes through the gateway's 2mb JSON body limit.
+ */
+export async function storageSignedUrl(
+  bucket: string,
+  path: string,
+  expiresInSeconds: number,
+): Promise<{ url: string | null; error: Error | null }> {
+  if (getStorageProvider() === 's3') return s3SignedUrl(bucket, path, expiresInSeconds);
+  const supabase = getSupabase();
+  if (!supabase) return { url: null, error: new Error('Supabase client unavailable') };
+  const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, expiresInSeconds);
+  if (error || !data) return { url: null, error: error ? new Error(error.message) : new Error('createSignedUrl returned no data') };
+  return { url: data.signedUrl, error: null };
 }

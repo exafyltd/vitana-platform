@@ -20,40 +20,37 @@
  * bearer, or an exafy_admin JWT for manual testing) — identical gate to
  * `ai-bridge.ts`. There is no anonymous path.
  *
- * **Scope, deliberately not the full 5-function surface:** this covers
- * upload/remove/public-url/list — the operations whose payload is either
- * absent or comfortably inside the gateway's 2mb JSON body limit
- * (`express.json({ limit: '2mb' })`, index.ts). Two real gaps are left
- * OPEN rather than faked, matching this migration's "ai-chat's streaming
- * legs" precedent (documented as deliberately unfinished, not silently
- * declared done):
+ * **Scope, now the full 5-function surface (2026-09-11 follow-up).** The
+ * first cut covered upload/remove/public-url/list — anything whose payload
+ * is either absent or comfortably inside the gateway's 2mb JSON body limit
+ * (`express.json({ limit: '2mb' })`, index.ts) — and left two real gaps
+ * open (`voucher-download-pdf`'s signed URL, `extract-video-meta`'s video
+ * download). Both are now closed by `/signed-url`
+ * (`storage-provider.ts`'s new `storageSignedUrl`, backed by
+ * `@aws-sdk/s3-request-presigner` on the S3 side and Supabase's own
+ * `createSignedUrl()` otherwise):
  *
- * 1. **No `/download`.** `extract-video-meta` downloads whole source videos
- *    before thumbnailing — base64-in-JSON would add ~33% overhead on top of
- *    an already-unbounded file size, and 2mb is nowhere near enough for a
- *    real video clip. That function is not wired to this bridge at all
- *    (partially wiring it — upload/public-url through the bridge, download
- *    still direct-to-Supabase — would split one logical operation across
- *    two storage backends, which `storage-provider.ts`'s own header comment
- *    already rules out: "never mixed per-call"). Needs either a raw-binary
- *    streaming endpoint or a presigned-URL hand-off instead of a JSON
- *    bridge — real, separate follow-up work.
- * 2. **No `/signed-url`.** `voucher-download-pdf` needs a signed URL for a
- *    private bucket, which needs `@aws-sdk/s3-request-presigner` — not a
- *    dependency this codebase has today. Adding it is a one-line
- *    `package.json` change but a real dependency-surface decision this
- *    pass leaves to whoever picks up that function's wiring, rather than
- *    bundling an unrelated dependency add into this route's first cut.
+ * - `voucher-download-pdf` gets a real signed link to hand the user
+ *   directly — that was always the natural fit.
+ * - `extract-video-meta` no longer needs a `/download` endpoint at all: it
+ *   asks this bridge for a signed URL, then `fetch()`s the video bytes
+ *   itself, straight from Supabase/S3 — the bytes never pass through the
+ *   gateway, so the 2mb body-limit mismatch that blocked a byte-proxying
+ *   `/download` route never applies. This also means the function's
+ *   upload/public-url legs (thumbnail) and its "download" leg (source
+ *   video) both now go through the SAME bridge, so `storage-provider.ts`'s
+ *   "never mixed per-call" rule is honored, not sidestepped.
  *
- * What IS fully covered: `generate-event-image`, `generate-maxina-summer-
- * events` (upload + public-url, no download/signing needed), and
- * `request-account-deletion` (list + remove, confirmed against its real
- * `USER_STORAGE_BUCKETS`/`.list(userId)`/`.remove(filePaths)` call shape).
+ * All 5 identified edge functions are covered: `generate-event-image`,
+ * `generate-maxina-summer-events` (upload + public-url),
+ * `request-account-deletion` (list + remove), `voucher-download-pdf`
+ * (upload + signed-url), `extract-video-meta` (signed-url read + upload +
+ * public-url).
  */
 
 import { Router, Request, Response } from 'express';
 import { requireServiceOrAdmin } from '../middleware/require-service-or-admin';
-import { storageUpload, storageRemove, storagePublicUrl, storageList } from '../services/storage/storage-provider';
+import { storageUpload, storageRemove, storagePublicUrl, storageList, storageSignedUrl } from '../services/storage/storage-provider';
 
 const router = Router();
 
@@ -184,6 +181,32 @@ router.post('/list', requireServiceOrAdmin, async (req: Request, res: Response) 
   }
 
   res.status(200).json({ ok: true, files: data ?? [] });
+});
+
+router.post('/signed-url', requireServiceOrAdmin, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: pure URL generation (a presign/sign call, no
+  // object read or write), same category as /public-url above.
+  const body = req.body as { bucket?: string; path?: string; expiresInSeconds?: number };
+
+  if (!body?.bucket || typeof body.bucket !== 'string') {
+    res.status(400).json({ ok: false, error: 'bucket must be a non-empty string' });
+    return;
+  }
+  if (!body?.path || typeof body.path !== 'string') {
+    res.status(400).json({ ok: false, error: 'path must be a non-empty string' });
+    return;
+  }
+  const expiresInSeconds = typeof body.expiresInSeconds === 'number' && body.expiresInSeconds > 0
+    ? body.expiresInSeconds
+    : 3600;
+
+  const { url, error } = await storageSignedUrl(body.bucket, body.path, expiresInSeconds);
+  if (error || !url) {
+    res.status(502).json({ ok: false, error: 'signed_url_failed', message: error?.message ?? 'no URL returned' });
+    return;
+  }
+
+  res.status(200).json({ ok: true, url, expiresInSeconds });
 });
 
 export default router;

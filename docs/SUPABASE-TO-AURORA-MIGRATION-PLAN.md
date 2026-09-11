@@ -328,15 +328,23 @@ workstream; the real surface turned out larger once edge functions were
 checked (never done in the original pass) — see
 `AURORA-B6-STORAGE-INVENTORY.md`'s 2026-09-11 addenda. Gateway's own call
 sites are done (`STORAGE_PROVIDER` seam, VTID-03765, public-bucket
-backfill complete). A gateway-owned `storage-bridge` route (2026-09-11,
-VTID-03815 continuation) now covers 3 of the 5 identified edge-function
-call sites (`generate-event-image`, `generate-maxina-summer-events`,
-`request-account-deletion`) the same way `ai-bridge` covers B7's LLM
-calls — one storage call point on the gateway, no per-function AWS
-credential. `extract-video-meta` (video-download body-size mismatch) and
-`voucher-download-pdf` (needs `@aws-sdk/s3-request-presigner`, not yet a
-dependency) remain genuinely unsolved. No vitana-v1-side client/wiring
-shipped yet — gateway route only.
+backfill complete). **Edge-function code-side gap now fully closed
+(2026-09-11, VTID-03815 continuation):** a gateway-owned `storage-bridge`
+route (`upload`/`remove`/`public-url`/`list`/`signed-url`, the same
+one-call-point-on-the-gateway shape `ai-bridge` uses for B7's LLM calls)
+covers all 5 identified edge-function call sites —
+`generate-event-image`, `generate-maxina-summer-events`,
+`request-account-deletion` (list+remove), `voucher-download-pdf`
+(upload+signed-url), and `extract-video-meta` (the video-download
+body-size mismatch resolved by having the function fetch bytes directly
+from a signed URL instead of proxying them through the gateway).
+`exafyltd/vitana-v1`'s `_shared/storage-bridge-client.ts` companion and
+all 5 functions' wiring shipped in the same pass, each behind its own
+`STORAGE_BRIDGE_PROVIDER` secret, default unchanged. Private-bucket
+backfill (116 objects) remains blocked on a `secretsmanager:GetSecretValue`
+grant this session doesn't have (unchanged from the 2026-08-27 finding);
+no live exercise of any of this against a real Supabase/S3 bucket (no
+credentials any session here has had).
 
 **B7 — Edge functions.** 74 Deno functions → Lambda/ECS
 (`docs/AURORA-B7-EDGE-FUNCTIONS-INVENTORY.md`). First real cut shipped: a
