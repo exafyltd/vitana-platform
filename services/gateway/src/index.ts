@@ -373,6 +373,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const walletAdminRouter = require('./routes/wallet-admin').default;
   // Notification System — FCM push + in-app notification history
   const notificationsRouter = require('./routes/notifications').default;
+  const realtimeRelayRouter = require('./routes/realtime-relay').default;
   // Chat — User-to-user direct messaging
   const chatRouter = require('./routes/chat').default;
   // Group chat — VTID-03089
@@ -1172,6 +1173,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // Notification System — FCM push notifications + in-app history
   mountRouterSync(app, '/api/v1/notifications', notificationsRouter, { owner: 'notifications' });
+
+  // B5 realtime relay (Aurora migration) — feature-flagged off by default,
+  // see docs/AURORA-B5-REALTIME-INVENTORY.md.
+  mountRouterSync(app, '/api/v1/realtime', realtimeRelayRouter, { owner: 'realtime-relay' });
 
   // Chat — User-to-user direct messaging
   mountRouterSync(app, '/api/v1/chat', chatRouter, { owner: 'chat' });

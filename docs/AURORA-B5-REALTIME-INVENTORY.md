@@ -371,3 +371,63 @@ gateway-owned relay needs to know which tenant/user each Aurora row belongs
 to in order to fan out only to authorized subscribers, i.e. it needs the
 same identity/session context B4 is already building, rather than
 re-deriving RLS-equivalent authorization logic a second time.
+
+## Execution update, 2026-09-11, VTID-03815 continuation — B5 execution started: `user_notifications` polling relay shipped, flagged off
+
+Followed this doc's own recommendation above and started B5 execution with
+path 2 (polling relay), on the simplest of the 3 hot tables first —
+`user_notifications`, whose ownership model is a plain `user_id` +
+`tenant_id` match (mirrors the scoping `notifications-repository.ts`'s
+existing `fetchNotificationHistory()` already uses for the non-realtime
+history endpoint). `user_activity_log` and `chat_messages` are NOT covered
+by this pass — `chat_messages` in particular needs thread/group membership
+checks, not just row ownership, and is real follow-up work, not an
+oversight here.
+
+**Shipped, same "ship the seam, don't flip it live" pattern as B6's
+`STORAGE_PROVIDER` and B7's `AI_BRIDGE_PROVIDER`:**
+
+- `services/gateway/src/services/realtime/user-notifications-relay-repository.ts`
+  — cursor-based query (`created_at`/`id` tie-break, so no row is skipped
+  or duplicated across polls even when several share a timestamp).
+- `services/gateway/src/services/realtime/user-notifications-poller.ts` —
+  pure polling logic (`pollNotificationsOnce` / `startNotificationPolling`),
+  deliberately separated from any HTTP/SSE concern so it unit-tests without
+  a live Supabase connection or an open connection. On a query error the
+  cursor is left unchanged (retries the same window next tick) and the
+  caller is notified via `onError` without the loop stopping — a transient
+  Supabase blip shouldn't kill a live connection, matching the
+  narration-audio-cache's "log loudly, degrade, keep going" posture
+  elsewhere in this migration.
+- `services/gateway/src/routes/realtime-relay.ts` — new
+  `GET /api/v1/realtime/user-notifications/stream` SSE route,
+  `requireAuth`+`requireTenant`, scoped to the caller's own
+  `identity.user_id`/`tenant_id` (never a client-supplied id). Gated by
+  `FEATURE_REALTIME_RELAY_USER_NOTIFICATIONS_ENV` — unset anywhere today,
+  so `isFeatureLive()` resolves `off` and the route 404s before touching
+  identity, Supabase, or opening a connection. Mounted at
+  `/api/v1/realtime` in `index.ts`.
+- Stream semantics: a cursor starting at connection time (not a backlog
+  replay — `GET /notifications` already serves history for anything
+  older), 3s poll interval, 30s heartbeat, and `req.on('close')` cleanup
+  that stops the poller's `setInterval` — mirrors the existing
+  `GET /reminders/stream` SSE route's conventions exactly rather than
+  inventing a new shape.
+
+**Explicitly not done, and not silently implied by "shipped":**
+- No frontend consumer exists yet. Nothing today calls this endpoint from
+  `vitana-v1` — wiring one up (and deciding whether a browser client uses
+  a token-in-query-param `EventSource`, the same compromise
+  `reminders.ts`'s own `/stream` route already documents needing, or an
+  `Authorization`-header `fetch()` stream reader instead) is separate,
+  later work.
+- `user_activity_log`/`chat_messages` relays — not built, per the scoping
+  note above.
+- No live exercise against a real Supabase project — this session has no
+  live Supabase credentials this pass (Supabase MCP unavailable
+  mid-session, see this branch's VTID-03815 commits). 12 new unit tests
+  (repository query shape, poller cursor-advance/error/stop semantics,
+  route flag-gating) plus a full gateway suite re-run: 838/839 suites (1
+  pre-existing skip), 14,331 tests passing, 0 failures; `tsc --noEmit`
+  clean. Flipping the flag on and confirming a real poll cycle against
+  live Aurora/Supabase data is the next real step, not assumed done here.
