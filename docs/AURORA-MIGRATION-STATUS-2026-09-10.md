@@ -224,14 +224,29 @@ effort's live-infrastructure checks.
 
 `vitana-auth-proxy` was one instance of a pattern this file's §2 only
 gestured at ("~15 other services... none of which appear in CLAUDE.md
-§1b/§2"). Enumerated the full ECS cluster (`aws ecs list-services`) and
-checked every non-`-awsdr`/non-`-staging` service's `createdAt`, load
-balancer, service discovery, and log history — not just the one this
-session happened to trip over. **21 services**, not ~15, share the
-identical `createdAt` window (1783603505.4–1783603508.3, a 3-second span,
-2026-07-09) and **all 21 have zero ALB target group and zero Cloud Map
-service discovery** — nothing in this account can address any of them by
-name or IP. Full roster: `vitana-auth-proxy`, `vitana-conductor`,
+§1b/§2"), and `docs/AWS-PRODUCTION-BUILD-LOG.md` had already independently
+put a rougher number on the same event ("29 ECS services... plus ~17
+services with no counterpart"). Enumerated the full ECS cluster (`aws ecs
+list-services`, 32 services total) and pulled `createdAt` for every one
+via a single batched `describe-services` pass (not per-service spot
+checks, which is how this session's own first version of this addendum
+undercounted) — **exactly 27 services share the identical `createdAt`
+window (1783603505.429–1783603508.299, a 2.87-second span, 2026-07-09)**,
+against 5 services created weeks later via real, deliberate deploys
+(`vitana-gateway-awsdr`, `vitana-community-app-awsdr`,
+`vitana-oasis-operator-awsdr`, `vitana-gateway`,
+`vitana-community-app-staging`). **Correction to this addendum's own
+first draft, caught before merge: it originally said "21 services" — a
+real undercount**, from checking a curated list rather than sorting the
+full cluster by `createdAt`. The precise number is **27**, of which **4
+already have a CLAUDE.md §1b entry and a deploy pipeline added after the
+fact** (`vitana-orb-agent`, `vitana-oasis-projector`,
+`vitana-worker-runner`, `vitana-vitana-verification-engine` — the same
+"pre-existing, deploy pipeline added on top" shape CLAUDE.md already
+documents for `orb-agent` specifically) and **23 remain completely
+undocumented anywhere**, all with zero ALB target group and zero Cloud Map
+service discovery — nothing in this account can address any of them by
+name or IP. Full 23-name roster: `vitana-auth-proxy`, `vitana-conductor`,
 `vitana-planner-core`, `vitana-validator-core`, `vitana-qa-agent`,
 `vitana-worker-core`, `vitana-cognee-extractor`, `vitana-oasis-approval`,
 `vitana-test-agent`, `vitana-dev-console-ui`, `vitana-github-sync-service`,
@@ -239,23 +254,26 @@ name or IP. Full roster: `vitana-auth-proxy`, `vitana-conductor`,
 `vitana-vitana-dev-gateway`, `vitana-memory-indexer`,
 `vitana-vitana-memory-indexer`, `vitana-openclaw-bridge`,
 `vitana-crewai-kb-agent`, `vitana-crewai-prompt-synth`,
-`vitana-lifetime-context-crew` — plus two more from this same batch that
-are easy to miss because their names collide with real services:
-**`vitana-community-app`** and **`vitana-oasis-operator`** (bare, no
-`-awsdr`/`-staging` suffix) are ALSO July-9 orphans, distinct from the
-real, ALB-fronted `vitana-community-app-awsdr`/`-staging` and
-`vitana-oasis-operator-awsdr` created weeks later. **This is the exact
-"vitana-gateway vs vitana-gateway-awsdr" name-collision trap CLAUDE.md's
-own AWS-prod hard rules already warn about, for two more service names it
-doesn't yet mention** — worth adding there.
+`vitana-lifetime-context-crew`, plus two that are easy to miss because
+their names collide with real production services: **`vitana-community-app`**
+and **`vitana-oasis-operator`** (bare, no `-awsdr`/`-staging` suffix) are
+ALSO July-9 orphans, distinct from the real, ALB-fronted
+`vitana-community-app-awsdr`/`-staging` and `vitana-oasis-operator-awsdr`
+created weeks later — `docs/AWS-PRODUCTION-BUILD-LOG.md` already flagged
+this specific pair by name at the time of the original 2026-07-27
+build, which this pass independently re-confirms rather than discovers
+fresh. **This is the exact "vitana-gateway vs vitana-gateway-awsdr"
+name-collision trap CLAUDE.md's own AWS-prod hard rules already warn
+about, for two more service names it doesn't yet mention** — worth
+adding there.
 
 **Correcting my own prior read: "unreachable" is not the same claim as
 "orphaned," and I initially conflated them.** Checked log activity (not
-just reachability) for every one of the 21 before generalizing from
-`auth-proxy`'s specific finding, since a background worker legitimately
-polling outward (the same shape CLAUDE.md already documents for
-`worker-runner`/`oasis-projector`) would correctly show no ALB and still
-be doing real work. The 21 split cleanly into two groups:
+just reachability) for every one of the 23 undocumented services before
+generalizing from `auth-proxy`'s specific finding, since a background
+worker legitimately polling outward (the same shape CLAUDE.md already
+documents for `worker-runner`/`oasis-projector`) would correctly show no
+ALB and still be doing real work. The 23 split cleanly into two groups:
 
 - **Group A — genuinely dormant, same shape as `auth-proxy`** (a log
   group with only isolated single-moment bursts, first≈last timestamp on
@@ -294,7 +312,7 @@ documented worker-runner/autopilot-executor system, but that is a
 plausible reading of the names, not a confirmed finding — do not repeat
 it as fact without independently verifying it.
 
-**Recommendation, not a decision:** every one of these 21 (and Group A's 4
+**Recommendation, not a decision:** every one of these 23 (and Group A's 4
 in particular, which do nothing detectable at all) is a real, standing
 question for the platform owner — keep running at real cost with unknown
 purpose, or investigate each one's actual container image/source and
@@ -304,5 +322,6 @@ own rule, a live AWS resource is not governed just because it exists, and
 that cuts both ways here: this session neither assumes these are safe to
 delete nor assumes they matter — it only establishes, for the first time
 with names and evidence instead of an approximate count, exactly what is
-running and what state it's actually in. No action taken on any of these
-21 services (none stopped, none modified) — read-only investigation only.
+running and what state it's actually in. No action taken on any of the 27
+July-9-batch services (none stopped, none modified) — read-only
+investigation only.

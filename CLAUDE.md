@@ -546,10 +546,13 @@ still-open checklist.
 - **Never** assume a service not in the §1b table has AWS infrastructure,
   or that a live AWS resource is governed just because it exists —
   `orb-agent`'s ECS service/task-def predated its own deploy pipeline
-  (2026-07-09 bulk-provisioning event). **The full roster of 21 orphaned
-  services from that event is now named and classified**, not just
-  estimated at "~17-22" — see `docs/AURORA-MIGRATION-STATUS-2026-09-10.md`'s
-  2026-09-11 addendum for the complete list, which four of them
+  (2026-07-09 bulk-provisioning event, exactly **27 ECS services** created
+  in the same 3-second window — 4 later got a CLAUDE.md §1b entry and a
+  deploy pipeline the same way `orb-agent` did, **23 remain fully
+  undocumented**). **That 23-service roster is now named and classified**,
+  not just estimated at "~17-22" — see
+  `docs/AURORA-MIGRATION-STATUS-2026-09-10.md`'s 2026-09-11 addendum for
+  the complete list, of which four
   (`vitana-auth-proxy`, `vitana-dev-console-ui`,
   `vitana-github-sync-service`, `vitana-mcp-gateway`) are confirmed fully
   dormant vs. which seventeen are alive and running real workloads with no
