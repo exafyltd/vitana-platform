@@ -399,3 +399,77 @@ embedding call, and an embedding endpoint is infrastructurally different
 from a chat completion. That is a call for the platform owner, not this
 document. No code changed here — this addendum only sharpens what the
 plan's existing "still untouched" line actually means.
+
+## Addendum, 2026-09-11 continued — re-auditing the "~12 no-confirmed-caller" list against real code references, not just a frontend `.invoke()` grep
+
+The 2026-08-29 addendum's dozen names were screened by whether the
+FRONTEND calls them. Re-grepped the whole repo (frontend, every other
+edge function, migrations, `config.toml`) for each name, since a function
+can be reachable via another edge function or a cron trigger without the
+frontend ever touching it directly — the exact undercounting shape B6's
+own storage-call-site grep already hit once this pass (see that doc's
+2026-09-11 addendum). Real, code-confirmed results, not assumed:
+
+- **`generate-memory-embedding` / `search-memories` — confirmed reachable
+  indirectly**, exactly as the addendum immediately above already
+  established (called from `extract-diary-insights`/`ai-chat`, both
+  already Bedrock-bridge-capable) — no new finding, already correctly
+  handled as the embedding data-migration decision above, not re-litigated
+  here.
+- **`test-api-integration` — confirmed reachable**, invoked from
+  `run-uptime-checks/index.ts` (`supabase.functions.invoke
+  ('test-api-integration', ...)`) — a real caller, but an internal QA/
+  uptime prober, not a user-facing feature.
+- **`vertex-live` and `vitanaland-live` — NOT reachable via
+  `.invoke()` from anywhere; the only references are `test-api-
+  integration`'s own health-check probe (`fetch(.../functions/v1/
+  vertex-live)`) and `integration-discovery`'s static metadata listing.**
+  Both are Vertex AI Live voice-session functions (`vitanaland-live`'s own
+  header comment: *"VITANALAND Voice Assistant - Dedicated Vertex AI Live
+  Session"*) — the exact Vertex Live capability the platform repo's own
+  CLAUDE.md §2e says was **permanently killed** by the 2026-08-16 GCP
+  shutdown ("ORB voice used to fall back to Vertex Live — that fallback
+  is now permanently dead... voice runs on Amazon Nova Sonic
+  exclusively"). These two functions are dead code by the platform's own
+  standing decision, not merely unreachable-and-unconfirmed like the other
+  eight.
+- **Real, previously-unnoted consequence: `test-api-integration`'s
+  `testVertexLiveIntegration()` branch (triggered whenever
+  `run-uptime-checks` runs it) checks `GOOGLE_CLOUD_SERVICE_ACCOUNT_JSON`/
+  probes `vertex-live`/calls the raw Gemini Developer API directly with
+  `GOOGLE_GEMINI_API_KEY`.** If GCP secrets are still configured here,
+  this uptime check is silently exercising and reporting on a fully
+  decommissioned Google dependency on every scheduled run — the same
+  "silent Google fallback normalized as routine" pattern CLAUDE.md's own
+  standing rule (10c) was written to end for LLM routing, just in a QA
+  prober instead of a live request path. If the GCP secrets are already
+  unset (plausible, given GCP billing is off — CLAUDE.md §1), this branch
+  instead fails loudly every run, which is at least honest but still
+  reports a permanent, unactionable "failed" status for a check nobody
+  can fix without either restoring Vertex (against standing policy) or
+  retiring the check.
+- **The other eight (`analyze-patterns`, `analyze-situation`,
+  `analyze-visual-context`, `extract-user-interests`,
+  `generate-maxina-summer-events`, `generate-proactive-message`,
+  `generate-recommendations`, `linkedin-import`) have exactly ONE
+  reference anywhere in the repo outside their own directory: their own
+  `config.toml` entry.** No frontend call, no edge-function-to-edge-
+  function call, no migration/cron reference found. This re-confirms
+  (does not merely repeat) the 2026-08-29 addendum's classification for
+  these eight specifically — real orphans by this evidence, not an
+  under-grepped false negative the way B6's storage call sites turned out
+  to be.
+
+**Net effect: no new functions get wired to Bedrock in this addendum,
+and that is the correct outcome, not an incomplete one.** The doc's own
+discipline (confirm reachability before spending effort) holds up under
+a second, broader grep — the dozen weren't undercounted the way B6's
+storage sites were, except for the embedding cluster already handled
+above. `vertex-live`/`vitanaland-live` are a genuine cleanup
+recommendation (delete or explicitly retire, matching CLAUDE.md's "treat
+it as dead code to be removed on sight" instruction for any live
+`lovable-vitana-vers1`/GCP reference), and `test-api-integration`'s
+Vertex/Gemini probe branch is a genuine, previously-unflagged monitoring
+gap — both are product/ops decisions (delete a function, retire a check)
+outside this document's remit to make unilaterally. No code changed in
+this addendum — inventory only, same posture as the rest of B7.
