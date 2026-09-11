@@ -519,11 +519,32 @@ new nav content was added after that GA translation pass without a
 corresponding `tr`/`zh`/`ar` follow-up pass, or `tr` (a locale that
 2026-08-18 note never row-counted at all, unlike `de`) was incomplete from
 the start and simply never surfaced because nobody had run this RPC and
-read its output until now. **This is a content gap for a human/
-translation-pipeline follow-up to close** (the missing keys are named
-above), not a schema or migration defect — flagging here rather than
-fixing, since it is a content-quality item orthogonal to the Aurora/AWS
-migration this doc otherwise tracks.
+read its output until now.
+
+**Correction, same session, minutes later: this is not an unknown or
+unaddressed gap — it's already documented, explained, and explicitly
+accepted as non-blocking, in `exafyltd/vitana-v1`'s
+`src/contexts/LanguageContext.tsx` (VTID-03701, 2026-08-24).** That
+comment records the exact same shape for the exact same three locales:
+`ar` 271/291 and `zh` 278/291 nav rows, `tr` 270/291 nav / 249/254
+checklist rows, **at GA-promotion time** — and explains it precisely: "the
+gap to 291 in each case is exclusively product/brand names (e.g. 'Vitana
+Index', 'Memory Garden') that the translation pipeline's own
+echo-detection rule correctly leaves untranslated but then rejects as a
+'silent passthrough' failure on the required `title` field... not a
+blocker for GA promotion, since it's a bounded, known gap rather than
+missing coverage." **The counts have actually IMPROVED since**: `ar`
+271→290, `zh` 278→289, `tr` 270→282 nav / 249→253 checklist — the gap has
+been shrinking release over release, not sitting static and undiscovered
+as this addendum's original framing implied. Retracting "a content gap
+for a human/translation-pipeline follow-up to close" — that follow-up is
+already known, already in progress (the counts prove it), and the
+remaining gap is a deliberate pipeline characteristic (a brand-name
+allowlist rule not yet grown to cover every case), not an oversight. The
+one specific new fact this session's finding still adds: the exact
+current topic (`T178`) and catalog IDs still short of full parity today,
+useful for whoever next extends that allowlist, but the framing of "nobody
+knew about this" was wrong and is corrected here.
 
 ## Addendum, 2026-09-11 continued — the DMS DNS failure is a REGRESSION on 2026-08-20, not a permanent structural block: found DMS's own heartbeat table proving a full month of successful connectivity beforehand
 
