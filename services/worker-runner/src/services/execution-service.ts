@@ -2,13 +2,18 @@
  * VTID-01200: Worker Runner - Execution Service
  * VTID-01229: Added execution timeout to prevent hanging tasks
  * VTID-01231: Contract validation on LLM outputs before action execution
- * BOOTSTRAP-WORKER-DS: env-configurable model + DeepSeek-reasoner fallback
+ * BOOTSTRAP-WORKER-DS: env-configurable model + DeepSeek fallback
  *
  * Executes work via Anthropic Claude (default: claude-opus-4-6). Operators
  * can swap the primary model via WORKER_LLM_MODEL env without code change.
  * If Claude API fails (5xx, rate-limit, network), execution falls back to
- * DeepSeek-reasoner via the OpenAI-compatible endpoint at api.deepseek.com.
- * Fallback is logged loudly and reported in the ExecutionResult.
+ * DeepSeek (deepseek-flash, DeepSeek-V4.1-Flash) via the OpenAI-compatible
+ * endpoint at api.deepseek.com. Fallback is logged loudly and reported in
+ * the ExecutionResult.
+ *
+ * BOOTSTRAP-DEEPSEEK-V4.1-FLASH (2026-09-11): the fallback default moved off
+ * the retired deepseek-reasoner alias onto deepseek-flash directly — see
+ * services/gateway/src/constants/llm-defaults.ts for the full rationale.
  */
 
 import Anthropic from '@anthropic-ai/sdk';
@@ -27,7 +32,7 @@ const MAX_CONTRACT_RETRIES = parseInt(process.env.WORKER_CONTRACT_RETRIES || '2'
 
 // BOOTSTRAP-WORKER-DS: model is now env-configurable, defaults preserved
 const CLAUDE_MODEL = process.env.WORKER_LLM_MODEL || 'claude-opus-4-6';
-const DEEPSEEK_FALLBACK_MODEL = process.env.WORKER_FALLBACK_MODEL || 'deepseek-reasoner';
+const DEEPSEEK_FALLBACK_MODEL = process.env.WORKER_FALLBACK_MODEL || 'deepseek-flash';
 const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com';
 const DEEPSEEK_FALLBACK_ENABLED = process.env.WORKER_DEEPSEEK_FALLBACK !== 'false';
 

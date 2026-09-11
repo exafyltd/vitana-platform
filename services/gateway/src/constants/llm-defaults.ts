@@ -110,42 +110,51 @@ export interface LLMRoutingPolicy {
 // InvokeModel against eu-central-1 on 2026-08-10. Every Haiku and Opus profile
 // returns AccessDenied — the account is not subscribed — so naming one here
 // would reintroduce the same silent-fallback bug one layer down.
+// BOOTSTRAP-DEEPSEEK-V4.1-FLASH (2026-09-11): DeepSeek retired the two-tier
+// deepseek-chat (V3) / deepseek-reasoner (R1) naming. Both legacy names are
+// still accepted for now but already alias to the non-thinking/thinking mode
+// of the same underlying model, and DeepSeek's own announcement (2026-07-24)
+// put them on a ~3-month discontinuation clock — so every DeepSeek call site
+// here now targets the single current model directly: 'deepseek-flash'
+// (marketing name "DeepSeek-V4.1-Flash"), rather than waiting for the alias
+// to break. There is no separate reasoning-mode model id to preserve the old
+// chat/reasoner cost split with — see MODEL_COSTS below for the one rate.
 export const LLM_SAFE_DEFAULTS: Required<LLMRoutingPolicy> = {
   planner: {
     primary_provider: 'bedrock',
     primary_model: 'eu.anthropic.claude-sonnet-4-6',
     fallback_provider: 'deepseek',
-    fallback_model: 'deepseek-reasoner',
+    fallback_model: 'deepseek-flash',
   },
   worker: {
     primary_provider: 'bedrock',
     primary_model: 'eu.anthropic.claude-sonnet-4-6',
     fallback_provider: 'deepseek',
-    fallback_model: 'deepseek-chat',
+    fallback_model: 'deepseek-flash',
   },
   validator: {
     primary_provider: 'bedrock',
     primary_model: 'eu.anthropic.claude-sonnet-4-6',
     fallback_provider: 'deepseek',
-    fallback_model: 'deepseek-reasoner',
+    fallback_model: 'deepseek-flash',
   },
   operator: {
     primary_provider: 'bedrock',
     primary_model: 'eu.anthropic.claude-sonnet-4-6',
     fallback_provider: 'deepseek',
-    fallback_model: 'deepseek-chat',
+    fallback_model: 'deepseek-flash',
   },
   memory: {
     primary_provider: 'bedrock',
     primary_model: 'eu.anthropic.claude-sonnet-4-6',
     fallback_provider: 'deepseek',
-    fallback_model: 'deepseek-chat',
+    fallback_model: 'deepseek-flash',
   },
   triage: {
     primary_provider: 'bedrock',
     primary_model: 'eu.anthropic.claude-sonnet-4-6',
     fallback_provider: 'deepseek',
-    fallback_model: 'deepseek-chat',
+    fallback_model: 'deepseek-flash',
   },
   vision: {
     primary_provider: 'bedrock',
@@ -159,7 +168,7 @@ export const LLM_SAFE_DEFAULTS: Required<LLMRoutingPolicy> = {
     primary_provider: 'bedrock',
     primary_model: 'eu.anthropic.claude-sonnet-4-6',
     fallback_provider: 'deepseek',
-    fallback_model: 'deepseek-chat',
+    fallback_model: 'deepseek-flash',
   },
 };
 
@@ -189,9 +198,16 @@ export const MODEL_COSTS: Record<string, { input: number; output: number }> = {
   'gpt-4o': { input: 5.00, output: 15.00 },
   'gpt-4o-mini': { input: 0.15, output: 0.60 },
 
-  // DeepSeek — flagship + mid
-  'deepseek-reasoner': { input: 0.55, output: 2.19 },     // R1 published rates
-  'deepseek-chat': { input: 0.14, output: 0.28 },         // V3 published rates
+  // DeepSeek — current model + retired legacy aliases (kept so a stray
+  // stored policy row still on the old names doesn't silently cost-estimate
+  // to $0 — see the BOOTSTRAP-DEEPSEEK-V4.1-FLASH note above LLM_SAFE_DEFAULTS).
+  // Rates are off-peak, cache-miss input (matches this table's existing
+  // convention for deepseek-chat/deepseek-reasoner below); DeepSeek doubles
+  // these at peak hours and offers a cheaper cache-hit input tier not
+  // modeled here.
+  'deepseek-flash': { input: 0.15, output: 0.60 },        // DeepSeek-V4.1-Flash published rates (2026-09)
+  'deepseek-reasoner': { input: 0.55, output: 2.19 },     // retired R1 alias — published rates
+  'deepseek-chat': { input: 0.14, output: 0.28 },         // retired V3 alias — published rates
 
   // claude_subscription pseudo-provider — billed via Claude Pro/Max plan, not per-token
   'claude-subscription': { input: 0, output: 0 },
@@ -274,7 +290,7 @@ export const PROVIDER_FLAGSHIPS: Record<LLMProvider, string> = {
   anthropic: 'claude-opus-4-7',
   vertex: 'gemini-3.1-pro-preview',
   openai: 'gpt-5',
-  deepseek: 'deepseek-reasoner',
+  deepseek: 'deepseek-flash',
   claude_subscription: 'claude-opus-4-7',
   bedrock: process.env.BEDROCK_MODEL_ID || 'eu.anthropic.claude-sonnet-4-6',
 };
@@ -287,10 +303,10 @@ export const RECOMMENDED_MODELS: Record<LLMStage, string[]> = {
   worker: ['claude-opus-4-7', 'gemini-3.1-pro-preview', 'gpt-5'],
   validator: ['gemini-3.1-pro-preview', 'claude-opus-4-7'],
   operator: ['gemini-3.1-pro-preview', 'claude-opus-4-7'],
-  memory: ['gemini-3.1-pro-preview', 'deepseek-reasoner', 'claude-opus-4-7'],
-  triage: ['gemini-3.1-pro-preview', 'claude-opus-4-7', 'deepseek-reasoner'],
+  memory: ['gemini-3.1-pro-preview', 'deepseek-flash', 'claude-opus-4-7'],
+  triage: ['gemini-3.1-pro-preview', 'claude-opus-4-7', 'deepseek-flash'],
   vision: ['gemini-3.1-pro-preview', 'claude-opus-4-7'],
-  classifier: ['deepseek-reasoner', 'gemini-3.1-pro-preview', 'gpt-5'],
+  classifier: ['deepseek-flash', 'gemini-3.1-pro-preview', 'gpt-5'],
 };
 
 /**

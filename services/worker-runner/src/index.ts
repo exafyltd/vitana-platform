@@ -221,7 +221,7 @@ async function main(): Promise<void> {
       gatewayUrl: process.env.GATEWAY_URL || '',
       agentId: 'worker-runner',
       displayName: 'Worker Runner',
-      description: 'Autonomous VTID execution plane (VTID-01200). Polls, claims, executes via Anthropic SDK (default claude-opus-4-6, env-overridable via WORKER_LLM_MODEL). DeepSeek-reasoner fallback engages if primary fails.',
+      description: 'Autonomous VTID execution plane (VTID-01200). Polls, claims, executes via Anthropic SDK (default claude-opus-4-6, env-overridable via WORKER_LLM_MODEL). DeepSeek (deepseek-flash, DeepSeek-V4.1-Flash) fallback engages if primary fails.',
       tier: 'service',
       role: 'executor',
       llmProvider: workerLlmProvider,
@@ -230,7 +230,7 @@ async function main(): Promise<void> {
       healthEndpoint: '/alive',
       metadata: {
         vtid: VTID,
-        fallback_model: process.env.WORKER_FALLBACK_MODEL || 'deepseek-reasoner',
+        fallback_model: process.env.WORKER_FALLBACK_MODEL || 'deepseek-flash',
         fallback_enabled: process.env.WORKER_DEEPSEEK_FALLBACK !== 'false',
       },
     });
