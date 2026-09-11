@@ -1,0 +1,11 @@
+$ cd services/gateway && npx jest test/ -t "operator" --silent=false
+
+Snapshot Summary
+ 7 snapshots obsolete from 2 test suites (pre-existing, unrelated to this
+ change -- tool-catalog and system-instruction characterization snapshots).
+
+Test Suites: 725 skipped, 13 passed, 13 of 738 total
+Tests:       13636 skipped, 72 passed, 13708 total
+Snapshots:   7 obsolete, 0 total
+Time:        37.301 s
+Ran all test suites matching /test\//i with tests matching "operator".
