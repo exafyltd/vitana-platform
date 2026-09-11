@@ -588,3 +588,41 @@ Supabase error via `console.warn` on failure — added for consistency
 (`services/gateway/test/routes/tenant-admin/community-admin.test.ts`'s
 existing `/memberships` error test now also asserts the log call). No
 frontend fix needed here since there is no frontend to fix.
+
+## Addendum 12 (VTID-03815 continuation), 2026-09-10 — `community_group_members`: the silent-error half is already fixed on `main`; the "no membership table at all" half is now confirmed with live data, not inferred
+
+Addendum 7 left two open questions: (a) is the silent-error-swallow fixed,
+and (b) does `community_groups` membership actually live somewhere this
+pass's static grep missed (an array column, `chat_group_members`, some
+other join path)?
+
+**(a) — already fixed, found via `git log`, not this session's own work.**
+`routes/community.ts`'s join-group handler now does `console.error(...)`
+on `membersErr` instead of silently discarding it (commit `b134d9c5`,
+explicitly citing this addendum). No further action needed here.
+
+**(b) — checked live against Aurora (read-only `claude-readonly` RDS Data
+API credential, `vitana/aurora/prod/claude-readonly`), not grepped again.**
+`community_groups` has 10 real rows and exactly the columns you'd expect
+for a group record (`tenant_id`, `name`, `topic_key`, `is_public`) — no
+member-list column of any kind. Every plausible substitute table was
+checked by JOINing on `group_id = community_groups.id` rather than going
+by name similarity alone:
+
+- `global_group_members` (0 rows total) — 0 matches.
+- `chat_group_members` (306 rows) — 0 matches.
+- `community_group_invitations` (0 rows total) — 0 matches.
+
+**Conclusion, now definitive: `community_groups` membership was never
+built, in any form, anywhere in the schema.** Not a naming mismatch, not
+an array column, not tracked via a different join path — the 10 existing
+groups have no way to know who belongs to them at the database level. This
+is a genuine, confirmed product gap (was tenant-scoped group membership a
+planned feature that never got its storage layer, or should `community_groups`
+have been retired in favor of `chat_groups`/`global_community_groups`?) —
+a product decision, not something to infer or route around from this pass.
+Not fixed here, for the same reason Addendum 7 declined to guess: any table
+this session invented would be exactly the kind of unverified assumption
+CLAUDE.md's "never assume context that is not verified" rule exists to
+prevent, on a table that already has 10 real production rows depending on
+whatever the real answer turns out to be.
