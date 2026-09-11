@@ -473,3 +473,21 @@ Vertex/Gemini probe branch is a genuine, previously-unflagged monitoring
 gap — both are product/ops decisions (delete a function, retire a check)
 outside this document's remit to make unilaterally. No code changed in
 this addendum — inventory only, same posture as the rest of B7.
+
+## Addendum, 2026-09-11 (VTID-03815 continuation) — the zero-invocation finding re-confirmed live, on a 2.5x larger sample two weeks later
+
+The 2026-08-27 PR update for this branch reported: "checked Supabase's
+own invocation logs: zero `/functions/v1/*` requests out of 748,348 total
+`edge_logs` entries in the last 24h." Re-ran the identical check live via
+Supabase MCP `query_logs` (`select count(*), countIf(event_message like
+'%/functions/v1/%') from logs where source='edge_logs'`, last 24h):
+**1,877,474 total edge log entries, 0 requests to any `/functions/v1/*`
+path.** Same result, on a sample 2.5x larger and two weeks apart — this
+rules out "that one day happened to be unusually quiet" as an
+explanation, rather than merely repeating the original finding. The
+entire 74-function Deno edge-function fleet remains, as far as this
+project's own edge gateway logs show, genuinely receiving zero live
+traffic. Not independently traced here to confirm WHY (e.g., whether
+`vitanaland.com`'s AWS-served frontend calls these functions through a
+different transport this log source wouldn't capture) — flagging the
+reconfirmed number, not a new root cause.
