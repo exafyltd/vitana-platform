@@ -7,7 +7,8 @@
  * Flow:
  *   1. Caller passes an incident (topic + optional vtid/signature/notes)
  *   2. We pull recent oasis_events for context
- *   3. We call deepseek-reasoner with a structured-output prompt
+ *   3. We call DeepSeek (deepseek-flash, DeepSeek-V4.1-Flash) with a
+ *      structured-output prompt
  *   4. We persist the report to architecture_reports
  *   5. We emit architecture.investigation.completed
  *
@@ -21,7 +22,9 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com';
-const DEEPSEEK_MODEL = process.env.ARCH_INVESTIGATOR_MODEL || 'deepseek-reasoner';
+// BOOTSTRAP-DEEPSEEK-V4.1-FLASH: deepseek-reasoner is a retired alias now
+// served by DeepSeek-V4.1-Flash (deepseek-flash) — see llm-defaults.ts.
+const DEEPSEEK_MODEL = process.env.ARCH_INVESTIGATOR_MODEL || 'deepseek-flash';
 
 const LOG_PREFIX = '[architecture-investigator]';
 
