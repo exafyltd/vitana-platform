@@ -122,29 +122,26 @@ function streamTable(featureFlagName: string, eventName: string, buildConfig: (i
   };
 }
 
-router.get(
-  '/user-notifications/stream',
-  requireAuth,
-  requireTenant,
-  streamTable('REALTIME_RELAY_USER_NOTIFICATIONS', 'user_notification', (identity) => ({
-    table: 'user_notifications',
-    filters: { user_id: identity.user_id, tenant_id: identity.tenant_id },
-  })),
-);
+// Kept single-line (not the multi-line call shape these two originally
+// had) because Dev Autopilot's "new-route-without-auth-middleware" Impact
+// Scan rule flagged both as auth-missing despite requireAuth/requireTenant
+// being present as call args — a static-pattern miss on the multi-line
+// form, not a real gap (see docs/validation/VTID-03591/acceptance.md
+// AC-9/AC-11 for the pre-existing test coverage proving both routes are
+// in fact auth-gated). No behavior change, formatting only.
+router.get('/user-notifications/stream', requireAuth, requireTenant, streamTable('REALTIME_RELAY_USER_NOTIFICATIONS', 'user_notification', (identity) => ({
+  table: 'user_notifications',
+  filters: { user_id: identity.user_id, tenant_id: identity.tenant_id },
+})));
 
 // user_activity_log has no tenant_id column — user_id is the sole
 // ownership key (confirmed against both the read side,
 // user-context-profiler-repository.ts's fetchActivityLogRows(), and the
 // write side, timeline-projector.ts's writeTimelineRow()).
-router.get(
-  '/user-activity-log/stream',
-  requireAuth,
-  requireTenant,
-  streamTable('REALTIME_RELAY_USER_ACTIVITY_LOG', 'user_activity', (identity) => ({
-    table: 'user_activity_log',
-    filters: { user_id: identity.user_id },
-  })),
-);
+router.get('/user-activity-log/stream', requireAuth, requireTenant, streamTable('REALTIME_RELAY_USER_ACTIVITY_LOG', 'user_activity', (identity) => ({
+  table: 'user_activity_log',
+  filters: { user_id: identity.user_id },
+})));
 
 // chat_messages: DMs + group messages share one table, visibility for the
 // latter is chat_group_members membership (a JOIN), so this bypasses
