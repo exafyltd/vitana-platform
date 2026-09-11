@@ -194,3 +194,21 @@ staging deploy's `/api/v1/admin/aurora-rls-health` response flip from
 confirmation the pg.Pool transport works at all, which no session so far
 has been able to observe directly (no VPC route from any Claude Code
 sandbox to Aurora's Postgres port, per this doc's earlier caveats).
+
+**Checked 2026-09-11 (VTID-03815 continuation):** curled
+`https://preview-aws-gateway.vitanaland.com/api/v1/admin/aurora-rls-health`
+directly — `404`, `text/html`, `Cannot GET`, the CLAUDE.md §15 signature
+for "route does not exist on deployed code." Traced the reason before
+assuming a regression: `git show origin/main:services/gateway/src/routes/
+admin-health.ts` confirms the route is genuinely absent from `main`
+today, and staging's own `/api/v1/admin/build-info` reports it's serving
+`main`'s current tip. **This is not a lost or reverted commit** — the
+commits that add it (`5cbf8178`, `4a1100b4`) are real, present on this
+session's branch, and confirmed (via the GitHub API, not local git —
+this checkout is shallow and its own ancestry math is unreliable) to be
+part of the file set already included in the still-open PR #3087
+alongside this session's other B2–B7 work. It simply hasn't merged yet.
+**No action needed here beyond what's already tracked**: this resolves
+itself the moment PR #3087 merges to `main`, which then auto-deploys to
+staging per §16 — the same event this whole B2–B7 body of work is
+already waiting on.
