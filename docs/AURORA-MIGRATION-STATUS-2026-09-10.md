@@ -524,3 +524,60 @@ translation-pipeline follow-up to close** (the missing keys are named
 above), not a schema or migration defect — flagging here rather than
 fixing, since it is a content-quality item orthogonal to the Aurora/AWS
 migration this doc otherwise tracks.
+
+## Addendum, 2026-09-11 continued — the DMS DNS failure is a REGRESSION on 2026-08-20, not a permanent structural block: found DMS's own heartbeat table proving a full month of successful connectivity beforehand
+
+Both this doc's own §1 and the correction addendum above frame the DMS
+CDC failure as something to root-cause going forward from today. Querying
+the source Supabase database directly (read-only, via Supabase MCP) for
+DMS's own bookkeeping tables — the kind AWS DMS creates automatically on a
+source endpoint once a task establishes CDC (`awsdms_heartbeat`,
+`awsdms_ddl_audit`) — found one that changes the framing entirely:
+
+```
+select * from awsdms_heartbeat;
+hb_key=1, hb_created_at=2026-07-21 12:22:23.913097,
+hb_created_by=migrate, hb_last_heartbeat_at=2026-08-20 09:55:57.722794,
+hb_last_heartbeat_by=migrate
+```
+
+**This proves the `migrate` role successfully connected to and wrote to
+this Supabase database continuously from 2026-07-21 through 2026-08-20
+09:55:57 — a full month of working DMS connectivity** — not that the
+instance has ever been structurally unable to resolve
+`db.inmkhvwdcuyhnxkgfvsb.supabase.co`. The heartbeat stops at
+**09:55:57 UTC on 2026-08-20**; the fatal DNS-resolution error this
+session pulled from CloudWatch in the addendum above is timestamped
+**2026-08-20T11:05:42** — about 70 minutes later, consistent with the
+task failing shortly after the last successful heartbeat and DMS logging
+the fatal error after its own retry/backoff window. (`awsdms_ddl_audit`
+is empty — 0 rows — which is a normal, unremarkable state for a table
+that only ever gets a row on a captured DDL change during CDC, not
+evidence against the heartbeat finding.)
+
+**This changes the actual question that needs answering.** It is no
+longer "why can a `PubliclyAccessible: true` DMS instance never resolve a
+public hostname" (a permanent-configuration question) but **"what changed
+on or immediately before 2026-08-20 that broke a DNS path which had
+worked continuously for a month"** (a regression question — normally far
+more tractable, because something specific to point at should exist:
+a VPC DHCP-options-set change, a security-group rule edit, a Supabase-side
+DNS/network change, or an AWS-side change to the VPC's route table/NAT/
+egress). 2026-08-20 has no obvious infrastructure-change entry in this
+CLAUDE.md's own CHANGE LOG for that exact date, but the days immediately
+around it (2026-08-16 GCP billing shutdown, 2026-08-18 AWS/GCP cleanup
+sweep) are exactly the highest-infrastructure-churn window in this
+project's whole timeline — a plausible, not yet confirmed, candidate
+window for whatever broke DNS resolution for this specific DMS instance's
+VPC.
+
+**This does not change the currently-pending unblock** — EC2 `Describe*`
+permissions are still needed to inspect the VPC's DHCP options set/
+security groups/route tables and find the actual change, and CloudTrail
+access (not yet requested or granted to any identity or role in this
+session) would let that change be dated precisely rather than inferred
+from proximity. **It does change what to look for once unblocked**: the
+investigation is no longer "what's wrong with this configuration" in the
+abstract, but "diff this VPC's DNS-relevant configuration against
+whatever it was before 2026-08-20" — a materially narrower, more
+tractable question than the one the prior addendum left open.
