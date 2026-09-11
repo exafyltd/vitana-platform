@@ -599,3 +599,56 @@ hook itself has never been exercised against a live SSE stream — the
 mock in its test suite stands in for `consumeSseRelay`, so the parser's
 correctness against real gateway output is unverified until the backend
 flag is flipped on staging and someone points a real browser at it.
+
+## Execution update, 2026-09-11 continued — frontend consumers now exist for all 3 relay routes
+
+Closes the "other 2 relay routes have no frontend consumer" gap named
+immediately above. Rather than copy `useUserNotificationsRealtimeRelay`'s
+connect/reconnect/parse logic a second and third time — the exact "five
+copies drift" shape this codebase's own CHANGE LOG names twice already —
+extracted it into a shared `src/hooks/useRealtimeRelayStream.ts`
+(`useRealtimeRelayStream<T>({path, eventName, onRow, enabled})`), then
+rewired the existing notifications hook onto it (behavior unchanged,
+confirmed by its own pre-existing 4 tests passing unmodified) before
+adding the two new ones:
+
+- `useUserActivityLogRealtimeRelay` — `UserActivityLogRow` is
+  deliberately loose (`id`/`user_id`/`created_at` + index signature)
+  rather than a fully-typed row: the existing `useActivityHistory.ts`
+  hook that reads this same table today doesn't type its own realtime
+  payload either (its `postgres_changes` callback just invalidates a
+  query and refetches via REST) — not inventing a schema this pass
+  can't verify against a live table.
+- `useChatMessagesRealtimeRelay` — reuses the existing `ChatMessage`
+  type from `useChatApi.ts` rather than a new shape, since the relay's
+  `chat_message` event carries the same `chat_messages` row that hook's
+  own REST fetch already returns.
+
+**A real bug was caught by the refactor's own test run, not a design
+review:** `useRealtimeRelayStream.ts`'s original doc comment wrote the
+route pattern as `` `GET /api/v1/realtime/*/stream` `` — the literal
+`*/` inside that inline-code span closes a JSDoc block comment early,
+which swc's parser (Vite's `vite:react-swc` plugin) treated as the end
+of the comment and then failed to parse the code after it as valid
+JavaScript, failing the whole test file with a syntax error before a
+single test ran. Fixed by writing the pattern as
+`` `GET /api/v1/realtime/<table>/stream` `` instead — same information,
+no literal `*/` sequence. Worth remembering: any doc comment describing
+a wildcard path segment with `/*/` is one keystroke from breaking the
+build this way.
+
+15 new tests (4 for the extracted generic hook's own connect/parse/
+abort/eventName-filtering behavior, 3 for the activity-log wrapper, 4 for
+the chat-messages wrapper, plus the pre-existing 4 for the refactored
+notifications hook passing unmodified). Full vitana-v1 suite: 92/92
+files, 438/438 tests passing; `tsc --noEmit -p tsconfig.app.json` clean
+for every touched file.
+
+**Still not done:** none of the 3 hooks are wired into a real component
+yet (same "backend flag is off, wiring today would just retry a 404"
+reasoning as the first hook) and none has been exercised against a live
+SSE stream from any of the 3 real backend routes. Flipping any
+`FEATURE_REALTIME_RELAY_*_ENV` flag on staging, confirming a real poll
+cycle, and THEN wiring a hook into an actual component to replace the
+matching Supabase Realtime subscription is the real next step, in that
+order — not something this pass should decide or shortcut.
