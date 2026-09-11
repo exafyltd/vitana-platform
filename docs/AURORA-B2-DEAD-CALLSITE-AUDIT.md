@@ -647,3 +647,20 @@ left to a human for `wallet_balances`/`community_group_members` and
 whichever of the remaining dead tables a product owner decides to revisit.
 No code or further doc changes needed; this closes the audit's own
 tracking list.
+
+## Addendum, 2026-09-11 (VTID-03815 continuation) — full 33-table batch re-check: still zero exist, anywhere
+
+Extracted all 33 table names from this doc's "Confirmed dead" table and
+batch-checked every one against live `information_schema.tables` with no
+schema filter (the same no-schema-filter method this doc's own header
+specifies, to rule out "exists somewhere else") in a single query via
+Supabase MCP. **Result: zero of the 33 exist under any schema, unchanged
+from this doc's original finding.** Combined with today's identical
+re-confirmation of B3's 106 dead RPCs (same session, `AURORA-B3-RPC-
+PARITY-INVENTORY.md`), this is now two independent, fully-reconfirmed-
+static defect surfaces — nothing has been created, deleted, or renamed on
+either list in the intervening weeks, while every organic-growth metric
+checked elsewhere today (users, RLS policies, edge-log volume) kept
+climbing. Consistent with this doc's own conclusion: what's left across
+both audits is a set of human product/eng decisions waiting to happen,
+not an actively-drifting code problem.
