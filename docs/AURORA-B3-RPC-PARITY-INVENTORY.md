@@ -1395,8 +1395,20 @@ and fixed the identical bug.
 
 **No further action taken here** — the fix already exists and is already
 on this branch. This closes the investigative half of the base doc's Next
-Steps item 3 for `send_funds` specifically; `credit_wallet`,
-`debit_wallet_for_spend`, `credit_wallet_for_earning`, `credit_deposit`,
-and `increment_wallet_balance` (the other RPCs item 3 names) have not been
-given the same diff-level read and remain open for a genuine follow-up
-pass, not assumed clean by association.
+Steps item 3 for `send_funds` specifically.
+
+**Correction to a first draft of this addendum:** an earlier version of
+this paragraph claimed `credit_wallet`, `debit_wallet_for_spend`,
+`credit_wallet_for_earning`, `credit_deposit`, and
+`increment_wallet_balance` "have not been given the same diff-level read."
+That is wrong and was written before re-reading the doc's own 2026-08-29
+addendum (above, "money-adjacent RPC diff-level read (Next Steps item
+3)") — which already gave every one of those five RPCs, plus
+`vtn_reward`/`vtn_spend`/`vtn_transfer`, exactly that read, and already
+fixed three real bugs found in `credit_wallet`'s diary-streak/milestone/
+AP-0708 call sites the same day. **Next Steps item 3 is fully closed** for
+every RPC it named; the only thing left open from that item, per its own
+closing paragraph, is the product decision — what (if anything) replaces
+the dead `credit_wallet`/`vtn_*` RPCs, and whether wallet ledgers #1/#3/#4
+should unify into #2 — which is explicitly reserved for a human, not a
+code-audit follow-up.
