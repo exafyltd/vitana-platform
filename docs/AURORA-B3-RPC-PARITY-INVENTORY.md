@@ -1367,3 +1367,36 @@ fail-open fix beyond the one already applied to `d50`. The remaining open
 item across all 36 is unchanged from what the base doc already said: a
 product decision on whether to rebuild each feature's DB layer or retire
 it, not a code-safety follow-up.
+
+## Addendum, 2026-09-11, VTID-03815 continuation — the `send_funds` fund-loss bug (Next Steps item 3) is already fixed, on `main` before this session started
+
+This doc's own 2026-08-27/29 addendum (above, money-adjacent RPCs) described
+a "real, if narrow, race... a real fund-loss bug, not a hypothetical" in
+`services/gateway/src/services/orb-tools/wallet-payments-tools.ts`'s
+`send_funds` ORB voice tool: on `RECIPIENT_ACCOUNT_FAILED`, the
+compensation path was said to discard its refund RPC's `{data,error}`
+result entirely and unconditionally tell the user "I've refunded your X
+back," even if the refund itself had silently failed — the exact
+discard-the-result class this whole doc exists to catch.
+
+Read the live source (lines ~390-480) before doing anything else with it,
+per this session's own standing discipline of re-verifying doc claims
+against current code rather than assuming either staleness or freshness.
+**Both compensation branches already check `refund.ok` before claiming
+success to the user; neither discards the RPC result.** `git log --oneline
+-5 -- services/gateway/src/services/orb-tools/wallet-payments-tools.ts`
+shows why: commit `a0a0e4a3`, dated 2026-08-29 — **"Fix send_funds refund
+result being discarded on RECIPIENT_ACCOUNT_FAILED (real fund-loss
+bug)"** — already landed this exact fix, on `main`, before this session
+began (merged into this branch via the standing `git fetch origin main &&
+git merge` discipline used throughout the migration work). Same day this
+doc's own addendum was written, a different session independently found
+and fixed the identical bug.
+
+**No further action taken here** — the fix already exists and is already
+on this branch. This closes the investigative half of the base doc's Next
+Steps item 3 for `send_funds` specifically; `credit_wallet`,
+`debit_wallet_for_spend`, `credit_wallet_for_earning`, `credit_deposit`,
+and `increment_wallet_balance` (the other RPCs item 3 names) have not been
+given the same diff-level read and remain open for a genuine follow-up
+pass, not assumed clean by association.
