@@ -571,13 +571,135 @@ project's whole timeline — a plausible, not yet confirmed, candidate
 window for whatever broke DNS resolution for this specific DMS instance's
 VPC.
 
-**This does not change the currently-pending unblock** — EC2 `Describe*`
-permissions are still needed to inspect the VPC's DHCP options set/
-security groups/route tables and find the actual change, and CloudTrail
-access (not yet requested or granted to any identity or role in this
-session) would let that change be dated precisely rather than inferred
-from proximity. **It does change what to look for once unblocked**: the
-investigation is no longer "what's wrong with this configuration" in the
-abstract, but "diff this VPC's DNS-relevant configuration against
-whatever it was before 2026-08-20" — a materially narrower, more
-tractable question than the one the prior addendum left open.
+**Superseded minutes later by a live re-test — see the addendum
+immediately below, which changes the actionable next step.**
+
+## Addendum, 2026-09-11 continued — live re-test moments later: the CURRENT blocker is §1's already-documented Supavisor tenant/user error, not the DNS regression, and it does not need EC2 permissions to fix
+
+Immediately after finding the heartbeat evidence above, this session
+tried the obvious next thing: attempt to resume the task
+(`aws dms start-replication-task --start-replication-task-type
+resume-processing`) to see whether whatever broke DNS on 2026-08-20 had
+since self-healed. DMS refused with `InvalidResourceStateFault` — a
+replication task cannot start without a currently-passing connection
+test — which forced running a **fresh, live `test-connection` right now**
+rather than continuing to reason from the historical CloudWatch log.
+
+**Result: DNS resolution is no longer the failure.** The fresh test against
+the task's actual, currently-attached source endpoint failed with:
+
+```
+Application-Detailed-Message: RetCode: SQL_ERROR  SqlState: 08001
+NativeError: 101 Message: [unixODBC]FATAL:  (ENOTFOUND) tenant/user
+migrate.inmkhvwdcuyhnxkgfvsb not found
+```
+
+— the exact Supavisor tenant/user error §1 already documented for "the
+pooler path," not the "could not translate host name" DNS error from the
+2026-08-20 CloudWatch log. **Checking which endpoint is actually wired to
+this task resolves the apparent contradiction:** `describe-replication-tasks`
+confirms task `vitana-supabase-to-aurora-v3`'s `SourceEndpointArn` is
+`vitana-src-supabase-v3` — and `describe-endpoints` shows this endpoint is
+configured with `ServerName: aws-0-eu-north-1.pooler.supabase.com`,
+`Username: migrate.inmkhvwdcuyhnxkgfvsb` — **the pooler shape, not the
+direct hostname.** The 2026-08-20 CloudWatch log's DNS-failure text
+literally names `db.inmkhvwdcuyhnxkgfvsb.supabase.co`, so either this same
+endpoint object was reconfigured from direct to pooler at some point after
+that log entry (plausible — §1 records this being independently
+re-tested by sessions on 2026-08-29 and 2026-09-02, any of which could
+have repointed it while investigating), or a full trace of every
+intermediate change is not recoverable without CloudTrail access (not
+available to this session). **Full current endpoint inventory, for the
+next session so this isn't re-discovered from scratch:**
+
+| Endpoint ID | Host | Username |
+|---|---|---|
+| `vitana-source-supabase` | `db.inmkhvwdcuyhnxkgfvsb.supabase.co` (direct) | `migrate` |
+| `vitana-src-supabase-v3` | `aws-0-eu-north-1.pooler.supabase.com` (pooler) | `migrate.inmkhvwdcuyhnxkgfvsb` |
+| `vitana-supabase-source-autopilot` | `db.inmkhvwdcuyhnxkgfvsb.supabase.co` (direct) | `migrate` |
+| `vitana-supabase-source-fullload` | `db.inmkhvwdcuyhnxkgfvsb.supabase.co` (direct) | `migrate` |
+
+Only `vitana-src-supabase-v3` is bound to the live task. The other three
+direct-hostname endpoints exist but are not attached to any currently
+running task — testing against one of them (as the original 2026-08-20
+CloudWatch log implies happened, and as this doc's own §1 prose describes
+under "direct hostname") is a different test than testing the one that
+actually matters operationally.
+
+**This corrects the prior addendum's recommendation.** EC2 permissions
+would still explain the historical 2026-08-20 DNS regression as a matter
+of record, but **they are not what is blocking CDC resumption right now.**
+The live, currently-reproducible failure is Supavisor rejecting the
+`migrate.inmkhvwdcuyhnxkgfvsb` tenant/user on the pooler endpoint — §1's
+own words already say this "is Supabase-platform-side pooler
+configuration, not fixable via SQL, Secrets Manager, or any Supabase MCP
+tool available to a Claude Code session," and that remains true after this
+session's own live Supabase MCP access: `pg_roles` confirms the underlying
+`migrate` role exists and has `rolcanlogin=true`/`rolreplication=true` (§1,
+re-confirmed available data), so the account is fine — it's specifically
+the Supavisor pooler's own tenant registry that doesn't recognize the
+dotted `migrate.inmkhvwdcuyhnxkgfvsb` identity format DMS is sending.
+**The actionable next step is a human with the Supabase dashboard or
+Management API**, either re-provisioning that pooler user or switching
+this task's source endpoint back to a direct-hostname endpoint (one of
+the three already provisioned above) — which would reintroduce the DNS
+question, but is at least a different, already-configured connection
+worth a fresh `test-connection` in its own right, cheap to try, not yet
+re-tested live by this session.
+
+## Addendum, 2026-09-11 continued — ran that suggested direct-endpoint test immediately: it fully reconciles every prior finding, and closes the case on what EC2 permissions would and wouldn't fix
+
+Rather than leave the direct-endpoint test as a suggestion, ran it live
+(`vitana-source-supabase`, `db.inmkhvwdcuyhnxkgfvsb.supabase.co`, same
+replication instance) immediately after the pooler test above. Result:
+
+```
+Application-Detailed-Message: RetCode: SQL_ERROR  SqlState: 08001
+NativeError: 101 Message: [unixODBC]could not connect to server:
+Network is unreachable  Is the server running on host
+"db.inmkhvwdcuyhnxkgfvsb.supabase.co" (2a05:d016:c4a:9700:e653:eac4:c86c:f1f4)
+and accepting TCP/IP connections on port 5432?
+```
+
+**This is a THIRD, distinct error signature from the same host** —
+DNS resolves successfully this time (to the IPv6 address
+`2a05:d016:c4a:9700:e653:eac4:c86c:f1f4`), but the VPC/instance cannot
+route to it. This is exactly §1's *original*, oldest-documented finding
+("resolves IPv6-only... `Network is unreachable`") — not the 2026-08-20
+CloudWatch "could not translate host name" total-DNS-failure, and not the
+pooler's Supavisor error above. **All three pieces of evidence now form
+one coherent timeline, not three competing theories:**
+
+1. **2026-07-21 → 2026-08-20 09:55:57** — CDC worked continuously
+   (`awsdms_heartbeat`), meaning the direct-hostname path (or whatever
+   endpoint was attached then) had usable connectivity.
+2. **2026-08-20 11:05:42** — total DNS resolution failure (`could not
+   translate host name` — the resolver itself failed to return ANY
+   answer), captured live in CloudWatch, causing the task's 9
+   recovery attempts and permanent `failed` state.
+3. **2026-09-11 (today, both re-tested live)** — DNS resolution has
+   partially recovered: the direct hostname now resolves again, but only
+   to an **IPv6-only** address the VPC can't route to (`Network
+   unreachable` — §1's original finding, now reproduced fresh); the
+   **pooler** endpoint (the one actually attached to the live task)
+   resolves and connects fine at the network layer, failing only on
+   Supabase's own Supavisor tenant/user registration.
+
+**Conclusion: EC2 permissions would only ever explain/fix the direct
+hostname's IPv6-routing problem — and the task doesn't use that endpoint.**
+The task is correctly configured against the pooler, which is the
+IPv4-reachable path Supabase's own architecture points DMS customers at
+for exactly this reason (their direct `db.*.supabase.co` hostname is
+IPv6-only in this and evidently other regions). **The EC2 permission
+request made earlier in this session is no longer the right ask for
+resuming production CDC** — pursuing it would fully explain and possibly
+fix a network path this migration doesn't actually depend on. **The
+single, real, live-confirmed blocker to resuming replication today is
+Supavisor rejecting `migrate.inmkhvwdcuyhnxkgfvsb`** on the pooler
+endpoint the task already correctly uses. §1's own two remedies stand
+unchanged: a human with Supabase dashboard/Management API access needs to
+either re-provision that pooler tenant/user, or reconfigure the task's
+source endpoint to authenticate via the standard `postgres.<project_ref>`
+pooler identity instead. Nothing else discovered this session changes
+that recommendation — it sharpens it from "one of several possible fixes"
+to "the only one that matters for the endpoint actually in use."
