@@ -380,3 +380,82 @@ pipeline someone built and forgot to document) or an oversight from the
 `vitana/supabase/prod/service-role-key` once these services are
 understood or decommissioned. Not resolved here — flagging with the exact
 evidence rather than either alarming unnecessarily or under-stating it.
+
+## Addendum, 2026-09-11 continued — §1's DMS root cause was measured from the wrong place; the real fatal error is a third, distinct failure
+
+This session finally got a **pre-existing, working AWS identity**
+(`claude-code-aws-agent`) with broader access than any prior session on
+this doc had (ECS describe, S3, Secrets Manager including
+`vitana/aurora/prod/claude-readonly`, Bedrock, and — critically — CloudWatch
+Logs read access), and used it to pull the DMS replication task's **own
+CloudWatch log** for the first time this migration's documentation reflects.
+Every prior root-cause claim in §1 above (both the direct-hostname
+"IPv6-only/`Network unreachable`" finding and the pooler
+"`tenant/user...not found`" finding) was reached by testing DNS resolution
+and connectivity **from this container**, never from inside the actual DMS
+replication instance, and never by reading what DMS itself logged when it
+tried and failed. That gap matters: this container's network path is not
+the DMS instance's network path, and §1's own pooler finding already
+concerns an endpoint this session confirmed is not even the one the failing
+task currently uses.
+
+**What was pulled:** task `vitana-supabase-to-aurora-v3` (task UUID
+`6HXJWOLRF5FA3DND3TLMGXHY4I`), log group `dms-tasks-vitana-dms-prod`, log
+stream `dms-task-6HXJWOLRF5FA3DND3TLMGXHY4I`, bounded by explicit
+`--start-time`/`--end-time` epoch-millisecond values derived from the
+stream's own `lastEventTimestamp` (an unbounded `get-log-events
+--no-start-from-head` call returned a valid-but-empty page here — a real
+CloudWatch pagination quirk, not a sign the stream was empty). The real
+fatal line, timestamped `2026-08-20T11:05:42`:
+
+```
+[METADATA_MANAGE ]E:  RetCode: SQL_ERROR  SqlState: 08001 NativeError: 101
+Message: [unixODBC]could not translate host name
+"db.inmkhvwdcuyhnxkgfvsb.supabase.co" to address: Name or service not
+known [1022502]
+```
+
+**This is a third, distinct failure signature — not a re-confirmation of
+either finding already in §1.** `SQL_ERROR SqlState: 08001 NativeError: 101`
+is a flat ODBC DNS-resolution failure (`getaddrinfo`-style "Name or service
+not known"), not an IPv6-only/`Network unreachable` result (which is what
+this container's own `getent`/`socket.getaddrinfo`/`dms test-connection`
+calls produced against the same hostname) and not a Supavisor
+`tenant/user...not found` rejection (which is a different, currently-unused
+pooler endpoint entirely — `aws-0-eu-north-1.pooler.supabase.com`, not
+`db.inmkhvwdcuyhnxkgfvsb.supabase.co`). The DMS instance's own DNS resolver
+cannot resolve the direct hostname **at all** — it isn't getting an
+IPv6-only answer it can't route to, it is getting no usable answer.
+
+**What this session additionally confirmed, and where it stopped:** the
+replication instance `vitana-dms-prod` reports `PubliclyAccessible: true`
+in VPC `vpc-05958f035e596fe64` (via `aws dms describe-replication-instances`
+— available without EC2 permissions). That is the extent of what could be
+established from here: this identity has **zero `ec2:Describe*`
+permissions** (`UnauthorizedOperation` on every attempt), so the VPC's DNS
+support/hostname attributes, its DHCP options set (which controls what DNS
+servers instances in it actually use), and the replication instance's
+security-group egress rules for port 53 could not be inspected. A
+`PubliclyAccessible: true` instance failing to resolve a public hostname at
+all is consistent with several distinct causes (DHCP options set pointing
+at a non-functional/unreachable DNS server, `enableDnsSupport` disabled on
+the VPC, or an egress security-group rule blocking UDP/TCP 53) — this
+session cannot yet distinguish between them.
+
+**Correction to §1, precisely stated:** §1's two documented root causes are
+not wrong on their own terms — the direct hostname genuinely does resolve
+IPv6-only from this container, and the pooler genuinely does reject the
+`migrate` tenant/user — but **neither is what is actually failing inside
+the DMS task**, because neither was ever measured from the DMS task's own
+vantage point until now. The real, currently-active fatal error is the DNS
+resolution failure quoted above, which is closer in shape to (but not
+identical to, and not yet root-caused as being the same underlying issue
+as) §1's IPv6-only finding — the DMS instance's resolver failing outright is
+a different, and arguably more fundamental, problem than "resolves IPv6-only
+from an unrelated host." **Recommendation: stop treating §1's two entries as
+the live blocker for CDC.** The next unblock is EC2 read-only permissions
+(`ec2:DescribeVpcs`, `DescribeVpcAttribute`, `DescribeDhcpOptions`,
+`DescribeSecurityGroups`, `DescribeSecurityGroupRules`, `DescribeRouteTables`)
+on this or a scoped role, to actually inspect why a publicly-accessible DMS
+instance cannot resolve a public hostname — a request has been made to the
+platform owner for this and is pending as of this addendum.
