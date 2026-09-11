@@ -533,6 +533,12 @@ still-open checklist.
   whose own README says **"DO NOT terraform apply YET"** (checked-in state
   is stale vs. live infra) — see `docs/AWS-CUTOVER-RUNBOOK.md` §1 before
   ever running `terraform plan`/`apply` there.
+- **Never** confuse the bare `vitana-community-app`/`vitana-oasis-operator`
+  ECS services with the real, ALB-fronted
+  `vitana-community-app-awsdr`/`-staging`/`vitana-oasis-operator-awsdr` —
+  same name-collision trap as gateway above, except the bare-named ones
+  are **not staging**, they're 2026-07-09 mystery-provisioning orphans
+  (see the roster below) with zero ALB/service-discovery attached at all.
 - **IF** adding a host-header listener rule to `vitana-alb-prod` →
   **THEN** give it priority < 10 — the existing path-based rules (`/api/*`,
   `/ws/*` at priority 10) match before higher-numbered host-header rules
@@ -540,8 +546,15 @@ still-open checklist.
 - **Never** assume a service not in the §1b table has AWS infrastructure,
   or that a live AWS resource is governed just because it exists —
   `orb-agent`'s ECS service/task-def predated its own deploy pipeline
-  (2026-07-09 bulk-provisioning event, ~17-22 still-unexplained "mystery
-  services" from the same event — see `docs/AWS-PRODUCTION-BUILD-LOG.md`).
+  (2026-07-09 bulk-provisioning event). **The full roster of 21 orphaned
+  services from that event is now named and classified**, not just
+  estimated at "~17-22" — see `docs/AURORA-MIGRATION-STATUS-2026-09-10.md`'s
+  2026-09-11 addendum for the complete list, which four of them
+  (`vitana-auth-proxy`, `vitana-dev-console-ui`,
+  `vitana-github-sync-service`, `vitana-mcp-gateway`) are confirmed fully
+  dormant vs. which seventeen are alive and running real workloads with no
+  external ingress path, and what is and isn't established about what the
+  latter group actually does.
   Check for a matching `AWS-PROD-DEPLOY-*.yml` before trusting a running
   service reflects `main`; extending to a new service needs its own VTID.
 - **Never** autoscale `oasis-projector`, `worker-runner`, or

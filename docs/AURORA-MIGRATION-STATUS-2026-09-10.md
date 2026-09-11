@@ -219,3 +219,90 @@ wiring decision — not a resumption of unknown prior work. No action taken
 on the service itself (not stopped, not modified) — this addendum is
 read-only investigation, the same posture as the rest of this migration
 effort's live-infrastructure checks.
+
+## Addendum, 2026-09-11 continued — the full 2026-07-09 mystery-service roster, finally named and classified
+
+`vitana-auth-proxy` was one instance of a pattern this file's §2 only
+gestured at ("~15 other services... none of which appear in CLAUDE.md
+§1b/§2"). Enumerated the full ECS cluster (`aws ecs list-services`) and
+checked every non-`-awsdr`/non-`-staging` service's `createdAt`, load
+balancer, service discovery, and log history — not just the one this
+session happened to trip over. **21 services**, not ~15, share the
+identical `createdAt` window (1783603505.4–1783603508.3, a 3-second span,
+2026-07-09) and **all 21 have zero ALB target group and zero Cloud Map
+service discovery** — nothing in this account can address any of them by
+name or IP. Full roster: `vitana-auth-proxy`, `vitana-conductor`,
+`vitana-planner-core`, `vitana-validator-core`, `vitana-qa-agent`,
+`vitana-worker-core`, `vitana-cognee-extractor`, `vitana-oasis-approval`,
+`vitana-test-agent`, `vitana-dev-console-ui`, `vitana-github-sync-service`,
+`vitana-cloudshell-relay`, `vitana-mcp-gateway`, `vitana-oasis-mcp-v2`,
+`vitana-vitana-dev-gateway`, `vitana-memory-indexer`,
+`vitana-vitana-memory-indexer`, `vitana-openclaw-bridge`,
+`vitana-crewai-kb-agent`, `vitana-crewai-prompt-synth`,
+`vitana-lifetime-context-crew` — plus two more from this same batch that
+are easy to miss because their names collide with real services:
+**`vitana-community-app`** and **`vitana-oasis-operator`** (bare, no
+`-awsdr`/`-staging` suffix) are ALSO July-9 orphans, distinct from the
+real, ALB-fronted `vitana-community-app-awsdr`/`-staging` and
+`vitana-oasis-operator-awsdr` created weeks later. **This is the exact
+"vitana-gateway vs vitana-gateway-awsdr" name-collision trap CLAUDE.md's
+own AWS-prod hard rules already warn about, for two more service names it
+doesn't yet mention** — worth adding there.
+
+**Correcting my own prior read: "unreachable" is not the same claim as
+"orphaned," and I initially conflated them.** Checked log activity (not
+just reachability) for every one of the 21 before generalizing from
+`auth-proxy`'s specific finding, since a background worker legitimately
+polling outward (the same shape CLAUDE.md already documents for
+`worker-runner`/`oasis-projector`) would correctly show no ALB and still
+be doing real work. The 21 split cleanly into two groups:
+
+- **Group A — genuinely dormant, same shape as `auth-proxy`** (a log
+  group with only isolated single-moment bursts, first≈last timestamp on
+  every stream, no sustained activity ever): `vitana-auth-proxy`,
+  `vitana-dev-console-ui`, `vitana-github-sync-service`,
+  `vitana-mcp-gateway`. 4 services.
+- **Group B — alive and running stable, sustained workloads for weeks at
+  a time**, confirmed by real multi-day-to-multi-week log streams and, for
+  `vitana-conductor` specifically, actual log content read directly
+  (`gunicorn`/`uvicorn` FastAPI, listening on 8080 — consistent with every
+  task definition's port mapping): `vitana-conductor`,
+  `vitana-planner-core`, `vitana-worker-core`, `vitana-validator-core`,
+  `vitana-qa-agent`, `vitana-crewai-kb-agent`, `vitana-crewai-prompt-synth`,
+  `vitana-lifetime-context-crew`, `vitana-oasis-approval`,
+  `vitana-cloudshell-relay`, `vitana-test-agent`, `vitana-oasis-mcp-v2`,
+  `vitana-vitana-dev-gateway`, `vitana-memory-indexer`,
+  `vitana-vitana-memory-indexer`, `vitana-cognee-extractor`,
+  `vitana-community-app`, `vitana-oasis-operator`, `vitana-openclaw-bridge`
+  (already independently confirmed reachable-only-by-manual-dispatch in
+  `AURORA-B3-RPC-PARITY-INVENTORY.md`'s §5). 19 services (revised from an
+  earlier miscount of "16" before `openclaw-bridge`/the two bare-named
+  services were folded in).
+
+**What Group B is actually computing is not established here — a real,
+important limit on this finding.** These processes are alive, costing
+real Fargate spend continuously since mid-July, and have zero external
+ingress path, so whatever they do must be either outbound (polling some
+external API, writing to a database, talking to another AWS resource) or
+genuinely inert work in a loop — this pass did not trace any of their
+outbound calls, IAM role permissions, or task-definition secrets/env vars
+beyond `auth-proxy`'s and did not read enough log content from the other
+18 to characterize their actual behavior. The names (`conductor`,
+`planner-core`, `validator-core`, `qa-agent`, `worker-core`, `crewai-*`)
+strongly suggest an autonomous multi-agent pipeline distinct from the
+documented worker-runner/autopilot-executor system, but that is a
+plausible reading of the names, not a confirmed finding — do not repeat
+it as fact without independently verifying it.
+
+**Recommendation, not a decision:** every one of these 21 (and Group A's 4
+in particular, which do nothing detectable at all) is a real, standing
+question for the platform owner — keep running at real cost with unknown
+purpose, or investigate each one's actual container image/source and
+either bring it under governance (its own VTID, source recovered into a
+tracked repo, explicit CLAUDE.md entry) or decommission it. Per CLAUDE.md's
+own rule, a live AWS resource is not governed just because it exists, and
+that cuts both ways here: this session neither assumes these are safe to
+delete nor assumes they matter — it only establishes, for the first time
+with names and evidence instead of an approximate count, exactly what is
+running and what state it's actually in. No action taken on any of these
+21 services (none stopped, none modified) — read-only investigation only.
