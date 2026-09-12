@@ -90,6 +90,60 @@ TEST: `outputs/vtid-allocate.txt` — the `POST /api/v1/vtid/allocate`
 response minting VTID-03824, followed by the ledger UPDATE setting
 `title`/`status='in_progress'`/`spec_status='approved'`.
 
+## Follow-up (2026-09-12) — live staging test found the mechanism worked but the model still didn't comply
+
+The platform owner ran a real manual test on staging after the fix above
+deployed and reported it did not work, with a screenshot of a German
+conversation where Vitana kept responding instead of ending the session.
+Investigated via a direct, read-only query against `oasis_events` (topic
+per §6 of this repo's CLAUDE.md — no writes made to any production table
+for this investigation) for the reported session window.
+
+**Finding: the `end_conversation` tool mechanism itself worked exactly as
+built.** One session (`live-1a258a4e-...`) called `end_conversation` and
+closed cleanly (~4s from call to session teardown) — AC-1 through AC-7
+above are confirmed against a real invocation, not just structurally. The
+actual defect was upstream of the tool: on an earlier turn in the same
+reported conversation, the model did NOT call the tool on a repeated stop
+request and instead replied with a proactive follow-up question
+("Was möchtest du als Nächstes angehen?" — "What would you like to tackle
+next?") — a near-verbatim match of the system instruction's own RULE 0
+banned-phrase list. A direct read of `orb.live.diag` (`stage:
+nova_instruction_debug_dump`) for that session's own rendered system
+instruction confirmed why: the original "ENDING THE CONVERSATION"
+paragraph (AC-2 above) was positioned BEFORE "PROACTIVE LEADERSHIP — RULE 0
+(ABSOLUTE, EVERY TURN, NO EXCEPTIONS, ALL TENURES)" with materially less
+emphasis (no all-caps header, no explicit override framing) — RULE 0's
+much louder, later, "NO EXCEPTIONS" framing plausibly won the conflict on
+a repeated stop request.
+
+AC-10 — The "ENDING THE CONVERSATION" instruction is positioned and framed
+so it wins against RULE 0 instead of merely coexisting with it: moved to
+AFTER the RULE 0 section (recency) and reframed as an explicit, named
+exception ("OVERRIDES RULE 0 (ABSOLUTE)" / "SUSPENDED"), with an added
+explicit instruction covering the reported failure mode (the user having
+to repeat the stop request). The block is kept under ~1100 chars to stay
+well inside the ~32-33KB session-instruction budget this repo has
+previously measured triggering real Nova content-filter blocks
+(VTID-03795/03787).
+
+TEST: `outputs/jest-rule0-precedence-followup.txt` — new
+`test/orb/live/instruction/end-conversation-rule0-precedence.test.ts` (7
+tests) pins the block's position (after, not before, RULE 0), its override
+framing, its handling of a repeated stop request, that it still carries a
+farewell + carve-out for Teacher Mode/My Journey, and its length budget;
+the system-instruction characterization snapshot suite is re-recorded and
+passing alongside it. `outputs/tsc-noemit-followup.txt` (clean, exit 0)
+and `outputs/jest-orb-frontend-followup.txt` (230/230 suites, 3807/3813
+tests passing, 6 pre-existing todo, 0 failures) confirm no regression.
+
+**Deliberately NOT claimed:** this fix is verified structurally (the
+instruction now wins the position/emphasis/recency contest against RULE 0
+in every rendered persona this repo's test fixtures cover) — it is not yet
+independently re-confirmed against a real live Nova conversation, for the
+same reason as the original fix: this session cannot place a real ORB
+voice call. The next real signal is another live staging test.
+
 ## Deliberately NOT attempted
 
 - **Verifying against a live Nova Sonic voice call.** This session has no
