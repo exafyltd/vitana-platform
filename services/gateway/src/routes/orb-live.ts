@@ -6570,6 +6570,35 @@ async function executeLiveApiToolInner(
         };
       }
 
+      // BOOTSTRAP-ORB-END-CONVERSATION: general-purpose session close — see
+      // live-tool-catalog.ts's declaration for why this exists. Same shape
+      // as end_teaching_session / end_guided_topic_teaching above.
+      case 'end_conversation': {
+        const reason = typeof args.reason === 'string' ? args.reason.trim().slice(0, 200) : '';
+        const directive = {
+          type: 'orb_directive',
+          directive: 'end_conversation',
+          reason: reason || 'user_ended_conversation',
+          vtid: 'BOOTSTRAP-ORB-END-CONVERSATION',
+        };
+        try {
+          if (session.sseResponse) {
+            session.sseResponse.write(`data: ${JSON.stringify(directive)}\n\n`);
+          }
+          if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+            session.clientWs.send(JSON.stringify(directive));
+          }
+        } catch (err) {
+          console.warn(`[BOOTSTRAP-ORB-END-CONVERSATION] end_conversation directive emit failed (non-fatal): ${(err as Error).message}`);
+        }
+        console.log(`[BOOTSTRAP-ORB-END-CONVERSATION] end_conversation called: session=${session.sessionId} reason=${reason || '<none>'}`);
+        emitDiag(session, 'conversation_ended', { reason: reason || null });
+        return {
+          success: true,
+          result: 'Conversation is ending. Your farewell line was the final thing — the overlay is now closing, do not speak further.',
+        };
+      }
+
       case 'record_journey_answer': {
         // VTID-03257 (Fix-1): Vertex parity for the journey-answer tool.
         // record_journey_answer was added to ORB_TOOL_REGISTRY by VTID-03255
