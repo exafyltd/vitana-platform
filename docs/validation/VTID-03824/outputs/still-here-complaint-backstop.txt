@@ -1,0 +1,253 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.warn
+    [VTID-01225] Cognee Extractor URL not configured - extraction disabled
+
+      138 |
+      139 |     if (!this.enabled) {
+    > 140 |       console.warn('[VTID-01225] Cognee Extractor URL not configured - extraction disabled');
+          |               ^
+      141 |     } else {
+      142 |       console.log(`[VTID-01225] Cognee Extractor Client initialized: ${this.baseUrl}`);
+      143 |     }
+
+      at new CogneeExtractorClient (src/services/cognee-extractor-client.ts:140:15)
+      at Object.<anonymous> (src/services/cognee-extractor-client.ts:1143:38)
+      at Object.<anonymous> (src/routes/orb-live.ts:156:1)
+      at Object.<anonymous> (test/orb/live/session/still-here-complaint-backstop.test.ts:30:1)
+
+  console.warn
+    [VTID-01225] Config warning: COGNEE_EXTRACTOR_URL is not set - extraction will be disabled
+
+      152 |   static validateConfig(): void {
+      153 |     if (!process.env.COGNEE_EXTRACTOR_URL) {
+    > 154 |       console.warn('[VTID-01225] Config warning: COGNEE_EXTRACTOR_URL is not set - extraction will be disabled');
+          |               ^
+      155 |     }
+      156 |     if (!process.env.SUPABASE_URL) {
+      157 |       console.warn('[VTID-01225] Config warning: SUPABASE_URL is not set - persistence will fail');
+
+      at Function.validateConfig (src/services/cognee-extractor-client.ts:154:15)
+      at new CogneeExtractorClient (src/services/cognee-extractor-client.ts:145:27)
+      at Object.<anonymous> (src/services/cognee-extractor-client.ts:1143:38)
+      at Object.<anonymous> (src/routes/orb-live.ts:156:1)
+      at Object.<anonymous> (test/orb/live/session/still-here-complaint-backstop.test.ts:30:1)
+
+  console.log
+    [VTID-ORBC] Vertex config at startup: PROJECT_ID=lovable-vitana-vers1, LOCATION=us-central1
+
+      at Object.<anonymous> (src/routes/orb-live.ts:1925:9)
+
+  console.log
+    [VTID-01155] Google Cloud TTS client initialized
+
+      at Object.<anonymous> (src/routes/orb-live.ts:1932:11)
+
+  console.log
+    [VTID-01219] Google Auth client initialized for Live API
+
+      at Object.<anonymous> (src/routes/orb-live.ts:1956:11)
+
+  console.log
+    [VTID-01219] ORB Voice startup validation passed — Live API ready
+
+      at src/routes/orb-live.ts:1981:13
+
+  console.log
+    [VTID-INSTANT-FEEDBACK] Chime PCM generated: 9600 samples, 19200 bytes, 25600 b64 chars
+
+      at generateChimePcm (src/routes/orb-live.ts:2175:11)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.watchdog.turn_response_timeout_ms" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at getTurnResponseTimeoutMs (src/orb/upstream/constants.ts:148:30)
+      at handleTranscript (src/orb/live/session/upstream-message-handler.ts:1819:69)
+      at FakeUpstreamClient.transcriptH (src/orb/live/session/upstream-message-handler.ts:2676:38)
+      at FakeUpstreamClient.emitTranscript (test/orb/live/session/still-here-complaint-backstop.test.ts:72:64)
+      at Object.<anonymous> (test/orb/live/session/still-here-complaint-backstop.test.ts:157:12)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.post_turn.cooldown_ms" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at getPostTurnCooldownMs (src/orb/upstream/constants.ts:120:30)
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2148:143)
+      at FakeUpstreamClient.turnH (src/orb/live/session/upstream-message-handler.ts:2678:40)
+      at FakeUpstreamClient.emitTurnComplete (test/orb/live/session/still-here-complaint-backstop.test.ts:73:67)
+      at Object.<anonymous> (test/orb/live/session/still-here-complaint-backstop.test.ts:158:12)
+
+  console.log
+    [VTID-VOICE-INIT] Model stopped speaking for session sess-still-here-1 — mic audio ungated (cooldown 300ms)
+
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2148:11)
+
+  console.log
+    [VTID-01219] Turn complete for session sess-still-here-1 (turn 2, isGreeting=false, consecutiveModelTurns=1)
+
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2182:11)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.loop_guard.max_consecutive_model_turns" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at getMaxConsecutiveModelTurns (src/orb/upstream/constants.ts:162:30)
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2250:94)
+      at FakeUpstreamClient.turnH (src/orb/live/session/upstream-message-handler.ts:2678:40)
+      at FakeUpstreamClient.emitTurnComplete (test/orb/live/session/still-here-complaint-backstop.test.ts:73:67)
+      at Object.<anonymous> (test/orb/live/session/still-here-complaint-backstop.test.ts:158:12)
+
+  console.log
+    [VTID-03824] end_conversation dispatched: session=sess-still-here-1 reason=still_here_complaint_detected
+
+      at Object.dispatchEndConversationDirective (src/routes/orb-live.ts:7051:11)
+
+  console.log
+    [VTID-NAV-DIAG] turn_complete for session sess-still-here-1: NO pendingNavigation (navigationDispatched=false, consecutiveToolCalls=0) — widget will transition to listening
+
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2655:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.live.diag for VTID-01155 (250d809e-a7a5-4e72-9953-ea905c556edd)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-VOICE-INIT] Model stopped speaking for session sess-still-here-1 — mic audio ungated (cooldown 300ms)
+
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2148:11)
+
+  console.log
+    [VTID-01219] Turn complete for session sess-still-here-1 (turn 2, isGreeting=false, consecutiveModelTurns=1)
+
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2182:11)
+
+  console.log
+    [VTID-NAV-DIAG] turn_complete for session sess-still-here-1: NO pendingNavigation (navigationDispatched=false, consecutiveToolCalls=0) — widget will transition to listening
+
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2655:13)
+
+  console.log
+    [VTID-VOICE-INIT] Model stopped speaking for session sess-still-here-1 — mic audio ungated (cooldown 300ms)
+
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2148:11)
+
+  console.log
+    [VTID-01219] Turn complete for session sess-still-here-1 (turn 2, isGreeting=false, consecutiveModelTurns=1)
+
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2182:11)
+
+  console.log
+    [VTID-03824] end_conversation dispatched: session=sess-still-here-1 reason=still_here_complaint_detected
+
+      at Object.dispatchEndConversationDirective (src/routes/orb-live.ts:7051:11)
+
+  console.log
+    [VTID-NAV-DIAG] turn_complete for session sess-still-here-1: NO pendingNavigation (navigationDispatched=false, consecutiveToolCalls=0) — widget will transition to listening
+
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2655:13)
+
+  console.log
+    [VTID-VOICE-INIT] Model stopped speaking for session sess-still-here-1 — mic audio ungated (cooldown 300ms)
+
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2148:11)
+
+  console.log
+    [VTID-01219] Turn complete for session sess-still-here-1 (turn 3, isGreeting=false, consecutiveModelTurns=1)
+
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2182:11)
+
+  console.log
+    [VTID-NAV-DIAG] turn_complete for session sess-still-here-1: NO pendingNavigation (navigationDispatched=false, consecutiveToolCalls=0) — widget will transition to listening
+
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2655:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.live.diag for VTID-01155 (c74dc6a4-a807-409e-90fe-3e0355b90c10)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-VOICE-INIT] Model stopped speaking for session sess-still-here-1 — mic audio ungated (cooldown 300ms)
+
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2148:11)
+
+  console.log
+    [VTID-01219] Turn complete for session sess-still-here-1 (turn 1, isGreeting=true, consecutiveModelTurns=1)
+
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2182:11)
+
+  console.log
+    [VTID-NAV-DIAG] turn_complete for session sess-still-here-1: NO pendingNavigation (navigationDispatched=false, consecutiveToolCalls=0) — widget will transition to listening
+
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2655:13)
+
+  console.log
+    [VTID-VOICE-INIT] Model stopped speaking for session sess-still-here-1 — mic audio ungated (cooldown 300ms)
+
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2148:11)
+
+  console.log
+    [VTID-01219] Turn complete for session sess-still-here-1 (turn 2, isGreeting=false, consecutiveModelTurns=1)
+
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2182:11)
+
+  console.log
+    [VTID-NAV-DIAG] turn_complete for session sess-still-here-1: NO pendingNavigation (navigationDispatched=false, consecutiveToolCalls=0) — widget will transition to listening
+
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2655:13)
+
+(node:1528) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS test/orb/live/session/still-here-complaint-backstop.test.ts
+  VTID-03824: still-here-complaint backstop fires through the real handler wiring
+    ✓ dispatches end_conversation when the completed turn's transcript is a still-here complaint (83 ms)
+    ✓ does NOT dispatch on an ambiguous "let's talk later" turn (the backstop must not be trigger-happy) (5 ms)
+    ✓ is idempotent — a second still-here turn in the same session does not double-dispatch (8 ms)
+    ✓ does not fire on the greeting turn (matches the existing isGreetingTurn guard for all turn-complete side effects) (3 ms)
+    ✓ does not fire when the session is already inactive (4 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       5 passed, 5 total
+Snapshots:   0 total
+Time:        3.416 s
+Ran all test suites matching /test\/orb\/live\/session\/still-here-complaint-backstop.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+EXIT=0
