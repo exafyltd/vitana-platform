@@ -56,10 +56,13 @@ logger = logging.getLogger('cognee-extractor')
 
 # LLM Configuration
 #
-# Default: Gemini (legacy). Operators can flip to DeepSeek-V3 for cost savings
+# Default: Gemini (legacy). Operators can flip to DeepSeek for cost savings
 # (~50x cheaper per token for entity extraction) by setting Cloud Run env vars:
 #   LLM_PROVIDER=deepseek
-#   LLM_MODEL=deepseek-chat        # V3, cheap; or deepseek-reasoner for R1
+#   LLM_MODEL=deepseek-flash       # DeepSeek-V4.1-Flash — deepseek-chat/
+#                                  # deepseek-reasoner are retired aliases
+#                                  # that now serve requests via this same
+#                                  # model (BOOTSTRAP-DEEPSEEK-V4.1-FLASH)
 #   DEEPSEEK_API_KEY=<key>
 # When LLM_PROVIDER=deepseek, the lifespan handler maps these to litellm's
 # OpenAI-compatible adapter targeting https://api.deepseek.com.
@@ -77,9 +80,10 @@ if LLM_PROVIDER.lower() == 'deepseek':
         LLM_API_KEY = _deepseek_key
         LLM_ENDPOINT = os.getenv('LLM_ENDPOINT', 'https://api.deepseek.com')
         # litellm understands openai/<model> with a custom base_url for OpenAI-
-        # compatible providers like DeepSeek. Default to deepseek-chat (V3).
+        # compatible providers like DeepSeek. Default to deepseek-flash
+        # (DeepSeek-V4.1-Flash) — deepseek-chat is a retired alias.
         if not LLM_MODEL.startswith('openai/') and not LLM_MODEL.startswith('deepseek/'):
-            LLM_MODEL = f'openai/{LLM_MODEL}' if LLM_MODEL else 'openai/deepseek-chat'
+            LLM_MODEL = f'openai/{LLM_MODEL}' if LLM_MODEL else 'openai/deepseek-flash'
         # Tell litellm to treat this as openai-compatible
         LLM_PROVIDER = 'openai'
 

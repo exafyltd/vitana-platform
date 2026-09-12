@@ -482,6 +482,29 @@ jobs:
         # see the note near SEC_JWT above, this is the
         # SECOND time an apostrophe here broke the
         # surrounding single-quoted bash string to 0 jobs.
+        # VTID-03820 follow-up — OPERATOR_EXECUTION_ONRAMP_ENABLED pinned to
+        # STAGING ONLY, exact-"true" opt-in (operator-execution-onramp.ts's
+        # own isOnRampEnabled() checks for the literal string "true" —
+        # unset/"false"/a typo all stay disabled). Explicit platform-owner
+        # request, after observing the feature's own risk in this file's
+        # header comment: enabling this means the Operator Console chat
+        # (autopilot_execute_task tool) can cause a REAL pull request
+        # against THIS repo — there is one GitHub repo regardless of which
+        # gateway environment triggers it, staging front end included.
+        # DEEPSEEK_API_KEY is already resolved onto this task definition
+        # (SEC_DEEPSEEK above) — this on-ramp forces its one invocation
+        # onto deepseek-flash. Every other gate (target VTID must be
+        # spec_status='approved' and non-terminal; the full reused
+        # approveAutoExecute() safety gate — kill_switch, allow/deny scope,
+        # budget, concurrency, tests_missing, PR-flood guard) is unchanged
+        # and still applies; this flag only removes the one gate that is
+        # unconditionally OFF by default. Deliberately NOT added to
+        # AWS-PROD-DEPLOY-GATEWAY.yml — promoting it there is a separate,
+        # later decision once a real on-ramp execution has been observed
+        # end-to-end on staging. Rollback is this value -> "false" (or
+        # removal), no code revert — with it off, triggerOperatorExecution()
+        # returns operator_execution_onramp_disabled immediately, before any
+        # DB row is written.
         run: |
           set -e
           IMAGE="${{ steps.build.outputs.image }}"
@@ -580,6 +603,7 @@ jobs:
                                                 "ORB_LOG_NOVA_INSTRUCTION_DEBUG",
                                                 "TTS_PROVIDER","TTS_POLLY_STRICT","VERTEX_LIVE_UNAVAILABLE",
                                                 "ORB_CASCADED_VOICE_ENABLED",
+                                                "OPERATOR_EXECUTION_ONRAMP_ENABLED",
                                                 "BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION",
                                                 "AURORA_CA_BUNDLE_PATH") | not) ]
                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
@@ -604,6 +628,7 @@ jobs:
                           {name:"TTS_POLLY_STRICT", value:"true"},
                           {name:"VERTEX_LIVE_UNAVAILABLE", value:"true"},
                           {name:"ORB_CASCADED_VOICE_ENABLED", value:"true"},
+                          {name:"OPERATOR_EXECUTION_ONRAMP_ENABLED", value:"true"},
                           {name:"BEDROCK_ROLE_ARN", value:$TASK_ROLE},
                           {name:"AWS_BEDROCK_REGION", value:"eu-central-1"},
                           {name:"AURORA_CA_BUNDLE_PATH", value:"/app/certs/rds-combined-ca-bundle.pem"} ] )

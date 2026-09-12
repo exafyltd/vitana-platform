@@ -76,15 +76,17 @@ spec:
             - name: VERTEX_LOCATION
               value: "us-central1"
 
-            # ─── DeepSeek-V3 swap (opt-in cost optimization) ─────────────────
+            # ─── DeepSeek swap (opt-in cost optimization) ─────────────────
             # main.py detects LLM_PROVIDER=deepseek and routes through litellm's
             # OpenAI-compatible adapter at https://api.deepseek.com. To flip:
             #
             #   - name: LLM_PROVIDER
             #     value: "deepseek"
             #   - name: LLM_MODEL
-            #     value: "deepseek-chat"        # V3 chat (fastest/cheapest)
-            #     # OR "deepseek-reasoner"      # R1 (deeper reasoning)
+            #     value: "deepseek-flash"       # DeepSeek-V4.1-Flash
+            #     # deepseek-chat / deepseek-reasoner are retired aliases —
+            #     # both now serve requests via this same model
+            #     # (BOOTSTRAP-DEEPSEEK-V4.1-FLASH, 2026-09-11)
             #   - name: DEEPSEEK_API_KEY
             #     valueFrom:
             #       secretKeyRef:

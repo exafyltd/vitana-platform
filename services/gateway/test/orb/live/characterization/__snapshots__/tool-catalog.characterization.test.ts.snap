@@ -2680,6 +2680,31 @@ before you have actually explained the topic's content.",
         },
       },
       {
+        "description": "General conversation termination: close the orb overlay when the
+user has expressed — in any wording, any language — that they
+want to stop talking, end the session, or turn you off (e.g.
+"you can turn off now", "that's enough for now", "I don't want
+to continue", "tschüss", "du kannst jetzt ausschalten"). ALWAYS
+call this AFTER speaking a brief, warm farewell of your own
+wording that respects their wish to stop — never argue, never
+ask "are you sure?". Do not call this for a mid-conversation
+pause or a topic change; only when the user is ending the
+conversation itself. Do not use this inside Teacher Mode or a My
+Journey guided topic — those have their own dedicated end tools
+(end_teaching_session, end_guided_topic_teaching).",
+        "name": "end_conversation",
+        "parameters": {
+          "properties": {
+            "reason": {
+              "description": "Short freeform reason the model is closing (e.g. "user said turn off", "user said goodbye"). Used for telemetry — never spoken.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
         "description": "Get the community member with the highest Vitana Index right now.
 Returns their name and score; private profiles are never revealed.
 CALL WHEN the user asks: "who has the highest Vitana Index?",
@@ -15503,6 +15528,31 @@ before you have actually explained the topic's content.",
           "properties": {
             "reason": {
               "description": "Short freeform reason the model is closing (e.g. "explained topic, no more questions", "user confirmed understanding"). Used for telemetry — never spoken.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "General conversation termination: close the orb overlay when the
+user has expressed — in any wording, any language — that they
+want to stop talking, end the session, or turn you off (e.g.
+"you can turn off now", "that's enough for now", "I don't want
+to continue", "tschüss", "du kannst jetzt ausschalten"). ALWAYS
+call this AFTER speaking a brief, warm farewell of your own
+wording that respects their wish to stop — never argue, never
+ask "are you sure?". Do not call this for a mid-conversation
+pause or a topic change; only when the user is ending the
+conversation itself. Do not use this inside Teacher Mode or a My
+Journey guided topic — those have their own dedicated end tools
+(end_teaching_session, end_guided_topic_teaching).",
+        "name": "end_conversation",
+        "parameters": {
+          "properties": {
+            "reason": {
+              "description": "Short freeform reason the model is closing (e.g. "user said turn off", "user said goodbye"). Used for telemetry — never spoken.",
               "type": "string",
             },
           },

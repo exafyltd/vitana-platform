@@ -110,6 +110,22 @@ export interface LLMRouterOpts {
    * and a single-turn call is still literally a string.
    */
   history?: LLMRouterMessage[];
+  /**
+   * VTID-03820: per-call override of the stage's PRIMARY provider/model,
+   * bypassing the DB-backed `llm_routing_policy` for this one call only.
+   * Both fields must be set together or neither is used — a lone override
+   * without its model (or vice versa) is ambiguous and is ignored rather
+   * than guessed. The stage's own `fallback_provider`/`fallback_model`
+   * (from `llm_routing_policy`, unchanged) still applies if the override
+   * fails, so a DeepSeek outage on an overridden call degrades exactly the
+   * way a normal policy-driven call would.
+   *
+   * Every existing caller omits these fields, so `loadPolicy()` still
+   * governs every stage/caller that doesn't explicitly opt in — this does
+   * NOT change what `llm_routing_policy` serves for anyone else.
+   */
+  providerOverride?: LLMProvider;
+  modelOverride?: string;
 }
 
 /** Returned when `forceTool` is set and the model emitted a tool call. */
@@ -981,10 +997,21 @@ export async function callViaRouter(
   // stored row wholesale rather than merging per-stage defaults (unlike
   // `getStageRoutingConfig()`, which does merge). The guard below was already
   // correct; only the annotation claimed otherwise.
-  const stageConfig: StageRoutingConfig | undefined = policy[stage];
-  if (!stageConfig) {
+  const policyStageConfig: StageRoutingConfig | undefined = policy[stage];
+  if (!policyStageConfig) {
     return { ok: false, error: `No policy configured for stage '${stage}'` };
   }
+
+  // VTID-03820: an explicit per-call override replaces PRIMARY only; the
+  // stage's own policy-configured fallback still applies on failure. See
+  // LLMRouterOpts.providerOverride/modelOverride doc comment.
+  const stageConfig: StageRoutingConfig = (opts.providerOverride && opts.modelOverride)
+    ? {
+        ...policyStageConfig,
+        primary_provider: opts.providerOverride,
+        primary_model: opts.modelOverride,
+      }
+    : policyStageConfig;
 
   const allowFallback = opts.allowFallback !== false;
 

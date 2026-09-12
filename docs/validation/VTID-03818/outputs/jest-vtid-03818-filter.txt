@@ -1,0 +1,49 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/vtid-03818-complete-completed-drift.test.ts
+  'complete' / 'completed' status drift fix (VTID-03818)
+    ✓ mapStatusToColumn()'s Completed-column check recognizes 'complete' alongside 'completed' (3 ms)
+    ✓ renderTaskDrawer()'s isFinalMode check recognizes 'complete' alongside 'completed' (1 ms)
+    ✓ renderTaskDrawer()'s isInconsistentState check recognizes 'complete' alongside 'completed' (1 ms)
+    ✓ renderTaskDrawer()'s isCompleted check recognizes 'complete' alongside 'completed'
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/vtid-03818-allocation-title.test.ts
+  deriveAllocationTitle (VTID-03818)
+    ✓ never returns null or an empty string, for any input combination (2 ms)
+    ✓ prefers a real caller-supplied title over everything else
+    ✓ ignores the literal placeholder title even if a caller passes it explicitly
+    ✓ derives a capitalized title from a meaningful source slug when no title is given
+    ✓ falls back to '<Module> — <VTID>' when source is the generic 'api' default (the bug's exact trigger)
+    ✓ falls back to '<Module> — <VTID>' when source is empty/undefined too
+    ✓ falls back to a generic "Task — <VTID>" when neither source nor module is meaningful
+    ✓ truncates any derived title to 200 characters (1 ms)
+    ✓ truncates a caller-supplied title to 200 characters too
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/vtid-03818-reaper-terminal-flag.test.ts
+  allocatedOrphanReaperTick terminal-flag regression (VTID-03818)
+    ✓ sets is_terminal: true on the tombstoning PATCH (1 ms)
+    ✓ sets terminal_outcome: 'deleted' on the tombstoning PATCH
+    ✓ still sets status: deleted (unchanged behavior) (1 ms)
+
+Test Suites: 3 passed, 3 total
+Tests:       16 passed, 16 total
+Snapshots:   0 total
+Time:        0.781 s, estimated 1 s
+Ran all test suites matching /test\/vtid-03818-allocation-title.test.ts|test\/vtid-03818-reaper-terminal-flag.test.ts|test\/vtid-03818-complete-completed-drift.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

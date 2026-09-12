@@ -1,0 +1,40 @@
+$ npx jest test/llm-router.test.ts test/llm-router-agentic.test.ts test/llm-safe-defaults-no-google.test.ts test/llm-telemetry-summary.test.ts test/inline-fact-extractor-deepseek.test.ts test/inline-fact-extractor.test.ts test/services/user-model-synthesis.test.ts test/services/automation-handlers-phase2.test.ts --silent=false
+
+PASS test/inline-fact-extractor.test.ts
+  VTID-01225: Inline Fact Extractor
+    isInlineExtractionAvailable
+      ✓ should return true when LLM and Supabase are configured (8 ms)
+    extractAndPersistFacts - extraction and persistence
+      ✓ should extract facts from conversation text and call write_fact RPC (200 ms)
+      ✓ writes stated facts as user_stated with higher base confidence (13 ms)
+      ✓ bumps confidence when the same key+value is re-mentioned (evidence-weighted) (5 ms)
+      ✓ should pass correct authorization headers to write_fact (39 ms)
+      ✓ should skip extraction for very short messages (< 30 chars) (1 ms)
+      ✓ should not throw on extraction failure (fire-and-forget safe) (6 ms)
+      ✓ should handle write_fact RPC failure gracefully (3 ms)
+    write_fact RPC schema compliance
+      ✓ should use correct RPC parameter names matching migration schema (8 ms)
+      ✓ should call correct Supabase REST endpoint for write_fact (8 ms)
+  VTID-01225: Fact Parsing Edge Cases
+    ✓ should handle clean JSON array response (5 ms)
+    ✓ should handle markdown-wrapped JSON response (5 ms)
+    ✓ should handle JSON with surrounding text (5 ms)
+    ✓ should handle empty array response (no facts) (2 ms)
+    ✓ should handle completely malformed response (1 ms)
+    ✓ should filter out facts with missing required fields (4 ms)
+    ✓ should handle multiple facts in a single extraction (29 ms)
+    ✓ does NOT fall through to Google when the router fails (VTID-03579) (5 ms)
+  VTID-01225: Context Pack reads inline-extracted facts
+    ✓ should read facts written by inline extractor (provenance_source=assistant_inferred) (694 ms)
+    ✓ should include inline-extracted facts in memory_hits with correct category (15 ms)
+
+Test Suites: 8 passed, 8 total
+Tests:       150 passed, 150 total
+Snapshots:   0 total
+Time:        5.99 s
+Ran all test suites matching /test\/llm-router.test.ts|test\/llm-router-agentic.test.ts|test\/llm-safe-defaults-no-google.test.ts|test\/llm-telemetry-summary.test.ts|test\/inline-fact-extractor-deepseek.test.ts|test\/inline-fact-extractor.test.ts|test\/services\/user-model-synthesis.test.ts|test\/services\/automation-handlers-phase2.test.ts/i.
+
+(The 7 other suites' PASS lines and per-test output are omitted here for
+brevity — this file preserves the run's actual final summary and the last
+suite's detail exactly as emitted; all 8 suites reported PASS with 0
+failures, matching the "Test Suites: 8 passed, 8 total" line above.)
