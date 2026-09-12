@@ -22,8 +22,8 @@
 #   - DMS                → both replication tasks are actually `running`
 #
 # Usage:
-#   scripts/aws/verify-aws-production.sh              # probe dr-* hostnames
-#   scripts/aws/verify-aws-production.sh --post-cutover  # probe canonical
+#   scripts/aws/verify-aws-production.sh              # probe production (gateway.vitanaland.com)
+#   scripts/aws/verify-aws-production.sh --post-cutover  # (no-op flag, kept for backward compat)
 #
 # Exit code is the number of FAILED probes, so CI/rollback logic can gate
 # on it. Read-only: performs no mutations of any kind.
@@ -32,23 +32,20 @@ set -uo pipefail
 
 REGION="${AWS_REGION:-eu-central-1}"
 CLUSTER="${ECS_CLUSTER:-Vitana-ECS-Cluster}"
-MODE="pre-cutover"
-[[ "${1:-}" == "--post-cutover" ]] && MODE="post-cutover"
 
-if [[ "$MODE" == "post-cutover" ]]; then
-  GATEWAY_HOST="gateway.vitanaland.com"
-  APP_HOST="vitanaland.com"
-else
-  GATEWAY_HOST="dr-gateway.vitanaland.com"
-  APP_HOST="dr-app.vitanaland.com"
-fi
+# GCP→AWS cutover is complete (VTID-03419 / GCP off 2026-08-16).
+# gateway.vitanaland.com is the single canonical production gateway URL.
+# The --post-cutover flag is kept as a no-op for backward compatibility
+# with any callers that already pass it, but has no effect.
+GATEWAY_HOST="gateway.vitanaland.com"
+APP_HOST="vitanaland.com"
 
 PASS=0; FAIL=0; SKIP=0
 ok()   { echo "  ✓ $1"; PASS=$((PASS+1)); }
 bad()  { echo "  ✗ $1"; FAIL=$((FAIL+1)); }
 skip() { echo "  – $1"; SKIP=$((SKIP+1)); }
 
-echo "AWS production functional verification (${MODE})"
+echo "AWS production functional verification"
 echo "  gateway: https://${GATEWAY_HOST}   app: https://${APP_HOST}"
 echo
 
