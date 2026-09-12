@@ -142,3 +142,78 @@ console.log prefixes, the `vtid:` field in the orb_directive payload, test
 describe blocks) to VTID-03824, and added VTID-03824 to
 `command-hub-ownership-guard.js`'s `ALLOWED_VTID_PATTERN` (its own
 existing convention for a narrowly-scoped orb-widget.js change).
+
+## Follow-up (2026-09-12) — live staging test reported the fix "doesn't work"
+
+Platform owner ran a real manual test on staging and reported (with a
+screenshot) that Vitana kept responding instead of ending the session on
+a repeated German stop request.
+
+### Investigate live telemetry (read-only)
+
+$ (Supabase MCP, read-only query) information_schema.columns for
+  oasis_events
+-> corrected an initial wrong-column guess (`type` does not exist; real
+   columns are `topic`, `event`, `metadata` jsonb).
+
+$ SELECT event, metadata FROM oasis_events WHERE topic = 'orb.live.diag'
+    AND created_at > <reported window> ORDER BY created_at
+-> found the reported session's `nova_instruction_debug_dump` diag event
+   (metadata key is `instruction_text`, not `instruction` — corrected
+   after `jsonb_object_keys(metadata)` came back null on the first guess)
+   and the two session_ids covering the reported conversation.
+
+Findings:
+- `live-1a258a4e-e5f2-498c-9a69-f0649b419d9e`: called `end_conversation`
+  and closed cleanly (~4s call-to-teardown). The tool mechanism (AC-1
+  through AC-7) fired correctly on a real live invocation.
+- An earlier turn in the same reported conversation shows the model
+  replying with a RULE-0-shaped follow-up question instead of calling the
+  tool on a repeated stop request — the `nova_instruction_debug_dump` for
+  that turn's rendered system instruction confirms the "ENDING THE
+  CONVERSATION" paragraph sat BEFORE "PROACTIVE LEADERSHIP — RULE 0
+  (ABSOLUTE, EVERY TURN, NO EXCEPTIONS, ALL TENURES)" with far less
+  emphasis.
+- A second session (`live-1fc2cd81-...`) auto-started ~8s after the first
+  session's clean close; noted as likely-expected behavior for this
+  chat-style UI (each new user turn needs its own session) rather than a
+  confirmed separate defect — not investigated further in this VTID.
+
+### Fix
+
+- live-system-instruction.ts: removed the "ENDING THE CONVERSATION"
+  paragraph from its original position (before RULE 0) and added a
+  rewritten version AFTER the entire RULE 0 section, reframed as an
+  explicit override ("OVERRIDES RULE 0 (ABSOLUTE)" / "SUSPENDED") and
+  covering the reported repeated-request failure mode explicitly ("If
+  they have to say it again... that proves the first call never
+  happened"). Kept to ~780 chars to stay well inside the ~32-33KB Nova
+  content-filter budget this repo has previously measured
+  (VTID-03795/03787).
+
+### Verify
+
+$ cd services/gateway && npx tsc --noEmit
+-> outputs/tsc-noemit-followup.txt: clean, exit 0.
+
+$ npx jest test/orb/live/characterization/system-instruction.characterization.test.ts -u
+-> re-recorded the 3 persona snapshots to the new instruction text; diff
+   reviewed and confirmed to be exactly the intended paragraph move.
+
+$ npx jest test/orb/live/instruction/end-conversation-rule0-precedence.test.ts \
+    test/orb/live/characterization/system-instruction.characterization.test.ts --ci
+-> outputs/jest-rule0-precedence-followup.txt: 2/2 suites, 23/23 tests
+   passing. New file `end-conversation-rule0-precedence.test.ts` (7 tests)
+   pins the block's position after RULE 0, its override framing, its
+   handling of the repeated-request failure, the retained farewell/
+   Teacher-Mode-My-Journey carve-out, and the length budget.
+
+$ npx jest test/orb test/frontend --ci
+-> outputs/jest-orb-frontend-followup.txt: 230/230 suites, 3807/3813 tests
+   passing (6 pre-existing todo), 0 failures.
+
+Not re-run: this session still cannot place a real ORB voice call (same
+proxy/WebSocket limitation as the original fix), so this follow-up is
+verified structurally against the exact conflict that was observed live,
+not against a fresh live Nova conversation. Flagged explicitly rather than
+claimed as live-confirmed.
