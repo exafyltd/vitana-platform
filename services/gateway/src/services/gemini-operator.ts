@@ -1001,6 +1001,25 @@ async function executeCreateTask(
     };
   }
 
+  // VTID-03819: a similar task already exists — nothing new was allocated,
+  // so skip the vtid.created/executed intent logging below (those describe
+  // a task that was actually created) and tell the caller which existing
+  // VTID to use instead.
+  if (createdTask.duplicate) {
+    console.log(`[VTID-03819] Skipping creation — similar task already exists: ${createdTask.vtid}`);
+    return {
+      ok: true,
+      data: {
+        vtid: createdTask.vtid,
+        title: createdTask.title,
+        mode: createdTask.mode,
+        status: 'existing',
+        duplicate: true,
+        message: `A similar task already exists: ${createdTask.vtid} — "${createdTask.title}". No new task was created.`
+      }
+    };
+  }
+
   // Step 5: Log VTID created
   await emitOasisEvent({
     vtid: createdTask.vtid,

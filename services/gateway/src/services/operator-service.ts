@@ -11,6 +11,7 @@
 import fetch from 'node-fetch';
 import { randomUUID } from 'crypto';
 import { guessAreaFromText, buildTitle, validateTaskTitle, normalizeTaskTitle } from '../utils/task-title';
+import { checkForSimilarTask, stampTaskEmbedding } from './ledger-task-dedup';
 
 // ==================== VTID-01004: Event Classification ====================
 // Event categories for OASIS ingestion control
@@ -594,11 +595,20 @@ export async function getChatThreadHistory(threadId: string): Promise<ThreadHist
 
 /**
  * Task creation result
+ *
+ * VTID-03819: `duplicate`/`relatedVtid` let a caller distinguish "created a
+ * brand new task" from "found an existing near-duplicate and returned it
+ * instead" without breaking existing callers, which only ever checked
+ * truthiness and read `.vtid`/`.title` — both remain populated in every case.
  */
 export interface CreatedTask {
   vtid: string;
   title: string;
   mode: 'plan-only';
+  /** true when this VTID is a pre-existing task, not a newly-created one. */
+  duplicate?: boolean;
+  /** set when a related-but-not-duplicate task was found alongside creation. */
+  relatedVtid?: string;
 }
 
 /**
@@ -978,6 +988,20 @@ export async function createOperatorTask(params: {
   // Extract title from description
   const title = extractTitle(rawDescription);
 
+  // VTID-03819: check for an existing similar/duplicate task BEFORE
+  // allocating a VTID for this one — no point minting a ledger number for
+  // a request that turns out to be the same task someone already filed.
+  const similarity = await checkForSimilarTask(title, rawDescription);
+  if (similarity.duplicate) {
+    console.log(`[${'VTID-03819'}] Duplicate task detected — reusing ${similarity.duplicate.vtid} ("${similarity.duplicate.title}", similarity=${similarity.duplicate.similarity.toFixed(3)}) instead of creating a new one`);
+    return {
+      vtid: similarity.duplicate.vtid,
+      title: similarity.duplicate.title,
+      mode: 'plan-only',
+      duplicate: true
+    };
+  }
+
   // VTID-0542: Use global allocator instead of legacy generateVtid
   const allocResult = await allocateVtid('operator-chat', layer, module);
 
@@ -997,7 +1021,10 @@ export async function createOperatorTask(params: {
         source: 'operator-chat',
         threadId: sourceThreadId,
         createdVia: 'vtid-0542-allocator',
-        allocatedNum: allocResult.num
+        allocatedNum: allocResult.num,
+        // VTID-03819: surfaced on the Command Hub board as a "Related" chip
+        // when a similar-but-not-duplicate task already exists.
+        ...(similarity.related ? { related_vtid: similarity.related.vtid, related_similarity: similarity.related.similarity } : {})
       }
     });
 
@@ -1005,6 +1032,10 @@ export async function createOperatorTask(params: {
       console.error(`[VTID-0542] Failed to update allocated task entry for ${vtid} — task will appear as 'Allocated - Pending Title'`);
       return undefined;
     }
+
+    // VTID-03819: fire-and-forget — populate this row's own embedding so
+    // future dedup checks can find it. Never blocks task creation.
+    void stampTaskEmbedding(vtid, title, rawDescription);
   } else {
     // Allocator failed — DO NOT fall back to legacy (produces wrong VTID format)
     console.error(`[VTID-0542] Allocator failed (${allocResult.error}): ${allocResult.message}. No legacy fallback.`);

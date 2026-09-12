@@ -1,0 +1,37 @@
+$ mcp__Supabase__apply_migration name=vtid_03819_ledger_dedup_embedding
+-> {"success": true}
+
+$ mcp__Supabase__execute_sql (verify column)
+  select column_name, udt_name from information_schema.columns
+  where table_name='vtid_ledger' and column_name in ('embedding','embedding_updated_at');
+-> [{"column_name":"embedding","udt_name":"vector"},
+    {"column_name":"embedding_updated_at","udt_name":"timestamptz"}]
+
+$ mcp__Supabase__execute_sql (verify index)
+  select indexname from pg_indexes where tablename='vtid_ledger'
+    and indexname='idx_vtid_ledger_embedding_hnsw';
+-> [{"indexname":"idx_vtid_ledger_embedding_hnsw"}]
+
+$ mcp__Supabase__execute_sql (verify RPC exists)
+  select routine_name from information_schema.routines
+  where routine_name = 'find_similar_vtid_tasks';
+-> [{"routine_name":"find_similar_vtid_tasks"}]
+
+$ mcp__Supabase__execute_sql (smoke-test the RPC against a real vector)
+  select * from find_similar_vtid_tasks(
+    (select ('[' || array_to_string(array_fill(0.001::float8, array[1536]), ',') || ']')::vector(1536)),
+    5, 0.0
+  );
+-> [] (no error; empty result is correct — see next line)
+
+$ mcp__Supabase__execute_sql
+  select count(*) as rows_with_embedding from vtid_ledger where embedding is not null;
+-> {"rows_with_embedding": 0}
+
+CONFIRMED: schema/index/RPC are live and callable. 0 rows carry an embedding
+yet, as expected — this VTID deliberately does NOT backfill the 1,682
+existing ledger rows (see migration header + acceptance.md "Deliberately NOT
+attempted"). Coverage grows from here forward: every task newly created via
+createOperatorTask() gets its embedding stamped immediately after creation
+(stampTaskEmbedding), so the dedup check has something to compare against
+starting with the first task created after this ships.

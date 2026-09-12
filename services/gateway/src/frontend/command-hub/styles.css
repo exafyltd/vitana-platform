@@ -8413,6 +8413,30 @@ body {
   box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.2);
 }
 
+/* VTID-03819: Related-task chip — shown when embedding search finds a
+   similar-but-not-duplicate task already on the board. Amber, matching
+   the existing "needs attention" tone (.task-card-status-pill-in-progress)
+   rather than success/error colors, since this is informational only. */
+.task-related-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: rgba(245, 158, 11, 0.12);
+  color: #fbbf24;
+  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.25);
+  cursor: pointer;
+  width: fit-content;
+}
+
+.task-related-chip:hover {
+  background: rgba(245, 158, 11, 0.2);
+}
+
 /* DEV-COMHU-2025-0015: Uniform card sizing across all columns */
 .task-card-enhanced {
   min-height: 140px;
