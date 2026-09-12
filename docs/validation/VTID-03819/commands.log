@@ -1,0 +1,95 @@
+VTID-03819 — commands.log
+==========================
+
+## Research (background agent) before writing any code
+
+Traced the actual task-creation call chain rather than assuming one:
+- services/gateway/src/services/gemini-operator.ts:991 (executeCreateTask,
+  the autopilot_create_task tool handler) and
+  services/gateway/src/routes/operator.ts:228 (slash-command intake) both
+  funnel through ONE choke point:
+  services/gateway/src/services/operator-service.ts:967 createOperatorTask().
+- Confirmed existing embedding infra to reuse (VTID-01184):
+  services/gateway/src/services/embedding-service.ts's generateEmbedding()
+  (1536-dim, OpenAI-primary/Gemini-fallback) and the pgvector pattern in
+  services/gateway/src/services/supabase-semantic-memory.ts's
+  memory_semantic_search RPC (supabase.rpc() with embedding formatted as a
+  '[v1,v2,...]' string).
+- Confirmed vtid_ledger has NO embedding column (DATABASE_SCHEMA.md) — a new
+  additive column + RPC is needed, modeled directly on the existing
+  memory_items HNSW-index pattern
+  (supabase/migrations/20260117140000_vtid_01184_pgvector_semantic_memory.sql).
+- Confirmed no existing "duplicate task"/"related task" feature anywhere in
+  the repo (grepped "duplicate", "similar_task", "related_task", "dedup") —
+  the closest precedent is intent-find-match.ts's search-before-create
+  pattern for a different domain (Discover intent catalog), reused here as
+  the design template, not copy-pasted.
+
+## Schema change
+
+$ mcp__Supabase__apply_migration name=vtid_03819_ledger_dedup_embedding
+  ALTER TABLE vtid_ledger ADD COLUMN IF NOT EXISTS embedding vector(1536) NULL;
+  ALTER TABLE vtid_ledger ADD COLUMN IF NOT EXISTS embedding_updated_at timestamptz NULL;
+  CREATE INDEX IF NOT EXISTS idx_vtid_ledger_embedding_hnsw ON vtid_ledger
+    USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
+  CREATE OR REPLACE FUNCTION find_similar_vtid_tasks(...) ...
+-> {"success": true}
+
+See outputs/live-verification.txt for the full schema/index/RPC verification
+transcript, including a live smoke-test call to the RPC.
+
+## Code changes
+
+- New services/gateway/src/services/ledger-task-dedup.ts:
+  checkForSimilarTask(title, description) — embeds the text via the existing
+  generateEmbedding(), calls find_similar_vtid_tasks via REST RPC, and
+  classifies the closest match as `duplicate` (>=0.93 similarity) or
+  `related` (0.80-0.93). Fails OPEN (returns {}) on any missing config,
+  embedding failure, or RPC error — dedup is an availability enhancement,
+  never a precondition for task creation.
+  stampTaskEmbedding(vtid, title, description) — fire-and-forget PATCH of
+  the embedding column on a just-created row, so future checks can find it.
+- operator-service.ts's createOperatorTask(): calls checkForSimilarTask()
+  BEFORE allocateVtid() (no point minting a VTID for a request that's the
+  same as an existing task). A `duplicate` match short-circuits — returns
+  the EXISTING vtid/title with `duplicate: true`, no allocation, no ledger
+  write, no spec event. A `related` match still creates the task normally
+  but stamps `metadata.related_vtid`/`related_similarity`. On any successful
+  creation, stampTaskEmbedding() is fired (not awaited for the return value)
+  so the new row's own embedding gets populated.
+- gemini-operator.ts's executeCreateTask(): when createdTask.duplicate is
+  true, skips the vtid.created OASIS event + "executed" intent log (nothing
+  was actually created) and returns a message naming the existing VTID.
+- routes/operator.ts: distinguishes the duplicate case in its console log
+  only (same createOperatorTask() call, so the dedup logic applies here too
+  with no extra wiring needed).
+- Command Hub frontend (app.js/styles.css): new createRelatedTaskChip(task)
+  reads task.metadata.related_vtid, renders a "Related: VTID-XXXXX" pill
+  (new .task-related-chip CSS class, modeled on the existing
+  .task-card-status-pill pattern) on both the task card and the drawer
+  header; clicking it reuses the EXISTING state.taskSearchQuery board filter
+  (no new navigation built).
+- scripts/ci/command-hub-ownership-guard.js: registered VTID-03819 in the
+  Command Hub Path Ownership Guard allowlist (same per-VTID pattern as
+  VTID-03818), since this VTID touches the protected command-hub tree.
+
+## Verification
+
+$ cd services/gateway && npx tsc --noEmit
+-> outputs/tsc-noemit.txt: clean
+
+$ npx jest test/vtid-03819-ledger-task-dedup.test.ts test/vtid-03819-related-task-chip.test.ts test/vtid-03819-create-operator-task-dedup.test.ts --silent=false
+-> outputs/jest-vtid-03819-filter.txt: 3/3 suites, 22/22 tests passing
+
+$ npx jest --silent=false   # full suite
+-> outputs/jest-full-suite.txt (tail): 745/746 suites (1 pre-existing skip),
+   13,728/13,763 tests passing, 0 failures, exit code 0
+   (baseline shifted from VTID-03818's 740/741 because this branch was
+   restarted from origin/main after VTID-03818 AND VTID-03824 both merged;
+   the +3 suites here are exactly the 3 new VTID-03819 test files)
+
+$ node --check services/gateway/src/frontend/command-hub/app.js
+-> clean
+
+$ GITHUB_HEAD_REF=claude/wonderful-cray-puhjal PR_TITLE="VTID-03819: ..." node scripts/ci/command-hub-ownership-guard.js
+-> Guard check PASSED (once committed — the guard diffs committed history)
