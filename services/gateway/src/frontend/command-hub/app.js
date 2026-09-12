@@ -589,20 +589,203 @@ function buildOperatorChatContext(history) {
     return context;
 }
 
+// --- VTID-03822: Multi-thread conversation support ---
+//
+// operator_console_history / operator_console_conversation_id (VTID-01027,
+// above) were a single flat thread — no way to browse or resume a prior
+// conversation. This layer adds real, named, resumable threads without a
+// backend dependency (per this VTID's own spec: "purely frontend, no
+// backend dependency" — there is no server-side conversation table to
+// build against; continuity has always come from the client resending
+// `context` on every request, and that's unchanged here).
+
+var OPERATOR_THREADS_INDEX_KEY = 'operator_console_threads_index';
+
+function operatorThreadHistoryKey(threadId) {
+    return 'operator_console_history:' + threadId;
+}
+
+function generateOperatorThreadId() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+        var r = Math.random() * 16 | 0;
+        var v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+}
+
+function loadOperatorThreadsIndex() {
+    try {
+        var stored = localStorage.getItem(OPERATOR_THREADS_INDEX_KEY);
+        if (stored) {
+            var parsed = JSON.parse(stored);
+            if (Array.isArray(parsed)) return parsed;
+        }
+    } catch (e) {
+        console.warn('[VTID-03822] Error reading threads index:', e);
+    }
+    return [];
+}
+
+function saveOperatorThreadsIndex(index) {
+    try {
+        localStorage.setItem(OPERATOR_THREADS_INDEX_KEY, JSON.stringify(index));
+    } catch (e) {
+        console.warn('[VTID-03822] Error saving threads index:', e);
+    }
+}
+
+function getOperatorThreadHistory(threadId) {
+    try {
+        var stored = localStorage.getItem(operatorThreadHistoryKey(threadId));
+        if (stored) {
+            var parsed = JSON.parse(stored);
+            if (Array.isArray(parsed)) return parsed;
+        }
+    } catch (e) {
+        console.warn('[VTID-03822] Error reading thread history:', e);
+    }
+    return [];
+}
+
+function saveOperatorThreadHistory(threadId, history) {
+    try {
+        localStorage.setItem(operatorThreadHistoryKey(threadId), JSON.stringify(history));
+    } catch (e) {
+        console.warn('[VTID-03822] Error saving thread history:', e);
+    }
+}
+
+/** Derive a short, human title from a thread's first user message. */
+function deriveOperatorThreadTitle(history) {
+    var firstUser = (history || []).find(function (m) { return m.role === 'user'; });
+    if (!firstUser || !firstUser.content) return 'New conversation';
+    var text = firstUser.content.trim().replace(/\s+/g, ' ');
+    return text.length > 40 ? text.slice(0, 40) + '…' : text;
+}
+
 /**
- * VTID-01027: Initialize operator chat session.
- * Loads conversation_id and chat history from localStorage.
- * Restores chatMessages for UI rendering from persisted history.
+ * One-time migration from the pre-thread single-history storage into the
+ * first thread, so shipping this never silently discards existing operator
+ * chat history. Safe to call on every load — no-ops once threads exist.
+ */
+function migrateOperatorHistoryToThreads() {
+    var index = loadOperatorThreadsIndex();
+    if (index.length > 0) return index;
+
+    var legacyHistory = getOperatorChatHistory();
+    var legacyConversationId = null;
+    try { legacyConversationId = localStorage.getItem('operator_console_conversation_id'); } catch (e) { /* no-op */ }
+
+    var threadId = legacyConversationId || generateOperatorThreadId();
+    var now = Date.now();
+    var thread = {
+        id: threadId,
+        title: legacyHistory.length > 0 ? deriveOperatorThreadTitle(legacyHistory) : 'New conversation',
+        conversationId: legacyConversationId || threadId,
+        createdAt: now,
+        updatedAt: now
+    };
+    index = [thread];
+    saveOperatorThreadsIndex(index);
+    if (legacyHistory.length > 0) {
+        saveOperatorThreadHistory(threadId, legacyHistory);
+        console.log('[VTID-03822] Migrated', legacyHistory.length, 'legacy messages into thread', threadId);
+    }
+    return index;
+}
+
+/** Persist the active thread's updatedAt/title after a new message. */
+function touchActiveOperatorThread() {
+    var thread = state.operatorThreads.find(function (t) { return t.id === state.operatorActiveThreadId; });
+    if (!thread) return;
+    thread.updatedAt = Date.now();
+    if (thread.title === 'New conversation') {
+        thread.title = deriveOperatorThreadTitle(state.operatorChatHistory);
+    }
+    saveOperatorThreadsIndex(state.operatorThreads);
+}
+
+/**
+ * Create a new, empty conversation thread and make it active. This is the
+ * "New conversation" action clearOperatorChatSession() (VTID-01027) was
+ * written for but never wired to any UI element — it now runs as part of
+ * this flow (clearing the legacy single-thread keys is harmless hygiene
+ * once every session is thread-aware).
+ */
+function startNewOperatorThread() {
+    var now = Date.now();
+    var thread = {
+        id: generateOperatorThreadId(),
+        title: 'New conversation',
+        conversationId: generateOperatorThreadId(),
+        createdAt: now,
+        updatedAt: now
+    };
+    state.operatorThreads.unshift(thread);
+    saveOperatorThreadsIndex(state.operatorThreads);
+
+    clearOperatorChatSession();
+
+    state.operatorActiveThreadId = thread.id;
+    state.operatorConversationId = thread.conversationId;
+    state.operatorChatHistory = [];
+    state.chatMessages = [];
+    saveOperatorThreadHistory(thread.id, []);
+    renderApp();
+}
+
+/** Switch the active thread and restore its history into the UI. */
+function switchOperatorThread(threadId) {
+    if (threadId === state.operatorActiveThreadId) return;
+    var thread = state.operatorThreads.find(function (t) { return t.id === threadId; });
+    if (!thread) return;
+
+    state.operatorActiveThreadId = thread.id;
+    state.operatorConversationId = thread.conversationId;
+    var history = getOperatorThreadHistory(thread.id);
+    state.operatorChatHistory = history;
+    state.chatMessages = history.map(function (msg) {
+        return {
+            type: msg.role === 'user' ? 'user' : 'system',
+            content: msg.content,
+            timestamp: new Date(msg.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+        };
+    });
+    renderApp();
+}
+
+/**
+ * VTID-01027 / VTID-03822: Initialize operator chat session.
+ * Loads (migrating if needed) the thread index, then the active thread's
+ * conversation_id and chat history. Idempotent across repeated opens —
+ * only runs once per page load (state.operatorActiveThreadId gates it).
  */
 function initOperatorChatSession() {
-    // Get or create conversation_id
-    state.operatorConversationId = getOperatorConversationId();
+    var index = migrateOperatorHistoryToThreads();
+    state.operatorThreads = index;
 
-    // Load persisted chat history
-    var history = getOperatorChatHistory();
+    if (state.operatorActiveThreadId) return; // already initialized this session
+
+    var active = index[0];
+    if (!active) {
+        var now = Date.now();
+        active = {
+            id: generateOperatorThreadId(),
+            title: 'New conversation',
+            conversationId: generateOperatorThreadId(),
+            createdAt: now,
+            updatedAt: now
+        };
+        state.operatorThreads = [active];
+        saveOperatorThreadsIndex(state.operatorThreads);
+    }
+
+    state.operatorActiveThreadId = active.id;
+    state.operatorConversationId = active.conversationId;
+
+    var history = getOperatorThreadHistory(active.id);
     state.operatorChatHistory = history;
 
-    // Convert history to chatMessages format for UI rendering
     if (history.length > 0 && state.chatMessages.length === 0) {
         state.chatMessages = history.map(function (msg) {
             return {
@@ -611,7 +794,7 @@ function initOperatorChatSession() {
                 timestamp: new Date(msg.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
             };
         });
-        console.log('[VTID-01027] Restored', history.length, 'messages from history');
+        console.log('[VTID-03822] Restored', history.length, 'messages from thread', active.id);
     }
 }
 
@@ -3096,6 +3279,9 @@ const state = {
     // VTID-01027: Session Memory State
     operatorChatHistory: [], // Array of { role: 'user'|'assistant', content, ts }
     operatorConversationId: null, // UUID for conversation continuity
+    // VTID-03822: Multi-thread conversation state
+    operatorThreads: [], // Array of { id, title, conversationId, createdAt, updatedAt }
+    operatorActiveThreadId: null,
 
     // VTID-01041: Pending title capture state for ORB task creation
     pendingTitleVtid: null, // VTID awaiting title input from user
