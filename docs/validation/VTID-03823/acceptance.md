@@ -9,6 +9,22 @@ between columns except opening the drawer and clicking a button. This
 VTID adds four independent hygiene features, and a real, pre-existing bug
 found while verifying the second one.
 
+**AC-5's bug in full:** `.task-card-status-row` had `overflow: hidden`
+on `origin/main` before this VTID touched the file. Per the CSS Flexbox
+spec, a flex item's automatic minimum size resolves to 0 once its
+`overflow` is anything but `visible` — inside the flex-column `.task-card`,
+that made this row (and only this row, since sibling rows lack
+`overflow: hidden`) collapse to a MEASURED 0px real height, hiding the
+status pill and role badge that already lived there, on every card,
+before this VTID shipped anything. Adding a third item (the new age
+badge) to that same collapsed row would have shipped a data-correct but
+completely invisible feature. Fixed at the root: `flex-shrink: 0` on the
+row (so it no longer collapses) plus raising `.task-card-enhanced`'s
+`max-height` from 100px to 148px (the measured natural height of a fully
+populated Scheduled card, so the fix doesn't just relocate the same
+collapse onto the next-least-resistant row — confirmed by measuring, not
+assuming, via `getBoundingClientRect()` on each row before and after).
+
 ## Acceptance Criteria
 
 AC-1 — Combinable filter chips for Age (Today / This week / Stale >7d),
@@ -79,22 +95,15 @@ issued exactly one `PATCH /api/v1/oasis/tasks/VTID-20001` with body
 `{"status":"in_progress"}` — confirmed via a stubbed `fetch` that recorded
 the real call the real code made, not a mock of the drop handler itself.
 
-AC-5 — **Pre-existing bug, found and fixed while verifying AC-2, not
-introduced by this VTID.** `.task-card-status-row` had `overflow: hidden`
-on `origin/main` before this VTID touched the file. Per the CSS Flexbox
-spec, a flex item's automatic minimum size resolves to 0 once its
-`overflow` is anything but `visible` — inside the flex-column `.task-card`,
-that made this row (and only this row, since sibling rows lack
-`overflow: hidden`) collapse to a MEASURED 0px real height, hiding the
-status pill and role badge that already lived there, on every card,
-before this VTID shipped anything. Adding a third item (the new age
-badge) to that same collapsed row would have shipped a data-correct but
-completely invisible feature. Fixed at the root: `flex-shrink: 0` on the
-row (so it no longer collapses) plus raising `.task-card-enhanced`'s
-`max-height` from 100px to 148px (the measured natural height of a fully
-populated Scheduled card, so the fix doesn't just relocate the same
-collapse onto the next-least-resistant row — confirmed by measuring, not
-assuming, via `getBoundingClientRect()` on each row before and after).
+AC-5 — Pre-existing bug, found and fixed while verifying AC-2, not
+introduced by this VTID: `.task-card-status-row`'s `overflow: hidden`
+made it collapse to a measured 0px real height inside the flex-column
+`.task-card` (CSS Flexbox auto-min-size-to-0 rule), hiding the status
+pill and role badge on every card before this VTID shipped anything —
+see the Report section above for the full mechanism. Fixed at the root
+(`flex-shrink: 0` on the row, `.task-card-enhanced`'s `max-height` raised
+from 100px to 148px) rather than shipping the new age badge into the same
+invisible row.
 
 TEST: same file — "Pre-existing zero-height status-row bug…" (2 tests).
 
