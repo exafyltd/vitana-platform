@@ -724,3 +724,92 @@ source endpoint to authenticate via the standard `postgres.<project_ref>`
 pooler identity instead. Nothing else discovered this session changes
 that recommendation — it sharpens it from "one of several possible fixes"
 to "the only one that matters for the endpoint actually in use."
+
+## Addendum, 2026-09-12 — the platform owner reset the Supabase DB
+password themselves; live-tested it against all four DMS endpoints and
+it changes nothing, for a reason now nailed down precisely
+
+The platform owner reset "the database password" via Supabase Dashboard
+→ Database Settings and handed the new value to this session directly, as
+the agreed remediation path for the Supavisor blocker documented above.
+Rather than assume this fixed anything, tested it live end-to-end before
+reporting back.
+
+**Step 1 — pulled the real, current config of all four DMS Supabase
+source endpoints** (`describe-endpoints`, not assumed from an earlier
+session's notes). All four authenticate as **`migrate`**, not `postgres`:
+
+| Endpoint | Username | Server |
+|---|---|---|
+| `vitana-source-supabase` | `migrate` | `db.inmkhvwdcuyhnxkgfvsb.supabase.co` (direct) |
+| `vitana-src-supabase-v3` | `migrate.inmkhvwdcuyhnxkgfvsb` | `aws-0-eu-north-1.pooler.supabase.com` (pooler) — **the one the live task actually uses** |
+| `vitana-supabase-source-autopilot` | `migrate` | direct |
+| `vitana-supabase-source-fullload` | `migrate` | direct |
+
+Supabase's Dashboard "Database password" screen resets the **`postgres`**
+superuser's password specifically — a different credential from a custom
+`migrate` role. Updating all four endpoints' `Password` field to the new
+value and re-testing was therefore a real experiment, not a foregone
+conclusion.
+
+**Step 2 — updated all four endpoints' passwords via
+`aws dms modify-endpoint`, re-tested all four live. Result: no change.**
+The three direct-hostname endpoints still fail identically
+(`Network is unreachable` on the IPv6 address — the pre-existing VPC
+egress gap documented above, entirely unrelated to any password). The
+pooler endpoint still fails with the **byte-identical**
+`FATAL: (ENOTFOUND) tenant/user migrate.inmkhvwdcuyhnxkgfvsb not found`
+error as before the reset.
+
+**Step 3 — ruled out the role itself.** Queried Supabase directly
+(`select rolname, rolcanlogin, rolreplication, rolsuper from pg_roles
+where rolname in ('migrate','postgres')`): `migrate` genuinely exists,
+`rolcanlogin=true`, `rolreplication=true`, `rolsuper=false` — correctly
+provisioned for CDC at the Postgres level. Not a missing or misconfigured
+role.
+
+**Step 4 — ruled out the username/role identity entirely.** Repointed
+`vitana-src-supabase-v3` at **`postgres.inmkhvwdcuyhnxkgfvsb`** — the one
+identity that is *always* valid on any Supabase project's pooler, using
+the just-reset password. Re-tested live. **Identical failure**:
+`tenant/user postgres.inmkhvwdcuyhnxkgfvsb not found`. This is decisive:
+if even the universal `postgres` identity is rejected as "not found" at
+this specific pooler host, the problem cannot be about which role,
+username format, or password is used — Supavisor is not recognizing this
+**project** at this pooler endpoint at all.
+
+**Step 5 — checked for a region/host mismatch, found none.** Queried the
+project directly (`mcp__Supabase__get_project`): region is `eu-north-1`,
+which matches the pooler hostname already configured
+(`aws-0-eu-north-1.pooler.supabase.com`). So it isn't a stale/wrong-region
+pooler host either.
+
+**Where this leaves the blocker, precisely:** four hypotheses eliminated
+with live evidence (missing role, wrong role, wrong password, wrong
+region) leaves one real remaining explanation this session cannot verify
+without dashboard access: something about this specific project's
+**connection pooling configuration on Supabase's side** — pooling
+disabled for the project, a stale/incorrect pooler entry, or a
+project-side migration/region change that never propagated to Supavisor's
+tenant registry — is preventing this pooler host from ever resolving
+`inmkhvwdcuyhnxkgfvsb` as a valid tenant, independent of any credential.
+Asked the platform owner to check Project Settings → Database →
+Connection pooling and report back exactly what host/port/enabled-state
+it shows, since that page is the only remaining authoritative source this
+session doesn't have direct access to. No further AWS-side guessing
+(more hostnames, more ports) is planned until that comes back — each
+failed live test costs a real `aws dms test-connection` round trip against
+a production resource for no new information once the failure mode is
+this well isolated.
+
+**Endpoints left in a temporarily half-modified state, noted for
+whoever picks this up next:** `vitana-src-supabase-v3`'s username is
+currently `postgres.inmkhvwdcuyhnxkgfvsb` (changed from `migrate.
+inmkhvwdcuyhnxkgfvsb` during Step 4's test) and all four endpoints' 
+passwords are now the 2026-09-12 `postgres`-role value. None of this
+is destructive — all four endpoints were already `failed`/unused before
+today — but it means the endpoint's config no longer matches what
+§1/the earlier addenda describe verbatim; whoever next reads this doc
+should treat this addendum, not the ones above it, as the current
+endpoint state until the pooler issue is resolved and endpoint config is
+finalized one way or the other.
