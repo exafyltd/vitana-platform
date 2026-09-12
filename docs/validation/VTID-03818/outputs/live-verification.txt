@@ -1,0 +1,28 @@
+$ mcp__Supabase__execute_sql (read-only, before any fix)
+  select status, spec_status, is_terminal, count(*) from vtid_ledger group by status, spec_status, is_terminal order by count(*) desc;
+-> 703 rows title='Allocated - Pending Title' (184 of them is_terminal=false)
+-> 47 rows status='complete' (distinct from 'completed')
+-> 204+34+1+... rows status='deleted' AND is_terminal IS DISTINCT FROM true
+
+$ mcp__Supabase__execute_sql (before)
+  select count(*) as complete_rows from vtid_ledger where status='complete';
+-> {"complete_rows": 47}
+
+-- applied migration vtid_03818_ledger_hygiene_normalize_status_and_backfill_terminal --
+  UPDATE vtid_ledger SET status='completed', updated_at=now() WHERE status='complete';
+  UPDATE vtid_ledger SET is_terminal=true, terminal_outcome=COALESCE(terminal_outcome,'deleted'), updated_at=now()
+    WHERE status='deleted' AND (is_terminal IS DISTINCT FROM true);
+-> {"success": true}
+
+$ mcp__Supabase__execute_sql (after)
+  select
+    (select count(*) from vtid_ledger where status='complete') as remaining_complete_rows,
+    (select count(*) from vtid_ledger where status='deleted' and is_terminal is distinct from true) as remaining_nonterminal_deleted;
+-> {"remaining_complete_rows": 0, "remaining_nonterminal_deleted": 0}
+
+CONFIRMED: both live-data bugs (complete/completed drift, non-terminal deleted
+rows) are fully cleared as of this migration. The 703 placeholder-titled rows
+are NOT retroactively fixed by this VTID (that would mean guessing real titles
+for historic rows with no other signal) -- the code fix (deriveAllocationTitle
+always returning a real string) stops NEW rows from ever landing on the
+placeholder again, which is what the acceptance criteria actually require.
