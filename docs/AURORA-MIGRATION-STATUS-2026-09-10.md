@@ -1045,3 +1045,117 @@ actual cutover time do a short write-freeze window on Supabase, one final
 full-load catch-up pass (same `reload-tables` approach, whole-table-set
 this time), switch the application to Aurora, then shut down Supabase.
 No further Supabase spend of any kind, per explicit instruction.
+
+## Addendum, 2026-09-12 continued (3) — the two-pass retry worked for most of the 29; the stable remainder split into two distinct, now-understood causes.
+
+The two-pass `reload-tables` strategy above worked exactly as predicted
+for 15 of the 29 originally-errored tables (`app_users`, `chat_messages`,
+`campaigns`, `cart_order`, `business_packages`, `life_compass`,
+`location_visits`, `global_messages`, `global_thread_participants`,
+`memory_garden_nodes`, `voucher_orders`, `community_live_streams`,
+`chat_group_members`, `media_uploads`, `thread_participants`) — their
+blocking dependency was cleared once the rest of the main run's tables
+were dropped and recreated, confirming the drop-order-race diagnosis.
+
+The remaining 14 formed a **stable** set across two identical passes —
+not just slow convergence, but two genuinely separate, previously-hidden
+causes:
+
+**Cause A — `memberships`: a real, permanent cross-table RLS dependency,
+not a race.** `pg_depend` (correct `vitana` database) shows two policies
+— `user_intents_public_read` and `user_intents_tenant_read`, both
+defined **on `user_intents`**, both referencing `memberships` via a
+`tenant_id IN (SELECT ... FROM memberships ...)` subquery — as `deptype
+'n'` dependents of `memberships`. `user_intents` is one of the ~15
+tables **excluded** from this task's table-mapping (`/tmp/table-
+mappings.json` rule 10, `exclude-done-user_intents` — already migrated
+in an earlier task). Since this task never touches `user_intents`, those
+two policies never get dropped, so `memberships` can never pass its own
+bare `DROP TABLE` no matter how many retry passes run — this is a
+permanent blocker, not an ordering artifact.
+
+Attempted fix: `DROP POLICY user_intents_public_read/tenant_read ON
+public.user_intents` (captured both policies' exact definitions first
+via `pg_policy`/`pg_get_expr()` so they can be recreated byte-for-byte
+after `memberships` reloads) — **blocked by this session's own Claude
+Code permission classifier** (`[Security Weaken]`, dropping an RLS
+policy). Per this session's established pattern, not retried repeatedly;
+noted here and the other 13 unblocked tables were processed regardless.
+**Still open — needs one of:** (a) a human runs the two `DROP POLICY`
+statements (definitions captured below) followed by the `reload-tables`
+call for `memberships` alone, then the two `CREATE POLICY` statements to
+restore them; or (b) accept `memberships` as a known, understood gap
+until the final cutover-time catch-up load, at which point `user_intents`
+itself will likely need a fresh pass anyway.
+
+```sql
+-- Captured before any drop — restore verbatim after memberships reloads:
+CREATE POLICY user_intents_public_read ON public.user_intents
+  AS PERMISSIVE FOR SELECT
+  USING (
+    (visibility = 'public'::text)
+    AND (status = ANY (ARRAY['open'::text, 'matched'::text, 'engaged'::text]))
+    AND (tenant_id IN (
+      SELECT m.tenant_id FROM memberships m
+      WHERE (m.user_id = auth.uid()) AND (m.status = 'active'::text)
+    ))
+  );
+
+CREATE POLICY user_intents_tenant_read ON public.user_intents
+  AS PERMISSIVE FOR SELECT
+  USING (
+    (visibility = 'tenant'::text)
+    AND (status = ANY (ARRAY['open'::text, 'matched'::text, 'engaged'::text]))
+    AND (tenant_id IN (
+      SELECT m.tenant_id FROM memberships m
+      WHERE (m.user_id = auth.uid()) AND (m.status = 'active'::text)
+    ))
+  );
+```
+
+**Cause B — the other 13 (`bootstrap_cache`, `oasis_events`,
+`journey_checklist_versions`, `ai_messages`, `conversation_messages`,
+`autopilot_recommendations`, `voice_architecture_reports`,
+`dev_autopilot_signals`, `dev_autopilot_worker_queue`,
+`global_community_events`, `global_message_threads`, `reminders`,
+`event_co_creators`): a completely different, previously-misdiagnosed
+failure — DMS's default 32KB LOB truncation corrupting large JSONB
+columns.** `pg_depend` for every one of these showed **zero** external
+dependencies (only each table's own toast table, PK, and composite
+type) — the `2BP01` dependency error from the earlier passes was a red
+herring for this group; by the time of this check they had already
+progressed past DROP/CREATE entirely. The real, current error (from
+CloudWatch, same run): rows were unloaded and "received" successfully,
+then `Command failed to load data with exit error code 0 and exitwhy 1
+... Failed to load data from csv file` — immediately preceded by
+repeated warnings: `Value of column 'payload' in table
+'public.bootstrap_cache' was truncated to 32768 bytes, actual length:
+257952 bytes` (and similar, up to hundreds of KB, across the other
+tables in this group). The task's `TargetMetadata.LobMaxSize` was **32**
+(KB) with `LimitedSizeLobMode: true` — DMS's default. Truncating a JSONB
+value mid-object produces syntactically invalid JSON, which the
+Postgres `COPY` into a `jsonb` column then rejects, failing the whole
+load file.
+
+**Fix applied:** `aws dms modify-replication-task` raising
+`TargetMetadata.LobMaxSize` to **102400** (100MB), `LimitedSizeLobMode`
+left `true` (full LOB mode would be markedly slower with no benefit
+here — nothing observed anywhere near 100MB). Confirmed via
+`describe-replication-tasks` that the new value took effect. Restarted
+the task (`resume-processing`) and re-submitted `reload-tables` for
+these 13 tables (`memberships` deliberately excluded from this batch,
+per Cause A above) — outcome pending as of this addendum, monitored in
+the same session.
+
+**Operational note on the resume-processing/reload-tables interaction,
+worth keeping for the next person:** `reload-tables` requires the task
+to be in `running` state, but a full-load-only task that has already
+loaded every table in its own mapping **auto-stops within ~3 seconds**
+of a `resume-processing` restart (it checks "is everything loaded?",
+answers yes, and exits) — a `reload-tables` call issued even slightly
+after that restart can silently land on a task that has already gone
+back to `stopped`, accepted by the API but never processed (the affected
+tables just sit at `Before load`/`Table is being reloaded` with no
+progress). The reliable pattern: start the task, poll status in a tight
+loop (0.5s) until `running`, and fire `reload-tables` immediately in the
+same script — not as a separate, later command.
