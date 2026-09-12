@@ -1452,3 +1452,61 @@ tables byte-accurate right now, 5 known-blocked tables with a documented
 human-action fix, and one additional, previously-invisible category (13
 "already done" tables now measurably stale) added to the pre-cutover
 checklist above.
+
+## Addendum, 2026-09-12 continued (8) — a materially simpler fix for all 5 remaining blockers: `TRUNCATE_BEFORE_FULL_LOAD` instead of `DROP_AND_CREATE`, blocked by this session's classifier but recommended as the PREFERRED path over the policy-drop checklist above
+
+Every failure this session chased in the "cannot drop table X because
+other objects depend on it" family (Addenda 1-5) has the same single
+root mechanism: DMS's `TargetTablePrepMode: DROP_AND_CREATE` issues a
+bare `DROP TABLE` (no `CASCADE`), which fails whenever ANY other object
+— including a policy on a completely different table whose `USING`
+clause merely references this table — still exists. This is true even
+though this schema has **zero foreign keys anywhere in `public`**
+(confirmed repeatedly this session), which is precisely the condition
+under which `TargetTablePrepMode: TRUNCATE_BEFORE_FULL_LOAD` sidesteps
+the entire problem: **`TRUNCATE` does not drop the table object, so it
+carries none of `DROP TABLE`'s CASCADE-dependency requirements** — a
+table's own RLS policies, and any other table's policies that merely
+reference it in a `USING`/`WITH CHECK` expression, are completely
+unaffected by truncating its rows. The only thing that can block a
+`TRUNCATE` is a `FOREIGN KEY` referencing the table without `ON DELETE
+CASCADE`-equivalent handling (irrelevant here — there are none) or an
+explicit lock held by another session (not a factor against an idle
+Aurora cluster with no production traffic).
+
+**Attempted:** `aws dms modify-replication-task` changing this task's
+`FullLoadSettings.TargetTablePrepMode` from `DROP_AND_CREATE` to
+`TRUNCATE_BEFORE_FULL_LOAD`, scoped to a fresh attempt at the 5 known
+blockers (`memberships`, `global_community_events`, `event_co_creators`,
+`conversation_messages`, `reminders`). **Blocked twice, consistently,
+by this session's own Claude Code permission classifier** — reason
+`[Cloud Storage Mass Delete]` (the classifier reasonably reads "truncate
+a table" as a mass-delete action, even though in this specific context
+the truncated rows are immediately replaced by the full-load's own
+`INSERT`s in the same operation, and Aurora holds no production traffic
+to lose).
+
+**Recommendation for whoever picks up the human-action checklist above:
+try this FIRST, before the policy-drop-and-recreate approach.** It is
+one settings change instead of manual `DROP POLICY`/`CREATE POLICY`
+pairs across 3 tables, carries no risk of forgetting to recreate a
+policy correctly, and — if it works as the mechanism above predicts —
+would clear all 5 remaining blockers (not just the 3 with a diagnosed
+policy cause) in a single pass, including `conversation_messages`/
+`reminders` whose blocking cause this session could never fully pin
+down via `pg_depend`. Concretely:
+
+```bash
+aws dms modify-replication-task --region eu-central-1 \
+  --replication-task-arn arn:aws:dms:eu-central-1:472838866351:task:76AG2CJIY5H6HODN7VOW6AQL74 \
+  --replication-task-settings '{"FullLoadSettings":{"TargetTablePrepMode":"TRUNCATE_BEFORE_FULL_LOAD","CreatePkAfterFullLoad":false,"StopTaskCachedChangesApplied":false,"StopTaskCachedChangesNotApplied":false,"MaxFullLoadSubTasks":3,"TransactionConsistencyTimeout":600,"CommitRate":10000}}'
+# then start the task (resume-processing) and reload-tables scoped to
+# the 5 blocked tables, same pattern as the rest of this session
+```
+
+If this works, the policy-drop checklist in Addendum 5 becomes
+unnecessary for these 5 tables entirely — though it may still be worth
+switching the WHOLE task's default prep mode to `TRUNCATE_BEFORE_FULL_
+LOAD` for the eventual cutover-time final catch-up pass, since it would
+have prevented every single drop-order-race failure this entire session
+fought (Addenda 1-4), not just these last 5.
