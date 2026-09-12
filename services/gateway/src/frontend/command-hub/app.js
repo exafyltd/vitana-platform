@@ -7970,6 +7970,12 @@ function createTaskCard(task) {
     const stageTimeline = createTaskStageTimeline(task);
     card.appendChild(stageTimeline);
 
+    // VTID-03819: Related-task chip (embedding dedup surfaced a similar task)
+    const relatedChip = createRelatedTaskChip(task);
+    if (relatedChip) {
+        card.appendChild(relatedChip);
+    }
+
     return card;
 }
 
@@ -8132,6 +8138,32 @@ function startDrawerTitleEdit(titleValueElement, task) {
 }
 
 /**
+ * VTID-03819: Related-task chip. Shown when embedding-based dedup found a
+ * similar-but-not-duplicate task at creation time (metadata.related_vtid,
+ * set server-side by createOperatorTask/ledger-task-dedup.ts). Clicking it
+ * filters the board to that VTID, reusing the existing task search field
+ * rather than building new navigation.
+ */
+function createRelatedTaskChip(task) {
+    const relatedVtid = task && task.metadata && task.metadata.related_vtid;
+    if (!relatedVtid) return null;
+
+    const chip = document.createElement('span');
+    chip.className = 'task-related-chip';
+    chip.textContent = 'Related: ' + relatedVtid;
+    const similarity = task.metadata.related_similarity;
+    chip.title = 'A similar task already exists' +
+        (typeof similarity === 'number' ? ' (similarity ' + Math.round(similarity * 100) + '%)' : '') +
+        ' — click to find it';
+    chip.onclick = (e) => {
+        e.stopPropagation();
+        state.taskSearchQuery = relatedVtid;
+        renderApp();
+    };
+    return chip;
+}
+
+/**
  * VTID-0527: Create stage timeline pills for a task card.
  * Shows PLANNER → WORKER → VALIDATOR → DEPLOY progression.
  */
@@ -8267,6 +8299,12 @@ function renderTaskDrawer() {
     vtidHeading.className = 'drawer-title-text';
     vtidHeading.textContent = vtid;
     header.appendChild(vtidHeading);
+
+    // VTID-03819: Related-task chip (embedding dedup surfaced a similar task)
+    const drawerRelatedChip = createRelatedTaskChip(task);
+    if (drawerRelatedChip) {
+        header.appendChild(drawerRelatedChip);
+    }
 
     // VTID-01041: Editable title row (below VTID heading)
     var columnStatus = mapStatusToColumnWithOverride(vtid, task.status, task.oasisColumn) || 'Scheduled';

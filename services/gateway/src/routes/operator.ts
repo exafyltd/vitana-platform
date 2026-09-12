@@ -231,7 +231,9 @@ router.post('/chat', async (req: Request, res: Response) => {
         sourceMessageId: operatorMessageId
       });
 
-      if (createdTask) {
+      if (createdTask?.duplicate) {
+        console.log(`[VTID-03819] Similar task already exists: ${createdTask.vtid} - "${createdTask.title}" — no new task created`);
+      } else if (createdTask) {
         console.log(`[VTID-0532] Task created: ${createdTask.vtid} - "${createdTask.title}"`);
       } else {
         console.warn(`[VTID-0532] Task creation failed for request ${requestId}`);
