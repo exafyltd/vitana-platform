@@ -1644,3 +1644,50 @@ remaining items (recreate-catch-up for the 13 stale "already done"
 tables from Addendum 7, and the actual cutover write-freeze/final-load/
 Supabase-shutdown sequence) are forward-looking follow-ups, not
 unresolved defects from this work.
+
+## Addendum, 2026-09-12 continued (11) — confirmed: the 13 stale "already done" tables (Addendum 7) have zero live impact today
+
+Traced every Aurora-connected code path in `services/gateway/src` to confirm
+none of them read or write `mem_facts`, `memory_facts`, `mem_episodes`,
+`memory_items`, `user_intents`, `memory_embeddings`, `memory_audit_log`,
+`knowledge_docs`, `ai_memory`, `products`, `community_listings`,
+`calendar_events`, or `feedback_tickets`. Three Aurora seams exist in the
+gateway, and none touches any of these 13:
+
+1. **`GET /api/v1/admin/aurora-rls-health`** (`aurora-client.ts` /
+   `withAuroraRlsContext()`) — queries only `pg_roles` and `auth.uid()`,
+   no data tables at all.
+2. **`db-i18n` seam** (`services/db-i18n/aurora-client.ts` +
+   `db-i18n-repository.ts`, gated by `DB_I18N_TARGET`) — the one seam
+   this repo's own docs call "the real Aurora write path" — touches only
+   `supported_locales`, `nav_catalog_i18n`, `nav_catalog`,
+   `journey_checklist_translations`, `journey_checklist_versions`.
+   Confirmed no memory/fact table anywhere in its query set.
+3. **Memory-rebuild connectivity probe**
+   (`routes/admin-aurora-memory-health.ts`) — literally `SELECT 1 AS ok,
+   now()`, not a real query against any table.
+
+**`DB_I18N_TARGET` is not set on either `AWS-STAGE-DEPLOY-GATEWAY.yml` or
+`AWS-PROD-DEPLOY-GATEWAY.yml`** — confirmed via grep, zero matches in
+either — so it resolves to its code default, `'supabase'`, on both live
+stacks. `AURORA_DATABASE_URL`/`AURORA_RLS_DATABASE_URL` themselves ARE
+set on staging, but that only makes the connection reachable, not
+routed-to — even the one seam capable of writing to Aurora is currently
+serving from Supabase in practice on every live environment.
+
+**The real memory-facts write path** (`cognee-extractor-client.ts`'s
+`write_fact()` calls, the mechanism that populates `memory_facts`/
+`mem_facts`/`memory_items`/`mem_episodes` in the first place) goes
+directly to Supabase PostgREST (`${SUPABASE_URL}/rest/v1/rpc/write_fact`)
+— no Aurora pool involved anywhere in that file. Also checked
+`community-marketplace-repository.ts`, which carries an "Aurora
+migration B1 seam" doc comment but is currently 100% `getSupabase()`
+calls — a repository abstraction pre-positioned for a future swap, not
+an active Aurora connection; `community_listings` is Supabase-routed
+here too.
+
+**Conclusion: staleness on these 13 tables is a real gap that must be
+closed before cutover (per Addendum 7), but it is not causing any
+current production or staging behavior to be wrong** — nothing live
+reads Aurora's copy of any of them today. Safe to treat as a scheduled
+pre-cutover task, not an active incident.
