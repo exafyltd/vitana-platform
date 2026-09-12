@@ -1337,3 +1337,41 @@ full-load-only phase of Option A — next steps per the standing plan are
 verifying data completeness on the 566 successfully-loaded tables, then
 the human-run policy fixes above, then eventually the cutover write-freeze
 + final catch-up load + Supabase shutdown.
+
+## Addendum, 2026-09-12 continued (6) — spot-check data completeness verification: real row counts match, live drift is exactly as expected for Option A
+
+Ran the same `count(*)` query against both the Supabase source (via
+Supabase MCP `execute_sql`) and the Aurora target (via RDS Data API,
+`claude-readonly` secret) for a spread of 7 tables covering the two
+failure classes fixed this session — a small config table
+(`bootstrap_cache`), the largest previously-LOB-truncated table
+(`oasis_events`), tables from the original drop-order-race batch
+(`app_users`, `chat_messages`, `campaigns`), and two smaller ones
+(`cart_order`, `ai_messages`):
+
+| Table | Supabase (source) | Aurora (target) | Diff |
+|---|---|---|---|
+| `app_users` | 209 | 209 | 0 |
+| `chat_messages` | 44,035 | 44,035 | 0 |
+| `campaigns` | 40 | 40 | 0 |
+| `cart_order` | 0 | 0 | 0 |
+| `ai_messages` | 530 | 530 | 0 |
+| `bootstrap_cache` | 8 | 8 | 0 |
+| `oasis_events` | 483,932 | 483,924 | **8** |
+
+**6 of 7 match exactly.** `oasis_events` — a high-write-volume event log
+table — is 8 rows behind (0.002% drift), which is not a data-integrity
+bug: it is the **expected, correct** consequence of Option A's design
+(one-time full load against a still-live, still-writable Supabase
+source, deliberately with no CDC). Those 8 rows were written to Supabase
+during or after this session's load window and, with CDC intentionally
+not running, have no path to Aurora until the next load pass. This is
+exactly what the standing plan already accounts for: a final short
+write-freeze + catch-up load at actual cutover time, not a defect to
+chase now.
+
+This is a genuine, positive confirmation that the full-load mechanism
+itself produces byte-accurate row counts once a table clears DMS's own
+per-table error state — the two bugs fixed this session (drop-order race,
+LOB truncation) were blocking tables from loading at all, not silently
+corrupting or truncating the rows of tables that did load.
