@@ -2586,6 +2586,45 @@ export function buildLiveApiTools(
             required: [],
           },
         },
+        // VTID-03824: general-purpose session close, for
+        // the case neither of the two tools above covers — an ordinary
+        // conversation (not Teacher Mode, not a My Journey guided topic)
+        // where the user says something like "you can turn off now" / "I
+        // don't want to talk anymore". Without this the model has no way to
+        // signal "the user wants to stop", so turn_complete's default path
+        // unconditionally reopens the mic into LISTENING right after the
+        // farewell finishes playing — reported live as "it says goodbye and
+        // then starts listening again". Same shape as end_teaching_session /
+        // end_guided_topic_teaching deliberately, so the widget-side
+        // directive handling and teardown are the proven pattern, not a new
+        // one.
+        {
+          name: 'end_conversation',
+          description: [
+            'General conversation termination: close the orb overlay when the',
+            'user has expressed — in any wording, any language — that they',
+            'want to stop talking, end the session, or turn you off (e.g.',
+            '"you can turn off now", "that\'s enough for now", "I don\'t want',
+            'to continue", "tschüss", "du kannst jetzt ausschalten"). ALWAYS',
+            'call this AFTER speaking a brief, warm farewell of your own',
+            'wording that respects their wish to stop — never argue, never',
+            'ask "are you sure?". Do not call this for a mid-conversation',
+            'pause or a topic change; only when the user is ending the',
+            'conversation itself. Do not use this inside Teacher Mode or a My',
+            'Journey guided topic — those have their own dedicated end tools',
+            '(end_teaching_session, end_guided_topic_teaching).',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              reason: {
+                type: 'string',
+                description: 'Short freeform reason the model is closing (e.g. "user said turn off", "user said goodbye"). Used for telemetry — never spoken.',
+              },
+            },
+            required: [],
+          },
+        },
         // BOOTSTRAP-VOICE-CATALOG-COMPLETE — every tool built out from the
         // Voice Tools Catalog's `status: planned` backlog + P0 community-
         // feature gaps (Superlatives, Diary, Memory, Calendar management,

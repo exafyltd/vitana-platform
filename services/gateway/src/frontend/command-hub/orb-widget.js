@@ -2011,6 +2011,7 @@
     // after the first navigation. Reset here so each new session starts clean.
     _s.navigationPending = false;
     _s.signupClosing = false;
+    _s.conversationEnding = false; // VTID-03824: same reset, same reason
 
     // BOOTSTRAP-ORB-IOS-UNLOCK: the playback AudioContext create + 1-sample
     // silent-buffer unlock + resume() was MOVED UP to before the continuity
@@ -2761,7 +2762,9 @@
               if (_s._sessionGeneration !== myGen) return; // stale poll from a prior session
               if (!_s.active) return; // Session ended
               // VTID-NAV: Any close-pending state suppresses the listening transition.
-              // Covers signup close (legacy) AND navigator-driven navigation close.
+              // Covers signup close (legacy), navigator-driven navigation close,
+              // AND end_conversation (VTID-03824 — the model
+              // said goodbye and called end_conversation; don't reopen the mic).
               if (_isClosingForNav()) return;
               var stillPlaying = _s.audioPlaying ||
                 (_s.scheduledSources && _s.scheduledSources.length > 0) ||
@@ -3269,6 +3272,48 @@
             _endGuidedTopicTeaching(msg.topic_id || null, msg.reason || null);
           } catch (e) {
             console.error('[VTOrb] end_guided_topic_teaching handling error:', e);
+          }
+        } else if (msg.directive === 'end_conversation') {
+          // VTID-03824: the LLM called `end_conversation`
+          // after speaking a farewell because the user said something like
+          // "you can turn off now" / "I don't want to talk anymore". Without
+          // this, turn_complete's default path unconditionally reopens the
+          // mic into LISTENING once the farewell audio drains — reported
+          // live as "it says goodbye and then starts listening again".
+          //
+          // _s.conversationEnding is set FIRST (before the wait below) so
+          // _isClosingForNav() makes any in-flight turn_complete poll bail
+          // immediately instead of racing this teardown into a brief
+          // listening flash. Then, same as the navigate directive, wait for
+          // the farewell audio to actually finish draining before hiding —
+          // a fixed short delay would risk clipping a longer farewell.
+          console.log('[VTOrb] orb_directive end_conversation (reason=' + (msg.reason || '<none>') + ')');
+          _s.conversationEnding = true;
+          var _endConvAttempts = 0;
+          (function (myGen) {
+            (function _waitForFarewellEnd() {
+              setTimeout(function () {
+                if (_s._sessionGeneration !== myGen) return; // stale poll from a prior session
+                var stillPlaying = _s.audioPlaying ||
+                  (_s.scheduledSources && _s.scheduledSources.length > 0) ||
+                  (_s.audioQueue && _s.audioQueue.length > 0);
+                // Hard safety cap: 30s (100 * 300ms), same as the other directives.
+                if (stillPlaying && _endConvAttempts++ < 100) {
+                  _waitForFarewellEnd();
+                  return;
+                }
+                // Short grace period for the last buffer to finish cleanly.
+                setTimeout(function () {
+                  if (_s._sessionGeneration !== myGen) return; // stale poll from a prior session
+                  try { _hide(); }
+                  catch (e) { console.error('[VTOrb] _hide on end_conversation failed:', e); }
+                }, 200);
+              }, 300);
+            })();
+          })(_s._sessionGeneration);
+          if (typeof _cfg.onConversationEnd === 'function') {
+            try { _cfg.onConversationEnd(msg.reason || null); }
+            catch (e) { console.error('[VTOrb] onConversationEnd handler failed:', e); }
           }
         } else {
           console.warn('[VTOrb] Unknown orb_directive: ' + msg.directive);
@@ -4671,6 +4716,7 @@
         ' was delivered and is being closed — crediting completion (VTID-03799)');
     }
 
+    _s.conversationEnding = false; // VTID-03824: don't leak into a later, unrelated session
     _s.guidedAutoClose = false; // VTID-03294 (#4): clear any pending guided auto-close
     _s.guidedTopic = null; // VTID-03675: don't let a never-delivered topic leak into a later, unrelated session
     _s._guidedTopicInFlight = null; // VTID-03746: same lifecycle — this overlay session is genuinely over
@@ -4747,8 +4793,12 @@
   // VTID-NAV: Returns true when the widget is in any close-pending state.
   // Used by the turn_complete handler to suppress the listening transition
   // so we don't reactivate the orb while we are about to navigate away.
+  // VTID-03824: also true once the model has called
+  // end_conversation — without this, turn_complete's default path would
+  // reopen the mic into LISTENING for the few hundred ms between the
+  // farewell's audio draining and _hide() actually running.
   function _isClosingForNav() {
-    return _s.signupClosing === true || _s.navigationPending === true;
+    return _s.signupClosing === true || _s.navigationPending === true || _s.conversationEnding === true;
   }
 
   // 12. (Transcript UI removed — unified widget is voice-only, no chat bubbles)
@@ -5126,6 +5176,7 @@
       // host explicitly passes a function, and no host passes either.
       if (typeof opts.onGuidedTopicTeachingEnd === 'function') _cfg.onGuidedTopicTeachingEnd = opts.onGuidedTopicTeachingEnd;
       if (typeof opts.onTeachingSessionEnd === 'function') _cfg.onTeachingSessionEnd = opts.onTeachingSessionEnd;
+      if (typeof opts.onConversationEnd === 'function') _cfg.onConversationEnd = opts.onConversationEnd;
       if (typeof opts.onTurnComplete === 'function') _cfg.onTurnComplete = opts.onTurnComplete;
       // VTID-NAV: Optional initial context — current page + recent routes — so
       // the very first session has Navigator context even before any route
