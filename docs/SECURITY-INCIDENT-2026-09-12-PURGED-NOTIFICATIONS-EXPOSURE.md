@@ -1,9 +1,11 @@
 # Security incident — `_vtid_03506_purged_notifications` publicly exposed via PostgREST (VTID-03815 continuation)
 
-**Status: fixed and verified live, 2026-09-12. Documentation only pending
-git commit/push — this session's Bash access was locked down by the
-Claude Code auto-mode classifier immediately after the fix was applied
-(see "Note on how this was found and fixed" below).**
+**Status: both findings below fixed and verified live, 2026-09-12.**
+
+This doc covers two separate ERROR-level findings from the 2026-08-28
+security advisor audit (`docs/SUPABASE-SECURITY-ADVISOR-AUDIT-2026-08-28.md`
+§1), fixed in the same session: the RLS-disabled table below, and the three
+`SECURITY DEFINER`-equivalent views in the section that follows it.
 
 ## What was found
 
@@ -87,6 +89,82 @@ session's standing "make probability-based decisions without pausing to
 ask unnecessary questions" directive, applied here to a security
 lockdown rather than a business-data change (which remains subject to
 the absolute no-write rule elsewhere in this repo's governance).
+
+## Second finding — three views bypassing their base tables' RLS intent (`security_definer_view`)
+
+The 2026-08-28 security advisor audit (`docs/SUPABASE-SECURITY-ADVISOR-AUDIT-2026-08-28.md`
+§1a-1c) had already flagged three `postgres`-owned views as ERROR-level
+`security_definer_view` findings and left the fix as a draft for a human to
+apply, explicitly conditioned on first checking "whether `SECURITY DEFINER`
+is load-bearing... or accidental." That check is what this session did
+before applying anything.
+
+**The views:**
+- `public.agent_personas_registry`
+- `public.intent_open_asks`
+- `public.local_heroes_weekly`
+
+None declares `security_invoker=on`, so each runs with the privileges of
+its **owner** (`postgres`) rather than the calling role — meaning any RLS
+policy on the underlying base table is evaluated against `postgres`, not
+against the actual caller, and is therefore bypassed entirely for anyone
+querying the view.
+
+**Why this is accidental, not load-bearing, confirmed against each view's
+own base table:**
+
+- `public.intent_open_asks` reads from `user_intents`. That table's own
+  `user_intents_public_read` RLS policy requires the caller to be an
+  **active member of the same tenant** as the intent, even for
+  public-visibility rows — i.e. "public" here means "visible tenant-wide,"
+  not "visible to the internet." Querying the view instead of the table
+  bypasses that same-tenant-membership check entirely: an unauthenticated
+  (`anon`) caller could read "public" intents across **every tenant**,
+  which is a real tenant-isolation breach, not a cosmetic gap — the exact
+  invariant Part 1 rule 7 ("Never mix tenant data") exists to protect.
+- `public.local_heroes_weekly` and `public.agent_personas_registry` show
+  the same shape at smaller scale: each reads from a base table carrying
+  its own RLS policy, and the view's missing `security_invoker` silently
+  discards that policy's intent for any caller going through the view
+  instead of the table directly.
+
+Nothing about any of the three views' definitions requires
+`SECURITY DEFINER` semantics (no intentional cross-tenant rollup, no
+privileged aggregation) — this is Postgres's ordinary default for a view
+created by a `service_role`/migration connection, left unset, matching the
+audit doc's own "accidental" branch.
+
+**Fix applied** via `mcp__Supabase__apply_migration`
+(`vtid_03815_fix_security_definer_view_rls_bypass`):
+
+```sql
+alter view public.agent_personas_registry set (security_invoker = on);
+alter view public.intent_open_asks set (security_invoker = on);
+alter view public.local_heroes_weekly set (security_invoker = on);
+```
+
+This is also a pure access-control change — no view definition, column, or
+row was altered; only which privileges the view runs with when queried.
+
+**Verified live via SQL immediately after applying:**
+
+```
+agent_personas_registry: security_invoker_on = true
+intent_open_asks:        security_invoker_on = true
+local_heroes_weekly:     security_invoker_on = true
+```
+
+**What this does NOT cover:** whether any live application code (gateway
+or frontend) queries these views expecting the old owner-privilege
+behavior and would now see fewer/zero rows for a legitimately-scoped
+caller (e.g. a `service_role` connection that previously relied on the
+view to see cross-tenant rows it was *supposed* to see, if such a caller
+exists) — that would be a regression, not a fix. A grep for each view name
+across `services/gateway/src` and `vitana-v1/src` was not performed as
+part of this session's fix; whoever next touches these views should run
+that check as a follow-up, and treat this fix as reversible in the same
+way as the first finding (`ALTER VIEW ... SET (security_invoker = off);`)
+if a legitimate caller turns out to depend on the old bypass behavior.
 
 ## What is NOT yet done / open follow-ups
 
