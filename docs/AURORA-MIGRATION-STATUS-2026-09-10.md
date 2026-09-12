@@ -1691,3 +1691,109 @@ closed before cutover (per Addendum 7), but it is not causing any
 current production or staging behavior to be wrong** — nothing live
 reads Aurora's copy of any of them today. Safe to treat as a scheduled
 pre-cutover task, not an active incident.
+
+## Addendum, 2026-09-12 (12) — CDC root cause sharpened from "auth/tenant error" to a protocol-level proof: Supavisor pooler mode cannot serve DMS logical replication at all
+
+Routine scheduled check-in. Re-verified PR #3087's mergeable state (found
+`dirty` against a `main` that had moved 10 commits ahead since the PR's
+base — merged cleanly, one trivial `.env.example` conflict, both additions
+kept; full gateway suite re-run 859/860 suites, 14,550 tests passing,
+`tsc --noEmit` clean; pushed). PR #1051 (`exafyltd/vitana-v1`) is clean,
+no action needed.
+
+While re-checking DMS state (read-only — `describe-replication-tasks`,
+`describe-endpoints`, CloudWatch log reads; no task created/started/
+modified/deleted), found `vitana-supabase-to-aurora-v3` had failed **today,
+2026-09-12 12:51:33 UTC** — a few hours before this check-in fired, from a
+run this session did not initiate. `LastFailureMessage`: "An internal WAL
+conversational protocol error has occurred." Read the real CloudWatch log
+(`dms-tasks-vitana-dms-prod` / stream `dms-task-6HXJWOLRF5FA3DND3TLMGXHY4I`)
+for what that generic message was hiding:
+
+```
+[SOURCE_CAPTURE]I: Replication slot '6hxjwolrf...' created. XLOG position is '0000027E/39000B10'
+[SOURCE_CAPTURE]I: Queried replication slot ... restart position is ...
+[SOURCE_CAPTURE]E: Failure in executing replication command "IDENTIFY_SYSTEM":
+    ERROR: syntax error at or near "IDENTIFY_SYSTEM" LINE 1: IDENTIFY_SYSTEM ^
+[SOURCE_CAPTURE]E: Failure in execution of 'IDENTIFY SYSTEM'
+[SOURCE_CAPTURE]E: WAL reader terminated with irrecoverable error.
+```
+
+**This is materially more information than every prior session's
+"VPC IPv6 gap / Supavisor `tenant/user not found`" framing carried.** This
+run got PAST authentication entirely — it connected, authenticated, and
+successfully **created a logical replication slot** on the source. It only
+failed on the very next step, the replication-protocol handshake command
+`IDENTIFY_SYSTEM`, which a genuine PostgreSQL walsender always understands.
+Getting a *SQL syntax error* on a replication-protocol command is the
+textbook signature of a **connection pooler that does not implement the
+streaming replication protocol** — it received `IDENTIFY_SYSTEM` and tried
+to parse it as an ordinary SQL statement, exactly the known limitation of
+PgBouncer/Supavisor-style poolers with real Postgres logical replication.
+
+Confirmed via `describe-endpoints`: **every DMS source endpoint this
+project has ever created** (`vitana-source-supabase`, `vitana-src-supabase-v3`,
+`vitana-supabase-source-autopilot`, `vitana-supabase-source-fullload`) points
+at `aws-1-eu-north-1.pooler.supabase.com:5432` (Supabase's Supavisor pooler)
+— **never once at the project's direct, non-pooled Postgres host**
+(`db.inmkhvwdcuyhnxkgfvsb.supabase.co`). The full-load-only tasks
+(`vitana-fullload-only`, `vitana-reload-39-tables`) that this migration's
+585/585-table full load actually succeeded on both used the SAME pooler
+host and worked fine — full load is one-shot bulk `SELECT`s, ordinary SQL
+the pooler handles correctly. CDC is fundamentally different: it needs the
+raw streaming-replication sub-protocol (`IDENTIFY_SYSTEM`,
+`START_REPLICATION`, …), which a pooler in this mode cannot forward.
+
+**This rules out further pooler-connection-string tweaking as a possible
+fix path — no auth format, tenant string, or username variant fixes a
+protocol the pooler doesn't speak at all.** The only real fix is pointing
+DMS's source endpoint at Supabase's direct database host instead of the
+pooler. That host is IPv6-only unless Supabase's IPv4 add-on is purchased
+for this project — which is exactly why every prior session's VPC-IPv6-gap
+finding is not superseded by this, only sharpened: **the missing IPv6
+egress on the DMS replication instance's VPC (`vpc-05958f035e596fe64`) was
+already the real blocker; this addendum adds proof, at the protocol level,
+that there is no pooler-side workaround to route around it.**
+
+**Confirmed this session cannot investigate the VPC side either:**
+`aws ec2 describe-vpcs` on that VPC returned
+`UnauthorizedOperation — ec2:DescribeVpcs`, from the same
+`claude-code-aws-agent` IAM user whose permissions boundary already denies
+`cognito-idp:*` and `iam:List*Policies` (see
+`infra/cognito-migration/README.md`). This session cannot even read the
+VPC's IPv6 CIDR/route-table state, let alone change it.
+
+**The actionable choice for a human with real access, now sharper than
+"ask Supabase support":**
+1. **AWS-side (may not need Supabase involvement at all):** add an IPv6
+   CIDR block + egress-only internet gateway + route to the DMS
+   instance's VPC (`vpc-05958f035e596fe64`, security group
+   `sg-0838b2f2dabe87971`), then create a new DMS source endpoint pointed
+   at `db.inmkhvwdcuyhnxkgfvsb.supabase.co:5432` (direct, not pooled) and
+   retry full-load-and-cdc. This needs `ec2:*Vpc*`/`ec2:*Subnet*`/
+   `ec2:*Ipv6*`/`ec2:*RouteTable*` — an IAM permissions boundary widening,
+   same shape as the Cognito blocker, or a human doing it directly in the
+   AWS console.
+2. **Supabase-side:** purchase/enable the project's IPv4 add-on so
+   `db.inmkhvwdcuyhnxkgfvsb.supabase.co` resolves over IPv4, then the
+   existing VPC (no IPv6 change needed) can reach it directly.
+
+Either path converges on the same DMS-side change: stop pointing any CDC
+task at the pooler host. **Not attempted here** — creating VPC resources or
+new DMS endpoints is exactly the kind of AWS state change this session's
+standing instructions reserve for explicit approval, and this session has
+no path to do it even if approved (no EC2 permissions). Flagging plainly
+and continuing with other read-only verification, per this round's
+instructions, rather than stopping.
+
+**Also re-confirmed with a real parity check, not just a single side:**
+`app_users` row count is exactly `209` on **both** live Supabase
+(`select count(*)` via Supabase MCP) **and** Aurora (`select count(*)` via
+RDS Data API against the `vitana/aurora/prod/claude-readonly` secret) —
+matching, no drift since VTID-03811's fix. This is the same comparison
+`.github/workflows/ALERT-APP-USERS-IDENTITY-DRIFT.yml` (VTID-03811/
+2026-09-10 update #4) automates, just run by hand this round since that
+workflow's `schedule` trigger still can't fire until this branch merges to
+`main` — unchanged blocker, not a new one, but the underlying fact it
+would have reported (209=209, no drift) is now independently confirmed
+live rather than assumed.
