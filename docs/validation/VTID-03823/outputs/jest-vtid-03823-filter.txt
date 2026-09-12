@@ -1,0 +1,38 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/vtid-03823-tasks-board-hygiene.test.ts
+  Age/staleness computation (VTID-03823)
+    ✓ defines computeTaskAgeInfo() and treats >7 days + non-terminal as stale (4 ms)
+    ✓ renders the age badge in the status row, only when a label exists (1 ms)
+  Source filter reuses the VTID-03516 session/autonomous distinction (VTID-03823)
+    ✓ isAutonomousBoardTask() checks metadata.source/autonomous_execution, not a new rule (1 ms)
+  Filter chips wired into the board filter chain (VTID-03823)
+    ✓ age/owner/source filters are applied before a task is kept on the board (1 ms)
+    ✓ renderTasksView() renders a chip row with Age/Owner/Source groups (1 ms)
+    ✓ clicking the already-active chip clears that filter (toggle, not radio-lock)
+  Bulk-select + archive (VTID-03823)
+    ✓ the select checkbox only renders for Scheduled-column cards
+    ✓ bulkArchiveSelectedTasks() confirms once and reuses the existing per-task DELETE endpoint, not a new bulk/reaper endpoint (2 ms)
+    ✓ the bulk-action bar only renders when at least one task is selected (1 ms)
+  Drag-and-drop Scheduled -> In Progress (VTID-03823)
+    ✓ cards are draggable only in the Scheduled column
+    ✓ only the "In Progress" column drop wires to a real mutation (5 ms)
+    ✓ handleTaskDropIntoInProgress() enforces the same spec-approval gate as Manual Start, and reuses its exact PATCH call
+  CSS additions (VTID-03823)
+    ✓ defines the filter chip, bulk-bar, drop-target, checkbox, and age-badge classes (1 ms)
+  Pre-existing zero-height status-row bug, fixed as part of shipping the age badge (VTID-03823)
+    ✓ the status row no longer collapses to zero height (no overflow:hidden, flex-shrink:0) (1 ms)
+    ✓ the card height cap was raised enough to fit status-row + spec-row + stage-timeline without any of them shrinking
+
+Test Suites: 1 passed, 1 total
+Tests:       15 passed, 15 total
+Snapshots:   0 total
+Time:        0.484 s, estimated 1 s
+Ran all test suites matching /test\/vtid-03823-tasks-board-hygiene.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
