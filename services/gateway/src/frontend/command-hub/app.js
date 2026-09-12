@@ -3231,6 +3231,13 @@ const state = {
     activeExecutionsPollInterval: null,
     taskSearchQuery: '',
     taskDateFilter: '',
+    // VTID-03823: Tasks board hygiene filter chips + bulk-select state.
+    // '' means "no filter" for each; taskMultiSelectIds is Scheduled-only
+    // (mirrors the existing single-task Delete button's own column gate).
+    taskFilterAge: '',      // '' | 'today' | 'week' | 'stale'
+    taskFilterOwner: '',    // '' | 'claimed' | 'unclaimed'
+    taskFilterSource: '',   // '' | 'session' | 'autonomous'
+    taskMultiSelectIds: [],
     // VTID-01079: Board metadata for "Load More" completed tasks
     boardMeta: null,
     // DEV-COMHU-2025-0013: Drawer spec state for stable textarea editing
@@ -7772,6 +7779,144 @@ function renderModuleContent(moduleKey, tab) {
     return container;
 }
 
+// --- VTID-03823: Tasks board hygiene helpers ---
+
+/**
+ * Age/staleness info for a task card. 'stale' means no activity signal
+ * (createdAt) newer than 7 days AND not terminal — a terminal (completed)
+ * task sitting for a week is normal, not a hygiene problem.
+ */
+function computeTaskAgeInfo(task) {
+    if (!task || !task.createdAt) return { label: '', stale: false, days: null };
+    var created = new Date(task.createdAt);
+    if (isNaN(created.getTime())) return { label: '', stale: false, days: null };
+    var ms = Date.now() - created.getTime();
+    var days = ms / (1000 * 60 * 60 * 24);
+    var label;
+    if (days < 1) {
+        var hours = Math.max(1, Math.round(days * 24));
+        label = hours + 'h';
+    } else {
+        label = Math.round(days) + 'd';
+    }
+    var stale = days > 7 && !task.is_terminal;
+    return { label: label, stale: stale, days: days };
+}
+
+/**
+ * VTID-03516's session-vs-autonomous distinction, read client-side for the
+ * "source" filter chip. Mirrors isAutonomousExecutionTask()'s own allowlist
+ * (routes/worker-orchestrator.ts) rather than inventing a new rule: a task
+ * is autonomous-plane work only if metadata says so explicitly.
+ */
+function isAutonomousBoardTask(task) {
+    var meta = (task && task.metadata) || {};
+    return meta.source === 'self-healing' || meta.autonomous_execution === true;
+}
+
+/** VTID-03823: toggle a task's bulk-select checkbox state. */
+function toggleTaskMultiSelect(vtid) {
+    var idx = state.taskMultiSelectIds.indexOf(vtid);
+    if (idx === -1) {
+        state.taskMultiSelectIds.push(vtid);
+    } else {
+        state.taskMultiSelectIds.splice(idx, 1);
+    }
+    renderApp();
+}
+
+/**
+ * VTID-03823: bulk-archive the selected tasks by reusing the EXISTING,
+ * governed single-task delete semantics (VTID-01052's
+ * `DELETE /api/v1/oasis/tasks/:vtid` — soft-deletes, voids the VTID, logs
+ * an OASIS event) one call per task, not the VTID-03818-fixed reaper path.
+ * Scheduled-column only, matching that endpoint's own INVALID_STATE gate
+ * for non-scheduled tasks.
+ */
+async function bulkArchiveSelectedTasks() {
+    var ids = state.taskMultiSelectIds.slice();
+    if (ids.length === 0) return;
+    var confirmMsg = 'Archive ' + ids.length + ' scheduled task(s)?\n\n' +
+        'This will remove each from the Scheduled column, void its VTID\n' +
+        'permanently, and log the deletion in OASIS. This cannot be undone.';
+    if (!confirm(confirmMsg)) return;
+
+    var succeeded = [];
+    var failed = [];
+    for (var i = 0; i < ids.length; i++) {
+        var vtid = ids[i];
+        try {
+            var response = await fetch('/api/v1/oasis/tasks/' + vtid, {
+                method: 'DELETE',
+                headers: buildContextHeaders({ 'Content-Type': 'application/json' })
+            });
+            var result = await response.json();
+            if (result.ok) {
+                localStorage.removeItem('vitana.taskSpec.' + vtid);
+                clearTaskStatusOverride(vtid);
+                succeeded.push(vtid);
+            } else {
+                failed.push(vtid);
+            }
+        } catch (e) {
+            console.error('[VTID-03823] Bulk archive failed for', vtid, e);
+            failed.push(vtid);
+        }
+    }
+
+    state.taskMultiSelectIds = [];
+    await fetchTasks();
+
+    if (failed.length === 0) {
+        showToast('Archived ' + succeeded.length + ' task(s)', 'success');
+    } else {
+        showToast('Archived ' + succeeded.length + ', failed ' + failed.length + ' (' + failed.join(', ') + ')', 'warning');
+    }
+}
+
+/**
+ * VTID-03823: drag-and-drop from Scheduled into In Progress. Deliberately
+ * the ONLY drop target wired to a real mutation — it reuses the exact
+ * "Manual Start" call (PATCH .../oasis/tasks/:vtid {status:'in_progress'}),
+ * including its spec-approval gate and confirmation prompt, rather than
+ * inventing a new transition. Dropping onto Completed is not wired to
+ * anything (see docs/validation/VTID-03823 "Deliberately NOT attempted") —
+ * there is no existing manual "mark completed" endpoint to reuse, and
+ * completion is normally OASIS/executor-driven, not a manual board action.
+ */
+async function handleTaskDropIntoInProgress(vtid) {
+    var task = state.tasks.find(function (t) { return t.vtid === vtid; });
+    if (!task) return;
+    var currentColumn = mapStatusToColumnWithOverride(task.vtid, task.status, task.oasisColumn);
+    if (currentColumn !== 'Scheduled') return; // only Scheduled -> In Progress is wired
+
+    var specStatus = task.spec_status || 'missing';
+    if (specStatus !== 'approved') {
+        showToast('Cannot start: spec must be approved first', 'warning');
+        return;
+    }
+    if (!confirm('Move ' + vtid + ' to In Progress for manual work?\n\nThis will NOT trigger autonomous execution — you will work on this task yourself.')) {
+        return;
+    }
+    try {
+        var response = await fetch('/api/v1/oasis/tasks/' + vtid, {
+            method: 'PATCH',
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ status: 'in_progress' })
+        });
+        var result = await response.json();
+        if (result.ok) {
+            await fetchTasks();
+            showToast('Moved ' + vtid + ' to In Progress', 'success');
+        } else {
+            showToast('Move failed: ' + (result.message || result.error || 'Unknown error'), 'error');
+        }
+    } catch (e) {
+        console.error('[VTID-03823] Drag-drop status move failed:', e);
+        showToast('Move failed: Network error', 'error');
+    }
+}
+
 function renderTasksView() {
     const container = document.createElement('div');
     container.className = 'tasks-container';
@@ -7863,6 +8008,81 @@ function renderTasksView() {
 
     container.appendChild(toolbar);
 
+    // VTID-03823: Filter chip row (age / owner / source). Each is an
+    // independent, combinable toggle — clicking the active chip again
+    // clears that filter. Status is already the board's column split, so
+    // it isn't duplicated here as a chip.
+    const chipRow = document.createElement('div');
+    chipRow.className = 'task-filter-chip-row';
+
+    function makeChipGroup(label, options, stateKey) {
+        const group = document.createElement('div');
+        group.className = 'task-filter-chip-group';
+        const groupLabel = document.createElement('span');
+        groupLabel.className = 'task-filter-chip-group-label';
+        groupLabel.textContent = label + ':';
+        group.appendChild(groupLabel);
+        options.forEach(function (opt) {
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.className = 'task-filter-chip' + (state[stateKey] === opt.value ? ' task-filter-chip-active' : '');
+            chip.textContent = opt.text;
+            chip.onclick = function () {
+                state[stateKey] = (state[stateKey] === opt.value) ? '' : opt.value;
+                renderApp();
+            };
+            group.appendChild(chip);
+        });
+        return group;
+    }
+
+    chipRow.appendChild(makeChipGroup('Age', [
+        { value: 'today', text: 'Today' },
+        { value: 'week', text: 'This week' },
+        { value: 'stale', text: 'Stale (>7d)' }
+    ], 'taskFilterAge'));
+    chipRow.appendChild(makeChipGroup('Owner', [
+        { value: 'claimed', text: 'Claimed' },
+        { value: 'unclaimed', text: 'Unclaimed' }
+    ], 'taskFilterOwner'));
+    chipRow.appendChild(makeChipGroup('Source', [
+        { value: 'session', text: 'Session' },
+        { value: 'autonomous', text: 'Autonomous' }
+    ], 'taskFilterSource'));
+
+    container.appendChild(chipRow);
+
+    // VTID-03823: Bulk-action bar, shown only while at least one Scheduled
+    // task is checked.
+    if (state.taskMultiSelectIds.length > 0) {
+        const bulkBar = document.createElement('div');
+        bulkBar.className = 'task-bulk-action-bar';
+
+        const bulkLabel = document.createElement('span');
+        bulkLabel.className = 'task-bulk-action-label';
+        bulkLabel.textContent = state.taskMultiSelectIds.length + ' selected';
+        bulkBar.appendChild(bulkLabel);
+
+        const archiveBtn = document.createElement('button');
+        archiveBtn.type = 'button';
+        archiveBtn.className = 'btn btn-danger task-bulk-archive-btn';
+        archiveBtn.textContent = 'Archive selected';
+        archiveBtn.onclick = function () { bulkArchiveSelectedTasks(); };
+        bulkBar.appendChild(archiveBtn);
+
+        const clearBtn = document.createElement('button');
+        clearBtn.type = 'button';
+        clearBtn.className = 'btn task-bulk-clear-btn';
+        clearBtn.textContent = 'Clear selection';
+        clearBtn.onclick = function () {
+            state.taskMultiSelectIds = [];
+            renderApp();
+        };
+        bulkBar.appendChild(clearBtn);
+
+        container.appendChild(bulkBar);
+    }
+
     // Golden Task Board
     const board = document.createElement('div');
     board.className = 'task-board';
@@ -7896,6 +8116,28 @@ function renderTasksView() {
         // VTID-01002: Mark as scroll-retaining container
         content.dataset.scrollRetain = 'true';
         content.dataset.scrollKey = 'tasks-' + colName.toLowerCase().replace(/\s+/g, '-');
+
+        // VTID-03823: drag-and-drop drop zone. Only "In Progress" is wired
+        // to a real mutation (Scheduled -> In Progress, reusing Manual
+        // Start's own governed call+gate) — see handleTaskDropIntoInProgress.
+        // Every column still accepts the dragover so the drag cursor/
+        // highlight is consistent, but Scheduled/Completed drops are no-ops.
+        content.ondragover = function (e) {
+            e.preventDefault();
+            content.classList.add('column-content-drop-target');
+        };
+        content.ondragleave = function () {
+            content.classList.remove('column-content-drop-target');
+        };
+        content.ondrop = function (e) {
+            e.preventDefault();
+            content.classList.remove('column-content-drop-target');
+            const droppedVtid = e.dataTransfer.getData('text/plain');
+            if (!droppedVtid) return;
+            if (colName === 'In Progress') {
+                handleTaskDropIntoInProgress(droppedVtid);
+            }
+        };
 
         // Filter tasks
         // VTID-01022: Human task filter FIRST - exclude ALL system/CI/CD artifacts
@@ -7957,6 +8199,23 @@ function renderTasksView() {
                 const taskRoles = getTaskTargetRoles(t);
                 if (!taskRoles || !taskRoles.includes(state.taskRoleFilter)) return false;
             }
+
+            // VTID-03823: Age filter chip
+            if (state.taskFilterAge) {
+                const ageInfo = computeTaskAgeInfo(t);
+                if (ageInfo.days === null) return false;
+                if (state.taskFilterAge === 'today' && ageInfo.days >= 1) return false;
+                if (state.taskFilterAge === 'week' && ageInfo.days >= 7) return false;
+                if (state.taskFilterAge === 'stale' && !ageInfo.stale) return false;
+            }
+
+            // VTID-03823: Owner filter chip (claimed_by presence)
+            if (state.taskFilterOwner === 'claimed' && !t.claimed_by) return false;
+            if (state.taskFilterOwner === 'unclaimed' && t.claimed_by) return false;
+
+            // VTID-03823: Source filter chip (session vs autonomous plane, VTID-03516)
+            if (state.taskFilterSource === 'session' && isAutonomousBoardTask(t)) return false;
+            if (state.taskFilterSource === 'autonomous' && !isAutonomousBoardTask(t)) return false;
 
             return true;
         });
@@ -8028,6 +8287,17 @@ function createTaskCard(task) {
         card.dataset.terminal = 'true';
         card.dataset.outcome = task.terminal_outcome || '';
     }
+
+    // VTID-03823: draggable source, Scheduled column only (the only column
+    // with a wired drop target — see handleTaskDropIntoInProgress).
+    if (columnStatus === 'Scheduled') {
+        card.draggable = true;
+        card.ondragstart = function (e) {
+            e.dataTransfer.setData('text/plain', task.vtid);
+            e.dataTransfer.effectAllowed = 'move';
+        };
+    }
+
     card.onclick = () => {
         state.selectedTask = task;
         state.selectedTaskDetail = null;
@@ -8043,6 +8313,21 @@ function createTaskCard(task) {
             startExecutionStatusPolling(task.vtid);
         }
     };
+
+    // VTID-03823: bulk-select checkbox, Scheduled column only (mirrors the
+    // single-task Delete button's own column gate, and bulkArchiveSelectedTasks
+    // only knows how to archive Scheduled tasks).
+    if (columnStatus === 'Scheduled') {
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'task-card-select-checkbox';
+        checkbox.checked = state.taskMultiSelectIds.indexOf(task.vtid) !== -1;
+        checkbox.onclick = function (e) {
+            e.stopPropagation();
+            toggleTaskMultiSelect(task.vtid);
+        };
+        card.appendChild(checkbox);
+    }
 
     // VTID-01005: Title (larger, prominent)
     // VTID-01041: Use effective title (localStorage override > server > fallback)
@@ -8091,6 +8376,20 @@ function createTaskCard(task) {
     }
     statusPill.textContent = statusText;
     statusRow.appendChild(statusPill);
+
+    // VTID-03823: staleness/age badge — highlights hygiene sweep candidates
+    // (non-terminal, no activity in >7 days) without hiding the age of a
+    // normal, recent task.
+    var ageInfo = computeTaskAgeInfo(task);
+    if (ageInfo.label) {
+        var ageBadge = document.createElement('span');
+        ageBadge.className = 'task-card-age-badge' + (ageInfo.stale ? ' task-card-age-badge-stale' : '');
+        ageBadge.textContent = ageInfo.stale ? 'STALE · ' + ageInfo.label : ageInfo.label;
+        ageBadge.title = ageInfo.stale
+            ? 'No activity in over 7 days — consider archiving'
+            : 'Created ' + ageInfo.label + ' ago';
+        statusRow.appendChild(ageBadge);
+    }
 
     // VTID-01841: Retry badge for tasks that previously failed but are back in queue
     if (task.failure_count > 0 && !task.is_terminal) {

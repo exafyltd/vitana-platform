@@ -490,6 +490,98 @@ body {
   gap: 0.75rem;
 }
 
+/* VTID-03823: drag-and-drop highlight while a card is dragged over a column */
+.column-content-drop-target {
+  background: rgba(59, 130, 246, 0.08);
+  outline: 2px dashed rgba(59, 130, 246, 0.5);
+  outline-offset: -4px;
+}
+
+/* VTID-03823: Tasks board hygiene — filter chips */
+.task-filter-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.task-filter-chip-group {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.task-filter-chip-group-label {
+  font-size: 0.72rem;
+  color: var(--color-text-secondary, #9aa0a6);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.task-filter-chip {
+  background: #232e42;
+  color: #c7d0dc;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  padding: 0.2rem 0.7rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.task-filter-chip:hover {
+  background: #2d3b52;
+}
+
+.task-filter-chip-active {
+  background: #2a7bff;
+  border-color: #2a7bff;
+  color: #fff;
+}
+
+/* VTID-03823: bulk-action bar */
+.task-bulk-action-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1.5rem;
+  background: rgba(42, 123, 255, 0.12);
+  border-bottom: 1px solid rgba(42, 123, 255, 0.3);
+}
+
+.task-bulk-action-label {
+  font-size: 0.8rem;
+  color: #c7d0dc;
+  font-weight: 600;
+}
+
+/* VTID-03823: per-card select checkbox */
+.task-card-select-checkbox {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+/* VTID-03823: staleness/age badge on the status row */
+.task-card-age-badge {
+  font-size: 0.68rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #9aa0a6;
+}
+
+.task-card-age-badge-stale {
+  background: rgba(255, 106, 106, 0.15);
+  color: #ff8a8a;
+  font-weight: 600;
+}
+
 .task-card {
   background: #253045;
   /* Slightly lighter than sidebar */
@@ -9504,9 +9596,16 @@ body {
   padding: 0.625rem 0.75rem;
 }
 
+/* VTID-03823: raised from 100px. At 100px, a card with a status pill + role
+   badge already left no room for the spec-row/stage-timeline below without
+   one of them collapsing (see the status-row fix below) — adding a third
+   item (the new age/staleness badge) to that same row made the deficit
+   worse. 148px is the measured natural height of a fully-populated
+   Scheduled card (title + vtid + status row w/ 3 badges + spec row + stage
+   timeline) with no row forced to shrink. */
 .task-card-enhanced {
   min-height: 72px;
-  max-height: 100px;
+  max-height: 148px;
 }
 
 /* Reduce title font size and margins */
@@ -9538,13 +9637,23 @@ body {
   padding: 1px 6px;
 }
 
-/* Status row: single line flex, no wrap */
+/* Status row: single line flex, no wrap.
+   VTID-03823: `overflow: hidden` here made this row's flexbox automatic
+   minimum size resolve to 0 (CSS Flexbox spec: an item's auto min-size is
+   0 once its `overflow` is anything but `visible`), so inside the
+   flex-column `.task-card` this row was the ONLY thing in the whole card
+   that could shrink to nothing — measured at 0px actual height (fully
+   invisible: status pill, role badge, and the new age badge all rendered
+   with zero-height clipping) on origin/main, before this VTID ever
+   touched this file. `flex-shrink: 0` fixes it at the row level; the
+   `.task-card-enhanced` max-height bump above fixes the underlying content
+   budget so no OTHER row has to take the deficit instead. */
 .task-card-status-row {
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
   gap: 6px;
-  overflow: hidden;
+  flex-shrink: 0;
   margin-bottom: 0.25rem;
 }
 
