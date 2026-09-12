@@ -1156,6 +1156,72 @@ answers yes, and exits) — a `reload-tables` call issued even slightly
 after that restart can silently land on a task that has already gone
 back to `stopped`, accepted by the API but never processed (the affected
 tables just sit at `Before load`/`Table is being reloaded` with no
-progress). The reliable pattern: start the task, poll status in a tight
-loop (0.5s) until `running`, and fire `reload-tables` immediately in the
-same script — not as a separate, later command.
+progress). **This turned out to be worse than a timing nuisance: it was
+observed to silently no-op even when the API call landed while the task
+was genuinely `running`** — a `reload-tables` call can be accepted and
+show tables transition to "Before load"/"Table is being reloaded", then
+the task exits before ever actually dispatching a DROP/LOAD for them,
+leaving them stuck exactly where they started. **The only mechanism that
+reliably worked every time in the end was `start-replication-task-type
+reload-target`** — reloading the ENTIRE table set, not a scoped subset —
+which genuinely re-enters the full-load engine rather than the
+ambiguous "resume" path. Scoped `reload-tables` did work some of the
+time (notably for the original 29-table batch), so it is not
+categorically broken — just unreliable enough that `reload-target`
+should be the fallback the moment a scoped retry doesn't visibly
+progress within ~30s, rather than repeatedly re-attempting the scoped
+path.
+
+## Addendum, 2026-09-12 continued (4) — LOB fix confirmed working; final tally is 566-568/571, with 3 permanent cross-table RLS blockers identified precisely (not just 1).
+
+A full `reload-target` (all 571 tables, not scoped) with `LobMaxSize`
+raised to 100MB completed: **566/571 loaded, 5 errored.** This confirms
+the LOB truncation fix worked — 9 of the original 13 LOB-affected tables
+(`bootstrap_cache`, `journey_checklist_versions`,
+`autopilot_recommendations`, `voice_architecture_reports`,
+`oasis_events` — 483,619 rows, the largest table in this failing set —
+`ai_messages`, `dev_autopilot_signals`, `dev_autopilot_worker_queue`,
+`global_message_threads`) now load cleanly with real data.
+
+**The 5 remaining errors are THREE separate permanent blockers, not one:**
+
+1. **`memberships`** — already documented above: blocked by
+   `user_intents_public_read`/`user_intents_tenant_read`, two policies
+   on the excluded `user_intents` table that reference `memberships` and
+   will never be dropped by this task.
+
+2. **`global_community_events` ⟷ `event_co_creators` — a genuine
+   circular cross-table RLS dependency, newly found.** `pg_depend` shows
+   **both directions**: `event_co_creators` carries policies
+   ("Event creators can add/remove co-creators") referencing
+   `global_community_events`, AND `global_community_events` carries
+   policies ("Community users can update/delete events they created or
+   co-create") referencing `event_co_creators`. Both tables ARE included
+   in this task's mapping (unlike `user_intents`), so in principle both
+   get dropped and recreated eventually — but DMS drops each table
+   **independently**, and whichever one it attempts first is blocked by
+   the other's still-existing policy. No number of retries or reorderings
+   fixes a true two-way cycle with bare `DROP TABLE` (no `CASCADE`) — this
+   is structurally unfixable by retrying, unlike the earlier one-way
+   ordering races that a second pass legitimately cleared.
+   **Needs a human to drop all 4 policies (2 per table) before the next
+   reload of these two tables specifically, then recreate all 4
+   afterward** — blocked here by the same `[Security Weaken]` classifier
+   restriction as `memberships`. Exact policy text not yet captured in
+   this doc (follow-up for whoever picks this up, same `pg_get_expr()`
+   method as the `memberships`/`user_intents` pair above).
+
+3. **`conversation_messages` and `reminders`** — `pg_depend` shows
+   **zero** cross-table policy dependency for either, consistent with a
+   genuine ordering-race artifact rather than a permanent blocker (like
+   the 15 tables the first two-pass round already cleared this way). A
+   third scoped `reload-tables` retry was in flight as of this addendum
+   — outcome to be confirmed by whoever next reads this doc, or by a
+   subsequent addendum in the same session.
+
+**Practical takeaway for the eventual cutover-time final catch-up load:**
+budget for at least one manual, human-run SQL step (drop + recreate the
+6 policies across `user_intents`/`global_community_events`/
+`event_co_creators`) rather than assuming a fully automatic DMS pass will
+ever clear 100% of tables on its own — these are structural properties of
+the schema's own RLS policy graph, not transient migration bugs.
