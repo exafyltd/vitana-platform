@@ -259,6 +259,29 @@ function extractIdentity(payload: jose.JWTPayload): SupabaseIdentity {
 }
 
 /**
+ * VTID-03827/B4: Normalize the raw JWT payload before it is ever exposed as
+ * `req.auth_raw_claims`, so `sub` always equals `identity.user_id`.
+ *
+ * Why this exists: `req.auth_raw_claims` is forwarded verbatim into Aurora's
+ * `request.jwt.claims` session GUC by `withAuroraRlsContext()`
+ * (services/aurora-client.ts), reproducing PostgREST's own behavior so RLS
+ * policies using `auth.uid()` (which reads `sub` straight out of that GUC)
+ * keep working unmodified. For a Supabase-signed token this is a no-op —
+ * `extractIdentity()` already sets `identity.user_id = payload.sub`. For a
+ * Cognito-signed ID token it is NOT a no-op: Cognito assigns its own random
+ * `sub`, and `extractCognitoIdentity()` resolves the real (legacy Supabase)
+ * user id from the `custom:legacy_user_id` claim instead. Without this
+ * normalization, `auth.uid()` would silently resolve to Cognito's `sub` for
+ * every migrated user, breaking any `auth.uid() = user_id`-shaped RLS policy
+ * — the token would verify and authenticate fine, so the failure mode is a
+ * wrong-owner row match/mismatch inside Postgres, not an auth error.
+ */
+function claimsForRlsContext(payload: jose.JWTPayload, identity: SupabaseIdentity): jose.JWTPayload {
+  if (payload.sub === identity.user_id) return payload;
+  return { ...payload, sub: identity.user_id };
+}
+
+/**
  * VTID-ORBC: Verify a JWT against all configured secrets.
  * Tries SUPABASE_JWT_SECRET (Platform) first, then LOVABLE_JWT_SECRET (Lovable).
  * Returns identity + source on first successful verification.
@@ -277,7 +300,7 @@ export async function verifyAndExtractIdentity(
       });
       const identity = extractIdentity(payload);
       console.log(`[VTID-ORBC] JWT verified via ${source} secret: user=${identity.user_id}`);
-      return { identity, claims: payload, auth_source: source };
+      return { identity, claims: claimsForRlsContext(payload, identity), auth_source: source };
     } catch (_error: any) {
       // Continue to next secret
     }
@@ -291,7 +314,7 @@ export async function verifyAndExtractIdentity(
       const { payload } = await jose.jwtVerify(token, jwks, { algorithms: ['ES256'] });
       const identity = extractIdentity(payload);
       console.log(`[VTID-03292] JWT verified via JWKS (ES256): user=${identity.user_id}`);
-      return { identity, claims: payload, auth_source: 'jwks' };
+      return { identity, claims: claimsForRlsContext(payload, identity), auth_source: 'jwks' };
     } catch (_error: any) {
       // fall through to failure
     }
@@ -318,7 +341,7 @@ export async function verifyAndExtractIdentity(
       }
       const identity = extractCognitoIdentity(payload);
       console.log(`[VTID-03827] JWT verified via Cognito JWKS (RS256): user=${identity.user_id}`);
-      return { identity, claims: payload, auth_source: 'cognito' };
+      return { identity, claims: claimsForRlsContext(payload, identity), auth_source: 'cognito' };
     } catch (_error: any) {
       // fall through to failure
     }

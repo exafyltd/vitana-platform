@@ -75,6 +75,7 @@ import {
   requireAdminAuth,
   resolveVitanaId,
   invalidateVitanaIdCache,
+  verifyAndExtractIdentity,
 } from '../../src/middleware/auth-supabase-jwt';
 import { upsertActiveDay } from '../../src/services/guide/active-usage';
 
@@ -312,6 +313,79 @@ describe('auth-supabase-jwt middleware', () => {
       const res = await request(app).get('/auth').set('Authorization', 'Bearer any-aud');
 
       expect(res.status).toBe(200);
+    });
+  });
+
+  // =========================================================================
+  // claims.sub normalization for Aurora RLS (B4) — VTID-03827 follow-up
+  //
+  // `verifyAndExtractIdentity()`'s `claims` return value is forwarded
+  // verbatim into Aurora's `request.jwt.claims` session GUC by
+  // withAuroraRlsContext() (services/aurora-client.ts), which Postgres's
+  // auth.uid() reads `sub` out of. A Cognito ID token's own `sub` is
+  // Cognito's random UUID, not the legacy Supabase user id — these tests
+  // pin that the returned `claims.sub` always matches `identity.user_id`,
+  // regardless of which provider signed the token.
+  // =========================================================================
+
+  describe('claims.sub normalization for Aurora RLS (B4)', () => {
+    const cognitoClaims = (sub: string, overrides: Record<string, unknown> = {}) => ({
+      sub,
+      token_use: 'id',
+      email: 'migrated@example.com',
+      aud: 'test-app-client-id',
+      exp: 1893456000,
+      iat: 1893452400,
+      'custom:legacy_user_id': 'legacy-uuid-123',
+      ...overrides,
+    });
+
+    it('overwrites claims.sub with the legacy user id for a Cognito token', async () => {
+      delete process.env.SUPABASE_JWT_SECRET;
+      process.env.COGNITO_USER_POOL_ID = 'eu-central-1_TestPool';
+      process.env.COGNITO_REGION = 'eu-central-1';
+      process.env.COGNITO_APP_CLIENT_ID = 'test-app-client-id';
+      (jose.createRemoteJWKSet as jest.Mock).mockReturnValue('cognito-jwks-sentinel');
+      mockVerifiedJwt(cognitoClaims('cognito-random-sub-abc'));
+
+      const result = await verifyAndExtractIdentity('cognito-token');
+
+      expect(result).not.toBeNull();
+      expect(result!.identity.user_id).toBe('legacy-uuid-123');
+      // The bug this pins: without normalization this would be
+      // 'cognito-random-sub-abc' (Cognito's own sub), breaking
+      // auth.uid() = user_id RLS policies for every migrated user.
+      expect(result!.claims.sub).toBe('legacy-uuid-123');
+      expect(result!.claims.sub).not.toBe('cognito-random-sub-abc');
+      // Every other claim is preserved untouched.
+      expect(result!.claims.email).toBe('migrated@example.com');
+      expect(result!.claims['custom:legacy_user_id']).toBe('legacy-uuid-123');
+    });
+
+    it('leaves claims.sub as the Cognito sub when there is no legacy_user_id to map to', async () => {
+      delete process.env.SUPABASE_JWT_SECRET;
+      process.env.COGNITO_USER_POOL_ID = 'eu-central-1_TestPool';
+      process.env.COGNITO_REGION = 'eu-central-1';
+      delete process.env.COGNITO_APP_CLIENT_ID;
+      (jose.createRemoteJWKSet as jest.Mock).mockReturnValue('cognito-jwks-sentinel');
+      mockVerifiedJwt(cognitoClaims('cognito-random-sub-xyz', { 'custom:legacy_user_id': undefined }));
+
+      const result = await verifyAndExtractIdentity('cognito-token');
+
+      expect(result).not.toBeNull();
+      expect(result!.identity.user_id).toBe('cognito-random-sub-xyz');
+      expect(result!.claims.sub).toBe('cognito-random-sub-xyz');
+    });
+
+    it('is a no-op for a Supabase HS256 token (sub already equals identity.user_id)', async () => {
+      const sub = uniqueSub('rls-noop');
+      mockVerifiedJwt(claims(sub));
+
+      const result = await verifyAndExtractIdentity('good-token');
+
+      expect(result).not.toBeNull();
+      expect(result!.identity.user_id).toBe(sub);
+      expect(result!.claims.sub).toBe(sub);
     });
   });
 

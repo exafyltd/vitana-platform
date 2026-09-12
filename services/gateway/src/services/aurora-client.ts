@@ -149,7 +149,20 @@ export function getAuroraPool(): Pool | null {
 
 export interface AuroraRlsContext {
   /** Raw JWT payload — serialized verbatim into request.jwt.claims, same as
-   *  PostgREST forwards it. Pass verifyAndExtractIdentity()'s `claims`. */
+   *  PostgREST forwards it. Pass verifyAndExtractIdentity()'s `claims` (or
+   *  a request's `req.auth_raw_claims`), never the token's own decoded
+   *  payload directly.
+   *
+   *  VTID-03827/B4: for a Cognito-issued ID token, the token's own `sub` is
+   *  Cognito's own random UUID, NOT the legacy Supabase user id — Postgres's
+   *  `auth.uid()` reads `sub` straight out of this blob, so passing the raw
+   *  token payload would silently break every `auth.uid() = user_id`-shaped
+   *  RLS policy for a migrated user (wrong id, not an error). This is why
+   *  `claims` must come from `verifyAndExtractIdentity()`'s return value:
+   *  that function's `claimsForRlsContext()` step (auth-supabase-jwt.ts)
+   *  already overwrites `sub` with `identity.user_id` — the correct id
+   *  regardless of which provider signed the token. For a Supabase-signed
+   *  token this is a no-op (`identity.user_id` already equals `payload.sub`). */
   claims: JWTPayload | null;
   /** JWT `role` claim, e.g. 'authenticated' or 'service_role'. Falls back to
    *  no SET ROLE (connection's default privileges) if null/unrecognized —
