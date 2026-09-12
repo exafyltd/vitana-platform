@@ -20,6 +20,7 @@
 import { Router, Request, Response } from 'express';
 import { requireAuth, requireTenant, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { getSupabase } from '../lib/supabase';
+import * as repo from './community-members-repository';
 
 const router = Router();
 
@@ -52,16 +53,10 @@ router.get('/community/members/count', requireAuth, requireTenant, async (req: R
     return res.status(500).json({ ok: false, error: 'supabase_unavailable' });
   }
 
-  const { data: hiddenRows } = await supabase
-    .from('global_community_profiles')
-    .select('user_id')
-    .eq('is_visible', false);
+  const { data: hiddenRows } = await repo.fetchHiddenCommunityProfileUserIds(supabase);
   const hiddenIds = new Set<string>((hiddenRows || []).map((r: any) => String(r.user_id)));
 
-  const { count, error } = await supabase
-    .from('profiles')
-    .select('user_id', { count: 'exact', head: true })
-    .neq('user_id', identity.user_id);
+  const { count, error } = await repo.countProfilesExcludingSelf(supabase, identity.user_id);
 
   if (error) {
     console.error('[E6] community/members/count failed', error);
@@ -97,33 +92,15 @@ router.get('/community/members', requireAuth, requireTenant, async (req: Request
   // (PostgREST doesn't expose a FK between profiles and
   // global_community_profiles to inner-join here). Default for new signups
   // is is_visible=true so the hidden list is normally tiny / empty.
-  const { data: hiddenRows } = await supabase
-    .from('global_community_profiles')
-    .select('user_id')
-    .eq('is_visible', false);
+  const { data: hiddenRows } = await repo.fetchHiddenCommunityProfileUserIds(supabase);
   const hiddenIds = new Set<string>((hiddenRows || []).map((r: any) => String(r.user_id)));
 
-  let q = supabase
-    .from('profiles')
-    .select(
-      'user_id, vitana_id, registration_seq, display_name, full_name, avatar_url, location, dance_preferences, created_at'
-    )
-    .neq('user_id', identity.user_id);
-
-  if (sort === 'newest') {
-    q = q.order('registration_seq', { ascending: false, nullsFirst: false });
-    if (cursor) q = q.lt('registration_seq', parseInt(cursor, 10));
-  } else if (sort === 'oldest') {
-    q = q.order('registration_seq', { ascending: true, nullsFirst: true });
-    if (cursor) q = q.gt('registration_seq', parseInt(cursor, 10));
-  } else {
-    q = q.order('display_name', { ascending: true });
-    if (cursor) q = q.gt('display_name', cursor);
-  }
-
-  q = q.limit(limit);
-
-  const { data, error } = await q;
+  const { data, error } = await repo.buildMembersListQuery(supabase, {
+    selfUserId: identity.user_id,
+    sort,
+    cursor,
+    limit,
+  });
   if (error) {
     console.error('[VTID-DANCE-D4] community/members query failed', error);
     return res.status(500).json({ ok: false, error: error.message });

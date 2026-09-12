@@ -15,6 +15,7 @@
  */
 import { getSupabase } from '../../lib/supabase';
 import type { DelegationProviderId } from './types';
+import * as repo from './budget-repository';
 
 const LOG_PREFIX = '[orb/delegation/budget]';
 
@@ -43,12 +44,7 @@ export async function checkBudget(input: BudgetCheckInput): Promise<BudgetCheckR
   // Pull the cap (tenant-scoped policy)
   let capUsd: number | null = null;
   if (input.tenantId) {
-    const { data: policy, error: policyErr } = await supabase
-      .from('ai_provider_policies')
-      .select('cost_cap_usd_month')
-      .eq('tenant_id', input.tenantId)
-      .eq('provider', input.providerId)
-      .maybeSingle();
+    const { data: policy, error: policyErr } = await repo.fetchAiProviderPolicyCap(supabase, input.tenantId, input.providerId);
     if (policyErr) {
       console.warn(`${LOG_PREFIX} policy lookup failed: ${policyErr.message}`);
     } else if (policy?.cost_cap_usd_month != null) {
@@ -68,12 +64,7 @@ export async function checkBudget(input: BudgetCheckInput): Promise<BudgetCheckR
   }
 
   // Pull current-month spend for (user, provider) from the materialized view.
-  const { data: monthly, error: spentErr } = await supabase
-    .from('ai_usage_month_by_user_provider')
-    .select('total_cost_usd')
-    .eq('user_id', input.userId)
-    .eq('provider', input.providerId)
-    .maybeSingle();
+  const { data: monthly, error: spentErr } = await repo.fetchMonthlySpendByUserProvider(supabase, input.userId, input.providerId);
 
   if (spentErr) {
     console.warn(`${LOG_PREFIX} monthly-spend lookup failed: ${spentErr.message}`);

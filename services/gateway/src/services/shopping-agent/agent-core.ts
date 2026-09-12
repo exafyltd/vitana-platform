@@ -27,6 +27,7 @@ import { inferPrimaryCondition } from '../user-health-context';
 import { applyUserLimitations, type FilterableProduct } from '../limitations-filter';
 import { callViaRouter, type LLMRouterTool } from '../llm-router';
 import { getConditionMapping } from '../condition-matcher';
+import * as repo from './agent-core-repository';
 
 export const VTID = 'VTID-03260';
 
@@ -301,11 +302,7 @@ export async function searchCandidates(
     if (!healthGoals?.length && mapping.recommended_health_goals.length) healthGoals = mapping.recommended_health_goals;
   }
 
-  let query = supabase
-    .from('products')
-    .select(CANDIDATE_COLUMNS)
-    .eq('is_active', true)
-    .eq('availability', 'in_stock');
+  let query = repo.buildCandidateProductsAgentQuery(supabase, CANDIDATE_COLUMNS);
 
   if (intent.q) {
     const sanitizedQ = intent.q.replace(/[&|!<>()]/g, ' ').trim();

@@ -19,6 +19,7 @@ import { enrichMatchesWithCounterpartyProfiles } from '../services/intent-match-
 import { notifyMutualInterest } from '../services/intent-notifier';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import type { MatchRow } from '../services/intent-matcher';
+import * as repo from './intent-matches-repository';
 
 const router = Router();
 
@@ -42,19 +43,11 @@ router.get('/outgoing', requireAuth, requireTenant, async (req: Request, res: Re
   const supabase = getSupabase();
 
   // Find intents owned by the reader, then their matches.
-  const { data: myIntents } = await supabase
-    .from('user_intents')
-    .select('intent_id')
-    .eq('requester_user_id', identity.user_id);
+  const { data: myIntents } = await repo.fetchOwnedIntentIds(supabase, identity.user_id);
   const myIds = (myIntents ?? []).map((r: any) => r.intent_id as string);
   if (myIds.length === 0) return res.json({ ok: true, matches: [] });
 
-  const { data, error } = await supabase
-    .from('intent_matches')
-    .select('*')
-    .in('intent_a_id', myIds)
-    .order('score', { ascending: false })
-    .limit(limit);
+  const { data, error } = await repo.fetchOutgoingIntentMatches(supabase, myIds, limit);
   if (error) return res.status(500).json({ ok: false, error: error.message });
 
   const enriched = await enrichMatchesWithCounterpartyProfiles((data ?? []) as MatchRow[], identity.user_id);
@@ -70,19 +63,11 @@ router.get('/incoming', requireAuth, requireTenant, async (req: Request, res: Re
   const limit = Math.min(Number(req.query.limit) || 50, 200);
   const supabase = getSupabase();
 
-  const { data: myIntents } = await supabase
-    .from('user_intents')
-    .select('intent_id')
-    .eq('requester_user_id', identity.user_id);
+  const { data: myIntents } = await repo.fetchOwnedIntentIds(supabase, identity.user_id);
   const myIds = (myIntents ?? []).map((r: any) => r.intent_id as string);
   if (myIds.length === 0) return res.json({ ok: true, matches: [] });
 
-  const { data, error } = await supabase
-    .from('intent_matches')
-    .select('*')
-    .in('intent_b_id', myIds)
-    .order('score', { ascending: false })
-    .limit(limit);
+  const { data, error } = await repo.fetchIncomingIntentMatches(supabase, myIds, limit);
   if (error) return res.status(500).json({ ok: false, error: error.message });
 
   const enriched = await enrichMatchesWithCounterpartyProfiles((data ?? []) as MatchRow[], identity.user_id);
@@ -101,18 +86,13 @@ router.post('/:id/state', requireAuth, requireTenant, async (req: Request, res: 
   }
 
   const supabase = getSupabase();
-  const { data: m } = await supabase
-    .from('intent_matches')
-    .select('match_id, intent_a_id, intent_b_id, state, vitana_id_a, vitana_id_b, kind_pairing')
-    .eq('match_id', req.params.id)
-    .maybeSingle();
+  const { data: m } = await repo.fetchIntentMatchForStateTransition(supabase, req.params.id);
   if (!m) return res.status(404).json({ ok: false, error: 'not_found' });
 
   // Authorize: reader must own intent_a OR intent_b.
-  const { data: aOwner } = await supabase
-    .from('user_intents').select('requester_user_id').eq('intent_id', (m as any).intent_a_id).maybeSingle();
+  const { data: aOwner } = await repo.fetchIntentRequesterUserId(supabase, (m as any).intent_a_id);
   const { data: bOwner } = (m as any).intent_b_id
-    ? await supabase.from('user_intents').select('requester_user_id').eq('intent_id', (m as any).intent_b_id).maybeSingle()
+    ? await repo.fetchIntentRequesterUserId(supabase, (m as any).intent_b_id)
     : { data: null as any };
   const isA = aOwner && (aOwner as any).requester_user_id === identity.user_id;
   const isB = bOwner && (bOwner as any).requester_user_id === identity.user_id;
@@ -125,10 +105,7 @@ router.post('/:id/state', requireAuth, requireTenant, async (req: Request, res: 
     computedNextState = 'mutual_interest';
   }
 
-  const { error } = await supabase
-    .from('intent_matches')
-    .update({ state: computedNextState })
-    .eq('match_id', req.params.id);
+  const { error } = await repo.updateIntentMatchState(supabase, req.params.id, computedNextState);
   if (error) return res.status(500).json({ ok: false, error: error.message });
 
   // If transitioned to mutual_interest, try the reveal protocol AND fire
@@ -169,26 +146,18 @@ router.post('/:id/decline', requireAuth, requireTenant, async (req: Request, res
   if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
 
   const supabase = getSupabase();
-  const { data: m } = await supabase
-    .from('intent_matches')
-    .select('match_id, intent_a_id, intent_b_id, state, kind_pairing')
-    .eq('match_id', req.params.id)
-    .maybeSingle();
+  const { data: m } = await repo.fetchIntentMatchForDecline(supabase, req.params.id);
   if (!m) return res.status(404).json({ ok: false, error: 'not_found' });
 
-  const { data: aOwner } = await supabase
-    .from('user_intents').select('requester_user_id').eq('intent_id', (m as any).intent_a_id).maybeSingle();
+  const { data: aOwner } = await repo.fetchIntentRequesterUserId(supabase, (m as any).intent_a_id);
   const { data: bOwner } = (m as any).intent_b_id
-    ? await supabase.from('user_intents').select('requester_user_id').eq('intent_id', (m as any).intent_b_id).maybeSingle()
+    ? await repo.fetchIntentRequesterUserId(supabase, (m as any).intent_b_id)
     : { data: null as any };
   const isParty = (aOwner && (aOwner as any).requester_user_id === identity.user_id)
                 || (bOwner && (bOwner as any).requester_user_id === identity.user_id);
   if (!isParty) return res.status(403).json({ ok: false, error: 'not_a_party' });
 
-  const { error } = await supabase
-    .from('intent_matches')
-    .update({ state: 'declined' })
-    .eq('match_id', req.params.id);
+  const { error } = await repo.updateIntentMatchState(supabase, req.params.id, 'declined');
   if (error) return res.status(500).json({ ok: false, error: error.message });
 
   await emitOasisEvent({

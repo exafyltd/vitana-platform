@@ -54,6 +54,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { randomUUID } from 'crypto';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
 import { isWalletCurrency, type WalletCurrency } from '../../types/wallet';
+import * as repo from './wallet-payments-tools-repository';
 
 type Handler = (args: OrbToolArgs, id: OrbToolIdentity, sb: SupabaseClient) => Promise<OrbToolResult>;
 
@@ -118,12 +119,7 @@ export async function tool_get_wallet_summary(
     }
     let subscription: SubscriptionRow | null = null;
     try {
-      let subQuery = sb
-        .from('user_subscriptions')
-        .select('plan_key, status, current_period_end')
-        .eq('user_id', id.user_id);
-      if (id.tenant_id) subQuery = subQuery.eq('tenant_id', id.tenant_id);
-      const { data: subRow } = await subQuery.maybeSingle();
+      const { data: subRow } = await repo.fetchUserSubscriptionForWalletSummary(sb, id.user_id, id.tenant_id);
       subscription = (subRow as SubscriptionRow | null) ?? null;
     } catch {
       /* subscription read is optional */
@@ -135,10 +131,7 @@ export async function tool_get_wallet_summary(
     let rewardsCurrency: string = accounts[0]?.currency ?? 'EUR';
     let hasRewards = false;
     try {
-      const { data: rewardRows } = await sb
-        .from('rewards_ledger')
-        .select('amount, state, currency')
-        .eq('user_id', id.user_id);
+      const { data: rewardRows } = await repo.fetchRewardsLedgerForUser(sb, id.user_id);
       const rows = (rewardRows ?? []) as Array<{ amount: number; state: string; currency: string }>;
       hasRewards = rows.length > 0;
       if (hasRewards) rewardsCurrency = rows[0].currency || rewardsCurrency;
@@ -341,12 +334,7 @@ export async function tool_send_funds(
       if (!recipientName) {
         return { ok: false, error: 'send_funds requires the recipient\'s name — ask the user who to send to.' };
       }
-      const { data, error } = await sb.rpc('resolve_recipient_candidates', {
-        p_actor: id.user_id,
-        p_token: recipientName,
-        p_limit: 3,
-        p_global: true,
-      });
+      const { data, error } = await repo.resolveRecipientCandidates(sb, id.user_id, recipientName, 3);
       if (error) return { ok: false, error: error.message };
       const candidates = (data || []) as Array<{
         user_id: string;
@@ -382,11 +370,7 @@ export async function tool_send_funds(
     }
 
     // Verify the recipient actually exists (mirrors send_chat_message's guard).
-    const { data: recipRow, error: recipErr } = await sb
-      .from('app_users')
-      .select('user_id, display_name, vitana_id')
-      .eq('user_id', recipientUserId)
-      .maybeSingle();
+    const { data: recipRow, error: recipErr } = await repo.fetchAppUserForTransfer(sb, recipientUserId);
     if (recipErr) return { ok: false, error: recipErr.message };
     if (!recipRow) {
       return {
@@ -438,14 +422,10 @@ export async function tool_send_funds(
     const recipientAccounts = await getAccountsForUser(recipientUserId);
     let recipientAccount = recipientAccounts.find((a) => a.currency === currency && a.status === 'active');
     if (!recipientAccount) {
-      const { data: created, error: createErr } = await sb
-        .from('wallet_accounts')
-        .insert({ user_id: recipientUserId, currency })
-        .select('id, user_id, currency, balance_minor, status, created_at, updated_at')
-        .single();
+      const { data: created, error: createErr } = await repo.insertWalletAccount(sb, recipientUserId, currency);
       if (createErr || !created) {
         // Compensate: the debit succeeded but we can't deliver — refund the sender.
-        await creditWalletForEarning({
+        const refund = await creditWalletForEarning({
           account_id: senderAccount.id,
           amount_minor: amountMinor,
           currency,
@@ -453,10 +433,19 @@ export async function tool_send_funds(
           reference_id: `${transferId}-refund`,
           description: `Refund: could not create ${recipientDisplay}'s wallet account`,
         });
+        if (refund.ok) {
+          return {
+            ok: true,
+            result: { sent: false, error_code: 'RECIPIENT_ACCOUNT_FAILED', refunded: true },
+            text: `I couldn't set up ${recipientDisplay}'s wallet account, so I've refunded your ${fmtMinor(amountMinor, currency)} back.`,
+          };
+        }
+        // Debit succeeded, recipient account creation failed, AND the
+        // compensating refund failed. Same discipline as the credit-failure
+        // branch below: never claim a refund happened when it didn't.
         return {
-          ok: true,
-          result: { sent: false, error_code: 'RECIPIENT_ACCOUNT_FAILED', refunded: true },
-          text: `I couldn't set up ${recipientDisplay}'s wallet account, so I've refunded your ${fmtMinor(amountMinor, currency)} back.`,
+          ok: false,
+          error: `Couldn't set up ${recipientDisplay}'s wallet account, and the automatic refund also failed (${refund.error}). This needs manual reconciliation — reference ${transferId}.`,
         };
       }
       recipientAccount = created as typeof senderAccount;
@@ -605,11 +594,7 @@ export async function tool_get_referral_earnings(
   const gate = authGate('get_referral_earnings', id);
   if (gate) return gate;
   try {
-    const { data, error } = await sb
-      .from('rewards_ledger')
-      .select('amount, state, currency, created_at')
-      .eq('user_id', id.user_id)
-      .order('created_at', { ascending: false });
+    const { data, error } = await repo.fetchReferralEarnings(sb, id.user_id);
     if (error) return { ok: false, error: error.message };
     const rows = (data ?? []) as Array<{ amount: number; state: string; currency: string; created_at: string }>;
     if (rows.length === 0) {
@@ -664,12 +649,7 @@ export async function tool_get_commissions_summary(
   try {
     const now = new Date();
     const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
-    const { data, error } = await sb
-      .from('commission_event')
-      .select('gross_commission, currency, status, merchant, created_at')
-      .eq('user_id', id.user_id)
-      .gte('created_at', monthStart)
-      .order('created_at', { ascending: false });
+    const { data, error } = await repo.fetchCommissionsForMonth(sb, id.user_id, monthStart);
     if (error) return { ok: false, error: error.message };
     const rows = (data ?? []) as Array<{
       gross_commission: number;
@@ -727,13 +707,7 @@ export async function tool_get_pending_rewards(
   const gate = authGate('get_pending_rewards', id);
   if (gate) return gate;
   try {
-    const { data, error } = await sb
-      .from('rewards_ledger')
-      .select('amount, currency, created_at')
-      .eq('user_id', id.user_id)
-      .eq('state', 'pending')
-      .order('created_at', { ascending: false })
-      .limit(10);
+    const { data, error } = await repo.fetchPendingRewards(sb, id.user_id);
     if (error) return { ok: false, error: error.message };
     const rows = (data ?? []) as Array<{ amount: number; currency: string; created_at: string }>;
     if (rows.length === 0) {

@@ -20,9 +20,7 @@ import type {
   BusinessGate,
 } from '../../types/journey-checklist';
 
-const T = 'journey_checklist_topics';
-const V = 'journey_checklist_versions';
-const A = 'journey_checklist_audit';
+import * as repo from './checklist-service-repository';
 
 export function rowToTopic(r: ChecklistTopicRow): ChecklistTopic {
   return {
@@ -116,14 +114,7 @@ export async function listTopics(
   client: SupabaseClient,
   filters: ListFilters = {},
 ): Promise<ChecklistTopic[]> {
-  let q = client.from(T).select('*').eq('curriculum_version', filters.curriculumVersion ?? 'v2');
-  if (filters.session != null) q = q.eq('session', filters.session);
-  if (filters.chapterId) q = q.eq('chapter_id', filters.chapterId);
-  if (filters.status) q = q.eq('status', filters.status);
-  if (filters.businessGate) q = q.eq('business_gate', filters.businessGate);
-  if (filters.search) q = q.ilike('display_label', `%${filters.search}%`);
-  q = q.order('session', { ascending: true }).order('position', { ascending: true });
-  const { data, error } = await q;
+  const { data, error } = await repo.listChecklistTopics(client, filters);
   if (error) throw error;
   return (data as ChecklistTopicRow[]).map(rowToTopic);
 }
@@ -132,7 +123,7 @@ export async function getTopic(
   client: SupabaseClient,
   topicId: string,
 ): Promise<ChecklistTopic | null> {
-  const { data, error } = await client.from(T).select('*').eq('topic_id', topicId).maybeSingle();
+  const { data, error } = await repo.fetchChecklistTopicById(client, topicId);
   if (error) throw error;
   return data ? rowToTopic(data as ChecklistTopicRow) : null;
 }
@@ -196,7 +187,7 @@ async function audit(
   action: string,
   opts: { adminId?: string | null; topicId?: string; versionId?: string; changedFields?: unknown; detail?: string },
 ): Promise<void> {
-  await client.from(A).insert({
+  await repo.insertChecklistServiceAudit(client, {
     actor_admin_id: opts.adminId ?? null,
     action,
     topic_id: opts.topicId ?? null,
@@ -214,7 +205,7 @@ export async function updateTopic(
   now: string = new Date().toISOString(),
 ): Promise<ChecklistTopic> {
   const row = { ...patchToRow(patch), updated_by_admin_id: adminId, updated_at: now };
-  const { data, error } = await client.from(T).update(row).eq('topic_id', topicId).select('*').single();
+  const { data, error } = await repo.updateChecklistTopic(client, topicId, row);
   if (error) throw error;
   await audit(client, 'update', { adminId, topicId, changedFields: Object.keys(patch) });
   return rowToTopic(data as ChecklistTopicRow);
@@ -241,7 +232,7 @@ export async function createTopic(
     created_at: now,
     updated_at: now,
   };
-  const { data, error } = await client.from(T).insert(row).select('*').single();
+  const { data, error } = await repo.insertChecklistTopic(client, row);
   if (error) throw error;
   await audit(client, 'create', { adminId, topicId: input.topicId });
   return rowToTopic(data as ChecklistTopicRow);
@@ -255,12 +246,12 @@ export async function setTopicDisabled(
   adminId: string,
   now: string = new Date().toISOString(),
 ): Promise<ChecklistTopic> {
-  const { data, error } = await client
-    .from(T)
-    .update({ status: disabled ? 'disabled' : 'draft', enabled: !disabled, updated_by_admin_id: adminId, updated_at: now })
-    .eq('topic_id', topicId)
-    .select('*')
-    .single();
+  const { data, error } = await repo.setChecklistTopicDisabled(client, topicId, {
+    status: disabled ? 'disabled' : 'draft',
+    enabled: !disabled,
+    updated_by_admin_id: adminId,
+    updated_at: now,
+  });
   if (error) throw error;
   await audit(client, disabled ? 'disable' : 'enable', { adminId, topicId });
   return rowToTopic(data as ChecklistTopicRow);
@@ -343,13 +334,7 @@ async function fetchChecklistTranslations(
 ): Promise<ChecklistTranslationRow[]> {
   if (locale === 'de' || topicIds.length === 0) return [];
   try {
-    const { data, error } = await client
-      .from('journey_checklist_translations')
-      .select(
-        'topic_id, display_label, short_description, explanation_what_it_is, explanation_user_benefit, explanation_when_to_use, explanation_try_this',
-      )
-      .eq('locale', locale)
-      .in('topic_id', topicIds);
+    const { data, error } = await repo.fetchChecklistTranslationRows(client, locale, topicIds);
     if (error || !Array.isArray(data)) return [];
     return data as ChecklistTranslationRow[];
   } catch {
@@ -368,12 +353,7 @@ export async function getPublishedChecklist(
   curriculumVersion = 'v2',
   locale: ChecklistLocale = 'de',
 ): Promise<PublishedChecklist> {
-  const { data: ver, error } = await client
-    .from(V)
-    .select('version_label, snapshot')
-    .eq('curriculum_version', curriculumVersion)
-    .eq('is_current', true)
-    .maybeSingle();
+  const { data: ver, error } = await repo.fetchCurrentVersionSnapshot(client, curriculumVersion);
   if (error) throw error;
 
   let result: PublishedChecklist;
@@ -458,12 +438,7 @@ export async function getOrbTopicSeed(
   curriculumVersion = 'v2',
   locale: ChecklistLocale = 'de',
 ): Promise<OrbTopicSeed | null> {
-  const { data: ver, error } = await client
-    .from(V)
-    .select('snapshot')
-    .eq('curriculum_version', curriculumVersion)
-    .eq('is_current', true)
-    .maybeSingle();
+  const { data: ver, error } = await repo.fetchCurrentVersionSnapshotOnly(client, curriculumVersion);
   if (error) throw error;
 
   let seed: OrbTopicSeed | null = null;

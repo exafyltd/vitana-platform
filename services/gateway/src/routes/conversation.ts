@@ -81,6 +81,7 @@ import { addTurnRedis } from '../services/redis-turn-buffer';
 import { deduplicatedExtract } from '../services/extraction-dedup-manager';
 // Supabase client for persistent message storage
 import { getSupabase } from '../lib/supabase';
+import * as repo from './conversation-repository';
 
 const router = Router();
 
@@ -107,19 +108,15 @@ async function persistMessage(params: {
     return null;
   }
 
-  const { data, error } = await supabase
-    .from('conversation_messages')
-    .insert({
-      thread_id: params.thread_id,
-      tenant_id: params.tenant_id,
-      user_id: params.user_id,
-      role: params.role,
-      channel: params.channel,
-      content: params.content,
-      metadata: params.metadata || {},
-    })
-    .select('id')
-    .single();
+  const { data, error } = await repo.insertConversationMessage(supabase, {
+    thread_id: params.thread_id,
+    tenant_id: params.tenant_id,
+    user_id: params.user_id,
+    role: params.role,
+    channel: params.channel,
+    content: params.content,
+    metadata: params.metadata || {},
+  });
 
   if (error) {
     console.warn('[conversation] Failed to persist message:', error.message);
@@ -223,13 +220,7 @@ router.post('/turn', async (req: Request, res: Response) => {
       const supabase = getSupabase();
       if (supabase && user_id && tenant_id) {
         try {
-          const { data: membership } = await supabase
-            .from('user_tenants')
-            .select('active_role')
-            .eq('user_id', user_id)
-            .eq('tenant_id', tenant_id)
-            .limit(1)
-            .single();
+          const { data: membership } = await repo.fetchVerifiedActiveRole(supabase, user_id, tenant_id);
 
           verifiedRole = membership?.active_role || null;
         } catch (err: any) {
@@ -849,13 +840,7 @@ router.post('/stream', async (req: Request, res: Response) => {
       let verifiedRole: string | null = null;
       if (supabase && input.user_id && input.tenant_id) {
         try {
-          const { data: membership } = await supabase
-            .from('user_tenants')
-            .select('active_role')
-            .eq('user_id', input.user_id)
-            .eq('tenant_id', input.tenant_id)
-            .limit(1)
-            .single();
+          const { data: membership } = await repo.fetchVerifiedActiveRole(supabase, input.user_id, input.tenant_id);
           verifiedRole = membership?.active_role || null;
         } catch {}
       }
@@ -1057,18 +1042,7 @@ router.get('/history/:threadId', async (req: Request, res: Response) => {
   }
 
   try {
-    let query = supabase
-      .from('conversation_messages')
-      .select('id, thread_id, role, channel, content, metadata, created_at')
-      .eq('thread_id', threadId)
-      .order('created_at', { ascending: true })
-      .limit(limit);
-
-    if (before) {
-      query = query.lt('created_at', before);
-    }
-
-    const { data, error } = await query;
+    const { data, error } = await repo.fetchConversationHistoryQuery(supabase, threadId, limit, before);
 
     if (error) {
       console.error('[conversation] History fetch failed:', error.message);
@@ -1107,13 +1081,7 @@ router.get('/threads/active', async (req: Request, res: Response) => {
 
   try {
     // Find the most recent thread by looking at the latest message per thread
-    const { data, error } = await supabase
-      .from('conversation_messages')
-      .select('thread_id, created_at')
-      .eq('tenant_id', tenant_id)
-      .eq('user_id', user_id)
-      .order('created_at', { ascending: false })
-      .limit(1);
+    const { data, error } = await repo.fetchLatestConversationMessageForThread(supabase, tenant_id, user_id);
 
     if (error) {
       console.error('[conversation] Active thread fetch failed:', error.message);

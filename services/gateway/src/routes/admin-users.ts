@@ -14,6 +14,7 @@
 import { Router, Request, Response } from 'express';
 import { getSupabase } from '../lib/supabase';
 import { createUserSupabaseClient } from '../lib/supabase-user';
+import * as repo from './admin-users-repository';
 
 const router = Router();
 const VTID = 'ADMIN-USERS';
@@ -74,12 +75,12 @@ async function verifyAdminAccess(
     const supabase = getSupabase();
     if (!supabase) return { ok: false, status: 503, error: 'DB_UNAVAILABLE' };
 
-    const { data: membership } = await supabase
-      .from('user_tenants')
-      .select('active_role')
-      .eq('user_id', authData.user.id)
-      .eq('tenant_id', tenantId)
-      .single();
+    const { data: membership, error: membershipErr } = await repo.fetchTenantAdminMembership(supabase, authData.user.id, tenantId);
+    if (membershipErr) {
+      // Fail closed either way (unchanged) — logged so a real DB error isn't
+      // mistaken for the caller genuinely lacking admin access.
+      console.warn(`[${VTID}] Tenant admin membership check error:`, membershipErr.message);
+    }
 
     if (!membership || membership.active_role !== 'admin') {
       return { ok: false, status: 403, error: 'FORBIDDEN' };
@@ -101,7 +102,7 @@ async function verifyAdminAccess(
 // ── Helper: build tenant lookup map ─────────────────────────
 
 async function getTenantMap(supabase: any): Promise<Record<string, { name: string; slug: string }>> {
-  const { data: tenants } = await supabase.from('tenants').select('*');
+  const { data: tenants } = await repo.fetchAllTenants(supabase);
   const map: Record<string, { name: string; slug: string }> = {};
   (tenants || []).forEach((t: any) => {
     // Use whatever PK the table has — check for 'id' or 'tenant_id'
@@ -131,10 +132,7 @@ router.get('/', async (req: Request, res: Response) => {
     // then filter app_users to that set.
     let scopedUserIds: string[] | null = null;
     if (auth.scoped_tenant_id) {
-      const { data: tenantMembers } = await supabase
-        .from('user_tenants')
-        .select('user_id')
-        .eq('tenant_id', auth.scoped_tenant_id);
+      const { data: tenantMembers } = await repo.fetchTenantMemberUserIds(supabase, auth.scoped_tenant_id);
       scopedUserIds = (tenantMembers || []).map((m: any) => m.user_id);
       if (scopedUserIds.length === 0) {
         return res.json({ ok: true, users: [] });
@@ -142,25 +140,10 @@ router.get('/', async (req: Request, res: Response) => {
     }
 
     // 1. Get users (flat query, no nested relations)
-    let usersQuery = supabase
-      .from('app_users')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1);
-
-    if (query) {
-      usersQuery = usersQuery.ilike('email', `%${query}%`);
-    }
-
-    if (scopedUserIds) {
-      usersQuery = usersQuery.in('user_id', scopedUserIds);
-    }
+    const usersQuery = repo.fetchUsersPage(supabase, { query, scopedUserIds, offset, limit });
 
     // 2. Get memberships (scoped if tenant admin) and tenants in parallel
-    let membershipsQuery = supabase.from('user_tenants').select('*');
-    if (auth.scoped_tenant_id) {
-      membershipsQuery = membershipsQuery.eq('tenant_id', auth.scoped_tenant_id);
-    }
+    const membershipsQuery = repo.fetchMembershipsFull(supabase, auth.scoped_tenant_id);
 
     const [usersResult, membershipsResult, tenantMap] = await Promise.all([
       usersQuery,
@@ -231,11 +214,7 @@ router.get('/roles-summary', async (req: Request, res: Response) => {
     const supabase = getSupabase();
     if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
-    let membershipsQuery = supabase.from('user_tenants').select('active_role');
-    if (auth.scoped_tenant_id) {
-      membershipsQuery = membershipsQuery.eq('tenant_id', auth.scoped_tenant_id);
-    }
-    const { data: memberships, error } = await membershipsQuery;
+    const { data: memberships, error } = await repo.fetchMembershipRoles(supabase, auth.scoped_tenant_id);
 
     if (error) {
       console.error(`[${VTID}] Roles summary error:`, error.message);
@@ -276,25 +255,22 @@ router.get('/:userId', async (req: Request, res: Response) => {
 
     // Batch 1.B1: tenant admins can only view users who belong to their tenant
     if (auth.scoped_tenant_id) {
-      const { data: memberCheck } = await supabase
-        .from('user_tenants')
-        .select('user_id')
-        .eq('user_id', userId)
-        .eq('tenant_id', auth.scoped_tenant_id)
-        .single();
+      const { data: memberCheck, error: memberCheckErr } = await repo.fetchTenantMembershipCheck(supabase, userId, auth.scoped_tenant_id);
+      if (memberCheckErr) {
+        // Fail closed either way (unchanged) — logged so a real DB error
+        // isn't mistaken for the user genuinely not belonging to the tenant.
+        console.warn(`[${VTID}] Tenant membership check error:`, memberCheckErr.message);
+      }
       if (!memberCheck) {
         return res.status(404).json({ ok: false, error: 'USER_NOT_FOUND' });
       }
     }
 
     // Flat queries — no nested PostgREST relations
-    let membershipsQuery = supabase.from('user_tenants').select('*').eq('user_id', userId);
-    if (auth.scoped_tenant_id) {
-      membershipsQuery = membershipsQuery.eq('tenant_id', auth.scoped_tenant_id);
-    }
+    const membershipsQuery = repo.fetchUserMemberships(supabase, userId, auth.scoped_tenant_id);
 
     const [userResult, membershipsResult, tenantMap] = await Promise.all([
-      supabase.from('app_users').select('*').eq('user_id', userId).single(),
+      repo.fetchUserById(supabase, userId),
       membershipsQuery,
       getTenantMap(supabase),
     ]);

@@ -24,6 +24,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import * as repo from './topics-repository';
 
 const router = Router();
 
@@ -161,9 +162,7 @@ export async function validateTopicKeys(
   try {
     const supabase = createUserSupabaseClient(token);
 
-    const { data, error } = await supabase.rpc('topics_validate_keys', {
-      p_topic_keys: topicKeys
-    });
+    const { data, error } = await repo.validateTopicKeysRpc(supabase, topicKeys);
 
     if (error) {
       if (error.message.includes('function') && error.message.includes('does not exist')) {
@@ -233,10 +232,7 @@ router.post('/recompute', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // Call topics_recompute_user_profile RPC
-    const { data, error } = await supabase.rpc('topics_recompute_user_profile', {
-      p_user_id: user_id || null,
-      p_date: date || null
-    });
+    const { data, error } = await repo.recomputeUserTopicProfileRpc(supabase, user_id || null, date || null);
 
     if (error) {
       if (error.message.includes('function') && error.message.includes('does not exist')) {
@@ -316,9 +312,7 @@ router.get('/profile', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // Call topics_get_user_profile RPC
-    const { data, error } = await supabase.rpc('topics_get_user_profile', {
-      p_user_id: userId || null
-    });
+    const { data, error } = await repo.fetchUserTopicProfileRpc(supabase, userId || null);
 
     if (error) {
       if (error.message.includes('function') && error.message.includes('does not exist')) {
@@ -407,9 +401,7 @@ router.post('/registry', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // Call topics_create_registry_entry RPC
-    const { data, error } = await supabase.rpc('topics_create_registry_entry', {
-      p_payload: entry
-    });
+    const { data, error } = await repo.createTopicsRegistryEntryRpc(supabase, entry);
 
     if (error) {
       if (error.message.includes('function') && error.message.includes('does not exist')) {
@@ -504,9 +496,7 @@ router.get('/registry', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // Call topics_get_registry RPC
-    const { data, error } = await supabase.rpc('topics_get_registry', {
-      p_category: category || null
-    });
+    const { data, error } = await repo.fetchTopicsRegistryRpc(supabase, category || null);
 
     if (error) {
       if (error.message.includes('function') && error.message.includes('does not exist')) {

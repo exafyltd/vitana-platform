@@ -26,6 +26,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import * as repo from './memory-governance-repository';
 
 const router = Router();
 
@@ -154,7 +155,7 @@ router.get('/settings', async (req: Request, res: Response) => {
 
   try {
     const supabase = createUserSupabaseClient(token);
-    const { data, error } = await supabase.rpc('memory_get_settings');
+    const { data, error } = await repo.getMemorySettings(supabase);
 
     if (error) {
       if (error.message.includes('function') && error.message.includes('does not exist')) {
@@ -225,7 +226,7 @@ router.post('/settings/visibility', async (req: Request, res: Response) => {
 
   try {
     const supabase = createUserSupabaseClient(token);
-    const { data, error } = await supabase.rpc('memory_set_visibility', {
+    const { data, error } = await repo.setMemoryVisibility(supabase, {
       p_domain: domain,
       p_visibility: visibility,
       p_custom_rules: custom_rules || null
@@ -312,7 +313,7 @@ router.post('/lock', async (req: Request, res: Response) => {
 
   try {
     const supabase = createUserSupabaseClient(token);
-    const { data, error } = await supabase.rpc('memory_lock_entity', {
+    const { data, error } = await repo.lockMemoryEntity(supabase, {
       p_entity_type: entity_type,
       p_entity_id: entity_id,
       p_reason: reason || null
@@ -400,7 +401,7 @@ router.post('/unlock', async (req: Request, res: Response) => {
 
   try {
     const supabase = createUserSupabaseClient(token);
-    const { data, error } = await supabase.rpc('memory_unlock_entity', {
+    const { data, error } = await repo.unlockMemoryEntity(supabase, {
       p_entity_type: entity_type,
       p_entity_id: entity_id
     });
@@ -486,7 +487,7 @@ router.delete('/entity', async (req: Request, res: Response) => {
 
   try {
     const supabase = createUserSupabaseClient(token);
-    const { data, error } = await supabase.rpc('memory_delete_entity', {
+    const { data, error } = await repo.deleteMemoryEntity(supabase, {
       p_entity_type: entity_type,
       p_entity_id: entity_id
     });
@@ -574,7 +575,7 @@ router.get('/locks', async (req: Request, res: Response) => {
 
   try {
     const supabase = createUserSupabaseClient(token);
-    const { data, error } = await supabase.rpc('memory_get_locked_entities', {
+    const { data, error } = await repo.getLockedMemoryEntities(supabase, {
       p_entity_type: entity_type || null
     });
 
@@ -644,7 +645,7 @@ router.post('/export', async (req: Request, res: Response) => {
 
   try {
     const supabase = createUserSupabaseClient(token);
-    const { data, error } = await supabase.rpc('memory_request_export', {
+    const { data, error } = await repo.requestMemoryExport(supabase, {
       p_domains: domains,
       p_format: format
     });
@@ -729,7 +730,7 @@ router.get('/export/:id', async (req: Request, res: Response) => {
 
   try {
     const supabase = createUserSupabaseClient(token);
-    const { data, error } = await supabase.rpc('memory_get_export_status', {
+    const { data, error } = await repo.getMemoryExportStatus(supabase, {
       p_export_id: exportId
     });
 

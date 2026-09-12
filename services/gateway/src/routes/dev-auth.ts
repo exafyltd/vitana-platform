@@ -13,6 +13,7 @@ import { Router, Request, Response } from 'express';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { randomUUID } from 'crypto';
 import { getSupabase } from '../lib/supabase';
+import * as repo from './dev-auth-repository';
 
 const router = Router();
 
@@ -108,10 +109,7 @@ async function bootstrapRequestContext(
   activeRole: string
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    const { data, error } = await supabase.rpc('dev_bootstrap_request_context', {
-      p_tenant_id: tenantId,
-      p_active_role: activeRole,
-    });
+    const { data, error } = await repo.bootstrapDevRequestContext(supabase, tenantId, activeRole);
 
     if (error) {
       console.error('[VTID-01050] Bootstrap RPC error:', error.message);

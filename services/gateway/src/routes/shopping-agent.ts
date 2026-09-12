@@ -35,6 +35,7 @@ import { getUserHealthContext } from '../services/user-health-context';
 import { runPropose, type AnnotatedPick, type InsertPickFn } from '../services/shopping-agent/agent-core';
 import { getMonthlySpend } from '../services/budget/spend-service';
 import { buildReorderPicks } from '../services/shopping-agent/reorder-core';
+import * as repo from './shopping-agent-repository';
 
 /** Default currency fallback (matches the rest of the gateway's commerce code). */
 const DEFAULT_CURRENCY = 'EUR';
@@ -157,11 +158,7 @@ router.post('/propose', async (req: Request, res: Response) => {
     if (pick.unit_price_cents_snapshot !== null) insertPayload.unit_price_cents_snapshot = pick.unit_price_cents_snapshot;
     if (pick.currency_snapshot !== null) insertPayload.currency_snapshot = pick.currency_snapshot;
 
-    const inserted = await userClient
-      .from('universal_cart_items')
-      .insert(insertPayload)
-      .select('id')
-      .single();
+    const inserted = await repo.insertProposedCartItem(userClient, insertPayload);
 
     if (inserted.error || !inserted.data) {
       return { ok: false, error: inserted.error?.message ?? 'item_insert_failed' };
@@ -303,11 +300,7 @@ router.post('/reorder', async (req: Request, res: Response) => {
     if (pick.unit_price_cents_snapshot !== null) insertPayload.unit_price_cents_snapshot = pick.unit_price_cents_snapshot;
     if (pick.currency_snapshot !== null) insertPayload.currency_snapshot = pick.currency_snapshot;
 
-    const inserted = await userClient
-      .from('universal_cart_items')
-      .insert(insertPayload)
-      .select('id')
-      .single();
+    const inserted = await repo.insertProposedCartItem(userClient, insertPayload);
 
     if (inserted.error || !inserted.data) {
       console.error(`[${VTID}] reorder insert failed for product ${pick.product_id}: ${inserted.error?.message}`);
@@ -362,12 +355,7 @@ async function resolveActiveCartId(
   userId: string,
   tenantId: string | null
 ): Promise<{ ok: true; cartId: string } | { ok: false; error: string }> {
-  const cartLookup = await userClient
-    .from('universal_carts')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('status', 'active')
-    .maybeSingle();
+  const cartLookup = await repo.fetchActiveCartForUser(userClient, userId);
 
   if (cartLookup.error && !isNoRowsError(cartLookup.error)) {
     return { ok: false, error: 'cart_lookup_failed' };
@@ -376,19 +364,10 @@ async function resolveActiveCartId(
     return { ok: true, cartId: cartLookup.data.id as string };
   }
 
-  const newCart = await userClient
-    .from('universal_carts')
-    .insert({ user_id: userId, tenant_id: tenantId, status: 'active', metadata: {} })
-    .select('id')
-    .single();
+  const newCart = await repo.insertNewActiveCart(userClient, userId, tenantId);
 
   if (newCart.error && isUniqueViolation(newCart.error)) {
-    const racedCart = await userClient
-      .from('universal_carts')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('status', 'active')
-      .maybeSingle();
+    const racedCart = await repo.fetchActiveCartForUser(userClient, userId);
     if (racedCart.data?.id) return { ok: true, cartId: racedCart.data.id as string };
     return { ok: false, error: 'cart_create_failed' };
   }

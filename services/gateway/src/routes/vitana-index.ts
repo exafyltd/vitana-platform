@@ -18,6 +18,7 @@ import { createClient } from '@supabase/supabase-js';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { fetchVitanaIndexForProfiler } from '../services/user-context-profiler';
 import { resolvePillarKey } from '../lib/vitana-pillars';
+import * as repo from './vitana-index-repository';
 
 const router = Router();
 
@@ -132,14 +133,7 @@ router.get('/suggestions', requireAuth, async (req: AuthenticatedRequest, res: R
   }
 
   try {
-    const { data, error } = await client
-      .from('autopilot_recommendations')
-      .select('id, title, summary, contribution_vector, impact_score, status')
-      .eq('user_id', userId)
-      .in('status', ['pending', 'new', 'snoozed'])
-      .not('contribution_vector', 'is', null)
-      .order('impact_score', { ascending: false, nullsFirst: false })
-      .limit(50);
+    const { data, error } = await repo.fetchOpenAutopilotRecommendationsWithVector(client, userId);
 
     if (error) {
       return res

@@ -60,6 +60,7 @@ import {
   UIContext,
 } from '../types/conversation';
 import { getSupabase } from '../lib/supabase';
+import * as repo from './memory-orchestrator-repository';
 
 // =============================================================================
 // Sentinels — the enforcement layer greps for these
@@ -221,13 +222,7 @@ async function fetchActiveGoals(userId: string): Promise<ActiveGoal[]> {
     // life_compass table has NO is_system_seeded column, and selecting a
     // missing column makes PostgREST return an error (silently mapped to
     // zero goals). Verified against production data 2026-07-03.
-    const { data, error } = await supabase
-      .from('life_compass')
-      .select('primary_goal, category')
-      .eq('user_id', userId)
-      .eq('is_active', true)
-      .order('created_at', { ascending: false })
-      .limit(3);
+    const { data, error } = await repo.fetchActiveLifeCompassGoals(supabase, userId);
     if (error) throw new Error(error.message);
     return (data || []).map((r: any) => ({
       primary_goal: r.primary_goal,

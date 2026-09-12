@@ -14,6 +14,7 @@ import { Router, Request, Response } from 'express';
 import { getSupabase } from '../lib/supabase';
 import { notifyUser, notifyUsersAsync, NotificationPayload } from '../services/notification-service';
 import { requireExafyAdmin, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import * as repo from './admin-notifications-repository';
 
 const router = Router();
 const VTID = 'ADMIN-NOTIFICATIONS';
@@ -68,11 +69,7 @@ router.post('/compose', async (req: AuthenticatedRequest, res: Response) => {
       targetUserIds = recipient_ids;
     } else if (recipient_role && tenant_id) {
       // Fetch users by role in tenant
-      const { data: members, error } = await supabase
-        .from('user_tenants')
-        .select('user_id')
-        .eq('tenant_id', tenant_id)
-        .eq('active_role', recipient_role);
+      const { data: members, error } = await repo.fetchTenantUserIdsByRole(supabase, tenant_id, recipient_role);
 
       if (error) {
         console.error(`[${VTID}] POST /compose role lookup error:`, error.message);
@@ -81,10 +78,7 @@ router.post('/compose', async (req: AuthenticatedRequest, res: Response) => {
       targetUserIds = (members || []).map((m: any) => m.user_id);
     } else if (send_to_all && tenant_id) {
       // Fetch all users in tenant
-      const { data: members, error } = await supabase
-        .from('user_tenants')
-        .select('user_id')
-        .eq('tenant_id', tenant_id);
+      const { data: members, error } = await repo.fetchTenantUserIds(supabase, tenant_id);
 
       if (error) {
         console.error(`[${VTID}] POST /compose all-users lookup error:`, error.message);
@@ -158,24 +152,14 @@ router.get('/sent', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const since = new Date(Date.now() - days * 86400000).toISOString();
 
-    let query = supabase
-      .from('user_notifications')
-      .select('*', { count: 'exact' })
-      .gte('created_at', since)
-      .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1);
-
-    if (type && typeof type === 'string') {
-      query = query.eq('type', type);
-    }
-    if (user_id && typeof user_id === 'string') {
-      query = query.eq('user_id', user_id);
-    }
-    if (search && typeof search === 'string') {
-      query = query.or(`title.ilike.%${search}%,body.ilike.%${search}%`);
-    }
-
-    const { data, error, count } = await query;
+    const { data, error, count } = await repo.fetchSentNotifications(supabase, {
+      sinceIso: since,
+      offset,
+      limit,
+      type: type && typeof type === 'string' ? type : undefined,
+      userId: user_id && typeof user_id === 'string' ? user_id : undefined,
+      search: search && typeof search === 'string' ? search : undefined,
+    });
     if (error) {
       console.error(`[${VTID}] GET /sent error:`, error.message);
       return res.status(500).json({ ok: false, error: error.message });
@@ -198,12 +182,10 @@ router.get('/preferences/stats', async (req: AuthenticatedRequest, res: Response
 
   try {
     // Get all preferences
-    let query = supabase.from('user_notification_preferences').select('*');
-    if (tenant_id && typeof tenant_id === 'string') {
-      query = query.eq('tenant_id', tenant_id);
-    }
-
-    const { data: prefs, error } = await query;
+    const { data: prefs, error } = await repo.fetchNotificationPreferences(
+      supabase,
+      tenant_id && typeof tenant_id === 'string' ? tenant_id : undefined,
+    );
     if (error) {
       console.error(`[${VTID}] GET /preferences/stats error:`, error.message);
       return res.status(500).json({ ok: false, error: error.message });
@@ -229,16 +211,9 @@ router.get('/preferences/stats', async (req: AuthenticatedRequest, res: Response
 
     // Get total notification count (last 30 days)
     const since = new Date(Date.now() - 30 * 86400000).toISOString();
-    const { count: notificationCount } = await supabase
-      .from('user_notifications')
-      .select('id', { count: 'exact', head: true })
-      .gte('created_at', since);
+    const { count: notificationCount } = await repo.countNotificationsSince(supabase, since);
 
-    const { count: readCount } = await supabase
-      .from('user_notifications')
-      .select('id', { count: 'exact', head: true })
-      .gte('created_at', since)
-      .not('read_at', 'is', null);
+    const { count: readCount } = await repo.countReadNotificationsSince(supabase, since);
 
     return res.json({
       ok: true,

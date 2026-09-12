@@ -17,6 +17,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { ActionRequest, ActionResult, Connector, TokenPair } from '../types';
 import { getConnector } from '../index';
 import { storageProvidersFor } from '../../capabilities';
+import * as repo from './dispatcher-repository';
 
 export interface DispatchContext {
   supabase: SupabaseClient;
@@ -65,13 +66,7 @@ async function loadConnection(
   provider_username: string | null;
 } | null> {
   for (const provider of providers) {
-    const { data } = await supabase
-      .from('social_connections')
-      .select('id, access_token, refresh_token, token_expires_at, provider_user_id, provider_username')
-      .eq('user_id', userId)
-      .eq('provider', provider)
-      .eq('is_active', true)
-      .maybeSingle();
+    const { data } = await repo.fetchActiveSocialConnectionByProvider(supabase, userId, provider);
     if (data?.access_token) {
       return {
         id: data.id,
@@ -109,14 +104,11 @@ async function refreshIfExpired(
 
   try {
     const fresh = await connector.refreshToken(stored.refresh_token);
-    await supabase
-      .from('social_connections')
-      .update({
-        access_token: fresh.access_token,
-        token_expires_at: fresh.expires_at ?? null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', connectionId);
+    await repo.updateSocialConnectionTokens(supabase, connectionId, {
+      access_token: fresh.access_token,
+      token_expires_at: fresh.expires_at ?? null,
+      updated_at: new Date().toISOString(),
+    });
     console.log(`${LOG} refreshed ${connectorId} token, new expiry ${fresh.expires_at}`);
     return { tokens: fresh, refreshed: true };
   } catch (err: unknown) {

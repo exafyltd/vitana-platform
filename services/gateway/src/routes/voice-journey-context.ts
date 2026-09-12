@@ -19,6 +19,7 @@
 
 import { Router, Response } from 'express';
 import { getSupabase } from '../lib/supabase';
+import * as repo from './voice-journey-context-repository';
 import {
   requireAuthWithTenant,
   requireExafyAdmin,
@@ -130,12 +131,7 @@ router.get(
         });
       }
 
-      const { data, error } = await sb
-        .from('user_assistant_state')
-        .select('signal_name, value, count, confidence, source, expires_at, last_seen_at, created_at, updated_at')
-        .eq('tenant_id', tenantId)
-        .eq('user_id', userId)
-        .order('updated_at', { ascending: false });
+      const { data, error } = await repo.fetchUserAssistantStateRows(sb, tenantId, userId);
 
       if (error) {
         return res.status(500).json({

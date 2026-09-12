@@ -51,6 +51,7 @@ import {
   tool_reset_marketplace_preferences,
   tool_complete_marketplace_selection,
   tool_clarify_shopping_need,
+  tool_get_marketplace_context,
 } from '../../src/services/orb-tools/marketplace-guide-tools';
 
 const IDENT = { user_id: 'u-1', tenant_id: 't-1', role: 'community' };
@@ -331,5 +332,22 @@ describe('complete_marketplace_selection (two-step confirm)', () => {
     expect(payload.metadata.origin).toBe('discover_assistant');
     expect(emitCartEvent).toHaveBeenCalledWith(expect.objectContaining({ event_type: 'item.added' }));
     expect((r as { text: string }).text).toContain('nothing has been charged');
+  });
+});
+
+describe('get_marketplace_context', () => {
+  it('logs loudly (not silently) when the budget-cap lookup errors, still reports no cap (unchanged advisory-only fallback)', async () => {
+    const { sb } = makeSb({
+      user_limitations: [{ data: null, error: { message: 'connection reset' } }],
+    });
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const r = await tool_get_marketplace_context({}, IDENT, sb);
+
+    expect(r.ok).toBe(true);
+    const res = (r as { result: { budget_monthly_cap_cents: number | null } }).result;
+    expect(res.budget_monthly_cap_cents).toBeNull();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('budget cap lookup failed'));
+    errorSpy.mockRestore();
   });
 });

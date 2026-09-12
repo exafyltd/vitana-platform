@@ -135,6 +135,27 @@ describe('runReferralReward (AP-0405)', () => {
     expect(supabase.rpc).not.toHaveBeenCalled();
     expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
   });
+
+  it('logs (does not silence) an increment_wallet_balance RPC error, while still notifying and completing normally', async () => {
+    const supabase = makeFakeSupabase({
+      referrals: [{ data: [{ id: 'ref-1' }], error: null }],
+      app_users: [{ data: { display_name: 'Alex' }, error: null }],
+    });
+    supabase.rpc = jest.fn(async () => ({ data: null, error: { message: 'connection terminated' } }));
+    const { ctx, notify } = makeCtx(supabase, { referrer_id: 'u1', referred_id: 'u2' });
+    const handler = getHandler('runReferralReward')!;
+
+    const result = await handler(ctx);
+
+    expect(ctx.log).toHaveBeenCalledWith(
+      expect.stringContaining('increment_wallet_balance RPC returned an error for referral reward (referrer=u1): connection terminated'),
+    );
+    // Unchanged: the "friend joined" notification and the referral-completed
+    // event/return shape do not depend on the wallet credit outcome — this
+    // fix only makes the failure visible, per AURORA-B3-RPC-PARITY-INVENTORY.md.
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ usersAffected: 2, actionsTaken: 3 });
+  });
 });
 
 describe('runBringYourCircleInviteWave (AP-0411)', () => {
@@ -227,5 +248,20 @@ describe('runSocialMediaEventCardGenerator (AP-0403)', () => {
     const result = await handler(ctx);
     expect(notify).not.toHaveBeenCalled();
     expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
+  });
+
+  it('skips (does not duplicate a sharing link) when fetchExistingSocialCard errors', async () => {
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const supabase = makeFakeSupabase({
+      global_community_events: [{ data: [{ id: 'e1', title: 'Sunset Run', start_time: new Date().toISOString(), created_by: 'u1', participant_count: 4, slug: 'sunset-run' }], error: null }],
+      sharing_links: [{ data: null, error: { message: 'db timeout' } }],
+    });
+    const { ctx, notify } = makeCtx(supabase);
+    const handler = getHandler('runSocialMediaEventCardGenerator')!;
+    const result = await handler(ctx);
+    expect(notify).not.toHaveBeenCalled();
+    expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('fetchExistingSocialCard failed'));
+    consoleErrorSpy.mockRestore();
   });
 });

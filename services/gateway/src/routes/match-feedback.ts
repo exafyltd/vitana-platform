@@ -21,6 +21,7 @@ import { z } from 'zod';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { dispatchEvent } from '../services/automation-executor';
+import * as repo from './match-feedback-repository';
 
 const router = Router();
 
@@ -170,13 +171,11 @@ router.post('/:id/feedback', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // 7. Call record_match_feedback RPC
-    const { data, error } = await supabase.rpc('record_match_feedback', {
-      p_payload: {
-        match_id: matchId,
-        feedback_type,
-        topic_key: topic_key || null,
-        note: note || null
-      }
+    const { data, error } = await repo.recordMatchFeedbackRpc(supabase, {
+      match_id: matchId,
+      feedback_type,
+      topic_key: topic_key || null,
+      note: note || null
     });
 
     if (error) {
@@ -364,7 +363,7 @@ personalizationRouter.get('/changes', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // Call get_personalization_changes RPC
-    const { data, error } = await supabase.rpc('get_personalization_changes', {
+    const { data, error } = await repo.getPersonalizationChangesRpc(supabase, {
       p_from: from || null,
       p_to: to || null,
       p_limit: limit
@@ -471,10 +470,7 @@ personalizationRouter.get('/topics', async (req: Request, res: Response) => {
   try {
     const supabase = createUserSupabaseClient(token);
 
-    const { data, error } = await supabase
-      .from('user_topic_profile')
-      .select('topic_key, score, source, updated_at')
-      .order('score', { ascending: false });
+    const { data, error } = await repo.fetchUserTopicProfileRanked(supabase);
 
     if (error) {
       if (error.message.includes('relation') && error.message.includes('does not exist')) {

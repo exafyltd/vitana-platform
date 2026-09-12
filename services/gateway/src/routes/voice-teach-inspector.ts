@@ -22,6 +22,7 @@ import {
   AuthenticatedRequest,
 } from '../middleware/auth-supabase-jwt';
 import { getSupabase } from '../lib/supabase';
+import * as repo from './voice-teach-inspector-repository';
 import {
   listTeacherGreetings,
   listTeacherInvitations,
@@ -52,12 +53,7 @@ router.get(
       }
 
       // ---- Catalog (global) ----
-      const { data: catalogRows, error: catalogErr } = await sb
-        .from('system_capabilities')
-        .select(
-          'capability_key, display_name, description, manual_path, required_role, required_integrations, helpful_for_intents, enabled, surfaced_at, updated_at',
-        )
-        .order('capability_key', { ascending: true });
+      const { data: catalogRows, error: catalogErr } = await repo.fetchAllSystemCapabilitiesOrdered(sb);
       if (catalogErr) {
         return res.status(502).json({
           ok: false,
@@ -70,12 +66,7 @@ router.get(
       // ---- Ledger (per-user, optional) ----
       let ledgerRows: unknown[] = [];
       if (userId) {
-        const { data, error: ledErr } = await sb
-          .from('user_capability_awareness')
-          .select(
-            'capability_key, awareness_state, first_introduced_at, last_introduced_at, first_used_at, last_used_at, use_count, dismiss_count, mastery_confidence, last_surface, updated_at',
-          )
-          .eq('user_id', userId);
+        const { data, error: ledErr } = await repo.fetchUserCapabilityAwarenessLedger(sb, userId);
         if (!ledErr && Array.isArray(data)) {
           ledgerRows = data;
         }

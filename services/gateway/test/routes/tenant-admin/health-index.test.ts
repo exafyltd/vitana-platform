@@ -289,6 +289,21 @@ describe('Tenant Health Index routes', () => {
     expect(res.body.current).toBeNull();
   });
 
+  it('GET /current returns 500 (not current: null) when the query errors', async () => {
+    // Previously: an unchecked `{data}`-only destructure meant a query
+    // error resolved to `current: null` — indistinguishable from "no score
+    // computed yet" — silently hiding a fetch failure behind a blank metric.
+    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    chainFor('tenant_health_index_daily').mockResolvedValue({ data: null, error: { message: 'query failed' } });
+
+    const res = await request(app)
+      .get(url(TENANT_A, '/current'))
+      .set('Authorization', 'Bearer t');
+
+    expect(res.status).toBe(500);
+    expect(res.body.ok).toBe(false);
+  });
+
   // --- POST /refresh ---
 
   it('POST /refresh recomputes for the caller tenant only', async () => {

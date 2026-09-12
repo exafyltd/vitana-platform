@@ -15,6 +15,14 @@
  *   POST   /:id/read               — Mark all group messages read up to "now"
  *   PATCH  /:id/messages/:messageId — Edit a message (sender only)
  *   DELETE /:id/messages/:messageId — Delete a message (sender only)
+ *
+ * Data access for the tables this route owns (chat_groups,
+ * chat_group_members, chat_messages) goes through
+ * ./chat-groups-repository.ts (VTID-03702, Aurora migration B1
+ * data-access seam) instead of calling supabase.from(...) directly.
+ * Reads against the generic profiles/app_users/user_notifications
+ * tables stay inline here, same as other B1 seams leave shared/general
+ * tables alone.
  */
 
 import { Router, Request, Response } from 'express';
@@ -29,6 +37,7 @@ import { notifyUser } from '../services/notification-service';
 import { VITANA_BOT_USER_ID, isVitanaBot } from '../lib/vitana-bot';
 import { processConversationTurn } from '../services/conversation-client';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import * as repo from './chat-groups-repository';
 
 const router = Router();
 
@@ -60,11 +69,7 @@ router.get('/', requireAuth, requireTenant, async (req: Request, res: Response) 
   if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
 
   const supabase = getSupabase();
-  const { data: memberships, error } = await supabase
-    .from('chat_group_members')
-    .select('group_id, last_read_at, role, joined_at')
-    .eq('user_id', identity.user_id)
-    .eq('tenant_id', identity.tenant_id);
+  const { data: memberships, error } = await repo.listChatGroupMemberships(supabase, identity.user_id, identity.tenant_id!);
 
   if (error) {
     console.error('[ChatGroups] List memberships error:', error);
@@ -77,22 +82,14 @@ router.get('/', requireAuth, requireTenant, async (req: Request, res: Response) 
 
   const groupIds = memberships.map(m => m.group_id);
 
-  const { data: groups, error: groupsErr } = await supabase
-    .from('chat_groups')
-    .select('id, name, description, is_system, metadata, created_at')
-    .in('id', groupIds);
+  const { data: groups, error: groupsErr } = await repo.listChatGroupsByIds(supabase, groupIds);
 
   if (groupsErr) {
     console.error('[ChatGroups] Fetch groups error:', groupsErr);
     return res.status(500).json({ ok: false, error: groupsErr.message });
   }
 
-  const { data: lastMessages, error: lastErr } = await supabase
-    .from('chat_messages')
-    .select('id, group_id, sender_id, content, created_at, message_type, metadata')
-    .in('group_id', groupIds)
-    .order('created_at', { ascending: false })
-    .limit(500);
+  const { data: lastMessages, error: lastErr } = await repo.listLatestChatMessagesForGroups(supabase, groupIds);
 
   if (lastErr) {
     console.warn('[ChatGroups] Fetch last messages failed:', lastErr.message);
@@ -110,13 +107,7 @@ router.get('/', requireAuth, requireTenant, async (req: Request, res: Response) 
   const unreadCounts = await Promise.all(groupIds.map(async gid => {
     const m = membershipByGroup.get(gid);
     const since = m?.last_read_at;
-    let q = supabase
-      .from('chat_messages')
-      .select('id', { count: 'exact', head: true })
-      .eq('group_id', gid)
-      .neq('sender_id', identity.user_id);
-    if (since) q = q.gt('created_at', since);
-    const { count } = await q;
+    const { count } = await repo.countUnreadChatMessagesForGroup(supabase, { groupId: gid, userId: identity.user_id, since });
     return { group_id: gid, count: count || 0 };
   }));
   const unreadByGroup = new Map(unreadCounts.map(u => [u.group_id, u.count]));
@@ -158,10 +149,7 @@ router.get('/:id', requireAuth, requireTenant, async (req: Request, res: Respons
     return res.status(403).json({ ok: false, error: 'not_a_member' });
   }
 
-  const [{ data: group, error: groupErr }, { data: members, error: membersErr }] = await Promise.all([
-    supabase.from('chat_groups').select('*').eq('id', groupId).maybeSingle(),
-    supabase.from('chat_group_members').select('user_id, role, joined_at').eq('group_id', groupId),
-  ]);
+  const [{ data: group, error: groupErr }, { data: members, error: membersErr }] = await repo.fetchChatGroupWithMembers(supabase, groupId);
 
   if (groupErr || !group) {
     return res.status(404).json({ ok: false, error: 'group_not_found' });
@@ -236,16 +224,7 @@ router.get('/:id/messages', requireAuth, requireTenant, async (req: Request, res
     return res.status(403).json({ ok: false, error: 'not_a_member' });
   }
 
-  let query = supabase
-    .from('chat_messages')
-    .select('*')
-    .eq('group_id', groupId)
-    .order('created_at', { ascending: false })
-    .limit(limit);
-
-  if (before) query = query.lt('created_at', before);
-
-  const { data, error } = await query;
+  const { data, error } = await repo.listChatGroupMessages(supabase, { groupId, limit, before });
   if (error) {
     console.error('[ChatGroups] Messages fetch error:', error);
     return res.status(500).json({ ok: false, error: error.message });
@@ -293,19 +272,15 @@ router.post('/:id/send', requireAuth, requireTenant, async (req: Request, res: R
     return res.status(403).json({ ok: false, error: 'not_a_member' });
   }
 
-  const { data, error } = await supabase
-    .from('chat_messages')
-    .insert({
-      tenant_id: identity.tenant_id,
-      sender_id: identity.user_id,
-      receiver_id: null,
-      group_id: groupId,
-      content: trimmed,
-      message_type: msgType,
-      metadata,
-    })
-    .select()
-    .single();
+  const { data, error } = await repo.insertChatGroupMessage(supabase, {
+    tenant_id: identity.tenant_id,
+    sender_id: identity.user_id,
+    receiver_id: null,
+    group_id: groupId,
+    content: trimmed,
+    message_type: msgType,
+    metadata,
+  });
 
   if (error) {
     console.error('[ChatGroups] Send error:', error);
@@ -369,11 +344,7 @@ router.post('/:id/read', requireAuth, requireTenant, async (req: Request, res: R
     return res.status(403).json({ ok: false, error: 'not_a_member' });
   }
 
-  const { error } = await supabase
-    .from('chat_group_members')
-    .update({ last_read_at: new Date().toISOString() })
-    .eq('group_id', groupId)
-    .eq('user_id', identity.user_id);
+  const { error } = await repo.markChatGroupRead(supabase, groupId, identity.user_id);
 
   if (error) {
     console.error('[ChatGroups] Mark read error:', error);
@@ -411,12 +382,7 @@ router.patch('/:id/messages/:messageId', requireAuth, requireTenant, async (req:
     return res.status(403).json({ ok: false, error: 'not_the_sender' });
   }
 
-  const { data, error } = await supabase
-    .from('chat_messages')
-    .update({ content: trimmed })
-    .eq('id', messageId)
-    .select()
-    .single();
+  const { data, error } = await repo.updateChatGroupMessageContent(supabase, messageId, trimmed);
 
   if (error) {
     console.error('[ChatGroups] Update message error:', error);
@@ -461,10 +427,7 @@ router.delete('/:id/messages/:messageId', requireAuth, requireTenant, async (req
     return res.status(403).json({ ok: false, error: 'not_the_sender' });
   }
 
-  const { error } = await supabase
-    .from('chat_messages')
-    .delete()
-    .eq('id', messageId);
+  const { error } = await repo.deleteChatGroupMessage(supabase, messageId);
 
   if (error) {
     console.error('[ChatGroups] Delete message error:', error);
@@ -495,11 +458,7 @@ async function requireOwnMessage(
   messageId: string,
   userId: string,
 ): Promise<'ok' | 'not_found' | 'forbidden'> {
-  const { data, error } = await supabase
-    .from('chat_messages')
-    .select('sender_id, group_id')
-    .eq('id', messageId)
-    .maybeSingle();
+  const { data, error } = await repo.fetchChatMessageOwnership(supabase, messageId);
   if (error || !data || (data as any).group_id !== groupId) return 'not_found';
   if ((data as any).sender_id !== userId) return 'forbidden';
   return 'ok';
@@ -510,12 +469,7 @@ async function requireMembership(
   groupId: string,
   userId: string,
 ): Promise<{ role: string } | null> {
-  const { data, error } = await supabase
-    .from('chat_group_members')
-    .select('role')
-    .eq('group_id', groupId)
-    .eq('user_id', userId)
-    .maybeSingle();
+  const { data, error } = await repo.fetchChatGroupMembership(supabase, groupId, userId);
   if (error || !data) return null;
   return { role: (data as any).role };
 }
@@ -529,8 +483,8 @@ async function fanoutGroupNotifications(
   messageId: string,
 ): Promise<void> {
   const [{ data: group }, { data: members }, { data: senderAppUser }, { data: senderProfile }] = await Promise.all([
-    supabase.from('chat_groups').select('name').eq('id', groupId).maybeSingle(),
-    supabase.from('chat_group_members').select('user_id').eq('group_id', groupId),
+    repo.fetchChatGroupName(supabase, groupId),
+    repo.listChatGroupMemberIds(supabase, groupId),
     supabase.from('app_users').select('display_name, email').eq('user_id', senderId).maybeSingle(),
     supabase.from('profiles').select('display_name, full_name').eq('user_id', senderId).maybeSingle(),
   ]);
@@ -596,12 +550,7 @@ async function fetchVitanaGroupHistory(
   limit = 12,
 ): Promise<Array<{ role: 'user' | 'assistant'; content: string }>> {
   try {
-    const { data, error } = await supabase
-      .from('chat_messages')
-      .select('sender_id, content, created_at')
-      .eq('group_id', groupId)
-      .order('created_at', { ascending: false })
-      .limit(limit + 1);
+    const { data, error } = await repo.listRecentChatGroupMessagesForHistory(supabase, groupId, limit + 1);
     if (error || !data) return [];
 
     const rows = [...data].reverse() as Array<{ sender_id: string; content: string | null }>;
@@ -674,25 +623,23 @@ async function handleVitanaGroupMention(
       return;
     }
 
-    const { error } = await supabase
-      .from('chat_messages')
-      .insert({
-        tenant_id: tenantId,
-        sender_id: VITANA_BOT_USER_ID,
-        receiver_id: null,
-        group_id: groupId,
-        content: result.reply,
-        message_type: 'text',
-        metadata: {
-          source: useBrain ? 'brain_group_mention' : 'group_mention',
-          model_used: result.meta.model_used,
-          latency_ms: result.meta.latency_ms,
-          thread_id: result.thread_id,
-          turn_number: result.turn_number,
-          brain_enabled: useBrain,
-          asked_by: askerUserId,
-        },
-      });
+    const { error } = await repo.insertChatGroupMessageNoReturn(supabase, {
+      tenant_id: tenantId,
+      sender_id: VITANA_BOT_USER_ID,
+      receiver_id: null,
+      group_id: groupId,
+      content: result.reply,
+      message_type: 'text',
+      metadata: {
+        source: useBrain ? 'brain_group_mention' : 'group_mention',
+        model_used: result.meta.model_used,
+        latency_ms: result.meta.latency_ms,
+        thread_id: result.thread_id,
+        turn_number: result.turn_number,
+        brain_enabled: useBrain,
+        asked_by: askerUserId,
+      },
+    });
 
     if (error) {
       console.warn(`[ChatGroups] Vitana group reply write failed: ${error.message}`);
@@ -720,31 +667,18 @@ router.post('/:id/refanout-welcome', requireAuth, requireExafyAdmin, async (req:
   const dryRun = !!req.body?.dry_run;
   const supabase = getSupabase();
 
-  const { data: group, error: groupErr } = await supabase
-    .from('chat_groups')
-    .select('id, tenant_id, name')
-    .eq('id', groupId)
-    .maybeSingle();
+  const { data: group, error: groupErr } = await repo.fetchChatGroupForRefanout(supabase, groupId);
   if (groupErr || !group) {
     return res.status(404).json({ ok: false, error: 'group_not_found' });
   }
 
-  const { data: welcomeRows, error: welcomeErr } = await supabase
-    .from('chat_messages')
-    .select('id, content, sender_id, created_at')
-    .eq('group_id', groupId)
-    .filter('metadata->>source', 'eq', 'vitana_group_welcome')
-    .order('created_at', { ascending: true })
-    .limit(1);
+  const { data: welcomeRows, error: welcomeErr } = await repo.fetchChatGroupWelcomeMessage(supabase, groupId);
   if (welcomeErr || !welcomeRows || welcomeRows.length === 0) {
     return res.status(404).json({ ok: false, error: 'welcome_message_not_found' });
   }
   const welcome = welcomeRows[0] as { id: string; content: string; sender_id: string; created_at: string };
 
-  const { data: members, error: membersErr } = await supabase
-    .from('chat_group_members')
-    .select('user_id')
-    .eq('group_id', groupId);
+  const { data: members, error: membersErr } = await repo.listChatGroupMemberIds(supabase, groupId);
   if (membersErr) {
     return res.status(500).json({ ok: false, error: membersErr.message });
   }

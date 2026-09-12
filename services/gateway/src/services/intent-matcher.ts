@@ -12,6 +12,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
+import * as repo from './intent-matcher-repository';
 
 const SUPABASE_URL = process.env.SUPABASE_URL!;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE!;
@@ -45,10 +46,7 @@ export async function computeForIntent(intentId: string): Promise<number> {
   const supabase = getSupabase();
 
   // 1. Run the kind-aware SQL fn for user-vs-user pairings.
-  const { data, error } = await supabase.rpc('compute_intent_matches', {
-    p_intent_id: intentId,
-    p_top_n: 5,
-  });
+  const { data, error } = await repo.computeIntentMatchesRpc(supabase, intentId, 5);
 
   if (error) {
     console.warn(`[VTID-01973] compute_intent_matches RPC failed: ${error.message}`);
@@ -61,22 +59,14 @@ export async function computeForIntent(intentId: string): Promise<number> {
   // P2-A keeps this minimal: same-tenant, category-mapped products with
   // a baseline score of 0.55. P2-B adds proper semantic-over-products.
   try {
-    const { data: src } = await supabase
-      .from('user_intents')
-      .select('intent_kind, category, requester_vitana_id')
-      .eq('intent_id', intentId)
-      .maybeSingle();
+    const { data: src } = await repo.fetchIntentForCommercialFederation(supabase, intentId);
 
     if (src && (src as any).intent_kind === 'commercial_buy' && (src as any).category) {
       // Map intent category to product category and pull top 3.
       // For P2-A we just look for products whose category column shares the
       // first hierarchy segment (e.g. wellness.coaching → wellness).
       const parentCategory = ((src as any).category as string).split('.')[0];
-      const { data: products } = await supabase
-        .from('products')
-        .select('id, name, category')
-        .eq('category', parentCategory)
-        .limit(3);
+      const { data: products } = await repo.fetchProductsByParentCategory(supabase, parentCategory, 3);
 
       if (Array.isArray(products) && products.length > 0) {
         const rows = products.map((p: any, idx: number) => ({
@@ -92,7 +82,7 @@ export async function computeForIntent(intentId: string): Promise<number> {
           compass_aligned: false,
           state: 'new',
         }));
-        await supabase.from('intent_matches').insert(rows as any);
+        await repo.insertIntentMatchRows(supabase, rows);
       }
     }
   } catch (err: any) {
@@ -104,11 +94,7 @@ export async function computeForIntent(intentId: string): Promise<number> {
   // meetups so a student looking for salsa instantly sees both peer teachers
   // AND open paid classes. Best-effort.
   try {
-    const { data: src } = await supabase
-      .from('user_intents')
-      .select('intent_kind, category, requester_vitana_id, kind_payload')
-      .eq('intent_id', intentId)
-      .maybeSingle();
+    const { data: src } = await repo.fetchIntentForDanceFederation(supabase, intentId);
 
     if (src && typeof (src as any).category === 'string' && ((src as any).category as string).startsWith('dance.')) {
       const danceVariety = ((src as any).kind_payload?.dance?.variety) as string | undefined;
@@ -116,13 +102,7 @@ export async function computeForIntent(intentId: string): Promise<number> {
       const horizon = new Date(now.getTime() + 30 * 86_400_000); // next 30 days
 
       // live_rooms federation. Match on category prefix or variety presence.
-      const { data: rooms } = await supabase
-        .from('live_rooms')
-        .select('id, title, category, starts_at, location_label, price_cents, dance_payload')
-        .ilike('category', 'dance.%')
-        .gte('starts_at', now.toISOString())
-        .lte('starts_at', horizon.toISOString())
-        .limit(5);
+      const { data: rooms } = await repo.fetchUpcomingDanceLiveRooms(supabase, now.toISOString(), horizon.toISOString(), 5);
 
       if (Array.isArray(rooms) && rooms.length > 0) {
         const candidateRows = rooms
@@ -155,7 +135,7 @@ export async function computeForIntent(intentId: string): Promise<number> {
           .sort((a: any, b: any) => b.score - a.score);
 
         if (candidateRows.length > 0) {
-          await supabase.from('intent_matches').insert(candidateRows as any);
+          await repo.insertIntentMatchRows(supabase, candidateRows);
         }
       }
     }
@@ -173,12 +153,7 @@ export async function computeForIntent(intentId: string): Promise<number> {
  */
 export async function surfaceTopMatches(intentId: string, n: number = 5): Promise<MatchRow[]> {
   const supabase = getSupabase();
-  const { data, error } = await supabase
-    .from('intent_matches')
-    .select('*')
-    .eq('intent_a_id', intentId)
-    .order('score', { ascending: false })
-    .limit(n);
+  const { data, error } = await repo.fetchTopIntentMatches(supabase, intentId, n);
 
   if (error) {
     console.warn(`[VTID-01973] surfaceTopMatches failed: ${error.message}`);

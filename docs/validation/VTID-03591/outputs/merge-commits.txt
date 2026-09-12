@@ -1,0 +1,145 @@
+d9814f3 fix(ci): regenerate services/gateway/pnpm-lock.yaml after merge (VTID-03702)
+b52aa9c docs(gateway): document Aurora client env vars in .env.example (VTID-03702)
+6837892 Merge origin/main into aws-supabase-aurora-cutover branch (VTID-03619 follow-up)
+fa22951 P0: restore the proactive ORB conversation flow (VTID-03646)
+0e7e137 fix(ci): restore the production gateway deploy — 26 dispatch inputs exceeded GitHub's limit of 25 (VTID-03697) (#3145)
+c7dc847 docs(validation): evidence pack for VTID-03697
+1978fd4 fix(ci): restore the production gateway deploy — 26 dispatch inputs exceeded GitHub's limit of 25 (VTID-03697)
+14a85f6 feat(tts): narration audio cache, cascade wiring, locale seeding, VALIDATOR-CHECK fix (VTID-03691) (#3144)
+648d2f3 fix(ci): scope the CSP gate to the browser-served surface; add VTID-03691 evidence pack (VTID-03696)
+2ecf95e fix(ci): the VTID body fallback must be a declaration, not a prose mention (VTID-03696)
+9b3c5f0 fix(ci): route-mount evidence keys off an ADDED route, not a touched file (VTID-03696)
+8f90b7e fix(ci): make VALIDATOR-CHECK judge only the surface its trigger selects (VTID-03696)
+f4bb498 fix(i18n): inline the source-sha expression so it cannot vanish mid-apply (VTID-03695)
+b0b768c fix(i18n): close the 54 DB-content parity gaps in 7 locales (VTID-03695)
+57575c0 fix(orb): wire the cascaded voice pipeline so it can actually run (BOOTSTRAP-CASCADE-WIRING)
+3d8cb42 fix(ci): bind the three narration-cache env vars in a diffable file (BOOTSTRAP-POLLY-NARRATION-CACHE)
+5811ea8 feat(tts): cache guided-topic narration audio; verify the Polly table live (BOOTSTRAP-POLLY-NARRATION-CACHE)
+3c784e4 docs(CLAUDE.md): cut file 56% by archiving old changelog + trimming narrative bloat (#3142)
+975f98f fix(i18n-db): route the DB-content translator off Google, unblock the seeder (VTID-03689)
+0e194c4 Fix zero-turn recovery + soften alarm-flag prompt language (VTID-03687) (#3141)
+9b00274 Merge pull request #3139 — ORB voice: cascaded pipeline for the languages Nova cannot speak (VTID-03683)
+8be43f3 Suppress premature error flash + forbid skip-to-tool-call in guided teaching (VTID-03686) (#3140)
+fac781a Fix guided-topic sessions closing before teaching begins (VTID-03685)
+6592adf fix(ci): update the pnpm lockfile CI actually uses; bind the new env levers (VTID-03683)
+9dd7711 feat(orb): cascaded voice pipeline for Nova-unsupported languages (VTID-03683)
+7329a82 Merge pull request #3137 from exafyltd/claude/cumulative-like-notifications-2f5o1t
+64c9f2a Add per-entity push tag so cumulative-like updates replace, not stack (VTID-03684)
+c61cacb Merge pull request #3136 — ORB voice: make Nova's German-voice substitution observable (VTID-03682)
+17d32a2 Latch the nova_voice_fallback diag per session (VTID-03682, review fix)
+8d5306a Add OASIS_PROOF to VTID-03682 evidence pack (validate-pr exit 80/81)
+bc656ed Add route markers to VTID-03682 evidence pack (validate-pr exit 70)
+07748ff ORB voice: make Nova's German-voice substitution observable (VTID-03682)
+d408d26 Merge pull request #3135 — ORB voice: stop serving English to Portuguese and Polish users (VTID-03681)
+b334a63 Fix VTID-03681 acceptance.md to the format validate-pr actually requires
+916f7e0 Fix ORB voice serving English to Portuguese and Polish users (VTID-03681)
+1130b64 Fix ci_vital_systems_health() false positive on German locale (VTID-03679)
+2d70a95 Fix ci_vital_systems_health() false positive on German locale (VTID-03679)
+4d784d7 Merge pull request #3132 — Nova Portuguese voice (VTID-03672) + Bedrock role ARN on AWS staging (VTID-03580)
+55f679b Rebuild morning health check for AWS/Aurora, extend to 21 vital-system checks (VTID-03666)
+e796aa6 Merge remote-tracking branch 'origin/main' into claude/morning-health-check-aws-aurora-dcntmv
+06d968b docs(CLAUDE.md): sweep GCP as a direction for new work, GCP is decommissioned (#3133)
+577df74 Merge pull request #3130 from exafyltd/claude/aws-eventbridge-push-dispatch-scheduler
+22784cf Merge remote-tracking branch 'origin/main' into claude/morning-health-check-aws-aurora-dcntmv
+79682a4 fix(aws): address review findings — timeout headroom, non-2xx failures, config drift
+247e81f Merge remote-tracking branch 'origin/main' into claude/aws-eventbridge-push-dispatch-scheduler
+265da7f docs(CLAUDE.md): VTID-03676 verified live — Lambda pivot, backlog drained
+f3207c1 docs(validation): evidence pack for VTID-03672
+13f896d fix(aws): switch EventBridge Scheduler target from API destination to Lambda
+28bb0e2 chore(orb): verify-nova-language degrades honestly when Polly is denied
+9b691b7 fix(aws): resolve real ARNs, drop invalid Scheduler field, region collision
+9d10319 Stop suppressing guided-topic-narration on client reconnect (VTID-03677)
+53b2b7c feat(aws): EventBridge Scheduler replacement for push-dispatch cron (VTID-03676)
+8d6e872 Merge pull request #3124 from exafyltd/claude/news-feed-notifications-9zqzds
+c0b011d docs(CLAUDE.md): note the retired-GCP-gateway default fix under VTID-03656
+bc7cc07 fix(scripts): setup-cloud-scheduler.sh defaulted to the retired GCP gateway
+6d33bd1 feat(orb): serve Portuguese voice on Nova instead of Google (VTID-03672)
+daddece Merge remote-tracking branch 'origin/main' into claude/news-feed-notifications-9zqzds
+b3d4015 Fix ORB widget losing guided_topic_id on client-side reconnect (VTID-03675)
+6c3fc35 Remove guided-topic override_v2 trigger wrapper — Nova rejects it regardless of length (VTID-03674)
+b8c92b7 Merge remote-tracking branch 'origin/main' into claude/news-feed-notifications-9zqzds
+14f662a Address Codex review: forbid vertex routing too, validate translated fields not just row counts (VTID-03666)
+65ff13e Silence impact-scan solo-migration warning on VTID-03666's RPC
+6c4a4fa Rebuild morning health check for AWS/Aurora, extend to 21 vital-system checks (VTID-03666)
+75e5c92 Fix guided-topic Polly-failure fallback — stop reciting curriculum verbatim (VTID-03665)
+aa25086 Merge pull request #3093 from exafyltd/claude/vitana-commerce-mesh-arch-opeet7
+14f443d Address Codex review on #3093: SSRF-guard FHIR token exchange, fail loud on credential-write errors (VTID-03601/03603/03605)
+c400558 Merge pull request #3094 from exafyltd/claude/vtid-03603-shopify-oauth-schema
+01b1ebd fix(notifications): use oldest row (index 0) for backlog-age warning (VTID-03656)
+99d4204 fix(notifications): recover push-dispatch cron from silent 40h outage (VTID-03656)
+bf12191 Merge branch 'main' into claude/vitana-commerce-mesh-arch-opeet7
+b29639d Merge branch 'main' into claude/vtid-03603-shopify-oauth-schema
+18fde28 Guided Journey chapter narration via Amazon Polly (VTID-03650)
+0e7b473 GCP emergency shutdown response: LLM usage telemetry, ORB Vertex-dead fix, oasis-projector Aurora→Supabase (VTID-03599, VTID-03649)
+7561960 Kill-switch the VTID-03647 guided-topic Vertex fallback (VTID-03648)
+29b48c6 Fall back to Vertex when Nova blocks a guided-topic request (VTID-03647)
+991c231 Merge branch 'main' into claude/vitana-commerce-mesh-arch-opeet7
+8287e71 Merge branch 'main' into claude/vtid-03603-shopify-oauth-schema
+ffa590a Fix guided-topic narration locale gaps for My Journey (254-topic catalog) (#3119)
+cfc90dd fix(orb): navigator resolved "log my steps" to Reminders/Index/Journey (VTID-03624)
+f7cd91e P0: silenced_on_cadence was ALSO silencing zero-turn Nova recovery (VTID-03635) (#3114)
+db0bf78 P0: zero-turn Nova reconnect was permanently silenced (VTID-03634) (#3113)
+bcbfe88 fix(chat): Vitana text-chat memory + recipient matching (drift fix + chat-history robustness) (VTID-03623) (#3105)
+9d25406 Merge branch 'main' into claude/vitana-commerce-mesh-arch-opeet7
+0a159d8 Merge branch 'main' into claude/vtid-03603-shopify-oauth-schema
+6a6e962 P0: stop hardcoding the short-gap greeting opener (VERBATIM → INTENT) (VTID-03630) (#3112)
+c9ed83c P0: kill switch for day_close greeting rung (Nova content-filter block) (VTID-03629) (#3111)
+956e9c3 P0: kill switch for new-day-overview greeting rung (Nova content-filter block) (#3110)
+0570ac9 P0: revert ORB_CONTEXT_READY_GATE_TIMEOUT_MS 4000ms regression killing Nova sessions (#3109)
+bb7348f feat(orb): VTID-03604 — the ORB day-close (all 4 build-order items)
+1bdc1e0 fix(orb): stop hardcoding sentences Vitana speaks (VTID-03622)
+c9ab96f docs(claude): record the three ORB conversation-flow findings (VTID-03592, VTID-03607/03609, VTID-03614)
+d4b24f2 fix(orb): response watchdog leaks its timer, leaving Nova greeting stalls unrecovered (VTID-03616)
+9464ced Carry MARKETPLACE_SYNC_SECRET onto AWS prod gateway task def (VTID-03618)
+79ac9d9 fix(orb): 36 of 187 nav-catalog screens were unreachable by voice navigation (VTID-03614)
+96034d7 Fix self-referential trap in Morning Health Check's self-audit (VTID-03617)
+e756dd9 Add manual Google Chat confirmation dispatch to Hourly Status Check (VTID-03615)
+91f9e78 fix(orb): new-day briefing read its greeting facts before the prefetch resolved (VTID-03609, VTID-03607)
+e5b0719 Fix 3 chronically-failing scheduled workflows (VTID-03608)
+3bd0625 feat(vcaop): hand-rolled SMART on FHIR connector, dormant (VTID-03605)
+6d5637f schema(vcaop): generalize partner_oauth_credential for a second connector (VTID-03605)
+d033d33 ORB voice: +10% playback speed for German Nova Sonic sessions (VTID-03606) (#3096)
+150f06b fix(deploy): set BEDROCK_ROLE_ARN on AWS staging so staging can verify Claude (VTID-03580) (#3095)
+a3fcc2f fix(deploy): set BEDROCK_ROLE_ARN on AWS staging so staging can verify Claude (VTID-03580)
+17856b9 fix(i18n): promote pt/ru/pl to GA in supported_locales, correct the pt hint to Brazilian (VTID-03580) (#3085)
+b92980d fix(vcaop): correct impact-scan marker placement, revert .env.example
+321a16b chore(vcaop): address impact-scan findings on the Shopify OAuth connector
+24bacaa schema(vcaop): partner_oauth_credential table for Shopify OAuth (VTID-03603)
+21f29f3 feat(vcaop): hand-rolled Shopify OAuth connector, dormant (VTID-03603)
+a9b0a83 Repoint health-check pipeline from GCP to AWS gateway (VTID-03598)
+8bfb9db test(vcaop): avoid CSP-governance-gate false positives in fingerprint fixtures
+59a4ebd docs(validation): add VALIDATOR-CHECK evidence pack for VTID-03601
+77aa7a1 feat(vcaop): SSRF-guarded storefront platform detection (VTID-03601)
+54ea28f fix(orb): stop apologising for sessions that never failed (VTID-03597) (#3090)
+55a91c8 refactor(llm): stop every LLM call site from choosing Google (VTID-03579)
+6d6b675 fix(orb): navigator dropped the correct screen at score 0 (VTID-03595) (#3089)
+7a558e3 fix(orb): duplicate Nova turns + new-day briefing unreachable when context was ready (VTID-03592, VTID-03593) (#3088)
+10a3e5e fix(orb): restore the new-day greeting and repeat navigation (VTID-03583, VTID-03584, VTID-03586, VTID-03587) (#3046)
+1d3d026 Bridge AWS SNS alerts to existing Google Chat channel (VTID-03413) (#2946)
+c7d9fb0 Gateway: Commerce Mesh Partner Portal surface over live factory tables (VTID-03544) (#3067)
+82e44ae Commerce Mesh activation wave: blockers BLK-001/007/009/010 resolved (VTID-03544/03545/03547/03548) (#3066)
+a9a1177 feat(deploy): make the two remaining Google seams settable from a diffable file (VTID-03578) (#3083)
+5257f18 fix(tts): Polly was reading Portuguese and Polish users English (VTID-03578) (#3082)
+8dc0aa1 docs(aurora): scope the Supabase→Aurora migration from live AWS measurements (VTID-03566) (#3076)
+1e9b1ad feat(i18n): Chinese on the gateway — catalog, LLM directive, voice tag (VTID-03569) (#3078)
+62058ce fix(i18n): correct the Chinese register hint in supported_locales (VTID-03575) (#3081)
+44af589 fix(db-i18n): the Aurora runner refused nothing and fetched nothing (VTID-03574) (#3080)
+02216c6 fix(db-i18n): a fresh Aurora could never have been seeded (VTID-03572) (#3079)
+9dbeede fix(ci): repair unparseable VALIDATOR-CHECK.yml — PR governance was enforcing nothing (VTID-03505) (#3050)
+ac5b8cf fix(self-healing): authenticate control-plane routes + fail closed (P0-1, P0-5) (#2884)
+92b5b81 fix(orb): never dead-end &quot;improve my Index&quot; — degrade to plan + Autopilot offer (#2759)
+4d3b5be DEV-COMHU-03302: Show frontend (community-app) staging build in the PUBLISH panel (#2747)
+b1c092d Security audit: fix wallet RLS, broken admin auth, hardcoded API key (#2867)
+25b3593 ORB voice fixes: English-locale apology bug + Nova Sonic retry-before-fallback (VTID-03556, VTID-03557) (#3070)
+55348af fix(orb): emit vtid.live.session.stop from the WS teardown path (VTID-03561) (#3073)
+94fac56 feat(db-i18n): Aurora seed script + DMS replication is dead since 2026-07-27 (VTID-03517) (#3075)
+307377e Gitignore local RepoWise index artifacts (#3074)
+f27b244 VALIDATOR-CHECK: fetch the base branch fully so a merge base always exists (VTID-03570)
+b912e7b docs: "use a preview instead" was wrong — every frontend writes to prod Supabase (VTID-03506) (#3065)
+5804477 Add mobile-loading test-program cluster to Command Hub (#2469)
+a980cda docs(navigator): VITANA desktop platform navigation/routing inventory (#2779)
+9e3db95 feat(intelligence): context quality score driven by inventory (VTID-03246) (#2481)
+6965ebd fix(e2e): scroll-retry for Android password-field detection (#3064)
+93462d4 docs: changelog row for the Nova global promotion (VTID-03560) (#3072)
+771bd78 feat(i18n): 8-locale gateway catalogs + DB-content i18n pipeline (VTID-03509, 03515, 03517, 03521, 03522, 03559) (#3055)
+e3b87e9 feat(aws-prod): wire Nova global promotion + ORB idle budget as deploy inputs (VTID-03560) (#3071)

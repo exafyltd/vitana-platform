@@ -24,12 +24,11 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { callViaRouter } from './llm-router'; // VTID-03579: provider from llm_routing_policy, never hardcoded
+import * as repo from './user-model-synthesis-repository';
 
 export const SIGNAL_PROFILE_NARRATIVE = 'user_profile_narrative_v1';
 /** Below this many live facts a narrative adds nothing — skip. */
 export const MIN_FACTS_FOR_NARRATIVE = 3;
-const MAX_FACTS_IN_PROMPT = 30;
-const MAX_ROUTINES_IN_PROMPT = 5;
 // VTID-03579: no NARRATIVE_MODEL / Vertex client here any more. Which model
 // writes the narrative is a routing decision (`memory` stage), not a property
 // of this module — see the cascade removal below.
@@ -77,34 +76,10 @@ export async function gatherSynthesisInputs(
   userId: string,
 ): Promise<SynthesisInputs> {
   const [factsRes, routinesRes, goalRes, indexRes] = await Promise.all([
-    supabase
-      .from('memory_facts')
-      .select('fact_key, fact_value, provenance_source')
-      .eq('tenant_id', tenantId)
-      .eq('user_id', userId)
-      .is('superseded_at', null)
-      .order('provenance_confidence', { ascending: false })
-      .order('extracted_at', { ascending: false })
-      .limit(MAX_FACTS_IN_PROMPT),
-    supabase
-      .from('user_routines')
-      .select('title, summary')
-      .eq('user_id', userId)
-      .order('confidence', { ascending: false })
-      .limit(MAX_ROUTINES_IN_PROMPT),
-    supabase
-      .from('life_compass')
-      .select('primary_goal')
-      .eq('user_id', userId)
-      .eq('is_active', true)
-      .order('created_at', { ascending: false })
-      .limit(1),
-    supabase
-      .from('vitana_index_scores')
-      .select('score_total, score_nutrition, score_hydration, score_exercise, score_sleep, score_mental')
-      .eq('user_id', userId)
-      .order('date', { ascending: false })
-      .limit(1),
+    repo.fetchMemoryFactsForSynthesis(supabase, tenantId, userId),
+    repo.fetchUserRoutinesForSynthesis(supabase, userId),
+    repo.fetchActiveLifeCompassGoal(supabase, userId),
+    repo.fetchLatestVitanaIndexScore(supabase, userId),
   ]);
 
   let index: SynthesisInputs['index'] = null;
@@ -189,13 +164,12 @@ export async function synthesizeUserModel(
   }
   const hash = computeInputsHash(inputs);
 
-  const { data: existing } = await supabase
-    .from('user_assistant_state')
-    .select('value')
-    .eq('tenant_id', tenantId)
-    .eq('user_id', userId)
-    .eq('signal_name', SIGNAL_PROFILE_NARRATIVE)
-    .maybeSingle();
+  const { data: existing } = await repo.fetchExistingProfileNarrativeState(
+    supabase,
+    tenantId,
+    userId,
+    SIGNAL_PROFILE_NARRATIVE,
+  );
   const prior = (existing as { value?: { inputs_hash?: string } } | null)?.value;
   if (prior?.inputs_hash === hash) {
     return { ok: true, written: false, reason: 'inputs_unchanged' };
@@ -205,21 +179,18 @@ export async function synthesizeUserModel(
   if (!narrative) return { ok: false, written: false, reason: 'model_failed' };
 
   const nowIso = new Date().toISOString();
-  const { error } = await supabase.from('user_assistant_state').upsert(
-    {
-      tenant_id: tenantId,
-      user_id: userId,
-      signal_name: SIGNAL_PROFILE_NARRATIVE,
-      value: {
-        narrative,
-        generated_at: nowIso,
-        inputs_hash: hash,
-        facts_count: inputs.facts.length,
-      },
-      last_seen_at: nowIso,
+  const { error } = await repo.upsertProfileNarrativeState(supabase, {
+    tenant_id: tenantId,
+    user_id: userId,
+    signal_name: SIGNAL_PROFILE_NARRATIVE,
+    value: {
+      narrative,
+      generated_at: nowIso,
+      inputs_hash: hash,
+      facts_count: inputs.facts.length,
     },
-    { onConflict: 'tenant_id,user_id,signal_name' },
-  );
+    last_seen_at: nowIso,
+  });
   if (error) return { ok: false, written: false, reason: error.message };
   return { ok: true, written: true };
 }
@@ -231,13 +202,12 @@ export async function readUserProfileNarrative(
   userId: string,
 ): Promise<{ narrative: string; generated_at: string } | null> {
   try {
-    const { data, error } = await supabase
-      .from('user_assistant_state')
-      .select('value')
-      .eq('tenant_id', tenantId)
-      .eq('user_id', userId)
-      .eq('signal_name', SIGNAL_PROFILE_NARRATIVE)
-      .maybeSingle();
+    const { data, error } = await repo.fetchExistingProfileNarrativeState(
+      supabase,
+      tenantId,
+      userId,
+      SIGNAL_PROFILE_NARRATIVE,
+    );
     if (error || !data) return null;
     const v = (data as { value?: { narrative?: unknown; generated_at?: unknown } }).value;
     if (v && typeof v.narrative === 'string' && v.narrative.trim()) {

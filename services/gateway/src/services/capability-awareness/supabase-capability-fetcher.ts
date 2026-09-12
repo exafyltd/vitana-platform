@@ -29,6 +29,7 @@ import type {
   CapabilityFetcher,
   CapabilityRow,
 } from '../assistant-continuation/providers/feature-discovery';
+import * as repo from './supabase-capability-fetcher-repository';
 
 // ---------------------------------------------------------------------------
 // Cache primitives
@@ -97,12 +98,7 @@ export function createSupabaseCapabilityFetcher(
         return [];
       }
       try {
-        const { data, error } = await sb
-          .from('system_capabilities')
-          .select(
-            'capability_key, display_name, description, required_role, required_tenant_features, required_integrations, helpful_for_intents, enabled',
-          )
-          .eq('enabled', true);
+        const { data, error } = await repo.fetchEnabledCapabilities(sb);
         if (error || !Array.isArray(data)) {
           _catalogCache.set(key, { value: [], expiresAtMs: t + CATALOG_TTL_MS });
           return [];
@@ -129,13 +125,7 @@ export function createSupabaseCapabilityFetcher(
         return [];
       }
       try {
-        const { data, error } = await sb
-          .from('user_capability_awareness')
-          .select(
-            'capability_key, awareness_state, first_introduced_at, last_introduced_at, first_used_at, last_used_at, use_count, dismiss_count, mastery_confidence, last_surface',
-          )
-          .eq('tenant_id', args.tenantId)
-          .eq('user_id', args.userId);
+        const { data, error } = await repo.fetchUserCapabilityAwareness(sb, args.tenantId, args.userId);
         if (error || !Array.isArray(data)) {
           _awarenessCache.set(key, { value: [], expiresAtMs: t + AWARENESS_TTL_MS });
           return [];

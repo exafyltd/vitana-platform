@@ -32,6 +32,7 @@ import {
   pickPersonaForKindForTenant as registryPickPersonaForKindForTenant,
 } from './persona-registry';
 import { emitOasisEvent } from './oasis-event-service';
+import * as repo from './report-to-specialist-core-repository';
 
 export interface ReportToSpecialistArgs {
   kind?: string;
@@ -158,10 +159,7 @@ export async function executeReportToSpecialist(
         : 'pick_specialist_for_text';
       const rpcArgs: Record<string, unknown> = { p_text: gateInput };
       if (tenantId) rpcArgs.p_tenant_id = tenantId;
-      const { data: rpcData, error: rpcError } = await sb.rpc(
-        rpcName,
-        rpcArgs as never,
-      );
+      const { data: rpcData, error: rpcError } = await repo.pickSpecialistForText(sb, rpcName, rpcArgs);
       if (rpcError) {
         // Gate failure isn't fatal — fall through to the kind→persona
         // fallback. We log on the caller side; here we just surface
@@ -208,33 +206,29 @@ export async function executeReportToSpecialist(
   const source = options.source ?? 'orb-voice-tool';
   const screenPath = options.screen_path ?? '/orb/voice';
   const triagedAt = pickedPersona ? new Date().toISOString() : null;
-  const { data: created, error: insertError } = await sb
-    .from('feedback_tickets')
-    .insert({
-      user_id: identity.user_id,
-      vitana_id: identity.vitana_id ?? null,
-      kind,
-      status: pickedPersona ? 'triaged' : 'new',
-      raw_transcript: summary,
-      intake_messages: [
-        {
-          agent: 'vitana',
-          role: 'user',
-          content: summary,
-          ts: new Date().toISOString(),
-        },
-      ],
-      structured_fields: {
-        specialist_hint: specialistHint || null,
-        voice_origin: true,
-        source,
+  const { data: created, error: insertError } = await repo.insertFeedbackTicket(sb, {
+    user_id: identity.user_id,
+    vitana_id: identity.vitana_id ?? null,
+    kind,
+    status: pickedPersona ? 'triaged' : 'new',
+    raw_transcript: summary,
+    intake_messages: [
+      {
+        agent: 'vitana',
+        role: 'user',
+        content: summary,
+        ts: new Date().toISOString(),
       },
-      screen_path: screenPath,
-      resolver_agent: pickedPersona || null,
-      triaged_at: triagedAt,
-    })
-    .select('id, ticket_number')
-    .single();
+    ],
+    structured_fields: {
+      specialist_hint: specialistHint || null,
+      voice_origin: true,
+      source,
+    },
+    screen_path: screenPath,
+    resolver_agent: pickedPersona || null,
+    triaged_at: triagedAt,
+  });
 
   if (insertError || !created) {
     return {
@@ -248,7 +242,7 @@ export async function executeReportToSpecialist(
   // Live Handoffs panel event — only when a specialist was picked.
   if (pickedPersona) {
     try {
-      await sb.from('feedback_handoff_events').insert({
+      await repo.insertFeedbackHandoffEvent(sb, {
         ticket_id: ticket.id,
         user_id: identity.user_id,
         vitana_id: identity.vitana_id ?? null,

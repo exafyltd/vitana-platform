@@ -320,6 +320,39 @@ describe('Tenant Admin Overview Routes', () => {
     expect(chainFor('app_users').select).not.toHaveBeenCalled();
   });
 
+  it('GET /at-risk returns 500 (not an empty cohort) when the members lookup errors', async () => {
+    // Previously: an unchecked `{data}`-only destructure meant a query
+    // error resolved `members` to null, which `!members` treated identically
+    // to "tenant genuinely has zero members" — reporting a false "0 at-risk"
+    // to the admin instead of surfacing the DB failure.
+    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    chainFor('user_tenants').mockResolvedValueOnce({ data: null, error: { message: 'members lookup failed' } });
+
+    const res = await request(app)
+      .get(`/api/v1/admin/tenants/${TENANT_A}/overview/at-risk`)
+      .set('Authorization', 'Bearer token');
+
+    expect(res.status).toBe(500);
+    expect(res.body.ok).toBe(false);
+    expect(chainFor('app_users').select).not.toHaveBeenCalled();
+  });
+
+  it('GET /at-risk returns 500 when the app_users lookup errors', async () => {
+    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    chainFor('user_tenants').mockResolvedValueOnce({
+      data: [{ user_id: 'u1', active_role: 'community', created_at: new Date().toISOString() }],
+      error: null,
+    });
+    chainFor('app_users').mockResolvedValueOnce({ data: null, error: { message: 'app_users lookup failed' } });
+
+    const res = await request(app)
+      .get(`/api/v1/admin/tenants/${TENANT_A}/overview/at-risk`)
+      .set('Authorization', 'Bearer token');
+
+    expect(res.status).toBe(500);
+    expect(res.body.ok).toBe(false);
+  });
+
   // --- GET /activity ---
 
   it('GET /activity filters out events tagged with another tenant\'s id', async () => {

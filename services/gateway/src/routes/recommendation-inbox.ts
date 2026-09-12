@@ -19,6 +19,7 @@ import { Router, Request, Response } from 'express';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { notifyUserAsync } from '../services/notification-service';
 import { optionalAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import * as repo from './recommendation-inbox-repository';
 
 const router = Router();
 
@@ -307,12 +308,7 @@ router.post('/:id/accept', async (req: Request, res: Response) => {
         const supa = createClient(supabaseUrl, serviceKey);
 
         // Get user's tenant
-        const { data: tenant } = await supa
-          .from('user_tenants')
-          .select('tenant_id')
-          .eq('user_id', userId)
-          .limit(1)
-          .single();
+        const { data: tenant } = await repo.fetchUserPrimaryTenantId(supa, userId);
 
         if (tenant?.tenant_id) {
           notifyUserAsync(userId, tenant.tenant_id, 'recommendation_activated', {

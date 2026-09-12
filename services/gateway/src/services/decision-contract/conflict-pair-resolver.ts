@@ -24,6 +24,7 @@
 
 import { getSupabase } from '../../lib/supabase';
 import type { PriorityDomain } from '../../types/context-fusion';
+import * as repo from './conflict-pair-resolver-repository';
 
 const CACHE_TTL_MS = 15_000;
 const TELEMETRY_PREFIX =
@@ -145,11 +146,7 @@ async function fetchAll(): Promise<CacheSnapshot> {
     return snap; // Will fall through to FALLBACK_MAP at read time.
   }
   try {
-    const { data, error } = await supa
-      .from('decision_conflict_pair')
-      .select(
-        'conflict_type, domain_a, domain_b, tenant_id, version, effective_from, effective_until',
-      );
+    const { data, error } = await repo.fetchAllDecisionConflictPairs(supa);
     if (error) {
       if (
         !/relation .*decision_conflict_pair.* does not exist/i.test(error.message)

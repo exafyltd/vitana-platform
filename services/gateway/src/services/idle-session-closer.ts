@@ -19,6 +19,7 @@
 
 import { getSupabase } from '../lib/supabase';
 import { recordSessionSummary } from './guide/session-summaries';
+import * as repo from './idle-session-closer-repository';
 
 const LOG_PREFIX = '[VTID-01990:idle-session-closer]';
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -59,13 +60,7 @@ async function findIdleThreadsToSummarize(idleHours: number): Promise<IdleThread
   // Step 1: list candidate text-channel threads with their newest activity.
   // We grab a recent window so the closer doesn't scan the whole table.
   const lookbackIso = new Date(Date.now() - 14 * 24 * 3600 * 1000).toISOString(); // last 14 days
-  const { data: msgs, error: msgErr } = await supabase
-    .from('conversation_messages')
-    .select('thread_id, user_id, tenant_id, channel, created_at')
-    .neq('channel', 'orb') // voice writes its own summaries via orb-live.ts
-    .gte('created_at', lookbackIso)
-    .order('created_at', { ascending: false })
-    .limit(2000);
+  const { data: msgs, error: msgErr } = await repo.fetchRecentNonOrbConversationMessages(supabase, lookbackIso);
 
   if (msgErr) {
     console.warn(`${LOG_PREFIX} message scan failed: ${msgErr.message}`);
@@ -125,10 +120,7 @@ async function findIdleThreadsToSummarize(idleHours: number): Promise<IdleThread
 
   // Step 2: filter out threads that already have a summary
   const sessionIds = idle.map((t) => t.thread_id);
-  const { data: existing, error: existingErr } = await supabase
-    .from('user_session_summaries')
-    .select('session_id, user_id')
-    .in('session_id', sessionIds);
+  const { data: existing, error: existingErr } = await repo.fetchExistingSessionSummaries(supabase, sessionIds);
 
   if (existingErr) {
     console.warn(`${LOG_PREFIX} existing-summary check failed: ${existingErr.message}`);
@@ -151,12 +143,7 @@ async function fetchTranscript(
   const supabase = getSupabase();
   if (!supabase) return [];
 
-  const { data, error } = await supabase
-    .from('conversation_messages')
-    .select('role, content, created_at')
-    .eq('thread_id', threadId)
-    .order('created_at', { ascending: true })
-    .limit(MAX_TURNS_PER_SESSION);
+  const { data, error } = await repo.fetchThreadTranscript(supabase, threadId, MAX_TURNS_PER_SESSION);
 
   if (error || !data) {
     if (error) console.warn(`${LOG_PREFIX} transcript fetch failed: ${error.message}`);

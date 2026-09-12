@@ -1,10 +1,23 @@
 # Supabase → Aurora Migration Plan
 
-**VTID-03494** · Status: **DRAFT — planning only, no code changed** · 2026-08-04
+**VTID-03494** · Status: **DECIDED — Option B, execution in progress** · 2026-08-04
+(decision recorded 2026-08-25, VTID-03702 umbrella)
 
 Written at explicit user direction ("Aurora is the target — plan it"). This
-document does **not** authorize execution. Every phase below needs its own
-execution VTID, and Phase 0 is a hard gate on all of them.
+document did **not**, at the time it was written, authorize execution — but
+the platform owner has since given that authorization explicitly and
+repeatedly: **"move everything from Supabase to AWS and Aurora. Also the
+Auth server, so in the end we shut down Supabase... this is final decision,
+so get the migration job done"**, with a hard external deadline ("Supabase
+including auth server disconnecting from production by 20 September 2026
+and downgrading to free plan from paid plan by same day"), and explicit
+authorization to proceed without further check-ins ("go and execute a
+hundred tasks... We have a plan. Go ahead"). See the "Phase 1 — decided"
+note below for what this settles. Individual phases/workstreams still get
+their own execution VTIDs (B1 → VTID-03702, B2 → VTID-03735, B3 →
+VTID-03732, Phase 0 → VTID-03734, B4-sizing → VTID-03739, B5 →
+VTID-03736, B6 → VTID-03737, B7 → VTID-03738) — this note records that the
+**decision to execute at all**, and which option, are no longer open.
 
 ---
 
@@ -72,6 +85,50 @@ production. Migrating onto it would promote silent data loss to primary.
 **Owner needs:** live AWS/DMS access. This is the first real blocker and it is
 not a code task.
 
+**Correction, 2026-08-27 (same day, see the doc's own correction notice):**
+this update originally claimed the "~154k dropped applies" figure was
+"root-caused as a live, generalized coercion defect." That was wrong — a
+prior pass (`docs/AURORA-PHASE0-RECONCILIATION-FINDINGS.md`, 2026-08-25,
+which this update failed to check against before writing itself) already
+used exact `count(*)` (not the `n_live_tup` estimator this update's own
+sweep used, which is independently confirmed unreliable — 29x off on
+`oasis_events`) and decisively showed the 225,958/225,990-row
+`awsdms_validation_failures_v1` table is **stale history from a superseded,
+older DMS task's single 2026-07-27 validation run — not a current defect.**
+The corrected read: **the real, current, and only confirmed gap is CDC
+having been down since 2026-08-20**, measured directly on the 3
+highest-churn tables and growing day over day (`oasis_events` 25,955 rows
+behind as of 2026-08-27, up from 9,332 on 2026-08-25). See
+`docs/AURORA-PHASE0-RECONCILIATION-2026-08-27.md` for the full corrected
+report, and the 2026-08-25 doc for the original, more rigorous pass this
+one should have deferred to from the start. **Still open:** exact-count
+reconciliation across the other ~580 shared tables (only 3 done so far);
+criterion 2's checksum half; criterion 3 (both passes were ad hoc, neither
+is a committed re-runnable job); and criterion 4, blocked on a Supabase-
+dashboard Supavisor fix — the specific blocking error has itself changed
+since the 2026-08-25 pass (now a pooler tenant/role error, previously an
+IPv6 network error), worth relaying since the actual fix action may differ.
+**Phase 0 is not closed.**
+
+**2026-08-28 update:** the "only 3 done so far" row-count gap above is
+closed — this session ran the exact-count comparison across **all 581
+shared tables** (HTTPS-based: RDS Data API + Supabase `execute_sql`, no
+raw-Postgres access needed). 500/581 match exactly; 79 are the same
+CDC-down gap, now precisely quantified per-table; 2 (`voice_healing_history`,
+`thread_presence`/`community_search_history`, negative deltas) are a new,
+flagged-not-resolved anomaly (Aurora ahead of Supabase, likely un-replicated
+Supabase-side deletes). **One real defect found and fixed, live, verified:**
+`memory_audit_log`'s 13 monthly partitions existed on Aurora with real data
+but were never `ATTACH PARTITION`ed to the parent (a `created_at`
+`timestamptz` vs `timestamptz(6)` typmod mismatch blocked it) — parent
+silently returned 0 rows instead of 9,000+. Fixed both the type mismatch
+and the attachment on all 13; parent now correctly reports 9,734 rows.
+Full detail in `docs/AURORA-PHASE0-RECONCILIATION-2026-08-27.md`'s
+"Addendum, 2026-08-28" section. Checksums (criterion 2's other half),
+criterion 3 (re-runnable job), and criterion 4 (still blocked on the same
+Supabase-dashboard fix) remain open — **Phase 0 is still not closed**, but
+its scope is now precisely bounded rather than partially unmeasured.
+
 ---
 
 ### Decision recorded 2026-08-04
@@ -112,8 +169,24 @@ Two consequences for this migration:
 
 ## Phase 1 — Decide the target architecture
 
-Three genuinely different end-states. This is the decision that shapes
-everything else, and it has not been made.
+> **DECIDED 2026-08-25: Option B.** The platform owner's standing directive
+> — full migration off Supabase, **including the Auth server**, ending in
+> Supabase being fully disconnected and downgraded to its free plan by
+> 20 September 2026 — rules out Option A by construction: self-hosting the
+> Supabase stack (even on AWS/Aurora) is still running Supabase, not
+> shutting it down, and does not touch GoTrue/Auth at all. Only Option B
+> (gateway → real Postgres, auth → a replacement identity source, realtime
+> → owned WebSockets, storage → S3, edge functions → Lambda/ECS) satisfies
+> "shut down Supabase." This session's B1/B2/B5/B6/B7 work (repository
+> seams talking to Postgres directly rather than through a self-hosted
+> Supabase stack; Storage/Realtime/edge-functions inventoried for
+> replacement, not for a lift-and-shift) has been executing consistent with
+> Option B throughout — this note makes that consistency explicit rather
+> than leaving a future reader to infer it. The three options below are
+> kept as-written for the historical record of what was weighed.
+
+Three genuinely different end-states were considered; below is that original
+analysis, unedited.
 
 ### Option A — Self-hosted Supabase on AWS
 Run the Supabase stack (PostgREST, GoTrue, Realtime, Storage) against Aurora.
@@ -215,13 +288,115 @@ cheaply by providing a compatible `auth.uid()` function in Aurora reading from a
 session GUC set per connection. That last trick is what makes 557 policies port
 unchanged; without it they must each be rewritten.
 
-**B5 — Realtime.** 79 subscriptions. Assess how many are genuinely live-critical
-vs. polling that could be simplified before rebuilding them.
+**Re-verified live 2026-09-11 (VTID-03815 continuation), against live
+Supabase via MCP — both counts have grown, as expected on a live
+production system that hasn't stopped taking real traffic while this
+migration remains unexecuted:** `auth.users` is now **209** (was 199 as
+of this doc's 2026-08-04 header date), and `pg_policies` in `public` now
+shows **638** policies referencing `auth.uid()` (up from 557), **65**
+referencing `auth.jwt()` (not previously broken out separately here),
+across **1,039 total policies** on **327 distinct tables**. This is drift
+from continued production use, not a data-quality problem — but it does
+mean B4's actual scope is ~15% larger than this section's original count,
+and will keep growing every day execution is deferred. The `auth.uid()`
+compatibility-shim approach this section recommends is unaffected by the
+count itself (it's a mechanism, not a per-policy rewrite), so the growth
+doesn't change B4's design — only its stakes for delaying further.
 
-**B6 — Storage.** 23 call sites → S3. Smallest workstream.
+**B5 — Realtime.** 79 subscriptions (live-corrected to 60 in-frontend /
+39 files, gateway has zero — see `docs/AURORA-B5-REALTIME-INVENTORY.md`).
+Live Aurora write-activity data narrows the "how many are genuinely
+live-critical" question to 3 tables (`user_activity_log`,
+`user_notifications`, `chat_messages`) out of 30 — see the doc's 2026-08-28
+addenda, which also live-verify that Supabase's own `realtime` server
+cannot attach to Aurora today (`wal_level=replica`,
+`rds.logical_replication=off`) without a cluster reboot. **Decided
+2026-08-29** (`AURORA-B5-REALTIME-INVENTORY.md`'s own addendum): running
+Supabase's `realtime` binary against Aurora is Option A's approach applied
+to one component, which this doc's own Option B decision (below) already
+rules out — a gateway-owned relay for those 3 tables is the only choice
+consistent with the decision on record. Recommended starting point: a
+short-interval polling relay (no reboot needed, buildable now) rather than
+a logical-replication consumer (same reboot cost as running `realtime`
+itself), upgradable later if polling latency proves insufficient.
+**Execution complete 2026-09-11** (VTID-03815 continuation): all 3 tables
+now have a polling relay — `user_notifications`
+(`GET /api/v1/realtime/user-notifications/stream`) and `user_activity_log`
+(`GET /api/v1/realtime/user-activity-log/stream`) share one generic
+cursor-poller (`services/gateway/src/services/realtime/generic-cursor-relay.ts`,
+"row ownership by column equality"); `chat_messages`
+(`GET /api/v1/realtime/chat-messages/stream`) has its own purpose-built
+poller instead, since it needs thread/group-membership authorization
+(a JOIN against `chat_group_members`), not row ownership — confirmed
+against the real schema rather than assumed. All three are built,
+unit-tested, and merged behind their own independent feature flags
+(`FEATURE_REALTIME_RELAY_USER_NOTIFICATIONS_ENV`/
+`FEATURE_REALTIME_RELAY_USER_ACTIVITY_LOG_ENV`/
+`FEATURE_REALTIME_RELAY_CHAT_MESSAGES_ENV`) — all off everywhere today,
+no frontend consumer wired up yet, and no live exercise against real
+Supabase/Aurora data (no live credentials this session). See
+`AURORA-B5-REALTIME-INVENTORY.md`'s 2026-09-11 addenda for the full
+build record.
 
-**B7 — Edge functions.** 74 Deno functions → Lambda/ECS. Independent of the DB
-work and can proceed in parallel.
+**B6 — Storage.** Originally scoped as 23 call sites → S3, smallest
+workstream; the real surface turned out larger once edge functions were
+checked (never done in the original pass) — see
+`AURORA-B6-STORAGE-INVENTORY.md`'s 2026-09-11 addenda. Gateway's own call
+sites are done (`STORAGE_PROVIDER` seam, VTID-03765, public-bucket
+backfill complete). **Edge-function code-side gap now fully closed
+(2026-09-11, VTID-03815 continuation):** a gateway-owned `storage-bridge`
+route (`upload`/`remove`/`public-url`/`list`/`signed-url`, the same
+one-call-point-on-the-gateway shape `ai-bridge` uses for B7's LLM calls)
+covers all 5 identified edge-function call sites —
+`generate-event-image`, `generate-maxina-summer-events`,
+`request-account-deletion` (list+remove), `voucher-download-pdf`
+(upload+signed-url), and `extract-video-meta` (the video-download
+body-size mismatch resolved by having the function fetch bytes directly
+from a signed URL instead of proxying them through the gateway).
+`exafyltd/vitana-v1`'s `_shared/storage-bridge-client.ts` companion and
+all 5 functions' wiring shipped in the same pass, each behind its own
+`STORAGE_BRIDGE_PROVIDER` secret, default unchanged. Private-bucket
+backfill (116 objects) remains blocked on a `secretsmanager:GetSecretValue`
+grant this session doesn't have (unchanged from the 2026-08-27 finding);
+no live exercise of any of this against a real Supabase/S3 bucket (no
+credentials any session here has had).
+
+**B7 — Edge functions.** 74 Deno functions → Lambda/ECS
+(`docs/AURORA-B7-EDGE-FUNCTIONS-INVENTORY.md`). First real cut shipped: a
+gateway-owned Bedrock bridge (`POST /api/v1/ai-bridge/generate`,
+vitana-platform PR #3087) plus a drop-in `_shared/bedrock-bridge-client.ts`
+(vitana-v1 PR #1051) closes the 23-of-74-functions "calls Gemini/Vertex
+directly" violation for the 6 frontend-reachable, `gemini-client.ts`-based
+functions without needing Lambda (IAM-denied to this session) — wired
+behind an `AI_BRIDGE_PROVIDER` flag on all 6 of those functions now
+(`generate-enhanced-recommendations`, `generate-proactive-greeting`,
+`extract-diary-insights`, `social-media-import`, `ai-chat` (partial, see
+below), `transcribe-audio`), each defaulting to unchanged behavior.
+`generate-event-image`'s Vertex Imagen call is wired too (merged
+independently into `main`, `AI_BRIDGE_PROVIDER` defaulting to `'vertex'`
+there specifically since Imagen still works and Bedrock/Titan is the
+opt-in). `ai-chat` turned out to have THREE separate Gemini-touching code
+paths, not one: its two isolated non-streaming `generateContent()` calls
+(post-stream translation, background insight extraction) are wired the
+same way; its streaming chat response (a raw fetch directly to Gemini's
+SSE endpoint, entangled with per-sentence TTS triggering) and its
+non-streaming fallback (routed through Lovable's own AI gateway, itself
+pointed at `google/gemini-2.5-flash` — a third distinct integration) are
+deliberately untouched, needing real Bedrock streaming support this
+session has no safe way to build and verify against a live chat feature.
+`transcribe-audio` (VTID-03815 continuation, 2026-09-10): a THIRD,
+independent bridge adapter — neither Bedrock nor Titan does audio
+transcription — over Amazon Transcribe (`POST /api/v1/ai-bridge/transcribe`,
+`services/gateway/src/services/transcribe-audio-bridge.ts`), reusing the
+language-code table the ORB cascaded-voice pipeline already built
+(`orb/live/upstream/cascaded-config.ts`, VTID-03683) rather than a fourth
+copy of it. Decodes the browser's arbitrary MediaRecorder container
+(webm/opus, mp4/aac, etc.) to 16kHz mono PCM via `ffmpeg` (already on the
+gateway's PATH), then feeds the whole clip through Transcribe streaming as
+a short-lived single-shot stream. Still untouched: the 2
+`generateEmbedding`-dependent functions (no Bedrock embedding endpoint
+exists in this codebase's provider yet) and `ai-chat`'s streaming/
+Lovable-gateway legs above.
 
 **B8 — Cutover + rollback.** Per Phase 4 below.
 
@@ -246,7 +421,7 @@ Explicitly **out of scope** until Phase 4 has been stable for an agreed window.
 
 ---
 
-## What I did not do, and why
+## What I did not do, and why (as of when this section was originally written)
 
 - **No code changed.** The instruction was to plan.
 - **No execution VTID allocated.** Following the precedent set for the GCP
@@ -257,12 +432,53 @@ Explicitly **out of scope** until Phase 4 has been stable for an agreed window.
   be amended as part of the Phase 1 decision — not silently ignored, and not
   edited by me ahead of that decision.
 
-## Open questions for the user
+**Status update, 2026-08-25 — all three of the above are now resolved:**
+the sign-off conversation happened (see the header and Phase 1 decision
+note above), execution VTIDs have since been allocated per-workstream
+(B1/B2/B3/Phase 0/B4-sizing/B5/B6/B7, listed in the header), code has
+changed (B1's repository-seam extraction across ~90 gateway files, all on
+`claude/aws-supabase-aurora-cutover-oxdie9`), and **CLAUDE.md's rule 21 has
+itself been updated** — it now reads *"Always use the platform's Postgres
+store (Aurora, migrating off Supabase — see §3) as the persistent data
+store,"* not the old Supabase-only wording this section originally flagged
+as conflicting. The bullets above are left unedited as the historical
+record of the plan's original, more cautious posture.
+
+## Open questions for the user — ANSWERED 2026-08-25
 
 1. **Which option in Phase 1** — A (self-host Supabase on Aurora), or B (full
    platform replacement)? Everything downstream depends on it.
+   → **Answered: Option B.** See the decision note under Phase 1 above.
 2. **What is the actual driver** — cost, AWS consolidation, removing a vendor
    dependency, or something else? A and B serve different goals.
+   → Not stated explicitly by the platform owner in those terms; the
+   directive frames it as removing the Supabase dependency entirely
+   ("in the end we shut down Supabase"), which is Option B's own stated
+   benefit ("no Supabase dependency, full AWS consolidation") regardless of
+   which underlying driver motivated it.
 3. **Who has live AWS/DMS access** to close the Phase 0 gate? No session so far
    has had it.
+   → Partially answered, and re-verified 2026-08-29 with a materially
+   different result than the 2026-08-25 answer: this session has live AWS
+   CLI (DMS/RDS Data API/most of Secrets Manager) + Supabase MCP SQL
+   access — broader than 2026-08-25's own recorded finding (the Aurora
+   master-password secret that was explicit-denied then reads cleanly
+   now). Precisely quantified the cost of the gap this time instead of
+   describing it qualitatively: CDC has been down 9 days (since
+   2026-08-20), and Aurora is now measurably 5-9% behind Supabase on the
+   three hottest tables (`oasis_events`, `chat_messages`,
+   `user_notifications`) — see `docs/AURORA-PHASE0-RECONCILIATION-
+   FINDINGS.md`'s 2026-08-29 addenda for the exact counts and the
+   platform-owner-authorized fix attempt. **Still not closeable from this
+   session**, but the blocker is narrower than "no write access" now:
+   this identity has **zero EC2/VPC permissions at all** (not a boundary
+   deny — no grant exists), which rules out the IPv6-egress fix, and the
+   Supabase-side pooler/tenant registry fix needs Supabase dashboard/
+   Management API access this session's tools don't reach — DMS
+   endpoint/Secrets Manager mutation itself was never actually tested
+   against a concrete corrected value, because neither fix path produced
+   one this session could safely apply.
 4. **Is there a deadline** this is working back from?
+   → **Answered: 20 September 2026** — Supabase (including Auth) fully
+   disconnected from production and downgraded to the free plan by that
+   date, per the platform owner's explicit compressed-deadline directive.

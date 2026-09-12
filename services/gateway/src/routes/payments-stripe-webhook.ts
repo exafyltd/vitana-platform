@@ -14,6 +14,7 @@
 import { Router, Request, Response } from 'express';
 import { getSupabase } from '../lib/supabase';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import * as repo from './payments-stripe-webhook-repository';
 
 const router = Router();
 
@@ -66,11 +67,25 @@ router.post('/webhooks/stripe-dance', async (req: Request, res: Response) => {
     return res.status(200).json({ ok: true, ack_only: true });
   }
 
-  const { data: payment } = await supabase
-    .from('service_payments')
-    .select('payment_id, payer_vitana_id, payee_vitana_id, state')
-    .eq('stripe_pi_id', piId)
-    .maybeSingle();
+  const { data: payment, error: paymentErr } = await repo.fetchServicePaymentByStripePiId(supabase, piId);
+
+  if (paymentErr) {
+    // Distinct from "unknown payment_intent" below: this is a real query
+    // failure, not a benign lookup miss — must not be mislabeled as info,
+    // or the service_payments row silently never advances and nobody is
+    // alerted that anything went wrong.
+    await emitOasisEvent({
+      vtid: 'VTID-DANCE-D6',
+      type: 'voice.message.sent',
+      source: 'stripe-webhook',
+      status: 'error',
+      message: `Stripe webhook lookup failed for payment_intent ${piId}: ${paymentErr.message}`,
+      payload: { stripe_event_id: event.id, stripe_event_type: event.type, pi_id: piId, error: paymentErr.message },
+      actor_role: 'system',
+      surface: 'api',
+    });
+    return res.status(500).json({ ok: false, error: 'LOOKUP_FAILED' });
+  }
 
   if (!payment) {
     // Could be a new PI we haven't seen yet — log and ack.
@@ -87,13 +102,7 @@ router.post('/webhooks/stripe-dance', async (req: Request, res: Response) => {
     return res.json({ ok: true, unknown_pi: true });
   }
 
-  await supabase
-    .from('service_payments')
-    .update({
-      state: nextState,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('payment_id', (payment as any).payment_id);
+  await repo.updateServicePaymentState(supabase, (payment as any).payment_id, nextState);
 
   await emitOasisEvent({
     vtid: 'VTID-DANCE-D6',

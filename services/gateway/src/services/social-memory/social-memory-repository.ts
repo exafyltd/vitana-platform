@@ -19,6 +19,7 @@
  * populated sources are the ones used here.
  */
 
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabase } from '../../lib/supabase';
 import {
   SocialPerson,
@@ -74,7 +75,14 @@ export async function fetchPeople(userIds: string[]): Promise<Map<string, Social
   if (ids.length === 0) return out;
   const supabase = getSupabase();
   if (!supabase) return out;
-  const { data } = await supabase.from('profiles').select(PROFILE_COLS).in('user_id', ids.slice(0, 200));
+  const { data, error } = await supabase.from('profiles').select(PROFILE_COLS).in('user_id', ids.slice(0, 200));
+  if (error) {
+    // Non-fatal by design (unlike fetchExclusions below, this is not a
+    // privacy gate) — degrades to treating every requested person as
+    // unknown to the social/personalization context. Logged so a real DB
+    // failure here isn't silently indistinguishable from an empty batch.
+    console.error(`[social-memory] fetchPeople query failed for ${ids.length} id(s): ${error.message}`);
+  }
   for (const row of data || []) out.set(row.user_id, mapPerson(row));
   return out;
 }
@@ -671,4 +679,39 @@ export async function resolvePersonByName(hint: string): Promise<SocialPerson | 
 export async function fetchPersonById(personId: string): Promise<SocialPerson | null> {
   const people = await fetchPeople([personId]);
   return people.get(personId) ?? null;
+}
+
+/** Active life_compass goal (primary_goal + category) for topical boosts. */
+export async function fetchActiveLifeCompassGoal(sb: SupabaseClient, userId: string) {
+  return sb
+    .from('life_compass')
+    .select('primary_goal, category')
+    .eq('user_id', userId)
+    .eq('is_active', true)
+    .order('created_at', { ascending: false })
+    .limit(1);
+}
+
+/**
+ * The viewer's own DM inbox rows (chat_messages, group messages excluded),
+ * scope 'unread' | 'all', used by social-read-tools.ts's view_messages tool.
+ * Client-provided (`sb`) since the caller already resolved/checked it.
+ */
+export async function fetchInboxMessages(
+  sb: SupabaseClient,
+  userId: string,
+  tenantId: string,
+  scope: 'unread' | 'all',
+  limit: number,
+) {
+  let q = sb
+    .from('chat_messages')
+    .select('sender_id, content, created_at, read_at')
+    .eq('tenant_id', tenantId)
+    .eq('receiver_id', userId)
+    .is('group_id', null)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (scope === 'unread') q = q.is('read_at', null);
+  return q;
 }

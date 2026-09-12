@@ -17,6 +17,7 @@ import { Request, Response, NextFunction } from 'express';
 import * as jose from 'jose';
 import { getSupabase } from '../lib/supabase';
 import { upsertActiveDay } from '../services/guide/active-usage';
+import * as repo from './auth-supabase-jwt-repository';
 
 /**
  * Identity claims extracted from a validated Supabase JWT
@@ -61,11 +62,7 @@ export async function resolveVitanaId(userId: string): Promise<string | null> {
     const supabase = getSupabase();
     if (!supabase) return null;
 
-    const { data } = await supabase
-      .from('app_users')
-      .select('vitana_id')
-      .eq('user_id', userId)
-      .maybeSingle();
+    const { data } = await repo.fetchVitanaIdForUser(supabase, userId);
 
     const vitanaId = (data && (data as any).vitana_id) || null;
     vitanaIdCache.set(userId, {
@@ -366,12 +363,7 @@ export async function requireTenant(
     const supabase = getSupabase();
     if (supabase) {
       try {
-        const { data: tenantRow } = await supabase
-          .from('user_tenants')
-          .select('tenant_id')
-          .eq('user_id', req.identity.user_id)
-          .eq('is_primary', true)
-          .single();
+        const { data: tenantRow } = await repo.fetchPrimaryTenantForUser(supabase, req.identity.user_id);
 
         if (tenantRow?.tenant_id) {
           req.identity.tenant_id = tenantRow.tenant_id;
@@ -450,12 +442,7 @@ export async function requireAuthWithTenant(
     const supabase = getSupabase();
     if (supabase) {
       try {
-        const { data: tenantRow } = await supabase
-          .from('user_tenants')
-          .select('tenant_id')
-          .eq('user_id', req.identity.user_id)
-          .eq('is_primary', true)
-          .single();
+        const { data: tenantRow } = await repo.fetchPrimaryTenantForUser(supabase, req.identity.user_id);
 
         if (tenantRow?.tenant_id) {
           req.identity.tenant_id = tenantRow.tenant_id;

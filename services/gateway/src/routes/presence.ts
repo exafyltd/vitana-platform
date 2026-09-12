@@ -18,6 +18,7 @@ import {
 } from '../services/guide';
 import { resolvePriorityMessage } from '../services/guide/priority-rules';
 import { tt, GATEWAY_DEFAULT_LOCALE } from '../i18n/catalog';
+import * as repo from './presence-repository';
 import { getUserLocale } from '../i18n/server-locale';
 import { getSupabase } from '../lib/supabase';
 
@@ -40,7 +41,7 @@ async function resolveIdentity(req: Request): Promise<{
   const token = auth.slice(7);
   try {
     const supabase = createUserSupabaseClient(token);
-    const { data, error } = await supabase.rpc('me_context');
+    const { data, error } = await repo.meContextRpc(supabase);
     if (error || !data) {
       return { user_id: null, tenant_id: null, user_name: null, error: error?.message || 'no_context' };
     }
@@ -51,13 +52,7 @@ async function resolveIdentity(req: Request): Promise<{
     // primary user_tenants row exists. Match the behavior of the
     // gateway's requireAuthWithTenant middleware (auth-supabase-jwt.ts).
     if (!tenantId && userId) {
-      const { data: tenantRow } = await supabase
-        .from('user_tenants')
-        .select('tenant_id')
-        .eq('user_id', userId)
-        .eq('is_primary', true)
-        .limit(1)
-        .maybeSingle();
+      const { data: tenantRow } = await repo.fetchPrimaryTenantForUser(supabase, userId);
       tenantId = tenantRow?.tenant_id || null;
     }
     return {

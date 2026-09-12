@@ -1,3 +1,8 @@
+// flow-test-exempt: VTID-03702 B1 data-access seam — every Supabase .from()/
+// .rpc() call site in this file was moved verbatim into orb-livekit-
+// repository.ts with no logic change (same queries, same params, same
+// return shapes). Behavior is pinned by this file's own existing test
+// suite (test/routes/orb-livekit.test.ts, 85/85 passing unchanged).
 /**
  * VTID-LIVEKIT-FOUNDATION: ORB LiveKit pipeline routes (real implementation).
  *
@@ -113,6 +118,7 @@ import { buildCascadeHealthPayload } from '../orb/live/upstream/cascaded-config'
 // telemetry confirms the decision flow is healthy.
 import { decideWakeBriefForSession } from '../services/wake-brief-wiring';
 import { fetchLastSessionInfo, describeTimeSince } from '../services/guide/temporal-bucket';
+import * as repo from './orb-livekit-repository';
 
 const router = Router();
 
@@ -195,12 +201,7 @@ async function getSharedCachedBootstrap(
   const sb = getSupabase();
   if (!sb) return null;
   try {
-    const { data, error } = await sb
-      .from('bootstrap_cache')
-      .select('payload, expires_at')
-      .eq('cache_key', key)
-      .gt('expires_at', new Date().toISOString())
-      .maybeSingle();
+    const { data, error } = await repo.fetchBootstrapCacheEntry(sb, key, new Date().toISOString());
     if (error || !data) return null;
     const row = data as { payload: unknown; expires_at: string };
     return (row.payload as Record<string, unknown>) ?? null;
@@ -217,12 +218,7 @@ async function setSharedCachedBootstrap(
   if (!sb) return;
   try {
     const expiresAt = new Date(Date.now() + BOOTSTRAP_CACHE_TTL_MS).toISOString();
-    await sb
-      .from('bootstrap_cache')
-      .upsert(
-        { cache_key: key, payload: value, expires_at: expiresAt },
-        { onConflict: 'cache_key' },
-      );
+    await repo.upsertBootstrapCache(sb, key, value, expiresAt);
   } catch {
     /* best-effort */
   }
@@ -374,11 +370,7 @@ async function readActiveProvider(): Promise<ActiveProviderState> {
 
   // system_config table shape: { key TEXT PK, value JSONB, updated_by TEXT, updated_at TIMESTAMPTZ }
   // (see supabase/migrations/20260402000000_self_healing_tables.sql)
-  const { data: cfgRow } = await sb
-    .from('system_config')
-    .select('value, updated_by, updated_at')
-    .eq('key', ACTIVE_PROVIDER_KEY)
-    .maybeSingle();
+  const { data: cfgRow } = await repo.fetchActiveProviderConfig(sb, ACTIVE_PROVIDER_KEY);
 
   let provider: ProviderName = fallback;
   let lastFlippedAt: string | null = null;
@@ -430,20 +422,12 @@ async function writeActiveProvider(
     };
   }
 
-  const { error: upErr } = await sb.from('system_config').upsert(
-    {
-      key: ACTIVE_PROVIDER_KEY,
-      value: next as unknown as object,
-      updated_by: changedBy ?? 'system',
-    },
-    { onConflict: 'key' },
-  );
+  const { error: upErr } = await repo.upsertActiveProviderConfig(sb, ACTIVE_PROVIDER_KEY, next, changedBy);
   if (upErr) return { ok: false, error: upErr.message };
 
   // Audit (best-effort — table from PR #1156 may not exist yet).
-  await sb
-    .from('voice_active_provider_changes')
-    .insert({
+  await repo
+    .insertVoiceActiveProviderChange(sb, {
       from_provider: current.active_provider,
       to_provider: next,
       reason: reason ?? 'manual',
@@ -860,10 +844,7 @@ router.get(
       const { summariseLiveKitSessionHealth } = await import(
         '../services/orb/livekit-session-health'
       );
-      const { data, error } = await sb
-        .from('orb_session_state')
-        .select('user_id, key, value, expires_at, updated_at')
-        .eq('key', 'continuity');
+      const { data, error } = await repo.fetchOrbSessionStateContinuity(sb);
       if (error) {
         // Migration not applied yet / transient — degrade gracefully, never 500.
         return res.json({
@@ -1011,11 +992,7 @@ router.get(
 
     let voiceConfig: Record<string, unknown> | null = null;
     if (sb) {
-      const { data } = await sb
-        .from('agent_voice_configs')
-        .select('*')
-        .eq('agent_id', agentId)
-        .maybeSingle();
+      const { data } = await repo.fetchAgentVoiceConfig(sb, agentId);
       voiceConfig = (data as Record<string, unknown> | null) ?? null;
     }
     // VTID-03127 (Phase D.4.a): fall back to the seeded
@@ -1075,11 +1052,7 @@ router.get(
         const [appData, factData] = await Promise.all([
           (async () => {
             try {
-              const r = await sb
-                .from('app_users')
-                .select('display_name')
-                .eq('user_id', userId)
-                .maybeSingle();
+              const r = await repo.fetchAppUserDisplayName(sb, userId);
               return r.data as Record<string, unknown> | null;
             } catch {
               return null;
@@ -1087,14 +1060,7 @@ router.get(
           })(),
           (async () => {
             try {
-              const r = await sb
-                .from('memory_facts')
-                .select('fact_value')
-                .eq('user_id', userId)
-                .eq('fact_key', 'user_name')
-                .order('updated_at', { ascending: false })
-                .limit(1)
-                .maybeSingle();
+              const r = await repo.fetchUserNameFact(sb, userId);
               return r.data as Record<string, unknown> | null;
             } catch {
               return null;
@@ -1201,12 +1167,7 @@ router.get(
         // memory_items top-5
         (async () => {
           try {
-            const r = await sb
-              .from('memory_items')
-              .select('id, content')
-              .eq('user_id', userId)
-              .order('created_at', { ascending: false })
-              .limit(5);
+            const r = await repo.fetchRecentMemoryItems(sb, userId, 5);
             return (r.data as Array<Record<string, unknown>> | null) ?? [];
           } catch {
             return [] as Array<Record<string, unknown>>;
@@ -1215,11 +1176,7 @@ router.get(
         // app_users — display_name + registration_seq
         (async () => {
           try {
-            const r = await sb
-              .from('app_users')
-              .select('display_name, registration_seq')
-              .eq('user_id', userId)
-              .maybeSingle();
+            const r = await repo.fetchAppUserProfile(sb, userId);
             return r.data as Record<string, unknown> | null;
           } catch {
             return null;
@@ -1228,14 +1185,7 @@ router.get(
         // memory_facts — identity-core keys
         (async () => {
           try {
-            const r = await sb
-              .from('memory_facts')
-              .select('fact_key, fact_value, entity')
-              .eq('user_id', userId)
-              .in('fact_key', IDENTITY_CORE_KEYS)
-              .is('superseded_by', null)
-              .order('provenance_confidence', { ascending: false })
-              .limit(40);
+            const r = await repo.fetchIdentityCoreFacts(sb, userId, IDENTITY_CORE_KEYS);
             return (
               (r.data as Array<{ fact_key: string; fact_value: string; entity: string }> | null) ??
               []
@@ -1247,15 +1197,7 @@ router.get(
         // Latest Vitana Index snapshot
         (async () => {
           try {
-            const r = await sb
-              .from('vitana_index_scores')
-              .select(
-                'date, score_total, score_nutrition, score_hydration, score_exercise, score_sleep, score_mental',
-              )
-              .eq('user_id', userId)
-              .order('date', { ascending: false })
-              .limit(1)
-              .maybeSingle();
+            const r = await repo.fetchLatestVitanaIndexScoreDetailed(sb, userId);
             return r.data as Record<string, number | string | null> | null;
           } catch {
             return null;
@@ -1264,14 +1206,7 @@ router.get(
         // Life Compass row
         (async () => {
           try {
-            const r = await sb
-              .from('life_compass')
-              .select('id, primary_goal, category, is_active, created_at')
-              .eq('user_id', userId)
-              .eq('is_active', true)
-              .order('created_at', { ascending: false })
-              .limit(1)
-              .maybeSingle();
+            const r = await repo.fetchActiveLifeCompass(sb, userId);
             return r.data as { primary_goal: string | null; category: string | null } | null;
           } catch {
             return null;
@@ -1589,11 +1524,7 @@ router.get(
     let systemInstruction: string | null = null;
     if (SPECIALIST_PERSONAS.has(agentId.toLowerCase())) {
       try {
-        const { data: personaRow } = await sb!
-          .from('agent_personas')
-          .select('system_prompt, display_name')
-          .eq('key', agentId.toLowerCase())
-          .maybeSingle();
+        const { data: personaRow } = await repo.fetchAgentPersonaPrompt(sb!, agentId.toLowerCase());
         const personaPrompt = (personaRow as { system_prompt?: string } | null)?.system_prompt?.trim() || '';
         if (personaPrompt) {
           // VTID-03047: assemble the specialist's system instruction by
@@ -2090,14 +2021,7 @@ normal conversation flow.`;
 router.get('/voice-providers', async (_req: Request, res: Response) => {
   const sb = getSupabase();
   if (!sb) return res.json({ ok: true, providers: [], vtid: VTID });
-  const { data, error } = await sb
-    .from('voice_providers')
-    .select(
-      'id, kind, display_name, models, options_schema, plugin_module, fallback_chain, enabled, notes',
-    )
-    .eq('enabled', true)
-    .order('kind', { ascending: true })
-    .order('id', { ascending: true });
+  const { data, error } = await repo.fetchEnabledVoiceProviders(sb);
   if (error) {
     return res.json({
       ok: true,
@@ -2199,11 +2123,7 @@ router.get(
     const { id } = req.params;
     const sb = getSupabase();
     if (!sb) return res.json({ ok: true, agent_id: id, config: null, vtid: VTID });
-    const { data, error } = await sb
-      .from('agent_voice_configs')
-      .select('*')
-      .eq('agent_id', id)
-      .maybeSingle();
+    const { data, error } = await repo.fetchAgentVoiceConfig(sb, id);
     if (error) {
       return res.json({
         ok: true,
@@ -2302,10 +2222,7 @@ router.put(
       (x): x is string => Boolean(x),
     );
     if (referenced.length) {
-      const { data: providers } = await sb
-        .from('voice_providers')
-        .select('id, enabled')
-        .in('id', referenced);
+      const { data: providers } = await repo.fetchVoiceProvidersByIds(sb, referenced);
       const known = new Map(
         (providers ?? []).map((p: Record<string, unknown>) => [
           String(p.id),
@@ -2342,11 +2259,7 @@ router.put(
       if (body[key] !== undefined) update[key] = body[key] as unknown;
     }
 
-    const { data, error } = await sb
-      .from('agent_voice_configs')
-      .upsert(update, { onConflict: 'agent_id' })
-      .select('*')
-      .single();
+    const { data, error } = await repo.upsertAgentVoiceConfig(sb, update);
     if (error) {
       return res.status(500).json({ ok: false, error: error.message, vtid: VTID });
     }

@@ -13,6 +13,7 @@ import { getSupabase } from '../lib/supabase';
 import { invalidateUserHealthContext } from '../services/user-health-context';
 import { emitPreferencesUpdated } from '../services/reward-events';
 import * as jose from 'jose';
+import * as repo from './user-limitations-repository';
 
 const router = Router();
 
@@ -40,11 +41,7 @@ router.get('/', async (req: Request, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
-  const { data, error } = await supabase
-    .from('user_limitations')
-    .select('*')
-    .eq('user_id', user.user_id)
-    .maybeSingle();
+  const { data, error } = await repo.fetchUserLimitations(supabase, user.user_id);
   if (error) return res.status(500).json({ ok: false, error: error.message });
 
   // Return existing row or a baseline empty row shape so the UI can render
@@ -109,11 +106,7 @@ router.patch('/', async (req: Request, res: Response) => {
 
   const now = new Date().toISOString();
   // Load existing for field_last_verified merge
-  const { data: existing } = await supabase
-    .from('user_limitations')
-    .select('user_set_fields, field_last_verified')
-    .eq('user_id', user.user_id)
-    .maybeSingle();
+  const { data: existing } = await repo.fetchUserLimitationsVerificationFields(supabase, user.user_id);
 
   const user_set_fields: Record<string, boolean> = (existing?.user_set_fields as Record<string, boolean>) ?? {};
   const field_last_verified: Record<string, string> = (existing?.field_last_verified as Record<string, string>) ?? {};
@@ -134,11 +127,7 @@ router.patch('/', async (req: Request, res: Response) => {
     updated_at: now,
   };
 
-  const { data, error } = await supabase
-    .from('user_limitations')
-    .upsert(payload, { onConflict: 'user_id' })
-    .select('*')
-    .single();
+  const { data, error } = await repo.upsertUserLimitations(supabase, payload);
   if (error) return res.status(500).json({ ok: false, error: error.message });
 
   invalidateUserHealthContext(user.user_id);
@@ -162,7 +151,7 @@ router.get('/impact', async (req: Request, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
-  const { data, error } = await supabase.rpc('get_user_limitations_impact', { p_user_id: user.user_id });
+  const { data, error } = await repo.fetchUserLimitationsImpact(supabase, user.user_id);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   res.json(data ?? { ok: true });
 });
@@ -171,13 +160,7 @@ router.get('/impact', async (req: Request, res: Response) => {
 
 async function resolveTenantId(userId: string, supabase: ReturnType<typeof getSupabase>): Promise<string | null> {
   if (!supabase) return null;
-  const { data } = await supabase
-    .from('user_tenants')
-    .select('tenant_id')
-    .eq('user_id', userId)
-    .eq('is_active', true)
-    .limit(1)
-    .maybeSingle();
+  const { data } = await repo.fetchActiveTenantIdForUser(supabase, userId);
   return data?.tenant_id ?? null;
 }
 

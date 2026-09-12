@@ -15,6 +15,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { getSupabase } from '../../lib/supabase';
+import * as repo from './livekit-test-coverage-repository';
 
 export interface ToolManifestEntry {
   name: string;
@@ -94,10 +95,7 @@ export async function getCoverage(): Promise<CoverageReport> {
   const manifest = loadToolManifest();
   const liveTools = manifest.tools.filter((t) => t.status === 'live');
 
-  const { data: rows, error } = await sb
-    .from('livekit_test_cases')
-    .select('expected, enabled')
-    .eq('enabled', true);
+  const { data: rows, error } = await repo.fetchEnabledLivekitTestCaseExpectations(sb);
   if (error) throw new Error(`getCoverage: ${error.message}`);
 
   const tested = new Set<string>();

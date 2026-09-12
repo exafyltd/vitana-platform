@@ -34,6 +34,7 @@ import { getSupabase } from '../lib/supabase';
 import { getBearerToken, getUserContext } from './universal-cart';
 import { getUserLocale } from '../i18n/server-locale';
 import { localizeCatalogRecords } from '../i18n/catalog-localizer';
+import * as repo from './shop-feed-repository';
 
 export const VTID = 'VTID-03237';
 
@@ -52,12 +53,6 @@ const ALLOWED_EVENT_TYPES = [
   'variant_change', 'add_to_cart', 'buy_now', 'checkout_start', 'purchase',
   'save', 'unsave', 'share', 'drawer_close',
 ] as const;
-
-/** Product columns hydrated into the feed/drawer payloads. */
-const PRODUCT_COLUMNS =
-  'id, title, description, brand, category, subcategory, price_cents, currency, ' +
-  'compare_at_price_cents, images, affiliate_url, availability, rating, review_count, ' +
-  'origin_country, merchant_id, ingredients_primary, health_goals, dietary_tags, is_active';
 
 // =============================================================================
 // Helpers
@@ -204,15 +199,11 @@ async function loadPrimaryAnchors(
   const out = new Map<string, { anchor: any; product: any }>();
   if (videoIds.length === 0) return out;
 
-  const anchors = await svc
-    .from('shop_video_anchors')
-    .select('id, video_id, product_id, label, appear_at_ms, pos_x, pos_y, badge_price_cents, currency')
-    .in('video_id', videoIds)
-    .eq('is_primary', true);
+  const anchors = await repo.fetchPrimaryShopVideoAnchors(svc, videoIds);
   if (anchors.error || !anchors.data?.length) return out;
 
   const productIds = [...new Set(anchors.data.map((a: any) => a.product_id))];
-  const products = await svc.from('products').select(PRODUCT_COLUMNS).in('id', productIds);
+  const products = await repo.fetchProductsByIds(svc, productIds as string[]);
   const productById = new Map<string, any>();
   for (const p of products.data || []) productById.set(p.id, p);
 
@@ -236,7 +227,7 @@ async function insertEvents(rows: Record<string, unknown>[]): Promise<void> {
     console.error(`[${VTID}] event sink: service-role client unavailable`);
     return;
   }
-  const { error } = await svc.from('shop_video_events').insert(rows);
+  const { error } = await repo.insertShopVideoEvents(svc, rows);
   if (error) console.error(`[${VTID}] shop_video_events insert failed:`, error.message);
 }
 
@@ -296,14 +287,7 @@ router.get('/videos', async (req: Request, res: Response) => {
   let exhausted = false;
 
   while (items.length < limit && scanOffset - offset < MAX_SCAN) {
-    const batch = await svc
-      .from('shop_videos')
-      .select('id, title, caption, creator_id, video_url, poster_url, thumbnail_url, duration_ms, aspect_ratio, rank_score, created_at')
-      .eq('status', 'active')
-      .eq('moderation_status', 'approved')
-      .order('rank_score', { ascending: false })
-      .order('created_at', { ascending: false })
-      .range(scanOffset, scanOffset + FETCH_BATCH - 1); // inclusive → up to FETCH_BATCH rows
+    const batch = await repo.fetchRankedShopVideosPage(svc, scanOffset, scanOffset + FETCH_BATCH - 1); // inclusive → up to FETCH_BATCH rows
     if (batch.error) {
       return res.status(500).json({ ok: false, error: 'feed_lookup_failed', detail: batch.error.message });
     }
@@ -342,11 +326,7 @@ router.get('/videos/:id', async (req: Request, res: Response) => {
   const svc = getSupabase();
   if (!svc) return res.status(500).json({ ok: false, error: 'service_unavailable' });
 
-  const video = await svc
-    .from('shop_videos')
-    .select('id, title, caption, creator_id, video_url, poster_url, thumbnail_url, duration_ms, aspect_ratio, status, moderation_status')
-    .eq('id', videoId)
-    .maybeSingle();
+  const video = await repo.fetchShopVideoById(svc, videoId);
   if (video.error) {
     return res.status(500).json({ ok: false, error: 'video_lookup_failed', detail: video.error.message });
   }
@@ -375,11 +355,7 @@ router.get('/videos/:id/anchor', async (req: Request, res: Response) => {
   // and /videos/:id — otherwise the drawer could surface an anchor for an
   // inactive or moderation-rejected video. Collapse to the same opaque
   // 'anchor_unavailable' response so video state isn't leaked to the client.
-  const video = await svc
-    .from('shop_videos')
-    .select('id, status, moderation_status')
-    .eq('id', videoId)
-    .maybeSingle();
+  const video = await repo.fetchShopVideoStatusById(svc, videoId);
   if (video.error) {
     return res.status(500).json({ ok: false, error: 'video_lookup_failed', detail: video.error.message });
   }
@@ -469,11 +445,7 @@ router.get('/saved', async (req: Request, res: Response) => {
   const offset = decodeCursor(req.query.cursor);
   const supabase = createUserSupabaseClient(id.token);
 
-  const saved = await supabase
-    .from('shop_saved_products')
-    .select('id, product_id, video_id, created_at')
-    .order('created_at', { ascending: false })
-    .range(offset, offset + limit);
+  const saved = await repo.fetchSavedProductsPage(supabase, offset, offset + limit);
   if (saved.error) {
     return res.status(500).json({ ok: false, error: 'saved_lookup_failed', detail: saved.error.message });
   }
@@ -486,7 +458,7 @@ router.get('/saved', async (req: Request, res: Response) => {
   const productIds = [...new Set(page.map((s: any) => s.product_id))];
   const productById = new Map<string, any>();
   if (svc && productIds.length) {
-    const products = await svc.from('products').select(PRODUCT_COLUMNS).in('id', productIds);
+    const products = await repo.fetchProductsByIds(svc, productIds as string[]);
     for (const p of (products.data || []) as any[]) productById.set(p.id, p);
     await localizeProducts(svc, id.user_id, [...productById.values()]);
   }
@@ -520,14 +492,11 @@ router.post('/saved', async (req: Request, res: Response) => {
   const body = parsed.data;
   const supabase = createUserSupabaseClient(id.token);
 
-  const inserted = await supabase
-    .from('shop_saved_products')
-    .upsert(
-      { user_id: id.user_id, product_id: body.product_id, video_id: body.video_id ?? null },
-      { onConflict: 'user_id,product_id', ignoreDuplicates: true }
-    )
-    .select('id, product_id, video_id, created_at')
-    .maybeSingle();
+  const inserted = await repo.upsertSavedProduct(supabase, {
+    user_id: id.user_id,
+    product_id: body.product_id,
+    video_id: body.video_id ?? null,
+  });
   if (inserted.error) {
     return res.status(500).json({ ok: false, error: 'save_failed', detail: inserted.error.message });
   }
@@ -540,11 +509,7 @@ router.delete('/saved/:productId', async (req: Request, res: Response) => {
   if (!id) return;
 
   const supabase = createUserSupabaseClient(id.token);
-  const removed = await supabase
-    .from('shop_saved_products')
-    .delete()
-    .eq('user_id', id.user_id)
-    .eq('product_id', req.params.productId);
+  const removed = await repo.deleteSavedProduct(supabase, id.user_id, req.params.productId);
   if (removed.error) {
     return res.status(500).json({ ok: false, error: 'unsave_failed', detail: removed.error.message });
   }

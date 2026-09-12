@@ -13,6 +13,7 @@
  */
 import { getSupabase } from '../../lib/supabase';
 import type { AdminScanner, InsightDraft } from './types';
+import * as repo from './community-repository';
 
 const LOG_PREFIX = '[admin-scanner:community]';
 
@@ -33,12 +34,7 @@ export const communityScanner: AdminScanner = {
 
     // 1. No upcoming events
     try {
-      const { count } = await supabase
-        .from('global_community_events')
-        .select('id', { count: 'exact', head: true })
-        .eq('tenant_id', tenantId)
-        .gte('start_time', nowIso)
-        .lt('start_time', in7d);
+      const { count } = await repo.countUpcomingCommunityEvents(supabase, tenantId, nowIso, in7d);
       if (count !== null && count === 0) {
         insights.push({
           natural_key: 'no_upcoming_events_7d',
@@ -61,19 +57,11 @@ export const communityScanner: AdminScanner = {
 
     // 2. Dormant groups — groups with no new memberships in 30 days
     try {
-      const { data: groups } = await supabase
-        .from('global_community_groups')
-        .select('id, name, created_at')
-        .eq('tenant_id', tenantId)
-        .lt('created_at', d30);
+      const { data: groups } = await repo.fetchCommunityGroupsCreatedBefore(supabase, tenantId, d30);
       if (groups && groups.length > 0) {
         // For each group, check if any membership updated in last 30d
         const groupIds = groups.map((g: { id: string }) => g.id);
-        const { data: recentMembers } = await supabase
-          .from('community_memberships')
-          .select('group_id')
-          .in('group_id', groupIds)
-          .gte('created_at', d30);
+        const { data: recentMembers } = await repo.fetchRecentCommunityMemberships(supabase, groupIds, d30);
         const activeGroupIds = new Set((recentMembers ?? []).map((m: { group_id: string }) => m.group_id));
         const dormant = groups.filter((g: { id: string }) => !activeGroupIds.has(g.id));
         if (dormant.length >= 3) {
@@ -106,19 +94,10 @@ export const communityScanner: AdminScanner = {
 
     // 3. Live-room unused — upcoming rooms with zero access grants
     try {
-      const { data: rooms } = await supabase
-        .from('live_rooms')
-        .select('id, title, starts_at')
-        .eq('tenant_id', tenantId)
-        .gte('starts_at', nowIso)
-        .lt('starts_at', in7d)
-        .limit(20);
+      const { data: rooms } = await repo.fetchUpcomingLiveRooms(supabase, tenantId, nowIso, in7d);
       if (rooms && rooms.length > 0) {
         const roomIds = rooms.map((r: { id: string }) => r.id);
-        const { data: grants } = await supabase
-          .from('live_room_access_grants')
-          .select('live_room_id')
-          .in('live_room_id', roomIds);
+        const { data: grants } = await repo.fetchLiveRoomAccessGrants(supabase, roomIds);
         const withGrants = new Set((grants ?? []).map((g: { live_room_id: string }) => g.live_room_id));
         const unused = rooms.filter((r: { id: string }) => !withGrants.has(r.id));
         if (unused.length >= 2) {

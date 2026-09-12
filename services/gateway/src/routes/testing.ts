@@ -4,6 +4,7 @@ import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import githubService from '../services/github-service';
+import * as repo from '../services/testing/testing-repository';
 
 const GITHUB_REPO = 'exafyltd/vitana-platform';
 const ORB_MONITOR_WORKFLOW = 'E2E-ORB-MONITOR.yml';
@@ -63,12 +64,7 @@ router.get('/runs', async (req: Request, res: Response) => {
   const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
   const offset = parseInt(req.query.offset as string) || 0;
 
-  const { data, error } = await supabase
-    .from('test_runs')
-    .select('*')
-    .eq('type', type)
-    .order('created_at', { ascending: false })
-    .range(offset, offset + limit - 1);
+  const { data, error } = await repo.fetchRuns(supabase, type, offset, limit);
 
   if (error) return res.status(500).json({ ok: false, error: error.message });
   res.json({ ok: true, runs: data || [], count: (data || []).length });
@@ -79,20 +75,11 @@ router.get('/runs/:id', async (req: Request, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
 
-  const { data: run, error: runErr } = await supabase
-    .from('test_runs')
-    .select('*')
-    .eq('id', req.params.id)
-    .single();
+  const { data: run, error: runErr } = await repo.fetchRunById(supabase, req.params.id);
 
   if (runErr) return res.status(404).json({ ok: false, error: 'Run not found' });
 
-  const { data: results, error: resErr } = await supabase
-    .from('test_results')
-    .select('*')
-    .eq('run_id', req.params.id)
-    .order('project', { ascending: true })
-    .order('test_name', { ascending: true });
+  const { data: results, error: resErr } = await repo.fetchResultsForRun(supabase, req.params.id);
 
   if (resErr) return res.status(500).json({ ok: false, error: resErr.message });
   res.json({ ok: true, run, results: results || [] });
@@ -119,11 +106,9 @@ router.post('/run', async (req: Request, res: Response) => {
       return res.status(500).json({ ok: false, error: 'GitHub dispatch failed: ' + (err.message || 'Unknown') });
     }
 
-    const { data: run, error: insertErr } = await supabase
-      .from('test_runs')
-      .insert({ type: 'unit', status: 'running', projects: [GATEWAY_UNIT_PROJECT], triggered_by: 'manual' })
-      .select()
-      .single();
+    const { data: run, error: insertErr } = await repo.insertRun(supabase, {
+      type: 'unit', status: 'running', projects: [GATEWAY_UNIT_PROJECT], triggered_by: 'manual',
+    });
 
     if (insertErr || !run) {
       return res.status(500).json({ ok: false, error: insertErr?.message || 'Failed to create run' });
@@ -149,16 +134,12 @@ router.post('/run', async (req: Request, res: Response) => {
     const supabase = getSupabase();
     if (!supabase) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
 
-    const { data: run, error: insertErr } = await supabase
-      .from('test_runs')
-      .insert({
-        type,
-        status: 'running',
-        projects: validProjects,
-        triggered_by: 'manual',
-      })
-      .select()
-      .single();
+    const { data: run, error: insertErr } = await repo.insertRun(supabase, {
+      type,
+      status: 'running',
+      projects: validProjects,
+      triggered_by: 'manual',
+    });
 
     if (insertErr || !run) {
       return res.status(500).json({ ok: false, error: insertErr?.message || 'Failed to create run' });
@@ -188,10 +169,7 @@ router.get('/cycles', async (_req: Request, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
 
-  const { data, error } = await supabase
-    .from('test_cycles')
-    .select('*')
-    .order('created_at', { ascending: true });
+  const { data, error } = await repo.fetchCycles(supabase);
 
   if (error) return res.status(500).json({ ok: false, error: error.message });
   res.json({ ok: true, cycles: data || [] });
@@ -207,11 +185,7 @@ router.post('/cycles', async (req: Request, res: Response) => {
     return res.status(400).json({ ok: false, error: 'name and projects[] required' });
   }
 
-  const { data, error } = await supabase
-    .from('test_cycles')
-    .insert({ name, type, projects, schedule })
-    .select()
-    .single();
+  const { data, error } = await repo.insertCycle(supabase, { name, type, projects, schedule });
 
   if (error) return res.status(500).json({ ok: false, error: error.message });
   res.json({ ok: true, cycle: data });
@@ -222,11 +196,7 @@ router.post('/cycles/:id/run', async (req: Request, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
 
-  const { data: cycle, error: cycleErr } = await supabase
-    .from('test_cycles')
-    .select('*')
-    .eq('id', req.params.id)
-    .single();
+  const { data: cycle, error: cycleErr } = await repo.fetchCycleById(supabase, req.params.id);
 
   if (cycleErr || !cycle) {
     return res.status(404).json({ ok: false, error: 'Cycle not found' });
@@ -234,26 +204,19 @@ router.post('/cycles/:id/run', async (req: Request, res: Response) => {
 
   // If e2e directory exists (local dev), run locally
   if (fs.existsSync(E2E_DIR)) {
-    const { data: run, error: runErr } = await supabase
-      .from('test_runs')
-      .insert({
-        type: cycle.type,
-        status: 'running',
-        projects: cycle.projects,
-        triggered_by: 'cycle',
-        cycle_id: cycle.id,
-      })
-      .select()
-      .single();
+    const { data: run, error: runErr } = await repo.insertRun(supabase, {
+      type: cycle.type,
+      status: 'running',
+      projects: cycle.projects,
+      triggered_by: 'cycle',
+      cycle_id: cycle.id,
+    });
 
     if (runErr || !run) {
       return res.status(500).json({ ok: false, error: runErr?.message || 'Failed to create run' });
     }
 
-    await supabase
-      .from('test_cycles')
-      .update({ last_run_id: run.id, last_run_at: new Date().toISOString() })
-      .eq('id', cycle.id);
+    await repo.updateCycle(supabase, cycle.id, { last_run_id: run.id, last_run_at: new Date().toISOString() });
 
     res.json({ ok: true, run_id: run.id, status: 'running', cycle_name: cycle.name, via: 'local' });
     executePlaywrightRun(run.id, cycle.projects, cycle.type, supabase, req.body?.community_url).catch(err => {
@@ -269,10 +232,7 @@ router.post('/cycles/:id/run', async (req: Request, res: Response) => {
       projects: projects.join(','),
     });
 
-    await supabase
-      .from('test_cycles')
-      .update({ last_run_at: new Date().toISOString() })
-      .eq('id', cycle.id);
+    await repo.updateCycle(supabase, cycle.id, { last_run_at: new Date().toISOString() });
 
     res.json({ ok: true, status: 'dispatched', via: 'github-actions', cycle_name: cycle.name });
   } catch (err: any) {
@@ -411,26 +371,23 @@ async function executePlaywrightRun(
     const runStatus = result.code === 0 ? 'passed' : (failed > 0 ? 'failed' : 'error');
 
     // Update run record
-    await supabase
-      .from('test_runs')
-      .update({
-        status: runStatus,
-        total,
-        passed,
-        failed,
-        skipped,
-        duration_ms: duration,
-        finished_at: new Date().toISOString(),
-        error_message: runStatus === 'error' ? result.stderr.slice(0, 2000) : null,
-      })
-      .eq('id', runId);
+    await repo.updateRun(supabase, runId, {
+      status: runStatus,
+      total,
+      passed,
+      failed,
+      skipped,
+      duration_ms: duration,
+      finished_at: new Date().toISOString(),
+      error_message: runStatus === 'error' ? result.stderr.slice(0, 2000) : null,
+    });
 
     // Insert individual test results (batch)
     if (testRows.length > 0) {
       const rows = testRows.map(r => ({ ...r, run_id: runId }));
       // Insert in batches of 100
       for (let i = 0; i < rows.length; i += 100) {
-        await supabase.from('test_results').insert(rows.slice(i, i + 100));
+        await repo.insertTestResultsBatch(supabase, rows.slice(i, i + 100));
       }
     }
 
@@ -441,15 +398,12 @@ async function executePlaywrightRun(
 
   } catch (err: any) {
     console.error(`[Testing] Run ${runId} error:`, err);
-    await supabase
-      .from('test_runs')
-      .update({
-        status: 'error',
-        duration_ms: Date.now() - startTime,
-        finished_at: new Date().toISOString(),
-        error_message: err.message?.slice(0, 2000) || 'Unknown error',
-      })
-      .eq('id', runId);
+    await repo.updateRun(supabase, runId, {
+      status: 'error',
+      duration_ms: Date.now() - startTime,
+      finished_at: new Date().toISOString(),
+      error_message: err.message?.slice(0, 2000) || 'Unknown error',
+    });
   }
 }
 
@@ -478,15 +432,12 @@ export async function pollGatewayUnitRunCompletion(
       }
       const run = (data.workflow_runs || []).find(r => r.id === ghRunId);
       if (run && run.status === 'completed') {
-        await supabase
-          .from('test_runs')
-          .update({
-            status: run.conclusion === 'success' ? 'passed' : 'failed',
-            duration_ms: Date.now() - dispatchedAt.getTime(),
-            finished_at: new Date().toISOString(),
-            error_message: run.conclusion !== 'success' ? `GitHub Actions run concluded: ${run.conclusion}. See ${run.html_url}` : null,
-          })
-          .eq('id', runRowId);
+        await repo.updateRun(supabase, runRowId, {
+          status: run.conclusion === 'success' ? 'passed' : 'failed',
+          duration_ms: Date.now() - dispatchedAt.getTime(),
+          finished_at: new Date().toISOString(),
+          error_message: run.conclusion !== 'success' ? `GitHub Actions run concluded: ${run.conclusion}. See ${run.html_url}` : null,
+        });
         return;
       }
     } catch (err) {
@@ -495,10 +446,7 @@ export async function pollGatewayUnitRunCompletion(
   }
 
   // Timed out — leave the row as 'running' but note we stopped watching it.
-  await supabase
-    .from('test_runs')
-    .update({ error_message: 'Stopped polling after 15 minutes; check GitHub Actions directly for final status.' })
-    .eq('id', runRowId);
+  await repo.updateRun(supabase, runRowId, { error_message: 'Stopped polling after 15 minutes; check GitHub Actions directly for final status.' });
 }
 
 // ─── ORB Monitor — GitHub Actions workflow status ────────────────────────

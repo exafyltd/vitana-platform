@@ -48,6 +48,7 @@ import {
   AuthenticatedRequest,
 } from '../middleware/auth-supabase-jwt';
 import { getSupabase } from '../lib/supabase';
+import * as repo from './voice-next-action-inspector-repository';
 import {
   NEXT_ACTION_SUGGESTED,
   NEXT_ACTION_ACCEPTED,
@@ -97,14 +98,8 @@ router.get(
       }
 
       const sinceIso = new Date(Date.now() - hours * 3_600_000).toISOString();
-      const { data, error } = await sb
-        .from('oasis_events')
-        .select('id, topic, created_at, payload, actor_id')
-        .in('topic', TOPICS as unknown as string[])
-        .eq('actor_id', userId)
-        .gte('created_at', sinceIso)
-        .order('created_at', { ascending: false })
-        .limit(800); // 4 topic types × 200 decisions cap
+      // 4 topic types × 200 decisions cap
+      const { data, error } = await repo.fetchNextActionOasisEvents(sb, TOPICS as unknown as string[], userId, sinceIso, 800);
 
       if (error) {
         return res

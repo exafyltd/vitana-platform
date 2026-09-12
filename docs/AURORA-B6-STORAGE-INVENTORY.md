@@ -1,0 +1,375 @@
+# B6 — Storage Inventory (VTID-03737)
+
+Part of `docs/SUPABASE-TO-AURORA-MIGRATION-PLAN.md`'s B6 workstream ("23
+call sites → S3, smallest workstream"). Same live-verification discipline
+as B2/B3/B5: check the plan's own numbers against current `main` and the
+live project before treating them as settled.
+
+## Call-site count: plan is accurate here (unlike B5)
+
+Plan states (line 25): *"19 frontend + 4 gateway call sites."* Live-checked
+via `.storage.from(` (the Supabase Storage client entry point, distinct
+from the `.from()` query-builder call B1/B2/B3 covered):
+
+- **`services/gateway`**: 4 call sites, 4 files — `video-thumbnail-service.ts`,
+  `intent-cover-service.ts`, `intent-cover-service-repository.ts` (this
+  session's own B1 extraction of `intent-cover-service.ts`'s query calls;
+  its Storage calls were left in the original file, correctly — B1 only
+  moved `.from()`/`.rpc()` query-builder calls, not Storage), `cover-image-
+  outpaint.ts`. **Matches the plan exactly.**
+- **`exafyltd/vitana-v1`**: 19 call sites, 15 files. **Matches the plan
+  exactly.**
+
+Total: 23, confirmed. No correction needed for this half of B6, in contrast
+to B5 where the gateway figure had gone stale.
+
+## Bucket names referenced in code (9 distinct)
+
+| Bucket | Referenced from |
+|---|---|
+| `covers` | frontend (5 call sites) |
+| `feedback-attachments` | frontend (5 call sites, mixed quote styles) |
+| `intent-covers` | frontend (2) + gateway (`INTENT_COVERS_BUCKET` env var, default `'intent-covers'`, in `cover-image-outpaint.ts` + `intent-cover-service.ts`) |
+| `stream-recordings` | frontend (1) |
+| `media-uploads` | frontend (2) |
+| `diary-photos` | frontend (1) |
+| `avatars` | frontend (2) |
+| `media` | gateway only (`video-thumbnail-service.ts`) |
+
+## Plan's "8 objects in storage schema" claim: stale — live has 19 buckets, 1099 objects, ~5GB
+
+Plan line 25 also states *"8 objects in `storage` schema"* — checked live
+against `storage.buckets`/`storage.objects` on project `inmkhvwdcuyhnxkgfvsb`:
+**19 buckets exist, holding 1,099 objects totaling ~5,020 MB (~5 GB).**
+Whatever the "8" referred to (possibly a bucket count from an earlier point
+in the project's life, or a different metric entirely), it does not match
+current reality by an order of magnitude. Per-bucket breakdown, sized for
+S3 migration planning:
+
+| Bucket | Public | Objects | Approx. size | Referenced in code? |
+|---|---|---|---|---|
+| `media-uploads` | yes | 380 | 3,455 MB | yes (both repos) |
+| `media` | yes | 92 | 301 MB | yes (gateway) |
+| `covers` | yes | 238 | 181 MB | yes (frontend) |
+| `avatars` | yes | 82 | 165 MB | yes (frontend) |
+| `intent-covers` | yes | 108 | 143 MB | yes (both repos) |
+| `media-podcasts` | yes | 12 | 426 MB | **not found in either repo's grep** |
+| `chat-attachments` | no | 67 | 73 MB | **not found in either repo's grep** |
+| `event-images` | yes | 50 | 73 MB | **not found in either repo's grep** |
+| `media-music` | yes | 13 | 101 MB | **not found in either repo's grep** |
+| `health-reports` | no | 20 | 36 MB | **not found in either repo's grep** |
+| `media-videos` | yes | 2 | 57 MB | **not found in either repo's grep** |
+| `diary-photos` | yes | 5 | 8 MB | yes (frontend) |
+| `voucher-pdfs` | no | 28 | 226 kB | **not found in either repo's grep** |
+| `feedback-attachments` | no | 1 | 980 kB | yes (frontend) |
+| `campaign-images` | yes | 1 | ~0 | **not found in either repo's grep** |
+| `stream-recordings` | yes | 0 | — | yes (frontend), but bucket is empty |
+| `community-marketplace-listings` | yes | 0 | — | not found |
+| `default-images` | yes | 0 | — | not found |
+| `media-thumbnails` | yes | 0 | — | not found |
+
+**9 of 19 live buckets (holding ~766 MB / 172 objects — `media-podcasts`,
+`chat-attachments`, `event-images`, `media-music`, `health-reports`,
+`media-videos`, `voucher-pdfs`, `campaign-images`, plus the empty
+`community-marketplace-listings`/`default-images`/`media-thumbnails`) were
+not found by grepping `.storage.from(` in either `vitana-platform` or
+`vitana-v1`.** This is a real gap in this pass's coverage, not a claim those
+buckets are unused — plausible explanations, none checked here:
+Supabase **edge functions** (`supabase/functions/*`, a third code surface
+this pass did not grep), the **mobile app** (`exafyltd/vitana-mobile`, also
+not checked — same gap B5 flagged), or direct dashboard/admin uploads with
+no application code touching them at all. `chat-attachments`,
+`health-reports`, and `voucher-pdfs` being non-public buckets with real
+object counts makes them the most important of these nine to positively
+locate before S3 migration — a bucket nobody's code visibly reads is either
+dead weight or a coverage gap, and those are very different next steps.
+
+Also relevant to the migration's RLS-parity requirement (ALWAYS rule 22,
+"Always enforce tenant isolation (RLS)"): **58 RLS policies exist on
+`storage.objects`/`storage.buckets`** (`pg_policies` where
+`schemaname='storage'`) — each one is an access-control rule that needs an
+S3-side equivalent (bucket policy, presigned-URL scoping, or an
+application-layer check in front of S3) before cutover, not just the data
+itself.
+
+## Not done in this pass
+
+- Did not grep `supabase/functions/*` (edge functions) or
+  `exafyltd/vitana-mobile` for Storage call sites — both are plausible
+  homes for the 9 buckets with no hit in the two repos checked. B5 flagged
+  the identical mobile-app gap for Realtime; the same repo is unchecked
+  here for the same reason (out of this session's active branches).
+- Did not read the 58 storage RLS policies individually to map each to an
+  S3-equivalent access rule — sizing only, not a policy-by-policy port plan.
+- Did not check whether any bucket needs versioning, lifecycle rules, or
+  CDN/CloudFront fronting in its S3 form — pure inventory, no target-
+  architecture design.
+
+## Execution update (VTID-03765), 2026-08-27 — public backfill complete
+
+This inventory became real execution the same session: `STORAGE_PROVIDER`
+abstraction shipped (`services/gateway/src/services/storage/storage-provider.ts`,
+default `supabase`, zero behavior change until flipped), all 19 buckets
+provisioned on S3 with matching public/private ACLs
+(`scripts/aws/setup-storage-buckets.sh`), and the public-object backfill
+(`scripts/aws/migrate-storage-to-s3.sh`) **completed: 992/992 objects
+copied, 0 failures, 0 size mismatches.** Spot-checked 3 random objects
+directly against live S3 afterward — correct `Content-Type` and non-zero
+size on each.
+
+**Still open:** the 116 private-bucket objects (`feedback-attachments`,
+`chat-attachments`, `health-reports`, `voucher-pdfs`) remain unmigrated —
+blocked on `secretsmanager:GetSecretValue` for the Supabase service-role
+key. **Re-confirmed 2026-09-11 with a precise error, not just "denied":**
+`AccessDeniedException ... with an explicit deny in a permissions
+boundary: arn:aws:iam::472838866351:policy/claude-code-aws-agent-boundary`.
+This is a deliberate security boundary on this session's IAM identity, not
+a missing grant someone forgot to add — the fix for whoever picks this up
+is a scoped exception to that boundary policy (or running the backfill
+from a different identity entirely), not simply attaching an extra IAM
+statement to the current one. The migration script already treats this as
+a distinct, reported skip (`skipped_private_no_key`), not a silent drop.
+`STORAGE_PROVIDER` has not been flipped to `s3` anywhere — that remains a
+deliberate, separate operator action for once the private-bucket gap
+closes.
+
+## Addendum, 2026-08-28 — `exafyltd/vitana-mobile` checked: zero Storage usage, out of scope
+
+Same gap this doc flagged for B5, closed the same way: `exafyltd/vitana-mobile`
+has zero `supabase_flutter` dependency at all (no `.storage.from(`, no
+`Supabase.instance` anywhere in `lib/`) — it's a Firebase-based app, not a
+Supabase consumer. Nothing to migrate here for Storage either. See the B5
+doc's matching addendum for the one unrelated finding from the same pass
+(a hardcoded GCP credential in that repo, flagged separately to the
+platform owner, not detailed here).
+
+## Addendum, 2026-09-11, VTID-03815 continuation — the "not found" grep pattern was too narrow; edge functions were never checked either
+
+This doc's own "Not done in this pass" list named two real gaps: it never
+grepped `supabase/functions/*`, and its frontend/gateway counts came from
+a single-line `\.storage\.from\(` pattern. Both turned out to matter.
+
+**The single-line pattern undercounts real call sites, because the common
+style in this codebase chains `.storage` and `.from(...)` across two
+lines:**
+
+```ts
+const { data, error } = await supabaseAdmin.storage
+  .from("voucher-pdfs")
+  .upload(...);
+```
+
+Re-grepping `vitana-v1/src` for the bare `\.storage\b` token (not
+`\.storage\.from\(` on one line) finds **34 files**, not 15, and **73**
+raw `.storage` occurrences, not "19 call sites" — the original count was a
+real undercount, not a rounding difference. (Gateway's own count is now
+*lower* than B6's original "4 files," but for a good reason, not a miss:
+the 2026-08-27 `STORAGE_PROVIDER` execution update above already moved
+`video-thumbnail-service.ts`/`cover-image-outpaint.ts` off raw
+`.storage.*` calls onto `storageDownload`/`storageUpload`/`storageRemove`/
+`storagePublicUrl` wrappers in `storage-provider.ts` — confirmed by
+reading both files directly. `intent-cover-service.ts`'s Storage calls
+went the same way. This is the migration abstraction working as intended,
+not a coverage gap.)
+
+**Re-running the same broadened grep against `supabase/functions/*`
+(never checked before) finds 5 more real call sites**, resolving several
+of the "not found in either repo's grep" buckets from the table above:
+
+| File | Bucket(s) | What it does |
+|---|---|---|
+| `extract-video-meta/index.ts` | `media` | download source video, upload thumbnail, get public URL |
+| `generate-event-image/index.ts` | `covers` | upload + public URL for AI-generated event covers |
+| `generate-maxina-summer-events/index.ts` | `event-images` | upload + public URL for AI-generated event images |
+| `voucher-download-pdf/index.ts` | `voucher-pdfs` | upload regenerated PDF + create a 1h signed URL |
+| `request-account-deletion/index.ts` | `avatars`, `diary-photos`, `chat-attachments`, `media-uploads`, `voucher-pdfs`, `stream-recordings`, `event-images` (a hardcoded `USER_STORAGE_BUCKETS` list) | lists and deletes every file under `{userId}/` across all 7 buckets on account deletion |
+
+A second broadened grep of `vitana-v1/src` for the same "not found" bucket
+name strings (not just `.storage.from(`) finds 4 more frontend files using
+the same two-line chain pattern: `MobileHealthMedicalTab.tsx`,
+`HealthReportUploadSheet.tsx`, `MyBiology.tsx` (all three → `health-reports`)
+and `CampaignDialog.tsx` (→ `campaign-images`).
+
+**Resolved — real code references now confirmed for 6 of the original 9
+"not found" buckets:** `chat-attachments`, `event-images`, `voucher-pdfs`,
+`health-reports`, `campaign-images` (via `.storage` client calls), and
+`default-images` (referenced, but only as a hardcoded public-URL string —
+`https://inmkhvwdcuyhnxkgfvsb.supabase.co/storage/v1/object/public/default-images/...`
+in `og-campaign/index.ts`, three times — not a `.storage.from()` client
+call at all. This is its own, narrower migration hazard: that literal
+Supabase host is baked into an edge function's source, so it will keep
+resolving to the *old* Supabase bucket after an S3 cutover unless this
+specific string is also updated — a `.storage.from()` call site would
+follow whatever `STORAGE_PROVIDER` resolves to automatically, a hardcoded
+URL will not).
+
+**Still genuinely unreferenced by any application code in either repo, any
+edge function, or the mobile app** (already ruled out in the addendum
+above): `media-podcasts`, `media-music`, `media-videos`, `media-thumbnails`.
+Found the likely explanation this time, rather than leaving it as an open
+question: `vitana-v1/supabase/migrations/20251013140256_eef15fd0-214d-
+4804-aaac-056ddaaf3d8b.sql` creates all four buckets plus a full set of
+per-bucket RLS policies (owner-scoped upload/update/delete, public read) —
+the DB layer for a "media library" feature (music/podcasts/video/thumbnails)
+was fully provisioned and then never consumed by any application code this
+pass can find, the same "DB shipped ahead of the app layer" shape this
+migration effort's D-series RPC findings (`AURORA-B3-RPC-PARITY-
+INVENTORY.md`) already document repeatedly elsewhere. **`community-
+marketplace-listings`** has no migration hit either — it is the one bucket
+in the original list with zero trace anywhere except its own existence in
+live `storage.buckets`, and is the most likely genuinely-abandoned one of
+the four.
+
+**Net effect on the S3 migration:** the real, code-reachable call-site
+surface for B6 is larger than originally scoped — at least 5 edge
+functions plus ~4 additional frontend files, on top of the 23 already
+counted — and the private-bucket backfill blocker already flagged above
+(`chat-attachments`, `health-reports`, `voucher-pdfs` all IAM-blocked)
+now has confirmed, real consumers waiting on it, not just orphaned data.
+No `STORAGE_PROVIDER`-equivalent abstraction exists in `supabase/functions/*`
+today — each edge function calls the Supabase JS client's `.storage`
+directly, so migrating these 5 functions to S3 needs either a Deno-side
+storage-provider shim mirroring the gateway's, or leaving edge functions
+on Supabase Storage past cutover as a deliberately scoped exception (a
+product/architecture decision, not something this pass should decide
+unilaterally). No code changed in this addendum — inventory only, same
+posture as the rest of B6.
+
+## Execution update, 2026-09-11 continued — a gateway-owned storage-bridge route, not a Deno-side S3 client
+
+The previous addendum's own "needs a Deno-side storage-provider shim
+mirroring the gateway's" framing turned out to be the wrong shape once
+actually scoped: it would mean an AWS SDK dependency and IAM-role
+credential distributed to five Deno edge-function runtimes, exactly the
+per-function-credential problem B7's `ai-bridge` route already solved
+once for LLM calls (one Bedrock call point on the gateway, edge functions
+call it as a service instead of holding their own credential). Built the
+same pattern for storage: `services/gateway/src/routes/storage-bridge.ts`
+(4 handlers — `/upload`, `/remove`, `/public-url`, `/list`, all
+`requireServiceOrAdmin`), backed by `storage-provider.ts`'s existing
+`storageUpload`/`storageRemove`/`storagePublicUrl` plus a new
+`storageList` (and `s3-storage.ts`'s new `s3List`) added in this same
+pass. See `docs/validation/VTID-03591/acceptance.md` AC-15/AC-16 for the
+full route-mount evidence.
+
+**Deliberately not the full 5-function surface — two real gaps left open,
+not faked:**
+- **No `/download`.** The gateway's `express.json({ limit: '2mb' })` is
+  the wrong transport for `extract-video-meta`'s whole-source-video
+  downloads (base64 overhead on top of an unbounded file size). That
+  function is not wired to this bridge at all — `storage-provider.ts`'s
+  own header comment rules out mixing backends per-call, so partially
+  wiring one function's upload/public-url legs while leaving its download
+  on direct Supabase would violate that principle, not honor it.
+- **No `/signed-url`.** `voucher-download-pdf` needs a signed URL for a
+  private bucket, which needs `@aws-sdk/s3-request-presigner` — not a
+  dependency this codebase has today. A one-line `package.json` add, but
+  a real dependency-surface decision left to whoever wires that function,
+  rather than bundled into this route's first cut.
+
+**Fully covered, confirmed against each function's real `.storage.*` call
+shape in `exafyltd/vitana-v1` before writing this route** (not inferred
+from the bucket-name table alone): `generate-event-image` and
+`generate-maxina-summer-events` (upload + public-url), and
+`request-account-deletion` (list + remove — its real
+`USER_STORAGE_BUCKETS`/`.list(userId, {limit:1000})`/`.remove(filePaths)`
+shape is exactly what `storageList`'s `{name}` return shape and
+`storageRemove`'s path-array signature were built to match).
+
+**A real bug was caught by this route's own test before shipping:**
+`Buffer.from(str, 'base64')` in Node never throws on malformed input — it
+silently decodes whatever valid base64 characters it finds and drops the
+rest, so a try/catch around the decode (the same shape `ai-bridge.ts`'s
+`/transcribe` route already uses for `audioBase64`) never actually
+catches anything; garbage input would otherwise upload silently-corrupted
+bytes instead of being rejected. Fixed in `storage-bridge.ts` with an
+actual base64-charset regex check before decoding. `ai-bridge.ts`'s own
+`/transcribe` route was NOT touched — this is a pre-existing latent gap
+there too, flagged here rather than silently fixed in a file this pass
+had no other reason to touch.
+
+23 new tests in `storage-bridge.test.ts` plus 15 new tests in
+`storage-provider.test.ts` (`storageList`/`s3List` — S3 prefix-stripping,
+folder-marker filtering, empty-prefix handling, provider-routing gating,
+Supabase-unconfigured fail-closed). Full gateway suite re-run: 840/841
+suites (1 pre-existing skip), 14,373 tests passing, 0 failures;
+`tsc --noEmit` clean.
+
+**Still open at this point:** no vitana-v1-side client or edge-function
+wiring yet — this ships the gateway route only, same "gateway route
+first, edge-function client second" sequencing B7's `ai-bridge` used
+across two separate steps. No live exercise against real Supabase/S3 (no
+credentials this session). `extract-video-meta`'s download leg and
+`voucher-download-pdf`'s signed-url leg remain genuinely unsolved, not
+just unwired.
+
+## Execution update, 2026-09-11 continued — both remaining gaps closed; all 5 edge functions now wired end-to-end
+
+Closes both items the previous update left open, in the same pass.
+
+**`/signed-url` (gateway side):** added `@aws-sdk/s3-request-presigner`
+(a real dependency add, declared via `DEPENDENCY_CHANGE:` — see
+`docs/validation/VTID-03591/acceptance.md` AC-18) and
+`storage-provider.ts`'s new `storageSignedUrl` (Supabase
+`createSignedUrl()` or S3 presigning). This closes `voucher-download-pdf`
+directly (it just needs a link to hand the user) and closes
+`extract-video-meta`'s download gap **without** a byte-proxying
+`/download` route: the function now asks for a signed URL and `fetch()`s
+the video itself, so the bytes never pass through the gateway's 2mb JSON
+body limit at all — the constraint that made a `/download` route the
+wrong shape in the first place stops applying once bytes never need to
+be JSON-wrapped. `extract-video-meta`'s three storage calls (download,
+thumbnail upload, thumbnail public-url) move to the bridge together under
+one flag check, not leg-by-leg, honoring `storage-provider.ts`'s own
+"never mixed per-call" rule.
+
+**Real dependency-alignment bug caught before shipping:** adding
+`s3-request-presigner` alone broke `tsc --noEmit` with a genuine
+structural type error — the newly-installed presigner's bundled
+`@smithy/types` (4.18.0) didn't match the already-installed
+`@aws-sdk/client-s3`'s (4.16.1), so `getSignedUrl(client, command, opts)`
+rejected the `S3Client` instance as an incompatible `Client` type. Not a
+false positive: two different `@smithy/types` resolutions genuinely can't
+type-check against each other. Fixed by bumping `@aws-sdk/client-s3` to
+the same release line (`^3.1130.0`), not by casting around it.
+`pnpm-lock.yaml` regenerated with `pnpm@9.0.0` via `corepack prepare
+pnpm@9.0.0 --activate` (matching this repo's pinned `packageManager` —
+the locally-installed pnpm was 10.33.0) and reverified with
+`pnpm install --frozen-lockfile`, the actual command CI runs.
+
+**vitana-v1 side:** new `supabase/functions/_shared/storage-bridge-client.ts`
+mirrors `bedrock-bridge-client.ts`'s exact auth/fetch pattern
+(`GATEWAY_SERVICE_TOKEN` bearer) — `uploadFile`/`removeFiles`/
+`getPublicUrl`/`listFiles`/`getSignedUrl`. All 5 identified edge functions
+wired behind their OWN `STORAGE_BRIDGE_PROVIDER` secret (per-function
+opt-in, mirroring `AI_BRIDGE_PROVIDER`'s shape — not a single global
+switch), default `supabase` everywhere, unchanged behavior:
+
+| Function | Bridge ops used |
+|---|---|
+| `generate-event-image` | upload + public-url |
+| `generate-maxina-summer-events` | upload + public-url |
+| `request-account-deletion` | list + remove |
+| `voucher-download-pdf` | upload + signed-url |
+| `extract-video-meta` | signed-url (read) + upload + public-url |
+
+14 new tests in `src/lib/storage-bridge-client.test.ts` (provider gating,
+a base64 round-trip test including a >1-chunk input — the chunked
+`bytesToBase64` helper needed this to catch a boundary bug, though none
+was found — and each wrapper's request shape/URL/error forwarding). Full
+vitana-v1 suite: 89/89 files, 427/427 tests passing;
+`tsc --noEmit -p tsconfig.app.json` clean for every file this pass
+touched (the edge functions themselves aren't covered by this tsconfig —
+`include` is `["src"]` only — so their Deno-specific syntax was never
+type-checked by tsc in the first place, same as every other edge function
+in this repo; the shared client IS checked, transitively, via the Vitest
+file's import).
+
+**This closes B6's code-side edge-function gap completely — 5 of 5
+functions covered.** Still open: no live exercise against a real
+Supabase/S3 bucket from any session (no credentials), so
+`extract-video-meta`'s signed-URL-fetch path in particular is unverified
+against real object bytes; and the `STORAGE_BRIDGE_PROVIDER`/
+`STORAGE_PROVIDER`/`AI_BRIDGE_PROVIDER` flags are all still `off`
+everywhere — flipping any of them is a live-traffic decision for later,
+not something this pass should decide.

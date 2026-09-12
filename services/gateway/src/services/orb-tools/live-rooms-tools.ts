@@ -13,6 +13,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
 import { gatewayApiCall, relAge } from './developer-tools';
+import * as repo from './live-rooms-tools-repository';
 
 type Handler = (
   args: OrbToolArgs,
@@ -36,13 +37,7 @@ const NO_SESSION: OrbToolResult = {
 
 export const list_live_rooms_now: Handler = async (args, id, sb) => {
   if (!id.user_id || !id.tenant_id) return { ok: false, error: 'list_live_rooms_now requires an authenticated user with a tenant.' };
-  const { data, error } = await sb
-    .from('live_rooms')
-    .select('id, title, starts_at, status')
-    .eq('tenant_id', id.tenant_id)
-    .in('status', ['scheduled', 'live'])
-    .order('starts_at', { ascending: true })
-    .limit(20);
+  const { data, error } = await repo.fetchLiveRoomsNow(sb, id.tenant_id);
   if (error) return { ok: false, error: `list_live_rooms_now failed: ${error.message}` };
   const rooms = (data ?? []) as Array<{ id: string; title: string; status: string; starts_at: string }>;
   const live = rooms.filter((r) => r.status === 'live');

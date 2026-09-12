@@ -35,6 +35,7 @@
 //     a bad seed can't crash the engine.
 
 import { getSupabase } from '../../lib/supabase';
+import * as repo from './compatibility-resolver-repository';
 
 const CACHE_TTL_MS = 15_000;
 const TELEMETRY_PREFIX =
@@ -316,12 +317,7 @@ async function fetchAll(): Promise<CacheSnapshot> {
     return snap; // Cold — read-time fallback kicks in.
   }
   try {
-    const { data, error } = await supa
-      .from('decision_compatibility_score')
-      .select(
-        'dimension, profile_value, candidate_value, score, tenant_id, ' +
-          'version, effective_from, effective_until',
-      );
+    const { data, error } = await repo.fetchAllDecisionCompatibilityScores(supa);
     if (error) {
       if (
         !/relation .*decision_compatibility_score.* does not exist/i.test(error.message)

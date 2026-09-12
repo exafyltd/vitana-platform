@@ -10,6 +10,12 @@
  * 6 Phase-0 screens across 2 sidebar sections:
  *   Catalog:     Overview | Merchants | Products | (Taxonomy Phase 2) | (Feed Curation defaults subset)
  *   Operations:  Ingestion & Coverage | (Affiliate Networks Phase 2) | Geo Policies | (Attribution Phase 2) | (Moderation Phase 2)
+ *
+ * Data access for the tables this route owns (merchants, products,
+ * catalog_sources, product_clicks, product_orders, default_feed_config,
+ * geo_policy, marketplace_sources_config, admin_settings) goes through
+ * ./admin-marketplace-repository.ts (VTID-03702, Aurora migration B1
+ * data-access seam) instead of calling supabase.from(...) directly.
  */
 
 import { Router, Request, Response } from 'express';
@@ -17,6 +23,7 @@ import { requireTenantAdmin } from '../middleware/require-tenant-admin';
 import { AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { getSupabase } from '../lib/supabase';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import * as repo from './admin-marketplace-repository';
 
 const router = Router();
 const VTID = 'VTID-02000';
@@ -61,14 +68,7 @@ router.get('/overview', requireTenantAdmin, async (_req: Request, res: Response)
     runsRecent,
     clicks24h,
     conversions30d,
-  ] = await Promise.all([
-    supabase.from('merchants').select('id', { count: 'exact', head: true }).eq('is_active', true),
-    supabase.from('products').select('id', { count: 'exact', head: true }).eq('is_active', true),
-    supabase.from('products').select('id', { count: 'exact', head: true }).eq('requires_admin_review', true).eq('is_active', true),
-    supabase.from('catalog_sources').select('run_id, source_network, started_at, finished_at, products_inserted, products_updated, errors').order('started_at', { ascending: false }).limit(10),
-    supabase.from('product_clicks').select('id', { count: 'exact', head: true }).gte('clicked_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()),
-    supabase.from('product_orders').select('id, commission_cents', { count: 'exact' }).gte('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()).eq('state', 'converted'),
-  ]);
+  ] = await repo.fetchAdminMarketplaceOverviewStats(supabase);
 
   const commission_30d_cents = (conversions30d.data ?? []).reduce((a, r) => a + ((r.commission_cents as number) ?? 0), 0);
 
@@ -92,12 +92,13 @@ router.get('/merchants', requireTenantAdmin, async (req: Request, res: Response)
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
   const { source_network, is_active, limit, offset, search } = req.query;
-  let q = supabase.from('merchants').select('*', { count: 'exact' });
-  if (source_network) q = q.eq('source_network', String(source_network));
-  if (is_active !== undefined) q = q.eq('is_active', String(is_active) === 'true');
-  if (search) q = q.ilike('name', `%${search}%`);
-  q = q.order('created_at', { ascending: false }).range(Number(offset ?? 0), Number(offset ?? 0) + Number(limit ?? 50) - 1);
-  const { data, error, count } = await q;
+  const { data, error, count } = await repo.listAdminMarketplaceMerchants(supabase, {
+    sourceNetwork: source_network ? String(source_network) : undefined,
+    isActive: is_active !== undefined ? String(is_active) : undefined,
+    search: search ? String(search) : undefined,
+    offset: Number(offset ?? 0),
+    limit: Number(limit ?? 50),
+  });
   if (error) return res.status(500).json({ ok: false, error: error.message });
   res.json({ ok: true, items: data ?? [], total: count ?? 0 });
 });
@@ -110,7 +111,7 @@ router.patch('/merchants/:id', requireTenantAdmin, async (req: Request, res: Res
   const patch: Record<string, unknown> = {};
   for (const k of allowed) if (k in req.body) patch[k] = req.body[k];
   if (Object.keys(patch).length === 0) return res.status(400).json({ ok: false, error: 'No allowed fields to update' });
-  const { data, error } = await supabase.from('merchants').update(patch).eq('id', id).select().single();
+  const { data, error } = await repo.updateAdminMarketplaceMerchant(supabase, id, patch);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   await emitAdminActivity(getTenantId(req), getUserId(req), 'merchant.updated', { merchant_id: id, patch });
   res.json({ ok: true, merchant: data });
@@ -122,15 +123,16 @@ router.get('/products', requireTenantAdmin, async (req: Request, res: Response) 
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
   const { requires_admin_review, is_active, source_network, category, origin_region, limit, offset, search } = req.query;
-  let q = supabase.from('products').select('id, title, brand, category, subcategory, price_cents, currency, origin_country, origin_region, source_network, source_product_id, rating, availability, requires_admin_review, admin_review_reason, analyzer_confidence, is_active, ingested_at, last_seen_at, merchant_id', { count: 'exact' });
-  if (requires_admin_review !== undefined) q = q.eq('requires_admin_review', String(requires_admin_review) === 'true');
-  if (is_active !== undefined) q = q.eq('is_active', String(is_active) === 'true');
-  if (source_network) q = q.eq('source_network', String(source_network));
-  if (category) q = q.eq('category', String(category));
-  if (origin_region) q = q.eq('origin_region', String(origin_region));
-  if (search) q = q.ilike('title', `%${search}%`);
-  q = q.order('ingested_at', { ascending: false }).range(Number(offset ?? 0), Number(offset ?? 0) + Number(limit ?? 50) - 1);
-  const { data, error, count } = await q;
+  const { data, error, count } = await repo.listAdminMarketplaceProducts(supabase, {
+    requiresAdminReview: requires_admin_review !== undefined ? String(requires_admin_review) : undefined,
+    isActive: is_active !== undefined ? String(is_active) : undefined,
+    sourceNetwork: source_network ? String(source_network) : undefined,
+    category: category ? String(category) : undefined,
+    originRegion: origin_region ? String(origin_region) : undefined,
+    search: search ? String(search) : undefined,
+    offset: Number(offset ?? 0),
+    limit: Number(limit ?? 50),
+  });
   if (error) return res.status(500).json({ ok: false, error: error.message });
   res.json({ ok: true, items: data ?? [], total: count ?? 0 });
 });
@@ -143,7 +145,7 @@ router.patch('/products/:id', requireTenantAdmin, async (req: Request, res: Resp
   const patch: Record<string, unknown> = {};
   for (const k of allowed) if (k in req.body) patch[k] = req.body[k];
   if (Object.keys(patch).length === 0) return res.status(400).json({ ok: false, error: 'No allowed fields to update' });
-  const { data, error } = await supabase.from('products').update(patch).eq('id', id).select().single();
+  const { data, error } = await repo.updateAdminMarketplaceProduct(supabase, id, patch);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   await emitAdminActivity(getTenantId(req), getUserId(req), 'product.updated', { product_id: id, patch });
   res.json({ ok: true, product: data });
@@ -177,7 +179,7 @@ router.post('/products/bulk-action', requireTenantAdmin, async (req: Request, re
       return res.status(400).json({ ok: false, error: `Unknown action: ${action}` });
   }
 
-  const { data, error } = await supabase.from('products').update(patch).in('id', product_ids).select('id');
+  const { data, error } = await repo.bulkUpdateAdminMarketplaceProducts(supabase, product_ids, patch);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   const updated = data?.length ?? 0;
   await emitAdminActivity(getTenantId(req), getUserId(req), `products.bulk_${action}`, { count: updated, product_ids: product_ids.slice(0, 10), reason: reason ?? null });
@@ -191,13 +193,7 @@ router.get('/feed-curation', requireTenantAdmin, async (req: Request, res: Respo
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
   const tenantId = getTenantId(req);
   // Return tenant-scoped configs + platform-wide defaults (as fallback view)
-  const { data, error } = await supabase
-    .from('default_feed_config')
-    .select('*')
-    .or(`tenant_id.is.null,tenant_id.eq.${tenantId}`)
-    .eq('is_active', true)
-    .order('region_group', { ascending: true })
-    .order('lifecycle_stage', { ascending: true });
+  const { data, error } = await repo.fetchAdminMarketplaceFeedCurationConfigs(supabase, tenantId);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   res.json({ ok: true, configs: data ?? [] });
 });
@@ -211,7 +207,7 @@ router.patch('/feed-curation/:id', requireTenantAdmin, async (req: Request, res:
   for (const k of allowed) if (k in req.body) patch[k] = req.body[k];
   if (Object.keys(patch).length === 0) return res.status(400).json({ ok: false, error: 'No allowed fields to update' });
   patch.updated_by = getUserId(req) ?? 'admin';
-  const { data, error } = await supabase.from('default_feed_config').update(patch).eq('id', id).select().single();
+  const { data, error } = await repo.updateAdminMarketplaceFeedCurationConfig(supabase, id, patch);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   await emitAdminActivity(getTenantId(req), getUserId(req), 'feed_config.updated', { config_id: id, patch });
   res.json({ ok: true, config: data });
@@ -223,10 +219,11 @@ router.get('/ingestion/runs', requireTenantAdmin, async (req: Request, res: Resp
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
   const { source_network, limit, offset } = req.query;
-  let q = supabase.from('catalog_sources').select('*', { count: 'exact' });
-  if (source_network) q = q.eq('source_network', String(source_network));
-  q = q.order('started_at', { ascending: false }).range(Number(offset ?? 0), Number(offset ?? 0) + Number(limit ?? 50) - 1);
-  const { data, error, count } = await q;
+  const { data, error, count } = await repo.listAdminMarketplaceIngestionRuns(supabase, {
+    sourceNetwork: source_network ? String(source_network) : undefined,
+    offset: Number(offset ?? 0),
+    limit: Number(limit ?? 50),
+  });
   if (error) return res.status(500).json({ ok: false, error: error.message });
   res.json({ ok: true, runs: data ?? [], total: count ?? 0 });
 });
@@ -235,10 +232,7 @@ router.get('/ingestion/coverage', requireTenantAdmin, async (_req: Request, res:
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
   // Compute origin_region × ships_to_region matrix
-  const { data, error } = await supabase
-    .from('products')
-    .select('origin_region, ships_to_regions')
-    .eq('is_active', true);
+  const { data, error } = await repo.fetchAdminMarketplaceIngestionCoverage(supabase);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   const matrix: Record<string, Record<string, number>> = {};
   const regions = ['EU', 'UK', 'US', 'CA', 'LATAM', 'MENA', 'APAC_JP_KR_TW', 'APAC_CN', 'APAC_SEA', 'APAC_IN', 'AFRICA', 'OCEANIA', 'OTHER'];
@@ -259,11 +253,7 @@ router.get('/ingestion/coverage', requireTenantAdmin, async (_req: Request, res:
 router.get('/geo-policy', requireTenantAdmin, async (_req: Request, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
-  const { data, error } = await supabase
-    .from('geo_policy')
-    .select('*')
-    .order('user_region', { ascending: true })
-    .order('rule_type', { ascending: true });
+  const { data, error } = await repo.listAdminMarketplaceGeoPolicies(supabase);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   res.json({ ok: true, policies: data ?? [] });
 });
@@ -276,7 +266,7 @@ router.patch('/geo-policy/:id', requireTenantAdmin, async (req: Request, res: Re
   const patch: Record<string, unknown> = {};
   for (const k of allowed) if (k in req.body) patch[k] = req.body[k];
   if (Object.keys(patch).length === 0) return res.status(400).json({ ok: false, error: 'No allowed fields to update' });
-  const { data, error } = await supabase.from('geo_policy').update(patch).eq('id', id).select().single();
+  const { data, error } = await repo.updateAdminMarketplaceGeoPolicy(supabase, id, patch);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   await emitAdminActivity(getTenantId(req), getUserId(req), 'geo_policy.updated', { policy_id: id, patch });
   res.json({ ok: true, policy: data });
@@ -316,12 +306,7 @@ router.get('/awin/feeds', requireTenantAdmin, async (req: Request, res: Response
       : process.env.AWIN_PUBLISHER_ID || '';
 
   if (!apiKey && supabase) {
-    const { data } = await supabase
-      .from('marketplace_sources_config')
-      .select('config')
-      .eq('source_network', 'awin')
-      .eq('is_active', true)
-      .limit(1);
+    const { data } = await repo.fetchAdminMarketplaceAwinSourceConfig(supabase);
     const cfg = data?.[0]?.config as { api_key?: string; publisher_id?: string } | undefined;
     if (cfg?.api_key) apiKey = cfg.api_key;
     if (!publisherId && cfg?.publisher_id) publisherId = cfg.publisher_id;
@@ -360,9 +345,7 @@ router.get('/sources', requireTenantAdmin, async (req: Request, res: Response) =
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
   const { source_network } = req.query;
-  let q = supabase.from('marketplace_sources_config').select('*').order('created_at', { ascending: false });
-  if (source_network) q = q.eq('source_network', String(source_network));
-  const { data, error } = await q;
+  const { data, error } = await repo.listAdminMarketplaceSources(supabase, source_network ? String(source_network) : undefined);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   res.json({ ok: true, sources: data ?? [] });
 });
@@ -389,7 +372,7 @@ router.post('/sources', requireTenantAdmin, async (req: Request, res: Response) 
     }
   }
   payload.created_by = getUserId(req) ?? null;
-  const { data, error } = await supabase.from('marketplace_sources_config').insert(payload).select().single();
+  const { data, error } = await repo.insertAdminMarketplaceSource(supabase, payload);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   await emitAdminActivity(getTenantId(req), getUserId(req), 'marketplace_source.created', { source_id: data.id, source_network: data.source_network });
   res.json({ ok: true, source: data });
@@ -402,7 +385,7 @@ router.patch('/sources/:id', requireTenantAdmin, async (req: Request, res: Respo
   const patch: Record<string, unknown> = {};
   for (const k of allowed) if (k in req.body) patch[k] = req.body[k];
   if (Object.keys(patch).length === 0) return res.status(400).json({ ok: false, error: 'No allowed fields to update' });
-  const { data, error } = await supabase.from('marketplace_sources_config').update(patch).eq('id', req.params.id).select().single();
+  const { data, error } = await repo.updateAdminMarketplaceSource(supabase, req.params.id, patch);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   await emitAdminActivity(getTenantId(req), getUserId(req), 'marketplace_source.updated', { source_id: req.params.id, patch });
   res.json({ ok: true, source: data });
@@ -456,7 +439,7 @@ router.post('/geo-policy', requireTenantAdmin, async (req: Request, res: Respons
   const payload: Record<string, unknown> = {};
   for (const k of allowed) if (k in req.body) payload[k] = req.body[k];
   if (!payload.user_region || !payload.rule_type) return res.status(400).json({ ok: false, error: 'user_region + rule_type required' });
-  const { data, error } = await supabase.from('geo_policy').insert(payload).select().single();
+  const { data, error } = await repo.insertAdminMarketplaceGeoPolicy(supabase, payload);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   await emitAdminActivity(getTenantId(req), getUserId(req), 'geo_policy.created', { policy_id: data.id, payload });
   res.json({ ok: true, policy: data });
@@ -467,11 +450,7 @@ router.post('/geo-policy', requireTenantAdmin, async (req: Request, res: Respons
 router.get('/commission-settings', requireTenantAdmin, async (_req: Request, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
-  const { data, error } = await supabase
-    .from('admin_settings')
-    .select('value, updated_at')
-    .eq('key', 'recommendation_commission_default_rate')
-    .maybeSingle();
+  const { data, error } = await repo.fetchAdminMarketplaceCommissionSetting(supabase);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   const rate = (data?.value as { rate?: number } | undefined)?.rate ?? 0.2;
   res.json({ ok: true, default_rate: rate, updated_at: data?.updated_at ?? null });
@@ -486,12 +465,7 @@ router.patch('/commission-settings', requireTenantAdmin, async (req: Request, re
   if (!Number.isFinite(rate) || rate <= 0 || rate > 1) {
     return res.status(400).json({ ok: false, error: 'default_rate must be a number between 0 and 1' });
   }
-  const { error } = await supabase
-    .from('admin_settings')
-    .upsert(
-      { key: 'recommendation_commission_default_rate', value: { rate }, updated_by: getUserId(req), updated_at: new Date().toISOString() },
-      { onConflict: 'key' }
-    );
+  const { error } = await repo.upsertAdminMarketplaceCommissionSetting(supabase, { rate }, getUserId(req));
   if (error) return res.status(500).json({ ok: false, error: error.message });
   await emitAdminActivity(getTenantId(req), getUserId(req), 'commission_settings.updated', { default_rate: rate });
   res.json({ ok: true, default_rate: rate });

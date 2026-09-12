@@ -19,6 +19,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { emitOasisEvent } from './oasis-event-service';
 import { assertWriteFact } from './memory-audit'; // VTID-01952 Identity Lock chokepoint
 import { mirrorFact } from './mem-tier2-writer'; // VTID-02005 Phase 5b Tier 2 mirror
+import * as repo from './memory-facts-service-repository';
 
 // =============================================================================
 // Configuration
@@ -173,7 +174,7 @@ export async function writeFact(request: WriteFactRequest): Promise<WriteFactRes
   }
 
   try {
-    const { data, error } = await supabase.rpc('write_fact', {
+    const { data, error } = await repo.writeFactRpc(supabase, {
       p_tenant_id: request.tenant_id,
       p_user_id: request.user_id,
       p_fact_key: request.fact_key,
@@ -272,7 +273,7 @@ export async function getCurrentFacts(request: GetFactsRequest): Promise<GetFact
   }
 
   try {
-    const { data, error } = await supabase.rpc('get_current_facts', {
+    const { data, error } = await repo.getCurrentFactsRpc(supabase, {
       p_tenant_id: request.tenant_id,
       p_user_id: request.user_id,
       p_entity: request.entity || null,
@@ -715,6 +716,17 @@ async function callGeminiForFactEmbeddings(texts: string[]): Promise<FactEmbeddi
  * vector(768) column. OpenAI (requested at native 768d) primary, Gemini
  * text-embedding-004 (native 768d) fallback. Exported for AP-0910's batch
  * backfill; also used internally by generateFactEmbeddingAsync below.
+ *
+ * GATEWAY-GOOGLE-DEPENDENCY-AUDIT-2026-08-28 finding #1/#2 flagged this
+ * alongside embedding-service.ts's Gemini fallback (VTID-01184, now fixed —
+ * see providers/titan-embedding.ts), but this one could NOT get the same
+ * Bedrock/Titan fix: Titan Text Embeddings V1 is fixed at 1536-dim, and V2
+ * only offers 256/512/1024 — none match this column's fixed 768. Closing
+ * this one for real needs a human decision (migrate memory_facts.embedding
+ * to a Titan-compatible width and re-embed every existing row, or accept a
+ * quality-degrading truncation), not a code-only swap — so the Gemini
+ * fallback stays, but is now logged as the policy incident it is (NEVER-27
+ * / IF-THEN-29) instead of a silent console.warn.
  */
 export async function generateFactEmbeddings(texts: string[]): Promise<FactEmbeddingBatchResult> {
   if (texts.length === 0) return { ok: true, embeddings: [] };
@@ -722,7 +734,24 @@ export async function generateFactEmbeddings(texts: string[]): Promise<FactEmbed
   if (openai.ok) return openai;
   console.warn(`[${VTID}] OpenAI fact-embedding failed, trying Gemini: ${openai.error}`);
   const gemini = await callGeminiForFactEmbeddings(texts);
-  if (gemini.ok) return gemini;
+  if (gemini.ok) {
+    console.error(`[${VTID}] GOOGLE FALLBACK USED (policy violation, no Bedrock/Titan equivalent for the fixed 768-dim column): ${gemini.model}`);
+    await emitOasisEvent({
+      vtid: VTID,
+      type: 'embedding.google_fallback_used',
+      source: 'memory-facts-service',
+      status: 'error',
+      message: `POLICY VIOLATION: used Gemini fallback for fact-embedding generation (${gemini.model}) — OpenAI failed and no Bedrock/Titan model matches the fixed 768-dim column`,
+      payload: {
+        policy_violation: true,
+        openai_error: openai.error,
+        provider: 'gemini',
+        model: gemini.model,
+        count: texts.length,
+      },
+    }).catch(() => {});
+    return gemini;
+  }
   return { ok: false, error: `OpenAI: ${openai.error}; Gemini: ${gemini.error}` };
 }
 
@@ -758,14 +787,13 @@ export function generateFactEmbeddingAsync(
       const supabase = createServiceClient();
       if (!supabase) return;
 
-      const { error } = await supabase
-        .from('memory_facts')
-        .update({
-          embedding: JSON.stringify(embedding),
-          embedding_model: result.model || FACT_EMBEDDING_OPENAI_MODEL,
-          embedding_updated_at: new Date().toISOString(),
-        })
-        .eq('id', factId);
+      const { error } = await repo.updateFactEmbedding(
+        supabase,
+        factId,
+        JSON.stringify(embedding),
+        result.model || FACT_EMBEDDING_OPENAI_MODEL,
+        new Date().toISOString(),
+      );
 
       if (error) {
         console.warn(`[${VTID}] Embedding storage failed for fact ${factId}: ${error.message}`);

@@ -597,5 +597,22 @@ describe('Health Router', () => {
       expect(res.status).toBe(200);
       expect(res.body.completed).toBe(false);
     });
+
+    it('500s (not a false completed:false) when the score-existence lookup errors', async () => {
+      // Survey exists — a real user who genuinely completed both steps.
+      supabaseMock._fromChain.maybeSingle.mockResolvedValueOnce({
+        data: { completed_at: '2026-01-01T00:00:00Z' },
+        error: null,
+      });
+      adminMock._fromChain.maybeSingle.mockResolvedValueOnce({
+        data: null,
+        error: { message: 'connection reset' },
+      });
+      const res = await request(testApp)
+        .get('/baseline-survey/status')
+        .set('Authorization', AUTH_HEADER);
+      expect(res.status).toBe(500);
+      expect(res.body.ok).toBe(false);
+    });
   });
 });

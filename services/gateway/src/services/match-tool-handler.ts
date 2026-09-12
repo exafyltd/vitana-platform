@@ -10,6 +10,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { emitOasisEvent } from './oasis-event-service';
+import * as repo from './match-tool-handler-repository';
 
 const VTID = 'VTID-01270';
 const MATCH_SHARE_BASE = 'https://e.vitanaland.com/matches';
@@ -91,25 +92,18 @@ export async function executeGetUserMatches(
     // "Could not find a relationship ... in the schema cache" and threw.
     // Instead we fetch match_targets in a second query (no relationship
     // discovery required) and join in memory.
-    let query = supabase
-      .from('matches_daily')
-      .select('id, match_type, target_id, score, reasons, state')
-      .eq('user_id', userId)
-      .eq('match_date', date)
-      .eq('state', 'suggested')
-      .gte('score', minScore)
-      .order('score', { ascending: false });
-
-    // Apply match_type filter (real column on matches_daily)
-    if (args.match_type) {
-      query = query.eq('match_type', args.match_type);
-    }
-
     // The topic filter lives on match_targets (Step 2). When present we must
     // over-fetch and filter in memory after the join, since we can't apply it
     // on matches_daily. Daily matches per user are small, so the cap is safe.
     const fetchLimit = args.topic_filter ? 200 : limit;
-    const { data: matches, error } = await query.limit(fetchLimit);
+    const { data: matches, error } = await repo.fetchSuggestedMatchesForDate(
+      supabase,
+      userId,
+      date,
+      minScore,
+      args.match_type,
+      fetchLimit,
+    );
 
     if (error) {
       console.error(`[${VTID}] get_user_matches query error:`, error.message);
@@ -149,14 +143,7 @@ export async function executeGetUserMatches(
     const targetIds = [...new Set(matchRows.map((m) => m.target_id).filter(Boolean))];
     const targetMap = new Map<string, any>();
     if (targetIds.length > 0) {
-      let tq = supabase
-        .from('match_targets')
-        .select('id, display_name, topic_keys, tags, metadata, target_type')
-        .in('id', targetIds);
-      if (args.topic_filter) {
-        tq = tq.contains('topic_keys', [args.topic_filter]);
-      }
-      const { data: targets, error: targetErr } = await tq;
+      const { data: targets, error: targetErr } = await repo.fetchMatchTargetsByIds(supabase, targetIds, args.topic_filter);
       if (targetErr) {
         const tm = targetErr.message || '';
         if (
@@ -179,20 +166,11 @@ export async function executeGetUserMatches(
       .slice(0, limit);
 
     // Get total count of suggested matches for context
-    const { count: totalCount } = await supabase
-      .from('matches_daily')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .eq('match_date', date)
-      .eq('state', 'suggested');
+    const { count: totalCount } = await repo.countSuggestedMatchesForDate(supabase, userId, date);
 
     // Check user's privacy preferences for person matches
     let revealMode = 'first_name'; // default
-    const { data: prefs } = await supabase
-      .from('user_match_preferences')
-      .select('reveal_identity_mode')
-      .eq('user_id', userId)
-      .single();
+    const { data: prefs } = await repo.fetchUserMatchRevealMode(supabase, userId);
 
     if (prefs?.reveal_identity_mode) {
       revealMode = prefs.reveal_identity_mode;

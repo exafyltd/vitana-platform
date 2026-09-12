@@ -15,6 +15,7 @@
 
 import { createHash } from 'crypto';
 import { getSupabase } from '../../../lib/supabase';
+import * as repo from './wearable-analyzer-repository';
 
 const LOG_PREFIX = '[VTID-02100:WearableAnalyzer]';
 
@@ -55,13 +56,7 @@ interface RollupRow {
 async function resolveTenantId(userId: string): Promise<string | null> {
   const supabase = getSupabase();
   if (!supabase) return null;
-  const { data } = await supabase
-    .from('user_tenants')
-    .select('tenant_id')
-    .eq('user_id', userId)
-    .eq('is_active', true)
-    .limit(1)
-    .maybeSingle();
+  const { data } = await repo.fetchActiveTenantIdForUser(supabase, userId);
   return data?.tenant_id ?? null;
 }
 
@@ -150,16 +145,7 @@ export async function analyzeWearables(opts: {
     };
   }
 
-  let query = supabase
-    .from('wearable_rollup_7d')
-    .select('*')
-    .gte('days_with_data', 3)
-    .limit(opts.limit ?? 500);
-  if (opts.user_ids?.length) {
-    query = query.in('user_id', opts.user_ids);
-  }
-
-  const { data, error } = await query;
+  const { data, error } = await repo.fetchWearableRollup7d(supabase, { userIds: opts.user_ids, limit: opts.limit ?? 500 });
   if (error) {
     return {
       ok: false,

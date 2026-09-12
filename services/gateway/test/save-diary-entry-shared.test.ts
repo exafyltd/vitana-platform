@@ -58,6 +58,7 @@ function makeStubSupabase(opts: {
   diaryUpdateError?: { message: string } | null;
   recentDiaryEntry?: { id: string; text: string; created_at: string } | null;
   preIndexRow?: Record<string, number> | null;
+  preIndexError?: { message: string } | null;
   rpcReturn?: { data: unknown; error?: { message: string } | null };
 }) {
   const calls: DbCall[] = [];
@@ -98,7 +99,7 @@ function makeStubSupabase(opts: {
               eq: () => ({
                 maybeSingle: async () => {
                   calls.push({ table, op: 'select' });
-                  return { data: opts.preIndexRow ?? null, error: null };
+                  return { data: opts.preIndexRow ?? null, error: opts.preIndexError ?? null };
                 },
               }),
             }),
@@ -426,5 +427,51 @@ describe('VTID-03042 — save_diary_entry lifted to shared dispatcher', () => {
       sb as never,
     );
     expect(result.ok).toBe(true);
+  });
+
+  test('10. pre-recompute Index lookup error is logged, not silently treated as no-baseline', async () => {
+    const sb = makeStubSupabase({
+      preIndexRow: null,
+      preIndexError: { message: 'connection reset' },
+      rpcReturn: { data: { ok: true, score_total: 50 } },
+    });
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const result = await tool_save_diary_entry(
+      { raw_text: 'Slept eight hours and had a big salad for lunch.' },
+      identity,
+      sb as never,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok !== true) return;
+    // Still degrades gracefully — no baseline means no delta is reported,
+    // never a fabricated one — but the failure must not be silent.
+    const r = result.result as { index_delta: unknown };
+    expect(r.index_delta).toBeNull();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('pre-recompute Index lookup failed'),
+    );
+    warnSpy.mockRestore();
+  });
+
+  test('11. Index recompute RPC error is logged, not silently indistinguishable from a no-op recompute', async () => {
+    const sb = makeStubSupabase({
+      preIndexRow: null,
+      rpcReturn: { data: null, error: { message: 'function health_compute_vitana_index_for_user does not exist' } },
+    });
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const result = await tool_save_diary_entry(
+      { raw_text: 'Went for a run and had a healthy breakfast.' },
+      identity,
+      sb as never,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok !== true) return;
+    const r = result.result as { pillars_after: unknown; index_delta: unknown };
+    expect(r.pillars_after).toBeNull();
+    expect(r.index_delta).toBeNull();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Index recompute RPC failed'),
+    );
+    warnSpy.mockRestore();
   });
 });

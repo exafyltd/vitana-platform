@@ -20,6 +20,7 @@ import { notifyUserAsync } from '../services/notification-service';
 import { tt } from '../i18n/catalog';
 import { bulkGetUserLocales } from '../i18n/server-locale';
 import { recordStatusHistory } from './community-marketplace';
+import * as repo from '../services/community-marketplace/community-marketplace-repository';
 
 const router = Router();
 router.use(requireTenantAdmin);
@@ -60,29 +61,16 @@ router.get('/listings', async (req: Request, res: Response) => {
   const tenantId = getTenantId(req);
   const { requires_admin_review, status, category, listing_kind, search, limit, offset } = req.query;
 
-  let q = supabase
-    .from('community_listings')
-    .select(
-      'id, seller_user_id, listing_kind, condition, category, subcategory, title, description, images, ' +
-        'price_cents, currency, price_on_request, status, auto_check_result, auto_check_reasons, ' +
-        'requires_admin_review, admin_review_reason, admin_notes, reviewed_by, reviewed_at, created_at, updated_at, ' +
-        'profiles:seller_user_id(display_name, vitana_id)',
-      { count: 'exact' }
-    )
-    .eq('tenant_id', tenantId);
-
-  if (requires_admin_review !== undefined) q = q.eq('requires_admin_review', String(requires_admin_review) === 'true');
-  if (status) q = q.eq('status', String(status));
-  if (category) q = q.eq('category', String(category));
-  if (listing_kind) q = q.eq('listing_kind', String(listing_kind));
-  if (search) q = q.ilike('title', `%${String(search)}%`);
-
-  q = q
-    .order('requires_admin_review', { ascending: false })
-    .order('created_at', { ascending: false })
-    .range(Number(offset ?? 0), Number(offset ?? 0) + Number(limit ?? 50) - 1);
-
-  const { data, error, count } = await q;
+  const { data, error, count } = await repo.fetchAdminListingsQueue(supabase, {
+    tenantId,
+    requiresAdminReview: requires_admin_review !== undefined ? String(requires_admin_review) === 'true' : undefined,
+    status: status ? String(status) : undefined,
+    category: category ? String(category) : undefined,
+    listingKind: listing_kind ? String(listing_kind) : undefined,
+    search: search ? String(search) : undefined,
+    offset: Number(offset ?? 0),
+    limit: Number(limit ?? 50),
+  });
   if (error) return res.status(500).json({ ok: false, error: error.message });
 
   const items = (data ?? []).map((row: any) => ({
@@ -109,12 +97,8 @@ router.patch('/listings/:id', async (req: Request, res: Response) => {
   for (const k of allowed) if (k in req.body) patch[k] = req.body[k];
   if (Object.keys(patch).length === 0) return res.status(400).json({ ok: false, error: 'no_allowed_fields' });
 
-  const { data: existing } = await supabase
-    .from('community_listings')
-    .select('id, status')
-    .eq('id', id)
-    .eq('tenant_id', getTenantId(req))
-    .maybeSingle();
+  const { data: existing, error: existingErr } = await repo.fetchListingForAdminEdit(supabase, id, getTenantId(req));
+  if (existingErr) return res.status(500).json({ ok: false, error: existingErr.message });
   if (!existing) return res.status(404).json({ ok: false, error: 'listing_not_found' });
 
   if (typeof patch.status === 'string') {
@@ -122,7 +106,7 @@ router.patch('/listings/:id', async (req: Request, res: Response) => {
     patch.reviewed_at = new Date().toISOString();
   }
 
-  const { data, error } = await supabase.from('community_listings').update(patch).eq('id', id).select().single();
+  const { data, error } = await repo.updateListingAdmin(supabase, id, patch);
   if (error) return res.status(500).json({ ok: false, error: error.message });
 
   if (typeof patch.status === 'string' && patch.status !== existing.status) {
@@ -183,15 +167,11 @@ router.post('/listings/bulk-action', async (req: Request, res: Response) => {
     patch.reviewed_at = new Date().toISOString();
   }
 
-  const { data: rows, error: fetchErr } = await supabase
-    .from('community_listings')
-    .select('id, seller_user_id, title, status')
-    .eq('tenant_id', getTenantId(req))
-    .in('id', listing_ids);
+  const { data: rows, error: fetchErr } = await repo.fetchListingsForBulkAction(supabase, getTenantId(req), listing_ids);
   if (fetchErr) return res.status(500).json({ ok: false, error: fetchErr.message });
   if (!rows || rows.length === 0) return res.status(404).json({ ok: false, error: 'no_matching_listings' });
 
-  const { error } = await supabase.from('community_listings').update(patch).in('id', rows.map((r) => r.id));
+  const { error } = await repo.bulkUpdateListings(supabase, rows.map((r) => r.id), patch);
   if (error) return res.status(500).json({ ok: false, error: error.message });
 
   const toStatus = typeof patch.status === 'string' ? patch.status : null;
@@ -252,23 +232,24 @@ router.post('/sellers/:userId/suspend', async (req: Request, res: Response) => {
   const { reason } = req.body as { reason?: string };
   const tenantId = getTenantId(req);
 
-  const { error: upsertErr } = await supabase
-    .from('community_marketplace_seller_suspensions')
-    .upsert({ seller_user_id: userId, tenant_id: tenantId, suspended_by: getAdminUserId(req), reason: reason?.trim() ?? null });
+  const { error: upsertErr } = await repo.upsertSellerSuspension(supabase, {
+    seller_user_id: userId, tenant_id: tenantId, suspended_by: getAdminUserId(req), reason: reason?.trim() ?? null,
+  });
   if (upsertErr) return res.status(500).json({ ok: false, error: upsertErr.message });
 
-  const { data: rows } = await supabase
-    .from('community_listings')
-    .select('id, status')
-    .eq('seller_user_id', userId)
-    .eq('tenant_id', tenantId)
-    .in('status', ['active', 'paused']);
+  const { data: rows, error: rowsErr } = await repo.fetchActiveListingsForSeller(supabase, userId, tenantId);
+  if (rowsErr) {
+    // The suspension record itself already committed above — this only
+    // affects whether the seller's currently-active listings also get
+    // pulled down. Logged loudly rather than silently reporting
+    // listings_suspended:0 as if the seller genuinely had none: an admin
+    // relying on that count to confirm a bad actor's listings are hidden
+    // would otherwise be told everything is handled when it isn't.
+    console.error(`[admin-community-marketplace] active-listings lookup failed while suspending seller=${userId}: ${rowsErr.message}`);
+  }
 
   if (rows && rows.length > 0) {
-    await supabase
-      .from('community_listings')
-      .update({ status: 'suspended', requires_admin_review: false })
-      .in('id', rows.map((r) => r.id));
+    await repo.bulkUpdateListings(supabase, rows.map((r) => r.id), { status: 'suspended', requires_admin_review: false });
     await Promise.all(
       rows.map((r) => recordStatusHistory(supabase, r.id, 'admin', getAdminUserId(req), r.status, 'suspended', 'seller_suspended'))
     );
@@ -277,10 +258,11 @@ router.post('/sellers/:userId/suspend', async (req: Request, res: Response) => {
   await emitAdminActivity(req, 'community_marketplace.admin.seller_suspended', 'Admin suspended a seller', {
     seller_user_id: userId,
     listings_suspended: rows?.length ?? 0,
+    listings_lookup_failed: !!rowsErr,
     reason: reason?.trim() ?? null,
   });
 
-  res.status(201).json({ ok: true, listings_suspended: rows?.length ?? 0 });
+  res.status(201).json({ ok: true, listings_suspended: rows?.length ?? 0, listings_lookup_failed: !!rowsErr });
 });
 
 router.delete('/sellers/:userId/suspend', async (req: Request, res: Response) => {
@@ -290,11 +272,7 @@ router.delete('/sellers/:userId/suspend', async (req: Request, res: Response) =>
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
   const { userId } = req.params;
-  const { error } = await supabase
-    .from('community_marketplace_seller_suspensions')
-    .delete()
-    .eq('seller_user_id', userId)
-    .eq('tenant_id', getTenantId(req));
+  const { error } = await repo.deleteSellerSuspension(supabase, userId, getTenantId(req));
   if (error) return res.status(500).json({ ok: false, error: error.message });
 
   // Deliberately does NOT auto-reactivate the seller's suspended listings —
@@ -314,20 +292,12 @@ router.get('/reports', async (req: Request, res: Response) => {
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
   const { status, limit, offset } = req.query;
-  let q = supabase
-    .from('community_listing_reports')
-    .select(
-      'id, listing_id, reporter_user_id, report_reason, report_note, status, admin_notes, resolved_by, resolved_at, created_at, ' +
-        'community_listings:listing_id(title, status, seller_user_id)',
-      { count: 'exact' }
-    )
-    .eq('tenant_id', getTenantId(req));
-  if (status) q = q.eq('status', String(status));
-  else q = q.in('status', ['received', 'under_review']);
-
-  q = q.order('created_at', { ascending: false }).range(Number(offset ?? 0), Number(offset ?? 0) + Number(limit ?? 50) - 1);
-
-  const { data, error, count } = await q;
+  const { data, error, count } = await repo.fetchAdminReportsQueue(supabase, {
+    tenantId: getTenantId(req),
+    status: status ? String(status) : undefined,
+    offset: Number(offset ?? 0),
+    limit: Number(limit ?? 50),
+  });
   if (error) return res.status(500).json({ ok: false, error: error.message });
 
   const items = (data ?? []).map((row: any) => ({
@@ -358,13 +328,7 @@ router.patch('/reports/:id', async (req: Request, res: Response) => {
     patch.resolved_at = new Date().toISOString();
   }
 
-  const { data, error } = await supabase
-    .from('community_listing_reports')
-    .update(patch)
-    .eq('id', id)
-    .eq('tenant_id', getTenantId(req))
-    .select()
-    .single();
+  const { data, error } = await repo.updateReport(supabase, id, getTenantId(req), patch);
   if (error) return res.status(500).json({ ok: false, error: error.message });
 
   await emitAdminActivity(req, 'community_marketplace.admin.report_resolved', 'Admin updated a listing report', { report_id: id, patch });
@@ -378,10 +342,7 @@ router.get('/categories', async (req: Request, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
-  const { data, error } = await supabase
-    .from('community_listing_categories')
-    .select('key, listing_kind, display_label, parent_key, is_prohibited, requires_verified_provider, requires_admin_review_always, is_active, sort_order')
-    .order('sort_order', { ascending: true });
+  const { data, error } = await repo.fetchAllCategoriesAdmin(supabase);
   if (error) return res.status(500).json({ ok: false, error: error.message });
 
   res.json({ ok: true, categories: data ?? [] });
@@ -399,7 +360,7 @@ router.patch('/categories/:key', async (req: Request, res: Response) => {
   for (const k of allowed) if (k in req.body) patch[k] = req.body[k];
   if (Object.keys(patch).length === 0) return res.status(400).json({ ok: false, error: 'no_allowed_fields' });
 
-  const { data, error } = await supabase.from('community_listing_categories').update(patch).eq('key', key).select().maybeSingle();
+  const { data, error } = await repo.updateCategory(supabase, key, patch);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   if (!data) return res.status(404).json({ ok: false, error: 'category_not_found' });
 

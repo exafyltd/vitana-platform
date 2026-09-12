@@ -37,6 +37,7 @@ import type {
   DecisionPillarMomentum,
   PillarKey,
 } from '../../../../../orb/context/types';
+import * as repo from './life-compass-alignment-repository';
 
 const KEY = 'life_compass_alignment' as const;
 
@@ -54,14 +55,7 @@ export async function produceLifeCompassAlignment(
   // Step 1: read the active Life Compass row.
   let compass: LifeCompassLike | null = null;
   try {
-    const { data, error } = await ctx.supabase
-      .from('life_compass')
-      .select('id, primary_goal, category, is_active, created_at')
-      .eq('user_id', ctx.userId)
-      .eq('is_active', true)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const { data, error } = await repo.fetchActiveLifeCompassRow(ctx.supabase, ctx.userId);
     if (error) {
       // Missing-table is a separate skip; everything else is unavailable.
       if (/relation .* does not exist/i.test(error.message)) {

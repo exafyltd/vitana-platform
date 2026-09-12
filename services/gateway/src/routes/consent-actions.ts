@@ -16,6 +16,7 @@ import {
   denyPendingAction,
 } from '../services/consent-gate';
 import { getSupabase } from '../lib/supabase';
+import * as repo from './consent-actions-repository';
 
 const router = Router();
 
@@ -60,11 +61,7 @@ router.get('/permissions', async (req: Request, res: Response) => {
   if (!user) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
-  const { data, error } = await supabase
-    .from('user_action_permissions')
-    .select('*')
-    .eq('user_id', user.user_id)
-    .order('granted_at', { ascending: false });
+  const { data, error } = await repo.fetchUserActionPermissions(supabase, user.user_id);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   res.json({ ok: true, permissions: data ?? [] });
 });
@@ -74,11 +71,7 @@ router.post('/permissions/:action_type/revoke', async (req: Request, res: Respon
   if (!user) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
-  const { error } = await supabase
-    .from('user_action_permissions')
-    .update({ granted: false, revoked_at: new Date().toISOString() })
-    .eq('user_id', user.user_id)
-    .eq('action_type', req.params.action_type);
+  const { error } = await repo.revokeUserActionPermission(supabase, user.user_id, req.params.action_type);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   res.json({ ok: true });
 });

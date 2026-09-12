@@ -11,6 +11,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import type { IntentKind } from './intent-classifier';
+import * as repo from './intent-compass-lens-repository';
 
 const SUPABASE_URL = process.env.SUPABASE_URL!;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE!;
@@ -39,12 +40,7 @@ export async function getActiveCompassGoal(userId: string): Promise<CompassGoal 
 
   try {
     const supabase = getSupabase();
-    const { data } = await supabase
-      .from('life_compass')
-      .select('user_id, category, primary_goal, alignment_score, confidence_score')
-      .eq('user_id', userId)
-      .eq('is_active', true)
-      .maybeSingle();
+    const { data } = await repo.fetchActiveLifeCompassGoal(supabase, userId);
 
     const goal = (data as CompassGoal | null) ?? null;
     compassCache.set(userId, { goal, expires_at: Date.now() + COMPASS_TTL_MS });
@@ -76,11 +72,11 @@ export async function compassAlignmentBonus(
 
   try {
     const supabase = getSupabase();
-    const { data } = await supabase
-      .from('intent_compass_boost')
-      .select('compass_category, intent_kind, boost_weight')
-      .in('compass_category', [dictatorCategory, counterpartyCategory])
-      .in('intent_kind', [kindA, kindB]);
+    const { data } = await repo.fetchIntentCompassBoosts(
+      supabase,
+      [dictatorCategory, counterpartyCategory],
+      [kindA, kindB],
+    );
 
     if (!data || (data as any[]).length === 0) return 0;
 

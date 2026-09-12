@@ -23,6 +23,7 @@
 import { Router, Response } from 'express';
 import { getSupabase } from '../lib/supabase';
 import { requireAuth, requireExafyAdmin, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import * as repo from './orb-tools-selfcheck-repository';
 
 const router = Router();
 
@@ -76,11 +77,7 @@ router.post('/selfcheck', requireAuth, requireExafyAdmin, async (req: Authentica
     // whole row. Role is carried on the session/JWT, not this table; for the
     // harness 'community' is a safe stand-in (the tools that gate on role_context
     // now map any role to a valid value), and tenant_id/vitana_id come from here.
-    const { data } = await sb
-      .from('app_users')
-      .select('tenant_id, vitana_id')
-      .eq('user_id', userId)
-      .maybeSingle();
+    const { data } = await repo.fetchAppUserIdentity(sb, userId);
     const row = data as { tenant_id?: string; vitana_id?: string } | null;
     tenantId = row?.tenant_id ?? null;
     role = 'community';
@@ -127,18 +124,13 @@ router.post('/selfcheck', requireAuth, requireExafyAdmin, async (req: Authentica
     // Cleanup write side-effects so the harness is idempotent.
     if (check.cleanup === 'index_plan') {
       try {
-        await sb
-          .from('calendar_events')
-          .delete()
-          .eq('user_id', userId)
-          .eq('metadata->>plan', 'index_improvement')
-          .gte('created_at', new Date(Date.now() - 5 * 60 * 1000).toISOString());
+        await repo.deleteSelfcheckIndexPlanCalendarEvents(sb, userId, new Date(Date.now() - 5 * 60 * 1000).toISOString());
       } catch { /* best-effort cleanup */ }
     }
 
     // Emit to oasis_events so the report is queryable via SQL/MCP.
     try {
-      await sb.from('oasis_events').insert({
+      await repo.insertSelfcheckOasisEvent(sb, {
         topic: 'orb.tools.selfcheck',
         source: 'gateway',
         status: ok && !soft ? 'success' : 'error',

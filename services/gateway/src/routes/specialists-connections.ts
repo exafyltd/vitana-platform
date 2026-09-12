@@ -17,6 +17,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { createClient } from '@supabase/supabase-js';
+import * as repo from './specialists-connections-repository';
 
 const router = Router();
 
@@ -45,12 +46,9 @@ function ensureAuth(req: Request, res: Response): string | null {
 router.get('/personas/:key/connections', async (req: Request, res: Response) => {
   if (!ensureAuth(req, res)) return;
   const supabase = getServiceClient();
-  const { data: persona } = await supabase.from('agent_personas').select('id').eq('key', req.params.key).maybeSingle();
+  const { data: persona } = await repo.fetchPersonaIdByKey(supabase, req.params.key);
   if (!persona) return res.status(404).json({ ok: false, error: 'PERSONA_NOT_FOUND' });
-  const { data, error } = await supabase
-    .from('agent_third_party_connections')
-    .select('id, provider, status, last_check_at, created_at')
-    .eq('persona_id', persona.id);
+  const { data, error } = await repo.fetchPersonaConnections(supabase, persona.id);
   if (error) return res.status(502).json({ ok: false, error: error.message });
   return res.json({ ok: true, supported_providers: SUPPORTED_PROVIDERS, connections: data ?? [] });
 });
@@ -64,17 +62,13 @@ router.post('/personas/:key/connections', async (req: Request, res: Response) =>
   const v = AddSchema.safeParse(req.body);
   if (!v.success) return res.status(400).json({ ok: false, error: 'VALIDATION_FAILED' });
   const supabase = getServiceClient();
-  const { data: persona } = await supabase.from('agent_personas').select('id').eq('key', req.params.key).maybeSingle();
+  const { data: persona } = await repo.fetchPersonaIdByKey(supabase, req.params.key);
   if (!persona) return res.status(404).json({ ok: false, error: 'PERSONA_NOT_FOUND' });
 
-  const { data, error } = await supabase
-    .from('agent_third_party_connections')
-    .insert({ persona_id: persona.id, provider: v.data.provider, status: 'draft', created_by: userId })
-    .select('*')
-    .single();
+  const { data, error } = await repo.insertConnection(supabase, { persona_id: persona.id, provider: v.data.provider, status: 'draft', created_by: userId });
   if (error || !data) return res.status(502).json({ ok: false, error: error?.message });
 
-  await supabase.from('agent_audit_log').insert({
+  await repo.insertAuditLog(supabase, {
     actor_user_id: userId,
     persona_id: persona.id,
     action: 'connection_add',
@@ -86,11 +80,11 @@ router.post('/personas/:key/connections', async (req: Request, res: Response) =>
 router.delete('/connections/:id', async (req: Request, res: Response) => {
   const userId = ensureAuth(req, res); if (!userId) return;
   const supabase = getServiceClient();
-  const { data: existing } = await supabase.from('agent_third_party_connections').select('*').eq('id', req.params.id).maybeSingle();
+  const { data: existing } = await repo.fetchConnectionById(supabase, req.params.id);
   if (!existing) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
-  const { error } = await supabase.from('agent_third_party_connections').delete().eq('id', req.params.id);
+  const { error } = await repo.deleteConnection(supabase, req.params.id);
   if (error) return res.status(502).json({ ok: false, error: error.message });
-  await supabase.from('agent_audit_log').insert({
+  await repo.insertAuditLog(supabase, {
     actor_user_id: userId,
     persona_id: existing.persona_id,
     action: 'connection_remove',
@@ -102,7 +96,7 @@ router.delete('/connections/:id', async (req: Request, res: Response) => {
 router.post('/connections/:id/test', async (req: Request, res: Response) => {
   if (!ensureAuth(req, res)) return;
   const supabase = getServiceClient();
-  const { data: conn } = await supabase.from('agent_third_party_connections').select('*').eq('id', req.params.id).maybeSingle();
+  const { data: conn } = await repo.fetchConnectionById(supabase, req.params.id);
   if (!conn) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
 
   // Stub adapter: always succeeds with "would do X"
@@ -111,7 +105,7 @@ router.post('/connections/:id/test', async (req: Request, res: Response) => {
     healthy: true,
     note: `Stub adapter — real ${conn.provider.replace('-stub', '')} executor not yet wired. Would call provider API in production.`,
   };
-  await supabase.from('agent_third_party_connections').update({ status: 'active', last_check_at: new Date().toISOString() }).eq('id', conn.id);
+  await repo.updateConnectionStatus(supabase, conn.id, 'active', new Date().toISOString());
   return res.json({ ok: true, ...adapter_response });
 });
 

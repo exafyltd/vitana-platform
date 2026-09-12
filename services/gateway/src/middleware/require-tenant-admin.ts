@@ -22,6 +22,7 @@ import {
   verifyAndExtractIdentity,
 } from './auth-supabase-jwt';
 import { createClient } from '@supabase/supabase-js';
+import * as repo from './require-tenant-admin-repository';
 
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
@@ -36,12 +37,7 @@ async function getCallerRole(userId: string, tenantId: string): Promise<string |
     return null;
   }
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
-  const { data, error } = await supabase
-    .from('user_tenants')
-    .select('active_role')
-    .eq('user_id', userId)
-    .eq('tenant_id', tenantId)
-    .single();
+  const { data, error } = await repo.fetchCallerActiveRoleForTenant(supabase, userId, tenantId);
 
   if (error || !data) return null;
   return data.active_role;

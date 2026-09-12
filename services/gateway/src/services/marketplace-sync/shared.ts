@@ -8,6 +8,7 @@
 
 import { createHash } from 'crypto';
 import { getSupabase } from '../../lib/supabase';
+import * as repo from './shared-repository';
 
 export interface SyncRunHandle {
   run_id: string;
@@ -22,11 +23,7 @@ export async function startSyncRun(
 ): Promise<SyncRunHandle | null> {
   const supabase = getSupabase();
   if (!supabase) return null;
-  const { data, error } = await supabase
-    .from('catalog_sources')
-    .insert({ source_network, triggered_by })
-    .select('run_id, started_at, source_network, triggered_by')
-    .single();
+  const { data, error } = await repo.insertCatalogSourceRun(supabase, source_network, triggered_by);
   if (error || !data) {
     console.error('[marketplace-sync] failed to start run:', error?.message);
     return null;
@@ -45,17 +42,14 @@ export async function finishSyncRun(
 ): Promise<void> {
   const supabase = getSupabase();
   if (!supabase) return;
-  await supabase
-    .from('catalog_sources')
-    .update({
-      finished_at: new Date().toISOString(),
-      products_inserted: stats.inserted,
-      products_updated: stats.updated,
-      products_skipped: stats.skipped,
-      errors: stats.errors,
-      error_sample: stats.error_sample ? stats.error_sample.slice(0, 10) : null,
-    })
-    .eq('run_id', handle.run_id);
+  await repo.updateCatalogSourceRunStats(supabase, handle.run_id, {
+    finished_at: new Date().toISOString(),
+    products_inserted: stats.inserted,
+    products_updated: stats.updated,
+    products_skipped: stats.skipped,
+    errors: stats.errors,
+    error_sample: stats.error_sample ? stats.error_sample.slice(0, 10) : null,
+  });
 }
 
 // ==================== Merchant upsert ====================
@@ -79,29 +73,22 @@ export interface MerchantUpsert {
 export async function upsertMerchant(m: MerchantUpsert): Promise<string | null> {
   const supabase = getSupabase();
   if (!supabase) return null;
-  const { data, error } = await supabase
-    .from('merchants')
-    .upsert(
-      {
-        source_network: m.source_network,
-        source_merchant_id: m.source_merchant_id,
-        name: m.name,
-        slug: m.slug ?? null,
-        storefront_url: m.storefront_url ?? null,
-        merchant_country: m.merchant_country ?? null,
-        ships_to_countries: m.ships_to_countries ?? null,
-        ships_to_regions: m.ships_to_regions ?? null,
-        currencies: m.currencies ?? [],
-        affiliate_network: m.affiliate_network ?? null,
-        commission_rate: m.commission_rate ?? null,
-        quality_score: m.quality_score ?? 50,
-        customs_risk: m.customs_risk ?? null,
-        is_active: true,
-      },
-      { onConflict: 'source_network,source_merchant_id' }
-    )
-    .select('id')
-    .single();
+  const { data, error } = await repo.upsertMerchantRow(supabase, {
+    source_network: m.source_network,
+    source_merchant_id: m.source_merchant_id,
+    name: m.name,
+    slug: m.slug ?? null,
+    storefront_url: m.storefront_url ?? null,
+    merchant_country: m.merchant_country ?? null,
+    ships_to_countries: m.ships_to_countries ?? null,
+    ships_to_regions: m.ships_to_regions ?? null,
+    currencies: m.currencies ?? [],
+    affiliate_network: m.affiliate_network ?? null,
+    commission_rate: m.commission_rate ?? null,
+    quality_score: m.quality_score ?? 50,
+    customs_risk: m.customs_risk ?? null,
+    is_active: true,
+  });
   if (error || !data) {
     console.error('[marketplace-sync] merchant upsert failed:', error?.message);
     return null;
@@ -188,14 +175,11 @@ export async function upsertProducts(
   if (!supabase || products.length === 0) return result;
 
   // Look up existing rows to detect insert vs update vs unchanged
-  const { data: existing } = await supabase
-    .from('products')
-    .select('source_product_id, content_hash')
-    .eq('source_network', source_network)
-    .in(
-      'source_product_id',
-      products.map((p) => p.source_product_id)
-    );
+  const { data: existing } = await repo.fetchExistingProductHashes(
+    supabase,
+    source_network,
+    products.map((p) => p.source_product_id),
+  );
   const existingMap = new Map((existing ?? []).map((e) => [e.source_product_id, e.content_hash]));
 
   const now = new Date().toISOString();
@@ -262,10 +246,7 @@ export async function upsertProducts(
     });
   }
 
-  const { data: upserted, error } = await supabase
-    .from('products')
-    .upsert(rows, { onConflict: 'source_network,source_product_id' })
-    .select('source_product_id');
+  const { data: upserted, error } = await repo.upsertProductRows(supabase, rows);
 
   if (error) {
     result.errors.push({ source_product_id: '(batch)', error: error.message });

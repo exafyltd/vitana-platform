@@ -52,6 +52,7 @@ export type CanonicalWeakness =
 // safety net.
 import { getPolicyResolver } from '../../decision-contract/policy-resolver';
 import { POLICY_KEYS } from '../../decision-contract/policy-keys';
+import * as repo from './community-user-analyzer-repository';
 
 /** Threshold below which a pillar is considered weak and a weakness
  *  recommendation is emitted. Each pillar scale: 0..200; threshold 80 =
@@ -565,69 +566,28 @@ export async function gatherUserContext(
     diaryStreakResult,
   ] = await Promise.all([
     // Latest 2 Vitana Index rows for trend (canonical 5-pillar schema).
-    supabase
-      .from('vitana_index_scores')
-      .select('score_total, score_nutrition, score_hydration, score_exercise, score_sleep, score_mental')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(2),
+    repo.fetchRecentVitanaIndexScores(supabase, userId),
 
     // Memory facts (name, goals, interests, language)
-    supabase
-      .from('memory_facts')
-      .select('fact_key, fact_value')
-      .eq('user_id', userId)
-      .in('fact_key', ['name', 'display_name', 'goals', 'interests', 'hobbies', 'preferred_language']),
+    repo.fetchProfileMemoryFacts(supabase, userId),
 
     // Recent diary entries (last 3 days for mood/energy)
-    supabase
-      .from('memory_items')
-      .select('content, tags, metadata')
-      .eq('user_id', userId)
-      .eq('item_type', 'diary')
-      .order('created_at', { ascending: false })
-      .limit(3),
+    repo.fetchRecentDiaryEntries(supabase, userId, 3),
 
     // Connection count
-    supabase
-      .from('relationship_edges')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .eq('tenant_id', tenantId)
-      .eq('target_type', 'person')
-      .eq('relationship_type', 'connected'),
+    repo.countConnectedRelationshipEdges(supabase, userId, tenantId),
 
     // Group memberships
-    supabase
-      .from('relationship_edges')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .eq('tenant_id', tenantId)
-      .eq('target_type', 'group'),
+    repo.countGroupRelationshipEdges(supabase, userId, tenantId),
 
     // Pending matches
-    supabase
-      .from('matches_daily')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .eq('tenant_id', tenantId)
-      .is('feedback', null),
+    repo.countPendingDailyMatches(supabase, userId, tenantId),
 
     // Account info
-    supabase
-      .from('app_users')
-      .select('created_at, display_name')
-      .eq('user_id', userId)
-      .maybeSingle(),
+    repo.fetchAppUserAccountInfo(supabase, userId),
 
     // Diary streak (consecutive days with diary entries)
-    supabase
-      .from('memory_items')
-      .select('created_at')
-      .eq('user_id', userId)
-      .eq('item_type', 'diary')
-      .order('created_at', { ascending: false })
-      .limit(30),
+    repo.fetchDiaryStreakDates(supabase, userId, 30),
   ]);
 
   // Parse canonical 5-pillar health scores (G2: was querying dropped 6-pillar

@@ -23,6 +23,7 @@
 
 import { Router, Request, Response } from 'express';
 import { createUserSupabaseClient } from '../lib/supabase-user';
+import * as repo from './user-preferences-repository';
 import {
   VTID,
   emitPreferenceEvent,
@@ -74,7 +75,7 @@ async function getUserContext(token: string): Promise<{
 }> {
   try {
     const supabase = createUserSupabaseClient(token);
-    const { data, error } = await supabase.rpc('me_context');
+    const { data, error } = await repo.getMeContextRpc(supabase);
 
     if (error) {
       return { ok: false, tenant_id: null, user_id: null, error: error.message };
@@ -177,7 +178,7 @@ router.get('/bundle', async (req: Request, res: Response) => {
 
   try {
     const supabase = createUserSupabaseClient(token);
-    const { data, error } = await supabase.rpc('preference_bundle_get');
+    const { data, error } = await repo.getPreferenceBundleRpc(supabase);
 
     if (error) {
       console.error(`[${VTID}] preference_bundle_get error:`, error.message);
@@ -249,7 +250,7 @@ router.post('/preference', async (req: Request, res: Response) => {
 
   try {
     const supabase = createUserSupabaseClient(token);
-    const { data, error } = await supabase.rpc('preference_set', {
+    const { data, error } = await repo.setPreferenceRpc(supabase, {
       p_category: category,
       p_key: key,
       p_value: value,
@@ -326,7 +327,7 @@ router.delete('/preference', async (req: Request, res: Response) => {
 
   try {
     const supabase = createUserSupabaseClient(token);
-    const { data, error } = await supabase.rpc('preference_delete', {
+    const { data, error } = await repo.deletePreferenceRpc(supabase, {
       p_category: category,
       p_key: key,
       p_scope: scope,
@@ -400,7 +401,7 @@ router.post('/constraint', async (req: Request, res: Response) => {
 
   try {
     const supabase = createUserSupabaseClient(token);
-    const { data, error } = await supabase.rpc('constraint_set', {
+    const { data, error } = await repo.setConstraintRpc(supabase, {
       p_type: type,
       p_key: key,
       p_value: value,
@@ -474,7 +475,7 @@ router.delete('/constraint', async (req: Request, res: Response) => {
 
   try {
     const supabase = createUserSupabaseClient(token);
-    const { data, error } = await supabase.rpc('constraint_delete', {
+    const { data, error } = await repo.deleteConstraintRpc(supabase, {
       p_type: type,
       p_key: key
     });
@@ -545,7 +546,7 @@ router.post('/confirm', async (req: Request, res: Response) => {
 
   try {
     const supabase = createUserSupabaseClient(token);
-    const { data, error } = await supabase.rpc('preference_confirm', {
+    const { data, error } = await repo.confirmPreferenceRpc(supabase, {
       p_preference_id: preference_id
     });
 
@@ -614,7 +615,7 @@ router.post('/reinforce', async (req: Request, res: Response) => {
 
   try {
     const supabase = createUserSupabaseClient(token);
-    const { data, error } = await supabase.rpc('inference_reinforce', {
+    const { data, error } = await repo.reinforceInferenceRpc(supabase, {
       p_inference_id: inference_id,
       p_evidence: evidence ?? null
     });
@@ -685,7 +686,7 @@ router.post('/downgrade', async (req: Request, res: Response) => {
 
   try {
     const supabase = createUserSupabaseClient(token);
-    const { data, error } = await supabase.rpc('inference_downgrade', {
+    const { data, error } = await repo.downgradeInferenceRpc(supabase, {
       p_inference_id: inference_id,
       p_reason: reason ?? null
     });
@@ -765,7 +766,7 @@ router.get('/audit', async (req: Request, res: Response) => {
 
   try {
     const supabase = createUserSupabaseClient(token);
-    const { data, error } = await supabase.rpc('preference_get_audit', {
+    const { data, error } = await repo.getPreferenceAuditRpc(supabase, {
       p_limit: limit,
       p_offset: offset,
       p_target_type: target_type ?? null
@@ -831,7 +832,7 @@ router.post('/check', async (req: Request, res: Response) => {
   try {
     // Get user's constraints
     const supabase = createUserSupabaseClient(token);
-    const { data: bundleData, error: bundleError } = await supabase.rpc('preference_bundle_get');
+    const { data: bundleData, error: bundleError } = await repo.getPreferenceBundleRpc(supabase);
 
     if (bundleError) {
       console.error(`[${VTID}] preference_bundle_get error:`, bundleError.message);

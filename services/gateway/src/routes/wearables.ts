@@ -15,6 +15,7 @@ import * as jose from 'jose';
 import { getSupabase } from '../lib/supabase';
 import { getConnector, listConnectors } from '../connectors';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import * as repo from './wearables-repository';
 
 const router = Router();
 
@@ -36,13 +37,13 @@ function getUser(req: Request): { user_id: string; tenant_id: string | null } | 
 async function resolveTenantId(userId: string): Promise<string | null> {
   const supabase = getSupabase();
   if (!supabase) return null;
-  const { data } = await supabase
-    .from('user_tenants')
-    .select('tenant_id')
-    .eq('user_id', userId)
-    .eq('is_active', true)
-    .limit(1)
-    .maybeSingle();
+  const { data, error } = await repo.fetchActivePrimaryTenant(supabase, userId);
+  if (error) {
+    // Non-fatal by design — the sole caller already treats a null tenant
+    // as a 400. Logged so a real DB failure here isn't silently
+    // indistinguishable from a user who genuinely has no active tenant.
+    console.error(`[wearables] resolveTenantId lookup failed for user=${userId}: ${error.message}`);
+  }
   return data?.tenant_id ?? null;
 }
 
@@ -53,21 +54,18 @@ router.get('/providers', async (req: Request, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
-  const { data: registry } = await supabase
-    .from('connector_registry')
-    .select('*')
-    .in('category', ['wearable', 'aggregator'])
-    .eq('enabled', true)
-    .order('category', { ascending: false })
-    .order('display_name', { ascending: true });
+  const { data: registry, error: registryErr } = await repo.fetchWearableConnectorRegistry(supabase);
+  if (registryErr) return res.status(500).json({ ok: false, error: registryErr.message });
 
   let userConnections: Array<{ connector_id: string; is_active: boolean; last_sync_at: string | null; display_name: string | null }> = [];
   if (user) {
-    const { data: connections } = await supabase
-      .from('user_connections')
-      .select('connector_id, is_active, last_sync_at, display_name')
-      .eq('user_id', user.user_id)
-      .in('category', ['wearable', 'aggregator']);
+    const { data: connections, error: connectionsErr } = await repo.fetchUserWearableConnections(supabase, user.user_id);
+    if (connectionsErr) {
+      // Non-fatal: the provider catalog itself is still valid — degrade to
+      // "nothing shows as connected" rather than fail the whole page, but
+      // log so a real error isn't silently read as "user has no connections".
+      console.error(`[wearables] user connections lookup failed for user=${user.user_id}: ${connectionsErr.message}`);
+    }
     userConnections = connections ?? [];
   }
   const connectionMap = new Map(userConnections.filter((c) => c.is_active).map((c) => [c.connector_id, c]));
@@ -124,20 +122,15 @@ router.post('/connect/:connector', async (req: Request, res: Response) => {
         });
       }
       // Persist a pending connection row we'll fill in once the auth webhook arrives
-      await supabase
-        .from('user_connections')
-        .upsert(
-          {
-            tenant_id: tenantId,
-            user_id: user.user_id,
-            connector_id: connector.id,
-            category: connector.category,
-            widget_session_id: widget.session_id,
-            enrichment_status: 'pending',
-            is_active: false, // flipped to true on auth webhook
-          },
-          { onConflict: 'tenant_id,user_id,connector_id,provider_user_id' }
-        );
+      await repo.upsertPendingWidgetConnection(supabase, {
+        tenant_id: tenantId,
+        user_id: user.user_id,
+        connector_id: connector.id,
+        category: connector.category,
+        widget_session_id: widget.session_id,
+        enrichment_status: 'pending',
+        is_active: false, // flipped to true on auth webhook
+      });
       return res.json({ ok: true, connector: connector.id, widget_url: widget.url, widget_session_id: widget.session_id });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -201,29 +194,26 @@ router.get('/callback/:connector', async (req: Request, res: Response) => {
     const result = await connector.exchangeCode(code, redirectUri);
 
     // Persist user_connections row
-    await supabase.from('user_connections').upsert(
-      {
-        tenant_id: stateData.t,
-        user_id: stateData.u,
-        connector_id: connector.id,
-        category: connector.category,
-        provider_user_id: result.provider_user_id ?? null,
-        provider_username: result.profile?.provider_username ?? null,
-        display_name: result.profile?.display_name ?? null,
-        avatar_url: result.profile?.avatar_url ?? null,
-        profile_url: result.profile?.profile_url ?? null,
-        access_token: result.tokens.access_token,
-        refresh_token: result.tokens.refresh_token ?? null,
-        token_expires_at: result.tokens.expires_at ?? null,
-        scopes_granted: result.tokens.scopes_granted ?? [],
-        capabilities_granted: connector.capabilities,
-        profile_data: (result.profile?.raw ?? {}) as object,
-        enrichment_status: 'pending',
-        is_active: true,
-        connected_at: new Date().toISOString(),
-      },
-      { onConflict: 'tenant_id,user_id,connector_id,provider_user_id' }
-    );
+    await repo.upsertOAuthConnection(supabase, {
+      tenant_id: stateData.t,
+      user_id: stateData.u,
+      connector_id: connector.id,
+      category: connector.category,
+      provider_user_id: result.provider_user_id ?? null,
+      provider_username: result.profile?.provider_username ?? null,
+      display_name: result.profile?.display_name ?? null,
+      avatar_url: result.profile?.avatar_url ?? null,
+      profile_url: result.profile?.profile_url ?? null,
+      access_token: result.tokens.access_token,
+      refresh_token: result.tokens.refresh_token ?? null,
+      token_expires_at: result.tokens.expires_at ?? null,
+      scopes_granted: result.tokens.scopes_granted ?? [],
+      capabilities_granted: connector.capabilities,
+      profile_data: (result.profile?.raw ?? {}) as object,
+      enrichment_status: 'pending',
+      is_active: true,
+      connected_at: new Date().toISOString(),
+    });
 
     // Redirect user to frontend success page
     const successUrl = `${process.env.FRONTEND_PUBLIC_URL ?? 'https://vitanaland.com'}/ecosystem?wearable=success&provider=${connectorId}`;
@@ -245,11 +235,7 @@ router.post('/disconnect/:connector', async (req: Request, res: Response) => {
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
   const connectorId = req.params.connector;
-  const { error } = await supabase
-    .from('user_connections')
-    .update({ is_active: false, disconnected_at: new Date().toISOString() })
-    .eq('user_id', user.user_id)
-    .eq('connector_id', connectorId);
+  const { error } = await repo.disconnectUserConnection(supabase, user.user_id, connectorId);
 
   if (error) return res.status(500).json({ ok: false, error: error.message });
   res.json({ ok: true, connector: connectorId });
@@ -262,12 +248,7 @@ router.get('/connections', async (req: Request, res: Response) => {
   if (!user) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
-  const { data, error } = await supabase
-    .from('user_connections')
-    .select('connector_id, category, display_name, provider_username, is_active, last_sync_at, last_error, connected_at, disconnected_at')
-    .eq('user_id', user.user_id)
-    .in('category', ['wearable', 'aggregator'])
-    .order('connected_at', { ascending: false });
+  const { data, error } = await repo.fetchUserWearableConnectionsFull(supabase, user.user_id);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   res.json({ ok: true, connections: data ?? [] });
 });
@@ -281,13 +262,8 @@ router.get('/metrics', async (req: Request, res: Response) => {
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
   const [rollup, recent] = await Promise.all([
-    supabase.from('wearable_rollup_7d').select('*').eq('user_id', user.user_id).maybeSingle(),
-    supabase
-      .from('wearable_daily_metrics')
-      .select('metric_date, provider, sleep_minutes, sleep_deep_minutes, hrv_avg_ms, resting_hr, active_minutes, workout_count, steps')
-      .eq('user_id', user.user_id)
-      .order('metric_date', { ascending: false })
-      .limit(30),
+    repo.fetchWearableRollup7d(supabase, user.user_id),
+    repo.fetchRecentWearableDailyMetrics(supabase, user.user_id, 30),
   ]);
 
   if (rollup.error) return res.status(500).json({ ok: false, error: rollup.error.message });

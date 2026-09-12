@@ -43,6 +43,7 @@ import type {
   AssistantContinuation,
 } from '../../types';
 import { renderFirstTimeWelcomeLine } from './content';
+import * as repo from './index-repository';
 
 export const FIRST_TIME_WELCOME_PROVIDER_KEY = 'first_time_welcome' as const;
 export const FIRST_TIME_WELCOME_EXTRA_KEY = 'firstTimeWelcome' as const;
@@ -98,10 +99,7 @@ async function clearFirstSession(
   userId: string,
 ): Promise<void> {
   try {
-    const { error } = await supabase
-      .from('user_journey')
-      .update({ is_first_session: false })
-      .eq('user_id', userId);
+    const { error } = await repo.updateUserJourneyClearFirstSession(supabase, userId);
     if (error) {
       console.warn(
         `[R6 first-time-welcome] clearFirstSession failed for ${userId.slice(0, 8)}: ${error.message}`,
@@ -140,11 +138,7 @@ export function makeFirstTimeWelcomeProvider(
       // ---- DB fetch: user_journey row ----
       let row: UserJourneyRow | null = null;
       try {
-        const { data, error } = await inputs.supabase
-          .from('user_journey')
-          .select('is_first_session')
-          .eq('user_id', inputs.userId)
-          .maybeSingle();
+        const { data, error } = await repo.fetchUserJourneyFirstSessionFlag(inputs.supabase, inputs.userId);
         if (error) {
           return {
             providerKey: FIRST_TIME_WELCOME_PROVIDER_KEY,

@@ -33,7 +33,7 @@ import {
   extractTerms,
   buildMatchScoreMap,
 } from './social-memory-ranker';
-import { fetchPeople } from './social-memory-repository';
+import { fetchPeople, fetchActiveLifeCompassGoal } from './social-memory-repository';
 import { buildPersonContext } from './person-context-builder';
 import { buildPersonActivity, buildNetworkDigest } from './community-activity-builder';
 import { detectSocialIntent, buildAssistantSystemHints } from './social-memory-prompts';
@@ -309,13 +309,7 @@ function emptyPack(
 async function fetchGoalTerms(userId: string): Promise<string[]> {
   const supabase = getSupabase();
   if (!supabase) return [];
-  const { data } = await supabase
-    .from('life_compass')
-    .select('primary_goal, category')
-    .eq('user_id', userId)
-    .eq('is_active', true)
-    .order('created_at', { ascending: false })
-    .limit(1);
+  const { data } = await fetchActiveLifeCompassGoal(supabase, userId);
   const goal = data?.[0];
   if (!goal) return [];
   return extractTerms(`${goal.primary_goal} ${goal.category}`);

@@ -11,6 +11,7 @@
  */
 import { getSupabase } from '../../lib/supabase';
 import type { AdminScanner, InsightDraft } from './types';
+import * as repo from './knowledge-repository';
 
 const LOG_PREFIX = '[admin-scanner:knowledge]';
 const PENDING_REVIEW_THRESHOLD = 3;
@@ -28,11 +29,7 @@ export const knowledgeScanner: AdminScanner = {
 
     // 1. Pending KB docs for this tenant
     try {
-      const { count } = await supabase
-        .from('kb_documents')
-        .select('id', { count: 'exact', head: true })
-        .eq('tenant_id', tenantId)
-        .eq('status', 'pending');
+      const { count } = await repo.countPendingKbDocuments(supabase, tenantId);
       if (count !== null && count >= PENDING_REVIEW_THRESHOLD) {
         insights.push({
           natural_key: 'kb_docs_pending_review',
@@ -59,13 +56,7 @@ export const knowledgeScanner: AdminScanner = {
 
     // 2. Failed indexing
     try {
-      const { data: failed } = await supabase
-        .from('kb_documents')
-        .select('id, title, updated_at')
-        .eq('tenant_id', tenantId)
-        .eq('status', 'failed')
-        .order('updated_at', { ascending: false })
-        .limit(20);
+      const { data: failed } = await repo.fetchFailedKbDocuments(supabase, tenantId);
       if (failed && failed.length > 0) {
         insights.push({
           natural_key: 'kb_docs_failed_indexing',
@@ -102,18 +93,9 @@ export const knowledgeScanner: AdminScanner = {
     // haven't set anything up at all.
     try {
       const [{ count: tenantDocs }, { count: optouts }, { count: baselineTotal }] = await Promise.all([
-        supabase
-          .from('kb_documents')
-          .select('id', { count: 'exact', head: true })
-          .eq('tenant_id', tenantId),
-        supabase
-          .from('tenant_kb_baseline_optouts')
-          .select('document_id', { count: 'exact', head: true })
-          .eq('tenant_id', tenantId),
-        supabase
-          .from('kb_documents')
-          .select('id', { count: 'exact', head: true })
-          .is('tenant_id', null),
+        repo.countTenantKbDocuments(supabase, tenantId),
+        repo.countTenantKbBaselineOptouts(supabase, tenantId),
+        repo.countGlobalKbBaselineDocuments(supabase),
       ]);
       const hasOwnDocs = (tenantDocs ?? 0) > 0;
       const hasBaseline = (baselineTotal ?? 0) > 0;

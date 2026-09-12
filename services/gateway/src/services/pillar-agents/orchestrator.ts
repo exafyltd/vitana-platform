@@ -14,6 +14,7 @@ import { createHydrationAgent } from './hydration';
 import { createExerciseAgent } from './exercise';
 import { createSleepAgent } from './sleep';
 import { createMentalAgent } from './mental';
+import * as repo from './orchestrator-repository';
 
 export function buildAllAgents(admin: SupabaseClient): PillarAgent[] {
   return [
@@ -31,20 +32,18 @@ async function persistOutput(
   date: string,
   output: PillarAgentOutput,
 ): Promise<void> {
-  const { error } = await admin
-    .from('vitana_pillar_agent_outputs')
-    .upsert({
-      user_id: userId,
-      pillar: output.pillar,
-      date,
-      outputs_jsonb: output.metadata,
-      subscore_baseline:    output.subscores.baseline,
-      subscore_completions: output.subscores.completions,
-      subscore_data:        output.subscores.data,
-      subscore_streak:      output.subscores.streak,
-      agent_version: output.agent_version,
-      computed_at: new Date().toISOString(),
-    }, { onConflict: 'user_id,pillar,date' });
+  const { error } = await repo.upsertPillarAgentOutput(admin, {
+    user_id: userId,
+    pillar: output.pillar,
+    date,
+    outputs_jsonb: output.metadata,
+    subscore_baseline:    output.subscores.baseline,
+    subscore_completions: output.subscores.completions,
+    subscore_data:        output.subscores.data,
+    subscore_streak:      output.subscores.streak,
+    agent_version: output.agent_version,
+    computed_at: new Date().toISOString(),
+  });
 
   if (error) {
     throw new Error(`vitana_pillar_agent_outputs upsert failed: ${error.message}`);
@@ -58,15 +57,12 @@ async function heartbeat(
   errorMessage?: string,
 ): Promise<void> {
   try {
-    await admin
-      .from('agents_registry')
-      .update({
-        status: ok ? 'healthy' : 'degraded',
-        last_heartbeat_at: new Date().toISOString(),
-        last_error: ok ? null : (errorMessage ?? null),
-        updated_at: new Date().toISOString(),
-      })
-      .eq('agent_id', agentId);
+    await repo.updateAgentHeartbeat(admin, agentId, {
+      status: ok ? 'healthy' : 'degraded',
+      last_heartbeat_at: new Date().toISOString(),
+      last_error: ok ? null : (errorMessage ?? null),
+      updated_at: new Date().toISOString(),
+    });
   } catch {
     // Heartbeat failures are never fatal.
   }

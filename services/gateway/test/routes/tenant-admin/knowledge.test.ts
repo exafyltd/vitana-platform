@@ -206,6 +206,27 @@ describe('Tenant Admin Knowledge Base Routes', () => {
     expect(chainFor('kb_documents').eq).toHaveBeenCalledWith('tenant_id', TENANT_A);
   });
 
+  it('GET /documents returns 500 (not is_opted_out:false for everything) when the opt-out lookup errors', async () => {
+    // Previously: an unchecked `{data}`-only destructure meant a failed
+    // opt-out lookup resolved to an empty Set, so a baseline doc the tenant
+    // explicitly opted OUT of (e.g. retracted/incorrect guidance) silently
+    // reported is_opted_out:false and reappeared as active — a content-
+    // governance bypass, not just a display bug.
+    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    chainFor('tenant_kb_baseline_optouts').mockResolvedValueOnce({
+      data: null,
+      error: { message: 'optout lookup failed' },
+    });
+
+    const res = await request(app)
+      .get(`/api/v1/admin/tenants/${TENANT_A}/kb/documents`)
+      .set('Authorization', 'Bearer token');
+
+    expect(res.status).toBe(500);
+    expect(res.body.ok).toBe(false);
+    expect(chainFor('kb_documents').select).not.toHaveBeenCalled();
+  });
+
   // --- POST /documents ---
 
   it('POST /documents requires a title', async () => {
@@ -411,6 +432,53 @@ describe('Tenant Admin Knowledge Base Routes', () => {
     expect(kbChain.eq).toHaveBeenCalledWith('tenant_id', TENANT_A);
     expect(kbChain.is).toHaveBeenCalledWith('tenant_id', null);
     expect(kbChain.ilike).toHaveBeenCalledWith('title', '%sleep%');
+  });
+
+  it('GET /search returns 500 when the tenant-docs leg errors, instead of silently reporting no matches', async () => {
+    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    chainFor('kb_documents').mockResolvedValueOnce({ data: null, error: { message: 'tenant docs search failed' } });
+
+    const res = await request(app)
+      .get(`/api/v1/admin/tenants/${TENANT_A}/kb/search?q=sleep`)
+      .set('Authorization', 'Bearer token');
+
+    expect(res.status).toBe(500);
+    expect(res.body.ok).toBe(false);
+  });
+
+  it('GET /search returns 500 when the baseline-docs leg errors', async () => {
+    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    const kbChain = chainFor('kb_documents');
+    kbChain.mockResolvedValueOnce({ data: [], error: null });
+    kbChain.mockResolvedValueOnce({ data: null, error: { message: 'baseline docs search failed' } });
+
+    const res = await request(app)
+      .get(`/api/v1/admin/tenants/${TENANT_A}/kb/search?q=sleep`)
+      .set('Authorization', 'Bearer token');
+
+    expect(res.status).toBe(500);
+    expect(res.body.ok).toBe(false);
+  });
+
+  it('GET /search returns 500 (not an unfiltered baseline list) when the opt-out lookup errors', async () => {
+    // Previously: an unchecked destructure meant a failed opt-out lookup
+    // resolved to an empty Set, so an opted-out baseline doc silently
+    // reappeared in search results as if never opted out of.
+    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    const kbChain = chainFor('kb_documents');
+    kbChain.mockResolvedValueOnce({ data: [], error: null });
+    kbChain.mockResolvedValueOnce({ data: [{ id: 'b1', title: 'Baseline', topics: [], status: 'indexed' }], error: null });
+    chainFor('tenant_kb_baseline_optouts').mockResolvedValueOnce({
+      data: null,
+      error: { message: 'optout lookup failed' },
+    });
+
+    const res = await request(app)
+      .get(`/api/v1/admin/tenants/${TENANT_A}/kb/search?q=sleep`)
+      .set('Authorization', 'Bearer token');
+
+    expect(res.status).toBe(500);
+    expect(res.body.ok).toBe(false);
   });
 
   // --- GET /topics ---

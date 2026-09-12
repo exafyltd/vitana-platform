@@ -14,6 +14,7 @@
  */
 
 import { SupabaseClient } from '@supabase/supabase-js';
+import * as repo from './milestone-service-repository';
 
 // =============================================================================
 // Milestone Definitions
@@ -177,12 +178,7 @@ async function getAchievedMilestones(
   userId: string,
   tenantId: string,
 ): Promise<Set<string>> {
-  const { data } = await supabase
-    .from('autopilot_recommendations')
-    .select('source_ref')
-    .eq('user_id', userId)
-    .eq('source_type', 'milestone')
-    .eq('status', 'completed');
+  const { data } = await repo.fetchAchievedMilestoneRefs(supabase, userId);
 
   return new Set((data || []).map((r: any) => r.source_ref));
 }
@@ -199,7 +195,7 @@ async function recordMilestone(
   const def = MILESTONES[milestoneId];
   if (!def) return;
 
-  await supabase.from('autopilot_recommendations').insert({
+  await repo.insertAchievedMilestone(supabase, {
     tenant_id: tenantId,
     user_id: userId,
     title: def.name,
@@ -285,19 +281,14 @@ interface CheckContext {
 async function checkProfileComplete(ctx: CheckContext): Promise<string | null> {
   if (ctx.achieved.has('profile_complete')) return null;
 
-  const { data: user } = await ctx.supabase
-    .from('app_users')
-    .select('display_name, avatar_url:profile->>avatar_url')
-    .eq('user_id', ctx.userId)
-    .maybeSingle();
+  const { data: user } = await repo.fetchAppUserForProfileCheck(ctx.supabase, ctx.userId);
 
   if (!user?.display_name || !user?.avatar_url) return null;
 
-  const { count: interestCount } = await ctx.supabase
-    .from('user_topic_profile')
-    .select('id', { count: 'exact', head: true })
-    .eq('tenant_id', ctx.tenantId)
-    .eq('user_id', ctx.userId);
+  const { count: interestCount, error: interestErr } = await repo.countUserTopicProfileRows(ctx.supabase, ctx.tenantId, ctx.userId);
+  if (interestErr) {
+    console.warn(`[milestone-service] countUserTopicProfileRows failed (profile_complete cannot be evaluated): ${interestErr.message}`);
+  }
 
   if ((interestCount || 0) === 0) return null;
 
@@ -307,23 +298,13 @@ async function checkProfileComplete(ctx: CheckContext): Promise<string | null> {
 async function checkFirstDiary(ctx: CheckContext): Promise<string | null> {
   if (ctx.achieved.has('first_diary')) return null;
 
-  const { count } = await ctx.supabase
-    .from('memory_items')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', ctx.userId)
-    .eq('item_type', 'diary');
+  const { count } = await repo.countDiaryMemoryItems(ctx.supabase, ctx.userId);
 
   return (count || 0) >= 1 ? 'first_diary' : null;
 }
 
 async function checkConnectionMilestones(ctx: CheckContext): Promise<string | null> {
-  const { count } = await ctx.supabase
-    .from('relationship_edges')
-    .select('id', { count: 'exact', head: true })
-    .eq('tenant_id', ctx.tenantId)
-    .eq('user_id', ctx.userId)
-    .eq('target_type', 'person')
-    .eq('relationship_type', 'connected');
+  const { count } = await repo.countConnectedRelationshipEdges(ctx.supabase, ctx.tenantId, ctx.userId);
 
   const connections = count || 0;
 
@@ -335,12 +316,7 @@ async function checkConnectionMilestones(ctx: CheckContext): Promise<string | nu
 async function checkFirstGroup(ctx: CheckContext): Promise<string | null> {
   if (ctx.achieved.has('first_group')) return null;
 
-  const { count } = await ctx.supabase
-    .from('relationship_edges')
-    .select('id', { count: 'exact', head: true })
-    .eq('tenant_id', ctx.tenantId)
-    .eq('user_id', ctx.userId)
-    .eq('target_type', 'group');
+  const { count } = await repo.countGroupRelationshipEdges(ctx.supabase, ctx.tenantId, ctx.userId);
 
   return (count || 0) >= 1 ? 'first_group' : null;
 }
@@ -348,11 +324,7 @@ async function checkFirstGroup(ctx: CheckContext): Promise<string | null> {
 async function checkFirstEventRsvp(ctx: CheckContext): Promise<string | null> {
   if (ctx.achieved.has('first_event_rsvp')) return null;
 
-  const { count } = await ctx.supabase
-    .from('community_meetup_attendance')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', ctx.userId)
-    .eq('status', 'rsvp');
+  const { count } = await repo.countRsvpMeetupAttendance(ctx.supabase, ctx.userId);
 
   return (count || 0) >= 1 ? 'first_event_rsvp' : null;
 }
@@ -360,25 +332,14 @@ async function checkFirstEventRsvp(ctx: CheckContext): Promise<string | null> {
 async function checkFirstMatchAccepted(ctx: CheckContext): Promise<string | null> {
   if (ctx.achieved.has('first_match_accepted')) return null;
 
-  const { count } = await ctx.supabase
-    .from('matches_daily')
-    .select('id', { count: 'exact', head: true })
-    .eq('tenant_id', ctx.tenantId)
-    .eq('user_id', ctx.userId)
-    .eq('state', 'accepted');
+  const { count } = await repo.countAcceptedDailyMatches(ctx.supabase, ctx.tenantId, ctx.userId);
 
   return (count || 0) >= 1 ? 'first_match_accepted' : null;
 }
 
 async function checkDiaryStreaks(ctx: CheckContext): Promise<string | null> {
   // Calculate current streak from diary entries
-  const { data: entries } = await ctx.supabase
-    .from('memory_items')
-    .select('created_at')
-    .eq('user_id', ctx.userId)
-    .eq('item_type', 'diary')
-    .order('created_at', { ascending: false })
-    .limit(35);
+  const { data: entries } = await repo.fetchRecentDiaryEntryDates(ctx.supabase, ctx.userId, 35);
 
   if (!entries?.length) return null;
 
@@ -413,10 +374,7 @@ async function checkDiaryStreaks(ctx: CheckContext): Promise<string | null> {
 async function checkFirstHealthCheck(ctx: CheckContext): Promise<string | null> {
   if (ctx.achieved.has('first_health_check')) return null;
 
-  const { count } = await ctx.supabase
-    .from('vitana_index_scores')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', ctx.userId);
+  const { count } = await repo.countVitanaIndexScoreRows(ctx.supabase, ctx.userId);
 
   return (count || 0) >= 1 ? 'first_health_check' : null;
 }
@@ -424,12 +382,7 @@ async function checkFirstHealthCheck(ctx: CheckContext): Promise<string | null> 
 async function checkFirstReferral(ctx: CheckContext): Promise<string | null> {
   if (ctx.achieved.has('first_referral')) return null;
 
-  const { count } = await ctx.supabase
-    .from('referrals')
-    .select('id', { count: 'exact', head: true })
-    .eq('tenant_id', ctx.tenantId)
-    .eq('referrer_id', ctx.userId)
-    .in('status', ['signed_up', 'activated', 'rewarded']);
+  const { count } = await repo.countSuccessfulReferrals(ctx.supabase, ctx.tenantId, ctx.userId);
 
   return (count || 0) >= 1 ? 'first_referral' : null;
 }
@@ -485,11 +438,21 @@ export async function scanUserMilestones(
     await recordMilestone(supabase, userId, tenantId, milestoneId);
     await emitMilestoneEvent(userId, tenantId, milestoneId);
 
-    // Credit wallet reward if applicable
+    // Credit wallet reward if applicable.
+    //
+    // credit_wallet is best-effort — a duplicate p_source_event_id is
+    // idempotent and fine to ignore. But supabase-js's .rpc() resolves
+    // normally with an {error} field on a Postgres-level failure — it
+    // does NOT throw — so the old empty `catch {}` here was unreachable
+    // for that case and the failure was completely invisible in logs
+    // (AURORA-B3-RPC-PARITY-INVENTORY.md's 2026-08-29 addendum). Checking
+    // `error` explicitly makes it loud, per this codebase's own "never
+    // silence errors" rule, without changing whether the milestone is
+    // recorded (that stays a product decision, not fixed here).
     const def = MILESTONES[milestoneId];
     if (def && def.reward > 0) {
       try {
-        await supabase.rpc('credit_wallet', {
+        const { error: walletErr } = await repo.creditWalletForMilestone(supabase, {
           p_tenant_id: tenantId,
           p_user_id: userId,
           p_amount: def.reward,
@@ -498,8 +461,12 @@ export async function scanUserMilestones(
           p_source_event_id: `milestone_${milestoneId}_${userId}`,
           p_description: def.celebration,
         });
-      } catch {
-        // Idempotent — duplicate source_event_id is fine
+        if (walletErr) {
+          console.error(`[MilestoneService] credit_wallet RPC returned an error for ${milestoneId}: ${walletErr.message}`);
+        }
+      } catch (walletErr: any) {
+        // Network-layer failure (the only case .rpc() actually rejects for).
+        console.warn(`[MilestoneService] credit_wallet failed for ${milestoneId}: ${walletErr?.message ?? walletErr}`);
       }
     }
   }
@@ -570,10 +537,12 @@ export async function checkMilestonesForAction(
     await recordMilestone(supabase, userId, tenantId, milestoneId);
     await emitMilestoneEvent(userId, tenantId, milestoneId);
 
+    // See the identical wallet-credit block above (scanUserMilestones) for
+    // why `error` is checked explicitly rather than relying on `catch`.
     const def = MILESTONES[milestoneId];
     if (def && def.reward > 0) {
       try {
-        await supabase.rpc('credit_wallet', {
+        const { error: walletErr } = await repo.creditWalletForMilestone(supabase, {
           p_tenant_id: tenantId,
           p_user_id: userId,
           p_amount: def.reward,
@@ -582,8 +551,11 @@ export async function checkMilestonesForAction(
           p_source_event_id: `milestone_${milestoneId}_${userId}`,
           p_description: def.celebration,
         });
-      } catch {
-        // Idempotent
+        if (walletErr) {
+          console.error(`[MilestoneService] credit_wallet RPC returned an error for ${milestoneId}: ${walletErr.message}`);
+        }
+      } catch (walletErr: any) {
+        console.warn(`[MilestoneService] credit_wallet failed for ${milestoneId}: ${walletErr?.message ?? walletErr}`);
       }
     }
   }

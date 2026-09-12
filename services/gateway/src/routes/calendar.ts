@@ -21,6 +21,7 @@ import {
   ListCalendarEventsSchema,
   CompleteEventSchema,
 } from '../types/calendar';
+import * as repo from './calendar-repository';
 import {
   listCalendarEvents,
   getUserUpcomingEvents,
@@ -56,17 +57,13 @@ async function recomputeVitanaIndexForUser(
 
   try {
     // Snapshot prior row (if any) so we can compute deltas.
-    const { data: priorRow } = await admin
-      .from('vitana_index_scores')
-      .select('score_total, score_nutrition, score_hydration, score_exercise, score_sleep, score_mental')
-      .eq('user_id', userId)
-      .eq('date', today)
-      .maybeSingle();
+    const { data: priorRow } = await repo.fetchVitanaIndexScoresForUserDate(admin, userId, today);
 
-    const { data: newResult, error: rpcErr } = await admin.rpc(
-      'health_compute_vitana_index_for_user',
-      { p_user_id: userId, p_date: today, p_model_version: 'v3-5pillar' },
-    );
+    const { data: newResult, error: rpcErr } = await repo.healthComputeVitanaIndexForUserRpc(admin, {
+      p_user_id: userId,
+      p_date: today,
+      p_model_version: 'v3-5pillar',
+    });
     if (rpcErr || !(newResult as any)?.ok) {
       console.warn('[Calendar] recompute RPC failed:', rpcErr?.message || (newResult as any)?.error);
       return null;

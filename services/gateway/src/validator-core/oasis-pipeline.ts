@@ -1,4 +1,5 @@
 import { getSupabase } from '../lib/supabase';
+import * as repo from './oasis-pipeline-repository';
 
 export class OasisPipeline {
     async logEvent(eventType: string, payload: any): Promise<void> {
@@ -10,7 +11,7 @@ export class OasisPipeline {
             return;
         }
 
-        const { error } = await supabase.from('oasis_events_v1').insert({
+        const { error } = await repo.insertOasisEventV1(supabase, {
             task_type: eventType,
             metadata: payload.data,
             vtid: 'VTID-00000' // System governance events (no specific task)

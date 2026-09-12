@@ -60,6 +60,7 @@ import {
   HEALTH_BOUNDARY_NOTE,
 } from './marketplace-va-shared';
 import { classifyIntent } from './marketplace-guide-tools';
+import * as repo from './marketplace-journey-tools-repository';
 
 type Handler = (args: OrbToolArgs, id: OrbToolIdentity, sb: SupabaseClient) => Promise<OrbToolResult>;
 
@@ -74,24 +75,8 @@ async function productNeedSearch(
   opts: { budgetMaxCents?: number | null; dietary?: string[]; certifications?: string[]; excludeId?: string; category?: string | null; limit: number },
 ): Promise<{ items: ProductRow[]; dropped: Array<{ title: string; reason: string }>; error?: string }> {
   const run = async (useWebsearch: boolean): Promise<{ rows: ProductRow[]; error?: string }> => {
-    let query = sb.from('products').select(PRODUCT_COLS).eq('is_active', true);
     const sanitized = need.replace(/[&|!<>()]/g, ' ').trim();
-    if (sanitized) {
-      if (useWebsearch) {
-        query = query.textSearch('search_text', sanitized, { config: 'simple', type: 'websearch' });
-      } else {
-        const token = sanitized.split(/\s+/).sort((a, b) => b.length - a.length)[0];
-        if (token && token.length >= 3) query = query.ilike('search_text', `%${token}%`);
-      }
-    }
-    if (opts.budgetMaxCents != null) query = query.lte('price_cents', opts.budgetMaxCents);
-    if (opts.dietary?.length) query = query.contains('dietary_tags', opts.dietary);
-    if (opts.certifications?.length) query = query.contains('certifications', opts.certifications);
-    if (opts.category) query = query.eq('category', opts.category);
-    if (opts.excludeId) query = query.neq('id', opts.excludeId);
-    const { data, error } = await query
-      .order('rating', { ascending: false, nullsFirst: false })
-      .limit(Math.max(opts.limit * 3, 12));
+    const { data, error } = await repo.searchActiveProducts(sb, PRODUCT_COLS, sanitized, useWebsearch, opts);
     if (error) return { rows: [], error: error.message };
     return { rows: (data as unknown as ProductRow[]) ?? [] };
   };
@@ -119,14 +104,9 @@ async function serviceNeedSearch(
     .filter((t) => t.length >= 3)
     .sort((a, b) => b.length - a.length)
     .slice(0, 2);
-  let query = sb.from('services_catalog').select(SERVICE_COLS).eq('tenant_id', tenantId);
-  if (serviceTypes?.length) query = query.in('service_type', serviceTypes);
-  if (tokens.length) {
-    query = query.or(tokens.map((t) => `name.ilike.%${t}%,provider_name.ilike.%${t}%`).join(','));
-  }
-  const { data, error } = await query.limit(limit);
+  const { data, error } = await repo.searchServicesCatalog(sb, SERVICE_COLS, tenantId, serviceTypes, tokens, limit);
   if (error) return [];
-  return (data as ServiceRow[]) ?? [];
+  return (data as unknown as ServiceRow[]) ?? [];
 }
 
 interface CartItemRow {
@@ -144,15 +124,11 @@ async function loadActiveCartItems(
   sb: SupabaseClient,
   userId: string,
 ): Promise<{ ok: true; cartId: string | null; items: CartItemRow[] } | { ok: false; error: string }> {
-  const cart = await sb.from('universal_carts').select('id').eq('user_id', userId).eq('status', 'active').maybeSingle();
+  const cart = await repo.fetchActiveCart(sb, userId);
   if (cart.error && (cart.error as { code?: string }).code !== 'PGRST116') return { ok: false, error: cart.error.message };
   const cartId = (cart.data?.id as string | undefined) ?? null;
   if (!cartId) return { ok: true, cartId: null, items: [] };
-  const { data, error } = await sb
-    .from('universal_cart_items')
-    .select('id, product_id, item_type, quantity, status, unit_price_cents_snapshot, currency_snapshot, metadata')
-    .eq('cart_id', cartId)
-    .eq('status', 'active');
+  const { data, error } = await repo.fetchActiveCartItems(sb, cartId);
   if (error) return { ok: false, error: error.message };
   return { ok: true, cartId, items: (data as CartItemRow[]) ?? [] };
 }
@@ -161,7 +137,7 @@ async function productTitles(sb: SupabaseClient, ids: string[]): Promise<Map<str
   const map = new Map<string, string>();
   const unique = Array.from(new Set(ids.filter(Boolean)));
   if (unique.length === 0) return map;
-  const { data } = await sb.from('products').select('id, title').in('id', unique);
+  const { data } = await repo.fetchProductTitles(sb, unique);
   for (const p of (data as Array<{ id: string; title: string }>) ?? []) map.set(p.id, p.title);
   return map;
 }
@@ -610,15 +586,9 @@ export async function tool_recommend_lower_cost_option(
       return { ok: false, error: `"${base.title}" has no listed price to compare against.` };
     }
 
-    const { data, error } = await sb
-      .from('products')
-      .select(PRODUCT_COLS)
-      .eq('is_active', true)
-      .eq('category', base.category ?? '')
-      .lt('price_cents', base.price_cents)
-      .neq('id', base.id)
-      .order('rating', { ascending: false, nullsFirst: false })
-      .limit(6);
+    const { data, error } = await repo.searchCheaperProductsInCategory(
+      sb, PRODUCT_COLS, base.category ?? '', base.price_cents, base.id, 6,
+    );
     if (error) return { ok: false, error: error.message };
 
     const prefs = await loadMarketplacePrefs(sb, tenantId, id.user_id);
@@ -916,14 +886,9 @@ export async function tool_shortlist_marketplace_options(
 
     const savedTitles: string[] = [];
     for (const p of targets) {
-      const { data: existingRow } = await sb
-        .from('shop_saved_products')
-        .select('id')
-        .eq('user_id', id.user_id)
-        .eq('product_id', p.id)
-        .maybeSingle();
+      const { data: existingRow } = await repo.fetchSavedProductRow(sb, id.user_id, p.id);
       if (!existingRow) {
-        const { error } = await sb.from('shop_saved_products').insert({ user_id: id.user_id, product_id: p.id });
+        const { error } = await repo.insertSavedProduct(sb, id.user_id, p.id);
         if (error) return { ok: false, error: error.message };
       }
       savedTitles.push(p.title);
@@ -948,19 +913,14 @@ export async function tool_view_marketplace_shortlist(
   const limit = clampInt(args.limit, 1, 20, 10);
 
   try {
-    const { data, error } = await sb
-      .from('shop_saved_products')
-      .select('product_id, created_at')
-      .eq('user_id', id.user_id)
-      .order('created_at', { ascending: false })
-      .limit(limit);
+    const { data, error } = await repo.fetchSavedProductsForUser(sb, id.user_id, limit);
     if (error) return { ok: false, error: error.message };
     const rows = (data as Array<{ product_id: string }>) ?? [];
     if (rows.length === 0) {
       return { ok: true, result: { items: [] }, text: 'The shortlist is empty.' };
     }
     const ids = rows.map((r) => r.product_id);
-    const { data: products, error: pErr } = await sb.from('products').select(PRODUCT_COLS).in('id', ids);
+    const { data: products, error: pErr } = await repo.searchProductsByIds(sb, PRODUCT_COLS, ids);
     if (pErr) return { ok: false, error: pErr.message };
     const byId = new Map(((products as unknown as ProductRow[]) ?? []).map((p) => [p.id, p]));
     const items = ids
@@ -992,12 +952,7 @@ export async function tool_remove_from_marketplace_shortlist(
     const ref = await resolveReferencedProduct(sb, tenantId, id.user_id, args);
     if (!ref.ok) return { ok: false, error: ref.error };
     if (!ref.product) return { ok: false, error: 'Could not resolve which shortlist item to remove — name it.' };
-    const { data, error } = await sb
-      .from('shop_saved_products')
-      .delete()
-      .eq('user_id', id.user_id)
-      .eq('product_id', ref.product.id)
-      .select('id');
+    const { data, error } = await repo.deleteSavedProduct(sb, id.user_id, ref.product.id);
     if (error) return { ok: false, error: error.message };
     const removed = ((data as Array<{ id: string }>) ?? []).length > 0;
     return {
@@ -1139,11 +1094,14 @@ export async function tool_review_shopping_budget(
   try {
     let capCents: number | null = null;
     try {
-      const { data } = await sb
-        .from('user_limitations')
-        .select('budget_monthly_cap_cents')
-        .eq('user_id', id.user_id)
-        .maybeSingle();
+      const { data, error } = await repo.fetchBudgetMonthlyCap(sb, id.user_id);
+      if (error) {
+        // Advisory-only (real checkout enforcement lives elsewhere, already
+        // verified clean) — a real DB error is kept non-fatal here on
+        // purpose, but logged so it isn't silently indistinguishable from
+        // "user genuinely has no budget cap set."
+        console.error(`[review_shopping_budget] budget cap lookup failed for user=${id.user_id}: ${error.message}`);
+      }
       capCents = (data as { budget_monthly_cap_cents?: number | null } | null)?.budget_monthly_cap_cents ?? null;
     } catch {
       /* no limitations row → no cap */
@@ -1302,7 +1260,7 @@ export async function tool_review_cart_suitability(
 
     const prefs = await loadMarketplacePrefs(sb, tenantId, id.user_id);
     const ids = cart.items.map((i) => i.product_id).filter((v): v is string => !!v);
-    const { data } = await sb.from('products').select(PRODUCT_COLS).in('id', Array.from(new Set(ids)));
+    const { data } = await repo.searchProductsByIds(sb, PRODUCT_COLS, Array.from(new Set(ids)));
     const products = new Map(((data as unknown as ProductRow[]) ?? []).map((p) => [p.id, p]));
 
     const findings: string[] = [];

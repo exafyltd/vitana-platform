@@ -20,6 +20,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { emitOasisEvent } from './oasis-event-service';
 import type { MatchRow } from './intent-matcher';
+import * as repo from './intent-mutual-reveal-repository';
 
 const SUPABASE_URL = process.env.SUPABASE_URL!;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE!;
@@ -78,21 +79,13 @@ export async function redactMatchForReader(
   // (We check via a fresh read of the unlock timestamp because the cached
   // match passed in might be stale.)
   const supabase = getSupabase();
-  const { data: fresh } = await supabase
-    .from('intent_matches')
-    .select('mutual_reveal_unlocked_at, intent_a_id, intent_b_id')
-    .eq('match_id', match.match_id)
-    .maybeSingle();
+  const { data: fresh } = await repo.fetchMatchRevealState(supabase, match.match_id);
   const unlocked = fresh && (fresh as any).mutual_reveal_unlocked_at !== null;
 
   if (unlocked) return { ...match, redacted: false };
 
   // Pre-reveal: figure out which side the reader is on, hide the other vitana_id.
-  const { data: aOwner } = await supabase
-    .from('user_intents')
-    .select('requester_user_id')
-    .eq('intent_id', match.intent_a_id)
-    .maybeSingle();
+  const { data: aOwner } = await repo.fetchIntentRequesterUserId(supabase, match.intent_a_id);
   const isReaderA = aOwner && (aOwner as any).requester_user_id === readerUserId;
 
   return {
@@ -109,11 +102,7 @@ export async function redactMatchForReader(
  */
 export async function tryUnlockReveal(matchId: string): Promise<boolean> {
   const supabase = getSupabase();
-  const { data: m } = await supabase
-    .from('intent_matches')
-    .select('match_id, kind_pairing, state, mutual_reveal_unlocked_at, vitana_id_a, vitana_id_b')
-    .eq('match_id', matchId)
-    .maybeSingle();
+  const { data: m } = await repo.fetchMatchForUnlock(supabase, matchId);
 
   if (!m) return false;
   if ((m as any).mutual_reveal_unlocked_at) return true;
@@ -127,10 +116,7 @@ export async function tryUnlockReveal(matchId: string): Promise<boolean> {
   // of truth — any time it sets mutual_interest we call this.
   if ((m as any).state !== 'mutual_interest') return false;
 
-  const { error } = await supabase
-    .from('intent_matches')
-    .update({ mutual_reveal_unlocked_at: new Date().toISOString() })
-    .eq('match_id', matchId);
+  const { error } = await repo.updateMutualRevealUnlockedAt(supabase, matchId, new Date().toISOString());
 
   if (error) {
     console.warn(`[VTID-01973] tryUnlockReveal update failed: ${error.message}`);

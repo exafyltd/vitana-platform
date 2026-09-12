@@ -39,6 +39,7 @@ import type {
   GreetingPolicy,
   GreetingPolicyInput,
 } from '../orb/live/instruction/greeting-policy';
+import * as repo from './wake-cadence-signals-repository';
 
 const SIGNAL_LAST_TURN_AT = 'wake_cadence:last_turn_at';
 const SIGNAL_LAST_GREETING_AT = 'wake_cadence:last_greeting_at';
@@ -75,12 +76,12 @@ export async function fetchWakeCadenceSignals(
   const todayKey = nowIso.slice(0, 10); // YYYY-MM-DD UTC
 
   try {
-    const { data, error } = await inputs.supabase
-      .from('user_assistant_state')
-      .select('signal_name, value, last_seen_at')
-      .eq('tenant_id', inputs.tenantId)
-      .eq('user_id', inputs.userId)
-      .in('signal_name', WAKE_CADENCE_SIGNAL_NAMES as unknown as string[]);
+    const { data, error } = await repo.fetchWakeCadenceSignalRows(
+      inputs.supabase,
+      inputs.tenantId,
+      inputs.userId,
+      WAKE_CADENCE_SIGNAL_NAMES,
+    );
     if (error) return {};
     const rows = (data || []) as Array<{
       signal_name: string;
@@ -153,27 +154,22 @@ export async function recordWakeBriefEmitted(
   }
   const nowIso = inputs.nowIso ?? new Date().toISOString();
   try {
-    const { error } = await inputs.supabase
-      .from('user_assistant_state')
-      .upsert(
-        [
-          {
-            tenant_id: inputs.tenantId,
-            user_id: inputs.userId,
-            signal_name: SIGNAL_LAST_GREETING_AT,
-            value: { iso: nowIso },
-            last_seen_at: nowIso,
-          },
-          {
-            tenant_id: inputs.tenantId,
-            user_id: inputs.userId,
-            signal_name: SIGNAL_LAST_GREETING_STYLE,
-            value: { style: inputs.style },
-            last_seen_at: nowIso,
-          },
-        ],
-        { onConflict: 'tenant_id,user_id,signal_name' },
-      );
+    const { error } = await repo.upsertWakeBriefEmittedSignals(inputs.supabase, [
+      {
+        tenant_id: inputs.tenantId,
+        user_id: inputs.userId,
+        signal_name: SIGNAL_LAST_GREETING_AT,
+        value: { iso: nowIso },
+        last_seen_at: nowIso,
+      },
+      {
+        tenant_id: inputs.tenantId,
+        user_id: inputs.userId,
+        signal_name: SIGNAL_LAST_GREETING_STYLE,
+        value: { style: inputs.style },
+        last_seen_at: nowIso,
+      },
+    ]);
     if (error) return { ok: false, reason: error.message };
     return { ok: true };
   } catch (e) {
@@ -199,13 +195,12 @@ export async function recordWakeSessionStart(
     // Read-modify-write — small race window but the policy degrades
     // gracefully on inaccurate counts (over-count → softer greeting,
     // under-count → louder; both safe).
-    const { data: existing } = await inputs.supabase
-      .from('user_assistant_state')
-      .select('value')
-      .eq('tenant_id', inputs.tenantId)
-      .eq('user_id', inputs.userId)
-      .eq('signal_name', SIGNAL_SESSIONS_TODAY)
-      .maybeSingle();
+    const { data: existing } = await repo.fetchWakeSessionsTodaySignal(
+      inputs.supabase,
+      inputs.tenantId,
+      inputs.userId,
+      SIGNAL_SESSIONS_TODAY,
+    );
     let nextCount = 1;
     if (existing && typeof existing === 'object') {
       const prev = (existing as { value: unknown }).value;
@@ -217,18 +212,13 @@ export async function recordWakeSessionStart(
         }
       }
     }
-    const { error } = await inputs.supabase
-      .from('user_assistant_state')
-      .upsert(
-        {
-          tenant_id: inputs.tenantId,
-          user_id: inputs.userId,
-          signal_name: SIGNAL_SESSIONS_TODAY,
-          value: { date: today, count: nextCount },
-          last_seen_at: nowIso,
-        },
-        { onConflict: 'tenant_id,user_id,signal_name' },
-      );
+    const { error } = await repo.upsertWakeCadenceSignal(inputs.supabase, {
+      tenant_id: inputs.tenantId,
+      user_id: inputs.userId,
+      signal_name: SIGNAL_SESSIONS_TODAY,
+      value: { date: today, count: nextCount },
+      last_seen_at: nowIso,
+    });
     if (error) return { ok: false, reason: error.message };
     return { ok: true };
   } catch (e) {
@@ -253,18 +243,13 @@ export async function recordWakeTurn(
   }
   const nowIso = inputs.nowIso ?? new Date().toISOString();
   try {
-    const { error } = await inputs.supabase
-      .from('user_assistant_state')
-      .upsert(
-        {
-          tenant_id: inputs.tenantId,
-          user_id: inputs.userId,
-          signal_name: SIGNAL_LAST_TURN_AT,
-          value: { iso: nowIso },
-          last_seen_at: nowIso,
-        },
-        { onConflict: 'tenant_id,user_id,signal_name' },
-      );
+    const { error } = await repo.upsertWakeCadenceSignal(inputs.supabase, {
+      tenant_id: inputs.tenantId,
+      user_id: inputs.userId,
+      signal_name: SIGNAL_LAST_TURN_AT,
+      value: { iso: nowIso },
+      last_seen_at: nowIso,
+    });
     if (error) return { ok: false, reason: error.message };
     return { ok: true };
   } catch (e) {

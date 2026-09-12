@@ -14,6 +14,7 @@
 
 import { getSupabase } from '../../lib/supabase';
 import type { VitanaIndexScoreRow } from './types';
+import * as repo from './pillar-momentum-fetcher-repository';
 
 export interface PillarMomentumFetcher {
   fetchVitanaIndexHistory(args: {
@@ -43,15 +44,7 @@ export function createSupabasePillarMomentumFetcher(
       const sb = getDb();
       if (!sb) return { ok: false, rows: [], reason: 'supabase_unconfigured' };
       try {
-        const { data, error } = await sb
-          .from('vitana_index_scores')
-          .select(
-            'date, score_total, score_sleep, score_nutrition, score_exercise, score_hydration, score_mental',
-          )
-          .eq('tenant_id', args.tenantId)
-          .eq('user_id', args.userId)
-          .order('date', { ascending: false })
-          .limit(limit);
+        const { data, error } = await repo.fetchVitanaIndexScoreHistory(sb, args.tenantId, args.userId, limit);
         if (error) return { ok: false, rows: [], reason: error.message };
         const rows = Array.isArray(data) ? data : [];
         return { ok: true, rows: rows.map(mapRow) };

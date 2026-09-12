@@ -24,6 +24,7 @@ import { processConversationTurn } from '../services/conversation-client';
 import { extractDmActions } from '../services/chat/dm-tool-actions';
 import { tt } from '../i18n/catalog';
 import { getUserLocale } from '../i18n/server-locale';
+import * as repo from './chat-repository';
 
 const router = Router();
 
@@ -99,20 +100,16 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
     resolveVitanaId(receiver_id),
   ]);
 
-  const { data, error } = await supabase
-    .from('chat_messages')
-    .insert({
-      tenant_id: identity.tenant_id,
-      sender_id: identity.user_id,
-      receiver_id,
-      content: trimmedContent,
-      message_type: msgType,
-      metadata,
-      ...(sender_vitana_id && { sender_vitana_id }),
-      ...(receiver_vitana_id && { receiver_vitana_id }),
-    })
-    .select()
-    .single();
+  const { data, error } = await repo.insertChatMessage(supabase, {
+    tenant_id: identity.tenant_id,
+    sender_id: identity.user_id,
+    receiver_id,
+    content: trimmedContent,
+    message_type: msgType,
+    metadata,
+    ...(sender_vitana_id && { sender_vitana_id }),
+    ...(receiver_vitana_id && { receiver_vitana_id }),
+  });
 
   if (error) {
     console.error('[Chat] Send error:', error);
@@ -139,11 +136,7 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
     // We query `app_users` (the profile table used across the platform).
     let senderName = 'New message';
     try {
-      const { data: senderProfile } = await supabase
-        .from('app_users')
-        .select('display_name, email')
-        .eq('user_id', identity.user_id)
-        .maybeSingle();
+      const { data: senderProfile } = await repo.fetchSenderProfile(supabase, identity.user_id);
       if (senderProfile) {
         senderName = senderProfile.display_name
           || (senderProfile.email ? senderProfile.email.split('@')[0] : 'New message');
@@ -306,21 +299,7 @@ router.get('/conversation/:peerId', requireAuth, requireTenant, async (req: Requ
 
   const supabase = getSupabase();
 
-  let query = supabase
-    .from('chat_messages')
-    .select('*')
-    .eq('tenant_id', identity.tenant_id)
-    .or(
-      `and(sender_id.eq.${identity.user_id},receiver_id.eq.${peerId}),and(sender_id.eq.${peerId},receiver_id.eq.${identity.user_id})`
-    )
-    .order('created_at', { ascending: false })
-    .limit(limit);
-
-  if (before) {
-    query = query.lt('created_at', before);
-  }
-
-  const { data, error } = await query;
+  const { data, error } = await repo.fetchConversationMessages(supabase, identity.tenant_id, identity.user_id, peerId, limit, before);
 
   if (error) {
     console.error('[Chat] Conversation fetch error:', error);
@@ -345,7 +324,7 @@ router.get('/conversations', requireAuth, requireTenant, async (req: Request, re
   const limit = Math.min(Number(req.query.limit) || 250, 500);
 
   // Server-side dedup: use DISTINCT ON to get latest message per peer in one query
-  const { data, error } = await supabase.rpc('get_recent_conversations', {
+  const { data, error } = await repo.getRecentConversationsRpc(supabase, {
     p_user_id: identity.user_id,
     p_tenant_id: identity.tenant_id,
     p_limit: limit,
@@ -359,18 +338,12 @@ router.get('/conversations', requireAuth, requireTenant, async (req: Request, re
     // conversations — a chatty peer can eat hundreds of rows on its own. Pull
     // a multiple of the requested conversation count so the fallback doesn't
     // return a far shorter inbox than the RPC path it stands in for.
-    const { data: fallbackData, error: fallbackErr } = await supabase
-      .from('chat_messages')
-      .select('*')
-      .eq('tenant_id', identity.tenant_id)
-      .or(`sender_id.eq.${identity.user_id},receiver_id.eq.${identity.user_id}`)
-      // DM rows only — mirrors the RPC. Group messages share this table with
-      // receiver_id NULL + group_id set, and would dedup to a peer_id of
-      // `undefined`, producing an inbox entry with no peer.
-      .not('receiver_id', 'is', null)
-      .is('group_id', null)
-      .order('created_at', { ascending: false })
-      .limit(Math.min(limit * 8, 2000));
+    const { data: fallbackData, error: fallbackErr } = await repo.fetchConversationsFallback(
+      supabase,
+      identity.tenant_id,
+      identity.user_id,
+      Math.min(limit * 8, 2000),
+    );
 
     if (fallbackErr) {
       console.error('[Chat] Conversations list error:', fallbackErr);
@@ -424,13 +397,7 @@ router.post('/read', requireAuth, requireTenant, async (req: Request, res: Respo
   }
 
   const supabase = getSupabase();
-  const { error } = await supabase
-    .from('chat_messages')
-    .update({ read_at: new Date().toISOString() })
-    .eq('tenant_id', identity.tenant_id)
-    .eq('sender_id', peer_id)
-    .eq('receiver_id', identity.user_id)
-    .is('read_at', null);
+  const { error } = await repo.markPeerMessagesRead(supabase, identity.tenant_id, peer_id, identity.user_id);
 
   if (error) {
     console.error('[Chat] Mark read error:', error);
@@ -450,12 +417,7 @@ router.post('/read-all', requireAuth, requireTenant, async (req: Request, res: R
   // read-receipt, not a governed state transition — consistent with the sibling
   // POST /read handler, which likewise emits no OASIS event.
   const supabase = getSupabase();
-  const { error, count } = await supabase
-    .from('chat_messages')
-    .update({ read_at: new Date().toISOString() }, { count: 'exact' })
-    .eq('tenant_id', identity.tenant_id)
-    .eq('receiver_id', identity.user_id)
-    .is('read_at', null);
+  const { error, count } = await repo.markAllMessagesRead(supabase, identity.tenant_id, identity.user_id);
 
   if (error) {
     console.error('[Chat] Mark all read error:', error);
@@ -472,12 +434,7 @@ router.get('/unread-count', requireAuth, requireTenant, async (req: Request, res
   if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
 
   const supabase = getSupabase();
-  const { count, error } = await supabase
-    .from('chat_messages')
-    .select('*', { count: 'exact', head: true })
-    .eq('tenant_id', identity.tenant_id)
-    .eq('receiver_id', identity.user_id)
-    .is('read_at', null);
+  const { count, error } = await repo.countUnreadMessages(supabase, identity.tenant_id, identity.user_id);
 
   if (error) {
     console.error('[Chat] Unread count error:', error);
@@ -514,15 +471,7 @@ async function fetchVitanaDmHistory(
   limit = 12,
 ): Promise<Array<{ role: 'user' | 'assistant'; content: string }>> {
   try {
-    const { data, error } = await supabase
-      .from('chat_messages')
-      .select('sender_id, content, created_at')
-      .eq('tenant_id', tenantId)
-      .or(
-        `and(sender_id.eq.${userId},receiver_id.eq.${VITANA_BOT_USER_ID}),and(sender_id.eq.${VITANA_BOT_USER_ID},receiver_id.eq.${userId})`,
-      )
-      .order('created_at', { ascending: false })
-      .limit(limit + 1);
+    const { data, error } = await repo.fetchVitanaDmHistoryRows(supabase, tenantId, userId, VITANA_BOT_USER_ID, limit + 1);
     if (error || !data) return [];
 
     const rows = [...data].reverse() as Array<{ sender_id: string; content: string | null }>;
@@ -615,29 +564,27 @@ async function handleVitanaTextReply(
     }
 
     // Write Vitana's reply to chat_messages
-    const { error } = await supabase
-      .from('chat_messages')
-      .insert({
-        tenant_id: tenantId,
-        sender_id: VITANA_BOT_USER_ID,
-        receiver_id: userId,
-        content: result.reply,
-        message_type: 'text',
-        metadata: {
-          source: useBrain ? 'brain_text_dm' : 'text_dm',
-          model_used: result.meta.model_used,
-          latency_ms: result.meta.latency_ms,
-          thread_id: result.thread_id,
-          turn_number: result.turn_number,
-          brain_enabled: useBrain,
-          // VTID-03587: carry the turn's client-actionable tool calls. This
-          // array was previously built by processConversationTurn, logged to
-          // OASIS, and then dropped — so the assistant would narrate "let me
-          // show you the articles" and never open anything, forever. See
-          // services/chat/dm-tool-actions.ts.
-          actions: dmActions,
-        },
-      });
+    const { error } = await repo.insertVitanaReplyMessage(supabase, {
+      tenant_id: tenantId,
+      sender_id: VITANA_BOT_USER_ID,
+      receiver_id: userId,
+      content: result.reply,
+      message_type: 'text',
+      metadata: {
+        source: useBrain ? 'brain_text_dm' : 'text_dm',
+        model_used: result.meta.model_used,
+        latency_ms: result.meta.latency_ms,
+        thread_id: result.thread_id,
+        turn_number: result.turn_number,
+        brain_enabled: useBrain,
+        // VTID-03587: carry the turn's client-actionable tool calls. This
+        // array was previously built by processConversationTurn, logged to
+        // OASIS, and then dropped — so the assistant would narrate "let me
+        // show you the articles" and never open anything, forever. See
+        // services/chat/dm-tool-actions.ts.
+        actions: dmActions,
+      },
+    });
 
     if (error) {
       console.warn(`[Chat] Vitana reply write failed: ${error.message}`);

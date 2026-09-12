@@ -22,9 +22,14 @@ import { AutomationContext } from '../../src/types/automations';
 registerConnectPeopleHandlers();
 
 const SRC = path.join(__dirname, '..', '..', 'src', 'services', 'automation-handlers', 'connect-people.ts');
+const REPO_SRC = path.join(__dirname, '..', '..', 'src', 'services', 'automation-handlers', 'connect-people-repository.ts');
 
 describe('connect-people — source-level wall against never-deployed / wrong tables', () => {
-  const src = fs.readFileSync(SRC, 'utf8');
+  // VTID-03702 (Aurora migration B1): the literal `.from(...)` calls this
+  // wall pins now live in the repository seam, not the handler file itself
+  // — check the combined text so the pure-move refactor doesn't break a
+  // still-valid invariant.
+  const src = fs.readFileSync(SRC, 'utf8') + '\n' + fs.readFileSync(REPO_SRC, 'utf8');
 
   it('AP-0101/0102/0103/0105 no longer reference tables that were never deployed', () => {
     expect(src).not.toMatch(/from\(['"]matches_daily['"]\)/);

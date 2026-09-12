@@ -16,6 +16,7 @@ import { Router, Request, Response } from 'express';
 import * as jose from 'jose';
 import { getSupabase } from '../../lib/supabase';
 import { emitOasisEvent } from '../../services/oasis-event-service';
+import * as repo from './ai-integrations-repository';
 
 const router = Router();
 const VTID = 'VTID-02403';
@@ -56,11 +57,7 @@ router.get('/catalog', async (req: Request, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
-  const { data, error } = await supabase
-    .from('connector_registry')
-    .select('*')
-    .eq('category', 'ai_assistant')
-    .order('display_name', { ascending: true });
+  const { data, error } = await repo.fetchAiAssistantConnectorCatalog(supabase);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   return res.json({ ok: true, catalog: data ?? [] });
 });
@@ -85,13 +82,7 @@ router.patch('/catalog/:provider', async (req: Request, res: Response) => {
     return res.status(400).json({ ok: false, error: 'NO_FIELDS' });
   }
 
-  const { data, error } = await supabase
-    .from('connector_registry')
-    .update(updates)
-    .eq('id', provider)
-    .eq('category', 'ai_assistant')
-    .select('*')
-    .maybeSingle();
+  const { data, error } = await repo.updateConnectorRegistryEntry(supabase, provider, updates);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   if (!data) return res.status(404).json({ ok: false, error: 'PROVIDER_NOT_FOUND' });
   return res.json({ ok: true, entry: data });
@@ -111,15 +102,12 @@ router.get('/policies/:tenant', async (req: Request, res: Response) => {
   let tenantId = tenantParam;
   // Allow slug-based lookup
   if (!/^[0-9a-fA-F-]{36}$/.test(tenantParam)) {
-    const { data: tRow } = await supabase.from('tenants').select('tenant_id').eq('slug', tenantParam).maybeSingle();
+    const { data: tRow } = await repo.resolveTenantIdBySlug(supabase, tenantParam);
     if (!tRow) return res.status(404).json({ ok: false, error: 'TENANT_NOT_FOUND' });
     tenantId = tRow.tenant_id;
   }
 
-  const { data, error } = await supabase
-    .from('ai_provider_policies')
-    .select('*')
-    .eq('tenant_id', tenantId);
+  const { data, error } = await repo.fetchAiProviderPolicies(supabase, tenantId);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   return res.json({ ok: true, tenant_id: tenantId, policies: data ?? [] });
 });
@@ -138,7 +126,7 @@ router.put('/policies/:tenant', async (req: Request, res: Response) => {
   const tenantParam = req.params.tenant;
   let tenantId = tenantParam;
   if (!/^[0-9a-fA-F-]{36}$/.test(tenantParam)) {
-    const { data: tRow } = await supabase.from('tenants').select('tenant_id').eq('slug', tenantParam).maybeSingle();
+    const { data: tRow } = await repo.resolveTenantIdBySlug(supabase, tenantParam);
     if (!tRow) return res.status(404).json({ ok: false, error: 'TENANT_NOT_FOUND' });
     tenantId = tRow.tenant_id;
   }
@@ -153,12 +141,7 @@ router.put('/policies/:tenant', async (req: Request, res: Response) => {
   if (!body.provider) return res.status(400).json({ ok: false, error: 'PROVIDER_REQUIRED' });
 
   // Snapshot before for audit
-  const { data: before } = await supabase
-    .from('ai_provider_policies')
-    .select('*')
-    .eq('tenant_id', tenantId)
-    .eq('provider', body.provider)
-    .maybeSingle();
+  const { data: before } = await repo.fetchAiProviderPolicyForTenantAndProvider(supabase, tenantId, body.provider);
 
   const upsertRow: Record<string, unknown> = {
     tenant_id: tenantId,
@@ -171,15 +154,11 @@ router.put('/policies/:tenant', async (req: Request, res: Response) => {
   if (typeof body.cost_cap_usd_month === 'number') upsertRow.cost_cap_usd_month = body.cost_cap_usd_month;
   if (Array.isArray(body.allowed_memory_categories)) upsertRow.allowed_memory_categories = body.allowed_memory_categories;
 
-  const { data: after, error } = await supabase
-    .from('ai_provider_policies')
-    .upsert(upsertRow, { onConflict: 'tenant_id,provider' })
-    .select('*')
-    .single();
+  const { data: after, error } = await repo.upsertAiProviderPolicy(supabase, upsertRow);
   if (error) return res.status(500).json({ ok: false, error: error.message });
 
   // Audit + OASIS
-  await supabase.from('ai_consent_log').insert({
+  await repo.insertAiConsentLogEntry(supabase, {
     user_id: null,
     tenant_id: tenantId,
     provider: body.provider,
@@ -218,35 +197,23 @@ router.get('/connections', async (req: Request, res: Response) => {
   const provider = (req.query.provider as string | undefined) || null;
   const statusParam = (req.query.status as string | undefined) || null; // 'active' | 'inactive'
 
-  let query = supabase
-    .from('user_connections')
-    .select('id, tenant_id, user_id, connector_id, is_active, connected_at, disconnected_at, last_error')
-    .eq('category', 'ai_assistant')
-    .order('connected_at', { ascending: false })
-    .limit(200);
-
+  let tenantId: string | null = null;
   if (tenantParam) {
-    let tenantId = tenantParam;
+    tenantId = tenantParam;
     if (!/^[0-9a-fA-F-]{36}$/.test(tenantParam)) {
-      const { data: tRow } = await supabase.from('tenants').select('tenant_id').eq('slug', tenantParam).maybeSingle();
+      const { data: tRow } = await repo.resolveTenantIdBySlug(supabase, tenantParam);
       if (tRow) tenantId = tRow.tenant_id;
     }
-    query = query.eq('tenant_id', tenantId);
   }
-  if (provider) query = query.eq('connector_id', provider);
-  if (statusParam === 'active') query = query.eq('is_active', true);
-  if (statusParam === 'inactive') query = query.eq('is_active', false);
+  const statusFilter = statusParam === 'active' || statusParam === 'inactive' ? statusParam : null;
 
-  const { data, error } = await query;
+  const { data, error } = await repo.fetchAiAssistantConnections(supabase, { tenantId, provider, status: statusFilter });
   if (error) return res.status(500).json({ ok: false, error: error.message });
 
   const ids = (data ?? []).map((c) => c.id);
   let credMap = new Map<string, { key_prefix: string; key_last4: string; last_verified_at: string | null; last_verify_status: string | null }>();
   if (ids.length > 0) {
-    const { data: creds } = await supabase
-      .from('ai_assistant_credentials')
-      .select('connection_id, key_prefix, key_last4, last_verified_at, last_verify_status')
-      .in('connection_id', ids);
+    const { data: creds } = await repo.fetchAiAssistantCredentialsByConnectionIds(supabase, ids);
     credMap = new Map(
       (creds ?? []).map((c) => [
         c.connection_id,
@@ -294,19 +261,16 @@ router.get('/consent-log', async (req: Request, res: Response) => {
   const providerFilter = (req.query.provider as string | undefined) || null;
   const limit = Math.min(parseInt((req.query.limit as string) || '100', 10) || 100, 500);
 
-  let query = supabase.from('ai_consent_log').select('*').order('ts', { ascending: false }).limit(limit);
+  let tenantId: string | null = null;
   if (tenantParam) {
-    let tenantId = tenantParam;
+    tenantId = tenantParam;
     if (!/^[0-9a-fA-F-]{36}$/.test(tenantParam)) {
-      const { data: tRow } = await supabase.from('tenants').select('tenant_id').eq('slug', tenantParam).maybeSingle();
+      const { data: tRow } = await repo.resolveTenantIdBySlug(supabase, tenantParam);
       if (tRow) tenantId = tRow.tenant_id;
     }
-    query = query.eq('tenant_id', tenantId);
   }
-  if (userFilter) query = query.eq('user_id', userFilter);
-  if (providerFilter) query = query.eq('provider', providerFilter);
 
-  const { data, error } = await query;
+  const { data, error } = await repo.fetchAiConsentLog(supabase, { tenantId, userId: userFilter, provider: providerFilter, limit });
   if (error) {
     console.error(`${LOG_PREFIX} GET /consent-log err`, error.message);
     return res.status(500).json({ ok: false, error: error.message });

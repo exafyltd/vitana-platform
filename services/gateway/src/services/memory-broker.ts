@@ -19,6 +19,7 @@
 
 import { getSupabase } from '../lib/supabase';
 import { getSystemControl } from './system-controls-service';
+import * as repo from './memory-broker-repository';
 
 const VTID = 'VTID-02026';
 const POLICY_VERSION = 'mem-2026.04';
@@ -398,12 +399,7 @@ async function fetchIdentityBlock(input: MemoryReadInput): Promise<{
   // JSONB blob plus a few flat columns (display_name, email, locale,
   // vitana_id). We unpack profile into the IdentityBlock shape so callers
   // get a stable contract regardless of the backing layout.
-  const { data, error } = await supabase
-    .from('app_users')
-    .select('user_id, display_name, email, locale, vitana_id, profile')
-    .eq('user_id', input.user_id)
-    .eq('tenant_id', input.tenant_id)
-    .maybeSingle();
+  const { data, error } = await repo.fetchAppUserIdentity(supabase, input.user_id, input.tenant_id);
 
   if (error || !data) {
     return { block: null, latency_ms: Date.now() - t0 };
@@ -467,21 +463,10 @@ async function fetchEpisodicBlock(
   // Step 2: mem_episodes recency-order.
   let recencyBlock: EpisodicBlock | null = null;
   {
-    let q = supabase
-      .from('mem_episodes')
-      .select('id, kind, content, category_key, source, importance, occurred_at, actor_id, conversation_id')
-      .eq('tenant_id', input.tenant_id)
-      .eq('user_id', input.user_id)
-      .is('valid_to', null) // active rows only
-      .order('occurred_at', { ascending: false })
-      .limit(limit);
-
-    if (maxAgeHours && maxAgeHours > 0) {
-      const cutoff = new Date(Date.now() - maxAgeHours * 3600 * 1000).toISOString();
-      q = q.gte('occurred_at', cutoff);
-    }
-
-    const { data, error } = await q;
+    const cutoff = maxAgeHours && maxAgeHours > 0
+      ? new Date(Date.now() - maxAgeHours * 3600 * 1000).toISOString()
+      : null;
+    const { data, error } = await repo.fetchMemEpisodesRecency(supabase, input.tenant_id, input.user_id, limit, cutoff);
     if (!error) {
       recencyBlock = {
         kind: 'EPISODIC',
@@ -555,7 +540,7 @@ async function fetchEpisodicLegacySemantic(
   const emb = await generateEmbedding(query);
   if (!emb.ok || !emb.embedding) return { ok: false, block: null };
 
-  const { data, error } = await supabase.rpc('memory_semantic_search', {
+  const { data, error } = await repo.rpcMemorySemanticSearch(supabase, {
     p_query_embedding: '[' + emb.embedding.join(',') + ']',
     p_top_k: limit * 2,
     p_tenant_id: input.tenant_id,
@@ -610,14 +595,7 @@ async function fetchEpisodicLegacyRest(
   // term overlap — when no overlap, the blender ordering collapsed
   // to importance+recency anyway).
   const fetchLimit = limit * 3;
-  const { data, error } = await supabase
-    .from('memory_items')
-    .select('id, category_key, content, importance, occurred_at, source')
-    .eq('tenant_id', input.tenant_id)
-    .eq('user_id', input.user_id)
-    .order('importance', { ascending: false })
-    .order('occurred_at', { ascending: false })
-    .limit(fetchLimit);
+  const { data, error } = await repo.fetchMemoryItemsLegacyRest(supabase, input.tenant_id, input.user_id, fetchLimit);
 
   if (error) {
     console.warn(`[${VTID}] memory_items REST query failed: ${error.message}`);
@@ -655,14 +633,7 @@ async function fetchSemanticBlock(
   if (!supabase) return { block: null, latency_ms: Date.now() - t0 };
 
   // Active facts only (the canonical "current truth" view from mem_facts).
-  const { data, error } = await supabase
-    .from('mem_facts')
-    .select('id, fact_key, fact_value, fact_value_type, entity, confidence, actor_id, asserted_at')
-    .eq('tenant_id', input.tenant_id)
-    .eq('user_id', input.user_id)
-    .is('valid_to', null)
-    .order('asserted_at', { ascending: false })
-    .limit(limit);
+  const { data, error } = await repo.fetchActiveMemFacts(supabase, input.tenant_id, input.user_id, limit);
 
   if (error) {
     console.warn(`[${VTID}] mem_facts query failed: ${error.message}`);
@@ -705,7 +676,7 @@ async function fetchEpisodicSemantic(
   const emb = await generateEmbedding(query);
   if (!emb.ok || !emb.embedding) return { ok: false, block: null };
 
-  const { data, error } = await supabase.rpc('mem_episodes_semantic_search', {
+  const { data, error } = await repo.rpcMemEpisodesSemanticSearch(supabase, {
     p_query_embedding: '[' + emb.embedding.join(',') + ']',
     p_top_k: limit,
     p_tenant_id: input.tenant_id,
@@ -754,14 +725,7 @@ async function fetchTrajectoryBlock(
   if (!supabase) return { block: null, latency_ms: Date.now() - t0 };
 
   const cutoff = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString().slice(0, 10);
-  const { data, error } = await supabase
-    .from('vitana_index_scores')
-    .select('date, score_total, score_sleep, score_nutrition, score_exercise, score_hydration, score_mental')
-    .eq('tenant_id', input.tenant_id)
-    .eq('user_id', input.user_id)
-    .gte('date', cutoff)
-    .order('date', { ascending: true })
-    .limit(40);
+  const { data, error } = await repo.fetchTrajectoryScores(supabase, input.tenant_id, input.user_id, cutoff, 40);
 
   if (error) {
     console.warn(`[${VTID}] vitana_index_scores query failed: ${error.message}`);
@@ -815,15 +779,7 @@ async function fetchNetworkBlock(
   // (mutual-follow edges are written in BOTH directions as separate rows, so
   // this single-sided filter still covers them). Ordered by strength then
   // recent interaction, mirroring the original intent.
-  const { data: edges, error } = await supabase
-    .from('relationship_edges')
-    .select('source_type, source_id, target_type, target_id, edge_type, strength, last_interaction_at')
-    .eq('tenant_id', input.tenant_id)
-    .eq('source_type', 'person')
-    .eq('source_id', input.user_id)
-    .order('strength', { ascending: false })
-    .order('last_interaction_at', { ascending: false, nullsFirst: false })
-    .limit(limit);
+  const { data: edges, error } = await repo.fetchRelationshipEdgesForPerson(supabase, input.tenant_id, input.user_id, limit);
 
   if (error) {
     console.warn(`[${VTID}] relationship_edges query failed: ${error.message}`);
@@ -839,10 +795,7 @@ async function fetchNetworkBlock(
 
   let nodesById: Record<string, { title: string | null; node_type: string }> = {};
   if (nodeIds.length > 0) {
-    const { data: nodes } = await supabase
-      .from('relationship_nodes')
-      .select('id, title, node_type')
-      .in('id', nodeIds);
+    const { data: nodes } = await repo.fetchRelationshipNodesByIds(supabase, nodeIds);
     nodesById = Object.fromEntries(
       (nodes ?? []).map((n) => [n.id, { title: n.title, node_type: n.node_type }])
     );
@@ -881,21 +834,8 @@ async function fetchLocationBlock(
   if (!supabase) return { block: null, latency_ms: Date.now() - t0 };
 
   const [historyRes, settingsRes] = await Promise.all([
-    supabase
-      .from('user_location_history')
-      .select('location_type, locality, country, timezone, source, valid_from')
-      .eq('tenant_id', input.tenant_id)
-      .eq('user_id', input.user_id)
-      .is('valid_to', null)
-      .order('valid_from', { ascending: false })
-      .limit(1),
-    supabase
-      .from('user_location_settings')
-      .select('name, locality, country, timezone, user_confirmed')
-      .eq('tenant_id', input.tenant_id)
-      .eq('user_id', input.user_id)
-      .order('is_primary_home', { ascending: false })
-      .limit(20),
+    repo.fetchCurrentLocationHistory(supabase, input.tenant_id, input.user_id),
+    repo.fetchNamedLocationSettings(supabase, input.tenant_id, input.user_id),
   ]);
 
   const current = (historyRes.data?.[0] ?? null) as LocationCurrent | null;
@@ -929,21 +869,8 @@ async function fetchBiometricsBlock(
   if (!supabase) return { block: null, latency_ms: Date.now() - t0 };
 
   const [trendsRes, eventsRes] = await Promise.all([
-    supabase
-      .from('biometric_trends')
-      .select('feature_key, pillar, trend_class, latest, mean_30d, anomaly_flag')
-      .eq('tenant_id', input.tenant_id)
-      .eq('user_id', input.user_id)
-      .order('computed_at', { ascending: false })
-      .limit(20),
-    supabase
-      .from('biometric_events')
-      .select('event_type, feature_key, pillar, observed_at, detail')
-      .eq('tenant_id', input.tenant_id)
-      .eq('user_id', input.user_id)
-      .is('acknowledged_at', null)
-      .order('observed_at', { ascending: false })
-      .limit(10),
+    repo.fetchBiometricTrends(supabase, input.tenant_id, input.user_id),
+    repo.fetchActiveBiometricEvents(supabase, input.tenant_id, input.user_id),
   ]);
 
   const block: BiometricsBlock = {
@@ -983,14 +910,7 @@ async function fetchDiaryBlock(
   if (!supabase) return { block: null, latency_ms: Date.now() - t0 };
 
   const cutoff = new Date(Date.now() - daysBack * 24 * 3600 * 1000).toISOString();
-  const { data, error } = await supabase
-    .from('memory_diary_entries')
-    .select('id, occurred_at, category_key, content')
-    .eq('tenant_id', input.tenant_id)
-    .eq('user_id', input.user_id)
-    .gte('occurred_at', cutoff)
-    .order('occurred_at', { ascending: false })
-    .limit(limit);
+  const { data, error } = await repo.fetchDiaryEntriesSince(supabase, input.tenant_id, input.user_id, cutoff, limit);
 
   if (error) {
     // Table may not exist on all environments — graceful empty.
@@ -1027,20 +947,8 @@ async function fetchGovernanceBlock(
   const cooldownStart = new Date(Date.now() - 14 * 24 * 3600 * 1000).toISOString();
 
   const [recsRes, pausesRes] = await Promise.all([
-    supabase
-      .from('autopilot_recommendations')
-      .select('id, title, domain, status, snoozed_until, expires_at, signal_fingerprint, updated_at')
-      .eq('user_id', input.user_id)
-      .in('status', ['rejected', 'auto_archived'])
-      .gte('updated_at', cooldownStart)
-      .order('updated_at', { ascending: false })
-      .limit(50),
-    supabase
-      .from('user_proactive_pause')
-      .select('*')
-      .eq('user_id', input.user_id)
-      .order('created_at', { ascending: false })
-      .limit(20),
+    repo.fetchDismissedAutopilotRecommendations(supabase, input.user_id, ['rejected', 'auto_archived'], cooldownStart),
+    repo.fetchUserProactivePauses(supabase, input.user_id),
   ]);
 
   const dismissals: GovernanceDismissal[] = (recsRes.data ?? []).map(r => ({
@@ -1088,12 +996,7 @@ async function fetchProgressionBlock(
   const supabase = getSupabase();
   if (!supabase) return { block: null, latency_ms: Date.now() - t0 };
 
-  const { data, error } = await supabase
-    .from('user_feature_introductions')
-    .select('feature_key, introduced_at, channel')
-    .eq('user_id', input.user_id)
-    .order('introduced_at', { ascending: false })
-    .limit(50);
+  const { data, error } = await repo.fetchUserFeatureIntroductions(supabase, input.user_id);
   if (error) return { block: null, latency_ms: Date.now() - t0 };
 
   const block: ProgressionBlock = {

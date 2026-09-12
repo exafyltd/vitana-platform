@@ -99,6 +99,7 @@ function createMockSupabase() {
     rpc: jest.fn(() => Promise.resolve(getNextData())),
     __setMockData: (data: any, count: number = 0) => { defaultData = { data, error: null, count }; resolveDataQueue = []; },
     __addQueueData: (data: any, count: number = 0) => { resolveDataQueue.push({ data, error: null, count }); },
+    __addQueueError: (error: any) => { resolveDataQueue.push({ data: null, error }); },
     __setMockError: (error: any) => { defaultData = { data: null, error }; resolveDataQueue = []; },
     mockQuery
   };
@@ -393,6 +394,21 @@ describe('GET /api/v1/admin/autopilot/recommendations', () => {
     expect(mockSupabase.mockQuery.eq).toHaveBeenCalledWith('domain', 'health');
     expect(mockSupabase.mockQuery.eq).toHaveBeenCalledWith('risk_level', 'medium');
   });
+
+  it('returns 500 (not a permissive default) when the tenant settings lookup errors', async () => {
+    // Previously: a failed settings lookup fell through as if the tenant had
+    // no settings row at all, silently applying the fully-permissive default
+    // allowed_domains/allowed_risk_levels instead of surfacing the DB error.
+    // The follow-up recommendations query is queued to succeed, so this test
+    // isolates the settings-lookup check specifically rather than merely
+    // exercising the (already-correct) error check on the second query.
+    mockSupabase.__addQueueError(new Error('settings lookup failed'));
+    mockSupabase.__addQueueData([{ id: 'rec-1', domain: 'health' }], 1);
+
+    const res = await request(app).get('/api/v1/admin/autopilot/recommendations');
+    expect(res.status).toBe(500);
+    expect(res.body.ok).toBe(false);
+  });
 });
 
 describe('GET /api/v1/admin/autopilot/recommendations/summary', () => {
@@ -408,6 +424,15 @@ describe('GET /api/v1/admin/autopilot/recommendations/summary', () => {
     const res = await request(app).get('/api/v1/admin/autopilot/recommendations/summary');
     expect(res.status).toBe(200);
     expect(res.body.data).toEqual({ new: 2, activated: 1, rejected: 1, snoozed: 1, total: 5 });
+  });
+
+  it('returns 500 when the tenant settings lookup errors, instead of a fake zeroed summary', async () => {
+    mockSupabase.__addQueueError(new Error('settings lookup failed'));
+    mockSupabase.__addQueueData([{ status: 'new' }]);
+
+    const res = await request(app).get('/api/v1/admin/autopilot/recommendations/summary');
+    expect(res.status).toBe(500);
+    expect(res.body.ok).toBe(false);
   });
 });
 
@@ -433,6 +458,25 @@ describe('GET /api/v1/admin/autopilot/waves', () => {
       expect.objectContaining({ id: 'auto-1', name: 'Auto One', enabled: true }),
       expect.objectContaining({ id: 'auto-2', name: 'Auto Two', enabled: false }),
     ]);
+  });
+
+  it('returns 500 when the wave_config settings lookup errors, instead of silently defaulting overrides to empty', async () => {
+    mockSupabase.__setMockError(new Error('settings lookup failed'));
+
+    const res = await request(app).get('/api/v1/admin/autopilot/waves');
+    expect(res.status).toBe(500);
+    expect(res.body.ok).toBe(false);
+  });
+
+  it('returns 500 when the bindings lookup errors, instead of silently reporting every automation disabled', async () => {
+    // 1st query: settings succeeds
+    mockSupabase.__addQueueData({ wave_config: {} });
+    // 2nd query: bindings errors
+    mockSupabase.__addQueueError(new Error('bindings lookup failed'));
+
+    const res = await request(app).get('/api/v1/admin/autopilot/waves');
+    expect(res.status).toBe(500);
+    expect(res.body.ok).toBe(false);
   });
 });
 
@@ -478,6 +522,23 @@ describe('PATCH /api/v1/admin/autopilot/waves/:waveId', () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('MISSING_ENABLED');
+  });
+
+  it('returns 500 when the settings lookup errors, instead of treating it as "no settings" and overwriting wave_config', async () => {
+    // Previously: a failed lookup made `settings` undefined, `!settings` was
+    // true, so the handler inserted a fresh minimal settings row in memory
+    // (wave_config: {}) and proceeded to UPDATE the real row with only the
+    // one wave being toggled — silently discarding every other tenant's
+    // existing wave_config override on a transient read error.
+    mockSupabase.__setMockError(new Error('settings lookup failed'));
+
+    const res = await request(app)
+      .patch('/api/v1/admin/autopilot/waves/default-wave')
+      .send({ enabled: false });
+
+    expect(res.status).toBe(500);
+    expect(res.body.ok).toBe(false);
+    expect(mockSupabase.mockQuery.update).not.toHaveBeenCalled();
   });
 });
 

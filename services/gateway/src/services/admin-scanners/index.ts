@@ -26,6 +26,7 @@ import { signupsFunnelScanner } from './signups-funnel';
 import { settingsAuditScanner } from './settings-audit';
 import { complianceScanner } from './compliance';
 import { notificationsScanner } from './notifications';
+import * as repo from './index-repository';
 
 const LOG_PREFIX = '[admin-scanners]';
 
@@ -72,30 +73,24 @@ export async function runAllScannersForTenant(tenantId: string): Promise<{
 
       // Upsert each draft — unique (tenant_id, scanner, natural_key) handles dedup.
       for (const draft of drafts) {
-        const { error } = await supabase.from('admin_insights').upsert(
-          {
-            tenant_id: tenantId,
-            scanner: scanner.id,
-            natural_key: draft.natural_key,
-            domain: draft.domain,
-            title: draft.title,
-            description: draft.description ?? null,
-            severity: draft.severity,
-            actionable: draft.actionable ?? false,
-            recommended_action: draft.recommended_action ?? null,
-            context: draft.context ?? {},
-            confidence_score: draft.confidence_score ?? null,
-            autonomy_level: draft.autonomy_level ?? 'observe_only',
-            // Only set status on insert. On conflict we leave existing
-            // status alone so approved/rejected/snoozed decisions stick
-            // across rescans.
-            status: 'open',
-          },
-          {
-            onConflict: 'tenant_id,scanner,natural_key',
-            ignoreDuplicates: false,
-          },
-        );
+        const { error } = await repo.upsertAdminInsight(supabase, {
+          tenant_id: tenantId,
+          scanner: scanner.id,
+          natural_key: draft.natural_key,
+          domain: draft.domain,
+          title: draft.title,
+          description: draft.description ?? null,
+          severity: draft.severity,
+          actionable: draft.actionable ?? false,
+          recommended_action: draft.recommended_action ?? null,
+          context: draft.context ?? {},
+          confidence_score: draft.confidence_score ?? null,
+          autonomy_level: draft.autonomy_level ?? 'observe_only',
+          // Only set status on insert. On conflict we leave existing
+          // status alone so approved/rejected/snoozed decisions stick
+          // across rescans.
+          status: 'open',
+        });
         if (error) {
           console.warn(`${LOG_PREFIX} upsert failed scanner=${scanner.id} key=${draft.natural_key}: ${error.message}`);
         } else {
@@ -108,24 +103,22 @@ export async function runAllScannersForTenant(tenantId: string): Promise<{
       // admin isn't shown stale actions.
       const activeKeys = drafts.map((d) => d.natural_key);
       if (activeKeys.length > 0) {
-        const { data: stale, error: staleErr } = await supabase
-          .from('admin_insights')
-          .update({ status: 'resolved', resolved_at: new Date().toISOString(), resolved_via: 'scanner_auto' })
-          .eq('tenant_id', tenantId)
-          .eq('scanner', scanner.id)
-          .eq('status', 'open')
-          .not('natural_key', 'in', `(${activeKeys.map((k) => `"${k.replace(/"/g, '\\"')}"`).join(',')})`)
-          .select('id');
+        const { data: stale, error: staleErr } = await repo.resolveStaleAdminInsightsNotIn(
+          supabase,
+          tenantId,
+          scanner.id,
+          `(${activeKeys.map((k) => `"${k.replace(/"/g, '\\"')}"`).join(',')})`,
+          new Date().toISOString(),
+        );
         if (!staleErr && stale) insightsResolved += stale.length;
       } else {
         // No drafts at all — resolve everything currently open from this scanner.
-        const { data: stale } = await supabase
-          .from('admin_insights')
-          .update({ status: 'resolved', resolved_at: new Date().toISOString(), resolved_via: 'scanner_auto' })
-          .eq('tenant_id', tenantId)
-          .eq('scanner', scanner.id)
-          .eq('status', 'open')
-          .select('id');
+        const { data: stale } = await repo.resolveAllOpenAdminInsightsForScanner(
+          supabase,
+          tenantId,
+          scanner.id,
+          new Date().toISOString(),
+        );
         if (stale) insightsResolved += stale.length;
       }
     } catch (err: any) {

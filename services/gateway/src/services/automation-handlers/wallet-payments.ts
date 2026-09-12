@@ -7,6 +7,7 @@
 
 import { AutomationContext, REWARD_TABLE, CreditWalletResult } from '../../types/automations';
 import { registerHandler } from '../automation-executor';
+import * as repo from './wallet-payments-repository';
 
 // ── AP-0701: Payment Failure Detection & Retry ──────────────
 async function runPaymentFailureRetry(ctx: AutomationContext) {
@@ -48,11 +49,11 @@ async function runCreatorStripeOnboarding(ctx: AutomationContext) {
   const { supabase, tenantId } = ctx;
 
   // Check if user already has Stripe account
-  const { data: user } = await supabase
-    .from('app_users')
-    .select('stripe_account_id, stripe_charges_enabled')
-    .eq('user_id', userId)
-    .maybeSingle();
+  const { data: user, error: userErr } = await repo.fetchStripeAccountStatus(supabase, userId);
+  if (userErr) {
+    console.error(`[wallet-payments] fetchStripeAccountStatus failed for user=${userId}, skipping to avoid a false onboarding nudge: ${userErr.message}`);
+    return { usersAffected: 0, actionsTaken: 0 };
+  }
 
   if (user?.stripe_charges_enabled) {
     ctx.log('Creator already has Stripe Connect enabled');
@@ -109,7 +110,13 @@ async function runWalletCreditReward(ctx: AutomationContext) {
   const { supabase, tenantId } = ctx;
   const sourceEventId = event_id || `${reward_type}_${user_id}_${Date.now()}`;
 
-  const { data } = await supabase.rpc('credit_wallet', {
+  // credit_wallet's error field must be checked explicitly: supabase-js's
+  // .rpc() resolves normally with {error} on a Postgres-level failure (e.g.
+  // credit_wallet not existing) rather than throwing, so a failed credit
+  // otherwise looks identical to `result` being undefined below — and this
+  // handler used to report a successful user-affecting action regardless
+  // (see AURORA-B3-RPC-PARITY-INVENTORY.md's 2026-08-29 addendum).
+  const { data, error } = await repo.creditWallet(supabase, {
     p_tenant_id: tenantId,
     p_user_id: user_id,
     p_amount: rewardConfig.amount,
@@ -118,6 +125,10 @@ async function runWalletCreditReward(ctx: AutomationContext) {
     p_source_event_id: sourceEventId,
     p_description: rewardConfig.description,
   });
+
+  if (error) {
+    ctx.log(`credit_wallet RPC returned an error for ${reward_type}/${user_id}: ${error.message}`);
+  }
 
   const result = data as CreditWalletResult;
 
@@ -136,9 +147,13 @@ async function runWalletCreditReward(ctx: AutomationContext) {
     await ctx.emitEvent('autopilot.wallet.credits_awarded', {
       user_id, reward_type, amount: rewardConfig.amount, balance: result.balance,
     });
+
+    return { usersAffected: 1, actionsTaken: 1 };
   }
 
-  return { usersAffected: 1, actionsTaken: 1 };
+  // Neither duplicate nor ok — the credit did not happen. Report it
+  // honestly instead of claiming a successful user-affecting action.
+  return { usersAffected: 0, actionsTaken: 0 };
 }
 
 // ── AP-0710: Monetization Readiness Scoring ─────────────────
@@ -156,12 +171,7 @@ async function runMonetizationReadinessCheck(ctx: AutomationContext) {
   // Check recent monetization signals
   const thirtyDays = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
-  const { data: signals } = await supabase
-    .from('monetization_signals')
-    .select('signal_type, indicator, weight')
-    .eq('tenant_id', tenantId)
-    .eq('user_id', userId)
-    .gte('detected_at', thirtyDays);
+  const { data: signals } = await repo.fetchMonetizationSignals(supabase, tenantId, userId, thirtyDays);
 
   // Simple readiness score calculation
   let readiness = 50; // baseline
@@ -172,14 +182,7 @@ async function runMonetizationReadinessCheck(ctx: AutomationContext) {
   readiness = Math.max(0, Math.min(100, readiness));
 
   // Check for vulnerability signals
-  const { data: emotionalSignals } = await supabase
-    .from('d28_emotional_signals')
-    .select('signal_type')
-    .eq('tenant_id', tenantId)
-    .eq('user_id', userId)
-    .eq('status', 'active')
-    .in('signal_type', ['emotional_vulnerability', 'distress', 'overwhelmed'])
-    .limit(1);
+  const { data: emotionalSignals } = await repo.fetchEmotionalVulnerabilitySignals(supabase, tenantId, userId);
 
   const isVulnerable = (emotionalSignals?.length || 0) > 0;
 
@@ -207,22 +210,13 @@ async function runCreatorWeeklyEarnings(ctx: AutomationContext) {
   let actionsTaken = 0;
 
   // Find all creators (users with stripe_charges_enabled)
-  const { data: creators } = await supabase
-    .from('app_users')
-    .select('user_id, display_name')
-    .eq('stripe_charges_enabled', true);
+  const { data: creators } = await repo.fetchCreatorsWithStripeCharges(supabase);
 
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
   for (const creator of creators || []) {
     // KNOWN GAP: user_offers_memory doesn't exist live; txCount is always 0.
-    const { count: txCount } = await supabase
-      .from('user_offers_memory')
-      .select('id', { count: 'exact', head: true })
-      .eq('tenant_id', tenantId)
-      .eq('target_id', creator.user_id)
-      .eq('state', 'used')
-      .gte('updated_at', sevenDaysAgo);
+    const { count: txCount } = await repo.countUsedOffersForCreator(supabase, tenantId, creator.user_id, sevenDaysAgo);
 
     ctx.notify(creator.user_id, 'orb_proactive_message', {
       title: 'Your Weekly Earnings',
@@ -252,26 +246,20 @@ async function runSubscriptionExpiryWarning(ctx: AutomationContext) {
   const now = new Date();
   const windowEnd = new Date(now.getTime() + EXPIRY_WARNING_WINDOW_DAYS * 86_400_000);
 
-  const { data: expiring } = await supabase
-    .from('user_subscriptions')
-    .select('user_id, plan_key, current_period_end')
-    .eq('tenant_id', tenantId)
-    .eq('status', 'active')
-    .eq('cancel_at_period_end', true)
-    .gte('current_period_end', now.toISOString())
-    .lte('current_period_end', windowEnd.toISOString())
-    .limit(500);
+  const { data: expiring, error: expiringErr } = await repo.fetchExpiringSubscriptions(supabase, tenantId, now.toISOString(), windowEnd.toISOString());
+  if (expiringErr) {
+    console.error(`[wallet-payments] fetchExpiringSubscriptions failed for tenant=${tenantId}, no expiry warnings sent this run: ${expiringErr.message}`);
+    return { usersAffected: 0, actionsTaken: 0 };
+  }
 
   const cooldownCutoff = new Date(now.getTime() - EXPIRY_WARNING_COOLDOWN_DAYS * 86_400_000).toISOString();
 
   for (const sub of expiring || []) {
-    const { data: recentWarning } = await supabase
-      .from('user_notifications')
-      .select('id')
-      .eq('user_id', sub.user_id)
-      .contains('data', { automation_id: 'AP-0704' })
-      .gte('created_at', cooldownCutoff)
-      .limit(1);
+    const { data: recentWarning, error: recentWarningErr } = await repo.fetchRecentExpiryWarning(supabase, sub.user_id, cooldownCutoff);
+    if (recentWarningErr) {
+      console.error(`[wallet-payments] fetchRecentExpiryWarning failed for user=${sub.user_id}, skipping to avoid re-warning within the cooldown: ${recentWarningErr.message}`);
+      continue;
+    }
     if (recentWarning && recentWarning.length > 0) continue;
 
     const daysLeft = Math.max(1, Math.ceil((new Date(sub.current_period_end).getTime() - now.getTime()) / 86_400_000));
@@ -307,13 +295,7 @@ async function runSpendingInsights(ctx: AutomationContext) {
   const users = (await ctx.queryTargetUsers()).slice(0, SPENDING_INSIGHTS_MAX_USERS_PER_RUN);
 
   for (const { user_id } of users) {
-    const { data: txs } = await supabase
-      .from('wallet_transactions')
-      .select('amount, from_currency')
-      .eq('from_user_id', user_id)
-      .eq('status', 'completed')
-      .gte('created_at', monthStart.toISOString())
-      .lt('created_at', monthEnd.toISOString());
+    const { data: txs } = await repo.fetchCompletedOutgoingTransactions(supabase, user_id, monthStart.toISOString(), monthEnd.toISOString());
 
     if (!txs?.length) continue;
 

@@ -11,6 +11,7 @@ import { randomUUID } from 'crypto';
 import { getSupabase } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth-supabase-jwt';
 import { resolveShopifyConfig, syncShopifyCatalog } from '../services/shopify-sync';
+import * as repo from './shopify-sync-repository';
 
 const router = Router();
 router.use(requireAuth as any);
@@ -27,7 +28,7 @@ router.post('/sync', async (req: Request, res: Response) => {
   try {
     const result = await syncShopifyCatalog(supabase, cfg);
     try {
-      await supabase.from('oasis_events').insert({
+      await repo.insertShopifySyncOasisEvent(supabase, {
         id: randomUUID(), service: 'vcaop', source: 'vcaop',
         type: 'vcaop.shopify.synced', topic: 'vcaop.shopify.synced',
         status: 'success', message: `shopify sync ${result.upserted}/${result.fetched} products`,

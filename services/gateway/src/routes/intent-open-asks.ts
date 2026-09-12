@@ -13,6 +13,7 @@
 import { Router, Request, Response } from 'express';
 import { requireAuth, requireTenant, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { getSupabase } from '../lib/supabase';
+import * as repo from './intent-open-asks-repository';
 
 const router = Router();
 
@@ -31,11 +32,7 @@ router.get('/community/open-asks', requireAuth, requireTenant, async (req: Reque
   const supabase = getSupabase();
   if (!supabase) return res.status(500).json({ ok: false, error: 'supabase_unavailable' });
 
-  let q = supabase
-    .from('intent_open_asks')
-    .select('intent_id, requester_vitana_id, intent_kind, category, title, scope, kind_payload, created_at')
-    .order('created_at', { ascending: false })
-    .limit(limit);
+  let q = repo.buildOpenAsksQuery(supabase, limit);
 
   if (cursor) q = q.lt('created_at', cursor);
   if (kindFilter) q = q.eq('intent_kind', kindFilter);

@@ -52,6 +52,7 @@ import {
   DOMAIN_CONFIG,
   SAFE_LANGUAGE_PATTERNS
 } from '../types/risk-mitigation';
+import * as repo from './d49-risk-mitigation-engine-repository';
 
 // =============================================================================
 // VTID-01143: Constants
@@ -155,10 +156,7 @@ async function getClientWithContext(authToken?: string): Promise<{
 
   // Bootstrap dev context if needed
   if (useDevIdentity) {
-    const { error: bootstrapError } = await supabase.rpc('dev_bootstrap_request_context', {
-      p_tenant_id: DEV_IDENTITY.TENANT_ID,
-      p_active_role: 'developer'
-    });
+    const { error: bootstrapError } = await repo.bootstrapDevRequestContext(supabase, DEV_IDENTITY.TENANT_ID, 'developer');
     if (bootstrapError) {
       console.warn(`${LOG_PREFIX} Bootstrap context failed (non-fatal):`, bootstrapError.message);
     }
@@ -408,14 +406,7 @@ async function checkRecentMitigations(
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - cooldownDays);
 
-    const { data, error } = await supabase
-      .from('risk_mitigations')
-      .select('id, created_at')
-      .eq('user_id', userId)
-      .eq('domain', domain)
-      .eq('suggestion_hash', suggestionHash)
-      .gte('created_at', cutoffDate.toISOString())
-      .limit(1);
+    const { data, error } = await repo.fetchRecentMitigation(supabase, userId, domain, suggestionHash, cutoffDate.toISOString());
 
     if (error) {
       console.warn(`${LOG_PREFIX} Error checking recent mitigations:`, error.message);
@@ -614,27 +605,25 @@ export async function generateMitigations(
         risk_type: request.risk_windows.find(rw => rw.risk_window_id === mitigation.risk_window_id)?.risk_type
       });
 
-      const { error: insertError } = await supabase
-        .from('risk_mitigations')
-        .insert({
-          id: mitigation.mitigation_id,
-          tenant_id: effectiveTenantId,
-          user_id: effectiveUserId,
-          risk_window_id: mitigation.risk_window_id,
-          domain: mitigation.domain,
-          confidence: mitigation.confidence,
-          suggested_adjustment: mitigation.suggested_adjustment,
-          why_this_helps: mitigation.why_this_helps,
-          effort_level: mitigation.effort_level,
-          source_signals: mitigation.source_signals,
-          precedent_type: mitigation.precedent_type,
-          disclaimer: mitigation.disclaimer,
-          status: mitigation.status,
-          expires_at: mitigation.expires_at,
-          generated_by_version: mitigation.generated_by_version,
-          input_hash: mitigation.input_hash,
-          suggestion_hash: suggestionHash
-        });
+      const { error: insertError } = await repo.insertRiskMitigation(supabase, {
+        id: mitigation.mitigation_id,
+        tenant_id: effectiveTenantId,
+        user_id: effectiveUserId,
+        risk_window_id: mitigation.risk_window_id,
+        domain: mitigation.domain,
+        confidence: mitigation.confidence,
+        suggested_adjustment: mitigation.suggested_adjustment,
+        why_this_helps: mitigation.why_this_helps,
+        effort_level: mitigation.effort_level,
+        source_signals: mitigation.source_signals,
+        precedent_type: mitigation.precedent_type,
+        disclaimer: mitigation.disclaimer,
+        status: mitigation.status,
+        expires_at: mitigation.expires_at,
+        generated_by_version: mitigation.generated_by_version,
+        input_hash: mitigation.input_hash,
+        suggestion_hash: suggestionHash
+      });
 
       if (insertError) {
         console.error(`${LOG_PREFIX} Error storing mitigation:`, insertError.message);
@@ -695,17 +684,12 @@ export async function dismissMitigation(
 
     const now = new Date().toISOString();
 
-    const { data, error } = await supabase
-      .from('risk_mitigations')
-      .update({
-        status: 'dismissed',
-        dismissed_at: now,
-        dismiss_reason: request.reason || null,
-        updated_at: now
-      })
-      .eq('id', request.mitigation_id)
-      .select('id, domain')
-      .single();
+    const { data, error } = await repo.dismissMitigationRow(supabase, request.mitigation_id, {
+      status: 'dismissed',
+      dismissed_at: now,
+      dismiss_reason: request.reason || null,
+      updated_at: now
+    });
 
     if (error) {
       console.error(`${LOG_PREFIX} Error dismissing mitigation:`, error.message);
@@ -753,19 +737,11 @@ export async function getActiveMitigations(
       return { ok: false, error: clientError || 'SERVICE_UNAVAILABLE' };
     }
 
-    let query = supabase
-      .from('risk_mitigations')
-      .select('*')
-      .eq('status', 'active')
-      .gte('expires_at', new Date().toISOString())
-      .order('created_at', { ascending: false })
-      .limit(request.limit);
-
-    if (request.domains && request.domains.length > 0) {
-      query = query.in('domain', request.domains);
-    }
-
-    const { data, error } = await query;
+    const { data, error } = await repo.fetchActiveMitigations(supabase, {
+      nowIso: new Date().toISOString(),
+      limit: request.limit,
+      domains: request.domains,
+    });
 
     if (error) {
       console.error(`${LOG_PREFIX} Error fetching active mitigations:`, error.message);
@@ -819,25 +795,12 @@ export async function getMitigationHistory(
       return { ok: false, error: clientError || 'SERVICE_UNAVAILABLE' };
     }
 
-    let query = supabase
-      .from('risk_mitigations')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(request.limit);
-
-    if (request.domains && request.domains.length > 0) {
-      query = query.in('domain', request.domains);
-    }
-
-    if (request.statuses && request.statuses.length > 0) {
-      query = query.in('status', request.statuses);
-    }
-
-    if (request.since) {
-      query = query.gte('created_at', request.since);
-    }
-
-    const { data, error } = await query;
+    const { data, error } = await repo.fetchMitigationHistory(supabase, {
+      limit: request.limit,
+      domains: request.domains,
+      statuses: request.statuses,
+      since: request.since,
+    });
 
     if (error) {
       console.error(`${LOG_PREFIX} Error fetching mitigation history:`, error.message);
@@ -893,15 +856,11 @@ export async function acknowledgeMitigation(
 
     const now = new Date().toISOString();
 
-    const { error } = await supabase
-      .from('risk_mitigations')
-      .update({
-        status: 'acknowledged',
-        acknowledged_at: now,
-        updated_at: now
-      })
-      .eq('id', mitigationId)
-      .eq('status', 'active');  // Only acknowledge active mitigations
+    const { error } = await repo.acknowledgeMitigationRow(supabase, mitigationId, {
+      status: 'acknowledged',
+      acknowledged_at: now,
+      updated_at: now
+    }); // Only acknowledge active mitigations
 
     if (error) {
       console.error(`${LOG_PREFIX} Error acknowledging mitigation:`, error.message);
@@ -938,15 +897,10 @@ export async function expireOldMitigations(
 
     const now = new Date().toISOString();
 
-    const { data, error } = await supabase
-      .from('risk_mitigations')
-      .update({
-        status: 'expired',
-        updated_at: now
-      })
-      .eq('status', 'active')
-      .lt('expires_at', now)
-      .select('id');
+    const { data, error } = await repo.expireOldMitigationsRows(supabase, now, {
+      status: 'expired',
+      updated_at: now
+    });
 
     if (error) {
       console.error(`${LOG_PREFIX} Error expiring mitigations:`, error.message);

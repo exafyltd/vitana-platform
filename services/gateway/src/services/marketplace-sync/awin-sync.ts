@@ -71,6 +71,7 @@ import {
   type ProductUpsert,
 } from './shared';
 import { getSupabase } from '../../lib/supabase';
+import * as repo from './awin-sync-repository';
 
 interface AwinFeedRef {
   feed_url: string;
@@ -102,11 +103,8 @@ const DEFAULT_SHIPS_TO_REGIONS = ['EU', 'UK', 'US', 'MENA', 'GLOBAL'];
 async function loadSourceConfigs(): Promise<AwinSourceConfig[]> {
   const supabase = getSupabase();
   if (!supabase) return [];
-  const { data } = await supabase
-    .from('marketplace_sources_config')
-    .select('config')
-    .eq('source_network', 'awin')
-    .eq('is_active', true);
+  const { data, error } = await repo.fetchActiveMarketplaceSourceConfigs(supabase, 'awin');
+  if (error) throw error; // must not be indistinguishable from "no feeds configured" — caller reports it as a real failure
   if (!data?.length) return [];
   return data
     .map((r) => r.config as AwinSourceConfig)

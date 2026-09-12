@@ -15,6 +15,7 @@
  */
 import { getSupabase } from '../../lib/supabase';
 import { notifyUserAsync } from '../notification-service';
+import * as repo from './briefing-repository';
 
 const LOG_PREFIX = '[admin-briefing]';
 
@@ -59,14 +60,7 @@ export async function fetchAdminBriefingBlock(
   try {
     // Fetch open insights excluding snoozed-until-future. Rank severity client-side
     // since Postgres sorts the text alphabetically, not by our semantic order.
-    const { data, error } = await supabase
-      .from('admin_insights')
-      .select(
-        'id, scanner, natural_key, domain, title, description, severity, confidence_score, recommended_action, snoozed_until',
-      )
-      .eq('tenant_id', tenantId)
-      .eq('status', 'open')
-      .limit(20);
+    const { data, error } = await repo.fetchOpenAdminInsights(supabase, tenantId);
     if (error) {
       console.warn(`${LOG_PREFIX} fetch failed: ${error.message}`);
       return null;
@@ -121,11 +115,7 @@ async function getTenantAdminUserIds(tenantId: string): Promise<string[]> {
   const supabase = getSupabase();
   if (!supabase) return [];
   try {
-    const { data, error } = await supabase
-      .from('user_tenants')
-      .select('user_id, active_role')
-      .eq('tenant_id', tenantId)
-      .in('active_role', PRIVILEGED_ROLES);
+    const { data, error } = await repo.fetchTenantAdminUserIds(supabase, tenantId, PRIVILEGED_ROLES);
     if (error) {
       console.warn(`${LOG_PREFIX} getTenantAdminUserIds failed: ${error.message}`);
       return [];
@@ -147,14 +137,7 @@ export async function notifyUnnotifiedUrgentInsights(tenantId: string): Promise<
   if (!supabase) return 0;
 
   try {
-    const { data, error } = await supabase
-      .from('admin_insights')
-      .select('id, title, description, domain, scanner, natural_key')
-      .eq('tenant_id', tenantId)
-      .eq('status', 'open')
-      .eq('severity', 'urgent')
-      .is('urgent_notified_at', null)
-      .limit(20);
+    const { data, error } = await repo.fetchUnnotifiedUrgentAdminInsights(supabase, tenantId);
     if (error) {
       console.warn(`${LOG_PREFIX} notify fetch failed: ${error.message}`);
       return 0;
@@ -167,10 +150,7 @@ export async function notifyUnnotifiedUrgentInsights(tenantId: string): Promise<
       // they'll see the insight in the console; the first-push opportunity
       // is only valuable for live admins.
       const ids = data.map((r: { id: string }) => r.id);
-      await supabase
-        .from('admin_insights')
-        .update({ urgent_notified_at: new Date().toISOString() })
-        .in('id', ids);
+      await repo.markAdminInsightsUrgentNotified(supabase, ids);
       return 0;
     }
 
@@ -206,10 +186,7 @@ export async function notifyUnnotifiedUrgentInsights(tenantId: string): Promise<
 
     // Stamp notified — use one UPDATE for all ids
     const ids = data.map((r: { id: string }) => r.id);
-    await supabase
-      .from('admin_insights')
-      .update({ urgent_notified_at: new Date().toISOString() })
-      .in('id', ids);
+    await repo.markAdminInsightsUrgentNotified(supabase, ids);
 
     return notified;
   } catch (err: any) {

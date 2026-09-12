@@ -21,6 +21,7 @@ import { Router, Response } from 'express';
 import { requireTenantAdmin } from '../../middleware/require-tenant-admin';
 import { AuthenticatedRequest } from '../../middleware/auth-supabase-jwt';
 import { getSupabase } from '../../lib/supabase';
+import * as repo from '../../services/content-moderation/content-moderation-repository';
 
 const router = Router({ mergeParams: true });
 
@@ -34,16 +35,7 @@ router.get('/items', requireTenantAdmin, async (req: AuthenticatedRequest, res: 
     const mediaType = (req.query.type as string || '').trim();
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
 
-    let query = supabase
-      .from('media_uploads')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(limit);
-
-    if (status) query = query.eq('status', status);
-    if (mediaType) query = query.eq('media_type', mediaType);
-
-    const { data, error } = await query;
+    const { data, error } = await repo.fetchMediaItems(supabase, { status, mediaType, limit });
 
     if (error) {
       console.warn('[CONTENT-MOD] media_uploads query error:', error.message);
@@ -62,9 +54,7 @@ router.get('/items/stats', requireTenantAdmin, async (req: AuthenticatedRequest,
     const supabase = getSupabase();
     if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
-    const { data, error } = await supabase
-      .from('media_uploads')
-      .select('status, media_type');
+    const { data, error } = await repo.fetchMediaItemsStats(supabase);
 
     if (error) {
       return res.json({ ok: true, total: 0, by_status: {}, by_type: {} });
@@ -96,11 +86,7 @@ router.get('/items/:id', requireTenantAdmin, async (req: AuthenticatedRequest, r
     const supabase = getSupabase();
     if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
-    const { data, error } = await supabase
-      .from('media_uploads')
-      .select('*, music_metadata(*), podcast_metadata(*), video_metadata(*)')
-      .eq('id', req.params.id)
-      .single();
+    const { data, error } = await repo.fetchMediaItemById(supabase, req.params.id);
 
     if (error || !data) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
     return res.json({ ok: true, item: data });
@@ -115,16 +101,11 @@ router.post('/items/:id/approve', requireTenantAdmin, async (req: AuthenticatedR
     const supabase = getSupabase();
     if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
-    const { data, error } = await supabase
-      .from('media_uploads')
-      .update({
-        status: 'approved',
-        is_public: true,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', req.params.id)
-      .select('*')
-      .single();
+    const { data, error } = await repo.updateMediaItem(supabase, req.params.id, {
+      status: 'approved',
+      is_public: true,
+      updated_at: new Date().toISOString(),
+    });
 
     if (error || !data) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
     return res.json({ ok: true, item: data });
@@ -139,16 +120,11 @@ router.post('/items/:id/reject', requireTenantAdmin, async (req: AuthenticatedRe
     const supabase = getSupabase();
     if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
-    const { data, error } = await supabase
-      .from('media_uploads')
-      .update({
-        status: 'rejected',
-        is_public: false,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', req.params.id)
-      .select('*')
-      .single();
+    const { data, error } = await repo.updateMediaItem(supabase, req.params.id, {
+      status: 'rejected',
+      is_public: false,
+      updated_at: new Date().toISOString(),
+    });
 
     if (error || !data) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
     return res.json({ ok: true, item: data });
@@ -163,15 +139,10 @@ router.post('/items/:id/flag', requireTenantAdmin, async (req: AuthenticatedRequ
     const supabase = getSupabase();
     if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
-    const { data, error } = await supabase
-      .from('media_uploads')
-      .update({
-        status: 'flagged',
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', req.params.id)
-      .select('*')
-      .single();
+    const { data, error } = await repo.updateMediaItem(supabase, req.params.id, {
+      status: 'flagged',
+      updated_at: new Date().toISOString(),
+    });
 
     if (error || !data) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
     return res.json({ ok: true, item: data });

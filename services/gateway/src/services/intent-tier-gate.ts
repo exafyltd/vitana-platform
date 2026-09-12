@@ -17,6 +17,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
+import * as repo from './intent-tier-gate-repository';
 
 const SUPABASE_URL = process.env.SUPABASE_URL!;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE!;
@@ -51,11 +52,7 @@ export async function getTrustTier(userId: string): Promise<TrustTier> {
   if (!userId) return 'unverified';
   try {
     const supabase = getSupabase();
-    const { data } = await supabase
-      .from('profiles')
-      .select('vitana_id_locked')
-      .eq('user_id', userId)
-      .maybeSingle();
+    const { data } = await repo.fetchProfileVitanaIdLocked(supabase, userId);
     if (data && (data as any).vitana_id_locked === true) return 'community_verified';
     return 'unverified';
   } catch (err: any) {

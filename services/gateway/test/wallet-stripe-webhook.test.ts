@@ -261,6 +261,47 @@ describe('wallet-stripe-webhook', () => {
     expect(mockFinalizeDeposit).not.toHaveBeenCalled();
   });
 
+  it('returns 500 (not a silent skip) when payment_intent.succeeded\'s deposit lookup errors', async () => {
+    // Previously: an unchecked `{data}`-only destructure meant a real DB
+    // error resolved `deposit` to undefined, logged as a benign "no
+    // matching deposit; skipping" — indistinguishable from a genuinely
+    // unrelated payment_intent — and the user's payment was never credited,
+    // with no retry (Stripe eventually stops resending).
+    mockConstructEvent.mockReturnValue({
+      id: 'evt_test_pi_succeeded',
+      type: 'payment_intent.succeeded',
+      data: { object: { id: 'pi_test_err' } },
+    } as unknown as Stripe.Event);
+    mockMaybeSingle.mockResolvedValueOnce({ data: null, error: { message: 'deposit lookup failed' } });
+
+    const res = await request(makeApp())
+      .post('/api/v1/stripe/webhook/wallet')
+      .set('Content-Type', 'application/json')
+      .set('stripe-signature', 'valid')
+      .send(Buffer.from('{}'));
+
+    expect(res.status).toBe(500);
+    expect(mockFinalizeDeposit).not.toHaveBeenCalled();
+  });
+
+  it('returns 500 when payment_intent.payment_failed\'s deposit lookup errors', async () => {
+    mockConstructEvent.mockReturnValue({
+      id: 'evt_test_pi_failed',
+      type: 'payment_intent.payment_failed',
+      data: { object: { id: 'pi_test_err', last_payment_error: { code: 'card_declined' } } },
+    } as unknown as Stripe.Event);
+    mockMaybeSingle.mockResolvedValueOnce({ data: null, error: { message: 'deposit lookup failed' } });
+
+    const res = await request(makeApp())
+      .post('/api/v1/stripe/webhook/wallet')
+      .set('Content-Type', 'application/json')
+      .set('stripe-signature', 'valid')
+      .send(Buffer.from('{}'));
+
+    expect(res.status).toBe(500);
+    expect(mockMarkDepositTerminal).not.toHaveBeenCalled();
+  });
+
   it('returns 500 when the handler throws (Stripe will retry)', async () => {
     mockConstructEvent.mockReturnValue(checkoutCompletedEvent());
     mockFinalizeDeposit.mockRejectedValueOnce(new Error('rpc explode'));

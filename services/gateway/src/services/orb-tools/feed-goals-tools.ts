@@ -18,6 +18,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
 import { gatewayApiCall } from './developer-tools';
+import * as repo from './feed-goals-tools-repository';
 
 type Handler = (
   args: OrbToolArgs,
@@ -70,13 +71,7 @@ export const edit_my_post: Handler = async (args, id, sb) => {
       text: `About to change your post to: "${content}". Confirm, then call again with confirm=true.`,
     };
   }
-  const { data, error } = await sb
-    .from('profile_posts')
-    .update({ content })
-    .eq('id', postId)
-    .eq('user_id', id.user_id)
-    .select('id')
-    .maybeSingle();
+  const { data, error } = await repo.updateOwnPostContent(sb, postId, id.user_id, content);
   if (error) return { ok: false, error: `edit_my_post failed: ${error.message}` };
   if (!data) return { ok: true, result: { updated: false }, text: `I couldn't find that post of yours to edit.` };
   return { ok: true, result: { updated: true }, text: `Post updated.` };
@@ -93,13 +88,7 @@ export const delete_my_post: Handler = async (args, id, sb) => {
       text: `About to permanently delete this post. Confirm, then call again with confirm=true.`,
     };
   }
-  const { data, error } = await sb
-    .from('profile_posts')
-    .delete()
-    .eq('id', postId)
-    .eq('user_id', id.user_id)
-    .select('id')
-    .maybeSingle();
+  const { data, error } = await repo.deleteOwnPost(sb, postId, id.user_id);
   if (error) return { ok: false, error: `delete_my_post failed: ${error.message}` };
   if (!data) return { ok: true, result: { deleted: false }, text: `I couldn't find that post of yours to delete.` };
   return { ok: true, result: { deleted: true }, text: `Post deleted.` };

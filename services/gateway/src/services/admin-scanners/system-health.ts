@@ -13,6 +13,7 @@
  */
 import { getSupabase } from '../../lib/supabase';
 import type { AdminScanner, InsightDraft } from './types';
+import * as repo from './system-health-repository';
 
 const LOG_PREFIX = '[admin-scanner:system_health]';
 const ORB_STALL_CLUSTER_THRESHOLD = 3;
@@ -35,11 +36,7 @@ export const systemHealthScanner: AdminScanner = {
 
     // 1. Orb stall cluster — how many orb.live.stall_detected in the last 1h
     try {
-      const { count, error } = await supabase
-        .from('oasis_events')
-        .select('id', { count: 'exact', head: true })
-        .eq('topic', 'orb.live.stall_detected')
-        .gte('created_at', h1);
+      const { count, error } = await repo.countOrbStallEventsSince(supabase, h1);
       if (!error && count !== null && count >= ORB_STALL_CLUSTER_THRESHOLD) {
         insights.push({
           natural_key: 'orb_stall_cluster_1h',
@@ -65,11 +62,7 @@ export const systemHealthScanner: AdminScanner = {
 
     // 2. Error spike — OASIS events with status='error' in last 1h
     try {
-      const { count, error } = await supabase
-        .from('oasis_events')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'error')
-        .gte('created_at', h1);
+      const { count, error } = await repo.countErrorEventsSince(supabase, h1);
       if (!error && count !== null && count >= ERROR_SPIKE_THRESHOLD) {
         insights.push({
           natural_key: 'error_spike_1h',
@@ -93,13 +86,7 @@ export const systemHealthScanner: AdminScanner = {
 
     // 3. Deploy failure in last 24h
     try {
-      const { data, error } = await supabase
-        .from('oasis_events')
-        .select('topic, created_at, message')
-        .in('topic', ['cicd.deploy.failed', 'deploy.gateway.failed'])
-        .gte('created_at', d1)
-        .order('created_at', { ascending: false })
-        .limit(5);
+      const { data, error } = await repo.fetchRecentDeployFailures(supabase, d1);
       if (!error && data && data.length > 0) {
         insights.push({
           natural_key: `deploy_failure_${data[0].created_at}`,
@@ -122,12 +109,7 @@ export const systemHealthScanner: AdminScanner = {
 
     // 4. Service-tier agent heartbeat stale
     try {
-      const { data, error } = await supabase
-        .from('agents_registry')
-        .select('agent_id, name, tier, last_heartbeat_at')
-        .eq('tier', 'service')
-        .order('last_heartbeat_at', { ascending: true, nullsFirst: true })
-        .limit(20);
+      const { data, error } = await repo.fetchServiceTierAgents(supabase);
       if (!error && data) {
         const stale = data.filter((a: { last_heartbeat_at: string | null }) => {
           if (!a.last_heartbeat_at) return true;

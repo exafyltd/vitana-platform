@@ -89,7 +89,12 @@ router.get('/wallet/deposits/:id', async (req: AuthenticatedRequest, res: Respon
   if (!userId) {
     return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
   }
-  const deposit = await getDepositForUser(req.params.id, userId);
+  const { deposit, error: lookupErr } = await getDepositForUser(req.params.id, userId);
+  if (lookupErr) {
+    // Distinct from "not found" — a real query failure must not tell a
+    // user polling their own just-paid deposit that it doesn't exist.
+    return res.status(500).json({ ok: false, error: 'LOOKUP_FAILED' });
+  }
   if (!deposit) {
     return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
   }

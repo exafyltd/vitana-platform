@@ -12,6 +12,7 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { emitOasisEvent } from './oasis-event-service';
+import * as repo from './trust-repair-service-repository';
 import {
   FeedbackType,
   AffectedComponent,
@@ -219,15 +220,13 @@ export class TrustRepairService {
     error?: string;
   }> {
     try {
-      const { data, error } = await this.supabase.rpc('record_user_correction', {
-        p_payload: {
-          feedback_type: feedbackType,
-          content,
-          context,
-          affected_component: affectedComponent,
-          session_id: sessionId || null,
-          source: 'orb',
-        },
+      const { data, error } = await repo.recordUserCorrectionRpc(this.supabase, {
+        feedback_type: feedbackType,
+        content,
+        context,
+        affected_component: affectedComponent,
+        session_id: sessionId || null,
+        source: 'orb',
       });
 
       if (error) {
@@ -272,7 +271,7 @@ export class TrustRepairService {
   async getTrustContext(): Promise<TrustContext | null> {
     try {
       // Fetch trust scores
-      const { data: trustData, error: trustError } = await this.supabase.rpc('get_trust_scores');
+      const { data: trustData, error: trustError } = await repo.fetchTrustScores(this.supabase);
 
       if (trustError || !trustData?.ok) {
         console.error('[VTID-01121] Failed to get trust scores:', trustError?.message);
@@ -280,9 +279,7 @@ export class TrustRepairService {
       }
 
       // Fetch constraints
-      const { data: constraintData, error: constraintError } = await this.supabase.rpc('get_behavior_constraints', {
-        p_constraint_type: null,
-      });
+      const { data: constraintData, error: constraintError } = await repo.fetchBehaviorConstraints(this.supabase, null);
 
       if (constraintError || !constraintData?.ok) {
         console.error('[VTID-01121] Failed to get constraints:', constraintError?.message);
@@ -290,11 +287,7 @@ export class TrustRepairService {
       }
 
       // Fetch recent corrections (last 24 hours)
-      const { data: historyData, error: historyError } = await this.supabase.rpc('get_correction_history', {
-        p_limit: 10,
-        p_offset: 0,
-        p_feedback_type: null,
-      });
+      const { data: historyData, error: historyError } = await repo.fetchCorrectionHistory(this.supabase, 10, 0, null);
 
       if (historyError || !historyData?.ok) {
         console.error('[VTID-01121] Failed to get correction history:', historyError?.message);
@@ -332,10 +325,7 @@ export class TrustRepairService {
    */
   async isConstrained(constraintType: ConstraintType, constraintKey: string): Promise<boolean> {
     try {
-      const { data, error } = await this.supabase.rpc('check_behavior_constraint', {
-        p_constraint_type: constraintType,
-        p_constraint_key: constraintKey,
-      });
+      const { data, error } = await repo.checkBehaviorConstraintRpc(this.supabase, constraintType, constraintKey);
 
       if (error || !data?.ok) {
         console.error('[VTID-01121] isConstrained check failed:', error?.message);
@@ -364,12 +354,10 @@ export class TrustRepairService {
     error?: string;
   }> {
     try {
-      const { data, error } = await this.supabase.rpc('repair_trust', {
-        p_payload: {
-          component,
-          correction_id: correctionId || null,
-          repair_action: repairAction,
-        },
+      const { data, error } = await repo.repairTrustRpc(this.supabase, {
+        component,
+        correction_id: correctionId || null,
+        repair_action: repairAction,
       });
 
       if (error) {

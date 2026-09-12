@@ -13,6 +13,7 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
+import * as repo from './diary-memory-tools-repository';
 
 type Handler = (args: OrbToolArgs, id: OrbToolIdentity, sb: SupabaseClient) => Promise<OrbToolResult>;
 
@@ -103,14 +104,13 @@ export async function tool_list_diary_entries(
   const limit = clampLimit(args.limit, 10, 30);
 
   try {
-    let q = sb
-      .from('diary_entries')
-      .select('id, text, source, tags, created_at')
-      .eq('user_id', id.user_id);
-    if (dateFrom) q = q.gte('created_at', `${dateFrom}T00:00:00.000Z`);
-    if (dateTo) q = q.lte('created_at', `${dateTo}T23:59:59.999Z`);
-
-    const { data, error } = await q.order('created_at', { ascending: false }).limit(limit);
+    const { data, error } = await repo.fetchDiaryEntriesInWindow(
+      sb,
+      id.user_id,
+      dateFrom ? `${dateFrom}T00:00:00.000Z` : undefined,
+      dateTo ? `${dateTo}T23:59:59.999Z` : undefined,
+      limit,
+    );
     if (error) return { ok: false, error: `Could not load diary entries: ${error.message}` };
 
     const rows = (data || []) as DiaryRow[];
@@ -162,12 +162,7 @@ export async function tool_get_diary_streak(
   if (gate) return gate;
 
   try {
-    const { data, error } = await sb
-      .from('diary_entries')
-      .select('created_at')
-      .eq('user_id', id.user_id)
-      .order('created_at', { ascending: false })
-      .limit(1000);
+    const { data, error } = await repo.fetchAllDiaryEntryTimestamps(sb, id.user_id, 1000);
     if (error) return { ok: false, error: `Could not load diary entries: ${error.message}` };
 
     const rows = (data || []) as Array<{ created_at: string }>;
@@ -255,34 +250,10 @@ export async function tool_get_memory_timeline(
   const toIso = dateTo ? `${dateTo}T23:59:59.999Z` : undefined;
 
   try {
-    let itemsQ = sb
-      .from('memory_items')
-      .select('id, category_key, source, content, occurred_at')
-      .eq('tenant_id', id.tenant_id)
-      .eq('user_id', id.user_id);
-    if (fromIso) itemsQ = itemsQ.gte('occurred_at', fromIso);
-    if (toIso) itemsQ = itemsQ.lte('occurred_at', toIso);
-
-    let factsQ = sb
-      .from('memory_facts')
-      .select('id, fact_key, fact_value, extracted_at')
-      .eq('tenant_id', id.tenant_id)
-      .eq('user_id', id.user_id)
-      .is('superseded_by', null);
-    if (fromIso) factsQ = factsQ.gte('extracted_at', fromIso);
-    if (toIso) factsQ = factsQ.lte('extracted_at', toIso);
-
-    let diaryQ = sb
-      .from('diary_entries')
-      .select('id, text, created_at')
-      .eq('user_id', id.user_id);
-    if (fromIso) diaryQ = diaryQ.gte('created_at', fromIso);
-    if (toIso) diaryQ = diaryQ.lte('created_at', toIso);
-
     const [items, facts, diary] = await Promise.all([
-      itemsQ.order('occurred_at', { ascending: false }).limit(limit),
-      factsQ.order('extracted_at', { ascending: false }).limit(Math.min(limit, 15)),
-      diaryQ.order('created_at', { ascending: false }).limit(Math.min(limit, 15)),
+      repo.fetchMemoryItemsForTimeline(sb, id.tenant_id, id.user_id, fromIso, toIso, limit),
+      repo.fetchActiveMemoryFactsForTimeline(sb, id.tenant_id, id.user_id, fromIso, toIso, Math.min(limit, 15)),
+      repo.fetchDiaryEntriesForTimeline(sb, id.user_id, fromIso, toIso, Math.min(limit, 15)),
     ]);
     if (items.error) {
       return { ok: false, error: `Could not load memory timeline: ${items.error.message}` };
@@ -345,9 +316,7 @@ export async function tool_get_memory_timeline(
 async function expandCategory(sb: SupabaseClient, category: string): Promise<string[]> {
   const cats = new Set<string>([category]);
   try {
-    const { data } = await sb
-      .from('memory_category_mapping')
-      .select('source_category, garden_category');
+    const { data } = await repo.fetchMemoryCategoryMapping(sb);
     for (const m of (data || []) as Array<{ source_category: string; garden_category: string }>) {
       if (m.garden_category === category) cats.add(m.source_category);
     }
@@ -371,37 +340,12 @@ export async function tool_recall_memory_about(
   const pattern = `%${escapeLike(topic)}%`;
 
   try {
-    let itemsQ = sb
-      .from('memory_items')
-      .select('id, category_key, content, occurred_at')
-      .eq('tenant_id', id.tenant_id)
-      .eq('user_id', id.user_id)
-      .ilike('content', pattern);
-    if (category) {
-      itemsQ = itemsQ.in('category_key', await expandCategory(sb, category));
-    }
-
-    const factsValueQ = sb
-      .from('memory_facts')
-      .select('id, fact_key, fact_value, extracted_at')
-      .eq('tenant_id', id.tenant_id)
-      .eq('user_id', id.user_id)
-      .is('superseded_by', null)
-      .ilike('fact_value', pattern)
-      .limit(5);
-    const factsKeyQ = sb
-      .from('memory_facts')
-      .select('id, fact_key, fact_value, extracted_at')
-      .eq('tenant_id', id.tenant_id)
-      .eq('user_id', id.user_id)
-      .is('superseded_by', null)
-      .ilike('fact_key', pattern)
-      .limit(5);
+    const categoryKeys = category ? await expandCategory(sb, category) : undefined;
 
     const [items, factsByValue, factsByKey] = await Promise.all([
-      itemsQ.order('occurred_at', { ascending: false }).limit(10),
-      factsValueQ,
-      factsKeyQ,
+      repo.searchMemoryItemsByContent(sb, id.tenant_id, id.user_id, pattern, categoryKeys, 10),
+      repo.searchActiveMemoryFactsByValue(sb, id.tenant_id, id.user_id, pattern, 5),
+      repo.searchActiveMemoryFactsByKey(sb, id.tenant_id, id.user_id, pattern, 5),
     ]);
     if (items.error) {
       return { ok: false, error: `Could not search memory: ${items.error.message}` };
@@ -480,11 +424,8 @@ export async function tool_get_memory_garden_summary(
     // Garden config (labels + order) and source→garden mapping. Both are
     // small lookup tables; failure falls back to raw category_key grouping.
     const [cfgRes, mapRes] = await Promise.all([
-      sb
-        .from('memory_garden_config')
-        .select('category_key, label, display_order')
-        .order('display_order', { ascending: true }),
-      sb.from('memory_category_mapping').select('source_category, garden_category'),
+      repo.fetchMemoryGardenConfig(sb),
+      repo.fetchMemoryCategoryMapping(sb),
     ]);
 
     const gardenLabels = new Map<string, string>();
@@ -499,12 +440,7 @@ export async function tool_get_memory_garden_summary(
     // One page of the user's category keys — grouped in JS. memory_items has
     // no GROUP BY via PostgREST, and the garden RPC is auth.uid()-scoped
     // (unavailable to the service-role client).
-    const { data, error } = await sb
-      .from('memory_items')
-      .select('category_key')
-      .eq('tenant_id', id.tenant_id)
-      .eq('user_id', id.user_id)
-      .limit(1000);
+    const { data, error } = await repo.fetchUserMemoryCategoryKeys(sb, id.tenant_id, id.user_id, 1000);
     if (error) return { ok: false, error: `Could not load memory summary: ${error.message}` };
 
     const rows = (data || []) as Array<{ category_key: string }>;
@@ -571,13 +507,7 @@ export async function tool_forget_memory(
   }
 
   try {
-    const { data, error } = await sb
-      .from('memory_items')
-      .select('id, category_key, content, occurred_at')
-      .eq('id', memoryId)
-      .eq('tenant_id', id.tenant_id)
-      .eq('user_id', id.user_id)
-      .maybeSingle();
+    const { data, error } = await repo.fetchMemoryItemForForget(sb, memoryId, id.tenant_id, id.user_id);
     if (error) return { ok: false, error: `Could not look up that memory: ${error.message}` };
     if (!data) {
       return {
@@ -600,19 +530,14 @@ export async function tool_forget_memory(
       };
     }
 
-    const del = await sb
-      .from('memory_items')
-      .delete()
-      .eq('id', memoryId)
-      .eq('tenant_id', id.tenant_id)
-      .eq('user_id', id.user_id);
+    const del = await repo.deleteMemoryItem(sb, memoryId, id.tenant_id, id.user_id);
     if (del.error) {
       return { ok: false, error: `Could not delete the memory: ${del.error.message}` };
     }
 
     // Governance ledger (VTID-01099) — best-effort; the delete already happened.
     try {
-      await sb.from('memory_deletions').insert({
+      await repo.insertMemoryDeletion(sb, {
         tenant_id: id.tenant_id,
         user_id: id.user_id,
         entity_type: 'memory_item',

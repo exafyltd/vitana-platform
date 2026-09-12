@@ -39,6 +39,7 @@ import {
 } from '../lib/nav-catalog-db';
 import { consultNavigator, type NavigatorConsultInput } from '../services/navigator-consult';
 import { SPA_ROUTES_FALLBACK } from '../lib/spa-routes-fallback';
+import * as repo from './admin-navigator-repository';
 
 const router = Router();
 const VTID = 'VTID-NAV-02';
@@ -153,7 +154,7 @@ async function writeAudit(args: {
 }): Promise<void> {
   const supabase = getSupabase();
   if (!supabase) return;
-  const { error } = await supabase.from('nav_catalog_audit').insert({
+  const { error } = await repo.insertNavCatalogAudit(supabase, {
     catalog_id: args.catalog_id,
     screen_id: args.screen_id,
     tenant_id: args.tenant_id,
@@ -175,36 +176,21 @@ router.get('/catalog', async (req: AuthenticatedRequest, res: Response) => {
   const { tenant_id, category, q, lang: langQ, include_inactive, platform, role } = req.query;
 
   try {
-    let query = supabase
-      .from('nav_catalog')
-      .select('id, screen_id, tenant_id, route, category, access, anonymous_safe, priority, platform, role, related_kb_topics, context_rules, override_triggers, is_active, created_at, updated_at, updated_by');
-
-    // BOOTSTRAP-NAV-PLATFORM: scope to one MAXINA catalog (Mobile by default).
-    query = query.eq('platform', platform === 'desktop' ? 'desktop' : 'mobile');
-
-    // BOOTSTRAP-NAV-ROLE: scope to one role-surface (community by default).
-    query = query.eq('role', normalizeRole(role));
-
-    if (include_inactive !== 'true') query = query.eq('is_active', true);
-    if (category && typeof category === 'string') query = query.eq('category', category);
-    if (tenant_id && typeof tenant_id === 'string') {
-      if (tenant_id === '__shared__' || tenant_id === 'null') {
-        query = query.is('tenant_id', null);
-      } else {
-        query = query.eq('tenant_id', tenant_id);
-      }
-    }
-
-    const { data: rows, error } = await query.order('category').order('screen_id');
+    const { data: rows, error } = await repo.fetchNavCatalogList(supabase, {
+      // BOOTSTRAP-NAV-PLATFORM: scope to one MAXINA catalog (Mobile by default).
+      platform: platform === 'desktop' ? 'desktop' : 'mobile',
+      // BOOTSTRAP-NAV-ROLE: scope to one role-surface (community by default).
+      role: normalizeRole(role),
+      includeInactive: include_inactive === 'true',
+      category: category && typeof category === 'string' ? category : null,
+      tenantId: tenant_id && typeof tenant_id === 'string' ? tenant_id : null,
+    });
     if (error) return res.status(500).json({ ok: false, error: error.message });
 
     const catalogIds = (rows || []).map((r: any) => r.id);
     let i18nByCatalog: Record<string, any[]> = {};
     if (catalogIds.length > 0) {
-      const { data: i18nRows } = await supabase
-        .from('nav_catalog_i18n')
-        .select('catalog_id, lang, title, description, when_to_visit, updated_at')
-        .in('catalog_id', catalogIds);
+      const { data: i18nRows } = await repo.fetchNavCatalogI18nForCatalogIds(supabase, catalogIds);
       for (const r of (i18nRows as any[]) || []) {
         (i18nByCatalog[r.catalog_id] ||= []).push(r);
       }
@@ -238,25 +224,13 @@ router.get('/catalog/:id', async (req: AuthenticatedRequest, res: Response) => {
 
   const { id } = req.params;
   try {
-    const { data: row, error } = await supabase
-      .from('nav_catalog')
-      .select('*')
-      .eq('id', id)
-      .maybeSingle();
+    const { data: row, error } = await repo.fetchNavCatalogEntryById(supabase, id);
     if (error) return res.status(500).json({ ok: false, error: error.message });
     if (!row) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
 
-    const { data: i18nRows } = await supabase
-      .from('nav_catalog_i18n')
-      .select('*')
-      .eq('catalog_id', id);
+    const { data: i18nRows } = await repo.fetchNavCatalogI18nRows(supabase, id);
 
-    const { data: auditRows } = await supabase
-      .from('nav_catalog_audit')
-      .select('*')
-      .eq('catalog_id', id)
-      .order('created_at', { ascending: false })
-      .limit(50);
+    const { data: auditRows } = await repo.fetchNavCatalogAuditHistory(supabase, id, 50);
 
     return res.json({
       ok: true,
@@ -300,11 +274,7 @@ router.post('/catalog', async (req: AuthenticatedRequest, res: Response) => {
       updated_by: auth.user_id,
     };
 
-    const { data: created, error: insertErr } = await supabase
-      .from('nav_catalog')
-      .insert(insertRow)
-      .select('*')
-      .single();
+    const { data: created, error: insertErr } = await repo.insertNavCatalogEntry(supabase, insertRow);
 
     if (insertErr) {
       // Unique index violation → friendly message for the admin UI.
@@ -323,7 +293,7 @@ router.post('/catalog', async (req: AuthenticatedRequest, res: Response) => {
       when_to_visit: c.when_to_visit || '',
     }));
     if (i18nRows.length > 0) {
-      const { error: i18nErr } = await supabase.from('nav_catalog_i18n').insert(i18nRows);
+      const { error: i18nErr } = await repo.insertNavCatalogI18nRows(supabase, i18nRows);
       if (i18nErr) console.warn(`[${VTID}] i18n insert after create: ${i18nErr.message}`);
     }
 
@@ -359,22 +329,17 @@ router.patch('/catalog/:id', async (req: AuthenticatedRequest, res: Response) =>
 
   const { id } = req.params;
   try {
-    const { data: existing } = await supabase.from('nav_catalog').select('*').eq('id', id).maybeSingle();
+    const { data: existing } = await repo.fetchNavCatalogEntryById(supabase, id);
     if (!existing) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
 
-    const { data: existingI18n } = await supabase.from('nav_catalog_i18n').select('*').eq('catalog_id', id);
+    const { data: existingI18n } = await repo.fetchNavCatalogI18nRows(supabase, id);
 
     const patch: any = { updated_by: auth.user_id };
     for (const key of ['route', 'category', 'access', 'anonymous_safe', 'priority', 'related_kb_topics', 'context_rules', 'override_triggers', 'is_active']) {
       if (req.body[key] !== undefined) patch[key] = req.body[key];
     }
 
-    const { data: updated, error: updErr } = await supabase
-      .from('nav_catalog')
-      .update(patch)
-      .eq('id', id)
-      .select('*')
-      .single();
+    const { data: updated, error: updErr } = await repo.updateNavCatalogEntry(supabase, id, patch);
 
     if (updErr) return res.status(500).json({ ok: false, error: updErr.message });
 
@@ -389,12 +354,10 @@ router.patch('/catalog/:id', async (req: AuthenticatedRequest, res: Response) =>
         when_to_visit: c.when_to_visit || '',
       }));
       if (upserts.length > 0) {
-        const { error: upErr } = await supabase
-          .from('nav_catalog_i18n')
-          .upsert(upserts, { onConflict: 'catalog_id,lang' });
+        const { error: upErr } = await repo.upsertNavCatalogI18nRows(supabase, upserts);
         if (upErr) console.warn(`[${VTID}] i18n upsert: ${upErr.message}`);
       }
-      const { data: refreshed } = await supabase.from('nav_catalog_i18n').select('*').eq('catalog_id', id);
+      const { data: refreshed } = await repo.fetchNavCatalogI18nRows(supabase, id);
       newI18n = refreshed || newI18n;
     }
 
@@ -427,15 +390,10 @@ router.delete('/catalog/:id', async (req: AuthenticatedRequest, res: Response) =
 
   const { id } = req.params;
   try {
-    const { data: existing } = await supabase.from('nav_catalog').select('*').eq('id', id).maybeSingle();
+    const { data: existing } = await repo.fetchNavCatalogEntryById(supabase, id);
     if (!existing) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
 
-    const { data: updated, error: updErr } = await supabase
-      .from('nav_catalog')
-      .update({ is_active: false, updated_by: auth.user_id })
-      .eq('id', id)
-      .select('*')
-      .single();
+    const { data: updated, error: updErr } = await repo.updateNavCatalogEntry(supabase, id, { is_active: false, updated_by: auth.user_id });
     if (updErr) return res.status(500).json({ ok: false, error: updErr.message });
 
     await writeAudit({
@@ -467,12 +425,7 @@ router.post('/catalog/:id/restore/:audit_id', async (req: AuthenticatedRequest, 
 
   const { id, audit_id } = req.params;
   try {
-    const { data: audit } = await supabase
-      .from('nav_catalog_audit')
-      .select('*')
-      .eq('id', audit_id)
-      .eq('catalog_id', id)
-      .maybeSingle();
+    const { data: audit } = await repo.fetchNavCatalogAuditById(supabase, audit_id, id);
     if (!audit) return res.status(404).json({ ok: false, error: 'AUDIT_NOT_FOUND' });
 
     // The snapshot we restore to depends on action:
@@ -494,10 +447,9 @@ router.post('/catalog/:id/restore/:audit_id', async (req: AuthenticatedRequest, 
       updated_by: auth.user_id,
     };
 
-    const { data: existing } = await supabase.from('nav_catalog').select('*').eq('id', id).maybeSingle();
+    const { data: existing } = await repo.fetchNavCatalogEntryById(supabase, id);
 
-    const { data: updated, error: updErr } = await supabase
-      .from('nav_catalog').update(patch).eq('id', id).select('*').single();
+    const { data: updated, error: updErr } = await repo.updateNavCatalogEntry(supabase, id, patch);
     if (updErr) return res.status(500).json({ ok: false, error: updErr.message });
 
     // Restore i18n too if snapshot has it.
@@ -509,7 +461,7 @@ router.post('/catalog/:id/restore/:audit_id', async (req: AuthenticatedRequest, 
         description: r.description || '',
         when_to_visit: r.when_to_visit || '',
       }));
-      await supabase.from('nav_catalog_i18n').upsert(upserts, { onConflict: 'catalog_id,lang' });
+      await repo.upsertNavCatalogI18nRows(supabase, upserts);
     }
 
     await writeAudit({
@@ -622,12 +574,7 @@ router.get('/coverage', async (req: AuthenticatedRequest, res: Response) => {
     // Dead triggers: screens that never produced a catalog match in the last
     // 30 days. We detect those via OASIS navigator events.
     const since = new Date(Date.now() - 30 * 86400000).toISOString();
-    const { data: events } = await supabase
-      .from('oasis_events_v1')
-      .select('payload, type, created_at')
-      .like('type', 'orb.navigator.%')
-      .gte('created_at', since)
-      .limit(10000);
+    const { data: events } = await repo.fetchNavigatorEventsSince(supabase, since, 10000);
 
     const firedScreenIds = new Set<string>();
     for (const ev of (events as any[]) || []) {
@@ -671,13 +618,7 @@ router.get('/telemetry', async (req: AuthenticatedRequest, res: Response) => {
   const since = new Date(Date.now() - days * 86400000).toISOString();
 
   try {
-    const { data: events, error } = await supabase
-      .from('oasis_events_v1')
-      .select('type, payload, created_at')
-      .like('type', 'orb.navigator.%')
-      .gte('created_at', since)
-      .order('created_at', { ascending: false })
-      .limit(5000);
+    const { data: events, error } = await repo.fetchNavigatorTelemetryEvents(supabase, since, 5000);
     if (error) return res.status(500).json({ ok: false, error: error.message });
 
     const byType: Record<string, number> = {};

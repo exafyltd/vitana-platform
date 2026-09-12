@@ -39,6 +39,7 @@ import { getPersonalityConfigSync } from './ai-personality-service';
 import { buildJourneyModesSection } from '../orb/live/instruction/journey-modes-prompt';
 import { emitOasisEvent } from './oasis-event-service';
 import { getSupabase } from '../lib/supabase';
+import * as repo from './vitana-brain-repository';
 // Proactive Guide Phase 0.5 + Companion Awareness Phase A (VTID-01927)
 // + Phase B personality config (VTID-01931) + Phase G feature introductions (VTID-01932)
 import { getSystemControl } from './system-controls-service';
@@ -464,13 +465,7 @@ export async function buildLifeCompassGoalBlock(input: {
   if (!supabase) return '';
 
   try {
-    const { data: rows } = await supabase
-      .from('life_compass')
-      .select('primary_goal, category')
-      .eq('user_id', input.user_id)
-      .eq('is_active', true)
-      .order('created_at', { ascending: false })
-      .limit(1);
+    const { data: rows } = await repo.fetchLatestActiveLifeCompassGoal(supabase, input.user_id);
 
     if (!rows || rows.length === 0) {
       return `

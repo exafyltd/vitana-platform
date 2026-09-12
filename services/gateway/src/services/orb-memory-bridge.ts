@@ -19,6 +19,7 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { emitOasisEvent } from './oasis-event-service';
+import * as repo from './orb-memory-bridge-repository';
 // VTID-02005 Phase 5b: Tier 2 dual-writer
 import { mirrorEpisode } from './mem-tier2-writer';
 import {
@@ -272,16 +273,10 @@ export async function fetchRecentConversationForCognee(
 
   try {
     // VTID-01225: Include all ORB-related sources for comprehensive conversation capture
-    const { data, error } = await client
-      .from('memory_items')
-      .select('content, content_json, occurred_at')
-      .eq('tenant_id', tenantId)
-      .eq('user_id', userId)
-      .in('source', ['orb_voice', 'orb_text', 'orb', 'orb-live-ws'])
-      .gte('occurred_at', startTime.toISOString())
-      .lte('occurred_at', endTime.toISOString())
-      .order('occurred_at', { ascending: true })
-      .limit(100);
+    const { data, error } = await repo.fetchOrbConversationItems(
+      client, tenantId, userId, ['orb_voice', 'orb_text', 'orb', 'orb-live-ws'],
+      startTime.toISOString(), endTime.toISOString(),
+    );
 
     if (error) {
       console.error('[VTID-01225] Error fetching conversation:', error.message);
@@ -326,14 +321,10 @@ export async function fetchRecentOrbUserTurns(
   if (!client) return [];
 
   try {
-    const { data, error } = await client
-      .from('memory_items')
-      .select('content, content_json, occurred_at')
-      .eq('tenant_id', identity.tenant_id)
-      .eq('user_id', identity.user_id)
-      .in('source', ['orb_voice', 'orb_text', 'orb', 'orb-live-ws'])
-      .order('occurred_at', { ascending: false })
-      .limit(Math.max(limit * 4, 12)); // over-fetch; then filter to user-direction
+    const { data, error } = await repo.fetchRecentOrbUserTurnsRaw(
+      client, identity.tenant_id, identity.user_id, ['orb_voice', 'orb_text', 'orb', 'orb-live-ws'],
+      Math.max(limit * 4, 12), // over-fetch; then filter to user-direction
+    );
 
     if (error || !data) return [];
 
@@ -576,20 +567,16 @@ export async function writeDevMemoryItem(params: {
     }
 
     // Insert directly into memory_items table using service role
-    const { data, error } = await supabase
-      .from('memory_items')
-      .insert({
-        tenant_id: DEV_IDENTITY.TENANT_ID,
-        user_id: DEV_IDENTITY.USER_ID,
-        category_key: categoryKey,
-        source: params.source,
-        content: params.content,
-        content_json: contentJson,
-        importance: adjustedImportance,
-        occurred_at: occurredAt
-      })
-      .select('id, category_key')
-      .single();
+    const { data, error } = await repo.insertMemoryItem(supabase, {
+      tenant_id: DEV_IDENTITY.TENANT_ID,
+      user_id: DEV_IDENTITY.USER_ID,
+      category_key: categoryKey,
+      source: params.source,
+      content: params.content,
+      content_json: contentJson,
+      importance: adjustedImportance,
+      occurred_at: occurredAt
+    });
 
     if (error) {
       // Check if table doesn't exist
@@ -692,20 +679,16 @@ export async function writeMemoryItemWithIdentity(
     }
 
     // Insert with authenticated identity
-    const { data, error } = await supabase
-      .from('memory_items')
-      .insert({
-        tenant_id: identity.tenant_id,
-        user_id: identity.user_id,
-        category_key: categoryKey,
-        source: params.source,
-        content: params.content,
-        content_json: contentJson,
-        importance: adjustedImportance,
-        occurred_at: occurredAt
-      })
-      .select('id, category_key')
-      .single();
+    const { data, error } = await repo.insertMemoryItem(supabase, {
+      tenant_id: identity.tenant_id,
+      user_id: identity.user_id,
+      category_key: categoryKey,
+      source: params.source,
+      content: params.content,
+      content_json: contentJson,
+      importance: adjustedImportance,
+      occurred_at: occurredAt
+    });
 
     if (error) {
       if (error.message.includes('does not exist') || error.code === '42P01') {
@@ -840,16 +823,9 @@ export async function fetchMemoryContextWithIdentity(
     // 1. Persistent categories (no time filter)
     if (persistentCategories.length > 0) {
       bootstrapPromises.push(
-        Promise.resolve(
-          supabase
-            .from('memory_items')
-            .select('id, category_key, source, content, content_json, importance, occurred_at, created_at')
-            .eq('tenant_id', effectiveIdentity.tenant_id)
-            .eq('user_id', effectiveIdentity.user_id)
-            .in('category_key', persistentCategories)
-            .order('importance', { ascending: false })
-            .limit(limit)
-            .abortSignal(bootstrapController.signal)
+        repo.fetchPersistentMemoryItemsParallel(
+          supabase, effectiveIdentity.tenant_id, effectiveIdentity.user_id, persistentCategories,
+          limit, bootstrapController.signal,
         ).then(({ data, error }) => {
             if (!error) persistentItems = (data || []) as MemoryItem[];
           })
@@ -860,17 +836,9 @@ export async function fetchMemoryContextWithIdentity(
     // 2. Time-sensitive categories
     if (timeSensitiveCategories.length > 0) {
       bootstrapPromises.push(
-        Promise.resolve(
-          supabase
-            .from('memory_items')
-            .select('id, category_key, source, content, content_json, importance, occurred_at, created_at')
-            .eq('tenant_id', effectiveIdentity.tenant_id)
-            .eq('user_id', effectiveIdentity.user_id)
-            .in('category_key', timeSensitiveCategories)
-            .gte('occurred_at', sinceTimestamp)
-            .order('importance', { ascending: false })
-            .limit(limit)
-            .abortSignal(bootstrapController.signal)
+        repo.fetchTimeSensitiveMemoryItemsParallel(
+          supabase, effectiveIdentity.tenant_id, effectiveIdentity.user_id, timeSensitiveCategories,
+          sinceTimestamp, limit, bootstrapController.signal,
         ).then(({ data, error }) => {
             if (!error) timeSensitiveItems = (data || []) as MemoryItem[];
           })
@@ -923,15 +891,8 @@ export async function fetchMemoryContextWithIdentity(
 
     // 4. Diary entries (memory_diary_entries)
     bootstrapPromises.push(
-      Promise.resolve(
-        supabase
-          .from('memory_diary_entries')
-          .select('id, raw_text, tags, entry_date, created_at, entry_type')
-          .eq('tenant_id', effectiveIdentity.tenant_id)
-          .eq('user_id', effectiveIdentity.user_id)
-          .order('created_at', { ascending: false })
-          .limit(20)
-          .abortSignal(bootstrapController.signal)
+      repo.fetchMemoryDiaryEntriesParallel(
+        supabase, effectiveIdentity.tenant_id, effectiveIdentity.user_id, 20, bootstrapController.signal,
       ).then(({ data: diaryData, error: diaryError }) => {
           if (!diaryError && diaryData && diaryData.length > 0) {
             diaryItems = (diaryData as Array<{
@@ -955,14 +916,8 @@ export async function fetchMemoryContextWithIdentity(
 
     // 5. Lovable diary entries (diary_entries)
     bootstrapPromises.push(
-      Promise.resolve(
-        supabase
-          .from('diary_entries')
-          .select('id, text, source, tags, created_at')
-          .eq('user_id', effectiveIdentity.user_id)
-          .order('created_at', { ascending: false })
-          .limit(20)
-          .abortSignal(bootstrapController.signal)
+      repo.fetchLovableDiaryEntriesParallel(
+        supabase, effectiveIdentity.user_id, 20, bootstrapController.signal,
       ).then(({ data: lovDiaryData, error: lovDiaryErr }) => {
           if (!lovDiaryErr && lovDiaryData && lovDiaryData.length > 0) {
             lovableDiaryItems = (lovDiaryData as Array<{
@@ -986,14 +941,8 @@ export async function fetchMemoryContextWithIdentity(
 
     // 6. Lovable AI memory (ai_memory)
     bootstrapPromises.push(
-      Promise.resolve(
-        supabase
-          .from('ai_memory')
-          .select('id, content, memory_type, category, created_at')
-          .eq('user_id', effectiveIdentity.user_id)
-          .order('created_at', { ascending: false })
-          .limit(30)
-          .abortSignal(bootstrapController.signal)
+      repo.fetchLovableAiMemoryParallel(
+        supabase, effectiveIdentity.user_id, 30, bootstrapController.signal,
       ).then(({ data: lovMemData, error: lovMemErr }) => {
           if (!lovMemErr && lovMemData && lovMemData.length > 0) {
             lovableMemoryItems = (lovMemData as Array<{
@@ -1285,10 +1234,9 @@ export async function fetchDevMemoryContext(
 
     // Call memory_get_context RPC with dev identity context
     // First, set the request context for the dev user
-    const { error: bootstrapError } = await supabase.rpc('dev_bootstrap_request_context', {
-      p_tenant_id: DEV_IDENTITY.TENANT_ID,
-      p_active_role: DEV_IDENTITY.ACTIVE_ROLE
-    });
+    const { error: bootstrapError } = await repo.rpcDevBootstrapRequestContextByTenantId(
+      supabase, DEV_IDENTITY.TENANT_ID, DEV_IDENTITY.ACTIVE_ROLE,
+    );
     if (bootstrapError) {
       console.warn('[VTID-01106] Bootstrap context failed (non-fatal):', bootstrapError.message);
     }
@@ -1308,15 +1256,9 @@ export async function fetchDevMemoryContext(
     // Query 1: Persistent categories WITHOUT time filter (personal identity never expires)
     let persistentItems: MemoryItem[] = [];
     if (persistentCategories.length > 0) {
-      const { data: persistentData, error: persistentError } = await supabase
-        .from('memory_items')
-        .select('id, category_key, source, content, content_json, importance, occurred_at, created_at')
-        .eq('tenant_id', DEV_IDENTITY.TENANT_ID)
-        .eq('user_id', DEV_IDENTITY.USER_ID)
-        .in('category_key', persistentCategories)
-        // NO time filter - personal identity info should always be available
-        .order('importance', { ascending: false })
-        .limit(limit);  // Generous limit for identity info
+      const { data: persistentData, error: persistentError } = await repo.fetchPersistentMemoryItemsByImportance(
+        supabase, DEV_IDENTITY.TENANT_ID, DEV_IDENTITY.USER_ID, persistentCategories, limit,
+      );  // Generous limit for identity info
 
       if (persistentError) {
         console.warn('[VTID-DEBUG-01] Persistent category query error:', persistentError.message);
@@ -1329,15 +1271,9 @@ export async function fetchDevMemoryContext(
     // Query 2: Time-sensitive categories WITH time filter
     let timeSensitiveItems: MemoryItem[] = [];
     if (timeSensitiveCategories.length > 0) {
-      const { data: timeSensitiveData, error: timeSensitiveError } = await supabase
-        .from('memory_items')
-        .select('id, category_key, source, content, content_json, importance, occurred_at, created_at')
-        .eq('tenant_id', DEV_IDENTITY.TENANT_ID)
-        .eq('user_id', DEV_IDENTITY.USER_ID)
-        .in('category_key', timeSensitiveCategories)
-        .gte('occurred_at', sinceTimestamp)  // Time filter for non-identity categories
-        .order('importance', { ascending: false })
-        .limit(limit);
+      const { data: timeSensitiveData, error: timeSensitiveError } = await repo.fetchTimeSensitiveMemoryItemsByImportance(
+        supabase, DEV_IDENTITY.TENANT_ID, DEV_IDENTITY.USER_ID, timeSensitiveCategories, sinceTimestamp, limit,
+      );  // Time filter for non-identity categories
 
       if (timeSensitiveError) {
         // Check if table doesn't exist (VTID-01104 not deployed)
@@ -1576,10 +1512,9 @@ export async function fetchScoredMemoryContext(
     const categoryFilter = categories || MEMORY_CONFIG.CONTEXT_CATEGORIES;
 
     // Set request context for dev user
-    const { error: bootstrapError } = await supabase.rpc('dev_bootstrap_request_context', {
-      p_tenant_id: DEV_IDENTITY.TENANT_ID,
-      p_active_role: DEV_IDENTITY.ACTIVE_ROLE
-    });
+    const { error: bootstrapError } = await repo.rpcDevBootstrapRequestContextByTenantId(
+      supabase, DEV_IDENTITY.TENANT_ID, DEV_IDENTITY.ACTIVE_ROLE,
+    );
     if (bootstrapError) {
       console.warn('[VTID-01115] Bootstrap context failed (non-fatal):', bootstrapError.message);
     }
@@ -1599,15 +1534,9 @@ export async function fetchScoredMemoryContext(
     // Query 1: Persistent categories WITHOUT time filter (personal identity never expires)
     let persistentItems: MemoryItem[] = [];
     if (persistentCategories.length > 0) {
-      const { data: persistentData, error: persistentError } = await supabase
-        .from('memory_items')
-        .select('id, category_key, source, content, content_json, importance, occurred_at, created_at')
-        .eq('tenant_id', DEV_IDENTITY.TENANT_ID)
-        .eq('user_id', DEV_IDENTITY.USER_ID)
-        .in('category_key', persistentCategories)
-        // NO time filter - personal identity info should always be available
-        .order('importance', { ascending: false })
-        .limit(limit * 2);
+      const { data: persistentData, error: persistentError } = await repo.fetchPersistentMemoryItemsByImportance(
+        supabase, DEV_IDENTITY.TENANT_ID, DEV_IDENTITY.USER_ID, persistentCategories, limit * 2,
+      );
 
       if (persistentError) {
         console.warn('[VTID-DEBUG-01] Persistent category query error (scored):', persistentError.message);
@@ -1620,15 +1549,9 @@ export async function fetchScoredMemoryContext(
     // Query 2: Time-sensitive categories WITH time filter
     let timeSensitiveItems: MemoryItem[] = [];
     if (timeSensitiveCategories.length > 0) {
-      const { data: timeSensitiveData, error: timeSensitiveError } = await supabase
-        .from('memory_items')
-        .select('id, category_key, source, content, content_json, importance, occurred_at, created_at')
-        .eq('tenant_id', DEV_IDENTITY.TENANT_ID)
-        .eq('user_id', DEV_IDENTITY.USER_ID)
-        .in('category_key', timeSensitiveCategories)
-        .gte('occurred_at', sinceTimestamp)  // Time filter for non-identity categories
-        .order('occurred_at', { ascending: false })
-        .limit(limit * 2);
+      const { data: timeSensitiveData, error: timeSensitiveError } = await repo.fetchTimeSensitiveMemoryItemsByOccurredAt(
+        supabase, DEV_IDENTITY.TENANT_ID, DEV_IDENTITY.USER_ID, timeSensitiveCategories, sinceTimestamp, limit * 2,
+      );
 
       if (timeSensitiveError) {
         if (timeSensitiveError.message.includes('does not exist') || timeSensitiveError.code === '42P01') {
@@ -2321,14 +2244,12 @@ export async function fetchDevTrustContext(): Promise<OrbTrustContext> {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     // Bootstrap dev identity context
-    await supabase.rpc('dev_bootstrap_request_context', {
-      p_tenant_slug: DEV_IDENTITY.TENANT_SLUG,
-      p_user_id: DEV_IDENTITY.USER_ID,
-      p_active_role: DEV_IDENTITY.ACTIVE_ROLE,
-    });
+    await repo.rpcDevBootstrapRequestContextByTenantSlug(
+      supabase, DEV_IDENTITY.TENANT_SLUG, DEV_IDENTITY.USER_ID, DEV_IDENTITY.ACTIVE_ROLE,
+    );
 
     // Fetch trust scores
-    const { data: trustData, error: trustError } = await supabase.rpc('get_trust_scores');
+    const { data: trustData, error: trustError } = await repo.rpcGetTrustScores(supabase);
 
     if (trustError) {
       // If RPC doesn't exist, return defaults (migration not applied)
@@ -2350,20 +2271,14 @@ export async function fetchDevTrustContext(): Promise<OrbTrustContext> {
     }
 
     // Fetch behavior constraints
-    const { data: constraintData, error: constraintError } = await supabase.rpc('get_behavior_constraints', {
-      p_constraint_type: null,
-    });
+    const { data: constraintData, error: constraintError } = await repo.rpcGetBehaviorConstraints(supabase, null);
 
     if (constraintError && !constraintError.message.includes('does not exist')) {
       console.warn('[VTID-01121] Constraint fetch error:', constraintError.message);
     }
 
     // Fetch recent correction count
-    const { data: historyData } = await supabase.rpc('get_correction_history', {
-      p_limit: 10,
-      p_offset: 0,
-      p_feedback_type: null,
-    });
+    const { data: historyData } = await repo.rpcGetCorrectionHistory(supabase, 10, 0, null);
 
     const scores: TrustScore[] = trustData?.scores || [];
     const constraints: BehaviorConstraint[] = constraintData?.constraints || [];

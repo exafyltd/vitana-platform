@@ -18,6 +18,7 @@ import type {
   OpenThreadStatus,
   PromiseStatus,
 } from './types';
+import * as repo from './continuity-fetcher-repository';
 
 export interface ContinuityFetcher {
   listOpenThreads(args: {
@@ -53,15 +54,7 @@ export function createSupabaseContinuityFetcher(
         return { ok: false, rows: [], reason: 'supabase_unconfigured' };
       }
       try {
-        const { data, error } = await sb
-          .from('user_open_threads')
-          .select(
-            'thread_id, topic, summary, status, session_id_first, session_id_last, last_mentioned_at, resolved_at, created_at, updated_at',
-          )
-          .eq('tenant_id', args.tenantId)
-          .eq('user_id', args.userId)
-          .order('last_mentioned_at', { ascending: false })
-          .limit(limit);
+        const { data, error } = await repo.fetchOpenThreads(sb, args.tenantId, args.userId, limit);
         if (error) {
           return { ok: false, rows: [], reason: error.message };
         }
@@ -81,17 +74,7 @@ export function createSupabaseContinuityFetcher(
         return { ok: false, rows: [], reason: 'supabase_unconfigured' };
       }
       try {
-        let q = sb
-          .from('assistant_promises')
-          .select(
-            'promise_id, thread_id, session_id, promise_text, due_at, status, decision_id, kept_at, created_at, updated_at',
-          )
-          .eq('tenant_id', args.tenantId)
-          .eq('user_id', args.userId)
-          .order('created_at', { ascending: false })
-          .limit(limit);
-        if (args.status) q = q.eq('status', args.status);
-        const { data, error } = await q;
+        const { data, error } = await repo.fetchAssistantPromises(sb, args.tenantId, args.userId, limit, args.status);
         if (error) {
           return { ok: false, rows: [], reason: error.message };
         }

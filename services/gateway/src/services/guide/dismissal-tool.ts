@@ -18,6 +18,7 @@
 import { getSupabase } from '../../lib/supabase';
 import { ProactivePauseScope } from './types';
 import { emitGuideTelemetry } from './guide-telemetry';
+import * as repo from './dismissal-tool-repository';
 
 const LOG_PREFIX = '[Guide:dismissal-tool]';
 
@@ -114,19 +115,15 @@ export async function executePauseProactiveGuidance(
   const durationMinutes = clampDuration(args.duration_minutes ?? 1440);
   const pausedUntil = new Date(Date.now() + durationMinutes * 60 * 1000).toISOString();
 
-  const { data, error } = await supabase
-    .from('user_proactive_pause')
-    .insert({
-      user_id: context.user_id,
-      scope: args.scope,
-      scope_value: args.scope === 'all' ? null : (args.scope_value ?? null),
-      paused_from: new Date().toISOString(),
-      paused_until: pausedUntil,
-      reason: args.reason ?? null,
-      created_via: context.channel === 'voice' ? 'voice' : 'text',
-    })
-    .select()
-    .single();
+  const { data, error } = await repo.insertProactivePause(supabase, {
+    user_id: context.user_id,
+    scope: args.scope,
+    scope_value: args.scope === 'all' ? null : (args.scope_value ?? null),
+    paused_from: new Date().toISOString(),
+    paused_until: pausedUntil,
+    reason: args.reason ?? null,
+    created_via: context.channel === 'voice' ? 'voice' : 'text',
+  });
 
   if (error) {
     console.error(`${LOG_PREFIX} insert failed:`, error.message);
@@ -136,18 +133,13 @@ export async function executePauseProactiveGuidance(
   // Also write to user_nudge_state if scope=nudge_key so opener-mvp's
   // silenced_until check honors it on next pickOpenerCandidate.
   if (args.scope === 'nudge_key' && args.scope_value) {
-    await supabase
-      .from('user_nudge_state')
-      .upsert(
-        {
-          user_id: context.user_id,
-          nudge_key: args.scope_value,
-          dismissed_at: new Date().toISOString(),
-          silenced_until: pausedUntil,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id,nudge_key' },
-      );
+    await repo.upsertNudgeSilence(supabase, {
+      user_id: context.user_id,
+      nudge_key: args.scope_value,
+      dismissed_at: new Date().toISOString(),
+      silenced_until: pausedUntil,
+      updated_at: new Date().toISOString(),
+    });
   }
 
   await emitGuideTelemetry('guide.dismissal.pause_created', {
@@ -185,12 +177,7 @@ export async function executeClearProactivePauses(
   }
 
   const nowIso = new Date().toISOString();
-  const { data, error } = await supabase
-    .from('user_proactive_pause')
-    .update({ paused_until: nowIso })
-    .eq('user_id', context.user_id)
-    .gt('paused_until', nowIso)
-    .select('id');
+  const { data, error } = await repo.clearActivePausesForUser(supabase, context.user_id, nowIso);
 
   if (error) {
     console.error(`${LOG_PREFIX} clear failed:`, error.message);

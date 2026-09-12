@@ -30,6 +30,7 @@ import type {
   NextActionSourceResult,
   ScoredCandidate,
 } from '../types';
+import * as repo from './calendar-upcoming-repository';
 
 const KEY = 'calendar_upcoming' as const;
 const HORIZON_MINUTES = 24 * 60;
@@ -51,15 +52,7 @@ export async function produceCalendarUpcoming(
 
   let row: CalendarEventLike | null = null;
   try {
-    const { data, error } = await ctx.supabase
-      .from('calendar_events')
-      .select('id, title, start_time, end_time, status, event_type')
-      .eq('user_id', ctx.userId)
-      .eq('status', 'scheduled')
-      .gte('start_time', ctx.nowIso)
-      .lte('start_time', horizonIso)
-      .order('start_time', { ascending: true })
-      .limit(1);
+    const { data, error } = await repo.fetchNearestUpcomingCalendarEvent(ctx.supabase, ctx.userId, ctx.nowIso, horizonIso);
     if (error) {
       return { source: KEY, candidate: null, skippedReason: 'source_unavailable' };
     }

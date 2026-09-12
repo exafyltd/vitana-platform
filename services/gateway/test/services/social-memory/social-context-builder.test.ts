@@ -20,6 +20,11 @@ jest.mock('../../../src/lib/supabase', () => ({
   getSupabase: jest.fn(),
 }));
 jest.mock('../../../src/services/social-memory/social-memory-repository', () => ({
+  // fetchActiveLifeCompassGoal is left as the REAL implementation (a thin
+  // sb.from('life_compass')... wrapper, VTID-03702 B1 seam) so the
+  // useSupabaseSequence-based life_compass assertion below keeps exercising
+  // the real query-building logic instead of throwing "not a function".
+  ...jest.requireActual('../../../src/services/social-memory/social-memory-repository'),
   fetchExclusions: jest.fn(),
   fetchFollowEdges: jest.fn(),
   fetchMatches: jest.fn(),

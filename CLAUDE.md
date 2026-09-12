@@ -533,6 +533,12 @@ still-open checklist.
   whose own README says **"DO NOT terraform apply YET"** (checked-in state
   is stale vs. live infra) — see `docs/AWS-CUTOVER-RUNBOOK.md` §1 before
   ever running `terraform plan`/`apply` there.
+- **Never** confuse the bare `vitana-community-app`/`vitana-oasis-operator`
+  ECS services with the real, ALB-fronted
+  `vitana-community-app-awsdr`/`-staging`/`vitana-oasis-operator-awsdr` —
+  same name-collision trap as gateway above, except the bare-named ones
+  are **not staging**, they're 2026-07-09 mystery-provisioning orphans
+  (see the roster below) with zero ALB/service-discovery attached at all.
 - **IF** adding a host-header listener rule to `vitana-alb-prod` →
   **THEN** give it priority < 10 — the existing path-based rules (`/api/*`,
   `/ws/*` at priority 10) match before higher-numbered host-header rules
@@ -540,8 +546,18 @@ still-open checklist.
 - **Never** assume a service not in the §1b table has AWS infrastructure,
   or that a live AWS resource is governed just because it exists —
   `orb-agent`'s ECS service/task-def predated its own deploy pipeline
-  (2026-07-09 bulk-provisioning event, ~17-22 still-unexplained "mystery
-  services" from the same event — see `docs/AWS-PRODUCTION-BUILD-LOG.md`).
+  (2026-07-09 bulk-provisioning event, exactly **27 ECS services** created
+  in the same 3-second window — 4 later got a CLAUDE.md §1b entry and a
+  deploy pipeline the same way `orb-agent` did, **23 remain fully
+  undocumented**). **That 23-service roster is now named and classified**,
+  not just estimated at "~17-22" — see
+  `docs/AURORA-MIGRATION-STATUS-2026-09-10.md`'s 2026-09-11 addendum for
+  the complete list, of which four
+  (`vitana-auth-proxy`, `vitana-dev-console-ui`,
+  `vitana-github-sync-service`, `vitana-mcp-gateway`) are confirmed fully
+  dormant vs. which seventeen are alive and running real workloads with no
+  external ingress path, and what is and isn't established about what the
+  latter group actually does.
   Check for a matching `AWS-PROD-DEPLOY-*.yml` before trusting a running
   service reflects `main`; extending to a new service needs its own VTID.
 - **Never** autoscale `oasis-projector`, `worker-runner`, or
@@ -917,12 +933,12 @@ thresholds.
 |-------|---------|
 | `vtid_ledger` | Central VTID task tracking |
 | `oasis_events` | System-wide event log |
-| `personalization_audit` | Cross-domain personalization audit |
+| `personalization_audit` | Cross-domain personalization audit — **⚠️ confirmed still missing in live Supabase** (`to_regclass` null, re-checked 2026-08-29). **Investigated 2026-08-29: reachable but NOT a silent-failure bug.** The one real call site (`writePersonalizationAudit()` in `personalization-service.ts`, invoked fire-and-forget from `GET /api/v1/personalization/snapshot`) already checks `response.ok` and logs loudly via `console.error` on failure, and the route never awaits it (`.catch(err => console.warn(...))`) — so every snapshot request logs a write failure but the user-facing response is unaffected. The two `app.js`/`app.js.backup*` hits are static Command Hub schema-catalog metadata, not live queries. Net: a known, correctly-degrading gap in the audit trail, not a confidently-wrong response — building the table (or retiring the audit feature) is a product decision, not a bug fix. |
 | `services_catalog` | Service catalog |
 | `products_catalog` | Product catalog |
-| `d44_predictive_signals` | Proactive intervention signals |
+| `d44_predictive_signals` | Proactive intervention signals — **⚠️ does not exist in live Supabase**, confirmed reachable from a live admin screen (Intelligence → Signals) that surfaces this as a visible error. See `docs/AURORA-B2-DEAD-CALLSITE-AUDIT.md` Addendum 2. |
 | `contextual_opportunities` | D48 opportunity surfacing |
-| `risk_mitigations` | D49 risk mitigation |
+| `risk_mitigations` | D49 risk mitigation — **⚠️ does not exist in live Supabase**, route is mounted but no confirmed caller found — same "registered but never invoked" shape confirmed for the `AP-0710` monetization-vulnerability automation. See `docs/AURORA-B2-DEAD-CALLSITE-AUDIT.md` Addendum 3 and Addendum 10. |
 
 ### vtid_ledger Key Columns
 | Column | Type | Values |

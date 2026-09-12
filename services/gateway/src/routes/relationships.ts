@@ -22,6 +22,7 @@ import { z } from 'zod';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { notifyUserAsync } from '../services/notification-service';
+import * as repo from './relationships-repository';
 
 const router = Router();
 
@@ -254,7 +255,7 @@ router.post('/node', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // Call relationship_ensure_node RPC
-    const { data, error } = await supabase.rpc('relationship_ensure_node', {
+    const { data, error } = await repo.ensureRelationshipNodeRpc(supabase, {
       p_node_type: node_type,
       p_title: title,
       p_ref_id: ref_id || null,
@@ -347,7 +348,7 @@ router.post('/edge', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // Call relationship_add_edge RPC
-    const { data, error } = await supabase.rpc('relationship_add_edge', {
+    const { data, error } = await repo.addRelationshipEdgeRpc(supabase, {
       p_from_node_id: from_node_id,
       p_to_node_id: to_node_id,
       p_relationship_type: relationship_type,
@@ -406,12 +407,7 @@ router.post('/edge', async (req: Request, res: Response) => {
           const supa = createClient(supabaseUrl, serviceKey);
 
           // Get the target user's tenant
-          const { data: tenant } = await supa
-            .from('user_tenants')
-            .select('tenant_id')
-            .eq('user_id', data.to_node.user_id)
-            .limit(1)
-            .single();
+          const { data: tenant } = await repo.fetchUserTenantIdLimit1(supa, data.to_node.user_id);
 
           if (tenant?.tenant_id) {
             notifyUserAsync(data.to_node.user_id, tenant.tenant_id, 'new_connection_formed', {
@@ -502,7 +498,7 @@ router.get('/graph', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // Call relationship_get_graph RPC
-    const { data, error } = await supabase.rpc('relationship_get_graph', {
+    const { data, error } = await repo.getRelationshipGraphRpc(supabase, {
       p_domain: domain || null,
       p_node_types: nodeTypesArray,
       p_relationship_types: relationshipTypesArray,
@@ -601,7 +597,7 @@ router.get('/signals', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // Call relationship_get_signals RPC
-    const { data, error } = await supabase.rpc('relationship_get_signals', {
+    const { data, error } = await repo.getRelationshipSignalsRpc(supabase, {
       p_min_confidence: min_confidence,
       p_signal_keys: signalKeysArray
     });
@@ -674,7 +670,7 @@ router.post('/signal', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // Call relationship_update_signal RPC
-    const { data, error } = await supabase.rpc('relationship_update_signal', {
+    const { data, error } = await repo.updateRelationshipSignalRpc(supabase, {
       p_signal_key: signal_key,
       p_confidence: confidence,
       p_evidence: evidence
@@ -752,7 +748,7 @@ router.get('/recommendations', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // Get user's signals
-    const { data: signalsData, error: signalsError } = await supabase.rpc('relationship_get_signals', {
+    const { data: signalsData, error: signalsError } = await repo.getRelationshipSignalsRpc(supabase, {
       p_min_confidence: 30,
       p_signal_keys: null
     });
@@ -768,7 +764,7 @@ router.get('/recommendations', async (req: Request, res: Response) => {
     }
 
     // Get user's relationship graph
-    const { data: graphData, error: graphError } = await supabase.rpc('relationship_get_graph', {
+    const { data: graphData, error: graphError } = await repo.getRelationshipGraphRpc(supabase, {
       p_domain: null,
       p_node_types: null,
       p_relationship_types: null,
@@ -1091,7 +1087,7 @@ router.post('/from-cognee', async (req: Request, res: Response) => {
     // 1. Create/get nodes for all entities (bounded-concurrency: one RPC per
     // entity, but no longer one sequential round-trip per entity)
     await mapWithConcurrency(payload.entities, 8, async (entity) => {
-      const { data: nodeResult, error: nodeError } = await supabase.rpc('relationship_ensure_node', {
+      const { data: nodeResult, error: nodeError } = await repo.ensureRelationshipNodeRpc(supabase, {
         p_node_type: entity.vitana_node_type,
         p_title: entity.name,
         p_domain: entity.domain,
@@ -1137,7 +1133,7 @@ router.post('/from-cognee', async (req: Request, res: Response) => {
         return;
       }
 
-      const { data: edgeResult, error: edgeError } = await supabase.rpc('relationship_add_edge', {
+      const { data: edgeResult, error: edgeError } = await repo.addRelationshipEdgeRpc(supabase, {
         p_from_node_id: fromNodeId,
         p_to_node_id: toNodeId,
         p_relationship_type: rel.vitana_type,
@@ -1170,7 +1166,7 @@ router.post('/from-cognee', async (req: Request, res: Response) => {
 
     // 3. Update signals
     await mapWithConcurrency(payload.signals, 8, async (signal) => {
-      const { data: signalResult, error: signalError } = await supabase.rpc('relationship_update_signal', {
+      const { data: signalResult, error: signalError } = await repo.updateRelationshipSignalRpc(supabase, {
         p_signal_key: signal.signal_key,
         p_confidence: signal.confidence,
         p_evidence: {

@@ -12,6 +12,7 @@
  */
 import { createHash } from 'crypto';
 import { getSupabase } from '../lib/supabase';
+import * as repo from './shopify-sync-repository';
 
 export interface ShopifySyncConfig {
   domain: string;              // e.g. 54n0fa-ir.myshopify.com
@@ -151,10 +152,10 @@ export function resolveShopifyConfig(): ShopifySyncConfig | null {
 
 /** Fetch the Shopify feed and upsert merchant + products into the catalog. */
 export async function syncShopifyCatalog(supabase: any, cfg: ShopifySyncConfig): Promise<ShopifySyncResult> {
-  await supabase.from('merchants').upsert({
+  await repo.upsertShopifyMerchant(supabase, {
     id: cfg.merchantId, name: cfg.merchantName, source_network: 'shopify',
     currencies: ['EUR'], is_active: true, updated_at: new Date().toISOString(),
-  }, { onConflict: 'id' });
+  });
 
   const products = await fetchProductsJson(cfg);
   const rows = products
@@ -164,7 +165,7 @@ export async function syncShopifyCatalog(supabase: any, cfg: ShopifySyncConfig):
   let upserted = 0;
   for (let i = 0; i < rows.length; i += 100) {
     const chunk = rows.slice(i, i + 100);
-    const { error } = await supabase.from('products').upsert(chunk, { onConflict: 'id' });
+    const { error } = await repo.upsertShopifyProductsChunk(supabase, chunk);
     if (error) throw new Error(error.message);
     upserted += chunk.length;
   }

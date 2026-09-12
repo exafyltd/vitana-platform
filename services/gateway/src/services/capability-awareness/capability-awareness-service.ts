@@ -22,6 +22,7 @@ import {
   AWARENESS_EVENT_TO_TOPIC,
   type CapabilityAwarenessEventName,
 } from '../assistant-continuation/telemetry';
+import * as repo from './capability-awareness-service-repository';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -124,7 +125,7 @@ export function createCapabilityAwarenessService(
       // ---- Invoke the atomic RPC ----
       let rpcResult: any;
       try {
-        const { data, error } = await sb.rpc('advance_capability_awareness', {
+        const { data, error } = await repo.advanceCapabilityAwareness(sb, {
           p_tenant_id: args.tenantId,
           p_user_id: args.userId,
           p_capability_key: args.capabilityKey,

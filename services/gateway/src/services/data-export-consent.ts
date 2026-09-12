@@ -25,6 +25,7 @@
  */
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import * as repo from './data-export-consent-repository';
 
 const TTL_MS = 5 * 60 * 1000;
 const LOG_PREFIX = '[data-export-consent]';
@@ -63,12 +64,7 @@ async function resolveTenantForUser(userId: string): Promise<string | null> {
   try {
     const supa = getServiceClient();
     if (supa) {
-      const { data } = await supa
-        .from('user_tenants')
-        .select('tenant_id')
-        .eq('user_id', userId)
-        .limit(1)
-        .maybeSingle();
+      const { data } = await repo.fetchTenantIdForUser(supa, userId);
       tenantId = (data as { tenant_id?: string | null } | null)?.tenant_id ?? null;
     }
   } catch (e) {
@@ -92,11 +88,7 @@ async function tenantExportPolicy(tenantId: string): Promise<boolean> {
   try {
     const supa = getServiceClient();
     if (supa) {
-      const { data } = await supa
-        .from('tenant_settings')
-        .select('feature_flags')
-        .eq('tenant_id', tenantId)
-        .maybeSingle();
+      const { data } = await repo.fetchTenantSettingsFeatureFlags(supa, tenantId);
       const flags = (data as { feature_flags?: Record<string, unknown> } | null)?.feature_flags;
       consented = flags?.data_export_ok === true;
     }

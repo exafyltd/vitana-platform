@@ -10,6 +10,7 @@
 
 import { getSupabase } from '../../lib/supabase';
 import { ProactivePause, ProactivePauseScope } from './types';
+import * as repo from './pause-check-repository';
 
 const LOG_PREFIX = '[Guide:pause-check]';
 
@@ -47,12 +48,7 @@ export async function isPaused(input: PauseCheckInput): Promise<PauseCheckResult
 
   const nowIso = new Date().toISOString();
 
-  const { data, error } = await supabase
-    .from('user_proactive_pause')
-    .select('*')
-    .eq('user_id', input.user_id)
-    .gt('paused_until', nowIso)
-    .order('created_at', { ascending: false });
+  const { data, error } = await repo.fetchActivePauses(supabase, input.user_id, nowIso);
 
   if (error) {
     console.error(`${LOG_PREFIX} query failed:`, error.message);

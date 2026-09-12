@@ -31,6 +31,7 @@ import type {
   PriorityTasksStatus,
   ProactivePauseStateSummary,
 } from './types';
+import * as repo from './awareness-extensions-repository';
 
 const LOG_PREFIX = '[Guide:awareness-v2]';
 
@@ -149,11 +150,7 @@ async function fetchGuidedState(
   supabase: SupabaseClient,
 ): Promise<GuidedStateRow | null> {
   try {
-    const { data, error } = await supabase
-      .from('user_guided_journey_state')
-      .select('mode, onboarding_status, current_session, completed_topic_ids, last_opened_topic_id')
-      .eq('user_id', userId)
-      .maybeSingle();
+    const { data, error } = await repo.fetchGuidedJourneyState(supabase, userId);
     if (error || !data) return null;
     return data as unknown as GuidedStateRow;
   } catch (err: any) {
@@ -176,15 +173,7 @@ async function buildJourneyProgress(
     // completed, in (session, position) order. We page from the user's
     // current session forward so the query stays small even with a
     // 250-topic curriculum.
-    const { data, error } = await supabase
-      .from('journey_checklist_topics')
-      .select('topic_id, session, position')
-      .eq('status', 'published')
-      .eq('enabled', true)
-      .gte('session', Math.max(1, guidedState.current_session))
-      .order('session', { ascending: true })
-      .order('position', { ascending: true })
-      .limit(50);
+    const { data, error } = await repo.fetchNextChecklistTopics(supabase, Math.max(1, guidedState.current_session), 50);
     if (!error && data) {
       const next = (data as unknown as ChecklistTopicRow[]).find(
         (t) => !completed.has(t.topic_id),
@@ -214,11 +203,7 @@ async function fetchGreetingOpenings(
   supabase: SupabaseClient,
 ): Promise<string[]> {
   try {
-    const { data, error } = await supabase
-      .from('user_journey')
-      .select('recent_greeting_openings')
-      .eq('user_id', userId)
-      .maybeSingle();
+    const { data, error } = await repo.fetchRecentGreetingOpenings(supabase, userId);
     if (error || !data) return [];
     return (data.recent_greeting_openings as string[] | null) ?? [];
   } catch {
@@ -231,11 +216,7 @@ async function fetchProfile(
   supabase: SupabaseClient,
 ): Promise<ProfileRow | null> {
   try {
-    const { data, error } = await supabase
-      .from('app_users')
-      .select('first_name, last_name, date_of_birth, gender, city, country, avatar_url')
-      .eq('user_id', userId)
-      .maybeSingle();
+    const { data, error } = await repo.fetchProfileCompletionFields(supabase, userId);
     if (error || !data) return null;
     return data as unknown as ProfileRow;
   } catch {
@@ -265,11 +246,7 @@ async function fetchAutopilotActivations(
   supabase: SupabaseClient,
 ): Promise<number> {
   try {
-    const { count, error } = await supabase
-      .from('autopilot_recommendations')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .eq('status', 'activated');
+    const { count, error } = await repo.countActivatedRecommendations(supabase, userId);
     if (error) return 0;
     return count ?? 0;
   } catch {
@@ -287,11 +264,7 @@ async function fetchPauseState(
     paused_nudge_keys: [],
   };
   try {
-    const { data, error } = await supabase
-      .from('user_proactive_pause')
-      .select('scope, scope_value, paused_until')
-      .eq('user_id', userId)
-      .gt('paused_until', new Date().toISOString());
+    const { data, error } = await repo.fetchActivePauseRows(supabase, userId, new Date().toISOString());
     if (error || !data) return empty;
     const rows = data as Array<{ scope: string; scope_value: string | null }>;
     return {
@@ -314,11 +287,7 @@ async function fetchDiaryToday(
   todayUtc: string,
 ): Promise<boolean> {
   try {
-    const { count, error } = await supabase
-      .from('memory_diary_entries')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .gte('created_at', `${todayUtc}T00:00:00.000Z`);
+    const { count, error } = await repo.countDiaryEntriesSince(supabase, userId, `${todayUtc}T00:00:00.000Z`);
     if (error) return false;
     return (count ?? 0) > 0;
   } catch {

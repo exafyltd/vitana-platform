@@ -31,6 +31,7 @@ import { evaluateRecAlignment } from '../services/recommendation-engine/alignmen
 import { tt, GATEWAY_DEFAULT_LOCALE, type GatewayLocale } from '../i18n/catalog';
 import { getUserLocale } from '../i18n/server-locale';
 import { optionalAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import * as repo from './autopilot-recommendations-repository';
 
 /**
  * Recommendation-identity work: resolve the requesting user's locale for the
@@ -556,12 +557,7 @@ router.get('/', async (req: Request, res: Response) => {
           if (supabaseUrl && svcKey) {
             const { createClient } = await import('@supabase/supabase-js');
             const supa = createClient(supabaseUrl, svcKey);
-            const { data: tenantRow } = await supa
-              .from('user_tenants')
-              .select('tenant_id')
-              .eq('user_id', userId)
-              .eq('is_primary', true)
-              .maybeSingle();
+            const { data: tenantRow } = await repo.fetchPrimaryTenantId(supa, userId);
             const tenantId = tenantRow?.tenant_id || process.env.DEFAULT_TENANT_ID;
             if (tenantId) {
               const genResult = await generatePersonalRecommendations(userId, tenantId, { trigger_type: 'auto_replenish' });
@@ -848,12 +844,7 @@ router.post('/generate-personal', async (req: Request, res: Response) => {
 
     const { createClient } = await import('@supabase/supabase-js');
     const supa = createClient(supabaseUrl, svcKey);
-    const { data: tenantRow } = await supa
-      .from('user_tenants')
-      .select('tenant_id')
-      .eq('user_id', userId)
-      .eq('is_primary', true)
-      .maybeSingle();
+    const { data: tenantRow } = await repo.fetchPrimaryTenantId(supa, userId);
 
     const tenantId = tenantRow?.tenant_id || process.env.DEFAULT_TENANT_ID;
     if (!tenantId) {
@@ -939,12 +930,7 @@ export async function listCommunityAutopilotRecommendations(
           if (supabaseUrl && svcKey) {
             const { createClient } = await import('@supabase/supabase-js');
             const supa = createClient(supabaseUrl, svcKey);
-            const { data: tenantRow } = await supa
-              .from('user_tenants')
-              .select('tenant_id')
-              .eq('user_id', userId)
-              .eq('is_primary', true)
-              .maybeSingle();
+            const { data: tenantRow } = await repo.fetchPrimaryTenantId(supa, userId);
             // Community users always have a primary tenant; if none, skip
             // generation rather than depend on a DEFAULT_TENANT_ID fallback.
             const tenantId = tenantRow?.tenant_id;
@@ -1254,12 +1240,7 @@ export async function activateCommunityAutopilotRecommendation(
     try {
       const { createClient } = await import('@supabase/supabase-js');
       const supa = createClient(supabaseUrl, svcKey);
-      const { data: tenantRow } = await supa
-        .from('user_tenants')
-        .select('tenant_id')
-        .eq('user_id', userId)
-        .eq('is_primary', true)
-        .maybeSingle();
+      const { data: tenantRow } = await repo.fetchPrimaryTenantId(supa, userId);
       if (tenantRow?.tenant_id) {
         notifyUserAsync(userId, tenantRow.tenant_id, 'recommendation_activated', {
           title: rec.title,
@@ -1879,12 +1860,7 @@ router.post('/generate', async (req: Request, res: Response) => {
       try {
         const { createClient } = await import('@supabase/supabase-js');
         const supa = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE!);
-        const { data: tenantRow } = await supa
-          .from('user_tenants')
-          .select('tenant_id')
-          .eq('user_id', userId)
-          .eq('is_primary', true)
-          .single();
+        const { data: tenantRow } = await repo.fetchPrimaryTenantIdStrict(supa, userId);
         if (tenantRow?.tenant_id) {
           notifyUserAsync(userId, tenantRow.tenant_id, 'new_recommendation', {
             title: `${result.generated} new recommendation${result.generated > 1 ? 's' : ''}`,
@@ -1897,15 +1873,7 @@ router.post('/generate', async (req: Request, res: Response) => {
           // recommendations even outside the in-app inbox. Threshold of 8+
           // matches the engine's reserved tier (see recommendation-
           // generator impact_score mapping where 8 is "strong signal").
-          const { data: highImpact } = await supa
-            .from('autopilot_recommendations')
-            .select('id, title, summary, impact_score')
-            .eq('user_id', userId)
-            .eq('tenant_id', tenantRow.tenant_id)
-            .gte('impact_score', 8)
-            .gte('created_at', new Date(Date.now() - 5 * 60 * 1000).toISOString())
-            .order('impact_score', { ascending: false })
-            .limit(1);
+          const { data: highImpact } = await repo.fetchHighImpactRecentRecommendation(supa, userId, tenantRow.tenant_id);
           const topRec = highImpact?.[0];
           if (topRec) {
             notifyUserAsync(userId, tenantRow.tenant_id, 'high_impact_recommendation', {
@@ -2152,22 +2120,12 @@ router.post('/:id/complete', async (req: Request, res: Response) => {
     try {
       const { createClient } = await import('@supabase/supabase-js');
       const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE!);
-      const { data: tenantRow } = await supabase
-        .from('user_tenants')
-        .select('tenant_id')
-        .eq('user_id', userId)
-        .eq('is_primary', true)
-        .maybeSingle();
+      const { data: tenantRow } = await repo.fetchPrimaryTenantId(supabase, userId);
       tenantId = tenantRow?.tenant_id || undefined;
 
       // Milestone fan-out: only on first-time completion of an onboarding rec.
       if (!alreadyCompleted && sourceRef?.startsWith?.('onboarding_')) {
-        const { data: remaining } = await supabase
-          .from('autopilot_recommendations')
-          .select('id')
-          .eq('user_id', userId)
-          .eq('status', 'activated')
-          .like('source_ref', 'onboarding_%');
+        const { data: remaining } = await repo.fetchRemainingOnboardingRecommendations(supabase, userId);
 
         if ((!remaining || remaining.length === 0) && tenantId) {
           await emitOasisEvent({

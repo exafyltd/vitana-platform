@@ -17,6 +17,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
+import * as repo from './identity-guardrail-block-repository';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
@@ -75,11 +76,7 @@ export async function buildIdentityGuardrailBlock(
 
   let row: IdentityRow | null = null;
   try {
-    const { data, error } = await supabase
-      .from('app_users')
-      .select(IDENTITY_COLUMNS.join(','))
-      .eq('user_id', input.user_id)
-      .maybeSingle();
+    const { data, error } = await repo.fetchAppUserIdentityRow(supabase, IDENTITY_COLUMNS.join(','), input.user_id);
 
     if (error) {
       console.warn('[VTID-01952] identity-guardrail: app_users select error:', error.message);

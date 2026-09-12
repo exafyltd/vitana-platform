@@ -28,6 +28,7 @@ import { getSystemControl } from '../services/system-controls-service';
 import { getSupabase } from '../lib/supabase';
 import { getUserLocale } from '../i18n/server-locale';
 import { localizeCatalogRecords } from '../i18n/catalog-localizer';
+import * as repo from './presence-did-you-know-repository';
 
 const router = Router();
 const FLAG_KEY = 'vitana_did_you_know_enabled';
@@ -48,7 +49,7 @@ async function resolveIdentity(req: Request): Promise<{
   const token = auth.slice(7);
   try {
     const supabase = createUserSupabaseClient(token);
-    const { data, error } = await supabase.rpc('me_context');
+    const { data, error } = await repo.meContextRpc(supabase);
     if (error || !data) {
       return { user_id: null, tenant_id: null, error: error?.message || 'no_context' };
     }
@@ -59,13 +60,7 @@ async function resolveIdentity(req: Request): Promise<{
     // primary user_tenants row exists. Match the behavior of the
     // gateway's requireAuthWithTenant middleware (auth-supabase-jwt.ts).
     if (!tenantId && userId) {
-      const { data: tenantRow } = await supabase
-        .from('user_tenants')
-        .select('tenant_id')
-        .eq('user_id', userId)
-        .eq('is_primary', true)
-        .limit(1)
-        .maybeSingle();
+      const { data: tenantRow } = await repo.fetchPrimaryTenantForUser(supabase, userId);
       tenantId = tenantRow?.tenant_id || null;
     }
     return { user_id: userId, tenant_id: tenantId };

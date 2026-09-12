@@ -13,6 +13,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
+import * as repo from './persona-registry-repository';
 
 const FF_OPTIMIZE_PERSONA_REGISTRY = process.env.FF_OPTIMIZE_PERSONA_REGISTRY === 'true';
 
@@ -58,9 +59,7 @@ function getServiceClient() {
 
 async function loadFromDB(): Promise<Map<string, PersonaRecord>> {
   const supabase = getServiceClient();
-  const { data, error } = await supabase
-    .from('agent_personas_registry')
-    .select('*');
+  const { data, error } = await repo.fetchAllAgentPersonas(supabase);
   if (error) {
     console.warn('[persona-registry] load failed, returning empty registry:', error.message);
     return new Map();
@@ -249,10 +248,7 @@ export interface TenantPersonaRecord extends PersonaRecord {
 
 async function loadTenantOverrides(tenantId: string): Promise<Map<string, TenantOverridesRecord>> {
   const supabase = getServiceClient();
-  const { data, error } = await supabase
-    .from('agent_personas_tenant_overrides')
-    .select('tenant_id, persona_id, enabled, intake_schema_extras, custom_greeting_templates')
-    .eq('tenant_id', tenantId);
+  const { data, error } = await repo.fetchTenantPersonaOverrides(supabase, tenantId);
   if (error) {
     console.warn(`[persona-registry] tenant overrides load failed for ${tenantId}:`, error.message);
     return new Map();

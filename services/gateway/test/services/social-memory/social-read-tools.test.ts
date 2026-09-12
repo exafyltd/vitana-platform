@@ -6,7 +6,9 @@
  *   - ../../lib/supabase (getSupabase) — chat_messages query chain
  *   - ./social-memory-repository (fetchExclusions, fetchFollowEdges,
  *     fetchRecentMessageContacts, fetchPeople) — sibling batch, not
- *     under test here.
+ *     under test here. fetchInboxMessages is left as the real
+ *     implementation (VTID-03702 B1 seam) so the chatMessagesChain
+ *     assertions below still exercise the real query-building logic.
  *
  * Every read tool is identity-gated (user_id/tenant_id required) and
  * fails closed if the exclusion (blocked-user) lookup throws — these are
@@ -46,6 +48,10 @@ const mockFetchRecentMessageContacts = jest.fn();
 const mockFetchPeople = jest.fn();
 
 jest.mock('../../../src/services/social-memory/social-memory-repository', () => ({
+  // fetchInboxMessages is left as the REAL implementation (a thin
+  // sb.from('chat_messages')... wrapper) so the existing chatMessagesChain
+  // assertions below keep exercising the actual query-building logic.
+  ...jest.requireActual('../../../src/services/social-memory/social-memory-repository'),
   fetchExclusions: (...args: unknown[]) => mockFetchExclusions(...args),
   fetchFollowEdges: (...args: unknown[]) => mockFetchFollowEdges(...args),
   fetchRecentMessageContacts: (...args: unknown[]) => mockFetchRecentMessageContacts(...args),

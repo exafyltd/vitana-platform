@@ -25,6 +25,7 @@ import {
 } from '../middleware/auth-supabase-jwt';
 import { createClient } from '@supabase/supabase-js';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import * as repo from './users-vitana-id-repository';
 
 const router = Router();
 
@@ -62,11 +63,7 @@ router.get('/me/vitana-id/suggestion', requireAuth, async (req: Request, res: Re
 
   const supabase = getSupabase();
 
-  const { data: profileRow } = await supabase
-    .from('profiles')
-    .select('display_name, full_name, email, vitana_id, vitana_id_locked, registration_seq')
-    .eq('user_id', identity.user_id)
-    .maybeSingle();
+  const { data: profileRow } = await repo.fetchProfileForSuggestion(supabase, identity.user_id);
 
   if (profileRow && (profileRow as any).vitana_id_locked) {
     return res.status(409).json({
@@ -132,11 +129,7 @@ router.post('/me/vitana-id/confirm', requireAuth, async (req: Request, res: Resp
   const supabase = getSupabase();
 
   // Read current row + lock state + seq.
-  const { data: current, error: currentErr } = await supabase
-    .from('profiles')
-    .select('vitana_id, vitana_id_locked, registration_seq')
-    .eq('user_id', identity.user_id)
-    .maybeSingle();
+  const { data: current, error: currentErr } = await repo.fetchProfileForConfirm(supabase, identity.user_id);
 
   if (currentErr || !current) {
     return res.status(404).json({
@@ -216,11 +209,7 @@ router.post('/me/vitana-id/confirm', requireAuth, async (req: Request, res: Resp
   }
 
   // Reserved-word check against the canonical reserved table.
-  const { data: reserved } = await supabase
-    .from('vitana_id_reserved')
-    .select('token')
-    .eq('token', base)
-    .maybeSingle();
+  const { data: reserved } = await repo.fetchReservedToken(supabase, base);
   if (reserved) {
     return res.status(400).json({
       ok: false,
@@ -242,12 +231,7 @@ router.post('/me/vitana-id/confirm', requireAuth, async (req: Request, res: Resp
 
   // Uniqueness pre-check (definitive guard is the UNIQUE index on UPDATE).
   if (previous !== requested) {
-    const { data: taken } = await supabase
-      .from('profiles')
-      .select('user_id')
-      .eq('vitana_id', requested)
-      .neq('user_id', identity.user_id)
-      .maybeSingle();
+    const { data: taken } = await repo.fetchVitanaIdOwner(supabase, requested, identity.user_id);
     if (taken) {
       return res.status(409).json({
         ok: false,
@@ -256,12 +240,7 @@ router.post('/me/vitana-id/confirm', requireAuth, async (req: Request, res: Resp
       });
     }
 
-    const { data: aliasTaken } = await supabase
-      .from('handle_aliases')
-      .select('user_id')
-      .eq('old_handle', requested)
-      .neq('user_id', identity.user_id)
-      .maybeSingle();
+    const { data: aliasTaken } = await repo.fetchHandleAliasOwner(supabase, requested, identity.user_id);
     if (aliasTaken) {
       return res.status(409).json({
         ok: false,
@@ -271,21 +250,11 @@ router.post('/me/vitana-id/confirm', requireAuth, async (req: Request, res: Resp
     }
 
     if (previous) {
-      await supabase.from('handle_aliases').upsert(
-        { old_handle: previous, user_id: identity.user_id },
-        { onConflict: 'old_handle' }
-      );
+      await repo.upsertHandleAlias(supabase, previous, identity.user_id);
     }
   }
 
-  const { error: updateErr } = await supabase
-    .from('profiles')
-    .update({
-      vitana_id: requested,
-      handle: requested,
-      vitana_id_locked: true,
-    })
-    .eq('user_id', identity.user_id);
+  const { error: updateErr } = await repo.confirmVitanaId(supabase, identity.user_id, requested);
 
   if (updateErr) {
     console.error('[VTID-01987] vitana-id confirm update error:', updateErr);

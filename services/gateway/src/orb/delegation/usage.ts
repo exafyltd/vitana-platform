@@ -10,6 +10,7 @@
  * console warning — we never block the orb session on telemetry.
  */
 import { getSupabase } from '../../lib/supabase';
+import * as repo from './usage-repository';
 import type {
   DelegationProviderId,
   DelegationStrength,
@@ -60,9 +61,8 @@ export function logUsage(input: LogUsageInput): void {
     },
   };
 
-  supabase
-    .from('ai_usage_log')
-    .insert(row)
+  repo
+    .insertAiUsageLog(supabase, row)
     .then(({ error }) => {
       if (error) {
         console.warn(`${LOG_PREFIX} insert failed for user=${input.userId.substring(0, 8)}... provider=${input.providerId}: ${error.message}`);

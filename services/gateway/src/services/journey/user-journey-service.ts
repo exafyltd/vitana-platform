@@ -13,6 +13,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { DEFAULT_WAVE_CONFIG, type WaveDefinition } from '../wave-defaults';
+import * as repo from './user-journey-service-repository';
 
 const JOURNEY_TOTAL_DAYS_DEFAULT = 90;
 const GREETING_OPENINGS_MAX = 5;
@@ -136,15 +137,7 @@ export async function getJourneyState(
   userId: string,
 ): Promise<JourneyState | null> {
   try {
-    const { data, error } = await client
-      .from('user_journey')
-      .select(
-        'user_id, tenant_id, started_at, total_days, plan_type, plan_summary, current_wave_id, ' +
-          'current_milestone_id, status, completed_milestone_ids, is_first_session, last_session_date, ' +
-          'last_acknowledged_day, recent_greeting_openings, plan_negotiated_at, created_at, updated_at',
-      )
-      .eq('user_id', userId)
-      .maybeSingle();
+    const { data, error } = await repo.fetchUserJourneyRow(client, userId);
 
     if (error) {
       console.warn(`[journey-service] getJourneyState DB error for ${userId.slice(0, 8)}:`, error.message);
@@ -154,11 +147,7 @@ export async function getJourneyState(
     if (data) return toState(data as unknown as UserJourneyRow);
 
     // Fallback: synthesize from app_users.created_at.
-    const { data: userRow, error: userErr } = await client
-      .from('app_users')
-      .select('user_id, created_at')
-      .eq('user_id', userId)
-      .maybeSingle();
+    const { data: userRow, error: userErr } = await repo.fetchAppUserForJourneyFallback(client, userId);
     if (userErr || !userRow) return null;
     const synth: UserJourneyRow = {
       user_id: userRow.user_id,
@@ -201,21 +190,17 @@ export async function ensureUserJourneyRow(
       opts.started_at instanceof Date
         ? opts.started_at.toISOString()
         : opts.started_at ?? new Date().toISOString();
-    const { data, error } = await client
-      .from('user_journey')
-      .insert({
-        user_id: userId,
-        tenant_id: opts.tenant_id ?? null,
-        started_at: startedAtIso,
-        // Defaults to true so the /me seeding path (brand-new users) is
-        // unchanged. The session-start backfill passes false: a user reaching
-        // a live session WITHOUT a row is an existing user the backfill missed,
-        // not a first-ever signup — seeding them as first_session would (re)play
-        // the one-time welcome on the legacy continuation path.
-        is_first_session: opts.is_first_session ?? true,
-      })
-      .select('user_id')
-      .maybeSingle();
+    const { data, error } = await repo.insertUserJourneyRow(client, {
+      user_id: userId,
+      tenant_id: opts.tenant_id ?? null,
+      started_at: startedAtIso,
+      // Defaults to true so the /me seeding path (brand-new users) is
+      // unchanged. The session-start backfill passes false: a user reaching
+      // a live session WITHOUT a row is an existing user the backfill missed,
+      // not a first-ever signup — seeding them as first_session would (re)play
+      // the one-time welcome on the legacy continuation path.
+      is_first_session: opts.is_first_session ?? true,
+    });
     if (error) {
       // 23505 = unique_violation = row already exists. Idempotent path.
       if ((error as any).code === '23505') return false;
@@ -258,11 +243,7 @@ export async function updateSessionEndState(
       update.last_acknowledged_day = patch.last_acknowledged_day;
 
     if (patch.pushed_greeting_opening) {
-      const { data: existing } = await client
-        .from('user_journey')
-        .select('recent_greeting_openings')
-        .eq('user_id', userId)
-        .maybeSingle();
+      const { data: existing } = await repo.fetchUserJourneyRecentGreetingOpenings(client, userId);
       const current: string[] =
         (existing?.recent_greeting_openings as string[] | undefined) ?? [];
       const next = [patch.pushed_greeting_opening, ...current].slice(0, GREETING_OPENINGS_MAX);
@@ -271,7 +252,7 @@ export async function updateSessionEndState(
 
     if (Object.keys(update).length === 0) return;
 
-    const { error } = await client.from('user_journey').update(update).eq('user_id', userId);
+    const { error } = await repo.updateUserJourneyRow(client, userId, update);
     if (error) {
       console.warn(`[journey-service] updateSessionEndState error for ${userId.slice(0, 8)}:`, error.message);
     }

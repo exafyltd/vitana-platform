@@ -14,11 +14,16 @@
  * RLS on the tables is defense-in-depth.
  *
  * Mounted at: /api/v1/vaea
+ *
+ * Data access for the 5 VAEA tables goes through ./vaea-repository.ts
+ * (VTID-03702, Aurora migration B1 data-access seam) instead of calling
+ * supabase.from(...) directly.
  */
 
 import { Router, Response } from 'express';
 import { getSupabase } from '../lib/supabase';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import * as repo from './vaea-repository';
 
 const router = Router();
 const VTID = 'VTID-02402';
@@ -55,12 +60,7 @@ router.get('/config', async (req: AuthenticatedRequest, res: Response) => {
   const sb = supabaseOrFail(res);
   if (!sb) return;
 
-  const { data, error } = await sb
-    .from('vaea_config')
-    .select('*')
-    .eq('tenant_id', ident.tenant_id)
-    .eq('user_id', ident.user_id)
-    .maybeSingle();
+  const { data, error } = await repo.fetchVaeaConfig(sb, ident);
 
   if (error) {
     res.status(500).json({ ok: false, error: error.message });
@@ -112,11 +112,7 @@ router.put('/config', async (req: AuthenticatedRequest, res: Response) => {
     payload.mesh_scope = body.mesh_scope;
   }
 
-  const { data, error } = await sb
-    .from('vaea_config')
-    .upsert(payload, { onConflict: 'tenant_id,user_id' })
-    .select('*')
-    .single();
+  const { data, error } = await repo.upsertVaeaConfig(sb, payload);
 
   if (error) {
     res.status(500).json({ ok: false, error: error.message });
@@ -133,13 +129,7 @@ router.get('/catalog', async (req: AuthenticatedRequest, res: Response) => {
   const sb = supabaseOrFail(res);
   if (!sb) return;
 
-  const { data, error } = await sb
-    .from('vaea_referral_catalog')
-    .select('*')
-    .eq('tenant_id', ident.tenant_id)
-    .eq('user_id', ident.user_id)
-    .order('tier', { ascending: true })
-    .order('created_at', { ascending: false });
+  const { data, error } = await repo.listVaeaCatalog(sb, ident);
 
   if (error) { res.status(500).json({ ok: false, error: error.message }); return; }
   res.json({ ok: true, items: data || [] });
@@ -161,26 +151,22 @@ router.post('/catalog', async (req: AuthenticatedRequest, res: Response) => {
     return;
   }
 
-  const { data, error } = await sb
-    .from('vaea_referral_catalog')
-    .insert({
-      tenant_id: ident.tenant_id,
-      user_id: ident.user_id,
-      tier: b.tier,
-      category: b.category,
-      title: b.title,
-      description: b.description ?? null,
-      affiliate_url: b.affiliate_url,
-      affiliate_network: b.affiliate_network ?? null,
-      commission_percent: typeof b.commission_percent === 'number' ? b.commission_percent : null,
-      personal_note: b.personal_note ?? null,
-      vetting_status: typeof b.vetting_status === 'string' && ['unvetted', 'tried', 'endorsed'].includes(b.vetting_status)
-        ? b.vetting_status
-        : 'unvetted',
-      active: typeof b.active === 'boolean' ? b.active : true,
-    })
-    .select('*')
-    .single();
+  const { data, error } = await repo.insertVaeaCatalogItem(sb, {
+    tenant_id: ident.tenant_id,
+    user_id: ident.user_id,
+    tier: b.tier,
+    category: b.category,
+    title: b.title,
+    description: b.description ?? null,
+    affiliate_url: b.affiliate_url,
+    affiliate_network: b.affiliate_network ?? null,
+    commission_percent: typeof b.commission_percent === 'number' ? b.commission_percent : null,
+    personal_note: b.personal_note ?? null,
+    vetting_status: typeof b.vetting_status === 'string' && ['unvetted', 'tried', 'endorsed'].includes(b.vetting_status)
+      ? b.vetting_status
+      : 'unvetted',
+    active: typeof b.active === 'boolean' ? b.active : true,
+  });
 
   if (error) { res.status(500).json({ ok: false, error: error.message }); return; }
   res.status(201).json({ ok: true, item: data });
@@ -202,14 +188,7 @@ router.patch('/catalog/:id', async (req: AuthenticatedRequest, res: Response) =>
     return;
   }
 
-  const { data, error } = await sb
-    .from('vaea_referral_catalog')
-    .update(patch)
-    .eq('id', req.params.id)
-    .eq('tenant_id', ident.tenant_id)
-    .eq('user_id', ident.user_id)
-    .select('*')
-    .maybeSingle();
+  const { data, error } = await repo.updateVaeaCatalogItem(sb, req.params.id, ident, patch);
 
   if (error) { res.status(500).json({ ok: false, error: error.message }); return; }
   if (!data) { res.status(404).json({ ok: false, error: 'NOT_FOUND' }); return; }
@@ -222,12 +201,7 @@ router.delete('/catalog/:id', async (req: AuthenticatedRequest, res: Response) =
   const sb = supabaseOrFail(res);
   if (!sb) return;
 
-  const { error } = await sb
-    .from('vaea_referral_catalog')
-    .delete()
-    .eq('id', req.params.id)
-    .eq('tenant_id', ident.tenant_id)
-    .eq('user_id', ident.user_id);
+  const { error } = await repo.deleteVaeaCatalogItem(sb, req.params.id, ident);
 
   if (error) { res.status(500).json({ ok: false, error: error.message }); return; }
   res.json({ ok: true });
@@ -241,12 +215,7 @@ router.get('/channels', async (req: AuthenticatedRequest, res: Response) => {
   const sb = supabaseOrFail(res);
   if (!sb) return;
 
-  const { data, error } = await sb
-    .from('vaea_listener_channels')
-    .select('*')
-    .eq('tenant_id', ident.tenant_id)
-    .eq('user_id', ident.user_id)
-    .order('created_at', { ascending: false });
+  const { data, error } = await repo.listVaeaChannels(sb, ident);
 
   if (error) { res.status(500).json({ ok: false, error: error.message }); return; }
   res.json({ ok: true, channels: data || [] });
@@ -269,21 +238,17 @@ router.post('/channels', async (req: AuthenticatedRequest, res: Response) => {
     return;
   }
 
-  const { data, error } = await sb
-    .from('vaea_listener_channels')
-    .insert({
-      tenant_id: ident.tenant_id,
-      user_id: ident.user_id,
-      platform: b.platform,
-      channel_key: b.channel_key,
-      display_name: b.display_name ?? null,
-      config: typeof b.config === 'object' && b.config !== null ? b.config : {},
-      autonomy: typeof b.autonomy === 'string' ? b.autonomy : null,
-      active: typeof b.active === 'boolean' ? b.active : true,
-      dry_run: typeof b.dry_run === 'boolean' ? b.dry_run : true,
-    })
-    .select('*')
-    .single();
+  const { data, error } = await repo.insertVaeaChannel(sb, {
+    tenant_id: ident.tenant_id,
+    user_id: ident.user_id,
+    platform: b.platform,
+    channel_key: b.channel_key,
+    display_name: b.display_name ?? null,
+    config: typeof b.config === 'object' && b.config !== null ? b.config : {},
+    autonomy: typeof b.autonomy === 'string' ? b.autonomy : null,
+    active: typeof b.active === 'boolean' ? b.active : true,
+    dry_run: typeof b.dry_run === 'boolean' ? b.dry_run : true,
+  });
 
   if (error) { res.status(500).json({ ok: false, error: error.message }); return; }
   res.status(201).json({ ok: true, channel: data });
@@ -305,14 +270,7 @@ router.patch('/channels/:id', async (req: AuthenticatedRequest, res: Response) =
     return;
   }
 
-  const { data, error } = await sb
-    .from('vaea_listener_channels')
-    .update(patch)
-    .eq('id', req.params.id)
-    .eq('tenant_id', ident.tenant_id)
-    .eq('user_id', ident.user_id)
-    .select('*')
-    .maybeSingle();
+  const { data, error } = await repo.updateVaeaChannel(sb, req.params.id, ident, patch);
 
   if (error) { res.status(500).json({ ok: false, error: error.message }); return; }
   if (!data) { res.status(404).json({ ok: false, error: 'NOT_FOUND' }); return; }
@@ -325,12 +283,7 @@ router.delete('/channels/:id', async (req: AuthenticatedRequest, res: Response) 
   const sb = supabaseOrFail(res);
   if (!sb) return;
 
-  const { error } = await sb
-    .from('vaea_listener_channels')
-    .delete()
-    .eq('id', req.params.id)
-    .eq('tenant_id', ident.tenant_id)
-    .eq('user_id', ident.user_id);
+  const { error } = await repo.deleteVaeaChannel(sb, req.params.id, ident);
 
   if (error) { res.status(500).json({ ok: false, error: error.message }); return; }
   res.json({ ok: true });
@@ -348,17 +301,7 @@ router.get('/detected-questions', async (req: AuthenticatedRequest, res: Respons
   const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
   const disposition = req.query.disposition as string | undefined;
 
-  let q = sb
-    .from('vaea_detected_questions')
-    .select('*')
-    .eq('tenant_id', ident.tenant_id)
-    .eq('user_id', ident.user_id)
-    .order('created_at', { ascending: false })
-    .range(offset, offset + limit - 1);
-
-  if (disposition) q = q.eq('disposition', disposition);
-
-  const { data, error } = await q;
+  const { data, error } = await repo.listVaeaDetectedQuestions(sb, ident, { limit, offset, disposition });
   if (error) { res.status(500).json({ ok: false, error: error.message }); return; }
   res.json({ ok: true, questions: data || [], limit, offset });
 });
@@ -376,14 +319,7 @@ router.get('/drafts', async (req: AuthenticatedRequest, res: Response) => {
   const status = (req.query.status as string) || 'shadow,pending_approval';
   const statuses = status.split(',').map((s) => s.trim()).filter(Boolean);
 
-  const { data, error } = await sb
-    .from('vaea_reply_drafts')
-    .select('*, vaea_detected_questions(id, message_body, platform, author_handle, message_url, combined_score, extracted_topics)')
-    .eq('tenant_id', ident.tenant_id)
-    .eq('user_id', ident.user_id)
-    .in('status', statuses)
-    .order('created_at', { ascending: false })
-    .range(offset, offset + limit - 1);
+  const { data, error } = await repo.listVaeaDrafts(sb, ident, { statuses, limit, offset });
 
   if (error) { res.status(500).json({ ok: false, error: error.message }); return; }
   res.json({ ok: true, drafts: data || [], limit, offset });
@@ -395,15 +331,7 @@ router.post('/drafts/:id/dismiss', async (req: AuthenticatedRequest, res: Respon
   const sb = supabaseOrFail(res);
   if (!sb) return;
 
-  const { data, error } = await sb
-    .from('vaea_reply_drafts')
-    .update({ status: 'dismissed' })
-    .eq('id', req.params.id)
-    .eq('tenant_id', ident.tenant_id)
-    .eq('user_id', ident.user_id)
-    .in('status', ['shadow', 'pending_approval'])
-    .select('id, status')
-    .maybeSingle();
+  const { data, error } = await repo.dismissVaeaDraft(sb, req.params.id, ident);
 
   if (error) { res.status(500).json({ ok: false, error: error.message }); return; }
   if (!data) { res.status(404).json({ ok: false, error: 'NOT_FOUND_OR_TERMINAL' }); return; }
@@ -418,13 +346,7 @@ router.get('/summary', async (req: AuthenticatedRequest, res: Response) => {
   const sb = supabaseOrFail(res);
   if (!sb) return;
 
-  const [configRes, channelsCountRes, catalogCountRes, draftsCountRes, questionsCountRes] = await Promise.all([
-    sb.from('vaea_config').select('*').eq('tenant_id', ident.tenant_id).eq('user_id', ident.user_id).maybeSingle(),
-    sb.from('vaea_listener_channels').select('id', { count: 'exact', head: true }).eq('tenant_id', ident.tenant_id).eq('user_id', ident.user_id).eq('active', true),
-    sb.from('vaea_referral_catalog').select('id', { count: 'exact', head: true }).eq('tenant_id', ident.tenant_id).eq('user_id', ident.user_id).eq('active', true),
-    sb.from('vaea_reply_drafts').select('id', { count: 'exact', head: true }).eq('tenant_id', ident.tenant_id).eq('user_id', ident.user_id).in('status', ['shadow', 'pending_approval']),
-    sb.from('vaea_detected_questions').select('id', { count: 'exact', head: true }).eq('tenant_id', ident.tenant_id).eq('user_id', ident.user_id).gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()),
-  ]);
+  const [configRes, channelsCountRes, catalogCountRes, draftsCountRes, questionsCountRes] = await repo.fetchVaeaSummary(sb, ident);
 
   res.json({
     ok: true,

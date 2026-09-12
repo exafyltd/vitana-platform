@@ -16,6 +16,7 @@
  */
 import { getSupabase } from '../lib/supabase';
 import { emitOasisEvent } from './oasis-event-service';
+import * as repo from './admin-health-index-repository';
 
 const LOG_PREFIX = '[admin-health-index]';
 
@@ -110,18 +111,8 @@ async function fetchOpenInsightCounts(tenantId: string): Promise<{ urgent: numbe
   if (!supabase) return { urgent: 0, actionNeeded: 0 };
   try {
     const [{ count: urgent }, { count: actionNeeded }] = await Promise.all([
-      supabase
-        .from('admin_insights')
-        .select('id', { count: 'exact', head: true })
-        .eq('tenant_id', tenantId)
-        .eq('status', 'open')
-        .eq('severity', 'urgent'),
-      supabase
-        .from('admin_insights')
-        .select('id', { count: 'exact', head: true })
-        .eq('tenant_id', tenantId)
-        .eq('status', 'open')
-        .eq('severity', 'action_needed'),
+      repo.countOpenUrgentInsights(supabase, tenantId),
+      repo.countOpenActionNeededInsights(supabase, tenantId),
     ]);
     return { urgent: urgent ?? 0, actionNeeded: actionNeeded ?? 0 };
   } catch (err: any) {
@@ -136,11 +127,7 @@ export async function computeTenantHealthIndex(tenantId: string): Promise<Health
 
   try {
     const [kpiRow, insightCounts] = await Promise.all([
-      supabase
-        .from('tenant_kpi_current')
-        .select('kpi')
-        .eq('tenant_id', tenantId)
-        .maybeSingle(),
+      repo.fetchTenantKpiCurrent(supabase, tenantId),
       fetchOpenInsightCounts(tenantId),
     ]);
 
@@ -193,32 +180,20 @@ export async function storeTenantHealthIndex(tenantId: string): Promise<HealthIn
   // Fetch previous snapshot for regression detection
   let prevScore: number | null = null;
   try {
-    const { data: prev } = await supabase
-      .from('tenant_health_index_daily')
-      .select('score, snapshot_date')
-      .eq('tenant_id', tenantId)
-      .lt('snapshot_date', today)
-      .order('snapshot_date', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const { data: prev } = await repo.fetchPreviousHealthIndexSnapshot(supabase, tenantId, today);
     if (prev?.score !== null && prev?.score !== undefined) prevScore = prev.score;
   } catch {
     /* swallow — first snapshot */
   }
 
-  const { error } = await supabase
-    .from('tenant_health_index_daily')
-    .upsert(
-      {
-        tenant_id: tenantId,
-        snapshot_date: today,
-        score: result.score,
-        components: result.components,
-        computed_at: new Date().toISOString(),
-        source_version: HEALTH_INDEX_VERSION,
-      },
-      { onConflict: 'tenant_id,snapshot_date' },
-    );
+  const { error } = await repo.upsertTenantHealthIndexDaily(supabase, {
+    tenant_id: tenantId,
+    snapshot_date: today,
+    score: result.score,
+    components: result.components,
+    computed_at: new Date().toISOString(),
+    source_version: HEALTH_INDEX_VERSION,
+  });
   if (error) {
     console.warn(`${LOG_PREFIX} upsert failed: ${error.message}`);
     return result;

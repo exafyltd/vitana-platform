@@ -19,6 +19,7 @@ import {
 } from '../middleware/auth-supabase-jwt';
 import { getActiveCompassGoal } from '../services/intent-compass-lens';
 import type { IntentKind } from '../services/intent-classifier';
+import * as repo from './intent-board-repository';
 
 const router = Router();
 
@@ -85,15 +86,7 @@ router.get('/', requireAuth, requireTenant, async (req: Request, res: Response) 
     : defaultKindsForCompass(compass?.category ?? null);
 
   const supabase = getSupabase();
-  let q = supabase
-    .from('user_intents')
-    .select('*')
-    .eq('tenant_id', identity.tenant_id)
-    .eq('status', 'open')
-    .in('intent_kind', kinds)
-    .neq('requester_user_id', identity.user_id)  // never show me my own intents on the board
-    .order('created_at', { ascending: false })
-    .limit(limit);
+  let q = repo.buildIntentBoardQuery(supabase, identity.tenant_id, identity.user_id, kinds, limit);
 
   // For partner_seek on the default surface, only return rows when
   // explicitly requested. On the find_a_partner surface, include

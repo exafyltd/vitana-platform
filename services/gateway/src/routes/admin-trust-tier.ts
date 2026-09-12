@@ -11,6 +11,7 @@ import { Router, Request, Response } from 'express';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { getSupabase } from '../lib/supabase';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import * as repo from './admin-trust-tier-repository';
 
 const router = Router();
 
@@ -36,31 +37,22 @@ router.post('/admin/users/:vitana_id/trust-tier', requireAuth, async (req: Reque
   const supabase = getSupabase();
   if (!supabase) return res.status(500).json({ ok: false, error: 'supabase_unavailable' });
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('user_id, vitana_id')
-    .eq('vitana_id', targetVid)
-    .maybeSingle();
+  const { data: profile } = await repo.fetchProfileByVitanaId(supabase, targetVid);
   if (!profile) return res.status(404).json({ ok: false, error: 'USER_NOT_FOUND' });
 
   const userId = (profile as any).user_id as string;
   const provider = tier === 'id_verified' ? 'manual_admin' : null;
 
   // Upsert into user_reputation. The row may not exist yet for new users.
-  const { error } = await supabase
-    .from('user_reputation')
-    .upsert(
-      {
-        vitana_id: targetVid,
-        user_id: userId,
-        trust_tier: tier,
-        ...(tier === 'id_verified'
-          ? { id_verified_at: new Date().toISOString(), id_verified_by: provider }
-          : {}),
-        updated_at: new Date().toISOString(),
-      } as any,
-      { onConflict: 'vitana_id' }
-    );
+  const { error } = await repo.upsertUserReputationTrustTier(supabase, {
+    vitana_id: targetVid,
+    user_id: userId,
+    trust_tier: tier,
+    ...(tier === 'id_verified'
+      ? { id_verified_at: new Date().toISOString(), id_verified_by: provider }
+      : {}),
+    updated_at: new Date().toISOString(),
+  });
 
   if (error) {
     return res.status(500).json({ ok: false, error: error.message });

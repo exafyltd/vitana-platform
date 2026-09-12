@@ -26,6 +26,7 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { emitOasisEvent } from './oasis-event-service';
+import * as repo from './d47-social-alignment-engine-repository';
 import {
   AlignmentSuggestion,
   AlignmentDomain,
@@ -129,10 +130,7 @@ function createUserClient(token: string): SupabaseClient | null {
 // =============================================================================
 
 async function bootstrapDevContext(supabase: SupabaseClient): Promise<void> {
-  const { error } = await supabase.rpc('dev_bootstrap_request_context', {
-    p_tenant_id: DEV_IDENTITY.TENANT_ID,
-    p_active_role: 'developer'
-  });
+  const { error } = await repo.bootstrapDevRequestContext(supabase, DEV_IDENTITY.TENANT_ID);
   if (error) {
     console.warn(`${LOG_PREFIX} Bootstrap context failed (non-fatal):`, error.message);
   }
@@ -194,7 +192,7 @@ export async function generateSuggestions(
     const alignmentDomains = request.alignment_domains || null;
 
     // Call RPC to generate suggestions
-    const result = await supabase.rpc('alignment_generate_suggestions', {
+    const result = await repo.alignmentGenerateSuggestionsRpc(supabase, {
       p_max_suggestions: maxSuggestions,
       p_alignment_domains: alignmentDomains,
       p_min_relevance: minRelevance,
@@ -367,7 +365,7 @@ export async function getSuggestions(
     const limit = request.limit || 10;
 
     // Call RPC to get suggestions
-    const result = await supabase.rpc('alignment_get_suggestions', {
+    const result = await repo.alignmentGetSuggestionsRpc(supabase, {
       p_status: status,
       p_alignment_domains: alignmentDomains,
       p_limit: limit
@@ -456,9 +454,7 @@ export async function markSuggestionShown(
     }
 
     // Call RPC to mark shown
-    const result = await supabase.rpc('alignment_mark_shown', {
-      p_suggestion_id: request.suggestion_id
-    });
+    const result = await repo.alignmentMarkShownRpc(supabase, request.suggestion_id);
 
     if (result.error) {
       console.error(`${LOG_PREFIX} RPC error:`, result.error);
@@ -555,7 +551,7 @@ export async function actOnSuggestion(
     }
 
     // Call RPC to record action
-    const result = await supabase.rpc('alignment_act_on_suggestion', {
+    const result = await repo.alignmentActOnSuggestionRpc(supabase, {
       p_suggestion_id: request.suggestion_id,
       p_action: request.action,
       p_feedback: request.feedback || null
@@ -653,7 +649,7 @@ export async function cleanupExpiredSuggestions(
     }
 
     // Call RPC to cleanup
-    const result = await supabase.rpc('alignment_cleanup_expired');
+    const result = await repo.alignmentCleanupExpiredRpc(supabase);
 
     if (result.error) {
       console.error(`${LOG_PREFIX} RPC error:`, result.error);

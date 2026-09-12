@@ -30,6 +30,7 @@ import {
   computeNextStep,
   nextStepPrompt,
 } from './journey-foundation-next-step';
+import * as repo from './journey-foundation-delta-repository';
 
 const TEACHER_STEPS = new Set(['understand_economy', 'autopilot', 'business_live_media']);
 
@@ -84,17 +85,20 @@ async function ensureRow(
   client: SupabaseClient,
   userId: string,
 ): Promise<JourneyFoundationRow> {
-  const { data } = await client
-    .from('user_journey_foundation')
-    .select('*')
-    .eq('user_id', userId)
-    .maybeSingle();
+  const { data, error } = await repo.fetchJourneyFoundationRow(client, userId);
+  if (error) {
+    // Must NOT fall through to "row doesn't exist yet" — that would attempt
+    // an INSERT against a row that may genuinely already exist (failing on
+    // the unique user_id constraint, itself unchecked below) and then
+    // return a fabricated blank row as if it were the user's real state.
+    // applyJourneyAnswer would then persist writes (current_next_step, etc.)
+    // computed from that fake blank state over the user's real progress.
+    // Both callers already wrap this in try/catch, so throwing is safe.
+    throw error;
+  }
   if (data) return data as JourneyFoundationRow;
-  const { data: inserted } = await client
-    .from('user_journey_foundation')
-    .insert({ user_id: userId })
-    .select('*')
-    .maybeSingle();
+  const { data: inserted, error: insertErr } = await repo.insertJourneyFoundationRow(client, userId);
+  if (insertErr) throw insertErr;
   return (
     (inserted as JourneyFoundationRow) ?? {
       user_id: userId,
@@ -115,10 +119,7 @@ async function patchRow(
   userId: string,
   patch: Record<string, unknown>,
 ): Promise<void> {
-  await client
-    .from('user_journey_foundation')
-    .update({ ...patch, updated_at: new Date().toISOString() })
-    .eq('user_id', userId);
+  await repo.updateJourneyFoundationRow(client, userId, { ...patch, updated_at: new Date().toISOString() });
 }
 
 async function writeGoal(
@@ -139,19 +140,12 @@ async function writeGoal(
   if (input.starting_value != null) payload.starting_value = input.starting_value;
 
   // One active row per user: update the active one if present, else insert.
-  const { data: existing } = await client
-    .from('life_compass')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('is_active', true)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const { data: existing } = await repo.fetchActiveLifeCompassId(client, userId);
 
   if (existing?.id) {
-    await client.from('life_compass').update(payload).eq('id', existing.id);
+    await repo.updateLifeCompassGoal(client, existing.id, payload);
   } else {
-    await client.from('life_compass').insert({ user_id: userId, category: 'general', ...payload });
+    await repo.insertLifeCompassGoal(client, { user_id: userId, category: 'general', ...payload });
   }
 }
 

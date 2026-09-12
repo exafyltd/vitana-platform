@@ -16,6 +16,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { listConnectors, getConnector } from '../connectors';
 import { dispatchAction, type DispatchContext, type DispatchResult } from '../connectors/runtime/dispatcher';
+import * as repo from './index-repository';
 
 export interface CapabilityDefinition {
   /** Dot-separated id, e.g. 'music.play'. */
@@ -200,11 +201,7 @@ export async function resolveConnectorFor(
     return { error: `No connector declares capability ${capabilityId}` };
   }
 
-  const { data: active } = await supabase
-    .from('social_connections')
-    .select('provider')
-    .eq('user_id', userId)
-    .eq('is_active', true);
+  const { data: active } = await repo.fetchActiveSocialConnectionProviders(supabase, userId);
   const activeIds = new Set((active ?? []).map((r) => r.provider));
   const isAvailable = (cId: string, auth: string): boolean => {
     if (auth === 'none') return true;
@@ -232,12 +229,7 @@ export async function resolveConnectorFor(
   // ── Rule 2: stored preference for this capability ─────────────────────
   // VTID-01942 PR 2: user_capability_preferences row. Honoured only if
   // the preferred connector is still available.
-  const { data: prefRow } = await supabase
-    .from('user_capability_preferences')
-    .select('preferred_connector_id, set_method')
-    .eq('user_id', userId)
-    .eq('capability_id', capabilityId)
-    .maybeSingle();
+  const { data: prefRow } = await repo.fetchUserCapabilityPreference(supabase, userId, capabilityId);
   if (prefRow?.preferred_connector_id) {
     const pref = candidates.find((c) => c.id === prefRow.preferred_connector_id);
     if (pref && isAvailable(pref.id, pref.auth_type)) {
@@ -312,7 +304,7 @@ export async function executeCapability(
   let suggestDefault = false;
   if (result.ok) {
     try {
-      await ctx.supabase.from('capability_play_log').insert({
+      await repo.insertCapabilityPlayLog(ctx.supabase, {
         tenant_id: ctx.tenantId,
         user_id: ctx.userId,
         capability_id: capabilityId,
@@ -335,21 +327,10 @@ export async function executeCapability(
       resolved.reason === 'external_connected' &&
       !explicitSource
     ) {
-      const { count: existingPrefCount } = await ctx.supabase
-        .from('user_capability_preferences')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', ctx.userId)
-        .eq('capability_id', capabilityId);
+      const { count: existingPrefCount } = await repo.countUserCapabilityPreferences(ctx.supabase, ctx.userId, capabilityId);
 
       if ((existingPrefCount ?? 0) === 0) {
-        const { data: recent } = await ctx.supabase
-          .from('capability_play_log')
-          .select('connector_id')
-          .eq('user_id', ctx.userId)
-          .eq('capability_id', capabilityId)
-          .eq('ok', true)
-          .order('created_at', { ascending: false })
-          .limit(3);
+        const { data: recent } = await repo.fetchRecentSuccessfulCapabilityPlays(ctx.supabase, ctx.userId, capabilityId, 3);
 
         const lastThree = (recent ?? []).map((r: any) => r.connector_id);
         if (

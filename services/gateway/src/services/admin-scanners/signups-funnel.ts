@@ -12,6 +12,7 @@
  */
 import { getSupabase } from '../../lib/supabase';
 import type { AdminScanner, InsightDraft } from './types';
+import * as repo from './signups-funnel-repository';
 
 const LOG_PREFIX = '[admin-scanner:signups_funnel]';
 const STUCK_THRESHOLD = 3;
@@ -35,12 +36,7 @@ export const signupsFunnelScanner: AdminScanner = {
 
     // 1. Stuck in 'started' — user hit the form but never got email confirmation
     try {
-      const { count } = await supabase
-        .from('signup_attempts')
-        .select('id', { count: 'exact', head: true })
-        .eq('tenant_id', tenantId)
-        .eq('status', 'started')
-        .lt('started_at', h2);
+      const { count } = await repo.countSignupsStuckAtStarted(supabase, tenantId, h2);
       if (count !== null && count >= STUCK_THRESHOLD) {
         insights.push({
           natural_key: 'signup_stuck_at_started_2h',
@@ -67,12 +63,7 @@ export const signupsFunnelScanner: AdminScanner = {
 
     // 2. Stuck in 'email_sent' — email sent but user hasn't verified in 24h
     try {
-      const { count } = await supabase
-        .from('signup_attempts')
-        .select('id', { count: 'exact', head: true })
-        .eq('tenant_id', tenantId)
-        .eq('status', 'email_sent')
-        .lt('started_at', d1);
+      const { count } = await repo.countSignupsStuckAtEmailSent(supabase, tenantId, d1);
       if (count !== null && count >= STUCK_THRESHOLD) {
         insights.push({
           natural_key: 'signup_stuck_at_email_sent_24h',
@@ -100,17 +91,8 @@ export const signupsFunnelScanner: AdminScanner = {
     // 3. Abandonment rate spike
     try {
       const [{ count: abandoned }, { count: total }] = await Promise.all([
-        supabase
-          .from('signup_attempts')
-          .select('id', { count: 'exact', head: true })
-          .eq('tenant_id', tenantId)
-          .eq('status', 'abandoned')
-          .gte('started_at', d1),
-        supabase
-          .from('signup_attempts')
-          .select('id', { count: 'exact', head: true })
-          .eq('tenant_id', tenantId)
-          .gte('started_at', d1),
+        repo.countSignupsAbandonedSince(supabase, tenantId, d1),
+        repo.countSignupsTotalSince(supabase, tenantId, d1),
       ]);
       if (total !== null && total >= 10 && abandoned !== null) {
         const rate = (abandoned / total) * 100;
@@ -143,12 +125,7 @@ export const signupsFunnelScanner: AdminScanner = {
 
     // 4. Onboarding invitations expired unconverted in last 7d
     try {
-      const { count } = await supabase
-        .from('onboarding_invitations')
-        .select('id', { count: 'exact', head: true })
-        .eq('tenant_id', tenantId)
-        .eq('status', 'expired')
-        .gte('created_at', d7);
+      const { count } = await repo.countOnboardingInvitationsExpiredSince(supabase, tenantId, d7);
       if (count !== null && count >= STUCK_THRESHOLD) {
         insights.push({
           natural_key: 'onboarding_invitations_expired_7d',

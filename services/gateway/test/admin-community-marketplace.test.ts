@@ -142,6 +142,18 @@ describe('PATCH /listings/:id', () => {
     expect(r.status).toBe(404);
   });
 
+  it('500 (not 404) when the existing-listing lookup errors', async () => {
+    tableHandlers.community_listings = () => ({ data: null, error: { message: 'connection reset' } });
+
+    const r = await request(makeApp())
+      .patch('/api/v1/admin/community-marketplace/listings/listing-1')
+      .set('Authorization', 'Bearer admin-1')
+      .send({ admin_notes: 'checked, looks fine' });
+
+    expect(r.status).toBe(500);
+    expect(r.body.ok).toBe(false);
+  });
+
   it('200 happy path — edits admin_notes and emits an OASIS event', async () => {
     tableHandlers.community_listings = ({ op }: any) =>
       op === 'update'
@@ -222,6 +234,30 @@ describe('POST /sellers/:userId/suspend', () => {
 
     expect(r.status).toBe(201);
     expect(r.body.listings_suspended).toBe(1);
+  });
+
+  it('logs loudly and flags listings_lookup_failed when the active-listings lookup errors, instead of silently reporting 0', async () => {
+    tableHandlers.community_marketplace_seller_suspensions = () => ({ data: null, error: null });
+    tableHandlers.community_listings = ({ op }: any) =>
+      op === 'select'
+        ? { data: null, error: { message: 'connection reset' } }
+        : { data: null, error: null };
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const r = await request(makeApp())
+      .post(`/api/v1/admin/community-marketplace/sellers/${SELLER_ID}/suspend`)
+      .set('Authorization', 'Bearer admin-1')
+      .send({ reason: 'repeat offender' });
+
+    // The suspension record itself still succeeds — only the "also pull
+    // down their listings" step is affected, and that must be visible.
+    expect(r.status).toBe(201);
+    expect(r.body.listings_suspended).toBe(0);
+    expect(r.body.listings_lookup_failed).toBe(true);
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('active-listings lookup failed'),
+    );
+    errorSpy.mockRestore();
   });
 });
 

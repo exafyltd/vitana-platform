@@ -24,6 +24,7 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { emitOasisEvent } from './oasis-event-service';
+import * as repo from './d40-life-stage-awareness-engine-repository';
 import {
   LifeStageBundle,
   LifeStageAssessInput,
@@ -171,16 +172,15 @@ export async function assessLifeStage(
 
     // For dev sandbox, bootstrap the request context first
     if (useDevIdentity) {
-      const { error: bootstrapError } = await supabase.rpc('dev_bootstrap_request_context', {
-        p_tenant_id: DEV_IDENTITY.TENANT_ID,
-        p_active_role: 'developer'
-      });
+      const { error: bootstrapError } = await repo.rpcDevBootstrapRequestContext(
+        supabase, DEV_IDENTITY.TENANT_ID, 'developer',
+      );
       if (bootstrapError) {
         console.warn(`${LOG_PREFIX} Bootstrap context failed (non-fatal):`, bootstrapError.message);
       }
     }
 
-    const result = await supabase.rpc('life_stage_assess', rpcParams);
+    const result = await repo.rpcLifeStageAssess(supabase, rpcParams);
 
     if (result.error) {
       console.error(`${LOG_PREFIX} RPC error:`, result.error);
@@ -290,18 +290,15 @@ export async function getCurrentLifeStage(
 
     // For dev sandbox, bootstrap the request context first
     if (useDevIdentity) {
-      const { error: bootstrapError } = await supabase.rpc('dev_bootstrap_request_context', {
-        p_tenant_id: DEV_IDENTITY.TENANT_ID,
-        p_active_role: 'developer'
-      });
+      const { error: bootstrapError } = await repo.rpcDevBootstrapRequestContext(
+        supabase, DEV_IDENTITY.TENANT_ID, 'developer',
+      );
       if (bootstrapError) {
         console.warn(`${LOG_PREFIX} Bootstrap context failed (non-fatal):`, bootstrapError.message);
       }
     }
 
-    const result = await supabase.rpc('life_stage_get_current', {
-      p_session_id: sessionId || null
-    });
+    const result = await repo.rpcLifeStageGetCurrent(supabase, sessionId || null);
 
     if (result.error) {
       console.error(`${LOG_PREFIX} RPC error (get_current):`, result.error);
@@ -370,19 +367,15 @@ export async function overrideLifeStage(
 
     // For dev sandbox, bootstrap the request context first
     if (useDevIdentity) {
-      const { error: bootstrapError } = await supabase.rpc('dev_bootstrap_request_context', {
-        p_tenant_id: DEV_IDENTITY.TENANT_ID,
-        p_active_role: 'developer'
-      });
+      const { error: bootstrapError } = await repo.rpcDevBootstrapRequestContext(
+        supabase, DEV_IDENTITY.TENANT_ID, 'developer',
+      );
       if (bootstrapError) {
         console.warn(`${LOG_PREFIX} Bootstrap context failed (non-fatal):`, bootstrapError.message);
       }
     }
 
-    const result = await supabase.rpc('life_stage_override', {
-      p_assessment_id: assessmentId,
-      p_override: override
-    });
+    const result = await repo.rpcLifeStageOverride(supabase, assessmentId, override);
 
     if (result.error) {
       console.error(`${LOG_PREFIX} RPC error (override):`, result.error);
@@ -463,18 +456,15 @@ export async function explainLifeStage(
 
     // For dev sandbox, bootstrap the request context first
     if (useDevIdentity) {
-      const { error: bootstrapError } = await supabase.rpc('dev_bootstrap_request_context', {
-        p_tenant_id: DEV_IDENTITY.TENANT_ID,
-        p_active_role: 'developer'
-      });
+      const { error: bootstrapError } = await repo.rpcDevBootstrapRequestContext(
+        supabase, DEV_IDENTITY.TENANT_ID, 'developer',
+      );
       if (bootstrapError) {
         console.warn(`${LOG_PREFIX} Bootstrap context failed (non-fatal):`, bootstrapError.message);
       }
     }
 
-    const result = await supabase.rpc('life_stage_explain', {
-      p_assessment_id: assessmentId
-    });
+    const result = await repo.rpcLifeStageExplain(supabase, assessmentId);
 
     if (result.error) {
       console.error(`${LOG_PREFIX} RPC error (explain):`, result.error);
@@ -539,19 +529,18 @@ export async function detectGoal(
     }
 
     if (useDevIdentity) {
-      const { error: bootstrapError } = await supabase.rpc('dev_bootstrap_request_context', {
-        p_tenant_id: DEV_IDENTITY.TENANT_ID,
-        p_active_role: 'developer'
-      });
+      const { error: bootstrapError } = await repo.rpcDevBootstrapRequestContext(
+        supabase, DEV_IDENTITY.TENANT_ID, 'developer',
+      );
       if (bootstrapError) {
         console.warn(`${LOG_PREFIX} Bootstrap context failed (non-fatal):`, bootstrapError.message);
       }
     }
 
-    const result = await supabase.rpc('life_stage_detect_goal', {
+    const result = await repo.rpcLifeStageDetectGoal(supabase, {
       p_message: input.message || null,
       p_session_id: input.session_id || null,
-      p_source: input.source
+      p_source: input.source,
     });
 
     if (result.error) {
@@ -629,16 +618,15 @@ export async function getGoals(
     }
 
     if (useDevIdentity) {
-      const { error: bootstrapError } = await supabase.rpc('dev_bootstrap_request_context', {
-        p_tenant_id: DEV_IDENTITY.TENANT_ID,
-        p_active_role: 'developer'
-      });
+      const { error: bootstrapError } = await repo.rpcDevBootstrapRequestContext(
+        supabase, DEV_IDENTITY.TENANT_ID, 'developer',
+      );
       if (bootstrapError) {
         console.warn(`${LOG_PREFIX} Bootstrap context failed (non-fatal):`, bootstrapError.message);
       }
     }
 
-    const result = await supabase.rpc('life_stage_get_goals');
+    const result = await repo.rpcLifeStageGetGoals(supabase);
 
     if (result.error) {
       console.error(`${LOG_PREFIX} RPC error (get_goals):`, result.error);
@@ -701,19 +689,15 @@ export async function updateGoal(
     }
 
     if (useDevIdentity) {
-      const { error: bootstrapError } = await supabase.rpc('dev_bootstrap_request_context', {
-        p_tenant_id: DEV_IDENTITY.TENANT_ID,
-        p_active_role: 'developer'
-      });
+      const { error: bootstrapError } = await repo.rpcDevBootstrapRequestContext(
+        supabase, DEV_IDENTITY.TENANT_ID, 'developer',
+      );
       if (bootstrapError) {
         console.warn(`${LOG_PREFIX} Bootstrap context failed (non-fatal):`, bootstrapError.message);
       }
     }
 
-    const result = await supabase.rpc('life_stage_update_goal', {
-      p_goal_id: goalId,
-      p_updates: updates
-    });
+    const result = await repo.rpcLifeStageUpdateGoal(supabase, goalId, updates);
 
     if (result.error) {
       console.error(`${LOG_PREFIX} RPC error (update_goal):`, result.error);
@@ -784,19 +768,18 @@ export async function scoreTrajectory(
     }
 
     if (useDevIdentity) {
-      const { error: bootstrapError } = await supabase.rpc('dev_bootstrap_request_context', {
-        p_tenant_id: DEV_IDENTITY.TENANT_ID,
-        p_active_role: 'developer'
-      });
+      const { error: bootstrapError } = await repo.rpcDevBootstrapRequestContext(
+        supabase, DEV_IDENTITY.TENANT_ID, 'developer',
+      );
       if (bootstrapError) {
         console.warn(`${LOG_PREFIX} Bootstrap context failed (non-fatal):`, bootstrapError.message);
       }
     }
 
-    const result = await supabase.rpc('life_stage_score_trajectory', {
+    const result = await repo.rpcLifeStageScoreTrajectory(supabase, {
       p_actions: input.actions,
       p_session_id: input.session_id || null,
-      p_include_trade_offs: input.include_trade_offs ?? true
+      p_include_trade_offs: input.include_trade_offs ?? true,
     });
 
     if (result.error) {

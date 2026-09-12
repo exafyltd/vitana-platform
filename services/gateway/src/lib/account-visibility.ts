@@ -18,6 +18,7 @@
  */
 
 import { getSupabase } from './supabase';
+import * as repo from './account-visibility-repository';
 
 export type FieldVisibility = 'private' | 'connections' | 'public';
 export type ViewerRelationship = 'self' | 'connection' | 'stranger';
@@ -106,10 +107,7 @@ export async function getViewerRelationship(
   const supabase = getSupabase();
   if (!supabase) return 'stranger';
 
-  const { data, error } = await supabase.rpc('get_viewer_relationship', {
-    p_viewer: viewerUserId,
-    p_subject: subjectUserId,
-  });
+  const { data, error } = await repo.fetchViewerRelationship(supabase, viewerUserId, subjectUserId);
 
   if (error) {
     console.warn('[account-visibility] get_viewer_relationship failed', error);

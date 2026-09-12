@@ -24,6 +24,7 @@ import { Router, Response } from 'express';
 import { requireTenantAdmin } from '../../middleware/require-tenant-admin';
 import { AuthenticatedRequest } from '../../middleware/auth-supabase-jwt';
 import { getSupabase } from '../../lib/supabase';
+import * as repo from './product-analytics-repository';
 
 const router = Router({ mergeParams: true });
 
@@ -68,16 +69,14 @@ async function fetchEvents(
 ): Promise<EventRow[]> {
   const rows: EventRow[] = [];
   for (let page = 0; page < MAX_PAGES; page++) {
-    let query = supabase
-      .from('product_analytics_events')
-      .select(EVENT_COLUMNS)
-      .eq('tenant_id', tenantId)
-      .gte('occurred_at', sinceIso);
-    if (eventTypes && eventTypes.length > 0) query = query.in('event_type', eventTypes);
-
-    const { data, error } = await query
-      .order('occurred_at', { ascending: false })
-      .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+    const { data, error } = await repo.fetchProductAnalyticsEventsPage(supabase, {
+      columns: EVENT_COLUMNS,
+      tenantId,
+      sinceIso,
+      eventTypes,
+      from: page * PAGE_SIZE,
+      to: (page + 1) * PAGE_SIZE - 1,
+    });
     if (error) throw new Error(error.message);
     rows.push(...((data ?? []) as EventRow[]));
     if (!data || data.length < PAGE_SIZE) break;
@@ -567,16 +566,13 @@ router.get('/events', async (req: AuthenticatedRequest, res: Response) => {
   const eventType = typeof req.query.event_type === 'string' ? req.query.event_type : null;
 
   try {
-    let query = supabase
-      .from('product_analytics_events')
-      .select(EVENT_COLUMNS)
-      .eq('tenant_id', tenantId)
-      .order('occurred_at', { ascending: false })
-      .limit(limit);
-    if (eventName) query = query.eq('event_name', eventName);
-    if (eventType) query = query.eq('event_type', eventType);
-
-    const { data, error } = await query;
+    const { data, error } = await repo.fetchProductAnalyticsEventsList(supabase, {
+      columns: EVENT_COLUMNS,
+      tenantId,
+      limit,
+      eventName,
+      eventType,
+    });
     if (error) return res.status(500).json({ ok: false, error: error.message });
     return res.json({ ok: true, count: (data ?? []).length, events: data ?? [] });
   } catch (err: any) {

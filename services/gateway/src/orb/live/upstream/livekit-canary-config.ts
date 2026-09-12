@@ -30,6 +30,7 @@
  */
 
 import { getSupabase } from '../../../lib/supabase';
+import * as repo from './livekit-canary-config-repository';
 
 export interface LiveKitCanaryConfig {
   enabled: boolean;
@@ -121,10 +122,7 @@ export async function getLiveKitCanaryConfig(
   let tenants: string[] = [];
   let users: string[] = [];
   try {
-    const { data, error } = await sb
-      .from('system_config')
-      .select('key, value')
-      .in('key', [ENABLED_KEY, ALLOWLIST_KEY]);
+    const { data, error } = await repo.fetchLiveKitCanarySystemConfig(sb, ENABLED_KEY, ALLOWLIST_KEY);
     if (!error && Array.isArray(data)) {
       for (const row of data as Array<{ key: string; value: unknown }>) {
         if (row.key === ENABLED_KEY) {
