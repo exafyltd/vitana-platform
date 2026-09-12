@@ -3130,13 +3130,23 @@ async function allocatedOrphanReaperTick(): Promise<void> {
   for (const orphan of orphansR.data) {
     const ageMin = Math.round((Date.now() - new Date(orphan.created_at).getTime()) / 60_000);
     console.log(`${LOG_PREFIX} reaper: tombstoning orphan ${orphan.vtid} (age=${ageMin}min, title='${orphan.title}')`);
+    // VTID-03818: this PATCH used to set only status='deleted', never
+    // is_terminal/terminal_outcome — the Command Hub's own manual delete
+    // endpoint (routes/oasis-tasks.ts) sets both alongside status, and this
+    // reaper was the one write site in the repo that didn't match it,
+    // leaving reaper-deleted rows permanently non-terminal.
+    const now = new Date().toISOString();
     await supa(s, `/rest/v1/vtid_ledger?vtid=eq.${orphan.vtid}&status=eq.allocated`, {
       method: 'PATCH',
       headers: { Prefer: 'return=minimal' },
       body: JSON.stringify({
         status: 'deleted',
+        is_terminal: true,
+        terminal_outcome: 'deleted',
+        deleted_at: now,
+        deleted_by: 'allocated-orphan-reaper',
         delete_reason: `allocated-orphan-reaper: shell never received title (age=${ageMin}min)`,
-        updated_at: new Date().toISOString(),
+        updated_at: now,
       }),
     });
   }

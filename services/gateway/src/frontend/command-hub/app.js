@@ -8207,9 +8207,12 @@ function renderTaskDrawer() {
     // 1. oasisColumn is COMPLETED (AUTHORITATIVE - highest priority)
     // 2. is_terminal flag from API
     // 3. status indicates completion
+    // VTID-03818: 'complete' (no trailing 's') is checked alongside
+    // 'completed' — a live status-value drift found in vtid_ledger.
     const isFinalMode = isOasisTerminal ||
         isTerminal ||
         taskStatus === 'completed' ||
+        taskStatus === 'complete' ||
         taskStatus === 'failed' ||
         taskStatus === 'cancelled';
 
@@ -8230,7 +8233,8 @@ function renderTaskDrawer() {
     });
 
     // VTID-01006: Inconsistent state detection
-    const isInconsistentState = (taskStatus === 'completed' || taskStatus === 'failed') &&
+    // VTID-03818: include 'complete' alongside 'completed'.
+    const isInconsistentState = (taskStatus === 'completed' || taskStatus === 'complete' || taskStatus === 'failed') &&
         !isTerminal && !hasOasisCompletionEvent;
 
     // DEV-COMHU-2025-0013: Initialize drawer spec state when opening for a new task
@@ -9549,7 +9553,8 @@ function renderTaskStageDetail(task) {
     // VTID-01006: Check task terminal state for stage validation
     const isTerminal = task.is_terminal === true;
     const taskStatus = (task.status || '').toLowerCase();
-    const isCompleted = taskStatus === 'completed' || (isTerminal && task.terminal_outcome === 'success');
+    // VTID-03818: include 'complete' alongside 'completed'.
+    const isCompleted = taskStatus === 'completed' || taskStatus === 'complete' || (isTerminal && task.terminal_outcome === 'success');
 
     const heading = document.createElement('h3');
     heading.className = 'task-stage-detail-heading';
@@ -10972,7 +10977,12 @@ function mapStatusToColumn(status) {
     if (['in_progress', 'executing', 'running'].includes(s)) return 'In Progress';
 
     // Completed column: deployed, completed, success, failed, blocked, cancelled
-    if (['deployed', 'completed', 'success', 'failed', 'blocked', 'cancelled'].includes(s)) return 'Completed';
+    // VTID-03818: 'complete' (no trailing 's') is a live, separate status
+    // value some rows carry — board-adapter.ts already normalizes both
+    // spellings server-side, but this client fallback only recognized
+    // 'completed', stranding a 'complete' row in Scheduled whenever it
+    // reached the client without a server-computed oasisColumn.
+    if (['deployed', 'completed', 'complete', 'success', 'failed', 'blocked', 'cancelled'].includes(s)) return 'Completed';
 
     // Fallback: unknown status → Scheduled (status label remains visible on card)
     return 'Scheduled';
