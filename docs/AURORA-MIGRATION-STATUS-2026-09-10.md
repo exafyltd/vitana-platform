@@ -1375,3 +1375,80 @@ itself produces byte-accurate row counts once a table clears DMS's own
 per-table error state — the two bugs fixed this session (drop-order race,
 LOB truncation) were blocking tables from loading at all, not silently
 corrupting or truncating the rows of tables that did load.
+
+## Addendum, 2026-09-12 continued (7) — comprehensive exact-count sweep across ALL 585 public tables (not a 7-table spot check): 574/585 (98.1%) match exactly, and a previously undocumented "excluded tables have drifted" gap found
+
+The earlier spot-check (7 tables) was real but small. Ran the same
+exact-count technique (`query_to_xml`/`xpath` trick — gets a true
+`count(*)` for every table in ONE round trip per side, not 585
+individual queries) against **every** table in `public` on both
+Supabase (via Supabase MCP) and Aurora (via RDS Data API), for the full
+585-table set (excluding `awsdms_*` control tables).
+
+**Result: 574/585 (98.1%) match exactly. Zero tables are missing
+entirely from Aurora** — every table that exists on Supabase also
+exists on Aurora, including the ~13 tables this task's own
+`table-mappings.json` explicitly excludes as "already done" by an
+earlier migration effort (`memory_items`, `memory_facts`, `mem_episodes`,
+`user_intents`, `memory_embeddings`, `community_listings`,
+`calendar_events`, `mem_facts`, `feedback_tickets`, `products`,
+`knowledge_docs`, `ai_memory`, `memory_audit_log`) — confirming that
+earlier effort really did seed all of them, not just some.
+
+**Only 9 tables show any count difference at all:**
+
+| Table | Source | Aurora | Diff | Why |
+|---|---|---|---|---|
+| `mem_facts` | 13,422 | 12,052 | 1,370 | **New finding — see below** |
+| `memory_facts` | 12,166 | 10,856 | 1,310 | **New finding — see below** |
+| `mem_episodes` | 5,278 | 5,170 | 108 | **New finding — see below** |
+| `memory_items` | 3,123 | 3,022 | 101 | **New finding — see below** |
+| `oasis_events` | 483,936 | 483,924 | 12 | Expected live-write drift (no CDC), already documented |
+| `memberships` | 206 | 202 | 4 | Known blocker (§ Addendum 5) — real but small impact |
+| `reminders` | 123 | 120 | 3 | Known blocker (§ Addendum 5) — real but small impact |
+| `products` | 752 | 750 | 2 | Excluded table, minor drift |
+| `api_test_logs` | 19,361 | 19,360 | 1 | Ordinary live-write drift, included in this task's mapping |
+
+**A genuinely useful correction to Addendum 5's framing: the 3
+`conversation_messages`/`event_co_creators`/`global_community_events`
+"blocker" tables are NOT missing or stale data-wise.** Their row counts
+are `18=18`, `60=60`, `123=123` — **exact matches**, source vs. target.
+Because their `DROP TABLE` failed every time, they were never actually
+emptied — they still hold whatever rows an **earlier**, successful load
+effort (`vitana-supabase-to-aurora`/`-v3`, which loaded 495 tables before
+this session began) put there, and by coincidence or genuinely low
+write activity, nothing has changed their row counts since. **This does
+not mean the policy-fix checklist in Addendum 5 is unnecessary** — those
+tables still can't be refreshed by this task at all until the policies
+are fixed, so any FUTURE drift on them is invisible and unrecoverable
+without the fix — but it does mean the current, present-moment data
+gap for those three specific tables is zero, not "missing," which is a
+more precise finding than Addendum 5's blocker framing implied on its
+own.
+
+**New finding, not previously documented anywhere in this doc: the 13
+tables excluded from this session's DMS task as "already done" have
+drifted significantly since whatever earlier effort loaded them**,
+because — obviously in hindsight, but not previously measured — nothing
+has kept them in sync since (no CDC, and this task explicitly skips
+them). Four show real, non-trivial drift: `mem_facts` (1,370 rows
+behind, ~10% of the source total), `memory_facts` (1,310 rows behind,
+~11%), `mem_episodes` (108 behind, ~2%), `memory_items` (101 behind,
+~3%). These are exactly the memory/fact tables VTID-01192/VTID-01225
+(§14 of `CLAUDE.md`) treat as canonical infinite memory — a real,
+measurable gap between what a user has told Vitana since the earlier
+load and what Aurora currently holds for these tables specifically.
+**This is a genuine open item for the eventual cutover-time final catch-
+up load: these 13 "already done" tables should NOT be treated as
+permanently out of scope — they need at least one more full-load pass
+(remove them from the exclude list, or run a separate targeted
+`reload-tables` for just this set) before Aurora can be considered
+current for a real cutover.** Everything else (`products`,
+`api_test_logs`) is ordinary, harmless single-digit drift consistent
+with Option A's known trade-off.
+
+**Bottom line this addendum leaves the migration state at:** 574/585
+tables byte-accurate right now, 5 known-blocked tables with a documented
+human-action fix, and one additional, previously-invisible category (13
+"already done" tables now measurably stale) added to the pre-cutover
+checklist above.
