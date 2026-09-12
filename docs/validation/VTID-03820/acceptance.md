@@ -109,6 +109,19 @@ TEST: `outputs/tsc-noemit.txt`; `outputs/jest-vtid-03820-filter.txt` (5/5
 suites, 42/42 tests); `outputs/jest-full-suite.txt` (748/749 suites — 1
 pre-existing skip — 13,753/13,788 tests passing, 0 failures).
 
+## OASIS Impact
+
+OASIS_PROOF: On a successful on-ramp trigger, `triggerOperatorExecution()`
+(`services/gateway/src/services/operator-execution-onramp.ts`, end of the
+function) calls `emitOasisEvent({ type: 'operator.execution_onramp.triggered',
+vtid: input.vtid, source: 'operator-execution-onramp', status: 'success',
+payload: { execution_id, finding_id, vtid, requested_by, provider: 'deepseek',
+model: 'deepseek-flash', correlation_id } })`. The new
+`autopilot_execute_task` tool handler (`executeExecuteTask()` in
+`gemini-operator.ts`) also emits a `governance.evaluate` OASIS event before
+calling the on-ramp, mirroring `autopilot_create_task`'s existing pattern —
+both a rejection and a real trigger are always OASIS-visible, never silent.
+
 ## Deliberately NOT attempted
 
 - **No live invocation of the on-ramp against the real repo.** The kill
