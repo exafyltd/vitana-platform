@@ -132,6 +132,9 @@ describe('auth-supabase-jwt middleware', () => {
     process.env.SUPABASE_JWT_SECRET = 'test-jwt-secret';
     delete process.env.LOVABLE_JWT_SECRET;
     delete process.env.SUPABASE_AUTH_JWKS_URL;
+    delete process.env.COGNITO_USER_POOL_ID;
+    delete process.env.COGNITO_REGION;
+    delete process.env.COGNITO_APP_CLIENT_ID;
     for (const chain of Object.values(tableChains)) chain.mockReset();
     mockGetSupabase.mockReturnValue(mockSupabase as any);
     mockInvalidJwt();
@@ -224,6 +227,91 @@ describe('auth-supabase-jwt middleware', () => {
       expect(res.status).toBe(200);
       expect(res.body.auth_source).toBe('lovable');
       expect(jose.jwtVerify).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  // =========================================================================
+  // Cognito RS256 JWT verification (VTID-03827)
+  // =========================================================================
+
+  describe('Cognito RS256 JWT verification (VTID-03827)', () => {
+    const cognitoClaims = (sub: string, overrides: Record<string, unknown> = {}) => ({
+      sub,
+      token_use: 'id',
+      email: 'migrated@example.com',
+      aud: 'test-app-client-id',
+      exp: 1893456000,
+      iat: 1893452400,
+      'custom:legacy_user_id': 'legacy-uuid-123',
+      ...overrides,
+    });
+
+    beforeEach(() => {
+      // Isolate from the HS256/ES256 paths so only the Cognito branch can
+      // possibly succeed — makes call-count assertions unambiguous.
+      delete process.env.SUPABASE_JWT_SECRET;
+      process.env.COGNITO_USER_POOL_ID = 'eu-central-1_TestPool';
+      process.env.COGNITO_REGION = 'eu-central-1';
+      process.env.COGNITO_APP_CLIENT_ID = 'test-app-client-id';
+      (jose.createRemoteJWKSet as jest.Mock).mockReturnValue('cognito-jwks-sentinel');
+    });
+
+    it('verifies a Cognito ID token and maps custom:legacy_user_id to user_id (not the Cognito sub)', async () => {
+      mockVerifiedJwt(cognitoClaims('cognito-random-sub-abc'));
+
+      const res = await request(app).get('/auth').set('Authorization', 'Bearer cognito-token');
+
+      expect(res.status).toBe(200);
+      expect(res.body.auth_source).toBe('cognito');
+      expect(res.body.identity).toMatchObject({
+        user_id: 'legacy-uuid-123',
+        email: 'migrated@example.com',
+        tenant_id: null,
+        exafy_admin: false,
+        role: 'authenticated',
+      });
+      expect(jose.jwtVerify).toHaveBeenCalledWith(
+        'cognito-token',
+        'cognito-jwks-sentinel',
+        expect.objectContaining({
+          algorithms: ['RS256'],
+          issuer: 'https://cognito-idp.eu-central-1.amazonaws.com/eu-central-1_TestPool',
+        })
+      );
+    });
+
+    it('falls back to the Cognito sub when custom:legacy_user_id is absent', async () => {
+      mockVerifiedJwt(cognitoClaims('cognito-random-sub-xyz', { 'custom:legacy_user_id': undefined }));
+
+      const res = await request(app).get('/auth').set('Authorization', 'Bearer cognito-token');
+
+      expect(res.status).toBe(200);
+      expect(res.body.identity.user_id).toBe('cognito-random-sub-xyz');
+    });
+
+    it('rejects a Cognito access token (token_use !== "id")', async () => {
+      mockVerifiedJwt(cognitoClaims('cognito-sub', { token_use: 'access' }));
+
+      const res = await request(app).get('/auth').set('Authorization', 'Bearer access-token');
+
+      expect(res.status).toBe(401);
+    });
+
+    it('rejects a token whose aud does not match COGNITO_APP_CLIENT_ID', async () => {
+      mockVerifiedJwt(cognitoClaims('cognito-sub', { aud: 'some-other-client' }));
+
+      const res = await request(app).get('/auth').set('Authorization', 'Bearer wrong-aud');
+
+      expect(res.status).toBe(401);
+    });
+
+    it('skips the aud check when COGNITO_APP_CLIENT_ID is unset', async () => {
+      delete process.env.COGNITO_APP_CLIENT_ID;
+      mockVerifiedJwt(cognitoClaims('cognito-sub', { aud: 'anything-at-all' }));
+
+      const res = await request(app).get('/auth').set('Authorization', 'Bearer any-aud');
+
+      expect(res.status).toBe(200);
     });
   });
 

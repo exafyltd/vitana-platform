@@ -51,6 +51,25 @@ resource "aws_cognito_user_pool" "vitana" {
     }
   }
 
+  # VTID-03827: carries the ORIGINAL Supabase auth.users.id through to every
+  # token this pool issues (as the custom:legacy_user_id claim). Cognito
+  # assigns its own random `sub` per user, but every FK, RLS policy, and
+  # app_users/user_tenants row in this platform is keyed on the Supabase
+  # user id — without this attribute, a migrated user's Cognito identity
+  # would be unlinkable from all of their existing data. Populated once, at
+  # migration time, by lambda/index.js; immutable afterward — nothing should
+  # ever need to change a user's legacy id post-migration.
+  schema {
+    name                     = "legacy_user_id"
+    attribute_data_type     = "String"
+    mutable                  = false
+    developer_only_attribute = false
+    string_attribute_constraints {
+      min_length = 1
+      max_length = 64
+    }
+  }
+
   account_recovery_setting {
     recovery_mechanism {
       name     = "verified_email"
@@ -87,6 +106,16 @@ resource "aws_cognito_user_pool_client" "vitana" {
   # Don't leak whether an email exists via a different error shape —
   # matches GoTrue's own behavior, which the frontend already assumes.
   prevent_user_existence_errors = "ENABLED"
+
+  # custom:legacy_user_id MUST be explicitly listed here to appear in the ID
+  # token this client receives — it's how the gateway's Cognito JWT
+  # verification path (services/gateway/src/middleware/auth-supabase-jwt.ts,
+  # extractCognitoIdentity()) recovers the real Supabase user id. It's
+  # deliberately absent from write_attributes (and couldn't be included even
+  # if listed — it's `mutable = false` on the pool schema above): nothing
+  # should ever let a user or client change their own legacy id.
+  read_attributes  = ["email", "email_verified", "custom:legacy_user_id"]
+  write_attributes = ["email"]
 
   access_token_validity  = 1
   id_token_validity      = 1

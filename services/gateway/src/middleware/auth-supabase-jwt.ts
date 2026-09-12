@@ -1,16 +1,25 @@
 /**
  * VTID-01157: Supabase JWT Auth Middleware (Dev Onboarding MVP)
  * VTID-ORBC: Unified auth with dual JWT secrets (Platform + Lovable)
+ * VTID-03827: Additive Cognito RS256/JWKS verification (Supabase Auth →
+ *   Cognito migration — see infra/cognito-migration/README.md)
  *
- * Purpose: Verify Supabase HS256 JWT tokens and extract identity claims.
- * Supports two JWT secrets simultaneously:
- *   1. SUPABASE_JWT_SECRET — Platform Supabase project
- *   2. LOVABLE_JWT_SECRET  — Lovable Supabase project (temp_vitana_v1)
+ * Purpose: Verify Supabase HS256/ES256 JWT tokens (and, once configured,
+ * Cognito RS256 ID tokens) and extract identity claims. Supports:
+ *   1. SUPABASE_JWT_SECRET — Platform Supabase project (HS256)
+ *   2. LOVABLE_JWT_SECRET  — Lovable Supabase project, temp_vitana_v1 (HS256)
+ *   3. SUPABASE_AUTH_JWKS_URL — newer Supabase projects signing ES256
+ *   4. COGNITO_USER_POOL_ID — Cognito User Pool issuing RS256 ID tokens
+ *      (VTID-03827). Unset in every live task def today — this path is
+ *      inert until a real pool exists and this var is deliberately set.
  *
- * Tries Platform secret first, then Lovable secret. Attaches auth_source
- * to the request so downstream code knows which project the token came from.
+ * Tries each configured source in order, HS256 first, then falls through.
+ * Attaches auth_source to the request so downstream code knows which
+ * identity provider signed the token.
  *
- * SECURITY: Does NOT call Supabase to validate tokens - just verifies signature + exp/nbf.
+ * SECURITY: Does NOT call Supabase/Cognito to validate tokens - just
+ * verifies signature + exp/nbf/iss/aud locally against the relevant key
+ * material.
  */
 
 import { Request, Response, NextFunction } from 'express';
@@ -87,9 +96,9 @@ export function invalidateVitanaIdCache(userId: string): void {
 }
 
 /**
- * Auth source: which Supabase project signed the JWT
+ * Auth source: which identity provider signed the JWT
  */
-export type AuthSource = 'platform' | 'lovable' | 'jwks';
+export type AuthSource = 'platform' | 'lovable' | 'jwks' | 'cognito';
 
 /**
  * Extended Express Request with identity attached
@@ -164,6 +173,75 @@ function getRemoteJwks(): ReturnType<typeof jose.createRemoteJWKSet> | null {
 }
 
 /**
+ * VTID-03827: RS256 verification via a Cognito User Pool's JWKS.
+ *
+ * Additive + gated exactly like SUPABASE_AUTH_JWKS_URL above: unset in every
+ * live task def today, so this is a no-op until COGNITO_USER_POOL_ID is
+ * deliberately configured (see infra/cognito-migration/README.md for the
+ * infra this verifies against, and its own "not yet applied" status).
+ */
+let _cognitoJwks: ReturnType<typeof jose.createRemoteJWKSet> | null = null;
+let _cognitoJwksKey: string | null = null;
+function getCognitoJwks(): ReturnType<typeof jose.createRemoteJWKSet> | null {
+  const poolId = process.env.COGNITO_USER_POOL_ID;
+  if (!poolId) return null;
+  const region = process.env.COGNITO_REGION || process.env.AWS_REGION || 'eu-central-1';
+  const key = `${region}/${poolId}`;
+  if (_cognitoJwks && _cognitoJwksKey === key) return _cognitoJwks;
+  try {
+    const url = `https://cognito-idp.${region}.amazonaws.com/${poolId}/.well-known/jwks.json`;
+    _cognitoJwks = jose.createRemoteJWKSet(new URL(url));
+    _cognitoJwksKey = key;
+    return _cognitoJwks;
+  } catch (e) {
+    console.error(`[VTID-03827] Invalid Cognito JWKS config: ${(e as Error).message}`);
+    return null;
+  }
+}
+
+function cognitoIssuer(): string {
+  const poolId = process.env.COGNITO_USER_POOL_ID;
+  const region = process.env.COGNITO_REGION || process.env.AWS_REGION || 'eu-central-1';
+  return `https://cognito-idp.${region}.amazonaws.com/${poolId}`;
+}
+
+/**
+ * VTID-03827: Map a verified Cognito ID token payload to a SupabaseIdentity.
+ *
+ * `user_id` deliberately comes from the `custom:legacy_user_id` claim, NOT
+ * from Cognito's own `sub` — Cognito assigns a fresh random UUID per user on
+ * creation, but every FK, RLS policy, and app_users/user_tenants row in this
+ * platform is keyed on the ORIGINAL Supabase auth.users.id. The Cognito User
+ * Migration Lambda (infra/cognito-migration/lambda/index.js) is responsible
+ * for populating that custom attribute from the legacy account at migration
+ * time; the User Pool's admin_create_user_config.allow_admin_create_user_only
+ * means the Lambda is currently the ONLY way a user is ever created, so this
+ * claim should always be present in practice. Falling back to `sub` is a
+ * defensive default for a malformed/unmigrated token, not an expected path.
+ *
+ * KNOWN GAP, not yet resolved: `exafy_admin` has no Cognito-side source of
+ * truth yet (no custom claim/group has been defined) and is hardcoded false
+ * here — a Cognito-authenticated admin will be denied by requireExafyAdmin/
+ * requireAdminAuth until this gets either a custom claim populated by the
+ * migration Lambda (mirroring legacy_user_id) or a DB-lookup fallback the
+ * way requireTenant already does for tenant_id. Do not remove this comment
+ * without actually fixing the gap.
+ */
+function extractCognitoIdentity(payload: jose.JWTPayload): SupabaseIdentity {
+  const legacyUserId = (payload['custom:legacy_user_id'] as string) || payload.sub || '';
+  return {
+    user_id: legacyUserId,
+    email: (payload.email as string) || null,
+    tenant_id: null, // resolved via requireTenant's existing user_tenants DB fallback
+    exafy_admin: false, // see KNOWN GAP above
+    role: 'authenticated',
+    aud: Array.isArray(payload.aud) ? payload.aud[0] : (payload.aud as string) || null,
+    exp: typeof payload.exp === 'number' ? payload.exp : null,
+    iat: typeof payload.iat === 'number' ? payload.iat : null,
+  };
+}
+
+/**
  * Extract identity claims from a verified JWT payload.
  */
 function extractIdentity(payload: jose.JWTPayload): SupabaseIdentity {
@@ -219,7 +297,34 @@ export async function verifyAndExtractIdentity(
     }
   }
 
-  if (secrets.length === 0 && !jwks) {
+  // VTID-03827: Supabase paths failed (or none configured) — try Cognito's
+  // RS256 ID tokens when a pool is configured. Only accepts token_use='id'
+  // (Cognito access tokens carry no email/custom claims, so the ID token is
+  // what this platform's identity shape needs) and, when
+  // COGNITO_APP_CLIENT_ID is set, checks aud matches that specific client.
+  const cognitoJwks = getCognitoJwks();
+  if (cognitoJwks) {
+    try {
+      const { payload } = await jose.jwtVerify(token, cognitoJwks, {
+        algorithms: ['RS256'],
+        issuer: cognitoIssuer(),
+      });
+      if (payload.token_use !== 'id') {
+        throw new Error(`expected a Cognito ID token, got token_use=${payload.token_use}`);
+      }
+      const expectedClientId = process.env.COGNITO_APP_CLIENT_ID;
+      if (expectedClientId && payload.aud !== expectedClientId) {
+        throw new Error('aud does not match COGNITO_APP_CLIENT_ID');
+      }
+      const identity = extractCognitoIdentity(payload);
+      console.log(`[VTID-03827] JWT verified via Cognito JWKS (RS256): user=${identity.user_id}`);
+      return { identity, claims: payload, auth_source: 'cognito' };
+    } catch (_error: any) {
+      // fall through to failure
+    }
+  }
+
+  if (secrets.length === 0 && !jwks && !cognitoJwks) {
     return null;
   }
   // All verification paths failed — log for debugging

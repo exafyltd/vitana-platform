@@ -98,6 +98,13 @@ function buildUserAttributes(legacyUser) {
   return [
     { Name: 'email', Value: legacyUser.email },
     { Name: 'email_verified', Value: legacyUser.email_confirmed_at ? 'true' : 'false' },
+    // Carries the original Supabase auth.users.id through to every token
+    // Cognito issues for this user (as the custom:legacy_user_id claim) —
+    // see cognito.tf's schema block and the gateway's
+    // auth-supabase-jwt.ts::extractCognitoIdentity() for why this, not
+    // Cognito's own freshly-assigned `sub`, is what the rest of the
+    // platform must key on.
+    { Name: 'custom:legacy_user_id', Value: legacyUser.id },
   ];
 }
 

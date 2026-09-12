@@ -134,17 +134,61 @@ Until one of those happens, treat the Cognito side of this migration as
    real values in a **non-committed** copy) — review carefully, this is a
    real AWS account.
 
+## Gateway token verification — DONE (additive, inert until configured)
+
+`services/gateway/src/middleware/auth-supabase-jwt.ts` now has a third
+verification path (VTID-03827), tried after the existing HS256/ES256
+Supabase paths fail: it verifies a Cognito-issued **ID token** (not access
+token — Cognito access tokens carry no email/custom claims) as RS256
+against the pool's JWKS, requires `token_use === 'id'`, and optionally
+checks `aud` against `COGNITO_APP_CLIENT_ID` when that's set. Gated on
+`COGNITO_USER_POOL_ID` — unset (as it is everywhere today, since no pool
+exists yet), it's a complete no-op, exactly like `SUPABASE_AUTH_JWKS_URL`'s
+existing pattern.
+
+New env vars this reads (none set on any live task def yet — set them once
+the User Pool above is actually applied):
+
+| Var | Required | Purpose |
+|---|---|---|
+| `COGNITO_USER_POOL_ID` | yes (gates the whole path) | e.g. `eu-central-1_XXXXXXXXX` — the `user_pool_id` output above |
+| `COGNITO_REGION` | no (falls back to `AWS_REGION`, then `eu-central-1`) | region the pool lives in |
+| `COGNITO_APP_CLIENT_ID` | no, but strongly recommended | the `user_pool_client_id` output above — without it, any client of this pool's tokens is accepted, not just the vitana app |
+
+**Identity mapping — the important part.** `extractCognitoIdentity()` reads
+`user_id` from the token's `custom:legacy_user_id` claim, NOT Cognito's own
+`sub`. This is why `cognito.tf`'s User Pool schema carries that custom
+attribute and why the migration Lambda populates it from the Supabase
+user's `id` at migration time (see `lambda/index.js`'s
+`buildUserAttributes()`) — every existing FK, RLS policy, and
+`app_users`/`user_tenants` row is keyed on the Supabase id, and Cognito's
+own `sub` is a fresh random UUID that has no relationship to any of that.
+Losing this claim would silently disconnect a migrated user from all their
+existing data despite a "successful" login.
+
+**Still an open gap, deliberately not silently glossed over:**
+`exafy_admin` is hardcoded `false` for every Cognito-authenticated
+identity — there is no Cognito-side source of truth for it yet (no custom
+claim, no group). `requireExafyAdmin`/`requireAdminAuth` will therefore
+incorrectly reject a real admin who has been migrated to Cognito, until
+this gets either its own custom claim (mirroring `legacy_user_id`, set by
+the migration Lambda from the legacy `app_metadata.exafy_admin` value) or
+a DB-lookup fallback the way `requireTenant` already has for `tenant_id`.
+Flagged in-code (`extractCognitoIdentity`'s doc comment) so it can't be
+missed by a future reader. `tenant_id` has no equivalent gap — it already
+resolves correctly for a Cognito identity via `requireTenant`'s existing
+`user_tenants` DB lookup, since that lookup is keyed on `user_id`, which is
+now the correct (legacy) id regardless of which provider signed the token.
+
+New tests: `services/gateway/test/middleware/auth-supabase-jwt.test.ts`,
+`describe('Cognito RS256 JWT verification (VTID-03827)')` — verifies the
+legacy-id mapping, the sub fallback, `token_use` and `aud` rejection.
+
 ## What this does NOT cover — still needed before any real cutover
 
-This directory is the identity **provider**. It does not touch:
+This directory is the identity **provider**, and the gateway can now verify
+its tokens. It does not yet touch:
 
-- **Gateway token verification.** `services/gateway/src/middleware/
-  auth-supabase-jwt.ts` only verifies Supabase/GoTrue-issued JWTs
-  (`SUPABASE_JWT_SECRET`/`LOVABLE_JWT_SECRET`, HS256). It needs a new path
-  that verifies Cognito-issued tokens (RS256, via the pool's JWKS at
-  `https://cognito-idp.<region>.amazonaws.com/<user_pool_id>/.well-known/
-  jwks.json`) — almost certainly running both verifiers side by side during
-  the migration window, not a hard cutover.
 - **The gateway's own `/auth` proxy routes** (`services/gateway/src/routes/
   auth.ts`, lines ~127/346) still proxy straight to GoTrue's
   `/auth/v1/token` endpoints. These need Cognito equivalents
