@@ -1225,3 +1225,115 @@ budget for at least one manual, human-run SQL step (drop + recreate the
 `event_co_creators`) rather than assuming a fully automatic DMS pass will
 ever clear 100% of tables on its own — these are structural properties of
 the schema's own RLS policy graph, not transient migration bugs.
+
+## Addendum, 2026-09-12 continued (5) — FINAL state of this session's full-load pass: 566/571, confirmed stable across two independent full `reload-target` runs. Full human-action checklist below.
+
+Ran a **second, completely independent** full `reload-target` (all 571
+tables, not scoped) after the first one. Result: **identical** —
+566/571 loaded, the exact same 5 tables errored both times:
+`memberships`, `conversation_messages`, `global_community_events`,
+`reminders`, `event_co_creators`. Two independent full runs landing on
+the exact same 5 stragglers rules out ordinary per-run randomness as the
+explanation and confirms this is a stable, reproducible end-state for
+this task's current schema/config — not a fluke to keep retrying away.
+
+**All 4 policies for the `global_community_events` ⟷
+`event_co_creators` cycle, captured verbatim via `pg_get_expr()`:**
+
+```sql
+-- On event_co_creators:
+CREATE POLICY "Event creators can add co-creators" ON public.event_co_creators
+  AS PERMISSIVE FOR INSERT
+  WITH CHECK (
+    EXISTS (SELECT 1 FROM global_community_events gce
+            WHERE gce.id = event_co_creators.event_id
+              AND gce.created_by = auth.uid())
+  );
+
+CREATE POLICY "Event creators can remove co-creators" ON public.event_co_creators
+  AS PERMISSIVE FOR DELETE
+  USING (
+    EXISTS (SELECT 1 FROM global_community_events gce
+            WHERE gce.id = event_co_creators.event_id
+              AND gce.created_by = auth.uid())
+  );
+
+-- On global_community_events:
+CREATE POLICY "Community users can delete events they created or co-create"
+  ON public.global_community_events
+  AS PERMISSIVE FOR DELETE
+  USING (
+    is_community_user() AND (
+      created_by = auth.uid()
+      OR EXISTS (SELECT 1 FROM event_co_creators ecc
+                 WHERE ecc.event_id = global_community_events.id
+                   AND ecc.user_id = auth.uid())
+    )
+  );
+
+CREATE POLICY "Community users can update events they created or co-create"
+  ON public.global_community_events
+  AS PERMISSIVE FOR UPDATE
+  USING (
+    is_community_user() AND (
+      created_by = auth.uid()
+      OR EXISTS (SELECT 1 FROM event_co_creators ecc
+                 WHERE ecc.event_id = global_community_events.id
+                   AND ecc.user_id = auth.uid())
+    )
+  );
+```
+
+Note the `global_community_events` policies also call `is_community_user()`
+— confirm this function still exists on Aurora before recreating them
+(it should, since it's a function, not a table, and unaffected by any of
+this task's DROP TABLE activity).
+
+**`conversation_messages` and `reminders` — genuinely unexplained by
+`pg_depend`, unlike the other 3.** Broadened the check beyond
+`pg_policy` to **every** `pg_depend` row of any `classid`/`deptype`
+referencing either table — result for both: only self-owned objects
+(own indexes, constraints, defaults, triggers, toast table, composite
+type). No cross-table policy, no view, no foreign key (reconfirmed 0 FKs
+exist anywhere in `public` schema). Whatever blocks their `DROP TABLE` at
+the moment DMS attempts it is not visible in `pg_depend` by the time this
+session checks afterward — the same "existed at drop time, gone by
+completion" shape as the original 15-table batch that a second pass
+legitimately cleared, **except retrying has not cleared these two across
+three separate attempts now** (original run, first scoped retry, two
+full `reload-target` runs). This is flagged as a genuinely open question,
+not a confidently-diagnosed permanent blocker like the other 3 — a
+plausible next step for whoever picks this up is watching
+`pg_locks`/`pg_stat_activity` **during** a live attempt (this session
+only ever checked after the fact) to catch what's actually holding the
+table at drop time.
+
+### Complete, final human-action checklist for 100% full-load completion
+
+All three of the following need a human (or a session with
+`[Security Weaken]`-classified actions unblocked) to run directly against
+Aurora, in this order, each followed by a scoped `aws dms reload-tables`
+(or a full `reload-target`) for just the affected table(s):
+
+1. **`memberships`**: drop `user_intents_public_read` and
+   `user_intents_tenant_read` on `public.user_intents` (definitions in
+   the addendum above this one), reload `memberships`, recreate both
+   policies verbatim.
+2. **`global_community_events` + `event_co_creators`** (must be done
+   together, in one transaction, since it's a true cycle): drop all 4
+   policies above, reload BOTH tables, recreate all 4 policies verbatim.
+3. **`conversation_messages` + `reminders`**: cause still unconfirmed:
+   try one more scoped `reload-tables` pass for just these two first
+   (cheap, might simply need a slightly different run order); if that
+   still fails, capture `pg_locks`/CloudWatch logs from a live attempt
+   for real diagnosis before assuming a policy fix is even needed here.
+
+**Final tally this session leaves the migration in: 566 of 571 tables
+(99.1%) successfully loaded into Aurora with real data**, including the
+previously-broken large tables (`oasis_events` at 483,619 rows). The
+remaining 5 are fully scoped and, for 3 of them, fully diagnosed with
+exact fix SQL ready to run. This is the natural stopping point for the
+full-load-only phase of Option A — next steps per the standing plan are
+verifying data completeness on the 566 successfully-loaded tables, then
+the human-run policy fixes above, then eventually the cutover write-freeze
++ final catch-up load + Supabase shutdown.
