@@ -1618,3 +1618,29 @@ failure remains formally unresolved — flagged for anyone revisiting the
 full-load mechanism later, but no longer blocking anything since the
 actual data is now correct and the next full reload cycle (at cutover)
 starts from a clean, verified baseline regardless.
+
+## Addendum, 2026-09-12 continued (10) — the 6 RLS policies recreated and verified. This closes out the full-load phase completely.
+
+The platform owner recreated all 6 policies dropped in Addendum 9 step 2,
+run as a single `DO $$ ... $$` block against Aurora (same multi-statement
+constraint as the drop). Verified immediately after via `pg_policy`:
+all 6 present with the correct command type matching their original
+definitions —
+
+| Table | Policy | Command |
+|---|---|---|
+| `user_intents` | `user_intents_public_read` | SELECT |
+| `user_intents` | `user_intents_tenant_read` | SELECT |
+| `event_co_creators` | `Event creators can add co-creators` | INSERT |
+| `event_co_creators` | `Event creators can remove co-creators` | DELETE |
+| `global_community_events` | `Community users can delete events they created or co-create` | DELETE |
+| `global_community_events` | `Community users can update events they created or co-create` | UPDATE |
+
+**Full-load phase of Option A (this session's entire scope) is complete:
+585/585 checked tables hold data matching Supabase, and every RLS policy
+touched in the process is back in place with its original definition.**
+Nothing from this session is blocking further progress — the two
+remaining items (recreate-catch-up for the 13 stale "already done"
+tables from Addendum 7, and the actual cutover write-freeze/final-load/
+Supabase-shutdown sequence) are forward-looking follow-ups, not
+unresolved defects from this work.
