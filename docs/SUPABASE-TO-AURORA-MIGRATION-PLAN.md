@@ -295,13 +295,27 @@ migration remains unexecuted:** `auth.users` is now **209** (was 199 as
 of this doc's 2026-08-04 header date), and `pg_policies` in `public` now
 shows **638** policies referencing `auth.uid()` (up from 557), **65**
 referencing `auth.jwt()` (not previously broken out separately here),
-across **1,039 total policies** on **327 distinct tables**. This is drift
+across **1,039 total policies**. This is drift
 from continued production use, not a data-quality problem — but it does
 mean B4's actual scope is ~15% larger than this section's original count,
 and will keep growing every day execution is deferred. The `auth.uid()`
 compatibility-shim approach this section recommends is unaffected by the
 count itself (it's a mechanism, not a per-policy rewrite), so the growth
 doesn't change B4's design — only its stakes for delaying further.
+
+**Re-checked live 2026-09-12 (routine autonomous check-in) — one number
+above needed a correction, not a re-measurement.** "327 distinct tables"
+was ambiguous and, read the obvious way (distinct tables across all 1,039
+policies), wrong: that figure is actually the count of tables carrying an
+`auth.uid()`-referencing policy **specifically** (confirmed exactly —
+`count(distinct tablename) where qual/with_check ilike '%auth.uid()%'` =
+327, live). The real all-policy distinct-table count is **493**; adding in
+`auth.jwt()`-only tables brings the auth-relevant total to **341**. Not
+drift — the underlying 638/65/1,039 counts are byte-identical to the
+2026-09-11 re-verification, re-run today via the same live query. Matters
+for B4 planning because "493 tables carry some RLS policy" is the real
+surface area a `auth.uid()`/`auth.jwt()` compatibility shim needs to keep
+working, not 327 — 327 undercounts by ~34%.
 
 **B5 — Realtime.** 79 subscriptions (live-corrected to 60 in-frontend /
 39 files, gateway has zero — see `docs/AURORA-B5-REALTIME-INVENTORY.md`).
