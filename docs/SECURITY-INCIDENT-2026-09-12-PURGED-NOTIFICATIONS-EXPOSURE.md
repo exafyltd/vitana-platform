@@ -96,17 +96,26 @@ the absolute no-write rule elsewhere in this repo's governance).
    was applied, blocking even read-only commands like `git status`.
    Whoever picks this up next should commit and push this file once
    Bash access is restored, with the usual attribution trailer.
-2. **No broader sweep for sibling exposures was done.** This table was
-   found incidentally while investigating RLS-disabled tables
-   (`awsdms_heartbeat`/`awsdms_ddl_audit`, both low-risk DMS bookkeeping
-   tables, not fixed — no user data, no legitimate caller either way but
-   lower stakes). A full audit of every table with `anon`/`authenticated`
-   grants but RLS disabled, cross-referenced against whether it holds any
-   user-identifying columns, has not been run. **Recommended next step**
-   for whoever picks this up: run the security advisors
-   (`mcp__Supabase__get_advisors(type=security)`) fresh and specifically
-   check every `rls_disabled_in_public` finding against its columns, not
-   just count them.
+2. **Broader sweep done (2026-09-12, following cycle).** Queried every
+   `public` table for the combination (RLS disabled) AND (a grant to
+   `anon` or `authenticated`) — the exact shape of this incident:
+   ```sql
+   select c.relname, bool_or(g.grantee='anon') as anon_grant,
+     bool_or(g.grantee='authenticated') as auth_grant
+   from pg_class c
+   join pg_namespace n on n.oid = c.relnamespace
+   join information_schema.role_table_grants g
+     on g.table_name = c.relname and g.table_schema='public'
+   where n.nspname='public' and c.relkind='r' and not c.relrowsecurity
+     and g.grantee in ('anon','authenticated')
+   group by c.relname;
+   ```
+   **Result: zero rows.** `_vtid_03506_purged_notifications` was an
+   isolated incident, not one instance of a broader pattern — every other
+   `public` table either has RLS enabled, or has no `anon`/`authenticated`
+   grant at all (e.g. the two DMS bookkeeping tables, which have RLS
+   disabled but no such grants, confirmed separately — no fix needed
+   there, matching the original assessment above).
 3. **Whether this exposure was ever actually exploited is unknown** — no
    Supabase-side access-log review was done (would need `query_logs`
    against `edge_logs`/`postgrest` logs filtered to this table's path,
