@@ -1,0 +1,29 @@
+VTID-03718 — commands run for verification (cwd: services/gateway)
+
+$ npx jest test/services/conversation/compute-greeting-decision.golden.test.ts --silent=false
+Test Suites: 1 passed, 1 total
+Tests:       60 passed, 60 total
+Snapshots:   34 passed, 34 total
+(full output: outputs/golden-test.txt)
+
+$ npx jest test/services/conversation/
+Test Suites: 11 passed, 11 total
+Tests:       220 passed, 220 total
+Snapshots:   34 passed, 34 total
+
+$ npx tsc --noEmit
+exit=0 (clean, no output — see outputs/vtid03718-tsc.txt)
+
+$ npm run build
+exit=0 (see outputs/vtid03718-build.txt)
+
+$ ORB_CASCADED_VOICE_ENABLED=true node scripts/verify-language-routing.js
+pt/pl both DECIDED PROVIDER: cascaded, no PROBLEM flag.
+Only sr flagged (pre-existing, documented, accepted gap — no Polly voice).
+(full output: outputs/verify-language-routing.txt)
+
+NOT RUN (cannot be run from this session without violating the
+production-write absolute rule):
+- A real anonymous ORB voice session in Polish or Portuguese against
+  preview-aws.vitanaland.com. See acceptance.md "Not yet independently
+  confirmed".
