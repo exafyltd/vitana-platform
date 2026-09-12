@@ -1,5 +1,5 @@
 /**
- * BOOTSTRAP-ORB-END-CONVERSATION
+ * VTID-03824
  *
  * Live-reported bug: the user says "okay du kannst jetzt ausschalten" ("okay
  * you can turn off now") — Vitana correctly speaks a farewell acknowledging
@@ -53,7 +53,7 @@ function extractBlock(anchor: string, openBraceSearchStart?: string): string {
   throw new Error(`unclosed block: ${anchor}`);
 }
 
-describe('BOOTSTRAP-ORB-END-CONVERSATION: _isClosingForNav() also suppresses on conversationEnding', () => {
+describe('VTID-03824: _isClosingForNav() also suppresses on conversationEnding', () => {
   it('OR-s in _s.conversationEnding alongside signupClosing/navigationPending', () => {
     const block = extractBlock('function _isClosingForNav() {');
     expect(block).toMatch(/_s\.signupClosing === true/);
@@ -62,7 +62,7 @@ describe('BOOTSTRAP-ORB-END-CONVERSATION: _isClosingForNav() also suppresses on 
   });
 });
 
-describe('BOOTSTRAP-ORB-END-CONVERSATION: orb_directive end_conversation handler', () => {
+describe('VTID-03824: orb_directive end_conversation handler', () => {
   it('exists as its own branch in the orb_directive switch', () => {
     expect(source).toMatch(/msg\.directive === 'end_conversation'/);
   });
@@ -114,7 +114,7 @@ describe('BOOTSTRAP-ORB-END-CONVERSATION: orb_directive end_conversation handler
   });
 });
 
-describe('BOOTSTRAP-ORB-END-CONVERSATION: conversationEnding flag cannot leak across sessions', () => {
+describe('VTID-03824: conversationEnding flag cannot leak across sessions', () => {
   it('is reset to false inside _hide()', () => {
     const block = extractBlock('function _hide() {');
     expect(block).toMatch(/_s\.conversationEnding = false;/);
@@ -129,7 +129,7 @@ describe('BOOTSTRAP-ORB-END-CONVERSATION: conversationEnding flag cannot leak ac
   });
 });
 
-describe('BOOTSTRAP-ORB-END-CONVERSATION: turn_complete default path is suppressed via the shared guard', () => {
+describe('VTID-03824: turn_complete default path is suppressed via the shared guard', () => {
   it('_waitForAudioEnd (turn_complete) still calls _isClosingForNav() before the default listening transition', () => {
     const block = extractBlock("case 'turn_complete':", '(function (myGen) {');
     expect(block).toMatch(/if \(_isClosingForNav\(\)\) return;/);

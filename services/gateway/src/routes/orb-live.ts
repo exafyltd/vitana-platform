@@ -6570,7 +6570,7 @@ async function executeLiveApiToolInner(
         };
       }
 
-      // BOOTSTRAP-ORB-END-CONVERSATION: general-purpose session close — see
+      // VTID-03824: general-purpose session close — see
       // live-tool-catalog.ts's declaration for why this exists. Same shape
       // as end_teaching_session / end_guided_topic_teaching above.
       case 'end_conversation': {
@@ -6579,7 +6579,7 @@ async function executeLiveApiToolInner(
           type: 'orb_directive',
           directive: 'end_conversation',
           reason: reason || 'user_ended_conversation',
-          vtid: 'BOOTSTRAP-ORB-END-CONVERSATION',
+          vtid: 'VTID-03824',
         };
         try {
           if (session.sseResponse) {
@@ -6589,9 +6589,9 @@ async function executeLiveApiToolInner(
             session.clientWs.send(JSON.stringify(directive));
           }
         } catch (err) {
-          console.warn(`[BOOTSTRAP-ORB-END-CONVERSATION] end_conversation directive emit failed (non-fatal): ${(err as Error).message}`);
+          console.warn(`[VTID-03824] end_conversation directive emit failed (non-fatal): ${(err as Error).message}`);
         }
-        console.log(`[BOOTSTRAP-ORB-END-CONVERSATION] end_conversation called: session=${session.sessionId} reason=${reason || '<none>'}`);
+        console.log(`[VTID-03824] end_conversation called: session=${session.sessionId} reason=${reason || '<none>'}`);
         emitDiag(session, 'conversation_ended', { reason: reason || null });
         return {
           success: true,

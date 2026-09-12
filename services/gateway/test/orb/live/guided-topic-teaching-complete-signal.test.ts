@@ -323,7 +323,7 @@ describe('VTID-03762 follow-up: client-side backstop when the model never calls 
     // inline — no second "var stillPlaying" poll of its own.
     const directiveIdx = source.indexOf("msg.directive === 'end_guided_topic_teaching'");
     // Bounded to the NEXT branch, whichever comes first — another `else if`
-    // (e.g. BOOTSTRAP-ORB-END-CONVERSATION's end_conversation, which has its
+    // (e.g. VTID-03824's end_conversation, which has its
     // own legitimate audio-drain poll, same as the navigate directive) or
     // the final catch-all `else`. Stopping only at `} else {` would sweep a
     // later, unrelated branch's poll into this slice and falsely fail.

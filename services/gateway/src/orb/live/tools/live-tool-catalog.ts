@@ -2586,7 +2586,7 @@ export function buildLiveApiTools(
             required: [],
           },
         },
-        // BOOTSTRAP-ORB-END-CONVERSATION: general-purpose session close, for
+        // VTID-03824: general-purpose session close, for
         // the case neither of the two tools above covers — an ordinary
         // conversation (not Teacher Mode, not a My Journey guided topic)
         // where the user says something like "you can turn off now" / "I

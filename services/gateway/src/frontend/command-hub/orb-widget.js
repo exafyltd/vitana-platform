@@ -2011,7 +2011,7 @@
     // after the first navigation. Reset here so each new session starts clean.
     _s.navigationPending = false;
     _s.signupClosing = false;
-    _s.conversationEnding = false; // BOOTSTRAP-ORB-END-CONVERSATION: same reset, same reason
+    _s.conversationEnding = false; // VTID-03824: same reset, same reason
 
     // BOOTSTRAP-ORB-IOS-UNLOCK: the playback AudioContext create + 1-sample
     // silent-buffer unlock + resume() was MOVED UP to before the continuity
@@ -2763,7 +2763,7 @@
               if (!_s.active) return; // Session ended
               // VTID-NAV: Any close-pending state suppresses the listening transition.
               // Covers signup close (legacy), navigator-driven navigation close,
-              // AND end_conversation (BOOTSTRAP-ORB-END-CONVERSATION — the model
+              // AND end_conversation (VTID-03824 — the model
               // said goodbye and called end_conversation; don't reopen the mic).
               if (_isClosingForNav()) return;
               var stillPlaying = _s.audioPlaying ||
@@ -3274,7 +3274,7 @@
             console.error('[VTOrb] end_guided_topic_teaching handling error:', e);
           }
         } else if (msg.directive === 'end_conversation') {
-          // BOOTSTRAP-ORB-END-CONVERSATION: the LLM called `end_conversation`
+          // VTID-03824: the LLM called `end_conversation`
           // after speaking a farewell because the user said something like
           // "you can turn off now" / "I don't want to talk anymore". Without
           // this, turn_complete's default path unconditionally reopens the
@@ -4716,7 +4716,7 @@
         ' was delivered and is being closed — crediting completion (VTID-03799)');
     }
 
-    _s.conversationEnding = false; // BOOTSTRAP-ORB-END-CONVERSATION: don't leak into a later, unrelated session
+    _s.conversationEnding = false; // VTID-03824: don't leak into a later, unrelated session
     _s.guidedAutoClose = false; // VTID-03294 (#4): clear any pending guided auto-close
     _s.guidedTopic = null; // VTID-03675: don't let a never-delivered topic leak into a later, unrelated session
     _s._guidedTopicInFlight = null; // VTID-03746: same lifecycle — this overlay session is genuinely over
@@ -4793,7 +4793,7 @@
   // VTID-NAV: Returns true when the widget is in any close-pending state.
   // Used by the turn_complete handler to suppress the listening transition
   // so we don't reactivate the orb while we are about to navigate away.
-  // BOOTSTRAP-ORB-END-CONVERSATION: also true once the model has called
+  // VTID-03824: also true once the model has called
   // end_conversation — without this, turn_complete's default path would
   // reopen the mic into LISTENING for the few hundred ms between the
   // farewell's audio draining and _hide() actually running.
