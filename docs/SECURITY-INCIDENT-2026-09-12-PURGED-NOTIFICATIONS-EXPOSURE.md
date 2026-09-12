@@ -154,17 +154,29 @@ intent_open_asks:        security_invoker_on = true
 local_heroes_weekly:     security_invoker_on = true
 ```
 
-**What this does NOT cover:** whether any live application code (gateway
-or frontend) queries these views expecting the old owner-privilege
-behavior and would now see fewer/zero rows for a legitimately-scoped
-caller (e.g. a `service_role` connection that previously relied on the
-view to see cross-tenant rows it was *supposed* to see, if such a caller
-exists) — that would be a regression, not a fix. A grep for each view name
-across `services/gateway/src` and `vitana-v1/src` was not performed as
-part of this session's fix; whoever next touches these views should run
-that check as a follow-up, and treat this fix as reversible in the same
-way as the first finding (`ALTER VIEW ... SET (security_invoker = off);`)
-if a legitimate caller turns out to depend on the old bypass behavior.
+**Regression check, done as a follow-up in the same session:** grepped
+every call site of all three view names across both `services/gateway/src`
+and `vitana-v1/src`.
+
+- `agent_personas_registry` is read by `persona-registry.ts` via
+  `getServiceClient()`, and `intent_open_asks` is read by
+  `routes/intent-open-asks.ts` via `getSupabase()` — both resolve to the
+  **`service_role`** key (`SUPABASE_SERVICE_ROLE_KEY`/`SUPABASE_SERVICE_ROLE`
+  in `lib/supabase.ts`). `service_role` bypasses RLS entirely regardless of
+  a view's `security_invoker` setting (Supabase's documented model, also
+  the basis of this repo's own `docs/AURORA-EXCEPT-AUTH-ASSESSMENT.md`
+  observation that "the gateway uses the service-role client, so RLS is
+  already bypassed for every gateway query"), so **neither gateway call
+  site's behavior changes at all** from this fix.
+- `local_heroes_weekly` has no call site anywhere in `services/gateway/src`.
+- **None of the three views has any call site in `vitana-v1/src`** — the
+  frontend never queries them directly.
+
+So the only caller whose access actually changes is exactly the one this
+fix targets: an unauthenticated/authenticated PostgREST caller using the
+`anon`/publishable key, which is precisely the exposure being closed. No
+legitimate caller depends on the old bypass behavior — confirmed, not
+assumed.
 
 ## What is NOT yet done / open follow-ups
 
