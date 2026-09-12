@@ -184,15 +184,53 @@ New tests: `services/gateway/test/middleware/auth-supabase-jwt.test.ts`,
 `describe('Cognito RS256 JWT verification (VTID-03827)')` — verifies the
 legacy-id mapping, the sub fallback, `token_use` and `aud` rejection.
 
+## Gateway auth proxy routes (`/login`, `/refresh`) — DONE (additive, inert until configured)
+
+`services/gateway/src/routes/auth.ts`'s `POST /login` and `POST /refresh`
+now branch on `isCognitoAuthConfigured()` (same gate as the JWT verification
+path — `COGNITO_USER_POOL_ID` + `COGNITO_APP_CLIENT_ID`) via a new
+`services/gateway/src/services/cognito-auth-client.ts`, wrapping
+`InitiateAuth` (`USER_PASSWORD_AUTH` for login, `REFRESH_TOKEN_AUTH` for
+refresh). **The frontend's request/response shape at these two endpoints
+does not change either way** — that's the point of a gateway PROXY: a
+client that already calls `POST /auth/login` with `{email, password}` and
+reads back `{access_token, refresh_token, user}` keeps working unmodified
+whichever identity provider is behind it. `GET /auth/health` now also
+reports `cognito_configured`/`active_login_provider` so this is observable
+without reading env vars directly.
+
+What `cognitoLogin()`/`cognitoRefresh()` return as `access_token` is
+Cognito's **ID token**, not its AccessToken — deliberately, because that's
+the only Cognito token type carrying the `custom:legacy_user_id`/`email`
+claims the gateway's JWT verification path (above) needs, and because
+Cognito access tokens can't carry custom claims at all. A user's very
+first successful `/login` attempt is also what triggers the User Migration
+Lambda behind the scenes (Cognito calls it automatically mid-`InitiateAuth`
+for an email it doesn't have a user record for yet) — no separate
+migration step or endpoint is needed on the gateway side.
+
+**Deliberately not implemented: `RespondToAuthChallenge`.** This pool's
+design (`allow_admin_create_user_only = true`, users only ever created by
+the migration Lambda with `finalUserStatus: 'CONFIRMED'`) means a login
+challenge — `NEW_PASSWORD_REQUIRED`, MFA, etc. — should never occur in
+practice. If `InitiateAuth` ever returns a `ChallengeName` instead of
+tokens, `cognito-auth-client.ts` surfaces an explicit `CHALLENGE_REQUIRED`
+error rather than silently mishandling it; implement the real
+challenge-response flow only if this pool's config changes to actually
+need one.
+
+New tests: `services/gateway/test/services/cognito-auth-client.test.ts`
+(the SDK wrapper — token mapping, legacy-id/sub fallback, challenge and
+error handling, client memoization) and
+`services/gateway/test/routes/auth-cognito.test.ts` (the route branching —
+Cognito-configured vs. Supabase-fallback, for both endpoints, plus
+`/health`'s new fields).
+
 ## What this does NOT cover — still needed before any real cutover
 
-This directory is the identity **provider**, and the gateway can now verify
-its tokens. It does not yet touch:
+This directory is the identity **provider**, the gateway can verify its
+tokens, and `/login`/`/refresh` can proxy to it. It does not yet touch:
 
-- **The gateway's own `/auth` proxy routes** (`services/gateway/src/routes/
-  auth.ts`, lines ~127/346) still proxy straight to GoTrue's
-  `/auth/v1/token` endpoints. These need Cognito equivalents
-  (`InitiateAuth`/`RespondToAuthChallenge` via the AWS SDK).
 - **Aurora RLS compatibility.** 638 policies key on `auth.uid()`/
   `auth.jwt()`, which are Supabase-specific SQL functions reading a
   session GUC that GoTrue's PostgREST layer sets per-request. A

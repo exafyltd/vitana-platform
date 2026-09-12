@@ -23,6 +23,7 @@ import { generatePersonalRecommendations } from '../services/recommendation-engi
 import { sendWelcomeChatMessages } from '../services/welcome-chat-service';
 import { addUserToSystemGroups } from '../services/community-group-enrollment';
 import * as repo from './auth-repository';
+import { isCognitoAuthConfigured, cognitoLogin, cognitoRefresh } from '../services/cognito-auth-client';
 
 const router = Router();
 
@@ -110,33 +111,13 @@ router.post('/login', async (req: Request, res: Response) => {
     });
   }
 
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
-
-  if (!supabaseUrl || !supabaseAnonKey) {
-    console.error('[VTID-01186] POST /auth/login - Missing Supabase configuration');
-    return res.status(500).json({
-      ok: false,
-      error: 'INTERNAL_ERROR',
-      message: 'Supabase configuration not available',
-    });
-  }
-
   try {
-    // Call Supabase Auth REST API for email/password login
-    const authResponse = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': supabaseAnonKey,
-      },
-      body: JSON.stringify({
-        email: email.trim(),
-        password,
-      }),
-    });
-
-    const authData = await authResponse.json() as {
+    // VTID-03827: Cognito path, tried first when configured. The frontend's
+    // request/response shape at this endpoint doesn't change either way —
+    // this is why /login is a gateway PROXY rather than the frontend
+    // talking to the identity provider directly, and it's what lets this
+    // branch exist without touching a single frontend call site.
+    let authData: {
       access_token?: string;
       refresh_token?: string;
       expires_in?: number;
@@ -150,21 +131,83 @@ router.post('/login', async (req: Request, res: Response) => {
           name?: string;
         };
       };
-      error?: string;
-      error_description?: string;
-      msg?: string;
     };
 
-    if (!authResponse.ok) {
-      console.warn(`[VTID-01186] POST /auth/login - Auth failed for ${email}: ${authData.error || authData.msg || 'Unknown error'}`);
-      return res.status(401).json({
-        ok: false,
-        error: 'INVALID_CREDENTIALS',
-        message: authData.error_description || authData.msg || 'Invalid email or password',
-      });
-    }
+    if (isCognitoAuthConfigured()) {
+      const result = await cognitoLogin(email.trim(), password);
+      if (!result.ok) {
+        console.warn(`[VTID-03827] POST /auth/login - Cognito auth failed for ${email}: ${result.message}`);
+        return res.status(401).json({
+          ok: false,
+          error: result.error,
+          message: result.message,
+        });
+      }
+      authData = {
+        access_token: result.access_token,
+        refresh_token: result.refresh_token,
+        expires_in: result.expires_in,
+        token_type: result.token_type,
+        user: { id: result.user?.id, email: result.user?.email || undefined },
+      };
+      console.log(`[VTID-03827] POST /auth/login - Cognito success for ${email}, user_id=${authData.user?.id}`);
+    } else {
+      const supabaseUrl = process.env.SUPABASE_URL;
+      const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 
-    console.log(`[VTID-01186] POST /auth/login - Success for ${email}, user_id=${authData.user?.id}`);
+      if (!supabaseUrl || !supabaseAnonKey) {
+        console.error('[VTID-01186] POST /auth/login - Missing Supabase configuration');
+        return res.status(500).json({
+          ok: false,
+          error: 'INTERNAL_ERROR',
+          message: 'Supabase configuration not available',
+        });
+      }
+
+      // Call Supabase Auth REST API for email/password login
+      const authResponse = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseAnonKey,
+        },
+        body: JSON.stringify({
+          email: email.trim(),
+          password,
+        }),
+      });
+
+      const rawAuthData = await authResponse.json() as {
+        access_token?: string;
+        refresh_token?: string;
+        expires_in?: number;
+        token_type?: string;
+        user?: {
+          id?: string;
+          email?: string;
+          user_metadata?: {
+            avatar_url?: string;
+            full_name?: string;
+            name?: string;
+          };
+        };
+        error?: string;
+        error_description?: string;
+        msg?: string;
+      };
+
+      if (!authResponse.ok) {
+        console.warn(`[VTID-01186] POST /auth/login - Auth failed for ${email}: ${rawAuthData.error || rawAuthData.msg || 'Unknown error'}`);
+        return res.status(401).json({
+          ok: false,
+          error: 'INVALID_CREDENTIALS',
+          message: rawAuthData.error_description || rawAuthData.msg || 'Invalid email or password',
+        });
+      }
+
+      console.log(`[VTID-01186] POST /auth/login - Success for ${email}, user_id=${rawAuthData.user?.id}`);
+      authData = rawAuthData;
+    }
 
     // VTID-01196: Fetch profile from app_users to get avatar_url
     let profile: { display_name?: string; avatar_url?: string; bio?: string } = {};
@@ -330,47 +373,76 @@ router.post('/refresh', async (req: Request, res: Response) => {
     });
   }
 
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
-
-  if (!supabaseUrl || !supabaseAnonKey) {
-    console.error('[BOOTSTRAP-DEV-6H-SESSION] POST /auth/refresh - Missing Supabase config');
-    return res.status(500).json({
-      ok: false,
-      error: 'INTERNAL_ERROR',
-      message: 'Supabase configuration not available',
-    });
-  }
-
   try {
-    const authResponse = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': supabaseAnonKey,
-      },
-      body: JSON.stringify({ refresh_token }),
-    });
-
-    const authData = await authResponse.json() as {
+    // VTID-03827: Cognito path, tried first when configured — same
+    // provider-transparent proxy pattern as /login above.
+    let authData: {
       access_token?: string;
       refresh_token?: string;
       expires_in?: number;
       token_type?: string;
-      error?: string;
-      error_description?: string;
-      msg?: string;
     };
 
-    if (!authResponse.ok || !authData.access_token) {
-      console.warn(
-        `[BOOTSTRAP-DEV-6H-SESSION] POST /auth/refresh - failed: ${authData.error || authData.msg || authResponse.status}`
-      );
-      return res.status(401).json({
-        ok: false,
-        error: 'INVALID_REFRESH_TOKEN',
-        message: authData.error_description || authData.msg || 'Refresh token is invalid or expired',
+    if (isCognitoAuthConfigured()) {
+      const result = await cognitoRefresh(refresh_token);
+      if (!result.ok) {
+        console.warn(`[VTID-03827] POST /auth/refresh - Cognito refresh failed: ${result.message}`);
+        return res.status(401).json({
+          ok: false,
+          error: result.error,
+          message: result.message,
+        });
+      }
+      authData = {
+        access_token: result.access_token,
+        refresh_token: result.refresh_token,
+        expires_in: result.expires_in,
+        token_type: result.token_type,
+      };
+    } else {
+      const supabaseUrl = process.env.SUPABASE_URL;
+      const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+      if (!supabaseUrl || !supabaseAnonKey) {
+        console.error('[BOOTSTRAP-DEV-6H-SESSION] POST /auth/refresh - Missing Supabase config');
+        return res.status(500).json({
+          ok: false,
+          error: 'INTERNAL_ERROR',
+          message: 'Supabase configuration not available',
+        });
+      }
+
+      const authResponse = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseAnonKey,
+        },
+        body: JSON.stringify({ refresh_token }),
       });
+
+      const rawAuthData = await authResponse.json() as {
+        access_token?: string;
+        refresh_token?: string;
+        expires_in?: number;
+        token_type?: string;
+        error?: string;
+        error_description?: string;
+        msg?: string;
+      };
+
+      if (!authResponse.ok || !rawAuthData.access_token) {
+        console.warn(
+          `[BOOTSTRAP-DEV-6H-SESSION] POST /auth/refresh - failed: ${rawAuthData.error || rawAuthData.msg || authResponse.status}`
+        );
+        return res.status(401).json({
+          ok: false,
+          error: 'INVALID_REFRESH_TOKEN',
+          message: rawAuthData.error_description || rawAuthData.msg || 'Refresh token is invalid or expired',
+        });
+      }
+
+      authData = rawAuthData;
     }
 
     return res.status(200).json({
@@ -793,6 +865,7 @@ router.put('/profile', requireAuth, async (req: AuthenticatedRequest, res: Respo
 router.get('/health', (_req, res: Response) => {
   const hasJwtSecret = !!process.env.SUPABASE_JWT_SECRET;
   const hasSupabaseUrl = !!process.env.SUPABASE_URL;
+  const cognitoConfigured = isCognitoAuthConfigured();
 
   return res.status(200).json({
     ok: true,
@@ -801,6 +874,10 @@ router.get('/health', (_req, res: Response) => {
     config: {
       jwt_secret_configured: hasJwtSecret,
       supabase_url_configured: hasSupabaseUrl,
+      // VTID-03827: when true, /login and /refresh proxy to Cognito instead
+      // of Supabase GoTrue — see cognito-auth-client.ts.
+      cognito_configured: cognitoConfigured,
+      active_login_provider: cognitoConfigured ? 'cognito' : 'supabase',
     },
     timestamp: new Date().toISOString(),
   });
