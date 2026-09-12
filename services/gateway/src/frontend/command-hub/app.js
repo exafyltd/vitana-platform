@@ -25615,9 +25615,67 @@ function renderOperatorOverlay() {
     return backdrop;
 }
 
+// VTID-03822: tool-name -> human label for the chat tool-activity line.
+// Unlisted tools fall back to a generic "Ran <name>" — this is a display
+// nicety, not a contract, so an unmapped/new tool degrades gracefully
+// rather than being silently dropped.
+var TOOL_ACTIVITY_LABELS = {
+    create_task: 'Created a task',
+    knowledge_search: 'Searched the Knowledge Hub',
+    web_search: 'Searched the web',
+    get_task: 'Looked up a task',
+    update_task: 'Updated a task'
+};
+
+function describeToolActivity(tr) {
+    if (!tr || !tr.name) return 'Ran a tool';
+    var label = TOOL_ACTIVITY_LABELS[tr.name] || ('Ran ' + tr.name);
+    if (tr.response && typeof tr.response === 'object' && tr.response.vtid) {
+        label += ' (' + tr.response.vtid + ')';
+    }
+    return label;
+}
+
 function renderOperatorChat() {
     const container = document.createElement('div');
     container.className = 'chat-container';
+
+    // VTID-03822: thread switcher — a dropdown of existing conversation
+    // threads plus a "+ New" button. Purely client-side (localStorage),
+    // per this VTID's own spec: there is no backend conversation table to
+    // build against, so "resuming a thread" means restoring its saved
+    // history into state.chatMessages, not a server-side fetch.
+    const threadBar = document.createElement('div');
+    threadBar.className = 'chat-thread-bar';
+
+    const threadSelect = document.createElement('select');
+    threadSelect.className = 'chat-thread-select';
+    threadSelect.title = 'Switch conversation';
+    (state.operatorThreads || []).forEach(function (thread) {
+        const opt = document.createElement('option');
+        opt.value = thread.id;
+        opt.textContent = thread.title || 'New conversation';
+        if (thread.id === state.operatorActiveThreadId) {
+            opt.selected = true;
+        }
+        threadSelect.appendChild(opt);
+    });
+    threadSelect.onchange = function () {
+        switchOperatorThread(threadSelect.value);
+    };
+    threadBar.appendChild(threadSelect);
+
+    const newThreadBtn = document.createElement('button');
+    newThreadBtn.type = 'button';
+    newThreadBtn.className = 'chat-new-thread-btn';
+    newThreadBtn.textContent = '+ New';
+    newThreadBtn.title = 'Start a new conversation';
+    newThreadBtn.onclick = function () {
+        startNewOperatorThread();
+    };
+    threadBar.appendChild(newThreadBtn);
+
+    container.appendChild(threadBar);
 
     // Messages area
     const messages = document.createElement('div');
@@ -25647,8 +25705,27 @@ function renderOperatorChat() {
                 bubbleClasses += ' message-error';
             }
             bubble.className = bubbleClasses;
-            bubble.textContent = msg.content || msg.text;
+            // VTID-03822: render markdown (bold/links/lists/headings) instead of
+            // plain text — replies routinely come back with markdown, which
+            // rendered as a wall of literal asterisks/backticks before this.
+            bubble.appendChild(renderManualMarkdown(msg.content || msg.text || ''));
             messages.appendChild(bubble);
+
+            // VTID-03822: surface which tools ran on this turn (already present
+            // on the message object since sendChatMessage's response handling —
+            // toolResults/meta were pushed onto chatMessages but never read by
+            // this renderer).
+            if (msg.toolResults && msg.toolResults.length > 0) {
+                const toolActivity = document.createElement('div');
+                toolActivity.className = 'chat-tool-activity';
+                msg.toolResults.forEach(tr => {
+                    const line = document.createElement('div');
+                    line.className = 'chat-tool-activity-line';
+                    line.textContent = describeToolActivity(tr);
+                    toolActivity.appendChild(line);
+                });
+                messages.appendChild(toolActivity);
+            }
 
             // Show attachments if any
             if (msg.attachments && msg.attachments.length > 0) {
@@ -25913,7 +25990,8 @@ async function sendChatMessage() {
         ts: now.getTime()
     };
     state.operatorChatHistory.push(userHistoryEntry);
-    saveOperatorChatHistory(state.operatorChatHistory);
+    saveOperatorThreadHistory(state.operatorActiveThreadId, state.operatorChatHistory);
+    touchActiveOperatorThread();
 
     // Add user message
     state.chatMessages.push({
@@ -26014,7 +26092,8 @@ async function sendChatMessage() {
             ts: Date.now()
         };
         state.operatorChatHistory.push(assistantHistoryEntry);
-        saveOperatorChatHistory(state.operatorChatHistory);
+        saveOperatorThreadHistory(state.operatorActiveThreadId, state.operatorChatHistory);
+        touchActiveOperatorThread();
 
         state.chatMessages.push({
             type: 'system',
@@ -34782,7 +34861,13 @@ function renderCommandHubLiveConsoleView() {
 
             var contentSpan = document.createElement('span');
             contentSpan.className = 'console-content';
-            contentSpan.textContent = msg.content || '';
+            // VTID-03822: same markdown-rendering fix as the Operator Console
+            // chat bubble — both hit the identical /api/v1/operator/chat reply
+            // shape. Deliberately NOT consolidating the two chat surfaces
+            // (Operator Console vs. Live Console) into one component in this
+            // VTID — that's a larger UI-architecture change than this ticket's
+            // scope; documented here rather than silently left inconsistent.
+            contentSpan.appendChild(renderManualMarkdown(msg.content || ''));
 
             var timeSpan = document.createElement('span');
             timeSpan.className = 'console-timestamp';

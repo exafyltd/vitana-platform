@@ -1854,6 +1854,58 @@ body {
   padding: 1.5rem;
 }
 
+/* VTID-03822: Operator Console thread switcher */
+.chat-thread-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1.5rem;
+  border-bottom: 1px solid var(--color-border, #2a2a2a);
+  background: var(--color-bg, #1a1a1a);
+}
+
+.chat-thread-select {
+  flex: 1;
+  min-width: 0;
+  background: #232323;
+  color: #e0e0e0;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.8rem;
+}
+
+.chat-new-thread-btn {
+  background: #2a7bff;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.chat-new-thread-btn:hover {
+  background: #1f63d1;
+}
+
+/* VTID-03822: tool-activity lines rendered under a chat bubble */
+.chat-tool-activity {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin: 0.15rem 0 0.2rem;
+  align-self: flex-start;
+  max-width: 80%;
+}
+
+.chat-tool-activity-line {
+  font-size: 0.72rem;
+  color: #9aa0a6;
+  font-style: italic;
+}
+
 /* VTID-0526: Message bubble styles */
 .message-bubble {
   padding: 0.6rem 0.9rem;

@@ -1,0 +1,81 @@
+VTID-03822 — commands.log
+==========================
+
+## Syntax checks
+
+$ node --check services/gateway/src/frontend/command-hub/app.js
+-> SYNTAX_OK
+
+$ node --check scripts/ci/command-hub-ownership-guard.js
+-> OK
+
+## Type check
+
+$ cd services/gateway && npx tsc --noEmit
+-> exit 0, no output (clean)
+
+## Targeted tests
+
+$ cd services/gateway && npx jest test/vtid-03822-operator-chat-threads.test.ts --silent=false
+-> outputs/jest-vtid-03822-filter.txt: 1/1 suite, 13/13 tests passing
+
+## Full suite regression check
+
+$ cd services/gateway && npx jest --silent=false
+-> outputs/jest-full-suite-tail.txt (tail): 752/753 suites (1 pre-existing
+   skip), 13,796/13,831 tests passing, 0 failures, exit code 0
+
+## Real-browser verification (no live gateway/Supabase credentials in this
+## session, so the CLAUDE.md screenshot recipe's literal live-URL + Supabase
+## auth-token steps were not reachable — see acceptance.md's AC-4 deviation
+## note for what was done instead)
+
+$ mkdir -p /tmp/static-root/command-hub
+$ cp -r services/gateway/src/frontend/command-hub/* /tmp/static-root/command-hub/
+$ (cd /tmp/static-root && python3 -m http.server 8099 &)
+   # serves the real, unmodified command-hub assets at /command-hub/*,
+   # the same relative path the real gateway mounts them at
+
+Playwright (headless Chromium at /opt/pw-browsers/chromium, loaded via the
+gateway package's own node_modules/playwright):
+  1. Navigated to http://localhost:8099/command-hub/index.html — real
+     app.js/styles.css/orb-widget.js/intelligence-panels.js/
+     command-hub-staging.js all loaded with no pageerror (only expected
+     404s for backend API calls this environment cannot serve).
+  2. Verified `state`, `renderOperatorChat`, `initOperatorChatSession`,
+     `startNewOperatorThread`, `switchOperatorThread` are all real,
+     callable bindings in the page (classic, non-module script — top-level
+     `function`/`const` share the page's global script scope, confirmed
+     directly rather than assumed).
+  3. Migration check: seeded a legacy single-thread
+     `operator_console_history`/`operator_console_conversation_id` in
+     localStorage, called the real `initOperatorChatSession()`. Result:
+     1 thread, title derived from the first user message, history length
+     2, `conversation_id` preserved — see acceptance.md AC-1.
+  4. Rendered the real `renderOperatorChat()` with 3 real threads (created
+     via the real `startNewOperatorThread()`) mounted in a container
+     appended to `document.body` (outside `#root`, so the app's own
+     periodic auth-gate re-render — unavoidable without live backend
+     credentials — can't clobber the test harness). Confirmed the
+     `<select>` has exactly 3 options matching `state.operatorThreads`
+     ids, with the correct one selected.
+  5. Seeded two threads' worth of realistic chat history (markdown bold,
+     a bullet list, an emoji, and a `toolResults` entry) and screenshotted
+     the real rendered panel at 1400x900 and 390x844 —
+     /tmp/vtid03822-chat-desktop.png, /tmp/vtid03822-chat-mobile.png (sent
+     to the user directly). Confirmed: markdown renders as real
+     bold/list/emoji (not literal `**`/`-`), the tool-activity line
+     renders in italic under the bubble, no mobile horizontal overflow.
+  6. Clicked the real "+ New" button via `page.click()`; confirmed
+     `state.operatorThreads.length` went 2 -> 3, and a re-render shows the
+     new thread's empty state ("No messages yet…") —
+     /tmp/vtid03822-chat-after-new-thread.png (sent to the user).
+  7. Cleaned up: removed the ad-hoc Playwright driver scripts (not part of
+     the shipped diff — they were a verification harness, not product
+     code) and the temporary static file server.
+
+## Not run
+
+No live `/api/v1/operator/chat` request was exercised end-to-end (no
+gateway/Supabase credentials in this session). See acceptance.md
+"Deliberately NOT attempted".
