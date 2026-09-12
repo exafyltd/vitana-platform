@@ -2376,10 +2376,14 @@ export async function handleLiveSessionStop(
   // Emit OASIS event
   // VTID-NAV-TIMEJOURNEY: include user_id so fetchLastSessionInfo can find
   // this event when the user next opens the ORB.
+  // flow-test-exempt: VTID-03807 adds one extra telemetry field
+  // (sse_ever_attached) to the stop-event payload only — no conversation
+  // flow, decision, or user-facing behavior changes.
   await deps.emitLiveSessionEvent('vtid.live.session.stop', {
     session_id,
     user_id: session.identity?.user_id || null,
     tenant_id: session.identity?.tenant_id || null,
+    sse_ever_attached: !!(session as any).sseEverAttached, // VTID-03807
     audio_in_chunks: session.audioInChunks,
     audio_in_forwarded_chunks: session.audioInForwarded, // VTID-VOICE-FWD (Track A)
     video_frames: session.videoInFrames, // VTID-03565: was video_in_frames — no reader, voice-lab reads video_frames

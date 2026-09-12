@@ -928,6 +928,20 @@ export interface GeminiLiveSession {
   // surfaced these two sites as the only places still restating the list.
   upstreamProvider?: VoiceProviderName;
   sseResponse: Response | null;
+  // VTID-03807: latch — true the first (and only the first) time GET
+  // /live/stream actually attaches an SSE response to this session.
+  // `sseResponse` alone can't tell "never attached" apart from "attached,
+  // then disconnected" (both leave it null), which is exactly the
+  // ambiguity that made a real production symptom ("general Orb
+  // communication doesn't even start") take a full event-log excavation
+  // to diagnose: POST /live/session/start + context bootstrap succeed in
+  // milliseconds, then total silence until the idle_no_engagement sweep
+  // reaps the session ~130s later with turn_count=0/audio_out=0 — the
+  // shape a client that never opens the EventSource (or never sends
+  // audio_ready) produces. Never set for the WS transport (which has no
+  // separate attach step); stays false there, which is correct — WS
+  // sessions are told apart by `transport` already.
+  sseEverAttached?: boolean;
   active: boolean;
   // VTID-03561: latch — at most one `vtid.live.session.stop` per session.
   // Every teardown path sets this immediately after emitting. `cleanupWsSession`
@@ -1353,6 +1367,13 @@ setInterval(() => {
         // tell a 5-minute reap from a 32-minute one is duration_ms, which
         // also includes the useful part of the session.
         idle_ms: now - s.lastActivity.getTime(),
+        // VTID-03807: tells "client never opened the SSE stream at all" (a
+        // dangling POST /live/session/start with no follow-up — the shape
+        // behind the "Orb communication doesn't even start" report) apart
+        // from "stream was open, then went quiet" — both otherwise look
+        // identical (sseResponse null, turn_count 0) by the time this sweep
+        // reaps them.
+        sse_ever_attached: !!s.sseEverAttached,
         audio_in_chunks: s.audioInChunks,
         audio_out_chunks: s.audioOutChunks,
         duration_ms: Date.now() - s.createdAt.getTime(),
@@ -1451,6 +1472,7 @@ function terminateExistingSessionsForUser(userId: string, excludeSessionId?: str
       user_id: existingSession.identity?.user_id || null,
       tenant_id: existingSession.identity?.tenant_id || null,
       reason: 'superseded_by_new_session',
+      sse_ever_attached: !!existingSession.sseEverAttached, // VTID-03807
       audio_in_chunks: existingSession.audioInChunks,
       audio_out_chunks: existingSession.audioOutChunks,
       duration_ms: Date.now() - existingSession.createdAt.getTime(),
@@ -15557,6 +15579,7 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
   // Track connection
   incrementConnection(clientIP);
   session.sseResponse = res;
+  session.sseEverAttached = true; // VTID-03807: see GeminiLiveSession field doc comment
   session.lastActivity = new Date();
 
   // VTID-01225: On reconnect, rebuild context pack to include newly extracted facts
