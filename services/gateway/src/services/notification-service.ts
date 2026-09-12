@@ -73,6 +73,10 @@ export const TYPE_META: Record<string, TypeMeta> = {
   new_member_in_group:        { channel: 'inapp',          priority: 'p3', category: 'community' },
   group_milestone_reached:    { channel: 'inapp',          priority: 'p2', category: 'community' },
   group_invitation_received:  { channel: 'push_and_inapp', priority: 'p1', category: 'community' },
+  // Maxina Longevity Game (event-specific) — must reach a closed app; join/
+  // post confirmations stay client-side toasts, not backend notifications.
+  event_game_ending_soon:     { channel: 'push_and_inapp', priority: 'p1', category: 'community' },
+  event_game_results_ready:   { channel: 'push_and_inapp', priority: 'p1', category: 'community' },
   post_like:                  { channel: 'push_and_inapp', priority: 'p1', category: 'community' },
   post_comment:               { channel: 'push_and_inapp', priority: 'p1', category: 'community' },
   // Meetups
