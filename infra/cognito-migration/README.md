@@ -231,15 +231,31 @@ Cognito-configured vs. Supabase-fallback, for both endpoints, plus
 This directory is the identity **provider**, the gateway can verify its
 tokens, and `/login`/`/refresh` can proxy to it. It does not yet touch:
 
-- **Aurora RLS compatibility.** 638 policies key on `auth.uid()`/
-  `auth.jwt()`, which are Supabase-specific SQL functions reading a
-  session GUC that GoTrue's PostgREST layer sets per-request. A
-  Cognito-issued JWT's claims need to end up in that same GUC (or an
-  equivalent compatible function) for those policies to keep working
-  unmodified — see `docs/SUPABASE-TO-AURORA-MIGRATION-PLAN.md` B4 for the
-  fuller framing, and this repo's existing `withAuroraRlsContext()`
-  mechanism (built earlier in this migration for the non-auth Aurora
-  seams) as the closest existing pattern to extend.
+- **Aurora RLS compatibility — partially done (VTID-03830).** 638 policies
+  key on `auth.uid()`/`auth.jwt()`, which are Supabase-specific SQL
+  functions reading a session GUC (`request.jwt.claims`) that GoTrue's
+  PostgREST layer sets per-request — see
+  `docs/SUPABASE-TO-AURORA-MIGRATION-PLAN.md` B4 for the fuller framing.
+  `withAuroraRlsContext()` (`services/gateway/src/services/aurora-client.ts`,
+  VTID-03591) already reproduces that GUC for the one wired-up route
+  (`GET /api/v1/admin/aurora-rls-health`), sourced from
+  `verifyAndExtractIdentity()`'s claims. **What VTID-03830 fixed:** that
+  function was forwarding the raw JWT payload verbatim — for a Cognito ID
+  token, `payload.sub` is Cognito's own random UUID, not the legacy
+  Supabase user id `extractCognitoIdentity()` resolves into
+  `identity.user_id` via `custom:legacy_user_id`. `auth.uid()` reads `sub`
+  straight out of the GUC, so this would have silently mismatched every
+  `auth.uid() = user_id`-shaped policy for a Cognito-authenticated user —
+  the token verifies fine, so the failure is a wrong-owner row match
+  inside Postgres, never an auth error. Fixed via a `claimsForRlsContext()`
+  normalization step (`middleware/auth-supabase-jwt.ts`) that overwrites
+  `sub` with `identity.user_id` before the claims are ever attached to a
+  request — a no-op for the existing Supabase HS256/ES256 paths. **What
+  is still open:** `withAuroraRlsContext()` remains wired into exactly one
+  diagnostic route; extending it to real, request-serving Aurora call
+  sites is unstarted, and `exafy_admin` still has no Cognito-side source
+  of truth (hardcoded `false` in `extractCognitoIdentity()` — see that
+  function's own KNOWN GAP comment).
 - **Frontend call sites.** `exafyltd/vitana-v1`'s `MaxinaPortal.tsx`,
   `ExafyAdminPortal.tsx`, `CommercePortalLogin.tsx`, `DevLogin.tsx` all call
   `supabase.auth.signInWithPassword()`/`signUp()`/`signInWithOAuth()`
