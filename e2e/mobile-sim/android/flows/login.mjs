@@ -91,6 +91,17 @@ export async function loginFlow({ driver, report, email, password }, depth = 0) 
   await driver.typeText(email);
   report.record({ label: 'typed email', ok: true, detail: email });
 
+  // Tapping the email field opens the soft keyboard, which can occupy roughly
+  // half the viewport and push a short below-the-fold field (like password,
+  // on this compact single-card form) out of the visible/dumped layout
+  // entirely. KEYCODE_BACK dismisses only the keyboard here (the page itself
+  // has no back-navigable history yet), restoring the full viewport before
+  // we even try scrolling — confirmed live: a run needing 3 failed scroll
+  // retries still couldn't find the password field, consistent with the
+  // keyboard covering it rather than it being further down a scrollable page.
+  await driver.pressBack();
+  await sleep(500);
+
   // The password field may not have been in the *initial* dump if it sits
   // below the fold — re-check (with scroll-retry) after typing the email,
   // rather than relying on the pre-typing snapshot.
