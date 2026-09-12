@@ -1496,13 +1496,30 @@ export async function runExecutionSession(
   // Pull prior-attempt lessons for the finding's scanner so Claude avoids
   // repeating known traps. Best-effort — no rows / failed query just skips
   // the optional prompt section.
-  const findingMetaR = await supa<Array<{ spec_snapshot: { scanner?: string } | null }>>(
+  //
+  // VTID-03821: also select activated_vtid here (no extra round trip —
+  // this query already runs unconditionally) so the LLM-call telemetry
+  // below can be tagged with the REAL task VTID a human looks at, instead
+  // of only the synthetic VTID-DA-<execId> id. Before this fix, every
+  // dev-autopilot execution's `llm.call.*` telemetry (provider, model,
+  // latency — exactly "which LLM served this run") was invisible on the
+  // task's own OASIS Event Tracking panel / Agents Control Plane trace
+  // view, because it was never tagged with the vtid either of those
+  // already reads events by.
+  const findingMetaR = await supa<Array<{ spec_snapshot: { scanner?: string } | null; activated_vtid: string | null }>>(
     s,
-    `/rest/v1/autopilot_recommendations?id=eq.${exec.finding_id}&select=spec_snapshot&limit=1`,
+    `/rest/v1/autopilot_recommendations?id=eq.${exec.finding_id}&select=spec_snapshot,activated_vtid&limit=1`,
   );
   const findingScanner: string | null = findingMetaR.ok && findingMetaR.data && findingMetaR.data[0]?.spec_snapshot?.scanner
     ? String(findingMetaR.data[0].spec_snapshot.scanner)
     : null;
+  const activatedVtid: string | null = findingMetaR.ok && findingMetaR.data && findingMetaR.data[0]?.activated_vtid
+    ? String(findingMetaR.data[0].activated_vtid)
+    : null;
+  // Telemetry vtid: prefer the real task VTID (makes LLM calls observable
+  // on the task itself); fall back to the synthetic per-execution id when
+  // no activated_vtid is set (older/unlinked findings) — never blank.
+  const telemetryVtid = activatedVtid || `VTID-DA-${executionId.slice(0, 8)}`;
   const lessons = findingScanner ? await loadExecutionLessons(s, findingScanner) : [];
 
   // 2. Ask Claude to produce the new file contents. Routes through the
@@ -1557,11 +1574,11 @@ export async function runExecutionSession(
             worker_owns_pr: ownsPr,
             branch_name: branch,
             base_branch: GITHUB_BASE_BRANCH,
-            vtid_like: `VTID-DA-${executionId.slice(0, 8)}`,
+            vtid_like: telemetryVtid,
           },
           { timeoutMs: MESSAGES_TIMEOUT_MS },
         )
-      : await callMessagesApi(prompt, `VTID-DA-${executionId.slice(0, 8)}`, onRampOverride);
+      : await callMessagesApi(prompt, telemetryVtid, onRampOverride);
   const elapsed = Math.round((Date.now() - startedAt) / 1000);
 
   // Prompt-gap feedback loop: the worker reports per-attempt validation

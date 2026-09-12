@@ -78,6 +78,10 @@ describe('runExecutionSession source wiring (VTID-03820, source check)', () => {
   });
 
   it('the direct-API branch passes the override into callMessagesApi', () => {
-    expect(SOURCE).toContain('await callMessagesApi(prompt, `VTID-DA-${executionId.slice(0, 8)}`, onRampOverride);');
+    // VTID-03821: the vtid argument itself changed from a synthetic
+    // per-execution id to telemetryVtid (real activated_vtid when known —
+    // see vtid-03821-execution-telemetry-vtid.test.ts); this only pins
+    // that the override is still threaded through as the 3rd argument.
+    expect(SOURCE).toContain('await callMessagesApi(prompt, telemetryVtid, onRampOverride);');
   });
 });
