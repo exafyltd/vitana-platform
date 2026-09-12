@@ -217,3 +217,126 @@ proxy/WebSocket limitation as the original fix), so this follow-up is
 verified structurally against the exact conflict that was observed live,
 not against a fresh live Nova conversation. Flagged explicitly rather than
 claimed as live-confirmed.
+
+## Second follow-up (2026-09-12) — deterministic backstop for model non-compliance
+
+Platform owner retested on staging immediately after the RULE 0 fix
+merged/deployed and reported (second screenshot) it still doesn't work —
+Vitana says "Alles klar, ich gehe jetzt. Ich bin jetzt weg." but never
+closes.
+
+### Investigate (read-only)
+
+$ SELECT topic, event, created_at, metadata FROM oasis_events
+    WHERE topic = 'orb.live.diag' AND created_at > now() - interval '40 minutes'
+    ORDER BY created_at DESC LIMIT 5;
+-> found session_id live-2dafffa5-fe05-4ad7-8294-53803185549d,
+   stage=upstream_closed reason=user_stop turn_count=6.
+
+Checked whether `env` distinguishes staging/prod for this session first
+(ruled out as a possible "wrong host" explanation) — confirmed it does
+NOT: `emitLiveSessionEvent()` in orb-live.ts sets
+`env: isDevSandbox() ? 'dev-sandbox' : 'production'` unconditionally, a
+hardcoded literal unrelated to which ECS task served the request. Not a
+real environment signal; do not use it to diagnose deploy-target issues
+in future investigations.
+
+$ SELECT created_at, topic, metadata->>'stage', ... FROM oasis_events
+    WHERE metadata->>'session_id' = 'live-2dafffa5-fe05-4ad7-8294-53803185549d'
+    ORDER BY created_at ASC;
+-> full 6-turn trace. Zero end_conversation tool-call events anywhere.
+   Session ends via upstream_closed reason=user_stop (the CLIENT closing),
+   not the model.
+
+$ SELECT length(metadata->>'instruction_text') as len,
+    position('ENDING THE CONVERSATION' in ...) as ending_pos,
+    position('PROACTIVE LEADERSHIP' in ...) as rule0_pos,
+    position('OVERRIDES RULE 0' in ...) as override_pos
+    FROM oasis_events WHERE ... stage = 'nova_instruction_debug_dump';
+-> {"len":32406,"ending_pos":9687,"rule0_pos":2954,"override_pos":9713}
+   Confirms the first follow-up's fix IS deployed and correctly positioned
+   (ending after rule0, override framing present) in this exact session.
+   Rules out a stale-deploy/wrong-instruction explanation.
+
+$ SELECT substring(metadata->>'instruction_text' from 9600 for 1300) ...
+-> byte-for-byte match of the shipped "ENDING THE CONVERSATION — OVERRIDES
+   RULE 0 (ABSOLUTE): ..." paragraph. Confirmed verbatim, not truncated or
+   mangled.
+
+$ SELECT metadata->>'turn_count', metadata->>'text_preview' FROM oasis_events
+    WHERE ... stage = 'input_transcription' ORDER BY created_at;
+-> turn 1: "nee danke lass uns später sprechen ich will gerade nicht"
+   turn 2: "hast du mich gehört" / "ich will gerade nicht sprechen lass uns später reden"
+   turn 3: "du bist immer noch da"
+   turn 4: "ich will dass du gehst lass mich in ruhe"
+   turn 5: "du bist immer noch da"
+   Matches the reported screenshot exactly. 5 explicit stop signals, model
+   never called the tool once.
+
+Conclusion: genuine Nova tool-calling compliance gap, not a code/deploy
+bug. Per this repo's own established remedy for a model-compliance
+failure that keeps recurring (VTID-03650), moved to a deterministic
+code-level backstop rather than a third prompt-wording attempt.
+
+### Implement
+
+- orb-live.ts: new `detectStillHereComplaint(text)` — small, high-precision
+  EN/DE regex set matching ONLY "you're still here" / "du bist (immer)
+  noch da" (never a legitimate continuation request, always a repeat-
+  complaint). New `dispatchEndConversationDirective(session, reason)`
+  extracted from the existing `case 'end_conversation':` tool handler so
+  both the model-invoked tool and the new backstop send byte-identical
+  `orb_directive` payloads. Both exported for direct test import.
+- upstream-message-handler.ts: `UpstreamMessageHandlerDeps` gained
+  `detectStillHereComplaint`/`dispatchEndConversationDirective`.
+  `handleTurnComplete` now checks the just-completed turn's transcribed
+  user text against the new detector (right where `userText` is already
+  computed for the existing VTID-01953 identity-intercept, same style) and
+  force-dispatches the close directive on a match — independent of
+  whether the model calls the tool. Idempotent via a new
+  `session.stillHereEndDispatched` flag; gated on `session.active` and
+  skipped on the greeting turn to match every other turn-complete side
+  effect in this function.
+- orb-live.ts: wired the two new deps into all three
+  `bindUpstreamSessionHandlers` call sites (cascaded, Nova, Vertex-legacy)
+  so both WS and SSE (sharing this path since VTID-03471) get the
+  backstop.
+- No client-side changes needed at all — the widget's existing
+  `orb_directive: end_conversation` handler (built for the original tool)
+  fires identically regardless of which server-side path sent it.
+
+### Verify
+
+$ cd services/gateway && npx tsc --noEmit
+-> outputs/tsc-noemit-round3.txt: clean, exit 0.
+
+$ npx jest test/orb/live/detect-still-here-complaint.test.ts --ci
+-> outputs/detect-still-here-complaint.txt: 20/20 tests passing. Pins the
+   regex against the exact reported phrasings (EN+DE) and confirms it
+   stays silent on ambiguous phrases ("let's talk later", a first-time
+   stop request) that must not force-end a session.
+
+$ npx jest test/orb/live/session/still-here-complaint-backstop.test.ts --ci
+-> outputs/still-here-complaint-backstop.txt: 5/5 tests passing. Uses the
+   same bindUpstreamSessionHandlers harness as
+   test/routes/orb-live-nova-incident-regressions.test.ts but wires the
+   REAL (unmocked) detectStillHereComplaint/dispatchEndConversationDirective
+   from orb-live.ts — proves the directive is actually sent over a fake
+   client WebSocket end-to-end, not just that a mock was invoked.
+
+$ npx jest test/orb test/frontend test/routes --ci
+-> 311/311 suites, 5370/5377 tests passing (1 skip, 6 pre-existing todo).
+   Two pre-existing test files (upstream-provider-parity.test.ts,
+   upstream-session-binding.test.ts) needed their own makeDeps() updated
+   with the two new required dependency fields — no behavior change to
+   those suites, only the stub additions.
+
+$ npx jest --ci  (full gateway suite)
+-> outputs/jest-full-suite-round3.txt: 741/742 suites (1 pre-existing
+   skip), 13,715/13,750 tests passing, 0 failures.
+
+Not re-run: a real live Nova conversation — same environment limitation
+as every round in this VTID. The backstop is verified structurally
+against the exact reported failure (real transcript text, real handler
+wiring, real directive dispatch) but not yet observed ending a live
+session in production/staging.

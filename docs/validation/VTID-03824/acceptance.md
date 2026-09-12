@@ -144,6 +144,95 @@ independently re-confirmed against a real live Nova conversation, for the
 same reason as the original fix: this session cannot place a real ORB
 voice call. The next real signal is another live staging test.
 
+## Second follow-up (2026-09-12) — the repositioned instruction still lost to Nova's own judgment; added a deterministic backstop
+
+The platform owner retested on staging immediately after the first
+follow-up (RULE 0 repositioning) deployed, and reported it still "doesn't
+work" with a second screenshot: Vitana acknowledged the user's repeated
+stop requests in words ("Alles klar, ich gehe jetzt. Ich bin jetzt weg.")
+but never actually ended the session.
+
+Investigated via a direct, read-only `oasis_events` query against the
+exact reported session (`live-2dafffa5-fe05-4ad7-8294-53803185549d`,
+12:52-12:53 UTC). Two things were checked and BOTH ruled out before
+concluding this is a genuine model-compliance gap:
+
+1. **Was the fix even deployed/rendered?** Confirmed yes — the session's
+   own `nova_instruction_debug_dump` shows "ENDING THE CONVERSATION" at
+   character offset 9687 of a 32,406-character instruction, AFTER
+   "PROACTIVE LEADERSHIP" (offset 2954) and immediately followed by
+   "OVERRIDES RULE 0" (offset 9713) — byte-for-byte the exact text this
+   VTID's first follow-up shipped. Not a stale-deploy or wrong-host issue.
+2. **Did the tool ever get called?** Confirmed no. The full turn-by-turn
+   trace for this session (6 turns) shows zero `end_conversation` tool
+   calls anywhere, despite five separate turns transcribing an explicit
+   stop/leave-me-alone request, including "du bist immer noch da" ("you're
+   still here") verbatim twice. The session only ended because the CLIENT
+   sent `upstream_closed reason:"user_stop"` — i.e. the user closed the
+   widget themselves; Vitana never did.
+
+This is a real Nova tool-calling compliance gap, not a prompt-precedence
+or deployment bug — the exact instruction text this VTID already fixed to
+"win" against RULE 0 in principle still didn't make the model act on it
+in this real conversation.
+
+**Fix:** rather than a third round of prompt wording, added a
+deterministic, code-level backstop — matching this repo's own established
+remedy for this failure shape (VTID-03650: "stop asking a conversational
+model to read curriculum text at all" once prompt compliance proved
+unreliable). `handleTurnComplete` (`upstream-message-handler.ts`) now
+inspects each completed turn's transcribed user text via a new
+`detectStillHereComplaint()` (`orb-live.ts`) — a small, high-precision
+EN/DE regex set matching ONLY the unambiguous "you're still here" / "du
+bist (immer) noch da" complaint (deliberately NOT a broad stop-intent
+classifier — that would risk false-positives on legitimate pause requests
+like "let's talk later"; "you're still here" is never said except in
+direct response to an assistant that already failed to leave). On a
+match, the server dispatches the exact same `orb_directive:
+end_conversation` message the TOOL sends
+(`dispatchEndConversationDirective()`, extracted from the tool handler so
+both paths are byte-identical) — reusing the widget's already-built,
+already-tested close handling with ZERO client-side changes. Idempotent
+per session (`session.stillHereEndDispatched`) so a stray extra matching
+turn can't double-dispatch. Wired into all three
+`bindUpstreamSessionHandlers` call sites (cascaded, Nova, Vertex-legacy)
+so both WS and SSE transports (which share this path since VTID-03471)
+get the backstop.
+
+AC-11 — A deterministic, code-level backstop force-ends the session when
+the user's transcribed turn is an unambiguous "you're still here"
+complaint, independent of whether the model calls the tool.
+
+TEST: `outputs/detect-still-here-complaint.txt` —
+`test/orb/live/detect-still-here-complaint.test.ts` (20 tests) pins the
+regex against the exact reported live phrasings (EN+DE) and confirms it
+stays silent on ambiguous phrases ("let's talk later", a first-time
+explicit stop request) that must NOT force-end a session.
+`outputs/still-here-complaint-backstop.txt` —
+`test/orb/live/session/still-here-complaint-backstop.test.ts` (5 tests)
+proves the real (unmocked) `detectStillHereComplaint`/
+`dispatchEndConversationDirective` wiring fires end-to-end through
+`handleTurnComplete`, including idempotency and the greeting-turn/
+inactive-session guards, and that the real directive JSON is actually
+sent over the (fake) client WebSocket.
+
+TEST: `outputs/tsc-noemit-round3.txt` (clean, exit 0) and
+`outputs/jest-full-suite-round3.txt` confirm no regression across the full
+gateway suite, including the two pre-existing test files
+(`upstream-provider-parity.test.ts`, `upstream-session-binding.test.ts`)
+whose own `makeDeps()` needed the two new required dependency fields
+added.
+
+**Deliberately NOT claimed:** this backstop only covers the specific,
+reproduced "you're still here" repeat-complaint — the narrowest, highest-
+precision signal available. It does not attempt to force-end on a FIRST
+stop request (still relies on the prompt-level instruction there,
+deliberately, to avoid false-positives on ambiguous first utterances like
+"let's talk later"). Also not independently re-confirmed against a fresh
+live Nova conversation for the same reason as every round in this
+VTID — this session cannot place a real ORB voice call. The next real
+signal is another manual staging test.
+
 ## Deliberately NOT attempted
 
 - **Verifying against a live Nova Sonic voice call.** This session has no
