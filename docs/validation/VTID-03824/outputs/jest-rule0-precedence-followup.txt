@@ -1,0 +1,183 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.warn
+    [VTID-01225] Cognee Extractor URL not configured - extraction disabled
+
+      138 |
+      139 |     if (!this.enabled) {
+    > 140 |       console.warn('[VTID-01225] Cognee Extractor URL not configured - extraction disabled');
+          |               ^
+      141 |     } else {
+      142 |       console.log(`[VTID-01225] Cognee Extractor Client initialized: ${this.baseUrl}`);
+      143 |     }
+
+      at new CogneeExtractorClient (src/services/cognee-extractor-client.ts:140:15)
+      at Object.<anonymous> (src/services/cognee-extractor-client.ts:1143:38)
+      at Object.<anonymous> (src/routes/orb-live.ts:156:1)
+      at Object.<anonymous> (test/orb/live/characterization/system-instruction.characterization.test.ts:20:1)
+
+  console.warn
+    [VTID-01225] Config warning: COGNEE_EXTRACTOR_URL is not set - extraction will be disabled
+
+      152 |   static validateConfig(): void {
+      153 |     if (!process.env.COGNEE_EXTRACTOR_URL) {
+    > 154 |       console.warn('[VTID-01225] Config warning: COGNEE_EXTRACTOR_URL is not set - extraction will be disabled');
+          |               ^
+      155 |     }
+      156 |     if (!process.env.SUPABASE_URL) {
+      157 |       console.warn('[VTID-01225] Config warning: SUPABASE_URL is not set - persistence will fail');
+
+      at Function.validateConfig (src/services/cognee-extractor-client.ts:154:15)
+      at new CogneeExtractorClient (src/services/cognee-extractor-client.ts:145:27)
+      at Object.<anonymous> (src/services/cognee-extractor-client.ts:1143:38)
+      at Object.<anonymous> (src/routes/orb-live.ts:156:1)
+      at Object.<anonymous> (test/orb/live/characterization/system-instruction.characterization.test.ts:20:1)
+
+  console.log
+    [VTID-ORBC] Vertex config at startup: PROJECT_ID=lovable-vitana-vers1, LOCATION=us-central1
+
+      at Object.<anonymous> (src/routes/orb-live.ts:1925:9)
+
+  console.log
+    [VTID-01155] Google Cloud TTS client initialized
+
+      at Object.<anonymous> (src/routes/orb-live.ts:1932:11)
+
+  console.log
+    [VTID-01219] Google Auth client initialized for Live API
+
+      at Object.<anonymous> (src/routes/orb-live.ts:1956:11)
+
+  console.log
+    [VTID-01219] ORB Voice startup validation passed — Live API ready
+
+      at src/routes/orb-live.ts:1981:13
+
+  console.log
+    [VTID-INSTANT-FEEDBACK] Chime PCM generated: 9600 samples, 19200 bytes, 25600 b64 chars
+
+      at generateChimePcm (src/routes/orb-live.ts:2175:11)
+
+  console.warn
+    [voice.instruction.budget_trimmed] {"vitana_id":"@x","chars_trimmed":8029,"cap":12000}
+
+      814 |       // (Cloud Logging ingests stdout; Phase D adds the budget-watch route + cron
+      815 |       // and the typed `voice.instruction.budget_trimmed` OASIS topic.)
+    > 816 |       console.warn(
+          |               ^
+      817 |         '[voice.instruction.budget_trimmed]',
+      818 |         JSON.stringify({
+      819 |           vitana_id: vitanaId ?? null,
+
+      at buildLiveSystemInstruction (src/orb/live/instruction/live-system-instruction.ts:816:15)
+      at Object.<anonymous> (test/orb/live/characterization/system-instruction.characterization.test.ts:213:53)
+
+(node:1503) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS test/orb/live/characterization/system-instruction.characterization.test.ts
+  A0.1 characterization: buildLiveSystemInstruction
+    ✓ renders a stable system instruction for persona "day-1-anonymous-landing" (8 ms)
+    ✓ renders a stable system instruction for persona "day-30-warm-german" (3 ms)
+    ✓ renders a stable system instruction for persona "day-180-veteran-reconnect" (3 ms)
+    ✓ produces a different instruction when isReconnect flips (3 ms)
+    ✓ produces a different instruction when activeRole changes (2 ms)
+    ✓ produces a different instruction when language changes (2 ms)
+    per-surface persona switch
+      ✓ Command Hub route swaps the identity-lock role line (17 ms)
+      ✓ Command Hub route swaps base_identity to the engineering co-pilot framing (1 ms)
+      ✓ Command Hub route swaps tools_section to drop community-surface tools (2 ms)
+      ✓ mobile + Command Hub route still resolves to community (mobile override wins) (2 ms)
+      ✓ Command Hub route drops the EVENT LINK SHARING and Devon-handoff trailing blocks (2 ms)
+      ✓ Community route STILL contains the trailing community blocks (no regression) (1 ms)
+    MESSAGING_CONTRACT placement (BOOTSTRAP-ORB-MESSAGING-CONTRACT-TRIM-FIX)
+      ✓ is present in the rendered instruction (2 ms)
+      ✓ is positioned AFTER the navigator marker, not inside bootstrapContext (1 ms)
+      ✓ decomposeInstructionSections classifies it as scaffold (preserved), not bootstrap (trimmed first) (2 ms)
+      ✓ survives enforceInstructionBudget even when a heavy bootstrapContext forces trimming (the actual production bug) (12 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.warn
+    [VTID-01225] Cognee Extractor URL not configured - extraction disabled
+
+      138 |
+      139 |     if (!this.enabled) {
+    > 140 |       console.warn('[VTID-01225] Cognee Extractor URL not configured - extraction disabled');
+          |               ^
+      141 |     } else {
+      142 |       console.log(`[VTID-01225] Cognee Extractor Client initialized: ${this.baseUrl}`);
+      143 |     }
+
+      at new CogneeExtractorClient (src/services/cognee-extractor-client.ts:140:15)
+      at Object.<anonymous> (src/services/cognee-extractor-client.ts:1143:38)
+      at Object.<anonymous> (src/routes/orb-live.ts:156:1)
+      at Object.<anonymous> (test/orb/live/instruction/end-conversation-rule0-precedence.test.ts:33:1)
+
+  console.warn
+    [VTID-01225] Config warning: COGNEE_EXTRACTOR_URL is not set - extraction will be disabled
+
+      152 |   static validateConfig(): void {
+      153 |     if (!process.env.COGNEE_EXTRACTOR_URL) {
+    > 154 |       console.warn('[VTID-01225] Config warning: COGNEE_EXTRACTOR_URL is not set - extraction will be disabled');
+          |               ^
+      155 |     }
+      156 |     if (!process.env.SUPABASE_URL) {
+      157 |       console.warn('[VTID-01225] Config warning: SUPABASE_URL is not set - persistence will fail');
+
+      at Function.validateConfig (src/services/cognee-extractor-client.ts:154:15)
+      at new CogneeExtractorClient (src/services/cognee-extractor-client.ts:145:27)
+      at Object.<anonymous> (src/services/cognee-extractor-client.ts:1143:38)
+      at Object.<anonymous> (src/routes/orb-live.ts:156:1)
+      at Object.<anonymous> (test/orb/live/instruction/end-conversation-rule0-precedence.test.ts:33:1)
+
+  console.log
+    [VTID-ORBC] Vertex config at startup: PROJECT_ID=lovable-vitana-vers1, LOCATION=us-central1
+
+      at Object.<anonymous> (src/routes/orb-live.ts:1925:9)
+
+  console.log
+    [VTID-01155] Google Cloud TTS client initialized
+
+      at Object.<anonymous> (src/routes/orb-live.ts:1932:11)
+
+  console.log
+    [VTID-01219] Google Auth client initialized for Live API
+
+      at Object.<anonymous> (src/routes/orb-live.ts:1956:11)
+
+  console.log
+    [VTID-01219] ORB Voice startup validation passed — Live API ready
+
+      at src/routes/orb-live.ts:1981:13
+
+  console.log
+    [VTID-INSTANT-FEEDBACK] Chime PCM generated: 9600 samples, 19200 bytes, 25600 b64 chars
+
+      at generateChimePcm (src/routes/orb-live.ts:2175:11)
+
+PASS test/orb/live/instruction/end-conversation-rule0-precedence.test.ts
+  VTID-03824 follow-up: ENDING THE CONVERSATION must override RULE 0, not just coexist with it
+    ✓ both sections are present (1 ms)
+    ✓ ENDING THE CONVERSATION is positioned AFTER RULE 0, not before it (the actual live regression) (1 ms)
+    ✓ explicitly frames itself as overriding / suspending RULE 0, not as an unrelated adjacent rule
+    ✓ explicitly handles the reported failure: the user having to repeat the stop request (1 ms)
+    ✓ still instructs a brief farewell before calling end_conversation, not a hard stop with no acknowledgement (1 ms)
+    ✓ still carves out Teacher Mode / My Journey, which use their own end tools
+    ✓ the block stays reasonably concise — VTID-03795/03787 measured real Nova content-filter blocks once a session instruction crossed ~32-33KB, so this block must not silently balloon (1 ms)
+
+Test Suites: 2 passed, 2 total
+Tests:       23 passed, 23 total
+Snapshots:   3 passed, 3 total
+Time:        3.041 s
+Ran all test suites matching /test\/orb\/live\/instruction\/end-conversation-rule0-precedence.test.ts|test\/orb\/live\/characterization\/system-instruction.characterization.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+EXIT=0
