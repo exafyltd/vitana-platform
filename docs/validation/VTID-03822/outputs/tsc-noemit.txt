@@ -1,0 +1,1 @@
+tsc-noemit.txt: clean (npx tsc --noEmit exited 0, no output)
