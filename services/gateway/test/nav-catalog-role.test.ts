@@ -13,7 +13,7 @@ describe('nav_catalog role scoping', () => {
 
   test('the role set matches getRoleNavigation cases (+ developer/infra)', () => {
     expect([...VALID_ROLES].sort()).toEqual(
-      ['admin', 'community', 'developer', 'infra', 'patient', 'professional', 'staff'],
+      ['admin', 'backoffice', 'community', 'developer', 'infra', 'patient', 'professional', 'staff'],
     );
   });
 

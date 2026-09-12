@@ -19,8 +19,9 @@ import { createUserSupabaseClient } from '../lib/supabase-user';
 const router = Router();
 const VTID = 'VTID-01230';
 
-// Valid roles that can be granted
-const VALID_ROLES = ['community', 'patient', 'professional', 'staff', 'admin', 'developer', 'infra'];
+// Valid roles that can be granted — VTID-03832: shared constant (adds 'backoffice',
+// tenant-admin-grantable; developer/infra stay super-admin-only)
+import { VALID_ROLES, SUPER_ADMIN_ONLY_ROLES } from '../constants/vitana-roles';
 
 // =============================================================================
 // Helpers
@@ -243,8 +244,7 @@ router.post('/grant', async (req: Request, res: Response) => {
   }
 
   // Developer and infra roles can only be granted by super admin (exafy_admin)
-  const SUPER_ADMIN_ONLY_ROLES = ['developer', 'infra'];
-  if (SUPER_ADMIN_ONLY_ROLES.includes(role) && !auth.is_exafy_admin) {
+  if ((SUPER_ADMIN_ONLY_ROLES as readonly string[]).includes(role) && !auth.is_exafy_admin) {
     return res.status(403).json({
       ok: false,
       error: 'FORBIDDEN',
