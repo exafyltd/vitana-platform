@@ -1,0 +1,157 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.log
+    [OASIS Event] Emitted: llm.call.started for VTID-01208 (afc17007-d3de-446d-8127-aa92db6345c9)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: llm.call.completed for VTID-01208 (89e7afce-7e3d-43dd-adc5-15e6c6f58241)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: llm.call.started for VTID-01208 (097fda0a-e9ca-4bb1-8951-76e6007c7dce)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: llm.call.completed for VTID-01208 (904cc6b8-7942-47eb-9ea5-b33a608e97a9)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: llm.call.started for VTID-01208 (4a393f75-a7b5-4c50-968a-28317acce2a9)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: llm.call.completed for VTID-01208 (2aa95410-5848-4e5c-93d9-2d06a6da153c)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: llm.call.started for VTID-01208 (5b585b8f-9669-4923-a805-3c524ba19340)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: llm.call.failed for VTID-01208 (26aba7a0-44bd-4190-b0b6-618691eaf728)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.warn
+    [llm-router] stage=worker primary deepseek/deepseek-flash failed: DeepSeek 429: rate limited — trying fallback anthropic/claude-opus-4-7
+
+      1035 |     return primary;
+      1036 |   }
+    > 1037 |   console.warn(
+           |           ^
+      1038 |     `${LOG_PREFIX} stage=${stage} primary ${stageConfig.primary_provider}/${stageConfig.primary_model} failed: ${primary.error?.slice(0, 200)} — trying fallback ${stageConfig.fallback_provider}/${stageConfig.fallback_model}`,
+      1039 |   );
+      1040 |   const fallback = await runProviderCall(
+
+      at callViaRouter (src/services/llm-router.ts:1037:11)
+      at Object.<anonymous> (test/vtid-03820-llm-router-override.test.ts:177:15)
+
+  console.log
+    [OASIS Event] Emitted: llm.call.started for VTID-01208 (4dec4f28-a9b0-4c99-a96b-bce3878ed0d5)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: llm.call.completed for VTID-01208 (93853a18-e7c2-479d-8dbd-65fe47e3a018)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+PASS test/vtid-03820-llm-router-override.test.ts
+  callViaRouter provider/model override (VTID-03820)
+    ✓ providerOverride/modelOverride replace the policy PRIMARY for this call only (162 ms)
+    ✓ a call with no override still uses the policy PRIMARY unchanged (existing callers unaffected) (31 ms)
+    ✓ a LONE override field (provider without model) is ignored — policy PRIMARY still used (31 ms)
+    ✓ on override failure, the STAGE'S OWN policy fallback still applies (resilience preserved) (43 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/vtid-03820-operator-execution-onramp.test.ts
+  triggerOperatorExecution (VTID-03820)
+    ✓ rejects when the kill switch is not "true" (default OFF) (1 ms)
+    ✓ rejects an arbitrary non-"true" value the same as unset
+    ✓ rejects when Supabase is not configured (1 ms)
+    ✓ rejects empty planMarkdown without touching the DB (1 ms)
+    ✓ rejects an empty filesReferenced list without touching the DB (1 ms)
+    ✓ rejects when the target VTID is not found (1 ms)
+    ✓ rejects when the target VTID is already terminal (1 ms)
+    ✓ rejects when the target VTID is not spec_status=approved
+    ✓ creates the recommendation + plan rows, calls approveAutoExecute, and stamps the DeepSeek override on success (8 ms)
+    ✓ surfaces a safety-gate rejection from approveAutoExecute without stamping anything (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/vtid-03820-execution-onramp-metadata.test.ts
+  extractLlmOnRampOverride (VTID-03820)
+    ✓ returns undefined for null/undefined metadata (1 ms)
+    ✓ returns undefined when the field is absent (self-healing executions)
+    ✓ returns the override when provider/model are valid (1 ms)
+    ✓ rejects an unknown provider
+    ✓ rejects a missing/non-string model
+    ✓ rejects a non-object llm_on_ramp_override without throwing
+    ✓ accepts every real LLMProvider value (1 ms)
+  runExecutionSession source wiring (VTID-03820, source check)
+    ✓ computes onRampOverride from exec.metadata before choosing the LLM path
+    ✓ the worker-queue branch condition excludes executions carrying an override (1 ms)
+    ✓ the direct-API branch passes the override into callMessagesApi
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/autopilot-source-type-filter-call-sites.test.ts
+  dev-autopilot-execute.ts — executor-source-type allowlist call sites
+    ✓ imports the shared allowlist module (1 ms)
+    ✓ does NOT re-introduce the hard-coded source_type=in.(dev_autopilot,dev_autopilot_impact) filter
+    ✓ lazyPlanTick filters recommendations through executableSourceTypesPostgrestIn()
+    ✓ activationReaperTick filters recommendations through executableSourceTypesPostgrestIn() (1 ms)
+    ✓ autoApproveTick (PR-M1.x baseline) still filters through executableSourceTypesPostgrestIn() (1 ms)
+    ✓ preserves the narrow impact-only filter inside autoApproveTick (intentional, not a regression) (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/autopilot-executable-source-types.test.ts
+  isExecutableSourceType — the executor gate
+    ✓ accepts dev_autopilot (legacy baseline scan source) — backward compat preserved (1 ms)
+    ✓ accepts dev_autopilot_impact (impact-rule findings) — backward compat preserved
+    ✓ accepts test-contract-failure-scanner (PR-L3 recurring contract failures)
+    ✓ accepts missing-test-scanner (PR-L2 capabilities without contracts)
+    ✓ accepts operator_onramp (VTID-03820 operator-triggered DeepSeek execution on-ramp) (1 ms)
+    ✓ REJECTS unrelated source types so misrouted rows stay out of the executor
+    ✓ REJECTS empty / null / undefined / whitespace inputs (1 ms)
+    ✓ is case-sensitive — typos like DEV_AUTOPILOT must not be accepted
+    ✓ exports the canonical list with exactly the current five entries (lock in scope) (1 ms)
+  executableSourceTypesPostgrestIn — PostgREST in.() value renderer
+    ✓ produces a comma-separated list of double-quoted, URL-encoded values
+    ✓ URL-encodes hyphenated source types (test-contract-failure-scanner) without breaking the in.() syntax (1 ms)
+    ✓ is deterministic (same call → same output) so PostgREST filter stays cacheable
+
+Test Suites: 5 passed, 5 total
+Tests:       42 passed, 42 total
+Snapshots:   0 total
+Time:        1.01 s
+Ran all test suites matching /test\/vtid-03820-llm-router-override.test.ts|test\/vtid-03820-execution-onramp-metadata.test.ts|test\/vtid-03820-operator-execution-onramp.test.ts|test\/autopilot-executable-source-types.test.ts|test\/autopilot-source-type-filter-call-sites.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

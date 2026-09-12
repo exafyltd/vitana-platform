@@ -31,6 +31,11 @@ export const EXECUTABLE_RECOMMENDATION_SOURCE_TYPES = [
   'dev_autopilot',
   // PR-1234 lineage — diff-aware impact rules
   'dev_autopilot_impact',
+  // VTID-03820 — operator-triggered DeepSeek execution on-ramp
+  // (operator-execution-onramp.ts). Gated separately by its own
+  // OPERATOR_EXECUTION_ONRAMP_ENABLED kill switch and a spec_status
+  // check before it ever reaches this allowlist/the safety gate.
+  'operator_onramp',
 ] as const;
 
 export type ExecutableRecommendationSourceType =

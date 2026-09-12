@@ -56,6 +56,36 @@ const TOOL_REGISTRY: Map<string, ToolDefinition> = new Map([
     },
   ],
   [
+    'autopilot_execute_task',
+    {
+      name: 'autopilot_execute_task',
+      description: 'Execute an already-approved VTID via the DeepSeek-powered execution on-ramp (writes code, opens a PR). Requires the target VTID to have spec_status=approved. Disabled by default — gated on OPERATOR_EXECUTION_ONRAMP_ENABLED.',
+      parameters_schema: {
+        type: 'object',
+        properties: {
+          vtid: {
+            type: 'string',
+            description: 'The already-approved VTID to execute.',
+          },
+          plan_markdown: {
+            type: 'string',
+            description: 'What to change and why — the execution plan.',
+          },
+          files_referenced: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Source AND paired test file paths the plan touches.',
+          },
+        },
+        required: ['vtid', 'plan_markdown', 'files_referenced'],
+      },
+      allowed_roles: ['operator', 'admin', 'developer'],
+      enabled: true,
+      category: 'autopilot',
+      vtid: 'VTID-03820',
+    },
+  ],
+  [
     'autopilot_get_status',
     {
       name: 'autopilot_get_status',
@@ -1167,7 +1197,7 @@ export async function runToolHealthChecks(): Promise<ToolHealthResponse> {
   const supabaseAvailable = !!SUPABASE_URL && !!SUPABASE_SERVICE_ROLE;
 
   // Update health for Supabase-dependent tools
-  const supabaseTools = ['autopilot_create_task', 'autopilot_get_status', 'autopilot_list_recent_tasks', 'knowledge_search', 'memory_write', 'memory_search', 'recall_conversation_at_time', 'discover_oasis_tasks', 'dev_list_tasks', 'dev_get_task_detail', 'dev_generate_spec', 'dev_get_spec', 'dev_validate_spec', 'dev_quality_check', 'dev_approve_spec', 'dev_list_approvals', 'dev_approval_count', 'dev_approve_item', 'dev_reject_item', 'dev_query_oasis_events'];
+  const supabaseTools = ['autopilot_create_task', 'autopilot_execute_task', 'autopilot_get_status', 'autopilot_list_recent_tasks', 'knowledge_search', 'memory_write', 'memory_search', 'recall_conversation_at_time', 'discover_oasis_tasks', 'dev_list_tasks', 'dev_get_task_detail', 'dev_generate_spec', 'dev_get_spec', 'dev_validate_spec', 'dev_quality_check', 'dev_approve_spec', 'dev_list_approvals', 'dev_approval_count', 'dev_approve_item', 'dev_reject_item', 'dev_query_oasis_events'];
   for (const toolName of supabaseTools) {
     updateToolHealth(
       toolName,
