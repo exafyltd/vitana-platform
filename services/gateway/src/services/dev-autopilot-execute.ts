@@ -29,6 +29,7 @@
  */
 
 import { randomUUID } from 'crypto';
+import type { LLMProvider } from '../constants/llm-defaults';
 import { emitOasisEvent } from './oasis-event-service';
 import {
   evaluateSafetyGate,
@@ -148,6 +149,34 @@ export interface ExecutionRow {
   pr_number?: number;
   auto_fix_depth: number;
   parent_execution_id?: string;
+  /** VTID-03820: read for llm_on_ramp_override; not otherwise used here. */
+  metadata?: Record<string, unknown> | null;
+}
+
+/**
+ * VTID-03820: per-invocation LLM provider/model override for an operator-
+ * triggered execution (e.g. the DeepSeek-powered execution on-ramp),
+ * stamped into dev_autopilot_executions.metadata by the caller that queued
+ * the execution — never set by the autonomous self-healing path, so its
+ * own executions are provably unaffected.
+ *
+ * Deliberately permissive about malformed input: this reads untrusted-ish
+ * jsonb, and a bad shape must fall through to normal policy-driven
+ * behavior, never crash the execution.
+ */
+export function extractLlmOnRampOverride(
+  metadata: Record<string, unknown> | null | undefined
+): { provider: LLMProvider; model: string } | undefined {
+  const raw = metadata?.llm_on_ramp_override;
+  if (!raw || typeof raw !== 'object') return undefined;
+  const provider = (raw as Record<string, unknown>).provider;
+  const model = (raw as Record<string, unknown>).model;
+  if (typeof provider !== 'string' || typeof model !== 'string' || model.length === 0) {
+    return undefined;
+  }
+  const KNOWN_PROVIDERS: LLMProvider[] = ['anthropic', 'openai', 'vertex', 'deepseek', 'claude_subscription', 'bedrock'];
+  if (!KNOWN_PROVIDERS.includes(provider as LLMProvider)) return undefined;
+  return { provider: provider as LLMProvider, model };
 }
 
 // =============================================================================
@@ -164,7 +193,9 @@ export function getSupabase(): SupaConfig | null {
   return { url, key };
 }
 
-async function supa<T>(
+// VTID-03820: exported so operator-execution-onramp.ts can reuse the same
+// REST helper instead of duplicating it.
+export async function supa<T>(
   s: SupaConfig,
   path: string,
   init: RequestInit = {},
@@ -1313,6 +1344,8 @@ function buildExecutionPrompt(
 async function callMessagesApi(
   prompt: string,
   vtid?: string | null,
+  /** VTID-03820: operator-execution-onramp override — see extractLlmOnRampOverride. */
+  override?: { provider: LLMProvider; model: string },
 ): Promise<{ ok: boolean; text?: string; usage?: { input_tokens?: number; output_tokens?: number }; error?: string }> {
   const { callViaRouter } = await import('./llm-router');
   const r = await callViaRouter('worker', prompt, {
@@ -1320,6 +1353,7 @@ async function callMessagesApi(
     service: 'dev-autopilot-execute',
     allowFallback: true,
     maxTokens: MESSAGES_MAX_TOKENS,
+    ...(override ? { providerOverride: override.provider, modelOverride: override.model } : {}),
   });
   if (!r.ok) {
     return { ok: false, error: r.error || 'router returned ok=false' };
@@ -1498,11 +1532,19 @@ export async function runExecutionSession(
   }
   const prompt = buildExecutionPrompt(exec.finding_id, exec.plan_version, plan.plan_markdown, fileCtx, branch, lessons, watcherBlock);
   const startedAt = Date.now();
+  // VTID-03820: an execution queued with an llm_on_ramp_override (e.g. the
+  // operator DeepSeek execution on-ramp) ALWAYS takes the direct
+  // callViaRouter path, bypassing the worker queue entirely — the worker
+  // queue dispatches to a hardcoded Claude-subscription model unrelated to
+  // llm_routing_policy, so an override could never actually take effect
+  // through it. Every other execution (no override set) is completely
+  // unaffected by this branch.
+  const onRampOverride = extractLlmOnRampOverride(exec.metadata);
   // Widen the inline type so both call shapes satisfy the union we destructure
   // below (worker-queue path may carry pr_url/pr_number/branch from the
   // worker-owned-PR mode; direct Messages API never does).
   const llm: { ok: boolean; text?: string; usage?: { input_tokens?: number; output_tokens?: number }; error?: string; pr_url?: string; pr_number?: number; branch?: string; attempt_failures?: WorkerAttemptFailure[] } =
-    isWorkerQueueEnabled()
+    (isWorkerQueueEnabled() && !onRampOverride)
       ? await runWorkerTask(
           {
             kind: 'execute',
@@ -1519,7 +1561,7 @@ export async function runExecutionSession(
           },
           { timeoutMs: MESSAGES_TIMEOUT_MS },
         )
-      : await callMessagesApi(prompt, `VTID-DA-${executionId.slice(0, 8)}`);
+      : await callMessagesApi(prompt, `VTID-DA-${executionId.slice(0, 8)}`, onRampOverride);
   const elapsed = Math.round((Date.now() - startedAt) / 1000);
 
   // Prompt-gap feedback loop: the worker reports per-attempt validation

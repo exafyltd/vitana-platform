@@ -28,6 +28,10 @@ describe('isExecutableSourceType — the executor gate', () => {
     expect(isExecutableSourceType('missing-test-scanner')).toBe(true);
   });
 
+  it('accepts operator_onramp (VTID-03820 operator-triggered DeepSeek execution on-ramp)', () => {
+    expect(isExecutableSourceType('operator_onramp')).toBe(true);
+  });
+
   it('REJECTS unrelated source types so misrouted rows stay out of the executor', () => {
     expect(isExecutableSourceType('community-recommendation')).toBe(false);
     expect(isExecutableSourceType('orb-voice-scanner')).toBe(false);
@@ -47,12 +51,13 @@ describe('isExecutableSourceType — the executor gate', () => {
     expect(isExecutableSourceType('Test-Contract-Failure-Scanner')).toBe(false);
   });
 
-  it('exports the canonical list with exactly the four current entries (lock in scope)', () => {
+  it('exports the canonical list with exactly the current five entries (lock in scope)', () => {
     const sorted = [...EXECUTABLE_RECOMMENDATION_SOURCE_TYPES].sort();
     expect(sorted).toEqual([
       'dev_autopilot',
       'dev_autopilot_impact',
       'missing-test-scanner',
+      'operator_onramp',
       'test-contract-failure-scanner',
     ]);
   });

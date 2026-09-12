@@ -38,6 +38,8 @@ import {
   TaskStatusResponse
 } from './operator-service';
 import { emitOasisEvent, recommendationSyncEvents } from './oasis-event-service';
+// VTID-03820: DeepSeek-powered execution on-ramp
+import { triggerOperatorExecution } from './operator-execution-onramp';
 import { dataExportConsentTag } from './data-export-consent';
 // VTID-01221: Sync Brief formatter for recommendation presentation
 import { formatSyncBrief, isWhatNextIntent, shouldFetchRecommendations, SyncBriefContext, Recommendation } from './sync-brief-formatter';
@@ -176,6 +178,29 @@ export const GEMINI_TOOL_DEFINITIONS = {
           }
         },
         required: ['description']
+      }
+    },
+    {
+      name: 'autopilot_execute_task',
+      description: 'VTID-03820: Execute an already-approved VTID via the DeepSeek-powered execution on-ramp — writes code and opens a real pull request. The target VTID MUST already have spec_status=approved; this tool does not approve specs itself. Disabled unless the platform owner has explicitly enabled OPERATOR_EXECUTION_ONRAMP_ENABLED. Only call this when the user has clearly asked to execute/implement/ship a SPECIFIC, already-approved VTID — never to create new work (use autopilot_create_task for that) and never speculatively.',
+      parameters: {
+        type: 'object',
+        properties: {
+          vtid: {
+            type: 'string',
+            description: 'The already-approved VTID to execute (e.g. VTID-04102).'
+          },
+          plan_markdown: {
+            type: 'string',
+            description: 'What to change and why — the execution plan for this VTID.'
+          },
+          files_referenced: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'File paths the plan touches — BOTH the source file(s) being changed AND their paired test file(s). The existing safety gate rejects a plan missing test coverage.'
+          }
+        },
+        required: ['vtid', 'plan_markdown', 'files_referenced']
       }
     },
     {
@@ -1063,6 +1088,93 @@ async function executeCreateTask(
       status: 'pending',
       message: `Task created successfully with VTID ${createdTask.vtid}. It has been queued for planning.`
     }
+  };
+}
+
+/**
+ * VTID-03820: Execute autopilot_execute_task — the DeepSeek-powered
+ * execution on-ramp. Higher-risk than task creation (this writes code and
+ * opens a real PR), so it gets its own governance action id and a higher
+ * risk_level. The actual approval/safety-gate/kill-switch logic all lives
+ * in triggerOperatorExecution()/the reused Dev Autopilot machinery — this
+ * function is a thin governance-logged wrapper, matching executeCreateTask's
+ * own shape.
+ */
+async function executeExecuteTask(
+  args: { vtid: string; plan_markdown: string; files_referenced: string[] },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  const requestId = randomUUID();
+  console.log(`[VTID-03820] execute_task called for ${args.vtid}`);
+
+  const governanceResult = await evaluateGovernance('operator.autopilot.execute_task', {
+    role: 'operator',
+    risk_level: 'A2', // writes code + opens a PR — higher risk than task creation (A4)
+    vtid: args.vtid,
+  });
+
+  await emitOasisEvent({
+    vtid: args.vtid,
+    type: 'governance.evaluate',
+    source: 'operator-console',
+    status: governanceResult.allowed ? 'success' : 'warning',
+    message: `Governance evaluated for operator.autopilot.execute_task: ${governanceResult.allowed ? 'allowed' : 'blocked'}`,
+    payload: {
+      action_id: 'operator.autopilot.execute_task',
+      allowed: governanceResult.allowed,
+      level: governanceResult.level,
+      violations_count: governanceResult.violations.length,
+    },
+  }).catch(err => console.warn('[VTID-03820] Failed to log governance event:', err.message));
+
+  if (!governanceResult.allowed) {
+    await logAutopilotIntent({
+      vtid: args.vtid,
+      threadId,
+      action: 'rejected',
+      details: { reason: 'governance_blocked', violations: governanceResult.violations },
+    });
+    return {
+      ok: false,
+      governanceBlocked: true,
+      governanceResult,
+      error: `Governance blocked: ${governanceResult.violations.map(v => v.message).join('; ')}`,
+    };
+  }
+
+  const result = await triggerOperatorExecution({
+    vtid: args.vtid,
+    planMarkdown: args.plan_markdown,
+    filesReferenced: args.files_referenced,
+    requestedBy: `operator-chat:${threadId}`,
+  });
+
+  if (!result.ok) {
+    await logAutopilotIntent({
+      vtid: args.vtid,
+      threadId,
+      action: 'rejected',
+      details: { reason: result.error, violations: result.violations },
+    });
+    return { ok: false, error: result.error };
+  }
+
+  await logAutopilotIntent({
+    vtid: args.vtid,
+    threadId,
+    action: 'executed',
+    details: { execution_id: result.execution_id, finding_id: result.finding_id, requestId },
+  });
+
+  return {
+    ok: true,
+    data: {
+      vtid: args.vtid,
+      execution_id: result.execution_id,
+      provider: 'deepseek',
+      status: 'queued',
+      message: `Execution queued for ${args.vtid} via the DeepSeek on-ramp (${result.execution_id.slice(0, 8)}). It will run on the next executor tick.`,
+    },
   };
 }
 
@@ -2582,6 +2694,13 @@ export async function executeTool(
       case 'autopilot_create_task':
         result = await executeCreateTask(
           args as { description: string; priority?: string; tags?: string[] },
+          threadId
+        );
+        break;
+
+      case 'autopilot_execute_task':
+        result = await executeExecuteTask(
+          args as { vtid: string; plan_markdown: string; files_referenced: string[] },
           threadId
         );
         break;
