@@ -1,0 +1,5 @@
+# cross-check test run with the bridge catalog present (copied from the VTID-03840 branch for the run, then removed):
+PASS test/vtid-03842-commands-vs-bridge-catalog.test.ts
+  ✓ same action set, same tier, capabilities, domain and company scope (40 ms)
+Tests: 1 passed, 1 total
+# without it (this branch): 1 skipped

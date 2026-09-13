@@ -46,8 +46,8 @@ async function fetchGrants(tenantId: string, userId?: string): Promise<GrantRow[
   return (await response.json()) as GrantRow[];
 }
 
-/** Resolve the caller's effective access (role defaults ∪ explicit grants in their tenant). */
-async function resolveAccess(auth: { user_id: string; is_exafy_admin: boolean; tenant_id: string | null; active_role: string | null }): Promise<EffectiveAccess> {
+/** Resolve the caller's effective access (role defaults ∪ explicit grants in their tenant). Exported for VTID-03842's command routes. */
+export async function resolveAccess(auth: { user_id: string; is_exafy_admin: boolean; tenant_id: string | null; active_role: string | null }): Promise<EffectiveAccess> {
   let explicit: string[] = [];
   if (auth.tenant_id) {
     try {
