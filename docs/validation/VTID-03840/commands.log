@@ -1,0 +1,28 @@
+# VTID-03840 — commands run (container-local; PG16 throwaway cluster on /tmp:54329; ERPClaw checkout /home/user/avansaber/erpclaw @ 4d32db65; addons @ 7c1b5ae5)
+# ledger
+curl -X POST https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate -d '{"source":"claude-code","layer":"DEV","module":"erp-bridge"}'   -> VTID-03840
+curl -X PATCH https://preview-aws-gateway.vitanaland.com/api/v1/oasis/tasks/VTID-03840 -d '{"title":"Infra: erp-bridge service + ERPClaw foundation spike","status":"in_progress"}'  -> 200
+spec: generate 201 -> validate 200 pass -> quality-check 200 pass (95, CRITICAL label = known false positive) -> approve 200 (spec_status=approved)
+# spike (env: ERPCLAW_DB_DIALECT=postgresql ERPCLAW_HOME=/tmp/erpclaw-home ERPCLAW_DB_URL=postgresql://postgres@/erpclaw?host=/tmp&port=54329)
+python3 scripts/db_query.py --action initialize-database --db-path "$URL"                          # 216 tables
+python3 scripts/db_query.py --action list-companies                                                 # FAILS before patch 0001 (invalid dsn), OK after
+python3 scripts/db_query.py --action setup-company --name "Vitanaland Spike LLC" --abbr VSL --currency AED --country "United Arab Emirates" --fiscal-year-start-month 1
+python3 scripts/db_query.py --action setup-chart-of-accounts --company-id $CO --template uae_ifrs  # outputs/01 (absent) + outputs/02 (present, 22 accounts)
+python3 scripts/db_query.py --action seed-defaults --company-id $CO                                # outputs/03
+python3 scripts/db_query.py --action add-tax-template ... / calculate-tax ... / list-tax-templates  # outputs/04
+python3 - (latency harness)                                                                         # outputs/05
+python3 - (12/24-way ThreadPoolExecutor add+submit journal entries)                                 # outputs/06a (before patch 0002), outputs/06b (after)
+python3 - (identical add-journal-entry twice; submit twice)                                         # outputs/07
+pg_dump -Fc -d erpclaw | pg_restore -d erpclaw_restore ; row-count + sum comparison                 # outputs/09
+python3 scripts/db_query.py --action migrate --dry-run ; --action migrate --user-confirmed (x2) on erpclaw_restore   # outputs/10 (typing_extensions finding)
+ERPCLAW_ROOT=... python3 vendor/install_module_local.py erpclaw-growth /home/user/avansaber/erpclaw-addons/erpclaw-growth   # outputs/11
+python3 scripts/db_query.py --action list-leads / add-lead --company-id $CO                        # outputs/11 (Unknown action before patch 0003, OK after)
+git diff > vendor/patches/0001-0002-erpclaw-lib-db-postgres.patch ; vendor/patches/0003-router-module-lookup-postgres.patch ; git apply --check -R  -> reverses cleanly
+# bridge
+cd services/erp-bridge && pip install -r requirements.txt
+ERPCLAW_ROOT=/home/user/avansaber/erpclaw ERP_BRIDGE_TEST_DB_URL=postgresql://postgres@/erpclaw_restore?host=/tmp&port=54329 python3 -m pytest -v tests   # outputs/08: 36 passed, 0 skipped
+python3 -m uvicorn app.main:build --factory --host 127.0.0.1 --port 8093 (ERP_BRIDGE_TOKEN, ERP_TENANTS, ERPCLAW_ROOT, ERPCLAW_HOME set) ; curl sequence   # outputs/12
+ERPCLAW_ROOT=$T/root ERPCLAW_HOME=$T/home bash vendor/vendor.sh ; python3 vendor/extract_flags.py $T/root $T/home/vendored-modules/erpclaw-growth | diff - vendor/action-flags.json   # outputs/13 (IDENTICAL)
+python3 -c "import yaml; yaml.safe_load(open('.github/workflows/AWS-STAGE-DEPLOY-ERP-BRIDGE.yml'))"   # yaml ok
+node -e "JSON.parse(require('fs').readFileSync('config/service-path-map.json','utf8'))"                # json ok
+# NOT run: docker build (no daemon in session); anything against AWS (no credentials; nothing provisioned for this service yet)
