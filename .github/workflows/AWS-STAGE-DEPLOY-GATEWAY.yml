@@ -564,6 +564,8 @@ jobs:
                                                 "TTS_PROVIDER","TTS_POLLY_STRICT","VERTEX_LIVE_UNAVAILABLE",
                                                 "ORB_CASCADED_VOICE_ENABLED",
                                                 "OPERATOR_EXECUTION_ONRAMP_ENABLED",
+                                                "OPERATOR_CODEBASE_READ_ENABLED",
+                                                "OPERATOR_DB_READONLY_ENABLED",
                                                 "BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION",
                                                 "AURORA_CA_BUNDLE_PATH") | not) ]
                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
@@ -589,6 +591,8 @@ jobs:
                           {name:"VERTEX_LIVE_UNAVAILABLE", value:"true"},
                           {name:"ORB_CASCADED_VOICE_ENABLED", value:"true"},
                           {name:"OPERATOR_EXECUTION_ONRAMP_ENABLED", value:"true"},
+                          {name:"OPERATOR_CODEBASE_READ_ENABLED", value:"true"},
+                          {name:"OPERATOR_DB_READONLY_ENABLED", value:"true"},
                           {name:"BEDROCK_ROLE_ARN", value:$TASK_ROLE},
                           {name:"AWS_BEDROCK_REGION", value:"eu-central-1"},
                           {name:"AURORA_CA_BUNDLE_PATH", value:"/app/certs/rds-combined-ca-bundle.pem"} ] )

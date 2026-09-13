@@ -45,6 +45,10 @@ import { dataExportConsentTag } from './data-export-consent';
 import { formatSyncBrief, isWhatNextIntent, shouldFetchRecommendations, SyncBriefContext, Recommendation } from './sync-brief-formatter';
 // VTID-0538: Knowledge Hub integration
 import { executeKnowledgeSearch, KNOWLEDGE_SEARCH_TOOL_DEFINITION } from './knowledge-hub';
+// VTID-03835: Operator Console codebase read access (search + file read)
+import { searchCode, getFileContents } from './github-service';
+// VTID-03836: Operator Console AWS ECS read-only status
+import { describeEcsServices, ALLOWED_ECS_SERVICES } from './aws-ecs-readonly';
 // VTID-01208: LLM Telemetry
 import {
   startLLMCall,
@@ -412,6 +416,85 @@ Returns checklist items with pass/fail status based on OASIS evidence.`,
           }
         },
         required: ['vtid']
+      }
+    },
+    // VTID-03835: Operator Console codebase read access — read-only, GitHub-backed
+    // (there is no live checkout on the gateway container to read from).
+    {
+      name: 'dev_search_codebase',
+      description: `Search the exafyltd/vitana-platform codebase (via the GitHub Search Code API, default branch "main") for a keyword, symbol name, or string literal. Read-only. Returns matching file paths, not full file content — call dev_read_file on a result to see the code. Developer/admin role only.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'Search terms — e.g. a function/variable name, a string literal, or a concept keyword.'
+          },
+          path_glob: {
+            type: 'string',
+            description: 'Optional path prefix/substring to narrow results (e.g. "services/gateway/src/routes"). GitHub code search has no true glob support — this is a substring match, not a wildcard pattern.'
+          }
+        },
+        required: ['query']
+      }
+    },
+    {
+      name: 'dev_read_file',
+      description: `Read a file's content, or list a directory, from the exafyltd/vitana-platform GitHub repo. Defaults to the "main" branch. Read-only. Developer/admin role only.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Repo-relative file or directory path, e.g. "services/gateway/src/services/gemini-operator.ts".'
+          },
+          ref: {
+            type: 'string',
+            description: 'Branch, tag, or commit SHA to read from. Defaults to "main".'
+          }
+        },
+        required: ['path']
+      }
+    },
+    // VTID-03836: Operator Console AWS ECS read-only status. Disabled until a
+    // dedicated read-only IAM role is provisioned — see aws-ecs-readonly.ts.
+    {
+      name: 'dev_aws_ecs_status',
+      description: `Get the live ECS deployment status (desired/running/pending task counts, current task definition, rollout state) for one documented Vitana service. Read-only — never deploys, scales, or restarts anything, and only the services listed in CLAUDE.md §1b are queryable. Developer/admin role only.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          service_name: {
+            type: 'string',
+            description: `The ECS service name, e.g. "vitana-gateway-awsdr" (prod) or "vitana-gateway" (staging). Allowed values: ${ALLOWED_ECS_SERVICES.join(', ')}.`
+          }
+        },
+        required: ['service_name']
+      }
+    },
+    // VTID-03837: Operator Console read-only DB access — explicit table
+    // allowlist via Supabase PostgREST, never arbitrary SQL.
+    {
+      name: 'dev_db_query',
+      description: `Read rows from an explicitly allowlisted table (vtid_ledger, oasis_events, dev_autopilot_executions, dev_autopilot_plan_versions) via Supabase. Read-only — no arbitrary SQL, no writes, no other tables. Developer/admin role only.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          table: {
+            type: 'string',
+            enum: ['vtid_ledger', 'oasis_events', 'dev_autopilot_executions', 'dev_autopilot_plan_versions'],
+            description: 'Table to read from.'
+          },
+          vtid: {
+            type: 'string',
+            description: 'Optional VTID to filter rows by.'
+          },
+          limit: {
+            type: 'integer',
+            description: 'Max rows to return. Defaults to 20, max 100.'
+          }
+        },
+        required: ['table']
       }
     },
     // VTID-01270A: Community & Events tools for ORB text chat
@@ -2221,6 +2304,137 @@ async function executeVerifyDeployChecklist(
   }
 }
 
+const OPERATOR_DEFAULT_REPO = 'exafyltd/vitana-platform';
+
+/**
+ * VTID-03835: dev_search_codebase — read-only GitHub code search.
+ */
+async function executeDevSearchCodebase(
+  args: { query: string; path_glob?: string },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  if (process.env.OPERATOR_CODEBASE_READ_ENABLED !== 'true') {
+    return { ok: false, error: 'operator_codebase_read_disabled: OPERATOR_CODEBASE_READ_ENABLED is not "true"' };
+  }
+  if (!args.query || !args.query.trim()) {
+    return { ok: false, error: 'query is required' };
+  }
+  try {
+    const results = await searchCode(OPERATOR_DEFAULT_REPO, args.query, args.path_glob);
+    console.log(`[VTID-03835] dev_search_codebase thread=${threadId} query="${args.query}" results=${results.length}`);
+    return { ok: true, data: { repo: OPERATOR_DEFAULT_REPO, query: args.query, results } };
+  } catch (err: any) {
+    return { ok: false, error: `Codebase search failed: ${err.message}` };
+  }
+}
+
+/**
+ * VTID-03835: dev_read_file — read-only GitHub file/directory read.
+ */
+async function executeDevReadFile(
+  args: { path: string; ref?: string },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  if (process.env.OPERATOR_CODEBASE_READ_ENABLED !== 'true') {
+    return { ok: false, error: 'operator_codebase_read_disabled: OPERATOR_CODEBASE_READ_ENABLED is not "true"' };
+  }
+  if (!args.path || !args.path.trim()) {
+    return { ok: false, error: 'path is required' };
+  }
+  try {
+    const result = await getFileContents(OPERATOR_DEFAULT_REPO, args.path, args.ref || 'main');
+    console.log(`[VTID-03835] dev_read_file thread=${threadId} path="${args.path}" ref="${args.ref || 'main'}" type=${result.type}`);
+    return { ok: true, data: { repo: OPERATOR_DEFAULT_REPO, ref: args.ref || 'main', ...result } };
+  } catch (err: any) {
+    return { ok: false, error: `File read failed: ${err.message}` };
+  }
+}
+
+/**
+ * VTID-03836: dev_aws_ecs_status — read-only ECS DescribeServices.
+ * Kill-switched off by default and NOT pinned on any deploy workflow yet —
+ * see aws-ecs-readonly.ts's header comment for why (no dedicated read-only
+ * IAM role provisioned; the client currently runs under the same broad
+ * gateway task role as the deploy-capable aws-ecs-admin.ts).
+ */
+async function executeDevAwsEcsStatus(
+  args: { service_name: string },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  if (process.env.OPERATOR_AWS_READONLY_ENABLED !== 'true') {
+    return { ok: false, error: 'operator_aws_readonly_disabled: OPERATOR_AWS_READONLY_ENABLED is not "true"' };
+  }
+  if (!args.service_name || !args.service_name.trim()) {
+    return { ok: false, error: 'service_name is required' };
+  }
+  try {
+    const results = await describeEcsServices([args.service_name]);
+    console.log(`[VTID-03836] dev_aws_ecs_status thread=${threadId} service=${args.service_name}`);
+    if (results.length === 0) {
+      return { ok: false, error: `Service not found: ${args.service_name}` };
+    }
+    return { ok: true, data: results[0] as any };
+  } catch (err: any) {
+    return { ok: false, error: `ECS status check failed: ${err.message}` };
+  }
+}
+
+// VTID-03837: explicit table allowlist for dev_db_query — never arbitrary SQL.
+const DEV_DB_QUERY_ALLOWED_TABLES = [
+  'vtid_ledger',
+  'oasis_events',
+  'dev_autopilot_executions',
+  'dev_autopilot_plan_versions',
+] as const;
+
+/**
+ * VTID-03837: dev_db_query — read-only Supabase PostgREST read, restricted
+ * to an explicit table allowlist. Reuses the same SUPABASE_SERVICE_ROLE
+ * read pattern already used by executeDevDeploymentStatus/executeAnalyzeVTID
+ * elsewhere in this file — not a new or widened credential.
+ */
+async function executeDevDbQuery(
+  args: { table: string; vtid?: string; limit?: number },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  if (process.env.OPERATOR_DB_READONLY_ENABLED !== 'true') {
+    return { ok: false, error: 'operator_db_readonly_disabled: OPERATOR_DB_READONLY_ENABLED is not "true"' };
+  }
+  if (!(DEV_DB_QUERY_ALLOWED_TABLES as readonly string[]).includes(args.table)) {
+    return { ok: false, error: `Table not allowed: ${args.table}. Allowed: ${DEV_DB_QUERY_ALLOWED_TABLES.join(', ')}` };
+  }
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+  if (!supabaseUrl || !supabaseKey) {
+    return { ok: false, error: 'Supabase not configured' };
+  }
+  const limit = Math.min(Math.max(args.limit || 20, 1), 100);
+  // Only vtid_ledger/oasis_events key on a plain `vtid` column — the two
+  // dev_autopilot_* tables key on finding_id (a UUID FK) / self_healing_vtid
+  // instead, so a vtid filter there would just 400 against PostgREST.
+  const VTID_FILTERABLE_TABLES = new Set(['vtid_ledger', 'oasis_events']);
+  try {
+    let url = `${supabaseUrl}/rest/v1/${args.table}?order=created_at.desc&limit=${limit}`;
+    if (args.vtid && VTID_FILTERABLE_TABLES.has(args.table)) {
+      url += `&vtid=eq.${encodeURIComponent(args.vtid)}`;
+    } else if (args.vtid) {
+      return { ok: false, error: `Table ${args.table} does not support filtering by vtid (no vtid column) — omit the vtid argument.` };
+    }
+    const resp = await fetch(url, {
+      headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
+    });
+    if (!resp.ok) {
+      const errorText = await resp.text();
+      return { ok: false, error: `Query failed: ${resp.status} - ${errorText}` };
+    }
+    const rows = await resp.json();
+    console.log(`[VTID-03837] dev_db_query thread=${threadId} table=${args.table} rows=${Array.isArray(rows) ? rows.length : 0}`);
+    return { ok: true, data: { table: args.table, rows } as any };
+  } catch (err: any) {
+    return { ok: false, error: `DB query failed: ${err.message}` };
+  }
+}
+
 /**
  * Build deploy verification checklist from OASIS events
  */
@@ -2768,6 +2982,37 @@ export async function executeTool(
       case 'dev_verify_deploy_checklist':
         result = await executeVerifyDeployChecklist(
           args as { vtid: string; service?: string },
+          threadId
+        );
+        break;
+
+      // VTID-03835: Operator Console codebase read access
+      case 'dev_search_codebase':
+        result = await executeDevSearchCodebase(
+          args as { query: string; path_glob?: string },
+          threadId
+        );
+        break;
+
+      case 'dev_read_file':
+        result = await executeDevReadFile(
+          args as { path: string; ref?: string },
+          threadId
+        );
+        break;
+
+      // VTID-03836: Operator Console AWS ECS read-only status
+      case 'dev_aws_ecs_status':
+        result = await executeDevAwsEcsStatus(
+          args as { service_name: string },
+          threadId
+        );
+        break;
+
+      // VTID-03837: Operator Console read-only DB access
+      case 'dev_db_query':
+        result = await executeDevDbQuery(
+          args as { table: string; vtid?: string; limit?: number },
           threadId
         );
         break;
