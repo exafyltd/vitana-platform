@@ -20,6 +20,24 @@
 # deferred secrets until real values exist. Re-add them (see git history
 # on this file / the VTID-03415 build notes) once populated.
 #
+# VTID-03850 (2026-09-13): the executor now gets a working LLM path of its
+# own, mirroring the gateway task defs. The register step upserts
+#   - BEDROCK_ROLE_ARN   = the executor task definition's own taskRoleArn
+#                          (activation gate for the Bedrock adapter, CLAUDE.md
+#                          §2b; credentials come from the task role itself)
+#   - AWS_BEDROCK_REGION = eu-central-1
+#   - DEEPSEEK_API_KEY   = Secrets Manager `vitana/gateway/staging/deepseek-api-key`
+#                          (the same secret the staging gateway already resolves;
+#                          referenced by NAME, which ECS accepts for a same-region
+#                          secret — the deploy role has no secretsmanager:Describe*)
+# so a dispatched execution can run the worker call on the Bedrock policy
+# primary and honour an on-ramp DeepSeek override (VTID-03820). Before this,
+# every dispatched execution would have failed at the LLM step: the task def
+# carried no LLM credential at all (see the deferred-secrets note above).
+# Whether the executor task role actually holds bedrock:InvokeModel is not
+# verifiable from the repo — the first dispatched execution's llm.call.*
+# events are the check.
+#
 # workflow_dispatch ONLY, required `reason`, never on push.
 
 name: AWS Prod Deploy Autopilot Executor (ECS Task Def)
@@ -105,16 +123,37 @@ jobs:
           docker push "$REGISTRY/${{ env.ECR_REPOSITORY }}:latest"
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
-      - name: Register new task-definition revision (image only — env/secrets carry forward)
+      - name: Register new task-definition revision (image + executor LLM runtime env/secrets — VTID-03850)
+        env:
+          DEEPSEEK_SECRET_NAME: vitana/gateway/staging/deepseek-api-key
         run: |
           set -e
           IMAGE="${{ steps.build.outputs.image }}"
           CURRENT_ARN=$(aws ecs describe-task-definition --task-definition "${{ env.TASK_FAMILY }}" \
             --query 'taskDefinition.taskDefinitionArn' --output text)
           echo "Current: $CURRENT_ARN"
+          # VTID-03850: same activation pattern as the gateway task defs —
+          # BEDROCK_ROLE_ARN is the task's OWN role; the adapter only checks
+          # it is set, credentials come from the task role via the SDK chain.
+          TASK_ROLE_ARN=$(aws ecs describe-task-definition --task-definition "$CURRENT_ARN" \
+            --query 'taskDefinition.taskRoleArn' --output text)
+          if [ -z "$TASK_ROLE_ARN" ] || [ "$TASK_ROLE_ARN" = "None" ]; then
+            echo "::error::Task definition $CURRENT_ARN has no taskRoleArn — cannot set BEDROCK_ROLE_ARN."
+            exit 1
+          fi
+          echo "Executor task role (Bedrock activation): $TASK_ROLE_ARN"
+          echo "DEEPSEEK_API_KEY <- Secrets Manager: $DEEPSEEK_SECRET_NAME (by name; same region)"
           NEW_DEF=$(aws ecs describe-task-definition --task-definition "$CURRENT_ARN" --query taskDefinition \
-            | jq --arg IMG "$IMAGE" '
+            | jq --arg IMG "$IMAGE" --arg TASK_ROLE "$TASK_ROLE_ARN" \
+                 --arg REGION "${{ env.TARGET_AWS_REGION }}" --arg DS "$DEEPSEEK_SECRET_NAME" '
                 .containerDefinitions[0].image = $IMG
+                | .containerDefinitions[0].environment |=
+                    ( [ (. // [])[] | select(.name | IN("BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION") | not) ]
+                      + [ {name:"BEDROCK_ROLE_ARN", value:$TASK_ROLE},
+                          {name:"AWS_BEDROCK_REGION", value:$REGION} ] )
+                | .containerDefinitions[0].secrets |=
+                    ( [ (. // [])[] | select(.name | IN("DEEPSEEK_API_KEY") | not) ]
+                      + [ {name:"DEEPSEEK_API_KEY", valueFrom:$DS} ] )
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" --query 'taskDefinition.taskDefinitionArn' --output text)
