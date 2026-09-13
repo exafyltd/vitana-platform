@@ -1,0 +1,15 @@
+# VTID-03845 — commands run (2026-09-13)
+
+## Governance
+curl -s -X POST https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate -d '{"source":"claude-code","layer":"DEV","module":"operator-prompt-files-referenced-wording"}'
+  -> {"ok":true,"vtid":"VTID-03845"}
+curl -s -X PATCH https://preview-aws-gateway.vitanaland.com/api/v1/oasis/tasks/VTID-03845 -d '{"title":"Operator: files_referenced wording for test-only plans","status":"in_progress",...}'
+SQL: update vtid_ledger set spec_status='approved' where vtid='VTID-03845'   (user-instructed work; no gateway PATCH field for spec_status)
+
+## Verification
+cd services/gateway && npx tsc --noEmit                                                                 -> outputs/tsc-noemit.txt
+cd services/gateway && npx jest test/vtid-03838-operator-prompt-lists-execute-tool.test.ts (+ every test mentioning the rules block)
+                                                                                                        -> outputs/jest-scoped-operator-prompt.txt
+grep -rn "source file(s) to change AND\|source file(s) AND their test\|BOTH the source file(s)" services/gateway/src   -> outputs/old-wording-grep.txt (expected empty)
+grep -n "files_referenced: {" -A 4 services/gateway/src/services/gemini-operator.ts                    -> outputs/tool-schema-description.txt
+cd services/gateway && npx jest                                                                         -> outputs/jest-full-suite-tail.txt
