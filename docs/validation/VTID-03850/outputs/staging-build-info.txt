@@ -1,0 +1,3 @@
+preview-aws-gateway.vitanaland.com /api/v1/admin/build-info after merge of #3297 (8131af9):
+  6/6 samples git_commit=8131af9248cf1a932ee7cbd27358432a751167a1 env=staging (watcher bttlsy4ie, 2026-09-13 ~14:16 UTC)
+  => DEV_AUTOPILOT_USE_JOB=true / DEV_AUTOPILOT_JOB_CLOUD=aws are on the live staging task definition.

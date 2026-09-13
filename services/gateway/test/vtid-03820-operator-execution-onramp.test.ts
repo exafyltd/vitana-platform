@@ -146,7 +146,10 @@ describe('triggerOperatorExecution (VTID-03820)', () => {
       expect(result.execution_id).toBe('exec-456');
       expect(result.finding_id).toBe('finding-123');
     }
-    expect(mockedApprove).toHaveBeenCalledWith({ finding_id: 'finding-123', approved_by: VALID_INPUT.requestedBy });
+    // VTID-03839: the requester label is NOT passed as approved_by (uuid
+    // column); the on-ramp declares itself interactive instead.
+    expect(mockedApprove).toHaveBeenCalledWith({ finding_id: 'finding-123', interactive: true });
+    expect(mockedApprove.mock.calls[0][0]).not.toHaveProperty('approved_by');
 
     // The recommendation insert used the new operator_onramp source_type.
     const recCall = fetchMock.mock.calls.find((c) => String(c[0]).includes('autopilot_recommendations'));

@@ -505,6 +505,22 @@ jobs:
         # removal), no code revert — with it off, triggerOperatorExecution()
         # returns operator_execution_onramp_disabled immediately, before any
         # DB row is written.
+        # VTID-03850 -- DEV_AUTOPILOT_USE_JOB=true + DEV_AUTOPILOT_JOB_CLOUD=aws
+        # pinned on STAGING: every claimed Dev Autopilot execution (including
+        # the operator on-ramp above) is dispatched as a one-shot Fargate task
+        # of the vitana-autopilot-executor family via ecs:RunTask
+        # (dispatchExecutorJobAws), instead of a fire-and-forget promise on
+        # this gateway task. Observed 2026-09-13 (VTID-03841): an in-process
+        # run had no GitHub token and died silently on a 20-minute watchdog.
+        # The executor task def carries GITHUB_SAFE_MERGE_TOKEN and, since
+        # VTID-03850, BEDROCK_ROLE_ARN + DEEPSEEK_API_KEY (see
+        # AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml). Failure posture is the
+        # code path itself: if RunTask is refused (IAM, capacity), the gateway
+        # logs the reason and falls back to the in-process run, i.e. exactly
+        # today. Rollback is this value -> "false", no code revert. Platform
+        # owner approved 2026-09-13. Deliberately NOT added to
+        # AWS-PROD-DEPLOY-GATEWAY.yml -- prod keeps its live task def state
+        # until a staging dispatch has been observed end-to-end.
         run: |
           set -e
           IMAGE="${{ steps.build.outputs.image }}"
@@ -604,6 +620,9 @@ jobs:
                                                 "TTS_PROVIDER","TTS_POLLY_STRICT","VERTEX_LIVE_UNAVAILABLE",
                                                 "ORB_CASCADED_VOICE_ENABLED",
                                                 "OPERATOR_EXECUTION_ONRAMP_ENABLED",
+                                                "OPERATOR_CODEBASE_READ_ENABLED",
+                                                "OPERATOR_DB_READONLY_ENABLED",
+                                                "DEV_AUTOPILOT_USE_JOB","DEV_AUTOPILOT_JOB_CLOUD",
                                                 "BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION",
                                                 "AURORA_CA_BUNDLE_PATH") | not) ]
                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
@@ -629,6 +648,10 @@ jobs:
                           {name:"VERTEX_LIVE_UNAVAILABLE", value:"true"},
                           {name:"ORB_CASCADED_VOICE_ENABLED", value:"true"},
                           {name:"OPERATOR_EXECUTION_ONRAMP_ENABLED", value:"true"},
+                          {name:"OPERATOR_CODEBASE_READ_ENABLED", value:"true"},
+                          {name:"OPERATOR_DB_READONLY_ENABLED", value:"true"},
+                          {name:"DEV_AUTOPILOT_USE_JOB", value:"true"},
+                          {name:"DEV_AUTOPILOT_JOB_CLOUD", value:"aws"},
                           {name:"BEDROCK_ROLE_ARN", value:$TASK_ROLE},
                           {name:"AWS_BEDROCK_REGION", value:"eu-central-1"},
                           {name:"AURORA_CA_BUNDLE_PATH", value:"/app/certs/rds-combined-ca-bundle.pem"} ] )

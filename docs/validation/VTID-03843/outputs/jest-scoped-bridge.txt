@@ -1,0 +1,209 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/vtid-03843-selfheal-child-inherits-onramp-override.test.ts
+  VTID-03843 — spawnChildExecution inherits on-ramp override
+    ✓ copies llm_on_ramp and llm_on_ramp_override from the parent metadata verbatim (4 ms)
+    ✓ keeps the bridge identity fields — the parent source never leaks into the child (1 ms)
+    ✓ a child of an autonomous (non-on-ramp) parent carries no override keys — self-healing path byte-identical
+    ✓ a parent with null metadata still spawns cleanly (1 ms)
+  VTID-03843 — inheritedOnRampMetadata (pure)
+    ✓ returns {} for null/undefined/non-object input
+    ✓ drops a malformed override (array / string / empty on-ramp) instead of forwarding junk
+    ✓ forwards a well-formed override object as-is (extractLlmOnRampOverride validates the shape downstream)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.task.injected for VTID-99999 (b27d48fc-64b9-4f87-8117-88b836ac743d)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: autopilot.task.spec.created for VTID-99999 (939521a3-cb5c-469d-8bba-b4f89c02ffca)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [self-healing-injector] VTID-99999 auto-approved and injected into autopilot pipeline
+
+      at injectIntoAutopilotPipeline (src/services/self-healing-injector-service.ts:524:15)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.execution.bridged for VTID-99999 (a37fdb44-9f66-4985-91cd-6322b7b8887a)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [self-healing-injector] VTID-99999 bridged to autopilot execution exec-uui
+
+      at injectIntoAutopilotPipeline (src/services/self-healing-injector-service.ts:563:21)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.task.injected for VTID-99999 (6650187c-e2e7-49bc-8642-6045bd17a4fb)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: autopilot.task.spec.created for VTID-99999 (f99bd937-3599-4f78-ab94-9573cacfab9e)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [self-healing-injector] VTID-99999 auto-approved and injected into autopilot pipeline
+
+      at injectIntoAutopilotPipeline (src/services/self-healing-injector-service.ts:524:15)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.injection.deduped for VTID-99999 (135656df-3c66-4ac1-b291-09390b82c106)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [self-healing-injector] VTID-99999 bridged to autopilot execution exec-uui (deduped, reused existing)
+
+      at injectIntoAutopilotPipeline (src/services/self-healing-injector-service.ts:563:21)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.task.injected for VTID-99998 (5f56f814-ffa9-44b8-8ab8-2dda23c62376)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: autopilot.task.spec.created for VTID-99998 (eb464a3f-2ae1-43a6-84b3-076d980897f9)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [self-healing-injector] VTID-99998 auto-approved and injected into autopilot pipeline
+
+      at injectIntoAutopilotPipeline (src/services/self-healing-injector-service.ts:524:15)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.task.injected for VTID-99997 (60c9af66-4c37-4bba-808f-f6ad2e1b6b0b)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: autopilot.task.spec.created for VTID-99997 (786efebd-16ee-44ae-824d-ae4fcf522d8b)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [self-healing-injector] VTID-99997 auto-approved and injected into autopilot pipeline
+
+      at injectIntoAutopilotPipeline (src/services/self-healing-injector-service.ts:524:15)
+
+  console.warn
+    [self-healing-injector] VTID-99997 autopilot bridge failed: bridgeActivationToExecution failed: plan generation failed — worker-runner will see no execution_id and the repair-evidence gate will refuse completion.
+
+      566 |             );
+      567 |           } else {
+    > 568 |             console.warn(
+          |                     ^
+      569 |               `[self-healing-injector] ${vtid} autopilot bridge failed: ${bridge.error || 'unknown'} — ` +
+      570 |                 `worker-runner will see no execution_id and the repair-evidence gate will refuse completion.`,
+      571 |             );
+
+      at injectIntoAutopilotPipeline (src/services/self-healing-injector-service.ts:568:21)
+      at Object.<anonymous> (test/self-healing-injector-autopilot-bridge.test.ts:229:20)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.execution.bridge_failed for VTID-99997 (31abafc9-8b39-47b3-a8af-fa4eecb540b1)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+PASS test/self-healing-injector-autopilot-bridge.test.ts
+  injectIntoAutopilotPipeline — autopilot bridge
+    ✓ first injection writes recommendation + plan_version + execution link (20 ms)
+    ✓ second injection with same dedupe key reuses the existing execution (3 ms)
+    ✓ voice synthetic endpoints skip the autopilot bridge entirely (2 ms)
+    ✓ bridge failure does not break the injector (worker-runner gate catches it) (4 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.log
+    [dev-autopilot-bridge] DRY RUN revert (ci) → https://github.com/exafyltd/vitana-platform/pull/9001#closed-dry-run
+
+      at revertExecutionPR (src/services/dev-autopilot-bridge.ts:297:13)
+
+  console.log
+    [dev-autopilot-bridge] DRY RUN revert (ci) → https://github.com/exafyltd/vitana-platform/pull/9001#closed-dry-run
+
+      at revertExecutionPR (src/services/dev-autopilot-bridge.ts:297:13)
+
+  console.log
+    [dev-autopilot-bridge] DRY RUN revert (ci) → https://github.com/exafyltd/vitana-platform/pull/9001#closed-dry-run
+
+      at revertExecutionPR (src/services/dev-autopilot-bridge.ts:297:13)
+
+  console.log
+    [dev-autopilot-bridge] DRY RUN revert (verification) → https://github.com/exafyltd/vitana-platform/pull/REVERT-11111111
+
+      at revertExecutionPR (src/services/dev-autopilot-bridge.ts:297:13)
+
+  console.log
+    [dev-autopilot-bridge] DRY RUN revert (ci) → https://github.com/exafyltd/vitana-platform/pull/9001#closed-dry-run
+
+      at revertExecutionPR (src/services/dev-autopilot-bridge.ts:297:13)
+
+  console.log
+    [dev-autopilot-bridge] DRY RUN revert (ci) → https://github.com/exafyltd/vitana-platform/pull/123#closed-dry-run
+
+      at revertExecutionPR (src/services/dev-autopilot-bridge.ts:297:13)
+
+  console.log
+    [dev-autopilot-bridge] DRY RUN revert (deploy) → https://github.com/exafyltd/vitana-platform/pull/REVERT-abcdef12
+
+      at revertExecutionPR (src/services/dev-autopilot-bridge.ts:297:13)
+
+  console.log
+    [dev-autopilot-bridge] DRY RUN revert (verification) → https://github.com/exafyltd/vitana-platform/pull/REVERT-abcdef12
+
+      at revertExecutionPR (src/services/dev-autopilot-bridge.ts:297:13)
+
+PASS test/dev-autopilot-bridge.test.ts
+  decideBridgeAction
+    ✓ spawns child when confidence high, depth below cap, kill switch off (1 ms)
+    ✓ escalates when confidence below threshold
+    ✓ escalates at depth cap even with high confidence (1 ms)
+    ✓ kill switch always escalates, regardless of confidence/depth
+    ✓ threshold is the documented CHILD_SPAWN_CONFIDENCE_THRESHOLD
+    ✓ no failure_stage falls back to the global threshold (backward compatible)
+  resolveRetryThreshold + per-stage calibration
+    ✓ uses a low bar for CI and a high bar for verification (1 ms)
+    ✓ environmental_blocker never retries regardless of confidence
+    ✓ same confidence: retries a CI failure but escalates a verification failure
+    ✓ parseThreshold falls back to the default for non-finite / missing overrides (Codex P2)
+    ✓ depth cap and kill switch still take precedence over the per-stage bar (1 ms)
+  bridgeFailureToSelfHealing
+    ✓ spawns a child execution when triage confidence is high and depth is 0 (8 ms)
+    ✓ escalates when auto_fix_depth is at the cap (2 ms)
+    ✓ escalates when triage confidence is low (1 ms)
+    ✓ escalates when triage itself fails (1 ms)
+    ✓ is idempotent — already-bridged execution short-circuits
+    ✓ returns no_execution when the execution row is missing
+    ✓ uses verification_failure triage mode for verification stage (1 ms)
+    ✓ kill switch forces escalation even with high confidence (1 ms)
+  revertExecutionPR (DRY_RUN)
+    ✓ returns a closed-dry-run marker URL for CI stage failures with a PR (4 ms)
+    ✓ returns a REVERT- marker URL for deploy/verification stage failures (1 ms)
+    ✓ is a no-op when the execution never produced a PR (1 ms)
+
+Test Suites: 3 passed, 3 total
+Tests:       33 passed, 33 total
+Snapshots:   0 total
+Time:        0.858 s, estimated 1 s
+Ran all test suites matching /test\/vtid-03843-selfheal-child-inherits-onramp-override.test.ts|test\/dev-autopilot-bridge.test.ts|test\/self-healing-injector-autopilot-bridge.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

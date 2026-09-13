@@ -192,10 +192,19 @@ export async function triggerOperatorExecution(
   }
 
   // Governance gate 2 (reused, not reimplemented): approveAutoExecute runs
-  // the full existing safety gate. approved_by is set, so a rejection is
-  // returned synchronously here — never silently snoozed the way an
+  // the full existing safety gate. `interactive: true` makes a rejection
+  // come back synchronously here — never silently snoozed the way an
   // unattended autoApproveTick call would be.
-  const approval = await approveAutoExecute({ finding_id: findingId, approved_by: input.requestedBy });
+  //
+  // VTID-03839: `requestedBy` is deliberately NOT passed as `approved_by`.
+  // It is a label (`operator-chat:<threadId>`), and
+  // `dev_autopilot_executions.approved_by` is a uuid column — the first
+  // real staging run that cleared the safety gate died on exactly that
+  // INSERT (Postgres 22P02). The requester is still recorded on the
+  // recommendation (`spec_snapshot.requested_by`), the execution metadata
+  // (`triggered_by`, PATCHed below) and the OASIS event — nothing is lost,
+  // it just does not go into a uuid column.
+  const approval = await approveAutoExecute({ finding_id: findingId, interactive: true });
   if (!approval.ok || !approval.execution) {
     return { ok: false, error: approval.error || 'approval failed', violations: approval.decision?.violations };
   }

@@ -1,0 +1,24 @@
+# VTID-03839 — commands run (2026-09-13)
+
+## Live reproduction (staging, read-only DB checks)
+curl -s https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info
+  -> git_commit=ae833f657954a6cd1d514760d41e078c72233fea env=staging
+curl -s -X POST https://preview-aws-gateway.vitanaland.com/api/v1/operator/chat -H "Content-Type: application/json" --data-binary @onramp-retry.json
+  -> toolResults[0].response.error = "execution insert failed: 400: ... 22P02 ... operator-chat:e947d9bb-..."   (see outputs/staging-repro-2026-09-13.txt)
+SQL (read-only): select column_name,data_type,is_nullable from information_schema.columns where table_name='dev_autopilot_executions' and column_name='approved_by'
+  -> approved_by uuid YES
+SQL (read-only): select ... from oasis_events where created_at > now()-interval '15 minutes' and (vtid='VTID-03829' or metadata::text ilike '%e947d9bb%')
+SQL (read-only): select allow_scope, deny_scope from dev_autopilot_config
+SQL (read-only): select id,status,source_type,spec_snapshot->'files_referenced' from autopilot_recommendations where spec_snapshot::text like '%VTID-03829%'
+
+## Governance
+curl -s -X POST https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate -d '{"source":"claude-code","layer":"DEV","module":"operator-onramp-approved-by-uuid"}'
+  -> {"ok":true,"vtid":"VTID-03839"}
+curl -s -X PATCH https://preview-aws-gateway.vitanaland.com/api/v1/oasis/tasks/VTID-03839 -d '{"title":"Gateway: on-ramp approved_by must be a UUID","status":"in_progress",...}'
+SQL: update vtid_ledger set spec_status='approved' where vtid='VTID-03839'   (user-instructed work; no gateway PATCH field for spec_status)
+
+## Verification
+cd services/gateway && npx tsc --noEmit                                    -> exit 0   (outputs/tsc-noemit.txt)
+cd services/gateway && npx jest test/vtid-03839-onramp-approved-by-uuid.test.ts test/vtid-03820-operator-execution-onramp.test.ts test/dev-autopilot-finding-completion.test.ts test/dev-autopilot-execute.test.ts test/vtid-03820-execution-onramp-metadata.test.ts
+                                                                           -> 5/5 suites, 56 tests (outputs/jest-scoped-onramp.txt)
+cd services/gateway && npx jest                                            -> outputs/jest-full-suite-tail.txt
