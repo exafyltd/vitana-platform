@@ -82,6 +82,42 @@ Neither finding changes B4's stakes or timeline — this was a fully
 independent, previously-unaudited item, now closed with a precise, bounded
 answer instead of "needs audit."
 
+**Follow-up, same VTID-03847 — the `vector` version and the two remaining
+extensions in the "Extensions in use" list are now also closed, not just
+`pg_net`/`supabase_vault`.**
+
+- **`vector` version match confirmed live: `0.8.0` on both sides.** Queried
+  Supabase via MCP (`0.8.0`) and Aurora via the RDS Data API against
+  `vitana-aurora-prod` (`0.8.0`) — exact match. The plan's stated
+  uncertainty above ("the version must be matched or the memory embeddings
+  need reindexing") is resolved: **no reindexing is needed.**
+- **`pg_stat_statements`** (Supabase: installed, v1.11) **is absent from
+  Aurora.** Non-issue — it is pure runtime query-monitoring with zero
+  persistent application state to migrate; Aurora has its own equivalent
+  tooling (Performance Insights / its own `pg_stat_statements` if enabled
+  separately) if that visibility is wanted post-cutover.
+- **`pgmq`** (Supabase: installed, v1.4.4) **is absent from Aurora.**
+  Investigated rather than assumed non-issue, since a message-queue
+  extension implies real application state: `pgmq.list_queues()` against
+  live Supabase returns an empty array — **zero queues have ever been
+  created.** Installed but completely unused; nothing to migrate.
+- Aurora's full extension list, queried directly via `aws rds-data
+  execute-statement` against the `vitana/aurora/prod/claude-readonly`
+  secret: `dblink 1.2, fuzzystrmatch 1.2, pg_cron 1.6, pg_trgm 1.6,
+  pgcrypto 1.3, plpgsql 1.0, unaccent 1.1, uuid-ossp 1.1, vector 0.8.0`. Of
+  the 12-extension "Extensions in use" list above, every absence from this
+  list is now individually accounted for: `pg_net`/`supabase_vault` (2 live
+  trigger dependents, addressed above), `pg_stat_statements`/`pgmq` (both
+  confirmed dead weight, this entry). `dblink` appearing on Aurora but not
+  in Supabase's "in use" list is pre-existing RDS scaffolding, not a gap in
+  the other direction.
+
+This closes the extension-parity portion of Phase 0/B4 entirely — every
+extension either matches, has a named live dependent with a concrete
+migration path, or is confirmed unused and droppable. Nothing here changes
+the hard 2026-09-20 deadline or the still-open human-only blockers (DMS
+CDC/Supavisor, Cognito provisioning, private-bucket S3 backfill).
+
 ---
 
 ## Phase 0 — GATE: Aurora is not currently a trustworthy copy
