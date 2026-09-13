@@ -1880,3 +1880,41 @@ every prior session's pattern).
 No new findings on the DMS CDC/S3/EC2 blockers this round — this addendum
 is purely the merge-reconciliation record; see the prior addendum
 immediately above for the current, unchanged status of all three.
+
+## Addendum, 2026-09-13 (3), VTID-03874 — second routine merge with main (VTID-03867)
+
+Same-day follow-up: PR #3087 went `dirty` again ~2 hours after the previous
+merge, main having moved 2 more commits (VTID-03851 doc-only staging
+evidence, **VTID-03867** wiring `GITHUB_SAFE_MERGE_TOKEN` into the staging
+gateway task definition — needed for the on-ramp executor's PR-opening
+capability per the VTID-03846 changelog row's "still open" list).
+
+Merged `origin/main`. **One conflict**, in
+`.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml`, across 4 adjacent blocks —
+VTID-03867's new `GITHUB_SAFE_MERGE_TOKEN` secret-resolution/env-injection
+wiring landed on the exact same lines as this branch's existing
+`AURORA_RLS_DATABASE_URL` wiring (both append to the same `for pair in`
+secret list, the same jq `--arg` list, the same jq `select(...| not)`
+exclusion list, and the same final secrets-array construction). Independent,
+non-overlapping additions — resolved by keeping both in each of the 4 spots.
+
+Rather than only eyeballing the resolution, extracted the actual jq filter
+from the merged YAML (via a proper YAML parse, not naive text slicing — a
+naive first attempt truncated wrong and produced a false "syntax error" that
+turned out to be a `jq empty` misuse in the test harness, not a real
+problem) and ran it through the real `jq` binary against a dummy ECS
+task-definition JSON. Output confirmed both `AURORA_RLS_DATABASE_URL` and
+`GITHUB_SAFE_MERGE_TOKEN` land in the final `secrets` array exactly once
+each, with every pre-existing secret/env var also present and unchanged —
+the same live-verification discipline this branch's own VTID-03815 merge
+used for the analogous `AURORA_DATABASE_URL` collision.
+
+`tsc --noEmit`: same 2 pre-existing, unrelated `express-serve-static-core`
+pnpm-hoisting errors — no new errors, and none expected, since this merge
+touched only workflow YAML, no TypeScript source. Pushed (`6a137097`).
+
+Self-allocated **VTID-03874** via the now-repeatedly-reachable
+`POST /api/v1/vtid/allocate` gateway endpoint (third consecutive session
+this has worked, after VTID-03861 and VTID-03846/50/51 earlier the same
+day) — this session's live-gateway access is holding, not a one-off.
+Terminalized `success`.
