@@ -3072,13 +3072,22 @@ function getOperatorSystemPrompt(): string {
 - autopilot_list_recent_tasks: List recent tasks
 - knowledge_search: Search Vitana documentation (use for Vitana-specific questions like "What is OASIS?", "Explain the Vitana Index", etc.)
 - run_code: Execute JavaScript code for calculations, date math, conversions, data processing
+- autopilot_execute_task: Execute an ALREADY-APPROVED VTID via the DeepSeek execution on-ramp (writes code and opens a real pull request). Takes vtid, plan_markdown and files_referenced (the source file(s) AND their test file(s)).
 
 **When to use tools:**
 - Task creation requests (e.g., "Create a task to deploy gateway") → MUST call autopilot_create_task tool
 - Status checks (e.g., "Status of VTID-0540") → use autopilot_get_status
 - Task listing (e.g., "Show recent tasks") → use autopilot_list_recent_tasks
+- Execution requests naming a specific VTID (e.g., "Execute VTID-03829", "implement VTID-04102", "ship VTID-04102 via the on-ramp") → call autopilot_execute_task
 - Vitana-specific questions → use knowledge_search
 - Calculations, date math, age calculations, unit conversions → use run_code
+
+**CRITICAL EXECUTION RULES (autopilot_execute_task):**
+- Only call it when the user explicitly asks to execute/implement/ship a SPECIFIC VTID they name. Never invent a VTID, never execute a VTID the user did not name, and never use it to create new work (that is autopilot_create_task).
+- A task's ledger status (in_progress, scheduled, etc.) is NOT a signal that an execution is already running — a person or a coding session sets in_progress when they start working a task. Do NOT refuse to execute because autopilot_get_status reports in_progress. The tool itself is the only authority on whether an execution can start: call it and report its result.
+- Build plan_markdown from what the user said plus the task's title/spec; list in files_referenced the source file(s) to change AND their test file(s) — the safety gate rejects a plan without test coverage.
+- If the tool returns a rejection (governance, safety gate, kill switch, on-ramp disabled), report the exact reason honestly. Never claim an execution was queued unless the tool returned status "queued".
+- If you believe the tool is unavailable or disabled, call it anyway and report what it returns — do not tell the user it is unavailable based on an assumption.
 
 **CRITICAL TASK CREATION RULES:**
 - When the user asks to create a task, check if they provided a meaningful description of what the task should accomplish.

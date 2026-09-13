@@ -1,0 +1,48 @@
+VTID-03838 — commands.log
+=========================
+
+## Diagnosis (all read-only)
+
+$ grep -n "tools" services/gateway/src/services/llm-router.ts     # deepseekAdapter forwards tools[] unmodified (L709-716)
+$ grep -n "autopilot_execute_task\|When to use tools" services/gateway/src/services/gemini-operator.ts
+   -> declared at L184 (VTID-03820); prompt tool list (L3069-3081) omits it
+$ sed -n 216,221p services/gateway/src/services/ai-personality-service.ts
+   -> served PERSONALITY_DEFAULTS.operator_chat.system_prompt omits it
+$ git log origin/main --oneline | grep 03820   -> d360473
+$ git merge-base --is-ancestor d360473 35ca6aed56bd3ae8ed336ca82614df397e60e8fc -> YES (tool code is in the staging build)
+$ curl -s https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info -> git_commit 35ca6aed…, env staging
+
+Supabase (read-only SELECT on public.oasis_events, 2026-09-12 20:59:30–21:02:00 UTC):
+   operator.chat.message -> autopilot.status.requested -> assistant.turn "Tool call: autopilot_get_status" -> reply (x2)
+   NO governance.evaluate for operator.autopilot.execute_task -> executeExecuteTask() never entered
+
+## Governance
+
+$ curl -s -X POST https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate \
+    -d '{"source":"claude-code","layer":"DEV","module":"operator-onramp-prompt-gap"}'
+-> {"ok":true,"vtid":"VTID-03838","num":3838,"id":"ea867a38-e654-43f3-86ab-9ef499f80867"}
+$ curl -s -X PATCH https://preview-aws-gateway.vitanaland.com/api/v1/oasis/tasks/VTID-03838 \
+    -d '{"title":"Operator: list execute tool in system prompt","status":"in_progress","summary":"…"}'
+-> {"id":"VTID-03838","vtid":"VTID-03838","title":"Operator: list execute tool in system prompt","status":"in_progress"}
+
+## Change
+
+Edited services/gateway/src/services/ai-personality-service.ts (PERSONALITY_DEFAULTS.operator_chat.system_prompt)
+and services/gateway/src/services/gemini-operator.ts (getOperatorSystemPrompt() inline fallback):
+  + Available tools: autopilot_execute_task
+  + When to use tools: execution requests naming a specific VTID -> autopilot_execute_task
+  + CRITICAL EXECUTION RULES block (named VTID only; in_progress != running; test files in
+    files_referenced; honest rejection; call rather than assume unavailable)
+Added services/gateway/test/vtid-03838-operator-prompt-lists-execute-tool.test.ts (12 tests).
+
+## Verification
+
+$ npx jest test/vtid-03838-operator-prompt-lists-execute-tool.test.ts   -> outputs/jest-vtid-03838-filter.txt (12/12)
+$ npx tsc --noEmit                                                       -> outputs/tsc-noemit.txt (exit 0)
+$ npx jest --testPathPattern "operator|personality|onramp|gemini"        -> outputs/jest-scoped-operator.txt (10/10 suites, 103 passed)
+$ npx jest --silent | tail -40                                           -> outputs/jest-full-suite-tail.txt
+
+## Not run
+
+No live DeepSeek turn — requires the staging redeploy that merging this PR triggers.
+See acceptance.md "Not verified here".
