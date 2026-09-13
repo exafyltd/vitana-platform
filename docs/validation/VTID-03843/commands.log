@@ -1,0 +1,13 @@
+# VTID-03843 — commands run (2026-09-13)
+
+## Governance
+curl -s -X POST https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate -d '{"source":"claude-code","layer":"DEV","module":"selfheal-child-inherits-onramp-override"}'
+  -> {"ok":true,"vtid":"VTID-03843"}
+curl -s -X PATCH https://preview-aws-gateway.vitanaland.com/api/v1/oasis/tasks/VTID-03843 -d '{"title":"Pipeline: self-heal child inherits on-ramp LLM override","status":"in_progress",...}'
+SQL: update vtid_ledger set spec_status='approved' where vtid='VTID-03843'   (user-instructed work; no gateway PATCH field for spec_status)
+
+## Verification
+cd services/gateway && npx tsc --noEmit                                                                 -> outputs/tsc-noemit.txt
+cd services/gateway && npx jest test/vtid-03843-selfheal-child-inherits-onramp-override.test.ts test/dev-autopilot-bridge.test.ts test/self-healing-injector-autopilot-bridge.test.ts
+                                                                                                        -> outputs/jest-scoped-bridge.txt
+cd services/gateway && npx jest                                                                         -> outputs/jest-full-suite-tail.txt
