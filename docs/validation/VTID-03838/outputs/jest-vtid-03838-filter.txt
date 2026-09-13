@@ -1,0 +1,19 @@
+$ cd services/gateway && npx jest test/vtid-03838-operator-prompt-lists-execute-tool.test.ts
+PASS test/vtid-03838-operator-prompt-lists-execute-tool.test.ts
+  VTID-03838: operator prompt lists autopilot_execute_task
+    ✓ is declared as a tool (VTID-03820) — the precondition this test exists for
+    ✓ the two prompt sources carry the same execution-rules block (no drift)
+    PERSONALITY_DEFAULTS.operator_chat.system_prompt (served)
+      ✓ lists autopilot_execute_task under Available tools
+      ✓ routes explicit execution requests to autopilot_execute_task
+      ✓ tells the model a ledger status of in_progress is not a running execution
+      ✓ forbids the exact failure observed live: declaring the tool unavailable without calling it
+      ✓ keeps the guardrails: named VTID only, never speculative, honest on rejection
+    getOperatorSystemPrompt() inline fallback
+      ✓ lists autopilot_execute_task under Available tools
+      ✓ routes explicit execution requests to autopilot_execute_task
+      ✓ tells the model a ledger status of in_progress is not a running execution
+      ✓ forbids the exact failure observed live: declaring the tool unavailable without calling it
+      ✓ keeps the guardrails: named VTID only, never speculative, honest on rejection
+Test Suites: 1 passed, 1 total
+Tests:       12 passed, 12 total
