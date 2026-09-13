@@ -157,6 +157,10 @@ router.post('/chat', optionalAuth, async (req: Request, res: Response) => {
     // VTID-03851: record what THIS request proved about its caller. The
     // threadId comes from the client, so an unauthenticated request must
     // clear any marker a previous (admin) request left on the same thread.
+    // impact-allow-no-oasis: pre-existing handler — VTID-0531 already
+    // persists the user and assistant turns as OASIS chat events further
+    // down (assistantEventResult / oasis_ref). VTID-03851 only added
+    // optionalAuth on the registration line; no new state mutation here.
     const callerIdentity = (req as AuthenticatedRequest).identity;
     if (callerIdentity?.user_id) {
       setThreadAuth(threadId, { user_id: callerIdentity.user_id, exafy_admin: callerIdentity.exafy_admin === true });
