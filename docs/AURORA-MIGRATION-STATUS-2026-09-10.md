@@ -1833,3 +1833,50 @@ finding, no action taken beyond recording the re-check:
   `UnauthorizedOperation`. Neither blocker has moved; no point re-checking
   more often than roughly daily until a human changes the IAM boundary or
   the Supabase-side pooler/IPv4 situation.
+
+## Addendum, 2026-09-13 (2), VTID-03861 — routine merge with main (VTID-03850/03851)
+
+Routine scheduled check-in found PR #3087's `mergeable_state` had gone from
+`unknown`/pending-checks (right after the previous check-in's own doc
+commits landed) to `dirty` — `main` had moved 11 commits ahead in the
+interim, most notably **VTID-03850** (staging Dev Autopilot executions now
+dispatch to the ECS executor task) and **VTID-03851** (`autopilot_execute_task`
+now requires an authenticated `exafy_admin` session — a real security fix,
+closing an unauthenticated-request gap on `POST /api/v1/operator/chat`).
+
+Merged `origin/main` into this branch. **One conflict**, in
+`services/gateway/src/services/gemini-operator.ts`'s import block — this
+branch's own B1 repository-seam import (`import * as repo from
+'./gemini-operator-repository'`, unrelated prior work on this branch) sat on
+the same line main's VTID-03851 added its new `operator-execute-authz`
+import to. Not a real logic conflict: both imports are independent and
+both are genuinely used later in the file (`repo.*` at 5 call sites,
+`getThreadAuth`/`isExecuteTaskAuthorized`/`describeExecuteTaskRefusal` at
+the `executeExecuteTask()` auth gate VTID-03851 added) — resolved by
+keeping both. `tsc --noEmit` clean after resolution (the same 2
+pre-existing, unrelated `express-serve-static-core` pnpm-hoisting errors
+this doc has already noted elsewhere — not a regression). Ran the 11
+test suites touching this file and the merged-in on-ramp/executor code
+(`vtid-03851-execute-task-requires-auth`, `vtid-03850-staging-executor-
+dispatch-pinned`, `vtid-03820-operator-execution-onramp`,
+`operator-command`, `operator-chat-oasis`,
+`vtid-03822-operator-chat-threads`, `vtid-03835-operator-console-read-
+tools`, `vtid-03838-operator-prompt-lists-execute-tool`,
+`vtid-03844-outcomes-record-operator-onramp`,
+`vtid-03819-create-operator-task-dedup`, `operator-deployments`):
+**125/127 passing (2 pre-existing skips), 0 failures.** Pushed
+(`adce69a0`).
+
+**Governance note:** self-allocated a real VTID for this — `POST
+/api/v1/vtid/allocate` against `gateway.vitanaland.com` (production) was
+directly reachable from this session for the first time in this doc's
+history (every prior entry recorded it as unreachable or used the
+existing VTID-03847/VTID-03830 identity instead). Allocated **VTID-03861**,
+followed up with the title/summary/`status=in_progress`/
+`spec_status=approved` update via a direct, narrowly-scoped Supabase
+`UPDATE vtid_ledger` (no gateway PATCH equivalent exists for this, same as
+every prior session's pattern).
+
+No new findings on the DMS CDC/S3/EC2 blockers this round — this addendum
+is purely the merge-reconciliation record; see the prior addendum
+immediately above for the current, unchanged status of all three.
