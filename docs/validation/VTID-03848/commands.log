@@ -1,0 +1,10 @@
+# VTID-03848 — commands run
+curl -X POST https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate -d '{"source":"claude-code","layer":"DEV","module":"orb-backoffice-surface"}'   -> VTID-03848
+curl -X PATCH .../oasis/tasks/VTID-03848 -d '{"title":"ORB: BackOffice assistant surface + admin overlay","status":"in_progress"}' -> 200
+generate 201 -> validate pass -> quality-check pass (95, known CRITICAL label) -> approve 200 (spec_status=approved)
+git checkout -b claude/practical-gates-iqwv52-vtid-03848 claude/practical-gates-iqwv52-vtid-03842
+cd services/gateway && npx tsc --noEmit -p .                                                     # outputs/tsc.txt
+./node_modules/.bin/jest test/routes/backoffice-commands.test.ts test/routes/backoffice-access.test.ts test/orb/live/characterization/tool-catalog.characterization.test.ts test/orb/live/characterization/system-instruction.characterization.test.ts test/orb/live/characterization/tool-dispatcher.characterization.test.ts test/orb/live/instruction/omit-tools-prose.test.ts   # 79 passed, 7 snapshots unchanged
+./node_modules/.bin/jest test/orb/live/surface.test.ts test/orb/live/tools/surface-gated-catalog.test.ts test/orb/live/instruction/work-surface-overlays.test.ts test/vtid-03848-backoffice-voice-tools.test.ts test/vtid-03848-orchestrator-voice-ceiling.test.ts   # outputs/jest-targeted.txt
+./node_modules/.bin/jest --silent                                                                 # full suite — tail below
+# NOT run: a live ORB voice session (no device/mic in this session); anything against staging or production

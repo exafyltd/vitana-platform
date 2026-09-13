@@ -146,6 +146,9 @@ import {
 import { dispatchVoiceFailureFireAndForget } from '../services/voice-self-healing-adapter';
 import { fetchAdminBriefingBlock, isAdminRole } from '../services/admin-scanners/briefing';
 import { ADMIN_TOOL_HANDLERS, ADMIN_TOOL_NAMES, ADMIN_TOOL_SCHEMAS } from '../services/admin-voice-tools';
+// VTID-03848: BackOffice voice tools (surface-gated) + shared surface resolver.
+import { BACKOFFICE_TOOL_HANDLERS, BACKOFFICE_TOOL_NAMES } from '../services/backoffice-voice-tools';
+import { resolveOrbSurface, navigatorRoleForSurface, isWorkSurface } from '../orb/live/surface';
 import { getUserContextSummary } from '../services/user-context-profiler';
 import { getAwarenessConfigSync } from '../services/awareness-registry';
 import { writeTimelineRow } from '../services/timeline-projector';
@@ -3209,10 +3212,8 @@ const ANONYMOUS_SAFE_TOOLS = new Set<string>([
  * in that case the Navigator should still only surface community routes.
  */
 function deriveSurfaceRole(currentRoute: string | undefined | null): string {
-  const route = (currentRoute || '').toLowerCase();
-  if (route.startsWith('/command-hub')) return 'developer';
-  if (route === '/admin' || route.startsWith('/admin/')) return 'admin';
-  return 'community';
+  // VTID-03848: one resolver for every surface decision (adds /backoffice).
+  return navigatorRoleForSurface(resolveOrbSurface({ currentRoute }));
 }
 
 /**
@@ -6620,6 +6621,25 @@ async function executeLiveApiToolInner(
         // BOOTSTRAP-ADMIN-DD: route admin voice tools through their handlers.
         // The handlers re-check role server-side, so a community session that
         // somehow names an admin tool will be denied with admin_role_required.
+        // VTID-03848: BackOffice voice tools — only on the /backoffice surface;
+        // the handlers re-check the surface and identity, and the orchestrator
+        // applies the voice ceiling (Draft) before anything reaches ERPClaw.
+        if (BACKOFFICE_TOOL_NAMES.includes(toolName)) {
+          const handler = BACKOFFICE_TOOL_HANDLERS[toolName];
+          return await handler(
+            {
+              tenantId: session.identity?.tenant_id || '',
+              userId: session.identity?.user_id || '',
+              email: session.identity?.email ?? null,
+              activeRole: session.active_role || session.identity?.role || 'community',
+              isExafyAdmin: !!session.identity?.exafy_admin,
+              surface: resolveOrbSurface({ currentRoute: session.current_route, isMobile: !!session.clientContext?.isMobile }),
+              sessionId: session.sessionId,
+              turnNumber: session.turn_count,
+            },
+            args ?? {},
+          );
+        }
         if (ADMIN_TOOL_NAMES.includes(toolName)) {
           const handler = ADMIN_TOOL_HANDLERS[toolName];
           return await handler(
@@ -7921,6 +7941,8 @@ async function connectToLiveAPI(
             session.identity && !session.isAnonymous ? 'authenticated' : 'anonymous',
             session.current_route,
             session.active_role || session.identity?.role || undefined,
+            // VTID-03848: mobile is always the community surface; route decides otherwise.
+            resolveOrbSurface({ currentRoute: session.current_route, isMobile: !!session.clientContext?.isMobile }),
           )
         }
       };
@@ -8293,9 +8315,12 @@ async function connectToLiveAPI(
         // nothing to claim (never prewarmed, expired, already claimed by a
         // race, or the connection died while it waited) — zero behavior
         // change for every session this doesn't apply to.
-        const prewarmedNova = session.identity?.user_id
+        // VTID-03848: never reuse the (community-persona, no-route) login prewarm on a work surface.
+        const sessionSurface = resolveOrbSurface({ currentRoute: session.current_route, isMobile: !!session.clientContext?.isMobile });
+        const prewarmedNova = session.identity?.user_id && !isWorkSurface(sessionSurface)
           ? consumePrewarmedNovaSession(session.identity.user_id)
           : null;
+        if (session.identity?.user_id && isWorkSurface(sessionSurface)) emitDiag(session, 'nova_prewarm_skipped_work_surface', { provider: 'nova_sonic', surface: sessionSurface });
         const reusedWarmNova = !!prewarmedNova;
 
         let novaSystemInstruction: string;
