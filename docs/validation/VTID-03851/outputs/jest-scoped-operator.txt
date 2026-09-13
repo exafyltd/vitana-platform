@@ -1,0 +1,97 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/vtid-03851-execute-task-requires-auth.test.ts
+  VTID-03851 — isExecuteTaskAuthorized (pure)
+    ✓ refuses when no marker exists (anonymous request) (3 ms)
+    ✓ refuses an empty / non-string user_id (1 ms)
+    ✓ refuses an authenticated non-admin (1 ms)
+    ✓ allows a verified exafy_admin (1 ms)
+    ✓ refusal text names the VTID and says no execution was queued (1 ms)
+  VTID-03851 — thread marker semantics
+    ✓ set → get round-trips and normalises exafy_admin to a strict boolean (1 ms)
+    ✓ the threat this exists for: an anonymous request on a reused threadId clears the admin marker
+    ✓ a non-admin request on a reused threadId overwrites, never keeps, the admin marker
+    ✓ clearing an unknown thread is a no-op (1 ms)
+  VTID-03851 — source wiring
+    ✓ /chat runs optionalAuth (never requireAuth — anonymous chat stays allowed) (1 ms)
+    ✓ /chat writes the marker on EVERY request: set on a verified identity, clear otherwise (1 ms)
+    ✓ executeExecuteTask refuses before governance, OASIS, or any on-ramp call
+    ✓ the on-ramp is still reachable for an authorized caller (the gate is an early return, not a removal)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.log
+    [dev-autopilot-execute] [4208c292] safety gate blocked auto-approve — snoozed 7d (Plan touches 1 file(s) outside the allow-scope.)
+
+      at approveAutoExecute (src/services/dev-autopilot-execute.ts:635:15)
+
+PASS test/vtid-03839-onramp-approved-by-uuid.test.ts
+  isUuidString (VTID-03839)
+    ✓ accepts a canonical UUID in either case (1 ms)
+    ✓ rejects the on-ramp label that broke the real INSERT, and other non-UUIDs (1 ms)
+  approveAutoExecute — approved_by must be a UUID (VTID-03839)
+    ✓ rejects a non-UUID approved_by BEFORE any DB access, naming the uuid column and the interactive alternative (3 ms)
+    ✓ interactive request with no approved_by: inserts approved_by = null and records a human "approved" outcome (4 ms)
+    ✓ a real user UUID still passes the pre-check and is written verbatim (the guard does not over-reject) (1 ms)
+    ✓ system auto-approve (no approved_by, not interactive) is unchanged: approved_by = null, outcome auto_exec (1 ms)
+    safety-gate rejection
+      ✓ interactive caller gets the violation back and the finding is NOT snoozed (1 ms)
+      ✓ mutation check: the same rejection WITHOUT interactive (unattended tick) still snoozes for 7 days (41 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/vtid-03820-operator-execution-onramp.test.ts
+  triggerOperatorExecution (VTID-03820)
+    ✓ rejects when the kill switch is not "true" (default OFF) (10 ms)
+    ✓ rejects an arbitrary non-"true" value the same as unset
+    ✓ rejects when Supabase is not configured
+    ✓ rejects empty planMarkdown without touching the DB
+    ✓ rejects an empty filesReferenced list without touching the DB
+    ✓ rejects when the target VTID is not found (1 ms)
+    ✓ rejects when the target VTID is already terminal
+    ✓ rejects when the target VTID is not spec_status=approved
+    ✓ creates the recommendation + plan rows, calls approveAutoExecute, and stamps the DeepSeek override on success (3 ms)
+    ✓ surfaces a safety-gate rejection from approveAutoExecute without stamping anything (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/vtid-03838-operator-prompt-lists-execute-tool.test.ts
+  VTID-03838: operator prompt lists autopilot_execute_task
+    ✓ is declared as a tool (VTID-03820) — the precondition this test exists for (1 ms)
+    ✓ the two prompt sources carry the same execution-rules block (no drift)
+    PERSONALITY_DEFAULTS.operator_chat.system_prompt (served)
+      ✓ lists autopilot_execute_task under Available tools (1 ms)
+      ✓ routes explicit execution requests to autopilot_execute_task
+      ✓ tells the model a ledger status of in_progress is not a running execution
+      ✓ forbids the exact failure observed live: declaring the tool unavailable without calling it
+      ✓ files_referenced = the files the plan will create or change; a test-only plan lists only the test file
+      ✓ keeps the guardrails: named VTID only, never speculative, honest on rejection (1 ms)
+    getOperatorSystemPrompt() inline fallback
+      ✓ lists autopilot_execute_task under Available tools
+      ✓ routes explicit execution requests to autopilot_execute_task (1 ms)
+      ✓ tells the model a ledger status of in_progress is not a running execution
+      ✓ forbids the exact failure observed live: declaring the tool unavailable without calling it (1 ms)
+      ✓ files_referenced = the files the plan will create or change; a test-only plan lists only the test file
+      ✓ keeps the guardrails: named VTID only, never speculative, honest on rejection (1 ms)
+
+Test Suites: 4 passed, 4 total
+Tests:       45 passed, 45 total
+Snapshots:   0 total
+Time:        2.541 s
+Ran all test suites matching /test\/vtid-03851-execute-task-requires-auth.test.ts|test\/vtid-03820-operator-execution-onramp.test.ts|test\/vtid-03838-operator-prompt-lists-execute-tool.test.ts|test\/vtid-03839-onramp-approved-by-uuid.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
