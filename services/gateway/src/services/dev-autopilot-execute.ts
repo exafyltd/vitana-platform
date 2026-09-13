@@ -126,7 +126,20 @@ const GITHUB_BASE_BRANCH = process.env.DEV_AUTOPILOT_REPO_REF || 'main';
 
 export interface ApprovalInput {
   finding_id: string;
+  /** Approving user's id. MUST be a UUID — it is written verbatim to
+   *  `dev_autopilot_executions.approved_by` (uuid) and
+   *  `dev_autopilot_outcomes.approver_user_id`. Omit for system approvals
+   *  (autoApproveTick) — NULL is the documented sentinel there. */
   approved_by?: string;
+  /** VTID-03839: the caller is a person (or a session acting for one)
+   *  waiting synchronously on the result, but has no user UUID to put in
+   *  `approved_by` — the operator on-ramp's requester is a chat-thread
+   *  label, not a user. Keeps the human-approval semantics that used to
+   *  ride on `approved_by` being set: a safety-gate rejection is returned
+   *  to the caller instead of 7-day-snoozing the finding, and the outcome
+   *  is recorded as `approved`, not `auto_exec`. Never changes what is
+   *  written to `approved_by`. */
+  interactive?: boolean;
 }
 
 export interface ApprovalResult {
@@ -384,7 +397,28 @@ async function countRunningExecutions(s: SupaConfig): Promise<number> {
 // Approval entry point
 // =============================================================================
 
+// VTID-03839: shape check for `ApprovalInput.approved_by`. Any RFC-4122
+// variant/version — Supabase auth ids are v4, but the column accepts any.
+const UUID_STRING_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export function isUuidString(value: string): boolean {
+  return UUID_STRING_RE.test(value);
+}
+
 export async function approveAutoExecute(input: ApprovalInput): Promise<ApprovalResult> {
+  // VTID-03839: fail loudly, before any DB work, on a non-UUID approver.
+  // `dev_autopilot_executions.approved_by` is a uuid column; a label here
+  // (the operator on-ramp used to pass `operator-chat:<threadId>`) only
+  // surfaced as a Postgres 22P02 on the execution INSERT — after the
+  // finding + plan rows were already written and the safety gate had
+  // already passed. Name the real constraint instead.
+  if (input.approved_by !== undefined && !isUuidString(input.approved_by)) {
+    return {
+      ok: false,
+      error: `approved_by must be a user UUID (dev_autopilot_executions.approved_by is uuid) — got "${input.approved_by}". `
+        + `Pass interactive:true and omit approved_by when the requester is not a user.`,
+    };
+  }
+
   const s = getSupabase();
   if (!s) return { ok: false, error: 'Supabase not configured' };
 
@@ -575,7 +609,9 @@ export async function approveAutoExecute(input: ApprovalInput): Promise<Approval
     // meantime). Human-approved calls (approved_by present) skip this:
     // the human sees the violations in the API response and decides.
     // Feedback findings also skip — they get human triage attention.
-    const isAutoApprove = !input.approved_by;
+    // VTID-03839: an interactive caller (operator on-ramp) is waiting on
+    // this rejection synchronously — it is not an unattended tick either.
+    const isAutoApprove = !input.approved_by && !input.interactive;
     if (isAutoApprove && !isFeedbackLane) {
       const snoozedUntil = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
       const violationSummary = (decision.violations || [])
@@ -659,7 +695,9 @@ export async function approveAutoExecute(input: ApprovalInput): Promise<Approval
   // backfilled later when the worker reports completion/failure.
   await recordOutcome({
     finding_id: input.finding_id,
-    decision: input.approved_by ? 'approved' : 'auto_exec',
+    // VTID-03839: an interactive request is a human decision even when no
+    // user UUID is available for approver_user_id.
+    decision: input.approved_by || input.interactive ? 'approved' : 'auto_exec',
     approver_user_id: input.approved_by || null,
   });
 
