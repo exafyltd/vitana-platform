@@ -38,15 +38,17 @@ describe('runExecutionSession telemetry vtid resolution (VTID-03821, source chec
     expect(idx).toBeGreaterThan(-1);
   });
 
-  it('the direct-API path tags callMessagesApi with telemetryVtid, not a bare synthetic id', () => {
-    expect(SOURCE).toContain('await callMessagesApi(prompt, telemetryVtid, onRampOverride);');
+  it('the routed-LLM path tags callRoutedLlm with telemetryVtid, not a bare synthetic id', () => {
+    // VTID-03852 renamed callMessagesApi -> callRoutedLlm (it never actually
+    // called Anthropic's Messages API directly, since VTID-02686).
+    expect(SOURCE).toContain('await callRoutedLlm(prompt, telemetryVtid, onRampOverride);');
     // The old always-synthetic call shape must not remain anywhere in the file.
-    expect(SOURCE).not.toContain('await callMessagesApi(prompt, `VTID-DA-${executionId.slice(0, 8)}`');
+    expect(SOURCE).not.toContain('await callRoutedLlm(prompt, `VTID-DA-${executionId.slice(0, 8)}`');
   });
 
   it('the worker-queue path tags vtid_like with telemetryVtid too (commit-message/trace consistency)', () => {
     const start = SOURCE.indexOf('await runWorkerTask(');
-    const end = SOURCE.indexOf('await callMessagesApi(prompt, telemetryVtid, onRampOverride);');
+    const end = SOURCE.indexOf('await callRoutedLlm(prompt, telemetryVtid, onRampOverride);');
     expect(start).toBeGreaterThan(-1);
     expect(end).toBeGreaterThan(start);
     const block = SOURCE.slice(start, end);

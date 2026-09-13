@@ -44659,6 +44659,23 @@ function renderDevAutopilotExecutionCard(exec) {
         topRow.appendChild(vtidEl);
     }
 
+    // VTID-03852: this execution's real WORKER-stage LLM was never surfaced —
+    // an operator watching a PR get created had no way to tell the code was
+    // written by whatever provider metadata.llm_on_ramp_override forces
+    // (currently DeepSeek-flash for every operator-onramp execution) rather
+    // than the llm_routing_policy 'worker' stage default. Always show it —
+    // "policy default" is itself informative, not a placeholder to hide.
+    var llmBadge = document.createElement('span');
+    llmBadge.className = 'llm-provider-badge';
+    var onRampOverride = exec.metadata && exec.metadata.llm_on_ramp_override;
+    llmBadge.textContent = (onRampOverride && onRampOverride.provider)
+        ? 'llm: ' + onRampOverride.provider + '/' + (onRampOverride.model || '?')
+        : 'llm: policy default (worker stage)';
+    llmBadge.title = onRampOverride
+        ? 'Forced by metadata.llm_on_ramp_override — bypasses llm_routing_policy primary, but its configured fallback still applies on failure.'
+        : 'No on-ramp override on this execution — routed per the live llm_routing_policy \'worker\' stage.';
+    topRow.appendChild(llmBadge);
+
     if (exec.execute_after && exec.status === 'cooling') {
         var ms = new Date(exec.execute_after) - new Date();
         if (ms > 0) {
@@ -51567,6 +51584,17 @@ function renderAutopilotLiveView() {
             bottomLine.textContent = (scanner ? scanner + ' · ' : '') + (filePath || 'no file') + depthBadge;
             label.appendChild(bottomLine);
             card.appendChild(label);
+
+            // VTID-03852: same transparency badge as renderDevAutopilotExecutionCard —
+            // this dashboard renders dev_autopilot_executions independently, so it
+            // needs its own copy rather than silently omitting the signal here.
+            var llmOverride2 = exec.metadata && exec.metadata.llm_on_ramp_override;
+            var llmBadge2 = document.createElement('span');
+            llmBadge2.className = 'llm-provider-badge';
+            llmBadge2.textContent = (llmOverride2 && llmOverride2.provider)
+                ? 'llm: ' + llmOverride2.provider + '/' + (llmOverride2.model || '?')
+                : 'llm: policy default';
+            card.appendChild(llmBadge2);
 
             // PR link if available
             if (exec.pr_url) {

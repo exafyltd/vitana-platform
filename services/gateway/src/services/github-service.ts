@@ -219,13 +219,20 @@ export async function getPullRequest(
 }
 
 /**
- * Get files changed in a PR
+ * Get files changed in a PR.
+ *
+ * VTID-03853: widened to include the optional `patch` field GitHub's real
+ * API response already carries (the unified diff hunk for that file — absent
+ * for binary files or files too large to diff). Purely additive: existing
+ * callers destructuring filename/status/additions/deletions are unaffected;
+ * `runLlmMergeReview()` (dev-autopilot-llm-review.ts) is the first consumer
+ * that reads `patch`.
  */
 export async function getPrFiles(
   repo: string,
   prNumber: number
-): Promise<Array<{ filename: string; status: string; additions: number; deletions: number }>> {
-  return githubRequest<Array<{ filename: string; status: string; additions: number; deletions: number }>>(
+): Promise<Array<{ filename: string; status: string; additions: number; deletions: number; patch?: string }>> {
+  return githubRequest<Array<{ filename: string; status: string; additions: number; deletions: number; patch?: string }>>(
     `/repos/${repo}/pulls/${prNumber}/files`
   );
 }

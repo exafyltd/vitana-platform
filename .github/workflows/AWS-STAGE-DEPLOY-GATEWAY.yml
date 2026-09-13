@@ -566,6 +566,7 @@ jobs:
                                                 "OPERATOR_EXECUTION_ONRAMP_ENABLED",
                                                 "OPERATOR_CODEBASE_READ_ENABLED",
                                                 "OPERATOR_DB_READONLY_ENABLED",
+                                                "DEV_AUTOPILOT_LLM_REVIEW_ENABLED",
                                                 "BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION",
                                                 "AURORA_CA_BUNDLE_PATH") | not) ]
                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
@@ -593,6 +594,7 @@ jobs:
                           {name:"OPERATOR_EXECUTION_ONRAMP_ENABLED", value:"true"},
                           {name:"OPERATOR_CODEBASE_READ_ENABLED", value:"true"},
                           {name:"OPERATOR_DB_READONLY_ENABLED", value:"true"},
+                          {name:"DEV_AUTOPILOT_LLM_REVIEW_ENABLED", value:"true"},
                           {name:"BEDROCK_ROLE_ARN", value:$TASK_ROLE},
                           {name:"AWS_BEDROCK_REGION", value:"eu-central-1"},
                           {name:"AURORA_CA_BUNDLE_PATH", value:"/app/certs/rds-combined-ca-bundle.pem"} ] )
