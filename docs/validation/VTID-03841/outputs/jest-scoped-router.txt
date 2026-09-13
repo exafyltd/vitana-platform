@@ -1,0 +1,7 @@
+$ cd services/gateway && npx jest test/vtid-03841-deepseek-adapter-timeout.test.ts test/vtid-03820-llm-router-override.test.ts test/llm-router.test.ts
+PASS test/vtid-03841-deepseek-adapter-timeout.test.ts
+PASS test/llm-router.test.ts
+PASS test/vtid-03820-llm-router-override.test.ts
+Test Suites: 3 passed, 3 total
+Tests:       20 passed, 20 total
+Time:        1.272 s

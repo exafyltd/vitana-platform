@@ -1,0 +1,24 @@
+Staging (preview-aws-gateway, build 978d494) — operator on-ramp execution for VTID-03829, read-only OASIS/DB trace.
+
+dev_autopilot_executions beeb2c55 (finding 167e8cba, metadata.llm_on_ramp_override = deepseek/deepseek-flash):
+  07:39:58  approved (cooling) -> execute_after fast-forwarded by the on-ramp
+  07:40:03  dev_autopilot.execution.running
+  07:40:04  llm.call.started   worker using deepseek/deepseek-flash   trace 21aa9b45   (prompt_hash b9fb89f318adcaae)
+  ...       NO llm.call.completed, NO llm.call.failed, NO further dev_autopilot.* event for this execution
+  08:00:10  dev_autopilot.execution.failed  "reclaimed by watchdog (stuck in running)"  -> row metadata.error:
+            "watchdog: stuck in 'running' > 20m (container recycled mid-execution)"; status later set to 'reverted' by the bridge
+  08:00:11  self-healing triage (bedrock/eu.anthropic.claude-sonnet-4-6, 24s) -> child fb3d86f8 spawned (depth 1/2)
+
+Child fb3d86f8 (metadata carries NO llm_on_ramp_override -> default worker policy):
+  08:01:43  llm.call.started   worker using bedrock/eu.anthropic.claude-opus-4-5-20251101-v1:0
+  08:02:12  llm.call.completed 29.6s, 3517 in / 2768 out tokens
+  08:02:13  dev_autopilot.execution.failed "base branch lookup: GITHUB_SAFE_MERGE_TOKEN not set"  (staging gateway task def has no GitHub token)
+
+Reference point: the operator chat's own DeepSeek call (stage operator, same task, 07:39:59-07:40:01) completed in 2.36s —
+DeepSeek was reachable; the worker-shaped request (32000 max_tokens, full execution prompt) is the one that never returned.
+
+Code facts (read, not assumed):
+  llm-router.ts deepseekAdapter: plain fetch(...) with no signal / timeout (before this VTID)
+  dev-autopilot-execute.ts callMessagesApi -> callViaRouter('worker', ..., allowFallback: true) — fallback needs a FAILURE to engage
+  dev-autopilot-execute.ts STUCK_EXECUTION_MS = 20 min watchdog; comment: "normal execute (5-10 min)"
+  AWS-STAGE-DEPLOY-GATEWAY.yml: no DEV_AUTOPILOT_USE_JOB / DEV_AUTOPILOT_JOB_CLOUD -> executions run in-process on the gateway
