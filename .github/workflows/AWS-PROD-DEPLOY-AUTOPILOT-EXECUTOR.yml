@@ -142,10 +142,24 @@ jobs:
             exit 1
           fi
           echo "Executor task role (Bedrock activation): $TASK_ROLE_ARN"
-          echo "DEEPSEEK_API_KEY <- Secrets Manager: $DEEPSEEK_SECRET_NAME (by name; same region)"
+          # VTID-03875: valueFrom for a Secrets Manager secret MUST be the full
+          # ARN -- ECS only accepts a bare name for SSM Parameter Store. The
+          # comment this replaces ("by name; same region") documented a
+          # mistaken belief; passing the bare name here made the ECS agent
+          # resolve it via ssm:GetParameters instead, which
+          # vitana-ecs-task-execution-role is not authorized for, so every
+          # dispatched task died with ResourceInitializationError before the
+          # container ever started. Resolve the real ARN the same way
+          # AWS-STAGE-DEPLOY-GATEWAY.yml already does for its own secrets.
+          DEEPSEEK_ARN=$(aws secretsmanager describe-secret --secret-id "$DEEPSEEK_SECRET_NAME" --query ARN --output text 2>/dev/null || true)
+          if [ -z "$DEEPSEEK_ARN" ] || [ "$DEEPSEEK_ARN" = "None" ]; then
+            echo "::error::Secret '$DEEPSEEK_SECRET_NAME' not found in Secrets Manager (region ${{ env.TARGET_AWS_REGION }}). Refusing to register a task definition that cannot start."
+            exit 1
+          fi
+          echo "DEEPSEEK_API_KEY <- Secrets Manager: $DEEPSEEK_ARN"
           NEW_DEF=$(aws ecs describe-task-definition --task-definition "$CURRENT_ARN" --query taskDefinition \
             | jq --arg IMG "$IMAGE" --arg TASK_ROLE "$TASK_ROLE_ARN" \
-                 --arg REGION "${{ env.TARGET_AWS_REGION }}" --arg DS "$DEEPSEEK_SECRET_NAME" '
+                 --arg REGION "${{ env.TARGET_AWS_REGION }}" --arg DS "$DEEPSEEK_ARN" '
                 .containerDefinitions[0].image = $IMG
                 | .containerDefinitions[0].environment |=
                     ( [ (. // [])[] | select(.name | IN("BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION") | not) ]
