@@ -34,6 +34,9 @@ import { randomUUID } from 'crypto';
 import { processMessage } from '../services/ai-orchestrator';
 // VTID-0536: Gemini Operator Tools Bridge
 import { processWithGemini } from '../services/gemini-operator';
+// VTID-03851: verified-caller marker for autopilot_execute_task (set or
+// cleared on EVERY /chat request — threadId is client-supplied).
+import { setThreadAuth, clearThreadAuth } from '../services/operator-execute-authz';
 import {
   ingestOperatorEvent,
   getTasksSummary,
@@ -70,7 +73,7 @@ import {
   toRevisionRow,
 } from '../services/aws-gateway-admin';
 // Note: deployOrchestrator + emitOasisEvent are imported mid-file (lines ~590).
-import { requireAdminAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import { requireAdminAuth, optionalAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 // VTID-0525-B: naturalLanguageService disabled for MVP - using simple command matching
 // import { naturalLanguageService } from '../services/natural-language-service';
 import {
@@ -125,7 +128,11 @@ const FileUploadSchema = z.object({
  * VTID-0531: Extended with threadId, vtid, role, mode support and unified OASIS event logging
  * VTID-0532: Added task detection and automatic VTID/Task creation
  */
-router.post('/chat', async (req: Request, res: Response) => {
+// VTID-03851: optionalAuth verifies a bearer token when one is present and
+// attaches req.identity; it never rejects, so the chat route's existing
+// anonymous behaviour is unchanged — only autopilot_execute_task reads the
+// resulting marker and refuses without a verified exafy_admin.
+router.post('/chat', optionalAuth, async (req: Request, res: Response) => {
   const requestId = randomUUID();
   console.log(`[Operator Chat] Request ${requestId} started`);
 
@@ -146,6 +153,16 @@ router.post('/chat', async (req: Request, res: Response) => {
     // VTID-0531: Normalize threadId - generate if missing
     const threadId = validation.data.threadId || randomUUID();
     const createdAt = new Date().toISOString();
+
+    // VTID-03851: record what THIS request proved about its caller. The
+    // threadId comes from the client, so an unauthenticated request must
+    // clear any marker a previous (admin) request left on the same thread.
+    const callerIdentity = (req as AuthenticatedRequest).identity;
+    if (callerIdentity?.user_id) {
+      setThreadAuth(threadId, { user_id: callerIdentity.user_id, exafy_admin: callerIdentity.exafy_admin === true });
+    } else {
+      clearThreadAuth(threadId);
+    }
 
     // VTID-0531: Validate VTID if provided (warn but don't fail)
     let validatedVtid: string | undefined = validation.data.vtid;

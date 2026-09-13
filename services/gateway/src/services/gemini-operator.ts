@@ -68,6 +68,10 @@ import { runFullQualityCheck } from './spec-quality-agent';
 // BOOTSTRAP-VOICE-DEMO: real heartbeats so the agents dashboard shows
 // gemini-operator as healthy whenever it's actually called.
 import { recordAgentHeartbeat } from '../routes/agents-registry';
+// VTID-03851: verified-caller marker for the execution on-ramp. Written by
+// routes/operator.ts on EVERY /chat request (set or clear), read by
+// executeExecuteTask() before anything else. See operator-execute-authz.ts.
+import { getThreadAuth, isExecuteTaskAuthorized, describeExecuteTaskRefusal } from './operator-execute-authz';
 
 // Environment config
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -1189,6 +1193,23 @@ async function executeExecuteTask(
 ): Promise<ToolExecutionResult> {
   const requestId = randomUUID();
   console.log(`[VTID-03820] execute_task called for ${args.vtid}`);
+
+  // VTID-03851: refuse before governance, before any DB read, before any
+  // OASIS event that could be mistaken for a legitimate attempt. The
+  // marker is whatever THIS request's route handler wrote (set on a
+  // verified JWT, cleared otherwise) — an anonymous request can never
+  // inherit a previous admin's thread.
+  const authz = isExecuteTaskAuthorized(getThreadAuth(threadId));
+  if (!authz.ok) {
+    console.warn(`[VTID-03851] execute_task REFUSED for ${args.vtid} thread=${threadId}: ${authz.reason}`);
+    await logAutopilotIntent({
+      vtid: args.vtid,
+      threadId,
+      action: 'rejected',
+      details: { reason: `auth_${authz.reason}` },
+    });
+    return { ok: false, error: describeExecuteTaskRefusal(authz.reason) };
+  }
 
   const governanceResult = await evaluateGovernance('operator.autopilot.execute_task', {
     role: 'operator',
