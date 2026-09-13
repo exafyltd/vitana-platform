@@ -7,6 +7,8 @@ Scope: gateway only — `services/gateway/src/orb/live/surface.ts` (new), `servi
 
 No route is added or mounted: the HTTP surface is unchanged; the voice surface is a new ORB tool set on an existing session path.
 
+OASIS_PROOF: the only OASIS emitter this VTID touches is `audit()` in `services/backoffice/command-orchestrator.ts` (moved verbatim from `routes/backoffice-commands.ts`, VTID-03842): `emitOasisEvent({ vtid: 'VTID-03842', type: 'backoffice.<event>', source: 'gateway', surface: channel === 'voice' ? 'orb' : 'api', payload: { tenant_id, command_id, approval_id, … } })` fires once per real transition (`command.executed|failed|queued|rejected`, `approval.approved|rejected|refused`, `policy.updated`) — never on polling, heartbeats, or the voice catalog reads (`backoffice_list_commands`/`backoffice_my_access`/`backoffice_pending_approvals` emit nothing). The one new voice-side emission path is `backoffice_command` → `submitCommand(channel:'voice')`, asserted by `test/vtid-03848-orchestrator-voice-ceiling.test.ts` (a Commit-tier voice request is rejected before any bridge call; `emitOasisEvent` mocked and reached through the real orchestrator) and `test/routes/backoffice-commands.test.ts` (18/18 unchanged after the extraction — `expect(mockEmit).toHaveBeenCalledWith(expect.objectContaining({ type: 'backoffice.command.executed' }))`). `nova_prewarm_skipped_work_surface` is a session diag (`emitDiag`), not an `oasis_events` row. Live `oasis_events` rows cannot be shown until #3291's migration is applied and the routes are on staging.
+
 ## Acceptance criteria
 
 AC-1 — One surface resolver: `vitanaland | command-hub | admin | backoffice`, mobile always community, explicit surface wins
