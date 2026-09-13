@@ -80,3 +80,15 @@ An end-to-end authorized execution from a real admin session — this
 session holds no exafy_admin JWT. The refusal path is the security
 property and is verified live; the allow path is verified structurally and
 by the unchanged `triggerOperatorExecution` call.
+
+## Route mount evidence (VALIDATOR-CHECK Route Mount Evidence Gate)
+
+This PR adds middleware to an EXISTING route registration; no new path is
+introduced. The gate fires because the registration line itself changed
+(`router.post('/chat', async …)` → `router.post('/chat', optionalAuth, async …)`).
+
+ROUTE_MOUNT: `services/gateway/src/routes/operator.ts` — `router.post('/chat', optionalAuth, …)`; router mounted at `/api/v1/operator` (unchanged).
+
+FINAL_URL: https://preview-aws-gateway.vitanaland.com/api/v1/operator/chat
+
+CURL_PROOF: `curl -s -o /dev/null -w "%{http_code} %{content_type}" -X POST https://preview-aws-gateway.vitanaland.com/api/v1/operator/chat -H 'Content-Type: application/json' -d '{}'` → `400 application/json; charset=utf-8` (JSON validation error — route exists; an empty body fails schema validation before any processing, so this probe has no side effects). Full output in `outputs/curl-route-exists.txt`.
