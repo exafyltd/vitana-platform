@@ -38,7 +38,7 @@ Measured against production (`inmkhvwdcuyhnxkgfvsb`) on 2026-08-04:
 | **Storage** | File/object storage + policies | S3, but a different API | 19 frontend + 4 gateway call sites; 8 objects in `storage` schema |
 | **Edge Functions** | Deno serverless | Lambda/ECS, different runtime | **74 functions** in `vitana-v1/supabase/functions/` |
 | **Vault** | Secret storage in-DB | Secrets Manager | `supabase_vault` extension |
-| **pg_cron / pg_net** | In-DB scheduling + HTTP | pg_cron yes on Aurora; **pg_net is not available on RDS** | needs audit |
+| **pg_cron / pg_net** | In-DB scheduling + HTTP | pg_cron yes on Aurora; **pg_net is not available on RDS** | audited (VTID-03847, below) — 2 live trigger dependents need porting |
 
 Files importing `@supabase/supabase-js`: **496** in `services/`, **207** in
 `vitana-v1/src/`.
