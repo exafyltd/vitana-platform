@@ -8,3 +8,8 @@ cd services/gateway && npx tsc --noEmit -p .                                    
 ./node_modules/.bin/jest test/orb/live/surface.test.ts test/orb/live/tools/surface-gated-catalog.test.ts test/orb/live/instruction/work-surface-overlays.test.ts test/vtid-03848-backoffice-voice-tools.test.ts test/vtid-03848-orchestrator-voice-ceiling.test.ts   # outputs/jest-targeted.txt
 ./node_modules/.bin/jest --silent                                                                 # full suite — tail below
 # NOT run: a live ORB voice session (no device/mic in this session); anything against staging or production
+# full gateway suite (./node_modules/.bin/jest --silent), tail:
+Test Suites: 2 skipped, 765 passed, 765 of 767 total
+Tests:       30 skipped, 6 todo, 13929 passed, 13965 total
+Snapshots:   44 passed, 44 total
+# earlier full runs caught two real issues before this result: (1) the VTID-03779 prewarm shape pins (updated deliberately for the surface gate); (2) test/routes/orb-live.test.ts failing at import because the surface allowlists read mocked declaration arrays at module load — made lazy.
