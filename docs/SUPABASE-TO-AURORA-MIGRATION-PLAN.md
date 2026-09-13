@@ -58,6 +58,30 @@ calling it needs rewriting) and **`supabase_vault`** (Supabase-specific).
 **`vector 0.8.0`** is available on Aurora but the version must be matched or the
 memory embeddings need reindexing.
 
+**Audited live 2026-09-13 (VTID-03847) — this "needs audit" line is now
+closed.** Queried `public.pg_proc.prosrc` directly (not `pg_get_functiondef()`,
+which throws on an unrelated function elsewhere in the schema) for every
+function referencing `net.http` or `vault.` — exactly 4 exist, all in
+`public`:
+
+| Function | Uses | Live? |
+|---|---|---|
+| `notify_welcome_discount` | `net.http_post` + `vault.decrypted_secrets` (URL + service-role key) | **Yes** — `ENABLED` `AFTER INSERT` trigger `on_discount_code_created_send_email` on `user_discount_codes`, calls the `send-welcome-discount` edge function |
+| `notify_test_user_confirmation` | `net.http_post` + `vault.decrypted_secrets` (a trigger secret) | **Yes** — `ENABLED` `AFTER INSERT` trigger `trg_send_test_user_confirmation` on `test_user_applications`, calls `send-test-user-confirmation` |
+| `encrypt_api_key` | `vault.decrypted_secrets` + `pgsodium` only, no `net.*` | **Dead** — zero RPC callers in `services/gateway/src` or `vitana-v1/src`; only appears in the migrations that created it and generated TS types |
+| `decrypt_api_key` | same as above | **Dead**, same evidence |
+
+So the real scope is narrow: **2 live `pg_net` dependencies**, both simple
+DB-trigger-fires-an-HTTP-call patterns, need a replacement before Aurora
+(no `pg_net` on RDS) becomes primary — most naturally as gateway-side logic
+(insert row via the repository seam, then call the edge function directly
+from the same request) rather than trying to reproduce an in-DB HTTP
+extension on Aurora. `supabase_vault` has no live dependents once these two
+are ported (the encrypt/decrypt pair can simply be dropped, not migrated).
+Neither finding changes B4's stakes or timeline — this was a fully
+independent, previously-unaudited item, now closed with a precise, bounded
+answer instead of "needs audit."
+
 ---
 
 ## Phase 0 — GATE: Aurora is not currently a trustworthy copy
