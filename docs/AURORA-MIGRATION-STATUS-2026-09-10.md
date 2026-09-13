@@ -1797,3 +1797,39 @@ workflow's `schedule` trigger still can't fire until this branch merges to
 `main` — unchanged blocker, not a new one, but the underlying fact it
 would have reported (209=209, no drift) is now independently confirmed
 live rather than assumed.
+
+## Addendum, 2026-09-13 — routine re-verification: both blockers and app_users parity unchanged
+
+Also shipped this round: **VTID-03830**, a genuine B4 bug found while
+re-reading `aurora-client.ts` for this check-in, unrelated to the DMS/S3
+blockers below — `withAuroraRlsContext()` was forwarding
+`verifyAndExtractIdentity()`'s raw JWT payload verbatim into Aurora's
+`request.jwt.claims` GUC, so a Cognito-authenticated request (VTID-03827)
+would have resolved `auth.uid()` to Cognito's own random `sub` instead of
+the legacy Supabase user id `extractCognitoIdentity()` already resolves
+into `identity.user_id` via `custom:legacy_user_id` — silently breaking
+every `auth.uid() = user_id`-shaped RLS policy for a migrated user. Fixed
+via a `claimsForRlsContext()` normalization step in `auth-supabase-jwt.ts`
+(no-op for the existing Supabase HS256/ES256 paths); 3 new tests; full
+gateway suite 859/860 suites, 14,553 tests, 0 failures; `tsc --noEmit`:
+same 2 pre-existing, unrelated pnpm-hoisting errors. See
+`infra/cognito-migration/README.md`'s Aurora-RLS entry for detail.
+
+Re-ran the three checks this doc's own "actionable choice" section leaves
+for a human, purely to confirm nothing changed since 2026-09-12 — no new
+finding, no action taken beyond recording the re-check:
+
+- **DMS CDC** (`aws dms describe-replication-tasks`): still `failed`,
+  identical `LastFailureMessage` ("An internal WAL conversational protocol
+  error has occurred") — same Supavisor-pooler-cannot-serve-logical-
+  replication root cause as Addendum (12), unchanged.
+- **`app_users` parity**: `209` on Supabase (Supabase MCP) and `209` on
+  Aurora (RDS Data API, `vitana/aurora/prod/claude-readonly`) — still
+  matching, no drift.
+- **Private S3 backfill / EC2 VPC inspection**: both IAM boundaries
+  re-confirmed still in force —
+  `secretsmanager:GetSecretValue` still explicit-denied by
+  `claude-code-aws-agent-boundary`, `ec2:DescribeVpcs` still
+  `UnauthorizedOperation`. Neither blocker has moved; no point re-checking
+  more often than roughly daily until a human changes the IAM boundary or
+  the Supabase-side pooler/IPv4 situation.
