@@ -128,10 +128,10 @@ definition, rollout state) is returned; no mutation call is ever made.
 TEST: `outputs/jest-operator-read-tools.txt` — `dev_aws_ecs_status`
 "returns the described service status".
 
-**Known limitation, explicit, not silently deferred:** the IAM gap in
-AC-3 means this tool is shipped as dead code until a dedicated read-only
-role is provisioned (outside this session's reach — no AWS console/CLI
-IAM access). See `aws-ecs-readonly.ts`'s header comment.
+**Known limitation, explicit, not silently deferred:** per the missing-IAM-role
+gap described above, this tool ships as dead code until a dedicated
+read-only role is provisioned (outside this session's reach — no AWS
+console/CLI IAM access). See `aws-ecs-readonly.ts`'s header comment.
 
 ---
 
