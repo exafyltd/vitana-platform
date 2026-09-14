@@ -1,0 +1,26 @@
+{
+ "ok": true,
+ "vtid": "VTID-03834",
+ "spec_id": "1a8a3865-d265-4ee1-a418-55db6d8b99e9",
+ "result": "pass",
+ "spec_status": "validated",
+ "validation_id": "fd0dd2ae-31ea-4289-83d3-1a1b458a9d11",
+ "report": {
+  "required_sections": 9,
+  "found_sections": 9,
+  "missing_sections": [],
+  "found": [
+   "Goal",
+   "Non-negotiable Governance Rules Touched",
+   "Scope",
+   "Changes",
+   "Files to Modify",
+   "Acceptance Criteria",
+   "Verification Steps",
+   "Rollback Plan",
+   "Risk Level"
+  ],
+  "validation_time": "2026-09-13T00:14:44.532Z"
+ },
+ "message": "Spec validation passed"
+}

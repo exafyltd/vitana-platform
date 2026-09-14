@@ -29,6 +29,7 @@
  */
 
 import { Router, Request, Response } from 'express';
+import { VITANA_ROLES } from '../constants/vitana-roles';
 import { getSupabase } from '../lib/supabase';
 import { requireAdminAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import {
@@ -73,7 +74,8 @@ const VALID_ACCESS = ['public', 'authenticated'] as const;
 // of the app's getRoleNavigation cases (+ developer/infra, which fall through to
 // the community sidebar but are accepted for completeness). 'community' is the
 // default — every catalog entry today is the consumer surface.
-export const VALID_ROLES = ['community', 'patient', 'professional', 'staff', 'admin', 'developer', 'infra'] as const;
+// VTID-03832: shared constant (adds 'backoffice'); re-exported so existing importers keep working.
+export const VALID_ROLES = VITANA_ROLES;
 const DEFAULT_ROLE = 'community';
 export function normalizeRole(r: unknown): string {
   return typeof r === 'string' && (VALID_ROLES as readonly string[]).includes(r) ? r : DEFAULT_ROLE;

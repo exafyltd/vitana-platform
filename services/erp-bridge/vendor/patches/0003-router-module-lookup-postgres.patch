@@ -1,0 +1,56 @@
+diff --git a/scripts/db_query.py b/scripts/db_query.py
+index 3f50222..2726cb8 100644
+--- a/scripts/db_query.py
++++ b/scripts/db_query.py
+@@ -1045,22 +1045,41 @@ def lookup_module_for_action(action):
+     Returns the module_name if found, None otherwise.
+     Uses a direct sqlite3 connection (not shared lib) to avoid import overhead.
+     """
++    lookup_sql = """SELECT ma.module_name
++               FROM erpclaw_module_action ma
++               JOIN erpclaw_module m ON m.name = ma.module_name
++               WHERE ma.action_name = {ph}
++                 AND m.install_status = 'installed'
++                 AND m.is_active = 1
++               LIMIT 1"""
++    # VITANA PATCH 0003 (VTID-03840): this lookup opened the SQLite file
++    # directly, so under ERPCLAW_DB_DIALECT=postgresql every expansion-module
++    # action (all of CRM) was "Unknown action" even though the module was
++    # installed. Resolve through the same Postgres URL the modules use.
++    if os.environ.get("ERPCLAW_DB_DIALECT", "sqlite") == "postgresql":
++        url = os.environ.get("ERPCLAW_DB_URL") or os.environ.get("ERPCLAW_DB_PATH")
++        if not url:
++            return None
++        try:
++            import psycopg2
++            conn = psycopg2.connect(url)
++            try:
++                cur = conn.cursor()
++                cur.execute(lookup_sql.format(ph="%s"), (action,))
++                row = cur.fetchone()
++            finally:
++                conn.close()
++            return row[0] if row else None
++        except Exception:  # noqa: BLE001 — absent table / DB issue: fall through
++            return None
++
+     if not os.path.isfile(DB_PATH):
+         return None
+ 
+     try:
+         conn = sqlite3.connect(DB_PATH)
+         conn.row_factory = sqlite3.Row
+-        row = conn.execute(
+-            """SELECT ma.module_name
+-               FROM erpclaw_module_action ma
+-               JOIN erpclaw_module m ON m.name = ma.module_name
+-               WHERE ma.action_name = ?
+-                 AND m.install_status = 'installed'
+-                 AND m.is_active = 1
+-               LIMIT 1""",
+-            (action,)
+-        ).fetchone()
++        row = conn.execute(lookup_sql.format(ph="?"), (action,)).fetchone()
+         conn.close()
+         if row:
+             return row["module_name"]

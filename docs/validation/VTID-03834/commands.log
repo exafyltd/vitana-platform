@@ -1,0 +1,47 @@
+VTID-03834 — commands.log
+==========================
+
+## VTID self-allocation + ledger (governed staging gateway, real)
+
+$ curl -sS -X POST https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate \
+    -d '{"source":"claude-code","layer":"DEV","module":"backoffice-capability-grants"}'
+-> HTTP 201 {"ok":true,"vtid":"VTID-03834","num":3834,"id":"f5091353-c6e7-4956-babc-e27df245568f"}
+$ curl -sS -X PATCH https://preview-aws-gateway.vitanaland.com/api/v1/oasis/tasks/VTID-03834 \
+    -d '{"title":"Gateway: BackOffice ERP capability grants API","status":"in_progress"}'   -> HTTP 200
+
+## Spec pipeline (raw responses in outputs/spec-*.json)
+
+generate -> HTTP 201 v1 draft; validate -> 200 pass; quality-check -> 200 pass, score 95, risk CRITICAL (known false
+positive); approve -> 200 approved (approval_id 75f78dbc-b0e9-44d6-a936-824f19de7b3a)
+
+## Code
+
+- services/gateway/src/constants/erp-capabilities.ts          catalog (30) + role defaults + explicit-only domains
+- services/gateway/src/services/backoffice/erp-access.ts      pure policy (effective access, who manages, grant validation)
+- services/gateway/src/lib/tenant-role-auth.ts                verifyAuth/canManageRoles extracted VERBATIM from routes/role-admin.ts
+- services/gateway/src/routes/role-admin.ts                   now imports them (behaviour unchanged)
+- services/gateway/src/routes/backoffice-access.ts            GET /me, GET /access, GET /access/:userId, POST /access/grant|revoke,
+                                                              requireErpCapability() middleware for later BackOffice routes
+- services/gateway/src/index.ts                               mountRouterSync(app, '/api/v1/backoffice', ...)
+- supabase/migrations/20260913010000_vtid_03834_erp_capability_grants.sql   NOT applied (rule 4)
+- DATABASE_SCHEMA.md                                          new section (marked "migration file only, NOT yet applied")
+
+## Design-doc cross-check (one-off, against the VTID-03831 branch's GOLDEN-WORKFLOWS.md §3.1)
+
+$ git show claude/practical-gates-iqwv52:docs/backoffice/GOLDEN-WORKFLOWS.md | python3 (extract `x.y` tokens in §3.1)
+-> cited in §3.1: 30 | missing from catalog: [] | in catalog not cited: []
+
+## Verification
+
+$ npx tsc --noEmit -p tsconfig.json                                            -> exit 0 (outputs/gateway-tsc-noemit.txt)
+$ npx jest test/vtid-03834-erp-capabilities.test.ts test/routes/backoffice-access.test.ts test/vtid-03832-vitana-roles-constant.test.ts
+-> first run: 2 failures — (1) explicit grants were not de-duplicated (real defect, fixed with a Set);
+   (2) the design-doc cross-check read a file that only exists on the VTID-03831 branch (test now skips when absent)
+-> second run: 3 suites, 28 tests passed (outputs/gateway-jest-vtid-03834.txt)
+$ npx jest   (full suite)                                                       -> outputs/gateway-jest-full-tail.txt
+
+## NOT DONE — deliberately
+
+- The migration is NOT applied (execution-brief rule 4). Until it is, GET /me still works (role defaults, explicit
+  grants read fails closed with an error log) but /access/grant returns 500 from PostgREST (table missing).
+- No live CURL against staging yet: the route reaches staging only after merge-to-main auto-deploys it.

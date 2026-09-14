@@ -7,7 +7,8 @@ const router = Router();
 
 // VTID-01048: Valid roles for active_role validation
 // VTID-01074: Added 'infra' role for platform infrastructure
-const VALID_ROLES = ['community', 'patient', 'professional', 'staff', 'admin', 'developer', 'infra'];
+// VTID-03832: list now lives in constants/vitana-roles.ts (adds 'backoffice')
+import { VALID_ROLES } from '../constants/vitana-roles';
 
 // VTID-01074: Tenant slug mapping (tenant_id -> slug)
 // These are the known tenant slugs in the Vitana ecosystem

@@ -12,6 +12,7 @@
  */
 
 import { Router, Request, Response } from 'express';
+import { VALID_ROLES } from '../constants/vitana-roles';
 import { getSupabase } from '../lib/supabase';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import * as repo from './admin-users-repository';
@@ -227,8 +228,7 @@ router.get('/roles-summary', async (req: Request, res: Response) => {
       counts[role] = (counts[role] || 0) + 1;
     });
 
-    const ALL_ROLES = ['community', 'patient', 'professional', 'staff', 'admin', 'developer', 'infra'];
-    const roles = ALL_ROLES.map(role => ({
+    const roles = VALID_ROLES.map(role => ({
       role,
       user_count: counts[role] || 0,
     }));

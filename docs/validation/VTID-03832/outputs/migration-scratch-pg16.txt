@@ -1,0 +1,65 @@
+APPLIED 20260913000000_vtid_03832_vitana_role_add_values.sql
+APPLIED 20260913000001_vtid_03832_tenant_role_add_values.sql
+APPLIED 20260913000002_vtid_03832_role_functions.sql
+vitana_role|{community,patient,professional,staff,admin,developer,infra,backoffice}
+tenant_role|{community,patient,professional,reseller,staff,admin,backoffice,developer,infra}
+Output format is unaligned.
+INSERT 0 2
+INSERT 0 1
+INSERT 0 1
+SET
+SET
+SET
+--- T1 get_my_permitted_roles (non-Exafy, granted backoffice)
+get_my_permitted_roles
+{"ok": true, "roles": ["backoffice"], "is_super_admin": false}
+(1 row)
+--- T2 set_role_preference(backoffice) — must SUCCEED via user_permitted_roles path
+set_role_preference
+
+(1 row)
+role
+backoffice
+(1 row)
+--- T3 set_role_preference(staff) — NOT granted anywhere, must RAISE
+psql:/tmp/claude-0/-home-user/67271758-7f48-52f5-b89d-a3eea2da1616/scratchpad/behav.sql:14: ERROR:  Role not granted for this tenant or invalid role assignment
+CONTEXT:  PL/pgSQL function public.set_role_preference(uuid,text) line 33 at RAISE
+--- T4 set_role_preference(admin) — hard block for non-Exafy must still RAISE even if granted
+INSERT 0 1
+psql:/tmp/claude-0/-home-user/67271758-7f48-52f5-b89d-a3eea2da1616/scratchpad/behav.sql:17: ERROR:  Admin role can only be assigned by super administrators
+CONTEXT:  PL/pgSQL function public.set_role_preference(uuid,text) line 40 at RAISE
+--- T5 me_set_active_role(backoffice) — must succeed
+me_set_active_role
+{"ok": true, "user_id": "11111111-1111-1111-1111-111111111111", "tenant_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "active_role": "backoffice"}
+(1 row)
+--- T6 set_active_role(backoffice) with a user_roles row — enum cast must now work
+INSERT 0 1
+CREATE FUNCTION
+CREATE FUNCTION
+set_active_role
+{"ok": true, "active_role": "backoffice"}
+(1 row)
+set_active_role
+{"ok": false, "role": "infra", "error": "ROLE_NOT_GRANTED"}
+(1 row)
+--- T7 validate_role_assignment ladder: an admin (memberships) assigning backoffice → true; staff assigning backoffice → false
+INSERT 0 1
+INSERT 0 1
+SET
+admin_assigns_backoffice
+t
+(1 row)
+admin_assigns_developer
+f
+(1 row)
+UPDATE 1
+staff_assigns_backoffice
+f
+(1 row)
+--- T8 membership-path regression: a user with an active memberships.role=backoffice row and NO user_permitted_roles row
+INSERT 0 1
+INSERT 0 1
+SET
+psql:/tmp/claude-0/-home-user/67271758-7f48-52f5-b89d-a3eea2da1616/scratchpad/behav.sql:48: ERROR:  Role not granted for this tenant or invalid role assignment
+CONTEXT:  PL/pgSQL function public.set_role_preference(uuid,text) line 33 at RAISE
+(T8: the pre-existing membership path still requires validate_role_assignment, which a backoffice self-switch fails on the ladder — this is the LIVE behaviour for staff today too; the canonical path is user_permitted_roles)

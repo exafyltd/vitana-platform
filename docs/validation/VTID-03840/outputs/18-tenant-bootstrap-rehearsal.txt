@@ -1,0 +1,36 @@
+# 18 — tenant bootstrap rehearsal (services/erp-bridge/scripts/bootstrap_tenant.py) on the local PG16 cluster, fresh database
+# ERPCLAW_ROOT = worktree at pin + patches 0001-0004 (+ the uae_ifrs.json overlay vendor.sh adds in the image); ERPCLAW_HOME = fresh home with the vendored growth tree staged
+# Run 1 (fresh role + database):
+[ddl] {"role_created": true, "db_created": true}
+[erpclaw] --action initialize-database -> rc 1
+[erpclaw] initialize-database: Postgres schema created (sqlite verify step ignored)
+[cleanup] removed empty data.sqlite left by initialize-database
+[erpclaw] --action migrate --user-confirmed -> rc 0
+[module] install erpclaw-growth -> rc 0
+[erpclaw] --action list-companies -> rc 0
+[erpclaw] --action setup-company --name Vitanaland Trading LLC --abbr VTL --currency AED --country United Arab Emirates --fiscal-year-start-month 1 --user-confirmed -> rc 0
+[erpclaw] --action setup-chart-of-accounts --company-id 87a1dfbe-5e2d-40f5-ab4e-622db183352e --template uae_ifrs -> rc 1
+bootstrap: ERPClaw action failed: --action setup-chart-of-accounts --company-id 87a1dfbe-5e2d-40f5-ab4e-622db183352e --template uae_ifrs
+{
+  "status": "error",
+  "message": "Chart template 'uae_ifrs' not found. Expected at assets/charts/uae_ifrs.json"
+}
+
+# -> the ONLY failure was the CoA template missing from the rehearsal tree (the image gets it from vendor.sh's overlay step; copied it in and re-ran)
+# Run 2 (same inputs — exercises the idempotent path: role/db exist, company found by abbr, CoA idempotent):
+[ddl] {"role_created": false, "db_created": false}
+[erpclaw] --action initialize-database -> rc 1
+[erpclaw] initialize-database: Postgres schema created (sqlite verify step ignored)
+[cleanup] removed empty data.sqlite left by initialize-database
+[erpclaw] --action migrate --user-confirmed -> rc 0
+[module] install erpclaw-growth -> rc 0
+[erpclaw] --action list-companies -> rc 0
+[erpclaw] --action setup-chart-of-accounts --company-id 87a1dfbe-5e2d-40f5-ab4e-622db183352e --template uae_ifrs -> rc 0
+[erpclaw] --action seed-defaults --company-id 87a1dfbe-5e2d-40f5-ab4e-622db183352e -> rc 0
+BOOTSTRAP_RESULT {"accounts_created": 22, "coa_template": "uae_ifrs", "company_created": false, "company_id": "87a1dfbe-5e2d-40f5-ab4e-622db183352e", "db_created": false, "db_host": "127.0.0.1", "db_name": "erpclaw_boot_t1", "db_port": 54329, "db_role": "erpclaw_boot_t1", "module": "erpclaw-growth", "module_version": "2.10.0", "role_created": false, "sslmode": "disable", "tenant_id": "11111111-2222-4333-8444-555555555555"}
+
+# Findings folded into the script: (1) initialize-database creates the Postgres schema, then verifies via sqlite3 on DEFAULT_DB_PATH (SQLite-only upstream code) and reports THAT as a JSON error — treated as success when the banner says 'initialized successfully' + 'Backend: PostgreSQL'; (2) that verify step leaves an EMPTY data.sqlite in ERPCLAW_HOME, and the migration runner then targets it instead of Postgres ('near SET: syntax error') — the empty file is removed before migrate.
+248
+Vitanaland Trading LLC|VTL|AED
+22
+164
