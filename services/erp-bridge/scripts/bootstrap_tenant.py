@@ -85,14 +85,17 @@ def ensure_role_and_db(admin_url: str, db_name: str, db_role: str, db_password: 
             # generated it and will write it into ERP_TENANTS.
             cur.execute(sql.SQL("ALTER ROLE {} WITH LOGIN PASSWORD %s").format(sql.Identifier(db_role)),
                         (db_password,))
+        # RDS: the master user is not a superuser, so `CREATE DATABASE … OWNER x`
+        # fails with `must be able to SET ROLE "x"` unless the master user is a
+        # member of x. The grant therefore has to happen BEFORE the CREATE
+        # DATABASE, not after it (the first staging bootstrap of VTID-03840
+        # failed exactly there). Harmless when already granted.
+        cur.execute(sql.SQL("GRANT {} TO CURRENT_USER").format(sql.Identifier(db_role)))
         cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (db_name,))
         if cur.fetchone() is None:
             cur.execute(sql.SQL("CREATE DATABASE {} OWNER {}").format(
                 sql.Identifier(db_name), sql.Identifier(db_role)))
             out["db_created"] = True
-        # RDS: the master user must be a member of the owner role to hand the
-        # database over; harmless when already granted.
-        cur.execute(sql.SQL("GRANT {} TO CURRENT_USER").format(sql.Identifier(db_role)))
     finally:
         conn.close()
     return out
