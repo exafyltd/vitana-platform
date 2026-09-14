@@ -1857,3 +1857,27 @@ refuses to construct without a recorded BLK-009 activation
 
 **Remember:** This file is the SINGLE SOURCE OF TRUTH for table names.
 When in doubt, CHECK HERE FIRST!
+
+
+## BackOffice — `erp_capability_grants` (VTID-03834, 2026-09-13) — migration file only, NOT yet applied
+
+The Vitana role `backoffice` (VTID-03832) opens `/backoffice`; an ERP **capability** gates what a
+person may do inside (catalog: `services/gateway/src/constants/erp-capabilities.ts`, derived from
+`docs/backoffice/GOLDEN-WORKFLOWS.md` §3). Role defaults are computed in the gateway; this table
+holds only **explicit** grants and is written exclusively by the gateway's service role through
+`POST /api/v1/backoffice/access/grant|revoke`.
+
+### erp_capability_grants
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | UUID PK | `gen_random_uuid()` |
+| `user_id` | UUID NOT NULL | grantee |
+| `tenant_id` | UUID NOT NULL | tenant scope — grants never cross tenants |
+| `capability` | TEXT NOT NULL | `<domain>.<level>`, CHECK on shape; real catalog validated in the gateway |
+| `granted_by` | UUID | caller of the grant endpoint |
+| `granted_at` | TIMESTAMPTZ | default `now()` |
+
+Constraints: `UNIQUE (user_id, tenant_id, capability)`; indexes on `(user_id, tenant_id)` and `(tenant_id)`.
+RLS: `authenticated` may SELECT own rows; `service_role` ALL. `hr.*` / `payroll.*` rows can only be
+created by a tenant `admin` or an Exafy super-admin (enforced in the gateway, never a role default).
