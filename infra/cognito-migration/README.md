@@ -226,6 +226,66 @@ error handling, client memoization) and
 Cognito-configured vs. Supabase-fallback, for both endpoints, plus
 `/health`'s new fields).
 
+## OAuth (Google/Apple) — a real, previously-undocumented gap (VTID-03879)
+
+**This module has zero federation setup for any OAuth provider.**
+`cognito.tf` builds a User Pool with password auth + the User Migration
+Lambda only. Checked `exafyltd/vitana-v1`'s actual call sites (not assumed
+from the plan doc's prose) before writing this: `src/components/
+AuthGuard.tsx` and `src/pages/dev/DevLogin.tsx` call
+`supabase.auth.signInWithOAuth({ provider: 'apple' })` and `{ provider:
+'google' }` respectively, and `src/hooks/useSupabaseOAuthSignIn.ts` is a
+shared WebView-aware wrapper around the same call — both are real, live
+sign-in paths on production portals, not dead code.
+
+**Why this doesn't fall out of the existing Lambda-migration design for
+free.** The User Migration Lambda triggers on `USER_PASSWORD_AUTH` — it has
+no bearing on an OAuth flow at all, and `allow_admin_create_user_only =
+true` (deliberately set so a genuinely-new signup can't race a
+not-yet-migrated legacy account) would also block a first-time Google/Apple
+sign-in from silently creating a new Cognito user the way Supabase's GoTrue
+does today. Supporting this in Cognito needs **Cognito Identity Provider
+federation** — a materially separate piece of AWS configuration per
+provider:
+
+- **Google**: register Cognito's own OAuth client with Google (new client
+  ID/secret, NOT Supabase's existing one — Google ties a redirect URI
+  allowlist to the client), then configure it as a Cognito IdP
+  (`aws_cognito_identity_provider`, `provider_type = "Google"`).
+- **Apple ("Sign in with Apple")**: needs an Apple Developer Team ID, a
+  Services ID, a Key ID, and a private key registered with Apple
+  specifically for Cognito's redirect URI — again, not reusable from
+  whatever Supabase already has configured, since Apple also ties the key
+  to a specific redirect/return URL set.
+- Either way, the frontend's OAuth call site changes from
+  `supabase.auth.signInWithOAuth()` to either Cognito's Hosted UI redirect
+  flow or a custom OIDC/OAuth dance via `amazon-cognito-identity-js`/AWS
+  Amplify — a different client-side mechanism than the password flow's
+  `InitiateAuth`, so this isn't just "add another branch to
+  `cognito-auth-client.ts`."
+
+**What this means for sequencing:** Phase 4 of the wider cutover plan
+(frontend call-site rewrite) cannot treat "add Cognito support" as one
+uniform task — the password-flow call sites (`MaxinaPortal.tsx`'s
+sign-in/sign-up) can move as soon as the User Pool exists, but the three
+OAuth call sites above are blocked on a **second, separate infra decision
+and setup** (new Google OAuth client, new Apple Services ID/key) that
+nobody has scoped or requested credentials for yet. This is exactly the
+kind of gap this repo's own governance rules ask to be surfaced rather than
+quietly worked around (`NEVER rule 6: never assume unverified context`) —
+flagging it now, before anyone assumes the existing Terraform module is a
+complete auth-provider replacement.
+
+**Not yet decided, needs a human product/eng call:** whether Apple/Google
+sign-in stay as Cognito-federated IdPs (more AWS-native, but two new
+external-provider registrations with their own approval/review lag,
+Apple's in particular), or whether OAuth sign-in is kept on a thin bridge
+(a small service that completes the OAuth handshake and then calls the
+User Migration Lambda's same verification path) to avoid re-registering
+with Google/Apple at all. No code changes made here — this is a scoping
+gap, not a bug with a clear fix, and doesn't block the password-only flow
+from proceeding.
+
 ## What this does NOT cover — still needed before any real cutover
 
 This directory is the identity **provider**, the gateway can verify its
