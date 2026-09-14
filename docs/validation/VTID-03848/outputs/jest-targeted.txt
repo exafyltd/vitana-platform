@@ -1,0 +1,197 @@
+    [VTID-01225] Cognee Extractor URL not configured - extraction disabled
+      138 |
+      139 |     if (!this.enabled) {
+          |               ^
+      141 |     } else {
+      143 |     }
+    [VTID-01225] Config warning: COGNEE_EXTRACTOR_URL is not set - extraction will be disabled
+      152 |   static validateConfig(): void {
+      153 |     if (!process.env.COGNEE_EXTRACTOR_URL) {
+          |               ^
+      155 |     }
+      156 |     if (!process.env.SUPABASE_URL) {
+    [VTID-ORBC] Vertex config at startup: PROJECT_ID=lovable-vitana-vers1, LOCATION=us-central1
+    [VTID-01155] Google Cloud TTS client initialized
+    [VTID-01219] Google Auth client initialized for Live API
+    [VTID-01219] ORB Voice startup validation passed — Live API ready
+    [VTID-INSTANT-FEEDBACK] Chime PCM generated: 9600 samples, 19200 bytes, 25600 b64 chars
+(node:1752) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS test/orb/live/characterization/tool-catalog.characterization.test.ts
+  A0.1 characterization: buildLiveApiTools
+    mode/role matrix
+      ✓ anonymous on landing route returns no tools (6 ms)
+      ✓ anonymous on /maxina (also a landing route) returns no tools (1 ms)
+      ✓ anonymous on a community route gets navigator tools only (token-expired path) (2 ms)
+      ✓ authenticated community user gets the full community tool set (2 ms)
+      ✓ authenticated admin user gets community tools PLUS admin tools (69 ms)
+    snapshots
+      ✓ snapshots full catalog for anonymous-landing (2 ms)
+      ✓ snapshots full catalog for anonymous-community-route (2 ms)
+      ✓ snapshots full catalog for authenticated-community (27 ms)
+      ✓ snapshots full catalog for authenticated-admin (41 ms)
+    [VTID-01225] Cognee Extractor URL not configured - extraction disabled
+      138 |
+      139 |     if (!this.enabled) {
+          |               ^
+      141 |     } else {
+      143 |     }
+    [VTID-01225] Config warning: COGNEE_EXTRACTOR_URL is not set - extraction will be disabled
+      152 |   static validateConfig(): void {
+      153 |     if (!process.env.COGNEE_EXTRACTOR_URL) {
+          |               ^
+      155 |     }
+      156 |     if (!process.env.SUPABASE_URL) {
+    [VTID-ORBC] Vertex config at startup: PROJECT_ID=lovable-vitana-vers1, LOCATION=us-central1
+    [VTID-01155] Google Cloud TTS client initialized
+    [VTID-01219] Google Auth client initialized for Live API
+    [VTID-01219] ORB Voice startup validation passed — Live API ready
+    [VTID-INSTANT-FEEDBACK] Chime PCM generated: 9600 samples, 19200 bytes, 25600 b64 chars
+PASS test/orb/live/instruction/work-surface-overlays.test.ts
+  backoffice surface
+    ✓ speaks as the BackOffice operations assistant, not the community companion (1 ms)
+    ✓ advertises only backoffice tools in the prose directory
+    ✓ community brain context is NOT injected (memory scoping)
+    ✓ states the voice ceiling (1 ms)
+  admin surface
+    ✓ speaks as the tenant administration assistant and drops community context (1 ms)
+  unchanged surfaces
+    ✓ community route keeps the companion identity and its context (2 ms)
+    ✓ mobile on a backoffice route is still the community surface (2 ms)
+    ✓ command hub keeps the engineering co-pilot overlay (16 ms)
+    [VTID-01225] Cognee Extractor URL not configured - extraction disabled
+      138 |
+      139 |     if (!this.enabled) {
+          |               ^
+      141 |     } else {
+      143 |     }
+    [VTID-01225] Config warning: COGNEE_EXTRACTOR_URL is not set - extraction will be disabled
+      152 |   static validateConfig(): void {
+      153 |     if (!process.env.COGNEE_EXTRACTOR_URL) {
+          |               ^
+      155 |     }
+      156 |     if (!process.env.SUPABASE_URL) {
+    [VTID-ORBC] Vertex config at startup: PROJECT_ID=lovable-vitana-vers1, LOCATION=us-central1
+    [VTID-01155] Google Cloud TTS client initialized
+    [VTID-01219] Google Auth client initialized for Live API
+    [VTID-01219] ORB Voice startup validation passed — Live API ready
+    [VTID-INSTANT-FEEDBACK] Chime PCM generated: 9600 samples, 19200 bytes, 25600 b64 chars
+    [voice.instruction.budget_trimmed] {"vitana_id":"@x","chars_trimmed":8029,"cap":12000}
+      811 |       // (Cloud Logging ingests stdout; Phase D adds the budget-watch route + cron
+      812 |       // and the typed `voice.instruction.budget_trimmed` OASIS topic.)
+          |               ^
+      814 |         '[voice.instruction.budget_trimmed]',
+      815 |         JSON.stringify({
+      816 |           vitana_id: vitanaId ?? null,
+PASS test/orb/live/characterization/system-instruction.characterization.test.ts
+  A0.1 characterization: buildLiveSystemInstruction
+    ✓ renders a stable system instruction for persona "day-1-anonymous-landing" (2 ms)
+    ✓ renders a stable system instruction for persona "day-30-warm-german" (3 ms)
+    ✓ renders a stable system instruction for persona "day-180-veteran-reconnect" (2 ms)
+    ✓ produces a different instruction when isReconnect flips (2 ms)
+    ✓ produces a different instruction when activeRole changes (2 ms)
+    ✓ produces a different instruction when language changes (2 ms)
+    per-surface persona switch
+      ✓ Command Hub route swaps the identity-lock role line (3 ms)
+      ✓ Command Hub route swaps base_identity to the engineering co-pilot framing (2 ms)
+      ✓ Command Hub route swaps tools_section to drop community-surface tools (2 ms)
+      ✓ mobile + Command Hub route still resolves to community (mobile override wins) (11 ms)
+      ✓ Command Hub route drops the EVENT LINK SHARING and Devon-handoff trailing blocks (2 ms)
+      ✓ Community route STILL contains the trailing community blocks (no regression) (2 ms)
+    MESSAGING_CONTRACT placement (BOOTSTRAP-ORB-MESSAGING-CONTRACT-TRIM-FIX)
+      ✓ is present in the rendered instruction (1 ms)
+      ✓ is positioned AFTER the navigator marker, not inside bootstrapContext (1 ms)
+      ✓ decomposeInstructionSections classifies it as scaffold (preserved), not bootstrap (trimmed first) (2 ms)
+      ✓ survives enforceInstructionBudget even when a heavy bootstrapContext forces trimming (the actual production bug) (10 ms)
+PASS test/orb/live/tools/surface-gated-catalog.test.ts
+  surface gating
+    ✓ community surface is unchanged (admin role on /health still gets community + admin tools) (5 ms)
+    ✓ backoffice surface: navigation + knowledge + the four backoffice tools, nothing community or admin (2 ms)
+    ✓ backoffice tools appear even for an admin role on the backoffice surface; admin tools do not (1 ms)
+    ✓ admin surface: navigation + admin tools, no community tools, no backoffice tools (2 ms)
+    ✓ explicit surface parameter overrides the route heuristic
+    ✓ anonymous sessions are not widened by the gate (1 ms)
+    ✓ command-hub surface is untouched by this VTID (3 ms)
+PASS test/routes/backoffice-commands.test.ts
+  POST /commands — read/draft/commit
+    ✓ 401 without identity, JSON body (mount proof) (41 ms)
+    ✓ unknown type → 400; bad key → 400 (10 ms)
+    ✓ read executes on the bridge with tenant + actor + channel; receipt stored; audit + OASIS emitted (6 ms)
+    ✓ capability missing → 403, rejected row, nothing sent to the bridge (3 ms)
+    ✓ commit without confirm → rejected confirmation_required; with confirm → bridge gets granted:true (5 ms)
+    ✓ idempotency: replay returns the stored command, different payload → 409 (9 ms)
+    ✓ ERPClaw failure → 502, failed row, command.failed audit (3 ms)
+    ✓ voice: draft ok, commit rejected voice_not_permitted (5 ms)
+    ✓ developer holds the capability but is capped at Read (5 ms)
+    ✓ bridge not configured → 503 on a ref lookup; failed row on execute (never a silent success) (6 ms)
+  POST /commands — entity resolution
+    ✓ customer_ref resolves exactly via the bridge Read action and is replaced by customer_id (4 ms)
+    ✓ ambiguous / missing → rejected with candidates, nothing written (2 ms)
+  High-risk → approvals (maker-checker)
+    ✓ queues with no_eligible_approver when the tenant has no second approver, still queued (3 ms)
+    ✓ requester cannot approve own request (even as tenant admin); a second admin with MFA can; then the bridge runs with the approval chain (30 ms)
+    ✓ approver needs the approve capability, not just any capability; reject path records the note (7 ms)
+    ✓ exafy super-admin queues like everyone and cannot self-approve (4 ms)
+    ✓ §4.3: payment kind=pay escalates to High-risk with finance.pay; amount over the tenant threshold escalates too (5 ms)
+  GET /commands, /approvals, /audit, policy
+    ✓ audit.view sees all rows; others only their own; audit needs audit.view; policy needs approvals.policy (22 ms)
+    ✓ approvals list is denied to a user with no capabilities and carries can_decide (6 ms)
+      42 |       explicit = (await fetchGrants(auth.tenant_id, auth.user_id)).map((r) => r.capability);
+      43 |     } catch (err: any) {
+         |               ^
+      46 |     }
+      47 |   }
+PASS test/routes/backoffice-access.test.ts
+  GET /me
+    ✓ 401 without identity (mount proof: JSON, not HTML) (8 ms)
+    ✓ backoffice role with no grants: empty capabilities, cannot manage access (3 ms)
+  requireErpCapability middleware
+    ✓ 403 names the missing capability; 200 when held via explicit grant (5 ms)
+  GET /access
+    ✓ 403 for a backoffice user without erp.admin; 200 grouped per user for a tenant admin (5 ms)
+    ✓ a non-exafy caller cannot read another tenant via ?tenant_id (5 ms)
+  POST /access/grant
+    ✓ validates the capability against the catalog (14 ms)
+    ✓ tenant admin grants sales.draft: POST to erp_capability_grants with granted_by and tenant scope (3 ms)
+    ✓ duplicate grant is idempotent (200, already granted) (3 ms)
+    ✓ hr.* can be granted by a tenant admin, NOT by a delegated erp.admin holder (5 ms)
+    ✓ target outside the tenant is refused (canManageRoles membership check) (2 ms)
+    ✓ a backoffice user without erp.admin cannot grant at all (3 ms)
+  POST /access/revoke
+    ✓ DELETE scoped to user × tenant × capability (3 ms)
+PASS test/vtid-03848-backoffice-voice-tools.test.ts
+  ✓ schemas and handlers agree; every schema has a name and parameters (1 ms)
+  ✓ every tool is denied off the backoffice surface and without identity (2 ms)
+  ✓ backoffice_command submits through the orchestrator as channel voice, unconfirmed, with a per-turn idempotency key (1 ms)
+  ✓ a voice-refused Commit comes back with the reason and a next step, and never succeeds (1 ms)
+  ✓ unknown type is refused before the orchestrator; explicit idempotency key is honoured (1 ms)
+  ✓ list_commands filters to what the caller may run and marks voice-ok tiers
+  ✓ pending_approvals is read-only and marks the caller's own requests (1 ms)
+  ✓ my_access reports capabilities and the voice ceiling
+PASS test/orb/live/surface.test.ts
+  resolveOrbSurface
+    ✓ route / → vitanaland (1 ms)
+    ✓ route /health → vitanaland (1 ms)
+    ✓ route /maxina → vitanaland
+    ✓ route undefined → vitanaland
+    ✓ route  → vitanaland (1 ms)
+    ✓ route /command-hub → command-hub
+    ✓ route /command-hub/cockpit → command-hub
+    ✓ route /admin → admin (1 ms)
+    ✓ route /admin/dashboard → admin
+    ✓ route /administration → vitanaland
+    ✓ route /backoffice → backoffice
+    ✓ route /backoffice/sales/leads → backoffice (1 ms)
+    ✓ route /BackOffice/Dashboard → backoffice
+    ✓ route /backofficex → vitanaland
+    ✓ mobile is always the community surface, whatever the route (5 ms)
+    ✓ an explicit valid surface wins; an invalid one is ignored (1 ms)
+    ✓ work surfaces, persona keys and navigator roles (1 ms)
+PASS test/vtid-03848-orchestrator-voice-ceiling.test.ts
+  ✓ voice: read executes, draft executes, commit and high are rejected voice_not_permitted and never reach the bridge (3 ms)
+Test Suites: 9 passed, 9 total
+Tests:       99 passed, 99 total
+Snapshots:   7 passed, 7 total
+Time:        5.125 s
+Ran all test suites matching /test\/orb\/live\/surface.test.ts|test\/orb\/live\/tools\/surface-gated-catalog.test.ts|test\/orb\/live\/instruction\/work-surface-overlays.test.ts|test\/vtid-03848-backoffice-voice-tools.test.ts|test\/vtid-03848-orchestrator-voice-ceiling.test.ts|test\/routes\/backoffice-commands.test.ts|test\/routes\/backoffice-access.test.ts|test\/orb\/live\/characterization\/tool-catalog.characterization.test.ts|test\/orb\/live\/characterization\/system-instruction.characterization.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

@@ -28,37 +28,12 @@ const router = Router();
 const VTID = 'VTID-03834';
 const TABLE = 'erp_capability_grants';
 
-interface GrantRow { user_id: string; tenant_id: string; capability: string; granted_by: string | null; granted_at: string }
-
-function serviceCreds(): { url: string; key: string } | null {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
-  return url && key ? { url, key } : null;
-}
-
-async function fetchGrants(tenantId: string, userId?: string): Promise<GrantRow[]> {
-  const creds = serviceCreds();
-  if (!creds) throw new Error('SERVICE_CONFIG');
-  let url = `${creds.url}/rest/v1/${TABLE}?tenant_id=eq.${encodeURIComponent(tenantId)}&select=user_id,tenant_id,capability,granted_by,granted_at&order=capability.asc`;
-  if (userId) url += `&user_id=eq.${encodeURIComponent(userId)}`;
-  const response = await fetch(url, { headers: { apikey: creds.key, Authorization: `Bearer ${creds.key}` } });
-  if (!response.ok) throw new Error(`GRANTS_FETCH_${response.status}`);
-  return (await response.json()) as GrantRow[];
-}
-
-/** Resolve the caller's effective access (role defaults ∪ explicit grants in their tenant). Exported for VTID-03842's command routes. */
-export async function resolveAccess(auth: { user_id: string; is_exafy_admin: boolean; tenant_id: string | null; active_role: string | null }): Promise<EffectiveAccess> {
-  let explicit: string[] = [];
-  if (auth.tenant_id) {
-    try {
-      explicit = (await fetchGrants(auth.tenant_id, auth.user_id)).map((r) => r.capability);
-    } catch (err: any) {
-      console.error(`[${VTID}] explicit grants fetch failed:`, err.message);
-      // fail closed on explicit grants, but role defaults still apply
-    }
-  }
-  return effectiveCapabilities(auth.active_role, auth.is_exafy_admin, explicit);
-}
+import { fetchGrants, resolveAccess, serviceCreds, type GrantRow } from '../services/backoffice/erp-access-resolver';
+// VTID-03848: fetchGrants/resolveAccess/serviceCreds moved verbatim to
+// services/backoffice/erp-access-resolver.ts so the ORB tool dispatcher
+// (session identity, no Express request) resolves access exactly like the
+// routes do. Re-exported for the command routes that already import from here.
+export { resolveAccess };
 
 /**
  * Middleware factory for later BackOffice routes: 401 without identity, 403 without the
