@@ -112,5 +112,9 @@
   "notif.listing_interest.title": "有人对你的商品感兴趣",
   "notif.listing_interest.body": "有人对“{title}”感兴趣。",
   "notif.day_close.title": "晚安 🌙",
-  "notif.day_close.body": "今天过去了——如果心里还有什么事，告诉我一声吧。"
+  "notif.day_close.body": "今天过去了——如果心里还有什么事，告诉我一声吧。",
+  "notif.partner_test_status_changed.title": "{partner_name} 的更新",
+  "notif.partner_test_status_changed.body": "你的 {test_name} 有新进展。",
+  "notif.partner_test_result_ready.title": "你的结果已就绪",
+  "notif.partner_test_result_ready.body": "你的 {test_name} 结果（来自 {partner_name}）已经准备好了。让 Vitana 为你解读。"
 }

@@ -112,5 +112,9 @@
   "notif.listing_interest.title": "Interesse an deinem Angebot",
   "notif.listing_interest.body": "Jemand hat Interesse an „{title}\" gezeigt.",
   "notif.day_close.title": "Gute Nacht 🌙",
-  "notif.day_close.body": "Der Tag ist zu Ende — wenn dir noch was durch den Kopf geht, sag es mir kurz."
+  "notif.day_close.body": "Der Tag ist zu Ende — wenn dir noch was durch den Kopf geht, sag es mir kurz.",
+  "notif.partner_test_status_changed.title": "Update von {partner_name}",
+  "notif.partner_test_status_changed.body": "Es gibt ein Update zu deinem {test_name}.",
+  "notif.partner_test_result_ready.title": "Deine Ergebnisse sind da",
+  "notif.partner_test_result_ready.body": "Deine {test_name}-Ergebnisse von {partner_name} sind da. Frag Vitana, sie dir zu erklären."
 }
