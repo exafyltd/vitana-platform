@@ -75,6 +75,7 @@ interface DoctorBoxWebhookPayload {
   external_order_ref?: string;
   status?: string;
   result?: Record<string, unknown>;
+  [key: string]: unknown;
 }
 
 const doctorBoxConnector: Connector = {

@@ -188,7 +188,7 @@ router.post('/inbox/:id/upload-result', requireTenantAdmin, async (req: Request,
     source_ref: getAdminId(req) ?? undefined,
   });
   if (!outcome.ok) return res.status(500).json({ ok: false, error: outcome.error });
-  return res.json({ ok: true, ...outcome });
+  return res.json({ ...outcome, ok: true });
 });
 
 // ==================== Confirm match (the hard-stop step) ====================
