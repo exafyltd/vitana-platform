@@ -2912,6 +2912,19 @@ where device connections are managed (pairing itself is a native/client flow).
 CALL WHEN the user says: "connect my Oura ring", "pair my device",
 "verbinde mein Gerät".
 
+### get_health_test_status
+Get the status of the user's partner health test(s) (e.g. a DoctorBox
+blood test ordered through Discover). Reads a canonical status —
+never a raw partner status string.
+CALL WHEN the user asks: "what's the status of my blood test?",
+"has my DoctorBox test shipped?", "wo ist mein Bluttest?".
+
+### get_health_test_result
+Get the actual biomarker values from a completed partner health test
+(status result_ready or delivered) so the model can discuss them.
+CALL WHEN the user asks: "what were my blood test results?", "tell me
+about my DoctorBox results", "was hat mein Bluttest ergeben?".
+
 ### get_my_subscription
 Current plan, status, renewal date, and voice-minutes usage.
 
@@ -5863,6 +5876,19 @@ Start pairing a wearable/health device. Opens the health tracker screen
 where device connections are managed (pairing itself is a native/client flow).
 CALL WHEN the user says: "connect my Oura ring", "pair my device",
 "verbinde mein Gerät".
+
+### get_health_test_status
+Get the status of the user's partner health test(s) (e.g. a DoctorBox
+blood test ordered through Discover). Reads a canonical status —
+never a raw partner status string.
+CALL WHEN the user asks: "what's the status of my blood test?",
+"has my DoctorBox test shipped?", "wo ist mein Bluttest?".
+
+### get_health_test_result
+Get the actual biomarker values from a completed partner health test
+(status result_ready or delivered) so the model can discuss them.
+CALL WHEN the user asks: "what were my blood test results?", "tell me
+about my DoctorBox results", "was hat mein Bluttest ergeben?".
 
 ### get_my_subscription
 Current plan, status, renewal date, and voice-minutes usage.

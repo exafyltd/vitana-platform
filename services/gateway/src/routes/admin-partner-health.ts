@@ -18,6 +18,7 @@ import { Router, Request, Response } from 'express';
 import { requireTenantAdmin } from '../middleware/require-tenant-admin';
 import { AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { getSupabase } from '../lib/supabase';
+import { emitOasisEvent } from '../services/oasis-event-service';
 import { findClickCorrelationCandidates } from '../services/partner-health/id-matching';
 import { ingestPartnerResult, recordStatusChange, type PartnerOrderRow } from '../services/partner-health/ingestion';
 import doctorBoxAdapter from '../services/partner-health/doctorbox-adapter';
@@ -76,6 +77,10 @@ router.get('/orders', requireTenantAdmin, async (req: Request, res: Response) =>
 });
 
 router.patch('/orders/:id', requireTenantAdmin, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: the state transition IS recorded — via
+  // recordStatusChange() below, which emits health_test.status_changed
+  // itself. This handler's own body has no direct emitOasisEvent call
+  // because the ingestion pipeline (not this route) owns that emission.
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
@@ -155,6 +160,9 @@ router.get('/candidates/:inboxId', requireTenantAdmin, async (req: Request, res:
 // ==================== Upload result (manual, no DoctorBox API) ====================
 
 router.post('/inbox/:id/upload-result', requireTenantAdmin, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: ingestPartnerResult() below emits
+  // health_test.result_ready / health_test.result_quarantined itself —
+  // this route only orchestrates the call.
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
@@ -256,6 +264,16 @@ router.post('/inbox/:id/confirm-match', requireTenantAdmin, async (req: Request,
     .from('partner_health_result_inbox')
     .update({ resolved: true, resolved_by_admin_id: adminId, resolved_order_id: (order as { id: string }).id, resolved_at: new Date().toISOString() })
     .eq('id', inbox.id);
+
+  await emitOasisEvent({
+    vtid: 'VTID-03885',
+    type: 'health_test.order_created',
+    source: 'admin-partner-health',
+    status: 'success',
+    message: `Admin confirmed a match for inbox row ${inbox.id}, creating order ${(order as { id: string }).id}.`,
+    payload: { inbox_id: inbox.id, order_id: (order as { id: string }).id, link_id: (link as { id: string }).id },
+    actor_id: adminId ?? undefined,
+  });
 
   return res.json({ ok: true, order_id: (order as { id: string }).id, link_id: (link as { id: string }).id });
 });

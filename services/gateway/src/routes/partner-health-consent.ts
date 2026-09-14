@@ -49,6 +49,10 @@ router.get('/', requireAuthWithTenant, async (req: Request, res: Response) => {
 });
 
 router.post('/grant', requireAuthWithTenant, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: grantDataSharingConsent() writes its own
+  // purpose-built audit row (data_sharing_consent_events, with before/
+  // after snapshots) — a generic OASIS event would duplicate that, not
+  // add to it, for this specific consent domain.
   const identity = getIdentity(req);
   if (!identity) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
   const supabase = getSupabase();
@@ -71,6 +75,8 @@ router.post('/grant', requireAuthWithTenant, async (req: Request, res: Response)
 });
 
 router.post('/revoke', requireAuthWithTenant, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: see /grant's identical note — revoke's audit
+  // trail is data_sharing_consent_events, not a generic OASIS event.
   const identity = getIdentity(req);
   if (!identity) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
   const supabase = getSupabase();
