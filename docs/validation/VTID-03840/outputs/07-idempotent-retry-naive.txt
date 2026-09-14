@@ -1,0 +1,11 @@
+# 07 — idempotent retry, NAIVE (ERPClaw CLI alone): the identical add-journal-entry command sent twice, as a client retry after a lost response would
+call 1: rc=0 journal_entry_id=27f3d71d-1ac4-45e2-a2af-a74fd4f346a2 naming=JE-2026-00022
+call 2: rc=0 journal_entry_id=a59ebf76-de44-4459-8ab0-68b44cbc7416 naming=JE-2026-00023
+rows with remark idem-retry-probe: 2
+finding: ERPClaw has NO idempotency-key concept on write actions (grep -i idempot across all modules: only 'idempotent' docstrings for seed/migrate/recurring). A naive retry creates a second draft; for submit-journal-entry a retry is rejected by the status guard (draft->submitted), but for add-* actions it double-creates. => the bridge must own idempotency: (idempotency_key, tenant, action) -> stored receipt, replayed on retry, with the first execution serialized per key. Implemented in services/erp-bridge/app/idempotency.py; see 08-bridge-idempotency-test.txt.
+submit #1 rc 0 ok
+submit #2 (retry) rc 1 {
+  "status": "error",
+  "message": "Cannot submit: journal entry is 'submitted' (must be 'draft')"
+}
+gl rows for JE#1 after double submit: 2 (expected 2)

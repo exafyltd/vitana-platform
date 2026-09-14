@@ -93,7 +93,15 @@
       ],
       "cloud_run_service": "vaea",
       "deployable": false,
-      "notes": "VTID-02400 Phase 0 scaffold — flip deployable to true in Phase 1 when loops land"
+      "notes": "VTID-02400 Phase 0 scaffold \u2014 flip deployable to true in Phase 1 when loops land"
+    },
+    "erp-bridge": {
+      "paths": [
+        "services/erp-bridge/"
+      ],
+      "cloud_run_service": "erp-bridge",
+      "deployable": true,
+      "$comment": "VTID-03840: AWS ECS staging service vitana-erp-bridge via AWS-STAGE-DEPLOY-ERP-BRIDGE.yml (no Cloud Run \u2014 key kept for schema compatibility)"
     }
   },
   "shared": {
