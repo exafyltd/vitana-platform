@@ -367,6 +367,32 @@ export async function revertExecutionPR(
 // Child execution spawn
 // =============================================================================
 
+/**
+ * VTID-03843: the subset of a parent execution's metadata a self-heal child
+ * must inherit. Only the on-ramp LLM override keys (VTID-03820) — never the
+ * whole metadata blob, so the child keeps its own `source` and never carries
+ * stale per-attempt fields (bridge_stage, merge_sha, ...) from the parent.
+ *
+ * Without this, a retry child of an operator on-ramp execution silently fell
+ * back to the worker policy model: extractLlmOnRampOverride() (execute.ts)
+ * reads the CHILD row's metadata, and the child was inserted with none of
+ * the parent's override. Observed live on staging 2026-09-13 (execution
+ * fb3d86f8 — child of beeb2c55 — ran without `llm_on_ramp`).
+ */
+export function inheritedOnRampMetadata(
+  parentMetadata: Record<string, unknown> | null | undefined,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (!parentMetadata || typeof parentMetadata !== 'object') return out;
+  const onRamp = parentMetadata.llm_on_ramp;
+  if (typeof onRamp === 'string' && onRamp.length > 0) out.llm_on_ramp = onRamp;
+  const override = parentMetadata.llm_on_ramp_override;
+  if (override && typeof override === 'object' && !Array.isArray(override)) {
+    out.llm_on_ramp_override = override;
+  }
+  return out;
+}
+
 export async function spawnChildExecution(
   s: SupaConfig,
   parent: ExecutionRow,
@@ -390,6 +416,9 @@ export async function spawnChildExecution(
       parent_execution_id: parent.id,
       triage_report: report,
       metadata: {
+        // VTID-03843: inherited keys first so the bridge's own identity
+        // fields below always win if a parent ever carried a same-named key.
+        ...inheritedOnRampMetadata(parent.metadata),
         source: 'dev-autopilot-bridge',
         parent_execution_id: parent.id,
         triage_session_id: report.session_id,
