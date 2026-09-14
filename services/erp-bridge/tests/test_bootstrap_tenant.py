@@ -67,3 +67,51 @@ def test_script_compiles_and_prints_nothing_secret_on_usage_error():
                           env={"PATH": os.environ.get("PATH", ""), "ERP_BOOTSTRAP_TENANT_ID": ""}, timeout=30)
     assert proc.returncode != 0
     assert "is required" in (proc.stderr + proc.stdout)
+
+
+def test_master_user_joins_owner_role_before_create_database(boot, monkeypatch):
+    """RDS: the master user is not a superuser. `CREATE DATABASE … OWNER x`
+    raises `must be able to SET ROLE "x"` unless the master user already
+    belongs to x — the first staging bootstrap failed exactly there because
+    the GRANT ran after the CREATE. Pin the order with a fake psycopg2."""
+    import types
+
+    executed: list[str] = []
+
+    class _Cur:
+        def execute(self, q, params=None):
+            executed.append(str(q))
+
+        def fetchone(self):
+            return None  # role and database both absent
+
+    class _Conn:
+        autocommit = False
+
+        def cursor(self):
+            return _Cur()
+
+        def close(self):
+            pass
+
+    class _SQL(str):
+        def format(self, *parts):
+            return _SQL(str.format(self, *(str(p) for p in parts)))
+
+    fake_pg = types.ModuleType("psycopg2")
+    fake_pg.connect = lambda url: _Conn()
+    fake_sql = types.ModuleType("psycopg2.sql")
+    fake_sql.SQL = _SQL
+    fake_sql.Identifier = lambda name: f'"{name}"'
+    fake_pg.sql = fake_sql
+    monkeypatch.setitem(sys.modules, "psycopg2", fake_pg)
+    monkeypatch.setitem(sys.modules, "psycopg2.sql", fake_sql)
+
+    out = boot.ensure_role_and_db("postgresql://admin:pw@h:5432/postgres", "erpclaw_t", "erpclaw_t", "pw")
+
+    assert out == {"role_created": True, "db_created": True}
+    grant = next(i for i, q in enumerate(executed) if q.startswith("GRANT"))
+    create_db = next(i for i, q in enumerate(executed) if q.startswith("CREATE DATABASE"))
+    create_role = next(i for i, q in enumerate(executed) if q.startswith("CREATE ROLE"))
+    assert create_role < grant < create_db, executed
+    assert executed[grant] == 'GRANT "erpclaw_t" TO CURRENT_USER'
