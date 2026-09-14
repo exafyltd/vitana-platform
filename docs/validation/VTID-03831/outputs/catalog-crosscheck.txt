@@ -1,0 +1,29 @@
+erpclaw       HEAD 4d32db6585297a1d05a7b5927168de8c75bb7708
+erpclaw-addons HEAD 7c1b5ae5701980e97f34cf25fa5943066140f6a3
+
+[1] ERPClaw action names cited in the doc: 267 resolve against the pinned catalogs
+    PASS — no cited action is absent from the pinned catalogs
+
+[2] DANGEROUS_ACTIONS at pinned commit: 74 actions
+    doc marks 23 actions as ERPClaw-gated
+    PASS — every action the doc marks gated is in DANGEROUS_ACTIONS
+    PASS — no DANGEROUS action is exposed at Read or Draft tier
+
+[3] Golden workflows
+    GW-1: PASS all five parts present
+    GW-2: PASS all five parts present
+    GW-3: PASS all five parts present
+    GW-4: PASS all five parts present
+
+[4] Structure
+    PASS section "## 2. Golden workflows"
+    PASS section "## 3. Capability catalog"
+    PASS section "## 4. Wave-1 mapping"
+    PASS section "## 5. UAE"
+    PASS section "## 7. Open decisions"
+    PASS open-decision rows marked UNASSIGNED: 4/4
+
+[5] High-risk rows in §4.2 name an approver
+    13 High-risk mapping rows; PASS all name an approver
+
+RESULT: PASS
