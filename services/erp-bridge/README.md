@@ -63,15 +63,54 @@ python3 $ERPCLAW_ROOT/scripts/db_query.py --action setup-chart-of-accounts --com
 ```
 Then put `<id>` into `ERP_TENANTS[...].company_id`. Bootstrap actions are deliberately **not** in the catalog.
 
-## Provisioning still owed by an operator (cannot be done from a Claude Code session)
+## Provisioning (staging) — `scripts/aws/setup-erp-bridge-staging.sh`
 
-1. Dedicated Postgres for ERPClaw (one DB per tenant; the spike used PG 16). Not the Vitana app DB.
-2. ECR repo `vitana/erp-bridge`; ECS service `vitana-erp-bridge` on `Vitana-ECS-Cluster` (fixed `desiredCount` 1, no ALB rule — private; the gateway reaches it over the VPC via service discovery or a private ALB listener).
-3. Secrets Manager: `vitana/erp-bridge/staging/bridge-token`, `vitana/erp-bridge/staging/tenants`.
-4. Egress: allow `api.frankfurter.dev:443` only (for `fetch-exchange-rates`); block everything else.
-5. Task role: no AWS API permissions needed; the bridge only talks to Postgres.
+The deploy workflow refuses to run until the AWS resources exist (its preflight), and
+creating them needs admin rights no Claude Code session has (the session's IAM user is
+read-only for ECR/ECS/RDS/Secrets — measured `AccessDenied` on every create call). The
+script is the exact, idempotent set of calls an operator runs instead; every fact in it
+(subnets, security groups, roles, RDS endpoint, VPC) was read from the live account.
 
-Until 2–3 exist, `AWS-STAGE-DEPLOY-ERP-BRIDGE.yml` fails at preflight by design.
+```
+scripts/aws/setup-erp-bridge-staging.sh provision            # dry run — prints the plan
+scripts/aws/setup-erp-bridge-staging.sh provision --apply    # ECR repo, log group, the two secrets,
+                                                             # SG rules, Cloud Map DNS, placeholder
+                                                             # task def, ECS service (desiredCount 0)
+# then let AWS-STAGE-DEPLOY-ERP-BRIDGE.yml build + roll the real image (push to main / dispatch)
+scripts/aws/setup-erp-bridge-staging.sh bootstrap-tenant \
+    --tenant-id <vitana tenant uuid> --db-name erpclaw_<slug> \
+    --company-name "Vitanaland Trading LLC" --abbr VTL --apply
+scripts/aws/setup-erp-bridge-staging.sh status
+```
+
+What the pieces are:
+
+1. **ERPClaw Postgres** — a separate *database* per tenant on the staging RDS instance
+   `vitana-postgres-staging` (never the app database), owned by a per-tenant role whose
+   password lives in `vitana/erp-bridge/staging/tenant-db/<tenant>`. `bootstrap-tenant`
+   runs `scripts/bootstrap_tenant.py` as a one-shot ECS task **inside the VPC** using the
+   deployed bridge image: role + database DDL (the RDS master password is read by the task
+   from the RDS-managed secret and never leaves the VPC), then the spike sequence —
+   `initialize-database → migrate → install erpclaw-growth (vendored) → setup-company →
+   setup-chart-of-accounts --template uae_ifrs → seed-defaults` — then merges the tenant
+   into the `tenants` secret and scales the service to 1. Rehearsed end to end on a local
+   Postgres: `docs/validation/VTID-03840/outputs/18-tenant-bootstrap-rehearsal.txt`.
+2. **ECR `vitana/erp-bridge`**, **ECS `vitana-erp-bridge`** on `Vitana-ECS-Cluster` (Fargate,
+   fixed desiredCount, **no ALB rule**). The gateway reaches it privately through a Cloud
+   Map private DNS namespace: `http://erp-bridge.vitana.internal:8080`.
+3. **Secrets Manager**: `vitana/erp-bridge/staging/bridge-token` (generated once by the
+   script, never printed or rotated by it), `vitana/erp-bridge/staging/tenants` (`{}` until
+   the first `bootstrap-tenant`).
+4. **Gateway wiring is automatic**: `AWS-STAGE-DEPLOY-GATEWAY.yml` upserts `ERP_BRIDGE_URL`
+   + `ERP_BRIDGE_TOKEN` on the gateway task definition whenever the token secret exists,
+   and leaves them untouched (bridge reported `not_configured`) while it does not.
+5. Egress: allow `api.frankfurter.dev:443` only (for `fetch-exchange-rates`) — still an
+   operator-side network-policy item; the script does not manage NACLs/egress.
+6. Task role: the bridge itself needs no AWS API permissions; the *bootstrap* task's
+   execution role gets a scoped `secretsmanager:GetSecretValue` on the two secrets it reads.
+
+Production has no twin of any of this on purpose (staging-first; the bridge is not in
+`AWS-PROD-DEPLOY-*` at all).
 
 ## Local development
 

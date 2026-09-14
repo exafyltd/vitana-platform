@@ -580,6 +580,19 @@ jobs:
             export "$VAR"
             echo "  resolved $NAME"
           done
+          # VTID-03840: the erp-bridge (BackOffice ERP facade) is OPTIONAL on
+          # staging until an operator runs scripts/aws/setup-erp-bridge-staging.sh.
+          # Absent token secret => ERP_BRIDGE_URL/ERP_BRIDGE_TOKEN are left
+          # untouched on the task definition and the gateway keeps reporting the
+          # bridge as not_configured. It must never fail a gateway deploy.
+          ERP_BRIDGE_URL="http://erp-bridge.vitana.internal:8080"
+          SEC_ERP_BRIDGE=$(aws secretsmanager describe-secret --secret-id vitana/erp-bridge/staging/bridge-token --query ARN --output text 2>/dev/null || true)
+          if [ -z "$SEC_ERP_BRIDGE" ] || [ "$SEC_ERP_BRIDGE" = "None" ]; then
+            SEC_ERP_BRIDGE=""
+            echo "  erp-bridge token secret absent - ERP_BRIDGE_URL/TOKEN not wired (VTID-03840; expected until provisioned)"
+          else
+            echo "  resolved vitana/erp-bridge/staging/bridge-token -> ERP_BRIDGE_URL=$ERP_BRIDGE_URL"
+          fi
           TASK_ROLE_ARN=$(aws ecs describe-task-definition --task-definition "$TD_ARN" \
             --query 'taskDefinition.taskRoleArn' --output text)
           if [ -z "$TASK_ROLE_ARN" ] || [ "$TASK_ROLE_ARN" = "None" ]; then
@@ -596,6 +609,7 @@ jobs:
                  --arg SEC_GEMINI "$SEC_GEMINI" --arg SEC_OPENAI "$SEC_OPENAI" \
                  --arg SEC_DEEPSEEK "$SEC_DEEPSEEK" --arg SEC_AURORA "$SEC_AURORA" \
                  --arg SEC_GITHUB_TOKEN "$SEC_GITHUB_TOKEN" \
+                 --arg SEC_ERP_BRIDGE "$SEC_ERP_BRIDGE" --arg ERP_BRIDGE_URL "$ERP_BRIDGE_URL" \
                  --arg TASK_ROLE "$TASK_ROLE_ARN" '
                 .containerDefinitions[0].image = $IMG
                 | .containerDefinitions[0].environment |=
@@ -665,6 +679,14 @@ jobs:
                           {name:"DEEPSEEK_API_KEY",      valueFrom:$SEC_DEEPSEEK},
                           {name:"AURORA_DATABASE_URL",   valueFrom:$SEC_AURORA},
                           {name:"GITHUB_SAFE_MERGE_TOKEN", valueFrom:$SEC_GITHUB_TOKEN} ] )
+                | ( if $SEC_ERP_BRIDGE != "" then
+                      ( .containerDefinitions[0].environment |=
+                          ( [ .[] | select(.name | IN("ERP_BRIDGE_URL") | not) ]
+                            + [ {name:"ERP_BRIDGE_URL", value:$ERP_BRIDGE_URL} ] )
+                      | .containerDefinitions[0].secrets |=
+                          ( [ .[] | select(.name | IN("ERP_BRIDGE_TOKEN") | not) ]
+                            + [ {name:"ERP_BRIDGE_TOKEN", valueFrom:$SEC_ERP_BRIDGE} ] ) )
+                    else . end )
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \

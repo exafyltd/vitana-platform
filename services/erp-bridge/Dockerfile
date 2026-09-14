@@ -17,6 +17,7 @@ COPY vendor/ /app/vendor/
 RUN bash /app/vendor/vendor.sh && apt-get purge -y git && apt-get autoremove -y
 
 COPY app/ /app/app/
+COPY scripts/ /app/scripts/
 
 # Non-root; the install home must be writable for module install-state markers.
 RUN useradd -r -u 10001 erpbridge && chown -R erpbridge:erpbridge /var/lib/erpclaw

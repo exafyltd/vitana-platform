@@ -33,3 +33,10 @@ git apply --check vendor/patches/0004-decimal-sum-numeric-postgres.patch   # on 
 ERPCLAW_ROOT=$T/root ERPCLAW_HOME=$T/home bash vendor/vendor.sh ; extract_flags.py … | diff - vendor/action-flags.json   # outputs/16: four patches applied, IDENTICAL
 python3 -m pytest -q tests   # bridge: 34 passed, 2 skipped (no ERPCLAW_ROOT / PG store in this run)
 python3 -m pytest -q scripts/erpclaw-reports/tests scripts/erpclaw-gl/tests scripts/erpclaw-setup/tests --ignore=…/test_crypto_env_check.py --deselect …/test_elimination_retired.py::test_cli_steers_with_the_legacy_flags   # outputs/17 (crypto test needs _cffi_backend; the 4 deselected fail identically WITHOUT 0004 — pre-existing)
+
+# provisioning + tenant bootstrap (2026-09-14)
+python3 scripts/bootstrap_tenant.py   # env-driven; local PG16 rehearsal x2 (fresh + idempotent) → outputs/18
+python3 -m pytest -q tests   # bridge: 51 passed, 2 skipped (+ tests/test_bootstrap_tenant.py)
+bash -n scripts/aws/setup-erp-bridge-staging.sh ; ./scripts/aws/setup-erp-bridge-staging.sh (usage, exit 2) ; provision without aws CLI → "missing tool: aws" (exit 1)
+npx jest test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts <8 more *-pinned.test.ts>   # 42 passed after the ERP_BRIDGE_* upsert in AWS-STAGE-DEPLOY-GATEWAY.yml
+# NOT run: anything against AWS (session IAM is read-only for ECR/ECS/Secrets/IAM); docker build (the image now COPYs scripts/ — vendor.sh rehearsal in outputs/16 covers the vendor step)
