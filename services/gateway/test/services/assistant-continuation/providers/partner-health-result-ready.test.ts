@@ -24,7 +24,11 @@ import {
 
 interface QueryResult {
   data?: unknown;
-  error?: { message: string } | null;
+  // Real Supabase errors (PostgrestError) extend Error, so the provider's
+  // `err instanceof Error` check works against them; a plain
+  // `{message: string}` object here would not, and would produce a
+  // misleading "[object Object]" — this must always be a real Error.
+  error?: Error | null;
 }
 
 /** Minimal fake matching the one `.from('partner_health_test_orders')` select then update this provider issues. */
@@ -117,7 +121,7 @@ describe('partner-health-result-ready provider', () => {
   });
 
   it('errors when the query throws', async () => {
-    const { sb } = fakeSb({ data: null, error: { message: 'boom' } });
+    const { sb } = fakeSb({ data: null, error: new Error('boom') });
     const p = makePartnerHealthResultReadyProvider(baseOpts);
     const res = await p.produce(makeCtx(sb));
     expect(res.status).toBe('errored');
