@@ -71,7 +71,12 @@ describe('VTID-03850: the executor task definition gets an LLM runtime of its ow
   });
 
   it('wires DEEPSEEK_API_KEY from the same Secrets Manager secret the staging gateway resolves', () => {
-    expect(registerStep).toContain('DEEPSEEK_SECRET_NAME: vitana/gateway/staging/deepseek-api-key');
+    // VTID-03880: hardcoded as a literal ARN rather than resolved via
+    // describe-secret at deploy time (the prod deploy role lacks
+    // secretsmanager:DescribeSecret on this staging-prefixed path) — but
+    // it's still the same underlying secret name the staging gateway
+    // resolves for itself.
+    expect(registerStep).toContain('DEEPSEEK_SECRET_ARN: arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/staging/deepseek-api-key');
     expect(registerStep).toMatch(/\{name:"DEEPSEEK_API_KEY", valueFrom:\$DS\}/);
     // The staging gateway resolves the identical secret name — one source of truth.
     expect(staging).toContain('vitana/gateway/staging/deepseek-api-key');

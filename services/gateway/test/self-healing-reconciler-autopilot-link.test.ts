@@ -146,6 +146,7 @@ describe('reconcileAutopilotLinkedSelfHealingVtids', () => {
 
     expect(state.ledgerPatches.length).toBe(1);
     const ledger = state.ledgerPatches[0];
+    expect(ledger.body.status).toBe('failed');
     expect(ledger.body.is_terminal).toBe(true);
     expect(ledger.body.terminal_outcome).toBe('failed');
     expect(ledger.body.metadata.healing_state).toBe('execution_failed');
@@ -179,6 +180,7 @@ describe('reconcileAutopilotLinkedSelfHealingVtids', () => {
     await reconcileAutopilotLinkedSelfHealingVtids();
 
     expect(state.ledgerPatches.length).toBe(1);
+    expect(state.ledgerPatches[0].body.status).toBe('failed');
     expect(state.ledgerPatches[0].body.terminal_outcome).toBe('failed');
   });
 
@@ -268,6 +270,7 @@ describe('reconcileAutopilotLinkedSelfHealingVtids', () => {
     expect(state.ledgerPatches.length).toBe(1);
     const ledger = state.ledgerPatches[0];
     expect(ledger.vtid).toBe('VTID-03862');
+    expect(ledger.body.status).toBe('failed');
     expect(ledger.body.is_terminal).toBe(true);
     expect(ledger.body.terminal_outcome).toBe('failed');
     expect(ledger.body.metadata.execution_failure_status).toBe('reverted');
