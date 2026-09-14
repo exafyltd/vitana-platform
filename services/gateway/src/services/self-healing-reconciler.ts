@@ -393,8 +393,11 @@ async function reconcileVoiceRow(
   }
 }
 
-// PR-A (VTID-02922): owner of final terminal_outcome for self-healing VTIDs
-// that were bridged into the Dev Autopilot execution pipeline. Worker-runner
+// PR-A (VTID-02922): owner of final terminal_outcome for any VTID that was
+// bridged into the Dev Autopilot execution pipeline — originally the
+// self-healing plane only, widened by VTID-03877 to also cover the operator
+// on-ramp (operator-execution-onramp.ts), the only other producer that links
+// metadata.autopilot_execution_id onto a vtid_ledger row. Worker-runner
 // returns a 'pr_ready' (PR opened but CI/deploy/verify still in flight) or
 // 'deferred' (autopilot still running past worker-runner await window) and
 // MUST NOT terminalize the VTID itself. This scan runs every reconciler
@@ -403,15 +406,22 @@ async function reconcileVoiceRow(
 //     (which means CI green + deploy verified + live probe passed)
 //   - terminalizes 'failed' when status in (failed, failed_escalated, reverted)
 //   - leaves in-flight statuses alone (cooling/running/ci/merging/...)
+//
+// VTID-03877: deliberately does NOT filter on metadata.source any more —
+// confirmed live that an operator-onramp VTID (VTID-03862) reverted via the
+// 20-min stuck-execution watchdog but stayed reported as in_progress
+// indefinitely, because nothing here ever saw it. The linkage field
+// (autopilot_execution_id) is the only thing this function actually needs;
+// requiring source=self-healing on top of it excluded every other bridge
+// with no corresponding benefit.
 export async function reconcileAutopilotLinkedSelfHealingVtids(): Promise<void> {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) return;
   try {
-    // Pull self-healing VTIDs that have a linked autopilot execution and are
-    // not terminal yet. Filter via metadata.source + metadata.autopilot_execution_id.
+    // Pull any VTID that has a linked autopilot execution and is not
+    // terminal yet, regardless of who created the link.
     const ledgerUrl =
       `${SUPABASE_URL}/rest/v1/vtid_ledger` +
-      `?metadata->>source=eq.self-healing` +
-      `&metadata->>autopilot_execution_id=not.is.null` +
+      `?metadata->>autopilot_execution_id=not.is.null` +
       `&is_terminal=eq.false` +
       `&select=vtid,metadata,claimed_by,claim_expires_at` +
       `&order=updated_at.asc&limit=50`;
@@ -490,7 +500,7 @@ export async function reconcileAutopilotLinkedSelfHealingVtids(): Promise<void> 
             type: 'self-healing.completed',
             source: 'self-healing-reconciler',
             status: 'success',
-            message: `Self-healing verified-healed for ${lrow.vtid}: autopilot execution ${execId.slice(0, 8)} reached 'completed' (PR ${exec.pr_url || '?'})`,
+            message: `Execution verified-healed for ${lrow.vtid}: autopilot execution ${execId.slice(0, 8)} reached 'completed' (PR ${exec.pr_url || '?'})`,
             payload: {
               autopilot_execution_id: execId,
               pr_url: exec.pr_url,
@@ -545,7 +555,7 @@ export async function reconcileAutopilotLinkedSelfHealingVtids(): Promise<void> 
             type: 'self-healing.execution.failed',
             source: 'self-healing-reconciler',
             status: 'error',
-            message: `Self-healing execution failed for ${lrow.vtid}: ${errMsg}`,
+            message: `Execution failed for ${lrow.vtid}: ${errMsg}`,
             payload: {
               autopilot_execution_id: execId,
               execution_status: exec.status,

@@ -172,6 +172,67 @@ describe('triggerOperatorExecution (VTID-03820)', () => {
     expect(mockedEmit).toHaveBeenCalled();
   });
 
+  it('VTID-03877: links the execution onto vtid_ledger.metadata.autopilot_execution_id, merging existing metadata', async () => {
+    mockedSupa
+      .mockResolvedValueOnce({ ok: true, data: [{ spec_status: 'approved', is_terminal: false }] }) // governance read
+      .mockResolvedValueOnce({ ok: true, data: [] }) // execution metadata PATCH
+      .mockResolvedValueOnce({ ok: true, data: [{ metadata: { source: 'claude-code', purpose: 'onramp-eval' } }] }) // ledger metadata GET
+      .mockResolvedValueOnce({ ok: true, data: [] }); // ledger metadata PATCH
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes('/rest/v1/autopilot_recommendations')) {
+        return Promise.resolve(jsonRes(201, [{ id: 'finding-999' }]));
+      }
+      if (url.includes('/rest/v1/dev_autopilot_plan_versions')) {
+        return Promise.resolve(jsonRes(201, null));
+      }
+      return Promise.resolve(jsonRes(404, { error: 'unexpected url' }));
+    });
+    mockedApprove.mockResolvedValue({ ok: true, execution: { id: 'exec-onramp-999' } });
+
+    const result = await triggerOperatorExecution(VALID_INPUT);
+    expect(result.ok).toBe(true);
+
+    const ledgerGetCall = mockedSupa.mock.calls.find(
+      (c) => String(c[1]).includes(`vtid_ledger?vtid=eq.${encodeURIComponent(VALID_INPUT.vtid)}`) && String(c[1]).includes('select=metadata')
+    );
+    expect(ledgerGetCall).toBeDefined();
+
+    const ledgerPatchCall = mockedSupa.mock.calls.find(
+      (c) => String(c[1]).includes(`vtid_ledger?vtid=eq.${encodeURIComponent(VALID_INPUT.vtid)}`) && c[2]?.method === 'PATCH'
+    );
+    expect(ledgerPatchCall).toBeDefined();
+    const ledgerPatchBody = JSON.parse(ledgerPatchCall![2].body);
+    // Merged, not replaced: pre-existing keys survive alongside the new link.
+    expect(ledgerPatchBody.metadata).toEqual({
+      source: 'claude-code',
+      purpose: 'onramp-eval',
+      autopilot_execution_id: 'exec-onramp-999',
+    });
+  });
+
+  it('VTID-03877: a failure linking to vtid_ledger does not fail the on-ramp trigger itself', async () => {
+    mockedSupa
+      .mockResolvedValueOnce({ ok: true, data: [{ spec_status: 'approved', is_terminal: false }] }) // governance read
+      .mockResolvedValueOnce({ ok: true, data: [] }) // execution metadata PATCH
+      .mockRejectedValueOnce(new Error('supabase blip')); // ledger metadata GET throws
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes('/rest/v1/autopilot_recommendations')) {
+        return Promise.resolve(jsonRes(201, [{ id: 'finding-888' }]));
+      }
+      if (url.includes('/rest/v1/dev_autopilot_plan_versions')) {
+        return Promise.resolve(jsonRes(201, null));
+      }
+      return Promise.resolve(jsonRes(404, { error: 'unexpected url' }));
+    });
+    mockedApprove.mockResolvedValue({ ok: true, execution: { id: 'exec-resilient-888' } });
+
+    const result = await triggerOperatorExecution(VALID_INPUT);
+
+    // The on-ramp itself still succeeds -- linking is best-effort.
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.execution_id).toBe('exec-resilient-888');
+  });
+
   it('surfaces a safety-gate rejection from approveAutoExecute without stamping anything', async () => {
     mockedSupa.mockResolvedValueOnce({ ok: true, data: [{ spec_status: 'approved', is_terminal: false }] });
     fetchMock.mockImplementation((url: string) => {

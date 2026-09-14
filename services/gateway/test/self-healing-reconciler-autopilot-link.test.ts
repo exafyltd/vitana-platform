@@ -41,8 +41,9 @@ function setupFetchMock(state: MockState) {
     const method = init?.method || 'GET';
     const body = init?.body ? JSON.parse(init.body) : null;
 
-    // 1. Scan for self-healing VTIDs with autopilot_execution_id
-    if (url.includes('/rest/v1/vtid_ledger?metadata->>source=eq.self-healing')) {
+    // 1. Scan for any VTID with a linked autopilot_execution_id (VTID-03877:
+    // no longer filtered to metadata.source=self-healing)
+    if (url.includes('/rest/v1/vtid_ledger?metadata->>autopilot_execution_id=not.is.null')) {
       return { ok: true, json: () => Promise.resolve(state.ledgerRows) };
     }
 
@@ -235,6 +236,41 @@ describe('reconcileAutopilotLinkedSelfHealingVtids', () => {
     expect(aPatch.body.terminal_outcome).toBe('success');
     const cPatch = state.ledgerPatches.find(p => p.vtid === 'VTID-C')!;
     expect(cPatch.body.terminal_outcome).toBe('failed');
+  });
+
+  it('VTID-03877: terminalizes a non-self-healing VTID (e.g. operator-onramp) that has a linked execution', async () => {
+    const state: MockState = {
+      ledgerRows: [{
+        vtid: 'VTID-03862',
+        // No metadata.source=self-healing here on purpose -- this is the
+        // exact shape operator-execution-onramp.ts's linkExecutionToVtidLedger
+        // produces (source stays whatever the VTID was allocated with).
+        metadata: { source: 'claude-code', purpose: 'operator-onramp-eval-task-1', autopilot_execution_id: 'exec-onramp-001' },
+      }],
+      executionRowsById: {
+        'exec-onramp-001': {
+          id: 'exec-onramp-001',
+          status: 'reverted',
+          pr_url: null,
+          pr_number: null,
+          branch: null,
+          metadata: { error: "watchdog: stuck in 'running' > 20m (container recycled mid-execution)" },
+          completed_at: new Date().toISOString(),
+        },
+      },
+      ledgerPatches: [],
+      selfHealingLogPatches: [],
+    };
+    setupFetchMock(state);
+
+    await reconcileAutopilotLinkedSelfHealingVtids();
+
+    expect(state.ledgerPatches.length).toBe(1);
+    const ledger = state.ledgerPatches[0];
+    expect(ledger.vtid).toBe('VTID-03862');
+    expect(ledger.body.is_terminal).toBe(true);
+    expect(ledger.body.terminal_outcome).toBe('failed');
+    expect(ledger.body.metadata.execution_failure_status).toBe('reverted');
   });
 
   it('no-op when no autopilot-linked self-healing rows exist', async () => {
