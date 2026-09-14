@@ -52,6 +52,9 @@ AC-12 — Staging deploy path, no prod twin
 TEST: `.github/workflows/AWS-STAGE-DEPLOY-ERP-BRIDGE.yml` — `test` job (pytest) then build/push/roll; preflight refuses any service name containing `awsdr`/`prod`, refuses to register a task def if either Secrets Manager entry is missing. `config/service-path-map.json` registers `erp-bridge`. YAML/JSON parsed (`commands.log`).
 UI: n/a.
 
+AC-13 — Postgres arithmetic on `decimal_sum()` works (report/GL/credit actions that failed on the spike)
+TEST: `outputs/15-patch0004-decimal-sum-numeric.txt` — `validate-period-close`, `general-ledger`, `cash-flow`, `comparative-pl`, `check-credit-limit`, `check-overdue`, `submit-sales-invoice` all `status: ok` on the spike DB with patch 0004; an aggregate installed by 0002 (finalfunc → text) is upgraded in place on the first connection open (`prorettype` text → numeric, old finalfunc dropped); `vendor.sh` rehearsal applies all four patches and `action-flags.json` stays IDENTICAL (`outputs/16-vendor-sh-four-patches.txt`); bridge suite 34 passed / 2 skipped after the lock change; upstream SQLite suites for reports/gl/setup-lib unchanged by the patch (`outputs/17-upstream-sqlite-suites-with-0004.txt`).
+
 ## Not verified / owed
 
 - Nothing here ran on AWS: no ECR repo, ECS service, per-tenant Postgres or Secrets Manager entries exist for the bridge yet (README "Provisioning"). The workflow will fail at preflight, loudly, until an operator creates them.

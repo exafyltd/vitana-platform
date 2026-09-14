@@ -26,3 +26,10 @@ ERPCLAW_ROOT=$T/root ERPCLAW_HOME=$T/home bash vendor/vendor.sh ; python3 vendor
 python3 -c "import yaml; yaml.safe_load(open('.github/workflows/AWS-STAGE-DEPLOY-ERP-BRIDGE.yml'))"   # yaml ok
 node -e "JSON.parse(require('fs').readFileSync('config/service-path-map.json','utf8'))"                # json ok
 # NOT run: docker build (no daemon in session); anything against AWS (no credentials; nothing provisioned for this service yet)
+
+# patch 0004 (2026-09-14) — rehearsal worktree /tmp/claude-0/erpclaw-0004 (pin + 0001-0003 committed as base), ERPCLAW_HOME lib → worktree lib
+ERPCLAW_DB_DIALECT=postgresql ERPCLAW_DB_URL='postgresql://postgres@/erpclaw?host=/tmp&port=54329' python3 scripts/db_query.py --action {validate-period-close,general-ledger,cash-flow,comparative-pl,check-credit-limit,check-overdue,submit-sales-invoice} …   # outputs/15: 7/7 ok, aggregate text→numeric in place
+git apply --check vendor/patches/0004-decimal-sum-numeric-postgres.patch   # on the 0001-0003 checkout: clean
+ERPCLAW_ROOT=$T/root ERPCLAW_HOME=$T/home bash vendor/vendor.sh ; extract_flags.py … | diff - vendor/action-flags.json   # outputs/16: four patches applied, IDENTICAL
+python3 -m pytest -q tests   # bridge: 34 passed, 2 skipped (no ERPCLAW_ROOT / PG store in this run)
+python3 -m pytest -q scripts/erpclaw-reports/tests scripts/erpclaw-gl/tests scripts/erpclaw-setup/tests --ignore=…/test_crypto_env_check.py --deselect …/test_elimination_retired.py::test_cli_steers_with_the_legacy_flags   # outputs/17 (crypto test needs _cffi_backend; the 4 deselected fail identically WITHOUT 0004 — pre-existing)

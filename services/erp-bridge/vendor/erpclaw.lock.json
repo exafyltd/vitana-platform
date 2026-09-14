@@ -17,7 +17,8 @@
   },
   "patches": [
     "patches/0001-0002-erpclaw-lib-db-postgres.patch",
-    "patches/0003-router-module-lookup-postgres.patch"
+    "patches/0003-router-module-lookup-postgres.patch",
+    "patches/0004-decimal-sum-numeric-postgres.patch"
   ],
   "overlay": {"charts/uae_ifrs.json": "scripts/erpclaw-gl/assets/charts/uae_ifrs.json"}
 }

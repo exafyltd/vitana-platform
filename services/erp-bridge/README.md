@@ -88,5 +88,7 @@ Spike evidence (latency, concurrency, idempotency, backup/restore, upgrade, UAE 
 
 1. Edit `vendor/erpclaw.lock.json` (foundation + addons commits) under a new VTID.
 2. `python3 vendor/extract_flags.py <root> <growth-dir> > vendor/action-flags.json`; run the tests — they fail if a catalogued action or admitted flag disappeared.
-3. Re-check the three patches apply (`git apply --check`); upstream may have fixed them.
+3. Re-check the four patches apply (`git apply --check`); upstream may have fixed them.
+   0004 (`decimal_sum` returns `numeric`; HAVING repeats aggregates instead of aliases) is the one
+   most likely to be superseded upstream — drop it the moment `general-ledger` runs clean without it.
 4. Rehearse `migrate --dry-run` / `migrate --user-confirmed` on a **restored copy** of a tenant DB (see outputs/10-upgrade-rehearsal.txt), never on the live one.
