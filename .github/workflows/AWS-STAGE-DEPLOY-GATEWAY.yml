@@ -534,6 +534,26 @@ jobs:
         # identical shared executionRoleArn (vitana-ecs-task-execution-role),
         # so no new credential material or IAM change is introduced -- this
         # is purely wiring an existing secret into a second task def.
+        #
+        # VTID-03883 -- DEV_AUTOPILOT_WATCHER_LIVE=true. Without this, the
+        # CI watcher (dev-autopilot-watcher.ts) defaults to DRY_RUN mode
+        # (its own fallback is `DEV_AUTOPILOT_DRY_RUN || 'true'`) and
+        # FABRICATES ci-passed/merged/deployed/verified/completed
+        # transitions 90s apart per stage, WITHOUT ever calling GitHub.
+        # Confirmed live 2026-09-14: an operator on-ramp execution
+        # (VTID-03863, PR #3307) reported dev_autopilot_executions.status
+        # = 'completed' while PR #3307 sat open, unmerged, and still
+        # failing VALIDATOR-CHECK — a false-success report the reconciler
+        # (VTID-03877) would otherwise propagate onto vtid_ledger as a
+        # real terminal_outcome='success'. VTID-03863 itself is left
+        # uncorrected as a documented eval artifact of this exact defect.
+        # Flipping this makes the watcher poll real GitHub check-run/merge/
+        # deploy state instead (existing risk-class + mergeable_state
+        # auto-merge gates in dev-autopilot-watcher.ts are unchanged).
+        # Deliberately NOT added to AWS-PROD-DEPLOY-GATEWAY.yml -- prod's
+        # live task def state is untouched pending real staging observation
+        # under live mode. Rollback is this value -> "false", no code
+        # revert. Platform owner approved 2026-09-14.
         run: |
           set -e
           IMAGE="${{ steps.build.outputs.image }}"
@@ -638,6 +658,7 @@ jobs:
                                                 "OPERATOR_CODEBASE_READ_ENABLED",
                                                 "OPERATOR_DB_READONLY_ENABLED",
                                                 "DEV_AUTOPILOT_USE_JOB","DEV_AUTOPILOT_JOB_CLOUD",
+                                                "DEV_AUTOPILOT_WATCHER_LIVE",
                                                 "BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION",
                                                 "AURORA_CA_BUNDLE_PATH") | not) ]
                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
@@ -667,6 +688,7 @@ jobs:
                           {name:"OPERATOR_DB_READONLY_ENABLED", value:"true"},
                           {name:"DEV_AUTOPILOT_USE_JOB", value:"true"},
                           {name:"DEV_AUTOPILOT_JOB_CLOUD", value:"aws"},
+                          {name:"DEV_AUTOPILOT_WATCHER_LIVE", value:"true"},
                           {name:"BEDROCK_ROLE_ARN", value:$TASK_ROLE},
                           {name:"AWS_BEDROCK_REGION", value:"eu-central-1"},
                           {name:"AURORA_CA_BUNDLE_PATH", value:"/app/certs/rds-combined-ca-bundle.pem"} ] )

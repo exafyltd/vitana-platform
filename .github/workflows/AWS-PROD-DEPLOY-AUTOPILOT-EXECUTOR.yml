@@ -27,9 +27,10 @@
 #                          §2b; credentials come from the task role itself)
 #   - AWS_BEDROCK_REGION = eu-central-1
 #   - DEEPSEEK_API_KEY   = Secrets Manager `vitana/gateway/staging/deepseek-api-key`
-#                          (the same secret the staging gateway already resolves;
-#                          referenced by NAME, which ECS accepts for a same-region
-#                          secret — the deploy role has no secretsmanager:Describe*)
+#                          (the same secret the staging gateway already resolves)
+#                          — referenced by its full ARN, hardcoded below (VTID-03880).
+#                          See that step's own comment for why it is not resolved
+#                          dynamically via `describe-secret` here.
 # so a dispatched execution can run the worker call on the Bedrock policy
 # primary and honour an on-ramp DeepSeek override (VTID-03820). Before this,
 # every dispatched execution would have failed at the LLM step: the task def
@@ -125,7 +126,24 @@ jobs:
 
       - name: Register new task-definition revision (image + executor LLM runtime env/secrets — VTID-03850)
         env:
-          DEEPSEEK_SECRET_NAME: vitana/gateway/staging/deepseek-api-key
+          # VTID-03880: hardcoded ARN, not resolved via `describe-secret` at
+          # deploy time. AWS_PROD_ROLE_ARN (the role this workflow assumes,
+          # via configure-aws-credentials above) does not have
+          # secretsmanager:DescribeSecret on this staging-prefixed secret
+          # path -- confirmed live, run 34782600979: VTID-03875's fix-loud
+          # guard correctly refused to register a task def when that call
+          # came back empty, but the guard's own premise (this role can
+          # describe the secret) was wrong, not the secret's existence. The
+          # secret itself is unchanged and was resolved once, out-of-band,
+          # with a broader-scoped identity: same account/region, same name
+          # (`vitana/gateway/staging/deepseek-api-key`) the staging gateway
+          # already reads successfully. An ARN is not a credential -- it is
+          # safe to commit -- so hardcoding it here removes the need for
+          # this role to have any Secrets Manager read permission at all.
+          # If the secret is ever recreated (new random suffix), this line
+          # needs a one-time manual update; nothing else in this workflow
+          # depends on resolving it dynamically.
+          DEEPSEEK_SECRET_ARN: arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/staging/deepseek-api-key-iErwBo
         run: |
           set -e
           IMAGE="${{ steps.build.outputs.image }}"
@@ -142,10 +160,19 @@ jobs:
             exit 1
           fi
           echo "Executor task role (Bedrock activation): $TASK_ROLE_ARN"
-          echo "DEEPSEEK_API_KEY <- Secrets Manager: $DEEPSEEK_SECRET_NAME (by name; same region)"
+          # VTID-03875: valueFrom for a Secrets Manager secret MUST be the full
+          # ARN -- ECS only accepts a bare name for SSM Parameter Store. See
+          # DEEPSEEK_SECRET_ARN's own comment above for why it is a hardcoded
+          # literal (VTID-03880) rather than resolved here via describe-secret.
+          DEEPSEEK_ARN="$DEEPSEEK_SECRET_ARN"
+          if [ -z "$DEEPSEEK_ARN" ]; then
+            echo "::error::DEEPSEEK_SECRET_ARN is empty. Refusing to register a task definition that cannot start."
+            exit 1
+          fi
+          echo "DEEPSEEK_API_KEY <- Secrets Manager: $DEEPSEEK_ARN"
           NEW_DEF=$(aws ecs describe-task-definition --task-definition "$CURRENT_ARN" --query taskDefinition \
             | jq --arg IMG "$IMAGE" --arg TASK_ROLE "$TASK_ROLE_ARN" \
-                 --arg REGION "${{ env.TARGET_AWS_REGION }}" --arg DS "$DEEPSEEK_SECRET_NAME" '
+                 --arg REGION "${{ env.TARGET_AWS_REGION }}" --arg DS "$DEEPSEEK_ARN" '
                 .containerDefinitions[0].image = $IMG
                 | .containerDefinitions[0].environment |=
                     ( [ (. // [])[] | select(.name | IN("BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION") | not) ]
