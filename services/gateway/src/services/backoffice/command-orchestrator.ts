@@ -71,12 +71,32 @@ async function approverPool(store: CommandStore, tenantId: string, capability: E
   return [...new Set([...explicit, ...admins])];
 }
 
-export function publicCommand(row: CommandRow, replayed = false) {
-  return {
+/**
+ * The command as the API exposes it. `withPayload` (VTID-03887) adds `payload` +
+ * `resolved_payload` — only for callers the route has checked may see them: the
+ * requester, an `audit.view` holder, or a holder of the approve capability of a
+ * command awaiting approval. The approver must see WHAT they approve
+ * (GOLDEN-WORKFLOWS §3.3, maker-checker); nobody else sees a payload.
+ */
+export function publicCommand(row: CommandRow, replayed = false, withPayload = false) {
+  const base = {
     command_id: row.id, type: row.type, action: row.action, tier: row.tier, status: row.status,
     reason: row.reason, approval_id: row.approval_id, receipt: row.receipt, escalations: row.escalations,
     channel: row.channel, requester_id: row.requester_id, created_at: row.created_at, executed_at: row.executed_at, replayed,
   };
+  return withPayload ? { ...base, payload: row.payload ?? {}, resolved_payload: row.resolved_payload ?? null } : base;
+}
+
+/**
+ * VTID-03887 — who may see a command's payload. Requester and `audit.view` see it always;
+ * a holder of the approval's approve capability sees it while the command awaits their decision
+ * (and after it: the audit trail of what was approved). Returns false for everyone else.
+ */
+export function mayViewPayload(row: CommandRow, viewer: { user_id: string; access: EffectiveAccess }, approval?: { approve_capability: string } | null): boolean {
+  if (row.requester_id === viewer.user_id) return true;
+  if (hasCapability(viewer.access, 'audit.view')) return true;
+  if (approval && row.approval_id && hasCapability(viewer.access, approval.approve_capability as ErpCapability)) return true;
+  return false;
 }
 
 async function audit(store: CommandStore, caller: OrchestratorCaller, access: EffectiveAccess, channel: string, event: string, command_id: string | null, approval_id: string | null, details: Record<string, unknown>) {

@@ -83,6 +83,8 @@ export interface CommandStore {
   insertCommand(row: NewCommand): Promise<CommandRow>;
   updateCommand(id: string, patch: Partial<CommandRow>): Promise<CommandRow>;
   getCommand(tenantId: string, id: string): Promise<CommandRow | null>;
+  /** VTID-03887 — batch read for the approvals list (the approver must see WHAT they approve) */
+  getCommandsByIds(tenantId: string, ids: string[]): Promise<CommandRow[]>;
   listCommands(tenantId: string, opts: { status?: CommandStatus; limit: number }): Promise<CommandRow[]>;
   insertApproval(row: NewApproval): Promise<ApprovalRow>;
   getApproval(tenantId: string, id: string): Promise<ApprovalRow | null>;
@@ -140,6 +142,12 @@ export class PostgrestCommandStore implements CommandStore {
   async getCommand(tenantId: string, id: string) {
     const rows = await rest<CommandRow[]>(`erp_commands?tenant_id=eq.${enc(tenantId)}&id=eq.${enc(id)}&limit=1`);
     return rows[0] ?? null;
+  }
+  async getCommandsByIds(tenantId: string, ids: string[]) {
+    const unique = [...new Set(ids.filter((x) => typeof x === 'string' && x.length > 0))];
+    if (unique.length === 0) return [];
+    // PostgREST `in.(...)`: each id is a UUID (never user text) but is still encoded per value.
+    return rest<CommandRow[]>(`erp_commands?tenant_id=eq.${enc(tenantId)}&id=in.(${unique.map(enc).join(',')})`);
   }
   async listCommands(tenantId: string, opts: { status?: CommandStatus; limit: number }) {
     let q = `erp_commands?tenant_id=eq.${enc(tenantId)}&order=created_at.desc&limit=${opts.limit}`;
@@ -208,6 +216,7 @@ export class MemoryCommandStore implements CommandStore {
   async insertCommand(row: NewCommand) { const r: CommandRow = { ...row, created_at: this.now(), updated_at: this.now() }; this.commands.push(r); return r; }
   async updateCommand(id: string, patch: Partial<CommandRow>) { const r = this.commands.find((c) => c.id === id)!; Object.assign(r, patch, { updated_at: this.now() }); return r; }
   async getCommand(t: string, id: string) { return this.commands.find((c) => c.tenant_id === t && c.id === id) ?? null; }
+  async getCommandsByIds(t: string, ids: string[]) { const want = new Set(ids); return this.commands.filter((c) => c.tenant_id === t && want.has(c.id)); }
   async listCommands(t: string, o: { status?: CommandStatus; limit: number }) { return this.commands.filter((c) => c.tenant_id === t && (!o.status || c.status === o.status)).slice(-o.limit).reverse(); }
   async insertApproval(row: NewApproval) { const r: ApprovalRow = { ...row, created_at: this.now() }; this.approvals.push(r); return r; }
   async getApproval(t: string, id: string) { return this.approvals.find((a) => a.tenant_id === t && a.id === id) ?? null; }
