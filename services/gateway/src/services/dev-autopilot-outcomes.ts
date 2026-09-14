@@ -13,6 +13,8 @@
  * action because the substrate write failed.
  */
 
+import { isExecutableSourceType } from './autopilot-executable-source-types';
+
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
 const LOG_PREFIX = '[dev-autopilot-outcomes]';
@@ -31,7 +33,8 @@ function getSupa(): SupaConfig | null {
 }
 
 interface FindingShape {
-  source_type: 'dev_autopilot' | 'dev_autopilot_impact';
+  /** Free text on the row; gated below by the executor-lane allowlist. */
+  source_type: string | null;
   risk_class: string | null;
   impact_score: number | null;
   effort_score: number | null;
@@ -77,10 +80,20 @@ export async function recordOutcome(input: RecordOutcomeInput): Promise<void> {
 
   const finding = await fetchFinding(supa, input.finding_id);
   if (!finding) {
-    // Finding gone or not a dev row — silently skip. Outcomes are dev-only.
+    // Finding gone — silently skip. Outcomes exist only for findings that
+    // can enter the executor lane.
     return;
   }
-  if (finding.source_type !== 'dev_autopilot' && finding.source_type !== 'dev_autopilot_impact') {
+  // VTID-03844: gate on the SAME allowlist the executor lane uses
+  // (autopilot-executable-source-types.ts) instead of a hard-coded pair.
+  // The old `dev_autopilot` / `dev_autopilot_impact` check silently dropped
+  // every operator on-ramp execution (source_type `operator_onramp`,
+  // VTID-03820) — observed on staging 2026-09-13: zero outcome rows for a
+  // real approved+executed on-ramp finding. Non-executable source_types
+  // (user-facing recommendations) still skip. The table's CHECK constraint
+  // is widened to the same list by migration
+  // 20260913100000_vtid_03844_outcomes_source_type_allowlist.sql.
+  if (!isExecutableSourceType(finding.source_type)) {
     return;
   }
 

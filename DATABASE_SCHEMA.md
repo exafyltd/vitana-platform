@@ -676,6 +676,7 @@ CREATE TABLE my_new_table (
 
 | Date | Change | Author | VTID |
 |------|--------|--------|------|
+| 2026-09-13 | `dev_autopilot_outcomes.source_type` CHECK widened from the original `('dev_autopilot','dev_autopilot_impact')` pair to the full executor-lane allowlist (`missing-test-scanner`, `test-contract-failure-scanner`, `dev_autopilot`, `dev_autopilot_impact`, `operator_onramp`) — migration `20260913100000_vtid_03844_outcomes_source_type_allowlist.sql`. The constraint had never followed VTID-02984's single allowlist or VTID-03820's `operator_onramp`, and `recordOutcome()` carried its own copy of the stale pair, so operator on-ramp executions produced no outcome rows at all (observed on staging 2026-09-13). A gateway test reads the migration and fails if its list drifts from `EXECUTABLE_RECOMMENDATION_SOURCE_TYPES`. Migration ships as a file; apply via `RUN-MIGRATION.yml`. | Claude | VTID-03844 |
 | 2026-07-21 | Added missing `wallet_transactions_from_user_id_fkey`/`_to_user_id_fkey` (NOT VALID, targeting `profiles.user_id`) — the Wallet's "Recent Activity" transaction list had never worked; every `fetchTransactions` PostgREST embed 400'd for lack of any FK on `from_user_id`/`to_user_id`. Found while verifying the VTNA/Credits merge deploy on AWS staging; unrelated pre-existing bug. Verified with a direct PostgREST request (200 OK, real profile data resolved). | Claude | — |
 | 2026-07-20 | Merged VTNA and Credits into one "VTNA Credits" currency; stripped staking-APY/governance/appreciation copy (previous cause of an Apple 3.1.5(iii) rejection) from the two dedicated VTNA popups and every send/request/exchange/booking currency picker in vitana-v1; defensive DB migration folding any nonzero VTNA balance into CREDITS (no-op, verified). Also fixed an unrelated bug found in the same pass: `WalletMasterActionPopup`'s quick-action menu fabricated free balance and silently destroyed real USD balance via a fake withdrawal. | Claude | BOOTSTRAP-VTNA-CREDITS-MERGE |
 | 2025-11-11 | Initial schema documentation | Claude | DEV-COMMU-0055 |
@@ -1858,7 +1859,7 @@ refuses to construct without a recorded BLK-009 activation
 When in doubt, CHECK HERE FIRST!
 
 
-## BackOffice — `erp_capability_grants` (VTID-03834, 2026-09-13) — migration file only, NOT yet applied
+## BackOffice — `erp_capability_grants` (VTID-03834, 2026-09-13) — applied to the live project 2026-09-14 (owner: "apply now")
 
 The Vitana role `backoffice` (VTID-03832) opens `/backoffice`; an ERP **capability** gates what a
 person may do inside (catalog: `services/gateway/src/constants/erp-capabilities.ts`, derived from
@@ -1881,7 +1882,7 @@ Constraints: `UNIQUE (user_id, tenant_id, capability)`; indexes on `(user_id, te
 RLS: `authenticated` may SELECT own rows; `service_role` ALL. `hr.*` / `payroll.*` rows can only be
 created by a tenant `admin` or an Exafy super-admin (enforced in the gateway, never a role default).
 
-## BackOffice — command orchestrator tables (VTID-03842, 2026-09-13) — migration file only, NOT yet applied
+## BackOffice — command orchestrator tables (VTID-03842, 2026-09-13) — applied to the live project 2026-09-14 (owner: "apply now"); browser-role privileges revoked by `20260914130000_vtid_03842_erp_tables_revoke_browser_roles.sql`
 
 `supabase/migrations/20260913020000_vtid_03842_erp_commands_approvals_audit.sql`. Written only by the gateway (service role) behind `POST /api/v1/backoffice/commands` and the approvals routes; the browser never touches them.
 

@@ -76,6 +76,40 @@ function isOnRampEnabled(): boolean {
 }
 
 /**
+ * VTID-03877: link the queued execution back onto the VTID's own ledger row
+ * so self-healing-reconciler.ts's terminal-outcome sync (originally built
+ * only for the self-healing plane, widened by this same VTID to cover any
+ * bridged execution) can find it. Without this, an on-ramp-triggered VTID's
+ * vtid_ledger.status/is_terminal never updates when the execution finishes —
+ * confirmed live: VTID-03862 reverted via the 20-min watchdog but stayed
+ * reported as in_progress indefinitely, since nothing ever linked the two
+ * rows in the first place.
+ *
+ * Merges into existing metadata rather than replacing it — a plain PATCH
+ * body would clobber whatever else already lives in vtid_ledger.metadata
+ * (e.g. the VTID's own `source`/`purpose` set at allocation time).
+ * Best-effort: failure here must not fail the on-ramp trigger itself, since
+ * the execution is already queued and real work is already in flight.
+ */
+async function linkExecutionToVtidLedger(s: SupaConfig, vtid: string, executionId: string): Promise<void> {
+  try {
+    const r = await supa<Array<{ metadata: Record<string, unknown> | null }>>(
+      s,
+      `/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(vtid)}&select=metadata&limit=1`
+    );
+    if (!r.ok || !r.data || r.data.length === 0) return;
+    const mergedMetadata = { ...(r.data[0].metadata || {}), autopilot_execution_id: executionId };
+    await supa(s, `/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(vtid)}`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ metadata: mergedMetadata }),
+    });
+  } catch (err) {
+    console.warn(`[operator-execution-onramp] linkExecutionToVtidLedger failed for ${vtid}:`, err);
+  }
+}
+
+/**
  * Split out for testability — real DB call, no side effects beyond the read.
  */
 async function loadVtidGovernanceState(
@@ -192,10 +226,19 @@ export async function triggerOperatorExecution(
   }
 
   // Governance gate 2 (reused, not reimplemented): approveAutoExecute runs
-  // the full existing safety gate. approved_by is set, so a rejection is
-  // returned synchronously here — never silently snoozed the way an
+  // the full existing safety gate. `interactive: true` makes a rejection
+  // come back synchronously here — never silently snoozed the way an
   // unattended autoApproveTick call would be.
-  const approval = await approveAutoExecute({ finding_id: findingId, approved_by: input.requestedBy });
+  //
+  // VTID-03839: `requestedBy` is deliberately NOT passed as `approved_by`.
+  // It is a label (`operator-chat:<threadId>`), and
+  // `dev_autopilot_executions.approved_by` is a uuid column — the first
+  // real staging run that cleared the safety gate died on exactly that
+  // INSERT (Postgres 22P02). The requester is still recorded on the
+  // recommendation (`spec_snapshot.requested_by`), the execution metadata
+  // (`triggered_by`, PATCHed below) and the OASIS event — nothing is lost,
+  // it just does not go into a uuid column.
+  const approval = await approveAutoExecute({ finding_id: findingId, interactive: true });
   if (!approval.ok || !approval.execution) {
     return { ok: false, error: approval.error || 'approval failed', violations: approval.decision?.violations };
   }
@@ -217,6 +260,11 @@ export async function triggerOperatorExecution(
       },
     }),
   });
+
+  // VTID-03877: link before emitting the event, not after — a crash between
+  // the two would still leave the ledger correctly linked, whereas the
+  // reverse order could lose the link on a crash right after the event.
+  await linkExecutionToVtidLedger(s, input.vtid, executionId);
 
   await emitOasisEvent({
     vtid: input.vtid,

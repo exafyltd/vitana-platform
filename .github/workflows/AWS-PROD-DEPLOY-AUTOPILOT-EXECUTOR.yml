@@ -20,6 +20,25 @@
 # deferred secrets until real values exist. Re-add them (see git history
 # on this file / the VTID-03415 build notes) once populated.
 #
+# VTID-03850 (2026-09-13): the executor now gets a working LLM path of its
+# own, mirroring the gateway task defs. The register step upserts
+#   - BEDROCK_ROLE_ARN   = the executor task definition's own taskRoleArn
+#                          (activation gate for the Bedrock adapter, CLAUDE.md
+#                          §2b; credentials come from the task role itself)
+#   - AWS_BEDROCK_REGION = eu-central-1
+#   - DEEPSEEK_API_KEY   = Secrets Manager `vitana/gateway/staging/deepseek-api-key`
+#                          (the same secret the staging gateway already resolves)
+#                          — referenced by its full ARN, hardcoded below (VTID-03880).
+#                          See that step's own comment for why it is not resolved
+#                          dynamically via `describe-secret` here.
+# so a dispatched execution can run the worker call on the Bedrock policy
+# primary and honour an on-ramp DeepSeek override (VTID-03820). Before this,
+# every dispatched execution would have failed at the LLM step: the task def
+# carried no LLM credential at all (see the deferred-secrets note above).
+# Whether the executor task role actually holds bedrock:InvokeModel is not
+# verifiable from the repo — the first dispatched execution's llm.call.*
+# events are the check.
+#
 # workflow_dispatch ONLY, required `reason`, never on push.
 
 name: AWS Prod Deploy Autopilot Executor (ECS Task Def)
@@ -105,16 +124,63 @@ jobs:
           docker push "$REGISTRY/${{ env.ECR_REPOSITORY }}:latest"
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
-      - name: Register new task-definition revision (image only — env/secrets carry forward)
+      - name: Register new task-definition revision (image + executor LLM runtime env/secrets — VTID-03850)
+        env:
+          # VTID-03880: hardcoded ARN, not resolved via `describe-secret` at
+          # deploy time. AWS_PROD_ROLE_ARN (the role this workflow assumes,
+          # via configure-aws-credentials above) does not have
+          # secretsmanager:DescribeSecret on this staging-prefixed secret
+          # path -- confirmed live, run 34782600979: VTID-03875's fix-loud
+          # guard correctly refused to register a task def when that call
+          # came back empty, but the guard's own premise (this role can
+          # describe the secret) was wrong, not the secret's existence. The
+          # secret itself is unchanged and was resolved once, out-of-band,
+          # with a broader-scoped identity: same account/region, same name
+          # (`vitana/gateway/staging/deepseek-api-key`) the staging gateway
+          # already reads successfully. An ARN is not a credential -- it is
+          # safe to commit -- so hardcoding it here removes the need for
+          # this role to have any Secrets Manager read permission at all.
+          # If the secret is ever recreated (new random suffix), this line
+          # needs a one-time manual update; nothing else in this workflow
+          # depends on resolving it dynamically.
+          DEEPSEEK_SECRET_ARN: arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/staging/deepseek-api-key-iErwBo
         run: |
           set -e
           IMAGE="${{ steps.build.outputs.image }}"
           CURRENT_ARN=$(aws ecs describe-task-definition --task-definition "${{ env.TASK_FAMILY }}" \
             --query 'taskDefinition.taskDefinitionArn' --output text)
           echo "Current: $CURRENT_ARN"
+          # VTID-03850: same activation pattern as the gateway task defs —
+          # BEDROCK_ROLE_ARN is the task's OWN role; the adapter only checks
+          # it is set, credentials come from the task role via the SDK chain.
+          TASK_ROLE_ARN=$(aws ecs describe-task-definition --task-definition "$CURRENT_ARN" \
+            --query 'taskDefinition.taskRoleArn' --output text)
+          if [ -z "$TASK_ROLE_ARN" ] || [ "$TASK_ROLE_ARN" = "None" ]; then
+            echo "::error::Task definition $CURRENT_ARN has no taskRoleArn — cannot set BEDROCK_ROLE_ARN."
+            exit 1
+          fi
+          echo "Executor task role (Bedrock activation): $TASK_ROLE_ARN"
+          # VTID-03875: valueFrom for a Secrets Manager secret MUST be the full
+          # ARN -- ECS only accepts a bare name for SSM Parameter Store. See
+          # DEEPSEEK_SECRET_ARN's own comment above for why it is a hardcoded
+          # literal (VTID-03880) rather than resolved here via describe-secret.
+          DEEPSEEK_ARN="$DEEPSEEK_SECRET_ARN"
+          if [ -z "$DEEPSEEK_ARN" ]; then
+            echo "::error::DEEPSEEK_SECRET_ARN is empty. Refusing to register a task definition that cannot start."
+            exit 1
+          fi
+          echo "DEEPSEEK_API_KEY <- Secrets Manager: $DEEPSEEK_ARN"
           NEW_DEF=$(aws ecs describe-task-definition --task-definition "$CURRENT_ARN" --query taskDefinition \
-            | jq --arg IMG "$IMAGE" '
+            | jq --arg IMG "$IMAGE" --arg TASK_ROLE "$TASK_ROLE_ARN" \
+                 --arg REGION "${{ env.TARGET_AWS_REGION }}" --arg DS "$DEEPSEEK_ARN" '
                 .containerDefinitions[0].image = $IMG
+                | .containerDefinitions[0].environment |=
+                    ( [ (. // [])[] | select(.name | IN("BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION") | not) ]
+                      + [ {name:"BEDROCK_ROLE_ARN", value:$TASK_ROLE},
+                          {name:"AWS_BEDROCK_REGION", value:$REGION} ] )
+                | .containerDefinitions[0].secrets |=
+                    ( [ (. // [])[] | select(.name | IN("DEEPSEEK_API_KEY") | not) ]
+                      + [ {name:"DEEPSEEK_API_KEY", valueFrom:$DS} ] )
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" --query 'taskDefinition.taskDefinitionArn' --output text)
