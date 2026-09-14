@@ -1834,6 +1834,65 @@ finding, no action taken beyond recording the re-check:
   more often than roughly daily until a human changes the IAM boundary or
   the Supabase-side pooler/IPv4 situation.
 
+## Addendum, 2026-09-14, VTID-03886 — app_users drift has resumed (219 vs 209); sync attempt blocked by this session's own write guard, not by IAM
+
+Routine scheduled check-in. Re-verified PR #3087's `mergeable_state` (had
+gone `dirty` again — `main` moved 5 more commits ahead: VTID-03875/03877/
+03880/03881/03883, all workflow/autopilot-executor changes with zero
+overlap with this branch's files; merged cleanly, no conflicts; `tsc
+--noEmit`: same 2 pre-existing `express-serve-static-core` pnpm-hoisting
+errors, nothing new; pushed `a01a3bce`). PR #1051 (`exafyltd/vitana-v1`)
+re-checked separately: clean, all 7 check runs green on its own latest
+merge commit, no action needed.
+
+**DMS CDC:** re-ran `aws dms describe-replication-tasks` — still `failed`,
+identical `LastFailureMessage` ("An internal WAL conversational protocol
+error has occurred"). No change since the 2026-09-12/13 addenda; the
+Supavisor-pooler-cannot-serve-logical-replication root cause and its two
+possible fixes (IPv6 egress + direct-host DMS endpoint, or Supabase IPv4
+add-on) are unchanged and still outside this session's IAM reach.
+
+**`app_users` parity — real drift, not a repeat of the 209=209 confirmation.**
+Supabase (Supabase MCP, `select count(*)`): **219**. Aurora (RDS Data API,
+`vitana/aurora/prod/claude-readonly`, database `vitana`): **209**. This is
+the first drift measured since VTID-03811's fix, and it is exactly what
+the 2026-09-10 update #4 predicted ("will very likely alarm on its first
+scheduled run, correctly — CDC has been down since 2026-08-20, so the
+tables are almost certainly diverging again already") — the drift-alert
+workflow itself still can't fire on schedule until this branch reaches
+`main` (`schedule` triggers only fire from the default branch), so this
+manual check is standing in for it again.
+
+Identified the exact 10 rows: every `app_users` row on Supabase with
+`created_at >= 2026-09-13` (10 real signups, confirmed by `vitana_id`/
+`display_name`/`email` shape, not test data) is absent from Aurora by
+`user_id` — a clean 219-209=10 match, not a partial/ambiguous drift.
+
+**Attempted the same manual-sync remedy VTID-03811 used (Supabase MCP read
++ RDS Data API typed-parameter INSERT ... ON CONFLICT DO NOTHING) and it
+was blocked — not by AWS IAM, but by this session's own auto-mode write
+classifier** ("Modify Shared Resources"), which this scheduled/autonomous
+firing has no way to approve past (no human present to click through the
+prompt). This is a **different** blocker than the IAM permissions boundary
+that stops the DMS/S3/EC2 work — Aurora writes are not IAM-denied, they are
+policy-denied by this environment's own auto-mode guard when there is no
+interactive user to authorize them. **Not attempted further** — per this
+repo's own standing rule against routing around a denial, rather than
+retrying with a different tool shape to slip past the classifier.
+
+**Left as-is deliberately:** the 10-row drift is not fixed. It does not
+affect any live-serving path (nothing reads Aurora's `app_users` copy in
+production today — Supabase/PostgREST is still the live connection per
+§3's own status banner), so leaving it unsynced for now is not a
+production-facing regression, just an accumulating gap in Aurora's copy
+that will keep growing at whatever the real signup rate is until either
+CDC is fixed or a human/interactive session re-runs the same sync with
+the write approved. Self-allocated **VTID-03886** via the governed
+`POST /api/v1/vtid/allocate` gateway endpoint (still reachable); the one
+follow-up (`title`/`status`/`spec_status`) applied via a direct, narrowly
+scoped Supabase `vtid_ledger` UPDATE per the established §4.1 precedent
+(no gateway PATCH exists for this).
+
 ## Addendum, 2026-09-13 (2), VTID-03861 — routine merge with main (VTID-03850/03851)
 
 Routine scheduled check-in found PR #3087's `mergeable_state` had gone from
