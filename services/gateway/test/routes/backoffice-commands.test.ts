@@ -246,3 +246,63 @@ describe('GET /commands, /approvals, /audit, policy', () => {
     expect(r.body.approvals).toHaveLength(1); expect(r.body.approvals[0].can_decide).toBe(false);   // own request
   });
 });
+
+describe('VTID-03887 — the approver sees WHAT they approve (payload exposure)', () => {
+  const queueAsMaker = async () => {
+    mockVerifyAuth.mockResolvedValue(user('u-maker', 'admin'));
+    const r = await post({ type: 'sales.invoice.cancel', payload: { sales_invoice_id: 'inv-77', reason: 'duplicate' }, idempotency_key: 'k-00000060', confirm: true });
+    expect(r.status).toBe(202);
+    return { commandId: r.body.command.command_id as string, approvalId: r.body.approval.approval_id as string };
+  };
+  test('GET /commands/:id — requester and audit.view see payload + resolved_payload', async () => {
+    const { commandId } = await queueAsMaker();
+    let r = await request(app).get(`/api/v1/backoffice/commands/${commandId}`);
+    expect(r.status).toBe(200);
+    expect(r.body.command.payload).toEqual({ sales_invoice_id: 'inv-77', reason: 'duplicate' });
+    expect(r.body.command).toHaveProperty('resolved_payload');
+    withGrants('u-audit', ['audit.view']); mockVerifyAuth.mockResolvedValue(user('u-audit', 'backoffice'));
+    r = await request(app).get(`/api/v1/backoffice/commands/${commandId}`);
+    expect(r.status).toBe(200); expect(r.body.command.payload.sales_invoice_id).toBe('inv-77');
+  });
+  test('GET /commands/:id — a holder of the approve capability sees the queued command; anyone else still gets 404', async () => {
+    const { commandId } = await queueAsMaker();
+    withGrants('u-fin', ['finance.approve']); mockVerifyAuth.mockResolvedValue(user('u-fin', 'backoffice'));
+    let r = await request(app).get(`/api/v1/backoffice/commands/${commandId}`);
+    expect(r.status).toBe(200);
+    expect(r.body.command).toMatchObject({ status: 'awaiting_approval', payload: { sales_invoice_id: 'inv-77' } });
+    withGrants('u-sales', ['sales.commit', 'crm.view']); mockVerifyAuth.mockResolvedValue(user('u-sales', 'backoffice'));
+    r = await request(app).get(`/api/v1/backoffice/commands/${commandId}`);
+    expect(r.status).toBe(404);
+  });
+  test('GET /commands (list) never carries a payload — the list stays a summary', async () => {
+    await queueAsMaker();
+    const r = await request(app).get('/api/v1/backoffice/commands');
+    expect(r.body.commands).toHaveLength(1);
+    expect(r.body.commands[0]).not.toHaveProperty('payload');
+  });
+  test('GET /approvals attaches the command with payload for the approver and the requester, null for a bystander', async () => {
+    const { commandId } = await queueAsMaker();
+    // approver
+    withGrants('u-fin', ['finance.approve']); mockVerifyAuth.mockResolvedValue(user('u-fin', 'backoffice'));
+    let r = await request(app).get('/api/v1/backoffice/approvals');
+    expect(r.status).toBe(200); expect(r.body.approvals).toHaveLength(1);
+    expect(r.body.approvals[0].command).toMatchObject({ command_id: commandId, type: 'sales.invoice.cancel', payload: { sales_invoice_id: 'inv-77', reason: 'duplicate' } });
+    expect(r.body.approvals[0].can_decide).toBe(true);
+    // requester (cannot decide, may see own payload)
+    mockVerifyAuth.mockResolvedValue(user('u-maker', 'admin'));
+    r = await request(app).get('/api/v1/backoffice/approvals');
+    expect(r.body.approvals[0].command.payload.sales_invoice_id).toBe('inv-77'); expect(r.body.approvals[0].can_decide).toBe(false);
+    // bystander with an unrelated capability: sees the approval row, not the payload
+    withGrants('u-crm', ['crm.view']); mockVerifyAuth.mockResolvedValue(user('u-crm', 'backoffice'));
+    r = await request(app).get('/api/v1/backoffice/approvals');
+    expect(r.status).toBe(200); expect(r.body.approvals[0].command).toBeNull();
+  });
+  test('the approver still sees the payload after deciding (audit trail of what was approved)', async () => {
+    store.admins = [{ tenant_id: TENANT, user_id: 'u-maker' }, { tenant_id: TENANT, user_id: 'u-checker' }];
+    const { commandId, approvalId } = await queueAsMaker();
+    mockVerifyAuth.mockResolvedValue(user('u-checker', 'admin'));
+    expect((await request(app).post(`/api/v1/backoffice/approvals/${approvalId}/approve`).send({ note: 'ok' })).status).toBe(200);
+    const r = await request(app).get(`/api/v1/backoffice/commands/${commandId}`);
+    expect(r.status).toBe(200); expect(r.body.command).toMatchObject({ status: 'executed', payload: { sales_invoice_id: 'inv-77' } });
+  });
+});

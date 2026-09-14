@@ -35,7 +35,7 @@ import { type ErpCapability } from '../constants/erp-capabilities';
 import { hasCapability, type EffectiveAccess } from '../services/backoffice/erp-access';
 import { DEFAULT_TENANT_POLICY, evaluateApproval, type CommandChannel } from '../services/backoffice/command-policy';
 import { getCommandStore } from '../services/backoffice/command-store';
-import { submitCommand, decideApproval, publicCommand, tenantPolicy, recordPolicyUpdate, type OrchestratorCaller } from '../services/backoffice/command-orchestrator';
+import { submitCommand, decideApproval, publicCommand, mayViewPayload, tenantPolicy, recordPolicyUpdate, type OrchestratorCaller } from '../services/backoffice/command-orchestrator';
 
 const router = Router();
 const VTID = 'VTID-03842';
@@ -109,9 +109,14 @@ router.get('/commands/:id', async (req: Request, res: Response) => {
   const ctx = await requireCtx(req, res);
   if (!ctx) return;
   try {
-    const row = await getCommandStore().getCommand(ctx.tenantId, req.params.id);
-    if (!row || (!hasCapability(ctx.access, 'audit.view') && row.requester_id !== ctx.auth.user_id)) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
-    return res.json({ ok: true, command: publicCommand(row) });
+    const store = getCommandStore();
+    const row = await store.getCommand(ctx.tenantId, req.params.id);
+    if (!row) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
+    // VTID-03887: the approver of a queued command may read it (and its payload) even without audit.view.
+    const approval = row.approval_id ? await store.getApproval(ctx.tenantId, row.approval_id) : null;
+    const viewer = { user_id: ctx.auth.user_id, access: ctx.access };
+    if (!mayViewPayload(row, viewer, approval)) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
+    return res.json({ ok: true, command: publicCommand(row, false, true) });
   } catch (err: any) {
     console.error(`[${VTID}] GET /commands/:id error:`, err.message);
     return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR' });
@@ -126,13 +131,23 @@ router.get('/approvals', async (req: Request, res: Response) => {
   try {
     const limit = Math.min(parseInt(String(req.query.limit || '50'), 10) || 50, 200);
     const status = typeof req.query.status === 'string' ? (req.query.status as any) : 'pending';
-    const rows = await getCommandStore().listApprovals(ctx.tenantId, { status, limit });
+    const store = getCommandStore();
+    const rows = await store.listApprovals(ctx.tenantId, { status, limit });
+    // VTID-03887: attach the queued command (with its payload) for every approval the caller may see the
+    // payload of — the approver, the requester, audit.view. Others get the approval row without `command`.
+    const commands = new Map((await store.getCommandsByIds(ctx.tenantId, rows.map((a) => a.command_id))).map((c) => [c.id, c] as const));
+    const viewer = { user_id: ctx.auth.user_id, access: ctx.access };
     return res.json({
       ok: true,
-      approvals: rows.map((a) => ({
-        ...a,
-        can_decide: evaluateApproval({ user_id: ctx.auth.user_id, active_role: ctx.access.role, is_exafy_admin: ctx.access.is_exafy_admin, capabilities: ctx.access.capabilities, channel: 'web', aal: ctx.caller.aal }, a.requester_id, a.approve_capability as ErpCapability, DEFAULT_TENANT_POLICY).ok,
-      })),
+      approvals: rows.map((a) => {
+        const cmd = commands.get(a.command_id) ?? null;
+        const visible = cmd ? mayViewPayload(cmd, viewer, a) : false;
+        return {
+          ...a,
+          can_decide: evaluateApproval({ user_id: ctx.auth.user_id, active_role: ctx.access.role, is_exafy_admin: ctx.access.is_exafy_admin, capabilities: ctx.access.capabilities, channel: 'web', aal: ctx.caller.aal }, a.requester_id, a.approve_capability as ErpCapability, DEFAULT_TENANT_POLICY).ok,
+          command: visible && cmd ? publicCommand(cmd, false, true) : null,
+        };
+      }),
     });
   } catch (err: any) {
     console.error(`[${VTID}] GET /approvals error:`, err.message);
