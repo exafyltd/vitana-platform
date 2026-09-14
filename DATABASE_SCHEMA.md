@@ -1859,7 +1859,7 @@ refuses to construct without a recorded BLK-009 activation
 When in doubt, CHECK HERE FIRST!
 
 
-## BackOffice — `erp_capability_grants` (VTID-03834, 2026-09-13) — migration file only, NOT yet applied
+## BackOffice — `erp_capability_grants` (VTID-03834, 2026-09-13) — applied to the live project 2026-09-14 (owner: "apply now")
 
 The Vitana role `backoffice` (VTID-03832) opens `/backoffice`; an ERP **capability** gates what a
 person may do inside (catalog: `services/gateway/src/constants/erp-capabilities.ts`, derived from
@@ -1881,3 +1881,46 @@ holds only **explicit** grants and is written exclusively by the gateway's servi
 Constraints: `UNIQUE (user_id, tenant_id, capability)`; indexes on `(user_id, tenant_id)` and `(tenant_id)`.
 RLS: `authenticated` may SELECT own rows; `service_role` ALL. `hr.*` / `payroll.*` rows can only be
 created by a tenant `admin` or an Exafy super-admin (enforced in the gateway, never a role default).
+
+## BackOffice — command orchestrator tables (VTID-03842, 2026-09-13) — applied to the live project 2026-09-14 (owner: "apply now"); browser-role privileges revoked by `20260914130000_vtid_03842_erp_tables_revoke_browser_roles.sql`
+
+`supabase/migrations/20260913020000_vtid_03842_erp_commands_approvals_audit.sql`. Written only by the gateway (service role) behind `POST /api/v1/backoffice/commands` and the approvals routes; the browser never touches them.
+
+### erp_commands
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID PK | command_id returned to the client |
+| tenant_id, requester_id | UUID | tenant from `me_context`, requester = caller |
+| channel | TEXT | web / chat / voice / system |
+| type, action | TEXT | typed command (`constants/backoffice-commands.ts`) and the ERPClaw action it maps to |
+| tier | TEXT | read / draft / commit / high — AFTER §4.3 escalations |
+| status | TEXT | executed / failed / awaiting_approval / rejected |
+| payload, resolved_payload | JSONB | as sent; after exact-match entity resolution |
+| idempotency_key, request_hash | TEXT | UNIQUE (tenant_id, idempotency_key); hash of type+payload for replay/conflict |
+| reason, approval_id, receipt, escalations | | policy reason; queue link; bridge receipt; §4.3 attributes that escalated |
+
+### erp_approvals
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID PK | approval_id |
+| command_id | UUID FK → erp_commands | |
+| requester_id, decided_by | UUID | CHECK decided_by <> requester_id (maker-checker at the storage layer) |
+| approve_capability | TEXT | what the approver must hold (`finance.pay`, `finance.approve`, `accounting.close`, `payroll.approve`, `erp.admin`) |
+| status | TEXT | pending / approved / rejected |
+| reason, decision_note, decided_at | | `no_eligible_approver` when the tenant lacks a second approver |
+
+### erp_audit_log (append-only)
+| Column | Type | Notes |
+|---|---|---|
+| id, tenant_id, actor_id, actor_role, channel | | |
+| event | TEXT | `command.executed` / `command.failed` / `command.queued` / `command.rejected` / `approval.approved` / `approval.rejected` / `policy.updated` |
+| command_id, approval_id, details | | |
+| — | trigger | `trg_erp_audit_log_immutable` raises on UPDATE/DELETE; UPDATE/DELETE also REVOKEd from service_role |
+
+### erp_policy_settings
+| Column | Type | Notes |
+|---|---|---|
+| tenant_id | UUID PK | |
+| high_risk_amount_threshold | NUMERIC | default 25000 (AED) — §4.3 |
+| require_mfa_for_high | BOOLEAN | default true — approvals need an `aal2` session |
+| updated_by, updated_at | | |
