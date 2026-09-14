@@ -530,6 +530,13 @@ export async function reconcileAutopilotLinkedSelfHealingVtids(): Promise<void> 
           method: 'PATCH',
           headers: { ...supabaseHeaders(), Prefer: 'return=minimal' },
           body: JSON.stringify({
+            // VTID-03881: the success branch above sets status:'completed'
+            // alongside terminal_outcome:'success' -- this branch must set
+            // its own status counterpart too, or a status-only reader (e.g.
+            // autopilot_get_status) keeps reporting a terminally-failed VTID
+            // as still in-flight. Confirmed live: VTID-03862 terminalized
+            // failed but its status stayed 'in_progress' until this fix.
+            status: 'failed',
             is_terminal: true,
             terminal_outcome: 'failed',
             metadata: newMeta,
