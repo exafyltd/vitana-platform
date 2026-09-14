@@ -316,11 +316,78 @@ tokens, and `/login`/`/refresh` can proxy to it. It does not yet touch:
   sites is unstarted, and `exafy_admin` still has no Cognito-side source
   of truth (hardcoded `false` in `extractCognitoIdentity()` — see that
   function's own KNOWN GAP comment).
-- **Frontend call sites.** `exafyltd/vitana-v1`'s `MaxinaPortal.tsx`,
-  `ExafyAdminPortal.tsx`, `CommercePortalLogin.tsx`, `DevLogin.tsx` all call
-  `supabase.auth.signInWithPassword()`/`signUp()`/`signInWithOAuth()`
-  directly against GoTrue. Each needs a Cognito-based replacement (likely
-  via `amazon-cognito-identity-js` or AWS Amplify Auth).
+- **Frontend call sites — re-scoped after actually reading the code (VTID-03884),
+  not just grepping the sign-in screens.** `grep -rl "supabase\.auth\."
+  src/` in `exafyltd/vitana-v1` returns **116 files, 207 call sites** — far
+  more than the 4 sign-in screens the plan doc's earlier prose implied. The
+  good news: this is NOT 207 independent rewrites. Nearly all of it is
+  centralized in one place, `src/context/AuthProvider.tsx` — a single
+  `useEffect` that owns `onAuthStateChange`, the initial `getSession()`,
+  OAuth-callback recovery (PKCE code exchange, hash-token `setSession`, a
+  `refreshSession` fallback), a 30-second active-session health poller with
+  its own transient-vs-definitive-failure classifier, `realtime.setAuth()`
+  wiring, and `signOut()`. The other ~200 call sites overwhelmingly read
+  `useAuth()` (the context this provider exposes), not `supabase.auth.*`
+  directly — so the real rewrite surface is closer to "one intricate
+  provider + ~7 direct sign-in/sign-up/OAuth call sites" than "207 call
+  sites," which is a materially smaller and more tractable scope than the
+  raw grep count suggests.
+
+  **The bad news: that one file is exactly the kind of code this repo has
+  already been burned by rewriting blind.** `AuthProvider.tsx` carries
+  explicit VTID comments for THREE separate real production incidents this
+  exact logic was built to survive: VTID-03652 (a hung `getSession()` on a
+  transient backend blip turned into a permanent stuck spinner — fixed with
+  a 10s unblock timeout), an unlabeled active-session health monitor whose
+  own comment explains it exists because the Appilix WebView/backgrounded
+  tabs can suspend `supabase-js`'s auto-refresh timer while the cached
+  session still LOOKS valid (fixed with a 30s poll + foreground-resume
+  check + a `isDefinitiveAuthFailure()` classifier that only signs out on a
+  real dead-refresh-token response, never a transient network blip — the
+  comment says the OLD code signed out on any failure and that is "why the
+  app appeared to close itself after inactivity"), and VTID-03481 (releasing
+  a device's push claim on sign-out, awaited but never allowed to block or
+  fail sign-out). It also does `supabase.realtime.setAuth()` explicitly on
+  every auth event because this app drives auth through manual
+  `setSession`/`exchangeCodeForSession`/`refreshSession` rather than
+  supabase-js's own automatic flow, and a missing/stale Realtime auth token
+  means RLS silently drops every `postgres_changes` event without an error
+  anywhere — the messenger just goes quiet. **None of Cognito's session
+  primitives (`InitiateAuth`/`RefreshToken`, no built-in
+  onAuthStateChange-equivalent, no automatic realtime-auth-sync since
+  Cognito isn't Supabase Realtime's auth source at all) map onto this
+  behavior for free** — a correct replacement has to reproduce each of
+  these hard-won properties deliberately, not just swap which SDK issues
+  the token.
+
+  **Deliberately not attempted blind in this pass.** This session has no
+  way to exercise any of it against a real Cognito pool (the IAM boundary
+  above blocks pool creation entirely), and per this repo's own established
+  pattern for exactly this class of risk (rewriting intricate,
+  incident-hardened session/reconnect logic without being able to observe
+  the result — see `vitana-platform`'s VTID-03674→03706 ORB-voice chain,
+  8+ rounds of regressions from "obvious" fixes applied without
+  measurement), attempting `AuthProvider.tsx`'s internals now would be
+  guessing at a design nobody can verify. What's genuinely safe to build
+  ahead of a live pool: a `cognito-auth-client.ts` for the frontend
+  mirroring the gateway's own (`services/gateway/src/services/
+  cognito-auth-client.ts`, VTID-03827) — but even that is lower-value than
+  it looks, because the gateway's `/login`/`/refresh` proxy already exists
+  and is designed so **the frontend's request/response shape doesn't need
+  to change at all** (its own header comment says so explicitly) — meaning
+  the actual frontend work is less "add a Cognito SDK" and more "point the
+  sign-in call sites at the gateway's existing `/auth/login` proxy instead
+  of `supabase.auth.signInWithPassword()` directly," then rebuild
+  `AuthProvider.tsx`'s session-lifecycle logic (storage, refresh polling,
+  realtime re-auth) around whatever that proxy returns — a real design
+  task, not a mechanical swap, and one that needs a live pool to verify
+  against before it can be trusted with any of the three incidents above.
+
+  Password-flow sign-in/sign-up (`MaxinaPortal.tsx`) can start once a pool
+  exists; the OAuth call sites (see the section above) need the federation
+  decision first; either way, `AuthProvider.tsx`'s rewrite should be
+  planned and reviewed as its own deliberate piece of work, not folded into
+  a larger frontend PR as a side effect.
 - **Realtime.** 79 Supabase Realtime subscriptions authenticate using the
   same Supabase session; moving auth off Supabase without also addressing
   Realtime's own auth check breaks those subscriptions independently of
