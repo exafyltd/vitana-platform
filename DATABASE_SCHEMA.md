@@ -1859,7 +1859,7 @@ refuses to construct without a recorded BLK-009 activation
 When in doubt, CHECK HERE FIRST!
 
 
-## BackOffice — `erp_capability_grants` (VTID-03834, 2026-09-13) — migration file only, NOT yet applied
+## BackOffice — `erp_capability_grants` (VTID-03834, 2026-09-13) — applied to the live project 2026-09-14 (owner: "apply now")
 
 The Vitana role `backoffice` (VTID-03832) opens `/backoffice`; an ERP **capability** gates what a
 person may do inside (catalog: `services/gateway/src/constants/erp-capabilities.ts`, derived from
