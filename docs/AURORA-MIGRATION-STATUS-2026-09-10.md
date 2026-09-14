@@ -1893,6 +1893,65 @@ follow-up (`title`/`status`/`spec_status`) applied via a direct, narrowly
 scoped Supabase `vtid_ledger` UPDATE per the established §4.1 precedent
 (no gateway PATCH exists for this).
 
+## Addendum, 2026-09-14 (2), VTID-03890 — routine merge with main caught a real regression in the new BackOffice auth extraction
+
+Routine scheduled check-in, ~2h after the VTID-03886 addendum above. Both
+PRs needed reconciling again: PR #3087 (`main` had moved 7 commits ahead —
+VTID-03831/03832/03834/03840/03842/03848/03887, the BackOffice ERP feature
+line) and PR #1051 (`main` had moved 2 commits ahead — VTID-03832/03833,
+the frontend half of the same BackOffice work).
+
+**vitana-platform merge conflict, real (not textual):**
+`services/gateway/src/routes/role-admin.ts` conflicted because this
+branch's B1 data-access-seam refactor (repository-pattern `role-admin-
+repository.ts`) and main's **VTID-03834** (extracting `verifyAuth()`/
+`canManageRoles()` out of this file into a new shared
+`lib/tenant-role-auth.ts`, so the new `backoffice-access.ts` route reuses
+the identical identity/tenant checks instead of copying them) both touched
+the same helper functions. Resolving it surfaced a genuine, silent
+regression: VTID-03834's extraction was taken "verbatim" from a copy of
+`role-admin.ts` that predated an earlier fix on this branch — destructuring
+`{ data: meData, error: meError }` from the `me_context` RPC and
+`console.warn`-logging a real RPC error before falling through to the
+existing fail-closed behavior. Without that log, a genuine tenant admin
+hitting an RPC error is silently denied role management with a misleading
+"Only admins can manage roles" — an infra failure misattributed to an
+access-control decision, with no observability trail. Because the function
+moved to a *shared* file, the regression would have shipped to **both**
+`role-admin.ts` and the brand-new `backoffice-access.ts` at once, doubling
+the blast radius versus if the extraction had never happened.
+
+**Fix:** re-applied the same destructure-and-log pattern inside
+`lib/tenant-role-auth.ts` at its new location, and re-pointed the existing
+source-check test (`test/routes/role-admin-error-logging.test.ts`, which
+has no runtime harness for this module-internal function, matching this
+repo's `IntroExperience.orb-placement.test.ts` precedent) at the file the
+function now actually lives in — it had failed for the right reason
+(content moved, not deleted) rather than a broken assertion. Caught by
+running the specific affected test suites after the merge rather than only
+trusting a clean `tsc --noEmit`, which this class of change would never
+surface (it's a same-shape refactor, not a type error).
+
+Verified: full gateway suite 880/881 suites (1 pre-existing skip),
+14,765/14,800 tests passing, 0 failures; `tsc --noEmit` clean (same 2
+pre-existing unrelated `express-serve-static-core` errors only). Pushed
+`cd524f65`.
+
+**vitana-v1 merge, textual only:** 8 `src/i18n/*/screens.json` files
+conflicted from the new `backoffice.json` i18n shard's key additions
+landing in the same nested `screens` object this branch's own i18n-stamp
+work had also touched. Deep-flattened both sides per file before
+resolving (same verification method as the earlier `i18n-source-stamps`
+conflict in this branch's history) — zero conflicting values across all
+8 files (10,136 common keys, 0 mismatches; 7-12 keys only on one side or
+the other per file) — confirmed pure additive divergence, then wrote a
+sorted deep key-union back to each file rather than picking a side.
+Verified: `tsc --noEmit` clean, full `vitest run` 96/96 files, 472/472
+tests passing. Pushed `d2410f5`.
+
+Both PRs' `mergeable_state` re-confirmed `clean`/pending-checks-only after
+these pushes, no textual conflicts remaining.
+
 ## Addendum, 2026-09-13 (2), VTID-03861 — routine merge with main (VTID-03850/03851)
 
 Routine scheduled check-in found PR #3087's `mergeable_state` had gone from
