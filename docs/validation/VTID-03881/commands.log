@@ -1,0 +1,68 @@
+# VTID-03881 — commands run for validation
+
+## Root-cause investigation (read-only, before any code change)
+
+- Direct Supabase query on vtid_ledger confirmed VTID-03862's status column
+  was still 'in_progress' immediately after the self-healing-reconciler's
+  11:36:59 UTC cycle set is_terminal=true/terminal_outcome='failed'.
+- Cross-checked gateway logs (aws logs get-log-events, /vitana/gateway log
+  group) confirming the exact terminalize log line and timestamp:
+  "[self-healing-reconciler] VTID-03862 terminalized failed via autopilot
+  execution 37fa35bb (reverted)" at 2026-09-14T11:36:59.600Z.
+- Read self-healing-reconciler.ts's success and failure branches side by
+  side: success sets status:'completed' in its PATCH body; failure never
+  sets status at all.
+- grep confirmed 'failed' is already used as a vtid_ledger.status value
+  elsewhere (routes/events.ts query filter), so this is not a new enum value.
+
+## Local validation (this branch)
+
+```
+cd services/gateway
+npm install --no-audit --no-fund
+
+npx tsc --noEmit
+# exit 0, see outputs/tsc-noemit.txt
+
+npx jest test/self-healing-reconciler-autopilot-link.test.ts test/vtid-03850-staging-executor-dispatch-pinned.test.ts
+# 13 + N passing, see outputs/jest-new-vtid-suites.txt
+
+npx jest
+# 763/764 suites (1 pre-existing skip), 13907/13942 tests, 0 failures
+# see outputs/jest-full-suite-summary.txt (tail, full run confirmed 0 failures)
+```
+
+## Independent regression caught during this PR's own validation
+
+Running the FULL suite (not just the new/changed test file) surfaced a
+pre-existing test failure introduced by PR #3305 (VTID-03880, already
+merged): `vtid-03850-staging-executor-dispatch-pinned.test.ts` pinned the
+old `DEEPSEEK_SECRET_NAME`/describe-secret shape in
+AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml, which VTID-03880 replaced with a
+hardcoded `DEEPSEEK_SECRET_ARN` literal. PR #3305 was workflow-only and was
+validated with YAML parsing + `bash -n` on its `run:` blocks, not a full
+jest run (VALIDATOR-CHECK.yml's own path triggers don't cover
+`.github/workflows/**`). Fixed the test's assertion in this same PR to match
+the new, correct shape — this is not a new production behavior change, only
+a test fix for an already-live workflow file.
+
+## Route Mount Evidence Gate
+
+No route registration added or changed — this PR touches
+services/gateway/src/services/self-healing-reconciler.ts (one PATCH body
+field) and two test files. Not applicable.
+
+## CSP Governance Gate
+
+No changes to services/gateway/src/frontend/ or dist/frontend/. Not applicable.
+
+## Path Ownership Guard (VALIDATOR-CHECK.yml gateway_backend profile)
+
+Changed files:
+- services/gateway/src/services/self-healing-reconciler.ts
+- services/gateway/test/self-healing-reconciler-autopilot-link.test.ts
+- services/gateway/test/vtid-03850-staging-executor-dispatch-pinned.test.ts
+- docs/validation/VTID-03881/**
+
+All within the gateway_backend profile's admitted trees
+(services/gateway/src/, services/gateway/test/, docs/validation/).

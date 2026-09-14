@@ -68,6 +68,10 @@ import { runFullQualityCheck } from './spec-quality-agent';
 // BOOTSTRAP-VOICE-DEMO: real heartbeats so the agents dashboard shows
 // gemini-operator as healthy whenever it's actually called.
 import { recordAgentHeartbeat } from '../routes/agents-registry';
+// VTID-03851: verified-caller marker for the execution on-ramp. Written by
+// routes/operator.ts on EVERY /chat request (set or clear), read by
+// executeExecuteTask() before anything else. See operator-execute-authz.ts.
+import { getThreadAuth, isExecuteTaskAuthorized, describeExecuteTaskRefusal } from './operator-execute-authz';
 
 // Environment config
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -201,7 +205,7 @@ export const GEMINI_TOOL_DEFINITIONS = {
           files_referenced: {
             type: 'array',
             items: { type: 'string' },
-            description: 'File paths the plan touches — BOTH the source file(s) being changed AND their paired test file(s). The existing safety gate rejects a plan missing test coverage.'
+            description: 'File paths the plan will create or change — nothing else. A test-only plan lists only the test file; a source change lists the source file AND its paired test file (the safety gate rejects a plan missing test coverage, and rejects any listed file outside its allow scope).'
           }
         },
         required: ['vtid', 'plan_markdown', 'files_referenced']
@@ -1189,6 +1193,23 @@ async function executeExecuteTask(
 ): Promise<ToolExecutionResult> {
   const requestId = randomUUID();
   console.log(`[VTID-03820] execute_task called for ${args.vtid}`);
+
+  // VTID-03851: refuse before governance, before any DB read, before any
+  // OASIS event that could be mistaken for a legitimate attempt. The
+  // marker is whatever THIS request's route handler wrote (set on a
+  // verified JWT, cleared otherwise) — an anonymous request can never
+  // inherit a previous admin's thread.
+  const authz = isExecuteTaskAuthorized(getThreadAuth(threadId));
+  if (!authz.ok) {
+    console.warn(`[VTID-03851] execute_task REFUSED for ${args.vtid} thread=${threadId}: ${authz.reason}`);
+    await logAutopilotIntent({
+      vtid: args.vtid,
+      threadId,
+      action: 'rejected',
+      details: { reason: `auth_${authz.reason}` },
+    });
+    return { ok: false, error: describeExecuteTaskRefusal(authz.reason) };
+  }
 
   const governanceResult = await evaluateGovernance('operator.autopilot.execute_task', {
     role: 'operator',
@@ -3317,7 +3338,7 @@ function getOperatorSystemPrompt(): string {
 - autopilot_list_recent_tasks: List recent tasks
 - knowledge_search: Search Vitana documentation (use for Vitana-specific questions like "What is OASIS?", "Explain the Vitana Index", etc.)
 - run_code: Execute JavaScript code for calculations, date math, conversions, data processing
-- autopilot_execute_task: Execute an ALREADY-APPROVED VTID via the DeepSeek execution on-ramp (writes code and opens a real pull request). Takes vtid, plan_markdown and files_referenced (the source file(s) AND their test file(s)).
+- autopilot_execute_task: Execute an ALREADY-APPROVED VTID via the DeepSeek execution on-ramp (writes code and opens a real pull request). Takes vtid, plan_markdown and files_referenced (the files the plan will create or change).
 
 **When to use tools:**
 - Task creation requests (e.g., "Create a task to deploy gateway") → MUST call autopilot_create_task tool
@@ -3330,7 +3351,7 @@ function getOperatorSystemPrompt(): string {
 **CRITICAL EXECUTION RULES (autopilot_execute_task):**
 - Only call it when the user explicitly asks to execute/implement/ship a SPECIFIC VTID they name. Never invent a VTID, never execute a VTID the user did not name, and never use it to create new work (that is autopilot_create_task).
 - A task's ledger status (in_progress, scheduled, etc.) is NOT a signal that an execution is already running — a person or a coding session sets in_progress when they start working a task. Do NOT refuse to execute because autopilot_get_status reports in_progress. The tool itself is the only authority on whether an execution can start: call it and report its result.
-- Build plan_markdown from what the user said plus the task's title/spec; list in files_referenced the source file(s) to change AND their test file(s) — the safety gate rejects a plan without test coverage.
+- Build plan_markdown from what the user said plus the task's title/spec; list in files_referenced the files the plan will create or change — nothing else. A test-only plan lists only the test file; a source change lists the source file AND its test file, because the safety gate rejects a plan without test coverage. Never add a file the plan does not touch (the safety gate also rejects any file outside its allow scope).
 - If the tool returns a rejection (governance, safety gate, kill switch, on-ramp disabled), report the exact reason honestly. Never claim an execution was queued unless the tool returned status "queued".
 - If you believe the tool is unavailable or disabled, call it anyway and report what it returns — do not tell the user it is unavailable based on an assumption.
 

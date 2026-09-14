@@ -1,0 +1,68 @@
+VTID-03831 — commands.log
+==========================
+
+## Reference clones (read-only, anonymous git; pinned commits confirmed)
+
+$ GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 https://github.com/avansaber/erpclaw     /home/user/avansaber/erpclaw
+$ GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 https://github.com/avansaber/erpclaw-web /home/user/avansaber/erpclaw-web
+$ GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 https://github.com/avansaber/webclaw     /home/user/avansaber/webclaw
+-> erpclaw     4d32db6585297a1d05a7b5927168de8c75bb7708  (== pin, no drift)
+-> erpclaw-web 898ed5fd5945b4cbda7feaefc665b3dc6beb2fdc  (== pin)
+-> webclaw     1d150ba195862abe1d8837592fc034f28ba77097  (== pin)
+$ GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 https://github.com/avansaber/erpclaw-addons /home/user/avansaber/erpclaw-addons
+-> 7c1b5ae5701980e97f34cf25fa5943066140f6a3  (HEAD of the day; read for the CRM module's SKILL.md only — VTID-E pins it)
+
+## VTID self-allocation + ledger (governed staging gateway, real)
+
+$ curl -sS -X POST https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate \
+    -H 'Content-Type: application/json' \
+    -d '{"source":"claude-code","layer":"DEV","module":"backoffice-design-gate"}'
+-> HTTP 201 {"ok":true,"vtid":"VTID-03831","num":3831,"id":"01824898-6fb2-4980-a61e-b155f0fa59e5"}
+
+$ curl -sS -X PATCH https://preview-aws-gateway.vitanaland.com/api/v1/oasis/tasks/VTID-03831 \
+    -d '{"title":"Governance: BackOffice operating design gate (golden workflows, capability catalog, wave-1 action map)","status":"in_progress"}'
+-> HTTP 400 {"error":"Invalid title","detail":"Title too long (max 60 chars)"}
+$ curl -sS -X PATCH https://preview-aws-gateway.vitanaland.com/api/v1/oasis/tasks/VTID-03831 \
+    -d '{"title":"Governance: BackOffice operating design gate document","status":"in_progress"}'
+-> HTTP 200 {"id":"VTID-03831","vtid":"VTID-03831","title":"Governance: BackOffice operating design gate document","status":"in_progress"}
+
+## Spec pipeline (in order; raw responses in outputs/spec-*.json)
+
+$ curl -sS -X POST .../api/v1/specs/VTID-03831/generate       -> HTTP 201 version 1, spec_status draft (no 502 on first try)
+$ curl -sS -X POST .../api/v1/specs/VTID-03831/validate       -> HTTP 200 result pass, 9/9 required sections, spec_status validated
+$ curl -sS -X POST .../api/v1/specs/VTID-03831/quality-check  -> HTTP 200 overall_result pass, score 100, risk_level CRITICAL (known false positive), spec_status quality_checked
+$ curl -sS -X POST .../api/v1/specs/VTID-03831/approve        -> HTTP 200 spec_status approved, approval_id af970183-71fc-4cf0-b3c1-87926db514bd
+
+## Source reads that the document is derived from (no execution)
+
+erpclaw/SKILL.md                              action catalog, 14 domains; "Runtime gate" section; Security section (two network calls)
+erpclaw/scripts/db_query.py L745-825          DANGEROUS_ACTIONS frozenset (74 actions)
+erpclaw/scripts/erpclaw-gl/db_query.py L201   chart_path = os.path.join(CHARTS_DIR, f"{template}.json")  (plain lookup, no allowlist)
+erpclaw/scripts/erpclaw-gl/assets/charts/     us_gaap.json only (94 rows; field shape recorded in §5 U1)
+erpclaw/scripts/erpclaw-tax/db_query.py       VALID_TAX_TYPES, VALID_CHARGE_TYPES, VALID_ADD_DEDUCT, tax_template_line columns, exempt_from_sales_tax
+erpclaw/scripts/module_registry.json          46 modules; CRM = erpclaw-growth v2.10.0 (avansaber/erpclaw-addons, subdir erpclaw-growth)
+erpclaw-addons/erpclaw-growth/SKILL.md        CRM domain actions + "Confirmation Requirements"
+
+## Verification
+
+$ python3 docs/validation/VTID-03831/outputs/check-golden-workflows.py | tee docs/validation/VTID-03831/outputs/catalog-crosscheck.txt
+-> first run: FAIL (3) — `submit-credit-note` cited but absent from catalogs; close-purchase-order /
+   create-debit-note / create-purchase-receipt marked gated but not in DANGEROUS_ACTIONS; GW-4 table lacked
+   "Accounting result". All three fixed in the document.
+-> second run: RESULT: PASS  (267 cited actions resolve; 23/23 gated claims in DANGEROUS_ACTIONS;
+   0 DANGEROUS actions below Commit; GW-1..4 complete; 4/4 open decisions UNASSIGNED; 13/13 High-risk rows name an approver)
+
+$ python3 <the Acceptance Mapping Gate python from VALIDATOR-CHECK.yml> docs/validation/VTID-03831/acceptance.md
+-> 8 ACs; ALL MAPPED
+
+## Diff scope (docs only)
+
+ docs/backoffice/GOLDEN-WORKFLOWS.md                | 691 +++++++++++++++++++++
+ docs/validation/VTID-03831/acceptance.md           |  99 +++
+ .../VTID-03831/outputs/catalog-crosscheck.txt      |  29 +
+ .../VTID-03831/outputs/check-golden-workflows.py   |  83 +++
+ .../VTID-03831/outputs/spec-approve.json           |  11 +
+ docs/validation/VTID-03831/outputs/spec-gen-1.json |   9 +
+ docs/validation/VTID-03831/outputs/spec-qc.json    | 151 +++++
+ docs/validation/VTID-03831/outputs/spec-val.json   |  26 +
+ 8 files changed, 1099 insertions(+)

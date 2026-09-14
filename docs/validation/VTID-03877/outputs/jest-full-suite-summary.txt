@@ -1,0 +1,15 @@
+    ✓ 403 when worker does not hold the claim (4 ms)
+    ✓ 403 when claim has expired (claim_expires_at in the past) (3 ms)
+  POST /api/v1/worker/orchestrator/await-autopilot-execution — four-state contract
+    ✓ returns completed with files_changed from PR diff when status=completed (4 ms)
+    ✓ returns pr_ready with files when status=ci (PR opened, CI in flight) (3 ms)
+    ✓ returns failed when status=failed (12 ms)
+    ✓ returns deferred (NOT failed) when timeout elapses while status=running (60039 ms)
+    ✓ returns failed (NOT deferred) when execution row is missing entirely (7 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 1 skipped, 763 passed, 763 of 764 total
+Tests:       29 skipped, 6 todo, 13907 passed, 13942 total
+Snapshots:   44 passed, 44 total
+Time:        61.939 s, estimated 72 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

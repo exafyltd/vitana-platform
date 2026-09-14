@@ -70,6 +70,20 @@ describe('VTID-03838: operator prompt lists autopilot_execute_task', () => {
         expect(prompt()).toMatch(/call it anyway and report what it returns/);
       });
 
+      // VTID-03845: the old wording ("the source file(s) to change AND their
+      // test file(s)") made a test-only plan drag an untouched source file
+      // into files_referenced, which the safety gate rejected as
+      // file_outside_allow_scope (observed on staging 2026-09-13, VTID-03829:
+      // src/utils/task-title.ts listed for a test-only plan).
+      it('files_referenced = the files the plan will create or change; a test-only plan lists only the test file', () => {
+        const text = prompt();
+        expect(text).toMatch(/files_referenced the files the plan will create or change/);
+        expect(text).toMatch(/A test-only plan lists only the test file/);
+        expect(text).toMatch(/Never add a file the plan does not touch/);
+        expect(text).not.toMatch(/source file\(s\) to change AND their test file\(s\)/);
+        expect(text).not.toMatch(/files_referenced \(the source file\(s\) AND their test file\(s\)\)/);
+      });
+
       it('keeps the guardrails: named VTID only, never speculative, honest on rejection', () => {
         const text = prompt();
         expect(text).toMatch(/SPECIFIC VTID they name/);
