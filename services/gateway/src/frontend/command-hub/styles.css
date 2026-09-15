@@ -19647,3 +19647,99 @@ border-bottom: 1px solid var(--color-border, #333);
   color: #3b82f6;
   white-space: nowrap;
 }
+
+/* VTID-03896/03897/03898: Command Hub Operator "Steps" panel — a live
+   per-execution step feed (SSE-backed) alongside the existing "Lineage"
+   view, plus a last_event_at heartbeat badge on active execution cards.
+   Classes here rather than scripted inline-style assignment, same reason
+   as .llm-provider-badge above (the CSP governance gate's CSP_PATTERNS
+   flags any added reference to the element style property in this tree). */
+.dev-autopilot-heartbeat {
+  font-size: 11px;
+  color: var(--text-secondary, #888);
+}
+.dev-autopilot-heartbeat--stale {
+  color: #eab308;
+}
+.dev-autopilot-ghost-toggle {
+  padding: 3px 10px;
+  border-radius: 3px;
+  font-size: 11px;
+  cursor: pointer;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.15));
+  background: transparent;
+  color: var(--text-secondary, #aaa);
+}
+.dev-autopilot-steps-panel {
+  margin-top: 10px;
+  padding: 10px;
+  background: rgba(59, 130, 246, 0.04);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 4px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.dev-autopilot-steps-panel--muted {
+  color: var(--text-secondary, #888);
+}
+.dev-autopilot-steps-panel--error {
+  color: #ef4444;
+}
+.dev-autopilot-steps-heading {
+  font-size: 11px;
+  color: #3b82f6;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+  letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dev-autopilot-steps-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+  display: inline-block;
+}
+.dev-autopilot-steps-stream-note {
+  color: #eab308;
+  font-size: 10px;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.dev-autopilot-steps-empty {
+  font-size: 12px;
+  color: var(--text-secondary, #888);
+}
+.dev-autopilot-step-line {
+  font-size: 11px;
+  padding: 3px 0;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+.dev-autopilot-step-time {
+  font-family: monospace;
+  color: var(--text-secondary, #666);
+  flex-shrink: 0;
+}
+.dev-autopilot-step-topic {
+  font-family: monospace;
+  flex-shrink: 0;
+  color: #3b82f6;
+}
+.dev-autopilot-step-topic--error {
+  color: #ef4444;
+}
+.dev-autopilot-step-topic--warning {
+  color: #eab308;
+}
+.dev-autopilot-step-topic--success {
+  color: #22c55e;
+}
+.dev-autopilot-step-message {
+  color: var(--text-primary, #ccc);
+  word-break: break-word;
+}
