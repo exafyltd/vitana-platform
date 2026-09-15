@@ -2298,3 +2298,50 @@ and vitana-v1) were confirmed fully merged into `main`
 reset to a fresh `origin/main` rather than carrying forward already-merged
 history. Any further Aurora migration work in this session starts clean
 from here.
+
+## Addendum, 2026-09-15 (continued) — `app_users` mirror still healthy; the drift-alert workflow's own predicted IAM gap is now confirmed real, not hypothetical
+
+**Mirror health, live-checked via Supabase MCP:** `auth.users` and
+`public.app_users` are still perfectly in sync — **223/223 rows, 0
+missing** (up from 209/209 on 2026-09-11, i.e. 14 new signups since,
+zero drift introduced). The fix from VTID-03811/03815 continues to hold
+under real production load.
+
+**`ALERT-APP-USERS-IDENTITY-DRIFT.yml` manually dispatched for the first
+live end-to-end run (its cron is `0 6 * * *` UTC, not yet due) — and
+failed exactly the way its own header comment predicted, not from a new
+bug.** The Aurora leg's `aws rds-data execute-statement` call failed with:
+
+```
+AccessDeniedException: User: arn:aws:iam::472838866351:user/claude-staging-validation
+is not authorized to perform: secretsmanager:GetSecretValue on resource:
+arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/aurora/prod/claude-readonly-ZJGHXq
+because no identity-based policy allows the secretsmanager:GetSecretValue action
+```
+
+The workflow's own error-handling correctly distinguished this as a
+permissions gap rather than a drift finding (`"Not a drift finding — a
+permissions gap to fix first"`), exactly as designed — this is the
+workflow doing its job, not a defect in it. **This needed a human with
+IAM admin rights the whole time** — this session's own AWS access (via
+`aws bedrock`/RDS Data API calls used elsewhere in this migration) is a
+*different* identity/role than the `claude-staging-validation` IAM user
+GitHub Actions authenticates as, and no session in this migration has
+ever had `iam:PutUserPolicy`/`iam:AttachUserPolicy` to grant it directly.
+
+**Fix needed (one-time, by a human with IAM admin access):** attach a
+policy to `arn:aws:iam::472838866351:user/claude-staging-validation`
+granting:
+- `secretsmanager:GetSecretValue` on
+  `arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/aurora/prod/claude-readonly-ZJGHXq*`
+- `rds-data:ExecuteStatement` on
+  `arn:aws:rds:eu-central-1:472838866351:cluster:vitana-aurora-prod`
+  (unconfirmed whether this is *also* missing — the run failed at the
+  secret-fetch step, before ever reaching the RDS Data API call itself,
+  so this permission's status is still unknown until the secret access
+  is fixed and the workflow is re-run)
+
+Until that grant lands, this alert will fail on IAM every time it runs
+(daily, or on manual dispatch) rather than ever producing a real drift
+verdict — worth fixing before relying on it as the safety net B4's own
+recommendation named it as.
