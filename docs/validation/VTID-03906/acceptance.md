@@ -105,6 +105,11 @@ max-width/border-radius) when true, and the original `.operator-overlay`
 sizing (70vw/min 600px/max 1000px/80vh) otherwise. The icon itself swaps
 between an "expand" and a "restore" glyph depending on state.
 
+TEST: `outputs/jest-new-suite.txt` — "VTID-03908" block (fullscreen class
+applied conditionally, both buttons live inside `overlay-header-actions`,
+the fullscreen button toggles state + re-renders, the CSS modifier class
+exists with the expected dimensions).
+
 AC-5 — the X close button's own behavior is unchanged: it still only sets
 `state.isOperatorOpen = false` (plus the pre-existing
 `stopActiveExecutionsPolling()` and, new in this PR, dictation cleanup) —
