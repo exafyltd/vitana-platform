@@ -2105,3 +2105,37 @@ reflect the real, current shape of both blockers rather than the
 `POST /api/v1/vtid/allocate` endpoint; the usual `vtid_ledger` bookkeeping
 follow-up applied directly. Terminalized `success` — the deliverable here
 is the corrected documentation, not a fix.
+
+## Addendum, 2026-09-15, VTID-03899 — DMS CDC re-checked live again, unchanged; PR #3087 reconciled with a large `main` merge (BackOffice program + Partner Health)
+
+Routine live re-check per this doc's own standing priority (never trust a
+prior session's snapshot without re-measuring): `aws dms
+describe-replication-tasks --region eu-central-1` shows
+`vitana-supabase-to-aurora-v3` still `Status: failed`,
+`FullLoadProgressPercent: 0`, `TablesQueued: 571` — byte-for-byte the same
+shape recorded throughout this file since 2026-08-20. No new attempt was
+made to resume it or touch its endpoints; per the 2026-09-12 addendum's own
+conclusion, the remaining fix (the dropped replication slot,
+`start-replication` needed instead of `resume-processing`) is blocked by
+this session's own Claude Code auto-mode classifier, not by AWS/Supabase
+credentials, and re-attempting it without new guidance would just
+reproduce that same denial a third time. **Status: unchanged, re-confirmed
+live, no action taken.**
+
+Separately, this session merged a large `origin/main` update into PR #3087
+(commit `41aab693`→ this branch, 1041 files changed — the BackOffice
+ERP/CRM wave-1 program VTID-03831→03891 plus the Partner Health/DoctorBox
+integration VTID-03885) with one real conflict: `services/gateway/src/
+frontend/command-hub/index.html`'s `app.js` cache-busting `?v=` string
+(this branch's older VTID-01086 Memory Garden marker vs. main's newer
+VTID-03852 LLM-provider-badge marker). Confirmed VTID-01086's Memory
+Garden code is still fully present in the auto-merged `app.js` before
+resolving — a single cache-bust value invalidates the whole file
+regardless of how many features changed it, so collapsing to main's newer
+marker does not silently mask a needed invalidation. Full gateway suite
+re-run clean post-merge: 895/896 suites (1 pre-existing skip), 14,887/
+14,922 tests passing, 0 failures; `tsc --noEmit` clean (only the 2
+pre-existing unrelated `express-serve-static-core` errors). Pushed as
+commit `625198a4`; PR #1051 (vitana-v1) was independently re-checked this
+same cycle and is `mergeable_state: clean` with all 7 checks green, no
+action needed there.
