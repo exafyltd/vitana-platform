@@ -3348,6 +3348,29 @@ ${lines.join('\n')}`;
 }
 
 /**
+ * VTID-03930: a compact, always-on codebase orientation block — the
+ * "understand the codebase immediately, without reading hundreds of files"
+ * ask. RepoWise/Graphify themselves are local CLI tools with session-scoped
+ * indexes (graphify-out/graph.json, .repowise/) — they are not services the
+ * deployed ECS gateway container can invoke at request time, so this is NOT
+ * a live query against them. It is a small, hand-curated summary SOURCED
+ * from a real run of both (graphify god-nodes, repowise health) plus this
+ * repo's own CLAUDE.md §2 services table, refreshed by editing this
+ * constant (re-run the commands in its own comment, not automatically).
+ * Deliberately short — anything deeper goes through the tools that already
+ * exist and are now reachable (VTID-03926): dev_search_codebase,
+ * dev_read_file, dev_db_query, knowledge_search.
+ *
+ * Refresh commands (run from repo root): `graphify god-nodes --top 15`,
+ * `repowise health`, `repowise status`. Last generated 2026-09-15.
+ */
+const CODEBASE_OVERVIEW_BLOCK = `**Codebase orientation (vitana-platform, refreshed 2026-09-15):**
+- Deployable services: Gateway (services/gateway/ — this process), OASIS Operator, OASIS Projector, Verification Engine, Worker Runner. Full table + AWS ECS names: CLAUDE.md §1b/§2.
+- Architectural hubs (most-connected symbols, i.e. touching these has the widest blast radius): RunContext, function_tool(), summarize(), emitOasisEvent(), getSupabase(), _dispatch(), renderApp() (Command Hub frontend), gatewayApiCall(), buildContextHeaders(), requireAuth(), developerGate().
+- Known health hotspot: services/gateway/src/routes/orb-live.ts (lowest maintainability score in the repo — large, stateful, high change-risk file).
+- For anything beyond this summary — a specific file, function, recent change, or "where is X implemented" — call dev_search_codebase / dev_read_file (real GitHub API, VTID-03835) or dev_db_query (VTID-03837) rather than guessing from this block alone.`;
+
+/**
  * VTID-01023: System prompt for Operator Chat Gemini/Vertex integration
  * VTID-01025: Open chat mode - general knowledge + task operations
  */
@@ -3465,7 +3488,12 @@ async function callVertexWithTools(
     : `${getOperatorSystemPrompt()}\n\nCurrent thread: ${threadId}`;
   // VTID-03892: memory is appended after either base — a custom instruction
   // (e.g. ORB memory context) and the default operator prompt both get it.
-  const systemPrompt = memoryContextBlock ? `${basePrompt}\n\n${memoryContextBlock}` : basePrompt;
+  const withMemory = memoryContextBlock ? `${basePrompt}\n\n${memoryContextBlock}` : basePrompt;
+  // VTID-03930: the codebase orientation block is unconditional — every
+  // Operator turn, authenticated or not, gets it, the same way
+  // dev_agent_memory recall runs unconditionally above. It is background
+  // context, not a tool result, so it does not depend on userRole.
+  const systemPrompt = `${withMemory}\n\n${CODEBASE_OVERVIEW_BLOCK}`;
 
   // VTID-03579: was a direct Vertex `generateContent` with ADC. The operator is
   // the last big Google caller and the hardest, because it is an agentic loop
