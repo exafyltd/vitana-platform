@@ -31,6 +31,7 @@ const createChain = () => {
     order: jest.fn(() => chain),
     eq: jest.fn(() => chain),
     gte: jest.fn(() => chain),
+    gt: jest.fn(() => chain),
     in: jest.fn(() => chain),
     is: jest.fn(() => chain),
     not: jest.fn(() => chain),
@@ -270,6 +271,40 @@ describe('Tenant Admin Invitations Routes', () => {
     expect(res.status).toBe(409);
     expect(res.body.error).toBe('ALREADY_INVITED');
     expect(chain.insert).not.toHaveBeenCalled();
+  });
+
+  it('POST / allows re-inviting once the previous invitation has expired (VTID-03938)', async () => {
+    // Regression test: fetchExistingPendingInvitation() used to check only
+    // accepted_at/revoked_at, so an expired-but-unrevoked invitation blocked
+    // re-inviting the same email forever (409 ALREADY_INVITED with no way
+    // out short of an admin manually calling /revoke first). The fix adds an
+    // expires_at filter to the duplicate-check query itself — asserting the
+    // filter was applied is what actually pins the fix, since a mocked
+    // resolved value alone can't distinguish "filtered correctly" from
+    // "filter never added".
+    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    const chain = chainFor('tenant_invitations');
+    // Simulates: with the expires_at filter applied, the expired row no
+    // longer matches, so Supabase's .single() reports "no rows".
+    chain.mockResolvedValueOnce({ data: null, error: { code: 'PGRST116', message: 'No rows' } });
+    chain.mockResolvedValueOnce({
+      data: { id: INVITE_ID, email: 'expired-invite@example.com', roles: ['community'], token: 'tok-456' },
+      error: null,
+    });
+
+    const res = await request(app)
+      .post(`/api/v1/admin/tenants/${TENANT_A}/invitations`)
+      .set('Authorization', 'Bearer token')
+      .send({ email: 'expired-invite@example.com' });
+
+    expect(res.status).toBe(201);
+    expect(res.body.ok).toBe(true);
+    // The duplicate-check query must filter on expires_at, not just
+    // accepted_at/revoked_at — this is the line that actually pins the fix.
+    expect(chain.gt).toHaveBeenCalledWith('expires_at', expect.any(String));
+    expect(chain.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ email: 'expired-invite@example.com' })
+    );
   });
 
   it('POST / returns 500 (not a silent duplicate-invite risk) when the existing-invitation check errors', async () => {
