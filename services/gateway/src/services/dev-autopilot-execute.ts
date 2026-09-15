@@ -34,7 +34,7 @@
 
 import { randomUUID } from 'crypto';
 import type { LLMProvider } from '../constants/llm-defaults';
-import { emitOasisEvent } from './oasis-event-service';
+import { emitOasisEvent, cicdEvents } from './oasis-event-service';
 import {
   evaluateSafetyGate,
   SafetyContext,
@@ -927,6 +927,10 @@ export async function cancelExecution(executionId: string): Promise<{ ok: boolea
     message: `Execution ${executionId.slice(0, 8)} cancelled during cooldown`,
     payload: { execution_id: executionId },
   });
+  // VTID-03895: this PATCHes dev_autopilot_executions directly rather than
+  // through patchExecution() above, so it needs its own call to pick up the
+  // shared terminal side effects (vtid_ledger terminalization included).
+  applyExecTerminalSideEffects(s, executionId, 'cancelled');
   return { ok: true };
 }
 
@@ -1885,6 +1889,13 @@ export function applyExecTerminalSideEffects(
   executionId: string,
   status: string,
 ): void {
+  // VTID-03895: propagate to vtid_ledger regardless of which of the three
+  // terminal outcomes this is — separate from the completed/failed-only
+  // outcome-bookkeeping block below, which has its own narrower, historical
+  // reason for excluding 'cancelled' (see its own docstring).
+  if (status === 'completed' || status === 'failed' || status === 'cancelled') {
+    void terminalizeVtidLedgerForExecution(s, executionId, status);
+  }
   if (status !== 'completed' && status !== 'failed') return;
   void (async () => {
     try {
@@ -1945,6 +1956,84 @@ export function applyExecTerminalSideEffects(
       console.warn(`${LOG_PREFIX} outcome / finding-completion backfill error for ${executionId.slice(0, 8)}:`, err);
     }
   })();
+}
+
+/**
+ * VTID-03895: close the loop from a terminal dev_autopilot_executions status
+ * back to the vtid_ledger row the Operator on-ramp activated it for.
+ *
+ * Before this, nothing ever wrote is_terminal/terminal_outcome for an
+ * on-ramp execution's own VTID — the activation reaper comment a few
+ * hundred lines up already names the user-visible symptom this produces
+ * ("the vtid_ledger card sits in IN PROGRESS forever"), but that reaper only
+ * recovers executions that never started; one that runs to completion,
+ * merges, and deploys cleanly was *still* left stuck, because nothing on
+ * the happy path ever flipped the ledger. Task Management's board reads
+ * is_terminal/the COMPLETED column directly, so this alone is what makes a
+ * finished execution actually show as Completed there.
+ *
+ * Only fires for executions with a real activated_vtid (i.e. ones the
+ * Operator on-ramp created for a named VTID) — autonomous-plane findings
+ * with no activated_vtid have no vtid_ledger row of their own to close, and
+ * are correctly left to their own accounting (recordExecOutcome above,
+ * self_healing_log, etc). Guarded on is_terminal=eq.false so this can never
+ * overwrite a task a human already terminalized, or double-fire on a status
+ * that's somehow patched twice — per IF-THEN rule 3 ("is_terminal=true →
+ * do not modify task"), not just as a defensive habit.
+ */
+async function terminalizeVtidLedgerForExecution(
+  s: SupaConfig,
+  executionId: string,
+  status: 'completed' | 'failed' | 'cancelled',
+): Promise<void> {
+  try {
+    const execR = await supa<Array<{ finding_id: string }>>(
+      s,
+      `/rest/v1/dev_autopilot_executions?id=eq.${executionId}&select=finding_id&limit=1`,
+    );
+    const finding_id = execR.ok ? execR.data?.[0]?.finding_id : null;
+    if (!finding_id) return;
+
+    const findingR = await supa<Array<{ activated_vtid: string | null }>>(
+      s,
+      `/rest/v1/autopilot_recommendations?id=eq.${finding_id}&select=activated_vtid&limit=1`,
+    );
+    const vtid = findingR.ok ? findingR.data?.[0]?.activated_vtid : null;
+    if (!vtid) return; // autonomous-plane finding — no vtid_ledger row to close
+
+    const terminal_outcome = status === 'completed' ? 'success' : status;
+    const patchR = await supa(
+      s,
+      `/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(vtid)}&is_terminal=eq.false`,
+      {
+        method: 'PATCH',
+        headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ is_terminal: true, terminal_outcome, status }),
+      },
+    );
+    if (!patchR.ok) {
+      console.warn(
+        `${LOG_PREFIX} vtid_ledger terminalize failed for ${vtid} (execution ${executionId.slice(0, 8)}): ${patchR.error}`,
+      );
+      return;
+    }
+
+    if (status === 'completed') {
+      await cicdEvents.vtidLifecycleCompleted(
+        vtid,
+        'operator',
+        `Operator on-ramp execution ${executionId.slice(0, 8)} completed`,
+      );
+    } else {
+      await cicdEvents.vtidLifecycleFailed(
+        vtid,
+        'operator',
+        `Operator on-ramp execution ${executionId.slice(0, 8)} ${status}`,
+      );
+    }
+  } catch (err) {
+    console.warn(`${LOG_PREFIX} vtid_ledger terminalize error for execution ${executionId.slice(0, 8)}:`, err);
+  }
 }
 
 async function patchExecution(
