@@ -12,6 +12,7 @@
  */
 
 import { SupabaseClient } from '@supabase/supabase-js';
+import * as repo from './community-group-enrollment-repository';
 
 /**
  * Reads a numeric member cap from a group's metadata. Returns null (uncapped)
@@ -36,11 +37,7 @@ export async function addUserToSystemGroups(
   const tag = '[GroupEnrollment]';
 
   try {
-    const { data: groups, error: groupsErr } = await supabase
-      .from('chat_groups')
-      .select('id, name, metadata')
-      .eq('tenant_id', tenantId)
-      .eq('is_system', true);
+    const { data: groups, error: groupsErr } = await repo.fetchSystemChatGroups(supabase, tenantId);
 
     if (groupsErr) {
       console.warn(`${tag} List system groups failed: ${groupsErr.message}`);
@@ -51,12 +48,7 @@ export async function addUserToSystemGroups(
     }
 
     for (const group of groups as Array<{ id: string; name: string; metadata: unknown }>) {
-      const { data: existing } = await supabase
-        .from('chat_group_members')
-        .select('user_id')
-        .eq('group_id', group.id)
-        .eq('user_id', userId)
-        .maybeSingle();
+      const { data: existing } = await repo.fetchExistingGroupMembership(supabase, group.id, userId);
 
       if (existing) {
         skipped.push({ group_id: group.id, reason: 'already_member' });
@@ -67,10 +59,7 @@ export async function addUserToSystemGroups(
 
       // Only count members when a cap applies — uncapped groups skip the query.
       if (cap !== null) {
-        const { count, error: countErr } = await supabase
-          .from('chat_group_members')
-          .select('user_id', { count: 'exact', head: true })
-          .eq('group_id', group.id);
+        const { count, error: countErr } = await repo.countGroupMembers(supabase, group.id);
 
         if (countErr) {
           console.warn(`${tag} Count members for ${group.id} failed: ${countErr.message}`);
@@ -84,14 +73,12 @@ export async function addUserToSystemGroups(
         }
       }
 
-      const { error: insertErr } = await supabase
-        .from('chat_group_members')
-        .insert({
-          group_id: group.id,
-          user_id: userId,
-          tenant_id: tenantId,
-          role: 'member',
-        });
+      const { error: insertErr } = await repo.insertGroupMembership(supabase, {
+        group_id: group.id,
+        user_id: userId,
+        tenant_id: tenantId,
+        role: 'member',
+      });
 
       if (insertErr) {
         console.warn(`${tag} Insert membership for ${group.name} failed: ${insertErr.message}`);

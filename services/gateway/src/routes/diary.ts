@@ -24,6 +24,7 @@ import { emitOasisEvent } from '../services/oasis-event-service';
 import { writeTimelineRow } from '../services/timeline-projector';
 // VTID-01225: Cognee entity extraction from diary entries
 import { cogneeExtractorClient } from '../services/cognee-extractor-client';
+import * as repo from './diary-repository';
 
 const router = Router();
 
@@ -660,7 +661,7 @@ router.post('/entry', async (req: Request, res: Response) => {
     if (entry.misalignment) contentJson.misalignment = entry.misalignment;
 
     // Call memory_write_item RPC with source='diary'
-    const { data, error } = await supabase.rpc('memory_write_item', {
+    const { data, error } = await repo.writeDiaryMemoryItem(supabase, {
       p_category_key: categoryKey,
       p_source: 'diary',
       p_content: entry.content,

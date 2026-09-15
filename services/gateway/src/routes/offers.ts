@@ -22,6 +22,7 @@ import { z } from 'zod';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { emitOutcomeReported } from '../services/reward-events';
+import * as repo from './offers-repository';
 
 const router = Router();
 
@@ -182,14 +183,12 @@ router.post('/catalog/services', async (req: Request, res: Response) => {
   try {
     const supabase = createUserSupabaseClient(token);
 
-    const { data, error } = await supabase.rpc('catalog_add_service', {
-      p_payload: {
-        name,
-        service_type,
-        topic_keys,
-        provider_name,
-        metadata
-      }
+    const { data, error } = await repo.catalogAddService(supabase, {
+      name,
+      service_type,
+      topic_keys,
+      provider_name,
+      metadata
     });
 
     if (error) {
@@ -270,13 +269,11 @@ router.post('/catalog/products', async (req: Request, res: Response) => {
   try {
     const supabase = createUserSupabaseClient(token);
 
-    const { data, error } = await supabase.rpc('catalog_add_product', {
-      p_payload: {
-        name,
-        product_type,
-        topic_keys,
-        metadata
-      }
+    const { data, error } = await repo.catalogAddProduct(supabase, {
+      name,
+      product_type,
+      topic_keys,
+      metadata
     });
 
     if (error) {
@@ -361,14 +358,12 @@ router.post('/offers/state', async (req: Request, res: Response) => {
   try {
     const supabase = createUserSupabaseClient(token);
 
-    const { data, error } = await supabase.rpc('offers_set_state', {
-      p_payload: {
-        target_type,
-        target_id,
-        state,
-        trust_score,
-        notes
-      }
+    const { data, error } = await repo.offersSetState(supabase, {
+      target_type,
+      target_id,
+      state,
+      trust_score,
+      notes
     });
 
     if (error) {
@@ -466,15 +461,13 @@ router.post('/offers/outcome', async (req: Request, res: Response) => {
   try {
     const supabase = createUserSupabaseClient(token);
 
-    const { data, error } = await supabase.rpc('offers_record_outcome', {
-      p_payload: {
-        target_type,
-        target_id,
-        outcome_date,
-        outcome_type,
-        perceived_impact,
-        evidence
-      }
+    const { data, error } = await repo.offersRecordOutcome(supabase, {
+      target_type,
+      target_id,
+      outcome_date,
+      outcome_type,
+      perceived_impact,
+      evidence
     });
 
     if (error) {
@@ -580,10 +573,7 @@ router.get('/offers/recommendations', async (req: Request, res: Response) => {
   try {
     const supabase = createUserSupabaseClient(token);
 
-    const { data, error } = await supabase.rpc('offers_get_recommendations', {
-      p_limit: limit,
-      p_target_type: target_type || null
-    });
+    const { data, error } = await repo.offersGetRecommendations(supabase, limit, target_type || null);
 
     if (error) {
       console.error('[VTID-01092] offers_get_recommendations RPC error:', error.message);
@@ -662,11 +652,7 @@ router.get('/offers/memory', async (req: Request, res: Response) => {
   try {
     const supabase = createUserSupabaseClient(token);
 
-    const { data, error } = await supabase.rpc('offers_get_memory', {
-      p_limit: limit,
-      p_target_type: target_type || null,
-      p_state: state || null
-    });
+    const { data, error } = await repo.offersGetMemory(supabase, limit, target_type || null, state || null);
 
     if (error) {
       console.error('[VTID-01092] offers_get_memory RPC error:', error.message);

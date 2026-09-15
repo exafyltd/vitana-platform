@@ -22,11 +22,17 @@ const PROFILER_PATH = path.resolve(
   __dirname,
   '../../src/services/user-context-profiler.ts',
 );
+const PROFILER_REPOSITORY_PATH = path.resolve(
+  __dirname,
+  '../../src/services/user-context-profiler-repository.ts',
+);
 
 let profilerSource: string;
+let profilerRepositorySource: string;
 
 beforeAll(() => {
   profilerSource = fs.readFileSync(PROFILER_PATH, 'utf8');
+  profilerRepositorySource = fs.readFileSync(PROFILER_REPOSITORY_PATH, 'utf8');
 });
 
 describe('VTID-03037 buildAccountSection (pure renderer)', () => {
@@ -95,12 +101,14 @@ describe('VTID-03037 buildAccountSection (pure renderer)', () => {
 
 describe('VTID-03037 profiler wire-up (source-text characterization)', () => {
   it('fetches app_users.created_at via fetchAppUsersAccount', () => {
-    // The fetch must live in the profiler and read created_at from
+    // The fetch must live in the profiler (delegating its Supabase call to
+    // the B1 data-access repository, VTID-03702) and read created_at from
     // app_users. A regression that moves the source column (e.g. to a
     // mirror table) or drops the fetch will trip this assertion before
     // any LLM behavior change is observable.
     expect(profilerSource).toMatch(/async\s+function\s+fetchAppUsersAccount/);
-    expect(profilerSource).toMatch(/from\(['"]app_users['"]\)[\s\S]{0,60}select\(['"]created_at['"]\)/);
+    expect(profilerSource).toMatch(/repo\.fetchAppUsersAccountRow/);
+    expect(profilerRepositorySource).toMatch(/from\(['"]app_users['"]\)[\s\S]{0,60}select\(['"]created_at['"]\)/);
   });
 
   it('runs the account fetch inside the existing parallel Promise.all batch', () => {

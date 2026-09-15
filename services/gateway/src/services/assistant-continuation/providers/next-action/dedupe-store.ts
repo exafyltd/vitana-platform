@@ -24,6 +24,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import * as repo from './dedupe-store-repository';
 
 /** Default look-back window. Keep at 4h so a morning + evening orb
  *  tap doesn't get the same nudge twice, but the next day is fresh. */
@@ -64,14 +65,12 @@ export async function isSeenRecently(inputs: IsSeenRecentlyInputs): Promise<bool
   const nowIso = inputs.nowIso ?? new Date().toISOString();
   const cutoffIso = new Date(Date.parse(nowIso) - windowMs).toISOString();
   try {
-    const { data, error } = await inputs.supabase
-      .from('user_assistant_state')
-      .select('last_seen_at')
-      .eq('tenant_id', inputs.tenantId)
-      .eq('user_id', inputs.userId)
-      .eq('signal_name', buildDedupeSignalName(inputs.dedupeKey))
-      .gte('last_seen_at', cutoffIso)
-      .limit(1);
+    const { data, error } = await repo.fetchRecentDedupeSighting(inputs.supabase, {
+      tenantId: inputs.tenantId,
+      userId: inputs.userId,
+      signalName: buildDedupeSignalName(inputs.dedupeKey),
+      cutoffIso,
+    });
     if (error) return false;
     return Array.isArray(data) && data.length > 0;
   } catch {
@@ -103,9 +102,7 @@ export async function recordDedupeSighting(
       // so the row reflects "seen N times, most recently at <iso>".
       last_seen_at: nowIso,
     };
-    const { error } = await inputs.supabase
-      .from('user_assistant_state')
-      .upsert(row, { onConflict: 'tenant_id,user_id,signal_name' });
+    const { error } = await repo.upsertDedupeSighting(inputs.supabase, row);
     if (error) return { ok: false, reason: error.message };
     return { ok: true };
   } catch (e) {

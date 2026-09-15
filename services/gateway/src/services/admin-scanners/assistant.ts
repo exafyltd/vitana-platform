@@ -13,6 +13,7 @@
  */
 import { getSupabase } from '../../lib/supabase';
 import type { AdminScanner, InsightDraft } from './types';
+import * as repo from './assistant-repository';
 
 const LOG_PREFIX = '[admin-scanner:assistant]';
 const ORB_STALL_RATE_THRESHOLD_PCT = 5;
@@ -33,10 +34,7 @@ export const assistantScanner: AdminScanner = {
 
     // 1. Assistant config never set up
     try {
-      const { count } = await supabase
-        .from('tenant_assistant_config')
-        .select('id', { count: 'exact', head: true })
-        .eq('tenant_id', tenantId);
+      const { count } = await repo.countTenantAssistantConfigRows(supabase, tenantId);
       if (count !== null && count === 0) {
         insights.push({
           natural_key: 'assistant_no_config',
@@ -63,12 +61,7 @@ export const assistantScanner: AdminScanner = {
 
     // 2. Stale persona — override hasn't been touched in 90 days
     try {
-      const { data: overrides } = await supabase
-        .from('tenant_assistant_config')
-        .select('surface_key, updated_at, system_prompt_override')
-        .eq('tenant_id', tenantId)
-        .not('system_prompt_override', 'is', null)
-        .lt('updated_at', d90);
+      const { data: overrides } = await repo.fetchStaleAssistantOverrides(supabase, tenantId, d90);
       if (overrides && overrides.length > 0) {
         insights.push({
           natural_key: 'assistant_persona_stale_90d',
@@ -103,16 +96,8 @@ export const assistantScanner: AdminScanner = {
     // oasis_events has no tenant_id so this is global, tagged accordingly.
     try {
       const [{ count: stalls }, { count: starts }] = await Promise.all([
-        supabase
-          .from('oasis_events')
-          .select('id', { count: 'exact', head: true })
-          .eq('topic', 'orb.live.stall_detected')
-          .gte('occurred_at', d1),
-        supabase
-          .from('oasis_events')
-          .select('id', { count: 'exact', head: true })
-          .in('topic', ['vtid.live.session.start', 'voice.live.session.start'])
-          .gte('occurred_at', d1),
+        repo.countOrbStallEventsSinceForAssistant(supabase, d1),
+        repo.countVoiceSessionStartsSince(supabase, d1),
       ]);
       const stallCount = stalls ?? 0;
       const startCount = starts ?? 0;

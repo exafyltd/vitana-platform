@@ -26,6 +26,7 @@ import { Router, Request, Response } from 'express';
 import { requireAuth, requireTenant, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { getSupabase } from '../lib/supabase';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import * as repo from './intents-share-repository';
 
 const router = Router();
 
@@ -63,11 +64,7 @@ router.post('/api/v1/intents/:intent_id/share', requireAuth, requireTenant, asyn
   }
 
   // 1. Load source intent + visibility check.
-  const { data: srcIntent, error: srcErr } = await supabase
-    .from('user_intents')
-    .select('intent_id, requester_user_id, requester_vitana_id, intent_kind, category, title, scope, visibility, status, tenant_id')
-    .eq('intent_id', intentId)
-    .maybeSingle();
+  const { data: srcIntent, error: srcErr } = await repo.fetchIntentForShare(supabase, intentId);
 
   if (srcErr || !srcIntent) {
     return res.status(404).json({ ok: false, error: 'INTENT_NOT_FOUND' });
@@ -90,11 +87,7 @@ router.post('/api/v1/intents/:intent_id/share', requireAuth, requireTenant, asyn
   // sharer's tenant (when the intent is tenant-scoped). For public posts we
   // allow cross-tenant resolution.
   const tenantScope = visibility === 'public' ? null : (srcIntent as any).tenant_id;
-  const resolveQ = supabase
-    .from('profiles')
-    .select('user_id, vitana_id, display_name')
-    .in('vitana_id', recipientIds);
-  const { data: recipients, error: recErr } = await resolveQ;
+  const { data: recipients, error: recErr } = await repo.resolveRecipientsByVitanaId(supabase, recipientIds);
   if (recErr) {
     console.error('[VTID-DANCE-D10] resolve recipients failed', recErr);
     return res.status(500).json({ ok: false, error: recErr.message });
@@ -109,12 +102,7 @@ router.post('/api/v1/intents/:intent_id/share', requireAuth, requireTenant, asyn
   // upsert can't target partial UNIQUE indexes via onConflict). Plain INSERT
   // with idempotency enforced manually.
   const recipientVids = validRecipients.map((r: any) => r.vitana_id);
-  const { data: existingDirect } = await supabase
-    .from('intent_matches')
-    .select('vitana_id_b')
-    .eq('intent_a_id', intentId)
-    .eq('kind_pairing', 'direct_share')
-    .in('vitana_id_b', recipientVids);
+  const { data: existingDirect } = await repo.fetchExistingDirectShares(supabase, intentId, recipientVids);
   const alreadySharedTo = new Set<string>((existingDirect || []).map((r: any) => String(r.vitana_id_b)));
   const fanout = validRecipients.filter((r: any) => !alreadySharedTo.has(String(r.vitana_id)));
 
@@ -134,10 +122,7 @@ router.post('/api/v1/intents/:intent_id/share', requireAuth, requireTenant, asyn
       state: 'new',
     }));
 
-    const { data, error: matchInsErr } = await supabase
-      .from('intent_matches')
-      .insert(matchRows as any)
-      .select('match_id, vitana_id_b');
+    const { data, error: matchInsErr } = await repo.insertDirectShareMatches(supabase, matchRows);
 
     if (matchInsErr) {
       console.error('[VTID-DANCE-D10] match insert failed', matchInsErr);
@@ -168,7 +153,7 @@ router.post('/api/v1/intents/:intent_id/share', requireAuth, requireTenant, asyn
       },
     }));
     try {
-      await supabase.from('chat_messages').insert(messageRows as any);
+      await repo.insertShareChatMessages(supabase, messageRows);
     } catch (err: any) {
       console.warn('[VTID-DANCE-D10] chat_messages insert non-fatal:', err?.message);
     }
@@ -222,11 +207,7 @@ router.get('/p/:intent_id', async (req: Request, res: Response) => {
     return res.status(500).type('html').send('<h1>Service unavailable</h1>');
   }
 
-  const { data: intent } = await supabase
-    .from('user_intents')
-    .select('intent_id, requester_vitana_id, intent_kind, category, title, scope, visibility, created_at')
-    .eq('intent_id', intentId)
-    .maybeSingle();
+  const { data: intent } = await repo.fetchIntentForPublicView(supabase, intentId);
 
   if (!intent) {
     return res.status(404).type('html').send('<h1>Post not found</h1>');

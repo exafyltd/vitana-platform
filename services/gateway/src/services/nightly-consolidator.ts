@@ -26,6 +26,7 @@
 import { getSupabase } from '../lib/supabase';
 import { getSystemControl } from './system-controls-service';
 import { emitOasisEvent } from './oasis-event-service';
+import * as repo from './nightly-consolidator-repository';
 
 const VTID = 'VTID-02632';
 
@@ -122,15 +123,7 @@ export async function runConsolidator(input: ConsolidatorInput): Promise<Consoli
   }
 
   // Open a run row
-  const { data: runRow } = await supabase
-    .from('consolidator_runs')
-    .insert({
-      triggered_by: input.triggered_by,
-      tenant_id: input.user_scope?.tenant_id ?? null,
-      status: 'running',
-    })
-    .select('id')
-    .single();
+  const { data: runRow } = await repo.insertConsolidatorRun(supabase, input.triggered_by, input.user_scope?.tenant_id ?? null);
 
   const runId: string | null = runRow?.id ?? null;
 
@@ -162,14 +155,7 @@ export async function runConsolidator(input: ConsolidatorInput): Promise<Consoli
   const finishedAt = new Date().toISOString();
 
   if (runId) {
-    await supabase
-      .from('consolidator_runs')
-      .update({
-        finished_at: finishedAt,
-        status,
-        summary: { loops: reports },
-      })
-      .eq('id', runId);
+    await repo.updateConsolidatorRun(supabase, runId, { finished_at: finishedAt, status, summary: { loops: reports } });
   }
 
   // Telemetry — single OASIS event per run, regardless of loop count
@@ -240,12 +226,7 @@ async function loop3DriftAdaptation(
   //  created_at). We score on observed_delta, falling back to predicted_delta
   //  when the observation hasn't been measured yet.
   const since = new Date(Date.now() - 14 * 24 * 3600 * 1000).toISOString();
-  let q = supabase
-    .from('index_delta_observations')
-    .select('tenant_id, user_id, pillar, predicted_delta, observed_delta, created_at')
-    .gte('created_at', since);
-  if (scope) q = q.eq('tenant_id', scope.tenant_id).eq('user_id', scope.user_id);
-  const { data: rows, error } = await q.limit(5000);
+  const { data: rows, error } = await repo.fetchIndexDeltaObservations(supabase, since, scope);
   if (error) {
     return { ok: true, loop: 'loop_3_drift', processed: 0, errors: 0, notes: `skipped: ${error.message}` };
   }
@@ -268,20 +249,18 @@ async function loop3DriftAdaptation(
   let errors = 0;
   for (const v of byKey.values()) {
     if (v.count < 3 || v.sum > -3) continue;
-    const insert = await supabase
-      .from('drift_adaptation_plans')
-      .insert({
-        tenant_id: v.tenant_id,
-        user_id: v.user_id,
-        drift_kind: 'pillar_decline',
-        detected_pillar: v.pillar,
-        drift_magnitude: v.sum,
-        recommended_actions: [
-          { action_kind: 'autopilot_focus_pillar', pillar: v.pillar, intensity: 'gentle' },
-          { action_kind: 'voice_checkin', topic: `${v.pillar}_drift` },
-        ],
-        source_engine: 'consolidator.loop_3',
-      });
+    const insert = await repo.insertDriftAdaptationPlan(supabase, {
+      tenant_id: v.tenant_id,
+      user_id: v.user_id,
+      drift_kind: 'pillar_decline',
+      detected_pillar: v.pillar,
+      drift_magnitude: v.sum,
+      recommended_actions: [
+        { action_kind: 'autopilot_focus_pillar', pillar: v.pillar, intensity: 'gentle' },
+        { action_kind: 'voice_checkin', topic: `${v.pillar}_drift` },
+      ],
+      source_engine: 'consolidator.loop_3',
+    });
     if (insert.error) errors += 1; else processed += 1;
   }
 
@@ -311,12 +290,7 @@ async function loop4IndexDeltaSnapshot(
   // vitana_index_scores has flat 5-pillar columns, not score_pillars jsonb.
   // Use the latest 30 days to compute tier_at_start / tier_at_end.
   const since30 = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString().slice(0, 10);
-  let q = supabase
-    .from('vitana_index_scores')
-    .select('tenant_id, user_id, date, score_total, score_sleep, score_nutrition, score_exercise, score_hydration, score_mental, model_version')
-    .gte('date', since30);
-  if (scope) q = q.eq('tenant_id', scope.tenant_id).eq('user_id', scope.user_id);
-  const { data: rows, error } = await q.order('date', { ascending: true }).limit(10000);
+  const { data: rows, error } = await repo.fetchVitanaIndexScoresForTrajectory(supabase, since30, scope);
   if (error) {
     return { ok: true, loop: 'loop_4_index_delta', processed: 0, errors: 0, notes: `skipped: ${error.message}` };
   }
@@ -368,23 +342,18 @@ async function loop4IndexDeltaSnapshot(
       `(${trajectoryClass}, balance ${(balanceFactorAvg ?? 0).toFixed(2)}, ` +
       `tier ${tierAtStart} → ${tierAtEnd}, ${series.length} obs)`;
 
-    const upsert = await supabase
-      .from('vitana_index_trajectory_snapshots')
-      .upsert(
-        {
-          tenant_id: last.tenant_id,
-          user_id: last.user_id,
-          snapshot_date: today,
-          time_window: '30d',
-          narrative,
-          pillars_snapshot: pillarsSnapshot,
-          balance_factor_avg: balanceFactorAvg,
-          tier_at_start: tierAtStart,
-          tier_at_end: tierAtEnd,
-          trajectory_class: trajectoryClass,
-        },
-        { onConflict: 'tenant_id,user_id,snapshot_date,time_window' }
-      );
+    const upsert = await repo.upsertVitanaIndexTrajectorySnapshot(supabase, {
+      tenant_id: last.tenant_id,
+      user_id: last.user_id,
+      snapshot_date: today,
+      time_window: '30d',
+      narrative,
+      pillars_snapshot: pillarsSnapshot,
+      balance_factor_avg: balanceFactorAvg,
+      tier_at_start: tierAtStart,
+      tier_at_end: tierAtEnd,
+      trajectory_class: trajectoryClass,
+    });
     if (upsert.error) errors += 1; else processed += 1;
   }
 
@@ -433,12 +402,7 @@ async function loop10DiaryConsolidation(
   if (!supabase) return { ok: false, loop: 'loop_10_diary', processed: 0, errors: 1, notes: 'no supabase' };
 
   const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
-  let q = supabase
-    .from('memory_diary_entries')
-    .select('id', { count: 'exact', head: true })
-    .gte('created_at', since);
-  if (scope) q = q.eq('tenant_id', scope.tenant_id).eq('user_id', scope.user_id);
-  const { count, error } = await q;
+  const { count, error } = await repo.countDiaryEntriesSince(supabase, since, scope);
   if (error) return { ok: false, loop: 'loop_10_diary', processed: 0, errors: 1, notes: error.message };
 
   return {
@@ -468,12 +432,7 @@ async function loop11BiometricTrends(
   // biometric_trends has: feature_key, pillar, mean_7d/30d/90d, std_30d,
   //   latest, latest_z_score, trend_class, anomaly_flag, last_anomaly_at.
   const since30 = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString().slice(0, 10);
-  let q = supabase
-    .from('health_features_daily')
-    .select('tenant_id, user_id, feature_key, date, feature_value')
-    .gte('date', since30);
-  if (scope) q = q.eq('tenant_id', scope.tenant_id).eq('user_id', scope.user_id);
-  const { data: rows, error } = await q.limit(50000);
+  const { data: rows, error } = await repo.fetchHealthFeaturesDailyForTrends(supabase, since30, scope);
   if (error) {
     return { ok: true, loop: 'loop_11_biometric', processed: 0, errors: 0, notes: `skipped: ${error.message}` };
   }
@@ -518,26 +477,21 @@ async function loop11BiometricTrends(
     else trendClass = z > 0 ? 'improving' : 'regressing';
     const anomaly = Math.abs(z) >= 2;
 
-    const upsert = await supabase
-      .from('biometric_trends')
-      .upsert(
-        {
-          tenant_id: s.tenant_id,
-          user_id: s.user_id,
-          feature_key: s.feature_key,
-          pillar: featureKeyToPillar(s.feature_key),
-          mean_7d: mean7,
-          mean_30d: mean30,
-          std_30d: std30,
-          latest: s.latest,
-          latest_z_score: z,
-          trend_class: trendClass,
-          anomaly_flag: anomaly,
-          last_anomaly_at: anomaly ? new Date().toISOString() : null,
-          computed_at: new Date().toISOString(),
-        },
-        { onConflict: 'tenant_id,user_id,feature_key' }
-      );
+    const upsert = await repo.upsertBiometricTrend(supabase, {
+      tenant_id: s.tenant_id,
+      user_id: s.user_id,
+      feature_key: s.feature_key,
+      pillar: featureKeyToPillar(s.feature_key),
+      mean_7d: mean7,
+      mean_30d: mean30,
+      std_30d: std30,
+      latest: s.latest,
+      latest_z_score: z,
+      trend_class: trendClass,
+      anomaly_flag: anomaly,
+      last_anomaly_at: anomaly ? new Date().toISOString() : null,
+      computed_at: new Date().toISOString(),
+    });
     if (upsert.error) errors += 1; else processed += 1;
   }
 
@@ -578,12 +532,7 @@ async function loop12LocationPatterns(
   // row per named place (NOT a jsonb list). Build a candidate row per locality
   // that meets the visit-count threshold.
   const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
-  let q = supabase
-    .from('user_location_history')
-    .select('tenant_id, user_id, locality, country, timezone, location_type, valid_from')
-    .gte('valid_from', since);
-  if (scope) q = q.eq('tenant_id', scope.tenant_id).eq('user_id', scope.user_id);
-  const { data: rows, error } = await q.limit(50000);
+  const { data: rows, error } = await repo.fetchUserLocationHistory(supabase, since, scope);
   if (error) {
     return { ok: true, loop: 'loop_12_location', processed: 0, errors: 0, notes: `skipped: ${error.message}` };
   }
@@ -606,21 +555,16 @@ async function loop12LocationPatterns(
   let errors = 0;
   for (const s of byKey.values()) {
     if (s.count < 3) continue;
-    const upsert = await supabase
-      .from('user_location_settings')
-      .upsert(
-        {
-          tenant_id: s.tenant_id,
-          user_id: s.user_id,
-          name: s.locality,
-          locality: s.locality,
-          country: s.country,
-          timezone: s.timezone,
-          is_primary_home: false,
-          user_confirmed: false,
-        },
-        { onConflict: 'tenant_id,user_id,name' }
-      );
+    const upsert = await repo.upsertUserLocationSetting(supabase, {
+      tenant_id: s.tenant_id,
+      user_id: s.user_id,
+      name: s.locality,
+      locality: s.locality,
+      country: s.country,
+      timezone: s.timezone,
+      is_primary_home: false,
+      user_confirmed: false,
+    });
     if (upsert.error) errors += 1; else processed += 1;
   }
 
@@ -651,16 +595,7 @@ async function loop13NetworkStats(
   // in 30 days drift toward 5 (mid) by 5% — bounded to [1,10].
   // Tenant scoping is supported; per-user scoping uses source_id.
   const cutoff = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
-  let q = supabase
-    .from('relationship_edges')
-    .select('id, tenant_id, source_id, target_id, strength, last_interaction_at')
-    .lte('last_interaction_at', cutoff);
-  if (scope) {
-    q = q.eq('tenant_id', scope.tenant_id);
-    // Source-only filter — keeps the query simple and idempotent.
-    q = q.eq('source_id', scope.user_id);
-  }
-  const { data: rows, error } = await q.limit(5000);
+  const { data: rows, error } = await repo.fetchStaleRelationshipEdges(supabase, cutoff, scope);
   if (error) {
     return { ok: true, loop: 'loop_13_network', processed: 0, errors: 0, notes: `skipped: ${error.message}` };
   }
@@ -672,10 +607,7 @@ async function loop13NetworkStats(
     const target = 5;
     const decayed = Math.max(1, Math.min(10, cur + (target - cur) * 0.05));
     if (Math.abs(decayed - cur) < 0.01) continue;
-    const update = await supabase
-      .from('relationship_edges')
-      .update({ strength: decayed, updated_at: new Date().toISOString() })
-      .eq('id', r.id);
+    const update = await repo.updateRelationshipEdgeStrength(supabase, r.id, decayed);
     if (update.error) errors += 1; else processed += 1;
   }
 
@@ -701,12 +633,7 @@ async function loop14DevicePatterns(
   if (!supabase) return { ok: false, loop: 'loop_14_device', processed: 0, errors: 1, notes: 'no supabase' };
 
   const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
-  let q = supabase
-    .from('user_device_session_log')
-    .select('tenant_id, user_id, device_token_id, started_at')
-    .gte('started_at', since);
-  if (scope) q = q.eq('tenant_id', scope.tenant_id).eq('user_id', scope.user_id);
-  const { data: rows, error } = await q.limit(50000);
+  const { data: rows, error } = await repo.fetchDeviceSessionLog(supabase, since, scope);
   if (error) {
     return { ok: true, loop: 'loop_14_device', processed: 0, errors: 0, notes: `skipped: ${error.message}` };
   }
@@ -727,10 +654,7 @@ async function loop14DevicePatterns(
     const winner = [...u.counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
     // Best-effort: not every env has user_device_tokens with is_primary,
     // so swallow errors quietly.
-    const upd = await supabase
-      .from('user_device_tokens')
-      .update({ is_primary: true, updated_at: new Date().toISOString() })
-      .eq('id', winner);
+    const upd = await repo.updateDeviceTokenPrimary(supabase, winner);
     if (upd.error) {
       // skipped — column may not exist
     } else {

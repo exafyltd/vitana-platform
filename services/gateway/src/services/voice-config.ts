@@ -24,6 +24,7 @@
  */
 
 import { getSupabase } from '../lib/supabase';
+import * as repo from './voice-config-repository';
 
 // BOOTSTRAP-NOVA-SONIC-VOICE: `nova_sonic` joins the V2V provider set. The
 // DB default stays `vertex`; a global nova_sonic flip is additionally gated
@@ -104,10 +105,7 @@ function unwrap(raw: unknown): unknown {
 async function readRows(): Promise<Record<string, unknown>> {
   const sb = getSupabase();
   if (!sb) return {};
-  const { data, error } = await sb
-    .from('system_config')
-    .select('key, value')
-    .in('key', ALL_KEYS);
+  const { data, error } = await repo.fetchSystemConfigRows(sb, ALL_KEYS);
   if (error || !data) return {};
   const out: Record<string, unknown> = {};
   for (const row of data as Array<{ key: string; value: unknown }>) {
@@ -228,10 +226,11 @@ export async function putVoiceConfig(
   }
 
   for (const u of upserts) {
-    const { error } = await sb.from('system_config').upsert(
-      { key: u.key, value: u.value as unknown as object, updated_by: changedBy ?? 'voice-config' },
-      { onConflict: 'key' },
-    );
+    const { error } = await repo.upsertSystemConfigRow(sb, {
+      key: u.key,
+      value: u.value as unknown as object,
+      updated_by: changedBy ?? 'voice-config',
+    });
     if (error) return { ok: false, error: error.message };
   }
 

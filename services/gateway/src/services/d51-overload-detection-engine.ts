@@ -33,6 +33,7 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { emitOasisEvent } from './oasis-event-service';
+import * as repo from './d51-overload-detection-engine-repository';
 import {
   OverloadDimension,
   OverloadSignalSource,
@@ -158,10 +159,7 @@ async function getClientWithContext(authToken?: string): Promise<{
 
   // Bootstrap dev context if needed
   if (useDevIdentity) {
-    const { error: bootstrapError } = await supabase.rpc('dev_bootstrap_request_context', {
-      p_tenant_id: DEV_IDENTITY.TENANT_ID,
-      p_active_role: 'developer'
-    });
+    const { error: bootstrapError } = await repo.devBootstrapRequestContext(supabase, DEV_IDENTITY.TENANT_ID, 'developer');
     if (bootstrapError) {
       console.warn(`${LOG_PREFIX} Bootstrap context failed (non-fatal):`, bootstrapError.message);
     }
@@ -363,9 +361,7 @@ export async function computeBaselines(
       return { ok: false, error: clientError || 'SERVICE_UNAVAILABLE' };
     }
 
-    const { data, error } = await supabase.rpc('overload_compute_baselines', {
-      p_dimensions: request.dimensions || null
-    });
+    const { data, error } = await repo.computeOverloadBaselines(supabase, request.dimensions || null);
 
     if (error) {
       console.error(`${LOG_PREFIX} RPC error (compute_baselines):`, error);
@@ -415,9 +411,7 @@ export async function getBaselines(
       return { ok: false, error: clientError || 'SERVICE_UNAVAILABLE' };
     }
 
-    const { data, error } = await supabase.rpc('overload_get_baselines', {
-      p_dimensions: request.dimensions || null
-    });
+    const { data, error } = await repo.fetchOverloadBaselines(supabase, request.dimensions || null);
 
     if (error) {
       console.error(`${LOG_PREFIX} RPC error (get_baselines):`, error);
@@ -465,7 +459,7 @@ export async function recordPattern(
       return { ok: false, error: clientError || 'SERVICE_UNAVAILABLE' };
     }
 
-    const { data, error } = await supabase.rpc('overload_record_pattern', {
+    const { data, error } = await repo.recordOverloadPattern(supabase, {
       p_pattern_type: patternType,
       p_dimension: dimension,
       p_signal_sources: signalSources,
@@ -528,10 +522,7 @@ export async function computeDetections(
 
     const timeWindowDays = request.time_window_days || DETECTION_THRESHOLDS.DEFAULT_TIME_WINDOW_DAYS;
 
-    const { data, error } = await supabase.rpc('overload_detect', {
-      p_time_window_days: timeWindowDays,
-      p_dimensions: request.dimensions || null
-    });
+    const { data, error } = await repo.detectOverload(supabase, timeWindowDays, request.dimensions || null);
 
     if (error) {
       console.error(`${LOG_PREFIX} RPC error (detect):`, error);
@@ -626,10 +617,7 @@ export async function getDetections(
       return { ok: false, error: clientError || 'SERVICE_UNAVAILABLE' };
     }
 
-    const { data, error } = await supabase.rpc('overload_get_detections', {
-      p_include_dismissed: request.include_dismissed || false,
-      p_limit: request.limit || 10
-    });
+    const { data, error } = await repo.fetchOverloadDetections(supabase, request.include_dismissed || false, request.limit || 10);
 
     if (error) {
       console.error(`${LOG_PREFIX} RPC error (get_detections):`, error);
@@ -666,10 +654,7 @@ export async function dismissDetection(
       return { ok: false, error: clientError || 'SERVICE_UNAVAILABLE' };
     }
 
-    const { data, error } = await supabase.rpc('overload_dismiss', {
-      p_overload_id: request.overload_id,
-      p_reason: request.reason || null
-    });
+    const { data, error } = await repo.dismissOverloadDetection(supabase, request.overload_id, request.reason || null);
 
     if (error) {
       console.error(`${LOG_PREFIX} RPC error (dismiss):`, error);
@@ -718,9 +703,7 @@ export async function explainDetection(
       return { ok: false, error: clientError || 'SERVICE_UNAVAILABLE' };
     }
 
-    const { data, error } = await supabase.rpc('overload_explain', {
-      p_overload_id: request.overload_id
-    });
+    const { data, error } = await repo.explainOverloadDetection(supabase, request.overload_id);
 
     if (error) {
       console.error(`${LOG_PREFIX} RPC error (explain):`, error);
@@ -785,11 +768,7 @@ export async function analyzeFromLongitudinalTrends(
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - 21);
 
-    const { data: dataPoints, error } = await supabase.rpc('d43_get_data_points', {
-      p_domains: ['health', 'engagement'],
-      p_since: cutoffDate.toISOString(),
-      p_limit: 100
-    });
+    const { data: dataPoints, error } = await repo.fetchD43DataPointsForOverload(supabase, ['health', 'engagement'], cutoffDate.toISOString(), 100);
 
     if (error || !dataPoints || dataPoints.length === 0) {
       return patterns;
@@ -861,12 +840,7 @@ export async function analyzeFromBehavioralSignals(
     }
 
     // Get D28 emotional/cognitive signals from last 21 days
-    const { data: signals, error } = await supabase
-      .from('emotional_cognitive_signals')
-      .select('*')
-      .eq('decayed', false)
-      .gte('created_at', new Date(Date.now() - 21 * 24 * 60 * 60 * 1000).toISOString())
-      .order('created_at', { ascending: true });
+    const { data: signals, error } = await repo.fetchEmotionalCognitiveSignalsSince(supabase, new Date(Date.now() - 21 * 24 * 60 * 60 * 1000).toISOString());
 
     if (error || !signals || signals.length === 0) {
       return patterns;
@@ -934,12 +908,7 @@ export async function analyzeFromCapacityState(
     }
 
     // Get capacity states from last 21 days
-    const { data: capacityStates, error } = await supabase
-      .from('capacity_state')
-      .select('*')
-      .eq('decayed', false)
-      .gte('created_at', new Date(Date.now() - 21 * 24 * 60 * 60 * 1000).toISOString())
-      .order('created_at', { ascending: true });
+    const { data: capacityStates, error } = await repo.fetchCapacityStatesSince(supabase, new Date(Date.now() - 21 * 24 * 60 * 60 * 1000).toISOString());
 
     if (error || !capacityStates || capacityStates.length === 0) {
       return patterns;

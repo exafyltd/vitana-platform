@@ -25,6 +25,7 @@ import { emitOasisEvent } from '../services/oasis-event-service';
 import { notifyUserAsync } from '../services/notification-service';
 import { sendProactiveMatchMessages, ProactiveMatchResult } from '../services/proactive-match-messenger';
 import { dispatchEvent } from '../services/automation-executor';
+import * as repo from './matchmaking-repository';
 
 const router = Router();
 
@@ -191,10 +192,7 @@ router.post('/recompute/daily', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // Call RPC function
-    const { data, error } = await supabase.rpc('match_recompute_daily', {
-      p_user_id: null, // Will use auth.uid() in RPC
-      p_date: matchDate
-    });
+    const { data, error } = await repo.recomputeDailyMatchesRpc(supabase, matchDate);
 
     if (error) {
       console.error(`[${VTID}] POST /match/recompute/daily - RPC error:`, error.message);
@@ -375,10 +373,7 @@ router.get('/daily', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // Call RPC function
-    const { data, error } = await supabase.rpc('match_get_daily', {
-      p_user_id: null, // Will use auth.uid() in RPC
-      p_date: matchDate
-    });
+    const { data, error } = await repo.getDailyMatchesRpc(supabase, matchDate);
 
     if (error) {
       console.error(`[${VTID}] GET /match/daily - RPC error:`, error.message);
@@ -497,10 +492,7 @@ router.post('/:id/state', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // Call RPC function
-    const { data, error } = await supabase.rpc('match_set_state', {
-      p_match_id: matchId,
-      p_state: newState
-    });
+    const { data, error } = await repo.setMatchStateRpc(supabase, matchId, newState);
 
     if (error) {
       console.error(`[${VTID}] POST /match/:id/state - RPC error:`, error.message);
@@ -599,11 +591,7 @@ router.post('/:id/state', async (req: Request, res: Response) => {
         try { acceptorId = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub; } catch {}
 
         // Query match to get both users and tenant
-        const { data: match } = await supabase
-          .from('user_matches')
-          .select('user_id, matched_user_id, tenant_id')
-          .eq('id', matchId)
-          .single();
+        const { data: match } = await repo.fetchMatchUsersAndTenant(supabase, matchId);
 
         if (match?.tenant_id && acceptorId) {
           const otherUserId = acceptorId === match.user_id ? match.matched_user_id : match.user_id;
@@ -634,7 +622,7 @@ router.post('/:id/state', async (req: Request, res: Response) => {
       try {
         let _uid = '';
         try { _uid = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub; } catch {}
-        const { data: _m } = await supabase.from('user_matches').select('tenant_id').eq('id', matchId).maybeSingle();
+        const { data: _m } = await repo.fetchMatchTenantId(supabase, matchId);
         if (_uid && _m?.tenant_id) {
           import('../services/milestone-service').then(({ checkMilestonesForAction }) => {
             checkMilestonesForAction(supabase, _uid, _m.tenant_id, 'match_accepted').catch(() => {});
@@ -779,12 +767,7 @@ router.post('/proactive/send', async (req: Request, res: Response) => {
       const { createClient } = await import('@supabase/supabase-js');
       const supa = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE!);
 
-      const { data: users, error } = await supa
-        .from('matches_daily')
-        .select('user_id')
-        .eq('match_date', date)
-        .eq('state', 'suggested')
-        .gte('score', min_score);
+      const { data: users, error } = await repo.fetchUsersWithSuggestedMatches(supa, date, min_score);
 
       if (error) {
         console.error(`[${VTID}] Failed to query users with matches:`, error.message);

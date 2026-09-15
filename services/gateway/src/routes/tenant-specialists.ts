@@ -24,6 +24,7 @@ import { createClient } from '@supabase/supabase-js';
 import * as tenantRepo from '../services/specialists/tenant-specialists-repository';
 import { RepositoryError } from '../services/specialists/tenant-specialists-repository';
 import { clearTenantPersonaCache } from '../services/persona-registry';
+import * as ticketsRepo from './tenant-specialists-tickets-repository';
 
 const router = Router();
 const VTID = 'VTID-02655';
@@ -343,32 +344,21 @@ router.post('/:tenantId/customers/:vitanaId/approve-all', async (req: Request, r
   // Resolve vitana_id → user_id via the canonical app_users mirror, then
   // confirm the customer is a member of this tenant. Refusing to act on
   // tickets owned by users outside the tenant is the security guarantee.
-  const { data: appUser } = await supabase
-    .from('app_users')
-    .select('user_id')
-    .eq('vitana_id', vitanaId)
-    .maybeSingle();
+  const { data: appUser } = await ticketsRepo.fetchAppUserIdByVitanaId(supabase, vitanaId);
   if (!appUser) {
     return res.status(404).json({ ok: false, error: 'CUSTOMER_NOT_FOUND' });
   }
   const customerUserId = appUser.user_id;
 
-  const { data: membership } = await supabase
-    .from('user_tenants')
-    .select('user_id')
-    .eq('user_id', customerUserId)
-    .eq('tenant_id', tenantId)
-    .maybeSingle();
+  const { data: membership } = await ticketsRepo.fetchTenantMembership(supabase, customerUserId, tenantId);
   if (!membership) {
     return res.status(404).json({ ok: false, error: 'CUSTOMER_NOT_IN_TENANT' });
   }
 
   // Find this customer's actionable tickets.
-  const { data: tickets, error: qErr } = await supabase
-    .from('feedback_tickets')
-    .select('id, ticket_number, kind, status, vitana_id, resolver_agent')
-    .eq('user_id', customerUserId)
-    .in('status', ['spec_ready', 'answer_ready']);
+  const { data: tickets, error: qErr } = await ticketsRepo.fetchActionableFeedbackTickets(
+    supabase, customerUserId, ['spec_ready', 'answer_ready'],
+  );
   if (qErr) {
     return res.status(502).json({ ok: false, error: 'QUERY_FAILED', details: qErr.message });
   }
@@ -399,25 +389,13 @@ router.post('/:tenantId/customers/:vitanaId/approve-all', async (req: Request, r
 
   for (const t of tickets ?? []) {
     if (t.status === 'spec_ready') {
-      const { data: updated, error: upErr } = await supabase
-        .from('feedback_tickets')
-        .update({ status: 'in_progress' })
-        .eq('id', t.id)
-        .eq('status', 'spec_ready')          // optimistic lock against concurrent edits
-        .select('id, ticket_number, kind, status, vitana_id, resolver_agent')
-        .single();
+      const { data: updated, error: upErr } = await ticketsRepo.advanceSpecReadyTicketToInProgress(supabase, t.id);
       if (upErr || !updated) { skipped++; continue; }
       approved++;
       results.push({ ticket_number: updated.ticket_number, from: 'spec_ready', to: 'in_progress' });
       await emit('feedback.ticket.status_changed', updated, { new_status: 'in_progress', from: 'bulk-approve' });
     } else if (t.status === 'answer_ready') {
-      const { data: updated, error: upErr } = await supabase
-        .from('feedback_tickets')
-        .update({ status: 'resolved', resolved_at: now, auto_resolved: false })
-        .eq('id', t.id)
-        .eq('status', 'answer_ready')
-        .select('id, ticket_number, kind, status, vitana_id, resolver_agent, draft_answer_md')
-        .single();
+      const { data: updated, error: upErr } = await ticketsRepo.advanceAnswerReadyTicketToResolved(supabase, t.id, now);
       if (upErr || !updated) { skipped++; continue; }
       sent++;
       results.push({ ticket_number: updated.ticket_number, from: 'answer_ready', to: 'resolved' });
@@ -427,7 +405,7 @@ router.post('/:tenantId/customers/:vitanaId/approve-all', async (req: Request, r
 
   // Tenant audit row covering the whole batch — easier to scan than N
   // individual rows when reading the tenant audit log.
-  await supabase.from('agent_audit_log').insert({
+  await ticketsRepo.insertAgentAuditLog(supabase, {
     actor_user_id: userId,
     tenant_id: tenantId,
     persona_id: null,
@@ -466,25 +444,12 @@ async function loadTicketIfTenantOwned(
   tenantId: string,
 ): Promise<null | { ticket: Record<string, any>; handoffs: Array<Record<string, any>> }> {
   const supabase = getServiceClient();
-  const { data: ticket } = await supabase
-    .from('feedback_tickets')
-    .select('*')
-    .eq('id', ticketId)
-    .maybeSingle();
+  const { data: ticket } = await ticketsRepo.fetchFeedbackTicketById(supabase, ticketId);
   if (!ticket) return null;
   if (!ticket.user_id) return null;
-  const { data: membership } = await supabase
-    .from('user_tenants')
-    .select('user_id')
-    .eq('user_id', ticket.user_id)
-    .eq('tenant_id', tenantId)
-    .maybeSingle();
+  const { data: membership } = await ticketsRepo.fetchTenantMembership(supabase, ticket.user_id, tenantId);
   if (!membership) return null;
-  const { data: handoffs } = await supabase
-    .from('feedback_handoff_events')
-    .select('id, from_agent, to_agent, reason, detected_intent, matched_keyword, confidence, ts')
-    .eq('ticket_id', ticketId)
-    .order('ts', { ascending: true });
+  const { data: handoffs } = await ticketsRepo.fetchFeedbackHandoffEvents(supabase, ticketId);
   return { ticket, handoffs: handoffs ?? [] };
 }
 
@@ -512,13 +477,7 @@ router.get('/:tenantId/tickets/:id', async (req: Request, res: Response) => {
   const findingId = (loaded.ticket as { linked_finding_id?: string | null }).linked_finding_id ?? null;
   if (findingId) {
     const supabase = getServiceClient();
-    const { data } = await supabase
-      .from('dev_autopilot_executions')
-      .select('id, status, pr_url, pr_number, branch, failure_stage, created_at, updated_at, completed_at')
-      .eq('finding_id', findingId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const { data } = await ticketsRepo.fetchLatestExecutionByFindingId(supabase, findingId);
     if (data) execution = data as unknown as typeof execution;
   }
 
@@ -536,15 +495,10 @@ router.post('/:tenantId/tickets/:id/reject', async (req: Request, res: Response)
   if (!loaded) return res.status(404).json({ ok: false, error: 'NOT_FOUND_OR_NOT_IN_TENANT' });
 
   const supabase = getServiceClient();
-  const { data: updated, error } = await supabase
-    .from('feedback_tickets')
-    .update({ status: 'rejected', supervisor_notes: v.data.reason ?? null })
-    .eq('id', req.params.id)
-    .select('id, ticket_number, kind, status, vitana_id')
-    .single();
+  const { data: updated, error } = await ticketsRepo.updateFeedbackTicketRejected(supabase, req.params.id, v.data.reason ?? null);
   if (error || !updated) return res.status(502).json({ ok: false, error: error?.message });
 
-  await supabase.from('agent_audit_log').insert({
+  await ticketsRepo.insertAgentAuditLog(supabase, {
     actor_user_id: userId,
     tenant_id: tenantId,
     persona_id: null,
@@ -638,14 +592,7 @@ router.post('/:tenantId/tickets/:id/rollback', async (req: Request, res: Respons
 
   // Look up the execution row so we can get the merge SHA.
   const supabase = getServiceClient();
-  const { data: exec } = await supabase
-    .from('dev_autopilot_executions')
-    .select('id, status, pr_url, pr_number, metadata')
-    .eq('finding_id', t.linked_finding_id)
-    .eq('status', 'completed')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const { data: exec } = await ticketsRepo.fetchLatestCompletedExecutionByFindingId(supabase, t.linked_finding_id);
   if (!exec) {
     return res.status(409).json({ ok: false, error: 'NO_COMPLETED_EXEC' });
   }
@@ -680,21 +627,18 @@ router.post('/:tenantId/tickets/:id/rollback', async (req: Request, res: Respons
   // status back to 'reopened' so a fresh autopilot attempt can be launched
   // (or so the supervisor can refine the spec and try again).
   const nowIso = new Date().toISOString();
-  const { error: upErr } = await supabase
-    .from('feedback_tickets')
-    .update({
-      status: 'reopened',
-      rolled_back_at: nowIso,
-      rollback_pr_url: revertPr.html_url,
-      rolled_back_by: userId,
-    })
-    .eq('id', t.id);
+  const { error: upErr } = await ticketsRepo.updateFeedbackTicketRollback(supabase, t.id, {
+    status: 'reopened',
+    rolled_back_at: nowIso,
+    rollback_pr_url: revertPr.html_url,
+    rolled_back_by: userId,
+  });
   if (upErr) {
     return res.status(502).json({ ok: false, error: 'TICKET_UPDATE_FAILED', detail: upErr.message });
   }
 
   // Audit + OASIS event for traceability.
-  await supabase.from('agent_audit_log').insert({
+  await ticketsRepo.insertAgentAuditLog(supabase, {
     actor_user_id: userId,
     tenant_id: tenantId,
     persona_id: null,
@@ -831,12 +775,11 @@ router.post('/:tenantId/tickets/:id/draft-spec', async (req: Request, res: Respo
     [draftField]: markdown,
   };
   if (supervisorInstructions) patch.supervisor_notes = supervisorInstructions;
-  const { error: upErr } = await supabase
-    .from('feedback_tickets').update(patch).eq('id', t.id);
+  const { error: upErr } = await ticketsRepo.updateFeedbackTicketDraft(supabase, t.id, patch);
   if (upErr) return res.status(502).json({ ok: false, error: upErr.message });
 
   // Audit + OASIS
-  await supabase.from('agent_audit_log').insert({
+  await ticketsRepo.insertAgentAuditLog(supabase, {
     actor_user_id: userId,
     tenant_id: tenantId,
     persona_id: null,
@@ -981,10 +924,9 @@ router.post('/:tenantId/tickets/:id/activate', async (req: Request, res: Respons
     // (the bridge already wrote linked_finding_id; we do another write so
     // status + audit are coherent if the bridge's intermediate write
     // briefly persisted nothing).
-    const { error: upErr } = await supabase
-      .from('feedback_tickets')
-      .update({ status: 'in_progress', linked_finding_id: dispatch.recommendation_id ?? null })
-      .eq('id', t.id);
+    const { error: upErr } = await ticketsRepo.dispatchFeedbackTicketToInProgress(
+      supabase, t.id, dispatch.recommendation_id ?? null,
+    );
     if (upErr) return res.status(502).json({ ok: false, error: upErr.message });
     newStatus = 'in_progress';
     action = 'dispatched';
@@ -999,9 +941,7 @@ router.post('/:tenantId/tickets/:id/activate', async (req: Request, res: Respons
   // The actual delivery to the user (push notification / inbox) is a
   // separate follow-up; for now status flip + audit is the contract.
   else if (t.kind === 'support_question' && t.status === 'answer_ready') {
-    const { data: u, error: upErr } = await supabase.from('feedback_tickets')
-      .update({ status: 'resolved', resolved_at: new Date().toISOString(), auto_resolved: false })
-      .eq('id', t.id).select('status').single();
+    const { data: u, error: upErr } = await ticketsRepo.resolveSupportQuestionTicket(supabase, t.id, new Date().toISOString());
     if (upErr) return res.status(502).json({ ok: false, error: upErr.message });
     if (u) { newStatus = 'resolved'; action = 'sent_answer'; }
   }
@@ -1009,16 +949,14 @@ router.post('/:tenantId/tickets/:id/activate', async (req: Request, res: Respons
   // marketplace_claim / account_issue: spec_ready → in_progress (no
   // executor adapter yet — these stay in_progress until manually closed).
   else if ((t.kind === 'marketplace_claim' || t.kind === 'account_issue') && t.status === 'spec_ready') {
-    const { data: u, error: upErr } = await supabase.from('feedback_tickets')
-      .update({ status: 'in_progress' }).eq('id', t.id).select('status').single();
+    const { data: u, error: upErr } = await ticketsRepo.advanceTicketToInProgressSimple(supabase, t.id);
     if (upErr) return res.status(502).json({ ok: false, error: upErr.message });
     if (u) { newStatus = 'in_progress'; action = 'approved'; }
   }
 
   // feedback / feature_request: NEEDS_DRAFT → in_progress.
   else if (!KINDS_WITH_DRAFT.has(t.kind) && NEEDS_DRAFT.has(t.status)) {
-    const { data: u, error: upErr } = await supabase.from('feedback_tickets')
-      .update({ status: 'in_progress' }).eq('id', t.id).select('status').single();
+    const { data: u, error: upErr } = await ticketsRepo.advanceTicketToInProgressSimple(supabase, t.id);
     if (upErr) return res.status(502).json({ ok: false, error: upErr.message });
     if (u) { newStatus = 'in_progress'; action = 'activated'; }
   }
@@ -1034,7 +972,7 @@ router.post('/:tenantId/tickets/:id/activate', async (req: Request, res: Respons
   }
 
   // Audit + OASIS
-  await supabase.from('agent_audit_log').insert({
+  await ticketsRepo.insertAgentAuditLog(supabase, {
     actor_user_id: userId,
     tenant_id: tenantId,
     persona_id: null,
@@ -1112,20 +1050,17 @@ router.put('/:tenantId/tickets/:id/reclassify', async (req: Request, res: Respon
   }
 
   const supabase = getServiceClient();
-  const { error: upErr } = await supabase
-    .from('feedback_tickets')
-    .update({
-      kind: v.data.kind,
-      status: 'triaged',
-      spec_md: null,
-      draft_answer_md: null,
-      resolution_md: null,
-      resolver_agent: null,
-    })
-    .eq('id', t.id);
+  const { error: upErr } = await ticketsRepo.reclassifyFeedbackTicket(supabase, t.id, {
+    kind: v.data.kind,
+    status: 'triaged',
+    spec_md: null,
+    draft_answer_md: null,
+    resolution_md: null,
+    resolver_agent: null,
+  });
   if (upErr) return res.status(502).json({ ok: false, error: upErr.message });
 
-  await supabase.from('agent_audit_log').insert({
+  await ticketsRepo.insertAgentAuditLog(supabase, {
     actor_user_id: userId,
     tenant_id: tenantId,
     persona_id: null,

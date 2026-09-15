@@ -15,6 +15,7 @@
 import { Router, Request, Response } from 'express';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import * as repo from './orb-agent-trace-repository';
 
 const router = Router();
 const VTID = 'VTID-LIVEKIT-AGENT-TRACE';
@@ -52,7 +53,7 @@ router.post('/orb/agent-trace', async (req: Request, res: Response) => {
   }
 
   try {
-    const { error } = await sb.from('oasis_events').insert({
+    const { error } = await repo.insertAgentTraceEvent(sb, {
       topic: TRACE_TOPIC,
       vtid: VTID,
       source: 'orb-agent',
@@ -105,18 +106,13 @@ router.get('/orb/agent-trace', requireAuth, async (req: AuthenticatedRequest, re
 
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
   try {
-    let query = sb
-      .from('oasis_events')
-      .select('id, topic, metadata, created_at')
-      .eq('topic', TRACE_TOPIC)
-      .filter('metadata->>user_id', 'eq', userId)
-      .gte('created_at', oneHourAgo)
-      .order('created_at', { ascending: false })
-      .limit(limit);
-    if (phaseFilter) {
-      query = query.filter('metadata->>phase', 'eq', phaseFilter);
-    }
-    const { data, error } = await query;
+    const { data, error } = await repo.fetchUserTracesSince(sb, {
+      topic: TRACE_TOPIC,
+      userId,
+      sinceIso: oneHourAgo,
+      limit,
+      phaseFilter,
+    });
     if (error) {
       return res.status(500).json({ ok: false, error: error.message, vtid: VTID });
     }
@@ -165,13 +161,7 @@ router.get('/orb/agent-trace/recent', async (_req: Request, res: Response) => {
   }
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
   try {
-    const { data, error } = await sb
-      .from('oasis_events')
-      .select('id, topic, metadata, created_at')
-      .eq('topic', TRACE_TOPIC)
-      .gte('created_at', oneHourAgo)
-      .order('created_at', { ascending: false })
-      .limit(15);
+    const { data, error } = await repo.fetchRecentTracesForTopic(sb, TRACE_TOPIC, oneHourAgo, 15);
     if (error) {
       return res.status(500).json({ ok: false, error: error.message, vtid: VTID });
     }

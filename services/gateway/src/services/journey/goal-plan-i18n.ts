@@ -17,6 +17,7 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { callViaRouter } from '../llm-router';
 import { normalizeLocale, LOCALE_ENGLISH_NAME, LOCALE_INFORMAL_HINT, type GatewayLocale } from '../../i18n/catalog';
 import type { GoalPlanView, GoalPlanStep } from './goal-planner-service';
+import * as repo from './goal-plan-i18n-repository';
 
 const LOG = '[VTID-03152b goal-plan-i18n]';
 
@@ -176,9 +177,9 @@ export async function localizeGoalPlan(
   try {
     const [{ data: stepRows }, { data: planRows }] = await Promise.all([
       stepIds.length
-        ? client.from('goal_plan_step_i18n').select('step_id, title, description').eq('locale', target).in('step_id', stepIds)
+        ? repo.fetchCachedStepTranslations(client, target, stepIds)
         : Promise.resolve({ data: [] as any[] }),
-      client.from('goal_plan_i18n').select('goal_text, plan_summary').eq('locale', target).eq('plan_id', plan.id).maybeSingle(),
+      repo.fetchCachedPlanTranslation(client, target, plan.id),
     ]);
     for (const r of (stepRows as any[]) ?? []) {
       cachedSteps.set(r.step_id, { title: r.title, description: r.description ?? null });
@@ -211,15 +212,12 @@ export async function localizeGoalPlan(
       // Persist new translations to the cache (best-effort; never blocks the response).
       try {
         if (goalTextMissing || summaryMissing) {
-          await client.from('goal_plan_i18n').upsert(
-            {
-              plan_id: plan.id,
-              locale: target,
-              goal_text: cachedGoalText ?? plan.goal_text,
-              plan_summary: cachedSummary ?? plan.plan_summary,
-            },
-            { onConflict: 'plan_id,locale' },
-          );
+          await repo.upsertPlanTranslation(client, {
+            plan_id: plan.id,
+            locale: target,
+            goal_text: cachedGoalText ?? plan.goal_text,
+            plan_summary: cachedSummary ?? plan.plan_summary,
+          });
         }
         const rows = missingSteps.map((s) => {
           const tr = translated.steps[s.id];
@@ -229,7 +227,7 @@ export async function localizeGoalPlan(
           return { step_id: s.id, locale: target, title, description };
         });
         if (rows.length > 0) {
-          await client.from('goal_plan_step_i18n').upsert(rows, { onConflict: 'step_id,locale' });
+          await repo.upsertStepTranslations(client, rows);
         }
       } catch (e: any) {
         console.warn(`${LOG} cache write failed (non-fatal): ${e?.message}`);
@@ -278,13 +276,11 @@ export async function seedGoalPlanSourceCache(
 ): Promise<void> {
   const locale = normalizeLocale(sourceLocaleRaw);
   try {
-    await client
-      .from('goal_plan_i18n')
-      .upsert({ plan_id: planId, locale, goal_text: goalText ?? null, plan_summary: planSummary ?? null }, { onConflict: 'plan_id,locale' });
+    await repo.upsertPlanTranslation(client, { plan_id: planId, locale, goal_text: goalText ?? null, plan_summary: planSummary ?? null });
     if (steps.length > 0) {
-      await client.from('goal_plan_step_i18n').upsert(
+      await repo.upsertStepTranslations(
+        client,
         steps.map((s) => ({ step_id: s.id, locale, title: s.title, description: s.description ?? null })),
-        { onConflict: 'step_id,locale' },
       );
     }
   } catch (e: any) {

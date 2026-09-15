@@ -28,6 +28,7 @@ import { isStaging } from '../env';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { runWithShadowAwaitable } from '../services/llm-router-shadow';
 import { accuracyRollup } from '../services/shadow-accuracy';
+import * as repo from './admin-staging-repository';
 import { candidateEndpointFor, vertexPredictToolName } from '../services/candidate-model-provider';
 
 const router = Router();
@@ -83,15 +84,7 @@ router.post(
       return;
     }
 
-    let query = supabase
-      .from('tenant_settings')
-      .select('tenant_id, feature_flags');
-    if (tenant_id && tenant_id !== 'ALL') {
-      query = query.eq('tenant_id', tenant_id);
-    }
-    query = query.limit(500);
-
-    const { data: rows, error: readErr } = await query;
+    const { data: rows, error: readErr } = await repo.fetchTenantSettingsFeatureFlags(supabase, tenant_id);
     if (readErr) {
       res.status(500).json({ ok: false, error: 'read_failed', message: readErr.message });
       return;
@@ -125,10 +118,7 @@ router.post(
     const failed: Array<{ tenant_id: string; error: string }> = [];
     for (const r of toFlip) {
       const merged = { ...(r.feature_flags ?? {}), data_export_ok: true };
-      const { error: updErr } = await supabase
-        .from('tenant_settings')
-        .update({ feature_flags: merged })
-        .eq('tenant_id', r.tenant_id);
+      const { error: updErr } = await repo.updateTenantFeatureFlags(supabase, r.tenant_id, merged);
       if (updErr) {
         failed.push({ tenant_id: r.tenant_id, error: updErr.message });
       } else {
@@ -293,13 +283,7 @@ router.get(
     }
 
     const sinceIso = new Date(Date.now() - windowHours * 3600_000).toISOString();
-    const { data: rows, error } = await supabase
-      .from('oasis_events')
-      .select('id, created_at, metadata')
-      .eq('topic', 'eval.shadow.compared')
-      .gte('created_at', sinceIso)
-      .order('created_at', { ascending: false })
-      .limit(50_000);
+    const { data: rows, error } = await repo.fetchShadowComparedEventsInWindow(supabase, sinceIso);
 
     if (error) {
       res.status(500).json({ ok: false, error: 'query_failed', message: error.message });
@@ -801,20 +785,11 @@ router.get(
     const { resolveSpokenFirstName } = await import('../services/awareness-unified-context');
 
     // Resolve tenant + first name the same way the live controller does.
-    const { data: appUser } = await supabase
-      .from('app_users')
-      .select('tenant_id, display_name')
-      .eq('user_id', userId)
-      .maybeSingle();
+    const { data: appUser } = await repo.fetchAppUserForWakeBrief(supabase, userId);
     const tenantId = (appUser as { tenant_id?: string } | null)?.tenant_id ?? null;
     const displayName = (appUser as { display_name?: string | null } | null)?.display_name ?? null;
 
-    const { data: nameFact } = await supabase
-      .from('memory_facts')
-      .select('fact_value')
-      .eq('user_id', userId)
-      .eq('fact_key', 'user_name')
-      .maybeSingle();
+    const { data: nameFact } = await repo.fetchUserNameFact(supabase, userId);
     const { firstName } = resolveSpokenFirstName({
       memoryFactUserName: (nameFact as { fact_value?: string | null } | null)?.fact_value ?? null,
       displayName,

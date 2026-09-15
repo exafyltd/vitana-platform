@@ -13,6 +13,7 @@
  */
 import { getSupabase } from '../../lib/supabase';
 import type { AdminScanner, InsightDraft } from './types';
+import * as repo from './compliance-repository';
 
 const LOG_PREFIX = '[admin-scanner:compliance]';
 const PRIVILEGED_GRANT_THRESHOLD = 3;
@@ -39,12 +40,7 @@ export const complianceScanner: AdminScanner = {
     // 1. Privileged role-grant spike — filter for grants that mention a
     // privileged role in after_state.
     try {
-      const { data: grants } = await supabase
-        .from('tenant_admin_audit_log')
-        .select('id, action, actor_user_id, target_resource, after_state, created_at')
-        .eq('tenant_id', tenantId)
-        .in('action', PRIVILEGED_GRANT_ACTIONS)
-        .gte('created_at', d7);
+      const { data: grants } = await repo.fetchPrivilegedGrantAuditRows(supabase, tenantId, PRIVILEGED_GRANT_ACTIONS, d7);
       if (grants && grants.length > 0) {
         const privileged = (grants as { after_state: any }[]).filter((g) => {
           const state = g.after_state;
@@ -84,14 +80,7 @@ export const complianceScanner: AdminScanner = {
 
     // 2. Flagged content aging beyond legal review SLA
     try {
-      const { data: aged } = await supabase
-        .from('media_uploads')
-        .select('id, created_at, media_type')
-        .eq('tenant_id', tenantId)
-        .eq('status', 'flagged')
-        .lt('updated_at', flaggedCutoff)
-        .order('updated_at', { ascending: true })
-        .limit(20);
+      const { data: aged } = await repo.fetchAgedFlaggedMediaUploads(supabase, tenantId, flaggedCutoff);
       if (aged && aged.length > 0) {
         insights.push({
           natural_key: 'flagged_content_aging_72h',
@@ -121,23 +110,13 @@ export const complianceScanner: AdminScanner = {
 
     // 3. GDPR erasure requests missing deletion confirmation
     try {
-      const { data: requests } = await supabase
-        .from('tenant_admin_audit_log')
-        .select('id, target_resource, created_at')
-        .eq('tenant_id', tenantId)
-        .eq('action', 'user.delete_request')
-        .lt('created_at', gdprCutoff);
+      const { data: requests } = await repo.fetchGdprErasureRequests(supabase, tenantId, gdprCutoff);
       if (requests && requests.length > 0) {
         const requestTargets = requests
           .map((r: { target_resource: string | null }) => r.target_resource)
           .filter((t: string | null): t is string => !!t);
         const { data: completions } = requestTargets.length > 0
-          ? await supabase
-              .from('tenant_admin_audit_log')
-              .select('target_resource')
-              .eq('tenant_id', tenantId)
-              .eq('action', 'user.deleted')
-              .in('target_resource', requestTargets)
+          ? await repo.fetchGdprErasureCompletions(supabase, tenantId, requestTargets)
           : { data: [] };
         const completed = new Set(
           (completions ?? []).map((c: { target_resource: string }) => c.target_resource),

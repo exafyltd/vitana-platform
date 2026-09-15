@@ -15,6 +15,7 @@ import { Router, Request, Response } from 'express';
 import { getSupabase } from '../lib/supabase';
 import { getConnector } from '../connectors';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import * as repo from './connector-webhooks-repository';
 
 const router = Router();
 
@@ -41,7 +42,7 @@ router.post('/webhook/:connectorId', async (req: Request, res: Response) => {
 
   if (!connector) {
     if (supabase) {
-      await supabase.from('connector_webhooks_log').insert({
+      await repo.insertConnectorWebhookLog(supabase, {
         connector_id: connectorId,
         event_type: 'unknown_connector',
         signature_valid: false,
@@ -67,7 +68,7 @@ router.post('/webhook/:connectorId', async (req: Request, res: Response) => {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     if (supabase) {
-      await supabase.from('connector_webhooks_log').insert({
+      await repo.insertConnectorWebhookLog(supabase, {
         connector_id: connectorId,
         event_type: 'handler_error',
         signature_valid: null,
@@ -81,7 +82,7 @@ router.post('/webhook/:connectorId', async (req: Request, res: Response) => {
 
   if (!result.valid) {
     if (supabase) {
-      await supabase.from('connector_webhooks_log').insert({
+      await repo.insertConnectorWebhookLog(supabase, {
         connector_id: connectorId,
         event_type: 'invalid',
         signature_valid: false,
@@ -106,35 +107,35 @@ router.post('/webhook/:connectorId', async (req: Request, res: Response) => {
 
       // Find or create user_connection row
       let userConnectionId: string | null = null;
-      const { data: conn } = await supabase
-        .from('user_connections')
-        .select('id, tenant_id')
-        .eq('user_id', userId)
-        .eq('connector_id', connector.id)
-        .limit(1)
-        .maybeSingle();
+      const { data: conn, error: connErr } = await repo.fetchUserConnectionForWebhook(supabase, userId, connector.id);
+      if (connErr) {
+        // A real DB error here must NOT be treated the same as "no
+        // connection row" — that silently drops tenantId, which makes every
+        // downstream `if (tenantId)` upsert (sleep/activity/workout data) a
+        // silent no-op while `persisted++` below still counts the event and
+        // the webhook acks 200, so the provider never retries. Throw so the
+        // existing per-event catch below counts it as skipped instead.
+        throw connErr;
+      }
       if (conn) userConnectionId = conn.id;
       const tenantId = conn?.tenant_id;
 
       // On auth.completed: flip connection active
       if (event.topic === 'connector.wearable.auth.completed' && conn) {
-        await supabase
-          .from('user_connections')
-          .update({
-            is_active: true,
-            last_sync_at: new Date().toISOString(),
-            provider_user_id: (event.payload.terra_user_id as string | undefined) ?? null,
-            provider_username: (event.payload.provider as string | undefined) ?? null,
-          })
-          .eq('id', conn.id);
+        await repo.updateUserConnectionState(supabase, conn.id, {
+          is_active: true,
+          last_sync_at: new Date().toISOString(),
+          provider_user_id: (event.payload.terra_user_id as string | undefined) ?? null,
+          provider_username: (event.payload.provider as string | undefined) ?? null,
+        });
       }
 
       // On auth.revoked: flip inactive
       if (event.topic === 'connector.wearable.auth.revoked' && conn) {
-        await supabase
-          .from('user_connections')
-          .update({ is_active: false, disconnected_at: new Date().toISOString() })
-          .eq('id', conn.id);
+        await repo.updateUserConnectionState(supabase, conn.id, {
+          is_active: false,
+          disconnected_at: new Date().toISOString(),
+        });
       }
 
       // On data events: upsert into daily metrics / workouts
@@ -165,31 +166,26 @@ router.post('/webhook/:connectorId', async (req: Request, res: Response) => {
               patch[k] = event.payload[k];
             }
           }
-          await supabase
-            .from('wearable_daily_metrics')
-            .upsert(patch, { onConflict: 'user_id,provider,metric_date' });
+          await repo.upsertWearableDailyMetrics(supabase, patch);
         }
       } else if (event.topic === 'connector.wearable.workout.recorded') {
         if (tenantId) {
-          await supabase.from('wearable_workouts').upsert(
-            {
-              tenant_id: tenantId,
-              user_id: userId,
-              user_connection_id: userConnectionId,
-              provider,
-              external_workout_id: (event.payload.external_workout_id as string | null) ?? null,
-              workout_type: (event.payload.workout_type as string | null) ?? null,
-              started_at: (event.payload.started_at as string | null) ?? new Date().toISOString(),
-              ended_at: (event.payload.ended_at as string | null) ?? null,
-              duration_minutes: (event.payload.duration_minutes as number | null) ?? null,
-              distance_meters: (event.payload.distance_meters as number | null) ?? null,
-              calories: (event.payload.calories as number | null) ?? null,
-              avg_hr: (event.payload.avg_hr as number | null) ?? null,
-              max_hr: (event.payload.max_hr as number | null) ?? null,
-              raw: event.raw ?? null,
-            },
-            { onConflict: 'user_id,provider,external_workout_id' }
-          );
+          await repo.upsertWearableWorkout(supabase, {
+            tenant_id: tenantId,
+            user_id: userId,
+            user_connection_id: userConnectionId,
+            provider,
+            external_workout_id: (event.payload.external_workout_id as string | null) ?? null,
+            workout_type: (event.payload.workout_type as string | null) ?? null,
+            started_at: (event.payload.started_at as string | null) ?? new Date().toISOString(),
+            ended_at: (event.payload.ended_at as string | null) ?? null,
+            duration_minutes: (event.payload.duration_minutes as number | null) ?? null,
+            distance_meters: (event.payload.distance_meters as number | null) ?? null,
+            calories: (event.payload.calories as number | null) ?? null,
+            avg_hr: (event.payload.avg_hr as number | null) ?? null,
+            max_hr: (event.payload.max_hr as number | null) ?? null,
+            raw: event.raw ?? null,
+          });
         }
       }
 
@@ -212,7 +208,7 @@ router.post('/webhook/:connectorId', async (req: Request, res: Response) => {
   }
 
   if (supabase) {
-    await supabase.from('connector_webhooks_log').insert({
+    await repo.insertConnectorWebhookLog(supabase, {
       connector_id: connectorId,
       event_type: (parsedPayload as { type?: string } | null)?.type ?? 'ok',
       signature_valid: true,

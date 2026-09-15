@@ -30,6 +30,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { createHash } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
+import * as repo from './context-assembly-engine-repository';
 
 // =============================================================================
 // VTID-01112: Configuration
@@ -600,32 +601,27 @@ async function fetchMemoryItems(
   const persistentCategories = CONTEXT_CONFIG.PERSISTENT_CATEGORIES as readonly string[];
 
   // Query 1: Persistent categories WITHOUT time filter
-  const { data: persistentData, error: persistentError } = await supabase
-    .from('memory_items')
-    .select('id, category_key, source, content, content_json, importance, occurred_at, created_at')
-    .eq('tenant_id', tenantId)
-    .eq('user_id', userId)
-    .in('category_key', persistentCategories)
-    // NO time filter - personal identity info should always be available
-    .order('importance', { ascending: false })
-    .order('occurred_at', { ascending: false })
-    .limit(limit);
+  const { data: persistentData, error: persistentError } = await repo.fetchPersistentMemoryItems(
+    supabase,
+    tenantId,
+    userId,
+    persistentCategories,
+    limit,
+  );
 
   if (persistentError) {
     console.warn('[VTID-DEBUG-02] Persistent memory fetch error:', persistentError.message);
   }
 
   // Query 2: Time-sensitive categories WITH time filter
-  const { data: timeSensitiveData, error: timeSensitiveError } = await supabase
-    .from('memory_items')
-    .select('id, category_key, source, content, content_json, importance, occurred_at, created_at')
-    .eq('tenant_id', tenantId)
-    .eq('user_id', userId)
-    .not('category_key', 'in', `(${persistentCategories.join(',')})`)
-    .gte('occurred_at', since.toISOString())
-    .order('importance', { ascending: false })
-    .order('occurred_at', { ascending: false })
-    .limit(limit);
+  const { data: timeSensitiveData, error: timeSensitiveError } = await repo.fetchTimeSensitiveMemoryItems(
+    supabase,
+    tenantId,
+    userId,
+    persistentCategories,
+    since.toISOString(),
+    limit,
+  );
 
   if (timeSensitiveError) {
     console.warn('[VTID-01112] Time-sensitive memory fetch error:', timeSensitiveError.message);
@@ -670,14 +666,7 @@ async function fetchDiaryEntries(
   since: Date,
   limit: number
 ): Promise<NormalizedDiaryEntry[]> {
-  const { data, error } = await supabase
-    .from('memory_diary_entries')
-    .select('id, entry_date, entry_type, raw_text, mood, energy_level, tags, created_at')
-    .eq('tenant_id', tenantId)
-    .eq('user_id', userId)
-    .gte('entry_date', since.toISOString().split('T')[0])
-    .order('entry_date', { ascending: false })
-    .limit(limit);
+  const { data, error } = await repo.fetchDiaryEntriesSince(supabase, tenantId, userId, since.toISOString().split('T')[0], limit);
 
   if (error) {
     console.warn('[VTID-01112] Diary entries fetch error:', error.message);
@@ -707,14 +696,7 @@ async function fetchGardenNodes(
   tenantId: string,
   limit: number
 ): Promise<NormalizedGardenNode[]> {
-  const { data, error } = await supabase
-    .from('memory_garden_nodes')
-    .select('id, domain, node_type, title, summary, confidence, first_seen, last_seen')
-    .eq('tenant_id', tenantId)
-    .eq('user_id', userId)
-    .order('confidence', { ascending: false })
-    .order('last_seen', { ascending: false })
-    .limit(limit);
+  const { data, error } = await repo.fetchGardenNodes(supabase, tenantId, userId, limit);
 
   if (error) {
     console.warn('[VTID-01112] Garden nodes fetch error:', error.message);
@@ -782,10 +764,7 @@ export async function assembleContext(request: ContextAssemblyRequest): Promise<
   try {
     // Bootstrap request context for RLS
     try {
-      await supabase.rpc('dev_bootstrap_request_context', {
-        p_tenant_id: request.tenant_id,
-        p_active_role: request.active_role
-      });
+      await repo.devBootstrapRequestContext(supabase, request.tenant_id, request.active_role);
     } catch {
       // Non-fatal if RPC doesn't exist
     }

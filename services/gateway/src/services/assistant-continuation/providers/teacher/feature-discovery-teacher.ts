@@ -70,6 +70,7 @@ import {
   pickTeacherInvitationMeta,
   listTeacherInvitations,
 } from './teacher-invitation-pool';
+import * as repo from './feature-discovery-teacher-repository';
 
 // ---------------------------------------------------------------------------
 // Inputs — caller forwards via ctx.extra.teacher
@@ -554,10 +555,7 @@ export function makeFeatureDiscoveryTeacherProvider(
       let catalog: CapabilityCatalogRow[];
       let ledger: AwarenessLedgerRow[];
       try {
-        const cap = await inputs.supabase
-          .from('system_capabilities')
-          .select('capability_key, display_name, description, manual_path, enabled, pedagogical_order')
-          .eq('enabled', true);
+        const cap = await repo.fetchEnabledSystemCapabilities(inputs.supabase);
         if (cap.error) {
           return {
             providerKey: TEACHER_PROVIDER_KEY,
@@ -568,11 +566,7 @@ export function makeFeatureDiscoveryTeacherProvider(
         }
         catalog = (cap.data || []) as CapabilityCatalogRow[];
 
-        const led = await inputs.supabase
-          .from('user_capability_awareness')
-          .select('capability_key, awareness_state, dismiss_count, last_introduced_at')
-          .eq('tenant_id', inputs.tenantId)
-          .eq('user_id', inputs.userId);
+        const led = await repo.fetchUserCapabilityAwareness(inputs.supabase, inputs.tenantId, inputs.userId);
         if (led.error) {
           // Ledger fetch failures degrade to empty ledger — every capability
           // is treated as 'unknown'. Better than silencing the Teacher.
@@ -838,11 +832,7 @@ async function produceGraduatedTrack(
   // ---- Fetch the refresh schedule (degrade to empty on error) ----
   let schedule: RefreshScheduleRow[] = [];
   try {
-    const sched = await inputs.supabase
-      .from('teacher_capability_refresh_schedule')
-      .select('capability_key, next_refresh_ok_at, refresh_count')
-      .eq('tenant_id', inputs.tenantId)
-      .eq('user_id', inputs.userId);
+    const sched = await repo.fetchTeacherCapabilityRefreshSchedule(inputs.supabase, inputs.tenantId, inputs.userId);
     if (!sched.error && Array.isArray(sched.data)) {
       schedule = sched.data as RefreshScheduleRow[];
     }
@@ -914,7 +904,7 @@ async function produceGraduatedTrack(
 
     // Record the refresh (advance the 90-day cadence). Best-effort.
     try {
-      await inputs.supabase.rpc('record_teacher_refresh', {
+      await repo.recordTeacherRefresh(inputs.supabase, {
         p_tenant_id: inputs.tenantId,
         p_user_id: inputs.userId,
         p_capability_key: refresh.row.capability_key,
@@ -977,7 +967,7 @@ async function produceGraduatedTrack(
 
   // Stamp the same-day silence sentinel: next allowed at start of next local day.
   try {
-    await inputs.supabase.rpc('record_teacher_refresh', {
+    await repo.recordTeacherRefresh(inputs.supabase, {
       p_tenant_id: inputs.tenantId,
       p_user_id: inputs.userId,
       p_capability_key: GRACEFUL_PAUSE_KEY,

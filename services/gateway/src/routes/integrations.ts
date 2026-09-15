@@ -22,6 +22,7 @@ import { Router, Response } from 'express';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { getSupabase } from '../lib/supabase';
 import { runPillarAgentsForUser } from '../services/pillar-agents/orchestrator';
+import * as repo from './integrations-repository';
 
 const router = Router();
 
@@ -53,11 +54,7 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
   if (!userId) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
 
   try {
-    const { data, error } = await admin
-      .from('user_integrations')
-      .select('integration_id, status, connected_at, disconnected_at, last_sync_at, last_error, metadata')
-      .eq('user_id', userId)
-      .order('integration_id', { ascending: true });
+    const { data, error } = await repo.fetchUserIntegrations(admin, userId);
     if (error) return res.status(400).json({ ok: false, error: error.message });
 
     const rows = data ?? [];
@@ -105,22 +102,7 @@ router.post('/:integration_id/connect', requireAuth, async (req: AuthenticatedRe
   const integrationId = req.params.integration_id;
 
   try {
-    const { data, error } = await admin
-      .from('user_integrations')
-      .upsert(
-        {
-          user_id: userId,
-          integration_id: integrationId,
-          status: 'connected',
-          connected_at: new Date().toISOString(),
-          disconnected_at: null,
-          last_error: null,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id,integration_id' }
-      )
-      .select()
-      .single();
+    const { data, error } = await repo.upsertIntegrationConnected(admin, userId, integrationId);
     if (error) return res.status(400).json({ ok: false, error: error.message });
     return res.status(200).json({ ok: true, integration: data });
   } catch (err: any) {
@@ -136,20 +118,7 @@ router.post('/:integration_id/disconnect', requireAuth, async (req: Authenticate
   const integrationId = req.params.integration_id;
 
   try {
-    const { data, error } = await admin
-      .from('user_integrations')
-      .upsert(
-        {
-          user_id: userId,
-          integration_id: integrationId,
-          status: 'disconnected',
-          disconnected_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id,integration_id' }
-      )
-      .select()
-      .single();
+    const { data, error } = await repo.upsertIntegrationDisconnected(admin, userId, integrationId);
     if (error) return res.status(400).json({ ok: false, error: error.message });
     return res.status(200).json({ ok: true, integration: data });
   } catch (err: any) {
@@ -187,44 +156,27 @@ router.post('/manual/log', requireAuth, async (req: AuthenticatedRequest, res: R
   try {
     // Resolve tenant via user_tenants fallback (same pattern as baseline survey).
     let tenantId: string | null = null;
-    const { data: tenantRow } = await admin
-      .from('user_tenants')
-      .select('tenant_id')
-      .eq('user_id', userId)
-      .limit(1)
-      .maybeSingle();
+    const { data: tenantRow } = await repo.fetchUserTenantId(admin, userId);
     tenantId = (tenantRow?.tenant_id as string | undefined) ?? null;
     const effectiveTenantId = tenantId ?? '00000000-0000-0000-0000-000000000000';
 
     // Upsert the feature row.
-    const { error: featErr } = await admin
-      .from('health_features_daily')
-      .upsert({
-        tenant_id: effectiveTenantId,
-        user_id: userId,
-        date,
-        feature_key: featureKey,
-        feature_value: value,
-        feature_unit: unit,
-        sample_count: 1,
-        confidence: 0.8,
-      }, { onConflict: 'tenant_id,user_id,date,feature_key' });
+    const { error: featErr } = await repo.upsertHealthFeatureDaily(admin, {
+      tenant_id: effectiveTenantId,
+      user_id: userId,
+      date,
+      feature_key: featureKey,
+      feature_value: value,
+      feature_unit: unit,
+      sample_count: 1,
+      confidence: 0.8,
+    });
     if (featErr) {
       return res.status(400).json({ ok: false, error: 'FEATURE_WRITE_FAILED', detail: featErr.message });
     }
 
     // Mark the manual-entry integration as connected + bump last_sync_at.
-    await admin
-      .from('user_integrations')
-      .upsert({
-        user_id: userId,
-        integration_id: 'manual-entry',
-        status: 'connected',
-        connected_at: new Date().toISOString(),
-        last_sync_at: new Date().toISOString(),
-        metadata: { source: 'manual_log' },
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'user_id,integration_id' });
+    await repo.upsertManualEntryIntegrationSynced(admin, userId);
 
     // Re-run pillar agents so the per-agent connected_data sub-score reflects the new signal.
     const orchestratorResult = await runPillarAgentsForUser(admin, userId, date);
@@ -234,10 +186,7 @@ router.post('/manual/log', requireAuth, async (req: AuthenticatedRequest, res: R
     // the main Index total lives in vitana_index_scores and is only refreshed by
     // health_compute_vitana_index_for_user. Without this call the badge stays flat
     // after a manual log even though the agents panel updates.
-    const { data: recomputedRow, error: recomputeErr } = await admin.rpc(
-      'health_compute_vitana_index_for_user',
-      { p_user_id: userId, p_date: date }
-    );
+    const { data: recomputedRow, error: recomputeErr } = await repo.recomputeVitanaIndexForUser(admin, userId, date);
 
     return res.status(200).json({
       ok: true,

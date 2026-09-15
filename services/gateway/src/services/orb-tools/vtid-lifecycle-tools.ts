@@ -15,6 +15,7 @@ import {
   relAge,
   gatewayApiCall,
 } from './developer-tools';
+import * as repo from './vtid-lifecycle-tools-repository';
 
 type Handler = (
   args: OrbToolArgs,
@@ -30,11 +31,7 @@ async function resolveVtid(
   if (candidates.length === 0) {
     return { error: 'A VTID is required, e.g. "VTID-01234" or "1234".' };
   }
-  const { data, error } = await sb
-    .from('vtid_ledger')
-    .select('vtid, status, is_terminal')
-    .in('vtid', candidates)
-    .limit(1);
+  const { data, error } = await repo.fetchVtidLedgerRowByCandidates(sb, candidates);
   if (error) return { error: error.message };
   const row = ((data ?? []) as Array<{ vtid: string; status: string | null; is_terminal: boolean | null }>)[0];
   if (!row) return { error: `VTID ${candidates[0]} not found in the ledger.` };

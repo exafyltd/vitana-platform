@@ -23,6 +23,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { UserHealthContext } from '../user-health-context';
 import { deriveItemType, type AnnotatedPick } from './agent-core';
+import * as repo from './reorder-core-repository';
 
 export const VTID = 'VTID-03260';
 
@@ -75,10 +76,7 @@ export async function buildReorderPicks(
   if (order.length === 0) return [];
 
   // 2. Hydrate from products (single batched read).
-  const { data, error } = await supabase
-    .from('products')
-    .select(REORDER_PRODUCT_COLUMNS)
-    .in('id', order);
+  const { data, error } = await repo.fetchProductsByIds(supabase, REORDER_PRODUCT_COLUMNS, order);
 
   if (error) {
     console.error(`[${VTID}] buildReorderPicks product hydrate failed:`, error.message);

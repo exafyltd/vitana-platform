@@ -61,6 +61,7 @@ import {
   ContextualOpportunityRecord
 } from '../types/opportunity-surfacing';
 import { PriorityDomain, getDefaultFusionContext, FusionContext } from '../types/context-fusion';
+import * as repo from './d48-opportunity-surfacing-engine-repository';
 
 // =============================================================================
 // Constants
@@ -173,11 +174,7 @@ async function generateServiceCandidates(
 
   try {
     // Query services catalog
-    const { data: services, error } = await supabase
-      .from('services_catalog')
-      .select('id, name, service_type, topic_keys, provider_name, metadata')
-      .eq('tenant_id', input.tenant_id)
-      .limit(50);
+    const { data: services, error } = await repo.fetchServicesCatalogForTenant(supabase, input.tenant_id, 50);
 
     if (error) {
       console.warn(`${LOG_PREFIX} Error fetching services:`, error.message);
@@ -300,11 +297,7 @@ async function generateProductCandidates(
 
   try {
     // Query products catalog
-    const { data: products, error } = await supabase
-      .from('products_catalog')
-      .select('id, name, product_type, topic_keys, metadata')
-      .eq('tenant_id', input.tenant_id)
-      .limit(30);
+    const { data: products, error } = await repo.fetchProductsCatalogForTenant(supabase, input.tenant_id, 30);
 
     if (error) {
       console.warn(`${LOG_PREFIX} Error fetching products:`, error.message);
@@ -750,13 +743,7 @@ async function filterCandidates(
     const cooldownDate = new Date();
     cooldownDate.setDate(cooldownDate.getDate() - rules.similar_opportunity_cooldown_days);
 
-    const { data: dismissed } = await supabase
-      .from('contextual_opportunities')
-      .select('external_id')
-      .eq('tenant_id', input.tenant_id)
-      .eq('user_id', input.user_id)
-      .eq('status', 'dismissed')
-      .gte('dismissed_at', cooldownDate.toISOString());
+    const { data: dismissed } = await repo.fetchDismissedOpportunityIds(supabase, input.tenant_id, input.user_id, cooldownDate.toISOString());
 
     if (dismissed) {
       dismissedIds = new Set(dismissed.map(d => d.external_id).filter(Boolean));
@@ -814,12 +801,7 @@ async function checkUserFatigue(
   today.setHours(0, 0, 0, 0);
 
   try {
-    const { count } = await supabase
-      .from('contextual_opportunities')
-      .select('id', { count: 'exact' })
-      .eq('tenant_id', tenantId)
-      .eq('user_id', userId)
-      .gte('created_at', today.toISOString());
+    const { count } = await repo.countOpportunitiesToday(supabase, tenantId, userId, today.toISOString());
 
     const opportunitiesToday = count || 0;
 
@@ -932,9 +914,7 @@ async function storeOpportunities(
       updated_at: new Date().toISOString()
     }));
 
-    const { error } = await supabase
-      .from('contextual_opportunities')
-      .insert(records);
+    const { error } = await repo.insertOpportunities(supabase, records);
 
     if (error) {
       console.warn(`${LOG_PREFIX} Error storing opportunities:`, error.message);
@@ -1205,17 +1185,12 @@ export async function dismissOpportunity(
       return { ok: false, error: 'NO_DATABASE_CONNECTION' };
     }
 
-    const { error } = await supabase
-      .from('contextual_opportunities')
-      .update({
-        status: 'dismissed',
-        dismissed_at: new Date().toISOString(),
-        dismissed_reason: reason || 'not_interested',
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', opportunityId)
-      .eq('user_id', userId)
-      .eq('tenant_id', tenantId);
+    const { error } = await repo.dismissOpportunityRow(supabase, opportunityId, userId, tenantId, {
+      status: 'dismissed',
+      dismissed_at: new Date().toISOString(),
+      dismissed_reason: reason || 'not_interested',
+      updated_at: new Date().toISOString()
+    });
 
     if (error) {
       console.warn(`${LOG_PREFIX} Error dismissing opportunity:`, error.message);
@@ -1264,17 +1239,12 @@ export async function recordEngagement(
       return { ok: false, error: 'NO_DATABASE_CONNECTION' };
     }
 
-    const { error } = await supabase
-      .from('contextual_opportunities')
-      .update({
-        status: engagementType === 'completed' ? 'engaged' : 'active',
-        engaged_at: new Date().toISOString(),
-        engagement_type: engagementType,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', opportunityId)
-      .eq('user_id', userId)
-      .eq('tenant_id', tenantId);
+    const { error } = await repo.recordOpportunityEngagement(supabase, opportunityId, userId, tenantId, {
+      status: engagementType === 'completed' ? 'engaged' : 'active',
+      engaged_at: new Date().toISOString(),
+      engagement_type: engagementType,
+      updated_at: new Date().toISOString()
+    });
 
     if (error) {
       console.warn(`${LOG_PREFIX} Error recording engagement:`, error.message);
@@ -1322,14 +1292,7 @@ export async function getActiveOpportunities(
       return { ok: false, error: 'NO_DATABASE_CONNECTION' };
     }
 
-    const { data, error } = await supabase
-      .from('contextual_opportunities')
-      .select('*')
-      .eq('tenant_id', tenantId)
-      .eq('user_id', userId)
-      .eq('status', 'active')
-      .order('created_at', { ascending: false })
-      .limit(limit);
+    const { data, error } = await repo.fetchActiveOpportunities(supabase, tenantId, userId, limit);
 
     if (error) {
       console.warn(`${LOG_PREFIX} Error fetching opportunities:`, error.message);

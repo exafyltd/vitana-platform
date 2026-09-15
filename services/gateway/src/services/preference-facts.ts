@@ -22,6 +22,8 @@
  *                                         the 0.55 confidence floor)
  */
 
+import * as repo from './preference-facts-repository';
+
 type SupabaseLike = { from: (table: string) => any };
 
 export interface PreferenceFact {
@@ -43,14 +45,7 @@ export async function fetchPreferenceFacts(
   if (!client || !userId) return [];
   const limit = opts.limit ?? 15;
   try {
-    let query = client
-      .from('memory_facts')
-      .select('fact_key, fact_value, provenance_source, provenance_confidence, extracted_at')
-      .eq('user_id', userId)
-      .like('fact_key', `${PREFERENCE_FACT_KEY_PREFIX}%`)
-      .is('superseded_at', null)
-      .order('extracted_at', { ascending: false })
-      .limit(Math.min(limit * 3, 60));
+    let query = repo.buildPreferenceFactsQuery(client, userId, PREFERENCE_FACT_KEY_PREFIX, Math.min(limit * 3, 60));
     if (opts.tenantId) query = query.eq('tenant_id', opts.tenantId);
     const { data, error } = await query;
     if (error || !Array.isArray(data)) return [];

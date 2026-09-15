@@ -15,6 +15,7 @@
 
 import { Router, Request, Response } from 'express';
 import { createUserSupabaseClient } from '../lib/supabase-user';
+import * as repo from './role-admin-repository';
 // VTID-03834: verifyAuth/canManageRoles moved verbatim to lib/tenant-role-auth.ts (shared with backoffice-access.ts)
 import { verifyAuth, canManageRoles } from '../lib/tenant-role-auth';
 
@@ -41,7 +42,7 @@ router.get('/my-roles', async (req: Request, res: Response) => {
 
   try {
     const userClient = createUserSupabaseClient(auth.token);
-    const { data, error } = await userClient.rpc('get_my_permitted_roles');
+    const { data, error } = await repo.getMyPermittedRolesRpc(userClient);
 
     if (error) {
       console.error(`[${VTID}] GET /my-roles RPC error:`, error.message);

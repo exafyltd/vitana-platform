@@ -80,6 +80,15 @@ describe('fetchPeople', () => {
     const inCall = log[0].calls.find((c) => c[0] === 'in');
     expect(inCall![2]).toHaveLength(200);
   });
+
+  it('logs loudly (not silently) when the query errors, degrading to an empty map', async () => {
+    useSequence([{ data: null, error: { message: 'connection reset' } }]);
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const out = await repo.fetchPeople(['u1']);
+    expect(out.size).toBe(0);
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('fetchPeople query failed'));
+    errorSpy.mockRestore();
+  });
 });
 
 // ---------------------------------------------------------------------------

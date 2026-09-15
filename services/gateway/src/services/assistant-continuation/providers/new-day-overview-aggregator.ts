@@ -22,6 +22,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { fetchLifeCompass, fetchVitanaIndexForProfiler } from '../../user-context-profiler';
+import * as repo from './new-day-overview-aggregator-repository';
 
 export interface NewDayOverviewPayload {
   /** Calendar events with start_time in (last_session_started_at, now). */
@@ -151,14 +152,12 @@ async function fetchCalendarPassed(
   nowIso: string,
 ): Promise<{ count: number; notable: { title: string; start_iso: string } | null }> {
   try {
-    const { data, error } = await supabase
-      .from('calendar_events')
-      .select('title, start_time, end_time, status')
-      .eq('user_id', userId)
-      .gte('start_time', lookbackIso)
-      .lt('start_time', nowIso)
-      .order('start_time', { ascending: false })
-      .limit(5);
+    const { data, error } = await repo.fetchCalendarEventsInWindow(supabase, {
+      userId,
+      gteIso: lookbackIso,
+      ltIso: nowIso,
+      limit: 5,
+    });
     if (error) return { count: 0, notable: null };
     const rows = (data ?? []) as CalendarRow[];
     if (rows.length === 0) return { count: 0, notable: null };
@@ -179,14 +178,12 @@ async function fetchCalendarTodayUpcoming(
   endOfTodayUtcIso: string,
 ): Promise<{ count: number; next: { title: string; start_iso: string } | null }> {
   try {
-    const { data, error } = await supabase
-      .from('calendar_events')
-      .select('title, start_time, end_time, status')
-      .eq('user_id', userId)
-      .gte('start_time', nowIso)
-      .lte('start_time', endOfTodayUtcIso)
-      .order('start_time', { ascending: true })
-      .limit(5);
+    const { data, error } = await repo.fetchCalendarEventsUpcoming(supabase, {
+      userId,
+      gteIso: nowIso,
+      lteIso: endOfTodayUtcIso,
+      limit: 5,
+    });
     if (error) return { count: 0, next: null };
     const rows = (data ?? []) as CalendarRow[];
     if (rows.length === 0) return { count: 0, next: null };

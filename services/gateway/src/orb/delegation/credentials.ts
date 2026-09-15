@@ -11,6 +11,7 @@
 import { getSupabase } from '../../lib/supabase';
 import { decryptApiKey, toBuffer } from '../../lib/ai-credential-crypto';
 import type { DelegationProviderId } from './types';
+import * as repo from './credentials-repository';
 
 const LOG_PREFIX = '[orb/delegation/credentials]';
 
@@ -43,15 +44,7 @@ export async function loadUserCredential(
   }
 
   const connectorId = CONNECTOR_ID_BY_PROVIDER[providerId];
-  const { data: conn, error: connErr } = await supabase
-    .from('user_connections')
-    .select('id, is_active')
-    .eq('user_id', userId)
-    .eq('connector_id', connectorId)
-    .eq('category', 'ai_assistant')
-    .order('connected_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const { data: conn, error: connErr } = await repo.fetchLatestActiveUserConnection(supabase, userId, connectorId);
 
   if (connErr) {
     console.warn(`${LOG_PREFIX} user_connections query failed: ${connErr.message}`);
@@ -59,11 +52,7 @@ export async function loadUserCredential(
   }
   if (!conn) return null;
 
-  const { data: cred, error: credErr } = await supabase
-    .from('ai_assistant_credentials')
-    .select('encrypted_key, encryption_iv, encryption_tag')
-    .eq('connection_id', conn.id)
-    .maybeSingle();
+  const { data: cred, error: credErr } = await repo.fetchAiAssistantCredentialByConnectionId(supabase, conn.id);
 
   if (credErr) {
     console.warn(`${LOG_PREFIX} credential fetch failed for ${providerId}: ${credErr.message}`);
@@ -101,12 +90,7 @@ export async function listActiveProviders(userId: string): Promise<DelegationPro
   const supabase = getSupabase();
   if (!supabase) return [];
 
-  const { data, error } = await supabase
-    .from('user_connections')
-    .select('connector_id')
-    .eq('user_id', userId)
-    .eq('category', 'ai_assistant')
-    .eq('is_active', true);
+  const { data, error } = await repo.fetchActiveAiAssistantConnectorIds(supabase, userId);
 
   if (error) {
     console.warn(`${LOG_PREFIX} listActiveProviders failed: ${error.message}`);

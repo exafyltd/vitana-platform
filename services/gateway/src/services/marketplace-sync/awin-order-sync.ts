@@ -34,6 +34,7 @@
 
 import { getSupabase } from '../../lib/supabase';
 import { creditRecommenderForOrder } from '../recommendation-commissions/credit-recommender';
+import * as repo from './awin-order-sync-repository';
 
 const AWIN_API_BASE = 'https://api.awin.com';
 /** Awin caps a single transactions query at a 31-day range. */
@@ -77,12 +78,8 @@ function dateParam(d: Date): string {
 async function loadAwinOrderSyncConfig(): Promise<AwinOrderSyncConfig | null> {
   const supabase = getSupabase();
   if (!supabase) return null;
-  const { data } = await supabase
-    .from('marketplace_sources_config')
-    .select('config')
-    .eq('source_network', 'awin')
-    .eq('is_active', true)
-    .maybeSingle();
+  const { data, error } = await repo.fetchActiveAwinSourceConfig(supabase);
+  if (error) throw error; // must not be indistinguishable from "not configured" — caller reports it as a real failure
   const config = data?.config as { api_token?: string; publisher_id?: string } | undefined;
   if (!config?.api_token || !config?.publisher_id) return null;
   return { publisherId: config.publisher_id, apiToken: config.api_token };
@@ -153,11 +150,15 @@ export async function runAwinOrderSync(lookbackDays = 30): Promise<AwinOrderSync
       continue;
     }
 
-    const { data: click } = await supabase
-      .from('product_clicks')
-      .select('click_id, user_id, tenant_id, product_id, merchant_id, attribution_surface, attribution_recommendation_id')
-      .eq('click_id', clickId)
-      .maybeSingle();
+    const { data: click, error: clickErr } = await repo.fetchProductClickByClickId(supabase, clickId);
+    if (clickErr) {
+      // A Postgres-level failure here resolves normally rather than
+      // throwing, so it was previously indistinguishable from "genuinely
+      // no matching click" (an intended, documented skip) — a transient
+      // DB blip would silently and permanently drop a real affiliate
+      // sale's attribution and commission credit for this sync run.
+      console.error(`[awin-order-sync] fetchProductClickByClickId failed for clickRef=${clickId}:`, clickErr.message);
+    }
     if (!click) {
       unattributed++;
       continue;
@@ -171,31 +172,24 @@ export async function runAwinOrderSync(lookbackDays = 30): Promise<AwinOrderSync
       .slice(0, 3);
     const state = mapAwinStatus(String(tx.commissionStatus ?? ''));
 
-    const { data: upserted, error } = await supabase
-      .from('product_orders')
-      .upsert(
-        {
-          user_id: click.user_id,
-          tenant_id: click.tenant_id,
-          product_id: click.product_id,
-          merchant_id: click.merchant_id,
-          click_id: click.click_id,
-          external_order_id: String(tx.id),
-          checkout_mode: 'affiliate_link',
-          state,
-          amount_cents: Math.round(saleAmount * 100),
-          currency,
-          commission_cents: Math.round(commissionAmount * 100),
-          raw: tx as unknown as Record<string, unknown>,
-          attribution_surface: click.attribution_surface,
-          attribution_recommendation_id: click.attribution_recommendation_id,
-          purchased_at: state === 'converted' ? new Date().toISOString() : null,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'merchant_id,external_order_id' }
-      )
-      .select('id')
-      .single();
+    const { data: upserted, error } = await repo.upsertProductOrder(supabase, {
+      user_id: click.user_id,
+      tenant_id: click.tenant_id,
+      product_id: click.product_id,
+      merchant_id: click.merchant_id,
+      click_id: click.click_id,
+      external_order_id: String(tx.id),
+      checkout_mode: 'affiliate_link',
+      state,
+      amount_cents: Math.round(saleAmount * 100),
+      currency,
+      commission_cents: Math.round(commissionAmount * 100),
+      raw: tx as unknown as Record<string, unknown>,
+      attribution_surface: click.attribution_surface,
+      attribution_recommendation_id: click.attribution_recommendation_id,
+      purchased_at: state === 'converted' ? new Date().toISOString() : null,
+      updated_at: new Date().toISOString(),
+    });
     if (error || !upserted) {
       console.error('[awin-order-sync] product_orders upsert failed:', error?.message);
       continue;

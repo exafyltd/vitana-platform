@@ -16,6 +16,7 @@ import { randomUUID } from 'crypto';
 import { AutomationDefinition, AutomationContext, RunStatus, TriggerType, RoleTarget } from '../types/automations';
 import { getAutomation, getHeartbeatAutomations, getEventAutomations, automationTargetsRole } from './automation-registry';
 import { notifyUserAsync } from './notification-service';
+import * as repo from './automation-executor-repository';
 
 // ── Notification throttle ────────────────────────────────────
 // Tracks daily notification counts per user to prevent flooding.
@@ -47,11 +48,7 @@ async function checkNotificationThrottle(
   // Look up user's max_prompts_per_day preference
   let maxPerDay = DEFAULT_MAX_PROMPTS_PER_DAY;
   try {
-    const { data } = await supabase
-      .from('autopilot_prompt_prefs')
-      .select('max_prompts_per_day')
-      .eq('user_id', userId)
-      .maybeSingle();
+    const { data } = await repo.fetchAutopilotPromptMaxPerDay(supabase, userId);
     if (data?.max_prompts_per_day != null) {
       maxPerDay = data.max_prompts_per_day;
     }
@@ -142,7 +139,7 @@ async function createRun(
   if (!supabase) throw new Error('Supabase not configured');
 
   const runId = randomUUID();
-  const { error } = await supabase.from('automation_runs').insert({
+  const { error } = await repo.insertAutomationRun(supabase, {
     id: runId,
     tenant_id: tenantId,
     automation_id: automationId,
@@ -167,14 +164,14 @@ async function completeRun(
   const supabase = await getServiceClient();
   if (!supabase) return;
 
-  await supabase.from('automation_runs').update({
+  await repo.updateAutomationRun(supabase, runId, {
     status,
     users_affected: usersAffected,
     actions_taken: actionsTaken,
     error_message: errorMessage,
     metadata: metadata || {},
     completed_at: new Date().toISOString(),
-  }).eq('id', runId);
+  });
 }
 
 // ── Handler registry (maps handler name → function) ─────────
@@ -217,16 +214,7 @@ async function queryUsersByRole(
   targetRoles: RoleTarget,
   selectColumns: string = 'user_id, active_role',
 ): Promise<Array<{ user_id: string; active_role: string }>> {
-  let query = supabase
-    .from('user_tenants')
-    .select(selectColumns)
-    .eq('tenant_id', tenantId);
-
-  if (targetRoles !== 'all') {
-    query = query.in('active_role', targetRoles);
-  }
-
-  const { data, error } = await query;
+  const { data, error } = await repo.fetchUsersByRole(supabase, tenantId, selectColumns, targetRoles);
   if (error) {
     console.warn(`[AutomationExecutor] queryUsersByRole failed: ${error.message}`);
     return [];
@@ -444,18 +432,7 @@ export async function getRunHistory(
   const supabase = await getServiceClient();
   if (!supabase) return [];
 
-  let query = supabase
-    .from('automation_runs')
-    .select('*')
-    .eq('tenant_id', tenantId)
-    .order('created_at', { ascending: false })
-    .limit(limit);
-
-  if (automationId) {
-    query = query.eq('automation_id', automationId);
-  }
-
-  const { data } = await query;
+  const { data } = await repo.fetchAutomationRunHistory(supabase, tenantId, automationId, limit);
   return data || [];
 }
 
@@ -463,12 +440,7 @@ export async function getActiveRuns(tenantId: string): Promise<any[]> {
   const supabase = await getServiceClient();
   if (!supabase) return [];
 
-  const { data } = await supabase
-    .from('automation_runs')
-    .select('*')
-    .eq('tenant_id', tenantId)
-    .eq('status', 'running')
-    .order('started_at', { ascending: false });
+  const { data } = await repo.fetchActiveAutomationRuns(supabase, tenantId);
 
   return data || [];
 }

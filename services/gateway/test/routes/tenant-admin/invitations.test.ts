@@ -272,6 +272,28 @@ describe('Tenant Admin Invitations Routes', () => {
     expect(chain.insert).not.toHaveBeenCalled();
   });
 
+  it('POST / returns 500 (not a silent duplicate-invite risk) when the existing-invitation check errors', async () => {
+    // Previously: an unchecked `{data}`-only destructure meant a failed
+    // existing-invitation lookup resolved `existing` to undefined, so the
+    // handler proceeded as if no pending invitation existed — risking a
+    // duplicate invitation record/email for someone already invited.
+    // Uses a non-PGRST116 code: PGRST116 ("no rows") is .single()'s normal,
+    // expected shape for "not yet invited" and must NOT be treated as an error
+    // (see the two POST / success tests above, which rely on exactly that).
+    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    const chain = chainFor('tenant_invitations');
+    chain.mockResolvedValueOnce({ data: null, error: { code: '500', message: 'lookup failed' } });
+
+    const res = await request(app)
+      .post(`/api/v1/admin/tenants/${TENANT_A}/invitations`)
+      .set('Authorization', 'Bearer token')
+      .send({ email: 'dupe@example.com' });
+
+    expect(res.status).toBe(500);
+    expect(res.body.ok).toBe(false);
+    expect(chain.insert).not.toHaveBeenCalled();
+  });
+
   it('POST / returns 503 when the DB client is unavailable', async () => {
     mockVerifiedJwt(tenantAdminClaims(TENANT_A));
     mockGetSupabase.mockReturnValue(null as any);
@@ -441,5 +463,37 @@ describe('Tenant Admin Invitations Routes', () => {
     expect(chainFor('tenant_invitations').update).toHaveBeenCalledWith(
       expect.objectContaining({ accepted_by: 'member-1', accepted_at: expect.any(String) })
     );
+  });
+
+  it('accept: returns 500 (not a silent membership reset) when the existing-membership check errors', async () => {
+    // Previously: an unchecked `{data}`-only destructure meant a failed
+    // existing-membership lookup resolved `existingMembership` to undefined,
+    // so the handler proceeded as if the user had no membership yet —
+    // inserting a fresh user_tenants row and resetting active_role even for
+    // a user who already had a membership. Uses a non-PGRST116 code:
+    // PGRST116 ("no rows") is .single()'s normal "not yet a member" shape
+    // and must NOT be treated as an error (see the success test above).
+    mockVerifiedJwt(MEMBER_CLAIMS);
+    const futureExpiry = new Date(Date.now() + 7 * 86400_000).toISOString();
+    chainFor('tenant_invitations').mockResolvedValueOnce({
+      data: {
+        id: INVITE_ID,
+        tenant_id: TENANT_A,
+        roles: ['community'],
+        invited_by: 'admin-a',
+        expires_at: futureExpiry,
+      },
+      error: null,
+    });
+    chainFor('user_tenants').mockResolvedValueOnce({ data: null, error: { code: '500', message: 'lookup failed' } });
+
+    const res = await request(app)
+      .post('/api/v1/admin/invitations/accept/tok-123')
+      .set('Authorization', 'Bearer member-token');
+
+    expect(res.status).toBe(500);
+    expect(res.body.ok).toBe(false);
+    expect(chainFor('user_tenants').insert).not.toHaveBeenCalled();
+    expect(chainFor('user_permitted_roles').upsert).not.toHaveBeenCalled();
   });
 });

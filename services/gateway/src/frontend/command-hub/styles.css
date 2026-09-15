@@ -1760,6 +1760,13 @@ body {
   flex-direction: column;
   max-height: 90vh;
   overflow: hidden;
+  /* VTID-03910: a flex column child defaults to min-height:auto, which lets
+     it grow past its own container instead of shrinking to fit — the
+     classic reason overflow-y:auto never gets a chance to kick in on a
+     nested flex layout like this one. min-height:0 lets this column (and
+     everything flexed inside it) actually shrink to the available space,
+     so the deeper *-content/*-container overflow rules can do their job. */
+  min-height: 0;
 }
 
 .overlay-header {
@@ -1796,6 +1803,34 @@ body {
 
 .overlay-close:hover {
   color: var(--color-text-primary);
+}
+
+/* VTID-03905: wraps the fullscreen toggle + close button so overlay-header's
+   existing justify-content:space-between keeps titleBlock and this group at
+   opposite ends, with a small gap between the two action icons themselves. */
+.overlay-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.overlay-fullscreen-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s;
+}
+
+.overlay-fullscreen-toggle:hover {
+  color: var(--color-text-primary);
+  background: var(--color-bg-hover, rgba(255, 255, 255, 0.08));
 }
 
 .overlay-content {
@@ -1890,6 +1925,23 @@ body {
   min-width: 600px;
   max-width: 1000px;
   height: 80vh;
+  transition: width 0.2s ease, height 0.2s ease, max-width 0.2s ease, border-radius 0.2s ease;
+}
+
+/* VTID-03905/VTID-03910: fullscreen toggle modifier. Uses a symmetric 2cm
+   inset on every side (real CSS length unit, not an approximation) instead
+   of true 100vw/100vh — the popup used to run edge-to-edge with zero gap
+   from the screen frame, which read as broken chrome rather than
+   "fullscreen". The backdrop's own flex centering (align/justify: center)
+   then spaces this evenly on all four sides with no extra centering code
+   needed. Border-radius is intentionally left at the default 12px (not
+   overridden to 0) so it still reads as a panel, not a bare rectangle. */
+.operator-overlay--fullscreen {
+  width: calc(100vw - 4cm);
+  height: calc(100vh - 4cm);
+  max-width: calc(100vw - 4cm);
+  max-height: calc(100vh - 4cm);
+  min-width: 0;
 }
 
 .operator-tabs {
@@ -1926,6 +1978,7 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-height: 0; /* VTID-03910: see .overlay-panel's min-height comment */
 }
 
 /* Chat UI */
@@ -1934,6 +1987,7 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-height: 0; /* VTID-03910: see .overlay-panel's min-height comment */
 }
 
 .chat-messages {
@@ -1944,6 +1998,16 @@ body {
   overflow-y: auto;
   max-height: 65vh;
   padding: 1.5rem;
+  min-height: 0; /* VTID-03910: see .overlay-panel's min-height comment */
+}
+
+/* VTID-03910: the 65vh cap was tuned for the popup's original 80vh height;
+   in fullscreen the panel is much taller, so the fixed vh cap leaves a big
+   dead gap between the messages and the input row instead of using the
+   space fullscreen mode is meant to provide. Let it fill the flex column
+   like every other tab's content area already does. */
+.operator-overlay--fullscreen .chat-messages {
+  max-height: none;
 }
 
 /* VTID-03822: Operator Console thread switcher */
@@ -2476,6 +2540,17 @@ body {
     height: 90vh;
   }
 
+  /* VTID-03910: a flat 2cm inset on every side is fine on a desktop window
+     but eats too much of a narrow viewport (the input row's textarea has
+     no room left and wraps vertically) — shrink to a smaller fixed inset
+     here instead of scaling by viewport width. */
+  .operator-overlay--fullscreen {
+    width: calc(100vw - 1.5rem);
+    height: calc(100vh - 1.5rem);
+    max-width: calc(100vw - 1.5rem);
+    max-height: calc(100vh - 1.5rem);
+  }
+
   .heartbeat-metrics {
     grid-template-columns: 1fr;
   }
@@ -2701,6 +2776,54 @@ body {
 
 .chat-attach-menu.menu-open {
   display: block;
+}
+
+/* VTID-03907: Voice dictation mic button (mirrors .chat-attach-btn sizing) */
+.chat-mic-btn {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-sidebar-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.chat-mic-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--color-text-secondary);
+  color: var(--color-text-primary);
+}
+
+.chat-mic-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* VTID-03911: .chat-mic-btn:hover:not(:disabled) above has specificity
+   (0,3,0) (one class + two pseudo-classes, :not() counting its argument's
+   own specificity) — higher than plain .chat-mic-btn--active's (0,1,0), so
+   the neutral hover style silently won and the button never visibly turned
+   red while the cursor stayed on it after the click (which it always does
+   in real mouse use). Repeating the active rule with :hover explicitly
+   matches or beats that specificity so the red state actually shows, and
+   stays red on hover instead of flipping back to neutral. */
+.chat-mic-btn--active,
+.chat-mic-btn--active:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: #ef4444;
+  color: #ef4444;
+  animation: chat-mic-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes chat-mic-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.35); }
+  50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
 }
 
 .attach-option {
@@ -19646,4 +19769,100 @@ border-bottom: 1px solid var(--color-border, #333);
   background: rgba(59, 130, 246, 0.12);
   color: #3b82f6;
   white-space: nowrap;
+}
+
+/* VTID-03896/03897/03898: Command Hub Operator "Steps" panel — a live
+   per-execution step feed (SSE-backed) alongside the existing "Lineage"
+   view, plus a last_event_at heartbeat badge on active execution cards.
+   Classes here rather than scripted inline-style assignment, same reason
+   as .llm-provider-badge above (the CSP governance gate's CSP_PATTERNS
+   flags any added reference to the element style property in this tree). */
+.dev-autopilot-heartbeat {
+  font-size: 11px;
+  color: var(--text-secondary, #888);
+}
+.dev-autopilot-heartbeat--stale {
+  color: #eab308;
+}
+.dev-autopilot-ghost-toggle {
+  padding: 3px 10px;
+  border-radius: 3px;
+  font-size: 11px;
+  cursor: pointer;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.15));
+  background: transparent;
+  color: var(--text-secondary, #aaa);
+}
+.dev-autopilot-steps-panel {
+  margin-top: 10px;
+  padding: 10px;
+  background: rgba(59, 130, 246, 0.04);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 4px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.dev-autopilot-steps-panel--muted {
+  color: var(--text-secondary, #888);
+}
+.dev-autopilot-steps-panel--error {
+  color: #ef4444;
+}
+.dev-autopilot-steps-heading {
+  font-size: 11px;
+  color: #3b82f6;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+  letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dev-autopilot-steps-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+  display: inline-block;
+}
+.dev-autopilot-steps-stream-note {
+  color: #eab308;
+  font-size: 10px;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.dev-autopilot-steps-empty {
+  font-size: 12px;
+  color: var(--text-secondary, #888);
+}
+.dev-autopilot-step-line {
+  font-size: 11px;
+  padding: 3px 0;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+.dev-autopilot-step-time {
+  font-family: monospace;
+  color: var(--text-secondary, #666);
+  flex-shrink: 0;
+}
+.dev-autopilot-step-topic {
+  font-family: monospace;
+  flex-shrink: 0;
+  color: #3b82f6;
+}
+.dev-autopilot-step-topic--error {
+  color: #ef4444;
+}
+.dev-autopilot-step-topic--warning {
+  color: #eab308;
+}
+.dev-autopilot-step-topic--success {
+  color: #22c55e;
+}
+.dev-autopilot-step-message {
+  color: var(--text-primary, #ccc);
+  word-break: break-word;
 }

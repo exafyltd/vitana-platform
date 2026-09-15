@@ -25,6 +25,7 @@
 import { Router, Request, Response } from 'express';
 import { getSupabase } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth-supabase-jwt';
+import * as repo from './discover-recommendations-public-repository';
 
 const router = Router();
 
@@ -37,32 +38,18 @@ router.get('/recommendations/:vitanaId', requireAuth, async (req: Request, res: 
   const rawVid = String(req.params.vitanaId || '').replace(/^@/, '').toLowerCase().trim();
   if (!rawVid) return res.status(400).json({ ok: false, error: 'vitana_id_required' });
 
-  const { data: subject, error: subjectErr } = await supabase
-    .from('profiles')
-    .select('user_id')
-    .eq('vitana_id', rawVid)
-    .maybeSingle();
+  const { data: subject, error: subjectErr } = await repo.fetchProfileUserIdByVitanaId(supabase, rawVid);
   if (subjectErr) return res.status(500).json({ ok: false, error: subjectErr.message });
   if (!subject) return res.status(404).json({ ok: false, error: 'profile_not_found' });
 
   // Same visibility gate get_user_profile_by_identifier applies, so a hidden/
   // deactivated profile's recommendations can't leak via this side-channel
   // even if the main profile page itself 404s.
-  const { data: gcp, error: gcpErr } = await supabase
-    .from('global_community_profiles')
-    .select('is_visible')
-    .eq('user_id', subject.user_id)
-    .maybeSingle();
+  const { data: gcp, error: gcpErr } = await repo.fetchGlobalCommunityProfileVisibility(supabase, subject.user_id);
   if (gcpErr) return res.status(500).json({ ok: false, error: gcpErr.message });
   if (!gcp?.is_visible) return res.status(404).json({ ok: false, error: 'profile_not_found' });
 
-  const { data, error } = await supabase
-    .from('product_recommendations')
-    .select('id, product_id, created_at, products(title, images)')
-    .eq('user_id', subject.user_id)
-    .eq('status', 'active')
-    .order('created_at', { ascending: false })
-    .limit(MAX_ITEMS);
+  const { data, error } = await repo.fetchActiveProductRecommendations(supabase, subject.user_id, MAX_ITEMS);
   if (error) return res.status(500).json({ ok: false, error: error.message });
 
   // Only these 5 fields — never status/click_count/conversion_count/

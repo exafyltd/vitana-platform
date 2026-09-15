@@ -45,6 +45,7 @@ import { notifyMatchSurfaced } from '../services/intent-notifier';
 import { writeIntentFacts } from '../services/intent-memory-hooks';
 import { getActiveCompassGoal } from '../services/intent-compass-lens';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import * as repo from './intents-repository';
 
 const router = Router();
 
@@ -144,15 +145,7 @@ router.post('/', requireAuth, requireTenant, async (req: Request, res: Response)
     const supabase = getSupabase();
     // Pull the requester's open intents from the same kind in the last 24h.
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const { data: existing } = await supabase
-      .from('user_intents')
-      .select('intent_id, requester_vitana_id, title, scope, category, kind_payload, created_at')
-      .eq('requester_user_id', identity.user_id)
-      .eq('intent_kind', intentKind)
-      .eq('status', 'open')
-      .gte('created_at', since)
-      .order('created_at', { ascending: false })
-      .limit(20);
+    const { data: existing } = await repo.fetchRecentOpenIntentsForDedup(supabase, identity.user_id, intentKind, since);
 
     const norm = (s: string | null) => (s ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
     const newTitle = norm(title);
@@ -268,22 +261,18 @@ router.post('/', requireAuth, requireTenant, async (req: Request, res: Response)
   const compass = await getActiveCompassGoal(identity.user_id);
 
   const supabase = getSupabase();
-  const { data: inserted, error: insErr } = await supabase
-    .from('user_intents')
-    .insert({
-      requester_user_id: identity.user_id,
-      tenant_id: identity.tenant_id,
-      intent_kind: intentKind,
-      category,
-      title,
-      scope,
-      kind_payload: kindPayload,
-      visibility: visibility ?? undefined,
-      compass_alignment_at_post: compass?.category ?? null,
-      status: 'open',
-    })
-    .select('intent_id, requester_vitana_id')
-    .single();
+  const { data: inserted, error: insErr } = await repo.insertUserIntent(supabase, {
+    requester_user_id: identity.user_id,
+    tenant_id: identity.tenant_id,
+    intent_kind: intentKind,
+    category,
+    title,
+    scope,
+    kind_payload: kindPayload,
+    visibility: visibility ?? undefined,
+    compass_alignment_at_post: compass?.category ?? null,
+    status: 'open',
+  });
 
   if (insErr || !inserted) {
     console.error('[VTID-01973] intents POST insert failed', insErr);
@@ -302,10 +291,7 @@ router.post('/', requireAuth, requireTenant, async (req: Request, res: Response)
       ? ((kindPayload as Record<string, unknown>).cover_url as string)
       : null;
   if (userProvidedCover) {
-    void supabase
-      .from('user_intents')
-      .update({ cover_url: userProvidedCover, cover_source: 'user_upload' })
-      .eq('intent_id', (inserted as any).intent_id)
+    void repo.promoteUserProvidedCover(supabase, (inserted as any).intent_id, userProvidedCover)
       .then(({ error }) => {
         if (error) console.warn('[cover] user-provided promote failed:', error.message);
       });
@@ -332,10 +318,7 @@ router.post('/', requireAuth, requireTenant, async (req: Request, res: Response)
     try {
       const embedding = await embedIntent({ intent_kind: intentKind, category, title, scope, kind_payload: kindPayload });
       if (embedding) {
-        const { error: embedUpdErr } = await supabase
-          .from('user_intents')
-          .update({ embedding: embedding as any })
-          .eq('intent_id', (inserted as any).intent_id);
+        const { error: embedUpdErr } = await repo.updateIntentEmbedding(supabase, (inserted as any).intent_id, embedding);
         if (embedUpdErr) console.warn(`[VTID-01973] inline embedding update failed: ${embedUpdErr.message}`);
       }
     } catch (err: any) {
@@ -436,11 +419,7 @@ router.get('/:id/matchmaker', requireAuth, requireTenant, async (req: Request, r
   if (!supabase) return res.status(500).json({ ok: false, error: 'supabase_unavailable' });
 
   // Visibility gate: requester must own the intent OR the intent is public.
-  const { data: src } = await supabase
-    .from('user_intents')
-    .select('intent_id, requester_user_id, visibility')
-    .eq('intent_id', intentId)
-    .maybeSingle();
+  const { data: src } = await repo.fetchIntentVisibilityForMatchmakerPoll(supabase, intentId);
   if (!src) return res.status(404).json({ ok: false, error: 'INTENT_NOT_FOUND' });
 
   const isOwner = (src as any).requester_user_id === identity.user_id;
@@ -449,11 +428,7 @@ router.get('/:id/matchmaker', requireAuth, requireTenant, async (req: Request, r
     return res.status(403).json({ ok: false, error: 'FORBIDDEN' });
   }
 
-  const { data: rec } = await supabase
-    .from('intent_match_recommendations')
-    .select('intent_id, status, mode, pool_size, candidates, counter_questions, voice_readback, reasoning_summary, used_fallback, model, latency_ms, error, computed_at, updated_at')
-    .eq('intent_id', intentId)
-    .maybeSingle();
+  const { data: rec } = await repo.fetchIntentMatchRecommendation(supabase, intentId);
 
   if (!rec) {
     return res.json({ ok: true, status: 'not_started', poll_again_ms: 2000 });
@@ -490,16 +465,7 @@ router.get('/', requireAuth, requireTenant, async (req: Request, res: Response) 
   const limit = Math.min(Number(req.query.limit) || 20, 100);
 
   const supabase = getSupabase();
-  let q = supabase
-    .from('user_intents')
-    .select('*')
-    .eq('requester_user_id', identity.user_id)
-    .order('created_at', { ascending: false })
-    .limit(limit);
-  if (kind) q = q.eq('intent_kind', kind);
-  if (status) q = q.eq('status', status);
-
-  const { data, error } = await q;
+  const { data, error } = await repo.fetchOwnIntents(supabase, identity.user_id, limit, kind, status);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   return res.json({ ok: true, intents: data ?? [] });
 });
@@ -511,17 +477,10 @@ router.get('/:id', requireAuth, requireTenant, async (req: Request, res: Respons
   if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
 
   const supabase = getSupabase();
-  const { data: ok } = await supabase.rpc('can_read_intent', {
-    p_reader: identity.user_id,
-    p_intent_id: req.params.id,
-  });
+  const { data: ok } = await repo.canReadIntentRpc(supabase, identity.user_id, req.params.id);
   if (!ok) return res.status(404).json({ ok: false, error: 'not_found' });
 
-  const { data, error } = await supabase
-    .from('user_intents')
-    .select('*')
-    .eq('intent_id', req.params.id)
-    .maybeSingle();
+  const { data, error } = await repo.fetchIntentById(supabase, req.params.id);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   if (!data) return res.status(404).json({ ok: false, error: 'not_found' });
   return res.json({ ok: true, intent: data });
@@ -541,13 +500,7 @@ router.patch('/:id', requireAuth, requireTenant, async (req: Request, res: Respo
   if (Object.keys(patch).length === 0) return res.status(400).json({ ok: false, error: 'no fields' });
 
   const supabase = getSupabase();
-  const { data, error } = await supabase
-    .from('user_intents')
-    .update(patch as any)
-    .eq('intent_id', req.params.id)
-    .eq('requester_user_id', identity.user_id)
-    .select('*')
-    .maybeSingle();
+  const { data, error } = await repo.updateOwnIntent(supabase, req.params.id, identity.user_id, patch);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   if (!data) return res.status(404).json({ ok: false, error: 'not_found_or_not_owner' });
   return res.json({ ok: true, intent: data });
@@ -560,13 +513,7 @@ router.post('/:id/close', requireAuth, requireTenant, async (req: Request, res: 
   if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
 
   const supabase = getSupabase();
-  const { data, error } = await supabase
-    .from('user_intents')
-    .update({ status: 'closed' })
-    .eq('intent_id', req.params.id)
-    .eq('requester_user_id', identity.user_id)
-    .select('*')
-    .maybeSingle();
+  const { data, error } = await repo.closeOwnIntent(supabase, req.params.id, identity.user_id);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   if (!data) return res.status(404).json({ ok: false, error: 'not_found_or_not_owner' });
   return res.json({ ok: true, intent: data });
@@ -579,10 +526,7 @@ router.get('/:id/matches', requireAuth, requireTenant, async (req: Request, res:
   if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
 
   const supabase = getSupabase();
-  const { data: canRead } = await supabase.rpc('can_read_intent', {
-    p_reader: identity.user_id,
-    p_intent_id: req.params.id,
-  });
+  const { data: canRead } = await repo.canReadIntentRpc(supabase, identity.user_id, req.params.id);
   if (!canRead) return res.status(404).json({ ok: false, error: 'not_found' });
 
   const matches = await surfaceTopMatches(req.params.id, Math.min(Number(req.query.limit) || 5, 20));
@@ -606,11 +550,7 @@ router.post('/:id/cover/generate', requireAuth, requireTenant, async (req: Reque
   if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
 
   const supabase = getSupabase();
-  const { data: row } = await supabase
-    .from('user_intents')
-    .select('intent_id, requester_user_id, category')
-    .eq('intent_id', req.params.id)
-    .maybeSingle();
+  const { data: row } = await repo.fetchIntentForCoverGenerate(supabase, req.params.id);
   if (!row) return res.status(404).json({ ok: false, error: 'not_found' });
   if ((row as { requester_user_id: string }).requester_user_id !== identity.user_id) {
     return res.status(403).json({ ok: false, error: 'not_owner' });

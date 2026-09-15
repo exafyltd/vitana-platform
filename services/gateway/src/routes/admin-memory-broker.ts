@@ -23,6 +23,7 @@ import { buildAgentProfile } from '../services/agent-profile-service';
 import { runConsolidator, LoopId } from '../services/nightly-consolidator';
 import { getSupabase } from '../lib/supabase';
 import { getSystemControl } from '../services/system-controls-service';
+import * as repo from './admin-memory-broker-repository';
 
 const router = Router();
 // VTID-02032: Path-scoped auth — was `router.use(requireAuth)` which fired
@@ -178,7 +179,7 @@ router.get('/admin/memory/health', async (_req: AuthenticatedRequest, res: Respo
   const tableCounts: Record<string, number | null> = {};
   await Promise.all(TABLES.map(async (t) => {
     try {
-      const r = await supabase.from(t).select('*', { count: 'exact', head: true });
+      const r = await repo.countTableRows(supabase, t);
       tableCounts[t] = r.error ? null : (r.count ?? 0);
     } catch {
       tableCounts[t] = null;
@@ -206,35 +207,20 @@ router.get('/admin/memory/health', async (_req: AuthenticatedRequest, res: Respo
 
   let consolidatorRuns: any[] = [];
   try {
-    const r = await supabase
-      .from('consolidator_runs')
-      .select('id, triggered_by, triggered_at, finished_at, status, summary, tenant_id')
-      .order('triggered_at', { ascending: false })
-      .limit(10);
+    const r = await repo.fetchRecentConsolidatorRuns(supabase);
     consolidatorRuns = r.data ?? [];
   } catch { consolidatorRuns = []; }
 
   let memoryEvents: any[] = [];
   try {
     const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
-    const r = await supabase
-      .from('oasis_events')
-      .select('id, topic, vtid, status, message, payload, created_at, source')
-      .or('topic.ilike.memory.%,topic.ilike.orb.memory.%')
-      .gte('created_at', since)
-      .order('created_at', { ascending: false })
-      .limit(25);
+    const r = await repo.fetchRecentMemoryEvents(supabase, since);
     memoryEvents = r.data ?? [];
   } catch { memoryEvents = []; }
 
   let identityLockAttempts: any[] = [];
   try {
-    const r = await supabase
-      .from('oasis_events')
-      .select('id, topic, vtid, status, message, payload, created_at')
-      .ilike('topic', 'memory.identity.%')
-      .order('created_at', { ascending: false })
-      .limit(10);
+    const r = await repo.fetchIdentityLockAttempts(supabase);
     identityLockAttempts = r.data ?? [];
   } catch { identityLockAttempts = []; }
 
@@ -257,25 +243,13 @@ router.get('/admin/memory/graph-sample', async (req: AuthenticatedRequest, res: 
 
   let memEdges: any[] = [];
   try {
-    let q = supabase
-      .from('mem_graph_edges')
-      .select('id, tenant_id, user_id, source_kind, source_id, edge_type, target_kind, target_id, strength, asserted_at')
-      .order('asserted_at', { ascending: false })
-      .limit(50);
-    if (userId) q = q.eq('user_id', userId);
-    const r = await q;
+    const r = await repo.fetchMemGraphEdgesSample(supabase, userId);
     memEdges = r.data ?? [];
   } catch { memEdges = []; }
 
   let legacyEdges: any[] = [];
   try {
-    let q = supabase
-      .from('relationship_edges')
-      .select('id, tenant_id, source_type, source_id, target_type, target_id, edge_type, strength, last_interaction_at')
-      .order('last_interaction_at', { ascending: false, nullsFirst: false })
-      .limit(50);
-    if (userId) q = q.eq('source_id', userId);
-    const r = await q;
+    const r = await repo.fetchLegacyRelationshipEdgesSample(supabase, userId);
     legacyEdges = r.data ?? [];
   } catch { legacyEdges = []; }
 
@@ -299,7 +273,7 @@ router.get('/admin/memory/embeddings', async (_req: AuthenticatedRequest, res: R
   const out: any[] = [];
   await Promise.all(collections.map(async (c) => {
     try {
-      const r = await supabase.from(c.key).select('*', { count: 'exact', head: true });
+      const r = await repo.countTableRows(supabase, c.key);
       out.push({ ...c, vectors: r.error ? null : (r.count ?? 0), status: r.error ? 'error' : 'active' });
     } catch {
       out.push({ ...c, vectors: null, status: 'error' });

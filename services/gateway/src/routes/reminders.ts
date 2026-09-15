@@ -28,6 +28,7 @@ import {
   ReminderValidationError,
 } from '../services/reminders-service';
 import { getReminderChimePcmB64 } from '../services/reminder-chime';
+import * as repo from './reminders-repository';
 
 const router = Router();
 const LOG_PREFIX = '[Reminders]';
@@ -165,14 +166,7 @@ router.get('/missed', async (req: Request, res: Response) => {
     const admin = getSupabase();
     if (!admin) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
 
-    const { data, error } = await admin
-      .from('reminders')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('status', 'fired')
-      .is('acked_at', null)
-      .order('fired_at', { ascending: false })
-      .limit(20);
+    const { data, error } = await repo.fetchFiredUnackedReminders(admin, userId, false);
     if (error) throw new Error(error.message);
 
     return res.json({ ok: true, data: data || [], count: data?.length || 0 });
@@ -221,14 +215,7 @@ router.get('/stream', async (req: Request, res: Response) => {
 
   const pollFires = async () => {
     try {
-      const { data, error } = await admin
-        .from('reminders')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('status', 'fired')
-        .is('acked_at', null)
-        .order('fired_at', { ascending: true })
-        .limit(20);
+      const { data, error } = await repo.fetchFiredUnackedReminders(admin, userId, true);
       if (error) {
         console.error('[Reminders SSE] poll error:', error.message);
         return;
@@ -283,12 +270,7 @@ router.get('/:id', async (req: Request, res: Response) => {
     const admin = getSupabase();
     if (!admin) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
 
-    const { data, error } = await admin
-      .from('reminders')
-      .select('*')
-      .eq('id', req.params.id)
-      .eq('user_id', userId)
-      .maybeSingle();
+    const { data, error } = await repo.fetchReminderById(admin, req.params.id, userId);
     if (error) throw new Error(error.message);
     if (!data) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
     return res.json({ ok: true, data });
@@ -328,13 +310,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
       return res.status(400).json({ ok: false, error: 'no updatable fields supplied' });
     }
 
-    const { data, error } = await admin
-      .from('reminders')
-      .update(updates)
-      .eq('id', req.params.id)
-      .eq('user_id', userId)
-      .select('*')
-      .maybeSingle();
+    const { data, error } = await repo.updateReminderReturningFull(admin, req.params.id, userId, updates);
     if (error) throw new Error(error.message);
     if (!data) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
     return res.json({ ok: true, data });
@@ -357,28 +333,18 @@ router.post('/:id/snooze', async (req: Request, res: Response) => {
     const minutes = Math.max(1, Math.min(parseInt(String(req.body?.minutes ?? '10'), 10) || 10, 24 * 60));
     const newTime = new Date(Date.now() + minutes * 60_000).toISOString();
 
-    const { data: row } = await admin
-      .from('reminders')
-      .select('snooze_count')
-      .eq('id', req.params.id)
-      .eq('user_id', userId)
-      .maybeSingle();
+    const { data: row, error: rowErr } = await repo.fetchReminderSnoozeCount(admin, req.params.id, userId);
+    if (rowErr) throw new Error(rowErr.message);
     if (!row) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
 
-    const { data, error } = await admin
-      .from('reminders')
-      .update({
-        next_fire_at: newTime,
-        status: 'pending',
-        fired_at: null,
-        acked_at: null,
-        delivery_via: null,
-        snooze_count: ((row as any).snooze_count || 0) + 1,
-      })
-      .eq('id', req.params.id)
-      .eq('user_id', userId)
-      .select('*')
-      .single();
+    const { data, error } = await repo.updateReminderSnooze(admin, req.params.id, userId, {
+      next_fire_at: newTime,
+      status: 'pending',
+      fired_at: null,
+      acked_at: null,
+      delivery_via: null,
+      snooze_count: ((row as any).snooze_count || 0) + 1,
+    });
     if (error) throw new Error(error.message);
     return res.json({ ok: true, data });
   } catch (err: any) {
@@ -402,13 +368,10 @@ router.post('/:id/ack', async (req: Request, res: Response) => {
       return res.status(400).json({ ok: false, error: 'invalid via' });
     }
 
-    const { data, error } = await admin
-      .from('reminders')
-      .update({ acked_at: new Date().toISOString(), delivery_via: via })
-      .eq('id', req.params.id)
-      .eq('user_id', userId)
-      .select('id, acked_at, delivery_via')
-      .maybeSingle();
+    const { data, error } = await repo.updateReminderAck(admin, req.params.id, userId, {
+      acked_at: new Date().toISOString(),
+      delivery_via: via,
+    });
     if (error) throw new Error(error.message);
     if (!data) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
     return res.json({ ok: true, data });
@@ -428,17 +391,11 @@ router.post('/:id/complete', async (req: Request, res: Response) => {
     const admin = getSupabase();
     if (!admin) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
 
-    const { data, error } = await admin
-      .from('reminders')
-      .update({
-        status: 'completed',
-        acked_at: new Date().toISOString(),
-        delivery_via: 'manual',
-      })
-      .eq('id', req.params.id)
-      .eq('user_id', userId)
-      .select('*')
-      .maybeSingle();
+    const { data, error } = await repo.updateReminderReturningFull(admin, req.params.id, userId, {
+      status: 'completed',
+      acked_at: new Date().toISOString(),
+      delivery_via: 'manual',
+    });
     if (error) throw new Error(error.message);
     if (!data) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
     return res.json({ ok: true, data });

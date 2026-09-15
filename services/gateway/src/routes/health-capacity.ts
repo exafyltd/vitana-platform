@@ -23,6 +23,7 @@
 
 import { Router, Request, Response } from 'express';
 import { createUserSupabaseClient } from '../lib/supabase-user';
+import * as repo from './health-capacity-repository';
 import {
   computeCapacity,
   getCurrentCapacity,
@@ -392,12 +393,7 @@ router.get('/rules', async (req: Request, res: Response) => {
       return res.status(500).json({ ok: false, error: 'SERVICE_UNAVAILABLE' });
     }
 
-    const { data, error } = await supabase
-      .from('capacity_rules')
-      .select('rule_key, rule_version, signal_source, target_dimension, weight, decay_minutes, active')
-      .eq('active', true)
-      .order('signal_source')
-      .order('weight', { ascending: false });
+    const { data, error } = await repo.fetchActiveCapacityRules(supabase);
 
     if (error) {
       console.error(`${LOG_PREFIX} GET /rules - Error:`, error);

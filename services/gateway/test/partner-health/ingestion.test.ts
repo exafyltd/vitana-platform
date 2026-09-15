@@ -194,7 +194,7 @@ describe('ingestPartnerResult', () => {
     const orderUpdate = calls.find((c) => c.table === 'partner_health_test_orders' && c.op === 'update');
     expect(orderUpdate?.arg).toMatchObject({ status: 'result_ready' });
 
-    expect(notifyUserAsync).toHaveBeenCalledWith('user-1', 'tenant-1', 'lab_report_processed', expect.any(Object), sb);
+    expect(notifyUserAsync).toHaveBeenCalledWith('user-1', 'tenant-1', 'health_test_result_ready', expect.any(Object), sb);
     expect(emitOasisEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'health_test.result_ready' }));
   });
 

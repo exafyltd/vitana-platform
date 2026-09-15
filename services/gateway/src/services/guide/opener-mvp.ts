@@ -27,6 +27,7 @@ import {
   OpenerSelection,
 } from './types';
 import { DEFAULT_WAVE_CONFIG } from '../wave-defaults';
+import * as repo from './opener-mvp-repository';
 
 const LOG_PREFIX = '[Guide:opener-mvp]';
 
@@ -89,13 +90,7 @@ export async function pickOpenerCandidate(input: PickOpenerInput): Promise<Opene
   let goal: LifeCompassRow | null = null;
   let goalIsSystemSeeded = false;
 
-  const { data: compassRows } = await supabase
-    .from('life_compass')
-    .select('id, primary_goal, category')
-    .eq('user_id', input.user_id)
-    .eq('is_active', true)
-    .order('created_at', { ascending: false })
-    .limit(1);
+  const { data: compassRows } = await repo.fetchActiveGoalForOpener(supabase, input.user_id, 1);
 
   if (compassRows && compassRows.length) {
     goal = compassRows[0] as LifeCompassRow;
@@ -103,17 +98,13 @@ export async function pickOpenerCandidate(input: PickOpenerInput): Promise<Opene
     // Lazy seed — Vitana's default focus is the platform's mission itself:
     // improve quality of life and extend lifespan. The user can swap this
     // for any catalog goal anytime.
-    const { data: seeded, error: seedErr } = await supabase
-      .from('life_compass')
-      .insert({
-        user_id: input.user_id,
-        primary_goal: 'Improve quality of life and extend lifespan',
-        category: 'longevity',
-        is_active: true,
-        version: 1,
-      })
-      .select('id, primary_goal, category')
-      .single();
+    const { data: seeded, error: seedErr } = await repo.insertDefaultLifeCompassGoal(supabase, {
+      user_id: input.user_id,
+      primary_goal: 'Improve quality of life and extend lifespan',
+      category: 'longevity',
+      is_active: true,
+      version: 1,
+    });
 
     if (seedErr) {
       console.warn(`${LOG_PREFIX} default-goal seed failed for user ${input.user_id}:`, seedErr.message);
@@ -136,15 +127,7 @@ export async function pickOpenerCandidate(input: PickOpenerInput): Promise<Opene
   const in24hIso = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
   // 1. Overdue autopilot events (highest priority candidate kind)
-  const { data: overdueRows } = await supabase
-    .from('calendar_events')
-    .select('id, title, start_time, duration_minutes, event_type, status, source_ref')
-    .eq('user_id', input.user_id)
-    .eq('event_type', 'autopilot')
-    .eq('status', 'scheduled')
-    .lt('start_time', nowIso)
-    .order('start_time', { ascending: false })
-    .limit(1);
+  const { data: overdueRows } = await repo.fetchOverdueCalendarEvent(supabase, input.user_id, nowIso, 1);
 
   if (overdueRows && overdueRows.length) {
     const ev = overdueRows[0] as CalendarEventRow;
@@ -162,16 +145,7 @@ export async function pickOpenerCandidate(input: PickOpenerInput): Promise<Opene
   }
 
   // 2. Upcoming within 24h
-  const { data: upcomingRows } = await supabase
-    .from('calendar_events')
-    .select('id, title, start_time, duration_minutes, event_type, status, source_ref')
-    .eq('user_id', input.user_id)
-    .eq('event_type', 'autopilot')
-    .eq('status', 'scheduled')
-    .gt('start_time', nowIso)
-    .lt('start_time', in24hIso)
-    .order('start_time', { ascending: true })
-    .limit(1);
+  const { data: upcomingRows } = await repo.fetchUpcomingCalendarEvent(supabase, input.user_id, nowIso, in24hIso, 1);
 
   if (upcomingRows && upcomingRows.length) {
     const ev = upcomingRows[0] as CalendarEventRow;
@@ -190,14 +164,7 @@ export async function pickOpenerCandidate(input: PickOpenerInput): Promise<Opene
   }
 
   // 3. Top "new" autopilot recommendation matching role
-  const { data: recRows } = await supabase
-    .from('autopilot_recommendations')
-    .select('id, title, summary, domain, role_scope, status, user_id, created_at')
-    .eq('user_id', input.user_id)
-    .eq('status', 'new')
-    .in('role_scope', ['any', input.active_role])
-    .order('created_at', { ascending: false })
-    .limit(1);
+  const { data: recRows } = await repo.fetchTopNewRecommendation(supabase, input.user_id, ['any', input.active_role], 1);
 
   if (recRows && recRows.length) {
     const rec = recRows[0] as AutopilotRecRow;
@@ -220,11 +187,7 @@ export async function pickOpenerCandidate(input: PickOpenerInput): Promise<Opene
   //    Date-stamped nudge_key so daily dismissals don't permanently silence.
   const dateKey = new Date().toISOString().slice(0, 10);
   let registeredAt: string | null = null;
-  const { data: userRows } = await supabase
-    .from('app_users')
-    .select('created_at')
-    .eq('id', input.user_id)
-    .limit(1);
+  const { data: userRows } = await repo.fetchUserRegisteredAt(supabase, input.user_id, 1);
   if (userRows && userRows.length) {
     registeredAt = (userRows[0] as { created_at: string }).created_at;
   }
@@ -336,12 +299,7 @@ async function buildAndCheck(b: BuildAndCheckInput): Promise<OpenerSelection> {
 
   const supabase = getSupabase();
   if (supabase) {
-    const { data: nudgeRows } = await supabase
-      .from('user_nudge_state')
-      .select('silenced_until')
-      .eq('user_id', b.input.user_id)
-      .eq('nudge_key', b.nudge_key)
-      .limit(1);
+    const { data: nudgeRows } = await repo.fetchNudgeSilencedUntil(supabase, b.input.user_id, b.nudge_key, 1);
     if (nudgeRows && nudgeRows.length && nudgeRows[0].silenced_until) {
       const silenced = new Date(nudgeRows[0].silenced_until).getTime();
       if (silenced > Date.now()) {

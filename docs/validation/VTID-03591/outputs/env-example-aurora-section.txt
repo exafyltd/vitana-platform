@@ -1,0 +1,13 @@
+# Aurora application-layer client (VTID-03591, VTID-03702 — Supabase→Aurora
+# migration). NOT WIRED INTO ANY ROUTE YET: getAuroraPool() (aurora-client.ts)
+# returns null until AURORA_DATABASE_URL is set, same deliberate-opt-in shape
+# as TTS_PROVIDER/IMAGE_PROVIDER/BEDROCK_ROLE_ARN. Setting these vars alone
+# changes nothing at runtime.
+#   AURORA_DATABASE_URL — postgres:// URL for the Aurora writer endpoint.
+#     Unset = Aurora client unavailable (expected until the real cutover).
+#   AURORA_SSL — set to 'false' to disable TLS entirely (loopback/local only).
+#     Any other value (including unset) uses TLS with rejectUnauthorized:false
+#     (ECS reaches Aurora inside the VPC, not over the public internet).
+#   AURORA_POOL_MAX — max pool connections. Defaults to 10.
+AURORA_DATABASE_URL=
+AURORA_SSL=

@@ -3270,6 +3270,7 @@ const state = {
     // Global Overlays (VTID-0508 / VTID-0509)
     isHeartbeatOpen: false,
     isOperatorOpen: false,
+    isOperatorFullscreen: false, // VTID-03905: Operator popup fullscreen toggle
     operatorActiveTab: 'ticker', // 'chat', 'ticker', 'history'
 
     // VTID-0509: Operator Console State
@@ -3283,6 +3284,7 @@ const state = {
     chatAttachments: [], // Array of { oasis_ref, kind, name }
     chatSending: false,
     chatIsTyping: false, // VTID-0526-D: Guard against scroll/render during typing
+    chatDictationActive: false, // VTID-03907: voice dictation (Web Speech API) recording state
     // VTID-01027: Session Memory State
     operatorChatHistory: [], // Array of { role: 'user'|'assistant', content, ts }
     operatorConversationId: null, // UUID for conversation continuity
@@ -5656,7 +5658,11 @@ function _renderAppCore() {
 
     // VTID-0539: Scroll anchoring - preserve scroll position or scroll to bottom based on user's position
     // Only auto-scroll if user was near bottom; otherwise preserve their scroll position
-    if (state.isOperatorOpen && state.operatorActiveTab === 'chat' && !savedChatFocus) {
+    // VTID-03906: this used to also require !savedChatFocus, so a re-render while the
+    // textarea had focus (the normal reading/typing state) skipped restoring scroll
+    // entirely, snapping .chat-messages to scrollTop=0. Focus restoration and scroll
+    // restoration touch different elements and don't need to be mutually exclusive.
+    if (state.isOperatorOpen && state.operatorActiveTab === 'chat') {
         requestAnimationFrame(function () {
             var newMessagesContainer = document.querySelector('.chat-messages');
             if (newMessagesContainer && savedChatScroll) {
@@ -23549,6 +23555,18 @@ function renderMemoryGardenView() {
         return container;
     }
 
+    // VTID-01086: memory_get_garden_progress RPC does not exist live —
+    // every fetch falls into the backend's _placeholder branch, returning
+    // an ok:true, all-zero response indistinguishable from a genuinely
+    // empty Memory Garden. Without this banner an admin sees "0 memories
+    // stored" for every single user with no indication the data is fake.
+    if (state.memoryGarden.progress?._placeholder) {
+        var placeholderBanner = document.createElement('div');
+        placeholderBanner.className = 'admin-not-wired-banner';
+        placeholderBanner.innerHTML = '<span class="admin-not-wired-icon">⚠️</span> Memory Garden data unavailable — the memory_get_garden_progress database function is not deployed. The counts below are placeholder zeros, not this user\'s real data.';
+        container.appendChild(placeholderBanner);
+    }
+
     // Main content area
     var mainContent = document.createElement('div');
     mainContent.className = 'memory-garden-main';
@@ -25828,6 +25846,85 @@ function renderHeartbeatOverlay() {
     return backdrop;
 }
 
+// VTID-03905: Operator popup fullscreen/restore icons. Plain stroke SVGs
+// with no inline styling attribute — the CSP Governance Gate forbids scripted inline styles.
+var ICON_EXPAND_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>';
+var ICON_RESTORE_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"></polyline><polyline points="20 10 14 10 14 4"></polyline><line x1="14" y1="10" x2="21" y2="3"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>';
+
+// VTID-03907: Operator chat voice dictation via the Web Speech API — no
+// backend route or new dependency, client-side only (transcribed text just
+// fills state.chatInputValue the same as typing would).
+var ICON_MIC_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>';
+
+var operatorSpeechRecognition = null;
+
+function operatorDictationSupported() {
+    return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+}
+
+function stopOperatorDictation() {
+    if (operatorSpeechRecognition) {
+        try { operatorSpeechRecognition.stop(); } catch (e) { /* already stopped/errored */ }
+    }
+    operatorSpeechRecognition = null;
+    state.chatDictationActive = false;
+}
+
+// Starts a live SpeechRecognition session that streams transcribed text
+// directly into state.chatInputValue (and the live textarea, so the user
+// sees words appear as they speak) without going through renderApp() — a
+// full re-render per partial result would be the exact kind of disruption
+// VTID-03906 fixed elsewhere in this same popup.
+function startOperatorDictation(textarea, micBtn) {
+    var SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognitionCtor || state.chatDictationActive) return;
+
+    var recognition = new SpeechRecognitionCtor();
+    recognition.lang = (navigator.language || 'en-US');
+    recognition.continuous = true;
+    recognition.interimResults = true;
+
+    var baseValue = state.chatInputValue || '';
+    var baseNeedsSpace = baseValue.length > 0 && !/\s$/.test(baseValue);
+
+    recognition.onresult = function (event) {
+        var finalTranscript = '';
+        var interimTranscript = '';
+        for (var i = event.resultIndex; i < event.results.length; i++) {
+            var transcript = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+                finalTranscript += transcript;
+            } else {
+                interimTranscript += transcript;
+            }
+        }
+        if (finalTranscript) {
+            baseValue = baseValue + (baseNeedsSpace ? ' ' : '') + finalTranscript.trim() + ' ';
+            baseNeedsSpace = false;
+        }
+        var combined = baseValue + interimTranscript;
+        state.chatInputValue = combined;
+        if (textarea) textarea.value = combined;
+    };
+
+    recognition.onerror = function (event) {
+        console.warn('[VTID-03907] Speech recognition error:', event.error);
+        stopOperatorDictation();
+        if (micBtn) micBtn.classList.remove('chat-mic-btn--active');
+    };
+
+    recognition.onend = function () {
+        operatorSpeechRecognition = null;
+        state.chatDictationActive = false;
+        if (micBtn) micBtn.classList.remove('chat-mic-btn--active');
+    };
+
+    operatorSpeechRecognition = recognition;
+    state.chatDictationActive = true;
+    if (micBtn) micBtn.classList.add('chat-mic-btn--active');
+    recognition.start();
+}
+
 function renderOperatorOverlay() {
     const backdrop = document.createElement('div');
     backdrop.className = 'overlay-backdrop';
@@ -25836,12 +25933,14 @@ function renderOperatorOverlay() {
             state.isOperatorOpen = false;
             // VTID-01209: Stop active executions polling when closing
             stopActiveExecutionsPolling();
+            // VTID-03907: Stop any in-progress voice dictation when closing
+            if (state.chatDictationActive) stopOperatorDictation();
             renderApp();
         }
     };
 
     const panel = document.createElement('div');
-    panel.className = 'overlay-panel operator-overlay';
+    panel.className = 'overlay-panel operator-overlay' + (state.isOperatorFullscreen ? ' operator-overlay--fullscreen' : '');
 
     // Header
     const header = document.createElement('div');
@@ -25860,6 +25959,22 @@ function renderOperatorOverlay() {
 
     header.appendChild(titleBlock);
 
+    // VTID-03905: header action buttons (fullscreen / restore), between the
+    // title block and the close button. Close button behavior is unchanged.
+    const headerActions = document.createElement('div');
+    headerActions.className = 'overlay-header-actions';
+
+    const fullscreenBtn = document.createElement('button');
+    fullscreenBtn.className = 'overlay-fullscreen-toggle';
+    fullscreenBtn.title = state.isOperatorFullscreen ? 'Restore' : 'Fullscreen';
+    fullscreenBtn.setAttribute('aria-label', state.isOperatorFullscreen ? 'Restore popup size' : 'Enter fullscreen');
+    fullscreenBtn.innerHTML = state.isOperatorFullscreen ? ICON_RESTORE_SVG : ICON_EXPAND_SVG;
+    fullscreenBtn.onclick = () => {
+        state.isOperatorFullscreen = !state.isOperatorFullscreen;
+        renderApp();
+    };
+    headerActions.appendChild(fullscreenBtn);
+
     const closeBtn = document.createElement('button');
     closeBtn.className = 'overlay-close';
     closeBtn.innerHTML = '&times;';
@@ -25867,9 +25982,13 @@ function renderOperatorOverlay() {
         state.isOperatorOpen = false;
         // VTID-01209: Stop active executions polling when closing
         stopActiveExecutionsPolling();
+        // VTID-03907: Stop any in-progress voice dictation when closing
+        if (state.chatDictationActive) stopOperatorDictation();
         renderApp();
     };
-    header.appendChild(closeBtn);
+    headerActions.appendChild(closeBtn);
+
+    header.appendChild(headerActions);
 
     panel.appendChild(header);
 
@@ -26152,6 +26271,30 @@ function renderOperatorChat() {
     };
     inputContainer.appendChild(textarea);
 
+    // VTID-03907: Voice dictation mic button (Web Speech API)
+    const micBtn = document.createElement('button');
+    micBtn.type = 'button';
+    var dictationSupported = operatorDictationSupported();
+    micBtn.className = 'chat-mic-btn' + (state.chatDictationActive ? ' chat-mic-btn--active' : '');
+    micBtn.disabled = !dictationSupported;
+    micBtn.title = !dictationSupported
+        ? 'Voice dictation is not supported in this browser'
+        : (state.chatDictationActive ? 'Stop voice dictation' : 'Start voice dictation');
+    micBtn.setAttribute('aria-label', micBtn.title);
+    micBtn.innerHTML = ICON_MIC_SVG;
+    micBtn.onclick = () => {
+        if (!dictationSupported) return;
+        if (state.chatDictationActive) {
+            stopOperatorDictation();
+            micBtn.classList.remove('chat-mic-btn--active');
+            micBtn.title = 'Start voice dictation';
+        } else {
+            startOperatorDictation(textarea, micBtn);
+            micBtn.title = 'Stop voice dictation';
+        }
+    };
+    inputContainer.appendChild(micBtn);
+
     // Send button
     const sendBtn = document.createElement('button');
     sendBtn.className = 'chat-send-btn';
@@ -26214,6 +26357,8 @@ async function sendChatMessage() {
 
     // VTID-0526-D: Reset typing flag - user is done typing, now sending
     state.chatIsTyping = false;
+    // VTID-03907: Stop any in-progress voice dictation once the message is sent
+    if (state.chatDictationActive) stopOperatorDictation();
 
     const now = new Date();
     const timestamp = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
@@ -31567,9 +31712,15 @@ function renderOverviewSystemView() {
     }
     // Auto-refresh every 30s while the Overview is mounted. Use a single
     // timer keyed on the state to avoid stacking duplicates across renders.
+    // VTID-03906: state.isOperatorOpen is an overlay flag independent of
+    // activeModule/activeTab, so with Overview mounted underneath, this timer
+    // used to keep calling fetchActionRequired(true) -> a full renderApp()
+    // every 30s while the Operator popup was open on top, tearing down and
+    // rebuilding the whole DOM (including the open popup) unprompted by any
+    // user action. Skip the poll entirely while a popup covers the tab.
     if (!state._actionRequiredTimer) {
         state._actionRequiredTimer = setInterval(function () {
-            if (state.activeModule === 'overview' && state.activeTab === 'system-overview') {
+            if (state.activeModule === 'overview' && state.activeTab === 'system-overview' && !state.isOperatorOpen) {
                 state.actionRequired.fetched = false;
                 fetchActionRequired(true);
             }
@@ -43447,6 +43598,12 @@ if (!state.devAutopilot) {
         // Lineage cache (execId → { loading, root_id, lineage[] }) (PR-8)
         lineages: {},
         expandedExecIds: {},
+        // VTID-03896/03897: per-execution step feed. `steps[execId]` holds
+        // { loading, steps[], error, es } where `es` is the live EventSource
+        // (not serializable/renderable — only ever read/closed by the
+        // stream helpers below, never iterated for display).
+        expandedStepsExecIds: {},
+        steps: {},
         // In-flight action keys (e.g. 'approve:<id>') so buttons can disable
         // themselves cleanly via state instead of touching detached DOM after
         // showToast() (which re-renders and invalidates refs).
@@ -44381,6 +44538,70 @@ function ensureLineageLoaded(execId) {
     });
 }
 
+// VTID-03897: open (or reuse) a live SSE tail for one execution's step feed.
+// A one-shot GET .../steps primes the panel immediately (so slow SSE
+// handshakes don't leave it blank), then the EventSource appends live
+// `step` events as they arrive and self-closes on a `terminal` event.
+function ensureStepsStreamOpened(execId) {
+    if (!state.devAutopilot.steps[execId]) {
+        state.devAutopilot.steps[execId] = { loading: true, steps: [], error: null, es: null };
+    }
+    var slot = state.devAutopilot.steps[execId];
+    if (slot.es) return; // already streaming
+
+    devAutopilotApi('/executions/' + execId + '/steps', 'GET').then(function (data) {
+        if (data.ok) {
+            slot.steps = data.steps || [];
+            slot.error = null;
+        } else {
+            slot.error = data.error || 'steps fetch failed';
+        }
+        slot.loading = false;
+        renderApp();
+    }).catch(function (err) {
+        slot.loading = false;
+        slot.error = err.message || String(err);
+        renderApp();
+    });
+
+    // The browser's native EventSource cannot set an Authorization header,
+    // so this one stream route also accepts the bearer token as a query
+    // param (server-side: requireDevRoleForStream in dev-autopilot.ts).
+    var url = '/api/v1/dev-autopilot/executions/' + execId + '/stream?access_token=' + encodeURIComponent(state.authToken || '');
+    var es = new EventSource(url);
+    slot.es = es;
+    slot.streamError = false;
+
+    es.addEventListener('step', function (evt) {
+        try {
+            var step = JSON.parse(evt.data);
+            slot.steps = (slot.steps || []).concat([step]);
+            slot.loading = false;
+            renderApp();
+        } catch (_e) { /* ignore malformed frame */ }
+    });
+
+    es.addEventListener('terminal', function () {
+        closeStepsStream(execId);
+        renderApp();
+    });
+
+    es.onerror = function () {
+        if (slot.es === es) slot.streamError = true;
+    };
+}
+
+// Closes the live stream (if any) for one execution. Called when the
+// developer collapses the Steps panel — an execution the operator isn't
+// watching shouldn't hold an open connection indefinitely.
+function closeStepsStream(execId) {
+    var slot = state.devAutopilot.steps[execId];
+    if (slot && slot.es) {
+        slot.es.close();
+        slot.es = null;
+    }
+}
+
 // -----------------------------------------------------------------------------
 // Renderers
 // -----------------------------------------------------------------------------
@@ -44676,6 +44897,31 @@ function renderDevAutopilotExecutionCard(exec) {
         : 'No on-ramp override on this execution — routed per the live llm_routing_policy \'worker\' stage.';
     topRow.appendChild(llmBadge);
 
+    // VTID-03898: last_event_at heartbeat — lets a developer tell a
+    // long-running-but-healthy execution (recent step) from one that's
+    // silently stuck (last step was a long time ago), without opening the
+    // step feed. Only meaningful for still-active statuses.
+    var ACTIVE_STATUSES = { cooling: 1, running: 1, ci: 1, merging: 1, deploying: 1, verifying: 1 };
+    if (ACTIVE_STATUSES[exec.status] && exec.last_event_at) {
+        var ageMs = Date.now() - new Date(exec.last_event_at).getTime();
+        var ageMin = Math.round(ageMs / 60000);
+        var heartbeatEl = document.createElement('span');
+        // Stale past 10 minutes of no step activity: not necessarily
+        // broken (a long CI run can be quiet that long), but worth a
+        // visually distinct color so a developer scanning the board knows
+        // where to look first.
+        var stale = ageMs > 10 * 60000;
+        heartbeatEl.className = 'dev-autopilot-heartbeat' + (stale ? ' dev-autopilot-heartbeat--stale' : '');
+        heartbeatEl.title = 'Last step event at ' + exec.last_event_at;
+        heartbeatEl.textContent = (stale ? '⚠ ' : '') + 'last step ' + (ageMin <= 0 ? '<1m' : ageMin + 'm') + ' ago';
+        topRow.appendChild(heartbeatEl);
+    } else if (ACTIVE_STATUSES[exec.status] && exec.last_event_at === null) {
+        var noEventsEl = document.createElement('span');
+        noEventsEl.className = 'dev-autopilot-heartbeat';
+        noEventsEl.textContent = 'no steps yet';
+        topRow.appendChild(noEventsEl);
+    }
+
     if (exec.execute_after && exec.status === 'cooling') {
         var ms = new Date(exec.execute_after) - new Date();
         if (ms > 0) {
@@ -44715,6 +44961,25 @@ function renderDevAutopilotExecutionCard(exec) {
     };
     topRow.appendChild(lineageBtn);
 
+    // VTID-03896/03897: Steps toggle — opens a live SSE tail of this
+    // execution's dev_autopilot.execution.* OASIS events, mirroring the
+    // Lineage button's expand/collapse pattern.
+    var stepsOpen = !!state.devAutopilot.expandedStepsExecIds[exec.id];
+    var stepsBtn = document.createElement('button');
+    stepsBtn.textContent = stepsOpen ? '▾ Steps' : '▸ Steps';
+    stepsBtn.className = 'dev-autopilot-ghost-toggle';
+    stepsBtn.onclick = function () {
+        if (stepsOpen) {
+            delete state.devAutopilot.expandedStepsExecIds[exec.id];
+            closeStepsStream(exec.id);
+        } else {
+            state.devAutopilot.expandedStepsExecIds[exec.id] = true;
+            ensureStepsStreamOpened(exec.id);
+        }
+        renderApp();
+    };
+    topRow.appendChild(stepsBtn);
+
     card.appendChild(topRow);
 
     if (exec.branch) {
@@ -44726,6 +44991,10 @@ function renderDevAutopilotExecutionCard(exec) {
 
     if (lineageOpen) {
         card.appendChild(renderDevAutopilotLineageView(exec.id));
+    }
+
+    if (stepsOpen) {
+        card.appendChild(renderDevAutopilotStepsView(exec.id));
     }
 
     return card;
@@ -44786,6 +45055,83 @@ function renderDevAutopilotLineageView(execId) {
             hereEl.textContent = '← here';
             line.appendChild(hereEl);
         }
+        box.appendChild(line);
+    });
+
+    return box;
+}
+
+// VTID-03896/03897: renders the live step-by-step OASIS event tail for one
+// execution — the per-step Command Hub equivalent of watching Claude Code
+// run turn-by-turn, instead of only seeing a single status badge change
+// hours apart. Steps arrive oldest-first (both the priming GET and the SSE
+// appends preserve that order), so the list below simply reads top-to-bottom.
+function renderDevAutopilotStepsView(execId) {
+    var slot = state.devAutopilot.steps[execId] || {};
+    var box = document.createElement('div');
+    box.className = 'dev-autopilot-steps-panel';
+
+    if (slot.loading) {
+        box.textContent = 'Loading steps…';
+        box.classList.add('dev-autopilot-steps-panel--muted');
+        return box;
+    }
+    if (slot.error) {
+        box.classList.add('dev-autopilot-steps-panel--error');
+        box.textContent = 'Steps error: ' + slot.error;
+        return box;
+    }
+
+    var heading = document.createElement('div');
+    heading.className = 'dev-autopilot-steps-heading';
+    var headingText = document.createElement('span');
+    headingText.textContent = 'Live step feed (' + (slot.steps ? slot.steps.length : 0) + ')';
+    heading.appendChild(headingText);
+    if (slot.es) {
+        var liveDot = document.createElement('span');
+        liveDot.className = 'dev-autopilot-steps-live-dot';
+        liveDot.title = 'Streaming live';
+        heading.appendChild(liveDot);
+    } else if (slot.streamError) {
+        var errDot = document.createElement('span');
+        errDot.className = 'dev-autopilot-steps-stream-note';
+        errDot.textContent = '(stream reconnecting…)';
+        heading.appendChild(errDot);
+    }
+    box.appendChild(heading);
+
+    if (!slot.steps || slot.steps.length === 0) {
+        var empty = document.createElement('div');
+        empty.className = 'dev-autopilot-steps-empty';
+        empty.textContent = 'No step events yet.';
+        box.appendChild(empty);
+        return box;
+    }
+
+    var STEP_STATUS_CLASS = { error: 'dev-autopilot-step-topic--error', warning: 'dev-autopilot-step-topic--warning', success: 'dev-autopilot-step-topic--success' };
+    slot.steps.forEach(function (step) {
+        var line = document.createElement('div');
+        line.className = 'dev-autopilot-step-line';
+
+        var timeEl = document.createElement('span');
+        timeEl.className = 'dev-autopilot-step-time';
+        try {
+            timeEl.textContent = new Date(step.created_at).toLocaleTimeString();
+        } catch (_e) {
+            timeEl.textContent = String(step.created_at || '?');
+        }
+        line.appendChild(timeEl);
+
+        var topicEl = document.createElement('span');
+        topicEl.className = 'dev-autopilot-step-topic ' + (STEP_STATUS_CLASS[step.status] || '');
+        topicEl.textContent = (step.topic || '?').replace('dev_autopilot.execution.', '');
+        line.appendChild(topicEl);
+
+        var msgEl = document.createElement('span');
+        msgEl.className = 'dev-autopilot-step-message';
+        msgEl.textContent = step.message || '';
+        line.appendChild(msgEl);
+
         box.appendChild(line);
     });
 

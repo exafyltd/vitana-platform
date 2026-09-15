@@ -36,6 +36,7 @@ import {
   type CapabilityCatalogRow,
   type AwarenessLedgerRow,
 } from './feature-discovery-teacher';
+import * as repo from './teacher-deflection-repository';
 
 export interface TeacherDeflectionInputs {
   supabase: SupabaseClient;
@@ -141,18 +142,11 @@ export async function buildTeacherDeflectionForEmptyRecommendations(
   let catalog: CapabilityCatalogRow[] = [];
   let ledger: AwarenessLedgerRow[] = [];
   try {
-    const cap = await inputs.supabase
-      .from('system_capabilities')
-      .select('capability_key, display_name, description, manual_path, enabled, pedagogical_order')
-      .eq('enabled', true);
+    const cap = await repo.fetchEnabledSystemCapabilities(inputs.supabase);
     if (!cap.error && Array.isArray(cap.data)) {
       catalog = cap.data as CapabilityCatalogRow[];
     }
-    const led = await inputs.supabase
-      .from('user_capability_awareness')
-      .select('capability_key, awareness_state, dismiss_count, last_introduced_at')
-      .eq('tenant_id', inputs.tenantId)
-      .eq('user_id', inputs.userId);
+    const led = await repo.fetchUserCapabilityAwarenessLedger(inputs.supabase, inputs.tenantId, inputs.userId);
     if (!led.error && Array.isArray(led.data)) {
       ledger = led.data as AwarenessLedgerRow[];
     }

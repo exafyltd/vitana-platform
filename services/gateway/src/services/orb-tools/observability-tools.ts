@@ -12,6 +12,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
 import { developerGate, clampLimit, relAge, gatewayApiCall } from './developer-tools';
+import * as repo from './observability-tools-repository';
 
 type Handler = (
   args: OrbToolArgs,
@@ -72,11 +73,7 @@ export const dev_error_rate: Handler = async (args, id, sb) => {
   if (denied) return denied;
   const hours = Math.max(1, Math.min(168, Number(args.hours) || 24));
   const since = new Date(Date.now() - hours * 3600_000).toISOString();
-  const { data, error } = await sb
-    .from('oasis_events')
-    .select('status')
-    .gte('created_at', since)
-    .limit(5000);
+  const { data, error } = await repo.fetchOasisEventStatusesSince(sb, since);
   if (error) return { ok: false, error: `dev_error_rate failed: ${error.message}` };
   const rows = (data ?? []) as Array<{ status: string | null }>;
   const total = rows.length;
@@ -98,12 +95,7 @@ export const dev_latency_summary: Handler = async (args, id, sb) => {
   if (denied) return denied;
   const hours = Math.max(1, Math.min(168, Number(args.hours) || 24));
   const since = new Date(Date.now() - hours * 3600_000).toISOString();
-  const { data, error } = await sb
-    .from('oasis_events')
-    .select('payload')
-    .eq('topic', 'voice.latency.measured')
-    .gte('created_at', since)
-    .limit(2000);
+  const { data, error } = await repo.fetchVoiceLatencyPayloadsSince(sb, since);
   if (error) return { ok: false, error: `dev_latency_summary failed: ${error.message}` };
   const values = ((data ?? []) as Array<{ payload: Record<string, unknown> | null }>)
     .map((r) => Number(r.payload?.total_ms))

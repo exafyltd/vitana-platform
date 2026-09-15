@@ -20,6 +20,7 @@ import { AutomationContext } from '../../src/types/automations';
 registerOnboardingGrowthHandlers();
 
 const SRC = path.join(__dirname, '..', '..', 'src', 'services', 'automation-handlers', 'onboarding-growth.ts');
+const REPO_SRC = path.join(__dirname, '..', '..', 'src', 'services', 'automation-handlers', 'onboarding-growth-repository.ts');
 
 function makeFakeSupabase(resultsByTable: Record<string, Array<{ data?: any; count?: number; error?: any }>>) {
   const cursors: Record<string, number> = {};
@@ -74,7 +75,11 @@ function makeCtx(supabase: any, metadata: Record<string, unknown> = {}) {
 }
 
 describe('onboarding-growth — source-level wall against never-deployed / wrong tables', () => {
-  const src = fs.readFileSync(SRC, 'utf8');
+  // VTID-03702 (Aurora migration B1): the literal `.from(...)` calls this
+  // wall pins now live in the repository seam, not the handler file itself
+  // — check the combined text so the pure-move refactor doesn't break a
+  // still-valid invariant.
+  const src = fs.readFileSync(SRC, 'utf8') + '\n' + fs.readFileSync(REPO_SRC, 'utf8');
 
   it('never references the never-deployed VTID-01084/legacy tables', () => {
     expect(src).not.toMatch(/from\(['"]user_topic_profile['"]\)/);
@@ -129,7 +134,38 @@ describe('runOrbGuidedOnboarding (AP-1301)', () => {
     const result = await handler(ctx);
     expect(notify).toHaveBeenCalledTimes(1);
     expect(supabase.rpc).toHaveBeenCalledWith('increment_wallet_balance', expect.objectContaining({ p_user_id: 'u1' }));
+    expect(ctx.log).toHaveBeenCalledWith(expect.stringContaining('Credited welcome bonus'));
     expect(result.usersAffected).toBe(1);
+  });
+
+  it('on an increment_wallet_balance RPC error: logs the failure instead of a false success message, and does not count it as an action taken', async () => {
+    const supabase = makeFakeSupabase({
+      app_users: [{ data: { display_name: 'Alex', created_at: new Date().toISOString() }, error: null }],
+      user_interests: [{ count: 0, data: [], error: null }],
+    });
+    supabase.rpc = jest.fn(async () => ({ data: null, error: { message: 'connection terminated' } }));
+    const { ctx, notify } = makeCtx(supabase, { user_id: 'u1' });
+    const handler = getHandler('runOrbGuidedOnboarding')!;
+
+    const resultWithError = await handler(ctx);
+
+    expect(ctx.log).toHaveBeenCalledWith(expect.stringContaining('Wallet credit failed for user'));
+    expect(ctx.log).toHaveBeenCalledWith(expect.stringContaining('connection terminated'));
+    expect(ctx.log).not.toHaveBeenCalledWith(expect.stringContaining('Credited welcome bonus'));
+
+    // Compare actionsTaken against the identical happy-path run (both hit
+    // the same generatePersonalRecommendations() catch branch in this test
+    // env) — the bug this fix closes: actionsTaken used to be incremented
+    // unconditionally even though the credit never happened.
+    const supabaseOk = makeFakeSupabase({
+      app_users: [{ data: { display_name: 'Alex', created_at: new Date().toISOString() }, error: null }],
+      user_interests: [{ count: 0, data: [], error: null }],
+    });
+    const { ctx: ctxOk } = makeCtx(supabaseOk, { user_id: 'u1' });
+    const resultOk = await handler(ctxOk);
+
+    expect(resultWithError.actionsTaken).toBe(resultOk.actionsTaken - 1);
+    expect(notify).toHaveBeenCalledTimes(1);
   });
 });
 

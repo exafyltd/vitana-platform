@@ -191,3 +191,107 @@ describe('runGroupOutingBuilder (AP-0310)', () => {
     expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
   });
 });
+
+describe('runHostNightConcierge (AP-0309)', () => {
+  const event = {
+    data: [{ id: 'e1', title: 'Sunset Run', start_time: new Date(Date.now() + 3 * 86_400_000).toISOString(), participant_count: 1, max_participants: 20, created_by: 'host-1', slug: 'sunset-run' }],
+    error: null,
+  };
+
+  it('nudges the host of an under-filled upcoming event with no recent nudge', async () => {
+    const supabase = makeFakeSupabase({
+      global_community_events: [event],
+      user_notifications: [{ data: [], error: null }],
+    });
+    const { ctx, notify } = makeCtx(supabase);
+    const handler = getHandler('runHostNightConcierge')!;
+    const result = await handler(ctx);
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ usersAffected: 1, actionsTaken: 1 });
+  });
+
+  it('skips (does not re-concierge within cooldown) when fetchRecentConciergeNudge errors, and logs it', async () => {
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const supabase = makeFakeSupabase({
+      global_community_events: [event],
+      user_notifications: [{ data: null, error: { message: 'db timeout' } }],
+    });
+    const { ctx, notify } = makeCtx(supabase);
+    const handler = getHandler('runHostNightConcierge')!;
+    const result = await handler(ctx);
+    expect(notify).not.toHaveBeenCalled();
+    expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('fetchRecentConciergeNudge failed'));
+    consoleErrorSpy.mockRestore();
+  });
+});
+
+describe('runEventSeriesAutoSuggestion (AP-0306)', () => {
+  const pastEvent = {
+    data: [{ id: 'e1', title: 'Sunset Run', created_by: 'host-1', participant_count: 25, end_time: new Date(Date.now() - 86_400_000).toISOString() }],
+    error: null,
+  };
+
+  it('suggests scheduling a series when the host has no upcoming event and no recent suggestion', async () => {
+    const supabase = makeFakeSupabase({
+      global_community_events: [pastEvent, { count: 0, data: [], error: null }],
+      user_notifications: [{ data: [], error: null }],
+    });
+    const { ctx, notify } = makeCtx(supabase);
+    const handler = getHandler('runEventSeriesAutoSuggestion')!;
+    const result = await handler(ctx);
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ usersAffected: 1, actionsTaken: 1 });
+  });
+
+  it('skips (does not re-suggest within cooldown) when fetchRecentSeriesSuggestion errors, and logs it', async () => {
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const supabase = makeFakeSupabase({
+      global_community_events: [pastEvent, { count: 0, data: [], error: null }],
+      user_notifications: [{ data: null, error: { message: 'db timeout' } }],
+    });
+    const { ctx, notify } = makeCtx(supabase);
+    const handler = getHandler('runEventSeriesAutoSuggestion')!;
+    const result = await handler(ctx);
+    expect(notify).not.toHaveBeenCalled();
+    expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('fetchRecentSeriesSuggestion failed'));
+    consoleErrorSpy.mockRestore();
+  });
+});
+
+describe('runLiveRoomFromTrendingChatTopic (AP-0307)', () => {
+  const group = {
+    data: [{ id: 'g1', name: 'Runners', created_by: 'host-1', chat_thread_id: 'thread-1' }],
+    error: null,
+  };
+
+  it('suggests a live room when the group chat is spiking and no recent suggestion exists', async () => {
+    const supabase = makeFakeSupabase({
+      global_community_groups: [group],
+      global_messages: [{ count: 50, data: [], error: null }],
+      user_notifications: [{ data: [], error: null }],
+    });
+    const { ctx, notify } = makeCtx(supabase);
+    const handler = getHandler('runLiveRoomFromTrendingChatTopic')!;
+    const result = await handler(ctx);
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ usersAffected: 1, actionsTaken: 1 });
+  });
+
+  it('skips (does not re-suggest within cooldown) when fetchRecentLiveRoomSuggestion errors, and logs it', async () => {
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const supabase = makeFakeSupabase({
+      global_community_groups: [group],
+      global_messages: [{ count: 50, data: [], error: null }],
+      user_notifications: [{ data: null, error: { message: 'db timeout' } }],
+    });
+    const { ctx, notify } = makeCtx(supabase);
+    const handler = getHandler('runLiveRoomFromTrendingChatTopic')!;
+    const result = await handler(ctx);
+    expect(notify).not.toHaveBeenCalled();
+    expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('fetchRecentLiveRoomSuggestion failed'));
+    consoleErrorSpy.mockRestore();
+  });
+});

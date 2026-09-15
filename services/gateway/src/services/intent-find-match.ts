@@ -26,6 +26,7 @@ import { classifyIntentKind, type IntentKind } from './intent-classifier';
 import { extractIntent, friendlyMissingFields, type ExtractedIntent } from './intent-extractor';
 import { embedIntent } from './intent-embedding';
 import { computeForIntent, surfaceTopMatches } from './intent-matcher';
+import * as repo from './intent-find-match-repository';
 
 const PARTNER_REVEAL_KINDS = new Set<IntentKind>(['partner_seek']);
 
@@ -73,7 +74,7 @@ async function searchIntentCatalog(
   embedding: number[] | null,
   topN = 5,
 ): Promise<CatalogCandidate[]> {
-  const { data, error } = await supabase.rpc('search_intent_catalog', {
+  const { data, error } = await repo.searchIntentCatalogRpc(supabase, {
     p_user_id: id.user_id,
     p_tenant_id: id.tenant_id,
     p_intent_kind: kind,
@@ -102,20 +103,16 @@ async function persistIntent(
   kind: IntentKind,
   extract: ExtractedIntent,
 ): Promise<{ intent_id: string; vitana_id: string | null } | null> {
-  const { data: inserted, error } = await supabase
-    .from('user_intents')
-    .insert({
-      requester_user_id: id.user_id,
-      tenant_id: id.tenant_id,
-      intent_kind: kind,
-      category: extract.category,
-      title: extract.title,
-      scope: extract.scope,
-      kind_payload: extract.kind_payload,
-      status: 'open',
-    })
-    .select('intent_id, requester_vitana_id')
-    .single();
+  const { data: inserted, error } = await repo.insertUserIntent(supabase, {
+    requester_user_id: id.user_id,
+    tenant_id: id.tenant_id,
+    intent_kind: kind,
+    category: extract.category,
+    title: extract.title,
+    scope: extract.scope,
+    kind_payload: extract.kind_payload,
+    status: 'open',
+  });
 
   if (error || !inserted) {
     console.error(`[BOOTSTRAP-FIND-MATCH] user_intents insert failed: ${error?.message ?? 'no row'}`);
@@ -135,7 +132,7 @@ async function persistIntent(
       kind_payload: extract.kind_payload,
     });
     if (emb) {
-      await supabase.from('user_intents').update({ embedding: emb as unknown as string }).eq('intent_id', intentId);
+      await repo.updateUserIntentEmbedding(supabase, intentId, emb as unknown as string);
     }
   } catch (err) {
     console.warn(`[BOOTSTRAP-FIND-MATCH] embedding backfill non-fatal: ${err instanceof Error ? err.message : 'unknown'}`);

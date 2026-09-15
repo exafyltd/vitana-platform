@@ -1,0 +1,69 @@
+{
+  "family": "vitana-postgrest-aurora-staging",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "REPLACE_WITH_ECS_EXECUTION_ROLE_ARN",
+  "taskRoleArn": "REPLACE_WITH_ECS_TASK_ROLE_ARN",
+  "containerDefinitions": [
+    {
+      "name": "proxy",
+      "image": "REPLACE_WITH_ECR_PROXY_IMAGE_URI",
+      "essential": true,
+      "portMappings": [{ "containerPort": 8080, "protocol": "tcp" }],
+      "environment": [
+        { "name": "SUPABASE_AUTH_HOST", "value": "inmkhvwdcuyhnxkgfvsb.supabase.co" }
+      ],
+      "healthCheck": {
+        "command": ["CMD-SHELL", "wget -q -O- http://localhost:8080/alive || exit 1"],
+        "interval": 15,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 10
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/vitana-postgrest-aurora-staging",
+          "awslogs-region": "eu-central-1",
+          "awslogs-stream-prefix": "proxy"
+        }
+      }
+    },
+    {
+      "name": "postgrest",
+      "image": "postgrest/postgrest:v12.2.3",
+      "essential": true,
+      "portMappings": [{ "containerPort": 3000, "protocol": "tcp" }],
+      "environment": [
+        { "name": "PGRST_DB_SCHEMA", "value": "public" },
+        { "name": "PGRST_DB_ANON_ROLE", "value": "anon" },
+        { "name": "PGRST_DB_USE_LEGACY_GUCS", "value": "false" },
+        { "name": "PGRST_SERVER_PORT", "value": "3000" },
+        { "name": "PGRST_DB_PORT", "value": "5432" },
+        { "name": "PGRST_DB_HOST", "value": "vitana-aurora-prod.cluster-cfk228aiedf3.eu-central-1.rds.amazonaws.com" },
+        { "name": "PGRST_DB_NAME", "value": "vitana" }
+      ],
+      "secrets": [
+        { "name": "PGRST_DB_URI", "valueFrom": "REPLACE_WITH_AUTHENTICATOR_DB_URI_SECRET_ARN" },
+        { "name": "PGRST_JWT_SECRET", "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/staging/supabase-jwt-secret" }
+      ],
+      "healthCheck": {
+        "command": ["CMD-SHELL", "wget -q -O- http://localhost:3000/ || exit 1"],
+        "interval": 15,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 10
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/vitana-postgrest-aurora-staging",
+          "awslogs-region": "eu-central-1",
+          "awslogs-stream-prefix": "postgrest"
+        }
+      }
+    }
+  ]
+}

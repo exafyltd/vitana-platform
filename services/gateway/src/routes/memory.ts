@@ -54,6 +54,7 @@ import { processLocationMentionsFromDiary } from './locations';
 // VTID-01977: pattern-matching health-feature extraction from diary text
 import { getSupabase } from '../lib/supabase';
 import { extractHealthFeaturesFromDiary, persistDiaryHealthFeatures } from '../services/diary-health-extractor';
+import * as repo from './memory-repository';
 
 const router = Router();
 
@@ -796,7 +797,7 @@ export async function writeMemoryItem(
     const supabase = createUserSupabaseClient(token);
 
     // Call memory_write_item RPC
-    const { data, error } = await supabase.rpc('memory_write_item', {
+    const { data, error } = await repo.writeMemoryItemRpc(supabase, {
       p_category_key: categoryKey,
       p_source: params.source,
       p_content: params.content,
@@ -990,7 +991,7 @@ router.get('/context', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // Call memory_get_context RPC
-    const { data, error } = await supabase.rpc('memory_get_context', {
+    const { data, error } = await repo.getMemoryContextRpc(supabase, {
       p_limit: limit,
       p_categories: categoriesArray,
       p_since: since || null
@@ -1116,7 +1117,7 @@ router.post('/retrieve', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // Call memory_retrieve RPC
-    const { data, error } = await supabase.rpc('memory_retrieve', {
+    const { data, error } = await repo.memoryRetrieveRpc(supabase, {
       p_payload: rpcPayload
     });
 
@@ -1249,7 +1250,7 @@ router.get('/garden/progress', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // Call memory_get_garden_progress RPC
-    const { data, error } = await supabase.rpc('memory_get_garden_progress');
+    const { data, error } = await repo.getMemoryGardenProgressRpc(supabase);
 
     if (error) {
       // Check if RPC doesn't exist (migration not deployed yet)
@@ -1285,7 +1286,7 @@ router.get('/garden/progress', async (req: Request, res: Response) => {
     }
 
     // Get user context for OASIS event
-    const { data: meData } = await supabase.rpc('me_context');
+    const { data: meData } = await repo.getMeContextRpc(supabase);
     const tenantId = meData?.tenant_id || null;
     const userId = meData?.user_id || meData?.id || null;
     const activeRole = meData?.active_role || null;
@@ -1379,7 +1380,7 @@ router.get('/timeline', async (req: Request, res: Response) => {
     const userId = userData.user.id;
 
     // Call memory_get_timeline RPC
-    const { data, error } = await supabase.rpc('memory_get_timeline', {
+    const { data, error } = await repo.getMemoryTimelineRpc(supabase, {
       p_user_id: userId,
       p_from: from,
       p_to: to
@@ -1502,7 +1503,7 @@ router.post('/timeline/rebuild', async (req: Request, res: Response) => {
     const userId = userData.user.id;
 
     // Call memory_build_timeline RPC (forces rebuild)
-    const { data, error } = await supabase.rpc('memory_build_timeline', {
+    const { data, error } = await repo.buildMemoryTimelineRpc(supabase, {
       p_user_id: userId,
       p_from: from,
       p_to: to
@@ -1660,7 +1661,7 @@ router.post('/diary', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // Call memory_add_diary_entry RPC
-    const { data, error } = await supabase.rpc('memory_add_diary_entry', {
+    const { data, error } = await repo.addMemoryDiaryEntryRpc(supabase, {
       p_entry_date: entry_date,
       p_entry_type: entry_type,
       p_raw_text: raw_text,
@@ -1720,10 +1721,7 @@ router.post('/diary', async (req: Request, res: Response) => {
           // header badge / profile / Index Detail without waiting for the
           // nightly job. Best-effort: failures don't fail the diary write.
           try {
-            await admin.rpc('health_compute_vitana_index_for_user', {
-              p_user_id: userIdForFeatures,
-              p_date: entry_date,
-            });
+            await repo.recomputeVitanaIndexForUser(admin, userIdForFeatures, entry_date);
           } catch (recErr: any) {
             console.warn(`[VTID-01977] Index recompute failed (non-fatal): ${recErr?.message ?? recErr}`);
           }
@@ -1823,23 +1821,13 @@ router.post('/diary/sync-index', async (req: Request, res: Response) => {
     if (!admin) {
       return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
     }
-    const { data: tenantRow } = await admin
-      .from('user_tenants')
-      .select('tenant_id')
-      .eq('user_id', userId)
-      .limit(1)
-      .maybeSingle();
+    const { data: tenantRow } = await repo.fetchUserTenantId(admin, userId);
     const tenantId = (tenantRow?.tenant_id as string | undefined)
       ?? '00000000-0000-0000-0000-000000000000';
 
     // Read the user's pre-write Index so we can compute a per-pillar delta
     // for the response (drives the celebration toast + voice "what moved").
-    const { data: beforeRow } = await admin
-      .from('vitana_index_scores')
-      .select('score_total, score_nutrition, score_hydration, score_exercise, score_sleep, score_mental')
-      .eq('user_id', userId)
-      .eq('date', entryDate)
-      .maybeSingle();
+    const { data: beforeRow } = await repo.fetchVitanaIndexScoreRow(admin, userId, entryDate);
     const before = beforeRow as {
       score_total?: number;
       score_nutrition?: number;
@@ -1868,10 +1856,7 @@ router.post('/diary/sync-index', async (req: Request, res: Response) => {
     // visible).
     let pillars_after: Record<string, number> | null = null;
     try {
-      const { data: rec } = await admin.rpc('health_compute_vitana_index_for_user', {
-        p_user_id: userId,
-        p_date: entryDate,
-      });
+      const { data: rec } = await repo.recomputeVitanaIndexForUser(admin, userId, entryDate);
       const r = rec as any;
       if (r && r.ok !== false) {
         pillars_after = {
@@ -1957,7 +1942,7 @@ router.get('/diary', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // Call memory_get_diary_entries RPC
-    const { data, error } = await supabase.rpc('memory_get_diary_entries', {
+    const { data, error } = await repo.getMemoryDiaryEntriesRpc(supabase, {
       p_from: from || null,
       p_to: to || null,
       p_limit: limit
@@ -2061,7 +2046,7 @@ router.post('/garden/extract', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // Call memory_extract_garden_nodes RPC
-    const { data, error } = await supabase.rpc('memory_extract_garden_nodes', {
+    const { data, error } = await repo.extractMemoryGardenNodesRpc(supabase, {
       p_diary_entry_id: diary_entry_id
     });
 
@@ -2169,7 +2154,7 @@ router.get('/garden/summary', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // Call memory_get_garden_summary RPC
-    const { data, error } = await supabase.rpc('memory_get_garden_summary');
+    const { data, error } = await repo.getMemoryGardenSummaryRpc(supabase);
 
     if (error) {
       // Check if RPC doesn't exist
@@ -2283,7 +2268,7 @@ router.post('/quality/compute', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // Call memory_compute_quality RPC
-    const { data, error } = await supabase.rpc('memory_compute_quality', {
+    const { data, error } = await repo.computeMemoryQualityRpc(supabase, {
       p_user_id: null, // Use authenticated user
       p_date: computeDate
     });
@@ -2376,7 +2361,7 @@ router.get('/quality', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // Call memory_get_quality RPC
-    const { data, error } = await supabase.rpc('memory_get_quality', {
+    const { data, error } = await repo.getMemoryQualityRpc(supabase, {
       p_user_id: null // Use authenticated user
     });
 
@@ -2493,7 +2478,7 @@ router.post('/confidence/adjust', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // Call memory_adjust_confidence RPC
-    const { data, error } = await supabase.rpc('memory_adjust_confidence', {
+    const { data, error } = await repo.adjustMemoryConfidenceRpc(supabase, {
       p_memory_item_id: memory_item_id,
       p_reason_code: reason_code,
       p_context: context
@@ -2606,7 +2591,7 @@ router.post('/confidence/confirm', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // Call memory_confirm_item RPC
-    const { data, error } = await supabase.rpc('memory_confirm_item', {
+    const { data, error } = await repo.confirmMemoryItemRpc(supabase, {
       p_memory_item_id: memory_item_id,
       p_confirmation_notes: confirmation_notes || null
     });
@@ -2714,7 +2699,7 @@ router.post('/confidence/correct', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // Call memory_correct_item RPC
-    const { data, error } = await supabase.rpc('memory_correct_item', {
+    const { data, error } = await repo.correctMemoryItemRpc(supabase, {
       p_memory_item_id: memory_item_id,
       p_correction_notes: correction_notes || null,
       p_new_content: new_content || null
@@ -2822,7 +2807,7 @@ router.get('/confidence/history/:id', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // Call memory_get_confidence_history RPC
-    const { data, error } = await supabase.rpc('memory_get_confidence_history', {
+    const { data, error } = await repo.getMemoryConfidenceHistoryRpc(supabase, {
       p_memory_item_id: memoryItemId,
       p_limit: limit
     });
@@ -2943,7 +2928,7 @@ router.get('/context/trusted', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // Call memory_get_context_with_confidence RPC
-    const { data, error } = await supabase.rpc('memory_get_context_with_confidence', {
+    const { data, error } = await repo.getMemoryContextWithConfidenceRpc(supabase, {
       p_limit: limit,
       p_min_confidence: min_confidence,
       p_categories: categoriesArray,
@@ -3040,7 +3025,7 @@ router.post('/confidence/decay', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // Call memory_apply_time_decay RPC
-    const { data, error } = await supabase.rpc('memory_apply_time_decay', {
+    const { data, error } = await repo.applyMemoryTimeDecayRpc(supabase, {
       p_decay_threshold_days: decay_threshold_days
     });
 
@@ -3130,10 +3115,7 @@ router.get('/source-trust', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // Query memory_source_trust table directly
-    const { data, error } = await supabase
-      .from('memory_source_trust')
-      .select('*')
-      .order('trust_weight', { ascending: false });
+    const { data, error } = await repo.fetchMemorySourceTrust(supabase);
 
     if (error) {
       // Check if table doesn't exist
@@ -3209,11 +3191,7 @@ router.get('/confidence/reasons', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // Query memory_confidence_reasons table directly
-    const { data, error } = await supabase
-      .from('memory_confidence_reasons')
-      .select('*')
-      .order('category', { ascending: true })
-      .order('delta_max', { ascending: false });
+    const { data, error } = await repo.fetchMemoryConfidenceReasons(supabase);
 
     if (error) {
       // Check if table doesn't exist

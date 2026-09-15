@@ -18,6 +18,7 @@ import {
   AuthenticatedRequest,
 } from '../middleware/auth-supabase-jwt';
 import { createClient } from '@supabase/supabase-js';
+import * as repo from './users-resolve-repository';
 
 const router = Router();
 
@@ -44,12 +45,7 @@ router.post('/resolve', requireAuth, requireTenant, async (req: Request, res: Re
   const limitInt = Math.min(Math.max(Number(limit) || 5, 1), 20);
 
   const supabase = getSupabase();
-  const { data, error } = await supabase.rpc('resolve_recipient_candidates', {
-    p_actor: identity.user_id,
-    p_token: token,
-    p_limit: limitInt,
-    p_global: false,
-  });
+  const { data, error } = await repo.resolveRecipientCandidates(supabase, identity.user_id, token, limitInt);
 
   if (error) {
     console.error('[VTID-01967] users/resolve RPC error:', error);

@@ -380,6 +380,8 @@ export type CicdEventType =
   | 'd41.action.allowed'
   | 'd41.vulnerability.detected'
   | 'd41.vulnerability.cleared'
+  | 'd41.boundary.rpc_error_default'
+  | 'd41.consent.rpc_error_default'
   // VTID-01136: D42 Cross-Domain Context Fusion Events
   | 'd42.priorities.resolved'
   | 'd42.priorities.failed'
@@ -458,6 +460,7 @@ export type CicdEventType =
   | 'memory.read.requested'
   | 'memory.read.completed'
   | 'embedding.fallback_used'
+  | 'embedding.google_fallback_used'
   | 'embedding.all_providers_failed'
   | 'embedding.batch_generated'
   | 'embedding.pipeline.batch_completed'
@@ -490,6 +493,11 @@ export type CicdEventType =
   | 'vtid.spec.quality_check.started'
   | 'vtid.spec.quality_check.passed'
   | 'vtid.spec.quality_check.failed'
+  // VTID-03902: Operator Planner — closes the gap where Operator-chat tasks
+  // (autopilot_create_task) had no automated path from "scheduled" to a
+  // generated spec. One summary event per sweep that actually processed a
+  // task; a quiet sweep (nothing to plan) emits nothing.
+  | 'operator.planner.sweep_completed'
   | 'vtid.spec.conflict.detected'
   | 'vtid.spec.governance_gap.detected'
   | 'vtid.spec.risk.assessed'

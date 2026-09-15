@@ -15,9 +15,7 @@ import type { ChecklistValidationResult, ChecklistVersion } from '../../types/jo
 import { listTopics, toSnapshotTopic } from './checklist-service';
 import { validateChecklist } from './checklist-validator';
 import { notifyDbI18nSourceChanged } from '../db-i18n/notify-source-changed';
-
-const V = 'journey_checklist_versions';
-const A = 'journey_checklist_audit';
+import * as repo from './checklist-publish-repository';
 
 export class ChecklistValidationError extends Error {
   result: ChecklistValidationResult;
@@ -47,11 +45,7 @@ export async function listVersions(
   client: SupabaseClient,
   curriculumVersion = 'v2',
 ): Promise<ChecklistVersion[]> {
-  const { data, error } = await client
-    .from(V)
-    .select('id, version_label, curriculum_version, status, session_count, topic_count, is_current, note, published_by, published_at')
-    .eq('curriculum_version', curriculumVersion)
-    .order('published_at', { ascending: false });
+  const { data, error } = await repo.fetchVersionsByCurriculum(client, curriculumVersion);
   if (error) throw error;
   return (data as any[]).map(rowToVersion);
 }
@@ -79,34 +73,26 @@ export async function publishChecklist(
   const versionLabel = `${curriculumVersion}-${now}`;
 
   // Unset previous current for this curriculum line, then insert the new one.
-  const unset = await client
-    .from(V)
-    .update({ is_current: false })
-    .eq('curriculum_version', curriculumVersion)
-    .eq('is_current', true);
+  const unset = await repo.unsetCurrentVersion(client, curriculumVersion);
   if (unset.error) throw unset.error;
 
-  const inserted = await client
-    .from(V)
-    .insert({
-      version_label: versionLabel,
-      curriculum_version: curriculumVersion,
-      status: 'published',
-      session_count: validation.summary.sessionCount,
-      topic_count: validation.summary.topicCount,
-      snapshot,
-      validation,
-      is_current: true,
-      note: opts.note ?? null,
-      published_by: adminId,
-      published_at: now,
-    })
-    .select('id, version_label, curriculum_version, status, session_count, topic_count, is_current, note, published_by, published_at')
-    .single();
+  const inserted = await repo.insertPublishedVersion(client, {
+    version_label: versionLabel,
+    curriculum_version: curriculumVersion,
+    status: 'published',
+    session_count: validation.summary.sessionCount,
+    topic_count: validation.summary.topicCount,
+    snapshot,
+    validation,
+    is_current: true,
+    note: opts.note ?? null,
+    published_by: adminId,
+    published_at: now,
+  });
   if (inserted.error) throw inserted.error;
 
   const version = rowToVersion(inserted.data);
-  await client.from(A).insert({
+  await repo.insertChecklistAudit(client, {
     actor_admin_id: adminId,
     action: 'publish',
     version_id: version.id,
@@ -133,30 +119,17 @@ export async function rollbackChecklist(
 ): Promise<ChecklistVersion> {
   const curriculumVersion = opts.curriculumVersion ?? 'v2';
 
-  const target = await client
-    .from(V)
-    .select('id, curriculum_version')
-    .eq('id', versionId)
-    .maybeSingle();
+  const target = await repo.fetchVersionForRollback(client, versionId);
   if (target.error) throw target.error;
   if (!target.data) throw new Error('version_not_found');
 
-  const unset = await client
-    .from(V)
-    .update({ is_current: false })
-    .eq('curriculum_version', curriculumVersion)
-    .eq('is_current', true);
+  const unset = await repo.unsetCurrentVersion(client, curriculumVersion);
   if (unset.error) throw unset.error;
 
-  const updated = await client
-    .from(V)
-    .update({ is_current: true, status: 'published' })
-    .eq('id', versionId)
-    .select('id, version_label, curriculum_version, status, session_count, topic_count, is_current, note, published_by, published_at')
-    .single();
+  const updated = await repo.setVersionCurrent(client, versionId);
   if (updated.error) throw updated.error;
 
-  await client.from(A).insert({
+  await repo.insertChecklistAudit(client, {
     actor_admin_id: adminId,
     action: 'rollback',
     version_id: versionId,

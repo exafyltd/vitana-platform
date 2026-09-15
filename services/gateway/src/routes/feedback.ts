@@ -24,6 +24,7 @@ import { z } from 'zod';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { resolveVitanaId } from '../middleware/auth-supabase-jwt';
+import * as repo from './feedback-repository';
 
 const router = Router();
 const VTID = 'VTID-02047';
@@ -163,11 +164,7 @@ router.post('/', async (req: Request, res: Response) => {
     ...(body.surface ? { surface: body.surface } : {}),
   };
 
-  const { data, error } = await supabase
-    .from('feedback_tickets')
-    .insert(insertRow)
-    .select('id, ticket_number, status, kind, created_at')
-    .single();
+  const { data, error } = await repo.insertFeedbackTicket(supabase, insertRow);
 
   if (error) {
     console.error(`[${VTID}] insert feedback_ticket failed:`, error.message);
@@ -230,17 +227,7 @@ router.get('/mine', async (req: Request, res: Response) => {
 
   const supabase = createUserSupabaseClient(token);
 
-  let query = supabase
-    .from('feedback_tickets')
-    .select('id, ticket_number, kind, status, priority, surface, created_at, resolver_agent, resolved_at, user_confirmed_at, structured_fields')
-    .order('created_at', { ascending: false })
-    .limit(limit);
-
-  if (cursor) {
-    query = query.lt('created_at', cursor);
-  }
-
-  const { data, error } = await query;
+  const { data, error } = await repo.fetchMyTickets(supabase, { limit, cursor });
 
   if (error) {
     console.error(`[${VTID}] list mine failed:`, error.message);

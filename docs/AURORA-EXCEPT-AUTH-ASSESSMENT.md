@@ -132,3 +132,58 @@ B1 is transport-agnostic by construction: it moves queries behind repositories
 that currently wrap supabase-js. Whether the adapter later points at Aurora,
 or the frontend routes through the gateway, B1 is the prerequisite either way
 and is safe to continue against the current stack.
+
+## Addendum (VTID-03815 continuation), 2026-09-10 — the drift already recurred, and now has a monitor
+
+This doc's own recommendation named "a monitor that alarms on any drift" as
+a precondition for promoting `app_users` to the identity anchor — not yet
+built when this doc was written. It was needed sooner than expected: a live
+comparison this session (VTID-03811, same day as this addendum) found 10
+`app_users` rows out of sync between Supabase and Aurora — a different,
+later instance of the exact drift this doc flagged at 7 rows on 2026-08-05.
+Fixed by hand again, with nothing that would have caught it happening.
+
+`.github/workflows/ALERT-APP-USERS-IDENTITY-DRIFT.yml` closes that gap: a
+daily row-count comparison (Aurora via RDS Data API, Supabase via
+PostgREST — both HTTPS-only transports reachable from a GitHub-hosted
+runner, unlike the raw-Postgres-wire reconciliation script in
+`services/gateway/scripts/reconciliation/`) that alarms once the gap
+exceeds a small threshold. Live-verified the Aurora leg's exact query
+against the real cluster this session (`208` — matching VTID-03811's
+post-fix count); the Supabase leg is syntactically validated but not
+live-exercised (no Supabase credentials in this sandbox). **Will very
+likely fire red on its first scheduled run** — CDC replication has been
+down since 2026-08-20 (`docs/AURORA-PHASE0-RECONCILIATION-2026-08-27.md`),
+so the two tables are almost certainly diverging again already; that is
+the alert doing its job, not a false positive, and the workflow's own
+error message says so explicitly. Also unverified: whether the reused
+`AWS_STAGING_ACCESS_KEY_ID` identity actually holds `rds-data:ExecuteStatement`
+on the cluster — the workflow distinguishes that failure mode from a real
+drift finding in its own output.
+
+## Addendum, 2026-09-11 (VTID-03815 continuation) — the mirror has held: 0 drift today, but the FK count this section's headline number is built on has grown
+
+**Good news first, checked live via Supabase MCP:** `auth.users` and
+`public.app_users` are **currently perfectly in sync — 209 rows each, 0
+`auth.users` rows missing an `app_users` counterpart.** The 2026-09-10 fix
+(VTID-03811, 208/208) has held for at least a day without a fresh
+recurrence — real evidence the mirror isn't drifting on its own between
+manual checks, at least not yet, though the drift-alert workflow still
+can't run on a schedule until this branch merges (`schedule` triggers
+only fire from the default branch).
+
+**The section's headline number has grown, re-measured with a more
+reliable method than this addendum's own first attempt:** an
+`information_schema.constraint_column_usage`-based query returned a
+suspicious `0`, which turned out to be that view's own known unreliability
+for cross-schema foreign keys, not a real finding — switched to direct
+`pg_constraint`/`pg_class`/`pg_namespace` introspection instead, which is
+immune to that quirk. Result: **127 FKs into `auth.users` across 116
+distinct tables** (was 116 FKs / 105 tables in this doc's original
+measurement) — both counts grew by exactly 11, consistent with 11 new
+tables each picking up one new FK since this doc was written, rather than
+existing tables gaining additional FKs. FKs into `public.app_users` (the
+mirror) are unchanged at **18**. This doesn't change the doc's
+recommendation — the `auth.users` FK count growing over time is exactly
+the cost-of-delay dynamic B4 sizing already established elsewhere in this
+migration's docs, not a new risk shape.

@@ -9,6 +9,7 @@
 
 import { SupabaseClient } from '@supabase/supabase-js';
 import { emitOasisEvent } from './oasis-event-service';
+import * as repo from './reminders-service-repository';
 
 const VTID = 'VTID-02601';
 const REMINDER_VTID = 'VTID-REMINDER';
@@ -119,24 +120,20 @@ export async function createReminder(
 
   const tts = await preRenderReminderTts(spokenMessage, lang);
 
-  const { data, error } = await admin
-    .from('reminders')
-    .insert({
-      user_id: input.user_id,
-      tenant_id: input.tenant_id,
-      action_text: actionText,
-      spoken_message: spokenMessage,
-      description: input.description || null,
-      next_fire_at: fireAt.toISOString(),
-      user_tz: input.user_tz || 'UTC',
-      tts_audio_b64: tts.audio_b64,
-      tts_voice: tts.voice,
-      tts_lang: tts.lang,
-      calendar_event_id: input.calendar_event_id || null,
-      created_via: input.created_via,
-    })
-    .select('*')
-    .single();
+  const { data, error } = await repo.insertReminder(admin, {
+    user_id: input.user_id,
+    tenant_id: input.tenant_id,
+    action_text: actionText,
+    spoken_message: spokenMessage,
+    description: input.description || null,
+    next_fire_at: fireAt.toISOString(),
+    user_tz: input.user_tz || 'UTC',
+    tts_audio_b64: tts.audio_b64,
+    tts_voice: tts.voice,
+    tts_lang: tts.lang,
+    calendar_event_id: input.calendar_event_id || null,
+    created_via: input.created_via,
+  });
 
   if (error) throw new Error(`reminders insert failed: ${error.message}`);
 
@@ -169,14 +166,7 @@ export async function softDeleteReminders(
   context?: { confirmation?: string },
 ): Promise<{ deleted: number; action_text?: string }> {
   if (scope.mode === 'single') {
-    const { data, error } = await admin
-      .from('reminders')
-      .update({ status: 'cancelled' })
-      .eq('id', scope.reminder_id)
-      .eq('user_id', userId)
-      .in('status', ['pending', 'dispatching', 'fired'])
-      .select('id, action_text')
-      .maybeSingle();
+    const { data, error } = await repo.cancelSingleReminder(admin, scope.reminder_id, userId, ['pending', 'dispatching', 'fired']);
     if (error) throw new Error(error.message);
     if (!data) return { deleted: 0 };
 
@@ -197,12 +187,7 @@ export async function softDeleteReminders(
   }
 
   // mode === 'all'
-  const { data, error } = await admin
-    .from('reminders')
-    .update({ status: 'cancelled' })
-    .eq('user_id', userId)
-    .in('status', ['pending', 'dispatching', 'fired'])
-    .select('id');
+  const { data, error } = await repo.cancelAllReminders(admin, userId, ['pending', 'dispatching', 'fired']);
   if (error) throw new Error(error.message);
   const count = data?.length || 0;
 
@@ -237,22 +222,8 @@ export async function findReminders(
     ? ['pending', 'dispatching', 'fired']
     : ['pending', 'dispatching'];
 
-  let qb = admin
-    .from('reminders')
-    .select('*')
-    .eq('user_id', userId)
-    .in('status', statuses)
-    .order('next_fire_at', { ascending: true })
-    .limit(limit);
-
   const q = (opts.query || '').trim();
-  if (q) {
-    // ilike against both fields. Supabase JS .or() takes a comma-separated PostgREST filter string.
-    const escaped = q.replace(/[,)]/g, ' ');
-    qb = qb.or(`action_text.ilike.%${escaped}%,spoken_message.ilike.%${escaped}%`);
-  }
-
-  const { data, error } = await qb;
+  const { data, error } = await repo.fetchReminders(admin, userId, statuses, limit, q);
   if (error) throw new Error(error.message);
   return (data || []) as ReminderRow[];
 }

@@ -1882,6 +1882,42 @@ Constraints: `UNIQUE (user_id, tenant_id, capability)`; indexes on `(user_id, te
 RLS: `authenticated` may SELECT own rows; `service_role` ALL. `hr.*` / `payroll.*` rows can only be
 created by a tenant `admin` or an Exafy super-admin (enforced in the gateway, never a role default).
 
+## role_preferences — the frontend role switcher's write target (VTID-03832 / VTID-03916)
+
+Not previously documented here — the table (and `set_role_preference()`/
+`get_my_permitted_roles()`/`validate_role_assignment()`/`me_set_active_role()`)
+existed only in the live database before VTID-03832's
+`20260913000002_vtid_03832_role_functions.sql` gave them a migration file.
+
+| Column | Type | Notes |
+|---|---|---|
+| `user_id`, `tenant_id` | UUID | PK pair (`ON CONFLICT (user_id, tenant_id) DO UPDATE`) |
+| `role` | **TEXT**, not an enum | independent `role_preferences_role_check` CHECK constraint — does **not** inherit from `tenant_role`/`vitana_role` |
+| `updated_at` | TIMESTAMPTZ | |
+
+**VTID-03832 extended the `tenant_role`/`vitana_role` enums (and the four role
+RPCs) to the 8-role ladder but never touched this CHECK constraint** — it was
+still `role = ANY (ARRAY['community','patient','professional','staff','admin'])`.
+`set_role_preference()`'s `INSERT` therefore raised a `23514` violation for
+`backoffice`/`developer`/`infra` unconditionally, regardless of the caller's
+permission (an exafy_admin, who bypasses every permission check in that
+function, still hit this). **VTID-03916 widened it** to
+`community, patient, professional, staff, backoffice, admin, developer, infra`
+— applied directly to the live project 2026-09-15, migration file
+`20260915131400_vtid_03916_widen_role_preferences_check.sql`.
+
+**Known sibling gap, NOT fixed by VTID-03916 (flagged, deliberately deferred):**
+`nav_catalog_role_chk` has the identical shape of bug — it carries
+`admin`/`developer`/`infra` but is still missing `backoffice`. VTID-03832's own
+changelog entry already lists "nav-catalog rows for the BackOffice Navigator
+role" as an open decision, so this is a known gap, not a currently-firing bug
+(nothing inserts a `backoffice` nav_catalog row yet). A separate, much older
+`user_active_role` (singular) table has an even narrower CHECK
+(`community`/`developer`/`admin` only) — confirmed dead: no code path in
+either repo writes to it (`me_set_active_role()` writes the different,
+unconstrained `user_active_roles` plural table, and nothing on the frontend
+calls that RPC either).
+
 ## BackOffice — command orchestrator tables (VTID-03842, 2026-09-13) — applied to the live project 2026-09-14 (owner: "apply now"); browser-role privileges revoked by `20260914130000_vtid_03842_erp_tables_revoke_browser_roles.sql`
 
 `supabase/migrations/20260913020000_vtid_03842_erp_commands_approvals_audit.sql`. Written only by the gateway (service role) behind `POST /api/v1/backoffice/commands` and the approvals routes; the browser never touches them.
