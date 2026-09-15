@@ -139,6 +139,38 @@ router.post('/register', requireAuth, async (req: Request, res: Response) => {
   return res.status(201).json({ ok: true, organization: orgRow });
 });
 
+// ==================== Mine ====================
+
+/**
+ * VTID-03935 — Phase 2 (frontend) needs a way for a caller to discover
+ * which org(s) they belong to and their role in each, without already
+ * knowing an orgId. Any member (not just org_admin) — this is a read of
+ * the caller's own memberships, not a management action.
+ */
+router.get('/mine', requireAuth, async (req: Request, res: Response) => {
+  const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+
+  const callerId = getCallerId(req);
+  if (!callerId) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+
+  const { data, error } = await supabase
+    .from('partner_organization_members')
+    .select('role, partner_organizations(id, org_key, display_name, org_type, status)')
+    .eq('user_id', callerId);
+  if (error) return res.status(500).json({ ok: false, error: error.message });
+
+  type OrgEmbed = { id: string; org_key: string; display_name: string; org_type: string; status: string };
+  const organizations = ((data ?? []) as Array<{ role: string; partner_organizations: OrgEmbed | OrgEmbed[] | null }>)
+    .map((row) => {
+      const org = Array.isArray(row.partner_organizations) ? row.partner_organizations[0] : row.partner_organizations;
+      return org ? { ...org, role: row.role } : null;
+    })
+    .filter((org): org is OrgEmbed & { role: string } => org !== null);
+
+  return res.json({ ok: true, organizations });
+});
+
 // ==================== Members ====================
 
 router.get('/:orgId/members', requireAuth, requireOrgAdmin(), async (req: Request, res: Response) => {
@@ -186,6 +218,23 @@ router.post('/:orgId/members/invite', requireAuth, requireOrgAdmin(), async (req
   });
 
   return res.status(201).json({ ok: true, invite });
+});
+
+/**
+ * VTID-03935 — the roster UI needs to show pending invites alongside the
+ * members list; org_admin-only, same gate as the members list itself.
+ */
+router.get('/:orgId/invites', requireAuth, requireOrgAdmin(), async (req: Request, res: Response) => {
+  const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+
+  const { data, error } = await supabase
+    .from('partner_organization_invites')
+    .select('id, email, role, expires_at, accepted_at')
+    .eq('partner_organization_id', req.params.orgId)
+    .order('created_at', { ascending: false });
+  if (error) return res.status(500).json({ ok: false, error: error.message });
+  return res.json({ ok: true, invites: data ?? [] });
 });
 
 router.post('/invites/:token/accept', requireAuth, async (req: Request, res: Response) => {

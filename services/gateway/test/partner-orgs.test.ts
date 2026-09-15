@@ -125,6 +125,35 @@ describe('POST /register', () => {
   });
 });
 
+describe('GET /mine', () => {
+  it('returns the orgs the caller belongs to, with role, via the embedded join', async () => {
+    tableHandlers.partner_organization_members = () => ({
+      data: [
+        { role: 'org_admin', partner_organizations: { id: 'org-1', org_key: 'doctorbox', display_name: 'DoctorBox', org_type: 'lab_partner', status: 'pending_review' } },
+        { role: 'professional', partner_organizations: { id: 'org-2', org_key: 'wellco', display_name: 'WellCo', org_type: 'wellness_partner', status: 'active' } },
+      ],
+      error: null,
+    });
+    const r = await request(makeApp())
+      .get('/api/v1/partner-orgs/mine')
+      .set('Authorization', 'Bearer owner-1');
+    expect(r.status).toBe(200);
+    expect(r.body.organizations).toEqual([
+      { id: 'org-1', org_key: 'doctorbox', display_name: 'DoctorBox', org_type: 'lab_partner', status: 'pending_review', role: 'org_admin' },
+      { id: 'org-2', org_key: 'wellco', display_name: 'WellCo', org_type: 'wellness_partner', status: 'active', role: 'professional' },
+    ]);
+  });
+
+  it('returns an empty list for a caller with no memberships', async () => {
+    tableHandlers.partner_organization_members = () => ({ data: [], error: null });
+    const r = await request(makeApp())
+      .get('/api/v1/partner-orgs/mine')
+      .set('Authorization', 'Bearer other-1');
+    expect(r.status).toBe(200);
+    expect(r.body.organizations).toEqual([]);
+  });
+});
+
 describe('GET /:orgId/members', () => {
   it('403 for a caller who is not an org_admin for this org', async () => {
     tableHandlers.partner_organization_members = () => ({ data: null, error: null });
@@ -183,6 +212,31 @@ describe('POST /:orgId/members/invite', () => {
     expect(r.status).toBe(201);
     expect(r.body.invite.role).toBe('professional');
     expect(emitOasisEventMock).toHaveBeenCalledWith(expect.objectContaining({ type: 'partner_org.member_invited' }));
+  });
+});
+
+describe('GET /:orgId/invites', () => {
+  it('403 for a caller who is not an org_admin for this org', async () => {
+    tableHandlers.partner_organization_members = () => ({ data: null, error: null });
+    const r = await request(makeApp())
+      .get('/api/v1/partner-orgs/org-1/invites')
+      .set('Authorization', 'Bearer other-1');
+    expect(r.status).toBe(403);
+  });
+
+  it("200 for the org's own org_admin, listing pending invites", async () => {
+    tableHandlers.partner_organization_members = ({ terminal }: any) =>
+      terminal === 'maybeSingle' ? { data: { role: 'org_admin' }, error: null } : { data: [], error: null };
+    tableHandlers.partner_organization_invites = () => ({
+      data: [{ id: 'invite-1', email: 'doc@example.com', role: 'professional', expires_at: '2026-12-01T00:00:00Z', accepted_at: null }],
+      error: null,
+    });
+    const r = await request(makeApp())
+      .get('/api/v1/partner-orgs/org-1/invites')
+      .set('Authorization', 'Bearer owner-1');
+    expect(r.status).toBe(200);
+    expect(r.body.invites).toHaveLength(1);
+    expect(r.body.invites[0].email).toBe('doc@example.com');
   });
 });
 
