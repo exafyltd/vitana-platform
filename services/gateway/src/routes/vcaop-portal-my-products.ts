@@ -101,12 +101,43 @@ async function findOwnMerchant(s: any, owner: string) {
   return data ?? null;
 }
 
+/**
+ * The ONLY networks with a real conversion path today, verified against the
+ * code rather than a brochure:
+ *
+ *   awin     — pulled. creditAwinConversions() reads our publisher account's
+ *              transactions and resolves each by advertiser id.
+ *   admitad  — pushed. routes/vcaop-postback.ts mounts /admitad and nothing else.
+ *
+ * CJ, Rakuten, Impact and Amazon have NO conversion path. Adding one here
+ * without building its plumbing would record a supplier's answer and silently
+ * attribute none of their sales — worse than not asking, because it looks
+ * like it works.
+ */
+export const ATTRIBUTING_NETWORKS = ['awin', 'admitad'] as const;
+
 const MerchantSchema = z.object({
   name: z.string().min(1).max(256),
   vertical_key: z.string().min(1).max(50),
   merchant_country: z.string().length(2).transform((c) => c.toUpperCase()).optional(),
   storefront_url: z.string().url().optional(),
-});
+  // 'other' is a real, allowed answer — a supplier not on a network can still
+  // list. It is recorded so "we never asked" and "they told us none" stay
+  // distinguishable; it simply carries no advertiser id.
+  affiliate_network: z.enum([...ATTRIBUTING_NETWORKS, 'other']).optional(),
+  affiliate_advertiser_id: z.string().min(1).max(128).optional(),
+}).refine(
+  (m) => m.affiliate_network === undefined
+    || m.affiliate_network === 'other'
+    || (m.affiliate_advertiser_id ?? '').length > 0,
+  {
+    // Without the id a pulled conversion resolves to `<network>_unknown` and
+    // never reaches this merchant. Naming a network with no id is the exact
+    // shape of "looks connected, attributes nothing".
+    message: 'affiliate_advertiser_id is required when a network is named',
+    path: ['affiliate_advertiser_id'],
+  },
+);
 
 router.post('/merchants', async (req: Request, res: Response) => {
   const s = supa(res);
