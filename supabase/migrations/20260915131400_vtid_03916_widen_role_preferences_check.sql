@@ -14,6 +14,12 @@
 -- CHECK ((role = ANY (ARRAY['community','patient','professional','staff','admin'])))),
 -- this file is that same statement for the repo's own migration history.
 --
+-- impact-allow-solo-migration — pure ALTER TABLE ... DROP/ADD CONSTRAINT, no
+-- data touched. The RPCs this unblocks (set_role_preference() et al.) were
+-- already rewritten for the 8-role ladder by VTID-03832's own migration; this
+-- one only removes a stale constraint those RPCs were tripping over. No
+-- gateway/worker code change is needed for this constraint fix to take effect.
+--
 -- NOT fixed here, flagged only: `nav_catalog_role_chk` has the identical gap (missing
 -- 'backoffice', though it does carry admin/developer/infra) — VTID-03832's own
 -- changelog already lists "nav-catalog rows for the BackOffice Navigator role" as an
