@@ -34,6 +34,7 @@ import { randomUUID } from 'crypto';
 import { processMessage } from '../services/ai-orchestrator';
 // VTID-0536: Gemini Operator Tools Bridge
 import { processWithGemini } from '../services/gemini-operator';
+import { writeDevMemory } from '../services/dev-agent-memory';
 // VTID-03851: verified-caller marker for autopilot_execute_task (set or
 // cleared on EVERY /chat request — threadId is client-supplied).
 import { setThreadAuth, clearThreadAuth } from '../services/operator-execute-authz';
@@ -102,6 +103,80 @@ function getOperatorRole(req: Request): 'operator' | 'admin' | 'system' {
   const role = req.headers['x-operator-role'] as string;
   if (role === 'admin' || role === 'operator') return role;
   return 'system';
+}
+
+// VTID-03928: tool names whose SUCCESSFUL result represents a real decision
+// or outcome worth remembering across sessions — not every tool call (a
+// codebase search or a status read is not a decision), and not a failed
+// call (nothing to remember from an attempt that didn't happen).
+const SIGNIFICANT_OUTCOME_TOOLS = new Set([
+  'dev_merge_pr',
+  'dev_deploy_service',
+  'dev_approve_spec',
+  'dev_approve_item',
+  'autopilot_create_task',
+]);
+
+// VTID-03928: dev_agent_memory's recall (VTID-03892) already runs correctly
+// on every Operator turn, including a brand-new thread's first message —
+// that IS the "understand relevance, don't read everything" mechanism the
+// platform owner asked for, and it already works (verified against staging,
+// VTID-03926). The actual gap: writeDevMemory() was never called anywhere
+// in the live Operator path, so every one of the 26 existing rows is a
+// one-time changelog backfill — nothing was feeding it as real work
+// happened. This closes that gap: after a real outcome (a task created, a
+// PR merged, a spec approved, a service deployed), auto-write a compact
+// summary so the NEXT session's recall actually has real history to find,
+// not just a historical snapshot. Fire-and-forget and fail-open, matching
+// recallDevMemory's own convention — a memory-write failure must never
+// block or fail the user-facing chat response.
+async function recordSessionOutcomeMemory(params: {
+  threadId: string;
+  vtid?: string;
+  toolResults?: Array<{ name: string; response: Record<string, unknown> }>;
+  finalCreatedTask?: CreatedTask;
+}): Promise<void> {
+  try {
+    const { threadId, vtid, toolResults, finalCreatedTask } = params;
+    const entries: Array<{ title: string; content: string; vtid?: string }> = [];
+
+    if (finalCreatedTask && !finalCreatedTask.duplicate) {
+      entries.push({
+        title: `Operator created task ${finalCreatedTask.vtid}: ${finalCreatedTask.title}`,
+        content: `Created via Operator Console thread ${threadId} (mode: ${finalCreatedTask.mode}).`,
+        vtid: finalCreatedTask.vtid,
+      });
+    }
+
+    for (const tr of toolResults || []) {
+      if (!SIGNIFICANT_OUTCOME_TOOLS.has(tr.name) || tr.response?.ok !== true) continue;
+      const r = tr.response;
+      const outcomeVtid = (typeof r.vtid === 'string' ? r.vtid : undefined) || vtid;
+      entries.push({
+        title: `Operator ran ${tr.name}${outcomeVtid ? ` for ${outcomeVtid}` : ''}`,
+        content: `Thread ${threadId} — ${tr.name} succeeded. Result: ${JSON.stringify(r).slice(0, 500)}`,
+        vtid: outcomeVtid,
+      });
+    }
+
+    for (const entry of entries) {
+      const written = await writeDevMemory({
+        repo: 'vitana-platform',
+        category: 'task_outcome',
+        title: entry.title.slice(0, 200),
+        content: entry.content,
+        vtid: entry.vtid,
+        importance: 50,
+        source: 'session',
+        tags: ['operator-console', 'auto-recorded'],
+      });
+      if (!written.ok) {
+        console.warn(`[VTID-03928] writeDevMemory failed, continuing: ${written.error}`);
+      }
+    }
+  } catch (err: any) {
+    console.warn(`[VTID-03928] recordSessionOutcomeMemory threw, continuing: ${err?.message}`);
+  }
 }
 
 // ==================== VTID-0509 Schemas ====================
@@ -354,6 +429,14 @@ router.post('/chat', optionalAuth, async (req: Request, res: Response) => {
     if (geminiResult.toolResults && geminiResult.toolResults.length > 0) {
       response.toolResults = geminiResult.toolResults;
     }
+
+    // VTID-03928: fire-and-forget — must never delay or fail the chat response.
+    recordSessionOutcomeMemory({
+      threadId,
+      vtid: validatedVtid,
+      toolResults: geminiResult.toolResults,
+      finalCreatedTask,
+    }).catch((err) => console.warn(`[VTID-03928] recordSessionOutcomeMemory rejected: ${err?.message}`));
 
     return res.status(200).json(response);
 
