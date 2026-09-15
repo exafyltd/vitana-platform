@@ -1,0 +1,89 @@
+# VTID-03902 — commands actually run.
+
+# --- Investigation ---------------------------------------------------------
+
+# Built a small chat client (operator-chat.mjs, not part of this PR) that
+# POSTs to POST /api/v1/operator/chat exactly like the real Command Hub UI,
+# maintaining threadId/conversation_id across turns.
+curl -s -o /dev/null -w "%{http_code}\n" https://preview-aws-gateway.vitanaland.com/api/v1/operator/health
+#   -> 200, staging gateway reachable
+
+node operator-chat.mjs "Hi, what's the status of VTID-03900?"
+#   -> Operator called autopilot_get_status for real; confirmed the
+#      malformed title live: "Frontend: TITLE: Fix — Unfollow button
+#      pushed off-screen in"
+
+node operator-chat.mjs "Why hasn't a plan been generated for VTID-03900 yet? Can you generate one now?"
+#   -> Operator's honest reply: "I don't have a tool available that can
+#      trigger plan generation... Plan creation is handled by the
+#      Autopilot orchestrator itself, which I can't invoke directly."
+
+# Read-only Supabase MCP queries (execute_sql, SELECT only — no writes):
+#   SELECT vtid, title, status, spec_status, ... FROM vtid_ledger WHERE vtid = 'VTID-03900';
+#   -> status=scheduled, spec_status=missing, claimed_by=null
+#   SELECT * FROM oasis_specs WHERE vtid = 'VTID-03900';
+#   -> zero rows
+#   SELECT created_at, topic, event, kind, status, task_stage, message
+#     FROM oasis_events WHERE vtid = 'VTID-03900' ORDER BY created_at ASC;
+#   -> autopilot.task.spec.created, vtid.created, autopilot.intent.executed
+#      (task_stage:PLANNER, but no oasis_specs row was ever written)
+
+grep -rn "pending-plan" services/gateway/src services/gateway/test scripts
+#   -> GET /api/v1/autopilot/tasks/pending-plan (VTID-0532) has exactly one
+#      caller in the whole repo: its own test file. No worker-runner, cron,
+#      or script polls it.
+
+grep -n "isAutonomousExecutionTask" services/gateway/src/routes/worker-orchestrator.ts
+#   -> confirms the canonical GET /api/v1/worker/orchestrator/tasks/pending
+#      feed ALSO filters through the VTID-03516 allowlist, so
+#      metadata.source='operator-chat' tasks are invisible to the
+#      autonomous plane too — by design, not an oversight.
+
+# Found the real, non-deprecated, already-governed spec pipeline:
+grep -n "specs/:vtid/generate\|executeDevGenerateSpec" services/gateway/src/services/gemini-operator.ts services/gateway/src/routes/specs.ts
+#   -> POST /api/v1/specs/:vtid/generate (VTID-01188) calls
+#      generateSpecWithLLM() (Bedrock Claude via callClaudeText), writes to
+#      oasis_specs, sets vtid_ledger.spec_status. executeDevGenerateSpec
+#      (the dev_generate_spec chat tool) already calls this internally via
+#      http://localhost:$PORT/... — reused the identical pattern rather
+#      than reimplementing spec generation.
+
+# --- Fix ---------------------------------------------------------------
+
+# services/gateway/src/services/operator-service.ts
+#   extractTitle(): strip a leading "TITLE:" line before area-detection/
+#   truncation; first-sentence match now also stops at a newline.
+#   extractTitle exported (was private) so it can be unit-tested directly.
+
+# services/gateway/src/services/operator-planner.ts (new)
+#   findPlannableOperatorTasks() / generateSpecForTask() /
+#   runOperatorPlannerOnce() / initializeOperatorPlanner() /
+#   stopOperatorPlanner() — see file header comment for the full design
+#   rationale and the explicit VTID-03516 scoping boundary.
+
+# services/gateway/src/types/cicd.ts
+#   Added 'operator.planner.sweep_completed' to CicdEventType.
+
+# services/gateway/src/index.ts
+#   Wired initializeOperatorPlanner() at gateway boot, following the exact
+#   initializeEventLoop() (VTID-01179) pattern — gated by
+#   OPERATOR_PLANNER_ENABLED, non-fatal on failure.
+
+# --- Verification --------------------------------------------------------
+
+cd services/gateway
+
+npx jest test/operator-planner.test.ts test/operator-service.extract-title.test.ts \
+         test/task-extractor.test.ts test/vtid-03819-create-operator-task-dedup.test.ts \
+         test/vtid-03819-related-task-chip.test.ts
+#   -> 3 suites, 45/45 tests passing, 0 failures. (outputs/targeted-tests.txt)
+
+npx tsc --noEmit
+#   -> clean, exit 0. (outputs/tsc.txt)
+
+npm run build
+#   -> tsc && copy-frontend && copy-data, clean, no errors.
+
+npx jest
+#   -> full suite: 738/739 suites (1 pre-existing skip), 13,684/13,719
+#      tests passing, 0 failures. (outputs/full-suite.txt)
