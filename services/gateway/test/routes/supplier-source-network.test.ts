@@ -14,7 +14,8 @@
  * That is precisely the bug this file exists to make impossible. It was real:
  * the route originally wrote 'manual', which IS first-party.
  */
-import { describe, expect, it } from 'vitest';
+// describe/it/expect come from Jest's globals — the gateway runs Jest (ts-jest),
+// not Vitest, and no sibling suite in this tree imports them.
 import { FIRST_PARTY_SOURCE_NETWORKS } from '../../src/services/checkout/checkout-service';
 import { SUPPLIER_SOURCE_NETWORK } from '../../src/routes/vcaop-portal-my-products';
 

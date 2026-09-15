@@ -1,0 +1,44 @@
+VTID-03894 — local PostgreSQL 16 harness
+=======================================
+Real production table definitions for merchants/products/catalog_vocabulary,
+then the three migrations applied from scratch, then the route's exact insert
+shapes. Nothing here touches any live system.
+
+$ psql -f supabase/migrations/20260915100000_vtid_03894_supplier_verticals.sql   -> OK
+$ psql -f supabase/migrations/20260915100100_vtid_03894_seed_verticals.sql       -> OK
+$ psql -f supabase/migrations/20260915103000_vtid_03894_supplier_affiliate_link.sql -> OK
+
+--- verticals seeded (10; 'other' is deliberately fieldless) ---
+        key        | fields 
+-------------------+--------
+ wine_spirits      |      6
+ apparel           |      5
+ diagnostics       |      5
+ devices_wearables |      4
+ fitness_equipment |      4
+ services          |      4
+ beauty_care       |      3
+ home_living       |      3
+ supplements       |      3
+ other             |      0
+(10 rows)
+
+--- total fields ---
+ total_fields 
+--------------
+           37
+(1 row)
+
+--- an enum field without a vocabulary is rejected ---
+ERROR:  new row for relation "catalog_vertical_fields" violates check constraint "catalog_vertical_fields_enum_needs_vocabulary"
+--- control: a text field without one is accepted (so the CHECK is not just rejecting everything) ---
+accepted, as intended
+
+--- a supplier merchant + product written through the route's exact shapes ---
+        title        |  source_network   |             checkout_routing             | is_active | onboarding_status | attribution  | vertical_attribute 
+---------------------+-------------------+------------------------------------------+-----------+-------------------+--------------+--------------------
+ Barolo Riserva 2019 | supplier_referral | affiliate (clicks out to their own shop) | f         | draft             | awin / 98765 | 2019
+(1 row)
+
+The routing column is the point: a supplier product is NOT first-party, so
+approving it can never debit a member's wallet for an order nobody ships.

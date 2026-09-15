@@ -1,0 +1,29 @@
+# VTID-03894 — guard assertions executed in plain Node
+# (npm registry is blocked in this environment, so neither repo has node_modules
+#  and jest/vitest cannot run locally. These parse the real source files and
+#  assert the same properties the jest suites assert. CI runs the suites.)
+
+$ node firstparty-check.mjs
+  pass  supplier network is 'supplier_referral'
+  pass  supplier network is NOT first-party
+  pass  supplier network is not the old "manual"
+  pass  "manual" really is first-party (so the old code was the bug)
+  pass  first-party set is exactly {manual, partner}
+  pass  route writes no bare manual source_network
+
+all 6 first-party assertions hold
+
+$ node networks-check.mjs
+  pass  is exactly the two with a conversion path
+  pass  offers no "cj"
+  pass  offers no "rakuten"
+  pass  offers no "impact"
+  pass  offers no "partnerize"
+  pass  offers no "tradedoubler"
+  pass  offers no "amazon"
+  pass  admitad postback route exists
+  pass  awin conversions sync exists
+  pass  the gateway test imports the real constant (not a copy)
+  pass  no vitest import (gateway runs jest)
+
+all 11 assertions

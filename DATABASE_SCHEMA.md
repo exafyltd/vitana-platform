@@ -1924,3 +1924,99 @@ created by a tenant `admin` or an Exafy super-admin (enforced in the gateway, ne
 | high_risk_amount_threshold | NUMERIC | default 25000 (AED) — §4.3 |
 | require_mfa_for_high | BOOLEAN | default true — approvals need an `aal2` session |
 | updated_by, updated_at | | |
+
+---
+
+## VTID-03894 — Maxina supplier self-service (multi-vertical catalog)
+
+Suppliers span supplements, blood tests, gym equipment, textiles and wine, so
+the catalog asks each vertical its own questions instead of hardcoding one
+industry's columns. Written by the owner-scoped endpoints in
+`services/gateway/src/routes/vcaop-portal-my-products.ts`.
+
+### products.attributes (new column on an existing table)
+
+```sql
+ALTER TABLE products ADD COLUMN attributes JSONB NOT NULL DEFAULT '{}'::jsonb;
+CREATE INDEX idx_products_attributes ON products USING GIN (attributes jsonb_path_ops);
+```
+
+Vertical-specific answers (a wine's vintage, a garment's fabric) live here,
+keyed by `catalog_vertical_fields.field_key`.
+
+**The existing health columns were deliberately NOT moved in here.**
+`contains_allergens` and `contraindicated_with_conditions` /
+`contraindicated_with_medications` are read by `user_limitations` as a **hard
+filter** on who is shown a product. Moving them behind a JSONB round trip would
+change that filter's behaviour — a correctness change wearing a refactor's
+clothes. They stay typed columns.
+
+### catalog_verticals
+
+| Column | Type | Notes |
+|---|---|---|
+| key | TEXT PK | CHECK `^[a-z][a-z0-9_]{1,48}$` |
+| display_label | TEXT NOT NULL | |
+| description, icon | TEXT | |
+| is_regulated | BOOLEAN | default false — diagnostics and supplements are |
+| is_active, sort_order, created_at | | |
+
+Ten seeded: `supplements`, `diagnostics`, `fitness_equipment`, `apparel`,
+`wine_spirits`, `beauty_care`, `devices_wearables`, `home_living`, `services`,
+`other`. Referenced by `merchants.vertical_key` and `catalog_vertical_fields`.
+
+### catalog_vertical_fields
+
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID PK | |
+| vertical_key | TEXT FK → catalog_verticals(key) ON DELETE CASCADE | |
+| field_key | TEXT NOT NULL | CHECK `^[a-z][a-z0-9_]{1,48}$`; UNIQUE (vertical_key, field_key) |
+| display_label, help_text | TEXT | |
+| data_type | TEXT NOT NULL | CHECK in text / number / integer / boolean / date / enum / multi_enum / url |
+| vocabulary | TEXT | names a `catalog_vocabulary` set |
+| unit | TEXT | rendered as an input suffix (`%`, `g`, `ml`) |
+| is_prominent | BOOLEAN | above the fold vs. behind "More details" |
+| is_active, sort_order, created_at | | |
+| — | CHECK | `catalog_vertical_fields_enum_needs_vocabulary`: a field whose `data_type` is `enum`/`multi_enum` MUST name a vocabulary — otherwise the form renders a select with no options and the supplier cannot answer a question it insists on asking |
+| — | index | `idx_catalog_vertical_fields_lookup (vertical_key, sort_order) WHERE is_active` |
+
+37 fields seeded. **`other` deliberately has none** — a catch-all that asks
+questions is a catch-all nobody picks.
+
+### catalog_vocabulary (CHECK widened)
+
+The `vocabulary` CHECK previously enumerated six hardcoded health vocabularies,
+so a wine region or a fabric could not be added without a migration. It is now
+a shape regex on the vocabulary name. The six original values still validate.
+
+### merchants (new columns)
+
+| Column | Type | Notes |
+|---|---|---|
+| owner_user_id | UUID | the supplier who registered. **Every read and write in the portal resolves the merchant by this column from the JWT**, never from a client-supplied id |
+| partner_tenant_id | UUID | set when the merchant arrived via a VCAOP connection |
+| vertical_key | TEXT FK → catalog_verticals(key) | |
+| onboarding_status | TEXT | default `draft`; CHECK in `draft` / `in_review` / `approved` / `rejected` / `suspended` |
+| affiliate_advertiser_id | TEXT | the supplier's id **within** `affiliate_network`. Load-bearing: `creditAwinConversions` resolves a pulled conversion to a merchant by it, so a named network without this id records a preference and attributes nothing. Partial index where not null |
+
+No CHECK was added to `affiliate_network` — the column predates this VTID and
+already carries values written by catalog ingest.
+
+### Supplier rows are `source_network = 'supplier_referral'` — not `'manual'`
+
+`services/checkout/checkout-service.ts` routes every cart line by
+`products.source_network`. Anything in its `FIRST_PARTY_SOURCE_NETWORKS`
+(`manual`, `partner`) **debits the buyer's Vitana wallet** and writes a
+CONVERTED order meaning "Vitana fulfils".
+
+A supplier product is not that. It carries an `affiliate_url` to the supplier's
+own shop, and nothing in this platform pays a supplier or tells them to ship.
+Tagged `'manual'`, approving one would take a member's money for an order nobody
+would ever fulfil.
+
+`SUPPLIER_SOURCE_NETWORK = 'supplier_referral'` is therefore kept outside that
+set, and `services/gateway/test/routes/supplier-source-network.test.ts` pins
+both the value and the set so widening it later fails loudly rather than
+silently moving real money. Supplier rows are also written `is_active = false`
+with `onboarding_status = 'draft'`; only an admin flips them.
