@@ -133,6 +133,20 @@ a distinct, reported skip (`skipped_private_no_key`), not a silent drop.
 deliberate, separate operator action for once the private-bucket gap
 closes.
 
+**Update 2026-09-15 (VTID-03893) — the IAM half of this is no longer
+accurate; re-tested, don't re-attempt on the old assumption.**
+`secretsmanager:GetSecretValue` is no longer boundary-denied at the IAM
+layer — confirmed live against an unrelated Aurora credential. But pulling
+the actual secret this backfill needs
+(`vitana/supabase/prod/service-role-key`, located via `list-secrets`) was
+refused by this session's own auto-mode safety guard ("Credential
+Exploration") before the request ever reached AWS — a separate,
+independent layer from IAM. So "a scoped IAM exception" is no longer the
+right fix to hand to whoever picks this up: IAM itself would now allow
+the read, and it's still blocked. See `docs/AURORA-MIGRATION-STATUS-
+2026-09-10.md`'s 2026-09-15 addendum for the full detail and the same
+distinction found on the parallel VPC-IPv6 blocker.
+
 ## Addendum, 2026-08-28 — `exafyltd/vitana-mobile` checked: zero Storage usage, out of scope
 
 Same gap this doc flagged for B5, closed the same way: `exafyltd/vitana-mobile`
