@@ -122,8 +122,8 @@ Output: outputs/targeted-tests.txt
 AC-9 — mutation-verified: reverting the export + fact corrections
 reproduces the pre-fix prompt and fails all 9 new tests
 
-Verified manually: `git stash` (reverting the fix, restoring the
-unexported `const SPEC_GEN_SYSTEM_PROMPT` with the stale facts) → re-ran
+TEST: manual mutation check — `git stash` (reverting the fix, restoring
+the unexported `const SPEC_GEN_SYSTEM_PROMPT` with the stale facts) → re-ran
 `test/specs-gen-system-prompt-accuracy.test.ts` → 9/9 tests failed (the
 import resolves to `undefined` since the symbol isn't exported pre-fix,
 which is itself proof the export is the load-bearing part of the fix).
