@@ -2139,3 +2139,79 @@ pre-existing unrelated `express-serve-static-core` errors). Pushed as
 commit `625198a4`; PR #1051 (vitana-v1) was independently re-checked this
 same cycle and is `mergeable_state: clean` with all 7 checks green, no
 action needed there.
+
+## Addendum, 2026-09-15, VTID-03912 — root cause of the CDC failure found: Supavisor's session pooler cannot proxy the Postgres logical-replication wire protocol
+
+The platform owner ran the DMS start commands directly this session (per
+their own explicit instruction, after Claude Code's own client-side
+safety classifier denied `aws dms start-replication-task` a third time —
+same denial as every prior attempt in this migration, still not routed
+around per this repo's standing rule). First attempt,
+`--start-replication-task-type start-replication`, was rejected outright
+by the AWS API itself: `InvalidParameterCombinationException: Start Type:
+START_REPLICATION, valid only for tasks running for the first time` — task
+`vitana-supabase-to-aurora-v3` had already completed a full load in an
+earlier session, so its CDC replication slot no longer exists and
+`start-replication` no longer applies. Corrected to
+`--start-replication-task-type reload-target` (the right choice for
+"already ran once, slot is gone, need a fresh full load + brand-new CDC
+slot," and the one that honors the task's configured
+`TargetTablePrepMode: DROP_AND_CREATE`) — accepted by the API,
+`Status: "starting"`.
+
+**The reload attempt failed within 8 seconds of starting**, before loading
+a single table (`TablesLoaded: 0`, `TablesQueued: 585`,
+`FullLoadProgressPercent: 0`). Confirmed via
+`describe-replication-tasks`: `Status: "failed"`,
+`LastFailureMessage`/`StopReason`: `"Last Error An internal WAL
+conversational protocol error has occurred. Stop Reason FATAL_ERROR Error
+Level FATAL"`. The real error, from the task's CloudWatch log stream
+(`dms-tasks-vitana-dms-prod` / `dms-task-6HXJWOLRF5FA3DND3TLMGXHY4I`,
+correctly disambiguated via `filter-log-events --start-time
+<exact-epoch-ms-of-this-run>` against the log group after
+`describe-log-streams`'s `--order-by LastEventTime` initially surfaced an
+unrelated, 3-day-stale stream from a prior run ahead of the real one):
+
+```
+[SOURCE_CAPTURE ]E: Failure in executing replication command "IDENTIFY_SYSTEM":
+  ERROR:  syntax error at or near "IDENTIFY_SYSTEM"
+  LINE 1: IDENTIFY_SYSTEM
+          ^ [1020452]  (postgres_endpoint_wal_engine.c:2096)
+[SOURCE_CAPTURE ]E: WAL reader terminated with irrecoverable error. [1020452]
+  (postgres_endpoint_capture.c:508)
+```
+
+**Root cause, the most precise this migration has found yet:** the
+source endpoint connects through Supabase's Supavisor **session pooler**
+(`aws-1-eu-north-1.pooler.supabase.com`), and the pooler proxies ordinary
+SQL query traffic only — it cannot speak the Postgres **logical-replication
+wire protocol** at all. `IDENTIFY_SYSTEM` is a replication-protocol
+command, not SQL; the pooler receives it, doesn't recognize it as a query,
+and rejects it as a syntax error. This is structural, not a
+config/credential/slot problem like the three earlier bugs this migration
+fixed (stale pooler node, stale target password, dropped replication
+slot) — **no amount of pooler-side reconfiguration can make this work.**
+Full-load-only DMS traffic succeeds over the pooler because it's plain
+SQL; CDC can never succeed over it, ever, regardless of task
+configuration.
+
+The fix has to happen upstream of the pooler entirely, via the direct
+(non-pooled) connection (`db.inmkhvwdcuyhnxkgfvsb.supabase.co`), which
+does speak the replication protocol — but that hostname resolves
+**IPv6-only**, and the DMS instance's VPC (`vpc-05958f035e596fe64`) has
+only a `10.0.0.0/16` IPv4 CIDR, no IPv6 association. Two real paths
+forward, neither completable from this session:
+
+1. **Supabase IPv4 add-on** (Dashboard-only, paid) — assigns a real IPv4
+   address to the direct/non-pooled connection string, sidestepping IPv6
+   entirely. Likely the faster path if available on this project's plan.
+   Asked the platform owner to check; no response yet.
+2. **IPv6 egress on the DMS VPC** (NAT64/DNS64 gateway, or direct IPv6
+   CIDR association + route table entries) — needs `ec2:*` permissions
+   this session has never had (re-confirmed still denied this week).
+
+Task `vitana-supabase-to-aurora-v3` is currently in `Status: "failed"`
+with zero rows moved by this attempt. Full-load-only replication (no CDC)
+remains available as a fallback if a one-time cutover with a maintenance
+window is acceptable, but does not give the near-zero-downtime cutover
+this migration has been aiming for.
