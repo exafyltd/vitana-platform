@@ -161,6 +161,12 @@ const MerchantSchema = z.object({
 );
 
 router.post('/merchants', async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: this writes a DRAFT row nobody can see yet.
+  // CLAUDE.md §6 — OASIS is for state transitions and decisions. The
+  // transition worth an event here is APPROVAL (an admin flipping is_active,
+  // which is what puts a product in front of members), and that happens on the
+  // admin surface, not this one. Emitting on every keystroke-level save would
+  // be the "polling ≠ progress" mistake in a different costume.
   const s = supa(res);
   if (!s) return;
   const owner = userId(req);
@@ -310,6 +316,12 @@ router.get('/products', async (req: Request, res: Response) => {
 });
 
 router.post('/products', async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: this writes a DRAFT row nobody can see yet.
+  // CLAUDE.md §6 — OASIS is for state transitions and decisions. The
+  // transition worth an event here is APPROVAL (an admin flipping is_active,
+  // which is what puts a product in front of members), and that happens on the
+  // admin surface, not this one. Emitting on every keystroke-level save would
+  // be the "polling ≠ progress" mistake in a different costume.
   const s = supa(res);
   if (!s) return;
   const owner = userId(req);
@@ -352,6 +364,12 @@ router.post('/products', async (req: Request, res: Response) => {
 });
 
 router.patch('/products/:id', async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: this writes a DRAFT row nobody can see yet.
+  // CLAUDE.md §6 — OASIS is for state transitions and decisions. The
+  // transition worth an event here is APPROVAL (an admin flipping is_active,
+  // which is what puts a product in front of members), and that happens on the
+  // admin surface, not this one. Emitting on every keystroke-level save would
+  // be the "polling ≠ progress" mistake in a different costume.
   const s = supa(res);
   if (!s) return;
   const owner = userId(req);

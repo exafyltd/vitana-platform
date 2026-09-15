@@ -51,7 +51,15 @@ AC-3 — Naming a network without an advertiser id is refused
         -> 400 (advertiser id required)
 
 AC-4 — Every endpoint is authenticated and scoped to the calling supplier
-  TEST: router.use(requireAuth) at src/routes/vcaop-portal-my-products.ts:35;
+  TEST: services/gateway/test/routes/vcaop-portal-my-products.test.ts — 18
+        tests over the real router via supertest: a request with no user_id is
+        refused before any query runs, reads resolve the merchant by
+        owner_user_id from the JWT, the product query is scoped to that
+        merchant, ownership on a write comes from the JWT even when the body
+        claims otherwise, and a PATCH on someone else's product is 404 rather
+        than 403 (403 would confirm the row exists). Also pins what a
+        supplier's rows are born as, and the validation refusals.
+  TEST: router.use(requireAuth) at src/routes/vcaop-portal-my-products.ts;
         every read and write resolves the merchant by owner_user_id from the
         JWT (findOwnMerchant), never from a client-supplied id.
   CURL: GET {gateway}/api/v1/vcaop/portal/my/products with no Bearer -> 401 JSON
