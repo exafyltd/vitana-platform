@@ -3,7 +3,7 @@
  *
  * Takes an approved-and-cooled execution row and drives it through:
  *
- *   cooling   → running   (claim + Messages API session starts)
+ *   cooling   → running   (claim + routed LLM call starts, see callRoutedLlm)
  *   running   → ci        (edits applied, PR opened)
  *   ci        → merging   (PR-9 watcher: CI green)
  *   merging   → deploying (PR-9: merged; AUTO-DEPLOY fires)
@@ -19,9 +19,13 @@
  *   open a PR". Managed Agents with the triage agent don't have file-write
  *   or open_pr tools provisioned, so the session always ended without a PR
  *   URL — and provisioning a dedicated agent with those tools is a large
- *   operational bet. The Messages API + GitHub Contents API path below is
+ *   operational bet. The routed-LLM + GitHub Contents API path below is
  *   deterministic, faster (~30-90s), and uses the same plumbing the planning
- *   service uses (dev-autopilot-planning.ts, PR #753).
+ *   service uses (dev-autopilot-planning.ts, PR #753). "Routed" means
+ *   callViaRouter() against the DB-backed llm_routing_policy — this stopped
+ *   being a literal, hardcoded call to Anthropic's Messages API at VTID-02686
+ *   (see callRoutedLlm below); a per-execution override (VTID-03820) can also
+ *   force a specific provider regardless of policy.
  *
  * Dry-run mode (DEV_AUTOPILOT_DRY_RUN=true) skips the LLM + GitHub writes
  * and produces a synthetic PR URL so the UI and pipeline can be exercised
@@ -58,9 +62,17 @@ import { recordShown } from './watcher/feedback';
 const LOG_PREFIX = '[dev-autopilot-execute]';
 const EXEC_VTID = 'VTID-DEV-AUTOPILOT';
 
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
-const ANTHROPIC_BASE = 'https://api.anthropic.com';
-// Messages API timeout — Cloud Run's request timeout is 300s; we run in a
+// VTID-03852: ANTHROPIC_API_KEY/ANTHROPIC_BASE ('https://api.anthropic.com')
+// used to live here as module-level constants for a direct fetch() to
+// Anthropic's Messages API. VTID-02686 rewired every real call to go through
+// callRoutedLlm() → callViaRouter('worker', ...), which resolves the actual
+// provider from the DB-backed llm_routing_policy (bedrock/deepseek/etc, never
+// a hardcoded Anthropic key) — see CLAUDE.md §1b, which also confirms
+// ANTHROPIC_API_KEY is never populated in AWS Secrets Manager, so the old
+// constants could not have worked even if some path still read them. Removed
+// rather than left as harmless-looking dead code implying an Anthropic-direct
+// path exists here.
+// LLM call timeout — Cloud Run's request timeout is 300s; we run in a
 // background ticker so that's not the constraint. Still cap at 8 minutes so
 // a pathological stuck call doesn't hold a concurrency slot forever.
 // 12 min. Was 8 min; bumped after PR #846 added jest validation in the
@@ -1082,7 +1094,7 @@ async function compareBranchFiles(
 }
 
 // =============================================================================
-// Messages API — ask Claude to produce the file contents
+// Routed LLM call — ask the configured provider to produce the file contents
 // =============================================================================
 
 interface ExecutionLlmOutput {
@@ -1379,10 +1391,15 @@ function buildExecutionPrompt(
  * quality matters most here, which is why the worker (Claude subscription)
  * stays primary; Gemini 3.1 Pro is the fallback floor.
  */
-async function callMessagesApi(
+// VTID-03852: renamed from callMessagesApi — the old name implied a direct
+// call to Anthropic's Messages API (api.anthropic.com), which this function
+// has not done since VTID-02686. It calls callViaRouter('worker', ...),
+// which resolves the real provider (bedrock/deepseek/etc) from the DB-backed
+// llm_routing_policy 'worker' stage, or from `override` when one is passed
+// (VTID-03820's operator on-ramp forces one — see extractLlmOnRampOverride).
+async function callRoutedLlm(
   prompt: string,
   vtid?: string | null,
-  /** VTID-03820: operator-execution-onramp override — see extractLlmOnRampOverride. */
   override?: { provider: LLMProvider; model: string },
 ): Promise<{ ok: boolean; text?: string; usage?: { input_tokens?: number; output_tokens?: number }; error?: string }> {
   const { callViaRouter } = await import('./llm-router');
@@ -1560,9 +1577,13 @@ export async function runExecutionSession(
   const telemetryVtid = activatedVtid || `VTID-DA-${executionId.slice(0, 8)}`;
   const lessons = findingScanner ? await loadExecutionLessons(s, findingScanner) : [];
 
-  // 2. Ask Claude to produce the new file contents. Routes through the
-  // worker queue when DEV_AUTOPILOT_USE_WORKER=true (Claude subscription);
-  // otherwise hits the Messages API directly (pay-per-token).
+  // 2. Ask an LLM to produce the new file contents. Routes through the
+  // worker queue when DEV_AUTOPILOT_USE_WORKER=true (a local daemon shelling
+  // out to `claude -p` against a Claude Pro/Max subscription — see
+  // services/autopilot-worker/README.md); otherwise routes per-request via
+  // callRoutedLlm() → callViaRouter('worker', ...), i.e. the DB-backed
+  // llm_routing_policy 'worker' stage (pay-per-token, whichever provider
+  // that stage is configured for — not necessarily Anthropic).
   //
   // When AUTOPILOT_WORKER_OWNS_PR=true, ALSO delegate the post-LLM work
   // (parse output, create branch, write files, open PR) to the worker.
@@ -1588,16 +1609,21 @@ export async function runExecutionSession(
   const prompt = buildExecutionPrompt(exec.finding_id, exec.plan_version, plan.plan_markdown, fileCtx, branch, lessons, watcherBlock);
   const startedAt = Date.now();
   // VTID-03820: an execution queued with an llm_on_ramp_override (e.g. the
-  // operator DeepSeek execution on-ramp) ALWAYS takes the direct
-  // callViaRouter path, bypassing the worker queue entirely — the worker
-  // queue dispatches to a hardcoded Claude-subscription model unrelated to
-  // llm_routing_policy, so an override could never actually take effect
-  // through it. Every other execution (no override set) is completely
-  // unaffected by this branch.
+  // operator DeepSeek execution on-ramp) ALWAYS takes the callRoutedLlm
+  // path, bypassing the worker queue entirely — the worker queue dispatches
+  // to services/autopilot-worker's `claude -p` (Claude Code CLI against a
+  // Claude subscription), which has no way to honor a per-call provider
+  // override, so an override could never actually take effect through it.
+  // Every other execution (no override set) is completely unaffected by
+  // this branch. Note: even without an override, this branch is ALSO taken
+  // whenever isWorkerQueueEnabled() is false (DEV_AUTOPILOT_USE_WORKER
+  // unset) — true on both AWS_STAGE/PROD-DEPLOY-GATEWAY.yml as of VTID-03852,
+  // since neither pins that var — so the worker-queue/Claude-Code path is
+  // dead in practice on the deployed gateway, override or not.
   const onRampOverride = extractLlmOnRampOverride(exec.metadata);
   // Widen the inline type so both call shapes satisfy the union we destructure
   // below (worker-queue path may carry pr_url/pr_number/branch from the
-  // worker-owned-PR mode; direct Messages API never does).
+  // worker-owned-PR mode; callRoutedLlm never does).
   const llm: { ok: boolean; text?: string; usage?: { input_tokens?: number; output_tokens?: number }; error?: string; pr_url?: string; pr_number?: number; branch?: string; attempt_failures?: WorkerAttemptFailure[] } =
     (isWorkerQueueEnabled() && !onRampOverride)
       ? await runWorkerTask(
@@ -1616,7 +1642,7 @@ export async function runExecutionSession(
           },
           { timeoutMs: MESSAGES_TIMEOUT_MS },
         )
-      : await callMessagesApi(prompt, telemetryVtid, onRampOverride);
+      : await callRoutedLlm(prompt, telemetryVtid, onRampOverride);
   const elapsed = Math.round((Date.now() - startedAt) / 1000);
 
   // Prompt-gap feedback loop: the worker reports per-attempt validation

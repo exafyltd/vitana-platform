@@ -1,0 +1,86 @@
+PASS test/routes/backoffice-commands.test.ts
+  POST /commands — read/draft/commit
+    ✓ 401 without identity, JSON body (mount proof) (34 ms)
+    ✓ unknown type → 400; bad key → 400 (21 ms)
+    ✓ read executes on the bridge with tenant + actor + channel; receipt stored; audit + OASIS emitted (8 ms)
+    ✓ capability missing → 403, rejected row, nothing sent to the bridge (5 ms)
+    ✓ commit without confirm → rejected confirmation_required; with confirm → bridge gets granted:true (7 ms)
+    ✓ idempotency: replay returns the stored command, different payload → 409 (11 ms)
+    ✓ ERPClaw failure → 502, failed row, command.failed audit (3 ms)
+    ✓ voice: draft ok, commit rejected voice_not_permitted (4 ms)
+    ✓ developer holds the capability but is capped at Read (5 ms)
+    ✓ bridge not configured → 503 on a ref lookup; failed row on execute (never a silent success) (5 ms)
+  POST /commands — entity resolution
+    ✓ customer_ref resolves exactly via the bridge Read action and is replaced by customer_id (3 ms)
+    ✓ ambiguous / missing → rejected with candidates, nothing written (3 ms)
+  High-risk → approvals (maker-checker)
+    ✓ queues with no_eligible_approver when the tenant has no second approver, still queued (3 ms)
+    ✓ requester cannot approve own request (even as tenant admin); a second admin with MFA can; then the bridge runs with the approval chain (14 ms)
+    ✓ approver needs the approve capability, not just any capability; reject path records the note (7 ms)
+    ✓ exafy super-admin queues like everyone and cannot self-approve (4 ms)
+    ✓ §4.3: payment kind=pay escalates to High-risk with finance.pay; amount over the tenant threshold escalates too (5 ms)
+  GET /commands, /approvals, /audit, policy
+    ✓ audit.view sees all rows; others only their own; audit needs audit.view; policy needs approvals.policy (22 ms)
+    ✓ approvals list is denied to a user with no capabilities and carries can_decide (7 ms)
+      54 |       explicit = (await fetchGrants(auth.tenant_id, auth.user_id)).map((r) => r.capability);
+      55 |     } catch (err: any) {
+         |               ^
+      58 |     }
+      59 |   }
+PASS test/routes/backoffice-access.test.ts
+  GET /me
+    ✓ 401 without identity (mount proof: JSON, not HTML) (16 ms)
+    ✓ backoffice role with no grants: empty capabilities, cannot manage access (9 ms)
+  requireErpCapability middleware
+    ✓ 403 names the missing capability; 200 when held via explicit grant (15 ms)
+  GET /access
+    ✓ 403 for a backoffice user without erp.admin; 200 grouped per user for a tenant admin (11 ms)
+    ✓ a non-exafy caller cannot read another tenant via ?tenant_id (26 ms)
+  POST /access/grant
+    ✓ validates the capability against the catalog (16 ms)
+    ✓ tenant admin grants sales.draft: POST to erp_capability_grants with granted_by and tenant scope (8 ms)
+    ✓ duplicate grant is idempotent (200, already granted) (25 ms)
+    ✓ hr.* can be granted by a tenant admin, NOT by a delegated erp.admin holder (5 ms)
+    ✓ target outside the tenant is refused (canManageRoles membership check) (2 ms)
+    ✓ a backoffice user without erp.admin cannot grant at all (2 ms)
+  POST /access/revoke
+    ✓ DELETE scoped to user × tenant × capability (3 ms)
+PASS test/vtid-03842-command-policy.test.ts
+  registry shape
+    ✓ 164 unique types, every ERPClaw-gated action is commit or high, approvers only on high (16 ms)
+  evaluateCommand — capability + tier
+    ✓ read with the view capability executes; without it rejects capability_missing (1 ms)
+    ✓ draft executes without confirmation
+    ✓ commit needs the explicit confirmation (1 ms)
+    ✓ high always queues, even when confirmed, with the approver capability
+    ✓ any-of capabilities: sales.invoice.cancel accepts a finance.approve holder as requester too (1 ms)
+    ✓ exafy super-admin passes capability but still queues High-risk (no self-approval later)
+    ✓ developer/infra ceiling is Read (§3.3 rule 5), even holding the capability
+  evaluateCommand — §4.3 escalations
+    ✓ submit-payment kind=pay → High-risk, approver finance.pay; kind=receive stays Commit
+    ✓ journal submit tagged payroll → High-risk, approver payroll.approve (1 ms)
+    ✓ amount ≥ threshold on a Commit → High-risk with the per-domain approver; below stays Commit
+    ✓ tenant threshold is honoured (1 ms)
+    ✓ escalations stack (pay + amount) and never downgrade
+    ✓ Read and Draft never escalate on amount (1 ms)
+  evaluateCommand — channel ceilings
+    ✓ voice: Read/Draft ok, Commit and High-risk rejected voice_not_permitted
+    ✓ chat: Commit executes with confirmation, High-risk queues (1 ms)
+  evaluateApproval — maker-checker
+    ✓ requester ≠ approver, for everyone including Exafy
+    ✓ approver must hold the approve capability; approvals.policy never approves (1 ms)
+    ✓ only from the Approvals screen (web); MFA-backed session when policy requires it
+    ✓ platform roles cannot approve; erp.admin approves company creation (1 ms)
+    ✓ minimum staffing counts distinct holders other than the requester
+PASS test/vtid-03842-entity-resolution.test.ts
+  ✓ exact match (trimmed, case-folded) resolves to the id and drops the ref (2 ms)
+  ✓ several exact matches → entity_ambiguous with candidates, never a pick
+  ✓ no match → entity_not_found; a near miss is not a match
+  ✓ ref and id both present → entity_ref_conflict; lookup failure surfaces; no refs → passthrough (1 ms)
+  ✓ account_ref matches on number or name (1 ms)
+Test Suites: 4 passed, 4 total
+Tests:       59 passed, 59 total
+Snapshots:   0 total
+Time:        1.354 s
+Ran all test suites matching /test\/vtid-03842-command-policy.test.ts|test\/vtid-03842-entity-resolution.test.ts|test\/routes\/backoffice-commands.test.ts|test\/routes\/backoffice-access.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

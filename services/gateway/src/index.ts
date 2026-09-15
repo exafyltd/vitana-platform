@@ -141,6 +141,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const devAccessRouter = require('./routes/dev-access').default;
   // VTID-01230: Role Admission Management - grant/revoke/list permitted roles
   const roleAdminRouter = require('./routes/role-admin').default;
+  // VTID-03834: BackOffice ERP capability access - /me, /access, /access/grant|revoke
+  const backofficeAccessRouter = require('./routes/backoffice-access').default;
+  const backofficeCommandsRouter = require('./routes/backoffice-commands').default;
   // VTID-01081 + VTID-01103: Health Gateway (C2 ingest + C3 compute)
   const healthRouter = require('./routes/health').default;
   // VTID-01105: Memory Gateway Routes - memory write/context for ORB
@@ -1046,6 +1049,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01230: Role Admission Management - grant/revoke/list permitted roles
   mountRouterSync(app, '/api/v1/roles', roleAdminRouter, { owner: 'role-admin' });
+
+  // VTID-03834: BackOffice ERP capability access (role opens the door, capabilities gate actions)
+  mountRouterSync(app, '/api/v1/backoffice', backofficeAccessRouter, { owner: 'backoffice-access' });
+  mountRouterSync(app, '/api/v1/backoffice', backofficeCommandsRouter, { owner: 'backoffice-commands' });
 
   // VTID-01157: Supabase JWT Auth Middleware + /api/v1/auth/me endpoint
   mountRouterSync(app, '/api/v1/auth', authRouter, { owner: 'auth' });

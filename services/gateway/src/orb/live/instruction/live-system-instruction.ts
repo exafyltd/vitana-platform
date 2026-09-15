@@ -57,6 +57,7 @@ import {
 // the LLM can read directly. Vertex sees the same prose block AND the
 // structured function_declarations via the BidiGenerate setup message —
 // redundancy is harmless for Vertex and load-bearing for LiveKit.
+import { resolveOrbSurface, SURFACE_PERSONA_KEY } from '../surface';
 import { renderAvailableToolsSection } from '../tools/live-tool-catalog';
 import {
   capBootstrapContext,
@@ -482,37 +483,27 @@ export function buildLiveSystemInstruction(
   // community sessions.
   const voiceLiveConfig: Record<string, any> = { ...(getPersonalityConfigSync('voice_live') as Record<string, any>) };
 
-  // Per-surface persona overlay. When the session is on the Command Hub
-  // (developer surface), pull voice_* fields from dev_orb so the assistant
-  // speaks as the engineering co-pilot instead of the community wellness
-  // companion. Missing fields fall back to voice_live defaults — a partial
-  // dev_orb override (e.g. only voice_tools_section set in the DB) is safe.
-  //
-  // Resolution mirrors the role-override logic in orb-live.ts session
-  // bootstrap (~14327): mobile is always community, /command-hub/* is the
-  // developer surface, /admin/* is the admin surface (no overlay yet —
-  // behaves as community). An explicit `surface` param wins over the
-  // heuristic so voice-lab eval and tests can force a surface.
-  const resolveSurface = (): string => {
-    if (typeof surface === 'string' && surface.trim()) return surface.trim();
-    if (clientContext?.isMobile) return 'vitanaland';
-    const route = (currentRoute || '').toLowerCase();
-    if (route.startsWith('/command-hub')) return 'command-hub';
-    if (route.startsWith('/admin')) return 'admin';
-    return 'vitanaland';
-  };
-  const resolvedSurface = resolveSurface();
+  // Per-surface persona overlay (VTID-03848 generalised the Command Hub-only
+  // overlay). The resolved surface picks an ai_personality_config row whose
+  // voice_* fields overlay voice_live: command-hub → dev_orb (engineering
+  // co-pilot), admin → admin_orb (tenant administration), backoffice →
+  // backoffice_orb (ERP/CRM operations). Missing fields fall back to the
+  // voice_live defaults — a partial override in the DB is safe. Resolution
+  // lives in orb/live/surface.ts (mobile is always community; an explicit
+  // `surface` param wins so voice-lab eval and tests can force one).
+  const resolvedSurface = resolveOrbSurface({ currentRoute, isMobile: !!clientContext?.isMobile, explicit: surface });
   const isCommandHubSurface = resolvedSurface === 'command-hub';
   let identityLockRoleLine = "the user's life companion and instruction manual";
-  if (isCommandHubSurface) {
-    const devOrbConfig = getPersonalityConfigSync('dev_orb') as Record<string, any>;
-    if (devOrbConfig.voice_base_identity) voiceLiveConfig.base_identity = devOrbConfig.voice_base_identity;
-    if (devOrbConfig.voice_general_behavior) voiceLiveConfig.general_behavior = devOrbConfig.voice_general_behavior;
-    if (devOrbConfig.voice_greeting_rules) voiceLiveConfig.greeting_rules = devOrbConfig.voice_greeting_rules;
-    if (devOrbConfig.voice_tools_section) voiceLiveConfig.tools_section = devOrbConfig.voice_tools_section;
-    if (devOrbConfig.voice_important_section) voiceLiveConfig.important_section = devOrbConfig.voice_important_section;
-    if (typeof devOrbConfig.voice_identity_lock_role === 'string' && devOrbConfig.voice_identity_lock_role.trim()) {
-      identityLockRoleLine = devOrbConfig.voice_identity_lock_role;
+  const overlayKey = SURFACE_PERSONA_KEY[resolvedSurface];
+  if (overlayKey) {
+    const overlay = getPersonalityConfigSync(overlayKey) as Record<string, any>;
+    if (overlay.voice_base_identity) voiceLiveConfig.base_identity = overlay.voice_base_identity;
+    if (overlay.voice_general_behavior) voiceLiveConfig.general_behavior = overlay.voice_general_behavior;
+    if (overlay.voice_greeting_rules) voiceLiveConfig.greeting_rules = overlay.voice_greeting_rules;
+    if (overlay.voice_tools_section) voiceLiveConfig.tools_section = overlay.voice_tools_section;
+    if (overlay.voice_important_section) voiceLiveConfig.important_section = overlay.voice_important_section;
+    if (typeof overlay.voice_identity_lock_role === 'string' && overlay.voice_identity_lock_role.trim()) {
+      identityLockRoleLine = overlay.voice_identity_lock_role;
     }
   }
 
@@ -796,7 +787,13 @@ ${voiceLiveConfig.important_section || '- This is a real-time voice conversation
   // rest of the brain context (USER CONTEXT PROFILE, ACTIVITY_14D,
   // RECENT, FACTS, etc.) stays — those carry no greeting instructions
   // and continue to ground the conversation after the first utterance.
-  let effectiveBootstrap = bootstrapContext ?? '';
+  // VTID-03848: on the admin and backoffice surfaces the community brain
+  // context (USER CONTEXT PROFILE, health, diary, journey, activity, memory
+  // facts) is not injected at all — those assistants must never mix personal
+  // or community material into tenant-administration or ERP work. The
+  // Command Hub keeps its existing behaviour (the developer is also a member).
+  const bootstrapForSurface = (resolvedSurface === 'admin' || resolvedSurface === 'backoffice') ? '' : bootstrapContext;
+  let effectiveBootstrap = bootstrapForSurface ?? '';
   if (
     effectiveBootstrap &&
     effectiveBootstrap.includes('<<VERTEX_WAKE_BRIEF_OVERRIDE_ACTIVE>>')
@@ -963,8 +960,8 @@ the policy above as normal.`;
   // ignores it and defaults to describing `currentRoute` ("you are on the
   // event screen") when asked about activity history. Re-extract the profile
   // here and append at the end with strict anti-hallucination rules.
-  if (bootstrapContext) {
-    const profileMatch = bootstrapContext.match(
+  if (bootstrapForSurface) {
+    const profileMatch = bootstrapForSurface.match(
       /## USER CONTEXT PROFILE[\s\S]*?(?=\n\n(?:##|---)\s|\n\n\*\*|$)/
     );
     const profileSummary = profileMatch ? profileMatch[0].trim() : '';
@@ -1524,6 +1521,7 @@ M. DIARY LOGGING IS A TOOL CALL, NOT A NAVIGATION. (VTID-01983)
     toolsMode,
     currentRoute ?? undefined,
     activeRole ?? undefined,
+    resolvedSurface, // VTID-03848: prose directory matches the surface-gated catalog
   );
   if (toolsBlock && !omitToolsProse) {
     instruction += `\n\n## AVAILABLE TOOLS\n\nYou have the following tools available. Call the matching tool immediately when the user asks about anything in its description — do NOT say "I don't have access" or "I can't do that". Tools you didn't see in your own function-declarations array but DO see described below are still callable; the runtime resolves the call through the shared dispatcher. Never invent a tool name not listed here.\n\n${toolsBlock}`;

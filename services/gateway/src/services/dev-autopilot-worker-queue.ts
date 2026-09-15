@@ -18,6 +18,18 @@
  *     request handler for plan (where we already cap at 240s on the API path).
  *   - A row that stays in 'running' longer than STUCK_MINUTES is marked
  *     'failed' by reclaimStuckWorkerTasks() — called on a schedule separately.
+ *
+ * VTID-03852: this is the ONE place real Claude Code CLI execution exists in
+ * this platform, and it is currently orphaned in practice — see
+ * services/autopilot-worker/README.md's status banner for the full picture.
+ * Short version: DEV_AUTOPILOT_USE_WORKER is not set on either
+ * AWS-STAGE-DEPLOY-GATEWAY.yml or AWS-PROD-DEPLOY-GATEWAY.yml (off by
+ * default on the deployed gateway), the worker itself isn't in CLAUDE.md
+ * §1b/§2's AWS service table or built by any AWS-*-DEPLOY-*.yml, AND any
+ * execution the Operator Console's DeepSeek on-ramp (VTID-03820) triggers
+ * bypasses isWorkerQueueEnabled() unconditionally regardless of this flag
+ * (see dev-autopilot-execute.ts's onRampOverride branch). Don't assume this
+ * path is live without checking the actual deployed task-def env vars.
  */
 
 import { writeAutopilotFailure, type AutopilotFailureStage } from './dev-autopilot-self-heal-log';

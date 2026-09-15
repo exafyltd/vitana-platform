@@ -60,7 +60,8 @@ describe('runExecutionSession source wiring (VTID-03820, source check)', () => {
   // module's other Supabase-dependent helpers — see
   // vtid-03818-reaper-terminal-flag.test.ts). This pins the two things that
   // matter: the worker-queue path is skipped when an override is present,
-  // and the override is threaded into callMessagesApi.
+  // and the override is threaded into callRoutedLlm (renamed from
+  // callMessagesApi at VTID-03852 — see that file's own comment).
   const fs = require('fs');
   const path = require('path');
   const SOURCE: string = fs.readFileSync(
@@ -77,11 +78,11 @@ describe('runExecutionSession source wiring (VTID-03820, source check)', () => {
     expect(SOURCE).toContain('(isWorkerQueueEnabled() && !onRampOverride)');
   });
 
-  it('the direct-API branch passes the override into callMessagesApi', () => {
+  it('the routed-LLM branch passes the override into callRoutedLlm', () => {
     // VTID-03821: the vtid argument itself changed from a synthetic
     // per-execution id to telemetryVtid (real activated_vtid when known —
     // see vtid-03821-execution-telemetry-vtid.test.ts); this only pins
     // that the override is still threaded through as the 3rd argument.
-    expect(SOURCE).toContain('await callMessagesApi(prompt, telemetryVtid, onRampOverride);');
+    expect(SOURCE).toContain('await callRoutedLlm(prompt, telemetryVtid, onRampOverride);');
   });
 });
