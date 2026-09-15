@@ -64,7 +64,7 @@ interface HealthResultRow {
  * defense-in-depth), each with its biomarker_results and — for
  * partner-sourced reports — best-effort org/professional attribution.
  */
-router.get('/health-results', async (req: Request, res: Response) => {
+router.get('/health-results', async (req: Request, res: Response) => { // inline-bearer-auth: Bearer token -> createUserSupabaseClient -> me_context, 401 below on missing/invalid token
   const token = getBearerToken(req);
   if (!token) return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
 

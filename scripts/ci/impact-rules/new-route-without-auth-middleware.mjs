@@ -82,8 +82,16 @@ export async function check({ diff, repoRoot }) {
     const authRe = new RegExp(`\\b(?:${AUTH_NAMES.join('|')})\\b`);
     const unauthedLines = lines.filter(t => !authRe.test(t));
     if (unauthedLines.length === 0) continue;
-    // Public-route sentinel on the added line itself
-    const trulyUnauth = unauthedLines.filter(t => !/\/\/\s*public[-\s]?route\b/i.test(t));
+    // Public-route sentinel on the added line itself — OR a route that
+    // authenticates inline (Bearer token -> createUserSupabaseClient ->
+    // RLS/me_context), the same established pattern `health.ts`'s
+    // POST /lab-reports/ingest already uses. That pattern has no named
+    // middleware to match on the router.METHOD(...) line — the check
+    // happens inside the handler body — so it needs its own sentinel
+    // rather than a false "public-route" label, which would misdescribe
+    // a route that genuinely 401s on a missing/invalid token.
+    const trulyUnauth = unauthedLines.filter(t =>
+      !/\/\/\s*public[-\s]?route\b/i.test(t) && !/\/\/\s*inline-bearer-auth\b/i.test(t));
     if (trulyUnauth.length === 0) continue;
 
     findings.push({
