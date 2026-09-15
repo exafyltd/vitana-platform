@@ -33161,12 +33161,28 @@ async function fetchPipelineSummary() {
     if (isInitialLoad) renderApp();
 
     try {
-        var response = await fetchWT('/api/v1/autopilot/pipeline/summary', {}, 12000);
+        // VTID-03925: attaching the user's bearer token for consistency with
+        // every sibling fetch in this file — but note this does NOT actually
+        // make the call succeed. /api/v1/autopilot/* is gated by
+        // requireServiceToken (routes/autopilot.ts), which checks the bearer
+        // token against process.env.GATEWAY_SERVICE_TOKEN, an internal
+        // service-to-service secret — never a user session token, by design
+        // (VTID-03598 locked this router down specifically because it used
+        // to have NO auth at all). The browser can never legitimately hold
+        // that secret, so this endpoint will keep 401ing for the Command Hub
+        // regardless of headers. That's a real backend routing gap (this
+        // read-only dashboard endpoint needs a user/admin-auth exemption
+        // similar to the existing /health path exemptions) — flagged, not
+        // fixed here, since it needs a deliberate, reviewed backend change,
+        // not a silent frontend workaround. The header is still attached
+        // (harmless, matches the established pattern) in case that gap is
+        // closed later.
+        var headers = (typeof buildContextHeaders === 'function') ? buildContextHeaders({ Accept: 'application/json' }) : { Accept: 'application/json' };
+        var response = await fetchWT('/api/v1/autopilot/pipeline/summary', { headers: headers }, 12000);
         if (!response.ok) throw new Error('Pipeline summary fetch failed: ' + response.status);
 
         var data = await response.json();
         state.overviewPipelineSummary.snapshot = data;
-        state.overviewPipelineSummary.fetched = true;
         state.overviewPipelineSummary.error = null;
         console.log('[Pipeline] Summary loaded');
     } catch (error) {
@@ -33174,6 +33190,18 @@ async function fetchPipelineSummary() {
         state.overviewPipelineSummary.error = error.message;
     } finally {
         state.overviewPipelineSummary.loading = false;
+        // VTID-03925: `fetched` must be set unconditionally here, matching
+        // every sibling fetcher in this file (fetchActionRequired,
+        // fetchServiceHealth, ...). It used to be set ONLY inside the try
+        // block on success, so a failure (the 401 above, or any other
+        // transient error) left `fetched` false forever. renderOverviewSystemView()
+        // re-triggers this fetch on every render while `!fetched`, and this
+        // function's own isInitialLoad branch calls renderApp() on both
+        // entry and exit while `!fetched` — so a persistent failure produced
+        // a tight, self-sustaining fetch -> render -> fetch loop that pegged
+        // the browser (reported live as the whole Overview screen freezing,
+        // with hundreds of repeating 401s in the console within seconds).
+        state.overviewPipelineSummary.fetched = true;
         if (isInitialLoad) {
             renderApp();
         }
