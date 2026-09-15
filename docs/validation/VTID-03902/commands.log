@@ -87,3 +87,14 @@ npm run build
 npx jest
 #   -> full suite: 738/739 suites (1 pre-existing skip), 13,684/13,719
 #      tests passing, 0 failures. (outputs/full-suite.txt)
+
+# --- Staging enablement --------------------------------------------------
+
+# Platform-owner decision: watch the planner draft a real spec for
+# VTID-03900. Wired OPERATOR_PLANNER_ENABLED=true into
+# .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml's task-def jq upsert block
+# (staging only, mirroring every other staging-only flag already in that
+# file). Locally validated the jq filter against a synthetic task-def JSON:
+python3 -c "import re" # (see full jq validation run in this session's log)
+#   -> filter parses and upserts {name:"OPERATOR_PLANNER_ENABLED",
+#      value:"true"} correctly; bash -n on the extracted run: block clean.

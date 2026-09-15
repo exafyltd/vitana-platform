@@ -112,3 +112,14 @@ TEST: `npx tsc --noEmit`
 Output: outputs/tsc.txt
 TEST: `npm run build`
 Output: outputs/commands.log (build ran clean, see Verification section)
+
+## Staging enablement (platform-owner decision, this PR)
+
+`OPERATOR_PLANNER_ENABLED=true` is upserted onto the AWS staging gateway
+task definition in `.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml` (staging
+only — not added to `AWS-PROD-DEPLOY-GATEWAY.yml`). This file falls outside
+the `gateway_backend` profile's REMIT trees (VTID-03696), so it is reported
+by the path-ownership guard, not gated by it. Once this PR merges and the
+staging auto-deploy completes, the planner runs its first sweep immediately
+at boot (`initializeOperatorPlanner()`) — the next real signal is a draft
+spec appearing in `oasis_specs` for VTID-03900.
