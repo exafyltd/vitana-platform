@@ -27,6 +27,16 @@
  *   specificity bug (:hover:not(:disabled) beating a bare active class)
  *   meant it silently stayed neutral while the cursor rested on the button
  *   after the click — the normal case with a mouse.
+ * VTID-03918: once VTID-03911 made the red state actually visible, real
+ *   testing surfaced the mic turning red and never reacting to speech,
+ *   needing a second manual press to go neutral again. Root cause:
+ *   recognition.start() was unguarded and the active class/state were set
+ *   BEFORE it ran, so a synchronous throw (or any of the async
+ *   not-allowed/audio-capture/network/no-speech onerror codes) left the
+ *   button stuck red with no live recognition behind it and no visible
+ *   explanation. Fixed by only marking active state after start() succeeds,
+ *   wrapping it in try/catch, and surfacing a showToast() reason on every
+ *   failure path instead of failing silently.
  */
 
 import * as fs from 'fs';
@@ -149,6 +159,58 @@ describe('VTID-03907: Operator chat voice dictation', () => {
     const block = CSS.slice(idx, idx + 300);
     expect(block).toMatch(/\.chat-mic-btn--active:hover/);
     expect(block).toContain('#ef4444');
+  });
+});
+
+describe('VTID-03918: dictation no longer gets stuck red with no live recognition', () => {
+  it('recognition.start() is wrapped in try/catch, not called bare', () => {
+    const start = SOURCE.indexOf('function startOperatorDictation(textarea, micBtn) {');
+    const end = SOURCE.indexOf('\nfunction operatorDictationErrorMessage', start);
+    const body = SOURCE.slice(start, end);
+    expect(body).toMatch(/try\s*\{\s*recognition\.start\(\);\s*\}\s*catch/);
+  });
+
+  it('active state/class are only set AFTER a successful start(), not before', () => {
+    const start = SOURCE.indexOf('function startOperatorDictation(textarea, micBtn) {');
+    const end = SOURCE.indexOf('\nfunction operatorDictationErrorMessage', start);
+    const body = SOURCE.slice(start, end);
+    const startCallIdx = body.indexOf('recognition.start();');
+    const activeStateIdx = body.indexOf('state.chatDictationActive = true;');
+    const activeClassIdx = body.indexOf("micBtn.classList.add('chat-mic-btn--active')");
+    expect(startCallIdx).toBeGreaterThan(-1);
+    expect(activeStateIdx).toBeGreaterThan(startCallIdx);
+    expect(activeClassIdx).toBeGreaterThan(startCallIdx);
+  });
+
+  it('a thrown start() is caught, cleaned up, and surfaced via showToast', () => {
+    const start = SOURCE.indexOf('function startOperatorDictation(textarea, micBtn) {');
+    const end = SOURCE.indexOf('\nfunction operatorDictationErrorMessage', start);
+    const body = SOURCE.slice(start, end);
+    const catchIdx = body.indexOf('} catch (e) {');
+    expect(catchIdx).toBeGreaterThan(-1);
+    const catchBlock = body.slice(catchIdx, catchIdx + 300);
+    expect(catchBlock).toContain('showToast(');
+    expect(catchBlock).toContain("'error'");
+    // Must not leave chatDictationActive/the active class set on a failed start.
+    expect(body.slice(0, catchIdx)).not.toContain('state.chatDictationActive = true;');
+  });
+
+  it('onerror surfaces a human-readable reason via showToast, not just console.warn', () => {
+    const idx = SOURCE.indexOf('recognition.onerror = function (event) {');
+    expect(idx).toBeGreaterThan(-1);
+    const body = SOURCE.slice(idx, idx + 800);
+    expect(body).toContain('console.warn(');
+    expect(body).toContain('showToast(operatorDictationErrorMessage(event.error), \'error\')');
+  });
+
+  it('operatorDictationErrorMessage() maps the real Web Speech API error codes', () => {
+    const body = functionBody(SOURCE, 'function operatorDictationErrorMessage(errorCode) {');
+    expect(body).toContain("case 'not-allowed':");
+    expect(body).toContain("case 'service-not-allowed':");
+    expect(body).toContain("case 'audio-capture':");
+    expect(body).toContain("case 'network':");
+    expect(body).toContain("case 'no-speech':");
+    expect(body).toContain('default:');
   });
 });
 
