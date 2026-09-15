@@ -48,3 +48,18 @@ access to exercise these routes against the real `partner_organization_*`
 tables, which don't exist yet pending the platform owner's "apply now."
 No jest execution in this sandbox — traced by hand against the same
 fake-Supabase harness `partner-orgs.test.ts` already established.
+
+## Addendum — `GET /:orgId/invites` was missing `token` (found building
+## the Phase 2 frontend, same VTID)
+
+`POST /:orgId/members/invite` selects `token` on creation (needed for the
+"copy invite link" affordance right after sending an invite), but this
+list endpoint's own `.select(...)` omitted it — so the roster UI had no
+way to rebuild that link for an invite that was already created in an
+earlier page load. Fixed the select to include `token`; `OrgInviteRow` in
+`exafyltd/vitana-v1`'s `useOrgMembers.ts` now carries it.
+
+AC-4 — `GET /:orgId/invites` returns each invite's `token`.
+
+TEST: same file, `describe('GET /:orgId/invites', ...)` — the 200 case now
+also asserts `r.body.invites[0].token`.
