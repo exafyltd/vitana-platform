@@ -1760,6 +1760,13 @@ body {
   flex-direction: column;
   max-height: 90vh;
   overflow: hidden;
+  /* VTID-03910: a flex column child defaults to min-height:auto, which lets
+     it grow past its own container instead of shrinking to fit — the
+     classic reason overflow-y:auto never gets a chance to kick in on a
+     nested flex layout like this one. min-height:0 lets this column (and
+     everything flexed inside it) actually shrink to the available space,
+     so the deeper *-content/*-container overflow rules can do their job. */
+  min-height: 0;
 }
 
 .overlay-header {
@@ -1921,14 +1928,20 @@ body {
   transition: width 0.2s ease, height 0.2s ease, max-width 0.2s ease, border-radius 0.2s ease;
 }
 
-/* VTID-03905: fullscreen toggle modifier */
+/* VTID-03905/VTID-03910: fullscreen toggle modifier. Uses a symmetric 2cm
+   inset on every side (real CSS length unit, not an approximation) instead
+   of true 100vw/100vh — the popup used to run edge-to-edge with zero gap
+   from the screen frame, which read as broken chrome rather than
+   "fullscreen". The backdrop's own flex centering (align/justify: center)
+   then spaces this evenly on all four sides with no extra centering code
+   needed. Border-radius is intentionally left at the default 12px (not
+   overridden to 0) so it still reads as a panel, not a bare rectangle. */
 .operator-overlay--fullscreen {
-  width: 100vw;
-  height: 100vh;
-  max-width: 100vw;
-  max-height: 100vh;
+  width: calc(100vw - 4cm);
+  height: calc(100vh - 4cm);
+  max-width: calc(100vw - 4cm);
+  max-height: calc(100vh - 4cm);
   min-width: 0;
-  border-radius: 0;
 }
 
 .operator-tabs {
@@ -1965,6 +1978,7 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-height: 0; /* VTID-03910: see .overlay-panel's min-height comment */
 }
 
 /* Chat UI */
@@ -1973,6 +1987,7 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-height: 0; /* VTID-03910: see .overlay-panel's min-height comment */
 }
 
 .chat-messages {
@@ -1983,6 +1998,16 @@ body {
   overflow-y: auto;
   max-height: 65vh;
   padding: 1.5rem;
+  min-height: 0; /* VTID-03910: see .overlay-panel's min-height comment */
+}
+
+/* VTID-03910: the 65vh cap was tuned for the popup's original 80vh height;
+   in fullscreen the panel is much taller, so the fixed vh cap leaves a big
+   dead gap between the messages and the input row instead of using the
+   space fullscreen mode is meant to provide. Let it fill the flex column
+   like every other tab's content area already does. */
+.operator-overlay--fullscreen .chat-messages {
+  max-height: none;
 }
 
 /* VTID-03822: Operator Console thread switcher */
@@ -2515,6 +2540,17 @@ body {
     height: 90vh;
   }
 
+  /* VTID-03910: a flat 2cm inset on every side is fine on a desktop window
+     but eats too much of a narrow viewport (the input row's textarea has
+     no room left and wraps vertically) — shrink to a smaller fixed inset
+     here instead of scaling by viewport width. */
+  .operator-overlay--fullscreen {
+    width: calc(100vw - 1.5rem);
+    height: calc(100vh - 1.5rem);
+    max-width: calc(100vw - 1.5rem);
+    max-height: calc(100vh - 1.5rem);
+  }
+
   .heartbeat-metrics {
     grid-template-columns: 1fr;
   }
@@ -2769,7 +2805,16 @@ body {
   cursor: not-allowed;
 }
 
-.chat-mic-btn--active {
+/* VTID-03911: .chat-mic-btn:hover:not(:disabled) above has specificity
+   (0,3,0) (one class + two pseudo-classes, :not() counting its argument's
+   own specificity) — higher than plain .chat-mic-btn--active's (0,1,0), so
+   the neutral hover style silently won and the button never visibly turned
+   red while the cursor stayed on it after the click (which it always does
+   in real mouse use). Repeating the active rule with :hover explicitly
+   matches or beats that specificity so the red state actually shows, and
+   stays red on hover instead of flipping back to neutral. */
+.chat-mic-btn--active,
+.chat-mic-btn--active:hover:not(:disabled) {
   background: rgba(239, 68, 68, 0.15);
   border-color: #ef4444;
   color: #ef4444;
