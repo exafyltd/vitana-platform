@@ -223,7 +223,16 @@ router.post('/merchants', async (req: Request, res: Response) => {
  * is a required field that merely looks optional, which is exactly the kind a
  * form forgets to ask for.
  */
-const ProductSchema = z.object({
+/**
+ * The product fields, WITHOUT the cross-field refine below.
+ *
+ * Kept separate because `.refine()` returns a ZodEffects, and ZodEffects has
+ * no `.partial()` — PATCH needs to build a partial from the plain object.
+ * (Calling `.partial()` on the refined schema is a compile error, which is
+ * how this was caught: ts-jest transpiles without typechecking, so the test
+ * suite was green and `npm run build` was not.)
+ */
+const ProductFields = z.object({
   title: z.string().min(1).max(512),
   description: z.string().max(10000).optional(),
   brand: z.string().max(256).optional(),
@@ -239,10 +248,41 @@ const ProductSchema = z.object({
   category: z.string().max(128).optional(),
   // Vertical-specific answers, keyed by catalog_vertical_fields.field_key.
   attributes: z.record(z.string(), z.unknown()).default({}),
-}).refine(
-  (p) => (p.ships_to_countries?.length ?? 0) > 0 || (p.ships_to_regions?.length ?? 0) > 0,
-  { message: 'ships_to_countries or ships_to_regions must name at least one destination', path: ['ships_to_countries'] },
-);
+});
+
+/**
+ * A product must ship SOMEWHERE.
+ *
+ * Discover gates every row on `ships_to_countries.includes(country)` OR
+ * `ships_to_regions.includes(region)`, so a product naming neither can never
+ * be shown to anyone — it would sit in the supplier's portal looking listed
+ * and reach no one.
+ */
+const SHIPS_SOMEWHERE_MESSAGE =
+  'ships_to_countries or ships_to_regions must name at least one destination';
+
+export function shipsSomewhere(p: {
+  ships_to_countries?: string[];
+  ships_to_regions?: string[];
+}): boolean {
+  return (p.ships_to_countries?.length ?? 0) > 0 || (p.ships_to_regions?.length ?? 0) > 0;
+}
+
+const ProductSchema = ProductFields.refine(shipsSomewhere, {
+  message: SHIPS_SOMEWHERE_MESSAGE,
+  path: ['ships_to_countries'],
+});
+
+/**
+ * PATCH body: every field optional.
+ *
+ * Deliberately NOT refined here. The invariant is about the product's final
+ * state, and a patch only carries a fragment of it — a patch clearing
+ * `ships_to_countries` is perfectly valid if the row already ships to a
+ * region. So the check runs in the handler, against the merge of the stored
+ * row and the patch, where the real answer lives.
+ */
+const ProductPatchSchema = ProductFields.partial();
 
 router.get('/products', async (req: Request, res: Response) => {
   const s = supa(res);
@@ -326,10 +366,37 @@ router.patch('/products/:id', async (req: Request, res: Response) => {
     return;
   }
 
-  const parsed = ProductSchema.partial().safeParse(req.body);
+  const parsed = ProductPatchSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ ok: false, error: 'invalid_product', details: parsed.error.flatten() });
     return;
+  }
+
+  // Ships-to is checked against the MERGED state, not the patch alone.
+  // Clearing ships_to_countries is fine if the row already ships to a region,
+  // and emptying both is not — neither is decidable from the patch on its own.
+  // Scoped by merchant_id for the same reason as the update below.
+  if (
+    parsed.data.ships_to_countries !== undefined
+    || parsed.data.ships_to_regions !== undefined
+  ) {
+    const { data: current } = await s.from('products')
+      .select('ships_to_countries,ships_to_regions')
+      .eq('id', req.params.id).eq('merchant_id', merchant.id).maybeSingle();
+
+    if (!current) {
+      res.status(404).json({ ok: false, error: 'not_found' });
+      return;
+    }
+    const merged = { ...current, ...parsed.data };
+    if (!shipsSomewhere(merged)) {
+      res.status(400).json({
+        ok: false,
+        error: 'invalid_product',
+        details: { fieldErrors: { ships_to_countries: [SHIPS_SOMEWHERE_MESSAGE] } },
+      });
+      return;
+    }
   }
 
   // The merchant_id predicate is the authorization: another supplier's product

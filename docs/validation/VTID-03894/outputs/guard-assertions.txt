@@ -27,3 +27,24 @@ $ node networks-check.mjs
   pass  no vitest import (gateway runs jest)
 
 all 11 assertions
+
+=== FOLLOW-UP: the build error CI caught, and the hole under it ===
+$ node ships-check.mjs
+  pass  the real helper still has the expression this mirrors
+  pass  it is exported (the jest suite imports it)
+  pass  PATCH uses the un-refined partial
+  pass  POST still uses the refined schema
+  pass  no .partial() is called on the refined schema anywhere
+  pass  the handler merges stored row with patch
+  pass  the merged check is scoped by merchant_id
+  pass  accepts a country list
+  pass  accepts a region list
+  pass  rejects both empty
+  pass  rejects both absent
+  pass  rejects one empty, other absent
+  pass  merge: clear countries, row has regions -> ok
+  pass  merge: clear the only destination -> refused
+  pass  merge: countries -> regions in one step -> ok
+  pass  merge: omitted field does not overwrite stored
+
+all 16 assertions

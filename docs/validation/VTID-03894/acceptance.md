@@ -78,6 +78,18 @@ AC-7 — A vertical field that offers choices must say where the choices come fr
         earlier run of this check gave a false "accepted" because the UPDATE
         touched zero rows on an empty table; this version inserts first.)
 
+AC-8b — A product must ship somewhere, on PATCH as well as on POST
+  TEST: services/gateway/test/routes/supplier-ships-somewhere.test.ts
+        POST enforces this through a zod refine. PATCH could not: .refine()
+        returns a ZodEffects and ZodEffects has no .partial(), so the patch
+        body is built from the plain object and the refine does not come with
+        it. (That was a real compile error — `npm run build` caught it where
+        the jest suite did not, because ts-jest transpiles without
+        typechecking.) The check is also not decidable from a patch alone:
+        clearing ships_to_countries is valid when the row already ships to a
+        region. So the handler merges the patch over the stored row, scoped by
+        merchant_id, and this pins the predicate that decision rests on.
+
 AC-8 — The migrations apply cleanly from scratch, are additive, and are RLS-protected
   TEST: outputs/pg16-harness.txt — all four applied with ON_ERROR_STOP=1
         against real production table definitions for merchants, products and
