@@ -1528,6 +1528,22 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ Autopilot event loop initialization failed (non-fatal):', error);
       }
 
+      // VTID-03902: Initialize the Operator Planner (if enabled) — generates
+      // draft specs for operator-chat-created tasks stuck at
+      // status=scheduled/spec_status=missing, closing the gap where
+      // autopilot_create_task had no automated path to a plan.
+      try {
+        const { initializeOperatorPlanner, isOperatorPlannerEnabled } = require('./services/operator-planner');
+        await initializeOperatorPlanner();
+        if (isOperatorPlannerEnabled()) {
+          console.log('🗓️ Operator planner started (VTID-03902)');
+        } else {
+          console.log('⏸️ Operator planner disabled (VTID-03902) - set OPERATOR_PLANNER_ENABLED=true to enable');
+        }
+      } catch (error) {
+        console.warn('⚠️ Operator planner initialization failed (non-fatal):', error);
+      }
+
       // VTID-01250: Initialize Autopilot Automations Engine
       try {
         const { registerAllAutomationHandlers } = require('./services/automation-handlers');
