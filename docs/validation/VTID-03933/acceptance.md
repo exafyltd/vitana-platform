@@ -78,7 +78,7 @@ Output: outputs/targeted-tests.txt
 AC-7 — mutation-verified: reverting `Auth` to its original 2nd-position
 placement reproduces the exact live bug and fails 3 of the above tests
 
-Verified manually: `git stash` (reverting the fix) → re-ran
+TEST: manual mutation check — `git stash` (reverting the fix) → re-ran
 `test/task-title.guess-area-ordering.test.ts` → 3/6 tests failed, including
 the exact reproduced-failure assertion (AC-1) returning `Auth` instead of
 `Command Hub`, and the "more specific area wins" assertions (AC-3) also
