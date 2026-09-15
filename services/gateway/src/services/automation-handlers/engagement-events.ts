@@ -46,6 +46,66 @@ async function runGraduatedReminders(ctx: AutomationContext) {
   }
 }
 
+// Maxina Longevity Game (event-specific, temporary) — delegates to the two
+// scheduled-notifications endpoints the same way runGraduatedReminders does.
+// Registering these here (not just writing the route handlers) is the
+// deliberate fix for the exact "wiring existed only in live scheduler
+// state, invisible to this repo" trap this codebase has hit before for
+// push-dispatch (see platform CLAUDE.md 2026-08-17 changelog row) — the
+// AP-XXXX registry below is this repo's own in-code schedule, not an
+// opaque external cron job.
+async function runEventGameEndingSoon(ctx: AutomationContext) {
+  ctx.log('Event Game ending-soon check — dispatching via scheduled-notifications');
+  const { tenantId } = ctx;
+
+  try {
+    const gatewayUrl = process.env.GATEWAY_INTERNAL_URL || `http://localhost:${process.env.PORT || 3000}`;
+    const resp = await fetch(`${gatewayUrl}/api/v1/scheduled-notifications/event-game-ending-soon`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tenant_id: tenantId }),
+    });
+
+    if (!resp.ok) {
+      ctx.log(`Event Game ending-soon endpoint failed: ${resp.status}`);
+      return { usersAffected: 0, actionsTaken: 0 };
+    }
+
+    const result = await resp.json() as any;
+    ctx.log(`Event Game ending-soon dispatched to ${result.dispatched || 0} users`);
+    return { usersAffected: result.dispatched || 0, actionsTaken: result.dispatched || 0 };
+  } catch (err: any) {
+    ctx.log(`Event Game ending-soon error: ${err.message}`);
+    return { usersAffected: 0, actionsTaken: 0 };
+  }
+}
+
+async function runEventGameEnded(ctx: AutomationContext) {
+  ctx.log('Event Game ended check — dispatching via scheduled-notifications');
+  const { tenantId } = ctx;
+
+  try {
+    const gatewayUrl = process.env.GATEWAY_INTERNAL_URL || `http://localhost:${process.env.PORT || 3000}`;
+    const resp = await fetch(`${gatewayUrl}/api/v1/scheduled-notifications/event-game-ended`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tenant_id: tenantId }),
+    });
+
+    if (!resp.ok) {
+      ctx.log(`Event Game ended endpoint failed: ${resp.status}`);
+      return { usersAffected: 0, actionsTaken: 0 };
+    }
+
+    const result = await resp.json() as any;
+    ctx.log(`Event Game ended: ${result.ended || 0} game(s), ${result.dispatched || 0} notifications`);
+    return { usersAffected: result.dispatched || 0, actionsTaken: result.dispatched || 0 };
+  } catch (err: any) {
+    ctx.log(`Event Game ended error: ${err.message}`);
+    return { usersAffected: 0, actionsTaken: 0 };
+  }
+}
+
 // Real schema: community_meetups/community_meetup_attendance (VTID-01084)
 // were never deployed; global_community_events/global_event_participants is
 // the real, live events schema (status only has 'attending' — no separate
@@ -967,6 +1027,8 @@ export function registerEngagementEventsHandlers(): void {
   // Events & Live Rooms (AP-0300)
   registerHandler('runAutoScheduleDailyRoom', runAutoScheduleDailyRoom);
   registerHandler('runGraduatedReminders', runGraduatedReminders);
+  registerHandler('runEventGameEndingSoon', runEventGameEndingSoon);
+  registerHandler('runEventGameEnded', runEventGameEnded);
   registerHandler('runGoTogetherMatch', runGoTogetherMatch);
   registerHandler('runPostEventFeedback', runPostEventFeedback);
   registerHandler('runTrendingEventsDigest', runTrendingEventsDigest);

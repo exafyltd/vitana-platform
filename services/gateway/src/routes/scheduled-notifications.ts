@@ -12,6 +12,8 @@
  *   POST /api/v1/scheduled-notifications/weekly-summary
  *   POST /api/v1/scheduled-notifications/weekly-reflection
  *   POST /api/v1/scheduled-notifications/meetup-reminders
+ *   POST /api/v1/scheduled-notifications/event-game-ending-soon
+ *   POST /api/v1/scheduled-notifications/event-game-ended
  *   POST /api/v1/scheduled-notifications/upcoming-events
  *   POST /api/v1/scheduled-notifications/recommendation-expiry
  *   POST /api/v1/scheduled-notifications/signal-cleanup
@@ -1028,6 +1030,163 @@ router.post('/meetup-reminders', async (req: Request, res: Response) => {
 
   console.log(`[Scheduled] meetup_reminders → ${dispatched} notifications`);
   return res.status(200).json({ ok: true, dispatched });
+});
+
+// =============================================================================
+// POST /event-game-ending-soon — Maxina Longevity Game, ~every 5-15 min
+//
+// Timestamp-driven, same authority as the DB scoring triggers (never
+// `status` — see the migration's own comments). Reads the tenant's
+// enable_event_game feature flag first so a kill-switch also silences
+// in-flight crons, not just future UI (defense-in-depth, per this repo's
+// own "assume multiple gates are intentional" convention).
+// =============================================================================
+// Invoked internally by the AP-1700 automation-registry heartbeat
+// (runEventGameEndingSoon) via GATEWAY_INTERNAL_URL, not exposed publicly by
+// design; same pattern as meetup-reminders/upcoming-events.
+router.post('/event-game-ending-soon', async (req: Request, res: Response) => { // public-route
+  // impact-allow-no-oasis — fan-out only, no state transition (event_games
+  // itself is never written here). Mirrors /upcoming-events' own reasoning
+  // for the same "read + notify, nothing mutated" shape.
+  const tenantId = getTenantId(req);
+  if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
+
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+
+  const { data: settings } = await supa
+    .from('tenant_settings')
+    .select('feature_flags')
+    .eq('tenant_id', tenantId)
+    .maybeSingle();
+  if ((settings?.feature_flags as Record<string, unknown> | undefined)?.enable_event_game !== true) {
+    return res.status(200).json({ ok: true, dispatched: 0, reason: 'feature_disabled' });
+  }
+
+  const now = new Date();
+  const in11min = new Date(now.getTime() + 11 * 60 * 1000);
+
+  const { data: games } = await supa
+    .from('event_games')
+    .select('id, name, ends_at')
+    .eq('tenant_id', tenantId)
+    .eq('status', 'live')
+    .gt('ends_at', now.toISOString())
+    .lte('ends_at', in11min.toISOString());
+
+  let dispatched = 0;
+  for (const game of games || []) {
+    const { data: participants } = await supa
+      .from('event_game_participants')
+      .select('user_id')
+      .eq('event_game_id', game.id);
+
+    dispatched += await dispatchLocalized(
+      supa,
+      (participants || []) as Array<{ user_id: string }>,
+      tenantId,
+      'event_game_ending_soon',
+      'notif.event_game_ending_soon.title',
+      'notif.event_game_ending_soon.body',
+      { url: '/community/event-game', event_game_id: game.id, entity_id: game.id },
+      () => ({ name: game.name }),
+      1, // once per game's short 10-minute window is enough
+    );
+  }
+
+  console.log(`[Scheduled] event_game_ending_soon → ${dispatched} notifications`);
+  return res.status(200).json({ ok: true, dispatched });
+});
+
+// =============================================================================
+// POST /event-game-ended — Maxina Longevity Game, ~every 5 min
+//
+// UPDATE ... RETURNING is naturally idempotent against repeated cron ticks —
+// only games that actually transition status='live' -> 'ended' IN THIS CALL
+// get notified. This is status hygiene for the UI and for firing this
+// notification — it is NOT a scoring precondition; the scoring cutoff is
+// already enforced inline, at award time, by every DB trigger regardless of
+// whether or when this handler ever runs.
+// =============================================================================
+// Invoked internally by the AP-1701 automation-registry heartbeat
+// (runEventGameEnded) via GATEWAY_INTERNAL_URL, not exposed publicly by
+// design; same pattern as meetup-reminders/upcoming-events.
+router.post('/event-game-ended', async (req: Request, res: Response) => { // public-route
+  const tenantId = getTenantId(req);
+  if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
+
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+
+  const { data: settings } = await supa
+    .from('tenant_settings')
+    .select('feature_flags')
+    .eq('tenant_id', tenantId)
+    .maybeSingle();
+  if ((settings?.feature_flags as Record<string, unknown> | undefined)?.enable_event_game !== true) {
+    return res.status(200).json({ ok: true, dispatched: 0, reason: 'feature_disabled' });
+  }
+
+  const { data: justEnded, error } = await supa
+    .from('event_games')
+    .update({ status: 'ended' })
+    .eq('tenant_id', tenantId)
+    .eq('status', 'live')
+    .lt('ends_at', new Date().toISOString())
+    .select('id, name');
+
+  if (error) {
+    console.error('[Scheduled] event_game_ended update error:', error.message);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+
+  let dispatched = 0;
+  for (const game of justEnded || []) {
+    const { data: participants } = await supa
+      .from('event_game_participants')
+      .select('user_id')
+      .eq('event_game_id', game.id);
+
+    dispatched += await dispatchLocalized(
+      supa,
+      (participants || []) as Array<{ user_id: string }>,
+      tenantId,
+      'event_game_results_ready',
+      'notif.event_game_results_ready.title',
+      'notif.event_game_results_ready.body',
+      { url: '/community/event-game', event_game_id: game.id, entity_id: game.id },
+      () => ({ name: game.name }),
+    );
+  }
+
+  // Record the status='live'->'ended' transition — a real state change, not
+  // a poll (matches the emitOasisEvent pattern used elsewhere in this file,
+  // e.g. daily-pace-notifications). Best-effort — never fail the response
+  // if the OASIS write fails, and only fires when a game actually
+  // transitioned in this call (the UPDATE...RETURNING is what makes that
+  // exact, not an approximation).
+  for (const game of justEnded || []) {
+    try {
+      const { emitOasisEvent } = await import('../services/oasis-event-service');
+      await emitOasisEvent({
+        type: 'event_game.lifecycle.ended' as any,
+        source: 'gateway',
+        // VTID format is VTID-\d{4,5} per CLAUDE.md §4; no real VTID is bound
+        // to this feature yet (this session had no live network access to
+        // self-allocate one — see the PR body), so use the BOOTSTRAP- prefix
+        // accepted by the OASIS validator and the AUTO-DEPLOY regex.
+        vtid: 'BOOTSTRAP-MAXINA-EVENT-GAME',
+        status: 'info',
+        message: `event_game ${game.id} (${game.name}) transitioned live -> ended`,
+        payload: { event_game_id: game.id, tenant_id: tenantId },
+      } as any);
+    } catch (oasisErr: any) {
+      console.warn('[Scheduled] event_game_ended OASIS emit failed:', oasisErr?.message);
+    }
+  }
+
+  console.log(`[Scheduled] event_game_ended → ${(justEnded || []).length} games ended, ${dispatched} notifications`);
+  return res.status(200).json({ ok: true, ended: (justEnded || []).length, dispatched });
 });
 
 // =============================================================================
