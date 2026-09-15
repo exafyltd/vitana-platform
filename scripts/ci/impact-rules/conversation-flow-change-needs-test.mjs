@@ -59,13 +59,24 @@ const FLOW_SOURCE_RE = [
 // `test/routes/orb-livekit.test.ts` with four supertest cases pinning new
 // endpoint behaviour still reported the blocker.
 //
+// VTID-03885 — same defect, a new provider this time. A genuinely new
+// `orb_wake`-surface continuation provider (partner-health-result-ready.ts,
+// the "your result is ready" proactive opener) shipped with a real test at
+// test/services/assistant-continuation/providers/partner-health-result-ready.test.ts
+// — same directory, same naming convention as every sibling provider test in
+// that folder — and the gate still flagged it, because no existing keyword
+// happened to appear in "partner-health-result-ready". Per this rule's own
+// stated maintenance model ("extend the regexes when a new flow area lands"),
+// added "partner-health" below rather than renaming the test file to chase an
+// unrelated keyword.
+//
 // An unsatisfiable gate does not get satisfied honestly — it gets satisfied by
 // renaming a file until it hits a keyword, or by claiming the behaviour-free
 // exemption for a change that is not behaviour-free. Both launder a guess into a
 // green check. Same defect family as the Route Mount Evidence Gate (VTID-03696):
 // the rule keyed off a proxy for the thing it meant to check.
 const FLOW_TEST_RE =
-  /^services\/gateway\/test\/.*(conversation|narrate|guided|journey|greeting|wake|continuity|screen|opening|next-best|decide|instruction|session|nba|recency|temporal|diary|match|intent|index|capability|tool|orb-live).*\.(test|spec)\.(ts|tsx)$/i;
+  /^services\/gateway\/test\/.*(conversation|narrate|guided|journey|greeting|wake|continuity|screen|opening|next-best|decide|instruction|session|nba|recency|temporal|diary|match|intent|index|capability|tool|orb-live|partner-health).*\.(test|spec)\.(ts|tsx)$/i;
 
 const TEST_OR_DTS_RE = /\.(test|spec)\.(ts|tsx)$|\.d\.ts$/;
 const EXEMPT_RE = /flow-test-exempt/;

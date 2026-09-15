@@ -1,0 +1,115 @@
+=== git diff --stat (this branch vs origin/main) ===
+ .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml     |   2 +
+ services/autopilot-worker/README.md                |  28 ++++++
+ services/gateway/src/frontend/command-hub/app.js   |  28 ++++++
+ .../gateway/src/frontend/command-hub/index.html    |   2 +-
+ .../gateway/src/services/dev-autopilot-execute.ts  |  66 +++++++++----
+ .../gateway/src/services/dev-autopilot-planning.ts | 103 ++++++++++++++-------
+ .../gateway/src/services/dev-autopilot-watcher.ts  |  26 ++++++
+ .../src/services/dev-autopilot-worker-queue.ts     |  12 +++
+ services/gateway/src/services/github-service.ts    |  13 ++-
+ services/gateway/src/types/cicd.ts                 |   2 +
+ .../vtid-03820-execution-onramp-metadata.test.ts   |   7 +-
+ .../vtid-03821-execution-telemetry-vtid.test.ts    |  10 +-
+ 12 files changed, 232 insertions(+), 67 deletions(-)
+
+=== AWS-STAGE-DEPLOY-GATEWAY.yml diff (DEV_AUTOPILOT_LLM_REVIEW_ENABLED pin) ===
+diff --git a/.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml b/.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml
+index a246790..689205b 100644
+--- a/.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml
++++ b/.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml
+@@ -566,6 +566,7 @@ jobs:
+                                                 "OPERATOR_EXECUTION_ONRAMP_ENABLED",
+                                                 "OPERATOR_CODEBASE_READ_ENABLED",
+                                                 "OPERATOR_DB_READONLY_ENABLED",
++                                                "DEV_AUTOPILOT_LLM_REVIEW_ENABLED",
+                                                 "BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION",
+                                                 "AURORA_CA_BUNDLE_PATH") | not) ]
+                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
+@@ -593,6 +594,7 @@ jobs:
+                           {name:"OPERATOR_EXECUTION_ONRAMP_ENABLED", value:"true"},
+                           {name:"OPERATOR_CODEBASE_READ_ENABLED", value:"true"},
+                           {name:"OPERATOR_DB_READONLY_ENABLED", value:"true"},
++                          {name:"DEV_AUTOPILOT_LLM_REVIEW_ENABLED", value:"true"},
+                           {name:"BEDROCK_ROLE_ARN", value:$TASK_ROLE},
+                           {name:"AWS_BEDROCK_REGION", value:"eu-central-1"},
+                           {name:"AURORA_CA_BUNDLE_PATH", value:"/app/certs/rds-combined-ca-bundle.pem"} ] )
+
+=== confirm AWS-PROD-DEPLOY-GATEWAY.yml untouched ===
+(empty above == untouched)
+
+=== tsc --noEmit -p . (services/gateway) ===
+exit 0, no output — see outputs/tsc-noemit.txt
+
+=== npm run build (services/gateway) ===
+exit 0 — see outputs/npm-build.txt
+
+=== npx jest --testPathPattern="vtid-0385" ===
+Test Suites: 5 passed, 5 total
+Tests:       37 passed, 37 total
+— see outputs/jest-new-vtid-suites.txt
+
+=== npx jest (full gateway suite) ===
+Test Suites: 1 skipped, 766 passed, 766 of 767 total
+Tests:       29 skipped, 6 todo, 13918 passed, 13953 total
+Snapshots:   44 passed, 44 total
+(the 1 skipped suite and 29 skipped/6 todo tests are pre-existing, unrelated
+to this change — confirmed by re-running the same full suite before this
+branch's changes were applied, same skip count)
+— see outputs/jest-full-suite-summary.txt
+
+=== grep confirmation: dead ANTHROPIC_API_KEY/ANTHROPIC_BASE removed ===
+$ grep -n "^const ANTHROPIC_API_KEY\|^const ANTHROPIC_BASE" \
+    services/gateway/src/services/dev-autopilot-execute.ts \
+    services/gateway/src/services/dev-autopilot-planning.ts
+(no matches — both removed)
+
+=== grep confirmation: callMessagesApi renamed everywhere ===
+$ grep -rn "function callMessagesApi" services/gateway/src/
+(no matches)
+
+=== grep confirmation: getPrFiles widened, no other callers broken ===
+$ grep -rn "getPrFiles(" services/gateway/src services/gateway/test | grep -v '\.test\.ts'
+services/gateway/src/services/github-service.ts:230:export async function getPrFiles(
+services/gateway/src/services/github-service.ts:516:  const files = await getPrFiles(repo, prNumber);
+services/gateway/src/routes/cicd.ts:1084:    const files = await githubService.getPrFiles(DEFAULT_REPO, prNumber);
+services/gateway/src/routes/cicd.ts:1372:        const files = await githubService.getPrFiles(DEFAULT_REPO, pr_number);
+services/gateway/src/routes/cicd.ts:1669:      prFiles = await githubService.getPrFiles(repo, pr.number);
+(all 4 pre-existing call sites destructure filename/status/additions/deletions
+only — an added optional `patch` field is purely additive, tsc --noEmit
+confirms no breakage)
+
+=== CSP Governance Gate — local repro of VALIDATOR-CHECK.yml's exact check ===
+$ git diff origin/main -- 'services/gateway/src/frontend/' 'services/gateway/dist/frontend/' > /tmp/csp_diff.txt
+$ node scripts/ci/validator-path-guard.cjs --csp-added-lines /tmp/csp_diff.txt
+
+First attempt: REJECTED — CSP_PATTERNS' /\.style\b/ flagged the new badges'
+scripted inline-style assignment (`.style.cssText = '...'`), matching this
+file's own pervasive pre-existing pattern but tripping the gate on any NEW
+addition of it. Fixed by moving the badge styling to a CSS class
+(`.llm-provider-badge` in styles.css) and `element.className = '...'`
+instead — cleaner anyway, and avoids relitigating the gate's own CSP
+semantics. Re-ran after the fix:
+
+No CSP pattern hits in added lines.
+exit: 0
+
+(A second false-positive round-trip: the explanatory code comment ITSELF
+used the literal substring ".style" and re-tripped the same naive
+substring-match gate — the same self-matching failure mode this repo's own
+CLAUDE.md changelog already documents for VALIDATOR-CHECK.yml's `<script`/
+`unsafe-inline` patterns. Reworded the comment to avoid the literal
+substring; not a gate change, just careful wording, since the gate is
+shared governance tooling out of scope for this PR.)
+
+=== Acceptance Mapping Gate — local repro ===
+$ python3 (same regex the workflow uses against acceptance.md)
+Found 12 AC- entries at lines: [35, 46, 57, 90, 103, 116, 126, 135, 162, 170, 181, 189]
+Acceptance mapping OK
+
+=== Final full verification, after the CSS-class fix ===
+tsc --noEmit: exit 0, no output
+npm run build: exit 0
+jest --testPathPattern="vtid-0385": 5 suites, 38 tests, all passing
+jest (full suite): 766/767 suites (1 pre-existing skip), 13919/13954 tests
+  (29 skipped, 6 todo — all pre-existing), 0 failures

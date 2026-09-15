@@ -183,6 +183,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const discoverRecommendationsPublicRouter = require('./routes/discover-recommendations-public').default;
   // VTID-02000: Maxina admin marketplace routes
   const adminMarketplaceRouter = require('./routes/admin-marketplace').default;
+  // VTID-03885: Partner Health Test Integration — admin portal (orders/inbox/confirm-match)
+  const adminPartnerHealthRouter = require('./routes/admin-partner-health').default;
+  // VTID-03885: Partner Health Test Integration — self-service consent (grant/revoke/check)
+  const partnerHealthConsentRouter = require('./routes/partner-health-consent').default;
   // BOOTSTRAP-COMMUNITY-MARKETPLACE: peer-to-peer classifieds (seller + buyer API)
   const communityMarketplaceRouter = require('./routes/community-marketplace').default;
   // BOOTSTRAP-COMMUNITY-MARKETPLACE (Chunk 7): admin review queue (listings/reports/seller suspensions/categories)
@@ -1093,6 +1097,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/public', publicProfileOgRouter, { owner: 'public-profile-og' });
   // VTID-02000: Maxina admin marketplace
   mountRouterSync(app, '/api/v1/admin/marketplace', adminMarketplaceRouter, { owner: 'admin-marketplace' });
+  // VTID-03885: Partner Health Test Integration admin portal
+  mountRouterSync(app, '/api/v1/admin/partner-health', adminPartnerHealthRouter, { owner: 'admin-partner-health' });
+  // VTID-03885: Partner Health Test Integration self-service consent
+  mountRouterSync(app, '/api/v1/partner-health/consent', partnerHealthConsentRouter, { owner: 'partner-health-consent' });
   // BOOTSTRAP-COMMUNITY-MARKETPLACE: peer-to-peer classifieds (seller + buyer API)
   mountRouterSync(app, '/api/v1/community-marketplace', communityMarketplaceRouter, { owner: 'community-marketplace' });
   // BOOTSTRAP-COMMUNITY-MARKETPLACE (Chunk 7): admin review queue

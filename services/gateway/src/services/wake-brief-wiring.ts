@@ -71,6 +71,15 @@ import {
   REAL_LIFE_INVITE_EXTRA_KEY,
   REAL_LIFE_INVITE_PROVIDER_KEY,
 } from './assistant-continuation/providers/real-life-invite-provider';
+// VTID-03885: Partner Health Test Integration — priority 94.5, between
+// new-day-return (94) and first-time-welcome/guided-topic (95-96).
+// Grounded in a real partner_health_test_orders query; suppresses cleanly
+// when there's no unsurfaced result, so registering always is safe.
+import {
+  makePartnerHealthResultReadyProvider,
+  PARTNER_HEALTH_RESULT_READY_EXTRA_KEY,
+  PARTNER_HEALTH_RESULT_READY_PROVIDER_KEY,
+} from './assistant-continuation/providers/partner-health-result-ready';
 // VTID-03164: new-day-return provider — fires first session of a new
 // calendar day in user's local TZ. Priority 90 so it beats Teacher (85)
 // and wake-brief (80). Suppresses cleanly when same-day repeat or when
@@ -242,6 +251,11 @@ export function ensureWakeBriefProviderRegistered(): void {
   // safe.
   if (!defaultProviderRegistry.get(UNREAD_MESSAGES_ANNOUNCE_PROVIDER_KEY)) {
     defaultProviderRegistry.register(makeUnreadMessagesAnnounceProvider());
+  }
+  // VTID-03885: partner-health-result-ready at priority 94.5. Suppresses
+  // cleanly (no_unsurfaced_result) so registering always is safe.
+  if (!defaultProviderRegistry.get(PARTNER_HEALTH_RESULT_READY_PROVIDER_KEY)) {
+    defaultProviderRegistry.register(makePartnerHealthResultReadyProvider());
   }
   // VTID-03307 (SAFE rebuild): Conversation Flow v3 at priority 88. Speak-only;
   // self-suppresses when its flag is off, so registering always is safe.
@@ -584,6 +598,15 @@ export async function decideWakeBriefForSession(
       // BOOTSTRAP-ORB-UNREAD-MESSAGES-NAV: unread-messages-announce inputs.
       // The provider suppresses on zero unread, so forwarding always is safe.
       extra[UNREAD_MESSAGES_ANNOUNCE_EXTRA_KEY] = {
+        supabase: args.supabase,
+        userId: args.userId,
+        tenantId: args.tenantId,
+        lang: args.lang,
+      };
+      // VTID-03885: partner-health-result-ready inputs. The provider
+      // suppresses when there's no unsurfaced result, so forwarding
+      // always is safe.
+      extra[PARTNER_HEALTH_RESULT_READY_EXTRA_KEY] = {
         supabase: args.supabase,
         userId: args.userId,
         tenantId: args.tenantId,

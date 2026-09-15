@@ -124,6 +124,10 @@ export const TYPE_META: Record<string, TypeMeta> = {
   health_score_decline:     { channel: 'push_and_inapp', priority: 'p0', category: 'health' },
   longevity_signal_alert:   { channel: 'push_and_inapp', priority: 'p0', category: 'health' },
   lab_report_processed:     { channel: 'inapp',          priority: 'p2', category: 'health' },
+  // VTID-03885: Partner Health Test Integration — intermediate lifecycle
+  // pings (ordered -> sample_received -> processing). The result-ready
+  // moment itself reuses lab_report_processed above, not a new type.
+  partner_test_status_changed: { channel: 'inapp',       priority: 'p2', category: 'health' },
   wearable_data_synced:     { channel: 'silent',          priority: 'p3', category: 'health' },
   // Signals
   predictive_signal_detected:  { channel: 'push_and_inapp', priority: 'p0', category: 'signal' },
