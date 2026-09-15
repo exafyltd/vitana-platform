@@ -28,6 +28,7 @@ export async function fetchExistingPendingInvitation(supabase: SupabaseClient, t
     .eq('email', email)
     .is('accepted_at', null)
     .is('revoked_at', null)
+    .gt('expires_at', new Date().toISOString())
     .single();
 }
 
