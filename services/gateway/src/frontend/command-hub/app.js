@@ -44760,13 +44760,13 @@ function renderDevAutopilotExecutionCard(exec) {
         // visually distinct color so a developer scanning the board knows
         // where to look first.
         var stale = ageMs > 10 * 60000;
-        heartbeatEl.style.cssText = 'font-size: 11px; color: ' + (stale ? '#eab308' : 'var(--text-secondary, #888)') + ';';
+        heartbeatEl.className = 'dev-autopilot-heartbeat' + (stale ? ' dev-autopilot-heartbeat--stale' : '');
         heartbeatEl.title = 'Last step event at ' + exec.last_event_at;
         heartbeatEl.textContent = (stale ? '⚠ ' : '') + 'last step ' + (ageMin <= 0 ? '<1m' : ageMin + 'm') + ' ago';
         topRow.appendChild(heartbeatEl);
     } else if (ACTIVE_STATUSES[exec.status] && exec.last_event_at === null) {
         var noEventsEl = document.createElement('span');
-        noEventsEl.style.cssText = 'font-size: 11px; color: var(--text-secondary, #888);';
+        noEventsEl.className = 'dev-autopilot-heartbeat';
         noEventsEl.textContent = 'no steps yet';
         topRow.appendChild(noEventsEl);
     }
@@ -44816,7 +44816,7 @@ function renderDevAutopilotExecutionCard(exec) {
     var stepsOpen = !!state.devAutopilot.expandedStepsExecIds[exec.id];
     var stepsBtn = document.createElement('button');
     stepsBtn.textContent = stepsOpen ? '▾ Steps' : '▸ Steps';
-    stepsBtn.style.cssText = 'padding: 3px 10px; border-radius: 3px; font-size: 11px; cursor: pointer; border: 1px solid var(--border-color, rgba(255,255,255,0.15)); background: transparent; color: var(--text-secondary, #aaa);';
+    stepsBtn.className = 'dev-autopilot-ghost-toggle';
     stepsBtn.onclick = function () {
         if (stepsOpen) {
             delete state.devAutopilot.expandedStepsExecIds[exec.id];
@@ -44918,32 +44918,32 @@ function renderDevAutopilotLineageView(execId) {
 function renderDevAutopilotStepsView(execId) {
     var slot = state.devAutopilot.steps[execId] || {};
     var box = document.createElement('div');
-    box.style.cssText = 'margin-top: 10px; padding: 10px; background: rgba(59,130,246,0.04); border: 1px solid rgba(59,130,246,0.2); border-radius: 4px; max-height: 320px; overflow-y: auto;';
+    box.className = 'dev-autopilot-steps-panel';
 
     if (slot.loading) {
         box.textContent = 'Loading steps…';
-        box.style.color = 'var(--text-secondary, #888)';
+        box.classList.add('dev-autopilot-steps-panel--muted');
         return box;
     }
     if (slot.error) {
-        box.style.color = '#ef4444';
+        box.classList.add('dev-autopilot-steps-panel--error');
         box.textContent = 'Steps error: ' + slot.error;
         return box;
     }
 
     var heading = document.createElement('div');
-    heading.style.cssText = 'font-size: 11px; color: #3b82f6; text-transform: uppercase; margin-bottom: 6px; letter-spacing: 0.05em; display: flex; align-items: center; gap: 8px;';
+    heading.className = 'dev-autopilot-steps-heading';
     var headingText = document.createElement('span');
     headingText.textContent = 'Live step feed (' + (slot.steps ? slot.steps.length : 0) + ')';
     heading.appendChild(headingText);
     if (slot.es) {
         var liveDot = document.createElement('span');
-        liveDot.style.cssText = 'width: 6px; height: 6px; border-radius: 50%; background: #22c55e; display: inline-block;';
+        liveDot.className = 'dev-autopilot-steps-live-dot';
         liveDot.title = 'Streaming live';
         heading.appendChild(liveDot);
     } else if (slot.streamError) {
         var errDot = document.createElement('span');
-        errDot.style.cssText = 'color: #eab308; font-size: 10px; text-transform: none; letter-spacing: normal;';
+        errDot.className = 'dev-autopilot-steps-stream-note';
         errDot.textContent = '(stream reconnecting…)';
         heading.appendChild(errDot);
     }
@@ -44951,18 +44951,19 @@ function renderDevAutopilotStepsView(execId) {
 
     if (!slot.steps || slot.steps.length === 0) {
         var empty = document.createElement('div');
-        empty.style.cssText = 'font-size: 12px; color: var(--text-secondary, #888);';
+        empty.className = 'dev-autopilot-steps-empty';
         empty.textContent = 'No step events yet.';
         box.appendChild(empty);
         return box;
     }
 
+    var STEP_STATUS_CLASS = { error: 'dev-autopilot-step-topic--error', warning: 'dev-autopilot-step-topic--warning', success: 'dev-autopilot-step-topic--success' };
     slot.steps.forEach(function (step) {
         var line = document.createElement('div');
-        line.style.cssText = 'font-size: 11px; padding: 3px 0; display: flex; gap: 8px; align-items: baseline; border-bottom: 1px solid rgba(255,255,255,0.04);';
+        line.className = 'dev-autopilot-step-line';
 
         var timeEl = document.createElement('span');
-        timeEl.style.cssText = 'font-family: monospace; color: var(--text-secondary, #666); flex-shrink: 0;';
+        timeEl.className = 'dev-autopilot-step-time';
         try {
             timeEl.textContent = new Date(step.created_at).toLocaleTimeString();
         } catch (_e) {
@@ -44970,14 +44971,13 @@ function renderDevAutopilotStepsView(execId) {
         }
         line.appendChild(timeEl);
 
-        var statusColors = { error: '#ef4444', warning: '#eab308', success: '#22c55e' };
         var topicEl = document.createElement('span');
-        topicEl.style.cssText = 'font-family: monospace; flex-shrink: 0; color: ' + (statusColors[step.status] || '#3b82f6') + ';';
+        topicEl.className = 'dev-autopilot-step-topic ' + (STEP_STATUS_CLASS[step.status] || '');
         topicEl.textContent = (step.topic || '?').replace('dev_autopilot.execution.', '');
         line.appendChild(topicEl);
 
         var msgEl = document.createElement('span');
-        msgEl.style.cssText = 'color: var(--text-primary, #ccc); word-break: break-word;';
+        msgEl.className = 'dev-autopilot-step-message';
         msgEl.textContent = step.message || '';
         line.appendChild(msgEl);
 
