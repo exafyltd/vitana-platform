@@ -1,0 +1,2 @@
+$ cd services/gateway && npx tsc --noEmit
+(no output — exit 0, clean)

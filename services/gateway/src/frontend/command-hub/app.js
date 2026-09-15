@@ -589,20 +589,203 @@ function buildOperatorChatContext(history) {
     return context;
 }
 
+// --- VTID-03822: Multi-thread conversation support ---
+//
+// operator_console_history / operator_console_conversation_id (VTID-01027,
+// above) were a single flat thread — no way to browse or resume a prior
+// conversation. This layer adds real, named, resumable threads without a
+// backend dependency (per this VTID's own spec: "purely frontend, no
+// backend dependency" — there is no server-side conversation table to
+// build against; continuity has always come from the client resending
+// `context` on every request, and that's unchanged here).
+
+var OPERATOR_THREADS_INDEX_KEY = 'operator_console_threads_index';
+
+function operatorThreadHistoryKey(threadId) {
+    return 'operator_console_history:' + threadId;
+}
+
+function generateOperatorThreadId() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+        var r = Math.random() * 16 | 0;
+        var v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+}
+
+function loadOperatorThreadsIndex() {
+    try {
+        var stored = localStorage.getItem(OPERATOR_THREADS_INDEX_KEY);
+        if (stored) {
+            var parsed = JSON.parse(stored);
+            if (Array.isArray(parsed)) return parsed;
+        }
+    } catch (e) {
+        console.warn('[VTID-03822] Error reading threads index:', e);
+    }
+    return [];
+}
+
+function saveOperatorThreadsIndex(index) {
+    try {
+        localStorage.setItem(OPERATOR_THREADS_INDEX_KEY, JSON.stringify(index));
+    } catch (e) {
+        console.warn('[VTID-03822] Error saving threads index:', e);
+    }
+}
+
+function getOperatorThreadHistory(threadId) {
+    try {
+        var stored = localStorage.getItem(operatorThreadHistoryKey(threadId));
+        if (stored) {
+            var parsed = JSON.parse(stored);
+            if (Array.isArray(parsed)) return parsed;
+        }
+    } catch (e) {
+        console.warn('[VTID-03822] Error reading thread history:', e);
+    }
+    return [];
+}
+
+function saveOperatorThreadHistory(threadId, history) {
+    try {
+        localStorage.setItem(operatorThreadHistoryKey(threadId), JSON.stringify(history));
+    } catch (e) {
+        console.warn('[VTID-03822] Error saving thread history:', e);
+    }
+}
+
+/** Derive a short, human title from a thread's first user message. */
+function deriveOperatorThreadTitle(history) {
+    var firstUser = (history || []).find(function (m) { return m.role === 'user'; });
+    if (!firstUser || !firstUser.content) return 'New conversation';
+    var text = firstUser.content.trim().replace(/\s+/g, ' ');
+    return text.length > 40 ? text.slice(0, 40) + '…' : text;
+}
+
 /**
- * VTID-01027: Initialize operator chat session.
- * Loads conversation_id and chat history from localStorage.
- * Restores chatMessages for UI rendering from persisted history.
+ * One-time migration from the pre-thread single-history storage into the
+ * first thread, so shipping this never silently discards existing operator
+ * chat history. Safe to call on every load — no-ops once threads exist.
+ */
+function migrateOperatorHistoryToThreads() {
+    var index = loadOperatorThreadsIndex();
+    if (index.length > 0) return index;
+
+    var legacyHistory = getOperatorChatHistory();
+    var legacyConversationId = null;
+    try { legacyConversationId = localStorage.getItem('operator_console_conversation_id'); } catch (e) { /* no-op */ }
+
+    var threadId = legacyConversationId || generateOperatorThreadId();
+    var now = Date.now();
+    var thread = {
+        id: threadId,
+        title: legacyHistory.length > 0 ? deriveOperatorThreadTitle(legacyHistory) : 'New conversation',
+        conversationId: legacyConversationId || threadId,
+        createdAt: now,
+        updatedAt: now
+    };
+    index = [thread];
+    saveOperatorThreadsIndex(index);
+    if (legacyHistory.length > 0) {
+        saveOperatorThreadHistory(threadId, legacyHistory);
+        console.log('[VTID-03822] Migrated', legacyHistory.length, 'legacy messages into thread', threadId);
+    }
+    return index;
+}
+
+/** Persist the active thread's updatedAt/title after a new message. */
+function touchActiveOperatorThread() {
+    var thread = state.operatorThreads.find(function (t) { return t.id === state.operatorActiveThreadId; });
+    if (!thread) return;
+    thread.updatedAt = Date.now();
+    if (thread.title === 'New conversation') {
+        thread.title = deriveOperatorThreadTitle(state.operatorChatHistory);
+    }
+    saveOperatorThreadsIndex(state.operatorThreads);
+}
+
+/**
+ * Create a new, empty conversation thread and make it active. This is the
+ * "New conversation" action clearOperatorChatSession() (VTID-01027) was
+ * written for but never wired to any UI element — it now runs as part of
+ * this flow (clearing the legacy single-thread keys is harmless hygiene
+ * once every session is thread-aware).
+ */
+function startNewOperatorThread() {
+    var now = Date.now();
+    var thread = {
+        id: generateOperatorThreadId(),
+        title: 'New conversation',
+        conversationId: generateOperatorThreadId(),
+        createdAt: now,
+        updatedAt: now
+    };
+    state.operatorThreads.unshift(thread);
+    saveOperatorThreadsIndex(state.operatorThreads);
+
+    clearOperatorChatSession();
+
+    state.operatorActiveThreadId = thread.id;
+    state.operatorConversationId = thread.conversationId;
+    state.operatorChatHistory = [];
+    state.chatMessages = [];
+    saveOperatorThreadHistory(thread.id, []);
+    renderApp();
+}
+
+/** Switch the active thread and restore its history into the UI. */
+function switchOperatorThread(threadId) {
+    if (threadId === state.operatorActiveThreadId) return;
+    var thread = state.operatorThreads.find(function (t) { return t.id === threadId; });
+    if (!thread) return;
+
+    state.operatorActiveThreadId = thread.id;
+    state.operatorConversationId = thread.conversationId;
+    var history = getOperatorThreadHistory(thread.id);
+    state.operatorChatHistory = history;
+    state.chatMessages = history.map(function (msg) {
+        return {
+            type: msg.role === 'user' ? 'user' : 'system',
+            content: msg.content,
+            timestamp: new Date(msg.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+        };
+    });
+    renderApp();
+}
+
+/**
+ * VTID-01027 / VTID-03822: Initialize operator chat session.
+ * Loads (migrating if needed) the thread index, then the active thread's
+ * conversation_id and chat history. Idempotent across repeated opens —
+ * only runs once per page load (state.operatorActiveThreadId gates it).
  */
 function initOperatorChatSession() {
-    // Get or create conversation_id
-    state.operatorConversationId = getOperatorConversationId();
+    var index = migrateOperatorHistoryToThreads();
+    state.operatorThreads = index;
 
-    // Load persisted chat history
-    var history = getOperatorChatHistory();
+    if (state.operatorActiveThreadId) return; // already initialized this session
+
+    var active = index[0];
+    if (!active) {
+        var now = Date.now();
+        active = {
+            id: generateOperatorThreadId(),
+            title: 'New conversation',
+            conversationId: generateOperatorThreadId(),
+            createdAt: now,
+            updatedAt: now
+        };
+        state.operatorThreads = [active];
+        saveOperatorThreadsIndex(state.operatorThreads);
+    }
+
+    state.operatorActiveThreadId = active.id;
+    state.operatorConversationId = active.conversationId;
+
+    var history = getOperatorThreadHistory(active.id);
     state.operatorChatHistory = history;
 
-    // Convert history to chatMessages format for UI rendering
     if (history.length > 0 && state.chatMessages.length === 0) {
         state.chatMessages = history.map(function (msg) {
             return {
@@ -611,7 +794,7 @@ function initOperatorChatSession() {
                 timestamp: new Date(msg.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
             };
         });
-        console.log('[VTID-01027] Restored', history.length, 'messages from history');
+        console.log('[VTID-03822] Restored', history.length, 'messages from thread', active.id);
     }
 }
 
@@ -3048,6 +3231,13 @@ const state = {
     activeExecutionsPollInterval: null,
     taskSearchQuery: '',
     taskDateFilter: '',
+    // VTID-03823: Tasks board hygiene filter chips + bulk-select state.
+    // '' means "no filter" for each; taskMultiSelectIds is Scheduled-only
+    // (mirrors the existing single-task Delete button's own column gate).
+    taskFilterAge: '',      // '' | 'today' | 'week' | 'stale'
+    taskFilterOwner: '',    // '' | 'claimed' | 'unclaimed'
+    taskFilterSource: '',   // '' | 'session' | 'autonomous'
+    taskMultiSelectIds: [],
     // VTID-01079: Board metadata for "Load More" completed tasks
     boardMeta: null,
     // DEV-COMHU-2025-0013: Drawer spec state for stable textarea editing
@@ -3096,6 +3286,9 @@ const state = {
     // VTID-01027: Session Memory State
     operatorChatHistory: [], // Array of { role: 'user'|'assistant', content, ts }
     operatorConversationId: null, // UUID for conversation continuity
+    // VTID-03822: Multi-thread conversation state
+    operatorThreads: [], // Array of { id, title, conversationId, createdAt, updatedAt }
+    operatorActiveThreadId: null,
 
     // VTID-01041: Pending title capture state for ORB task creation
     pendingTitleVtid: null, // VTID awaiting title input from user
@@ -7586,6 +7779,144 @@ function renderModuleContent(moduleKey, tab) {
     return container;
 }
 
+// --- VTID-03823: Tasks board hygiene helpers ---
+
+/**
+ * Age/staleness info for a task card. 'stale' means no activity signal
+ * (createdAt) newer than 7 days AND not terminal — a terminal (completed)
+ * task sitting for a week is normal, not a hygiene problem.
+ */
+function computeTaskAgeInfo(task) {
+    if (!task || !task.createdAt) return { label: '', stale: false, days: null };
+    var created = new Date(task.createdAt);
+    if (isNaN(created.getTime())) return { label: '', stale: false, days: null };
+    var ms = Date.now() - created.getTime();
+    var days = ms / (1000 * 60 * 60 * 24);
+    var label;
+    if (days < 1) {
+        var hours = Math.max(1, Math.round(days * 24));
+        label = hours + 'h';
+    } else {
+        label = Math.round(days) + 'd';
+    }
+    var stale = days > 7 && !task.is_terminal;
+    return { label: label, stale: stale, days: days };
+}
+
+/**
+ * VTID-03516's session-vs-autonomous distinction, read client-side for the
+ * "source" filter chip. Mirrors isAutonomousExecutionTask()'s own allowlist
+ * (routes/worker-orchestrator.ts) rather than inventing a new rule: a task
+ * is autonomous-plane work only if metadata says so explicitly.
+ */
+function isAutonomousBoardTask(task) {
+    var meta = (task && task.metadata) || {};
+    return meta.source === 'self-healing' || meta.autonomous_execution === true;
+}
+
+/** VTID-03823: toggle a task's bulk-select checkbox state. */
+function toggleTaskMultiSelect(vtid) {
+    var idx = state.taskMultiSelectIds.indexOf(vtid);
+    if (idx === -1) {
+        state.taskMultiSelectIds.push(vtid);
+    } else {
+        state.taskMultiSelectIds.splice(idx, 1);
+    }
+    renderApp();
+}
+
+/**
+ * VTID-03823: bulk-archive the selected tasks by reusing the EXISTING,
+ * governed single-task delete semantics (VTID-01052's
+ * `DELETE /api/v1/oasis/tasks/:vtid` — soft-deletes, voids the VTID, logs
+ * an OASIS event) one call per task, not the VTID-03818-fixed reaper path.
+ * Scheduled-column only, matching that endpoint's own INVALID_STATE gate
+ * for non-scheduled tasks.
+ */
+async function bulkArchiveSelectedTasks() {
+    var ids = state.taskMultiSelectIds.slice();
+    if (ids.length === 0) return;
+    var confirmMsg = 'Archive ' + ids.length + ' scheduled task(s)?\n\n' +
+        'This will remove each from the Scheduled column, void its VTID\n' +
+        'permanently, and log the deletion in OASIS. This cannot be undone.';
+    if (!confirm(confirmMsg)) return;
+
+    var succeeded = [];
+    var failed = [];
+    for (var i = 0; i < ids.length; i++) {
+        var vtid = ids[i];
+        try {
+            var response = await fetch('/api/v1/oasis/tasks/' + vtid, {
+                method: 'DELETE',
+                headers: buildContextHeaders({ 'Content-Type': 'application/json' })
+            });
+            var result = await response.json();
+            if (result.ok) {
+                localStorage.removeItem('vitana.taskSpec.' + vtid);
+                clearTaskStatusOverride(vtid);
+                succeeded.push(vtid);
+            } else {
+                failed.push(vtid);
+            }
+        } catch (e) {
+            console.error('[VTID-03823] Bulk archive failed for', vtid, e);
+            failed.push(vtid);
+        }
+    }
+
+    state.taskMultiSelectIds = [];
+    await fetchTasks();
+
+    if (failed.length === 0) {
+        showToast('Archived ' + succeeded.length + ' task(s)', 'success');
+    } else {
+        showToast('Archived ' + succeeded.length + ', failed ' + failed.length + ' (' + failed.join(', ') + ')', 'warning');
+    }
+}
+
+/**
+ * VTID-03823: drag-and-drop from Scheduled into In Progress. Deliberately
+ * the ONLY drop target wired to a real mutation — it reuses the exact
+ * "Manual Start" call (PATCH .../oasis/tasks/:vtid {status:'in_progress'}),
+ * including its spec-approval gate and confirmation prompt, rather than
+ * inventing a new transition. Dropping onto Completed is not wired to
+ * anything (see docs/validation/VTID-03823 "Deliberately NOT attempted") —
+ * there is no existing manual "mark completed" endpoint to reuse, and
+ * completion is normally OASIS/executor-driven, not a manual board action.
+ */
+async function handleTaskDropIntoInProgress(vtid) {
+    var task = state.tasks.find(function (t) { return t.vtid === vtid; });
+    if (!task) return;
+    var currentColumn = mapStatusToColumnWithOverride(task.vtid, task.status, task.oasisColumn);
+    if (currentColumn !== 'Scheduled') return; // only Scheduled -> In Progress is wired
+
+    var specStatus = task.spec_status || 'missing';
+    if (specStatus !== 'approved') {
+        showToast('Cannot start: spec must be approved first', 'warning');
+        return;
+    }
+    if (!confirm('Move ' + vtid + ' to In Progress for manual work?\n\nThis will NOT trigger autonomous execution — you will work on this task yourself.')) {
+        return;
+    }
+    try {
+        var response = await fetch('/api/v1/oasis/tasks/' + vtid, {
+            method: 'PATCH',
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ status: 'in_progress' })
+        });
+        var result = await response.json();
+        if (result.ok) {
+            await fetchTasks();
+            showToast('Moved ' + vtid + ' to In Progress', 'success');
+        } else {
+            showToast('Move failed: ' + (result.message || result.error || 'Unknown error'), 'error');
+        }
+    } catch (e) {
+        console.error('[VTID-03823] Drag-drop status move failed:', e);
+        showToast('Move failed: Network error', 'error');
+    }
+}
+
 function renderTasksView() {
     const container = document.createElement('div');
     container.className = 'tasks-container';
@@ -7677,6 +8008,81 @@ function renderTasksView() {
 
     container.appendChild(toolbar);
 
+    // VTID-03823: Filter chip row (age / owner / source). Each is an
+    // independent, combinable toggle — clicking the active chip again
+    // clears that filter. Status is already the board's column split, so
+    // it isn't duplicated here as a chip.
+    const chipRow = document.createElement('div');
+    chipRow.className = 'task-filter-chip-row';
+
+    function makeChipGroup(label, options, stateKey) {
+        const group = document.createElement('div');
+        group.className = 'task-filter-chip-group';
+        const groupLabel = document.createElement('span');
+        groupLabel.className = 'task-filter-chip-group-label';
+        groupLabel.textContent = label + ':';
+        group.appendChild(groupLabel);
+        options.forEach(function (opt) {
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.className = 'task-filter-chip' + (state[stateKey] === opt.value ? ' task-filter-chip-active' : '');
+            chip.textContent = opt.text;
+            chip.onclick = function () {
+                state[stateKey] = (state[stateKey] === opt.value) ? '' : opt.value;
+                renderApp();
+            };
+            group.appendChild(chip);
+        });
+        return group;
+    }
+
+    chipRow.appendChild(makeChipGroup('Age', [
+        { value: 'today', text: 'Today' },
+        { value: 'week', text: 'This week' },
+        { value: 'stale', text: 'Stale (>7d)' }
+    ], 'taskFilterAge'));
+    chipRow.appendChild(makeChipGroup('Owner', [
+        { value: 'claimed', text: 'Claimed' },
+        { value: 'unclaimed', text: 'Unclaimed' }
+    ], 'taskFilterOwner'));
+    chipRow.appendChild(makeChipGroup('Source', [
+        { value: 'session', text: 'Session' },
+        { value: 'autonomous', text: 'Autonomous' }
+    ], 'taskFilterSource'));
+
+    container.appendChild(chipRow);
+
+    // VTID-03823: Bulk-action bar, shown only while at least one Scheduled
+    // task is checked.
+    if (state.taskMultiSelectIds.length > 0) {
+        const bulkBar = document.createElement('div');
+        bulkBar.className = 'task-bulk-action-bar';
+
+        const bulkLabel = document.createElement('span');
+        bulkLabel.className = 'task-bulk-action-label';
+        bulkLabel.textContent = state.taskMultiSelectIds.length + ' selected';
+        bulkBar.appendChild(bulkLabel);
+
+        const archiveBtn = document.createElement('button');
+        archiveBtn.type = 'button';
+        archiveBtn.className = 'btn btn-danger task-bulk-archive-btn';
+        archiveBtn.textContent = 'Archive selected';
+        archiveBtn.onclick = function () { bulkArchiveSelectedTasks(); };
+        bulkBar.appendChild(archiveBtn);
+
+        const clearBtn = document.createElement('button');
+        clearBtn.type = 'button';
+        clearBtn.className = 'btn task-bulk-clear-btn';
+        clearBtn.textContent = 'Clear selection';
+        clearBtn.onclick = function () {
+            state.taskMultiSelectIds = [];
+            renderApp();
+        };
+        bulkBar.appendChild(clearBtn);
+
+        container.appendChild(bulkBar);
+    }
+
     // Golden Task Board
     const board = document.createElement('div');
     board.className = 'task-board';
@@ -7710,6 +8116,28 @@ function renderTasksView() {
         // VTID-01002: Mark as scroll-retaining container
         content.dataset.scrollRetain = 'true';
         content.dataset.scrollKey = 'tasks-' + colName.toLowerCase().replace(/\s+/g, '-');
+
+        // VTID-03823: drag-and-drop drop zone. Only "In Progress" is wired
+        // to a real mutation (Scheduled -> In Progress, reusing Manual
+        // Start's own governed call+gate) — see handleTaskDropIntoInProgress.
+        // Every column still accepts the dragover so the drag cursor/
+        // highlight is consistent, but Scheduled/Completed drops are no-ops.
+        content.ondragover = function (e) {
+            e.preventDefault();
+            content.classList.add('column-content-drop-target');
+        };
+        content.ondragleave = function () {
+            content.classList.remove('column-content-drop-target');
+        };
+        content.ondrop = function (e) {
+            e.preventDefault();
+            content.classList.remove('column-content-drop-target');
+            const droppedVtid = e.dataTransfer.getData('text/plain');
+            if (!droppedVtid) return;
+            if (colName === 'In Progress') {
+                handleTaskDropIntoInProgress(droppedVtid);
+            }
+        };
 
         // Filter tasks
         // VTID-01022: Human task filter FIRST - exclude ALL system/CI/CD artifacts
@@ -7771,6 +8199,23 @@ function renderTasksView() {
                 const taskRoles = getTaskTargetRoles(t);
                 if (!taskRoles || !taskRoles.includes(state.taskRoleFilter)) return false;
             }
+
+            // VTID-03823: Age filter chip
+            if (state.taskFilterAge) {
+                const ageInfo = computeTaskAgeInfo(t);
+                if (ageInfo.days === null) return false;
+                if (state.taskFilterAge === 'today' && ageInfo.days >= 1) return false;
+                if (state.taskFilterAge === 'week' && ageInfo.days >= 7) return false;
+                if (state.taskFilterAge === 'stale' && !ageInfo.stale) return false;
+            }
+
+            // VTID-03823: Owner filter chip (claimed_by presence)
+            if (state.taskFilterOwner === 'claimed' && !t.claimed_by) return false;
+            if (state.taskFilterOwner === 'unclaimed' && t.claimed_by) return false;
+
+            // VTID-03823: Source filter chip (session vs autonomous plane, VTID-03516)
+            if (state.taskFilterSource === 'session' && isAutonomousBoardTask(t)) return false;
+            if (state.taskFilterSource === 'autonomous' && !isAutonomousBoardTask(t)) return false;
 
             return true;
         });
@@ -7842,6 +8287,17 @@ function createTaskCard(task) {
         card.dataset.terminal = 'true';
         card.dataset.outcome = task.terminal_outcome || '';
     }
+
+    // VTID-03823: draggable source, Scheduled column only (the only column
+    // with a wired drop target — see handleTaskDropIntoInProgress).
+    if (columnStatus === 'Scheduled') {
+        card.draggable = true;
+        card.ondragstart = function (e) {
+            e.dataTransfer.setData('text/plain', task.vtid);
+            e.dataTransfer.effectAllowed = 'move';
+        };
+    }
+
     card.onclick = () => {
         state.selectedTask = task;
         state.selectedTaskDetail = null;
@@ -7857,6 +8313,21 @@ function createTaskCard(task) {
             startExecutionStatusPolling(task.vtid);
         }
     };
+
+    // VTID-03823: bulk-select checkbox, Scheduled column only (mirrors the
+    // single-task Delete button's own column gate, and bulkArchiveSelectedTasks
+    // only knows how to archive Scheduled tasks).
+    if (columnStatus === 'Scheduled') {
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'task-card-select-checkbox';
+        checkbox.checked = state.taskMultiSelectIds.indexOf(task.vtid) !== -1;
+        checkbox.onclick = function (e) {
+            e.stopPropagation();
+            toggleTaskMultiSelect(task.vtid);
+        };
+        card.appendChild(checkbox);
+    }
 
     // VTID-01005: Title (larger, prominent)
     // VTID-01041: Use effective title (localStorage override > server > fallback)
@@ -7905,6 +8376,20 @@ function createTaskCard(task) {
     }
     statusPill.textContent = statusText;
     statusRow.appendChild(statusPill);
+
+    // VTID-03823: staleness/age badge — highlights hygiene sweep candidates
+    // (non-terminal, no activity in >7 days) without hiding the age of a
+    // normal, recent task.
+    var ageInfo = computeTaskAgeInfo(task);
+    if (ageInfo.label) {
+        var ageBadge = document.createElement('span');
+        ageBadge.className = 'task-card-age-badge' + (ageInfo.stale ? ' task-card-age-badge-stale' : '');
+        ageBadge.textContent = ageInfo.stale ? 'STALE · ' + ageInfo.label : ageInfo.label;
+        ageBadge.title = ageInfo.stale
+            ? 'No activity in over 7 days — consider archiving'
+            : 'Created ' + ageInfo.label + ' ago';
+        statusRow.appendChild(ageBadge);
+    }
 
     // VTID-01841: Retry badge for tasks that previously failed but are back in queue
     if (task.failure_count > 0 && !task.is_terminal) {
@@ -7969,6 +8454,12 @@ function createTaskCard(task) {
     // DEV-COMHU-2025-0012: Stage badges row (PL / WO / VA / DE)
     const stageTimeline = createTaskStageTimeline(task);
     card.appendChild(stageTimeline);
+
+    // VTID-03819: Related-task chip (embedding dedup surfaced a similar task)
+    const relatedChip = createRelatedTaskChip(task);
+    if (relatedChip) {
+        card.appendChild(relatedChip);
+    }
 
     return card;
 }
@@ -8132,6 +8623,32 @@ function startDrawerTitleEdit(titleValueElement, task) {
 }
 
 /**
+ * VTID-03819: Related-task chip. Shown when embedding-based dedup found a
+ * similar-but-not-duplicate task at creation time (metadata.related_vtid,
+ * set server-side by createOperatorTask/ledger-task-dedup.ts). Clicking it
+ * filters the board to that VTID, reusing the existing task search field
+ * rather than building new navigation.
+ */
+function createRelatedTaskChip(task) {
+    const relatedVtid = task && task.metadata && task.metadata.related_vtid;
+    if (!relatedVtid) return null;
+
+    const chip = document.createElement('span');
+    chip.className = 'task-related-chip';
+    chip.textContent = 'Related: ' + relatedVtid;
+    const similarity = task.metadata.related_similarity;
+    chip.title = 'A similar task already exists' +
+        (typeof similarity === 'number' ? ' (similarity ' + Math.round(similarity * 100) + '%)' : '') +
+        ' — click to find it';
+    chip.onclick = (e) => {
+        e.stopPropagation();
+        state.taskSearchQuery = relatedVtid;
+        renderApp();
+    };
+    return chip;
+}
+
+/**
  * VTID-0527: Create stage timeline pills for a task card.
  * Shows PLANNER → WORKER → VALIDATOR → DEPLOY progression.
  */
@@ -8207,9 +8724,12 @@ function renderTaskDrawer() {
     // 1. oasisColumn is COMPLETED (AUTHORITATIVE - highest priority)
     // 2. is_terminal flag from API
     // 3. status indicates completion
+    // VTID-03818: 'complete' (no trailing 's') is checked alongside
+    // 'completed' — a live status-value drift found in vtid_ledger.
     const isFinalMode = isOasisTerminal ||
         isTerminal ||
         taskStatus === 'completed' ||
+        taskStatus === 'complete' ||
         taskStatus === 'failed' ||
         taskStatus === 'cancelled';
 
@@ -8230,7 +8750,8 @@ function renderTaskDrawer() {
     });
 
     // VTID-01006: Inconsistent state detection
-    const isInconsistentState = (taskStatus === 'completed' || taskStatus === 'failed') &&
+    // VTID-03818: include 'complete' alongside 'completed'.
+    const isInconsistentState = (taskStatus === 'completed' || taskStatus === 'complete' || taskStatus === 'failed') &&
         !isTerminal && !hasOasisCompletionEvent;
 
     // DEV-COMHU-2025-0013: Initialize drawer spec state when opening for a new task
@@ -8263,6 +8784,12 @@ function renderTaskDrawer() {
     vtidHeading.className = 'drawer-title-text';
     vtidHeading.textContent = vtid;
     header.appendChild(vtidHeading);
+
+    // VTID-03819: Related-task chip (embedding dedup surfaced a similar task)
+    const drawerRelatedChip = createRelatedTaskChip(task);
+    if (drawerRelatedChip) {
+        header.appendChild(drawerRelatedChip);
+    }
 
     // VTID-01041: Editable title row (below VTID heading)
     var columnStatus = mapStatusToColumnWithOverride(vtid, task.status, task.oasisColumn) || 'Scheduled';
@@ -9549,7 +10076,8 @@ function renderTaskStageDetail(task) {
     // VTID-01006: Check task terminal state for stage validation
     const isTerminal = task.is_terminal === true;
     const taskStatus = (task.status || '').toLowerCase();
-    const isCompleted = taskStatus === 'completed' || (isTerminal && task.terminal_outcome === 'success');
+    // VTID-03818: include 'complete' alongside 'completed'.
+    const isCompleted = taskStatus === 'completed' || taskStatus === 'complete' || (isTerminal && task.terminal_outcome === 'success');
 
     const heading = document.createElement('h3');
     heading.className = 'task-stage-detail-heading';
@@ -10972,7 +11500,12 @@ function mapStatusToColumn(status) {
     if (['in_progress', 'executing', 'running'].includes(s)) return 'In Progress';
 
     // Completed column: deployed, completed, success, failed, blocked, cancelled
-    if (['deployed', 'completed', 'success', 'failed', 'blocked', 'cancelled'].includes(s)) return 'Completed';
+    // VTID-03818: 'complete' (no trailing 's') is a live, separate status
+    // value some rows carry — board-adapter.ts already normalizes both
+    // spellings server-side, but this client fallback only recognized
+    // 'completed', stranding a 'complete' row in Scheduled whenever it
+    // reached the client without a server-computed oasisColumn.
+    if (['deployed', 'completed', 'complete', 'success', 'failed', 'blocked', 'cancelled'].includes(s)) return 'Completed';
 
     // Fallback: unknown status → Scheduled (status label remains visible on card)
     return 'Scheduled';
@@ -25381,9 +25914,67 @@ function renderOperatorOverlay() {
     return backdrop;
 }
 
+// VTID-03822: tool-name -> human label for the chat tool-activity line.
+// Unlisted tools fall back to a generic "Ran <name>" — this is a display
+// nicety, not a contract, so an unmapped/new tool degrades gracefully
+// rather than being silently dropped.
+var TOOL_ACTIVITY_LABELS = {
+    create_task: 'Created a task',
+    knowledge_search: 'Searched the Knowledge Hub',
+    web_search: 'Searched the web',
+    get_task: 'Looked up a task',
+    update_task: 'Updated a task'
+};
+
+function describeToolActivity(tr) {
+    if (!tr || !tr.name) return 'Ran a tool';
+    var label = TOOL_ACTIVITY_LABELS[tr.name] || ('Ran ' + tr.name);
+    if (tr.response && typeof tr.response === 'object' && tr.response.vtid) {
+        label += ' (' + tr.response.vtid + ')';
+    }
+    return label;
+}
+
 function renderOperatorChat() {
     const container = document.createElement('div');
     container.className = 'chat-container';
+
+    // VTID-03822: thread switcher — a dropdown of existing conversation
+    // threads plus a "+ New" button. Purely client-side (localStorage),
+    // per this VTID's own spec: there is no backend conversation table to
+    // build against, so "resuming a thread" means restoring its saved
+    // history into state.chatMessages, not a server-side fetch.
+    const threadBar = document.createElement('div');
+    threadBar.className = 'chat-thread-bar';
+
+    const threadSelect = document.createElement('select');
+    threadSelect.className = 'chat-thread-select';
+    threadSelect.title = 'Switch conversation';
+    (state.operatorThreads || []).forEach(function (thread) {
+        const opt = document.createElement('option');
+        opt.value = thread.id;
+        opt.textContent = thread.title || 'New conversation';
+        if (thread.id === state.operatorActiveThreadId) {
+            opt.selected = true;
+        }
+        threadSelect.appendChild(opt);
+    });
+    threadSelect.onchange = function () {
+        switchOperatorThread(threadSelect.value);
+    };
+    threadBar.appendChild(threadSelect);
+
+    const newThreadBtn = document.createElement('button');
+    newThreadBtn.type = 'button';
+    newThreadBtn.className = 'chat-new-thread-btn';
+    newThreadBtn.textContent = '+ New';
+    newThreadBtn.title = 'Start a new conversation';
+    newThreadBtn.onclick = function () {
+        startNewOperatorThread();
+    };
+    threadBar.appendChild(newThreadBtn);
+
+    container.appendChild(threadBar);
 
     // Messages area
     const messages = document.createElement('div');
@@ -25413,8 +26004,27 @@ function renderOperatorChat() {
                 bubbleClasses += ' message-error';
             }
             bubble.className = bubbleClasses;
-            bubble.textContent = msg.content || msg.text;
+            // VTID-03822: render markdown (bold/links/lists/headings) instead of
+            // plain text — replies routinely come back with markdown, which
+            // rendered as a wall of literal asterisks/backticks before this.
+            bubble.appendChild(renderManualMarkdown(msg.content || msg.text || ''));
             messages.appendChild(bubble);
+
+            // VTID-03822: surface which tools ran on this turn (already present
+            // on the message object since sendChatMessage's response handling —
+            // toolResults/meta were pushed onto chatMessages but never read by
+            // this renderer).
+            if (msg.toolResults && msg.toolResults.length > 0) {
+                const toolActivity = document.createElement('div');
+                toolActivity.className = 'chat-tool-activity';
+                msg.toolResults.forEach(tr => {
+                    const line = document.createElement('div');
+                    line.className = 'chat-tool-activity-line';
+                    line.textContent = describeToolActivity(tr);
+                    toolActivity.appendChild(line);
+                });
+                messages.appendChild(toolActivity);
+            }
 
             // Show attachments if any
             if (msg.attachments && msg.attachments.length > 0) {
@@ -25679,7 +26289,8 @@ async function sendChatMessage() {
         ts: now.getTime()
     };
     state.operatorChatHistory.push(userHistoryEntry);
-    saveOperatorChatHistory(state.operatorChatHistory);
+    saveOperatorThreadHistory(state.operatorActiveThreadId, state.operatorChatHistory);
+    touchActiveOperatorThread();
 
     // Add user message
     state.chatMessages.push({
@@ -25780,7 +26391,8 @@ async function sendChatMessage() {
             ts: Date.now()
         };
         state.operatorChatHistory.push(assistantHistoryEntry);
-        saveOperatorChatHistory(state.operatorChatHistory);
+        saveOperatorThreadHistory(state.operatorActiveThreadId, state.operatorChatHistory);
+        touchActiveOperatorThread();
 
         state.chatMessages.push({
             type: 'system',
@@ -34548,7 +35160,13 @@ function renderCommandHubLiveConsoleView() {
 
             var contentSpan = document.createElement('span');
             contentSpan.className = 'console-content';
-            contentSpan.textContent = msg.content || '';
+            // VTID-03822: same markdown-rendering fix as the Operator Console
+            // chat bubble — both hit the identical /api/v1/operator/chat reply
+            // shape. Deliberately NOT consolidating the two chat surfaces
+            // (Operator Console vs. Live Console) into one component in this
+            // VTID — that's a larger UI-architecture change than this ticket's
+            // scope; documented here rather than silently left inconsistent.
+            contentSpan.appendChild(renderManualMarkdown(msg.content || ''));
 
             var timeSpan = document.createElement('span');
             timeSpan.className = 'console-timestamp';
@@ -42829,6 +43447,12 @@ if (!state.devAutopilot) {
         // Lineage cache (execId → { loading, root_id, lineage[] }) (PR-8)
         lineages: {},
         expandedExecIds: {},
+        // VTID-03896/03897: per-execution step feed. `steps[execId]` holds
+        // { loading, steps[], error, es } where `es` is the live EventSource
+        // (not serializable/renderable — only ever read/closed by the
+        // stream helpers below, never iterated for display).
+        expandedStepsExecIds: {},
+        steps: {},
         // In-flight action keys (e.g. 'approve:<id>') so buttons can disable
         // themselves cleanly via state instead of touching detached DOM after
         // showToast() (which re-renders and invalidates refs).
@@ -43763,6 +44387,70 @@ function ensureLineageLoaded(execId) {
     });
 }
 
+// VTID-03897: open (or reuse) a live SSE tail for one execution's step feed.
+// A one-shot GET .../steps primes the panel immediately (so slow SSE
+// handshakes don't leave it blank), then the EventSource appends live
+// `step` events as they arrive and self-closes on a `terminal` event.
+function ensureStepsStreamOpened(execId) {
+    if (!state.devAutopilot.steps[execId]) {
+        state.devAutopilot.steps[execId] = { loading: true, steps: [], error: null, es: null };
+    }
+    var slot = state.devAutopilot.steps[execId];
+    if (slot.es) return; // already streaming
+
+    devAutopilotApi('/executions/' + execId + '/steps', 'GET').then(function (data) {
+        if (data.ok) {
+            slot.steps = data.steps || [];
+            slot.error = null;
+        } else {
+            slot.error = data.error || 'steps fetch failed';
+        }
+        slot.loading = false;
+        renderApp();
+    }).catch(function (err) {
+        slot.loading = false;
+        slot.error = err.message || String(err);
+        renderApp();
+    });
+
+    // The browser's native EventSource cannot set an Authorization header,
+    // so this one stream route also accepts the bearer token as a query
+    // param (server-side: requireDevRoleForStream in dev-autopilot.ts).
+    var url = '/api/v1/dev-autopilot/executions/' + execId + '/stream?access_token=' + encodeURIComponent(state.authToken || '');
+    var es = new EventSource(url);
+    slot.es = es;
+    slot.streamError = false;
+
+    es.addEventListener('step', function (evt) {
+        try {
+            var step = JSON.parse(evt.data);
+            slot.steps = (slot.steps || []).concat([step]);
+            slot.loading = false;
+            renderApp();
+        } catch (_e) { /* ignore malformed frame */ }
+    });
+
+    es.addEventListener('terminal', function () {
+        closeStepsStream(execId);
+        renderApp();
+    });
+
+    es.onerror = function () {
+        if (slot.es === es) slot.streamError = true;
+    };
+}
+
+// Closes the live stream (if any) for one execution. Called when the
+// developer collapses the Steps panel — an execution the operator isn't
+// watching shouldn't hold an open connection indefinitely.
+function closeStepsStream(execId) {
+    var slot = state.devAutopilot.steps[execId];
+    if (slot && slot.es) {
+        slot.es.close();
+        slot.es = null;
+    }
+}
+
 // -----------------------------------------------------------------------------
 // Renderers
 // -----------------------------------------------------------------------------
@@ -44041,6 +44729,48 @@ function renderDevAutopilotExecutionCard(exec) {
         topRow.appendChild(vtidEl);
     }
 
+    // VTID-03852: this execution's real WORKER-stage LLM was never surfaced —
+    // an operator watching a PR get created had no way to tell the code was
+    // written by whatever provider metadata.llm_on_ramp_override forces
+    // (currently DeepSeek-flash for every operator-onramp execution) rather
+    // than the llm_routing_policy 'worker' stage default. Always show it —
+    // "policy default" is itself informative, not a placeholder to hide.
+    var llmBadge = document.createElement('span');
+    llmBadge.className = 'llm-provider-badge';
+    var onRampOverride = exec.metadata && exec.metadata.llm_on_ramp_override;
+    llmBadge.textContent = (onRampOverride && onRampOverride.provider)
+        ? 'llm: ' + onRampOverride.provider + '/' + (onRampOverride.model || '?')
+        : 'llm: policy default (worker stage)';
+    llmBadge.title = onRampOverride
+        ? 'Forced by metadata.llm_on_ramp_override — bypasses llm_routing_policy primary, but its configured fallback still applies on failure.'
+        : 'No on-ramp override on this execution — routed per the live llm_routing_policy \'worker\' stage.';
+    topRow.appendChild(llmBadge);
+
+    // VTID-03898: last_event_at heartbeat — lets a developer tell a
+    // long-running-but-healthy execution (recent step) from one that's
+    // silently stuck (last step was a long time ago), without opening the
+    // step feed. Only meaningful for still-active statuses.
+    var ACTIVE_STATUSES = { cooling: 1, running: 1, ci: 1, merging: 1, deploying: 1, verifying: 1 };
+    if (ACTIVE_STATUSES[exec.status] && exec.last_event_at) {
+        var ageMs = Date.now() - new Date(exec.last_event_at).getTime();
+        var ageMin = Math.round(ageMs / 60000);
+        var heartbeatEl = document.createElement('span');
+        // Stale past 10 minutes of no step activity: not necessarily
+        // broken (a long CI run can be quiet that long), but worth a
+        // visually distinct color so a developer scanning the board knows
+        // where to look first.
+        var stale = ageMs > 10 * 60000;
+        heartbeatEl.className = 'dev-autopilot-heartbeat' + (stale ? ' dev-autopilot-heartbeat--stale' : '');
+        heartbeatEl.title = 'Last step event at ' + exec.last_event_at;
+        heartbeatEl.textContent = (stale ? '⚠ ' : '') + 'last step ' + (ageMin <= 0 ? '<1m' : ageMin + 'm') + ' ago';
+        topRow.appendChild(heartbeatEl);
+    } else if (ACTIVE_STATUSES[exec.status] && exec.last_event_at === null) {
+        var noEventsEl = document.createElement('span');
+        noEventsEl.className = 'dev-autopilot-heartbeat';
+        noEventsEl.textContent = 'no steps yet';
+        topRow.appendChild(noEventsEl);
+    }
+
     if (exec.execute_after && exec.status === 'cooling') {
         var ms = new Date(exec.execute_after) - new Date();
         if (ms > 0) {
@@ -44080,6 +44810,25 @@ function renderDevAutopilotExecutionCard(exec) {
     };
     topRow.appendChild(lineageBtn);
 
+    // VTID-03896/03897: Steps toggle — opens a live SSE tail of this
+    // execution's dev_autopilot.execution.* OASIS events, mirroring the
+    // Lineage button's expand/collapse pattern.
+    var stepsOpen = !!state.devAutopilot.expandedStepsExecIds[exec.id];
+    var stepsBtn = document.createElement('button');
+    stepsBtn.textContent = stepsOpen ? '▾ Steps' : '▸ Steps';
+    stepsBtn.className = 'dev-autopilot-ghost-toggle';
+    stepsBtn.onclick = function () {
+        if (stepsOpen) {
+            delete state.devAutopilot.expandedStepsExecIds[exec.id];
+            closeStepsStream(exec.id);
+        } else {
+            state.devAutopilot.expandedStepsExecIds[exec.id] = true;
+            ensureStepsStreamOpened(exec.id);
+        }
+        renderApp();
+    };
+    topRow.appendChild(stepsBtn);
+
     card.appendChild(topRow);
 
     if (exec.branch) {
@@ -44091,6 +44840,10 @@ function renderDevAutopilotExecutionCard(exec) {
 
     if (lineageOpen) {
         card.appendChild(renderDevAutopilotLineageView(exec.id));
+    }
+
+    if (stepsOpen) {
+        card.appendChild(renderDevAutopilotStepsView(exec.id));
     }
 
     return card;
@@ -44151,6 +44904,83 @@ function renderDevAutopilotLineageView(execId) {
             hereEl.textContent = '← here';
             line.appendChild(hereEl);
         }
+        box.appendChild(line);
+    });
+
+    return box;
+}
+
+// VTID-03896/03897: renders the live step-by-step OASIS event tail for one
+// execution — the per-step Command Hub equivalent of watching Claude Code
+// run turn-by-turn, instead of only seeing a single status badge change
+// hours apart. Steps arrive oldest-first (both the priming GET and the SSE
+// appends preserve that order), so the list below simply reads top-to-bottom.
+function renderDevAutopilotStepsView(execId) {
+    var slot = state.devAutopilot.steps[execId] || {};
+    var box = document.createElement('div');
+    box.className = 'dev-autopilot-steps-panel';
+
+    if (slot.loading) {
+        box.textContent = 'Loading steps…';
+        box.classList.add('dev-autopilot-steps-panel--muted');
+        return box;
+    }
+    if (slot.error) {
+        box.classList.add('dev-autopilot-steps-panel--error');
+        box.textContent = 'Steps error: ' + slot.error;
+        return box;
+    }
+
+    var heading = document.createElement('div');
+    heading.className = 'dev-autopilot-steps-heading';
+    var headingText = document.createElement('span');
+    headingText.textContent = 'Live step feed (' + (slot.steps ? slot.steps.length : 0) + ')';
+    heading.appendChild(headingText);
+    if (slot.es) {
+        var liveDot = document.createElement('span');
+        liveDot.className = 'dev-autopilot-steps-live-dot';
+        liveDot.title = 'Streaming live';
+        heading.appendChild(liveDot);
+    } else if (slot.streamError) {
+        var errDot = document.createElement('span');
+        errDot.className = 'dev-autopilot-steps-stream-note';
+        errDot.textContent = '(stream reconnecting…)';
+        heading.appendChild(errDot);
+    }
+    box.appendChild(heading);
+
+    if (!slot.steps || slot.steps.length === 0) {
+        var empty = document.createElement('div');
+        empty.className = 'dev-autopilot-steps-empty';
+        empty.textContent = 'No step events yet.';
+        box.appendChild(empty);
+        return box;
+    }
+
+    var STEP_STATUS_CLASS = { error: 'dev-autopilot-step-topic--error', warning: 'dev-autopilot-step-topic--warning', success: 'dev-autopilot-step-topic--success' };
+    slot.steps.forEach(function (step) {
+        var line = document.createElement('div');
+        line.className = 'dev-autopilot-step-line';
+
+        var timeEl = document.createElement('span');
+        timeEl.className = 'dev-autopilot-step-time';
+        try {
+            timeEl.textContent = new Date(step.created_at).toLocaleTimeString();
+        } catch (_e) {
+            timeEl.textContent = String(step.created_at || '?');
+        }
+        line.appendChild(timeEl);
+
+        var topicEl = document.createElement('span');
+        topicEl.className = 'dev-autopilot-step-topic ' + (STEP_STATUS_CLASS[step.status] || '');
+        topicEl.textContent = (step.topic || '?').replace('dev_autopilot.execution.', '');
+        line.appendChild(topicEl);
+
+        var msgEl = document.createElement('span');
+        msgEl.className = 'dev-autopilot-step-message';
+        msgEl.textContent = step.message || '';
+        line.appendChild(msgEl);
+
         box.appendChild(line);
     });
 
@@ -50949,6 +51779,17 @@ function renderAutopilotLiveView() {
             bottomLine.textContent = (scanner ? scanner + ' · ' : '') + (filePath || 'no file') + depthBadge;
             label.appendChild(bottomLine);
             card.appendChild(label);
+
+            // VTID-03852: same transparency badge as renderDevAutopilotExecutionCard —
+            // this dashboard renders dev_autopilot_executions independently, so it
+            // needs its own copy rather than silently omitting the signal here.
+            var llmOverride2 = exec.metadata && exec.metadata.llm_on_ramp_override;
+            var llmBadge2 = document.createElement('span');
+            llmBadge2.className = 'llm-provider-badge';
+            llmBadge2.textContent = (llmOverride2 && llmOverride2.provider)
+                ? 'llm: ' + llmOverride2.provider + '/' + (llmOverride2.model || '?')
+                : 'llm: policy default';
+            card.appendChild(llmBadge2);
 
             // PR link if available
             if (exec.pr_url) {

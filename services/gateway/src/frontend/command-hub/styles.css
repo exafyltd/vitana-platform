@@ -490,6 +490,98 @@ body {
   gap: 0.75rem;
 }
 
+/* VTID-03823: drag-and-drop highlight while a card is dragged over a column */
+.column-content-drop-target {
+  background: rgba(59, 130, 246, 0.08);
+  outline: 2px dashed rgba(59, 130, 246, 0.5);
+  outline-offset: -4px;
+}
+
+/* VTID-03823: Tasks board hygiene — filter chips */
+.task-filter-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.task-filter-chip-group {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.task-filter-chip-group-label {
+  font-size: 0.72rem;
+  color: var(--color-text-secondary, #9aa0a6);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.task-filter-chip {
+  background: #232e42;
+  color: #c7d0dc;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  padding: 0.2rem 0.7rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.task-filter-chip:hover {
+  background: #2d3b52;
+}
+
+.task-filter-chip-active {
+  background: #2a7bff;
+  border-color: #2a7bff;
+  color: #fff;
+}
+
+/* VTID-03823: bulk-action bar */
+.task-bulk-action-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1.5rem;
+  background: rgba(42, 123, 255, 0.12);
+  border-bottom: 1px solid rgba(42, 123, 255, 0.3);
+}
+
+.task-bulk-action-label {
+  font-size: 0.8rem;
+  color: #c7d0dc;
+  font-weight: 600;
+}
+
+/* VTID-03823: per-card select checkbox */
+.task-card-select-checkbox {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+/* VTID-03823: staleness/age badge on the status row */
+.task-card-age-badge {
+  font-size: 0.68rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #9aa0a6;
+}
+
+.task-card-age-badge-stale {
+  background: rgba(255, 106, 106, 0.15);
+  color: #ff8a8a;
+  font-weight: 600;
+}
+
 .task-card {
   background: #253045;
   /* Slightly lighter than sidebar */
@@ -1852,6 +1944,58 @@ body {
   overflow-y: auto;
   max-height: 65vh;
   padding: 1.5rem;
+}
+
+/* VTID-03822: Operator Console thread switcher */
+.chat-thread-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1.5rem;
+  border-bottom: 1px solid var(--color-border, #2a2a2a);
+  background: var(--color-bg, #1a1a1a);
+}
+
+.chat-thread-select {
+  flex: 1;
+  min-width: 0;
+  background: #232323;
+  color: #e0e0e0;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.8rem;
+}
+
+.chat-new-thread-btn {
+  background: #2a7bff;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.chat-new-thread-btn:hover {
+  background: #1f63d1;
+}
+
+/* VTID-03822: tool-activity lines rendered under a chat bubble */
+.chat-tool-activity {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin: 0.15rem 0 0.2rem;
+  align-self: flex-start;
+  max-width: 80%;
+}
+
+.chat-tool-activity-line {
+  font-size: 0.72rem;
+  color: #9aa0a6;
+  font-style: italic;
 }
 
 /* VTID-0526: Message bubble styles */
@@ -8413,6 +8557,30 @@ body {
   box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.2);
 }
 
+/* VTID-03819: Related-task chip — shown when embedding search finds a
+   similar-but-not-duplicate task already on the board. Amber, matching
+   the existing "needs attention" tone (.task-card-status-pill-in-progress)
+   rather than success/error colors, since this is informational only. */
+.task-related-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: rgba(245, 158, 11, 0.12);
+  color: #fbbf24;
+  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.25);
+  cursor: pointer;
+  width: fit-content;
+}
+
+.task-related-chip:hover {
+  background: rgba(245, 158, 11, 0.2);
+}
+
 /* DEV-COMHU-2025-0015: Uniform card sizing across all columns */
 .task-card-enhanced {
   min-height: 140px;
@@ -9428,9 +9596,16 @@ body {
   padding: 0.625rem 0.75rem;
 }
 
+/* VTID-03823: raised from 100px. At 100px, a card with a status pill + role
+   badge already left no room for the spec-row/stage-timeline below without
+   one of them collapsing (see the status-row fix below) — adding a third
+   item (the new age/staleness badge) to that same row made the deficit
+   worse. 148px is the measured natural height of a fully-populated
+   Scheduled card (title + vtid + status row w/ 3 badges + spec row + stage
+   timeline) with no row forced to shrink. */
 .task-card-enhanced {
   min-height: 72px;
-  max-height: 100px;
+  max-height: 148px;
 }
 
 /* Reduce title font size and margins */
@@ -9462,13 +9637,23 @@ body {
   padding: 1px 6px;
 }
 
-/* Status row: single line flex, no wrap */
+/* Status row: single line flex, no wrap.
+   VTID-03823: `overflow: hidden` here made this row's flexbox automatic
+   minimum size resolve to 0 (CSS Flexbox spec: an item's auto min-size is
+   0 once its `overflow` is anything but `visible`), so inside the
+   flex-column `.task-card` this row was the ONLY thing in the whole card
+   that could shrink to nothing — measured at 0px actual height (fully
+   invisible: status pill, role badge, and the new age badge all rendered
+   with zero-height clipping) on origin/main, before this VTID ever
+   touched this file. `flex-shrink: 0` fixes it at the row level; the
+   `.task-card-enhanced` max-height bump above fixes the underlying content
+   budget so no OTHER row has to take the deficit instead. */
 .task-card-status-row {
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
   gap: 6px;
-  overflow: hidden;
+  flex-shrink: 0;
   margin-bottom: 0.25rem;
 }
 
@@ -19445,4 +19630,116 @@ border-bottom: 1px solid var(--color-border, #333);
   margin-top: 0.5rem;
   font-size: 0.75rem;
   color: var(--color-text-secondary);
+}
+
+/* VTID-03852: LLM provider/model transparency badge on
+   dev_autopilot_executions cards (both renderers — the Autopilot Developer
+   panel and the Autopilot Overview dashboard). A class here rather than a
+   scripted inline-style assignment, matching the CSP governance gate's
+   surface (scripts/ci/validator-path-guard.cjs's CSP_PATTERNS flags any
+   added reference to the element style property in this tree). */
+.llm-provider-badge {
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-family: monospace;
+  background: rgba(59, 130, 246, 0.12);
+  color: #3b82f6;
+  white-space: nowrap;
+}
+
+/* VTID-03896/03897/03898: Command Hub Operator "Steps" panel — a live
+   per-execution step feed (SSE-backed) alongside the existing "Lineage"
+   view, plus a last_event_at heartbeat badge on active execution cards.
+   Classes here rather than scripted inline-style assignment, same reason
+   as .llm-provider-badge above (the CSP governance gate's CSP_PATTERNS
+   flags any added reference to the element style property in this tree). */
+.dev-autopilot-heartbeat {
+  font-size: 11px;
+  color: var(--text-secondary, #888);
+}
+.dev-autopilot-heartbeat--stale {
+  color: #eab308;
+}
+.dev-autopilot-ghost-toggle {
+  padding: 3px 10px;
+  border-radius: 3px;
+  font-size: 11px;
+  cursor: pointer;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.15));
+  background: transparent;
+  color: var(--text-secondary, #aaa);
+}
+.dev-autopilot-steps-panel {
+  margin-top: 10px;
+  padding: 10px;
+  background: rgba(59, 130, 246, 0.04);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 4px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.dev-autopilot-steps-panel--muted {
+  color: var(--text-secondary, #888);
+}
+.dev-autopilot-steps-panel--error {
+  color: #ef4444;
+}
+.dev-autopilot-steps-heading {
+  font-size: 11px;
+  color: #3b82f6;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+  letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dev-autopilot-steps-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+  display: inline-block;
+}
+.dev-autopilot-steps-stream-note {
+  color: #eab308;
+  font-size: 10px;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.dev-autopilot-steps-empty {
+  font-size: 12px;
+  color: var(--text-secondary, #888);
+}
+.dev-autopilot-step-line {
+  font-size: 11px;
+  padding: 3px 0;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+.dev-autopilot-step-time {
+  font-family: monospace;
+  color: var(--text-secondary, #666);
+  flex-shrink: 0;
+}
+.dev-autopilot-step-topic {
+  font-family: monospace;
+  flex-shrink: 0;
+  color: #3b82f6;
+}
+.dev-autopilot-step-topic--error {
+  color: #ef4444;
+}
+.dev-autopilot-step-topic--warning {
+  color: #eab308;
+}
+.dev-autopilot-step-topic--success {
+  color: #22c55e;
+}
+.dev-autopilot-step-message {
+  color: var(--text-primary, #ccc);
+  word-break: break-word;
 }

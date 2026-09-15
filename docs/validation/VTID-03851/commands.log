@@ -1,0 +1,23 @@
+# VTID-03851 — commands run (2026-09-13)
+
+## Governance
+curl -s -X POST https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate -d '{"source":"claude-code","layer":"DEV","module":"operator-execute-task-requires-authenticated-session"}'
+  -> {"ok":true,"vtid":"VTID-03851"}
+curl -s -X PATCH https://preview-aws-gateway.vitanaland.com/api/v1/oasis/tasks/VTID-03851 -d '{"title":"Operator: autopilot_execute_task requires auth session","status":"in_progress"}'
+SQL: update vtid_ledger set spec_status='approved' where vtid='VTID-03851'   (platform owner approved the plan in conversation)
+
+## Facts read (read-only)
+grep: routes/operator.ts -> router.post('/chat', async ...) with no auth middleware; requireAdminAuth used on /publish /revert /promote /revisions
+grep: frontend/command-hub/app.js buildContextHeaders() -> sends Authorization: Bearer <state.authToken> on /api/v1/operator/chat
+grep: middleware/auth-supabase-jwt.ts -> optionalAuth attaches req.identity (user_id, exafy_admin) without rejecting
+
+## Verification
+cd services/gateway && npx tsc --noEmit                                                                 -> outputs/tsc-noemit.txt
+cd services/gateway && npx jest test/vtid-03851-execute-task-requires-auth.test.ts test/vtid-03820-operator-execution-onramp.test.ts test/vtid-03838-operator-prompt-lists-execute-tool.test.ts test/vtid-03839-onramp-approved-by-uuid.test.ts
+                                                                                                        -> outputs/jest-scoped-operator.txt
+cd services/gateway && npx jest                                                                         -> outputs/jest-full-suite-tail.txt
+
+## After staging deploy (read-only + one anonymous chat request that must be refused)
+curl -s -X POST https://preview-aws-gateway.vitanaland.com/api/v1/operator/chat (no Authorization) -d '{"message":"Execute VTID-03829 ...","threadId":"vtid-03851-anon-check"}'
+  -> outputs/staging-anon-refusal.txt
+SQL (read-only): select count(*) from dev_autopilot_executions / autopilot_recommendations created after the request timestamp -> 0 new rows

@@ -1,5 +1,33 @@
 # Dev Autopilot Worker
 
+> **⚠️ Status as of VTID-03852 (2026-09-13): orphaned, not deployed, and
+> structurally bypassed for operator-triggered execution.** This is the
+> only place in the whole platform where real **Claude Code CLI** execution
+> exists — everything else in the Dev Autopilot / Operator on-ramp pipeline
+> calls raw model APIs via `callViaRouter()`, never the Claude Code product.
+> But today:
+> - It is **not** in `exafyltd/vitana-platform` CLAUDE.md §1b/§2's AWS ECS
+>   service table, and no `AWS-*-DEPLOY-*.yml` workflow builds or ships it —
+>   it only runs where someone has manually set it up per the Quickstart
+>   sections below (a workstation or a self-managed VM).
+> - Its gate, `DEV_AUTOPILOT_USE_WORKER=true`, is set on **neither**
+>   `AWS-STAGE-DEPLOY-GATEWAY.yml` nor `AWS-PROD-DEPLOY-GATEWAY.yml` — so on
+>   the actual deployed gateway this whole path is off by default, with or
+>   without a worker daemon running anywhere.
+> - Even when it IS running and the gate IS on, **any execution the Operator
+>   Console's DeepSeek on-ramp (VTID-03820) triggers bypasses it entirely,
+>   unconditionally** — `runExecutionSession()` in
+>   `services/gateway/src/services/dev-autopilot-execute.ts` skips the
+>   worker-queue branch whenever `metadata.llm_on_ramp_override` is set, and
+>   the on-ramp always sets it. See that file's own VTID-03820/VTID-03852
+>   comments.
+>
+> If reviving real Claude-Code-quality execution as a reachable option is
+> ever wanted, THIS is the piece to revive — provisioning it as a deployed,
+> selectable path rather than a hand-run script the on-ramp can't reach. If
+> it is not worth reviving, it should be retired explicitly rather than left
+> to be rediscovered and assumed live by a future session.
+
 A tiny Node.js process that runs the Dev Autopilot's LLM calls through your **Claude Pro/Max subscription** instead of a pay-per-token API key.
 
 ## Why this exists

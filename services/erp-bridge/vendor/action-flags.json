@@ -1,0 +1,4370 @@
+{
+ "foundation": {
+  "domains": {
+   "erpclaw-accounting-adv": {
+    "actions": [],
+    "flags": {
+     "--action": {
+      "store_true": false
+     },
+     "--amount": {
+      "store_true": false
+     },
+     "--annual-escalation": {
+      "store_true": false
+     },
+     "--asset-description": {
+      "store_true": false
+     },
+     "--company-id": {
+      "store_true": false
+     },
+     "--confirm": {
+      "store_true": true
+     },
+     "--consolidation-currency": {
+      "store_true": false
+     },
+     "--consolidation-method": {
+      "store_true": false
+     },
+     "--constraint-amount": {
+      "store_true": false
+     },
+     "--contract-id": {
+      "store_true": false
+     },
+     "--contract-number": {
+      "store_true": false
+     },
+     "--contract-status": {
+      "store_true": false
+     },
+     "--credit-account": {
+      "store_true": false
+     },
+     "--currency": {
+      "store_true": false
+     },
+     "--customer-name": {
+      "store_true": false
+     },
+     "--db-path": {
+      "store_true": false
+     },
+     "--debit-account": {
+      "store_true": false
+     },
+     "--description": {
+      "store_true": false
+     },
+     "--discount-rate": {
+      "store_true": false
+     },
+     "--effective-date": {
+      "store_true": false
+     },
+     "--end-date": {
+      "store_true": false
+     },
+     "--entity-company-id": {
+      "store_true": false
+     },
+     "--entity-name": {
+      "store_true": false
+     },
+     "--estimated-amount": {
+      "store_true": false
+     },
+     "--expiry-date": {
+      "store_true": false
+     },
+     "--from-company-id": {
+      "store_true": false
+     },
+     "--functional-currency": {
+      "store_true": false
+     },
+     "--group-id": {
+      "store_true": false
+     },
+     "--group-status": {
+      "store_true": false
+     },
+     "--ic-status": {
+      "store_true": false
+     },
+     "--id": {
+      "store_true": false
+     },
+     "--lease-id": {
+      "store_true": false
+     },
+     "--lease-status": {
+      "store_true": false
+     },
+     "--lease-type": {
+      "store_true": false
+     },
+     "--lessee-name": {
+      "store_true": false
+     },
+     "--lessor-name": {
+      "store_true": false
+     },
+     "--limit": {
+      "store_true": false
+     },
+     "--markup-pct": {
+      "store_true": false
+     },
+     "--method": {
+      "store_true": false
+     },
+     "--monthly-payment": {
+      "store_true": false
+     },
+     "--name": {
+      "store_true": false
+     },
+     "--obligation-id": {
+      "store_true": false
+     },
+     "--obligation-status": {
+      "store_true": false
+     },
+     "--offset": {
+      "store_true": false
+     },
+     "--ownership-pct": {
+      "store_true": false
+     },
+     "--parent-company-id": {
+      "store_true": false
+     },
+     "--payment-amount": {
+      "store_true": false
+     },
+     "--payment-date": {
+      "store_true": false
+     },
+     "--pct-complete": {
+      "store_true": false
+     },
+     "--period-date": {
+      "store_true": false
+     },
+     "--probability": {
+      "store_true": false
+     },
+     "--purchase-option-price": {
+      "store_true": false
+     },
+     "--recognition-basis": {
+      "store_true": false
+     },
+     "--recognition-method": {
+      "store_true": false
+     },
+     "--search": {
+      "store_true": false
+     },
+     "--standalone-price": {
+      "store_true": false
+     },
+     "--start-date": {
+      "store_true": false
+     },
+     "--status": {
+      "store_true": false
+     },
+     "--term-months": {
+      "store_true": false
+     },
+     "--to-company-id": {
+      "store_true": false
+     },
+     "--total-value": {
+      "store_true": false
+     },
+     "--transaction-type": {
+      "store_true": false
+     },
+     "--transfer-price-method": {
+      "store_true": false
+     }
+    }
+   },
+   "erpclaw-billing": {
+    "actions": [
+     "add-billing-adjustment",
+     "add-meter",
+     "add-meter-reading",
+     "add-prepaid-credit",
+     "add-rate-plan",
+     "add-usage-event",
+     "add-usage-events-batch",
+     "create-billing-period",
+     "generate-invoices",
+     "get-billing-period",
+     "get-billing-run",
+     "get-meter",
+     "get-prepaid-balance",
+     "get-rate-plan",
+     "link-billing-period-invoice",
+     "list-billing-periods",
+     "list-billing-runs",
+     "list-meter-readings",
+     "list-meters",
+     "list-rate-plans",
+     "rate-consumption",
+     "resume-billing-run",
+     "run-billing",
+     "status",
+     "sync-billing-period-status",
+     "unlink-billing-period-invoice",
+     "update-meter",
+     "update-rate-plan"
+    ],
+    "flags": {
+     "--action": {
+      "store_true": false
+     },
+     "--address": {
+      "store_true": false
+     },
+     "--adjustment-type": {
+      "store_true": false
+     },
+     "--amount": {
+      "store_true": false
+     },
+     "--approved-by": {
+      "store_true": false
+     },
+     "--base-charge": {
+      "store_true": false
+     },
+     "--base-charge-period": {
+      "store_true": false
+     },
+     "--billing-date": {
+      "store_true": false
+     },
+     "--billing-model": {
+      "store_true": false
+     },
+     "--billing-period-id": {
+      "store_true": false
+     },
+     "--billing-period-ids": {
+      "store_true": false
+     },
+     "--company-id": {
+      "store_true": false
+     },
+     "--consumption": {
+      "store_true": false
+     },
+     "--customer-id": {
+      "store_true": false
+     },
+     "--db-path": {
+      "store_true": false
+     },
+     "--effective-from": {
+      "store_true": false
+     },
+     "--effective-to": {
+      "store_true": false
+     },
+     "--estimated-reason": {
+      "store_true": false
+     },
+     "--event-date": {
+      "store_true": false
+     },
+     "--event-type": {
+      "store_true": false
+     },
+     "--events": {
+      "store_true": false
+     },
+     "--from-date": {
+      "store_true": false
+     },
+     "--idempotency-key": {
+      "store_true": false
+     },
+     "--install-date": {
+      "store_true": false
+     },
+     "--invoice-id": {
+      "store_true": false
+     },
+     "--item-id": {
+      "store_true": false
+     },
+     "--limit": {
+      "store_true": false
+     },
+     "--meter-id": {
+      "store_true": false
+     },
+     "--meter-type": {
+      "store_true": false
+     },
+     "--minimum-charge": {
+      "store_true": false
+     },
+     "--minimum-commitment": {
+      "store_true": false
+     },
+     "--name": {
+      "store_true": false
+     },
+     "--offset": {
+      "store_true": false
+     },
+     "--overage-rate": {
+      "store_true": false
+     },
+     "--peak-demand": {
+      "store_true": false
+     },
+     "--properties": {
+      "store_true": false
+     },
+     "--quantity": {
+      "store_true": false
+     },
+     "--rate-plan-id": {
+      "store_true": false
+     },
+     "--reading-date": {
+      "store_true": false
+     },
+     "--reading-type": {
+      "store_true": false
+     },
+     "--reading-value": {
+      "store_true": false
+     },
+     "--reason": {
+      "store_true": false
+     },
+     "--run-id": {
+      "store_true": false
+     },
+     "--run-type": {
+      "store_true": false
+     },
+     "--serial-number-id": {
+      "store_true": false
+     },
+     "--service-type": {
+      "store_true": false
+     },
+     "--source": {
+      "store_true": false
+     },
+     "--status": {
+      "store_true": false
+     },
+     "--tier-strategy": {
+      "store_true": false
+     },
+     "--tiers": {
+      "store_true": false
+     },
+     "--to-date": {
+      "store_true": false
+     },
+     "--unit": {
+      "store_true": false
+     },
+     "--uom": {
+      "store_true": false
+     },
+     "--usage-by-period": {
+      "store_true": false
+     },
+     "--valid-until": {
+      "store_true": false
+     }
+    }
+   },
+   "erpclaw-buying": {
+    "actions": [
+     "add-blanket-po",
+     "add-landed-cost-voucher",
+     "add-material-request",
+     "add-purchase-order",
+     "add-recurring-bill-template",
+     "add-rfq",
+     "add-supplier",
+     "add-supplier-quotation",
+     "cancel-landed-cost-voucher",
+     "cancel-purchase-invoice",
+     "cancel-purchase-order",
+     "cancel-purchase-receipt",
+     "close-purchase-order",
+     "compare-supplier-quotations",
+     "create-debit-note",
+     "create-po-from-blanket",
+     "create-po-from-material-request",
+     "create-po-from-so",
+     "create-purchase-invoice",
+     "create-purchase-receipt",
+     "generate-recurring-bills",
+     "get-blanket-po",
+     "get-landed-cost-voucher",
+     "get-material-request",
+     "get-purchase-invoice",
+     "get-purchase-order",
+     "get-purchase-receipt",
+     "get-supplier",
+     "import-suppliers",
+     "list-blanket-pos",
+     "list-landed-cost-vouchers",
+     "list-material-requests",
+     "list-purchase-invoices",
+     "list-purchase-orders",
+     "list-purchase-receipts",
+     "list-recurring-bill-templates",
+     "list-rfqs",
+     "list-supplier-quotations",
+     "list-suppliers",
+     "set-item-purchase-uom",
+     "status",
+     "submit-blanket-po",
+     "submit-material-request",
+     "submit-purchase-invoice",
+     "submit-purchase-order",
+     "submit-purchase-receipt",
+     "submit-rfq",
+     "update-invoice-outstanding",
+     "update-purchase-invoice",
+     "update-purchase-order",
+     "update-receipt-tolerance",
+     "update-supplier",
+     "update-three-way-match-policy"
+    ],
+    "flags": {
+     "--action": {
+      "store_true": false
+     },
+     "--against-invoice-id": {
+      "store_true": false
+     },
+     "--amount": {
+      "store_true": false
+     },
+     "--as-of-date": {
+      "store_true": false
+     },
+     "--auto-submit": {
+      "store_true": true
+     },
+     "--blanket-order-id": {
+      "store_true": false
+     },
+     "--blanket-status": {
+      "store_true": false
+     },
+     "--charges": {
+      "store_true": false
+     },
+     "--closed-by": {
+      "store_true": false
+     },
+     "--company-id": {
+      "store_true": false
+     },
+     "--conversion-factor": {
+      "store_true": false
+     },
+     "--csv-path": {
+      "store_true": false
+     },
+     "--custom-fields": {
+      "store_true": false
+     },
+     "--cwip-asset-id": {
+      "store_true": false
+     },
+     "--db-path": {
+      "store_true": false
+     },
+     "--due-date": {
+      "store_true": false
+     },
+     "--email": {
+      "store_true": false
+     },
+     "--end-date": {
+      "store_true": false
+     },
+     "--frequency": {
+      "store_true": false
+     },
+     "--from-date": {
+      "store_true": false
+     },
+     "--is-1099-vendor": {
+      "store_true": false
+     },
+     "--item-id": {
+      "store_true": false
+     },
+     "--items": {
+      "store_true": false
+     },
+     "--landed-cost-voucher-id": {
+      "store_true": false
+     },
+     "--lcv-status": {
+      "store_true": false
+     },
+     "--limit": {
+      "store_true": false
+     },
+     "--material-request-id": {
+      "store_true": false
+     },
+     "--mr-status": {
+      "store_true": false
+     },
+     "--name": {
+      "store_true": false
+     },
+     "--offset": {
+      "store_true": false
+     },
+     "--payment-terms-id": {
+      "store_true": false
+     },
+     "--phone": {
+      "store_true": false
+     },
+     "--pi-status": {
+      "store_true": false
+     },
+     "--po-status": {
+      "store_true": false
+     },
+     "--policy": {
+      "store_true": false
+     },
+     "--posting-date": {
+      "store_true": false
+     },
+     "--pr-status": {
+      "store_true": false
+     },
+     "--primary-address": {
+      "store_true": false
+     },
+     "--purchase-invoice-id": {
+      "store_true": false
+     },
+     "--purchase-order-id": {
+      "store_true": false
+     },
+     "--purchase-receipt-id": {
+      "store_true": false
+     },
+     "--purchase-receipt-ids": {
+      "store_true": false
+     },
+     "--purchase-uom": {
+      "store_true": false
+     },
+     "--reason": {
+      "store_true": false
+     },
+     "--received-qty": {
+      "store_true": false
+     },
+     "--request-type": {
+      "store_true": false
+     },
+     "--rfq-id": {
+      "store_true": false
+     },
+     "--rfq-status": {
+      "store_true": false
+     },
+     "--sales-order-id": {
+      "store_true": false
+     },
+     "--search": {
+      "store_true": false
+     },
+     "--start-date": {
+      "store_true": false
+     },
+     "--subcontract-charge-rate": {
+      "store_true": false
+     },
+     "--subcontracting-order-id": {
+      "store_true": false
+     },
+     "--supplier-group": {
+      "store_true": false
+     },
+     "--supplier-id": {
+      "store_true": false
+     },
+     "--supplier-type": {
+      "store_true": false
+     },
+     "--suppliers": {
+      "store_true": false
+     },
+     "--tax-id": {
+      "store_true": false
+     },
+     "--tax-template-id": {
+      "store_true": false
+     },
+     "--template-id": {
+      "store_true": false
+     },
+     "--template-status": {
+      "store_true": false
+     },
+     "--to-date": {
+      "store_true": false
+     },
+     "--tolerance-pct": {
+      "store_true": false
+     },
+     "--valid-from": {
+      "store_true": false
+     },
+     "--valid-to": {
+      "store_true": false
+     }
+    }
+   },
+   "erpclaw-gl": {
+    "actions": [
+     "add-account",
+     "add-budget",
+     "add-cost-center",
+     "add-dimension",
+     "add-fiscal-year",
+     "check-gl-integrity",
+     "close-fiscal-year",
+     "deactivate-dimension",
+     "freeze-account",
+     "get-account",
+     "get-account-balance",
+     "import-chart-of-accounts",
+     "import-opening-balances",
+     "list-accounts",
+     "list-budgets",
+     "list-cost-centers",
+     "list-dimensions",
+     "list-fiscal-years",
+     "list-gl-entries",
+     "next-series",
+     "post-gl-entries",
+     "reopen-fiscal-year",
+     "revalue-foreign-balances",
+     "reverse-gl-entries",
+     "seed-naming-series",
+     "setup-chart-of-accounts",
+     "status",
+     "unfreeze-account",
+     "update-account",
+     "update-dimension",
+     "validate-period-close"
+    ],
+    "flags": {
+     "--account-id": {
+      "store_true": false
+     },
+     "--account-number": {
+      "store_true": false
+     },
+     "--account-type": {
+      "store_true": false
+     },
+     "--action": {
+      "store_true": false
+     },
+     "--action-if-exceeded": {
+      "store_true": false
+     },
+     "--allowed-values": {
+      "store_true": false
+     },
+     "--as-of-date": {
+      "store_true": false
+     },
+     "--budget-amount": {
+      "store_true": false
+     },
+     "--closing-account-id": {
+      "store_true": false
+     },
+     "--company": {
+      "store_true": false
+     },
+     "--company-id": {
+      "store_true": false
+     },
+     "--cost-center-id": {
+      "store_true": false
+     },
+     "--csv-path": {
+      "store_true": false
+     },
+     "--currency": {
+      "store_true": false
+     },
+     "--db-path": {
+      "store_true": false
+     },
+     "--end-date": {
+      "store_true": false
+     },
+     "--entity-type": {
+      "store_true": false
+     },
+     "--entries": {
+      "store_true": false
+     },
+     "--fiscal-year-id": {
+      "store_true": false
+     },
+     "--from-date": {
+      "store_true": false
+     },
+     "--include-frozen": {
+      "store_true": true
+     },
+     "--include-inactive": {
+      "store_true": true
+     },
+     "--is-active": {
+      "store_true": false
+     },
+     "--is-cancelled": {
+      "store_true": false
+     },
+     "--is-frozen": {
+      "store_true": false
+     },
+     "--is-group": {
+      "store_true": true
+     },
+     "--key": {
+      "store_true": false
+     },
+     "--label": {
+      "store_true": false
+     },
+     "--limit": {
+      "store_true": false
+     },
+     "--name": {
+      "store_true": false
+     },
+     "--offset": {
+      "store_true": false
+     },
+     "--parent-id": {
+      "store_true": false
+     },
+     "--party-id": {
+      "store_true": false
+     },
+     "--party-type": {
+      "store_true": false
+     },
+     "--posting-date": {
+      "store_true": false
+     },
+     "--reclassify-posted": {
+      "store_true": true
+     },
+     "--refers-to": {
+      "store_true": false
+     },
+     "--required-on-account-types": {
+      "store_true": false
+     },
+     "--root-type": {
+      "store_true": false
+     },
+     "--search": {
+      "store_true": false
+     },
+     "--start-date": {
+      "store_true": false
+     },
+     "--template": {
+      "store_true": false
+     },
+     "--to-date": {
+      "store_true": false
+     },
+     "--type": {
+      "store_true": false
+     },
+     "--voucher-id": {
+      "store_true": false
+     },
+     "--voucher-type": {
+      "store_true": false
+     },
+     "--within-days": {
+      "store_true": false
+     }
+    }
+   },
+   "erpclaw-hr": {
+    "actions": [
+     "add-department",
+     "add-designation",
+     "add-employee",
+     "add-employee-document",
+     "add-expense-claim",
+     "add-holiday-list",
+     "add-leave-allocation",
+     "add-leave-application",
+     "add-leave-type",
+     "add-regularization-rule",
+     "add-shift-type",
+     "apply-attendance-regularization",
+     "approve-expense-claim",
+     "approve-leave",
+     "assign-shift",
+     "bulk-mark-attendance",
+     "check-expiring-documents",
+     "get-employee",
+     "get-employee-document",
+     "get-leave-balance",
+     "list-attendance",
+     "list-departments",
+     "list-designations",
+     "list-employee-documents",
+     "list-employees",
+     "list-expense-claims",
+     "list-leave-applications",
+     "list-leave-types",
+     "list-shift-assignments",
+     "list-shift-types",
+     "mark-attendance",
+     "record-lifecycle-event",
+     "reject-expense-claim",
+     "reject-leave",
+     "status",
+     "submit-expense-claim",
+     "update-employee",
+     "update-expense-claim-status",
+     "update-shift-type"
+    ],
+    "flags": {
+     "--action": {
+      "store_true": false
+     },
+     "--applicable-after-days": {
+      "store_true": false
+     },
+     "--approved-by": {
+      "store_true": false
+     },
+     "--attendance-device-id": {
+      "store_true": false
+     },
+     "--bank-details": {
+      "store_true": false
+     },
+     "--branch": {
+      "store_true": false
+     },
+     "--cell-phone": {
+      "store_true": false
+     },
+     "--check-in-time": {
+      "store_true": false
+     },
+     "--check-out-time": {
+      "store_true": false
+     },
+     "--company-email": {
+      "store_true": false
+     },
+     "--company-id": {
+      "store_true": false
+     },
+     "--cost-center-id": {
+      "store_true": false
+     },
+     "--date": {
+      "store_true": false
+     },
+     "--date-of-birth": {
+      "store_true": false
+     },
+     "--date-of-exit": {
+      "store_true": false
+     },
+     "--date-of-joining": {
+      "store_true": false
+     },
+     "--days": {
+      "store_true": false
+     },
+     "--db-path": {
+      "store_true": false
+     },
+     "--department-id": {
+      "store_true": false
+     },
+     "--description": {
+      "store_true": false
+     },
+     "--designation-id": {
+      "store_true": false
+     },
+     "--details": {
+      "store_true": false
+     },
+     "--document-id": {
+      "store_true": false
+     },
+     "--document-name": {
+      "store_true": false
+     },
+     "--document-type": {
+      "store_true": false
+     },
+     "--early-exit": {
+      "store_true": false
+     },
+     "--emergency-contact": {
+      "store_true": false
+     },
+     "--employee-401k-rate": {
+      "store_true": false
+     },
+     "--employee-grade-id": {
+      "store_true": false
+     },
+     "--employee-id": {
+      "store_true": false
+     },
+     "--employment-type": {
+      "store_true": false
+     },
+     "--end-date": {
+      "store_true": false
+     },
+     "--end-time": {
+      "store_true": false
+     },
+     "--entries": {
+      "store_true": false
+     },
+     "--event-date": {
+      "store_true": false
+     },
+     "--event-type": {
+      "store_true": false
+     },
+     "--expense-claim-id": {
+      "store_true": false
+     },
+     "--expense-date": {
+      "store_true": false
+     },
+     "--expiry-date": {
+      "store_true": false
+     },
+     "--federal-filing-status": {
+      "store_true": false
+     },
+     "--first-name": {
+      "store_true": false
+     },
+     "--fiscal-year": {
+      "store_true": false
+     },
+     "--from-date": {
+      "store_true": false
+     },
+     "--gender": {
+      "store_true": false
+     },
+     "--half-day": {
+      "store_true": false
+     },
+     "--half-day-date": {
+      "store_true": false
+     },
+     "--holiday-list-id": {
+      "store_true": false
+     },
+     "--holidays": {
+      "store_true": false
+     },
+     "--hsa-contribution": {
+      "store_true": false
+     },
+     "--is-carry-forward": {
+      "store_true": false
+     },
+     "--is-compensatory": {
+      "store_true": false
+     },
+     "--is-exempt-from-fica": {
+      "store_true": false
+     },
+     "--is-paid-leave": {
+      "store_true": false
+     },
+     "--items": {
+      "store_true": false
+     },
+     "--last-name": {
+      "store_true": false
+     },
+     "--late-entry": {
+      "store_true": false
+     },
+     "--late-threshold-minutes": {
+      "store_true": false
+     },
+     "--leave-application-id": {
+      "store_true": false
+     },
+     "--leave-policy-id": {
+      "store_true": false
+     },
+     "--leave-type-id": {
+      "store_true": false
+     },
+     "--limit": {
+      "store_true": false
+     },
+     "--max-carry-forward-days": {
+      "store_true": false
+     },
+     "--max-days-allowed": {
+      "store_true": false
+     },
+     "--name": {
+      "store_true": false
+     },
+     "--new-values": {
+      "store_true": false
+     },
+     "--notes": {
+      "store_true": false
+     },
+     "--offset": {
+      "store_true": false
+     },
+     "--old-values": {
+      "store_true": false
+     },
+     "--parent-id": {
+      "store_true": false
+     },
+     "--payment-entry-id": {
+      "store_true": false
+     },
+     "--payroll-cost-center-id": {
+      "store_true": false
+     },
+     "--personal-email": {
+      "store_true": false
+     },
+     "--reason": {
+      "store_true": false
+     },
+     "--regularization-action": {
+      "store_true": false
+     },
+     "--reporting-to": {
+      "store_true": false
+     },
+     "--salary-structure-id": {
+      "store_true": false
+     },
+     "--search": {
+      "store_true": false
+     },
+     "--shift": {
+      "store_true": false
+     },
+     "--shift-id": {
+      "store_true": false
+     },
+     "--shift-type-id": {
+      "store_true": false
+     },
+     "--source": {
+      "store_true": false
+     },
+     "--ssn": {
+      "store_true": false
+     },
+     "--start-date": {
+      "store_true": false
+     },
+     "--start-time": {
+      "store_true": false
+     },
+     "--state-filing-status": {
+      "store_true": false
+     },
+     "--state-withholding-allowances": {
+      "store_true": false
+     },
+     "--status": {
+      "store_true": false
+     },
+     "--to-date": {
+      "store_true": false
+     },
+     "--total-leaves": {
+      "store_true": false
+     },
+     "--w4-additional-withholding": {
+      "store_true": false
+     },
+     "--w4-allowances": {
+      "store_true": false
+     },
+     "--working-hours": {
+      "store_true": false
+     }
+    }
+   },
+   "erpclaw-inventory": {
+    "actions": [
+     "add-batch",
+     "add-item",
+     "add-item-alternative",
+     "add-item-attribute",
+     "add-item-group",
+     "add-item-price",
+     "add-item-supplier",
+     "add-material-consumption",
+     "add-pick-list-item",
+     "add-price-list",
+     "add-pricing-rule",
+     "add-putaway-rule",
+     "add-repack-stock-entry",
+     "add-reservation",
+     "add-serial-number",
+     "add-stock-entry",
+     "add-stock-reconciliation",
+     "add-warehouse",
+     "apply-putaway-on-receipt",
+     "cancel-pick-list",
+     "cancel-stock-entry",
+     "cancel-stock-revaluation",
+     "check-reorder",
+     "complete-pick-list",
+     "create-item-variant",
+     "create-pick-list",
+     "create-stock-ledger-entries",
+     "delete-putaway-rule",
+     "generate-item-variants",
+     "get-best-alternative-for-item",
+     "get-item",
+     "get-item-price",
+     "get-projected-qty",
+     "get-stock-balance",
+     "get-stock-entry",
+     "get-stock-revaluation",
+     "import-items",
+     "list-batches",
+     "list-item-alternatives",
+     "list-item-groups",
+     "list-item-suppliers",
+     "list-item-variants",
+     "list-items",
+     "list-putaway-rules",
+     "list-reservations",
+     "list-serial-numbers",
+     "list-stock-entries",
+     "list-stock-revaluations",
+     "list-warehouses",
+     "mark-picked",
+     "release-reservation",
+     "remove-item-alternative",
+     "resolve-item",
+     "revalue-stock",
+     "reverse-stock-ledger-entries",
+     "status",
+     "stock-balance",
+     "stock-balance-report",
+     "stock-ledger-report",
+     "submit-pick-list",
+     "submit-stock-entry",
+     "submit-stock-reconciliation",
+     "update-item",
+     "update-putaway-rule",
+     "update-warehouse"
+    ],
+    "flags": {
+     "--account-id": {
+      "store_true": false
+     },
+     "--action": {
+      "store_true": false
+     },
+     "--active-only": {
+      "store_true": true
+     },
+     "--alternative": {
+      "store_true": false
+     },
+     "--applies-to": {
+      "store_true": false
+     },
+     "--attribute-name": {
+      "store_true": false
+     },
+     "--attribute-values": {
+      "store_true": false
+     },
+     "--attributes": {
+      "store_true": false
+     },
+     "--batch-id": {
+      "store_true": false
+     },
+     "--batch-name": {
+      "store_true": false
+     },
+     "--company": {
+      "store_true": false
+     },
+     "--company-id": {
+      "store_true": false
+     },
+     "--conversion-factor": {
+      "store_true": false
+     },
+     "--csv-path": {
+      "store_true": false
+     },
+     "--currency": {
+      "store_true": false
+     },
+     "--custom-fields": {
+      "store_true": false
+     },
+     "--db-path": {
+      "store_true": false
+     },
+     "--discount-percentage": {
+      "store_true": false
+     },
+     "--entity-id": {
+      "store_true": false
+     },
+     "--entries": {
+      "store_true": false
+     },
+     "--entry-type": {
+      "store_true": false
+     },
+     "--expiry-date": {
+      "store_true": false
+     },
+     "--from-date": {
+      "store_true": false
+     },
+     "--from-item-id": {
+      "store_true": false
+     },
+     "--from-qty": {
+      "store_true": false
+     },
+     "--from-sales-order": {
+      "store_true": false
+     },
+     "--has-batch": {
+      "store_true": false
+     },
+     "--has-serial": {
+      "store_true": false
+     },
+     "--id": {
+      "store_true": false
+     },
+     "--is-buying": {
+      "store_true": false
+     },
+     "--is-group": {
+      "store_true": false
+     },
+     "--is-selling": {
+      "store_true": false
+     },
+     "--item": {
+      "store_true": false
+     },
+     "--item-code": {
+      "store_true": false
+     },
+     "--item-group": {
+      "store_true": false
+     },
+     "--item-id": {
+      "store_true": false
+     },
+     "--item-name": {
+      "store_true": false
+     },
+     "--item-type": {
+      "store_true": false
+     },
+     "--items": {
+      "store_true": false
+     },
+     "--lead-time-days": {
+      "store_true": false
+     },
+     "--limit": {
+      "store_true": false
+     },
+     "--manufacturing-date": {
+      "store_true": false
+     },
+     "--match-item": {
+      "store_true": false
+     },
+     "--match-item-group": {
+      "store_true": false
+     },
+     "--max-qty": {
+      "store_true": false
+     },
+     "--min-order-qty": {
+      "store_true": false
+     },
+     "--min-qty": {
+      "store_true": false
+     },
+     "--name": {
+      "store_true": false
+     },
+     "--new-rate": {
+      "store_true": false
+     },
+     "--notes": {
+      "store_true": false
+     },
+     "--offset": {
+      "store_true": false
+     },
+     "--parent-id": {
+      "store_true": false
+     },
+     "--party-id": {
+      "store_true": false
+     },
+     "--pick-list": {
+      "store_true": false
+     },
+     "--picked-qty": {
+      "store_true": false
+     },
+     "--posting-date": {
+      "store_true": false
+     },
+     "--price-list-id": {
+      "store_true": false
+     },
+     "--pricing-rule-rate": {
+      "store_true": false
+     },
+     "--priority": {
+      "store_true": false
+     },
+     "--qty": {
+      "store_true": false
+     },
+     "--rate": {
+      "store_true": false
+     },
+     "--reason": {
+      "store_true": false
+     },
+     "--reorder-level": {
+      "store_true": false
+     },
+     "--reorder-qty": {
+      "store_true": false
+     },
+     "--reservation-status": {
+      "store_true": false
+     },
+     "--revaluation-id": {
+      "store_true": false
+     },
+     "--search": {
+      "store_true": false
+     },
+     "--serial-no": {
+      "store_true": false
+     },
+     "--serial-status": {
+      "store_true": false
+     },
+     "--source-bin": {
+      "store_true": false
+     },
+     "--standard-rate": {
+      "store_true": false
+     },
+     "--status": {
+      "store_true": false
+     },
+     "--status-filter": {
+      "store_true": false
+     },
+     "--stock-entry": {
+      "store_true": false
+     },
+     "--stock-entry-id": {
+      "store_true": false
+     },
+     "--stock-reconciliation-id": {
+      "store_true": false
+     },
+     "--stock-uom": {
+      "store_true": false
+     },
+     "--supplier-id": {
+      "store_true": false
+     },
+     "--supplier-warehouse-id": {
+      "store_true": false
+     },
+     "--target-warehouse": {
+      "store_true": false
+     },
+     "--template-item-id": {
+      "store_true": false
+     },
+     "--to-date": {
+      "store_true": false
+     },
+     "--to-item-id": {
+      "store_true": false
+     },
+     "--to-qty": {
+      "store_true": false
+     },
+     "--valid-from": {
+      "store_true": false
+     },
+     "--valid-to": {
+      "store_true": false
+     },
+     "--valuation-method": {
+      "store_true": false
+     },
+     "--voucher-id": {
+      "store_true": false
+     },
+     "--voucher-type": {
+      "store_true": false
+     },
+     "--warehouse": {
+      "store_true": false
+     },
+     "--warehouse-id": {
+      "store_true": false
+     },
+     "--warehouse-name": {
+      "store_true": false
+     },
+     "--warehouse-type": {
+      "store_true": false
+     },
+     "--work-order-id": {
+      "store_true": false
+     }
+    }
+   },
+   "erpclaw-journals": {
+    "actions": [
+     "add-journal-entry",
+     "add-recurring-template",
+     "amend-journal-entry",
+     "cancel-journal-entry",
+     "create-intercompany-je",
+     "delete-journal-entry",
+     "delete-recurring-template",
+     "duplicate-journal-entry",
+     "get-journal-entry",
+     "get-recurring-template",
+     "list-journal-entries",
+     "list-recurring-templates",
+     "process-recurring",
+     "status",
+     "submit-journal-entry",
+     "update-journal-entry",
+     "update-recurring-template"
+    ],
+    "flags": {
+     "--account-id": {
+      "store_true": false
+     },
+     "--action": {
+      "store_true": false
+     },
+     "--amended-from": {
+      "store_true": false
+     },
+     "--amount": {
+      "store_true": false
+     },
+     "--as-of-date": {
+      "store_true": false
+     },
+     "--auto-submit": {
+      "store_true": true
+     },
+     "--company": {
+      "store_true": false
+     },
+     "--company-id": {
+      "store_true": false
+     },
+     "--cwip-asset-id": {
+      "store_true": false
+     },
+     "--db-path": {
+      "store_true": false
+     },
+     "--description": {
+      "store_true": false
+     },
+     "--end-date": {
+      "store_true": false
+     },
+     "--entry-type": {
+      "store_true": false
+     },
+     "--frequency": {
+      "store_true": false
+     },
+     "--from-date": {
+      "store_true": false
+     },
+     "--journal-entry-id": {
+      "store_true": false
+     },
+     "--limit": {
+      "store_true": false
+     },
+     "--lines": {
+      "store_true": false
+     },
+     "--offset": {
+      "store_true": false
+     },
+     "--posting-date": {
+      "store_true": false
+     },
+     "--remark": {
+      "store_true": false
+     },
+     "--resume-run-id": {
+      "store_true": false
+     },
+     "--source-company-id": {
+      "store_true": false
+     },
+     "--start-date": {
+      "store_true": false
+     },
+     "--status": {
+      "store_true": false
+     },
+     "--target-company-id": {
+      "store_true": false
+     },
+     "--template-id": {
+      "store_true": false
+     },
+     "--template-name": {
+      "store_true": false
+     },
+     "--template-status": {
+      "store_true": false
+     },
+     "--to-date": {
+      "store_true": false
+     }
+    }
+   },
+   "erpclaw-meta": {
+    "actions": [
+     "check-installation",
+     "install-guide",
+     "seed-demo-data",
+     "setup-web-dashboard"
+    ],
+    "flags": {
+     "--action": {
+      "store_true": false
+     },
+     "--company-id": {
+      "store_true": false
+     },
+     "--db-path": {
+      "store_true": false
+     },
+     "--domain": {
+      "store_true": false
+     },
+     "--no-ssl": {
+      "store_true": false
+     },
+     "--skip-build": {
+      "store_true": true
+     },
+     "--ssl": {
+      "store_true": true
+     }
+    }
+   },
+   "erpclaw-os": {
+    "actions": [
+     "build-table-registry",
+     "list-articles",
+     "schema-apply",
+     "schema-drift",
+     "schema-plan",
+     "schema-rollback",
+     "validate-module"
+    ],
+    "flags": {
+     "--action": {
+      "store_true": false
+     },
+     "--article-type": {
+      "store_true": false
+     },
+     "--db-path": {
+      "store_true": false
+     },
+     "--dry-run": {
+      "store_true": true
+     },
+     "--module-name": {
+      "store_true": false
+     },
+     "--module-path": {
+      "store_true": false
+     },
+     "--src-root": {
+      "store_true": false
+     },
+     "--target": {
+      "store_true": false
+     },
+     "--validation-type": {
+      "store_true": false
+     }
+    }
+   },
+   "erpclaw-payments": {
+    "actions": [
+     "add-payment",
+     "allocate-payment",
+     "apply-advance-to-invoice",
+     "bank-reconciliation",
+     "cancel-payment",
+     "create-payment-ledger-entry",
+     "delete-payment",
+     "get-outstanding",
+     "get-payment",
+     "get-unallocated-payments",
+     "list-open-advances",
+     "list-payments",
+     "reconcile-payments",
+     "status",
+     "submit-payment",
+     "update-payment",
+     "write-off-invoice"
+    ],
+    "flags": {
+     "--account-id": {
+      "store_true": false
+     },
+     "--action": {
+      "store_true": false
+     },
+     "--against-voucher-id": {
+      "store_true": false
+     },
+     "--against-voucher-type": {
+      "store_true": false
+     },
+     "--allocated-amount": {
+      "store_true": false
+     },
+     "--allocations": {
+      "store_true": false
+     },
+     "--amount": {
+      "store_true": false
+     },
+     "--bank-account-id": {
+      "store_true": false
+     },
+     "--company": {
+      "store_true": false
+     },
+     "--company-id": {
+      "store_true": false
+     },
+     "--cost-center-id": {
+      "store_true": false
+     },
+     "--db-path": {
+      "store_true": false
+     },
+     "--deductions": {
+      "store_true": false
+     },
+     "--exchange-rate": {
+      "store_true": false
+     },
+     "--from-date": {
+      "store_true": false
+     },
+     "--limit": {
+      "store_true": false
+     },
+     "--offset": {
+      "store_true": false
+     },
+     "--paid-amount": {
+      "store_true": false
+     },
+     "--paid-from-account": {
+      "store_true": false
+     },
+     "--paid-to-account": {
+      "store_true": false
+     },
+     "--party-id": {
+      "store_true": false
+     },
+     "--party-type": {
+      "store_true": false
+     },
+     "--payment-currency": {
+      "store_true": false
+     },
+     "--payment-entry-id": {
+      "store_true": false
+     },
+     "--payment-type": {
+      "store_true": false
+     },
+     "--posting-date": {
+      "store_true": false
+     },
+     "--reason": {
+      "store_true": false
+     },
+     "--reference-date": {
+      "store_true": false
+     },
+     "--reference-number": {
+      "store_true": false
+     },
+     "--status": {
+      "store_true": false
+     },
+     "--to-date": {
+      "store_true": false
+     },
+     "--voucher-id": {
+      "store_true": false
+     },
+     "--voucher-type": {
+      "store_true": false
+     },
+     "--write-off-account-id": {
+      "store_true": false
+     },
+     "--write-off-amount": {
+      "store_true": false
+     }
+    }
+   },
+   "erpclaw-payroll": {
+    "actions": [
+     "add-employee-bank-account",
+     "add-garnishment",
+     "add-income-tax-slab",
+     "add-overtime-policy",
+     "add-salary-assignment",
+     "add-salary-component",
+     "add-salary-structure",
+     "add-state-tax-slab",
+     "calculate-overtime",
+     "calculate-retro-pay",
+     "cancel-payroll-run",
+     "create-payroll-run",
+     "generate-nacha-file",
+     "generate-salary-slips",
+     "generate-w2-data",
+     "get-garnishment",
+     "get-salary-slip",
+     "get-salary-structure",
+     "list-employee-bank-accounts",
+     "list-garnishments",
+     "list-salary-assignments",
+     "list-salary-components",
+     "list-salary-slips",
+     "list-salary-structures",
+     "status",
+     "submit-payroll-run",
+     "update-employee-state-config",
+     "update-fica-config",
+     "update-futa-suta-config",
+     "update-garnishment"
+    ],
+    "flags": {
+     "--account-number": {
+      "store_true": false
+     },
+     "--account-type": {
+      "store_true": false
+     },
+     "--action": {
+      "store_true": false
+     },
+     "--additional-medicare-rate": {
+      "store_true": false
+     },
+     "--additional-medicare-threshold": {
+      "store_true": false
+     },
+     "--amount-or-percentage": {
+      "store_true": false
+     },
+     "--bank-name": {
+      "store_true": false
+     },
+     "--base-amount": {
+      "store_true": false
+     },
+     "--bracket-end": {
+      "store_true": false
+     },
+     "--bracket-start": {
+      "store_true": false
+     },
+     "--company-id": {
+      "store_true": false
+     },
+     "--component-type": {
+      "store_true": false
+     },
+     "--components": {
+      "store_true": false
+     },
+     "--cost-center-id": {
+      "store_true": false
+     },
+     "--creditor-name": {
+      "store_true": false
+     },
+     "--daily-threshold": {
+      "store_true": false
+     },
+     "--db-path": {
+      "store_true": false
+     },
+     "--department-id": {
+      "store_true": false
+     },
+     "--depends-on-payment-days": {
+      "store_true": false
+     },
+     "--description": {
+      "store_true": false
+     },
+     "--double-ot-multiplier": {
+      "store_true": false
+     },
+     "--effective-from": {
+      "store_true": false
+     },
+     "--effective-to": {
+      "store_true": false
+     },
+     "--employee-id": {
+      "store_true": false
+     },
+     "--employer-rate-override": {
+      "store_true": false
+     },
+     "--end-date": {
+      "store_true": false
+     },
+     "--filing-status": {
+      "store_true": false
+     },
+     "--from-date": {
+      "store_true": false
+     },
+     "--garnishment-id": {
+      "store_true": false
+     },
+     "--garnishment-type": {
+      "store_true": false
+     },
+     "--gl-account-id": {
+      "store_true": false
+     },
+     "--hourly-rate": {
+      "store_true": false
+     },
+     "--is-percentage": {
+      "store_true": true
+     },
+     "--is-pre-tax": {
+      "store_true": false
+     },
+     "--is-statutory": {
+      "store_true": false
+     },
+     "--is-supplemental": {
+      "store_true": false
+     },
+     "--is-tax-applicable": {
+      "store_true": false
+     },
+     "--limit": {
+      "store_true": false
+     },
+     "--medicare-employee-rate": {
+      "store_true": false
+     },
+     "--medicare-employer-rate": {
+      "store_true": false
+     },
+     "--name": {
+      "store_true": false
+     },
+     "--offset": {
+      "store_true": false
+     },
+     "--order-number": {
+      "store_true": false
+     },
+     "--ot-multiplier": {
+      "store_true": false
+     },
+     "--payroll-frequency": {
+      "store_true": false
+     },
+     "--payroll-run-id": {
+      "store_true": false
+     },
+     "--period-end": {
+      "store_true": false
+     },
+     "--period-start": {
+      "store_true": false
+     },
+     "--rate": {
+      "store_true": false
+     },
+     "--rates": {
+      "store_true": false
+     },
+     "--residence-state": {
+      "store_true": false
+     },
+     "--routing-number": {
+      "store_true": false
+     },
+     "--salary-assignment-id": {
+      "store_true": false
+     },
+     "--salary-component-id": {
+      "store_true": false
+     },
+     "--salary-slip-id": {
+      "store_true": false
+     },
+     "--salary-structure-id": {
+      "store_true": false
+     },
+     "--search": {
+      "store_true": false
+     },
+     "--ss-employee-rate": {
+      "store_true": false
+     },
+     "--ss-employer-rate": {
+      "store_true": false
+     },
+     "--ss-wage-base": {
+      "store_true": false
+     },
+     "--standard-deduction": {
+      "store_true": false
+     },
+     "--start-date": {
+      "store_true": false
+     },
+     "--state-code": {
+      "store_true": false
+     },
+     "--status": {
+      "store_true": false
+     },
+     "--tax-jurisdiction": {
+      "store_true": false
+     },
+     "--tax-year": {
+      "store_true": false
+     },
+     "--to-date": {
+      "store_true": false
+     },
+     "--total-owed": {
+      "store_true": false
+     },
+     "--variable-based-on-taxable-salary": {
+      "store_true": false
+     },
+     "--wage-base": {
+      "store_true": false
+     },
+     "--weekly-threshold": {
+      "store_true": false
+     },
+     "--work-state": {
+      "store_true": false
+     }
+    }
+   },
+   "erpclaw-reports": {
+    "actions": [
+     "add-elimination-rule",
+     "ap-aging",
+     "ar-aging",
+     "balance-sheet",
+     "budget-variance",
+     "budget-vs-actual",
+     "cash-flow",
+     "check-overdue",
+     "comparative-pl",
+     "dimension-balance-report",
+     "general-ledger",
+     "gl-summary",
+     "list-elimination-entries",
+     "list-elimination-rules",
+     "multi-dim-trial-balance",
+     "party-ledger",
+     "payment-summary",
+     "profit-and-loss",
+     "run-elimination",
+     "status",
+     "tax-summary",
+     "trial-balance"
+    ],
+    "flags": {
+     "--account-id": {
+      "store_true": false
+     },
+     "--action": {
+      "store_true": false
+     },
+     "--aging-buckets": {
+      "store_true": false
+     },
+     "--as-of-date": {
+      "store_true": false
+     },
+     "--company": {
+      "store_true": false
+     },
+     "--company-id": {
+      "store_true": false
+     },
+     "--cost-center-id": {
+      "store_true": false
+     },
+     "--customer-id": {
+      "store_true": false
+     },
+     "--db-path": {
+      "store_true": false
+     },
+     "--dimension": {
+      "store_true": false
+     },
+     "--dimension-key": {
+      "store_true": false
+     },
+     "--dimension-value": {
+      "store_true": false
+     },
+     "--fiscal-year-id": {
+      "store_true": false
+     },
+     "--from-date": {
+      "store_true": false
+     },
+     "--group-by": {
+      "store_true": false
+     },
+     "--limit": {
+      "store_true": false
+     },
+     "--name": {
+      "store_true": false
+     },
+     "--offset": {
+      "store_true": false
+     },
+     "--party-id": {
+      "store_true": false
+     },
+     "--party-type": {
+      "store_true": false
+     },
+     "--periodicity": {
+      "store_true": false
+     },
+     "--periods": {
+      "store_true": false
+     },
+     "--posting-date": {
+      "store_true": false
+     },
+     "--project-id": {
+      "store_true": false
+     },
+     "--source-account-id": {
+      "store_true": false
+     },
+     "--supplier-id": {
+      "store_true": false
+     },
+     "--target-account-id": {
+      "store_true": false
+     },
+     "--target-company-id": {
+      "store_true": false
+     },
+     "--to-date": {
+      "store_true": false
+     },
+     "--values": {
+      "store_true": false
+     },
+     "--voucher-type": {
+      "store_true": false
+     }
+    }
+   },
+   "erpclaw-selling": {
+    "actions": [
+     "add-blanket-order",
+     "add-customer",
+     "add-dunning-level",
+     "add-intercompany-account-map",
+     "add-packing-slip",
+     "add-quotation",
+     "add-recurring-template",
+     "add-sales-order",
+     "add-sales-partner",
+     "amend-sales-order",
+     "cancel-delivery-note",
+     "cancel-intercompany-invoice",
+     "cancel-sales-invoice",
+     "cancel-sales-order",
+     "check-credit-limit",
+     "close-sales-order",
+     "convert-quotation-to-so",
+     "create-credit-note",
+     "create-delivery-note",
+     "create-drop-ship-order",
+     "create-intercompany-invoice",
+     "create-sales-invoice",
+     "create-so-from-blanket",
+     "generate-recurring-invoices",
+     "get-amendment-history",
+     "get-blanket-order",
+     "get-customer",
+     "get-delivery-note",
+     "get-packing-slip",
+     "get-quotation",
+     "get-sales-invoice",
+     "get-sales-order",
+     "import-customers",
+     "list-blanket-orders",
+     "list-credit-notes",
+     "list-customers",
+     "list-delivery-notes",
+     "list-dunning-runs",
+     "list-intercompany-account-maps",
+     "list-intercompany-invoices",
+     "list-packing-slips",
+     "list-quotations",
+     "list-recurring-templates",
+     "list-sales-invoices",
+     "list-sales-orders",
+     "list-sales-partners",
+     "place-customer-on-hold",
+     "run-dunning-cycle",
+     "status",
+     "submit-blanket-order",
+     "submit-delivery-note",
+     "submit-quotation",
+     "submit-sales-invoice",
+     "submit-sales-order",
+     "update-customer",
+     "update-invoice-outstanding",
+     "update-quotation",
+     "update-recurring-template",
+     "update-sales-invoice",
+     "update-sales-order"
+    ],
+    "flags": {
+     "--action": {
+      "store_true": false
+     },
+     "--against-invoice-id": {
+      "store_true": false
+     },
+     "--amount": {
+      "store_true": false
+     },
+     "--as-of-date": {
+      "store_true": false
+     },
+     "--blanket-order-id": {
+      "store_true": false
+     },
+     "--closed-by": {
+      "store_true": false
+     },
+     "--commission-rate": {
+      "store_true": false
+     },
+     "--company-id": {
+      "store_true": false
+     },
+     "--credit-limit": {
+      "store_true": false
+     },
+     "--credit-status": {
+      "store_true": false
+     },
+     "--csv-path": {
+      "store_true": false
+     },
+     "--custom-fields": {
+      "store_true": false
+     },
+     "--customer-group": {
+      "store_true": false
+     },
+     "--customer-id": {
+      "store_true": false
+     },
+     "--customer-type": {
+      "store_true": false
+     },
+     "--days-overdue": {
+      "store_true": false
+     },
+     "--db-path": {
+      "store_true": false
+     },
+     "--default-price-list-id": {
+      "store_true": false
+     },
+     "--delivery-date": {
+      "store_true": false
+     },
+     "--delivery-note-id": {
+      "store_true": false
+     },
+     "--description": {
+      "store_true": false
+     },
+     "--due-date": {
+      "store_true": false
+     },
+     "--dunning-action": {
+      "store_true": false
+     },
+     "--email": {
+      "store_true": false
+     },
+     "--end-date": {
+      "store_true": false
+     },
+     "--exempt-from-sales-tax": {
+      "store_true": false
+     },
+     "--frequency": {
+      "store_true": false
+     },
+     "--from-date": {
+      "store_true": false
+     },
+     "--items": {
+      "store_true": false
+     },
+     "--level": {
+      "store_true": false
+     },
+     "--limit": {
+      "store_true": false
+     },
+     "--name": {
+      "store_true": false
+     },
+     "--offset": {
+      "store_true": false
+     },
+     "--packing-slip-id": {
+      "store_true": false
+     },
+     "--payment-terms-id": {
+      "store_true": false
+     },
+     "--phone": {
+      "store_true": false
+     },
+     "--posting-date": {
+      "store_true": false
+     },
+     "--primary-address": {
+      "store_true": false
+     },
+     "--primary-contact": {
+      "store_true": false
+     },
+     "--quotation-id": {
+      "store_true": false
+     },
+     "--reason": {
+      "store_true": false
+     },
+     "--resume-run-id": {
+      "store_true": false
+     },
+     "--run-date": {
+      "store_true": false
+     },
+     "--sales-invoice-id": {
+      "store_true": false
+     },
+     "--sales-order-id": {
+      "store_true": false
+     },
+     "--search": {
+      "store_true": false
+     },
+     "--source-account-id": {
+      "store_true": false
+     },
+     "--start-date": {
+      "store_true": false
+     },
+     "--status": {
+      "store_true": false
+     },
+     "--supplier-id": {
+      "store_true": false
+     },
+     "--target-account-id": {
+      "store_true": false
+     },
+     "--target-company-id": {
+      "store_true": false
+     },
+     "--tax-id": {
+      "store_true": false
+     },
+     "--tax-template-id": {
+      "store_true": false
+     },
+     "--template-id": {
+      "store_true": false
+     },
+     "--template-status": {
+      "store_true": false
+     },
+     "--to-date": {
+      "store_true": false
+     },
+     "--valid-from": {
+      "store_true": false
+     },
+     "--valid-till": {
+      "store_true": false
+     },
+     "--valid-to": {
+      "store_true": false
+     },
+     "--warehouse-id": {
+      "store_true": false
+     }
+    }
+   },
+   "erpclaw-setup": {
+    "actions": [
+     "add-account-type",
+     "add-currency",
+     "add-custom-field",
+     "add-exchange-rate",
+     "add-payment-terms",
+     "add-role",
+     "add-uom",
+     "add-uom-conversion",
+     "add-user",
+     "add-voucher-type",
+     "assign-role",
+     "backup-database",
+     "check-telegram-permission",
+     "cleanup-backups",
+     "deactivate-account-type",
+     "deactivate-voucher-type",
+     "delete-credential",
+     "fetch-exchange-rates",
+     "get-audit-log",
+     "get-company",
+     "get-credential",
+     "get-custom-field-values",
+     "get-exchange-rate",
+     "get-schema-version",
+     "get-user",
+     "import-master-key-from-backup",
+     "initialize-database",
+     "link-telegram-user",
+     "list-account-types",
+     "list-backups",
+     "list-companies",
+     "list-credentials",
+     "list-currencies",
+     "list-custom-fields",
+     "list-exchange-rates",
+     "list-payment-terms",
+     "list-roles",
+     "list-uoms",
+     "list-users",
+     "list-voucher-types",
+     "migrate",
+     "migrate-credentials",
+     "onboarding-step",
+     "remove-custom-field",
+     "restore-database",
+     "revoke-role",
+     "seed-defaults",
+     "seed-permissions",
+     "set-advance-account",
+     "set-credential",
+     "set-custom-field-value",
+     "set-password",
+     "setup-company",
+     "status",
+     "tutorial",
+     "unlink-telegram-user",
+     "update-company",
+     "update-regional-settings",
+     "update-user",
+     "validate-registry-completeness",
+     "verify-backup"
+    ],
+    "flags": {
+     "--abbr": {
+      "store_true": false
+     },
+     "--account-id": {
+      "store_true": false
+     },
+     "--account-type": {
+      "store_true": false
+     },
+     "--accounts-frozen-till-date": {
+      "store_true": false
+     },
+     "--action": {
+      "store_true": false
+     },
+     "--answer": {
+      "store_true": false
+     },
+     "--audit-action": {
+      "store_true": false
+     },
+     "--backup-path": {
+      "store_true": false
+     },
+     "--check-action": {
+      "store_true": false
+     },
+     "--code": {
+      "store_true": false
+     },
+     "--company-id": {
+      "store_true": false
+     },
+     "--confirm": {
+      "store_true": true
+     },
+     "--conversion-factor": {
+      "store_true": false
+     },
+     "--country": {
+      "store_true": false
+     },
+     "--currency": {
+      "store_true": false
+     },
+     "--date-format": {
+      "store_true": false
+     },
+     "--db-path": {
+      "store_true": false
+     },
+     "--decimal-places": {
+      "store_true": false
+     },
+     "--default": {
+      "store_true": false
+     },
+     "--default-bank-account-id": {
+      "store_true": false
+     },
+     "--default-cash-account-id": {
+      "store_true": false
+     },
+     "--default-cost-center-id": {
+      "store_true": false
+     },
+     "--default-expense-account-id": {
+      "store_true": false
+     },
+     "--default-income-account-id": {
+      "store_true": false
+     },
+     "--default-payable-account-id": {
+      "store_true": false
+     },
+     "--default-receivable-account-id": {
+      "store_true": false
+     },
+     "--default-tax-template-id": {
+      "store_true": false
+     },
+     "--default-warehouse-id": {
+      "store_true": false
+     },
+     "--description": {
+      "store_true": false
+     },
+     "--discount-days": {
+      "store_true": false
+     },
+     "--discount-percentage": {
+      "store_true": false
+     },
+     "--dry-run": {
+      "store_true": true
+     },
+     "--due-days": {
+      "store_true": false
+     },
+     "--effective-date": {
+      "store_true": false
+     },
+     "--email": {
+      "store_true": false
+     },
+     "--enable-negative-stock": {
+      "store_true": false
+     },
+     "--enabled": {
+      "store_true": true
+     },
+     "--enabled-only": {
+      "store_true": true
+     },
+     "--encrypt": {
+      "store_true": true
+     },
+     "--entity-id": {
+      "store_true": false
+     },
+     "--entity-type": {
+      "store_true": false
+     },
+     "--exchange-gain-loss-account-id": {
+      "store_true": false
+     },
+     "--field-name": {
+      "store_true": false
+     },
+     "--field-type": {
+      "store_true": false
+     },
+     "--fiscal-year-start-month": {
+      "store_true": false
+     },
+     "--force": {
+      "store_true": true
+     },
+     "--from-currency": {
+      "store_true": false
+     },
+     "--from-date": {
+      "store_true": false
+     },
+     "--from-env": {
+      "store_true": false
+     },
+     "--from-stdin": {
+      "store_true": true
+     },
+     "--from-uom": {
+      "store_true": false
+     },
+     "--full-name": {
+      "store_true": false
+     },
+     "--include-inactive": {
+      "store_true": true
+     },
+     "--industry": {
+      "store_true": false
+     },
+     "--integration": {
+      "store_true": false
+     },
+     "--item-id": {
+      "store_true": false
+     },
+     "--label": {
+      "store_true": false
+     },
+     "--limit": {
+      "store_true": false
+     },
+     "--module": {
+      "store_true": false
+     },
+     "--must-be-whole-number": {
+      "store_true": true
+     },
+     "--name": {
+      "store_true": false
+     },
+     "--number-format": {
+      "store_true": false
+     },
+     "--offset": {
+      "store_true": false
+     },
+     "--options": {
+      "store_true": false
+     },
+     "--passphrase": {
+      "store_true": false
+     },
+     "--passphrase-from-env": {
+      "store_true": false
+     },
+     "--passphrase-from-stdin": {
+      "store_true": true
+     },
+     "--password": {
+      "store_true": false
+     },
+     "--perpetual-inventory": {
+      "store_true": false
+     },
+     "--rate": {
+      "store_true": false
+     },
+     "--required": {
+      "store_true": true
+     },
+     "--reset": {
+      "store_true": true
+     },
+     "--role-allowed-for-frozen-entries": {
+      "store_true": false
+     },
+     "--role-name": {
+      "store_true": false
+     },
+     "--round-off-account-id": {
+      "store_true": false
+     },
+     "--row-id": {
+      "store_true": false
+     },
+     "--skill": {
+      "store_true": false
+     },
+     "--skill-name": {
+      "store_true": false
+     },
+     "--source": {
+      "store_true": false
+     },
+     "--symbol": {
+      "store_true": false
+     },
+     "--table": {
+      "store_true": false
+     },
+     "--target-table": {
+      "store_true": false
+     },
+     "--tax-id": {
+      "store_true": false
+     },
+     "--telegram-user-id": {
+      "store_true": false
+     },
+     "--to-currency": {
+      "store_true": false
+     },
+     "--to-date": {
+      "store_true": false
+     },
+     "--to-uom": {
+      "store_true": false
+     },
+     "--type": {
+      "store_true": false
+     },
+     "--user-id": {
+      "store_true": false
+     },
+     "--user-status": {
+      "store_true": false
+     },
+     "--value": {
+      "store_true": false
+     },
+     "--voucher-type": {
+      "store_true": false
+     }
+    }
+   },
+   "erpclaw-tax": {
+    "actions": [
+     "add-item-tax-template",
+     "add-tax-category",
+     "add-tax-rule",
+     "add-tax-template",
+     "add-tax-withholding-category",
+     "calculate-tax",
+     "delete-tax-template",
+     "generate-1099-data",
+     "get-tax-template",
+     "get-withholding-details",
+     "list-tax-categories",
+     "list-tax-rules",
+     "list-tax-templates",
+     "record-1099-payment",
+     "record-withholding-entry",
+     "resolve-tax-template",
+     "status",
+     "update-tax-template"
+    ],
+    "flags": {
+     "--action": {
+      "store_true": false
+     },
+     "--amount": {
+      "store_true": false
+     },
+     "--company": {
+      "store_true": false
+     },
+     "--company-id": {
+      "store_true": false
+     },
+     "--customer-group": {
+      "store_true": false
+     },
+     "--customer-id": {
+      "store_true": false
+     },
+     "--db-path": {
+      "store_true": false
+     },
+     "--description": {
+      "store_true": false
+     },
+     "--form-type": {
+      "store_true": false
+     },
+     "--is-default": {
+      "store_true": true
+     },
+     "--item-id": {
+      "store_true": false
+     },
+     "--item-overrides": {
+      "store_true": false
+     },
+     "--items": {
+      "store_true": false
+     },
+     "--limit": {
+      "store_true": false
+     },
+     "--lines": {
+      "store_true": false
+     },
+     "--name": {
+      "store_true": false
+     },
+     "--offset": {
+      "store_true": false
+     },
+     "--party-id": {
+      "store_true": false
+     },
+     "--party-type": {
+      "store_true": false
+     },
+     "--priority": {
+      "store_true": false
+     },
+     "--rate": {
+      "store_true": false
+     },
+     "--shipping-address": {
+      "store_true": false
+     },
+     "--shipping-state": {
+      "store_true": false
+     },
+     "--supplier-id": {
+      "store_true": false
+     },
+     "--tax-category-id": {
+      "store_true": false
+     },
+     "--tax-rate": {
+      "store_true": false
+     },
+     "--tax-template-id": {
+      "store_true": false
+     },
+     "--tax-type": {
+      "store_true": false
+     },
+     "--tax-year": {
+      "store_true": false
+     },
+     "--threshold-amount": {
+      "store_true": false
+     },
+     "--transaction-type": {
+      "store_true": false
+     },
+     "--voucher-id": {
+      "store_true": false
+     },
+     "--voucher-type": {
+      "store_true": false
+     },
+     "--withholding-amount": {
+      "store_true": false
+     }
+    }
+   }
+  },
+  "router": {
+   "add-account": "erpclaw-gl",
+   "add-account-type": "erpclaw-setup",
+   "add-batch": "erpclaw-inventory",
+   "add-billing-adjustment": "erpclaw-billing",
+   "add-blanket-order": "erpclaw-selling",
+   "add-blanket-po": "erpclaw-buying",
+   "add-budget": "erpclaw-gl",
+   "add-consolidation-group": "erpclaw-accounting-adv",
+   "add-cost-center": "erpclaw-gl",
+   "add-currency": "erpclaw-setup",
+   "add-currency-translation": "erpclaw-accounting-adv",
+   "add-custom-field": "erpclaw-setup",
+   "add-customer": "erpclaw-selling",
+   "add-department": "erpclaw-hr",
+   "add-designation": "erpclaw-hr",
+   "add-dimension": "erpclaw-gl",
+   "add-dunning-level": "erpclaw-selling",
+   "add-elimination-rule": "erpclaw-reports",
+   "add-employee": "erpclaw-hr",
+   "add-employee-bank-account": "erpclaw-payroll",
+   "add-employee-document": "erpclaw-hr",
+   "add-exchange-rate": "erpclaw-setup",
+   "add-expense-claim": "erpclaw-hr",
+   "add-feature-to-module": "erpclaw-os",
+   "add-fiscal-year": "erpclaw-gl",
+   "add-garnishment": "erpclaw-payroll",
+   "add-group-entity": "erpclaw-accounting-adv",
+   "add-holiday-list": "erpclaw-hr",
+   "add-ic-transaction": "erpclaw-accounting-adv",
+   "add-income-tax-slab": "erpclaw-payroll",
+   "add-intercompany-account-map": "erpclaw-selling",
+   "add-item": "erpclaw-inventory",
+   "add-item-alternative": "erpclaw-inventory",
+   "add-item-attribute": "erpclaw-inventory",
+   "add-item-group": "erpclaw-inventory",
+   "add-item-price": "erpclaw-inventory",
+   "add-item-supplier": "erpclaw-inventory",
+   "add-item-tax-template": "erpclaw-tax",
+   "add-journal-entry": "erpclaw-journals",
+   "add-landed-cost-voucher": "erpclaw-buying",
+   "add-lease": "erpclaw-accounting-adv",
+   "add-leave-allocation": "erpclaw-hr",
+   "add-leave-application": "erpclaw-hr",
+   "add-leave-type": "erpclaw-hr",
+   "add-material-consumption": "erpclaw-inventory",
+   "add-material-request": "erpclaw-buying",
+   "add-meter": "erpclaw-billing",
+   "add-meter-reading": "erpclaw-billing",
+   "add-overtime-policy": "erpclaw-payroll",
+   "add-packing-slip": "erpclaw-selling",
+   "add-payment": "erpclaw-payments",
+   "add-payment-terms": "erpclaw-setup",
+   "add-performance-obligation": "erpclaw-accounting-adv",
+   "add-pick-list-item": "erpclaw-inventory",
+   "add-prepaid-credit": "erpclaw-billing",
+   "add-price-list": "erpclaw-inventory",
+   "add-pricing-rule": "erpclaw-inventory",
+   "add-purchase-order": "erpclaw-buying",
+   "add-putaway-rule": "erpclaw-inventory",
+   "add-quotation": "erpclaw-selling",
+   "add-rate-plan": "erpclaw-billing",
+   "add-recurring-bill-template": "erpclaw-buying",
+   "add-recurring-invoice-template": "erpclaw-selling",
+   "add-recurring-template": "erpclaw-journals",
+   "add-regularization-rule": "erpclaw-hr",
+   "add-repack-stock-entry": "erpclaw-inventory",
+   "add-reservation": "erpclaw-inventory",
+   "add-revenue-contract": "erpclaw-accounting-adv",
+   "add-rfq": "erpclaw-buying",
+   "add-role": "erpclaw-setup",
+   "add-salary-assignment": "erpclaw-payroll",
+   "add-salary-component": "erpclaw-payroll",
+   "add-salary-structure": "erpclaw-payroll",
+   "add-sales-order": "erpclaw-selling",
+   "add-sales-partner": "erpclaw-selling",
+   "add-serial-number": "erpclaw-inventory",
+   "add-shift-type": "erpclaw-hr",
+   "add-state-tax-slab": "erpclaw-payroll",
+   "add-stock-entry": "erpclaw-inventory",
+   "add-stock-reconciliation": "erpclaw-inventory",
+   "add-supplier": "erpclaw-buying",
+   "add-supplier-quotation": "erpclaw-buying",
+   "add-tax-category": "erpclaw-tax",
+   "add-tax-rule": "erpclaw-tax",
+   "add-tax-template": "erpclaw-tax",
+   "add-tax-withholding-category": "erpclaw-tax",
+   "add-transfer-price-rule": "erpclaw-accounting-adv",
+   "add-uom": "erpclaw-setup",
+   "add-uom-conversion": "erpclaw-setup",
+   "add-usage-event": "erpclaw-billing",
+   "add-usage-events-batch": "erpclaw-billing",
+   "add-user": "erpclaw-setup",
+   "add-variable-consideration": "erpclaw-accounting-adv",
+   "add-voucher-type": "erpclaw-setup",
+   "add-warehouse": "erpclaw-inventory",
+   "allocate-payment": "erpclaw-payments",
+   "amend-journal-entry": "erpclaw-journals",
+   "amend-sales-order": "erpclaw-selling",
+   "ap-aging": "erpclaw-reports",
+   "apply-advance-to-invoice": "erpclaw-payments",
+   "apply-attendance-regularization": "erpclaw-hr",
+   "apply-putaway-on-receipt": "erpclaw-inventory",
+   "approve-expense-claim": "erpclaw-hr",
+   "approve-ic-transaction": "erpclaw-accounting-adv",
+   "approve-leave": "erpclaw-hr",
+   "ar-aging": "erpclaw-reports",
+   "assign-role": "erpclaw-setup",
+   "assign-shift": "erpclaw-hr",
+   "backup-database": "erpclaw-setup",
+   "balance-sheet": "erpclaw-reports",
+   "bank-reconciliation": "erpclaw-payments",
+   "billing-status": "erpclaw-billing",
+   "budget-variance": "erpclaw-reports",
+   "budget-vs-actual": "erpclaw-reports",
+   "build-table-registry": "erpclaw-os",
+   "bulk-mark-attendance": "erpclaw-hr",
+   "buying-status": "erpclaw-buying",
+   "calculate-lease-liability": "erpclaw-accounting-adv",
+   "calculate-overtime": "erpclaw-payroll",
+   "calculate-retro-pay": "erpclaw-payroll",
+   "calculate-revenue-schedule": "erpclaw-accounting-adv",
+   "calculate-rou-asset": "erpclaw-accounting-adv",
+   "calculate-tax": "erpclaw-tax",
+   "cancel-delivery-note": "erpclaw-selling",
+   "cancel-intercompany-invoice": "erpclaw-selling",
+   "cancel-journal-entry": "erpclaw-journals",
+   "cancel-landed-cost-voucher": "erpclaw-buying",
+   "cancel-payment": "erpclaw-payments",
+   "cancel-payroll-run": "erpclaw-payroll",
+   "cancel-pick-list": "erpclaw-inventory",
+   "cancel-purchase-invoice": "erpclaw-buying",
+   "cancel-purchase-order": "erpclaw-buying",
+   "cancel-purchase-receipt": "erpclaw-buying",
+   "cancel-sales-invoice": "erpclaw-selling",
+   "cancel-sales-order": "erpclaw-selling",
+   "cancel-stock-entry": "erpclaw-inventory",
+   "cancel-stock-revaluation": "erpclaw-inventory",
+   "cash-flow": "erpclaw-reports",
+   "check-credit-limit": "erpclaw-selling",
+   "check-expiring-documents": "erpclaw-hr",
+   "check-feature-completeness": "erpclaw-os",
+   "check-gl-integrity": "erpclaw-gl",
+   "check-installation": "erpclaw-meta",
+   "check-overdue": "erpclaw-reports",
+   "check-reorder": "erpclaw-inventory",
+   "check-telegram-permission": "erpclaw-setup",
+   "classify-lease": "erpclaw-accounting-adv",
+   "classify-operation": "erpclaw-os",
+   "cleanup-backups": "erpclaw-setup",
+   "close-fiscal-year": "erpclaw-gl",
+   "close-purchase-order": "erpclaw-buying",
+   "close-sales-order": "erpclaw-selling",
+   "comparative-pl": "erpclaw-reports",
+   "compare-supplier-quotations": "erpclaw-buying",
+   "complete-pick-list": "erpclaw-inventory",
+   "compliance-weather-status": "erpclaw-os",
+   "configure-module": "erpclaw-os",
+   "consolidation-summary": "erpclaw-accounting-adv",
+   "consolidation-trial-balance-report": "erpclaw-accounting-adv",
+   "convert-quotation-to-so": "erpclaw-selling",
+   "create-billing-period": "erpclaw-billing",
+   "create-credit-note": "erpclaw-selling",
+   "create-debit-note": "erpclaw-buying",
+   "create-delivery-note": "erpclaw-selling",
+   "create-drop-ship-order": "erpclaw-selling",
+   "create-intercompany-invoice": "erpclaw-selling",
+   "create-intercompany-je": "erpclaw-journals",
+   "create-item-variant": "erpclaw-inventory",
+   "create-payment-ledger-entry": "erpclaw-payments",
+   "create-payroll-run": "erpclaw-payroll",
+   "create-pick-list": "erpclaw-inventory",
+   "create-po-from-blanket": "erpclaw-buying",
+   "create-po-from-material-request": "erpclaw-buying",
+   "create-po-from-so": "erpclaw-buying",
+   "create-purchase-invoice": "erpclaw-buying",
+   "create-purchase-receipt": "erpclaw-buying",
+   "create-sales-invoice": "erpclaw-selling",
+   "create-so-from-blanket": "erpclaw-selling",
+   "create-stock-ledger-entries": "erpclaw-inventory",
+   "deactivate-account-type": "erpclaw-setup",
+   "deactivate-dimension": "erpclaw-gl",
+   "deactivate-voucher-type": "erpclaw-setup",
+   "delete-credential": "erpclaw-setup",
+   "delete-journal-entry": "erpclaw-journals",
+   "delete-payment": "erpclaw-payments",
+   "delete-putaway-rule": "erpclaw-inventory",
+   "delete-recurring-template": "erpclaw-journals",
+   "delete-tax-template": "erpclaw-tax",
+   "deploy-audit-log": "erpclaw-os",
+   "deploy-module": "erpclaw-os",
+   "detect-gaps": "erpclaw-os",
+   "detect-schema-divergence": "erpclaw-os",
+   "detect-stubs": "erpclaw-os",
+   "dgm-list-variants": "erpclaw-os",
+   "dgm-run-variant": "erpclaw-os",
+   "dgm-select-best": "erpclaw-os",
+   "dimension-balance-report": "erpclaw-reports",
+   "duplicate-journal-entry": "erpclaw-journals",
+   "fetch-exchange-rates": "erpclaw-setup",
+   "freeze-account": "erpclaw-gl",
+   "general-ledger": "erpclaw-reports",
+   "generate-1099-data": "erpclaw-tax",
+   "generate-amortization-schedule": "erpclaw-accounting-adv",
+   "generate-elimination-entries": "erpclaw-accounting-adv",
+   "generate-invoices": "erpclaw-billing",
+   "generate-item-variants": "erpclaw-inventory",
+   "generate-module": "erpclaw-os",
+   "generate-nacha-file": "erpclaw-payroll",
+   "generate-recurring-bills": "erpclaw-buying",
+   "generate-recurring-invoices": "erpclaw-selling",
+   "generate-revenue-entries": "erpclaw-accounting-adv",
+   "generate-salary-slips": "erpclaw-payroll",
+   "generate-w2-data": "erpclaw-payroll",
+   "get-account": "erpclaw-gl",
+   "get-account-balance": "erpclaw-gl",
+   "get-amendment-history": "erpclaw-selling",
+   "get-audit-log": "erpclaw-setup",
+   "get-best-alternative-for-item": "erpclaw-inventory",
+   "get-billing-period": "erpclaw-billing",
+   "get-billing-run": "erpclaw-billing",
+   "get-blanket-order": "erpclaw-selling",
+   "get-blanket-po": "erpclaw-buying",
+   "get-company": "erpclaw-setup",
+   "get-credential": "erpclaw-setup",
+   "get-custom-field-values": "erpclaw-setup",
+   "get-customer": "erpclaw-selling",
+   "get-delivery-note": "erpclaw-selling",
+   "get-employee": "erpclaw-hr",
+   "get-employee-document": "erpclaw-hr",
+   "get-exchange-rate": "erpclaw-setup",
+   "get-garnishment": "erpclaw-payroll",
+   "get-ic-transaction": "erpclaw-accounting-adv",
+   "get-implementation-guide": "erpclaw-os",
+   "get-item": "erpclaw-inventory",
+   "get-item-price": "erpclaw-inventory",
+   "get-journal-entry": "erpclaw-journals",
+   "get-landed-cost-voucher": "erpclaw-buying",
+   "get-lease": "erpclaw-accounting-adv",
+   "get-leave-balance": "erpclaw-hr",
+   "get-material-request": "erpclaw-buying",
+   "get-meter": "erpclaw-billing",
+   "get-outstanding": "erpclaw-payments",
+   "get-packing-slip": "erpclaw-selling",
+   "get-payment": "erpclaw-payments",
+   "get-prepaid-balance": "erpclaw-billing",
+   "get-projected-qty": "erpclaw-inventory",
+   "get-purchase-invoice": "erpclaw-buying",
+   "get-purchase-order": "erpclaw-buying",
+   "get-purchase-receipt": "erpclaw-buying",
+   "get-quotation": "erpclaw-selling",
+   "get-rate-plan": "erpclaw-billing",
+   "get-recurring-template": "erpclaw-journals",
+   "get-revenue-contract": "erpclaw-accounting-adv",
+   "get-salary-slip": "erpclaw-payroll",
+   "get-salary-structure": "erpclaw-payroll",
+   "get-sales-invoice": "erpclaw-selling",
+   "get-sales-order": "erpclaw-selling",
+   "get-schema-version": "erpclaw-setup",
+   "get-stock-balance": "erpclaw-inventory",
+   "get-stock-entry": "erpclaw-inventory",
+   "get-stock-revaluation": "erpclaw-inventory",
+   "get-supplier": "erpclaw-buying",
+   "get-tax-template": "erpclaw-tax",
+   "get-unallocated-payments": "erpclaw-payments",
+   "get-user": "erpclaw-setup",
+   "get-withholding-details": "erpclaw-tax",
+   "gl-status": "erpclaw-gl",
+   "gl-summary": "erpclaw-reports",
+   "heartbeat-analyze": "erpclaw-os",
+   "heartbeat-report": "erpclaw-os",
+   "heartbeat-suggest": "erpclaw-os",
+   "ic-elimination-report": "erpclaw-accounting-adv",
+   "ic-reconciliation-report": "erpclaw-accounting-adv",
+   "import-chart-of-accounts": "erpclaw-gl",
+   "import-customers": "erpclaw-selling",
+   "import-items": "erpclaw-inventory",
+   "import-master-key-from-backup": "erpclaw-setup",
+   "import-opening-balances": "erpclaw-gl",
+   "import-suppliers": "erpclaw-buying",
+   "initialize-database": "erpclaw-setup",
+   "install-guide": "erpclaw-meta",
+   "install-suite": "erpclaw-os",
+   "inventory-status": "erpclaw-inventory",
+   "journals-status": "erpclaw-journals",
+   "lease-disclosure-report": "erpclaw-accounting-adv",
+   "lease-maturity-report": "erpclaw-accounting-adv",
+   "lease-summary": "erpclaw-accounting-adv",
+   "link-billing-period-invoice": "erpclaw-billing",
+   "link-telegram-user": "erpclaw-setup",
+   "list-account-types": "erpclaw-setup",
+   "list-accounts": "erpclaw-gl",
+   "list-articles": "erpclaw-os",
+   "list-attendance": "erpclaw-hr",
+   "list-backups": "erpclaw-setup",
+   "list-batches": "erpclaw-inventory",
+   "list-billing-periods": "erpclaw-billing",
+   "list-billing-runs": "erpclaw-billing",
+   "list-blanket-orders": "erpclaw-selling",
+   "list-blanket-pos": "erpclaw-buying",
+   "list-budgets": "erpclaw-gl",
+   "list-companies": "erpclaw-setup",
+   "list-consolidation-groups": "erpclaw-accounting-adv",
+   "list-cost-centers": "erpclaw-gl",
+   "list-credentials": "erpclaw-setup",
+   "list-credit-notes": "erpclaw-selling",
+   "list-currencies": "erpclaw-setup",
+   "list-custom-fields": "erpclaw-setup",
+   "list-customers": "erpclaw-selling",
+   "list-delivery-notes": "erpclaw-selling",
+   "list-departments": "erpclaw-hr",
+   "list-designations": "erpclaw-hr",
+   "list-dimensions": "erpclaw-gl",
+   "list-dunning-runs": "erpclaw-selling",
+   "list-elimination-entries": "erpclaw-reports",
+   "list-elimination-rules": "erpclaw-reports",
+   "list-elimination-surplus": "erpclaw-accounting-adv",
+   "list-employee-bank-accounts": "erpclaw-payroll",
+   "list-employee-documents": "erpclaw-hr",
+   "list-employees": "erpclaw-hr",
+   "list-exchange-rates": "erpclaw-setup",
+   "list-expense-claims": "erpclaw-hr",
+   "list-feature-matrix": "erpclaw-os",
+   "list-fiscal-years": "erpclaw-gl",
+   "list-garnishments": "erpclaw-payroll",
+   "list-gl-entries": "erpclaw-gl",
+   "list-ic-transactions": "erpclaw-accounting-adv",
+   "list-improvements": "erpclaw-os",
+   "list-industries": "erpclaw-os",
+   "list-intercompany-account-maps": "erpclaw-selling",
+   "list-intercompany-invoices": "erpclaw-selling",
+   "list-item-alternatives": "erpclaw-inventory",
+   "list-item-groups": "erpclaw-inventory",
+   "list-item-suppliers": "erpclaw-inventory",
+   "list-item-variants": "erpclaw-inventory",
+   "list-items": "erpclaw-inventory",
+   "list-journal-entries": "erpclaw-journals",
+   "list-landed-cost-vouchers": "erpclaw-buying",
+   "list-leases": "erpclaw-accounting-adv",
+   "list-leave-applications": "erpclaw-hr",
+   "list-leave-types": "erpclaw-hr",
+   "list-material-requests": "erpclaw-buying",
+   "list-meter-readings": "erpclaw-billing",
+   "list-meters": "erpclaw-billing",
+   "list-open-advances": "erpclaw-payments",
+   "list-packing-slips": "erpclaw-selling",
+   "list-payment-terms": "erpclaw-setup",
+   "list-payments": "erpclaw-payments",
+   "list-performance-obligations": "erpclaw-accounting-adv",
+   "list-purchase-invoices": "erpclaw-buying",
+   "list-purchase-orders": "erpclaw-buying",
+   "list-purchase-receipts": "erpclaw-buying",
+   "list-putaway-rules": "erpclaw-inventory",
+   "list-quotations": "erpclaw-selling",
+   "list-rate-plans": "erpclaw-billing",
+   "list-recurring-bill-templates": "erpclaw-buying",
+   "list-recurring-invoice-templates": "erpclaw-selling",
+   "list-recurring-templates": "erpclaw-journals",
+   "list-reservations": "erpclaw-inventory",
+   "list-revenue-contracts": "erpclaw-accounting-adv",
+   "list-rfqs": "erpclaw-buying",
+   "list-roles": "erpclaw-setup",
+   "list-salary-assignments": "erpclaw-payroll",
+   "list-salary-components": "erpclaw-payroll",
+   "list-salary-slips": "erpclaw-payroll",
+   "list-salary-structures": "erpclaw-payroll",
+   "list-sales-invoices": "erpclaw-selling",
+   "list-sales-orders": "erpclaw-selling",
+   "list-sales-partners": "erpclaw-selling",
+   "list-serial-numbers": "erpclaw-inventory",
+   "list-shift-assignments": "erpclaw-hr",
+   "list-shift-types": "erpclaw-hr",
+   "list-stock-entries": "erpclaw-inventory",
+   "list-stock-revaluations": "erpclaw-inventory",
+   "list-supplier-quotations": "erpclaw-buying",
+   "list-suppliers": "erpclaw-buying",
+   "list-tax-categories": "erpclaw-tax",
+   "list-tax-rules": "erpclaw-tax",
+   "list-tax-templates": "erpclaw-tax",
+   "list-transfer-price-rules": "erpclaw-accounting-adv",
+   "list-uoms": "erpclaw-setup",
+   "list-users": "erpclaw-setup",
+   "list-variable-considerations": "erpclaw-accounting-adv",
+   "list-voucher-types": "erpclaw-setup",
+   "list-warehouses": "erpclaw-inventory",
+   "log-improvement": "erpclaw-os",
+   "mark-attendance": "erpclaw-hr",
+   "mark-picked": "erpclaw-inventory",
+   "migrate": "erpclaw-setup",
+   "migrate-credentials": "erpclaw-setup",
+   "modify-contract": "erpclaw-accounting-adv",
+   "multi-dim-trial-balance": "erpclaw-reports",
+   "next-series": "erpclaw-gl",
+   "onboarding-step": "erpclaw-setup",
+   "party-ledger": "erpclaw-reports",
+   "payment-summary": "erpclaw-reports",
+   "payments-status": "erpclaw-payments",
+   "place-customer-on-hold": "erpclaw-selling",
+   "post-gl-entries": "erpclaw-gl",
+   "post-ic-transaction": "erpclaw-accounting-adv",
+   "process-recurring": "erpclaw-journals",
+   "profit-and-loss": "erpclaw-reports",
+   "rate-consumption": "erpclaw-billing",
+   "recognize-schedule-entry": "erpclaw-accounting-adv",
+   "reconcile-payments": "erpclaw-payments",
+   "record-1099-payment": "erpclaw-tax",
+   "record-lease-payment": "erpclaw-accounting-adv",
+   "record-lifecycle-event": "erpclaw-hr",
+   "record-withholding-entry": "erpclaw-tax",
+   "reject-expense-claim": "erpclaw-hr",
+   "reject-leave": "erpclaw-hr",
+   "release-reservation": "erpclaw-inventory",
+   "remove-custom-field": "erpclaw-setup",
+   "remove-elimination-surplus": "erpclaw-accounting-adv",
+   "remove-item-alternative": "erpclaw-inventory",
+   "reopen-fiscal-year": "erpclaw-gl",
+   "reports-status": "erpclaw-reports",
+   "research-business-rule": "erpclaw-os",
+   "resolve-item": "erpclaw-inventory",
+   "resolve-tax-template": "erpclaw-tax",
+   "restore-database": "erpclaw-setup",
+   "resume-billing-run": "erpclaw-billing",
+   "revalue-foreign-balances": "erpclaw-gl",
+   "revalue-stock": "erpclaw-inventory",
+   "revenue-recognition-summary": "erpclaw-accounting-adv",
+   "revenue-waterfall-report": "erpclaw-accounting-adv",
+   "reverse-gl-entries": "erpclaw-gl",
+   "reverse-stock-ledger-entries": "erpclaw-inventory",
+   "review-improvement": "erpclaw-os",
+   "revoke-role": "erpclaw-setup",
+   "run-audit": "erpclaw-os",
+   "run-billing": "erpclaw-billing",
+   "run-consolidation": "erpclaw-accounting-adv",
+   "run-dunning-cycle": "erpclaw-selling",
+   "run-elimination": "erpclaw-reports",
+   "satisfy-performance-obligation": "erpclaw-accounting-adv",
+   "schema-apply": "erpclaw-os",
+   "schema-drift": "erpclaw-os",
+   "schema-plan": "erpclaw-os",
+   "schema-rollback": "erpclaw-os",
+   "seed-defaults": "erpclaw-setup",
+   "seed-demo-data": "erpclaw-meta",
+   "seed-naming-series": "erpclaw-gl",
+   "seed-permissions": "erpclaw-setup",
+   "selling-status": "erpclaw-selling",
+   "semantic-check": "erpclaw-os",
+   "semantic-rules-list": "erpclaw-os",
+   "set-advance-account": "erpclaw-setup",
+   "set-credential": "erpclaw-setup",
+   "set-custom-field-value": "erpclaw-setup",
+   "set-item-purchase-uom": "erpclaw-buying",
+   "set-password": "erpclaw-setup",
+   "setup-chart-of-accounts": "erpclaw-gl",
+   "setup-company": "erpclaw-setup",
+   "setup-web-dashboard": "erpclaw-meta",
+   "standards-compliance-dashboard": "erpclaw-accounting-adv",
+   "status": "erpclaw-setup",
+   "stock-balance": "erpclaw-inventory",
+   "stock-balance-report": "erpclaw-inventory",
+   "stock-ledger-report": "erpclaw-inventory",
+   "submit-blanket-order": "erpclaw-selling",
+   "submit-blanket-po": "erpclaw-buying",
+   "submit-delivery-note": "erpclaw-selling",
+   "submit-expense-claim": "erpclaw-hr",
+   "submit-journal-entry": "erpclaw-journals",
+   "submit-material-request": "erpclaw-buying",
+   "submit-payment": "erpclaw-payments",
+   "submit-payroll-run": "erpclaw-payroll",
+   "submit-pick-list": "erpclaw-inventory",
+   "submit-purchase-invoice": "erpclaw-buying",
+   "submit-purchase-order": "erpclaw-buying",
+   "submit-purchase-receipt": "erpclaw-buying",
+   "submit-quotation": "erpclaw-selling",
+   "submit-rfq": "erpclaw-buying",
+   "submit-sales-invoice": "erpclaw-selling",
+   "submit-sales-order": "erpclaw-selling",
+   "submit-stock-entry": "erpclaw-inventory",
+   "submit-stock-reconciliation": "erpclaw-inventory",
+   "suggest-modules": "erpclaw-os",
+   "sync-billing-period-status": "erpclaw-billing",
+   "tax-status": "erpclaw-tax",
+   "tax-summary": "erpclaw-reports",
+   "trial-balance": "erpclaw-reports",
+   "tutorial": "erpclaw-setup",
+   "unfreeze-account": "erpclaw-gl",
+   "unlink-billing-period-invoice": "erpclaw-billing",
+   "unlink-telegram-user": "erpclaw-setup",
+   "update-account": "erpclaw-gl",
+   "update-company": "erpclaw-setup",
+   "update-customer": "erpclaw-selling",
+   "update-dimension": "erpclaw-gl",
+   "update-employee": "erpclaw-hr",
+   "update-employee-state-config": "erpclaw-payroll",
+   "update-expense-claim-status": "erpclaw-hr",
+   "update-fica-config": "erpclaw-payroll",
+   "update-futa-suta-config": "erpclaw-payroll",
+   "update-garnishment": "erpclaw-payroll",
+   "update-ic-transaction": "erpclaw-accounting-adv",
+   "update-invoice-outstanding": "erpclaw-selling",
+   "update-item": "erpclaw-inventory",
+   "update-journal-entry": "erpclaw-journals",
+   "update-lease": "erpclaw-accounting-adv",
+   "update-meter": "erpclaw-billing",
+   "update-payment": "erpclaw-payments",
+   "update-performance-obligation": "erpclaw-accounting-adv",
+   "update-purchase-invoice": "erpclaw-buying",
+   "update-purchase-order": "erpclaw-buying",
+   "update-purchase-outstanding": "erpclaw-buying",
+   "update-putaway-rule": "erpclaw-inventory",
+   "update-quotation": "erpclaw-selling",
+   "update-rate-plan": "erpclaw-billing",
+   "update-receipt-tolerance": "erpclaw-buying",
+   "update-recurring-invoice-template": "erpclaw-selling",
+   "update-recurring-template": "erpclaw-journals",
+   "update-regional-settings": "erpclaw-setup",
+   "update-revenue-contract": "erpclaw-accounting-adv",
+   "update-sales-invoice": "erpclaw-selling",
+   "update-sales-order": "erpclaw-selling",
+   "update-schedule-amounts": "erpclaw-accounting-adv",
+   "update-shift-type": "erpclaw-hr",
+   "update-supplier": "erpclaw-buying",
+   "update-tax-template": "erpclaw-tax",
+   "update-three-way-match-policy": "erpclaw-buying",
+   "update-user": "erpclaw-setup",
+   "update-warehouse": "erpclaw-inventory",
+   "validate-module": "erpclaw-os",
+   "validate-period-close": "erpclaw-gl",
+   "validate-registry-completeness": "erpclaw-setup",
+   "verify-backup": "erpclaw-setup",
+   "write-off-invoice": "erpclaw-payments"
+  }
+ },
+ "modules": {
+  "erpclaw-growth": {
+   "domains": {
+    "erpclaw-ai-engine": {
+     "actions": [
+      "acknowledge-anomaly",
+      "add-business-rule",
+      "add-categorization-rule",
+      "add-pending-decision",
+      "categorize-transaction",
+      "create-scenario",
+      "detect-anomalies",
+      "discover-correlations",
+      "dismiss-anomaly",
+      "evaluate-business-rules",
+      "forecast-cash-flow",
+      "get-conversation-context",
+      "get-forecast",
+      "list-anomalies",
+      "list-business-rules",
+      "list-correlations",
+      "list-relationship-scores",
+      "list-scenarios",
+      "log-audit-conversation",
+      "save-conversation-context",
+      "score-relationship",
+      "status"
+     ],
+     "flags": {
+      "--account-id": {
+       "store_true": false
+      },
+      "--action": {
+       "store_true": false
+      },
+      "--action-data": {
+       "store_true": false
+      },
+      "--action-name": {
+       "store_true": false
+      },
+      "--action-type": {
+       "store_true": false
+      },
+      "--amount": {
+       "store_true": false
+      },
+      "--anomaly-id": {
+       "store_true": false
+      },
+      "--assumptions": {
+       "store_true": false
+      },
+      "--company-id": {
+       "store_true": false
+      },
+      "--context-data": {
+       "store_true": false
+      },
+      "--context-id": {
+       "store_true": false
+      },
+      "--cost-center-id": {
+       "store_true": false
+      },
+      "--db-path": {
+       "store_true": false
+      },
+      "--decision-type": {
+       "store_true": false
+      },
+      "--description": {
+       "store_true": false
+      },
+      "--details": {
+       "store_true": false
+      },
+      "--from-date": {
+       "store_true": false
+      },
+      "--horizon-days": {
+       "store_true": false
+      },
+      "--is-active": {
+       "store_true": false
+      },
+      "--limit": {
+       "store_true": false
+      },
+      "--min-strength": {
+       "store_true": false
+      },
+      "--name": {
+       "store_true": false
+      },
+      "--offset": {
+       "store_true": false
+      },
+      "--options": {
+       "store_true": false
+      },
+      "--party-id": {
+       "store_true": false
+      },
+      "--party-type": {
+       "store_true": false
+      },
+      "--pattern": {
+       "store_true": false
+      },
+      "--reason": {
+       "store_true": false
+      },
+      "--result": {
+       "store_true": false
+      },
+      "--rule-text": {
+       "store_true": false
+      },
+      "--scenario-type": {
+       "store_true": false
+      },
+      "--severity": {
+       "store_true": false
+      },
+      "--source": {
+       "store_true": false
+      },
+      "--status": {
+       "store_true": false
+      },
+      "--to-date": {
+       "store_true": false
+      }
+     }
+    },
+    "erpclaw-analytics": {
+     "actions": [
+      "abc-analysis",
+      "aging-inventory",
+      "analyze-query-performance",
+      "available-metrics",
+      "company-scorecard",
+      "cost-trend",
+      "customer-concentration",
+      "efficiency-ratios",
+      "executive-dashboard",
+      "expense-breakdown",
+      "headcount-analytics",
+      "inventory-turnover",
+      "leave-utilization",
+      "liquidity-ratios",
+      "metric-trend",
+      "opex-vs-capex",
+      "payroll-analytics",
+      "period-comparison",
+      "profitability-ratios",
+      "project-profitability-analytics",
+      "quality-analytics",
+      "revenue-by-customer",
+      "revenue-by-item",
+      "revenue-trend",
+      "status",
+      "support-metrics"
+     ],
+     "flags": {
+      "--account-id": {
+       "store_true": false
+      },
+      "--action": {
+       "store_true": false
+      },
+      "--aging-buckets": {
+       "store_true": false
+      },
+      "--as-of-date": {
+       "store_true": false
+      },
+      "--company-id": {
+       "store_true": false
+      },
+      "--cost-center-id": {
+       "store_true": false
+      },
+      "--db-path": {
+       "store_true": false
+      },
+      "--department-id": {
+       "store_true": false
+      },
+      "--from-date": {
+       "store_true": false
+      },
+      "--group-by": {
+       "store_true": false
+      },
+      "--item-id": {
+       "store_true": false
+      },
+      "--limit": {
+       "store_true": false
+      },
+      "--metric": {
+       "store_true": false
+      },
+      "--metrics": {
+       "store_true": false
+      },
+      "--offset": {
+       "store_true": false
+      },
+      "--periodicity": {
+       "store_true": false
+      },
+      "--periods": {
+       "store_true": false
+      },
+      "--project-id": {
+       "store_true": false
+      },
+      "--to-date": {
+       "store_true": false
+      },
+      "--warehouse-id": {
+       "store_true": false
+      }
+     }
+    },
+    "erpclaw-crm": {
+     "actions": [
+      "add-activity",
+      "add-campaign",
+      "add-crm-company",
+      "add-crm-contact",
+      "add-crm-pipeline",
+      "add-crm-pipeline-stage",
+      "add-crm-saved-view",
+      "add-crm-task",
+      "add-lead",
+      "add-lead-source",
+      "add-opportunity",
+      "apply-saved-view",
+      "cancel-crm-task",
+      "complete-crm-task",
+      "convert-lead-to-opportunity",
+      "convert-opportunity-to-quotation",
+      "delete-crm-saved-view",
+      "export-crm-companies",
+      "export-crm-contacts",
+      "export-leads",
+      "export-opportunities",
+      "get-crm-company",
+      "get-crm-contact",
+      "get-crm-saved-view",
+      "get-crm-task",
+      "get-lead",
+      "get-opportunity",
+      "global-crm-search",
+      "import-crm-companies",
+      "import-crm-contacts",
+      "import-leads",
+      "import-opportunities",
+      "link-contact-to-company",
+      "link-task-to-entity",
+      "list-activities",
+      "list-campaigns",
+      "list-crm-companies",
+      "list-crm-contacts",
+      "list-crm-pipeline-stages",
+      "list-crm-pipelines",
+      "list-crm-saved-views",
+      "list-crm-tasks",
+      "list-lead-sources",
+      "list-leads",
+      "list-opportunities",
+      "mark-opportunity-lost",
+      "mark-opportunity-won",
+      "merge-crm-contacts",
+      "pipeline-report",
+      "promote-contact-to-customer",
+      "remove-crm-contact",
+      "set-opportunity-pipeline-stage",
+      "status",
+      "unlink-task-from-entity",
+      "update-crm-company",
+      "update-crm-contact",
+      "update-crm-pipeline-stage",
+      "update-crm-saved-view",
+      "update-crm-task",
+      "update-lead",
+      "update-opportunity"
+     ],
+     "flags": {
+      "--action": {
+       "store_true": false
+      },
+      "--activity-date": {
+       "store_true": false
+      },
+      "--activity-id": {
+       "store_true": false
+      },
+      "--activity-type": {
+       "store_true": false
+      },
+      "--actual-spend": {
+       "store_true": false
+      },
+      "--assigned-to": {
+       "store_true": false
+      },
+      "--budget": {
+       "store_true": false
+      },
+      "--campaign-id": {
+       "store_true": false
+      },
+      "--campaign-type": {
+       "store_true": false
+      },
+      "--column-order-json": {
+       "store_true": false
+      },
+      "--company-id": {
+       "store_true": false
+      },
+      "--company-name": {
+       "store_true": false
+      },
+      "--created-by": {
+       "store_true": false
+      },
+      "--crm-company-id": {
+       "store_true": false
+      },
+      "--crm-contact-id": {
+       "store_true": false
+      },
+      "--crm-task-id": {
+       "store_true": false
+      },
+      "--customer-id": {
+       "store_true": false
+      },
+      "--db-path": {
+       "store_true": false
+      },
+      "--description": {
+       "store_true": false
+      },
+      "--domain": {
+       "store_true": false
+      },
+      "--due-date": {
+       "store_true": false
+      },
+      "--due-within-days": {
+       "store_true": false
+      },
+      "--duplicate-contact-id": {
+       "store_true": false
+      },
+      "--email": {
+       "store_true": false
+      },
+      "--end-date": {
+       "store_true": false
+      },
+      "--entity-id": {
+       "store_true": false
+      },
+      "--entity-type": {
+       "store_true": false
+      },
+      "--entity-types": {
+       "store_true": false
+      },
+      "--expected-closing-date": {
+       "store_true": false
+      },
+      "--expected-revenue": {
+       "store_true": false
+      },
+      "--file": {
+       "store_true": false
+      },
+      "--filter-json": {
+       "store_true": false
+      },
+      "--from-date": {
+       "store_true": false
+      },
+      "--group-by-json": {
+       "store_true": false
+      },
+      "--id": {
+       "store_true": false
+      },
+      "--include-udfs": {
+       "store_true": true
+      },
+      "--industry": {
+       "store_true": false
+      },
+      "--is-active": {
+       "store_true": false
+      },
+      "--is-primary": {
+       "store_true": true
+      },
+      "--is-shared": {
+       "store_true": true
+      },
+      "--items": {
+       "store_true": false
+      },
+      "--job-title": {
+       "store_true": false
+      },
+      "--lead-id": {
+       "store_true": false
+      },
+      "--lead-name": {
+       "store_true": false
+      },
+      "--lead-source-id": {
+       "store_true": false
+      },
+      "--lifecycle": {
+       "store_true": false
+      },
+      "--limit": {
+       "store_true": false
+      },
+      "--link-to": {
+       "store_true": false
+      },
+      "--linked-customer-id": {
+       "store_true": false
+      },
+      "--linked-to": {
+       "store_true": false
+      },
+      "--linkedin-url": {
+       "store_true": false
+      },
+      "--lost-reason": {
+       "store_true": false
+      },
+      "--mobile": {
+       "store_true": false
+      },
+      "--name": {
+       "store_true": false
+      },
+      "--next-action-date": {
+       "store_true": false
+      },
+      "--next-follow-up-date": {
+       "store_true": false
+      },
+      "--not-shared": {
+       "store_true": true
+      },
+      "--notes": {
+       "store_true": false
+      },
+      "--offset": {
+       "store_true": false
+      },
+      "--on-duplicate": {
+       "store_true": false
+      },
+      "--opportunity": {
+       "store_true": false
+      },
+      "--opportunity-id": {
+       "store_true": false
+      },
+      "--opportunity-name": {
+       "store_true": false
+      },
+      "--opportunity-type": {
+       "store_true": false
+      },
+      "--order": {
+       "store_true": false
+      },
+      "--output": {
+       "store_true": false
+      },
+      "--overdue": {
+       "store_true": true
+      },
+      "--owner-user-id": {
+       "store_true": false
+      },
+      "--phone": {
+       "store_true": false
+      },
+      "--pipeline": {
+       "store_true": false
+      },
+      "--primary-contact-id": {
+       "store_true": false
+      },
+      "--priority": {
+       "store_true": false
+      },
+      "--probability": {
+       "store_true": false
+      },
+      "--query": {
+       "store_true": false
+      },
+      "--reason": {
+       "store_true": false
+      },
+      "--revenue": {
+       "store_true": false
+      },
+      "--role-title": {
+       "store_true": false
+      },
+      "--saved-view-id": {
+       "store_true": false
+      },
+      "--search": {
+       "store_true": false
+      },
+      "--set-as-default": {
+       "store_true": true
+      },
+      "--shared-only": {
+       "store_true": true
+      },
+      "--shift-existing": {
+       "store_true": true
+      },
+      "--sort-json": {
+       "store_true": false
+      },
+      "--source": {
+       "store_true": false
+      },
+      "--stage": {
+       "store_true": false
+      },
+      "--start-date": {
+       "store_true": false
+      },
+      "--status": {
+       "store_true": false
+      },
+      "--subject": {
+       "store_true": false
+      },
+      "--task": {
+       "store_true": false
+      },
+      "--terminal": {
+       "store_true": false
+      },
+      "--territory": {
+       "store_true": false
+      },
+      "--to-date": {
+       "store_true": false
+      },
+      "--view": {
+       "store_true": false
+      }
+     }
+    },
+    "erpclaw-crm-adv": {
+     "actions": [],
+     "flags": {
+      "--action": {
+       "store_true": false
+      },
+      "--actions-json": {
+       "store_true": false
+      },
+      "--annual-value": {
+       "store_true": false
+      },
+      "--auto-renew": {
+       "store_true": false
+      },
+      "--body-html": {
+       "store_true": false
+      },
+      "--body-text": {
+       "store_true": false
+      },
+      "--campaign-id": {
+       "store_true": false
+      },
+      "--campaign-status-filter": {
+       "store_true": false
+      },
+      "--company-id": {
+       "store_true": false
+      },
+      "--conditions-json": {
+       "store_true": false
+      },
+      "--contact-id": {
+       "store_true": false
+      },
+      "--contract-id": {
+       "store_true": false
+      },
+      "--contract-status-filter": {
+       "store_true": false
+      },
+      "--contract-type": {
+       "store_true": false
+      },
+      "--criteria-json": {
+       "store_true": false
+      },
+      "--customer-name": {
+       "store_true": false
+      },
+      "--db-path": {
+       "store_true": false
+      },
+      "--delay-hours": {
+       "store_true": false
+      },
+      "--description": {
+       "store_true": false
+      },
+      "--due-date": {
+       "store_true": false
+      },
+      "--email-template-id": {
+       "store_true": false
+      },
+      "--end-date": {
+       "store_true": false
+      },
+      "--enrollment-id": {
+       "store_true": false
+      },
+      "--event-timestamp": {
+       "store_true": false
+      },
+      "--event-type": {
+       "store_true": false
+      },
+      "--filter-criteria": {
+       "store_true": false
+      },
+      "--is-active": {
+       "store_true": false
+      },
+      "--limit": {
+       "store_true": false
+      },
+      "--list-type": {
+       "store_true": false
+      },
+      "--metadata": {
+       "store_true": false
+      },
+      "--name": {
+       "store_true": false
+      },
+      "--now": {
+       "store_true": false
+      },
+      "--obligation-id": {
+       "store_true": false
+      },
+      "--obligation-status-filter": {
+       "store_true": false
+      },
+      "--obligee": {
+       "store_true": false
+      },
+      "--offset": {
+       "store_true": false
+      },
+      "--parent-territory-id": {
+       "store_true": false
+      },
+      "--period": {
+       "store_true": false
+      },
+      "--points": {
+       "store_true": false
+      },
+      "--quota-amount": {
+       "store_true": false
+      },
+      "--recipient-email": {
+       "store_true": false
+      },
+      "--recipient-list-id": {
+       "store_true": false
+      },
+      "--region": {
+       "store_true": false
+      },
+      "--renewal-terms": {
+       "store_true": false
+      },
+      "--salesperson": {
+       "store_true": false
+      },
+      "--scheduled-date": {
+       "store_true": false
+      },
+      "--search": {
+       "store_true": false
+      },
+      "--sequence-id": {
+       "store_true": false
+      },
+      "--start-date": {
+       "store_true": false
+      },
+      "--status": {
+       "store_true": false
+      },
+      "--step-order": {
+       "store_true": false
+      },
+      "--steps-json": {
+       "store_true": false
+      },
+      "--subject": {
+       "store_true": false
+      },
+      "--subject-template": {
+       "store_true": false
+      },
+      "--template-id": {
+       "store_true": false
+      },
+      "--template-type": {
+       "store_true": false
+      },
+      "--territory-id": {
+       "store_true": false
+      },
+      "--territory-type": {
+       "store_true": false
+      },
+      "--total-value": {
+       "store_true": false
+      },
+      "--trigger-event": {
+       "store_true": false
+      },
+      "--workflow-id": {
+       "store_true": false
+      },
+      "--workflow-status-filter": {
+       "store_true": false
+      }
+     }
+    }
+   },
+   "router": {
+    "abc-analysis": "erpclaw-analytics",
+    "acknowledge-anomaly": "erpclaw-ai-engine",
+    "activate-workflow": "erpclaw-crm-adv",
+    "add-activity": "erpclaw-crm",
+    "add-automation-workflow": "erpclaw-crm-adv",
+    "add-business-rule": "erpclaw-ai-engine",
+    "add-campaign": "erpclaw-crm",
+    "add-campaign-template": "erpclaw-crm-adv",
+    "add-categorization-rule": "erpclaw-ai-engine",
+    "add-contract": "erpclaw-crm-adv",
+    "add-contract-obligation": "erpclaw-crm-adv",
+    "add-crm-company": "erpclaw-crm",
+    "add-crm-contact": "erpclaw-crm",
+    "add-crm-pipeline": "erpclaw-crm",
+    "add-crm-pipeline-stage": "erpclaw-crm",
+    "add-crm-saved-view": "erpclaw-crm",
+    "add-crm-task": "erpclaw-crm",
+    "add-drip-sequence": "erpclaw-crm-adv",
+    "add-drip-step": "erpclaw-crm-adv",
+    "add-email-campaign": "erpclaw-crm-adv",
+    "add-lead": "erpclaw-crm",
+    "add-lead-score-rule": "erpclaw-crm-adv",
+    "add-lead-source": "erpclaw-crm",
+    "add-nurture-sequence": "erpclaw-crm-adv",
+    "add-opportunity": "erpclaw-crm",
+    "add-pending-decision": "erpclaw-ai-engine",
+    "add-recipient-list": "erpclaw-crm-adv",
+    "add-territory": "erpclaw-crm-adv",
+    "add-territory-assignment": "erpclaw-crm-adv",
+    "aging-inventory": "erpclaw-analytics",
+    "analyze-query-performance": "erpclaw-analytics",
+    "apply-saved-view": "erpclaw-crm",
+    "automation-performance-report": "erpclaw-crm-adv",
+    "available-metrics": "erpclaw-analytics",
+    "campaign-roi-report": "erpclaw-crm-adv",
+    "cancel-crm-task": "erpclaw-crm",
+    "cancel-enrollment": "erpclaw-crm-adv",
+    "categorize-transaction": "erpclaw-ai-engine",
+    "company-scorecard": "erpclaw-analytics",
+    "complete-crm-task": "erpclaw-crm",
+    "contract-expiry-report": "erpclaw-crm-adv",
+    "contract-value-report": "erpclaw-crm-adv",
+    "convert-lead-to-opportunity": "erpclaw-crm",
+    "convert-opportunity-to-quotation": "erpclaw-crm",
+    "cost-trend": "erpclaw-analytics",
+    "create-scenario": "erpclaw-ai-engine",
+    "customer-concentration": "erpclaw-analytics",
+    "deactivate-workflow": "erpclaw-crm-adv",
+    "delete-crm-saved-view": "erpclaw-crm",
+    "detect-anomalies": "erpclaw-ai-engine",
+    "discover-correlations": "erpclaw-ai-engine",
+    "dismiss-anomaly": "erpclaw-ai-engine",
+    "efficiency-ratios": "erpclaw-analytics",
+    "enroll-contact": "erpclaw-crm-adv",
+    "evaluate-business-rules": "erpclaw-ai-engine",
+    "executive-dashboard": "erpclaw-analytics",
+    "expense-breakdown": "erpclaw-analytics",
+    "export-crm-companies": "erpclaw-crm",
+    "export-crm-contacts": "erpclaw-crm",
+    "export-leads": "erpclaw-crm",
+    "export-opportunities": "erpclaw-crm",
+    "forecast-cash-flow": "erpclaw-ai-engine",
+    "funnel-analysis": "erpclaw-crm-adv",
+    "get-contract": "erpclaw-crm-adv",
+    "get-conversation-context": "erpclaw-ai-engine",
+    "get-crm-company": "erpclaw-crm",
+    "get-crm-contact": "erpclaw-crm",
+    "get-crm-saved-view": "erpclaw-crm",
+    "get-crm-task": "erpclaw-crm",
+    "get-email-campaign": "erpclaw-crm-adv",
+    "get-forecast": "erpclaw-ai-engine",
+    "get-lead": "erpclaw-crm",
+    "get-opportunity": "erpclaw-crm",
+    "get-territory": "erpclaw-crm-adv",
+    "global-crm-search": "erpclaw-crm",
+    "headcount-analytics": "erpclaw-analytics",
+    "import-crm-companies": "erpclaw-crm",
+    "import-crm-contacts": "erpclaw-crm",
+    "import-leads": "erpclaw-crm",
+    "import-opportunities": "erpclaw-crm",
+    "inventory-turnover": "erpclaw-analytics",
+    "leave-utilization": "erpclaw-analytics",
+    "link-contact-to-company": "erpclaw-crm",
+    "link-task-to-entity": "erpclaw-crm",
+    "liquidity-ratios": "erpclaw-analytics",
+    "list-activities": "erpclaw-crm",
+    "list-anomalies": "erpclaw-ai-engine",
+    "list-automation-workflows": "erpclaw-crm-adv",
+    "list-business-rules": "erpclaw-ai-engine",
+    "list-campaign-templates": "erpclaw-crm-adv",
+    "list-campaigns": "erpclaw-crm",
+    "list-contract-obligations": "erpclaw-crm-adv",
+    "list-contracts": "erpclaw-crm-adv",
+    "list-correlations": "erpclaw-ai-engine",
+    "list-crm-companies": "erpclaw-crm",
+    "list-crm-contacts": "erpclaw-crm",
+    "list-crm-pipeline-stages": "erpclaw-crm",
+    "list-crm-pipelines": "erpclaw-crm",
+    "list-crm-saved-views": "erpclaw-crm",
+    "list-crm-tasks": "erpclaw-crm",
+    "list-drip-sequences": "erpclaw-crm-adv",
+    "list-drip-steps": "erpclaw-crm-adv",
+    "list-email-campaigns": "erpclaw-crm-adv",
+    "list-enrollments": "erpclaw-crm-adv",
+    "list-lead-score-rules": "erpclaw-crm-adv",
+    "list-lead-sources": "erpclaw-crm",
+    "list-leads": "erpclaw-crm",
+    "list-nurture-sequences": "erpclaw-crm-adv",
+    "list-opportunities": "erpclaw-crm",
+    "list-recipient-lists": "erpclaw-crm-adv",
+    "list-relationship-scores": "erpclaw-ai-engine",
+    "list-scenarios": "erpclaw-ai-engine",
+    "list-territories": "erpclaw-crm-adv",
+    "list-territory-assignments": "erpclaw-crm-adv",
+    "list-territory-quotas": "erpclaw-crm-adv",
+    "log-audit-conversation": "erpclaw-ai-engine",
+    "mark-opportunity-lost": "erpclaw-crm",
+    "mark-opportunity-won": "erpclaw-crm",
+    "marketing-dashboard": "erpclaw-crm-adv",
+    "merge-crm-contacts": "erpclaw-crm",
+    "metric-trend": "erpclaw-analytics",
+    "opex-vs-capex": "erpclaw-analytics",
+    "payroll-analytics": "erpclaw-analytics",
+    "period-comparison": "erpclaw-analytics",
+    "pipeline-report": "erpclaw-crm",
+    "pipeline-velocity": "erpclaw-crm-adv",
+    "process-drip-sends": "erpclaw-crm-adv",
+    "profitability-ratios": "erpclaw-analytics",
+    "project-profitability-analytics": "erpclaw-analytics",
+    "promote-contact-to-customer": "erpclaw-crm",
+    "quality-analytics": "erpclaw-analytics",
+    "remove-crm-contact": "erpclaw-crm",
+    "renew-contract": "erpclaw-crm-adv",
+    "revenue-by-customer": "erpclaw-analytics",
+    "revenue-by-item": "erpclaw-analytics",
+    "revenue-trend": "erpclaw-analytics",
+    "save-conversation-context": "erpclaw-ai-engine",
+    "schedule-campaign": "erpclaw-crm-adv",
+    "score-relationship": "erpclaw-ai-engine",
+    "send-campaign": "erpclaw-crm-adv",
+    "set-opportunity-pipeline-stage": "erpclaw-crm",
+    "set-territory-quota": "erpclaw-crm-adv",
+    "status": "erpclaw-analytics",
+    "support-metrics": "erpclaw-analytics",
+    "terminate-contract": "erpclaw-crm-adv",
+    "territory-comparison-report": "erpclaw-crm-adv",
+    "territory-performance-report": "erpclaw-crm-adv",
+    "track-campaign-event": "erpclaw-crm-adv",
+    "unlink-task-from-entity": "erpclaw-crm",
+    "update-automation-workflow": "erpclaw-crm-adv",
+    "update-contract": "erpclaw-crm-adv",
+    "update-crm-company": "erpclaw-crm",
+    "update-crm-contact": "erpclaw-crm",
+    "update-crm-pipeline-stage": "erpclaw-crm",
+    "update-crm-saved-view": "erpclaw-crm",
+    "update-crm-task": "erpclaw-crm",
+    "update-email-campaign": "erpclaw-crm-adv",
+    "update-lead": "erpclaw-crm",
+    "update-opportunity": "erpclaw-crm",
+    "update-territory": "erpclaw-crm-adv",
+    "win-loss-analysis": "erpclaw-crm-adv"
+   }
+  }
+ }
+}

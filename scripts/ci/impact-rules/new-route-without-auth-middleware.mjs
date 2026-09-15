@@ -50,6 +50,14 @@ const AUTH_NAMES = [
   // requireServiceOrAdmin = GATEWAY_SERVICE_TOKEN or exafy_admin JWT;
   // requireAdminOnly = exafy_admin JWT only. Both ARE auth.
   'requireServiceOrAdmin', 'requireAdminOnly',
+  // requireDevRoleForStream (routes/dev-autopilot.ts, VTID-03897): wraps
+  // requireDevRole for the one SSE route whose EventSource client can't set
+  // an Authorization header, accepting the bearer token via ?access_token=
+  // instead. The word-boundary match on 'requireDevRole' above does NOT
+  // match inside 'requireDevRoleForStream' (no boundary between 'e' and
+  // 'F'), so this name needs its own explicit entry. It IS auth — strictly
+  // the same requireDevRole check, just with an extra token source.
+  'requireDevRoleForStream',
 ];
 const ROUTE_PREFIX_RE = /^\s*router\.(get|post|put|patch|delete)\s*\(/;
 

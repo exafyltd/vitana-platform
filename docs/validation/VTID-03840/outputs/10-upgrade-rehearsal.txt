@@ -1,0 +1,119 @@
+# 10 — upgrade rehearsal (pinned commit -> next upstream version)
+pinned: 4d32db6585297a1d05a7b5927168de8c75bb7708 (upstream label v4.15.0; NOT a git tag — see tags.txt)
+upstream refs/heads/main at 2026-09-13: 4d32db6585297a1d05a7b5927168de8c75bb7708  commits ahead of pin: 0
+upstream tags on origin (all): v1.0.0 v3.5.0 v3.5.1 v4.0.0 v4.0.1 v4.0.2 v4.1.0 v4.1.1 v4.1.2 
+=> no newer upstream tag or commit exists to rehearse against today. The rehearsal exercises the mechanism a pin bump runs — migration ledger + dry-run + apply + re-apply — on the restored copy (erpclaw_restore), never on the source DB.
+## migrate --dry-run (gated: 'migrate' is in ERPClaw's DANGEROUS_ACTIONS, needs --user-confirmed even for dry-run)
+{"status": "error", "error": "user_confirmation_required", "action": "migrate", "message": "Action 'migrate' is a high-impact action. Re-invoke with --user-confirmed to proceed."}
+## migrate (apply)
+Database not found at /tmp/erpclaw-home/data.sqlite. Nothing to migrate.
+Database not found at /tmp/erpclaw-home/data.sqlite. Nothing to migrate.
+  Postgres: account_type CHECK dropped (IF EXISTS); registry seeded.
+  Postgres: gl_entry voucher_type/party_type CHECKs dropped; registries seeded.
+  Postgres: stock_ledger_entry voucher_type CHECK dropped; registry seeded.
+  Postgres: payment-table party_type/voucher_type CHECKs dropped.
+  Postgres: asset_status_registry created + seeded; asset.status CHECK dropped.
+  Postgres: is_active ensured on all four registries.
+  Postgres: custom_field_value ensured (+ index).
+  Postgres: stock_revaluation ensured (+ indexes).
+  Postgres: usage_event ensured (+ indexes).
+  Postgres: erp_user.password_hash ensured.
+  Postgres: dead orphan tables dropped (if present).
+  Postgres: company advance-account columns ensured.
+  Postgres: payment_entry.advance_account_id ensured.
+  Postgres: customer.email ensured.
+  Postgres: customer.phone ensured.
+  Postgres: supplier.email ensured.
+  Postgres: supplier.phone ensured.
+  Postgres: dimension_registry ensured (+ index, seeds).
+  Postgres: asset_impairment/asset_capitalization ensured (+ indexes, seeds).
+  Postgres: asset_maintenance.is_capex ensured.
+  Postgres: asset_maintenance.is_capex backfilled 0 NULL row(s) to 0.
+  Postgres: bank_statement / bank_match_rule / bank_statement_line ensured (+ indexes).
+  Postgres: asset.cwip_project_id ensured.
+  Postgres: cwip_cost_accumulation ensured (+ indexes, cwip_capitalization seed).
+  Postgres: purchase_invoice.cwip_asset_id ensured.
+  Postgres: journal_entry.cwip_asset_id ensured.
+  Postgres: CRM FK columns ensured.
+  Postgres: opportunity stage CHECK dropped; pipeline_stage_id added; seed/backfill applied.
+  Postgres: putaway_rule / pick_list / pick_list_item / stock_reservation_entry ensured (+ indexes).
+  Postgres: subcontracting charge columns ensured.
+  Postgres: item_alternative ensured (+ index).
+  Postgres: dead orphan tables (batch 2) dropped (if present).
+  Postgres: landed_cost_voucher voucher types seeded (if absent).
+  Postgres: billing_run/billing_run_target ensured (+ indexes).
+  Postgres: payment_allocation.delinked ensured.
+  payment_allocation back-heal: released 0 payment(s) with allocations against cancelled documents.
+  skipped: 0 allocation(s) whose payment is not submitted.
+  party-level PLE heal: appended 0 compensation row(s).
+  skipped: 0 payment(s) this migration refuses to heal.
+  billing_period re-derivation (applied):
+    draft-linked → rated:        0
+    cancelled-linked → rated:    0
+    GL-posted, ensured invoiced: 0
+    total rows changed:           0
+  Postgres: payment_deduction.type already admits 'write_off'; nothing to do.
+{
+  "status": "error",
+  "message": "Migration '035_disposal_gain_loss_account_type' failed: No module named 'typing_extensions'",
+  "suggestion": "DB left at the last successful migration. Fix the failing migration and re-run."
+}
+## migrate again (must be a no-op)
+{
+  "status": "error",
+  "message": "Migration '035_disposal_gain_loss_account_type' failed: No module named 'typing_extensions'",
+  "suggestion": "DB left at the last successful migration. Fix the failing migration and re-run."
+}
+## ledger rows after: 35
+001_registry_tables|erpclaw-setup|alter|erpclaw-setup migration 001_registry_tables|applied||2026-09-13T07:38:18Z|2026-09-13T07:38:18Z||migration_runner
+002_credit_dunning|erpclaw-setup|alter|erpclaw-setup migration 002_credit_dunning|applied||2026-09-13T07:38:18Z|2026-09-13T07:38:18Z||migration_runner
+003_displace_account_check|erpclaw-setup|alter|erpclaw-setup migration 003_displace_account_check|applied||2026-09-13T07:38:18Z|2026-09-13T07:38:18Z||migration_runner
+004_displace_gl_entry_checks|erpclaw-setup|alter|erpclaw-setup migration 004_displace_gl_entry_checks|applied||2026-09-13T07:38:18Z|2026-09-13T07:38:18Z||migration_runner
+005_displace_sle_check|erpclaw-setup|alter|erpclaw-setup migration 005_displace_sle_check|applied||2026-09-13T07:38:18Z|2026-09-13T07:38:18Z||migration_runner
+006_displace_payment_checks|erpclaw-setup|alter|erpclaw-setup migration 006_displace_payment_checks|applied||2026-09-13T07:38:18Z|2026-09-13T07:38:18Z||migration_runner
+007_displace_asset_status_check|erpclaw-setup|alter|erpclaw-setup migration 007_displace_asset_status_check|applied||2026-09-13T07:38:19Z|2026-09-13T07:38:19Z||migration_runner
+008_registry_is_active|erpclaw-setup|alter|erpclaw-setup migration 008_registry_is_active|applied||2026-09-13T07:38:19Z|2026-09-13T07:38:19Z||migration_runner
+## CLI still works on the migrated copy
+ templates: 3
+ journal entries: 23
+## FINDING: migration 035_disposal_gain_loss_account_type imports typing_extensions, which is not in ERPClaw's declared deps (only pypika/psycopg2/cryptography were needed for init + CLI). The bridge image must pin typing_extensions. Installed and resumed:
+## migrate (resume, applies the remaining migrations from the ledger position)
+    "014_company_advance_accounts",
+    "015_payment_advance_account",
+    "016_customer_supplier_email_phone",
+    "017_dimension_registry_table",
+    "018_asset_depth_tables",
+    "019_asset_maintenance_is_capex",
+    "020_bank_statement_import",
+    "021_cwip_cost_accumulation",
+    "022_cwip_invoice_je_hooks",
+    "023_crm_contact_fks",
+    "024_displace_opportunity_stage_check",
+    "025_putaway_pick_reservation",
+    "026_subcontracting_charge_columns",
+    "027_item_alternative_table",
+    "028_drop_dead_orphan_tables_2",
+    "029_landed_cost_voucher_types",
+    "030_billing_run_tables",
+    "031_allocation_delink_and_release",
+    "032_heal_party_level_ple",
+    "033_rederive_billing_period_invoice_state",
+    "034_widen_payment_deduction_type"
+  ],
+  "total_known": 36,
+  "status": "ok"
+}
+## migrate again (must be a no-op)
+    "033_rederive_billing_period_invoice_state",
+    "034_widen_payment_deduction_type",
+    "035_disposal_gain_loss_account_type",
+    "036_elimination_entry_source_link"
+  ],
+  "total_known": 36,
+  "status": "ok"
+}
+## ledger rows after: 36  pending files: 36 migration scripts on disk
+## CLI still works on the migrated copy
+ templates: 3
+ journal entries: 23
+## source DB untouched: 0 ledger rows (migrations only ran on the copy)

@@ -111,6 +111,8 @@ function makeDeps(overrides: Partial<UpstreamMessageHandlerDeps> = {}): Upstream
   return {
     clearResponseWatchdog: jest.fn(),
     detectAuthIntent: jest.fn().mockReturnValue(null),
+    detectStillHereComplaint: jest.fn().mockReturnValue(false),
+    dispatchEndConversationDirective: jest.fn(),
     emitDiag: jest.fn(),
     emitLiveSessionEvent: jest.fn().mockResolvedValue(undefined),
     executeLiveApiTool: jest.fn().mockResolvedValue({ success: true, result: '{"screen":"journey"}' }),

@@ -20,6 +20,9 @@
  */
 
 import { ADMIN_TOOL_SCHEMAS } from '../../../services/admin-voice-tools';
+// VTID-03848: BackOffice voice tools + per-surface catalog gating.
+import { BACKOFFICE_TOOL_SCHEMAS } from '../../../services/backoffice-voice-tools';
+import { resolveOrbSurface, type OrbSurface } from '../surface';
 // BOOTSTRAP-VOICE-CATALOG-COMPLETE — Vertex declarations for every tool built
 // out from the Voice Tools Catalog's `status: planned` backlog + the P0
 // community-feature gaps. Handlers live in services/orb-tools/*, spread into
@@ -58,8 +61,9 @@ export function renderAvailableToolsSection(
   mode: 'anonymous' | 'authenticated' = 'authenticated',
   currentRoute?: string,
   activeRole?: string,
+  surface?: string | null,
 ): string {
-  const tools = buildLiveApiTools(mode, currentRoute, activeRole);
+  const tools = buildLiveApiTools(mode, currentRoute, activeRole, surface);
   const decls: Array<{ name?: unknown; description?: unknown }> = [];
   for (const entry of tools as Array<Record<string, unknown>>) {
     const fnDecls = (entry as { function_declarations?: unknown }).function_declarations;
@@ -97,6 +101,60 @@ export function renderAvailableToolsSection(
 // addressable so the refactor can lock its current output as a contract
 // before A5 extracts the tool catalog into orb/live/tools/.
 export function buildLiveApiTools(
+  mode: 'anonymous' | 'authenticated' = 'authenticated',
+  currentRoute?: string,
+  activeRole?: string,
+  surface?: string | null,
+): object[] {
+  return applySurfaceGate(
+    buildLiveApiToolsUngated(mode, currentRoute, activeRole),
+    resolveOrbSurface({ currentRoute, explicit: surface }),
+    mode,
+  );
+}
+
+/**
+ * VTID-03848 — per-surface tool gating. The community catalog is built as
+ * before; on the admin and backoffice surfaces only the tools that belong to
+ * that surface survive, and community/developer tools are ABSENT (not merely
+ * discouraged in prose). backoffice additionally gains its own four tools.
+ * vitanaland and command-hub are byte-for-byte unchanged.
+ */
+const NAVIGATION_TOOL_NAMES = new Set(['get_current_screen', 'navigate', 'end_conversation', 'search_knowledge']);
+// Computed lazily: the declaration arrays come from modules that some route
+// tests mock at import time, so reading them at module load would throw.
+const namesOf = (decls: unknown): string[] =>
+  Array.isArray(decls) ? decls.map((t) => String((t as { name?: unknown })?.name ?? '')).filter(Boolean) : [];
+function surfaceAllowlist(surface: 'admin' | 'backoffice'): Set<string> {
+  return surface === 'admin'
+    ? new Set<string>([...namesOf(ADMIN_TOOL_SCHEMAS), ...namesOf(ADMIN_DOMAIN_TOOL_DECLARATIONS)])
+    : new Set<string>(namesOf(BACKOFFICE_TOOL_SCHEMAS));
+}
+
+export function applySurfaceGate(tools: object[], surface: OrbSurface, mode: 'anonymous' | 'authenticated'): object[] {
+  if (surface !== 'admin' && surface !== 'backoffice') return tools;
+  if (mode !== 'authenticated') return tools; // anonymous sessions already get the narrow navigator-only set
+  const allowed = surfaceAllowlist(surface);
+  const out: object[] = [];
+  for (const group of tools as Array<Record<string, unknown>>) {
+    if (Array.isArray(group.function_declarations)) {
+      const kept = (group.function_declarations as Array<{ name?: unknown }>).filter((d) => {
+        const name = typeof d?.name === 'string' ? d.name : '';
+        return NAVIGATION_TOOL_NAMES.has(name) || allowed.has(name);
+      });
+      if (surface === 'backoffice') {
+        const present = new Set(kept.map((d) => String(d.name)));
+        for (const schema of (Array.isArray(BACKOFFICE_TOOL_SCHEMAS) ? BACKOFFICE_TOOL_SCHEMAS : [])) if (!present.has(schema.name)) kept.push(schema as { name?: unknown });
+      }
+      if (kept.length > 0) out.push({ ...group, function_declarations: kept });
+    } else {
+      out.push(group); // google_search grounding stays available on both work surfaces
+    }
+  }
+  return out;
+}
+
+function buildLiveApiToolsUngated(
   mode: 'anonymous' | 'authenticated' = 'authenticated',
   currentRoute?: string,
   activeRole?: string,
@@ -2581,6 +2639,45 @@ export function buildLiveApiTools(
               reason: {
                 type: 'string',
                 description: 'Short freeform reason the model is closing (e.g. "explained topic, no more questions", "user confirmed understanding"). Used for telemetry — never spoken.',
+              },
+            },
+            required: [],
+          },
+        },
+        // VTID-03824: general-purpose session close, for
+        // the case neither of the two tools above covers — an ordinary
+        // conversation (not Teacher Mode, not a My Journey guided topic)
+        // where the user says something like "you can turn off now" / "I
+        // don't want to talk anymore". Without this the model has no way to
+        // signal "the user wants to stop", so turn_complete's default path
+        // unconditionally reopens the mic into LISTENING right after the
+        // farewell finishes playing — reported live as "it says goodbye and
+        // then starts listening again". Same shape as end_teaching_session /
+        // end_guided_topic_teaching deliberately, so the widget-side
+        // directive handling and teardown are the proven pattern, not a new
+        // one.
+        {
+          name: 'end_conversation',
+          description: [
+            'General conversation termination: close the orb overlay when the',
+            'user has expressed — in any wording, any language — that they',
+            'want to stop talking, end the session, or turn you off (e.g.',
+            '"you can turn off now", "that\'s enough for now", "I don\'t want',
+            'to continue", "tschüss", "du kannst jetzt ausschalten"). ALWAYS',
+            'call this AFTER speaking a brief, warm farewell of your own',
+            'wording that respects their wish to stop — never argue, never',
+            'ask "are you sure?". Do not call this for a mid-conversation',
+            'pause or a topic change; only when the user is ending the',
+            'conversation itself. Do not use this inside Teacher Mode or a My',
+            'Journey guided topic — those have their own dedicated end tools',
+            '(end_teaching_session, end_guided_topic_teaching).',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              reason: {
+                type: 'string',
+                description: 'Short freeform reason the model is closing (e.g. "user said turn off", "user said goodbye"). Used for telemetry — never spoken.',
               },
             },
             required: [],

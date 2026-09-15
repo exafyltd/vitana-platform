@@ -189,6 +189,12 @@ export function notifyOrbVoiceBridgeWrite(
 export interface UpstreamMessageHandlerDeps {
   clearResponseWatchdog: (session: GeminiLiveSession) => void;
   detectAuthIntent: (text: string) => any;
+  // VTID-03824 (second follow-up): deterministic code-level backstop for
+  // the model failing to call the end_conversation tool despite an
+  // unambiguous "you're still here" complaint — see the definitions in
+  // orb-live.ts for why this can't be left to prompt compliance alone.
+  detectStillHereComplaint: (text: string) => boolean;
+  dispatchEndConversationDirective: (session: GeminiLiveSession, reason: string) => void;
   emitDiag: (
     session: GeminiLiveSession,
     stage: string,
@@ -2262,6 +2268,23 @@ export function handleTurnComplete(
   if (session.inputTranscriptBuffer.length > 0 && !isGreetingTurn) {
     const userText = session.inputTranscriptBuffer.trim();
     chatBridgeUserText = userText;
+
+    // VTID-03824 (second follow-up): deterministic backstop — see the
+    // detectStillHereComplaint() doc comment in orb-live.ts. The model just
+    // finished responding to THIS turn (possibly non-compliantly, e.g. a
+    // farewell-sounding sentence with no actual tool call); rather than let
+    // turn_complete's default path reopen the mic for another round, force
+    // the exact same client-side close the end_conversation TOOL would have
+    // triggered. Idempotent per session so a stray extra turn can't double-
+    // dispatch.
+    if (
+      session.active &&
+      !(session as any).stillHereEndDispatched &&
+      ctx.deps.detectStillHereComplaint(userText)
+    ) {
+      (session as any).stillHereEndDispatched = true;
+      ctx.deps.dispatchEndConversationDirective(session, 'still_here_complaint_detected');
+    }
 
     // VTID-01953 identity-mutation intent intercept.
     if (session.identity?.user_id && session.identity?.tenant_id) {

@@ -19,6 +19,8 @@ import stravaConnector from './wearable/strava';
 import googleConnector from './productivity/google';
 // VTID-01942: in-house Vitana Media Hub — music/podcast/shorts, no OAuth
 import vitanaHubConnector from './media/vitana-hub';
+// VTID-03885: Partner Health Test Integration — DoctorBox is Partner #001 (sandbox/mock)
+import doctorBoxConnector from './health/doctorbox';
 
 const CONNECTORS = new Map<string, Connector>();
 
@@ -38,6 +40,7 @@ register(ouraConnector);
 register(stravaConnector);
 register(googleConnector);
 register(vitanaHubConnector);
+register(doctorBoxConnector);
 
 export function getConnector(id: string): Connector | undefined {
   return CONNECTORS.get(id);

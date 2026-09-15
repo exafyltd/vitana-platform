@@ -1,0 +1,29 @@
+# 13 — vendor.sh rehearsal (pinned clone + patch apply + overlay + module staging), throwaway dirs
+== foundation 4d32db6585297a1d05a7b5927168de8c75bb7708
+   applied patches/0001-0002-erpclaw-lib-db-postgres.patch
+   applied patches/0003-router-module-lookup-postgres.patch
+   overlay scripts/erpclaw-gl/assets/charts/uae_ifrs.json
+== install home /tmp/tmp.0YVuz77lRb/home
+== addons 7c1b5ae5701980e97f34cf25fa5943066140f6a3 (module trees staged for install_module_local.py at first DB init)
+   staged erpclaw-growth
+== done
+exit=0
+## tree:
+db_query.py
+erpclaw-accounting-adv
+erpclaw-billing
+erpclaw-buying
+erpclaw-gl
+lib
+modules
+vendored-modules
+erpclaw-growth
+## pin checks:
+/tmp/tmp.0YVuz77lRb/root/scripts/erpclaw-setup/lib/erpclaw_lib/db.py:2
+/tmp/tmp.0YVuz77lRb/root/scripts/db_query.py:1
+uae_ifrs.json
+us_gaap.json
+.no_autosync present
+.git removed
+## flags manifest regenerated from the vendored trees is identical to the committed one:
+IDENTICAL

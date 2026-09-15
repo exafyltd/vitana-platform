@@ -2582,6 +2582,19 @@
       ]
     },
     {
+      "name": "end_conversation",
+      "surface": "Onboarding",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "General conversation termination: close the orb overlay after a farewell when the user wants to stop talking or turn Vitana off.",
+      "wired_in": [
+        "vertex"
+      ]
+    },
+    {
       "name": "view_messages",
       "surface": "Chat",
       "category": "community",

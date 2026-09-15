@@ -482,6 +482,78 @@ jobs:
         # see the note near SEC_JWT above, this is the
         # SECOND time an apostrophe here broke the
         # surrounding single-quoted bash string to 0 jobs.
+        # VTID-03820 follow-up — OPERATOR_EXECUTION_ONRAMP_ENABLED pinned to
+        # STAGING ONLY, exact-"true" opt-in (operator-execution-onramp.ts's
+        # own isOnRampEnabled() checks for the literal string "true" —
+        # unset/"false"/a typo all stay disabled). Explicit platform-owner
+        # request, after observing the feature's own risk in this file's
+        # header comment: enabling this means the Operator Console chat
+        # (autopilot_execute_task tool) can cause a REAL pull request
+        # against THIS repo — there is one GitHub repo regardless of which
+        # gateway environment triggers it, staging front end included.
+        # DEEPSEEK_API_KEY is already resolved onto this task definition
+        # (SEC_DEEPSEEK above) — this on-ramp forces its one invocation
+        # onto deepseek-flash. Every other gate (target VTID must be
+        # spec_status='approved' and non-terminal; the full reused
+        # approveAutoExecute() safety gate — kill_switch, allow/deny scope,
+        # budget, concurrency, tests_missing, PR-flood guard) is unchanged
+        # and still applies; this flag only removes the one gate that is
+        # unconditionally OFF by default. Deliberately NOT added to
+        # AWS-PROD-DEPLOY-GATEWAY.yml — promoting it there is a separate,
+        # later decision once a real on-ramp execution has been observed
+        # end-to-end on staging. Rollback is this value -> "false" (or
+        # removal), no code revert — with it off, triggerOperatorExecution()
+        # returns operator_execution_onramp_disabled immediately, before any
+        # DB row is written.
+        # VTID-03850 -- DEV_AUTOPILOT_USE_JOB=true + DEV_AUTOPILOT_JOB_CLOUD=aws
+        # pinned on STAGING: every claimed Dev Autopilot execution (including
+        # the operator on-ramp above) is dispatched as a one-shot Fargate task
+        # of the vitana-autopilot-executor family via ecs:RunTask
+        # (dispatchExecutorJobAws), instead of a fire-and-forget promise on
+        # this gateway task. Observed 2026-09-13 (VTID-03841): an in-process
+        # run had no GitHub token and died silently on a 20-minute watchdog.
+        # The executor task def carries GITHUB_SAFE_MERGE_TOKEN and, since
+        # VTID-03850, BEDROCK_ROLE_ARN + DEEPSEEK_API_KEY (see
+        # AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml). Failure posture is the
+        # code path itself: if RunTask is refused (IAM, capacity), the gateway
+        # logs the reason and falls back to the in-process run, i.e. exactly
+        # today. Rollback is this value -> "false", no code revert. Platform
+        # owner approved 2026-09-13. Deliberately NOT added to
+        # AWS-PROD-DEPLOY-GATEWAY.yml -- prod keeps its live task def state
+        # until a staging dispatch has been observed end-to-end.
+        #
+        # VTID-03867 -- GITHUB_SAFE_MERGE_TOKEN was never wired into this
+        # task def at all (unlike prod's vitana-gateway-awsdr, which has
+        # carried it since day one). Confirmed live 2026-09-13: the most
+        # recent staging dev-autopilot/operator-onramp execution that
+        # reached the merge stage failed with metadata.error =
+        # "base branch lookup: GITHUB_SAFE_MERGE_TOKEN not set" -- every
+        # execution that gets this far on staging has always failed here,
+        # this is not new breakage. Points at the SAME secret
+        # (vitana/github/token) prod already reads successfully via the
+        # identical shared executionRoleArn (vitana-ecs-task-execution-role),
+        # so no new credential material or IAM change is introduced -- this
+        # is purely wiring an existing secret into a second task def.
+        #
+        # VTID-03883 -- DEV_AUTOPILOT_WATCHER_LIVE=true. Without this, the
+        # CI watcher (dev-autopilot-watcher.ts) defaults to DRY_RUN mode
+        # (its own fallback is `DEV_AUTOPILOT_DRY_RUN || 'true'`) and
+        # FABRICATES ci-passed/merged/deployed/verified/completed
+        # transitions 90s apart per stage, WITHOUT ever calling GitHub.
+        # Confirmed live 2026-09-14: an operator on-ramp execution
+        # (VTID-03863, PR #3307) reported dev_autopilot_executions.status
+        # = 'completed' while PR #3307 sat open, unmerged, and still
+        # failing VALIDATOR-CHECK — a false-success report the reconciler
+        # (VTID-03877) would otherwise propagate onto vtid_ledger as a
+        # real terminal_outcome='success'. VTID-03863 itself is left
+        # uncorrected as a documented eval artifact of this exact defect.
+        # Flipping this makes the watcher poll real GitHub check-run/merge/
+        # deploy state instead (existing risk-class + mergeable_state
+        # auto-merge gates in dev-autopilot-watcher.ts are unchanged).
+        # Deliberately NOT added to AWS-PROD-DEPLOY-GATEWAY.yml -- prod's
+        # live task def state is untouched pending real staging observation
+        # under live mode. Rollback is this value -> "false", no code
+        # revert. Platform owner approved 2026-09-14.
         run: |
           set -e
           IMAGE="${{ steps.build.outputs.image }}"
@@ -496,7 +568,8 @@ jobs:
             "SEC_GEMINI:vitana/gateway/staging/google-gemini-api-key" \
             "SEC_OPENAI:vitana/gateway/staging/openai-api-key" \
             "SEC_DEEPSEEK:vitana/gateway/staging/deepseek-api-key" \
-            "SEC_AURORA:vitana/aurora/prod/database-url" ; do
+            "SEC_AURORA:vitana/aurora/prod/database-url" \
+            "SEC_GITHUB_TOKEN:vitana/github/token" ; do
             VAR="${pair%%:*}"; NAME="${pair#*:}"
             ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text 2>/dev/null || true)
             if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
@@ -507,6 +580,19 @@ jobs:
             export "$VAR"
             echo "  resolved $NAME"
           done
+          # VTID-03840: the erp-bridge (BackOffice ERP facade) is OPTIONAL on
+          # staging until an operator runs scripts/aws/setup-erp-bridge-staging.sh.
+          # Absent token secret => ERP_BRIDGE_URL/ERP_BRIDGE_TOKEN are left
+          # untouched on the task definition and the gateway keeps reporting the
+          # bridge as not_configured. It must never fail a gateway deploy.
+          ERP_BRIDGE_URL="http://erp-bridge.vitana.internal:8080"
+          SEC_ERP_BRIDGE=$(aws secretsmanager describe-secret --secret-id vitana/erp-bridge/staging/bridge-token --query ARN --output text 2>/dev/null || true)
+          if [ -z "$SEC_ERP_BRIDGE" ] || [ "$SEC_ERP_BRIDGE" = "None" ]; then
+            SEC_ERP_BRIDGE=""
+            echo "  erp-bridge token secret absent - ERP_BRIDGE_URL/TOKEN not wired (VTID-03840; expected until provisioned)"
+          else
+            echo "  resolved vitana/erp-bridge/staging/bridge-token -> ERP_BRIDGE_URL=$ERP_BRIDGE_URL"
+          fi
           TASK_ROLE_ARN=$(aws ecs describe-task-definition --task-definition "$TD_ARN" \
             --query 'taskDefinition.taskRoleArn' --output text)
           if [ -z "$TASK_ROLE_ARN" ] || [ "$TASK_ROLE_ARN" = "None" ]; then
@@ -522,6 +608,8 @@ jobs:
                  --arg SEC_JWT "$SEC_JWT" --arg SEC_ANON "$SEC_ANON" \
                  --arg SEC_GEMINI "$SEC_GEMINI" --arg SEC_OPENAI "$SEC_OPENAI" \
                  --arg SEC_DEEPSEEK "$SEC_DEEPSEEK" --arg SEC_AURORA "$SEC_AURORA" \
+                 --arg SEC_GITHUB_TOKEN "$SEC_GITHUB_TOKEN" \
+                 --arg SEC_ERP_BRIDGE "$SEC_ERP_BRIDGE" --arg ERP_BRIDGE_URL "$ERP_BRIDGE_URL" \
                  --arg TASK_ROLE "$TASK_ROLE_ARN" '
                 .containerDefinitions[0].image = $IMG
                 | .containerDefinitions[0].environment |=
@@ -540,6 +628,12 @@ jobs:
                                                 "ORB_LOG_NOVA_INSTRUCTION_DEBUG",
                                                 "TTS_PROVIDER","TTS_POLLY_STRICT","VERTEX_LIVE_UNAVAILABLE",
                                                 "ORB_CASCADED_VOICE_ENABLED",
+                                                "OPERATOR_EXECUTION_ONRAMP_ENABLED",
+                                                "OPERATOR_CODEBASE_READ_ENABLED",
+                                                "OPERATOR_DB_READONLY_ENABLED",
+                                                "DEV_AUTOPILOT_LLM_REVIEW_ENABLED",
+                                                "DEV_AUTOPILOT_USE_JOB","DEV_AUTOPILOT_JOB_CLOUD",
+                                                "DEV_AUTOPILOT_WATCHER_LIVE",
                                                 "BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION",
                                                 "AURORA_CA_BUNDLE_PATH") | not) ]
                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
@@ -564,6 +658,13 @@ jobs:
                           {name:"TTS_POLLY_STRICT", value:"true"},
                           {name:"VERTEX_LIVE_UNAVAILABLE", value:"true"},
                           {name:"ORB_CASCADED_VOICE_ENABLED", value:"true"},
+                          {name:"OPERATOR_EXECUTION_ONRAMP_ENABLED", value:"true"},
+                          {name:"OPERATOR_CODEBASE_READ_ENABLED", value:"true"},
+                          {name:"OPERATOR_DB_READONLY_ENABLED", value:"true"},
+                          {name:"DEV_AUTOPILOT_LLM_REVIEW_ENABLED", value:"true"},
+                          {name:"DEV_AUTOPILOT_USE_JOB", value:"true"},
+                          {name:"DEV_AUTOPILOT_JOB_CLOUD", value:"aws"},
+                          {name:"DEV_AUTOPILOT_WATCHER_LIVE", value:"true"},
                           {name:"BEDROCK_ROLE_ARN", value:$TASK_ROLE},
                           {name:"AWS_BEDROCK_REGION", value:"eu-central-1"},
                           {name:"AURORA_CA_BUNDLE_PATH", value:"/app/certs/rds-combined-ca-bundle.pem"} ] )
@@ -571,14 +672,23 @@ jobs:
                     ( [ .[] | select(.name | IN("SUPABASE_JWT_SECRET","SUPABASE_ANON_KEY",
                                                 "GOOGLE_GEMINI_API_KEY","GEMINI_API_KEY",
                                                 "OPENAI_API_KEY","DEEPSEEK_API_KEY",
-                                                "AURORA_DATABASE_URL") | not) ]
+                                                "AURORA_DATABASE_URL","GITHUB_SAFE_MERGE_TOKEN") | not) ]
                       + [ {name:"SUPABASE_JWT_SECRET",   valueFrom:$SEC_JWT},
                           {name:"SUPABASE_ANON_KEY",     valueFrom:$SEC_ANON},
                           {name:"GOOGLE_GEMINI_API_KEY", valueFrom:$SEC_GEMINI},
                           {name:"GEMINI_API_KEY",        valueFrom:$SEC_GEMINI},
                           {name:"OPENAI_API_KEY",        valueFrom:$SEC_OPENAI},
                           {name:"DEEPSEEK_API_KEY",      valueFrom:$SEC_DEEPSEEK},
-                          {name:"AURORA_DATABASE_URL",   valueFrom:$SEC_AURORA} ] )
+                          {name:"AURORA_DATABASE_URL",   valueFrom:$SEC_AURORA},
+                          {name:"GITHUB_SAFE_MERGE_TOKEN", valueFrom:$SEC_GITHUB_TOKEN} ] )
+                | ( if $SEC_ERP_BRIDGE != "" then
+                      ( .containerDefinitions[0].environment |=
+                          ( [ .[] | select(.name | IN("ERP_BRIDGE_URL") | not) ]
+                            + [ {name:"ERP_BRIDGE_URL", value:$ERP_BRIDGE_URL} ] )
+                      | .containerDefinitions[0].secrets |=
+                          ( [ .[] | select(.name | IN("ERP_BRIDGE_TOKEN") | not) ]
+                            + [ {name:"ERP_BRIDGE_TOKEN", valueFrom:$SEC_ERP_BRIDGE} ] ) )
+                    else . end )
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \

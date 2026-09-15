@@ -1,0 +1,52 @@
+
+PASS test/orb/live/characterization/upstream-greeting-reemit-suppression.characterization.test.ts
+  BOOTSTRAP-ORB-GREETING-REEMIT: structural greeting re-emit suppression
+    ✓ guards on greetingSent + the "user never spoke" counter relation (2 ms)
+    ✓ flips session.suppressCurrentTurnAudio so the existing forward gate drops the turn (1 ms)
+    ✓ emits a [BOOTSTRAP-ORB-GREETING-REEMIT] warn + greeting_reemit_suppressed diag
+    ✓ sets the flag inside the new-turn-start (isModelSpeaking) block, before audio is forwarded (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb/live/session/upstream-close-classifier.test.ts
+  classifyUpstreamClose
+    ✓ code=1000 on an active session → transparent_reconnect (no loud alert)
+    ✓ watchdog stall-recovery → transparent_reconnect (no loud alert)
+    ✓ persona swap → persona_swap (silent cue, not an alert)
+    ✓ abnormal close (1006) with no stall recovery → genuine_disconnect (loud alert) (1 ms)
+    ✓ pre-setup close → ignore (connect path owns it)
+    ✓ inactive session → ignore (teardown path owns it)
+    ✓ the dominant production case — Vertex 5-min recycle on a healthy session — is silent (1 ms)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.execution.deferred for VTID-00004 (351de0bb-af8c-4379-b31d-8cff61d9f5ff)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+PASS test/worker-orchestrator-await-autopilot.test.ts (60.289 s)
+  POST /api/v1/worker/orchestrator/await-autopilot-execution — auth
+    ✓ 400 when vtid is missing (8 ms)
+    ✓ 400 when autopilot_execution_id is missing (3 ms)
+    ✓ 401 when worker_id is missing (4 ms)
+    ✓ 401 when worker is NOT in worker_registry (2 ms)
+    ✓ 403 when worker does not hold the claim (2 ms)
+    ✓ 403 when claim has expired (claim_expires_at in the past) (2 ms)
+  POST /api/v1/worker/orchestrator/await-autopilot-execution — four-state contract
+    ✓ returns completed with files_changed from PR diff when status=completed (3 ms)
+    ✓ returns pr_ready with files when status=ci (PR opened, CI in flight) (3 ms)
+    ✓ returns failed when status=failed (2 ms)
+    ✓ returns deferred (NOT failed) when timeout elapses while status=running (60094 ms)
+    ✓ returns failed (NOT deferred) when execution row is missing entirely (11 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 1 skipped, 738 passed, 738 of 739 total
+Tests:       29 skipped, 6 todo, 13683 passed, 13718 total
+Snapshots:   44 passed, 44 total
+Time:        93.508 s
+Ran all test suites.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+
+[exited with code 0]

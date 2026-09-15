@@ -29,6 +29,9 @@ import { createClient } from '@supabase/supabase-js';
 // VTID-03579: operator LLM calls go through the router (Bedrock primary,
 // DeepSeek fallback) — never a provider named in this file.
 import { callViaRouter, type LLMRouterTool } from './llm-router';
+// VTID-03892: the Operator's own engineering memory (VTID-03889) — separate
+// from Memory Garden, which is community end-user personalization data.
+import { recallDevMemory, type DevMemoryHit } from './dev-agent-memory';
 import {
   createOperatorTask,
   getAutopilotTaskStatus,
@@ -38,11 +41,17 @@ import {
   TaskStatusResponse
 } from './operator-service';
 import { emitOasisEvent, recommendationSyncEvents } from './oasis-event-service';
+// VTID-03820: DeepSeek-powered execution on-ramp
+import { triggerOperatorExecution } from './operator-execution-onramp';
 import { dataExportConsentTag } from './data-export-consent';
 // VTID-01221: Sync Brief formatter for recommendation presentation
 import { formatSyncBrief, isWhatNextIntent, shouldFetchRecommendations, SyncBriefContext, Recommendation } from './sync-brief-formatter';
 // VTID-0538: Knowledge Hub integration
 import { executeKnowledgeSearch, KNOWLEDGE_SEARCH_TOOL_DEFINITION } from './knowledge-hub';
+// VTID-03835: Operator Console codebase read access (search + file read)
+import { searchCode, getFileContents } from './github-service';
+// VTID-03836: Operator Console AWS ECS read-only status
+import { describeEcsServices, ALLOWED_ECS_SERVICES } from './aws-ecs-readonly';
 // VTID-01208: LLM Telemetry
 import {
   startLLMCall,
@@ -62,6 +71,10 @@ import { runFullQualityCheck } from './spec-quality-agent';
 // BOOTSTRAP-VOICE-DEMO: real heartbeats so the agents dashboard shows
 // gemini-operator as healthy whenever it's actually called.
 import { recordAgentHeartbeat } from '../routes/agents-registry';
+// VTID-03851: verified-caller marker for the execution on-ramp. Written by
+// routes/operator.ts on EVERY /chat request (set or clear), read by
+// executeExecuteTask() before anything else. See operator-execute-authz.ts.
+import { getThreadAuth, isExecuteTaskAuthorized, describeExecuteTaskRefusal } from './operator-execute-authz';
 
 // Environment config
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -176,6 +189,29 @@ export const GEMINI_TOOL_DEFINITIONS = {
           }
         },
         required: ['description']
+      }
+    },
+    {
+      name: 'autopilot_execute_task',
+      description: 'VTID-03820: Execute an already-approved VTID via the DeepSeek-powered execution on-ramp — writes code and opens a real pull request. The target VTID MUST already have spec_status=approved; this tool does not approve specs itself. Disabled unless the platform owner has explicitly enabled OPERATOR_EXECUTION_ONRAMP_ENABLED. Only call this when the user has clearly asked to execute/implement/ship a SPECIFIC, already-approved VTID — never to create new work (use autopilot_create_task for that) and never speculatively.',
+      parameters: {
+        type: 'object',
+        properties: {
+          vtid: {
+            type: 'string',
+            description: 'The already-approved VTID to execute (e.g. VTID-04102).'
+          },
+          plan_markdown: {
+            type: 'string',
+            description: 'What to change and why — the execution plan for this VTID.'
+          },
+          files_referenced: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'File paths the plan will create or change — nothing else. A test-only plan lists only the test file; a source change lists the source file AND its paired test file (the safety gate rejects a plan missing test coverage, and rejects any listed file outside its allow scope).'
+          }
+        },
+        required: ['vtid', 'plan_markdown', 'files_referenced']
       }
     },
     {
@@ -387,6 +423,85 @@ Returns checklist items with pass/fail status based on OASIS evidence.`,
           }
         },
         required: ['vtid']
+      }
+    },
+    // VTID-03835: Operator Console codebase read access — read-only, GitHub-backed
+    // (there is no live checkout on the gateway container to read from).
+    {
+      name: 'dev_search_codebase',
+      description: `Search the exafyltd/vitana-platform codebase (via the GitHub Search Code API, default branch "main") for a keyword, symbol name, or string literal. Read-only. Returns matching file paths, not full file content — call dev_read_file on a result to see the code. Developer/admin role only.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'Search terms — e.g. a function/variable name, a string literal, or a concept keyword.'
+          },
+          path_glob: {
+            type: 'string',
+            description: 'Optional path prefix/substring to narrow results (e.g. "services/gateway/src/routes"). GitHub code search has no true glob support — this is a substring match, not a wildcard pattern.'
+          }
+        },
+        required: ['query']
+      }
+    },
+    {
+      name: 'dev_read_file',
+      description: `Read a file's content, or list a directory, from the exafyltd/vitana-platform GitHub repo. Defaults to the "main" branch. Read-only. Developer/admin role only.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Repo-relative file or directory path, e.g. "services/gateway/src/services/gemini-operator.ts".'
+          },
+          ref: {
+            type: 'string',
+            description: 'Branch, tag, or commit SHA to read from. Defaults to "main".'
+          }
+        },
+        required: ['path']
+      }
+    },
+    // VTID-03836: Operator Console AWS ECS read-only status. Disabled until a
+    // dedicated read-only IAM role is provisioned — see aws-ecs-readonly.ts.
+    {
+      name: 'dev_aws_ecs_status',
+      description: `Get the live ECS deployment status (desired/running/pending task counts, current task definition, rollout state) for one documented Vitana service. Read-only — never deploys, scales, or restarts anything, and only the services listed in CLAUDE.md §1b are queryable. Developer/admin role only.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          service_name: {
+            type: 'string',
+            description: `The ECS service name, e.g. "vitana-gateway-awsdr" (prod) or "vitana-gateway" (staging). Allowed values: ${ALLOWED_ECS_SERVICES.join(', ')}.`
+          }
+        },
+        required: ['service_name']
+      }
+    },
+    // VTID-03837: Operator Console read-only DB access — explicit table
+    // allowlist via Supabase PostgREST, never arbitrary SQL.
+    {
+      name: 'dev_db_query',
+      description: `Read rows from an explicitly allowlisted table (vtid_ledger, oasis_events, dev_autopilot_executions, dev_autopilot_plan_versions) via Supabase. Read-only — no arbitrary SQL, no writes, no other tables. Developer/admin role only.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          table: {
+            type: 'string',
+            enum: ['vtid_ledger', 'oasis_events', 'dev_autopilot_executions', 'dev_autopilot_plan_versions'],
+            description: 'Table to read from.'
+          },
+          vtid: {
+            type: 'string',
+            description: 'Optional VTID to filter rows by.'
+          },
+          limit: {
+            type: 'integer',
+            description: 'Max rows to return. Defaults to 20, max 100.'
+          }
+        },
+        required: ['table']
       }
     },
     // VTID-01270A: Community & Events tools for ORB text chat
@@ -1001,6 +1116,25 @@ async function executeCreateTask(
     };
   }
 
+  // VTID-03819: a similar task already exists — nothing new was allocated,
+  // so skip the vtid.created/executed intent logging below (those describe
+  // a task that was actually created) and tell the caller which existing
+  // VTID to use instead.
+  if (createdTask.duplicate) {
+    console.log(`[VTID-03819] Skipping creation — similar task already exists: ${createdTask.vtid}`);
+    return {
+      ok: true,
+      data: {
+        vtid: createdTask.vtid,
+        title: createdTask.title,
+        mode: createdTask.mode,
+        status: 'existing',
+        duplicate: true,
+        message: `A similar task already exists: ${createdTask.vtid} — "${createdTask.title}". No new task was created.`
+      }
+    };
+  }
+
   // Step 5: Log VTID created
   await emitOasisEvent({
     vtid: createdTask.vtid,
@@ -1044,6 +1178,110 @@ async function executeCreateTask(
       status: 'pending',
       message: `Task created successfully with VTID ${createdTask.vtid}. It has been queued for planning.`
     }
+  };
+}
+
+/**
+ * VTID-03820: Execute autopilot_execute_task — the DeepSeek-powered
+ * execution on-ramp. Higher-risk than task creation (this writes code and
+ * opens a real PR), so it gets its own governance action id and a higher
+ * risk_level. The actual approval/safety-gate/kill-switch logic all lives
+ * in triggerOperatorExecution()/the reused Dev Autopilot machinery — this
+ * function is a thin governance-logged wrapper, matching executeCreateTask's
+ * own shape.
+ */
+async function executeExecuteTask(
+  args: { vtid: string; plan_markdown: string; files_referenced: string[] },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  const requestId = randomUUID();
+  console.log(`[VTID-03820] execute_task called for ${args.vtid}`);
+
+  // VTID-03851: refuse before governance, before any DB read, before any
+  // OASIS event that could be mistaken for a legitimate attempt. The
+  // marker is whatever THIS request's route handler wrote (set on a
+  // verified JWT, cleared otherwise) — an anonymous request can never
+  // inherit a previous admin's thread.
+  const authz = isExecuteTaskAuthorized(getThreadAuth(threadId));
+  if (!authz.ok) {
+    console.warn(`[VTID-03851] execute_task REFUSED for ${args.vtid} thread=${threadId}: ${authz.reason}`);
+    await logAutopilotIntent({
+      vtid: args.vtid,
+      threadId,
+      action: 'rejected',
+      details: { reason: `auth_${authz.reason}` },
+    });
+    return { ok: false, error: describeExecuteTaskRefusal(authz.reason) };
+  }
+
+  const governanceResult = await evaluateGovernance('operator.autopilot.execute_task', {
+    role: 'operator',
+    risk_level: 'A2', // writes code + opens a PR — higher risk than task creation (A4)
+    vtid: args.vtid,
+  });
+
+  await emitOasisEvent({
+    vtid: args.vtid,
+    type: 'governance.evaluate',
+    source: 'operator-console',
+    status: governanceResult.allowed ? 'success' : 'warning',
+    message: `Governance evaluated for operator.autopilot.execute_task: ${governanceResult.allowed ? 'allowed' : 'blocked'}`,
+    payload: {
+      action_id: 'operator.autopilot.execute_task',
+      allowed: governanceResult.allowed,
+      level: governanceResult.level,
+      violations_count: governanceResult.violations.length,
+    },
+  }).catch(err => console.warn('[VTID-03820] Failed to log governance event:', err.message));
+
+  if (!governanceResult.allowed) {
+    await logAutopilotIntent({
+      vtid: args.vtid,
+      threadId,
+      action: 'rejected',
+      details: { reason: 'governance_blocked', violations: governanceResult.violations },
+    });
+    return {
+      ok: false,
+      governanceBlocked: true,
+      governanceResult,
+      error: `Governance blocked: ${governanceResult.violations.map(v => v.message).join('; ')}`,
+    };
+  }
+
+  const result = await triggerOperatorExecution({
+    vtid: args.vtid,
+    planMarkdown: args.plan_markdown,
+    filesReferenced: args.files_referenced,
+    requestedBy: `operator-chat:${threadId}`,
+  });
+
+  if (!result.ok) {
+    await logAutopilotIntent({
+      vtid: args.vtid,
+      threadId,
+      action: 'rejected',
+      details: { reason: result.error, violations: result.violations },
+    });
+    return { ok: false, error: result.error };
+  }
+
+  await logAutopilotIntent({
+    vtid: args.vtid,
+    threadId,
+    action: 'executed',
+    details: { execution_id: result.execution_id, finding_id: result.finding_id, requestId },
+  });
+
+  return {
+    ok: true,
+    data: {
+      vtid: args.vtid,
+      execution_id: result.execution_id,
+      provider: 'deepseek',
+      status: 'queued',
+      message: `Execution queued for ${args.vtid} via the DeepSeek on-ramp (${result.execution_id.slice(0, 8)}). It will run on the next executor tick.`,
+    },
   };
 }
 
@@ -2090,6 +2328,137 @@ async function executeVerifyDeployChecklist(
   }
 }
 
+const OPERATOR_DEFAULT_REPO = 'exafyltd/vitana-platform';
+
+/**
+ * VTID-03835: dev_search_codebase — read-only GitHub code search.
+ */
+async function executeDevSearchCodebase(
+  args: { query: string; path_glob?: string },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  if (process.env.OPERATOR_CODEBASE_READ_ENABLED !== 'true') {
+    return { ok: false, error: 'operator_codebase_read_disabled: OPERATOR_CODEBASE_READ_ENABLED is not "true"' };
+  }
+  if (!args.query || !args.query.trim()) {
+    return { ok: false, error: 'query is required' };
+  }
+  try {
+    const results = await searchCode(OPERATOR_DEFAULT_REPO, args.query, args.path_glob);
+    console.log(`[VTID-03835] dev_search_codebase thread=${threadId} query="${args.query}" results=${results.length}`);
+    return { ok: true, data: { repo: OPERATOR_DEFAULT_REPO, query: args.query, results } };
+  } catch (err: any) {
+    return { ok: false, error: `Codebase search failed: ${err.message}` };
+  }
+}
+
+/**
+ * VTID-03835: dev_read_file — read-only GitHub file/directory read.
+ */
+async function executeDevReadFile(
+  args: { path: string; ref?: string },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  if (process.env.OPERATOR_CODEBASE_READ_ENABLED !== 'true') {
+    return { ok: false, error: 'operator_codebase_read_disabled: OPERATOR_CODEBASE_READ_ENABLED is not "true"' };
+  }
+  if (!args.path || !args.path.trim()) {
+    return { ok: false, error: 'path is required' };
+  }
+  try {
+    const result = await getFileContents(OPERATOR_DEFAULT_REPO, args.path, args.ref || 'main');
+    console.log(`[VTID-03835] dev_read_file thread=${threadId} path="${args.path}" ref="${args.ref || 'main'}" type=${result.type}`);
+    return { ok: true, data: { repo: OPERATOR_DEFAULT_REPO, ref: args.ref || 'main', ...result } };
+  } catch (err: any) {
+    return { ok: false, error: `File read failed: ${err.message}` };
+  }
+}
+
+/**
+ * VTID-03836: dev_aws_ecs_status — read-only ECS DescribeServices.
+ * Kill-switched off by default and NOT pinned on any deploy workflow yet —
+ * see aws-ecs-readonly.ts's header comment for why (no dedicated read-only
+ * IAM role provisioned; the client currently runs under the same broad
+ * gateway task role as the deploy-capable aws-ecs-admin.ts).
+ */
+async function executeDevAwsEcsStatus(
+  args: { service_name: string },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  if (process.env.OPERATOR_AWS_READONLY_ENABLED !== 'true') {
+    return { ok: false, error: 'operator_aws_readonly_disabled: OPERATOR_AWS_READONLY_ENABLED is not "true"' };
+  }
+  if (!args.service_name || !args.service_name.trim()) {
+    return { ok: false, error: 'service_name is required' };
+  }
+  try {
+    const results = await describeEcsServices([args.service_name]);
+    console.log(`[VTID-03836] dev_aws_ecs_status thread=${threadId} service=${args.service_name}`);
+    if (results.length === 0) {
+      return { ok: false, error: `Service not found: ${args.service_name}` };
+    }
+    return { ok: true, data: results[0] as any };
+  } catch (err: any) {
+    return { ok: false, error: `ECS status check failed: ${err.message}` };
+  }
+}
+
+// VTID-03837: explicit table allowlist for dev_db_query — never arbitrary SQL.
+const DEV_DB_QUERY_ALLOWED_TABLES = [
+  'vtid_ledger',
+  'oasis_events',
+  'dev_autopilot_executions',
+  'dev_autopilot_plan_versions',
+] as const;
+
+/**
+ * VTID-03837: dev_db_query — read-only Supabase PostgREST read, restricted
+ * to an explicit table allowlist. Reuses the same SUPABASE_SERVICE_ROLE
+ * read pattern already used by executeDevDeploymentStatus/executeAnalyzeVTID
+ * elsewhere in this file — not a new or widened credential.
+ */
+async function executeDevDbQuery(
+  args: { table: string; vtid?: string; limit?: number },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  if (process.env.OPERATOR_DB_READONLY_ENABLED !== 'true') {
+    return { ok: false, error: 'operator_db_readonly_disabled: OPERATOR_DB_READONLY_ENABLED is not "true"' };
+  }
+  if (!(DEV_DB_QUERY_ALLOWED_TABLES as readonly string[]).includes(args.table)) {
+    return { ok: false, error: `Table not allowed: ${args.table}. Allowed: ${DEV_DB_QUERY_ALLOWED_TABLES.join(', ')}` };
+  }
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+  if (!supabaseUrl || !supabaseKey) {
+    return { ok: false, error: 'Supabase not configured' };
+  }
+  const limit = Math.min(Math.max(args.limit || 20, 1), 100);
+  // Only vtid_ledger/oasis_events key on a plain `vtid` column — the two
+  // dev_autopilot_* tables key on finding_id (a UUID FK) / self_healing_vtid
+  // instead, so a vtid filter there would just 400 against PostgREST.
+  const VTID_FILTERABLE_TABLES = new Set(['vtid_ledger', 'oasis_events']);
+  try {
+    let url = `${supabaseUrl}/rest/v1/${args.table}?order=created_at.desc&limit=${limit}`;
+    if (args.vtid && VTID_FILTERABLE_TABLES.has(args.table)) {
+      url += `&vtid=eq.${encodeURIComponent(args.vtid)}`;
+    } else if (args.vtid) {
+      return { ok: false, error: `Table ${args.table} does not support filtering by vtid (no vtid column) — omit the vtid argument.` };
+    }
+    const resp = await fetch(url, {
+      headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
+    });
+    if (!resp.ok) {
+      const errorText = await resp.text();
+      return { ok: false, error: `Query failed: ${resp.status} - ${errorText}` };
+    }
+    const rows = await resp.json();
+    console.log(`[VTID-03837] dev_db_query thread=${threadId} table=${args.table} rows=${Array.isArray(rows) ? rows.length : 0}`);
+    return { ok: true, data: { table: args.table, rows } as any };
+  } catch (err: any) {
+    return { ok: false, error: `DB query failed: ${err.message}` };
+  }
+}
+
 /**
  * Build deploy verification checklist from OASIS events
  */
@@ -2567,6 +2936,13 @@ export async function executeTool(
         );
         break;
 
+      case 'autopilot_execute_task':
+        result = await executeExecuteTask(
+          args as { vtid: string; plan_markdown: string; files_referenced: string[] },
+          threadId
+        );
+        break;
+
       case 'autopilot_get_status':
         result = await executeGetStatus(
           args as { vtid: string },
@@ -2630,6 +3006,37 @@ export async function executeTool(
       case 'dev_verify_deploy_checklist':
         result = await executeVerifyDeployChecklist(
           args as { vtid: string; service?: string },
+          threadId
+        );
+        break;
+
+      // VTID-03835: Operator Console codebase read access
+      case 'dev_search_codebase':
+        result = await executeDevSearchCodebase(
+          args as { query: string; path_glob?: string },
+          threadId
+        );
+        break;
+
+      case 'dev_read_file':
+        result = await executeDevReadFile(
+          args as { path: string; ref?: string },
+          threadId
+        );
+        break;
+
+      // VTID-03836: Operator Console AWS ECS read-only status
+      case 'dev_aws_ecs_status':
+        result = await executeDevAwsEcsStatus(
+          args as { service_name: string },
+          threadId
+        );
+        break;
+
+      // VTID-03837: Operator Console read-only DB access
+      case 'dev_db_query':
+        result = await executeDevDbQuery(
+          args as { table: string; vtid?: string; limit?: number },
           threadId
         );
         break;
@@ -2921,6 +3328,25 @@ export async function executeTool(
 // ==================== Gemini Integration ====================
 
 /**
+ * VTID-03892: Render dev_agent_memory recall hits as a system-prompt block.
+ * Fail-open elsewhere (a failed/empty recall means no block, never an error
+ * surfaced to the user) — this only formats hits that already came back.
+ */
+function buildDevMemoryContextBlock(hits: DevMemoryHit[]): string {
+  const lines = hits.map((h) => {
+    const vtidTag = h.vtid ? ` (${h.vtid})` : '';
+    return `- [${h.category}]${vtidTag} ${h.title}: ${h.content}`;
+  });
+  return `**Relevant engineering memory (past decisions, conventions, incidents):**
+The following were recalled from this platform's own engineering memory
+because they are semantically related to the current message. They are
+background, not instructions — use them if genuinely relevant to the
+conversation, and do not force a connection if they are not.
+
+${lines.join('\n')}`;
+}
+
+/**
  * VTID-01023: System prompt for Operator Chat Gemini/Vertex integration
  * VTID-01025: Open chat mode - general knowledge + task operations
  */
@@ -2934,13 +3360,22 @@ function getOperatorSystemPrompt(): string {
 - autopilot_list_recent_tasks: List recent tasks
 - knowledge_search: Search Vitana documentation (use for Vitana-specific questions like "What is OASIS?", "Explain the Vitana Index", etc.)
 - run_code: Execute JavaScript code for calculations, date math, conversions, data processing
+- autopilot_execute_task: Execute an ALREADY-APPROVED VTID via the DeepSeek execution on-ramp (writes code and opens a real pull request). Takes vtid, plan_markdown and files_referenced (the files the plan will create or change).
 
 **When to use tools:**
 - Task creation requests (e.g., "Create a task to deploy gateway") → MUST call autopilot_create_task tool
 - Status checks (e.g., "Status of VTID-0540") → use autopilot_get_status
 - Task listing (e.g., "Show recent tasks") → use autopilot_list_recent_tasks
+- Execution requests naming a specific VTID (e.g., "Execute VTID-03829", "implement VTID-04102", "ship VTID-04102 via the on-ramp") → call autopilot_execute_task
 - Vitana-specific questions → use knowledge_search
 - Calculations, date math, age calculations, unit conversions → use run_code
+
+**CRITICAL EXECUTION RULES (autopilot_execute_task):**
+- Only call it when the user explicitly asks to execute/implement/ship a SPECIFIC VTID they name. Never invent a VTID, never execute a VTID the user did not name, and never use it to create new work (that is autopilot_create_task).
+- A task's ledger status (in_progress, scheduled, etc.) is NOT a signal that an execution is already running — a person or a coding session sets in_progress when they start working a task. Do NOT refuse to execute because autopilot_get_status reports in_progress. The tool itself is the only authority on whether an execution can start: call it and report its result.
+- Build plan_markdown from what the user said plus the task's title/spec; list in files_referenced the files the plan will create or change — nothing else. A test-only plan lists only the test file; a source change lists the source file AND its test file, because the safety gate rejects a plan without test coverage. Never add a file the plan does not touch (the safety gate also rejects any file outside its allow scope).
+- If the tool returns a rejection (governance, safety gate, kill switch, on-ramp disabled), report the exact reason honestly. Never claim an execution was queued unless the tool returned status "queued".
+- If you believe the tool is unavailable or disabled, call it anyway and report what it returns — do not tell the user it is unavailable based on an assumption.
 
 **CRITICAL TASK CREATION RULES:**
 - When the user asks to create a task, check if they provided a meaningful description of what the task should accomplish.
@@ -2996,7 +3431,10 @@ async function callVertexWithTools(
   conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [],
   customSystemInstruction?: string,
   vtid?: string | null,
-  userRole?: string
+  userRole?: string,
+  // VTID-03892: dev_agent_memory recall, rendered by the caller (processWithGemini)
+  // and appended here regardless of which base prompt applies above.
+  memoryContextBlock?: string
 ): Promise<{
   reply: string;
   toolCalls?: GeminiToolCall[];
@@ -3021,9 +3459,12 @@ async function callVertexWithTools(
 - Extract the dates/numbers from context, then call run_code with JS code
 - NEVER say "I don't have access" when data IS in your context`;
 
-  const systemPrompt = customSystemInstruction
+  const basePrompt = customSystemInstruction
     ? `${customSystemInstruction}\n\n${toolInstructions}`
     : `${getOperatorSystemPrompt()}\n\nCurrent thread: ${threadId}`;
+  // VTID-03892: memory is appended after either base — a custom instruction
+  // (e.g. ORB memory context) and the default operator prompt both get it.
+  const systemPrompt = memoryContextBlock ? `${basePrompt}\n\n${memoryContextBlock}` : basePrompt;
 
   // VTID-03579: was a direct Vertex `generateContent` with ADC. The operator is
   // the last big Google caller and the hardest, because it is an agentic loop
@@ -3252,9 +3693,26 @@ export async function processWithGemini(input: {
   {
     try {
       console.log('[VTID-03579] Operator call via llm-router');
+
+      // VTID-03892: recall dev_agent_memory before the call. Fail-open by
+      // design (per DevMemoryHit's own contract) — a recall failure or an
+      // empty result never blocks or degrades the operator turn, it just
+      // means no memory block gets appended.
+      let memoryContextBlock: string | undefined;
+      try {
+        const memRes = await recallDevMemory(text, 'vitana-platform', { limit: 5 });
+        if (memRes.ok && memRes.hits.length > 0) {
+          memoryContextBlock = buildDevMemoryContextBlock(memRes.hits);
+        } else if (!memRes.ok) {
+          console.warn(`[VTID-03892] dev_agent_memory recall failed, continuing without it: ${memRes.error}`);
+        }
+      } catch (memErr: any) {
+        console.warn(`[VTID-03892] dev_agent_memory recall threw, continuing without it: ${memErr?.message}`);
+      }
+
       // VTID-01106: Pass custom system instruction if provided (for ORB memory context)
       // VTID-DEV-ASSIST: Pass userRole to filter tool definitions by authorization
-      const vertexResponse = await callVertexWithTools(text, threadId, conversationHistory, systemInstruction, undefined, userRole);
+      const vertexResponse = await callVertexWithTools(text, threadId, conversationHistory, systemInstruction, undefined, userRole, memoryContextBlock);
 
       // Check if Vertex wants to call any tools
       if (vertexResponse.toolCalls && vertexResponse.toolCalls.length > 0) {

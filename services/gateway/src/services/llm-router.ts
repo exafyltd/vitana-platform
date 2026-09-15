@@ -110,6 +110,22 @@ export interface LLMRouterOpts {
    * and a single-turn call is still literally a string.
    */
   history?: LLMRouterMessage[];
+  /**
+   * VTID-03820: per-call override of the stage's PRIMARY provider/model,
+   * bypassing the DB-backed `llm_routing_policy` for this one call only.
+   * Both fields must be set together or neither is used — a lone override
+   * without its model (or vice versa) is ambiguous and is ignored rather
+   * than guessed. The stage's own `fallback_provider`/`fallback_model`
+   * (from `llm_routing_policy`, unchanged) still applies if the override
+   * fails, so a DeepSeek outage on an overridden call degrades exactly the
+   * way a normal policy-driven call would.
+   *
+   * Every existing caller omits these fields, so `loadPolicy()` still
+   * governs every stage/caller that doesn't explicitly opt in — this does
+   * NOT change what `llm_routing_policy` serves for anyone else.
+   */
+  providerOverride?: LLMProvider;
+  modelOverride?: string;
 }
 
 /** Returned when `forceTool` is set and the model emitted a tool call. */
@@ -660,6 +676,26 @@ const vertexAdapter: ProviderAdapter = {
  * fallback chain is responsible for routing vision calls to a different
  * provider via the `vision` stage policy.
  */
+// VTID-03841: bound every DeepSeek request. The adapter used to issue a
+// plain fetch with no AbortSignal, so a stalled request never returned —
+// observed on staging 2026-09-13: the first operator on-ramp execution
+// (VTID-03829, exec beeb2c55) started its worker call on deepseek-flash at
+// 07:40:04 and emitted neither a completion nor a failure for 20 minutes,
+// until the stuck-running watchdog reclaimed it. With no error surfacing,
+// the router's own fallback (`allowFallback`) could never engage. 10 min
+// sits under the worker execution budget (MESSAGES_TIMEOUT_MS, 12 min) and
+// the 20-min watchdog, and far above any legitimate call observed (the
+// operator chat completes in ~2s).
+const DEFAULT_DEEPSEEK_TIMEOUT_MS = 10 * 60 * 1000;
+export function resolveDeepseekTimeoutMs(raw: string | undefined = process.env.DEEPSEEK_TIMEOUT_MS): number {
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_DEEPSEEK_TIMEOUT_MS;
+}
+function isAbortLikeError(err: unknown): boolean {
+  const name = (err as { name?: unknown } | null)?.name;
+  return name === 'TimeoutError' || name === 'AbortError';
+}
+
 const deepseekAdapter: ProviderAdapter = {
   isAvailable: () => Boolean(process.env.DEEPSEEK_API_KEY),
   async call({ prompt, model, systemPrompt, maxTokens, image, images, tools, forceTool, history }): Promise<AdapterResult> {
@@ -700,6 +736,7 @@ const deepseekAdapter: ProviderAdapter = {
       }
     }
 
+    const timeoutMs = resolveDeepseekTimeoutMs();
     try {
       const resp = await fetch('https://api.deepseek.com/chat/completions', {
         method: 'POST',
@@ -708,6 +745,8 @@ const deepseekAdapter: ProviderAdapter = {
           'content-type': 'application/json',
         },
         body: JSON.stringify(body),
+        // VTID-03841: covers the connection AND the body read below.
+        signal: AbortSignal.timeout(timeoutMs),
       });
       if (!resp.ok) {
         const errText = await resp.text();
@@ -743,6 +782,11 @@ const deepseekAdapter: ProviderAdapter = {
         },
       };
     } catch (err) {
+      if (isAbortLikeError(err)) {
+        // VTID-03841: a bounded, named failure — the router can fall back
+        // and telemetry records it, instead of a silent hang.
+        return { ok: false, error: `DeepSeek request timed out after ${timeoutMs}ms (DEEPSEEK_TIMEOUT_MS)` };
+      }
       return { ok: false, error: `DeepSeek threw: ${String(err).slice(0, 300)}` };
     }
   },
@@ -981,10 +1025,21 @@ export async function callViaRouter(
   // stored row wholesale rather than merging per-stage defaults (unlike
   // `getStageRoutingConfig()`, which does merge). The guard below was already
   // correct; only the annotation claimed otherwise.
-  const stageConfig: StageRoutingConfig | undefined = policy[stage];
-  if (!stageConfig) {
+  const policyStageConfig: StageRoutingConfig | undefined = policy[stage];
+  if (!policyStageConfig) {
     return { ok: false, error: `No policy configured for stage '${stage}'` };
   }
+
+  // VTID-03820: an explicit per-call override replaces PRIMARY only; the
+  // stage's own policy-configured fallback still applies on failure. See
+  // LLMRouterOpts.providerOverride/modelOverride doc comment.
+  const stageConfig: StageRoutingConfig = (opts.providerOverride && opts.modelOverride)
+    ? {
+        ...policyStageConfig,
+        primary_provider: opts.providerOverride,
+        primary_model: opts.modelOverride,
+      }
+    : policyStageConfig;
 
   const allowFallback = opts.allowFallback !== false;
 

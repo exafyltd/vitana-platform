@@ -112,5 +112,9 @@
   "notif.listing_interest.title": "İlanına ilgi var",
   "notif.listing_interest.body": "Birisi \"{title}\" ile ilgilendi.",
   "notif.day_close.title": "İyi geceler 🌙",
-  "notif.day_close.body": "Gün sona erdi — aklında bir şey varsa, bana kısaca söyleyebilirsin."
+  "notif.day_close.body": "Gün sona erdi — aklında bir şey varsa, bana kısaca söyleyebilirsin.",
+  "notif.partner_test_status_changed.title": "{partner_name} güncellemesi",
+  "notif.partner_test_status_changed.body": "{test_name} testinle ilgili bir güncelleme var.",
+  "notif.partner_test_result_ready.title": "Sonuçların hazır",
+  "notif.partner_test_result_ready.body": "{partner_name} tarafından yapılan {test_name} sonuçların hazır. Vitana'dan sana açıklamasını isteyebilirsin."
 }
