@@ -1,0 +1,60 @@
+$ curl -sS -X POST "https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate" \
+    -H "Content-Type: application/json" \
+    -d '{"source":"claude-code","layer":"frontend","module":"command-hub"}'
+{"ok":true,"vtid":"VTID-03925","num":3925,"id":"642e08b2-7064-4d9b-bfa4-a56ff415c813"}
+
+$ grep -n "pipeline/summary" services/gateway/src/routes/autopilot.ts
+routes/autopilot.ts:1273: * GET /pipeline/summary -> /api/v1/autopilot/pipeline/summary
+routes/autopilot.ts:1276:router.get('/pipeline/summary', async (_req: Request, res: Response) => {
+
+$ sed -n '107,138p' services/gateway/src/routes/autopilot.ts
+# Confirms requireServiceToken checks bearer token === process.env.GATEWAY_SERVICE_TOKEN
+# (an internal secret) with only /health-family paths exempted -- pipeline/summary
+# is not exempt, so it 401s for any browser session token.
+
+$ cd services/gateway && node --check src/frontend/command-hub/app.js && echo "SYNTAX OK"
+SYNTAX OK
+
+$ npx jest test/vtid-03925-pipeline-summary-loop-fix.test.ts
+PASS test/vtid-03925-pipeline-summary-loop-fix.test.ts
+  VTID-03925: fetchPipelineSummary() cannot loop forever on a persistent failure
+    ✓ sets state.overviewPipelineSummary.fetched = true unconditionally in the finally block
+    ✓ the try block no longer sets fetched = true itself (single source of truth: finally)
+    ✓ attaches the bearer token via buildContextHeaders(), matching sibling fetchers
+    ✓ a successful response still populates the snapshot and clears any prior error
+    ✓ a failure is still logged and recorded, not silently swallowed
+  VTID-03925: renderOverviewSystemView() guard this fix protects against
+    ✓ still only calls fetchPipelineSummary() when not already fetched/loading (guard unchanged)
+  VTID-03925: downstream consumers stay null-safe with a permanently-null snapshot
+    ✓ renderOverviewSystemView's metrics grid null-guards every summary field it reads
+    ✓ renderVtidAttentionSection() null-guards the attention_queue array and returns null when empty
+Test Suites: 1 passed, 1 total
+Tests:       8 passed, 8 total
+
+$ npx tsc --noEmit
+(no output -- clean)
+
+$ npx jest --silent
+Test Suites: 1 skipped, 797 passed, 797 of 798 total
+Tests:       29 skipped, 6 todo, 14223 passed, 14258 total
+Snapshots:   44 passed, 44 total
+
+$ npm run build
+(clean build, dist/frontend/command-hub/app.js regenerated)
+
+$ node --check dist/frontend/command-hub/app.js && echo "SYNTAX OK"
+SYNTAX OK
+
+$ node ../../scripts/ci/command-hub-golden-fingerprint.js
+Bundle size: 2487.6 KB
+All golden markers verified.
+Fingerprint check PASSED.
+
+$ cd ../.. && GITHUB_HEAD_REF=claude/clever-carson-64d3k5 GITHUB_BASE_REF=main \
+    PR_TITLE="VTID-03925: Command Hub Overview pipeline-summary infinite-loop fix" \
+    node scripts/ci/command-hub-ownership-guard.js
+Changed files: 7
+Command Hub frontend files modified:
+  - services/gateway/src/frontend/command-hub/app.js
+  - services/gateway/src/frontend/command-hub/index.html
+Guard check PASSED.
