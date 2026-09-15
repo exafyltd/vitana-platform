@@ -326,6 +326,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const vcaopPortalRouter = require('./routes/vcaop-portal').default;
   // VCAOP: merchant self-service portal — owner-scoped /my surface (VTID-03553)
   const vcaopPortalMyRouter = require('./routes/vcaop-portal-my').default;
+  const vcaopPortalMyProductsRouter = require('./routes/vcaop-portal-my-products').default;
   // VCAOP: Shopify own-store catalog sync (admin trigger; background worker in services)
   const shopifySyncRouter = require('./routes/shopify-sync').default;
   // VCAOP: Shopify OAuth callback for the merchant self-service connector (VTID-03603) —
@@ -739,6 +740,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // portal router so /api/v1/vcaop/portal/my/* resolves to the owner-scoped
   // handlers instead of the admin ones (VTID-03553).
   mountRouterSync(app, '/api/v1/vcaop/portal/my', vcaopPortalMyRouter, { owner: 'vcaop-portal-my' });
+  // VCAOP: supplier self-service catalogue (VTID-03894) — shares the /my base
+  // path. Its routes (/verticals, /products, /merchants) do not collide with
+  // the connection routes above, so a request falls through to whichever
+  // router declares it. Mounted after, so connection paths keep priority.
+  mountRouterSync(app, '/api/v1/vcaop/portal/my', vcaopPortalMyProductsRouter, { owner: 'vcaop-portal-my-products' });
   // VCAOP: Partner Portal — mount before the vcaop router so the sub-path resolves.
   mountRouterSync(app, '/api/v1/vcaop/portal', vcaopPortalRouter, { owner: 'vcaop-portal' });
   // VCAOP: Shopify catalog sync — mount before the vcaop router so the sub-path resolves.
