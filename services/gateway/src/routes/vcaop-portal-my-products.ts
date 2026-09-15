@@ -116,6 +116,27 @@ async function findOwnMerchant(s: any, owner: string) {
  */
 export const ATTRIBUTING_NETWORKS = ['awin', 'admitad'] as const;
 
+/**
+ * What a self-registered supplier's rows are tagged with — and the reason it is
+ * NOT `'manual'` (VTID-03894).
+ *
+ * `checkout-service.ts` routes every cart line by `products.source_network`:
+ * anything in its `FIRST_PARTY_SOURCE_NETWORKS` (`manual`, `partner`) debits the
+ * BUYER'S VITANA WALLET and writes a CONVERTED order whose meaning is "Vitana
+ * fulfils". Everything else clicks out to the merchant and settles later.
+ *
+ * A supplier product is the second thing. It carries an `affiliate_url` to the
+ * supplier's own shop, and nothing in this platform pays a supplier or tells
+ * them to ship — `credit-recommender.ts` credits the RECOMMENDER, a community
+ * member, not the merchant. Tagged `'manual'`, approving one product would take
+ * a member's money for an order nobody would ever fulfil.
+ *
+ * Direct sale is a deliberate future opt-in that needs payout and fulfilment
+ * first. Until then this value must stay outside the first-party set, which
+ * `supplier-source-network.test.ts` enforces rather than trusts.
+ */
+export const SUPPLIER_SOURCE_NETWORK = 'supplier_referral';
+
 const MerchantSchema = z.object({
   name: z.string().min(1).max(256),
   vertical_key: z.string().min(1).max(50),
@@ -176,8 +197,8 @@ router.post('/merchants', async (req: Request, res: Response) => {
     owner_user_id: owner,
     // UNIQUE (source_network, source_merchant_id): a hand-entered supplier has
     // no upstream id, so mint a stable one rather than collide on null.
-    source_network: 'manual',
-    source_merchant_id: `manual:${owner}`,
+    source_network: SUPPLIER_SOURCE_NETWORK,
+    source_merchant_id: `${SUPPLIER_SOURCE_NETWORK}:${owner}`,
     onboarding_status: 'draft',
     is_active: false,
   }).select('id,name,vertical_key,onboarding_status').maybeSingle();
@@ -275,8 +296,8 @@ router.post('/products', async (req: Request, res: Response) => {
   const { data, error } = await s.from('products').insert({
     id: randomUUID(),
     merchant_id: merchant.id,
-    source_network: 'manual',
-    source_product_id: `manual:${merchant.id}:${randomUUID()}`,
+    source_network: SUPPLIER_SOURCE_NETWORK,
+    source_product_id: `${SUPPLIER_SOURCE_NETWORK}:${merchant.id}:${randomUUID()}`,
     ...p,
     // Nothing a supplier types goes live on their own say-so. Discover shows
     // is_active rows; approval flips it, not this endpoint.
