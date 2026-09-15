@@ -148,14 +148,18 @@ describe('ownership scoping', () => {
     expect(merchants.filters.owner_user_id).toBe('supplier-2');
   });
 
-  test('POST /products refuses when the caller has no merchant of their own', async () => {
+  test('POST /products without a merchant says WHICH step was skipped', async () => {
+    // 409 no_merchant, not 404 and not a 500 on a null merchant_id: the form
+    // creates the business first, so reaching here means the client skipped a
+    // step and the response should name it.
     asSupplier();
     const products = tableStub();
     db({ merchants: tableStub({ data: null }), products });
 
     const res = await request(app).post('/api/v1/vcaop/portal/my/products').send(VALID_PRODUCT);
 
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('no_merchant');
     expect(products.inserted).toHaveLength(0);
   });
 });
@@ -181,7 +185,9 @@ describe('what a supplier\'s rows are born as', () => {
 
   test('a merchant is written draft + inactive, owned by the JWT\'s user', async () => {
     asSupplier('supplier-9');
-    const merchants = tableStub({ data: { ...OWNED_MERCHANT, id: 'm-new' } });
+    // data:null so findOwnMerchant finds nothing — this route is
+    // create-OR-update, and an existing merchant takes the update branch.
+    const merchants = tableStub({ data: null });
     db({ merchants });
 
     const res = await request(app).post('/api/v1/vcaop/portal/my/merchants')
@@ -195,9 +201,29 @@ describe('what a supplier\'s rows are born as', () => {
     expect(row.source_network).toBe(SUPPLIER_SOURCE_NETWORK);
   });
 
+  test('a SECOND POST /merchants updates rather than 409s, scoped to the owner', async () => {
+    // One supplier, one merchant: the form's "save" is idempotent from the
+    // supplier's point of view. Found because the original version of this
+    // suite assumed create-always and CI disagreed — 200, not 201.
+    asSupplier('supplier-9');
+    const merchants = tableStub({ data: OWNED_MERCHANT });
+    db({ merchants });
+
+    const res = await request(app).post('/api/v1/vcaop/portal/my/merchants')
+      .send({ name: 'Weingut Muster GmbH', vertical_key: 'wine_spirits' });
+
+    expect(res.status).toBe(200);
+    expect(merchants.inserted).toHaveLength(0);
+    expect(merchants.updated[0].name).toBe('Weingut Muster GmbH');
+    // The update is owner-scoped too, not just the lookup that preceded it —
+    // otherwise knowing a merchant id would be enough to rewrite it.
+    expect(merchants.filters.owner_user_id).toBe('supplier-9');
+    expect(merchants.filters.id).toBe('m-1');
+  });
+
   test('ownership comes from the JWT even when the body claims otherwise', async () => {
     asSupplier('real-owner');
-    const merchants = tableStub({ data: OWNED_MERCHANT });
+    const merchants = tableStub({ data: null });
     db({ merchants });
 
     await request(app).post('/api/v1/vcaop/portal/my/merchants')
@@ -237,7 +263,7 @@ describe('validation', () => {
 
   test('"other" is allowed with no advertiser id — a supplier on no network can still list', async () => {
     asSupplier();
-    const merchants = tableStub({ data: OWNED_MERCHANT });
+    const merchants = tableStub({ data: null });
     db({ merchants });
 
     const res = await request(app).post('/api/v1/vcaop/portal/my/merchants')

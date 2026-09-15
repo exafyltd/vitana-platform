@@ -48,3 +48,37 @@ $ node ships-check.mjs
   pass  merge: omitted field does not overwrite stored
 
 all 16 assertions
+
+=== FOLLOW-UP: the route test CI caught, and what it taught ===
+The first version of vcaop-portal-my-products.test.ts failed 4 tests. All four
+were the TEST being wrong about the route, not the route being wrong:
+  - POST /merchants is create-OR-UPDATE; stubbing an existing merchant took
+    the update branch (200), not the create branch (201).
+  - POST /products with no merchant returns 409 no_merchant (naming the
+    skipped step), not the 404 the test assumed.
+Corrected, and a test added for the update branch the failure revealed.
+
+$ node route-trace.mjs   # each test's setup vs the branch the real route takes
+  pass  POST /merchants: existing -> res.json (200)
+  pass  POST /merchants: new -> res.status(201)
+  pass  POST /merchants: update is owner-scoped
+  pass  POST /products: no merchant -> 409 no_merchant
+  pass  POST /products: validation AFTER the merchant check
+  pass  POST /merchants: validation BEFORE the merchant lookup
+  pass  unauthenticated -> 401 before any query
+  pass  no supabase -> 503
+  pass  a merchant is written draft + inactive — stub matches the branch it needs (none)
+  pass  a merchant is written draft + inactive — expects 201
+  pass  a SECOND POST /merchants updates — stub matches the branch it needs (existing)
+  pass  a SECOND POST /merchants updates — expects 200
+  pass  ownership comes from the JWT — stub matches the branch it needs (none)
+  pass  "other" is allowed with no advertiser id — stub matches the branch it needs (none)
+  pass  "other" is allowed with no advertiser id — expects 201
+  pass  POST /products without a merchant — stub matches the branch it needs (none)
+  pass  POST /products without a merchant — expects 409
+  pass  a product is written supplier_referral — stub matches the branch it needs (existing)
+  pass  a product is written supplier_referral — expects 201
+  pass  no test still expects 404 from POST /products
+  pass  no vitest import
+
+all 21 assertions
