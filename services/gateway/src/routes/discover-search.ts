@@ -25,7 +25,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { getSupabase } from '../lib/supabase';
 import { getUserHealthContext, inferPrimaryCondition } from '../services/user-health-context';
-import { applyUserLimitations, type FilterableProduct } from '../services/limitations-filter';
+import { applyUserLimitations, excludePastPurchases, type FilterableProduct } from '../services/limitations-filter';
 import { getConditionMapping, expandSynonymPhrase } from '../services/condition-matcher';
 import { emitLimitationBypass } from '../services/reward-events';
 import * as jose from 'jose';
@@ -326,6 +326,7 @@ router.get('/search', async (req: Request, res: Response) => {
     sensitivities: 0,
     geo: fetched.length - geoAllowed.length,
     excluded_region: 0,
+    past_purchases: 0,
   };
 
   if (ctx) {
@@ -339,14 +340,15 @@ router.get('/search', async (req: Request, res: Response) => {
       ...result.hidden_breakdown,
       geo: hiddenBreakdown.geo + result.hidden_breakdown.geo,
       excluded_region: result.hidden_breakdown.excluded_region,
+      past_purchases: hiddenBreakdown.past_purchases,
     };
   } else {
     allowed = geoAllowed;
   }
 
   // Exclude past purchases (anonymized — only for logged-in user)
-  const pastIds = new Set(ctx?.past_purchases.map((p) => p.product_id) ?? []);
-  const withoutPast = allowed.filter((p) => !pastIds.has(p.id));
+  const { withoutPast, past_purchases_hidden } = excludePastPurchases(allowed, ctx?.past_purchases ?? []);
+  hiddenBreakdown = { ...hiddenBreakdown, past_purchases: past_purchases_hidden };
 
   // Match reasons + score
   const enriched = withoutPast.map((p) => {
