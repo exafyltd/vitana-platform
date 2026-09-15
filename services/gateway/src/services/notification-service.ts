@@ -124,9 +124,17 @@ export const TYPE_META: Record<string, TypeMeta> = {
   longevity_signal_alert:   { channel: 'push_and_inapp', priority: 'p0', category: 'health' },
   lab_report_processed:     { channel: 'inapp',          priority: 'p2', category: 'health' },
   // VTID-03885: Partner Health Test Integration — intermediate lifecycle
-  // pings (ordered -> sample_received -> processing). The result-ready
-  // moment itself reuses lab_report_processed above, not a new type.
+  // pings (ordered -> sample_received -> processing), in-app only: none of
+  // these individually need to interrupt the user, unlike the result
+  // itself below.
   partner_test_status_changed: { channel: 'inapp',       priority: 'p2', category: 'health' },
+  // The result-ready moment used to reuse lab_report_processed above —
+  // wrong on purpose vs. by design: that entry is in-app-only, so a
+  // finished blood/lab test never reached the lock screen. Split into its
+  // own type so it can carry its own channel without also pushing
+  // lab_report_processed's OTHER caller (health-wellness.ts's "still being
+  // analyzed" ping, which deliberately stays in-app-only).
+  health_test_result_ready: { channel: 'push_and_inapp',  priority: 'p1', category: 'health' },
   wearable_data_synced:     { channel: 'silent',          priority: 'p3', category: 'health' },
   // Signals
   predictive_signal_detected:  { channel: 'push_and_inapp', priority: 'p0', category: 'signal' },

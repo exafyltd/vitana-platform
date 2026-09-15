@@ -270,7 +270,7 @@ export async function ingestPartnerResult(
   notifyUserAsync(
     order.user_id,
     order.tenant_id,
-    'lab_report_processed',
+    'health_test_result_ready',
     {
       title: tt('notif.partner_test_result_ready.title', locale),
       body: tt('notif.partner_test_result_ready.body', locale, { test_name: order.test_name, partner_name: order.partner_display_name }),
