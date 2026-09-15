@@ -43447,6 +43447,12 @@ if (!state.devAutopilot) {
         // Lineage cache (execId → { loading, root_id, lineage[] }) (PR-8)
         lineages: {},
         expandedExecIds: {},
+        // VTID-03896/03897: per-execution step feed. `steps[execId]` holds
+        // { loading, steps[], error, es } where `es` is the live EventSource
+        // (not serializable/renderable — only ever read/closed by the
+        // stream helpers below, never iterated for display).
+        expandedStepsExecIds: {},
+        steps: {},
         // In-flight action keys (e.g. 'approve:<id>') so buttons can disable
         // themselves cleanly via state instead of touching detached DOM after
         // showToast() (which re-renders and invalidates refs).
@@ -44381,6 +44387,70 @@ function ensureLineageLoaded(execId) {
     });
 }
 
+// VTID-03897: open (or reuse) a live SSE tail for one execution's step feed.
+// A one-shot GET .../steps primes the panel immediately (so slow SSE
+// handshakes don't leave it blank), then the EventSource appends live
+// `step` events as they arrive and self-closes on a `terminal` event.
+function ensureStepsStreamOpened(execId) {
+    if (!state.devAutopilot.steps[execId]) {
+        state.devAutopilot.steps[execId] = { loading: true, steps: [], error: null, es: null };
+    }
+    var slot = state.devAutopilot.steps[execId];
+    if (slot.es) return; // already streaming
+
+    devAutopilotApi('/executions/' + execId + '/steps', 'GET').then(function (data) {
+        if (data.ok) {
+            slot.steps = data.steps || [];
+            slot.error = null;
+        } else {
+            slot.error = data.error || 'steps fetch failed';
+        }
+        slot.loading = false;
+        renderApp();
+    }).catch(function (err) {
+        slot.loading = false;
+        slot.error = err.message || String(err);
+        renderApp();
+    });
+
+    // The browser's native EventSource cannot set an Authorization header,
+    // so this one stream route also accepts the bearer token as a query
+    // param (server-side: requireDevRoleForStream in dev-autopilot.ts).
+    var url = '/api/v1/dev-autopilot/executions/' + execId + '/stream?access_token=' + encodeURIComponent(state.authToken || '');
+    var es = new EventSource(url);
+    slot.es = es;
+    slot.streamError = false;
+
+    es.addEventListener('step', function (evt) {
+        try {
+            var step = JSON.parse(evt.data);
+            slot.steps = (slot.steps || []).concat([step]);
+            slot.loading = false;
+            renderApp();
+        } catch (_e) { /* ignore malformed frame */ }
+    });
+
+    es.addEventListener('terminal', function () {
+        closeStepsStream(execId);
+        renderApp();
+    });
+
+    es.onerror = function () {
+        if (slot.es === es) slot.streamError = true;
+    };
+}
+
+// Closes the live stream (if any) for one execution. Called when the
+// developer collapses the Steps panel — an execution the operator isn't
+// watching shouldn't hold an open connection indefinitely.
+function closeStepsStream(execId) {
+    var slot = state.devAutopilot.steps[execId];
+    if (slot && slot.es) {
+        slot.es.close();
+        slot.es = null;
+    }
+}
+
 // -----------------------------------------------------------------------------
 // Renderers
 // -----------------------------------------------------------------------------
@@ -44676,6 +44746,31 @@ function renderDevAutopilotExecutionCard(exec) {
         : 'No on-ramp override on this execution — routed per the live llm_routing_policy \'worker\' stage.';
     topRow.appendChild(llmBadge);
 
+    // VTID-03898: last_event_at heartbeat — lets a developer tell a
+    // long-running-but-healthy execution (recent step) from one that's
+    // silently stuck (last step was a long time ago), without opening the
+    // step feed. Only meaningful for still-active statuses.
+    var ACTIVE_STATUSES = { cooling: 1, running: 1, ci: 1, merging: 1, deploying: 1, verifying: 1 };
+    if (ACTIVE_STATUSES[exec.status] && exec.last_event_at) {
+        var ageMs = Date.now() - new Date(exec.last_event_at).getTime();
+        var ageMin = Math.round(ageMs / 60000);
+        var heartbeatEl = document.createElement('span');
+        // Stale past 10 minutes of no step activity: not necessarily
+        // broken (a long CI run can be quiet that long), but worth a
+        // visually distinct color so a developer scanning the board knows
+        // where to look first.
+        var stale = ageMs > 10 * 60000;
+        heartbeatEl.className = 'dev-autopilot-heartbeat' + (stale ? ' dev-autopilot-heartbeat--stale' : '');
+        heartbeatEl.title = 'Last step event at ' + exec.last_event_at;
+        heartbeatEl.textContent = (stale ? '⚠ ' : '') + 'last step ' + (ageMin <= 0 ? '<1m' : ageMin + 'm') + ' ago';
+        topRow.appendChild(heartbeatEl);
+    } else if (ACTIVE_STATUSES[exec.status] && exec.last_event_at === null) {
+        var noEventsEl = document.createElement('span');
+        noEventsEl.className = 'dev-autopilot-heartbeat';
+        noEventsEl.textContent = 'no steps yet';
+        topRow.appendChild(noEventsEl);
+    }
+
     if (exec.execute_after && exec.status === 'cooling') {
         var ms = new Date(exec.execute_after) - new Date();
         if (ms > 0) {
@@ -44715,6 +44810,25 @@ function renderDevAutopilotExecutionCard(exec) {
     };
     topRow.appendChild(lineageBtn);
 
+    // VTID-03896/03897: Steps toggle — opens a live SSE tail of this
+    // execution's dev_autopilot.execution.* OASIS events, mirroring the
+    // Lineage button's expand/collapse pattern.
+    var stepsOpen = !!state.devAutopilot.expandedStepsExecIds[exec.id];
+    var stepsBtn = document.createElement('button');
+    stepsBtn.textContent = stepsOpen ? '▾ Steps' : '▸ Steps';
+    stepsBtn.className = 'dev-autopilot-ghost-toggle';
+    stepsBtn.onclick = function () {
+        if (stepsOpen) {
+            delete state.devAutopilot.expandedStepsExecIds[exec.id];
+            closeStepsStream(exec.id);
+        } else {
+            state.devAutopilot.expandedStepsExecIds[exec.id] = true;
+            ensureStepsStreamOpened(exec.id);
+        }
+        renderApp();
+    };
+    topRow.appendChild(stepsBtn);
+
     card.appendChild(topRow);
 
     if (exec.branch) {
@@ -44726,6 +44840,10 @@ function renderDevAutopilotExecutionCard(exec) {
 
     if (lineageOpen) {
         card.appendChild(renderDevAutopilotLineageView(exec.id));
+    }
+
+    if (stepsOpen) {
+        card.appendChild(renderDevAutopilotStepsView(exec.id));
     }
 
     return card;
@@ -44786,6 +44904,83 @@ function renderDevAutopilotLineageView(execId) {
             hereEl.textContent = '← here';
             line.appendChild(hereEl);
         }
+        box.appendChild(line);
+    });
+
+    return box;
+}
+
+// VTID-03896/03897: renders the live step-by-step OASIS event tail for one
+// execution — the per-step Command Hub equivalent of watching Claude Code
+// run turn-by-turn, instead of only seeing a single status badge change
+// hours apart. Steps arrive oldest-first (both the priming GET and the SSE
+// appends preserve that order), so the list below simply reads top-to-bottom.
+function renderDevAutopilotStepsView(execId) {
+    var slot = state.devAutopilot.steps[execId] || {};
+    var box = document.createElement('div');
+    box.className = 'dev-autopilot-steps-panel';
+
+    if (slot.loading) {
+        box.textContent = 'Loading steps…';
+        box.classList.add('dev-autopilot-steps-panel--muted');
+        return box;
+    }
+    if (slot.error) {
+        box.classList.add('dev-autopilot-steps-panel--error');
+        box.textContent = 'Steps error: ' + slot.error;
+        return box;
+    }
+
+    var heading = document.createElement('div');
+    heading.className = 'dev-autopilot-steps-heading';
+    var headingText = document.createElement('span');
+    headingText.textContent = 'Live step feed (' + (slot.steps ? slot.steps.length : 0) + ')';
+    heading.appendChild(headingText);
+    if (slot.es) {
+        var liveDot = document.createElement('span');
+        liveDot.className = 'dev-autopilot-steps-live-dot';
+        liveDot.title = 'Streaming live';
+        heading.appendChild(liveDot);
+    } else if (slot.streamError) {
+        var errDot = document.createElement('span');
+        errDot.className = 'dev-autopilot-steps-stream-note';
+        errDot.textContent = '(stream reconnecting…)';
+        heading.appendChild(errDot);
+    }
+    box.appendChild(heading);
+
+    if (!slot.steps || slot.steps.length === 0) {
+        var empty = document.createElement('div');
+        empty.className = 'dev-autopilot-steps-empty';
+        empty.textContent = 'No step events yet.';
+        box.appendChild(empty);
+        return box;
+    }
+
+    var STEP_STATUS_CLASS = { error: 'dev-autopilot-step-topic--error', warning: 'dev-autopilot-step-topic--warning', success: 'dev-autopilot-step-topic--success' };
+    slot.steps.forEach(function (step) {
+        var line = document.createElement('div');
+        line.className = 'dev-autopilot-step-line';
+
+        var timeEl = document.createElement('span');
+        timeEl.className = 'dev-autopilot-step-time';
+        try {
+            timeEl.textContent = new Date(step.created_at).toLocaleTimeString();
+        } catch (_e) {
+            timeEl.textContent = String(step.created_at || '?');
+        }
+        line.appendChild(timeEl);
+
+        var topicEl = document.createElement('span');
+        topicEl.className = 'dev-autopilot-step-topic ' + (STEP_STATUS_CLASS[step.status] || '');
+        topicEl.textContent = (step.topic || '?').replace('dev_autopilot.execution.', '');
+        line.appendChild(topicEl);
+
+        var msgEl = document.createElement('span');
+        msgEl.className = 'dev-autopilot-step-message';
+        msgEl.textContent = step.message || '';
+        line.appendChild(msgEl);
+
         box.appendChild(line);
     });
 
