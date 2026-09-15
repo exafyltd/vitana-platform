@@ -1,7 +1,7 @@
 # VTID-03894 — Acceptance (Maxina supplier self-service, gateway + schema)
 
 Scope of THIS PR: `services/gateway/src/**`, `services/gateway/test/**` and the
-three `supabase/migrations/**` files. The frontend half — registration, the
+four `supabase/migrations/**` files. The frontend half — registration, the
 manual product form, the sales-model card — ships in `exafyltd/vitana-v1#1084`.
 
 Verification tokens: `TEST` = a jest suite in `services/gateway/test/`,
@@ -78,14 +78,18 @@ AC-7 — A vertical field that offers choices must say where the choices come fr
         earlier run of this check gave a false "accepted" because the UPDATE
         touched zero rows on an empty table; this version inserts first.)
 
-AC-8 — The migrations apply cleanly from scratch and are additive
-  TEST: outputs/pg16-harness.txt — all three applied with ON_ERROR_STOP=1
+AC-8 — The migrations apply cleanly from scratch, are additive, and are RLS-protected
+  TEST: outputs/pg16-harness.txt — all four applied with ON_ERROR_STOP=1
         against real production table definitions for merchants, products and
         catalog_vocabulary. No existing row is rewritten and nothing is dropped.
         Existing health columns were deliberately NOT moved into the new
         attributes JSONB: user_limitations hard-filters on contains_allergens
         and contraindicated_with_*, and a JSONB round trip there would change
         who is shown what.
+  TEST: outputs/pg16-harness.txt, "FOLLOW-UP: RLS" — the two new tables carry
+        the same policy shape as catalog_vocabulary (authenticated SELECT on
+        active rows, service_role ALL). They shipped without it; the Supabase
+        security advisor caught it, and 20260915132000 closes it.
 
 # ---------------------------------------------------------------------------
 # Route Mount Evidence

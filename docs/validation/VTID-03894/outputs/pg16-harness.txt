@@ -42,3 +42,32 @@ accepted, as intended
 
 The routing column is the point: a supplier product is NOT first-party, so
 approving it can never debit a member's wallet for an order nobody ships.
+
+
+--- FOLLOW-UP: RLS on the two new tables (20260915132000) -------------------
+The first migration created catalog_verticals and catalog_vertical_fields with
+NO RLS, while every sibling table has it on. In Supabase that means anon-key
+reach through PostgREST, for reads AND writes. Caught by the Supabase security
+advisor (lint rls_disabled_in_public) after applying, not before — recorded
+here because the lesson is the ordering, not the fix.
+
+$ psql -v ON_ERROR_STOP=1 -f 20260915132000_vtid_03894_catalog_vertical_rls.sql
+psql exit code: 0
+
+        tablename        |           policyname            |  cmd   |      roles
+-------------------------+---------------------------------+--------+-----------------
+ catalog_vertical_fields | catalog_vertical_fields_select  | SELECT | {authenticated}
+ catalog_vertical_fields | catalog_vertical_fields_service | ALL    | {service_role}
+ catalog_verticals       | catalog_verticals_select        | SELECT | {authenticated}
+ catalog_verticals       | catalog_verticals_service       | ALL    | {service_role}
+
+Identical shape to catalog_vocabulary, the right analogue: reference data the
+app reads and only the gateway writes. Verified the same four policies are live
+on the project. The security advisor now reports zero findings against any
+object this VTID created.
+
+NOTE on this harness: vanilla PostgreSQL has no `authenticated`/`service_role`,
+so the CREATE POLICY statements fail here until those roles are created. An
+earlier run of this file reported "applies clean" while psql had in fact
+errored — the shell was reading tail's exit code, not psql's. Re-run above with
+`set -o pipefail` and the exit code printed explicitly.

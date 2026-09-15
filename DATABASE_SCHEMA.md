@@ -2003,7 +2003,7 @@ a shape regex on the vocabulary name. The six original values still validate.
 No CHECK was added to `affiliate_network` — the column predates this VTID and
 already carries values written by catalog ingest.
 
-### Supplier rows are `source_network = 'supplier_referral'` — not `'manual'`
+### How a supplier row reaches checkout
 
 `services/checkout/checkout-service.ts` routes every cart line by
 `products.source_network`. Anything in its `FIRST_PARTY_SOURCE_NETWORKS`
@@ -2014,6 +2014,19 @@ A supplier product is not that. It carries an `affiliate_url` to the supplier's
 own shop, and nothing in this platform pays a supplier or tells them to ship.
 Tagged `'manual'`, approving one would take a member's money for an order nobody
 would ever fulfil.
+
+### RLS on the two new catalog tables
+
+Both carry the same posture as `catalog_vocabulary`: `authenticated` may SELECT
+active rows, `service_role` may do anything, and there is no `anon` policy.
+
+They shipped in `20260915100000` with **no RLS at all**, which in Supabase means
+anon-key reach through PostgREST for reads *and writes* — the questions every
+supplier is asked were briefly writable by anyone. The Supabase security advisor
+(`rls_disabled_in_public`) is what caught it; `20260915132000` closes it. Run the
+advisor after any migration that creates a table.
+
+### Supplier rows are `source_network = 'supplier_referral'` — not `'manual'`
 
 `SUPPLIER_SOURCE_NETWORK = 'supplier_referral'` is therefore kept outside that
 set, and `services/gateway/test/routes/supplier-source-network.test.ts` pins
