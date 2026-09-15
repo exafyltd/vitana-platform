@@ -982,6 +982,7 @@ export type CicdEventType =
   | 'health_test.result_quarantined'
   // VTID-03932: Commerce Partner Onboarding — self-service partner org registration
   | 'partner_org.registered'
+  | 'partner_org.member_invited'
   | 'partner_org.member_joined'
   | 'partner_org.activated';
 

@@ -175,6 +175,16 @@ router.post('/:orgId/members/invite', requireAuth, requireOrgAdmin(), async (req
     .single();
   if (inviteErr || !invite) return res.status(500).json({ ok: false, error: inviteErr?.message ?? 'partner_organization_invites insert failed' });
 
+  await emitOasisEvent({
+    vtid: 'VTID-03932',
+    type: 'partner_org.member_invited',
+    source: 'partner-orgs',
+    status: 'success',
+    message: `Partner organization ${orgId} invited ${email} as "${role}".`,
+    payload: { partner_organization_id: orgId, role, invite_id: (invite as { id: string }).id },
+    actor_id: callerId ?? undefined,
+  });
+
   return res.status(201).json({ ok: true, invite });
 });
 

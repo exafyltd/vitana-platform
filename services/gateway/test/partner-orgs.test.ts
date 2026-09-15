@@ -182,6 +182,7 @@ describe('POST /:orgId/members/invite', () => {
       .send({ email: 'doc@example.com', role: 'professional' });
     expect(r.status).toBe(201);
     expect(r.body.invite.role).toBe('professional');
+    expect(emitOasisEventMock).toHaveBeenCalledWith(expect.objectContaining({ type: 'partner_org.member_invited' }));
   });
 });
 

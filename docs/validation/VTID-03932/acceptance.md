@@ -133,6 +133,10 @@ identical shape to the precedent recorded in
 
 AC-8 — Route mount evidence (new routes added: `partner-orgs.ts`).
 
+CURL: supertest `POST /api/v1/partner-orgs/register` → 401 `application/json`
+(`test/partner-orgs.test.ts`, describe "partner-orgs — auth (mount proof)");
+live staging curl of FINAL_URL below after merge.
+
 ROUTE_MOUNT: `partnerOrgsRouter` (`services/gateway/src/routes/partner-orgs.ts`)
 is mounted in `services/gateway/src/index.ts` right after the partner-health
 consent mount: `mountRouterSync(app, '/api/v1/partner-orgs', partnerOrgsRouter,
@@ -149,12 +153,16 @@ did not ship).
 
 AC-9 — OASIS traceability.
 
-OASIS_PROOF: `emitOasisEvent()` is called for `partner_org.registered`
-(register), `partner_org.member_joined` (invite accept), and
-`partner_org.activated` (admin activate) — all three added to
-`CicdEventType` in `src/types/cicd.ts`. Asserted in
-`test/partner-orgs.test.ts`'s happy-path tests via
-`expect(emitOasisEventMock).toHaveBeenCalledWith(expect.objectContaining({type: '...'}))`.
+TEST: `test/partner-orgs.test.ts`'s happy-path tests assert
+`expect(emitOasisEventMock).toHaveBeenCalledWith(expect.objectContaining({type: '...'}))`
+for `partner_org.registered` (register), `partner_org.member_invited` (invite
+create — added after this repo's own Dev Autopilot impact-scan flagged the
+handler as a mutation with no OASIS emit), `partner_org.member_joined`
+(invite accept), and `partner_org.activated` (admin activate).
+
+OASIS_PROOF: all four event types newly added to `CicdEventType` in
+`src/types/cicd.ts`; `emitOasisEvent()` called from each of the four
+mutating handlers in `services/gateway/src/routes/partner-orgs.ts`.
 
 ## Not verified / blocked
 
