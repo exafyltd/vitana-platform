@@ -1,5 +1,6 @@
 /**
- * VTID-03906 / VTID-03907 / VTID-03908 — Command Hub Operator popup fixes.
+ * VTID-03906 / VTID-03907 / VTID-03908 / VTID-03910 / VTID-03911 —
+ * Command Hub Operator popup fixes.
  *
  * app.js is a plain script with no module exports (Command Hub frontend),
  * so this is a source-text regression guard rather than an import-based
@@ -18,6 +19,14 @@
  * VTID-03908: adds fullscreen/restore icon buttons beside the existing X
  *   close button on the Operator overlay header; the X's own behavior is
  *   unchanged.
+ * VTID-03910: the fullscreen popup ran edge-to-edge with no visible margin
+ *   on any side and reportedly couldn't scroll. Fixed with a symmetric
+ *   2cm inset (real CSS length unit) plus a min-height:0 fix through the
+ *   nested flex-column chain that was silently defeating overflow-y:auto.
+ * VTID-03911: the mic's active/red state was reachable in code but a CSS
+ *   specificity bug (:hover:not(:disabled) beating a bare active class)
+ *   meant it silently stayed neutral while the cursor rested on the button
+ *   after the click — the normal case with a mouse.
  */
 
 import * as fs from 'fs';
@@ -126,7 +135,20 @@ describe('VTID-03907: Operator chat voice dictation', () => {
 
   it('.chat-mic-btn CSS exists with a recording/active state', () => {
     expect(CSS).toMatch(/\.chat-mic-btn\s*{/);
-    expect(CSS).toMatch(/\.chat-mic-btn--active\s*{/);
+    expect(CSS).toMatch(/\.chat-mic-btn--active[,\s]/);
+  });
+
+  it('VTID-03911: the active/red state also wins while hovered, not just at rest', () => {
+    // .chat-mic-btn:hover:not(:disabled) has specificity (0,3,0) — higher
+    // than a bare .chat-mic-btn--active (0,1,0) — so without an explicit
+    // :hover variant of the active rule, resting the cursor on the button
+    // after clicking it (the normal case with a mouse) silently keeps the
+    // neutral hover style and the button never visibly turns red.
+    const idx = CSS.indexOf('.chat-mic-btn--active,');
+    expect(idx).toBeGreaterThan(-1);
+    const block = CSS.slice(idx, idx + 300);
+    expect(block).toMatch(/\.chat-mic-btn--active:hover/);
+    expect(block).toContain('#ef4444');
   });
 });
 
@@ -176,8 +198,60 @@ describe('VTID-03908: Operator popup fullscreen toggle', () => {
 
   it('.operator-overlay--fullscreen CSS modifier exists', () => {
     expect(CSS).toMatch(/\.operator-overlay--fullscreen\s*{/);
-    expect(CSS).toContain('width: 100vw;');
-    expect(CSS).toContain('height: 100vh;');
+  });
+});
+
+describe('VTID-03910: fullscreen symmetric edge spacing + scrollable content', () => {
+  it('the fullscreen panel is inset by a real 2cm on every side, not true edge-to-edge 100vw/100vh', () => {
+    const idx = CSS.indexOf('.operator-overlay--fullscreen {');
+    expect(idx).toBeGreaterThan(-1);
+    const block = CSS.slice(idx, idx + 400);
+    expect(block).toContain('calc(100vw - 4cm)');
+    expect(block).toContain('calc(100vh - 4cm)');
+    // Must NOT be literal edge-to-edge sizing any more.
+    expect(block).not.toMatch(/width:\s*100vw;/);
+    expect(block).not.toMatch(/height:\s*100vh;/);
+  });
+
+  it('the backdrop still centers the panel (flex align/justify center), so the inset lands symmetrically', () => {
+    const idx = CSS.indexOf('.overlay-backdrop {');
+    expect(idx).toBeGreaterThan(-1);
+    const block = CSS.slice(idx, idx + 300);
+    expect(block).toContain('align-items: center;');
+    expect(block).toContain('justify-content: center;');
+  });
+
+  it('a narrower mobile breakpoint uses a smaller fixed inset instead of the flat 2cm', () => {
+    const idx = CSS.indexOf('@media (max-width: 768px)');
+    expect(idx).toBeGreaterThan(-1);
+    const block = CSS.slice(idx, idx + 800);
+    expect(block).toMatch(/\.operator-overlay--fullscreen\s*{/);
+    expect(block).toContain('calc(100vw - 1.5rem)');
+  });
+
+  it('the flex chain from .overlay-panel down to .chat-container sets min-height:0 so overflow-y:auto can actually engage', () => {
+    // A flex column child defaults to min-height:auto, which lets it grow
+    // past its own container instead of shrinking to fit — the classic
+    // reason a nested flex layout like this one can silently break
+    // scrolling regardless of an overflow-y:auto declared further down.
+    const panelIdx = CSS.indexOf('.overlay-panel {');
+    expect(panelIdx).toBeGreaterThan(-1);
+    const panelEnd = CSS.indexOf('\n}', panelIdx);
+    expect(CSS.slice(panelIdx, panelEnd)).toContain('min-height: 0;');
+
+    const tabContentIdx = CSS.indexOf('.operator-tab-content {');
+    expect(tabContentIdx).toBeGreaterThan(-1);
+    const tabContentEnd = CSS.indexOf('\n}', tabContentIdx);
+    expect(CSS.slice(tabContentIdx, tabContentEnd)).toContain('min-height: 0;');
+
+    const chatContainerIdx = CSS.indexOf('.chat-container {');
+    expect(chatContainerIdx).toBeGreaterThan(-1);
+    const chatContainerEnd = CSS.indexOf('\n}', chatContainerIdx);
+    expect(CSS.slice(chatContainerIdx, chatContainerEnd)).toContain('min-height: 0;');
+  });
+
+  it('.chat-messages drops its fixed 65vh cap in fullscreen mode so it fills the available space instead of leaving a dead gap', () => {
+    expect(CSS).toMatch(/\.operator-overlay--fullscreen \.chat-messages\s*{\s*max-height:\s*none;/);
   });
 });
 

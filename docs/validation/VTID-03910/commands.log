@@ -1,0 +1,57 @@
+# VTID-03910/03911 — commands run during this change
+
+## Investigation: live-browser-equivalent verification harness
+
+Since this session has no live authenticated Command Hub browser session,
+built a local static harness (`/tmp/.../verify-operator-ui/harness.html`)
+that loads the real `services/gateway/src/frontend/command-hub/styles.css`
+and mirrors the exact DOM class structure `renderOperatorOverlay()`/
+`renderOperatorChat()` produce, then drove it with Playwright
+(chromium at /opt/pw-browsers/chromium-1194, NODE_PATH pointed at the
+global playwright install since this repo has no local playwright dep).
+
+This caught the real VTID-03911 root cause directly: `page.locator(...)
+.evaluate(el => getComputedStyle(el))` on the mic button right after a
+click showed `border: rgb(148, 163, 184)` (the neutral :hover color) even
+though `el.className` correctly included `chat-mic-btn--active` — proving
+a CSS specificity bug, not a JS logic bug.
+
+## TypeScript
+$ cd services/gateway && npx tsc --noEmit -p tsconfig.json
+(clean, no output — see outputs/tsc-noemit.txt)
+
+## New-suite tests
+$ cd services/gateway && npx jest test/vtid-03906-08-operator-scroll-mic-fullscreen.test.ts --silent
+Test Suites: 1 passed, 1 total
+Tests:       24 passed, 24 total
+(full output: outputs/jest-new-suite.txt)
+
+## Full gateway suite (regression check)
+$ cd services/gateway && npx jest --silent
+Test Suites: 1 skipped, 795 passed, 795 of 796 total
+Tests:       29 skipped, 6 todo, 14209 passed, 14244 total
+0 failures.
+(tail: outputs/jest-full-suite.txt)
+
+## Build Gate (gateway_backend profile)
+$ cd services/gateway && npm run build
+exit 0 — tsc, copy-frontend, copy-data all succeeded
+(full output: outputs/npm-build.txt)
+
+## CSP Governance Gate — local pre-flight
+$ git diff origin/main -- 'services/gateway/src/frontend/' > /tmp/csp_diff_final2.txt
+$ node scripts/ci/validator-path-guard.cjs --csp-added-lines /tmp/csp_diff_final2.txt
+No CSP pattern hits in added lines.
+
+## Command Hub Ownership Guard — local pre-flight
+Added VTID-03910/VTID-03911 to
+scripts/ci/command-hub-ownership-guard.js's ALLOWED_VTID_PATTERN (same
+pattern as every prior VTID in this file).
+
+## Path Ownership Guard (validator-path-guard.cjs) — local pre-flight
+$ git diff --name-only origin/main...HEAD > /tmp/changed_files.txt
+$ node scripts/ci/validator-path-guard.cjs /tmp/changed_files.txt gateway_backend /tmp/pr_body.txt
+(gateway_backend allows services/gateway/src/** — including
+frontend/command-hub/** — plus services/gateway/test/** and
+docs/validation/**; scripts/ci/*.js is outside this gate's REMIT and is
+reported NOT JUDGED rather than rejected, per VTID-03696.)
