@@ -32769,8 +32769,36 @@ async function fetchActionRequired(silentRefresh) {
     state.actionRequired.loading = false;
     state.actionRequired.fetched = true;
     if (state.activeModule === 'overview' && state.activeTab === 'system-overview') {
-        renderApp();
+        // VTID-03917: this used to call the unconditional full renderApp()
+        // below even when silentRefresh was requested (the 30s Overview
+        // poll, app.js:~31713) — mirrors the exact bug fetchServiceHealth
+        // already guards against a few hundred lines up. A full renderApp()
+        // does root.innerHTML='' and rebuilds the ENTIRE app (sidebar,
+        // header, every card) every 30s while sitting on this tab: visible
+        // as flicker, a window where a click can land on an element that's
+        // mid-teardown and never fire, and the sidebar's scroll-retention
+        // rAF racing the rebuild and visibly resetting-then-restoring.
+        // Silent refreshes now patch only the Action Required panel's own
+        // DOM node in place instead of tearing down the whole app.
+        if (silentRefresh) {
+            refreshActionRequiredPanel();
+        } else {
+            renderApp();
+        }
     }
+}
+
+/**
+ * VTID-03917: Refreshes only the Action Required panel's DOM in place,
+ * without a full renderApp() rebuild. Used by the 30s Overview poll so a
+ * silent background refresh doesn't tear down and rebuild the whole app
+ * (see fetchActionRequired's silentRefresh branch above).
+ */
+function refreshActionRequiredPanel() {
+    var oldPanel = document.querySelector('.action-required-panel');
+    if (!oldPanel) return;
+    var newPanel = renderActionRequiredPanel();
+    oldPanel.replaceWith(newPanel);
 }
 
 // DEV-COMHU-03404: hourly rollup backing the Overview sparklines.
@@ -32797,7 +32825,12 @@ async function fetchOverviewTimeseries(silentRefresh) {
     state.overviewTimeseries.lastRefreshed = new Date().toISOString();
     state.overviewTimeseries.loading = false;
     state.overviewTimeseries.fetched = true;
-    if (state.activeModule === 'overview' && state.activeTab === 'system-overview') {
+    // VTID-03917: parity with fetchServiceHealth/fetchActionRequired — no
+    // caller currently passes silentRefresh=true here, but if one ever
+    // does, it must not trigger a full-app renderApp() rebuild either.
+    // State is already updated above; a silent caller picks it up on the
+    // next natural render instead of forcing one.
+    if (state.activeModule === 'overview' && state.activeTab === 'system-overview' && !silentRefresh) {
         renderApp();
     }
 }
