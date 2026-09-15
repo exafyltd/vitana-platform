@@ -7,25 +7,23 @@
  * IP, or URL (CLAUDE.md §1b hard rule).
  *
  * DELIBERATELY a separate module and a separate cached client from
- * `aws-ecs-admin.ts`. That module's `ECSClient` runs under the gateway
- * task's IAM role, which already grants `ecs:RunTask` (it dispatches the
- * autopilot-executor job) — reusing it here would mean this "read-only"
- * tool actually executes under a role broad enough to launch tasks, which
- * is exactly the credential-widening this tool must not do.
- *
- * KNOWN GAP, DO NOT ENABLE IN ANY REAL ENVIRONMENT UNTIL THIS IS CLOSED:
- * a truly narrower role needs either a dedicated IAM role assumed via STS
- * (this repo has no `@aws-sdk/client-sts` / `@aws-sdk/credential-providers`
- * dependency yet — adding one is a declared `DEPENDENCY_CHANGE` this VTID
- * deliberately does not make) or a distinct ECS task role attached to a
- * process that isn't also the deploy-capable gateway container. Absent
- * that, this client falls back to the SAME default credential chain as
- * `aws-ecs-admin.ts` and therefore the SAME broad role — so today it is
- * NOT yet the narrowly-scoped read-only surface CLAUDE.md's own AWS
- * hard rules require. `OPERATOR_AWS_READONLY_ENABLED` therefore ships
- * default-OFF and is NOT pinned on any deploy workflow by this VTID; the
- * IAM work is a separate, explicit follow-up before this can be turned on
- * anywhere, staging included.
+ * `aws-ecs-admin.ts`, kept as two files so a future narrower credential
+ * path is a one-line change here rather than a refactor. This client runs
+ * under the gateway task's own IAM role — the SAME broad role
+ * `aws-ecs-admin.ts` uses, which already grants `ecs:RunTask` (it
+ * dispatches the autopilot-executor job). A dedicated, narrower role
+ * assumed via STS was proposed and deliberately rejected by the platform
+ * owner (VTID-03929): "No way to do a narrow role. It must have the
+ * maximum broad one... otherwise we are stuck in the process, repeating
+ * unnecessary blockers." The operator is treated as a daily internal
+ * development tool, not a customer-facing surface, and broad access is an
+ * explicit, recorded product decision — not an oversight. Every call this
+ * client makes is still read-only (`DescribeServicesCommand` only, never
+ * `UpdateService`/`RunTask`/`RegisterTaskDefinition`) and still refuses any
+ * service name outside `ALLOWED_ECS_SERVICES` before making an AWS call.
+ * `OPERATOR_AWS_READONLY_ENABLED=true` is pinned on
+ * `AWS-STAGE-DEPLOY-GATEWAY.yml` (VTID-03929) — staging only; enabling it
+ * on prod is a separate, later decision.
  */
 
 import { ECSClient, DescribeServicesCommand } from '@aws-sdk/client-ecs';

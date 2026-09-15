@@ -1,0 +1,17 @@
+    ✓ fetch throws → health_unreachable
+    ✓ malformed JSON → health_malformed_json (1 ms)
+    ✓ chime-only would-pass simulation: this v1 probe is config/auth-focused
+    ✓ probe records duration_ms
+
+PASS test/routes/role-admin-error-logging.test.ts
+  lib/tenant-role-auth.ts — verifyAuth me_context RPC error logging
+    ✓ destructures `error` from the me_context RPC and logs it before the unchanged fail-closed fallbacks (1 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 1 skipped, 906 passed, 906 of 907 total
+Tests:       29 skipped, 6 todo, 14982 passed, 15017 total
+Snapshots:   44 passed, 44 total
+Time:        64.618 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+
+[exited with code 0]
