@@ -335,6 +335,29 @@ describe('Stage Timeline Status Mapping (VTID-0530)', () => {
         expect(timeline[1].status).toBe('ERROR');
         expect(timeline[1].errorAt).toBe(errorTime);
       });
+
+      // VTID-03927: two 'success' events land in the same macro stage
+      // (e.g. spec.generate.completed then, much later, spec.approved —
+      // both map to PLANNER per inferTaskStageFromType). completedAt must
+      // reflect the LATER one, not freeze at the first.
+      it('should use the LATEST completion event, not the first, when a stage has multiple success events', () => {
+        const baseTime = new Date('2025-12-11T10:00:00Z');
+        const draftTime = new Date(baseTime.getTime() + 60000).toISOString();
+        const approvedTime = new Date(baseTime.getTime() + 3600000).toISOString(); // 1h later
+
+        const events: TimelineEvent[] = [
+          createEvent('PLANNER', 'info', { created_at: baseTime.toISOString(), title: 'Spec generation requested' }),
+          createEvent('PLANNER', 'success', { created_at: draftTime, title: 'Spec generated (draft)' }),
+          createEvent('PLANNER', 'success', { created_at: approvedTime, title: 'Spec approved' }),
+        ];
+
+        const timeline = buildStageTimeline(events);
+
+        expect(timeline[0].stage).toBe('PLANNER');
+        expect(timeline[0].status).toBe('SUCCESS');
+        expect(timeline[0].completedAt).toBe(approvedTime);
+        expect(timeline[0].completedAt).not.toBe(draftTime);
+      });
     });
   });
 });

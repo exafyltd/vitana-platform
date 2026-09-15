@@ -146,6 +146,10 @@ describe('Operator Planner (VTID-03902)', () => {
       const [event] = mockedEmitOasisEvent.mock.calls[0];
       expect(event.type).toBe('operator.planner.sweep_completed');
       expect(event.status).toBe('success');
+      // VTID-03927: this event's type matches none of
+      // inferTaskStageFromType()'s keywords, so without an explicit
+      // task_stage it was invisible in the VTID-03902 stage timeline.
+      expect(event.task_stage).toBe('PLANNER');
     });
 
     it('marks the sweep event as a warning when at least one task fails', async () => {

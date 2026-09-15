@@ -258,7 +258,14 @@ export function buildStageTimeline(events: TimelineEvent[], vtid?: string): Stag
     }
 
     if (hasCompleted) {
-      const completedEvent = sorted.find(e =>
+      // VTID-03927: `sorted` is ascending, so `.find()` picked the FIRST
+      // matching completion event — e.g. a draft "spec.generate.completed"
+      // (success) fires before a later "spec.approved" (also success, same
+      // PLANNER stage), and `.find()` froze completedAt at draft time,
+      // never advancing to reflect the real (later) approval. Use the LAST
+      // matching event instead, since a stage's completion timestamp should
+      // reflect the most recent thing that finished it, not the first.
+      const completedEvent = [...sorted].reverse().find(e =>
         e.status === 'success' || e.status === 'completed' ||
         (e.kind && /completed|done|finished|success/i.test(e.kind)) ||
         (e.title && /completed|done|finished|success/i.test(e.title))
