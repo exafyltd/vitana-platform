@@ -228,7 +228,7 @@ describe('GET /:orgId/invites', () => {
     tableHandlers.partner_organization_members = ({ terminal }: any) =>
       terminal === 'maybeSingle' ? { data: { role: 'org_admin' }, error: null } : { data: [], error: null };
     tableHandlers.partner_organization_invites = () => ({
-      data: [{ id: 'invite-1', email: 'doc@example.com', role: 'professional', expires_at: '2026-12-01T00:00:00Z', accepted_at: null }],
+      data: [{ id: 'invite-1', email: 'doc@example.com', role: 'professional', token: 'tok-abc', expires_at: '2026-12-01T00:00:00Z', accepted_at: null }],
       error: null,
     });
     const r = await request(makeApp())
@@ -237,6 +237,7 @@ describe('GET /:orgId/invites', () => {
     expect(r.status).toBe(200);
     expect(r.body.invites).toHaveLength(1);
     expect(r.body.invites[0].email).toBe('doc@example.com');
+    expect(r.body.invites[0].token).toBe('tok-abc');
   });
 });
 

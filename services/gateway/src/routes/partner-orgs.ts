@@ -230,7 +230,7 @@ router.get('/:orgId/invites', requireAuth, requireOrgAdmin(), async (req: Reques
 
   const { data, error } = await supabase
     .from('partner_organization_invites')
-    .select('id, email, role, expires_at, accepted_at')
+    .select('id, email, role, token, expires_at, accepted_at')
     .eq('partner_organization_id', req.params.orgId)
     .order('created_at', { ascending: false });
   if (error) return res.status(500).json({ ok: false, error: error.message });
