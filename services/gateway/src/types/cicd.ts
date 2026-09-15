@@ -966,7 +966,12 @@ export type CicdEventType =
   | 'community_marketplace.admin.report_resolved'
   | 'community_marketplace.admin.seller_suspended'
   | 'community_marketplace.admin.seller_unsuspended'
-  | 'community_marketplace.admin.category_updated';
+  | 'community_marketplace.admin.category_updated'
+  // VTID-03885: Partner Health Test Integration
+  | 'health_test.order_created'
+  | 'health_test.status_changed'
+  | 'health_test.result_ready'
+  | 'health_test.result_quarantined';
 
 export interface CicdOasisEvent {
   vtid: string;

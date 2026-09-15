@@ -112,5 +112,9 @@
   "notif.listing_interest.title": "Interesovanje za tvoj oglas",
   "notif.listing_interest.body": "Neko je zainteresovan za „{title}\".",
   "notif.day_close.title": "Лаку ноћ 🌙",
-  "notif.day_close.body": "Дан је прошао — ако ти нешто још увек пролази кроз главу, реци ми."
+  "notif.day_close.body": "Дан је прошао — ако ти нешто још увек пролази кроз главу, реци ми.",
+  "notif.partner_test_status_changed.title": "Ažuriranje od {partner_name}",
+  "notif.partner_test_status_changed.body": "Postoji ažuriranje za tvoj {test_name}.",
+  "notif.partner_test_result_ready.title": "Tvoji rezultati su stigli",
+  "notif.partner_test_result_ready.body": "Tvoji rezultati {test_name} od {partner_name} su spremni. Zamoli Vitanu da ti ih objasni."
 }

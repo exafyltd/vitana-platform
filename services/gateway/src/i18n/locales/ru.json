@@ -112,5 +112,9 @@
   "notif.listing_interest.title": "Интерес к твоему объявлению",
   "notif.listing_interest.body": "Кто-то заинтересовался «{title}».",
   "notif.day_close.title": "Спокойной ночи 🌙",
-  "notif.day_close.body": "День закончился — если тебя что-то всё ещё беспокоит, скажи мне."
+  "notif.day_close.body": "День закончился — если тебя что-то всё ещё беспокоит, скажи мне.",
+  "notif.partner_test_status_changed.title": "Обновление от {partner_name}",
+  "notif.partner_test_status_changed.body": "Есть обновление по твоему тесту {test_name}.",
+  "notif.partner_test_result_ready.title": "Твои результаты готовы",
+  "notif.partner_test_result_ready.body": "Результаты {test_name} от {partner_name} готовы. Попроси Vitana объяснить их тебе."
 }

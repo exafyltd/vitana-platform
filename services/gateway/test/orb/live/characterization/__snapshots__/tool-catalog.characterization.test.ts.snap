@@ -6263,6 +6263,41 @@ CALL WHEN the user says: "connect my Oura ring", "pair my device",
         },
       },
       {
+        "description": "Get the status of the user's partner health test(s) (e.g. a DoctorBox
+blood test ordered through Discover). Reads a canonical status —
+never a raw partner status string.
+CALL WHEN the user asks: "what's the status of my blood test?",
+"has my DoctorBox test shipped?", "wo ist mein Bluttest?".",
+        "name": "get_health_test_status",
+        "parameters": {
+          "properties": {
+            "test_name": {
+              "description": "Optional test name to filter by, e.g. "cholesterol".",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Get the actual biomarker values from a completed partner health test
+(status result_ready or delivered) so the model can discuss them.
+CALL WHEN the user asks: "what were my blood test results?", "tell me
+about my DoctorBox results", "was hat mein Bluttest ergeben?".",
+        "name": "get_health_test_result",
+        "parameters": {
+          "properties": {
+            "test_name": {
+              "description": "Optional test name to filter by.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
         "description": "Current plan, status, renewal date, and voice-minutes usage.",
         "name": "get_my_subscription",
         "parameters": {
@@ -19111,6 +19146,41 @@ CALL WHEN the user says: "connect my Oura ring", "pair my device",
           "properties": {
             "device_name": {
               "description": "Optional device name, e.g. "Oura Ring".",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Get the status of the user's partner health test(s) (e.g. a DoctorBox
+blood test ordered through Discover). Reads a canonical status —
+never a raw partner status string.
+CALL WHEN the user asks: "what's the status of my blood test?",
+"has my DoctorBox test shipped?", "wo ist mein Bluttest?".",
+        "name": "get_health_test_status",
+        "parameters": {
+          "properties": {
+            "test_name": {
+              "description": "Optional test name to filter by, e.g. "cholesterol".",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Get the actual biomarker values from a completed partner health test
+(status result_ready or delivered) so the model can discuss them.
+CALL WHEN the user asks: "what were my blood test results?", "tell me
+about my DoctorBox results", "was hat mein Bluttest ergeben?".",
+        "name": "get_health_test_result",
+        "parameters": {
+          "properties": {
+            "test_name": {
+              "description": "Optional test name to filter by.",
               "type": "string",
             },
           },

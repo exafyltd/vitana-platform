@@ -112,5 +112,9 @@
   "notif.listing_interest.title": "Zainteresowanie Twoim ogłoszeniem",
   "notif.listing_interest.body": "Ktoś jest zainteresowany „{title}\".",
   "notif.day_close.title": "Dobranoc 🌙",
-  "notif.day_close.body": "Dzień się skończył — jeśli coś wciąż chodzi ci po głowie, powiedz mi."
+  "notif.day_close.body": "Dzień się skończył — jeśli coś wciąż chodzi ci po głowie, powiedz mi.",
+  "notif.partner_test_status_changed.title": "Aktualizacja od {partner_name}",
+  "notif.partner_test_status_changed.body": "Jest aktualizacja dotycząca twojego {test_name}.",
+  "notif.partner_test_result_ready.title": "Twoje wyniki są już dostępne",
+  "notif.partner_test_result_ready.body": "Twoje wyniki {test_name} od {partner_name} są gotowe. Poproś Vitanę, aby ci je wyjaśniła."
 }
