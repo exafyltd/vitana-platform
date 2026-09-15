@@ -1,0 +1,31 @@
+$ node -e "... brace balance check ..."
+services/gateway/src/routes/orb-live.ts braces: 4082 4082 BALANCED
+services/gateway/src/orb/live/session/live-session-controller.ts braces: 553 553 BALANCED
+
+$ grep -n "sseEverAttached" services/gateway/src/routes/orb-live.ts services/gateway/src/orb/live/session/live-session-controller.ts
+services/gateway/src/routes/orb-live.ts:944:  sseEverAttached?: boolean;
+services/gateway/src/routes/orb-live.ts:1376:        sse_ever_attached: !!s.sseEverAttached,
+services/gateway/src/routes/orb-live.ts:1475:      sse_ever_attached: !!existingSession.sseEverAttached, // VTID-03807
+services/gateway/src/routes/orb-live.ts:15582:  session.sseEverAttached = true; // VTID-03807: see GeminiLiveSession field doc comment
+services/gateway/src/orb/live/session/live-session-controller.ts:2386:    sse_ever_attached: !!(session as any).sseEverAttached, // VTID-03807
+
+$ grep -n "sse_ever_attached" services/gateway/src/routes/orb-live.ts services/gateway/src/orb/live/session/live-session-controller.ts
+services/gateway/src/routes/orb-live.ts:1376:        sse_ever_attached: !!s.sseEverAttached,
+services/gateway/src/routes/orb-live.ts:1475:      sse_ever_attached: !!existingSession.sseEverAttached, // VTID-03807
+services/gateway/src/orb/live/session/live-session-controller.ts:2380:  // (sse_ever_attached) to the stop-event payload only — no conversation
+services/gateway/src/orb/live/session/live-session-controller.ts:2386:    sse_ever_attached: !!(session as any).sseEverAttached, // VTID-03807
+
+$ grep -n "flow-test-exempt" services/gateway/src/orb/live/session/live-session-controller.ts
+2379:  // flow-test-exempt: VTID-03807 adds one extra telemetry field
+
+Confirms:
+- Exactly one write site sets sseEverAttached = true (the real GET /live/stream
+  attach point in orb-live.ts). No other write site exists, so the field can
+  only ever be set true by an actual SSE attach.
+- The field is read (as sse_ever_attached) at exactly the 3 stop-emission call
+  sites intended: the idle/expired reap sweep, the same-user
+  superseded_by_new_session teardown, and the explicit POST
+  /live/session/stop handler (live-session-controller.ts). The two
+  WS-transport-only stop sites (orb-live.ts ~17840-ish "transport:
+  'websocket'" block, and live-session-controller.ts's ws.on('close')
+  handler) do NOT read it, matching the PR description.

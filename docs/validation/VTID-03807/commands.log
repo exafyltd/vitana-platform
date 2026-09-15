@@ -1,0 +1,65 @@
+# VTID-03807 — commands run, in order
+
+## Diagnosis (read-only against production oasis_events; project inmkhvwdcuyhnxkgfvsb)
+
+select topic, event, status, count(*) as cnt, max(created_at) as last_seen
+from oasis_events
+where created_at > now() - interval '48 hours'
+  and (topic ilike '%live%' or topic ilike '%orb%' or topic ilike '%voice%')
+group by topic, event, status
+order by last_seen desc
+limit 80;
+
+select
+  metadata->>'reason' as reason,
+  metadata->>'transport' as transport,
+  (metadata->>'turn_count')::int as turn_count,
+  (metadata->>'audio_out_chunks')::int as audio_out_chunks,
+  count(*) as cnt
+from oasis_events
+where created_at > now() - interval '24 hours'
+  and topic = 'vtid.live.session.stop'
+group by 1,2,3,4
+order by cnt desc;
+
+-- (full session-timeline reconstructions for both a stuck session and a
+-- working session, keyed by metadata->>'session_id', and the
+-- starts-vs-reached-diag join used to size the ~15% failure rate, run the
+-- same way — omitted here for length; all SELECT-only against oasis_events,
+-- no writes, no test content created.)
+
+## Source reading
+
+grep -n "sendGreetingAudioBridge\|synthesizeGreetingBridgeAudioPcm\|tryPollySynthesis" \
+  services/gateway/src/routes/orb-live.ts services/gateway/src/services/tts/greeting-bridge-tts.ts services/gateway/src/services/tts/tts-provider.ts
+
+grep -n "googleAuth && VERTEX_PROJECT_ID\|orb.upstream.provider.selected\|orb.live.config_missing" \
+  services/gateway/src/routes/orb-live.ts
+
+grep -n "_signalAudioReady\|new EventSource\|live/session/start" \
+  services/gateway/src/frontend/command-hub/orb-widget.js
+
+## Verification of this diff
+
+cd services/gateway
+
+node -e "
+const fs = require('fs');
+for (const f of ['src/routes/orb-live.ts','src/orb/live/session/live-session-controller.ts']) {
+  const s = fs.readFileSync(f, 'utf8');
+  const open = (s.match(/\{/g)||[]).length;
+  const close = (s.match(/\}/g)||[]).length;
+  console.log(f, 'braces:', open, close, open===close?'BALANCED':'MISMATCH');
+}
+"
+# -> see outputs/brace-and-field-checks.txt
+
+grep -n "sseEverAttached" src/routes/orb-live.ts src/orb/live/session/live-session-controller.ts
+grep -n "sse_ever_attached" src/routes/orb-live.ts src/orb/live/session/live-session-controller.ts
+grep -n "flow-test-exempt" src/orb/live/session/live-session-controller.ts
+# -> see outputs/brace-and-field-checks.txt
+
+npm ci --prefer-offline --no-audit --no-fund
+# -> 403 from registry.npmjs.org (no network egress to npm from this sandbox)
+# -> see outputs/tsc-attempt.txt for the full note; tsc/jest not run from
+#    this session, left for CI.

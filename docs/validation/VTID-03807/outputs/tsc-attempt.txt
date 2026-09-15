@@ -1,0 +1,24 @@
+$ cd services/gateway && npm ci --prefer-offline --no-audit --no-fund
+npm error code E403
+npm error 403 403 Forbidden - GET https://registry.npmjs.org/zod/-/zod-3.25.76.tgz
+npm error 403 In most cases, you or one of your dependencies are requesting
+npm error 403 a package version that is forbidden by your security policy, or
+npm error 403 on a server you do not have access to.
+
+This sandboxed session has no route to registry.npmjs.org, so node_modules
+could not be installed and `tsc --noEmit` / `npm run typecheck` / `npm test`
+could not be run against the pinned toolchain from this session. An ad-hoc
+`npx tsc` in this sandbox resolves an unrelated, much newer global
+TypeScript (6.0.2, vs this project's pinned ^5.3.3) that rejects the
+repo's own tsconfig.json outright (TS5107, moduleResolution=node10
+deprecated) before reaching any project file, so it is not a usable
+substitute either.
+
+Verification for this PR is therefore source-level (see
+brace-and-field-checks.txt) rather than a green tsc/jest run. Both new call
+sites (payload objects) are already typed `Record<string, unknown>`, and
+the only new interface member is `sseEverAttached?: boolean` on
+GeminiLiveSession (routes/orb-live.ts) -- an optional field added to an
+existing interface never narrows or breaks existing usages of that
+interface. Requesting CI (which does have registry + toolchain access) be
+the actual gate for this PR rather than treating this note as a substitute.
