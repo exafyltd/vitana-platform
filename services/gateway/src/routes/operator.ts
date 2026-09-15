@@ -266,6 +266,17 @@ router.post('/chat', optionalAuth, async (req: Request, res: Response) => {
     // Falls back to local routing if Gemini API is not configured
     // VTID-01027: Pass conversation history for session memory
     console.log(`[VTID-01027] Processing with conversation_id: ${conversation_id}, context messages: ${context?.length || 0}`);
+    // VTID-03926: processWithGemini()/getRouterToolDefinitions() have accepted
+    // a userRole param since VTID-DEV-ASSIST specifically to gate every
+    // dev_* tool (dev_search_codebase, dev_read_file, dev_db_query, PR/deploy
+    // tools) to developer/admin callers — but this route never resolved or
+    // passed one, so getRouterToolDefinitions(undefined) filtered out every
+    // dev_* tool for every caller, including an authenticated exafy_admin
+    // session. callerIdentity is already resolved above (line ~164) from the
+    // verified JWT (optionalAuth), not a client-supplied header — mirror that
+    // trust level here rather than the spoofable x-operator-role header
+    // getOperatorRole() reads elsewhere in this file.
+    const geminiUserRole = callerIdentity?.exafy_admin === true ? 'admin' : undefined;
     const geminiResult = await processWithGemini({
       text: message,
       threadId,
@@ -277,7 +288,9 @@ router.post('/chat', optionalAuth, async (req: Request, res: Response) => {
       },
       // VTID-01027: Conversation history for context
       conversationHistory: context || [],
-      conversationId: conversation_id
+      conversationId: conversation_id,
+      // VTID-03926: authorize dev_* tools for a verified exafy_admin caller
+      userRole: geminiUserRole
     });
 
     // VTID-0536: Check if Gemini created a task via tools (in addition to explicit /task command)
