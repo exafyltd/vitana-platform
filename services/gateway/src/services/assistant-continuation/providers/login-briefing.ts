@@ -59,6 +59,7 @@ import { getJourneyState } from '../../guided-journey/guided-journey-state';
 import { getPublishedChecklist } from '../../guided-journey/checklist-service';
 import { fetchLifeCompass, fetchVitanaIndexForProfiler } from '../../user-context-profiler';
 import { PILLAR_KEYS, type PillarKey } from '../../../lib/vitana-pillars';
+import * as repo from './login-briefing-repository';
 
 export const LOGIN_BRIEFING_PROVIDER_KEY = 'login_briefing';
 export const LOGIN_BRIEFING_EXTRA_KEY = 'loginBriefing' as const;
@@ -781,11 +782,7 @@ async function fetchUserJourneyRow(
   supabase: SupabaseClient,
   userId: string,
 ): Promise<UserJourneyRow | null> {
-  const { data, error } = await supabase
-    .from('user_journey')
-    .select('last_session_date, is_first_session, started_at')
-    .eq('user_id', userId)
-    .maybeSingle();
+  const { data, error } = await repo.fetchUserJourneyRow(supabase, userId);
   if (error) throw new Error(error.message);
   return (data ?? null) as UserJourneyRow | null;
 }

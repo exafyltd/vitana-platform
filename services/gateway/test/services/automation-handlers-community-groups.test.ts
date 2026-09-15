@@ -30,9 +30,14 @@ import { AutomationContext } from '../../src/types/automations';
 registerCommunityGroupsHandlers();
 
 const SRC = path.join(__dirname, '..', '..', 'src', 'services', 'automation-handlers', 'community-groups.ts');
+const REPO_SRC = path.join(__dirname, '..', '..', 'src', 'services', 'automation-handlers', 'community-groups-repository.ts');
 
 describe('community-groups — source-level wall against never-deployed / wrong-column tables', () => {
-  const src = fs.readFileSync(SRC, 'utf8');
+  // VTID-03702 (Aurora migration B1): the literal `.from(...)` calls this
+  // wall pins now live in the repository seam, not the handler file itself
+  // — check the combined text so the pure-move refactor doesn't break a
+  // still-valid invariant.
+  const src = fs.readFileSync(SRC, 'utf8') + '\n' + fs.readFileSync(REPO_SRC, 'utf8');
 
   it('never references the never-deployed VTID-01084 tables', () => {
     expect(src).not.toMatch(/from\(['"]community_groups['"]\)/);
@@ -186,6 +191,28 @@ describe('runAutoCreateGroupFromInterestCluster (AP-0201)', () => {
     expect(notify).not.toHaveBeenCalled();
     expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
   });
+
+  it('does NOT create a duplicate group when the existing-group check errors — skips instead of treating the error as "no existing group"', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const clusterUsers = ['u1', 'u2', 'u3', 'u4', 'u5'].map((user_id) => ({
+      user_id, interest: 'pickleball', confidence_score: 0.9,
+    }));
+    const supabase = makeFakeSupabase({
+      user_interests: [{ data: clusterUsers, error: null }],
+      global_community_groups: [
+        { data: null, error: { message: 'connection reset' } }, // existing-group check errors
+      ],
+    });
+    const { ctx, notify } = makeCtx(supabase);
+
+    const handler = getHandler('runAutoCreateGroupFromInterestCluster')!;
+    const result = await handler(ctx);
+
+    expect(notify).not.toHaveBeenCalled();
+    expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('fetchExistingGroupByCategory failed'));
+    errorSpy.mockRestore();
+  });
 });
 
 describe('runAutoSuggestMeetupFromGroupActivity (AP-0204)', () => {
@@ -297,6 +324,31 @@ describe('runCrossGroupIntroduction (AP-0206)', () => {
     expect(notify).not.toHaveBeenCalled();
     expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
   });
+
+  it('does NOT re-notify an already-introduced pair when the existing-edge check errors — skips instead of failing open', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const supabase = makeFakeSupabase({
+      global_community_group_members: [{
+        data: [
+          { user_id: 'u1', group_id: 'g-1' },
+          { user_id: 'u1', group_id: 'g-2' },
+          { user_id: 'u2', group_id: 'g-1' },
+          { user_id: 'u2', group_id: 'g-2' },
+        ],
+        error: null,
+      }],
+      relationship_edges: [{ data: null, error: { message: 'connection reset' } }],
+    });
+    const { ctx, notify } = makeCtx(supabase);
+
+    const handler = getHandler('runCrossGroupIntroduction')!;
+    const result = await handler(ctx);
+
+    expect(notify).not.toHaveBeenCalled();
+    expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('fetchExistingConnectionEdge failed'));
+    errorSpy.mockRestore();
+  });
 });
 
 describe('runGroupCreationFromMatchCluster (AP-0209)', () => {
@@ -342,5 +394,32 @@ describe('runGroupCreationFromMatchCluster (AP-0209)', () => {
 
     expect(notify).not.toHaveBeenCalled();
     expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
+  });
+
+  it('does NOT create a duplicate group when the shared-memberships check errors — skips instead of treating the error as "no shared group"', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const supabase = makeFakeSupabase({
+      relationship_edges: [{
+        data: [
+          { source_id: 'u1', target_id: 'u2' },
+          { source_id: 'u2', target_id: 'u1' },
+          { source_id: 'u1', target_id: 'u3' },
+          { source_id: 'u3', target_id: 'u1' },
+          { source_id: 'u2', target_id: 'u3' },
+          { source_id: 'u3', target_id: 'u2' },
+        ],
+        error: null,
+      }],
+      global_community_group_members: [{ data: null, error: { message: 'connection reset' } }],
+    });
+    const { ctx, notify } = makeCtx(supabase);
+
+    const handler = getHandler('runGroupCreationFromMatchCluster')!;
+    const result = await handler(ctx);
+
+    expect(notify).not.toHaveBeenCalled();
+    expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('fetchSharedMemberships failed'));
+    errorSpy.mockRestore();
   });
 });

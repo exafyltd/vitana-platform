@@ -7,6 +7,12 @@
  *   POST  /api/v1/admin/intent-engine/intent/:id/close  — force close
  *   POST  /api/v1/admin/intent-engine/recompute         — body { intent_id? } — re-run compute (one or daily fan-out)
  *   GET   /api/v1/admin/intent-engine/stats             — basic dashboard counts
+ *
+ * Data access for the tables this route owns (user_intents, intent_events,
+ * intent_matches, intent_disputes) goes through
+ * ./admin-intent-engine-repository.ts (VTID-03702, Aurora migration B1
+ * data-access seam) instead of calling supabase.from(...)/.rpc(...)
+ * directly.
  */
 
 import { Router, Request, Response } from 'express';
@@ -16,6 +22,7 @@ import {
   AuthenticatedRequest,
 } from '../middleware/auth-supabase-jwt';
 import { computeForIntent } from '../services/intent-matcher';
+import * as repo from './admin-intent-engine-repository';
 
 const router = Router();
 
@@ -25,11 +32,7 @@ function getSupabase() {
 
 router.get('/intent/:id', requireAdminAuth, async (req: Request, res: Response) => {
   const supabase = getSupabase();
-  const { data, error } = await supabase
-    .from('user_intents')
-    .select('*')
-    .eq('intent_id', req.params.id)
-    .maybeSingle();
+  const { data, error } = await repo.fetchAdminIntentById(supabase, req.params.id);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   if (!data) return res.status(404).json({ ok: false, error: 'not_found' });
   return res.json({ ok: true, intent: data });
@@ -38,18 +41,14 @@ router.get('/intent/:id', requireAdminAuth, async (req: Request, res: Response) 
 router.post('/intent/:id/close', requireAdminAuth, async (req: Request, res: Response) => {
   const { identity } = req as AuthenticatedRequest;
   const supabase = getSupabase();
-  const { error } = await supabase
-    .from('user_intents')
-    .update({ status: 'closed' })
-    .eq('intent_id', req.params.id);
+  const { error } = await repo.closeAdminIntent(supabase, req.params.id);
   if (error) return res.status(500).json({ ok: false, error: error.message });
 
-  await supabase.from('intent_events').insert({
-    intent_id: req.params.id,
-    actor_user_id: identity?.user_id,
-    actor_vitana_id: identity?.vitana_id ?? null,
-    event_type: 'admin.force_close',
-    payload: { reason: req.body?.reason ?? 'admin_action' },
+  await repo.insertAdminIntentCloseEvent(supabase, {
+    intentId: req.params.id,
+    actorUserId: identity?.user_id,
+    actorVitanaId: identity?.vitana_id ?? null,
+    reason: req.body?.reason ?? 'admin_action',
   });
   return res.json({ ok: true });
 });
@@ -61,29 +60,14 @@ router.post('/recompute', requireAdminAuth, async (req: Request, res: Response) 
     return res.json({ ok: true, mode: 'one', inserted });
   }
   const supabase = getSupabase();
-  const { data, error } = await supabase.rpc('compute_intent_matches_daily');
+  const { data, error } = await repo.recomputeIntentMatchesDaily(supabase);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   return res.json({ ok: true, mode: 'daily', result: data });
 });
 
 router.get('/stats', requireAdminAuth, async (_req: Request, res: Response) => {
   const supabase = getSupabase();
-  const { count: totalIntents } = await supabase
-    .from('user_intents')
-    .select('*', { count: 'exact', head: true });
-  const { count: openIntents } = await supabase
-    .from('user_intents')
-    .select('*', { count: 'exact', head: true })
-    .eq('status', 'open');
-  const { count: totalMatches } = await supabase
-    .from('intent_matches')
-    .select('*', { count: 'exact', head: true });
-  const { count: stuckOpen } = await supabase
-    .from('user_intents')
-    .select('*', { count: 'exact', head: true })
-    .eq('status', 'open')
-    .eq('match_count', 0)
-    .lt('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+  const { totalIntents, openIntents, totalMatches, stuckOpen } = await repo.fetchAdminIntentEngineStats(supabase);
 
   return res.json({
     ok: true,
@@ -148,8 +132,6 @@ router.post('/disputes/:disputeId/resolve', requireAdminAuth, async (req: Reques
 // KPI route — feeds the Command Hub Intent Engine tile.
 router.get('/kpi', requireAdminAuth, async (_req: Request, res: Response) => {
   const supabase = getSupabase();
-  const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
   try {
     const [
@@ -160,18 +142,7 @@ router.get('/kpi', requireAdminAuth, async (_req: Request, res: Response) => {
       { count: openDisputes },
       { count: stuckOpen },
       kindCounts,
-    ] = await Promise.all([
-      supabase.from('user_intents').select('*', { count: 'exact', head: true }).gte('created_at', since24h),
-      supabase.from('user_intents').select('*', { count: 'exact', head: true }).gte('created_at', since7d),
-      supabase.from('user_intents').select('*', { count: 'exact', head: true }).gt('match_count', 0),
-      supabase.from('intent_matches').select('*', { count: 'exact', head: true }).eq('state', 'mutual_interest'),
-      supabase.from('intent_disputes').select('*', { count: 'exact', head: true }).in('status', ['open', 'investigating']),
-      supabase.from('user_intents').select('*', { count: 'exact', head: true })
-        .eq('status', 'open')
-        .eq('match_count', 0)
-        .lt('created_at', since24h),
-      supabase.from('user_intents').select('intent_kind').gte('created_at', since7d).limit(1000),
-    ]);
+    ] = await repo.fetchAdminIntentEngineKpi(supabase);
 
     // Aggregate kinds breakdown.
     const kindBreakdown: Record<string, number> = {};
@@ -203,10 +174,7 @@ router.post('/archive', requireAdminAuth, async (req: Request, res: Response) =>
   const olderThan = Math.max(Number(req.body?.older_than_days) || 90, 7);
   const batchSize = Math.min(Math.max(Number(req.body?.batch_size) || 500, 1), 5000);
   try {
-    const { data, error } = await supabase.rpc('archive_old_intent_matches', {
-      p_older_than_days: olderThan,
-      p_batch_size: batchSize,
-    });
+    const { data, error } = await repo.archiveOldIntentMatches(supabase, olderThan, batchSize);
     if (error) return res.status(500).json({ ok: false, error: error.message });
     const row = Array.isArray(data) ? data[0] : data;
     return res.json({ ok: true, archived: row?.archived ?? 0, remaining: row?.remaining ?? 0 });

@@ -10,6 +10,7 @@
 import { Router, Request, Response } from 'express';
 import { listCapabilities, executeCapability } from '../capabilities';
 import { listConnectors } from '../connectors';
+import * as repo from './capabilities-repository';
 
 const router = Router();
 
@@ -49,11 +50,7 @@ router.get('/my-connectors', async (req: Request, res: Response) => {
   const supabase = await getServiceClient();
   if (!supabase) return res.status(503).json({ ok: false, error: 'Service unavailable' });
 
-  const { data: activeRows } = await supabase
-    .from('social_connections')
-    .select('provider, provider_username, connected_at')
-    .eq('user_id', user.userId)
-    .eq('is_active', true);
+  const { data: activeRows } = await repo.fetchActiveSocialConnectionsForUser(supabase, user.userId);
 
   const activeByProvider = new Map((activeRows ?? []).map((r) => [r.provider, r]));
   const connectors = listConnectors().map((c) => ({
@@ -82,10 +79,7 @@ router.get('/preferences', async (req: Request, res: Response) => {
   const supabase = await getServiceClient();
   if (!supabase) return res.status(503).json({ ok: false, error: 'Service unavailable' });
 
-  const { data, error } = await supabase
-    .from('user_capability_preferences')
-    .select('capability_id, preferred_connector_id, set_method, updated_at')
-    .eq('user_id', user.userId);
+  const { data, error } = await repo.fetchUserCapabilityPreferences(supabase, user.userId);
 
   if (error) return res.status(500).json({ ok: false, error: error.message });
   return res.json({ ok: true, preferences: data ?? [] });
@@ -111,18 +105,14 @@ router.put('/preferences/:capability', async (req: Request, res: Response) => {
   const supabase = await getServiceClient();
   if (!supabase) return res.status(503).json({ ok: false, error: 'Service unavailable' });
 
-  const { data, error } = await supabase
-    .from('user_capability_preferences')
-    .upsert({
-      tenant_id: user.tenantId,
-      user_id: user.userId,
-      capability_id: capability,
-      preferred_connector_id,
-      set_method,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'tenant_id,user_id,capability_id' })
-    .select('capability_id, preferred_connector_id, set_method, updated_at')
-    .single();
+  const { data, error } = await repo.upsertUserCapabilityPreference(supabase, {
+    tenant_id: user.tenantId,
+    user_id: user.userId,
+    capability_id: capability,
+    preferred_connector_id,
+    set_method,
+    updated_at: new Date().toISOString(),
+  });
 
   if (error) return res.status(500).json({ ok: false, error: error.message });
   return res.json({ ok: true, preference: data });
@@ -135,11 +125,7 @@ router.delete('/preferences/:capability', async (req: Request, res: Response) =>
   const supabase = await getServiceClient();
   if (!supabase) return res.status(503).json({ ok: false, error: 'Service unavailable' });
 
-  const { error } = await supabase
-    .from('user_capability_preferences')
-    .delete()
-    .eq('user_id', user.userId)
-    .eq('capability_id', req.params.capability);
+  const { error } = await repo.deleteUserCapabilityPreference(supabase, user.userId, req.params.capability);
 
   if (error) return res.status(500).json({ ok: false, error: error.message });
   return res.json({ ok: true });

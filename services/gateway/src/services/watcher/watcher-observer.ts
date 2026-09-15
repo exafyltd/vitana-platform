@@ -47,6 +47,7 @@ import {
 import { distilBatch } from './distiller';
 import { upsertLesson } from './lessons-store';
 import type { SourceTickResult, WatcherStep } from './types';
+import * as repo from './watcher-observer-repository';
 
 const LOG_PREFIX = '[watcher-observer]';
 
@@ -105,11 +106,7 @@ async function readCursor(source: string): Promise<string> {
   const sb = getSupabase();
   if (!sb) return new Date(Date.now() - COLD_START_LOOKBACK_MS).toISOString();
 
-  const { data, error } = await sb
-    .from('watcher_observer_state')
-    .select('cursor_at')
-    .eq('source', source)
-    .maybeSingle();
+  const { data, error } = await repo.fetchObserverCursor(sb, source);
 
   if (error || !data?.cursor_at) {
     return new Date(Date.now() - COLD_START_LOOKBACK_MS).toISOString();
@@ -126,17 +123,14 @@ async function writeCursor(
   const sb = getSupabase();
   if (!sb) return;
   const now = new Date().toISOString();
-  await sb.from('watcher_observer_state').upsert(
-    {
-      source,
-      cursor_at: cursorAt,
-      last_run_at: now,
-      last_error: error ?? null,
-      last_written: written,
-      updated_at: now,
-    },
-    { onConflict: 'source' },
-  );
+  await repo.upsertObserverCursor(sb, {
+    source,
+    cursor_at: cursorAt,
+    last_run_at: now,
+    last_error: error ?? null,
+    last_written: written,
+    updated_at: now,
+  });
 }
 
 // =============================================================================
@@ -187,13 +181,7 @@ export async function writeSteps(
     // already distilled on the tick that first inserted them, so selecting
     // only the genuinely-new rows is what makes distillation idempotent
     // across the overlap rescan without needing a second dedupe pass.
-    const { data, error } = await sb
-      .from('watcher_steps')
-      .upsert(steps, {
-        onConflict: 'source,source_ref,step',
-        ignoreDuplicates: true,
-      })
-      .select('id, work_unit_kind, work_unit_id, vtid, step, outcome, actor, evidence, source, source_ref, observed_at');
+    const { data, error } = await repo.upsertWatcherSteps(sb, steps);
 
     if (error) {
       console.error(`${LOG_PREFIX} write failed:`, error.message);
@@ -285,14 +273,13 @@ async function scanOasisEvents(sink: StoredStep[]): Promise<SourceTickResult> {
   let maxSeen = cursor;
 
   for (let page = 0; page < MAX_PAGES_PER_TICK; page++) {
-    const { data, error } = await sb
-      .from('oasis_events')
-      .select('id, topic, vtid, status, message, service, source, metadata, created_at')
-      .gte('created_at', from)
-      .or(oasisTopicFilter())
-      .order('created_at', { ascending: true })
-      .order('id', { ascending: true })
-      .range(page * SCAN_LIMIT, (page + 1) * SCAN_LIMIT - 1);
+    const { data, error } = await repo.fetchOasisEventsPage(
+      sb,
+      from,
+      oasisTopicFilter(),
+      page * SCAN_LIMIT,
+      (page + 1) * SCAN_LIMIT - 1,
+    );
 
     if (error) {
       // Leave the cursor where it was: re-reading is free, losing events is not.
@@ -347,16 +334,7 @@ async function scanExecutions(sink: StoredStep[]): Promise<SourceTickResult> {
     return { source: SOURCE_EXECUTIONS, scanned: 0, written: 0, cursor_at: cursor, error: 'supabase unavailable' };
   }
 
-  const { data, error } = await sb
-    .from('dev_autopilot_executions')
-    // Kept on one line deliberately: supabase-js parses the select string at
-    // the TYPE level, and a concatenated expression defeats that parse — it
-    // degrades the row type to GenericStringError[] and the cast below then
-    // fails to compile. Do not "tidy" this into a multi-line concat.
-    .select('id, status, finding_id, branch, pr_url, pr_number, failure_stage, self_healing_vtid, parent_execution_id, auto_fix_depth, updated_at')
-    .gte('updated_at', from)
-    .order('updated_at', { ascending: true })
-    .limit(SCAN_LIMIT);
+  const { data, error } = await repo.fetchDevAutopilotExecutions(sb, from, SCAN_LIMIT);
 
   if (error) {
     await writeCursor(SOURCE_EXECUTIONS, cursor, 0, error.message);
@@ -418,13 +396,7 @@ export async function distilBackfill(opts: {
 
   const limit = Math.min(Math.max(opts.limit ?? 1000, 1), 5000);
   try {
-    const { data, error } = await sb
-      .from('watcher_steps')
-      .select('id, work_unit_kind, work_unit_id, vtid, step, outcome, actor, evidence, source, source_ref, observed_at')
-      .eq('outcome', 'failure')
-      .gte('observed_at', opts.sinceIso)
-      .order('observed_at', { ascending: true })
-      .limit(limit);
+    const { data, error } = await repo.fetchFailedWatcherStepsSince(sb, opts.sinceIso, limit);
 
     if (error) return { ok: false, scanned: 0, lessons: 0, error: error.message };
 

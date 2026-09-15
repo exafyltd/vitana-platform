@@ -24,6 +24,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { generatePersonalRecommendations, type GenerationConfig } from './recommendation-generator';
+import * as repo from './community-regeneration-repository';
 
 const LOG_PREFIX = '[VTID-03301]';
 
@@ -75,14 +76,7 @@ const inFlight = new Set<string>();
  */
 async function hasAutopilotOptOut(supa: SupabaseClient, userId: string): Promise<boolean> {
   try {
-    const { data } = await supa
-      .from('memory_facts')
-      .select('fact_value')
-      .eq('user_id', userId)
-      .eq('fact_key', 'autopilot_opt_out')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const { data } = await repo.fetchAutopilotOptOutFact(supa, userId);
     const v = (data as { fact_value?: string | null } | null)?.fact_value;
     return typeof v === 'string' && ['true', '1', 'yes'].includes(v.trim().toLowerCase());
   } catch {
@@ -120,12 +114,7 @@ export async function regenerateCommunityRecommendations(
     // Resolve primary tenant.
     let tenantId = opts.tenantId;
     if (!tenantId) {
-      const { data: tenantRow } = await supa
-        .from('user_tenants')
-        .select('tenant_id')
-        .eq('user_id', userId)
-        .eq('is_primary', true)
-        .maybeSingle();
+      const { data: tenantRow } = await repo.fetchPrimaryTenantId(supa, userId);
       tenantId = (tenantRow as { tenant_id?: string } | null)?.tenant_id || undefined;
     }
     if (!tenantId) {
@@ -134,11 +123,7 @@ export async function regenerateCommunityRecommendations(
     }
 
     // Guard: tenant Autopilot enabled (this is also the AI-data enable gate).
-    const { data: settings } = await supa
-      .from('tenant_autopilot_settings')
-      .select('enabled, max_recommendations_per_day')
-      .eq('tenant_id', tenantId)
-      .maybeSingle();
+    const { data: settings } = await repo.fetchTenantAutopilotSettings(supa, tenantId);
     if (settings && (settings as { enabled?: boolean }).enabled === false) {
       console.log(`${LOG_PREFIX} Autopilot disabled for tenant ${tenantId} — skipping regen`);
       return { ok: true, generated: 0, reason: 'disabled' };
@@ -153,11 +138,7 @@ export async function regenerateCommunityRecommendations(
 
     // Guard: queue must be empty for the auto-trigger (new + activated == 0).
     if (opts.requireEmptyQueue) {
-      const { count: activeCount } = await supa
-        .from('autopilot_recommendations')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', userId)
-        .in('status', ['new', 'activated']);
+      const { count: activeCount } = await repo.countActiveAutopilotRecommendations(supa, userId);
       if ((activeCount ?? 0) > 0) {
         return { ok: true, generated: 0, reason: 'not_empty' };
       }
@@ -165,11 +146,7 @@ export async function regenerateCommunityRecommendations(
 
     // Guard: cooldown/debounce — skip if a batch was created very recently.
     const since = new Date(Date.now() - COOLDOWN_MS).toISOString();
-    const { count: recentCount } = await supa
-      .from('autopilot_recommendations')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .gte('created_at', since);
+    const { count: recentCount } = await repo.countRecentAutopilotRecommendations(supa, userId, since);
     if ((recentCount ?? 0) > 0) {
       console.log(
         `${LOG_PREFIX} cooldown active for ${userId.slice(0, 8)} ` +
@@ -182,11 +159,7 @@ export async function regenerateCommunityRecommendations(
     // show "all caught up for today" rather than regenerate past the cap.
     const startOfDay = new Date();
     startOfDay.setUTCHours(0, 0, 0, 0);
-    const { count: todayCount } = await supa
-      .from('autopilot_recommendations')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .gte('created_at', startOfDay.toISOString());
+    const { count: todayCount } = await repo.countTodayAutopilotRecommendations(supa, userId, startOfDay.toISOString());
     if ((todayCount ?? 0) >= dailyCap) {
       console.log(`${LOG_PREFIX} daily cap reached for ${userId.slice(0, 8)} (${todayCount}/${dailyCap})`);
       return { ok: true, generated: 0, reason: 'daily_cap' };

@@ -13,9 +13,10 @@ import {
 // ── Stateful fake client ─────────────────────────────────────────────────────
 // Tables are mutable arrays. Filters are ignored (queries are single-intent);
 // inserts/updates mutate the backing array so later reads see them.
-function makeStatefulClient(seed: Record<string, any[]> = {}) {
+function makeStatefulClient(seed: Record<string, any[]> = {}, errorQueues: Record<string, any[]> = {}) {
   const db: Record<string, any[]> = { ...seed };
   const rows = (t: string) => (db[t] ??= []);
+  const errQueues: Record<string, any[]> = { ...errorQueues };
 
   function builder(table: string) {
     let pending: any = null; // staged insert payload
@@ -36,8 +37,11 @@ function makeStatefulClient(seed: Record<string, any[]> = {}) {
       return api;
     };
     api.delete = () => api;
-    api.maybeSingle = () =>
-      Promise.resolve({ data: pending ?? rows(table)[0] ?? null, error: null });
+    api.maybeSingle = () => {
+      const queued = errQueues[table]?.shift();
+      if (queued) return Promise.resolve({ data: null, error: queued });
+      return Promise.resolve({ data: pending ?? rows(table)[0] ?? null, error: null });
+    };
     api.single = api.maybeSingle;
     const result = () => ({ data: rows(table), count: rows(table).length, error: null });
     api.then = (onF: any, onR: any) => Promise.resolve(result()).then(onF, onR);
@@ -123,5 +127,22 @@ describe('applyJourneyAnswer — write + delta', () => {
     const client2 = makeStatefulClient();
     await applyJourneyAnswer(client2, 'u1', { step: 'life_compass', value: 'Lose 5kg' });
     expect(client2._db['life_compass'][0].primary_goal).toBe('Lose 5kg');
+  });
+
+  it('throws (not silently resets progress) when the foundation-row lookup errors', async () => {
+    // A real user with existing progress (economic_intent already set) —
+    // a transient read error here must never be treated as "row doesn't
+    // exist yet", which would attempt a duplicate insert and fall back to
+    // a fabricated blank row, silently resetting the user's real progress.
+    const client = makeStatefulClient(
+      { user_journey_foundation: [{ user_id: 'u1', economic_intent: 'build_business' }] },
+      { user_journey_foundation: [{ message: 'connection reset' }] },
+    );
+    await expect(
+      applyJourneyAnswer(client, 'u1', { step: 'weakest_habit', value: 'sleep more' }),
+    ).rejects.toMatchObject({ message: 'connection reset' });
+    // No insert/patch should have run against the corrupted-state path.
+    expect(client._db['user_journey_foundation']).toHaveLength(1);
+    expect(client._db['user_journey_foundation'][0].economic_intent).toBe('build_business');
   });
 });

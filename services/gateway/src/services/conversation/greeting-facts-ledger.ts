@@ -25,6 +25,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OverviewPayload } from '../assistant-continuation/providers/new-day-overview-payload';
+import * as repo from './greeting-facts-ledger-repository';
 
 export const SIGNAL_GREETING_FACTS = 'greeting_facts_v1';
 export const SIGNAL_GREETING_LAST_UTTERANCE = 'greeting_last_utterance_v1';
@@ -85,16 +86,11 @@ export async function readGreetingLedger(inputs: LedgerIdentity): Promise<Greeti
   if (!inputs.tenantId || !inputs.userId) return { ...EMPTY_GREETING_LEDGER };
   const nowIso = inputs.nowIso ?? new Date().toISOString();
   try {
-    const { data, error } = await inputs.supabase
-      .from('user_assistant_state')
-      .select('signal_name, value')
-      .eq('tenant_id', inputs.tenantId)
-      .eq('user_id', inputs.userId)
-      .in('signal_name', [
-        SIGNAL_GREETING_FACTS,
-        SIGNAL_GREETING_LAST_UTTERANCE,
-        'wake_cadence:sessions_today',
-      ]);
+    const { data, error } = await repo.fetchGreetingLedgerSignals(inputs.supabase, inputs.tenantId, inputs.userId, [
+      SIGNAL_GREETING_FACTS,
+      SIGNAL_GREETING_LAST_UTTERANCE,
+      'wake_cadence:sessions_today',
+    ]);
     if (error) {
       emitLedgerReadFailure(inputs, error.message);
       return { ...EMPTY_GREETING_LEDGER };
@@ -262,28 +258,24 @@ export async function recordGreetingFacts(
   if (keys.length === 0) return { ok: false, reason: 'no_facts' };
   const nowIso = inputs.nowIso ?? new Date().toISOString();
   try {
-    const { data: existing } = await inputs.supabase
-      .from('user_assistant_state')
-      .select('value')
-      .eq('tenant_id', inputs.tenantId)
-      .eq('user_id', inputs.userId)
-      .eq('signal_name', SIGNAL_GREETING_FACTS)
-      .maybeSingle();
+    const { data: existing } = await repo.fetchExistingGreetingFactsSignal(
+      inputs.supabase,
+      inputs.tenantId,
+      inputs.userId,
+      SIGNAL_GREETING_FACTS,
+    );
     const merged = existing ? parseFacts((existing as { value: unknown }).value) : {};
     for (const key of keys) {
       const value = inputs.facts[key];
       if (Number.isFinite(value)) merged[key] = { value, spoken_at: nowIso };
     }
-    const { error } = await inputs.supabase.from('user_assistant_state').upsert(
-      {
-        tenant_id: inputs.tenantId,
-        user_id: inputs.userId,
-        signal_name: SIGNAL_GREETING_FACTS,
-        value: { facts: merged },
-        last_seen_at: nowIso,
-      },
-      { onConflict: 'tenant_id,user_id,signal_name' },
-    );
+    const { error } = await repo.upsertUserAssistantStateSignal(inputs.supabase, {
+      tenant_id: inputs.tenantId,
+      user_id: inputs.userId,
+      signal_name: SIGNAL_GREETING_FACTS,
+      value: { facts: merged },
+      last_seen_at: nowIso,
+    });
     if (error) return { ok: false, reason: error.message };
     return { ok: true };
   } catch (e) {
@@ -304,16 +296,13 @@ export async function recordGreetingUtterance(
   if (!text) return { ok: false, reason: 'empty_utterance' };
   const nowIso = inputs.nowIso ?? new Date().toISOString();
   try {
-    const { error } = await inputs.supabase.from('user_assistant_state').upsert(
-      {
-        tenant_id: inputs.tenantId,
-        user_id: inputs.userId,
-        signal_name: SIGNAL_GREETING_LAST_UTTERANCE,
-        value: { text, spoken_at: nowIso },
-        last_seen_at: nowIso,
-      },
-      { onConflict: 'tenant_id,user_id,signal_name' },
-    );
+    const { error } = await repo.upsertUserAssistantStateSignal(inputs.supabase, {
+      tenant_id: inputs.tenantId,
+      user_id: inputs.userId,
+      signal_name: SIGNAL_GREETING_LAST_UTTERANCE,
+      value: { text, spoken_at: nowIso },
+      last_seen_at: nowIso,
+    });
     if (error) return { ok: false, reason: error.message };
     return { ok: true };
   } catch (e) {

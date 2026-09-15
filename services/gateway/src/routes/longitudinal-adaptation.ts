@@ -30,6 +30,7 @@
 
 import { Router, Request, Response } from 'express';
 import { createUserSupabaseClient } from '../lib/supabase-user';
+import * as repo from './longitudinal-adaptation-repository';
 import {
   recordDataPoint,
   getTrends,
@@ -84,7 +85,7 @@ async function getUserContext(token: string): Promise<{
 }> {
   try {
     const supabase = createUserSupabaseClient(token);
-    const { data, error } = await supabase.rpc('me_context');
+    const { data, error } = await repo.fetchMeContext(supabase);
 
     if (error) {
       return { ok: false, tenant_id: null, user_id: null, active_role: null, error: error.message };

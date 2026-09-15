@@ -6,6 +6,7 @@
  */
 
 import { getSupabase } from '../lib/supabase';
+import * as repo from './condition-matcher-repository';
 
 export interface ConditionMappingExpanded {
   condition_key: string;
@@ -38,14 +39,7 @@ export async function getConditionMapping(condition_key: string): Promise<Condit
 
   const supabase = getSupabase();
   if (!supabase) return null;
-  const { data, error } = await supabase
-    .from('condition_product_mappings')
-    .select(
-      'condition_key, display_label, recommended_ingredients, recommended_health_goals, recommended_categories, recommended_form, contraindicated_ingredients, contraindicated_with_conditions, contraindicated_with_medications, evidence_level, typical_protocol, typical_timeline'
-    )
-    .eq('condition_key', condition_key)
-    .eq('is_active', true)
-    .maybeSingle();
+  const { data, error } = await repo.fetchConditionProductMapping(supabase, condition_key);
   if (error || !data) {
     CACHE.set(condition_key, { value: null, expiresAt: now + CACHE_TTL_MS });
     return null;
@@ -81,10 +75,7 @@ export async function expandSynonymPhrase(phrase: string): Promise<Record<string
   if (!normalized) return {};
   const supabase = getSupabase();
   if (!supabase) return {};
-  const { data } = await supabase
-    .from('catalog_vocabulary_synonyms')
-    .select('phrase, maps_to_vocabulary, maps_to_values')
-    .eq('is_active', true);
+  const { data } = await repo.fetchActiveCatalogVocabularySynonyms(supabase);
   if (!data) return {};
   const result: Record<string, string[]> = {};
   for (const row of data) {

@@ -21,6 +21,7 @@
 import { getSupabase } from '../../lib/supabase';
 import { isPaused } from './pause-check';
 import { emitGuideTelemetry } from './guide-telemetry';
+import * as repo from './presence-pacer-repository';
 
 const LOG_PREFIX = '[Guide:presence-pacer]';
 
@@ -119,11 +120,7 @@ export async function canSurfaceProactively(
   startOfToday.setUTCHours(0, 0, 0, 0);
   const startIso = startOfToday.toISOString();
 
-  const { data: todaysTouches } = await supabase
-    .from('user_proactive_touches')
-    .select('surface, dismissed_at, sent_at')
-    .eq('user_id', userId)
-    .gte('sent_at', startIso);
+  const { data: todaysTouches } = await repo.fetchTodaysTouches(supabase, userId, startIso);
 
   const touches = (todaysTouches || []) as Array<{
     surface: string;
@@ -190,7 +187,7 @@ export async function recordTouch(input: RecordTouchInput): Promise<{ success: b
   const supabase = getSupabase();
   if (!supabase) return { success: false, error: 'storage_unavailable' };
 
-  const { error } = await supabase.from('user_proactive_touches').insert({
+  const { error } = await repo.insertProactiveTouch(supabase, {
     user_id: input.user_id,
     surface: input.surface,
     reason_tag: input.reason_tag ?? null,
@@ -225,23 +222,12 @@ export async function acknowledgeTouch(input: AcknowledgeTouchInput): Promise<{ 
   startOfToday.setUTCHours(0, 0, 0, 0);
 
   // Find the most-recent unresolved touch for this user+surface today
-  const { data } = await supabase
-    .from('user_proactive_touches')
-    .select('id')
-    .eq('user_id', input.user_id)
-    .eq('surface', input.surface)
-    .gte('sent_at', startOfToday.toISOString())
-    .is(col, null)
-    .order('sent_at', { ascending: false })
-    .limit(1);
+  const { data } = await repo.fetchUnresolvedTouch(supabase, input.user_id, input.surface, startOfToday.toISOString(), col, 1);
 
   const row = (data || [])[0] as { id: string } | undefined;
   if (!row) return { success: true }; // nothing to update — idempotent
 
-  await supabase
-    .from('user_proactive_touches')
-    .update({ [col]: nowIso })
-    .eq('id', row.id);
+  await repo.updateTouchResolution(supabase, row.id, { [col]: nowIso });
 
   emitGuideTelemetry(
     input.action === 'acknowledged'
@@ -261,12 +247,7 @@ async function resolvePresenceLevel(userId: string): Promise<PresenceLevel> {
   const supabase = getSupabase();
   if (!supabase) return 'balanced';
 
-  const { data } = await supabase
-    .from('user_preferences')
-    .select('metadata')
-    .eq('user_id', userId)
-    .eq('preference_type', 'proactive_presence_level')
-    .limit(1);
+  const { data } = await repo.fetchPresencePreference(supabase, userId, 1);
 
   const row = (data || [])[0] as { metadata: { level?: PresenceLevel } } | undefined;
   const level = row?.metadata?.level;

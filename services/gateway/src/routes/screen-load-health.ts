@@ -26,6 +26,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { getSupabase } from '../lib/supabase';
+import * as repo from './screen-load-health-repository';
 
 const VTID = 'VTID-SCREEN-LOAD-01';
 const TOPIC = 'screen.load.synthetic_test';
@@ -137,13 +138,7 @@ router.get('/health', async (_req: Request, res: Response) => { // public-route
   }
 
   const since = new Date(Date.now() - STALE_AFTER_MS).toISOString();
-  const { data, error } = await sb
-    .from('oasis_events')
-    .select('created_at, metadata')
-    .eq('topic', TOPIC)
-    .gte('created_at', since)
-    .order('created_at', { ascending: false })
-    .limit(200);
+  const { data, error } = await repo.fetchRecentScreenLoadHealthEvents(sb, TOPIC, since);
 
   if (error) {
     return res.status(200).json({ status: 'down', reason: 'query_failed', detail: error.message });

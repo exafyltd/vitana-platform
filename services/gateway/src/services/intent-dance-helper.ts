@@ -10,6 +10,7 @@
  */
 
 import { getSupabase } from '../lib/supabase';
+import * as repo from './intent-dance-helper-repository';
 
 export type DanceVariety =
   | 'salsa' | 'tango' | 'bachata' | 'kizomba'
@@ -84,11 +85,7 @@ export async function readUserDancePreferences(userId: string): Promise<Record<s
   const supabase = getSupabase();
   if (!supabase || !userId) return {};
   try {
-    const { data } = await supabase
-      .from('profiles')
-      .select('dance_preferences')
-      .eq('user_id', userId)
-      .maybeSingle();
+    const { data } = await repo.fetchProfileDancePreferences(supabase, userId);
     const prefs = (data as any)?.dance_preferences;
     return prefs && typeof prefs === 'object' ? prefs : {};
   } catch {

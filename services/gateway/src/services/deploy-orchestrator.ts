@@ -15,6 +15,7 @@
 import githubService from './github-service';
 import cicdEvents from './oasis-event-service';
 import { randomUUID } from 'crypto';
+import * as repo from './deploy-orchestrator-repository';
 
 const DEFAULT_REPO = 'exafyltd/vitana-platform';
 
@@ -92,11 +93,7 @@ async function evaluateGovernance(
     }
 
     // Fetch active governance rules
-    const { data: rules, error: rulesError } = await supabase
-      .from('governance_rules')
-      .select('*')
-      .eq('tenant_id', 'SYSTEM')
-      .eq('is_active', true);
+    const { data: rules, error: rulesError } = await repo.fetchActiveSystemGovernanceRules(supabase);
 
     if (rulesError) {
       console.error('[VTID-0407] Error fetching governance rules:', rulesError);

@@ -12,6 +12,7 @@ import { Router, Response } from 'express';
 import { requireTenantAdmin } from '../../middleware/require-tenant-admin';
 import { AuthenticatedRequest } from '../../middleware/auth-supabase-jwt';
 import { getSupabase } from '../../lib/supabase';
+import * as repo from './settings-repository';
 
 const router = Router({ mergeParams: true });
 
@@ -23,11 +24,7 @@ router.get('/', requireTenantAdmin, async (req: AuthenticatedRequest, res: Respo
 
     const tenantId = req.params.tenantId || (req as any).targetTenantId;
 
-    const { data, error } = await supabase
-      .from('tenant_settings')
-      .select('*')
-      .eq('tenant_id', tenantId)
-      .single();
+    const { data, error } = await repo.fetchTenantSettings(supabase, tenantId);
 
     if (error && error.code !== 'PGRST116') { // PGRST116 = no rows
       return res.status(500).json({ ok: false, error: error.message });
@@ -70,11 +67,7 @@ router.put('/', requireTenantAdmin, async (req: AuthenticatedRequest, res: Respo
     if (domains !== undefined) updates.domains = domains;
     // billing is read-only from admin — not updatable via this endpoint
 
-    const { data, error } = await supabase
-      .from('tenant_settings')
-      .upsert({ tenant_id: tenantId, ...updates }, { onConflict: 'tenant_id' })
-      .select('*')
-      .single();
+    const { data, error } = await repo.upsertTenantSettings(supabase, { tenant_id: tenantId, ...updates });
 
     if (error) return res.status(500).json({ ok: false, error: error.message });
 

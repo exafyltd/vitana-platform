@@ -80,6 +80,7 @@ import { getUserHealthContext } from '../user-health-context';
 import { getMonthlySpend } from '../budget/spend-service';
 import { runPropose, type AnnotatedPick, type InsertPickFn } from '../shopping-agent/agent-core';
 import { buildReorderPicks } from '../shopping-agent/reorder-core';
+import * as repo from './marketplace-discovery-tools-repository';
 
 type Handler = (args: OrbToolArgs, id: OrbToolIdentity, sb: SupabaseClient) => Promise<OrbToolResult>;
 
@@ -100,11 +101,7 @@ function authGate(tool: string, id: OrbToolIdentity): OrbToolResult | null {
 async function resolveTenantId(id: OrbToolIdentity, sb: SupabaseClient): Promise<string | null> {
   if (id.tenant_id) return id.tenant_id;
   try {
-    const { data } = await sb
-      .from('app_users')
-      .select('tenant_id')
-      .eq('user_id', id.user_id)
-      .maybeSingle();
+    const { data } = await repo.fetchTenantIdForAppUser(sb, id.user_id);
     return (data as { tenant_id?: string | null } | null)?.tenant_id ?? null;
   } catch {
     return null;
@@ -151,9 +148,6 @@ interface ProductRow {
   safety_notes?: string | null;
 }
 
-const PRODUCT_COLS =
-  'id, title, description, brand, category, subcategory, price_cents, currency, compare_at_price_cents, rating, review_count, availability, affiliate_url, dosage, serving_size, safety_notes';
-
 function speakProduct(p: ProductRow): string {
   return `"${p.title}"${p.brand ? ` by ${p.brand}` : ''} — ${fmtPrice(p.price_cents, p.currency)}${
     p.rating != null ? `, rated ${p.rating.toFixed(1)}/5` : ''
@@ -178,17 +172,14 @@ export async function tool_search_marketplace(
   const limit = clampInt(args.limit, 1, 10, 5);
 
   try {
-    let query = sb.from('products').select(PRODUCT_COLS).eq('is_active', true);
-    if (q) {
-      const sanitized = q.replace(/[&|!<>()]/g, ' ').trim();
-      if (sanitized) query = query.textSearch('search_text', sanitized, { config: 'simple', type: 'websearch' });
-    }
-    if (category) query = query.eq('category', category);
-    if (priceMin != null && Number.isFinite(priceMin)) query = query.gte('price_cents', priceMin);
-    if (priceMax != null && Number.isFinite(priceMax)) query = query.lte('price_cents', priceMax);
-    query = query.order('rating', { ascending: false, nullsFirst: false }).limit(limit);
-
-    const { data, error } = await query;
+    const sanitized = q ? q.replace(/[&|!<>()]/g, ' ').trim() : '';
+    const { data, error } = await repo.searchProducts(sb, {
+      sanitizedQuery: sanitized || null,
+      category: category || null,
+      priceMin,
+      priceMax,
+      limit,
+    });
     if (error) return { ok: false, error: error.message };
     const items = (data as ProductRow[]) ?? [];
 
@@ -242,23 +233,11 @@ export async function tool_get_product_details(
     let product: ProductRow | null = null;
 
     if (UUID_RE.test(productId)) {
-      const { data, error } = await sb
-        .from('products')
-        .select(PRODUCT_COLS)
-        .eq('id', productId)
-        .eq('is_active', true)
-        .maybeSingle();
+      const { data, error } = await repo.fetchProductById(sb, productId);
       if (error) return { ok: false, error: error.message };
       product = (data as ProductRow | null) ?? null;
     } else if (query) {
-      const { data, error } = await sb
-        .from('products')
-        .select(PRODUCT_COLS)
-        .eq('is_active', true)
-        .ilike('title', `%${query}%`)
-        .order('rating', { ascending: false, nullsFirst: false })
-        .limit(1)
-        .maybeSingle();
+      const { data, error } = await repo.searchProductByTitleTop1(sb, query);
       if (error) return { ok: false, error: error.message };
       product = (data as ProductRow | null) ?? null;
     } else {
@@ -310,13 +289,7 @@ export async function tool_browse_supplements(
   if (gate) return gate;
   const limit = clampInt(args.limit, 1, 10, 8);
   try {
-    const { data, error } = await sb
-      .from('products')
-      .select(PRODUCT_COLS)
-      .eq('is_active', true)
-      .eq('category', 'supplements')
-      .order('rating', { ascending: false, nullsFirst: false })
-      .limit(limit);
+    const { data, error } = await repo.fetchProductsByCategory(sb, 'supplements', limit);
     if (error) return { ok: false, error: error.message };
     const items = (data as ProductRow[]) ?? [];
     const route = '/discover/supplements';
@@ -394,7 +367,6 @@ interface ServiceRow {
   topic_keys: string[] | null;
   metadata: Record<string, unknown> | null;
 }
-const SERVICE_COLS = 'id, name, service_type, provider_name, topic_keys, metadata';
 const WELLNESS_TYPES = ['wellness', 'nutrition', 'fitness', 'therapy', 'lab', 'other'];
 const PRACTITIONER_TYPES = ['doctor', 'coach'];
 
@@ -409,12 +381,7 @@ export async function tool_browse_wellness_services(
   if (!tenantId) return { ok: false, error: 'browse_wellness_services requires a known tenant context.' };
   const limit = clampInt(args.limit, 1, 10, 8);
   try {
-    const { data, error } = await sb
-      .from('services_catalog')
-      .select(SERVICE_COLS)
-      .eq('tenant_id', tenantId)
-      .in('service_type', WELLNESS_TYPES)
-      .limit(limit);
+    const { data, error } = await repo.fetchServicesCatalogByTypes(sb, tenantId, WELLNESS_TYPES, limit);
     if (error) return { ok: false, error: error.message };
     const items = (data as ServiceRow[]) ?? [];
     const route = '/discover/wellness-services';
@@ -458,22 +425,11 @@ export async function tool_get_provider_profile(
   try {
     let row: ServiceRow | null = null;
     if (UUID_RE.test(serviceId)) {
-      const { data, error } = await sb
-        .from('services_catalog')
-        .select(SERVICE_COLS)
-        .eq('tenant_id', tenantId)
-        .eq('id', serviceId)
-        .maybeSingle();
+      const { data, error } = await repo.fetchServiceCatalogById(sb, tenantId, serviceId);
       if (error) return { ok: false, error: error.message };
       row = (data as ServiceRow | null) ?? null;
     } else if (query) {
-      const { data, error } = await sb
-        .from('services_catalog')
-        .select(SERVICE_COLS)
-        .eq('tenant_id', tenantId)
-        .or(`name.ilike.%${query}%,provider_name.ilike.%${query}%`)
-        .limit(1)
-        .maybeSingle();
+      const { data, error } = await repo.searchServiceCatalogByName(sb, tenantId, query);
       if (error) return { ok: false, error: error.message };
       row = (data as ServiceRow | null) ?? null;
     } else {
@@ -519,12 +475,7 @@ export async function tool_browse_doctors_coaches(
   if (!tenantId) return { ok: false, error: 'browse_doctors_coaches requires a known tenant context.' };
   const limit = clampInt(args.limit, 1, 10, 8);
   try {
-    const { data, error } = await sb
-      .from('services_catalog')
-      .select(SERVICE_COLS)
-      .eq('tenant_id', tenantId)
-      .in('service_type', PRACTITIONER_TYPES)
-      .limit(limit);
+    const { data, error } = await repo.fetchServicesCatalogByTypes(sb, tenantId, PRACTITIONER_TYPES, limit);
     if (error) return { ok: false, error: error.message };
     const items = (data as ServiceRow[]) ?? [];
     const route = '/discover/doctors-coaches';
@@ -586,14 +537,7 @@ export async function tool_browse_deals_offers(
     // column (no dedicated deals/promotions table exists) — a product is "on
     // sale" when its compare_at_price_cents (the pre-discount reference price)
     // is present and greater than its current price_cents.
-    const { data, error } = await sb
-      .from('products')
-      .select(PRODUCT_COLS)
-      .eq('is_active', true)
-      .eq('availability', 'in_stock')
-      .not('compare_at_price_cents', 'is', null)
-      .order('rating', { ascending: false, nullsFirst: false })
-      .limit(50);
+    const { data, error } = await repo.fetchDealsProducts(sb);
     if (error) return { ok: false, error: error.message };
     const onSale = ((data as ProductRow[]) ?? []).filter(
       (p) => p.compare_at_price_cents != null && p.price_cents != null && p.compare_at_price_cents > p.price_cents,
@@ -681,17 +625,13 @@ async function getOrCreateActiveCart(
   userId: string,
   tenantId: string | null,
 ): Promise<{ ok: true; cartId: string } | { ok: false; error: string }> {
-  const lookup = await sb.from('universal_carts').select('id').eq('user_id', userId).eq('status', 'active').maybeSingle();
+  const lookup = await repo.fetchActiveCartId(sb, userId);
   if (lookup.error && !isNoRowsError(lookup.error)) return { ok: false, error: lookup.error.message };
   if (lookup.data?.id) return { ok: true, cartId: lookup.data.id as string };
 
-  const created = await sb
-    .from('universal_carts')
-    .insert({ user_id: userId, tenant_id: tenantId, status: 'active', metadata: {} })
-    .select('id')
-    .single();
+  const created = await repo.insertActiveCartForUser(sb, userId, tenantId);
   if (created.error && isUniqueViolation(created.error)) {
-    const raced = await sb.from('universal_carts').select('id').eq('user_id', userId).eq('status', 'active').maybeSingle();
+    const raced = await repo.fetchActiveCartId(sb, userId);
     if (raced.data?.id) return { ok: true, cartId: raced.data.id as string };
     return { ok: false, error: 'cart_create_failed' };
   }
@@ -746,7 +686,7 @@ export async function tool_get_ai_product_picks(
       if (pick.unit_price_cents_snapshot !== null) insertPayload.unit_price_cents_snapshot = pick.unit_price_cents_snapshot;
       if (pick.currency_snapshot !== null) insertPayload.currency_snapshot = pick.currency_snapshot;
 
-      const inserted = await sb.from('universal_cart_items').insert(insertPayload).select('id').single();
+      const inserted = await repo.insertCartItemDynamic(sb, insertPayload);
       if (inserted.error || !inserted.data) return { ok: false, error: inserted.error?.message ?? 'item_insert_failed' };
       const itemId = inserted.data.id as string;
       await emitCartEvent({
@@ -808,8 +748,6 @@ interface OrderRow {
   purchased_at: string | null;
   created_at: string;
 }
-const ORDER_COLS = 'id, product_id, state, amount_cents, currency, purchased_at, created_at';
-
 export async function tool_list_my_orders(
   args: OrbToolArgs,
   id: OrbToolIdentity,
@@ -819,12 +757,7 @@ export async function tool_list_my_orders(
   if (gate) return gate;
   const limit = clampInt(args.limit, 1, 20, 10);
   try {
-    const { data, error } = await sb
-      .from('product_orders')
-      .select(ORDER_COLS)
-      .eq('user_id', id.user_id)
-      .order('created_at', { ascending: false })
-      .limit(limit);
+    const { data, error } = await repo.fetchMyOrders(sb, id.user_id, limit);
     if (error) return { ok: false, error: error.message };
     const orders = (data as OrderRow[]) ?? [];
     const route = '/discover/orders';
@@ -839,7 +772,7 @@ export async function tool_list_my_orders(
     const productIds = orders.map((o) => o.product_id).filter((v): v is string => !!v);
     const titleById = new Map<string, string>();
     if (productIds.length > 0) {
-      const { data: products } = await sb.from('products').select('id, title').in('id', productIds);
+      const { data: products } = await repo.fetchProductTitlesByIds(sb, productIds);
       for (const p of (products as Array<{ id: string; title: string }>) ?? []) titleById.set(p.id, p.title);
     }
     const speak = (o: OrderRow) =>
@@ -884,24 +817,13 @@ export async function tool_get_order_status(
   try {
     let order: OrderRow | null = null;
     if (UUID_RE.test(orderId)) {
-      const { data, error } = await sb
-        .from('product_orders')
-        .select(ORDER_COLS)
-        .eq('id', orderId)
-        .eq('user_id', id.user_id)
-        .maybeSingle();
+      const { data, error } = await repo.fetchOrderById(sb, orderId, id.user_id);
       if (error) return { ok: false, error: error.message };
       order = (data as OrderRow | null) ?? null;
     } else {
       // No order_id given → track the most recent order (a reasonable
       // default for "where's my order?").
-      const { data, error } = await sb
-        .from('product_orders')
-        .select(ORDER_COLS)
-        .eq('user_id', id.user_id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const { data, error } = await repo.fetchMostRecentOrder(sb, id.user_id);
       if (error) return { ok: false, error: error.message };
       order = (data as OrderRow | null) ?? null;
     }
@@ -911,7 +833,7 @@ export async function tool_get_order_status(
     }
     let title: string | null = null;
     if (order.product_id) {
-      const { data: product } = await sb.from('products').select('title').eq('id', order.product_id).maybeSingle();
+      const { data: product } = await repo.fetchProductTitleById(sb, order.product_id);
       title = (product as { title?: string } | null)?.title ?? null;
     }
     const route = '/discover/orders';
@@ -1003,7 +925,7 @@ export async function tool_reorder_last_order(
     if (pick.unit_price_cents_snapshot !== null) insertPayload.unit_price_cents_snapshot = pick.unit_price_cents_snapshot;
     if (pick.currency_snapshot !== null) insertPayload.currency_snapshot = pick.currency_snapshot;
 
-    const inserted = await sb.from('universal_cart_items').insert(insertPayload).select('id').single();
+    const inserted = await repo.insertCartItemDynamic(sb, insertPayload);
     if (inserted.error || !inserted.data) {
       return { ok: false, error: inserted.error?.message ?? 'reorder_insert_failed' };
     }

@@ -13,6 +13,7 @@
  */
 import { getSupabase } from '../../lib/supabase';
 import type { AdminScanner, InsightDraft } from './types';
+import * as repo from './marketplace-repository';
 
 const LOG_PREFIX = '[admin-scanner:marketplace]';
 const PENDING_REVIEW_THRESHOLD = 5;
@@ -35,11 +36,7 @@ export const marketplaceScanner: AdminScanner = {
 
     // 1. Products requiring admin review (global catalog)
     try {
-      const { count } = await supabase
-        .from('products')
-        .select('id', { count: 'exact', head: true })
-        .eq('requires_admin_review', true)
-        .eq('is_active', true);
+      const { count } = await repo.countProductsPendingAdminReview(supabase);
       if (count !== null && count >= PENDING_REVIEW_THRESHOLD) {
         insights.push({
           natural_key: 'products_pending_admin_review',
@@ -66,13 +63,7 @@ export const marketplaceScanner: AdminScanner = {
 
     // 2. Ingestion failures in last 24h
     try {
-      const { data: runs } = await supabase
-        .from('catalog_sources')
-        .select('id, source_network, started_at, errors, products_inserted, products_updated, error_sample')
-        .gte('started_at', d1)
-        .gt('errors', 0)
-        .order('started_at', { ascending: false })
-        .limit(20);
+      const { data: runs } = await repo.fetchRecentFailedCatalogSourceRuns(supabase, d1);
       if (runs && runs.length > 0) {
         const totalErrors = runs.reduce((sum: number, r: { errors: number | null }) => sum + (r.errors ?? 0), 0);
         const affectedSources = new Set(runs.map((r: { source_network: string }) => r.source_network));
@@ -108,12 +99,8 @@ export const marketplaceScanner: AdminScanner = {
     // 3. Stale catalog — fraction of active products not seen in 14d
     try {
       const [{ count: activeTotal }, { count: staleCount }] = await Promise.all([
-        supabase.from('products').select('id', { count: 'exact', head: true }).eq('is_active', true),
-        supabase
-          .from('products')
-          .select('id', { count: 'exact', head: true })
-          .eq('is_active', true)
-          .lt('last_seen_at', d14),
+        repo.countActiveProducts(supabase),
+        repo.countStaleActiveProducts(supabase, d14),
       ]);
       if (activeTotal !== null && activeTotal >= 50 && staleCount !== null && staleCount > 0) {
         const stalePct = Math.round((staleCount / activeTotal) * 100);
@@ -149,11 +136,7 @@ export const marketplaceScanner: AdminScanner = {
     // 4. Unmatched orders in this tenant — postbacks the system couldn't
     // attach to a click. Revenue leak if it accumulates.
     try {
-      const { count } = await supabase
-        .from('product_orders')
-        .select('id', { count: 'exact', head: true })
-        .eq('tenant_id', tenantId)
-        .eq('state', 'unmatched');
+      const { count } = await repo.countUnmatchedTenantOrders(supabase, tenantId);
       if (count !== null && count >= UNMATCHED_ORDER_THRESHOLD) {
         insights.push({
           natural_key: 'marketplace_unmatched_orders',

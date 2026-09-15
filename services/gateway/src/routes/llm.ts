@@ -22,6 +22,7 @@ import { queryLLMTelemetry, getLLMTelemetrySummary } from '../services/llm-telem
 import { verifyProvider } from '../services/llm-router';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { requireAdminAuth } from '../middleware/auth-supabase-jwt';
+import * as repo from './llm-repository';
 import {
   LLM_SAFE_DEFAULTS,
   VALID_STAGES,
@@ -622,13 +623,7 @@ router.get('/models', async (req: Request, res: Response) => {
       if (!tenantId && typeof claims.sub === 'string') {
         const supabase = getSupabase();
         if (supabase) {
-          const { data: ut } = await supabase
-            .from('user_tenants')
-            .select('tenant_id')
-            .eq('user_id', claims.sub)
-            .eq('is_active', true)
-            .limit(1)
-            .maybeSingle();
+          const { data: ut } = await repo.fetchActiveTenantIdForUser(supabase, claims.sub);
           tenantId = ut?.tenant_id ?? null;
         }
       }
@@ -640,13 +635,7 @@ router.get('/models', async (req: Request, res: Response) => {
   const aiCounts: Record<string, number> = { chatgpt: 0, claude: 0 };
   if (supabase && tenantId) {
     for (const connectorId of Object.values(providerMap)) {
-      const { count } = await supabase
-        .from('user_connections')
-        .select('id', { count: 'exact', head: true })
-        .eq('tenant_id', tenantId)
-        .eq('connector_id', connectorId)
-        .eq('category', 'ai_assistant')
-        .eq('is_active', true);
+      const { count } = await repo.countActiveTenantConnectorConnections(supabase, tenantId, connectorId);
       aiCounts[connectorId] = count ?? 0;
     }
   }

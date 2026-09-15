@@ -359,6 +359,23 @@ describe('review_shopping_budget', () => {
     expect(res.remaining_cents).toBe(15000);
     expect(res.cart_total_cents).toBe(3998);
   });
+
+  it('logs loudly (not silently) when the budget-cap lookup errors, still reports no cap (unchanged advisory-only fallback)', async () => {
+    const { sb } = makeSb({
+      user_limitations: [{ data: null, error: { message: 'connection reset' } }],
+      universal_carts: [{ data: { id: 'cart-1' }, error: null }],
+      universal_cart_items: [{ data: [], error: null }],
+    });
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const r = await tool_review_shopping_budget({}, IDENT, sb);
+
+    expect(r.ok).toBe(true);
+    const res = (r as { result: { budget_monthly_cap_cents: number | null } }).result;
+    expect(res.budget_monthly_cap_cents).toBeNull();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('budget cap lookup failed'));
+    errorSpy.mockRestore();
+  });
 });
 
 describe('add_selected_option_to_cart (two-step confirm)', () => {

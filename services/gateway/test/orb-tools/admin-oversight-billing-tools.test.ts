@@ -96,6 +96,23 @@ describe('admin_credit_wallet / admin_debit_wallet (exafy_admin only)', () => {
     expect((r.result as { reason: string }).reason).toBe('no_wallet_account');
   });
 
+  it('on a DB error resolving the wallet account: does NOT claim "no wallet account" — reports a distinct lookup error instead', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const sb = makeSb({ maybeSingle: jest.fn().mockResolvedValue({ data: null, error: { message: 'permission denied for table wallet_accounts' } }) });
+
+    const r = await admin_credit_wallet({ user_id: 'u-1', currency: 'EUR', amount_minor: 500 }, EXAFY_ID, sb);
+
+    // The bug this fix closes: a DB error used to be indistinguishable
+    // from "genuinely no active account," confidently telling the admin
+    // operator the wrong business fact and risking a duplicate account
+    // being provisioned.
+    expect(r.ok).toBe(false);
+    expect((r as { error: string }).error).not.toContain('has no active');
+    expect((r as { error: string }).error).toContain('database error');
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('permission denied for table wallet_accounts'));
+    errorSpy.mockRestore();
+  });
+
   it('requires confirmation before crediting', async () => {
     const sb = makeSb({ maybeSingle: jest.fn().mockResolvedValue({ data: { id: 'acct-1' }, error: null }) });
     const r = await admin_credit_wallet({ user_id: 'u-1', currency: 'EUR', amount_minor: 500 }, EXAFY_ID, sb);

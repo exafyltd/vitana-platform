@@ -15,6 +15,7 @@
 
 import { getSupabase } from '../../lib/supabase';
 import type { InteractionStyleSignalRow, InteractionStyleSignalValue } from './types';
+import * as repo from './interaction-style-fetcher-repository';
 
 /** Canonical signal name for B6. Versioned so a future schema bump can
  *  coexist without overwriting. */
@@ -46,13 +47,12 @@ export function createSupabaseInteractionStyleFetcher(
       const sb = getDb();
       if (!sb) return { ok: false, row: null, reason: 'supabase_unconfigured' };
       try {
-        const { data, error } = await sb
-          .from('user_assistant_state')
-          .select('value, confidence, updated_at, last_seen_at')
-          .eq('tenant_id', args.tenantId)
-          .eq('user_id', args.userId)
-          .eq('signal_name', INTERACTION_STYLE_SIGNAL_NAME)
-          .maybeSingle();
+        const { data, error } = await repo.fetchInteractionStyleSignalRow(
+          sb,
+          args.tenantId,
+          args.userId,
+          INTERACTION_STYLE_SIGNAL_NAME,
+        );
         if (error) return { ok: false, row: null, reason: error.message };
         if (!data) return { ok: true, row: null };
         return { ok: true, row: mapRow(data as Record<string, unknown>) };

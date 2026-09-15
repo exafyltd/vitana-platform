@@ -14,6 +14,7 @@
  */
 
 import { getSupabase } from '../../lib/supabase';
+import * as repo from './active-usage-repository';
 
 const LOG_PREFIX = '[Guide:active-usage]';
 
@@ -31,12 +32,7 @@ export async function upsertActiveDay(userId: string): Promise<void> {
   if (!supabase) return;
 
   const activeDate = new Date().toISOString().slice(0, 10); // YYYY-MM-DD UTC
-  const { error } = await supabase
-    .from('user_active_days')
-    .upsert(
-      { user_id: userId, active_date: activeDate },
-      { onConflict: 'user_id,active_date', ignoreDuplicates: true },
-    );
+  const { error } = await repo.upsertActiveUsageDay(supabase, userId, activeDate);
 
   if (error) {
     console.warn(`${LOG_PREFIX} upsert failed for user=${userId.substring(0, 8)}:`, error.message);
@@ -56,10 +52,7 @@ export async function countActiveUsageDays(userId: string): Promise<number> {
   const supabase = getSupabase();
   if (!supabase) return 0;
 
-  const { count, error } = await supabase
-    .from('user_active_days')
-    .select('user_id', { count: 'exact', head: true })
-    .eq('user_id', userId);
+  const { count, error } = await repo.countActiveUsageDaysForUser(supabase, userId);
 
   if (error) {
     console.warn(`${LOG_PREFIX} count failed for user=${userId.substring(0, 8)}:`, error.message);

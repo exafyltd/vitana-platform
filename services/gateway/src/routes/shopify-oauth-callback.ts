@@ -21,10 +21,11 @@ import {
   decodeAndVerifyState,
   exchangeCodeForToken,
 } from '../services/shopify-oauth';
+import * as repo from './shopify-oauth-callback-repository';
 
 async function emitOasisEvent(supabase: any, type: string, status: string, message: string, payload: Record<string, unknown>) {
   try {
-    await supabase.from('oasis_events').insert({
+    await repo.insertOasisEvent(supabase, {
       id: randomUUID(), service: 'vcaop', source: 'vcaop-shopify-oauth', type, topic: type, status, message,
       metadata: payload, created_at: new Date().toISOString(),
     });
@@ -58,11 +59,7 @@ router.get('/callback', async (req: Request, res: Response) => { // public-route
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'database unavailable' });
 
-  const { data: rec } = await supabase
-    .from('integration_manifest')
-    .select('id,connector_id,status')
-    .eq('id', decoded.manifestId)
-    .maybeSingle();
+  const { data: rec } = await repo.fetchIntegrationManifestById(supabase, decoded.manifestId);
   if (!rec || rec.connector_id !== 'shopify') {
     return res.status(404).json({ ok: false, error: 'connection not found' });
   }
@@ -73,18 +70,15 @@ router.get('/callback', async (req: Request, res: Response) => { // public-route
   }
 
   const now = new Date().toISOString();
-  const { error: upsertError } = await supabase.from('partner_oauth_credential').upsert(
-    {
-      id: randomUUID(),
-      manifest_id: rec.id,
-      provider: 'shopify',
-      endpoint_domain: shop,
-      access_token: token.access_token,
-      scope: token.scope ?? null,
-      updated_at: now,
-    },
-    { onConflict: 'manifest_id,provider' },
-  );
+  const { error: upsertError } = await repo.upsertPartnerOauthCredential(supabase, {
+    id: randomUUID(),
+    manifest_id: rec.id,
+    provider: 'shopify',
+    endpoint_domain: shop,
+    access_token: token.access_token,
+    scope: token.scope ?? null,
+    updated_at: now,
+  });
   if (upsertError) {
     await emitOasisEvent(supabase, 'vcaop.portal.connection.shopify_credential_persist_failed', 'error',
       `connection ${rec.id}: shopify OAuth code exchanged but credential write failed: ${upsertError.message ?? 'unknown error'}`, {
@@ -97,7 +91,7 @@ router.get('/callback', async (req: Request, res: Response) => { // public-route
   // mapping the same way an OpenAPI-document connection does at creation.
   const advanced = canTransition(rec.status, 'mapping');
   if (advanced) {
-    await supabase.from('integration_manifest').update({ status: 'mapping', updated_at: now }).eq('id', rec.id);
+    await repo.updateIntegrationManifestStatus(supabase, rec.id, 'mapping', now);
   }
 
   await emitOasisEvent(supabase, 'vcaop.portal.connection.shopify_authorized', 'success',

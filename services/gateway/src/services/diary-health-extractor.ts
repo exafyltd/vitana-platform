@@ -41,6 +41,7 @@
  */
 
 import { SupabaseClient } from '@supabase/supabase-js';
+import * as repo from './diary-health-extractor-repository';
 
 export interface DiaryFeatureWrite {
   feature_key: string;
@@ -300,22 +301,17 @@ export async function persistDiaryHealthFeatures(
   let failed = 0;
   for (const w of writes) {
     try {
-      const { error } = await admin
-        .from('health_features_daily')
-        .upsert(
-          {
-            tenant_id: tenantId,
-            user_id: userId,
-            date,
-            feature_key: w.feature_key,
-            feature_value: w.feature_value,
-            feature_unit: w.feature_unit,
-            sample_count: 1,
-            confidence: 0.6,
-            metadata: { source: 'diary_extractor', evidence: w.evidence.slice(0, 200) },
-          },
-          { onConflict: 'tenant_id,user_id,date,feature_key' },
-        );
+      const { error } = await repo.upsertHealthFeatureDaily(admin, {
+        tenant_id: tenantId,
+        user_id: userId,
+        date,
+        feature_key: w.feature_key,
+        feature_value: w.feature_value,
+        feature_unit: w.feature_unit,
+        sample_count: 1,
+        confidence: 0.6,
+        metadata: { source: 'diary_extractor', evidence: w.evidence.slice(0, 200) },
+      });
       if (error) {
         console.warn(`[VTID-01977] feature write failed (${w.feature_key}): ${error.message}`);
         failed += 1;
@@ -340,8 +336,8 @@ export async function persistDiaryHealthFeatures(
       .slice(0, 4)
       .map((w) => `${w.feature_key.replace(/_/g, ' ')}: ${w.feature_value}${w.feature_unit ? ` ${w.feature_unit}` : ''}`)
       .join(', ');
-    admin
-      .rpc('write_fact', {
+    repo
+      .writeDiaryHealthSignalFact(admin, {
         p_tenant_id: tenantId,
         p_user_id: userId,
         p_fact_key: 'diary_recent_health_signals',

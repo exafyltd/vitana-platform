@@ -18,6 +18,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabase } from '../lib/supabase';
 import { notifyUserAsync } from './notification-service';
+import * as repo from './lifecycle-notification-worker-repository';
 
 const VTID = 'VTID-03107';
 const LOG_PREFIX = '[lifecycle-notification-worker]';
@@ -91,12 +92,7 @@ async function processBatch(): Promise<void> {
     }
 
     const sinceIso = new Date(Date.now() - LOOK_BACK_HOURS * 3600_000).toISOString();
-    const { data, error } = await sb
-      .from('lifecycle_notification_state')
-      .select('user_id, tenant_id, lifecycle_kind, subscription_id, metadata, fired_at')
-      .gte('fired_at', sinceIso)
-      .is('notified_at', null)
-      .limit(500);
+    const { data, error } = await repo.fetchUnnotifiedLifecycleStateSince(sb, sinceIso, 500);
 
     if (error) {
       if (/notified_at/i.test(error.message) || /column .* does not exist/i.test(error.message)) {
@@ -138,11 +134,7 @@ async function processBatch(): Promise<void> {
         }
       }
 
-      const { error: updErr } = await sb
-        .from('lifecycle_notification_state')
-        .update({ notified_at: new Date().toISOString() })
-        .eq('user_id', row.user_id)
-        .eq('lifecycle_kind', row.lifecycle_kind);
+      const { error: updErr } = await repo.markLifecycleStateNotified(sb, row.user_id, row.lifecycle_kind);
       if (updErr) {
         console.warn(
           `${LOG_PREFIX} mark-notified failed for ${row.user_id} ${row.lifecycle_kind}: ${updErr.message}`

@@ -27,6 +27,7 @@ import {
   fetchFollowEdges,
   fetchRecentMessageContacts,
   fetchPeople,
+  fetchInboxMessages,
 } from './social-memory-repository';
 import type { SocialPerson } from './social-memory-types';
 
@@ -93,16 +94,7 @@ export async function runViewMessages(
     };
   }
 
-  let q = supabase
-    .from('chat_messages')
-    .select('sender_id, content, created_at, read_at')
-    .eq('tenant_id', identity.tenant_id)
-    .eq('receiver_id', identity.user_id)
-    .is('group_id', null)
-    .order('created_at', { ascending: false })
-    .limit(limit);
-  if (scope === 'unread') q = q.is('read_at', null);
-  const { data, error } = await q;
+  const { data, error } = await fetchInboxMessages(supabase, identity.user_id, identity.tenant_id, scope, limit);
   if (error) return { ok: false, error: `view_messages: ${error.message}` };
 
   const rows = ((data ?? []) as Array<{

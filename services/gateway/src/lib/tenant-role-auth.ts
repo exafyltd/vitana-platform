@@ -46,7 +46,14 @@ export async function verifyAuth(req: Request): Promise<
     const isExafyAdmin = appMetadata.exafy_admin === true;
 
     // Get tenant context via me_context RPC
-    const { data: meData } = await userClient.rpc('me_context');
+    const { data: meData, error: meError } = await userClient.rpc('me_context');
+    if (meError) {
+      // Fail closed either way (unchanged) — a caller who is genuinely a
+      // tenant admin loses tenant_id/active_role and is denied downstream
+      // by canManageRoles(); logged so that isn't mistaken for the caller
+      // genuinely lacking admin rights.
+      console.warn(`[${VTID}] me_context RPC error:`, meError.message);
+    }
     const tenantId = meData?.tenant_id || null;
     const activeRole = meData?.active_role || null;
 

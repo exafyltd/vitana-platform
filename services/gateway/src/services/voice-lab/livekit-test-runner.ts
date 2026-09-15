@@ -33,6 +33,7 @@ import {
   type ExpectedContract,
   type ScoreOutcome,
 } from './livekit-test-scorer';
+import * as repo from './livekit-test-runner-repository';
 
 export type RunTrigger = 'manual' | 'cron' | 'admin' | 'test';
 
@@ -110,16 +111,12 @@ export async function runLiveKitTestSuite(
   // 2. Create the run row (so partial progress is observable).
   const startedAtIso = new Date().toISOString();
   const startedAtMs = Date.now();
-  const insertRun = await sb
-    .from('livekit_test_runs')
-    .insert({
-      started_at: startedAtIso,
-      layer,
-      trigger: opts.trigger,
-      total: cases.length,
-    })
-    .select('id')
-    .single();
+  const insertRun = await repo.insertLiveKitTestRun(sb, {
+    started_at: startedAtIso,
+    layer,
+    trigger: opts.trigger,
+    total: cases.length,
+  });
 
   if (insertRun.error || !insertRun.data) {
     throw new Error(
@@ -155,16 +152,13 @@ export async function runLiveKitTestSuite(
   const durationMs = finishedAtMs - startedAtMs;
   const finishedAtIso = new Date(finishedAtMs).toISOString();
 
-  await sb
-    .from('livekit_test_runs')
-    .update({
-      finished_at: finishedAtIso,
-      passed,
-      failed,
-      errored,
-      duration_ms: durationMs,
-    })
-    .eq('id', runId);
+  await repo.updateLiveKitTestRunTotals(sb, runId, {
+    finished_at: finishedAtIso,
+    passed,
+    failed,
+    errored,
+    duration_ms: durationMs,
+  });
 
   return {
     run_id: runId,
@@ -211,7 +205,7 @@ async function runOneCase(
 
   const row = projectToPersisted(c, final, retried);
 
-  await sb.from('livekit_test_results').insert({
+  await repo.insertLiveKitTestResult(sb, {
     run_id: runId,
     case_id: c.id,
     case_key: c.key,
@@ -299,17 +293,7 @@ async function loadCases(
   const sb = getSupabase();
   if (!sb) throw new Error('loadCases: Supabase client not configured');
 
-  let query = sb
-    .from('livekit_test_cases')
-    .select('id, key, label, prompt, expected, layer, enabled')
-    .eq('enabled', true)
-    .eq('layer', layer);
-
-  if (caseKey) {
-    query = query.eq('key', caseKey);
-  }
-
-  const { data, error } = await query.order('key', { ascending: true });
+  const { data, error } = await repo.fetchEnabledLiveKitTestCases(sb, caseKey, layer);
 
   if (error) {
     throw new Error(`loadCases: ${error.message}`);
@@ -343,11 +327,7 @@ export async function listRecentRuns(limit = 50): Promise<Array<{
 }>> {
   const sb = getSupabase();
   if (!sb) throw new Error('listRecentRuns: Supabase client not configured');
-  const { data, error } = await sb
-    .from('livekit_test_runs')
-    .select('id, started_at, finished_at, trigger, layer, total, passed, failed, errored, duration_ms')
-    .order('started_at', { ascending: false })
-    .limit(Math.min(limit, 200));
+  const { data, error } = await repo.fetchRecentLiveKitTestRuns(sb, Math.min(limit, 200));
   if (error) throw new Error(`listRecentRuns: ${error.message}`);
   return (data ?? []) as Array<{
     id: string;
@@ -396,21 +376,11 @@ export async function getRunDetail(runId: string): Promise<{
   const sb = getSupabase();
   if (!sb) throw new Error('getRunDetail: Supabase client not configured');
 
-  const { data: runRow, error: runErr } = await sb
-    .from('livekit_test_runs')
-    .select('id, started_at, finished_at, trigger, layer, total, passed, failed, errored, duration_ms')
-    .eq('id', runId)
-    .maybeSingle();
+  const { data: runRow, error: runErr } = await repo.fetchLiveKitTestRunById(sb, runId);
   if (runErr) throw new Error(`getRunDetail: ${runErr.message}`);
   if (!runRow) return null;
 
-  const { data: resultRows, error: resErr } = await sb
-    .from('livekit_test_results')
-    .select(
-      'case_key, status, tool_calls, reply_text, expected, failure_reasons, error, latency_ms, retried, started_at, finished_at',
-    )
-    .eq('run_id', runId)
-    .order('case_key', { ascending: true });
+  const { data: resultRows, error: resErr } = await repo.fetchLiveKitTestResultsForRun(sb, runId);
   if (resErr) throw new Error(`getRunDetail: ${resErr.message}`);
 
   return {
@@ -456,10 +426,7 @@ export async function listCases(): Promise<Array<{
 }>> {
   const sb = getSupabase();
   if (!sb) throw new Error('listCases: Supabase client not configured');
-  const { data, error } = await sb
-    .from('livekit_test_cases')
-    .select('id, key, label, prompt, layer, enabled, notes')
-    .order('key', { ascending: true });
+  const { data, error } = await repo.fetchAllLiveKitTestCases(sb);
   if (error) throw new Error(`listCases: ${error.message}`);
   return (data ?? []) as Array<{
     id: string;

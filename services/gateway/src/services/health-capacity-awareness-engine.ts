@@ -22,6 +22,7 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { emitOasisEvent } from './oasis-event-service';
+import * as repo from './health-capacity-awareness-engine-repository';
 import {
   CapacityStateBundle,
   ComputeCapacityRequest,
@@ -174,16 +175,13 @@ export async function computeCapacity(
 
     // For dev sandbox, bootstrap the request context first
     if (useDevIdentity) {
-      const { error: bootstrapError } = await supabase.rpc('dev_bootstrap_request_context', {
-        p_tenant_id: DEV_IDENTITY.TENANT_ID,
-        p_active_role: 'developer'
-      });
+      const { error: bootstrapError } = await repo.bootstrapDevRequestContext(supabase, DEV_IDENTITY.TENANT_ID);
       if (bootstrapError) {
         console.warn(`${LOG_PREFIX} Bootstrap context failed (non-fatal):`, bootstrapError.message);
       }
     }
 
-    const result = await supabase.rpc('capacity_compute', rpcParams);
+    const result = await repo.capacityComputeRpc(supabase, rpcParams);
 
     if (result.error) {
       console.error(`${LOG_PREFIX} RPC error:`, result.error);
@@ -305,18 +303,13 @@ export async function getCurrentCapacity(
 
     // For dev sandbox, bootstrap the request context first
     if (useDevIdentity) {
-      const { error: bootstrapError } = await supabase.rpc('dev_bootstrap_request_context', {
-        p_tenant_id: DEV_IDENTITY.TENANT_ID,
-        p_active_role: 'developer'
-      });
+      const { error: bootstrapError } = await repo.bootstrapDevRequestContext(supabase, DEV_IDENTITY.TENANT_ID);
       if (bootstrapError) {
         console.warn(`${LOG_PREFIX} Bootstrap context failed (non-fatal):`, bootstrapError.message);
       }
     }
 
-    const result = await supabase.rpc('capacity_get_current', {
-      p_session_id: sessionId || null
-    });
+    const result = await repo.capacityGetCurrentRpc(supabase, sessionId || null);
 
     if (result.error) {
       console.error(`${LOG_PREFIX} RPC error (get_current):`, result.error);
@@ -381,16 +374,13 @@ export async function overrideCapacity(
 
     // For dev sandbox, bootstrap the request context first
     if (useDevIdentity) {
-      const { error: bootstrapError } = await supabase.rpc('dev_bootstrap_request_context', {
-        p_tenant_id: DEV_IDENTITY.TENANT_ID,
-        p_active_role: 'developer'
-      });
+      const { error: bootstrapError } = await repo.bootstrapDevRequestContext(supabase, DEV_IDENTITY.TENANT_ID);
       if (bootstrapError) {
         console.warn(`${LOG_PREFIX} Bootstrap context failed (non-fatal):`, bootstrapError.message);
       }
     }
 
-    const result = await supabase.rpc('capacity_override', {
+    const result = await repo.capacityOverrideRpc(supabase, {
       p_energy_state: input.energy_state,
       p_note: input.note || null,
       p_duration_minutes: input.duration_minutes || 60
@@ -479,16 +469,13 @@ export async function filterActions(
 
     // For dev sandbox, bootstrap the request context first
     if (useDevIdentity) {
-      const { error: bootstrapError } = await supabase.rpc('dev_bootstrap_request_context', {
-        p_tenant_id: DEV_IDENTITY.TENANT_ID,
-        p_active_role: 'developer'
-      });
+      const { error: bootstrapError } = await repo.bootstrapDevRequestContext(supabase, DEV_IDENTITY.TENANT_ID);
       if (bootstrapError) {
         console.warn(`${LOG_PREFIX} Bootstrap context failed (non-fatal):`, bootstrapError.message);
       }
     }
 
-    const result = await supabase.rpc('capacity_filter_actions', {
+    const result = await repo.capacityFilterActionsRpc(supabase, {
       p_actions: input.actions,
       p_respect_capacity: input.respect_capacity ?? true
     });

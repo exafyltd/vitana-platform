@@ -21,6 +21,7 @@
  */
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import * as repo from './awareness-registry-repository';
 
 // =============================================================================
 // Types
@@ -434,9 +435,7 @@ function buildSnapshot(overrides: Record<string, { enabled: boolean; params: Rec
 async function fetchOverrides(): Promise<Record<string, { enabled: boolean; params: Record<string, unknown> }>> {
   const client = serviceClient();
   if (!client) return {};
-  const { data, error } = await client
-    .from('awareness_config')
-    .select('key, enabled, params');
+  const { data, error } = await repo.fetchAwarenessConfigOverrides(client);
   if (error) {
     // table missing pre-migration is normal — log once and continue.
     if (!/relation .*awareness_config.* does not exist/i.test(error.message)) {

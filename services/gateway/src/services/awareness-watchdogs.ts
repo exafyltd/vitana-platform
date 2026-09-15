@@ -16,6 +16,7 @@
  */
 
 import { getSupabase } from '../lib/supabase';
+import * as repo from './awareness-watchdogs-repository';
 
 export type WatchdogVerdict = 'pass' | 'fail' | 'partial' | 'unknown';
 
@@ -151,13 +152,7 @@ export async function getWatchdogStatuses(): Promise<WatchdogStatus[]> {
   let mostRecentByTopic: Record<string, string> = {};
   if (sb && topics.length > 0) {
     const since = new Date(Date.now() - PASS_WINDOW_HOURS * 60 * 60 * 1000).toISOString();
-    const { data } = await sb
-      .from('oasis_events')
-      .select('topic, created_at')
-      .in('topic', topics)
-      .gte('created_at', since)
-      .order('created_at', { ascending: false })
-      .limit(500);
+    const { data } = await repo.fetchRecentOasisEventTopics(sb, topics, since, 500);
     for (const row of (data || []) as Array<{ topic: string; created_at: string }>) {
       if (!mostRecentByTopic[row.topic]) {
         mostRecentByTopic[row.topic] = row.created_at;

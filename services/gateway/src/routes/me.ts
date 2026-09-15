@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import { randomUUID } from 'crypto';
+import * as repo from './me-repository';
 
 const router = Router();
 
@@ -156,7 +157,7 @@ router.get('/', async (req: Request, res: Response) => {
 
   try {
     const supabase = createUserSupabaseClient(token);
-    const { data, error } = await supabase.rpc('me_context');
+    const { data, error } = await repo.fetchMeContext(supabase);
 
     if (error) {
       console.error('[VTID-01048] GET /me - RPC error:', error.message);
@@ -245,7 +246,7 @@ router.get('/context', async (req: Request, res: Response) => {
 
   try {
     const supabase = createUserSupabaseClient(token);
-    const { data, error } = await supabase.rpc('me_context');
+    const { data, error } = await repo.fetchMeContext(supabase);
 
     if (error) {
       console.error('[VTID-01074] GET /me/context - RPC error:', error.message);
@@ -342,7 +343,7 @@ router.post('/active-role', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // Set the active role via RPC
-    const { data: setData, error: setError } = await supabase.rpc('me_set_active_role', { p_role: roleValue });
+    const { data: setData, error: setError } = await repo.setActiveRole(supabase, roleValue);
 
     if (setError) {
       console.error('[VTID-01074] POST /me/active-role - RPC set error:', setError.message);
@@ -390,7 +391,7 @@ router.post('/active-role', async (req: Request, res: Response) => {
     }
 
     // Fetch fresh me_context after setting role
-    const { data: contextData, error: contextError } = await supabase.rpc('me_context');
+    const { data: contextData, error: contextError } = await repo.fetchMeContext(supabase);
 
     if (contextError) {
       console.error('[VTID-01074] POST /me/active-role - RPC context error:', contextError.message);

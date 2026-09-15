@@ -15,6 +15,7 @@
  */
 import { getSupabase } from '../../lib/supabase';
 import type { AdminScanner, InsightDraft } from './types';
+import * as repo from './settings-audit-repository';
 
 const LOG_PREFIX = '[admin-scanner:settings_audit]';
 const HIGH_ACTION_RATE_THRESHOLD = 50;
@@ -45,11 +46,7 @@ export const settingsAuditScanner: AdminScanner = {
 
     // 1. Settings entirely empty
     try {
-      const { data: settings } = await supabase
-        .from('tenant_settings')
-        .select('profile, branding, feature_flags, integrations, domains')
-        .eq('tenant_id', tenantId)
-        .maybeSingle();
+      const { data: settings } = await repo.fetchTenantSettings(supabase, tenantId);
       if (settings) {
         const empty = (obj: unknown) =>
           !obj || (typeof obj === 'object' && obj !== null && Object.keys(obj as Record<string, unknown>).length === 0);
@@ -107,11 +104,7 @@ export const settingsAuditScanner: AdminScanner = {
 
     // 2. High admin action rate (could be legit but worth awareness)
     try {
-      const { count } = await supabase
-        .from('tenant_admin_audit_log')
-        .select('id', { count: 'exact', head: true })
-        .eq('tenant_id', tenantId)
-        .gte('created_at', d1);
+      const { count } = await repo.countTenantAdminAuditLogSince(supabase, tenantId, d1);
       if (count !== null && count >= HIGH_ACTION_RATE_THRESHOLD) {
         insights.push({
           natural_key: 'admin_action_rate_24h',
@@ -138,14 +131,12 @@ export const settingsAuditScanner: AdminScanner = {
 
     // 3. Cluster of destructive actions in last hour
     try {
-      const { data: destructive } = await supabase
-        .from('tenant_admin_audit_log')
-        .select('id, action, actor_user_id, created_at')
-        .eq('tenant_id', tenantId)
-        .in('action', DESTRUCTIVE_ACTIONS)
-        .gte('created_at', h1)
-        .order('created_at', { ascending: false })
-        .limit(50);
+      const { data: destructive } = await repo.fetchDestructiveTenantAdminActionsSince(
+        supabase,
+        tenantId,
+        DESTRUCTIVE_ACTIONS,
+        h1,
+      );
       if (destructive && destructive.length >= DESTRUCTIVE_CLUSTER_THRESHOLD) {
         const actorIds = new Set(destructive.map((r: { actor_user_id: string }) => r.actor_user_id));
         const actionBreakdown: Record<string, number> = {};

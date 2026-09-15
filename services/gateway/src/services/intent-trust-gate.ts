@@ -9,6 +9,7 @@
  */
 
 import { getSupabase } from '../lib/supabase';
+import * as repo from './intent-trust-gate-repository';
 
 const TIER_ORDER = ['unverified', 'community_verified', 'pro_verified', 'id_verified'] as const;
 type Tier = typeof TIER_ORDER[number];
@@ -53,10 +54,7 @@ export async function gateIntentByTier(input: TrustGateInput): Promise<TrustGate
   const supabase = getSupabase();
   if (!supabase) return { ok: true }; // fail-open if DB unavailable
 
-  const { data: rules } = await supabase
-    .from('intent_tier_required')
-    .select('intent_kind, category_prefix, payload_match, required_tier, reason')
-    .eq('intent_kind', input.intent_kind);
+  const { data: rules } = await repo.fetchIntentTierRequiredRules(supabase, input.intent_kind);
 
   const matching = (rules || []).filter((r: any) => {
     const prefixOk = !r.category_prefix || (input.category || '').startsWith(r.category_prefix);
@@ -73,11 +71,7 @@ export async function gateIntentByTier(input: TrustGateInput): Promise<TrustGate
   }, { tier: 'unverified' as Tier, reason: '' });
 
   // Look up the user's current trust_tier.
-  const { data: userRep } = await supabase
-    .from('user_reputation')
-    .select('trust_tier')
-    .eq('user_id', input.user_id)
-    .maybeSingle();
+  const { data: userRep } = await repo.fetchUserTrustTier(supabase, input.user_id);
   const currentTier = ((userRep as any)?.trust_tier ?? 'unverified') as Tier;
 
   if (tierRank(currentTier) >= tierRank(strictest.tier)) {

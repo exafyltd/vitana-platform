@@ -22,6 +22,7 @@
 
 import { createHash } from 'crypto';
 import { getSupabase } from '../../../lib/supabase';
+import * as repo from './calendar-prep-analyzer-repository';
 
 const LOG_PREFIX = '[BOOTSTRAP-AUTOPILOT-EXPANSION:CalendarPrep]';
 
@@ -230,15 +231,7 @@ export async function analyzeCalendarPrep(
 
   const horizon = new Date(now.getTime() + config.lookahead_hours * 60 * 60 * 1000).toISOString();
 
-  let query = supabase
-    .from('calendar_events')
-    .select('id,user_id,tenant_id,start_time,pillar,event_type,status,source_type')
-    .not('pillar', 'is', null)
-    .neq('status', 'cancelled')
-    .gte('start_time', now.toISOString())
-    .lte('start_time', horizon)
-    .order('start_time', { ascending: true })
-    .limit(opts.limit ?? 1000);
+  let query = repo.buildCalendarPrepEventsQuery(supabase, now.toISOString(), horizon, opts.limit ?? 1000);
   if (opts.user_ids?.length) {
     query = query.in('user_id', opts.user_ids);
   }

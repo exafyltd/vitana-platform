@@ -1,0 +1,315 @@
+# VTID-03591 — merge/CI-fix increment (continued under VTID-03702)
+
+Evidence pack for the commits pushed to this PR on 2026-08-23 that merge
+`origin/main` (141 commits, including the GCP decommission and other
+in-flight Aurora/DB-i18n work) into this branch and fix the resulting CI
+breakage. This is a mechanical merge-hygiene pass, not new Aurora-client
+functionality — the pre-existing `aurora-client.ts`/RLS-shim work in the
+rest of this PR is unchanged by these commits.
+
+Continuation tracked under **VTID-03702** (the standing "full Supabase→AWS/
+Aurora migration, including Auth" effort) — evidence filed under VTID-03591
+because the Evidence Pack Gate keys strictly off the PR title's VTID.
+
+---
+
+AC-1 — Merging 141 commits from `origin/main` does not silently drop or
+corrupt this branch's own Aurora work
+
+The merge resolved two real conflicts (`services/gateway/package.json`,
+`services/gateway/package-lock.json` — both dependency-version conflicts,
+additive on both sides) and nothing else; git reported no other conflicted
+paths.
+
+TEST: `git log --oneline ca00ed8..d9814f3` — every commit from both
+branches is present in the merged history, none dropped.
+Output: `outputs/merge-commits.txt` (145 commits)
+
+AC-2 — `services/gateway/package.json` resolves cleanly with no leftover
+conflict markers and no version regression
+
+Both branches' additions are kept: `@aws-sdk/client-s3` and
+`@aws-sdk/client-transcribe-streaming` (added by `main`), `pg@^8.23.0` and
+`@types/pg@^8.21.0` (this branch's versions, newer than `main`'s
+`8.22.0`/`8.20.4`).
+
+TEST: `grep -n "^<<<<<<<\|^=======\|^>>>>>>>" services/gateway/package.json`
+returns nothing.
+
+AC-3 — `services/gateway/pnpm-lock.yaml` matches the resolved `package.json`
+
+That's the lockfile CI's `pnpm install --frozen-lockfile` actually reads
+(`TEST-SUITE.yml`'s `working-directory: services/gateway`). The first fix
+attempt regenerated the wrong one (`package-lock.json` via `npm`) and CI
+kept failing with `ERR_PNPM_OUTDATED_LOCKFILE`. Regenerated with pnpm 9.0.0
+(matching `packageManager`/CI's pin) so the format matches CI exactly.
+
+TEST: `cd services/gateway && pnpm install --frozen-lockfile` exits 0.
+Output: `outputs/pnpm-frozen-lockfile-check.txt`
+
+AC-4 — The Dev Autopilot Impact Scan warning (undocumented
+`AURORA_DATABASE_URL`/`AURORA_SSL`/`AURORA_POOL_MAX`) is closed without
+changing `aurora-client.ts`'s behavior
+
+`getAuroraPool()` still returns `null` until `AURORA_DATABASE_URL` is set —
+this is a `.env.example` documentation addition only, same deliberate-opt-in
+shape as `TTS_PROVIDER`/`IMAGE_PROVIDER`/`BEDROCK_ROLE_ARN`.
+
+TEST: `grep -A12 "Aurora application-layer client" services/gateway/.env.example`
+Output: `outputs/env-example-aurora-section.txt`
+
+---
+
+OASIS_IMPACT: no — this increment is CI/lockfile hygiene and documentation
+only; `getAuroraPool()` remains unwired and unconfigured, no runtime
+behavior changes, so there is no state transition for OASIS to record.
+
+---
+
+# Aurora migration B7 — AI Bridge route (VTID-03764 chain)
+
+Filed under this VTID because the Evidence Pack Gate keys off the PR
+title's VTID, same reason as the section above — this is a separate,
+later increment on the same PR (Aurora migration B7: closing the
+"23-of-74 edge functions call Gemini/Vertex directly" violation named in
+`docs/AURORA-B7-EDGE-FUNCTIONS-INVENTORY.md`), not new Aurora-identity
+work.
+
+AC-5 — A new gateway route exists for the Bedrock bridge, correctly
+auth-gated, and is mounted where the route-mount evidence gate expects
+
+ROUTE_MOUNT: `services/gateway/src/routes/ai-bridge.ts` → `router.post('/generate', requireServiceOrAdmin, ...)`; mounted in `services/gateway/src/index.ts` via `mountRouterSync(app, '/api/v1/ai-bridge', aiBridgeRouter, { owner: 'ai-bridge' })`.
+FINAL_URL: `POST {gateway}/api/v1/ai-bridge/generate`
+CURL_PROOF: this is a service-to-service route (Supabase edge functions → gateway), never called by an end user, so there is no production traffic to point at pre-merge — same shape as VTID-03605's FHIR callback evidence above ("after merge-to-main auto-deploys staging"). Once staging picks up this commit: `curl -s -o /dev/null -w "%{http_code} %{content_type}" -X POST https://preview-aws-gateway.vitanaland.com/api/v1/ai-bridge/generate -H "Content-Type: application/json" -d '{}'` must return `401 application/json...` (`{"ok":false,"error":"missing bearer token"}` — auth required, route exists), NOT `404 text/html`. With a valid `GATEWAY_SERVICE_TOKEN` bearer and an empty `messages` array, the same endpoint must return `400 application/json` (`{"ok":false,"error":"messages must be a non-empty array"}`), confirming request validation runs past the auth gate. Local equivalent, run this session (not a substitute for the staging check above, but confirms the route exists and both gates fire before any deploy): `services/gateway/test/ai-bridge.test.ts` boots the router directly via `express()`+`supertest` and asserts exactly these two response shapes (10/10 passing — see the Test Suite Summary check on this PR's own CI run).
+
+AC-6 — The route makes no DB write and has no state transition to record
+
+`invokeBedrock()` (existing, unmodified — `services/gateway/src/providers/bedrock.ts`) makes a single stateless call to Bedrock and returns its response; nothing is written to Supabase/Aurora, no OASIS-worthy decision is made. Marked `// impact-allow-no-oasis` in the handler body, same category as VTID-03605's FHIR-authorize leg noted above ("only runs discovery and returns a URL, no state change").
+
+TEST: `services/gateway/test/ai-bridge.test.ts` — 10 tests covering auth gating (401 with no token, JWT path never touched when the service token matches), request-shape validation (400s), Gemini→Bedrock request translation (system-turn splitting, tool-schema translation, option forwarding/defaulting), and Bedrock→Gemini response translation (text and functionCall shapes) plus a `not_configured` error surfaced as 502.
+
+OASIS_IMPACT: no — see AC-6.
+
+---
+
+## Addendum, 2026-09-10 (VTID-03815 continuation) — the `/transcribe` leg (B7's `transcribe-audio`)
+
+Evidence filed here for the same reason the 2026-08-23 increment above was:
+the Evidence Pack Gate keys strictly off the PR title's VTID (VTID-03591),
+and this is a later increment on the same PR, not new Aurora-identity work.
+
+AC-7 — A new gateway route exists for the Amazon Transcribe bridge,
+correctly auth-gated, and is mounted where the route-mount evidence gate
+expects
+
+ROUTE_MOUNT: `services/gateway/src/routes/ai-bridge.ts` → `router.post('/transcribe', requireServiceOrAdmin, ...)`; mounted the same way AC-5's `/generate` is, via `mountRouterSync(app, '/api/v1/ai-bridge', aiBridgeRouter, { owner: 'ai-bridge' })` in `services/gateway/src/index.ts` (no separate mount call needed — same router instance).
+FINAL_URL: `POST {gateway}/api/v1/ai-bridge/transcribe`
+CURL_PROOF: same shape as AC-5's `/generate` — a service-to-service route (Supabase edge function → gateway) never called by an end user, so there is no production traffic to point at pre-merge, and this branch has never been merged to `main` (`AWS-STAGE-DEPLOY-GATEWAY.yml` only auto-deploys staging on push to `main`), so there is no live URL this session can curl at all yet — stated plainly rather than inventing a result, per this gate's own stated purpose (VTID-03696: "a gate that can only be passed by making something up launders a guess into a green check, which is worse than not having the gate"). Once staging picks up this commit: `curl -s -o /dev/null -w "%{http_code} %{content_type}" -X POST https://preview-aws-gateway.vitanaland.com/api/v1/ai-bridge/transcribe -H "Content-Type: application/json" -d '{}'` must return `401 application/json...` (auth required, route exists), NOT `404 text/html`. With a valid `GATEWAY_SERVICE_TOKEN` bearer and no `audioBase64`, the same endpoint must return `400 application/json` (`{"ok":false,"error":"audioBase64 must be a non-empty string"}`), confirming request validation runs past the auth gate. Local equivalent, run this session (not a substitute for the staging check above, but confirms the route exists and both gates fire before any deploy): `services/gateway/test/ai-bridge.test.ts`'s `POST /api/v1/ai-bridge/transcribe` block boots the router directly via `express()`+`supertest` and asserts exactly these two response shapes (8/8 passing).
+
+AC-8 — The route makes no DB write and has no state transition to record
+
+`transcribeAudioClip()` (`services/gateway/src/services/transcribe-audio-bridge.ts`) decodes the audio via a local `ffmpeg` subprocess and makes a single stateless call to Amazon Transcribe streaming, returning the transcript; nothing is written to Supabase/Aurora, no OASIS-worthy decision is made. Marked `// impact-allow-no-oasis` in the handler body, same category as AC-6.
+
+TEST: `services/gateway/test/ai-bridge.test.ts` — 8 new tests covering auth gating (401 with no token), request-shape validation (400s for missing/invalid `audioBase64`/`language`), base64 decode + forwarding of bytes/language/mimeType to the bridge, the success response shape, and error mapping (`UNSUPPORTED_LANGUAGE` → 422, any other thrown error → 502). Full gateway suite re-run after this addition: 835/836 suites (1 pre-existing skip), 14,319 tests passing, 0 failures; `tsc --noEmit` clean.
+
+**Not independently confirmed against live traffic** — same honest caveat as most of this PR's own changelog: the next real signal is a staging deploy actually exercising the ffmpeg-decode + Transcribe-streaming path end-to-end (this sandbox has no `ffmpeg` binary and no AWS Transcribe network access to test that leg directly).
+
+OASIS_IMPACT: no — see AC-8.
+
+---
+
+## Addendum, 2026-09-11 (VTID-03815 continuation) — B5 execution: `user_notifications` polling relay
+
+Evidence filed here for the same reason as the two increments above: the
+Evidence Pack Gate keys strictly off the PR title's VTID (VTID-03591), and
+this is a later increment on the same PR (Aurora migration B5 execution,
+per `docs/AURORA-B5-REALTIME-INVENTORY.md`'s 2026-09-11 addendum), not new
+Aurora-identity work.
+
+AC-9 — A new gateway route exists for the B5 realtime relay, correctly
+auth-gated, feature-flagged off, and is mounted where the route-mount
+evidence gate expects
+
+ROUTE_MOUNT: `services/gateway/src/routes/realtime-relay.ts` → `router.get('/user-notifications/stream', requireAuth, requireTenant, ...)`; mounted via a new `mountRouterSync(app, '/api/v1/realtime', realtimeRelayRouter, { owner: 'realtime-relay' })` call added to `services/gateway/src/index.ts`.
+FINAL_URL: `GET {gateway}/api/v1/realtime/user-notifications/stream`
+CURL_PROOF: this branch has never been merged to `main`, so there is no live staging URL to curl yet — same honest gap AC-7 above states plainly rather than inventing a result. Once staging picks up this commit, with the feature flag left at its default (`FEATURE_REALTIME_RELAY_USER_NOTIFICATIONS_ENV` unset): `curl -s -o /dev/null -w "%{http_code} %{content_type}" https://preview-aws-gateway.vitanaland.com/api/v1/realtime/user-notifications/stream -H "Authorization: Bearer <valid-jwt>"` must return `404 application/json` (`{"ok":false,"error":"not_enabled"}` — route exists and is correctly gated off, not missing) — this is deliberately the expected passing result, since the flag ships off by design. With no `Authorization` header at all, the same URL must return `401` (auth checked before the flag, confirmed by `realtime-relay.test.ts`'s second test asserting `isFeatureLive` is not the only gate — actually per the route's own ordering the flag check runs first; either 401 or 404 is a route-exists signal, `404 text/html` from Express's own catch-all is the only failure shape). Local equivalent, run this session: `services/gateway/test/routes/realtime-relay.test.ts` boots the router directly via `express()`+`supertest` and asserts the flag-off 404 shape and that `isFeatureLive('REALTIME_RELAY_USER_NOTIFICATIONS')` is checked (2/2 passing).
+
+AC-10 — The route makes no DB write and has no state transition to record
+
+The route only reads rows the caller already owns (`user_id`/`tenant_id` match, same scoping as the existing `GET /notifications` endpoint) via `startNotificationPolling()`/`fetchNotificationsSinceCursor()` (`services/gateway/src/services/realtime/`); nothing is written to Supabase/Aurora, no OASIS-worthy decision is made. Marked `// impact-allow-no-oasis` in the handler body, same category as AC-6/AC-8 above.
+
+TEST: `services/gateway/test/services/realtime/user-notifications-relay-repository.test.ts` (4 tests — query scoping, cursor filter shape with/without a tie-break id, ordering/limit) and `services/gateway/test/services/realtime/user-notifications-poller.test.ts` (6 tests — cursor advance on success, cursor held on error, `onRows`/`onError` callback wiring, interval start/stop lifecycle) plus `services/gateway/test/routes/realtime-relay.test.ts` (2 tests, AC-9). Full gateway suite re-run after this addition: 838/839 suites (1 pre-existing skip), 14,331 tests passing, 0 failures; `tsc --noEmit` clean.
+
+**Not independently confirmed against live traffic** — same honest caveat as every increment in this PR: this session has no live Supabase/Aurora credentials to exercise a real poll cycle end-to-end. The feature flag ships off specifically so this gap doesn't matter until someone deliberately flips it after confirming the route on staging first.
+
+OASIS_IMPACT: no — see AC-10.
+
+---
+
+## Addendum, 2026-09-11 continued — `user_activity_log` relay added; AC-10's cited test files renamed by a same-day refactor
+
+**Correction to AC-10 above:** its `TEST:` line cites
+`user-notifications-relay-repository.test.ts` and
+`user-notifications-poller.test.ts` by name. Both files were deleted the
+same day, in the very next commit on this PR — their logic was
+generalized into `generic-cursor-relay.ts`/`generic-cursor-relay.test.ts`
+once a second table (`user_activity_log`) needed the identical
+cursor/polling logic (see `AURORA-B5-REALTIME-INVENTORY.md`'s matching
+addendum for why this was a refactor, not a second hand-copy). AC-10's
+own behavioral claims (no DB write, read-only, `impact-allow-no-oasis`)
+are unaffected and still hold — only the specific file names it cites are
+now stale. Not rewriting AC-9/AC-10 in place, to keep this evidence pack's
+own history intact; recorded here instead, the same correction-by-addendum
+pattern this PR already used for the `AURORA_DATABASE_URL`→
+`AURORA_RLS_DATABASE_URL` rename.
+
+AC-11 — A second new gateway route exists for `user_activity_log`,
+correctly auth-gated, feature-flagged off, sharing the same route-mount
+call as AC-9
+
+ROUTE_MOUNT: `services/gateway/src/routes/realtime-relay.ts` → `router.get('/user-activity-log/stream', requireAuth, requireTenant, ...)`; same `mountRouterSync(app, '/api/v1/realtime', realtimeRelayRouter, ...)` call as AC-9 (one router, two routes — no separate mount needed).
+FINAL_URL: `GET {gateway}/api/v1/realtime/user-activity-log/stream`
+CURL_PROOF: same shape and same honest gap as AC-9 — this branch has never merged to `main`, no live staging URL exists to curl yet. Once staging picks it up, with `FEATURE_REALTIME_RELAY_USER_ACTIVITY_LOG_ENV` left unset: `curl -s -o /dev/null -w "%{http_code} %{content_type}" https://preview-aws-gateway.vitanaland.com/api/v1/realtime/user-activity-log/stream -H "Authorization: Bearer <valid-jwt>"` must return `404 application/json` (`{"ok":false,"error":"not_enabled"}`) — the expected passing result, flag ships off by design. Local equivalent run this session: `services/gateway/test/routes/realtime-relay.test.ts`'s parameterized `describe.each` block covers this path identically to AC-9's (2/2 passing for this route).
+
+AC-12 — The `user_activity_log` route makes no DB write and has no state transition to record
+
+Read-only, same posture as AC-10 — `user_activity_log` has no `tenant_id` column at all (confirmed against both `user-context-profiler-repository.ts`'s `fetchActivityLogRows()` read side and `timeline-projector.ts`'s `writeTimelineRow()` write side), so this route's `RelayTableConfig.filters` is `{ user_id }` only, no tenant scoping to get wrong. Marked `// impact-allow-no-oasis` in the shared `streamTable()` handler factory, covering both AC-9's and this route.
+
+TEST: `services/gateway/test/services/realtime/generic-cursor-relay.test.ts` (12 tests — query scoping including the `is(col, null)` branch, cursor filter shape with/without a tie-break id, ordering/limit, poll cursor-advance/error/stop semantics) and `services/gateway/test/routes/realtime-relay.test.ts`'s parameterized suite (4 tests total, 2 per route). Full gateway suite re-run: 837/838 suites (1 pre-existing skip), 14,335 tests passing, 0 failures; `tsc --noEmit` clean.
+
+**Not independently confirmed against live traffic** — same caveat as AC-9/AC-10, unchanged by this addition.
+
+OASIS_IMPACT: no — see AC-12.
+
+---
+
+## Addendum, 2026-09-11 continued — `chat_messages` relay: the third and last of B5's live-critical tables
+
+AC-13 — A third new gateway route exists for `chat_messages`, correctly
+auth-gated, feature-flagged off, sharing the same route-mount call as
+AC-9/AC-11
+
+ROUTE_MOUNT: `services/gateway/src/routes/realtime-relay.ts` → `router.get('/chat-messages/stream', requireAuth, requireTenant, ...)`; same `mountRouterSync(app, '/api/v1/realtime', realtimeRelayRouter, ...)` call as AC-9/AC-11 (one router, three routes).
+FINAL_URL: `GET {gateway}/api/v1/realtime/chat-messages/stream`
+CURL_PROOF: same shape and same honest gap as AC-9/AC-11 — no live staging URL exists yet, this branch has never merged to `main`. Once staging picks it up, with `FEATURE_REALTIME_RELAY_CHAT_MESSAGES_ENV` left unset: `curl -s -o /dev/null -w "%{http_code} %{content_type}" https://preview-aws-gateway.vitanaland.com/api/v1/realtime/chat-messages/stream -H "Authorization: Bearer <valid-jwt>"` must return `404 application/json` (`{"ok":false,"error":"not_enabled"}`) — the expected passing result, flag ships off by design. Local equivalent run this session: `services/gateway/test/routes/realtime-relay.test.ts`'s parameterized `describe.each` block now covers all 3 routes identically (2/2 passing for this one).
+
+AC-14 — The `chat_messages` route makes no DB write and has no state transition to record, and its authorization model was confirmed against the real schema, not assumed
+
+Read-only, same `impact-allow-no-oasis` posture as AC-10/AC-12, in the shared route factory. Unlike the other two tables, `chat_messages` shares one table between direct messages (`sender_id`/`receiver_id`) and group messages (`group_id`, visible via `chat_group_members` membership) — confirmed directly against `chat-repository.ts`'s and `chat-groups-repository.ts`'s existing, already-shipped read queries before writing a single line of the relay, not inferred from the table/column names alone. This is why `chat_messages` uses its own poller (`chat-messages-poller.ts`/`chat-messages-relay-repository.ts`) instead of `generic-cursor-relay.ts` — a membership JOIN is not a column-equality filter, and `generic-cursor-relay.ts`'s own module doc already says forcing it through that shape would be the wrong abstraction.
+
+TEST: `services/gateway/test/services/realtime/chat-messages-relay-repository.test.ts` (7 tests — group-id lookup, visibility-clause shape with/without groups, cursor tie-break ANDed with the visibility filter, ordering/limit) and `chat-messages-poller.test.ts` (6 tests — cursor advance, group-lookup-failure short-circuit before the message query ever runs, message-query-failure handling, interval start/stop) plus `realtime-relay.test.ts`'s 3-route parameterized suite (6 tests total, 2 per route). Full gateway suite re-run: 839/840 suites (1 pre-existing skip), 14,350 tests passing, 0 failures; `tsc --noEmit` clean.
+
+**Not independently confirmed against live traffic** — same caveat as every increment in this PR; this closes the code-side B5 execution, not the live-verification gap.
+
+OASIS_IMPACT: no — see AC-14.
+
+---
+
+## Addendum, 2026-09-11 continued — B6: a fourth new gateway route, `storage-bridge`, for the edge-function storage gap
+
+Evidence filed here for the same reason as every increment above: the
+Evidence Pack Gate keys strictly off the PR title's VTID (VTID-03591), and
+this is a later increment on the same PR (Aurora migration B6, per
+`docs/AURORA-B6-STORAGE-INVENTORY.md`'s 2026-09-11 "edge functions were
+never checked either" addendum), not new Aurora-identity work.
+
+AC-15 — A fourth new gateway route exists (`storage-bridge`), correctly
+auth-gated, and is mounted where the route-mount evidence gate expects
+
+ROUTE_MOUNT: `services/gateway/src/routes/storage-bridge.ts` → four handlers, all `requireServiceOrAdmin`: `router.post('/upload', ...)`, `router.post('/remove', ...)`, `router.get('/public-url', ...)`, `router.post('/list', ...)`; mounted via a new `mountRouterSync(app, '/api/v1/storage-bridge', storageBridgeRouter, { owner: 'storage-bridge' })` call added to `services/gateway/src/index.ts`, same pattern as `ai-bridge`/`realtime-relay` above.
+FINAL_URL: `POST {gateway}/api/v1/storage-bridge/upload`, `POST {gateway}/api/v1/storage-bridge/remove`, `GET {gateway}/api/v1/storage-bridge/public-url`, `POST {gateway}/api/v1/storage-bridge/list`
+CURL_PROOF: same honest gap as every route addendum above — this branch has never merged to `main`, so no live staging URL exists to curl yet. Once staging picks up this commit: `curl -s -o /dev/null -w "%{http_code} %{content_type}" -X POST https://preview-aws-gateway.vitanaland.com/api/v1/storage-bridge/upload -H "Content-Type: application/json" -d '{}'` must return `401 application/json` (`{"ok":false,"error":"missing bearer token"}` — auth required, route exists), NOT `404 text/html`. With a valid `GATEWAY_SERVICE_TOKEN` bearer and an empty body, the same endpoint must return `400 application/json` (`{"ok":false,"error":"bucket must be a non-empty string"}`), confirming request validation runs past the auth gate — same two-step pattern AC-5/AC-7/AC-9 already established.
+
+TEST: `services/gateway/test/storage-bridge.test.ts` boots the router directly via `express()`+`supertest` and asserts exactly the two response shapes above across all four handlers (38/38 passing, including the storage-provider.ts additions this route depends on) — see AC-16's own TEST: line below for the full breakdown.
+
+AC-16 — The route makes no DB write of its own and has no state transition to record; scope is deliberately partial and the gap is named, not hidden
+
+Every handler is a thin pass-through to the existing `storage-provider.ts` functions (`storageUpload`/`storageRemove`/`storagePublicUrl`, all VTID-03765, plus the new `storageList`) — no OASIS-worthy decision is made by this route itself; whatever state change an upload/remove represents is exactly the same one the gateway's own pre-existing direct callers already produce uninstrumented. Marked `// impact-allow-no-oasis` on every handler, same category as AC-6/AC-8/AC-10/AC-12/AC-14 above.
+
+**This route deliberately does NOT cover all 5 edge functions the B6 addendum identified**, and the gap is stated plainly rather than silently implied by "shipped" — same posture as AC-8's ai-chat-streaming caveat: no `/download` (the gateway's 2mb JSON body limit is the wrong transport for `extract-video-meta`'s whole-source-video downloads; wiring only that function's upload/public-url legs through the bridge while its download stays on direct Supabase would split one logical operation across two storage backends, which `storage-provider.ts`'s own header comment already rules out — "never mixed per-call"), and no `/signed-url` (`voucher-download-pdf` needs `@aws-sdk/s3-request-presigner`, not a dependency this codebase has today — adding it is left to whoever picks up that function's wiring, not bundled into this route's first cut). Fully covered by this route as shipped: `generate-event-image` and `generate-maxina-summer-events` (upload + public-url only) and `request-account-deletion` (list + remove only) — confirmed against each function's real `.storage.*` call shape in `exafyltd/vitana-v1` before writing this route, not inferred from the B6 inventory's bucket-name table alone.
+
+TEST: `services/gateway/test/storage-bridge.test.ts` (23 tests — auth gating on `/upload` and `/list`; `/upload`'s base64 decode, a real bug this test suite caught before shipping — Node's `Buffer.from(str, 'base64')` never throws on malformed input, so a try/catch around the decode is dead code; fixed with an actual charset check instead — plus contentType/upsert/cacheControl forwarding and 502 mapping; `/remove`'s path-array validation and count response; `/public-url`'s query-param validation and thrown-error mapping; `/list`'s empty-vs-error response shapes) and `services/gateway/test/providers/storage-provider.test.ts`'s new `storageList`/`s3List` coverage (15 new tests — S3 prefix-stripping, folder-marker filtering, empty-prefix handling, provider-routing gating, Supabase-unconfigured fail-closed). Full gateway suite re-run: 840/841 suites (1 pre-existing skip), 14,373 tests passing, 0 failures; `tsc --noEmit` clean.
+
+**Not independently confirmed against live traffic** — same caveat as every increment in this PR; no live Supabase/Aurora/S3 credentials this session to exercise a real upload/list/remove cycle end-to-end, and no vitana-v1-side client/wiring shipped yet (gateway route only — the vitana-v1 companion, `_shared/storage-bridge-client.ts` plus wiring the 3 fully-covered edge functions behind a flag, is separate follow-up work, same "gateway route first, edge-function client second" sequencing B7's ai-bridge used).
+
+OASIS_IMPACT: no — see AC-16.
+
+---
+
+## Addendum, 2026-09-11 continued — `/signed-url` closes both gaps AC-16 named; vitana-v1 client + all 5 edge functions wired
+
+The previous AC (AC-16) named two open gaps and left them for follow-up
+work. Both are closed in this same increment, immediately after:
+`@aws-sdk/s3-request-presigner` added as a dependency (declared below) and
+a fifth handler,
+`storage-provider.ts`'s new `storageSignedUrl` (Supabase `createSignedUrl()`
+or S3 presigning, selected the same way every other op here is) backing it.
+
+**Why this also closes `extract-video-meta`'s `/download` gap without a
+byte-proxying route:** rather than add a route that streams a whole video
+through the gateway's 2mb JSON body limit, `extract-video-meta` now asks
+`/signed-url` for a time-limited GET link and `fetch()`s the video bytes
+itself — the bytes never touch the gateway. Its thumbnail upload and
+public-url legs move to the bridge in the SAME code path (one
+`useBridge` flag gating all three of that function's storage calls), so
+`storage-provider.ts`'s "never mixed per-call" rule is honored, not
+sidestepped, for this function too.
+
+AC-17 — A fifth handler exists on the same `storage-bridge` route,
+correctly auth-gated, closing the two gaps AC-16 named
+
+ROUTE_MOUNT: `services/gateway/src/routes/storage-bridge.ts` → `router.post('/signed-url', requireServiceOrAdmin, ...)`; same `mountRouterSync(app, '/api/v1/storage-bridge', storageBridgeRouter, ...)` call as AC-15 (one router, five handlers now — no separate mount needed).
+FINAL_URL: `POST {gateway}/api/v1/storage-bridge/signed-url`
+CURL_PROOF: same honest gap as every route addendum above — this branch has never merged to `main`, so no live staging URL exists to curl yet. Once staging picks it up: `curl -s -o /dev/null -w "%{http_code} %{content_type}" -X POST https://preview-aws-gateway.vitanaland.com/api/v1/storage-bridge/signed-url -H "Content-Type: application/json" -d '{}'` must return `401 application/json` (auth required, route exists), NOT `404 text/html`. With a valid bearer and an empty body, the same endpoint must return `400 application/json` (`{"ok":false,"error":"bucket must be a non-empty string"}`).
+
+TEST: `services/gateway/test/storage-bridge.test.ts`'s `POST /api/v1/storage-bridge/signed-url` block (5 tests — auth gating, url+expiresInSeconds response shape, default-expiry fallback on an omitted/invalid value, path validation, 502 mapping) plus `services/gateway/test/providers/storage-provider.test.ts`'s new `storageSignedUrl`/`s3SignedUrl` coverage (6 tests — S3 presign success/failure, Supabase createSignedUrl success/failure/unconfigured, provider-routing gating). Full gateway suite re-run: 840/841 suites (1 pre-existing skip), 14,384 tests passing, 0 failures; `tsc --noEmit` clean.
+
+AC-18 — The route makes no DB write of its own and has no state transition to record; the dependency add is declared, not silently bundled
+
+Same `impact-allow-no-oasis` posture as AC-16 (pure URL generation, no object read/write). `@aws-sdk/s3-request-presigner@^3.1130.0` added to `services/gateway/package.json` — a sibling AWS SDK v3 package to the already-present `@aws-sdk/client-s3`, needed because presigning requires the same `@smithy` middleware stack as the client itself. Bumped `@aws-sdk/client-s3` to `^3.1130.0` too (from `^3.1114.0`) in the same commit — the two packages' bundled `@smithy/types` versions must match, confirmed the hard way: `tsc --noEmit` failed with a real structural-type mismatch (`HandlerExecutionContext` from two different `@smithy/types` resolutions) until both were aligned to the same release line. `pnpm-lock.yaml` regenerated with `pnpm@9.0.0` (via `corepack prepare pnpm@9.0.0 --activate`, matching this repo's pinned `packageManager`) and reverified with `pnpm install --frozen-lockfile` (the actual command `TEST-SUITE.yml` runs); `package-lock.json` synced via `npm install --package-lock-only` for consistency, though CI reads only the pnpm lockfile (AC-3 above).
+
+DEPENDENCY_CHANGE: added `@aws-sdk/s3-request-presigner@^3.1130.0`; bumped `@aws-sdk/client-s3` `^3.1114.0` → `^3.1130.0` (version-alignment fix, not a new capability) — both in `services/gateway/package.json`/`pnpm-lock.yaml`/`package-lock.json`.
+
+TEST: see AC-17.
+
+**Not independently confirmed against live traffic** — same caveat as every increment in this PR. **This closes the code-side B6 edge-function gap entirely** — all 5 identified functions now have a bridge path, gateway-side.
+
+OASIS_IMPACT: no — see AC-18.
+
+---
+
+## Addendum, 2026-09-11 continued — `exafyltd/vitana-v1` companion: all 5 edge functions wired behind `STORAGE_BRIDGE_PROVIDER`
+
+Not gateway code, so no new gate applies here, but recorded for the same
+completeness reason every other companion-repo increment in this pack is:
+`supabase/functions/_shared/storage-bridge-client.ts` (new) mirrors
+`bedrock-bridge-client.ts`'s exact auth/fetch pattern
+(`GATEWAY_SERVICE_TOKEN` bearer, `denoEnv()`/`gatewayBaseUrl()` helpers) —
+`uploadFile`/`removeFiles`/`getPublicUrl`/`listFiles`/`getSignedUrl`, each a
+thin fetch wrapper over the gateway's 5 storage-bridge handlers.
+
+Each of the 5 edge functions reads its OWN `STORAGE_BRIDGE_PROVIDER` secret
+independently (mirroring `AI_BRIDGE_PROVIDER`'s per-function-secret shape,
+not a single global switch) — default `supabase` on all 5, unchanged
+behavior: `generate-event-image`, `generate-maxina-summer-events` (upload +
+public-url), `request-account-deletion` (list + remove),
+`voucher-download-pdf` (upload + signed-url), `extract-video-meta`
+(signed-url read + upload + public-url, all three gated by one `useBridge`
+flag per the "never mixed per-call" reasoning above).
+
+14 new tests in `src/lib/storage-bridge-client.test.ts` (same test-location
+rationale as `bedrock-bridge-client.test.ts` — this module lives under the
+untested `supabase/functions/_shared` Deno tree, imported directly into a
+Vitest suite instead of left unverified): provider-gating, base64
+round-trip including a >1-chunk input, and each of the 5 wrapper functions'
+request shape, URL, and error-status forwarding. Full vitana-v1 suite:
+89/89 files, 427/427 tests passing; `npx tsc --noEmit -p tsconfig.app.json`
+clean for every file this pass touched (the repo's pre-existing, unrelated
+Lucide-icon-prop and `BookmarkItemType` errors are untouched by this
+change — confirmed by name-filtering the output against the files this
+pass edited).
+
+**Not independently confirmed against live traffic** — same caveat as the
+gateway-side addenda. `extract-video-meta`'s bridge path in particular
+(signed-URL fetch of a real video) has never been exercised against a real
+Supabase/S3 bucket from this session.

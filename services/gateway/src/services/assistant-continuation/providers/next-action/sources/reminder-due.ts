@@ -28,6 +28,7 @@ import type {
   NextActionSourceResult,
   ScoredCandidate,
 } from '../types';
+import * as repo from './reminder-due-repository';
 
 const KEY = 'reminder_due' as const;
 const HORIZON_MINUTES = 120;
@@ -51,15 +52,7 @@ export async function produceReminderDue(
 
   let row: ReminderLike | null = null;
   try {
-    const { data, error } = await ctx.supabase
-      .from('reminders')
-      .select('id, action_text, spoken_message, next_fire_at, status')
-      .eq('user_id', ctx.userId)
-      .in('status', ['pending', 'dispatching'])
-      .gte('next_fire_at', ctx.nowIso)
-      .lte('next_fire_at', horizonIso)
-      .order('next_fire_at', { ascending: true })
-      .limit(1);
+    const { data, error } = await repo.fetchNearestPendingReminder(ctx.supabase, ctx.userId, ctx.nowIso, horizonIso);
     if (error) {
       return { source: KEY, candidate: null, skippedReason: 'source_unavailable' };
     }

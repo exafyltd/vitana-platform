@@ -11,15 +11,12 @@ import type {
   WalletCurrency,
   WalletLedgerEntry,
 } from '../../types/wallet';
+import * as repo from './balance-service-repository';
 
 export async function getAccountsForUser(userId: string): Promise<WalletAccount[]> {
   const supabase = getSupabase();
   if (!supabase) return [];
-  const { data, error } = await supabase
-    .from('wallet_accounts')
-    .select('*')
-    .eq('user_id', userId)
-    .order('currency', { ascending: true });
+  const { data, error } = await repo.fetchWalletAccountsForUser(supabase, userId);
   if (error) {
     console.error('[wallet/balance] getAccountsForUser failed:', error.message);
     return [];
@@ -43,21 +40,12 @@ export async function getTransactionsForUser(opts: {
 
   const limit = Math.min(Math.max(opts.limit ?? 20, 1), 100);
 
-  let q = supabase
-    .from('wallet_ledger_entries')
-    .select('*')
-    .eq('user_id', opts.user_id)
-    .order('created_at', { ascending: false })
-    .limit(limit + 1);
-
-  if (opts.currency) {
-    q = q.eq('currency', opts.currency);
-  }
-  if (opts.cursor) {
-    q = q.lt('created_at', opts.cursor);
-  }
-
-  const { data, error } = await q;
+  const { data, error } = await repo.fetchWalletLedgerEntriesForUser(supabase, {
+    userId: opts.user_id,
+    currency: opts.currency,
+    cursor: opts.cursor,
+    limit: limit + 1,
+  });
   if (error) {
     console.error('[wallet/balance] getTransactionsForUser failed:', error.message);
     return { entries: [], next_cursor: null };

@@ -11,6 +11,7 @@
  */
 import { getSupabase } from '../../lib/supabase';
 import type { AdminScanner, InsightDraft } from './types';
+import * as repo from './users-lifecycle-repository';
 
 const LOG_PREFIX = '[admin-scanner:users_lifecycle]';
 const VERIFICATION_BOTTLENECK_PCT = 60; // below 60% verified = bottleneck
@@ -34,16 +35,7 @@ export const usersLifecycleScanner: AdminScanner = {
 
     // 1. Invitations expiring within 48h
     try {
-      const { data: expiring } = await supabase
-        .from('tenant_invitations')
-        .select('id, email, expires_at')
-        .eq('tenant_id', tenantId)
-        .is('accepted_at', null)
-        .is('revoked_at', null)
-        .gte('expires_at', nowIso)
-        .lte('expires_at', in48h)
-        .order('expires_at', { ascending: true })
-        .limit(10);
+      const { data: expiring } = await repo.fetchInvitationsExpiringSoon(supabase, tenantId, nowIso, in48h);
       if (expiring && expiring.length > 0) {
         insights.push({
           natural_key: 'invitations_expiring_48h',
@@ -74,13 +66,7 @@ export const usersLifecycleScanner: AdminScanner = {
 
     // 2. Invitations aging — created > 7 days ago, still pending
     try {
-      const { count } = await supabase
-        .from('tenant_invitations')
-        .select('id', { count: 'exact', head: true })
-        .eq('tenant_id', tenantId)
-        .is('accepted_at', null)
-        .is('revoked_at', null)
-        .lt('created_at', d7);
+      const { count } = await repo.countInvitationsAging(supabase, tenantId, d7);
       if (count !== null && count >= 3) {
         insights.push({
           natural_key: 'invitations_aging_7d',
@@ -104,17 +90,8 @@ export const usersLifecycleScanner: AdminScanner = {
     // 3. Signup velocity drop — last 7d vs prior 7d
     try {
       const [last7, prior7] = await Promise.all([
-        supabase
-          .from('user_tenants')
-          .select('id', { count: 'exact', head: true })
-          .eq('tenant_id', tenantId)
-          .gte('created_at', d7),
-        supabase
-          .from('user_tenants')
-          .select('id', { count: 'exact', head: true })
-          .eq('tenant_id', tenantId)
-          .gte('created_at', d14)
-          .lt('created_at', d7),
+        repo.countUserTenantsSince(supabase, tenantId, d7),
+        repo.countUserTenantsBetween(supabase, tenantId, d14, d7),
       ]);
       const last = last7.count ?? 0;
       const prior = prior7.count ?? 0;
@@ -142,22 +119,14 @@ export const usersLifecycleScanner: AdminScanner = {
     // 4. Verification bottleneck — recent tenant members where email_confirmed_at
     // is null on the auth.users record. We sample up to 100 recent joins.
     try {
-      const { data: recentMembers } = await supabase
-        .from('user_tenants')
-        .select('user_id, created_at')
-        .eq('tenant_id', tenantId)
-        .gte('created_at', d7)
-        .limit(100);
+      const { data: recentMembers } = await repo.fetchRecentTenantMembers(supabase, tenantId, d7);
       if (recentMembers && recentMembers.length >= 5) {
         const userIds = recentMembers.map((m: { user_id: string }) => m.user_id);
         // auth.users read requires service role; this is the service-role client.
         // Using a raw fetch via the REST API since supabase-js's schema("auth") path
         // isn't universally available; fall back to app_users email_verified_at if
         // that column exists. We try app_users first (safer RLS).
-        const { data: verifiedRows } = await supabase
-          .from('app_users')
-          .select('user_id, email_verified_at')
-          .in('user_id', userIds);
+        const { data: verifiedRows } = await repo.fetchAppUsersEmailVerification(supabase, userIds);
         if (verifiedRows && verifiedRows.length > 0) {
           const verified = verifiedRows.filter((r: { email_verified_at: string | null }) => !!r.email_verified_at).length;
           const verifiedPct = Math.round((verified / recentMembers.length) * 100);

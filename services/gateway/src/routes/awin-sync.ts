@@ -12,6 +12,7 @@ import { getSupabase } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth-supabase-jwt';
 import { resolveAwinConfig, syncAwinProgrammes } from '../services/awin-sync';
 import { resolveAwinTxConfig, creditAwinConversions } from '../services/awin-conversions';
+import * as repo from './awin-sync-repository';
 
 const router = Router();
 router.use(requireAuth as any);
@@ -28,7 +29,7 @@ router.post('/sync', async (req: Request, res: Response) => {
   try {
     const result = await syncAwinProgrammes(supabase, cfg);
     try {
-      await supabase.from('oasis_events').insert({
+      await repo.insertAwinSyncOasisEvent(supabase, {
         id: randomUUID(), service: 'vcaop', source: 'vcaop',
         type: 'vcaop.awin.synced', topic: 'vcaop.awin.synced',
         status: 'success', message: `awin sync ${result.upserted}/${result.fetched} programmes`,
@@ -53,7 +54,7 @@ router.post('/conversions/sync', async (req: Request, res: Response) => {
   try {
     const result = await creditAwinConversions(supabase, cfg);
     try {
-      await supabase.from('oasis_events').insert({
+      await repo.insertAwinSyncOasisEvent(supabase, {
         id: randomUUID(), service: 'vcaop', source: 'vcaop',
         topic: 'vcaop.awin.conversions_synced',
         status: 'success', message: `awin conversions ${result.credited} credited / ${result.attributed} attributed / ${result.fetched} pulled`,

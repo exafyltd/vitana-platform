@@ -24,6 +24,7 @@ import {
   normaliseMatchState,
   type LatestMatchObservation,
 } from './match-journey-derivation';
+import * as repo from './match-journey-fetcher-repository';
 
 export interface MatchJourneyFetchResult {
   latestMatch: LatestMatchObservation | null;
@@ -88,11 +89,7 @@ export function createSupabaseMatchJourneyFetcher(
       // ----- user_id → vitana_id (same join the matchmaker uses) -----
       let vitanaId: string | null = null;
       try {
-        const { data, error } = await sb
-          .from('profiles')
-          .select('vitana_id')
-          .eq('user_id', args.userId)
-          .maybeSingle();
+        const { data, error } = await repo.fetchVitanaIdForUser(sb, args.userId);
         if (error) {
           health.profiles = { ok: false, reason: error.message };
         } else {
@@ -111,14 +108,7 @@ export function createSupabaseMatchJourneyFetcher(
         health.intent_matches = { ok: true };
       } else {
         try {
-          const { data, error } = await sb
-            .from('intent_matches')
-            .select('match_id, intent_a_id, state, state_changed_at, created_at')
-            .eq('vitana_id_a', vitanaId)
-            .order('state_changed_at', { ascending: false, nullsFirst: false })
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
+          const { data, error } = await repo.fetchLatestIntentMatch(sb, vitanaId);
           if (error) {
             health.intent_matches = { ok: false, reason: error.message };
           } else {

@@ -19,6 +19,10 @@ jest.mock('../../src/lib/supabase', () => ({
   getSupabase: jest.fn(),
 }));
 jest.mock('../../src/services/social-memory/social-memory-repository', () => ({
+  // fetchInboxMessages is left as the REAL implementation (a thin
+  // sb.from('chat_messages')... wrapper, VTID-03702 B1 seam) so the
+  // fakeChatSupabase-based assertions below keep exercising it for real.
+  ...jest.requireActual('../../src/services/social-memory/social-memory-repository'),
   fetchExclusions: jest.fn(),
   fetchFollowEdges: jest.fn(),
   fetchRecentMessageContacts: jest.fn(),

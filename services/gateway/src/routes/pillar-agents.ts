@@ -16,6 +16,7 @@ import { Router, Response } from 'express';
 import { requireAuth, requireExafyAdmin, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { getSupabase } from '../lib/supabase';
 import { runPillarAgentsForUser, buildAllAgents } from '../services/pillar-agents/orchestrator';
+import * as repo from './pillar-agents-repository';
 
 const router = Router();
 
@@ -80,12 +81,7 @@ router.get('/outputs', requireAuth, async (req: AuthenticatedRequest, res: Respo
     || new Date().toISOString().slice(0, 10);
 
   try {
-    const { data, error } = await supabase
-      .from('vitana_pillar_agent_outputs')
-      .select('pillar, date, subscore_baseline, subscore_completions, subscore_data, subscore_streak, agent_version, computed_at, outputs_jsonb')
-      .eq('user_id', userId)
-      .eq('date', date)
-      .order('pillar', { ascending: true });
+    const { data, error } = await repo.fetchPillarAgentOutputsForUserDate(supabase, userId, date);
     if (error) {
       return res.status(400).json({ ok: false, error: error.message });
     }
@@ -101,11 +97,7 @@ router.get('/admin/outputs', requireAuth, requireExafyAdmin, async (req: Authent
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
   const limit = Math.min(100, Number(req.query.limit ?? 20));
   try {
-    const { data, error } = await supabase
-      .from('vitana_pillar_agent_outputs')
-      .select('user_id, pillar, date, subscore_baseline, subscore_completions, subscore_data, subscore_streak, agent_version, computed_at')
-      .order('computed_at', { ascending: false })
-      .limit(limit);
+    const { data, error } = await repo.fetchRecentPillarAgentOutputsAdmin(supabase, limit);
     if (error) return res.status(400).json({ ok: false, error: error.message });
     return res.status(200).json({ ok: true, outputs: data ?? [] });
   } catch (err: any) {

@@ -24,6 +24,7 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { emitOasisEvent } from './oasis-event-service';
+import * as repo from './d45-predictive-risk-forecasting-engine-repository';
 import {
   WindowType,
   ForecastDomain,
@@ -152,10 +153,7 @@ async function getClientWithContext(authToken?: string): Promise<{
 
   // Bootstrap dev context if needed
   if (useDevIdentity) {
-    const { error: bootstrapError } = await supabase.rpc('dev_bootstrap_request_context', {
-      p_tenant_id: DEV_IDENTITY.TENANT_ID,
-      p_active_role: 'developer'
-    });
+    const { error: bootstrapError } = await repo.devBootstrapRequestContext(supabase, DEV_IDENTITY.TENANT_ID, 'developer');
     if (bootstrapError) {
       console.warn(`${LOG_PREFIX} Bootstrap context failed (non-fatal):`, bootstrapError.message);
     }
@@ -555,11 +553,7 @@ export async function computeForecast(
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - request.historical_days);
 
-    const { data: dataPoints, error: dpError } = await supabase.rpc('d43_get_data_points', {
-      p_domains: null,
-      p_since: cutoffDate.toISOString(),
-      p_limit: 1000
-    });
+    const { data: dataPoints, error: dpError } = await repo.fetchD43DataPointsForForecast(supabase, null, cutoffDate.toISOString(), 1000);
 
     if (dpError) {
       console.warn(`${LOG_PREFIX} Failed to fetch D43 data points:`, dpError.message);
@@ -649,9 +643,7 @@ export async function computeForecast(
     const allWindows = [...riskWindows, ...opportunityWindows];
     for (const window of allWindows) {
       try {
-        await supabase.rpc('d45_store_window', {
-          p_window: window
-        });
+        await repo.storeD45Window(supabase, window);
       } catch (storeErr) {
         console.warn(`${LOG_PREFIX} Failed to store window:`, storeErr);
       }
@@ -749,7 +741,7 @@ export async function getWindows(
       return { ok: false, error: clientError || 'SERVICE_UNAVAILABLE' };
     }
 
-    const { data, error } = await supabase.rpc('d45_get_windows', {
+    const { data, error } = await repo.fetchD45Windows(supabase, {
       p_window_types: request.window_types || null,
       p_domains: request.domains || null,
       p_status: request.status || null,
@@ -804,9 +796,7 @@ export async function getWindowDetails(
       return { ok: false, error: clientError || 'SERVICE_UNAVAILABLE' };
     }
 
-    const { data, error } = await supabase.rpc('d45_get_window_details', {
-      p_window_id: windowId
-    });
+    const { data, error } = await repo.fetchD45WindowDetails(supabase, windowId);
 
     if (error) {
       console.error(`${LOG_PREFIX} RPC error (get_window_details):`, error);
@@ -842,11 +832,7 @@ export async function acknowledgeWindow(
       return { ok: false, error: clientError || 'SERVICE_UNAVAILABLE' };
     }
 
-    const { data, error } = await supabase.rpc('d45_acknowledge_window', {
-      p_window_id: request.window_id,
-      p_feedback: request.feedback || null,
-      p_notes: request.notes || null
-    });
+    const { data, error } = await repo.acknowledgeD45Window(supabase, request.window_id, request.feedback || null, request.notes || null);
 
     if (error) {
       console.error(`${LOG_PREFIX} RPC error (acknowledge_window):`, error);
@@ -893,10 +879,7 @@ export async function invalidateWindow(
       return { ok: false, error: clientError || 'SERVICE_UNAVAILABLE' };
     }
 
-    const { error } = await supabase.rpc('d45_invalidate_window', {
-      p_window_id: windowId,
-      p_reason: reason
-    });
+    const { error } = await repo.invalidateD45Window(supabase, windowId, reason);
 
     if (error) {
       console.error(`${LOG_PREFIX} RPC error (invalidate_window):`, error);

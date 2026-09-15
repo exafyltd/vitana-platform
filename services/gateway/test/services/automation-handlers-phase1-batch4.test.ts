@@ -133,6 +133,25 @@ describe('runFriendsChallengeSocialStreak (AP-0511)', () => {
     expect(notify).not.toHaveBeenCalled();
     expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
   });
+
+  it('skips (does not re-nudge within cooldown) when fetchRecentStreakNudge errors, and logs it', async () => {
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const supabase = makeFakeSupabase({
+      user_diary_streak: [
+        { data: { current_streak_days: 5, last_day: new Date().toISOString().slice(0, 10) }, error: null },
+        { data: { current_streak_days: 4, last_day: new Date().toISOString().slice(0, 10) }, error: null },
+      ],
+      relationship_edges: [{ data: [{ target_id: 'f1' }], error: null }],
+      user_notifications: [{ data: null, error: { message: 'db timeout' } }],
+    });
+    const { ctx, notify } = makeCtx(supabase, {}, [{ user_id: 'u1', active_role: 'community' }]);
+    const handler = getHandler('runFriendsChallengeSocialStreak')!;
+    const result = await handler(ctx);
+    expect(notify).not.toHaveBeenCalled();
+    expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('fetchRecentStreakNudge failed'));
+    consoleErrorSpy.mockRestore();
+  });
 });
 
 describe('runDormantUserReEngagement (AP-0503)', () => {
@@ -190,6 +209,22 @@ describe('runCommunityWellnessEventSuggestion (AP-0605)', () => {
     const result = await handler(ctx);
     expect(notify).not.toHaveBeenCalled();
     expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
+  });
+
+  it('skips (does not re-suggest within cooldown) when fetchRecentAutomationSuggestion errors, and logs it', async () => {
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const supabase = makeFakeSupabase({
+      global_community_events: [{ data: [{ id: 'e1', title: 'Sunrise Yoga', start_time: new Date().toISOString() }], error: null }],
+      global_event_participants: [{ data: [], error: null }],
+      user_notifications: [{ data: null, error: { message: 'db timeout' } }],
+    });
+    const { ctx, notify } = makeCtx(supabase, {}, [{ user_id: 'u1', active_role: 'community' }]);
+    const handler = getHandler('runCommunityWellnessEventSuggestion')!;
+    const result = await handler(ctx);
+    expect(notify).not.toHaveBeenCalled();
+    expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('fetchRecentAutomationSuggestion failed'));
+    consoleErrorSpy.mockRestore();
   });
 });
 

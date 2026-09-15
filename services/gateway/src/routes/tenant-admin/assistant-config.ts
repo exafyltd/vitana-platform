@@ -22,6 +22,7 @@ import {
   upsertTenantAssistantConfig,
 } from '../../services/ai-personality-service';
 import { getSupabase } from '../../lib/supabase';
+import * as repo from './assistant-config-repository';
 
 const router = Router({ mergeParams: true });
 
@@ -135,11 +136,7 @@ router.delete('/:surfaceKey', requireTenantAdmin, async (req: AuthenticatedReque
     const supabase = getSupabase();
     if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
-    await supabase
-      .from('tenant_assistant_config')
-      .delete()
-      .eq('tenant_id', tenantId)
-      .eq('surface_key', surfaceKey);
+    await repo.deleteTenantAssistantConfig(supabase, tenantId, surfaceKey);
 
     return res.json({ ok: true, message: `Tenant override removed for ${surfaceKey}. Now using global config.` });
   } catch (err: any) {

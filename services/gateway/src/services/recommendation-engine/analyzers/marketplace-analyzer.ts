@@ -76,6 +76,7 @@ interface ProductRow extends FilterableProduct {
 // truth is `decision_policy` rows under `ranker.marketplace.*`.
 import { getPolicyResolver } from '../../decision-contract/policy-resolver';
 import { POLICY_KEYS } from '../../decision-contract/policy-keys';
+import * as repo from './marketplace-analyzer-repository';
 
 interface MarketplaceWeights {
   topPicksPerUser: number;
@@ -117,12 +118,7 @@ const PRODUCT_CANDIDATE_LIMIT = 100;
 async function fetchConditionMapping(condition_key: string): Promise<ConditionMapping | null> {
   const supabase = getSupabase();
   if (!supabase) return null;
-  const { data, error } = await supabase
-    .from('condition_product_mappings')
-    .select('condition_key, recommended_ingredients, recommended_health_goals, contraindicated_ingredients')
-    .eq('condition_key', condition_key)
-    .eq('is_active', true)
-    .maybeSingle();
+  const { data, error } = await repo.fetchActiveConditionProductMapping(supabase, condition_key);
   if (error || !data) return null;
   return {
     condition_key: data.condition_key,
@@ -141,13 +137,7 @@ async function fetchCandidateProducts(
   const supabase = getSupabase();
   if (!supabase) return [];
 
-  const query = supabase
-    .from('products')
-    .select(
-      'id, title, merchant_id, price_cents, currency, rating, origin_country, origin_region, health_goals, ingredients_primary, dietary_tags, contains_allergens, contraindicated_with_conditions, contraindicated_with_medications, ships_to_countries, ships_to_regions, excluded_from_regions'
-    )
-    .eq('is_active', true)
-    .limit(getMarketplaceWeights().productCandidateLimit);
+  const query = repo.buildCandidateProductsQuery(supabase, getMarketplaceWeights().productCandidateLimit);
 
   // Narrow by mapping ingredients if available — via GIN-indexed ingredients_primary
   if (mapping?.recommended_ingredients.length) {
@@ -309,11 +299,7 @@ export async function analyzeMarketplace(opts: {
   // Resolve user list — if not specified, pull users that have conditions set
   let userIds: string[] = opts.user_ids ?? [];
   if (userIds.length === 0) {
-    const { data } = await supabase
-      .from('user_limitations')
-      .select('user_id')
-      .or('contraindications.neq.{},allergies.neq.{}')
-      .limit(50);
+    const { data } = await repo.fetchUsersWithLimitations(supabase, 50);
     userIds = (data ?? []).map((r) => r.user_id as string);
   }
 

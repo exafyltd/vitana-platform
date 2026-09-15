@@ -21,7 +21,10 @@ registerWalletPaymentsHandlers();
 
 const SRC = path.join(__dirname, '..', '..', 'src', 'services', 'automation-handlers', 'wallet-payments.ts');
 
-function makeFakeSupabase(resultsByTable: Record<string, Array<{ data?: any; count?: number; error?: any }>>) {
+function makeFakeSupabase(
+  resultsByTable: Record<string, Array<{ data?: any; count?: number; error?: any }>>,
+  rpcResults: Record<string, { data?: any; error?: any }> = {},
+) {
   const cursors: Record<string, number> = {};
   return {
     from(table: string) {
@@ -49,6 +52,9 @@ function makeFakeSupabase(resultsByTable: Record<string, Array<{ data?: any; cou
         then: (resolve: any) => Promise.resolve(result).then(resolve),
       };
       return chain;
+    },
+    rpc(name: string) {
+      return Promise.resolve(rpcResults[name] ?? { data: null, error: null });
     },
   };
 }
@@ -132,6 +138,63 @@ describe('runSubscriptionExpiryWarning (AP-0704)', () => {
     expect(notify).not.toHaveBeenCalled();
     expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
   });
+
+  it('sends zero warnings and logs loudly when fetchExpiringSubscriptions errors, instead of treating the tenant as having no expiring subscriptions', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const supabase = makeFakeSupabase({
+      user_subscriptions: [{ data: null, error: { message: 'connection reset' } }],
+    });
+    const { ctx, notify } = makeCtx(supabase);
+    const handler = getHandler('runSubscriptionExpiryWarning')!;
+    const result = await handler(ctx);
+    expect(notify).not.toHaveBeenCalled();
+    expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('fetchExpiringSubscriptions failed'));
+    errorSpy.mockRestore();
+  });
+
+  it('skips a user (does not re-warn) when the cooldown check errors, instead of failing open', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const inTwoDays = new Date(Date.now() + 2 * 86_400_000).toISOString();
+    const supabase = makeFakeSupabase({
+      user_subscriptions: [{ data: [{ user_id: 'u1', plan_key: 'pro', current_period_end: inTwoDays }], error: null }],
+      user_notifications: [{ data: null, error: { message: 'connection reset' } }],
+    });
+    const { ctx, notify } = makeCtx(supabase);
+    const handler = getHandler('runSubscriptionExpiryWarning')!;
+    const result = await handler(ctx);
+    expect(notify).not.toHaveBeenCalled();
+    expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('fetchRecentExpiryWarning failed'));
+    errorSpy.mockRestore();
+  });
+});
+
+describe('runCreatorStripeOnboarding (AP-0706)', () => {
+  it('does not send a false "already onboarded" or a false onboarding nudge when fetchStripeAccountStatus errors', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const supabase = makeFakeSupabase({
+      app_users: [{ data: null, error: { message: 'connection reset' } }],
+    });
+    const { ctx, notify } = makeCtx(supabase, { user_id: 'u1' });
+    const handler = getHandler('runCreatorStripeOnboarding')!;
+    const result = await handler(ctx);
+    expect(notify).not.toHaveBeenCalled();
+    expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('fetchStripeAccountStatus failed'));
+    errorSpy.mockRestore();
+  });
+
+  it('nudges a creator who has no Stripe account yet, on a successful lookup', async () => {
+    const supabase = makeFakeSupabase({
+      app_users: [{ data: { stripe_account_id: null, stripe_charges_enabled: false }, error: null }],
+    });
+    const { ctx, notify } = makeCtx(supabase, { user_id: 'u1' });
+    const handler = getHandler('runCreatorStripeOnboarding')!;
+    const result = await handler(ctx);
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ usersAffected: 1, actionsTaken: 1 });
+  });
 });
 
 describe('runSpendingInsights (AP-0712)', () => {
@@ -153,6 +216,79 @@ describe('runSpendingInsights (AP-0712)', () => {
     const { ctx, notify } = makeCtx(supabase, {}, [{ user_id: 'u1', active_role: 'community' }]);
     const handler = getHandler('runSpendingInsights')!;
     const result = await handler(ctx);
+    expect(notify).not.toHaveBeenCalled();
+    expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
+  });
+});
+
+describe('runWalletCreditReward (AP-0708) — credit_wallet error handling', () => {
+  // 2026-08-29 fix (AURORA-B3-RPC-PARITY-INVENTORY.md addendum): credit_wallet
+  // is a confirmed-dead RPC. supabase-js's .rpc() resolves normally with an
+  // {error} field on a Postgres-level failure rather than throwing, so this
+  // handler used to silently report a successful action even when nothing
+  // was credited. These tests pin the corrected, honest behavior.
+
+  it('on the RPC returning {error}: logs it via ctx.log, does not notify or emit, and reports zero actions', async () => {
+    const supabase = makeFakeSupabase({}, {
+      credit_wallet: { data: null, error: { message: 'function credit_wallet(...) does not exist' } },
+    });
+    const { ctx, notify } = makeCtx(supabase, { user_id: 'u1', reward_type: 'product_review' });
+    const handler = getHandler('runWalletCreditReward')!;
+
+    const result = await handler(ctx);
+
+    expect(ctx.log).toHaveBeenCalledWith(
+      expect.stringContaining('credit_wallet RPC returned an error for product_review/u1'),
+    );
+    expect(ctx.log).toHaveBeenCalledWith(expect.stringContaining('function credit_wallet(...) does not exist'));
+    expect(notify).not.toHaveBeenCalled();
+    expect(ctx.emitEvent).not.toHaveBeenCalled();
+    // The bug this fix closes: this used to unconditionally return
+    // { usersAffected: 1, actionsTaken: 1 } regardless of whether the
+    // credit actually happened.
+    expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
+  });
+
+  it('on a duplicate reward: logs it and reports zero actions (unchanged behavior)', async () => {
+    const supabase = makeFakeSupabase({}, {
+      credit_wallet: { data: { duplicate: true }, error: null },
+    });
+    const { ctx, notify } = makeCtx(supabase, { user_id: 'u1', reward_type: 'product_review' });
+    const handler = getHandler('runWalletCreditReward')!;
+
+    const result = await handler(ctx);
+
+    expect(ctx.log).toHaveBeenCalledWith(expect.stringContaining('Duplicate reward blocked: product_review for u1'));
+    expect(notify).not.toHaveBeenCalled();
+    expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
+  });
+
+  it('on a successful credit: notifies, emits the event, and reports one action', async () => {
+    const supabase = makeFakeSupabase({}, {
+      credit_wallet: { data: { ok: true, balance: 125 }, error: null },
+    });
+    const { ctx, notify } = makeCtx(supabase, { user_id: 'u1', reward_type: 'product_review' });
+    const handler = getHandler('runWalletCreditReward')!;
+
+    const result = await handler(ctx);
+
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(ctx.emitEvent).toHaveBeenCalledWith(
+      'autopilot.wallet.credits_awarded',
+      expect.objectContaining({ user_id: 'u1', reward_type: 'product_review', amount: 25, balance: 125 }),
+    );
+    expect(result).toEqual({ usersAffected: 1, actionsTaken: 1 });
+  });
+
+  it('returns zero actions immediately for an unknown reward_type, without calling credit_wallet', async () => {
+    const supabase = makeFakeSupabase({}, {
+      credit_wallet: { data: { ok: true, balance: 1 }, error: null },
+    });
+    const { ctx, notify } = makeCtx(supabase, { user_id: 'u1', reward_type: 'not_a_real_reward' });
+    const handler = getHandler('runWalletCreditReward')!;
+
+    const result = await handler(ctx);
+
     expect(notify).not.toHaveBeenCalled();
     expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
   });
