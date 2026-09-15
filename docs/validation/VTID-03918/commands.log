@@ -1,0 +1,76 @@
+# VTID-03918 — commands run during this change
+
+## Investigation
+
+Read the full Web Speech API dictation lifecycle in
+services/gateway/src/frontend/command-hub/app.js:
+- operatorDictationSupported() / stopOperatorDictation() / startOperatorDictation()
+- the mic button's onclick wiring (~line 26263-26284)
+- every `if (state.chatDictationActive) stopOperatorDictation();` call site
+  (sendChatMessage, backdrop close, X close)
+- confirmed services/gateway/src/routes/command-hub.ts's CSP connect-src is
+  not the cause: Chrome's Web Speech API network call is browser-process
+  mediated, not a page-level fetch/XHR/WebSocket subject to page CSP, and
+  no CSP header changed in this diff anyway.
+- confirmed VTID-03910/VTID-03911 touched only styles.css — zero overlap
+  with app.js's dictation code, ruling those changes out as the cause of
+  this specific regression report.
+
+Root cause: `recognition.start()` was called unguarded, with the active
+state/class already applied beforehand — a synchronous throw (or any async
+onerror code) left the mic button stuck red with no live recognition and
+no visible explanation.
+
+## TypeScript
+$ cd services/gateway && npx tsc --noEmit -p tsconfig.json
+(clean, no output — see outputs/tsc-noemit.txt)
+
+Note: this run also required `npm install` first — the just-merged
+origin/main (VTID-03916 and the AWS/Aurora cutover branch merge) added
+@aws-sdk/s3-request-presigner and @aws-sdk/client-cognito-identity-provider
+to package.json, which were not yet present in node_modules in this
+session's checkout. Unrelated to this VTID's own change; installed once,
+tsc is clean after.
+
+## New-suite tests
+$ cd services/gateway && npx jest test/vtid-03906-08-operator-scroll-mic-fullscreen.test.ts --silent
+Test Suites: 1 passed, 1 total
+Tests:       29 passed, 29 total
+(full output: outputs/jest-new-suite.txt)
+
+## Full gateway suite (regression check)
+$ cd services/gateway && npx jest --silent
+Test Suites: 1 skipped, 900 passed, 900 of 901 total
+Tests:       29 skipped, 6 todo, 14952 passed, 14987 total
+0 failures.
+(tail: outputs/jest-full-suite.txt)
+
+## Build Gate (gateway_backend profile)
+$ cd services/gateway && npm run build
+exit 0 — tsc, copy-frontend, copy-data all succeeded
+(full output: outputs/npm-build.txt)
+
+## CSP Governance Gate — local pre-flight
+$ git diff origin/main -- 'services/gateway/src/frontend/' > /tmp/csp_diff_vtid03918.txt
+$ node scripts/ci/validator-path-guard.cjs --csp-added-lines /tmp/csp_diff_vtid03918.txt
+No CSP pattern hits in added lines.
+
+## Command Hub Ownership Guard — local pre-flight
+Added VTID-03918 to scripts/ci/command-hub-ownership-guard.js's
+ALLOWED_VTID_PATTERN (same pattern as every prior VTID in this file).
+
+## Branch sync
+Local branch claude/youthful-mccarthy-9o56j5 was behind origin/main (which
+had moved to VTID-03916 + an unrelated merged AWS/Aurora cutover branch
+after PR #3317 merged). Stashed this VTID's uncommitted work, `git reset
+--hard origin/main`, popped the stash back cleanly (auto-merge, no
+conflicts), then re-ran the full verification above against the rebased
+tree.
+
+## Path Ownership Guard (validator-path-guard.cjs) — local pre-flight
+$ git diff --name-only origin/main...HEAD > /tmp/changed_files_vtid03918.txt
+$ node scripts/ci/validator-path-guard.cjs /tmp/changed_files_vtid03918.txt gateway_backend /tmp/pr_body_vtid03918.txt
+(gateway_backend allows services/gateway/src/** — including
+frontend/command-hub/** — plus services/gateway/test/** and
+docs/validation/**; scripts/ci/*.js is outside this gate's REMIT and is
+reported NOT JUDGED rather than rejected, per VTID-03696.)

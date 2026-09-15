@@ -25911,6 +25911,11 @@ function startOperatorDictation(textarea, micBtn) {
         console.warn('[VTID-03907] Speech recognition error:', event.error);
         stopOperatorDictation();
         if (micBtn) micBtn.classList.remove('chat-mic-btn--active');
+        // VTID-03918: surface WHY dictation stopped instead of leaving the
+        // user with a silently-dead mic — 'not-allowed'/'service-not-allowed'
+        // (mic permission denied/blocked) and 'audio-capture' (no mic device)
+        // fire asynchronously here with no other visible signal at all.
+        showToast(operatorDictationErrorMessage(event.error), 'error');
     };
 
     recognition.onend = function () {
@@ -25919,10 +25924,43 @@ function startOperatorDictation(textarea, micBtn) {
         if (micBtn) micBtn.classList.remove('chat-mic-btn--active');
     };
 
+    // VTID-03918: recognition.start() can throw synchronously (e.g. a
+    // leftover/stale recognition session in InvalidStateError). Previously
+    // this call was unguarded AFTER the active class/state were already
+    // set, so a thrown start() left the mic button permanently red with no
+    // active recognition behind it — exactly "turns red, never listens,
+    // only a second manual press clears it." Set active state only once
+    // start() has actually succeeded, and clean up + inform the user if it
+    // hasn't.
+    try {
+        recognition.start();
+    } catch (e) {
+        console.warn('[VTID-03907] Speech recognition failed to start:', e);
+        showToast('Could not start voice dictation. Please try again.', 'error');
+        return;
+    }
+
     operatorSpeechRecognition = recognition;
     state.chatDictationActive = true;
     if (micBtn) micBtn.classList.add('chat-mic-btn--active');
-    recognition.start();
+}
+
+// VTID-03918: human-readable reason for a SpeechRecognition error code, so
+// a failed dictation attempt is explained instead of silently going dark.
+function operatorDictationErrorMessage(errorCode) {
+    switch (errorCode) {
+        case 'not-allowed':
+        case 'service-not-allowed':
+            return 'Voice dictation needs microphone permission. Check your browser\'s site settings and try again.';
+        case 'audio-capture':
+            return 'No microphone was found. Check your device and try again.';
+        case 'network':
+            return 'Voice dictation lost its network connection. Please try again.';
+        case 'no-speech':
+            return 'No speech detected. Voice dictation stopped.';
+        default:
+            return 'Voice dictation stopped (' + (errorCode || 'unknown error') + ').';
+    }
 }
 
 function renderOperatorOverlay() {
