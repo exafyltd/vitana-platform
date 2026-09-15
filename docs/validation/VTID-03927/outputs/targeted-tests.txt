@@ -1,0 +1,133 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.log
+    [SSE] Client disconnected
+
+      at IncomingMessage.<anonymous> (src/routes/events.ts:1015:13)
+
+  console.log
+    [SSE] Client disconnected
+
+      at IncomingMessage.<anonymous> (src/routes/events.ts:1015:13)
+
+  console.log
+    [SSE] Client disconnected
+
+      at IncomingMessage.<anonymous> (src/routes/events.ts:1015:13)
+
+PASS test/events-stream-channel-filter.test.ts
+  VTID-03927: GET /api/v1/events/stream honors ?channel=
+    ✓ translates channel=operator into surface=eq.operator on the oasis_events query (70 ms)
+    ✓ omits the surface filter entirely when no channel is passed (63 ms)
+    ✓ still applies vtid/topic filters alongside channel (62 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/stage-mapping.test.ts
+  Stage Timeline Status Mapping (VTID-0530)
+    defaultStageTimeline
+      ✓ should return 4 stages all with PENDING status (2 ms)
+    buildStageTimeline
+      ✓ should return all PENDING when no events exist (1 ms)
+      ✓ should return all PENDING for events with unmappable content (1 ms)
+      ✓ should infer stage from event content when task_stage is null (1 ms)
+      Happy path: all stages SUCCESS
+        ✓ should mark all 4 stages as SUCCESS when all have success events (1 ms)
+        ✓ should detect SUCCESS from kind field patterns (1 ms)
+        ✓ should detect SUCCESS from title field patterns (1 ms)
+      Error path: stage ERROR blocks later stages
+        ✓ should mark WORKER as ERROR and later stages as PENDING (1 ms)
+        ✓ should detect ERROR from status=failure
+        ✓ should detect ERROR from title containing fail/error/exception (1 ms)
+        ✓ should prioritize ERROR over SUCCESS (error after success)
+      In-progress path: mixed statuses
+        ✓ should show PLANNER SUCCESS, WORKER RUNNING, others PENDING (1 ms)
+        ✓ should detect RUNNING from status=in_progress
+        ✓ should detect RUNNING from kind patterns (started, processing, executing)
+        ✓ should mark stage as RUNNING if events exist but no completion/error
+      VTID filtering
+        ✓ should filter events by VTID when specified (1 ms)
+      Timestamp handling
+        ✓ should use earliest event timestamp as startedAt
+        ✓ should capture errorAt timestamp for ERROR status (1 ms)
+        ✓ should use the LATEST completion event, not the first, when a stage has multiple success events (2 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.warn
+    [VTID-03902] Query for plannable tasks failed: 500 - {"error":"boom"}
+
+      91 |     if (!resp.ok) {
+      92 |       const text = await resp.text();
+    > 93 |       console.warn(`[VTID-03902] Query for plannable tasks failed: ${resp.status} - ${text}`);
+         |               ^
+      94 |       return [];
+      95 |     }
+      96 |
+
+      at findPlannableOperatorTasks (src/services/operator-planner.ts:93:15)
+      at Object.<anonymous> (test/operator-planner.test.ts:92:7)
+
+  console.warn
+    [VTID-03902] Query for plannable tasks errored: network down
+
+       97 |     return (await resp.json()) as PlannableTask[];
+       98 |   } catch (error: any) {
+    >  99 |     console.warn(`[VTID-03902] Query for plannable tasks errored: ${error.message}`);
+          |             ^
+      100 |     return [];
+      101 |   }
+      102 | }
+
+      at findPlannableOperatorTasks (src/services/operator-planner.ts:99:13)
+      at Object.<anonymous> (test/operator-planner.test.ts:97:7)
+
+  console.warn
+    [VTID-03902] Spec generation failed for VTID-04003: llm_failed
+
+      162 |     results.push({ vtid: task.vtid, ok: outcome.ok, error: outcome.error });
+      163 |     if (!outcome.ok) {
+    > 164 |       console.warn(`[VTID-03902] Spec generation failed for ${task.vtid}: ${outcome.error}`);
+          |               ^
+      165 |     }
+      166 |   }
+      167 |
+
+      at runOperatorPlannerOnce (src/services/operator-planner.ts:164:15)
+      at Object.<anonymous> (test/operator-planner.test.ts:162:23)
+
+PASS test/operator-planner.test.ts
+  Operator Planner (VTID-03902)
+    isOperatorPlannerEnabled
+      ✓ defaults to disabled (1 ms)
+      ✓ is enabled only by the exact string "true"
+    findPlannableOperatorTasks
+      ✓ queries vtid_ledger scoped to operator-chat, scheduled, missing spec, no prior error (1 ms)
+      ✓ returns [] and logs a warning on a failed query, never throws (4 ms)
+      ✓ returns [] on a network error, never throws (1 ms)
+    generateSpecForTask
+      ✓ calls the existing internal spec-generation endpoint, not a reimplementation (1 ms)
+      ✓ surfaces the error and does not throw when spec generation fails (1 ms)
+    runOperatorPlannerOnce
+      ✓ emits no OASIS event on a quiet sweep (polling is not progress) (1 ms)
+      ✓ generates a spec for each found task and emits one summary event (1 ms)
+      ✓ marks the sweep event as a warning when at least one task fails (1 ms)
+
+Test Suites: 3 passed, 3 total
+Tests:       32 passed, 32 total
+Snapshots:   0 total
+Time:        0.809 s, estimated 1 s
+Ran all test suites matching /test\/events-stream-channel-filter.test.ts|test\/stage-mapping.test.ts|test\/operator-planner.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
