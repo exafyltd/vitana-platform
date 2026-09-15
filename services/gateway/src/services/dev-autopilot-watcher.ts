@@ -25,6 +25,7 @@ import { emitOasisEvent } from './oasis-event-service';
 import { bridgeFailureToSelfHealing, FailureStage } from './dev-autopilot-bridge';
 import { probeEndpoint, isJsonHealthy, resolveProbeTarget } from './self-healing-probe';
 import { applyExecTerminalSideEffects } from './dev-autopilot-execute';
+import { isLlmMergeReviewEnabled, runLlmMergeReview } from './dev-autopilot-llm-review';
 
 const LOG_PREFIX = '[dev-autopilot-watcher]';
 const WATCHER_VTID = 'VTID-DEV-AUTOPILOT';
@@ -572,6 +573,31 @@ export async function ciWatcherTick(): Promise<void> {
       });
       await bridgeFailure(exec.id, 'ci', gate.reason || 'auto-merge declined');
       continue;
+    }
+
+    // VTID-03853: real LLM merge review — see dev-autopilot-llm-review.ts's
+    // header comment for why this exists here specifically (this is the
+    // ONLY gate in the pipeline that a diff's actual content ever passes
+    // through before an autonomous merge). Off by default and fails open on
+    // any infrastructure problem; only a real, parsed "block" verdict stops
+    // the merge.
+    if (isLlmMergeReviewEnabled()) {
+      const review = await runLlmMergeReview({ repo: GITHUB_REPO, prNumber: exec.pr_number as number, vtid: WATCHER_VTID });
+      await emitOasisEvent({
+        vtid: WATCHER_VTID,
+        type: review.passed ? 'dev_autopilot.execution.llm_review_passed' : 'dev_autopilot.execution.llm_review_blocked',
+        source: 'dev-autopilot-watcher',
+        status: review.ok ? (review.passed ? 'success' : 'warning') : 'error',
+        message: `LLM merge review for ${exec.id.slice(0, 8)}: ${review.summary}`,
+        payload: { execution_id: exec.id, pr_url: exec.pr_url, ok: review.ok, passed: review.passed, error: review.error },
+      });
+      if (!review.passed) {
+        await transitionStatus(s, exec.id, 'merging', 'failed', {
+          metadata: { ...(exec.metadata || {}), llm_review_blocked: review.summary },
+        });
+        await bridgeFailure(exec.id, 'ci', `LLM merge review blocked: ${review.summary}`);
+        continue;
+      }
     }
 
     try {

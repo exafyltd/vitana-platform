@@ -1,9 +1,11 @@
 /**
- * Developer Autopilot — Stage B Planning (direct Messages API)
+ * Developer Autopilot — Stage B Planning (routed LLM call)
  *
- * Given a finding (autopilot_recommendations row), calls the Anthropic
- * Messages API with the referenced file content pre-fetched from GitHub
- * and asks Claude to produce a complete plan_markdown in the canonical
+ * Given a finding (autopilot_recommendations row), calls the configured LLM
+ * (via callRoutedLlm() → callViaRouter('planner', ...), i.e. the DB-backed
+ * llm_routing_policy 'planner' stage — not a hardcoded Anthropic-direct call
+ * since VTID-02686) with the referenced file content pre-fetched from GitHub
+ * and asks it to produce a complete plan_markdown in the canonical
  * structure (Context / Target flow / Components / Files / Reused
  * primitives / Implementation order / Verification / Out of scope).
  *
@@ -24,8 +26,17 @@
  * Plan versions are append-only: v1 on first generation; v2+ each time the
  * user submits "Continue planning" feedback. Prior versions stay readable.
  *
- * If ANTHROPIC_API_KEY is missing the service returns a deterministic stub
- * plan so the UI / pipeline can be exercised end-to-end in dev.
+ * VTID-03854: this used to return a deterministic stub plan (buildStubPlan)
+ * whenever ANTHROPIC_API_KEY was unset — checked BEFORE even attempting the
+ * routed call. Since CLAUDE.md §1b records that key as deliberately never
+ * populated in AWS Secrets Manager, that gate was permanently true on the
+ * real deployed gateway: every finding whose worker queue was unavailable
+ * silently got the generic stub template instead of a real plan, in
+ * production, indefinitely. The stub is now an explicit opt-in
+ * (DEV_AUTOPILOT_PLANNING_STUB_ENABLED=true, default off) for exercising the
+ * UI/pipeline without a live LLM call — never an accidental substitute for
+ * one. A real call failure still surfaces as a real, visible
+ * {ok:false,error} — that path was already correct and is unchanged.
  */
 
 import { randomUUID } from 'crypto';
@@ -48,12 +59,17 @@ import { recordShown } from './watcher/feedback';
 const LOG_PREFIX = '[dev-autopilot-planning]';
 const PLAN_VTID = 'VTID-DEV-AUTOPILOT';
 
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
-const ANTHROPIC_BASE = 'https://api.anthropic.com';
-// LLM call timeout. Applies whether we're using the direct Messages API
+// VTID-03854: DEV_AUTOPILOT_PLANNING_STUB_ENABLED replaces the old
+// "ANTHROPIC_API_KEY unset → stub" gate — see callRoutedLlm() and
+// runPlanningSession() below. Default off: a stub plan must be an explicit
+// choice, never an accidental substitute for a real one.
+export function isPlanningStubEnabled(): boolean {
+  return (process.env.DEV_AUTOPILOT_PLANNING_STUB_ENABLED || '').toLowerCase() === 'true';
+}
+// LLM call timeout. Applies whether we're using the routed call
 // path or the worker-queue path.
 //
-//   Direct API:       15-45s typical, 240s was the original guard.
+//   Routed call:      15-45s typical, 240s was the original guard.
 //   Worker queue:     subprocess overhead + larger contexts bring this
 //                     up to ~200-300s in practice (observed 267s on a
 //                     first real call against WSL + busy workstation).
@@ -122,7 +138,7 @@ export interface PlanningResult {
 }
 
 // =============================================================================
-// Anthropic Messages API + GitHub + Supabase helpers
+// Routed LLM call + GitHub + Supabase helpers
 // =============================================================================
 
 interface MessagesResponse {
@@ -132,19 +148,24 @@ interface MessagesResponse {
 }
 
 /**
- * BOOTSTRAP-LLM-ROUTER (Phase D): plan-gen direct-API call now goes through
- * the provider router. The router reads llm_routing_policy.policy.planner
- * and dispatches to the configured provider (default Vertex / gemini-2.5-pro
- * with Anthropic / claude-opus-4-7 fallback). Operators flip providers via
+ * BOOTSTRAP-LLM-ROUTER (Phase D), renamed from callMessagesApi at VTID-03854
+ * (the old name implied a hardcoded call to api.anthropic.com, which this
+ * function has not done since it was first wired to the router): dispatches
+ * through callViaRouter('planner', ...), which reads the DB-backed
+ * llm_routing_policy 'planner' stage and dispatches to whichever provider is
+ * currently configured there (per CLAUDE.md §2b/VTID-03563, that is Bedrock
+ * Claude primary with a DeepSeek fallback as of this writing — never assume
+ * this file's prose over the live policy row). Operators flip providers via
  * the Command Hub dropdown without code edits.
  *
- * This path only fires when the worker queue is unavailable (worker daemon
- * dead, binary missing) — the worker queue path at runPlanningSession()
- * remains the primary, free Claude-subscription route.
+ * This is called whenever the worker queue is unavailable/disabled — see
+ * runPlanningSession() below, which is the ONLY path to a plan when the
+ * worker queue is off (VTID-03854: it no longer short-circuits to a stub
+ * plan just because ANTHROPIC_API_KEY happens to be unset).
  *
  * Return shape preserved so callers don't change.
  */
-async function callMessagesApi(
+async function callRoutedLlm(
   prompt: string,
   vtid?: string | null,
 ): Promise<{ ok: boolean; text?: string; usage?: MessagesResponse['usage']; error?: string }> {
@@ -758,7 +779,7 @@ export function extractFilePaths(markdown: string): string[] {
 }
 
 // =============================================================================
-// Stub plan generator (used when ANTHROPIC_API_KEY is missing)
+// Stub plan generator (used when DEV_AUTOPILOT_PLANNING_STUB_ENABLED=true)
 // =============================================================================
 
 function buildStubPlan(finding: FindingForPlanning, note?: string): string {
@@ -768,7 +789,7 @@ function buildStubPlan(finding: FindingForPlanning, note?: string): string {
   const testFile = file.replace(/\.ts$/, '.test.ts').replace('src/', 'test/');
   const lines = [
     `## Context`,
-    `${finding.summary} Deterministic plan generated without LLM (ANTHROPIC_API_KEY unset in this environment).${note ? ' Reviewer feedback: ' + note : ''}`,
+    `${finding.summary} Deterministic plan generated without LLM (DEV_AUTOPILOT_PLANNING_STUB_ENABLED=true).${note ? ' Reviewer feedback: ' + note : ''}`,
     ``,
     `## Target flow`,
     `Apply the suggested action: ${snap.suggested_action || 'refactor per signal'}. No change to external behavior.`,
@@ -801,7 +822,7 @@ function buildStubPlan(finding: FindingForPlanning, note?: string): string {
 }
 
 // =============================================================================
-// Run a planning session via Anthropic Messages API
+// Run a planning session via the routed LLM call (or the worker queue)
 // =============================================================================
 
 async function runPlanningSession(
@@ -813,8 +834,14 @@ async function runPlanningSession(
 ): Promise<{ ok: boolean; plan_markdown?: string; session_id?: string; error?: string }> {
   const sessionId = `plan_${randomUUID().slice(0, 12)}`;
 
-  if (!ANTHROPIC_API_KEY) {
-    console.warn(`${LOG_PREFIX} ANTHROPIC_API_KEY unset — emitting stub plan for ${finding.id}`);
+  // VTID-03854: this used to gate on `!ANTHROPIC_API_KEY` — permanently true
+  // on the real deployed gateway (CLAUDE.md §1b: that key is deliberately
+  // never populated in AWS Secrets Manager), so every finding whose worker
+  // queue was unavailable silently got the stub template instead of a real
+  // plan. The stub is now an explicit, off-by-default opt-in for exercising
+  // the UI/pipeline without a live call — never an accidental substitute.
+  if (isPlanningStubEnabled()) {
+    console.warn(`${LOG_PREFIX} DEV_AUTOPILOT_PLANNING_STUB_ENABLED=true — emitting stub plan for ${finding.id}`);
     return {
       ok: true,
       plan_markdown: buildStubPlan(finding, feedbackNote),
@@ -898,7 +925,8 @@ async function runPlanningSession(
 
   // Route through the local worker queue when enabled, so the LLM call draws
   // on the Claude subscription instead of the pay-per-token API key. Falls
-  // back to the direct Messages API call when the feature flag is off.
+  // back to the routed LLM call (llm_routing_policy 'planner' stage) when
+  // the feature flag is off.
   let call = isWorkerQueueEnabled()
     ? await runWorkerTask(
         {
@@ -911,19 +939,22 @@ async function runPlanningSession(
         },
         { timeoutMs: MESSAGES_TIMEOUT_MS },
       )
-    : await callMessagesApi(prompt, `VTID-DA-FIND-${finding.id.slice(0, 8)}`);
+    : await callRoutedLlm(prompt, `VTID-DA-FIND-${finding.id.slice(0, 8)}`);
 
   // Auto-fallback for the worker-binary-missing failure: when the worker
   // can't spawn the Claude Code CLI (ENOENT, binary path stale after an
-  // extension update, etc.), retry once via the direct Messages API path.
-  // This is the kind of self-healing the "fully autonomous" goal requires:
-  // detect a known dependency failure and route around it without human
-  // intervention. ANTHROPIC_API_KEY must be set for the fallback to work;
-  // if it's missing, we still surface the failure on self_healing_log.
+  // extension update, etc.), retry once via the routed LLM call. This is
+  // the kind of self-healing the "fully autonomous" goal requires: detect a
+  // known dependency failure and route around it without human intervention.
+  // VTID-03854: no longer gated on ANTHROPIC_API_KEY — callRoutedLlm goes
+  // through llm_routing_policy (Bedrock/DeepSeek/etc), which that key has
+  // nothing to do with; if every configured provider is genuinely
+  // unreachable, the call itself fails and that failure still surfaces on
+  // self_healing_log below, same as before.
   let fallback_used = false;
-  if (!call.ok && isWorkerQueueEnabled() && isWorkerBinaryMissing(call.error) && ANTHROPIC_API_KEY) {
-    console.warn(`${LOG_PREFIX} worker binary missing — falling back to Messages API for ${finding.id}`);
-    call = await callMessagesApi(prompt, `VTID-DA-FIND-${finding.id.slice(0, 8)}`);
+  if (!call.ok && isWorkerQueueEnabled() && isWorkerBinaryMissing(call.error)) {
+    console.warn(`${LOG_PREFIX} worker binary missing — falling back to routed LLM call for ${finding.id}`);
+    call = await callRoutedLlm(prompt, `VTID-DA-FIND-${finding.id.slice(0, 8)}`);
     fallback_used = true;
   }
   const elapsed = Math.round((Date.now() - startedAt) / 1000);
@@ -942,7 +973,7 @@ async function runPlanningSession(
         confidence: 0,
         diagnosis: {
           summary: isBinaryMissing
-            ? 'Worker process cannot spawn Claude Code CLI (binary moved or PATH changed). Restart worker or update binary path. Fallback to Messages API also failed (or ANTHROPIC_API_KEY unset).'
+            ? 'Worker process cannot spawn Claude Code CLI (binary moved or PATH changed). Restart worker or update binary path. Fallback routed LLM call also failed.'
             : `Plan generation failed after ${elapsed}s: ${call.error || 'unknown error'}`,
           finding_id: finding.id,
           finding_title: finding.title,
@@ -965,7 +996,7 @@ async function runPlanningSession(
   }
 
   console.log(
-    `${LOG_PREFIX} plan generated for ${finding.id} in ${elapsed}s via ${isWorkerQueueEnabled() ? 'worker-queue' : 'messages-api'} (${call.usage?.input_tokens || '?'} in / ${call.usage?.output_tokens || '?'} out tokens)`,
+    `${LOG_PREFIX} plan generated for ${finding.id} in ${elapsed}s via ${isWorkerQueueEnabled() ? 'worker-queue' : 'routed-llm'} (${call.usage?.input_tokens || '?'} in / ${call.usage?.output_tokens || '?'} out tokens)`,
   );
 
   return { ok: true, plan_markdown: call.text, session_id: sessionId };
