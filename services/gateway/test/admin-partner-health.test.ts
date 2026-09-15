@@ -1,12 +1,16 @@
 // VTID-03885 — HTTP tests for the Partner Health Test Integration admin portal.
+// VTID-03932 — generalized so a partner org's own staff/professional can use
+// the same routes; auth mock now stands in for requireAuth +
+// requirePartnerHealthAccess (admin-partner-health.ts's own combined gate)
+// instead of the retired requireTenantAdmin.
 //
-// Contract under test (mounted at /api/v1/admin/partner-health,
-// requireTenantAdmin-gated):
-//   - auth: 401 without an identity
-//   - GET /orders: happy path
+// Contract under test (mounted at /api/v1/admin/partner-health):
+//   - auth: 401 without an identity, 403 for a caller with no admin/org access
+//   - GET /orders: happy path (admin); org-scoped filtering (staff/professional)
 //   - PATCH /orders/:id: 400 on result_ready (derived-state guard), 404 not
-//     found, happy path (delegates to recordStatusChange)
-//   - GET /inbox: happy path
+//     found, 403 for an out-of-scope order, happy path (delegates to
+//     recordStatusChange)
+//   - GET /inbox: happy path (admin); org-scoped (staff/professional-excluded)
 //   - GET /candidates/:inboxId: no-merchant-id note, happy path
 //   - POST /inbox/:id/upload-result: 400 missing fields, happy path
 //     (delegates to the adapter + ingestPartnerResult)
@@ -17,14 +21,24 @@ import express from 'express';
 import request from 'supertest';
 
 const ADMIN_USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+const STAFF_USER_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+const PROFESSIONAL_USER_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+const OUTSIDER_USER_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 const TENANT_ID = 'tenant-1';
 
-jest.mock('../src/middleware/require-tenant-admin', () => ({
-  requireTenantAdmin: (req: any, res: any, next: any) => {
-    if (req.headers.authorization !== 'Bearer admin-1') {
-      return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
+jest.mock('../src/middleware/auth-supabase-jwt', () => ({
+  requireAuth: (req: any, res: any, next: any) => {
+    const token = req.headers.authorization;
+    const byToken: Record<string, any> = {
+      'Bearer admin-1': { user_id: ADMIN_USER_ID, tenant_id: TENANT_ID, exafy_admin: true },
+      'Bearer staff-1': { user_id: STAFF_USER_ID, tenant_id: null, exafy_admin: false },
+      'Bearer professional-1': { user_id: PROFESSIONAL_USER_ID, tenant_id: null, exafy_admin: false },
+      'Bearer outsider-1': { user_id: OUTSIDER_USER_ID, tenant_id: null, exafy_admin: false },
+    };
+    if (!token || !byToken[token]) {
+      return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
     }
-    req.identity = { user_id: ADMIN_USER_ID, tenant_id: TENANT_ID };
+    req.identity = byToken[token];
     return next();
   },
 }));
@@ -68,7 +82,7 @@ function makeFakeSupabase() {
       let op = 'select';
       let opArgs: any[] = [];
       const chain: any = {};
-      for (const m of ['eq', 'order', 'limit']) {
+      for (const m of ['eq', 'in', 'order', 'limit']) {
         chain[m] = (...args: any[]) => chain;
       }
       chain.select = (...args: any[]) => { if (op === 'select') opArgs = args; return chain; };
@@ -102,14 +116,22 @@ beforeEach(() => {
 });
 
 describe('admin-partner-health — auth', () => {
-  it('401 without an admin token', async () => {
+  it('401 without any token', async () => {
     const r = await request(makeApp()).get('/api/v1/admin/partner-health/orders');
     expect(r.status).toBe(401);
+  });
+
+  it('403 for an authenticated caller with no admin/partner-org access at all (VTID-03932)', async () => {
+    tableHandlers.partner_organization_members = () => ({ data: [], error: null });
+    const r = await request(makeApp())
+      .get('/api/v1/admin/partner-health/orders')
+      .set('Authorization', 'Bearer outsider-1');
+    expect(r.status).toBe(403);
   });
 });
 
 describe('GET /orders', () => {
-  it('returns orders', async () => {
+  it('returns orders (admin scope, no partner_id filter)', async () => {
     tableHandlers.partner_health_test_orders = () => ({
       data: [{ id: 'order-1', test_name: 'Cholesterol Panel', status: 'processing' }],
       error: null,
@@ -119,6 +141,51 @@ describe('GET /orders', () => {
       .set('Authorization', 'Bearer admin-1');
     expect(r.status).toBe(200);
     expect(r.body.orders).toHaveLength(1);
+  });
+});
+
+describe('GET /orders — org-scoped access (VTID-03932)', () => {
+  it("staff sees any order for their org's linked partner", async () => {
+    tableHandlers.partner_organization_members = () => ({
+      data: [{ partner_organization_id: 'org-a', role: 'staff' }],
+      error: null,
+    });
+    tableHandlers.partner_registry = () => ({
+      data: [{ id: 'partner-a', partner_organization_id: 'org-a' }],
+      error: null,
+    });
+    tableHandlers.partner_health_test_orders = () => ({
+      data: [{ id: 'order-1', partner_id: 'partner-a', assigned_professional_user_id: null, test_name: 'A', status: 'processing' }],
+      error: null,
+    });
+    const r = await request(makeApp())
+      .get('/api/v1/admin/partner-health/orders')
+      .set('Authorization', 'Bearer staff-1');
+    expect(r.status).toBe(200);
+    expect(r.body.orders).toHaveLength(1);
+  });
+
+  it('professional sees only orders assigned to them', async () => {
+    tableHandlers.partner_organization_members = () => ({
+      data: [{ partner_organization_id: 'org-a', role: 'professional' }],
+      error: null,
+    });
+    tableHandlers.partner_registry = () => ({
+      data: [{ id: 'partner-a', partner_organization_id: 'org-a' }],
+      error: null,
+    });
+    tableHandlers.partner_health_test_orders = () => ({
+      data: [
+        { id: 'order-1', partner_id: 'partner-a', assigned_professional_user_id: PROFESSIONAL_USER_ID, test_name: 'A', status: 'processing' },
+        { id: 'order-2', partner_id: 'partner-a', assigned_professional_user_id: 'someone-else', test_name: 'B', status: 'processing' },
+      ],
+      error: null,
+    });
+    const r = await request(makeApp())
+      .get('/api/v1/admin/partner-health/orders')
+      .set('Authorization', 'Bearer professional-1');
+    expect(r.status).toBe(200);
+    expect(r.body.orders.map((o: any) => o.id)).toEqual(['order-1']);
   });
 });
 
@@ -158,6 +225,48 @@ describe('PATCH /orders/:id', () => {
       expect.anything(),
       expect.objectContaining({ to_status: 'sample_received', changed_by: 'portal_admin' }),
     );
+  });
+
+  it('403 when a professional attempts to PATCH an order not assigned to them (VTID-03932)', async () => {
+    tableHandlers.partner_organization_members = () => ({
+      data: [{ partner_organization_id: 'org-a', role: 'professional' }],
+      error: null,
+    });
+    tableHandlers.partner_registry = () => ({
+      data: [{ id: 'partner-a', partner_organization_id: 'org-a' }],
+      error: null,
+    });
+    tableHandlers.partner_health_test_orders = () => ({
+      data: { id: 'order-1', tenant_id: TENANT_ID, user_id: 'user-1', partner_id: 'partner-a', assigned_professional_user_id: 'someone-else', status: 'processing', test_name: 'Cholesterol Panel' },
+      error: null,
+    });
+    const r = await request(makeApp())
+      .patch('/api/v1/admin/partner-health/orders/order-1')
+      .set('Authorization', 'Bearer professional-1')
+      .send({ status: 'sample_received' });
+    expect(r.status).toBe(403);
+    expect(recordStatusChangeMock).not.toHaveBeenCalled();
+  });
+
+  it('200 when a professional PATCHes an order assigned to them', async () => {
+    tableHandlers.partner_organization_members = () => ({
+      data: [{ partner_organization_id: 'org-a', role: 'professional' }],
+      error: null,
+    });
+    tableHandlers.partner_registry = () => ({
+      data: [{ id: 'partner-a', partner_organization_id: 'org-a' }],
+      error: null,
+    });
+    tableHandlers.partner_health_test_orders = () => ({
+      data: { id: 'order-1', tenant_id: TENANT_ID, user_id: 'user-1', partner_id: 'partner-a', assigned_professional_user_id: PROFESSIONAL_USER_ID, status: 'processing', test_name: 'Cholesterol Panel' },
+      error: null,
+    });
+    recordStatusChangeMock.mockResolvedValue({ ok: true });
+    const r = await request(makeApp())
+      .patch('/api/v1/admin/partner-health/orders/order-1')
+      .set('Authorization', 'Bearer professional-1')
+      .send({ status: 'sample_received' });
+    expect(r.status).toBe(200);
   });
 });
 

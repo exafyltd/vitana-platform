@@ -1,0 +1,121 @@
+$ curl -s -m 15 -X POST "https://gateway.vitanaland.com/api/v1/vtid/allocate" \
+    -H "Content-Type: application/json" \
+    -d '{"source":"claude-code","layer":"backend","module":"partner-organizations"}'
+{"ok":true,"vtid":"VTID-03932", ...}
+(allocated earlier in this session, before any file was written; ledger
+title/status/spec_status follow-up applied per §4.1 rule 4 — no gateway
+PATCH endpoint exists for this, so via a narrowly-scoped Supabase UPDATE)
+
+$ python3 - <<'PY'
+import re
+path = "supabase/migrations/20260915120000_vtid_03932_partner_organizations.sql"
+sql = open(path).read()
+print("open parens:", sql.count("("), "close parens:", sql.count(")"))
+print("dollar-quote count ($$):", sql.count("$$"))
+print("CREATE TABLE count:", len(re.findall(r"CREATE TABLE", sql)))
+print("CREATE POLICY count:", len(re.findall(r"CREATE POLICY", sql)))
+print("ALTER TABLE count:", len(re.findall(r"ALTER TABLE", sql)))
+print("CREATE OR REPLACE FUNCTION count:", len(re.findall(r"CREATE OR REPLACE FUNCTION", sql)))
+print("CREATE TRIGGER count:", len(re.findall(r"CREATE TRIGGER", sql)))
+print("semicolons:", sql.count(";"))
+PY
+(see outputs/migration-sanity-check.txt — 72/72 balanced parens, 2 dollar
+quotes (one function body, opened+closed), 4 tables, 3 policies, 6 ALTER
+TABLE, 1 function, 1 trigger)
+
+$ cd services/gateway && npm ci --prefer-offline --no-audit --no-fund
+npm error code E403
+npm error 403 403 Forbidden - GET https://registry.npmjs.org/zod/-/zod-3.25.76.tgz
+(no node_modules reachable in this sandbox — identical to the environment
+limitation recorded in docs/validation/VTID-03901/commands.log; full
+`npm run build`/`jest` cannot execute here)
+
+$ cd services/gateway && /opt/node22/bin/tsc --noEmit --ignoreDeprecations 6.0 \
+    --skipLibCheck --ignoreConfig --target es2020 --module esnext \
+    --moduleResolution bundler \
+    src/routes/partner-orgs.ts src/routes/admin-partner-health.ts \
+    src/services/partner-health/org-access.ts src/types/cicd.ts
+(see outputs/gateway-tsc-narrow.txt — 57 total diagnostics, all of them
+missing-module/missing-global-type noise: @supabase/supabase-js, express,
+jose, zod, firebase-admin not installed; `process`/`crypto` unresolved
+without @types/node. 3 pre-existing implicit-any errors in
+notification-service.ts/id-matching.ts, unrelated to this change. Zero
+errors reference partner-orgs.ts, org-access.ts, or the new/changed lines
+in admin-partner-health.ts, index.ts, or types/cicd.ts. Before this VTID's
+edit to types/cicd.ts, the same command reported 3 additional TS2322 errors
+("partner_org.registered"/"partner_org.member_joined"/"partner_org.activated"
+not assignable to CicdEventType) — fixed by adding the three new event
+types to the CicdEventType union; re-run above confirms they're gone.)
+
+$ node -e "..." (jest cannot execute in this sandbox — no node_modules, see
+above). Every new/changed test file was instead traced by hand against the
+exact fake-Supabase chain semantics already established in
+admin-partner-health.test.ts/ingestion.test.ts's style:
+  - test/partner-health/org-access.test.ts: pure-function tests need no
+    fake-chain tracing (resolveOrgHealthAccess's own fake only implements
+    eq/in/order/limit/select/then, matching org-access.ts's calls, which
+    never use .maybeSingle()/.single()).
+  - test/admin-partner-health.test.ts: added `in` to the existing chain's
+    passthrough-method list (org-access.ts's partner_registry query uses
+    .in()); traced every new org-scoped test's table-handler shape against
+    admin-partner-health.ts's actual query chain (select/eq/order/limit vs
+    maybeSingle) to confirm each handler returns the shape the real code
+    path expects at that exact call site.
+  - test/partner-orgs.test.ts: extended the fake chain to tag each
+    handler invocation with `terminal: 'maybeSingle'|'single'|'then'`
+    (needed because requireOrgAdmin()'s own admin check and the members-list
+    handler both query partner_organization_members with op='select' but
+    different terminal methods, and returning an array where a single
+    object is expected — or vice versa — would silently break the request
+    without a type error to catch it, since this is untyped JS-shaped mock
+    data). The "200 for exafy_admin" test was fixed mid-authoring: it
+    originally awaited the request BEFORE setting up the table handler,
+    which would have thrown "Unexpected table in test" had exafy_admin's
+    short-circuit not skipped the query entirely — reordered so the handler
+    is registered before the request fires, matching every other test in
+    the file.
+
+$ git log --oneline origin/main -3 && git log --oneline HEAD -3
+(confirms this branch was rebuilt from a fresh origin/main after the prior
+session's branch's own PR — VTID-03901 — had already squash-merged as
+0db21cd1; work relocated via `git stash push -u` / `git checkout -B
+claude/vitanaland-commerce-handoff-r9lbve origin/main` / `git stash pop`,
+per this session's designated-branch convention)
+
+$ (CI fix round, PR #3331) node scripts/ci/validator-path-guard.cjs --* / python3 acceptance-mapping re-check
+`validate-pr` (VALIDATOR-CHECK.yml) failed on the first push: "REJECTED: AC
+at line 134 has no TEST:/CURL:/UI: mapping within 12 lines" — AC-8 and AC-9
+used ROUTE_MOUNT:/FINAL_URL:/CURL_PROOF:/OASIS_PROOF: (the Route Mount
+Evidence Gate's and OASIS Traceability Gate's own literal tokens) but the
+separate Acceptance Mapping Gate scans for exactly TEST:/CURL:/UI: within 12
+lines of each AC- line — matched on VTID-03834/acceptance.md's own AC-7,
+which correctly carries both a `CURL:` line AND `ROUTE_MOUNT:`/`FINAL_URL:`/
+`CURL_PROOF:`. Fixed by adding a `CURL:` line to AC-8 and a `TEST:` line to
+AC-9. Re-checked locally with the same window logic the CI script runs —
+confirmed all AC blocks now pass.
+
+$ (same round) Dev Autopilot Impact Scan bot comment: warning
+new-mutation-without-oasis-emit on partner-orgs.ts:157 (POST
+/:orgId/members/invite had no emitOasisEvent call). Fixed per the bot's own
+suggested remedy — added `partner_org.member_invited` to CicdEventType and
+an emitOasisEvent() call in the invite handler, plus an assertion in the
+existing "201 happy path — creates the invite" test.
+
+$ cd services/gateway && /opt/node22/bin/tsc --noEmit --ignoreDeprecations 6.0 \
+    --skipLibCheck --ignoreConfig --target es2020 --module esnext \
+    --moduleResolution bundler \
+    src/routes/partner-orgs.ts src/routes/admin-partner-health.ts \
+    src/services/partner-health/org-access.ts src/types/cicd.ts
+(re-run after the fixes above — outputs/gateway-tsc-narrow.txt updated;
+same 3 pre-existing unrelated implicit-any errors, zero new errors)
+
+$ (drift check, separately) MIGRATION-DRIFT-CHECK.yml failed as fully
+expected and by design: partner_organizations/partner_organization_members/
+partner_organization_invites/patient_profiles are declared in this VTID's
+migration but do not exist live yet (the migration ships as a file only,
+per rule 4 — see acceptance.md's "Not verified / blocked" section). This is
+not a bug in the PR; it requires the platform owner's explicit "apply now"
+before the migration can be applied to the live Supabase project
+(inmkhvwdcuyhnxkgfvsb) — flagged on the PR and to the user rather than
+self-applied, matching every prior VTID in this repo's changelog that
+shipped a migration file this way (VTID-03832/03834/03842).
