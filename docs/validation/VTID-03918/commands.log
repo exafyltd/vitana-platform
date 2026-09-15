@@ -74,3 +74,17 @@ $ node scripts/ci/validator-path-guard.cjs /tmp/changed_files_vtid03918.txt gate
 frontend/command-hub/** — plus services/gateway/test/** and
 docs/validation/**; scripts/ci/*.js is outside this gate's REMIT and is
 reported NOT JUDGED rather than rejected, per VTID-03696.)
+
+## VALIDATOR-CHECK.yml's validate-pr job — missed on first push, caught by CI
+
+The initial PR body used this repo's generic pull_request_template.md
+layout, which has no `VALIDATION_PROFILE:` line — the workflow's
+`validate-pr` job requires one (`grep -Eo 'VALIDATION_PROFILE:\s*[a-zA-Z0-9_/-]+'`
+against the PR body) and rejects with exit 11 without it. Added
+`VALIDATION_PROFILE: gateway_backend` to the top of the PR body via
+`update_pull_request`. Note: re-running the SAME failed job
+(`rerun_failed_jobs`) replays the ORIGINAL `pull_request` webhook payload
+(including the stale PR body captured at push time) — it does NOT
+re-fetch the current PR body, so the rerun still failed. A fresh commit
+push (this one) triggers a new `synchronize` event that reads the PR body
+live, which is what actually picks up the fix.
