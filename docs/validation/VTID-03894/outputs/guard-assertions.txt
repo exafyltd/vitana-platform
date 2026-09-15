@@ -82,3 +82,14 @@ $ node route-trace.mjs   # each test's setup vs the branch the real route takes
   pass  no vitest import
 
 all 21 assertions
+
+=== FOLLOW-UP: delivery times (asked, but nothing displays them yet) ===
+merchants.avg_delivery_days_eu/us/mena already exist and catalog-ingest already
+populates them from feeds. The supplier form never asked, so supplier merchants
+were the only ones guaranteed null. Now collected in the business step.
+
+VERIFIED ABSENCE: zero readers. 6 references to avg_delivery_days in the whole
+gateway, all in catalog-ingest (the WRITE path); 0 in the frontend. No Discover
+surface shows a delivery time today, so a buyer does not yet see this.
+
+$ node delivery-trace (schema + handler + the two new tests)

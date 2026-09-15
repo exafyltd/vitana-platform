@@ -272,6 +272,36 @@ describe('validation', () => {
     expect(res.status).toBe(201);
   });
 
+  test('delivery days are stored per region when given', async () => {
+    asSupplier();
+    const merchants = tableStub({ data: null });
+    db({ merchants });
+
+    const res = await request(app).post('/api/v1/vcaop/portal/my/merchants')
+      .send({ name: 'X', vertical_key: 'wine_spirits', avg_delivery_days_eu: 3, avg_delivery_days_us: 9 });
+
+    expect(res.status).toBe(201);
+    expect(merchants.inserted[0].avg_delivery_days_eu).toBe(3);
+    expect(merchants.inserted[0].avg_delivery_days_us).toBe(9);
+    // Unanswered stays absent, so the column is null rather than 0 — "did not
+    // answer" and "delivers same day" are different facts.
+    expect(merchants.inserted[0]).not.toHaveProperty('avg_delivery_days_mena');
+  });
+
+  test('a delivery time outside catalog-ingest\'s own bounds is refused', async () => {
+    // 0..120 integer, mirroring types/catalog-ingest.ts, so a supplier-entered
+    // value and a feed-entered value cannot disagree about what is legal.
+    asSupplier();
+    const merchants = tableStub({ data: null });
+    db({ merchants });
+
+    const res = await request(app).post('/api/v1/vcaop/portal/my/merchants')
+      .send({ name: 'X', vertical_key: 'wine_spirits', avg_delivery_days_eu: 121 });
+
+    expect(res.status).toBe(400);
+    expect(merchants.inserted).toHaveLength(0);
+  });
+
   test('a network with no conversion path is refused by the enum', async () => {
     asSupplier();
     const merchants = tableStub();

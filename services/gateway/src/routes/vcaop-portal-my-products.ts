@@ -147,6 +147,20 @@ const MerchantSchema = z.object({
   // distinguishable; it simply carries no advertiser id.
   affiliate_network: z.enum([...ATTRIBUTING_NETWORKS, 'other']).optional(),
   affiliate_advertiser_id: z.string().min(1).max(128).optional(),
+  // Typical delivery time per region, in days. Columns already exist on
+  // `merchants` and catalog-ingest already populates them from feeds — a
+  // supplier who cannot answer leaves them null, which is what they are today.
+  //
+  // Bounds match catalog-ingest's own schema (types/catalog-ingest.ts) rather
+  // than being invented here, so a supplier-entered value and a feed-entered
+  // value cannot disagree about what is a legal number.
+  //
+  // NOTHING RENDERS THESE YET — zero readers in the gateway or the frontend,
+  // verified. They are collected so supplier merchants stop being the only
+  // ones with a null, not because a buyer currently sees them.
+  avg_delivery_days_eu: z.number().int().min(0).max(120).optional(),
+  avg_delivery_days_us: z.number().int().min(0).max(120).optional(),
+  avg_delivery_days_mena: z.number().int().min(0).max(120).optional(),
 }).refine(
   (m) => m.affiliate_network === undefined
     || m.affiliate_network === 'other'
