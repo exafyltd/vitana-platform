@@ -88,3 +88,13 @@ against the PR body) and rejects with exit 11 without it. Added
 re-fetch the current PR body, so the rerun still failed. A fresh commit
 push (this one) triggers a new `synchronize` event that reads the PR body
 live, which is what actually picks up the fix.
+
+Second round, same class of gap: after VALIDATION_PROFILE was accepted,
+the "Require PR markers" step (exit 12-15) rejected on the next gate,
+missing SCOPE_ALLOWLIST/ACCEPTANCE/MERGE_PAYLOAD_PREVIEW/OASIS_IMPACT —
+four more literal marker lines this repo's generic PR template doesn't
+include. All four are presence-only `grep -q` checks (OASIS_IMPACT
+additionally needs a yes|no value, checked later in the OASIS
+Traceability Gate). Added all four to the PR body via update_pull_request,
+then pushed this same commit to trigger the fresh synchronize event
+needed to pick them up (same rerun-replays-stale-payload caveat as above).
