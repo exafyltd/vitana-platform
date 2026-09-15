@@ -716,12 +716,26 @@ export interface TaskSpecEventPayload {
  * Format: "Area: Short description" (max 60 chars).
  * Auto-detects system area from keywords in the description.
  */
-function extractTitle(rawDescription: string): string {
+export function extractTitle(rawDescription: string): string {
   if (!rawDescription || rawDescription.trim().length === 0) {
     return 'Gateway: Untitled task';
   }
 
-  const trimmed = rawDescription.trim();
+  let trimmed = rawDescription.trim();
+
+  // A caller (human or LLM) commonly writes a task spec with an explicit
+  // leading "TITLE: ..." line — the most natural way to state a title when
+  // it isn't already in "Area: description" format. Without stripping it
+  // first, `validateTaskTitle` rejects "TITLE" as an unknown area, area
+  // auto-detection re-guesses one from keywords elsewhere in the text, and
+  // the literal "TITLE: ..." text gets swept up as part of "the
+  // description" and re-prefixed — producing a doubled, truncated title
+  // like "Frontend: TITLE: Fix — Unfollow button pushed off-screen in".
+  // Strip that line first so the rest of the pipeline sees clean text.
+  const titleLineMatch = trimmed.match(/^title:\s*(.+?)\s*(?:\n|$)/i);
+  if (titleLineMatch) {
+    trimmed = titleLineMatch[1].trim();
+  }
 
   // If user already provided a valid "Area: description" format, normalize and use it
   const validation = validateTaskTitle(trimmed);
@@ -732,9 +746,9 @@ function extractTitle(rawDescription: string): string {
   // Auto-detect area from keywords in the description
   const area = guessAreaFromText(trimmed);
 
-  // Extract a short description: first sentence or first ~40 chars
+  // Extract a short description: first sentence/line or first ~40 chars
   let desc = trimmed;
-  const sentenceMatch = trimmed.match(/^[^.!?]+/);
+  const sentenceMatch = trimmed.match(/^[^\n.!?]+/);
   if (sentenceMatch) {
     desc = sentenceMatch[0].trim();
   }

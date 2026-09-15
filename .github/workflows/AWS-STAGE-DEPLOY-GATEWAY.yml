@@ -535,7 +535,21 @@ jobs:
         # so no new credential material or IAM change is introduced -- this
         # is purely wiring an existing secret into a second task def.
         #
-        # VTID-03883 -- DEV_AUTOPILOT_WATCHER_LIVE=true. Without this, the
+        # VTID-03902 -- OPERATOR_PLANNER_ENABLED=true, STAGING ONLY. Without a
+# consumer, an Operator-chat-created task (metadata.source='operator-chat')
+# sat at status=scheduled/spec_status=missing forever -- confirmed live
+# against VTID-03900, zero oasis_specs rows, no state change since
+# creation. operator-planner.ts runs one sweep immediately at boot (then
+# every OPERATOR_PLANNER_INTERVAL_MS, default 5min) and calls the existing,
+# already-governed POST /api/v1/specs/:vtid/generate pipeline for each
+# plannable task -- never touches the autonomous-execution plane
+# (VTID-03516) or writes code. Deliberately NOT added to
+# AWS-PROD-DEPLOY-GATEWAY.yml -- this is the first real observation of the
+# sweep before it is a prod question. Rollback is this value -> "false"
+# (or removal), no code revert -- with it off, initializeOperatorPlanner()
+# logs and returns immediately, byte-for-byte today's behaviour.
+#
+# VTID-03883 -- DEV_AUTOPILOT_WATCHER_LIVE=true. Without this, the
         # CI watcher (dev-autopilot-watcher.ts) defaults to DRY_RUN mode
         # (its own fallback is `DEV_AUTOPILOT_DRY_RUN || 'true'`) and
         # FABRICATES ci-passed/merged/deployed/verified/completed
@@ -674,6 +688,7 @@ jobs:
                                                 "DEV_AUTOPILOT_LLM_REVIEW_ENABLED",
                                                 "DEV_AUTOPILOT_USE_JOB","DEV_AUTOPILOT_JOB_CLOUD",
                                                 "DEV_AUTOPILOT_WATCHER_LIVE",
+                                                "OPERATOR_PLANNER_ENABLED",
                                                 "BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION",
                                                 "AURORA_CA_BUNDLE_PATH") | not) ]
                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
@@ -705,6 +720,7 @@ jobs:
                           {name:"DEV_AUTOPILOT_USE_JOB", value:"true"},
                           {name:"DEV_AUTOPILOT_JOB_CLOUD", value:"aws"},
                           {name:"DEV_AUTOPILOT_WATCHER_LIVE", value:"true"},
+                          {name:"OPERATOR_PLANNER_ENABLED", value:"true"},
                           {name:"BEDROCK_ROLE_ARN", value:$TASK_ROLE},
                           {name:"AWS_BEDROCK_REGION", value:"eu-central-1"},
                           {name:"AURORA_CA_BUNDLE_PATH", value:"/app/certs/rds-combined-ca-bundle.pem"} ] )

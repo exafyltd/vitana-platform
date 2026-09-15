@@ -3270,6 +3270,7 @@ const state = {
     // Global Overlays (VTID-0508 / VTID-0509)
     isHeartbeatOpen: false,
     isOperatorOpen: false,
+    isOperatorFullscreen: false, // VTID-03905: Operator popup fullscreen toggle
     operatorActiveTab: 'ticker', // 'chat', 'ticker', 'history'
 
     // VTID-0509: Operator Console State
@@ -3283,6 +3284,7 @@ const state = {
     chatAttachments: [], // Array of { oasis_ref, kind, name }
     chatSending: false,
     chatIsTyping: false, // VTID-0526-D: Guard against scroll/render during typing
+    chatDictationActive: false, // VTID-03907: voice dictation (Web Speech API) recording state
     // VTID-01027: Session Memory State
     operatorChatHistory: [], // Array of { role: 'user'|'assistant', content, ts }
     operatorConversationId: null, // UUID for conversation continuity
@@ -5656,7 +5658,11 @@ function _renderAppCore() {
 
     // VTID-0539: Scroll anchoring - preserve scroll position or scroll to bottom based on user's position
     // Only auto-scroll if user was near bottom; otherwise preserve their scroll position
-    if (state.isOperatorOpen && state.operatorActiveTab === 'chat' && !savedChatFocus) {
+    // VTID-03906: this used to also require !savedChatFocus, so a re-render while the
+    // textarea had focus (the normal reading/typing state) skipped restoring scroll
+    // entirely, snapping .chat-messages to scrollTop=0. Focus restoration and scroll
+    // restoration touch different elements and don't need to be mutually exclusive.
+    if (state.isOperatorOpen && state.operatorActiveTab === 'chat') {
         requestAnimationFrame(function () {
             var newMessagesContainer = document.querySelector('.chat-messages');
             if (newMessagesContainer && savedChatScroll) {
@@ -25840,6 +25846,85 @@ function renderHeartbeatOverlay() {
     return backdrop;
 }
 
+// VTID-03905: Operator popup fullscreen/restore icons. Plain stroke SVGs
+// with no inline styling attribute — the CSP Governance Gate forbids scripted inline styles.
+var ICON_EXPAND_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>';
+var ICON_RESTORE_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"></polyline><polyline points="20 10 14 10 14 4"></polyline><line x1="14" y1="10" x2="21" y2="3"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>';
+
+// VTID-03907: Operator chat voice dictation via the Web Speech API — no
+// backend route or new dependency, client-side only (transcribed text just
+// fills state.chatInputValue the same as typing would).
+var ICON_MIC_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>';
+
+var operatorSpeechRecognition = null;
+
+function operatorDictationSupported() {
+    return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+}
+
+function stopOperatorDictation() {
+    if (operatorSpeechRecognition) {
+        try { operatorSpeechRecognition.stop(); } catch (e) { /* already stopped/errored */ }
+    }
+    operatorSpeechRecognition = null;
+    state.chatDictationActive = false;
+}
+
+// Starts a live SpeechRecognition session that streams transcribed text
+// directly into state.chatInputValue (and the live textarea, so the user
+// sees words appear as they speak) without going through renderApp() — a
+// full re-render per partial result would be the exact kind of disruption
+// VTID-03906 fixed elsewhere in this same popup.
+function startOperatorDictation(textarea, micBtn) {
+    var SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognitionCtor || state.chatDictationActive) return;
+
+    var recognition = new SpeechRecognitionCtor();
+    recognition.lang = (navigator.language || 'en-US');
+    recognition.continuous = true;
+    recognition.interimResults = true;
+
+    var baseValue = state.chatInputValue || '';
+    var baseNeedsSpace = baseValue.length > 0 && !/\s$/.test(baseValue);
+
+    recognition.onresult = function (event) {
+        var finalTranscript = '';
+        var interimTranscript = '';
+        for (var i = event.resultIndex; i < event.results.length; i++) {
+            var transcript = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+                finalTranscript += transcript;
+            } else {
+                interimTranscript += transcript;
+            }
+        }
+        if (finalTranscript) {
+            baseValue = baseValue + (baseNeedsSpace ? ' ' : '') + finalTranscript.trim() + ' ';
+            baseNeedsSpace = false;
+        }
+        var combined = baseValue + interimTranscript;
+        state.chatInputValue = combined;
+        if (textarea) textarea.value = combined;
+    };
+
+    recognition.onerror = function (event) {
+        console.warn('[VTID-03907] Speech recognition error:', event.error);
+        stopOperatorDictation();
+        if (micBtn) micBtn.classList.remove('chat-mic-btn--active');
+    };
+
+    recognition.onend = function () {
+        operatorSpeechRecognition = null;
+        state.chatDictationActive = false;
+        if (micBtn) micBtn.classList.remove('chat-mic-btn--active');
+    };
+
+    operatorSpeechRecognition = recognition;
+    state.chatDictationActive = true;
+    if (micBtn) micBtn.classList.add('chat-mic-btn--active');
+    recognition.start();
+}
+
 function renderOperatorOverlay() {
     const backdrop = document.createElement('div');
     backdrop.className = 'overlay-backdrop';
@@ -25848,12 +25933,14 @@ function renderOperatorOverlay() {
             state.isOperatorOpen = false;
             // VTID-01209: Stop active executions polling when closing
             stopActiveExecutionsPolling();
+            // VTID-03907: Stop any in-progress voice dictation when closing
+            if (state.chatDictationActive) stopOperatorDictation();
             renderApp();
         }
     };
 
     const panel = document.createElement('div');
-    panel.className = 'overlay-panel operator-overlay';
+    panel.className = 'overlay-panel operator-overlay' + (state.isOperatorFullscreen ? ' operator-overlay--fullscreen' : '');
 
     // Header
     const header = document.createElement('div');
@@ -25872,6 +25959,22 @@ function renderOperatorOverlay() {
 
     header.appendChild(titleBlock);
 
+    // VTID-03905: header action buttons (fullscreen / restore), between the
+    // title block and the close button. Close button behavior is unchanged.
+    const headerActions = document.createElement('div');
+    headerActions.className = 'overlay-header-actions';
+
+    const fullscreenBtn = document.createElement('button');
+    fullscreenBtn.className = 'overlay-fullscreen-toggle';
+    fullscreenBtn.title = state.isOperatorFullscreen ? 'Restore' : 'Fullscreen';
+    fullscreenBtn.setAttribute('aria-label', state.isOperatorFullscreen ? 'Restore popup size' : 'Enter fullscreen');
+    fullscreenBtn.innerHTML = state.isOperatorFullscreen ? ICON_RESTORE_SVG : ICON_EXPAND_SVG;
+    fullscreenBtn.onclick = () => {
+        state.isOperatorFullscreen = !state.isOperatorFullscreen;
+        renderApp();
+    };
+    headerActions.appendChild(fullscreenBtn);
+
     const closeBtn = document.createElement('button');
     closeBtn.className = 'overlay-close';
     closeBtn.innerHTML = '&times;';
@@ -25879,9 +25982,13 @@ function renderOperatorOverlay() {
         state.isOperatorOpen = false;
         // VTID-01209: Stop active executions polling when closing
         stopActiveExecutionsPolling();
+        // VTID-03907: Stop any in-progress voice dictation when closing
+        if (state.chatDictationActive) stopOperatorDictation();
         renderApp();
     };
-    header.appendChild(closeBtn);
+    headerActions.appendChild(closeBtn);
+
+    header.appendChild(headerActions);
 
     panel.appendChild(header);
 
@@ -26164,6 +26271,30 @@ function renderOperatorChat() {
     };
     inputContainer.appendChild(textarea);
 
+    // VTID-03907: Voice dictation mic button (Web Speech API)
+    const micBtn = document.createElement('button');
+    micBtn.type = 'button';
+    var dictationSupported = operatorDictationSupported();
+    micBtn.className = 'chat-mic-btn' + (state.chatDictationActive ? ' chat-mic-btn--active' : '');
+    micBtn.disabled = !dictationSupported;
+    micBtn.title = !dictationSupported
+        ? 'Voice dictation is not supported in this browser'
+        : (state.chatDictationActive ? 'Stop voice dictation' : 'Start voice dictation');
+    micBtn.setAttribute('aria-label', micBtn.title);
+    micBtn.innerHTML = ICON_MIC_SVG;
+    micBtn.onclick = () => {
+        if (!dictationSupported) return;
+        if (state.chatDictationActive) {
+            stopOperatorDictation();
+            micBtn.classList.remove('chat-mic-btn--active');
+            micBtn.title = 'Start voice dictation';
+        } else {
+            startOperatorDictation(textarea, micBtn);
+            micBtn.title = 'Stop voice dictation';
+        }
+    };
+    inputContainer.appendChild(micBtn);
+
     // Send button
     const sendBtn = document.createElement('button');
     sendBtn.className = 'chat-send-btn';
@@ -26226,6 +26357,8 @@ async function sendChatMessage() {
 
     // VTID-0526-D: Reset typing flag - user is done typing, now sending
     state.chatIsTyping = false;
+    // VTID-03907: Stop any in-progress voice dictation once the message is sent
+    if (state.chatDictationActive) stopOperatorDictation();
 
     const now = new Date();
     const timestamp = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
@@ -31579,9 +31712,15 @@ function renderOverviewSystemView() {
     }
     // Auto-refresh every 30s while the Overview is mounted. Use a single
     // timer keyed on the state to avoid stacking duplicates across renders.
+    // VTID-03906: state.isOperatorOpen is an overlay flag independent of
+    // activeModule/activeTab, so with Overview mounted underneath, this timer
+    // used to keep calling fetchActionRequired(true) -> a full renderApp()
+    // every 30s while the Operator popup was open on top, tearing down and
+    // rebuilding the whole DOM (including the open popup) unprompted by any
+    // user action. Skip the poll entirely while a popup covers the tab.
     if (!state._actionRequiredTimer) {
         state._actionRequiredTimer = setInterval(function () {
-            if (state.activeModule === 'overview' && state.activeTab === 'system-overview') {
+            if (state.activeModule === 'overview' && state.activeTab === 'system-overview' && !state.isOperatorOpen) {
                 state.actionRequired.fetched = false;
                 fetchActionRequired(true);
             }
