@@ -582,6 +582,7 @@ jobs:
             "SEC_GEMINI:vitana/gateway/staging/google-gemini-api-key" \
             "SEC_OPENAI:vitana/gateway/staging/openai-api-key" \
             "SEC_DEEPSEEK:vitana/gateway/staging/deepseek-api-key" \
+            "SEC_FISH:vitana/gateway/staging/fish-api-key" \
             "SEC_AURORA:vitana/aurora/prod/database-url" \
             "SEC_AURORA_RLS:vitana/aurora/prod/postgrest-authenticator-uri" \
             "SEC_GITHUB_TOKEN:vitana/github/token" ; do
@@ -660,7 +661,8 @@ jobs:
                  --arg NOVA_TENANTS "$NOVA_SONIC_CANARY_TENANT_IDS" \
                  --arg SEC_JWT "$SEC_JWT" --arg SEC_ANON "$SEC_ANON" \
                  --arg SEC_GEMINI "$SEC_GEMINI" --arg SEC_OPENAI "$SEC_OPENAI" \
-                 --arg SEC_DEEPSEEK "$SEC_DEEPSEEK" --arg SEC_AURORA "$SEC_AURORA" \
+                 --arg SEC_DEEPSEEK "$SEC_DEEPSEEK" --arg SEC_FISH "$SEC_FISH" \
+                 --arg SEC_AURORA "$SEC_AURORA" \
                  --arg SEC_AURORA_RLS "$SEC_AURORA_RLS" \
                  --arg SEC_GITHUB_TOKEN "$SEC_GITHUB_TOKEN" \
                  --arg SEC_ERP_BRIDGE "$SEC_ERP_BRIDGE" --arg ERP_BRIDGE_URL "$ERP_BRIDGE_URL" \
@@ -712,6 +714,7 @@ jobs:
                           {name:"ORB_LOG_NOVA_INSTRUCTION_DEBUG", value:"true"},
                           {name:"TTS_PROVIDER", value:"polly"},
                           {name:"TTS_POLLY_STRICT", value:"true"},
+                          {name:"TTS_FISH_FALLBACK_ENABLED", value:"true"},
                           {name:"VERTEX_LIVE_UNAVAILABLE", value:"true"},
                           {name:"ORB_CASCADED_VOICE_ENABLED", value:"true"},
                           {name:"OPERATOR_EXECUTION_ONRAMP_ENABLED", value:"true"},
@@ -729,7 +732,7 @@ jobs:
                 | .containerDefinitions[0].secrets |=
                     ( [ .[] | select(.name | IN("SUPABASE_JWT_SECRET","SUPABASE_ANON_KEY",
                                                 "GOOGLE_GEMINI_API_KEY","GEMINI_API_KEY",
-                                                "OPENAI_API_KEY","DEEPSEEK_API_KEY",
+                                                "OPENAI_API_KEY","DEEPSEEK_API_KEY","FISH_API_KEY",
                                                 "AURORA_DATABASE_URL",
                                                 "AURORA_RLS_DATABASE_URL",
                                                 "GITHUB_SAFE_MERGE_TOKEN") | not) ]
@@ -739,6 +742,7 @@ jobs:
                           {name:"GEMINI_API_KEY",        valueFrom:$SEC_GEMINI},
                           {name:"OPENAI_API_KEY",        valueFrom:$SEC_OPENAI},
                           {name:"DEEPSEEK_API_KEY",      valueFrom:$SEC_DEEPSEEK},
+                          {name:"FISH_API_KEY",          valueFrom:$SEC_FISH},
                           {name:"AURORA_DATABASE_URL",   valueFrom:$SEC_AURORA},
                           {name:"AURORA_RLS_DATABASE_URL", valueFrom:$SEC_AURORA_RLS},
                           {name:"GITHUB_SAFE_MERGE_TOKEN", valueFrom:$SEC_GITHUB_TOKEN} ] )

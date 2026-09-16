@@ -1,0 +1,30 @@
+# VTID-03984 — commands run
+
+## YAML validity
+python3 -c "import yaml; yaml.safe_load(open('.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml'))"
+# => exit 0, "YAML parses OK"
+
+## Extract + bash-syntax-check the modified deploy step's run: block
+# (extracted via python3 yaml.safe_load, isolated the step whose run:
+# contains "SEC_FISH")
+bash -n /tmp/extracted-run-block-noname.sh
+# => exit 0, clean
+
+## jq dry-run against a fake task definition
+cat /tmp/fake-taskdef.json | jq \
+  --arg IMG "img" --arg SHA "sha" --arg SHORT "short" \
+  --arg NOVA_ENABLED "true" --arg NOVA_USERS "u" --arg NOVA_TENANTS "t" \
+  --arg SEC_JWT "j" --arg SEC_ANON "a" \
+  --arg SEC_GEMINI "g" --arg SEC_OPENAI "o" \
+  --arg SEC_DEEPSEEK "d" --arg SEC_FISH "f" \
+  --arg SEC_AURORA "au" --arg SEC_AURORA_RLS "ar" \
+  --arg SEC_GITHUB_TOKEN "gt" \
+  --arg SEC_ERP_BRIDGE "" --arg ERP_BRIDGE_URL "url" \
+  --arg TASK_ROLE "role" \
+  -f /tmp/jq-program.txt
+# => exit 0
+# => .containerDefinitions[0].environment contains
+#      {"name":"TTS_FISH_FALLBACK_ENABLED","value":"true"}
+# => .containerDefinitions[0].secrets contains
+#      {"name":"FISH_API_KEY","valueFrom":"f"}  (test arg "f" = $SEC_FISH)
+# See outputs/jq-dry-run-result.json for the full output.
