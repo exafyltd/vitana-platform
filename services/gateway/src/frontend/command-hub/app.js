@@ -756,6 +756,147 @@ function switchOperatorThread(threadId) {
 }
 
 /**
+ * VTID-03949: double-click-to-rename a conversation thread's title, usable
+ * from both the sessions sidebar and the title bar above the transcript
+ * (see renderEditableThreadTitle()). startRenamingOperatorThread() arms the
+ * inline-input state and renders once; the input's own oninput then syncs
+ * state.operatorRenameDraftValue WITHOUT calling renderApp() itself, same
+ * convention as .chat-textarea's oninput — keeps typing responsive even if
+ * an unrelated poller (ticker/heartbeat SSE) triggers a background
+ * renderApp() mid-edit, since the input's value is always re-derived from
+ * this state on the next rebuild rather than lost with the old DOM node.
+ */
+function startRenamingOperatorThread(threadId, currentTitle) {
+    state.operatorRenamingThreadId = threadId;
+    state.operatorRenameDraftValue = currentTitle || '';
+    renderApp();
+}
+
+function cancelRenamingOperatorThread() {
+    state.operatorRenamingThreadId = null;
+    state.operatorRenameDraftValue = '';
+    renderApp();
+}
+
+/** Commit the in-progress rename (if any). A blank/whitespace-only draft is
+ * discarded rather than saved, so a thread can never end up with an empty
+ * title. Guarded to be a safe no-op if called twice (Enter, then a
+ * trailing blur on the same input). */
+function commitRenamingOperatorThread() {
+    if (state.operatorRenamingThreadId === null) return;
+    var threadId = state.operatorRenamingThreadId;
+    var newTitle = (state.operatorRenameDraftValue || '').trim();
+    var thread = state.operatorThreads.find(function (t) { return t.id === threadId; });
+    state.operatorRenamingThreadId = null;
+    state.operatorRenameDraftValue = '';
+    if (thread && newTitle) {
+        thread.title = newTitle;
+        saveOperatorThreadsIndex(state.operatorThreads);
+    }
+    renderApp();
+}
+
+/**
+ * VTID-03949: renders a thread's title as either plain (double-click to
+ * edit) or, while state.operatorRenamingThreadId matches, an inline text
+ * input. Shared by the sidebar row and the chat title bar so both places
+ * behave identically, per the platform owner's explicit ask.
+ */
+function renderEditableThreadTitle(thread, className) {
+    if (state.operatorRenamingThreadId === thread.id) {
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = className + ' chat-session-title-input';
+        input.value = state.operatorRenameDraftValue;
+        input.oninput = (e) => {
+            state.operatorRenameDraftValue = e.target.value;
+        };
+        input.onkeydown = (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                commitRenamingOperatorThread();
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                cancelRenamingOperatorThread();
+            }
+        };
+        input.onblur = () => commitRenamingOperatorThread();
+        // Don't let a click inside the input bubble up to a sidebar row's
+        // own onclick (which would switch threads mid-edit).
+        input.onclick = (e) => e.stopPropagation();
+        // Deferred so the element is actually in the DOM before focusing.
+        setTimeout(() => { input.focus(); input.select(); }, 0);
+        return input;
+    }
+
+    const span = document.createElement('div');
+    span.className = className;
+    span.textContent = thread.title || 'New conversation';
+    span.title = 'Double-click to rename';
+    span.ondblclick = (e) => {
+        e.stopPropagation();
+        startRenamingOperatorThread(thread.id, thread.title || 'New conversation');
+    };
+    return span;
+}
+
+/**
+ * VTID-03949: Claude-Code-style sessions sidebar, replacing the old
+ * <select> thread dropdown — every past conversation is listed at once
+ * (most-recently-updated first) instead of hidden behind a menu that
+ * covered the transcript while open. Click a row to switch to it,
+ * double-click its title to rename it in place.
+ */
+function renderOperatorSessionsSidebar() {
+    const sidebar = document.createElement('div');
+    sidebar.className = 'chat-sessions-sidebar' + (state.operatorSessionsSidebarCollapsed ? ' chat-sessions-sidebar--collapsed' : '');
+
+    const sidebarHeader = document.createElement('div');
+    sidebarHeader.className = 'chat-sessions-sidebar-header';
+    const newBtn = document.createElement('button');
+    newBtn.type = 'button';
+    newBtn.className = 'chat-sessions-new-btn';
+    newBtn.textContent = '+ New chat';
+    newBtn.onclick = () => startNewOperatorThread();
+    sidebarHeader.appendChild(newBtn);
+    sidebar.appendChild(sidebarHeader);
+
+    const list = document.createElement('div');
+    list.className = 'chat-sessions-list';
+    list.dataset.scrollRetain = 'true';
+    list.dataset.scrollKey = 'operator-sessions-sidebar';
+
+    const sortedThreads = (state.operatorThreads || []).slice().sort(function (a, b) {
+        return (b.updatedAt || 0) - (a.updatedAt || 0);
+    });
+
+    if (sortedThreads.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'chat-sessions-empty';
+        empty.textContent = 'No conversations yet.';
+        list.appendChild(empty);
+    } else {
+        sortedThreads.forEach(function (thread) {
+            const row = document.createElement('div');
+            row.className = 'chat-session-row' + (thread.id === state.operatorActiveThreadId ? ' chat-session-row--active' : '');
+            row.onclick = () => switchOperatorThread(thread.id);
+
+            row.appendChild(renderEditableThreadTitle(thread, 'chat-session-row-title'));
+
+            const meta = document.createElement('div');
+            meta.className = 'chat-session-row-meta';
+            meta.textContent = formatRelativeTime(thread.updatedAt);
+            row.appendChild(meta);
+
+            list.appendChild(row);
+        });
+    }
+
+    sidebar.appendChild(list);
+    return sidebar;
+}
+
+/**
  * VTID-01027 / VTID-03822: Initialize operator chat session.
  * Loads (migrating if needed) the thread index, then the active thread's
  * conversation_id and chat history. Idempotent across repeated opens —
@@ -3293,6 +3434,10 @@ const state = {
     // VTID-03822: Multi-thread conversation state
     operatorThreads: [], // Array of { id, title, conversationId, createdAt, updatedAt }
     operatorActiveThreadId: null,
+    // VTID-03949: sessions sidebar + double-click-to-rename state
+    operatorSessionsSidebarCollapsed: false,
+    operatorRenamingThreadId: null, // thread id currently showing an inline rename input, or null
+    operatorRenameDraftValue: '', // current text of that inline input (synced on oninput, not via renderApp())
 
     // VTID-01041: Pending title capture state for ORB task creation
     pendingTitleVtid: null, // VTID awaiting title input from user
@@ -25874,6 +26019,10 @@ var ICON_MIC_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" 
 var ICON_COPY_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
 var ICON_CHECK_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
 
+// VTID-03949: sidebar show/hide toggle icon (a "panel" rectangle with a
+// left divider), same 16x16 stroke-icon style as the icons above.
+var ICON_SIDEBAR_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>';
+
 var operatorSpeechRecognition = null;
 
 function operatorDictationSupported() {
@@ -26076,7 +26225,12 @@ function renderOperatorOverlay() {
     tabContent.className = 'operator-tab-content';
 
     if (state.operatorActiveTab === 'chat') {
-        tabContent.appendChild(renderOperatorChat());
+        // VTID-03949: sessions sidebar + chat column, side by side.
+        const chatLayout = document.createElement('div');
+        chatLayout.className = 'operator-chat-layout';
+        chatLayout.appendChild(renderOperatorSessionsSidebar());
+        chatLayout.appendChild(renderOperatorChat());
+        tabContent.appendChild(chatLayout);
     } else if (state.operatorActiveTab === 'ticker') {
         tabContent.appendChild(renderOperatorTicker());
     } else if (state.operatorActiveTab === 'history') {
@@ -26114,30 +26268,40 @@ function renderOperatorChat() {
     const container = document.createElement('div');
     container.className = 'chat-container';
 
-    // VTID-03822: thread switcher — a dropdown of existing conversation
-    // threads plus a "+ New" button. Purely client-side (localStorage),
-    // per this VTID's own spec: there is no backend conversation table to
+    // VTID-03949: session title bar — a sidebar show/hide toggle, the
+    // active thread's own (double-click-to-rename) title, and "+ New".
+    // Replaces the VTID-03822 <select> dropdown, which covered the
+    // transcript while open and only ever showed one session at a time;
+    // the full session list now lives in the persistent sidebar rendered
+    // alongside this container by renderOperatorOverlay() (see
+    // renderOperatorSessionsSidebar()). Purely client-side (localStorage),
+    // per VTID-03822's own spec: there is no backend conversation table to
     // build against, so "resuming a thread" means restoring its saved
     // history into state.chatMessages, not a server-side fetch.
-    const threadBar = document.createElement('div');
-    threadBar.className = 'chat-thread-bar';
+    const titleBar = document.createElement('div');
+    titleBar.className = 'chat-session-title-bar';
 
-    const threadSelect = document.createElement('select');
-    threadSelect.className = 'chat-thread-select';
-    threadSelect.title = 'Switch conversation';
-    (state.operatorThreads || []).forEach(function (thread) {
-        const opt = document.createElement('option');
-        opt.value = thread.id;
-        opt.textContent = thread.title || 'New conversation';
-        if (thread.id === state.operatorActiveThreadId) {
-            opt.selected = true;
-        }
-        threadSelect.appendChild(opt);
-    });
-    threadSelect.onchange = function () {
-        switchOperatorThread(threadSelect.value);
+    const sidebarToggleBtn = document.createElement('button');
+    sidebarToggleBtn.type = 'button';
+    sidebarToggleBtn.className = 'chat-sessions-toggle-btn';
+    sidebarToggleBtn.title = state.operatorSessionsSidebarCollapsed ? 'Show sessions' : 'Hide sessions';
+    sidebarToggleBtn.setAttribute('aria-label', sidebarToggleBtn.title);
+    sidebarToggleBtn.innerHTML = ICON_SIDEBAR_SVG;
+    sidebarToggleBtn.onclick = () => {
+        state.operatorSessionsSidebarCollapsed = !state.operatorSessionsSidebarCollapsed;
+        renderApp();
     };
-    threadBar.appendChild(threadSelect);
+    titleBar.appendChild(sidebarToggleBtn);
+
+    const activeThread = (state.operatorThreads || []).find(function (t) { return t.id === state.operatorActiveThreadId; });
+    if (activeThread) {
+        titleBar.appendChild(renderEditableThreadTitle(activeThread, 'chat-session-title-bar-text'));
+    } else {
+        const fallbackTitle = document.createElement('div');
+        fallbackTitle.className = 'chat-session-title-bar-text';
+        fallbackTitle.textContent = 'New conversation';
+        titleBar.appendChild(fallbackTitle);
+    }
 
     const newThreadBtn = document.createElement('button');
     newThreadBtn.type = 'button';
@@ -26147,9 +26311,9 @@ function renderOperatorChat() {
     newThreadBtn.onclick = function () {
         startNewOperatorThread();
     };
-    threadBar.appendChild(newThreadBtn);
+    titleBar.appendChild(newThreadBtn);
 
-    container.appendChild(threadBar);
+    container.appendChild(titleBar);
 
     // Messages area
     const messages = document.createElement('div');
