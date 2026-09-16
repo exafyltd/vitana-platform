@@ -170,12 +170,26 @@ router.post('/login', async (req: Request, res: Response) => {
     const supabase = getSupabase();
     if (supabase && authData.user?.id) {
       try {
-        // First try app_users table
-        const { data: profileData, error: profileError } = await supabase
-          .from('app_users')
-          .select('display_name, bio, avatar_url:profile->>avatar_url')
-          .eq('user_id', authData.user.id)
-          .single();
+        // VTID-03952: app_users and users are independent tables with no data
+        // dependency between the two reads — only their RESULTS are merged
+        // (users is a fallback source for whatever app_users didn't have).
+        // These used to run strictly sequentially, adding a full extra
+        // PostgREST round trip to every login. Fire both at once.
+        const [
+          { data: profileData, error: profileError },
+          { data: usersData, error: usersError },
+        ] = await Promise.all([
+          supabase
+            .from('app_users')
+            .select('display_name, bio, avatar_url:profile->>avatar_url')
+            .eq('user_id', authData.user.id)
+            .single(),
+          supabase
+            .from('users')
+            .select('display_name, avatar_url')
+            .eq('id', authData.user.id)
+            .single(),
+        ]);
 
         if (!profileError && profileData) {
           profile = {
@@ -188,22 +202,15 @@ router.post('/login', async (req: Request, res: Response) => {
           console.log(`[VTID-01196] app_users query: ${profileError.message}`);
         }
 
-        // If no avatar, try users table (vitana-v1 compatibility)
-        if (!profile.avatar_url) {
-          const { data: usersData, error: usersError } = await supabase
-            .from('users')
-            .select('display_name, avatar_url')
-            .eq('id', authData.user.id)
-            .single();
-
-          if (!usersError && usersData) {
-            if (!profile.display_name && usersData.display_name) {
-              profile.display_name = usersData.display_name;
-            }
-            if (usersData.avatar_url) {
-              profile.avatar_url = usersData.avatar_url;
-              console.log(`[VTID-01196] Avatar from users table: ${profile.avatar_url}`);
-            }
+        // users table is a fallback source (vitana-v1 compatibility) — only
+        // fills in what app_users didn't provide.
+        if (!usersError && usersData) {
+          if (!profile.display_name && usersData.display_name) {
+            profile.display_name = usersData.display_name;
+          }
+          if (!profile.avatar_url && usersData.avatar_url) {
+            profile.avatar_url = usersData.avatar_url;
+            console.log(`[VTID-01196] Avatar from users table: ${profile.avatar_url}`);
           }
         }
       } catch (err: any) {
@@ -218,9 +225,17 @@ router.post('/login', async (req: Request, res: Response) => {
       console.log(`[VTID-01196] Avatar from user_metadata: ${userMetaAvatar}`);
     }
 
-    // Fire welcome notification once (first login)
+    // Fire welcome notification once (first login).
+    // VTID-03952: none of this block's output is part of the login response
+    // (it only decides whether to fire the fire-and-forget notification/
+    // recommendation/group-enrollment calls below) — it was still being
+    // AWAITED before, adding two more sequential PostgREST round trips
+    // (tenant membership lookup + welcome-notification count) to every
+    // login response for no user-facing reason. Kick it off without
+    // awaiting so it can't add latency to the response at all.
     if (supabase && authData.user?.id) {
       const uid = authData.user.id;
+      void (async () => {
       // Resolve tenant_id from memberships
       const { data: tenantRow } = await supabase
         .from('user_tenants')
@@ -298,6 +313,9 @@ router.post('/login', async (req: Request, res: Response) => {
         .catch(err => {
           console.warn(`[GroupEnrollment] Login enroll failed for ${uid.slice(0, 8)}: ${err.message}`);
         });
+      })().catch(err => {
+        console.warn(`[VTID-01185] Post-login welcome/enrollment side effects failed for ${uid.slice(0, 8)}: ${err.message}`);
+      });
     }
 
     return res.status(200).json({
@@ -470,13 +488,62 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
   const supabase = getSupabase();
   if (supabase && identity.user_id) {
     try {
-      // Fetch user profile from app_users — vitana_id is mirrored here by the
-      // Release A trigger profiles_vitana_id_mirror_trigger.
-      const { data: profileData, error: profileError } = await supabase
-        .from('app_users')
-        .select('display_name, bio, vitana_id, avatar_url:profile->>avatar_url')
-        .eq('user_id', identity.user_id)
-        .single();
+      // VTID-03952: these four reads are independent of each other's RESULTS
+      // (each only needs identity.user_id) — they were previously awaited
+      // one after another, including one whose own comment claimed "Parallel
+      // fetch" while the code was a plain sequential await. Fire all four
+      // at once; the users-table fallback is fetched unconditionally here
+      // (rather than only when app_users lacks an avatar) specifically so
+      // its round trip overlaps with the others instead of following them.
+      const [
+        { data: profileData, error: profileError },
+        lockResult,
+        usersResult,
+        { data: membershipData, error: membershipError },
+      ] = await Promise.all([
+        // Fetch user profile from app_users — vitana_id is mirrored here by
+        // the Release A trigger profiles_vitana_id_mirror_trigger.
+        supabase
+          .from('app_users')
+          .select('display_name, bio, vitana_id, avatar_url:profile->>avatar_url')
+          .eq('user_id', identity.user_id)
+          .single(),
+        // VTID-01967 + VTID-01987: vitana_id_locked + registration_seq live
+        // only on profiles (not mirrored) — null-tolerant (columns may not
+        // exist before Release A / v2 backfill). Wrapped in a real async
+        // function (rather than chaining .catch() straight on the
+        // Postgrest builder, which only guarantees PromiseLike/.then(), not
+        // a full Promise) so a throw here can't reject the whole Promise.all.
+        (async () => {
+          try {
+            return await supabase
+              .from('profiles')
+              .select('vitana_id_locked, vitana_id, registration_seq')
+              .eq('user_id', identity.user_id)
+              .maybeSingle();
+          } catch (_lockErr) {
+            return { data: null } as { data: null };
+          }
+        })(),
+        // VTID-01230-FIX: users table (vitana-v1 compat) fallback source for
+        // display_name/avatar_url. Same real-async-function wrapping as above.
+        (async () => {
+          try {
+            return await supabase
+              .from('users')
+              .select('display_name, avatar_url')
+              .eq('id', identity.user_id)
+              .single();
+          } catch (_usersErr) {
+            return { data: null, error: null } as { data: null; error: null };
+          }
+        })(),
+        // Fetch user memberships from user_tenants
+        supabase
+          .from('user_tenants')
+          .select('tenant_id, active_role, is_primary')
+          .eq('user_id', identity.user_id),
+      ]);
 
       if (!profileError && profileData) {
         profile = {
@@ -487,57 +554,38 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
         };
       }
 
-      // VTID-01967 + VTID-01987: vitana_id_locked + registration_seq live only
-      // on profiles (not mirrored). Parallel fetch — null-tolerant (columns
-      // may not exist before Release A / v2 backfill).
-      try {
-        const { data: lockData } = await supabase
-          .from('profiles')
-          .select('vitana_id_locked, vitana_id, registration_seq')
-          .eq('user_id', identity.user_id)
-          .maybeSingle();
-        if (lockData) {
-          profile.vitana_id_locked = (lockData as any).vitana_id_locked === true;
-          if (!profile.vitana_id && (lockData as any).vitana_id) {
-            profile.vitana_id = (lockData as any).vitana_id;
-          }
-          if (typeof (lockData as any).registration_seq === 'number') {
-            profile.registration_seq = (lockData as any).registration_seq;
-          }
+      const lockData = lockResult?.data;
+      if (lockData) {
+        profile.vitana_id_locked = (lockData as any).vitana_id_locked === true;
+        if (!profile.vitana_id && (lockData as any).vitana_id) {
+          profile.vitana_id = (lockData as any).vitana_id;
         }
-      } catch (_lockErr) {
-        // Silent — profiles.vitana_id_locked / registration_seq may not exist
-        // on this env yet.
+        if (typeof (lockData as any).registration_seq === 'number') {
+          profile.registration_seq = (lockData as any).registration_seq;
+        }
       }
 
       // VTID-01230-FIX: Match /auth/login fallback chain for avatar_url.
-      // If app_users has no avatar_url, try users table (vitana-v1 compat),
-      // then auth.users.user_metadata. Otherwise fetchAuthMe() in the frontend
+      // If app_users has no avatar_url, fall back to the users table, then
+      // auth.users.user_metadata. Otherwise fetchAuthMe() in the frontend
       // overwrites state.user with avatar_url=null, making the avatar disappear
       // moments after login.
-      if (!profile.avatar_url) {
-        try {
-          const { data: usersData } = await supabase
-            .from('users')
-            .select('display_name, avatar_url')
-            .eq('id', identity.user_id)
-            .single();
-          if (usersData) {
-            if (!profile.display_name && usersData.display_name) {
-              profile.display_name = usersData.display_name;
-            }
-            if (usersData.avatar_url) {
-              profile.avatar_url = usersData.avatar_url;
-              console.log(`[VTID-01230-FIX] /auth/me avatar_url from users table: ${profile.avatar_url}`);
-            }
-          }
-        } catch (_usersErr) {
-          // Silent — users table may not exist in all envs
+      const usersData = usersResult?.data;
+      if (usersData) {
+        if (!profile.display_name && usersData.display_name) {
+          profile.display_name = usersData.display_name;
+        }
+        if (!profile.avatar_url && usersData.avatar_url) {
+          profile.avatar_url = usersData.avatar_url;
+          console.log(`[VTID-01230-FIX] /auth/me avatar_url from users table: ${profile.avatar_url}`);
         }
       }
 
       if (!profile.avatar_url) {
-        // Try auth.users.user_metadata
+        // Try auth.users.user_metadata — a distinct (admin API) call from the
+        // above, and only reached when both prior sources came up empty, so
+        // it stays sequential/conditional rather than firing speculatively
+        // for every login.
         try {
           const { data: authUser } = await (supabase as any).auth.admin.getUserById(identity.user_id);
           const metaAvatar = authUser?.user?.user_metadata?.avatar_url;
@@ -549,12 +597,6 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
           // Silent — admin API requires service role
         }
       }
-
-      // Fetch user memberships from user_tenants
-      const { data: membershipData, error: membershipError } = await supabase
-        .from('user_tenants')
-        .select('tenant_id, active_role, is_primary')
-        .eq('user_id', identity.user_id);
 
       if (!membershipError && membershipData) {
         memberships = membershipData.map((m: any) => ({
