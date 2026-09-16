@@ -25,7 +25,13 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { getSupabase } from '../lib/supabase';
 import { getUserHealthContext, inferPrimaryCondition } from '../services/user-health-context';
-import { applyUserLimitations, excludePastPurchases, type FilterableProduct } from '../services/limitations-filter';
+import {
+  applyUserLimitations,
+  excludePastPurchases,
+  buildHiddenBreakdown,
+  type FilterableProduct,
+  type LimitationsHiddenBreakdown,
+} from '../services/limitations-filter';
 import { getConditionMapping, expandSynonymPhrase } from '../services/condition-matcher';
 import { emitLimitationBypass } from '../services/reward-events';
 import * as jose from 'jose';
@@ -317,17 +323,7 @@ router.get('/search', async (req: Request, res: Response) => {
   });
 
   let allowed: ProductSearchRow[];
-  let hiddenBreakdown = {
-    allergies: 0,
-    contraindications: 0,
-    medications: 0,
-    dietary: 0,
-    budget: 0,
-    sensitivities: 0,
-    geo: fetched.length - geoAllowed.length,
-    excluded_region: 0,
-    past_purchases: 0,
-  };
+  let limitationsBreakdown: LimitationsHiddenBreakdown | undefined;
 
   if (ctx) {
     const result = applyUserLimitations(geoAllowed, ctx, {
@@ -336,19 +332,19 @@ router.get('/search', async (req: Request, res: Response) => {
       surface: 'search',
     });
     allowed = result.allowed;
-    hiddenBreakdown = {
-      ...result.hidden_breakdown,
-      geo: hiddenBreakdown.geo + result.hidden_breakdown.geo,
-      excluded_region: result.hidden_breakdown.excluded_region,
-      past_purchases: hiddenBreakdown.past_purchases,
-    };
+    limitationsBreakdown = result.hidden_breakdown;
   } else {
     allowed = geoAllowed;
   }
 
   // Exclude past purchases (anonymized — only for logged-in user)
   const { withoutPast, past_purchases_hidden } = excludePastPurchases(allowed, ctx?.past_purchases ?? []);
-  hiddenBreakdown = { ...hiddenBreakdown, past_purchases: past_purchases_hidden };
+
+  const hiddenBreakdown = buildHiddenBreakdown({
+    preFilterGeoHidden: fetched.length - geoAllowed.length,
+    limitations: limitationsBreakdown,
+    pastPurchasesHidden: past_purchases_hidden,
+  });
 
   // Match reasons + score
   const enriched = withoutPast.map((p) => {
