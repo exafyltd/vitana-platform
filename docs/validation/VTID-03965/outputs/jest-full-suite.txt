@@ -1,0 +1,100 @@
+    ✓ returns the first instant of the current UTC month (4 ms)
+
+PASS test/orb/live/session/tool-failure-grace.test.ts
+  isHardToolFailure
+    ✓ true only for success === false (1 ms)
+  graceToolResultForModel
+    ✓ passes a successful result through unchanged (no-op) (1 ms)
+    ✓ reshapes a hard failure into a non-error pivot the model can speak (1 ms)
+    ✓ never emits the words error/bug/system-issue to the model
+
+PASS test/services/capability-awareness/capability-awareness-service-repository.test.ts
+  capability-awareness-service-repository
+    advanceCapabilityAwareness
+      ✓ calls the advance_capability_awareness RPC with the exact params passed (1 ms)
+
+PASS test/services/conversation/index-coach-text.test.ts
+  buildIndexSuggestionsText
+    ✓ with items → speakable, enumerated, never raw JSON, anti-fake-fail (1 ms)
+    ✓ with NO items → still positive + actionable, never a fake-fail (15 ms)
+  buildIndexPlanText
+    ✓ names every scheduled activity with its date (transparency) (1 ms)
+    ✓ singular wording for a single action
+
+PASS test/services/journey/user-journey-service.test.ts
+  VTID-03152 user-journey-service
+    computeDayInJourney
+      ✓ returns 0 on the same day as start (1 ms)
+      ✓ returns floor of elapsed days
+      ✓ returns 0 for future started_at (clamped)
+      ✓ handles 90+ days past start
+    resolveCurrentWave
+      ✓ returns the earliest-ending matching wave (matches existing buildJourney behavior) (1 ms)
+      ✓ returns null past all enabled waves
+    getJourneyState
+      ✓ returns derived state for a present row (1 ms)
+      ✓ falls back to app_users.created_at when journey row missing (14 ms)
+      ✓ returns null on DB error (1 ms)
+      ✓ returns null when neither row is present
+    ensureUserJourneyRow
+      ✓ returns true when insert succeeds
+      ✓ returns false when insert hits unique_violation (idempotent path)
+      ✓ returns false on other DB errors
+    updateSessionEndState
+      ✓ does nothing on empty patch (1 ms)
+      ✓ pushes greeting opening capped at 5
+      ✓ clear_first_session writes is_first_session=false (1 ms)
+
+PASS test/routes/admin-notification-categories-test-send-tenant-lookup.test.ts
+  admin-notification-categories.ts — POST /:id/test tenant_id lookup logging
+    ✓ destructures `error` from the user_tenants lookup and logs a non-PGRST116 error before the unchanged fallback
+
+PASS test/services/user-health-context-topic-profile-error-logging.test.ts
+  services/user-health-context.ts — fetchUserTopicProfile (topicsRes) error logging
+    ✓ checks topicsRes?.error before falling back to the non-fatal empty-affinity behavior (1 ms)
+    ✓ the non-fatal fallback itself is unchanged: still reads topicsRes?.data and pushes the source only when topics is present
+
+PASS test/services/tts/narration-audio-cache.test.ts
+  buildNarrationCacheKey
+    ✓ is stable for identical inputs (1 ms)
+    ✓ CHANGES when the engine changes — this is what makes the neural→generative flip safe
+    ✓ changes when the voice changes
+    ✓ changes when the lesson text changes, so a curriculum edit self-invalidates (1 ms)
+    ✓ changes when the language changes
+    ✓ changes when the topic changes
+    ✓ namespaces by schema version, language and topic so keys stay browsable
+  MemoryNarrationStore
+    ✓ returns null on a miss and the entry on a hit (1 ms)
+    ✓ evicts least-recently-used entries once the BYTE budget is exceeded
+    ✓ refuses an entry larger than the whole budget instead of evicting everything for it
+    ✓ does not double-count bytes when the same key is overwritten (1 ms)
+  resolveNarrationCacheMode
+    ✓ defaults to memory when unset
+    ✓ honours the three recognised values (8 ms)
+    ✓ treats an UNRECOGNISED value as memory, not off — a typo must not silently restore per-tap billing
+  getNarrationAudioStore
+    ✓ returns null when caching is off
+    ✓ returns the memory store by default
+    ✓ falls back to memory AND logs an error when s3 is selected with no bucket (1 ms)
+    ✓ returns the s3 store when a bucket is named
+
+PASS test/vtid-03820-onramp-staging-flag-pinned.test.ts
+  VTID-03820 follow-up: staging pins OPERATOR_EXECUTION_ONRAMP_ENABLED
+    ✓ upserts the flag as the exact string "true"
+    ✓ strips the inherited value first, so a stale one cannot survive
+    ✓ is deliberately NOT pinned on the prod deploy workflow yet (1 ms)
+    ✓ DEEPSEEK_API_KEY secret is already wired on the same task definition (a real prerequisite for the on-ramp)
+
+PASS test/vtid-03842-entity-resolution.test.ts
+  ✓ exact match (trimmed, case-folded) resolves to the id and drops the ref (1 ms)
+  ✓ several exact matches → entity_ambiguous with candidates, never a pick (1 ms)
+  ✓ no match → entity_not_found; a near miss is not a match
+  ✓ ref and id both present → entity_ref_conflict; lookup failure surfaces; no refs → passthrough (1 ms)
+  ✓ account_ref matches on number or name
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 1 skipped, 927 passed, 927 of 928 total
+Tests:       29 skipped, 6 todo, 15234 passed, 15269 total
+Snapshots:   44 passed, 44 total
+Time:        68.311 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

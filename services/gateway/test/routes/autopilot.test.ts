@@ -901,6 +901,44 @@ describe('GET /pipeline/health', () => {
     expect(res.body.stuck_count).toBe(0);
     expect(res.body.workers_active).toBe(false);
   }, 10_000);
+
+  // VTID-03965: live staging measurement AFTER VTID-03964's independent-
+  // AbortController fix still showed real 500s on this route ("Body is
+  // unusable: Body has already been read", "The operation was aborted.") —
+  // the shared-signal theory was incomplete. The actual gap: each
+  // response's .json() is read AFTER Promise.all has already settled,
+  // outside the per-fetch .catch(() => null) above and outside the (already
+  // cleared) AbortController timeouts. A corrupted/failed body read on any
+  // one of the three responses threw past every guard straight into the
+  // route's top-level catch, turning one degraded data point into a full
+  // 500. Each parse must be independently guarded so a body-read failure on
+  // ANY one of the three degrades only that field.
+  it('degrades one field instead of 500ing the whole route when a response body fails to parse', async () => {
+    (getEventLoopStatus as jest.Mock).mockResolvedValue({ is_running: true, execution_armed: true, config: {}, stats: {} });
+    (global.fetch as jest.Mock).mockImplementation((url: string) => {
+      if (url.includes('count_tasks_by_status')) {
+        // Simulates the observed corruption: the fetch() itself resolved
+        // (ok: true), but reading the body throws.
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: { get: () => null },
+          json: async () => { throw new Error('Body is unusable: Body has already been read'); },
+          text: async () => { throw new Error('Body is unusable: Body has already been read'); },
+        });
+      }
+      return Promise.resolve(jsonRes(200, []));
+    });
+
+    const res = await request(app).get('/api/v1/autopilot/pipeline/health');
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.tasks).toEqual({ scheduled: 0, in_progress: 0, completed: 0, rejected: 0, blocked: 0 });
+    // The other two fields, whose bodies parsed fine, are unaffected.
+    expect(res.body.stuck_count).toBe(0);
+    expect(res.body.workers_active).toBe(false);
+  });
 });
 
 describe('GET /pipeline/summary', () => {
