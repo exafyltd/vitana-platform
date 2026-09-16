@@ -1,0 +1,18 @@
+# VTID-03985 — commands run, verbatim
+
+cd services/gateway
+npx jest test/orb/live/upstream/cascaded-live-client-empty-completion.test.ts --silent
+# -> 5/5 passing
+
+npx tsc --noEmit
+# -> exit 0, see outputs/tsc-noemit.txt
+
+npx jest test/orb/live/upstream/cascaded --silent
+# -> 34/34 passing, see outputs/jest-cascaded-suites.txt
+
+npm run build
+# -> exit 0, see outputs/npm-build.txt
+
+npx jest --silent
+# -> 932/933 suites (1 pre-existing skip), 15276/15311 tests passing, 0 failures
+# -> see outputs/jest-full-suite-tail.txt

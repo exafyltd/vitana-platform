@@ -294,11 +294,37 @@ export class CascadedLiveClient implements UpstreamLiveClient {
         return;
       }
 
-      const replyText = (completion.text ?? '').trim();
+      let replyText = (completion.text ?? '').trim();
+
+      // VTID-03985: `callViaRouter` only escalates to the stage's fallback
+      // model on an explicit failure (`ok:false`) — a primary call that
+      // returns `ok:true` with EMPTY text (observed live the very first time
+      // this cascade path ran for real, VTID-03984) sails straight through
+      // as a "success" with nothing to say. Left alone, that silently drops
+      // the turn and the session hangs until the 30s stall watchdog kills it
+      // with a generic, unhelpful error — for a live spoken conversation,
+      // dead air for 30s is a much worse failure mode than a slow reply.
+      // One bounded retry against the stage's OWN currently-configured
+      // fallback model (bedrock/eu.anthropic.claude-sonnet-4-6 — confirmed
+      // live-invokable, CLAUDE.md §2b) before giving up for real.
+      if (!replyText && !completion.fallbackUsed) {
+        const retry = await callViaRouter('operator', userText, {
+          service: 'orb-cascaded-voice',
+          systemPrompt: this.systemInstruction,
+          maxTokens: 400,
+          providerOverride: 'bedrock',
+          modelOverride: 'eu.anthropic.claude-sonnet-4-6',
+          allowFallback: false,
+        });
+        if (retry.ok) {
+          replyText = (retry.text ?? '').trim();
+        }
+      }
+
       if (!replyText) {
         this.errorHandler?.({
           code: 'cascade_llm_empty',
-          message: 'LLM returned no text for the cascaded turn',
+          message: 'LLM returned no text for the cascaded turn (after retry)',
         });
         return;
       }
