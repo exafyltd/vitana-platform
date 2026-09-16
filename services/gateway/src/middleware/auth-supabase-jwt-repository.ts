@@ -22,10 +22,15 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-export async function fetchVitanaIdForUser(sb: SupabaseClient, userId: string) {
-  return sb.from('app_users').select('vitana_id').eq('user_id', userId).maybeSingle();
+// VTID-03972: both calls take a required AbortSignal (see abortAfter() in
+// auth-supabase-jwt.ts) — this middleware runs on every authenticated
+// request, so an unbounded Supabase call here stalls every screen the app
+// makes, not just one route. A slow/unreachable Supabase now fails fast
+// instead of hanging the request indefinitely.
+export async function fetchVitanaIdForUser(sb: SupabaseClient, userId: string, signal: AbortSignal) {
+  return sb.from('app_users').select('vitana_id').eq('user_id', userId).abortSignal(signal).maybeSingle();
 }
 
-export async function fetchPrimaryTenantForUser(sb: SupabaseClient, userId: string) {
-  return sb.from('user_tenants').select('tenant_id').eq('user_id', userId).eq('is_primary', true).single();
+export async function fetchPrimaryTenantForUser(sb: SupabaseClient, userId: string, signal: AbortSignal) {
+  return sb.from('user_tenants').select('tenant_id').eq('user_id', userId).eq('is_primary', true).abortSignal(signal).single();
 }

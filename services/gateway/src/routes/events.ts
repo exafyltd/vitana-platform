@@ -888,6 +888,58 @@ function collapseConversationGroup(events: any[]): any {
  * - topic: Filter by event topic (e.g., "deploy.gateway.success")
  * - vtid: Filter by VTID
  */
+// VTID-03980: SSE ticker back-pressure. Measured live 2026-09-16 on the
+// shared Supabase project (one DB for prod, staging and the Command Hub):
+// every open Command Hub tab ran this poll every 3s, the FIRST poll had no
+// time bound at all (`ORDER BY created_at DESC LIMIT 20` over a 540 MB
+// table with no created_at index = full seq scan + sort), and once the DB
+// was slow enough for that first page to hit PostgREST's 8s
+// statement_timeout, `lastSeenTimestamp` never got set — so the SAME
+// heaviest query was re-issued every 3s, overlapping (3s interval < 8s
+// timeout), forever, per tab. That storm is what starved logins and profile
+// reads for the mobile app. The rules now:
+//   1. the first poll is bounded to a recent window (index-friendly, and a
+//      bounded scan even without an index);
+//   2. polls never overlap — a poll still in flight means skip this tick;
+//   3. each poll carries its own AbortController timeout, well under
+//      PostgREST's statement_timeout, so the gateway gives up first;
+//   4. a failed poll doubles the interval (capped) and a successful poll
+//      resets it — a slow DB gets fewer requests, not more.
+export const SSE_POLL_INTERVAL_MS = 3000;
+export const SSE_POLL_MAX_BACKOFF_MS = 30_000;
+export const SSE_POLL_TIMEOUT_MS = 5000;
+export const SSE_INITIAL_WINDOW_MS = 15 * 60 * 1000;
+
+/** Query string for one SSE poll against PostgREST (pure — unit-tested). */
+export function buildSseEventsQuery(opts: {
+  lastSeenTimestamp: string | null;
+  topic?: string;
+  vtid?: string;
+  channel?: string;
+  now?: Date;
+}): string {
+  let queryParams = "limit=20&order=created_at.desc";
+  if (opts.lastSeenTimestamp) {
+    queryParams += `&created_at=gt.${encodeURIComponent(opts.lastSeenTimestamp)}`;
+  } else {
+    // No cursor yet (first poll, or every poll after a first page that
+    // never came back): bound the window instead of scanning everything.
+    const since = new Date((opts.now ?? new Date()).getTime() - SSE_INITIAL_WINDOW_MS).toISOString();
+    queryParams += `&created_at=gt.${encodeURIComponent(since)}`;
+  }
+  if (opts.topic) queryParams += `&topic=eq.${encodeURIComponent(opts.topic)}`;
+  if (opts.vtid) queryParams += `&vtid=eq.${encodeURIComponent(opts.vtid)}`;
+  // VTID-03927: `channel` maps to the existing `surface` column.
+  if (opts.channel) queryParams += `&surface=eq.${encodeURIComponent(opts.channel)}`;
+  return queryParams;
+}
+
+/** Next delay before polling again: reset on success, double (capped) on failure. */
+export function nextSsePollDelay(currentDelayMs: number, ok: boolean): number {
+  if (ok) return SSE_POLL_INTERVAL_MS;
+  return Math.min(Math.max(currentDelayMs, SSE_POLL_INTERVAL_MS) * 2, SSE_POLL_MAX_BACKOFF_MS);
+}
+
 router.get("/api/v1/events/stream", async (req: Request, res: Response) => {
   const svcKey = process.env.SUPABASE_SERVICE_ROLE;
   const supabaseUrl = process.env.SUPABASE_URL;
@@ -905,35 +957,42 @@ router.get("/api/v1/events/stream", async (req: Request, res: Response) => {
   let lastSeenId: string | null = null;
   let lastSeenTimestamp: string | null = null;
 
-  // Function to fetch and send new events
-  const pollEvents = async () => {
+  // VTID-03980: back-pressure state (see the constants above).
+  let inFlight = false;
+  let closed = false;
+  let pollDelayMs = SSE_POLL_INTERVAL_MS;
+  let pollTimer: NodeJS.Timeout | null = null;
+  let inFlightController: AbortController | null = null;
+
+  // Function to fetch and send new events. Resolves true on a successful
+  // poll, false when it failed or timed out (drives the backoff).
+  const pollEvents = async (): Promise<boolean> => {
     if (!svcKey || !supabaseUrl) {
       console.error("[SSE] Gateway misconfigured");
-      return;
+      return false;
     }
+    if (inFlight) {
+      // VTID-03980: never stack a second scan on top of one still running.
+      return false;
+    }
+    inFlight = true;
+    const controller = new AbortController();
+    inFlightController = controller;
+    const timeout = setTimeout(() => controller.abort(), SSE_POLL_TIMEOUT_MS);
 
     try {
-      // Build query params - fetch recent events
-      let queryParams = "limit=20&order=created_at.desc";
-
-      // If we have a last seen timestamp, only get newer events
-      if (lastSeenTimestamp) {
-        queryParams += `&created_at=gt.${lastSeenTimestamp}`;
-      }
-
-      // Apply optional filters
-      const topic = req.query.topic as string;
-      const vtid = req.query.vtid as string;
       // VTID-03927: `channel` was documented above but never read — every
       // caller passing `channel=operator` (e.g. Command Hub's SSE ticker)
       // silently got the unfiltered platform-wide firehose instead. Maps to
       // the existing `surface` column (already written as 'operator'/'orb'
       // by conversation.ts/tenant-specialists.ts) rather than inventing a
       // new column.
-      const channel = req.query.channel as string;
-      if (topic) queryParams += `&topic=eq.${encodeURIComponent(topic)}`;
-      if (vtid) queryParams += `&vtid=eq.${encodeURIComponent(vtid)}`;
-      if (channel) queryParams += `&surface=eq.${encodeURIComponent(channel)}`;
+      const queryParams = buildSseEventsQuery({
+        lastSeenTimestamp,
+        topic: req.query.topic as string | undefined,
+        vtid: req.query.vtid as string | undefined,
+        channel: req.query.channel as string | undefined,
+      });
 
       const resp = await fetch(
         `${supabaseUrl}/rest/v1/oasis_events?${queryParams}`,
@@ -944,12 +1003,13 @@ router.get("/api/v1/events/stream", async (req: Request, res: Response) => {
             apikey: svcKey,
             Authorization: `Bearer ${svcKey}`,
           },
+          signal: controller.signal,
         },
       );
 
       if (!resp.ok) {
         console.error(`[SSE] OASIS poll failed: ${resp.status}`);
-        return;
+        return false;
       }
 
       const events = (await resp.json()) as any[];
@@ -994,29 +1054,54 @@ router.get("/api/v1/events/stream", async (req: Request, res: Response) => {
           lastSeenTimestamp = event.created_at;
         }
       }
+      return true;
     } catch (err: any) {
-      console.error("[SSE] Poll error:", err.message);
+      console.error(`[SSE] Poll error${controller.signal.aborted ? ` (timed out after ${SSE_POLL_TIMEOUT_MS}ms)` : ""}:`, err?.message);
+      return false;
+    } finally {
+      clearTimeout(timeout);
+      inFlight = false;
+      if (inFlightController === controller) inFlightController = null;
     }
   };
 
-  // Initial poll to send recent events
-  await pollEvents();
-
-  // Set up polling interval (every 3 seconds)
-  const pollInterval = setInterval(pollEvents, 3000);
+  // VTID-03980: self-scheduling poll loop (replaces a fixed setInterval so
+  // the delay can back off while the DB is slow and never overlaps).
+  const scheduleNext = () => {
+    if (closed) return;
+    pollTimer = setTimeout(async () => {
+      pollTimer = null;
+      const ok = await pollEvents();
+      pollDelayMs = nextSsePollDelay(pollDelayMs, ok);
+      scheduleNext();
+    }, pollDelayMs);
+  };
 
   // Send heartbeat every 30 seconds to keep connection alive
   const heartbeatInterval = setInterval(() => {
+    if (closed) return;
     res.write(`: heartbeat ${new Date().toISOString()}\n\n`);
   }, 30000);
 
-  // Cleanup on client disconnect
+  // Cleanup on client disconnect. VTID-03980: registered BEFORE the initial
+  // poll — it used to be registered after `await pollEvents()`, so a client
+  // that gave up during a slow first poll (exactly the case under DB load)
+  // was never noticed: the handler kept polling for a socket nobody read,
+  // one more zombie ticker per abandoned tab.
   req.on("close", () => {
     console.log("[SSE] Client disconnected");
-    clearInterval(pollInterval);
+    closed = true;
+    if (pollTimer) clearTimeout(pollTimer);
+    if (inFlightController) inFlightController.abort();
     clearInterval(heartbeatInterval);
     res.end();
   });
+
+  // Initial poll to send recent events
+  const firstOk = await pollEvents();
+  if (closed) return;
+  pollDelayMs = nextSsePollDelay(pollDelayMs, firstOk);
+  scheduleNext();
 });
 
 /**

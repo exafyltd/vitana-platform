@@ -31,6 +31,7 @@ const createChain = () => {
   const chain: any = {
     select: jest.fn(() => chain),
     eq: jest.fn(() => chain),
+    abortSignal: jest.fn(() => chain),
     single: jest.fn(() => chain),
     maybeSingle: jest.fn(() => chain),
     then: jest.fn((resolve: (v: any) => any) => {

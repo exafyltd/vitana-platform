@@ -1,0 +1,126 @@
+# VTID-03972 — commands run during this change
+
+## Live production diagnosis (read-only, via Supabase MCP against project inmkhvwdcuyhnxkgfvsb)
+
+$ select count(*) as n from oasis_events where created_at > now() - interval '48 hours';
+(timed out after 60s — the first concrete signal that ordinary time-range
+queries against this table were not completing in reasonable time)
+
+$ select pid, state, wait_event_type, wait_event, now() - query_start as running_for, left(query, 120) as query_snippet
+  from pg_stat_activity where state != 'idle' order by query_start asc limit 25;
+[{"pid":2661418,"state":"idle in transaction (aborted)","wait_event_type":"Client","wait_event":"ClientRead","running_for":"00:00:08.311071", ...},
+ {"pid":2662527,"state":"active","wait_event_type":"IO","wait_event":"DataFileRead","running_for":"00:00:05.733765", "query_snippet":"WITH pgrst_source AS ( SELECT \"public\".\"oasis_events\".* FROM \"public\".\"oasis_events\" WHERE \"public\".\"oasis_events\".\"sur..."}, ...]
+(live PostgREST queries against oasis_events caught mid-flight, blocked on
+DataFileRead — confirms genuine disk I/O contention, not a fluke)
+
+$ select relname, n_live_tup, n_dead_tup, last_vacuum, last_autovacuum, last_analyze, last_autoanalyze
+  from pg_stat_user_tables where relname = 'oasis_events';
+[{"relname":"oasis_events","n_live_tup":505533,"n_dead_tup":65340,"last_vacuum":null,"last_autovacuum":"2026-09-02 03:00:39.974654+00","last_analyze":null,"last_autoanalyze":"2026-09-13 06:06:17.91995+00"}]
+
+$ select indexname, indexdef from pg_indexes where tablename = 'oasis_events';
+(10 indexes, all composite with topic/status/task_stage/vitana_id leading —
+no plain index on created_at alone)
+
+$ select relname, pg_size_pretty(pg_total_relation_size(oid)) as total_size, reltuples::bigint as est_rows
+  from pg_class where relname in ('oasis_events','app_users','profiles','role_preferences','erp_audit','erp_commands','erp_approvals','erp_capability_grants','chat_messages')
+  order by pg_total_relation_size(oid) desc;
+[{"relname":"oasis_events","total_size":"933 MB","est_rows":485635},
+ {"relname":"chat_messages","total_size":"57 MB","est_rows":45118},
+ {"relname":"profiles","total_size":"672 kB","est_rows":203},
+ {"relname":"app_users","total_size":"304 kB","est_rows":223},
+ {"relname":"role_preferences","total_size":"120 kB","est_rows":199},
+ {"relname":"erp_commands","total_size":"40 kB","est_rows":-1},
+ {"relname":"erp_capability_grants","total_size":"40 kB","est_rows":-1},
+ {"relname":"erp_approvals","total_size":"24 kB","est_rows":-1}]
+(oasis_events is ~16x every other table combined — the dominant table by far)
+
+$ select jobid, jobname, schedule, command, active from cron.job where jobid = 6;
+[{"jobid":6,"jobname":"oasis-events-info-retention","schedule":"0 3 * * *","command":"DELETE FROM oasis_events WHERE status = 'info' AND created_at < NOW() - INTERVAL '7 days'"}]
+(the live retention job only ever covered status='info' rows — the Feb
+migration's intended blanket 14-day retention never actually ran)
+
+$ select jobid, status, return_message, start_time, end_time from cron.job_run_details where jobid = 6 order by start_time desc limit 10;
+[]
+(zero run history for the originally-intended job name 'oasis-events-retention' — it was never created; jobid 6 is the narrower job that WAS running)
+
+## Live production fix (applied via Supabase MCP execute_sql)
+
+$ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_oasis_events_created_at ON public.oasis_events (created_at);
+(succeeded, no error — CONCURRENTLY means no lock taken on live traffic)
+
+$ CREATE OR REPLACE PROCEDURE public.oasis_events_cleanup_batched(retention_days INTEGER DEFAULT 14, batch_size INTEGER DEFAULT 5000, max_batches INTEGER DEFAULT 200) ...
+(succeeded — batched, per-batch-COMMIT cleanup procedure; see migration file
+for full body)
+
+$ select cron.alter_job(job_id => 6, command => $cmd$CALL public.oasis_events_cleanup_batched(14, 5000, 200)$cmd$);
+(succeeded — cron job now calls the batched procedure instead of the old
+narrow raw DELETE)
+
+$ CALL public.oasis_events_cleanup_batched(14, 5000, 200);
+(client-side timed out at 60s; confirmed still running server-side via
+pg_stat_activity, state=active, wait_event=DataFileRead — allowed to run to
+completion rather than cancelled, since each batch commits independently)
+
+$ select n_live_tup, n_dead_tup, pg_size_pretty(pg_total_relation_size('oasis_events')) as size from pg_stat_user_tables where relname = 'oasis_events';
+before: {"n_live_tup":505574,"n_dead_tup":65340,"size":"933 MB"}
+after:  {"n_live_tup":495582,"n_dead_tup":75341,"size":"933 MB"}
+(confirms real incremental progress: ~10,000 rows deleted in the one
+manual run this session had time to observe; size unchanged because
+non-FULL delete marks space reusable rather than shrinking the file —
+the nightly job continues this over the coming night(s))
+
+$ VACUUM (ANALYZE) public.oasis_events;
+(client-side timed out at 60s before completing; not re-run manually
+given the DB's confirmed I/O pressure — left for autovacuum's normal
+triggers now that the underlying unbounded-growth cause is fixed)
+
+## Local, dependency-free CI-gate self-checks (this repo's own scripts,
+## no npm install required — see "what could not be run locally" below)
+
+$ git diff --name-only 65853a3652697d4ceaf45c81ae4306f371896f8d...HEAD
+services/gateway/src/middleware/auth-supabase-jwt-repository.ts
+services/gateway/src/middleware/auth-supabase-jwt.ts
+services/gateway/src/routes/autopilot-recommendations.ts
+services/gateway/test/middleware/auth-supabase-jwt.test.ts
+supabase/migrations/20260916150000_vtid_03972_widen_oasis_events_retention.sql
+
+$ node scripts/ci/validator-path-guard.cjs /tmp/vtid03972_changed_files.txt gateway_backend /dev/null
+NOT JUDGED — 1 file(s) outside this gate's remit:
+  supabase/migrations/20260916150000_vtid_03972_widen_oasis_events_retention.sql
+  These trees have no governance gate of their own. That is a real gap,
+  not an approval — see VTID-03696.
+APPROVED: 4 in-remit file(s) match the gateway_backend allowlist
+(exit 0 — see outputs/path-ownership-gate.txt)
+
+$ node scripts/ci/validator-path-guard.cjs --route-evidence-required /tmp/vtid03972_route_diff.txt
+No route registration added — route-mount evidence not required for this diff.
+(exit 1, i.e. "not required" per this script's own documented CLI contract
+— see outputs/route-evidence-gate.txt)
+
+$ node scripts/ci/validator-path-guard.cjs --csp-added-lines /tmp/vtid03972_csp_diff.txt
+No CSP pattern hits in added lines.
+(exit 0 — see outputs/csp-gate.txt)
+
+## What could NOT be run locally in this session
+
+$ cd services/gateway && npm ci
+npm error code E403
+npm error 403 403 Forbidden - GET https://registry.npmjs.org/zod/-/zod-3.25.76.tgz
+npm error 403 In most cases, you or one of your dependencies are requesting
+npm error 403 a package version that is forbidden by your security policy
+(this sandbox's outbound egress policy blocks npm registry access; per this
+session's own proxy guidance, a 403 from the proxy is to be reported, not
+retried or routed around)
+
+Consequence: `npm run build`, `tsc --noEmit`, and the gateway jest suite
+could not be executed in this local sandbox. This PR's own "Build Gate"
+step (`cd services/gateway && npm ci && npm run build`, in this same
+VALIDATOR-CHECK workflow, running on a GitHub-hosted runner with normal
+registry access) is the actual, real verification for compilation —
+see its own job output on this PR. The updated jest fixture
+(`test/middleware/auth-supabase-jwt.test.ts`'s fake Supabase chain now
+stubs `.abortSignal()`, required because the real `@supabase/supabase-js`
+query builder's `.abortSignal()` is now called by production code) was
+written to match this repo's existing per-table thenable mock pattern
+exactly, but was not independently run against a real jest process by
+this session.

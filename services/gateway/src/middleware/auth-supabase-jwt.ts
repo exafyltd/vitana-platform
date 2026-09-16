@@ -53,6 +53,23 @@ export interface SupabaseIdentity {
 const VITANA_ID_CACHE_TTL_MS = 5 * 60 * 1000;
 const vitanaIdCache = new Map<string, { vitana_id: string | null; expires_at: number }>();
 
+// VTID-03972: this middleware runs on every authenticated/optionally-authenticated
+// gateway request. resolveVitanaId()/fetchPrimaryTenantForUser() previously had
+// no AbortController/timeout at all, so a slow Supabase moment (the platform's
+// own oasis_events I/O-stall pattern, see docs/CLAUDE.md changelog VTID-03954→65)
+// stalled every screen navigation, not just one route. Matches the
+// abortAfter()/timeout-budget pattern already established in vtid-ledger-reader.ts.
+const AUTH_LOOKUP_TIMEOUT_MS = 2500;
+
+function abortAfter(ms: number): { signal: AbortSignal; clear: () => void } {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), ms);
+  return {
+    signal: controller.signal,
+    clear: () => clearTimeout(timeoutId),
+  };
+}
+
 /**
  * VTID-01967: Resolve vitana_id for a user, with in-process caching.
  * Returns null if not found / not yet mirrored — callers must be null-tolerant.
@@ -67,11 +84,12 @@ export async function resolveVitanaId(userId: string): Promise<string | null> {
     return cached.vitana_id;
   }
 
+  const timeout = abortAfter(AUTH_LOOKUP_TIMEOUT_MS);
   try {
     const supabase = getSupabase();
     if (!supabase) return null;
 
-    const { data } = await repo.fetchVitanaIdForUser(supabase, userId);
+    const { data } = await repo.fetchVitanaIdForUser(supabase, userId, timeout.signal);
 
     const vitanaId = (data && (data as any).vitana_id) || null;
     vitanaIdCache.set(userId, {
@@ -81,8 +99,11 @@ export async function resolveVitanaId(userId: string): Promise<string | null> {
     return vitanaId;
   } catch {
     // Null-tolerant: never block auth on this lookup. If the column doesn't
-    // exist yet (Release A migrations not applied), the catch swallows.
+    // exist yet (Release A migrations not applied), or the request timed out,
+    // the catch swallows.
     return null;
+  } finally {
+    timeout.clear();
   }
 }
 
@@ -490,8 +511,9 @@ export async function requireTenant(
   if (!req.identity.tenant_id) {
     const supabase = getSupabase();
     if (supabase) {
+      const timeout = abortAfter(AUTH_LOOKUP_TIMEOUT_MS);
       try {
-        const { data: tenantRow } = await repo.fetchPrimaryTenantForUser(supabase, req.identity.user_id);
+        const { data: tenantRow } = await repo.fetchPrimaryTenantForUser(supabase, req.identity.user_id, timeout.signal);
 
         if (tenantRow?.tenant_id) {
           req.identity.tenant_id = tenantRow.tenant_id;
@@ -503,6 +525,8 @@ export async function requireTenant(
         console.warn(
           `[VTID-01186] Failed to resolve tenant from DB for user ${req.identity.user_id}: ${err.message}`
         );
+      } finally {
+        timeout.clear();
       }
     }
   }
@@ -562,29 +586,39 @@ export async function requireAuthWithTenant(
     upsertActiveDay(result.identity.user_id).catch(() => {});
   }
 
-  // VTID-01967: vitana_id resolution
-  req.identity.vitana_id = await resolveVitanaId(result.identity.user_id);
+  // VTID-01967 + VTID-01186, parallelized (VTID-03972): these two lookups are
+  // independent (vitana_id from app_users, tenant from user_tenants) and were
+  // previously awaited sequentially, stacking their timeouts. Run concurrently.
+  const needsTenantLookup = !req.identity.tenant_id;
+  const tenantLookup = needsTenantLookup
+    ? (async () => {
+        const supabase = getSupabase();
+        if (!supabase) return;
+        const timeout = abortAfter(AUTH_LOOKUP_TIMEOUT_MS);
+        try {
+          const { data: tenantRow } = await repo.fetchPrimaryTenantForUser(supabase, req.identity!.user_id, timeout.signal);
 
-  // If tenant_id missing from JWT, resolve from user_tenants table
-  if (!req.identity.tenant_id) {
-    const supabase = getSupabase();
-    if (supabase) {
-      try {
-        const { data: tenantRow } = await repo.fetchPrimaryTenantForUser(supabase, req.identity.user_id);
-
-        if (tenantRow?.tenant_id) {
-          req.identity.tenant_id = tenantRow.tenant_id;
-          console.log(
-            `[VTID-01186] Resolved tenant from user_tenants for user ${req.identity.user_id}: ${tenantRow.tenant_id}`
+          if (tenantRow?.tenant_id) {
+            req.identity!.tenant_id = tenantRow.tenant_id;
+            console.log(
+              `[VTID-01186] Resolved tenant from user_tenants for user ${req.identity!.user_id}: ${tenantRow.tenant_id}`
+            );
+          }
+        } catch (err: any) {
+          console.warn(
+            `[VTID-01186] Failed to resolve tenant from DB for user ${req.identity!.user_id}: ${err.message}`
           );
+        } finally {
+          timeout.clear();
         }
-      } catch (err: any) {
-        console.warn(
-          `[VTID-01186] Failed to resolve tenant from DB for user ${req.identity.user_id}: ${err.message}`
-        );
-      }
-    }
-  }
+      })()
+    : Promise.resolve();
+
+  const [vitanaId] = await Promise.all([
+    resolveVitanaId(result.identity.user_id),
+    tenantLookup,
+  ]);
+  req.identity.vitana_id = vitanaId;
 
   // Still no tenant after DB lookup → reject
   if (!req.identity.tenant_id) {
