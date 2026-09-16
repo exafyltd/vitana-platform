@@ -49,20 +49,25 @@ exclusion for the first time.
 AC-1 — `excludePastPurchases()` correctly filters out only products whose id
 matches a past purchase, and reports exactly how many were dropped.
 
-TEST (new file): `test/limitations-filter.test.ts` — 6 unit tests: basic
+TEST: `test/limitations-filter.test.ts` (new file) — 6 unit tests: basic
 filtering, correct count with multiple matches, zero when no overlap, zero
 when past-purchases list is empty, empty allowed list, and a past-purchase
 entry with no matching product contributing nothing.
 
 AC-2 — `discover-search.ts`'s `hidden_breakdown.past_purchases` is now
-populated (was previously always absent from the object, since it was
-computed but discarded) — verified via `tsc --noEmit` confirming the field
-flows through the object's inferred type end to end, and by code inspection
-that `hiddenBreakdown` is now seeded with `past_purchases: 0` and updated
-via the shared helper on every code path (with-context and without-context).
+populated on every code path (was previously always absent from the
+object, since it was computed but discarded).
 
-AC-3 — No regression to `discover-feed.ts`'s existing correct behavior —
-verified by the full gateway regression suite passing unchanged.
+TEST: `tsc --noEmit` (type-level proof the field flows through the
+object's inferred type end to end) + code inspection confirming
+`hiddenBreakdown` is seeded with `past_purchases: 0` and updated via the
+shared helper on both the ctx-present and ctx-absent branches.
+
+AC-3 — No regression to `discover-feed.ts`'s existing correct behavior.
+
+TEST: full gateway regression suite (`test/limitations-filter.test.ts`
+plus every pre-existing suite) — 916/917 suites (1 pre-existing skip),
+15,083/15,118 tests passing, 0 failures.
 
 ## Verification
 
