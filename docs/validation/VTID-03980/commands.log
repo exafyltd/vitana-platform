@@ -1,0 +1,39 @@
+# VTID-03980 — commands run during this change
+
+## Live diagnosis (read-only, Supabase MCP, project inmkhvwdcuyhnxkgfvsb)
+
+$ select application_name, usename, state, round(extract(epoch from now()-query_start)) as secs, left(query, 420) as q
+  from pg_stat_activity where query ilike '%oasis_events%' and pid <> pg_backend_pid() and state <> 'idle' order by query_start limit 8;
+→ three concurrent PostgREST 14.5 backends running
+  SELECT "public"."oasis_events".* FROM "public"."oasis_events" WHERE "surface" = $1 ORDER BY "created_at" DESC LIMIT $2 OFFSET $3
+
+$ (postgres_logs) select event_message, count() from logs where source='postgres_logs' and event_message ilike '%canceling statement%' group by 1
+→ canceling statement due to statement timeout: 1770 (15:00–16:16 UTC); due to user request: 13
+
+$ (postgres_logs) sample of timed-out statements with parsed.query
+→ queryid -5658177598521301144 = the WHERE surface = $1 ORDER BY created_at DESC LIMIT/OFFSET poll (pg_stat_statements: 2,565 recorded completions at 3,438 ms mean, 7,889 ms max — timed-out executions are not counted)
+
+$ grep -n "setInterval\|created_at=gt\|surface=eq" services/gateway/src/routes/events.ts
+→ /api/v1/events/stream: setInterval(pollEvents, 3000); no created_at bound on the first poll; cursor only set after a successful page
+
+## Sign-in / auth path measured against STAGING gateway + Supabase Auth (documented test user, read-only)
+
+$ curl -w "signin http=%{http_code} time=%{time_total}s" -X POST $SUPABASE_URL/auth/v1/token?grant_type=password ...
+→ first attempt: http=504 time=36.0s (upstream request timeout); second: http=200 time=32.8s
+$ curl -w "%{http_code} %{time_total}s" -H "Authorization: Bearer <token>" https://preview-aws-gateway.vitanaland.com/api/v1/auth/me  (x5)
+→ 200 19.0s, 200 4.1s, 200 2.7s, 200 3.5s, 200 4.2s   (staging gateway on 6d3134b = VTID-03972 timeouts live; DB still the bottleneck)
+
+## Change
+
+$ python3 (in-place edit) services/gateway/src/routes/events.ts — bounded first window, non-overlapping self-scheduling poll, per-poll AbortController timeout, exponential backoff
+$ cat > services/gateway/test/events-stream-backpressure.test.ts
+
+## Repo CI gates run locally (dependency-free)
+
+$ node scripts/ci/validator-path-guard.cjs /tmp/changed.txt gateway_backend > docs/validation/VTID-03980/outputs/path-ownership-gate.txt
+$ git diff --cached -U0 -- services/gateway/src/routes/events.ts | grep -E '^\+' | grep -E "router\.(get|post|put|patch|delete)\(" → no added route registrations
+
+## What could NOT be run locally
+
+$ cd services/gateway && npm ci
+→ npm error 403 Forbidden - GET https://registry.npmjs.org/... (sandbox egress policy) — jest / tsc not runnable here; CI is the verification.
