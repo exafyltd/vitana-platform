@@ -2215,3 +2215,133 @@ with zero rows moved by this attempt. Full-load-only replication (no CDC)
 remains available as a fallback if a one-time cutover with a maintenance
 window is acceptable, but does not give the near-zero-downtime cutover
 this migration has been aiming for.
+
+## Addendum, 2026-09-15 — PR #3087 (VTID-03591) and vitana-v1 PR #1051 (B7) merged to `main` and promoted to production on the platform owner's explicit approval
+
+After 600+/38+ commits of iterative design, live execution, and merge
+maintenance (documented throughout this file and the PR bodies
+themselves), the platform owner directly instructed merging and deploying
+both PRs. Both were green (CI passing, no open review threads,
+`mergeable_state: clean`) at the time.
+
+**Merged:** `exafyltd/vitana-platform#3087` → `main` @ `dc2d17d2` (Aurora
+identity/RLS shim, storage abstraction, B2/B3/B4/B6/B7 audits and fixes,
+`app_users` drift monitor, Amazon Transcribe bridge — see this PR's own
+body for the full incremental history). `exafyltd/vitana-v1#1051` →
+`main` @ `3b7ebcb` (Bedrock/Titan/Transcribe bridge client wiring for the
+6 frontend-reachable Gemini-dependent edge functions).
+
+**Production scope check before promoting, per this file's own standing
+rule (§16 IF-THEN 26 / the vitana-v1 equivalent):** gateway production
+was found to be running commit `b6259cea` (2026-09-12) — **4,752 commits
+and 1,052 distinct VTIDs behind** `main` at merge time, confirmed via
+`git merge-base --is-ancestor`, not just commit-count distance. No deploy
+path here (Command Hub PUBLISH, or a manual `workflow_dispatch`) can ship
+a pinned diff — only a full snapshot — so promoting to production would
+necessarily ship everything merged since 2026-09-12 (the BackOffice
+ERP/CRM wave-1 program, Partner Health/DoctorBox integration, ORB voice
+fixes, DeepSeek/Bedrock routing changes, Command Hub Operator work, and
+more), not just these two PRs' diffs. Put to the platform owner explicitly
+before acting; they chose **"Full staging promotion"** — the standard
+PUBLISH-button semantics, which this file's own rule says needs no further
+scoping once chosen deliberately.
+
+**Executed and verified:**
+- `AWS-PROD-DEPLOY-GATEWAY.yml` dispatched in `promote-staging` mode,
+  pinned via `expected_commit=dc2d17d2` to what AWS staging
+  (`vitana-gateway`) was actually serving at dispatch time (confirmed via
+  its own `build-info` endpoint first, not assumed). **Verified live
+  after completion:** `https://gateway.vitanaland.com/api/v1/admin/build-info`
+  reports `git_commit: dc2d17d2...`, `env: production`; `/alive` reports
+  `status: ok`.
+- `DEPLOY.yml` (vitana-v1) dispatched pinned to `commit_sha=3b7ebcb`.
+  **Anomaly, recorded honestly rather than glossed over:** this dispatch
+  call returned a normal `204 Workflow run has been queued` response, but
+  no corresponding workflow run ever appeared in the repo's Actions
+  history — checked directly via `list_workflow_runs` against both
+  `DEPLOY.yml` and the underlying `AWS-PROD-DEPLOY-FRONTEND.yml`, no
+  unexplained cause found. **Net outcome is still correct**: a *different*,
+  independent actor's later full-build promotion (an unrelated
+  developer/infra role-switch fix, VTID-03924, commit `dfc4087d`, ~2 hours
+  after this session's dispatch) shipped production to a commit that is a
+  direct git descendant of `3b7ebcb` (confirmed via
+  `git merge-base --is-ancestor 3b7ebcb dfc4087d`, only 3 commits apart) —
+  so PR #1051's changes did reach production, just not via this session's
+  own dispatch mechanically succeeding. Flagged here in case the
+  `run_workflow` dispatch path for this specific workflow is unreliable
+  and worth a human checking directly in the GitHub UI next time a
+  frontend prod deploy is dispatched from a Claude Code session.
+
+**Multi-actor concurrency observed, not caused:** while investigating the
+above, found that both repos have had numerous *other* prod deploys
+(gateway and frontend) firing every 20-90 minutes throughout this same
+window, each referencing a distinct VTID and a distinct
+`Claude-Session:` trailer — i.e. multiple concurrent Claude Code sessions
+(or the same automated system across sessions) are actively shipping
+live-reported bug fixes straight to production on this codebase right
+now. This session's own two dispatches were pinned to specific commits
+specifically to avoid being confused with, or accidentally reverting,
+that concurrent work — no conflicts were found; the ancestry checks above
+confirm this session's changes are strictly contained within, not
+clobbered by, the later commits.
+
+**Not done, left as a live gap:** gateway `main` has advanced 5 more
+commits since this session's `dc2d17d2` promotion and has not been
+re-promoted (expected — this session only promoted what was live on
+staging at the time it was asked to; a further promotion is a separate,
+later decision for whoever wants the newer commits in production).
+
+**Branch hygiene:** per this session's standing branch-reset convention,
+both `claude/aws-supabase-aurora-cutover-oxdie9` branches (vitana-platform
+and vitana-v1) were confirmed fully merged into `main`
+(`git merge-base --is-ancestor <old-tip> origin/main`, true for both) and
+reset to a fresh `origin/main` rather than carrying forward already-merged
+history. Any further Aurora migration work in this session starts clean
+from here.
+
+## Addendum, 2026-09-15 (continued) — `app_users` mirror still healthy; the drift-alert workflow's own predicted IAM gap is now confirmed real, not hypothetical
+
+**Mirror health, live-checked via Supabase MCP:** `auth.users` and
+`public.app_users` are still perfectly in sync — **223/223 rows, 0
+missing** (up from 209/209 on 2026-09-11, i.e. 14 new signups since,
+zero drift introduced). The fix from VTID-03811/03815 continues to hold
+under real production load.
+
+**`ALERT-APP-USERS-IDENTITY-DRIFT.yml` manually dispatched for the first
+live end-to-end run (its cron is `0 6 * * *` UTC, not yet due) — and
+failed exactly the way its own header comment predicted, not from a new
+bug.** The Aurora leg's `aws rds-data execute-statement` call failed with:
+
+```
+AccessDeniedException: User: arn:aws:iam::472838866351:user/claude-staging-validation
+is not authorized to perform: secretsmanager:GetSecretValue on resource:
+arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/aurora/prod/claude-readonly-ZJGHXq
+because no identity-based policy allows the secretsmanager:GetSecretValue action
+```
+
+The workflow's own error-handling correctly distinguished this as a
+permissions gap rather than a drift finding (`"Not a drift finding — a
+permissions gap to fix first"`), exactly as designed — this is the
+workflow doing its job, not a defect in it. **This needed a human with
+IAM admin rights the whole time** — this session's own AWS access (via
+`aws bedrock`/RDS Data API calls used elsewhere in this migration) is a
+*different* identity/role than the `claude-staging-validation` IAM user
+GitHub Actions authenticates as, and no session in this migration has
+ever had `iam:PutUserPolicy`/`iam:AttachUserPolicy` to grant it directly.
+
+**Fix needed (one-time, by a human with IAM admin access):** attach a
+policy to `arn:aws:iam::472838866351:user/claude-staging-validation`
+granting:
+- `secretsmanager:GetSecretValue` on
+  `arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/aurora/prod/claude-readonly-ZJGHXq*`
+- `rds-data:ExecuteStatement` on
+  `arn:aws:rds:eu-central-1:472838866351:cluster:vitana-aurora-prod`
+  (unconfirmed whether this is *also* missing — the run failed at the
+  secret-fetch step, before ever reaching the RDS Data API call itself,
+  so this permission's status is still unknown until the secret access
+  is fixed and the workflow is re-run)
+
+Until that grant lands, this alert will fail on IAM every time it runs
+(daily, or on manual dispatch) rather than ever producing a real drift
+verdict — worth fixing before relying on it as the safety net B4's own
+recommendation named it as.
