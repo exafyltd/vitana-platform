@@ -150,6 +150,19 @@ describe('VTID-03980: GET /api/v1/events/stream back-pressure (live route)', () 
     }
   }, 10_000);
 
+  it('stops polling when the client disconnects during a slow FIRST poll (no zombie ticker)', async () => {
+    // First poll takes 1.5s; the client gives up after 300ms.
+    mockFetch.mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve(jsonResp([])), 1500)));
+    const req = fireStream('/api/v1/events/stream');
+    await waitForCalls(1);
+    await sleep(300);
+    await destroyAndSettle(req);
+    // Let the slow first poll finish and give a would-be zombie loop time to
+    // fire its next tick (base interval 3s) — it must not.
+    await sleep(1500 + SSE_POLL_INTERVAL_MS + 500);
+    expect(mockFetch.mock.calls.length).toBe(1);
+  }, 10_000);
+
   it('backs off after a failed poll instead of hammering at the base interval', async () => {
     mockFetch.mockRejectedValue(new Error('upstream request timeout'));
     const req = fireStream('/api/v1/events/stream');

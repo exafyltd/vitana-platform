@@ -1077,17 +1077,17 @@ router.get("/api/v1/events/stream", async (req: Request, res: Response) => {
     }, pollDelayMs);
   };
 
-  // Initial poll to send recent events
-  const firstOk = await pollEvents();
-  pollDelayMs = nextSsePollDelay(pollDelayMs, firstOk);
-  scheduleNext();
-
   // Send heartbeat every 30 seconds to keep connection alive
   const heartbeatInterval = setInterval(() => {
+    if (closed) return;
     res.write(`: heartbeat ${new Date().toISOString()}\n\n`);
   }, 30000);
 
-  // Cleanup on client disconnect
+  // Cleanup on client disconnect. VTID-03980: registered BEFORE the initial
+  // poll — it used to be registered after `await pollEvents()`, so a client
+  // that gave up during a slow first poll (exactly the case under DB load)
+  // was never noticed: the handler kept polling for a socket nobody read,
+  // one more zombie ticker per abandoned tab.
   req.on("close", () => {
     console.log("[SSE] Client disconnected");
     closed = true;
@@ -1096,6 +1096,12 @@ router.get("/api/v1/events/stream", async (req: Request, res: Response) => {
     clearInterval(heartbeatInterval);
     res.end();
   });
+
+  // Initial poll to send recent events
+  const firstOk = await pollEvents();
+  if (closed) return;
+  pollDelayMs = nextSsePollDelay(pollDelayMs, firstOk);
+  scheduleNext();
 });
 
 /**
