@@ -814,6 +814,166 @@ function commitRenamingOperatorThread() {
 }
 
 /**
+ * VTID-03960: delete a thread and its saved history permanently. Mirrors
+ * this file's existing confirm() convention for destructive actions (see
+ * e.g. the task-drop/rollback confirms elsewhere in this file) rather than
+ * building a new custom modal for one action.
+ */
+function deleteOperatorThread(threadId) {
+    var thread = state.operatorThreads.find(function (t) { return t.id === threadId; });
+    if (!thread) return;
+    if (!confirm('Delete "' + (thread.title || 'New conversation') + '"? This cannot be undone.')) return;
+
+    state.operatorThreads = state.operatorThreads.filter(function (t) { return t.id !== threadId; });
+    saveOperatorThreadsIndex(state.operatorThreads);
+    try { localStorage.removeItem(operatorThreadHistoryKey(threadId)); } catch (e) { /* no-op */ }
+
+    if (state.operatorActiveThreadId === threadId) {
+        var next = state.operatorThreads
+            .filter(function (t) { return !t.archived; })
+            .slice()
+            .sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); })[0];
+        if (next) {
+            switchOperatorThread(next.id);
+        } else {
+            startNewOperatorThread();
+        }
+    } else {
+        renderApp();
+    }
+}
+
+/**
+ * VTID-03960: archive/unarchive a thread. Archiving hides it from the
+ * default sidebar list without deleting its history — it stays reachable
+ * via the "N archived" toggle at the bottom of the sidebar, so archiving
+ * can never silently orphan a conversation the way a one-way hide would.
+ */
+function archiveOperatorThread(threadId) {
+    var thread = state.operatorThreads.find(function (t) { return t.id === threadId; });
+    if (!thread) return;
+    thread.archived = true;
+    saveOperatorThreadsIndex(state.operatorThreads);
+
+    if (state.operatorActiveThreadId === threadId) {
+        var next = state.operatorThreads
+            .filter(function (t) { return !t.archived; })
+            .slice()
+            .sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); })[0];
+        if (next) {
+            switchOperatorThread(next.id);
+        } else {
+            startNewOperatorThread();
+        }
+    } else {
+        renderApp();
+    }
+}
+
+function unarchiveOperatorThread(threadId) {
+    var thread = state.operatorThreads.find(function (t) { return t.id === threadId; });
+    if (!thread) return;
+    thread.archived = false;
+    saveOperatorThreadsIndex(state.operatorThreads);
+    renderApp();
+}
+
+/**
+ * VTID-03960: "Share" copies a link that reopens this exact thread. Operator
+ * threads are localStorage-only (never synced across devices/users — see
+ * VTID-03822), so this genuinely only works when opened in the SAME browser
+ * it was copied from; it is not a cross-user share. initOperatorChatSession()
+ * and the DOMContentLoaded boot sequence both honor the ?operator_thread=
+ * param this produces.
+ */
+function shareOperatorThread(thread) {
+    var url = window.location.origin + window.location.pathname + '?operator_thread=' + encodeURIComponent(thread.id);
+    if (!navigator.clipboard || !navigator.clipboard.writeText) {
+        showToast('Clipboard not available', 'error');
+        return;
+    }
+    navigator.clipboard.writeText(url).then(function () {
+        showToast('Link copied — reopens this conversation in this browser', 'success');
+    }).catch(function () {
+        showToast('Could not copy link', 'error');
+    });
+}
+
+/**
+ * VTID-03960: the "..." button + its dropdown for a sessions-sidebar row,
+ * matching the Claude Code sidebar's own per-session menu. Click-outside-
+ * to-close follows this file's existing version-dropdown pattern (see
+ * renderHeader()'s isVersionDropdownOpen handling) — the listener is
+ * registered via setTimeout(0) so it starts listening only AFTER the click
+ * that opened the menu has finished propagating.
+ */
+function renderThreadMenuButton(thread) {
+    const wrap = document.createElement('div');
+    wrap.className = 'chat-session-row-menu-wrap';
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'chat-session-row-menu-btn';
+    btn.title = 'More options';
+    btn.setAttribute('aria-label', 'More options for ' + (thread.title || 'New conversation'));
+    btn.textContent = '⋯'; // midline horizontal ellipsis
+    btn.onclick = (e) => {
+        e.stopPropagation();
+        state.operatorThreadMenuOpenId = state.operatorThreadMenuOpenId === thread.id ? null : thread.id;
+        renderApp();
+    };
+    wrap.appendChild(btn);
+
+    if (state.operatorThreadMenuOpenId === thread.id) {
+        wrap.appendChild(renderThreadMenu(thread));
+    }
+
+    return wrap;
+}
+
+function renderThreadMenu(thread) {
+    const menu = document.createElement('div');
+    menu.className = 'chat-session-row-menu';
+    menu.onclick = (e) => e.stopPropagation();
+
+    var items = [
+        { label: 'Rename', onSelect: function () { startRenamingOperatorThread(thread.id, thread.title || 'New conversation'); } },
+        { label: 'Share', onSelect: function () { shareOperatorThread(thread); } },
+        thread.archived
+            ? { label: 'Unarchive', onSelect: function () { unarchiveOperatorThread(thread.id); } }
+            : { label: 'Archive', onSelect: function () { archiveOperatorThread(thread.id); } },
+        { label: 'Delete', danger: true, onSelect: function () { deleteOperatorThread(thread.id); } }
+    ];
+
+    items.forEach(function (item) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'chat-session-row-menu-item' + (item.danger ? ' chat-session-row-menu-item--danger' : '');
+        btn.textContent = item.label;
+        btn.onclick = (e) => {
+            e.stopPropagation();
+            state.operatorThreadMenuOpenId = null;
+            item.onSelect();
+        };
+        menu.appendChild(btn);
+    });
+
+    setTimeout(() => {
+        const closeMenu = (e) => {
+            const openMenu = document.querySelector('.chat-session-row-menu');
+            if (openMenu && !openMenu.contains(e.target)) {
+                state.operatorThreadMenuOpenId = null;
+                document.removeEventListener('click', closeMenu);
+                renderApp();
+            }
+        };
+        document.addEventListener('click', closeMenu);
+    }, 0);
+
+    return menu;
+}
+
+/**
  * VTID-03949: renders a thread's title as either plain (double-click to
  * edit) or, while state.operatorRenamingThreadId matches, an inline text
  * input. Shared by the sidebar row and the chat title bar so both places
@@ -878,6 +1038,28 @@ function renderEditableThreadTitle(thread, className) {
  * covered the transcript while open. Click a row to switch to it,
  * double-click its title to rename it in place.
  */
+function renderOperatorThreadRow(thread) {
+    const row = document.createElement('div');
+    row.className = 'chat-session-row'
+        + (thread.id === state.operatorActiveThreadId ? ' chat-session-row--active' : '')
+        + (thread.archived ? ' chat-session-row--archived' : '');
+    row.onclick = () => switchOperatorThread(thread.id);
+
+    const info = document.createElement('div');
+    info.className = 'chat-session-row-info';
+    info.appendChild(renderEditableThreadTitle(thread, 'chat-session-row-title'));
+
+    const meta = document.createElement('div');
+    meta.className = 'chat-session-row-meta';
+    meta.textContent = formatRelativeTime(thread.updatedAt);
+    info.appendChild(meta);
+
+    row.appendChild(info);
+    row.appendChild(renderThreadMenuButton(thread));
+
+    return row;
+}
+
 function renderOperatorSessionsSidebar() {
     const sidebar = document.createElement('div');
     sidebar.className = 'chat-sessions-sidebar' + (state.operatorSessionsSidebarCollapsed ? ' chat-sessions-sidebar--collapsed' : '');
@@ -897,30 +1079,40 @@ function renderOperatorSessionsSidebar() {
     list.dataset.scrollRetain = 'true';
     list.dataset.scrollKey = 'operator-sessions-sidebar';
 
-    const sortedThreads = (state.operatorThreads || []).slice().sort(function (a, b) {
-        return (b.updatedAt || 0) - (a.updatedAt || 0);
-    });
+    const allThreads = state.operatorThreads || [];
+    // VTID-03960: archived threads stay off the default list (never deleted,
+    // never silently orphaned) — reachable via the toggle below.
+    const activeThreads = allThreads.filter(function (t) { return !t.archived; });
+    const archivedThreads = allThreads.filter(function (t) { return t.archived; });
+    const sortByRecent = function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); };
 
-    if (sortedThreads.length === 0) {
+    if (activeThreads.length === 0) {
         const empty = document.createElement('div');
         empty.className = 'chat-sessions-empty';
         empty.textContent = 'No conversations yet.';
         list.appendChild(empty);
     } else {
-        sortedThreads.forEach(function (thread) {
-            const row = document.createElement('div');
-            row.className = 'chat-session-row' + (thread.id === state.operatorActiveThreadId ? ' chat-session-row--active' : '');
-            row.onclick = () => switchOperatorThread(thread.id);
-
-            row.appendChild(renderEditableThreadTitle(thread, 'chat-session-row-title'));
-
-            const meta = document.createElement('div');
-            meta.className = 'chat-session-row-meta';
-            meta.textContent = formatRelativeTime(thread.updatedAt);
-            row.appendChild(meta);
-
-            list.appendChild(row);
+        activeThreads.slice().sort(sortByRecent).forEach(function (thread) {
+            list.appendChild(renderOperatorThreadRow(thread));
         });
+    }
+
+    if (archivedThreads.length > 0) {
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'chat-sessions-archived-toggle';
+        toggle.textContent = (state.operatorShowArchivedThreads ? 'Hide' : 'Show') + ' ' + archivedThreads.length + ' archived';
+        toggle.onclick = () => {
+            state.operatorShowArchivedThreads = !state.operatorShowArchivedThreads;
+            renderApp();
+        };
+        list.appendChild(toggle);
+
+        if (state.operatorShowArchivedThreads) {
+            archivedThreads.slice().sort(sortByRecent).forEach(function (thread) {
+                list.appendChild(renderOperatorThreadRow(thread));
+            });
+        }
     }
 
     sidebar.appendChild(list);
@@ -932,6 +1124,10 @@ function renderOperatorSessionsSidebar() {
  * Loads (migrating if needed) the thread index, then the active thread's
  * conversation_id and chat history. Idempotent across repeated opens —
  * only runs once per page load (state.operatorActiveThreadId gates it).
+ *
+ * VTID-03960: honors a ?operator_thread=<id> deep link (see
+ * shareOperatorThread()) by preselecting that thread instead of the default
+ * most-recent one, when it still exists in the local index.
  */
 function initOperatorChatSession() {
     var index = migrateOperatorHistoryToThreads();
@@ -939,7 +1135,12 @@ function initOperatorChatSession() {
 
     if (state.operatorActiveThreadId) return; // already initialized this session
 
-    var active = index[0];
+    var requestedThreadId = null;
+    try {
+        requestedThreadId = new URLSearchParams(window.location.search).get('operator_thread');
+    } catch (e) { /* no-op */ }
+
+    var active = (requestedThreadId && index.find(function (t) { return t.id === requestedThreadId; })) || index[0];
     if (!active) {
         var now = Date.now();
         active = {
@@ -970,6 +1171,25 @@ function initOperatorChatSession() {
         });
         console.log('[VTID-03822] Restored', history.length, 'messages from thread', active.id);
     }
+}
+
+/**
+ * VTID-03960: shared open-Operator-Console flow, extracted from the header
+ * pill's onclick so the ?operator_thread= deep link (shareOperatorThread())
+ * can trigger the exact same sequence at page boot.
+ */
+function openOperatorConsole() {
+    state.operatorActiveTab = 'chat';
+    state.isOperatorOpen = true;
+
+    // VTID-01027: Initialize session memory on operator open
+    initOperatorChatSession();
+
+    renderApp();
+
+    // VTID-0526-B: Auto-start live ticker when opening Operator Console
+    // This ensures events are streaming without requiring Heartbeat button click
+    startOperatorLiveTicker();
 }
 
 // ===========================================================================
@@ -3469,6 +3689,9 @@ const state = {
     operatorSessionsSidebarCollapsed: false,
     operatorRenamingThreadId: null, // thread id currently showing an inline rename input, or null
     operatorRenameDraftValue: '', // current text of that inline input (synced on oninput, not via renderApp())
+    // VTID-03960: per-row "..." menu (Rename/Share/Archive/Delete)
+    operatorThreadMenuOpenId: null, // thread id currently showing its row menu, or null
+    operatorShowArchivedThreads: false, // toggled via the sidebar's "N archived" link
 
     // VTID-01041: Pending title capture state for ORB task creation
     pendingTitleVtid: null, // VTID awaiting title input from user
@@ -6143,19 +6366,7 @@ function renderHeader() {
     const operatorBtn = document.createElement('button');
     operatorBtn.className = 'header-pill header-pill--neutral';
     operatorBtn.textContent = 'OPERATOR';
-    operatorBtn.onclick = () => {
-        state.operatorActiveTab = 'chat';
-        state.isOperatorOpen = true;
-
-        // VTID-01027: Initialize session memory on operator open
-        initOperatorChatSession();
-
-        renderApp();
-
-        // VTID-0526-B: Auto-start live ticker when opening Operator Console
-        // This ensures events are streaming without requiring Heartbeat button click
-        startOperatorLiveTicker();
-    };
+    operatorBtn.onclick = () => openOperatorConsole();
     left.appendChild(operatorBtn);
 
     // 3. History icon button (⏱) - neutral color
@@ -42523,6 +42734,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // Final UI refresh after auth data is in
         renderApp();
+
+        // VTID-03960: honor a "Share" deep link (?operator_thread=<id>) by
+        // auto-opening the Operator Console straight into that thread —
+        // openOperatorConsole() itself (via initOperatorChatSession()) reads
+        // the same param to pick which thread becomes active.
+        try {
+            if (new URLSearchParams(window.location.search).get('operator_thread')) {
+                openOperatorConsole();
+            }
+        } catch (e) { /* no-op */ }
 
         // Load data in parallel after auth is established
         Promise.all([

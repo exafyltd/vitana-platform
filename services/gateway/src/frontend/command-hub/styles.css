@@ -2067,6 +2067,10 @@ body {
 }
 
 .chat-session-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.35rem;
   padding: 0.5rem 0.6rem;
   border-radius: 6px;
   cursor: pointer;
@@ -2082,6 +2086,17 @@ body {
   background: rgba(42, 123, 255, 0.15);
 }
 
+/* VTID-03960: archived rows stay reachable (see the "N archived" toggle),
+   just visually muted so they read as put-away rather than deleted. */
+.chat-session-row--archived {
+  opacity: 0.55;
+}
+
+.chat-session-row-info {
+  flex: 1;
+  min-width: 0;
+}
+
 .chat-session-row-title {
   font-size: 0.82rem;
   color: #e0e0e0;
@@ -2094,6 +2109,90 @@ body {
   font-size: 0.7rem;
   color: #9aa0a6;
   margin-top: 2px;
+}
+
+/* VTID-03960: per-row "..." menu (Rename/Share/Archive/Delete) */
+.chat-session-row-menu-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.chat-session-row-menu-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: #9aa0a6;
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.chat-session-row-menu-btn:hover {
+  color: #e0e0e0;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.chat-session-row-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 20;
+  min-width: 140px;
+  background: #232323;
+  border: 1px solid var(--color-border, #2a2a2a);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  padding: 0.25rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-session-row-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.8rem;
+  color: #e0e0e0;
+  cursor: pointer;
+}
+
+.chat-session-row-menu-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.chat-session-row-menu-item--danger {
+  color: #ff6b6b;
+}
+
+.chat-session-row-menu-item--danger:hover {
+  background: rgba(255, 107, 107, 0.12);
+}
+
+.chat-sessions-archived-toggle {
+  display: block;
+  width: 100%;
+  text-align: center;
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--color-border, #2a2a2a);
+  margin-top: 0.25rem;
+  padding: 0.5rem 0.6rem;
+  font-size: 0.72rem;
+  color: #9aa0a6;
+  cursor: pointer;
+}
+
+.chat-sessions-archived-toggle:hover {
+  color: #e0e0e0;
 }
 
 .chat-sessions-empty {
