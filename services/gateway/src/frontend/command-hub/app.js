@@ -47453,7 +47453,7 @@ function renderVoiceProvidersView() {
     // active-provider-resolver.ts); this note exists so the label is not
     // read as "still calls Google" while that rename is pending.
     var vertexNote = document.createElement('div');
-    vertexNote.style.cssText = 'font-size:0.75rem;color:var(--color-text-secondary);';
+    vertexNote.className = 'vp-hint-text';
     vertexNote.textContent = '"vertex" here is a legacy value name for the gateway-proxied transport — it is served by Amazon Nova Sonic, not Google Vertex (GCP is fully decommissioned, see CLAUDE.md §1).';
     v2vBody.appendChild(vertexNote);
 
@@ -47573,7 +47573,7 @@ function renderVoiceProvidersView() {
     ttsProviderBody.appendChild(ttsProviderRow);
     if (effTtsProvider === 'fish') {
         var fishHint = document.createElement('div');
-        fishHint.style.cssText = 'font-size:0.75rem;color:var(--color-text-secondary);';
+        fishHint.className = 'vp-hint-text';
         fishHint.textContent = 'Fish Audio is a per-language fallback, not a general voice catalog — it only has a curated voice for languages Polly cannot speak (Serbian today). Preview will report a clear error if it is not configured in this environment yet, or if the selected language has no curated Fish voice.';
         ttsProviderBody.appendChild(fishHint);
     }
@@ -47653,7 +47653,7 @@ function renderVoiceProvidersView() {
     voiceBody.appendChild(voiceRow);
     if (!voiceCatalogAppliesToProvider) {
         var hint2 = document.createElement('div');
-        hint2.style.cssText = 'font-size:0.75rem;color:var(--color-text-secondary);';
+        hint2.className = 'vp-hint-text';
         hint2.textContent = (ttsProviderLabels[effTtsProvider] || effTtsProvider) + ' picks one fixed voice per language server-side — there is no separate voice catalog to choose from here.';
         voiceBody.appendChild(hint2);
     } else if (voicesForLang.length === 0) {

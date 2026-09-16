@@ -20124,3 +20124,12 @@ border-bottom: 1px solid var(--color-border, #333);
   color: var(--text-primary, #ccc);
   word-break: break-word;
 }
+
+/* VTID-03970: small secondary-text hint, used by the Providers & Voice
+   screen. A named class rather than inline style.cssText — CSP §36/NEVER 24
+   forbid new inline styles even though this file's older code predates that
+   discipline; new UI should not add to that debt. */
+.vp-hint-text {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
