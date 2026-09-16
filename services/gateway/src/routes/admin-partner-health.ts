@@ -1,30 +1,97 @@
 /**
  * VTID-03885 — Partner Health Test Integration: admin portal routes.
+ * VTID-03932 — generalized (Commerce Partner Onboarding Phase 1) so a
+ * partner org's OWN staff/professional members can use these same
+ * handlers for their org's orders, not just a Vitana tenant admin.
  *
- * Mounted at /api/v1/admin/partner-health. Gated by requireTenantAdmin,
- * same as admin-marketplace.ts.
+ * Mounted at /api/v1/admin/partner-health. Gated by
+ * requirePartnerHealthAccess, which grants either:
+ *   - { scope: 'admin' }: exafy_admin or Vitana tenant admin — sees/acts on
+ *     everything, byte-for-byte the original VTID-03885 behavior.
+ *   - { scope: 'org' }: a partner_organization_members row — org_admin/
+ *     staff get full access to their org's linked partner_registry rows;
+ *     professional gets access ONLY to orders assigned to them
+ *     (assigned_professional_user_id), never a standing "see everything
+ *     for this patient" grant. See services/partner-health/org-access.ts.
  *
  * This is the fallback UI that makes the whole feature usable for
- * DoctorBox TODAY, with zero DoctorBox API access: an admin creates an
- * order after DoctorBox tells them about it out-of-band, uploads the
- * result they received by email/portal, and — the one hard-stop safety
- * requirement in the whole spec — an ambiguous/no-match result can only
- * ever be resolved into a real order by an EXPLICIT confirm-match call.
- * Nothing here writes to partner_health_results/biomarker_results
- * directly; every write goes through services/partner-health/ingestion.ts.
+ * DoctorBox TODAY, with zero DoctorBox API access: an admin (or now a
+ * partner's own staff) creates an order after being told about it
+ * out-of-band, uploads the result they received by email/portal, and —
+ * the one hard-stop safety requirement in the whole spec — an
+ * ambiguous/no-match result can only ever be resolved into a real order
+ * by an EXPLICIT confirm-match call. Nothing here writes to
+ * partner_health_results/biomarker_results directly; every write goes
+ * through services/partner-health/ingestion.ts.
  */
 
-import { Router, Request, Response } from 'express';
-import { requireTenantAdmin } from '../middleware/require-tenant-admin';
-import { AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import { Router, Request, Response, NextFunction } from 'express';
+import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { getSupabase } from '../lib/supabase';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { findClickCorrelationCandidates } from '../services/partner-health/id-matching';
 import { ingestPartnerResult, recordStatusChange, type PartnerOrderRow } from '../services/partner-health/ingestion';
 import doctorBoxAdapter from '../services/partner-health/doctorbox-adapter';
 import type { CanonicalHealthTestStatus, PartnerResultPayload } from '../services/partner-health/types';
+import {
+  resolveOrgHealthAccess,
+  hasFullPartnerAccess,
+  canActOnOrder,
+  allVisiblePartnerIds,
+  type PartnerHealthAccess,
+} from '../services/partner-health/org-access';
 
 const router = Router();
+
+interface PartnerHealthRequest extends AuthenticatedRequest {
+  partnerHealthAccess?: PartnerHealthAccess;
+}
+
+/**
+ * VTID-03932: replaces the old requireTenantAdmin gate. Grants
+ * { scope: 'admin' } to exafy_admin/Vitana tenant admins (unchanged
+ * behavior) or { scope: 'org' } to a partner org's own staff/professional
+ * member. 403s only when the caller is neither.
+ */
+async function requirePartnerHealthAccess(req: Request, res: Response, next: NextFunction) {
+  const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+
+  const identity = (req as AuthenticatedRequest).identity;
+  if (!identity) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+
+  if (identity.exafy_admin) {
+    (req as PartnerHealthRequest).partnerHealthAccess = { scope: 'admin' };
+    return next();
+  }
+
+  if (identity.tenant_id) {
+    const { data: tenantRow } = await supabase
+      .from('user_tenants')
+      .select('active_role')
+      .eq('user_id', identity.user_id)
+      .eq('tenant_id', identity.tenant_id)
+      .maybeSingle();
+    if ((tenantRow as { active_role?: string } | null)?.active_role === 'admin') {
+      (req as PartnerHealthRequest).partnerHealthAccess = { scope: 'admin' };
+      return next();
+    }
+  }
+
+  const orgAccess = await resolveOrgHealthAccess(supabase, identity.user_id);
+  if (orgAccess) {
+    (req as PartnerHealthRequest).partnerHealthAccess = orgAccess;
+    return next();
+  }
+
+  return res.status(403).json({ ok: false, error: 'FORBIDDEN', message: 'Requires Vitana tenant-admin access or membership in a partner organization.' });
+}
+
+function getAccess(req: Request): PartnerHealthAccess {
+  // requirePartnerHealthAccess always sets this before next() — a missing
+  // value here is a routing bug, not a runtime possibility to degrade from.
+  return (req as PartnerHealthRequest).partnerHealthAccess as PartnerHealthAccess;
+}
 
 const ADAPTERS: Record<string, { receiveResult: typeof doctorBoxAdapter.receiveResult; validateResult: typeof doctorBoxAdapter.validateResult }> = {
   doctorbox: doctorBoxAdapter,
@@ -59,30 +126,40 @@ function toOrderRow(row: {
 
 // ==================== Orders ====================
 
-router.get('/orders', requireTenantAdmin, async (req: Request, res: Response) => {
+router.get('/orders', requireAuth, requirePartnerHealthAccess, async (req: Request, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+  const access = getAccess(req);
 
   const status = typeof req.query.status === 'string' ? req.query.status : null;
   let query = supabase
     .from('partner_health_test_orders')
-    .select('id, tenant_id, user_id, partner_id, external_order_ref, test_name, status, status_updated_at, ordered_at, partner_registry(display_name)')
+    .select('id, tenant_id, user_id, partner_id, assigned_professional_user_id, external_order_ref, test_name, status, status_updated_at, ordered_at, partner_registry(display_name)')
     .order('ordered_at', { ascending: false })
     .limit(200);
   if (status) query = query.eq('status', status);
+  const visiblePartnerIds = allVisiblePartnerIds(access);
+  if (visiblePartnerIds !== null) query = query.in('partner_id', visiblePartnerIds);
 
   const { data, error } = await query;
   if (error) return res.status(500).json({ ok: false, error: error.message });
-  return res.json({ ok: true, orders: data ?? [] });
+  // VTID-03932: a professional-only org grant is assigned-order-only —
+  // filtered here rather than in SQL to keep the query builder simple;
+  // this never returns rows the caller couldn't already list partner_ids for.
+  const orders = ((data ?? []) as Array<{ partner_id: string; assigned_professional_user_id: string | null }>).filter(
+    (o) => canActOnOrder(access, o)
+  );
+  return res.json({ ok: true, orders });
 });
 
-router.patch('/orders/:id', requireTenantAdmin, async (req: Request, res: Response) => {
+router.patch('/orders/:id', requireAuth, requirePartnerHealthAccess, async (req: Request, res: Response) => {
   // impact-allow-no-oasis: the state transition IS recorded — via
   // recordStatusChange() below, which emits health_test.status_changed
   // itself. This handler's own body has no direct emitOasisEvent call
   // because the ingestion pipeline (not this route) owns that emission.
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+  const access = getAccess(req);
 
   const orderId = req.params.id;
   const toStatus = typeof req.body?.status === 'string' ? (req.body.status as CanonicalHealthTestStatus) : null;
@@ -97,11 +174,14 @@ router.patch('/orders/:id', requireTenantAdmin, async (req: Request, res: Respon
 
   const { data: orderRow, error: orderErr } = await supabase
     .from('partner_health_test_orders')
-    .select('id, tenant_id, user_id, partner_id, status, test_name, partner_registry(display_name)')
+    .select('id, tenant_id, user_id, partner_id, assigned_professional_user_id, status, test_name, partner_registry(display_name)')
     .eq('id', orderId)
     .maybeSingle();
   if (orderErr) return res.status(500).json({ ok: false, error: orderErr.message });
   if (!orderRow) return res.status(404).json({ ok: false, error: 'order not found' });
+  if (!canActOnOrder(access, orderRow as { partner_id: string; assigned_professional_user_id: string | null })) {
+    return res.status(403).json({ ok: false, error: 'FORBIDDEN' });
+  }
 
   const order = toOrderRow(orderRow);
   const outcome = await recordStatusChange(supabase, {
@@ -117,23 +197,33 @@ router.patch('/orders/:id', requireTenantAdmin, async (req: Request, res: Respon
 
 // ==================== Inbox (quarantine queue) ====================
 
-router.get('/inbox', requireTenantAdmin, async (_req: Request, res: Response) => {
+// Inbox rows precede a real order, so there is no assigned_professional
+// yet to scope by — visibility here is full-partner-access only
+// (org_admin/staff, or admin). A professional-only grant sees none of
+// this, matching least-privilege: they act on orders explicitly assigned
+// to them, not on their org's whole unresolved queue.
+router.get('/inbox', requireAuth, requirePartnerHealthAccess, async (req: Request, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+  const access = getAccess(req);
 
-  const { data, error } = await supabase
+  let query = supabase
     .from('partner_health_result_inbox')
     .select('id, partner_id, raw_payload, candidate_user_ids, reason, resolved, created_at, partner_registry(display_name)')
     .eq('resolved', false)
     .order('created_at', { ascending: true })
     .limit(100);
+  if (access.scope === 'org') query = query.in('partner_id', access.fullAccessPartnerIds);
+
+  const { data, error } = await query;
   if (error) return res.status(500).json({ ok: false, error: error.message });
   return res.json({ ok: true, inbox: data ?? [] });
 });
 
-router.get('/candidates/:inboxId', requireTenantAdmin, async (req: Request, res: Response) => {
+router.get('/candidates/:inboxId', requireAuth, requirePartnerHealthAccess, async (req: Request, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+  const access = getAccess(req);
 
   const { data: inboxRow, error: inboxErr } = await supabase
     .from('partner_health_result_inbox')
@@ -142,6 +232,9 @@ router.get('/candidates/:inboxId', requireTenantAdmin, async (req: Request, res:
     .maybeSingle();
   if (inboxErr) return res.status(500).json({ ok: false, error: inboxErr.message });
   if (!inboxRow) return res.status(404).json({ ok: false, error: 'inbox row not found' });
+  if (!hasFullPartnerAccess(access, (inboxRow as { partner_id: string }).partner_id)) {
+    return res.status(403).json({ ok: false, error: 'FORBIDDEN' });
+  }
 
   const raw = (inboxRow as { raw_payload: Record<string, unknown>; partner_id: string; created_at: string }).raw_payload;
   const merchantId = typeof raw?.merchant_id === 'string' ? raw.merchant_id : null;
@@ -159,12 +252,13 @@ router.get('/candidates/:inboxId', requireTenantAdmin, async (req: Request, res:
 
 // ==================== Upload result (manual, no DoctorBox API) ====================
 
-router.post('/inbox/:id/upload-result', requireTenantAdmin, async (req: Request, res: Response) => {
+router.post('/inbox/:id/upload-result', requireAuth, requirePartnerHealthAccess, async (req: Request, res: Response) => {
   // impact-allow-no-oasis: ingestPartnerResult() below emits
   // health_test.result_ready / health_test.result_quarantined itself —
   // this route only orchestrates the call.
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+  const access = getAccess(req);
 
   const orderId = typeof req.body?.order_id === 'string' ? req.body.order_id : null;
   const partnerKey = typeof req.body?.partner_key === 'string' ? req.body.partner_key : 'doctorbox';
@@ -177,11 +271,17 @@ router.post('/inbox/:id/upload-result', requireTenantAdmin, async (req: Request,
 
   const { data: orderRow, error: orderErr } = await supabase
     .from('partner_health_test_orders')
-    .select('id, tenant_id, user_id, partner_id, status, test_name, partner_registry(display_name)')
+    .select('id, tenant_id, user_id, partner_id, assigned_professional_user_id, status, test_name, partner_registry(display_name)')
     .eq('id', orderId)
     .maybeSingle();
   if (orderErr) return res.status(500).json({ ok: false, error: orderErr.message });
   if (!orderRow) return res.status(404).json({ ok: false, error: 'order not found' });
+  // VTID-03932: this is the shared upload primitive — a partner's own
+  // assigned professional may upload the result for THEIR order, exactly
+  // as a Vitana admin (or the org's own staff) already could.
+  if (!canActOnOrder(access, orderRow as { partner_id: string; assigned_professional_user_id: string | null })) {
+    return res.status(403).json({ ok: false, error: 'FORBIDDEN' });
+  }
 
   const order = toOrderRow(orderRow);
   const payload: PartnerResultPayload = await adapter.receiveResult(rawResult as Record<string, unknown>);
@@ -201,9 +301,13 @@ router.post('/inbox/:id/upload-result', requireTenantAdmin, async (req: Request,
 
 // ==================== Confirm match (the hard-stop step) ====================
 
-router.post('/inbox/:id/confirm-match', requireTenantAdmin, async (req: Request, res: Response) => {
+// Confirm-match creates the customer link AND the order in one step — kept
+// to full-partner-access (org_admin/staff, or admin) only, same as the
+// inbox listing above; a professional cannot self-assign a brand-new order.
+router.post('/inbox/:id/confirm-match', requireAuth, requirePartnerHealthAccess, async (req: Request, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+  const access = getAccess(req);
 
   const matchedUserId = typeof req.body?.matched_user_id === 'string' ? req.body.matched_user_id : null;
   const matchedTenantId = typeof req.body?.matched_tenant_id === 'string' ? req.body.matched_tenant_id : null;
@@ -225,6 +329,7 @@ router.post('/inbox/:id/confirm-match', requireTenantAdmin, async (req: Request,
   if (!inboxRow) return res.status(404).json({ ok: false, error: 'inbox row not found' });
   const inbox = inboxRow as { id: string; partner_id: string; raw_payload: Record<string, unknown>; resolved: boolean };
   if (inbox.resolved) return res.status(409).json({ ok: false, error: 'already resolved' });
+  if (!hasFullPartnerAccess(access, inbox.partner_id)) return res.status(403).json({ ok: false, error: 'FORBIDDEN' });
 
   const adminId = getAdminId(req);
 

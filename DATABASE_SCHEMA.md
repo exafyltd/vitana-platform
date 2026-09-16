@@ -2069,3 +2069,87 @@ set, and `services/gateway/test/routes/supplier-source-network.test.ts` pins
 both the value and the set so widening it later fails loudly rather than
 silently moving real money. Supplier rows are also written `is_active = false`
 with `onboarding_status = 'draft'`; only an admin flips them.
+
+## Commerce Partner Onboarding — `partner_organizations` + roster (VTID-03932, 2026-09-15) — migration file only, NOT applied
+
+Phase 1 of the platform-owner-approved plan to let any business (medical or
+non-medical) self-register once and have its own staff/professionals granted
+access, rather than an engineer hand-seeding `partner_registry` per partner
+(the VTID-03885 pattern DoctorBox shipped under). Deliberately a **separate,
+parallel** concept from `tenants` (the small, fixed set of Vitana-operated
+portal brands) — org-scoped roles below are NOT `vitana_role`/`tenant_role`
+values.
+
+### partner_organizations
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | UUID PK | |
+| `org_key` | TEXT UNIQUE NOT NULL | slug |
+| `display_name`, `org_type` | TEXT NOT NULL | `org_type` free-text by convention, mirrors `partner_registry.integration_mode`'s own pattern — no migration needed for a new vertical |
+| `status` | TEXT | `pending_review` (default) `\| active \| suspended \| rejected` |
+| `owner_user_id` | UUID NOT NULL | the registering caller |
+| `business_details` | JSONB | |
+
+### partner_organization_members
+
+| Column | Type | Notes |
+|---|---|---|
+| `partner_organization_id` | UUID FK → partner_organizations | |
+| `user_id` | UUID NOT NULL | |
+| `role` | TEXT CHECK | `org_admin \| staff \| professional` — a separate dimension from `vitana_role`, never that enum |
+| `granted_by`, `granted_at` | | |
+
+`UNIQUE (partner_organization_id, user_id)` — one role per org per user.
+
+### partner_organization_invites
+
+Email + token invite, `role` same CHECK as above, `expires_at`/`accepted_at`.
+Redeeming the token inserts the `partner_organization_members` row — works
+whether or not the invitee already has a Vitana account (auto-`community` on
+signup is unchanged, per the existing `provision_platform_user()` trigger).
+
+### patient_profiles
+
+| Column | Type | Notes |
+|---|---|---|
+| `user_id` | UUID PK | |
+| `activated_at` | TIMESTAMPTZ | |
+| `activation_reason` | TEXT CHECK | `partner_order \| vitana_service` |
+
+Vitana-wide, never org-scoped — set once, ever, by the new `AFTER INSERT`
+trigger `trg_partner_health_test_orders_activate_patient` on
+`partner_health_test_orders`, the first time a `user_id` gets any health
+order regardless of which partner org. The same trigger best-effort bumps
+`memberships.role` from `community`→`patient` (never downgrades
+staff/admin/etc; wrapped in `EXCEPTION` so a live-schema mismatch in
+`memberships` — whose exact shape here is inferred from `routes/auth.ts`'s
+`GET /me` contract, not created by any migration in this repo — can never
+block the order insert itself).
+
+### Existing tables extended
+
+- `partner_registry` (VTID-03885) gains a nullable `partner_organization_id`
+  FK — set once a self-registered org needs the health-integration
+  capabilities that table already models; hand-seeded partners (DoctorBox
+  pre-VTID-03932) may have none.
+- `partner_health_test_orders` (VTID-03885) gains
+  `assigned_professional_user_id` — order-scoped least-privilege assignment;
+  a professional acts on exactly the orders assigned to them, never a
+  standing "see everything for this patient" grant. A persistent
+  `care_relationships` table for an ongoing (non-order-scoped) relationship
+  is an explicit, deferred v2, not built here.
+
+### Access resolution (`services/partner-health/org-access.ts`)
+
+Not a table — the runtime layer that lets `admin-partner-health.ts`'s
+existing routes (VTID-03885) serve a partner org's own staff/professional
+members, re-keyed from `tenant_id` to `partner_organization_id` on the same
+shape as `erp-access.ts`'s `effectiveCapabilities()`. `org_admin`/`staff`
+get full access to every `partner_registry` row linked to their org;
+`professional` gets access only to orders where
+`assigned_professional_user_id` matches them.
+
+**Not applied to the live database — file only (rule 4).** No
+Supabase/gateway credentials were reachable from this session; see
+`docs/validation/VTID-03932/acceptance.md`.

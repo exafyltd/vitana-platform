@@ -187,6 +187,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const adminPartnerHealthRouter = require('./routes/admin-partner-health').default;
   // VTID-03885: Partner Health Test Integration — self-service consent (grant/revoke/check)
   const partnerHealthConsentRouter = require('./routes/partner-health-consent').default;
+  // VTID-03932: Commerce Partner Onboarding — self-service partner org registration + roster
+  const partnerOrgsRouter = require('./routes/partner-orgs').default;
+  // VTID-03939: Commerce Partner Onboarding Phase 3 — a patient's own aggregated health results
+  const patientHealthResultsRouter = require('./routes/patient-health-results').default;
   // BOOTSTRAP-COMMUNITY-MARKETPLACE: peer-to-peer classifieds (seller + buyer API)
   const communityMarketplaceRouter = require('./routes/community-marketplace').default;
   // BOOTSTRAP-COMMUNITY-MARKETPLACE (Chunk 7): admin review queue (listings/reports/seller suspensions/categories)
@@ -1107,6 +1111,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/admin/partner-health', adminPartnerHealthRouter, { owner: 'admin-partner-health' });
   // VTID-03885: Partner Health Test Integration self-service consent
   mountRouterSync(app, '/api/v1/partner-health/consent', partnerHealthConsentRouter, { owner: 'partner-health-consent' });
+  // VTID-03932: Commerce Partner Onboarding — self-service partner org registration + roster
+  mountRouterSync(app, '/api/v1/partner-orgs', partnerOrgsRouter, { owner: 'partner-orgs' });
+  // VTID-03939: Commerce Partner Onboarding Phase 3 — GET /api/v1/patient/health-results
+  mountRouterSync(app, '/api/v1/patient', patientHealthResultsRouter, { owner: 'patient-health-results' });
   // BOOTSTRAP-COMMUNITY-MARKETPLACE: peer-to-peer classifieds (seller + buyer API)
   mountRouterSync(app, '/api/v1/community-marketplace', communityMarketplaceRouter, { owner: 'community-marketplace' });
   // BOOTSTRAP-COMMUNITY-MARKETPLACE (Chunk 7): admin review queue
