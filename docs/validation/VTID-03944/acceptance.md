@@ -109,3 +109,20 @@ Note: both show the same 12 pre-existing failing suites / 2 pre-existing
 VTID touches). Zero failures in `app.js` or the new test file. CI's own
 `npm ci` in the Build Gate installs from the committed lockfile fresh, which
 does not carry this local `node_modules` gap forward.
+
+AC-8 — real CI (Command Hub Guardrails / VTID-0302 Command Hub Ownership
+Guard) correctly rejected the first push, then passed after the fix
+
+TEST: live CI run — `scripts/ci/command-hub-ownership-guard.js` requires an
+explicit `VTID-03944|...` allowlist entry (or a `DEV-COMHU-\d+` marker) in
+the branch name/PR title whenever `services/gateway/src/frontend/
+command-hub/` is touched, on top of and independent from
+`VALIDATOR-CHECK.yml`'s own gate. `VTID-03944` was not yet in that hardcoded
+regex (VTID-03906 — the poller this PR extends — already was, added when it
+shipped), so the first CI run failed exactly as designed:
+`ERROR: Command Hub frontend files modified without authorization!`. Added
+`VTID-03944` to `ALLOWED_VTID_PATTERN` (repo-root `scripts/`, outside the
+`gateway_backend` profile's REMIT — reported `NOT JUDGED` by
+`validator-path-guard.cjs`, not a violation, same as VTID-03937's PR #3334
+noted for `validate-pr-locally.cjs`) and confirmed locally via a standalone
+regex eval against the real branch name/PR title before re-pushing.
