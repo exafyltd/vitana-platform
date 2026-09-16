@@ -264,32 +264,11 @@ describe('VTID-03908: Operator popup fullscreen toggle', () => {
 });
 
 describe('VTID-03910: fullscreen symmetric edge spacing + scrollable content', () => {
-  it('the fullscreen panel is inset by a real 2cm on every side, not true edge-to-edge 100vw/100vh', () => {
-    const idx = CSS.indexOf('.operator-overlay--fullscreen {');
-    expect(idx).toBeGreaterThan(-1);
-    const block = CSS.slice(idx, idx + 400);
-    expect(block).toContain('calc(100vw - 4cm)');
-    expect(block).toContain('calc(100vh - 4cm)');
-    // Must NOT be literal edge-to-edge sizing any more.
-    expect(block).not.toMatch(/width:\s*100vw;/);
-    expect(block).not.toMatch(/height:\s*100vh;/);
-  });
-
-  it('the backdrop still centers the panel (flex align/justify center), so the inset lands symmetrically', () => {
-    const idx = CSS.indexOf('.overlay-backdrop {');
-    expect(idx).toBeGreaterThan(-1);
-    const block = CSS.slice(idx, idx + 300);
-    expect(block).toContain('align-items: center;');
-    expect(block).toContain('justify-content: center;');
-  });
-
-  it('a narrower mobile breakpoint uses a smaller fixed inset instead of the flat 2cm', () => {
-    const idx = CSS.indexOf('@media (max-width: 768px)');
-    expect(idx).toBeGreaterThan(-1);
-    const block = CSS.slice(idx, idx + 800);
-    expect(block).toMatch(/\.operator-overlay--fullscreen\s*{/);
-    expect(block).toContain('calc(100vw - 1.5rem)');
-  });
+  // VTID-03910's own deliberate 2cm-inset "bigger popup" design was
+  // reversed by VTID-03949 at the platform owner's explicit request
+  // ("the full screen is not full screen, it's just a bigger pop-up") —
+  // see the VTID-03949 describe block below for the true-fullscreen
+  // assertions that replace these two tests.
 
   it('the flex chain from .overlay-panel down to .chat-container sets min-height:0 so overflow-y:auto can actually engage', () => {
     // A flex column child defaults to min-height:auto, which lets it grow
@@ -314,6 +293,29 @@ describe('VTID-03910: fullscreen symmetric edge spacing + scrollable content', (
 
   it('.chat-messages drops its fixed 65vh cap in fullscreen mode so it fills the available space instead of leaving a dead gap', () => {
     expect(CSS).toMatch(/\.operator-overlay--fullscreen \.chat-messages\s*{\s*max-height:\s*none;/);
+  });
+});
+
+describe('VTID-03949: fullscreen is real edge-to-edge fullscreen, not a bigger popup', () => {
+  it('the fullscreen panel is literal 100vw/100vh with no border-radius', () => {
+    const idx = CSS.indexOf('.operator-overlay--fullscreen {');
+    expect(idx).toBeGreaterThan(-1);
+    const block = CSS.slice(idx, CSS.indexOf('\n}', idx));
+    expect(block).toMatch(/width:\s*100vw;/);
+    expect(block).toMatch(/height:\s*100vh;/);
+    expect(block).toMatch(/max-width:\s*100vw;/);
+    expect(block).toMatch(/max-height:\s*100vh;/);
+    expect(block).toMatch(/border-radius:\s*0;/);
+    // The old VTID-03910 2cm inset must be gone.
+    expect(block).not.toContain('calc(100vw - 4cm)');
+    expect(block).not.toContain('calc(100vh - 4cm)');
+  });
+
+  it('no separate mobile inset override remains — 100vw/100vh already fits a narrow viewport', () => {
+    const idx = CSS.indexOf('@media (max-width: 768px)');
+    expect(idx).toBeGreaterThan(-1);
+    const block = CSS.slice(idx, CSS.indexOf('\n}\n', idx + '@media (max-width: 768px) {'.length));
+    expect(block).not.toContain('calc(100vw - 1.5rem)');
   });
 });
 

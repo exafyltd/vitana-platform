@@ -101,7 +101,9 @@ describe('Operator chat message rendering (VTID-03822)', () => {
   it('surfaces msg.toolResults via describeToolActivity() instead of leaving it unread', () => {
     const start = SOURCE.indexOf('function renderOperatorChat()');
     expect(start).toBeGreaterThan(-1);
-    const body = SOURCE.slice(start, start + 4000);
+    // VTID-03949 grew the session title bar above the messages loop by
+    // ~1.5KB, pushing this block further into the function.
+    const body = SOURCE.slice(start, start + 5500);
     expect(body).toContain('if (msg.toolResults && msg.toolResults.length > 0)');
     expect(body).toContain('describeToolActivity(tr)');
   });
@@ -115,13 +117,16 @@ describe('Operator chat message rendering (VTID-03822)', () => {
     expect(body).toContain('TOOL_ACTIVITY_LABELS[tr.name]');
   });
 
-  it('renderOperatorChat() includes a thread-switcher select wired to switchOperatorThread', () => {
+  // VTID-03949 replaced the <select> thread-switcher dropdown with a
+  // persistent sessions sidebar (renderOperatorSessionsSidebar()) plus a
+  // title bar above the transcript — see
+  // test/vtid-03949-operator-sessions-sidebar-rename.test.ts for coverage
+  // of the new mechanism. renderOperatorChat() itself still wires up
+  // "+ New" directly.
+  it('renderOperatorChat() still wires its own "+ New" button to startNewOperatorThread', () => {
     const start = SOURCE.indexOf('function renderOperatorChat()');
-    const end = SOURCE.indexOf('\n}', SOURCE.indexOf('const messages = document.createElement', start));
     expect(start).toBeGreaterThan(-1);
     const body = SOURCE.slice(start, start + 3000);
-    expect(body).toContain("threadSelect.className = 'chat-thread-select';");
-    expect(body).toContain('switchOperatorThread(threadSelect.value);');
     expect(body).toContain('startNewOperatorThread();');
   });
 });
@@ -134,9 +139,10 @@ describe('Live Console markdown rendering parity (VTID-03822)', () => {
 });
 
 describe('CSS additions (VTID-03822)', () => {
-  it('defines the thread bar and tool-activity classes', () => {
-    expect(CSS).toContain('.chat-thread-bar {');
-    expect(CSS).toContain('.chat-thread-select {');
+  // .chat-thread-bar/.chat-thread-select (the <select> dropdown) were
+  // removed by VTID-03949 in favor of a sessions sidebar + title bar —
+  // .chat-new-thread-btn is still used (now in the title bar).
+  it('defines the tool-activity classes', () => {
     expect(CSS).toContain('.chat-new-thread-btn {');
     expect(CSS).toContain('.chat-tool-activity {');
     expect(CSS).toContain('.chat-tool-activity-line {');
