@@ -779,9 +779,26 @@ function switchOperatorThread(threadId) {
  * particular rebuild is restoring an already-focused input (so it must not
  * re-select-all on top of the precise cursor restore _renderAppCore() is
  * about to perform) rather than a fresh double-click open.
+ *
+ * VTID-03966: `_renameAutoFocusClaimedForThreadId` fixes a second, distinct
+ * defect this file's earlier fixes never covered. Renaming the ACTIVE
+ * thread renders `renderEditableThreadTitle()` TWICE in the same pass (the
+ * sidebar row AND the title bar above the transcript both show it — see
+ * VTID-03949's own doc comment on the function). Both instances used to
+ * independently schedule their own `setTimeout(() => input.focus(), 0)` —
+ * the second one to fire steals focus from the first, and THAT is a
+ * genuine (not involuntary-removal) blur, so it commits/closes the rename
+ * before the user can type a single character. Reproduced live with a
+ * local Playwright harness driving this exact file: renaming a non-active
+ * thread (rendered once) worked; renaming the active thread (rendered
+ * twice) closed itself within one frame every time. Fix: only the FIRST
+ * instance built during a render pass claims the auto-focus; a second
+ * instance for the same thread id skips scheduling its own, so the two
+ * can no longer fight over focus.
  */
 var _renameBlurSuppressed = false;
 var _renamePreserveFocusPending = false;
+var _renameAutoFocusClaimedForThreadId = null;
 
 function startRenamingOperatorThread(threadId, currentTitle) {
     state.operatorRenamingThreadId = threadId;
@@ -1013,7 +1030,15 @@ function renderEditableThreadTitle(thread, className) {
         // rebuild that's restoring an already-focused input (background
         // poller mid-edit) sets _renamePreserveFocusPending and handles its
         // own precise focus/selection restore in _renderAppCore() instead.
-        if (!_renamePreserveFocusPending) {
+        //
+        // VTID-03966: AND only the first instance rendered THIS PASS for
+        // this thread id claims the focus — this thread can render twice
+        // in the same pass (sidebar row + title bar, when renaming the
+        // active thread). Letting both schedule their own focus() makes
+        // the second steal it from the first, firing a genuine blur that
+        // commits/closes the rename before the user can type anything.
+        if (!_renamePreserveFocusPending && _renameAutoFocusClaimedForThreadId !== thread.id) {
+            _renameAutoFocusClaimedForThreadId = thread.id;
             // Deferred so the element is actually in the DOM before focusing.
             setTimeout(() => { input.focus(); input.select(); }, 0);
         }
@@ -5980,6 +6005,9 @@ function _renderAppCore() {
         };
     }
     _renamePreserveFocusPending = !!savedRenameFocus;
+    // VTID-03966: reset once per render pass so exactly one of the (up to
+    // two) rendered instances for a thread claims the deferred auto-focus.
+    _renameAutoFocusClaimedForThreadId = null;
     if (savedRenameFocus) _renameBlurSuppressed = true;
 
     root.innerHTML = '';
