@@ -54,14 +54,20 @@ describe('VTID-03949: sessions sidebar replaces the thread dropdown', () => {
     const body = functionBody(SOURCE, 'function renderOperatorSessionsSidebar() {');
     expect(body).toContain("sidebar.className = 'chat-sessions-sidebar'");
     expect(body).toContain('(b.updatedAt || 0) - (a.updatedAt || 0)');
-    expect(body).toContain("row.className = 'chat-session-row'");
-    expect(body).toContain('row.onclick = () => switchOperatorThread(thread.id);');
-    expect(body).toContain("row.className = 'chat-session-row' + (thread.id === state.operatorActiveThreadId ? ' chat-session-row--active' : '');");
+    expect(body).toContain('activeThreads.slice().sort(sortByRecent).forEach(function (thread) {');
+    expect(body).toContain('renderOperatorThreadRow(thread)');
+
+    // VTID-03960: row-building itself moved into a shared helper, used by
+    // both the active and archived sections.
+    const rowBody = functionBody(SOURCE, 'function renderOperatorThreadRow(thread) {');
+    expect(rowBody).toContain("row.className = 'chat-session-row'");
+    expect(rowBody).toContain('row.onclick = () => switchOperatorThread(thread.id);');
+    expect(rowBody).toContain("(thread.id === state.operatorActiveThreadId ? ' chat-session-row--active' : '')");
   });
 
   it('an empty thread list renders a plain empty state instead of a blank sidebar', () => {
     const body = functionBody(SOURCE, 'function renderOperatorSessionsSidebar() {');
-    expect(body).toContain('if (sortedThreads.length === 0) {');
+    expect(body).toContain('if (activeThreads.length === 0) {');
     expect(body).toContain("empty.className = 'chat-sessions-empty';");
   });
 
@@ -146,8 +152,10 @@ describe('VTID-03949: double-click-to-rename, shared by the sidebar and the titl
   });
 
   it('is used both in the sessions sidebar and in the chat title bar above the transcript', () => {
-    const sidebarBody = functionBody(SOURCE, 'function renderOperatorSessionsSidebar() {');
-    expect(sidebarBody).toContain("renderEditableThreadTitle(thread, 'chat-session-row-title')");
+    // VTID-03960: the per-row title rendering moved into renderOperatorThreadRow(),
+    // shared by the sidebar's active and archived sections.
+    const rowBody = functionBody(SOURCE, 'function renderOperatorThreadRow(thread) {');
+    expect(rowBody).toContain("renderEditableThreadTitle(thread, 'chat-session-row-title')");
 
     const chatIdx = SOURCE.indexOf('function renderOperatorChat() {');
     expect(chatIdx).toBeGreaterThan(-1);
