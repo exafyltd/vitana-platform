@@ -1,0 +1,155 @@
+# VTID-03970 — commands run during this change
+
+## Fish Audio API exploration (finding the right Serbian voice, rejecting the unsafe one)
+
+$ curl -s "https://api.fish.audio/model/f8c26ecae994449faf73bcfae844076b" -H "Authorization: Bearer $FISH_API_KEY"
+{"_id":"f8c26ecae994449faf73bcfae844076b","title":"Srpski Razgovorni Glas",
+ "description":"Mmmmm [moaning softly] volim dobar kurac i volim da se jebem. ...",
+ "languages":["hr"],"tags":["female","middle-aged","conversational","social-media",
+ "entertainment","clear","expressive","neutral-tone","dynamic","breathy","intimate",
+ "sexy","friendly","animated"],"like_count":0,"task_count":0,"state":"trained"}
+(the reference_id originally suggested for this integration — explicit sexual
+description + sexy/intimate/breathy tags, rejected outright, see
+fish-rejected-voice-metadata.json)
+
+$ curl -s -G "https://api.fish.audio/model" --data-urlencode "title=srpski" \
+    --data-urlencode "page_size=15" -H "Authorization: Bearer $FISH_API_KEY"
+(11 results; picked 2ad62aaf885e4a14add09fe4a38ffd23 "Milica - Female Serbian",
+published by Fish Audio's own official account — see below)
+
+$ curl -s "https://api.fish.audio/model/2ad62aaf885e4a14add09fe4a38ffd23" -H "Authorization: Bearer $FISH_API_KEY"
+{"_id":"2ad62aaf885e4a14add09fe4a38ffd23","title":"Milica - Female Serbian",
+ "description":"A natural, professional Serbian voice with a brisk, conversational
+ pace. Clear and easy to follow, suited to voice assistants, customer support and
+ everyday narration.","languages":["hr"],
+ "tags":["female","young","conversational","professional","clear","confident",
+ "brisk","serbian","sr-rs"],
+ "author":{"_id":"d8b0991f96b44e489422ca2ddf0bd31d","nickname":"Fish Official"},
+ "visibility":"public","state":"trained"}
+(full JSON: fish-milica-voice-metadata.json)
+
+$ curl -sL "<presigned Fish sample_audio URL>" -o milica_sample.mp3
+$ file milica_sample.mp3
+milica_sample.mp3: MPEG ADTS, layer III, v1, 128 kbps, 44.1 kHz, Monaural
+(confirms the sample is real, valid audio — not a broken/placeholder asset)
+
+## Attempted real synthesis — blocked on account credit, not a code defect
+
+$ curl -s -X POST "https://api.fish.audio/v1/tts" \
+    -H "Authorization: Bearer $FISH_API_KEY" -H "Content-Type: application/json" \
+    -H "model: s2.1-pro" \
+    -d '{"text":"Zdravo! Ja sam Vitana, tvoj lični asistent za zdravlje i dugovečnost. Kako mogu danas da ti pomognem?","reference_id":"2ad62aaf885e4a14add09fe4a38ffd23","format":"mp3","normalize":true,"latency":"normal"}' \
+    -o vitana_greeting_sr.mp3 -w "HTTP_STATUS:%{http_code}  SIZE:%{size_download} bytes\n"
+HTTP_STATUS:402  SIZE:202 bytes
+$ cat vitana_greeting_sr.mp3
+{"status":402,"message":"Insufficient API credit. API credit is managed
+independently from platform credit. Please visit
+https://fish.audio/app/developers to view your API credit balance or add
+funds."}
+(the supplied FISH_API_KEY has no funded API credit — this is an account
+state, not a bug in the request; the request shape itself is correct per
+Fish's own published API docs, cross-checked at
+docs.fish.audio/api-reference/endpoint/openapi-v1/text-to-speech)
+
+## Local verification (repo checkout, this session)
+
+$ cd services/gateway && npx tsc --noEmit
+(clean, exit 0 — see outputs/tsc-noemit.txt; two missing-dependency errors seen
+earlier in this session, @aws-sdk/s3-request-presigner and
+@aws-sdk/client-cognito-identity-provider, were an artifact of this sandbox's
+node_modules never having installed them — both ARE declared in package.json
+and package-lock.json. Installed locally with `npm install --no-save` to
+reproduce the real CI `npm ci` environment; no package.json/package-lock.json
+change made or needed.)
+
+$ npm run build
+(clean, exit 0 — see outputs/npm-build.txt; this is the exact command the
+Build Gate (VALIDATOR-CHECK.yml) runs for the gateway_backend profile)
+
+$ npx jest test/tts/fish-provider.test.ts test/orb/live/upstream/cascaded-voice-fish-fallback.test.ts --silent
+Test Suites: 2 passed, 2 total
+Tests:       19 passed, 19 total
+(see outputs/jest-new-tests.txt)
+
+$ npx jest --silent   # full gateway suite
+Test Suites: 1 skipped, 930 passed, 931 total
+Tests:       29 skipped, 6 todo, 15259 passed, 15294 total
+(see outputs/jest-full-suite.txt — 0 failures, 0 regressions; the 1 skipped
+suite and 6 todo tests are pre-existing, not introduced by this change)
+
+## Governance gate simulation (VALIDATOR-CHECK.yml, run locally before pushing)
+
+$ git diff --name-only origin/main...HEAD > changed_files.txt
+$ node scripts/ci/validator-path-guard.cjs changed_files.txt gateway_backend pr_body.txt
+NOT JUDGED — 4 file(s) outside this gate's remit:
+  CLAUDE.md
+  scripts/aws/setup-fish-audio-secret.sh
+  scripts/tts/verify-fish-voice.ts
+  services/gateway/.env.example
+APPROVED: 6 in-remit file(s) match the gateway_backend allowlist
+(see outputs/path-ownership-gate.txt)
+
+$ git diff origin/main...HEAD -- services/gateway/src/frontend/ services/gateway/dist/frontend/ | node scripts/ci/validator-path-guard.cjs --csp-added-lines -
+No CSP pattern hits in added lines.
+(see outputs/csp-gate.txt — this PR touches no frontend files, so nothing to scan)
+
+$ git diff origin/main...HEAD -- services/gateway/src/routes/ services/gateway/src/index.ts services/gateway/src/app.ts | node scripts/ci/validator-path-guard.cjs --route-evidence-required -
+No route registration added — route-mount evidence not required for this diff.
+(see outputs/route-evidence-gate.txt — this PR touches no route files)
+
+## Governance: VTID self-allocation
+
+$ POST https://gateway.vitanaland.com/api/v1/vtid/allocate  (45s timeout, no response)
+(gateway VTID-allocate endpoint unreachable from this session; fell back to
+the documented alternative per CLAUDE.md §4.1)
+
+$ SELECT * FROM allocate_global_vtid('claude-code', 'gateway', 'tts-fish-audio');
+[{"vtid":"VTID-03970","num":3970,"id":"8ba332ab-44ce-494a-85fa-d452630da8e5"}]
+$ UPDATE vtid_ledger SET title=..., status='in_progress', spec_status='approved' WHERE vtid='VTID-03970';
+
+## Round 2 — Command Hub voice test lab (Fish/Polly preview + Vertex label fixes)
+
+$ grep -rn "livekit-test\|nova-sonic-test\|orb-ui-monitor" services/gateway/src/frontend/command-hub/app.js
+(confirmed the 3 screens the platform owner named are tabs in the "voice" nav
+section; found the sibling "providers" tab -> /command-hub/voice/providers/,
+renderVoiceProvidersView() -- the real provider-picker+Preview test tool)
+
+$ grep -n "google_tts', 'elevenlabs'" services/gateway/src/frontend/command-hub/app.js
+(found the TTS provider dropdown never listed 'polly' despite
+POST /api/v1/voice/preview already supporting it -- IMPLEMENTED_TTS_PROVIDERS
+was still {'google_tts'} only)
+
+$ npx jest test/routes/voice-config.test.ts test/services/voice-config.test.ts --silent
+Test Suites: 2 passed, 2 total
+Tests:       65 passed, 65 total
+(after adding provider:'fish' branch to /voice/preview + 3 new tests)
+
+$ node --check services/gateway/src/frontend/command-hub/app.js
+app.js syntax OK
+
+$ git diff origin/main -- services/gateway/src/frontend/ services/gateway/dist/frontend/ > /tmp/diff.txt
+$ node scripts/ci/validator-path-guard.cjs --csp-added-lines /tmp/diff.txt
+REJECTED: CSP pattern hit in an added line :: /\.style\b/   (x3, my new hint elements)
+REJECTED: CSP pattern hit in an added line :: /style\s*=/    (a pre-existing inline
+  style="" attribute on a line whose TEXT I edited -- the whole line counts as
+  "added" in the diff)
+exit: 1
+(this is the real VALIDATOR-CHECK CSP gate, run locally before pushing --
+confirms CLAUDE.md ALWAYS-36/NEVER-24 are actually enforced on new lines, not
+just documented)
+
+--- fixed: moved the 3 hint elements + the edited paragraph to CSS classes
+    (.vp-hint-text, .nst-info-text) in styles.css instead of inline style ---
+
+$ node scripts/ci/validator-path-guard.cjs --csp-added-lines /tmp/diff.txt
+No CSP pattern hits in added lines.
+exit: 0
+
+$ npm run build
+(clean, exit 0)
+
+$ node scripts/ci/validator-path-guard.cjs changed_files.txt gateway_backend pr_body.txt
+NOT JUDGED -- 4 file(s) outside this gate's remit: CLAUDE.md,
+  scripts/aws/setup-fish-audio-secret.sh, scripts/tts/verify-fish-voice.ts,
+  services/gateway/.env.example
+APPROVED: 23 in-remit file(s) match the gateway_backend allowlist

@@ -45,6 +45,17 @@ jest.mock('../../src/services/oasis-event-service', () => ({
   emitOasisEvent: (...args: unknown[]) => mockEmitOasisEvent(...args),
 }));
 
+// VTID-03970: mocked (unlike polly.ts, which this file has never mocked —
+// its preview branch silently no-ops to null against real AWS creds absent
+// here). Mocking Fish explicitly means the new preview tests below are
+// real and deterministic rather than accidentally testing the fallthrough.
+const mockSynthesizeFish = jest.fn();
+const mockIsFishConfigured = jest.fn();
+jest.mock('../../src/services/tts/fish', () => ({
+  synthesizeFish: (...args: unknown[]) => mockSynthesizeFish(...args),
+  isFishConfigured: (...args: unknown[]) => mockIsFishConfigured(...args),
+}));
+
 // null = unauthenticated. Otherwise treated as req.identity.
 let mockIdentity: { user_id: string; exafy_admin: boolean } | null = null;
 jest.mock('../../src/middleware/auth-supabase-jwt', () => ({
@@ -295,6 +306,57 @@ describe('POST /api/v1/voice/preview', () => {
     const res = await request(app).post('/api/v1/voice/preview').send({ text: 'hi' });
     expect(res.status).toBe(500);
     expect(res.body.error).toBe('quota exceeded');
+  });
+
+  // VTID-03970 — Fish Audio preview branch.
+  describe('provider: fish', () => {
+    it('returns 422 when Fish is not configured, without calling synthesizeFish', async () => {
+      mockIdentity = ADMIN_IDENTITY;
+      mockIsFishConfigured.mockReturnValue(false);
+      const res = await request(app)
+        .post('/api/v1/voice/preview')
+        .send({ text: 'Zdravo', language: 'sr', provider: 'fish' });
+      expect(res.status).toBe(422);
+      expect(res.body.error).toMatch(/not configured/i);
+      expect(mockSynthesizeFish).not.toHaveBeenCalled();
+    });
+
+    it('returns 422 when Fish has no curated voice for the language', async () => {
+      mockIdentity = ADMIN_IDENTITY;
+      mockIsFishConfigured.mockReturnValue(true);
+      mockSynthesizeFish.mockResolvedValue(null);
+      const res = await request(app)
+        .post('/api/v1/voice/preview')
+        .send({ text: 'Bonjour', language: 'fr', provider: 'fish' });
+      expect(res.status).toBe(422);
+      expect(res.body.error).toMatch(/no curated voice/i);
+    });
+
+    it('returns audio/mpeg bytes and the resolved voice header on success', async () => {
+      mockIdentity = ADMIN_IDENTITY;
+      mockIsFishConfigured.mockReturnValue(true);
+      mockSynthesizeFish.mockResolvedValue({
+        audioB64: Buffer.from('fake-fish-mp3-bytes').toString('base64'),
+        sampleRateHz: 44100,
+        voice: 'Milica (Fish Official)',
+        languageCode: 'sr',
+      });
+      const res = await request(app)
+        .post('/api/v1/voice/preview')
+        .send({ text: 'Zdravo, ja sam Vitana.', language: 'sr', provider: 'fish' });
+
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toMatch(/audio\/mpeg/);
+      expect(res.headers['x-vitana-tts-voice']).toBe('Milica (Fish Official)');
+      expect(Buffer.compare(res.body, Buffer.from('fake-fish-mp3-bytes'))).toBe(0);
+      expect(mockSynthesizeFish).toHaveBeenCalledWith({
+        text: 'Zdravo, ja sam Vitana.',
+        lang: 'sr',
+        format: 'mp3',
+      });
+      // Deliberately does NOT call the Google TTS client on the fish path.
+      expect(mockSynthesizeSpeech).not.toHaveBeenCalled();
+    });
   });
 });
 

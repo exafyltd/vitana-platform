@@ -15,6 +15,8 @@ import { Router, Request, Response } from 'express';
 import textToSpeech, { protos } from '@google-cloud/text-to-speech';
 // VTID-03495: Polly preview support (explicit `provider: 'polly'` only).
 import { synthesizePolly, POLLY_UNSUPPORTED_LANGS } from '../services/tts/polly';
+// VTID-03970: Fish Audio preview support (explicit `provider: 'fish'` only).
+import { synthesizeFish, isFishConfigured } from '../services/tts/fish';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import {
   requireAuthWithTenant,
@@ -207,7 +209,7 @@ router.post(
     }
 
     const provider = body.provider || 'google_tts';
-    if (provider !== 'google_tts' && provider !== 'polly') {
+    if (provider !== 'google_tts' && provider !== 'polly' && provider !== 'fish') {
       return res.status(400).json({
         ok: false,
         error: `preview for provider '${provider}' not implemented yet`,
@@ -240,6 +242,41 @@ router.post(
       res.setHeader('Content-Type', 'audio/mpeg');
       res.setHeader('X-Vitana-Tts-Voice', result.voice);
       res.setHeader('X-Vitana-Tts-Engine', result.engine);
+      return res.send(Buffer.from(result.audioB64, 'base64'));
+    }
+
+    // VTID-03970: Fish Audio preview — same explicit-provider discipline as
+    // Polly above. Deliberately calls the SAME `synthesizeFish()` the live
+    // fallback uses (not a bypass), so this preview honestly reflects real
+    // system state: until `TTS_FISH_FALLBACK_ENABLED` + `FISH_API_KEY` are
+    // both set, it reports exactly that, rather than lying about what a real
+    // request would do. That is the whole point of an audition tool — this
+    // is the intended way to verify Fish sounds right before flipping the
+    // fallback on for real users, not a workaround for it being off.
+    if (provider === 'fish') {
+      if (!isFishConfigured()) {
+        return res.status(422).json({
+          ok: false,
+          error:
+            'Fish Audio is not configured yet (TTS_FISH_FALLBACK_ENABLED and/or ' +
+            'FISH_API_KEY unset on this environment) — see CLAUDE.md §2c-fish.',
+          vtid: VTID,
+        });
+      }
+      const result = await synthesizeFish({
+        text,
+        lang: body.language || 'en',
+        format: 'mp3',
+      });
+      if (!result) {
+        return res.status(422).json({
+          ok: false,
+          error: `Fish Audio has no curated voice for language '${body.language || 'en'}' yet.`,
+          vtid: VTID,
+        });
+      }
+      res.setHeader('Content-Type', 'audio/mpeg');
+      res.setHeader('X-Vitana-Tts-Voice', result.voice);
       return res.send(Buffer.from(result.audioB64, 'base64'));
     }
 

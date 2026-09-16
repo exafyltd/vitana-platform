@@ -39663,14 +39663,14 @@ function renderNovaSonicTestView() {
     var manualPanel = document.createElement('div');
     manualPanel.style.cssText = 'padding:12px;background:#0f172a;border-radius:8px;margin-bottom:16px;border:1px solid #334155;';
     manualPanel.innerHTML = '<span style="color:#94a3b8;font-size:11px;letter-spacing:0.05em;">MANUAL PERFORMANCE TEST</span>'
-        + '<p style="color:#94a3b8;font-size:12px;margin:8px 0 12px;">Step 1 — probe which provider YOUR identity would get. Step 2 — pick a language and hit <b>Connect &amp; Talk</b> to speak voice-to-voice right here; the live session appears below with turns and audio counters. Compare wake→first-audio feel and barge-in against a Vertex session. Nova sessions emit <code>orb.upstream.nova.connect_succeeded</code> (connect_ms) and <code>orb.live.upstream.usage</code> in OASIS Events.</p>'
+        + '<p class="nst-info-text">Step 1 — probe which provider YOUR identity would get. Step 2 — pick a language and hit <b>Connect &amp; Talk</b> to speak voice-to-voice right here; the live session appears below with turns and audio counters. Nova sessions emit <code>orb.upstream.nova.connect_succeeded</code> (connect_ms) and <code>orb.live.upstream.usage</code> in OASIS Events. (There is no live Vertex session left to compare against — GCP is decommissioned; a non-Nova decision here means no working voice for that language yet, not a working alternate backend.)</p>'
         + '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">'
         + '<select class="nst-lang" style="padding:8px 10px;background:#1e293b;color:#e5e7eb;border:1px solid #334155;border-radius:4px;">'
         + '<option value="en">English (canary)</option>'
         + '<option value="de">Deutsch (canary)</option>'
         + '<option value="fr">Français (canary)</option>'
         + '<option value="es">Español (canary)</option>'
-        + '<option value="sr">Srpski (expected fallback → vertex)</option>'
+        + '<option value="sr">Srpski (Nova Sonic does not speak this — no working ORB voice yet; Vertex is permanently dead, GCP decommissioned, so there is no fallback destination either)</option>'
         + '</select>'
         + '<button class="nst-decision-btn" style="padding:8px 16px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">Probe my provider decision</button>'
         + '<button class="nst-talk-btn" style="padding:8px 18px;background:#f97316;color:#0f172a;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">🎙 Connect &amp; Talk</button>'
@@ -47444,6 +47444,19 @@ function renderVoiceProvidersView() {
         + (v2v.last_flipped_at ? ('<span style="color:var(--color-text-secondary);font-size:0.8rem;">last flip: ' + escapeHtml(v2v.last_flipped_at) + '</span>') : '');
     v2vBody.appendChild(statusRow);
 
+    // VTID-03970: "vertex" is a LEGACY WIRE VALUE, not a live Google Vertex
+    // dependency — GCP is decommissioned (CLAUDE.md §1/§2e) and this value
+    // now names the gateway-proxied WS/SSE transport, which Amazon Nova
+    // Sonic serves exclusively. Renaming the value itself is a separate,
+    // larger change (it is the real request/DB value `/api/v1/orb/
+    // active-provider` and its resolver expect — see
+    // active-provider-resolver.ts); this note exists so the label is not
+    // read as "still calls Google" while that rename is pending.
+    var vertexNote = document.createElement('div');
+    vertexNote.className = 'vp-hint-text';
+    vertexNote.textContent = '"vertex" here is a legacy value name for the gateway-proxied transport — it is served by Amazon Nova Sonic, not Google Vertex (GCP is fully decommissioned, see CLAUDE.md §1).';
+    v2vBody.appendChild(vertexNote);
+
     if (cooldown > 0) {
         var cdMsg = document.createElement('div');
         cdMsg.style.cssText = 'padding:0.5rem 0.75rem;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);border-radius:6px;font-size:0.8rem;color:#fbbf24;';
@@ -47456,7 +47469,7 @@ function renderVoiceProvidersView() {
     ['vertex', 'livekit'].forEach(function (p) {
         var btn = document.createElement('button');
         btn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-generate';
-        btn.textContent = (current === p ? '✓ ' : '') + 'Use ' + (p === 'vertex' ? 'Vertex (Gemini Live)' : 'LiveKit');
+        btn.textContent = (current === p ? '✓ ' : '') + 'Use ' + (p === 'vertex' ? 'Nova Sonic (gateway transport)' : 'LiveKit');
         btn.disabled = current === p || cooldown > 0;
         btn.onclick = function () {
             if (!confirm('Flip realtime voice provider to ' + p + '? 60-min cooldown applies after flip.')) return;
@@ -47493,7 +47506,7 @@ function renderVoiceProvidersView() {
 
     var sttBadge = document.createElement('div');
     sttBadge.style.cssText = 'padding:0.4rem 0.75rem;background:rgba(168,85,247,0.08);border:1px solid rgba(168,85,247,0.3);border-radius:6px;font-size:0.78rem;color:var(--color-text-secondary);';
-    sttBadge.innerHTML = '<strong>Active when V2V = LiveKit.</strong> Vertex Gemini Live does STT internally and ignores this setting.';
+    sttBadge.innerHTML = '<strong>Active when V2V = LiveKit.</strong> The Nova Sonic gateway transport (labelled "vertex" — see the note above) does STT internally and ignores this setting.';
     sttBody.appendChild(sttBadge);
 
     var sttProviderRow = vpMakeFieldRow('Provider');
@@ -47532,17 +47545,38 @@ function renderVoiceProvidersView() {
     var ttsProviderRow = vpMakeFieldRow('Provider');
     var ttsProviderSelect = document.createElement('select');
     vpStyleSelect(ttsProviderSelect);
-    ['google_tts', 'elevenlabs', 'rime', 'inworld', 'deepgram_tts', 'openai_tts'].forEach(function (p) {
+    // VTID-03970: 'polly' and 'fish' are real, working dispatchers (see
+    // CLAUDE.md §2c/§2c-fish) — previously absent from this list even
+    // though /api/v1/voice/preview already supported 'polly'. Labels name
+    // what each one actually is, not a bare provider id.
+    var ttsProviderLabels = {
+        google_tts: 'Google Cloud TTS (Neural2 / Gemini)',
+        polly: 'Amazon Polly',
+        fish: 'Fish Audio (language-coverage fallback — e.g. Serbian)',
+        elevenlabs: 'ElevenLabs',
+        rime: 'Rime',
+        inworld: 'Inworld',
+        deepgram_tts: 'Deepgram TTS',
+        openai_tts: 'OpenAI TTS',
+    };
+    ['google_tts', 'polly', 'fish', 'elevenlabs', 'rime', 'inworld', 'deepgram_tts', 'openai_tts'].forEach(function (p) {
         var opt = document.createElement('option');
         opt.value = p;
-        opt.textContent = p + (ttsImpl.indexOf(p) === -1 ? ' (not yet wired)' : '');
-        opt.disabled = ttsImpl.indexOf(p) === -1;
+        var notWired = ttsImpl.indexOf(p) === -1;
+        opt.textContent = (ttsProviderLabels[p] || p) + (notWired ? ' (not yet wired)' : '');
+        opt.disabled = notWired;
         if (effTtsProvider === p) opt.selected = true;
         ttsProviderSelect.appendChild(opt);
     });
     ttsProviderSelect.onchange = function () { pending.ttsProvider = ttsProviderSelect.value; renderApp(); };
     ttsProviderRow.appendChild(ttsProviderSelect);
     ttsProviderBody.appendChild(ttsProviderRow);
+    if (effTtsProvider === 'fish') {
+        var fishHint = document.createElement('div');
+        fishHint.className = 'vp-hint-text';
+        fishHint.textContent = 'Fish Audio is a per-language fallback, not a general voice catalog — it only has a curated voice for languages Polly cannot speak (Serbian today). Preview will report a clear error if it is not configured in this environment yet, or if the selected language has no curated Fish voice.';
+        ttsProviderBody.appendChild(fishHint);
+    }
 
     var ttsModelRow = vpMakeFieldRow('Model');
     var ttsModelInput = document.createElement('input');
@@ -47609,9 +47643,20 @@ function renderVoiceProvidersView() {
         voiceSelect.appendChild(opt);
     });
     voiceSelect.onchange = function () { pending.ttsVoice = voiceSelect.value; renderApp(); };
+    // VTID-03970: this catalog is Google-voice-specific (fetchTtsVoicesForLanguage
+    // always queries provider=google_tts) — Polly and Fish each pick a fixed
+    // voice per language server-side instead, so showing "no voices loaded,
+    // pick a language" for them would misleadingly imply a fetch is missing.
+    var voiceCatalogAppliesToProvider = effTtsProvider === 'google_tts';
+    voiceSelect.disabled = !voiceCatalogAppliesToProvider;
     voiceRow.appendChild(voiceSelect);
     voiceBody.appendChild(voiceRow);
-    if (voicesForLang.length === 0) {
+    if (!voiceCatalogAppliesToProvider) {
+        var hint2 = document.createElement('div');
+        hint2.className = 'vp-hint-text';
+        hint2.textContent = (ttsProviderLabels[effTtsProvider] || effTtsProvider) + ' picks one fixed voice per language server-side — there is no separate voice catalog to choose from here.';
+        voiceBody.appendChild(hint2);
+    } else if (voicesForLang.length === 0) {
         var hint = document.createElement('div');
         hint.style.cssText = 'font-size:0.75rem;color:var(--color-text-secondary);';
         hint.textContent = 'No voices loaded yet for ' + voiceLangKey + '. Pick a language above.';

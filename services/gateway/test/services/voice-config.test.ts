@@ -87,8 +87,15 @@ afterEach(() => {
 });
 
 describe('IMPLEMENTED provider sets', () => {
-  test('only google_tts / google_stt are implemented', () => {
+  // VTID-03970: 'polly' (VTID-03495) and 'fish' (VTID-03970) both gained
+  // real dispatchers — this test's own title used to claim "only google_tts"
+  // was implemented while /api/v1/voice/preview already supported 'polly',
+  // which is exactly the drift that left Polly invisible in the Providers &
+  // Voice screen's dropdown. Named providers only, not an exclusivity claim.
+  test('google_tts, polly and fish are implemented; unbuilt providers are not', () => {
     expect(IMPLEMENTED_TTS_PROVIDERS.has('google_tts')).toBe(true);
+    expect(IMPLEMENTED_TTS_PROVIDERS.has('polly')).toBe(true);
+    expect(IMPLEMENTED_TTS_PROVIDERS.has('fish')).toBe(true);
     expect(IMPLEMENTED_TTS_PROVIDERS.has('elevenlabs')).toBe(false);
     expect(IMPLEMENTED_STT_PROVIDERS.has('google_stt')).toBe(true);
     expect(IMPLEMENTED_STT_PROVIDERS.has('whisper')).toBe(false);
