@@ -28,8 +28,18 @@ const ORG_ROLES = ['org_admin', 'staff', 'professional'] as const;
 type OrgRole = (typeof ORG_ROLES)[number];
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
+// VTID-03974 — the machine-readable routing signal that decides whether an
+// activated org gets a partner_registry bridge (see POST /:orgId/activate
+// below). Deliberately separate from org_type, which stays free-text.
+const COMMERCE_VERTICALS = ['health', 'general'] as const;
+type CommerceVertical = (typeof COMMERCE_VERTICALS)[number];
+
 function isOrgRole(value: unknown): value is OrgRole {
   return typeof value === 'string' && (ORG_ROLES as readonly string[]).includes(value);
+}
+
+function isCommerceVertical(value: unknown): value is CommerceVertical {
+  return typeof value === 'string' && (COMMERCE_VERTICALS as readonly string[]).includes(value);
 }
 
 function getCallerId(req: Request): string | null {
@@ -97,11 +107,15 @@ router.post('/register', requireAuth, async (req: Request, res: Response) => {
   const orgKey = typeof req.body?.org_key === 'string' ? req.body.org_key.trim().toLowerCase() : '';
   const displayName = typeof req.body?.display_name === 'string' ? req.body.display_name.trim() : '';
   const orgType = typeof req.body?.org_type === 'string' ? req.body.org_type.trim() : '';
+  const commerceVertical = req.body?.commerce_vertical;
   const businessDetails = req.body?.business_details && typeof req.body.business_details === 'object' ? req.body.business_details : {};
 
   if (!orgKey) return res.status(400).json({ ok: false, error: 'org_key is required' });
   if (!displayName) return res.status(400).json({ ok: false, error: 'display_name is required' });
   if (!orgType) return res.status(400).json({ ok: false, error: 'org_type is required' });
+  if (!isCommerceVertical(commerceVertical)) {
+    return res.status(400).json({ ok: false, error: `commerce_vertical must be one of: ${COMMERCE_VERTICALS.join(', ')}` });
+  }
 
   const { data: org, error: orgErr } = await supabase
     .from('partner_organizations')
@@ -109,17 +123,18 @@ router.post('/register', requireAuth, async (req: Request, res: Response) => {
       org_key: orgKey,
       display_name: displayName,
       org_type: orgType,
+      commerce_vertical: commerceVertical,
       status: 'pending_review',
       owner_user_id: callerId,
       business_details: businessDetails,
     })
-    .select('id, org_key, display_name, org_type, status')
+    .select('id, org_key, display_name, org_type, commerce_vertical, status')
     .single();
   if (orgErr || !org) {
     if (orgErr?.code === '23505') return res.status(409).json({ ok: false, error: 'org_key already taken' });
     return res.status(500).json({ ok: false, error: orgErr?.message ?? 'partner_organizations insert failed' });
   }
-  const orgRow = org as { id: string; org_key: string; display_name: string; org_type: string; status: string };
+  const orgRow = org as { id: string; org_key: string; display_name: string; org_type: string; commerce_vertical: CommerceVertical; status: string };
 
   const { error: memberErr } = await supabase
     .from('partner_organization_members')
@@ -298,20 +313,63 @@ router.post('/:orgId/activate', requireAuth, async (req: Request, res: Response)
     .from('partner_organizations')
     .update({ status: 'active', updated_at: new Date().toISOString() })
     .eq('id', req.params.orgId)
-    .select('id, org_key, display_name, status')
+    .select('id, org_key, display_name, commerce_vertical, status')
     .maybeSingle();
   if (error) return res.status(500).json({ ok: false, error: error.message });
   if (!org) return res.status(404).json({ ok: false, error: 'organization not found' });
+  const orgRow = org as { id: string; org_key: string; display_name: string; commerce_vertical: CommerceVertical | null; status: string };
 
   await emitOasisEvent({
     vtid: 'VTID-03932',
     type: 'partner_org.activated',
     source: 'partner-orgs',
     status: 'success',
-    message: `Partner organization ${(org as { display_name: string }).display_name} activated by exafy_admin.`,
+    message: `Partner organization ${orgRow.display_name} activated by exafy_admin.`,
     payload: { partner_organization_id: req.params.orgId },
     actor_id: getCallerId(req) ?? undefined,
   });
+
+  // VTID-03974 — health-vertical bridge: without this, an activated org can
+  // never receive an order, because partner_health_test_orders.partner_id
+  // references partner_registry, not partner_organizations. Find-or-create
+  // keyed on partner_key = org_key (stable, traceable back to the org),
+  // so re-activating an already-bridged org is a no-op, never a duplicate.
+  // A general-commerce org never gets a partner_registry row.
+  if (orgRow.commerce_vertical === 'health') {
+    const { data: existingRegistry } = await supabase
+      .from('partner_registry')
+      .select('id')
+      .eq('partner_key', orgRow.org_key)
+      .maybeSingle();
+
+    if (!existingRegistry) {
+      const { data: registry, error: registryErr } = await supabase
+        .from('partner_registry')
+        .insert({
+          partner_key: orgRow.org_key,
+          display_name: orgRow.display_name,
+          integration_mode: 'portal_manual',
+          status: 'active',
+          capabilities: { has_order_api: false, has_webhook: false, has_result_api: false },
+          partner_organization_id: orgRow.id,
+        })
+        .select('id')
+        .single();
+      if (registryErr || !registry) {
+        return res.status(500).json({ ok: false, error: registryErr?.message ?? 'partner_registry bridge insert failed', organization: orgRow });
+      }
+
+      await emitOasisEvent({
+        vtid: 'VTID-03974',
+        type: 'partner_org.registry_linked',
+        source: 'partner-orgs',
+        status: 'success',
+        message: `Partner organization ${orgRow.display_name} bridged to a new partner_registry row for health-order processing.`,
+        payload: { partner_organization_id: orgRow.id, partner_registry_id: (registry as { id: string }).id },
+        actor_id: getCallerId(req) ?? undefined,
+      });
+    }
+  }
 
   return res.json({ ok: true, organization: org });
 });

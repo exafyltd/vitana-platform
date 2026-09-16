@@ -30,7 +30,7 @@ import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-j
 import { getSupabase } from '../lib/supabase';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { findClickCorrelationCandidates } from '../services/partner-health/id-matching';
-import { ingestPartnerResult, recordStatusChange, type PartnerOrderRow } from '../services/partner-health/ingestion';
+import { ingestPartnerResult, recordStatusChange, quarantineUnmatchedResult, type PartnerOrderRow } from '../services/partner-health/ingestion';
 import doctorBoxAdapter from '../services/partner-health/doctorbox-adapter';
 import type { CanonicalHealthTestStatus, PartnerResultPayload } from '../services/partner-health/types';
 import {
@@ -297,6 +297,44 @@ router.post('/inbox/:id/upload-result', requireAuth, requirePartnerHealthAccess,
   });
   if (!outcome.ok) return res.status(500).json({ ok: false, error: outcome.error });
   return res.json({ ...outcome, ok: true });
+});
+
+// ==================== Manual inbox entry (VTID-03974) ====================
+
+// A self-registered health partner has no webhook/API integration yet
+// (integration_mode: 'portal_manual' — see partner-orgs.ts's activation
+// bridge) and quarantineUnmatchedResult() was, until now, only ever
+// invoked from the DoctorBox webhook path — so a brand-new partner could
+// never get their first order into their own Inbox tab at all. This is
+// that missing entry point: staff/org_admin key in a received result by
+// hand, and it lands in the SAME inbox row shape + the SAME hard-stop
+// confirm-match flow every other partner already uses — no new write
+// path, this just reuses quarantineUnmatchedResult() from ingestion.ts.
+// Full-partner-access only (org_admin/staff, or admin), same gate as the
+// inbox listing and confirm-match above — a professional cannot create a
+// brand-new unresolved entry any more than they can confirm-match one.
+router.post('/inbox/manual', requireAuth, requirePartnerHealthAccess, async (req: Request, res: Response) => {
+  const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+  const access = getAccess(req);
+
+  const partnerId = typeof req.body?.partner_id === 'string' ? req.body.partner_id : null;
+  const rawPayload = req.body?.raw_payload;
+  const candidateUserIds = Array.isArray(req.body?.candidate_user_ids)
+    ? req.body.candidate_user_ids.filter((v: unknown): v is string => typeof v === 'string')
+    : [];
+
+  if (!partnerId) return res.status(400).json({ ok: false, error: 'partner_id is required' });
+  if (!rawPayload || typeof rawPayload !== 'object') return res.status(400).json({ ok: false, error: 'raw_payload is required' });
+  if (!hasFullPartnerAccess(access, partnerId)) return res.status(403).json({ ok: false, error: 'FORBIDDEN' });
+
+  // Same "never auto-resolve" rule as every other entry point into the
+  // inbox: even a single named candidate still requires an explicit
+  // confirm-match call afterward, never applied automatically here.
+  const reason: 'no_match' | 'ambiguous_match' = candidateUserIds.length > 0 ? 'ambiguous_match' : 'no_match';
+  const outcome = await quarantineUnmatchedResult(supabase, partnerId, rawPayload as Record<string, unknown>, candidateUserIds, reason);
+  if (!outcome.ok) return res.status(500).json({ ok: false, error: outcome.error });
+  return res.status(201).json({ ok: true, inbox_id: outcome.inbox_id });
 });
 
 // ==================== Confirm match (the hard-stop step) ====================
