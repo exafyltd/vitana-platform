@@ -324,6 +324,37 @@ describe('getLoopStats', () => {
     expect(await getLoopStats()).toBeNull();
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
+
+  // VTID-03965: the fallback-to-getLoopState() path (above) is a SECOND
+  // sequential Supabase call, each independently bounded at ~3s by
+  // VTID-03954's supabaseRequest timeout. Live staging measurement post-
+  // VTID-03964 (which parallelized getLoopStats() against its sibling call
+  // in getEventLoopStatus(), but did not touch this internal fallback)
+  // still showed /api/v1/autopilot/health taking 6.4-6.6s — consistent with
+  // BOTH the primary RPC and its fallback each hanging to their full bound
+  // when Supabase is genuinely slow, stacking to ~6s from this one function
+  // alone. getLoopStats() must resolve (degrade to null) within its own
+  // ~3s total budget regardless of how many sequential steps it takes.
+  it('caps total time at ~3s even when both the primary RPC and its fallback each hang to their own bound', async () => {
+    mockFetch.mockImplementation((_url: string, options?: { signal?: AbortSignal }) => {
+      return new Promise((_resolve, reject) => {
+        options?.signal?.addEventListener('abort', () => {
+          const err = new Error('The operation was aborted');
+          err.name = 'AbortError';
+          reject(err);
+        });
+      });
+    });
+
+    const start = Date.now();
+    const result = await getLoopStats();
+    const elapsedMs = Date.now() - start;
+
+    expect(result).toBeNull();
+    // Sequential (primary hang + fallback hang) would take ~6s; the outer
+    // cap must resolve near 3s instead.
+    expect(elapsedMs).toBeLessThan(4500);
+  }, 10_000);
 });
 
 // ---------------------------------------------------------------------------

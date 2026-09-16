@@ -1257,31 +1257,56 @@ router.get('/pipeline/health', async (_req: Request, res: Response) => {
       workersTimeout.clear();
     }
 
-    // Parse task counts
+    // VTID-03965: reading each response body here happens AFTER Promise.all
+    // has already settled — outside the per-fetch `.catch(() => null)` above,
+    // and outside the AbortController timeouts (already cleared in the
+    // `finally` block). Live staging measurement post-VTID-03964 showed this
+    // route still throwing real 500s ("Body is unusable: Body has already
+    // been read", "The operation was aborted.") even with independent
+    // AbortControllers per fetch — consistent with Node's fetch (undici)
+    // pooled-connection reuse corrupting a body stream when several
+    // concurrent requests hit the same host at once (this route alone fires
+    // 3 direct fetches concurrently with getEventLoopStatus()'s own 2 —
+    // up to 5 concurrent requests to the same Supabase host). Each parse is
+    // now individually guarded: a corrupted/failed body read degrades that
+    // one data point instead of 500ing the whole health check, matching the
+    // fetch-level `.catch(() => null)` already in place above.
     let taskCounts: Record<string, number> = {};
     if (taskCountsResp && taskCountsResp.ok) {
-      const countsData = await taskCountsResp.json() as any;
-      taskCounts = Array.isArray(countsData)
-        ? countsData.reduce((acc: Record<string, number>, r: any) => { acc[r.status] = r.count; return acc; }, {})
-        : countsData;
+      try {
+        const countsData = await taskCountsResp.json() as any;
+        taskCounts = Array.isArray(countsData)
+          ? countsData.reduce((acc: Record<string, number>, r: any) => { acc[r.status] = r.count; return acc; }, {})
+          : countsData;
+      } catch (parseError) {
+        console.error('[pipeline/health] Failed to parse task-counts body:', parseError);
+      }
     }
 
     // Parse stuck tasks
     let stuckTasks: { vtid: string; title: string; stuck_minutes: number }[] = [];
     if (stuckTasksResp && stuckTasksResp.ok) {
-      const stuckData = await stuckTasksResp.json() as any[];
-      stuckTasks = stuckData.map(t => ({
-        vtid: t.vtid,
-        title: t.title,
-        stuck_minutes: Math.round((Date.now() - new Date(t.updated_at).getTime()) / 60000),
-      }));
+      try {
+        const stuckData = await stuckTasksResp.json() as any[];
+        stuckTasks = stuckData.map(t => ({
+          vtid: t.vtid,
+          title: t.title,
+          stuck_minutes: Math.round((Date.now() - new Date(t.updated_at).getTime()) / 60000),
+        }));
+      } catch (parseError) {
+        console.error('[pipeline/health] Failed to parse stuck-tasks body:', parseError);
+      }
     }
 
     // Parse workers
     let workersActive = false;
     if (workersResp && workersResp.ok) {
-      const workerData = await workersResp.json() as any[];
-      workersActive = workerData.length > 0;
+      try {
+        const workerData = await workersResp.json() as any[];
+        workersActive = workerData.length > 0;
+      } catch (parseError) {
+        console.error('[pipeline/health] Failed to parse workers body:', parseError);
+      }
     }
 
     return res.status(200).json({

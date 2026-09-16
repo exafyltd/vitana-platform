@@ -336,10 +336,32 @@ export async function recordLoopError(error: string): Promise<boolean> {
   return result.ok;
 }
 
+// VTID-03965: getLoopStats()'s fallback-on-failure path (below) makes a
+// SECOND sequential Supabase call (getLoopState()) when the primary RPC
+// fails or times out — each independently bounded at
+// SUPABASE_REQUEST_TIMEOUT_MS (3000ms) by VTID-03954, so a slow-Supabase
+// moment on the primary call (which is exactly when the fallback is most
+// likely to ALSO be slow) can stack this one function to ~6000ms, despite
+// VTID-03964 already parallelizing this call against its sibling
+// isAutopilotExecutionArmed() in getEventLoopStatus(). Live staging
+// measurement post-VTID-03964 confirmed this: /api/v1/autopilot/health
+// still measured 6.4-6.6s on 2 of 6 repeated calls, over the Command Hub
+// panel's 6s budget. Capping the WHOLE function (primary + fallback) at a
+// single wall-clock deadline closes this regardless of how many sequential
+// steps it takes internally.
+const GET_LOOP_STATS_TOTAL_TIMEOUT_MS = 3000;
+
 /**
  * Get loop statistics
  */
 export async function getLoopStats(): Promise<LoopStats | null> {
+  return Promise.race([
+    getLoopStatsUnbounded(),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), GET_LOOP_STATS_TOTAL_TIMEOUT_MS)),
+  ]);
+}
+
+async function getLoopStatsUnbounded(): Promise<LoopStats | null> {
   const result = await supabaseRequest<LoopStats[]>(
     `/rest/v1/rpc/get_autopilot_loop_stats`,
     {
