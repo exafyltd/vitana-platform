@@ -711,6 +711,116 @@ describe('VTID-01115: Domain Caps', () => {
 });
 
 // =============================================================================
+// Domain Cap Counter Reporting (regression for exclusion_reason-aware counts)
+// =============================================================================
+
+describe('VTID-01115: Domain Cap Counter Reporting', () => {
+  it('should count domain-capped items as deprioritized, not included', () => {
+    // Health domain cap is 10. Create 15 health items that all clear the
+    // include threshold so that the ONLY exclusion path exercised is the
+    // domain cap - never the score thresholds.
+    const memories = Array.from({ length: 15 }, (_, i) =>
+      createMockMemory({
+        id: `health-cap-${String(i).padStart(3, '0')}`,
+        category_key: 'health',
+        source: 'orb_voice',
+        importance: 90,
+        content: `Routine health note ${i}`,
+        occurred_at: new Date().toISOString()
+      })
+    );
+
+    const context = createMockContext({
+      intent: 'health',
+      domain: 'health',
+      role: 'patient'
+    });
+
+    const result = scoreAndRankMemories(memories, context);
+
+    // Sanity: every scored item must be above the include threshold so we
+    // know the only exclusions came from the domain cap.
+    for (const item of result.scored_items) {
+      expect(item.relevance_score).toBeGreaterThanOrEqual(SCORE_THRESHOLDS.include);
+    }
+
+    const cappedItems = result.scored_items.filter(i => i.exclusion_reason !== undefined);
+    const uncappedItems = result.scored_items.filter(i => i.exclusion_reason === undefined);
+
+    // Exactly (15 - DOMAIN_CAPS.health) items should have been deprioritized
+    // by the domain cap; the rest remain included on the returned list.
+    expect(uncappedItems.length).toBe(DOMAIN_CAPS.health);
+    expect(cappedItems.length).toBe(15 - DOMAIN_CAPS.health);
+    for (const item of cappedItems) {
+      expect(item.exclusion_reason).toContain('Domain cap');
+    }
+
+    // Core regression: counters must respect exclusion_reason.
+    // Domain-capped items are deprioritized, NOT included.
+    expect(result.scoring_metadata.included_count).toBe(DOMAIN_CAPS.health);
+    expect(result.scoring_metadata.deprioritized_count).toBe(15 - DOMAIN_CAPS.health);
+    expect(result.scoring_metadata.excluded_count).toBe(0);
+
+    // Counts reconcile with the total considered set.
+    expect(
+      result.scoring_metadata.included_count +
+        result.scoring_metadata.deprioritized_count +
+        result.scoring_metadata.excluded_count
+    ).toBe(result.scoring_metadata.total_candidates);
+  });
+
+  it('should reconcile domain-capped items alongside score-excluded items', () => {
+    // 12 health items above every threshold (domain cap is 10), plus 1 item
+    // that is excluded by score so we exercise both exclusion paths.
+    const passingMemories = Array.from({ length: 12 }, (_, i) =>
+      createMockMemory({
+        id: `pass-cap-${String(i).padStart(3, '0')}`,
+        category_key: 'health',
+        source: 'orb_voice',
+        importance: 90,
+        content: `Routine health note ${i}`,
+        occurred_at: new Date().toISOString()
+      })
+    );
+
+    const failingMemory = createMockMemory({
+      id: 'low-cap-000',
+      category_key: 'notes',
+      source: 'system',
+      importance: 0,
+      content: 'Unrelated low-value note.',
+      occurred_at: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString()
+    });
+
+    const context = createMockContext({
+      intent: 'health',
+      domain: 'health',
+      role: 'patient'
+    });
+
+    const result = scoreAndRankMemories(
+      [...passingMemories, failingMemory],
+      context
+    );
+
+    expect(result.scoring_metadata.total_candidates).toBe(13);
+
+    // The two health items beyond the domain cap must be reported as
+    // deprioritized rather than included.
+    expect(result.scoring_metadata.included_count).toBe(DOMAIN_CAPS.health);
+    expect(result.scoring_metadata.deprioritized_count).toBe(12 - DOMAIN_CAPS.health);
+
+    // Whatever the excluded count resolves to, the three buckets must sum
+    // to the total considered set.
+    expect(
+      result.scoring_metadata.included_count +
+        result.scoring_metadata.deprioritized_count +
+        result.scoring_metadata.excluded_count
+    ).toBe(result.scoring_metadata.total_candidates);
+  });
+});
+
+// =============================================================================
 // Scoring Metadata Tests
 // =============================================================================
 
