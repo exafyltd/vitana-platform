@@ -56,6 +56,18 @@ required), NOT `404 text/html` (which would mean the route didn't
 actually mount). This is the outstanding live-verification step, same
 posture as every other unverified-in-sandbox item in this evidence pack.
 
+OASIS_PROOF: this PR emits one real state-transition event, not a poll —
+`partner_org.registry_linked` (new `CicdEventType`, `services/gateway/src/types/cicd.ts`),
+fired from `POST /:orgId/activate` in `partner-orgs.ts` exactly once, the
+first time a `health`-vertical org's `partner_registry` bridge row is
+created (the idempotent re-activation path explicitly does NOT re-emit it —
+see AC-5/AC-4's tests, which assert the event fires on first bridge and is
+absent on a repeat activation). Pinned by
+`test/partner-orgs.test.ts`'s "health vertical bridges to a NEW
+partner_registry row" test (asserts `emitOasisEventMock` was called with
+`type: 'partner_org.registry_linked'`) and the idempotent-reactivation test
+(asserts it was NOT called a second time).
+
 MERGE_PAYLOAD_PREVIEW:
 - ALTER TABLE partner_organizations ADD COLUMN commerce_vertical TEXT CHECK (commerce_vertical IN ('health','general')), nullable, file-only (not applied to live Supabase in this PR).
 - POST /api/v1/partner-orgs/register now requires commerce_vertical; POST /:orgId/activate bridges a health-vertical org to a new (or existing) partner_registry row keyed on partner_key = org_key, emitting partner_org.registry_linked.
