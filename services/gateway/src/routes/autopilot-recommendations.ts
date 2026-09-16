@@ -33,6 +33,23 @@ import { getUserLocale } from '../i18n/server-locale';
 import { optionalAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import * as repo from './autopilot-recommendations-repository';
 
+// VTID-03972: this route backs the badge-count poll fired on every AppLayout
+// mount + every 60s (GET /count) and the popup list (GET /), including from
+// the MAXINA mobile app (role=community). None of its direct PostgREST
+// fetch() calls had any AbortController/timeout, so a slow Supabase moment
+// hung the whole request with no bound. Matches the abortAfter()/timeout
+// pattern already established in vtid-ledger-reader.ts.
+const REC_FETCH_TIMEOUT_MS = 3000;
+
+function abortAfter(ms: number): { signal: AbortSignal; clear: () => void } {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), ms);
+  return {
+    signal: controller.signal,
+    clear: () => clearTimeout(timeoutId),
+  };
+}
+
 /**
  * Recommendation-identity work: resolve the requesting user's locale for the
  * "Vitana empfiehlt" header (see annotateWithPillarImpact below). Best-effort —
@@ -303,6 +320,7 @@ async function callRpc<T>(
     return { ok: false, error: 'Missing Supabase credentials' };
   }
 
+  const timeout = abortAfter(REC_FETCH_TIMEOUT_MS);
   try {
     const response = await fetch(`${supabaseUrl}/rest/v1/rpc/${functionName}`, {
       method: 'POST',
@@ -312,6 +330,7 @@ async function callRpc<T>(
         'Authorization': authToken ? `Bearer ${authToken}` : `Bearer ${supabaseKey}`,
       },
       body: JSON.stringify(params),
+      signal: timeout.signal,
     });
 
     if (!response.ok) {
@@ -323,6 +342,8 @@ async function callRpc<T>(
     return { ok: true, data };
   } catch (error) {
     return { ok: false, error: String(error) };
+  } finally {
+    timeout.clear();
   }
 }
 
@@ -389,6 +410,7 @@ export async function queryRecommendationsByRole(
   }
   // admin role or unknown: no extra filters (returns everything)
 
+  const timeout = abortAfter(REC_FETCH_TIMEOUT_MS);
   try {
     const queryUrl = `${supabaseUrl}/rest/v1/autopilot_recommendations?${params.toString()}`;
     console.log(`${LOG_PREFIX} queryRecommendationsByRole PostgREST query:`, queryUrl.replace(supabaseKey!, '***'));
@@ -400,6 +422,7 @@ export async function queryRecommendationsByRole(
           'Authorization': `Bearer ${supabaseKey}`,
           'Prefer': 'count=exact',
         },
+        signal: timeout.signal,
       },
     );
     if (!response.ok) {
@@ -412,6 +435,8 @@ export async function queryRecommendationsByRole(
     return { ok: true, data, count: totalCount };
   } catch (error) {
     return { ok: false, error: String(error) };
+  } finally {
+    timeout.clear();
   }
 }
 
@@ -441,6 +466,7 @@ async function queryRecommendationsFallback(
   params.append('or', '(expires_at.is.null,expires_at.gt.now())');
   params.set('user_id', `eq.${userId}`);
 
+  const timeout = abortAfter(REC_FETCH_TIMEOUT_MS);
   try {
     const url = `${supabaseUrl}/rest/v1/autopilot_recommendations?${params.toString()}`;
     console.log(`${LOG_PREFIX} Fallback query URL: ${url.replace(supabaseKey, '***')}`);
@@ -450,6 +476,7 @@ async function queryRecommendationsFallback(
         'Authorization': `Bearer ${supabaseKey}`,
         'Prefer': 'count=exact',
       },
+      signal: timeout.signal,
     });
     if (!response.ok) {
       const errorText = await response.text();
@@ -461,6 +488,8 @@ async function queryRecommendationsFallback(
     return { ok: true, data, count: totalCount };
   } catch (error) {
     return { ok: false, error: String(error) };
+  } finally {
+    timeout.clear();
   }
 }
 
