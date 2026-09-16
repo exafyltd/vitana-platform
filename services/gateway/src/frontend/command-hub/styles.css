@@ -2104,6 +2104,10 @@ body {
   max-width: 80%;
 }
 
+.message-meta--sent {
+  align-self: flex-end;
+}
+
 .message-copy-btn {
   display: inline-flex;
   align-items: center;

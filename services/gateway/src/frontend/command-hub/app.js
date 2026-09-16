@@ -26210,11 +26210,10 @@ function renderOperatorChat() {
             // relative timestamp ("3h ago"), Claude Code style, replacing
             // the old plain always-absolute timestamp div.
             const meta = document.createElement('div');
-            meta.className = 'message-meta';
-            // Align with the message bubble, same as the old timestamp div.
-            if (isSent) {
-                meta.style.alignSelf = 'flex-end';
-            }
+            // Align with the message bubble via a CSS class rather than an
+            // inline style assignment, same convention as .message-sent/
+            // .message-reply above.
+            meta.className = 'message-meta' + (isSent ? ' message-meta--sent' : '');
 
             const copyBtn = document.createElement('button');
             copyBtn.type = 'button';

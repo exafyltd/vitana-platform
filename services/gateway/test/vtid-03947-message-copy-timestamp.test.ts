@@ -50,8 +50,12 @@ describe('VTID-03947: renderOperatorChat() message-meta row', () => {
   const body = functionBody(SOURCE, 'function renderOperatorChat() {');
 
   it('renders a message-meta row per message instead of the old bare timestamp div', () => {
-    expect(body).toContain("meta.className = 'message-meta';");
+    expect(body).toContain("meta.className = 'message-meta' + (isSent ? ' message-meta--sent' : '');");
     expect(body).toContain("messages.appendChild(meta);");
+  });
+
+  it('aligns the meta row via a CSS class, not an inline style write (avoids the CSP-surface guard)', () => {
+    expect(body).not.toMatch(/meta\.style\./);
   });
 
   it('the copy button copies msg.content via navigator.clipboard.writeText', () => {
