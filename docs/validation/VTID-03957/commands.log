@@ -1,0 +1,50 @@
+# VTID-03957 — commands run, in order
+
+## 1. Allocate VTID
+POST https://gateway.vitanaland.com/api/v1/vtid/allocate
+  body: {"source":"claude-code","layer":"platform","module":"commerce-onboarding-unblock"}
+  -> {"ok":true,"vtid":"VTID-03957","num":3957,"id":"34a3ebeb-65d4-40e6-b308-1cb76d940d78"}
+
+UPDATE vtid_ledger SET title=..., summary=..., status='in_progress',
+  spec_status='approved' WHERE vtid='VTID-03957';
+  (Supabase MCP execute_sql, project inmkhvwdcuyhnxkgfvsb)
+
+## 2. Pre-migration verification (Supabase MCP execute_sql)
+SELECT to_regclass('public.partner_organizations'), ... ;
+  -> all null (see outputs/pre-migration-check.json)
+
+## 3. Apply migration (Supabase MCP apply_migration)
+name: vtid_03932_partner_organizations
+file: supabase/migrations/20260915120000_vtid_03932_partner_organizations.sql
+  -> {"success":true}
+
+## 4. Post-migration verification (Supabase MCP execute_sql)
+Same query as step 2.
+  -> all 4 tables, both columns, and the trigger resolve
+  (see outputs/post-migration-check.json)
+
+## 5. Merge vitana-platform PR #3331
+- Marked ready for review (mcp__github__update_pull_request, draft:false)
+- Re-ran the `drift` check (mcp__github__actions_run_trigger,
+  rerun_failed_jobs) after the migration landed — passed
+- mcp__github__merge_pull_request (squash)
+  -> {"sha":"4a61b039b4268a1208af9bbd2a5c852f943dec7b","merged":true}
+
+## 6. Merge vitana-v1 PR #1088
+- Marked ready for review
+- Re-ran 4 workflow runs that came back "action_required" instead of
+  executing (i18n check, UNIT-TESTS, I18N-PROPAGATE, Preview Deploy
+  Frontend) — all passed on re-run
+- mcp__github__merge_pull_request (squash)
+  -> {"sha":"f545bf5b37ec656d69ecf35db355cd49e58ba2c5","merged":true}
+
+## 7. Staging verification (Bash, curl)
+curl -s -o /dev/null -w "%{http_code} %{content_type}\n" \
+    https://preview-aws-gateway.vitanaland.com/api/v1/partner-orgs/mine
+  -> 401 application/json; charset=utf-8
+
+curl -s -o /dev/null -w "%{http_code} %{content_type}\n" \
+    https://preview-aws.vitanaland.com/commerce
+  -> 200 text/html
+
+(see outputs/staging-curl-verification.txt)
