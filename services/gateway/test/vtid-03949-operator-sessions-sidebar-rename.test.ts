@@ -219,7 +219,10 @@ describe('VTID-03953: double-click-to-rename survives a background re-render mid
 
   it('renderEditableThreadTitle() skips the auto-select-all when restoring an already-focused input, so a mid-edit background re-render cannot select away the user\'s in-progress typing', () => {
     const body = functionBody(SOURCE, 'function renderEditableThreadTitle(thread, className) {');
-    const guardIdx = body.indexOf('if (!_renamePreserveFocusPending) {');
+    // VTID-03966 widened this guard to ALSO gate on the per-pass auto-focus
+    // claim tracker (see that VTID's own test file) — the condition still
+    // starts with !_renamePreserveFocusPending, just no longer alone.
+    const guardIdx = body.indexOf('if (!_renamePreserveFocusPending &&');
     expect(guardIdx).toBeGreaterThan(-1);
     const guardBlock = body.slice(guardIdx, body.indexOf('}', body.indexOf('input.select();', guardIdx)) + 1);
     expect(guardBlock).toContain('input.focus(); input.select();');
