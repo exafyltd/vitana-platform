@@ -57,3 +57,13 @@ same convention as this VTID family's other migrations; application is a
 separate step for the platform owner or a later explicit instruction, per
 this repo's "verify BEFORE deployment" protocol which applies to applying
 a migration exactly as much as to deploying a service.)
+
+$ (follow-up) validate-pr check failed on first push: "REJECTED: VALIDATION_PROFILE
+    missing in PR body" (exit 11) — VALIDATOR-CHECK.yml requires an explicit
+    VALIDATION_PROFILE: <profile> line, not just the SCOPE_ALLOWLIST/ACCEPTANCE/
+    MERGE_PAYLOAD_PREVIEW/OASIS_IMPACT tokens. Added "VALIDATION_PROFILE:
+    gateway_backend" to the PR body (this PR touches services/gateway/src/routes,
+    services/gateway/test, services/gateway/src/types only) and pushed this
+    follow-up commit to get a genuine new `synchronize` webhook event, since a
+    bare PR-body edit replays the stale payload on a re-run rather than
+    re-triggering the check with the current body.
