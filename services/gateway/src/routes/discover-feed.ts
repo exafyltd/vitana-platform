@@ -18,7 +18,12 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { getSupabase } from '../lib/supabase';
 import { getUserHealthContext, type UserHealthContext } from '../services/user-health-context';
-import { applyUserLimitations, type FilterableProduct } from '../services/limitations-filter';
+import {
+  applyUserLimitations,
+  excludePastPurchases,
+  buildHiddenBreakdown,
+  type FilterableProduct,
+} from '../services/limitations-filter';
 import { rankFeedProducts, type FeedConfig } from '../services/feed-ranker';
 import * as jose from 'jose';
 import * as repo from './discover-feed-repository';
@@ -215,8 +220,7 @@ router.get('/feed', async (req: Request, res: Response) => {
   const { allowed, hidden_breakdown } = applyUserLimitations(geoAllowed, ctx, { surface: 'feed' });
 
   // Exclude past purchases
-  const pastIds = new Set(ctx.past_purchases.map((p) => p.product_id));
-  const withoutPast = allowed.filter((p) => !pastIds.has(p.id));
+  const { withoutPast, past_purchases_hidden } = excludePastPurchases(allowed, ctx.past_purchases);
 
   const ranked = rankFeedProducts({
     products: withoutPast,
@@ -237,11 +241,11 @@ router.get('/feed', async (req: Request, res: Response) => {
       config_id: feedConfig?.id ?? null,
       guest: isGuest,
     },
-    hidden_breakdown: {
-      ...hidden_breakdown,
-      geo: hidden_breakdown.geo + (candidates.length - geoAllowed.length),
-      past_purchases: allowed.length - withoutPast.length,
-    },
+    hidden_breakdown: buildHiddenBreakdown({
+      preFilterGeoHidden: candidates.length - geoAllowed.length,
+      limitations: hidden_breakdown,
+      pastPurchasesHidden: past_purchases_hidden,
+    }),
   });
 });
 

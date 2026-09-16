@@ -1,0 +1,50 @@
+$ curl -sS -X POST "https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate" \
+  -H "Content-Type: application/json" \
+  -d '{"source":"claude-code","layer":"UIUX","module":"command-hub-operator-console"}'
+{"ok":true,"vtid":"VTID-03947","num":3947,"id":"c502215c-6e53-4aea-9801-28bdf75df47b"}
+
+$ cd services/gateway && npx jest test/vtid-03947-message-copy-timestamp.test.ts
+PASS test/vtid-03947-message-copy-timestamp.test.ts
+  VTID-03947: copy icon + relative timestamp constants exist
+    ✓ declares ICON_COPY_SVG and ICON_CHECK_SVG as 14x14 stroke icons, matching ICON_MIC_SVG's style
+  VTID-03947: renderOperatorChat() message-meta row
+    ✓ renders a message-meta row per message instead of the old bare timestamp div
+    ✓ the copy button copies msg.content via navigator.clipboard.writeText
+    ✓ the copy button swaps to the check icon and back, so the click gives visible confirmation
+    ✓ a missing/failing clipboard API is a silent no-op, not a thrown error
+    ✓ the timestamp span shows a relative time via the existing formatRelativeTime() helper, with the absolute time as a hover title
+    ✓ does not introduce a second formatRelativeTime-shaped helper (reuses the existing one)
+  VTID-03947: every state.chatMessages push carries a raw ts epoch for relative-time display
+    ✓ every state.chatMessages.push({...}) block within sendChatMessage() carries a ts: field
+    ✓ switchOperatorThread() and initOperatorChatSession() restore ts from the saved thread history
+Test Suites: 1 passed, 1 total
+Tests:       9 passed, 9 total
+
+$ cd services/gateway && npx tsc --noEmit
+(clean, no output)
+
+$ cd services/gateway && npm run build
+(clean — tsc + copy-frontend + copy-data all succeeded)
+
+$ cd services/gateway && node --check src/frontend/command-hub/app.js && node --check dist/frontend/command-hub/app.js
+(both syntax OK)
+
+$ diff services/gateway/src/frontend/command-hub/app.js services/gateway/dist/frontend/command-hub/app.js
+(no output — src/dist identical)
+
+$ node scripts/ci/command-hub-golden-fingerprint.js
+==========================================
+VTID-0302: Command Hub Golden Fingerprint
+==========================================
+Bundle size: 2493.3 KB
+  FOUND: Golden VTID marker
+  FOUND: Task Board class
+  FOUND: Task Column class
+  FOUND: Task Card class
+  FOUND: ORB idle element
+  FOUND: Header toolbar
+All golden markers verified.
+Fingerprint check PASSED.
+
+$ node --check scripts/ci/command-hub-ownership-guard.js
+(syntax OK — VTID-03947 added to ALLOWED_VTID_PATTERN)
