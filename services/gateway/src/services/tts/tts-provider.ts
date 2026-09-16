@@ -27,11 +27,23 @@
  * Every fallback is logged. CLAUDE.md forbids silent provider fallback
  * ("Never allow silent model fallback" / "IF model fallback occurs → THEN log
  * explicitly"), and that rule applies here as much as to the LLM router.
+ *
+ * ## Fish Audio — language-coverage fallback (VTID-03970)
+ *
+ * A language Polly has no voice for at all (`sr`, currently) tries Fish
+ * Audio — see `fish.ts` — BEFORE the Google fallback/strict-null decision
+ * below, gated on its own `TTS_FISH_FALLBACK_ENABLED`+`FISH_API_KEY`
+ * config so this is opt-in exactly like the Polly switch itself. This
+ * only fires on an UNSUPPORTED LANGUAGE, never on a transient Polly API
+ * error — a real Polly outage should surface as an outage, not be masked
+ * by silently rerouting every failure through a third, unverified
+ * provider.
  */
 
 import { synthesizePolly, resolvePollyVoice, POLLY_PCM_SAMPLE_RATE_HZ } from './polly';
+import { synthesizeFish } from './fish';
 
-export type TtsProviderName = 'google' | 'polly';
+export type TtsProviderName = 'google' | 'polly' | 'fish';
 
 /** Cloud TTS LINEAR16 rate the greeting bridge has always used. */
 export const GOOGLE_PCM_SAMPLE_RATE_HZ = 24_000;
@@ -112,6 +124,27 @@ export async function tryPollySynthesis(opts: {
   }
 
   const unsupported = resolvePollyVoice(opts.lang) === null;
+
+  if (unsupported) {
+    const fishStarted = Date.now();
+    const fishResult = await synthesizeFish({ text: opts.text, lang: opts.lang, format: opts.format });
+    if (fishResult) {
+      console.log(
+        `[TTS] provider=fish call_site=${opts.callSite} voice=${fishResult.voice} ` +
+          `lang=${fishResult.languageCode} format=${opts.format} rate_hz=${fishResult.sampleRateHz} ` +
+          `latency_ms=${Date.now() - fishStarted} fell_back_from=polly`,
+      );
+      return {
+        audioB64: fishResult.audioB64,
+        sampleRateHz: fishResult.sampleRateHz,
+        voice: fishResult.voice,
+        languageCode: fishResult.languageCode,
+        provider: 'fish',
+        fellBackFrom: 'polly',
+      };
+    }
+  }
+
   if (isPollyStrict()) {
     console.warn(
       `[TTS] provider=polly call_site=${opts.callSite} lang=${opts.lang} FAILED ` +

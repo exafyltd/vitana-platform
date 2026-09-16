@@ -46,6 +46,7 @@
 
 import type { LanguageCode } from '@aws-sdk/client-transcribe-streaming';
 import { resolvePollyVoice } from '../../../services/tts/polly';
+import { resolveFishVoice, isFishConfigured } from '../../../services/tts/fish';
 import { isNovaSonicLanguageSupported } from './nova-sonic-config';
 import { SUPPORTED_LIVE_LANGUAGES } from '../config';
 
@@ -111,6 +112,13 @@ export interface CascadeEligibility {
   eligible: boolean;
   reason: CascadeIneligibilityReason | null;
   transcribeLanguageCode: LanguageCode | null;
+  /**
+   * Which service serves the TTS leg. `null` when ineligible. `fish` only
+   * when Polly has no voice AND a curated, enabled Fish voice does — see
+   * `fish.ts`. Added VTID-03970; existing callers that only read
+   * `eligible`/`reason` are unaffected.
+   */
+  ttsProvider: 'polly' | 'fish' | null;
 }
 
 /**
@@ -129,17 +137,21 @@ export interface CascadeEligibility {
  *     found across seven tables, and what VTID-03578 found when `pt`/`pl`
  *     were in neither Polly table and fell through to English.
  *
- * `sr` is the one language this pipeline CANNOT rescue: Polly has no Serbian
- * voice in any engine, so it reports `no_polly_voice` and remains a known,
- * named product gap rather than being quietly served in the wrong language.
- * Serbian therefore still has NO working ORB voice after this change — the
- * cascade narrows the outage from five languages to one, it does not close it.
+ * `sr` used to be the one language this pipeline could not rescue: Polly has
+ * no Serbian voice in any engine, so it reported `no_polly_voice` and stayed
+ * a known, named product gap. VTID-03970 (Fish Audio, see `fish.ts`) closes
+ * that gap WHEN EXPLICITLY ENABLED (`TTS_FISH_FALLBACK_ENABLED=true` +
+ * `FISH_API_KEY` + a curated voice for the language) — `sr`'s Transcribe
+ * streaming leg was never the blocker (`sr-RS` is a real Transcribe language
+ * code, see the table above); only the TTS leg was missing. With Fish
+ * unconfigured (the default), behaviour here is byte-for-byte unchanged —
+ * `sr` still reports `no_polly_voice` exactly as before.
  */
 export function evaluateCascadeEligibility(lang: string | null | undefined): CascadeEligibility {
   const base = normalizeCascadeLang(lang);
 
   if (isNovaSonicLanguageSupported(base)) {
-    return { eligible: false, reason: 'nova_supports_natively', transcribeLanguageCode: null };
+    return { eligible: false, reason: 'nova_supports_natively', transcribeLanguageCode: null, ttsProvider: null };
   }
 
   // Polly is checked BEFORE Transcribe, and the order is about the honesty of
@@ -152,16 +164,20 @@ export function evaluateCascadeEligibility(lang: string | null | undefined): Cas
   // report `no_transcribe_language`, attributing the gap to the table we are
   // least sure about. A reason that names the wrong service sends the next
   // person to fix the wrong thing.
-  if (!resolvePollyVoice(base)) {
-    return { eligible: false, reason: 'no_polly_voice', transcribeLanguageCode: null };
+  let ttsProvider: 'polly' | 'fish' | null = resolvePollyVoice(base) ? 'polly' : null;
+  if (!ttsProvider && isFishConfigured() && resolveFishVoice(base)) {
+    ttsProvider = 'fish';
+  }
+  if (!ttsProvider) {
+    return { eligible: false, reason: 'no_polly_voice', transcribeLanguageCode: null, ttsProvider: null };
   }
 
   const transcribeLanguageCode = resolveTranscribeLanguageCode(base);
   if (!transcribeLanguageCode) {
-    return { eligible: false, reason: 'no_transcribe_language', transcribeLanguageCode: null };
+    return { eligible: false, reason: 'no_transcribe_language', transcribeLanguageCode: null, ttsProvider: null };
   }
 
-  return { eligible: true, reason: null, transcribeLanguageCode };
+  return { eligible: true, reason: null, transcribeLanguageCode, ttsProvider };
 }
 
 /** Convenience predicate for call sites that do not need the reason. */

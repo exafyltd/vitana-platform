@@ -57,7 +57,8 @@ import type {
 } from './types';
 import { TranscribeStreamSession } from './cascaded/transcribe-stream';
 import { evaluateCascadeEligibility } from './cascaded-config';
-import { synthesizePolly } from '../../../services/tts/polly';
+import { synthesizePolly, resolvePollyVoice } from '../../../services/tts/polly';
+import { synthesizeFish } from '../../../services/tts/fish';
 import { callViaRouter } from '../../../services/llm-router';
 
 export interface CascadedLiveClientDeps {
@@ -304,17 +305,28 @@ export class CascadedLiveClient implements UpstreamLiveClient {
 
       this.transcriptHandler?.({ direction: 'output', text: replyText, isFinal: true });
 
-      const speech = await synthesizePolly({
+      let speech: { audioB64: string } | null = await synthesizePolly({
         text: replyText,
         lang: this.lang,
         format: 'pcm',
       });
+
+      // VTID-03970: a language with NO Polly voice at all (sr) can still
+      // have reached here — eligibility (`cascaded-config.ts`) admits it
+      // only when Fish is explicitly enabled and has a curated voice for
+      // it. Gated the same way here rather than trusting eligibility was
+      // computed with the identical env state moments earlier.
+      if (!speech?.audioB64 && !resolvePollyVoice(this.lang)) {
+        speech = await synthesizeFish({ text: replyText, lang: this.lang, format: 'pcm' });
+      }
+
       if (!speech?.audioB64) {
-        // Eligibility already proved Polly has a voice for this language, so
-        // reaching here means a runtime synthesis failure, not a coverage gap.
+        // Eligibility already proved a TTS provider has a voice for this
+        // language, so reaching here means a runtime synthesis failure, not
+        // a coverage gap.
         this.errorHandler?.({
           code: 'cascade_tts_failed',
-          message: `Polly returned no audio for lang='${this.lang}'`,
+          message: `No TTS provider returned audio for lang='${this.lang}'`,
         });
         return;
       }
