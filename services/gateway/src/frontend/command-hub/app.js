@@ -11744,6 +11744,14 @@ function startExecutionStatusPolling(vtid) {
             return;
         }
 
+        // VTID-03944: skip this tick's fetch+renderApp() while the Operator
+        // popup is open on top — same class of bug as VTID-03906/VTID-0526-E
+        // (a background poller tearing down and rebuilding the whole DOM,
+        // including the popup, every few seconds). Polling itself isn't
+        // stopped, just paused for the tick, so state resumes fresh once the
+        // popup closes.
+        if (state.isOperatorOpen) return;
+
         // Stop polling if task is no longer active — refresh board to update columns and drawer
         if (state.executionStatus && !state.executionStatus.isActive) {
             console.log('[VTID-01209] Task completed, refreshing board and stopping polling');
@@ -43758,6 +43766,9 @@ function renderDevAutopilotView() {
     // Cleared in renderApp() preamble when the tab changes (see teardown hook below).
     if (!state.devAutopilot.pollerId) {
         state.devAutopilot.pollerId = setInterval(function () {
+            // VTID-03944: skip while the Operator popup covers the tab — see
+            // the executionStatusPollInterval fix above for the full rationale.
+            if (state.isOperatorOpen) return;
             if ((state.currentTab === 'dev-autopilot' && state.currentModuleKey === 'command-hub') || (state.currentTab === 'autopilot-developer' && state.currentModuleKey === 'autonomy')) {
                 fetchDevAutopilotState();
             }
@@ -45421,6 +45432,8 @@ function renderAutonomyPulseView() {
     // 30s poller while the tab is active
     if (!state.autonomyPulse.pollerId) {
         state.autonomyPulse.pollerId = setInterval(function () {
+            // VTID-03944: skip while the Operator popup covers the tab.
+            if (state.isOperatorOpen) return;
             if ((state.currentTab === 'autonomy-pulse') && (state.currentModuleKey === 'command-hub' || state.currentModuleKey === 'autonomy')) {
                 fetchAutonomyPulse();
             }
@@ -45720,6 +45733,8 @@ function renderAutonomyTraceView() {
     if (!state.autonomyTrace.fetched && !state.autonomyTrace.loading) fetchAutonomyTrace();
     if (!state.autonomyTrace.pollerId) {
         state.autonomyTrace.pollerId = setInterval(function () {
+            // VTID-03944: skip while the Operator popup covers the tab.
+            if (state.isOperatorOpen) return;
             if ((state.currentTab === 'autonomy-trace') && (state.currentModuleKey === 'command-hub' || state.currentModuleKey === 'autonomy')) fetchAutonomyTrace();
         }, 30000);
     }
