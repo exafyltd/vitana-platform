@@ -748,7 +748,8 @@ function switchOperatorThread(threadId) {
         return {
             type: msg.role === 'user' ? 'user' : 'system',
             content: msg.content,
-            timestamp: new Date(msg.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+            timestamp: new Date(msg.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+            ts: msg.ts
         };
     });
     renderApp();
@@ -791,7 +792,8 @@ function initOperatorChatSession() {
             return {
                 type: msg.role === 'user' ? 'user' : 'system',
                 content: msg.content,
-                timestamp: new Date(msg.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+                timestamp: new Date(msg.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+                ts: msg.ts
             };
         });
         console.log('[VTID-03822] Restored', history.length, 'messages from thread', active.id);
@@ -25856,6 +25858,14 @@ var ICON_RESTORE_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="no
 // fills state.chatInputValue the same as typing would).
 var ICON_MIC_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>';
 
+// VTID-03947: per-message copy-to-clipboard icon (Command Hub Operator
+// Console) and its transient "copied" confirmation state — same 16x16
+// stroke-icon style as ICON_MIC_SVG above. Relative-time display reuses
+// the existing formatRelativeTime() helper (defined further down this
+// file) rather than adding a third near-duplicate of it.
+var ICON_COPY_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+var ICON_CHECK_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+
 var operatorSpeechRecognition = null;
 
 function operatorDictationSupported() {
@@ -26196,15 +26206,52 @@ function renderOperatorChat() {
                 messages.appendChild(attachmentsEl);
             }
 
-            // Timestamp element
-            const time = document.createElement('div');
-            time.className = 'timestamp';
-            // Align timestamp with the message bubble
+            // VTID-03947: message-meta row — a copy-to-clipboard icon plus a
+            // relative timestamp ("3h ago"), Claude Code style, replacing
+            // the old plain always-absolute timestamp div.
+            const meta = document.createElement('div');
+            meta.className = 'message-meta';
+            // Align with the message bubble, same as the old timestamp div.
             if (isSent) {
-                time.style.alignSelf = 'flex-end';
+                meta.style.alignSelf = 'flex-end';
             }
-            time.textContent = msg.timestamp;
-            messages.appendChild(time);
+
+            const copyBtn = document.createElement('button');
+            copyBtn.type = 'button';
+            copyBtn.className = 'message-copy-btn';
+            copyBtn.title = 'Copy message';
+            copyBtn.setAttribute('aria-label', 'Copy message');
+            copyBtn.innerHTML = ICON_COPY_SVG;
+            copyBtn.onclick = () => {
+                var textToCopy = msg.content || msg.text || '';
+                if (!textToCopy) return;
+                var showCopied = function () {
+                    copyBtn.innerHTML = ICON_CHECK_SVG;
+                    copyBtn.classList.add('message-copy-btn--copied');
+                    setTimeout(function () {
+                        copyBtn.innerHTML = ICON_COPY_SVG;
+                        copyBtn.classList.remove('message-copy-btn--copied');
+                    }, 1500);
+                };
+                try {
+                    var result = navigator.clipboard.writeText(textToCopy);
+                    if (result && typeof result.then === 'function') {
+                        result.then(showCopied).catch(function () { /* ignore */ });
+                    } else {
+                        showCopied();
+                    }
+                } catch (e) { /* clipboard API unavailable — no-op */ }
+            };
+            meta.appendChild(copyBtn);
+
+            const time = document.createElement('span');
+            time.className = 'timestamp';
+            time.textContent = formatRelativeTime(msg.ts) || msg.timestamp || '';
+            // Exact absolute time still available on hover.
+            time.title = msg.timestamp || '';
+            meta.appendChild(time);
+
+            messages.appendChild(meta);
         });
     }
 
@@ -26414,7 +26461,8 @@ async function sendChatMessage() {
         state.chatMessages.push({
             type: 'user',
             content: messageText,
-            timestamp: timestamp
+            timestamp: timestamp,
+            ts: now.getTime()
         });
 
         if (isSkip) {
@@ -26422,7 +26470,8 @@ async function sendChatMessage() {
             state.chatMessages.push({
                 type: 'system',
                 content: 'Title skipped. The task will keep its placeholder title.',
-                timestamp: timestamp
+                timestamp: timestamp,
+                ts: now.getTime()
             });
             state.pendingTitleVtid = null;
             state.pendingTitleRetryCount = 0;
@@ -26433,13 +26482,15 @@ async function sendChatMessage() {
                 state.chatMessages.push({
                     type: 'system',
                     content: 'Please enter a title for **' + state.pendingTitleVtid + '**, or type "skip" to keep the placeholder.',
-                    timestamp: timestamp
+                    timestamp: timestamp,
+                    ts: now.getTime()
                 });
             } else {
                 state.chatMessages.push({
                     type: 'system',
                     content: 'No title provided. The task will keep its placeholder title.',
-                    timestamp: timestamp
+                    timestamp: timestamp,
+                    ts: now.getTime()
                 });
                 state.pendingTitleVtid = null;
                 state.pendingTitleRetryCount = 0;
@@ -26450,7 +26501,8 @@ async function sendChatMessage() {
             state.chatMessages.push({
                 type: 'system',
                 content: String.fromCodePoint(0x2705) + ' Title updated: **' + state.pendingTitleVtid + '** — "' + messageText.trim() + '"',
-                timestamp: timestamp
+                timestamp: timestamp,
+                ts: now.getTime()
             });
             console.log('[VTID-01041] Title captured for', state.pendingTitleVtid, ':', messageText.trim());
             state.pendingTitleVtid = null;
@@ -26480,6 +26532,7 @@ async function sendChatMessage() {
         type: 'user',
         content: messageText,
         timestamp: timestamp,
+        ts: now.getTime(),
         attachments: [...state.chatAttachments]
     });
 
@@ -26581,6 +26634,7 @@ async function sendChatMessage() {
             type: 'system',
             content: replyContent,
             timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+            ts: Date.now(),
             oasis_ref: result.oasis_ref,
             threadId: result.threadId,
             createdTask: result.createdTask,
@@ -26596,6 +26650,7 @@ async function sendChatMessage() {
             type: 'system',
             content: errorContent,
             timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+            ts: Date.now(),
             isError: true
         });
     } finally {
