@@ -766,6 +766,23 @@ function switchOperatorThread(threadId) {
  * renderApp() mid-edit, since the input's value is always re-derived from
  * this state on the next rebuild rather than lost with the old DOM node.
  */
+
+/**
+ * VTID-03953: removing a focused element via root.innerHTML = '' fires a
+ * synchronous, involuntary native `blur` on it as part of the removal — so
+ * any background renderApp() (ticker/heartbeat SSE poll) that fires while
+ * the rename <input> is focused was silently committing/closing the
+ * in-progress edit. `_renameBlurSuppressed` is bracketed around exactly
+ * that `root.innerHTML = ''` call in _renderAppCore() so only a genuine
+ * user-initiated blur (click away, Tab, switch thread) still commits.
+ * `_renamePreserveFocusPending` tells renderEditableThreadTitle() this
+ * particular rebuild is restoring an already-focused input (so it must not
+ * re-select-all on top of the precise cursor restore _renderAppCore() is
+ * about to perform) rather than a fresh double-click open.
+ */
+var _renameBlurSuppressed = false;
+var _renamePreserveFocusPending = false;
+
 function startRenamingOperatorThread(threadId, currentTitle) {
     state.operatorRenamingThreadId = threadId;
     state.operatorRenameDraftValue = currentTitle || '';
@@ -820,12 +837,26 @@ function renderEditableThreadTitle(thread, className) {
                 cancelRenamingOperatorThread();
             }
         };
-        input.onblur = () => commitRenamingOperatorThread();
+        input.onblur = () => {
+            // VTID-03953: a blur fired while _renameBlurSuppressed is true is
+            // the involuntary one caused by _renderAppCore() destroying this
+            // (focused) element mid-edit, not the user leaving the field —
+            // _renderAppCore() restores focus itself, so committing here
+            // would incorrectly close the edit the user never asked to end.
+            if (_renameBlurSuppressed) return;
+            commitRenamingOperatorThread();
+        };
         // Don't let a click inside the input bubble up to a sidebar row's
         // own onclick (which would switch threads mid-edit).
         input.onclick = (e) => e.stopPropagation();
-        // Deferred so the element is actually in the DOM before focusing.
-        setTimeout(() => { input.focus(); input.select(); }, 0);
+        // VTID-03953: only auto-select-all on a fresh double-click open. A
+        // rebuild that's restoring an already-focused input (background
+        // poller mid-edit) sets _renamePreserveFocusPending and handles its
+        // own precise focus/selection restore in _renderAppCore() instead.
+        if (!_renamePreserveFocusPending) {
+            // Deferred so the element is actually in the DOM before focusing.
+            setTimeout(() => { input.focus(); input.select(); }, 0);
+        }
         return input;
     }
 
@@ -5711,7 +5742,25 @@ function _renderAppCore() {
     // VTID-01002: Capture all scroll positions before DOM destruction
     var savedScrollPositions = captureAllScrollPositions();
 
+    // VTID-03953: Save the operator thread-rename input's focus/selection
+    // state before destroying the DOM, and suppress its onblur-triggered
+    // commit for the duration of the removal — see the comment above
+    // _renameBlurSuppressed's declaration for why the removal itself would
+    // otherwise involuntarily close the in-progress rename.
+    var savedRenameFocus = null;
+    var _activeRenameEl = document.activeElement;
+    if (_activeRenameEl && _activeRenameEl.classList && _activeRenameEl.classList.contains('chat-session-title-input')) {
+        savedRenameFocus = {
+            threadId: state.operatorRenamingThreadId,
+            selectionStart: _activeRenameEl.selectionStart,
+            selectionEnd: _activeRenameEl.selectionEnd
+        };
+    }
+    _renamePreserveFocusPending = !!savedRenameFocus;
+    if (savedRenameFocus) _renameBlurSuppressed = true;
+
     root.innerHTML = '';
+    _renameBlurSuppressed = false;
     // Clean up health modal overlay (lives on document.body, outside root)
     var _oldBackdrop = document.querySelector('.health-modal-overlay');
     if (_oldBackdrop) _oldBackdrop.remove();
@@ -5799,6 +5848,22 @@ function _renderAppCore() {
                 newSpecTextarea.focus();
                 // Restore cursor position
                 newSpecTextarea.setSelectionRange(savedSpecFocus.selectionStart, savedSpecFocus.selectionEnd);
+            }
+        });
+    }
+
+    // VTID-03953: Restore the operator thread-rename input's focus and
+    // cursor position after a background re-render (e.g. a ticker/heartbeat
+    // poll) interrupts an in-progress rename, instead of leaving the freshly
+    // rebuilt input unfocused. The threadId check is defensive — the blur
+    // suppression above already keeps operatorRenamingThreadId unchanged
+    // across this rebuild.
+    if (savedRenameFocus && savedRenameFocus.threadId === state.operatorRenamingThreadId) {
+        requestAnimationFrame(function () {
+            var newRenameInput = document.querySelector('.chat-session-title-input');
+            if (newRenameInput) {
+                newRenameInput.focus();
+                newRenameInput.setSelectionRange(savedRenameFocus.selectionStart, savedRenameFocus.selectionEnd);
             }
         });
     }
