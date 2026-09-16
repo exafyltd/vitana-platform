@@ -47,20 +47,32 @@
  * 'Fish Official'`), described as "A natural, professional Serbian voice
  * ... suited to voice assistants, customer support and everyday
  * narration" — verified via `GET /model/{id}` 2026-09-16, not assumed
- * from the search listing.
+ * from the search listing. One metadata quirk worth knowing about, not a
+ * blocker: the model's own `languages` field reports `["hr"]` (Croatian),
+ * not `sr`, despite the title/tags/description all being explicitly
+ * Serbian (`sr-rs` is itself one of the tags) — Fish's language
+ * classification appears coarser than its own marketing copy here. A real
+ * synthesis call with Serbian text (below) produced correct-sounding
+ * output regardless, so this is flagged as a documentation curiosity, not
+ * treated as disqualifying.
  *
- * ## Not yet verified against a live synthesis call
+ * ## Live-verified (VTID-03983)
  *
- * Same posture `polly.ts` shipped with originally (CLAUDE.md §2c): this
- * session confirmed the voice via Fish's model-metadata API and validated
- * the request/response shape against the public API docs, but the actual
- * `POST /v1/tts` call returned HTTP 402 ("Insufficient API credit — API
- * credit is managed independently from platform credit") — the supplied
- * key has no funded API credit. Until that's resolved and a real
- * synthesis is observed, treat the `pcm`-format sample rate below as a
- * documented assumption, not a confirmed fact — see the comment on
- * `FISH_PCM_SAMPLE_RATE_HZ`. `scripts/tts/verify-fish-voice.ts` exists to
- * confirm both before flipping `TTS_FISH_FALLBACK_ENABLED=true` anywhere.
+ * VTID-03970's build could not get a real `POST /v1/tts` response — every
+ * attempt against the default paid `s2.1-pro` model returned HTTP 402
+ * ("Insufficient API credit") with the supplied key. VTID-03983 found why:
+ * Fish's S2.1 Pro has a free tier, `s2.1-pro-free` (no character cap, no
+ * SLA/latency guarantee, requests may be retained for model improvement —
+ * acceptable for a rarely-hit language-gap fallback). The SAME unfunded
+ * key synthesized real audio against it on the first try — HTTP 200, a
+ * valid 29,256-byte MP3 (confirmed via `file`: MPEG layer III, 128kbps,
+ * 44.1kHz), for `sr` text "Zdravo, ovo je test." A parallel `pcm` request
+ * for the same text produced a byte count whose duration at the requested
+ * 16kHz (1.81s) closely matches the mp3's own duration (1.83s) — Fish
+ * honors the requested PCM sample rate, confirming the assumption
+ * documented on `FISH_PCM_SAMPLE_RATE_HZ` below. `getFishModel()` now
+ * defaults to `s2.1-pro-free`; `scripts/tts/verify-fish-voice.ts` runs the
+ * same checks in a repeatable script.
  */
 
 export interface FishVoiceConfig {
@@ -84,26 +96,31 @@ export function resolveFishVoice(lang: string): FishVoiceConfig | null {
 }
 
 /**
- * Fish's production TTS model as of 2026-09 (docs.fish.audio): `s2.1-pro`
- * supersedes `s2-pro` with "improved quality, latency, and throughput" per
- * Fish's own docs. Overridable per CLAUDE.md's "always specify model_name
+ * Fish's free tier for its S2.1 Pro model (VTID-03983): `s2.1-pro-free`.
+ * Same underlying model as the paid `s2.1-pro`, no character cap, but no
+ * SLA/latency guarantee and requests may be retained for model improvement
+ * (docs.fish.audio/developer-guide/models-pricing/pricing-and-rate-limits)
+ * — acceptable for this fallback's actual use (a rarely-hit language gap,
+ * not high-volume production traffic). Defaulting to the paid `s2.1-pro`
+ * was the reason every synthesis attempt during VTID-03970's build
+ * returned HTTP 402 with an unfunded key — confirmed live: switching to
+ * `s2.1-pro-free` with the SAME key produced a real 200 and real audio on
+ * the first try. Overridable per CLAUDE.md's "always specify model_name
  * explicitly" rule (IF-THEN 30) — never left to Fish's own header default.
  */
 function getFishModel(): string {
-  return (process.env.FISH_TTS_MODEL || 's2.1-pro').trim();
+  return (process.env.FISH_TTS_MODEL || 's2.1-pro-free').trim();
 }
 
 /**
- * Fish's `pcm` output format's default sample rate is not pinned in the
- * public API docs the way Polly's is (Polly: 8000/16000 only, hard error
- * otherwise). This value is REQUESTED, not confirmed — Fish streams raw
- * audio bytes with no rate confirmation in the response. Kept at 16kHz to
- * match the rate every other PCM-format caller in this codebase already
- * expects from a non-Google provider (`POLLY_PCM_SAMPLE_RATE_HZ`), but
- * this is the single highest-priority thing to confirm against a real
- * `cache=hit`-style live response once API credit exists — a silently
- * wrong rate plays audio at the wrong speed exactly like the 24kHz/16kHz
- * mix-up `polly.ts`'s own header warns about.
+ * Fish's `pcm` output format's sample rate is requested via `sample_rate`
+ * in the request body, not confirmed back in the response headers/body.
+ * CONFIRMED LIVE (VTID-03983): a real PCM request for the same text used
+ * for the mp3 verification produced a byte count whose duration at 16kHz
+ * 16-bit mono (1.81s) matches the mp3's own duration (1.83s at 128kbps)
+ * almost exactly — Fish honors the requested rate. Kept at 16kHz to match
+ * the rate every other PCM-format caller in this codebase already expects
+ * from a non-Google provider (`POLLY_PCM_SAMPLE_RATE_HZ`).
  */
 export const FISH_PCM_SAMPLE_RATE_HZ = 16_000;
 
