@@ -14,6 +14,7 @@
 import { createHash, randomUUID } from 'crypto';
 import { getSupabase } from '../../lib/supabase';
 import { sanitizeProperties } from '../../routes/product-analytics';
+import * as repo from './track-server-repository';
 
 const LOG_PREFIX = '[Analytics:Product:Server]';
 
@@ -62,7 +63,7 @@ export async function trackServerEvent(input: ServerTrackInput): Promise<void> {
       occurred_at: new Date().toISOString(),
     };
 
-    const { error } = await supa.from('product_analytics_events').insert(row);
+    const { error } = await repo.insertProductAnalyticsEvent(supa, row);
     if (error) console.warn(`${LOG_PREFIX} ${input.event_name} write failed: ${error.message}`);
   } catch (err: any) {
     console.warn(`${LOG_PREFIX} ${input.event_name} failed: ${err?.message}`);

@@ -141,6 +141,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const devAccessRouter = require('./routes/dev-access').default;
   // VTID-01230: Role Admission Management - grant/revoke/list permitted roles
   const roleAdminRouter = require('./routes/role-admin').default;
+  // VTID-03834: BackOffice ERP capability access - /me, /access, /access/grant|revoke
+  const backofficeAccessRouter = require('./routes/backoffice-access').default;
+  const backofficeCommandsRouter = require('./routes/backoffice-commands').default;
   // VTID-01081 + VTID-01103: Health Gateway (C2 ingest + C3 compute)
   const healthRouter = require('./routes/health').default;
   // VTID-01105: Memory Gateway Routes - memory write/context for ORB
@@ -180,6 +183,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const discoverRecommendationsPublicRouter = require('./routes/discover-recommendations-public').default;
   // VTID-02000: Maxina admin marketplace routes
   const adminMarketplaceRouter = require('./routes/admin-marketplace').default;
+  // VTID-03885: Partner Health Test Integration — admin portal (orders/inbox/confirm-match)
+  const adminPartnerHealthRouter = require('./routes/admin-partner-health').default;
+  // VTID-03885: Partner Health Test Integration — self-service consent (grant/revoke/check)
+  const partnerHealthConsentRouter = require('./routes/partner-health-consent').default;
   // BOOTSTRAP-COMMUNITY-MARKETPLACE: peer-to-peer classifieds (seller + buyer API)
   const communityMarketplaceRouter = require('./routes/community-marketplace').default;
   // BOOTSTRAP-COMMUNITY-MARKETPLACE (Chunk 7): admin review queue (listings/reports/seller suspensions/categories)
@@ -319,6 +326,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const vcaopPortalRouter = require('./routes/vcaop-portal').default;
   // VCAOP: merchant self-service portal — owner-scoped /my surface (VTID-03553)
   const vcaopPortalMyRouter = require('./routes/vcaop-portal-my').default;
+  const vcaopPortalMyProductsRouter = require('./routes/vcaop-portal-my-products').default;
   // VCAOP: Shopify own-store catalog sync (admin trigger; background worker in services)
   const shopifySyncRouter = require('./routes/shopify-sync').default;
   // VCAOP: Shopify OAuth callback for the merchant self-service connector (VTID-03603) —
@@ -349,8 +357,6 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const autonomyPulseRouter = require('./routes/autonomy-pulse').default;
   // Autonomy Trace — unified timeline of autonomous work-in-flight + history
   const autonomyTraceRouter = require('./routes/autonomy-trace').default;
-  // BOOTSTRAP-AWS-STAGING-VALIDATION: TEMPORARY — AI Studio ListModels debug proxy
-  const debugAiStudioModelsRouter = require('./routes/debug-ai-studio-models').default;
   // VTID-01250: Social Connect (AP-1305/AP-1306)
   const socialConnectRouter = require('./routes/social-connect').default;
   // Intelligent Calendar — Phase 1: Backend Calendar API
@@ -375,6 +381,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const walletAdminRouter = require('./routes/wallet-admin').default;
   // Notification System — FCM push + in-app notification history
   const notificationsRouter = require('./routes/notifications').default;
+  const realtimeRelayRouter = require('./routes/realtime-relay').default;
   // Chat — User-to-user direct messaging
   const chatRouter = require('./routes/chat').default;
   // Group chat — VTID-03089
@@ -496,6 +503,12 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const automationsRouter = require('./routes/automations').default;
   // Self-Healing System — Autonomous detection, diagnosis, fix, and verification pipeline
   const selfHealingRouter = require('./routes/self-healing').default;
+  // Aurora migration B7: Gemini-shaped facade over Bedrock, for vitana-v1
+  // edge functions being ported off direct Google calls (VTID-03764 chain).
+  const aiBridgeRouter = require('./routes/ai-bridge').default;
+  // Aurora migration B6: object-storage facade for vitana-v1 edge functions
+  // that call Supabase Storage directly (VTID-03815 continuation).
+  const storageBridgeRouter = require('./routes/storage-bridge').default;
   // PR-I (VTID-02949): operator-armed canary for end-to-end self-healing
   // smoke tests. Replaces the original PR-A canary (which mounted at `/`
   // and tripped diagnosis into proposing edits to index.ts). New canary
@@ -732,6 +745,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // portal router so /api/v1/vcaop/portal/my/* resolves to the owner-scoped
   // handlers instead of the admin ones (VTID-03553).
   mountRouterSync(app, '/api/v1/vcaop/portal/my', vcaopPortalMyRouter, { owner: 'vcaop-portal-my' });
+  // VCAOP: supplier self-service catalogue (VTID-03894) — shares the /my base
+  // path. Its routes (/verticals, /products, /merchants) do not collide with
+  // the connection routes above, so a request falls through to whichever
+  // router declares it. Mounted after, so connection paths keep priority.
+  mountRouterSync(app, '/api/v1/vcaop/portal/my', vcaopPortalMyProductsRouter, { owner: 'vcaop-portal-my-products' });
   // VCAOP: Partner Portal — mount before the vcaop router so the sub-path resolves.
   mountRouterSync(app, '/api/v1/vcaop/portal', vcaopPortalRouter, { owner: 'vcaop-portal' });
   // VCAOP: Shopify catalog sync — mount before the vcaop router so the sub-path resolves.
@@ -804,9 +822,6 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/dev-autopilot', devAutopilotRouter, { owner: 'dev-autopilot' });
   mountRouterSync(app, '/api/v1/autonomy', autonomyPulseRouter, { owner: 'autonomy-pulse' });
   mountRouterSync(app, '/api/v1/autonomy', autonomyTraceRouter, { owner: 'autonomy-trace' });
-
-  // BOOTSTRAP-AWS-STAGING-VALIDATION: TEMPORARY — remove once AI_STUDIO_LIVE_MODEL is confirmed
-  mountRouterSync(app, '/api/v1', debugAiStudioModelsRouter, { owner: 'debug-ai-studio-models' });
 
   // VTID-01250: Social Connect — OAuth, profile enrichment, auto-share (AP-1305/AP-1306)
   mountRouterSync(app, '/api/v1/social-accounts', socialConnectRouter, { owner: 'social-connect' });
@@ -1043,6 +1058,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-01230: Role Admission Management - grant/revoke/list permitted roles
   mountRouterSync(app, '/api/v1/roles', roleAdminRouter, { owner: 'role-admin' });
 
+  // VTID-03834: BackOffice ERP capability access (role opens the door, capabilities gate actions)
+  mountRouterSync(app, '/api/v1/backoffice', backofficeAccessRouter, { owner: 'backoffice-access' });
+  mountRouterSync(app, '/api/v1/backoffice', backofficeCommandsRouter, { owner: 'backoffice-commands' });
+
   // VTID-01157: Supabase JWT Auth Middleware + /api/v1/auth/me endpoint
   mountRouterSync(app, '/api/v1/auth', authRouter, { owner: 'auth' });
 
@@ -1084,6 +1103,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/public', publicProfileOgRouter, { owner: 'public-profile-og' });
   // VTID-02000: Maxina admin marketplace
   mountRouterSync(app, '/api/v1/admin/marketplace', adminMarketplaceRouter, { owner: 'admin-marketplace' });
+  // VTID-03885: Partner Health Test Integration admin portal
+  mountRouterSync(app, '/api/v1/admin/partner-health', adminPartnerHealthRouter, { owner: 'admin-partner-health' });
+  // VTID-03885: Partner Health Test Integration self-service consent
+  mountRouterSync(app, '/api/v1/partner-health/consent', partnerHealthConsentRouter, { owner: 'partner-health-consent' });
   // BOOTSTRAP-COMMUNITY-MARKETPLACE: peer-to-peer classifieds (seller + buyer API)
   mountRouterSync(app, '/api/v1/community-marketplace', communityMarketplaceRouter, { owner: 'community-marketplace' });
   // BOOTSTRAP-COMMUNITY-MARKETPLACE (Chunk 7): admin review queue
@@ -1174,6 +1197,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // Notification System — FCM push notifications + in-app history
   mountRouterSync(app, '/api/v1/notifications', notificationsRouter, { owner: 'notifications' });
+
+  // B5 realtime relay (Aurora migration) — feature-flagged off by default,
+  // see docs/AURORA-B5-REALTIME-INVENTORY.md.
+  mountRouterSync(app, '/api/v1/realtime', realtimeRelayRouter, { owner: 'realtime-relay' });
 
   // Chat — User-to-user direct messaging
   mountRouterSync(app, '/api/v1/chat', chatRouter, { owner: 'chat' });
@@ -1305,6 +1332,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // canary's route file from ENDPOINT_FILE_MAP. This is what unblocks
   // the autopilot bridge from proposing edits to index.ts.
   mountRouterSync(app, '/api/v1/canary-target', canaryTargetRouter, { owner: 'self-healing' });
+  // Aurora migration B7: Bedrock bridge for vitana-v1 edge functions.
+  mountRouterSync(app, '/api/v1/ai-bridge', aiBridgeRouter, { owner: 'ai-bridge' });
+  // Aurora migration B6: object-storage bridge for vitana-v1 edge functions.
+  mountRouterSync(app, '/api/v1/storage-bridge', storageBridgeRouter, { owner: 'storage-bridge' });
 
   // VTID-02031: Ops Action Required — pull surface for Command Hub Overview
   mountRouterSync(app, '/api/v1/ops/action-required', opsActionRequiredRouter, { owner: 'ops-action-required' });
@@ -1526,6 +1557,22 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         }
       } catch (error) {
         console.warn('⚠️ Autopilot event loop initialization failed (non-fatal):', error);
+      }
+
+      // VTID-03902: Initialize the Operator Planner (if enabled) — generates
+      // draft specs for operator-chat-created tasks stuck at
+      // status=scheduled/spec_status=missing, closing the gap where
+      // autopilot_create_task had no automated path to a plan.
+      try {
+        const { initializeOperatorPlanner, isOperatorPlannerEnabled } = require('./services/operator-planner');
+        await initializeOperatorPlanner();
+        if (isOperatorPlannerEnabled()) {
+          console.log('🗓️ Operator planner started (VTID-03902)');
+        } else {
+          console.log('⏸️ Operator planner disabled (VTID-03902) - set OPERATOR_PLANNER_ENABLED=true to enable');
+        }
+      } catch (error) {
+        console.warn('⚠️ Operator planner initialization failed (non-fatal):', error);
       }
 
       // VTID-01250: Initialize Autopilot Automations Engine

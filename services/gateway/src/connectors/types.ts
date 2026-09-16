@@ -15,7 +15,9 @@ export type ConnectorCategory =
   | 'shop'
   | 'calendar'
   | 'productivity'
-  | 'aggregator';
+  | 'aggregator'
+  // VTID-03885: Partner Health Test Integration — DoctorBox is Partner #001.
+  | 'health_lab';
 
 export type AuthType =
   | 'oauth2'

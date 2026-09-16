@@ -3,7 +3,7 @@
  *
  * Takes an approved-and-cooled execution row and drives it through:
  *
- *   cooling   → running   (claim + Messages API session starts)
+ *   cooling   → running   (claim + routed LLM call starts, see callRoutedLlm)
  *   running   → ci        (edits applied, PR opened)
  *   ci        → merging   (PR-9 watcher: CI green)
  *   merging   → deploying (PR-9: merged; AUTO-DEPLOY fires)
@@ -19,9 +19,13 @@
  *   open a PR". Managed Agents with the triage agent don't have file-write
  *   or open_pr tools provisioned, so the session always ended without a PR
  *   URL — and provisioning a dedicated agent with those tools is a large
- *   operational bet. The Messages API + GitHub Contents API path below is
+ *   operational bet. The routed-LLM + GitHub Contents API path below is
  *   deterministic, faster (~30-90s), and uses the same plumbing the planning
- *   service uses (dev-autopilot-planning.ts, PR #753).
+ *   service uses (dev-autopilot-planning.ts, PR #753). "Routed" means
+ *   callViaRouter() against the DB-backed llm_routing_policy — this stopped
+ *   being a literal, hardcoded call to Anthropic's Messages API at VTID-02686
+ *   (see callRoutedLlm below); a per-execution override (VTID-03820) can also
+ *   force a specific provider regardless of policy.
  *
  * Dry-run mode (DEV_AUTOPILOT_DRY_RUN=true) skips the LLM + GitHub writes
  * and produces a synthetic PR URL so the UI and pipeline can be exercised
@@ -29,7 +33,8 @@
  */
 
 import { randomUUID } from 'crypto';
-import { emitOasisEvent } from './oasis-event-service';
+import type { LLMProvider } from '../constants/llm-defaults';
+import { emitOasisEvent, cicdEvents } from './oasis-event-service';
 import {
   evaluateSafetyGate,
   SafetyContext,
@@ -57,9 +62,17 @@ import { recordShown } from './watcher/feedback';
 const LOG_PREFIX = '[dev-autopilot-execute]';
 const EXEC_VTID = 'VTID-DEV-AUTOPILOT';
 
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
-const ANTHROPIC_BASE = 'https://api.anthropic.com';
-// Messages API timeout — Cloud Run's request timeout is 300s; we run in a
+// VTID-03852: ANTHROPIC_API_KEY/ANTHROPIC_BASE ('https://api.anthropic.com')
+// used to live here as module-level constants for a direct fetch() to
+// Anthropic's Messages API. VTID-02686 rewired every real call to go through
+// callRoutedLlm() → callViaRouter('worker', ...), which resolves the actual
+// provider from the DB-backed llm_routing_policy (bedrock/deepseek/etc, never
+// a hardcoded Anthropic key) — see CLAUDE.md §1b, which also confirms
+// ANTHROPIC_API_KEY is never populated in AWS Secrets Manager, so the old
+// constants could not have worked even if some path still read them. Removed
+// rather than left as harmless-looking dead code implying an Anthropic-direct
+// path exists here.
+// LLM call timeout — Cloud Run's request timeout is 300s; we run in a
 // background ticker so that's not the constraint. Still cap at 8 minutes so
 // a pathological stuck call doesn't hold a concurrency slot forever.
 // 12 min. Was 8 min; bumped after PR #846 added jest validation in the
@@ -125,7 +138,20 @@ const GITHUB_BASE_BRANCH = process.env.DEV_AUTOPILOT_REPO_REF || 'main';
 
 export interface ApprovalInput {
   finding_id: string;
+  /** Approving user's id. MUST be a UUID — it is written verbatim to
+   *  `dev_autopilot_executions.approved_by` (uuid) and
+   *  `dev_autopilot_outcomes.approver_user_id`. Omit for system approvals
+   *  (autoApproveTick) — NULL is the documented sentinel there. */
   approved_by?: string;
+  /** VTID-03839: the caller is a person (or a session acting for one)
+   *  waiting synchronously on the result, but has no user UUID to put in
+   *  `approved_by` — the operator on-ramp's requester is a chat-thread
+   *  label, not a user. Keeps the human-approval semantics that used to
+   *  ride on `approved_by` being set: a safety-gate rejection is returned
+   *  to the caller instead of 7-day-snoozing the finding, and the outcome
+   *  is recorded as `approved`, not `auto_exec`. Never changes what is
+   *  written to `approved_by`. */
+  interactive?: boolean;
 }
 
 export interface ApprovalResult {
@@ -148,6 +174,34 @@ export interface ExecutionRow {
   pr_number?: number;
   auto_fix_depth: number;
   parent_execution_id?: string;
+  /** VTID-03820: read for llm_on_ramp_override; not otherwise used here. */
+  metadata?: Record<string, unknown> | null;
+}
+
+/**
+ * VTID-03820: per-invocation LLM provider/model override for an operator-
+ * triggered execution (e.g. the DeepSeek-powered execution on-ramp),
+ * stamped into dev_autopilot_executions.metadata by the caller that queued
+ * the execution — never set by the autonomous self-healing path, so its
+ * own executions are provably unaffected.
+ *
+ * Deliberately permissive about malformed input: this reads untrusted-ish
+ * jsonb, and a bad shape must fall through to normal policy-driven
+ * behavior, never crash the execution.
+ */
+export function extractLlmOnRampOverride(
+  metadata: Record<string, unknown> | null | undefined
+): { provider: LLMProvider; model: string } | undefined {
+  const raw = metadata?.llm_on_ramp_override;
+  if (!raw || typeof raw !== 'object') return undefined;
+  const provider = (raw as Record<string, unknown>).provider;
+  const model = (raw as Record<string, unknown>).model;
+  if (typeof provider !== 'string' || typeof model !== 'string' || model.length === 0) {
+    return undefined;
+  }
+  const KNOWN_PROVIDERS: LLMProvider[] = ['anthropic', 'openai', 'vertex', 'deepseek', 'claude_subscription', 'bedrock'];
+  if (!KNOWN_PROVIDERS.includes(provider as LLMProvider)) return undefined;
+  return { provider: provider as LLMProvider, model };
 }
 
 // =============================================================================
@@ -164,7 +218,9 @@ export function getSupabase(): SupaConfig | null {
   return { url, key };
 }
 
-async function supa<T>(
+// VTID-03820: exported so operator-execution-onramp.ts can reuse the same
+// REST helper instead of duplicating it.
+export async function supa<T>(
   s: SupaConfig,
   path: string,
   init: RequestInit = {},
@@ -353,7 +409,28 @@ async function countRunningExecutions(s: SupaConfig): Promise<number> {
 // Approval entry point
 // =============================================================================
 
+// VTID-03839: shape check for `ApprovalInput.approved_by`. Any RFC-4122
+// variant/version — Supabase auth ids are v4, but the column accepts any.
+const UUID_STRING_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export function isUuidString(value: string): boolean {
+  return UUID_STRING_RE.test(value);
+}
+
 export async function approveAutoExecute(input: ApprovalInput): Promise<ApprovalResult> {
+  // VTID-03839: fail loudly, before any DB work, on a non-UUID approver.
+  // `dev_autopilot_executions.approved_by` is a uuid column; a label here
+  // (the operator on-ramp used to pass `operator-chat:<threadId>`) only
+  // surfaced as a Postgres 22P02 on the execution INSERT — after the
+  // finding + plan rows were already written and the safety gate had
+  // already passed. Name the real constraint instead.
+  if (input.approved_by !== undefined && !isUuidString(input.approved_by)) {
+    return {
+      ok: false,
+      error: `approved_by must be a user UUID (dev_autopilot_executions.approved_by is uuid) — got "${input.approved_by}". `
+        + `Pass interactive:true and omit approved_by when the requester is not a user.`,
+    };
+  }
+
   const s = getSupabase();
   if (!s) return { ok: false, error: 'Supabase not configured' };
 
@@ -544,7 +621,9 @@ export async function approveAutoExecute(input: ApprovalInput): Promise<Approval
     // meantime). Human-approved calls (approved_by present) skip this:
     // the human sees the violations in the API response and decides.
     // Feedback findings also skip — they get human triage attention.
-    const isAutoApprove = !input.approved_by;
+    // VTID-03839: an interactive caller (operator on-ramp) is waiting on
+    // this rejection synchronously — it is not an unattended tick either.
+    const isAutoApprove = !input.approved_by && !input.interactive;
     if (isAutoApprove && !isFeedbackLane) {
       const snoozedUntil = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
       const violationSummary = (decision.violations || [])
@@ -628,7 +707,9 @@ export async function approveAutoExecute(input: ApprovalInput): Promise<Approval
   // backfilled later when the worker reports completion/failure.
   await recordOutcome({
     finding_id: input.finding_id,
-    decision: input.approved_by ? 'approved' : 'auto_exec',
+    // VTID-03839: an interactive request is a human decision even when no
+    // user UUID is available for approver_user_id.
+    decision: input.approved_by || input.interactive ? 'approved' : 'auto_exec',
     approver_user_id: input.approved_by || null,
   });
 
@@ -846,6 +927,10 @@ export async function cancelExecution(executionId: string): Promise<{ ok: boolea
     message: `Execution ${executionId.slice(0, 8)} cancelled during cooldown`,
     payload: { execution_id: executionId },
   });
+  // VTID-03895: this PATCHes dev_autopilot_executions directly rather than
+  // through patchExecution() above, so it needs its own call to pick up the
+  // shared terminal side effects (vtid_ledger terminalization included).
+  applyExecTerminalSideEffects(s, executionId, 'cancelled');
   return { ok: true };
 }
 
@@ -1013,7 +1098,7 @@ async function compareBranchFiles(
 }
 
 // =============================================================================
-// Messages API — ask Claude to produce the file contents
+// Routed LLM call — ask the configured provider to produce the file contents
 // =============================================================================
 
 interface ExecutionLlmOutput {
@@ -1310,9 +1395,16 @@ function buildExecutionPrompt(
  * quality matters most here, which is why the worker (Claude subscription)
  * stays primary; Gemini 3.1 Pro is the fallback floor.
  */
-async function callMessagesApi(
+// VTID-03852: renamed from callMessagesApi — the old name implied a direct
+// call to Anthropic's Messages API (api.anthropic.com), which this function
+// has not done since VTID-02686. It calls callViaRouter('worker', ...),
+// which resolves the real provider (bedrock/deepseek/etc) from the DB-backed
+// llm_routing_policy 'worker' stage, or from `override` when one is passed
+// (VTID-03820's operator on-ramp forces one — see extractLlmOnRampOverride).
+async function callRoutedLlm(
   prompt: string,
   vtid?: string | null,
+  override?: { provider: LLMProvider; model: string },
 ): Promise<{ ok: boolean; text?: string; usage?: { input_tokens?: number; output_tokens?: number }; error?: string }> {
   const { callViaRouter } = await import('./llm-router');
   const r = await callViaRouter('worker', prompt, {
@@ -1320,6 +1412,7 @@ async function callMessagesApi(
     service: 'dev-autopilot-execute',
     allowFallback: true,
     maxTokens: MESSAGES_MAX_TOKENS,
+    ...(override ? { providerOverride: override.provider, modelOverride: override.model } : {}),
   });
   if (!r.ok) {
     return { ok: false, error: r.error || 'router returned ok=false' };
@@ -1462,18 +1555,39 @@ export async function runExecutionSession(
   // Pull prior-attempt lessons for the finding's scanner so Claude avoids
   // repeating known traps. Best-effort — no rows / failed query just skips
   // the optional prompt section.
-  const findingMetaR = await supa<Array<{ spec_snapshot: { scanner?: string } | null }>>(
+  //
+  // VTID-03821: also select activated_vtid here (no extra round trip —
+  // this query already runs unconditionally) so the LLM-call telemetry
+  // below can be tagged with the REAL task VTID a human looks at, instead
+  // of only the synthetic VTID-DA-<execId> id. Before this fix, every
+  // dev-autopilot execution's `llm.call.*` telemetry (provider, model,
+  // latency — exactly "which LLM served this run") was invisible on the
+  // task's own OASIS Event Tracking panel / Agents Control Plane trace
+  // view, because it was never tagged with the vtid either of those
+  // already reads events by.
+  const findingMetaR = await supa<Array<{ spec_snapshot: { scanner?: string } | null; activated_vtid: string | null }>>(
     s,
-    `/rest/v1/autopilot_recommendations?id=eq.${exec.finding_id}&select=spec_snapshot&limit=1`,
+    `/rest/v1/autopilot_recommendations?id=eq.${exec.finding_id}&select=spec_snapshot,activated_vtid&limit=1`,
   );
   const findingScanner: string | null = findingMetaR.ok && findingMetaR.data && findingMetaR.data[0]?.spec_snapshot?.scanner
     ? String(findingMetaR.data[0].spec_snapshot.scanner)
     : null;
+  const activatedVtid: string | null = findingMetaR.ok && findingMetaR.data && findingMetaR.data[0]?.activated_vtid
+    ? String(findingMetaR.data[0].activated_vtid)
+    : null;
+  // Telemetry vtid: prefer the real task VTID (makes LLM calls observable
+  // on the task itself); fall back to the synthetic per-execution id when
+  // no activated_vtid is set (older/unlinked findings) — never blank.
+  const telemetryVtid = activatedVtid || `VTID-DA-${executionId.slice(0, 8)}`;
   const lessons = findingScanner ? await loadExecutionLessons(s, findingScanner) : [];
 
-  // 2. Ask Claude to produce the new file contents. Routes through the
-  // worker queue when DEV_AUTOPILOT_USE_WORKER=true (Claude subscription);
-  // otherwise hits the Messages API directly (pay-per-token).
+  // 2. Ask an LLM to produce the new file contents. Routes through the
+  // worker queue when DEV_AUTOPILOT_USE_WORKER=true (a local daemon shelling
+  // out to `claude -p` against a Claude Pro/Max subscription — see
+  // services/autopilot-worker/README.md); otherwise routes per-request via
+  // callRoutedLlm() → callViaRouter('worker', ...), i.e. the DB-backed
+  // llm_routing_policy 'worker' stage (pay-per-token, whichever provider
+  // that stage is configured for — not necessarily Anthropic).
   //
   // When AUTOPILOT_WORKER_OWNS_PR=true, ALSO delegate the post-LLM work
   // (parse output, create branch, write files, open PR) to the worker.
@@ -1498,11 +1612,24 @@ export async function runExecutionSession(
   }
   const prompt = buildExecutionPrompt(exec.finding_id, exec.plan_version, plan.plan_markdown, fileCtx, branch, lessons, watcherBlock);
   const startedAt = Date.now();
+  // VTID-03820: an execution queued with an llm_on_ramp_override (e.g. the
+  // operator DeepSeek execution on-ramp) ALWAYS takes the callRoutedLlm
+  // path, bypassing the worker queue entirely — the worker queue dispatches
+  // to services/autopilot-worker's `claude -p` (Claude Code CLI against a
+  // Claude subscription), which has no way to honor a per-call provider
+  // override, so an override could never actually take effect through it.
+  // Every other execution (no override set) is completely unaffected by
+  // this branch. Note: even without an override, this branch is ALSO taken
+  // whenever isWorkerQueueEnabled() is false (DEV_AUTOPILOT_USE_WORKER
+  // unset) — true on both AWS_STAGE/PROD-DEPLOY-GATEWAY.yml as of VTID-03852,
+  // since neither pins that var — so the worker-queue/Claude-Code path is
+  // dead in practice on the deployed gateway, override or not.
+  const onRampOverride = extractLlmOnRampOverride(exec.metadata);
   // Widen the inline type so both call shapes satisfy the union we destructure
   // below (worker-queue path may carry pr_url/pr_number/branch from the
-  // worker-owned-PR mode; direct Messages API never does).
+  // worker-owned-PR mode; callRoutedLlm never does).
   const llm: { ok: boolean; text?: string; usage?: { input_tokens?: number; output_tokens?: number }; error?: string; pr_url?: string; pr_number?: number; branch?: string; attempt_failures?: WorkerAttemptFailure[] } =
-    isWorkerQueueEnabled()
+    (isWorkerQueueEnabled() && !onRampOverride)
       ? await runWorkerTask(
           {
             kind: 'execute',
@@ -1515,11 +1642,11 @@ export async function runExecutionSession(
             worker_owns_pr: ownsPr,
             branch_name: branch,
             base_branch: GITHUB_BASE_BRANCH,
-            vtid_like: `VTID-DA-${executionId.slice(0, 8)}`,
+            vtid_like: telemetryVtid,
           },
           { timeoutMs: MESSAGES_TIMEOUT_MS },
         )
-      : await callMessagesApi(prompt, `VTID-DA-${executionId.slice(0, 8)}`);
+      : await callRoutedLlm(prompt, telemetryVtid, onRampOverride);
   const elapsed = Math.round((Date.now() - startedAt) / 1000);
 
   // Prompt-gap feedback loop: the worker reports per-attempt validation
@@ -1762,6 +1889,13 @@ export function applyExecTerminalSideEffects(
   executionId: string,
   status: string,
 ): void {
+  // VTID-03895: propagate to vtid_ledger regardless of which of the three
+  // terminal outcomes this is — separate from the completed/failed-only
+  // outcome-bookkeeping block below, which has its own narrower, historical
+  // reason for excluding 'cancelled' (see its own docstring).
+  if (status === 'completed' || status === 'failed' || status === 'cancelled') {
+    void terminalizeVtidLedgerForExecution(s, executionId, status);
+  }
   if (status !== 'completed' && status !== 'failed') return;
   void (async () => {
     try {
@@ -1822,6 +1956,84 @@ export function applyExecTerminalSideEffects(
       console.warn(`${LOG_PREFIX} outcome / finding-completion backfill error for ${executionId.slice(0, 8)}:`, err);
     }
   })();
+}
+
+/**
+ * VTID-03895: close the loop from a terminal dev_autopilot_executions status
+ * back to the vtid_ledger row the Operator on-ramp activated it for.
+ *
+ * Before this, nothing ever wrote is_terminal/terminal_outcome for an
+ * on-ramp execution's own VTID — the activation reaper comment a few
+ * hundred lines up already names the user-visible symptom this produces
+ * ("the vtid_ledger card sits in IN PROGRESS forever"), but that reaper only
+ * recovers executions that never started; one that runs to completion,
+ * merges, and deploys cleanly was *still* left stuck, because nothing on
+ * the happy path ever flipped the ledger. Task Management's board reads
+ * is_terminal/the COMPLETED column directly, so this alone is what makes a
+ * finished execution actually show as Completed there.
+ *
+ * Only fires for executions with a real activated_vtid (i.e. ones the
+ * Operator on-ramp created for a named VTID) — autonomous-plane findings
+ * with no activated_vtid have no vtid_ledger row of their own to close, and
+ * are correctly left to their own accounting (recordExecOutcome above,
+ * self_healing_log, etc). Guarded on is_terminal=eq.false so this can never
+ * overwrite a task a human already terminalized, or double-fire on a status
+ * that's somehow patched twice — per IF-THEN rule 3 ("is_terminal=true →
+ * do not modify task"), not just as a defensive habit.
+ */
+async function terminalizeVtidLedgerForExecution(
+  s: SupaConfig,
+  executionId: string,
+  status: 'completed' | 'failed' | 'cancelled',
+): Promise<void> {
+  try {
+    const execR = await supa<Array<{ finding_id: string }>>(
+      s,
+      `/rest/v1/dev_autopilot_executions?id=eq.${executionId}&select=finding_id&limit=1`,
+    );
+    const finding_id = execR.ok ? execR.data?.[0]?.finding_id : null;
+    if (!finding_id) return;
+
+    const findingR = await supa<Array<{ activated_vtid: string | null }>>(
+      s,
+      `/rest/v1/autopilot_recommendations?id=eq.${finding_id}&select=activated_vtid&limit=1`,
+    );
+    const vtid = findingR.ok ? findingR.data?.[0]?.activated_vtid : null;
+    if (!vtid) return; // autonomous-plane finding — no vtid_ledger row to close
+
+    const terminal_outcome = status === 'completed' ? 'success' : status;
+    const patchR = await supa(
+      s,
+      `/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(vtid)}&is_terminal=eq.false`,
+      {
+        method: 'PATCH',
+        headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ is_terminal: true, terminal_outcome, status }),
+      },
+    );
+    if (!patchR.ok) {
+      console.warn(
+        `${LOG_PREFIX} vtid_ledger terminalize failed for ${vtid} (execution ${executionId.slice(0, 8)}): ${patchR.error}`,
+      );
+      return;
+    }
+
+    if (status === 'completed') {
+      await cicdEvents.vtidLifecycleCompleted(
+        vtid,
+        'operator',
+        `Operator on-ramp execution ${executionId.slice(0, 8)} completed`,
+      );
+    } else {
+      await cicdEvents.vtidLifecycleFailed(
+        vtid,
+        'operator',
+        `Operator on-ramp execution ${executionId.slice(0, 8)} ${status}`,
+      );
+    }
+  } catch (err) {
+    console.warn(`${LOG_PREFIX} vtid_ledger terminalize error for execution ${executionId.slice(0, 8)}:`, err);
+  }
 }
 
 async function patchExecution(
@@ -3130,13 +3342,23 @@ async function allocatedOrphanReaperTick(): Promise<void> {
   for (const orphan of orphansR.data) {
     const ageMin = Math.round((Date.now() - new Date(orphan.created_at).getTime()) / 60_000);
     console.log(`${LOG_PREFIX} reaper: tombstoning orphan ${orphan.vtid} (age=${ageMin}min, title='${orphan.title}')`);
+    // VTID-03818: this PATCH used to set only status='deleted', never
+    // is_terminal/terminal_outcome — the Command Hub's own manual delete
+    // endpoint (routes/oasis-tasks.ts) sets both alongside status, and this
+    // reaper was the one write site in the repo that didn't match it,
+    // leaving reaper-deleted rows permanently non-terminal.
+    const now = new Date().toISOString();
     await supa(s, `/rest/v1/vtid_ledger?vtid=eq.${orphan.vtid}&status=eq.allocated`, {
       method: 'PATCH',
       headers: { Prefer: 'return=minimal' },
       body: JSON.stringify({
         status: 'deleted',
+        is_terminal: true,
+        terminal_outcome: 'deleted',
+        deleted_at: now,
+        deleted_by: 'allocated-orphan-reaper',
         delete_reason: `allocated-orphan-reaper: shell never received title (age=${ageMin}min)`,
-        updated_at: new Date().toISOString(),
+        updated_at: now,
       }),
     });
   }

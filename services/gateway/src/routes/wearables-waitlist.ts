@@ -11,6 +11,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { getSupabase } from '../lib/supabase';
 import * as jose from 'jose';
+import * as repo from './wearables-waitlist-repository';
 
 const router = Router();
 
@@ -47,13 +48,7 @@ function getUserFromReq(req: Request): { user_id: string; tenant_id: string | nu
 
 async function resolveTenantId(userId: string, supabase: ReturnType<typeof getSupabase>): Promise<string | null> {
   if (!supabase) return null;
-  const { data } = await supabase
-    .from('user_tenants')
-    .select('tenant_id')
-    .eq('user_id', userId)
-    .eq('is_active', true)
-    .limit(1)
-    .maybeSingle();
+  const { data } = await repo.fetchActiveUserTenantId(supabase, userId);
   return data?.tenant_id ?? null;
 }
 
@@ -71,19 +66,12 @@ router.post('/', async (req: Request, res: Response) => {
   const tenantId = user.tenant_id ?? (await resolveTenantId(user.user_id, supabase));
   if (!tenantId) return res.status(400).json({ ok: false, error: 'Tenant not found for user' });
 
-  const { data, error } = await supabase
-    .from('wearable_waitlist')
-    .upsert(
-      {
-        user_id: user.user_id,
-        tenant_id: tenantId,
-        provider: parsed.data.provider,
-        notify_via: parsed.data.notify_via,
-      },
-      { onConflict: 'user_id,provider' }
-    )
-    .select('*')
-    .single();
+  const { data, error } = await repo.upsertWearableWaitlistEntry(supabase, {
+    user_id: user.user_id,
+    tenant_id: tenantId,
+    provider: parsed.data.provider,
+    notify_via: parsed.data.notify_via,
+  });
   if (error) return res.status(500).json({ ok: false, error: error.message });
   res.json({ ok: true, waitlist_entry: data });
 });
@@ -93,10 +81,7 @@ router.get('/', async (req: Request, res: Response) => {
   if (!user) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
-  const { data, error } = await supabase
-    .from('wearable_waitlist')
-    .select('provider, created_at, notified_at, notify_via')
-    .eq('user_id', user.user_id);
+  const { data, error } = await repo.fetchWearableWaitlistEntriesForUser(supabase, user.user_id);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   res.json({ ok: true, entries: data ?? [] });
 });
@@ -106,11 +91,7 @@ router.delete('/:provider', async (req: Request, res: Response) => {
   if (!user) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
-  const { error } = await supabase
-    .from('wearable_waitlist')
-    .delete()
-    .eq('user_id', user.user_id)
-    .eq('provider', req.params.provider);
+  const { error } = await repo.deleteWearableWaitlistEntry(supabase, user.user_id, req.params.provider);
   if (error) return res.status(500).json({ ok: false, error: error.message });
   res.json({ ok: true });
 });

@@ -490,6 +490,98 @@ body {
   gap: 0.75rem;
 }
 
+/* VTID-03823: drag-and-drop highlight while a card is dragged over a column */
+.column-content-drop-target {
+  background: rgba(59, 130, 246, 0.08);
+  outline: 2px dashed rgba(59, 130, 246, 0.5);
+  outline-offset: -4px;
+}
+
+/* VTID-03823: Tasks board hygiene — filter chips */
+.task-filter-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.task-filter-chip-group {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.task-filter-chip-group-label {
+  font-size: 0.72rem;
+  color: var(--color-text-secondary, #9aa0a6);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.task-filter-chip {
+  background: #232e42;
+  color: #c7d0dc;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  padding: 0.2rem 0.7rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.task-filter-chip:hover {
+  background: #2d3b52;
+}
+
+.task-filter-chip-active {
+  background: #2a7bff;
+  border-color: #2a7bff;
+  color: #fff;
+}
+
+/* VTID-03823: bulk-action bar */
+.task-bulk-action-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1.5rem;
+  background: rgba(42, 123, 255, 0.12);
+  border-bottom: 1px solid rgba(42, 123, 255, 0.3);
+}
+
+.task-bulk-action-label {
+  font-size: 0.8rem;
+  color: #c7d0dc;
+  font-weight: 600;
+}
+
+/* VTID-03823: per-card select checkbox */
+.task-card-select-checkbox {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+/* VTID-03823: staleness/age badge on the status row */
+.task-card-age-badge {
+  font-size: 0.68rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #9aa0a6;
+}
+
+.task-card-age-badge-stale {
+  background: rgba(255, 106, 106, 0.15);
+  color: #ff8a8a;
+  font-weight: 600;
+}
+
 .task-card {
   background: #253045;
   /* Slightly lighter than sidebar */
@@ -1668,6 +1760,13 @@ body {
   flex-direction: column;
   max-height: 90vh;
   overflow: hidden;
+  /* VTID-03910: a flex column child defaults to min-height:auto, which lets
+     it grow past its own container instead of shrinking to fit — the
+     classic reason overflow-y:auto never gets a chance to kick in on a
+     nested flex layout like this one. min-height:0 lets this column (and
+     everything flexed inside it) actually shrink to the available space,
+     so the deeper *-content/*-container overflow rules can do their job. */
+  min-height: 0;
 }
 
 .overlay-header {
@@ -1704,6 +1803,34 @@ body {
 
 .overlay-close:hover {
   color: var(--color-text-primary);
+}
+
+/* VTID-03905: wraps the fullscreen toggle + close button so overlay-header's
+   existing justify-content:space-between keeps titleBlock and this group at
+   opposite ends, with a small gap between the two action icons themselves. */
+.overlay-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.overlay-fullscreen-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s;
+}
+
+.overlay-fullscreen-toggle:hover {
+  color: var(--color-text-primary);
+  background: var(--color-bg-hover, rgba(255, 255, 255, 0.08));
 }
 
 .overlay-content {
@@ -1798,6 +1925,21 @@ body {
   min-width: 600px;
   max-width: 1000px;
   height: 80vh;
+  transition: width 0.2s ease, height 0.2s ease, max-width 0.2s ease, border-radius 0.2s ease;
+}
+
+/* VTID-03949: true fullscreen, at the platform owner's explicit request —
+   "the full screen is not full screen, it's just a bigger pop-up". This
+   replaces VTID-03905/VTID-03910's deliberate 2cm-inset "bigger popup"
+   design: edge-to-edge 100vw/100vh, no border-radius, no visible backdrop
+   margin on any side. */
+.operator-overlay--fullscreen {
+  width: 100vw;
+  height: 100vh;
+  max-width: 100vw;
+  max-height: 100vh;
+  min-width: 0;
+  border-radius: 0;
 }
 
 .operator-tabs {
@@ -1834,6 +1976,7 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-height: 0; /* VTID-03910: see .overlay-panel's min-height comment */
 }
 
 /* Chat UI */
@@ -1842,6 +1985,7 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-height: 0; /* VTID-03910: see .overlay-panel's min-height comment */
 }
 
 .chat-messages {
@@ -1852,6 +1996,196 @@ body {
   overflow-y: auto;
   max-height: 65vh;
   padding: 1.5rem;
+  min-height: 0; /* VTID-03910: see .overlay-panel's min-height comment */
+}
+
+/* VTID-03910: the 65vh cap was tuned for the popup's original 80vh height;
+   in fullscreen the panel is much taller, so the fixed vh cap leaves a big
+   dead gap between the messages and the input row instead of using the
+   space fullscreen mode is meant to provide. Let it fill the flex column
+   like every other tab's content area already does. */
+.operator-overlay--fullscreen .chat-messages {
+  max-height: none;
+}
+
+/* VTID-03949: Operator Console session switching, replacing the VTID-03822
+   thread dropdown (a <select> that covered the transcript while open, and
+   only showed one session at a time) with a persistent Claude-Code-style
+   sessions sidebar alongside the chat column, plus a title bar above the
+   transcript showing the active session's own (renamable) title. */
+.operator-chat-layout {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.operator-chat-layout .chat-container {
+  min-width: 0;
+}
+
+.chat-sessions-sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--color-border, #2a2a2a);
+  background: var(--color-bg, #1a1a1a);
+  overflow: hidden;
+}
+
+.chat-sessions-sidebar--collapsed {
+  display: none;
+}
+
+.chat-sessions-sidebar-header {
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--color-border, #2a2a2a);
+}
+
+.chat-sessions-new-btn {
+  display: block;
+  width: 100%;
+  text-align: center;
+  background: #2a7bff;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.chat-sessions-new-btn:hover {
+  background: #1f63d1;
+}
+
+.chat-sessions-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.5rem;
+}
+
+.chat-session-row {
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-bottom: 2px;
+  transition: background 0.15s ease;
+}
+
+.chat-session-row:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.chat-session-row--active {
+  background: rgba(42, 123, 255, 0.15);
+}
+
+.chat-session-row-title {
+  font-size: 0.82rem;
+  color: #e0e0e0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-session-row-meta {
+  font-size: 0.7rem;
+  color: #9aa0a6;
+  margin-top: 2px;
+}
+
+.chat-sessions-empty {
+  padding: 1rem 0.6rem;
+  font-size: 0.8rem;
+  color: #9aa0a6;
+  text-align: center;
+}
+
+.chat-session-title-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1.5rem;
+  border-bottom: 1px solid var(--color-border, #2a2a2a);
+  background: var(--color-bg, #1a1a1a);
+}
+
+.chat-session-title-bar-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #e0e0e0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+}
+
+/* VTID-03949: double-click-to-rename inline input, shared by the sidebar
+   row title and the title-bar text above. */
+.chat-session-title-input {
+  width: 100%;
+  background: #232323;
+  color: #e0e0e0;
+  border: 1px solid #2a7bff;
+  border-radius: 4px;
+  padding: 0.15rem 0.35rem;
+  font-size: inherit;
+  font-weight: inherit;
+  font-family: inherit;
+}
+
+.chat-sessions-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: #9aa0a6;
+  cursor: pointer;
+}
+
+.chat-sessions-toggle-btn:hover {
+  color: #e0e0e0;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.chat-new-thread-btn {
+  background: #2a7bff;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.chat-new-thread-btn:hover {
+  background: #1f63d1;
+}
+
+/* VTID-03822: tool-activity lines rendered under a chat bubble */
+.chat-tool-activity {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin: 0.15rem 0 0.2rem;
+  align-self: flex-start;
+  max-width: 80%;
+}
+
+.chat-tool-activity-line {
+  font-size: 0.72rem;
+  color: #9aa0a6;
+  font-style: italic;
 }
 
 /* VTID-0526: Message bubble styles */
@@ -1884,7 +2218,47 @@ body {
 .timestamp {
   font-size: 0.7rem;
   opacity: 0.6;
+}
+
+/* VTID-03947: message-meta row — copy-to-clipboard icon + relative
+   timestamp, rendered under each chat bubble (both sent and reply). */
+.message-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
   margin-top: 2px;
+  max-width: 80%;
+}
+
+.message-meta--sent {
+  align-self: flex-end;
+}
+
+.message-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: #9aa0a6;
+  opacity: 0.6;
+  cursor: pointer;
+  transition: opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+
+.message-copy-btn:hover {
+  opacity: 1;
+  background-color: rgba(255, 255, 255, 0.08);
+  color: #e0e0e0;
+}
+
+.message-copy-btn--copied {
+  opacity: 1;
+  color: #3ddc84;
 }
 
 .chat-message {
@@ -2332,6 +2706,10 @@ body {
     height: 90vh;
   }
 
+  /* VTID-03949: true fullscreen (100vw/100vh, set above) already gives the
+     narrow viewport its maximum available width — no smaller inset needed
+     here any more. */
+
   .heartbeat-metrics {
     grid-template-columns: 1fr;
   }
@@ -2557,6 +2935,54 @@ body {
 
 .chat-attach-menu.menu-open {
   display: block;
+}
+
+/* VTID-03907: Voice dictation mic button (mirrors .chat-attach-btn sizing) */
+.chat-mic-btn {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-sidebar-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.chat-mic-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--color-text-secondary);
+  color: var(--color-text-primary);
+}
+
+.chat-mic-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* VTID-03911: .chat-mic-btn:hover:not(:disabled) above has specificity
+   (0,3,0) (one class + two pseudo-classes, :not() counting its argument's
+   own specificity) — higher than plain .chat-mic-btn--active's (0,1,0), so
+   the neutral hover style silently won and the button never visibly turned
+   red while the cursor stayed on it after the click (which it always does
+   in real mouse use). Repeating the active rule with :hover explicitly
+   matches or beats that specificity so the red state actually shows, and
+   stays red on hover instead of flipping back to neutral. */
+.chat-mic-btn--active,
+.chat-mic-btn--active:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: #ef4444;
+  color: #ef4444;
+  animation: chat-mic-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes chat-mic-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.35); }
+  50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
 }
 
 .attach-option {
@@ -8413,6 +8839,30 @@ body {
   box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.2);
 }
 
+/* VTID-03819: Related-task chip — shown when embedding search finds a
+   similar-but-not-duplicate task already on the board. Amber, matching
+   the existing "needs attention" tone (.task-card-status-pill-in-progress)
+   rather than success/error colors, since this is informational only. */
+.task-related-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: rgba(245, 158, 11, 0.12);
+  color: #fbbf24;
+  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.25);
+  cursor: pointer;
+  width: fit-content;
+}
+
+.task-related-chip:hover {
+  background: rgba(245, 158, 11, 0.2);
+}
+
 /* DEV-COMHU-2025-0015: Uniform card sizing across all columns */
 .task-card-enhanced {
   min-height: 140px;
@@ -9428,9 +9878,16 @@ body {
   padding: 0.625rem 0.75rem;
 }
 
+/* VTID-03823: raised from 100px. At 100px, a card with a status pill + role
+   badge already left no room for the spec-row/stage-timeline below without
+   one of them collapsing (see the status-row fix below) — adding a third
+   item (the new age/staleness badge) to that same row made the deficit
+   worse. 148px is the measured natural height of a fully-populated
+   Scheduled card (title + vtid + status row w/ 3 badges + spec row + stage
+   timeline) with no row forced to shrink. */
 .task-card-enhanced {
   min-height: 72px;
-  max-height: 100px;
+  max-height: 148px;
 }
 
 /* Reduce title font size and margins */
@@ -9462,13 +9919,23 @@ body {
   padding: 1px 6px;
 }
 
-/* Status row: single line flex, no wrap */
+/* Status row: single line flex, no wrap.
+   VTID-03823: `overflow: hidden` here made this row's flexbox automatic
+   minimum size resolve to 0 (CSS Flexbox spec: an item's auto min-size is
+   0 once its `overflow` is anything but `visible`), so inside the
+   flex-column `.task-card` this row was the ONLY thing in the whole card
+   that could shrink to nothing — measured at 0px actual height (fully
+   invisible: status pill, role badge, and the new age badge all rendered
+   with zero-height clipping) on origin/main, before this VTID ever
+   touched this file. `flex-shrink: 0` fixes it at the row level; the
+   `.task-card-enhanced` max-height bump above fixes the underlying content
+   budget so no OTHER row has to take the deficit instead. */
 .task-card-status-row {
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
   gap: 6px;
-  overflow: hidden;
+  flex-shrink: 0;
   margin-bottom: 0.25rem;
 }
 
@@ -19445,4 +19912,116 @@ border-bottom: 1px solid var(--color-border, #333);
   margin-top: 0.5rem;
   font-size: 0.75rem;
   color: var(--color-text-secondary);
+}
+
+/* VTID-03852: LLM provider/model transparency badge on
+   dev_autopilot_executions cards (both renderers — the Autopilot Developer
+   panel and the Autopilot Overview dashboard). A class here rather than a
+   scripted inline-style assignment, matching the CSP governance gate's
+   surface (scripts/ci/validator-path-guard.cjs's CSP_PATTERNS flags any
+   added reference to the element style property in this tree). */
+.llm-provider-badge {
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-family: monospace;
+  background: rgba(59, 130, 246, 0.12);
+  color: #3b82f6;
+  white-space: nowrap;
+}
+
+/* VTID-03896/03897/03898: Command Hub Operator "Steps" panel — a live
+   per-execution step feed (SSE-backed) alongside the existing "Lineage"
+   view, plus a last_event_at heartbeat badge on active execution cards.
+   Classes here rather than scripted inline-style assignment, same reason
+   as .llm-provider-badge above (the CSP governance gate's CSP_PATTERNS
+   flags any added reference to the element style property in this tree). */
+.dev-autopilot-heartbeat {
+  font-size: 11px;
+  color: var(--text-secondary, #888);
+}
+.dev-autopilot-heartbeat--stale {
+  color: #eab308;
+}
+.dev-autopilot-ghost-toggle {
+  padding: 3px 10px;
+  border-radius: 3px;
+  font-size: 11px;
+  cursor: pointer;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.15));
+  background: transparent;
+  color: var(--text-secondary, #aaa);
+}
+.dev-autopilot-steps-panel {
+  margin-top: 10px;
+  padding: 10px;
+  background: rgba(59, 130, 246, 0.04);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 4px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.dev-autopilot-steps-panel--muted {
+  color: var(--text-secondary, #888);
+}
+.dev-autopilot-steps-panel--error {
+  color: #ef4444;
+}
+.dev-autopilot-steps-heading {
+  font-size: 11px;
+  color: #3b82f6;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+  letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dev-autopilot-steps-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+  display: inline-block;
+}
+.dev-autopilot-steps-stream-note {
+  color: #eab308;
+  font-size: 10px;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.dev-autopilot-steps-empty {
+  font-size: 12px;
+  color: var(--text-secondary, #888);
+}
+.dev-autopilot-step-line {
+  font-size: 11px;
+  padding: 3px 0;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+.dev-autopilot-step-time {
+  font-family: monospace;
+  color: var(--text-secondary, #666);
+  flex-shrink: 0;
+}
+.dev-autopilot-step-topic {
+  font-family: monospace;
+  flex-shrink: 0;
+  color: #3b82f6;
+}
+.dev-autopilot-step-topic--error {
+  color: #ef4444;
+}
+.dev-autopilot-step-topic--warning {
+  color: #eab308;
+}
+.dev-autopilot-step-topic--success {
+  color: #22c55e;
+}
+.dev-autopilot-step-message {
+  color: var(--text-primary, #ccc);
+  word-break: break-word;
 }

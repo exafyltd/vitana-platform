@@ -145,6 +145,33 @@ describe('VTID-02950 — Discover recommendations routes', () => {
       });
     });
 
+    it('POST /recommendations returns 500 (not a fall-through create) when the existing-recommendation lookup errors (BOOTSTRAP-AURORA-CUTOVER)', async () => {
+      const productId = '11111111-1111-1111-1111-111111111111';
+      const insertCalls: string[] = [];
+      const from = jest.fn((table: string) => {
+        insertCalls.push(table);
+        if (table === 'products') {
+          return createMockQuery({ data: { id: productId, merchant_id: 'm-1', title: 'Test Product', is_active: true }, error: null });
+        }
+        if (table === 'product_recommendations') {
+          return createMockQuery({ data: null, error: { message: 'connection terminated unexpectedly' } });
+        }
+        return createMockQuery({ data: null, error: null });
+      });
+      (getSupabase as jest.Mock).mockReturnValue({ from });
+
+      const res = await request(app).post('/api/v1/discover/recommendations').send({ product_id: productId });
+
+      // The find-or-create contract must not be violated: a DB error on the
+      // lookup must never be treated as "no existing recommendation" and
+      // fall through to minting a duplicate + a second sharing link.
+      expect(res.status).toBe(500);
+      expect(res.body.ok).toBe(false);
+      expect(res.body.error).toBe('EXISTING_RECOMMENDATION_LOOKUP_FAILED');
+      expect(insertCalls).not.toContain('sharing_links');
+      expect(emitOasisEvent).not.toHaveBeenCalled();
+    });
+
     it('POST /recommendations reuses an existing recommendation without re-inserting or re-emitting', async () => {
       const productId = '11111111-1111-1111-1111-111111111111';
       const from = jest.fn((table: string) => {

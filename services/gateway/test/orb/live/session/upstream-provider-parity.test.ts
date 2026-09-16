@@ -114,6 +114,8 @@ function makeHarness() {
   const deps: UpstreamMessageHandlerDeps = {
     clearResponseWatchdog: jest.fn(),
     detectAuthIntent: jest.fn().mockReturnValue(null),
+    detectStillHereComplaint: jest.fn().mockReturnValue(false),
+    dispatchEndConversationDirective: jest.fn(),
     emitDiag: jest.fn(),
     emitLiveSessionEvent: jest.fn().mockResolvedValue(undefined),
     executeLiveApiTool: jest.fn().mockResolvedValue({ success: true, result: '{"screen":"journey"}' }),

@@ -189,4 +189,13 @@ describe('happy path', () => {
     const res = await request(app).get('/api/v1/vcaop/fhir-oauth/callback').query({ code: 'code', state });
     expect(res.status).toBe(404);
   });
+
+  test('500 (not 404) when the manifest lookup itself errors, mid-OAuth-redirect', async () => {
+    const state = await makeState();
+    const manifests = tableStub({ data: null, error: { message: 'connection reset' } });
+    (getSupabase as jest.Mock).mockReturnValue({ from: jest.fn(() => manifests) });
+    const res = await request(app).get('/api/v1/vcaop/fhir-oauth/callback').query({ code: 'code', state });
+    expect(res.status).toBe(500);
+    expect(res.body.ok).toBe(false);
+  });
 });

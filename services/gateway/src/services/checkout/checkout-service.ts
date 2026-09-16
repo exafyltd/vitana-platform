@@ -35,6 +35,7 @@ import { getSupabase } from '../../lib/supabase';
 import { debitWalletForSpend } from '../wallet/spend-earning-service';
 import { creditRecommenderForOrder } from '../recommendation-commissions/credit-recommender';
 import type { WalletCurrency } from '../../types/wallet';
+import * as repo from './checkout-service-repository';
 
 export const VTID = 'VTID-03237';
 
@@ -178,34 +179,20 @@ export async function checkoutUniversalCart(input: CheckoutCartInput): Promise<C
   const sessionId = input.sessionId || checkoutId;
 
   // 1. Active cart (scoped to the authenticated user).
-  const cartRes = await supa
-    .from('universal_carts')
-    .select('id, user_id, status')
-    .eq('user_id', userId)
-    .eq('status', 'active')
-    .maybeSingle();
+  const cartRes = await repo.fetchActiveCartForUser(supa, userId);
   if (cartRes.error) return { ok: false, error: 'CART_READ_FAILED', message: cartRes.error.message };
   if (!cartRes.data) return { ok: false, error: 'CART_EMPTY' };
   const cartId = cartRes.data.id as string;
 
   // 2. Active items.
-  const itemsRes = await supa
-    .from('universal_cart_items')
-    .select(
-      'id, product_id, quantity, unit_price_cents_snapshot, currency_snapshot, source_surface, source_video_id, source_creator_id, item_type'
-    )
-    .eq('cart_id', cartId)
-    .eq('status', 'active');
+  const itemsRes = await repo.fetchActiveCartItems(supa, cartId);
   if (itemsRes.error) return { ok: false, error: 'CART_READ_FAILED', message: itemsRes.error.message };
   const items = (itemsRes.data ?? []) as CartItemRow[];
   if (items.length === 0) return { ok: false, error: 'CART_EMPTY' };
 
   // 3. Hydrate the live product rows.
   const productIds = [...new Set(items.map((i) => i.product_id))];
-  const productsRes = await supa
-    .from('products')
-    .select('id, source_network, price_cents, currency, is_active, availability, merchant_id, affiliate_url')
-    .in('id', productIds);
+  const productsRes = await repo.fetchProductsByIds(supa, productIds);
   if (productsRes.error) return { ok: false, error: 'CART_READ_FAILED', message: productsRes.error.message };
   const productById = new Map<string, ProductRow>();
   for (const p of (productsRes.data ?? []) as ProductRow[]) productById.set(p.id, p);
@@ -267,12 +254,7 @@ export async function checkoutUniversalCart(input: CheckoutCartInput): Promise<C
     walletCurrency = cur as WalletCurrency;
     walletTotalMinor = walletLines.reduce((sum, l) => sum + l.lineMinor, 0);
 
-    const acctRes = await supa
-      .from('wallet_accounts')
-      .select('id, status, currency, balance_minor')
-      .eq('user_id', userId)
-      .eq('currency', walletCurrency)
-      .maybeSingle();
+    const acctRes = await repo.fetchWalletAccountForCurrency(supa, userId, walletCurrency);
     if (acctRes.error) return { ok: false, error: 'WALLET_READ_FAILED', message: acctRes.error.message };
     if (!acctRes.data) return { ok: false, error: 'WALLET_ACCOUNT_MISSING', currency: walletCurrency };
     if (acctRes.data.status !== 'active') return { ok: false, error: 'WALLET_ACCOUNT_INACTIVE' };
@@ -281,11 +263,7 @@ export async function checkoutUniversalCart(input: CheckoutCartInput): Promise<C
 
   // 7. INTENT — ensure a pending product_orders row exists for every line
   //    (idempotent: reuse rows already created for this checkout_id on a retry).
-  const existingRes = await supa
-    .from('product_orders')
-    .select('id, external_order_id')
-    .eq('user_id', userId)
-    .like('external_order_id', `${checkoutId}:%`);
+  const existingRes = await repo.fetchExistingOrdersForCheckout(supa, userId, `${checkoutId}:%`);
   if (existingRes.error) return { ok: false, error: 'ORDER_WRITE_FAILED', message: existingRes.error.message };
   const orderIdByExt = new Map<string, string>();
   for (const row of (existingRes.data ?? []) as { id: string; external_order_id: string }[]) {
@@ -319,7 +297,7 @@ export async function checkoutUniversalCart(input: CheckoutCartInput): Promise<C
     }));
 
   if (rowsToInsert.length > 0) {
-    const insRes = await supa.from('product_orders').insert(rowsToInsert).select('id, external_order_id');
+    const insRes = await repo.insertPendingOrders(supa, rowsToInsert);
     if (insRes.error) return { ok: false, error: 'ORDER_WRITE_FAILED', message: insRes.error.message };
     for (const row of (insRes.data ?? []) as { id: string; external_order_id: string }[]) {
       orderIdByExt.set(row.external_order_id, row.id);
@@ -357,11 +335,7 @@ export async function checkoutUniversalCart(input: CheckoutCartInput): Promise<C
     // 9a. SETTLE — flip the first-party orders to converted (best-effort; money
     //     already recorded against checkout_id, so a failure here is reconcilable).
     const walletExts = walletLines.map((l) => l.externalOrderId);
-    const updRes = await supa
-      .from('product_orders')
-      .update({ state: 'converted', purchased_at: new Date().toISOString() })
-      .eq('user_id', userId)
-      .in('external_order_id', walletExts);
+    const updRes = await repo.convertOrdersByExternalIds(supa, userId, walletExts, new Date().toISOString());
     if (updRes.error) {
       console.error(`[${VTID}] order convert failed for checkout ${checkoutId}:`, updRes.error.message);
     }
@@ -392,11 +366,7 @@ export async function checkoutUniversalCart(input: CheckoutCartInput): Promise<C
     ...(walletOrder ? walletLines.map((l) => l.item.id) : []),
   ];
   if (completedItemIds.length > 0) {
-    const compRes = await supa
-      .from('universal_cart_items')
-      .update({ status: 'completed' })
-      .eq('cart_id', cartId)
-      .in('id', completedItemIds);
+    const compRes = await repo.completeCartItems(supa, cartId, completedItemIds);
     if (compRes.error) {
       console.error(`[${VTID}] cart item completion failed for checkout ${checkoutId}:`, compRes.error.message);
     }
@@ -454,7 +424,7 @@ async function emitPurchaseEvents(
     });
   }
   if (rows.length === 0) return;
-  const { error } = await supa.from('shop_video_events').insert(rows);
+  const { error } = await repo.insertShopVideoEvents(supa, rows);
   if (error) console.error(`[${VTID}] shop_video_events purchase insert failed:`, error.message);
 }
 

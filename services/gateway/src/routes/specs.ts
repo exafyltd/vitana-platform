@@ -325,15 +325,15 @@ async function generateSpecWithLLM(vtid: string, title: string, summary: string,
 // ===========================================================================
 // LLM System Prompt for Spec Generation
 // ===========================================================================
-const SPEC_GEN_SYSTEM_PROMPT = `You are a senior software architect generating implementation specifications for the Vitana platform. You have deep knowledge of the system architecture and produce production-ready specs.
+export const SPEC_GEN_SYSTEM_PROMPT = `You are a senior software architect generating implementation specifications for the Vitana platform. You have deep knowledge of the system architecture and produce production-ready specs.
 
 ## Vitana Platform Architecture
 
 ### Services
-- **Gateway** (Node.js/Express, TypeScript): Main backend API on Cloud Run
+- **Gateway** (Node.js/Express, TypeScript): Main backend API on AWS ECS (service \`vitana-gateway-awsdr\` in prod, \`vitana-gateway\` in staging — see this repo's CLAUDE.md §1b; GCP/Cloud Run is fully decommissioned, do not reference it as a deploy target)
   - Routes: services/gateway/src/routes/ (auth.ts, orb-live.ts, specs.ts, autopilot.ts, vtid.ts, board-adapter.ts, etc.)
   - Services: services/gateway/src/services/ (oasis-event-service.ts, gemini-operator.ts, spec-quality-agent.ts, etc.)
-  - Frontend: services/gateway/src/frontend/command-hub/app.js (vanilla JS, ~30k lines)
+  - Frontend: services/gateway/src/frontend/command-hub/app.js (vanilla JS, a large single-file bundle — tens of thousands of lines; do not cite a specific line count, it drifts)
   - Middleware: services/gateway/src/middleware/auth-supabase-jwt.ts
   - Entry: services/gateway/src/index.ts
 
@@ -356,7 +356,7 @@ const SPEC_GEN_SYSTEM_PROMPT = `You are a senior software architect generating i
 - Spec pipeline: missing → draft → validated → quality_checked → approved
 - Task lifecycle: scheduled → in_progress → completed/failed
 - Frontend uses showToast() for notifications, renderApp() rebuilds entire DOM
-- Deploy via GitHub Actions EXEC-DEPLOY.yml → Cloud Run source deploy
+- Deploy: push/merge to \`main\` auto-deploys to AWS ECS STAGING only (\`AWS-STAGE-DEPLOY-GATEWAY.yml\`, service \`vitana-gateway\`, verify on \`preview-aws-gateway.vitanaland.com\`). Production is reached ONLY via the Command Hub PUBLISH button or a manual \`workflow_dispatch\` of \`AWS-PROD-DEPLOY-GATEWAY.yml\` (service \`vitana-gateway-awsdr\`) with a recorded reason. GCP, Cloud Run, and \`EXEC-DEPLOY.yml\` are fully decommissioned (billing disabled 2026-08-16) — NEVER describe a deploy path through them
 - Auth: Supabase JWT tokens, auth middleware validates on every request
 
 ### API Patterns
@@ -375,6 +375,7 @@ const SPEC_GEN_SYSTEM_PROMPT = `You are a senior software architect generating i
 5. Reference actual Vitana file paths, table names, API endpoints, and patterns
 6. Consider dependencies and conflicts with other tasks mentioned in the context
 7. Be concrete about risk based on what the task actually touches
+8. NEVER cite a specific VTID number (e.g. "VTID-03573 is actively modifying...") as a coordination risk, dependency, or conflict unless that exact VTID appears verbatim in the "--- SYSTEM CONTEXT ---" section of the task message you are given (Related/Similar Tasks, OASIS Events, or the Example Spec). If no related VTID appears there, describe the risk or dependency generically (by area/file/table) without inventing a VTID number — a fabricated VTID reads as real and cannot be told apart from one that was actually retrieved
 
 ## Required Spec Structure
 
@@ -484,23 +485,49 @@ router.post('/:vtid/generate', async (req: Request, res: Response) => {
 
     const ledgerRow = ledgerData[0];
 
-    // Step 2: Set spec_status to 'generating'
-    const updateGeneratingResp = await fetch(`${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${vtid}`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: svcKey,
-        Authorization: `Bearer ${svcKey}`
-      },
-      body: JSON.stringify({
-        spec_status: 'generating',
-        spec_last_error: null,
-        updated_at: new Date().toISOString()
-      })
-    });
+    // Step 2: Atomically claim the row by setting spec_status to 'generating'.
+    // VTID-03913: this used to be an UNCONDITIONAL PATCH, so two concurrent
+    // callers for the same vtid (e.g. two ECS task replicas each running
+    // their own operator-planner sweep, VTID-03902) could both "claim" it,
+    // both proceed to generate, and race on get_next_spec_version + the
+    // oasis_specs insert — the loser hit spec_insert_failed and the ledger
+    // reset to spec_status='missing' with an error, permanently stuck since
+    // this route never auto-retries a row with spec_last_error set.
+    // `spec_status=not.eq.generating` makes the claim a compare-and-swap:
+    // it succeeds from missing/draft/approved/etc (any legitimate starting
+    // state, including a human re-requesting a regenerate) but fails while
+    // another caller's generation is already in flight. PostgREST's
+    // `Prefer: return=representation` on a PATCH echoes back the rows it
+    // actually touched, so an empty array means the claim was lost.
+    const claimResp = await fetch(
+      `${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${vtid}&spec_status=not.eq.generating`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: svcKey,
+          Authorization: `Bearer ${svcKey}`,
+          Prefer: 'return=representation'
+        },
+        body: JSON.stringify({
+          spec_status: 'generating',
+          spec_last_error: null,
+          updated_at: new Date().toISOString()
+        })
+      }
+    );
 
-    if (!updateGeneratingResp.ok) {
-      console.error(`[VTID-01188] Failed to set spec_status to generating`);
+    if (!claimResp.ok) {
+      console.error(`[VTID-01188] Failed to claim ${vtid} for generation`);
+      return res.status(502).json({ ok: false, error: 'claim_failed' });
+    }
+
+    const claimedRows = await claimResp.json() as any[];
+    if (claimedRows.length === 0) {
+      // Someone else is already generating a spec for this vtid right now.
+      // Leave the ledger untouched — the in-flight caller owns the row.
+      console.log(`[VTID-01188] ${vtid} is already being generated by another caller; skipping`);
+      return res.status(409).json({ ok: false, error: 'already_generating', vtid });
     }
 
     // Emit generate requested event

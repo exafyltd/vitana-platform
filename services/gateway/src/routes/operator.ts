@@ -34,6 +34,10 @@ import { randomUUID } from 'crypto';
 import { processMessage } from '../services/ai-orchestrator';
 // VTID-0536: Gemini Operator Tools Bridge
 import { processWithGemini } from '../services/gemini-operator';
+import { writeDevMemory } from '../services/dev-agent-memory';
+// VTID-03851: verified-caller marker for autopilot_execute_task (set or
+// cleared on EVERY /chat request — threadId is client-supplied).
+import { setThreadAuth, clearThreadAuth } from '../services/operator-execute-authz';
 import {
   ingestOperatorEvent,
   getTasksSummary,
@@ -70,7 +74,7 @@ import {
   toRevisionRow,
 } from '../services/aws-gateway-admin';
 // Note: deployOrchestrator + emitOasisEvent are imported mid-file (lines ~590).
-import { requireAdminAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import { requireAdminAuth, optionalAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 // VTID-0525-B: naturalLanguageService disabled for MVP - using simple command matching
 // import { naturalLanguageService } from '../services/natural-language-service';
 import {
@@ -101,6 +105,80 @@ function getOperatorRole(req: Request): 'operator' | 'admin' | 'system' {
   return 'system';
 }
 
+// VTID-03928: tool names whose SUCCESSFUL result represents a real decision
+// or outcome worth remembering across sessions — not every tool call (a
+// codebase search or a status read is not a decision), and not a failed
+// call (nothing to remember from an attempt that didn't happen).
+const SIGNIFICANT_OUTCOME_TOOLS = new Set([
+  'dev_merge_pr',
+  'dev_deploy_service',
+  'dev_approve_spec',
+  'dev_approve_item',
+  'autopilot_create_task',
+]);
+
+// VTID-03928: dev_agent_memory's recall (VTID-03892) already runs correctly
+// on every Operator turn, including a brand-new thread's first message —
+// that IS the "understand relevance, don't read everything" mechanism the
+// platform owner asked for, and it already works (verified against staging,
+// VTID-03926). The actual gap: writeDevMemory() was never called anywhere
+// in the live Operator path, so every one of the 26 existing rows is a
+// one-time changelog backfill — nothing was feeding it as real work
+// happened. This closes that gap: after a real outcome (a task created, a
+// PR merged, a spec approved, a service deployed), auto-write a compact
+// summary so the NEXT session's recall actually has real history to find,
+// not just a historical snapshot. Fire-and-forget and fail-open, matching
+// recallDevMemory's own convention — a memory-write failure must never
+// block or fail the user-facing chat response.
+async function recordSessionOutcomeMemory(params: {
+  threadId: string;
+  vtid?: string;
+  toolResults?: Array<{ name: string; response: Record<string, unknown> }>;
+  finalCreatedTask?: CreatedTask;
+}): Promise<void> {
+  try {
+    const { threadId, vtid, toolResults, finalCreatedTask } = params;
+    const entries: Array<{ title: string; content: string; vtid?: string }> = [];
+
+    if (finalCreatedTask && !finalCreatedTask.duplicate) {
+      entries.push({
+        title: `Operator created task ${finalCreatedTask.vtid}: ${finalCreatedTask.title}`,
+        content: `Created via Operator Console thread ${threadId} (mode: ${finalCreatedTask.mode}).`,
+        vtid: finalCreatedTask.vtid,
+      });
+    }
+
+    for (const tr of toolResults || []) {
+      if (!SIGNIFICANT_OUTCOME_TOOLS.has(tr.name) || tr.response?.ok !== true) continue;
+      const r = tr.response;
+      const outcomeVtid = (typeof r.vtid === 'string' ? r.vtid : undefined) || vtid;
+      entries.push({
+        title: `Operator ran ${tr.name}${outcomeVtid ? ` for ${outcomeVtid}` : ''}`,
+        content: `Thread ${threadId} — ${tr.name} succeeded. Result: ${JSON.stringify(r).slice(0, 500)}`,
+        vtid: outcomeVtid,
+      });
+    }
+
+    for (const entry of entries) {
+      const written = await writeDevMemory({
+        repo: 'vitana-platform',
+        category: 'task_outcome',
+        title: entry.title.slice(0, 200),
+        content: entry.content,
+        vtid: entry.vtid,
+        importance: 50,
+        source: 'session',
+        tags: ['operator-console', 'auto-recorded'],
+      });
+      if (!written.ok) {
+        console.warn(`[VTID-03928] writeDevMemory failed, continuing: ${written.error}`);
+      }
+    }
+  } catch (err: any) {
+    console.warn(`[VTID-03928] recordSessionOutcomeMemory threw, continuing: ${err?.message}`);
+  }
+}
+
 // ==================== VTID-0509 Schemas ====================
 
 // VTID-0531: Use extended schema from types/operator-chat.ts (OperatorChatMessageSchema)
@@ -125,7 +203,11 @@ const FileUploadSchema = z.object({
  * VTID-0531: Extended with threadId, vtid, role, mode support and unified OASIS event logging
  * VTID-0532: Added task detection and automatic VTID/Task creation
  */
-router.post('/chat', async (req: Request, res: Response) => {
+// VTID-03851: optionalAuth verifies a bearer token when one is present and
+// attaches req.identity; it never rejects, so the chat route's existing
+// anonymous behaviour is unchanged — only autopilot_execute_task reads the
+// resulting marker and refuses without a verified exafy_admin.
+router.post('/chat', optionalAuth, async (req: Request, res: Response) => {
   const requestId = randomUUID();
   console.log(`[Operator Chat] Request ${requestId} started`);
 
@@ -146,6 +228,20 @@ router.post('/chat', async (req: Request, res: Response) => {
     // VTID-0531: Normalize threadId - generate if missing
     const threadId = validation.data.threadId || randomUUID();
     const createdAt = new Date().toISOString();
+
+    // VTID-03851: record what THIS request proved about its caller. The
+    // threadId comes from the client, so an unauthenticated request must
+    // clear any marker a previous (admin) request left on the same thread.
+    // impact-allow-no-oasis: pre-existing handler — VTID-0531 already
+    // persists the user and assistant turns as OASIS chat events further
+    // down (assistantEventResult / oasis_ref). VTID-03851 only added
+    // optionalAuth on the registration line; no new state mutation here.
+    const callerIdentity = (req as AuthenticatedRequest).identity;
+    if (callerIdentity?.user_id) {
+      setThreadAuth(threadId, { user_id: callerIdentity.user_id, exafy_admin: callerIdentity.exafy_admin === true });
+    } else {
+      clearThreadAuth(threadId);
+    }
 
     // VTID-0531: Validate VTID if provided (warn but don't fail)
     let validatedVtid: string | undefined = validation.data.vtid;
@@ -231,7 +327,9 @@ router.post('/chat', async (req: Request, res: Response) => {
         sourceMessageId: operatorMessageId
       });
 
-      if (createdTask) {
+      if (createdTask?.duplicate) {
+        console.log(`[VTID-03819] Similar task already exists: ${createdTask.vtid} - "${createdTask.title}" — no new task created`);
+      } else if (createdTask) {
         console.log(`[VTID-0532] Task created: ${createdTask.vtid} - "${createdTask.title}"`);
       } else {
         console.warn(`[VTID-0532] Task creation failed for request ${requestId}`);
@@ -243,6 +341,17 @@ router.post('/chat', async (req: Request, res: Response) => {
     // Falls back to local routing if Gemini API is not configured
     // VTID-01027: Pass conversation history for session memory
     console.log(`[VTID-01027] Processing with conversation_id: ${conversation_id}, context messages: ${context?.length || 0}`);
+    // VTID-03926: processWithGemini()/getRouterToolDefinitions() have accepted
+    // a userRole param since VTID-DEV-ASSIST specifically to gate every
+    // dev_* tool (dev_search_codebase, dev_read_file, dev_db_query, PR/deploy
+    // tools) to developer/admin callers — but this route never resolved or
+    // passed one, so getRouterToolDefinitions(undefined) filtered out every
+    // dev_* tool for every caller, including an authenticated exafy_admin
+    // session. callerIdentity is already resolved above (line ~164) from the
+    // verified JWT (optionalAuth), not a client-supplied header — mirror that
+    // trust level here rather than the spoofable x-operator-role header
+    // getOperatorRole() reads elsewhere in this file.
+    const geminiUserRole = callerIdentity?.exafy_admin === true ? 'admin' : undefined;
     const geminiResult = await processWithGemini({
       text: message,
       threadId,
@@ -254,7 +363,9 @@ router.post('/chat', async (req: Request, res: Response) => {
       },
       // VTID-01027: Conversation history for context
       conversationHistory: context || [],
-      conversationId: conversation_id
+      conversationId: conversation_id,
+      // VTID-03926: authorize dev_* tools for a verified exafy_admin caller
+      userRole: geminiUserRole
     });
 
     // VTID-0536: Check if Gemini created a task via tools (in addition to explicit /task command)
@@ -318,6 +429,14 @@ router.post('/chat', async (req: Request, res: Response) => {
     if (geminiResult.toolResults && geminiResult.toolResults.length > 0) {
       response.toolResults = geminiResult.toolResults;
     }
+
+    // VTID-03928: fire-and-forget — must never delay or fail the chat response.
+    recordSessionOutcomeMemory({
+      threadId,
+      vtid: validatedVtid,
+      toolResults: geminiResult.toolResults,
+      finalCreatedTask,
+    }).catch((err) => console.warn(`[VTID-03928] recordSessionOutcomeMemory rejected: ${err?.message}`));
 
     return res.status(200).json(response);
 

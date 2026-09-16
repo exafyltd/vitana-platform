@@ -25,6 +25,7 @@
  */
 
 import type { Response } from 'express';
+import { resolveOrbSurface, isWorkSurface } from '../surface';
 import type WebSocket from 'ws';
 import WebSocketPkg from 'ws';
 import { randomUUID } from 'crypto';
@@ -862,13 +863,8 @@ export async function handleLiveSessionStart(
   {
     const idResolvedRoute =
       typeof (body as any).current_route === 'string' ? (body as any).current_route : '';
-    const idResolvedSurface = clientContext.isMobile
-      ? 'vitanaland'
-      : idResolvedRoute.startsWith('/command-hub')
-        ? 'command-hub'
-        : idResolvedRoute.startsWith('/admin')
-          ? 'admin'
-          : 'vitanaland';
+    // VTID-03848: shared resolver (adds /backoffice; same mobile-first rule).
+    const idResolvedSurface = resolveOrbSurface({ currentRoute: idResolvedRoute, isMobile: !!clientContext.isMobile });
     emitOasisEvent({
       vtid: 'DEV-COMHU-0502',
       type: 'orb.session.identity.resolved',
@@ -888,7 +884,7 @@ export async function handleLiveSessionStart(
         active_role: (req.identity as any)?.active_role ?? null,
         // Flag the drift case explicitly: an authenticated surface running anonymous.
         anonymous_on_authenticated_surface:
-          isAnonymousSession && (idResolvedSurface === 'command-hub' || idResolvedSurface === 'admin'),
+          isAnonymousSession && isWorkSurface(idResolvedSurface),
       },
       actor_id: req.identity?.user_id ?? undefined,
       surface: 'orb',

@@ -41,6 +41,7 @@ import {
   fetchPeople,
   type RawPost,
 } from '../social-memory/social-memory-repository';
+import * as repo from './discovery-tools-repository';
 
 type Handler = (args: OrbToolArgs, id: OrbToolIdentity, sb: SupabaseClient) => Promise<OrbToolResult>;
 
@@ -106,14 +107,7 @@ async function getCompassAndWeakestPillar(
   let category: string | null = null;
   let weakest: string | null = null;
   try {
-    const { data } = await sb
-      .from('life_compass')
-      .select('primary_goal, category')
-      .eq('user_id', userId)
-      .eq('is_active', true)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const { data } = await repo.fetchLifeCompassGoal(sb, userId);
     const row = data as { primary_goal: string | null; category: string | null } | null;
     goal = (row?.primary_goal || '').trim() || null;
     category = (row?.category || '').trim() || null;
@@ -121,13 +115,7 @@ async function getCompassAndWeakestPillar(
     /* best-effort */
   }
   try {
-    const { data } = await sb
-      .from('vitana_index_scores')
-      .select('pillars')
-      .eq('user_id', userId)
-      .order('computed_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const { data } = await repo.fetchLatestVitanaIndexScore(sb, userId);
     const pillars = (data as { pillars: Record<string, number> | null } | null)?.pillars;
     if (pillars && typeof pillars === 'object') {
       const pairs = Object.entries(pillars).filter(([, v]) => typeof v === 'number');
@@ -188,11 +176,7 @@ export async function tool_global_search(
     tasks.push(
       (async () => {
         try {
-          const { data } = await sb
-            .from('profiles')
-            .select('user_id, display_name, handle, vitana_id, city')
-            .or(`display_name.ilike.*${safe}*,handle.ilike.*${safe}*`)
-            .limit(perCategory + 5);
+          const { data } = await repo.searchProfilesByNameOrHandle(sb, safe, perCategory + 5);
           for (const row of (data as SearchGroups['people'] | null) ?? []) {
             if (row.user_id === id.user_id || blocked.has(row.user_id)) continue;
             if (found.people.length < perCategory) found.people.push(row);
@@ -208,14 +192,7 @@ export async function tool_global_search(
     tasks.push(
       (async () => {
         try {
-          const { data } = await sb
-            .from('profile_posts')
-            .select('id, user_id, content, created_at')
-            .eq('is_public', true)
-            .neq('moderation_status', 'rejected')
-            .ilike('content', `%${query}%`)
-            .order('created_at', { ascending: false })
-            .limit(perCategory + 5);
+          const { data } = await repo.searchPublicPosts(sb, query, perCategory + 5);
           const rows = ((data as Array<{ id: string; user_id: string; content: string | null; created_at: string }> | null) ?? []).filter(
             (p) =>
               !exclusions.blocked.has(p.user_id) &&
@@ -243,13 +220,7 @@ export async function tool_global_search(
   tasks.push(
     (async () => {
       try {
-        const { data } = await sb
-          .from('global_community_events')
-          .select('id, title, start_time, location')
-          .gte('start_time', new Date().toISOString())
-          .or(`title.ilike.*${safe}*,description.ilike.*${safe}*`)
-          .order('start_time', { ascending: true })
-          .limit(perCategory);
+        const { data } = await repo.searchUpcomingEventsForGlobalSearch(sb, safe, perCategory);
         found.events = (data as SearchGroups['events'] | null) ?? [];
       } catch {
         /* lane is best-effort */
@@ -262,13 +233,7 @@ export async function tool_global_search(
     tasks.push(
       (async () => {
         try {
-          const { data } = await sb
-            .from('community_groups')
-            .select('id, name, topic_key, description')
-            .eq('tenant_id', id.tenant_id)
-            .eq('is_public', true)
-            .or(`name.ilike.*${safe}*,description.ilike.*${safe}*,topic_key.ilike.*${safe}*`)
-            .limit(perCategory);
+          const { data } = await repo.searchTenantGroups(sb, id.tenant_id, safe, perCategory);
           found.groups = (data as SearchGroups['groups'] | null) ?? [];
         } catch {
           /* lane is best-effort */
@@ -280,12 +245,7 @@ export async function tool_global_search(
     tasks.push(
       (async () => {
         try {
-          const { data } = await sb
-            .from('products_catalog')
-            .select('id, name, product_type')
-            .eq('tenant_id', id.tenant_id)
-            .ilike('name', `%${query}%`)
-            .limit(perCategory);
+          const { data } = await repo.searchTenantProducts(sb, id.tenant_id, query, perCategory);
           found.products = (data as SearchGroups['products'] | null) ?? [];
         } catch {
           /* catalog may not be deployed in this env */
@@ -295,12 +255,7 @@ export async function tool_global_search(
     tasks.push(
       (async () => {
         try {
-          const { data } = await sb
-            .from('services_catalog')
-            .select('id, name, service_type, provider_name')
-            .eq('tenant_id', id.tenant_id)
-            .ilike('name', `%${query}%`)
-            .limit(perCategory);
+          const { data } = await repo.searchTenantServices(sb, id.tenant_id, query, perCategory);
           found.services = (data as SearchGroups['services'] | null) ?? [];
         } catch {
           /* catalog may not be deployed in this env */
@@ -511,11 +466,7 @@ async function resolveRecommendation(
           ? pending.value.payload.id.trim()
           : '';
       if (pendingId) {
-        const { data, error } = await sb
-          .from('autopilot_recommendations')
-          .select('*')
-          .eq('id', pendingId)
-          .maybeSingle();
+        const { data, error } = await repo.fetchRecommendationById(sb, pendingId);
         const rec = !error ? (data as RecRow | null) : null;
         if (rec && (!rec.user_id || rec.user_id === id.user_id)) {
           return { ok: true, rec };
@@ -529,11 +480,7 @@ async function resolveRecommendation(
   }
 
   if (UUID_RX.test(ref)) {
-    const { data, error } = await sb
-      .from('autopilot_recommendations')
-      .select('*')
-      .eq('id', ref)
-      .maybeSingle();
+    const { data, error } = await repo.fetchRecommendationById(sb, ref);
     if (error) return { ok: false, res: { ok: false, error: `${toolName}: ${error.message}` } };
     const rec = data as RecRow | null;
     if (!rec) {
@@ -552,18 +499,7 @@ async function resolveRecommendation(
     return { ok: true, rec };
   }
 
-  let q = sb
-    .from('autopilot_recommendations')
-    .select('*')
-    .or(`user_id.eq.${id.user_id},user_id.is.null`)
-    .order('created_at', { ascending: false })
-    .limit(5);
-  if (statuses && statuses.length > 0) q = q.in('status', statuses);
-  if (ref) {
-    const safe = orSafe(ref);
-    q = q.or(`title.ilike.*${safe}*,summary.ilike.*${safe}*`);
-  }
-  const { data, error } = await q;
+  const { data, error } = await repo.searchRecommendations(sb, id.user_id, statuses, ref ? orSafe(ref) : null);
   if (error) return { ok: false, res: { ok: false, error: `${toolName}: ${error.message}` } };
   const rows = (data as RecRow[] | null) ?? [];
   if (rows.length === 0) {
@@ -626,10 +562,7 @@ export async function tool_snooze_recommendation(
     const rec = resolved.rec;
 
     // Same RPC the Command Hub snooze button calls (VTID-01180).
-    const { data, error } = await sb.rpc('snooze_autopilot_recommendation', {
-      p_recommendation_id: rec.id,
-      p_hours: hours,
-    });
+    const { data, error } = await repo.snoozeAutopilotRecommendation(sb, rec.id, hours);
     if (error) return { ok: false, error: `snooze_recommendation: ${error.message}` };
     const resp = data as { ok?: boolean; error?: string; snoozed_until?: string } | null;
     if (!resp?.ok) {
@@ -674,10 +607,7 @@ export async function tool_dismiss_recommendation(
     }
 
     // Same RPC the Command Hub dismiss button calls (VTID-01180).
-    const { data, error } = await sb.rpc('reject_autopilot_recommendation', {
-      p_recommendation_id: rec.id,
-      p_reason: reason || null,
-    });
+    const { data, error } = await repo.rejectAutopilotRecommendation(sb, rec.id, reason || null);
     if (error) return { ok: false, error: `dismiss_recommendation: ${error.message}` };
     const resp = data as { ok?: boolean; error?: string } | null;
     if (!resp?.ok) {
@@ -790,14 +720,8 @@ async function resolveMyIntent(
   ref: string,
   toolName: string,
 ): Promise<IntentResolution> {
-  const COLS = 'intent_id, intent_kind, category, title, scope, status, created_at';
   if (UUID_RX.test(ref)) {
-    const { data, error } = await sb
-      .from('user_intents')
-      .select(COLS)
-      .eq('intent_id', ref)
-      .eq('requester_user_id', id.user_id)
-      .maybeSingle();
+    const { data, error } = await repo.fetchIntentById(sb, ref, id.user_id);
     if (error) return { ok: false, res: { ok: false, error: `${toolName}: ${error.message}` } };
     const intent = data as IntentRow | null;
     if (!intent) {
@@ -813,18 +737,7 @@ async function resolveMyIntent(
     return { ok: true, intent };
   }
 
-  let q = sb
-    .from('user_intents')
-    .select(COLS)
-    .eq('requester_user_id', id.user_id)
-    .in('status', ACTIVE_INTENT_STATUSES)
-    .order('created_at', { ascending: false })
-    .limit(5);
-  if (ref) {
-    const safe = orSafe(ref);
-    q = q.or(`title.ilike.*${safe}*,scope.ilike.*${safe}*,category.ilike.*${safe}*`);
-  }
-  const { data, error } = await q;
+  const { data, error } = await repo.searchMyIntents(sb, id.user_id, ACTIVE_INTENT_STATUSES, ref ? orSafe(ref) : null);
   if (error) return { ok: false, res: { ok: false, error: `${toolName}: ${error.message}` } };
   const rows = (data as IntentRow[] | null) ?? [];
   if (rows.length === 0) {
@@ -885,13 +798,7 @@ export async function tool_update_intent(
     if (!resolved.ok) return resolved.res;
     const intent = resolved.intent;
 
-    const { data, error } = await sb
-      .from('user_intents')
-      .update(patch)
-      .eq('intent_id', intent.intent_id)
-      .eq('requester_user_id', id.user_id)
-      .select('intent_id, title, scope, category')
-      .maybeSingle();
+    const { data, error } = await repo.updateMyIntent(sb, intent.intent_id, id.user_id, patch);
     if (error) return { ok: false, error: `update_intent: ${error.message}` };
     if (!data) return { ok: false, error: 'not_found_or_not_owner' };
     const updated = data as { intent_id: string; title: string | null; scope: string | null; category: string | null };
@@ -936,13 +843,7 @@ export async function tool_delete_intent(
 
     // The platform's removal path is status='closed' (POST /intents/:id/close);
     // there is no hard-delete for user_intents.
-    const { data, error } = await sb
-      .from('user_intents')
-      .update({ status: 'closed' })
-      .eq('intent_id', intent.intent_id)
-      .eq('requester_user_id', id.user_id)
-      .select('intent_id')
-      .maybeSingle();
+    const { data, error } = await repo.closeMyIntent(sb, intent.intent_id, id.user_id);
     if (error) return { ok: false, error: `delete_intent: ${error.message}` };
     if (!data) return { ok: false, error: 'not_found_or_not_owner' };
 
@@ -977,20 +878,7 @@ export async function tool_browse_intent_board(
   try {
     // Mirrors GET /api/v1/intent-board: tenant-scoped, open only, never the
     // user's own posts, partner_seek excluded on the default surface.
-    let q = sb
-      .from('user_intents')
-      .select('intent_id, intent_kind, category, title, scope, created_at')
-      .eq('tenant_id', id.tenant_id)
-      .eq('status', 'open')
-      .neq('requester_user_id', id.user_id)
-      .neq('intent_kind', 'partner_seek')
-      .order('created_at', { ascending: false })
-      .limit(limit);
-    if (query) {
-      const safe = orSafe(query);
-      q = q.or(`title.ilike.*${safe}*,scope.ilike.*${safe}*,category.ilike.*${safe}*`);
-    }
-    const { data, error } = await q;
+    const { data, error } = await repo.fetchIntentBoard(sb, id.tenant_id, id.user_id, limit, query ? orSafe(query) : null);
     if (error) return { ok: false, error: `browse_intent_board: ${error.message}` };
     const rows = (data as IntentRow[] | null) ?? [];
 
@@ -1048,12 +936,7 @@ export async function tool_dispute_match(
     // No match named → look across the user's own intents' matches; only
     // auto-pick when it is unambiguous (exactly one recent match).
     if (!matchId) {
-      const { data: myIntents, error: intErr } = await sb
-        .from('user_intents')
-        .select('intent_id')
-        .eq('requester_user_id', id.user_id)
-        .order('created_at', { ascending: false })
-        .limit(50);
+      const { data: myIntents, error: intErr } = await repo.fetchMyIntentIds(sb, id.user_id, 50);
       if (intErr) return { ok: false, error: `dispute_match: ${intErr.message}` };
       const intentIds = ((myIntents as Array<{ intent_id: string }> | null) ?? []).map((r) => r.intent_id);
       if (intentIds.length === 0) {
@@ -1064,12 +947,7 @@ export async function tool_dispute_match(
         };
       }
       const list = intentIds.join(',');
-      const { data: matches, error: mErr } = await sb
-        .from('intent_matches')
-        .select('match_id, intent_a_id, intent_b_id, state, created_at')
-        .or(`intent_a_id.in.(${list}),intent_b_id.in.(${list})`)
-        .order('created_at', { ascending: false })
-        .limit(5);
+      const { data: matches, error: mErr } = await repo.fetchRecentMatchesForIntents(sb, list, 5);
       if (mErr) return { ok: false, error: `dispute_match: ${mErr.message}` };
       const rows = (matches as Array<{ match_id: string; state: string | null; created_at: string | null }> | null) ?? [];
       if (rows.length === 0) {

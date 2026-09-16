@@ -10,6 +10,7 @@ import path from 'path';
 import { naturalLanguageService } from '../services/natural-language-service';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { createUserSupabaseClient } from '../lib/supabase-user';
+import * as repo from './command-hub-repository';
 
 const router = Router();
 
@@ -38,7 +39,7 @@ async function requireDeveloperAccess(
       return;
     }
     const userClient = createUserSupabaseClient(token);
-    const { data: meData } = await userClient.rpc('me_context');
+    const { data: meData } = await repo.fetchMeContext(userClient);
     const activeRole = meData?.active_role || null;
 
     if (activeRole && COMMAND_HUB_ROLES.includes(activeRole)) {

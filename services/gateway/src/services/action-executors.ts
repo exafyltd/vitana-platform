@@ -8,6 +8,7 @@
 import { registerActionExecutor } from './consent-gate';
 import { getSupabase } from '../lib/supabase';
 import { emitClickOutbound } from './reward-events';
+import * as repo from './action-executors-repository';
 
 export function registerAllActionExecutors(): void {
   // ---- shopping_add_to_list ----
@@ -20,13 +21,11 @@ export function registerAllActionExecutors(): void {
 
     // Upsert into user_offers_memory as 'saved' state (reuses the existing
     // VTID-01092 relationship memory system)
-    const { data, error } = await supabase.rpc('offers_set_state', {
-      p_payload: {
-        target_type: 'product',
-        target_id: product_id,
-        state: 'saved',
-        notes: typeof args.note === 'string' ? args.note : 'Added by Vitana Assistant',
-      },
+    const { data, error } = await repo.setOfferState(supabase, {
+      target_type: 'product',
+      target_id: product_id,
+      state: 'saved',
+      notes: typeof args.note === 'string' ? args.note : 'Added by Vitana Assistant',
     });
 
     if (error) return { ok: false, error: error.message };
@@ -95,20 +94,16 @@ export function registerAllActionExecutors(): void {
     const duration_minutes = typeof args.duration_minutes === 'number' ? args.duration_minutes : null;
     const calories = typeof args.calories === 'number' ? args.calories : null;
 
-    const { data, error } = await supabase
-      .from('wearable_workouts')
-      .insert({
-        tenant_id: ctx.tenant_id,
-        user_id: ctx.user_id,
-        provider: 'manual',
-        external_workout_id: `manual-${ctx.action_id}`,
-        workout_type,
-        started_at: typeof args.started_at === 'string' ? args.started_at : new Date().toISOString(),
-        duration_minutes,
-        calories,
-      })
-      .select('id')
-      .single();
+    const { data, error } = await repo.insertManualWearableWorkout(supabase, {
+      tenant_id: ctx.tenant_id,
+      user_id: ctx.user_id,
+      provider: 'manual',
+      external_workout_id: `manual-${ctx.action_id}`,
+      workout_type,
+      started_at: typeof args.started_at === 'string' ? args.started_at : new Date().toISOString(),
+      duration_minutes,
+      calories,
+    });
 
     if (error) return { ok: false, error: error.message };
     return {
@@ -129,19 +124,15 @@ export function registerAllActionExecutors(): void {
     const duration_minutes = typeof args.duration_minutes === 'number' ? args.duration_minutes : 30;
     const end_time = new Date(new Date(start_time).getTime() + duration_minutes * 60000).toISOString();
 
-    const { data, error } = await supabase
-      .from('calendar_events')
-      .insert({
-        tenant_id: ctx.tenant_id,
-        user_id: ctx.user_id,
-        title,
-        start_time,
-        end_time,
-        event_type: typeof args.event_type === 'string' ? args.event_type : 'wellness_nudge',
-        wellness_tags: Array.isArray(args.wellness_tags) ? args.wellness_tags : [],
-      })
-      .select('id')
-      .single();
+    const { data, error } = await repo.insertCalendarEvent(supabase, {
+      tenant_id: ctx.tenant_id,
+      user_id: ctx.user_id,
+      title,
+      start_time,
+      end_time,
+      event_type: typeof args.event_type === 'string' ? args.event_type : 'wellness_nudge',
+      wellness_tags: Array.isArray(args.wellness_tags) ? args.wellness_tags : [],
+    });
 
     if (error) return { ok: false, error: error.message };
     return {

@@ -26,6 +26,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { getSupabase } from '../lib/supabase';
+import * as repo from './product-analytics-repository';
 
 const router = Router();
 const LOG_PREFIX = '[Analytics:Product]';
@@ -115,9 +116,7 @@ router.post('/events/batch', async (req: Request, res: Response) => { // public-
     return res.status(202).json({ ok: true, inserted: 0, dropped: parsed.data.events.length });
   }
 
-  const { error } = await supa
-    .from('product_analytics_events')
-    .upsert(writableEvents, { onConflict: 'event_id', ignoreDuplicates: true });
+  const { error } = await repo.upsertProductAnalyticsEventsBatch(supa, writableEvents);
 
   if (error) {
     console.error(`${LOG_PREFIX} insert failed: ${error.message}`);

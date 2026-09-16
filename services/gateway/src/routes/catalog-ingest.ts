@@ -43,6 +43,7 @@ import {
   type IngestFinishResponse,
   type IngestDryRunResponse,
 } from '../types/catalog-ingest';
+import * as repo from './catalog-ingest-repository';
 
 const router = Router();
 
@@ -139,16 +140,12 @@ router.post('/start', requireIngestAuth, async (req: Request, res: Response) => 
 
   const { source_network, source_url, triggered_by, notes } = parsed.data;
 
-  const { data, error } = await supabase
-    .from('catalog_sources')
-    .insert({
-      source_network,
-      source_url: source_url ?? null,
-      triggered_by,
-      notes: notes ?? null,
-    })
-    .select('run_id, started_at')
-    .single();
+  const { data, error } = await repo.insertCatalogSourceRun(supabase, {
+    source_network,
+    source_url: source_url ?? null,
+    triggered_by,
+    notes: notes ?? null,
+  });
 
   if (error || !data) {
     console.error('[catalog-ingest/start] insert failed:', error);
@@ -196,11 +193,7 @@ router.post('/merchants', requireIngestAuth, async (req: Request, res: Response)
   const { run_id, source_network, merchants } = parsed.data;
 
   // Verify run exists and is not yet finished
-  const { data: run, error: runErr } = await supabase
-    .from('catalog_sources')
-    .select('run_id, finished_at')
-    .eq('run_id', run_id)
-    .maybeSingle();
+  const { data: run, error: runErr } = await repo.fetchRunStatus(supabase, run_id);
   if (runErr || !run) {
     res.status(404).json({ ok: false, error: 'run_id not found', code: 'RUN_NOT_FOUND' });
     return;
@@ -241,21 +234,15 @@ router.post('/merchants', requireIngestAuth, async (req: Request, res: Response)
   }));
 
   // Identify which rows exist already (so we can split inserted vs updated counts)
-  const { data: existing } = await supabase
-    .from('merchants')
-    .select('source_network, source_merchant_id')
-    .eq('source_network', source_network)
-    .in(
-      'source_merchant_id',
-      rows.map((r) => r.source_merchant_id)
-    );
+  const { data: existing } = await repo.fetchMerchantsExisting(
+    supabase,
+    source_network,
+    rows.map((r) => r.source_merchant_id)
+  );
 
   const existingSet = new Set((existing ?? []).map((e) => `${e.source_network}::${e.source_merchant_id}`));
 
-  const { data: upserted, error: upsertErr } = await supabase
-    .from('merchants')
-    .upsert(rows, { onConflict: 'source_network,source_merchant_id' })
-    .select('id, source_merchant_id');
+  const { data: upserted, error: upsertErr } = await repo.upsertMerchants(supabase, rows);
 
   if (upsertErr) {
     result.ok = false;
@@ -297,11 +284,7 @@ router.post('/products', requireIngestAuth, async (req: Request, res: Response) 
 
   const { run_id, source_network, products } = parsed.data;
 
-  const { data: run, error: runErr } = await supabase
-    .from('catalog_sources')
-    .select('run_id, finished_at')
-    .eq('run_id', run_id)
-    .maybeSingle();
+  const { data: run, error: runErr } = await repo.fetchRunStatus(supabase, run_id);
   if (runErr || !run) {
     res.status(404).json({ ok: false, error: 'run_id not found', code: 'RUN_NOT_FOUND' });
     return;
@@ -323,22 +306,15 @@ router.post('/products', requireIngestAuth, async (req: Request, res: Response) 
 
   // Resolve merchants: source_merchant_id -> merchants.id
   const uniqueMerchantIds = Array.from(new Set(products.map((p) => p.source_merchant_id)));
-  const { data: merchantRows } = await supabase
-    .from('merchants')
-    .select('id, source_merchant_id')
-    .eq('source_network', source_network)
-    .in('source_merchant_id', uniqueMerchantIds);
+  const { data: merchantRows } = await repo.fetchMerchantIdsBySourceIds(supabase, source_network, uniqueMerchantIds);
   const merchantMap = new Map((merchantRows ?? []).map((r) => [r.source_merchant_id, r.id]));
 
   // Existing products by (source_network, source_product_id) to detect update vs insert and drift
-  const { data: existing } = await supabase
-    .from('products')
-    .select('id, source_product_id, content_hash')
-    .eq('source_network', source_network)
-    .in(
-      'source_product_id',
-      products.map((p) => p.source_product_id)
-    );
+  const { data: existing } = await repo.fetchExistingProductsWithHash(
+    supabase,
+    source_network,
+    products.map((p) => p.source_product_id)
+  );
   const existingMap = new Map((existing ?? []).map((e) => [e.source_product_id, e]));
 
   const errors: ProductIngestError[] = [];
@@ -421,10 +397,7 @@ router.post('/products', requireIngestAuth, async (req: Request, res: Response) 
   }
 
   if (toUpsert.length > 0) {
-    const { data: upserted, error: upsertErr } = await supabase
-      .from('products')
-      .upsert(toUpsert, { onConflict: 'source_network,source_product_id' })
-      .select('source_product_id');
+    const { data: upserted, error: upsertErr } = await repo.upsertProducts(supabase, toUpsert);
 
     if (upsertErr) {
       result.ok = false;
@@ -450,16 +423,13 @@ router.post('/products', requireIngestAuth, async (req: Request, res: Response) 
   result.errors = errors;
 
   // Increment run stats
-  await supabase
-    .from('catalog_sources')
-    .update({
-      products_inserted: result.inserted,
-      products_updated: result.updated,
-      products_skipped: result.skipped_unchanged + result.skipped_missing_merchant,
-      errors: result.errors.length,
-      error_sample: result.errors.slice(0, 10),
-    })
-    .eq('run_id', run_id);
+  await repo.updateRunProductStats(supabase, run_id, {
+    products_inserted: result.inserted,
+    products_updated: result.updated,
+    products_skipped: result.skipped_unchanged + result.skipped_missing_merchant,
+    errors: result.errors.length,
+    error_sample: result.errors.slice(0, 10),
+  });
 
   res.json(result);
 });
@@ -486,11 +456,7 @@ router.post('/finish', requireIngestAuth, async (req: Request, res: Response) =>
 
   const { run_id, deactivate_stale, stale_threshold_days } = parsed.data;
 
-  const { data: run, error: runErr } = await supabase
-    .from('catalog_sources')
-    .select('run_id, source_network, started_at, finished_at, products_inserted, products_updated, products_skipped, errors')
-    .eq('run_id', run_id)
-    .maybeSingle();
+  const { data: run, error: runErr } = await repo.fetchRunForFinish(supabase, run_id);
   if (runErr || !run) {
     res.status(404).json({ ok: false, error: 'run_id not found', code: 'RUN_NOT_FOUND' });
     return;
@@ -503,13 +469,7 @@ router.post('/finish', requireIngestAuth, async (req: Request, res: Response) =>
   let deactivatedStale = 0;
   if (deactivate_stale) {
     const threshold = new Date(Date.now() - stale_threshold_days * 24 * 60 * 60 * 1000).toISOString();
-    const { data: deactivated, error: deactErr } = await supabase
-      .from('products')
-      .update({ is_active: false })
-      .eq('source_network', run.source_network)
-      .eq('is_active', true)
-      .lt('last_seen_at', threshold)
-      .select('id');
+    const { data: deactivated, error: deactErr } = await repo.deactivateStaleProducts(supabase, run.source_network, threshold);
     if (deactErr) {
       console.error('[catalog-ingest/finish] deactivate stale failed:', deactErr);
     } else {
@@ -518,10 +478,7 @@ router.post('/finish', requireIngestAuth, async (req: Request, res: Response) =>
   }
 
   const finishedAt = new Date().toISOString();
-  await supabase
-    .from('catalog_sources')
-    .update({ finished_at: finishedAt })
-    .eq('run_id', run_id);
+  await repo.markRunFinished(supabase, run_id, finishedAt);
 
   await emitOasisEvent({
     vtid: 'VTID-02000',
@@ -590,21 +547,14 @@ router.post('/dry-run', requireIngestAuth, async (req: Request, res: Response) =
   };
 
   const uniqueMerchantIds = Array.from(new Set(products.map((p) => p.source_merchant_id)));
-  const { data: merchantRows } = await supabase
-    .from('merchants')
-    .select('id, source_merchant_id')
-    .eq('source_network', source_network)
-    .in('source_merchant_id', uniqueMerchantIds);
+  const { data: merchantRows } = await repo.fetchMerchantIdsBySourceIds(supabase, source_network, uniqueMerchantIds);
   const merchantSet = new Set((merchantRows ?? []).map((r) => r.source_merchant_id));
 
-  const { data: existing } = await supabase
-    .from('products')
-    .select('source_product_id, content_hash')
-    .eq('source_network', source_network)
-    .in(
-      'source_product_id',
-      products.map((p) => p.source_product_id)
-    );
+  const { data: existing } = await repo.fetchExistingProductHashesOnly(
+    supabase,
+    source_network,
+    products.map((p) => p.source_product_id)
+  );
   const existingMap = new Map((existing ?? []).map((e) => [e.source_product_id, e.content_hash]));
 
   // Region resolution from a simple in-TS map mirror — approximation for dry-run only.
@@ -674,7 +624,7 @@ router.get('/health', async (_req: Request, res: Response) => {
 
   let tablesPresent = false;
   if (supabase) {
-    const { error } = await supabase.from('catalog_sources').select('run_id').limit(1);
+    const { error } = await repo.checkCatalogSourcesReachable(supabase);
     tablesPresent = !error;
   }
 

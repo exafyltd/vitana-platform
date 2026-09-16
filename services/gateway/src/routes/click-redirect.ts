@@ -29,6 +29,7 @@ import * as jose from 'jose';
 import { getSupabase } from '../lib/supabase';
 import { emitClickOutbound, emitGeoMismatch } from '../services/reward-events';
 import type { AttributionSurface } from '../types/catalog-ingest';
+import * as repo from './click-redirect-repository';
 
 const router = Router();
 
@@ -229,14 +230,7 @@ router.get('/:product_id', async (req: Request, res: Response) => {
   const { user_id, tenant_id: tokenTenantId } = extractUserIdOptimistic(req);
 
   // Resolve product
-  const { data: product, error: productErr } = await supabase
-    .from('products')
-    .select(
-      'id, title, brand, merchant_id, affiliate_url, source_network, origin_country, ships_to_countries, ships_to_regions, is_active'
-    )
-    .eq('id', productId)
-    .eq('is_active', true)
-    .maybeSingle();
+  const { data: product, error: productErr } = await repo.fetchActiveProductForRedirect(supabase, productId);
   if (productErr || !product) {
     res.status(404).send('Product not found or no longer available.');
     return;
@@ -247,18 +241,14 @@ router.get('/:product_id', async (req: Request, res: Response) => {
   let userRegion: string | null = null;
   let tenantId: string | null = tokenTenantId;
   if (user_id) {
-    const { data: userRow } = await supabase
-      .from('app_users')
-      .select('country_code, delivery_country_code, region_group')
-      .eq('user_id', user_id)
-      .maybeSingle();
+    const { data: userRow } = await repo.fetchAppUserGeoContext(supabase, user_id);
     userCountry = userRow?.delivery_country_code ?? userRow?.country_code ?? null;
     userRegion = userRow?.region_group ?? null;
   }
   if (!userCountry) {
     userCountry = getCountryHeader(req);
     if (userCountry) {
-      const { data } = await supabase.rpc('get_region_group', { p_country_code: userCountry });
+      const { data } = await repo.fetchRegionGroupForCountry(supabase, userCountry);
       userRegion = typeof data === 'string' ? data : null;
     }
   }
@@ -308,9 +298,8 @@ router.get('/:product_id', async (req: Request, res: Response) => {
   const stampedUrl = stampAffiliateUrl(product.affiliate_url, clickId, userIdHash);
 
   // Best-effort insert — don't block redirect on click log failure
-  supabase
-    .from('product_clicks')
-    .insert({
+  repo
+    .insertProductClick(supabase, {
       click_id: clickId,
       user_id,
       tenant_id: tenantId,
@@ -329,8 +318,8 @@ router.get('/:product_id', async (req: Request, res: Response) => {
     .then(({ error }) => {
       if (error) console.error('[click-redirect] click log insert failed (non-fatal):', error);
       if (attribution_recommendation_id) {
-        supabase
-          .rpc('increment_product_recommendation_click', { p_recommendation_id: attribution_recommendation_id })
+        repo
+          .incrementProductRecommendationClick(supabase, attribution_recommendation_id)
           .then(({ error: rpcError }: { error: unknown }) => {
             if (rpcError) console.error('[click-redirect] recommendation click-count bump failed (non-fatal):', rpcError);
           });

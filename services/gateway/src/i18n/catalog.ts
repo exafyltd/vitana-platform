@@ -53,6 +53,11 @@ export type GatewayI18nKey =
   | 'notif.signal_expired.body'
   | 'notif.reminder.title'
   | 'notif.fallback_app_name'
+  // VTID-03885: Partner Health Test Integration
+  | 'notif.partner_test_status_changed.title'
+  | 'notif.partner_test_status_changed.body'
+  | 'notif.partner_test_result_ready.title'
+  | 'notif.partner_test_result_ready.body'
   // Live room goes live → notify everyone who tapped "Notify me" on the scheduled session.
   | 'notif.live_going_live.title'
   | 'notif.live_going_live.body'

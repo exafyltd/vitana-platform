@@ -1,0 +1,73 @@
+$ python3 scripts/erpclaw-setup/db_query.py --action initialize-database 
+ERPClaw database initialized successfully at: postgresql://postgres@/erpclaw?host=/tmp&port=54329
+  Tables created: 216
+  Indexes created: 617
+  Skills registered: 22
+  Backend: PostgreSQL
+{
+  "status": "error",
+  "message": "unable to open database file"
+}
+
+$ python3 scripts/erpclaw-setup/db_query.py --action migrate --user-confirmed
+{
+  "status": "error",
+  "message": "Unknown flags: --user-confirmed. Check flag names and try again.",
+  "valid_flags": [
+    "--abbr",
+    "--account-id",
+    "--account-type",
+    "--accounts-frozen-till-date",
+    "--action",
+    "--answer",
+    "--audit-action",
+    "--backup-path",
+    "--check-action",
+    "--code",
+    "--company-id",
+    "--confirm",
+    "--conversion-factor",
+    "--country",
+    "--currency",
+    "--date-format",
+    "--db-path",
+    "--decimal-places",
+    "--default",
+    "--default-bank-account-id",
+    "--default-cash-account-id",
+    "--default-cost-center-id",
+    "--default-expense-account-id",
+    "--default-income-account-id",
+    "--default-payable-account-id",
+    "--default-receivable-account-id",
+    "--default-tax-template-id",
+    "--default-warehouse-id",
+    "--description",
+    "--discount-days",
+    "--discount-percentage",
+    "--dry-run",
+
+$ python3 scripts/db_query.py --action setup-company --name Vitanaland Trading LLC --abbr VTL --currency AED --country United Arab Emirates --industry saas --user-confirmed
+Traceback (most recent call last):
+  File "/home/user/avansaber/erpclaw/scripts/erpclaw-setup/db_query.py", line 3029, in <module>
+    main()
+  File "/home/user/avansaber/erpclaw/scripts/erpclaw-setup/db_query.py", line 3017, in main
+    ensure_db_exists(db_path)
+  File "/tmp/erpclaw-home/lib/erpclaw_lib/db.py", line 472, in ensure_db_exists
+    _reject_url_shaped_path(path)
+  File "/tmp/erpclaw-home/lib/erpclaw_lib/db.py", line 445, in _reject_url_shaped_path
+    raise ValueError(
+ValueError: database path looks like a postgresql connection URL, not a filesystem path: pass it as ERPCLAW_DB_URL (or the module's --db-url) so it is parsed as a URL. Refusing rather than creating a directory named after it, because a URL can carry a password and a directory name is not a place for one.
+
+$ python3 scripts/db_query.py --action list-companies 
+Traceback (most recent call last):
+  File "/home/user/avansaber/erpclaw/scripts/erpclaw-setup/db_query.py", line 3029, in <module>
+    main()
+  File "/home/user/avansaber/erpclaw/scripts/erpclaw-setup/db_query.py", line 3017, in main
+    ensure_db_exists(db_path)
+  File "/tmp/erpclaw-home/lib/erpclaw_lib/db.py", line 472, in ensure_db_exists
+    _reject_url_shaped_path(path)
+  File "/tmp/erpclaw-home/lib/erpclaw_lib/db.py", line 445, in _reject_url_shaped_path
+    raise ValueError(
+ValueError: database path looks like a postgresql connection URL, not a filesystem path: pass it as ERPCLAW_DB_URL (or the module's --db-url) so it is parsed as a URL. Refusing rather than creating a directory named after it, because a URL can carry a password and a directory name is not a place for one.
+

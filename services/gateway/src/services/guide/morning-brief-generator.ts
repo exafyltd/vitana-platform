@@ -19,6 +19,7 @@ import { getUserLocale } from '../../i18n/server-locale';
 import { fetchLifeCompass } from '../user-context-profiler';
 import { tierForScore, projectDay90 } from '../../lib/vitana-pillars';
 import { buildRankerContext, rankBatch } from '../recommendation-engine/ranking/index-pillar-weighter';
+import * as repo from './morning-brief-generator-repository';
 
 export interface MorningBriefInput {
   user_id: string;
@@ -81,20 +82,8 @@ export async function buildMorningBrief(
     const supabase = getSupabase();
     if (supabase) {
       const [indexRow, firstRow, compass, rankerCtx] = await Promise.all([
-        supabase
-          .from('vitana_index_scores')
-          .select('score_total, date')
-          .eq('user_id', input.user_id)
-          .order('date', { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-        supabase
-          .from('vitana_index_scores')
-          .select('date')
-          .eq('user_id', input.user_id)
-          .order('date', { ascending: true })
-          .limit(1)
-          .maybeSingle(),
+        repo.fetchLatestIndexScore(supabase, input.user_id),
+        repo.fetchFirstIndexScoreDate(supabase, input.user_id),
         fetchLifeCompass(supabase, input.user_id),
         buildRankerContext(supabase, input.user_id),
       ]);
@@ -119,14 +108,7 @@ export async function buildMorningBrief(
       // Top ranked Autopilot rec using the shared ranker. This query runs
       // for up to 10 recent community recs; rankBatch re-orders and the
       // top is picked.
-      const { data: recs } = await supabase
-        .from('autopilot_recommendations')
-        .select('id, title, source_ref, impact_score, economic_axis, contribution_vector, domain, status')
-        .eq('user_id', input.user_id)
-        .eq('source_type', 'community')
-        .eq('status', 'new')
-        .order('impact_score', { ascending: false })
-        .limit(10);
+      const { data: recs } = await repo.fetchTopNewCommunityRecommendations(supabase, input.user_id, 10);
       if (recs && recs.length > 0) {
         const ranked = rankBatch(recs as any, rankerCtx);
         if (ranked.length > 0) {

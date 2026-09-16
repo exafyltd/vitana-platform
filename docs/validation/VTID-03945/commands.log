@@ -1,0 +1,88 @@
+# VTID-03945 — commands run during this change
+
+## Investigation
+Read the post-VTID-03943 state of both routes on origin/main to confirm
+the duplication this refactor removes was real, not assumed:
+$ git show origin/main:services/gateway/src/routes/discover-search.ts | sed -n '305,357p'
+  (18-line manual let-hiddenBreakdown-with-conditional-reassignment block)
+$ git show origin/main:services/gateway/src/routes/discover-feed.ts | sed -n '190,249p'
+  (5-line inline spread with its own geo-summing formula)
+
+Confirmed the two formulas are NOT byte-identical in shape (search seeds
+past_purchases:0 upfront and carries it forward across a conditional;
+feed spreads hidden_breakdown directly into the response) even though
+they compute the same underlying invariant (geo = pre-filter geo count +
+limitations' own geo count) — exactly the kind of two-copies-of-one-rule
+shape this repo's CHANGE LOG already names as a recurring defect source
+(VTID-03644, VTID-03696, VTID-03943).
+
+## Fix
+services/gateway/src/services/limitations-filter.ts:
+  1. Added LimitationsHiddenBreakdown (8 fields, matches
+     applyUserLimitations()'s existing hidden_breakdown shape) and
+     HiddenBreakdown (extends it with past_purchases) exported interfaces.
+  2. LimitationsFilterResult now references LimitationsHiddenBreakdown
+     instead of an inline duplicate object-type literal.
+  3. Added buildHiddenBreakdown({preFilterGeoHidden, limitations,
+     pastPurchasesHidden}) -> HiddenBreakdown — pure, no I/O.
+
+services/gateway/src/routes/discover-search.ts:
+  Replaced the 18-line manual hiddenBreakdown assembly (seed literal +
+  conditional reassignment + final past-purchases spread) with:
+    let limitationsBreakdown: LimitationsHiddenBreakdown | undefined;
+    if (ctx) { ...; limitationsBreakdown = result.hidden_breakdown; }
+    const hiddenBreakdown = buildHiddenBreakdown({
+      preFilterGeoHidden: fetched.length - geoAllowed.length,
+      limitations: limitationsBreakdown,
+      pastPurchasesHidden: past_purchases_hidden,
+    });
+
+services/gateway/src/routes/discover-feed.ts:
+  Replaced the inline response-object spread with:
+    hidden_breakdown: buildHiddenBreakdown({
+      preFilterGeoHidden: candidates.length - geoAllowed.length,
+      limitations: hidden_breakdown,
+      pastPurchasesHidden: past_purchases_hidden,
+    }),
+
+## New tests (extended the existing VTID-03943 test file)
+services/gateway/test/limitations-filter.test.ts — added 7 tests for
+buildHiddenBreakdown(): geo summing, category pass-through, past-purchases
+pass-through, undefined-limitations (anonymous request) case, fully-empty
+case, and two formula-equivalence tests that reproduce each route's exact
+PRE-REFACTOR inline formula and assert buildHiddenBreakdown() returns the
+byte-identical object — the concrete proof this refactor changes no
+observable behavior in either route.
+
+## Targeted test run
+$ cd services/gateway && npx jest test/limitations-filter.test.ts --silent
+Test Suites: 1 passed, 1 total
+Tests:       13 passed, 13 total
+(full output: outputs/jest-new-suite.txt)
+
+## TypeScript
+$ cd services/gateway && npx tsc --noEmit -p tsconfig.json
+(clean, no output — see outputs/tsc-noemit.txt)
+
+## Full gateway suite (regression check)
+$ cd services/gateway && npx jest --silent
+(see outputs/jest-full-suite.txt)
+
+## VTID allocation
+$ curl -sS -X POST "https://gateway.vitanaland.com/api/v1/vtid/allocate" \
+    -H "Content-Type: application/json" \
+    -d '{"source":"claude-code","layer":"gateway","module":"discover-hidden-breakdown-builder-refactor"}'
+{"ok":true,"vtid":"VTID-03945","num":3945,"id":"6d410187-de4c-4ace-a879-acf21bd8c051"}
+
+Followed with a direct Supabase UPDATE (project inmkhvwdcuyhnxkgfvsb) to
+set title/summary, status='in_progress', spec_status='approved'.
+
+## Branch hygiene
+Branched fresh as `rung5-vtid-03945` from `origin/main` (post-Rung-4
+merge, `328417e1`), per this session's established per-rung pattern.
+
+## Acceptance-mapping self-check (learned from Rung 4's first CI failure)
+Ran the exact same Python regex VALIDATOR-CHECK's Acceptance Mapping Gate
+uses, locally, against this VTID's acceptance.md, before pushing:
+  every AC-N line has a line starting literally with "TEST:" within the
+  next 12 lines. Confirmed "Acceptance mapping OK" before commit.

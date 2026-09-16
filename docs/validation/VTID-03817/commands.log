@@ -1,0 +1,156 @@
+VTID-03817 — commands.log
+==========================
+
+## Trace the real Operator Console call path
+
+Grep across services/gateway/src for "processWithGemini" -> real call sites
+in routes/conversation.ts, routes/operator.ts, routes/orb-live.ts,
+services/conversation-client.ts, all importing from services/gemini-operator.ts.
+
+Read services/gemini-operator.ts processWithGemini() (line 3213) and
+callVertexWithTools() (line 2993): despite the "Gemini"/"Vertex" names
+(legacy, VTID-03579 comment: "kept so this diff stays about behaviour, and
+now inaccurate"), the real call is `callViaRouter('operator', text, {...})`
+-- the same shared Bedrock-first router used everywhere else.
+
+## Confirm the live active policy (before touching anything)
+
+$ mcp__Supabase__execute_sql (read-only)
+  SELECT environment, version, is_active, activated_at, policy->'operator'
+  FROM llm_routing_policy WHERE is_active = true ORDER BY environment;
+-> exactly one active row: DEV, v16, operator = bedrock/eu.anthropic.claude-sonnet-4-6
+   primary, bedrock/eu.anthropic.claude-sonnet-4-5-20250929-v1:0 fallback.
+
+$ grep "LLM_ROUTING_ENV" services/gateway/src/services/llm-router.ts
+-> `const env = process.env.LLM_ROUTING_ENV || 'DEV';` and LLM_ROUTING_ENV is
+   confirmed (VTID-03666 changelog) unset on every tracked deploy workflow --
+   so both staging and production read this exact 'DEV' row. This is the row
+   that answers every live Operator Console conversation right now.
+
+## Attempt the flip via the GOVERNED API (not a raw table write)
+
+$ curl -X GET  https://gateway.vitanaland.com/api/v1/llm/routing-policy?environment=DEV
+-> full current policy + allowed providers/models/recommended, confirms
+   llm_allowed_models has ZERO provider_key='bedrock' rows.
+
+$ curl -X POST https://gateway.vitanaland.com/api/v1/llm/routing-policy?environment=DEV \
+    -d '{policy: <v16 unchanged except operator -> deepseek/deepseek-flash>, reason: "..."}'
+-> 400 "Policy validation failed: Model deepseek/deepseek-chat not applicable for stage triage"
+
+Root-caused via read of validatePolicy() (llm-routing-policy-service.ts:167):
+it checks every stage's provider/model pair against llm_allowed_models: is_active=true.
+Two independent gaps found:
+  1. No bedrock rows at all -> ANY policy referencing bedrock (i.e. every
+     stage in the live policy) fails validation. v16's own `created_by`
+     field already documents a PRIOR session hitting this and doing a
+     direct Supabase write instead of fixing it.
+  2. deepseek-chat's applicable_stages = [classifier, memory, worker] --
+     missing 'triage', even though v16 ALREADY uses deepseek/deepseek-chat
+     as triage's live fallback. Re-submitting the unchanged live policy
+     would ALSO have failed.
+
+## Fix both catalog gaps at the root (Supabase migrations, applied live)
+
+$ mcp__Supabase__apply_migration name=bootstrap_bedrock_deepseek_flash_catalog_gap
+  -> INSERT llm_allowed_providers ('bedrock', ...)
+  -> INSERT llm_allowed_models for the 3 bedrock model ids actually
+     referenced by v16 (eu.anthropic.claude-sonnet-4-6,
+     eu.anthropic.claude-opus-4-5-20251101-v1:0,
+     eu.anthropic.claude-sonnet-4-5-20250929-v1:0), applicable_stages set to
+     match their actual live usage, plus deepseek-flash (VTID-03816 follow-up,
+     the migration FILE existed in git but had never been applied to this
+     live database).
+  -> {"success":true}
+
+$ mcp__Supabase__apply_migration name=fix_deepseek_chat_applicable_stages_triage_gap
+  -> UPDATE llm_allowed_models SET applicable_stages = array + 'triage'
+     WHERE provider_key='deepseek' AND model_id='deepseek-chat'
+  -> {"success":true}
+
+## Retry the governed flip
+
+$ curl -X POST https://gateway.vitanaland.com/api/v1/llm/routing-policy?environment=DEV -d @policy_update.json
+-> 200 {"ok":true,"data":{"policy":{...,"version":17},"message":"Routing policy updated to v17"}}
+   operator: primary deepseek/deepseek-flash, fallback bedrock/eu.anthropic.claude-sonnet-4-6.
+   Every other stage (memory/triage/vision/worker/planner/validator/classifier)
+   submitted byte-for-byte identical to v16 -- confirmed by diffing the
+   response JSON against the pre-change GET.
+
+## Live test through the real Command Hub endpoint
+
+$ grep "operator/chat" services/gateway/src/frontend/command-hub/app.js
+-> confirms the Command Hub UI calls POST /api/v1/operator/chat directly --
+   used the SAME endpoint for the test, not a synthetic path.
+
+$ curl -X POST https://gateway.vitanaland.com/api/v1/operator/chat \
+    -d '{"message":"Which LLM model are you connected to right now?"}'
+-> see outputs/live-verification.txt for full response.
+   meta.provider="deepseek", meta.model="deepseek-flash" -- routing confirmed
+   live end-to-end. Reply text itself claims "I'm Claude, made by
+   Anthropic" -- a real, observed hallucinated self-identification, recorded
+   as evidence, not omitted.
+
+## Emoji tone change
+
+Checked whether services/gateway/src/services/ai-personality-service.ts's
+PERSONALITY_DEFAULTS.operator_chat is overridable via a DB row before editing
+the code (editing the hardcoded default would be a no-op if a DB override is
+already cached):
+
+$ mcp__Supabase__execute_sql
+  SELECT surface_key, is_customized, config FROM ai_personality_config
+  WHERE surface_key = 'operator_chat';
+-> [] (no row) -- confirms the plain code default is what actually serves
+   today, so a code edit is both necessary and sufficient (a DB-cache write
+   would risk a silent no-op given getPersonalityConfigSync's 30s cache is
+   only populated by a separate async warm path this investigation could not
+   confirm is ever actually invoked for this surface).
+
+Edited PERSONALITY_DEFAULTS.operator_chat.system_prompt to add one tone
+instruction: use emojis generously and match them to content. Not a
+hardcoded sentence (NEVER-rule 41) -- an intent/style instruction, same
+pattern already used throughout this codebase's other personas.
+
+## Verification
+
+$ cd services/gateway && npx tsc --noEmit
+-> outputs/tsc-noemit.txt: clean
+
+$ npx jest test/ -t "operator" --silent=false
+-> outputs/jest-operator-filter.txt: 13/13 relevant suites, 72/72 tests passing
+
+$ npx jest --silent=false   # full suite, run in background
+-> outputs/jest-full-suite.txt (tail): 737/738 suites (1 pre-existing skip),
+   13,673/13,708 tests passing, 0 failures, exit code 0
+
+## Tool-connectivity audit (for the platform owner's separate question)
+
+$ grep "name: '" services/gateway/src/services/tool-registry.ts
+-> full tool inventory: autopilot_* (VTID task mgmt), knowledge_search,
+   memory_write/memory_search/recall_conversation_at_time, discover_oasis_tasks,
+   community/marketplace tools, and a `dev_*` set gated to developer/admin role:
+   dev_create_pr, dev_merge_pr, dev_deploy_service, dev_deployment_status,
+   dev_cicd_health, dev_lock_status, dev_generate_spec/dev_validate_spec/
+   dev_quality_check/dev_approve_spec (full spec pipeline), dev_query_oasis_events,
+   investigate_failure.
+
+$ grep "developer_assistant" services/gateway/src -r
+-> a distinct 'developer_assistant' persona already exists in
+   ai-personality-service.ts, reachable from the same shared conversation.ts
+   route -- not dormant code.
+
+Read executeDevCreatePr/executeDevMergePr/executeDevDeployService
+(gemini-operator.ts ~4091-4216): each is a real internal HTTP call to
+this gateway's own /api/v1/github/create-pr, /api/v1/github/safe-merge,
+/api/v1/deploy/service routes (service-role authenticated) -- not stubs.
+No raw/arbitrary SQL or AWS-CLI tool exists; DB/AWS access is only through
+these purpose-built, gated actions.
+
+## ERPClaw verification (for the platform owner's ERP/CRM feedback)
+
+WebSearch "ERPClaw open source AI-native ERP CRM openclaw clawhub"
+-> real project: github.com/avansaber/erpclaw, GPL v3, self-hosted,
+   chat-first, runs on the OpenClaw runtime (`clawhub install erpclaw`).
+   erpclaw.ai's own blog dates ("Building an AI-Native ERP With Claude
+   Code") indicate a young, small project -- not independently verified
+   further (no attempt made to install/deploy it in this session).

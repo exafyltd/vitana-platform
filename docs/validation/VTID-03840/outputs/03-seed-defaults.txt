@@ -1,0 +1,7 @@
+# 03 — seed-defaults
+{
+  "currencies_seeded": 16,
+  "uoms_seeded": 14,
+  "payment_terms_seeded": 6,
+  "status": "ok"
+}

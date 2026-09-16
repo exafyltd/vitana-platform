@@ -57,6 +57,8 @@ import { WALLET_PAYMENTS_TOOL_HANDLERS, WALLET_PAYMENTS_TOOL_DECLARATIONS } from
 import { MESSAGING_DEPTH_TOOL_HANDLERS, MESSAGING_DEPTH_TOOL_DECLARATIONS } from './orb-tools/messaging-depth-tools';
 import { EVENTS_TICKETS_TOOL_HANDLERS, EVENTS_TICKETS_TOOL_DECLARATIONS } from './orb-tools/events-tickets-tools';
 import { HEALTH_DEPTH_TOOL_HANDLERS, HEALTH_DEPTH_TOOL_DECLARATIONS } from './orb-tools/health-depth-tools';
+// VTID-03885: Partner Health Test Integration — DoctorBox is Partner #001.
+import { PARTNER_HEALTH_TEST_TOOL_HANDLERS, PARTNER_HEALTH_TEST_TOOL_DECLARATIONS } from './orb-tools/partner-health-test-tools';
 // WAVE-2-VOICE-CATALOG-V2 — second wave of the approved 425-tool expansion:
 // developer P0 domains covering VTID/OASIS lifecycle, governance, CI/CD &
 // PRs, deployment/release, and observability (docs/VOICE_TOOLS_EXPANSION_PLAN.md).
@@ -4581,12 +4583,21 @@ export async function tool_save_diary_entry(
   }
 
   // 2) Pre-recompute Index for delta math.
-  const { data: beforeRow } = await sb
+  const { data: beforeRow, error: beforeErr } = await sb
     .from('vitana_index_scores')
     .select('score_total, score_nutrition, score_hydration, score_exercise, score_sleep, score_mental')
     .eq('user_id', identity.user_id)
     .eq('date', entryDate)
     .maybeSingle();
+  if (beforeErr) {
+    // Non-fatal by design (see the index_delta comment below) — a query
+    // error is treated the same as "no baseline yet" so we honestly report
+    // no delta rather than fabricate one. Logged so a real DB failure here
+    // isn't indistinguishable from the legitimate first-entry-of-the-day case.
+    console.warn(
+      `[save_diary_entry] pre-recompute Index lookup failed (non-fatal, no delta will be reported): ${beforeErr.message}`,
+    );
+  }
   const before = beforeRow as Record<string, number | null> | null;
 
   // 3) Extract health features + persist.
@@ -4610,10 +4621,20 @@ export async function tool_save_diary_entry(
   // 4) Recompute Index.
   let pillars_after: Record<string, number> | null = null;
   try {
-    const { data: rec } = await sb.rpc('health_compute_vitana_index_for_user', {
+    const { data: rec, error: rpcErr } = await sb.rpc('health_compute_vitana_index_for_user', {
       p_user_id: identity.user_id,
       p_date: entryDate,
     });
+    if (rpcErr) {
+      // supabase-js resolves normally with {data:null, error} on an RPC
+      // failure — it does not throw, so the surrounding try/catch alone
+      // never saw this. Non-fatal by design (pillars_after simply stays
+      // null, same as any other no-recompute case), but logged so a real
+      // RPC failure isn't silently indistinguishable from one.
+      console.warn(
+        `[save_diary_entry] Index recompute RPC failed (non-fatal): ${rpcErr.message}`,
+      );
+    }
     const r = rec as { ok?: boolean; [k: string]: unknown } | null;
     if (r && r.ok !== false) {
       pillars_after = {
@@ -5707,6 +5728,8 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   ...MESSAGING_DEPTH_TOOL_HANDLERS,
   ...EVENTS_TICKETS_TOOL_HANDLERS,
   ...HEALTH_DEPTH_TOOL_HANDLERS,
+  // VTID-03885: Partner Health Test Integration
+  ...PARTNER_HEALTH_TEST_TOOL_HANDLERS,
   // WAVE-2-VOICE-CATALOG-V2
   ...VTID_LIFECYCLE_TOOL_HANDLERS,
   ...GOVERNANCE_TOOL_HANDLERS,
@@ -5769,6 +5792,8 @@ export const NEW_DOMAIN_TOOL_DECLARATIONS: Array<Record<string, unknown>> = [
   ...MESSAGING_DEPTH_TOOL_DECLARATIONS,
   ...EVENTS_TICKETS_TOOL_DECLARATIONS,
   ...HEALTH_DEPTH_TOOL_DECLARATIONS,
+  // VTID-03885: Partner Health Test Integration
+  ...PARTNER_HEALTH_TEST_TOOL_DECLARATIONS,
   // WAVE-4-VOICE-CATALOG-V2 (community)
   ...SUBSCRIPTIONS_BILLING_TOOL_DECLARATIONS,
   ...LIVE_ROOMS_TOOL_DECLARATIONS,

@@ -54,6 +54,7 @@ import {
 } from './shared';
 import { inferSupplementAttributes } from './supplement-inference';
 import { getSupabase } from '../../lib/supabase';
+import * as repo from './admitad-sync-repository';
 
 interface AdmitadFeedRef {
   feed_url: string;
@@ -79,11 +80,8 @@ const DEFAULT_KEYWORDS =
 async function loadSourceConfigs(): Promise<AdmitadSourceConfig[]> {
   const supabase = getSupabase();
   if (!supabase) return [];
-  const { data } = await supabase
-    .from('marketplace_sources_config')
-    .select('config')
-    .eq('source_network', 'admitad_feed')
-    .eq('is_active', true);
+  const { data, error } = await repo.fetchActiveMarketplaceSourceConfigs(supabase, 'admitad_feed');
+  if (error) throw error; // must not be indistinguishable from "no feeds configured" — caller reports it as a real failure
   if (!data?.length) return [];
   return data
     .map((r) => r.config as AdmitadSourceConfig)

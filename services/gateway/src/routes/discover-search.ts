@@ -25,10 +25,17 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { getSupabase } from '../lib/supabase';
 import { getUserHealthContext, inferPrimaryCondition } from '../services/user-health-context';
-import { applyUserLimitations, type FilterableProduct } from '../services/limitations-filter';
+import {
+  applyUserLimitations,
+  excludePastPurchases,
+  buildHiddenBreakdown,
+  type FilterableProduct,
+  type LimitationsHiddenBreakdown,
+} from '../services/limitations-filter';
 import { getConditionMapping, expandSynonymPhrase } from '../services/condition-matcher';
 import { emitLimitationBypass } from '../services/reward-events';
 import * as jose from 'jose';
+import * as repo from './discover-search-repository';
 import {
   CountryCode,
   CurrencyCode,
@@ -207,13 +214,10 @@ router.get('/search', async (req: Request, res: Response) => {
   }
 
   // Build query
-  let query = supabase
-    .from('products')
-    .select(
-      'id, title, description, description_long, brand, category, subcategory, price_cents, currency, compare_at_price_cents, images, affiliate_url, availability, rating, review_count, origin_country, origin_region, merchant_id, ingredients_primary, health_goals, dietary_tags, reward_preview, contains_allergens, contraindicated_with_conditions, contraindicated_with_medications, ships_to_countries, ships_to_regions, excluded_from_regions, dosage, serving_size, servings_per_container, evidence_links, safety_notes',
-      { count: 'exact' }
-    )
-    .eq('is_active', true);
+  let query = repo.buildProductSearchQuery(
+    supabase,
+    'id, title, description, description_long, brand, category, subcategory, price_cents, currency, compare_at_price_cents, images, affiliate_url, availability, rating, review_count, origin_country, origin_region, merchant_id, ingredients_primary, health_goals, dietary_tags, reward_preview, contains_allergens, contraindicated_with_conditions, contraindicated_with_medications, ships_to_countries, ships_to_regions, excluded_from_regions, dosage, serving_size, servings_per_container, evidence_links, safety_notes',
+  );
 
   if (args.q) {
     // Websearch-style FTS: each phrase becomes an AND-of-tokens
@@ -319,16 +323,7 @@ router.get('/search', async (req: Request, res: Response) => {
   });
 
   let allowed: ProductSearchRow[];
-  let hiddenBreakdown = {
-    allergies: 0,
-    contraindications: 0,
-    medications: 0,
-    dietary: 0,
-    budget: 0,
-    sensitivities: 0,
-    geo: fetched.length - geoAllowed.length,
-    excluded_region: 0,
-  };
+  let limitationsBreakdown: LimitationsHiddenBreakdown | undefined;
 
   if (ctx) {
     const result = applyUserLimitations(geoAllowed, ctx, {
@@ -337,18 +332,19 @@ router.get('/search', async (req: Request, res: Response) => {
       surface: 'search',
     });
     allowed = result.allowed;
-    hiddenBreakdown = {
-      ...result.hidden_breakdown,
-      geo: hiddenBreakdown.geo + result.hidden_breakdown.geo,
-      excluded_region: result.hidden_breakdown.excluded_region,
-    };
+    limitationsBreakdown = result.hidden_breakdown;
   } else {
     allowed = geoAllowed;
   }
 
   // Exclude past purchases (anonymized — only for logged-in user)
-  const pastIds = new Set(ctx?.past_purchases.map((p) => p.product_id) ?? []);
-  const withoutPast = allowed.filter((p) => !pastIds.has(p.id));
+  const { withoutPast, past_purchases_hidden } = excludePastPurchases(allowed, ctx?.past_purchases ?? []);
+
+  const hiddenBreakdown = buildHiddenBreakdown({
+    preFilterGeoHidden: fetched.length - geoAllowed.length,
+    limitations: limitationsBreakdown,
+    pastPurchasesHidden: past_purchases_hidden,
+  });
 
   // Match reasons + score
   const enriched = withoutPast.map((p) => {
@@ -484,14 +480,11 @@ router.get('/product/:id', async (req: Request, res: Response) => {
     res.status(400).json({ ok: false, error: 'invalid product id' });
     return;
   }
-  const { data, error } = await supabase
-    .from('products')
-    .select(
-      'id, title, description, description_long, brand, category, subcategory, price_cents, currency, compare_at_price_cents, images, affiliate_url, availability, rating, review_count, origin_country, origin_region, merchant_id, ingredients_primary, health_goals, dietary_tags, reward_preview, dosage, serving_size, servings_per_container, evidence_links, safety_notes'
-    )
-    .eq('id', id)
-    .eq('is_active', true)
-    .maybeSingle();
+  const { data, error } = await repo.fetchProductById(
+    supabase,
+    id,
+    'id, title, description, description_long, brand, category, subcategory, price_cents, currency, compare_at_price_cents, images, affiliate_url, availability, rating, review_count, origin_country, origin_region, merchant_id, ingredients_primary, health_goals, dietary_tags, reward_preview, dosage, serving_size, servings_per_container, evidence_links, safety_notes',
+  );
 
   if (error) {
     res.status(500).json({ ok: false, error: error.message });

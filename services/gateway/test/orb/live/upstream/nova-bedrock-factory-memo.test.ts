@@ -59,7 +59,9 @@ describe('L-02: Bedrock client factory memoization', () => {
     // envelope build. Widened rather than narrowing the assertion; the
     // invariant under test (prep starts before the envelope await) is
     // unaffected by that unrelated branch.
-    const window = src.slice(novaBranch, novaBranch + 8000);
+    // VTID-03848 added the work-surface prewarm gate in the same gap; widened
+    // again for the same reason as above (the invariant is unaffected).
+    const window = src.slice(novaBranch, novaBranch + 9000);
 
     const prewarmAt = window.indexOf('prewarmNovaSonicBedrock(novaCfg)');
     const envelopeAt = window.indexOf('await buildOrbVertexSetupEnvelope()');

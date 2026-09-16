@@ -4,7 +4,10 @@
  * Provides embedding generation for semantic memory operations.
  * Supports multiple providers with fallback:
  * 1. OpenAI text-embedding-3-small (primary)
- * 2. Gemini embedding (fallback)
+ * 2. Amazon Titan Text Embeddings V1 via Bedrock (fallback — AWS-native,
+ *    gated on BEDROCK_ROLE_ARN; see providers/titan-embedding.ts)
+ * 3. Gemini embedding (last-resort only — see the "Google is a policy
+ *    violation, not a normal fallback" note below generateEmbedding())
  *
  * This service is STATELESS - it only generates embeddings,
  * it does not store them. Storage is handled by Supabase.
@@ -13,6 +16,14 @@
 import { emitOasisEvent } from './oasis-event-service';
 // VTID-01970 Tier 1: in-process LRU cache for embeddings (sha256(text)→vector)
 import { getCachedEmbedding, setCachedEmbedding, getCacheStats } from './embedding-cache';
+// Closes GATEWAY-GOOGLE-DEPENDENCY-AUDIT-2026-08-28 finding #1/#2 — see
+// providers/titan-embedding.ts header for why V1 (not V2) is the right model.
+import {
+  generateTitanEmbedding,
+  getTitanEmbeddingModelId,
+  TITAN_EMBEDDING_DIMENSIONS,
+  type TitanEmbeddingResult,
+} from '../providers/titan-embedding';
 
 // =============================================================================
 // Configuration
@@ -330,34 +341,82 @@ export async function generateEmbedding(text: string): Promise<EmbeddingResponse
     return openaiResult;
   }
 
-  // Fallback to Gemini
-  console.log(`[${VTID}] OpenAI failed, trying Gemini fallback`);
-  const geminiResult = await generateGeminiEmbedding(text);
+  // Fallback to Titan (Bedrock, AWS-native) — dormant (not_configured) until
+  // BEDROCK_ROLE_ARN is set, at which point this replaces Gemini as the
+  // fallback with zero further config, per providers/titan-embedding.ts.
+  console.log(`[${VTID}] OpenAI failed, trying Titan (Bedrock) fallback`);
+  const titanResult = await generateTitanEmbedding(text);
 
-  if (geminiResult.ok) {
-    console.log(`[${VTID}] Embedding generated (Gemini): ${geminiResult.dimensions}d, ${geminiResult.latency_ms}ms`);
-    if (geminiResult.embedding && geminiResult.dimensions && geminiResult.model) {
-      setCachedEmbedding(text, geminiResult.embedding, geminiResult.model, geminiResult.dimensions);
-    }
+  if (titanResult.ok) {
+    console.log(`[${VTID}] Embedding generated (Titan/Bedrock): ${titanResult.dimensions}d, ${titanResult.latency_ms}ms`);
+    setCachedEmbedding(text, titanResult.embedding, titanResult.model, titanResult.dimensions);
 
-    // Emit OASIS event for fallback
     await emitOasisEvent({
       vtid: VTID,
       type: 'embedding.fallback_used',
       source: SERVICE_NAME,
       status: 'warning',
-      message: `Used Gemini fallback for embedding generation (${geminiResult.model})`,
+      message: `Used Titan (Bedrock) fallback for embedding generation (${titanResult.model})`,
       payload: {
         openai_error: openaiResult.error,
+        titan_latency_ms: titanResult.latency_ms,
+        // Same VTID-03579 reasoning as the Gemini branch below: a Titan
+        // vector and an OpenAI vector of the same length are not comparable
+        // (different semantic space), so recording provider/model at write
+        // time is the only way to know which rows mix providers later.
+        provider: 'titan_bedrock',
+        model: titanResult.model,
+        dimensions: titanResult.dimensions
+      }
+    }).catch(() => {});
+
+    return {
+      ok: true,
+      embedding: titanResult.embedding,
+      model: titanResult.model,
+      dimensions: titanResult.dimensions,
+      latency_ms: titanResult.latency_ms
+    };
+  }
+
+  // Last resort: Gemini. Per CLAUDE.md NEVER-27/IF-THEN-27/29 ("no sanctioned
+  // Google dependency left at all"; "a fallback that lands on Google must be
+  // treated as an incident, not as normal operation") this is NOT a normal
+  // rung — it only fires when BOTH OpenAI and the AWS-native Titan path have
+  // failed, and it is logged at 'error' severity with an explicit
+  // policy_violation marker so it cannot be mistaken for routine fallback
+  // traffic the way the unconditional pre-Titan Gemini fallback was.
+  console.log(`[${VTID}] Titan (Bedrock) failed (${titanResult.error}: ${titanResult.message}), trying Gemini as last resort`);
+  const geminiResult = await generateGeminiEmbedding(text);
+
+  if (geminiResult.ok) {
+    console.error(`[${VTID}] GOOGLE FALLBACK USED (policy violation, both OpenAI and Titan failed): ${geminiResult.model}`);
+    if (geminiResult.embedding && geminiResult.dimensions && geminiResult.model) {
+      setCachedEmbedding(text, geminiResult.embedding, geminiResult.model, geminiResult.dimensions);
+    }
+
+    // Emit OASIS event for fallback — 'error' status (not 'warning'), per
+    // NEVER-27/IF-THEN-29: a Google fallback is an incident to investigate
+    // (why did OpenAI AND Bedrock both fail?), not routine degradation.
+    await emitOasisEvent({
+      vtid: VTID,
+      type: 'embedding.google_fallback_used',
+      source: SERVICE_NAME,
+      status: 'error',
+      message: `POLICY VIOLATION: used Gemini fallback for embedding generation (${geminiResult.model}) — both OpenAI and Titan/Bedrock failed`,
+      payload: {
+        policy_violation: true,
+        openai_error: openaiResult.error,
+        titan_error: `${titanResult.error}: ${titanResult.message}`,
         gemini_latency_ms: geminiResult.latency_ms,
         // VTID-03579: naming provider/model/dimensions here is not cosmetic.
-        // A Gemini vector and an OpenAI vector of the SAME length are not
-        // comparable — they occupy different semantic spaces — yet both insert
-        // happily into memory_items.embedding (vector(1536)) and neither errors.
-        // Similarity across the mixed set is quietly meaningless, so the only
-        // way to know which rows are affected is to have recorded it at write
-        // time. 495 such fallbacks fired between 2026-05-27 and 2026-07-06 with
-        // none of this captured.
+        // A Gemini vector and an OpenAI/Titan vector of the SAME length are
+        // not comparable — they occupy different semantic spaces — yet all
+        // insert happily into memory_items.embedding (vector(1536)) and none
+        // errors. Similarity across the mixed set is quietly meaningless, so
+        // the only way to know which rows are affected is to have recorded
+        // it at write time. 495 such fallbacks fired between 2026-05-27 and
+        // 2026-07-06 with none of this captured.
         provider: 'gemini',
         model: geminiResult.model,
         dimensions: geminiResult.dimensions
@@ -367,7 +426,7 @@ export async function generateEmbedding(text: string): Promise<EmbeddingResponse
     return geminiResult;
   }
 
-  // Both failed
+  // All three failed
   console.error(`[${VTID}] All embedding providers failed`);
 
   await emitOasisEvent({
@@ -378,13 +437,14 @@ export async function generateEmbedding(text: string): Promise<EmbeddingResponse
     message: 'All embedding providers failed',
     payload: {
       openai_error: openaiResult.error,
+      titan_error: `${titanResult.error}: ${titanResult.message}`,
       gemini_error: geminiResult.error
     }
   }).catch(() => {});
 
   return {
     ok: false,
-    error: `All providers failed. OpenAI: ${openaiResult.error}, Gemini: ${geminiResult.error}`
+    error: `All providers failed. OpenAI: ${openaiResult.error}, Titan: ${titanResult.error}, Gemini: ${geminiResult.error}`
   };
 }
 
@@ -438,8 +498,48 @@ export async function generateBatchEmbeddings(texts: string[]): Promise<BatchEmb
     return result;
   }
 
-  // Fallback to sequential Gemini (slower but reliable)
-  console.log(`[${VTID}] Batch failed, falling back to sequential Gemini`);
+  // Fallback to sequential Titan (Bedrock, AWS-native) first — same
+  // "AWS before Google" ordering as the single-embedding path above.
+  console.log(`[${VTID}] Batch failed, falling back to sequential Titan (Bedrock)`);
+  const titanStartTime = Date.now();
+  const titanEmbeddings: number[][] = [];
+  let titanFailure: TitanEmbeddingResult | null = null;
+
+  for (const text of texts) {
+    const titanResult = await generateTitanEmbedding(text);
+    if (!titanResult.ok) {
+      titanFailure = titanResult;
+      break;
+    }
+    titanEmbeddings.push(titanResult.embedding);
+  }
+
+  if (!titanFailure) {
+    return {
+      ok: true,
+      embeddings: titanEmbeddings,
+      model: getTitanEmbeddingModelId(),
+      dimensions: TITAN_EMBEDDING_DIMENSIONS,
+      latency_ms: Date.now() - titanStartTime
+    };
+  }
+
+  // Last resort: sequential Gemini — an incident, not routine, per the same
+  // NEVER-27/IF-THEN-29 reasoning as the single-embedding path above.
+  console.error(`[${VTID}] Titan (Bedrock) batch failed at index ${titanEmbeddings.length} (${titanFailure.error}), trying Gemini as last resort`);
+  await emitOasisEvent({
+    vtid: VTID,
+    type: 'embedding.google_fallback_used',
+    source: SERVICE_NAME,
+    status: 'error',
+    message: 'POLICY VIOLATION: batch falling back to sequential Gemini — both OpenAI batch and Titan/Bedrock failed',
+    payload: {
+      policy_violation: true,
+      count: texts.length,
+      titan_error: `${titanFailure.error}: ${titanFailure.message}`
+    }
+  }).catch(() => {});
+
   const startTime = Date.now();
   const embeddings: number[][] = [];
 
@@ -471,6 +571,10 @@ export function isEmbeddingServiceAvailable(): { available: boolean; providers: 
 
   if (process.env.OPENAI_API_KEY) {
     providers.push('openai');
+  }
+
+  if (process.env.BEDROCK_ROLE_ARN) {
+    providers.push('titan_bedrock');
   }
 
   if (process.env.GOOGLE_GEMINI_API_KEY) {

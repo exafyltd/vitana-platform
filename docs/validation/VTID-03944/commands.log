@@ -1,0 +1,72 @@
+# VTID-03944 — commands actually run.
+
+# --- Investigation ---------------------------------------------------------
+
+# Reported live: "why is the operator popup screen flickering??? its annoying"
+
+grep -n "isOperatorOpen" services/gateway/src/frontend/command-hub/app.js
+#   -> found existing prior-art: VTID-0526-E (SSE ticker gate) and VTID-03906
+#      (_actionRequiredTimer gate) already fixed this exact bug class once
+#      each. Both comments explicitly describe "a background poller tearing
+#      down and rebuilding the whole DOM ... unprompted."
+
+grep -n "setInterval" services/gateway/src/frontend/command-hub/app.js
+#   -> enumerated every setInterval in the file (11 call sites), read the
+#      body of each to see which ones call renderApp() (directly or via a
+#      fetch-then-render function) without checking state.isOperatorOpen.
+
+# Confirmed 4 more unguarded instances, none checking state.isOperatorOpen:
+#   1. state.executionStatusPollInterval (5s)  -> fetchExecutionStatus() -> renderApp()
+#   2. state.devAutopilot.pollerId (10s)       -> fetchDevAutopilotState() -> renderApp()
+#   3. state.autonomyPulse.pollerId (30s)      -> fetchAutonomyPulse() -> renderApp()
+#   4. state.autonomyTrace.pollerId (30s)      -> fetchAutonomyTrace() -> renderApp()
+# Each is gated only on unrelated conditions (selectedTask / currentTab /
+# currentModuleKey) — none excluded the case where the Operator popup is
+# open on top of the tab/drawer the poller is scoped to.
+
+# Ruled out (confirmed NOT full-render, no fix needed):
+#   - cicdHealthPollInterval (30s) -> fetchServiceHealth(true) -> updateServiceHealthPill()
+#     (targeted DOM update, comment says "scroll-safe")
+#   - overviewDashboardRefreshInterval (60s) -> silent refresh, same pattern
+#   - vh.pollingTimer / _vhExecPollTimer -> targeted replaceChild(), not renderApp()
+#   - activeExecutionsPollInterval (10s) -> fetchActiveExecutions() never calls
+#     renderApp() at all; unrelated CI/CD ticker board feature
+
+# --- Fix ---------------------------------------------------------------
+
+# services/gateway/src/frontend/command-hub/app.js
+#   Added `if (state.isOperatorOpen) return;` as the first check inside each
+#   of the 4 setInterval callbacks above, before any renderApp()-triggering
+#   fetch — same remedy pattern as VTID-03906's _actionRequiredTimer fix.
+#   Polling itself is not torn down (state.executionStatusPollInterval's own
+#   stop conditions are unchanged) — only the render-triggering fetch for
+#   that tick is skipped while the popup is open, so state resumes correctly
+#   once it closes.
+
+node --check services/gateway/src/frontend/command-hub/app.js
+#   -> SYNTAX OK
+
+# --- Verification -----------------------------------------------------------
+
+cd services/gateway
+
+npx jest test/vtid-03944-operator-popup-flicker-pollers.test.ts test/vtid-03906-08-operator-scroll-mic-fullscreen.test.ts --runInBand
+#   -> 2/2 suites, 34/34 tests passing. (outputs/targeted-tests.txt)
+
+# Mutation check: git stash'd app.js (reverting the fix), re-ran the new
+# test file -- confirmed all 5 new tests fail (each asserting the
+# `if (state.isOperatorOpen) return;` guard exists in the relevant poller
+# body). Restored the fix via `git stash pop` -- 34/34 green again.
+
+npx tsc --noEmit
+#   -> 2 pre-existing, unrelated errors only (missing @aws-sdk sub-packages
+#      in this session's local node_modules — declared in package.json, not
+#      referenced by any file this VTID touches). Zero errors in app.js or
+#      the new test file. (outputs/tsc.txt)
+
+npx jest --runInBand
+#   -> full suite: 904/917 test suites passing (12 pre-existing failures, 1
+#      pre-existing skip — identical set to VTID-03927/03933/03934/03937's
+#      own evidence packs, same missing-module root cause, unrelated to
+#      app.js), 14809/14855 tests passing, 13 pre-existing failures, 0
+#      failures in any file this VTID touches. (outputs/full-suite.txt)

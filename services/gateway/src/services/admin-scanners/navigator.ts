@@ -13,6 +13,7 @@
  */
 import { getSupabase } from '../../lib/supabase';
 import type { AdminScanner, InsightDraft } from './types';
+import * as repo from './navigator-repository';
 
 const LOG_PREFIX = '[admin-scanner:navigator]';
 const INACTIVE_ENTRY_THRESHOLD = 3;
@@ -31,12 +32,7 @@ export const navigatorScanner: AdminScanner = {
 
     // 1. Inactive catalog entries — hidden but not cleaned up
     try {
-      const { data: inactive } = await supabase
-        .from('nav_catalog')
-        .select('id, screen_id, category, tenant_id')
-        .eq('is_active', false)
-        .or(`tenant_id.is.null,tenant_id.eq.${tenantId}`)
-        .limit(50);
+      const { data: inactive } = await repo.fetchInactiveNavCatalogEntries(supabase, tenantId);
       if (inactive && inactive.length >= INACTIVE_ENTRY_THRESHOLD) {
         insights.push({
           natural_key: 'navigator_inactive_entries',
@@ -69,18 +65,10 @@ export const navigatorScanner: AdminScanner = {
 
     // 2. Missing i18n coverage — active entries without non-English translations
     try {
-      const { data: active } = await supabase
-        .from('nav_catalog')
-        .select('id, screen_id')
-        .eq('is_active', true)
-        .or(`tenant_id.is.null,tenant_id.eq.${tenantId}`)
-        .limit(500);
+      const { data: active } = await repo.fetchActiveNavCatalogEntries(supabase, tenantId);
       if (active && active.length > 0) {
         const ids = active.map((r: { id: string }) => r.id);
-        const { data: i18n } = await supabase
-          .from('nav_catalog_i18n')
-          .select('catalog_id, lang')
-          .in('catalog_id', ids);
+        const { data: i18n } = await repo.fetchNavCatalogI18nLangsForIds(supabase, ids);
         if (i18n) {
           // Group languages present per catalog entry
           const byCatalog = new Map<string, Set<string>>();
@@ -128,16 +116,10 @@ export const navigatorScanner: AdminScanner = {
     // been touched in 30 days, flag it for review (content likely drifts).
     try {
       const d30 = new Date(Date.now() - 30 * 86400_000).toISOString();
-      const { count } = await supabase
-        .from('nav_catalog_audit')
-        .select('id', { count: 'exact', head: true })
-        .gte('created_at', d30);
+      const { count } = await repo.countNavCatalogAuditRowsSince(supabase, d30);
       // Low cadence check — only flag if literally zero audit rows in 30d AND
       // catalog has ≥ 20 entries (so this isn't a fresh tenant).
-      const { count: catalogTotal } = await supabase
-        .from('nav_catalog')
-        .select('id', { count: 'exact', head: true })
-        .or(`tenant_id.is.null,tenant_id.eq.${tenantId}`);
+      const { count: catalogTotal } = await repo.countNavCatalogTotal(supabase, tenantId);
       if (count === 0 && catalogTotal !== null && catalogTotal >= 20) {
         insights.push({
           natural_key: 'navigator_stale_catalog_30d',

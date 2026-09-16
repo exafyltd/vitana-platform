@@ -18,9 +18,15 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { getSupabase } from '../lib/supabase';
 import { getUserHealthContext, type UserHealthContext } from '../services/user-health-context';
-import { applyUserLimitations, type FilterableProduct } from '../services/limitations-filter';
+import {
+  applyUserLimitations,
+  excludePastPurchases,
+  buildHiddenBreakdown,
+  type FilterableProduct,
+} from '../services/limitations-filter';
 import { rankFeedProducts, type FeedConfig } from '../services/feed-ranker';
 import * as jose from 'jose';
+import * as repo from './discover-feed-repository';
 
 const router = Router();
 
@@ -112,14 +118,7 @@ router.get('/feed', async (req: Request, res: Response) => {
 
   // Resolve feed config: tenant-specific > platform-wide > GLOBAL × stage fallback
   let feedConfig: FeedConfig | null = null;
-  const { data: configRows } = await supabase
-    .from('default_feed_config')
-    .select(
-      'id, tenant_id, region_group, lifecycle_stage, featured_product_ids, category_mix, max_products_per_merchant, max_products_per_category, starter_conditions, personalization_weight_override, diversity_rules, notes'
-    )
-    .in('region_group', [regionGroup, 'GLOBAL'])
-    .eq('lifecycle_stage', lifecycleStage)
-    .eq('is_active', true);
+  const { data: configRows } = await repo.fetchDefaultFeedConfig(supabase, { regionGroup, lifecycleStage });
 
   if (configRows?.length) {
     // Prefer tenant-specific, then platform-default for region, then GLOBAL fallback
@@ -143,13 +142,10 @@ router.get('/feed', async (req: Request, res: Response) => {
   }
 
   // Candidate fetch
-  let candidateQuery = supabase
-    .from('products')
-    .select(
-      'id, title, description, description_long, brand, category, subcategory, price_cents, currency, compare_at_price_cents, images, affiliate_url, availability, rating, review_count, origin_country, origin_region, merchant_id, ingredients_primary, health_goals, dietary_tags, reward_preview, contains_allergens, contraindicated_with_conditions, contraindicated_with_medications, ships_to_countries, ships_to_regions, excluded_from_regions, dosage, serving_size, servings_per_container, evidence_links, safety_notes'
-    )
-    .eq('is_active', true)
-    .eq('availability', 'in_stock');
+  let candidateQuery = repo.buildCandidateProductsFeedQuery(
+    supabase,
+    'id, title, description, description_long, brand, category, subcategory, price_cents, currency, compare_at_price_cents, images, affiliate_url, availability, rating, review_count, origin_country, origin_region, merchant_id, ingredients_primary, health_goals, dietary_tags, reward_preview, contains_allergens, contraindicated_with_conditions, contraindicated_with_medications, ships_to_countries, ships_to_regions, excluded_from_regions, dosage, serving_size, servings_per_container, evidence_links, safety_notes',
+  );
 
   if (category) candidateQuery = candidateQuery.eq('category', category);
 
@@ -224,8 +220,7 @@ router.get('/feed', async (req: Request, res: Response) => {
   const { allowed, hidden_breakdown } = applyUserLimitations(geoAllowed, ctx, { surface: 'feed' });
 
   // Exclude past purchases
-  const pastIds = new Set(ctx.past_purchases.map((p) => p.product_id));
-  const withoutPast = allowed.filter((p) => !pastIds.has(p.id));
+  const { withoutPast, past_purchases_hidden } = excludePastPurchases(allowed, ctx.past_purchases);
 
   const ranked = rankFeedProducts({
     products: withoutPast,
@@ -246,11 +241,11 @@ router.get('/feed', async (req: Request, res: Response) => {
       config_id: feedConfig?.id ?? null,
       guest: isGuest,
     },
-    hidden_breakdown: {
-      ...hidden_breakdown,
-      geo: hidden_breakdown.geo + (candidates.length - geoAllowed.length),
-      past_purchases: allowed.length - withoutPast.length,
-    },
+    hidden_breakdown: buildHiddenBreakdown({
+      preFilterGeoHidden: candidates.length - geoAllowed.length,
+      limitations: hidden_breakdown,
+      pastPurchasesHidden: past_purchases_hidden,
+    }),
   });
 });
 

@@ -1,5 +1,6 @@
 import { getSupabase } from '../lib/supabase';
 import { GovernanceRule, GovernanceEnforcement } from '../types/governance';
+import * as repo from './enforcement-executor-repository';
 
 // Removed top-level createClient
 
@@ -31,7 +32,7 @@ export class EnforcementExecutor {
         const supabase = getSupabase();
 
         if (supabase) {
-            const { error } = await supabase.from('governance_enforcements').insert(enforcement);
+            const { error } = await repo.insertGovernanceEnforcement(supabase, enforcement);
             if (error) console.error('Failed to save enforcement:', error);
         } else {
             console.warn('[EnforcementExecutor] Supabase not configured - enforcement not persisted');

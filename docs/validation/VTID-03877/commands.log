@@ -1,0 +1,54 @@
+# VTID-03877 — commands run for validation
+
+## Root-cause investigation (read-only, before any code change)
+
+- Direct Supabase query confirmed dev_autopilot_executions row 37fa35bb-e5ce-42f9-afe7-5043b63abf3c
+  (VTID-03862's operator on-ramp execution) reached status='reverted' at 2026-09-13 20:59:12 UTC
+  via the 20-min stuck-execution watchdog.
+- Operator Console, asked "what is the status" the next morning, reported VTID-03862 as still
+  in_progress (via oasis_analyze_vtid / autopilot_get_status), which read vtid_ledger.status —
+  never updated by anything in the on-ramp path.
+- grep across services/gateway/src/services/ + routes/ for terminal_outcome/is_terminal writers
+  found self-healing-reconciler.ts's reconcileAutopilotLinkedSelfHealingVtids() as the only
+  function that ever syncs dev_autopilot_executions outcomes back onto vtid_ledger — but its
+  ledger scan query hard-filters `metadata->>source=eq.self-healing`.
+- grep confirmed operator-execution-onramp.ts never writes `autopilot_execution_id` onto
+  vtid_ledger.metadata at all (it only READS spec_status/is_terminal from the ledger before
+  executing).
+
+## Local validation (this branch)
+
+```
+cd services/gateway
+npx tsc --noEmit
+# exit 0, see outputs/tsc-noemit.txt
+
+npx jest test/vtid-03820-operator-execution-onramp.test.ts test/self-healing-reconciler-autopilot-link.test.ts
+# 25/25 passing, see outputs/jest-new-vtid-suites.txt
+
+npx jest
+# 763/764 suites (1 pre-existing skip), 13907/13942 tests, 0 failures
+# see outputs/jest-full-suite-summary.txt
+```
+
+## Route Mount Evidence Gate
+
+No route registration added or changed by this PR — this is a service-layer fix
+(operator-execution-onramp.ts, self-healing-reconciler.ts) with no changes to
+services/gateway/src/routes/. Not applicable.
+
+## CSP Governance Gate
+
+No changes to services/gateway/src/frontend/ or dist/frontend/. Not applicable.
+
+## Path Ownership Guard (VALIDATOR-CHECK.yml gateway_backend profile)
+
+Changed files:
+- services/gateway/src/services/operator-execution-onramp.ts
+- services/gateway/src/services/self-healing-reconciler.ts
+- services/gateway/test/self-healing-reconciler-autopilot-link.test.ts
+- services/gateway/test/vtid-03820-operator-execution-onramp.test.ts
+- docs/validation/VTID-03877/**
+
+All within the gateway_backend profile's admitted trees
+(services/gateway/src/, services/gateway/test/, docs/validation/).

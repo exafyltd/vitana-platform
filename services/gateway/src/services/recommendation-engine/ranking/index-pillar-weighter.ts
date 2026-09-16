@@ -29,6 +29,7 @@
 
 import { SupabaseClient } from '@supabase/supabase-js';
 import { PILLAR_KEYS, PILLAR_TAGS, describeBalance, type PillarKey } from '../../../lib/vitana-pillars';
+import * as repo from './index-pillar-weighter-repository';
 
 export type EconomicAxis =
   | 'find_match'
@@ -197,53 +198,25 @@ export async function buildRankerContext(
   // 14d completion flag + baseline-exists flag + G7 recent-activity view +
   // G7 rejection-rate-by-domain.
   const [latestIdx, firstIdx, goal, recentCompletions, baselineSurvey, activity, rejections] = await Promise.all([
-    supabase
-      .from('vitana_index_scores')
-      .select('score_nutrition, score_hydration, score_exercise, score_sleep, score_mental, feature_inputs, date')
-      .eq('user_id', userId)
-      .order('date', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-    supabase
-      .from('vitana_index_scores')
-      .select('date')
-      .eq('user_id', userId)
-      .order('date', { ascending: true })
-      .limit(1)
-      .maybeSingle(),
-    supabase
-      .from('life_compass')
-      .select('category')
-      .eq('user_id', userId)
-      .eq('is_active', true)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-    supabase
-      .from('calendar_events')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .eq('completion_status', 'completed')
-      .gte('completed_at', new Date(Date.now() - 14 * 86400000).toISOString()),
-    supabase
-      .from('vitana_index_baseline_survey')
-      .select('user_id')
-      .eq('user_id', userId)
-      .limit(1)
-      .maybeSingle(),
+    repo.fetchLatestVitanaIndexScoreRow(supabase, userId),
+    repo.fetchFirstVitanaIndexScoreDate(supabase, userId),
+    repo.fetchActiveLifeCompassCategory(supabase, userId),
+    repo.countRecentCompletedCalendarEvents(
+      supabase,
+      userId,
+      new Date(Date.now() - 14 * 86400000).toISOString(),
+    ),
+    repo.fetchBaselineSurveyExists(supabase, userId),
     // G7: user_pillar_recent_activity view — 5 rows/user (one per pillar
     // the user has activity on). Pillars with zero activity are absent.
-    supabase
-      .from('user_pillar_recent_activity')
-      .select('pillar, last_completed_at, completions_24h, completions_7d, plan_events_24h')
-      .eq('user_id', userId),
+    repo.fetchUserPillarRecentActivity(supabase, userId),
     // G7: 30-day rejection rate per domain. Count rejected vs total for
     // each domain and compute ratio in-ranker.
-    supabase
-      .from('autopilot_recommendations')
-      .select('domain, status')
-      .eq('user_id', userId)
-      .gte('created_at', new Date(Date.now() - 30 * 86400000).toISOString()),
+    repo.fetchRecentRecommendationsForRejectionRate(
+      supabase,
+      userId,
+      new Date(Date.now() - 30 * 86400000).toISOString(),
+    ),
   ]);
 
   let pillars: Record<PillarKey, number> | null = null;

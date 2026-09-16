@@ -924,8 +924,16 @@ router.get("/api/v1/events/stream", async (req: Request, res: Response) => {
       // Apply optional filters
       const topic = req.query.topic as string;
       const vtid = req.query.vtid as string;
-      if (topic) queryParams += `&topic=eq.${topic}`;
-      if (vtid) queryParams += `&vtid=eq.${vtid}`;
+      // VTID-03927: `channel` was documented above but never read — every
+      // caller passing `channel=operator` (e.g. Command Hub's SSE ticker)
+      // silently got the unfiltered platform-wide firehose instead. Maps to
+      // the existing `surface` column (already written as 'operator'/'orb'
+      // by conversation.ts/tenant-specialists.ts) rather than inventing a
+      // new column.
+      const channel = req.query.channel as string;
+      if (topic) queryParams += `&topic=eq.${encodeURIComponent(topic)}`;
+      if (vtid) queryParams += `&vtid=eq.${encodeURIComponent(vtid)}`;
+      if (channel) queryParams += `&surface=eq.${encodeURIComponent(channel)}`;
 
       const resp = await fetch(
         `${supabaseUrl}/rest/v1/oasis_events?${queryParams}`,

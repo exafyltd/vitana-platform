@@ -26,6 +26,7 @@
 
 import { getSupabase } from '../../lib/supabase';
 import { emitGuideTelemetry } from './guide-telemetry';
+import * as repo from './adaptation-applier-repository';
 
 const LOG_PREFIX = '[Guide:adaptation-applier]';
 
@@ -56,13 +57,7 @@ export async function applyApprovedPlans(userId: string): Promise<ApplyResult> {
 
   // Try to read approved plans. If the table doesn't exist, supabase returns
   // an error like "relation 'adaptation_plans' does not exist" — handle gracefully.
-  const { data: plans, error } = await supabase
-    .from('adaptation_plans')
-    .select('id, user_id, plan_type, plan_payload, approved_at, applied_at')
-    .eq('user_id', userId)
-    .not('approved_at', 'is', null)
-    .is('applied_at', null)
-    .limit(20);
+  const { data: plans, error } = await repo.fetchPendingAdaptationPlans(supabase, userId, 20);
 
   if (error) {
     if (
@@ -96,16 +91,13 @@ export async function applyApprovedPlans(userId: string): Promise<ApplyResult> {
       // will need to interpret it (out of scope here).
       const waveId = plan.plan_payload?.wave_id || `adaptation_${plan.plan_type}`;
 
-      const { error: upsertErr } = await supabase.from('user_journey_overrides').upsert(
-        {
-          user_id: plan.user_id,
-          wave_id: waveId,
-          overrides: { adaptation: plan.plan_payload, plan_id: plan.id },
-          source: 'd43_adaptation',
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id,wave_id' },
-      );
+      const { error: upsertErr } = await repo.upsertJourneyOverride(supabase, {
+        user_id: plan.user_id,
+        wave_id: waveId,
+        overrides: { adaptation: plan.plan_payload, plan_id: plan.id },
+        source: 'd43_adaptation',
+        updated_at: new Date().toISOString(),
+      });
 
       if (upsertErr) {
         console.warn(`${LOG_PREFIX} override upsert failed for plan ${plan.id}:`, upsertErr.message);
@@ -113,10 +105,7 @@ export async function applyApprovedPlans(userId: string): Promise<ApplyResult> {
       }
 
       // Mark plan as applied
-      await supabase
-        .from('adaptation_plans')
-        .update({ applied_at: new Date().toISOString() })
-        .eq('id', plan.id);
+      await repo.markAdaptationPlanApplied(supabase, plan.id, new Date().toISOString());
 
       appliedCount += 1;
       detailLines.push(`applied plan_type=${plan.plan_type} → wave_id=${waveId}`);
@@ -146,12 +135,7 @@ export async function getAdaptationStatus(userId: string): Promise<AdaptationSta
   if (!supabase) return null;
 
   // Pending (approved but not applied)
-  const pendingRes = await supabase
-    .from('adaptation_plans')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', userId)
-    .not('approved_at', 'is', null)
-    .is('applied_at', null);
+  const pendingRes = await repo.countPendingAdaptationPlans(supabase, userId);
 
   if (pendingRes.error) {
     if (
@@ -163,13 +147,7 @@ export async function getAdaptationStatus(userId: string): Promise<AdaptationSta
   }
 
   // Applied (most recent)
-  const appliedRes = await supabase
-    .from('adaptation_plans')
-    .select('id, applied_at', { count: 'exact' })
-    .eq('user_id', userId)
-    .not('applied_at', 'is', null)
-    .order('applied_at', { ascending: false })
-    .limit(1);
+  const appliedRes = await repo.fetchMostRecentAppliedPlan(supabase, userId, 1);
 
   return {
     pending_plans: pendingRes.count ?? 0,

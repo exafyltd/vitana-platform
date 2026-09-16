@@ -124,6 +124,19 @@ async function requireDevRole(req: Request, res: Response, next: NextFunction): 
   if (authFailed) return;
 }
 
+// VTID-03897: the browser's native EventSource cannot set a custom
+// Authorization header, so the SSE stream route alone also accepts the
+// bearer token as a query param. Deliberately NOT folded into
+// requireDevRole itself — that would put every dev-autopilot GET's token
+// into server/proxy access logs, not just this one stream's.
+async function requireDevRoleForStream(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const queryToken = typeof req.query.access_token === 'string' ? req.query.access_token : undefined;
+  if (queryToken && !req.headers.authorization) {
+    req.headers.authorization = `Bearer ${queryToken}`;
+  }
+  return requireDevRole(req, res, next);
+}
+
 function requireScanToken(req: Request, res: Response, next: () => void) {
   const token = req.get('X-DevAutopilot-Scan-Token') || '';
   if (!SCAN_TOKEN) {
@@ -1020,6 +1033,139 @@ router.get('/executions/:id/lineage', requireDevRole, async (req: Request, res: 
   return res.json({ ok: true, root_id: root.id, lineage: all.data || [] });
 });
 
+// VTID-03896: dev_autopilot.execution.* OASIS events carry the execution's
+// own id in metadata.execution_id (see emitOasisEvent's payload->metadata
+// mapping) — never in the `vtid` column, which on this pipeline is the
+// constant EXEC_VTID, not a per-execution value. `metadata->>execution_id=
+// eq.X` is the same PostgREST jsonb-arrow filter already used elsewhere in
+// this codebase (self-healing.ts, orb-agent-trace.ts).
+const EXECUTION_STEP_TOPIC_FILTER = 'topic=ilike.dev_autopilot.*';
+
+// GET /executions/:id/steps — one-shot fetch of an execution's step-by-step
+// OASIS event log, oldest first. Used for the Command Hub step-feed panel's
+// initial render and as the SSE stream's non-JS/reconnect fallback.
+router.get('/executions/:id/steps', requireDevRole, async (req: Request, res: Response) => {
+  const supa = getSupabase();
+  if (!supa) return res.status(500).json({ ok: false, error: 'Supabase not configured' });
+  const executionId = req.params.id;
+  const limit = Math.min(Math.max(parseInt(String(req.query.limit || '200'), 10) || 200, 1), 500);
+
+  const r = await supaGet<Array<Record<string, unknown>>>(
+    supa,
+    `/rest/v1/oasis_events?metadata->>execution_id=eq.${encodeURIComponent(executionId)}` +
+      `&${EXECUTION_STEP_TOPIC_FILTER}&order=created_at.asc&limit=${limit}`,
+  );
+  if (!r.ok) return res.status(500).json({ ok: false, error: r.error });
+  return res.json({ ok: true, execution_id: executionId, steps: r.data || [] });
+});
+
+// VTID-03897: terminal execution topics that end the SSE stream on arrival —
+// mirrors the statuses applyExecTerminalSideEffects() treats as terminal
+// (dev-autopilot-execute.ts) plus the two lineage-closing outcomes it
+// deliberately leaves to the self-healing plane's own accounting.
+const EXECUTION_STREAM_TERMINAL_TOPICS = new Set([
+  'dev_autopilot.execution.completed',
+  'dev_autopilot.execution.failed',
+  'dev_autopilot.execution.cancelled',
+  'dev_autopilot.execution.reverted',
+  'dev_autopilot.execution.auto_archived',
+]);
+
+// GET /executions/:id/stream — Server-Sent Events live tail of one
+// execution's step events, so a developer can watch a multi-hour on-ramp
+// execution turn-by-turn instead of only seeing a single status badge.
+// Polls oasis_events every 2s (same interval class as /api/v1/events/stream's
+// established 3s admin-firehose poll) and closes itself the moment a
+// terminal event for THIS execution arrives, or the client disconnects —
+// unlike the global stream, a per-execution one has a real end.
+router.get('/executions/:id/stream', requireDevRoleForStream, async (req: Request, res: Response) => {
+  const supa = getSupabase();
+  if (!supa) return res.status(500).json({ ok: false, error: 'Supabase not configured' });
+  const executionId = req.params.id;
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.write(`event: connected\ndata: ${JSON.stringify({ status: 'connected', execution_id: executionId })}\n\n`);
+
+  let lastSeenTimestamp: string | null = null;
+  let closed = false;
+  let pollInterval: NodeJS.Timeout | undefined;
+  let heartbeatInterval: NodeJS.Timeout | undefined;
+
+  const finish = () => {
+    if (pollInterval) clearInterval(pollInterval);
+    if (heartbeatInterval) clearInterval(heartbeatInterval);
+    if (!res.writableEnded) res.end();
+  };
+
+  const pollSteps = async () => {
+    if (closed) return;
+    let queryParams =
+      `metadata->>execution_id=eq.${encodeURIComponent(executionId)}&${EXECUTION_STEP_TOPIC_FILTER}` +
+      `&order=created_at.asc&limit=50`;
+    if (lastSeenTimestamp) queryParams += `&created_at=gt.${encodeURIComponent(lastSeenTimestamp)}`;
+
+    const r = await supaGet<Array<Record<string, unknown>>>(supa, `/rest/v1/oasis_events?${queryParams}`);
+    if (!r.ok || !r.data) return;
+
+    for (const step of r.data) {
+      res.write(`event: step\ndata: ${JSON.stringify(step)}\n\n`);
+      if (typeof step.created_at === 'string') lastSeenTimestamp = step.created_at;
+      if (typeof step.topic === 'string' && EXECUTION_STREAM_TERMINAL_TOPICS.has(step.topic)) {
+        res.write(`event: terminal\ndata: ${JSON.stringify({ topic: step.topic })}\n\n`);
+        closed = true;
+      }
+    }
+    if (closed) finish();
+  };
+
+  await pollSteps();
+  if (!closed) {
+    pollInterval = setInterval(pollSteps, 2000);
+    heartbeatInterval = setInterval(() => {
+      if (!closed) res.write(`: heartbeat ${new Date().toISOString()}\n\n`);
+    }, 30000);
+  }
+
+  req.on('close', () => {
+    closed = true;
+    finish();
+  });
+});
+
+// VTID-03898: batched last_event_at lookup so the Command Hub can tell a
+// long-running-but-healthy execution ("still emitting steps") from a
+// silently stuck one ("last step was an hour ago"), without an N+1 query
+// per execution card. One query, `metadata->>execution_id=in.(...)` — the
+// same `=in.(...)` convention already used elsewhere in this file (e.g. the
+// `status=in.(...)` clause a few lines above) — ordered newest-first so the
+// first row seen per execution id is its most recent step.
+async function fetchLastEventAtByExecutionIds(
+  supa: SupaConfig,
+  executionIds: string[],
+): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  if (executionIds.length === 0) return result;
+  // Bounded so a large active-execution page can't request an unbounded
+  // amount of history — 50 recent rows/execution is far more than needed
+  // since only the single newest row per id is kept.
+  const limit = Math.min(Math.max(executionIds.length * 50, 100), 2000);
+  const idsCsv = executionIds.map((id) => encodeURIComponent(id)).join(',');
+  const r = await supaGet<Array<{ created_at: string; metadata: { execution_id?: string } | null }>>(
+    supa,
+    `/rest/v1/oasis_events?metadata->>execution_id=in.(${idsCsv})&${EXECUTION_STEP_TOPIC_FILTER}` +
+      `&select=created_at,metadata&order=created_at.desc&limit=${limit}`,
+  );
+  if (!r.ok || !r.data) return result;
+  for (const row of r.data) {
+    const execId = row.metadata?.execution_id;
+    if (execId && !result.has(execId)) result.set(execId, row.created_at);
+  }
+  return result;
+}
+
 router.get('/executions', requireDevRole, async (req: Request, res: Response) => {
   const supa = getSupabase();
   if (!supa) return res.status(500).json({ ok: false, error: 'Supabase not configured' });
@@ -1034,9 +1180,28 @@ router.get('/executions', requireDevRole, async (req: Request, res: Response) =>
   }
   const limit = Math.min(parseInt(String(req.query.limit || '100'), 10), 500);
   const qs = [statusClause, `order=created_at.desc`, `limit=${limit}`].filter(Boolean).join('&');
-  const r = await supaGet<unknown[]>(supa, `/rest/v1/dev_autopilot_executions?${qs}`);
+  const r = await supaGet<Array<Record<string, unknown>>>(supa, `/rest/v1/dev_autopilot_executions?${qs}`);
   if (!r.ok) return res.status(500).json({ ok: false, error: r.error });
-  return res.json({ ok: true, executions: r.data || [] });
+  const executions = r.data || [];
+
+  // VTID-03898: enrich with last_event_at in one extra query — never blocks
+  // the response on failure, since a heartbeat signal is a nice-to-have,
+  // not something that should turn a working list endpoint into a 500.
+  const executionIds = executions
+    .map((e) => (typeof e.id === 'string' ? e.id : null))
+    .filter((id): id is string => id !== null);
+  try {
+    const lastEventAtById = await fetchLastEventAtByExecutionIds(supa, executionIds);
+    for (const exec of executions) {
+      if (typeof exec.id === 'string') {
+        exec.last_event_at = lastEventAtById.get(exec.id) || null;
+      }
+    }
+  } catch (err) {
+    console.warn(`${LOG_PREFIX} last_event_at enrichment failed:`, err);
+  }
+
+  return res.json({ ok: true, executions });
 });
 
 // =============================================================================

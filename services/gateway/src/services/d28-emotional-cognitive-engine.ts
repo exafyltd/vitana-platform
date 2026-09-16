@@ -20,6 +20,7 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { emitOasisEvent } from './oasis-event-service';
+import * as repo from './d28-emotional-cognitive-engine-repository';
 import {
   SignalBundle,
   SignalComputeInput,
@@ -163,16 +164,13 @@ export async function computeSignals(
 
     // For dev sandbox, bootstrap the request context first
     if (useDevIdentity) {
-      const { error: bootstrapError } = await supabase.rpc('dev_bootstrap_request_context', {
-        p_tenant_id: DEV_IDENTITY.TENANT_ID,
-        p_active_role: 'developer'
-      });
+      const { error: bootstrapError } = await repo.devBootstrapRequestContext(supabase, DEV_IDENTITY.TENANT_ID, 'developer');
       if (bootstrapError) {
         console.warn(`${LOG_PREFIX} Bootstrap context failed (non-fatal):`, bootstrapError.message);
       }
     }
 
-    const result = await supabase.rpc('emotional_cognitive_compute', rpcParams);
+    const result = await repo.computeEmotionalCognitiveSignals(supabase, rpcParams);
 
     if (result.error) {
       console.error(`${LOG_PREFIX} RPC error:`, result.error);
@@ -280,18 +278,13 @@ export async function getCurrentSignals(
 
     // For dev sandbox, bootstrap the request context first
     if (useDevIdentity) {
-      const { error: bootstrapError } = await supabase.rpc('dev_bootstrap_request_context', {
-        p_tenant_id: DEV_IDENTITY.TENANT_ID,
-        p_active_role: 'developer'
-      });
+      const { error: bootstrapError } = await repo.devBootstrapRequestContext(supabase, DEV_IDENTITY.TENANT_ID, 'developer');
       if (bootstrapError) {
         console.warn(`${LOG_PREFIX} Bootstrap context failed (non-fatal):`, bootstrapError.message);
       }
     }
 
-    const result = await supabase.rpc('emotional_cognitive_get_current', {
-      p_session_id: sessionId || null
-    });
+    const result = await repo.fetchCurrentEmotionalCognitiveSignals(supabase, sessionId || null);
 
     if (result.error) {
       console.error(`${LOG_PREFIX} RPC error (get_current):`, result.error);
@@ -358,19 +351,13 @@ export async function overrideSignal(
 
     // For dev sandbox, bootstrap the request context first
     if (useDevIdentity) {
-      const { error: bootstrapError } = await supabase.rpc('dev_bootstrap_request_context', {
-        p_tenant_id: DEV_IDENTITY.TENANT_ID,
-        p_active_role: 'developer'
-      });
+      const { error: bootstrapError } = await repo.devBootstrapRequestContext(supabase, DEV_IDENTITY.TENANT_ID, 'developer');
       if (bootstrapError) {
         console.warn(`${LOG_PREFIX} Bootstrap context failed (non-fatal):`, bootstrapError.message);
       }
     }
 
-    const result = await supabase.rpc('emotional_cognitive_override', {
-      p_signal_id: signalId,
-      p_override: override
-    });
+    const result = await repo.overrideEmotionalCognitiveSignal(supabase, signalId, override);
 
     if (result.error) {
       console.error(`${LOG_PREFIX} RPC error (override):`, result.error);
@@ -451,18 +438,13 @@ export async function explainSignal(
 
     // For dev sandbox, bootstrap the request context first
     if (useDevIdentity) {
-      const { error: bootstrapError } = await supabase.rpc('dev_bootstrap_request_context', {
-        p_tenant_id: DEV_IDENTITY.TENANT_ID,
-        p_active_role: 'developer'
-      });
+      const { error: bootstrapError } = await repo.devBootstrapRequestContext(supabase, DEV_IDENTITY.TENANT_ID, 'developer');
       if (bootstrapError) {
         console.warn(`${LOG_PREFIX} Bootstrap context failed (non-fatal):`, bootstrapError.message);
       }
     }
 
-    const result = await supabase.rpc('emotional_cognitive_explain', {
-      p_signal_id: signalId
-    });
+    const result = await repo.explainEmotionalCognitiveSignal(supabase, signalId);
 
     if (result.error) {
       console.error(`${LOG_PREFIX} RPC error (explain):`, result.error);

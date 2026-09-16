@@ -14,6 +14,7 @@
 import { Router, Request, Response } from 'express';
 import { requireAuth } from '../middleware/auth-supabase-jwt';
 import { getSupabase } from '../lib/supabase';
+import * as repo from './intent-templates-repository';
 
 const router = Router();
 
@@ -29,24 +30,11 @@ router.get('/intent-templates', requireAuth, async (req: Request, res: Response)
   if (!supabase) return res.status(500).json({ ok: false, error: 'supabase_unavailable' });
 
   // Try exact category match first, then kind-level fallback.
-  let q = supabase
-    .from('intent_scope_templates')
-    .select('template_title, template_scope, payload_hint, category_key')
-    .eq('intent_kind', intentKind)
-    .order('sort_order', { ascending: true });
-
-  if (category) q = q.in('category_key', [category]);
-
-  const { data: exactRows } = await q;
+  const { data: exactRows } = await repo.fetchIntentScopeTemplatesByCategory(supabase, intentKind, category);
   let rows = (exactRows || []) as any[];
 
   if (rows.length === 0) {
-    const { data: fallback } = await supabase
-      .from('intent_scope_templates')
-      .select('template_title, template_scope, payload_hint, category_key')
-      .eq('intent_kind', intentKind)
-      .is('category_key', null)
-      .order('sort_order', { ascending: true });
+    const { data: fallback } = await repo.fetchIntentScopeTemplatesNoCategoryFallback(supabase, intentKind);
     rows = (fallback || []) as any[];
   }
 

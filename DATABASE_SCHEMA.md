@@ -676,6 +676,7 @@ CREATE TABLE my_new_table (
 
 | Date | Change | Author | VTID |
 |------|--------|--------|------|
+| 2026-09-13 | `dev_autopilot_outcomes.source_type` CHECK widened from the original `('dev_autopilot','dev_autopilot_impact')` pair to the full executor-lane allowlist (`missing-test-scanner`, `test-contract-failure-scanner`, `dev_autopilot`, `dev_autopilot_impact`, `operator_onramp`) — migration `20260913100000_vtid_03844_outcomes_source_type_allowlist.sql`. The constraint had never followed VTID-02984's single allowlist or VTID-03820's `operator_onramp`, and `recordOutcome()` carried its own copy of the stale pair, so operator on-ramp executions produced no outcome rows at all (observed on staging 2026-09-13). A gateway test reads the migration and fails if its list drifts from `EXECUTABLE_RECOMMENDATION_SOURCE_TYPES`. Migration ships as a file; apply via `RUN-MIGRATION.yml`. | Claude | VTID-03844 |
 | 2026-07-21 | Added missing `wallet_transactions_from_user_id_fkey`/`_to_user_id_fkey` (NOT VALID, targeting `profiles.user_id`) — the Wallet's "Recent Activity" transaction list had never worked; every `fetchTransactions` PostgREST embed 400'd for lack of any FK on `from_user_id`/`to_user_id`. Found while verifying the VTNA/Credits merge deploy on AWS staging; unrelated pre-existing bug. Verified with a direct PostgREST request (200 OK, real profile data resolved). | Claude | — |
 | 2026-07-20 | Merged VTNA and Credits into one "VTNA Credits" currency; stripped staking-APY/governance/appreciation copy (previous cause of an Apple 3.1.5(iii) rejection) from the two dedicated VTNA popups and every send/request/exchange/booking currency picker in vitana-v1; defensive DB migration folding any nonzero VTNA balance into CREDITS (no-op, verified). Also fixed an unrelated bug found in the same pass: `WalletMasterActionPopup`'s quick-action menu fabricated free balance and silently destroyed real USD balance via a fake withdrawal. | Claude | BOOTSTRAP-VTNA-CREDITS-MERGE |
 | 2025-11-11 | Initial schema documentation | Claude | DEV-COMMU-0055 |
@@ -1856,3 +1857,215 @@ refuses to construct without a recorded BLK-009 activation
 
 **Remember:** This file is the SINGLE SOURCE OF TRUTH for table names.
 When in doubt, CHECK HERE FIRST!
+
+
+## BackOffice — `erp_capability_grants` (VTID-03834, 2026-09-13) — applied to the live project 2026-09-14 (owner: "apply now")
+
+The Vitana role `backoffice` (VTID-03832) opens `/backoffice`; an ERP **capability** gates what a
+person may do inside (catalog: `services/gateway/src/constants/erp-capabilities.ts`, derived from
+`docs/backoffice/GOLDEN-WORKFLOWS.md` §3). Role defaults are computed in the gateway; this table
+holds only **explicit** grants and is written exclusively by the gateway's service role through
+`POST /api/v1/backoffice/access/grant|revoke`.
+
+### erp_capability_grants
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | UUID PK | `gen_random_uuid()` |
+| `user_id` | UUID NOT NULL | grantee |
+| `tenant_id` | UUID NOT NULL | tenant scope — grants never cross tenants |
+| `capability` | TEXT NOT NULL | `<domain>.<level>`, CHECK on shape; real catalog validated in the gateway |
+| `granted_by` | UUID | caller of the grant endpoint |
+| `granted_at` | TIMESTAMPTZ | default `now()` |
+
+Constraints: `UNIQUE (user_id, tenant_id, capability)`; indexes on `(user_id, tenant_id)` and `(tenant_id)`.
+RLS: `authenticated` may SELECT own rows; `service_role` ALL. `hr.*` / `payroll.*` rows can only be
+created by a tenant `admin` or an Exafy super-admin (enforced in the gateway, never a role default).
+
+## role_preferences — the frontend role switcher's write target (VTID-03832 / VTID-03916)
+
+Not previously documented here — the table (and `set_role_preference()`/
+`get_my_permitted_roles()`/`validate_role_assignment()`/`me_set_active_role()`)
+existed only in the live database before VTID-03832's
+`20260913000002_vtid_03832_role_functions.sql` gave them a migration file.
+
+| Column | Type | Notes |
+|---|---|---|
+| `user_id`, `tenant_id` | UUID | PK pair (`ON CONFLICT (user_id, tenant_id) DO UPDATE`) |
+| `role` | **TEXT**, not an enum | independent `role_preferences_role_check` CHECK constraint — does **not** inherit from `tenant_role`/`vitana_role` |
+| `updated_at` | TIMESTAMPTZ | |
+
+**VTID-03832 extended the `tenant_role`/`vitana_role` enums (and the four role
+RPCs) to the 8-role ladder but never touched this CHECK constraint** — it was
+still `role = ANY (ARRAY['community','patient','professional','staff','admin'])`.
+`set_role_preference()`'s `INSERT` therefore raised a `23514` violation for
+`backoffice`/`developer`/`infra` unconditionally, regardless of the caller's
+permission (an exafy_admin, who bypasses every permission check in that
+function, still hit this). **VTID-03916 widened it** to
+`community, patient, professional, staff, backoffice, admin, developer, infra`
+— applied directly to the live project 2026-09-15, migration file
+`20260915131400_vtid_03916_widen_role_preferences_check.sql`.
+
+**Known sibling gap, NOT fixed by VTID-03916 (flagged, deliberately deferred):**
+`nav_catalog_role_chk` has the identical shape of bug — it carries
+`admin`/`developer`/`infra` but is still missing `backoffice`. VTID-03832's own
+changelog entry already lists "nav-catalog rows for the BackOffice Navigator
+role" as an open decision, so this is a known gap, not a currently-firing bug
+(nothing inserts a `backoffice` nav_catalog row yet). A separate, much older
+`user_active_role` (singular) table has an even narrower CHECK
+(`community`/`developer`/`admin` only) — confirmed dead: no code path in
+either repo writes to it (`me_set_active_role()` writes the different,
+unconstrained `user_active_roles` plural table, and nothing on the frontend
+calls that RPC either).
+
+## BackOffice — command orchestrator tables (VTID-03842, 2026-09-13) — applied to the live project 2026-09-14 (owner: "apply now"); browser-role privileges revoked by `20260914130000_vtid_03842_erp_tables_revoke_browser_roles.sql`
+
+`supabase/migrations/20260913020000_vtid_03842_erp_commands_approvals_audit.sql`. Written only by the gateway (service role) behind `POST /api/v1/backoffice/commands` and the approvals routes; the browser never touches them.
+
+### erp_commands
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID PK | command_id returned to the client |
+| tenant_id, requester_id | UUID | tenant from `me_context`, requester = caller |
+| channel | TEXT | web / chat / voice / system |
+| type, action | TEXT | typed command (`constants/backoffice-commands.ts`) and the ERPClaw action it maps to |
+| tier | TEXT | read / draft / commit / high — AFTER §4.3 escalations |
+| status | TEXT | executed / failed / awaiting_approval / rejected |
+| payload, resolved_payload | JSONB | as sent; after exact-match entity resolution |
+| idempotency_key, request_hash | TEXT | UNIQUE (tenant_id, idempotency_key); hash of type+payload for replay/conflict |
+| reason, approval_id, receipt, escalations | | policy reason; queue link; bridge receipt; §4.3 attributes that escalated |
+
+### erp_approvals
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID PK | approval_id |
+| command_id | UUID FK → erp_commands | |
+| requester_id, decided_by | UUID | CHECK decided_by <> requester_id (maker-checker at the storage layer) |
+| approve_capability | TEXT | what the approver must hold (`finance.pay`, `finance.approve`, `accounting.close`, `payroll.approve`, `erp.admin`) |
+| status | TEXT | pending / approved / rejected |
+| reason, decision_note, decided_at | | `no_eligible_approver` when the tenant lacks a second approver |
+
+### erp_audit_log (append-only)
+| Column | Type | Notes |
+|---|---|---|
+| id, tenant_id, actor_id, actor_role, channel | | |
+| event | TEXT | `command.executed` / `command.failed` / `command.queued` / `command.rejected` / `approval.approved` / `approval.rejected` / `policy.updated` |
+| command_id, approval_id, details | | |
+| — | trigger | `trg_erp_audit_log_immutable` raises on UPDATE/DELETE; UPDATE/DELETE also REVOKEd from service_role |
+
+### erp_policy_settings
+| Column | Type | Notes |
+|---|---|---|
+| tenant_id | UUID PK | |
+| high_risk_amount_threshold | NUMERIC | default 25000 (AED) — §4.3 |
+| require_mfa_for_high | BOOLEAN | default true — approvals need an `aal2` session |
+| updated_by, updated_at | | |
+
+---
+
+## VTID-03894 — Maxina supplier self-service (multi-vertical catalog)
+
+Suppliers span supplements, blood tests, gym equipment, textiles and wine, so
+the catalog asks each vertical its own questions instead of hardcoding one
+industry's columns. Written by the owner-scoped endpoints in
+`services/gateway/src/routes/vcaop-portal-my-products.ts`.
+
+### products.attributes (new column on an existing table)
+
+```sql
+ALTER TABLE products ADD COLUMN attributes JSONB NOT NULL DEFAULT '{}'::jsonb;
+CREATE INDEX idx_products_attributes ON products USING GIN (attributes jsonb_path_ops);
+```
+
+Vertical-specific answers (a wine's vintage, a garment's fabric) live here,
+keyed by `catalog_vertical_fields.field_key`.
+
+**The existing health columns were deliberately NOT moved in here.**
+`contains_allergens` and `contraindicated_with_conditions` /
+`contraindicated_with_medications` are read by `user_limitations` as a **hard
+filter** on who is shown a product. Moving them behind a JSONB round trip would
+change that filter's behaviour — a correctness change wearing a refactor's
+clothes. They stay typed columns.
+
+### catalog_verticals
+
+| Column | Type | Notes |
+|---|---|---|
+| key | TEXT PK | CHECK `^[a-z][a-z0-9_]{1,48}$` |
+| display_label | TEXT NOT NULL | |
+| description, icon | TEXT | |
+| is_regulated | BOOLEAN | default false — diagnostics and supplements are |
+| is_active, sort_order, created_at | | |
+
+Ten seeded: `supplements`, `diagnostics`, `fitness_equipment`, `apparel`,
+`wine_spirits`, `beauty_care`, `devices_wearables`, `home_living`, `services`,
+`other`. Referenced by `merchants.vertical_key` and `catalog_vertical_fields`.
+
+### catalog_vertical_fields
+
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID PK | |
+| vertical_key | TEXT FK → catalog_verticals(key) ON DELETE CASCADE | |
+| field_key | TEXT NOT NULL | CHECK `^[a-z][a-z0-9_]{1,48}$`; UNIQUE (vertical_key, field_key) |
+| display_label, help_text | TEXT | |
+| data_type | TEXT NOT NULL | CHECK in text / number / integer / boolean / date / enum / multi_enum / url |
+| vocabulary | TEXT | names a `catalog_vocabulary` set |
+| unit | TEXT | rendered as an input suffix (`%`, `g`, `ml`) |
+| is_prominent | BOOLEAN | above the fold vs. behind "More details" |
+| is_active, sort_order, created_at | | |
+| — | CHECK | `catalog_vertical_fields_enum_needs_vocabulary`: a field whose `data_type` is `enum`/`multi_enum` MUST name a vocabulary — otherwise the form renders a select with no options and the supplier cannot answer a question it insists on asking |
+| — | index | `idx_catalog_vertical_fields_lookup (vertical_key, sort_order) WHERE is_active` |
+
+37 fields seeded. **`other` deliberately has none** — a catch-all that asks
+questions is a catch-all nobody picks.
+
+### catalog_vocabulary (CHECK widened)
+
+The `vocabulary` CHECK previously enumerated six hardcoded health vocabularies,
+so a wine region or a fabric could not be added without a migration. It is now
+a shape regex on the vocabulary name. The six original values still validate.
+
+### merchants (new columns)
+
+| Column | Type | Notes |
+|---|---|---|
+| owner_user_id | UUID | the supplier who registered. **Every read and write in the portal resolves the merchant by this column from the JWT**, never from a client-supplied id |
+| partner_tenant_id | UUID | set when the merchant arrived via a VCAOP connection |
+| vertical_key | TEXT FK → catalog_verticals(key) | |
+| onboarding_status | TEXT | default `draft`; CHECK in `draft` / `in_review` / `approved` / `rejected` / `suspended` |
+| affiliate_advertiser_id | TEXT | the supplier's id **within** `affiliate_network`. Load-bearing: `creditAwinConversions` resolves a pulled conversion to a merchant by it, so a named network without this id records a preference and attributes nothing. Partial index where not null |
+
+No CHECK was added to `affiliate_network` — the column predates this VTID and
+already carries values written by catalog ingest.
+
+### How a supplier row reaches checkout
+
+`services/checkout/checkout-service.ts` routes every cart line by
+`products.source_network`. Anything in its `FIRST_PARTY_SOURCE_NETWORKS`
+(`manual`, `partner`) **debits the buyer's Vitana wallet** and writes a
+CONVERTED order meaning "Vitana fulfils".
+
+A supplier product is not that. It carries an `affiliate_url` to the supplier's
+own shop, and nothing in this platform pays a supplier or tells them to ship.
+Tagged `'manual'`, approving one would take a member's money for an order nobody
+would ever fulfil.
+
+### RLS on the two new catalog tables
+
+Both carry the same posture as `catalog_vocabulary`: `authenticated` may SELECT
+active rows, `service_role` may do anything, and there is no `anon` policy.
+
+They shipped in `20260915100000` with **no RLS at all**, which in Supabase means
+anon-key reach through PostgREST for reads *and writes* — the questions every
+supplier is asked were briefly writable by anyone. The Supabase security advisor
+(`rls_disabled_in_public`) is what caught it; `20260915132000` closes it. Run the
+advisor after any migration that creates a table.
+
+### Supplier rows are `source_network = 'supplier_referral'` — not `'manual'`
+
+`SUPPLIER_SOURCE_NETWORK = 'supplier_referral'` is therefore kept outside that
+set, and `services/gateway/test/routes/supplier-source-network.test.ts` pins
+both the value and the set so widening it later fails loudly rather than
+silently moving real money. Supplier rows are also written `is_active = false`
+with `onboarding_status = 'draft'`; only an admin flips them.

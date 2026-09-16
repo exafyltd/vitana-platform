@@ -19,6 +19,7 @@
 import { createHash } from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
+import * as repo from './developer-tools-repository';
 
 type Handler = (
   args: OrbToolArgs,
@@ -153,13 +154,7 @@ export const dev_list_vtids: Handler = async (args, id, sb) => {
   const limit = clampLimit(args.limit, 5, 20);
   const status = String(args.status ?? '').trim().toLowerCase();
   try {
-    let q = sb
-      .from('vtid_ledger')
-      .select('vtid, title, description, status, spec_status, is_terminal, created_at, updated_at')
-      .order('created_at', { ascending: false })
-      .limit(limit);
-    if (status) q = q.eq('status', status);
-    const { data, error } = await q;
+    const { data, error } = await repo.fetchRecentVtids(sb, status, limit);
     if (error) return { ok: false, error: error.message };
     const rows = (data ?? []) as VtidRow[];
     if (rows.length === 0) {
@@ -197,13 +192,7 @@ export const dev_get_vtid_status: Handler = async (args, id, sb) => {
     return { ok: false, error: 'dev_get_vtid_status requires a VTID like "VTID-01234" or "1234".' };
   }
   try {
-    const { data, error } = await sb
-      .from('vtid_ledger')
-      .select(
-        'vtid, title, description, status, spec_status, is_terminal, terminal_outcome, claimed_by, created_at, updated_at',
-      )
-      .in('vtid', candidates)
-      .limit(1);
+    const { data, error } = await repo.fetchVtidByCandidates(sb, candidates);
     if (error) return { ok: false, error: error.message };
     const row = ((data ?? []) as VtidRow[])[0];
     if (!row) {
@@ -312,11 +301,7 @@ async function resolveApprovalTarget(
   }
   // Resolve the exact ledger VTID string first — the approval id is a hash
   // of the exact vtid text, so "1234" must become the real ledger key.
-  const { data, error } = await sb
-    .from('vtid_ledger')
-    .select('vtid')
-    .in('vtid', candidates)
-    .limit(1);
+  const { data, error } = await repo.fetchVtidKeyByCandidates(sb, candidates);
   if (error) return { error: error.message };
   const row = ((data ?? []) as Array<{ vtid: string }>)[0];
   if (!row) return { error: `VTID ${candidates[0]} not found in the ledger.` };
@@ -420,20 +405,8 @@ export const dev_list_voice_sessions: Handler = async (args, id, sb) => {
   const statusFilter = String(args.status ?? 'all').toLowerCase();
   try {
     const [startsRes, endsRes] = await Promise.all([
-      sb
-        .from('oasis_events')
-        .select('created_at, vitana_id, metadata')
-        .in('topic', VOICE_SESSION_START_TOPICS)
-        .in('vtid', VOICE_LAB_VTIDS)
-        .order('created_at', { ascending: false })
-        .limit(40),
-      sb
-        .from('oasis_events')
-        .select('created_at, vitana_id, metadata')
-        .in('topic', VOICE_SESSION_END_TOPICS)
-        .in('vtid', VOICE_LAB_VTIDS)
-        .order('created_at', { ascending: false })
-        .limit(100),
+      repo.fetchVoiceSessionStartEvents(sb, VOICE_SESSION_START_TOPICS, VOICE_LAB_VTIDS),
+      repo.fetchVoiceSessionEndEvents(sb, VOICE_SESSION_END_TOPICS, VOICE_LAB_VTIDS),
     ]);
     if (startsRes.error) return { ok: false, error: startsRes.error.message };
     const starts = (startsRes.data ?? []) as VoiceEventRow[];
@@ -522,10 +495,7 @@ export const dev_list_routines: Handler = async (_args, id, sb) => {
   const denied = developerGate(id);
   if (denied) return denied;
   try {
-    const { data, error } = await sb
-      .from('routines')
-      .select('name, display_name, cron_schedule, enabled, last_run_at, last_run_status, last_run_summary, consecutive_failures')
-      .order('name', { ascending: true });
+    const { data, error } = await repo.fetchAllRoutines(sb);
     if (error) return { ok: false, error: error.message };
     const rows = (data ?? []) as RoutineRow[];
     if (rows.length === 0) {
@@ -559,28 +529,19 @@ export const dev_get_routine_detail: Handler = async (args, id, sb) => {
   try {
     // Exact match first, then a fuzzy fallback so spoken names resolve.
     let routine: RoutineRow | undefined;
-    const exact = await sb.from('routines').select('*').eq('name', rawName).limit(1);
+    const exact = await repo.fetchRoutineByExactName(sb, rawName);
     if (exact.error) return { ok: false, error: exact.error.message };
     routine = ((exact.data ?? []) as RoutineRow[])[0];
     if (!routine) {
       const needle = rawName.replace(/[,()%]/g, '').replace(/\s+/g, '%');
-      const fuzzy = await sb
-        .from('routines')
-        .select('*')
-        .or(`name.ilike.%${needle}%,display_name.ilike.%${needle}%`)
-        .limit(1);
+      const fuzzy = await repo.fetchRoutineByFuzzyName(sb, needle);
       if (fuzzy.error) return { ok: false, error: fuzzy.error.message };
       routine = ((fuzzy.data ?? []) as RoutineRow[])[0];
     }
     if (!routine) {
       return { ok: true, result: { found: false }, text: `I could not find a routine matching "${rawName}".` };
     }
-    const runsRes = await sb
-      .from('routine_runs')
-      .select('id, started_at, finished_at, status, trigger, summary, error, duration_ms')
-      .eq('routine_name', routine.name)
-      .order('started_at', { ascending: false })
-      .limit(runsLimit);
+    const runsRes = await repo.fetchRoutineRuns(sb, routine.name, runsLimit);
     if (runsRes.error) return { ok: false, error: runsRes.error.message };
     const runs = (runsRes.data ?? []) as RoutineRunRow[];
     const name = routine.display_name || routine.name;
@@ -625,19 +586,8 @@ export const dev_list_active_healing: Handler = async (_args, id, sb) => {
   if (denied) return denied;
   try {
     const [tasksRes, pendingRes] = await Promise.all([
-      sb
-        .from('vtid_ledger')
-        .select('vtid, title, status, spec_status, created_at')
-        .filter('metadata->>source', 'eq', 'self-healing')
-        .in('status', HEALING_ACTIVE_STATUSES)
-        .order('created_at', { ascending: false })
-        .limit(20),
-      sb
-        .from('self_healing_log')
-        .select('id, vtid, endpoint, failure_class, created_at')
-        .eq('outcome', 'pending')
-        .order('created_at', { ascending: false })
-        .limit(20),
+      repo.fetchActiveHealingTasks(sb, HEALING_ACTIVE_STATUSES),
+      repo.fetchPendingHealingDiagnoses(sb),
     ]);
     if (tasksRes.error) return { ok: false, error: tasksRes.error.message };
     const tasks = (tasksRes.data ?? []) as VtidRow[];
@@ -683,39 +633,12 @@ export const dev_get_autonomy_pulse: Handler = async (_args, id, sb) => {
   if (denied) return denied;
   try {
     const [findingsRes, healsRes, execsRes, contractsRes, terminalizedRes] = await Promise.all([
-      sb
-        .from('autopilot_recommendations')
-        .select('id, title, summary, risk_class, impact_score, effort_score, auto_exec_eligible, domain, first_seen_at, seen_count, spec_snapshot')
-        .eq('source_type', 'dev_autopilot')
-        .eq('status', 'new')
-        .order('impact_score', { ascending: false, nullsFirst: false })
-        .limit(50),
-      sb
-        .from('self_healing_log')
-        .select('id, vtid, endpoint, failure_class, created_at, diagnosis, attempt_number')
-        .eq('outcome', 'pending')
-        .order('created_at', { ascending: false })
-        .limit(50),
-      sb
-        .from('dev_autopilot_executions')
-        .select('id, finding_id, status, pr_url, pr_number, branch, execute_after, auto_fix_depth, self_healing_vtid, created_at, updated_at')
-        .in('status', EXECUTION_INFLIGHT_STATUSES)
-        .order('created_at', { ascending: false })
-        .limit(50),
-      sb
-        .from('test_contracts')
-        .select('id, capability, service, environment, target_endpoint, target_file, owner, status, last_status, last_run_at, last_failure_signature')
-        .in('status', ['fail', 'quarantined'])
-        .order('last_run_at', { ascending: false, nullsFirst: false })
-        .limit(50),
+      repo.fetchNewDevAutopilotFindings(sb),
+      repo.fetchPendingHealingDiagnosesDetailed(sb),
+      repo.fetchInflightAutopilotExecutions(sb, EXECUTION_INFLIGHT_STATUSES),
+      repo.fetchFailingTestContracts(sb),
       // Recently terminalized VTIDs (last 24h) — autonomy throughput signal.
-      sb
-        .from('vtid_ledger')
-        .select('vtid, title, terminal_outcome, updated_at')
-        .eq('is_terminal', true)
-        .gte('updated_at', new Date(Date.now() - 24 * 3600_000).toISOString())
-        .order('updated_at', { ascending: false })
-        .limit(20),
+      repo.fetchRecentlyTerminalizedVtids(sb, new Date(Date.now() - 24 * 3600_000).toISOString()),
     ]);
     const findings = findingsRes.data ?? [];
     const heals = healsRes.data ?? [];
@@ -817,13 +740,7 @@ export const dev_list_agents: Handler = async (args, id, sb) => {
   if (denied) return denied;
   const tier = String(args.tier ?? '').trim().toLowerCase();
   try {
-    let q = sb
-      .from('agents_registry')
-      .select('agent_id, display_name, tier, status, last_heartbeat_at, llm_provider')
-      .order('tier', { ascending: true })
-      .order('agent_id', { ascending: true });
-    if (tier) q = q.eq('tier', tier);
-    const { data, error } = await q;
+    const { data, error } = await repo.fetchAgentsRegistry(sb, tier);
     if (error) return { ok: false, error: error.message };
     const rows = ((data ?? []) as AgentRow[]).map((r) => ({ ...r, derived_status: deriveAgentStatus(r) }));
     if (rows.length === 0) {

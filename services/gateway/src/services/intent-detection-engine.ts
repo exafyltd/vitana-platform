@@ -741,11 +741,16 @@ export function buildContextSignalFromMemory(
   // Extract unique categories
   const categorySet = new Set<string>();
   const personalFacts: string[] = [];
+  // Same category convention as navigator-consult.ts's buildMemoryHints():
+  // 'conversation'/'notes' items are recent-topic signal, not personal facts.
+  const recentTopics: string[] = [];
 
   for (const item of memoryContext.items) {
     categorySet.add(item.category_key);
     if (item.category_key === 'personal' || item.category_key === 'relationships') {
       personalFacts.push(item.content.substring(0, 100));
+    } else if (item.category_key === 'conversation' || item.category_key === 'notes') {
+      recentTopics.push(item.content.substring(0, 100));
     }
   }
 
@@ -754,7 +759,7 @@ export function buildContextSignalFromMemory(
     memory_categories: Array.from(categorySet),
     memory_item_count: memoryContext.items.length,
     personal_facts: personalFacts.slice(0, 5),
-    recent_topics: [] // TODO: Could extract from conversation items
+    recent_topics: recentTopics.slice(0, 5)
   };
 }
 

@@ -1,0 +1,45 @@
+  logWakeDecisionSnapshot
+    ✓ emits exactly one [wake-decision] line of valid JSON and returns the snapshot (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/services/context-pack-episodic-boundary.test.ts
+  VTID-03156 CPB-1/2 episodic fallback boundary — anti-regression
+    no direct references to legacy episodic storage
+      ✓ does not mention "memory_semantic_search" (1 ms)
+      ✓ does not mention "memory_items" (1 ms)
+    episodic-fetch path does not read Supabase credential env vars
+      ✓ fetchMemoryHits body does not read SUPABASE_URL
+      ✓ fetchMemoryHits body does not read SUPABASE_SERVICE_ROLE (1 ms)
+      ✓ fetchMemoryHits body does not construct fetch() requests directly
+    positive contract — episodic goes through the broker
+      ✓ fetchMemoryHits delegates to fetchMemoryHitsViaBroker
+      ✓ fetchMemoryHitsViaBroker calls getMemoryContext with EPISODIC block
+
+PASS test/orb/live/upstream/staging-ws-transport-flag-pinned.test.ts
+  VTID-03791: staging pins FEATURE_ORB_WS_TRANSPORT_ENV
+    ✓ upserts the flag as "staging-only" (1 ms)
+    ✓ strips the inherited value first, so a stale one cannot survive
+    ✓ is deliberately NOT pinned on the prod deploy workflow yet (1 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 1 skipped, 749 passed, 749 of 750 total
+Tests:       29 skipped, 6 todo, 13758 passed, 13793 total
+Snapshots:   44 passed, 44 total
+Time:        63.955 s
+Ran all test suites.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+EXIT=0
+
+NOTE: this file is the tail of the full `npx jest` run for services/gateway,
+matching the same truncation convention as prior VTIDs' jest-full-suite.txt
+in this directory. Full untruncated output was reviewed locally before
+committing this trimmed version.

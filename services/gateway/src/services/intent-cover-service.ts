@@ -32,6 +32,8 @@ import { promises as fs } from 'node:fs';
 import { createHash } from 'node:crypto';
 // VTID-03497: Titan seam. No-ops unless IMAGE_PROVIDER=bedrock.
 import { getImageProvider, generateTitanImage } from '../providers/titan-image';
+import { storageUpload, storagePublicUrl } from './storage/storage-provider';
+import * as repo from './intent-cover-service-repository';
 
 export type CoverTheme =
   | 'dance'
@@ -268,17 +270,13 @@ async function uploadFallbackCover(args: {
   intentId: string;
   theme: CoverTheme;
 }): Promise<string> {
-  const supabase = getSupabase();
   const file = fallbackKeyForSeed(args.theme, args.intentId);
   const localPath = path.join(fallbackDir(), file);
   const bytes = await fs.readFile(localPath);
   const remotePath = `fallback/${args.intentId}.jpg`;
-  const { error } = await supabase.storage
-    .from(BUCKET)
-    .upload(remotePath, bytes, { contentType: 'image/jpeg', upsert: true });
+  const { error } = await storageUpload(BUCKET, remotePath, bytes, { contentType: 'image/jpeg', upsert: true });
   if (error) throw new CoverGenError('storage_failed', error.message);
-  const { data } = supabase.storage.from(BUCKET).getPublicUrl(remotePath);
-  return data.publicUrl;
+  return storagePublicUrl(BUCKET, remotePath);
 }
 
 async function generateAiCover(theme: CoverTheme, gender: Gender): Promise<Buffer> {
@@ -374,26 +372,18 @@ async function generateAiCover(theme: CoverTheme, gender: Gender): Promise<Buffe
 }
 
 async function uploadAiCover(args: { intentId: string; bytes: Buffer }): Promise<string> {
-  const supabase = getSupabase();
   // Imagen returns PNG bytes by default; keep .png so the Content-Type
-  // header is correct on Supabase Storage.
+  // header is correct regardless of storage backend.
   const remotePath = `ai/${args.intentId}.png`;
-  const { error } = await supabase.storage
-    .from(BUCKET)
-    .upload(remotePath, args.bytes, { contentType: 'image/png', upsert: true });
+  const { error } = await storageUpload(BUCKET, remotePath, args.bytes, { contentType: 'image/png', upsert: true });
   if (error) throw new CoverGenError('storage_failed', error.message);
-  const { data } = supabase.storage.from(BUCKET).getPublicUrl(remotePath);
-  return data.publicUrl;
+  return storagePublicUrl(BUCKET, remotePath);
 }
 
 async function getUserGenderFromProfile(userId: string): Promise<Gender> {
   try {
     const supabase = getSupabase();
-    const { data } = await supabase
-      .from('profiles')
-      .select('gender')
-      .eq('user_id', userId)
-      .maybeSingle();
+    const { data } = await repo.fetchUserGenderProfile(supabase, userId);
     const raw = (data as { gender?: string | null } | null)?.gender;
     if (typeof raw !== 'string') return null;
     const v = raw.trim().toLowerCase();
@@ -415,11 +405,7 @@ async function getUserGenderFromProfile(userId: string): Promise<Gender> {
 async function getUserUniversalCover(userId: string): Promise<string | null> {
   try {
     const supabase = getSupabase();
-    const { data } = await supabase
-      .from('profiles')
-      .select('universal_intent_cover_url')
-      .eq('user_id', userId)
-      .maybeSingle();
+    const { data } = await repo.fetchUserUniversalCoverProfile(supabase, userId);
     const raw = (data as { universal_intent_cover_url?: string | null } | null)
       ?.universal_intent_cover_url;
     return typeof raw === 'string' && raw.length > 0 ? raw : null;
@@ -443,11 +429,7 @@ async function getUserLibraryCoverForCategory(
   if (!category) return null;
   try {
     const supabase = getSupabase();
-    const { data } = await supabase
-      .from('user_intent_cover_library')
-      .select('cover_url')
-      .eq('user_id', userId)
-      .eq('category', category);
+    const { data } = await repo.fetchUserLibraryCoversForCategory(supabase, userId, category);
     const rows = (data ?? []) as { cover_url: string }[];
     if (rows.length === 0) return null;
     const idx = createHash('sha256').update(intentId).digest()[0] % rows.length;
@@ -461,11 +443,7 @@ async function checkRateLimit(userId: string): Promise<void> {
   if (RATE_LIMIT_PER_DAY <= 0) return; // disabled.
   const supabase = getSupabase();
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  const { count, error } = await supabase
-    .from('user_intents')
-    .select('intent_id', { count: 'exact', head: true })
-    .eq('requester_user_id', userId)
-    .gte('cover_generated_at', since);
+  const { count, error } = await repo.countRecentCoverGenerations(supabase, userId, since);
   if (error) {
     // Fail open — don't block on a count failure, just log.
     console.warn('[cover-gen] rate-limit count failed:', error.message);
@@ -483,15 +461,11 @@ async function persistCover(args: {
   source: CoverSource;
 }): Promise<void> {
   const supabase = getSupabase();
-  const { error } = await supabase
-    .from('user_intents')
-    .update({
-      cover_url: args.url,
-      cover_generated_at: new Date().toISOString(),
-      cover_source: args.source,
-    })
-    .eq('intent_id', args.intentId)
-    .eq('requester_user_id', args.userId);
+  const { error } = await repo.updateIntentCover(supabase, args.intentId, args.userId, {
+    cover_url: args.url,
+    cover_generated_at: new Date().toISOString(),
+    cover_source: args.source,
+  });
   if (error) throw new CoverGenError('storage_failed', error.message);
 }
 
@@ -514,11 +488,7 @@ export async function generateCoverForIntent(
 ): Promise<GenerateCoverResult> {
   const supabase = getSupabase();
 
-  const { data: intent, error } = await supabase
-    .from('user_intents')
-    .select('intent_id, requester_user_id, cover_url, cover_source, category')
-    .eq('intent_id', args.intentId)
-    .maybeSingle();
+  const { data: intent, error } = await repo.fetchIntentForCoverGen(supabase, args.intentId);
   if (error) throw new CoverGenError('storage_failed', error.message);
   if (!intent) throw new CoverGenError('not_found', 'intent_not_found');
   if ((intent as { requester_user_id: string }).requester_user_id !== args.userId) {

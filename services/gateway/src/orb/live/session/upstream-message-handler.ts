@@ -70,6 +70,7 @@ import {
 import { addTurn as addSessionTurn } from '../../../services/session-memory-buffer';
 import { addTurnRedis } from '../../../services/redis-turn-buffer';
 import { getSupabase } from '../../../lib/supabase';
+import * as repo from './upstream-message-handler-repository';
 import { VITANA_BOT_USER_ID } from '../../../lib/vitana-bot';
 import { notifyUserAsync } from '../../../services/notification-service';
 
@@ -120,7 +121,7 @@ export async function bridgeVoiceTranscript(
   const MAX_ATTEMPTS = 2;
   let lastError: string | undefined;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const { error } = await bridgeSupabase.from('chat_messages').insert(row);
+    const { error } = await repo.insertChatMessage(bridgeSupabase, row);
     if (!error) return true;
     lastError = error.message;
     console.warn(`[VTID-CHAT-BRIDGE] ${direction} transcript write attempt ${attempt}/${MAX_ATTEMPTS} failed for session ${sessionId}: ${error.message}`);
@@ -189,6 +190,12 @@ export function notifyOrbVoiceBridgeWrite(
 export interface UpstreamMessageHandlerDeps {
   clearResponseWatchdog: (session: GeminiLiveSession) => void;
   detectAuthIntent: (text: string) => any;
+  // VTID-03824 (second follow-up): deterministic code-level backstop for
+  // the model failing to call the end_conversation tool despite an
+  // unambiguous "you're still here" complaint — see the definitions in
+  // orb-live.ts for why this can't be left to prompt compliance alone.
+  detectStillHereComplaint: (text: string) => boolean;
+  dispatchEndConversationDirective: (session: GeminiLiveSession, reason: string) => void;
   emitDiag: (
     session: GeminiLiveSession,
     stage: string,
@@ -2262,6 +2269,23 @@ export function handleTurnComplete(
   if (session.inputTranscriptBuffer.length > 0 && !isGreetingTurn) {
     const userText = session.inputTranscriptBuffer.trim();
     chatBridgeUserText = userText;
+
+    // VTID-03824 (second follow-up): deterministic backstop — see the
+    // detectStillHereComplaint() doc comment in orb-live.ts. The model just
+    // finished responding to THIS turn (possibly non-compliantly, e.g. a
+    // farewell-sounding sentence with no actual tool call); rather than let
+    // turn_complete's default path reopen the mic for another round, force
+    // the exact same client-side close the end_conversation TOOL would have
+    // triggered. Idempotent per session so a stray extra turn can't double-
+    // dispatch.
+    if (
+      session.active &&
+      !(session as any).stillHereEndDispatched &&
+      ctx.deps.detectStillHereComplaint(userText)
+    ) {
+      (session as any).stillHereEndDispatched = true;
+      ctx.deps.dispatchEndConversationDirective(session, 'still_here_complaint_detected');
+    }
 
     // VTID-01953 identity-mutation intent intercept.
     if (session.identity?.user_id && session.identity?.tenant_id) {

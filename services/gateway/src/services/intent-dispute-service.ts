@@ -9,6 +9,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { emitOasisEvent } from './oasis-event-service';
+import * as repo from './intent-dispute-service-repository';
 
 const SUPABASE_URL = process.env.SUPABASE_URL!;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE!;
@@ -48,20 +49,12 @@ export async function raiseDispute(args: RaiseArgs): Promise<DisputeRow> {
   const supabase = getSupabase();
 
   // Verify the raiser is one of the parties on the match.
-  const { data: m } = await supabase
-    .from('intent_matches')
-    .select('match_id, intent_a_id, intent_b_id, kind_pairing')
-    .eq('match_id', args.match_id)
-    .maybeSingle();
+  const { data: m } = await repo.fetchIntentMatchForDispute(supabase, args.match_id);
   if (!m) throw new Error('match_not_found');
 
-  const { data: aOwner } = await supabase
-    .from('user_intents')
-    .select('requester_user_id')
-    .eq('intent_id', (m as any).intent_a_id)
-    .maybeSingle();
+  const { data: aOwner } = await repo.fetchIntentRequesterUserId(supabase, (m as any).intent_a_id);
   const { data: bOwner } = (m as any).intent_b_id
-    ? await supabase.from('user_intents').select('requester_user_id').eq('intent_id', (m as any).intent_b_id).maybeSingle()
+    ? await repo.fetchIntentRequesterUserId(supabase, (m as any).intent_b_id)
     : { data: null as any };
 
   const isParty =
@@ -69,17 +62,13 @@ export async function raiseDispute(args: RaiseArgs): Promise<DisputeRow> {
     (bOwner && (bOwner as any).requester_user_id === args.raised_by);
   if (!isParty) throw new Error('not_a_party');
 
-  const { data, error } = await supabase
-    .from('intent_disputes')
-    .insert({
-      match_id: args.match_id,
-      raised_by: args.raised_by,
-      reason_category: args.reason_category,
-      reason_detail: args.reason_detail,
-      status: 'open',
-    })
-    .select('*')
-    .single();
+  const { data, error } = await repo.insertIntentDispute(supabase, {
+    match_id: args.match_id,
+    raised_by: args.raised_by,
+    reason_category: args.reason_category,
+    reason_detail: args.reason_detail,
+    status: 'open',
+  });
   if (error) throw new Error(error.message);
 
   await emitOasisEvent({
@@ -105,11 +94,7 @@ export async function raiseDispute(args: RaiseArgs): Promise<DisputeRow> {
 
 export async function listDisputesForMatch(matchId: string): Promise<DisputeRow[]> {
   const supabase = getSupabase();
-  const { data } = await supabase
-    .from('intent_disputes')
-    .select('*')
-    .eq('match_id', matchId)
-    .order('created_at', { ascending: false });
+  const { data } = await repo.fetchDisputesForMatch(supabase, matchId);
   return (data ?? []) as DisputeRow[];
 }
 
@@ -123,18 +108,13 @@ interface ResolveArgs {
 
 export async function resolveDispute(args: ResolveArgs): Promise<DisputeRow> {
   const supabase = getSupabase();
-  const { data, error } = await supabase
-    .from('intent_disputes')
-    .update({
-      status: args.status,
-      resolution: args.resolution,
-      resolution_actor_user_id: args.actor_user_id,
-      resolution_actor_vitana_id: args.actor_vitana_id,
-      resolved_at: new Date().toISOString(),
-    })
-    .eq('dispute_id', args.dispute_id)
-    .select('*')
-    .single();
+  const { data, error } = await repo.updateIntentDisputeResolution(supabase, args.dispute_id, {
+    status: args.status,
+    resolution: args.resolution,
+    resolution_actor_user_id: args.actor_user_id,
+    resolution_actor_vitana_id: args.actor_vitana_id,
+    resolved_at: new Date().toISOString(),
+  });
   if (error) throw new Error(error.message);
 
   await emitOasisEvent({
@@ -158,11 +138,6 @@ export async function resolveDispute(args: ResolveArgs): Promise<DisputeRow> {
 
 export async function listOpenDisputes(limit = 50): Promise<DisputeRow[]> {
   const supabase = getSupabase();
-  const { data } = await supabase
-    .from('intent_disputes')
-    .select('*')
-    .in('status', ['open', 'investigating'])
-    .order('created_at', { ascending: true })
-    .limit(limit);
+  const { data } = await repo.fetchOpenIntentDisputes(supabase, limit);
   return (data ?? []) as DisputeRow[];
 }

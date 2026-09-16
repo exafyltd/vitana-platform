@@ -146,6 +146,9 @@ import {
 import { dispatchVoiceFailureFireAndForget } from '../services/voice-self-healing-adapter';
 import { fetchAdminBriefingBlock, isAdminRole } from '../services/admin-scanners/briefing';
 import { ADMIN_TOOL_HANDLERS, ADMIN_TOOL_NAMES, ADMIN_TOOL_SCHEMAS } from '../services/admin-voice-tools';
+// VTID-03848: BackOffice voice tools (surface-gated) + shared surface resolver.
+import { BACKOFFICE_TOOL_HANDLERS, BACKOFFICE_TOOL_NAMES } from '../services/backoffice-voice-tools';
+import { resolveOrbSurface, navigatorRoleForSurface, isWorkSurface } from '../orb/live/surface';
 import { getUserContextSummary } from '../services/user-context-profiler';
 import { getAwarenessConfigSync } from '../services/awareness-registry';
 import { writeTimelineRow } from '../services/timeline-projector';
@@ -3209,10 +3212,8 @@ const ANONYMOUS_SAFE_TOOLS = new Set<string>([
  * in that case the Navigator should still only surface community routes.
  */
 function deriveSurfaceRole(currentRoute: string | undefined | null): string {
-  const route = (currentRoute || '').toLowerCase();
-  if (route.startsWith('/command-hub')) return 'developer';
-  if (route === '/admin' || route.startsWith('/admin/')) return 'admin';
-  return 'community';
+  // VTID-03848: one resolver for every surface decision (adds /backoffice).
+  return navigatorRoleForSurface(resolveOrbSurface({ currentRoute }));
 }
 
 /**
@@ -6570,6 +6571,18 @@ async function executeLiveApiToolInner(
         };
       }
 
+      // VTID-03824: general-purpose session close — see
+      // live-tool-catalog.ts's declaration for why this exists. Same shape
+      // as end_teaching_session / end_guided_topic_teaching above.
+      case 'end_conversation': {
+        const reason = typeof args.reason === 'string' ? args.reason.trim().slice(0, 200) : '';
+        dispatchEndConversationDirective(session, reason || 'user_ended_conversation');
+        return {
+          success: true,
+          result: 'Conversation is ending. Your farewell line was the final thing — the overlay is now closing, do not speak further.',
+        };
+      }
+
       case 'record_journey_answer': {
         // VTID-03257 (Fix-1): Vertex parity for the journey-answer tool.
         // record_journey_answer was added to ORB_TOOL_REGISTRY by VTID-03255
@@ -6608,6 +6621,25 @@ async function executeLiveApiToolInner(
         // BOOTSTRAP-ADMIN-DD: route admin voice tools through their handlers.
         // The handlers re-check role server-side, so a community session that
         // somehow names an admin tool will be denied with admin_role_required.
+        // VTID-03848: BackOffice voice tools — only on the /backoffice surface;
+        // the handlers re-check the surface and identity, and the orchestrator
+        // applies the voice ceiling (Draft) before anything reaches ERPClaw.
+        if (BACKOFFICE_TOOL_NAMES.includes(toolName)) {
+          const handler = BACKOFFICE_TOOL_HANDLERS[toolName];
+          return await handler(
+            {
+              tenantId: session.identity?.tenant_id || '',
+              userId: session.identity?.user_id || '',
+              email: session.identity?.email ?? null,
+              activeRole: session.active_role || session.identity?.role || 'community',
+              isExafyAdmin: !!session.identity?.exafy_admin,
+              surface: resolveOrbSurface({ currentRoute: session.current_route, isMobile: !!session.clientContext?.isMobile }),
+              sessionId: session.sessionId,
+              turnNumber: session.turn_count,
+            },
+            args ?? {},
+          );
+        }
         if (ADMIN_TOOL_NAMES.includes(toolName)) {
           const handler = ADMIN_TOOL_HANDLERS[toolName];
           return await handler(
@@ -6976,6 +7008,68 @@ function detectAuthIntent(text: string): 'signup' | 'login' | null {
     if (pattern.test(lower)) return 'signup';
   }
   return null;
+}
+
+// VTID-03824 (second follow-up): live evidence (a real staging session,
+// read directly from oasis_events) showed the model acknowledging a stop
+// request in WORDS — "Alles klar, ich gehe jetzt. Ich bin jetzt weg." —
+// without ever calling the end_conversation tool, across FIVE consecutive
+// turns, including the user saying "du bist immer noch da" ("you're still
+// here") TWICE. The ENDING THE CONVERSATION prompt block (repositioned
+// after RULE 0, reframed as an explicit override in the immediately
+// preceding follow-up to this same VTID) was confirmed present and
+// correctly placed in that exact session's own rendered system
+// instruction — this is a genuine model tool-calling compliance gap, not
+// a prompt-precedence or deploy-target bug. Per this repo's own
+// established remedy for this failure shape (VTID-03650: "stop asking a
+// conversational model to read curriculum text at all" once it proved
+// unreliable) this is a deterministic, code-level backstop rather than a
+// third round of prompt wording.
+//
+// Deliberately narrow and high-precision: "you're still here" / "du bist
+// (immer) noch da" is not an ambiguous phrase like "let's talk later" (a
+// legitimate pause request that should NOT force-end the session) — a
+// user only ever says it in direct response to an assistant that just
+// failed to leave/stop as asked. Detecting it is not a compliance risk;
+// NOT acting on it is.
+const STILL_HERE_COMPLAINT_PATTERNS = [
+  /\byou'?re\s+still\s+(here|there)\b/i,
+  /\byou\s+are\s+still\s+(here|there)\b/i,
+  /\b(you'?re|you\s+are)\s+(yet\s+)?again\s+(here|there)\b/i,
+  /\bstill\s+here\b/i,
+  /\bdu\s+bist\s+(ja\s+)?(immer\s+)?noch\s+da\b/i,
+  /\bbist\s+du\s+(ja\s+)?(immer\s+)?noch\s+da\b/i,
+];
+
+export function detectStillHereComplaint(text: string): boolean {
+  const lower = text.toLowerCase();
+  return STILL_HERE_COMPLAINT_PATTERNS.some((pattern) => pattern.test(lower));
+}
+
+// VTID-03824: shared dispatch for the end_conversation directive — used by
+// both the model-invoked `end_conversation` tool AND the
+// detectStillHereComplaint() code-level backstop above, so both paths
+// produce byte-identical client behavior (the widget's existing
+// `orb_directive: end_conversation` handler, unchanged either way).
+export function dispatchEndConversationDirective(session: GeminiLiveSession, reason: string): void {
+  const directive = {
+    type: 'orb_directive',
+    directive: 'end_conversation',
+    reason,
+    vtid: 'VTID-03824',
+  };
+  try {
+    if (session.sseResponse) {
+      session.sseResponse.write(`data: ${JSON.stringify(directive)}\n\n`);
+    }
+    if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+      session.clientWs.send(JSON.stringify(directive));
+    }
+  } catch (err) {
+    console.warn(`[VTID-03824] end_conversation directive emit failed (non-fatal): ${(err as Error).message}`);
+  }
+  console.log(`[VTID-03824] end_conversation dispatched: session=${session.sessionId} reason=${reason}`);
+  emitDiag(session, 'conversation_ended', { reason });
 }
 
 // VTID-01975: Intent Engine signal detector. Broad regex covering all six
@@ -7847,6 +7941,8 @@ async function connectToLiveAPI(
             session.identity && !session.isAnonymous ? 'authenticated' : 'anonymous',
             session.current_route,
             session.active_role || session.identity?.role || undefined,
+            // VTID-03848: mobile is always the community surface; route decides otherwise.
+            resolveOrbSurface({ currentRoute: session.current_route, isMobile: !!session.clientContext?.isMobile }),
           )
         }
       };
@@ -8027,6 +8123,8 @@ async function connectToLiveAPI(
           deps: {
             clearResponseWatchdog,
             detectAuthIntent,
+            detectStillHereComplaint,
+            dispatchEndConversationDirective,
             emitDiag,
             emitLiveSessionEvent,
             executeLiveApiTool,
@@ -8217,9 +8315,12 @@ async function connectToLiveAPI(
         // nothing to claim (never prewarmed, expired, already claimed by a
         // race, or the connection died while it waited) — zero behavior
         // change for every session this doesn't apply to.
-        const prewarmedNova = session.identity?.user_id
+        // VTID-03848: never reuse the (community-persona, no-route) login prewarm on a work surface.
+        const sessionSurface = resolveOrbSurface({ currentRoute: session.current_route, isMobile: !!session.clientContext?.isMobile });
+        const prewarmedNova = session.identity?.user_id && !isWorkSurface(sessionSurface)
           ? consumePrewarmedNovaSession(session.identity.user_id)
           : null;
+        if (session.identity?.user_id && isWorkSurface(sessionSurface)) emitDiag(session, 'nova_prewarm_skipped_work_surface', { provider: 'nova_sonic', surface: sessionSurface });
         const reusedWarmNova = !!prewarmedNova;
 
         let novaSystemInstruction: string;
@@ -8519,6 +8620,8 @@ async function connectToLiveAPI(
           deps: {
             clearResponseWatchdog,
             detectAuthIntent,
+            detectStillHereComplaint,
+            dispatchEndConversationDirective,
             emitDiag,
             emitLiveSessionEvent,
             executeLiveApiTool,
@@ -9086,6 +9189,8 @@ async function connectToLiveAPI(
       deps: {
         clearResponseWatchdog,
         detectAuthIntent,
+        detectStillHereComplaint,
+        dispatchEndConversationDirective,
         emitDiag,
         emitLiveSessionEvent,
         executeLiveApiTool,

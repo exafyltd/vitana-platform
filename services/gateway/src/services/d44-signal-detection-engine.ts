@@ -26,6 +26,7 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { emitOasisEvent } from './oasis-event-service';
+import * as repo from './d44-signal-detection-engine-repository';
 import {
   SignalType,
   UserImpact,
@@ -151,10 +152,7 @@ async function getClientWithContext(authToken?: string): Promise<{
 
   // Bootstrap dev context if needed
   if (useDevIdentity) {
-    const { error: bootstrapError } = await supabase.rpc('dev_bootstrap_request_context', {
-      p_tenant_id: DEV_IDENTITY.TENANT_ID,
-      p_active_role: 'developer'
-    });
+    const { error: bootstrapError } = await repo.rpcDevBootstrapRequestContext(supabase, DEV_IDENTITY.TENANT_ID, 'developer');
     if (bootstrapError) {
       console.warn(`${LOG_PREFIX} Bootstrap context failed (non-fatal):`, bootstrapError.message);
     }
@@ -859,9 +857,7 @@ export async function createSignal(
       return { ok: false, error: clientError || 'SERVICE_UNAVAILABLE' };
     }
 
-    const { data, error } = await supabase.rpc('d44_create_signal', {
-      p_signal: request
-    });
+    const { data, error } = await repo.rpcD44CreateSignal(supabase, request);
 
     if (error) {
       console.error(`${LOG_PREFIX} RPC error (create_signal):`, error);
@@ -917,10 +913,10 @@ export async function getActiveSignals(
       return { ok: false, error: clientError || 'SERVICE_UNAVAILABLE' };
     }
 
-    const { data, error } = await supabase.rpc('d44_get_active_signals', {
+    const { data, error } = await repo.rpcD44GetActiveSignals(supabase, {
       p_signal_types: request.signal_types || null,
       p_min_confidence: request.min_confidence || 0,
-      p_limit: request.limit || 20
+      p_limit: request.limit || 20,
     });
 
     if (error) {
@@ -958,11 +954,7 @@ export async function getSignalDetails(
     }
 
     // Get signal
-    const { data: signals, error: signalError } = await supabase
-      .from('d44_predictive_signals')
-      .select('*')
-      .eq('id', signalId)
-      .limit(1);
+    const { data: signals, error: signalError } = await repo.fetchPredictiveSignalById(supabase, signalId);
 
     if (signalError) {
       console.error(`${LOG_PREFIX} Error getting signal:`, signalError);
@@ -974,16 +966,10 @@ export async function getSignalDetails(
     }
 
     // Get evidence
-    const { data: evidence, error: evidenceError } = await supabase.rpc('d44_get_signal_evidence', {
-      p_signal_id: signalId
-    });
+    const { data: evidence, error: evidenceError } = await repo.rpcD44GetSignalEvidence(supabase, signalId);
 
     // Get history
-    const { data: history, error: historyError } = await supabase
-      .from('d44_intervention_history')
-      .select('*')
-      .eq('signal_id', signalId)
-      .order('created_at', { ascending: false });
+    const { data: history, error: historyError } = await repo.fetchInterventionHistoryForSignal(supabase, signalId);
 
     return {
       ok: true,
@@ -1012,11 +998,7 @@ export async function acknowledgeSignal(
       return { ok: false, error: clientError || 'SERVICE_UNAVAILABLE' };
     }
 
-    const { data, error } = await supabase.rpc('d44_update_signal_status', {
-      p_signal_id: request.signal_id,
-      p_status: 'acknowledged',
-      p_feedback: request.feedback || null
-    });
+    const { data, error } = await repo.rpcD44UpdateSignalStatus(supabase, request.signal_id, 'acknowledged', request.feedback || null);
 
     if (error) {
       console.error(`${LOG_PREFIX} RPC error (acknowledge):`, error);
@@ -1065,11 +1047,7 @@ export async function dismissSignal(
       return { ok: false, error: clientError || 'SERVICE_UNAVAILABLE' };
     }
 
-    const { data, error } = await supabase.rpc('d44_update_signal_status', {
-      p_signal_id: request.signal_id,
-      p_status: 'dismissed',
-      p_feedback: request.reason || null
-    });
+    const { data, error } = await repo.rpcD44UpdateSignalStatus(supabase, request.signal_id, 'dismissed', request.reason || null);
 
     if (error) {
       console.error(`${LOG_PREFIX} RPC error (dismiss):`, error);
@@ -1118,11 +1096,7 @@ export async function recordIntervention(
       return { ok: false, error: clientError || 'SERVICE_UNAVAILABLE' };
     }
 
-    const { data, error } = await supabase.rpc('d44_record_intervention', {
-      p_signal_id: request.signal_id,
-      p_action_type: request.action_type,
-      p_action_details: request.action_details
-    });
+    const { data, error } = await repo.rpcD44RecordIntervention(supabase, request.signal_id, request.action_type, request.action_details);
 
     if (error) {
       console.error(`${LOG_PREFIX} RPC error (record_intervention):`, error);
@@ -1170,9 +1144,7 @@ export async function getSignalStats(
       return { ok: false, error: clientError || 'SERVICE_UNAVAILABLE' };
     }
 
-    const { data, error } = await supabase.rpc('d44_get_signal_stats', {
-      p_since: since || null
-    });
+    const { data, error } = await repo.rpcD44GetSignalStats(supabase, since || null);
 
     if (error) {
       console.error(`${LOG_PREFIX} RPC error (get_signal_stats):`, error);
@@ -1274,12 +1246,7 @@ export async function runDetection(
           const oneWeekAgo = new Date();
           oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
 
-          const { data: recentSignals } = await supabase
-            .from('d44_predictive_signals')
-            .select('id')
-            .eq('signal_type', signal.signal_type)
-            .gte('detected_at', oneWeekAgo.toISOString())
-            .limit(1);
+          const { data: recentSignals } = await repo.fetchRecentSignalsOfType(supabase, signal.signal_type, oneWeekAgo.toISOString());
 
           if (recentSignals && recentSignals.length >= DETECTION_THRESHOLDS.MAX_SIGNALS_PER_TYPE_PER_WEEK) {
             signalsSkipped++;

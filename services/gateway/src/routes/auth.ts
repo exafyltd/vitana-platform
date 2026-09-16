@@ -22,6 +22,8 @@ import { notifyUserAsync } from '../services/notification-service';
 import { generatePersonalRecommendations } from '../services/recommendation-engine';
 import { sendWelcomeChatMessages } from '../services/welcome-chat-service';
 import { addUserToSystemGroups } from '../services/community-group-enrollment';
+import * as repo from './auth-repository';
+import { isCognitoAuthConfigured, cognitoLogin, cognitoRefresh } from '../services/cognito-auth-client';
 
 const router = Router();
 
@@ -109,33 +111,13 @@ router.post('/login', async (req: Request, res: Response) => {
     });
   }
 
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
-
-  if (!supabaseUrl || !supabaseAnonKey) {
-    console.error('[VTID-01186] POST /auth/login - Missing Supabase configuration');
-    return res.status(500).json({
-      ok: false,
-      error: 'INTERNAL_ERROR',
-      message: 'Supabase configuration not available',
-    });
-  }
-
   try {
-    // Call Supabase Auth REST API for email/password login
-    const authResponse = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': supabaseAnonKey,
-      },
-      body: JSON.stringify({
-        email: email.trim(),
-        password,
-      }),
-    });
-
-    const authData = await authResponse.json() as {
+    // VTID-03827: Cognito path, tried first when configured. The frontend's
+    // request/response shape at this endpoint doesn't change either way —
+    // this is why /login is a gateway PROXY rather than the frontend
+    // talking to the identity provider directly, and it's what lets this
+    // branch exist without touching a single frontend call site.
+    let authData: {
       access_token?: string;
       refresh_token?: string;
       expires_in?: number;
@@ -149,47 +131,91 @@ router.post('/login', async (req: Request, res: Response) => {
           name?: string;
         };
       };
-      error?: string;
-      error_description?: string;
-      msg?: string;
     };
 
-    if (!authResponse.ok) {
-      console.warn(`[VTID-01186] POST /auth/login - Auth failed for ${email}: ${authData.error || authData.msg || 'Unknown error'}`);
-      return res.status(401).json({
-        ok: false,
-        error: 'INVALID_CREDENTIALS',
-        message: authData.error_description || authData.msg || 'Invalid email or password',
-      });
-    }
+    if (isCognitoAuthConfigured()) {
+      const result = await cognitoLogin(email.trim(), password);
+      if (!result.ok) {
+        console.warn(`[VTID-03827] POST /auth/login - Cognito auth failed for ${email}: ${result.message}`);
+        return res.status(401).json({
+          ok: false,
+          error: result.error,
+          message: result.message,
+        });
+      }
+      authData = {
+        access_token: result.access_token,
+        refresh_token: result.refresh_token,
+        expires_in: result.expires_in,
+        token_type: result.token_type,
+        user: { id: result.user?.id, email: result.user?.email || undefined },
+      };
+      console.log(`[VTID-03827] POST /auth/login - Cognito success for ${email}, user_id=${authData.user?.id}`);
+    } else {
+      const supabaseUrl = process.env.SUPABASE_URL;
+      const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 
-    console.log(`[VTID-01186] POST /auth/login - Success for ${email}, user_id=${authData.user?.id}`);
+      if (!supabaseUrl || !supabaseAnonKey) {
+        console.error('[VTID-01186] POST /auth/login - Missing Supabase configuration');
+        return res.status(500).json({
+          ok: false,
+          error: 'INTERNAL_ERROR',
+          message: 'Supabase configuration not available',
+        });
+      }
+
+      // Call Supabase Auth REST API for email/password login
+      const authResponse = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseAnonKey,
+        },
+        body: JSON.stringify({
+          email: email.trim(),
+          password,
+        }),
+      });
+
+      const rawAuthData = await authResponse.json() as {
+        access_token?: string;
+        refresh_token?: string;
+        expires_in?: number;
+        token_type?: string;
+        user?: {
+          id?: string;
+          email?: string;
+          user_metadata?: {
+            avatar_url?: string;
+            full_name?: string;
+            name?: string;
+          };
+        };
+        error?: string;
+        error_description?: string;
+        msg?: string;
+      };
+
+      if (!authResponse.ok) {
+        console.warn(`[VTID-01186] POST /auth/login - Auth failed for ${email}: ${rawAuthData.error || rawAuthData.msg || 'Unknown error'}`);
+        return res.status(401).json({
+          ok: false,
+          error: 'INVALID_CREDENTIALS',
+          message: rawAuthData.error_description || rawAuthData.msg || 'Invalid email or password',
+        });
+      }
+
+      console.log(`[VTID-01186] POST /auth/login - Success for ${email}, user_id=${rawAuthData.user?.id}`);
+      authData = rawAuthData;
+    }
 
     // VTID-01196: Fetch profile from app_users to get avatar_url
     let profile: { display_name?: string; avatar_url?: string; bio?: string } = {};
     const supabase = getSupabase();
     if (supabase && authData.user?.id) {
       try {
-        // VTID-03952: app_users and users are independent tables with no data
-        // dependency between the two reads — only their RESULTS are merged
-        // (users is a fallback source for whatever app_users didn't have).
-        // These used to run strictly sequentially, adding a full extra
-        // PostgREST round trip to every login. Fire both at once.
-        const [
-          { data: profileData, error: profileError },
-          { data: usersData, error: usersError },
-        ] = await Promise.all([
-          supabase
-            .from('app_users')
-            .select('display_name, bio, avatar_url:profile->>avatar_url')
-            .eq('user_id', authData.user.id)
-            .single(),
-          supabase
-            .from('users')
-            .select('display_name, avatar_url')
-            .eq('id', authData.user.id)
-            .single(),
-        ]);
+        // First try app_users table
+        const { data: profileData, error: profileError } = await repo.fetchLoginProfile(supabase, authData.user.id);
 
         if (!profileError && profileData) {
           profile = {
@@ -202,15 +228,18 @@ router.post('/login', async (req: Request, res: Response) => {
           console.log(`[VTID-01196] app_users query: ${profileError.message}`);
         }
 
-        // users table is a fallback source (vitana-v1 compatibility) — only
-        // fills in what app_users didn't provide.
-        if (!usersError && usersData) {
-          if (!profile.display_name && usersData.display_name) {
-            profile.display_name = usersData.display_name;
-          }
-          if (!profile.avatar_url && usersData.avatar_url) {
-            profile.avatar_url = usersData.avatar_url;
-            console.log(`[VTID-01196] Avatar from users table: ${profile.avatar_url}`);
+        // If no avatar, try users table (vitana-v1 compatibility)
+        if (!profile.avatar_url) {
+          const { data: usersData, error: usersError } = await repo.fetchUsersTableProfile(supabase, authData.user.id);
+
+          if (!usersError && usersData) {
+            if (!profile.display_name && usersData.display_name) {
+              profile.display_name = usersData.display_name;
+            }
+            if (usersData.avatar_url) {
+              profile.avatar_url = usersData.avatar_url;
+              console.log(`[VTID-01196] Avatar from users table: ${profile.avatar_url}`);
+            }
           }
         }
       } catch (err: any) {
@@ -225,32 +254,15 @@ router.post('/login', async (req: Request, res: Response) => {
       console.log(`[VTID-01196] Avatar from user_metadata: ${userMetaAvatar}`);
     }
 
-    // Fire welcome notification once (first login).
-    // VTID-03952: none of this block's output is part of the login response
-    // (it only decides whether to fire the fire-and-forget notification/
-    // recommendation/group-enrollment calls below) — it was still being
-    // AWAITED before, adding two more sequential PostgREST round trips
-    // (tenant membership lookup + welcome-notification count) to every
-    // login response for no user-facing reason. Kick it off without
-    // awaiting so it can't add latency to the response at all.
+    // Fire welcome notification once (first login)
     if (supabase && authData.user?.id) {
       const uid = authData.user.id;
-      void (async () => {
       // Resolve tenant_id from memberships
-      const { data: tenantRow } = await supabase
-        .from('user_tenants')
-        .select('tenant_id')
-        .eq('user_id', uid)
-        .eq('is_primary', true)
-        .single();
+      const { data: tenantRow } = await repo.fetchPrimaryTenantMembership(supabase, uid);
       const tid = tenantRow?.tenant_id;
       if (tid) {
         // Only send welcome if user has never received it
-        const { count } = await supabase
-          .from('user_notifications')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', uid)
-          .eq('type', 'welcome_to_vitana');
+        const { count } = await repo.countWelcomeNotifications(supabase, uid);
         if (count === 0) {
           notifyUserAsync(uid, tid, 'welcome_to_vitana', {
             title: 'Welcome to Vitana!',
@@ -313,9 +325,6 @@ router.post('/login', async (req: Request, res: Response) => {
         .catch(err => {
           console.warn(`[GroupEnrollment] Login enroll failed for ${uid.slice(0, 8)}: ${err.message}`);
         });
-      })().catch(err => {
-        console.warn(`[VTID-01185] Post-login welcome/enrollment side effects failed for ${uid.slice(0, 8)}: ${err.message}`);
-      });
     }
 
     return res.status(200).json({
@@ -364,47 +373,76 @@ router.post('/refresh', async (req: Request, res: Response) => {
     });
   }
 
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
-
-  if (!supabaseUrl || !supabaseAnonKey) {
-    console.error('[BOOTSTRAP-DEV-6H-SESSION] POST /auth/refresh - Missing Supabase config');
-    return res.status(500).json({
-      ok: false,
-      error: 'INTERNAL_ERROR',
-      message: 'Supabase configuration not available',
-    });
-  }
-
   try {
-    const authResponse = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': supabaseAnonKey,
-      },
-      body: JSON.stringify({ refresh_token }),
-    });
-
-    const authData = await authResponse.json() as {
+    // VTID-03827: Cognito path, tried first when configured — same
+    // provider-transparent proxy pattern as /login above.
+    let authData: {
       access_token?: string;
       refresh_token?: string;
       expires_in?: number;
       token_type?: string;
-      error?: string;
-      error_description?: string;
-      msg?: string;
     };
 
-    if (!authResponse.ok || !authData.access_token) {
-      console.warn(
-        `[BOOTSTRAP-DEV-6H-SESSION] POST /auth/refresh - failed: ${authData.error || authData.msg || authResponse.status}`
-      );
-      return res.status(401).json({
-        ok: false,
-        error: 'INVALID_REFRESH_TOKEN',
-        message: authData.error_description || authData.msg || 'Refresh token is invalid or expired',
+    if (isCognitoAuthConfigured()) {
+      const result = await cognitoRefresh(refresh_token);
+      if (!result.ok) {
+        console.warn(`[VTID-03827] POST /auth/refresh - Cognito refresh failed: ${result.message}`);
+        return res.status(401).json({
+          ok: false,
+          error: result.error,
+          message: result.message,
+        });
+      }
+      authData = {
+        access_token: result.access_token,
+        refresh_token: result.refresh_token,
+        expires_in: result.expires_in,
+        token_type: result.token_type,
+      };
+    } else {
+      const supabaseUrl = process.env.SUPABASE_URL;
+      const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+      if (!supabaseUrl || !supabaseAnonKey) {
+        console.error('[BOOTSTRAP-DEV-6H-SESSION] POST /auth/refresh - Missing Supabase config');
+        return res.status(500).json({
+          ok: false,
+          error: 'INTERNAL_ERROR',
+          message: 'Supabase configuration not available',
+        });
+      }
+
+      const authResponse = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseAnonKey,
+        },
+        body: JSON.stringify({ refresh_token }),
       });
+
+      const rawAuthData = await authResponse.json() as {
+        access_token?: string;
+        refresh_token?: string;
+        expires_in?: number;
+        token_type?: string;
+        error?: string;
+        error_description?: string;
+        msg?: string;
+      };
+
+      if (!authResponse.ok || !rawAuthData.access_token) {
+        console.warn(
+          `[BOOTSTRAP-DEV-6H-SESSION] POST /auth/refresh - failed: ${rawAuthData.error || rawAuthData.msg || authResponse.status}`
+        );
+        return res.status(401).json({
+          ok: false,
+          error: 'INVALID_REFRESH_TOKEN',
+          message: rawAuthData.error_description || rawAuthData.msg || 'Refresh token is invalid or expired',
+        });
+      }
+
+      authData = rawAuthData;
     }
 
     return res.status(200).json({
@@ -488,62 +526,9 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
   const supabase = getSupabase();
   if (supabase && identity.user_id) {
     try {
-      // VTID-03952: these four reads are independent of each other's RESULTS
-      // (each only needs identity.user_id) — they were previously awaited
-      // one after another, including one whose own comment claimed "Parallel
-      // fetch" while the code was a plain sequential await. Fire all four
-      // at once; the users-table fallback is fetched unconditionally here
-      // (rather than only when app_users lacks an avatar) specifically so
-      // its round trip overlaps with the others instead of following them.
-      const [
-        { data: profileData, error: profileError },
-        lockResult,
-        usersResult,
-        { data: membershipData, error: membershipError },
-      ] = await Promise.all([
-        // Fetch user profile from app_users — vitana_id is mirrored here by
-        // the Release A trigger profiles_vitana_id_mirror_trigger.
-        supabase
-          .from('app_users')
-          .select('display_name, bio, vitana_id, avatar_url:profile->>avatar_url')
-          .eq('user_id', identity.user_id)
-          .single(),
-        // VTID-01967 + VTID-01987: vitana_id_locked + registration_seq live
-        // only on profiles (not mirrored) — null-tolerant (columns may not
-        // exist before Release A / v2 backfill). Wrapped in a real async
-        // function (rather than chaining .catch() straight on the
-        // Postgrest builder, which only guarantees PromiseLike/.then(), not
-        // a full Promise) so a throw here can't reject the whole Promise.all.
-        (async () => {
-          try {
-            return await supabase
-              .from('profiles')
-              .select('vitana_id_locked, vitana_id, registration_seq')
-              .eq('user_id', identity.user_id)
-              .maybeSingle();
-          } catch (_lockErr) {
-            return { data: null } as { data: null };
-          }
-        })(),
-        // VTID-01230-FIX: users table (vitana-v1 compat) fallback source for
-        // display_name/avatar_url. Same real-async-function wrapping as above.
-        (async () => {
-          try {
-            return await supabase
-              .from('users')
-              .select('display_name, avatar_url')
-              .eq('id', identity.user_id)
-              .single();
-          } catch (_usersErr) {
-            return { data: null, error: null } as { data: null; error: null };
-          }
-        })(),
-        // Fetch user memberships from user_tenants
-        supabase
-          .from('user_tenants')
-          .select('tenant_id, active_role, is_primary')
-          .eq('user_id', identity.user_id),
-      ]);
+      // Fetch user profile from app_users — vitana_id is mirrored here by the
+      // Release A trigger profiles_vitana_id_mirror_trigger.
+      const { data: profileData, error: profileError } = await repo.fetchMeProfile(supabase, identity.user_id);
 
       if (!profileError && profileData) {
         profile = {
@@ -554,38 +539,49 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
         };
       }
 
-      const lockData = lockResult?.data;
-      if (lockData) {
-        profile.vitana_id_locked = (lockData as any).vitana_id_locked === true;
-        if (!profile.vitana_id && (lockData as any).vitana_id) {
-          profile.vitana_id = (lockData as any).vitana_id;
+      // VTID-01967 + VTID-01987: vitana_id_locked + registration_seq live only
+      // on profiles (not mirrored). Parallel fetch — null-tolerant (columns
+      // may not exist before Release A / v2 backfill).
+      try {
+        const { data: lockData } = await repo.fetchProfilesVitanaIdLock(supabase, identity.user_id);
+        if (lockData) {
+          profile.vitana_id_locked = (lockData as any).vitana_id_locked === true;
+          if (!profile.vitana_id && (lockData as any).vitana_id) {
+            profile.vitana_id = (lockData as any).vitana_id;
+          }
+          if (typeof (lockData as any).registration_seq === 'number') {
+            profile.registration_seq = (lockData as any).registration_seq;
+          }
         }
-        if (typeof (lockData as any).registration_seq === 'number') {
-          profile.registration_seq = (lockData as any).registration_seq;
-        }
+      } catch (_lockErr) {
+        // Silent — profiles.vitana_id_locked / registration_seq may not exist
+        // on this env yet.
       }
 
       // VTID-01230-FIX: Match /auth/login fallback chain for avatar_url.
-      // If app_users has no avatar_url, fall back to the users table, then
-      // auth.users.user_metadata. Otherwise fetchAuthMe() in the frontend
+      // If app_users has no avatar_url, try users table (vitana-v1 compat),
+      // then auth.users.user_metadata. Otherwise fetchAuthMe() in the frontend
       // overwrites state.user with avatar_url=null, making the avatar disappear
       // moments after login.
-      const usersData = usersResult?.data;
-      if (usersData) {
-        if (!profile.display_name && usersData.display_name) {
-          profile.display_name = usersData.display_name;
-        }
-        if (!profile.avatar_url && usersData.avatar_url) {
-          profile.avatar_url = usersData.avatar_url;
-          console.log(`[VTID-01230-FIX] /auth/me avatar_url from users table: ${profile.avatar_url}`);
+      if (!profile.avatar_url) {
+        try {
+          const { data: usersData } = await repo.fetchUsersTableProfile(supabase, identity.user_id);
+          if (usersData) {
+            if (!profile.display_name && usersData.display_name) {
+              profile.display_name = usersData.display_name;
+            }
+            if (usersData.avatar_url) {
+              profile.avatar_url = usersData.avatar_url;
+              console.log(`[VTID-01230-FIX] /auth/me avatar_url from users table: ${profile.avatar_url}`);
+            }
+          }
+        } catch (_usersErr) {
+          // Silent — users table may not exist in all envs
         }
       }
 
       if (!profile.avatar_url) {
-        // Try auth.users.user_metadata — a distinct (admin API) call from the
-        // above, and only reached when both prior sources came up empty, so
-        // it stays sequential/conditional rather than firing speculatively
-        // for every login.
+        // Try auth.users.user_metadata
         try {
           const { data: authUser } = await (supabase as any).auth.admin.getUserById(identity.user_id);
           const metaAvatar = authUser?.user?.user_metadata?.avatar_url;
@@ -597,6 +593,9 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
           // Silent — admin API requires service role
         }
       }
+
+      // Fetch user memberships from user_tenants
+      const { data: membershipData, error: membershipError } = await repo.fetchUserMemberships(supabase, identity.user_id);
 
       if (!membershipError && membershipData) {
         memberships = membershipData.map((m: any) => ({
@@ -622,12 +621,7 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
         );
 
         // Resolve default tenant (oldest)
-        const { data: tenantRow } = await supabase
-          .from('tenants')
-          .select('tenant_id')
-          .order('created_at', { ascending: true })
-          .limit(1)
-          .single();
+        const { data: tenantRow } = await repo.fetchOldestTenant(supabase);
 
         const defaultTenantId = tenantRow?.tenant_id as string | undefined;
 
@@ -636,19 +630,12 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
             ? identity.email.split('@')[0]
             : 'User';
 
-          const { data: newProfile, error: provErr } = await supabase
-            .from('app_users')
-            .upsert(
-              {
-                user_id: identity.user_id,
-                email: identity.email,
-                display_name: displayName,
-                tenant_id: defaultTenantId || null,
-              },
-              { onConflict: 'user_id' }
-            )
-            .select('display_name, avatar_url, bio')
-            .single();
+          const { data: newProfile, error: provErr } = await repo.upsertAppUserProvision(supabase, {
+            user_id: identity.user_id,
+            email: identity.email,
+            display_name: displayName,
+            tenant_id: defaultTenantId || null,
+          });
 
           if (!provErr && newProfile) {
             profile = {
@@ -663,19 +650,12 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
         }
 
         if (missingMembership && defaultTenantId) {
-          const { data: newMembership, error: memErr } = await supabase
-            .from('user_tenants')
-            .upsert(
-              {
-                tenant_id: defaultTenantId,
-                user_id: identity.user_id,
-                active_role: 'community',
-                is_primary: true,
-              },
-              { onConflict: 'tenant_id,user_id' }
-            )
-            .select('tenant_id, active_role, is_primary')
-            .single();
+          const { data: newMembership, error: memErr } = await repo.upsertUserTenantProvision(supabase, {
+            tenant_id: defaultTenantId,
+            user_id: identity.user_id,
+            active_role: 'community',
+            is_primary: true,
+          });
 
           if (!memErr && newMembership) {
             memberships = [
@@ -820,11 +800,7 @@ router.put('/profile', requireAuth, async (req: AuthenticatedRequest, res: Respo
     updates.updated_at = new Date().toISOString();
 
     // Try UPDATE first (the row should exist from GET /me auto-provision)
-    const { data, error } = await supabase
-      .from('app_users')
-      .update(updates)
-      .eq('user_id', identity.user_id)
-      .select('display_name, bio, avatar_url:profile->>avatar_url');
+    const { data, error } = await repo.updateAppUserProfile(supabase, identity.user_id, updates);
 
     if (error) {
       console.error(`[VTID-01867] Profile update failed: ${error.message} (code=${error.code})`);
@@ -839,11 +815,7 @@ router.put('/profile', requireAuth, async (req: AuthenticatedRequest, res: Respo
         email: identity.email || 'unknown@example.com',
         ...updates,
       };
-      const { data: insertedData, error: insertError } = await supabase
-        .from('app_users')
-        .insert(insertPayload)
-        .select('display_name, bio, avatar_url:profile->>avatar_url')
-        .single();
+      const { data: insertedData, error: insertError } = await repo.insertAppUserProfile(supabase, insertPayload);
 
       if (insertError) {
         console.error(`[VTID-01867] Profile insert failed: ${insertError.message}`);
@@ -893,6 +865,7 @@ router.put('/profile', requireAuth, async (req: AuthenticatedRequest, res: Respo
 router.get('/health', (_req, res: Response) => {
   const hasJwtSecret = !!process.env.SUPABASE_JWT_SECRET;
   const hasSupabaseUrl = !!process.env.SUPABASE_URL;
+  const cognitoConfigured = isCognitoAuthConfigured();
 
   return res.status(200).json({
     ok: true,
@@ -901,6 +874,10 @@ router.get('/health', (_req, res: Response) => {
     config: {
       jwt_secret_configured: hasJwtSecret,
       supabase_url_configured: hasSupabaseUrl,
+      // VTID-03827: when true, /login and /refresh proxy to Cognito instead
+      // of Supabase GoTrue — see cognito-auth-client.ts.
+      cognito_configured: cognitoConfigured,
+      active_login_provider: cognitoConfigured ? 'cognito' : 'supabase',
     },
     timestamp: new Date().toISOString(),
   });

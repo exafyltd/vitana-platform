@@ -11,6 +11,7 @@
  */
 
 import { getSupabase } from '../../lib/supabase';
+import * as repo from './feedback-repository';
 
 const LOG_PREFIX = '[watcher-feedback]';
 
@@ -60,15 +61,9 @@ export async function recordShown(reminderIds: string[]): Promise<void> {
     // `col = col + 1` without an RPC, and an undercount under concurrency is
     // acceptable here — shown_count only gates a mute threshold, so drifting
     // low just delays a mute rather than causing a wrong one.
-    const { data } = await sb
-      .from('watcher_lessons')
-      .select('id, shown_count')
-      .in('id', lessonIds);
+    const { data } = await repo.fetchWatcherLessonsShownCounts(sb, lessonIds);
     for (const row of (data || []) as Array<{ id: string; shown_count: number }>) {
-      await sb
-        .from('watcher_lessons')
-        .update({ shown_count: (row.shown_count || 0) + 1 })
-        .eq('id', row.id);
+      await repo.incrementWatcherLessonShownCount(sb, row.id, (row.shown_count || 0) + 1);
     }
   } catch (err) {
     console.warn(`${LOG_PREFIX} recordShown failed:`, err);
@@ -91,7 +86,7 @@ export async function recordFeedback(
   if (!sb) return { ok: false, error: 'SUPABASE_UNAVAILABLE' };
 
   try {
-    const { error: insErr } = await sb.from('watcher_reminder_feedback').insert({
+    const { error: insErr } = await repo.insertWatcherReminderFeedback(sb, {
       reminder_id: input.reminder_id,
       kind: parsed.kind,
       work_unit_id: input.work_unit_id ?? null,
@@ -108,11 +103,7 @@ export async function recordFeedback(
     // should be retired.
     if (parsed.kind === 'rule') return { ok: true, muted: false };
 
-    const { data } = await sb
-      .from('watcher_lessons')
-      .select('id, confidence, shown_count, helped_count, ignored_count, status')
-      .eq('id', parsed.ref)
-      .maybeSingle();
+    const { data } = await repo.fetchWatcherLessonForFeedback(sb, parsed.ref);
     if (!data) return { ok: true, muted: false };
 
     const row = data as {
@@ -142,15 +133,12 @@ export async function recordFeedback(
       shown >= MUTE_MIN_SHOWN &&
       (ignoredRatio >= MUTE_IGNORED_RATIO || helped === 0);
 
-    const { error: updErr } = await sb
-      .from('watcher_lessons')
-      .update({
-        confidence,
-        helped_count: helped,
-        ignored_count: ignored,
-        ...(shouldMute ? { status: 'muted' } : {}),
-      })
-      .eq('id', row.id);
+    const { error: updErr } = await repo.updateWatcherLessonFeedback(sb, row.id, {
+      confidence,
+      helped_count: helped,
+      ignored_count: ignored,
+      ...(shouldMute ? { status: 'muted' } : {}),
+    });
     if (updErr) return { ok: false, error: updErr.message };
 
     return { ok: true, muted: shouldMute };

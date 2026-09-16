@@ -32,6 +32,7 @@
 //   __resetPolicyResolverForTests() -> void
 
 import { getSupabase } from '../../lib/supabase';
+import * as repo from './policy-resolver-repository';
 
 const CACHE_TTL_MS = 15_000;
 const TELEMETRY_PREFIX = '[PolicyResolver][decision_contract.policy.miss]';
@@ -205,9 +206,7 @@ async function fetchAll(): Promise<CacheSnapshot> {
     return snap;
   }
   try {
-    const { data: pol, error: polErr } = await supa
-      .from('decision_policy')
-      .select('policy_key, tenant_id, version, value_json, effective_from, effective_until');
+    const { data: pol, error: polErr } = await repo.fetchAllDecisionPolicyRows(supa);
     if (polErr) {
       // Table missing pre-migration is normal in early environments; treat
       // any error as "no rows" so the resolver degrades to defaults rather
@@ -226,9 +225,7 @@ async function fetchAll(): Promise<CacheSnapshot> {
     console.warn(`${TELEMETRY_PREFIX} decision_policy fetch threw: ${e?.message ?? e}`);
   }
   try {
-    const { data: blk, error: blkErr } = await supa
-      .from('policy_render_block')
-      .select('block_key, language, tenant_id, version, content, effective_from, effective_until');
+    const { data: blk, error: blkErr } = await repo.fetchAllPolicyRenderBlockRows(supa);
     if (blkErr) {
       if (!/relation .*policy_render_block.* does not exist/i.test(blkErr.message)) {
         console.warn(`${TELEMETRY_PREFIX} policy_render_block fetch failed: ${blkErr.message}`);

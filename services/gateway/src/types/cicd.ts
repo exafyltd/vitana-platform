@@ -380,6 +380,8 @@ export type CicdEventType =
   | 'd41.action.allowed'
   | 'd41.vulnerability.detected'
   | 'd41.vulnerability.cleared'
+  | 'd41.boundary.rpc_error_default'
+  | 'd41.consent.rpc_error_default'
   // VTID-01136: D42 Cross-Domain Context Fusion Events
   | 'd42.priorities.resolved'
   | 'd42.priorities.failed'
@@ -458,6 +460,7 @@ export type CicdEventType =
   | 'memory.read.requested'
   | 'memory.read.completed'
   | 'embedding.fallback_used'
+  | 'embedding.google_fallback_used'
   | 'embedding.all_providers_failed'
   | 'embedding.batch_generated'
   | 'embedding.pipeline.batch_completed'
@@ -490,6 +493,11 @@ export type CicdEventType =
   | 'vtid.spec.quality_check.started'
   | 'vtid.spec.quality_check.passed'
   | 'vtid.spec.quality_check.failed'
+  // VTID-03902: Operator Planner — closes the gap where Operator-chat tasks
+  // (autopilot_create_task) had no automated path from "scheduled" to a
+  // generated spec. One summary event per sweep that actually processed a
+  // task; a quiet sweep (nothing to plan) emits nothing.
+  | 'operator.planner.sweep_completed'
   | 'vtid.spec.conflict.detected'
   | 'vtid.spec.governance_gap.detected'
   | 'vtid.spec.risk.assessed'
@@ -780,6 +788,8 @@ export type CicdEventType =
   | 'dev_autopilot.execution.ci_failed'
   | 'dev_autopilot.execution.pr_merged'
   | 'dev_autopilot.execution.auto_merge_declined'
+  | 'dev_autopilot.execution.llm_review_passed'
+  | 'dev_autopilot.execution.llm_review_blocked'
   | 'dev_autopilot.execution.deployed'
   | 'dev_autopilot.execution.deploy_failed'
   | 'dev_autopilot.execution.verification_failed'
@@ -964,7 +974,12 @@ export type CicdEventType =
   | 'community_marketplace.admin.report_resolved'
   | 'community_marketplace.admin.seller_suspended'
   | 'community_marketplace.admin.seller_unsuspended'
-  | 'community_marketplace.admin.category_updated';
+  | 'community_marketplace.admin.category_updated'
+  // VTID-03885: Partner Health Test Integration
+  | 'health_test.order_created'
+  | 'health_test.status_changed'
+  | 'health_test.result_ready'
+  | 'health_test.result_quarantined';
 
 export interface CicdOasisEvent {
   vtid: string;

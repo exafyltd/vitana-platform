@@ -24,6 +24,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { emitOasisEvent } from './oasis-event-service';
 import { CicdEventType } from '../types/cicd';
+import * as repo from './d41-boundary-consent-engine-repository';
 import {
   PersonalBoundaries,
   ConsentState,
@@ -141,10 +142,7 @@ async function getSupabaseClient(authToken?: string): Promise<{ client: Supabase
 }
 
 async function bootstrapDevContext(supabase: SupabaseClient): Promise<void> {
-  const { error } = await supabase.rpc('dev_bootstrap_request_context', {
-    p_tenant_id: DEV_IDENTITY.TENANT_ID,
-    p_active_role: 'developer'
-  });
+  const { error } = await repo.devBootstrapRequestContext(supabase, DEV_IDENTITY.TENANT_ID, 'developer');
   if (error) {
     console.warn(`${LOG_PREFIX} Bootstrap context failed (non-fatal):`, error.message);
   }
@@ -175,11 +173,22 @@ export async function getPersonalBoundaries(
       await bootstrapDevContext(supabase);
     }
 
-    const result = await supabase.rpc('d41_get_personal_boundaries');
+    const result = await repo.fetchPersonalBoundaries(supabase);
 
     if (result.error) {
       console.warn(`${LOG_PREFIX} RPC error (get_boundaries):`, result.error.message);
-      // Return defaults on error
+      // Return defaults on error — the direction is safe (protective, not
+      // permissive) so this stays non-fatal, but a console.warn alone is
+      // never aggregated/alerted on, so a user's real boundaries silently
+      // going inert inside ORB could run indefinitely with nobody noticing.
+      await emitOasisEvent({
+        vtid: VTID,
+        type: 'd41.boundary.rpc_error_default',
+        source: 'gateway-d41',
+        status: 'warning',
+        message: `get_boundaries RPC failed; serving DEFAULT_BOUNDARIES instead of the user's real boundaries`,
+        payload: { error: result.error.message },
+      }).catch(() => { /* never let telemetry block the safe default */ });
       return {
         ok: true,
         boundaries: DEFAULT_BOUNDARIES
@@ -232,11 +241,7 @@ export async function setPersonalBoundary(
       await bootstrapDevContext(supabase);
     }
 
-    const result = await supabase.rpc('d41_set_personal_boundary', {
-      p_boundary_type: request.boundary_type,
-      p_value: request.value,
-      p_reason: request.reason || null
-    });
+    const result = await repo.setPersonalBoundaryRpc(supabase, request.boundary_type, request.value, request.reason || null);
 
     if (result.error) {
       console.error(`${LOG_PREFIX} RPC error (set_boundary):`, result.error);
@@ -316,10 +321,20 @@ export async function getConsentBundle(
       await bootstrapDevContext(supabase);
     }
 
-    const result = await supabase.rpc('d41_get_consent_bundle');
+    const result = await repo.fetchConsentBundle(supabase);
 
     if (result.error) {
       console.warn(`${LOG_PREFIX} RPC error (get_consent):`, result.error.message);
+      // Same reasoning as getPersonalBoundaries above: the fallback stance
+      // is safe (protective), but invisible without an aggregatable signal.
+      await emitOasisEvent({
+        vtid: VTID,
+        type: 'd41.consent.rpc_error_default',
+        source: 'gateway-d41',
+        status: 'warning',
+        message: `get_consent RPC failed; serving an empty protective-stance consent bundle instead of the user's real consent preferences`,
+        payload: { error: result.error.message },
+      }).catch(() => { /* never let telemetry block the safe default */ });
       return {
         ok: true,
         consent_bundle: {
@@ -402,12 +417,7 @@ export async function setConsent(
       }
     }
 
-    const result = await supabase.rpc('d41_set_consent', {
-      p_topic: request.topic,
-      p_status: request.status,
-      p_expires_at: expiresAt,
-      p_reason: request.reason || null
-    });
+    const result = await repo.setConsentRpc(supabase, request.topic, request.status, expiresAt, request.reason || null);
 
     if (result.error) {
       console.error(`${LOG_PREFIX} RPC error (set_consent):`, result.error);
@@ -494,10 +504,7 @@ export async function revokeConsent(
       await bootstrapDevContext(supabase);
     }
 
-    const result = await supabase.rpc('d41_revoke_consent', {
-      p_topic: request.topic,
-      p_reason: request.reason || null
-    });
+    const result = await repo.revokeConsentRpc(supabase, request.topic, request.reason || null);
 
     if (result.error) {
       console.error(`${LOG_PREFIX} RPC error (revoke_consent):`, result.error);

@@ -64,7 +64,10 @@ describe('VTID-03779 orb-live.ts prewarm wiring', () => {
 
   it('connectToLiveAPI claims a prewarmed client by user_id before falling back to a cold connect', () => {
     expect(code).toMatch(
-      /const prewarmedNova = session\.identity\?\.user_id\s*\n\s*\? consumePrewarmedNovaSession\(session\.identity\.user_id\)/,
+      // VTID-03848: the claim is additionally gated on the session surface — a
+      // login-time prewarm carries the community persona/tools and must never
+      // be reused on /admin, /backoffice or /command-hub.
+      /const prewarmedNova = session\.identity\?\.user_id && !isWorkSurface\(sessionSurface\)\s*\n\s*\? consumePrewarmedNovaSession\(session\.identity\.user_id\)/,
     );
     expect(code).toMatch(/const reusedWarmNova = !!prewarmedNova;/);
     // Both branches must exist: reuse (if) and cold connect (else).

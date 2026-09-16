@@ -30,12 +30,17 @@ describe('BOOTSTRAP-LLM-ROUTER constants', () => {
     });
 
     // VTID-03579: the flagship rule no longer holds for FALLBACKS, deliberately.
-    // Two stages need a non-flagship fallback for reasons that outrank tidiness:
-    //   - vision falls back to a SECOND Bedrock model, because DeepSeek has no
-    //     image input and a text-only fallback fails every frame call.
-    //   - the deepseek fallbacks split chat/reasoner by stage cost, so the
-    //     cheaper `deepseek-chat` is correct where `deepseek-reasoner` (the
-    //     flagship) would be waste.
+    // vision falls back to a SECOND Bedrock model, because DeepSeek has no
+    // image input and a text-only fallback fails every frame call.
+    //
+    // BOOTSTRAP-DEEPSEEK-V4.1-FLASH (2026-09-11): every other stage's DeepSeek
+    // fallback used to split cheaper `deepseek-chat` vs. flagship
+    // `deepseek-reasoner` by stage cost — DeepSeek retired that two-tier
+    // naming, so all of them now point at the one current model,
+    // `deepseek-flash` (DeepSeek-V4.1-Flash), which is also PROVIDER_FLAGSHIPS'
+    // deepseek entry. There is no longer a non-flagship DeepSeek fallback to
+    // explain here; the comment is kept because vision's still is.
+    //
     // The invariant that still matters is narrower and is asserted instead: a
     // fallback must never be Google, and a Bedrock fallback must be a model the
     // account can actually invoke.
@@ -106,7 +111,7 @@ describe('BOOTSTRAP-LLM-ROUTER constants', () => {
       expect(PROVIDER_FLAGSHIPS.anthropic).toBe('claude-opus-4-7');
       expect(PROVIDER_FLAGSHIPS.openai).toBe('gpt-5');
       expect(PROVIDER_FLAGSHIPS.vertex).toBe('gemini-3.1-pro-preview');
-      expect(PROVIDER_FLAGSHIPS.deepseek).toBe('deepseek-reasoner');
+      expect(PROVIDER_FLAGSHIPS.deepseek).toBe('deepseek-flash');
       expect(PROVIDER_FLAGSHIPS.claude_subscription).toBe('claude-opus-4-7');
       // VTID-03403: Bedrock's flagship is a cross-region inference profile id,
       // overridable via BEDROCK_MODEL_ID (unset in the test environment).

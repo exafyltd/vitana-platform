@@ -589,29 +589,386 @@ function buildOperatorChatContext(history) {
     return context;
 }
 
+// --- VTID-03822: Multi-thread conversation support ---
+//
+// operator_console_history / operator_console_conversation_id (VTID-01027,
+// above) were a single flat thread — no way to browse or resume a prior
+// conversation. This layer adds real, named, resumable threads without a
+// backend dependency (per this VTID's own spec: "purely frontend, no
+// backend dependency" — there is no server-side conversation table to
+// build against; continuity has always come from the client resending
+// `context` on every request, and that's unchanged here).
+
+var OPERATOR_THREADS_INDEX_KEY = 'operator_console_threads_index';
+
+function operatorThreadHistoryKey(threadId) {
+    return 'operator_console_history:' + threadId;
+}
+
+function generateOperatorThreadId() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+        var r = Math.random() * 16 | 0;
+        var v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+}
+
+function loadOperatorThreadsIndex() {
+    try {
+        var stored = localStorage.getItem(OPERATOR_THREADS_INDEX_KEY);
+        if (stored) {
+            var parsed = JSON.parse(stored);
+            if (Array.isArray(parsed)) return parsed;
+        }
+    } catch (e) {
+        console.warn('[VTID-03822] Error reading threads index:', e);
+    }
+    return [];
+}
+
+function saveOperatorThreadsIndex(index) {
+    try {
+        localStorage.setItem(OPERATOR_THREADS_INDEX_KEY, JSON.stringify(index));
+    } catch (e) {
+        console.warn('[VTID-03822] Error saving threads index:', e);
+    }
+}
+
+function getOperatorThreadHistory(threadId) {
+    try {
+        var stored = localStorage.getItem(operatorThreadHistoryKey(threadId));
+        if (stored) {
+            var parsed = JSON.parse(stored);
+            if (Array.isArray(parsed)) return parsed;
+        }
+    } catch (e) {
+        console.warn('[VTID-03822] Error reading thread history:', e);
+    }
+    return [];
+}
+
+function saveOperatorThreadHistory(threadId, history) {
+    try {
+        localStorage.setItem(operatorThreadHistoryKey(threadId), JSON.stringify(history));
+    } catch (e) {
+        console.warn('[VTID-03822] Error saving thread history:', e);
+    }
+}
+
+/** Derive a short, human title from a thread's first user message. */
+function deriveOperatorThreadTitle(history) {
+    var firstUser = (history || []).find(function (m) { return m.role === 'user'; });
+    if (!firstUser || !firstUser.content) return 'New conversation';
+    var text = firstUser.content.trim().replace(/\s+/g, ' ');
+    return text.length > 40 ? text.slice(0, 40) + '…' : text;
+}
+
 /**
- * VTID-01027: Initialize operator chat session.
- * Loads conversation_id and chat history from localStorage.
- * Restores chatMessages for UI rendering from persisted history.
+ * One-time migration from the pre-thread single-history storage into the
+ * first thread, so shipping this never silently discards existing operator
+ * chat history. Safe to call on every load — no-ops once threads exist.
+ */
+function migrateOperatorHistoryToThreads() {
+    var index = loadOperatorThreadsIndex();
+    if (index.length > 0) return index;
+
+    var legacyHistory = getOperatorChatHistory();
+    var legacyConversationId = null;
+    try { legacyConversationId = localStorage.getItem('operator_console_conversation_id'); } catch (e) { /* no-op */ }
+
+    var threadId = legacyConversationId || generateOperatorThreadId();
+    var now = Date.now();
+    var thread = {
+        id: threadId,
+        title: legacyHistory.length > 0 ? deriveOperatorThreadTitle(legacyHistory) : 'New conversation',
+        conversationId: legacyConversationId || threadId,
+        createdAt: now,
+        updatedAt: now
+    };
+    index = [thread];
+    saveOperatorThreadsIndex(index);
+    if (legacyHistory.length > 0) {
+        saveOperatorThreadHistory(threadId, legacyHistory);
+        console.log('[VTID-03822] Migrated', legacyHistory.length, 'legacy messages into thread', threadId);
+    }
+    return index;
+}
+
+/** Persist the active thread's updatedAt/title after a new message. */
+function touchActiveOperatorThread() {
+    var thread = state.operatorThreads.find(function (t) { return t.id === state.operatorActiveThreadId; });
+    if (!thread) return;
+    thread.updatedAt = Date.now();
+    if (thread.title === 'New conversation') {
+        thread.title = deriveOperatorThreadTitle(state.operatorChatHistory);
+    }
+    saveOperatorThreadsIndex(state.operatorThreads);
+}
+
+/**
+ * Create a new, empty conversation thread and make it active. This is the
+ * "New conversation" action clearOperatorChatSession() (VTID-01027) was
+ * written for but never wired to any UI element — it now runs as part of
+ * this flow (clearing the legacy single-thread keys is harmless hygiene
+ * once every session is thread-aware).
+ */
+function startNewOperatorThread() {
+    var now = Date.now();
+    var thread = {
+        id: generateOperatorThreadId(),
+        title: 'New conversation',
+        conversationId: generateOperatorThreadId(),
+        createdAt: now,
+        updatedAt: now
+    };
+    state.operatorThreads.unshift(thread);
+    saveOperatorThreadsIndex(state.operatorThreads);
+
+    clearOperatorChatSession();
+
+    state.operatorActiveThreadId = thread.id;
+    state.operatorConversationId = thread.conversationId;
+    state.operatorChatHistory = [];
+    state.chatMessages = [];
+    saveOperatorThreadHistory(thread.id, []);
+    renderApp();
+}
+
+/** Switch the active thread and restore its history into the UI. */
+function switchOperatorThread(threadId) {
+    if (threadId === state.operatorActiveThreadId) return;
+    var thread = state.operatorThreads.find(function (t) { return t.id === threadId; });
+    if (!thread) return;
+
+    state.operatorActiveThreadId = thread.id;
+    state.operatorConversationId = thread.conversationId;
+    var history = getOperatorThreadHistory(thread.id);
+    state.operatorChatHistory = history;
+    state.chatMessages = history.map(function (msg) {
+        return {
+            type: msg.role === 'user' ? 'user' : 'system',
+            content: msg.content,
+            timestamp: new Date(msg.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+            ts: msg.ts
+        };
+    });
+    renderApp();
+}
+
+/**
+ * VTID-03949: double-click-to-rename a conversation thread's title, usable
+ * from both the sessions sidebar and the title bar above the transcript
+ * (see renderEditableThreadTitle()). startRenamingOperatorThread() arms the
+ * inline-input state and renders once; the input's own oninput then syncs
+ * state.operatorRenameDraftValue WITHOUT calling renderApp() itself, same
+ * convention as .chat-textarea's oninput — keeps typing responsive even if
+ * an unrelated poller (ticker/heartbeat SSE) triggers a background
+ * renderApp() mid-edit, since the input's value is always re-derived from
+ * this state on the next rebuild rather than lost with the old DOM node.
+ */
+
+/**
+ * VTID-03953: removing a focused element via root.innerHTML = '' fires a
+ * synchronous, involuntary native `blur` on it as part of the removal — so
+ * any background renderApp() (ticker/heartbeat SSE poll) that fires while
+ * the rename <input> is focused was silently committing/closing the
+ * in-progress edit. `_renameBlurSuppressed` is bracketed around exactly
+ * that `root.innerHTML = ''` call in _renderAppCore() so only a genuine
+ * user-initiated blur (click away, Tab, switch thread) still commits.
+ * `_renamePreserveFocusPending` tells renderEditableThreadTitle() this
+ * particular rebuild is restoring an already-focused input (so it must not
+ * re-select-all on top of the precise cursor restore _renderAppCore() is
+ * about to perform) rather than a fresh double-click open.
+ */
+var _renameBlurSuppressed = false;
+var _renamePreserveFocusPending = false;
+
+function startRenamingOperatorThread(threadId, currentTitle) {
+    state.operatorRenamingThreadId = threadId;
+    state.operatorRenameDraftValue = currentTitle || '';
+    renderApp();
+}
+
+function cancelRenamingOperatorThread() {
+    state.operatorRenamingThreadId = null;
+    state.operatorRenameDraftValue = '';
+    renderApp();
+}
+
+/** Commit the in-progress rename (if any). A blank/whitespace-only draft is
+ * discarded rather than saved, so a thread can never end up with an empty
+ * title. Guarded to be a safe no-op if called twice (Enter, then a
+ * trailing blur on the same input). */
+function commitRenamingOperatorThread() {
+    if (state.operatorRenamingThreadId === null) return;
+    var threadId = state.operatorRenamingThreadId;
+    var newTitle = (state.operatorRenameDraftValue || '').trim();
+    var thread = state.operatorThreads.find(function (t) { return t.id === threadId; });
+    state.operatorRenamingThreadId = null;
+    state.operatorRenameDraftValue = '';
+    if (thread && newTitle) {
+        thread.title = newTitle;
+        saveOperatorThreadsIndex(state.operatorThreads);
+    }
+    renderApp();
+}
+
+/**
+ * VTID-03949: renders a thread's title as either plain (double-click to
+ * edit) or, while state.operatorRenamingThreadId matches, an inline text
+ * input. Shared by the sidebar row and the chat title bar so both places
+ * behave identically, per the platform owner's explicit ask.
+ */
+function renderEditableThreadTitle(thread, className) {
+    if (state.operatorRenamingThreadId === thread.id) {
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = className + ' chat-session-title-input';
+        input.value = state.operatorRenameDraftValue;
+        input.oninput = (e) => {
+            state.operatorRenameDraftValue = e.target.value;
+        };
+        input.onkeydown = (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                commitRenamingOperatorThread();
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                cancelRenamingOperatorThread();
+            }
+        };
+        input.onblur = () => {
+            // VTID-03953: a blur fired while _renameBlurSuppressed is true is
+            // the involuntary one caused by _renderAppCore() destroying this
+            // (focused) element mid-edit, not the user leaving the field —
+            // _renderAppCore() restores focus itself, so committing here
+            // would incorrectly close the edit the user never asked to end.
+            if (_renameBlurSuppressed) return;
+            commitRenamingOperatorThread();
+        };
+        // Don't let a click inside the input bubble up to a sidebar row's
+        // own onclick (which would switch threads mid-edit).
+        input.onclick = (e) => e.stopPropagation();
+        // VTID-03953: only auto-select-all on a fresh double-click open. A
+        // rebuild that's restoring an already-focused input (background
+        // poller mid-edit) sets _renamePreserveFocusPending and handles its
+        // own precise focus/selection restore in _renderAppCore() instead.
+        if (!_renamePreserveFocusPending) {
+            // Deferred so the element is actually in the DOM before focusing.
+            setTimeout(() => { input.focus(); input.select(); }, 0);
+        }
+        return input;
+    }
+
+    const span = document.createElement('div');
+    span.className = className;
+    span.textContent = thread.title || 'New conversation';
+    span.title = 'Double-click to rename';
+    span.ondblclick = (e) => {
+        e.stopPropagation();
+        startRenamingOperatorThread(thread.id, thread.title || 'New conversation');
+    };
+    return span;
+}
+
+/**
+ * VTID-03949: Claude-Code-style sessions sidebar, replacing the old
+ * <select> thread dropdown — every past conversation is listed at once
+ * (most-recently-updated first) instead of hidden behind a menu that
+ * covered the transcript while open. Click a row to switch to it,
+ * double-click its title to rename it in place.
+ */
+function renderOperatorSessionsSidebar() {
+    const sidebar = document.createElement('div');
+    sidebar.className = 'chat-sessions-sidebar' + (state.operatorSessionsSidebarCollapsed ? ' chat-sessions-sidebar--collapsed' : '');
+
+    const sidebarHeader = document.createElement('div');
+    sidebarHeader.className = 'chat-sessions-sidebar-header';
+    const newBtn = document.createElement('button');
+    newBtn.type = 'button';
+    newBtn.className = 'chat-sessions-new-btn';
+    newBtn.textContent = '+ New chat';
+    newBtn.onclick = () => startNewOperatorThread();
+    sidebarHeader.appendChild(newBtn);
+    sidebar.appendChild(sidebarHeader);
+
+    const list = document.createElement('div');
+    list.className = 'chat-sessions-list';
+    list.dataset.scrollRetain = 'true';
+    list.dataset.scrollKey = 'operator-sessions-sidebar';
+
+    const sortedThreads = (state.operatorThreads || []).slice().sort(function (a, b) {
+        return (b.updatedAt || 0) - (a.updatedAt || 0);
+    });
+
+    if (sortedThreads.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'chat-sessions-empty';
+        empty.textContent = 'No conversations yet.';
+        list.appendChild(empty);
+    } else {
+        sortedThreads.forEach(function (thread) {
+            const row = document.createElement('div');
+            row.className = 'chat-session-row' + (thread.id === state.operatorActiveThreadId ? ' chat-session-row--active' : '');
+            row.onclick = () => switchOperatorThread(thread.id);
+
+            row.appendChild(renderEditableThreadTitle(thread, 'chat-session-row-title'));
+
+            const meta = document.createElement('div');
+            meta.className = 'chat-session-row-meta';
+            meta.textContent = formatRelativeTime(thread.updatedAt);
+            row.appendChild(meta);
+
+            list.appendChild(row);
+        });
+    }
+
+    sidebar.appendChild(list);
+    return sidebar;
+}
+
+/**
+ * VTID-01027 / VTID-03822: Initialize operator chat session.
+ * Loads (migrating if needed) the thread index, then the active thread's
+ * conversation_id and chat history. Idempotent across repeated opens —
+ * only runs once per page load (state.operatorActiveThreadId gates it).
  */
 function initOperatorChatSession() {
-    // Get or create conversation_id
-    state.operatorConversationId = getOperatorConversationId();
+    var index = migrateOperatorHistoryToThreads();
+    state.operatorThreads = index;
 
-    // Load persisted chat history
-    var history = getOperatorChatHistory();
+    if (state.operatorActiveThreadId) return; // already initialized this session
+
+    var active = index[0];
+    if (!active) {
+        var now = Date.now();
+        active = {
+            id: generateOperatorThreadId(),
+            title: 'New conversation',
+            conversationId: generateOperatorThreadId(),
+            createdAt: now,
+            updatedAt: now
+        };
+        state.operatorThreads = [active];
+        saveOperatorThreadsIndex(state.operatorThreads);
+    }
+
+    state.operatorActiveThreadId = active.id;
+    state.operatorConversationId = active.conversationId;
+
+    var history = getOperatorThreadHistory(active.id);
     state.operatorChatHistory = history;
 
-    // Convert history to chatMessages format for UI rendering
     if (history.length > 0 && state.chatMessages.length === 0) {
         state.chatMessages = history.map(function (msg) {
             return {
                 type: msg.role === 'user' ? 'user' : 'system',
                 content: msg.content,
-                timestamp: new Date(msg.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+                timestamp: new Date(msg.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+                ts: msg.ts
             };
         });
-        console.log('[VTID-01027] Restored', history.length, 'messages from history');
+        console.log('[VTID-03822] Restored', history.length, 'messages from thread', active.id);
     }
 }
 
@@ -3048,6 +3405,13 @@ const state = {
     activeExecutionsPollInterval: null,
     taskSearchQuery: '',
     taskDateFilter: '',
+    // VTID-03823: Tasks board hygiene filter chips + bulk-select state.
+    // '' means "no filter" for each; taskMultiSelectIds is Scheduled-only
+    // (mirrors the existing single-task Delete button's own column gate).
+    taskFilterAge: '',      // '' | 'today' | 'week' | 'stale'
+    taskFilterOwner: '',    // '' | 'claimed' | 'unclaimed'
+    taskFilterSource: '',   // '' | 'session' | 'autonomous'
+    taskMultiSelectIds: [],
     // VTID-01079: Board metadata for "Load More" completed tasks
     boardMeta: null,
     // DEV-COMHU-2025-0013: Drawer spec state for stable textarea editing
@@ -3080,6 +3444,7 @@ const state = {
     // Global Overlays (VTID-0508 / VTID-0509)
     isHeartbeatOpen: false,
     isOperatorOpen: false,
+    isOperatorFullscreen: false, // VTID-03905: Operator popup fullscreen toggle
     operatorActiveTab: 'ticker', // 'chat', 'ticker', 'history'
 
     // VTID-0509: Operator Console State
@@ -3093,9 +3458,17 @@ const state = {
     chatAttachments: [], // Array of { oasis_ref, kind, name }
     chatSending: false,
     chatIsTyping: false, // VTID-0526-D: Guard against scroll/render during typing
+    chatDictationActive: false, // VTID-03907: voice dictation (Web Speech API) recording state
     // VTID-01027: Session Memory State
     operatorChatHistory: [], // Array of { role: 'user'|'assistant', content, ts }
     operatorConversationId: null, // UUID for conversation continuity
+    // VTID-03822: Multi-thread conversation state
+    operatorThreads: [], // Array of { id, title, conversationId, createdAt, updatedAt }
+    operatorActiveThreadId: null,
+    // VTID-03949: sessions sidebar + double-click-to-rename state
+    operatorSessionsSidebarCollapsed: false,
+    operatorRenamingThreadId: null, // thread id currently showing an inline rename input, or null
+    operatorRenameDraftValue: '', // current text of that inline input (synced on oninput, not via renderApp())
 
     // VTID-01041: Pending title capture state for ORB task creation
     pendingTitleVtid: null, // VTID awaiting title input from user
@@ -5369,7 +5742,25 @@ function _renderAppCore() {
     // VTID-01002: Capture all scroll positions before DOM destruction
     var savedScrollPositions = captureAllScrollPositions();
 
+    // VTID-03953: Save the operator thread-rename input's focus/selection
+    // state before destroying the DOM, and suppress its onblur-triggered
+    // commit for the duration of the removal — see the comment above
+    // _renameBlurSuppressed's declaration for why the removal itself would
+    // otherwise involuntarily close the in-progress rename.
+    var savedRenameFocus = null;
+    var _activeRenameEl = document.activeElement;
+    if (_activeRenameEl && _activeRenameEl.classList && _activeRenameEl.classList.contains('chat-session-title-input')) {
+        savedRenameFocus = {
+            threadId: state.operatorRenamingThreadId,
+            selectionStart: _activeRenameEl.selectionStart,
+            selectionEnd: _activeRenameEl.selectionEnd
+        };
+    }
+    _renamePreserveFocusPending = !!savedRenameFocus;
+    if (savedRenameFocus) _renameBlurSuppressed = true;
+
     root.innerHTML = '';
+    _renameBlurSuppressed = false;
     // Clean up health modal overlay (lives on document.body, outside root)
     var _oldBackdrop = document.querySelector('.health-modal-overlay');
     if (_oldBackdrop) _oldBackdrop.remove();
@@ -5461,9 +5852,29 @@ function _renderAppCore() {
         });
     }
 
+    // VTID-03953: Restore the operator thread-rename input's focus and
+    // cursor position after a background re-render (e.g. a ticker/heartbeat
+    // poll) interrupts an in-progress rename, instead of leaving the freshly
+    // rebuilt input unfocused. The threadId check is defensive — the blur
+    // suppression above already keeps operatorRenamingThreadId unchanged
+    // across this rebuild.
+    if (savedRenameFocus && savedRenameFocus.threadId === state.operatorRenamingThreadId) {
+        requestAnimationFrame(function () {
+            var newRenameInput = document.querySelector('.chat-session-title-input');
+            if (newRenameInput) {
+                newRenameInput.focus();
+                newRenameInput.setSelectionRange(savedRenameFocus.selectionStart, savedRenameFocus.selectionEnd);
+            }
+        });
+    }
+
     // VTID-0539: Scroll anchoring - preserve scroll position or scroll to bottom based on user's position
     // Only auto-scroll if user was near bottom; otherwise preserve their scroll position
-    if (state.isOperatorOpen && state.operatorActiveTab === 'chat' && !savedChatFocus) {
+    // VTID-03906: this used to also require !savedChatFocus, so a re-render while the
+    // textarea had focus (the normal reading/typing state) skipped restoring scroll
+    // entirely, snapping .chat-messages to scrollTop=0. Focus restoration and scroll
+    // restoration touch different elements and don't need to be mutually exclusive.
+    if (state.isOperatorOpen && state.operatorActiveTab === 'chat') {
         requestAnimationFrame(function () {
             var newMessagesContainer = document.querySelector('.chat-messages');
             if (newMessagesContainer && savedChatScroll) {
@@ -7586,6 +7997,144 @@ function renderModuleContent(moduleKey, tab) {
     return container;
 }
 
+// --- VTID-03823: Tasks board hygiene helpers ---
+
+/**
+ * Age/staleness info for a task card. 'stale' means no activity signal
+ * (createdAt) newer than 7 days AND not terminal — a terminal (completed)
+ * task sitting for a week is normal, not a hygiene problem.
+ */
+function computeTaskAgeInfo(task) {
+    if (!task || !task.createdAt) return { label: '', stale: false, days: null };
+    var created = new Date(task.createdAt);
+    if (isNaN(created.getTime())) return { label: '', stale: false, days: null };
+    var ms = Date.now() - created.getTime();
+    var days = ms / (1000 * 60 * 60 * 24);
+    var label;
+    if (days < 1) {
+        var hours = Math.max(1, Math.round(days * 24));
+        label = hours + 'h';
+    } else {
+        label = Math.round(days) + 'd';
+    }
+    var stale = days > 7 && !task.is_terminal;
+    return { label: label, stale: stale, days: days };
+}
+
+/**
+ * VTID-03516's session-vs-autonomous distinction, read client-side for the
+ * "source" filter chip. Mirrors isAutonomousExecutionTask()'s own allowlist
+ * (routes/worker-orchestrator.ts) rather than inventing a new rule: a task
+ * is autonomous-plane work only if metadata says so explicitly.
+ */
+function isAutonomousBoardTask(task) {
+    var meta = (task && task.metadata) || {};
+    return meta.source === 'self-healing' || meta.autonomous_execution === true;
+}
+
+/** VTID-03823: toggle a task's bulk-select checkbox state. */
+function toggleTaskMultiSelect(vtid) {
+    var idx = state.taskMultiSelectIds.indexOf(vtid);
+    if (idx === -1) {
+        state.taskMultiSelectIds.push(vtid);
+    } else {
+        state.taskMultiSelectIds.splice(idx, 1);
+    }
+    renderApp();
+}
+
+/**
+ * VTID-03823: bulk-archive the selected tasks by reusing the EXISTING,
+ * governed single-task delete semantics (VTID-01052's
+ * `DELETE /api/v1/oasis/tasks/:vtid` — soft-deletes, voids the VTID, logs
+ * an OASIS event) one call per task, not the VTID-03818-fixed reaper path.
+ * Scheduled-column only, matching that endpoint's own INVALID_STATE gate
+ * for non-scheduled tasks.
+ */
+async function bulkArchiveSelectedTasks() {
+    var ids = state.taskMultiSelectIds.slice();
+    if (ids.length === 0) return;
+    var confirmMsg = 'Archive ' + ids.length + ' scheduled task(s)?\n\n' +
+        'This will remove each from the Scheduled column, void its VTID\n' +
+        'permanently, and log the deletion in OASIS. This cannot be undone.';
+    if (!confirm(confirmMsg)) return;
+
+    var succeeded = [];
+    var failed = [];
+    for (var i = 0; i < ids.length; i++) {
+        var vtid = ids[i];
+        try {
+            var response = await fetch('/api/v1/oasis/tasks/' + vtid, {
+                method: 'DELETE',
+                headers: buildContextHeaders({ 'Content-Type': 'application/json' })
+            });
+            var result = await response.json();
+            if (result.ok) {
+                localStorage.removeItem('vitana.taskSpec.' + vtid);
+                clearTaskStatusOverride(vtid);
+                succeeded.push(vtid);
+            } else {
+                failed.push(vtid);
+            }
+        } catch (e) {
+            console.error('[VTID-03823] Bulk archive failed for', vtid, e);
+            failed.push(vtid);
+        }
+    }
+
+    state.taskMultiSelectIds = [];
+    await fetchTasks();
+
+    if (failed.length === 0) {
+        showToast('Archived ' + succeeded.length + ' task(s)', 'success');
+    } else {
+        showToast('Archived ' + succeeded.length + ', failed ' + failed.length + ' (' + failed.join(', ') + ')', 'warning');
+    }
+}
+
+/**
+ * VTID-03823: drag-and-drop from Scheduled into In Progress. Deliberately
+ * the ONLY drop target wired to a real mutation — it reuses the exact
+ * "Manual Start" call (PATCH .../oasis/tasks/:vtid {status:'in_progress'}),
+ * including its spec-approval gate and confirmation prompt, rather than
+ * inventing a new transition. Dropping onto Completed is not wired to
+ * anything (see docs/validation/VTID-03823 "Deliberately NOT attempted") —
+ * there is no existing manual "mark completed" endpoint to reuse, and
+ * completion is normally OASIS/executor-driven, not a manual board action.
+ */
+async function handleTaskDropIntoInProgress(vtid) {
+    var task = state.tasks.find(function (t) { return t.vtid === vtid; });
+    if (!task) return;
+    var currentColumn = mapStatusToColumnWithOverride(task.vtid, task.status, task.oasisColumn);
+    if (currentColumn !== 'Scheduled') return; // only Scheduled -> In Progress is wired
+
+    var specStatus = task.spec_status || 'missing';
+    if (specStatus !== 'approved') {
+        showToast('Cannot start: spec must be approved first', 'warning');
+        return;
+    }
+    if (!confirm('Move ' + vtid + ' to In Progress for manual work?\n\nThis will NOT trigger autonomous execution — you will work on this task yourself.')) {
+        return;
+    }
+    try {
+        var response = await fetch('/api/v1/oasis/tasks/' + vtid, {
+            method: 'PATCH',
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ status: 'in_progress' })
+        });
+        var result = await response.json();
+        if (result.ok) {
+            await fetchTasks();
+            showToast('Moved ' + vtid + ' to In Progress', 'success');
+        } else {
+            showToast('Move failed: ' + (result.message || result.error || 'Unknown error'), 'error');
+        }
+    } catch (e) {
+        console.error('[VTID-03823] Drag-drop status move failed:', e);
+        showToast('Move failed: Network error', 'error');
+    }
+}
+
 function renderTasksView() {
     const container = document.createElement('div');
     container.className = 'tasks-container';
@@ -7677,6 +8226,81 @@ function renderTasksView() {
 
     container.appendChild(toolbar);
 
+    // VTID-03823: Filter chip row (age / owner / source). Each is an
+    // independent, combinable toggle — clicking the active chip again
+    // clears that filter. Status is already the board's column split, so
+    // it isn't duplicated here as a chip.
+    const chipRow = document.createElement('div');
+    chipRow.className = 'task-filter-chip-row';
+
+    function makeChipGroup(label, options, stateKey) {
+        const group = document.createElement('div');
+        group.className = 'task-filter-chip-group';
+        const groupLabel = document.createElement('span');
+        groupLabel.className = 'task-filter-chip-group-label';
+        groupLabel.textContent = label + ':';
+        group.appendChild(groupLabel);
+        options.forEach(function (opt) {
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.className = 'task-filter-chip' + (state[stateKey] === opt.value ? ' task-filter-chip-active' : '');
+            chip.textContent = opt.text;
+            chip.onclick = function () {
+                state[stateKey] = (state[stateKey] === opt.value) ? '' : opt.value;
+                renderApp();
+            };
+            group.appendChild(chip);
+        });
+        return group;
+    }
+
+    chipRow.appendChild(makeChipGroup('Age', [
+        { value: 'today', text: 'Today' },
+        { value: 'week', text: 'This week' },
+        { value: 'stale', text: 'Stale (>7d)' }
+    ], 'taskFilterAge'));
+    chipRow.appendChild(makeChipGroup('Owner', [
+        { value: 'claimed', text: 'Claimed' },
+        { value: 'unclaimed', text: 'Unclaimed' }
+    ], 'taskFilterOwner'));
+    chipRow.appendChild(makeChipGroup('Source', [
+        { value: 'session', text: 'Session' },
+        { value: 'autonomous', text: 'Autonomous' }
+    ], 'taskFilterSource'));
+
+    container.appendChild(chipRow);
+
+    // VTID-03823: Bulk-action bar, shown only while at least one Scheduled
+    // task is checked.
+    if (state.taskMultiSelectIds.length > 0) {
+        const bulkBar = document.createElement('div');
+        bulkBar.className = 'task-bulk-action-bar';
+
+        const bulkLabel = document.createElement('span');
+        bulkLabel.className = 'task-bulk-action-label';
+        bulkLabel.textContent = state.taskMultiSelectIds.length + ' selected';
+        bulkBar.appendChild(bulkLabel);
+
+        const archiveBtn = document.createElement('button');
+        archiveBtn.type = 'button';
+        archiveBtn.className = 'btn btn-danger task-bulk-archive-btn';
+        archiveBtn.textContent = 'Archive selected';
+        archiveBtn.onclick = function () { bulkArchiveSelectedTasks(); };
+        bulkBar.appendChild(archiveBtn);
+
+        const clearBtn = document.createElement('button');
+        clearBtn.type = 'button';
+        clearBtn.className = 'btn task-bulk-clear-btn';
+        clearBtn.textContent = 'Clear selection';
+        clearBtn.onclick = function () {
+            state.taskMultiSelectIds = [];
+            renderApp();
+        };
+        bulkBar.appendChild(clearBtn);
+
+        container.appendChild(bulkBar);
+    }
+
     // Golden Task Board
     const board = document.createElement('div');
     board.className = 'task-board';
@@ -7710,6 +8334,28 @@ function renderTasksView() {
         // VTID-01002: Mark as scroll-retaining container
         content.dataset.scrollRetain = 'true';
         content.dataset.scrollKey = 'tasks-' + colName.toLowerCase().replace(/\s+/g, '-');
+
+        // VTID-03823: drag-and-drop drop zone. Only "In Progress" is wired
+        // to a real mutation (Scheduled -> In Progress, reusing Manual
+        // Start's own governed call+gate) — see handleTaskDropIntoInProgress.
+        // Every column still accepts the dragover so the drag cursor/
+        // highlight is consistent, but Scheduled/Completed drops are no-ops.
+        content.ondragover = function (e) {
+            e.preventDefault();
+            content.classList.add('column-content-drop-target');
+        };
+        content.ondragleave = function () {
+            content.classList.remove('column-content-drop-target');
+        };
+        content.ondrop = function (e) {
+            e.preventDefault();
+            content.classList.remove('column-content-drop-target');
+            const droppedVtid = e.dataTransfer.getData('text/plain');
+            if (!droppedVtid) return;
+            if (colName === 'In Progress') {
+                handleTaskDropIntoInProgress(droppedVtid);
+            }
+        };
 
         // Filter tasks
         // VTID-01022: Human task filter FIRST - exclude ALL system/CI/CD artifacts
@@ -7771,6 +8417,23 @@ function renderTasksView() {
                 const taskRoles = getTaskTargetRoles(t);
                 if (!taskRoles || !taskRoles.includes(state.taskRoleFilter)) return false;
             }
+
+            // VTID-03823: Age filter chip
+            if (state.taskFilterAge) {
+                const ageInfo = computeTaskAgeInfo(t);
+                if (ageInfo.days === null) return false;
+                if (state.taskFilterAge === 'today' && ageInfo.days >= 1) return false;
+                if (state.taskFilterAge === 'week' && ageInfo.days >= 7) return false;
+                if (state.taskFilterAge === 'stale' && !ageInfo.stale) return false;
+            }
+
+            // VTID-03823: Owner filter chip (claimed_by presence)
+            if (state.taskFilterOwner === 'claimed' && !t.claimed_by) return false;
+            if (state.taskFilterOwner === 'unclaimed' && t.claimed_by) return false;
+
+            // VTID-03823: Source filter chip (session vs autonomous plane, VTID-03516)
+            if (state.taskFilterSource === 'session' && isAutonomousBoardTask(t)) return false;
+            if (state.taskFilterSource === 'autonomous' && !isAutonomousBoardTask(t)) return false;
 
             return true;
         });
@@ -7842,6 +8505,17 @@ function createTaskCard(task) {
         card.dataset.terminal = 'true';
         card.dataset.outcome = task.terminal_outcome || '';
     }
+
+    // VTID-03823: draggable source, Scheduled column only (the only column
+    // with a wired drop target — see handleTaskDropIntoInProgress).
+    if (columnStatus === 'Scheduled') {
+        card.draggable = true;
+        card.ondragstart = function (e) {
+            e.dataTransfer.setData('text/plain', task.vtid);
+            e.dataTransfer.effectAllowed = 'move';
+        };
+    }
+
     card.onclick = () => {
         state.selectedTask = task;
         state.selectedTaskDetail = null;
@@ -7857,6 +8531,21 @@ function createTaskCard(task) {
             startExecutionStatusPolling(task.vtid);
         }
     };
+
+    // VTID-03823: bulk-select checkbox, Scheduled column only (mirrors the
+    // single-task Delete button's own column gate, and bulkArchiveSelectedTasks
+    // only knows how to archive Scheduled tasks).
+    if (columnStatus === 'Scheduled') {
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'task-card-select-checkbox';
+        checkbox.checked = state.taskMultiSelectIds.indexOf(task.vtid) !== -1;
+        checkbox.onclick = function (e) {
+            e.stopPropagation();
+            toggleTaskMultiSelect(task.vtid);
+        };
+        card.appendChild(checkbox);
+    }
 
     // VTID-01005: Title (larger, prominent)
     // VTID-01041: Use effective title (localStorage override > server > fallback)
@@ -7905,6 +8594,20 @@ function createTaskCard(task) {
     }
     statusPill.textContent = statusText;
     statusRow.appendChild(statusPill);
+
+    // VTID-03823: staleness/age badge — highlights hygiene sweep candidates
+    // (non-terminal, no activity in >7 days) without hiding the age of a
+    // normal, recent task.
+    var ageInfo = computeTaskAgeInfo(task);
+    if (ageInfo.label) {
+        var ageBadge = document.createElement('span');
+        ageBadge.className = 'task-card-age-badge' + (ageInfo.stale ? ' task-card-age-badge-stale' : '');
+        ageBadge.textContent = ageInfo.stale ? 'STALE · ' + ageInfo.label : ageInfo.label;
+        ageBadge.title = ageInfo.stale
+            ? 'No activity in over 7 days — consider archiving'
+            : 'Created ' + ageInfo.label + ' ago';
+        statusRow.appendChild(ageBadge);
+    }
 
     // VTID-01841: Retry badge for tasks that previously failed but are back in queue
     if (task.failure_count > 0 && !task.is_terminal) {
@@ -7969,6 +8672,12 @@ function createTaskCard(task) {
     // DEV-COMHU-2025-0012: Stage badges row (PL / WO / VA / DE)
     const stageTimeline = createTaskStageTimeline(task);
     card.appendChild(stageTimeline);
+
+    // VTID-03819: Related-task chip (embedding dedup surfaced a similar task)
+    const relatedChip = createRelatedTaskChip(task);
+    if (relatedChip) {
+        card.appendChild(relatedChip);
+    }
 
     return card;
 }
@@ -8132,6 +8841,32 @@ function startDrawerTitleEdit(titleValueElement, task) {
 }
 
 /**
+ * VTID-03819: Related-task chip. Shown when embedding-based dedup found a
+ * similar-but-not-duplicate task at creation time (metadata.related_vtid,
+ * set server-side by createOperatorTask/ledger-task-dedup.ts). Clicking it
+ * filters the board to that VTID, reusing the existing task search field
+ * rather than building new navigation.
+ */
+function createRelatedTaskChip(task) {
+    const relatedVtid = task && task.metadata && task.metadata.related_vtid;
+    if (!relatedVtid) return null;
+
+    const chip = document.createElement('span');
+    chip.className = 'task-related-chip';
+    chip.textContent = 'Related: ' + relatedVtid;
+    const similarity = task.metadata.related_similarity;
+    chip.title = 'A similar task already exists' +
+        (typeof similarity === 'number' ? ' (similarity ' + Math.round(similarity * 100) + '%)' : '') +
+        ' — click to find it';
+    chip.onclick = (e) => {
+        e.stopPropagation();
+        state.taskSearchQuery = relatedVtid;
+        renderApp();
+    };
+    return chip;
+}
+
+/**
  * VTID-0527: Create stage timeline pills for a task card.
  * Shows PLANNER → WORKER → VALIDATOR → DEPLOY progression.
  */
@@ -8207,9 +8942,12 @@ function renderTaskDrawer() {
     // 1. oasisColumn is COMPLETED (AUTHORITATIVE - highest priority)
     // 2. is_terminal flag from API
     // 3. status indicates completion
+    // VTID-03818: 'complete' (no trailing 's') is checked alongside
+    // 'completed' — a live status-value drift found in vtid_ledger.
     const isFinalMode = isOasisTerminal ||
         isTerminal ||
         taskStatus === 'completed' ||
+        taskStatus === 'complete' ||
         taskStatus === 'failed' ||
         taskStatus === 'cancelled';
 
@@ -8230,7 +8968,8 @@ function renderTaskDrawer() {
     });
 
     // VTID-01006: Inconsistent state detection
-    const isInconsistentState = (taskStatus === 'completed' || taskStatus === 'failed') &&
+    // VTID-03818: include 'complete' alongside 'completed'.
+    const isInconsistentState = (taskStatus === 'completed' || taskStatus === 'complete' || taskStatus === 'failed') &&
         !isTerminal && !hasOasisCompletionEvent;
 
     // DEV-COMHU-2025-0013: Initialize drawer spec state when opening for a new task
@@ -8263,6 +9002,12 @@ function renderTaskDrawer() {
     vtidHeading.className = 'drawer-title-text';
     vtidHeading.textContent = vtid;
     header.appendChild(vtidHeading);
+
+    // VTID-03819: Related-task chip (embedding dedup surfaced a similar task)
+    const drawerRelatedChip = createRelatedTaskChip(task);
+    if (drawerRelatedChip) {
+        header.appendChild(drawerRelatedChip);
+    }
 
     // VTID-01041: Editable title row (below VTID heading)
     var columnStatus = mapStatusToColumnWithOverride(vtid, task.status, task.oasisColumn) || 'Scheduled';
@@ -9549,7 +10294,8 @@ function renderTaskStageDetail(task) {
     // VTID-01006: Check task terminal state for stage validation
     const isTerminal = task.is_terminal === true;
     const taskStatus = (task.status || '').toLowerCase();
-    const isCompleted = taskStatus === 'completed' || (isTerminal && task.terminal_outcome === 'success');
+    // VTID-03818: include 'complete' alongside 'completed'.
+    const isCompleted = taskStatus === 'completed' || taskStatus === 'complete' || (isTerminal && task.terminal_outcome === 'success');
 
     const heading = document.createElement('h3');
     heading.className = 'task-stage-detail-heading';
@@ -10972,7 +11718,12 @@ function mapStatusToColumn(status) {
     if (['in_progress', 'executing', 'running'].includes(s)) return 'In Progress';
 
     // Completed column: deployed, completed, success, failed, blocked, cancelled
-    if (['deployed', 'completed', 'success', 'failed', 'blocked', 'cancelled'].includes(s)) return 'Completed';
+    // VTID-03818: 'complete' (no trailing 's') is a live, separate status
+    // value some rows carry — board-adapter.ts already normalizes both
+    // spellings server-side, but this client fallback only recognized
+    // 'completed', stranding a 'complete' row in Scheduled whenever it
+    // reached the client without a server-computed oasisColumn.
+    if (['deployed', 'completed', 'complete', 'success', 'failed', 'blocked', 'cancelled'].includes(s)) return 'Completed';
 
     // Fallback: unknown status → Scheduled (status label remains visible on card)
     return 'Scheduled';
@@ -11204,6 +11955,14 @@ function startExecutionStatusPolling(vtid) {
             stopExecutionStatusPolling();
             return;
         }
+
+        // VTID-03944: skip this tick's fetch+renderApp() while the Operator
+        // popup is open on top — same class of bug as VTID-03906/VTID-0526-E
+        // (a background poller tearing down and rebuilding the whole DOM,
+        // including the popup, every few seconds). Polling itself isn't
+        // stopped, just paused for the tick, so state resumes fresh once the
+        // popup closes.
+        if (state.isOperatorOpen) return;
 
         // Stop polling if task is no longer active — refresh board to update columns and drawer
         if (state.executionStatus && !state.executionStatus.isActive) {
@@ -23016,6 +23775,18 @@ function renderMemoryGardenView() {
         return container;
     }
 
+    // VTID-01086: memory_get_garden_progress RPC does not exist live —
+    // every fetch falls into the backend's _placeholder branch, returning
+    // an ok:true, all-zero response indistinguishable from a genuinely
+    // empty Memory Garden. Without this banner an admin sees "0 memories
+    // stored" for every single user with no indication the data is fake.
+    if (state.memoryGarden.progress?._placeholder) {
+        var placeholderBanner = document.createElement('div');
+        placeholderBanner.className = 'admin-not-wired-banner';
+        placeholderBanner.innerHTML = '<span class="admin-not-wired-icon">⚠️</span> Memory Garden data unavailable — the memory_get_garden_progress database function is not deployed. The counts below are placeholder zeros, not this user\'s real data.';
+        container.appendChild(placeholderBanner);
+    }
+
     // Main content area
     var mainContent = document.createElement('div');
     mainContent.className = 'memory-garden-main';
@@ -25295,6 +26066,135 @@ function renderHeartbeatOverlay() {
     return backdrop;
 }
 
+// VTID-03905: Operator popup fullscreen/restore icons. Plain stroke SVGs
+// with no inline styling attribute — the CSP Governance Gate forbids scripted inline styles.
+var ICON_EXPAND_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>';
+var ICON_RESTORE_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"></polyline><polyline points="20 10 14 10 14 4"></polyline><line x1="14" y1="10" x2="21" y2="3"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>';
+
+// VTID-03907: Operator chat voice dictation via the Web Speech API — no
+// backend route or new dependency, client-side only (transcribed text just
+// fills state.chatInputValue the same as typing would).
+var ICON_MIC_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>';
+
+// VTID-03947: per-message copy-to-clipboard icon (Command Hub Operator
+// Console) and its transient "copied" confirmation state — same 16x16
+// stroke-icon style as ICON_MIC_SVG above. Relative-time display reuses
+// the existing formatRelativeTime() helper (defined further down this
+// file) rather than adding a third near-duplicate of it.
+var ICON_COPY_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+var ICON_CHECK_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+
+// VTID-03949: sidebar show/hide toggle icon (a "panel" rectangle with a
+// left divider), same 16x16 stroke-icon style as the icons above.
+var ICON_SIDEBAR_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>';
+
+var operatorSpeechRecognition = null;
+
+function operatorDictationSupported() {
+    return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+}
+
+function stopOperatorDictation() {
+    if (operatorSpeechRecognition) {
+        try { operatorSpeechRecognition.stop(); } catch (e) { /* already stopped/errored */ }
+    }
+    operatorSpeechRecognition = null;
+    state.chatDictationActive = false;
+}
+
+// Starts a live SpeechRecognition session that streams transcribed text
+// directly into state.chatInputValue (and the live textarea, so the user
+// sees words appear as they speak) without going through renderApp() — a
+// full re-render per partial result would be the exact kind of disruption
+// VTID-03906 fixed elsewhere in this same popup.
+function startOperatorDictation(textarea, micBtn) {
+    var SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognitionCtor || state.chatDictationActive) return;
+
+    var recognition = new SpeechRecognitionCtor();
+    recognition.lang = (navigator.language || 'en-US');
+    recognition.continuous = true;
+    recognition.interimResults = true;
+
+    var baseValue = state.chatInputValue || '';
+    var baseNeedsSpace = baseValue.length > 0 && !/\s$/.test(baseValue);
+
+    recognition.onresult = function (event) {
+        var finalTranscript = '';
+        var interimTranscript = '';
+        for (var i = event.resultIndex; i < event.results.length; i++) {
+            var transcript = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+                finalTranscript += transcript;
+            } else {
+                interimTranscript += transcript;
+            }
+        }
+        if (finalTranscript) {
+            baseValue = baseValue + (baseNeedsSpace ? ' ' : '') + finalTranscript.trim() + ' ';
+            baseNeedsSpace = false;
+        }
+        var combined = baseValue + interimTranscript;
+        state.chatInputValue = combined;
+        if (textarea) textarea.value = combined;
+    };
+
+    recognition.onerror = function (event) {
+        console.warn('[VTID-03907] Speech recognition error:', event.error);
+        stopOperatorDictation();
+        if (micBtn) micBtn.classList.remove('chat-mic-btn--active');
+        // VTID-03918: surface WHY dictation stopped instead of leaving the
+        // user with a silently-dead mic — 'not-allowed'/'service-not-allowed'
+        // (mic permission denied/blocked) and 'audio-capture' (no mic device)
+        // fire asynchronously here with no other visible signal at all.
+        showToast(operatorDictationErrorMessage(event.error), 'error');
+    };
+
+    recognition.onend = function () {
+        operatorSpeechRecognition = null;
+        state.chatDictationActive = false;
+        if (micBtn) micBtn.classList.remove('chat-mic-btn--active');
+    };
+
+    // VTID-03918: recognition.start() can throw synchronously (e.g. a
+    // leftover/stale recognition session in InvalidStateError). Previously
+    // this call was unguarded AFTER the active class/state were already
+    // set, so a thrown start() left the mic button permanently red with no
+    // active recognition behind it — exactly "turns red, never listens,
+    // only a second manual press clears it." Set active state only once
+    // start() has actually succeeded, and clean up + inform the user if it
+    // hasn't.
+    try {
+        recognition.start();
+    } catch (e) {
+        console.warn('[VTID-03907] Speech recognition failed to start:', e);
+        showToast('Could not start voice dictation. Please try again.', 'error');
+        return;
+    }
+
+    operatorSpeechRecognition = recognition;
+    state.chatDictationActive = true;
+    if (micBtn) micBtn.classList.add('chat-mic-btn--active');
+}
+
+// VTID-03918: human-readable reason for a SpeechRecognition error code, so
+// a failed dictation attempt is explained instead of silently going dark.
+function operatorDictationErrorMessage(errorCode) {
+    switch (errorCode) {
+        case 'not-allowed':
+        case 'service-not-allowed':
+            return 'Voice dictation needs microphone permission. Check your browser\'s site settings and try again.';
+        case 'audio-capture':
+            return 'No microphone was found. Check your device and try again.';
+        case 'network':
+            return 'Voice dictation lost its network connection. Please try again.';
+        case 'no-speech':
+            return 'No speech detected. Voice dictation stopped.';
+        default:
+            return 'Voice dictation stopped (' + (errorCode || 'unknown error') + ').';
+    }
+}
+
 function renderOperatorOverlay() {
     const backdrop = document.createElement('div');
     backdrop.className = 'overlay-backdrop';
@@ -25303,12 +26203,14 @@ function renderOperatorOverlay() {
             state.isOperatorOpen = false;
             // VTID-01209: Stop active executions polling when closing
             stopActiveExecutionsPolling();
+            // VTID-03907: Stop any in-progress voice dictation when closing
+            if (state.chatDictationActive) stopOperatorDictation();
             renderApp();
         }
     };
 
     const panel = document.createElement('div');
-    panel.className = 'overlay-panel operator-overlay';
+    panel.className = 'overlay-panel operator-overlay' + (state.isOperatorFullscreen ? ' operator-overlay--fullscreen' : '');
 
     // Header
     const header = document.createElement('div');
@@ -25327,6 +26229,22 @@ function renderOperatorOverlay() {
 
     header.appendChild(titleBlock);
 
+    // VTID-03905: header action buttons (fullscreen / restore), between the
+    // title block and the close button. Close button behavior is unchanged.
+    const headerActions = document.createElement('div');
+    headerActions.className = 'overlay-header-actions';
+
+    const fullscreenBtn = document.createElement('button');
+    fullscreenBtn.className = 'overlay-fullscreen-toggle';
+    fullscreenBtn.title = state.isOperatorFullscreen ? 'Restore' : 'Fullscreen';
+    fullscreenBtn.setAttribute('aria-label', state.isOperatorFullscreen ? 'Restore popup size' : 'Enter fullscreen');
+    fullscreenBtn.innerHTML = state.isOperatorFullscreen ? ICON_RESTORE_SVG : ICON_EXPAND_SVG;
+    fullscreenBtn.onclick = () => {
+        state.isOperatorFullscreen = !state.isOperatorFullscreen;
+        renderApp();
+    };
+    headerActions.appendChild(fullscreenBtn);
+
     const closeBtn = document.createElement('button');
     closeBtn.className = 'overlay-close';
     closeBtn.innerHTML = '&times;';
@@ -25334,9 +26252,13 @@ function renderOperatorOverlay() {
         state.isOperatorOpen = false;
         // VTID-01209: Stop active executions polling when closing
         stopActiveExecutionsPolling();
+        // VTID-03907: Stop any in-progress voice dictation when closing
+        if (state.chatDictationActive) stopOperatorDictation();
         renderApp();
     };
-    header.appendChild(closeBtn);
+    headerActions.appendChild(closeBtn);
+
+    header.appendChild(headerActions);
 
     panel.appendChild(header);
 
@@ -25368,7 +26290,12 @@ function renderOperatorOverlay() {
     tabContent.className = 'operator-tab-content';
 
     if (state.operatorActiveTab === 'chat') {
-        tabContent.appendChild(renderOperatorChat());
+        // VTID-03949: sessions sidebar + chat column, side by side.
+        const chatLayout = document.createElement('div');
+        chatLayout.className = 'operator-chat-layout';
+        chatLayout.appendChild(renderOperatorSessionsSidebar());
+        chatLayout.appendChild(renderOperatorChat());
+        tabContent.appendChild(chatLayout);
     } else if (state.operatorActiveTab === 'ticker') {
         tabContent.appendChild(renderOperatorTicker());
     } else if (state.operatorActiveTab === 'history') {
@@ -25381,9 +26308,77 @@ function renderOperatorOverlay() {
     return backdrop;
 }
 
+// VTID-03822: tool-name -> human label for the chat tool-activity line.
+// Unlisted tools fall back to a generic "Ran <name>" — this is a display
+// nicety, not a contract, so an unmapped/new tool degrades gracefully
+// rather than being silently dropped.
+var TOOL_ACTIVITY_LABELS = {
+    create_task: 'Created a task',
+    knowledge_search: 'Searched the Knowledge Hub',
+    web_search: 'Searched the web',
+    get_task: 'Looked up a task',
+    update_task: 'Updated a task'
+};
+
+function describeToolActivity(tr) {
+    if (!tr || !tr.name) return 'Ran a tool';
+    var label = TOOL_ACTIVITY_LABELS[tr.name] || ('Ran ' + tr.name);
+    if (tr.response && typeof tr.response === 'object' && tr.response.vtid) {
+        label += ' (' + tr.response.vtid + ')';
+    }
+    return label;
+}
+
 function renderOperatorChat() {
     const container = document.createElement('div');
     container.className = 'chat-container';
+
+    // VTID-03949: session title bar — a sidebar show/hide toggle, the
+    // active thread's own (double-click-to-rename) title, and "+ New".
+    // Replaces the VTID-03822 <select> dropdown, which covered the
+    // transcript while open and only ever showed one session at a time;
+    // the full session list now lives in the persistent sidebar rendered
+    // alongside this container by renderOperatorOverlay() (see
+    // renderOperatorSessionsSidebar()). Purely client-side (localStorage),
+    // per VTID-03822's own spec: there is no backend conversation table to
+    // build against, so "resuming a thread" means restoring its saved
+    // history into state.chatMessages, not a server-side fetch.
+    const titleBar = document.createElement('div');
+    titleBar.className = 'chat-session-title-bar';
+
+    const sidebarToggleBtn = document.createElement('button');
+    sidebarToggleBtn.type = 'button';
+    sidebarToggleBtn.className = 'chat-sessions-toggle-btn';
+    sidebarToggleBtn.title = state.operatorSessionsSidebarCollapsed ? 'Show sessions' : 'Hide sessions';
+    sidebarToggleBtn.setAttribute('aria-label', sidebarToggleBtn.title);
+    sidebarToggleBtn.innerHTML = ICON_SIDEBAR_SVG;
+    sidebarToggleBtn.onclick = () => {
+        state.operatorSessionsSidebarCollapsed = !state.operatorSessionsSidebarCollapsed;
+        renderApp();
+    };
+    titleBar.appendChild(sidebarToggleBtn);
+
+    const activeThread = (state.operatorThreads || []).find(function (t) { return t.id === state.operatorActiveThreadId; });
+    if (activeThread) {
+        titleBar.appendChild(renderEditableThreadTitle(activeThread, 'chat-session-title-bar-text'));
+    } else {
+        const fallbackTitle = document.createElement('div');
+        fallbackTitle.className = 'chat-session-title-bar-text';
+        fallbackTitle.textContent = 'New conversation';
+        titleBar.appendChild(fallbackTitle);
+    }
+
+    const newThreadBtn = document.createElement('button');
+    newThreadBtn.type = 'button';
+    newThreadBtn.className = 'chat-new-thread-btn';
+    newThreadBtn.textContent = '+ New';
+    newThreadBtn.title = 'Start a new conversation';
+    newThreadBtn.onclick = function () {
+        startNewOperatorThread();
+    };
+    titleBar.appendChild(newThreadBtn);
+
+    container.appendChild(titleBar);
 
     // Messages area
     const messages = document.createElement('div');
@@ -25413,8 +26408,27 @@ function renderOperatorChat() {
                 bubbleClasses += ' message-error';
             }
             bubble.className = bubbleClasses;
-            bubble.textContent = msg.content || msg.text;
+            // VTID-03822: render markdown (bold/links/lists/headings) instead of
+            // plain text — replies routinely come back with markdown, which
+            // rendered as a wall of literal asterisks/backticks before this.
+            bubble.appendChild(renderManualMarkdown(msg.content || msg.text || ''));
             messages.appendChild(bubble);
+
+            // VTID-03822: surface which tools ran on this turn (already present
+            // on the message object since sendChatMessage's response handling —
+            // toolResults/meta were pushed onto chatMessages but never read by
+            // this renderer).
+            if (msg.toolResults && msg.toolResults.length > 0) {
+                const toolActivity = document.createElement('div');
+                toolActivity.className = 'chat-tool-activity';
+                msg.toolResults.forEach(tr => {
+                    const line = document.createElement('div');
+                    line.className = 'chat-tool-activity-line';
+                    line.textContent = describeToolActivity(tr);
+                    toolActivity.appendChild(line);
+                });
+                messages.appendChild(toolActivity);
+            }
 
             // Show attachments if any
             if (msg.attachments && msg.attachments.length > 0) {
@@ -25429,15 +26443,51 @@ function renderOperatorChat() {
                 messages.appendChild(attachmentsEl);
             }
 
-            // Timestamp element
-            const time = document.createElement('div');
+            // VTID-03947: message-meta row — a copy-to-clipboard icon plus a
+            // relative timestamp ("3h ago"), Claude Code style, replacing
+            // the old plain always-absolute timestamp div.
+            const meta = document.createElement('div');
+            // Align with the message bubble via a CSS class rather than an
+            // inline style assignment, same convention as .message-sent/
+            // .message-reply above.
+            meta.className = 'message-meta' + (isSent ? ' message-meta--sent' : '');
+
+            const copyBtn = document.createElement('button');
+            copyBtn.type = 'button';
+            copyBtn.className = 'message-copy-btn';
+            copyBtn.title = 'Copy message';
+            copyBtn.setAttribute('aria-label', 'Copy message');
+            copyBtn.innerHTML = ICON_COPY_SVG;
+            copyBtn.onclick = () => {
+                var textToCopy = msg.content || msg.text || '';
+                if (!textToCopy) return;
+                var showCopied = function () {
+                    copyBtn.innerHTML = ICON_CHECK_SVG;
+                    copyBtn.classList.add('message-copy-btn--copied');
+                    setTimeout(function () {
+                        copyBtn.innerHTML = ICON_COPY_SVG;
+                        copyBtn.classList.remove('message-copy-btn--copied');
+                    }, 1500);
+                };
+                try {
+                    var result = navigator.clipboard.writeText(textToCopy);
+                    if (result && typeof result.then === 'function') {
+                        result.then(showCopied).catch(function () { /* ignore */ });
+                    } else {
+                        showCopied();
+                    }
+                } catch (e) { /* clipboard API unavailable — no-op */ }
+            };
+            meta.appendChild(copyBtn);
+
+            const time = document.createElement('span');
             time.className = 'timestamp';
-            // Align timestamp with the message bubble
-            if (isSent) {
-                time.style.alignSelf = 'flex-end';
-            }
-            time.textContent = msg.timestamp;
-            messages.appendChild(time);
+            time.textContent = formatRelativeTime(msg.ts) || msg.timestamp || '';
+            // Exact absolute time still available on hover.
+            time.title = msg.timestamp || '';
+            meta.appendChild(time);
+
+            messages.appendChild(meta);
         });
     }
 
@@ -25542,6 +26592,30 @@ function renderOperatorChat() {
     };
     inputContainer.appendChild(textarea);
 
+    // VTID-03907: Voice dictation mic button (Web Speech API)
+    const micBtn = document.createElement('button');
+    micBtn.type = 'button';
+    var dictationSupported = operatorDictationSupported();
+    micBtn.className = 'chat-mic-btn' + (state.chatDictationActive ? ' chat-mic-btn--active' : '');
+    micBtn.disabled = !dictationSupported;
+    micBtn.title = !dictationSupported
+        ? 'Voice dictation is not supported in this browser'
+        : (state.chatDictationActive ? 'Stop voice dictation' : 'Start voice dictation');
+    micBtn.setAttribute('aria-label', micBtn.title);
+    micBtn.innerHTML = ICON_MIC_SVG;
+    micBtn.onclick = () => {
+        if (!dictationSupported) return;
+        if (state.chatDictationActive) {
+            stopOperatorDictation();
+            micBtn.classList.remove('chat-mic-btn--active');
+            micBtn.title = 'Start voice dictation';
+        } else {
+            startOperatorDictation(textarea, micBtn);
+            micBtn.title = 'Stop voice dictation';
+        }
+    };
+    inputContainer.appendChild(micBtn);
+
     // Send button
     const sendBtn = document.createElement('button');
     sendBtn.className = 'chat-send-btn';
@@ -25604,6 +26678,8 @@ async function sendChatMessage() {
 
     // VTID-0526-D: Reset typing flag - user is done typing, now sending
     state.chatIsTyping = false;
+    // VTID-03907: Stop any in-progress voice dictation once the message is sent
+    if (state.chatDictationActive) stopOperatorDictation();
 
     const now = new Date();
     const timestamp = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
@@ -25621,7 +26697,8 @@ async function sendChatMessage() {
         state.chatMessages.push({
             type: 'user',
             content: messageText,
-            timestamp: timestamp
+            timestamp: timestamp,
+            ts: now.getTime()
         });
 
         if (isSkip) {
@@ -25629,7 +26706,8 @@ async function sendChatMessage() {
             state.chatMessages.push({
                 type: 'system',
                 content: 'Title skipped. The task will keep its placeholder title.',
-                timestamp: timestamp
+                timestamp: timestamp,
+                ts: now.getTime()
             });
             state.pendingTitleVtid = null;
             state.pendingTitleRetryCount = 0;
@@ -25640,13 +26718,15 @@ async function sendChatMessage() {
                 state.chatMessages.push({
                     type: 'system',
                     content: 'Please enter a title for **' + state.pendingTitleVtid + '**, or type "skip" to keep the placeholder.',
-                    timestamp: timestamp
+                    timestamp: timestamp,
+                    ts: now.getTime()
                 });
             } else {
                 state.chatMessages.push({
                     type: 'system',
                     content: 'No title provided. The task will keep its placeholder title.',
-                    timestamp: timestamp
+                    timestamp: timestamp,
+                    ts: now.getTime()
                 });
                 state.pendingTitleVtid = null;
                 state.pendingTitleRetryCount = 0;
@@ -25657,7 +26737,8 @@ async function sendChatMessage() {
             state.chatMessages.push({
                 type: 'system',
                 content: String.fromCodePoint(0x2705) + ' Title updated: **' + state.pendingTitleVtid + '** — "' + messageText.trim() + '"',
-                timestamp: timestamp
+                timestamp: timestamp,
+                ts: now.getTime()
             });
             console.log('[VTID-01041] Title captured for', state.pendingTitleVtid, ':', messageText.trim());
             state.pendingTitleVtid = null;
@@ -25679,13 +26760,15 @@ async function sendChatMessage() {
         ts: now.getTime()
     };
     state.operatorChatHistory.push(userHistoryEntry);
-    saveOperatorChatHistory(state.operatorChatHistory);
+    saveOperatorThreadHistory(state.operatorActiveThreadId, state.operatorChatHistory);
+    touchActiveOperatorThread();
 
     // Add user message
     state.chatMessages.push({
         type: 'user',
         content: messageText,
         timestamp: timestamp,
+        ts: now.getTime(),
         attachments: [...state.chatAttachments]
     });
 
@@ -25780,12 +26863,14 @@ async function sendChatMessage() {
             ts: Date.now()
         };
         state.operatorChatHistory.push(assistantHistoryEntry);
-        saveOperatorChatHistory(state.operatorChatHistory);
+        saveOperatorThreadHistory(state.operatorActiveThreadId, state.operatorChatHistory);
+        touchActiveOperatorThread();
 
         state.chatMessages.push({
             type: 'system',
             content: replyContent,
             timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+            ts: Date.now(),
             oasis_ref: result.oasis_ref,
             threadId: result.threadId,
             createdTask: result.createdTask,
@@ -25801,6 +26886,7 @@ async function sendChatMessage() {
             type: 'system',
             content: errorContent,
             timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+            ts: Date.now(),
             isError: true
         });
     } finally {
@@ -30955,9 +32041,15 @@ function renderOverviewSystemView() {
     }
     // Auto-refresh every 30s while the Overview is mounted. Use a single
     // timer keyed on the state to avoid stacking duplicates across renders.
+    // VTID-03906: state.isOperatorOpen is an overlay flag independent of
+    // activeModule/activeTab, so with Overview mounted underneath, this timer
+    // used to keep calling fetchActionRequired(true) -> a full renderApp()
+    // every 30s while the Operator popup was open on top, tearing down and
+    // rebuilding the whole DOM (including the open popup) unprompted by any
+    // user action. Skip the poll entirely while a popup covers the tab.
     if (!state._actionRequiredTimer) {
         state._actionRequiredTimer = setInterval(function () {
-            if (state.activeModule === 'overview' && state.activeTab === 'system-overview') {
+            if (state.activeModule === 'overview' && state.activeTab === 'system-overview' && !state.isOperatorOpen) {
                 state.actionRequired.fetched = false;
                 fetchActionRequired(true);
             }
@@ -32006,8 +33098,36 @@ async function fetchActionRequired(silentRefresh) {
     state.actionRequired.loading = false;
     state.actionRequired.fetched = true;
     if (state.activeModule === 'overview' && state.activeTab === 'system-overview') {
-        renderApp();
+        // VTID-03917: this used to call the unconditional full renderApp()
+        // below even when silentRefresh was requested (the 30s Overview
+        // poll, app.js:~31713) — mirrors the exact bug fetchServiceHealth
+        // already guards against a few hundred lines up. A full renderApp()
+        // does root.innerHTML='' and rebuilds the ENTIRE app (sidebar,
+        // header, every card) every 30s while sitting on this tab: visible
+        // as flicker, a window where a click can land on an element that's
+        // mid-teardown and never fire, and the sidebar's scroll-retention
+        // rAF racing the rebuild and visibly resetting-then-restoring.
+        // Silent refreshes now patch only the Action Required panel's own
+        // DOM node in place instead of tearing down the whole app.
+        if (silentRefresh) {
+            refreshActionRequiredPanel();
+        } else {
+            renderApp();
+        }
     }
+}
+
+/**
+ * VTID-03917: Refreshes only the Action Required panel's DOM in place,
+ * without a full renderApp() rebuild. Used by the 30s Overview poll so a
+ * silent background refresh doesn't tear down and rebuild the whole app
+ * (see fetchActionRequired's silentRefresh branch above).
+ */
+function refreshActionRequiredPanel() {
+    var oldPanel = document.querySelector('.action-required-panel');
+    if (!oldPanel) return;
+    var newPanel = renderActionRequiredPanel();
+    oldPanel.replaceWith(newPanel);
 }
 
 // DEV-COMHU-03404: hourly rollup backing the Overview sparklines.
@@ -32034,7 +33154,12 @@ async function fetchOverviewTimeseries(silentRefresh) {
     state.overviewTimeseries.lastRefreshed = new Date().toISOString();
     state.overviewTimeseries.loading = false;
     state.overviewTimeseries.fetched = true;
-    if (state.activeModule === 'overview' && state.activeTab === 'system-overview') {
+    // VTID-03917: parity with fetchServiceHealth/fetchActionRequired — no
+    // caller currently passes silentRefresh=true here, but if one ever
+    // does, it must not trigger a full-app renderApp() rebuild either.
+    // State is already updated above; a silent caller picks it up on the
+    // next natural render instead of forcing one.
+    if (state.activeModule === 'overview' && state.activeTab === 'system-overview' && !silentRefresh) {
         renderApp();
     }
 }
@@ -32327,12 +33452,28 @@ async function fetchPipelineSummary() {
     if (isInitialLoad) renderApp();
 
     try {
-        var response = await fetchWT('/api/v1/autopilot/pipeline/summary', {}, 12000);
+        // VTID-03925: attaching the user's bearer token for consistency with
+        // every sibling fetch in this file — but note this does NOT actually
+        // make the call succeed. /api/v1/autopilot/* is gated by
+        // requireServiceToken (routes/autopilot.ts), which checks the bearer
+        // token against process.env.GATEWAY_SERVICE_TOKEN, an internal
+        // service-to-service secret — never a user session token, by design
+        // (VTID-03598 locked this router down specifically because it used
+        // to have NO auth at all). The browser can never legitimately hold
+        // that secret, so this endpoint will keep 401ing for the Command Hub
+        // regardless of headers. That's a real backend routing gap (this
+        // read-only dashboard endpoint needs a user/admin-auth exemption
+        // similar to the existing /health path exemptions) — flagged, not
+        // fixed here, since it needs a deliberate, reviewed backend change,
+        // not a silent frontend workaround. The header is still attached
+        // (harmless, matches the established pattern) in case that gap is
+        // closed later.
+        var headers = (typeof buildContextHeaders === 'function') ? buildContextHeaders({ Accept: 'application/json' }) : { Accept: 'application/json' };
+        var response = await fetchWT('/api/v1/autopilot/pipeline/summary', { headers: headers }, 12000);
         if (!response.ok) throw new Error('Pipeline summary fetch failed: ' + response.status);
 
         var data = await response.json();
         state.overviewPipelineSummary.snapshot = data;
-        state.overviewPipelineSummary.fetched = true;
         state.overviewPipelineSummary.error = null;
         console.log('[Pipeline] Summary loaded');
     } catch (error) {
@@ -32340,6 +33481,18 @@ async function fetchPipelineSummary() {
         state.overviewPipelineSummary.error = error.message;
     } finally {
         state.overviewPipelineSummary.loading = false;
+        // VTID-03925: `fetched` must be set unconditionally here, matching
+        // every sibling fetcher in this file (fetchActionRequired,
+        // fetchServiceHealth, ...). It used to be set ONLY inside the try
+        // block on success, so a failure (the 401 above, or any other
+        // transient error) left `fetched` false forever. renderOverviewSystemView()
+        // re-triggers this fetch on every render while `!fetched`, and this
+        // function's own isInitialLoad branch calls renderApp() on both
+        // entry and exit while `!fetched` — so a persistent failure produced
+        // a tight, self-sustaining fetch -> render -> fetch loop that pegged
+        // the browser (reported live as the whole Overview screen freezing,
+        // with hundreds of repeating 401s in the console within seconds).
+        state.overviewPipelineSummary.fetched = true;
         if (isInitialLoad) {
             renderApp();
         }
@@ -34548,7 +35701,13 @@ function renderCommandHubLiveConsoleView() {
 
             var contentSpan = document.createElement('span');
             contentSpan.className = 'console-content';
-            contentSpan.textContent = msg.content || '';
+            // VTID-03822: same markdown-rendering fix as the Operator Console
+            // chat bubble — both hit the identical /api/v1/operator/chat reply
+            // shape. Deliberately NOT consolidating the two chat surfaces
+            // (Operator Console vs. Live Console) into one component in this
+            // VTID — that's a larger UI-architecture change than this ticket's
+            // scope; documented here rather than silently left inconsistent.
+            contentSpan.appendChild(renderManualMarkdown(msg.content || ''));
 
             var timeSpan = document.createElement('span');
             timeSpan.className = 'console-timestamp';
@@ -42829,6 +43988,12 @@ if (!state.devAutopilot) {
         // Lineage cache (execId → { loading, root_id, lineage[] }) (PR-8)
         lineages: {},
         expandedExecIds: {},
+        // VTID-03896/03897: per-execution step feed. `steps[execId]` holds
+        // { loading, steps[], error, es } where `es` is the live EventSource
+        // (not serializable/renderable — only ever read/closed by the
+        // stream helpers below, never iterated for display).
+        expandedStepsExecIds: {},
+        steps: {},
         // In-flight action keys (e.g. 'approve:<id>') so buttons can disable
         // themselves cleanly via state instead of touching detached DOM after
         // showToast() (which re-renders and invalidates refs).
@@ -42884,6 +44049,9 @@ function renderDevAutopilotView() {
     // Cleared in renderApp() preamble when the tab changes (see teardown hook below).
     if (!state.devAutopilot.pollerId) {
         state.devAutopilot.pollerId = setInterval(function () {
+            // VTID-03944: skip while the Operator popup covers the tab — see
+            // the executionStatusPollInterval fix above for the full rationale.
+            if (state.isOperatorOpen) return;
             if ((state.currentTab === 'dev-autopilot' && state.currentModuleKey === 'command-hub') || (state.currentTab === 'autopilot-developer' && state.currentModuleKey === 'autonomy')) {
                 fetchDevAutopilotState();
             }
@@ -43763,6 +44931,70 @@ function ensureLineageLoaded(execId) {
     });
 }
 
+// VTID-03897: open (or reuse) a live SSE tail for one execution's step feed.
+// A one-shot GET .../steps primes the panel immediately (so slow SSE
+// handshakes don't leave it blank), then the EventSource appends live
+// `step` events as they arrive and self-closes on a `terminal` event.
+function ensureStepsStreamOpened(execId) {
+    if (!state.devAutopilot.steps[execId]) {
+        state.devAutopilot.steps[execId] = { loading: true, steps: [], error: null, es: null };
+    }
+    var slot = state.devAutopilot.steps[execId];
+    if (slot.es) return; // already streaming
+
+    devAutopilotApi('/executions/' + execId + '/steps', 'GET').then(function (data) {
+        if (data.ok) {
+            slot.steps = data.steps || [];
+            slot.error = null;
+        } else {
+            slot.error = data.error || 'steps fetch failed';
+        }
+        slot.loading = false;
+        renderApp();
+    }).catch(function (err) {
+        slot.loading = false;
+        slot.error = err.message || String(err);
+        renderApp();
+    });
+
+    // The browser's native EventSource cannot set an Authorization header,
+    // so this one stream route also accepts the bearer token as a query
+    // param (server-side: requireDevRoleForStream in dev-autopilot.ts).
+    var url = '/api/v1/dev-autopilot/executions/' + execId + '/stream?access_token=' + encodeURIComponent(state.authToken || '');
+    var es = new EventSource(url);
+    slot.es = es;
+    slot.streamError = false;
+
+    es.addEventListener('step', function (evt) {
+        try {
+            var step = JSON.parse(evt.data);
+            slot.steps = (slot.steps || []).concat([step]);
+            slot.loading = false;
+            renderApp();
+        } catch (_e) { /* ignore malformed frame */ }
+    });
+
+    es.addEventListener('terminal', function () {
+        closeStepsStream(execId);
+        renderApp();
+    });
+
+    es.onerror = function () {
+        if (slot.es === es) slot.streamError = true;
+    };
+}
+
+// Closes the live stream (if any) for one execution. Called when the
+// developer collapses the Steps panel — an execution the operator isn't
+// watching shouldn't hold an open connection indefinitely.
+function closeStepsStream(execId) {
+    var slot = state.devAutopilot.steps[execId];
+    if (slot && slot.es) {
+        slot.es.close();
+        slot.es = null;
+    }
+}
+
 // -----------------------------------------------------------------------------
 // Renderers
 // -----------------------------------------------------------------------------
@@ -44041,6 +45273,48 @@ function renderDevAutopilotExecutionCard(exec) {
         topRow.appendChild(vtidEl);
     }
 
+    // VTID-03852: this execution's real WORKER-stage LLM was never surfaced —
+    // an operator watching a PR get created had no way to tell the code was
+    // written by whatever provider metadata.llm_on_ramp_override forces
+    // (currently DeepSeek-flash for every operator-onramp execution) rather
+    // than the llm_routing_policy 'worker' stage default. Always show it —
+    // "policy default" is itself informative, not a placeholder to hide.
+    var llmBadge = document.createElement('span');
+    llmBadge.className = 'llm-provider-badge';
+    var onRampOverride = exec.metadata && exec.metadata.llm_on_ramp_override;
+    llmBadge.textContent = (onRampOverride && onRampOverride.provider)
+        ? 'llm: ' + onRampOverride.provider + '/' + (onRampOverride.model || '?')
+        : 'llm: policy default (worker stage)';
+    llmBadge.title = onRampOverride
+        ? 'Forced by metadata.llm_on_ramp_override — bypasses llm_routing_policy primary, but its configured fallback still applies on failure.'
+        : 'No on-ramp override on this execution — routed per the live llm_routing_policy \'worker\' stage.';
+    topRow.appendChild(llmBadge);
+
+    // VTID-03898: last_event_at heartbeat — lets a developer tell a
+    // long-running-but-healthy execution (recent step) from one that's
+    // silently stuck (last step was a long time ago), without opening the
+    // step feed. Only meaningful for still-active statuses.
+    var ACTIVE_STATUSES = { cooling: 1, running: 1, ci: 1, merging: 1, deploying: 1, verifying: 1 };
+    if (ACTIVE_STATUSES[exec.status] && exec.last_event_at) {
+        var ageMs = Date.now() - new Date(exec.last_event_at).getTime();
+        var ageMin = Math.round(ageMs / 60000);
+        var heartbeatEl = document.createElement('span');
+        // Stale past 10 minutes of no step activity: not necessarily
+        // broken (a long CI run can be quiet that long), but worth a
+        // visually distinct color so a developer scanning the board knows
+        // where to look first.
+        var stale = ageMs > 10 * 60000;
+        heartbeatEl.className = 'dev-autopilot-heartbeat' + (stale ? ' dev-autopilot-heartbeat--stale' : '');
+        heartbeatEl.title = 'Last step event at ' + exec.last_event_at;
+        heartbeatEl.textContent = (stale ? '⚠ ' : '') + 'last step ' + (ageMin <= 0 ? '<1m' : ageMin + 'm') + ' ago';
+        topRow.appendChild(heartbeatEl);
+    } else if (ACTIVE_STATUSES[exec.status] && exec.last_event_at === null) {
+        var noEventsEl = document.createElement('span');
+        noEventsEl.className = 'dev-autopilot-heartbeat';
+        noEventsEl.textContent = 'no steps yet';
+        topRow.appendChild(noEventsEl);
+    }
+
     if (exec.execute_after && exec.status === 'cooling') {
         var ms = new Date(exec.execute_after) - new Date();
         if (ms > 0) {
@@ -44080,6 +45354,25 @@ function renderDevAutopilotExecutionCard(exec) {
     };
     topRow.appendChild(lineageBtn);
 
+    // VTID-03896/03897: Steps toggle — opens a live SSE tail of this
+    // execution's dev_autopilot.execution.* OASIS events, mirroring the
+    // Lineage button's expand/collapse pattern.
+    var stepsOpen = !!state.devAutopilot.expandedStepsExecIds[exec.id];
+    var stepsBtn = document.createElement('button');
+    stepsBtn.textContent = stepsOpen ? '▾ Steps' : '▸ Steps';
+    stepsBtn.className = 'dev-autopilot-ghost-toggle';
+    stepsBtn.onclick = function () {
+        if (stepsOpen) {
+            delete state.devAutopilot.expandedStepsExecIds[exec.id];
+            closeStepsStream(exec.id);
+        } else {
+            state.devAutopilot.expandedStepsExecIds[exec.id] = true;
+            ensureStepsStreamOpened(exec.id);
+        }
+        renderApp();
+    };
+    topRow.appendChild(stepsBtn);
+
     card.appendChild(topRow);
 
     if (exec.branch) {
@@ -44091,6 +45384,10 @@ function renderDevAutopilotExecutionCard(exec) {
 
     if (lineageOpen) {
         card.appendChild(renderDevAutopilotLineageView(exec.id));
+    }
+
+    if (stepsOpen) {
+        card.appendChild(renderDevAutopilotStepsView(exec.id));
     }
 
     return card;
@@ -44151,6 +45448,83 @@ function renderDevAutopilotLineageView(execId) {
             hereEl.textContent = '← here';
             line.appendChild(hereEl);
         }
+        box.appendChild(line);
+    });
+
+    return box;
+}
+
+// VTID-03896/03897: renders the live step-by-step OASIS event tail for one
+// execution — the per-step Command Hub equivalent of watching Claude Code
+// run turn-by-turn, instead of only seeing a single status badge change
+// hours apart. Steps arrive oldest-first (both the priming GET and the SSE
+// appends preserve that order), so the list below simply reads top-to-bottom.
+function renderDevAutopilotStepsView(execId) {
+    var slot = state.devAutopilot.steps[execId] || {};
+    var box = document.createElement('div');
+    box.className = 'dev-autopilot-steps-panel';
+
+    if (slot.loading) {
+        box.textContent = 'Loading steps…';
+        box.classList.add('dev-autopilot-steps-panel--muted');
+        return box;
+    }
+    if (slot.error) {
+        box.classList.add('dev-autopilot-steps-panel--error');
+        box.textContent = 'Steps error: ' + slot.error;
+        return box;
+    }
+
+    var heading = document.createElement('div');
+    heading.className = 'dev-autopilot-steps-heading';
+    var headingText = document.createElement('span');
+    headingText.textContent = 'Live step feed (' + (slot.steps ? slot.steps.length : 0) + ')';
+    heading.appendChild(headingText);
+    if (slot.es) {
+        var liveDot = document.createElement('span');
+        liveDot.className = 'dev-autopilot-steps-live-dot';
+        liveDot.title = 'Streaming live';
+        heading.appendChild(liveDot);
+    } else if (slot.streamError) {
+        var errDot = document.createElement('span');
+        errDot.className = 'dev-autopilot-steps-stream-note';
+        errDot.textContent = '(stream reconnecting…)';
+        heading.appendChild(errDot);
+    }
+    box.appendChild(heading);
+
+    if (!slot.steps || slot.steps.length === 0) {
+        var empty = document.createElement('div');
+        empty.className = 'dev-autopilot-steps-empty';
+        empty.textContent = 'No step events yet.';
+        box.appendChild(empty);
+        return box;
+    }
+
+    var STEP_STATUS_CLASS = { error: 'dev-autopilot-step-topic--error', warning: 'dev-autopilot-step-topic--warning', success: 'dev-autopilot-step-topic--success' };
+    slot.steps.forEach(function (step) {
+        var line = document.createElement('div');
+        line.className = 'dev-autopilot-step-line';
+
+        var timeEl = document.createElement('span');
+        timeEl.className = 'dev-autopilot-step-time';
+        try {
+            timeEl.textContent = new Date(step.created_at).toLocaleTimeString();
+        } catch (_e) {
+            timeEl.textContent = String(step.created_at || '?');
+        }
+        line.appendChild(timeEl);
+
+        var topicEl = document.createElement('span');
+        topicEl.className = 'dev-autopilot-step-topic ' + (STEP_STATUS_CLASS[step.status] || '');
+        topicEl.textContent = (step.topic || '?').replace('dev_autopilot.execution.', '');
+        line.appendChild(topicEl);
+
+        var msgEl = document.createElement('span');
+        msgEl.className = 'dev-autopilot-step-message';
+        msgEl.textContent = step.message || '';
+        line.appendChild(msgEl);
+
         box.appendChild(line);
     });
 
@@ -44341,6 +45715,8 @@ function renderAutonomyPulseView() {
     // 30s poller while the tab is active
     if (!state.autonomyPulse.pollerId) {
         state.autonomyPulse.pollerId = setInterval(function () {
+            // VTID-03944: skip while the Operator popup covers the tab.
+            if (state.isOperatorOpen) return;
             if ((state.currentTab === 'autonomy-pulse') && (state.currentModuleKey === 'command-hub' || state.currentModuleKey === 'autonomy')) {
                 fetchAutonomyPulse();
             }
@@ -44640,6 +46016,8 @@ function renderAutonomyTraceView() {
     if (!state.autonomyTrace.fetched && !state.autonomyTrace.loading) fetchAutonomyTrace();
     if (!state.autonomyTrace.pollerId) {
         state.autonomyTrace.pollerId = setInterval(function () {
+            // VTID-03944: skip while the Operator popup covers the tab.
+            if (state.isOperatorOpen) return;
             if ((state.currentTab === 'autonomy-trace') && (state.currentModuleKey === 'command-hub' || state.currentModuleKey === 'autonomy')) fetchAutonomyTrace();
         }, 30000);
     }
@@ -50949,6 +52327,17 @@ function renderAutopilotLiveView() {
             bottomLine.textContent = (scanner ? scanner + ' · ' : '') + (filePath || 'no file') + depthBadge;
             label.appendChild(bottomLine);
             card.appendChild(label);
+
+            // VTID-03852: same transparency badge as renderDevAutopilotExecutionCard —
+            // this dashboard renders dev_autopilot_executions independently, so it
+            // needs its own copy rather than silently omitting the signal here.
+            var llmOverride2 = exec.metadata && exec.metadata.llm_on_ramp_override;
+            var llmBadge2 = document.createElement('span');
+            llmBadge2.className = 'llm-provider-badge';
+            llmBadge2.textContent = (llmOverride2 && llmOverride2.provider)
+                ? 'llm: ' + llmOverride2.provider + '/' + (llmOverride2.model || '?')
+                : 'llm: policy default';
+            card.appendChild(llmBadge2);
 
             // PR link if available
             if (exec.pr_url) {

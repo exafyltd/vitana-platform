@@ -13,12 +13,14 @@ import { Router, Request, Response } from 'express';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { randomUUID } from 'crypto';
 import { getSupabase } from '../lib/supabase';
+import * as repo from './dev-auth-repository';
 
 const router = Router();
 
 // Valid roles for the role parameter
 // VTID-01074: Added 'infra' role for platform infrastructure
-const VALID_ROLES = ['patient', 'community', 'professional', 'staff', 'admin', 'developer', 'infra'] as const;
+// VTID-03832: shared constant (adds 'backoffice')
+import { VITANA_ROLES as VALID_ROLES } from '../constants/vitana-roles';
 
 // VTID-01074: Valid tenant slugs and their corresponding UUIDs
 const SLUG_TO_TENANT_ID: Record<string, string> = {
@@ -108,10 +110,7 @@ async function bootstrapRequestContext(
   activeRole: string
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    const { data, error } = await supabase.rpc('dev_bootstrap_request_context', {
-      p_tenant_id: tenantId,
-      p_active_role: activeRole,
-    });
+    const { data, error } = await repo.bootstrapDevRequestContext(supabase, tenantId, activeRole);
 
     if (error) {
       console.error('[VTID-01050] Bootstrap RPC error:', error.message);

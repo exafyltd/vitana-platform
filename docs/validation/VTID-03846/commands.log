@@ -1,0 +1,15 @@
+# VTID-03846 — commands run (2026-09-13)
+
+## Source of the measurement (read-only, earlier in the same session)
+SQL (read-only): select ... from oasis_events where topic like 'llm.call.%' and created_at > '2026-09-13 08:00:00+00'
+  -> llm.call.completed provider=bedrock model=eu.anthropic.claude-opus-4-5-20251101-v1:0 latency 29.6s, 3517 in / 2768 out
+  (recorded in docs/validation/VTID-03841/outputs/staging-observation-2026-09-13.txt)
+
+## Governance
+curl -s -X POST https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate -d '{"source":"claude-code","layer":"DEV","module":"claude-md-bedrock-opus45-profile-row"}'
+  -> {"ok":true,"vtid":"VTID-03846"}
+curl -s -X PATCH https://preview-aws-gateway.vitanaland.com/api/v1/oasis/tasks/VTID-03846 -d '{"title":"Governance: CLAUDE.md Bedrock table stale (Opus 4.5 invokes)","status":"in_progress",...}'
+SQL: update vtid_ledger set spec_status='approved' where vtid='VTID-03846'   (user-instructed work; no gateway PATCH field for spec_status)
+
+## Verification
+grep -n "claude-opus-4-5-20251101\|every other Opus profile\|| VTID-03846 |" CLAUDE.md                 -> outputs/claude-md-grep.txt

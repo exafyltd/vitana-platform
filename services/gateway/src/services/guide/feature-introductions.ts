@@ -12,6 +12,7 @@
 
 import { getSupabase } from '../../lib/supabase';
 import { emitGuideTelemetry } from './guide-telemetry';
+import * as repo from './feature-introductions-repository';
 
 const LOG_PREFIX = '[Guide:feature-introductions]';
 
@@ -59,12 +60,7 @@ export async function getFeatureIntroductions(userId: string): Promise<FeatureIn
   const supabase = getSupabase();
   if (!supabase) return [];
 
-  const { data, error } = await supabase
-    .from('user_feature_introductions')
-    .select('feature_key, introduced_at, channel')
-    .eq('user_id', userId)
-    .order('introduced_at', { ascending: false })
-    .limit(50);
+  const { data, error } = await repo.fetchFeatureIntroductions(supabase, userId);
 
   if (error) {
     console.warn(`${LOG_PREFIX} read failed:`, error.message);
@@ -86,16 +82,13 @@ export async function recordFeatureIntroduction(
   const supabase = getSupabase();
   if (!supabase) return { success: false, error: 'storage_unavailable' };
 
-  const { error } = await supabase.from('user_feature_introductions').upsert(
-    {
-      user_id: userId,
-      feature_key: featureKey,
-      introduced_at: new Date().toISOString(),
-      channel,
-      context,
-    },
-    { onConflict: 'user_id,feature_key' },
-  );
+  const { error } = await repo.upsertFeatureIntroduction(supabase, {
+    user_id: userId,
+    feature_key: featureKey,
+    introduced_at: new Date().toISOString(),
+    channel,
+    context,
+  });
 
   if (error) {
     console.warn(`${LOG_PREFIX} write failed for ${featureKey}:`, error.message);

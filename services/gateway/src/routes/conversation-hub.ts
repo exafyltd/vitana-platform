@@ -40,6 +40,7 @@ import {
   type ConversationSurface,
 } from '../services/conversation/screen-surface';
 import type { TemporalBucket } from '../services/guide/temporal-bucket';
+import * as repo from './conversation-hub-repository';
 
 const router = Router();
 
@@ -241,14 +242,7 @@ router.get('/admin/conversation/decisions', ...adminOnly, async (req: Authentica
   if (!supabase) return jsonError(res, 503, 'Database not configured');
   try {
     const since = new Date(Date.now() - windowHours * 3600 * 1000).toISOString();
-    const { data, error } = await supabase
-      .from('oasis_events')
-      .select('created_at, metadata')
-      .eq('topic', 'orb.live.diag')
-      .eq('metadata->>stage', 'greeting_sent')
-      .gte('created_at', since)
-      .order('created_at', { ascending: false })
-      .limit(limit);
+    const { data, error } = await repo.fetchOasisEventsByStage(supabase, 'greeting_sent', since, limit);
     if (error) return jsonError(res, 500, error.message);
     const rows = (data || []).map((r: { created_at: string; metadata: Record<string, unknown> }) => {
       const m = r.metadata || {};
@@ -281,14 +275,7 @@ router.get('/admin/conversation/tool-failures', ...adminOnly, async (req: Authen
   if (!supabase) return jsonError(res, 503, 'Database not configured');
   try {
     const since = new Date(Date.now() - windowHours * 3600 * 1000).toISOString();
-    const { data, error } = await supabase
-      .from('oasis_events')
-      .select('created_at, metadata')
-      .eq('topic', 'orb.live.diag')
-      .eq('metadata->>stage', 'tool_failed')
-      .gte('created_at', since)
-      .order('created_at', { ascending: false })
-      .limit(limit);
+    const { data, error } = await repo.fetchOasisEventsByStage(supabase, 'tool_failed', since, limit);
     if (error) return jsonError(res, 500, error.message);
     const rows = (data || []).map((r: { created_at: string; metadata: Record<string, unknown> }) => {
       const m = r.metadata || {};

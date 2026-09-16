@@ -16,15 +16,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
 import { findReminders, formatTimeForVoice, type ReminderRow } from '../reminders-service';
+import * as repo from './reminders-clock-tools-repository';
 
 type Handler = (args: OrbToolArgs, id: OrbToolIdentity, sb: SupabaseClient) => Promise<OrbToolResult>;
 
 // ---------------------------------------------------------------------------
 // Shared helpers — reminders
 // ---------------------------------------------------------------------------
-
-/** Statuses a reminder can be acted on from (matches VTID-02601 routes). */
-const ACTIVE_REMINDER_STATUSES = ['pending', 'dispatching', 'fired'];
 
 const MIN_LEAD_MS = 60_000; // same 60s floor as reminders-service / PATCH route
 
@@ -55,13 +53,7 @@ async function resolveReminder(
   const textQuery = strArg(args, 'text_query');
 
   if (reminderId) {
-    const { data, error } = await sb
-      .from('reminders')
-      .select('*')
-      .eq('id', reminderId)
-      .eq('user_id', userId)
-      .in('status', ACTIVE_REMINDER_STATUSES)
-      .maybeSingle();
+    const { data, error } = await repo.fetchActiveReminderById(sb, reminderId, userId);
     if (error) throw new Error(error.message);
     if (!data) return { kind: 'none', message: 'No active reminder found with that id.' };
     return { kind: 'found', row: data as ReminderRow };
@@ -118,20 +110,14 @@ export async function tool_snooze_reminder(
     const row = resolved.row;
 
     const newTimeIso = new Date(Date.now() + minutes * 60_000).toISOString();
-    const { data, error } = await sb
-      .from('reminders')
-      .update({
-        next_fire_at: newTimeIso,
-        status: 'pending',
-        fired_at: null,
-        acked_at: null,
-        delivery_via: null,
-        snooze_count: (row.snooze_count || 0) + 1,
-      })
-      .eq('id', row.id)
-      .eq('user_id', id.user_id)
-      .select('*')
-      .single();
+    const { data, error } = await repo.snoozeReminderUpdate(sb, row.id, id.user_id, {
+      next_fire_at: newTimeIso,
+      status: 'pending',
+      fired_at: null,
+      acked_at: null,
+      delivery_via: null,
+      snooze_count: (row.snooze_count || 0) + 1,
+    });
     if (error) throw new Error(error.message);
 
     const human = formatTimeForVoice(new Date(newTimeIso), row.user_tz, langOf(id));
@@ -193,13 +179,7 @@ export async function tool_update_reminder(
       changes.push(`time changed to ${formatTimeForVoice(t, row.user_tz, langOf(id))}`);
     }
 
-    const { data, error } = await sb
-      .from('reminders')
-      .update(updates)
-      .eq('id', row.id)
-      .eq('user_id', id.user_id)
-      .select('*')
-      .maybeSingle();
+    const { data, error } = await repo.updateReminderPatch(sb, row.id, id.user_id, updates);
     if (error) throw new Error(error.message);
     if (!data) return { ok: false, error: 'Reminder not found or already cancelled.' };
 
@@ -231,13 +211,7 @@ export async function tool_acknowledge_reminder(
     }
     const row = resolved.row;
 
-    const { data, error } = await sb
-      .from('reminders')
-      .update({ acked_at: new Date().toISOString(), delivery_via: 'manual' })
-      .eq('id', row.id)
-      .eq('user_id', id.user_id)
-      .select('id, acked_at, delivery_via, action_text, status')
-      .maybeSingle();
+    const { data, error } = await repo.acknowledgeReminderUpdate(sb, row.id, id.user_id, new Date().toISOString());
     if (error) throw new Error(error.message);
     if (!data) return { ok: false, error: 'Reminder not found or already cancelled.' };
 
@@ -268,13 +242,7 @@ export async function tool_complete_reminder(
     }
     const row = resolved.row;
 
-    const { data, error } = await sb
-      .from('reminders')
-      .update({ status: 'completed', acked_at: new Date().toISOString(), delivery_via: 'manual' })
-      .eq('id', row.id)
-      .eq('user_id', id.user_id)
-      .select('*')
-      .maybeSingle();
+    const { data, error } = await repo.completeReminderUpdate(sb, row.id, id.user_id, new Date().toISOString());
     if (error) throw new Error(error.message);
     if (!data) return { ok: false, error: 'Reminder not found or already cancelled.' };
 
@@ -295,14 +263,7 @@ export async function tool_list_missed_reminders(
 ): Promise<OrbToolResult> {
   if (!id.user_id) return { ok: false, error: 'list_missed_reminders requires an authenticated user.' };
   try {
-    const { data, error } = await sb
-      .from('reminders')
-      .select('*')
-      .eq('user_id', id.user_id)
-      .eq('status', 'fired')
-      .is('acked_at', null)
-      .order('fired_at', { ascending: false })
-      .limit(20);
+    const { data, error } = await repo.fetchMissedReminders(sb, id.user_id);
     if (error) throw new Error(error.message);
 
     const rows = (data || []) as ReminderRow[];
@@ -337,8 +298,6 @@ export async function tool_list_missed_reminders(
 // ---------------------------------------------------------------------------
 // Shared helpers — clock (VTID-02779)
 // ---------------------------------------------------------------------------
-
-const CLOCK_TABLE = 'voice_clock_items';
 
 export interface VoiceClockItemRow {
   id: string;
@@ -486,19 +445,15 @@ export async function tool_set_alarm(
     if (!next.fires_at) return { ok: false, error: next.error || 'Could not compute the alarm time.' };
 
     const label = strArg(args, 'label') || null;
-    const { data, error } = await sb
-      .from(CLOCK_TABLE)
-      .insert({
-        tenant_id: id.tenant_id ?? null,
-        user_id: id.user_id,
-        kind: 'alarm',
-        label,
-        fires_at: next.fires_at.toISOString(),
-        recurrence,
-        status: 'active',
-      })
-      .select('*')
-      .single();
+    const { data, error } = await repo.insertVoiceClockItem(sb, {
+      tenant_id: id.tenant_id ?? null,
+      user_id: id.user_id,
+      kind: 'alarm',
+      label,
+      fires_at: next.fires_at.toISOString(),
+      recurrence,
+      status: 'active',
+    });
     if (error) throw new Error(error.message);
 
     const row = data as VoiceClockItemRow;
@@ -522,14 +477,7 @@ export async function tool_list_alarms(
   if (!id.user_id) return { ok: false, error: 'list_alarms requires an authenticated user.' };
   try {
     const { tz } = resolveTzArg(args); // invalid tz just falls back to UTC for display
-    const { data, error } = await sb
-      .from(CLOCK_TABLE)
-      .select('*')
-      .eq('user_id', id.user_id)
-      .eq('kind', 'alarm')
-      .eq('status', 'active')
-      .order('fires_at', { ascending: true })
-      .limit(20);
+    const { data, error } = await repo.fetchActiveAlarms(sb, id.user_id);
     if (error) throw new Error(error.message);
 
     const rows = (data || []) as VoiceClockItemRow[];
@@ -571,14 +519,7 @@ export async function tool_delete_alarm(
       return { ok: false, error: 'delete_alarm needs alarm_id, or a label/time to match.' };
     }
 
-    const { data, error } = await sb
-      .from(CLOCK_TABLE)
-      .select('*')
-      .eq('user_id', id.user_id)
-      .eq('kind', 'alarm')
-      .eq('status', 'active')
-      .order('fires_at', { ascending: true })
-      .limit(20);
+    const { data, error } = await repo.fetchActiveAlarms(sb, id.user_id);
     if (error) throw new Error(error.message);
     const all = (data || []) as VoiceClockItemRow[];
 
@@ -615,14 +556,7 @@ export async function tool_delete_alarm(
       };
     }
 
-    const { data: cancelled, error: cancelError } = await sb
-      .from(CLOCK_TABLE)
-      .update({ status: 'cancelled' })
-      .eq('id', target.id)
-      .eq('user_id', id.user_id)
-      .eq('status', 'active')
-      .select('id')
-      .maybeSingle();
+    const { data: cancelled, error: cancelError } = await repo.cancelAlarmClockItem(sb, target.id, id.user_id);
     if (cancelError) throw new Error(cancelError.message);
     if (!cancelled) return { ok: false, error: 'Alarm was already cancelled or no longer exists.' };
 
@@ -650,19 +584,15 @@ export async function tool_start_timer(
     const label = strArg(args, 'label') || null;
     const firesAt = new Date(Date.now() + minutes * 60_000);
 
-    const { data, error } = await sb
-      .from(CLOCK_TABLE)
-      .insert({
-        tenant_id: id.tenant_id ?? null,
-        user_id: id.user_id,
-        kind: 'timer',
-        label,
-        fires_at: firesAt.toISOString(),
-        duration_seconds: Math.round(minutes * 60),
-        status: 'active',
-      })
-      .select('*')
-      .single();
+    const { data, error } = await repo.insertVoiceClockItem(sb, {
+      tenant_id: id.tenant_id ?? null,
+      user_id: id.user_id,
+      kind: 'timer',
+      label,
+      fires_at: firesAt.toISOString(),
+      duration_seconds: Math.round(minutes * 60),
+      status: 'active',
+    });
     if (error) throw new Error(error.message);
 
     const row = data as VoiceClockItemRow;
@@ -692,19 +622,15 @@ export async function tool_start_pomodoro(
     const label = strArg(args, 'label') || null;
     const firesAt = new Date(Date.now() + minutes * 60_000);
 
-    const { data, error } = await sb
-      .from(CLOCK_TABLE)
-      .insert({
-        tenant_id: id.tenant_id ?? null,
-        user_id: id.user_id,
-        kind: 'pomodoro',
-        label,
-        fires_at: firesAt.toISOString(),
-        duration_seconds: Math.round(minutes * 60),
-        status: 'active',
-      })
-      .select('*')
-      .single();
+    const { data, error } = await repo.insertVoiceClockItem(sb, {
+      tenant_id: id.tenant_id ?? null,
+      user_id: id.user_id,
+      kind: 'pomodoro',
+      label,
+      fires_at: firesAt.toISOString(),
+      duration_seconds: Math.round(minutes * 60),
+      status: 'active',
+    });
     if (error) throw new Error(error.message);
 
     const row = data as VoiceClockItemRow;
@@ -726,14 +652,7 @@ export async function tool_list_active_timers(
 ): Promise<OrbToolResult> {
   if (!id.user_id) return { ok: false, error: 'list_active_timers requires an authenticated user.' };
   try {
-    const { data, error } = await sb
-      .from(CLOCK_TABLE)
-      .select('*')
-      .eq('user_id', id.user_id)
-      .in('kind', ['timer', 'pomodoro'])
-      .eq('status', 'active')
-      .order('fires_at', { ascending: true })
-      .limit(20);
+    const { data, error } = await repo.fetchActiveTimers(sb, id.user_id);
     if (error) throw new Error(error.message);
 
     const rows = (data || []) as VoiceClockItemRow[];

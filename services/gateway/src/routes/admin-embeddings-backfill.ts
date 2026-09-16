@@ -28,6 +28,7 @@ import {
 import { getSupabase } from '../lib/supabase';
 import { generateEmbedding } from '../services/embedding-service';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import * as repo from './admin-embeddings-backfill-repository';
 
 const router = Router();
 
@@ -58,19 +59,11 @@ router.get('/admin/embeddings/backfill/status', async (req: AuthenticatedRequest
   }
 
   try {
-    const { count: total } = await supabase
-      .from('memory_items')
-      .select('id', { count: 'exact', head: true });
+    const { count: total } = await repo.countMemoryItemsTotal(supabase);
 
-    const { count: embedded } = await supabase
-      .from('memory_items')
-      .select('id', { count: 'exact', head: true })
-      .not('embedding', 'is', null);
+    const { count: embedded } = await repo.countMemoryItemsEmbedded(supabase);
 
-    const { count: missing } = await supabase
-      .from('memory_items')
-      .select('id', { count: 'exact', head: true })
-      .is('embedding', null);
+    const { count: missing } = await repo.countMemoryItemsMissingEmbedding(supabase);
 
     return res.json({
       ok: true,
@@ -103,12 +96,7 @@ router.post('/admin/embeddings/backfill', async (req: AuthenticatedRequest, res:
   try {
     // Pull a batch of NULL-embedding rows ordered oldest → newest so the
     // backfill is monotonic and easy to reason about.
-    const { data: rows, error: selectErr } = await supabase
-      .from('memory_items')
-      .select('id, tenant_id, user_id, content')
-      .is('embedding', null)
-      .order('created_at', { ascending: true })
-      .limit(batchSize);
+    const { data: rows, error: selectErr } = await repo.fetchMemoryItemsMissingEmbeddingBatch(supabase, batchSize);
 
     if (selectErr) {
       return res.status(500).json({ ok: false, error: selectErr.message });
@@ -157,14 +145,11 @@ router.post('/admin/embeddings/backfill', async (req: AuthenticatedRequest, res:
           continue;
         }
 
-        const { error: updErr } = await supabase
-          .from('memory_items')
-          .update({
-            embedding: embRes.embedding,
-            embedding_model: embRes.model,
-            embedding_updated_at: new Date().toISOString(),
-          })
-          .eq('id', item.id);
+        const { error: updErr } = await repo.updateMemoryItemEmbedding(supabase, item.id, {
+          embedding: embRes.embedding,
+          embedding_model: embRes.model,
+          embedding_updated_at: new Date().toISOString(),
+        });
 
         if (updErr) {
           errors += 1;

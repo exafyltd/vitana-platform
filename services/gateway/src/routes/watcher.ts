@@ -35,6 +35,7 @@ import {
 } from '../services/watcher/reminder';
 import { recordFeedback, recordShown } from '../services/watcher/feedback';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import * as repo from './watcher-repository';
 import type { LessonStage } from '../services/watcher/lesson-types';
 import type {
   SessionStepInput,
@@ -92,17 +93,9 @@ router.get('/timeline', requireAdminAuth, async (req: AuthenticatedRequest, res:
     return res.status(503).json({ ok: false, error: 'SUPABASE_UNAVAILABLE' });
   }
 
-  let query = sb
-    .from('watcher_steps')
-    .select('id, work_unit_kind, work_unit_id, vtid, step, outcome, actor, evidence, source, source_ref, observed_at')
-    // Ascending: a timeline is read forwards. The DESC indexes still serve
-    // this — Postgres reads a btree in either direction.
-    .order('observed_at', { ascending: true })
-    .limit(limit);
-
-  query = vtid ? query.eq('vtid', vtid) : query.eq('work_unit_id', workUnitId);
-
-  const { data, error } = await query;
+  // Ascending: a timeline is read forwards. The DESC indexes still serve
+  // this — Postgres reads a btree in either direction.
+  const { data, error } = await repo.fetchWatcherTimeline(sb, { vtid, workUnitId, limit });
   if (error) {
     return res.status(500).json({ ok: false, error: 'QUERY_FAILED', detail: error.message });
   }
@@ -142,10 +135,7 @@ router.get('/health', requireAdminAuth, async (req: AuthenticatedRequest, res: R
   let sources: unknown[] = [];
   let stateError: string | null = null;
   if (sb) {
-    const { data, error } = await sb
-      .from('watcher_observer_state')
-      .select('source, cursor_at, last_run_at, last_error, last_written, updated_at')
-      .order('source', { ascending: true });
+    const { data, error } = await repo.fetchWatcherObserverState(sb);
     if (error) stateError = error.message;
     else sources = data || [];
   }
@@ -176,9 +166,8 @@ router.get('/health', requireAdminAuth, async (req: AuthenticatedRequest, res: R
   let lessons: { total: number; injectable: number } | null = null;
   if (sb) {
     const [all, mature] = await Promise.all([
-      sb.from('watcher_lessons').select('id', { count: 'exact', head: true }),
-      sb.from('watcher_lessons').select('id', { count: 'exact', head: true })
-        .eq('status', 'active').gt('frequency', 1),
+      repo.countAllWatcherLessons(sb),
+      repo.countInjectableWatcherLessons(sb),
     ]);
     lessons = { total: all.count ?? 0, injectable: mature.count ?? 0 };
   }

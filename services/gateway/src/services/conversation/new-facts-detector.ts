@@ -18,6 +18,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import * as repo from './new-facts-detector-repository';
 
 export const SIGNAL_LEARNING_SURFACED = 'learning_surfaced_v1';
 
@@ -53,16 +54,12 @@ export async function detectNewFacts(args: DetectNewFactsArgs): Promise<NewFacts
     Math.max(Number.isFinite(sinceMs) ? sinceMs : 0, nowMs - LOOKBACK_CAP_MS),
   ).toISOString();
   try {
-    let query = args.supabase
-      .from('memory_facts')
-      .select('fact_key, fact_value')
-      .eq('user_id', args.userId)
-      .is('superseded_at', null)
-      .gt('extracted_at', clampedSinceIso)
-      .order('extracted_at', { ascending: false })
-      .limit(50);
-    if (args.tenantId) query = query.eq('tenant_id', args.tenantId);
-    const { data, error } = await query;
+    const { data, error } = await repo.fetchNewMemoryFacts(args.supabase, {
+      userId: args.userId,
+      tenantId: args.tenantId,
+      sinceIso: clampedSinceIso,
+      limit: 50,
+    });
     if (error || !Array.isArray(data)) return empty;
     const rows = (data as Array<{ fact_key?: unknown; fact_value?: unknown }>).filter(
       (r) => typeof r.fact_key === 'string' && !EXCLUDED_FACT_KEYS.has(r.fact_key),
@@ -86,13 +83,7 @@ export async function readLearningSurfacedAt(
   userId: string,
 ): Promise<string | null> {
   try {
-    const { data, error } = await supabase
-      .from('user_assistant_state')
-      .select('value')
-      .eq('tenant_id', tenantId)
-      .eq('user_id', userId)
-      .eq('signal_name', SIGNAL_LEARNING_SURFACED)
-      .maybeSingle();
+    const { data, error } = await repo.fetchLearningSurfacedSignal(supabase, tenantId, userId, SIGNAL_LEARNING_SURFACED);
     if (error || !data) return null;
     const at = (data as { value?: { surfaced_at?: unknown } }).value?.surfaced_at;
     return typeof at === 'string' ? at : null;
@@ -111,16 +102,13 @@ export async function markLearningSurfaced(
 ): Promise<void> {
   const at = nowIso ?? new Date().toISOString();
   try {
-    await supabase.from('user_assistant_state').upsert(
-      {
-        tenant_id: tenantId,
-        user_id: userId,
-        signal_name: SIGNAL_LEARNING_SURFACED,
-        value: { surfaced_at: at, count },
-        last_seen_at: at,
-      },
-      { onConflict: 'tenant_id,user_id,signal_name' },
-    );
+    await repo.upsertLearningSurfacedSignal(supabase, {
+      tenant_id: tenantId,
+      user_id: userId,
+      signal_name: SIGNAL_LEARNING_SURFACED,
+      value: { surfaced_at: at, count },
+      last_seen_at: at,
+    });
   } catch {
     /* fire-and-forget */
   }

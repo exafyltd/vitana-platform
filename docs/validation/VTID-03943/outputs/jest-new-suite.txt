@@ -1,0 +1,17 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+PASS test/limitations-filter.test.ts
+  excludePastPurchases (VTID-03943)
+    ✓ drops products whose id matches a past purchase (3 ms)
+    ✓ reports the correct hidden count, matching the number actually dropped (1 ms)
+    ✓ reports zero when no past purchase overlaps the allowed list (1 ms)
+    ✓ reports zero and returns the list unchanged when past purchases is empty
+    ✓ handles an empty allowed list (1 ms)
+    ✓ a past purchase with no matching product in allowed contributes nothing
+
+Test Suites: 1 passed, 1 total
+Tests:       6 passed, 6 total
+Snapshots:   0 total
+Time:        0.47 s, estimated 1 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

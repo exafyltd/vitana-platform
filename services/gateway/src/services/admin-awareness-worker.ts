@@ -23,6 +23,7 @@
 import { getSupabase } from '../lib/supabase';
 import { runAllScannersForTenant } from './admin-scanners';
 import { storeTenantHealthIndex } from './admin-health-index';
+import * as repo from './admin-awareness-worker-repository';
 
 const LOG_PREFIX = '[admin-kpi]';
 const WORKER_TICK_MS = 5 * 60 * 1000; // 5 minutes
@@ -86,7 +87,7 @@ async function runTick(): Promise<void> {
 async function listActiveTenants(): Promise<string[]> {
   const supabase = getSupabase();
   if (!supabase) return [];
-  const { data, error } = await supabase.from('tenants').select('tenant_id, is_active');
+  const { data, error } = await repo.fetchAllTenants(supabase);
   if (error) {
     console.warn(`${LOG_PREFIX} listActiveTenants failed: ${error.message}`);
     return [];
@@ -112,12 +113,12 @@ export async function computeAndStoreForTenant(tenantId: string): Promise<void> 
     const d48h = new Date(now.getTime() + 2 * 86400_000).toISOString();
 
     const [totalMembers, signups24h, signups7d, signupsPrior7d, invPending, invExpiring48h] = await Promise.all([
-      supabase.from('user_tenants').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId),
-      supabase.from('user_tenants').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).gte('created_at', d1),
-      supabase.from('user_tenants').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).gte('created_at', d7),
-      supabase.from('user_tenants').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).gte('created_at', d14).lt('created_at', d7),
-      supabase.from('tenant_invitations').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).is('accepted_at', null).is('revoked_at', null),
-      supabase.from('tenant_invitations').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).is('accepted_at', null).is('revoked_at', null).lte('expires_at', d48h).gte('expires_at', now.toISOString()),
+      repo.countTenantMembers(supabase, tenantId),
+      repo.countTenantSignupsSince(supabase, tenantId, d1),
+      repo.countTenantSignupsSince(supabase, tenantId, d7),
+      repo.countTenantSignupsBetween(supabase, tenantId, d14, d7),
+      repo.countPendingInvitations(supabase, tenantId),
+      repo.countExpiringInvitations(supabase, tenantId, now.toISOString(), d48h),
     ]);
 
     const s7 = signups7d.count ?? 0;
@@ -147,12 +148,12 @@ export async function computeAndStoreForTenant(tenantId: string): Promise<void> 
     const d7 = new Date(now.getTime() - 7 * 86400_000).toISOString();
 
     const [eventsThisWeek, eventsNextWeek, groupsTotal, liveRoomsActive, newMemberships7d] = await Promise.all([
-      supabase.from('global_community_events').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).gte('start_time', nowIso).lt('start_time', in7d),
-      supabase.from('global_community_events').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).gte('start_time', in7d).lt('start_time', in14d),
+      repo.countTenantEventsInWindow(supabase, tenantId, nowIso, in7d),
+      repo.countTenantEventsInWindow(supabase, tenantId, in7d, in14d),
       // global_community_groups has no tenant_id — it's shared across tenants (see community-groups.ts), so this is a global count, not per-tenant.
-      supabase.from('global_community_groups').select('id', { count: 'exact', head: true }),
-      supabase.from('live_rooms').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).gte('ends_at', nowIso),
-      supabase.from('community_memberships').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).gte('created_at', d7),
+      repo.countAllCommunityGroups(supabase),
+      repo.countActiveLiveRooms(supabase, tenantId, nowIso),
+      repo.countNewMembershipsSince(supabase, tenantId, d7),
     ]);
 
     kpi.community = {
@@ -174,11 +175,11 @@ export async function computeAndStoreForTenant(tenantId: string): Promise<void> 
     const d7 = new Date(now.getTime() - 7 * 86400_000).toISOString();
 
     const [runs24h, runsCompleted7d, runsFailed7d, recsNew, recsActivated7d] = await Promise.all([
-      supabase.from('tenant_autopilot_runs').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).gte('started_at', d1),
-      supabase.from('tenant_autopilot_runs').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).gte('started_at', d7).eq('status', 'completed'),
-      supabase.from('tenant_autopilot_runs').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).gte('started_at', d7).eq('status', 'failed'),
-      supabase.from('autopilot_recommendations').select('id', { count: 'exact', head: true }).eq('status', 'new'),
-      supabase.from('autopilot_recommendations').select('id', { count: 'exact', head: true }).eq('status', 'activated').gte('updated_at', d7),
+      repo.countAutopilotRunsSince(supabase, tenantId, d1),
+      repo.countAutopilotRunsByStatusSince(supabase, tenantId, d7, 'completed'),
+      repo.countAutopilotRunsByStatusSince(supabase, tenantId, d7, 'failed'),
+      repo.countRecommendationsByStatus(supabase, 'new'),
+      repo.countRecommendationsByStatusSince(supabase, 'activated', d7),
     ]);
 
     const completed = runsCompleted7d.count ?? 0;
@@ -202,18 +203,13 @@ export async function computeAndStoreForTenant(tenantId: string): Promise<void> 
   const computationDurationMs = Date.now() - start;
 
   // Upsert current snapshot
-  const { error: currentErr } = await supabase
-    .from('tenant_kpi_current')
-    .upsert(
-      {
-        tenant_id: tenantId,
-        generated_at: new Date().toISOString(),
-        kpi,
-        computation_duration_ms: computationDurationMs,
-        source_version: WORKER_VERSION,
-      },
-      { onConflict: 'tenant_id' },
-    );
+  const { error: currentErr } = await repo.upsertTenantKpiCurrent(supabase, {
+    tenant_id: tenantId,
+    generated_at: new Date().toISOString(),
+    kpi,
+    computation_duration_ms: computationDurationMs,
+    source_version: WORKER_VERSION,
+  });
   if (currentErr) {
     console.warn(`${LOG_PREFIX} upsert current failed ${tenantId.substring(0, 8)}...: ${currentErr.message}`);
     return;
@@ -221,19 +217,14 @@ export async function computeAndStoreForTenant(tenantId: string): Promise<void> 
 
   // Upsert today's daily snapshot
   const todayDate = new Date().toISOString().slice(0, 10);
-  const { error: dailyErr } = await supabase
-    .from('tenant_kpi_daily')
-    .upsert(
-      {
-        tenant_id: tenantId,
-        snapshot_date: todayDate,
-        kpi,
-        computed_at: new Date().toISOString(),
-        computation_duration_ms: computationDurationMs,
-        source_version: WORKER_VERSION,
-      },
-      { onConflict: 'tenant_id,snapshot_date' },
-    );
+  const { error: dailyErr } = await repo.upsertTenantKpiDaily(supabase, {
+    tenant_id: tenantId,
+    snapshot_date: todayDate,
+    kpi,
+    computed_at: new Date().toISOString(),
+    computation_duration_ms: computationDurationMs,
+    source_version: WORKER_VERSION,
+  });
   if (dailyErr) {
     console.warn(`${LOG_PREFIX} upsert daily failed ${tenantId.substring(0, 8)}...: ${dailyErr.message}`);
   }

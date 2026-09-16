@@ -15,6 +15,7 @@ import { z } from 'zod';
 import { createClient } from '@supabase/supabase-js';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { requireAdminAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import * as repo from '../services/voice-feedback/voice-feedback-repository';
 
 const router = Router();
 
@@ -123,18 +124,14 @@ router.post('/submit', async (req: Request, res: Response) => {
 
   const { transcript, report_type, severity, affected_screen, attachments } = parsed.data;
 
-  const { data, error } = await userClient
-    .from('user_feedback_reports')
-    .insert({
-      user_id: user.id,
-      transcript,
-      report_type,
-      severity,
-      affected_screen: affected_screen || null,
-      attachments,
-    })
-    .select('id, created_at')
-    .single();
+  const { data, error } = await repo.insertFeedbackReport(userClient, {
+    user_id: user.id,
+    transcript,
+    report_type,
+    severity,
+    affected_screen: affected_screen || null,
+    attachments,
+  });
 
   if (error) {
     console.error('[voice-feedback] Insert error:', error);
@@ -177,17 +174,7 @@ router.get('/reports', async (req: Request, res: Response) => {
 
   const { limit, offset, status } = parsed.data;
 
-  let query = userClient
-    .from('user_feedback_reports')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .range(offset, offset + limit - 1);
-
-  if (status) {
-    query = query.eq('status', status);
-  }
-
-  const { data, error } = await query;
+  const { data, error } = await repo.fetchFeedbackReports(userClient, { status, offset, limit });
 
   if (error) {
     console.error('[voice-feedback] List error:', error);
@@ -211,11 +198,7 @@ router.get('/reports/:id', async (req: Request, res: Response) => {
     return res.status(503).json({ ok: false, error: 'GATEWAY_MISCONFIGURED' });
   }
 
-  const { data, error } = await userClient
-    .from('user_feedback_reports')
-    .select('*')
-    .eq('id', req.params.id)
-    .single();
+  const { data, error } = await repo.fetchFeedbackReportById(userClient, req.params.id);
 
   if (error || !data) {
     return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
@@ -236,11 +219,7 @@ router.post('/reports/:id/approve', requireAdminAuth, async (req: AuthenticatedR
   }
 
   // Fetch the report
-  const { data: report, error: fetchErr } = await serviceClient
-    .from('user_feedback_reports')
-    .select('*')
-    .eq('id', req.params.id)
-    .single();
+  const { data: report, error: fetchErr } = await repo.fetchFeedbackReportById(serviceClient, req.params.id);
 
   if (fetchErr || !report) {
     return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
@@ -262,12 +241,7 @@ router.post('/reports/:id/approve', requireAdminAuth, async (req: AuthenticatedR
   ].filter(Boolean).join('\n\n');
 
   // Allocate next VTID
-  const { data: maxVtid } = await serviceClient
-    .from('vtid_ledger')
-    .select('vtid')
-    .order('vtid', { ascending: false })
-    .limit(1)
-    .single();
+  const { data: maxVtid } = await repo.fetchMaxVtid(serviceClient);
 
   let nextNum = 1300;
   if (maxVtid?.vtid) {
@@ -277,19 +251,17 @@ router.post('/reports/:id/approve', requireAdminAuth, async (req: AuthenticatedR
   const vtid = `VTID-${String(nextNum).padStart(5, '0')}`;
 
   // Insert task into vtid_ledger
-  const { error: ledgerErr } = await serviceClient
-    .from('vtid_ledger')
-    .insert({
-      vtid,
-      header: taskHeader,
-      spec_text: specText,
-      status: 'pending',
-      spec_status: 'draft',
-      is_terminal: false,
-      target_role: 'DEV',
-      task_family: 'DEV',
-      source: 'voice-feedback',
-    });
+  const { error: ledgerErr } = await repo.insertVtidLedgerTask(serviceClient, {
+    vtid,
+    header: taskHeader,
+    spec_text: specText,
+    status: 'pending',
+    spec_status: 'draft',
+    is_terminal: false,
+    target_role: 'DEV',
+    task_family: 'DEV',
+    source: 'voice-feedback',
+  });
 
   if (ledgerErr) {
     console.error('[voice-feedback] Ledger insert error:', ledgerErr);
@@ -297,10 +269,7 @@ router.post('/reports/:id/approve', requireAdminAuth, async (req: AuthenticatedR
   }
 
   // Update report status
-  await serviceClient
-    .from('user_feedback_reports')
-    .update({ status: 'in_progress', vtid })
-    .eq('id', report.id);
+  await repo.updateFeedbackReport(serviceClient, report.id, { status: 'in_progress', vtid });
 
   await emitFeedbackEvent(
     'voice.feedback.approved',
@@ -328,20 +297,13 @@ router.post('/reports/:id/reject', requireAdminAuth, async (req: AuthenticatedRe
     return res.status(503).json({ ok: false, error: 'GATEWAY_MISCONFIGURED' });
   }
 
-  const { data: report, error: fetchErr } = await serviceClient
-    .from('user_feedback_reports')
-    .select('id, status')
-    .eq('id', req.params.id)
-    .single();
+  const { data: report, error: fetchErr } = await repo.fetchFeedbackReportStatus(serviceClient, req.params.id);
 
   if (fetchErr || !report) {
     return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
   }
 
-  await serviceClient
-    .from('user_feedback_reports')
-    .update({ status: 'wont_fix', admin_notes: parsed.data.reason })
-    .eq('id', report.id);
+  await repo.updateFeedbackReport(serviceClient, report.id, { status: 'wont_fix', admin_notes: parsed.data.reason });
 
   await emitFeedbackEvent(
     'voice.feedback.rejected',

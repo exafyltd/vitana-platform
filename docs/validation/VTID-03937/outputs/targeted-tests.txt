@@ -1,0 +1,121 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/scripts/validate-pr-locally.test.ts
+  validate-pr-locally — PR-body/metadata gates
+    title/body presence (exit 2)
+      ✓ rejects an empty title (3 ms)
+      ✓ rejects an empty body (1 ms)
+    VTID extraction (exit 10)
+      ✓ rejects when neither title nor a VTID: body line has one (1 ms)
+      ✓ accepts a VTID from the title
+      ✓ falls back to an explicit VTID: line in the body, not a prose mention (1 ms)
+    VALIDATION_PROFILE extraction (exit 11)
+      ✓ rejects when missing entirely
+      ✓ rejects when the colon has no separating space (awk $2 is empty)
+      ✓ extracts the profile when properly spaced (1 ms)
+    required markers (exit 12-15)
+      ✓ rejects when SCOPE_ALLOWLIST: is missing (exit 12)
+      ✓ rejects when ACCEPTANCE: is missing (exit 13)
+      ✓ rejects when MERGE_PAYLOAD_PREVIEW: is missing (exit 14) (4 ms)
+      ✓ rejects when OASIS_IMPACT: is missing (exit 15)
+    changed files (exit 16)
+      ✓ rejects when the diff is empty (1 ms)
+    path ownership guard (delegated to validator-path-guard.cjs)
+      ✓ propagates an unknown-profile rejection (exit 21) (1 ms)
+    evidence pack gate (exit 30-33)
+      ✓ rejects a missing evidence dir
+      ✓ rejects a missing acceptance.md (1 ms)
+      ✓ rejects a missing commands.log (1 ms)
+      ✓ rejects a missing outputs/ dir
+    acceptance mapping gate (exit 40-41) — the real VTID-03933/03934 incident
+      ✓ checkAcceptanceMapping() directly reproduces the exact reported CI failure: "Verified manually:" is not a TEST:/CURL:/UI: token (2 ms)
+      ✓ rejects via the full validate() pipeline when an AC has no TEST:/CURL:/UI: within 12 lines (1 ms)
+      ✓ rejects when acceptance.md has no AC- entries at all
+      ✓ approves the corrected wording that actually shipped (leads with TEST:) (1 ms)
+    OASIS traceability gate (exit 80-81) — the real VTID-03933/03934 incident
+      ✓ reproduces the exact reported CI failure: prose instead of the literal yes/no token (1 ms)
+      ✓ approves the corrected literal token that actually shipped (1 ms)
+      ✓ requires OASIS_PROOF: in acceptance.md when OASIS_IMPACT: yes
+      ✓ approves OASIS_IMPACT: yes when OASIS_PROOF: is present (1 ms)
+    CSP governance gate (exit 50)
+      ✓ rejects a CSP-pattern hit in an added line under the CSP surface (1 ms)
+    merge deploy gate (exit 90-91)
+      ✓ rejects when the title does not literally contain the VTID resolved from the body
+    the full happy path
+      ✓ approves a well-formed PR end to end and prints the PASS summary (1 ms)
+      ✓ skips the Build Gate by default and says so
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/scripts/validator-path-guard.test.ts
+  the remit is exactly the workflow trigger
+    ✓ matches the paths: list in VALIDATOR-CHECK.yml (2 ms)
+  gateway_backend — the ordinary cases
+    ✓ approves a PR confined to the gateway source tree
+    ✓ approves evidence docs alongside source (1 ms)
+  the VTID-03696 fix — out-of-remit files are reported, not rejected
+    ✓ approves the mixed PR that previously could not pass under any profile
+    ✓ says out loud which files it did not judge
+    ✓ does not present "not judged" as approval of those trees (1 ms)
+    ✓ .env.example is NOT treated as a committed .env
+  what the guard still rejects
+    ✓ rejects a committed .env anywhere, ignoring remit
+    ✓ rejects a bare .env at the repo root (1 ms)
+    ✓ rejects an unknown profile
+    ✓ rejects an in-remit file outside the declared profile — the check that still has teeth
+    ✓ does not let out-of-remit files mask an in-remit violation (1 ms)
+  dependency changes are declared, not forbidden
+    ✓ rejects an undeclared lockfile change
+    ✓ approves the same change once declared (2 ms)
+    ✓ still reports the dependency change when declared
+    ✓ catches yarn.lock too, not just npm and pnpm
+    ✓ ranks a committed .env above an undeclared lockfile
+  route-mount evidence keys off an ADDED route, not a touched file
+    ✓ requires evidence when a route is actually added (1 ms)
+    ✓ does NOT require evidence for a route file edited without adding a route
+    ✓ ignores removed and context lines
+    ✓ ignores the +++ file header, which is not an added line (1 ms)
+    ✓ requires evidence if any added line registers a route, among many that do not
+    ✓ treats an empty diff as not requiring evidence
+  CSP scanning is scoped to the browser-served surface
+    ✓ scans the command-hub frontend trees (1 ms)
+    ✓ does not scan the validator workflow — which contains the CSP patterns itself
+    ✓ does not scan lockfiles — a registry URL is not a CDN asset
+    ✓ does not scan markdown, CI scripts or migrations (1 ms)
+    ✓ does not scan gateway backend source — it is not served to a browser
+    ✓ picks the frontend files out of a mixed change set
+  CSP scan judges ADDED lines, not whole file content (VTID-03714)
+    ✓ flags a pattern that appears in an ADDED line (1 ms)
+    ✓ does NOT flag the identical pattern in a context (unchanged) line
+    ✓ does NOT flag a pattern in a REMOVED line
+    ✓ ignores the +++ file header, which is not an added line (1 ms)
+    ✓ reproduces the exact PR #3167 false positive and confirms it is now clean
+    ✓ still catches a genuinely NEW CSP violation added by a diff
+    ✓ P2 — an added line that itself starts with "++" is not mistaken for a file header (1 ms)
+    ✓ P2 — a genuine unified-diff file header (with the space) is still skipped
+    ✓ P1 — a pattern split across two consecutive added lines is still caught
+    ✓ P1 — consecutive added lines are joined only when truly contiguous (no context/removed line between)
+    ✓ isDiffFileHeader distinguishes a real header from added content that merely starts with +++ (1 ms)
+  degenerate input
+    ✓ ignores blank lines and surrounding whitespace
+    ✓ approves an empty change set rather than throwing
+  VTID-03706 — the three diff-marker cases VTID-03714 does not cover
+    ✓ does NOT flag a pre-existing violation carried as a CONTEXT line
+    ✓ does NOT flag a violation being REMOVED
+    ✓ does not flag an external <script src=…>, which is the sanctioned form
+
+Test Suites: 2 passed, 2 total
+Tests:       75 passed, 75 total
+Snapshots:   0 total
+Time:        0.535 s, estimated 1 s
+Ran all test suites matching /test\/scripts\/validate-pr-locally.test.ts|test\/scripts\/validator-path-guard.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

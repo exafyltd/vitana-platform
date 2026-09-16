@@ -31,6 +31,7 @@ const createChain = () => {
     order: jest.fn(() => chain),
     eq: jest.fn(() => chain),
     gte: jest.fn(() => chain),
+    gt: jest.fn(() => chain),
     in: jest.fn(() => chain),
     is: jest.fn(() => chain),
     not: jest.fn(() => chain),
@@ -272,6 +273,62 @@ describe('Tenant Admin Invitations Routes', () => {
     expect(chain.insert).not.toHaveBeenCalled();
   });
 
+  it('POST / allows re-inviting once the previous invitation has expired (VTID-03938)', async () => {
+    // Regression test: fetchExistingPendingInvitation() used to check only
+    // accepted_at/revoked_at, so an expired-but-unrevoked invitation blocked
+    // re-inviting the same email forever (409 ALREADY_INVITED with no way
+    // out short of an admin manually calling /revoke first). The fix adds an
+    // expires_at filter to the duplicate-check query itself — asserting the
+    // filter was applied is what actually pins the fix, since a mocked
+    // resolved value alone can't distinguish "filtered correctly" from
+    // "filter never added".
+    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    const chain = chainFor('tenant_invitations');
+    // Simulates: with the expires_at filter applied, the expired row no
+    // longer matches, so Supabase's .single() reports "no rows".
+    chain.mockResolvedValueOnce({ data: null, error: { code: 'PGRST116', message: 'No rows' } });
+    chain.mockResolvedValueOnce({
+      data: { id: INVITE_ID, email: 'expired-invite@example.com', roles: ['community'], token: 'tok-456' },
+      error: null,
+    });
+
+    const res = await request(app)
+      .post(`/api/v1/admin/tenants/${TENANT_A}/invitations`)
+      .set('Authorization', 'Bearer token')
+      .send({ email: 'expired-invite@example.com' });
+
+    expect(res.status).toBe(201);
+    expect(res.body.ok).toBe(true);
+    // The duplicate-check query must filter on expires_at, not just
+    // accepted_at/revoked_at — this is the line that actually pins the fix.
+    expect(chain.gt).toHaveBeenCalledWith('expires_at', expect.any(String));
+    expect(chain.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ email: 'expired-invite@example.com' })
+    );
+  });
+
+  it('POST / returns 500 (not a silent duplicate-invite risk) when the existing-invitation check errors', async () => {
+    // Previously: an unchecked `{data}`-only destructure meant a failed
+    // existing-invitation lookup resolved `existing` to undefined, so the
+    // handler proceeded as if no pending invitation existed — risking a
+    // duplicate invitation record/email for someone already invited.
+    // Uses a non-PGRST116 code: PGRST116 ("no rows") is .single()'s normal,
+    // expected shape for "not yet invited" and must NOT be treated as an error
+    // (see the two POST / success tests above, which rely on exactly that).
+    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    const chain = chainFor('tenant_invitations');
+    chain.mockResolvedValueOnce({ data: null, error: { code: '500', message: 'lookup failed' } });
+
+    const res = await request(app)
+      .post(`/api/v1/admin/tenants/${TENANT_A}/invitations`)
+      .set('Authorization', 'Bearer token')
+      .send({ email: 'dupe@example.com' });
+
+    expect(res.status).toBe(500);
+    expect(res.body.ok).toBe(false);
+    expect(chain.insert).not.toHaveBeenCalled();
+  });
+
   it('POST / returns 503 when the DB client is unavailable', async () => {
     mockVerifiedJwt(tenantAdminClaims(TENANT_A));
     mockGetSupabase.mockReturnValue(null as any);
@@ -441,5 +498,37 @@ describe('Tenant Admin Invitations Routes', () => {
     expect(chainFor('tenant_invitations').update).toHaveBeenCalledWith(
       expect.objectContaining({ accepted_by: 'member-1', accepted_at: expect.any(String) })
     );
+  });
+
+  it('accept: returns 500 (not a silent membership reset) when the existing-membership check errors', async () => {
+    // Previously: an unchecked `{data}`-only destructure meant a failed
+    // existing-membership lookup resolved `existingMembership` to undefined,
+    // so the handler proceeded as if the user had no membership yet —
+    // inserting a fresh user_tenants row and resetting active_role even for
+    // a user who already had a membership. Uses a non-PGRST116 code:
+    // PGRST116 ("no rows") is .single()'s normal "not yet a member" shape
+    // and must NOT be treated as an error (see the success test above).
+    mockVerifiedJwt(MEMBER_CLAIMS);
+    const futureExpiry = new Date(Date.now() + 7 * 86400_000).toISOString();
+    chainFor('tenant_invitations').mockResolvedValueOnce({
+      data: {
+        id: INVITE_ID,
+        tenant_id: TENANT_A,
+        roles: ['community'],
+        invited_by: 'admin-a',
+        expires_at: futureExpiry,
+      },
+      error: null,
+    });
+    chainFor('user_tenants').mockResolvedValueOnce({ data: null, error: { code: '500', message: 'lookup failed' } });
+
+    const res = await request(app)
+      .post('/api/v1/admin/invitations/accept/tok-123')
+      .set('Authorization', 'Bearer member-token');
+
+    expect(res.status).toBe(500);
+    expect(res.body.ok).toBe(false);
+    expect(chainFor('user_tenants').insert).not.toHaveBeenCalled();
+    expect(chainFor('user_permitted_roles').upsert).not.toHaveBeenCalled();
   });
 });

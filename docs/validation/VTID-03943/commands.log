@@ -1,0 +1,89 @@
+# VTID-03943 — commands run during this change
+
+## Investigation (via background Explore agent, then independently verified)
+Agent audited discover-feed/search, notifications, community-members,
+reminders, shop-feed, click-redirect, intent/cover-generation,
+journey-checklist, campaigns across both repos looking for a genuine
+cross-repo (backend+frontend) gap. Reported the discover-search
+`hidden_breakdown` undercounting bug as its top finding, with the caveat
+that the frontend (HiddenByLimitationsFooter.tsx, useMarketplace.ts) was
+already fully wired to render `past_purchases` — no frontend code change
+was strictly required.
+
+Independently verified by reading the actual files:
+$ grep -n "past_purchases\|hiddenBreakdown" services/gateway/src/routes/discover-search.ts
+  327-329 (hiddenBreakdown literal — no past_purchases field)
+  347-349 (withoutPast computed, never counted)
+  460-461 (hidden_total = sum(hiddenBreakdown) — past-purchase drops invisible)
+$ grep -n "past_purchases" services/gateway/src/routes/discover-feed.ts
+  218,219,243 (the correct inline pattern this fix mirrors)
+
+Confirmed zero existing test coverage for either route:
+$ grep -rl "past_purchases" services/gateway/test
+(no results, before this VTID)
+$ cat services/gateway/src/routes/discover-search-repository.ts | head -5
+  "impact-allow-no-test: pure data-access seam... zero coverage today" —
+  this repo's own documented exception for why discover-search.ts has no
+  route-level test; informed the decision to fix via an extracted, pure,
+  independently-testable helper instead.
+
+## Fix
+services/gateway/src/services/limitations-filter.ts:
+  Added excludePastPurchases<T extends {id:string}>(allowed, pastPurchases)
+  -> {withoutPast, past_purchases_hidden} — pure, no I/O.
+
+services/gateway/src/routes/discover-search.ts:
+  1. Import excludePastPurchases.
+  2. Seeded hiddenBreakdown's initial literal with past_purchases: 0 (so its
+     inferred type carries the field through every reassignment).
+  3. The ctx-present branch (line ~338) now also carries past_purchases
+     forward explicitly when reassigning hiddenBreakdown from
+     result.hidden_breakdown (which has no past_purchases field of its own).
+  4. Replaced the inline past-purchase filter with a call to
+     excludePastPurchases(), folding past_purchases_hidden into
+     hiddenBreakdown — this is the actual bug fix.
+
+services/gateway/src/routes/discover-feed.ts:
+  Replaced its own already-correct inline computation with a call to the
+  same new shared helper, so the two routes cannot independently drift
+  again the way this bug shows they can.
+
+## New test file (written from scratch)
+services/gateway/test/limitations-filter.test.ts — 6 tests, pure function,
+no mocking required: basic filter, correct count with multiple matches,
+zero-overlap case, empty-past-purchases case, empty-allowed-list case, and
+a past-purchase entry with no matching product contributing nothing.
+
+## Targeted test run
+$ cd services/gateway && npx jest test/limitations-filter.test.ts --silent
+Test Suites: 1 passed, 1 total
+Tests:       6 passed, 6 total
+(full output: outputs/jest-new-suite.txt)
+
+## TypeScript
+$ cd services/gateway && npx tsc --noEmit -p tsconfig.json
+(clean, no output — see outputs/tsc-noemit.txt)
+
+## Full gateway suite (regression check)
+$ cd services/gateway && npx jest --silent
+Test Suites: 1 skipped, 916 passed, 916 of 917 total
+Tests:       29 skipped, 6 todo, 15083 passed, 15118 total
+0 failures.
+(full output: outputs/jest-full-suite.txt)
+
+## VTID allocation
+$ curl -sS -X POST "https://gateway.vitanaland.com/api/v1/vtid/allocate" \
+    -H "Content-Type: application/json" \
+    -d '{"source":"claude-code","layer":"cross-repo","module":"discover-search-past-purchases-hidden-count"}'
+{"ok":true,"vtid":"VTID-03943","num":3943,"id":"7e476139-e854-4a74-82ca-ee52e573ca2b"}
+
+Followed with a direct Supabase UPDATE (project inmkhvwdcuyhnxkgfvsb) to
+set title/summary, status='in_progress', spec_status='approved'.
+
+Single VTID shared across both repos' PRs (this repo + exafyltd/vitana-v1)
+— one coordinated fix to one bug, not two unrelated changes, matching this
+repo's own precedent for cross-repo work under one VTID.
+
+## Branch hygiene
+Branched fresh as `rung4-vtid-03943` from `origin/main` (post-Rung-2 merge,
+`f9ca15ec`), per this session's established per-rung pattern.

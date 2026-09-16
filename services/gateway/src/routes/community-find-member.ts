@@ -22,6 +22,7 @@ import { Router, Request, Response } from 'express';
 import { requireAuth, requireTenant, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { getSupabase } from '../lib/supabase';
 import { findCommunityMember, hashQuery, FindMemberResult } from '../services/voice-tools/community-member-ranker';
+import * as repo from './community-find-member-repository';
 
 const router = Router();
 
@@ -61,11 +62,7 @@ router.post('/community/find-member', requireAuth, requireTenant, async (req: Re
   }
 
   // Look up the viewer's vitana_id once for persistence + analytics
-  const { data: viewerRow } = await supabase
-    .from('app_users')
-    .select('vitana_id')
-    .eq('user_id', viewerUserId)
-    .maybeSingle();
+  const { data: viewerRow } = await repo.fetchViewerVitanaId(supabase, viewerUserId);
   const viewerVid = (viewerRow as any)?.vitana_id ?? null;
 
   const queryHash = hashQuery(query, viewerUserId);
@@ -73,23 +70,19 @@ router.post('/community/find-member', requireAuth, requireTenant, async (req: Re
   // Persist to community_search_history. Service role bypasses RLS.
   let searchId: string | undefined;
   try {
-    const { data: inserted } = await supabase
-      .from('community_search_history')
-      .insert({
-        viewer_user_id: viewerUserId,
-        viewer_vitana_id: viewerVid,
-        tenant_id: tenantId,
-        query,
-        query_hash: queryHash,
-        tier: outcome.tier,
-        lane: outcome.lane,
-        winner_user_id: outcome.winnerUserId,
-        winner_vitana_id: outcome.result.vitana_id,
-        recipe_json: outcome.result.match_recipe,
-        excluded_vitana_ids: excluded,
-      })
-      .select('search_id')
-      .maybeSingle();
+    const { data: inserted } = await repo.insertCommunitySearchHistory(supabase, {
+      viewer_user_id: viewerUserId,
+      viewer_vitana_id: viewerVid,
+      tenant_id: tenantId,
+      query,
+      query_hash: queryHash,
+      tier: outcome.tier,
+      lane: outcome.lane,
+      winner_user_id: outcome.winnerUserId,
+      winner_vitana_id: outcome.result.vitana_id,
+      recipe_json: outcome.result.match_recipe,
+      excluded_vitana_ids: excluded,
+    });
     searchId = (inserted as any)?.search_id;
   } catch (err: any) {
     // Log but don't block the response — frontend gracefully handles a missing recipe.
@@ -127,11 +120,7 @@ router.get('/community/find-member/recipe/:search_id', requireAuth, requireTenan
   }
 
   // Service role read; we filter manually so cross-user reads return 404.
-  const { data, error } = await supabase
-    .from('community_search_history')
-    .select('search_id, viewer_user_id, query, tier, lane, winner_vitana_id, recipe_json, created_at')
-    .eq('search_id', searchId)
-    .maybeSingle();
+  const { data, error } = await repo.fetchCommunitySearchHistoryById(supabase, searchId);
   if (error || !data) {
     return res.status(404).json({ ok: false, error: 'not_found' });
   }

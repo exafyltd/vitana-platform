@@ -1,0 +1,102 @@
+# VTID-03946 — commands actually run.
+
+# --- Investigation ---------------------------------------------------------
+
+# User showed a real Operator Console conversation: asked Operator to scope
+# a frontend change, and Operator replied "I don't yet see where the actual
+# console UI lives" — asking 8 clarifying questions (repo path, framework,
+# etc.) instead of just finding the answer, after running dev_search_codebase
+# for "Operator Console" and getting zero frontend hits.
+
+grep -n "dev_search_codebase" -A 40 services/gateway/src/services/gemini-operator.ts
+#   -> tool description: "Search the exafyltd/vitana-platform codebase..."
+#      hardcoded single-repo, GitHub Search Code API-backed.
+
+grep -n "function searchCode" -A 20 services/gateway/src/services/github-service.ts
+#   -> confirmed: a thin wrapper around GET /search/code, no size-limit
+#      handling of its own.
+
+wc -c services/gateway/src/frontend/command-hub/app.js
+#   -> 2,564,394 bytes (~2.5MB). GitHub's Search Code API documented limit:
+#      files over 384KB are excluded from the index entirely.
+
+# Reproduced the EXACT live failure via the real GitHub Search Code API
+# (mcp__github__search_code, same underlying endpoint dev_search_codebase
+# calls):
+#   query: repo:exafyltd/vitana-platform Operator Console
+#   -> 263 total hits across the repo (operator-service.ts, operator.ts,
+#      operator-planner.ts, many docs/validation/*.md files, etc.)
+#   -> ZERO hits from services/gateway/src/frontend/command-hub/app.js,
+#      even though that file contains the literal string 'Operator Console'
+#      (renderOperatorOverlay(): title.textContent = 'Operator Console';).
+#   This proves the 384KB exclusion, not a query-wording problem — no
+#   query could ever surface content inside that file via this tool.
+
+# Second, independent, more consequential cause (raised directly by the
+# user): dev_search_codebase/dev_read_file are hardcoded to
+# OPERATOR_DEFAULT_REPO ('exafyltd/vitana-platform') with literally no way
+# to reach exafyltd/vitana-v1 — the separate repo holding the actual
+# consumer-facing Vitana app frontend (this repo's own frontend is only the
+# internal Command Hub admin console). Confirmed via the tool's own
+# parameter schema: no "repo" field existed at all.
+
+grep -n "FRONTEND_DEPLOY_TOKEN\|FRONTEND_DEPLOY_REPO" services/gateway/src/
+#   -> found an ALREADY-PROVISIONED cross-repo credential
+#      (services/gateway/src/routes/operator.ts, PUBLISH-button frontend
+#      promotion) scoped to exafyltd/vitana-v1 — reused here rather than
+#      requesting/wiring a new credential (CLAUDE.md ALWAYS rule 9: prefer
+#      existing systems over rebuilding).
+
+# --- Fix ---------------------------------------------------------------
+
+# services/gateway/src/services/gemini-operator.ts
+#   1. dev_search_codebase / dev_read_file gained an optional, allowlisted
+#      "repo" parameter (exafyltd/vitana-platform default, or
+#      exafyltd/vitana-v1) — resolveOperatorRepo() rejects anything else
+#      outright, and resolves the vitana-v1 token lazily via
+#      operatorRepoToken() (reads process.env.FRONTEND_DEPLOY_TOKEN at CALL
+#      time, not module-load time, so a task-def env change takes effect
+#      without a restart — same convention as BEDROCK_ROLE_ARN, CLAUDE.md
+#      §2b). Fails loudly (repo_token_not_configured) rather than silently
+#      falling back to the wrong token when FRONTEND_DEPLOY_TOKEN is unset.
+#   2. Both tool descriptions and CODEBASE_OVERVIEW_BLOCK (the always-on
+#      orientation block, VTID-03930) now explicitly state: two repos exist,
+#      most frontend/UI code is in vitana-v1 not vitana-platform, and
+#      dev_search_codebase always returns zero hits inside app.js
+#      specifically (384KB GitHub index exclusion) — use dev_read_file with
+#      an explicit path there instead.
+#   3. Default-repo call shape is UNCHANGED (still exactly 3 positional args
+#      to searchCode/getFileContents) so VTID-03835's own pre-existing tests
+#      needed no changes — verified by running them unmodified.
+
+node --check services/gateway/src/services/gemini-operator.ts 2>&1 || true
+#   (TypeScript file — real check is tsc below, this just confirms no stray
+#   syntax typo before running the type checker)
+
+# --- Verification -----------------------------------------------------------
+
+cd services/gateway
+
+npx jest test/vtid-03835-operator-console-read-tools.test.ts --runInBand
+#   -> 20/20 tests pass UNCHANGED — confirms the default-repo path is
+#      byte-for-byte backward compatible. (outputs/targeted-tests.txt)
+
+npx jest test/vtid-03946-operator-cross-repo-search.test.ts --runInBand
+#   -> 8/8 new tests pass. (outputs/targeted-tests.txt)
+
+# Mutation check: git stash'd gemini-operator.ts (reverting the fix), re-ran
+# the new test file -- confirmed 6/8 tests fail (the 2 default-repo-path
+# tests still pass since they don't exercise the new behavior at all).
+# git stash pop restored the fix -- 8/8 green again.
+
+npx tsc --noEmit
+#   -> 2 pre-existing, unrelated errors only (missing @aws-sdk sub-packages
+#      in this session's local node_modules — declared in package.json, not
+#      referenced by any file this VTID touches). Zero errors in
+#      gemini-operator.ts or the new test file. (outputs/tsc.txt)
+
+npx jest --runInBand
+#   -> full suite, run in background; see outputs/full-suite.txt for the
+#      final tally. Same pre-existing failing-suite set as every other
+#      evidence pack in this session (missing @aws-sdk sub-packages),
+#      confirmed unrelated to this VTID.

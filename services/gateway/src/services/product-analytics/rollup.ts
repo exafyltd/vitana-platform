@@ -17,6 +17,7 @@
  */
 
 import { getSupabase } from '../../lib/supabase';
+import * as repo from './rollup-repository';
 
 const LOG_PREFIX = '[Analytics:Product:Rollup]';
 
@@ -149,15 +150,7 @@ export function computeRollups(tenantId: string, rollupDate: string, events: Eve
 async function fetchDayEvents(supabase: any, dayStartIso: string, dayEndIso: string): Promise<EventRow[]> {
   const rows: EventRow[] = [];
   for (let page = 0; page < MAX_PAGES; page++) {
-    const { data, error } = await supabase
-      .from('product_analytics_events')
-      .select(
-        'event_name, event_type, tenant_id, user_id_hash, session_id, conversation_id, screen_route, feature_key, properties, occurred_at',
-      )
-      .gte('occurred_at', dayStartIso)
-      .lt('occurred_at', dayEndIso)
-      .order('occurred_at', { ascending: true })
-      .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+    const { data, error } = await repo.fetchDayEventsPage(supabase, dayStartIso, dayEndIso, page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
     if (error) throw new Error(error.message);
     rows.push(...((data ?? []) as EventRow[]));
     if (!data || data.length < PAGE_SIZE) break;
@@ -190,9 +183,7 @@ export async function runDailyRollup(targetDate?: string): Promise<{ ok: boolean
   for (const [tenantId, tenantEvents] of byTenant) {
     const rows = computeRollups(tenantId, date, tenantEvents);
     if (rows.length === 0) continue;
-    const { error } = await supabase
-      .from('product_analytics_daily_rollups')
-      .upsert(rows, { onConflict: 'tenant_id,rollup_date,metric_key,dimensions' });
+    const { error } = await repo.upsertRollupRows(supabase, rows);
     if (error) {
       console.error(`${LOG_PREFIX} upsert failed for tenant ${tenantId}: ${error.message}`);
       continue;
@@ -212,16 +203,10 @@ export async function purgeExpiredAnalytics(): Promise<void> {
   const rawCutoff = new Date(Date.now() - RAW_EVENT_RETENTION_DAYS * 86400000).toISOString();
   const rollupCutoff = new Date(Date.now() - ROLLUP_RETENTION_DAYS * 86400000).toISOString().slice(0, 10);
 
-  const { error: rawErr } = await supabase
-    .from('product_analytics_events')
-    .delete()
-    .lt('received_at', rawCutoff);
+  const { error: rawErr } = await repo.deleteProductAnalyticsEventsBefore(supabase, rawCutoff);
   if (rawErr) console.warn(`${LOG_PREFIX} raw purge failed: ${rawErr.message}`);
 
-  const { error: rollupErr } = await supabase
-    .from('product_analytics_daily_rollups')
-    .delete()
-    .lt('rollup_date', rollupCutoff);
+  const { error: rollupErr } = await repo.deleteRollupsBefore(supabase, rollupCutoff);
   if (rollupErr) console.warn(`${LOG_PREFIX} rollup purge failed: ${rollupErr.message}`);
 }
 

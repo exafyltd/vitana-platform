@@ -300,9 +300,13 @@ class LLMRouter:
         """Call DeepSeek via OpenAI-compatible API.
 
         DeepSeek exposes an OpenAI-compatible chat completions endpoint at
-        https://api.deepseek.com. Models in scope: 'deepseek-chat' (V3) and
-        'deepseek-reasoner' (R1). Uses raw HTTP to avoid pulling in the
-        full OpenAI SDK as a hard dependency.
+        https://api.deepseek.com. Current model: 'deepseek-flash'
+        (DeepSeek-V4.1-Flash). 'deepseek-chat' (V3) and 'deepseek-reasoner'
+        (R1) are retired aliases that now serve requests via this same model
+        (BOOTSTRAP-DEEPSEEK-V4.1-FLASH, 2026-09-11) — kept here only so a
+        caller still passing one of the old names is priced correctly rather
+        than silently mispriced. Uses raw HTTP to avoid pulling in the full
+        OpenAI SDK as a hard dependency.
         """
         if not self.deepseek_key:
             raise Exception("DEEPSEEK_API_KEY not set")
@@ -329,11 +333,16 @@ class LLMRouter:
         input_tokens = usage.get("prompt_tokens", 0)
         output_tokens = usage.get("completion_tokens", 0)
 
-        # Published rates: deepseek-chat (V3) = $0.14/$0.28 per 1M, reasoner (R1) = $0.55/$2.19
+        # Published rates (off-peak, cache-miss input): deepseek-flash
+        # (DeepSeek-V4.1-Flash, current) = $0.15/$0.60 per 1M. Retired
+        # aliases priced for backward compat: deepseek-chat (V3) =
+        # $0.14/$0.28 per 1M, deepseek-reasoner (R1) = $0.55/$2.19 per 1M.
         if "reasoner" in model:
             cost = (input_tokens * 0.55 / 1_000_000) + (output_tokens * 2.19 / 1_000_000)
-        else:
+        elif "chat" in model:
             cost = (input_tokens * 0.14 / 1_000_000) + (output_tokens * 0.28 / 1_000_000)
+        else:
+            cost = (input_tokens * 0.15 / 1_000_000) + (output_tokens * 0.60 / 1_000_000)
 
         return {
             "text": text,

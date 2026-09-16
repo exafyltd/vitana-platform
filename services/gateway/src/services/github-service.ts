@@ -123,6 +123,92 @@ export async function findPrForBranch(
 }
 
 /**
+ * VTID-03835: Search code in a repository via the GitHub Search Code API.
+ * Read-only. `pathQualifier` is passed through as a GitHub `path:` search
+ * qualifier (a prefix/substring match, not a true glob) — GitHub's code
+ * search has no glob support, so callers should not expect `**\/*.ts` to work.
+ */
+export interface GitHubSearchCodeResult {
+  path: string;
+  name: string;
+  html_url: string;
+  score: number;
+}
+
+export async function searchCode(
+  repo: string,
+  query: string,
+  pathQualifier?: string,
+  tokenOverride?: string
+): Promise<GitHubSearchCodeResult[]> {
+  const qParts = [query, `repo:${repo}`];
+  if (pathQualifier) qParts.push(`path:${pathQualifier}`);
+  const q = encodeURIComponent(qParts.join(' '));
+  const result = await githubRequest<{
+    total_count: number;
+    items: Array<{ path: string; name: string; html_url: string; score: number }>;
+  }>(`/search/code?q=${q}&per_page=20`, {}, tokenOverride);
+  return (result.items || []).map((i) => ({
+    path: i.path,
+    name: i.name,
+    html_url: i.html_url,
+    score: i.score,
+  }));
+}
+
+/**
+ * VTID-03835: Read-only file content read via the GitHub Contents API.
+ * Defaults `ref` to `main` — there is no live checkout on the gateway
+ * container to read from, so a branch/tag/SHA ref is the only option.
+ * Returns a directory listing when `path` names a directory; throws when
+ * the file is too large for the Contents API to inline (no `content` field).
+ */
+export interface GitHubFileContent {
+  path: string;
+  type: 'file';
+  content: string;
+  size: number;
+  sha: string;
+}
+
+export interface GitHubDirectoryListing {
+  path: string;
+  type: 'dir';
+  entries: Array<{ name: string; path: string; type: string }>;
+}
+
+export async function getFileContents(
+  repo: string,
+  path: string,
+  ref: string = 'main',
+  tokenOverride?: string
+): Promise<GitHubFileContent | GitHubDirectoryListing> {
+  const cleanPath = path.replace(/^\/+/, '');
+  const raw = await githubRequest<any>(
+    `/repos/${repo}/contents/${cleanPath}?ref=${encodeURIComponent(ref)}`,
+    {},
+    tokenOverride
+  );
+
+  if (Array.isArray(raw)) {
+    return {
+      path: cleanPath,
+      type: 'dir',
+      entries: raw.map((e: any) => ({ name: e.name, path: e.path, type: e.type })),
+    };
+  }
+
+  if (!raw.content) {
+    throw new Error(
+      `File too large or unsupported for inline read at ${cleanPath} (size=${raw.size ?? 'unknown'}); use the GitHub UI or clone the repo instead`
+    );
+  }
+
+  const content = Buffer.from(raw.content, raw.encoding === 'base64' ? 'base64' : 'utf-8').toString('utf-8');
+  return { path: cleanPath, type: 'file', content, size: raw.size, sha: raw.sha };
+}
+
+/**
  * Get PR details from GitHub
  */
 export async function getPullRequest(
@@ -133,13 +219,20 @@ export async function getPullRequest(
 }
 
 /**
- * Get files changed in a PR
+ * Get files changed in a PR.
+ *
+ * VTID-03853: widened to include the optional `patch` field GitHub's real
+ * API response already carries (the unified diff hunk for that file — absent
+ * for binary files or files too large to diff). Purely additive: existing
+ * callers destructuring filename/status/additions/deletions are unaffected;
+ * `runLlmMergeReview()` (dev-autopilot-llm-review.ts) is the first consumer
+ * that reads `patch`.
  */
 export async function getPrFiles(
   repo: string,
   prNumber: number
-): Promise<Array<{ filename: string; status: string; additions: number; deletions: number }>> {
-  return githubRequest<Array<{ filename: string; status: string; additions: number; deletions: number }>>(
+): Promise<Array<{ filename: string; status: string; additions: number; deletions: number; patch?: string }>> {
+  return githubRequest<Array<{ filename: string; status: string; additions: number; deletions: number; patch?: string }>>(
     `/repos/${repo}/pulls/${prNumber}/files`
   );
 }

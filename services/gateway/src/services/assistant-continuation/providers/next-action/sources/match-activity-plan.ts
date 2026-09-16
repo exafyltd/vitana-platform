@@ -49,6 +49,7 @@ import type {
   NextActionSourceResult,
   ScoredCandidate,
 } from '../types';
+import * as repo from './match-activity-plan-repository';
 
 const KEY = 'match_activity_plan' as const;
 
@@ -80,12 +81,7 @@ export async function produceMatchActivityPlan(
 ): Promise<NextActionSourceResult> {
   let userIntentIds: string[];
   try {
-    const { data, error } = await ctx.supabase
-      .from('user_intents')
-      .select('intent_id')
-      .eq('requester_user_id', ctx.userId)
-      .order('created_at', { ascending: false })
-      .limit(MAX_INTENTS_PER_USER);
+    const { data, error } = await repo.fetchUserIntentIds(ctx.supabase, ctx.userId, MAX_INTENTS_PER_USER);
     if (error) {
       return { source: KEY, candidate: null, skippedReason: 'source_unavailable' };
     }
@@ -105,13 +101,11 @@ export async function produceMatchActivityPlan(
     // We have to query "intent_a_id in (ids) OR intent_b_id in (ids)".
     // Supabase REST does that via .or('intent_a_id.in.(...),intent_b_id.in.(...)').
     const idList = userIntentIds.map((s) => `"${s}"`).join(',');
-    const { data, error } = await ctx.supabase
-      .from('intent_matches')
-      .select('match_id, intent_a_id, intent_b_id, kind_pairing, state, mutual_reveal_unlocked_at')
-      .or(`intent_a_id.in.(${idList}),intent_b_id.in.(${idList})`)
-      .in('state', ['new', 'responded_by_a', 'responded_by_b', 'mutual_interest'])
-      .order('match_id', { ascending: true })
-      .limit(MAX_MATCHES_PER_SOURCE);
+    const { data, error } = await repo.fetchIntentMatchesForIntentIds(
+      ctx.supabase,
+      `intent_a_id.in.(${idList}),intent_b_id.in.(${idList})`,
+      MAX_MATCHES_PER_SOURCE,
+    );
     if (error) {
       return { source: KEY, candidate: null, skippedReason: 'source_unavailable' };
     }

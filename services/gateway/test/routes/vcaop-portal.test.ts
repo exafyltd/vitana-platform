@@ -138,4 +138,23 @@ describe('route auth rules', () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/connector_id/);
   });
+
+  test('500 (not a silent duplicate-create) when the existing-partner lookup errors', async () => {
+    asAdmin();
+    const insertCalls: unknown[] = [];
+    const partnerTenantTable = {
+      select: jest.fn(function (this: any) { return this; }),
+      eq: jest.fn(function (this: any) { return this; }),
+      maybeSingle: jest.fn(() => Promise.resolve({ data: null, error: { message: 'connection reset' } })),
+      insert: jest.fn((row: unknown) => { insertCalls.push(row); return Promise.resolve({ error: null }); }),
+    };
+    (getSupabase as jest.Mock).mockReturnValue({ from: jest.fn(() => partnerTenantTable) });
+
+    const res = await request(app)
+      .post('/api/v1/vcaop/portal/connections')
+      .send({ name: 'Acme Health', connector_id: 'shopify', provider_id: 'shopify' });
+
+    expect(res.status).toBe(500);
+    expect(insertCalls).toHaveLength(0);
+  });
 });
