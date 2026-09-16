@@ -1,0 +1,9 @@
+{
+  "partner_organizations": "partner_organizations",
+  "partner_organization_members": "partner_organization_members",
+  "partner_organization_invites": "partner_organization_invites",
+  "patient_profiles": "patient_profiles",
+  "partner_registry_link_col": "partner_organization_id",
+  "assigned_professional_col": "assigned_professional_user_id",
+  "trigger_installed": "trg_partner_health_test_orders_activate_patient"
+}
