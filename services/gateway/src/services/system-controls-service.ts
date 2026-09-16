@@ -28,6 +28,23 @@ const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
 // Cache configuration (5-15 seconds to reduce DB load)
 const CACHE_TTL_MS = 10_000; // 10 seconds
 
+// VTID-03954: this control read had no timeout, so a slow Supabase moment
+// hung the request indefinitely instead of failing fast — one of the root
+// causes behind the Command Hub Service Health panel's "Autopilot" card
+// flapping down (isAutopilotExecutionArmed() → getSystemControl() sits on
+// /api/v1/autopilot/health's critical path). Bounded well under the
+// panel's own 6s per-check client timeout.
+const CONTROL_FETCH_TIMEOUT_MS = 3000;
+
+function abortAfter(ms: number): { signal: AbortSignal; clear: () => void } {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), ms);
+  return {
+    signal: controller.signal,
+    clear: () => clearTimeout(timeoutId),
+  };
+}
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -121,6 +138,7 @@ export async function getSystemControl(key: string): Promise<SystemControl | nul
     return null;
   }
 
+  const timeout = abortAfter(CONTROL_FETCH_TIMEOUT_MS);
   try {
     const response = await fetch(
       `${SUPABASE_URL}/rest/v1/system_controls?key=eq.${encodeURIComponent(key)}`,
@@ -131,6 +149,7 @@ export async function getSystemControl(key: string): Promise<SystemControl | nul
           apikey: SUPABASE_SERVICE_ROLE,
           Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
         },
+        signal: timeout.signal,
       }
     );
 
@@ -155,6 +174,8 @@ export async function getSystemControl(key: string): Promise<SystemControl | nul
   } catch (error) {
     console.error(`[VTID-01181] Error fetching control ${key}:`, error);
     return null;
+  } finally {
+    timeout.clear();
   }
 }
 

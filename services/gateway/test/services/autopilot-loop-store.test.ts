@@ -772,3 +772,42 @@ describe('markRunCompleted (VTID-01208: recovery from failed state)', () => {
     expect(call.body.error_code).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// VTID-03954: supabaseRequest() had no timeout at all — a slow Supabase
+// moment hung indefinitely instead of failing fast, which is what made the
+// Command Hub Service Health panel's "Autopilot"/"Autopilot Pipeline" cards
+// flap down (getLoopState/getLoopStats sit on both routes' critical path).
+// ---------------------------------------------------------------------------
+
+describe('supabaseRequest timeout (VTID-03954)', () => {
+  it('passes an AbortSignal on every request', async () => {
+    mockFetch.mockResolvedValueOnce(jsonResponse(200, []));
+    await getLoopState();
+
+    const [, options] = mockFetch.mock.calls[mockFetch.mock.calls.length - 1];
+    expect(options?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('bounds a hanging fetch instead of waiting on it forever', async () => {
+    mockFetch.mockImplementation((_url: string, options?: { signal?: AbortSignal }) => {
+      // Simulate a request that never resolves on its own — only reacts to
+      // the caller aborting it, exactly like a stalled Supabase/PostgREST
+      // connection would.
+      return new Promise((_resolve, reject) => {
+        options?.signal?.addEventListener('abort', () => {
+          const err = new Error('The operation was aborted');
+          err.name = 'AbortError';
+          reject(err);
+        });
+      });
+    });
+
+    const result = await getLoopState();
+
+    // Resolved (to the documented failure shape), not hung — this is the
+    // regression this test guards: without the abort signal wired up, the
+    // awaiting promise above would never settle and the test would time out.
+    expect(result).toBeNull();
+  }, 10_000);
+});

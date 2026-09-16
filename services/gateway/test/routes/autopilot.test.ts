@@ -839,6 +839,47 @@ describe('GET /pipeline/health', () => {
     expect(res.body.stuck_count).toBe(1);
     expect(res.body.workers_active).toBe(true);
   });
+
+  // VTID-03954: these three direct fetches had no timeout at all — a slow
+  // Supabase/PostgREST moment hung the whole route past the Command Hub
+  // Service Health panel's 6s client-side check, flapping "Autopilot
+  // Pipeline" to down even though nothing was actually broken.
+  it('passes an AbortSignal on every direct Supabase fetch', async () => {
+    (getEventLoopStatus as jest.Mock).mockResolvedValue({ is_running: true, execution_armed: true, config: {}, stats: {} });
+    const signals: (AbortSignal | undefined)[] = [];
+    (global.fetch as jest.Mock).mockImplementation((_url: string, init?: { signal?: AbortSignal }) => {
+      signals.push(init?.signal);
+      return Promise.resolve(jsonRes(200, []));
+    });
+
+    await request(app).get('/api/v1/autopilot/pipeline/health');
+
+    expect(signals.length).toBeGreaterThan(0);
+    for (const signal of signals) {
+      expect(signal).toBeInstanceOf(AbortSignal);
+    }
+  });
+
+  it('bounds hanging Supabase fetches instead of hanging the route past its timeout budget', async () => {
+    (getEventLoopStatus as jest.Mock).mockResolvedValue({ is_running: true, execution_armed: true, config: {}, stats: {} });
+    (global.fetch as jest.Mock).mockImplementation((_url: string, init?: { signal?: AbortSignal }) => {
+      // Simulate a stalled Supabase/PostgREST connection: never resolves on
+      // its own, only reacts to the route aborting it.
+      return new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new Error('The operation was aborted')));
+      });
+    });
+
+    const res = await request(app).get('/api/v1/autopilot/pipeline/health');
+
+    // Resolved within the test timeout below — this is the regression this
+    // test guards: without the abort signals wired up, the three .catch(()
+    // => null) fetches above would never settle and this would hang until
+    // the surrounding test timeout instead.
+    expect(res.status).toBe(200);
+    expect(res.body.stuck_count).toBe(0);
+    expect(res.body.workers_active).toBe(false);
+  }, 10_000);
 });
 
 describe('GET /pipeline/summary', () => {
