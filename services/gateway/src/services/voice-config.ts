@@ -82,7 +82,14 @@ const ALL_KEYS = Object.values(KEYS);
 // Providers the dispatcher actually knows how to call. Used by the PUT
 // endpoint to refuse provider values that have no client implementation,
 // so a stored config can never silently no-op or fall back.
-export const IMPLEMENTED_TTS_PROVIDERS = new Set<string>(['google_tts']);
+// VTID-03495 added a real Polly dispatcher, VTID-03970 a real Fish Audio
+// one (see tts-provider.ts/fish.ts) — both were previously missing from this
+// set despite `/api/v1/voice/preview` already supporting them, which made
+// the Providers & Voice screen's dropdown disable options that actually
+// work. `has an implementation` here does NOT mean "fully configured in
+// this environment" (Fish still needs TTS_FISH_FALLBACK_ENABLED +
+// FISH_API_KEY — see fish.ts) — it means the code path exists to try.
+export const IMPLEMENTED_TTS_PROVIDERS = new Set<string>(['google_tts', 'polly', 'fish']);
 export const IMPLEMENTED_STT_PROVIDERS = new Set<string>(['google_stt']); // Gemini-internal counts as google
 
 function clampSpeakingRate(n: unknown): number {
