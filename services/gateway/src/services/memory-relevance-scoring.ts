@@ -706,6 +706,24 @@ export function scoreAndRankMemories(
   // Apply domain caps
   const capped = applyDomainCaps(included, context.domain);
 
+  // VTID-01115: Counters MUST be derived from exclusion_reason in addition
+  // to score. Domain-capped items keep their (potentially high) relevance
+  // score but carry an exclusion_reason; they are deprioritized, never
+  // counted as included. Included items are only those with no
+  // exclusion_reason.
+  const includedCount = capped.filter(
+    (item) =>
+      !item.exclusion_reason &&
+      item.relevance_score >= SCORE_THRESHOLDS.include
+  ).length;
+
+  const deprioritizedCount = capped.filter(
+    (item) =>
+      item.exclusion_reason !== undefined ||
+      (item.relevance_score >= SCORE_THRESHOLDS.exclude &&
+        item.relevance_score < SCORE_THRESHOLDS.include)
+  ).length;
+
   // Build metadata
   const metadata: ScoringMetadata = {
     scoring_run_id: scoringRunId,
@@ -716,11 +734,8 @@ export function scoreAndRankMemories(
       role: context.role
     },
     total_candidates: memories.length,
-    included_count: capped.filter(i => i.relevance_score >= SCORE_THRESHOLDS.include).length,
-    deprioritized_count: capped.filter(i =>
-      i.relevance_score >= SCORE_THRESHOLDS.exclude &&
-      i.relevance_score < SCORE_THRESHOLDS.include
-    ).length,
+    included_count: includedCount,
+    deprioritized_count: deprioritizedCount,
     excluded_count: excluded.length,
     top_n_with_factors: capped.slice(0, 10).map(item => ({
       memory_id: item.id,
@@ -765,7 +780,11 @@ function applyDomainCaps(
       result.push(item);
       domainCounts[itemDomain]++;
     } else {
-      // Mark as deprioritized due to domain cap
+      // VTID-01115: Domain cap reached for this domain. Propagate the
+      // exclusion_reason onto the item so downstream counter logic can
+      // distinguish domain-capped items from genuinely included ones, even
+      // though their relevance_score may still be above the include
+      // threshold.
       result.push({
         ...item,
         exclusion_reason: `Domain cap reached for ${itemDomain} (${cap} items)`
