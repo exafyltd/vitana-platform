@@ -32,3 +32,100 @@ Tests:       19 passed, 19 total
 Snapshots:   0 total
 Time:        0.757 s, estimated 1 s
 Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+
+
+=== Round 2: test/routes/voice-config.test.ts + test/services/voice-config.test.ts ===
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+PASS test/routes/voice-config.test.ts
+  GET /api/v1/voice/config
+    ✓ returns the config with supported languages + implemented providers (no auth required) (48 ms)
+    ✓ returns 500 when the config lookup throws (7 ms)
+  PUT /api/v1/voice/config
+    ✓ returns 401 when unauthenticated (18 ms)
+    ✓ returns 403 when the caller is authenticated but not exafy_admin (19 ms)
+    ✓ returns 400 when putVoiceConfig rejects the update (9 ms)
+    ✓ applies the update, emits voice.config.updated when the diff is non-empty (4 ms)
+    ✓ does not emit an OASIS event when the diff is empty (no-op update) (3 ms)
+    ✓ still returns 200 when the OASIS emit itself fails (telemetry never blocks the save) (2 ms)
+  GET /api/v1/voice/tts-voices
+    ✓ defaults to google_tts / en and returns the built-in voice list (no auth required) (5 ms)
+    ✓ returns the German voice set for language=de (5 ms)
+    ✓ returns an empty voice list for an unmapped language (2 ms)
+    ✓ returns an empty list with a note for a non-google_tts provider (3 ms)
+  POST /api/v1/voice/preview
+    ✓ returns 401 when unauthenticated (4 ms)
+    ✓ returns 403 for a non-admin caller (3 ms)
+    ✓ returns 400 when text is missing/empty (3 ms)
+    ✓ returns 400 for a provider other than google_tts (2 ms)
+    ✓ synthesizes with the default English voice and returns audio/mpeg bytes (3 ms)
+    ✓ sets modelName for a gemini-tier voice (3 ms)
+    ✓ clamps an out-of-range speaking_rate (2 ms)
+    ✓ returns 500 when the TTS client returns no audio content (3 ms)
+    ✓ returns 500 when the TTS client throws (2 ms)
+    provider: fish
+      ✓ returns 422 when Fish is not configured, without calling synthesizeFish (3 ms)
+      ✓ returns 422 when Fish has no curated voice for the language (3 ms)
+      ✓ returns audio/mpeg bytes and the resolved voice header on success (3 ms)
+  POST /api/v1/voice/config/cache/invalidate
+    ✓ returns 401 when unauthenticated (2 ms)
+    ✓ returns 403 for a non-admin caller (2 ms)
+    ✓ invalidates the cache for an admin caller (2 ms)
+
+PASS test/services/voice-config.test.ts
+  IMPLEMENTED provider sets
+    ✓ google_tts, polly and fish are implemented; unbuilt providers are not (1 ms)
+  getVoiceConfig() — Supabase unavailable / row errors
+    ✓ returns DEFAULT_CONFIG when getSupabase() returns null (1 ms)
+    ✓ returns DEFAULT_CONFIG when the system_config read errors
+    ✓ returns DEFAULT_CONFIG when no rows are stored at all (1 ms)
+  getVoiceConfig() — active_provider (V2V) mapping
+    ✓ "livekit" row maps to active_provider "livekit" (1 ms)
+    ✓ "nova_sonic" row maps to active_provider "nova_sonic"
+    ✓ an unrecognized provider value defensively falls back to "vertex" (1 ms)
+    ✓ legacy object-shaped row ({"provider": "livekit"}) is unwrapped correctly
+  getVoiceConfig() — tts.voice / tts.language empty-string normalization
+    ✓ empty-string voice normalizes to null (1 ms)
+    ✓ non-empty voice is kept as-is
+    ✓ empty-string language normalizes to null
+    ✓ non-string value for provider/model falls back to DEFAULT_CONFIG value (1 ms)
+  getVoiceConfig() — speaking_rate clamp boundaries
+    ✓ exactly at the lower bound (0.25) is kept unchanged
+    ✓ just under the lower bound (0.249) clamps up to 0.25 (1 ms)
+    ✓ exactly at the upper bound (4.0) is kept unchanged
+    ✓ just over the upper bound (4.001) clamps down to 4.0
+    ✓ a mid-range value passes through unchanged
+    ✓ a numeric string is parsed (1 ms)
+    ✓ a non-numeric value falls back to the default (1.0), not 0.25
+  getVoiceConfig() — 30s cache behavior
+    ✓ a second call within the TTL reuses the cache (only one DB read) (2 ms)
+    ✓ a call just under the 30s TTL boundary still uses the cache (1 ms)
+    ✓ a call exactly at the 30s TTL boundary triggers a refetch (boundary is exclusive) (1 ms)
+    ✓ force=true always bypasses the cache, even on back-to-back calls (1 ms)
+    ✓ invalidateVoiceConfigCache() forces the next call to refetch (1 ms)
+  putVoiceConfig() — unimplemented provider refusal
+    ✓ rejects an unimplemented TTS provider and never touches the DB (1 ms)
+    ✓ rejects an unimplemented STT provider and never touches the DB (1 ms)
+    ✓ accepts the implemented google_tts / google_stt providers
+  putVoiceConfig() — supabase unavailable
+    ✓ returns ok:false when getSupabase() is null (1 ms)
+  putVoiceConfig() — diffing against current config
+    ✓ no-op when nothing actually changed
+    ✓ a genuine model change produces a diff entry and one upsert (1 ms)
+    ✓ setting voice to empty string when current is already null produces NO diff
+    ✓ setting a real voice value from null produces a diff, stored verbatim (1 ms)
+    ✓ speaking_rate is clamped BEFORE being compared/diffed (1 ms)
+    ✓ speaking_rate equal to current after clamping produces no diff (1 ms)
+    ✓ stt.provider and stt.model diffs are tracked independently from tts (1 ms)
+    ✓ changedBy=null stores updated_by as "voice-config" (1 ms)
+  putVoiceConfig() — upsert failure handling
+    ✓ stops at the first failing upsert and reports its error (does not attempt the rest) (1 ms)
+  putVoiceConfig() — cache invalidation on success
+    ✓ a successful write invalidates the cache so the next read is fresh (1 ms)
+
+Test Suites: 2 passed, 2 total
+Tests:       65 passed, 65 total
+Snapshots:   0 total
+Time:        1.248 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

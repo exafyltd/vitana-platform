@@ -1,2 +1,20 @@
+=== BEFORE fix (inline .style.cssText on 3 new hint elements + 1 pre-existing
+    style="" attribute on an edited line + a comment literally quoting style="") ===
+REJECTED: CSP pattern hit in an added line :: /style\s*=/
+  style=
+REJECTED: CSP pattern hit in an added line :: /\.style\b/
+  .style
+REJECTED: CSP pattern hit in an added line :: /\.style\b/
+  .style
+REJECTED: CSP pattern hit in an added line :: /\.style\b/
+  .style
+exit: 1
+
+=== AFTER fix (all 3 hint elements + the edited paragraph moved to CSS
+    classes in styles.css; comment reworded) ===
 No CSP pattern hits in added lines.
 exit: 0
+
+Command run (real governance-gate logic, not a re-implementation):
+  git diff origin/main -- 'services/gateway/src/frontend/' 'services/gateway/dist/frontend/' > /tmp/diff.txt
+  node scripts/ci/validator-path-guard.cjs --csp-added-lines /tmp/diff.txt

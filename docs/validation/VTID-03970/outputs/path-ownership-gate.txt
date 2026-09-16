@@ -5,4 +5,4 @@ NOT JUDGED — 4 file(s) outside this gate's remit:
   services/gateway/.env.example
   These trees have no governance gate of their own. That is a real gap,
   not an approval — see VTID-03696.
-APPROVED: 6 in-remit file(s) match the gateway_backend allowlist
+APPROVED: 23 in-remit file(s) match the gateway_backend allowlist

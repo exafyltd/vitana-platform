@@ -106,3 +106,50 @@ the documented alternative per CLAUDE.md §4.1)
 $ SELECT * FROM allocate_global_vtid('claude-code', 'gateway', 'tts-fish-audio');
 [{"vtid":"VTID-03970","num":3970,"id":"8ba332ab-44ce-494a-85fa-d452630da8e5"}]
 $ UPDATE vtid_ledger SET title=..., status='in_progress', spec_status='approved' WHERE vtid='VTID-03970';
+
+## Round 2 — Command Hub voice test lab (Fish/Polly preview + Vertex label fixes)
+
+$ grep -rn "livekit-test\|nova-sonic-test\|orb-ui-monitor" services/gateway/src/frontend/command-hub/app.js
+(confirmed the 3 screens the platform owner named are tabs in the "voice" nav
+section; found the sibling "providers" tab -> /command-hub/voice/providers/,
+renderVoiceProvidersView() -- the real provider-picker+Preview test tool)
+
+$ grep -n "google_tts', 'elevenlabs'" services/gateway/src/frontend/command-hub/app.js
+(found the TTS provider dropdown never listed 'polly' despite
+POST /api/v1/voice/preview already supporting it -- IMPLEMENTED_TTS_PROVIDERS
+was still {'google_tts'} only)
+
+$ npx jest test/routes/voice-config.test.ts test/services/voice-config.test.ts --silent
+Test Suites: 2 passed, 2 total
+Tests:       65 passed, 65 total
+(after adding provider:'fish' branch to /voice/preview + 3 new tests)
+
+$ node --check services/gateway/src/frontend/command-hub/app.js
+app.js syntax OK
+
+$ git diff origin/main -- services/gateway/src/frontend/ services/gateway/dist/frontend/ > /tmp/diff.txt
+$ node scripts/ci/validator-path-guard.cjs --csp-added-lines /tmp/diff.txt
+REJECTED: CSP pattern hit in an added line :: /\.style\b/   (x3, my new hint elements)
+REJECTED: CSP pattern hit in an added line :: /style\s*=/    (a pre-existing inline
+  style="" attribute on a line whose TEXT I edited -- the whole line counts as
+  "added" in the diff)
+exit: 1
+(this is the real VALIDATOR-CHECK CSP gate, run locally before pushing --
+confirms CLAUDE.md ALWAYS-36/NEVER-24 are actually enforced on new lines, not
+just documented)
+
+--- fixed: moved the 3 hint elements + the edited paragraph to CSS classes
+    (.vp-hint-text, .nst-info-text) in styles.css instead of inline style ---
+
+$ node scripts/ci/validator-path-guard.cjs --csp-added-lines /tmp/diff.txt
+No CSP pattern hits in added lines.
+exit: 0
+
+$ npm run build
+(clean, exit 0)
+
+$ node scripts/ci/validator-path-guard.cjs changed_files.txt gateway_backend pr_body.txt
+NOT JUDGED -- 4 file(s) outside this gate's remit: CLAUDE.md,
+  scripts/aws/setup-fish-audio-secret.sh, scripts/tts/verify-fish-voice.ts,
+  services/gateway/.env.example
+APPROVED: 23 in-remit file(s) match the gateway_backend allowlist

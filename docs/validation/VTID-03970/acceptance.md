@@ -10,6 +10,22 @@ and was rejected; the real test-run synthesis call was blocked by the
 supplied key having no funded API credit (HTTP 402). Both are documented
 below with the actual evidence, not glossed over.
 
+**Round 2, same VTID:** the platform owner asked where to manually test
+Fish Audio and pointed at the Command Hub's Voice screens, also flagging
+that they still mention Vertex. Investigated before touching anything:
+`/command-hub/voice/providers/` ("Providers & Voice", the sibling tab in
+the same nav section as the three screens named) already has exactly the
+provider-picker + text + Preview pattern requested — but its dropdown
+never listed Polly or Fish, and `POST /api/v1/voice/preview` rejected
+`provider:'fish'` outright. AC-7/AC-8 below cover that fix. The Vertex
+labels fixed are scoped to what was actively misleading (see AC-8) — the
+underlying `'vertex'` wire value used by `/api/v1/orb/active-provider`
+and its resolver is intentionally untouched; that is a much larger,
+separate change (confirmed by reading `provider-name.ts`/
+`active-provider-resolver.ts`, which document `'vertex'` as the real,
+still-used request/DB value for "the gateway transport Nova Sonic now
+serves", not a live Google dependency).
+
 ## Acceptance Criteria
 
 AC-1 — Fish Audio is wired as a gated fallback inside the existing Polly
@@ -75,6 +91,40 @@ TEST: `outputs/jest-full-suite.txt` — full gateway suite, 930/931 suites
 (1 pre-existing skip), 15,259/15,294 tests passing (29 pre-existing
 skipped, 6 pre-existing todo), 0 failures. `outputs/tsc-noemit.txt` and
 `outputs/npm-build.txt` both clean.
+
+AC-7 — The Providers & Voice screen (`/command-hub/voice/providers/`,
+`renderVoiceProvidersView()`) can preview Polly and Fish Audio, not just
+Google TTS: its dropdown lists both with real labels, `POST
+/api/v1/voice/preview` accepts `provider:'fish'` (calling the same
+`synthesizeFish()` the live fallback uses — an honest preview, not a
+bypass), and `IMPLEMENTED_TTS_PROVIDERS` includes both so neither option
+is disabled in the UI or rejected on save.
+
+TEST: `outputs/jest-new-tests.txt` — `test/routes/voice-config.test.ts`
+`describe('provider: fish')` (3 tests: 422 not-configured, 422 no-curated-
+voice, 200 with real audio bytes + `X-Vitana-Tts-Voice` header) and
+`test/services/voice-config.test.ts` (`IMPLEMENTED_TTS_PROVIDERS.has
+('polly'|'fish')` both true).
+
+AC-8 — The two actively-misleading Vertex mentions this session found
+and fixed, scoped to the Providers & Voice and Nova Sonic Test Bench
+screens: the V2V flip button's "Use Vertex (Gemini Live)" label (Vertex/
+Gemini Live is permanently dead, GCP decommissioned) and the Nova bench's
+Serbian dropdown option, which claimed "expected fallback → vertex" even
+though CLAUDE.md §2e has documented since VTID-03649 that the Vertex
+fallback is dead — Serbian has no working ORB voice via this pipeline at
+all today. Both corrected to name Nova Sonic / the real current gap
+instead. `node --check app.js` clean; `scripts/ci/validator-path-guard.cjs
+--csp-added-lines` clean on the full diff (no new inline `style=`
+introduced — the one pre-existing inline-style line this session had to
+edit the text of was extracted to a CSS class instead).
+
+TEST: `outputs/csp-gate.txt` (the real governance-gate CSP check, run
+locally against this PR's actual diff, both before the fix — 2
+rejections — and after — 0). `outputs/jest-new-tests.txt` covers the
+backend surface these UI labels describe; the label wording itself has
+no automated test (it is prose, not logic) but was verified by direct
+reading against `provider-name.ts`'s own documented semantics.
 
 ## Not yet independently verified
 
