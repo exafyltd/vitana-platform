@@ -43,25 +43,15 @@ fallback each hang to their own bound": both calls simulated as hanging
 until aborted; asserts the function resolves to `null` in ~3003ms, not the
 ~6000ms sequential-hang total.
 
-AC-2 — `routes/autopilot.ts`'s `/pipeline/health` reads each of its three
-Supabase response bodies (`taskCountsResp.json()`, `stuckTasksResp.json()`,
-`workersResp.json()`) AFTER `Promise.all` has already settled and the
-AbortController timeouts have already been cleared — completely unguarded
-by try/catch, outside the `.catch(() => null)` that only protects the
-`fetch()` promise itself. A failed/corrupted body read (consistent with
-Node's fetch/undici pooling this route's 3 direct fetches concurrently with
-`getEventLoopStatus()`'s own 2 internal fetches — up to 5 concurrent
-requests to the same Supabase host) threw straight past every existing
-guard into the route's top-level catch, turning one degraded data point
-into a full 500. Confirmed no safe fix is available at the connection-pool
-layer itself: neither the `undici` npm package nor the `node:undici` builtin
-module resolves in this environment (checked directly), so a
-dispatcher/Agent-based fix would have been unverifiable and was
-deliberately not attempted. Instead, each of the three parses is now
-independently wrapped in its own try/catch — a parse failure on any one
-degrades only that field (logged via `console.error`) instead of 500ing
-the whole health check, matching the fetch-level `.catch(() => null)`
-pattern already in place one line above.
+AC-2 — `routes/autopilot.ts`'s `/pipeline/health` read each of its three
+Supabase response bodies AFTER `Promise.all` settled and its
+AbortController timeouts were already cleared — unguarded by try/catch,
+outside the `.catch(() => null)` protecting only the `fetch()` promise. A
+failed/corrupted body read (Node fetch/undici pooling up to 5 concurrent
+requests to the same host) threw past every guard into the top-level
+catch, turning one degraded field into a full 500. Ruled out a
+connection-pool fix first (neither `undici` nor `node:undici` resolves in
+this environment). Each parse is now independently try/catch-wrapped.
 
 TEST: `outputs/jest-new-tests.txt` — `test/routes/autopilot.test.ts`, new
 test "degrades one field instead of 500ing the whole route when a response
