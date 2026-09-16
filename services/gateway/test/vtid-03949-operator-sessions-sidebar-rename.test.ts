@@ -106,13 +106,17 @@ describe('VTID-03949: double-click-to-rename, shared by the sidebar and the titl
     expect(body).toContain('input.value = state.operatorRenameDraftValue;');
   });
 
-  it('the rename input commits on Enter, cancels on Escape, and commits on blur', () => {
+  it('the rename input commits on Enter, cancels on Escape, and commits on a genuine blur', () => {
     const body = functionBody(SOURCE, 'function renderEditableThreadTitle(thread, className) {');
     expect(body).toContain("if (e.key === 'Enter') {");
     expect(body).toContain('commitRenamingOperatorThread();');
     expect(body).toContain("if (e.key === 'Escape') {");
     expect(body).toContain('cancelRenamingOperatorThread();');
-    expect(body).toContain('input.onblur = () => commitRenamingOperatorThread();');
+    expect(body).toContain('input.onblur = () => {');
+    const onblurIdx = body.indexOf('input.onblur = () => {');
+    const onblurBlock = body.slice(onblurIdx, body.indexOf('};', onblurIdx));
+    expect(onblurBlock).toContain('if (_renameBlurSuppressed) return;');
+    expect(onblurBlock).toContain('commitRenamingOperatorThread();');
   });
 
   it('a click inside the rename input does not bubble up to a sidebar row and switch threads mid-edit', () => {
@@ -153,5 +157,63 @@ describe('VTID-03949: double-click-to-rename, shared by the sidebar and the titl
 
   it('CSS defines the shared rename input style', () => {
     expect(CSS).toContain('.chat-session-title-input {');
+  });
+});
+
+describe('VTID-03953: double-click-to-rename survives a background re-render mid-edit', () => {
+  // Reported: "I double-click, it opens or activates, but then switches
+  // back... It turns it on, but then immediately shuts it down." Root cause:
+  // root.innerHTML = '' fires a synchronous, involuntary native blur on the
+  // focused rename <input> as part of removing it, and the old
+  // unconditional `input.onblur = () => commitRenamingOperatorThread();`
+  // treated that the same as the user genuinely leaving the field — closing
+  // an edit the user never asked to end whenever a background poller
+  // (ticker/heartbeat SSE) happened to trigger renderApp() while typing.
+
+  it('declares _renameBlurSuppressed and _renamePreserveFocusPending as module-level state', () => {
+    expect(SOURCE).toMatch(/var _renameBlurSuppressed = false;/);
+    expect(SOURCE).toMatch(/var _renamePreserveFocusPending = false;/);
+  });
+
+  it('_renderAppCore() captures the rename input focus/selection via document.activeElement (not querySelector, since the input can render twice — sidebar row + title bar)', () => {
+    const body = functionBody(SOURCE, 'function _renderAppCore() {');
+    const idx = body.indexOf("classList.contains('chat-session-title-input')");
+    expect(idx).toBeGreaterThan(-1);
+    const nearby = body.slice(Math.max(0, idx - 300), idx + 50);
+    expect(nearby).toContain('var _activeRenameEl = document.activeElement;');
+  });
+
+  it('_renderAppCore() sets _renameBlurSuppressed only around the root.innerHTML = \'\' call that would otherwise fire the involuntary blur', () => {
+    const body = functionBody(SOURCE, 'function _renderAppCore() {');
+    const setIdx = body.indexOf('if (savedRenameFocus) _renameBlurSuppressed = true;');
+    expect(setIdx).toBeGreaterThan(-1);
+    const between = body.slice(setIdx, setIdx + 200);
+    expect(between).toContain("root.innerHTML = '';");
+    expect(between).toContain('_renameBlurSuppressed = false;');
+    // The reset must come after the destructive rebuild starts, not before.
+    expect(between.indexOf("root.innerHTML = '';")).toBeLessThan(between.indexOf('_renameBlurSuppressed = false;'));
+  });
+
+  it('_renderAppCore() sets _renamePreserveFocusPending from whether the rename input was focused this pass', () => {
+    const body = functionBody(SOURCE, 'function _renderAppCore() {');
+    expect(body).toContain('_renamePreserveFocusPending = !!savedRenameFocus;');
+  });
+
+  it('_renderAppCore() restores rename-input focus and exact cursor position after rebuild, gated on the same thread still being renamed', () => {
+    const body = functionBody(SOURCE, 'function _renderAppCore() {');
+    const idx = body.indexOf('if (savedRenameFocus && savedRenameFocus.threadId === state.operatorRenamingThreadId) {');
+    expect(idx).toBeGreaterThan(-1);
+    const restoreBlock = body.slice(idx, body.indexOf('});', idx) + 3);
+    expect(restoreBlock).toContain("document.querySelector('.chat-session-title-input')");
+    expect(restoreBlock).toContain('newRenameInput.focus();');
+    expect(restoreBlock).toContain('newRenameInput.setSelectionRange(savedRenameFocus.selectionStart, savedRenameFocus.selectionEnd);');
+  });
+
+  it('renderEditableThreadTitle() skips the auto-select-all when restoring an already-focused input, so a mid-edit background re-render cannot select away the user\'s in-progress typing', () => {
+    const body = functionBody(SOURCE, 'function renderEditableThreadTitle(thread, className) {');
+    const guardIdx = body.indexOf('if (!_renamePreserveFocusPending) {');
+    expect(guardIdx).toBeGreaterThan(-1);
+    const guardBlock = body.slice(guardIdx, body.indexOf('}', body.indexOf('input.select();', guardIdx)) + 1);
+    expect(guardBlock).toContain('input.focus(); input.select();');
   });
 });
