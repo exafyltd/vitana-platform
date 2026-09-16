@@ -106,25 +106,21 @@ voice, 200 with real audio bytes + `X-Vitana-Tts-Voice` header) and
 `test/services/voice-config.test.ts` (`IMPLEMENTED_TTS_PROVIDERS.has
 ('polly'|'fish')` both true).
 
-AC-8 — The two actively-misleading Vertex mentions this session found
-and fixed, scoped to the Providers & Voice and Nova Sonic Test Bench
-screens: the V2V flip button's "Use Vertex (Gemini Live)" label (Vertex/
-Gemini Live is permanently dead, GCP decommissioned) and the Nova bench's
-Serbian dropdown option, which claimed "expected fallback → vertex" even
-though CLAUDE.md §2e has documented since VTID-03649 that the Vertex
-fallback is dead — Serbian has no working ORB voice via this pipeline at
-all today. Both corrected to name Nova Sonic / the real current gap
-instead. `node --check app.js` clean; `scripts/ci/validator-path-guard.cjs
---csp-added-lines` clean on the full diff (no new inline `style=`
-introduced — the one pre-existing inline-style line this session had to
-edit the text of was extracted to a CSS class instead).
+AC-8 — Two actively-misleading Vertex mentions, scoped to the Providers
+& Voice and Nova Sonic Test Bench screens, corrected: the V2V flip
+button's "Use Vertex (Gemini Live)" label (Vertex/Gemini Live is
+permanently dead, GCP decommissioned) and the Nova bench's Serbian
+option, which claimed "expected fallback → vertex" even though CLAUDE.md
+§2e has documented since VTID-03649 that the fallback is dead. Both now
+name Nova Sonic / the real current gap instead.
 
-TEST: `outputs/csp-gate.txt` (the real governance-gate CSP check, run
-locally against this PR's actual diff, both before the fix — 2
-rejections — and after — 0). `outputs/jest-new-tests.txt` covers the
-backend surface these UI labels describe; the label wording itself has
-no automated test (it is prose, not logic) but was verified by direct
-reading against `provider-name.ts`'s own documented semantics.
+TEST: `outputs/csp-gate.txt` — the real governance-gate CSP check, run
+locally against this PR's actual diff: 2 real rejections before the fix
+(a new `.style.cssText` and an edited line that carried a pre-existing
+inline `style=""`), 0 after (both moved to CSS classes). `node --check
+app.js` clean (see `commands.log`). Label wording has no automated test
+(prose, not logic) — verified by reading `provider-name.ts`'s own
+documented semantics of the `'vertex'` value directly.
 
 ## Not yet independently verified
 
