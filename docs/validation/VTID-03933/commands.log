@@ -1,0 +1,54 @@
+# VTID-03933 — commands actually run.
+
+# --- Investigation (prior conversation turn, part of the Operator quality
+#     evaluation that surfaced this bug) ---------------------------------
+
+# Submitted a real frontend task through the live Operator chat API, traced
+# it through task creation -> planner sweep -> spec draft, and read the
+# resulting VTID-03931 ledger row:
+#   title: "Auth: Feature: Inline title editing in the Command Hub"
+# — clearly mis-categorized; the task is about the Command Hub Operator
+# Console, not authentication.
+
+grep -n "guessAreaFromText" -A 25 services/gateway/src/utils/task-title.ts
+#   -> keyword array: Auth checked 2nd (right after ORB), matches bare
+#      "session"; Command Hub checked 3rd. First-match-wins picks Auth.
+
+grep -rn "guessAreaFromText" services/gateway/src services/gateway/test
+#   -> called from operator-service.ts:747 and email-intake.ts:197; no
+#      existing test file for task-title.ts at all.
+
+# --- Fix -----------------------------------------------------------------
+
+# services/gateway/src/utils/task-title.ts
+#   guessAreaFromText(): moved the 'Auth' keyword entry from 2nd position
+#   to last in the keyword array, so every more specific category (Command
+#   Hub, Pipeline, Operator, Governance, OASIS, Memory, Agents, Infra,
+#   Frontend, Gateway) gets a chance to match before the generic "session"/
+#   "auth"/"login"/etc. keywords are checked. ORB stays first (unchanged).
+
+cd services/gateway
+
+# --- Verification ---------------------------------------------------------
+
+npx jest test/task-title.guess-area-ordering.test.ts test/operator-service.extract-title.test.ts --runInBand
+#   -> 2/2 suites, 12/12 tests passing. (outputs/targeted-tests.txt)
+
+# Mutation check on the fix: reverted the reorder via `git stash`
+# (restoring pre-fix task-title.ts), re-ran the new test file -- confirmed
+# 3/6 tests fail, including the exact reproduced-failure assertion
+# returning 'Auth' instead of 'Command Hub'. Restored the fix via
+# `git stash pop` -- re-ran -- 6/6 green again.
+
+npx tsc --noEmit
+#   -> 2 pre-existing, unrelated errors only (missing @aws-sdk sub-packages
+#      in this session's local node_modules — declared in package.json,
+#      not referenced by any file this VTID touches). Zero errors in
+#      task-title.ts or its new test file. (outputs/tsc.txt)
+
+npx jest --runInBand
+#   -> full suite: 895/907 suites passing (12 pre-existing failures, same
+#      missing-module root cause as above, confirmed unrelated to
+#      task-title.ts via `git stash` + re-run on test/intent-cover-service.test.ts
+#      against the unmodified tree), 14715/14761 tests passing, 0 failures
+#      in any file this VTID touches. (outputs/full-suite.txt)

@@ -124,9 +124,21 @@ export function buildTitle(area: SystemArea, description: string): string {
 export function guessAreaFromText(text: string): SystemArea {
   const lower = (text || '').toLowerCase();
 
+  // VTID-03933: 'Auth' used to be checked 2nd, right after ORB, so its
+  // keyword "session" (a word that shows up in plenty of non-auth text —
+  // "task or session title", "user session on the dashboard") won on
+  // first-match-wins ordering even when a far more specific area keyword
+  // (e.g. "command hub") also appeared in the same text. Confirmed live:
+  // "Command Hub Operator Console... task or session title..." was
+  // mis-tagged 'Auth' instead of 'Command Hub'. Every other area's
+  // keywords are either domain-specific nouns (orb, oasis, pipeline) or
+  // scoped enough not to false-positive this way, so only 'Auth' needed to
+  // move — it now runs last, after every more specific category has had a
+  // chance to match, so a genuine Auth-only text (login/token/jwt/bare
+  // "session" with nothing else) still classifies correctly, but a
+  // shared, generic word inside a more specific area no longer wins.
   const keywords: [RegExp, SystemArea][] = [
     [/\b(orb|voice|audio|microphone|speak|listen|gemini.?live)\b/, 'ORB'],
-    [/\b(auth|login|logout|token|session|password|jwt|provision)\b/, 'Auth'],
     [/\b(command.?hub|board|task.?modal|dashboard|card)\b/, 'Command Hub'],
     [/\b(pipeline|autopilot|lifecycle|funnel|scheduling)\b/, 'Pipeline'],
     [/\b(operator|console|gemini.?operator)\b/, 'Operator'],
@@ -137,6 +149,7 @@ export function guessAreaFromText(text: string): SystemArea {
     [/\b(infra|deploy|cloud.?run|ci.?cd|docker|github.?action)\b/, 'Infra'],
     [/\b(frontend|lovable|mobile|app|ui|css|component|page)\b/, 'Frontend'],
     [/\b(gateway|api|route|endpoint|middleware|cors)\b/, 'Gateway'],
+    [/\b(auth|login|logout|token|session|password|jwt|provision)\b/, 'Auth'],
   ];
 
   for (const [pattern, area] of keywords) {

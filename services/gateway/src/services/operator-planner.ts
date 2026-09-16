@@ -176,6 +176,14 @@ export async function runOperatorPlannerOnce(): Promise<{
       status: failed > 0 ? 'warning' : 'success',
       message: `Operator planner: ${generated} spec(s) generated, ${failed} failed, out of ${results.length} candidate task(s)`,
       payload: { results },
+      // VTID-03927: 'operator.planner.sweep_completed' matches none of
+      // inferTaskStageFromType()'s keyword patterns (it only recognizes
+      // 'recommendation'/'autopilot.intent'/'task.intake'/etc. for PLANNER),
+      // and emitOasisEvent() never writes a `kind`/`title` column for the
+      // stage-mapping fallback matcher to fall back on either — so this
+      // event was invisible in every VTID-03902 stage timeline view.
+      // Explicit here since it's a planning-phase summary by definition.
+      task_stage: 'PLANNER',
     }).catch(err => console.warn('[VTID-03902] Failed to log planner sweep event:', err.message));
   }
 
