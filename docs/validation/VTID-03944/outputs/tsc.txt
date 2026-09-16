@@ -1,0 +1,2 @@
+src/providers/s3-storage.ts(31,30): error TS2307: Cannot find module '@aws-sdk/s3-request-presigner' or its corresponding type declarations.
+src/services/cognito-auth-client.ts(39,8): error TS2307: Cannot find module '@aws-sdk/client-cognito-identity-provider' or its corresponding type declarations.
