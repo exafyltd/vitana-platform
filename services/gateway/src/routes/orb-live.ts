@@ -16536,25 +16536,40 @@ router.get('/health', async (_req: Request, res: Response) => {
   let providerReason = 'default';
   let livekitReady = false;
   try {
-    const __vc = await getVoiceConfig();
-    const __canary = await getLiveKitCanaryConfig();
-    const __decision = selectUpstreamProvider({
-      envProviderOverride: process.env.ORB_LIVE_PROVIDER,
-      systemConfigActiveProvider: __vc.active_provider,
-      livekitCredentials: {
-        url: process.env.LIVEKIT_URL,
-        apiKey: process.env.LIVEKIT_API_KEY,
-        apiSecret: process.env.LIVEKIT_API_SECRET,
-      },
-      canary: {
-        enabled: __canary.enabled,
-        allowedTenants: __canary.allowedTenants,
-        allowedUsers: __canary.allowedUsers,
-      },
-    });
-    activeProvider = __decision.provider;
-    providerReason = __decision.reason;
-    livekitReady = __decision.livekitReady;
+    // VTID-03954: getVoiceConfig()/getLiveKitCanaryConfig() have no timeout
+    // of their own — a slow Supabase moment just HUNG here (no exception,
+    // so the catch below never fired) instead of falling back, which is
+    // what made this route occasionally take 16s+ and flap the Command Hub
+    // Service Health panel's "ORB Live" card down past its 6s check. Reuse
+    // the existing BOOTSTRAP-ORB-CONNECT-HANG timeout race instead of
+    // hanging: on timeout this resolves to `undefined` and the pre-set
+    // vertex/default fallbacks above are left in place, same as the catch.
+    await withBootstrapTimeout(
+      (async () => {
+        const __vc = await getVoiceConfig();
+        const __canary = await getLiveKitCanaryConfig();
+        const __decision = selectUpstreamProvider({
+          envProviderOverride: process.env.ORB_LIVE_PROVIDER,
+          systemConfigActiveProvider: __vc.active_provider,
+          livekitCredentials: {
+            url: process.env.LIVEKIT_URL,
+            apiKey: process.env.LIVEKIT_API_KEY,
+            apiSecret: process.env.LIVEKIT_API_SECRET,
+          },
+          canary: {
+            enabled: __canary.enabled,
+            allowedTenants: __canary.allowedTenants,
+            allowedUsers: __canary.allowedUsers,
+          },
+        });
+        activeProvider = __decision.provider;
+        providerReason = __decision.reason;
+        livekitReady = __decision.livekitReady;
+      })(),
+      undefined,
+      'orb-health-provider-config',
+      2500,
+    );
   } catch (e) {
     // Config read failure must NOT make the probe lie about being broken —
     // default to Vertex (matches connectToLiveAPI's own fallback).

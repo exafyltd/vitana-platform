@@ -121,6 +121,25 @@ export interface LoopStats {
 const LOOP_ID = 'gateway';
 const LOG_PREFIX = '[VTID-01179]';
 
+// VTID-03954: this request had no timeout at all, so a slow Supabase/
+// PostgREST moment hung indefinitely instead of failing fast — the root
+// cause of the Command Hub Service Health panel's "Autopilot"/"Autopilot
+// Pipeline" cards flapping down (their /health routes call through here via
+// getLoopStats/getLoopState) whenever the panel's own 6s client-side check
+// caught the hang mid-flight. Bounded well under that 6s budget so the
+// route always resolves (real data or a clean error) before the panel's
+// own timeout fires.
+const SUPABASE_REQUEST_TIMEOUT_MS = 3000;
+
+function abortAfter(ms: number): { signal: AbortSignal; clear: () => void } {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), ms);
+  return {
+    signal: controller.signal,
+    clear: () => clearTimeout(timeoutId),
+  };
+}
+
 // =============================================================================
 // Supabase Helpers
 // =============================================================================
@@ -151,6 +170,7 @@ async function supabaseRequest<T>(
   }
 
   const { method = 'GET', body, headers = {} } = options;
+  const timeout = abortAfter(SUPABASE_REQUEST_TIMEOUT_MS);
 
   try {
     const response = await fetch(`${creds.url}${path}`, {
@@ -163,6 +183,7 @@ async function supabaseRequest<T>(
         ...headers,
       },
       body: body ? JSON.stringify(body) : undefined,
+      signal: timeout.signal,
     });
 
     if (!response.ok) {
@@ -175,6 +196,8 @@ async function supabaseRequest<T>(
     return { ok: true, data };
   } catch (error) {
     return { ok: false, error: String(error) };
+  } finally {
+    timeout.clear();
   }
 }
 

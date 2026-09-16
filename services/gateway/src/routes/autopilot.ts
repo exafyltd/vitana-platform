@@ -92,6 +92,22 @@ import {
   resetEventLoopCursor,
 } from '../services/autopilot-event-loop';
 
+// VTID-03954: /pipeline/health fires three direct Supabase/PostgREST fetches
+// with no timeout at all — a slow moment there hung the whole route past the
+// Command Hub Service Health panel's 6s client-side check, flapping
+// "Autopilot Pipeline" to down even though nothing was actually broken.
+// Bounded well under that 6s budget so the route always resolves in time.
+const PIPELINE_HEALTH_FETCH_TIMEOUT_MS = 2500;
+
+function abortAfter(ms: number): { signal: AbortSignal; clear: () => void } {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), ms);
+  return {
+    signal: controller.signal,
+    clear: () => clearTimeout(timeoutId),
+  };
+}
+
 const router = Router();
 
 // =============================================================================
@@ -1181,42 +1197,53 @@ router.get('/pipeline/health', async (_req: Request, res: Response) => {
       return res.status(500).json({ ok: false, error: 'Supabase not configured' });
     }
 
-    // Fetch in parallel: loop status, task counts, stuck tasks, worker count
-    const [loopStatus, taskCountsResp, stuckTasksResp, workersResp] = await Promise.all([
-      getEventLoopStatus(),
-      fetch(
-        `${supabaseUrl}/rest/v1/rpc/count_tasks_by_status`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            apikey: svcKey,
-            Authorization: `Bearer ${svcKey}`,
-          },
-          body: '{}',
-        }
-      ).catch(() => null),
-      // Find tasks stuck in_progress for >1 hour
-      fetch(
-        `${supabaseUrl}/rest/v1/vtid_ledger?status=eq.in_progress&updated_at=lt.${encodeURIComponent(new Date(Date.now() - 3600000).toISOString())}&is_terminal=eq.false&select=vtid,title,updated_at&limit=10`,
-        {
-          headers: {
-            apikey: svcKey,
-            Authorization: `Bearer ${svcKey}`,
-          },
-        }
-      ).catch(() => null),
-      // Count registered workers (from recent heartbeats)
-      fetch(
-        `${supabaseUrl}/rest/v1/oasis_events?topic=eq.vtid.stage.worker_orchestrator.heartbeat&created_at=gt.${encodeURIComponent(new Date(Date.now() - 300000).toISOString())}&select=id&limit=1`,
-        {
-          headers: {
-            apikey: svcKey,
-            Authorization: `Bearer ${svcKey}`,
-          },
-        }
-      ).catch(() => null),
-    ]);
+    // Fetch in parallel: loop status, task counts, stuck tasks, worker count.
+    // VTID-03954: all three direct fetches share one bounded timeout so a
+    // slow Supabase moment fails fast instead of hanging the whole route.
+    const pipelineFetchTimeout = abortAfter(PIPELINE_HEALTH_FETCH_TIMEOUT_MS);
+    let loopStatus, taskCountsResp, stuckTasksResp, workersResp;
+    try {
+      [loopStatus, taskCountsResp, stuckTasksResp, workersResp] = await Promise.all([
+        getEventLoopStatus(),
+        fetch(
+          `${supabaseUrl}/rest/v1/rpc/count_tasks_by_status`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              apikey: svcKey,
+              Authorization: `Bearer ${svcKey}`,
+            },
+            body: '{}',
+            signal: pipelineFetchTimeout.signal,
+          }
+        ).catch(() => null),
+        // Find tasks stuck in_progress for >1 hour
+        fetch(
+          `${supabaseUrl}/rest/v1/vtid_ledger?status=eq.in_progress&updated_at=lt.${encodeURIComponent(new Date(Date.now() - 3600000).toISOString())}&is_terminal=eq.false&select=vtid,title,updated_at&limit=10`,
+          {
+            headers: {
+              apikey: svcKey,
+              Authorization: `Bearer ${svcKey}`,
+            },
+            signal: pipelineFetchTimeout.signal,
+          }
+        ).catch(() => null),
+        // Count registered workers (from recent heartbeats)
+        fetch(
+          `${supabaseUrl}/rest/v1/oasis_events?topic=eq.vtid.stage.worker_orchestrator.heartbeat&created_at=gt.${encodeURIComponent(new Date(Date.now() - 300000).toISOString())}&select=id&limit=1`,
+          {
+            headers: {
+              apikey: svcKey,
+              Authorization: `Bearer ${svcKey}`,
+            },
+            signal: pipelineFetchTimeout.signal,
+          }
+        ).catch(() => null),
+      ]);
+    } finally {
+      pipelineFetchTimeout.clear();
+    }
 
     // Parse task counts
     let taskCounts: Record<string, number> = {};
