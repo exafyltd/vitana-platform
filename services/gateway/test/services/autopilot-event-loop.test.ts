@@ -341,6 +341,33 @@ describe('getEventLoopStatus — governance visibility (VTID-01187)', () => {
     expect(status.ok).toBe(false);
     expect(status.execution_armed).toBe(false);
   });
+
+  // VTID-03964: getLoopStats() and isAutopilotExecutionArmed() are
+  // independent reads (no data dependency) but were awaited sequentially —
+  // each is bounded at ~3s by its own Supabase-request timeout (VTID-03954),
+  // so a caller could see up to ~6s from this function alone. Live staging
+  // measurement post-VTID-03954 caught exactly this: /api/v1/autopilot/health
+  // measured 6.3s, over the Command Hub panel's 6s budget. This pins that the
+  // two calls now run concurrently — wall time tracks the slower call, not
+  // their sum.
+  it('runs getLoopStats() and isAutopilotExecutionArmed() concurrently, not sequentially', async () => {
+    const DELAY_MS = 40;
+    mockGetLoopStats.mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve({ is_running: true } as any), DELAY_MS))
+    );
+    mockIsArmed.mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve(true), DELAY_MS))
+    );
+
+    const start = Date.now();
+    await eventLoop.getEventLoopStatus();
+    const elapsedMs = Date.now() - start;
+
+    // Sequential would take ~2*DELAY_MS; concurrent takes ~1*DELAY_MS. Give
+    // generous headroom for CI scheduling jitter while still failing if the
+    // two awaits regress back to sequential.
+    expect(elapsedMs).toBeLessThan(DELAY_MS * 1.8);
+  });
 });
 
 // ---------------------------------------------------------------------------

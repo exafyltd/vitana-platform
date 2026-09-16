@@ -1167,8 +1167,18 @@ export async function getEventLoopStatus(): Promise<{
   error?: string;
 }> {
   try {
-    const stats = await getLoopStats();
-    const executionArmed = await isAutopilotExecutionArmed();
+    // VTID-03964: these two reads are independent (no data dependency), but
+    // were awaited sequentially — each is bounded at ~3s by its own
+    // Supabase-request timeout (VTID-03954), so worst case this route added
+    // up to ~6s all by itself, before the rest of the route's own work. Live
+    // staging measurement post-VTID-03954 confirmed this stacking actually
+    // happened (/api/v1/autopilot/health measured 6.3s, over the Command Hub
+    // panel's 6s budget). Running them concurrently bounds this call at the
+    // slower of the two (~3s), not their sum.
+    const [stats, executionArmed] = await Promise.all([
+      getLoopStats(),
+      isAutopilotExecutionArmed(),
+    ]);
 
     return {
       ok: true,
