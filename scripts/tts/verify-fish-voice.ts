@@ -1,14 +1,18 @@
 #!/usr/bin/env npx ts-node
 /**
- * VTID-03970 — verify the Fish Audio voice table against the LIVE API.
+ * VTID-03970/VTID-03983 — verify the Fish Audio voice table against the LIVE API.
  *
  * Mirrors `verify-polly-voices.ts`'s purpose: `FISH_VOICES` in
  * `services/gateway/src/services/tts/fish.ts` was built from the model's
- * `GET /model/{id}` metadata (description, author, tags) — a real synthesis
- * call could not be verified because the supplied `FISH_API_KEY` returned
- * HTTP 402 ("Insufficient API credit") on every attempt. Run this once real
- * API credit exists, before flipping `TTS_FISH_FALLBACK_ENABLED=true`
- * anywhere.
+ * `GET /model/{id}` metadata (description, author, tags). A real synthesis
+ * call could NOT be verified during VTID-03970's build — the supplied
+ * `FISH_API_KEY` returned HTTP 402 ("Insufficient API credit") on every
+ * attempt against the default paid `s2.1-pro` model. VTID-03983 found the
+ * actual cause: Fish's S2.1 Pro has a free tier, `s2.1-pro-free` — same
+ * underlying model, no character cap, no SLA/latency guarantee — and the
+ * SAME unfunded key synthesizes real audio against it with no code change
+ * beyond the model string. This script (and `fish.ts`'s own default) now
+ * use it, so this check runs with nothing more than the existing key.
  *
  * Checks, per language in the table:
  *   - the reference_id still resolves via GET /model/{id} (not deleted/DMCA'd)
@@ -18,8 +22,7 @@
  *     integration; re-checked here so a voice can't silently drift into
  *     that category after an author edits it
  *   - a REAL synthesis call succeeds for both 'mp3' and 'pcm' format, and
- *     reports the actual bytes returned — this is the check that could not
- *     run during the building session (402 insufficient credit)
+ *     reports the actual bytes returned
  *
  * Usage:  FISH_API_KEY=sk-fish-... npx ts-node scripts/tts/verify-fish-voice.ts
  * Exits non-zero if any pinned voice fails a check.
@@ -51,7 +54,11 @@ async function main(): Promise<void> {
       failures++;
       continue;
     }
-    const meta = await metaRes.json();
+    const meta = (await metaRes.json()) as {
+      tags?: string[];
+      description?: string;
+      author?: { nickname?: string };
+    };
     const tags: string[] = meta.tags ?? [];
     const badTags = tags.filter((t) => NSFW_TAGS.has(t.toLowerCase()));
     if (badTags.length > 0) {
@@ -80,7 +87,7 @@ async function main(): Promise<void> {
         headers: {
           Authorization: `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
-          model: process.env.FISH_TTS_MODEL || 's2.1-pro',
+          model: process.env.FISH_TTS_MODEL || 's2.1-pro-free',
         },
         body: JSON.stringify(body),
       });

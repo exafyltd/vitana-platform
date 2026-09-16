@@ -105,7 +105,9 @@ describe('VTID-03970 synthesizeFish gating and request shape', () => {
     expect(url).toBe('https://api.fish.audio/v1/tts');
     expect(init.headers.Authorization).toBe('Bearer sk-fish-test');
     // CLAUDE.md IF-THEN 30: "IF TTS is used → THEN specify model_name explicitly."
-    expect(init.headers.model).toBe('s2.1-pro');
+    // s2.1-pro-free (VTID-03983): confirmed live to actually synthesize with
+    // an unfunded key, unlike the paid s2.1-pro this defaulted to before.
+    expect(init.headers.model).toBe('s2.1-pro-free');
     const body = JSON.parse(init.body);
     expect(body.reference_id).toBe('2ad62aaf885e4a14add09fe4a38ffd23');
     expect(body.text).toBe('Zdravo, ja sam Vitana.');
