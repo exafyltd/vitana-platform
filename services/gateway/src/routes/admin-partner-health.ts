@@ -314,6 +314,11 @@ router.post('/inbox/:id/upload-result', requireAuth, requirePartnerHealthAccess,
 // inbox listing and confirm-match above — a professional cannot create a
 // brand-new unresolved entry any more than they can confirm-match one.
 router.post('/inbox/manual', requireAuth, requirePartnerHealthAccess, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: the state transition IS recorded — via
+  // quarantineUnmatchedResult() below, which emits
+  // health_test.result_quarantined itself (ingestion.ts). Same pattern as
+  // PATCH /orders/:id above: this route's own body has no direct
+  // emitOasisEvent call because the ingestion pipeline owns that emission.
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
   const access = getAccess(req);
