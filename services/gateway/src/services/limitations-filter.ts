@@ -49,18 +49,26 @@ export interface LimitationsFilterOptions {
   surface?: string;
 }
 
+/** The limitations-only categories `applyUserLimitations()` tallies — everything except geo pre-filtering and past purchases, which its callers layer on separately. */
+export interface LimitationsHiddenBreakdown {
+  allergies: number;
+  contraindications: number;
+  medications: number;
+  dietary: number;
+  budget: number;
+  sensitivities: number;
+  geo: number;
+  excluded_region: number;
+}
+
+/** The full per-reason tally a discover route reports in its response (`hidden_breakdown`/`hidden_total`). */
+export interface HiddenBreakdown extends LimitationsHiddenBreakdown {
+  past_purchases: number;
+}
+
 export interface LimitationsFilterResult<T extends FilterableProduct = FilterableProduct> {
   allowed: T[];
-  hidden_breakdown: {
-    allergies: number;
-    contraindications: number;
-    medications: number;
-    dietary: number;
-    budget: number;
-    sensitivities: number;
-    geo: number;
-    excluded_region: number;
-  };
+  hidden_breakdown: LimitationsHiddenBreakdown;
   violations: Array<{ product_id: string; reason: string }>;
 }
 
@@ -89,6 +97,45 @@ export function excludePastPurchases<T extends { id: string }>(
   const pastIds = new Set(pastPurchases.map((p) => p.product_id));
   const withoutPast = allowed.filter((p) => !pastIds.has(p.id));
   return { withoutPast, past_purchases_hidden: allowed.length - withoutPast.length };
+}
+
+/**
+ * Merges the three independent sources of "why was this hidden" into the one
+ * `HiddenBreakdown` object a discover route reports (VTID-03945).
+ *
+ * Both discover-search.ts and discover-feed.ts filter in the same three
+ * stages — a pre-filter geo pass (over the RAW fetched/candidate rows, before
+ * `applyUserLimitations()` ever runs), `applyUserLimitations()` itself (which
+ * has its own, smaller geo count for rows that slipped past the pre-filter —
+ * e.g. no `country_code` known yet — but were still geo-excluded inside the
+ * limitations pass), and `excludePastPurchases()`. Each route was manually
+ * re-summing `geo` and re-spreading the other seven fields inline; extracting
+ * that into one function means the summing rule (`geo = preFilterGeoHidden +
+ * limitations.geo`) is written and tested once instead of twice, closing the
+ * exact "two independently-maintained copies drift apart" shape VTID-03943
+ * (and, earlier, VTID-03644/VTID-03696) already hit in this codebase.
+ *
+ * `limitations` is `undefined` when the caller has no `UserHealthContext`
+ * (an anonymous/unauthenticated discover-search request) — every limitations
+ * category then reports 0, since none of them ran.
+ */
+export function buildHiddenBreakdown(params: {
+  preFilterGeoHidden: number;
+  limitations: LimitationsHiddenBreakdown | undefined;
+  pastPurchasesHidden: number;
+}): HiddenBreakdown {
+  const l = params.limitations;
+  return {
+    allergies: l?.allergies ?? 0,
+    contraindications: l?.contraindications ?? 0,
+    medications: l?.medications ?? 0,
+    dietary: l?.dietary ?? 0,
+    budget: l?.budget ?? 0,
+    sensitivities: l?.sensitivities ?? 0,
+    geo: params.preFilterGeoHidden + (l?.geo ?? 0),
+    excluded_region: l?.excluded_region ?? 0,
+    past_purchases: params.pastPurchasesHidden,
+  };
 }
 
 /**

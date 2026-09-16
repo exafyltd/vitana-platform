@@ -18,7 +18,12 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { getSupabase } from '../lib/supabase';
 import { getUserHealthContext, type UserHealthContext } from '../services/user-health-context';
-import { applyUserLimitations, excludePastPurchases, type FilterableProduct } from '../services/limitations-filter';
+import {
+  applyUserLimitations,
+  excludePastPurchases,
+  buildHiddenBreakdown,
+  type FilterableProduct,
+} from '../services/limitations-filter';
 import { rankFeedProducts, type FeedConfig } from '../services/feed-ranker';
 import * as jose from 'jose';
 import * as repo from './discover-feed-repository';
@@ -236,11 +241,11 @@ router.get('/feed', async (req: Request, res: Response) => {
       config_id: feedConfig?.id ?? null,
       guest: isGuest,
     },
-    hidden_breakdown: {
-      ...hidden_breakdown,
-      geo: hidden_breakdown.geo + (candidates.length - geoAllowed.length),
-      past_purchases: past_purchases_hidden,
-    },
+    hidden_breakdown: buildHiddenBreakdown({
+      preFilterGeoHidden: candidates.length - geoAllowed.length,
+      limitations: hidden_breakdown,
+      pastPurchasesHidden: past_purchases_hidden,
+    }),
   });
 });
 
