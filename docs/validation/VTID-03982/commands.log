@@ -1,0 +1,65 @@
+# VTID-03982 — commands run during this change
+
+## Identifying the two accounts (read-only, Supabase MCP, project inmkhvwdcuyhnxkgfvsb)
+
+$ select id, email, raw_app_meta_data->>'exafy_admin' as exafy_admin, created_at
+  from auth.users where email ilike '%claude-code-agent%' or email ilike '%operator-autopilot%'
+  order by created_at;
+→ claude-code-agent@exafy.io   = 887b34cb-9ee9-47dc-ad53-db5be1869846 (created 2026-09-16 11:38:38 UTC)
+  operator-autopilot@exafy.io  = 856c30ed-7136-4bc5-8bfe-86a1e8ea1401 (created 2026-09-16 11:38:40 UTC)
+
+$ select case when sender_id in (<the two ids>) then sender_id else receiver_id end as dev_account,
+    count(*), count(distinct case when sender_id in (<the two ids>) then receiver_id else sender_id end),
+    min(created_at), max(created_at)
+  from chat_messages
+  where sender_id in (<the two ids>) or receiver_id in (<the two ids>)
+  group by 1;
+→ operator-autopilot:  223 messages, 223 distinct counterparts, all at 2026-09-16 11:38:40.74971 UTC
+  claude-code-agent:   222 messages, 222 distinct counterparts, all at 2026-09-16 11:38:38.525781 UTC
+  (single bulk insert per account at account-creation time — a "Hello! My name is ..." intro DM
+   fanned out to every community member)
+
+## VTID self-allocation (governed RPC, VTID-03448/§4.1 — not a community-content write)
+
+$ select allocate_global_vtid('claude-code', 'frontend', 'chat-inbox') as result;
+→ (VTID-03982, 3982, 755e223b-9dc7-4595-9445-c2ada26c1757)
+
+$ update vtid_ledger set title=..., summary=..., status='in_progress', spec_status='approved'
+  where vtid='VTID-03982';
+
+## Change
+
+$ services/gateway/src/lib/dev-service-accounts.ts        — new: the two known IDs + isDevServiceAccount()
+$ services/gateway/src/routes/chat.ts                      — GET /conversations filters both accounts on
+                                                               both the RPC path and the client-dedup fallback
+$ services/gateway/src/routes/chat-repository.ts            — countUnreadMessages() excludes their sender_id
+$ services/gateway/test/chat-dev-service-accounts.test.ts   — 3 new tests (RPC path, fallback path, unread-count)
+
+## Repo CI gates run locally (dependency-free)
+
+$ node scripts/ci/validator-path-guard.cjs /tmp/changed_files.txt gateway_backend \
+    > docs/validation/VTID-03982/outputs/path-ownership-gate.txt
+→ APPROVED: 7 in-remit file(s) match the gateway_backend allowlist
+
+$ git diff origin/main...HEAD -- services/gateway/src/routes/ services/gateway/src/index.ts \
+    services/gateway/src/app.ts > /tmp/route_diff.txt
+  node scripts/ci/validator-path-guard.cjs --route-evidence-required /tmp/route_diff.txt \
+    > docs/validation/VTID-03982/outputs/route-evidence-gate.txt
+→ No route registration added — route-mount evidence not required for this diff.
+  (confirmed independently: `git diff ... | grep -E '^\+' | grep -E '\b(router|app)\.(get|post|...)\('`
+   returns no matches — this PR only edits existing handler bodies, never registers a new route)
+
+## Build / test verification (runnable locally this session)
+
+$ cd services/gateway && npx tsc --noEmit -p .
+→ exit 0, no errors
+
+$ npx jest test/chat-dev-service-accounts.test.ts test/chat-vitana-reply.test.ts test/chat/dm-tool-actions.test.ts
+→ Test Suites: 3 passed, 3 total
+  Tests:       18 passed, 18 total
+  (chat-vitana-reply.test.ts and chat/dm-tool-actions.test.ts are the existing suites covering the same
+   routes.ts/POST handlers this PR's GET handlers live next to — re-run as a regression guard, unmodified
+   and unaffected)
+
+$ npx tsc --noEmit -p . (full gateway, not just changed files)
+→ exit 0, 0 lines of output
