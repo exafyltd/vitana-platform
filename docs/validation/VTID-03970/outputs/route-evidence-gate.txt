@@ -1,0 +1,2 @@
+No route registration added — route-mount evidence not required for this diff.
+exit: 1
