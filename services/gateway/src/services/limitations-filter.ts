@@ -75,6 +75,23 @@ function hasOverlap(a: readonly string[] | null | undefined, b: readonly string[
 }
 
 /**
+ * Excludes already-purchased products from an allowed list and reports how
+ * many were dropped, so callers can fold the count into `hidden_breakdown`
+ * (VTID-03943 — discover-search.ts computed the exclusion but never reported
+ * the count, so its transparency footer total silently undercounted; this
+ * mirrors discover-feed.ts's equivalent inline computation as one shared,
+ * independently testable function instead of two separately-maintained copies).
+ */
+export function excludePastPurchases<T extends { id: string }>(
+  allowed: T[],
+  pastPurchases: ReadonlyArray<{ product_id: string }>
+): { withoutPast: T[]; past_purchases_hidden: number } {
+  const pastIds = new Set(pastPurchases.map((p) => p.product_id));
+  const withoutPast = allowed.filter((p) => !pastIds.has(p.id));
+  return { withoutPast, past_purchases_hidden: allowed.length - withoutPast.length };
+}
+
+/**
  * The core filter. Returns a struct separating allowed products from an
  * anonymous tally of why the rest were hidden (for the transparency footer).
  */
