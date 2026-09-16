@@ -57,15 +57,7 @@ on:
       # Providing nova_sonic_enabled replaces the full Nova env block
       # (enabled + pinned region/model + allowlists) on the new revision.
       nova_sonic_enabled:
-        description: 'Set NOVA_SONIC_ENABLED (true/false; EMPTY = preserve current task-def state)'
-        required: false
-        default: ''
-      nova_canary_user_ids:
-        description: 'Nova canary user UUID allowlist (comma-separated; used only when nova_sonic_enabled is set)'
-        required: false
-        default: ''
-      nova_canary_tenant_ids:
-        description: 'Nova canary tenant UUID allowlist (comma-separated; used only when nova_sonic_enabled is set)'
+        description: 'Set NOVA_SONIC_ENABLED (true/false; EMPTY = preserve current task-def state). Canary user/tenant allowlists moved to env_overrides (VTID-03958, see below) once this file hit the 25-input ceiling.'
         required: false
         default: ''
       # VTID-03560: the two levers that actually move the Gemini API bill.
@@ -150,6 +142,12 @@ on:
       # replace the one-input-per-env-var pattern with a single JSON
       # `env_overrides` input. A guard test now fails if any workflow exceeds
       # the limit, so this cannot silently recur.
+      #
+      # VTID-03958: `env_overrides` (below, near the bottom of this inputs
+      # block) is now that escape hatch. It retired nova_canary_user_ids/
+      # nova_canary_tenant_ids (net -2 named inputs) to make room, and is the
+      # place any FUTURE one-off env var flag should go — not a new named
+      # input. See its own description for the generic upsert mechanism.
       # VTID-03649: GCP project billing was disabled, permanently killing
       # Vertex Live. Without this, sessions whose language/runtime fail
       # Nova's gates (and Nova's own premature-close recovery) still degrade
@@ -207,6 +205,31 @@ on:
         default: ''
       image_provider:
         description: 'Set IMAGE_PROVIDER (vertex|bedrock) — bedrock routes cover-image generation/outpainting to Amazon Titan. Run scripts/images/verify-titan-image.ts FIRST; outpaint mask polarity is still unverified (EMPTY = preserve)'
+        required: false
+        default: ''
+      # VTID-03958: the general escape hatch, added once this file hit
+      # GitHub's 25-input ceiling (see the block above bedrock_role_arn).
+      # A JSON object of {ENV_VAR_NAME: "value"} pairs, upserted onto
+      # .containerDefinitions[0].environment generically (any key works, no
+      # code change needed to add a new one later). EMPTY = no-op — every
+      # key already on the task def is left exactly as it is; this never
+      # clears anything on its own. Malformed JSON fails the deploy loudly
+      # rather than silently no-op'ing or corrupting the task definition.
+      # Prefer this over adding a new named input for a one-off/rare flag —
+      # this file is at (or near) the ceiling again with it in place.
+      #
+      # Deliberately no example env var name in this description: whatever
+      # name is used here becomes literal text in this file, and at least
+      # one existing test keys off of that ("is this flag name anywhere in
+      # AWS-PROD-DEPLOY-GATEWAY.yml?") as a "not promoted to prod yet"
+      # signal for a specific staging-only flag. Passing a value through
+      # this input at DISPATCH time (e.g.
+      # `-f env_overrides='{"SOME_FLAG":"true"}'`) does not add that string
+      # to this file at all — it only appears in that one run's dispatch
+      # inputs/logs, exactly as intended for a deliberate, one-off,
+      # human-triggered change, not a standing pin.
+      env_overrides:
+        description: 'JSON object of extra env vars to upsert onto the task def, e.g. {"SOME_ENV_VAR":"value"} (EMPTY = no-op; the general escape hatch now that this file is at the 25-input ceiling — prefer this over a new named input)'
         required: false
         default: ''
       reason:
@@ -568,8 +591,6 @@ jobs:
       - name: Build task-definition (2/2 — optional overrides) + register + roll the service
         env:
           NOVA_ENABLED_INPUT: ${{ inputs.nova_sonic_enabled }}
-          NOVA_USERS_INPUT: ${{ inputs.nova_canary_user_ids }}
-          NOVA_TENANTS_INPUT: ${{ inputs.nova_canary_tenant_ids }}
           NOVA_GLOBAL_INPUT: ${{ inputs.nova_sonic_global_enabled }}
           ORB_IDLE_NO_ENGAGEMENT_INPUT: ${{ inputs.orb_idle_no_engagement_ms }}
           ORB_NEWDAY_RUNG_INPUT: ${{ inputs.orb_newday_overview_rung_enabled }}
@@ -585,24 +606,31 @@ jobs:
           IMAGE_PROVIDER_INPUT: ${{ inputs.image_provider }}
           NARRATION_AUDIO_CACHE_INPUT: ${{ inputs.narration_audio_cache }}
           NARRATION_AUDIO_BUCKET_INPUT: ${{ inputs.narration_audio_bucket }}
+          ENV_OVERRIDES_INPUT: ${{ inputs.env_overrides }}
         run: |
           set -e
           NEW_DEF="$(cat /tmp/vitana-new-task-def.json)"
 
           # BOOTSTRAP-NOVA-SONIC-VOICE: only when explicitly requested, replace
           # the Nova env block (region/model stay pinned — never inputs).
+          #
+          # VTID-03958: the canary user/tenant allowlist upsert that used to
+          # live here (NOVA_SONIC_CANARY_USER_IDS / NOVA_SONIC_CANARY_TENANT_IDS,
+          # fed by their own dedicated inputs) was removed to make room under
+          # GitHub's 25-input ceiling — retired, not lost. If a canary
+          # allowlist is ever needed again, set it via the generic
+          # `env_overrides` JSON input below instead of restoring a dedicated
+          # input; this block no longer touches those two keys at all, so a
+          # value set that way survives untouched across ordinary deploys
+          # (this block only ever upserts the three names below).
           if [ -n "$NOVA_ENABLED_INPUT" ]; then
-            echo "Applying Nova canary env override: enabled=$NOVA_ENABLED_INPUT"
-            NEW_DEF=$(echo "$NEW_DEF" | jq \
-              --arg E "$NOVA_ENABLED_INPUT" --arg U "$NOVA_USERS_INPUT" --arg T "$NOVA_TENANTS_INPUT" '
+            echo "Applying Nova env override: enabled=$NOVA_ENABLED_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg E "$NOVA_ENABLED_INPUT" '
                 .containerDefinitions[0].environment |=
-                  ( [ .[] | select(.name | IN("NOVA_SONIC_ENABLED","NOVA_SONIC_REGION","NOVA_SONIC_MODEL_ID",
-                                              "NOVA_SONIC_CANARY_USER_IDS","NOVA_SONIC_CANARY_TENANT_IDS") | not) ]
+                  ( [ .[] | select(.name | IN("NOVA_SONIC_ENABLED","NOVA_SONIC_REGION","NOVA_SONIC_MODEL_ID") | not) ]
                     + [ {name:"NOVA_SONIC_ENABLED", value:$E},
                         {name:"NOVA_SONIC_REGION", value:"eu-north-1"},
-                        {name:"NOVA_SONIC_MODEL_ID", value:"amazon.nova-2-sonic-v1:0"},
-                        {name:"NOVA_SONIC_CANARY_USER_IDS", value:$U},
-                        {name:"NOVA_SONIC_CANARY_TENANT_IDS", value:$T} ] )')
+                        {name:"NOVA_SONIC_MODEL_ID", value:"amazon.nova-2-sonic-v1:0"} ] )')
           fi
 
           # VTID-03560: Nova GLOBAL promotion. Deliberately a separate branch
@@ -825,6 +853,43 @@ jobs:
                 ( [ .[] | select(.name != "NARRATION_AUDIO_BUCKET") ]
                   + [ {name:"NARRATION_AUDIO_BUCKET", value:$I} ] )')
           fi
+
+          # VTID-03958: the generic escape hatch. Runs LAST, after every
+          # named-input override above, so it can override anything they set
+          # or add anything new — deliberately the opposite precedence of an
+          # unset named input (which preserves current state), because
+          # supplying env_overrides is an explicit ask to apply exactly these
+          # keys, whatever else was requested on the same dispatch.
+          #
+          # Validates the JSON FIRST and fails the whole step loudly on a
+          # malformed value — this must never silently no-op (a typo'd
+          # override would look like it worked) and must never corrupt
+          # NEW_DEF (a bad `jq` mid-pipeline here would poison every
+          # override applied above it too).
+          if [ -n "$ENV_OVERRIDES_INPUT" ]; then
+            if ! echo "$ENV_OVERRIDES_INPUT" | jq -e . >/dev/null 2>&1; then
+              echo "::error::env_overrides is not valid JSON: $ENV_OVERRIDES_INPUT"
+              exit 1
+            fi
+            if [ "$(echo "$ENV_OVERRIDES_INPUT" | jq -r 'type')" != "object" ]; then
+              echo "::error::env_overrides must be a JSON OBJECT of {\"NAME\":\"value\"} pairs, got: $(echo "$ENV_OVERRIDES_INPUT" | jq -r 'type')"
+              exit 1
+            fi
+            echo "Applying env_overrides: $(echo "$ENV_OVERRIDES_INPUT" | jq -c 'keys')"
+            # Generic upsert over every key in the object — no key names
+            # hardcoded here, so a brand-new flag needs no workflow change.
+            # Remove-then-add per key (same upsert shape as every named
+            # override above), applied one key at a time via jq's own
+            # to_entries/reduce so an arbitrary-length object works without
+            # a fixed arity.
+            NEW_DEF=$(echo "$NEW_DEF" | jq --argjson OVR "$ENV_OVERRIDES_INPUT" '
+              .containerDefinitions[0].environment as $env
+              | ($OVR | to_entries) as $overrides
+              | .containerDefinitions[0].environment =
+                  ( ( $env | map(select(.name as $n | ($overrides | map(.key) | index($n)) | not)) )
+                    + ( $overrides | map({name: .key, value: (.value | tostring)}) ) )')
+          fi
+
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
             --query 'taskDefinition.taskDefinitionArn' --output text)
           echo "Registered $NEW_ARN"
