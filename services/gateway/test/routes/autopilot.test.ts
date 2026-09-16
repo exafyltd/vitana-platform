@@ -860,6 +860,27 @@ describe('GET /pipeline/health', () => {
     }
   });
 
+  // VTID-03964: the three fetches originally shared ONE AbortController/
+  // signal. Live staging measurement caught a real regression from that —
+  // intermittent 500s with "Body is unusable: Body has already been read",
+  // consistent with Node's fetch (undici) corrupting a pooled keep-alive
+  // connection when one shared signal aborts multiple in-flight requests to
+  // the same host at once. Each fetch must get its own independent signal so
+  // aborting one can never touch another's connection.
+  it('gives each of the three direct Supabase fetches its own independent AbortSignal', async () => {
+    (getEventLoopStatus as jest.Mock).mockResolvedValue({ is_running: true, execution_armed: true, config: {}, stats: {} });
+    const signals: AbortSignal[] = [];
+    (global.fetch as jest.Mock).mockImplementation((_url: string, init?: { signal?: AbortSignal }) => {
+      if (init?.signal) signals.push(init.signal);
+      return Promise.resolve(jsonRes(200, []));
+    });
+
+    await request(app).get('/api/v1/autopilot/pipeline/health');
+
+    expect(signals.length).toBe(3);
+    expect(new Set(signals).size).toBe(3); // no two calls share the same AbortSignal instance
+  });
+
   it('bounds hanging Supabase fetches instead of hanging the route past its timeout budget', async () => {
     (getEventLoopStatus as jest.Mock).mockResolvedValue({ is_running: true, execution_armed: true, config: {}, stats: {} });
     (global.fetch as jest.Mock).mockImplementation((_url: string, init?: { signal?: AbortSignal }) => {

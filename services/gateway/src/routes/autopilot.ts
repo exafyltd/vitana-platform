@@ -1198,9 +1198,19 @@ router.get('/pipeline/health', async (_req: Request, res: Response) => {
     }
 
     // Fetch in parallel: loop status, task counts, stuck tasks, worker count.
-    // VTID-03954: all three direct fetches share one bounded timeout so a
-    // slow Supabase moment fails fast instead of hanging the whole route.
-    const pipelineFetchTimeout = abortAfter(PIPELINE_HEALTH_FETCH_TIMEOUT_MS);
+    // VTID-03954 gave these three direct fetches a bounded timeout so a slow
+    // Supabase moment fails fast instead of hanging the whole route — but it
+    // shared ONE AbortController/signal across all three concurrent requests
+    // to the same host. Live staging measurement post-VTID-03954 caught a
+    // real regression from that: intermittent 500s with "Body is unusable:
+    // Body has already been read", consistent with Node's fetch (undici)
+    // corrupting a pooled keep-alive connection when one shared signal aborts
+    // multiple in-flight requests to the same host at once. Each fetch now
+    // gets its own independent timeout so aborting one can never touch
+    // another's connection.
+    const taskCountsTimeout = abortAfter(PIPELINE_HEALTH_FETCH_TIMEOUT_MS);
+    const stuckTasksTimeout = abortAfter(PIPELINE_HEALTH_FETCH_TIMEOUT_MS);
+    const workersTimeout = abortAfter(PIPELINE_HEALTH_FETCH_TIMEOUT_MS);
     let loopStatus, taskCountsResp, stuckTasksResp, workersResp;
     try {
       [loopStatus, taskCountsResp, stuckTasksResp, workersResp] = await Promise.all([
@@ -1215,7 +1225,7 @@ router.get('/pipeline/health', async (_req: Request, res: Response) => {
               Authorization: `Bearer ${svcKey}`,
             },
             body: '{}',
-            signal: pipelineFetchTimeout.signal,
+            signal: taskCountsTimeout.signal,
           }
         ).catch(() => null),
         // Find tasks stuck in_progress for >1 hour
@@ -1226,7 +1236,7 @@ router.get('/pipeline/health', async (_req: Request, res: Response) => {
               apikey: svcKey,
               Authorization: `Bearer ${svcKey}`,
             },
-            signal: pipelineFetchTimeout.signal,
+            signal: stuckTasksTimeout.signal,
           }
         ).catch(() => null),
         // Count registered workers (from recent heartbeats)
@@ -1237,12 +1247,14 @@ router.get('/pipeline/health', async (_req: Request, res: Response) => {
               apikey: svcKey,
               Authorization: `Bearer ${svcKey}`,
             },
-            signal: pipelineFetchTimeout.signal,
+            signal: workersTimeout.signal,
           }
         ).catch(() => null),
       ]);
     } finally {
-      pipelineFetchTimeout.clear();
+      taskCountsTimeout.clear();
+      stuckTasksTimeout.clear();
+      workersTimeout.clear();
     }
 
     // Parse task counts

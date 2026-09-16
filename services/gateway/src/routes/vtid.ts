@@ -7,6 +7,24 @@ import { isVtidAllocatorEnabled, getSystemControl } from '../services/system-con
 
 const router = Router();
 
+// VTID-03964: /health's two Supabase fetches (ledger read + RPC probe) had no
+// timeout and ran sequentially — live staging measurement (during the
+// VTID-03954 investigation into the Command Hub Service Health panel
+// flapping other checks) caught this route taking as long as 14.7s on a
+// single request, far past the panel's own 6s per-check client-side
+// timeout. Bounded and parallelized for the same reason and in the same way
+// as VTID-03954/VTID-03964's other health routes.
+const VTID_HEALTH_FETCH_TIMEOUT_MS = 2500;
+
+function abortAfter(ms: number): { signal: AbortSignal; clear: () => void } {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), ms);
+  return {
+    signal: controller.signal,
+    clear: () => clearTimeout(timeoutId),
+  };
+}
+
 // ===========================================================================
 // VTID-01010: Target Role Enum (canonical)
 // ===========================================================================
@@ -371,29 +389,33 @@ router.get("/health", async (_req: Request, res: Response) => {
   try {
     const { supabaseUrl, svcKey } = getSupabaseConfig();
 
-    // Check 1: Ledger is readable (SELECT)
-    const readStart = Date.now();
-    try {
-      const readResp = await fetch(
-        supabaseUrl + "/rest/v1/vtid_ledger?limit=1",
-        { headers: { apikey: svcKey, Authorization: "Bearer " + svcKey } }
-      );
-      checks.ledger_read = {
-        ok: readResp.ok,
-        latency_ms: Date.now() - readStart,
-        error: readResp.ok ? undefined : `HTTP ${readResp.status}`,
-      };
-    } catch (e: any) {
-      checks.ledger_read = { ok: false, latency_ms: Date.now() - readStart, error: e.message };
-    }
+    // VTID-03964: these two checks are independent (neither depends on the
+    // other's result) — run them concurrently, each with its own bounded
+    // timeout, instead of sequentially and unbounded.
+    const readTimeout = abortAfter(VTID_HEALTH_FETCH_TIMEOUT_MS);
+    const rpcTimeout = abortAfter(VTID_HEALTH_FETCH_TIMEOUT_MS);
 
-    // Check 2: Ledger is writable (test via RPC or direct insert check)
-    // We use a SELECT to verify the table exists and is accessible for writes
-    // A true write test would require cleanup, so we just verify schema access
-    const writeStart = Date.now();
-    try {
+    const readStart = Date.now();
+    const rpcStart = Date.now();
+
+    const [ledgerReadCheck, vtidGeneratorCheck] = await Promise.all([
+      // Check 1: Ledger is readable (SELECT)
+      fetch(
+        supabaseUrl + "/rest/v1/vtid_ledger?limit=1",
+        { headers: { apikey: svcKey, Authorization: "Bearer " + svcKey }, signal: readTimeout.signal }
+      )
+        .then((readResp) => ({
+          ok: readResp.ok,
+          latency_ms: Date.now() - readStart,
+          error: readResp.ok ? undefined : `HTTP ${readResp.status}`,
+        }))
+        .catch((e: any) => ({ ok: false, latency_ms: Date.now() - readStart, error: e.message }))
+        .finally(() => readTimeout.clear()),
+      // Check 2: Ledger is writable (test via RPC or direct insert check)
+      // We use a SELECT to verify the table exists and is accessible for writes
+      // A true write test would require cleanup, so we just verify schema access.
       // Test that next_vtid RPC is accessible (this is required for create)
-      const rpcResp = await fetch(
+      fetch(
         supabaseUrl + "/rest/v1/rpc/next_vtid",
         {
           method: "POST",
@@ -403,16 +425,20 @@ router.get("/health", async (_req: Request, res: Response) => {
             Authorization: "Bearer " + svcKey,
           },
           body: JSON.stringify({ p_family: "DEV", p_module: "TEST" }),
+          signal: rpcTimeout.signal,
         }
-      );
-      checks.vtid_generator = {
-        ok: rpcResp.ok,
-        latency_ms: Date.now() - writeStart,
-        error: rpcResp.ok ? undefined : `HTTP ${rpcResp.status}`,
-      };
-    } catch (e: any) {
-      checks.vtid_generator = { ok: false, latency_ms: Date.now() - writeStart, error: e.message };
-    }
+      )
+        .then((rpcResp) => ({
+          ok: rpcResp.ok,
+          latency_ms: Date.now() - rpcStart,
+          error: rpcResp.ok ? undefined : `HTTP ${rpcResp.status}`,
+        }))
+        .catch((e: any) => ({ ok: false, latency_ms: Date.now() - rpcStart, error: e.message }))
+        .finally(() => rpcTimeout.clear()),
+    ]);
+
+    checks.ledger_read = ledgerReadCheck;
+    checks.vtid_generator = vtidGeneratorCheck;
 
     const allOk = Object.values(checks).every((c) => c.ok);
     return res.status(allOk ? 200 : 503).json({
