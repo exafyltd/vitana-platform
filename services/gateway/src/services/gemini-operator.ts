@@ -430,7 +430,13 @@ Returns checklist items with pass/fail status based on OASIS evidence.`,
     // (there is no live checkout on the gateway container to read from).
     {
       name: 'dev_search_codebase',
-      description: `Search the exafyltd/vitana-platform codebase (via the GitHub Search Code API, default branch "main") for a keyword, symbol name, or string literal. Read-only. Returns matching file paths, not full file content — call dev_read_file on a result to see the code. Developer/admin role only.`,
+      description: `Search a Vitana codebase (via the GitHub Search Code API, default branch "main") for a keyword, symbol name, or string literal. Read-only. Returns matching file paths, not full file content — call dev_read_file on a result to see the code. Developer/admin role only.
+
+Two repos, pass "repo" to pick — defaults to exafyltd/vitana-platform (backend/gateway + the internal Command Hub admin console) if omitted:
+- exafyltd/vitana-platform: gateway, backend services, the Command Hub frontend (services/gateway/src/frontend/command-hub/).
+- exafyltd/vitana-v1: the actual consumer-facing Vitana app frontend (React/TypeScript screens, components, hooks) — most frontend/UI work lives HERE, not in vitana-platform.
+
+KNOWN BLIND SPOT: GitHub's code search index excludes any file over 384KB. services/gateway/src/frontend/command-hub/app.js (vitana-platform) is ~2.5MB — this tool will ALWAYS return zero results for anything inside it, no matter the query. For that one file, skip straight to dev_read_file with an explicit path instead of concluding the content doesn't exist.`,
       parameters: {
         type: 'object',
         properties: {
@@ -441,6 +447,10 @@ Returns checklist items with pass/fail status based on OASIS evidence.`,
           path_glob: {
             type: 'string',
             description: 'Optional path prefix/substring to narrow results (e.g. "services/gateway/src/routes"). GitHub code search has no true glob support — this is a substring match, not a wildcard pattern.'
+          },
+          repo: {
+            type: 'string',
+            description: 'Which repo to search: "exafyltd/vitana-platform" (default) or "exafyltd/vitana-v1" (the consumer-facing frontend app). Any other value is rejected.'
           }
         },
         required: ['query']
@@ -448,17 +458,21 @@ Returns checklist items with pass/fail status based on OASIS evidence.`,
     },
     {
       name: 'dev_read_file',
-      description: `Read a file's content, or list a directory, from the exafyltd/vitana-platform GitHub repo. Defaults to the "main" branch. Read-only. Developer/admin role only.`,
+      description: `Read a file's content, or list a directory, from a Vitana GitHub repo. Defaults to the "main" branch and to exafyltd/vitana-platform. Read-only. Developer/admin role only. Pass "repo": "exafyltd/vitana-v1" for the consumer-facing frontend app repo (most frontend/UI code lives there, not in vitana-platform).`,
       parameters: {
         type: 'object',
         properties: {
           path: {
             type: 'string',
-            description: 'Repo-relative file or directory path, e.g. "services/gateway/src/services/gemini-operator.ts".'
+            description: 'Repo-relative file or directory path, e.g. "services/gateway/src/services/gemini-operator.ts" or "src/pages" for vitana-v1.'
           },
           ref: {
             type: 'string',
             description: 'Branch, tag, or commit SHA to read from. Defaults to "main".'
+          },
+          repo: {
+            type: 'string',
+            description: 'Which repo to read from: "exafyltd/vitana-platform" (default) or "exafyltd/vitana-v1" (the consumer-facing frontend app). Any other value is rejected.'
           }
         },
         required: ['path']
@@ -2332,10 +2346,46 @@ async function executeVerifyDeployChecklist(
 const OPERATOR_DEFAULT_REPO = 'exafyltd/vitana-platform';
 
 /**
+ * VTID-03946: dev_search_codebase/dev_read_file used to be hardcoded to
+ * OPERATOR_DEFAULT_REPO with no way to reach exafyltd/vitana-v1 at all —
+ * the repo holding most of the actual Vitana frontend (this repo's own
+ * frontend is just the internal Command Hub admin console). A live
+ * Operator conversation asked to scope frontend work reported "I don't
+ * yet see where the actual console UI lives" and asked the user 8
+ * clarifying questions for something the codebase already answers,
+ * because the tool could never have found it regardless of query wording.
+ * Each entry maps to the GitHub token that actually has read access to it
+ * — vitana-v1 reuses FRONTEND_DEPLOY_TOKEN (already provisioned for the
+ * PUBLISH-button frontend promotion, CLAUDE.md §8), not a new credential.
+ * Never accept an arbitrary repo string from the model — this allowlist is
+ * the security boundary.
+ */
+// Resolved lazily (a function, not a value) so a task-def env change to
+// FRONTEND_DEPLOY_TOKEN takes effect without a restart — same convention
+// as BEDROCK_ROLE_ARN (CLAUDE.md §2b) — rather than being frozen at
+// module-load time.
+const OPERATOR_ALLOWED_REPOS = ['exafyltd/vitana-platform', 'exafyltd/vitana-v1'] as const;
+function operatorRepoToken(repo: string): string | undefined {
+  return repo === OPERATOR_DEFAULT_REPO ? undefined : process.env.FRONTEND_DEPLOY_TOKEN;
+}
+
+function resolveOperatorRepo(requested: string | undefined): { repo: string; token?: string } | { error: string } {
+  const repo = requested && requested.trim() ? requested.trim() : OPERATOR_DEFAULT_REPO;
+  if (!(OPERATOR_ALLOWED_REPOS as readonly string[]).includes(repo)) {
+    return { error: `unknown_repo: "${repo}" is not allowlisted. Allowed: ${OPERATOR_ALLOWED_REPOS.join(', ')}` };
+  }
+  const token = operatorRepoToken(repo);
+  if (repo !== OPERATOR_DEFAULT_REPO && !token) {
+    return { error: `repo_token_not_configured: FRONTEND_DEPLOY_TOKEN is not set — cannot read "${repo}" from this environment.` };
+  }
+  return { repo, token };
+}
+
+/**
  * VTID-03835: dev_search_codebase — read-only GitHub code search.
  */
 async function executeDevSearchCodebase(
-  args: { query: string; path_glob?: string },
+  args: { query: string; path_glob?: string; repo?: string },
   threadId: string
 ): Promise<ToolExecutionResult> {
   if (process.env.OPERATOR_CODEBASE_READ_ENABLED !== 'true') {
@@ -2344,10 +2394,17 @@ async function executeDevSearchCodebase(
   if (!args.query || !args.query.trim()) {
     return { ok: false, error: 'query is required' };
   }
+  const resolved = resolveOperatorRepo(args.repo);
+  if ('error' in resolved) return { ok: false, error: resolved.error };
   try {
-    const results = await searchCode(OPERATOR_DEFAULT_REPO, args.query, args.path_glob);
-    console.log(`[VTID-03835] dev_search_codebase thread=${threadId} query="${args.query}" results=${results.length}`);
-    return { ok: true, data: { repo: OPERATOR_DEFAULT_REPO, query: args.query, results } };
+    // Only pass a 4th arg when there's a real token override — keeps the
+    // default-repo call shape identical to before this VTID (VTID-03835's
+    // own tests assert an exact 3-arg call for that path).
+    const results = resolved.token
+      ? await searchCode(resolved.repo, args.query, args.path_glob, resolved.token)
+      : await searchCode(resolved.repo, args.query, args.path_glob);
+    console.log(`[VTID-03835] dev_search_codebase thread=${threadId} repo=${resolved.repo} query="${args.query}" results=${results.length}`);
+    return { ok: true, data: { repo: resolved.repo, query: args.query, results } };
   } catch (err: any) {
     return { ok: false, error: `Codebase search failed: ${err.message}` };
   }
@@ -2357,7 +2414,7 @@ async function executeDevSearchCodebase(
  * VTID-03835: dev_read_file — read-only GitHub file/directory read.
  */
 async function executeDevReadFile(
-  args: { path: string; ref?: string },
+  args: { path: string; ref?: string; repo?: string },
   threadId: string
 ): Promise<ToolExecutionResult> {
   if (process.env.OPERATOR_CODEBASE_READ_ENABLED !== 'true') {
@@ -2366,10 +2423,14 @@ async function executeDevReadFile(
   if (!args.path || !args.path.trim()) {
     return { ok: false, error: 'path is required' };
   }
+  const resolved = resolveOperatorRepo(args.repo);
+  if ('error' in resolved) return { ok: false, error: resolved.error };
   try {
-    const result = await getFileContents(OPERATOR_DEFAULT_REPO, args.path, args.ref || 'main');
-    console.log(`[VTID-03835] dev_read_file thread=${threadId} path="${args.path}" ref="${args.ref || 'main'}" type=${result.type}`);
-    return { ok: true, data: { repo: OPERATOR_DEFAULT_REPO, ref: args.ref || 'main', ...result } };
+    const result = resolved.token
+      ? await getFileContents(resolved.repo, args.path, args.ref || 'main', resolved.token)
+      : await getFileContents(resolved.repo, args.path, args.ref || 'main');
+    console.log(`[VTID-03835] dev_read_file thread=${threadId} repo=${resolved.repo} path="${args.path}" ref="${args.ref || 'main'}" type=${result.type}`);
+    return { ok: true, data: { repo: resolved.repo, ref: args.ref || 'main', ...result } };
   } catch (err: any) {
     return { ok: false, error: `File read failed: ${err.message}` };
   }
@@ -3014,14 +3075,14 @@ export async function executeTool(
       // VTID-03835: Operator Console codebase read access
       case 'dev_search_codebase':
         result = await executeDevSearchCodebase(
-          args as { query: string; path_glob?: string },
+          args as { query: string; path_glob?: string; repo?: string },
           threadId
         );
         break;
 
       case 'dev_read_file':
         result = await executeDevReadFile(
-          args as { path: string; ref?: string },
+          args as { path: string; ref?: string; repo?: string },
           threadId
         );
         break;
@@ -3364,11 +3425,13 @@ ${lines.join('\n')}`;
  * Refresh commands (run from repo root): `graphify god-nodes --top 15`,
  * `repowise health`, `repowise status`. Last generated 2026-09-15.
  */
-const CODEBASE_OVERVIEW_BLOCK = `**Codebase orientation (vitana-platform, refreshed 2026-09-15):**
+const CODEBASE_OVERVIEW_BLOCK = `**Codebase orientation (vitana-platform, refreshed 2026-09-16):**
 - Deployable services: Gateway (services/gateway/ — this process), OASIS Operator, OASIS Projector, Verification Engine, Worker Runner. Full table + AWS ECS names: CLAUDE.md §1b/§2.
-- Architectural hubs (most-connected symbols, i.e. touching these has the widest blast radius): RunContext, function_tool(), summarize(), emitOasisEvent(), getSupabase(), _dispatch(), renderApp() (Command Hub frontend), gatewayApiCall(), buildContextHeaders(), requireAuth(), developerGate().
+- TWO repos, not one. This is exafyltd/vitana-platform (backend/gateway + the internal Command Hub admin console at services/gateway/src/frontend/command-hub/app.js). The consumer-facing Vitana app — most frontend/UI screens, components, hooks — lives in a SEPARATE repo, exafyltd/vitana-v1, which dev_search_codebase/dev_read_file can also reach via their "repo" parameter. Never conclude frontend code "doesn't exist" or ask the user where the UI lives before trying repo:"exafyltd/vitana-v1".
+- Architectural hubs (most-connected symbols, i.e. touching these has the widest blast radius): RunContext, function_tool(), summarize(), emitOasisEvent(), getSupabase(), _dispatch(), renderApp() (Command Hub frontend, services/gateway/src/frontend/command-hub/app.js), gatewayApiCall(), buildContextHeaders(), requireAuth(), developerGate().
 - Known health hotspot: services/gateway/src/routes/orb-live.ts (lowest maintainability score in the repo — large, stateful, high change-risk file).
-- For anything beyond this summary — a specific file, function, recent change, or "where is X implemented" — call dev_search_codebase / dev_read_file (real GitHub API, VTID-03835) or dev_db_query (VTID-03837) rather than guessing from this block alone.`;
+- dev_search_codebase blind spot: GitHub's code search index excludes files over 384KB. app.js above is ~2.5MB, so a search will ALWAYS return zero hits for anything inside it regardless of query — this is a tool limitation, not evidence the content is missing. Use dev_read_file with an explicit path for that file instead.
+- For anything beyond this summary — a specific file, function, recent change, or "where is X implemented" — call dev_search_codebase / dev_read_file (real GitHub API, VTID-03835/VTID-03946) or dev_db_query (VTID-03837) rather than guessing from this block alone.`;
 
 /**
  * VTID-01023: System prompt for Operator Chat Gemini/Vertex integration
