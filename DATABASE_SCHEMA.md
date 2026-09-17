@@ -205,6 +205,61 @@ VALUES ('<uuid>', '<who/what this account is>') ON CONFLICT DO NOTHING;
 
 ---
 
+### service_bot_accounts
+**Purpose:** Accounts that are service/automation identities, not real
+community members — must never trigger a tenant-wide fan-out addressed to
+real users (VTID-03990). Sibling of `notification_test_actors` above, but
+gating a different mechanism: that table suppresses *notifications* fired
+by a test actor's content; this one stops the *content itself* (a
+tenant-wide chat broadcast) from ever being generated on a service
+account's behalf in the first place.
+
+**Used by:**
+- `fire_welcome_chat_on_membership()` — the VTID-03089 DB trigger on
+  `user_tenants` AFTER INSERT — early-return + mark-sent when the new
+  primary member is in this table
+- `sendWelcomeChatMessages()` (`services/gateway/src/services/welcome-chat-service.ts`)
+  — the legacy `/auth/login` first-login path, same trigger condition,
+  fails closed (skips) if the lookup itself errors
+- Defined in this repo, migration `20260917084341_vtid_03990_service_bot_accounts_skip_welcome_chat.sql`
+
+**Schema:**
+```sql
+CREATE TABLE service_bot_accounts (
+  user_id    UUID PRIMARY KEY,
+  label      TEXT NOT NULL,
+  reason     TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- RLS enabled, zero policies: service_role only.
+```
+
+**⚠️ Why it exists (VTID-03990):** on 2026-09-16 11:38 UTC two automation
+identities (`claude-code-agent@exafy.io`, `operator-autopilot@exafy.io`)
+were provisioned directly into `user_tenants` as primary members. Neither
+matched the single hardcoded Vitana-bot-user check the trigger already had,
+so it ran normally and fanned an identical "Hello! My name is ... I just
+joined the community" DM out to every other tenant member — **222 and 223
+real recipients respectively, within milliseconds of each account's
+creation** (445 real chat_messages rows total). Confirmed via a read-only
+query against production; nothing was deleted or recalled — a delivered DM
+can't be un-sent, same lesson as `notification_test_actors`'s own incident.
+
+**Unlike `notification_test_actors`, this guard fails CLOSED.** A
+notification silently dropped costs nothing visible; a tenant-wide chat
+broadcast silently sent to 445 real inboxes is the exact incident this
+table exists to prevent, so an error resolving the flag skips the
+broadcast rather than risking a repeat.
+
+**Registering a new service/automation account:**
+```sql
+INSERT INTO service_bot_accounts (user_id, label, reason)
+VALUES ('<uuid>', '<short identifier>', '<why this is a service account, not a member>')
+ON CONFLICT (user_id) DO NOTHING;
+```
+
+---
+
 ### Wallet System (USD / Credits / VTNA) — added 2026-07-17
 
 **This is the live, production system backing the wallet UI** (`useWallet.ts`
@@ -676,6 +731,7 @@ CREATE TABLE my_new_table (
 
 | Date | Change | Author | VTID |
 |------|--------|--------|------|
+| 2026-09-17 | Added `service_bot_accounts` allowlist + guarded the VTID-03089 welcome-chat trigger and its `/auth/login` TS mirror against it. Two service/automation accounts (claude-code-agent, operator-autopilot) provisioned directly into `user_tenants` on 2026-09-16 fanned an identical intro DM out to 445 real community members — confirmed via read-only production query, nothing recalled. Migration `20260917084341_vtid_03990_service_bot_accounts_skip_welcome_chat.sql`. | Claude | VTID-03990 |
 | 2026-09-13 | `dev_autopilot_outcomes.source_type` CHECK widened from the original `('dev_autopilot','dev_autopilot_impact')` pair to the full executor-lane allowlist (`missing-test-scanner`, `test-contract-failure-scanner`, `dev_autopilot`, `dev_autopilot_impact`, `operator_onramp`) — migration `20260913100000_vtid_03844_outcomes_source_type_allowlist.sql`. The constraint had never followed VTID-02984's single allowlist or VTID-03820's `operator_onramp`, and `recordOutcome()` carried its own copy of the stale pair, so operator on-ramp executions produced no outcome rows at all (observed on staging 2026-09-13). A gateway test reads the migration and fails if its list drifts from `EXECUTABLE_RECOMMENDATION_SOURCE_TYPES`. Migration ships as a file; apply via `RUN-MIGRATION.yml`. | Claude | VTID-03844 |
 | 2026-07-21 | Added missing `wallet_transactions_from_user_id_fkey`/`_to_user_id_fkey` (NOT VALID, targeting `profiles.user_id`) — the Wallet's "Recent Activity" transaction list had never worked; every `fetchTransactions` PostgREST embed 400'd for lack of any FK on `from_user_id`/`to_user_id`. Found while verifying the VTNA/Credits merge deploy on AWS staging; unrelated pre-existing bug. Verified with a direct PostgREST request (200 OK, real profile data resolved). | Claude | — |
 | 2026-07-20 | Merged VTNA and Credits into one "VTNA Credits" currency; stripped staking-APY/governance/appreciation copy (previous cause of an Apple 3.1.5(iii) rejection) from the two dedicated VTNA popups and every send/request/exchange/booking currency picker in vitana-v1; defensive DB migration folding any nonzero VTNA balance into CREDITS (no-op, verified). Also fixed an unrelated bug found in the same pass: `WalletMasterActionPopup`'s quick-action menu fabricated free balance and silently destroyed real USD balance via a fake withdrawal. | Claude | BOOTSTRAP-VTNA-CREDITS-MERGE |

@@ -54,6 +54,25 @@ export async function sendWelcomeChatMessages(
       return { sent: 0, skipped: true, reason: 'already_sent' };
     }
 
+    // VTID-03990: never broadcast on behalf of a registered service/
+    // automation account. Two such accounts (claude-code-agent,
+    // operator-autopilot) were provisioned directly and, before this
+    // guard existed, fanned an identical intro DM out to ~445 real
+    // community members via this exact code path (or its DB-trigger
+    // twin, fire_welcome_chat_on_membership).
+    const { data: botAccount, error: botAccountErr } = await repo.fetchServiceBotAccountFlag(supabase, userId);
+
+    if (botAccountErr) {
+      console.warn(`${tag} service_bot_accounts lookup failed for ${userId}: ${botAccountErr.message}`);
+      return { sent: 0, skipped: true, reason: 'service_bot_account_check_failed' };
+    }
+
+    if (botAccount) {
+      console.log(`${tag} ${userId} is a registered service/automation account, skipping fan-out`);
+      await markWelcomeSent(userId, supabase);
+      return { sent: 0, skipped: true, reason: 'service_bot_account' };
+    }
+
     // 2. Count community members in this tenant (exclude self + bot)
     const { count, error: countErr } = await repo.countTenantMembersExcluding(supabase, tenantId, userId, VITANA_BOT_USER_ID);
 
