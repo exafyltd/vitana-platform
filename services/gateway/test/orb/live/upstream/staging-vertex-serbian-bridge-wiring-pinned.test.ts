@@ -1,19 +1,35 @@
 /**
- * VTID-04000 — the staging task def must wire the Vertex Serbian bridge's
- * secret/env vars the same way the ERP-bridge secret is wired
- * (VTID-03840): OPTIONAL, resolved via `aws secretsmanager describe-secret`
- * at deploy time, and left completely untouched on the task definition
- * when the secret does not exist yet — never a hard `exit 1` that would
- * block every other staging deploy until an operator runs
- * scripts/aws/setup-vertex-serbian-bridge.sh --apply.
+ * VTID-04000 — the staging task def wires the Vertex Serbian bridge's four
+ * env vars UNCONDITIONALLY, as plain values, alongside AURORA_CA_BUNDLE_PATH
+ * etc. — not as an AWS-Secrets-Manager-backed OPTIONAL secret the way the
+ * ERP-bridge token is (VTID-03840).
  *
- * Project id `project-da3eb05a-c86e-47cb-85f` (Vitanaland) and location
- * `global` are the platform owner's own values for the new, dedicated GCP
- * project (never `lovable-vitana-vers1`) — `global` because they enabled
- * the Live API as a global-endpoint service; Google's own docs confirm the
- * Vertex Live WebSocket endpoint (`wss://{location}-aiplatform.googleapis.com`)
- * accepts `global` as a literal location the same way it accepts any
- * region, so no code change was needed in `vertex-live-client.ts` for this.
+ * This superseded an earlier design (AWS Secrets Manager +
+ * `aws secretsmanager describe-secret`) after the platform owner hit GCP's
+ * org-wide `iam.disableServiceAccountKeyCreation` policy live, even as org
+ * Owner — no downloadable service-account key could ever exist to put in
+ * Secrets Manager. The replacement is Workload Identity Federation (WIF):
+ * a Workload Identity Pool (`vitana-aws-pool`) + AWS provider
+ * (`vitana-aws-provider`) trusting AWS account `472838866351` directly, with
+ * `roles/iam.workloadIdentityUser` granted to the AWS principal that runs
+ * this workflow. The credential config this produces
+ * (`gcloud iam workload-identity-pools create-cred-config`'s output, type
+ * `external_account`) contains no private key — only federation metadata
+ * (pool/provider names, STS endpoints) — which is why Google's own docs
+ * call it safe to store in plain text, and why it is wired as a plain `value`
+ * here rather than routed through Secrets Manager. `gcp-adc-bootstrap.ts`
+ * and `google-auth-library`'s `GoogleAuth()` both already handle an
+ * `external_account` credential JSON generically — no code change needed
+ * for either to consume this.
+ *
+ * Project id `project-da3eb05a-c86e-47cb-85f` (Vitanaland, GCP project
+ * number `20926255361`) and location `global` are the platform owner's own
+ * values for the new, dedicated GCP project (never `lovable-vitana-vers1`)
+ * — `global` because they enabled the Live API as a global-endpoint
+ * service; Google's own docs confirm the Vertex Live WebSocket endpoint
+ * (`wss://{location}-aiplatform.googleapis.com`) accepts `global` as a
+ * literal location the same way it accepts any region, so no code change
+ * was needed in `vertex-live-client.ts` for this.
  */
 
 import * as fs from 'fs';
@@ -30,36 +46,41 @@ const PROD_WORKFLOW = path.resolve(
 
 const stagingYml = fs.readFileSync(STAGING_WORKFLOW, 'utf8');
 
-describe('VTID-04000: staging wires the Vertex Serbian bridge, optionally', () => {
-  it('resolves the GCP service account secret ARN via describe-secret, not a hardcoded ARN', () => {
-    expect(stagingYml).toMatch(
-      /aws secretsmanager describe-secret --secret-id vitana\/gateway\/staging\/gcp-service-account-json/,
-    );
+describe('VTID-04000: staging wires the Vertex Serbian bridge (WIF), unconditionally', () => {
+  it('never resolves a GCP service-account secret via describe-secret — there is no key to store', () => {
+    expect(stagingYml).not.toMatch(/gcp-service-account-json/);
+    expect(stagingYml).not.toMatch(/SEC_GCP_SA/);
   });
 
-  it('never fails the deploy when the secret is absent — falls back to an empty SEC_GCP_SA', () => {
-    const block = stagingYml.slice(
-      stagingYml.indexOf('SEC_GCP_SA=$(aws secretsmanager'),
-      stagingYml.indexOf('TASK_ROLE_ARN=$('),
-    );
-    expect(block).toMatch(/if \[ -z "\$SEC_GCP_SA" \] \|\| \[ "\$SEC_GCP_SA" = "None" \]/);
-    expect(block).toContain('SEC_GCP_SA=""');
-    expect(block).not.toMatch(/exit 1/);
+  it('assembles the WIF external_account credential config as a static, non-secret variable', () => {
+    expect(stagingYml).toMatch(/GCP_CRED_CONFIG='\{.*"type":"external_account".*\}'/);
   });
 
-  it('passes the resolved ARN into the jq filter as $SEC_GCP_SA', () => {
-    expect(stagingYml).toMatch(/--arg SEC_GCP_SA "\$SEC_GCP_SA"/);
+  it('pins the real pool/provider/project the platform owner provisioned via Cloud Shell', () => {
+    expect(stagingYml).toContain(
+      '//iam.googleapis.com/projects/20926255361/locations/global/workloadIdentityPools/vitana-aws-pool/providers/vitana-aws-provider',
+    );
+    expect(stagingYml).toContain(
+      'vitanaland@project-da3eb05a-c86e-47cb-85f.iam.gserviceaccount.com',
+    );
+    expect(stagingYml).toContain('sts.googleapis.com/v1/token');
   });
 
-  it('only wires the env vars and secret inside an if $SEC_GCP_SA != "" guard, mirroring the ERP-bridge pattern', () => {
-    const guardBlock = stagingYml.slice(
-      stagingYml.indexOf('if $SEC_GCP_SA != "" then'),
-      stagingYml.indexOf('del(.taskDefinitionArn'),
+  it('passes the credential config into the jq filter as $GCP_CRED_CONFIG', () => {
+    expect(stagingYml).toMatch(/--arg GCP_CRED_CONFIG "\$GCP_CRED_CONFIG"/);
+  });
+
+  it('wires all four vars UNCONDITIONALLY, in the same strip/add block as AURORA_CA_BUNDLE_PATH — no if-guard', () => {
+    const jqBlock = stagingYml.slice(
+      stagingYml.indexOf('.containerDefinitions[0].environment |='),
+      stagingYml.indexOf('.containerDefinitions[0].secrets |='),
     );
-    expect(guardBlock).toContain('GOOGLE_CLOUD_PROJECT');
-    expect(guardBlock).toContain('VERTEX_AI_LOCATION');
-    expect(guardBlock).toContain('VERTEX_SERBIAN_BRIDGE_ENABLED');
-    expect(guardBlock).toContain('GCP_SERVICE_ACCOUNT_JSON');
+    // The old design's conditional guard must be gone entirely for this var.
+    expect(jqBlock).not.toMatch(/if \$SEC_GCP_SA/);
+    expect(jqBlock).toContain('"GOOGLE_CLOUD_PROJECT","VERTEX_AI_LOCATION"');
+    expect(jqBlock).toContain('"VERTEX_SERBIAN_BRIDGE_ENABLED"');
+    expect(jqBlock).toContain('"GCP_SERVICE_ACCOUNT_JSON") | not) ]');
+    expect(jqBlock).toContain('{name:"AURORA_CA_BUNDLE_PATH"');
   });
 
   it('pins the exact project id and global location the platform owner gave', () => {
@@ -72,26 +93,27 @@ describe('VTID-04000: staging wires the Vertex Serbian bridge, optionally', () =
     );
   });
 
-  it('upserts the GCP_SERVICE_ACCOUNT_JSON secret pointed at $SEC_GCP_SA', () => {
+  it('wires GCP_SERVICE_ACCOUNT_JSON as a plain environment value pointed at $GCP_CRED_CONFIG, not a secret', () => {
     expect(stagingYml).toMatch(
-      /\{name:"GCP_SERVICE_ACCOUNT_JSON",\s*valueFrom:\$SEC_GCP_SA\}/,
+      /\{name:"GCP_SERVICE_ACCOUNT_JSON", value:\$GCP_CRED_CONFIG\}/,
     );
   });
 
-  it('strips inherited GOOGLE_CLOUD_PROJECT/VERTEX_AI_LOCATION/VERTEX_SERBIAN_BRIDGE_ENABLED first, so a stale value cannot survive', () => {
-    const guardBlock = stagingYml.slice(
-      stagingYml.indexOf('if $SEC_GCP_SA != "" then'),
-      stagingYml.indexOf('del(.taskDefinitionArn'),
+  it('strips any GCP_SERVICE_ACCOUNT_JSON left in .secrets, for migration hygiene, without re-adding it there', () => {
+    const secretsBlock = stagingYml.slice(
+      stagingYml.indexOf('.containerDefinitions[0].secrets |='),
+      stagingYml.indexOf('| ( if $SEC_ERP_BRIDGE'),
     );
-    const strip = guardBlock.slice(0, guardBlock.indexOf('| not) ]'));
-    expect(strip).toContain('GOOGLE_CLOUD_PROJECT');
-    expect(strip).toContain('VERTEX_AI_LOCATION');
-    expect(strip).toContain('VERTEX_SERBIAN_BRIDGE_ENABLED');
+    const strip = secretsBlock.slice(0, secretsBlock.indexOf('| not) ]'));
+    expect(strip).toContain('"GCP_SERVICE_ACCOUNT_JSON"');
+    const add = secretsBlock.slice(secretsBlock.indexOf('+ [ {'));
+    expect(add).not.toContain('GCP_SERVICE_ACCOUNT_JSON');
   });
 
   it('is NOT wired on prod — promoting this is a separate, later, human decision', () => {
     const prodYml = fs.readFileSync(PROD_WORKFLOW, 'utf8');
     expect(prodYml).not.toContain('VERTEX_SERBIAN_BRIDGE_ENABLED');
-    expect(prodYml).not.toContain('gcp-service-account-json');
+    expect(prodYml).not.toContain('GCP_SERVICE_ACCOUNT_JSON');
+    expect(prodYml).not.toContain('workloadIdentityPools');
   });
 });

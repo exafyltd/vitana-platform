@@ -151,7 +151,11 @@ option so the owner could push their own already-downloaded
 service-account key straight to AWS Secrets Manager themselves, without
 ever pasting the key into chat — `gcloud` is skipped entirely on that path,
 only the AWS upload runs. Default (no `--key-file`) behavior — gcloud
-creates the service account/key itself — is unchanged.
+creates the service account/key itself — is unchanged. **This flow was
+superseded before it was ever wired into the deploy workflow — see below —
+but the script and its `--key-file` option are left in place, unused for
+this deployment, in case a future GCP org without the blocking policy
+below wants the simpler Secrets-Manager path.**
 
 Verified `global` needs no code change before wiring it: Google's own docs
 confirm the Vertex Live WebSocket endpoint
@@ -161,26 +165,95 @@ literal location exactly like any region — `vertex-live-client.ts`'s
 interpolation, so `global` produces `wss://global-aiplatform.googleapis.com/...`
 correctly with no edit needed.
 
-`AWS-STAGE-DEPLOY-GATEWAY.yml` now resolves
+### Pivot: GCP org policy blocked service-account keys — Workload Identity Federation instead
+
+The originally-planned design — `AWS-STAGE-DEPLOY-GATEWAY.yml` resolving
 `vitana/gateway/staging/gcp-service-account-json` via
-`aws secretsmanager describe-secret`, the same OPTIONAL pattern the
-ERP-bridge secret already uses (VTID-03840) — absent secret leaves
-`GOOGLE_CLOUD_PROJECT`/`VERTEX_AI_LOCATION`/`VERTEX_SERBIAN_BRIDGE_ENABLED`/
-`GCP_SERVICE_ACCOUNT_JSON` untouched on the task def and never fails the
-deploy; once the owner runs the provisioning script with `--apply`, the
-next staging deploy picks it up automatically with
-`GOOGLE_CLOUD_PROJECT=project-da3eb05a-c86e-47cb-85f`,
-`VERTEX_AI_LOCATION=global`, `VERTEX_SERBIAN_BRIDGE_ENABLED=true`.
+`aws secretsmanager describe-secret` the same OPTIONAL way the ERP-bridge
+secret does (VTID-03840) — was never wired, because it depends on a
+downloadable service-account private key existing, and one never could.
+The platform owner hit GCP's org-wide policy
+`iam.disableServiceAccountKeyCreation` live, in the Console, repeatedly,
+even as confirmed org Owner ("I did this 15 times, and still this policy
+is blocking me"). This is an org-level constraint on the ACTION, not a
+permissions gap on any one identity — granting more access (to the owner
+or to this session) could not have helped, because the block applies
+regardless of who attempts it.
+
+**Replacement: Workload Identity Federation (WIF) for AWS**, Google's own
+keyless recommendation for exactly this situation. The platform owner
+provisioned it themselves via Google Cloud Shell (their own suggestion),
+running three `gcloud` commands supplied by this session:
+1. `gcloud iam workload-identity-pools create vitana-aws-pool ...`
+2. `gcloud iam workload-identity-pools providers create-aws
+   vitana-aws-provider --workload-identity-pool=vitana-aws-pool
+   --account-id=472838866351 ...` — trusts AWS account `472838866351`
+   directly.
+3. `gcloud iam service-accounts add-iam-policy-binding
+   vitanaland@project-da3eb05a-c86e-47cb-85f.iam.gserviceaccount.com
+   --role=roles/iam.workloadIdentityUser
+   --member="principal://iam.googleapis.com/projects/20926255361/locations/global/workloadIdentityPools/vitana-aws-pool/subject/arn:aws:iam::472838866351:user/claude-code-aws-agent"`
+   — lets that one AWS principal impersonate the GCP service account by
+   presenting its own AWS credentials (a signed `GetCallerIdentity` call),
+   no GCP key involved.
+4. `gcloud iam workload-identity-pools create-cred-config` — generates the
+   authoritative `external_account`-type credential config JSON. Google's
+   own docs state this file is safe to store in plain text / source
+   control: it contains no private key, only federation metadata (pool,
+   provider, STS endpoint URLs) — nothing an attacker could use without
+   also controlling the trusted AWS principal's own credentials.
+
+All four commands were run for real in Cloud Shell and their output
+(including the final `create-cred-config` JSON) was pasted back into this
+session verbatim — this is Google's own authoritative tool output against
+the real, live pool/provider/binding, not hand-constructed.
+
+**Wiring:** `AWS-STAGE-DEPLOY-GATEWAY.yml` now assigns the credential
+config to a static `GCP_CRED_CONFIG` bash variable (no `describe-secret`
+call — there is no secret to resolve) and wires all four vars
+UNCONDITIONALLY, in the same strip/re-add block as `AURORA_CA_BUNDLE_PATH`
+— no `if` guard, because there is no absent-vs-present secret state to
+guard against any more:
+- `GOOGLE_CLOUD_PROJECT=project-da3eb05a-c86e-47cb-85f`
+- `VERTEX_AI_LOCATION=global`
+- `VERTEX_SERBIAN_BRIDGE_ENABLED=true`
+- `GCP_SERVICE_ACCOUNT_JSON=$GCP_CRED_CONFIG` (a plain `value`, not
+  `valueFrom` a Secrets Manager ARN)
+
+No code changes were needed to consume this: `gcp-adc-bootstrap.ts`
+already handles any valid JSON generically (writes it to a file, points
+`GOOGLE_APPLICATION_CREDENTIALS` at it), and `google-auth-library`'s
+`GoogleAuth()` auto-detects `type:"external_account"` and resolves AWS
+credentials itself (checking AWS env vars first, then the ECS task-role
+container-credentials endpoint).
 
 TEST: `test/orb/live/upstream/staging-vertex-serbian-bridge-wiring-pinned.test.ts`
-(8 tests: optional describe-secret resolution, never-exit-1, the jq
-`--arg`/guard/strip/upsert shape, the exact project id + `global` location
-pinned, and confirmed NOT wired on prod). `tsc --noEmit` clean;
+(9 tests, rewritten for the WIF shape: no describe-secret/no `SEC_GCP_SA`
+anywhere, the credential config assembled as a static non-secret variable,
+the real pool/provider/project pinned by literal string match, the jq
+`--arg` wiring, all four vars proven UNCONDITIONAL — no `if`-guard — in the
+same block as `AURORA_CA_BUNDLE_PATH`, the exact project id + `global`
+location, `GCP_SERVICE_ACCOUNT_JSON` wired as `value:$GCP_CRED_CONFIG` not
+`valueFrom`, the migration-hygiene strip from `.secrets` with no re-add
+there, and confirmed NOT wired on prod). `tsc --noEmit` clean;
 `staging-deploy-workflow-bash-syntax.test.ts` still 7/7 (the workflow's
 `run:` blocks stay valid bash and the jq program still has no bare
-apostrophe). Not yet independently confirmed live — the next real signal
-is the owner running the provisioning script and this wiring taking effect
-on the next staging deploy.
+apostrophe) — both re-run together, 2/2 suites, 16/16 tests passing.
+
+**Not yet independently confirmed against a live token exchange.**
+Verifying the WIF credential config actually resolves a working GCP OAuth
+token locally (e.g. via `google-auth-library`'s
+`load_credentials_from_file()` + `.refresh()`) was attempted and was
+blocked by this session's own sandbox safety layer, which flagged writing/
+using this class of federated-credential config (it matches a
+containment-escape-shaped pattern — the config's `credential_source` URLs
+point at the AWS instance-metadata IP, `169.254.169.254`) — this session
+did not attempt to route around that block. This config is Google's own
+authoritative output against the real, live pool/provider/binding, not
+hand-constructed, but it has not been independently exercised end-to-end
+by this session. The real signal is still the next real `sr` session on
+staging actually authenticating and producing audio — confirm via
+`oasis_events` reporting `reason:'vertex_serbian_bridge'`.
 
 ## Post-merge finding: pre-existing Vertex/LiveKit parity gap (not this VTID's regression)
 
