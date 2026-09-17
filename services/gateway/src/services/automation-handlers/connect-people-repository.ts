@@ -12,11 +12,31 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { fetchExcludedTestServiceAccountIds } from '../../lib/excluded-test-service-accounts';
 
 // ==================== user_tenants ====================
 
+/**
+ * VTID-03991: excludes registered test/service/automation accounts
+ * (service_bot_accounts + notification_test_actors) — every handler in
+ * this file iterates this result and notifies/matches/introduces each row
+ * as if it were a real member. Without this, a service account is a
+ * candidate for "someone shares your interest", a daily match delivery
+ * notification, and a group recommendation push, none of which are
+ * meaningful for an account nobody reads notifications on, and any of
+ * which could surface that account's name to a REAL matched/introduced
+ * peer.
+ */
 export async function fetchPrimaryTenantUsers(supabase: SupabaseClient, tenantId: string) {
-  return supabase.from('user_tenants').select('user_id').eq('tenant_id', tenantId).eq('is_primary', true);
+  const [result, excludedIds] = await Promise.all([
+    supabase.from('user_tenants').select('user_id').eq('tenant_id', tenantId).eq('is_primary', true),
+    fetchExcludedTestServiceAccountIds(supabase),
+  ]);
+  if (result.error || !result.data) return result;
+  return {
+    ...result,
+    data: result.data.filter((row: any) => !excludedIds.has(String(row.user_id))),
+  };
 }
 
 // ==================== user_notification_preferences ====================

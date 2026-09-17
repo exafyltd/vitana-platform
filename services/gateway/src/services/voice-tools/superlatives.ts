@@ -20,6 +20,7 @@
  */
 
 import { SupabaseClient } from '@supabase/supabase-js';
+import { fetchExcludedTestServiceAccountIds } from '../../lib/excluded-test-service-accounts';
 import * as repo from './superlatives-repository';
 
 export type Pillar = 'nutrition' | 'hydration' | 'exercise' | 'sleep' | 'mental';
@@ -49,12 +50,20 @@ export interface SuperlativeError {
 }
 
 /**
- * Returns the set of user_ids who have opted out of community visibility.
- * Used to filter every superlative response.
+ * Returns the set of user_ids who have opted out of community visibility,
+ * plus (VTID-03991) any registered test/service/automation account — so a
+ * voice "who is the newest member?" / "who has the highest Vitana Index?"
+ * query can never answer with a bot's name. Used to filter every
+ * superlative response.
  */
 async function getHiddenUserIds(sb: SupabaseClient): Promise<Set<string>> {
-  const { data } = await repo.fetchHiddenCommunityProfileUserIds(sb);
-  return new Set<string>((data || []).map((r: any) => String(r.user_id)));
+  const [{ data }, excludedTestServiceIds] = await Promise.all([
+    repo.fetchHiddenCommunityProfileUserIds(sb),
+    fetchExcludedTestServiceAccountIds(sb),
+  ]);
+  const hidden = new Set<string>((data || []).map((r: any) => String(r.user_id)));
+  for (const id of excludedTestServiceIds) hidden.add(id);
+  return hidden;
 }
 
 /** Hydrate ProfileCard rows from app_users + profiles for a given list of user_ids. */

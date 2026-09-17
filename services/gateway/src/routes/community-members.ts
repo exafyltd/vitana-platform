@@ -20,6 +20,7 @@
 import { Router, Request, Response } from 'express';
 import { requireAuth, requireTenant, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { getSupabase } from '../lib/supabase';
+import { fetchExcludedTestServiceAccountIds } from '../lib/excluded-test-service-accounts';
 import * as repo from './community-members-repository';
 
 const router = Router();
@@ -53,8 +54,12 @@ router.get('/community/members/count', requireAuth, requireTenant, async (req: R
     return res.status(500).json({ ok: false, error: 'supabase_unavailable' });
   }
 
-  const { data: hiddenRows } = await repo.fetchHiddenCommunityProfileUserIds(supabase);
+  const [{ data: hiddenRows }, excludedTestServiceIds] = await Promise.all([
+    repo.fetchHiddenCommunityProfileUserIds(supabase),
+    fetchExcludedTestServiceAccountIds(supabase),
+  ]);
   const hiddenIds = new Set<string>((hiddenRows || []).map((r: any) => String(r.user_id)));
+  for (const id of excludedTestServiceIds) hiddenIds.add(id);
 
   const { count, error } = await repo.countProfilesExcludingSelf(supabase, identity.user_id);
 
@@ -63,8 +68,9 @@ router.get('/community/members/count', requireAuth, requireTenant, async (req: R
     return res.status(500).json({ ok: false, error: error.message });
   }
 
-  // The count above is the total profiles minus self. Subtract hidden ones.
-  // For small N this is fine; promote to a SQL-side view if it ever matters.
+  // The count above is the total profiles minus self. Subtract hidden ones
+  // (VTID-03991: including registered test/service accounts). For small N
+  // this is fine; promote to a SQL-side view if it ever matters.
   const total = Math.max(0, (count ?? 0) - hiddenIds.size);
   return res.json({ ok: true, total });
 });
@@ -92,8 +98,17 @@ router.get('/community/members', requireAuth, requireTenant, async (req: Request
   // (PostgREST doesn't expose a FK between profiles and
   // global_community_profiles to inner-join here). Default for new signups
   // is is_visible=true so the hidden list is normally tiny / empty.
-  const { data: hiddenRows } = await repo.fetchHiddenCommunityProfileUserIds(supabase);
+  //
+  // VTID-03991: also exclude registered test/service/automation accounts
+  // (service_bot_accounts + notification_test_actors) — this is the "who's
+  // new" directory, exactly the surface VTID-03990's incident showed such
+  // an account can otherwise appear at the TOP of, sorted by newest.
+  const [{ data: hiddenRows }, excludedTestServiceIds] = await Promise.all([
+    repo.fetchHiddenCommunityProfileUserIds(supabase),
+    fetchExcludedTestServiceAccountIds(supabase),
+  ]);
   const hiddenIds = new Set<string>((hiddenRows || []).map((r: any) => String(r.user_id)));
+  for (const id of excludedTestServiceIds) hiddenIds.add(id);
 
   const { data, error } = await repo.buildMembersListQuery(supabase, {
     selfUserId: identity.user_id,
@@ -112,8 +127,12 @@ router.get('/community/members', requireAuth, requireTenant, async (req: Request
   let filtered = rows.filter((r) => !hiddenIds.has(String(r.user_id)));
 
   // Apply dance filter in TS (small N today; promote to SQL when matters).
+  // VTID-03992: was `rows.filter(...)` — re-filtering from the RAW,
+  // unfiltered rows silently undid the hidden-profile/bot-exclusion filter
+  // above whenever a dance filter was present. Must filter `filtered`, not
+  // `rows`.
   if (danceFilter) {
-    filtered = rows.filter((r) => {
+    filtered = filtered.filter((r) => {
       const prefs = r.dance_preferences || {};
       const varieties: string[] = Array.isArray(prefs.varieties)
         ? prefs.varieties.map((v: any) => String(v).toLowerCase())
