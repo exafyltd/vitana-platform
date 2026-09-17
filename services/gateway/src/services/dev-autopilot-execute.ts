@@ -59,6 +59,8 @@ import {
 import { dispatchExecutorJobAws } from './aws-ecs-admin';
 // VTID-04005: claim-time environment stamp + ownership filter (shared table, two gateways).
 import { claimStamp, filterOwnedExecutions } from './dev-autopilot-env-ownership';
+// VTID-04006: single-shot vs agent executor selection.
+import { resolveExecutorMode } from './autopilot-agent/executor-mode';
 
 import { buildReminders, remindersEnabled, renderRemindersBlock } from './watcher/reminder';
 import { recordShown } from './watcher/feedback';
@@ -1483,6 +1485,15 @@ export async function runExecutionSession(
       error: reason,
       session_id: `pr-flood-block-${executionId.slice(0, 8)}`,
     };
+  }
+
+  // VTID-04006: the agent executor (real clone, tool loop, local tsc/jest,
+  // post-hoc scope) is selected per row (`metadata.executor`) or per process
+  // (`DEV_AUTOPILOT_EXECUTOR=agent`). Default stays this single-shot path.
+  // Placed after the PR-flood guard above so both executors share it.
+  if (resolveExecutorMode(exec.metadata) === 'agent') {
+    const { runAgentExecutionSession } = await import('./autopilot-agent/run-agent-execution');
+    return runAgentExecutionSession(s, exec);
   }
 
   const planR = await supa<Array<{ plan_markdown: string; files_referenced: string[] }>>(

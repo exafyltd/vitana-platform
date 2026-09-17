@@ -1,4 +1,5 @@
 # VTID-02703: Cloud Run Job container for the autopilot executor.
+# VTID-03415: also the image behind the AWS `vitana-autopilot-executor` task.
 #
 # Same source as the gateway service, different entry point:
 #   service:  CMD ["node", "dist/index.js"]    (Express server)
@@ -8,6 +9,15 @@
 # fire-and-forget LLM calls inside the gateway service. Used for orb-live.ts
 # work and any other execution where the LLM call is expected to take
 # longer than ~3 minutes.
+#
+# VTID-04006: the agent executor (src/services/autopilot-agent/) needs
+#   - git, to shallow-clone the repository it works on and push its branch;
+#   - the FULL dependency tree (tsc + jest are devDependencies), which it
+#     symlinks into the clone's services/gateway/node_modules so it can run
+#     `tsc --noEmit` and the relevant jest suites before opening the PR.
+# So the runtime stage now copies the builder's node_modules instead of a
+# `--production` reinstall. Bigger image, but no per-run `npm ci` (which
+# would cost minutes and a registry round-trip on every execution).
 
 FROM node:20-alpine AS builder
 WORKDIR /app
@@ -21,15 +31,19 @@ COPY specs ./specs
 RUN npm run build
 
 FROM node:20-alpine
+RUN apk add --no-cache git
 WORKDIR /app
 COPY package*.json ./
-# No ffmpeg here — the Job doesn't handle audio. Smaller image, faster cold start.
-RUN npm install --production
+COPY tsconfig.json ./
+# No ffmpeg here — the Job doesn't handle audio.
+COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/config ./config
 COPY --from=builder /app/specs ./specs
 COPY BUILD_INFO ./
 ENV NODE_ENV=production
+# VTID-04006: where the agent finds a dependency tree to link into its clone.
+ENV AGENT_NODE_MODULES_SOURCE=/app/node_modules
 # No PORT — Jobs don't listen for HTTP requests.
-# No HEALTHCHECK — Jobs run to completion and exit; Cloud Run tracks task state.
+# No HEALTHCHECK — Jobs run to completion and exit; ECS tracks task state.
 CMD ["node", "dist/job-entry.js"]

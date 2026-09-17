@@ -359,6 +359,10 @@ export async function triggerOperatorExecution(
         llm_on_ramp_override: { provider: 'deepseek', model: DEEPSEEK_MODEL },
         triggered_by: input.requestedBy,
         source: 'operator-onramp',
+        // VTID-04006: OPERATOR_ONRAMP_EXECUTOR=agent routes operator-instructed
+        // executions to the agent executor (clone + tool loop + local tsc/jest)
+        // without touching how the autonomous self-healing lane executes.
+        ...(process.env.OPERATOR_ONRAMP_EXECUTOR === 'agent' ? { executor: 'agent' } : {}),
       },
     }),
   });
