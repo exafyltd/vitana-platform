@@ -384,3 +384,57 @@ tick won the race. Consequences: (1) the ledger can report `success` for code th
 live auto-merge is effectively disabled whenever prod's tick runs first. Fix (adds to roadmap R-1): either pin
 `DEV_AUTOPILOT_WATCHER_LIVE=true` on prod too, or make the watcher skip executions whose `metadata.env` (to be
 stamped at claim time) is not its own — never let a dry-run process transition a real execution.
+
+## 8. Test Run #4 / #4b — the agent executor on staging, 2026-09-17 19:28–20:15 UTC (VTID-04008 → VTID-04012, PR #3382)
+
+Design (§5 test runs): the Run #3 task shape — a change whose **only caller is not in `files_referenced`** — on the
+agent executor (W1, VTID-04006), after #3375 merged, the executor image was rebuilt (run #7, `aa636f8`) and
+`OPERATOR_ONRAMP_EXECUTOR=agent` was pinned on the staging gateway (#3376). Task: `renderCiEvidence()` gains
+`totalFailing`, and the one caller in `dev-autopilot-watcher.ts` — deliberately left out of the plan — must pass
+`analysis.failedNames.length`. Run #3 (single-shot) could not touch that file; this is the capability under test.
+
+### What the agent did (execution `47a4d6eb`, then `4f7d5ea4`)
+
+| Step | Run #4 (`47a4d6eb`, exec image rev 9) | Run #4b (`4f7d5ea4`, rev 10 = +VTID-04009) |
+|---|---|---|
+| Chat → `autopilot_execute_task` → row queued with `metadata.executor='agent'` | 19:28:43 → 19:28:50 | 20:05:57 → 20:06:04 |
+| Claimed by staging; ECS task dispatched with `EXEC_ID` | 19:29:08 / 19:29:35 | 20:06:31 / 20:06:51 |
+| `read_file` both plan files → `search_text renderCiEvidence\(` → `read_file dev-autopilot-watcher.ts` (**the unlisted caller, found**) → `edit_file` ×3 | turns 1–11, 19:29:49–19:30:11 (22 s) | turns 1–7, 20:07:01–20:07:20 (19 s) |
+| `run_check tsc` | **OOM** (V8 `allocation failure` at ~2 GB, 140 s) ×9 across 44 turns | completes in 53 s; **TS2742** (symlinked node_modules) |
+| `run_check jest` on the changed test + the watcher suites | green (turns 14, 16) | green (turns 12, 15, 17, 20) |
+| Self-repair | deleted the `core.*` dumps it found via `git_diff` | added an explicit return-type interface to `connect-people-repository.ts` + 2 tests, tsc clean (turn 16) |
+| `finish` → runner: scope ✓, `runner:tsc`, `runner:jest` | never reached (see below) | 20:14:07 → tsc clean 20:14:58, jest green 20:15:00 |
+| PR | none | **#3382** at 20:15:04, 5 files, DeepSeek Flash end to end, **9 min 07 s** from chat to PR; 18/18 checks green incl. `validate-pr`; squash-merged 20:23 as `e104099` |
+
+The capability gap Run #3 exposed is closed: the agent located and edited a file it was never handed, ran the
+checks before opening the PR, and iterated on their output. The diff is better than the plan asked for — the
+"…and N more failing check(s) not fetched" line reserves its own budget so truncation can never drop it (Run #3's
+single-shot sibling #3379 appended it after the cap and could lose it).
+
+### Three executor defects found by the run, each fixed the same evening
+
+| # | Defect | Evidence | Fix |
+|---|---|---|---|
+| 1 | `tsc` on the gateway needs more than V8's default ~2 GB old-space; the 4 GB task never mattered | nine `allocation failure` aborts, core dumps in the clone; locally tsc peaks at 2497 MB RSS with a 3 GB heap (47 s) | **VTID-04009** (#3377): `runTsc` passes `NODE_OPTIONS=--max-old-space-size=<AGENT_CHECK_HEAP_MB=3072>` |
+| 2 | The 20-min running-watchdog reclaimed the **live** execution at 19:49:37 (nothing refreshed `updated_at` after the claim; the agent deadline is 22 min), and its PATCH — like `applyExecutionResult`'s failure PATCH — **replaced** `metadata`, wiping `executor`/`claimed_env`/`llm_on_ramp_override`. The self-heal child `8b2bce93` therefore ran **single-shot on Bedrock** and opened #3379 (correct `renderCiEvidence`, caller untouched — closed) | `dev_autopilot_executions` rows + `oasis_events`; the parent kept emitting `dev_autopilot.agent.*` steps until 19:53:46, four minutes after its "reclaim" | **VTID-04011** (#3380): both PATCHes merge via pure `buildWatchdogReclaimPatch` / `buildExecutionFailurePatch`; `agent-heartbeat.ts` bumps `updated_at` every 60 s while the agent runs |
+| 3 | The clone's `node_modules` is a symlink to `/app/node_modules`, so tsc resolves realpaths outside the project → `TS2742` on a library-inferred export type; clean on a real install | Run #4b turn 8 + `runner:tsc` (path ends in `…/app/node_modules`) | **VTID-04013** (#3381): `--preserveSymlinks` on the agent's tsc |
+
+Also observed, not fixed here: the model re-ran an identically failing `tsc` nine times (≈18 min of a 22-min
+budget) — the loop needs a repeated-identical-check guard; the PR contract's `commands.log` describes the
+single-shot flow ("parse PR_TITLE/FILE blocks … the executor itself does not run them"), which is wrong for the
+agent path; the production gateway's dry-run watcher (prod is not on VTID-04004/04005) still synthesized
+`ci_passed`/`pr_merged` on the staging-claimed child — the §7 finding, unchanged until prod is promoted; and
+two EventBridge Scheduler entries (`vitana-gateway-remi…`, `vitana-push-dispatc…`) launch stale
+`vitana-autopilot-executor:2` tasks every few minutes that exit with code 2 — outside this run, flagged to the
+owner (this session's IAM cannot list schedules).
+
+### Run #3 vs Run #4b
+
+| | Run #3 (single-shot, VTID-04004) | Run #4b (agent, VTID-04012) |
+|---|---|---|
+| Reads a file not in the plan | no — cannot | yes (`search_text` → `read_file`) |
+| Runs tsc/jest before the PR | no (CI only) | yes, and the runner re-verifies independently |
+| Reacts to a failing check | no | yes — 2 fix rounds (jest on its own test, TS2742) inside one execution |
+| Chat → PR | ~82 s | 9 min 07 s (53 s of it one tsc; the rest model turns at 1–8 s each) |
+| Model | DeepSeek Flash (one call) | DeepSeek Flash, 40 turns in total (23 + 1 fix round), no Bedrock fallback used; 1,040,899 input / 28,696 output tokens (the transcript is re-sent every turn — the input figure is the cost driver, and the case for W3's transcript compaction) |
+| PR completeness vs plan | incomplete (caller untouched) | complete, plus a scoped type-annotation workaround |

@@ -47,7 +47,12 @@ repo, take an open-ended request, and observe its own result — under the same 
 ## Test runs
 
 - **Run #4** (after W1, staging): the same task as Run #3 on the agent executor; compare
-  wall-clock, diff size, CI outcome, cost.
+  wall-clock, diff size, CI outcome, cost. **Done 2026-09-17** — see gap analysis §8. Run #4
+  (VTID-04008, `47a4d6eb`) found and edited the unlisted caller but was blocked by three executor
+  defects (tsc heap OOM → VTID-04009; watchdog reclaiming a live run and clobbering metadata →
+  VTID-04011; TS2742 on the symlinked node_modules → VTID-04013). Run #4b (VTID-04012, `4f7d5ea4`,
+  on the VTID-04009 image) opened PR #3382 in 9 min 07 s, complete vs the plan, DeepSeek Flash end
+  to end, no Bedrock fallback.
 - **Run #5** (after W2, staging): a vague request ("the CI failure reason should name the
   checks") with no VTID and no files; success = VTID allocated, PR green, scope respected.
 
