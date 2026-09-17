@@ -404,7 +404,7 @@ agent executor (W1, VTID-04006), after #3375 merged, the executor image was rebu
 | `run_check jest` on the changed test + the watcher suites | green (turns 14, 16) | green (turns 12, 15, 17, 20) |
 | Self-repair | deleted the `core.*` dumps it found via `git_diff` | added an explicit return-type interface to `connect-people-repository.ts` + 2 tests, tsc clean (turn 16) |
 | `finish` → runner: scope ✓, `runner:tsc`, `runner:jest` | never reached (see below) | 20:14:07 → tsc clean 20:14:58, jest green 20:15:00 |
-| PR | none | **#3382** at 20:15:04, 5 files, DeepSeek Flash end to end, **9 min 07 s** from chat to PR |
+| PR | none | **#3382** at 20:15:04, 5 files, DeepSeek Flash end to end, **9 min 07 s** from chat to PR; 18/18 checks green incl. `validate-pr`; squash-merged 20:23 as `e104099` |
 
 The capability gap Run #3 exposed is closed: the agent located and edited a file it was never handed, ran the
 checks before opening the PR, and iterated on their output. The diff is better than the plan asked for — the
