@@ -4,7 +4,7 @@
  */
 
 import { checkChangedFilesScope, hasTestCoverage } from '../src/services/autopilot-agent/agent-scope';
-import { projectDirFor, selectJestTargets } from '../src/services/autopilot-agent/agent-validate';
+import { checkHeapMb, checkNodeOptions, projectDirFor, runTsc, selectJestTargets } from '../src/services/autopilot-agent/agent-validate';
 import { parsePorcelain, scrubSecret } from '../src/services/autopilot-agent/agent-workspace';
 import { resolveExecutorMode } from '../src/services/autopilot-agent/executor-mode';
 import { isTestFile } from '../src/services/dev-autopilot-safety';
@@ -90,5 +90,35 @@ describe('VTID-04006 resolveExecutorMode', () => {
     expect(resolveExecutorMode({ executor: 'agent' }, {})).toBe('agent');
     expect(resolveExecutorMode({ executor: 'single-shot' }, { DEV_AUTOPILOT_EXECUTOR: 'agent' })).toBe('single-shot');
     expect(resolveExecutorMode({ executor: 'weird' }, { DEV_AUTOPILOT_EXECUTOR: 'nope' })).toBe('single-shot');
+  });
+});
+
+describe('VTID-04009 runTsc heap sizing', () => {
+  it('defaults to 3072 MB and honours AGENT_CHECK_HEAP_MB, ignoring garbage', () => {
+    expect(checkHeapMb({})).toBe(3072);
+    expect(checkHeapMb({ AGENT_CHECK_HEAP_MB: '6144' })).toBe(6144);
+    expect(checkHeapMb({ AGENT_CHECK_HEAP_MB: 'lots' })).toBe(3072);
+    expect(checkHeapMb({ AGENT_CHECK_HEAP_MB: '-1' })).toBe(3072);
+  });
+
+  it('appends the heap cap after any inherited NODE_OPTIONS so the cap wins', () => {
+    expect(checkNodeOptions({})).toBe('--max-old-space-size=3072');
+    expect(checkNodeOptions({ NODE_OPTIONS: '--enable-source-maps', AGENT_CHECK_HEAP_MB: '4096' }))
+      .toBe('--enable-source-maps --max-old-space-size=4096');
+  });
+
+  it('runTsc spawns tsc with NODE_OPTIONS carrying the heap cap (the Run #4 OOM)', async () => {
+    const calls: { cmd: string; args: string[]; env?: NodeJS.ProcessEnv }[] = [];
+    const exec = async (cmd: string, args: string[], opts: { env?: NodeJS.ProcessEnv }) => {
+      calls.push({ cmd, args, env: opts.env });
+      return { stdout: '', stderr: '' };
+    };
+    const r = await runTsc('/repo', 'services/gateway', exec);
+    expect(r.ok).toBe(true);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].cmd.endsWith('services/gateway/node_modules/.bin/tsc')).toBe(true);
+    expect(calls[0].args).toEqual(['--noEmit', '-p', 'tsconfig.json']);
+    expect(calls[0].env?.NODE_OPTIONS).toMatch(/--max-old-space-size=\d+$/);
+    expect(calls[0].env?.CI).toBe('true');
   });
 });
