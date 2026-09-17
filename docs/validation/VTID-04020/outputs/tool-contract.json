@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-04020",
+  "tool": "dev_cloudwatch_logs",
+  "role": "developer/admin (dev_ prefix gate)",
+  "kill_switch": "OPERATOR_AWS_READONLY_ENABLED=true (staging pinned; prod not)",
+  "input": { "log_group": "/ecs/vitana-<service> (required)", "filter_pattern": "CloudWatch filter syntax (optional, <=200 chars)", "minutes": "default 30, max 1440", "limit": "default 50, max 200" },
+  "aws_calls": ["logs:FilterLogEvents (only)"],
+  "bounds": { "message_chars": 600, "total_chars": 24000, "window_minutes_max": 1440, "events_max": 200 },
+  "output": { "log_group": "…", "window_minutes": 30, "filter_pattern": "…|null", "events": [{ "timestamp": "ISO", "stream": "<stream tail>", "message": "…" }], "truncated": false, "note": "present when no events matched" },
+  "failure_posture": "AWS/IAM error returned verbatim as `CloudWatch logs read failed: …`; never an empty result",
+  "dependency_added": "@aws-sdk/client-cloudwatch-logs ^3.1135.0"
+}

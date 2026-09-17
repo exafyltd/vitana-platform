@@ -51,6 +51,8 @@ import { executeKnowledgeSearch, KNOWLEDGE_SEARCH_TOOL_DEFINITION } from './know
 // VTID-03835: Operator Console codebase read access (search + file read)
 import { searchCode, getFileContents } from './github-service';
 import { getOperatorBootstrapPack } from './operator-bootstrap-pack';
+import { filterVitanaLogs, LOGS_DEFAULT_MINUTES, LOGS_MAX_MINUTES, LOGS_DEFAULT_LIMIT, LOGS_MAX_LIMIT } from './aws-cloudwatch-logs-readonly';
+import { buildRecallQuery } from './operator-threads';
 // VTID-03836: Operator Console AWS ECS read-only status
 import { describeEcsServices, ALLOWED_ECS_SERVICES } from './aws-ecs-readonly';
 // VTID-01208: LLM Telemetry
@@ -511,6 +513,34 @@ KNOWN BLIND SPOT: GitHub's code search index excludes any file over 384KB. servi
           }
         },
         required: ['service_name']
+      }
+    },
+    // VTID-04020: Operator Console read-only CloudWatch Logs — the third
+    // item of the gap analysis' §4.4 access list. FilterLogEvents only.
+    {
+      name: 'dev_cloudwatch_logs',
+      description: `Read recent CloudWatch log events from one documented Vitana ECS service's log group (/ecs/vitana-<service>, e.g. /ecs/vitana-gateway for staging, /ecs/vitana-gateway-awsdr for prod, /ecs/vitana-autopilot-executor for the executor task). Read-only — FilterLogEvents only, never writes, never touches any other group. Bounded: window default ${LOGS_DEFAULT_MINUTES} min (max ${LOGS_MAX_MINUTES}), events default ${LOGS_DEFAULT_LIMIT} (max ${LOGS_MAX_LIMIT}), messages clipped. Use filter_pattern (CloudWatch filter syntax, e.g. "ERROR", "[VTID-04007]", "execution 4f5d7ea4") to narrow. Developer/admin role only.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          log_group: {
+            type: 'string',
+            description: 'The log group, exactly /ecs/vitana-<service-name>. The ECS service names are the ones dev_aws_ecs_status accepts.'
+          },
+          filter_pattern: {
+            type: 'string',
+            description: 'Optional CloudWatch Logs filter pattern (plain terms, quoted phrases, or [bracketed] tokens). Omit for everything in the window.'
+          },
+          minutes: {
+            type: 'number',
+            description: `How far back to look, in minutes (default ${LOGS_DEFAULT_MINUTES}, max ${LOGS_MAX_MINUTES}).`
+          },
+          limit: {
+            type: 'number',
+            description: `Maximum events to return (default ${LOGS_DEFAULT_LIMIT}, max ${LOGS_MAX_LIMIT}).`
+          }
+        },
+        required: ['log_group']
       }
     },
     // VTID-03837: Operator Console read-only DB access — explicit table
@@ -2620,6 +2650,36 @@ async function executeDevAwsEcsStatus(
   }
 }
 
+/**
+ * VTID-04020: dev_cloudwatch_logs — read-only CloudWatch FilterLogEvents
+ * over one /ecs/vitana-<service> log group. Same kill switch as the ECS
+ * status tool; the log-group shape is enforced before any AWS call
+ * (aws-cloudwatch-logs-readonly.ts); an IAM denial comes back verbatim.
+ */
+async function executeDevCloudwatchLogs(
+  args: { log_group: string; filter_pattern?: string; minutes?: number; limit?: number },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  if (process.env.OPERATOR_AWS_READONLY_ENABLED !== 'true') {
+    return { ok: false, error: 'operator_aws_readonly_disabled: OPERATOR_AWS_READONLY_ENABLED is not "true"' };
+  }
+  if (!args.log_group || !String(args.log_group).trim()) {
+    return { ok: false, error: 'log_group is required (e.g. /ecs/vitana-gateway)' };
+  }
+  try {
+    const result = await filterVitanaLogs({
+      logGroup: String(args.log_group),
+      filterPattern: typeof args.filter_pattern === 'string' ? args.filter_pattern : undefined,
+      minutes: typeof args.minutes === 'number' ? args.minutes : undefined,
+      limit: typeof args.limit === 'number' ? args.limit : undefined,
+    });
+    console.log(`[VTID-04020] dev_cloudwatch_logs thread=${threadId} group=${result.log_group} window=${result.window_minutes}m events=${result.events.length}${result.truncated ? ' (truncated)' : ''}`);
+    return { ok: true, data: result as any };
+  } catch (err: any) {
+    return { ok: false, error: `CloudWatch logs read failed: ${err.message}` };
+  }
+}
+
 // VTID-03837: explicit table allowlist for dev_db_query — never arbitrary SQL.
 const DEV_DB_QUERY_ALLOWED_TABLES = [
   'vtid_ledger',
@@ -3253,6 +3313,14 @@ export async function executeTool(
       case 'dev_aws_ecs_status':
         result = await executeDevAwsEcsStatus(
           args as { service_name: string },
+          threadId
+        );
+        break;
+
+      // VTID-04020: Operator Console read-only CloudWatch Logs
+      case 'dev_cloudwatch_logs':
+        result = await executeDevCloudwatchLogs(
+          args as { log_group: string; filter_pattern?: string; minutes?: number; limit?: number },
           threadId
         );
         break;
@@ -3930,8 +3998,12 @@ export async function processWithGemini(input: {
   systemInstruction?: string;
   // VTID-DEV-ASSIST: User role for tool filtering — only send tools the user is authorized to use
   userRole?: string;
+  // VTID-04022: rolling server-side thread summary (operator-threads.ts). When
+  // present, dev_agent_memory recall runs against summary + current message
+  // instead of the raw message alone (gap analysis §4.3).
+  threadSummary?: string | null;
 }): Promise<GeminiOperatorResponse> {
-  const { text, threadId, attachments = [], context = {}, conversationHistory = [], conversationId, systemInstruction, userRole } = input;
+  const { text, threadId, attachments = [], context = {}, conversationHistory = [], conversationId, systemInstruction, userRole, threadSummary } = input;
 
   // BOOTSTRAP-MEMORY-ORCHESTRATOR-MANDATORY: soft bypass detection at the
   // shared executor. Emits memory.orchestrator.bypass_detected (never throws
@@ -3967,7 +4039,7 @@ export async function processWithGemini(input: {
       // means no memory block gets appended.
       let memoryContextBlock: string | undefined;
       try {
-        const memRes = await recallDevMemory(text, 'vitana-platform', { limit: 5 });
+        const memRes = await recallDevMemory(buildRecallQuery(threadSummary, text), 'vitana-platform', { limit: 5 });
         if (memRes.ok && memRes.hits.length > 0) {
           memoryContextBlock = buildDevMemoryContextBlock(memRes.hits);
         } else if (!memRes.ok) {
