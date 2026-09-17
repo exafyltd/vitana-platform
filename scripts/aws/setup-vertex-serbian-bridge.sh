@@ -49,8 +49,18 @@
 #   scripts/aws/setup-vertex-serbian-bridge.sh provision \
 #       --gcp-project <new-project-id> --env staging --apply
 #
-# Requires: gcloud (authenticated against the NEW project), aws CLI
-# (authenticated against 472838866351/eu-central-1).
+# If you already created the service account + downloaded its JSON key
+# yourself (e.g. via the GCP Console) instead of letting this script create
+# one via gcloud, pass --key-file to skip straight to the AWS upload — the
+# key is read from your local file and never needs to be typed into chat:
+#
+#   scripts/aws/setup-vertex-serbian-bridge.sh provision \
+#       --gcp-project <new-project-id> --env staging \
+#       --key-file /path/to/your-downloaded-key.json --apply
+#
+# Requires: gcloud (authenticated against the NEW project) unless --key-file
+# is given, in which case gcloud is never invoked; aws CLI (authenticated
+# against 472838866351/eu-central-1) either way.
 
 set -euo pipefail
 
@@ -61,13 +71,18 @@ ACTION=""
 APPLY=0
 SA_NAME="vitana-orb-vertex-bridge"
 KEY_FILE=""
+USER_KEY_FILE=""
+GENERATED_KEY_FILE=""
 
 say() { echo "[setup-vertex-serbian-bridge] $*"; }
 plan() { echo "  [dry-run] $*"; }
 
 cleanup() {
-  if [[ -n "$KEY_FILE" && -f "$KEY_FILE" ]]; then
-    rm -f "$KEY_FILE"
+  # Only ever shred/remove a key file THIS script generated via `gcloud
+  # iam service-accounts keys create` — never touch a file the caller
+  # pointed us at with --key-file, that one is theirs to manage.
+  if [[ -n "$GENERATED_KEY_FILE" && -f "$GENERATED_KEY_FILE" ]]; then
+    rm -f "$GENERATED_KEY_FILE"
   fi
 }
 trap cleanup EXIT
@@ -77,13 +92,19 @@ while [[ $# -gt 0 ]]; do
     provision|status) ACTION="$1"; shift ;;
     --gcp-project) GCP_PROJECT="$2"; shift 2 ;;
     --env) ENV_NAME="$2"; shift 2 ;;
+    --key-file) USER_KEY_FILE="$2"; shift 2 ;;
     --apply) APPLY=1; shift ;;
     *) echo "Unknown argument: $1" >&2; exit 1 ;;
   esac
 done
 
+if [[ -n "$USER_KEY_FILE" && ! -f "$USER_KEY_FILE" ]]; then
+  echo "--key-file '$USER_KEY_FILE' does not exist." >&2
+  exit 1
+fi
+
 if [[ -z "$ACTION" ]]; then
-  echo "Usage: $0 {provision|status} --gcp-project <new-project-id> [--env staging|prod] [--apply]" >&2
+  echo "Usage: $0 {provision|status} --gcp-project <new-project-id> [--env staging|prod] [--key-file <path>] [--apply]" >&2
   exit 1
 fi
 
@@ -123,15 +144,24 @@ case "$ACTION" in
     ;;
   provision)
     say "Target GCP project: $GCP_PROJECT"
-    say "Target service account: $SA_EMAIL"
+    if [[ -n "$USER_KEY_FILE" ]]; then
+      say "Using your existing key file: $USER_KEY_FILE (gcloud will not be invoked)"
+    else
+      say "Target service account: $SA_EMAIL"
+    fi
     say "Target AWS secret: $SECRET_NAME (region $REGION)"
 
     if [[ "$APPLY" != "1" ]]; then
-      plan "gcloud iam service-accounts create $SA_NAME --project=$GCP_PROJECT --display-name='Vitana ORB Vertex Serbian bridge (VTID-04000, 90-day credit window)'"
-      plan "gcloud projects add-iam-policy-binding $GCP_PROJECT --member=serviceAccount:$SA_EMAIL --role=roles/aiplatform.user"
-      plan "gcloud iam service-accounts keys create <tempfile> --iam-account=$SA_EMAIL"
-      plan "aws secretsmanager create-secret --region $REGION --name $SECRET_NAME --secret-string <base64 key JSON>"
-      say "Dry run only. Re-run with --apply to actually create the service account, grant it roles/aiplatform.user, and push its key to Secrets Manager."
+      if [[ -n "$USER_KEY_FILE" ]]; then
+        plan "aws secretsmanager create-secret --region $REGION --name $SECRET_NAME --secret-string file://${USER_KEY_FILE}"
+        say "Dry run only. Re-run with --apply to push your existing key file to Secrets Manager."
+      else
+        plan "gcloud iam service-accounts create $SA_NAME --project=$GCP_PROJECT --display-name='Vitana ORB Vertex Serbian bridge (VTID-04000, 90-day credit window)'"
+        plan "gcloud projects add-iam-policy-binding $GCP_PROJECT --member=serviceAccount:$SA_EMAIL --role=roles/aiplatform.user"
+        plan "gcloud iam service-accounts keys create <tempfile> --iam-account=$SA_EMAIL"
+        plan "aws secretsmanager create-secret --region $REGION --name $SECRET_NAME --secret-string <base64 key JSON>"
+        say "Dry run only. Re-run with --apply to actually create the service account, grant it roles/aiplatform.user, and push its key to Secrets Manager."
+      fi
       exit 0
     fi
 
@@ -140,24 +170,29 @@ case "$ACTION" in
       exit 0
     fi
 
-    if ! gcloud iam service-accounts describe "$SA_EMAIL" --project "$GCP_PROJECT" >/dev/null 2>&1; then
-      say "Creating service account $SA_EMAIL ..."
-      gcloud iam service-accounts create "$SA_NAME" \
-        --project="$GCP_PROJECT" \
-        --display-name="Vitana ORB Vertex Serbian bridge (VTID-04000, 90-day credit window)"
+    if [[ -n "$USER_KEY_FILE" ]]; then
+      KEY_FILE="$USER_KEY_FILE"
     else
-      say "$SA_EMAIL already exists — reusing it (only its key/secret are missing)."
+      if ! gcloud iam service-accounts describe "$SA_EMAIL" --project "$GCP_PROJECT" >/dev/null 2>&1; then
+        say "Creating service account $SA_EMAIL ..."
+        gcloud iam service-accounts create "$SA_NAME" \
+          --project="$GCP_PROJECT" \
+          --display-name="Vitana ORB Vertex Serbian bridge (VTID-04000, 90-day credit window)"
+      else
+        say "$SA_EMAIL already exists — reusing it (only its key/secret are missing)."
+      fi
+
+      say "Granting roles/aiplatform.user (least-privilege — Vertex Live API access only) ..."
+      gcloud projects add-iam-policy-binding "$GCP_PROJECT" \
+        --member="serviceAccount:${SA_EMAIL}" \
+        --role="roles/aiplatform.user" \
+        --condition=None >/dev/null
+
+      GENERATED_KEY_FILE="$(mktemp)"
+      KEY_FILE="$GENERATED_KEY_FILE"
+      say "Generating a new key for $SA_EMAIL ..."
+      gcloud iam service-accounts keys create "$KEY_FILE" --iam-account="$SA_EMAIL"
     fi
-
-    say "Granting roles/aiplatform.user (least-privilege — Vertex Live API access only) ..."
-    gcloud projects add-iam-policy-binding "$GCP_PROJECT" \
-      --member="serviceAccount:${SA_EMAIL}" \
-      --role="roles/aiplatform.user" \
-      --condition=None >/dev/null
-
-    KEY_FILE="$(mktemp)"
-    say "Generating a new key for $SA_EMAIL ..."
-    gcloud iam service-accounts keys create "$KEY_FILE" --iam-account="$SA_EMAIL"
 
     say "Pushing key to AWS Secrets Manager as $SECRET_NAME ..."
     aws secretsmanager create-secret \
@@ -166,7 +201,11 @@ case "$ACTION" in
       --description "VTID-04000 Vertex Serbian bridge GCP service account key ($ENV_NAME) — new project $GCP_PROJECT, 90-day credit window, sr-only" \
       --secret-string "file://${KEY_FILE}" \
       --tags Key=vtid,Value=VTID-04000 >/dev/null
-    say "Created $SECRET_NAME. Local key file will be shredded on exit."
+    if [[ -n "$USER_KEY_FILE" ]]; then
+      say "Created $SECRET_NAME from your key file. That file is yours — this script did not touch or delete it."
+    else
+      say "Created $SECRET_NAME. Local key file will be shredded on exit."
+    fi
     say ""
     say "Next steps:"
     say "  1. Wire GCP_SERVICE_ACCOUNT_JSON:$SECRET_NAME into AWS-STAGE-DEPLOY-GATEWAY.yml's secret-resolution loop and task-def jq block."
