@@ -1,0 +1,350 @@
+# Command Hub Operator Console — what is missing to make it work like Claude Code
+
+**VTID-04002 · 2026-09-17 · deep analysis + the two on-ramp fixes from Test Run #1**
+
+Scope of the question: *what does the Operator Console lack to execute development
+tasks on vitanaland / MAXINA the way a Claude Code session does — aware at every
+session of the codebase, GitHub, AWS (admin), cross-session memory, RepoWise /
+Graphify indexes, the real-time status of the platform, and able to execute fast
+with the highest code quality?*
+
+Everything below is grounded in the code on `main` (`a41ff27`), the live
+Supabase tables (read-only queries), the live gateway build-info endpoints, and
+the real GitHub state of PR #3351. Four parallel code-reading passes covered the
+chat→execution chain, the execution plane, memory/context, and credentials.
+
+> **Index caveat.** CLAUDE.md mandates RepoWise + Graphify before any change.
+> Neither binary exists in this session and neither repo has a `graphify-out/`
+> or `.repowise/` directory — the same is true for the deployed gateway (see §4.5).
+> This analysis used targeted source reads instead. That gap is itself finding #5.
+
+---
+
+## 0. Verdict in one paragraph
+
+The Operator Console is a **chat front-end over a single-shot, zero-tool code
+generator**, not an agent. One LLM call receives a plan plus the full text of at
+most 8 files and must emit complete replacement files in one response; nothing
+in the plane can read another file, search, run `tsc`, run a test, observe an
+error, or try again. Its "memory" is 28 rows written by five tool names, its
+"codebase awareness" is a 1.5 KB hand-typed constant, and its transcript lives in
+the operator's browser `localStorage`. On **production** every operator
+capability flag except the on-ramp is unset, so the prod console cannot read
+code, the DB, or ECS at all. Test Run #1 proved the *model* is not the problem
+(the DeepSeek fix in PR #3351 was correct and well tested); the *harness* is.
+The PR was killed by a repo governance contract (`VALIDATOR-CHECK.yml`) that the
+executor never knew existed, and the self-healing triage then invented a wrong
+root cause because it is fed a label, not evidence. The single highest-leverage
+move is to replace the single-shot executor with an agentic runner on a real
+checkout — the orphaned `services/autopilot-worker` already shells out to the
+Claude Code CLI and is the natural seed — and to give the chat layer a
+server-side session with a real bootstrap pack (§5, §6).
+
+---
+
+## 1. What exists today — the chain, hop by hop
+
+| # | Hop | Where | What it does |
+|---|-----|-------|--------------|
+| 0 | HTTP entry | `routes/operator.ts:210` `POST /api/v1/operator/chat` (`optionalAuth`) | Mints a `threadId` per request (the Command Hub never sends one), records the exafy_admin marker for this request, forwards `context` = last 20 messages / 12 000 chars the browser re-uploads every turn |
+| 1 | LLM turn | `gemini-operator.ts:3549` `callVertexWithTools` → `callViaRouter('operator')` | System prompt = persona + hand-written list of **6** tools (41 are actually declared) + top-5 `dev_agent_memory` recall + `CODEBASE_OVERVIEW_BLOCK` (6 bullets). Policy v17: `deepseek/deepseek-flash` primary, `bedrock/claude-sonnet-4-6` fallback |
+| 2 | Tool dispatch | `gemini-operator.ts:3001` → `executeExecuteTask` | exafy_admin check → governance `A2` → `triggerOperatorExecution` |
+| 3 | On-ramp | `operator-execution-onramp.ts` | Kill switch, `spec_status='approved'` + non-terminal gate, inserts `autopilot_recommendations` + `dev_autopilot_plan_versions`, calls `approveAutoExecute` (full safety gate), stamps `llm_on_ramp_override={deepseek,deepseek-flash}`, links execution to `vtid_ledger.metadata` |
+| 4 | Safety gate | `dev-autopilot-safety.ts:236` | kill switch, risk class, **allow/deny globs anchored at repo root**, `tests_missing`, daily budget (500), auto-fix depth (2). Live `allow_scope` = gateway `src/{routes,services,types,lib,orb,frontend/command-hub}/**`, `test(s)/**`, `services/agents/**`, `services/worker-runner/**`; deny = migrations, `**/auth*`, workflows, `lib/supabase.ts`, env/credentials |
+| 5 | Pick-up | `dev-autopilot-execute.ts:2405` `backgroundExecutorTick` | Claims `cooling→running`; on staging dispatches `ecs:RunTask` of `vitana-autopilot-executor` (same gateway image, `Dockerfile.job` → `job-entry.ts`); on prod `DEV_AUTOPILOT_USE_JOB` is unset so it runs **in-process inside the gateway container** (the 20-minute watchdog / "container recycled mid-execution" failures on 09-13 are this) |
+| 6 | Execution | `dev-autopilot-execute.ts:1433` `runExecutionSession` | Fetch ≤8 files from `main` via Contents API → one prompt (conventions constant + LOCKED FILE LIST + plan + full file bodies) → **one** `callViaRouter('worker')` call (32k output tokens) → regex-parse `<<<PR_TITLE>>>/<<<PR_BODY>>>/<<<FILE>>>` blocks → out-of-scope / coverage ≥0.6 / truncation / empty-diff guards → create branch `dev-autopilot/<exec8>` → PUT each file → open PR |
+| 7 | After the PR | `dev-autopilot-watcher.ts` (60 s poll), `self-healing-reconciler.ts`, `self-healing-triage-service.ts` | CI failure → `bridgeFailure` → 1-call triage with **no repo and no check logs** → child execution re-runs the **identical prompt** (depth ≤2). Auto-merge (squash, low/medium risk) only when `DEV_AUTOPILOT_WATCHER_LIVE=true` — staging only |
+
+Live numbers (Supabase, 2026-09-17): 7 executions in 30 days, **0 merged, 6 failed/reverted**;
+2 operator on-ramp executions ever (one `completed` on 09-14, PR #3307; one reverted on 09-16, PR #3351).
+`dev_agent_memory`: 28 rows, all `task_outcome`, 26 of them a one-time backfill.
+
+---
+
+## 2. Test Run #1 post-mortem — corrected
+
+The handoff diagnosed two gaps. Both are real; the second is bigger than stated.
+
+### 2.1 `files_referenced` path contract (fixed in this PR)
+No description text — not the wire schema the operator model receives
+(`gemini-operator.ts:209`), not the ORB registry (`tool-registry.ts:74`), not either
+copy of the prompt prose — said paths must be repo-root-relative. The gate matches
+anchored globs (`^services/gateway/src/services/.*$`), so `memory-relevance-scoring.ts`
+can never match. Worse, the chat only ever saw `safety gate blocked approval`:
+`executeExecuteTask` dropped `violations[]` before returning (`gemini-operator.ts:1281`),
+so neither the operator nor the model could see which path or rule failed.
+
+**Shipped:** all three description sites now state the contract with an example;
+both prompt sources carry the identical rule (the VTID-03838 drift test still passes);
+rejections now render as `safety gate blocked approval: file_outside_allow_scope
+(memory-relevance-scoring.ts) — Plan touches 1 file(s) outside the allow-scope.`
+
+### 2.2 The PR never satisfied the repo's governance contract (fixed in this PR)
+`validate-pr` exit 10 ("no VTID") was only the **first** of eight gates the PR would
+have failed. `VALIDATOR-CHECK.yml` triggers on `services/gateway/src/**` — exactly the
+autopilot's allow scope — and requires:
+
+| Gate | Requirement | Exit |
+|---|---|---|
+| VTID | `VTID-\d{4,5}` in the title, or a line starting `VTID: VTID-XXXXX` in the body | 10 |
+| Profile | `VALIDATION_PROFILE: gateway_backend` in the body | 11 |
+| Markers | `SCOPE_ALLOWLIST:`, `ACCEPTANCE:`, `MERGE_PAYLOAD_PREVIEW:`, `OASIS_IMPACT:` | 12-15 |
+| Evidence pack | `docs/validation/<VTID>/{acceptance.md, commands.log, outputs/}` **committed in the diff** | 30-33 |
+| Acceptance mapping | every `AC-n` line followed within 12 lines by `TEST:`/`CURL:`/`UI:` | 40-41 |
+| Merge gate | VTID in the title | 90 |
+
+The executor's prompt asked the model for `DEV-AUTOPILOT: short descriptive title` and
+a free-text body; its LOCKED FILE LIST forbids adding `docs/validation/**`; its commit
+messages use `VTID-DA-<exec8>`, which does not match the regex. So **no dev-autopilot
+PR that touches gateway source could ever have passed** — the plane and the gate were
+designed apart.
+
+**Shipped:** `services/gateway/src/services/dev-autopilot-pr-contract.ts` — a pure
+function that, given what the executor already has (`activated_vtid`, the emitted file
+list, execution/finding ids, the serving model), stamps the VTID on the title, prepends
+the full marker block to the body, and generates the three evidence files (acceptance
+ACs mapped to the paired test file in the same diff, a commands.log of what the executor
+did, an `outputs/execution.json` record). The executor writes them to the branch after
+the empty-diff guard and before opening the PR; commits now carry the real VTID.
+`test/dev-autopilot-pr-contract.test.ts` ports the workflow's own grep/regex checks so a
+regression here fails locally before it fails in CI.
+
+### 2.3 Why the reconciler lied
+`dev-autopilot-watcher.ts:470` turns GitHub `mergeable_state:'blocked'` into the literal
+string `"branch-protection blocked"` and that string becomes the triage prompt's only
+evidence. Triage (`self-healing-triage-service.ts:302`) had its repo mount and OASIS
+query tool removed, so it can only restate the label. The child execution then re-runs
+the same prompt — the loop is closed on a false premise by construction. Not fixed here;
+it is item R-7 below.
+
+---
+
+## 3. Capability gap matrix
+
+Severity: **S1** blocks the goal outright · **S2** makes it unreliable/slow · **S3** quality-of-life.
+
+### 3.1 Codebase awareness at session start — S1
+| Claude Code session | Operator Console today |
+|---|---|
+| Full checkout, `git log`, CLAUDE.md (~121 KB), DATABASE_SCHEMA.md, service map, tests runnable | `CODEBASE_OVERVIEW_BLOCK` (`gemini-operator.ts:3428`): 6 hand-typed bullets, refreshed by editing a TS constant. No CLAUDE.md, no schema doc, no file tree, no git history. |
+| Any file, any size, any ref | `dev_read_file` = GitHub Contents API, one file per call, `main` by default, large files throw; `dev_search_codebase` = GitHub Search API, 20 paths, files >384 KB invisible (`app.js` is 2.5 MB → permanently unsearchable). **Both off in production.** |
+| Tool-result turn keeps the same context | The final answer after any tool call is composed under a *different, weaker* prompt ("You are Vitana, a friendly community assistant…", `gemini-operator.ts:3611`) with no codebase block and no memory. |
+
+### 3.2 Execution engine — S1 (the core gap)
+| Claude Code loop | Dev Autopilot plane |
+|---|---|
+| N turns; read → search → edit → run → observe → fix | **1 turn**, terminal. 2 LLM calls per ticket (plan, execute). |
+| Surgical edits | Whole-file rewrite, ≤8 files, ≤200 KB each, 32k output tokens (truncation was the dominant failure class, VTID-02652) |
+| `tsc`, jest, lint before commit | Impossible: `node:20-alpine`, no git, no repo, no toolchain (`Dockerfile.job`); `grep child_process` in the plane → 0 hits. Validation is CI *after* the PR. |
+| Error → fix in-session | `{ok:false}`; retry = new row, same prompt, depth ≤2 |
+| Runs anywhere | On prod the executor runs **inside the gateway request process** (`DEV_AUTOPILOT_USE_JOB` unset on `AWS-PROD-DEPLOY-GATEWAY.yml`), i.e. subject to container recycling — the exact watchdog failures logged 09-13. |
+
+The one component that does clone, `npm ci`, `tsc --noEmit`, `jest --findRelatedTests`
+and retry up to 3× is `services/autopilot-worker` (`repo.ts`, `validate.ts`, `retry.ts`)
+— and it is documented as orphaned: not deployed, `DEV_AUTOPILOT_USE_WORKER` set nowhere,
+and unconditionally bypassed by the on-ramp (`dev-autopilot-execute.ts:1618`). Even there
+`claude -p` is used as a text-completion endpoint with `cwd` = the worker dir, not as an
+agent with tools on the clone.
+
+### 3.3 GitHub — S1 for vitana-v1, S2 for platform
+Held (staging): branch/commit/PR/squash-merge on `vitana-platform`, workflow dispatch,
+PR/check status. **Missing:** any write to `exafyltd/vitana-v1` (read-only via
+`FRONTEND_DEPLOY_TOKEN`, only one workflow dispatch — every MAXINA frontend change in the
+CHANGELOG was done by a session, never the console); reading Actions **job logs**
+(`/actions/jobs/{id}/logs` is called nowhere — CI diagnosis is `conclusion` strings +
+`mergeable_state`, which is what produced the wrong triage); PR review comments/labels;
+dispatch paths for the non-gateway `AWS-*-DEPLOY-*.yml` workflows. Three separate
+token-resolution ladders (`github-service.ts:25`, `dev-autopilot-execute.ts:942`,
+`dev-autopilot-bridge.ts:49`) — consolidate.
+
+### 3.4 AWS admin — S1 on prod, S2 on staging
+Runtime SDK clients: ECS (RunTask + DescribeServices on a 9-name allowlist), Bedrock,
+Polly, Transcribe, S3, Cognito. **Absent:** CloudWatch Logs, Secrets Manager, ECR, IAM/STS,
+`ecs:UpdateService`/`RegisterTaskDefinition`/`DescribeTaskDefinition`. The only log
+workflow (`DEBUG-GATEWAY-LOGS.yml`) still authenticates to GCP — dead. `ecs:RunTask` /
+`iam:PassRole` on the staging gateway role and `bedrock:InvokeModel` on the executor role
+are still **unverified live** (VTID-03850/03851 record). Prod task-def credentials
+(`GITHUB_SAFE_MERGE_TOKEN`, `SUPABASE_*`, `DEEPSEEK_API_KEY`) are live-only — not declared
+in `AWS-PROD-DEPLOY-GATEWAY.yml`, so unreviewable from the repo and a rotation would be a
+hand edit (the VTID-03513 trap). Platform-owner decision on record (VTID-03929): the
+operator's AWS identity "must have the maximum broad one" — that decision has not been
+executed as IAM.
+
+### 3.5 RepoWise / Graphify indexes — S1
+No index of any kind is wired to the console or the executor. The only mention of
+`repowise`/`graphify` in gateway source is the comment at `gemini-operator.ts:3412` saying
+they cannot run in the container. `services/mcp-gateway` (an MCP connector hub) is
+dormant and unreferenced by `services/gateway/src`. The mandatory workflow in CLAUDE.md is
+therefore unsatisfiable for the console, and for sessions like this one.
+
+### 3.6 Cross-session memory — S2
+`dev_agent_memory` (Titan v2 embeddings, `recall_dev_memory` RPC) is a good substrate,
+but: recall is top-5 on the raw user message only (`gemini-operator.ts:3795`); writes
+happen only when one of five tools succeeds (`routes/operator.ts:112`) — no decisions,
+preferences, gotchas, failures, or plain conversations are ever remembered; the executor
+and on-ramp never read or write it; there is no thread summary/compaction; and transcripts
+are `localStorage` — a new browser, a cleared cache, or a colleague sees nothing.
+`GET /api/v1/operator/chat/:threadId` (backed by `oasis_events`) exists but the UI never
+calls it. `threadIdentityMap` / `threadAuthMap` are in-process Maps lost on every deploy.
+
+### 3.7 Real-time status awareness — S2
+Read tools exist for the ledger, OASIS events, one ECS service, 4 allowlisted tables,
+deployment status and the internal approvals queue. **Missing:** live PR + check-run state
+for arbitrary PRs, workflow-run logs, CloudWatch logs, the 55-probe Service Health panel
+(browser-only fetch loop, no tool), ALB/target-group state, OASIS *stream* subscription,
+`git log`/diff, and any snapshot of these at session start. `investigate_failure`,
+`recall_conversation_at_time` are dispatchable but undeclared to the model.
+
+### 3.8 Governance friction — S2
+- `VALIDATOR-CHECK` contract (fixed for the executor here; the `docs/validation/**`
+  evidence pack assumes CI-verifiable ACs — the Route Mount gate will still block a PR
+  that *adds* a route, because `ROUTE_MOUNT:/FINAL_URL:/CURL_PROOF:` need a real curl).
+- The on-ramp requires a pre-existing, `spec_status='approved'` VTID, while CLAUDE.md
+  rule 2b says a session self-allocates and self-approves for operator-instructed work.
+  The console should do the same in one step (`autopilot_create_task` +
+  `spec_status='approved'` when the exafy_admin asked for it in conversation).
+- `dev_autopilot_config.allow_scope` excludes `docs/**`, `supabase/migrations/**`,
+  `scripts/**`, `.github/**`, and all of `vitana-v1` — a large share of real daily work.
+- `daily_budget=500`, `concurrency_cap=4`, `cooldown 1 min` — fine; `max_auto_fix_depth=2`
+  is wasted while retries re-run the same prompt.
+
+### 3.9 Environment gating — S1 for "production operator"
+Staging pins `OPERATOR_EXECUTION_ONRAMP_ENABLED`, `OPERATOR_CODEBASE_READ_ENABLED`,
+`OPERATOR_DB_READONLY_ENABLED`, `OPERATOR_AWS_READONLY_ENABLED`, `OPERATOR_PLANNER_ENABLED`,
+`DEV_AUTOPILOT_USE_JOB`, `DEV_AUTOPILOT_JOB_CLOUD=aws`, `DEV_AUTOPILOT_WATCHER_LIVE`.
+**Prod pins none of them** except the on-ramp (applied 09-16 via `env-only`). So the prod
+console can queue a code execution but cannot read the code it is changing, cannot see
+the DB or ECS, runs the executor in-process, and its watcher is in DRY_RUN — which
+*fabricates* merge/deploy transitions (`dev-autopilot-watcher.ts:44`).
+
+### 3.10 UI / UX — S3
+No token streaming (single `await fetch`), no tool-call transcript (one line per tool,
+no args/results/errors), no diff preview or patch approval, no plan approval in-console,
+no cancel, no cost/model display (`meta.provider/model` returned but never rendered),
+execution progress lives on a different screen (`/executions/:id/stream` SSE exists) with
+nothing linking the chat's `execution_id` to it.
+
+### 3.11 Security hygiene — S1 (independent of the goal, but blocks safe experimentation)
+- The Supabase `service_role` key rotation flagged in `docs/HANDOFF-voice-quality.md:65`
+  ("the earlier key was exposed and should be rotated") has **no confirmation anywhere**
+  — not in CLAUDE.md's CHANGELOG, not in git. Still open.
+- `CLAUDE.md:1920-1921` prints partial live PATs as the documented way to use the API.
+- Test Run #1 was executed **on production** with a real execution; vitana-v1's absolute
+  rule forbids testing against production. Run #2/#3 belong on staging (§6).
+
+---
+
+## 4. Target architecture — the "Operator Execution Agent"
+
+```
+Command Hub chat ──▶ /api/v1/operator/chat (server-side session, streaming)
+                          │  bootstrap pack (§4.1)  +  memory recall/write (§4.3)
+                          ▼
+                 Operator model (policy 'operator')  ── read tools (§4.4) ──▶ GitHub / AWS / DB / index
+                          │ autopilot_execute_task (self-allocates VTID, approves)
+                          ▼
+            dev_autopilot_executions row ──▶ ecs:RunTask  vitana-autopilot-agent   (§4.2)
+                                                │  real clone · CLAUDE.md · index · tsc/jest
+                                                │  Claude Code headless on Bedrock, tools on the repo
+                                                ▼
+                        PR with validator contract (this PR) ──▶ CI ──▶ watcher (log-aware) ──▶ merge/deploy
+```
+
+### 4.1 Session bootstrap pack (replaces `CODEBASE_OVERVIEW_BLOCK`)
+Assemble per thread, cache 5 min, ~20-40 KB: CLAUDE.md Part 1 rules + the §1b/§2 tables;
+`config/service-path-map.json`; DATABASE_SCHEMA.md table index; the last 20 CHANGELOG
+rows; live `build-info` for staging + prod; open PRs on both repos with check state;
+last 10 `oasis_events` of type `deploy.*`/`dev_autopilot.*`; the top-10 memory recall
+against the *thread summary*, not the raw message; the tool catalog rendered from the
+declarations (never a hand-typed list). Same prompt for tool-result turns.
+
+### 4.2 Agentic executor (`vitana-autopilot-agent`)
+Revive `services/autopilot-worker` as a deployed one-shot ECS task, not a workstation
+daemon: image with git + Node 20 + a shallow clone of both repos refreshed per run;
+Claude Code CLI in headless mode **on Bedrock** (`CLAUDE_CODE_USE_BEDROCK=1`, the task
+role's `bedrock:InvokeModel` — no `ANTHROPIC_API_KEY`, which keeps ALWAYS 10a/10b), with
+`cwd` = the clone so the model has Read/Grep/Edit/Bash tools on the actual repository;
+the executor prompt becomes "implement VTID-X per this plan; run tsc and the related jest
+suites; commit on `dev-autopilot/<exec8>`; stop" instead of "emit all files". Keep the
+existing safety gate, LOCKED-scope check (post-hoc on `git diff --name-only`), coverage,
+and PR-flood guards; keep the PR contract from this PR. Fallback lane when Bedrock Claude
+is unavailable: the same runner with the router's DeepSeek model through a tool-calling
+loop (the `worker` policy fallback), never the single-shot path. Bounded: 25-minute task
+timeout, 3 validation attempts, cost recorded per run in `dev_autopilot_outcomes`.
+
+### 4.3 Memory that actually accrues
+Server-side `operator_threads` / `operator_messages` tables (the `oasis_events` audit
+row stays); a thread summary written on every 10th turn and at close; `writeDevMemory`
+on decisions/gotchas/failures/preferences extracted by the `memory` policy stage from each
+completed turn (not only five tool names); the executor writes `task_outcome` +
+`gotcha` rows from each run (validation failures, CI failure reasons); recall query =
+summary + current message, top-10, category-diverse.
+
+### 4.4 Access to build, in this order
+1. GitHub Actions **job logs** (`getJobLogs`) — unblocks honest triage and CI-red
+   handling; 2. `vitana-v1` write path (branch/commit/PR/merge) with the same safety gate
+   and a frontend `allow_scope`; 3. CloudWatch `logs:FilterLogEvents` on `/ecs/vitana-*`;
+   4. `ecs:DescribeTaskDefinition/DescribeTasks/ListTasks` (read) and the deploy-workflow
+   dispatch table for every `AWS-*-DEPLOY-*.yml`; 5. an explicit `dev_run_sql_readonly`
+   over the Aurora reader (bounded, logged) instead of the 4-table PostgREST allowlist;
+   6. Secrets Manager `GetSecretValue` for the operator's own secrets only. Each grant is
+   its own VTID and is declared in the deploy workflow, never hand-edited on the task def.
+
+### 4.5 Index service
+Build RepoWise + Graphify in CI on every merge to `main` (both repos), publish
+`graph.json` + the RepoWise index to S3, and expose `dev_index_query` /
+`dev_graph_path` / `dev_get_risk` tools in the gateway that read the published artifact
+for the commit the session is on. Same artifacts are pulled into the agent task at start,
+which finally makes CLAUDE.md's "Mandatory Codebase Intelligence Workflow" satisfiable for
+the console, the agent, and Claude Code sessions alike.
+
+### 4.6 Console UX
+SSE streaming for the operator turn (the `/executions/:id/stream` pattern already
+exists); a tool-call transcript with args/result/duration; the queued execution's live
+steps inline in the chat; a diff preview with Approve/Reject before the PR is opened
+(commit-tier, like the BackOffice maker-checker); cost/model badge; cancel.
+
+---
+
+## 5. Roadmap (each row = one VTID, one PR; ordered by leverage ÷ risk)
+
+| # | Slice | Unblocks | Size |
+|---|---|---|---|
+| R-0 | **This PR** — path contract, violations surfaced, validator-compliant PR contract + evidence pack | Run #2 can pass `validate-pr` | done |
+| R-1 | Pin the operator/autopilot flag set + `DEV_AUTOPILOT_USE_JOB=true`/`JOB_CLOUD=aws` on **prod** via `env-only`; verify `ecs:RunTask`/`iam:PassRole`/`bedrock:InvokeModel` live | Executor stops running inside the gateway; prod console can read code/DB/ECS | S |
+| R-2 | Actions job-log reader + watcher passes failing check names/log excerpts to triage; triage regains an OASIS query tool | Honest CI diagnosis; ends the "branch protection" false loop | S |
+| R-3 | Bootstrap pack (§4.1) + rendered tool catalog + same prompt for tool-result turns | Session-start awareness | M |
+| R-4 | On-ramp self-allocates + approves the VTID for exafy_admin-instructed work; `docs/validation/**`, `docs/**`, `scripts/**` in allow_scope | One-step "do this" from chat | S |
+| R-5 | Server-side threads + summaries + broad memory writes (§4.3) | Cross-session memory | M |
+| R-6 | Agentic executor task on Bedrock (§4.2), behind `DEV_AUTOPILOT_EXECUTOR=agent` | Claude-Code-quality execution, local tsc/jest before PR | L |
+| R-7 | `vitana-v1` write lane + frontend allow_scope + preview-deploy verification | MAXINA work from the console | M |
+| R-8 | Index service (§4.5) | Knowledge-graph awareness | M |
+| R-9 | Console UX: streaming, transcript, inline execution steps, diff approval | Operator trust | M |
+| R-10 | CloudWatch logs + ECS describe + read-only SQL tools; IAM as declared workflow state | AWS admin awareness | M |
+| R-11 | Security: confirm/perform service_role rotation; remove PATs from CLAUDE.md; declare prod secrets in the workflow | Safe to keep experimenting | S |
+
+### Test runs (all on **staging**, `preview-aws-gateway.vitanaland.com`, per vitana-v1's rule)
+- **Run #2 (after R-0):** a two-file change that needs a *new* test file (e.g. add a
+  pure helper under `services/gateway/src/services/` + `test/<name>.test.ts`). Success =
+  PR passes `validate-pr` end to end, CI green, watcher merges on staging.
+- **Run #3 (after R-1/R-2):** a fix that requires reading a file *not* in the plan
+  (a caller of the changed function) — expect the single-shot executor to fail on scope
+  or coverage; this is the measurement that motivates R-6.
+- **Run #4 (after R-6):** the same task as Run #3 on the agentic executor; compare
+  wall-clock, PR-diff size, CI outcome, and cost from `dev_autopilot_outcomes`.
+
+---
+
+## 6. What this PR changes, and what it does not verify
+
+Changed: `tool-registry.ts`, `gemini-operator.ts` (schema text, prompt rule, violation
+rendering), `ai-personality-service.ts` (prompt rule, identical), new
+`dev-autopilot-pr-contract.ts` + wiring in `dev-autopilot-execute.ts` (contract applied,
+evidence files written after the empty-diff guard, real VTID in commit messages),
+`test/dev-autopilot-pr-contract.test.ts` (18 tests mirroring the validator's own checks).
+`tsc --noEmit` clean; 8 affected suites 103/103 green locally.
+
+Not verified: a real on-ramp execution through the new contract (that is Run #2, on
+staging); the Route Mount gate for PRs that add routes remains an honest gap; the
+`OASIS_IMPACT: no` default is correct for the autopilot's current allow scope but must
+be revisited if the scope grows to files that emit events.
