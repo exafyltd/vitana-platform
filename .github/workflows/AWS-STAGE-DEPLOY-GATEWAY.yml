@@ -609,6 +609,27 @@ jobs:
           else
             echo "  resolved vitana/erp-bridge/staging/bridge-token -> ERP_BRIDGE_URL=$ERP_BRIDGE_URL"
           fi
+          # VTID-04000: the Vertex Serbian bridge is OPTIONAL on staging until
+          # an operator runs scripts/aws/setup-vertex-serbian-bridge.sh
+          # --apply. Absent secret => GCP_SERVICE_ACCOUNT_JSON/
+          # GOOGLE_CLOUD_PROJECT/VERTEX_AI_LOCATION/
+          # VERTEX_SERBIAN_BRIDGE_ENABLED are all left untouched on the task
+          # definition, so the bridge stays inert exactly as it ships from
+          # the PR — this must never fail a gateway deploy. Project id is
+          # `project-da3eb05a-c86e-47cb-85f` (Vitanaland, GCP project number
+          # 20926255361), location is `global` — the platform owner enabled
+          # the Live API as a global-endpoint service, not a regional one;
+          # confirmed against Google's own docs that the Vertex Live
+          # WebSocket endpoint (`wss://{location}-aiplatform.googleapis.com`)
+          # accepts `global` as a literal location the same way it accepts
+          # any region, so no code change was needed for this.
+          SEC_GCP_SA=$(aws secretsmanager describe-secret --secret-id vitana/gateway/staging/gcp-service-account-json --query ARN --output text 2>/dev/null || true)
+          if [ -z "$SEC_GCP_SA" ] || [ "$SEC_GCP_SA" = "None" ]; then
+            SEC_GCP_SA=""
+            echo "  gcp-service-account-json secret absent - Vertex Serbian bridge not wired (VTID-04000; expected until provisioned)"
+          else
+            echo "  resolved vitana/gateway/staging/gcp-service-account-json -> Vertex Serbian bridge active"
+          fi
           TASK_ROLE_ARN=$(aws ecs describe-task-definition --task-definition "$TD_ARN" \
             --query 'taskDefinition.taskRoleArn' --output text)
           if [ -z "$TASK_ROLE_ARN" ] || [ "$TASK_ROLE_ARN" = "None" ]; then
@@ -666,6 +687,7 @@ jobs:
                  --arg SEC_AURORA_RLS "$SEC_AURORA_RLS" \
                  --arg SEC_GITHUB_TOKEN "$SEC_GITHUB_TOKEN" \
                  --arg SEC_ERP_BRIDGE "$SEC_ERP_BRIDGE" --arg ERP_BRIDGE_URL "$ERP_BRIDGE_URL" \
+                 --arg SEC_GCP_SA "$SEC_GCP_SA" \
                  --arg TASK_ROLE "$TASK_ROLE_ARN" '
                 .containerDefinitions[0].image = $IMG
                 | .containerDefinitions[0].environment |=
@@ -753,6 +775,16 @@ jobs:
                       | .containerDefinitions[0].secrets |=
                           ( [ .[] | select(.name | IN("ERP_BRIDGE_TOKEN") | not) ]
                             + [ {name:"ERP_BRIDGE_TOKEN", valueFrom:$SEC_ERP_BRIDGE} ] ) )
+                    else . end )
+                | ( if $SEC_GCP_SA != "" then
+                      ( .containerDefinitions[0].environment |=
+                          ( [ .[] | select(.name | IN("GOOGLE_CLOUD_PROJECT","VERTEX_AI_LOCATION","VERTEX_SERBIAN_BRIDGE_ENABLED") | not) ]
+                            + [ {name:"GOOGLE_CLOUD_PROJECT", value:"project-da3eb05a-c86e-47cb-85f"},
+                                {name:"VERTEX_AI_LOCATION", value:"global"},
+                                {name:"VERTEX_SERBIAN_BRIDGE_ENABLED", value:"true"} ] )
+                      | .containerDefinitions[0].secrets |=
+                          ( [ .[] | select(.name | IN("GCP_SERVICE_ACCOUNT_JSON") | not) ]
+                            + [ {name:"GCP_SERVICE_ACCOUNT_JSON", valueFrom:$SEC_GCP_SA} ] ) )
                     else . end )
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')

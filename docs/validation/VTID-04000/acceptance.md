@@ -140,6 +140,48 @@ structurally (unit tests + the existing invariant suite), not against a
 real Vertex connection. The next real signal is the reporting user's next
 pre-login Serbian session, once the operator steps above are done.
 
+## Staging task-def wiring, with the platform owner's own project details
+
+The platform owner supplied the new GCP project directly: **Vitanaland**,
+project id `project-da3eb05a-c86e-47cb-85f`, project number
+`20926255361`, Live API enabled as a **global** endpoint (not regional).
+
+`scripts/aws/setup-vertex-serbian-bridge.sh` gained a `--key-file <path>`
+option so the owner could push their own already-downloaded
+service-account key straight to AWS Secrets Manager themselves, without
+ever pasting the key into chat — `gcloud` is skipped entirely on that path,
+only the AWS upload runs. Default (no `--key-file`) behavior — gcloud
+creates the service account/key itself — is unchanged.
+
+Verified `global` needs no code change before wiring it: Google's own docs
+confirm the Vertex Live WebSocket endpoint
+(`wss://{location}-aiplatform.googleapis.com/ws/...`) accepts `global` as a
+literal location exactly like any region — `vertex-live-client.ts`'s
+`buildBidiGenerateContentUrl(location)` already does simple string
+interpolation, so `global` produces `wss://global-aiplatform.googleapis.com/...`
+correctly with no edit needed.
+
+`AWS-STAGE-DEPLOY-GATEWAY.yml` now resolves
+`vitana/gateway/staging/gcp-service-account-json` via
+`aws secretsmanager describe-secret`, the same OPTIONAL pattern the
+ERP-bridge secret already uses (VTID-03840) — absent secret leaves
+`GOOGLE_CLOUD_PROJECT`/`VERTEX_AI_LOCATION`/`VERTEX_SERBIAN_BRIDGE_ENABLED`/
+`GCP_SERVICE_ACCOUNT_JSON` untouched on the task def and never fails the
+deploy; once the owner runs the provisioning script with `--apply`, the
+next staging deploy picks it up automatically with
+`GOOGLE_CLOUD_PROJECT=project-da3eb05a-c86e-47cb-85f`,
+`VERTEX_AI_LOCATION=global`, `VERTEX_SERBIAN_BRIDGE_ENABLED=true`.
+
+TEST: `test/orb/live/upstream/staging-vertex-serbian-bridge-wiring-pinned.test.ts`
+(8 tests: optional describe-secret resolution, never-exit-1, the jq
+`--arg`/guard/strip/upsert shape, the exact project id + `global` location
+pinned, and confirmed NOT wired on prod). `tsc --noEmit` clean;
+`staging-deploy-workflow-bash-syntax.test.ts` still 7/7 (the workflow's
+`run:` blocks stay valid bash and the jq program still has no bare
+apostrophe). Not yet independently confirmed live — the next real signal
+is the owner running the provisioning script and this wiring taking effect
+on the next staging deploy.
+
 ## Post-merge finding: pre-existing Vertex/LiveKit parity gap (not this VTID's regression)
 
 This PR's own `voice-pipeline-parity` CI scanner (report-only, runs on

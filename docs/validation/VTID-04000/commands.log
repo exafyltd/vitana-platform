@@ -4,3 +4,10 @@ npx jest test/orb/live/upstream/upstream-provider-selector.test.ts test/orb/live
 npm run build
 npx jest --silent
 bash -n /home/user/vitana-platform/scripts/aws/setup-vertex-serbian-bridge.sh
+
+# --- staging task-def wiring, once the platform owner supplied project id ---
+bash -n /home/user/vitana-platform/scripts/aws/setup-vertex-serbian-bridge.sh
+python3 -c "import yaml; yaml.safe_load(open('.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml'))"
+cd /home/user/vitana-platform/services/gateway
+npx jest test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts test/orb/live/upstream/staging-vertex-serbian-bridge-wiring-pinned.test.ts --silent
+npx tsc --noEmit
