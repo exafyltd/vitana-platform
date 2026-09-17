@@ -62,7 +62,7 @@ const LANG = process.env.LANG_CODE || 'sr';
 // vitanaland surface ~290 — so it is the one knob that changes the setup
 // envelope's size without touching code. Used to isolate the tool-catalog
 // size as the cause of the authenticated-only 1007 closes.
-const ROUTE = args.route || process.env.CURRENT_ROUTE || '';
+const ROUTE = typeof args.route === 'string' ? args.route : '';
 const SSE_TIMEOUT_MS = 40000; // server's own greeting_timeout watchdog is 30s
 const GAP_BETWEEN_TRIALS_MS = 2000;
 
