@@ -1,0 +1,24 @@
+{
+  "vtid": "VTID-04008",
+  "execution_id": "8b2bce93-f7ff-4a81-8554-5ea3dd4221c5",
+  "finding_id": "d16e8810-22aa-4835-ae60-0d1a62113fd3",
+  "plan_version": 1,
+  "branch": "dev-autopilot/8b2bce93",
+  "base_branch": "main",
+  "llm": {
+    "provider": "bedrock",
+    "model": "eu.anthropic.claude-opus-4-5-20251101-v1:0"
+  },
+  "files": [
+    {
+      "path": "services/gateway/src/services/dev-autopilot-ci-logs.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/test/dev-autopilot-ci-logs.test.ts",
+      "action": "modify"
+    }
+  ],
+  "generated_at": "2026-09-17T19:52:45.841Z",
+  "generated_by": "dev-autopilot-execute (VTID-04002 PR contract)"
+}
