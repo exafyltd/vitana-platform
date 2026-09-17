@@ -79,6 +79,17 @@ const POLLY_PCM_SAMPLE_RATE_HZ = 16_000;
 const DEFAULT_AUDIO_CHUNK_BYTES = 32_000;
 
 /**
+ * VTID-03986 — margin added on top of the estimated TTS playback duration
+ * before mic audio is forwarded to Transcribe again. Covers the gap between
+ * the server emitting the last audio chunk and the client actually finishing
+ * playback (network delivery, client-side buffering/decode). Deliberately
+ * generous over precise: an over-wide gate only delays picking up the next
+ * real utterance by a few hundred ms, while an under-wide one re-admits the
+ * exact backlog this fix exists to remove.
+ */
+const PLAYBACK_MARGIN_MS = 400;
+
+/**
  * VTID-03722 — default silence budget that ends a user turn, in ms.
  *
  * 900ms: long enough to survive a mid-sentence pause (Transcribe emits finals
@@ -116,6 +127,13 @@ export class CascadedLiveClient implements UpstreamLiveClient {
   private silenceTimer: ReturnType<typeof setTimeout> | null = null;
   /** Guards against two turns generating concurrently. */
   private turnInFlight = false;
+  /**
+   * VTID-03986 — epoch ms until which incoming mic audio is dropped rather
+   * than forwarded to Transcribe. Set from the estimated playback duration
+   * of the reply just emitted (see `emitAudio()`); `sendAudioChunk()` checks
+   * it alongside `turnInFlight`. See `sendAudioChunk()` for why this exists.
+   */
+  private busyUntilMs = 0;
 
   private audioHandler: ((e: AudioOutputEvent) => void) | null = null;
   private transcriptHandler: ((e: TranscriptEvent) => void) | null = null;
@@ -196,6 +214,24 @@ export class CascadedLiveClient implements UpstreamLiveClient {
 
   sendAudioChunk(audioB64: string): boolean {
     if (this.state !== 'open' || !this.transcribe) return false;
+    // VTID-03986 — full-duplex (VTID-03706) forwards a continuous audio
+    // frame for the entire session, real speech above the echo floor and
+    // digital silence below it, so Nova's own native VAD/barge-in keeps
+    // working. This client has no use for that stream while a turn is
+    // generating or its reply is still playing out client-side: the cascade
+    // has no barge-in (see the file header) and `TranscribeStreamSession` is
+    // a single, ordered, never-restarted pipe (see its own header) — every
+    // frame pushed here is queued ahead of whatever the user says next, and
+    // Transcribe must work through all of it before it can transcribe that.
+    // Left ungated, every reply's own duration adds to a backlog that
+    // compounds turn over turn (measured live on one session:
+    // 8.7s -> 16.6s -> 35s -> 43s per-turn latency). Dropping here is safe:
+    // the client already silences non-speech frames below the echo floor
+    // (VTID-03706), so nothing meaningful is lost, and `turnInFlight`/
+    // `busyUntilMs` both clear the instant it is safe to listen again.
+    // Still `open` and functioning, so this is an intentional no-op, not
+    // backpressure — return true, never false.
+    if (this.turnInFlight || Date.now() < this.busyUntilMs) return true;
     this.transcribe.pushAudioB64(audioB64);
     return true;
   }
@@ -374,6 +410,12 @@ export class CascadedLiveClient implements UpstreamLiveClient {
   private emitAudio(audioB64: string): void {
     const buf = Buffer.from(audioB64, 'base64');
     const mimeType = `audio/pcm;rate=${POLLY_PCM_SAMPLE_RATE_HZ}`;
+    // VTID-03986 — 16-bit mono PCM: 2 bytes/sample. Extend the
+    // `sendAudioChunk()` gate through this reply's estimated client-side
+    // playback so full-duplex mic frames stop backing up Transcribe for as
+    // long as Vitana is actually talking, not just while she is thinking.
+    const estimatedPlaybackMs = Math.round((buf.length / 2 / POLLY_PCM_SAMPLE_RATE_HZ) * 1000);
+    this.busyUntilMs = Date.now() + estimatedPlaybackMs + PLAYBACK_MARGIN_MS;
     for (let offset = 0; offset < buf.length; offset += this.audioChunkBytes) {
       const slice = buf.subarray(offset, Math.min(offset + this.audioChunkBytes, buf.length));
       this.audioHandler?.({ dataB64: slice.toString('base64'), mimeType });

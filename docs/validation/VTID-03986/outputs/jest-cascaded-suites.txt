@@ -1,0 +1,67 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+PASS test/orb/live/upstream/cascaded-voice-fish-fallback.test.ts
+  VTID-03970: cascade eligibility with Fish fallback
+    ✓ sr stays ineligible (no_polly_voice) when Fish is unconfigured — the pre-existing default (2 ms)
+    ✓ sr stays ineligible when the flag is set but no API key is configured (1 ms)
+    ✓ sr becomes eligible, routed to Fish, once explicitly enabled AND keyed
+    ✓ a language Polly already covers stays on Polly even with Fish enabled (1 ms)
+    ✓ a language with no curated Fish voice either stays ineligible even with Fish enabled
+
+PASS test/orb/live/upstream/cascaded-voice.test.ts
+  VTID-03683: cascade language eligibility
+    ✓ REFUSES every language Nova speaks natively
+    ✓ takes exactly the languages Nova cannot speak AND both AWS services can (2 ms)
+    ✓ refuses sr, and blames POLLY — the blocker that is actually verified
+    ✓ derives coverage from Polly rather than restating it (1 ms)
+    ✓ normalises locale tags and refuses unknown languages (1 ms)
+  VTID-03683: activation gate is off by default
+    ✓ is off unless the value is exactly "true"
+  VTID-03683: selector routes Nova-blocked languages to the cascade
+    ✓ without the flag, behaviour is byte-for-byte the old forced-Nova path
+    ✓ with the flag on and the language covered, it routes to the cascade
+    ✓ with the flag on but the language NOT covered (sr), it does not divert (1 ms)
+    ✓ VTID-03723: the cascade now rescues regardless of vertexUnavailable — there is no "live Vertex" branch left to defer to
+    ✓ never diverts a session whose language Nova DOES support
+
+PASS test/orb/live/upstream/cascaded-wiring.test.ts
+  seam 1 — the selector is told about the cascade
+    ✓ imports the cascade gate helpers (they previously had NO caller on any live path) (2 ms)
+    ✓ passes a `cascade` field into selectUpstreamProvider (1 ms)
+    ✓ derives languageSupported from the session language, not a hardcoded list (1 ms)
+  seam 2 + 3 — a cascaded decision actually builds a cascaded client
+    ✓ has a branch on the cascaded provider decision (1 ms)
+    ✓ constructs the client with the 'cascaded' provider and supplies deps.cascaded
+    ✓ the cascaded branch precedes the nova_sonic branch and returns (1 ms)
+    ✓ binds the shared session handlers to the cascaded client
+    ✓ reuses the generic ws facade rather than introducing a second adapter
+    ✓ sets upstreamProvider so telemetry does not report the session as Nova (1 ms)
+  the cascade must NOT inherit Nova-specific transport behaviour
+    ✓ does not arm the silence keepalive on the cascaded path (1 ms)
+    ✓ does not arm Nova stream rotation on the cascaded path
+  failure is loud
+    ✓ emits a typed failure event carrying the error code
+    ✓ emits a success event so the rescue is observable in oasis_events (1 ms)
+
+PASS test/orb/live/upstream/cascaded-live-client-audio-gating.test.ts
+  VTID-03986: cascade drops mic audio while Vitana is thinking or speaking
+    ✓ forwards audio normally before any turn has ever run (2 ms)
+    ✓ drops mic audio while a turn is generating (turnInFlight), then resumes once the reply finishes playing (2 ms)
+    ✓ does not extend the busy window when the turn errors before any audio is emitted (1 ms)
+    ✓ a short reply gates for a correspondingly short window, not a fixed long one (1 ms)
+    ✓ still returns false (not true) when the client is not open at all
+
+PASS test/orb/live/upstream/cascaded-live-client-empty-completion.test.ts
+  VTID-03985: cascade turn survives an ok-but-empty primary completion
+    ✓ retries against the fallback model and completes the turn when the retry has real text (2 ms)
+    ✓ reports cascade_llm_empty only after BOTH the primary and the retry come back empty (1 ms)
+    ✓ does NOT retry when the primary already used the router-level fallback (fallbackUsed:true) (1 ms)
+    ✓ does not retry on an explicit primary failure (ok:false) — cascade_llm_failed still fires immediately
+    ✓ a non-empty primary reply never triggers a retry call at all (1 ms)
+
+Test Suites: 5 passed, 5 total
+Tests:       39 passed, 39 total
+Snapshots:   0 total
+Time:        0.548 s, estimated 1 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
