@@ -108,7 +108,6 @@ import {
   isHardDay,
 } from '../assistant-continuation/providers/day-close-themes';
 import { buildDayCloseBlock, buildDayCloseOpenerLine } from '../assistant-continuation/providers/day-close-prompt';
-import { LOCALE_ENGLISH_NAME } from '../../i18n/catalog';
 
 // ---------------------------------------------------------------------------
 // Decision shape
@@ -863,7 +862,7 @@ function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
   // "Respond ONLY in Serbian" — "verbatim" for an English string wins the
   // conflict for this one turn.
   //
-  // VTID-04010 FOLLOW-UP (same day): the first fix here ("Translate the
+  // VTID-04010 FOLLOW-UP #1 (same day): the first fix here ("Translate the
   // following into natural, fluent X ... do not leave any part of it in
   // English ... Keep the concrete details ... do not paraphrase them away")
   // was measured live and made things categorically worse — every single
@@ -876,19 +875,34 @@ function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
   // already identified and fixed the EXACT same anti-pattern this rewrite
   // reintroduced — quoting a block of text and instructing the model to
   // preserve/translate it "verbatim"/"do not leave any part... do not
-  // paraphrase" reads as a literal-recitation directive, which both Nova's
-  // and (now measured) Vertex's guardrails reject outright rather than
-  // degrade gracefully. Fixed the same way `override_v2` already works:
-  // treat the composed English text as a LEAD to compose freely from, not
-  // a quoted string to translate/recite. The model is explicitly told NOT
-  // to recite or translate it literally — only to keep the facts and speak
-  // entirely in the target language.
+  // paraphrase" reads as a literal-recitation directive.
+  //
+  // VTID-04010 FOLLOW-UP #2 (VTID-04015, same day): follow-up #1's rewrite
+  // ("Speak entirely in ${langName} — use no English words ... compose the
+  // wording yourself in ${langName}") still measured only 2/11 authenticated
+  // Serbian trials succeeding — the rest still hit the identical 1007 close.
+  // The remaining difference from `override_v2`'s proven-reliable wording
+  // (24/24 wake_opener events succeeded per this rung's own sibling): that
+  // rung NEVER names the target language or says "use no English" at all —
+  // it only says "compose the wording yourself in the user's own language",
+  // once, generically, and relies on the session's own top-level "Respond
+  // ONLY in {language}" system instruction to do the actual language
+  // selection. Explicitly naming the language and repeating "no English"
+  // reads as a second, competing language directive layered on top of the
+  // system prompt's own one — plausibly the same "extra directive fighting
+  // the base instruction" shape as the ORIGINAL bug this rung exists to fix,
+  // just inverted. Fixed by dropping `langName`/`LOCALE_ENGLISH_NAME`
+  // entirely and matching `override_v2`'s generic phrasing byte-for-byte in
+  // spirit: the model already knows the session's language from the system
+  // prompt; this rung only needs to say "not in English" as a light nudge
+  // (the one substantive difference from override_v2's context, since this
+  // rung's own bug was specifically an English-language leak), never name a
+  // specific target language.
   if (typeof ctx.proactiveLine === 'string' && ctx.proactiveLine.trim().length > 0) {
     const safeProactive = ctx.proactiveLine.trim().replace(/"/g, '\\"');
-    const langName = LOCALE_ENGLISH_NAME[ctx.lang as keyof typeof LOCALE_ENGLISH_NAME] || 'English';
     const proactivePrompt =
       `Open the conversation from this prepared lead (written in English for your reference): "${safeProactive}"\n` +
-      `Speak entirely in ${langName} — use no English words. Keep every concrete fact from the lead (names, titles, numbers) and the same single proposal exactly as given, but compose the wording yourself in ${langName}; do not recite the lead word for word and do not translate it literally. Then stop — do not add a question beyond the proposal already in the lead, and do not split it into multiple turns.`;
+      `Compose the wording yourself, entirely in the user's own language for this session — never in English. Keep every concrete fact from the lead (names, titles, numbers) and the same single proposal exactly as given, but do not recite the lead word for word and do not translate it literally. Then stop — do not add a question beyond the proposal already in the lead, and do not split it into multiple turns.`;
     return {
       wakeOpener: 'safe_fast_proactive',
       directive: proactivePrompt,

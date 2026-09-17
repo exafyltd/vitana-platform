@@ -1109,11 +1109,11 @@ exports[`computeGreetingDecision — rung golden snapshots rung 4: safe_fast_pro
 {
   "diag": {
     "lang": "de",
-    "prompt_len": 541,
+    "prompt_len": 555,
     "wake_opener": "safe_fast_proactive",
   },
   "directive": "Open the conversation from this prepared lead (written in English for your reference): "Letztes Mal ging es um deinen Schlaf — machen wir da weiter?"
-Speak entirely in German — use no English words. Keep every concrete fact from the lead (names, titles, numbers) and the same single proposal exactly as given, but compose the wording yourself in German; do not recite the lead word for word and do not translate it literally. Then stop — do not add a question beyond the proposal already in the lead, and do not split it into multiple turns.",
+Compose the wording yourself, entirely in the user's own language for this session — never in English. Keep every concrete fact from the lead (names, titles, numbers) and the same single proposal exactly as given, but do not recite the lead word for word and do not translate it literally. Then stop — do not add a question beyond the proposal already in the lead, and do not split it into multiple turns.",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,
