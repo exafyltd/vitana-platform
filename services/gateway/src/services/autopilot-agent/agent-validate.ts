@@ -10,6 +10,7 @@ import { defaultExec, type ExecFn } from './agent-workspace';
 import type { CheckKind, CheckResult } from './agent-tools';
 
 const TSC_TIMEOUT_MS = 10 * 60_000;
+export const TSC_ARGS = ['--noEmit', '-p', 'tsconfig.json', '--preserveSymlinks'] as const;
 /**
  * VTID-04009: tsc on the gateway project needs more than V8's default
  * old-space (~2 GB on the executor task, where Test Run #4 measured three
@@ -88,7 +89,12 @@ export function selectJestTargets(changed: string[]): { project: string; pattern
 export async function runTsc(repoDir: string, projectRel = 'services/gateway', exec: ExecFn = defaultExec): Promise<CheckResult> {
   const cwd = path.join(repoDir, projectRel);
   const tsc = path.join(cwd, 'node_modules', '.bin', 'tsc');
-  return runCapture(exec, tsc, ['--noEmit', '-p', 'tsconfig.json'], cwd, TSC_TIMEOUT_MS, { NODE_OPTIONS: checkNodeOptions() });
+  // VTID-04013: the clone's node_modules is a symlink to the image's tree
+  // (linkNodeModules). Without --preserveSymlinks TypeScript resolves the
+  // realpath and reports TS2742 ("cannot be named without a reference to
+  // '../../../../../..'") on exports whose inferred type lives in a library —
+  // an environment artifact, not a defect in the code (Test Run #4b).
+  return runCapture(exec, tsc, [...TSC_ARGS], cwd, TSC_TIMEOUT_MS, { NODE_OPTIONS: checkNodeOptions() });
 }
 
 export async function runJest(repoDir: string, projectRel: string, patterns: string[], exec: ExecFn = defaultExec): Promise<CheckResult> {

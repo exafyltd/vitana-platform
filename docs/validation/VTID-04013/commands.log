@@ -1,0 +1,10 @@
+# VTID-04013 — commands run (Claude Code session, 2026-09-17)
+# Live evidence (staging, execution 4f7d5ea4, task def vitana-autopilot-executor:10):
+#   runner:tsc (post-hoc) 20:10:24: same TS2742, reference path ends in '../../../../../../../../app/n[ode_modules]' — the symlink realpath.
+#   oasis_events dev_autopilot.agent.tool turn 8: run_check exit_code=2
+#   "src/services/automation-handlers/connect-people-repository.ts(30,23): error TS2742: The inferred type of
+#    'fetchPrimaryTenantUsers' cannot be named without a reference to '../../../../../.." (52.3 s, no OOM)
+node --max-old-space-size=3072 node_modules/.bin/tsc --noEmit -p tsconfig.json                     -> exit 0 (same commit, real install)
+node --max-old-space-size=3072 node_modules/.bin/tsc --noEmit -p tsconfig.json --preserveSymlinks  -> exit 0 (flag is a no-op on a real install)
+npx jest test/autopilot-agent-scope-validate.test.ts test/autopilot-agent-tools.test.ts               -> 2 suites, 22 tests passing (args assertion updated)
+NOT run here: a real agent execution on the rebuilt image (AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml from this commit).

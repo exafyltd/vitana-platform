@@ -117,7 +117,8 @@ describe('VTID-04009 runTsc heap sizing', () => {
     expect(r.ok).toBe(true);
     expect(calls).toHaveLength(1);
     expect(calls[0].cmd.endsWith('services/gateway/node_modules/.bin/tsc')).toBe(true);
-    expect(calls[0].args).toEqual(['--noEmit', '-p', 'tsconfig.json']);
+    // VTID-04013: --preserveSymlinks because the clone's node_modules is a symlink (TS2742 otherwise)
+    expect(calls[0].args).toEqual(['--noEmit', '-p', 'tsconfig.json', '--preserveSymlinks']);
     expect(calls[0].env?.NODE_OPTIONS).toMatch(/--max-old-space-size=\d+$/);
     expect(calls[0].env?.CI).toBe('true');
   });
