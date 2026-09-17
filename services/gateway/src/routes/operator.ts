@@ -33,7 +33,7 @@ import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { processMessage } from '../services/ai-orchestrator';
 // VTID-0536: Gemini Operator Tools Bridge
-import { processWithGemini } from '../services/gemini-operator';
+import { processWithGemini, type OperatorTurnEventSink } from '../services/gemini-operator';
 import { getThreadSummary, isOperatorThreadsEnabled, maybeSummarizeThread, recordOperatorTurn } from '../services/operator-threads';
 import { extractAndRecordTurnMemory, isTurnMemoryEnabled } from '../services/operator-turn-memory';
 import { writeDevMemory } from '../services/dev-agent-memory';
@@ -209,7 +209,22 @@ const FileUploadSchema = z.object({
 // attaches req.identity; it never rejects, so the chat route's existing
 // anonymous behaviour is unchanged — only autopilot_execute_task reads the
 // resulting marker and refuses without a verified exafy_admin.
-router.post('/chat', optionalAuth, async (req: Request, res: Response) => {
+/**
+ * VTID-04028: the operator chat turn, shared by POST /chat (one JSON reply)
+ * and POST /chat/stream (the same turn as Server-Sent Events with a live
+ * tool-call transcript). Returns the HTTP status + body /chat has always
+ * sent; the stream route wraps that body in its final `reply` frame so a
+ * client can consume either endpoint with one result shape.
+ */
+interface OperatorChatTurnOutcome {
+  status: number;
+  body: Record<string, unknown>;
+}
+
+async function runOperatorChatTurn(
+  req: Request,
+  opts: { onEvent?: OperatorTurnEventSink; threadId?: string } = {},
+): Promise<OperatorChatTurnOutcome> {
   const requestId = randomUUID();
   console.log(`[Operator Chat] Request ${requestId} started`);
 
@@ -218,17 +233,22 @@ router.post('/chat', optionalAuth, async (req: Request, res: Response) => {
     const validation = OperatorChatMessageSchema.safeParse(req.body);
     if (!validation.success) {
       console.warn(`[Operator Chat] Validation failed:`, validation.error.errors);
-      return res.status(400).json({
-        ok: false,
-        error: 'Validation failed',
-        details: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
-      });
+      return {
+        status: 400,
+        body: {
+          ok: false,
+          error: 'Validation failed',
+          details: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+        },
+      };
     }
 
     const { message, attachments, role, mode, metadata, conversation_id, context } = validation.data;
 
     // VTID-0531: Normalize threadId - generate if missing
-    const threadId = validation.data.threadId || randomUUID();
+    // VTID-04028: the stream route pre-computes it so its `turn.started`
+    // frame can carry the same id the turn is recorded under.
+    const threadId = opts.threadId || validation.data.threadId || randomUUID();
     const createdAt = new Date().toISOString();
 
     // VTID-03851: record what THIS request proved about its caller. The
@@ -374,6 +394,8 @@ router.post('/chat', optionalAuth, async (req: Request, res: Response) => {
       userRole: geminiUserRole,
       // VTID-04022
       threadSummary,
+      // VTID-04028: live tool transcript for the stream route (undefined for /chat)
+      onEvent: opts.onEvent,
     });
 
     // VTID-04025: durable facts from this turn (decisions, gotchas,
@@ -477,7 +499,7 @@ router.post('/chat', optionalAuth, async (req: Request, res: Response) => {
       finalCreatedTask,
     }).catch((err) => console.warn(`[VTID-03928] recordSessionOutcomeMemory rejected: ${err?.message}`));
 
-    return res.status(200).json(response);
+    return { status: 200, body: response };
 
   } catch (error: any) {
     console.warn(`[Operator Chat] Error:`, error);
@@ -491,11 +513,103 @@ router.post('/chat', optionalAuth, async (req: Request, res: Response) => {
       payload: { request_id: requestId, error: error.message }
     }).catch(() => {}); // Don't fail if logging fails
 
-    return res.status(500).json({
+    return {
+      status: 500,
+      body: {
+        ok: false,
+        error: 'Internal server error',
+        details: error.message
+      },
+    };
+  }
+}
+
+router.post('/chat', optionalAuth, async (req: Request, res: Response) => {
+  const outcome = await runOperatorChatTurn(req);
+  return res.status(outcome.status).json(outcome.body);
+});
+
+/**
+ * POST /chat/stream → /api/v1/operator/chat/stream
+ * VTID-04028 (gap analysis §4.6): the SAME operator turn as POST /chat —
+ * identical validation, caller authz marker, OASIS chat events, thread
+ * record, turn memory — delivered as Server-Sent Events so the Command Hub
+ * shows the tool-call transcript while the turn runs:
+ *
+ *   event: turn.started  data: { threadId, request_id }
+ *   event: model.turn    data: { stage, provider, model, tool_calls, duration_ms }
+ *   event: tool.call     data: { index, name, args }
+ *   event: tool.result   data: { index, name, ok, duration_ms, error?, excerpt }
+ *   event: reply         data: <exactly the JSON body POST /chat returns>
+ *   event: error         data: { status, ...body }   (instead of `reply`)
+ *   event: done          data: { threadId }
+ *
+ * A validation failure is answered as plain 400 JSON before any header is
+ * written, so a client can treat the two endpoints identically on bad
+ * input. Request bodies cannot be sent through EventSource, so the client
+ * reads the fetch() body as a stream (see app.js). A disconnected client
+ * stops the frames, not the turn — the turn still records and replies for
+ * the thread exactly as /chat would.
+ */
+export const OPERATOR_STREAM_HEARTBEAT_MS = 15_000;
+
+function writeSseFrame(res: Response, event: string, data: unknown): void {
+  if (res.writableEnded) return;
+  res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+}
+
+router.post('/chat/stream', optionalAuth, async (req: Request, res: Response) => {
+  const validation = OperatorChatMessageSchema.safeParse(req.body);
+  if (!validation.success) {
+    return res.status(400).json({
       ok: false,
-      error: 'Internal server error',
-      details: error.message
+      error: 'Validation failed',
+      details: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
     });
+  }
+  const threadId = validation.data.threadId || randomUUID();
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+
+  // Client-gone detection on the RESPONSE, not the request: on Node ≥ 16
+  // IncomingMessage emits 'close' as soon as the (JSON) request body has
+  // been consumed, which is before the turn even starts — `req.on('close')`
+  // would silence every frame after turn.started. `res` 'close' fires when
+  // the connection goes away, and also after our own end(), which
+  // writableEnded distinguishes.
+  let closed = false;
+  res.on('close', () => { if (!res.writableEnded) closed = true; });
+  const heartbeat = setInterval(() => {
+    if (!closed && !res.writableEnded) res.write(`: heartbeat ${new Date().toISOString()}\n\n`);
+  }, OPERATOR_STREAM_HEARTBEAT_MS);
+  heartbeat.unref?.();
+
+  writeSseFrame(res, 'turn.started', { threadId, started_at: new Date().toISOString() });
+
+  try {
+    const outcome = await runOperatorChatTurn(req, {
+      threadId,
+      onEvent: (event) => {
+        if (closed) return;
+        const { type, ...data } = event;
+        writeSseFrame(res, type, data);
+      },
+    });
+    if (!closed) {
+      if (outcome.status === 200) writeSseFrame(res, 'reply', outcome.body);
+      else writeSseFrame(res, 'error', { status: outcome.status, ...outcome.body });
+    }
+  } catch (error: any) {
+    // runOperatorChatTurn catches its own errors; this guards the frame writes.
+    if (!closed) writeSseFrame(res, 'error', { status: 500, ok: false, error: 'Internal server error', details: error?.message });
+  } finally {
+    clearInterval(heartbeat);
+    if (!closed) writeSseFrame(res, 'done', { threadId });
+    if (!res.writableEnded) res.end();
   }
 });
 
