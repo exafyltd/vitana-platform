@@ -385,6 +385,10 @@ export async function triggerOperatorExecution(
         // agent executor can work with — pinned on the row so the env default
         // cannot route it to the single-shot path.
         ...(openEnded ? { executor: 'agent', intake: 'open_ended' } : {}),
+        // VTID-04029: OPERATOR_PR_APPROVAL_REQUIRED=true makes the agent
+        // executor stop after pushing its branch and wait for a human
+        // Approve/Reject on the diff before any PR is opened (§4.6).
+        ...(process.env.OPERATOR_PR_APPROVAL_REQUIRED === 'true' ? { require_approval: true } : {}),
       },
     }),
   });

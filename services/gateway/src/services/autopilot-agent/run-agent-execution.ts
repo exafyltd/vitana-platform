@@ -30,7 +30,8 @@ import { runAgentLoop, type AgentStep } from './agent-loop';
 import { buildAgentSystemPrompt, buildAgentTaskPrompt, buildFixModeTaskPrompt, buildScopeFixPrompt, buildValidationFixPrompt } from './agent-prompt';
 import { checkChangedFilesScope, hasTestCoverage } from './agent-scope';
 import { makeCheckRunner, runJest, runTsc, selectJestTargets } from './agent-validate';
-import { cleanupWorkspace, commitAndPush, fetchRefSha, linkNodeModules, listChangedFiles, listChangedFilesSince, prepareWorkspace, scrubSecret, type Workspace } from './agent-workspace';
+import { cleanupWorkspace, commitAndPush, fetchRefSha, gitDiffAgainstBase, linkNodeModules, listChangedFiles, listChangedFilesSince, prepareWorkspace, scrubSecret, type Workspace } from './agent-workspace';
+import { approvalRequired } from '../dev-autopilot-approval';
 import { startExecutionHeartbeat } from './agent-heartbeat';
 import { RepeatedCheckGuard } from './agent-check-guard';
 
@@ -56,7 +57,13 @@ const AGENT_NODE_MODULES_SOURCE = process.env.AGENT_NODE_MODULES_SOURCE || '/app
 const AGENT_SKIP_TSC = (process.env.AGENT_SKIP_TSC || 'false').toLowerCase() === 'true';
 const CLAUDE_MD_EXCERPT_CHARS = 14_000;
 
-export type AgentExecutionResult = { ok: boolean; pr_url?: string; branch?: string; pr_number?: number; session_id?: string; error?: string };
+export type AgentExecutionResult = {
+  ok: boolean; pr_url?: string; branch?: string; pr_number?: number; session_id?: string; error?: string;
+  // VTID-04029: the branch is pushed, the PR is NOT opened — a human decides
+  // on the diff first (dev-autopilot-approval.ts).
+  awaiting_approval?: boolean; base_sha?: string; head_sha?: string; pr_title?: string; pr_body?: string;
+  diff?: { stat: string; patch: string; files: string[] };
+};
 
 interface ConfigRow { allow_scope: string[]; deny_scope: string[] }
 
@@ -153,7 +160,7 @@ export async function runAgentExecutionSession(
     turns: 0, fix_rounds: 0, checks_refused: 0, fallback_used: false, fix_mode: !!fixMode, outcome: 'failed', error: null, elapsed_ms: 0, recorded_at: '',
   };
   const finish = (r: AgentExecutionResult): AgentExecutionResult => {
-    run.outcome = r.ok ? (fixMode ? 'fix_pushed' : 'pr_opened') : 'failed';
+    run.outcome = !r.ok ? 'failed' : r.awaiting_approval ? 'awaiting_approval' : fixMode ? 'fix_pushed' : 'pr_opened';
     run.error = r.ok ? null : (r.error || 'unknown').slice(0, 500);
     return r;
   };
@@ -293,6 +300,17 @@ export async function runAgentExecutionSession(
     if (fixMode) {
       // Same PR, new head — the watcher tracks this row on the parent's PR number.
       return finish({ ok: true, pr_url: fixMode.pr_url, pr_number: fixMode.pr_number, branch, session_id: sessionId });
+    }
+    // VTID-04029: hold for a human Approve/Reject on the diff before any PR
+    // exists. The branch is already pushed (the scratch dir dies with this
+    // task); the preview is what the reviewer sees in the Command Hub.
+    if (approvalRequired(exec.metadata, { fixMode: false })) {
+      const diff = await gitDiffAgainstBase(repoDir, baseSha);
+      onStep({ turn: totalTurns, kind: 'finish', detail: `awaiting approval: ${diff.files.length} file(s), diff ${diff.patch.length} chars — no PR opened` });
+      return finish({
+        ok: true, awaiting_approval: true, branch, base_sha: baseSha, head_sha: sha, session_id: sessionId,
+        pr_title: contract.title, pr_body: contract.body, diff,
+      });
     }
     const pr = await openPullRequest(token, branch, contract.title, contract.body);
     if (!pr.ok) return finish({ ok: false, error: `open PR: ${scrubSecret(pr.error || '?', token)}`, session_id: sessionId, branch });

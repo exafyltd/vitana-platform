@@ -15,6 +15,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { ingestScan, ScanInput } from '../services/dev-autopilot-synthesis';
 import { generatePlanVersion } from '../services/dev-autopilot-planning';
 import { approveAutoExecute, cancelExecution } from '../services/dev-autopilot-execute';
+import { approveExecution, rejectExecution, getPendingApproval } from '../services/dev-autopilot-approval';
 import { bridgeFailureToSelfHealing, FailureStage } from '../services/dev-autopilot-bridge';
 import { writeAutopilotFailure } from '../services/dev-autopilot-self-heal-log';
 import { dryRunPreflight, RiskClass } from '../services/dev-autopilot-safety';
@@ -976,6 +977,35 @@ router.post('/executions/:id/cancel', requireDevRole, async (req: Request, res: 
   return res.status(r.ok ? 200 : 400).json(r);
 });
 
+// VTID-04029: diff review before a PR (gap analysis §4.6). An execution
+// whose agent run was told to hold sits in 'awaiting_approval' with the
+// pushed branch + a bounded diff preview under metadata.pending_approval.
+//   GET  /executions/:id/diff    → { ok, status, pending }
+//   POST /executions/:id/approve → opens the PR, row → 'ci' (pr_opened)
+//   POST /executions/:id/reject  → deletes the branch, row → 'cancelled'
+// All three are exafy_admin-only via requireDevRole; the actor recorded on
+// the row and the OASIS event is the verified identity, never a header.
+function approvalActor(req: Request): string {
+  const identity = (req as AuthenticatedRequest).identity;
+  return identity?.email || identity?.user_id || 'gateway-internal';
+}
+
+router.get('/executions/:id/diff', requireDevRole, async (req: Request, res: Response) => {
+  const r = await getPendingApproval(req.params.id);
+  return res.status(r.ok ? 200 : 404).json(r);
+});
+
+router.post('/executions/:id/approve', requireDevRole, async (req: Request, res: Response) => {
+  const r = await approveExecution(req.params.id, approvalActor(req));
+  return res.status(r.ok ? 200 : 400).json(r);
+});
+
+router.post('/executions/:id/reject', requireDevRole, async (req: Request, res: Response) => {
+  const reason = typeof req.body?.reason === 'string' ? req.body.reason : undefined;
+  const r = await rejectExecution(req.params.id, approvalActor(req), reason);
+  return res.status(r.ok ? 200 : 400).json(r);
+});
+
 // POST /executions/:id/bridge — manually route a failed execution through the
 // self-healing bridge. Useful for re-running the bridge after a fix, or for
 // testing from Command Hub. Valid stages: ci | deploy | verification.
@@ -1069,6 +1099,10 @@ const EXECUTION_STREAM_TERMINAL_TOPICS = new Set([
   'dev_autopilot.execution.cancelled',
   'dev_autopilot.execution.reverted',
   'dev_autopilot.execution.auto_archived',
+  // VTID-04029: the run itself is over when it parks for approval; the
+  // approve/reject decision is a separate, human-timed event.
+  'dev_autopilot.execution.awaiting_approval',
+  'dev_autopilot.execution.rejected',
 ]);
 
 // GET /executions/:id/stream — Server-Sent Events live tail of one
@@ -1172,7 +1206,8 @@ router.get('/executions', requireDevRole, async (req: Request, res: Response) =>
   const filter = String(req.query.status || 'active');
   let statusClause: string;
   if (filter === 'active') {
-    statusClause = 'status=in.(cooling,running,ci,merging,deploying,verifying)';
+    // VTID-04029: a row waiting for a human decision is still active work.
+    statusClause = 'status=in.(cooling,running,awaiting_approval,ci,merging,deploying,verifying)';
   } else if (filter === 'all') {
     statusClause = '';
   } else {

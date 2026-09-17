@@ -210,7 +210,9 @@ export interface AgentRunUsage {
   checks_refused: number;
   fallback_used: boolean;
   fix_mode: boolean;
-  outcome: 'pr_opened' | 'fix_pushed' | 'failed';
+  // VTID-04029: 'awaiting_approval' — the branch was pushed and the run
+  // stopped before opening a PR, waiting for a human Approve/Reject.
+  outcome: 'pr_opened' | 'fix_pushed' | 'awaiting_approval' | 'failed';
   error?: string | null;
   elapsed_ms: number;
   recorded_at: string;

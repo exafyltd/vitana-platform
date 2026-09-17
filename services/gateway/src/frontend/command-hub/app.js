@@ -44410,6 +44410,8 @@ if (!state.devAutopilot) {
         // Lineage cache (execId → { loading, root_id, lineage[] }) (PR-8)
         lineages: {},
         expandedExecIds: {},
+        expandedDiffExecIds: {}, // VTID-04029: execution ids whose approval diff is open
+        diffs: {}, // VTID-04029: execId → { loading, error, status, pending }
         // VTID-03896/03897: per-execution step feed. `steps[execId]` holds
         // { loading, steps[], error, es } where `es` is the live EventSource
         // (not serializable/renderable — only ever read/closed by the
@@ -45326,6 +45328,144 @@ function devAutopilotCancelExecution(execId) {
     });
 }
 
+// ---------------------------------------------------------------------------
+// VTID-04029: diff review before a PR — fetch the stored preview, approve
+// (opens the PR, row → ci) or reject (deletes the branch, row → cancelled).
+// ---------------------------------------------------------------------------
+
+function devAutopilotToggleDiff(execId) {
+    state.devAutopilot.expandedDiffExecIds = state.devAutopilot.expandedDiffExecIds || {};
+    if (state.devAutopilot.expandedDiffExecIds[execId]) {
+        delete state.devAutopilot.expandedDiffExecIds[execId];
+        renderApp();
+        return;
+    }
+    state.devAutopilot.expandedDiffExecIds[execId] = true;
+    ensureExecutionDiffLoaded(execId);
+    renderApp();
+}
+
+function ensureExecutionDiffLoaded(execId) {
+    state.devAutopilot.diffs = state.devAutopilot.diffs || {};
+    var slot = state.devAutopilot.diffs[execId];
+    if (slot && (slot.loading || slot.pending)) return;
+    state.devAutopilot.diffs[execId] = { loading: true, error: null, status: null, pending: null };
+    devAutopilotApi('/executions/' + execId + '/diff', 'GET').then(function (data) {
+        state.devAutopilot.diffs[execId] = data.ok
+            ? { loading: false, error: null, status: data.status, pending: data.pending || null }
+            : { loading: false, error: data.error || 'diff unavailable', status: null, pending: null };
+        renderApp();
+    }).catch(function (err) {
+        state.devAutopilot.diffs[execId] = { loading: false, error: err.message || String(err), status: null, pending: null };
+        renderApp();
+    });
+}
+
+// Both execution lists the Command Hub keeps (the Dev Autopilot page's and
+// the Autopilot Live view's) render the same rows; a decision updates both.
+function devAutopilotExecutionLists() {
+    var lists = [];
+    if (state.devAutopilot && Array.isArray(state.devAutopilot.executions)) lists.push(state.devAutopilot);
+    if (state.autopilot && state.autopilot.live && Array.isArray(state.autopilot.live.devAutopilotExecutions)) lists.push({ get executions() { return state.autopilot.live.devAutopilotExecutions; }, set executions(v) { state.autopilot.live.devAutopilotExecutions = v; } });
+    return lists;
+}
+
+function devAutopilotApproveExecution(execId) {
+    var key = 'approve:' + execId;
+    if (devAutopilotInFlight(key)) return;
+    devAutopilotMarkFlight(key, true);
+    renderApp();
+    devAutopilotApi('/executions/' + execId + '/approve', 'POST', {}).then(function (data) {
+        devAutopilotMarkFlight(key, false);
+        if (data.ok) {
+            devAutopilotExecutionLists().forEach(function (holder) {
+                holder.executions.forEach(function (e) {
+                    if (e.id === execId) { e.status = 'ci'; e.pr_url = data.pr_url; e.pr_number = data.pr_number; }
+                });
+            });
+            delete (state.devAutopilot.expandedDiffExecIds || {})[execId];
+            showToast('Approved — PR #' + data.pr_number + ' opened', 'success');
+        } else {
+            showToast(data.error || 'Approve failed', 'error');
+        }
+        renderApp();
+    }).catch(function (err) {
+        devAutopilotMarkFlight(key, false);
+        showToast('Network error: ' + (err.message || err), 'error');
+        renderApp();
+    });
+}
+
+function devAutopilotRejectExecution(execId) {
+    var key = 'reject:' + execId;
+    if (devAutopilotInFlight(key)) return;
+    var reason = window.prompt('Reject this execution? The pushed branch will be deleted. Optional reason:', '');
+    if (reason === null) return; // cancelled the prompt
+    devAutopilotMarkFlight(key, true);
+    renderApp();
+    devAutopilotApi('/executions/' + execId + '/reject', 'POST', { reason: reason }).then(function (data) {
+        devAutopilotMarkFlight(key, false);
+        if (data.ok) {
+            devAutopilotExecutionLists().forEach(function (holder) {
+                holder.executions = holder.executions.filter(function (e) { return e.id !== execId; });
+            });
+            delete (state.devAutopilot.expandedDiffExecIds || {})[execId];
+            showToast('Rejected' + (data.branch_deleted ? ' — branch deleted' : ' — branch left in place (see execution metadata)'), data.branch_deleted ? 'success' : 'warning');
+        } else {
+            showToast(data.error || 'Reject failed', 'error');
+        }
+        renderApp();
+    }).catch(function (err) {
+        devAutopilotMarkFlight(key, false);
+        showToast('Network error: ' + (err.message || err), 'error');
+        renderApp();
+    });
+}
+
+function renderExecutionDiffPanel(execId) {
+    var panel = document.createElement('div');
+    panel.className = 'dev-autopilot-diff-panel';
+    panel.style.cssText = 'margin-top: 8px; border: 1px solid rgba(245,158,11,0.35); border-radius: 4px; background: rgba(0,0,0,0.25); font-size: 11px;';
+    var slot = (state.devAutopilot.diffs || {})[execId];
+    var head = document.createElement('div');
+    head.style.cssText = 'padding: 6px 10px; color: #f59e0b; font-weight: 600; border-bottom: 1px solid rgba(255,255,255,0.06);';
+    if (!slot || slot.loading) {
+        head.textContent = 'Loading diff…';
+        panel.appendChild(head);
+        return panel;
+    }
+    if (slot.error || !slot.pending) {
+        head.textContent = slot.error || 'No pending approval on this execution';
+        panel.appendChild(head);
+        return panel;
+    }
+    var p = slot.pending;
+    head.textContent = p.pr_title + '  —  ' + p.branch + '@' + String(p.head_sha || '').slice(0, 8) + ' vs ' + String(p.base_sha || '').slice(0, 8)
+        + ' · ' + (p.diff ? p.diff.files_total : 0) + ' file(s)' + (p.diff && p.diff.truncated ? ' · preview truncated' : '');
+    panel.appendChild(head);
+    if (p.diff && p.diff.stat) {
+        var stat = document.createElement('pre');
+        stat.style.cssText = 'margin: 0; padding: 6px 10px; color: #9aa0a6; white-space: pre-wrap; border-bottom: 1px solid rgba(255,255,255,0.06); font-family: monospace;';
+        stat.textContent = p.diff.stat;
+        panel.appendChild(stat);
+    }
+    var patch = document.createElement('pre');
+    patch.className = 'dev-autopilot-diff-patch';
+    patch.style.cssText = 'margin: 0; padding: 8px 10px; max-height: 420px; overflow: auto; white-space: pre; font-family: monospace; font-size: 11px; line-height: 1.35;';
+    String(p.diff && p.diff.patch || '').split('\n').forEach(function (line) {
+        var el = document.createElement('div');
+        var color = line.indexOf('+') === 0 && line.indexOf('+++') !== 0 ? '#7fb57f'
+            : line.indexOf('-') === 0 && line.indexOf('---') !== 0 ? '#d9776f'
+            : line.indexOf('@@') === 0 ? '#60a5fa'
+            : (line.indexOf('diff --git') === 0 ? '#e5e7eb' : '#b0b6bd');
+        el.style.color = color;
+        el.textContent = line;
+        patch.appendChild(el);
+    });
+    panel.appendChild(patch);
+    return panel;
+}
+
 function ensureLineageLoaded(execId) {
     if (!state.devAutopilot.lineages[execId]) {
         state.devAutopilot.lineages[execId] = { loading: true, lineage: [] };
@@ -45643,6 +45783,7 @@ function renderDevAutopilotExecutionCard(exec) {
     var statusColors = {
         cooling: '#eab308',
         running: '#3b82f6',
+        awaiting_approval: '#f59e0b', // VTID-04029: branch pushed, PR held for a human decision
         ci: '#3b82f6',
         merging: '#3b82f6',
         deploying: '#a855f7',
@@ -45716,7 +45857,7 @@ function renderDevAutopilotExecutionCard(exec) {
     // long-running-but-healthy execution (recent step) from one that's
     // silently stuck (last step was a long time ago), without opening the
     // step feed. Only meaningful for still-active statuses.
-    var ACTIVE_STATUSES = { cooling: 1, running: 1, ci: 1, merging: 1, deploying: 1, verifying: 1 };
+    var ACTIVE_STATUSES = { cooling: 1, running: 1, awaiting_approval: 1, ci: 1, merging: 1, deploying: 1, verifying: 1 };
     if (ACTIVE_STATUSES[exec.status] && exec.last_event_at) {
         var ageMs = Date.now() - new Date(exec.last_event_at).getTime();
         var ageMin = Math.round(ageMs / 60000);
@@ -45759,6 +45900,35 @@ function renderDevAutopilotExecutionCard(exec) {
         cancelBtn.style.cssText = 'padding: 3px 10px; border-radius: 3px; font-size: 11px; cursor: ' + (cancelling ? 'wait' : 'pointer') + '; border: 1px solid #ef4444; background: transparent; color: #ef4444;';
         cancelBtn.onclick = function () { devAutopilotCancelExecution(exec.id); };
         topRow.appendChild(cancelBtn);
+    }
+
+    // VTID-04029: the agent pushed its branch and stopped — show the diff
+    // and let the reviewer Approve (opens the PR) or Reject (deletes the
+    // branch). The buttons sit on the card, the diff expands below it.
+    var pendingApproval = exec.status === 'awaiting_approval';
+    if (pendingApproval) {
+        var diffOpen = !!(state.devAutopilot.expandedDiffExecIds || {})[exec.id];
+        var diffBtn = document.createElement('button');
+        diffBtn.textContent = diffOpen ? '▾ Diff' : '▸ Diff';
+        diffBtn.className = 'dev-autopilot-ghost-toggle';
+        diffBtn.onclick = function () { devAutopilotToggleDiff(exec.id); };
+        topRow.appendChild(diffBtn);
+
+        var approving = devAutopilotInFlight('approve:' + exec.id);
+        var rejecting = devAutopilotInFlight('reject:' + exec.id);
+        var approveBtn = document.createElement('button');
+        approveBtn.textContent = approving ? 'Opening PR…' : 'Approve → open PR';
+        approveBtn.disabled = approving || rejecting;
+        approveBtn.style.cssText = 'padding: 3px 10px; border-radius: 3px; font-size: 11px; cursor: ' + (approving ? 'wait' : 'pointer') + '; border: 1px solid #22c55e; background: rgba(34,197,94,0.12); color: #22c55e; font-weight: 600;';
+        approveBtn.onclick = function () { devAutopilotApproveExecution(exec.id); };
+        topRow.appendChild(approveBtn);
+
+        var rejectBtn = document.createElement('button');
+        rejectBtn.textContent = rejecting ? 'Rejecting…' : 'Reject';
+        rejectBtn.disabled = approving || rejecting;
+        rejectBtn.style.cssText = 'padding: 3px 10px; border-radius: 3px; font-size: 11px; cursor: ' + (rejecting ? 'wait' : 'pointer') + '; border: 1px solid #ef4444; background: transparent; color: #ef4444;';
+        rejectBtn.onclick = function () { devAutopilotRejectExecution(exec.id); };
+        topRow.appendChild(rejectBtn);
     }
 
     var lineageOpen = !!state.devAutopilot.expandedExecIds[exec.id];
@@ -45810,6 +45980,11 @@ function renderDevAutopilotExecutionCard(exec) {
 
     if (stepsOpen) {
         card.appendChild(renderDevAutopilotStepsView(exec.id));
+    }
+
+    // VTID-04029: the approval diff, below the row, when the reviewer opened it.
+    if (pendingApproval && diffOpen) {
+        card.appendChild(renderExecutionDiffPanel(exec.id));
     }
 
     return card;
@@ -52762,8 +52937,10 @@ function renderAutopilotLiveView() {
     } else {
         devExecs.forEach(function (exec) {
             var card = document.createElement('div');
+            card.id = 'autopilot-live-exec-' + exec.id;
             var statusColor = exec.status === 'running' || exec.status === 'ci' || exec.status === 'merging' ? '#3b82f6'
                 : exec.status === 'cooling' ? '#eab308'
+                : exec.status === 'awaiting_approval' ? '#f59e0b' // VTID-04029: branch pushed, PR held for a human decision
                 : exec.status === 'deploying' || exec.status === 'verifying' ? '#a855f7'
                 : '#888';
             card.style.cssText = 'padding:10px 12px;background:rgba(255,255,255,0.02);border:1px solid #2a2a3a;border-left:3px solid ' + statusColor + ';border-radius:6px;margin-bottom:0.5rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap;';
@@ -52814,6 +52991,42 @@ function renderAutopilotLiveView() {
                 prLink.textContent = 'PR #' + (exec.pr_number || '?');
                 prLink.style.cssText = 'color:#60a5fa;text-decoration:none;font-size:0.78rem;font-family:monospace;';
                 card.appendChild(prLink);
+            }
+
+            // VTID-04029: the agent pushed its branch and is waiting for a
+            // human decision on the diff — Diff / Approve (opens the PR) /
+            // Reject (deletes the branch), same handlers as the Dev
+            // Autopilot card; the diff panel takes the full card width.
+            if (exec.status === 'awaiting_approval') {
+                var liveDiffOpen = !!(state.devAutopilot.expandedDiffExecIds || {})[exec.id];
+                var liveDiffBtn = document.createElement('button');
+                liveDiffBtn.textContent = liveDiffOpen ? '▾ Diff' : '▸ Diff';
+                liveDiffBtn.className = 'dev-autopilot-ghost-toggle';
+                liveDiffBtn.onclick = function () { devAutopilotToggleDiff(exec.id); };
+                card.appendChild(liveDiffBtn);
+
+                var liveApproving = devAutopilotInFlight('approve:' + exec.id);
+                var liveRejecting = devAutopilotInFlight('reject:' + exec.id);
+                var liveApproveBtn = document.createElement('button');
+                liveApproveBtn.textContent = liveApproving ? 'Opening PR…' : 'Approve → open PR';
+                liveApproveBtn.disabled = liveApproving || liveRejecting;
+                liveApproveBtn.style.cssText = 'padding:3px 10px;border-radius:3px;font-size:11px;cursor:' + (liveApproving ? 'wait' : 'pointer') + ';border:1px solid #22c55e;background:rgba(34,197,94,0.12);color:#22c55e;font-weight:600;';
+                liveApproveBtn.onclick = function () { devAutopilotApproveExecution(exec.id); };
+                card.appendChild(liveApproveBtn);
+
+                var liveRejectBtn = document.createElement('button');
+                liveRejectBtn.textContent = liveRejecting ? 'Rejecting…' : 'Reject';
+                liveRejectBtn.disabled = liveApproving || liveRejecting;
+                liveRejectBtn.style.cssText = 'padding:3px 10px;border-radius:3px;font-size:11px;cursor:' + (liveRejecting ? 'wait' : 'pointer') + ';border:1px solid #ef4444;background:transparent;color:#ef4444;';
+                liveRejectBtn.onclick = function () { devAutopilotRejectExecution(exec.id); };
+                card.appendChild(liveRejectBtn);
+
+                if (liveDiffOpen) {
+                    var liveDiffWrap = document.createElement('div');
+                    liveDiffWrap.style.cssText = 'flex-basis:100%;min-width:0;';
+                    liveDiffWrap.appendChild(renderExecutionDiffPanel(exec.id));
+                    card.appendChild(liveDiffWrap);
+                }
             }
             devApSection.appendChild(card);
         });

@@ -1,0 +1,38 @@
+# VTID-04029 — W4e: diff preview + Approve/Reject before the Dev Autopilot agent opens a PR (gap analysis §4.6)
+
+Context: `docs/OPERATOR-CONSOLE-GAP-ANALYSIS-2026-09-17.md` §4.6 asks for "a diff preview with Approve/Reject before the PR is opened (commit-tier, like the BackOffice maker-checker)". Until now every agent run (VTID-04006) went straight from `commitAndPush` to `openPullRequest`; the first time a human saw the change was as an open PR with CI already running, and the only way to say no was to close it.
+
+What ships:
+
+- **Runner hold** (`run-agent-execution.ts`): after the branch is pushed (the scratch clone dies with the ECS task, so the branch is the durable artefact) and only when `approvalRequired(exec.metadata)` — row `metadata.require_approval === true` wins, else the executor process's `DEV_AUTOPILOT_PR_APPROVAL_REQUIRED='true'`; never in fix mode (VTID-04017, the PR already exists) — the runner computes `gitDiffAgainstBase(baseSha)` and returns `{ ok:true, awaiting_approval:true, branch, base_sha, head_sha, pr_title, pr_body, diff }` instead of opening the PR. Run usage records outcome `awaiting_approval`.
+- **Stage** (`dev-autopilot-approval.ts`, called from `applyExecutionResult`): status `awaiting_approval`, `metadata.pending_approval = { branch, shas, pr_title, pr_body, session_id, staged_at, diff }` merged into the row's metadata (never replacing it — VTID-04011), diff bounded (stat 4 KB, patch 60 KB, 200 files, `truncated` + totals reported), one OASIS event `dev_autopilot.execution.awaiting_approval`. A malformed hold result takes the failure path instead of leaving a row stranded.
+- **Approve** (`POST /api/v1/dev-autopilot/executions/:id/approve`): refuses unless the row is `awaiting_approval` with a preview; opens the PR through `github-service.createPullRequest` against `main` with the stored title/body (`Approved by <actor>` appended); records `metadata.approved`; emits `dev_autopilot.execution.approved`; then re-enters `applyExecutionResult` with the PR so the row moves to `ci` and gets the `pr_opened` event + memory row exactly as an auto-opened PR would. A PR-open failure leaves the row waiting (retryable), never half-applied.
+- **Reject** (`POST …/reject`, optional `reason`): deletes the remote branch (best effort; a failure is recorded on the row, not fatal), status `cancelled`, `metadata.rejected`, event `dev_autopilot.execution.rejected`.
+- **Read** (`GET …/diff`): status + preview. All three routes are exafy_admin-only (`requireDevRole`); the actor recorded is the verified identity (email, else user id), never a header.
+- **Model** : the migration widens `dev_autopilot_executions_status_check` with `awaiting_approval`; the active list, the two same-finding inflight guards and the step-stream terminal topics know the status; the concurrency cap deliberately does **not** count a human hold. The operator on-ramp stamps `require_approval` from `OPERATOR_PR_APPROVAL_REQUIRED='true'`.
+- **Command Hub**: the Autopilot Live view's Dev Autopilot rows (the renderer operators actually see — the Dev Autopilot page's own execution card turned out to be dead code, kept in step anyway) show an `AWAITING_APPROVAL` pill, `▸ Diff` (fetches the preview, renders stat + colour-coded patch inline), `Approve → open PR` and `Reject` (prompts for a reason); a decision updates both execution lists.
+
+AC-1 — `approvalRequired`: row flag wins over the env, env is the exact string `true`, never in fix mode; `boundDiffPreview` clips stat/patch/file list and reports `truncated` + totals; `buildPendingApproval` carries branch/shas/title/body/session/staged_at; `isAwaitingApprovalResult` accepts only a complete hold result.
+TEST: services/gateway/test/vtid-04029-dev-autopilot-pr-approval.test.ts
+
+AC-2 — `stageExecutionForApproval` sets `awaiting_approval`, merges `pending_approval` into existing metadata, emits one event; `getPendingApproval` returns status + preview; `approveExecution` opens the PR with the stored title/body on the pushed branch (default: `createPullRequest(owner/repo, …, branch, 'main')`), records the decision, re-enters `applyExecutionResult` with `pr_url`, and refuses a non-waiting row, a missing preview, or leaves the row waiting when the PR open fails; `rejectExecution` deletes the branch, cancels with `metadata.rejected`, emits the event, tolerates a branch-delete failure, refuses a non-waiting row.
+TEST: services/gateway/test/vtid-04029-dev-autopilot-pr-approval.test.ts
+
+AC-3 — `applyExecutionResult` routes a hold result to the stage and a malformed one to the failure path.
+TEST: services/gateway/test/vtid-04029-dev-autopilot-pr-approval.test.ts
+TEST: services/gateway/test/dev-autopilot-execute.test.ts
+
+AC-4 — Routes: `GET /diff` 200/404, `POST /approve` and `/reject` pass the verified identity as actor and the body reason; unauthenticated → 401.
+TEST: services/gateway/test/vtid-04029-dev-autopilot-pr-approval.test.ts
+
+AC-5 — Wiring: migration widens the CHECK keeping every prior status; runner holds before `openPullRequest`, never in fix mode, records outcome `awaiting_approval`; on-ramp stamps `require_approval`; `.env.example` documents both switches; active list / inflight guards / terminal topics know the status; the Dev Autopilot card and the Autopilot Live rows carry Diff/Approve/Reject and the diff panel; a decision updates both lists. Executor/watcher/bridge/agent suites unchanged.
+TEST: services/gateway/test/vtid-04029-dev-autopilot-pr-approval.test.ts
+TEST: services/gateway/test/vtid-04017-fix-mode.test.ts
+TEST: services/gateway/test/dev-autopilot-watcher.test.ts
+TEST: services/gateway/test/dev-autopilot-runexec-pr-flood-guard.test.ts
+
+OASIS_PROOF: three new topics — `dev_autopilot.execution.awaiting_approval` (stage), `.approved` (before the PR-opened event the existing path emits), `.rejected` — all under the `dev_autopilot.*` prefix the steps feed and stream already filter on; `awaiting_approval` and `rejected` are added to the stream's terminal set. No existing topic, payload or consumer changes; `pr_opened`/`failed` are emitted exactly as before (pinned by the executor suites above). The migration is a constraint widening only, applied to the live project before merge (Migration Drift Check, VTID-03486) — see commands.log.
+
+Visual verification (CLAUDE.md IF-THEN 26): local harness (`outputs/harness-server.js`: statics from the working tree, stubbed boot APIs, one `awaiting_approval` execution with a real-shaped preview, `/approve` flips it to `ci`; nothing live) driven by Playwright (`outputs/harness-shoot.js`). `outputs/approval-diff-desktop.png` (1400×900): the Autopilot Live row with the amber `AWAITING_APPROVAL` pill, `▾ Diff`, `Approve → open PR`, `Reject`, and the expanded preview (title, branch@head vs base, file count, `--stat`, colour-coded patch). `outputs/approval-approved-desktop.png`: after Approve — pill `CI`, `PR #3382` link, toast "Approved — PR #3382 opened". `outputs/approval-diff-mobile.png` (390×844): the same row and diff at phone width.
+
+Not verified here: a real held execution on staging — needs `OPERATOR_PR_APPROVAL_REQUIRED=true` pinned on the staging gateway (owner) and the executor image rebuilt from this commit (`AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml`, owner dispatch); the first held run and its Approve from the Command Hub is the exercise (Test Run #7). Whether the staging gateway's `GITHUB_SAFE_MERGE_TOKEN` can open a PR (approve runs in the gateway, not the executor task) is answered by that run. Not in this VTID: operator-chat tools for approve/reject (the console can already run the same endpoints via `dev_*` reads + the Command Hub), cost badge, cancel of a running agent.
