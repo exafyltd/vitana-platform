@@ -9,8 +9,6 @@ import { AutomationContext } from '../../types/automations';
 import { registerHandler } from '../automation-executor';
 import * as repo from './connect-people-repository';
 
-const VITANA_BOT_USER_ID = process.env.VITANA_BOT_USER_ID || '00000000-0000-0000-0000-000000000000';
-
 // ── AP-0101: Daily Match Delivery ──────────────────────────
 // Real schema: matches_daily was never deployed; daily_matches (user_id,
 // matched_user_id, match_score, created_at, expires_at, viewed_at, action)
