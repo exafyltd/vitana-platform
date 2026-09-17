@@ -835,15 +835,30 @@ function readWeakestPillarDrop(snap: unknown): { pillar: PillarKey; deltaDown: n
  * line). Pure; exported for tests.
  */
 export function buildFastProactiveOpener(args: RenderArgs, rng: () => number = Math.random): string {
-  const de = args.lang === 'de';
-  const prefix = salutationPrefix(args.lang, args.salutation, args.firstName);
+  // BOOTSTRAP-ORB-PROACTIVE-OPENER-LANG: this function used to branch on
+  // `args.lang === 'de'` between a hand-translated German pool and an
+  // English one — every OTHER supported language (sr, es, fr, ru, pt, pl,
+  // tr, ar, zh) silently fell to the English pool, so a Serbian session's
+  // safe_fast_proactive opener came out in fluent English. The caller
+  // (compute-greeting-decision.ts's `safe_fast_proactive` rung) now asks the
+  // model to translate this composed line into the session's own language
+  // before speaking it, so this function always composes in English —
+  // translating that to German (or any other supported language) at speak
+  // time is exactly as correct as the old hardcoded German pool, and it now
+  // generalizes to every language instead of just one. `args.lang` is still
+  // threaded through to `gatherBriefingFactsForFastOpener` for the REAL
+  // localization concern (recalling a DB-stored curriculum title in the
+  // user's own language) — only the template scaffolding here is forced
+  // to English.
+  const de = false;
+  const prefix = salutationPrefix('en', args.salutation, args.firstName);
   const f = args.facts;
   const state = pickBriefingState(f);
 
   // Priority of the single proactive beat: weakness > graduated > orient > continue.
   const drop = f.weakestPillarDrop;
   if (drop && drop.deltaDown >= MATERIAL_PILLAR_DROP) {
-    const pillar = pillarLabelLocalized(args.lang, drop.pillar);
+    const pillar = pillarLabelLocalized('en', drop.pillar);
     const pool = de
       ? [
           `Dein Bereich ${pillar} ist diese Woche gesunken — lass uns das gemeinsam umkehren, ich zeige dir den ersten Schritt.`,

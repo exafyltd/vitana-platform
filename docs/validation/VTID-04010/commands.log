@@ -1,0 +1,26 @@
+# VTID-04010 commands
+
+cd /home/user/vitana-platform/services/gateway
+npx tsc --noEmit
+npx jest test/services/assistant-continuation/providers/login-briefing.test.ts test/services/conversation/compute-greeting-decision.golden.test.ts -u --silent
+npx jest test/services/assistant-continuation test/services/conversation test/orb/live/upstream --silent
+npx jest test/orb/conversation-flow.contract.test.ts -u --silent
+npx jest --silent
+
+# --- live verification against staging BEFORE the fix (repro) ---
+# Direct gateway API calls (bypassing the browser — WebSocket upgrades are
+# not supported through this session's outbound proxy; the SSE fallback
+# transport IS, and is the exact same protocol/message shapes):
+#   POST https://preview-aws-gateway.vitanaland.com/api/v1/orb/live/session/start
+#     { lang: 'sr' } with a real Authorization: Bearer token for the
+#     documented test account (a27552a3-0257-4305-8ed0-351a80fd3701)
+#   POST .../api/v1/orb/session/:id/audio-ready
+#   GET  .../api/v1/orb/live/stream?session_id=:id  (real SSE stream, parsed)
+#   POST .../api/v1/orb/live/session/stop
+# 3 authenticated trials: provider correctly selected
+#   vertex/gemini-live-2.5-flash-native-audio, lang:"sr" throughout — but
+# turn-1 speech was fluent English every time. Cross-checked against
+# oasis_events (read-only) for the exact session_ids to confirm
+# wake_opener:"safe_fast_proactive" and the provider selection, before
+# reading compute-greeting-decision.ts / login-briefing.ts to find the root
+# cause.
