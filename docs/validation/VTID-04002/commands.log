@@ -22,3 +22,13 @@ $ npx jest test/dev-autopilot-pr-contract.test.ts test/dev-autopilot-execute.tes
     test/vtid-03851-execute-task-requires-auth.test.ts test/dev-autopilot-safety.test.ts \
     test/dev-autopilot-runexec-pr-flood-guard.test.ts test/vtid-03844-outcomes-record-operator-onramp.test.ts
   → 8 suites, 103 tests, 0 failures
+
+## Test Run #2 (staging, 2026-09-17 17:01 UTC) — after #3371 merged (a5794fc)
+$ merge PR #3371 (squash) → a5794fc; AWS-STAGE-DEPLOY-GATEWAY run 35249579675 → staging build-info a5794fc
+$ workflow_dispatch AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml (run 35249597312, success) — executor image rebuilt from a5794fc
+$ POST /api/v1/vtid/allocate → VTID-04003; UPDATE vtid_ledger … status='in_progress', spec_status='approved'
+$ POST https://preview-aws-gateway.vitanaland.com/api/v1/operator/chat (Bearer exafy_admin service account)
+  → toolResults: autopilot_execute_task ok, execution e3ca9a1d queued (http 200, 9.0s)
+$ SELECT … FROM dev_autopilot_executions WHERE id='e3ca9a1d…'  → running 17:01:10 → completed 17:08:01, pr_url #3372
+$ GitHub: PR #3372 title "(VTID-04003)", body VTID:/VALIDATION_PROFILE:/markers, evidence pack in diff; 18/18 checks green incl. validate-pr
+$ merge PR #3372 (squash) → f79d51c
