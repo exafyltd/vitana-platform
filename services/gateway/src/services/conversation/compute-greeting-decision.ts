@@ -861,15 +861,34 @@ function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
   // opener came out in fluent English regardless of `session.lang`, even
   // though the SAME session's main system instruction correctly says
   // "Respond ONLY in Serbian" — "verbatim" for an English string wins the
-  // conflict for this one turn. Fixed at the root (login-briefing.ts no
-  // longer hardcodes per-language text at all) and here: the model is now
-  // asked to translate + speak this English intent fluently in the
-  // session's own language, matching how the rest of the conversation
-  // already works, instead of reciting the composed string byte-for-byte.
+  // conflict for this one turn.
+  //
+  // VTID-04010 FOLLOW-UP (same day): the first fix here ("Translate the
+  // following into natural, fluent X ... do not leave any part of it in
+  // English ... Keep the concrete details ... do not paraphrase them away")
+  // was measured live and made things categorically worse — every single
+  // authenticated Serbian trial after that deploy got `upstream_ws_close
+  // code:1007 reason:"Request contains an invalid argument."` from Vertex,
+  // a close signature with ZERO occurrences anywhere in the prior 7 days.
+  // The `override_v2` rung right above this one (see its own comment,
+  // "a directive to reproduce supplied text verbatim, wrapped in a stack of
+  // prohibitions... the shape [a] guardrail treats as injection-like") had
+  // already identified and fixed the EXACT same anti-pattern this rewrite
+  // reintroduced — quoting a block of text and instructing the model to
+  // preserve/translate it "verbatim"/"do not leave any part... do not
+  // paraphrase" reads as a literal-recitation directive, which both Nova's
+  // and (now measured) Vertex's guardrails reject outright rather than
+  // degrade gracefully. Fixed the same way `override_v2` already works:
+  // treat the composed English text as a LEAD to compose freely from, not
+  // a quoted string to translate/recite. The model is explicitly told NOT
+  // to recite or translate it literally — only to keep the facts and speak
+  // entirely in the target language.
   if (typeof ctx.proactiveLine === 'string' && ctx.proactiveLine.trim().length > 0) {
     const safeProactive = ctx.proactiveLine.trim().replace(/"/g, '\\"');
     const langName = LOCALE_ENGLISH_NAME[ctx.lang as keyof typeof LOCALE_ENGLISH_NAME] || 'English';
-    const proactivePrompt = `Translate the following into natural, fluent ${langName} and speak it as ONE greeting, entirely in ${langName} — do not leave any part of it in English: "${safeProactive}" Keep the concrete details (names, titles, numbers) and the same proposal; do not paraphrase them away. Do NOT add a question at the end or split it into multiple turns.`;
+    const proactivePrompt =
+      `Open the conversation from this prepared lead (written in English for your reference): "${safeProactive}"\n` +
+      `Speak entirely in ${langName} — use no English words. Keep every concrete fact from the lead (names, titles, numbers) and the same single proposal exactly as given, but compose the wording yourself in ${langName}; do not recite the lead word for word and do not translate it literally. Then stop — do not add a question beyond the proposal already in the lead, and do not split it into multiple turns.`;
     return {
       wakeOpener: 'safe_fast_proactive',
       directive: proactivePrompt,

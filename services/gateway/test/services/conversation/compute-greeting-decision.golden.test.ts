@@ -186,13 +186,21 @@ describe('computeGreetingDecision — rung golden snapshots', () => {
       }),
     );
     expect(d.wakeOpener).toBe('safe_fast_proactive');
-    // BOOTSTRAP-ORB-PROACTIVE-OPENER-LANG: this rung now asks the model to
-    // TRANSLATE the (always-English-composed) proactiveLine into the
-    // session's own language, rather than reciting it "verbatim" — the old
-    // verbatim framing meant a non-German, non-English session (e.g. sr)
-    // spoke this line in fluent English regardless of session.lang.
-    expect(d.directive).toContain('Translate the following into natural, fluent German');
+    // BOOTSTRAP-ORB-PROACTIVE-OPENER-LANG (VTID-04010 follow-up): the FIRST
+    // fix here asked the model to "translate the following ... verbatim ...
+    // do not leave any part of it in English" — measured live to get every
+    // authenticated Serbian trial closed by Vertex with `upstream_ws_close
+    // code:1007 "Request contains an invalid argument."`, a signature with
+    // zero prior occurrences in 7 days. That is the exact
+    // quote-and-reproduce-verbatim shape `override_v2` (rung 8, right above
+    // this one) already identified as guardrail-injection-shaped and fixed.
+    // This rung now uses the SAME safe "lead to compose from, not a string
+    // to recite/translate" framing override_v2 uses.
+    expect(d.directive).toContain('Open the conversation from this prepared lead');
+    expect(d.directive).toContain('Speak entirely in German');
     expect(d.directive).not.toContain('verbatim');
+    expect(d.directive).not.toMatch(/Translate the following/i);
+    expect(d.directive).not.toContain('do not leave any part of it in English');
     expect(d).toMatchSnapshot();
   });
 
@@ -208,8 +216,31 @@ describe('computeGreetingDecision — rung golden snapshots', () => {
       }),
     );
     expect(d.wakeOpener).toBe('safe_fast_proactive');
-    expect(d.directive).toContain('Translate the following into natural, fluent Serbian');
-    expect(d.directive).toContain('entirely in Serbian');
+    expect(d.directive).toContain('Speak entirely in Serbian');
+    expect(d.directive).not.toMatch(/Translate the following/i);
+  });
+
+  test('rung 4: safe_fast_proactive never instructs literal recitation/translation of the lead (VTID-04010 follow-up regression guard)', () => {
+    const d = computeGreetingDecision(
+      safeFastCtx({
+        bucket: 'same_day',
+        lastFullBriefingDate: '2026-06-30',
+        resumeOverview: null,
+        currentRoute: null,
+        lang: 'sr',
+        proactiveLine: 'Last time we worked on "What is Vitanaland". Want me to find you an activity partner?',
+      }),
+    );
+    expect(d.wakeOpener).toBe('safe_fast_proactive');
+    // The invariant that broke Vertex: a directive that quotes a text block
+    // and instructs the model to preserve/translate it "verbatim" instead of
+    // composing freely. Assert the safe shape instead.
+    expect(d.directive).toMatch(/do not recite the lead word for word/i);
+    expect(d.directive).toMatch(/do not translate it literally/i);
+    expect(d.directive).not.toMatch(/Translate the following/i);
+    expect(d.directive).not.toContain('verbatim');
+    expect(d.directive).not.toContain('do not leave any part of it in English');
+    expect(d.directive).not.toContain('do not paraphrase them away');
   });
 
   test('rung 5: safe_fast_newday (bare localized name greeting on a new day)', () => {
