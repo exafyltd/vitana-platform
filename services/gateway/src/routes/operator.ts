@@ -34,6 +34,7 @@ import { randomUUID } from 'crypto';
 import { processMessage } from '../services/ai-orchestrator';
 // VTID-0536: Gemini Operator Tools Bridge
 import { processWithGemini } from '../services/gemini-operator';
+import { getThreadSummary, isOperatorThreadsEnabled, maybeSummarizeThread, recordOperatorTurn } from '../services/operator-threads';
 import { writeDevMemory } from '../services/dev-agent-memory';
 // VTID-03851: verified-caller marker for autopilot_execute_task (set or
 // cleared on EVERY /chat request — threadId is client-supplied).
@@ -352,6 +353,10 @@ router.post('/chat', optionalAuth, async (req: Request, res: Response) => {
     // trust level here rather than the spoofable x-operator-role header
     // getOperatorRole() reads elsewhere in this file.
     const geminiUserRole = callerIdentity?.exafy_admin === true ? 'admin' : undefined;
+    // VTID-04022: server-side thread summary feeds the memory recall. Fail-open
+    // — a missing table / Supabase error yields null and the turn proceeds
+    // exactly as before.
+    const threadSummary = isOperatorThreadsEnabled() ? await getThreadSummary(threadId).catch(() => null) : null;
     const geminiResult = await processWithGemini({
       text: message,
       threadId,
@@ -365,8 +370,26 @@ router.post('/chat', optionalAuth, async (req: Request, res: Response) => {
       conversationHistory: context || [],
       conversationId: conversation_id,
       // VTID-03926: authorize dev_* tools for a verified exafy_admin caller
-      userRole: geminiUserRole
+      userRole: geminiUserRole,
+      // VTID-04022
+      threadSummary,
     });
+
+    // VTID-04022: record the turn server-side (thread + user/tool/assistant
+    // messages) and, on the cadence, rewrite the rolling summary. Fire and
+    // forget — never on the reply's critical path, never throws.
+    if (isOperatorThreadsEnabled()) {
+      recordOperatorTurn({
+        threadId,
+        identity: { user_id: callerIdentity?.user_id || null, role: geminiUserRole || null },
+        userText: message,
+        reply: geminiResult.reply,
+        tools: (geminiResult.toolResults || []).map((tr) => ({ name: tr.name, result: JSON.stringify(tr.response ?? {}) })),
+        meta: { conversation_id: conversation_id || null, request_id: requestId, provider: geminiResult.meta?.provider ?? null, model: geminiResult.meta?.model ?? null },
+      })
+        .then((r) => (r.recorded ? maybeSummarizeThread(threadId, r.turns) : false))
+        .catch((err) => console.warn('[VTID-04022] operator thread record failed:', err instanceof Error ? err.message : err));
+    }
 
     // VTID-0536: Check if Gemini created a task via tools (in addition to explicit /task command)
     let geminiCreatedTask: CreatedTask | undefined;

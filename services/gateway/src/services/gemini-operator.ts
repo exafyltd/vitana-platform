@@ -52,6 +52,7 @@ import { executeKnowledgeSearch, KNOWLEDGE_SEARCH_TOOL_DEFINITION } from './know
 import { searchCode, getFileContents } from './github-service';
 import { getOperatorBootstrapPack } from './operator-bootstrap-pack';
 import { filterVitanaLogs, LOGS_DEFAULT_MINUTES, LOGS_MAX_MINUTES, LOGS_DEFAULT_LIMIT, LOGS_MAX_LIMIT } from './aws-cloudwatch-logs-readonly';
+import { buildRecallQuery } from './operator-threads';
 // VTID-03836: Operator Console AWS ECS read-only status
 import { describeEcsServices, ALLOWED_ECS_SERVICES } from './aws-ecs-readonly';
 // VTID-01208: LLM Telemetry
@@ -3997,8 +3998,12 @@ export async function processWithGemini(input: {
   systemInstruction?: string;
   // VTID-DEV-ASSIST: User role for tool filtering — only send tools the user is authorized to use
   userRole?: string;
+  // VTID-04022: rolling server-side thread summary (operator-threads.ts). When
+  // present, dev_agent_memory recall runs against summary + current message
+  // instead of the raw message alone (gap analysis §4.3).
+  threadSummary?: string | null;
 }): Promise<GeminiOperatorResponse> {
-  const { text, threadId, attachments = [], context = {}, conversationHistory = [], conversationId, systemInstruction, userRole } = input;
+  const { text, threadId, attachments = [], context = {}, conversationHistory = [], conversationId, systemInstruction, userRole, threadSummary } = input;
 
   // BOOTSTRAP-MEMORY-ORCHESTRATOR-MANDATORY: soft bypass detection at the
   // shared executor. Emits memory.orchestrator.bypass_detected (never throws
@@ -4034,7 +4039,7 @@ export async function processWithGemini(input: {
       // means no memory block gets appended.
       let memoryContextBlock: string | undefined;
       try {
-        const memRes = await recallDevMemory(text, 'vitana-platform', { limit: 5 });
+        const memRes = await recallDevMemory(buildRecallQuery(threadSummary, text), 'vitana-platform', { limit: 5 });
         if (memRes.ok && memRes.hits.length > 0) {
           memoryContextBlock = buildDevMemoryContextBlock(memRes.hits);
         } else if (!memRes.ok) {
