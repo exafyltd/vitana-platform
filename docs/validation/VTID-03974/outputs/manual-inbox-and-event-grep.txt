@@ -1,0 +1,7 @@
+services/gateway/src/routes/admin-partner-health.ts:33:import { ingestPartnerResult, recordStatusChange, quarantineUnmatchedResult, type PartnerOrderRow } from '../services/partner-health/ingestion';
+services/gateway/src/routes/admin-partner-health.ts:306:// bridge) and quarantineUnmatchedResult() was, until now, only ever
+services/gateway/src/routes/admin-partner-health.ts:312:// path, this just reuses quarantineUnmatchedResult() from ingestion.ts.
+services/gateway/src/routes/admin-partner-health.ts:316:router.post('/inbox/manual', requireAuth, requirePartnerHealthAccess, async (req: Request, res: Response) => {
+services/gateway/src/routes/admin-partner-health.ts:335:  const outcome = await quarantineUnmatchedResult(supabase, partnerId, rawPayload as Record<string, unknown>, candidateUserIds, reason);
+services/gateway/src/routes/partner-orgs.ts:364:        type: 'partner_org.registry_linked',
+services/gateway/src/types/cicd.ts:988:  | 'partner_org.registry_linked';
