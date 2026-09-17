@@ -28,7 +28,9 @@ import { randomUUID } from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 // VTID-03579: operator LLM calls go through the router (Bedrock primary,
 // DeepSeek fallback) — never a provider named in this file.
-import { callViaRouter, type LLMRouterTool } from './llm-router';
+import { callViaRouter, type LLMRouterTool, type LLMUsage } from './llm-router';
+// VTID-04031: token usage + estimated cost per model call, folded into the reply meta.
+import { turnUsageFields, summarizeTurnCost, type ModelTurnCost } from './operator-turn-cost';
 // VTID-03892: the Operator's own engineering memory (VTID-03889) — separate
 // from Memory Garden, which is community end-user personalization data.
 import { recallDevMemory, type DevMemoryHit } from './dev-agent-memory';
@@ -177,7 +179,7 @@ export interface GeminiOperatorResponse {
  * ignored, it can never fail or delay the turn.
  */
 export type OperatorTurnEvent =
-  | { type: 'model.turn'; stage: 'plan' | 'final'; provider: string; model: string; tool_calls: number; duration_ms: number }
+  | ({ type: 'model.turn'; stage: 'plan' | 'final'; provider: string; model: string; tool_calls: number; duration_ms: number } & ModelTurnCost)
   | { type: 'tool.call'; index: number; name: string; args: Record<string, unknown> }
   | { type: 'tool.result'; index: number; name: string; ok: boolean; duration_ms: number; error?: string; governance_blocked?: boolean; excerpt: string };
 
@@ -3938,6 +3940,8 @@ async function callVertexWithTools(
   reply: string;
   toolCalls?: GeminiToolCall[];
   telemetryContext?: LLMCallContext;
+  // VTID-04031: the router's token usage for this call (undefined when the provider reported none).
+  usage?: LLMUsage;
   // VTID-03579 (review follow-up): who ACTUALLY served this turn. Without it
   // the caller kept reporting provider:'vertex' for every Bedrock/DeepSeek
   // call, which is the same "the table says one thing, the wire did another"
@@ -4010,12 +4014,12 @@ async function callVertexWithTools(
 
   if (toolCalls) {
     console.log(`[VTID-01023] operator returned ${toolCalls.length} tool call(s) via ${r.provider}`);
-    return { reply: r.text || '', toolCalls, provider: r.provider, model: r.model };
+    return { reply: r.text || '', toolCalls, provider: r.provider, model: r.model, usage: r.usage };
   }
 
   const reply = r.text || '';
   console.log(`[VTID-01023] operator returned text response (${reply.length} chars) via ${r.provider}`);
-  return { reply, provider: r.provider, model: r.model };
+  return { reply, provider: r.provider, model: r.model, usage: r.usage };
 }
 
 /**
@@ -4025,7 +4029,8 @@ async function sendToolResultsToVertex(
   originalText: string,
   toolResults: GeminiToolResult[],
   threadId: string
-): Promise<{ reply: string }> {
+  // VTID-04031: who served the final call and what it cost, for the turn's meta.
+): Promise<{ reply: string; usage?: LLMUsage; provider?: string; model?: string }> {
   const baseToolResultPrompt = `You are Vitana, a friendly community assistant. Present the tool results to the user in a warm, helpful way.
 If there were errors or governance blocks, explain them clearly.
 If successful, present the results naturally.
@@ -4073,7 +4078,7 @@ CRITICAL — Sharing links:
     // Unchanged safety net (VTID-01270): the link guarantee does not depend on
     // the model remembering to paste it, and that matters more now that the
     // model behind this is a different one than the prompt was tuned against.
-    return { reply: ensureLinksInReply(r.text, toolResults) };
+    return { reply: ensureLinksInReply(r.text, toolResults), usage: r.usage, provider: r.provider, model: r.model };
   } catch (err: any) {
     console.warn(`[VTID-01023] tool results call failed: ${err.message}`);
     return formatToolResultsAsResponse(toolResults);
@@ -4243,6 +4248,7 @@ export async function processWithGemini(input: {
         model: vertexResponse.model ?? 'router',
         tool_calls: vertexResponse.toolCalls?.length ?? 0,
         duration_ms: Date.now() - planStartedAt,
+        ...turnUsageFields(vertexResponse.model, vertexResponse.usage),
       });
 
       // Check if Vertex wants to call any tools
@@ -4282,12 +4288,18 @@ export async function processWithGemini(input: {
         emitTurnEvent(onEvent, {
           type: 'model.turn',
           stage: 'final',
-          provider: vertexResponse.provider ?? 'router',
-          model: vertexResponse.model ?? 'router',
+          provider: finalResponse.provider ?? vertexResponse.provider ?? 'router',
+          model: finalResponse.model ?? vertexResponse.model ?? 'router',
           tool_calls: 0,
           duration_ms: Date.now() - finalStartedAt,
+          ...turnUsageFields(finalResponse.model ?? vertexResponse.model, finalResponse.usage),
         });
 
+        // VTID-04031: both model calls of the turn folded into one cost line.
+        const turnCost = summarizeTurnCost([
+          { model: vertexResponse.model, usage: vertexResponse.usage },
+          { model: finalResponse.model ?? vertexResponse.model, usage: finalResponse.usage },
+        ]);
         return {
           reply: finalResponse.reply,
           toolResults,
@@ -4296,7 +4308,9 @@ export async function processWithGemini(input: {
             model: vertexResponse.model ?? 'router',
             mode: `operator_${vertexResponse.provider ?? 'router'}`,
             tool_calls: vertexResponse.toolCalls.length,
-            vtid: 'VTID-01023'
+            vtid: 'VTID-01023',
+            duration_ms: Date.now() - planStartedAt,
+            ...turnCost,
           }
         };
       }
@@ -4309,7 +4323,10 @@ export async function processWithGemini(input: {
           model: vertexResponse.model ?? 'router',
           mode: `operator_${vertexResponse.provider ?? 'router'}`,
           tool_calls: 0,
-          vtid: 'VTID-01023'
+          vtid: 'VTID-01023',
+          duration_ms: Date.now() - planStartedAt,
+          // VTID-04031
+          ...summarizeTurnCost([{ model: vertexResponse.model, usage: vertexResponse.usage }]),
         }
       };
     } catch (error: any) {

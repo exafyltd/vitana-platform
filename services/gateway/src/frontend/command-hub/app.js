@@ -26732,6 +26732,19 @@ function renderOperatorChat() {
             time.title = msg.timestamp || '';
             meta.appendChild(time);
 
+            // VTID-04031: cost / model badge — provider, model, turn duration,
+            // tokens and the estimated cost the gateway computed for this turn.
+            if (!isSent && msg.meta && msg.meta.provider) {
+                var badgeText = formatTurnCostBadge(msg.meta);
+                if (badgeText) {
+                    var badge = document.createElement('span');
+                    badge.className = 'message-cost-badge';
+                    badge.textContent = badgeText;
+                    badge.title = describeTurnCost(msg.meta);
+                    meta.appendChild(badge);
+                }
+            }
+
             messages.appendChild(meta);
         });
     }
@@ -27055,6 +27068,41 @@ function formatToolDuration(ms) {
     return ms < 1000 ? Math.round(ms) + 'ms' : (ms / 1000).toFixed(1) + 's';
 }
 
+// VTID-04031: token / cost formatting for the turn badge and the live transcript.
+function formatTokenCount(n) {
+    if (typeof n !== 'number' || !(n >= 0)) return '';
+    return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(Math.round(n));
+}
+
+function formatTurnCostUsd(meta) {
+    if (!meta || !meta.usage) return '';
+    if (meta.cost_priced === false) return 'unpriced';
+    if (typeof meta.cost_usd !== 'number') return '';
+    return '$' + (meta.cost_usd < 0.01 ? meta.cost_usd.toFixed(4) : meta.cost_usd.toFixed(3));
+}
+
+function formatTurnCostBadge(meta) {
+    if (!meta || !meta.provider) return '';
+    var parts = [meta.provider + (meta.model ? ' \u00b7 ' + meta.model : '')];
+    var dur = formatToolDuration(meta.duration_ms);
+    if (dur) parts.push(dur);
+    if (meta.usage && (meta.usage.input_tokens || meta.usage.output_tokens)) {
+        parts.push(formatTokenCount(meta.usage.input_tokens) + '\u2191 ' + formatTokenCount(meta.usage.output_tokens) + '\u2193');
+    }
+    var cost = formatTurnCostUsd(meta);
+    if (cost) parts.push(cost);
+    return parts.join(' \u00b7 ');
+}
+
+function describeTurnCost(meta) {
+    if (!meta) return '';
+    var lines = ['Provider: ' + (meta.provider || '?'), 'Model: ' + (meta.model || '?')];
+    if (typeof meta.duration_ms === 'number') lines.push('Turn: ' + formatToolDuration(meta.duration_ms) + (typeof meta.tool_calls === 'number' ? ' (' + meta.tool_calls + ' tool call' + (meta.tool_calls === 1 ? '' : 's') + ')' : ''));
+    if (meta.usage) lines.push('Tokens: ' + (meta.usage.input_tokens || 0) + ' in / ' + (meta.usage.output_tokens || 0) + ' out' + (typeof meta.model_calls === 'number' ? ' over ' + meta.model_calls + ' model call' + (meta.model_calls === 1 ? '' : 's') : ''));
+    if (meta.usage) lines.push(meta.cost_priced === false ? 'Cost: model not in the price table' : 'Est. cost: $' + Number(meta.cost_usd || 0).toFixed(6));
+    return lines.join('\n');
+}
+
 function renderOperatorLiveTranscript() {
     var wrap = document.createElement('div');
     wrap.className = 'chat-tool-activity chat-tool-activity--live';
@@ -27073,7 +27121,18 @@ function renderOperatorLiveTranscript() {
         line.title = entry.args ? JSON.stringify(entry.args) : '';
         wrap.appendChild(line);
     });
-    if (state.chatLiveTranscript.length === 0) {
+    // VTID-04031: each model call as it completes — provider, model, stage,
+    // duration and, when the provider reported usage, tokens + est. cost.
+    state.chatLiveModelTurns.forEach(function (d) {
+        if (!d) return;
+        var mline = document.createElement('div');
+        mline.className = 'chat-tool-activity-line chat-tool-activity-line--model';
+        mline.textContent = '\u2234 ' + formatTurnCostBadge({
+            provider: d.provider, model: d.model, duration_ms: d.duration_ms, usage: d.usage, cost_usd: d.cost_usd, cost_priced: d.cost_priced
+        }) + (d.stage ? ' (' + d.stage + ')' : '');
+        wrap.appendChild(mline);
+    });
+    if (state.chatLiveTranscript.length === 0 && state.chatLiveModelTurns.length === 0) {
         var thinking = document.createElement('div');
         thinking.className = 'chat-tool-activity-line chat-tool-activity-line--running';
         thinking.textContent = String.fromCodePoint(0x2026) + ' Thinking';

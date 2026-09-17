@@ -2359,6 +2359,36 @@ body {
   align-self: flex-end;
 }
 
+/* VTID-04031: cost / model badge on a reply's meta row */
+.message-cost-badge {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.68rem;
+  opacity: 0.7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.chat-tool-activity-line--model {
+  opacity: 0.75;
+  font-style: italic;
+}
+
+/* VTID-04031: at phone width the meta row is a few characters wide (the
+   pre-existing VTID-03949 sidebar+chat split) — let the badge wrap under the
+   timestamp instead of clipping to an ellipsis. */
+@media (max-width: 480px) {
+  .message-meta {
+    flex-wrap: wrap;
+  }
+  .message-cost-badge {
+    white-space: normal;
+    overflow: visible;
+    flex-basis: 100%;
+  }
+}
+
 .message-copy-btn {
   display: inline-flex;
   align-items: center;

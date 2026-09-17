@@ -324,8 +324,10 @@ describe('VTID-04028 Command Hub client', () => {
   });
 
   it('bumps the cache-bust version and ships the live-transcript styles', () => {
-    expect(INDEX_HTML).toContain('app.js?v=20260917-vtid-04028-operator-stream');
-    expect(INDEX_HTML).toContain('styles.css?v=20260917-vtid-04028-operator-stream');
+    // VTID-04031 bumped the version again (cost badge); the pin is "at or after the W4d bump".
+    const ver = (INDEX_HTML.match(/app\.js\?v=([0-9]{8}-[^"]+)"/) || [])[1] || '';
+    expect(ver >= '20260917-vtid-04028-operator-stream').toBe(true);
+    expect(INDEX_HTML).toContain('styles.css?v=' + ver);
     expect(CSS).toContain('.chat-tool-activity-line--running');
     expect(CSS).toContain('.chat-tool-activity-line--failed');
   });
