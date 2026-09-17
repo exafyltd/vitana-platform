@@ -1,0 +1,4 @@
+# VTID-04019 — commands run (Claude Code session, 2026-09-17)
+grep -rn "github_pat_\|ghp_" CLAUDE.md docs/*.md .claude/skills/*/SKILL.md   -> 2 hits, both CLAUDE.md §16 (the partial PATs); nothing elsewhere
+npx jest test/vtid-04019-no-token-prefixes-in-docs.test.ts                  -> 488 tests passing (487 files scanned clean + detector fixtures + §16 wording)
+NOT done here: rotating the two tokens whose prefixes were exposed (owner: GitHub settings + Secrets Manager + task-def redeploy).

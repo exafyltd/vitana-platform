@@ -2117,12 +2117,35 @@ The Gateway serves static files with `Cache-Control: no-cache, no-store, must-re
 <script src="/command-hub/app.js?v=YYYYMMDD-HHMM"></script>
 ```
 
-### GitHub PATs for API Access
+### GitHub access for API operations (VTID-04019 — no token material in this file)
 
-- **Vitana Platform**: `github_pat_11BI6FN3I0...` (use for PR creation, merging, workflow dispatch)
-- **Lovable (Vitana v1)**: `ghp_vCNFyyrr...` (use for Lovable repo access)
+This section used to print the first characters of two live personal access
+tokens. It no longer does, and must never again: a rules file that every
+session force-loads is the worst place for credential material, partial or
+not (`services/gateway/test/vtid-04019-no-token-prefixes-in-docs.test.ts`
+fails the build if a `github_pat_…`/`ghp_…`-shaped prefix reappears here or
+under `docs/`).
 
-Use these PATs with the GitHub REST API (`api.github.com`) for all PR and deployment operations.
+Where the tokens actually live, and how each consumer gets them:
+
+- **Gateway / executor (`GITHUB_SAFE_MERGE_TOKEN`)** — AWS Secrets Manager,
+  wired into the ECS task definitions by `AWS-STAGE-DEPLOY-GATEWAY.yml` /
+  `AWS-PROD-DEPLOY-*.yml`; the platform repo's PR/merge/dispatch calls in
+  `services/gateway/src/services/github-service.ts` read it from the
+  environment.
+- **`exafyltd/vitana-v1` (`FRONTEND_DEPLOY_TOKEN`)** — same mechanism; the
+  operator's cross-repo reads (`dev_read_file` / `dev_search_codebase` with
+  `repo:"exafyltd/vitana-v1"`) and the PUBLISH button's frontend promotion
+  use it.
+- **A Claude Code session** — uses the GitHub MCP tools (`mcp__github__*`)
+  and `add_repo`; it never needs, and must never be given, a raw PAT in
+  conversation or in a file.
+- **GitHub Actions** — repository secrets, referenced as
+  `${{ secrets.… }}` in the workflow that needs them.
+
+If a token is ever pasted into a file, a chat, or a log, treat it as leaked:
+rotate it in GitHub, update the Secrets Manager value, redeploy the task
+defs that carry it, and record the rotation in this file's CHANGE LOG.
 
 ---
 
@@ -2130,6 +2153,7 @@ Use these PATs with the GitHub REST API (`api.github.com`) for all PR and deploy
 
 | Date | Change | VTID |
 |------|--------|------|
+| 2026-09-17 | **W7a of the operator agent plan: the partial GitHub PATs are out of this file.** §16 printed the first characters of two live personal access tokens ("use these PATs with the GitHub REST API") in the one file every session force-loads and every agent prompt carries (the executor's system prompt embeds Part 1; the W4a bootstrap pack reads this file through the GitHub API). Replaced with where each token actually lives — `GITHUB_SAFE_MERGE_TOKEN`/`FRONTEND_DEPLOY_TOKEN` in AWS Secrets Manager wired by the deploy workflows, Actions repository secrets, and the GitHub MCP tools for a session — plus the leak rule (rotate, update the secret, redeploy, record). New `test/vtid-04019-no-token-prefixes-in-docs.test.ts` scans `CLAUDE.md`, `README.md` and every markdown file under `docs/` (487 files) for token shapes (GitHub fine-grained/classic, AWS access key ids, `sk-`/`sk-ant-` keys, JWTs) and fails the build on any hit; 488/488 passing. **Owner follow-up, not done here:** rotate the two tokens whose prefixes sat in `main` for weeks; the Supabase `service_role` rotation and the prod operator-flag declarations remain open W7 items. | VTID-04019 |
 | 2026-09-17 | **W4a of the operator agent plan: the Operator Console's session bootstrap pack (gap analysis §4.1).** The console's codebase knowledge was a hand-typed six-bullet constant (`CODEBASE_OVERVIEW_BLOCK`, VTID-03930) refreshed by hand. New `operator-bootstrap-pack.ts` assembles, on every operator turn — the main turn and, per §4.1, the tool-result turn too — what a Claude Code session starts with: CLAUDE.md Part 1 rules and the newest 20 CHANGE LOG rows (read through the GitHub contents API, since the gateway container ships no CLAUDE.md), `config/service-path-map.json`, the `DATABASE_SCHEMA.md` table index, live `build-info` for the gateways named in `OPERATOR_BOOTSTRAP_BUILD_INFO_URLS`, open PRs on both repos (platform with CI state), the last 10 `deploy.*`/`dev_autopilot.*` OASIS events, and the tool catalog rendered from the declarations the model is actually given this turn — never a hand-typed list. Every source is bounded and timed out at 2.5 s and fails open to one `(unavailable: …)` line; the fetched sections are cached 5 min with coalesced concurrent builds; the whole pack is capped at 40 KB. Gated on `OPERATOR_BOOTSTRAP_PACK_ENABLED=true` (pinned on staging with the two build-info targets; prod untouched); the VTID-03930 block stays as the pack's floor. 16 new tests (renderers, assembly/size budget, fail-open per source, cache/coalescing, wiring, staging pin); the VTID-03930/03892/03838 prompt suites still pass; `tsc --noEmit` clean. **Not verified live** — the first operator turn on staging after this deploys is the exercise; `(unavailable: …)` lines in the served prompt name what to fix. Thread summaries / memory-against-summary (§4.3) are W4b. | VTID-04018 |
 | 2026-09-17 | **W3 of the operator agent plan: the CI feedback loop runs in fix mode instead of starting over.** Until now a CI failure on a Dev Autopilot PR meant triage → `revertExecutionPR` (close the PR, delete the branch) → a child re-running the same plan from a fresh clone of `main` and opening a NEW PR — the first attempt discarded even for a one-line fix, and the VTID-04005 log excerpt only a hint. Two latent defects on that path: the PR-flood guard in `runExecutionSession` refuses any child whose parent still carries a `pr_url` (the parent is `reverted`, not in the guard's exclusion list), and the child was pointed at a branch that had just been deleted. **Now, for an agent-executor parent at stage `ci` (not DRY_RUN):** the PR stays open; `spawnChildExecution` writes `metadata.fix_mode = { branch, pr_number, pr_url, parent_execution_id }` on the child beside the inherited executor/override and `parent_failure`; the agent runner clones that branch (`prepareWorkspace({ existingBranch })`), fetches `main` for the diff base (`fetchRefSha`/`listChangedFilesSince`), builds `buildFixModeTaskPrompt` (PR files, CI evidence, attempt N of M, no starting over, no skipping tests), runs the post-hoc scope/coverage/tsc/jest checks on the WHOLE PR diff, refuses to push if this run edited nothing, fast-forwards onto the same branch (`commitAndPush({ force:false })`) and returns the parent's PR so the watcher's merge → `self_healed` chain is untouched; the flood guard exempts the fix target (`priorPrBlocksExecution`); escalation at the depth cap leaves the PR open (`pr_left_open` on the event). Single-shot parents and merged-then-broken changes keep the revert path. **Cost per run:** the runner appends tokens/`estimateCost`/turns/fix rounds/checks refused/fallback/outcome to the finding's `dev_autopilot_outcomes` row (`metadata.agent_runs[]`, `agent_cost_usd_total`) on every exit path — no migration. 16 new tests; 9 bridge/executor/agent suites re-run, 96 passing; `tsc --noEmit` clean. **Not verified live** — Test Run #6 (an agent PR whose first attempt breaks a paired test, then the same PR going green with no second PR) is the first exercise, after the executor image is rebuilt from this commit. | VTID-04017 |
 | 2026-09-17 | **W2 of the operator agent plan: open-ended intake, `autopilot_run_task(request, title?)`.** Before this the Operator Console could execute only an already-named VTID with a pre-listed file set; the operator still had to do the discovery a Claude Code session does itself. The new tool (tool registry + operator wire schema + both prompt sources, VTID-03838 drift rule kept byte-identical) runs the same VTID-03851 exafy_admin marker check and governance shape as `autopilot_execute_task`, then calls `triggerOperatorExecution({ openEnded: true })`: W0's server-side self-allocation (`OPERATOR_VTID_SELF_ALLOCATE_ENABLED`, still default OFF) mints and registers the VTID with `metadata.intake='open_ended'`; the recommendation/plan carry an empty file list (accepted ONLY with `openEnded`); the unchanged safety gate still runs (kill switch, budget, depth — its file rules have nothing to judge yet); the execution row is pinned to `executor:'agent'` on the row itself, independent of `OPERATOR_ONRAMP_EXECUTOR`, because the single-shot path refuses a plan with no files; and the agent runner switches its task prompt to discovery mode (request = the whole spec, search first, smallest change, no invented requirements, name the reading taken when ambiguous). Allow/deny globs, the test-coverage rule and runner tsc + jest apply to the real diff post-hoc (VTID-04006). 15 new tests; 31 operator/on-ramp/agent suites re-run, 319 passing; `tsc --noEmit` clean. **Inert on staging until the owner flips `OPERATOR_VTID_SELF_ALLOCATE_ENABLED=true`** — deliberately not pinned here (the plan reserved that flip); until then the tool returns the honest refusal. Test Run #5 waits on that flip. | VTID-04007 |
