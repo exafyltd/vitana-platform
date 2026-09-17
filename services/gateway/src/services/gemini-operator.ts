@@ -53,6 +53,7 @@ import { searchCode, getFileContents } from './github-service';
 import { getOperatorBootstrapPack } from './operator-bootstrap-pack';
 import { filterVitanaLogs, LOGS_DEFAULT_MINUTES, LOGS_MAX_MINUTES, LOGS_DEFAULT_LIMIT, LOGS_MAX_LIMIT } from './aws-cloudwatch-logs-readonly';
 import { buildRecallQuery } from './operator-threads';
+import { runReadonlySql, isSqlReadonlyEnabled, SQL_DEFAULT_ROWS, SQL_MAX_ROWS, SQL_DEFAULT_TIMEOUT_MS, SQL_MAX_TIMEOUT_MS } from './operator-sql-readonly';
 // VTID-03836: Operator Console AWS ECS read-only status
 import { describeEcsServices, ALLOWED_ECS_SERVICES } from './aws-ecs-readonly';
 // VTID-01208: LLM Telemetry
@@ -541,6 +542,32 @@ KNOWN BLIND SPOT: GitHub's code search index excludes any file over 384KB. servi
           }
         },
         required: ['log_group']
+      }
+    },
+    // VTID-04023: Operator Console read-only SQL — one bounded SELECT over a
+    // dedicated read-only connection (operator-sql-readonly.ts), for the
+    // questions the 4-table allowlist below cannot answer (joins, aggregates,
+    // any other table). Developer/admin only; inert until configured.
+    {
+      name: 'dev_run_sql_readonly',
+      description: `Run ONE read-only SQL statement (SELECT, WITH … SELECT, or plain EXPLAIN) against the platform database over a dedicated read-only connection, inside a READ ONLY transaction with a statement timeout. Use for joins, aggregates and tables dev_db_query does not cover (e.g. "how many dev_autopilot_executions failed per stage this week"). No writes, no DDL, no locking, no EXPLAIN ANALYZE; rows and payload are bounded. Developer/admin role only.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          sql: {
+            type: 'string',
+            description: 'A single SELECT / WITH … SELECT / EXPLAIN statement (max 4000 chars). Add ORDER BY … LIMIT yourself for large tables.'
+          },
+          max_rows: {
+            type: 'integer',
+            description: `Maximum rows to return (default ${SQL_DEFAULT_ROWS}, max ${SQL_MAX_ROWS}).`
+          },
+          timeout_ms: {
+            type: 'integer',
+            description: `Statement timeout in milliseconds (default ${SQL_DEFAULT_TIMEOUT_MS}, max ${SQL_MAX_TIMEOUT_MS}).`
+          }
+        },
+        required: ['sql']
       }
     },
     // VTID-03837: Operator Console read-only DB access — explicit table
@@ -2689,6 +2716,30 @@ const DEV_DB_QUERY_ALLOWED_TABLES = [
 ] as const;
 
 /**
+ * VTID-04023: dev_run_sql_readonly — one bounded read-only statement over the
+ * dedicated OPERATOR_SQL_READONLY_DATABASE_URL connection. Every safety layer
+ * lives in operator-sql-readonly.ts; this is the tool boundary: kill switch,
+ * argument shape, and an honest error (not an empty result) on refusal.
+ */
+async function executeDevRunSqlReadonly(
+  args: { sql?: string; max_rows?: number; timeout_ms?: number },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  if (!isSqlReadonlyEnabled()) {
+    return { ok: false, error: 'operator_sql_readonly_disabled: OPERATOR_SQL_READONLY_ENABLED is not "true"' };
+  }
+  if (typeof args.sql !== 'string' || !args.sql.trim()) {
+    return { ok: false, error: 'sql is required' };
+  }
+  try {
+    const result = await runReadonlySql({ sql: args.sql, max_rows: args.max_rows, timeout_ms: args.timeout_ms }, { threadId });
+    return { ok: true, data: result as any };
+  } catch (err: any) {
+    return { ok: false, error: `Read-only SQL failed: ${err?.message || String(err)}` };
+  }
+}
+
+/**
  * VTID-03837: dev_db_query — read-only Supabase PostgREST read, restricted
  * to an explicit table allowlist. Reuses the same SUPABASE_SERVICE_ROLE
  * read pattern already used by executeDevDeploymentStatus/executeAnalyzeVTID
@@ -3321,6 +3372,14 @@ export async function executeTool(
       case 'dev_cloudwatch_logs':
         result = await executeDevCloudwatchLogs(
           args as { log_group: string; filter_pattern?: string; minutes?: number; limit?: number },
+          threadId
+        );
+        break;
+
+      // VTID-04023: Operator Console read-only SQL
+      case 'dev_run_sql_readonly':
+        result = await executeDevRunSqlReadonly(
+          args as { sql?: string; max_rows?: number; timeout_ms?: number },
           threadId
         );
         break;
