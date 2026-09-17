@@ -128,6 +128,12 @@ export type SelectionReason =
   // chunks per turn against de/en's ~165 — it is served by the cascaded
   // Transcribe -> Bedrock -> Polly pipeline, which does support it.
   | 'cascaded_language_rescue'
+  // VTID-04000 — the ONE narrow, explicit exception to "Vertex is not a
+  // destination" (see this file's own VTID-03723 header above). Fires only
+  // for `sr` sessions, only when `VERTEX_SERBIAN_BRIDGE_ENABLED=true` on a
+  // NEW, dedicated GCP project — never the decommissioned one. See
+  // `vertex-serbian-bridge.ts` for the full rationale.
+  | 'vertex_serbian_bridge'
   | 'provider_invalid';           // unknown provider string anywhere → vertex
 
 export interface CanarySelectorConfig {
@@ -223,6 +229,22 @@ export interface UpstreamSelectorContext {
    * diverted into the slower three-hop path.
    */
   cascade?: {
+    enabled: boolean;
+    languageSupported: boolean;
+  };
+
+  /**
+   * VTID-04000: narrow, explicit exception to "Vertex is not a destination"
+   * (VTID-03723) — Serbian only, gated behind `VERTEX_SERBIAN_BRIDGE_ENABLED`
+   * on a NEW, dedicated GCP project (never the decommissioned one), for a
+   * time-boxed 90-day credit window. Precomputed by the caller (both fields
+   * derived from `vertex-serbian-bridge.ts`'s pure predicates) so this
+   * module stays pure and never inspects a language string or env var
+   * itself — same discipline as `nova`/`cascade` above. Both fields must be
+   * explicit; a missing/undefined context object can never accidentally
+   * satisfy this gate.
+   */
+  vertexSerbianBridge?: {
     enabled: boolean;
     languageSupported: boolean;
   };
@@ -339,6 +361,10 @@ function resolveWithoutVertex(
   error?: string,
 ): UpstreamSelectionDecision {
   const languageBlocked = ctx.nova ? ctx.nova.languageSupported !== true : false;
+  const bridge = tryVertexBridgeRescue(ctx, languageBlocked);
+  if (bridge) {
+    return { ...bridge, requested };
+  }
   const rescue = tryCascadeRescue(ctx, languageBlocked);
   if (rescue) {
     return { ...rescue, requested, reason: 'vertex_removed_cascaded' };
@@ -464,6 +490,37 @@ function tryCascadeRescue(
   };
 }
 
+/**
+ * VTID-04000 — the one narrow exception to "Vertex is not a destination"
+ * (VTID-03723's own hard-won invariant, added after the pl/pt
+ * English-speaking incident this file's header documents). Mirrors
+ * `tryCascadeRescue`'s exact contract — same `languageBlocked` gate, same
+ * "returns null when it does not apply" shape — and is checked BEFORE
+ * `tryCascadeRescue` at every call site, so a Serbian session gets the
+ * Vertex bridge instead of the cascade while the bridge is active.
+ *
+ * Both `enabled` and `languageSupported` must be explicit `true`; either
+ * absent/false and this returns null, falling through to the existing
+ * cascade-rescue/forced-Nova behaviour byte-for-byte — the bridge is
+ * additive, never a precondition anything else depends on.
+ */
+function tryVertexBridgeRescue(
+  ctx: UpstreamSelectorContext,
+  languageBlocked: boolean,
+): UpstreamSelectionDecision | null {
+  if (!languageBlocked) return null;
+  if (ctx.vertexSerbianBridge?.enabled !== true) return null;
+  if (ctx.vertexSerbianBridge.languageSupported !== true) return null;
+  return {
+    provider: 'vertex',
+    requested: 'nova_sonic',
+    reason: 'vertex_serbian_bridge',
+    livekitReady: false,
+    canary: false,
+    novaReady: false,
+  };
+}
+
 function evaluateNovaRequest(
   ctx: UpstreamSelectorContext,
   happyReason: 'env_explicit_nova_sonic' | 'system_config_nova_sonic',
@@ -479,6 +536,8 @@ function evaluateNovaRequest(
     // fully absent (no context at all), in which case cascade eligibility
     // can't be assessed and Nova is forced through blind.
     const languageBlocked = nova ? nova.languageSupported !== true : false;
+    const bridge = tryVertexBridgeRescue(ctx, languageBlocked);
+    if (bridge) return bridge;
     const rescue = tryCascadeRescue(ctx, languageBlocked);
     if (rescue) return rescue;
     return {
@@ -505,6 +564,8 @@ function evaluateNovaRequest(
   // policy gate outranking "there is no other destination" no longer makes
   // sense once that other destination is permanently gone.
   const forced = runtimeBlocked || languageBlocked || identityBlocked;
+  const bridge = tryVertexBridgeRescue(ctx, languageBlocked);
+  if (bridge) return bridge;
   const rescue = tryCascadeRescue(ctx, languageBlocked);
   if (rescue) return rescue;
   return {
@@ -535,6 +596,8 @@ function evaluateNovaCanary(
     // happen now that Vertex is not a destination at all. Cascade first,
     // then force Nova, unconditionally.
     const languageBlocked = nova ? nova.languageSupported !== true : false;
+    const bridge = tryVertexBridgeRescue(ctx, languageBlocked);
+    if (bridge) return { ...bridge, requested: null };
     const rescue = tryCascadeRescue(ctx, languageBlocked);
     if (rescue) return { ...rescue, requested: null };
     return {
@@ -562,6 +625,8 @@ function evaluateNovaCanary(
   // changed, so the label has to change with it.
   const global = nova.globalEnabled === true;
   const forced = runtimeBlocked || languageBlocked || identityBlocked;
+  const bridge = tryVertexBridgeRescue(ctx, languageBlocked);
+  if (bridge) return { ...bridge, requested: null };
   const rescue = tryCascadeRescue(ctx, languageBlocked);
   if (rescue) return { ...rescue, requested: null };
   return {

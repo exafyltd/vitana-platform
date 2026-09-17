@@ -5,16 +5,22 @@
  * The selector is a pure function — these tests never touch process.env,
  * Supabase, or OASIS. Every input is passed explicitly via the context bag.
  *
- * VTID-03723 — VERTEX IS REMOVED AS A DESTINATION, PERMANENTLY. This file
- * used to pin every degraded/default/invalid path to `provider: 'vertex'`.
- * That is exactly the defect that shipped: staging's `voice.active_provider`
- * row said `vertex`, so EVERY pre-login session short-circuited to the
- * (dead) Gemini live client before Nova or the cascade were ever consulted —
- * Polish and Portuguese got a correct-sounding per-language voice speaking
- * English for weeks. Every assertion below is rewritten to the new
- * contract: `provider` is NEVER `'vertex'`, no matter what is requested —
- * it resolves to `'nova_sonic'` (forced, when necessary) or `'cascaded'`
- * (when Nova cannot speak the session's language and the cascade covers it).
+ * VTID-03723 — VERTEX IS REMOVED AS A DESTINATION, PERMANENTLY, for every
+ * language except ONE deliberate, narrow, explicit exception added by
+ * VTID-04000 (see the dedicated describe block at the bottom of this file).
+ * This file used to pin every degraded/default/invalid path to
+ * `provider: 'vertex'`. That is exactly the defect that shipped: staging's
+ * `voice.active_provider` row said `vertex`, so EVERY pre-login session
+ * short-circuited to the (dead) Gemini live client before Nova or the
+ * cascade were ever consulted — Polish and Portuguese got a
+ * correct-sounding per-language voice speaking English for weeks. Every
+ * assertion below (except the VTID-04000 block) is rewritten to the
+ * ongoing contract: `provider` is NEVER `'vertex'` UNLESS
+ * `vertexSerbianBridge.enabled` AND `vertexSerbianBridge.languageSupported`
+ * are BOTH explicitly `true` (Serbian only, opt-in, one new GCP project) —
+ * it otherwise resolves to `'nova_sonic'` (forced, when necessary) or
+ * `'cascaded'` (when Nova cannot speak the session's language and the
+ * cascade covers it).
  *
  * Updated acceptance matrix:
  *   1. No signal anywhere → Nova (forced), reason `nova_forced_vertex_unavailable`.
@@ -621,6 +627,11 @@ describe('VTID-03723: Vertex is never a destination, and the cascade rescues Nov
       },
       { vertexUnavailable: false },
       { vertexUnavailable: true },
+      // VTID-04000: a HALF-satisfied bridge gate must never leak into
+      // 'vertex' either — both fields are required, not just one.
+      { vertexSerbianBridge: { enabled: true, languageSupported: false } },
+      { vertexSerbianBridge: { enabled: false, languageSupported: true } },
+      { nova: novaCantSpeakPolish, vertexSerbianBridge: { enabled: true, languageSupported: false } },
     ];
     for (const c of contexts) {
       const d = selectUpstreamProvider(c);
@@ -682,5 +693,136 @@ describe('deriveVoiceRuntimeHealthy (BOOTSTRAP-ORB-HEALTH-NOVA-READY / VTID-0380
     expect(
       deriveVoiceRuntimeHealthy('livekit', { ...allReady, livekitReady: false }),
     ).toBe(false);
+  });
+});
+
+// ============================================================================
+// VTID-04000 — the ONE narrow, explicit, time-boxed exception to
+// "Vertex is not a destination" (VTID-03723 above). Serbian only, both
+// gates required, checked at every call site that can otherwise force
+// Nova/the cascade.
+// ============================================================================
+
+describe('VTID-04000: Vertex Serbian bridge — the one narrow exception', () => {
+  const identity = { userId: 'user-1', tenantId: 'tenant-1' };
+  // Serbian is not in Nova's supported set (en/de/fr/es), matching the
+  // real session shape this bridge exists for.
+  const novaCantSpeakSerbian = {
+    enabled: true,
+    identityAllowed: true,
+    languageSupported: false,
+    runtime: 'aws-ecs' as const,
+  };
+  const bridgeOn = { enabled: true, languageSupported: true };
+  const cascadeCoversSerbian = { enabled: true, languageSupported: true };
+
+  it('default (no request) path: fires via resolveWithoutVertex when both bridge gates pass', () => {
+    const d = selectUpstreamProvider({
+      nova: novaCantSpeakSerbian,
+      vertexSerbianBridge: bridgeOn,
+      identity,
+    });
+    expect(d.provider).toBe('vertex');
+    expect(d.reason).toBe('vertex_serbian_bridge');
+  });
+
+  it('takes priority over the cascade rescue when both are eligible', () => {
+    const d = selectUpstreamProvider({
+      nova: novaCantSpeakSerbian,
+      cascade: cascadeCoversSerbian,
+      vertexSerbianBridge: bridgeOn,
+      identity,
+    });
+    expect(d.provider).toBe('vertex');
+    expect(d.provider).not.toBe('cascaded');
+    expect(d.reason).toBe('vertex_serbian_bridge');
+  });
+
+  it('ORB_LIVE_PROVIDER=vertex path: still resolves through the bridge, not the old dead-vertex rollback', () => {
+    const d = selectUpstreamProvider({
+      envProviderOverride: 'vertex',
+      nova: novaCantSpeakSerbian,
+      vertexSerbianBridge: bridgeOn,
+      identity,
+    });
+    expect(d.provider).toBe('vertex');
+    expect(d.reason).toBe('vertex_serbian_bridge');
+  });
+
+  it('system_config active_provider=vertex path: resolves through the bridge (evaluateNovaCanary branch)', () => {
+    const d = selectUpstreamProvider({
+      systemConfigActiveProvider: 'vertex',
+      nova: novaCantSpeakSerbian,
+      vertexSerbianBridge: bridgeOn,
+      identity,
+    });
+    expect(d.provider).toBe('vertex');
+    expect(d.reason).toBe('vertex_serbian_bridge');
+  });
+
+  it('explicit ORB_LIVE_PROVIDER=nova_sonic path: resolves through the bridge (evaluateNovaRequest branch) when Nova cannot speak the language', () => {
+    const d = selectUpstreamProvider({
+      envProviderOverride: 'nova_sonic',
+      nova: novaCantSpeakSerbian,
+      vertexSerbianBridge: bridgeOn,
+      identity,
+    });
+    expect(d.provider).toBe('vertex');
+    expect(d.reason).toBe('vertex_serbian_bridge');
+  });
+
+  it('Nova disabled entirely: still resolves through the bridge rather than forcing a disabled Nova', () => {
+    const d = selectUpstreamProvider({
+      nova: { enabled: false, identityAllowed: false, languageSupported: false },
+      vertexSerbianBridge: bridgeOn,
+      identity,
+    });
+    expect(d.provider).toBe('vertex');
+    expect(d.reason).toBe('vertex_serbian_bridge');
+  });
+
+  it('mutation: enabled=false alone never fires the bridge, even with a matching language', () => {
+    const d = selectUpstreamProvider({
+      nova: novaCantSpeakSerbian,
+      vertexSerbianBridge: { enabled: false, languageSupported: true },
+      identity,
+    });
+    expect(d.provider).not.toBe('vertex');
+    expect(d.reason).not.toBe('vertex_serbian_bridge');
+  });
+
+  it('mutation: languageSupported=false alone never fires the bridge, even when enabled', () => {
+    const d = selectUpstreamProvider({
+      nova: novaCantSpeakSerbian,
+      vertexSerbianBridge: { enabled: true, languageSupported: false },
+      identity,
+    });
+    expect(d.provider).not.toBe('vertex');
+    expect(d.reason).not.toBe('vertex_serbian_bridge');
+  });
+
+  it('mutation: bridge enabled but the session language IS one Nova speaks — languageBlocked is false, so the bridge never applies and the happy Nova path is unaffected', () => {
+    const novaSpeaksGerman = {
+      enabled: true,
+      identityAllowed: true,
+      languageSupported: true,
+      runtime: 'aws-ecs' as const,
+    };
+    const d = selectUpstreamProvider({
+      nova: novaSpeaksGerman,
+      vertexSerbianBridge: bridgeOn,
+      identity,
+    });
+    expect(d.provider).toBe('nova_sonic');
+    expect(d.reason).toBe('nova_canary_allowlisted');
+  });
+
+  it('mutation: context entirely absent (undefined vertexSerbianBridge) behaves exactly as before VTID-04000', () => {
+    const d = selectUpstreamProvider({
+      nova: novaCantSpeakSerbian,
+      identity,
+    });
+    expect(d.provider).toBe('nova_sonic');
+    expect(d.reason).toBe('nova_forced_vertex_unavailable');
   });
 });

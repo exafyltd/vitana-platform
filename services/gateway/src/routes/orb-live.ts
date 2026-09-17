@@ -1881,6 +1881,14 @@ import {
   isCascadeEnabled,
   isCascadeLanguageSupported,
 } from '../orb/live/upstream/cascaded-config';
+// VTID-04000: the narrow, explicit sr-only Vertex bridge — see
+// vertex-serbian-bridge.ts for the full rationale. Same "had no caller on
+// any live path" trap BOOTSTRAP-CASCADE-WIRING already hit for the cascade
+// above — the selector's gate is useless if nothing here ever asks it.
+import {
+  isVertexSerbianBridgeEnabled,
+  isVertexSerbianBridgeLanguage,
+} from '../orb/live/upstream/vertex-serbian-bridge';
 import { bindUpstreamSessionHandlers } from '../orb/live/session/upstream-message-handler';
 import { createNovaWsFacade } from '../orb/live/upstream/nova-ws-facade';
 import type { UpstreamLiveClient } from '../orb/live/upstream/types';
@@ -7355,6 +7363,14 @@ async function connectToLiveAPI(
         // every language Nova speaks natively, so a healthy Nova session can
         // never be diverted into the slower three-hop path.
         languageSupported: isCascadeLanguageSupported(session.lang),
+      },
+      // VTID-04000: precomputed the same way as `cascade` above — the
+      // selector never inspects env vars or language strings itself. Both
+      // fields must independently be true for the bridge to fire at all;
+      // see `vertex-serbian-bridge.ts`.
+      vertexSerbianBridge: {
+        enabled: isVertexSerbianBridgeEnabled(),
+        languageSupported: isVertexSerbianBridgeLanguage(session.lang),
       },
     });
   } catch (e) {

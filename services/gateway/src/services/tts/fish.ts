@@ -191,7 +191,21 @@ export async function synthesizeFish(opts: {
       reference_id: voice.referenceId,
       format,
       normalize: true,
-      latency: 'normal',
+      // VTID-03998: `'normal'` (the previous value) is Fish's own documented
+      // best-QUALITY, slowest setting (docs.fish.audio — "normal: best
+      // quality (default)" vs "low: lowest latency" / "balanced: reduced
+      // latency"). Live production evidence (oasis_events, pre-login sr
+      // sessions on preview-aws.vitanaland.com): every anonymous Serbian
+      // cascade session hit the 30s greeting_timeout stall watchdog and
+      // terminated with zero audio BEFORE cascade_tts_failed even logged —
+      // consistent with this request itself running close to (or past) its
+      // own FISH_REQUEST_TIMEOUT_MS below. This is the ONLY voice path
+      // Serbian has (Polly has no `sr` voice at all), so a slow Fish call is
+      // a total outage for that language, not degraded quality. `'low'`
+      // trades some audio quality for the latency this real-time voice path
+      // needs — an acceptable trade for a rarely-hit language-gap fallback
+      // that was otherwise producing no audio at all.
+      latency: 'low',
     };
     if (format === 'pcm') {
       body.sample_rate = FISH_PCM_SAMPLE_RATE_HZ;

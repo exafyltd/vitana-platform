@@ -4,17 +4,28 @@
 This file contains critical information for AI assistants working on the Vitana platform.
 **READ THIS BEFORE MAKING ANY CHANGES.**
 
-> **GCP IS FULLY DECOMMISSIONED.** GCP project `lovable-vitana-vers1` billing
-> was disabled 2026-08-16 and the GCP `gateway` Cloud Run service was deleted
-> the same night (VTID-03599/VTID-03649 emergency response). **Zero Vitana
-> processes run on GCP any more — no OASIS, no autopilot, no agents, no
-> Cloud Run, no Cloud Scheduler, nothing.** AWS is now the sole cloud for
-> every service. This file has been swept to remove GCP as a direction for
-> new work; every `gcloud`/Cloud Run/Artifact Registry/GCP-project reference
-> below is either replaced with its AWS equivalent or marked historical. See
-> the CHANGE LOG entry for this pass for what was touched and what is still
-> an open follow-up (a few code-level defaults still fall back toward Google
-> when their controlling env var is unset — see §2c/§2d/§2e).
+> **GCP IS FULLY DECOMMISSIONED — with ONE narrow, explicit, time-boxed
+> exception (VTID-04000, §2e-vertex-serbian-bridge).** GCP project
+> `lovable-vitana-vers1` billing was disabled 2026-08-16 and the GCP
+> `gateway` Cloud Run service was deleted the same night
+> (VTID-03599/VTID-03649 emergency response). `lovable-vitana-vers1` stays
+> permanently dead — nothing in this section reverses that. **Separately**,
+> the platform owner opened a brand-new, dedicated GCP project (90-day free
+> credit window) and asked to revive the Vertex Live API — never deleted,
+> only made structurally unreachable, see `upstream-provider-selector.ts`'s
+> own VTID-03723 header — for **Serbian voice sessions only**, behind
+> `VERTEX_SERBIAN_BRIDGE_ENABLED=true`. Every other Vitana process still
+> runs on AWS exclusively: no OASIS, no autopilot, no other agent, no Cloud
+> Run, no Cloud Scheduler on GCP anywhere else. Before touching any
+> `gcloud`/Cloud Run/Artifact Registry/GCP-project reference below, check
+> whether it's this one narrow carve-out or the general decommission — they
+> are not the same thing, and conflating them either reintroduces the
+> silent-fallback pattern that caused the original Gemini cost incident
+> (§2b) or wrongly blocks the platform owner's own explicit, scoped
+> decision. See the CHANGE LOG entry for this pass for what was touched and
+> what is still an open follow-up (a few code-level defaults still fall
+> back toward Google when their controlling env var is unset — see
+> §2c/§2d/§2e).
 
 ---
 
@@ -466,12 +477,23 @@ await page.reload();
     **This supersedes the former rules 26 and 27**, which said to use Gemini
     Pro for the planner and Gemini Flash for the worker. Those are obsolete:
     the standing direction is Claude-on-Bedrock, off Google.
-27. **IF** you are about to point any stage at `vertex`, Gemini, or any other
-    Google Cloud API → **THEN STOP.** There is no sanctioned Google
-    dependency left at all. ORB voice used to fall back to Vertex Live —
-    that fallback is now permanently dead (GCP billing disabled 2026-08-16
-    killed Vertex Live outright, VTID-03649) and voice runs on Amazon Nova
-    Sonic exclusively (§2e). Do not reintroduce a Google call anywhere.
+27. **IF** you are about to point an LLM-routing stage (`llm_routing_policy`
+    — planner/worker/validator/operator/memory/triage/classifier) at
+    `vertex`, Gemini, or any other Google Cloud API → **THEN STOP.** There
+    is no sanctioned Google dependency for LLM routing at all — that part
+    of this rule is unchanged and absolute. **This does NOT cover ORB
+    voice-to-voice any more.** ORB voice used to fall back to Vertex Live
+    for every language; that general fallback is still permanently dead
+    (GCP billing disabled 2026-08-16, VTID-03649) and voice runs on Amazon
+    Nova Sonic (+ the Transcribe/Bedrock/Fish or Polly cascade for
+    languages Nova can't speak) for every language except one. **Serbian
+    is the sole, deliberate exception (VTID-04000, §2e-vertex-serbian-bridge):**
+    a NEW, dedicated GCP project (never `lovable-vitana-vers1`) behind
+    `VERTEX_SERBIAN_BRIDGE_ENABLED=true`, narrowly gated in
+    `upstream-provider-selector.ts` so no other language or session can
+    ever reach it. Do not reintroduce a Google call ANYWHERE else — this
+    carve-out is one language, one flag, one narrow selector gate, not a
+    general reopening.
 28. **IF** validation is needed → **THEN use Claude (via Bedrock).**
 29. **IF** model fallback occurs → **THEN log explicitly.** A fallback that
     lands on Google must be treated as an incident, not as normal operation.
@@ -975,13 +997,21 @@ on the gateway task role.
 
 ## 2e. ORB VOICE — NOVA SONIC (VTID-03501)
 
-**Voice runs on Amazon Nova Sonic exclusively — no working Google speech
-fallback exists (see rule 27).** GCP's 2026-08-16 shutdown killed Vertex
-Live outright. `VERTEX_LIVE_UNAVAILABLE=true` (`orb-live.ts`) forces Nova
-through its own runtime/language gates instead of degrading to Vertex, and
-gates the premature-close reconnect (below) onto the honest
-`connection_issue` signal instead of a doomed round trip to a dead
-endpoint. **This is zero-behavior-change until the flag is actually set on
+**Voice runs on Amazon Nova Sonic (+ the Transcribe/Bedrock/Polly-or-Fish
+cascade for languages Nova can't speak) for every language except one —
+Serbian goes through a narrow, explicit Vertex Live bridge on a NEW GCP
+project instead, see §2e-vertex-serbian-bridge (VTID-04000).** GCP's
+2026-08-16 shutdown killed the GENERAL Vertex Live fallback outright — that
+part is unchanged and still true for every other language. `VERTEX_LIVE_
+UNAVAILABLE=true` (`orb-live.ts`) forces Nova through its own
+runtime/language gates instead of degrading to Vertex, and gates the
+premature-close reconnect (below) onto the honest `connection_issue` signal
+instead of a doomed round trip to a dead endpoint — note this flag is
+declared on `upstream-provider-selector.ts`'s context type but is no longer
+actually READ there (VTID-03723 made the force-through unconditional); it
+is NOT the mechanism the Serbian bridge uses either (see
+§2e-vertex-serbian-bridge for `VERTEX_SERBIAN_BRIDGE_ENABLED`, a separate,
+narrower flag). **This is zero-behavior-change until the flag is actually set on
 the live task definition — verify directly, don't assume it from this file.**
 
 Global activation: `NOVA_SONIC_GLOBAL_ENABLED='true'` (exact string) widens
@@ -1075,6 +1105,170 @@ real mic/speaker, and starts no ORB session. Echo test must report **zero**
 gate openings. If it reports any, full duplex is unsafe on that device
 class — do not enable it there, and do not "fix" it by lowering
 thresholds.
+
+### 2e-vertex-serbian-bridge. Serbian voice — Vertex Live, on a NEW GCP project (VTID-04000)
+
+**One narrow, explicit, time-boxed exception to "Vertex is not a
+destination" (VTID-03723).** Serbian has no Nova Sonic voice and no Polly
+voice; the Transcribe->Bedrock->Fish cascade built to cover it
+(VTID-03970/03987) was measured live and does NOT fix the underlying
+problem — VTID-03998 found that tuning Fish's `latency` request field makes
+no measurable difference at realistic reply length (6 trials, ~535 chars:
+`'normal'` avg ~9.6s, `'low'` avg ~9.6s; Fish's real throughput is ~50-60
+chars/sec regardless of mode). Combined with the cascade's own
+LLM-completion latency, that is what was blowing past the 30s
+`greeting_timeout` stall watchdog for pre-login `sr` sessions. The platform
+owner opened a **brand-new, dedicated GCP project** (never
+`lovable-vitana-vers1`, which stays permanently decommissioned) with a
+90-day free-credit window and asked to revive Vertex Live for Serbian only
+— Gemini Live natively speaks Serbian in one hop (confirmed: `sr` is in
+Google's own supported-language list for the Live API), so none of the
+cascade's three-hop turn-shaping cost applies.
+
+**The infrastructure was never deleted — only made unreachable.**
+`VertexLiveClient` (full protocol handling, OAuth token caching/refresh,
+prewarming) and the AWS-compatible ADC bootstrap
+(`services/gateway/src/lib/gcp-adc-bootstrap.ts` — takes
+`GCP_SERVICE_ACCOUNT_JSON` from Secrets Manager, writes it to disk, points
+`GOOGLE_APPLICATION_CREDENTIALS` at it so `GoogleAuth`/ADC resolves on ECS,
+which has no GCP metadata server) are the same code that ran in production
+before the shutdown. Serbian's Gemini TTS voice mapping
+(`voice-mapping.ts`'s `GEMINI_TTS_VOICE_FALLBACKS.sr`/
+`NEURAL2_TTS_VOICE_FALLBACKS.sr`) was already correctly configured and
+needed no change. What WAS rewired: `upstream-provider-selector.ts`
+(VTID-03723) hardened every branch so no session could EVER resolve to
+`provider: 'vertex'` again, after a real incident (staging's
+`voice.active_provider` row silently routing pl/pt sessions to a dead
+Vertex, which spoke fluent English because nothing else ever got consulted)
+— `ctx.vertexUnavailable` is declared on the context type but is **no
+longer read anywhere**; the force-through is unconditional now, not
+flag-gated.
+
+**The carve-out, `orb/live/upstream/vertex-serbian-bridge.ts` +
+`upstream-provider-selector.ts`'s `tryVertexBridgeRescue()`:** a new,
+narrow rescue helper — same "returns null when it does not apply" contract
+as its sibling `tryCascadeRescue()`, checked BEFORE it at all 5 call sites
+(`resolveWithoutVertex`, both branches of `evaluateNovaRequest`, both
+branches of `evaluateNovaCanary`) — fires ONLY when BOTH are explicitly
+true:
+- `isVertexSerbianBridgeEnabled()` — `VERTEX_SERBIAN_BRIDGE_ENABLED` exact
+  string `'true'` (same activation-gate convention as
+  `NOVA_SONIC_GLOBAL_ENABLED`/`isCascadeEnabled()` — a typo is off).
+- `isVertexSerbianBridgeLanguage(lang)` — the session language is `sr`
+  (any region/script suffix), and ONLY `sr`. Never widened to a language
+  list.
+
+New `SelectionReason: 'vertex_serbian_bridge'` so telemetry/dashboards can
+tell this narrow path apart from every historical vertex reason. Both
+fields are precomputed by the caller (`routes/orb-live.ts`'s
+`connectToLiveAPI`) exactly like `nova`/`cascade` — the selector itself
+never reads env vars or inspects language strings.
+
+**⚠️ `VERTEX_PROJECT_ID`'s own code default is still the DECOMMISSIONED
+project.** `orb/live/config.ts`: `process.env.GOOGLE_CLOUD_PROJECT ||
+process.env.GCP_PROJECT_ID || 'lovable-vitana-vers1'`. If the new task-def
+sets `VERTEX_SERBIAN_BRIDGE_ENABLED=true` without ALSO setting
+`GOOGLE_CLOUD_PROJECT` (or `GCP_PROJECT_ID`) to the new project, the bridge
+will pass its own config-presence check (the string is never empty) and
+then fail for real against a project with no billing account. Always
+verify both are set together — this is the same ordering discipline
+CLAUDE.md's Bedrock IF-THEN 31 already requires ("configure and verify
+FIRST, then flip the routing flag — never the other way round"), here for
+`GOOGLE_CLOUD_PROJECT`/`VERTEX_SERBIAN_BRIDGE_ENABLED` instead.
+
+**Provisioning — pivoted from an AWS-Secrets-Manager service-account key to
+Workload Identity Federation (WIF), because the key design was blocked at
+the GCP org level.** `scripts/aws/setup-vertex-serbian-bridge.sh` (dry-run
+by default, `--apply` to create; refuses outright if `--gcp-project
+lovable-vitana-vers1` is passed) still exists and still creates a scoped
+service account + downloadable key for AWS Secrets Manager — but that path
+was never actually usable on the platform owner's own GCP org, because the
+org-wide policy `iam.disableServiceAccountKeyCreation` blocks EVERY
+service-account private-key download, confirmed live in the Console by the
+org Owner repeatedly. That is an org-level block on the action itself, not
+a permissions gap any identity can be granted around.
+
+**What's actually wired on staging is WIF instead** — Google's own
+recommended keyless alternative. The platform owner provisioned it
+themselves via Google Cloud Shell (`gcloud iam workload-identity-pools
+create vitana-aws-pool`, `... providers create-aws vitana-aws-provider
+--account-id=472838866351`, `gcloud iam service-accounts
+add-iam-policy-binding vitanaland@project-da3eb05a-c86e-47cb-85f
+.iam.gserviceaccount.com --role=roles/iam.workloadIdentityUser
+--member="principal://iam.googleapis.com/projects/20926255361/locations/
+global/workloadIdentityPools/vitana-aws-pool/subject/<aws-principal-arn>"`)
+— this trusts one specific AWS principal directly and lets it exchange its
+own native AWS credentials for a GCP token via Google's STS endpoint, with
+no downloadable key ever created. `gcloud iam workload-identity-pools
+create-cred-config` then produces the authoritative `external_account`
+credential config JSON — Google's own docs confirm this file contains no
+private key (only pool/provider/STS-endpoint federation metadata), so it
+is safe to store as a **plain, non-secret value**, unlike a service-account
+key.
+
+`AWS-STAGE-DEPLOY-GATEWAY.yml` assigns that JSON to a static
+`GCP_CRED_CONFIG` variable and wires `GOOGLE_CLOUD_PROJECT`/
+`VERTEX_AI_LOCATION`/`VERTEX_SERBIAN_BRIDGE_ENABLED`/
+`GCP_SERVICE_ACCOUNT_JSON` UNCONDITIONALLY (no `describe-secret`, no `if`
+guard — there is no absent-vs-present secret state any more) in the same
+strip/re-add block as `AURORA_CA_BUNDLE_PATH`. `gcp-adc-bootstrap.ts` and
+`google-auth-library`'s `GoogleAuth()` both already handle an
+`external_account` credential JSON generically — zero code changes were
+needed to consume it. **Not yet independently confirmed against a live
+token exchange** — verifying the config resolves a real GCP OAuth token
+locally was attempted and blocked by this session's own sandbox safety
+layer (flagged as a containment-escape-shaped action, due to the config's
+AWS-instance-metadata `credential_source` URLs); the config is Google's
+own authoritative tool output against the real, live pool/provider/
+binding, not hand-constructed, but the real signal is still the next real
+`sr` session on staging reporting `reason:'vertex_serbian_bridge'` in
+`oasis_events` and actually producing audio. Full detail: `docs/validation/
+VTID-04000/acceptance.md`.
+
+**⚠️ Pre-existing parity gap, surfaced by this PR's own CI, not caused by
+it — read before flipping the flag.** This repo's `voice-pipeline-parity`
+scanner (report-only, runs on every gateway PR) flagged 13 `high`-severity
+`missing_in_vertex` items on PR #3369: 7 OASIS event topics
+(`orb.live.context.bootstrap`, `orb.live.context.bootstrap.skipped`,
+`orb.live.tool.executed`, `orb.navigator.requested`,
+`orb.navigator.blocked`, `admin.briefing.injected`,
+`feedback.ticket.created`) and 6 watchdog settings
+(`session_timeout_ms`, `conversation_timeout_ms`,
+`max_connections_per_ip`, `max_reconnects`, `max_history_chars`,
+`extraction_throttle_ms`) that the LiveKit/Nova pipeline has and
+`VertexLiveClient` does not. These are not regressions this VTID
+introduced — `VertexLiveClient` has been structurally unreachable since
+VTID-03723 while the LiveKit/Nova side kept shipping features, so the gap
+accumulated during the months Vertex sat dormant. **Concretely: a real
+Serbian bridge session, once enabled, will not get the same
+session/conversation timeout enforcement, connection-count capping,
+reconnect capping, or OASIS observability every Nova/cascade session
+gets.** `safety_critical: 0` on the scan (no crash/security-class gap),
+but a session with no watchdog timeout is a real operational risk under
+real Serbian traffic, not just a documentation gap. Before promoting this
+bridge past a small canary, either backport the missing watchdogs into
+`VertexLiveClient` or confirm gateway-level timeouts elsewhere already
+bound it — do not assume parity with Nova/cascade sessions just because
+the code path is the same one that ran before the 2026-08-16 shutdown.
+
+**⚠️ No longer inert on staging, once this PR's WIF wiring merges — this
+superseded the original "ships inert" design.** The original plan
+(`VERTEX_SERBIAN_BRIDGE_ENABLED` gated behind an AWS-Secrets-Manager
+`describe-secret` check, absent by default) really was inert until an
+operator provisioned the secret. The WIF replacement above wires
+`GOOGLE_CLOUD_PROJECT`/`VERTEX_AI_LOCATION`/`VERTEX_SERBIAN_BRIDGE_ENABLED`/
+`GCP_SERVICE_ACCOUNT_JSON` UNCONDITIONALLY on `AWS-STAGE-DEPLOY-GATEWAY.yml`
+— there is no secret to be absent any more, so the bridge activates for
+real on the very next staging deploy after this merges, with no separate
+operator step. `AWS-PROD-DEPLOY-GATEWAY.yml` is untouched — prod stays
+inert regardless.
+
+**90-day window.** This is a bridge, not a standing architecture decision
+— when the credit window ends (or the cascade's own turn-shaping latency
+gets fixed some other way), the fix is one flag flip
+(`VERTEX_SERBIAN_BRIDGE_ENABLED=false`) plus deleting the GCP project and
+its WIF pool/provider/binding; the selector code can stay (inert, harmless)
+or be removed in a follow-up cleanup VTID.
 
 ---
 
@@ -1331,6 +1525,14 @@ IMAGE_PROVIDER=bedrock
 BEDROCK_ROLE_ARN=xxx
 VERTEX_LIVE_UNAVAILABLE=true
 OPENAI_API_KEY=xxx
+# Serbian-only Vertex Live bridge on a NEW GCP project — see
+# §2e-vertex-serbian-bridge (VTID-04000). Off/unconfigured by default;
+# GOOGLE_CLOUD_PROJECT/VERTEX_AI_LOCATION must point at the NEW project,
+# never lovable-vitana-vers1 (permanently decommissioned).
+VERTEX_SERBIAN_BRIDGE_ENABLED=true
+GOOGLE_CLOUD_PROJECT=<new-project-id>
+VERTEX_AI_LOCATION=us-central1
+GCP_SERVICE_ACCOUNT_JSON=xxx
 ```
 
 `GOOGLE_CLOUD_PROJECT`, `GCP_PROJECT`, `VERTEX_LOCATION`, `VERTEX_MODEL`,
@@ -1928,6 +2130,9 @@ Use these PATs with the GitHub REST API (`api.github.com`) for all PR and deploy
 
 | Date | Change | VTID |
 |------|--------|------|
+| 2026-09-17 | **VTID-04000's staging wiring pivoted from an AWS-Secrets-Manager service-account key to Workload Identity Federation (WIF) — the originally-planned design was never actually deployable on the platform owner's own GCP org.** The platform owner explicitly directed this session to execute the remaining infrastructure step directly rather than walk through it themselves ("you do it... you have full access to AWS... are you fucking stupid?"), and separately gave standing authorization to paste credential-adjacent artifacts (API keys, WIF config JSON) directly into this session for this task. Confirmed this session has real, working AWS credentials (`claude-code-aws-agent`, account `472838866351`) but zero GCP credentials of its own. Before attempting the planned service-account-key path, ruled out two simpler alternatives with live evidence rather than assumption: a plain Vertex API key is categorically rejected (`401 UNAUTHENTICATED`, Google's own error states OAuth2/principal-asserting credentials are required, confirmed by direct curl against `aiplatform.googleapis.com`), and the supplied key's `generativelanguage.googleapis.com` (AI Studio) access is separately blocked (`API_KEY_SERVICE_BLOCKED`) — ruling out the alternate `GEMINI_LIVE_USE_API_KEY` code path too. Then hit the real blocker: GCP org policy `iam.disableServiceAccountKeyCreation` blocks every service-account private-key download, confirmed live in the Console by the platform owner as org Owner, repeatedly — an org-level block on the ACTION, not a permissions gap any identity (including a more-privileged one) could be granted around. **Pivoted to WIF**, Google's own keyless recommendation: the platform owner provisioned a Workload Identity Pool + AWS provider trusting AWS account `472838866351` directly, plus an IAM binding granting `roles/iam.workloadIdentityUser` to this session's own AWS principal, themselves via Google Cloud Shell (their own suggestion) running `gcloud` commands supplied by this session — confirmed via real command output pasted back verbatim, not assumed. The resulting `external_account` credential config (from `create-cred-config`) contains no private key by design — Google's own docs confirm it is safe to store as plain text — so `AWS-STAGE-DEPLOY-GATEWAY.yml` now wires `GOOGLE_CLOUD_PROJECT`/`VERTEX_AI_LOCATION`/`VERTEX_SERBIAN_BRIDGE_ENABLED`/`GCP_SERVICE_ACCOUNT_JSON` UNCONDITIONALLY as plain values (no `describe-secret`, no `if` guard) instead of behind an AWS-Secrets-Manager `describe-secret` OPTIONAL pattern. Zero code changes needed: `gcp-adc-bootstrap.ts` and `google-auth-library`'s `GoogleAuth()` both already handle `external_account` JSON generically. Rewrote `services/gateway/test/orb/live/upstream/staging-vertex-serbian-bridge-wiring-pinned.test.ts` (9 tests) for the new unconditional/plain-value shape; `tsc --noEmit` clean; both it and `staging-deploy-workflow-bash-syntax.test.ts` re-run together, 2/2 suites, 16/16 tests passing. **Not yet independently confirmed against a live token exchange** — verifying the WIF config resolves a real GCP OAuth token locally was attempted and was blocked by this session's own sandbox safety layer (a containment-escape-shaped classifier, triggered by the config's AWS-instance-metadata `credential_source` URLs) — not routed around, per that block's own instructions; the config is Google's own authoritative tool output against the real, live pool/provider/binding, not hand-constructed, but the real signal is still the next real `sr` session on staging reporting `reason:'vertex_serbian_bridge'` in `oasis_events` and actually producing audio. Full detail in `docs/validation/VTID-04000/acceptance.md`. | VTID-04000 |
+| 2026-09-17 | **VTID-03998's Fish `latency` fix was live-measured against a real Serbian voice (6 trials, `s2.1-pro-free`, platform owner supplied a Fish API key directly in-session) and disproved: at realistic reply length (~535 chars) `'normal'` and `'low'` both averaged ~9.6s — no measurable difference; Fish's throughput is ~50-60 chars/sec regardless of mode.** Posted a correction on PR #3369 and held it unmerged rather than ship a fix known not to work. When asked "is there a better choice?", recommended against reviving Vertex (a hard standing decommission rule, real prior cost incident) — the platform owner then reported they had already opened a **new, dedicated GCP project with a 90-day free-credit window** specifically to do exactly that for Serbian, and asked to proceed on that basis. Verified Gemini Live actually supports Serbian (`sr` is in Google's own Live API language list) before writing any code. **Investigated what "the backend is already built" actually meant:** `VertexLiveClient` (full OAuth token caching/refresh/prewarming) and the AWS-compatible ADC bootstrap (`gcp-adc-bootstrap.ts` — `GCP_SERVICE_ACCOUNT_JSON` → `GOOGLE_APPLICATION_CREDENTIALS`, built because AWS ECS has no GCP metadata server for free ADC resolution) were never deleted after the shutdown — they were made structurally unreachable by `upstream-provider-selector.ts` (VTID-03723, "VERTEX IS REMOVED AS A DESTINATION"), rewritten after a real incident where staging's `voice.active_provider='vertex'` row silently routed Polish/Portuguese sessions to a dead Vertex connection that "spoke" fluent English because nothing else was ever consulted. Serbian's own Gemini TTS voice mapping (`voice-mapping.ts`) was already correctly configured — no gap there either. **Fix: the ONE narrow, explicit, additive exception to that hard-won invariant.** New `orb/live/upstream/vertex-serbian-bridge.ts` (`isVertexSerbianBridgeEnabled()` — exact-string `VERTEX_SERBIAN_BRIDGE_ENABLED=true`, same convention as `isCascadeEnabled()`; `isVertexSerbianBridgeLanguage()` — `sr` only, never widened to a list) plus a new `tryVertexBridgeRescue()` in the selector, mirroring `tryCascadeRescue()`'s exact "returns null when it does not apply" contract and checked BEFORE it at all 5 call sites (`resolveWithoutVertex`, both branches of `evaluateNovaRequest`, both branches of `evaluateNovaCanary`) — fires ONLY when BOTH gates are explicitly true. New `SelectionReason:'vertex_serbian_bridge'`. Wired into `routes/orb-live.ts`'s real `selectUpstreamProvider()` call site the same way `cascade`/`nova` already are. New `scripts/aws/setup-vertex-serbian-bridge.sh` (dry-run by default, `--apply` to execute; refuses outright if `--gcp-project lovable-vitana-vers1` is passed) provisions a scoped service account (`roles/aiplatform.user` only) and pushes its key to AWS Secrets Manager — deliberately NOT wired into `AWS-STAGE-DEPLOY-GATEWAY.yml` in this VTID, same precedent as `setup-fish-audio-secret.sh` (this session can't confirm the secret exists before merging code that would require it). **CLAUDE.md updated** — the decommission banner, NEVER rule 27, and §2e's intro now document this as a deliberate, narrow, time-boxed exception (not a general reopening), plus a new §2e-vertex-serbian-bridge section with the full mechanism and the `VERTEX_PROJECT_ID` stale-fallback caveat (`orb/live/config.ts`'s own default is still the decommissioned project id when `GOOGLE_CLOUD_PROJECT`/`GCP_PROJECT_ID` are unset — must set both together with the new flag). 21 new tests (10 selector-carve-out + 11 predicate-module, plus 3 half-satisfied-bridge contexts added to the pre-existing VTID-03723 invariant matrix). `tsc --noEmit` clean; targeted suites 2/2, 58/58 tests passing; `npm run build` clean; full gateway suite 938/939 suites (1 pre-existing skip), 15,325/15,360 tests passing, 0 failures. **Ships inert** — `VERTEX_SERBIAN_BRIDGE_ENABLED` is unset by default; nothing changes on a live task def until an operator runs the provisioning script, confirms the secret, and wires all four new env vars. **Not yet independently confirmed against live traffic** — this session has no credentials for the new GCP project, so this is verified structurally (unit tests, the existing invariant suite) only; the next real signal is a real Serbian session reporting `reason:'vertex_serbian_bridge'` in `oasis_events` and actually producing audio, once an operator completes the deferred provisioning/wiring steps. | VTID-04000 |
+| 2026-09-17 | **Reported live, same day as VTID-03986/03987: "pre login does not work at all. no audio speech. zero!!!!!" on the `_intro/maxina` pre-login voice flow, plus (separately) "Spanish, French and Russian... worked, but latency was desastrous, like 10 seconds and more" and, after re-testing post-login, "serbian language works, but with terrible latency."** Traced via `oasis_events` (no `type` column — live-session diagnostics are `topic='orb.live.diag'`/`orb.live.stall_detected` with the real fields nested in `metadata`). Found EVERY `sr` (Serbian) cascade session in the prior 6 hours — all pre-login/anonymous — following an identical pattern: session starts, nothing logged for exactly 30 seconds, then the pre-existing `greeting_timeout` stall watchdog fires and tears the session down, and only ~0.2–1.2s AFTER that teardown does `cascade_tts_failed` (`CascadedLiveClient.runTurn()`, `cascaded-live-client.ts`) finally log — meaning the turn's combined LLM-completion + TTS-synthesis time was running right up against (or past) the session's own 30s budget, on every single sr session observed, not sporadically. Serbian has no Polly voice at all (`resolvePollyVoice('sr')` is null, per §2c/§2c-fish), so success there depends entirely on Fish (VTID-03970/03987). Root cause in `fish.ts`: the TTS request body sent `latency: 'normal'` — per Fish Audio's own docs, the best-QUALITY, SLOWEST setting (the documented default), not `'low'`/`'balanced'` (the lowest-latency options). Combined with the platform owner's own live report that the shared LLM-completion leg alone already costs 10s+ for Polly-backed cascade languages (ru/es/fr, same `callViaRouter('operator', ...)` call every cascade language shares), a Fish call running close to its own hard `FISH_REQUEST_TIMEOUT_MS=15_000` accounts for sr's total exceeding the 30s watchdog specifically, while Polly-backed languages (near-instant TTS leg) stay under it — with bad latency but not silence, matching "es/fr/ru work, terrible latency" vs. "sr: zero" (and, post-login, "sr works, terrible latency" — same call finishing under 30s sometimes rather than the more consistent pre-login failures observed in the traced window). **Fix, Fish-scoped only per the platform owner's standing instruction (VTID-03987's §2c-fish-scope boundary):** `latency: 'normal'` → `latency: 'low'` in `fish.ts`'s TTS request body — a one-field change inside `synthesizeFish()`, no edit to `cascaded-live-client.ts`, `tts-backend.ts`, `polly.ts`, or Nova Sonic. New test `test/tts/fish-provider.test.ts` — "requests latency=\"low\", not the slower \"normal\"/\"balanced\" modes (VTID-03998)". `tsc --noEmit` clean; targeted Fish/cascaded suites 7/7 suites, 62/62 tests passing, 0 regressions; `npm run build` clean; full gateway suite 934/935 suites (1 pre-existing skip), 15,290/15,325 tests passing, 0 failures. **Not yet independently confirmed against live traffic** — this session has no `FISH_API_KEY` to re-measure Fish's real response time directly; the next real signal is the reporting user's next pre-login Serbian session actually producing audio. **Deliberately NOT addressed here, flagged as a separate follow-up:** the shared LLM-completion latency (10s+, affecting ru/es/fr too) is out of this VTID's Fish-only scope — fixing it would touch the shared `cascaded-live-client.ts`/`callViaRouter` path, not `fish.ts`. | VTID-03998 |
 | 2026-09-17 | **Operator on-ramp Test Run #2 executed on STAGING and passed first try, end to end — the first dev-autopilot PR ever to clear `VALIDATOR-CHECK`.** After #3371 (VTID-04002) merged and the one-shot executor image was rebuilt from the same commit (`AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml` run 6 — the executor has no staging twin, but prod's gateway never dispatches it since `DEV_AUTOPILOT_USE_JOB` is unset there, so this affected staging executions only), a chat message to `POST /api/v1/operator/chat` on `preview-aws-gateway` as the `operator-autopilot@exafy.io` exafy_admin service account asked for VTID-04003 (a real fix: the watcher's CI failure reason now names the failing checks instead of collapsing `mergeable_state:blocked` to `branch-protection blocked` — the exact mechanism behind Run #1's wrong triage). DeepSeek called `autopilot_execute_task` with correct repo-root-relative paths on the first attempt; execution `e3ca9a1d` was claimed by the staging gateway 8 s later, the worker call took 38 s, and PR #3372 opened at +82 s with the VTID in the title, the `VTID:`/`VALIDATION_PROFILE:`/marker block, and the `docs/validation/VTID-04003/` evidence pack — 18/18 checks green including `validate-pr`. The diff matched the plan exactly (exported pure `buildCiFailureReason()`, ternary replaced, 9 new tests); merged as `f79d51c`. **Two things this run established that were previously unverified:** the staging gateway role does hold `ecs:RunTask`/`iam:PassRole` and the executor task can reach DeepSeek — the PR was opened by the ECS task (`env:production` tag on `pr_opened`, a different process from the staging gateway that claimed the row), not the in-process fallback. **New defect found, not yet fixed:** the PROD gateway's watcher — `DRY_RUN` because `DEV_AUTOPILOT_WATCHER_LIVE` is pinned on staging only — picked the shared-table row up first and synthesized `ci_passed → pr_merged → deployed → completed` (all `env:production`, `(dry-run synthetic)`), terminalizing VTID-04003 `success` at 17:08 while PR #3372 was still open. A dry-run process must never transition a real execution; roadmap R-1 now includes stamping the claiming env on the row and making each watcher skip rows it does not own (or pinning the live flag on prod). Details in `docs/OPERATOR-CONSOLE-GAP-ANALYSIS-2026-09-17.md` §7. The service account's password was rotated by this session for the run (previous value was never recorded in either repo); it lives only in this session's scratchpad. | VTID-04002 |
 | 2026-09-17 | **Deep analysis of the Command Hub Operator Console versus a Claude Code session, requested by the platform owner after the Operator execution on-ramp's Test Run #1 (VTID-03955 → PR #3351) — plus the two on-ramp gaps that run surfaced, one of which turned out to be much larger than reported.** Full write-up: `docs/OPERATOR-CONSOLE-GAP-ANALYSIS-2026-09-17.md` (verdict, hop-by-hop chain, capability gap matrix, target architecture, 11-slice roadmap, staging test-run designs). Verdict in one line: the console is a chat front-end over a **single-shot, zero-tool code generator** (one `callViaRouter('worker')` call must emit whole replacement files for ≤8 pre-fetched files; no file reads beyond the plan, no search, no `tsc`/jest, no observation, no retry — `grep child_process` over the plane returns nothing and the executor image is `node:20-alpine` with no git), whose only agentic component (`services/autopilot-worker`, real clone + tsc + jest + 3 retries via `claude -p`) is orphaned and unconditionally bypassed by the on-ramp; its transcript is browser `localStorage`, its memory is 28 `task_outcome` rows written by five tool names, its codebase knowledge is a 6-bullet TS constant, and on **production** every operator capability flag except the on-ramp is unset. Test Run #1 proved the model is not the problem — the harness is. **Corrected post-mortem:** the missing VTID (exit 10) was only the FIRST of eight `VALIDATOR-CHECK.yml` gates the PR would have failed — `VALIDATION_PROFILE:`/four body markers (11-15), a `docs/validation/<VTID>/` evidence pack IN THE DIFF (30-33, which the executor's LOCKED FILE LIST forbids adding), AC→`TEST:` mapping (40-41), VTID in title (90). No dev-autopilot PR touching gateway source could ever have merged. The reconciler's wrong 'branch protection' triage is mechanical: the watcher relabels GitHub `mergeable_state:'blocked'` as the literal string `branch-protection blocked` and triage (no repo mount, no OASIS tool since they were removed) can only restate it; the child retry re-runs the identical prompt — a loop closed on a false premise by construction. **Shipped (VTID-04002):** (1) `files_referenced` must be repo-root-relative, stated with an example in the operator wire schema, the ORB registry and both prompt sources (VTID-03838 drift test still green); (2) on-ramp rejections now render the safety-gate violation code + offending path(s) instead of the bare `safety gate blocked approval` (`violations[]` was dropped at the tool boundary); (3) new `dev-autopilot-pr-contract.ts` — a pure, deterministic PR contract applied by the executor after the empty-diff guard: VTID appended to the title in the repo's `(VTID-XXXXX)` convention, `VTID:` + `VALIDATION_PROFILE: gateway_backend` + all four markers prepended to the body, and the three evidence files written to the branch (ACs mapped to the paired test file in the same diff, a commands.log of what the executor did and which model served it, `outputs/execution.json`); commits carry the real VTID instead of `VTID-DA-<exec8>`; skipped with a logged reason when the finding has no `activated_vtid`. 18 new tests port the workflow's own grep/regex gates. `tsc --noEmit` clean; 8 affected suites 103/103. **Not verified:** a real on-ramp execution through the new contract — that is Test Run #2, to be run on STAGING (Run #1 ran on production, against `exafyltd/vitana-v1`'s absolute rule). **Still open, named not done:** the Supabase `service_role` rotation flagged in `docs/HANDOFF-voice-quality.md` has no confirmation anywhere in either repo; `CLAUDE.md` §16 still prints partial live PATs; prod pins none of the operator/autopilot flags so the prod executor runs in-process inside the gateway container (the 09-13 watchdog failures); `ecs:RunTask`/`iam:PassRole`/`bedrock:InvokeModel` on the staging roles remain unverified live; RepoWise/Graphify exist in neither repo nor the container, so CLAUDE.md's mandatory index workflow is currently unsatisfiable for the console and for sessions. | VTID-04002 |
 | 2026-09-17 | **Commerce Partner Onboarding — Phases A–E landed on STAGING end to end, on the platform owner's in-conversation "You merge, in order"; production never promoted.** Six PRs squash-merged to `main` in dependency order, each child re-based by merging `origin/main` with base = its parent PR's tip (so only the child's own changes replayed; JSON i18n shards merged key-wise on `main`'s copy): `vitana-platform` #3357 `2b5a9995` (VTID-03974, `partner_registry` bridge + `POST /admin/partner-health/inbox/manual`), `vitana-v1` #1095 `e70aa362` (VTID-03974/03976, `commerce_vertical` selector + mobile wiring), #1099 `7e571107` (VTID-03988, patient results on mobile from `patient_profiles`), #1100 `f66655bd` (VTID-03989, full mobile adaptation of the org-admin journey), `vitana-platform` #3367 `0166c7c9` (VTID-03995), `vitana-v1` #1101 `da9ab117` (VTID-03993, mobile role switcher + role-aware drawer/bottom nav — owner decision: Vitana roles are switchable modes, business roles stay memberships). Staging verified after each landing: gateway `/api/v1/admin/build-info` on `2b5a9995`, `/inbox/manual` → 401 JSON; frontend chunk sampled 10× carrying "Meine Befunde", "Mein Unternehmen", "Zur Community wechseln". **Both file-only migrations were then applied to the shared Supabase project on the owner's explicit "apply both migration now"** (`vtid_03974_commerce_vertical`, `vtid_03995_role_switch_community_and_membership_roles`), pre/post-checked read-only (column + CHECK + comment live; both function md5s changed, `set_role_preference()` no longer calls `validate_role_assignment()`, unauthenticated `get_my_permitted_roles()` still returns the `UNAUTHENTICATED` envelope). VTIDs 03957/03974/03976/03988/03989/03993/03995 terminalized `success` via the governed `POST /api/v1/oasis/tasks/:vtid/complete`. `DATABASE_SCHEMA.md` brought current in the same PR. **Still open, named not done:** a real activated-patient walkthrough of the switcher on staging (the only account this session may sign in as is an exafy admin, for whom the switcher always shows every role); the CI/preview quirk that every `github-actions[bot]` i18n commit lands its runs at `action_required` and must be re-run by hand. | VTID-03996 |

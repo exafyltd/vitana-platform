@@ -609,6 +609,56 @@ jobs:
           else
             echo "  resolved vitana/erp-bridge/staging/bridge-token -> ERP_BRIDGE_URL=$ERP_BRIDGE_URL"
           fi
+          # VTID-04000: the Vertex Serbian bridge. Project id is
+          # `project-da3eb05a-c86e-47cb-85f` (Vitanaland, GCP project number
+          # 20926255361), location is `global` — the platform owner enabled
+          # the Live API as a global-endpoint service, not a regional one;
+          # confirmed against Google's own docs that the Vertex Live
+          # WebSocket endpoint (`wss://{location}-aiplatform.googleapis.com`)
+          # accepts `global` as a literal location the same way it accepts
+          # any region, so no code change was needed for this.
+          #
+          # GCP_SERVICE_ACCOUNT_JSON is wired as a PLAIN value, not an AWS
+          # secret — because it isn't one. Org policy
+          # `iam.disableServiceAccountKeyCreation` (enforced org-wide,
+          # confirmed live by the platform owner hitting it repeatedly even
+          # as org Owner) makes a downloadable service-account private key
+          # impossible here, so this uses Workload Identity Federation
+          # instead: a Workload Identity Pool (`vitana-aws-pool`) + AWS
+          # provider (`vitana-aws-provider`) trusting AWS account
+          # `472838866351` directly, with `roles/iam.workloadIdentityUser`
+          # granted on `vitanaland@project-da3eb05a-c86e-47cb-85f
+          # .iam.gserviceaccount.com` to
+          # `principal://iam.googleapis.com/projects/20926255361/locations/
+          # global/workloadIdentityPools/vitana-aws-pool/subject/
+          # arn:aws:iam::472838866351:user/claude-code-aws-agent` — all
+          # created live via `gcloud` in Cloud Shell by the platform owner
+          # (org Owner), since the AWS-CLI-verified session here has no GCP
+          # credentials of its own. The JSON below is the `external_account`
+          # credential config `gcloud iam workload-identity-pools
+          # create-cred-config` generated against that exact pool/provider —
+          # Google's own docs state this file contains no secret (no
+          # private key, just federation config: pool/provider names, STS
+          # endpoints) and is safe to store in plain text/source control,
+          # unlike a service-account key. `gcp-adc-bootstrap.ts` already
+          # handles this generically — it writes whatever valid JSON is
+          # here to a file and points `GOOGLE_APPLICATION_CREDENTIALS` at
+          # it, and `google-auth-library`'s `GoogleAuth()` auto-detects
+          # `type:"external_account"` and resolves AWS credentials itself
+          # (env vars first, then the ECS task-role credential endpoint) —
+          # no code change was needed there either.
+          #
+          # NOT yet independently confirmed against a live token exchange —
+          # writing/using this class of federated-credential config to test
+          # it locally was blocked by this session's own sandbox safety
+          # layer (flagged as a containment-escape-shaped action, a
+          # reasonable guard this session did not attempt to route around).
+          # This config is Google's own authoritative output against the
+          # real, live pool/provider/binding, not hand-constructed, but the
+          # real signal is still the next real `sr` session on staging
+          # actually producing audio — confirm via `oasis_events` reporting
+          # `reason:'vertex_serbian_bridge'` before trusting this further.
+          GCP_CRED_CONFIG='{"universe_domain":"googleapis.com","type":"external_account","audience":"//iam.googleapis.com/projects/20926255361/locations/global/workloadIdentityPools/vitana-aws-pool/providers/vitana-aws-provider","subject_token_type":"urn:ietf:params:aws:token-type:aws4_request","token_url":"https://sts.googleapis.com/v1/token","credential_source":{"environment_id":"aws1","region_url":"http://169.254.169.254/latest/meta-data/placement/availability-zone","url":"http://169.254.169.254/latest/meta-data/iam/security-credentials","regional_cred_verification_url":"https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15"},"service_account_impersonation_url":"https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/vitanaland@project-da3eb05a-c86e-47cb-85f.iam.gserviceaccount.com:generateAccessToken"}'
           TASK_ROLE_ARN=$(aws ecs describe-task-definition --task-definition "$TD_ARN" \
             --query 'taskDefinition.taskRoleArn' --output text)
           if [ -z "$TASK_ROLE_ARN" ] || [ "$TASK_ROLE_ARN" = "None" ]; then
@@ -666,6 +716,7 @@ jobs:
                  --arg SEC_AURORA_RLS "$SEC_AURORA_RLS" \
                  --arg SEC_GITHUB_TOKEN "$SEC_GITHUB_TOKEN" \
                  --arg SEC_ERP_BRIDGE "$SEC_ERP_BRIDGE" --arg ERP_BRIDGE_URL "$ERP_BRIDGE_URL" \
+                 --arg GCP_CRED_CONFIG "$GCP_CRED_CONFIG" \
                  --arg TASK_ROLE "$TASK_ROLE_ARN" '
                 .containerDefinitions[0].image = $IMG
                 | .containerDefinitions[0].environment |=
@@ -693,7 +744,10 @@ jobs:
                                                 "DEV_AUTOPILOT_WATCHER_LIVE",
                                                 "OPERATOR_PLANNER_ENABLED",
                                                 "BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION",
-                                                "AURORA_CA_BUNDLE_PATH") | not) ]
+                                                "AURORA_CA_BUNDLE_PATH",
+                                                "GOOGLE_CLOUD_PROJECT","VERTEX_AI_LOCATION",
+                                                "VERTEX_SERBIAN_BRIDGE_ENABLED",
+                                                "GCP_SERVICE_ACCOUNT_JSON") | not) ]
                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
                           {name:"COMMIT_SHA", value:$SHA},
                           {name:"BUILD_INFO_MARKER", value:$SHORT},
@@ -728,14 +782,19 @@ jobs:
                           {name:"OPERATOR_PLANNER_ENABLED", value:"true"},
                           {name:"BEDROCK_ROLE_ARN", value:$TASK_ROLE},
                           {name:"AWS_BEDROCK_REGION", value:"eu-central-1"},
-                          {name:"AURORA_CA_BUNDLE_PATH", value:"/app/certs/rds-combined-ca-bundle.pem"} ] )
+                          {name:"AURORA_CA_BUNDLE_PATH", value:"/app/certs/rds-combined-ca-bundle.pem"},
+                          {name:"GOOGLE_CLOUD_PROJECT", value:"project-da3eb05a-c86e-47cb-85f"},
+                          {name:"VERTEX_AI_LOCATION", value:"global"},
+                          {name:"VERTEX_SERBIAN_BRIDGE_ENABLED", value:"true"},
+                          {name:"GCP_SERVICE_ACCOUNT_JSON", value:$GCP_CRED_CONFIG} ] )
                 | .containerDefinitions[0].secrets |=
                     ( [ .[] | select(.name | IN("SUPABASE_JWT_SECRET","SUPABASE_ANON_KEY",
                                                 "GOOGLE_GEMINI_API_KEY","GEMINI_API_KEY",
                                                 "OPENAI_API_KEY","DEEPSEEK_API_KEY","FISH_API_KEY",
                                                 "AURORA_DATABASE_URL",
                                                 "AURORA_RLS_DATABASE_URL",
-                                                "GITHUB_SAFE_MERGE_TOKEN") | not) ]
+                                                "GITHUB_SAFE_MERGE_TOKEN",
+                                                "GCP_SERVICE_ACCOUNT_JSON") | not) ]
                       + [ {name:"SUPABASE_JWT_SECRET",   valueFrom:$SEC_JWT},
                           {name:"SUPABASE_ANON_KEY",     valueFrom:$SEC_ANON},
                           {name:"GOOGLE_GEMINI_API_KEY", valueFrom:$SEC_GEMINI},
