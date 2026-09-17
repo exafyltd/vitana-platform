@@ -1,0 +1,32 @@
+# Live definitions BEFORE this migration — read-only pg_get_functiondef,
+# project inmkhvwdcuyhnxkgfvsb, 2026-09-17. Bodies abridged to the parts the
+# migration changes; signatures/search_path exactly as returned.
+
+check_role_permitted(p_user_id uuid, p_tenant_id uuid, p_role text) RETURNS boolean
+  SECURITY DEFINER SET search_path TO 'public'
+  -- exafy_admin bypass via auth.users.raw_app_meta_data, else
+  -- EXISTS(SELECT 1 FROM public.user_permitted_roles WHERE user_id=p_user_id AND tenant_id=p_tenant_id AND role=p_role)
+
+current_tenant_id() RETURNS uuid STABLE
+  -- request.tenant_id setting, then JWT claims tenant_id / tenant, else NULL
+
+get_my_permitted_roles() RETURNS jsonb
+  SECURITY DEFINER SET search_path TO 'public'
+  -- v_all_roles := ARRAY['community','patient','professional','staff','backoffice','admin','developer','infra']  (VTID-03832)
+  -- UNAUTHENTICATED envelope when auth.uid() is null; exafy_admin → all eight, is_super_admin true
+  -- v_tenant_id := public.current_tenant_id(); NULL → ['community']
+  -- SELECT ARRAY_AGG(role ORDER BY role) INTO v_roles
+  --   FROM public.user_permitted_roles WHERE user_id = v_user_id AND tenant_id = v_tenant_id;   <-- ONLY source
+  -- NULL/empty → ['community']; RETURN {ok:true, roles, is_super_admin:false}
+
+set_role_preference(p_tenant_id uuid, p_role text) RETURNS void
+  SECURITY DEFINER SET search_path TO ''
+  -- IF NOT is_exafy_admin THEN
+  --   is_permitted_role := public.check_role_permitted(auth.uid(), p_tenant_id, p_role);
+  --   IF NOT is_permitted_role THEN
+  --     has_membership_role := EXISTS(active public.memberships row with m.role::text = p_role);
+  --     is_valid_assignment := public.validate_role_assignment(auth.uid(), p_tenant_id, p_role);   <-- grant-to-others predicate
+  --     IF NOT has_membership_role OR NOT is_valid_assignment THEN RAISE EXCEPTION 'Role not granted for this tenant or invalid role assignment';
+  -- IF p_role = 'admin' AND NOT is_exafy_admin THEN RAISE EXCEPTION 'Admin role can only be assigned by super administrators';
+  -- INSERT INTO public.role_preferences ... ON CONFLICT (user_id, tenant_id) DO UPDATE ...
+  -- INSERT INTO public.audit_events (user_id, tenant_id, event_type, event_data) VALUES (... 'admin_role_switch'|'user_role_switch' ...)
