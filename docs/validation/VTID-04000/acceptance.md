@@ -118,27 +118,39 @@ pre-existing skip), 15,325/15,360 tests passing, 0 failures.
 TEST: `outputs/bash-syntax-check.txt` — `bash -n
 scripts/aws/setup-vertex-serbian-bridge.sh`, clean.
 
-## Not yet independently confirmed
+## Not yet independently confirmed (superseded by the WIF pivot below)
 
-**Ships inert.** `VERTEX_SERBIAN_BRIDGE_ENABLED` is unset by default —
-every line of this VTID changes nothing on a live task definition until an
+**This section describes this VTID's ORIGINAL, build-time state — before
+the platform owner supplied the real project details and before the WIF
+pivot ("Pivot: GCP org policy blocked service-account keys — Workload
+Identity Federation instead", further down this document). It is kept as
+a historical record of what this VTID looked like when merged into the
+codebase, not as the current wiring — see that later section for what is
+actually live on staging's task def.**
+
+At merge time: `VERTEX_SERBIAN_BRIDGE_ENABLED` was unset by default —
+every line of this VTID changed nothing on a live task definition until an
 operator:
-1. Runs `scripts/aws/setup-vertex-serbian-bridge.sh provision --gcp-project
-   <new-project-id> --env staging --apply` and confirms via its `status`
+1. Ran `scripts/aws/setup-vertex-serbian-bridge.sh provision --gcp-project
+   <new-project-id> --env staging --apply` and confirmed via its `status`
    action.
-2. Wires `GCP_SERVICE_ACCOUNT_JSON`, `GOOGLE_CLOUD_PROJECT`,
+2. Wired `GCP_SERVICE_ACCOUNT_JSON`, `GOOGLE_CLOUD_PROJECT`,
    `VERTEX_AI_LOCATION`, and `VERTEX_SERBIAN_BRIDGE_ENABLED=true` into
    `AWS-STAGE-DEPLOY-GATEWAY.yml`.
-3. Deploys and confirms a real Serbian voice session actually connects to
-   Vertex (`orb.upstream.provider.selected` reporting `reason:
+3. Deployed and confirmed a real Serbian voice session actually connects
+   to Vertex (`orb.upstream.provider.selected` reporting `reason:
    'vertex_serbian_bridge'` in `oasis_events`) and produces audio within
    budget.
 
-This session has no GCP/AWS credentials for the new project, so none of
-that live verification could happen here — the code path is verified
-structurally (unit tests + the existing invariant suite), not against a
-real Vertex connection. The next real signal is the reporting user's next
-pre-login Serbian session, once the operator steps above are done.
+This session had no GCP/AWS credentials for the new project at that point,
+so none of that live verification could happen here — the code path was
+verified structurally (unit tests + the existing invariant suite) only.
+**This changed later in the same session** — see the WIF pivot section:
+the platform owner provisioned real WIF credentials via Cloud Shell, and
+the staging task def now wires the bridge UNCONDITIONALLY (no operator
+step left), so step 1-2 above are no longer accurate for staging. Step 3
+(a real Serbian session actually producing audio) is still the one
+genuinely open item.
 
 ## Staging task-def wiring, with the platform owner's own project details
 

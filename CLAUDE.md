@@ -1251,17 +1251,24 @@ bridge past a small canary, either backport the missing watchdogs into
 bound it — do not assume parity with Nova/cascade sessions just because
 the code path is the same one that ran before the 2026-08-16 shutdown.
 
-**Ships inert.** `VERTEX_SERBIAN_BRIDGE_ENABLED` defaults unset/off — every
-byte of this VTID changes nothing until an operator runs the provisioning
-script, confirms the secret, and explicitly flips the flag on a task def
-that also carries the new project id.
+**⚠️ No longer inert on staging, once this PR's WIF wiring merges — this
+superseded the original "ships inert" design.** The original plan
+(`VERTEX_SERBIAN_BRIDGE_ENABLED` gated behind an AWS-Secrets-Manager
+`describe-secret` check, absent by default) really was inert until an
+operator provisioned the secret. The WIF replacement above wires
+`GOOGLE_CLOUD_PROJECT`/`VERTEX_AI_LOCATION`/`VERTEX_SERBIAN_BRIDGE_ENABLED`/
+`GCP_SERVICE_ACCOUNT_JSON` UNCONDITIONALLY on `AWS-STAGE-DEPLOY-GATEWAY.yml`
+— there is no secret to be absent any more, so the bridge activates for
+real on the very next staging deploy after this merges, with no separate
+operator step. `AWS-PROD-DEPLOY-GATEWAY.yml` is untouched — prod stays
+inert regardless.
 
 **90-day window.** This is a bridge, not a standing architecture decision
 — when the credit window ends (or the cascade's own turn-shaping latency
 gets fixed some other way), the fix is one flag flip
 (`VERTEX_SERBIAN_BRIDGE_ENABLED=false`) plus deleting the GCP project and
-its AWS secret; the selector code can stay (inert, harmless) or be removed
-in a follow-up cleanup VTID.
+its WIF pool/provider/binding; the selector code can stay (inert, harmless)
+or be removed in a follow-up cleanup VTID.
 
 ---
 
