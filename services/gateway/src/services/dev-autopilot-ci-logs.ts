@@ -103,13 +103,29 @@ export function extractLogExcerpt(rawLog: string, maxChars: number = CI_LOG_EXCE
 /**
  * Render excerpts into the single string that travels on the failure reason
  * (bridgeFailure → triage → child execution prompt). Bounded.
+ *
+ * @param excerpts     The log excerpts to render.
+ * @param maxChars     Budget for the entire rendered string.
+ * @param totalFailing When provided and greater than excerpts.length, appends
+ *                     a line indicating how many failing checks were not fetched.
  */
-export function renderCiEvidence(excerpts: CiLogExcerpt[], maxChars: number = 2 * CI_LOG_EXCERPT_MAX_CHARS): string {
+export function renderCiEvidence(
+  excerpts: CiLogExcerpt[],
+  maxChars: number = 2 * CI_LOG_EXCERPT_MAX_CHARS,
+  totalFailing?: number,
+): string {
   if (!excerpts || excerpts.length === 0) return '';
   const parts = excerpts.map((e) =>
     `--- ${e.check_name} (job ${e.job_id})${e.unavailable ? ' [log unavailable]' : ''} ---\n${e.excerpt}`,
   );
-  const joined = parts.join('\n');
+  let joined = parts.join('\n');
+
+  // Append notice about unfetched failing checks if applicable
+  if (typeof totalFailing === 'number' && totalFailing > excerpts.length) {
+    const unfetchedCount = totalFailing - excerpts.length;
+    joined += `\n…and ${unfetchedCount} more failing check(s) not fetched (cap CI_LOG_MAX_JOBS=${CI_LOG_MAX_JOBS})`;
+  }
+
   return joined.length > maxChars ? `${joined.slice(0, maxChars)}\n…[truncated]` : joined;
 }
 
