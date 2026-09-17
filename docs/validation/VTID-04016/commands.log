@@ -1,0 +1,8 @@
+# VTID-04016 — commands run (Claude Code session, 2026-09-17)
+# Evidence (staging, oasis_events dev_autopilot.agent.tool): Run #4b turns 8 and 13 and the runner's post-hoc tsc all
+#   failed with the same TS2742 output; Run #4 ran run_check tsc at turns 12,13,17,24,31,33,36,38,39,44 with the same
+#   V8 allocation failure and no edit between most of them (see docs/validation/VTID-04011/outputs/run4-timeline.json).
+npx jest test/vtid-04016-agent-check-guard.test.ts test/autopilot-agent-tools.test.ts test/dev-autopilot-pr-contract.test.ts \
+         test/autopilot-agent-scope-validate.test.ts test/autopilot-agent-loop.test.ts
+node --max-old-space-size=3072 node_modules/.bin/tsc --noEmit -p tsconfig.json
+NOT run here: a real agent execution on the rebuilt image (AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml from this commit).

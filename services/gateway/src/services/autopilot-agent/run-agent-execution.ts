@@ -29,6 +29,7 @@ import { checkChangedFilesScope, hasTestCoverage } from './agent-scope';
 import { makeCheckRunner, runJest, runTsc, selectJestTargets } from './agent-validate';
 import { cleanupWorkspace, commitAndPush, linkNodeModules, listChangedFiles, prepareWorkspace, scrubSecret, type Workspace } from './agent-workspace';
 import { startExecutionHeartbeat } from './agent-heartbeat';
+import { RepeatedCheckGuard } from './agent-check-guard';
 
 const LOG_PREFIX = '[autopilot-agent]';
 const EXEC_VTID = 'VTID-DEV-AUTOPILOT';
@@ -155,7 +156,10 @@ export async function runAgentExecutionSession(
       conventions: loadAutopilotContext(), claudeMdExcerpt: await readClaudeMdExcerpt(ws.repoDir),
     });
     const repoDir = ws.repoDir;
-    const toolCtx = { root: repoDir, runCheck: makeCheckRunner(repoDir), log: (l: string) => console.log(`${LOG_PREFIX} [${short}] ${l}`) };
+    // VTID-04016: refuse re-running a check that already failed since the
+    // last edit (Run #4b spent ~18 of 22 minutes on nine identical tsc runs).
+    const checkGuard = new RepeatedCheckGuard();
+    const toolCtx = { root: repoDir, runCheck: makeCheckRunner(repoDir), checkGuard, log: (l: string) => console.log(`${LOG_PREFIX} [${short}] ${l}`) };
     const callLlm = (prompt: string, history: LLMRouterMessage[], sys: string) =>
       callViaRouter('worker', prompt, {
         vtid: telemetryVtid, service: 'autopilot-agent', allowFallback: true, maxTokens: AGENT_MAX_TOKENS,
@@ -170,9 +174,11 @@ export async function runAgentExecutionSession(
     let provider: string | undefined; let model: string | undefined; let fallbackUsed = false;
     const usage = { inputTokens: 0, outputTokens: 0 };
     let totalTurns = 0;
+    let fixRounds = 0;
     const started = Date.now();
 
     for (let round = 0; round <= AGENT_MAX_FIX_ROUNDS; round++) {
+      fixRounds = round;
       const loop = await runAgentLoop({
         systemPrompt, prompt, tools: AGENT_TOOLS, history,
         execute: (name, args) => executeAgentTool(name, args, toolCtx),
@@ -227,6 +233,10 @@ export async function runAgentExecutionSession(
       files: changed.map((c) => ({ path: c.path, action: c.action })),
       executionId, findingId: exec.finding_id, planVersion: exec.plan_version, branch, baseBranch: GITHUB_BASE_BRANCH,
       provider: provider || override.provider, model: model || override.model,
+      // VTID-04016: the evidence pack's commands.log describes the agent
+      // path, not the single-shot flow it was written for.
+      executor: 'agent',
+      agentStats: { turns: totalTurns, fixRounds, checksRefused: checkGuard.refusedCount(), fallbackUsed, tscRun: !AGENT_SKIP_TSC },
     });
     if (contract.skipped_reason) console.warn(`${LOG_PREFIX} [${short}] PR contract NOT applied: ${contract.skipped_reason}`);
     for (const ef of contract.evidenceFiles) {
