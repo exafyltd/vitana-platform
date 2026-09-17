@@ -96,7 +96,8 @@ function splitPemCertificates(bundle: string): string[] {
   return matches ?? [];
 }
 
-function resolveAuroraSsl(): { rejectUnauthorized: true; ca: string[] } | undefined {
+/** Exported for the read-only operator SQL pool (VTID-04023) — same TLS resolution, no second copy. */
+export function resolveAuroraSsl(): { rejectUnauthorized: true; ca: string[] } | undefined {
   if (process.env.AURORA_SSL === 'false') return undefined;
   const caPath = (process.env.AURORA_CA_BUNDLE_PATH ?? '').trim();
   const bundleCerts = caPath && existsSync(caPath) ? splitPemCertificates(readFileSync(caPath, 'utf8')) : [];
