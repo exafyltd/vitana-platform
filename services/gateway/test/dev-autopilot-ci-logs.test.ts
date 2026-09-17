@@ -74,6 +74,43 @@ describe('VTID-04005 renderCiEvidence', () => {
   it('is empty for no excerpts', () => {
     expect(renderCiEvidence([])).toBe('');
   });
+
+  // VTID-04012: the CI_LOG_MAX_JOBS cap must be visible in the evidence.
+  it('names how many failing checks were not fetched when totalFailing exceeds the excerpts', () => {
+    const excerpts = [
+      { check_name: 'validate-pr', job_id: 1, excerpt: 'exit 10: no VTID' },
+      { check_name: 'unit', job_id: 2, excerpt: 'FAIL test/a.test.ts' },
+      { check_name: 'tsc', job_id: 3, excerpt: 'error TS2322' },
+    ];
+    const txt = renderCiEvidence(excerpts, undefined, CI_LOG_MAX_JOBS + 3);
+    expect(txt).toContain('--- tsc (job 3) ---');
+    expect(txt.endsWith(`\n…and 3 more failing check(s) not fetched (cap CI_LOG_MAX_JOBS=${CI_LOG_MAX_JOBS})`)).toBe(true);
+  });
+
+  it('adds no extra line when totalFailing equals the excerpts count or is omitted', () => {
+    const excerpts = [
+      { check_name: 'validate-pr', job_id: 1, excerpt: 'exit 10: no VTID' },
+      { check_name: 'unit', job_id: 2, excerpt: 'FAIL test/a.test.ts' },
+    ];
+    const omitted = renderCiEvidence(excerpts);
+    const equal = renderCiEvidence(excerpts, undefined, excerpts.length);
+    const fewer = renderCiEvidence(excerpts, undefined, excerpts.length - 1);
+    expect(omitted).toBe(equal);
+    expect(omitted).toBe(fewer);
+    expect(omitted).not.toContain('more failing check(s)');
+  });
+
+  it('keeps the trailing "not fetched" line inside the maxChars budget', () => {
+    const excerpts = [{ check_name: 'unit', job_id: 2, excerpt: 'x'.repeat(10_000) }];
+    const txt = renderCiEvidence(excerpts, 300, 5);
+    expect(txt.length).toBeLessThanOrEqual(300);
+    expect(txt).toContain('[truncated]');
+    expect(txt).toMatch(/…and 4 more failing check\(s\) not fetched \(cap CI_LOG_MAX_JOBS=\d+\)$/);
+  });
+
+  it('is empty for empty excerpts even when totalFailing is set', () => {
+    expect(renderCiEvidence([], undefined, 5)).toBe('');
+  });
 });
 
 describe('VTID-04005 collectCiFailureEvidence', () => {

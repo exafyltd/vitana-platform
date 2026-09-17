@@ -17,6 +17,25 @@ import { fetchExcludedTestServiceAccountIds } from '../../lib/excluded-test-serv
 // ==================== user_tenants ====================
 
 /**
+ * Explicit, portable shape of the user_tenants query this seam returns.
+ *
+ * VTID-04012: the return type used to be inferred. Because the result is a
+ * spread-merge of the postgrest response with a filtered `data`, the inferred
+ * type references `@supabase/postgrest-js` — which resolves from a nested
+ * `node_modules` here, so `tsc --declaration` could not name it and failed with
+ * TS2742 ("inferred type … cannot be named without a reference to …"). Naming
+ * the shape (and only the fields callers read) keeps the emitted declaration
+ * portable. Pure type annotation — no runtime behaviour change.
+ */
+export interface PrimaryTenantUsersResult {
+  data: Array<{ user_id: string }> | null;
+  error: unknown;
+  count?: number | null;
+  status?: number;
+  statusText?: string;
+}
+
+/**
  * VTID-03991: excludes registered test/service/automation accounts
  * (service_bot_accounts + notification_test_actors) — every handler in
  * this file iterates this result and notifies/matches/introduces each row
@@ -27,7 +46,10 @@ import { fetchExcludedTestServiceAccountIds } from '../../lib/excluded-test-serv
  * which could surface that account's name to a REAL matched/introduced
  * peer.
  */
-export async function fetchPrimaryTenantUsers(supabase: SupabaseClient, tenantId: string) {
+export async function fetchPrimaryTenantUsers(
+  supabase: SupabaseClient,
+  tenantId: string,
+): Promise<PrimaryTenantUsersResult> {
   const [result, excludedIds] = await Promise.all([
     supabase.from('user_tenants').select('user_id').eq('tenant_id', tenantId).eq('is_primary', true),
     fetchExcludedTestServiceAccountIds(supabase),
@@ -35,7 +57,7 @@ export async function fetchPrimaryTenantUsers(supabase: SupabaseClient, tenantId
   if (result.error || !result.data) return result;
   return {
     ...result,
-    data: result.data.filter((row: any) => !excludedIds.has(String(row.user_id))),
+    data: result.data.filter((row: { user_id?: unknown }) => !excludedIds.has(String(row.user_id))),
   };
 }
 
