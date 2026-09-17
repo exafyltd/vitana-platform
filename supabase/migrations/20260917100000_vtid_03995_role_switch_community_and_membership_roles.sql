@@ -27,6 +27,12 @@
 --
 -- File-only until the platform owner applies it (single shared Supabase
 -- project). Staging-first: nothing here deploys anywhere by itself.
+--
+-- impact-allow-solo-migration: no gateway/worker code change is needed —
+-- both RPCs are already called as-is by the frontend (vitana-v1
+-- useMemberships.ts / useRole.tsx) and the gateway never calls either.
+-- The signatures and JSON envelopes are unchanged; only the permission
+-- logic inside the functions moves.
 
 CREATE OR REPLACE FUNCTION public.get_my_permitted_roles()
  RETURNS jsonb
