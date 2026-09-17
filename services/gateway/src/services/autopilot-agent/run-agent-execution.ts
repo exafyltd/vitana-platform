@@ -18,16 +18,19 @@ import { randomUUID } from 'crypto';
 import { emitOasisEvent } from '../oasis-event-service';
 import type { CicdEventType } from '../../types/cicd';
 import { supa, extractLlmOnRampOverride, type SupaConfig, type ExecutionRow } from '../dev-autopilot-execute';
+import { parseFixMode } from '../dev-autopilot-bridge';
+import { recordAgentRunUsage, type AgentRunUsage } from '../dev-autopilot-outcomes';
+import { estimateCost } from '../../constants/llm-defaults';
 import { applyPrContract } from '../dev-autopilot-pr-contract';
 import { isTestFile } from '../dev-autopilot-safety';
 import { loadAutopilotContext } from '../dev-autopilot/context-loader';
 import type { LLMProvider, LLMRouterMessage } from '../llm-router';
 import { AGENT_TOOLS, executeAgentTool } from './agent-tools';
 import { runAgentLoop, type AgentStep } from './agent-loop';
-import { buildAgentSystemPrompt, buildAgentTaskPrompt, buildScopeFixPrompt, buildValidationFixPrompt } from './agent-prompt';
+import { buildAgentSystemPrompt, buildAgentTaskPrompt, buildFixModeTaskPrompt, buildScopeFixPrompt, buildValidationFixPrompt } from './agent-prompt';
 import { checkChangedFilesScope, hasTestCoverage } from './agent-scope';
 import { makeCheckRunner, runJest, runTsc, selectJestTargets } from './agent-validate';
-import { cleanupWorkspace, commitAndPush, linkNodeModules, listChangedFiles, prepareWorkspace, scrubSecret, type Workspace } from './agent-workspace';
+import { cleanupWorkspace, commitAndPush, fetchRefSha, linkNodeModules, listChangedFiles, listChangedFilesSince, prepareWorkspace, scrubSecret, type Workspace } from './agent-workspace';
 import { startExecutionHeartbeat } from './agent-heartbeat';
 import { RepeatedCheckGuard } from './agent-check-guard';
 
@@ -111,9 +114,12 @@ export async function runAgentExecutionSession(
   exec: ExecutionRow & { finding_id: string; plan_version: number },
 ): Promise<AgentExecutionResult> {
   const executionId = exec.id;
-  const branch = `dev-autopilot/${executionId.slice(0, 8)}`;
+  // VTID-04017: fix mode — continue on the parent execution's PR branch.
+  const fixMode = parseFixMode(exec.metadata);
+  const branch = fixMode ? fixMode.branch : `dev-autopilot/${executionId.slice(0, 8)}`;
   const sessionId = `agent_${randomUUID().slice(0, 12)}`;
   const short = executionId.slice(0, 8);
+  const startedAt = Date.now();
 
   const planR = await supa<Array<{ plan_markdown: string; files_referenced: string[] | null }>>(
     s, `/rest/v1/dev_autopilot_plan_versions?finding_id=eq.${exec.finding_id}&version=eq.${exec.plan_version}&limit=1`,
@@ -140,6 +146,17 @@ export async function runAgentExecutionSession(
   if (!token) return { ok: false, error: 'GITHUB_SAFE_MERGE_TOKEN not set — the agent executor cannot clone or push', session_id: sessionId, branch };
 
   const onStep = stepEmitter(executionId, telemetryVtid);
+  // VTID-04017: per-run usage/cost, appended to the finding's outcome row
+  // in `finally` whatever happens (best-effort, never throws).
+  const run: AgentRunUsage = {
+    execution_id: executionId, vtid: activatedVtid, provider: null, model: null, input_tokens: 0, output_tokens: 0, cost_usd: 0,
+    turns: 0, fix_rounds: 0, checks_refused: 0, fallback_used: false, fix_mode: !!fixMode, outcome: 'failed', error: null, elapsed_ms: 0, recorded_at: '',
+  };
+  const finish = (r: AgentExecutionResult): AgentExecutionResult => {
+    run.outcome = r.ok ? (fixMode ? 'fix_pushed' : 'pr_opened') : 'failed';
+    run.error = r.ok ? null : (r.error || 'unknown').slice(0, 500);
+    return r;
+  };
   // VTID-04011: keep the row's updated_at fresh while this task is alive so
   // the running-watchdog cannot reclaim a live agent execution.
   const heartbeat = startExecutionHeartbeat(s, executionId);
@@ -149,10 +166,15 @@ export async function runAgentExecutionSession(
   let ws: Workspace | null = null;
   try {
     const scope = await loadScope(s);
-    onStep({ turn: 0, kind: 'llm', detail: `preparing workspace ${GITHUB_OWNER}/${GITHUB_REPO}@${GITHUB_BASE_BRANCH} → ${branch}` });
-    ws = await prepareWorkspace({ owner: GITHUB_OWNER, repo: GITHUB_REPO, baseBranch: GITHUB_BASE_BRANCH, branch, token });
+    onStep({ turn: 0, kind: 'llm', detail: fixMode
+      ? `fix mode: continuing PR #${fixMode.pr_number} on ${GITHUB_OWNER}/${GITHUB_REPO}@${branch} (parent ${fixMode.parent_execution_id.slice(0, 8)})`
+      : `preparing workspace ${GITHUB_OWNER}/${GITHUB_REPO}@${GITHUB_BASE_BRANCH} → ${branch}` });
+    ws = await prepareWorkspace({ owner: GITHUB_OWNER, repo: GITHUB_REPO, baseBranch: GITHUB_BASE_BRANCH, branch, token, existingBranch: !!fixMode });
+    // In fix mode the diff that matters is the whole PR (parent's committed
+    // work + this run's edits) versus the base branch.
+    const baseSha = fixMode ? await fetchRefSha(ws.repoDir, GITHUB_BASE_BRANCH) : ws.baseSha;
     const linked = await linkNodeModules(ws.repoDir, 'services/gateway', AGENT_NODE_MODULES_SOURCE);
-    console.log(`${LOG_PREFIX} [${short}] workspace ${ws.repoDir} base=${ws.baseSha.slice(0, 8)} node_modules=${linked}`);
+    console.log(`${LOG_PREFIX} [${short}] workspace ${ws.repoDir} base=${baseSha.slice(0, 8)} node_modules=${linked}${fixMode ? ' fix_mode' : ''}`);
 
     const systemPrompt = buildAgentSystemPrompt({
       repo: `${GITHUB_OWNER}/${GITHUB_REPO}`, baseBranch: GITHUB_BASE_BRANCH, branch, vtid: telemetryVtid,
@@ -171,10 +193,16 @@ export async function runAgentExecutionSession(
         providerOverride: override.provider, modelOverride: override.model,
       });
 
-    let prompt = buildAgentTaskPrompt({ vtid: telemetryVtid, planMarkdown: plan.plan_markdown, filesReferenced: plan.files_referenced || [], priorFailure, openEnded });
+    const repoDirChanged = async () => (fixMode ? listChangedFilesSince(repoDir, baseSha) : listChangedFiles(repoDir));
+    let changed = await repoDirChanged();
+    let prompt = fixMode
+      ? buildFixModeTaskPrompt({
+        vtid: telemetryVtid, planMarkdown: plan.plan_markdown, prUrl: fixMode.pr_url, branch, prFiles: changed.map((c) => c.path),
+        ciEvidence: priorFailure || '', attempt: (exec.auto_fix_depth || 0) + 1, maxAttempts: (exec.auto_fix_depth || 0) + 1 + AGENT_MAX_FIX_ROUNDS,
+      })
+      : buildAgentTaskPrompt({ vtid: telemetryVtid, planMarkdown: plan.plan_markdown, filesReferenced: plan.files_referenced || [], priorFailure, openEnded });
     let history: LLMRouterMessage[] = [];
     let finished: { summary: string; pr_title: string; pr_body: string } | null = null;
-    let changed = await listChangedFiles(repoDir);
     let provider: string | undefined; let model: string | undefined; let fallbackUsed = false;
     const usage = { inputTokens: 0, outputTokens: 0 };
     let totalTurns = 0;
@@ -191,19 +219,26 @@ export async function runAgentExecutionSession(
       history = loop.history; totalTurns += loop.turns;
       usage.inputTokens += loop.usage.inputTokens; usage.outputTokens += loop.usage.outputTokens;
       provider = loop.provider || provider; model = loop.model || model; fallbackUsed = fallbackUsed || loop.fallbackUsed;
-      if (!loop.ok || !loop.finished) return { ok: false, error: loop.error || 'agent did not finish', session_id: sessionId, branch };
+      run.turns = totalTurns; run.fix_rounds = round; run.input_tokens = usage.inputTokens; run.output_tokens = usage.outputTokens;
+      run.provider = provider || null; run.model = model || null; run.fallback_used = fallbackUsed;
+      if (!loop.ok || !loop.finished) return finish({ ok: false, error: loop.error || 'agent did not finish', session_id: sessionId, branch });
       finished = loop.finished;
 
       // --- runner-side verification, independent of what the model claims ---
-      changed = await listChangedFiles(repoDir);
-      if (changed.length === 0) return { ok: false, error: 'agent finished with an empty diff — refusing to open an empty PR', session_id: sessionId, branch };
+      changed = await repoDirChanged();
+      if (changed.length === 0) return finish({ ok: false, error: 'agent finished with an empty diff — refusing to open an empty PR', session_id: sessionId, branch });
+      if (fixMode && (await listChangedFiles(repoDir)).length === 0) {
+        // The PR diff is non-empty (the parent's work) but this run edited
+        // nothing — pushing would re-run the same red CI.
+        return finish({ ok: false, error: 'fix mode: agent finished without changing anything on the PR branch', session_id: sessionId, branch });
+      }
       const scopeCheck = checkChangedFilesScope(changed, scope.allow_scope, scope.deny_scope, [`docs/validation/${telemetryVtid}/**`]);
       if (!scopeCheck.ok) {
-        if (round === AGENT_MAX_FIX_ROUNDS) return { ok: false, error: `scope violation after ${round} fix round(s): ${scopeCheck.reason}`, session_id: sessionId, branch };
+        if (round === AGENT_MAX_FIX_ROUNDS) return finish({ ok: false, error: `scope violation after ${round} fix round(s): ${scopeCheck.reason}`, session_id: sessionId, branch });
         prompt = buildScopeFixPrompt(scopeCheck.reason); continue;
       }
       if (!hasTestCoverage(changed, isTestFile)) {
-        if (round === AGENT_MAX_FIX_ROUNDS) return { ok: false, error: 'tests_missing: no test file in the diff after fix rounds', session_id: sessionId, branch };
+        if (round === AGENT_MAX_FIX_ROUNDS) return finish({ ok: false, error: 'tests_missing: no test file in the diff after fix rounds', session_id: sessionId, branch });
         prompt = buildValidationFixPrompt('test-coverage rule', 'The diff contains no test file. Every non-deletion change needs a jest test in the same diff.', round + 1, AGENT_MAX_FIX_ROUNDS); continue;
       }
       const changedPaths = changed.map((c) => c.path);
@@ -212,7 +247,7 @@ export async function runAgentExecutionSession(
         const tsc = await runTsc(repoDir, 'services/gateway');
         onStep({ turn: totalTurns, kind: 'tool', name: 'runner:tsc', detail: tsc.ok ? 'clean' : tsc.output.slice(0, 300), isError: !tsc.ok });
         if (!tsc.ok) {
-          if (round === AGENT_MAX_FIX_ROUNDS) return { ok: false, error: `tsc failed after ${round} fix round(s): ${tsc.output.slice(0, 1500)}`, session_id: sessionId, branch };
+          if (round === AGENT_MAX_FIX_ROUNDS) return finish({ ok: false, error: `tsc failed after ${round} fix round(s): ${tsc.output.slice(0, 1500)}`, session_id: sessionId, branch });
           prompt = buildValidationFixPrompt('tsc --noEmit (services/gateway)', tsc.output, round + 1, AGENT_MAX_FIX_ROUNDS); continue;
         }
       }
@@ -223,12 +258,12 @@ export async function runAgentExecutionSession(
         if (!r.ok) { jestFailed = `${target.project}: ${target.patterns.join(' ')}\n${r.output}`; break; }
       }
       if (jestFailed) {
-        if (round === AGENT_MAX_FIX_ROUNDS) return { ok: false, error: `jest failed after ${round} fix round(s): ${jestFailed.slice(0, 1500)}`, session_id: sessionId, branch };
+        if (round === AGENT_MAX_FIX_ROUNDS) return finish({ ok: false, error: `jest failed after ${round} fix round(s): ${jestFailed.slice(0, 1500)}`, session_id: sessionId, branch });
         prompt = buildValidationFixPrompt('jest', jestFailed, round + 1, AGENT_MAX_FIX_ROUNDS); continue;
       }
       break; // verified
     }
-    if (!finished) return { ok: false, error: 'agent did not finish', session_id: sessionId, branch };
+    if (!finished) return finish({ ok: false, error: 'agent did not finish', session_id: sessionId, branch });
 
     // --- PR contract + evidence pack (VTID-04002), written into the tree ---
     const contract = applyPrContract({
@@ -242,6 +277,7 @@ export async function runAgentExecutionSession(
       executor: 'agent',
       agentStats: { turns: totalTurns, fixRounds, checksRefused: checkGuard.refusedCount(), fallbackUsed, tscRun: !AGENT_SKIP_TSC },
     });
+    run.checks_refused = checkGuard.refusedCount();
     if (contract.skipped_reason) console.warn(`${LOG_PREFIX} [${short}] PR contract NOT applied: ${contract.skipped_reason}`);
     for (const ef of contract.evidenceFiles) {
       const abs = path.join(repoDir, ef.path);
@@ -249,13 +285,21 @@ export async function runAgentExecutionSession(
       await fs.writeFile(abs, ef.content, 'utf8');
     }
     const vtidLike = activatedVtid || `VTID-DA-${short}`;
-    const { sha } = await commitAndPush(repoDir, { message: `${contract.title}\n\n${finished.summary}\n\nExecution ${executionId} (${vtidLike})`, branch, token });
-    onStep({ turn: totalTurns, kind: 'finish', detail: `pushed ${sha.slice(0, 8)} on ${branch} (${changed.length} file(s))` });
+    const commitMessage = fixMode
+      ? `fix(ci): ${finished.pr_title.slice(0, 120)} (${vtidLike})\n\n${finished.summary}\n\nFix-mode execution ${executionId} for PR #${fixMode.pr_number} (parent ${fixMode.parent_execution_id})`
+      : `${contract.title}\n\n${finished.summary}\n\nExecution ${executionId} (${vtidLike})`;
+    const { sha } = await commitAndPush(repoDir, { message: commitMessage, branch, token, force: !fixMode });
+    onStep({ turn: totalTurns, kind: 'finish', detail: `pushed ${sha.slice(0, 8)} on ${branch} (${changed.length} file(s))${fixMode ? ` → PR #${fixMode.pr_number}` : ''}` });
+    if (fixMode) {
+      // Same PR, new head — the watcher tracks this row on the parent's PR number.
+      return finish({ ok: true, pr_url: fixMode.pr_url, pr_number: fixMode.pr_number, branch, session_id: sessionId });
+    }
     const pr = await openPullRequest(token, branch, contract.title, contract.body);
-    if (!pr.ok) return { ok: false, error: `open PR: ${scrubSecret(pr.error || '?', token)}`, session_id: sessionId, branch };
-    return { ok: true, pr_url: pr.url, pr_number: pr.number, branch, session_id: sessionId };
+    if (!pr.ok) return finish({ ok: false, error: `open PR: ${scrubSecret(pr.error || '?', token)}`, session_id: sessionId, branch });
+    return finish({ ok: true, pr_url: pr.url, pr_number: pr.number, branch, session_id: sessionId });
   } catch (err) {
     const msg = scrubSecret(err instanceof Error ? err.message : String(err), token);
+    run.outcome = 'failed'; run.error = msg.slice(0, 500);
     console.error(`${LOG_PREFIX} [${short}] failed: ${msg}`);
     await emitOasisEvent({
       vtid: EXEC_VTID, type: 'dev_autopilot.agent.error' as CicdEventType, source: 'autopilot-agent', status: 'error',
@@ -265,5 +309,9 @@ export async function runAgentExecutionSession(
   } finally {
     heartbeat.stop();
     await cleanupWorkspace(ws);
+    run.elapsed_ms = Date.now() - startedAt;
+    run.recorded_at = new Date().toISOString();
+    run.cost_usd = estimateCost(run.model || '', run.input_tokens, run.output_tokens);
+    await recordAgentRunUsage(exec.finding_id, run).catch(() => undefined);
   }
 }

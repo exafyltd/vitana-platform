@@ -400,6 +400,54 @@ export function inheritedOnRampMetadata(
 /** VTID-04005/04006: cap the failure evidence carried onto a child row. */
 const PARENT_FAILURE_MAX_CHARS = 8000;
 
+/**
+ * VTID-04017 (W3): fix mode. When CI fails on a PR the AGENT executor
+ * opened, the retry does not start over: the PR stays open, and the child
+ * execution is told which branch/PR to continue on. The agent runner clones
+ * that branch, gets the failing jobs' log excerpt (VTID-04005) as its task,
+ * fixes, re-runs tsc/jest, and pushes to the same branch so the same PR
+ * goes green. Rounds are still capped by `max_auto_fix_depth`.
+ *
+ * Only for stage 'ci' (the PR is unmerged — a merged-and-broken change is
+ * still reverted), only for agent-mode parents (the single-shot executor
+ * cannot read a branch), and never in DRY_RUN (there is no real PR).
+ */
+export interface FixModeInfo {
+  branch: string;
+  pr_number: number;
+  pr_url: string;
+  parent_execution_id: string;
+}
+
+export function isFixModeEligible(
+  exec: Pick<ExecutionRow, 'branch' | 'pr_number' | 'pr_url' | 'metadata'>,
+  stage: FailureStage,
+  dryRun: boolean = DRY_RUN,
+): boolean {
+  if (stage !== 'ci' || dryRun) return false;
+  if (!exec.metadata || exec.metadata.executor !== 'agent') return false;
+  return typeof exec.pr_number === 'number' && exec.pr_number > 0
+    && typeof exec.branch === 'string' && exec.branch.length > 0
+    && typeof exec.pr_url === 'string' && exec.pr_url.length > 0;
+}
+
+export function buildFixModeInfo(exec: Pick<ExecutionRow, 'id' | 'branch' | 'pr_number' | 'pr_url'>): FixModeInfo {
+  return { branch: String(exec.branch), pr_number: Number(exec.pr_number), pr_url: String(exec.pr_url), parent_execution_id: exec.id };
+}
+
+/** Read a child row's fix-mode target; null when absent or malformed. */
+export function parseFixMode(metadata: Record<string, unknown> | null | undefined): FixModeInfo | null {
+  const raw = metadata && typeof metadata === 'object' ? (metadata as Record<string, unknown>).fix_mode : null;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const o = raw as Record<string, unknown>;
+  const branch = typeof o.branch === 'string' ? o.branch.trim() : '';
+  const prNumber = typeof o.pr_number === 'number' ? o.pr_number : Number.parseInt(String(o.pr_number ?? ''), 10);
+  const prUrl = typeof o.pr_url === 'string' ? o.pr_url : '';
+  const parent = typeof o.parent_execution_id === 'string' ? o.parent_execution_id : '';
+  if (!branch || !Number.isFinite(prNumber) || prNumber <= 0 || !prUrl || !parent) return null;
+  return { branch, pr_number: prNumber, pr_url: prUrl, parent_execution_id: parent };
+}
+
 export async function spawnChildExecution(
   s: SupaConfig,
   parent: ExecutionRow,
@@ -410,6 +458,8 @@ export async function spawnChildExecution(
    *  `metadata.parent_failure` so the agent executor's task prompt (and any
    *  reader of the row) sees the evidence, not only the triage summary. */
   parentFailure?: string | null,
+  /** VTID-04017: continue on the parent's PR branch instead of starting over. */
+  fixMode?: FixModeInfo | null,
 ): Promise<{ ok: boolean; execution_id?: string; error?: string }> {
   const childId = randomUUID();
   const now = new Date();
@@ -436,6 +486,7 @@ export async function spawnChildExecution(
         triage_session_id: report.session_id,
         triage_confidence: report.confidence,
         ...(parentFailure ? { parent_failure: parentFailure.slice(0, PARENT_FAILURE_MAX_CHARS) } : {}),
+        ...(fixMode ? { fix_mode: fixMode } : {}),
       },
     }),
   });
@@ -631,9 +682,17 @@ export async function bridgeFailureToSelfHealing(input: BridgeInput): Promise<Br
 
   const report = triage.report;
 
+  // VTID-04017: fix mode — an agent PR that failed CI is NOT closed; the
+  // child continues on its branch. Escalation (below) also leaves it open,
+  // red, for the human it is escalated to.
+  const fixMode = isFixModeEligible(exec, input.failure_stage) ? buildFixModeInfo(exec) : null;
+
   // 2. Attempt auto-revert (best-effort — failure here shouldn't block the
   //    bridge from recording the triage report + escalating).
-  const revert = await revertExecutionPR(exec, input.failure_stage);
+  const revert: { ok: boolean; revert_pr_url?: string; error?: string } = fixMode
+    ? { ok: true }
+    : await revertExecutionPR(exec, input.failure_stage);
+  if (fixMode) console.log(`${LOG_PREFIX} fix mode for ${exec.id.slice(0, 8)}: PR #${fixMode.pr_number} stays open on ${fixMode.branch}`);
   if (!revert.ok) {
     // Log-only: revert failure is non-fatal to the bridge, and the escalation
     // payload below captures the error. No dedicated event type exists for
@@ -676,11 +735,12 @@ export async function bridgeFailureToSelfHealing(input: BridgeInput): Promise<Br
       bridge_stage: input.failure_stage,
       bridge_confidence: report.confidence,
       bridge_reason_decision: canRetry ? 'child_spawned' : 'escalated',
+      bridge_fix_mode: !!fixMode,
     },
   };
 
   if (canRetry) {
-    const child = await spawnChildExecution(s, exec, report, cooldown, input.error);
+    const child = await spawnChildExecution(s, exec, report, cooldown, input.error, fixMode);
     if (!child.ok) {
       // Couldn't spawn child — escalate instead.
       await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${exec.id}`, {
@@ -770,6 +830,8 @@ export async function bridgeFailureToSelfHealing(input: BridgeInput): Promise<Br
         max_depth: maxDepth,
         triage_confidence: report.confidence,
         stage: input.failure_stage,
+        fix_mode: !!fixMode,
+        ...(fixMode ? { fix_branch: fixMode.branch, fix_pr_number: fixMode.pr_number } : {}),
       },
     });
 
@@ -837,6 +899,7 @@ export async function bridgeFailureToSelfHealing(input: BridgeInput): Promise<Br
       max_depth: maxDepth,
       triage_confidence: report.confidence,
       stage: input.failure_stage,
+      ...(fixMode ? { pr_left_open: fixMode.pr_url } : {}),
     },
   });
 

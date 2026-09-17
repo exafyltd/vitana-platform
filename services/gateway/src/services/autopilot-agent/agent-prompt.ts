@@ -100,3 +100,48 @@ export function buildScopeFixPrompt(reason: string): string {
     `Revert or move those edits so every changed file is inside the allowed globs and outside the denied ones, then call finish again.`,
   ].join('\n');
 }
+
+/**
+ * VTID-04017 (W3): fix mode — the run continues on the parent execution's
+ * PR branch after CI failed there. The evidence is the failing jobs' real
+ * log excerpt (VTID-04005); the goal is the same PR going green.
+ */
+export interface FixModeTaskPromptInput {
+  vtid: string;
+  planMarkdown: string;
+  prUrl: string;
+  branch: string;
+  /** Files the PR already changes versus its base. */
+  prFiles: string[];
+  /** The parent's failure reason with CI log evidence. */
+  ciEvidence: string;
+  /** 1-based attempt number and the cap (auto_fix_depth / max). */
+  attempt: number;
+  maxAttempts: number;
+}
+
+export function buildFixModeTaskPrompt(i: FixModeTaskPromptInput): string {
+  const files = i.prFiles.length ? i.prFiles.map((f) => `- ${f}`).join('\n') : '- (none — run_check git_diff to see the branch)';
+  return [
+    `# Task ${i.vtid} — FIX MODE (attempt ${i.attempt} of ${i.maxAttempts})`,
+    ``,
+    `You are on branch ${i.branch}, the branch of the open pull request ${i.prUrl}. A previous run of this task made the changes on this branch; CI failed on it. Your job is to make THAT PR pass — not to start over, not to revert its intent, not to open a new PR.`,
+    ``,
+    `## Original task`,
+    i.planMarkdown.trim(),
+    ``,
+    `## Files the PR already changes (read them first)`,
+    files,
+    ``,
+    `## CI failure evidence (the failing jobs' own log excerpts)`,
+    i.ciEvidence.trim() || '(no evidence captured — run run_check tsc and the paired jest suites to reproduce)',
+    ``,
+    `## How to proceed`,
+    `1. Read the failing output above carefully and locate the exact cause in the files on this branch. Reproduce it with run_check (tsc / jest on the failing suite) before changing anything.`,
+    `2. Fix the cause with the smallest edit. If the failure is in a test, decide from the evidence whether the test or the code is wrong; do not delete or skip a test to get green.`,
+    `3. Re-run the checks that failed until they pass, then call finish. Your edits will be committed on this same branch and pushed to the same PR.`,
+    ``,
+    `Begin by reading the files the PR changes.`,
+  ].join('\n');
+}
+
