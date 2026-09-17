@@ -19,6 +19,10 @@ export async function fetchAppUserWelcomeChatSent(sb: SupabaseClient, userId: st
   return sb.from('app_users').select('welcome_chat_sent').eq('user_id', userId).single();
 }
 
+export async function fetchServiceBotAccountFlag(sb: SupabaseClient, userId: string) {
+  return sb.from('service_bot_accounts').select('user_id').eq('user_id', userId).maybeSingle();
+}
+
 export async function countTenantMembersExcluding(sb: SupabaseClient, tenantId: string, excludeUserId: string, botUserId: string) {
   return sb
     .from('user_tenants')
