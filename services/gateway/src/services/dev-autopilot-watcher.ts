@@ -210,6 +210,37 @@ export function analyzeCiStatus(
   return { state: 'passing', failedNames: [] };
 }
 
+/**
+ * VTID-04003: Build the human-readable CI failure reason that is handed to
+ * the self-healing triage agent as its ONLY evidence.
+ *
+ * Before this helper existed, the gate used an inline ternary whose
+ * `'blocked'` branch returned the literal `'branch-protection blocked'` for
+ * every blocked PR — even when `analyzeCiStatus` had produced concrete
+ * `failedNames`. GitHub reports `blocked` exactly when a REQUIRED check has
+ * failed (or a required review is missing), so that literal dropped the real
+ * root cause (e.g. `validate-pr` failed) and the triage agent invented a
+ * "branch protection is misconfigured" story. See PR #3351 / execution
+ * 0643b701.
+ *
+ * This function is pure and deterministic so it can be unit-tested directly.
+ */
+export function buildCiFailureReason(mergeableState: string, failedNames: string[]): string {
+  const names = failedNames && failedNames.length > 0 ? failedNames.join(', ') : '';
+  if (mergeableState === 'dirty') {
+    return names ? `merge conflict (dirty); failing checks: ${names}` : 'merge conflict (dirty)';
+  }
+  if (mergeableState === 'blocked') {
+    if (names) return `blocked: required check(s) failed: ${names}`;
+    return 'blocked: branch protection or a required check GitHub has not reported yet (no failing check names available)';
+  }
+  if (mergeableState === 'unstable') {
+    return `unstable: GitHub reports non-passing checks (failing names so far: ${names || '(none reported yet — wait)'})`;
+  }
+  if (names) return `failing checks: ${names}`;
+  return `unexpected mergeable_state=${mergeableState}`;
+}
+
 export type DeployOutcome = 'success' | 'failed' | 'pending';
 
 export function findDeployOutcomeForExecution(
@@ -467,12 +498,11 @@ export async function ciWatcherTick(): Promise<void> {
     // merging. If a late check has now reported a failure, we catch it.
     const hasAnyFailingChecks = analysis.failedNames.length > 0;
     if (mState !== 'clean' || hasAnyFailingChecks) {
-      const failureReason =
-        mState === 'dirty' ? 'merge conflict (dirty)'
-        : mState === 'blocked' ? 'branch-protection blocked'
-        : mState === 'unstable' ? `unstable: GitHub reports non-passing checks (failing names so far: ${analysis.failedNames.join(', ') || '(none reported yet — wait)'})`
-        : hasAnyFailingChecks ? `failing checks: ${analysis.failedNames.join(', ')}`
-        : `unexpected mergeable_state=${mState}`;
+      // VTID-04003: the failing-check names must survive into the reason.
+      // GitHub reports `blocked` when a REQUIRED check failed, so collapsing
+      // it to 'branch-protection blocked' hid the real root cause from the
+      // self-healing triage agent.
+      const failureReason = buildCiFailureReason(mState, analysis.failedNames);
       await transitionStatus(s, exec.id, 'ci', 'failed', {
         metadata: {
           ...(exec.metadata || {}),
