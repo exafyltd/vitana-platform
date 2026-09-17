@@ -1,0 +1,18 @@
+# VTID-04008 — commands run by the Dev Autopilot executor
+
+# 2026-09-17T19:52:45.841Z
+# execution_id=8b2bce93-f7ff-4a81-8554-5ea3dd4221c5 finding_id=d16e8810-22aa-4835-ae60-0d1a62113fd3 plan_version=1
+# branch=dev-autopilot/8b2bce93 base=main
+# llm provider=bedrock model=eu.anthropic.claude-opus-4-5-20251101-v1:0
+
+$ dev-autopilot: fetch current content of 2 plan file(s) from main
+$ dev-autopilot: callViaRouter('worker') → parse <<<PR_TITLE>>>/<<<PR_BODY>>>/<<<FILE>>> blocks
+$ dev-autopilot: validate emitted paths ⊆ plan.files_referenced; plan/diff coverage ≥ threshold
+$ git checkout -b dev-autopilot/8b2bce93 main
+$ git add services/gateway/src/services/dev-autopilot-ci-logs.ts   # modify
+$ git add services/gateway/test/dev-autopilot-ci-logs.test.ts   # modify
+$ dev-autopilot: write docs/validation/VTID-04008/ evidence pack (this file)
+$ gh pr create --base main --head dev-autopilot/8b2bce93
+
+# Build, lint and the full jest suite run in CI on this PR (VALIDATOR-CHECK build gate + Gateway CI);
+# the executor itself does not run them — see outputs/execution.json.
