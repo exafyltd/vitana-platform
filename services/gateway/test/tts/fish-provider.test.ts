@@ -114,6 +114,28 @@ describe('VTID-03970 synthesizeFish gating and request shape', () => {
     expect(body.format).toBe('mp3');
   });
 
+  it('requests latency="low", not the slower "normal"/"balanced" modes (VTID-03998)', async () => {
+    // Fish's own docs: 'normal' is the best-QUALITY, slowest default;
+    // 'low' is the lowest-latency option. Production evidence (oasis_events,
+    // pre-login Serbian sessions): every anonymous sr cascade session hit the
+    // 30s greeting_timeout stall watchdog with ZERO audio, before
+    // cascade_tts_failed even logged — consistent with 'normal' mode running
+    // close to (or past) FISH_REQUEST_TIMEOUT_MS. sr has no Polly voice at
+    // all, so a slow Fish call is a full outage for that language, not
+    // merely degraded quality.
+    process.env.TTS_FISH_FALLBACK_ENABLED = 'true';
+    process.env.FISH_API_KEY = 'sk-fish-test';
+    fetchMock.mockResolvedValue(
+      new Response(new Uint8Array([1, 2, 3, 4]).buffer, { status: 200 }),
+    );
+
+    await synthesizeFish({ text: 'Zdravo, ja sam Vitana.', lang: 'sr', format: 'pcm' });
+
+    const [, init] = fetchMock.mock.calls[0];
+    const body = JSON.parse(init.body);
+    expect(body.latency).toBe('low');
+  });
+
   it('requests an explicit sample rate for pcm format and reports it back authoritatively', async () => {
     process.env.TTS_FISH_FALLBACK_ENABLED = 'true';
     process.env.FISH_API_KEY = 'sk-fish-test';
