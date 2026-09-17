@@ -11,6 +11,7 @@ import {
   analyzeVerificationWindow,
   VERIFICATION_WINDOW_MS,
   shouldAutoMerge,
+  shouldSynthesizeDryRunOutcome,
 } from '../src/services/dev-autopilot-watcher';
 
 describe('analyzeCiStatus', () => {
@@ -196,5 +197,29 @@ describe('shouldAutoMerge', () => {
     const r = shouldAutoMerge('unknown');
     expect(r.ok).toBe(false);
     expect(r.reason).toMatch(/unknown/);
+  });
+});
+
+describe('shouldSynthesizeDryRunOutcome', () => {
+  it('synthesizes for dry-run with a placeholder DRY-RUN- URL', () => {
+    expect(shouldSynthesizeDryRunOutcome(true, 'https://example.invalid/DRY-RUN-abc123')).toBe('synthesize');
+  });
+
+  it('skips for dry-run with a real URL', () => {
+    expect(shouldSynthesizeDryRunOutcome(true, 'https://github.com/exafyltd/vitana-platform/pull/3372')).toBe('skip');
+  });
+
+  it('synthesizes for live with a placeholder DRY-RUN- URL', () => {
+    expect(shouldSynthesizeDryRunOutcome(false, 'https://example.invalid/DRY-RUN-abc123')).toBe('synthesize');
+  });
+
+  it('falls through to live for live with a real URL', () => {
+    expect(shouldSynthesizeDryRunOutcome(false, 'https://github.com/exafyltd/vitana-platform/pull/3372')).toBe('live');
+  });
+
+  it('skips for dry-run with null, undefined, or empty pr_url', () => {
+    expect(shouldSynthesizeDryRunOutcome(true, null)).toBe('skip');
+    expect(shouldSynthesizeDryRunOutcome(true, undefined)).toBe('skip');
+    expect(shouldSynthesizeDryRunOutcome(true, '')).toBe('skip');
   });
 });
