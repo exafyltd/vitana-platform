@@ -1,0 +1,36 @@
+{
+  "vtid": "VTID-04012",
+  "execution_id": "4f7d5ea4-8d9e-4a25-b88c-877144d96890",
+  "finding_id": "f438125d-14de-4435-abaf-040d95808821",
+  "plan_version": 1,
+  "branch": "dev-autopilot/4f7d5ea4",
+  "base_branch": "main",
+  "llm": {
+    "provider": "deepseek",
+    "model": "deepseek-flash"
+  },
+  "files": [
+    {
+      "path": "services/gateway/src/services/automation-handlers/connect-people-repository.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/src/services/dev-autopilot-ci-logs.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/src/services/dev-autopilot-watcher.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/test/dev-autopilot-ci-logs.test.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/test/services/automation-handlers-connect-people.test.ts",
+      "action": "modify"
+    }
+  ],
+  "generated_at": "2026-09-17T20:15:00.143Z",
+  "generated_by": "dev-autopilot-execute (VTID-04002 PR contract)"
+}

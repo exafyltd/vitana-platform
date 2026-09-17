@@ -103,14 +103,38 @@ export function extractLogExcerpt(rawLog: string, maxChars: number = CI_LOG_EXCE
 /**
  * Render excerpts into the single string that travels on the failure reason
  * (bridgeFailure → triage → child execution prompt). Bounded.
+ *
+ * VTID-04012: `collectCiFailureEvidence` stops after CI_LOG_MAX_JOBS jobs, so
+ * when a PR has more failing checks than that the reader saw only the fetched
+ * ones and could not tell the list was incomplete. `totalFailing` is the total
+ * number of failing checks known for the PR; whenever it exceeds the number of
+ * excerpts, the text ends with an explicit "N more … not fetched" line (which
+ * the maxChars budget accounts for, so the line is never truncated away).
+ * Omitting `totalFailing` renders exactly what this function rendered before.
  */
-export function renderCiEvidence(excerpts: CiLogExcerpt[], maxChars: number = 2 * CI_LOG_EXCERPT_MAX_CHARS): string {
+export function renderCiEvidence(
+  excerpts: CiLogExcerpt[],
+  maxChars: number = 2 * CI_LOG_EXCERPT_MAX_CHARS,
+  totalFailing?: number,
+): string {
   if (!excerpts || excerpts.length === 0) return '';
   const parts = excerpts.map((e) =>
     `--- ${e.check_name} (job ${e.job_id})${e.unavailable ? ' [log unavailable]' : ''} ---\n${e.excerpt}`,
   );
   const joined = parts.join('\n');
-  return joined.length > maxChars ? `${joined.slice(0, maxChars)}\n…[truncated]` : joined;
+  const notFetched = typeof totalFailing === 'number' && totalFailing > excerpts.length
+    ? totalFailing - excerpts.length
+    : 0;
+  if (notFetched === 0) {
+    return joined.length > maxChars ? `${joined.slice(0, maxChars)}\n…[truncated]` : joined;
+  }
+  const moreLine = `\n…and ${notFetched} more failing check(s) not fetched (cap CI_LOG_MAX_JOBS=${CI_LOG_MAX_JOBS})`;
+  const truncLine = '\n…[truncated]';
+  // Reserve the budget both trailing markers need, so the "not fetched" line
+  // always survives truncation and the whole string stays ≤ maxChars.
+  const bodyBudget = Math.max(0, maxChars - moreLine.length - truncLine.length);
+  const body = joined.length > bodyBudget ? `${joined.slice(0, bodyBudget)}${truncLine}` : joined;
+  return `${body}${moreLine}`;
 }
 
 interface CheckRunLike {

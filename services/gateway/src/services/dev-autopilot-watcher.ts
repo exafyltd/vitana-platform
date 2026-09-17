@@ -530,7 +530,11 @@ export async function ciWatcherTick(): Promise<void> {
       const evidence = headSha
         ? await collectCiFailureEvidence({ owner: GITHUB_OWNER, repo: GITHUB_REPO_NAME, headSha, failedNames: analysis.failedNames })
         : [];
-      const evidenceText = renderCiEvidence(evidence);
+      // VTID-04012: pass the total failing-check count so the evidence says
+      // explicitly when collectCiFailureEvidence's CI_LOG_MAX_JOBS cap left
+      // some failing checks unfetched — otherwise triage reads a partial log
+      // set as if it were the whole failure.
+      const evidenceText = renderCiEvidence(evidence, undefined, analysis.failedNames.length);
       const failureReasonWithEvidence = evidenceText ? `${failureReason}\n\nCI log evidence:\n${evidenceText}` : failureReason;
       await transitionStatus(s, exec.id, 'ci', 'failed', {
         metadata: {

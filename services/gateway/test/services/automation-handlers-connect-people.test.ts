@@ -17,6 +17,7 @@ import {
 } from '../../src/services/automation-registry';
 import { registerHandler, getHandler } from '../../src/services/automation-executor';
 import { registerConnectPeopleHandlers } from '../../src/services/automation-handlers/connect-people';
+import * as repo from '../../src/services/automation-handlers/connect-people-repository';
 import { AutomationContext } from '../../src/types/automations';
 
 registerConnectPeopleHandlers();
@@ -133,6 +134,33 @@ describe('registry — AP-0106 and AP-0110 are implemented', () => {
         expect(def.handler).toBeTruthy();
       }
     }
+  });
+});
+
+describe('connect-people-repository — fetchPrimaryTenantUsers (VTID-04012 explicit return type)', () => {
+  it('returns primary tenant users with registered test/service accounts filtered out', async () => {
+    const supabase = makeFakeSupabase({
+      user_tenants: { data: [{ user_id: 'real-1' }, { user_id: 'bot-1' }], error: null },
+      service_bot_accounts: { data: [{ user_id: 'bot-1' }], error: null },
+      notification_test_actors: { data: [], error: null },
+    });
+
+    const result = await repo.fetchPrimaryTenantUsers(supabase as any, 't-1');
+
+    expect(result.error).toBeNull();
+    expect(result.data).toEqual([{ user_id: 'real-1' }]);
+  });
+
+  it('passes the query error straight through', async () => {
+    const supabase = makeFakeSupabase({
+      user_tenants: { data: null, error: { message: 'boom' } },
+      service_bot_accounts: { data: [], error: null },
+      notification_test_actors: { data: [], error: null },
+    });
+
+    const result = await repo.fetchPrimaryTenantUsers(supabase as any, 't-1');
+
+    expect(result.error).toEqual({ message: 'boom' });
   });
 });
 
