@@ -125,6 +125,10 @@ export async function runAgentExecutionSession(
     s, `/rest/v1/autopilot_recommendations?id=eq.${exec.finding_id}&select=activated_vtid,spec_snapshot&limit=1`,
   );
   const activatedVtid = findR.ok && findR.data && findR.data[0]?.activated_vtid ? String(findR.data[0].activated_vtid) : null;
+  // VTID-04007: open-ended intake — no pre-selected files; the task prompt
+  // switches to discovery mode.
+  const openEnded = (findR.ok && findR.data && findR.data[0]?.spec_snapshot?.intake) === 'open_ended'
+    || exec.metadata?.intake === 'open_ended';
   const telemetryVtid = activatedVtid || `VTID-DA-${short}`;
   const priorFailure = typeof exec.metadata?.parent_failure === 'string' ? (exec.metadata.parent_failure as string)
     : typeof exec.metadata?.failure_reason === 'string' ? (exec.metadata.failure_reason as string) : null;
@@ -167,7 +171,7 @@ export async function runAgentExecutionSession(
         providerOverride: override.provider, modelOverride: override.model,
       });
 
-    let prompt = buildAgentTaskPrompt({ vtid: telemetryVtid, planMarkdown: plan.plan_markdown, filesReferenced: plan.files_referenced || [], priorFailure });
+    let prompt = buildAgentTaskPrompt({ vtid: telemetryVtid, planMarkdown: plan.plan_markdown, filesReferenced: plan.files_referenced || [], priorFailure, openEnded });
     let history: LLMRouterMessage[] = [];
     let finished: { summary: string; pr_title: string; pr_body: string } | null = null;
     let changed = await listChangedFiles(repoDir);
