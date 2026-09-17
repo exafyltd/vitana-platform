@@ -28,6 +28,7 @@ import { buildAgentSystemPrompt, buildAgentTaskPrompt, buildScopeFixPrompt, buil
 import { checkChangedFilesScope, hasTestCoverage } from './agent-scope';
 import { makeCheckRunner, runJest, runTsc, selectJestTargets } from './agent-validate';
 import { cleanupWorkspace, commitAndPush, linkNodeModules, listChangedFiles, prepareWorkspace, scrubSecret, type Workspace } from './agent-workspace';
+import { startExecutionHeartbeat } from './agent-heartbeat';
 
 const LOG_PREFIX = '[autopilot-agent]';
 const EXEC_VTID = 'VTID-DEV-AUTOPILOT';
@@ -134,6 +135,9 @@ export async function runAgentExecutionSession(
   if (!token) return { ok: false, error: 'GITHUB_SAFE_MERGE_TOKEN not set — the agent executor cannot clone or push', session_id: sessionId, branch };
 
   const onStep = stepEmitter(executionId, telemetryVtid);
+  // VTID-04011: keep the row's updated_at fresh while this task is alive so
+  // the running-watchdog cannot reclaim a live agent execution.
+  const heartbeat = startExecutionHeartbeat(s, executionId);
   const override = extractLlmOnRampOverride(exec.metadata) || { provider: AGENT_PRIMARY_PROVIDER, model: AGENT_PRIMARY_MODEL };
   const { callViaRouter } = await import('../llm-router');
 
@@ -245,6 +249,7 @@ export async function runAgentExecutionSession(
     }).catch(() => undefined);
     return { ok: false, error: msg, session_id: sessionId, branch };
   } finally {
+    heartbeat.stop();
     await cleanupWorkspace(ws);
   }
 }

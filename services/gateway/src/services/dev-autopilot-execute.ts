@@ -2457,6 +2457,50 @@ export async function reconcileStuckExecutions(s: SupaConfig): Promise<void> {
 }
 
 /** Main tick — called every BACKGROUND_TICK_MS. Idempotent. */
+/**
+ * VTID-04011: the PATCH `applyExecutionResult` writes when an execution
+ * fails. Same merge rule as the watchdog reclaim (see below) — the row's
+ * existing metadata survives, only `error` (+ timestamp) is added.
+ */
+export function buildExecutionFailurePatch(
+  existing: Record<string, unknown> | null | undefined,
+  error: string | undefined,
+  now: Date = new Date(),
+): { status: 'failed'; completed_at: string; metadata: Record<string, unknown> } {
+  return {
+    status: 'failed',
+    completed_at: now.toISOString(),
+    metadata: {
+      ...(existing && typeof existing === 'object' ? existing : {}),
+      error: error || 'unknown execution failure',
+      failed_at: now.toISOString(),
+    },
+  };
+}
+
+/**
+ * VTID-04011: the running-watchdog's reclaim PATCH. Merges the row's existing
+ * metadata instead of replacing it — Test Run #4 showed the replace wiping
+ * `executor`, `claimed_env` and `llm_on_ramp_override` off a live agent
+ * execution, so the self-heal child inherited nothing and ran single-shot.
+ * Pure so it can be pinned by a test without driving the whole tick.
+ */
+export function buildWatchdogReclaimPatch(
+  existing: Record<string, unknown> | null | undefined,
+  stuckMs: number,
+  now: Date = new Date(),
+): { status: 'failed'; completed_at: string; metadata: Record<string, unknown> } {
+  return {
+    status: 'failed',
+    completed_at: now.toISOString(),
+    metadata: {
+      ...(existing && typeof existing === 'object' ? existing : {}),
+      error: `watchdog: stuck in 'running' > ${stuckMs / 60_000}m (container recycled mid-execution)`,
+      watchdog_reclaimed_at: now.toISOString(),
+    },
+  };
+}
+
 export async function backgroundExecutorTick(): Promise<void> {
   const s = getSupabase();
   if (!s) return;
@@ -2482,6 +2526,9 @@ export async function backgroundExecutorTick(): Promise<void> {
   // 'running' forever. Anything that's been running > STUCK_EXECUTION_MS
   // and has no branch/pr_url yet is almost certainly abandoned — mark it
   // failed and bridge it into self-heal.
+  // VTID-04011: an agent execution (AGENT_DEADLINE_MS is 22 min by default)
+  // heartbeats its row's updated_at every AGENT_HEARTBEAT_MS while alive, so
+  // this cutoff only ever catches a task that actually died.
   const STUCK_EXECUTION_MS = 20 * 60 * 1000; // 20 min — plenty of slack for a normal execute (5-10 min)
   try {
     const cutoff = new Date(Date.now() - STUCK_EXECUTION_MS).toISOString();
@@ -2497,9 +2544,7 @@ export async function backgroundExecutorTick(): Promise<void> {
           method: 'PATCH',
           headers: { Prefer: 'return=minimal' },
           body: JSON.stringify({
-            status: 'failed',
-            completed_at: new Date().toISOString(),
-            metadata: { error: `watchdog: stuck in 'running' > ${STUCK_EXECUTION_MS / 60_000}m (container recycled mid-execution)` },
+            ...buildWatchdogReclaimPatch(stuck.metadata, STUCK_EXECUTION_MS),
           }),
         });
         if (reclaim.ok) {
@@ -2794,14 +2839,19 @@ export async function applyExecutionResult(
     return;
   }
 
+  // VTID-04011: merge, never replace — the row's metadata carries executor,
+  // claimed_env and the llm_on_ramp override that a self-heal child inherits
+  // (Test Run #4 lost all three here and the child ran single-shot).
+  const curR = await supa<Array<{ metadata?: Record<string, unknown> | null }>>(
+    s, `/rest/v1/dev_autopilot_executions?id=eq.${execId}&select=metadata&limit=1`,
+  );
+  const existingMeta = curR.ok && curR.data && curR.data[0] ? curR.data[0].metadata : null;
   await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${execId}`, {
     method: 'PATCH',
     headers: { Prefer: 'return=minimal' },
     body: JSON.stringify({
-      status: 'failed',
       execution_session_id: result.session_id || null,
-      metadata: { error: result.error || 'unknown execution failure' },
-      completed_at: new Date().toISOString(),
+      ...buildExecutionFailurePatch(existingMeta, result.error),
     }),
   });
   await emitOasisEvent({
