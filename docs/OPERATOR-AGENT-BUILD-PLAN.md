@@ -43,7 +43,7 @@ repo, take an open-ended request, and observe its own result — under the same 
 | W4b | next | Server-side `operator_threads`/`operator_messages` + thread summaries (§4.3), memory recall against the summary, broad memory writes; SSE streaming of the operator turn with tool transcript, diff preview + Approve before PR (§4.6). | Migrations applied on owner's go. |
 | W5 | next | CloudWatch `logs:FilterLogEvents`, `ecs:Describe*`, read-only SQL over the Aurora reader, deploy-workflow dispatch table, **`vitana-v1` write lane** with a frontend `allow_scope` and preview-deploy verification. | IAM grants + a vitana-v1 write token — owner. |
 | W6 | next | Index service: RepoWise + Graphify built in CI on merge, published to S3, `dev_index_query`/`dev_graph_path`/`dev_get_risk` tools; pulled into the agent task at start. | S3 bucket + CI secrets — owner. |
-| W7 | next | Hardening: remove the partial PATs from `CLAUDE.md` §16, declare prod secrets in the workflow, retire the single-shot executor once W1 has ≥10 green runs, confirm/perform the Supabase `service_role` rotation. | Rotation — owner. |
+| W7 | VTID-04019 (a) | Hardening. **(a) shipped 2026-09-17:** the partial PATs are out of `CLAUDE.md` §16 (replaced by where the tokens live + the leak rule) and a drift test scans CLAUDE.md/README/docs for token shapes. **Still open:** rotate the two tokens whose prefixes were exposed; declare the prod gateway's operator/autopilot flags in `AWS-PROD-DEPLOY-GATEWAY.yml`; retire the single-shot executor once W1 has ≥10 green runs; confirm/perform the Supabase `service_role` rotation. | Rotations + prod flags — owner. |
 
 ## Test runs
 
