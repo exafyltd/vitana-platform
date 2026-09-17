@@ -57,6 +57,8 @@ import {
 // VTID-03415: AWS RunTask dispatch path, parallel to the GCP Cloud Run Job
 // dispatch below. Only exercised when DEV_AUTOPILOT_JOB_CLOUD=aws.
 import { dispatchExecutorJobAws } from './aws-ecs-admin';
+// VTID-04005: claim-time environment stamp + ownership filter (shared table, two gateways).
+import { claimStamp, filterOwnedExecutions } from './dev-autopilot-env-ownership';
 
 import { buildReminders, remindersEnabled, renderRemindersBlock } from './watcher/reminder';
 import { recordShown } from './watcher/feedback';
@@ -2426,8 +2428,11 @@ export async function reconcileStuckExecutions(s: SupaConfig): Promise<void> {
       + `&select=id,finding_id,status,pr_url,pr_number,branch,updated_at,metadata`
       + `&order=updated_at.asc&limit=${RECONCILE_BATCH_SIZE}`);
     if (!stuckR.ok || !stuckR.data || stuckR.data.length === 0) continue;
-    console.log(`${LOG_PREFIX} reconciler: ${stuckR.data.length} execution(s) stuck in '${status}'`);
-    for (const exec of stuckR.data) {
+    // VTID-04005: never reconcile another environment's execution.
+    const owned = filterOwnedExecutions(stuckR.data, `${LOG_PREFIX} reconciler`);
+    if (owned.length === 0) continue;
+    console.log(`${LOG_PREFIX} reconciler: ${owned.length} execution(s) stuck in '${status}'`);
+    for (const exec of owned) {
       try {
         if (status === 'ci')         await reconcileCi(s, exec);
         else if (status === 'merging')   await reconcileMerging(s, exec);
@@ -2469,12 +2474,14 @@ export async function backgroundExecutorTick(): Promise<void> {
   const STUCK_EXECUTION_MS = 20 * 60 * 1000; // 20 min — plenty of slack for a normal execute (5-10 min)
   try {
     const cutoff = new Date(Date.now() - STUCK_EXECUTION_MS).toISOString();
-    const stuckR = await supa<Array<{ id: string; finding_id: string; updated_at: string }>>(
+    const stuckR = await supa<Array<{ id: string; finding_id: string; updated_at: string; metadata?: Record<string, unknown> | null }>>(
       s,
-      `/rest/v1/dev_autopilot_executions?status=eq.running&updated_at=lt.${cutoff}&select=id,finding_id,updated_at&limit=10`,
+      `/rest/v1/dev_autopilot_executions?status=eq.running&updated_at=lt.${cutoff}&select=id,finding_id,updated_at,metadata&limit=10`,
     );
     if (stuckR.ok && stuckR.data && stuckR.data.length > 0) {
-      for (const stuck of stuckR.data) {
+      // VTID-04005: a gateway only reclaims what it (or a legacy unstamped
+      // claim) owns — the other environment's executor task may be alive.
+      for (const stuck of filterOwnedExecutions(stuckR.data, `${LOG_PREFIX} watchdog`)) {
         const reclaim = await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${stuck.id}&status=eq.running`, {
           method: 'PATCH',
           headers: { Prefer: 'return=minimal' },
@@ -2593,7 +2600,7 @@ export async function backgroundExecutorTick(): Promise<void> {
   }>>(
     s,
     `/rest/v1/dev_autopilot_executions?status=eq.cooling&execute_after=lte.${encodeURIComponent(now)}&order=execute_after.asc&limit=${fetchLimit}`
-    + `&select=id,finding_id,plan_version,auto_fix_depth,recommendation:autopilot_recommendations!finding_id(source_type,source_ref)`,
+    + `&select=id,finding_id,plan_version,auto_fix_depth,metadata,recommendation:autopilot_recommendations!finding_id(source_type,source_ref)`,
   );
   if (!readyR.ok || !readyR.data || readyR.data.length === 0) return;
 
@@ -2611,10 +2618,16 @@ export async function backgroundExecutorTick(): Promise<void> {
 
   for (const exec of filteredRows) {
     // Atomic claim: transition cooling → running only if still cooling
+    // VTID-04005: stamp the claiming environment onto the row so the other
+    // gateway's watcher/reconciler (shared table) leaves it alone.
     const claim = await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${exec.id}&status=eq.cooling`, {
       method: 'PATCH',
       headers: { Prefer: 'return=representation' },
-      body: JSON.stringify({ status: 'running', updated_at: new Date().toISOString() }),
+      body: JSON.stringify({
+        status: 'running',
+        updated_at: new Date().toISOString(),
+        metadata: { ...(exec.metadata || {}), ...claimStamp() },
+      }),
     });
     if (!claim.ok) {
       console.warn(`${LOG_PREFIX} claim failed for ${exec.id}: ${claim.error}`);

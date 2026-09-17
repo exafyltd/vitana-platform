@@ -52,8 +52,23 @@ const ONRAMP_SOURCE_TYPE = 'operator_onramp';
 const DEEPSEEK_MODEL = 'deepseek-flash';
 
 export interface TriggerOperatorExecutionInput {
-  /** The already-allocated, already-approved VTID to execute. */
-  vtid: string;
+  /** The already-allocated, already-approved VTID to execute.
+   *
+   *  VTID-04005: optional ONLY when `OPERATOR_VTID_SELF_ALLOCATE_ENABLED=true`
+   *  (default OFF — same default-off posture as the on-ramp kill switch).
+   *  When enabled and omitted, the on-ramp mints a VTID through the same
+   *  `allocate_global_vtid` RPC the gateway's own /api/v1/vtid/allocate
+   *  route calls, sets a real title, and registers it `status=in_progress`
+   *  + `spec_status=approved` — the registration CLAUDE.md Part 1 rule 2b /
+   *  §4.1 prescribes for work the platform owner instructed in
+   *  conversation. The caller has already proven the requester is an
+   *  authenticated exafy_admin (executeExecuteTask's VTID-03851 authz runs
+   *  first); that instruction is the approval. With the flag off, a missing
+   *  VTID is rejected exactly as before. */
+  vtid?: string;
+  /** VTID-04005: short human title for a self-allocated VTID. Derived from
+   *  the plan's first heading/line when omitted. */
+  title?: string;
   /** Plan content — what to change and why. Not auto-derived; the caller
    *  (operator or the model composing the tool call) supplies it, same as
    *  a human filling in a plan before clicking Activate. */
@@ -68,11 +83,79 @@ export interface TriggerOperatorExecutionInput {
 }
 
 export type TriggerOperatorExecutionResult =
-  | { ok: true; execution_id: string; finding_id: string }
+  | { ok: true; execution_id: string; finding_id: string; vtid: string; vtid_allocated: boolean }
   | { ok: false; error: string; violations?: unknown[] };
 
 function isOnRampEnabled(): boolean {
   return process.env.OPERATOR_EXECUTION_ONRAMP_ENABLED === 'true';
+}
+
+/** VTID-04005: second, independent opt-in for self-allocating VTIDs. */
+export function isVtidSelfAllocateEnabled(): boolean {
+  return process.env.OPERATOR_VTID_SELF_ALLOCATE_ENABLED === 'true';
+}
+
+/** VTID-04005: derive a ledger title from a plan when the caller gave none. */
+export function deriveVtidTitleFromPlan(planMarkdown: string, explicit?: string): string {
+  const clean = (t: string) => t.replace(/^#+\s*/, '').replace(/[*_`]/g, '').trim();
+  const candidate = explicit && explicit.trim().length > 0
+    ? explicit
+    : (planMarkdown.split('\n').map(clean).find((l) => l.length > 0) || 'Operator-instructed change');
+  const title = clean(candidate).slice(0, 140);
+  return /^operator/i.test(title) ? title : `Operator: ${title}`;
+}
+
+/**
+ * VTID-04005: mint a VTID for operator-instructed work and register it the
+ * way §4.1 prescribes. Same RPC the gateway's own POST /api/v1/vtid/allocate
+ * route calls — no parallel allocator, no fabricated number. Any failure is
+ * returned as an error so the caller refuses loudly instead of executing
+ * without a governed VTID.
+ */
+async function allocateAndRegisterVtid(
+  s: SupaConfig,
+  input: { title: string; summary: string; requestedBy: string },
+): Promise<{ ok: true; vtid: string } | { ok: false; error: string }> {
+  try {
+    const rpc = await fetch(`${s.url}/rest/v1/rpc/allocate_global_vtid`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: s.key, Authorization: `Bearer ${s.key}` },
+      body: JSON.stringify({ p_source: 'operator-console', p_layer: 'DEV', p_module: 'operator-onramp' }),
+    });
+    if (!rpc.ok) {
+      return { ok: false, error: `vtid_allocation_failed: ${rpc.status} ${(await rpc.text()).slice(0, 200)}` };
+    }
+    const rows = (await rpc.json()) as Array<{ vtid?: string }>;
+    const vtid = rows && rows[0] && typeof rows[0].vtid === 'string' ? rows[0].vtid : null;
+    if (!vtid || !/^VTID-\d{4,5}$/.test(vtid)) {
+      return { ok: false, error: 'vtid_allocation_failed: allocator returned no VTID' };
+    }
+    const patch = await supa(s, `/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(vtid)}`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        title: input.title,
+        summary: input.summary.slice(0, 500),
+        status: 'in_progress',
+        spec_status: 'approved',
+        updated_at: new Date().toISOString(),
+        metadata: {
+          source: 'operator-onramp',
+          requested_by: input.requestedBy,
+          allocated_by: 'operator-execution-onramp',
+          purpose: 'operator-instructed execution (OPERATOR_VTID_SELF_ALLOCATE_ENABLED)',
+        },
+      }),
+    });
+    if (!patch.ok) {
+      // Allocated but not registered as approved — refuse rather than run
+      // an execution the ledger does not show as approved.
+      return { ok: false, error: `vtid_registration_failed for ${vtid}: ${patch.error || 'ledger PATCH failed'}` };
+    }
+    return { ok: true, vtid };
+  } catch (err) {
+    return { ok: false, error: `vtid_allocation_failed: ${err instanceof Error ? err.message : String(err)}` };
+  }
 }
 
 /**
@@ -145,23 +228,42 @@ export async function triggerOperatorExecution(
     return { ok: false, error: 'filesReferenced is required and must be non-empty' };
   }
 
+  // VTID-04005: self-allocate when the caller did not name a VTID and the
+  // capability is switched on. The freshly registered row is then re-read
+  // through the SAME governance gate below — no shortcut past it.
+  let vtidAllocated = false;
+  let vtid = (input.vtid || '').trim();
+  if (!vtid) {
+    if (!isVtidSelfAllocateEnabled()) {
+      return { ok: false, error: 'vtid is required (OPERATOR_VTID_SELF_ALLOCATE_ENABLED is not "true", so the on-ramp will not allocate one)' };
+    }
+    const alloc = await allocateAndRegisterVtid(s, {
+      title: deriveVtidTitleFromPlan(input.planMarkdown, input.title),
+      summary: input.planMarkdown,
+      requestedBy: input.requestedBy,
+    });
+    if (!alloc.ok) return { ok: false, error: alloc.error };
+    vtid = alloc.vtid;
+    vtidAllocated = true;
+  }
+
   // Governance gate 1: the target VTID must already be approved. The Dev
   // Autopilot pipeline itself has no spec_status check (see module doc) —
   // this on-ramp is the one place that enforces it for operator-triggered
   // execution.
-  const gov = await loadVtidGovernanceState(s, input.vtid);
+  const gov = await loadVtidGovernanceState(s, vtid);
   if (!gov.ok) {
     return { ok: false, error: gov.error };
   }
   if (gov.is_terminal) {
-    return { ok: false, error: `${input.vtid} is already terminal — nothing to execute` };
+    return { ok: false, error: `${vtid} is already terminal — nothing to execute` };
   }
   if (gov.spec_status !== 'approved') {
-    return { ok: false, error: `${input.vtid} spec_status is '${gov.spec_status ?? 'null'}', not 'approved' — cannot execute` };
+    return { ok: false, error: `${vtid} spec_status is '${gov.spec_status ?? 'null'}', not 'approved' — cannot execute` };
   }
 
   const specHash = createHash('sha256').update(input.planMarkdown).digest('hex');
-  const title = `Operator on-ramp: ${input.vtid}`;
+  const title = `Operator on-ramp: ${vtid}`;
 
   const recBody = {
     title,
@@ -174,10 +276,10 @@ export async function triggerOperatorExecution(
     risk_class: 'medium',
     auto_exec_eligible: false,
     status: 'new',
-    activated_vtid: input.vtid,
+    activated_vtid: vtid,
     spec_snapshot: {
       scanner: 'operator-onramp',
-      vtid: input.vtid,
+      vtid: vtid,
       spec_markdown: input.planMarkdown,
       files_referenced: input.filesReferenced,
       requested_by: input.requestedBy,
@@ -264,18 +366,18 @@ export async function triggerOperatorExecution(
   // VTID-03877: link before emitting the event, not after — a crash between
   // the two would still leave the ledger correctly linked, whereas the
   // reverse order could lose the link on a crash right after the event.
-  await linkExecutionToVtidLedger(s, input.vtid, executionId);
+  await linkExecutionToVtidLedger(s, vtid, executionId);
 
   await emitOasisEvent({
-    vtid: input.vtid,
+    vtid: vtid,
     type: 'operator.execution_onramp.triggered' as CicdEventType,
     source: 'operator-execution-onramp',
     status: 'success',
-    message: `Operator on-ramp queued DeepSeek-powered execution ${executionId.slice(0, 8)} for ${input.vtid}`,
+    message: `Operator on-ramp queued DeepSeek-powered execution ${executionId.slice(0, 8)} for ${vtid}`,
     payload: {
       execution_id: executionId,
       finding_id: findingId,
-      vtid: input.vtid,
+      vtid: vtid,
       requested_by: input.requestedBy,
       provider: 'deepseek',
       model: DEEPSEEK_MODEL,
@@ -283,5 +385,5 @@ export async function triggerOperatorExecution(
     },
   }).catch((err: any) => console.warn(`[${VTID}] Failed to log execution_onramp.triggered:`, err.message));
 
-  return { ok: true, execution_id: executionId, finding_id: findingId };
+  return { ok: true, execution_id: executionId, finding_id: findingId, vtid, vtid_allocated: vtidAllocated };
 }

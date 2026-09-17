@@ -25,6 +25,8 @@ import { emitOasisEvent } from './oasis-event-service';
 import { bridgeFailureToSelfHealing, FailureStage } from './dev-autopilot-bridge';
 import { probeEndpoint, isJsonHealthy, resolveProbeTarget } from './self-healing-probe';
 import { applyExecTerminalSideEffects } from './dev-autopilot-execute';
+import { filterOwnedExecutions } from './dev-autopilot-env-ownership';
+import { collectCiFailureEvidence, renderCiEvidence } from './dev-autopilot-ci-logs';
 import { isLlmMergeReviewEnabled, runLlmMergeReview } from './dev-autopilot-llm-review';
 
 const LOG_PREFIX = '[dev-autopilot-watcher]';
@@ -47,6 +49,8 @@ const DRY_RUN = (() => {
 })();
 const GITHUB_REPO =
   process.env.DEV_AUTOPILOT_GITHUB_REPO || 'exafyltd/vitana-platform';
+// VTID-04005: split form for the Actions job-log reader (owner/repo API paths).
+const [GITHUB_OWNER, GITHUB_REPO_NAME] = (GITHUB_REPO.includes('/') ? GITHUB_REPO : `exafyltd/${GITHUB_REPO}`).split('/', 2);
 // Risk classes we'll auto-merge. High risk should go through human review
 // regardless of CI state; the safety gate on approve already rejects them,
 // but this is defense-in-depth in case something reaches 'ci' status via
@@ -158,7 +162,8 @@ async function loadExecutions(s: SupaConfig, status: string): Promise<ExecutionR
     s,
     `/rest/v1/dev_autopilot_executions?status=eq.${status}&select=id,finding_id,status,branch,pr_url,pr_number,updated_at,metadata&limit=50`,
   );
-  return r.ok && r.data ? r.data : [];
+  // VTID-04005: only rows this environment claimed (or legacy unstamped rows).
+  return r.ok && r.data ? filterOwnedExecutions(r.data, LOG_PREFIX) : [];
 }
 
 /**
@@ -517,12 +522,23 @@ export async function ciWatcherTick(): Promise<void> {
       // it to 'branch-protection blocked' hid the real root cause from the
       // self-healing triage agent.
       const failureReason = buildCiFailureReason(mState, analysis.failedNames);
+      // VTID-04005: attach the failing jobs' real Actions log excerpts so
+      // triage (and any self-heal child) reasons from evidence, not from a
+      // check NAME. Best-effort — a log-fetch failure never blocks the
+      // transition; it just leaves the reason as it was.
+      const headSha = (prStatus as { pr?: { head?: { sha?: string } } }).pr?.head?.sha;
+      const evidence = headSha
+        ? await collectCiFailureEvidence({ owner: GITHUB_OWNER, repo: GITHUB_REPO_NAME, headSha, failedNames: analysis.failedNames })
+        : [];
+      const evidenceText = renderCiEvidence(evidence);
+      const failureReasonWithEvidence = evidenceText ? `${failureReason}\n\nCI log evidence:\n${evidenceText}` : failureReason;
       await transitionStatus(s, exec.id, 'ci', 'failed', {
         metadata: {
           ...(exec.metadata || {}),
           failed_checks: analysis.failedNames,
           mergeable_state: mState,
           gate_reason: failureReason,
+          ci_log_excerpts: evidence,
         },
       });
       await emitOasisEvent({
@@ -531,9 +547,9 @@ export async function ciWatcherTick(): Promise<void> {
         source: 'dev-autopilot-watcher',
         status: 'error',
         message: `Execution ${exec.id.slice(0, 8)} CI failed: ${failureReason}`,
-        payload: { execution_id: exec.id, pr_url: exec.pr_url, failed_checks: analysis.failedNames, mergeable_state: mState, gate_reason: failureReason },
+        payload: { execution_id: exec.id, pr_url: exec.pr_url, failed_checks: analysis.failedNames, mergeable_state: mState, gate_reason: failureReason, ci_log_jobs: evidence.map((e) => e.job_id) },
       });
-      await bridgeFailure(exec.id, 'ci', failureReason);
+      await bridgeFailure(exec.id, 'ci', failureReasonWithEvidence);
       continue;
     }
 
