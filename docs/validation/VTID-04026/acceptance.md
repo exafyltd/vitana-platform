@@ -109,9 +109,12 @@ AC-7 (live, post-merge): re-running
 a turn on every trial with no `upstream_ws_close` 1007, i.e. matches the
 admin-surface control above instead of 2/8.
 CURL: node scripts/orb/verify-vertex-serbian-bridge.mjs --mode=authenticated --trials=8
-  (result recorded in outputs/ once the staging deploy from this merge is live;
-  cross-checked with `select … from oasis_events where topic='orb.live.diag'
-  and metadata->>'stage' in ('upstream_ws_close','vertex_tool_catalog_trimmed')`)
+  **RESULT (2026-09-17 22:57 UTC, staging on d58b4ce, rollout gated on 12/12
+  consistent build-info samples): 8/8 turn_complete, 0 x 1007, fluent Serbian
+  on every trial, first-audio 0.9–1.6 s.** `oasis_events` shows
+  `vertex_tool_catalog_trimmed` on all 8 sessions (290 → 28 declarations,
+  226,316 → 49,139 bytes) and a clean close 1000 on each. See
+  outputs/live-verification-post-merge-2026-09-17.txt.
 
 ## Verification
 
@@ -121,7 +124,7 @@ CURL: node scripts/orb/verify-vertex-serbian-bridge.mjs --mode=authenticated --t
 - Full gateway suite: see outputs/test-results.txt.
 - Live: baseline and control runs above were taken BEFORE this change
   (they are the evidence for the cause); the post-deploy run (AC-7) is the
-  evidence for the fix.
+  evidence for the fix — **done: 8/8 vs the pre-fix 2/8 on the same surface.**
 
 ## Deliberately not touched
 
