@@ -671,6 +671,8 @@ export interface GitHubFeedItem {
   repo: string;
   pr_number: number;
   pr_url: string;
+  /** VTID-04024: the PR title (was never carried; the operator bootstrap pack rendered the branch instead). */
+  title: string;
   branch: string;
   commit_sha: string;
   ci_state: 'pass' | 'fail' | 'running';
@@ -773,10 +775,11 @@ export async function listOpenPrsWithStatus(
       updated_at: string;
     }>>(`/repos/${repo}/pulls?state=open&sort=updated&direction=desc&per_page=${limit}`);
 
-    const feedItems: GitHubFeedItem[] = [];
-
-    // Process each PR to get CI status
-    for (const pr of prs) {
+    // VTID-04024: the CI lookups are independent per PR — run them
+    // concurrently. Sequentially this was N+1 GitHub round trips, which
+    // timed the operator bootstrap pack's 2.5 s source budget out live on
+    // staging with a handful of open PRs.
+    const feedItems: GitHubFeedItem[] = await Promise.all(prs.map(async (pr) => {
       // Get CI state for this PR's head commit
       const ciState = await getCiState(repo, pr.head.sha);
 
@@ -789,24 +792,36 @@ export async function listOpenPrsWithStatus(
       const mergeable = pr.mergeable === true &&
         (pr.mergeable_state === 'clean' || pr.mergeable_state === 'unstable');
 
-      feedItems.push({
+      return {
         repo,
         pr_number: pr.number,
         pr_url: pr.html_url,
+        title: pr.title,
         branch: pr.head.ref,
         commit_sha: pr.head.sha,
         ci_state: ciState,
         mergeable,
         vtid,
         updated_at: pr.updated_at,
-      });
-    }
+      };
+    }));
 
     return feedItems;
   } catch (error) {
     console.error(`[VTID-01154] Error listing open PRs:`, error);
     throw error;
   }
+}
+
+/** VTID-04024: one GitHub call, no CI enrichment — the operator bootstrap
+ *  pack's fallback when listOpenPrsWithStatus cannot finish inside its budget. */
+export interface OpenPrBare { number: number; title: string; branch: string; url: string; updated_at: string }
+
+export async function listOpenPrsBare(repo: string = DEFAULT_REPO, limit: number = 20): Promise<OpenPrBare[]> {
+  const prs = await githubRequest<Array<{ number: number; html_url: string; title: string; head: { ref: string }; updated_at: string }>>(
+    `/repos/${repo}/pulls?state=open&sort=updated&direction=desc&per_page=${limit}`
+  );
+  return prs.map((pr) => ({ number: pr.number, title: pr.title, branch: pr.head.ref, url: pr.html_url, updated_at: pr.updated_at }));
 }
 
 /**
