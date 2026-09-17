@@ -731,6 +731,7 @@ CREATE TABLE my_new_table (
 
 | Date | Change | Author | VTID |
 |------|--------|--------|------|
+| 2026-09-17 | Commerce Partner Onboarding landing: marked the `partner_organizations`/roster/`patient_profiles` section APPLIED (Phase A, VTID-03957); documented `partner_organizations.commerce_vertical` (VTID-03974) and the VTID-03995 `get_my_permitted_roles()`/`set_role_preference()` changes — both migrations applied to the live project 2026-09-17 on the platform owner's explicit instruction, post-checked (column + CHECK + comment present; both function bodies replaced, `validate_role_assignment()` no longer called from `set_role_preference()`). | Claude | VTID-03996 |
 | 2026-09-17 | Added `service_bot_accounts` allowlist + guarded the VTID-03089 welcome-chat trigger and its `/auth/login` TS mirror against it. Two service/automation accounts (claude-code-agent, operator-autopilot) provisioned directly into `user_tenants` on 2026-09-16 fanned an identical intro DM out to 445 real community members — confirmed via read-only production query, nothing recalled. Migration `20260917084341_vtid_03990_service_bot_accounts_skip_welcome_chat.sql`. | Claude | VTID-03990 |
 | 2026-09-13 | `dev_autopilot_outcomes.source_type` CHECK widened from the original `('dev_autopilot','dev_autopilot_impact')` pair to the full executor-lane allowlist (`missing-test-scanner`, `test-contract-failure-scanner`, `dev_autopilot`, `dev_autopilot_impact`, `operator_onramp`) — migration `20260913100000_vtid_03844_outcomes_source_type_allowlist.sql`. The constraint had never followed VTID-02984's single allowlist or VTID-03820's `operator_onramp`, and `recordOutcome()` carried its own copy of the stale pair, so operator on-ramp executions produced no outcome rows at all (observed on staging 2026-09-13). A gateway test reads the migration and fails if its list drifts from `EXECUTABLE_RECOMMENDATION_SOURCE_TYPES`. Migration ships as a file; apply via `RUN-MIGRATION.yml`. | Claude | VTID-03844 |
 | 2026-07-21 | Added missing `wallet_transactions_from_user_id_fkey`/`_to_user_id_fkey` (NOT VALID, targeting `profiles.user_id`) — the Wallet's "Recent Activity" transaction list had never worked; every `fetchTransactions` PostgREST embed 400'd for lack of any FK on `from_user_id`/`to_user_id`. Found while verifying the VTNA/Credits merge deploy on AWS staging; unrelated pre-existing bug. Verified with a direct PostgREST request (200 OK, real profile data resolved). | Claude | — |
@@ -1945,6 +1946,19 @@ Not previously documented here — the table (and `set_role_preference()`/
 existed only in the live database before VTID-03832's
 `20260913000002_vtid_03832_role_functions.sql` gave them a migration file.
 
+**VTID-03995 (`20260917100000_vtid_03995_role_switch_community_and_membership_roles.sql`,
+applied 2026-09-17):** `get_my_permitted_roles()` now returns
+`user_permitted_roles` ∪ the caller's ACTIVE `memberships.role` for the tenant
+∪ `'community'` (ladder-ordered; exafy admins still get all eight), and
+`set_role_preference()` accepts `'community'` unconditionally and any role held
+via an active `memberships` row without the `validate_role_assignment()`
+grant-to-others check (the admin-is-exafy-only block, the upsert and the
+`audit_events` insert are unchanged). Reason: `trg_activate_patient_profile`
+(VTID-03932) bumps `memberships.role` community→patient and never writes
+`user_permitted_roles`, so an automatically activated patient could neither
+see Patient in the switcher nor switch back to Community. Frontend companion:
+`exafyltd/vitana-v1` VTID-03993 (mobile role switcher).
+
 | Column | Type | Notes |
 |---|---|---|
 | `user_id`, `tenant_id` | UUID | PK pair (`ON CONFLICT (user_id, tenant_id) DO UPDATE`) |
@@ -2126,7 +2140,13 @@ both the value and the set so widening it later fails loudly rather than
 silently moving real money. Supplier rows are also written `is_active = false`
 with `onboarding_status = 'draft'`; only an admin flips them.
 
-## Commerce Partner Onboarding — `partner_organizations` + roster (VTID-03932, 2026-09-15) — migration file only, NOT applied
+## Commerce Partner Onboarding — `partner_organizations` + roster (VTID-03932, 2026-09-15) — APPLIED (Phase A, VTID-03957, 2026-09-17)
+
+Applied to the live project 2026-09-17 under VTID-03957 (all four tables, both
+FK columns and `trg_partner_health_test_orders_activate_patient` confirmed via
+`to_regclass`). The `commerce_vertical` column below was added by VTID-03974
+(`20260916130000_vtid_03974_commerce_vertical.sql`) and applied 2026-09-17 on
+the platform owner's instruction (VTID-03996 records the apply).
 
 Phase 1 of the platform-owner-approved plan to let any business (medical or
 non-medical) self-register once and have its own staff/professionals granted
@@ -2146,6 +2166,7 @@ values.
 | `status` | TEXT | `pending_review` (default) `\| active \| suspended \| rejected` |
 | `owner_user_id` | UUID NOT NULL | the registering caller |
 | `business_details` | JSONB | |
+| `commerce_vertical` | TEXT CHECK (`health` \| `general`), nullable | VTID-03974: machine-readable routing signal set explicitly at registration (`POST /api/v1/partner-orgs/register` requires it, never inferred from `org_type`). `health` orgs get a `partner_registry` row bridged on activation (`POST /:orgId/activate`, FK `partner_registry.partner_organization_id`); `general` orgs never touch `partner_registry`. NULL for rows registered before the column existed. |
 
 ### partner_organization_members
 
