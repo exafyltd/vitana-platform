@@ -2285,6 +2285,32 @@ body {
   font-size: 0.72rem;
   color: #9aa0a6;
   font-style: italic;
+  /* VTID-04028: tool names and error text wrap instead of clipping in a narrow column */
+  overflow-wrap: anywhere;
+}
+
+/* VTID-04028: live tool-call transcript while a streamed operator turn runs */
+.chat-tool-activity--live {
+  border-left: 2px solid #3a3f47;
+  padding-left: 0.5rem;
+}
+
+.chat-tool-activity-line--running {
+  color: #c9a227;
+  animation: chat-tool-activity-pulse 1.2s ease-in-out infinite;
+}
+
+.chat-tool-activity-line--ok {
+  color: #7fb57f;
+}
+
+.chat-tool-activity-line--failed {
+  color: #d9776f;
+}
+
+@keyframes chat-tool-activity-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
 }
 
 /* VTID-0526: Message bubble styles */

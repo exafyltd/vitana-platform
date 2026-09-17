@@ -3702,6 +3702,8 @@ const state = {
     chatInputValue: '',
     chatAttachments: [], // Array of { oasis_ref, kind, name }
     chatSending: false,
+    chatLiveTranscript: [], // VTID-04028: tool.call/tool.result frames of the turn in flight
+    chatLiveModelTurns: [], // VTID-04028: model.turn frames of the turn in flight
     chatIsTyping: false, // VTID-0526-D: Guard against scroll/render during typing
     chatDictationActive: false, // VTID-03907: voice dictation (Web Speech API) recording state
     // VTID-01027: Session Memory State
@@ -26565,6 +26567,10 @@ function describeToolActivity(tr) {
     if (tr.response && typeof tr.response === 'object' && tr.response.vtid) {
         label += ' (' + tr.response.vtid + ')';
     }
+    // VTID-04028: the streamed turn measured each tool; keep it on the line.
+    if (typeof tr.duration_ms === 'number') {
+        label += ' · ' + formatToolDuration(tr.duration_ms);
+    }
     return label;
 }
 
@@ -26728,6 +26734,12 @@ function renderOperatorChat() {
 
             messages.appendChild(meta);
         });
+    }
+
+    // VTID-04028: while a streamed turn runs, show its tool-call transcript
+    // live under the transcript (replaces the bare "Sending..." wait).
+    if (state.chatSending) {
+        messages.appendChild(renderOperatorLiveTranscript());
     }
 
     container.appendChild(messages);
@@ -26912,6 +26924,164 @@ function formatCommandResult(result) {
     return 'Command processed';
 }
 
+// ---------------------------------------------------------------------------
+// VTID-04028: stream one operator turn as Server-Sent Events
+// ---------------------------------------------------------------------------
+// POST /api/v1/operator/chat/stream answers the SAME turn as /chat, but as
+// SSE frames (turn.started, model.turn, tool.call, tool.result, reply|error,
+// done). EventSource cannot POST a body, so the fetch() response body is
+// read as a stream and parsed frame by frame here. Every tool.call /
+// tool.result frame updates state.chatLiveTranscript and re-renders, so the
+// console shows what the operator is doing while the turn runs. Resolves
+// with the `reply` frame's JSON — byte-identical to /chat's body — so
+// sendChatMessage() needs no second code path. Any failure to obtain a
+// stream (older gateway, proxy buffering, no ReadableStream) falls back to
+// /chat; a failure mid-stream does NOT re-send (the turn already ran).
+
+function parseSseFrames(buffer) {
+    // Returns { frames: [{event, data}], rest } — frames end at a blank line.
+    var frames = [];
+    var parts = buffer.split('\n\n');
+    var rest = parts.pop();
+    parts.forEach(function (block) {
+        var event = 'message';
+        var dataLines = [];
+        block.split('\n').forEach(function (line) {
+            if (line.indexOf(':') === 0) return; // comment / heartbeat
+            if (line.indexOf('event:') === 0) event = line.slice(6).trim();
+            else if (line.indexOf('data:') === 0) dataLines.push(line.slice(5).replace(/^ /, ''));
+        });
+        if (dataLines.length === 0) return;
+        var raw = dataLines.join('\n');
+        var data;
+        try { data = JSON.parse(raw); } catch (e) { data = { raw: raw }; }
+        frames.push({ event: event, data: data });
+    });
+    return { frames: frames, rest: rest };
+}
+
+function applyOperatorTurnFrame(frame) {
+    var d = frame.data || {};
+    if (frame.event === 'tool.call') {
+        state.chatLiveTranscript[d.index] = {
+            index: d.index, name: d.name, args: d.args, status: 'running', started_at: Date.now()
+        };
+        renderApp();
+    } else if (frame.event === 'tool.result') {
+        var entry = state.chatLiveTranscript[d.index] || { index: d.index, name: d.name };
+        entry.status = d.ok ? 'ok' : 'failed';
+        entry.duration_ms = d.duration_ms;
+        entry.error = d.error;
+        entry.excerpt = d.excerpt;
+        state.chatLiveTranscript[d.index] = entry;
+        renderApp();
+    } else if (frame.event === 'model.turn') {
+        state.chatLiveModelTurns.push(d);
+        renderApp();
+    }
+}
+
+async function streamOperatorTurn(payload) {
+    var response = await fetch('/api/v1/operator/chat/stream', {
+        method: 'POST',
+        headers: buildContextHeaders({ 'Content-Type': 'application/json', 'Accept': 'text/event-stream' }),
+        body: JSON.stringify(payload)
+    });
+    if (!response.ok) {
+        var err = new Error('Chat request failed: ' + response.status);
+        err.status = response.status;
+        throw err;
+    }
+    var ctype = response.headers.get('content-type') || '';
+    if (ctype.indexOf('text/event-stream') === -1 || !response.body || !response.body.getReader) {
+        var e = new Error('stream unavailable');
+        e.streamUnavailable = true;
+        throw e;
+    }
+    var reader = response.body.getReader();
+    var decoder = new TextDecoder();
+    var buffer = '';
+    var reply = null;
+    var error = null;
+    while (true) {
+        var chunk = await reader.read();
+        if (chunk.done) break;
+        buffer += decoder.decode(chunk.value, { stream: true });
+        var parsed = parseSseFrames(buffer);
+        buffer = parsed.rest;
+        parsed.frames.forEach(function (frame) {
+            if (frame.event === 'reply') reply = frame.data;
+            else if (frame.event === 'error') error = frame.data;
+            else applyOperatorTurnFrame(frame);
+        });
+    }
+    if (reply) return reply;
+    if (error) {
+        var failed = new Error((error.details || error.error || 'Chat request failed') + '');
+        failed.status = error.status || 500;
+        throw failed;
+    }
+    var incomplete = new Error('stream ended without a reply');
+    incomplete.streamIncomplete = true;
+    throw incomplete;
+}
+
+async function requestOperatorTurn(payload) {
+    state.chatLiveTranscript = [];
+    state.chatLiveModelTurns = [];
+    try {
+        return await streamOperatorTurn(payload);
+    } catch (err) {
+        // A 404 means a gateway without the stream route; a missing stream
+        // means a proxy/browser that cannot deliver one. Both fall back to
+        // the one-shot endpoint. Anything else already ran the turn.
+        var canFallback = err && (err.status === 404 || err.streamUnavailable);
+        if (!canFallback) throw err;
+        console.warn('[VTID-04028] operator stream unavailable, falling back to /chat:', err.message);
+        var response = await fetch('/api/v1/operator/chat', {
+            method: 'POST',
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify(payload)
+        });
+        if (!response.ok) {
+            throw new Error('Chat request failed: ' + response.status);
+        }
+        return await response.json();
+    }
+}
+
+function formatToolDuration(ms) {
+    if (typeof ms !== 'number' || !(ms >= 0)) return '';
+    return ms < 1000 ? Math.round(ms) + 'ms' : (ms / 1000).toFixed(1) + 's';
+}
+
+function renderOperatorLiveTranscript() {
+    var wrap = document.createElement('div');
+    wrap.className = 'chat-tool-activity chat-tool-activity--live';
+    state.chatLiveTranscript.forEach(function (entry) {
+        if (!entry) return;
+        var line = document.createElement('div');
+        line.className = 'chat-tool-activity-line chat-tool-activity-line--' + (entry.status || 'running');
+        var marker = entry.status === 'ok' ? String.fromCodePoint(0x2713) + ' '
+            : entry.status === 'failed' ? String.fromCodePoint(0x2717) + ' '
+            : String.fromCodePoint(0x2026) + ' ';
+        var text = marker + describeToolActivity({ name: entry.name, response: {} });
+        if (entry.status === 'running') text += ' (running)';
+        else if (typeof entry.duration_ms === 'number') text += ' · ' + formatToolDuration(entry.duration_ms);
+        if (entry.status === 'failed' && entry.error) text += ' — ' + entry.error;
+        line.textContent = text;
+        line.title = entry.args ? JSON.stringify(entry.args) : '';
+        wrap.appendChild(line);
+    });
+    if (state.chatLiveTranscript.length === 0) {
+        var thinking = document.createElement('div');
+        thinking.className = 'chat-tool-activity-line chat-tool-activity-line--running';
+        thinking.textContent = String.fromCodePoint(0x2026) + ' Thinking';
+        wrap.appendChild(thinking);
+    }
+    return wrap;
+}
+
 async function sendChatMessage() {
     if (state.chatSending) return;
 
@@ -27042,23 +27212,26 @@ async function sendChatMessage() {
         console.log('[Operator] Sending message to operator chat:', messageText);
         console.log('[VTID-01027] Sending with conversation_id:', state.operatorConversationId, 'context messages:', context.length);
 
-        const response = await fetch('/api/v1/operator/chat', {
-            method: 'POST',
-            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({
-                message: messageText,
-                conversation_id: state.operatorConversationId,
-                context: context.length > 0 ? context : undefined,
-                attachments: attachments.length > 0 ? attachments : undefined
-            })
+        // VTID-04028: stream the turn (tool-call transcript live), falling
+        // back to the one-shot /chat reply when streaming is unavailable.
+        const result = await requestOperatorTurn({
+            message: messageText,
+            conversation_id: state.operatorConversationId,
+            context: context.length > 0 ? context : undefined,
+            attachments: attachments.length > 0 ? attachments : undefined
         });
-
-        if (!response.ok) {
-            throw new Error(`Chat request failed: ${response.status}`);
-        }
-
-        const result = await response.json();
         console.log('[Operator] Chat response:', result);
+
+        // VTID-04028: carry the measured per-tool durations from the live
+        // transcript onto the final message so the activity lines keep them.
+        if (Array.isArray(result.toolResults) && state.chatLiveTranscript.length > 0) {
+            result.toolResults.forEach(function (tr, i) {
+                var entry = state.chatLiveTranscript[i];
+                if (entry && entry.name === tr.name && typeof entry.duration_ms === 'number') {
+                    tr.duration_ms = entry.duration_ms;
+                }
+            });
+        }
 
         // VTID-0537: Use the reply from the Gemini Operator Tools Bridge
         let replyContent = result.reply || 'No response received';

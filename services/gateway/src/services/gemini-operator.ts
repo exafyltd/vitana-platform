@@ -165,6 +165,59 @@ export interface GeminiOperatorResponse {
   meta?: Record<string, unknown>;
 }
 
+// ==================== Turn events (VTID-04028) ====================
+
+/**
+ * VTID-04028 (gap analysis §4.6): live events for one operator turn, so the
+ * Command Hub can show the tool-call transcript while the turn runs instead
+ * of a spinner followed by the whole reply. Emitted through the optional
+ * `onEvent` sink on processWithGemini(); without a sink nothing changes.
+ * The sink is fire-and-forget by contract — a throwing sink is caught and
+ * ignored, it can never fail or delay the turn.
+ */
+export type OperatorTurnEvent =
+  | { type: 'model.turn'; stage: 'plan' | 'final'; provider: string; model: string; tool_calls: number; duration_ms: number }
+  | { type: 'tool.call'; index: number; name: string; args: Record<string, unknown> }
+  | { type: 'tool.result'; index: number; name: string; ok: boolean; duration_ms: number; error?: string; governance_blocked?: boolean; excerpt: string };
+
+export type OperatorTurnEventSink = (event: OperatorTurnEvent) => void;
+
+/** Bound on the tool-result excerpt carried in a `tool.result` event. */
+export const TURN_EVENT_EXCERPT_MAX_CHARS = 600;
+/** Bound on the serialized args carried in a `tool.call` event. */
+export const TURN_EVENT_ARGS_MAX_CHARS = 1200;
+
+/** Serialize a value for a turn event, clipped so an SSE frame stays small. */
+export function clipForTurnEvent(value: unknown, maxChars: number): string {
+  let s: string;
+  try {
+    s = typeof value === 'string' ? value : JSON.stringify(value ?? null);
+  } catch {
+    s = String(value);
+  }
+  if (typeof s !== 'string') s = String(s);
+  return s.length > maxChars ? `${s.slice(0, maxChars)}…(+${s.length - maxChars} chars)` : s;
+}
+
+/** Args for a `tool.call` event: the original object when small, else a clipped-string placeholder. */
+export function boundTurnEventArgs(args: Record<string, unknown> | undefined): Record<string, unknown> {
+  const safe = args && typeof args === 'object' ? args : {};
+  let raw = '';
+  try { raw = JSON.stringify(safe); } catch { raw = ''; }
+  if (raw.length <= TURN_EVENT_ARGS_MAX_CHARS) return safe;
+  return { _clipped: clipForTurnEvent(raw, TURN_EVENT_ARGS_MAX_CHARS) };
+}
+
+/** Emit through the sink, swallowing anything it throws. */
+export function emitTurnEvent(sink: OperatorTurnEventSink | undefined, event: OperatorTurnEvent): void {
+  if (!sink) return;
+  try {
+    sink(event);
+  } catch (err) {
+    console.warn(`[VTID-04028] turn event sink threw on ${event.type}: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
 // ==================== Tool Definitions ====================
 
 /**
@@ -4054,8 +4107,11 @@ export async function processWithGemini(input: {
   // present, dev_agent_memory recall runs against summary + current message
   // instead of the raw message alone (gap analysis §4.3).
   threadSummary?: string | null;
+  // VTID-04028: live turn events (model turns, tool calls/results) for the
+  // streaming route. Optional; a missing sink means no emission at all.
+  onEvent?: OperatorTurnEventSink;
 }): Promise<GeminiOperatorResponse> {
-  const { text, threadId, attachments = [], context = {}, conversationHistory = [], conversationId, systemInstruction, userRole, threadSummary } = input;
+  const { text, threadId, attachments = [], context = {}, conversationHistory = [], conversationId, systemInstruction, userRole, threadSummary, onEvent } = input;
 
   // BOOTSTRAP-MEMORY-ORCHESTRATOR-MANDATORY: soft bypass detection at the
   // shared executor. Emits memory.orchestrator.bypass_detected (never throws
@@ -4104,14 +4160,37 @@ export async function processWithGemini(input: {
 
       // VTID-01106: Pass custom system instruction if provided (for ORB memory context)
       // VTID-DEV-ASSIST: Pass userRole to filter tool definitions by authorization
+      const planStartedAt = Date.now();
       const vertexResponse = await callVertexWithTools(text, threadId, conversationHistory, systemInstruction, undefined, userRole, memoryContextBlock);
+      emitTurnEvent(onEvent, {
+        type: 'model.turn',
+        stage: 'plan',
+        provider: vertexResponse.provider ?? 'router',
+        model: vertexResponse.model ?? 'router',
+        tool_calls: vertexResponse.toolCalls?.length ?? 0,
+        duration_ms: Date.now() - planStartedAt,
+      });
 
       // Check if Vertex wants to call any tools
       if (vertexResponse.toolCalls && vertexResponse.toolCalls.length > 0) {
         const toolResults: GeminiToolResult[] = [];
 
-        for (const toolCall of vertexResponse.toolCalls) {
+        for (const [index, toolCall] of vertexResponse.toolCalls.entries()) {
+          // VTID-04028: announce the call before it runs, report it after —
+          // the transcript the Command Hub renders live.
+          emitTurnEvent(onEvent, { type: 'tool.call', index, name: toolCall.name, args: boundTurnEventArgs(toolCall.args) });
+          const toolStartedAt = Date.now();
           const result = await executeTool(toolCall.name, toolCall.args, threadId);
+          emitTurnEvent(onEvent, {
+            type: 'tool.result',
+            index,
+            name: toolCall.name,
+            ok: result.ok,
+            duration_ms: Date.now() - toolStartedAt,
+            ...(result.error ? { error: clipForTurnEvent(result.error, TURN_EVENT_EXCERPT_MAX_CHARS) } : {}),
+            ...(result.governanceBlocked ? { governance_blocked: true } : {}),
+            excerpt: clipForTurnEvent(result.data ?? {}, TURN_EVENT_EXCERPT_MAX_CHARS),
+          });
           toolResults.push({
             name: toolCall.name,
             response: {
@@ -4124,7 +4203,16 @@ export async function processWithGemini(input: {
         }
 
         // Send tool results back to Vertex for final response
+        const finalStartedAt = Date.now();
         const finalResponse = await sendToolResultsToVertex(text, toolResults, threadId);
+        emitTurnEvent(onEvent, {
+          type: 'model.turn',
+          stage: 'final',
+          provider: vertexResponse.provider ?? 'router',
+          model: vertexResponse.model ?? 'router',
+          tool_calls: 0,
+          duration_ms: Date.now() - finalStartedAt,
+        });
 
         return {
           reply: finalResponse.reply,

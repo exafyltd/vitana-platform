@@ -99,7 +99,9 @@ describe('VTID-03851 — source wiring', () => {
   });
 
   it('/chat writes the marker on EVERY request: set on a verified identity, clear otherwise', () => {
-    const route = operatorRoute.slice(operatorRoute.indexOf("router.post('/chat'"));
+    // VTID-04028: the /chat handler body became runOperatorChatTurn(), shared
+    // by POST /chat and POST /chat/stream — the marker is written once, there.
+    const route = operatorRoute.slice(operatorRoute.indexOf('async function runOperatorChatTurn('));
     const handler = route.slice(0, route.indexOf('processWithGemini({'));
     expect(handler).toMatch(/const callerIdentity = \(req as AuthenticatedRequest\)\.identity;/);
     expect(handler).toMatch(/setThreadAuth\(threadId, \{ user_id: callerIdentity\.user_id, exafy_admin: callerIdentity\.exafy_admin === true \}\)/);
