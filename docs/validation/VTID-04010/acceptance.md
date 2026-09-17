@@ -62,6 +62,36 @@ de/en-only defect shape but was not reached by either test run and is
 **not fixed here** — flagged as a known follow-up, not silently left
 undocumented.
 
+## Acceptance Criteria
+
+AC-1: `buildFastProactiveOpener` composes the same (English) template text
+regardless of the session's `lang` — German, Serbian, and English all
+produce byte-identical output, so localization happens once, at speak
+time, instead of being silently dropped for every language but German.
+TEST: services/gateway/test/services/assistant-continuation/providers/login-briefing.test.ts
+  ("composes in English regardless of the input `lang` — translation
+  happens at speak time, not here")
+
+AC-2: the `safe_fast_proactive` rung's directive no longer tells the model
+to recite the opener "verbatim" — it asks the model to translate the line
+into the session's own language and speak it entirely in that language.
+TEST: services/gateway/test/services/conversation/compute-greeting-decision.golden.test.ts
+  ("rung 4: safe_fast_proactive (pre-fetched proactive line)" — asserts
+  `directive` contains "Translate the following into natural, fluent
+  German" and does NOT contain "verbatim")
+
+AC-3: the rung correctly names the real target language for a non-German,
+non-English session (Serbian), not just the two languages the old
+hardcoded pools covered.
+TEST: services/gateway/test/services/conversation/compute-greeting-decision.golden.test.ts
+  ("rung 4: safe_fast_proactive names the real target language (Serbian),
+  not just German/English" — asserts `directive` contains "Translate the
+  following into natural, fluent Serbian" and "entirely in Serbian")
+
+AC-4: no regression to the full gateway test suite from this change.
+TEST: services/gateway (full suite) — 949/950 suites (1 pre-existing
+  skip), 15424/15459 tests passing, 0 failures; see outputs/test-results.txt
+
 ## Verification
 - `tsc --noEmit` clean.
 - Full gateway suite: 949/950 suites (1 pre-existing skip),
