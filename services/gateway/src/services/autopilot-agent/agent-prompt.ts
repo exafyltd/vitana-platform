@@ -47,9 +47,28 @@ export interface AgentTaskPromptInput {
   filesReferenced: string[];
   /** CI evidence / prior failure carried in from a self-heal parent. */
   priorFailure?: string | null;
+  /** VTID-04007: open-ended intake — the "plan" is the user's request in
+   *  their own words and no files were pre-selected. */
+  openEnded?: boolean;
 }
 
 export function buildAgentTaskPrompt(i: AgentTaskPromptInput): string {
+  if (i.openEnded) {
+    return [
+      `# Task ${i.vtid}`,
+      ``,
+      `## Request (the user's own words — this is the whole specification)`,
+      i.planMarkdown.trim(),
+      ``,
+      `## No files were pre-selected — discover them`,
+      `1. Locate the code the request is about with search_text / find_files, then read it and its existing tests (and the callers of anything you will change).`,
+      `2. Make the smallest change that fully addresses the request. Do not add features, refactors or requirements the request did not ask for.`,
+      `3. If the request is genuinely ambiguous in a way that changes what should be built, take the reading a maintainer of this repository would take, and say which reading you took (and why) in the PR body.`,
+      i.priorFailure ? `\n## A previous attempt failed — evidence\n${i.priorFailure.trim()}\n\nAddress the root cause shown above; do not repeat the same change.` : '',
+      ``,
+      `Begin by searching for the code the request refers to.`,
+    ].join('\n');
+  }
   const files = i.filesReferenced.length ? i.filesReferenced.map((f) => `- ${f}`).join('\n') : '- (none listed — discover them)';
   return [
     `# Task ${i.vtid}`,

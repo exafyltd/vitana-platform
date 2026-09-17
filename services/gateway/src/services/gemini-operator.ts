@@ -216,6 +216,24 @@ export const GEMINI_TOOL_DEFINITIONS = {
       }
     },
     {
+      name: 'autopilot_run_task',
+      description: 'VTID-04007: Turn a free-text development request into a governed agent-mode execution — allocates and registers the VTID itself, then the agent executor reads the code, makes the change, runs tsc + jest and opens a real pull request. Use ONLY when the user clearly asks for a code change to be made and names NO VTID. Never for questions about code, never to log a task for later (autopilot_create_task), never when the user names a VTID (autopilot_execute_task). Disabled unless the platform owner has enabled OPERATOR_EXECUTION_ONRAMP_ENABLED and OPERATOR_VTID_SELF_ALLOCATE_ENABLED.',
+      parameters: {
+        type: 'object',
+        properties: {
+          request: {
+            type: 'string',
+            description: "The development request in the user's own words — what should change and why. Quote the user; do not add requirements they did not state. No VTID, no file list."
+          },
+          title: {
+            type: 'string',
+            description: 'Optional short ledger title (≤ 140 chars); derived from the request when omitted.'
+          }
+        },
+        required: ['request']
+      }
+    },
+    {
       name: 'autopilot_get_status',
       description: 'Get the current status of an existing Autopilot task by its VTID. Returns information about planner, worker, and validator states.',
       parameters: {
@@ -1323,6 +1341,115 @@ async function executeExecuteTask(
       provider: 'deepseek',
       status: 'queued',
       message: `Execution queued for ${args.vtid} via the DeepSeek on-ramp (${result.execution_id.slice(0, 8)}). It will run on the next executor tick.`,
+    },
+  };
+}
+
+/**
+ * VTID-04007 (W2): autopilot_run_task — open-ended intake. The user's
+ * request, verbatim, becomes the plan; the on-ramp allocates the VTID
+ * (server-side self-allocation, VTID-04005) and pins the AGENT executor on
+ * the row, and the safety gate's globs are applied to the agent's real diff
+ * afterwards. Same authz (VTID-03851) and governance shape as
+ * executeExecuteTask; the only new capability is that no VTID and no file
+ * list have to be named up front.
+ */
+const INTAKE_TELEMETRY_VTID = 'VTID-DEV-AUTOPILOT';
+
+async function executeRunTask(
+  args: { request: string; title?: string },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  const requestId = randomUUID();
+  const request = typeof args.request === 'string' ? args.request.trim() : '';
+  console.log(`[VTID-04007] run_task called (${request.length} chars)`);
+
+  const authz = isExecuteTaskAuthorized(getThreadAuth(threadId));
+  if (!authz.ok) {
+    console.warn(`[VTID-04007] run_task REFUSED thread=${threadId}: ${authz.reason}`);
+    await logAutopilotIntent({
+      vtid: INTAKE_TELEMETRY_VTID,
+      threadId,
+      action: 'rejected',
+      details: { reason: `auth_${authz.reason}`, tool: 'autopilot_run_task' },
+    });
+    return { ok: false, error: describeExecuteTaskRefusal(authz.reason).replace('autopilot_execute_task', 'autopilot_run_task') };
+  }
+  if (request.length < 12) {
+    return { ok: false, error: 'autopilot_run_task needs the request in the user\'s own words (at least a sentence) — nothing was queued.' };
+  }
+
+  const governanceResult = await evaluateGovernance('operator.autopilot.run_task', {
+    role: 'operator',
+    risk_level: 'A2', // writes code + opens a PR, and allocates the VTID itself
+    vtid: INTAKE_TELEMETRY_VTID,
+  });
+
+  await emitOasisEvent({
+    vtid: INTAKE_TELEMETRY_VTID,
+    type: 'governance.evaluate',
+    source: 'operator-console',
+    status: governanceResult.allowed ? 'success' : 'warning',
+    message: `Governance evaluated for operator.autopilot.run_task: ${governanceResult.allowed ? 'allowed' : 'blocked'}`,
+    payload: {
+      action_id: 'operator.autopilot.run_task',
+      allowed: governanceResult.allowed,
+      level: governanceResult.level,
+      violations_count: governanceResult.violations.length,
+      intake: 'open_ended',
+    },
+  }).catch(err => console.warn('[VTID-04007] Failed to log governance event:', err.message));
+
+  if (!governanceResult.allowed) {
+    await logAutopilotIntent({
+      vtid: INTAKE_TELEMETRY_VTID,
+      threadId,
+      action: 'rejected',
+      details: { reason: 'governance_blocked', violations: governanceResult.violations, tool: 'autopilot_run_task' },
+    });
+    return {
+      ok: false,
+      governanceBlocked: true,
+      governanceResult,
+      error: `Governance blocked: ${governanceResult.violations.map(v => v.message).join('; ')}`,
+    };
+  }
+
+  const result = await triggerOperatorExecution({
+    planMarkdown: request,
+    title: typeof args.title === 'string' && args.title.trim() ? args.title.trim() : undefined,
+    filesReferenced: [],
+    openEnded: true,
+    requestedBy: `operator-chat:${threadId}`,
+  });
+
+  if (!result.ok) {
+    await logAutopilotIntent({
+      vtid: INTAKE_TELEMETRY_VTID,
+      threadId,
+      action: 'rejected',
+      details: { reason: result.error, violations: result.violations, tool: 'autopilot_run_task' },
+    });
+    return { ok: false, error: describeOnRampRejection(result.error, result.violations) };
+  }
+
+  await logAutopilotIntent({
+    vtid: result.vtid,
+    threadId,
+    action: 'executed',
+    details: { execution_id: result.execution_id, finding_id: result.finding_id, requestId, intake: 'open_ended', vtid_allocated: result.vtid_allocated },
+  });
+
+  return {
+    ok: true,
+    data: {
+      vtid: result.vtid,
+      vtid_allocated: result.vtid_allocated,
+      execution_id: result.execution_id,
+      executor: 'agent',
+      provider: 'deepseek',
+      status: 'queued',
+      message: `Allocated ${result.vtid} and queued an agent-mode execution (${result.execution_id.slice(0, 8)}) for it. The agent will locate the code, make the change, run tsc + jest and open a pull request on the next executor tick.`,
     },
   };
 }
@@ -3032,6 +3159,13 @@ export async function executeTool(
         );
         break;
 
+      case 'autopilot_run_task':
+        result = await executeRunTask(
+          args as { request: string; title?: string },
+          threadId
+        );
+        break;
+
       case 'autopilot_get_status':
         result = await executeGetStatus(
           args as { vtid: string },
@@ -3475,12 +3609,14 @@ function getOperatorSystemPrompt(): string {
 - knowledge_search: Search Vitana documentation (use for Vitana-specific questions like "What is OASIS?", "Explain the Vitana Index", etc.)
 - run_code: Execute JavaScript code for calculations, date math, conversions, data processing
 - autopilot_execute_task: Execute an ALREADY-APPROVED VTID via the DeepSeek execution on-ramp (writes code and opens a real pull request). Takes vtid, plan_markdown and files_referenced (the files the plan will create or change).
+- autopilot_run_task: Turn a free-text development request into a governed agent-mode execution — allocates and registers the VTID itself, then the agent executor reads the code, makes the change, runs tsc + jest and opens a real pull request. Takes request (the user's words) and an optional title. No VTID and no file list are needed.
 
 **When to use tools:**
 - Task creation requests (e.g., "Create a task to deploy gateway") → MUST call autopilot_create_task tool
 - Status checks (e.g., "Status of VTID-0540") → use autopilot_get_status
 - Task listing (e.g., "Show recent tasks") → use autopilot_list_recent_tasks
 - Execution requests naming a specific VTID (e.g., "Execute VTID-03829", "implement VTID-04102", "ship VTID-04102 via the on-ramp") → call autopilot_execute_task
+- Open-ended development requests that name NO VTID (e.g., "fix the CI failure reason so it names the checks", "add a retry to the push dispatcher") → call autopilot_run_task with the request as the user stated it
 - Vitana-specific questions → use knowledge_search
 - Calculations, date math, age calculations, unit conversions → use run_code
 
@@ -3488,6 +3624,7 @@ function getOperatorSystemPrompt(): string {
 - Only call it when the user explicitly asks to execute/implement/ship a SPECIFIC VTID they name. Never invent a VTID, never execute a VTID the user did not name, and never use it to create new work (that is autopilot_create_task).
 - A task's ledger status (in_progress, scheduled, etc.) is NOT a signal that an execution is already running — a person or a coding session sets in_progress when they start working a task. Do NOT refuse to execute because autopilot_get_status reports in_progress. The tool itself is the only authority on whether an execution can start: call it and report its result.
 - Build plan_markdown from what the user said plus the task's title/spec; list in files_referenced the files the plan will create or change — nothing else. A test-only plan lists only the test file; a source change lists the source file AND its test file, because the safety gate rejects a plan without test coverage. Never add a file the plan does not touch (the safety gate also rejects any file outside its allow scope). Every files_referenced entry MUST be the full repo-root-relative path exactly as it appears in the repository (e.g. services/gateway/src/services/foo.ts and services/gateway/test/foo.test.ts) — never a bare filename like foo.ts and never a path relative to a subdirectory; the safety gate glob-matches each entry against its allow scope and a bare filename never matches, so the whole execution is rejected.
+- autopilot_run_task is for a code change the user asks to be made NOW without naming a VTID: pass their request verbatim in request (plus only the context they gave — never invent requirements) and list no files; the agent discovers them and the safety gate checks its real diff afterwards. It allocates the VTID itself, so do not call autopilot_create_task first for the same request and never pair it with autopilot_execute_task. A question about code is not a request to change it; a request to log/track a task for later is autopilot_create_task, not autopilot_run_task.
 - If the tool returns a rejection (governance, safety gate, kill switch, on-ramp disabled), report the exact reason honestly. Never claim an execution was queued unless the tool returned status "queued".
 - If you believe the tool is unavailable or disabled, call it anyway and report what it returns — do not tell the user it is unavailable based on an assumption.
 

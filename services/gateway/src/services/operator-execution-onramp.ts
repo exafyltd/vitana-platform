@@ -80,6 +80,17 @@ export interface TriggerOperatorExecutionInput {
   filesReferenced: string[];
   /** Who asked for this — logged on the execution row and OASIS event. */
   requestedBy: string;
+  /** VTID-04007 (W2): open-ended intake. The caller supplies only a
+   *  free-text request — no VTID (self-allocated, so
+   *  `OPERATOR_VTID_SELF_ALLOCATE_ENABLED` must be on) and no file list.
+   *  The execution is pinned to the AGENT executor on the row itself
+   *  (`metadata.executor='agent'`, independent of OPERATOR_ONRAMP_EXECUTOR)
+   *  because only the agent can discover files; the single-shot path
+   *  refuses a plan with no files. Scope, deny globs and the test-coverage
+   *  rule are enforced on the agent's real diff after it finishes
+   *  (`checkChangedFilesScope`/`hasTestCoverage`, VTID-04006) — the same
+   *  globs the safety gate applies to a pre-listed plan, just post-hoc. */
+  openEnded?: boolean;
 }
 
 export type TriggerOperatorExecutionResult =
@@ -114,7 +125,7 @@ export function deriveVtidTitleFromPlan(planMarkdown: string, explicit?: string)
  */
 async function allocateAndRegisterVtid(
   s: SupaConfig,
-  input: { title: string; summary: string; requestedBy: string },
+  input: { title: string; summary: string; requestedBy: string; intake?: 'plan' | 'open_ended' },
 ): Promise<{ ok: true; vtid: string } | { ok: false; error: string }> {
   try {
     const rpc = await fetch(`${s.url}/rest/v1/rpc/allocate_global_vtid`, {
@@ -144,6 +155,7 @@ async function allocateAndRegisterVtid(
           requested_by: input.requestedBy,
           allocated_by: 'operator-execution-onramp',
           purpose: 'operator-instructed execution (OPERATOR_VTID_SELF_ALLOCATE_ENABLED)',
+          ...(input.intake ? { intake: input.intake } : {}),
         },
       }),
     });
@@ -224,7 +236,9 @@ export async function triggerOperatorExecution(
   if (!input.planMarkdown || input.planMarkdown.trim().length === 0) {
     return { ok: false, error: 'planMarkdown is required' };
   }
-  if (!Array.isArray(input.filesReferenced) || input.filesReferenced.length === 0) {
+  const openEnded = input.openEnded === true;
+  const filesReferenced = Array.isArray(input.filesReferenced) ? input.filesReferenced : [];
+  if (!openEnded && filesReferenced.length === 0) {
     return { ok: false, error: 'filesReferenced is required and must be non-empty' };
   }
 
@@ -241,6 +255,7 @@ export async function triggerOperatorExecution(
       title: deriveVtidTitleFromPlan(input.planMarkdown, input.title),
       summary: input.planMarkdown,
       requestedBy: input.requestedBy,
+      intake: openEnded ? 'open_ended' : 'plan',
     });
     if (!alloc.ok) return { ok: false, error: alloc.error };
     vtid = alloc.vtid;
@@ -263,7 +278,7 @@ export async function triggerOperatorExecution(
   }
 
   const specHash = createHash('sha256').update(input.planMarkdown).digest('hex');
-  const title = `Operator on-ramp: ${vtid}`;
+  const title = openEnded ? `Operator open-ended request: ${vtid}` : `Operator on-ramp: ${vtid}`;
 
   const recBody = {
     title,
@@ -281,8 +296,11 @@ export async function triggerOperatorExecution(
       scanner: 'operator-onramp',
       vtid: vtid,
       spec_markdown: input.planMarkdown,
-      files_referenced: input.filesReferenced,
+      files_referenced: filesReferenced,
       requested_by: input.requestedBy,
+      // VTID-04007: read by the agent runner to switch the task prompt to
+      // discovery mode ("no files were pre-selected — find them").
+      intake: openEnded ? 'open_ended' : 'plan',
     },
     spec_checksum: specHash,
   };
@@ -319,7 +337,7 @@ export async function triggerOperatorExecution(
       finding_id: findingId,
       version: 1,
       plan_markdown: input.planMarkdown,
-      files_referenced: input.filesReferenced,
+      files_referenced: filesReferenced,
     }),
   });
   if (!planResp.ok) {
@@ -363,6 +381,10 @@ export async function triggerOperatorExecution(
         // executions to the agent executor (clone + tool loop + local tsc/jest)
         // without touching how the autonomous self-healing lane executes.
         ...(process.env.OPERATOR_ONRAMP_EXECUTOR === 'agent' ? { executor: 'agent' } : {}),
+        // VTID-04007: an open-ended request has no file list, which only the
+        // agent executor can work with — pinned on the row so the env default
+        // cannot route it to the single-shot path.
+        ...(openEnded ? { executor: 'agent', intake: 'open_ended' } : {}),
       },
     }),
   });
@@ -377,11 +399,13 @@ export async function triggerOperatorExecution(
     type: 'operator.execution_onramp.triggered' as CicdEventType,
     source: 'operator-execution-onramp',
     status: 'success',
-    message: `Operator on-ramp queued DeepSeek-powered execution ${executionId.slice(0, 8)} for ${vtid}`,
+    message: `Operator on-ramp queued DeepSeek-powered execution ${executionId.slice(0, 8)} for ${vtid}${openEnded ? ' (open-ended request, agent executor)' : ''}`,
     payload: {
       execution_id: executionId,
       finding_id: findingId,
       vtid: vtid,
+      intake: openEnded ? 'open_ended' : 'plan',
+      vtid_allocated: vtidAllocated,
       requested_by: input.requestedBy,
       provider: 'deepseek',
       model: DEEPSEEK_MODEL,
