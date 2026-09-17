@@ -108,6 +108,7 @@ import {
   isHardDay,
 } from '../assistant-continuation/providers/day-close-themes';
 import { buildDayCloseBlock, buildDayCloseOpenerLine } from '../assistant-continuation/providers/day-close-prompt';
+import { LOCALE_ENGLISH_NAME } from '../../i18n/catalog';
 
 // ---------------------------------------------------------------------------
 // Decision shape
@@ -849,9 +850,26 @@ function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
   }
 
   // Rung 4 — safe_fast_proactive (short pre-fetched proactive opener).
+  //
+  // BOOTSTRAP-ORB-PROACTIVE-OPENER-LANG: `ctx.proactiveLine` (built by
+  // computeFastProactiveOpener/buildFastProactiveOpener, login-briefing.ts)
+  // is composed in ENGLISH ONLY — that file used to hardcode a German
+  // translation for every pool and silently fall to English for every OTHER
+  // supported language (sr, es, fr, ru, pt, pl, tr, ar, zh), because the
+  // directive here told the model to speak it "verbatim" instead of asking
+  // for a translation. A Serbian (or Spanish, French, …) session's turn-1
+  // opener came out in fluent English regardless of `session.lang`, even
+  // though the SAME session's main system instruction correctly says
+  // "Respond ONLY in Serbian" — "verbatim" for an English string wins the
+  // conflict for this one turn. Fixed at the root (login-briefing.ts no
+  // longer hardcodes per-language text at all) and here: the model is now
+  // asked to translate + speak this English intent fluently in the
+  // session's own language, matching how the rest of the conversation
+  // already works, instead of reciting the composed string byte-for-byte.
   if (typeof ctx.proactiveLine === 'string' && ctx.proactiveLine.trim().length > 0) {
     const safeProactive = ctx.proactiveLine.trim().replace(/"/g, '\\"');
-    const proactivePrompt = `Say exactly: "${safeProactive}" — speak it verbatim as audio, as ONE greeting. Do NOT add, paraphrase, or split it.`;
+    const langName = LOCALE_ENGLISH_NAME[ctx.lang as keyof typeof LOCALE_ENGLISH_NAME] || 'English';
+    const proactivePrompt = `Translate the following into natural, fluent ${langName} and speak it as ONE greeting, entirely in ${langName} — do not leave any part of it in English: "${safeProactive}" Keep the concrete details (names, titles, numbers) and the same proposal; do not paraphrase them away. Do NOT add a question at the end or split it into multiple turns.`;
     return {
       wakeOpener: 'safe_fast_proactive',
       directive: proactivePrompt,

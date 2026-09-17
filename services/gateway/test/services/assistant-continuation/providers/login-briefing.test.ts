@@ -327,43 +327,66 @@ describe('buildProgressBeat (advice #2)', () => {
 });
 
 // DEV-COMHU-0513 — the SHORT proactive opener spoken on the fast greeting path.
+//
+// BOOTSTRAP-ORB-PROACTIVE-OPENER-LANG: this function used to branch on
+// `lang === 'de'` between a hand-translated German pool and an English one
+// — every OTHER supported language (sr, es, fr, ru, pt, pl, tr, ar, zh)
+// silently fell to the English pool, so a Serbian session's safe_fast_proactive
+// opener came out in fluent English regardless of the session's actual
+// language. Fixed by always composing in English here and having the
+// caller (compute-greeting-decision.ts) ask the model to translate + speak
+// it in the session's own language — so `lang` is now irrelevant to this
+// function's OWN template selection (these tests assert exactly that: `lang`
+// input no longer changes the composed English text), while the REAL
+// localization (a recalled curriculum title) still comes from the DB in the
+// session's real language via gatherBriefingFactsForFastOpener.
 describe('buildFastProactiveOpener (proactive fast greeting)', () => {
   const GENERIC = [
-    'Lass uns weitermachen.',
-    'Lass uns dort weitermachen, wo wir aufgehört haben.',
-    'Willkommen zurück.',
+    "Let's keep going.",
+    "Let's pick up where we left off.",
+    'Welcome back.',
   ];
   const PASSIVE = /(möchtest du|willst du|was möchtest|what would you like|how can i help|what can i do)/i;
 
   const mk = (f: Partial<BriefingFacts>) =>
     buildFastProactiveOpener({ lang: 'de', salutation: 'morning', firstName: 'Maria', facts: { ...BASE_FACTS, ...f } }, () => 0);
 
+  it('composes in English regardless of the input `lang` — translation happens at speak time, not here', () => {
+    const facts = { ...BASE_FACTS, indexDeltaUp: null, daysSinceLastSession: 1 };
+    const de = buildFastProactiveOpener({ lang: 'de', salutation: 'morning', firstName: 'Maria', facts }, () => 0);
+    const sr = buildFastProactiveOpener({ lang: 'sr', salutation: 'morning', firstName: 'Maria', facts }, () => 0);
+    const en = buildFastProactiveOpener({ lang: 'en', salutation: 'morning', firstName: 'Maria', facts }, () => 0);
+    expect(de).toBe(sr);
+    expect(de).toBe(en);
+    expect(de).toMatch(/^Good morning, Maria\./);
+  });
+
   it('opens with the named salutation and is NOT a generic SHORT_GAP phrase', () => {
     const line = mk({ indexDeltaUp: null, daysSinceLastSession: 1 });
-    expect(line.startsWith('Guten Morgen, Maria.')).toBe(true);
+    expect(line.startsWith('Good morning, Maria.')).toBe(true);
     for (const g of GENERIC) expect(line).not.toBe(g);
-    expect(line).not.toContain('Willkommen zurück');
+    expect(line).not.toContain('Welcome back');
   });
 
   it('weakness → goal/pillar reversing step as the lead', () => {
     const line = mk({ weakestPillarDrop: { pillar: 'sleep', deltaDown: 6 } });
-    expect(line).toContain('Schlaf');
-    expect(line).toContain('ich zeige dir den ersten Schritt');
+    expect(line).toContain('sleep');
+    expect(line).toContain("I'll show you the first step");
   });
 
   it('building → continues at the named next session, and LEADS', () => {
     const line = mk({ indexDeltaUp: null, daysSinceLastSession: 1, nextSessionTitle: 'Schlaf-Routine' });
     expect(line).toContain('Schlaf-Routine');
-    expect(line).toContain('ich führe dich');
+    expect(line).toContain("I'll guide you");
   });
 
-  it('returning user → GROUNDED recall of the last session ("Letztes Mal ging es um X"), then LEADS forward', () => {
+  it('returning user → GROUNDED recall of the last session ("Last time we worked on X"), then LEADS forward', () => {
     // recall title == next title (same session) → no distinct step to name, so
     // it recalls where we left off and leads to the next session (no bluff, no
     // passive "what do you want").
     const line = mk({ daysSinceLastSession: 2, lastSessionTitle: 'Dein Plan', nextSessionTitle: 'Dein Plan' });
-    expect(line).toContain('Letztes Mal ging es um „Dein Plan"'); // the REAL last session, recalled
-    expect(line).toMatch(/nächsten Session|sag Bescheid|übernehme/); // proactively leads forward
+    expect(line).toContain('Last time we worked on "Dein Plan"'); // the REAL last session, recalled
+    expect(line).toMatch(/next session|say the word|take it from here/); // proactively leads forward
     expect(line).not.toMatch(PASSIVE);
   });
 
@@ -376,9 +399,9 @@ describe('buildFastProactiveOpener (proactive fast greeting)', () => {
       lastOpenedTitle: 'Schlaf-Grundlagen',
       nextStepTitle: 'Abendroutine',
     });
-    expect(line).toContain('Letztes Mal ging es um „Schlaf-Grundlagen"'); // where we left off
+    expect(line).toContain('Last time we worked on "Schlaf-Grundlagen"'); // where we left off
     expect(line).toContain('Abendroutine'); // the distinct next step, named
-    expect(line).toContain('ich führe dich'); // and Vitana leads / offers to do it
+    expect(line).toContain("I'll guide you"); // and Vitana leads / offers to do it
     expect(line).not.toMatch(PASSIVE);
   });
 
@@ -388,27 +411,27 @@ describe('buildFastProactiveOpener (proactive fast greeting)', () => {
     const community = buildFastProactiveOpener({ lang: 'de', salutation: 'morning', firstName: 'Maria', facts }, () => 0.5);
     const match = buildFastProactiveOpener({ lang: 'de', salutation: 'morning', firstName: 'Maria', facts }, () => 0.99);
     expect(journey).toContain('Abendroutine'); // proposal 1: the next session/step
-    expect(community).toMatch(/Community/); // proposal 2: post to the community
-    expect(match).toMatch(/Aktivitätspartner/); // proposal 3: find a match
+    expect(community).toMatch(/community/i); // proposal 2: post to the community
+    expect(match).toMatch(/activity partner/i); // proposal 3: find a match
     // Every rotation recalls where we left off and offers to do the work.
     for (const l of [journey, community, match]) {
-      expect(l).toContain('Letztes Mal ging es um „Schlaf-Grundlagen"');
-      expect(l).toMatch(/ich (führe|poste|kümmere|übernehme)/i);
+      expect(l).toContain('Last time we worked on "Schlaf-Grundlagen"');
+      expect(l).toMatch(/I'll (guide|post|take care|take)/i);
     }
   });
 
   it('NO false recall when there is no last session — never bluffs "where we left off"', () => {
     const line = mk({ lastSessionTitle: null, lastOpenedTitle: null, nextSessionTitle: 'Schlaf-Routine', nextStepTitle: null });
-    expect(line).not.toMatch(/Letztes Mal|wo wir aufgehört|anknüpfen/i); // no recall claim without data
+    expect(line).not.toMatch(/Last time|where we left off/i); // no recall claim without data
     expect(line).toContain('Schlaf-Routine'); // still leads to the next step
   });
 
   it('orient (first-time) → proposes a concrete deliverable step, NOT a fixed journey pitch', () => {
     const line = mk({ sessionsCompleted: 0, hasGoal: false });
-    expect(line.startsWith('Guten Morgen, Maria.')).toBe(true);
-    expect(line).toContain('Lass uns'); // it LEADS (proposal)
-    expect(line).not.toContain('durch Vitanaland'); // no fixed "step by step through Vitanaland" line
-    expect(line).not.toMatch(/Session eins|ersten Session/); // does not pitch the (possibly empty) journey
+    expect(line.startsWith('Good morning, Maria.')).toBe(true);
+    expect(line).toContain("Let's"); // it LEADS (proposal)
+    expect(line).not.toContain('through Vitanaland'); // no fixed "step by step through Vitanaland" line
+    expect(line).not.toMatch(/session one|first session/i); // does not pitch the (possibly empty) journey
   });
 
   it('FLEXIBLE WORDING — different rng yields different greetings (never hard-coded)', () => {

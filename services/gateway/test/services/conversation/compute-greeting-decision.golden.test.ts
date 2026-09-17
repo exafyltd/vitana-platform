@@ -186,7 +186,30 @@ describe('computeGreetingDecision — rung golden snapshots', () => {
       }),
     );
     expect(d.wakeOpener).toBe('safe_fast_proactive');
+    // BOOTSTRAP-ORB-PROACTIVE-OPENER-LANG: this rung now asks the model to
+    // TRANSLATE the (always-English-composed) proactiveLine into the
+    // session's own language, rather than reciting it "verbatim" — the old
+    // verbatim framing meant a non-German, non-English session (e.g. sr)
+    // spoke this line in fluent English regardless of session.lang.
+    expect(d.directive).toContain('Translate the following into natural, fluent German');
+    expect(d.directive).not.toContain('verbatim');
     expect(d).toMatchSnapshot();
+  });
+
+  test('rung 4: safe_fast_proactive names the real target language (Serbian), not just German/English', () => {
+    const d = computeGreetingDecision(
+      safeFastCtx({
+        bucket: 'same_day',
+        lastFullBriefingDate: '2026-06-30',
+        resumeOverview: null,
+        currentRoute: null,
+        lang: 'sr',
+        proactiveLine: 'Last time we worked on your sleep — want to continue?',
+      }),
+    );
+    expect(d.wakeOpener).toBe('safe_fast_proactive');
+    expect(d.directive).toContain('Translate the following into natural, fluent Serbian');
+    expect(d.directive).toContain('entirely in Serbian');
   });
 
   test('rung 5: safe_fast_newday (bare localized name greeting on a new day)', () => {

@@ -1109,10 +1109,10 @@ exports[`computeGreetingDecision — rung golden snapshots rung 4: safe_fast_pro
 {
   "diag": {
     "lang": "de",
-    "prompt_len": 159,
+    "prompt_len": 374,
     "wake_opener": "safe_fast_proactive",
   },
-  "directive": "Say exactly: "Letztes Mal ging es um deinen Schlaf — machen wir da weiter?" — speak it verbatim as audio, as ONE greeting. Do NOT add, paraphrase, or split it.",
+  "directive": "Translate the following into natural, fluent German and speak it as ONE greeting, entirely in German — do not leave any part of it in English: "Letztes Mal ging es um deinen Schlaf — machen wir da weiter?" Keep the concrete details (names, titles, numbers) and the same proposal; do not paraphrase them away. Do NOT add a question at the end or split it into multiple turns.",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,
