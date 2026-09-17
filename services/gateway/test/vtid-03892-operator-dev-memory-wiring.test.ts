@@ -50,7 +50,7 @@ describe('VTID-03892: Operator dev_agent_memory context wiring', () => {
     expect(mockedRecallDevMemory).toHaveBeenCalledWith(
       'why do we route Claude via Bedrock?',
       'vitana-platform',
-      expect.objectContaining({ limit: 5 }),
+      expect.objectContaining({ limit: 20 }), // VTID-04027: wider candidate set, diversified to 10 before rendering
     );
   });
 
