@@ -10,6 +10,24 @@ import { defaultExec, type ExecFn } from './agent-workspace';
 import type { CheckKind, CheckResult } from './agent-tools';
 
 const TSC_TIMEOUT_MS = 10 * 60_000;
+/**
+ * VTID-04009: tsc on the gateway project needs more than V8's default
+ * old-space (~2 GB on the executor task, where Test Run #4 measured three
+ * consecutive `allocation failure` aborts after ~2 min each, on a 4 GB
+ * task). The heap is sized explicitly and env-tunable so the task size and
+ * the check's heap can move together without a code change.
+ */
+const DEFAULT_CHECK_HEAP_MB = 3072;
+
+export function checkHeapMb(env: NodeJS.ProcessEnv = process.env): number {
+  const n = Number.parseInt(env.AGENT_CHECK_HEAP_MB || '', 10);
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_CHECK_HEAP_MB;
+}
+
+/** NODE_OPTIONS for a check process: inherited options plus the heap cap (last flag wins in node). */
+export function checkNodeOptions(env: NodeJS.ProcessEnv = process.env): string {
+  return [env.NODE_OPTIONS, `--max-old-space-size=${checkHeapMb(env)}`].filter(Boolean).join(' ');
+}
 const JEST_TIMEOUT_MS = 10 * 60_000;
 const OUTPUT_CAP = 60_000;
 
@@ -24,9 +42,9 @@ interface ExecFailure extends Error {
   killed?: boolean;
 }
 
-async function runCapture(exec: ExecFn, cmd: string, args: string[], cwd: string, timeoutMs: number): Promise<CheckResult> {
+async function runCapture(exec: ExecFn, cmd: string, args: string[], cwd: string, timeoutMs: number, extraEnv: NodeJS.ProcessEnv = {}): Promise<CheckResult> {
   try {
-    const { stdout, stderr } = await exec(cmd, args, { cwd, timeoutMs, env: { FORCE_COLOR: '0', CI: 'true' } });
+    const { stdout, stderr } = await exec(cmd, args, { cwd, timeoutMs, env: { FORCE_COLOR: '0', CI: 'true', ...extraEnv } });
     return { ok: true, exit_code: 0, output: cap(`${stdout}${stderr ? `\n${stderr}` : ''}`.trim()) };
   } catch (err) {
     const e = err as ExecFailure;
@@ -70,7 +88,7 @@ export function selectJestTargets(changed: string[]): { project: string; pattern
 export async function runTsc(repoDir: string, projectRel = 'services/gateway', exec: ExecFn = defaultExec): Promise<CheckResult> {
   const cwd = path.join(repoDir, projectRel);
   const tsc = path.join(cwd, 'node_modules', '.bin', 'tsc');
-  return runCapture(exec, tsc, ['--noEmit', '-p', 'tsconfig.json'], cwd, TSC_TIMEOUT_MS);
+  return runCapture(exec, tsc, ['--noEmit', '-p', 'tsconfig.json'], cwd, TSC_TIMEOUT_MS, { NODE_OPTIONS: checkNodeOptions() });
 }
 
 export async function runJest(repoDir: string, projectRel: string, patterns: string[], exec: ExecFn = defaultExec): Promise<CheckResult> {

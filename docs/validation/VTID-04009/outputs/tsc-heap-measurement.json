@@ -1,0 +1,17 @@
+{
+  "vtid": "VTID-04009",
+  "measured_at": "2026-09-17T19:40Z",
+  "where": "Claude Code session sandbox, services/gateway on main f76d740",
+  "command": "node --max-old-space-size=3072 node_modules/.bin/tsc --noEmit -p tsconfig.json",
+  "exit_code": 0,
+  "elapsed_seconds": 47.0,
+  "peak_rss_mb": 2497,
+  "executor_task": {
+    "task_definition": "vitana-autopilot-executor:9",
+    "cpu": 2048,
+    "memory_mb": 4096,
+    "observed_failure": "V8 allocation failure at ~2 GB old-space after ~110-140 s, three consecutive run_check tsc calls in execution 47a4d6eb (Test Run #4)"
+  },
+  "chosen_default_heap_mb": 3072,
+  "env_override": "AGENT_CHECK_HEAP_MB"
+}
