@@ -1,0 +1,15 @@
+{
+  "schema_existence_check": {
+    "match_targets_exists": null,
+    "matches_daily_exists": null,
+    "daily_matches_exists": "daily_matches"
+  },
+  "conclusion_1": "match_targets/matches_daily (the candidate-pool schema from migration 20251231000001_vtid_01088_matchmaking_engine.sql) are dead, never-deployed schema in production",
+  "daily_matches_columns": ["id", "user_id", "matched_user_id", "match_score", "match_reasons", "created_at", "expires_at", "viewed_at", "action"],
+  "bot_account_exposure_in_live_table": {
+    "total_rows": 1600,
+    "rows_as_user": 0,
+    "rows_as_matched_target": 0
+  },
+  "conclusion_2": "neither VTID-03990 bot account appears in the live daily_matches table today; no INSERT into daily_matches was found anywhere in this repo, so its population mechanism is outside this repo's own code and was not further investigated"
+}

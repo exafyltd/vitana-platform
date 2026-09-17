@@ -37,6 +37,7 @@
 
 import { SupabaseClient } from '@supabase/supabase-js';
 import * as crypto from 'crypto';
+import { fetchExcludedTestServiceAccountIds } from '../../lib/excluded-test-service-accounts';
 import {
   Pillar,
   ProfileCard,
@@ -266,9 +267,15 @@ async function buildCandidatePool(
   excludedVitanaIds: string[],
 ): Promise<{ pool: Candidate[]; viewerCity: string | null; viewerCountry: string | null }> {
   // Visible users only
-  const { data: visibleRows } = await repo.fetchVisibleProfileUserIds(sb);
+  const [{ data: visibleRows }, excludedTestServiceIds] = await Promise.all([
+    repo.fetchVisibleProfileUserIds(sb),
+    fetchExcludedTestServiceAccountIds(sb),
+  ]);
   const visibleSet = new Set<string>((visibleRows || []).map((r: any) => String(r.user_id)));
   visibleSet.delete(viewerUserId); // user shouldn't search up themselves
+  // VTID-03991: registered test/service/automation accounts must never be
+  // a find_community_member result, even if their profile is "visible".
+  for (const id of excludedTestServiceIds) visibleSet.delete(id);
 
   // Viewer's own city/country (for near_me modifier)
   const { data: viewerProfRow } = await repo.fetchViewerCityCountry(sb, viewerUserId);

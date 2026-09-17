@@ -984,7 +984,8 @@ export type CicdEventType =
   | 'partner_org.registered'
   | 'partner_org.member_invited'
   | 'partner_org.member_joined'
-  | 'partner_org.activated';
+  | 'partner_org.activated'
+  | 'partner_org.registry_linked';
 
 export interface CicdOasisEvent {
   vtid: string;

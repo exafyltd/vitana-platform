@@ -1,0 +1,78 @@
+# VTID-03990 — commands run, verbatim intent (real outputs redacted of secrets where applicable)
+
+## 1. Root-cause investigation (read-only against production)
+
+select id, handle, display_name, full_name, email, account_type, created_at
+from profiles
+where display_name ilike '%operator-autopilot%' or display_name ilike '%claude-code-agent%'
+   or handle ilike '%operator-autopilot%' or handle ilike '%claude-code-agent%';
+-- => confirmed two service accounts, created 2026-09-16 11:38:38/40 UTC
+
+select sender_id, count(*) as total_dms, count(distinct receiver_id) as distinct_recipients,
+       min(created_at) as first_sent, max(created_at) as last_sent
+from chat_messages
+where sender_id in ('887b34cb-9ee9-47dc-ad53-db5be1869846','856c30ed-7136-4bc5-8bfe-86a1e8ea1401')
+group by sender_id;
+-- => 222 and 223 distinct recipients respectively, both at a single insert timestamp
+
+## 2. Code search (read-only, local checkout)
+
+grep -R "just joined the community" services -> services/gateway/src/services/welcome-chat-service.ts
+-- => led to VTID-03089's fire_welcome_chat_on_membership() DB trigger
+--    (supabase/migrations/20260601000000_VTID_03089_welcome_chat_db_trigger.sql)
+--    and its /auth/login TS mirror (routes/auth.ts -> sendWelcomeChatMessages())
+
+## 3. Fix
+
+- New migration: supabase/migrations/20260917084341_vtid_03990_service_bot_accounts_skip_welcome_chat.sql
+  - CREATE TABLE service_bot_accounts (allowlist)
+  - seeds both offending accounts
+  - CREATE OR REPLACE FUNCTION fire_welcome_chat_on_membership() adds the guard
+- services/gateway/src/services/welcome-chat-service-repository.ts: added fetchServiceBotAccountFlag()
+- services/gateway/src/services/welcome-chat-service.ts: added the same guard to sendWelcomeChatMessages()
+- services/gateway/test/services/welcome-chat-service.test.ts: 3 new tests (see acceptance.md AC-1..AC-3)
+
+## 4. VTID allocation (governance)
+
+select * from allocate_global_vtid('claude-code', 'COM', 'CHAT');
+-- => {"vtid":"VTID-03990","num":3990,"id":"0b7f02ac-aad0-4040-a338-21400f4fc7d4"}
+
+update vtid_ledger set title=..., status='in_progress', spec_status='approved', metadata=... where vtid='VTID-03990';
+
+## 5. CI failures on push, and their fixes
+
+- validate-pr (VALIDATOR-CHECK.yml) failed: "REJECTED: VALIDATION_PROFILE missing in PR body" (exit 11)
+  -> read gov/validator-rules.yaml + scripts/ci/validator-path-guard.cjs to find the exact required
+     markers (VALIDATION_PROFILE, SCOPE_ALLOWLIST:, ACCEPTANCE:, MERGE_PAYLOAD_PREVIEW:, OASIS_IMPACT:)
+     and the evidence-pack requirements this file (acceptance.md/commands.log/outputs/) satisfies.
+  -> updated PR body with all required markers; VALIDATION_PROFILE: gateway_backend
+     (services/gateway/src/**, services/gateway/test/** are the only REMIT-governed paths touched;
+     CLAUDE.md/DATABASE_SCHEMA.md/supabase/migrations/** are out-of-remit per VTID-03696's guard,
+     reported NOT JUDGED rather than rejected).
+
+- drift (MIGRATION-DRIFT-CHECK.yml) failed: "table \"service_bot_accounts\" is declared ... but does
+  not exist in the database" (the VTID-03480 failure mode: migration authored, never applied)
+  -> dispatched .github/workflows/RUN-MIGRATION.yml (workflow_dispatch) on this branch with
+     migration_file=supabase/migrations/20260917084341_vtid_03990_service_bot_accounts_skip_welcome_chat.sql
+  -> run id 35202068003, conclusion: success (applied via Supabase Management API + PostgREST
+     schema-cache reload, per the workflow's own VTID-03492 transport note)
+
+## 6. Post-apply verification (read-only against production)
+
+select to_regclass('public.service_bot_accounts');
+-- => service_bot_accounts (table exists)
+
+select user_id, label, reason, created_at from public.service_bot_accounts order by created_at;
+-- => 2 rows: 887b34cb-9ee9-47dc-ad53-db5be1869846 (claude-code-agent),
+--            856c30ed-7136-4bc5-8bfe-86a1e8ea1401 (operator-autopilot)
+-- (full output saved to outputs/service-bot-accounts-select.json)
+
+select pg_get_functiondef('public.fire_welcome_chat_on_membership'::regproc) like '%service_bot_accounts%';
+-- => true (the deployed trigger function body contains the new guard)
+
+## Not run (sandbox limitation, disclosed rather than assumed)
+
+npm ci / npx jest / npx tsc --noEmit could not be run from this session — the sandbox's npm registry
+returns 403 on package installs (no node_modules for jest/tsc present in services/gateway). The
+Build Gate and Gateway Jest CI jobs on this PR are the actual first execution of these commands
+against this diff.

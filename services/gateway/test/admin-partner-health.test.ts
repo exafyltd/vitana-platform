@@ -45,9 +45,11 @@ jest.mock('../src/middleware/auth-supabase-jwt', () => ({
 
 const recordStatusChangeMock = jest.fn();
 const ingestPartnerResultMock = jest.fn();
+const quarantineUnmatchedResultMock = jest.fn();
 jest.mock('../src/services/partner-health/ingestion', () => ({
   recordStatusChange: (...args: any[]) => recordStatusChangeMock(...args),
   ingestPartnerResult: (...args: any[]) => ingestPartnerResultMock(...args),
+  quarantineUnmatchedResult: (...args: any[]) => quarantineUnmatchedResultMock(...args),
 }));
 
 const findClickCorrelationCandidatesMock = jest.fn();
@@ -391,6 +393,85 @@ describe('POST /inbox/:id/confirm-match', () => {
     expect(r.body).toMatchObject({ ok: true, order_id: 'order-1', link_id: 'link-1' });
     expect(emitOasisEventMock).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'health_test.order_created', payload: expect.objectContaining({ order_id: 'order-1' }) }),
+    );
+  });
+});
+
+// VTID-03974 — the manual inbox-entry endpoint that lets a self-registered
+// partner's own staff get their first result into the inbox at all, reusing
+// quarantineUnmatchedResult() rather than a new write path.
+describe('POST /inbox/manual', () => {
+  it('400 when partner_id or raw_payload is missing', async () => {
+    const r = await request(makeApp())
+      .post('/api/v1/admin/partner-health/inbox/manual')
+      .set('Authorization', 'Bearer admin-1')
+      .send({ raw_payload: { foo: 'bar' } });
+    expect(r.status).toBe(400);
+
+    const r2 = await request(makeApp())
+      .post('/api/v1/admin/partner-health/inbox/manual')
+      .set('Authorization', 'Bearer admin-1')
+      .send({ partner_id: 'partner-a' });
+    expect(r2.status).toBe(400);
+  });
+
+  it('403 for a professional-only org member (assigned-order-only, not full access)', async () => {
+    tableHandlers.partner_organization_members = () => ({
+      data: [{ partner_organization_id: 'org-a', role: 'professional' }],
+      error: null,
+    });
+    tableHandlers.partner_registry = () => ({
+      data: [{ id: 'partner-a', partner_organization_id: 'org-a' }],
+      error: null,
+    });
+    const r = await request(makeApp())
+      .post('/api/v1/admin/partner-health/inbox/manual')
+      .set('Authorization', 'Bearer professional-1')
+      .send({ partner_id: 'partner-a', raw_payload: { external_customer_ref: 'x1' } });
+    expect(r.status).toBe(403);
+    expect(quarantineUnmatchedResultMock).not.toHaveBeenCalled();
+  });
+
+  it('201 happy path for admin — no candidates given, reason=no_match', async () => {
+    quarantineUnmatchedResultMock.mockResolvedValue({ ok: true, inbox_id: 'inbox-9' });
+    const r = await request(makeApp())
+      .post('/api/v1/admin/partner-health/inbox/manual')
+      .set('Authorization', 'Bearer admin-1')
+      .send({ partner_id: 'partner-a', raw_payload: { external_customer_ref: 'x1' } });
+    expect(r.status).toBe(201);
+    expect(r.body).toMatchObject({ ok: true, inbox_id: 'inbox-9' });
+    expect(quarantineUnmatchedResultMock).toHaveBeenCalledWith(
+      expect.anything(),
+      'partner-a',
+      { external_customer_ref: 'x1' },
+      [],
+      'no_match',
+    );
+  });
+
+  it("201 happy path for the org's own staff — candidate user ids given, reason=ambiguous_match", async () => {
+    tableHandlers.partner_organization_members = () => ({
+      data: [{ partner_organization_id: 'org-a', role: 'staff' }],
+      error: null,
+    });
+    tableHandlers.partner_registry = () => ({
+      data: [{ id: 'partner-a', partner_organization_id: 'org-a' }],
+      error: null,
+    });
+    quarantineUnmatchedResultMock.mockResolvedValue({ ok: true, inbox_id: 'inbox-10' });
+
+    const r = await request(makeApp())
+      .post('/api/v1/admin/partner-health/inbox/manual')
+      .set('Authorization', 'Bearer staff-1')
+      .send({ partner_id: 'partner-a', raw_payload: { external_customer_ref: 'x2' }, candidate_user_ids: ['user-1', 'user-2'] });
+
+    expect(r.status).toBe(201);
+    expect(quarantineUnmatchedResultMock).toHaveBeenCalledWith(
+      expect.anything(),
+      'partner-a',
+      { external_customer_ref: 'x2' },
+      ['user-1', 'user-2'],
+      'ambiguous_match',
     );
   });
 });

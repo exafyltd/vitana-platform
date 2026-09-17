@@ -56,9 +56,8 @@ import type {
   UpstreamToolResult,
 } from './types';
 import { TranscribeStreamSession } from './cascaded/transcribe-stream';
+import { synthesizeCascadeReply } from './cascaded/tts-backend';
 import { evaluateCascadeEligibility } from './cascaded-config';
-import { synthesizePolly, resolvePollyVoice } from '../../../services/tts/polly';
-import { synthesizeFish } from '../../../services/tts/fish';
 import { callViaRouter } from '../../../services/llm-router';
 
 export interface CascadedLiveClientDeps {
@@ -77,6 +76,17 @@ const POLLY_PCM_SAMPLE_RATE_HZ = 16_000;
  * single large buffer would change its buffering behaviour on this path only.
  */
 const DEFAULT_AUDIO_CHUNK_BYTES = 32_000;
+
+/**
+ * VTID-03986 — margin added on top of the estimated TTS playback duration
+ * before mic audio is forwarded to Transcribe again. Covers the gap between
+ * the server emitting the last audio chunk and the client actually finishing
+ * playback (network delivery, client-side buffering/decode). Deliberately
+ * generous over precise: an over-wide gate only delays picking up the next
+ * real utterance by a few hundred ms, while an under-wide one re-admits the
+ * exact backlog this fix exists to remove.
+ */
+const PLAYBACK_MARGIN_MS = 400;
 
 /**
  * VTID-03722 — default silence budget that ends a user turn, in ms.
@@ -116,6 +126,13 @@ export class CascadedLiveClient implements UpstreamLiveClient {
   private silenceTimer: ReturnType<typeof setTimeout> | null = null;
   /** Guards against two turns generating concurrently. */
   private turnInFlight = false;
+  /**
+   * VTID-03986 — epoch ms until which incoming mic audio is dropped rather
+   * than forwarded to Transcribe. Set from the estimated playback duration
+   * of the reply just emitted (see `emitAudio()`); `sendAudioChunk()` checks
+   * it alongside `turnInFlight`. See `sendAudioChunk()` for why this exists.
+   */
+  private busyUntilMs = 0;
 
   private audioHandler: ((e: AudioOutputEvent) => void) | null = null;
   private transcriptHandler: ((e: TranscriptEvent) => void) | null = null;
@@ -196,6 +213,24 @@ export class CascadedLiveClient implements UpstreamLiveClient {
 
   sendAudioChunk(audioB64: string): boolean {
     if (this.state !== 'open' || !this.transcribe) return false;
+    // VTID-03986 — full-duplex (VTID-03706) forwards a continuous audio
+    // frame for the entire session, real speech above the echo floor and
+    // digital silence below it, so Nova's own native VAD/barge-in keeps
+    // working. This client has no use for that stream while a turn is
+    // generating or its reply is still playing out client-side: the cascade
+    // has no barge-in (see the file header) and `TranscribeStreamSession` is
+    // a single, ordered, never-restarted pipe (see its own header) — every
+    // frame pushed here is queued ahead of whatever the user says next, and
+    // Transcribe must work through all of it before it can transcribe that.
+    // Left ungated, every reply's own duration adds to a backlog that
+    // compounds turn over turn (measured live on one session:
+    // 8.7s -> 16.6s -> 35s -> 43s per-turn latency). Dropping here is safe:
+    // the client already silences non-speech frames below the echo floor
+    // (VTID-03706), so nothing meaningful is lost, and `turnInFlight`/
+    // `busyUntilMs` both clear the instant it is safe to listen again.
+    // Still `open` and functioning, so this is an intentional no-op, not
+    // backpressure — return true, never false.
+    if (this.turnInFlight || Date.now() < this.busyUntilMs) return true;
     this.transcribe.pushAudioB64(audioB64);
     return true;
   }
@@ -294,31 +329,50 @@ export class CascadedLiveClient implements UpstreamLiveClient {
         return;
       }
 
-      const replyText = (completion.text ?? '').trim();
+      let replyText = (completion.text ?? '').trim();
+
+      // VTID-03985: `callViaRouter` only escalates to the stage's fallback
+      // model on an explicit failure (`ok:false`) — a primary call that
+      // returns `ok:true` with EMPTY text (observed live the very first time
+      // this cascade path ran for real, VTID-03984) sails straight through
+      // as a "success" with nothing to say. Left alone, that silently drops
+      // the turn and the session hangs until the 30s stall watchdog kills it
+      // with a generic, unhelpful error — for a live spoken conversation,
+      // dead air for 30s is a much worse failure mode than a slow reply.
+      // One bounded retry against the stage's OWN currently-configured
+      // fallback model (bedrock/eu.anthropic.claude-sonnet-4-6 — confirmed
+      // live-invokable, CLAUDE.md §2b) before giving up for real.
+      if (!replyText && !completion.fallbackUsed) {
+        const retry = await callViaRouter('operator', userText, {
+          service: 'orb-cascaded-voice',
+          systemPrompt: this.systemInstruction,
+          maxTokens: 400,
+          providerOverride: 'bedrock',
+          modelOverride: 'eu.anthropic.claude-sonnet-4-6',
+          allowFallback: false,
+        });
+        if (retry.ok) {
+          replyText = (retry.text ?? '').trim();
+        }
+      }
+
       if (!replyText) {
         this.errorHandler?.({
           code: 'cascade_llm_empty',
-          message: 'LLM returned no text for the cascaded turn',
+          message: 'LLM returned no text for the cascaded turn (after retry)',
         });
         return;
       }
 
       this.transcriptHandler?.({ direction: 'output', text: replyText, isFinal: true });
 
-      let speech: { audioB64: string } | null = await synthesizePolly({
-        text: replyText,
-        lang: this.lang,
-        format: 'pcm',
-      });
-
-      // VTID-03970: a language with NO Polly voice at all (sr) can still
-      // have reached here — eligibility (`cascaded-config.ts`) admits it
-      // only when Fish is explicitly enabled and has a curated voice for
-      // it. Gated the same way here rather than trusting eligibility was
-      // computed with the identical env state moments earlier.
-      if (!speech?.audioB64 && !resolvePollyVoice(this.lang)) {
-        speech = await synthesizeFish({ text: replyText, lang: this.lang, format: 'pcm' });
-      }
+      // VTID-03987: TTS backend selection (Polly first, Fish only when
+      // Polly has no voice for the language at all) now lives in
+      // `cascaded/tts-backend.ts` — see that file for why the boundary is
+      // drawn there and what does/doesn't need a Polly-backed regression
+      // test when changed. Behaviour here is unchanged from before the
+      // extraction (VTID-03970's original selection).
+      const speech = await synthesizeCascadeReply(replyText, this.lang);
 
       if (!speech?.audioB64) {
         // Eligibility already proved a TTS provider has a voice for this
@@ -348,6 +402,12 @@ export class CascadedLiveClient implements UpstreamLiveClient {
   private emitAudio(audioB64: string): void {
     const buf = Buffer.from(audioB64, 'base64');
     const mimeType = `audio/pcm;rate=${POLLY_PCM_SAMPLE_RATE_HZ}`;
+    // VTID-03986 — 16-bit mono PCM: 2 bytes/sample. Extend the
+    // `sendAudioChunk()` gate through this reply's estimated client-side
+    // playback so full-duplex mic frames stop backing up Transcribe for as
+    // long as Vitana is actually talking, not just while she is thinking.
+    const estimatedPlaybackMs = Math.round((buf.length / 2 / POLLY_PCM_SAMPLE_RATE_HZ) * 1000);
+    this.busyUntilMs = Date.now() + estimatedPlaybackMs + PLAYBACK_MARGIN_MS;
     for (let offset = 0; offset < buf.length; offset += this.audioChunkBytes) {
       const slice = buf.subarray(offset, Math.min(offset + this.audioChunkBytes, buf.length));
       this.audioHandler?.({ dataB64: slice.toString('base64'), mimeType });

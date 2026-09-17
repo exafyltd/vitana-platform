@@ -97,19 +97,33 @@ describe('POST /register', () => {
     expect(r.status).toBe(400);
   });
 
+  it('400 when commerce_vertical is missing or invalid', async () => {
+    const r = await request(makeApp())
+      .post('/api/v1/partner-orgs/register')
+      .set('Authorization', 'Bearer owner-1')
+      .send({ org_key: 'doctorbox', display_name: 'DoctorBox', org_type: 'lab_partner' });
+    expect(r.status).toBe(400);
+
+    const r2 = await request(makeApp())
+      .post('/api/v1/partner-orgs/register')
+      .set('Authorization', 'Bearer owner-1')
+      .send({ org_key: 'doctorbox', display_name: 'DoctorBox', org_type: 'lab_partner', commerce_vertical: 'not-a-real-vertical' });
+    expect(r2.status).toBe(400);
+  });
+
   it('409 when org_key is already taken', async () => {
     tableHandlers.partner_organizations = ({ op }) =>
       op === 'insert' ? { data: null, error: { code: '23505', message: 'duplicate key' } } : { data: null, error: null };
     const r = await request(makeApp())
       .post('/api/v1/partner-orgs/register')
       .set('Authorization', 'Bearer owner-1')
-      .send({ org_key: 'doctorbox', display_name: 'DoctorBox', org_type: 'lab_partner' });
+      .send({ org_key: 'doctorbox', display_name: 'DoctorBox', org_type: 'lab_partner', commerce_vertical: 'health' });
     expect(r.status).toBe(409);
   });
 
   it('201 happy path — creates the org and adds the caller as org_admin', async () => {
     tableHandlers.partner_organizations = () => ({
-      data: { id: 'org-1', org_key: 'doctorbox', display_name: 'DoctorBox', org_type: 'lab_partner', status: 'pending_review' },
+      data: { id: 'org-1', org_key: 'doctorbox', display_name: 'DoctorBox', org_type: 'lab_partner', commerce_vertical: 'health', status: 'pending_review' },
       error: null,
     });
     tableHandlers.partner_organization_members = () => ({ data: null, error: null });
@@ -117,11 +131,27 @@ describe('POST /register', () => {
     const r = await request(makeApp())
       .post('/api/v1/partner-orgs/register')
       .set('Authorization', 'Bearer owner-1')
-      .send({ org_key: 'doctorbox', display_name: 'DoctorBox', org_type: 'lab_partner' });
+      .send({ org_key: 'doctorbox', display_name: 'DoctorBox', org_type: 'lab_partner', commerce_vertical: 'health' });
 
     expect(r.status).toBe(201);
     expect(r.body.organization).toMatchObject({ id: 'org-1', status: 'pending_review' });
     expect(emitOasisEventMock).toHaveBeenCalledWith(expect.objectContaining({ type: 'partner_org.registered' }));
+  });
+
+  it('201 happy path — general-commerce vertical registers the same way', async () => {
+    tableHandlers.partner_organizations = () => ({
+      data: { id: 'org-2', org_key: 'acme-supplements', display_name: 'Acme Supplements', org_type: 'commerce', commerce_vertical: 'general', status: 'pending_review' },
+      error: null,
+    });
+    tableHandlers.partner_organization_members = () => ({ data: null, error: null });
+
+    const r = await request(makeApp())
+      .post('/api/v1/partner-orgs/register')
+      .set('Authorization', 'Bearer owner-1')
+      .send({ org_key: 'acme-supplements', display_name: 'Acme Supplements', org_type: 'commerce', commerce_vertical: 'general' });
+
+    expect(r.status).toBe(201);
+    expect(r.body.organization).toMatchObject({ id: 'org-2', status: 'pending_review' });
   });
 });
 
@@ -308,16 +338,54 @@ describe('POST /:orgId/activate', () => {
     expect(r.status).toBe(404);
   });
 
-  it('200 happy path', async () => {
+  it('200 happy path — general-commerce vertical, no partner_registry bridge', async () => {
     tableHandlers.partner_organizations = () => ({
-      data: { id: 'org-1', org_key: 'doctorbox', display_name: 'DoctorBox', status: 'active' },
+      data: { id: 'org-1', org_key: 'acme-supplements', display_name: 'Acme Supplements', commerce_vertical: 'general', status: 'active' },
       error: null,
     });
+    // No partner_registry handler registered on purpose — a general-vertical
+    // org must never touch that table at all; a lookup here would throw.
     const r = await request(makeApp())
       .post('/api/v1/partner-orgs/org-1/activate')
       .set('Authorization', 'Bearer exafy-admin-1');
     expect(r.status).toBe(200);
     expect(r.body.organization.status).toBe('active');
     expect(emitOasisEventMock).toHaveBeenCalledWith(expect.objectContaining({ type: 'partner_org.activated' }));
+    expect(emitOasisEventMock).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'partner_org.registry_linked' }));
+  });
+
+  it('200 happy path — health vertical bridges to a NEW partner_registry row (VTID-03974)', async () => {
+    tableHandlers.partner_organizations = () => ({
+      data: { id: 'org-1', org_key: 'doctorbox2', display_name: 'DoctorBox 2', commerce_vertical: 'health', status: 'active' },
+      error: null,
+    });
+    tableHandlers.partner_registry = ({ op, terminal }: any) => {
+      if (terminal === 'maybeSingle') return { data: null, error: null }; // no existing row yet
+      if (op === 'insert') return { data: { id: 'registry-1' }, error: null };
+      throw new Error(`unexpected partner_registry op in this test: ${op}/${terminal}`);
+    };
+    const r = await request(makeApp())
+      .post('/api/v1/partner-orgs/org-1/activate')
+      .set('Authorization', 'Bearer exafy-admin-1');
+    expect(r.status).toBe(200);
+    expect(emitOasisEventMock).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'partner_org.registry_linked', payload: expect.objectContaining({ partner_registry_id: 'registry-1' }) })
+    );
+  });
+
+  it('200 happy path — re-activating a health org already bridged is a no-op (idempotent)', async () => {
+    tableHandlers.partner_organizations = () => ({
+      data: { id: 'org-1', org_key: 'doctorbox2', display_name: 'DoctorBox 2', commerce_vertical: 'health', status: 'active' },
+      error: null,
+    });
+    tableHandlers.partner_registry = ({ terminal }: any) => {
+      if (terminal === 'maybeSingle') return { data: { id: 'registry-1' }, error: null }; // already bridged
+      throw new Error('must not insert a second partner_registry row on re-activation');
+    };
+    const r = await request(makeApp())
+      .post('/api/v1/partner-orgs/org-1/activate')
+      .set('Authorization', 'Bearer exafy-admin-1');
+    expect(r.status).toBe(200);
+    expect(emitOasisEventMock).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'partner_org.registry_linked' }));
   });
 });
