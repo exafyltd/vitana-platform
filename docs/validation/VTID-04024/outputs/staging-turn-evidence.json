@@ -1,0 +1,20 @@
+{
+  "vtid": "VTID-04024",
+  "found_by": "first live W4a operator turn on staging, 2026-09-17 ~21:55 UTC (read-only question, no tool call)",
+  "staging_gateway_commit": "2545dcc7acef108b52d15d3d2e1e4ad742d94197",
+  "turn_meta": { "provider": "deepseek", "model": "deepseek-flash", "mode": "operator_deepseek", "tool_calls": 0, "http": 200, "seconds": 5.95 },
+  "pack_sections_observed": {
+    "live_build_info": "staging env=staging commit=2545dcc7acef; production env=production commit=7ba9a8eebad1 — correct",
+    "recent_change_log": "newest row VTID-04019 — correct (main at the time)",
+    "open_pull_requests": "(unavailable: Open pull requests timed out after 2500ms) — the defect"
+  },
+  "root_causes": [
+    "listOpenPrsWithStatus fetched CI state per open PR sequentially (N+1 GitHub round trips) — exceeded the 2.5 s source budget",
+    "GitHubFeedItem carried no title — the pack rendered the branch name as the PR title on the success path"
+  ],
+  "fix": {
+    "github_service": "Promise.all over the per-PR CI lookups; title on GitHubFeedItem; new one-call listOpenPrsBare",
+    "bootstrap_pack": "resolvePlatformOpenPrs races the enriched list against OPEN_PRS_ENRICH_BUDGET_MS=1500 and falls back to the bare list marked with OPEN_PRS_FALLBACK_NOTE; the section is never unavailable just because CI enrichment is slow"
+  },
+  "next_signal": "the open-PR section on the next staging turn lists exafyltd/vitana-platform#… rows with ci=… and no fallback note"
+}

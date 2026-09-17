@@ -129,7 +129,7 @@ describe('VTID-04018 sections, fail-open and cache', () => {
     }));
     expect(Date.now() - t0).toBeLessThan(SOURCE_TIMEOUT_MS + 1_500);
     expect(sections[6].error).toBe('oasis_events 503');
-    expect(sections[5].error).toMatch(/timed out/);
+    expect(sections[5].error).toMatch(/exceeded|timed out/); // VTID-04024: the enriched list is raced against its own budget first
     expect(sections[0].body).toContain('# PART 1');
   });
 

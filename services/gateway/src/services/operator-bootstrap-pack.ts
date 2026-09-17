@@ -29,10 +29,15 @@
  * orientation, the tools are the detail.
  */
 
-import { getFileContents, listOpenPrsWithStatus } from './github-service';
+import { getFileContents, listOpenPrsBare, listOpenPrsWithStatus } from './github-service';
 
 export const BOOTSTRAP_TTL_MS = 5 * 60_000;
 export const SOURCE_TIMEOUT_MS = 2_500;
+/** VTID-04024: how long the open-PR source waits for the CI-enriched list
+ *  before falling back to the one-call bare list. Leaves room for the bare
+ *  call inside SOURCE_TIMEOUT_MS. */
+export const OPEN_PRS_ENRICH_BUDGET_MS = 1_500;
+export const OPEN_PRS_FALLBACK_NOTE = '(platform CI state omitted: enrichment exceeded its budget — dev_github_feed has it)';
 export const PACK_MAX_CHARS = 40_000;
 
 const LIMITS = {
@@ -186,6 +191,8 @@ export function assembleBootstrapPack(sections: PackSection[], builtAt: string, 
 export interface BootstrapDeps {
   readRepoFile: (path: string) => Promise<string>;
   listPlatformOpenPrs: () => Promise<OpenPrSummary[]>;
+  /** VTID-04024: one-call list without CI state; used when the enriched list is late or fails. */
+  listPlatformOpenPrsBare?: () => Promise<OpenPrSummary[]>;
   listFrontendOpenPrs: () => Promise<OpenPrSummary[]>;
   queryRecentEvents: () => Promise<RecentEvent[]>;
   fetchBuildInfo: (url: string) => Promise<{ env?: string; git_commit?: string; booted_at?: string }>;
@@ -217,7 +224,10 @@ function defaultDeps(): BootstrapDeps {
       return r.content;
     },
     listPlatformOpenPrs: async () => (await listOpenPrsWithStatus(PLATFORM_REPO, LIMITS.openPrs)).map((f) => ({
-      repo: PLATFORM_REPO, number: f.pr_number, title: (f as { title?: string }).title || f.branch, branch: f.branch, ci: f.ci_state, mergeable: f.mergeable,
+      repo: PLATFORM_REPO, number: f.pr_number, title: f.title || f.branch, branch: f.branch, ci: f.ci_state, mergeable: f.mergeable,
+    })),
+    listPlatformOpenPrsBare: async () => (await listOpenPrsBare(PLATFORM_REPO, LIMITS.openPrs)).map((p) => ({
+      repo: PLATFORM_REPO, number: p.number, title: p.title, branch: p.branch, updated_at: p.updated_at,
     })),
     listFrontendOpenPrs: async () => {
       const token = process.env.FRONTEND_DEPLOY_TOKEN;
@@ -245,6 +255,38 @@ function defaultDeps(): BootstrapDeps {
 }
 
 /** The fetched (cacheable) part of the pack — everything except the per-role tool catalog. */
+/**
+ * VTID-04024: the CI-enriched list is one GitHub call per PR on top of the
+ * listing (parallel since this VTID, sequential before — the live cause of
+ * "(unavailable: Open pull requests timed out after 2500ms)" on the first
+ * staging turn). Race it against a partial budget; if it is late or fails
+ * and a bare lister exists, serve the PRs without CI state rather than no
+ * PRs at all. Errors never escape as unhandled rejections.
+ */
+export async function resolvePlatformOpenPrs(
+  deps: Pick<BootstrapDeps, 'listPlatformOpenPrs' | 'listPlatformOpenPrsBare'>,
+  budgetMs = OPEN_PRS_ENRICH_BUDGET_MS,
+): Promise<{ items: OpenPrSummary[]; degraded: boolean }> {
+  const rich = deps.listPlatformOpenPrs().then(
+    (items) => ({ ok: true as const, items }),
+    (err: unknown) => ({ ok: false as const, err }),
+  );
+  const bare = deps.listPlatformOpenPrsBare ? deps.listPlatformOpenPrsBare().then(
+    (items) => ({ ok: true as const, items }),
+    (err: unknown) => ({ ok: false as const, err }),
+  ) : null;
+  let timer: NodeJS.Timeout | undefined;
+  const late = new Promise<'late'>((resolve) => { timer = setTimeout(() => resolve('late'), budgetMs); });
+  const first = await Promise.race([rich, late]);
+  if (timer) clearTimeout(timer);
+  if (first !== 'late' && first.ok) return { items: first.items, degraded: false };
+  const richErr = first === 'late' ? `enriched list exceeded ${budgetMs}ms` : (first.err instanceof Error ? first.err.message : String(first.err));
+  if (!bare) throw new Error(`platform: ${richErr}`);
+  const b = await bare;
+  if (b.ok) return { items: b.items, degraded: true };
+  throw new Error(`platform: ${richErr}; bare list: ${b.err instanceof Error ? b.err.message : String(b.err)}`);
+}
+
 export async function buildBootstrapSections(deps: BootstrapDeps): Promise<PackSection[]> {
   const env = deps.env || process.env;
   const claudeMd = deps.readRepoFile('CLAUDE.md');
@@ -263,10 +305,11 @@ export async function buildBootstrapSections(deps: BootstrapDeps): Promise<PackS
     }),
     section('Open pull requests', SOURCE_TIMEOUT_MS, async () => {
       const [platform, frontend] = await Promise.all([
-        deps.listPlatformOpenPrs().catch((err) => { throw new Error(`platform: ${err instanceof Error ? err.message : String(err)}`); }),
+        resolvePlatformOpenPrs(deps),
         deps.listFrontendOpenPrs().catch(() => [] as OpenPrSummary[]),
       ]);
-      return renderOpenPrs([...platform, ...frontend]);
+      const body = renderOpenPrs([...platform.items, ...frontend]);
+      return platform.degraded ? `${body}\n${OPEN_PRS_FALLBACK_NOTE}` : body;
     }),
     section('Recent deploy / autopilot events (OASIS)', SOURCE_TIMEOUT_MS, async () => renderRecentEvents(await deps.queryRecentEvents())),
   ]);
