@@ -20,6 +20,7 @@
  * Usage:
  *   node scripts/orb/verify-vertex-serbian-bridge.mjs --mode=anonymous [--trials=10]
  *   node scripts/orb/verify-vertex-serbian-bridge.mjs --mode=authenticated --trials=10
+ *   node scripts/orb/verify-vertex-serbian-bridge.mjs --mode=authenticated --route=/admin   # smaller tool catalog (VTID-04026)
  *     (authenticated mode needs SUPABASE_ANON_KEY + TEST_ACCOUNT_EMAIL +
  *     TEST_ACCOUNT_PASSWORD in the environment — never hardcode credentials
  *     in this file. The documented test account is
@@ -55,6 +56,13 @@ const TRIALS = parseInt(args.trials || process.env.TRIALS || '10', 10);
 const GATEWAY = process.env.GATEWAY_URL || 'https://preview-aws-gateway.vitanaland.com';
 const ORIGIN = process.env.ORIGIN_URL || 'https://preview-aws.vitanaland.com';
 const LANG = process.env.LANG_CODE || 'sr';
+// VTID-04026: optional `current_route` for session/start. The gateway resolves
+// the ORB surface (and therefore the tool catalog it declares to the upstream
+// model) from this route — `/admin` declares ~134 tools, the default
+// vitanaland surface ~290 — so it is the one knob that changes the setup
+// envelope's size without touching code. Used to isolate the tool-catalog
+// size as the cause of the authenticated-only 1007 closes.
+const ROUTE = args.route || process.env.CURRENT_ROUTE || '';
 const SSE_TIMEOUT_MS = 40000; // server's own greeting_timeout watchdog is 30s
 const GAP_BETWEEN_TRIALS_MS = 2000;
 
@@ -122,7 +130,7 @@ async function readSse(resp, onEvent, deadlineMs) {
 }
 
 async function runTrial(idx, token) {
-  const trial = { idx, startedAt: nowIso(), lang: LANG, authenticated: !!token };
+  const trial = { idx, startedAt: nowIso(), lang: LANG, authenticated: !!token, route: ROUTE || null };
   const headers = { 'Content-Type': 'application/json', Origin: ORIGIN };
   if (token) headers.Authorization = `Bearer ${token}`;
   try {
@@ -130,7 +138,7 @@ async function runTrial(idx, token) {
     const startResp = await fetch(`${GATEWAY}/api/v1/orb/live/session/start`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ lang: LANG }),
+      body: JSON.stringify(ROUTE ? { lang: LANG, current_route: ROUTE } : { lang: LANG }),
     });
     trial.sessionStartRespondedAt = Date.now();
     trial.sessionStartHttpStatus = startResp.status;
@@ -213,7 +221,7 @@ async function runTrial(idx, token) {
 (async () => {
   const token = MODE === 'authenticated' ? await getAuthToken() : null;
   console.log(
-    `[verify-vertex-serbian-bridge] ${TRIALS} ${MODE.toUpperCase()} trials against ${GATEWAY}, lang=${LANG}`,
+    `[verify-vertex-serbian-bridge] ${TRIALS} ${MODE.toUpperCase()} trials against ${GATEWAY}, lang=${LANG}${ROUTE ? `, current_route=${ROUTE}` : ''}`,
   );
   const results = [];
   for (let i = 1; i <= TRIALS; i++) {
@@ -223,7 +231,7 @@ async function runTrial(idx, token) {
     results.push(t);
     if (i < TRIALS) await new Promise((r) => setTimeout(r, GAP_BETWEEN_TRIALS_MS));
   }
-  const outPath = `/tmp/vertex-serbian-bridge-${MODE}-results.json`;
+  const outPath = `/tmp/vertex-serbian-bridge-${MODE}${ROUTE ? '-' + ROUTE.replace(/[^a-z0-9]+/gi, '_') : ''}-results.json`;
   writeFileSync(outPath, JSON.stringify(results, null, 2));
   console.log(`\n(full results written to ${outPath})`);
 
