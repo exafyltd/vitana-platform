@@ -348,3 +348,39 @@ Not verified: a real on-ramp execution through the new contract (that is Run #2,
 staging); the Route Mount gate for PRs that add routes remains an honest gap; the
 `OASIS_IMPACT: no` default is correct for the autopilot's current allow scope but must
 be revisited if the scope grows to files that emit events.
+
+---
+
+## 7. Test Run #2 — executed on staging 2026-09-17 17:01 UTC (VTID-04003, execution `e3ca9a1d`, PR #3372)
+
+**Result: pass, first attempt, no human intervention between the chat message and a green PR.**
+
+| Step | Time (UTC) | Evidence |
+|---|---|---|
+| Chat message → `autopilot_execute_task` called with correct repo-root-relative paths | 17:01:02 | `toolResults[0].response.status = "queued"`; governance L4 allowed; safety gate passed (the path-contract fix held on the first try) |
+| Claimed by the staging gateway (`env: staging`) | 17:01:10 | `dev_autopilot.execution.running` |
+| LLM call on `deepseek/deepseek-flash` | 17:01:36 → 17:02:14 (38 s) | `llm.call.completed` tagged `VTID-04003` |
+| PR #3372 opened by the **ECS executor task** (`env: production` tag on `pr_opened`, a different process from the staging gateway that claimed it) with the VTID-04002 contract applied | 17:02:24 | title `… (VTID-04003)`, body starts `VTID: VTID-04003` + all markers, `docs/validation/VTID-04003/{acceptance.md,commands.log,outputs/execution.json}` in the diff, commits `VTID-04003: modify/create …` |
+| CI: all 18 checks green, **`validate-pr` passed** (the gate that reverted Run #1) | 17:04:46 | Gateway jest suite green; the new `dev-autopilot-watcher-failure-reason.test.ts` ran in CI |
+| Squash-merged to `main` by this session | 17:12 | `f79d51c` → staging auto-deploy |
+
+Code quality: the diff matches the plan exactly — `buildCiFailureReason()` exported next to the other pure analyzers,
+the inline ternary replaced, nothing else touched, 9 tests covering every branch including the regression
+assertion ("blocked with names never says branch protection"). Two cosmetic nits only: a dropped trailing newline
+in both files.
+
+**Confirmed live by this run (was "unverified" in §3.4):** the staging gateway role holds `ecs:RunTask` +
+`iam:PassRole` for the executor task, and the executor task's role holds `bedrock`/DeepSeek access — the PR was
+opened by the one-shot ECS task, not by the in-process fallback.
+
+### New finding: the PROD gateway's dry-run watcher "completed" a staging execution
+`dev_autopilot.execution.ci_passed / pr_merged / deployed / completed` all carry `env: production`,
+`service: dev-autopilot-watcher`, and the message suffix `(dry-run synthetic)` — and `vtid.lifecycle.completed`
+terminalized VTID-04003 as `success` at 17:08:01 while PR #3372 was still **open**. Mechanism: prod and staging
+share one `dev_autopilot_executions` table; prod's gateway runs `ciWatcherTick()` with `DRY_RUN=true`
+(`DEV_AUTOPILOT_WATCHER_LIVE` is pinned on staging only), and the dry-run branch synthesizes every transition
+after `DRY_RUN_SETTLE_MS` without looking at GitHub. Staging's live watcher never got the row because prod's
+tick won the race. Consequences: (1) the ledger can report `success` for code that never merged; (2) staging's
+live auto-merge is effectively disabled whenever prod's tick runs first. Fix (adds to roadmap R-1): either pin
+`DEV_AUTOPILOT_WATCHER_LIVE=true` on prod too, or make the watcher skip executions whose `metadata.env` (to be
+stamped at claim time) is not its own — never let a dry-run process transition a real execution.
