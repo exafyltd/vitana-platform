@@ -91,7 +91,12 @@ describe('VTID-03947: every state.chatMessages push carries a raw ts epoch for r
   it('every state.chatMessages.push({...}) block within sendChatMessage() carries a ts: field', () => {
     const idx = SOURCE.indexOf('async function sendChatMessage() {');
     expect(idx).toBeGreaterThan(-1);
-    const body = SOURCE.slice(idx, idx + 8500);
+    // VTID-04028: slice to the end of the function, not a fixed 8500 chars —
+    // the streamed-turn path made sendChatMessage() longer and a fixed window
+    // cut through a push block, reporting a ts: field that is there as missing.
+    const rest = SOURCE.slice(idx + 1);
+    const nextDef = rest.search(/\n(?:async )?function /);
+    const body = nextDef === -1 ? SOURCE.slice(idx) : SOURCE.slice(idx, idx + 1 + nextDef);
     // Split on each push call and check the object literal that follows it
     // (up to the matching close) contains a ts: field — avoids miscounting
     // the unrelated userHistoryEntry/assistantHistoryEntry.ts assignments
