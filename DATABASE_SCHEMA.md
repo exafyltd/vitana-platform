@@ -260,6 +260,64 @@ ON CONFLICT (user_id) DO NOTHING;
 
 ---
 
+### operator_threads / operator_messages — NOT YET APPLIED (VTID-04022, file-only)
+**Purpose:** server-side record of the Command Hub Operator Console (W4b of
+`docs/OPERATOR-AGENT-BUILD-PLAN.md`, gap analysis §4.3). Until this, the
+console's transcript lived only in the browser (`localStorage`, VTID-03822)
+and its cross-session memory was the handful of `dev_agent_memory` rows a
+few tool outcomes write. One `operator_threads` row per client `threadId`
+carrying a rolling `summary` (rewritten every `OPERATOR_THREAD_SUMMARY_EVERY`
+turns by the `memory` routing stage); one `operator_messages` row per
+user / tool / assistant message. The `oasis_events` audit row per operator
+message is unchanged.
+
+**Status:** migration `20260917230000_vtid_04022_operator_threads.sql`
+ships as a **file**; apply on the platform owner's go (`RUN-MIGRATION.yml`
+or the Supabase MCP). The gateway code (`services/gateway/src/services/
+operator-threads.ts`, behind `OPERATOR_THREADS_ENABLED=true`, default off)
+is fail-open while the tables are absent — it logs once and records
+nothing — so deploying the code first is safe.
+
+**Used by:**
+- `POST /api/v1/operator/chat` (`routes/operator.ts`) — reads the thread
+  summary before the model call (`getThreadSummary`), records the turn after
+  it (`recordOperatorTurn`, fire-and-forget), summarises on the cadence
+  (`maybeSummarizeThread`)
+- `processWithGemini()` — `dev_agent_memory` recall runs against
+  `buildRecallQuery(summary, message)` instead of the raw message
+
+**Schema:**
+```sql
+CREATE TABLE operator_threads (
+  id              TEXT PRIMARY KEY,          -- the client-supplied threadId
+  user_id         UUID,
+  tenant_id       UUID,
+  role            TEXT,
+  title           TEXT,                      -- first line of the first user message
+  summary         TEXT,                      -- rolling summary (≤ ~1.6 KB)
+  summary_turns   INTEGER NOT NULL DEFAULT 0,-- turn count the summary covers
+  turns           INTEGER NOT NULL DEFAULT 0,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_message_at TIMESTAMPTZ
+);
+CREATE TABLE operator_messages (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  thread_id  TEXT NOT NULL REFERENCES operator_threads(id) ON DELETE CASCADE,
+  role       TEXT NOT NULL CHECK (role IN ('user','assistant','tool')),
+  content    TEXT NOT NULL,                  -- clipped (6 KB user/assistant, 2 KB tool)
+  tool_name  TEXT,
+  meta       JSONB NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- idx_operator_messages_thread_created (thread_id, created_at DESC)
+-- idx_operator_threads_user_updated   (user_id, updated_at DESC)
+-- RLS enabled; one FOR ALL policy per table for service_role only —
+-- the browser never touches these tables, it talks to /api/v1/operator/*.
+```
+
+---
+
 ### Wallet System (USD / Credits / VTNA) — added 2026-07-17
 
 **This is the live, production system backing the wallet UI** (`useWallet.ts`
@@ -731,6 +789,7 @@ CREATE TABLE my_new_table (
 
 | Date | Change | Author | VTID |
 |------|--------|--------|------|
+| 2026-09-17 | Documented `operator_threads` / `operator_messages` (server-side Operator Console threads + rolling summaries, W4b). Migration `20260917230000_vtid_04022_operator_threads.sql` ships as a file — **NOT applied**; gateway code is fail-open until it is. | Claude | VTID-04022 |
 | 2026-09-17 | Commerce Partner Onboarding landing: marked the `partner_organizations`/roster/`patient_profiles` section APPLIED (Phase A, VTID-03957); documented `partner_organizations.commerce_vertical` (VTID-03974) and the VTID-03995 `get_my_permitted_roles()`/`set_role_preference()` changes — both migrations applied to the live project 2026-09-17 on the platform owner's explicit instruction, post-checked (column + CHECK + comment present; both function bodies replaced, `validate_role_assignment()` no longer called from `set_role_preference()`). | Claude | VTID-03996 |
 | 2026-09-17 | Added `service_bot_accounts` allowlist + guarded the VTID-03089 welcome-chat trigger and its `/auth/login` TS mirror against it. Two service/automation accounts (claude-code-agent, operator-autopilot) provisioned directly into `user_tenants` on 2026-09-16 fanned an identical intro DM out to 445 real community members — confirmed via read-only production query, nothing recalled. Migration `20260917084341_vtid_03990_service_bot_accounts_skip_welcome_chat.sql`. | Claude | VTID-03990 |
 | 2026-09-13 | `dev_autopilot_outcomes.source_type` CHECK widened from the original `('dev_autopilot','dev_autopilot_impact')` pair to the full executor-lane allowlist (`missing-test-scanner`, `test-contract-failure-scanner`, `dev_autopilot`, `dev_autopilot_impact`, `operator_onramp`) — migration `20260913100000_vtid_03844_outcomes_source_type_allowlist.sql`. The constraint had never followed VTID-02984's single allowlist or VTID-03820's `operator_onramp`, and `recordOutcome()` carried its own copy of the stale pair, so operator on-ramp executions produced no outcome rows at all (observed on staging 2026-09-13). A gateway test reads the migration and fails if its list drifts from `EXECUTABLE_RECOMMENDATION_SOURCE_TYPES`. Migration ships as a file; apply via `RUN-MIGRATION.yml`. | Claude | VTID-03844 |
