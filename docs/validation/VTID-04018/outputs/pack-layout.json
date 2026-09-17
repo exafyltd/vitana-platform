@@ -1,0 +1,20 @@
+{
+  "vtid": "VTID-04018",
+  "flag": "OPERATOR_BOOTSTRAP_PACK_ENABLED=true (staging pinned; prod not)",
+  "targets_env": "OPERATOR_BOOTSTRAP_BUILD_INFO_URLS=label=https://…/api/v1/admin/build-info,…",
+  "ttl_ms": 300000,
+  "source_timeout_ms": 2500,
+  "pack_max_chars": 40000,
+  "sections_in_order": [
+    { "title": "Governance rules (CLAUDE.md Part 1, abridged)", "source": "GitHub contents API, exafyltd/vitana-platform CLAUDE.md @main", "cap_chars": 8000 },
+    { "title": "Recent change log (newest first)", "source": "same CLAUDE.md fetch, CHANGE LOG table", "cap": "20 rows x 240 chars" },
+    { "title": "Service path map (config/service-path-map.json)", "source": "GitHub contents API", "cap_chars": 3000 },
+    { "title": "Database tables (DATABASE_SCHEMA.md index)", "source": "GitHub contents API, ### headings only", "cap_chars": 3000 },
+    { "title": "Live build-info", "source": "GET each target URL", "cap": "one line per target" },
+    { "title": "Open pull requests", "source": "listOpenPrsWithStatus(platform) + vitana-v1 pulls via FRONTEND_DEPLOY_TOKEN (optional)", "cap": "20 rows" },
+    { "title": "Recent deploy / autopilot events (OASIS)", "source": "oasis_events topic like deploy.* or dev_autopilot.*", "cap": "10 rows" },
+    { "title": "Tool catalog (rendered from the declarations you were given this turn)", "source": "getRouterToolDefinitions(role) — per call, not cached", "cap_chars": 5000 }
+  ],
+  "turns_that_carry_it": ["callVertexWithTools (main operator turn)", "sendToolResultsToVertex (tool-result turn)"],
+  "kept": "CODEBASE_OVERVIEW_BLOCK (VTID-03930) — the pack supplements it"
+}
