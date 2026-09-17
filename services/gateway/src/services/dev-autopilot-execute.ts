@@ -46,6 +46,8 @@ import { isWorkerQueueEnabled, isWorkerOwnsPrEnabled, runWorkerTask, reclaimStuc
 import { writeAutopilotFailure, writeAutopilotSuccess } from './dev-autopilot-self-heal-log';
 import { recordOutcome, recordExecOutcome } from './dev-autopilot-outcomes';
 import { loadAutopilotContext } from './dev-autopilot/context-loader';
+// VTID-04002: deterministic validator-compliant PR title/body + evidence pack.
+import { applyPrContract } from './dev-autopilot-pr-contract';
 // VTID-02984 (PR-M1.x): shared allowlist for executable source_types so
 // test-contract scanner recommendations (PR-L2/L3) reach the executor.
 import {
@@ -1405,7 +1407,7 @@ async function callRoutedLlm(
   prompt: string,
   vtid?: string | null,
   override?: { provider: LLMProvider; model: string },
-): Promise<{ ok: boolean; text?: string; usage?: { input_tokens?: number; output_tokens?: number }; error?: string }> {
+): Promise<{ ok: boolean; text?: string; usage?: { input_tokens?: number; output_tokens?: number }; error?: string; provider?: string; model?: string }> {
   const { callViaRouter } = await import('./llm-router');
   const r = await callViaRouter('worker', prompt, {
     vtid: vtid ?? null,
@@ -1423,6 +1425,9 @@ async function callRoutedLlm(
     usage: r.usage
       ? { input_tokens: r.usage.inputTokens, output_tokens: r.usage.outputTokens }
       : undefined,
+    // VTID-04002: recorded in the PR's evidence pack (commands.log / outputs/).
+    provider: r.provider ? String(r.provider) : undefined,
+    model: r.model ? String(r.model) : undefined,
   };
 }
 
@@ -1628,7 +1633,7 @@ export async function runExecutionSession(
   // Widen the inline type so both call shapes satisfy the union we destructure
   // below (worker-queue path may carry pr_url/pr_number/branch from the
   // worker-owned-PR mode; callRoutedLlm never does).
-  const llm: { ok: boolean; text?: string; usage?: { input_tokens?: number; output_tokens?: number }; error?: string; pr_url?: string; pr_number?: number; branch?: string; attempt_failures?: WorkerAttemptFailure[] } =
+  const llm: { ok: boolean; text?: string; usage?: { input_tokens?: number; output_tokens?: number }; error?: string; pr_url?: string; pr_number?: number; branch?: string; attempt_failures?: WorkerAttemptFailure[]; provider?: string; model?: string } =
     (isWorkerQueueEnabled() && !onRampOverride)
       ? await runWorkerTask(
           {
@@ -1746,7 +1751,10 @@ export async function runExecutionSession(
   if (!br.ok) return { ok: false, error: br.error, session_id: sessionId, branch };
 
   // 5. Write each file
-  const vtidLike = `VTID-DA-${executionId.slice(0, 8)}`;
+  // VTID-04002: commit under the real task VTID when the finding carries one
+  // (operator on-ramp always does); the synthetic VTID-DA-<exec> id stays the
+  // fallback for unlinked findings.
+  const vtidLike = activatedVtid || `VTID-DA-${executionId.slice(0, 8)}`;
   for (const f of parsed.files) {
     const existing = fileCtx.find(x => x.path === f.path);
     if (f.action === 'delete') {
@@ -1789,9 +1797,40 @@ export async function runExecutionSession(
     };
   }
 
-  // 6. Open PR
-  const prTitle = parsed.pr_title || `DEV-AUTOPILOT: execute plan ${executionId.slice(0, 8)}`;
-  const prBody = parsed.pr_body || `Automated PR from Dev Autopilot execution \`${executionId}\`.\n\n---\n\n${plan.plan_markdown.slice(0, 40_000)}`;
+  // 6. VTID-04002: apply the validator-compliant PR contract. VALIDATOR-CHECK.yml
+  // rejects any PR touching services/gateway/src/** that lacks the VTID in
+  // its title, the `VTID:`/`VALIDATION_PROFILE:`/marker lines in its body, and
+  // a docs/validation/<VTID>/ evidence pack IN THE DIFF (PR #3351, execution
+  // 0643b701, was reverted on exactly that — exit 10 — after every functional
+  // check had passed). The model is never asked for any of this; it is
+  // derived deterministically from what the executor already knows. The
+  // evidence files are written AFTER the empty-diff guard above so that guard
+  // still measures the model's own diff, never the pack.
+  const rawTitle = parsed.pr_title || `DEV-AUTOPILOT: execute plan ${executionId.slice(0, 8)}`;
+  const rawBody = parsed.pr_body || `Automated PR from Dev Autopilot execution \`${executionId}\`.\n\n---\n\n${plan.plan_markdown.slice(0, 40_000)}`;
+  const contract = applyPrContract({
+    vtid: activatedVtid,
+    title: rawTitle,
+    body: rawBody,
+    files: parsed.files.map(f => ({ path: f.path, action: f.action })),
+    executionId,
+    findingId: exec.finding_id,
+    planVersion: exec.plan_version,
+    branch,
+    baseBranch: GITHUB_BASE_BRANCH,
+    provider: llm.provider || onRampOverride?.provider || null,
+    model: llm.model || onRampOverride?.model || null,
+  });
+  if (contract.skipped_reason) {
+    console.warn(`${LOG_PREFIX} [${executionId.slice(0, 8)}] PR contract NOT applied: ${contract.skipped_reason} — VALIDATOR-CHECK will reject this PR`);
+  }
+  for (const ef of contract.evidenceFiles) {
+    const existingEv = await fetchFileContent(ef.path, branch);
+    const evR = await putFileToBranch(branch, ef.path, ef.content, `${vtidLike}: evidence pack ${ef.path}`, existingEv.exists ? existingEv.sha : undefined);
+    if (!evR.ok) return { ok: false, error: `write evidence ${ef.path}: ${evR.error}`, session_id: sessionId, branch };
+  }
+  const prTitle = contract.title;
+  const prBody = contract.body;
   console.log(`${LOG_PREFIX} [${executionId.slice(0, 8)}] opening PR "${prTitle}"`);
   const pr = await openPullRequest(branch, GITHUB_BASE_BRANCH, prTitle, prBody);
   if (!pr.ok) return { ok: false, error: `open PR: ${pr.error}`, session_id: sessionId, branch };

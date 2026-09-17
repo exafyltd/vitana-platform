@@ -1,0 +1,24 @@
+{
+  "vtid": "VTID-04003",
+  "execution_id": "e3ca9a1d-6534-435f-af3c-2a60632ca315",
+  "finding_id": "3d2b1bc4-e5c4-4068-a9d0-dd6d6b5d5fac",
+  "plan_version": 1,
+  "branch": "dev-autopilot/e3ca9a1d",
+  "base_branch": "main",
+  "llm": {
+    "provider": "deepseek",
+    "model": "deepseek-flash"
+  },
+  "files": [
+    {
+      "path": "services/gateway/src/services/dev-autopilot-watcher.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/test/dev-autopilot-watcher-failure-reason.test.ts",
+      "action": "create"
+    }
+  ],
+  "generated_at": "2026-09-17T17:02:19.072Z",
+  "generated_by": "dev-autopilot-execute (VTID-04002 PR contract)"
+}

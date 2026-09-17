@@ -74,7 +74,7 @@ const TOOL_REGISTRY: Map<string, ToolDefinition> = new Map([
           files_referenced: {
             type: 'array',
             items: { type: 'string' },
-            description: 'Source AND paired test file paths the plan touches.',
+            description: 'Source AND paired test file paths the plan touches. Every entry MUST be a repo-root-relative path exactly as it appears in the repository (e.g. services/gateway/src/services/foo.ts, services/gateway/test/foo.test.ts) — never a bare filename, never a path relative to a subdirectory. The safety gate glob-matches each entry against its allow scope; a bare filename like foo.ts never matches and the whole call is rejected.',
           },
         },
         required: ['vtid', 'plan_markdown', 'files_referenced'],

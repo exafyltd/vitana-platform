@@ -209,7 +209,7 @@ export const GEMINI_TOOL_DEFINITIONS = {
           files_referenced: {
             type: 'array',
             items: { type: 'string' },
-            description: 'File paths the plan will create or change — nothing else. A test-only plan lists only the test file; a source change lists the source file AND its paired test file (the safety gate rejects a plan missing test coverage, and rejects any listed file outside its allow scope).'
+            description: 'File paths the plan will create or change — nothing else. Every path MUST be repo-root-relative exactly as it appears in the repository (e.g. services/gateway/src/services/foo.ts, services/gateway/test/foo.test.ts) — never a bare filename, never relative to a subdirectory: the safety gate glob-matches each entry against its allow scope and a bare filename never matches. A test-only plan lists only the test file; a source change lists the source file AND its paired test file (the safety gate rejects a plan missing test coverage, and rejects any listed file outside its allow scope).'
           }
         },
         required: ['vtid', 'plan_markdown', 'files_referenced']
@@ -1205,6 +1205,28 @@ async function executeCreateTask(
  * function is a thin governance-logged wrapper, matching executeCreateTask's
  * own shape.
  */
+/**
+ * VTID-04002: render an on-ramp rejection with its safety-gate violations so
+ * the reason (rule code + offending path) is visible in the chat reply.
+ */
+export function describeOnRampRejection(error: string, violations?: unknown[]): string {
+  if (!Array.isArray(violations) || violations.length === 0) return error;
+  const parts = violations.slice(0, 8).map((v) => {
+    if (v && typeof v === 'object') {
+      const o = v as Record<string, unknown>;
+      const code = typeof o.code === 'string' ? o.code : 'violation';
+      const detail = (o.detail && typeof o.detail === 'object') ? (o.detail as Record<string, unknown>) : {};
+      const rawPath = o.path ?? o.file ?? detail.path ?? detail.file
+        ?? (Array.isArray(detail.files) ? (detail.files as unknown[]).map(String).join(', ') : undefined);
+      const path = typeof rawPath === 'string' && rawPath.length > 0 ? rawPath : undefined;
+      const msg = typeof o.message === 'string' ? o.message : '';
+      return [code, path ? `(${path})` : '', msg ? `— ${msg}` : ''].filter(Boolean).join(' ');
+    }
+    return String(v);
+  });
+  return `${error}: ${parts.join('; ')}`;
+}
+
 async function executeExecuteTask(
   args: { vtid: string; plan_markdown: string; files_referenced: string[] },
   threadId: string
@@ -1278,7 +1300,12 @@ async function executeExecuteTask(
       action: 'rejected',
       details: { reason: result.error, violations: result.violations },
     });
-    return { ok: false, error: result.error };
+    // VTID-04002: surface the safety-gate violations to the operator. Before
+    // this, only the bare string 'safety gate blocked approval' reached the
+    // chat and the model had no way to tell the user WHICH rule or path was
+    // rejected (Test Run #1: a bare `memory-relevance-scoring.ts` failed the
+    // allow-scope glob and the operator saw no path at all).
+    return { ok: false, error: describeOnRampRejection(result.error, result.violations) };
   }
 
   await logAutopilotIntent({
@@ -3460,7 +3487,7 @@ function getOperatorSystemPrompt(): string {
 **CRITICAL EXECUTION RULES (autopilot_execute_task):**
 - Only call it when the user explicitly asks to execute/implement/ship a SPECIFIC VTID they name. Never invent a VTID, never execute a VTID the user did not name, and never use it to create new work (that is autopilot_create_task).
 - A task's ledger status (in_progress, scheduled, etc.) is NOT a signal that an execution is already running — a person or a coding session sets in_progress when they start working a task. Do NOT refuse to execute because autopilot_get_status reports in_progress. The tool itself is the only authority on whether an execution can start: call it and report its result.
-- Build plan_markdown from what the user said plus the task's title/spec; list in files_referenced the files the plan will create or change — nothing else. A test-only plan lists only the test file; a source change lists the source file AND its test file, because the safety gate rejects a plan without test coverage. Never add a file the plan does not touch (the safety gate also rejects any file outside its allow scope).
+- Build plan_markdown from what the user said plus the task's title/spec; list in files_referenced the files the plan will create or change — nothing else. A test-only plan lists only the test file; a source change lists the source file AND its test file, because the safety gate rejects a plan without test coverage. Never add a file the plan does not touch (the safety gate also rejects any file outside its allow scope). Every files_referenced entry MUST be the full repo-root-relative path exactly as it appears in the repository (e.g. services/gateway/src/services/foo.ts and services/gateway/test/foo.test.ts) — never a bare filename like foo.ts and never a path relative to a subdirectory; the safety gate glob-matches each entry against its allow scope and a bare filename never matches, so the whole execution is rejected.
 - If the tool returns a rejection (governance, safety gate, kill switch, on-ramp disabled), report the exact reason honestly. Never claim an execution was queued unless the tool returned status "queued".
 - If you believe the tool is unavailable or disabled, call it anyway and report what it returns — do not tell the user it is unavailable based on an assumption.
 
