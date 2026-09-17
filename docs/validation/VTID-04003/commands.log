@@ -1,0 +1,18 @@
+# VTID-04003 — commands run by the Dev Autopilot executor
+
+# 2026-09-17T17:02:19.072Z
+# execution_id=e3ca9a1d-6534-435f-af3c-2a60632ca315 finding_id=3d2b1bc4-e5c4-4068-a9d0-dd6d6b5d5fac plan_version=1
+# branch=dev-autopilot/e3ca9a1d base=main
+# llm provider=deepseek model=deepseek-flash
+
+$ dev-autopilot: fetch current content of 2 plan file(s) from main
+$ dev-autopilot: callViaRouter('worker') → parse <<<PR_TITLE>>>/<<<PR_BODY>>>/<<<FILE>>> blocks
+$ dev-autopilot: validate emitted paths ⊆ plan.files_referenced; plan/diff coverage ≥ threshold
+$ git checkout -b dev-autopilot/e3ca9a1d main
+$ git add services/gateway/src/services/dev-autopilot-watcher.ts   # modify
+$ git add services/gateway/test/dev-autopilot-watcher-failure-reason.test.ts   # create
+$ dev-autopilot: write docs/validation/VTID-04003/ evidence pack (this file)
+$ gh pr create --base main --head dev-autopilot/e3ca9a1d
+
+# Build, lint and the full jest suite run in CI on this PR (VALIDATOR-CHECK build gate + Gateway CI);
+# the executor itself does not run them — see outputs/execution.json.
