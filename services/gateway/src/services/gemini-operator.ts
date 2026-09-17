@@ -50,6 +50,7 @@ import { formatSyncBrief, isWhatNextIntent, shouldFetchRecommendations, SyncBrie
 import { executeKnowledgeSearch, KNOWLEDGE_SEARCH_TOOL_DEFINITION } from './knowledge-hub';
 // VTID-03835: Operator Console codebase read access (search + file read)
 import { searchCode, getFileContents } from './github-service';
+import { getOperatorBootstrapPack } from './operator-bootstrap-pack';
 // VTID-03836: Operator Console AWS ECS read-only status
 import { describeEcsServices, ALLOWED_ECS_SERVICES } from './aws-ecs-readonly';
 // VTID-01208: LLM Telemetry
@@ -3720,7 +3721,13 @@ async function callVertexWithTools(
   // Operator turn, authenticated or not, gets it, the same way
   // dev_agent_memory recall runs unconditionally above. It is background
   // context, not a tool result, so it does not depend on userRole.
-  const systemPrompt = `${withMemory}\n\n${CODEBASE_OVERVIEW_BLOCK}`;
+  // VTID-04018: the session bootstrap pack (rules, service map, schema index,
+  // recent change log, live build-info, open PRs, recent events, and the tool
+  // catalog rendered from the declarations below). '' unless
+  // OPERATOR_BOOTSTRAP_PACK_ENABLED=true; fail-open by construction.
+  const routerTools = getRouterToolDefinitions(userRole);
+  const bootstrapPack = await getOperatorBootstrapPack({ toolDefs: routerTools });
+  const systemPrompt = `${withMemory}\n\n${CODEBASE_OVERVIEW_BLOCK}${bootstrapPack ? `\n\n${bootstrapPack}` : ''}`;
 
   // VTID-03579: was a direct Vertex `generateContent` with ADC. The operator is
   // the last big Google caller and the hardest, because it is an agentic loop
@@ -3738,7 +3745,7 @@ async function callVertexWithTools(
     service: 'gemini-operator',
     systemPrompt,
     maxTokens: 4096,
-    tools: getRouterToolDefinitions(userRole),
+    tools: routerTools,
     history: conversationHistory.map((m) => ({ role: m.role, content: m.content })),
   });
 
@@ -3772,7 +3779,7 @@ async function sendToolResultsToVertex(
   toolResults: GeminiToolResult[],
   threadId: string
 ): Promise<{ reply: string }> {
-  const systemPrompt = `You are Vitana, a friendly community assistant. Present the tool results to the user in a warm, helpful way.
+  const baseToolResultPrompt = `You are Vitana, a friendly community assistant. Present the tool results to the user in a warm, helpful way.
 If there were errors or governance blocks, explain them clearly.
 If successful, present the results naturally.
 
@@ -3782,6 +3789,10 @@ CRITICAL — Sharing links:
 - Example:
   🎉 City by Bike Tour in Lyon
   https://vitanaland.com/e/city-by-bike`;
+  // VTID-04018 (§4.1 "same prompt for tool-result turns"): the tool-result
+  // turn carries the same bootstrap pack as the main turn — '' when disabled.
+  const toolResultPack = await getOperatorBootstrapPack({ toolDefs: getRouterToolDefinitions(undefined) });
+  const systemPrompt = toolResultPack ? `${baseToolResultPrompt}\n\n${toolResultPack}` : baseToolResultPrompt;
 
   // VTID-03579: results are presented as a TEXT turn, not as tool_result blocks,
   // and that is a deliberate protocol choice rather than a shortcut.

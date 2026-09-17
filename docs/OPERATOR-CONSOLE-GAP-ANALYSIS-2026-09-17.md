@@ -459,3 +459,7 @@ owner (this session's IAM cannot list schedules).
 
 **Not verified live.** Test Run #6 (plan): an agent PR whose first attempt breaks a paired test, then the same PR going green from a fix-mode child with no second PR.
 
+## 11. W4a — the session bootstrap pack (VTID-04018), shipped 2026-09-17
+
+§4.1 asked for the console to start each turn the way a Claude Code session does. `operator-bootstrap-pack.ts` now assembles, per turn, the CLAUDE.md Part 1 rules and the newest 20 change-log rows (GitHub contents API — the container has no CLAUDE.md), the service path map, the `DATABASE_SCHEMA.md` table index, live `build-info` for the gateways named in `OPERATOR_BOOTSTRAP_BUILD_INFO_URLS`, open PRs on both repos (platform with CI state), the last 10 `deploy.*`/`dev_autopilot.*` OASIS events, and the tool catalog rendered from the declarations the model is actually given — the hand-typed tool list in the prompt is now the floor, not the ceiling. Every source is bounded, timed out at 2.5 s and fails open to one `(unavailable: …)` line; the fetched sections are cached for 5 minutes with coalesced concurrent builds; the pack is capped at 40 KB and appended to both the main turn and the tool-result turn. Gated on `OPERATOR_BOOTSTRAP_PACK_ENABLED` (pinned on staging). Still open from §4.1: recall against a thread summary rather than the raw message — that needs the server-side threads of §4.3 (W4b).
+
