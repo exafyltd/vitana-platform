@@ -390,14 +390,26 @@ export function inheritedOnRampMetadata(
   if (override && typeof override === 'object' && !Array.isArray(override)) {
     out.llm_on_ramp_override = override;
   }
+  // VTID-04006: a self-heal child runs on the same executor as its parent —
+  // an agent-mode parent's retry must not silently drop back to single-shot.
+  const executor = parentMetadata.executor;
+  if (executor === 'agent' || executor === 'single-shot') out.executor = executor;
   return out;
 }
+
+/** VTID-04005/04006: cap the failure evidence carried onto a child row. */
+const PARENT_FAILURE_MAX_CHARS = 8000;
 
 export async function spawnChildExecution(
   s: SupaConfig,
   parent: ExecutionRow,
   report: TriageReport,
   cooldownMinutes: number,
+  /** VTID-04005/04006: the parent's failure reason — since VTID-04005 this
+   *  carries the failing CI jobs' real log excerpts. Stored as
+   *  `metadata.parent_failure` so the agent executor's task prompt (and any
+   *  reader of the row) sees the evidence, not only the triage summary. */
+  parentFailure?: string | null,
 ): Promise<{ ok: boolean; execution_id?: string; error?: string }> {
   const childId = randomUUID();
   const now = new Date();
@@ -423,6 +435,7 @@ export async function spawnChildExecution(
         parent_execution_id: parent.id,
         triage_session_id: report.session_id,
         triage_confidence: report.confidence,
+        ...(parentFailure ? { parent_failure: parentFailure.slice(0, PARENT_FAILURE_MAX_CHARS) } : {}),
       },
     }),
   });
@@ -667,7 +680,7 @@ export async function bridgeFailureToSelfHealing(input: BridgeInput): Promise<Br
   };
 
   if (canRetry) {
-    const child = await spawnChildExecution(s, exec, report, cooldown);
+    const child = await spawnChildExecution(s, exec, report, cooldown, input.error);
     if (!child.ok) {
       // Couldn't spawn child — escalate instead.
       await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${exec.id}`, {

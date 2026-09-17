@@ -1,0 +1,5 @@
+{
+  "applied_at": "2026-09-17",
+  "allow_scope": ["config/**","DATABASE_SCHEMA.md","docs/**","scripts/**","services/agents/**","services/autopilot-worker/**","services/gateway/Dockerfile","services/gateway/Dockerfile.job","services/gateway/src/**","services/gateway/src/frontend/command-hub/**","services/gateway/src/lib/**","services/gateway/src/orb/**","services/gateway/src/routes/**","services/gateway/src/services/**","services/gateway/src/types/**","services/gateway/test/**","services/gateway/tests/**","services/oasis-operator/**","services/oasis-projector/**","services/worker-runner/**"],
+  "deny_scope": ["supabase/migrations/**","**/auth*",".github/workflows/**","services/gateway/src/lib/supabase.ts","**/.env*","**/credentials*"]
+}

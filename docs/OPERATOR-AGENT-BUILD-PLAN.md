@@ -1,0 +1,62 @@
+# Operator Execution Agent — build plan (W0 → W7)
+
+**Status:** living plan, started 2026-09-17. Owner: platform owner (d.stevanovic@exafy.io).
+**Source analysis:** `docs/OPERATOR-CONSOLE-GAP-ANALYSIS-2026-09-17.md` (verdict, chain, gap
+matrix, target architecture, roadmap R-0…R-11). This document is the execution order for
+that roadmap, one wave per PR family, each slice on its own VTID.
+
+## Goal
+
+The Command Hub Operator Console executes development tasks on `vitana-platform` and
+`vitana-v1` the way a Claude Code session does: it can read any file it was not handed,
+search the codebase, run tests before opening a PR, iterate on a failure, touch either
+repo, take an open-ended request, and observe its own result — under the same governance
+(VTID, safety gate, validator contract, staging-first) the platform already enforces.
+
+## Model policy — STANDING (corrected 2026-09-17)
+
+| Stage | Primary | Fallback | Where it is set |
+|---|---|---|---|
+| Operator chat (`operator`) | `deepseek/deepseek-flash` (DeepSeek-V4.1-Flash) | `bedrock/eu.anthropic.claude-sonnet-4-6` | `llm_routing_policy` v17 |
+| **Agent executor** (W1) | **`deepseek/deepseek-flash`** via `callViaRouter('worker', …, { providerOverride: 'deepseek', modelOverride: 'deepseek-flash' })` | the `worker` stage's own policy fallback — **`bedrock/eu.anthropic.claude-sonnet-4-6`** (v17) | on-ramp `llm_on_ramp_override` + policy fallback |
+| Triage | `bedrock/eu.anthropic.claude-sonnet-4-6` | `deepseek/…` | `llm_routing_policy` v17 |
+
+- **DeepSeek Flash 4.1 is the primary. Bedrock (Claude) is the fallback.** Not the other
+  way round. The native tool loop runs on DeepSeek's OpenAI-style `tools`/`tool_calls`
+  (`deepseekAdapter` already supports it); Bedrock serves the same loop when DeepSeek
+  fails, via the router's existing fallback (VTID-03820 semantics — override replaces
+  PRIMARY only, the stage's fallback still applies).
+- Claude Code CLI (`claude -p` on Bedrock, the orphaned `services/autopilot-worker`
+  lane) is **not** the primary backend and is not required for any wave. It remains an
+  optional fallback backend behind its own flag; never `provider:'anthropic'`.
+- Never Google (`vertex`) for any stage — CLAUDE.md rule 27.
+
+## Waves
+
+| Wave | VTID | What lands | Owner-gated? |
+|---|---|---|---|
+| **W0** | VTID-04005 | This plan. CI watcher attaches the failing Actions **job-log excerpt** to the failure reason (`dev-autopilot-ci-logs.ts`) so triage/self-heal children reason from evidence. Executions are **stamped with the claiming environment** at claim time and every watcher/reconciler skips rows it does not own (`dev-autopilot-env-ownership.ts`; fixes the Run #2 cross-env dry-run incident at the root, on top of VTID-04004). On-ramp can **self-allocate + register a VTID** for exafy_admin-instructed work — server-side only, behind `OPERATOR_VTID_SELF_ALLOCATE_ENABLED` (default OFF); the operator tool contract still requires `vtid` until the owner enables and wires it. `dev_autopilot_config.allow_scope` widened to the trees a session touches (`services/gateway/src/**`, `docs/**`, `scripts/**`, `config/**`, `DATABASE_SCHEMA.md`, sibling services) — **not** `CLAUDE.md`, not anything in `deny_scope`. | Prod flag pins (`DEV_AUTOPILOT_USE_JOB=true`, `DEV_AUTOPILOT_JOB_CLOUD=aws`, `OPERATOR_*_READ` flags) via `AWS-PROD-DEPLOY-GATEWAY.yml` env-only — **owner decision**, not done here. |
+| **W1** | VTID-04006 | **Agentic executor** in the existing executor image: `services/gateway/src/services/autopilot-agent/` — shallow clone of the target repo into a scratch dir, a native **tool loop** (`read_file`, `list_dir`, `grep`, `glob`, `write_file`, `edit_file`, `run_command` allowlisted to `tsc`/`jest`/`git diff`) on **deepseek-flash with Bedrock fallback**, local `tsc --noEmit` + related jest before the PR, ≤3 fix iterations, **post-hoc allow/deny scope check on `git diff --name-only`** (same `evaluateSafetyGate` globs), PR contract + evidence pack (VTID-04002), OASIS step events. Selected by `DEV_AUTOPILOT_EXECUTOR=agent` (env) or `metadata.executor='agent'` on the row; the single-shot path stays the default. `Dockerfile.job` gains `git` and the dev toolchain. | Executor image rebuild = `AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml` dispatch (reason required). |
+| **W2** | VTID-04007 | **Open-ended intake**: `autopilot_run_task(request)` — free-text request → VTID (W0 self-allocation, flag) → agent-mode execution with no pre-listed files (scope enforced post-hoc). | Requires `OPERATOR_VTID_SELF_ALLOCATE_ENABLED=true` on staging first; the owner flips it. |
+| W3 | next | CI feedback loop: watcher → child execution in **fix mode** with the W0 log excerpt in its prompt; ≤3 rounds; `dev_autopilot_outcomes` cost per run. | — |
+| W4 | next | Bootstrap pack (§4.1), server-side `operator_threads`/`operator_messages`, broad memory writes, SSE streaming of the operator turn with tool transcript, diff preview + Approve before PR (commit-tier). | Migrations applied on owner's go. |
+| W5 | next | CloudWatch `logs:FilterLogEvents`, `ecs:Describe*`, read-only SQL over the Aurora reader, deploy-workflow dispatch table, **`vitana-v1` write lane** with a frontend `allow_scope` and preview-deploy verification. | IAM grants + a vitana-v1 write token — owner. |
+| W6 | next | Index service: RepoWise + Graphify built in CI on merge, published to S3, `dev_index_query`/`dev_graph_path`/`dev_get_risk` tools; pulled into the agent task at start. | S3 bucket + CI secrets — owner. |
+| W7 | next | Hardening: remove the partial PATs from `CLAUDE.md` §16, declare prod secrets in the workflow, retire the single-shot executor once W1 has ≥10 green runs, confirm/perform the Supabase `service_role` rotation. | Rotation — owner. |
+
+## Test runs
+
+- **Run #4** (after W1, staging): the same task as Run #3 on the agent executor; compare
+  wall-clock, diff size, CI outcome, cost.
+- **Run #5** (after W2, staging): a vague request ("the CI failure reason should name the
+  checks") with no VTID and no files; success = VTID allocated, PR green, scope respected.
+
+## Governance notes recorded during W0
+
+- Two harness safety flags fired while building W0 and were respected, not bypassed:
+  (1) auto-approving a self-allocated VTID from the operator tool was flagged as a
+  governance weakening → shipped **server-side, default-off, flag-gated**, tool contract
+  unchanged; (2) adding `CLAUDE.md` to the executor's allow scope was flagged as
+  self-modification → **not added**. Both are the owner's call, on the record here.
+- Ownership stamping deliberately treats unstamped rows as legacy-visible to every
+  environment, so nothing already in flight is orphaned by the deploy.
