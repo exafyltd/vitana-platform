@@ -56,9 +56,8 @@ import type {
   UpstreamToolResult,
 } from './types';
 import { TranscribeStreamSession } from './cascaded/transcribe-stream';
+import { synthesizeCascadeReply } from './cascaded/tts-backend';
 import { evaluateCascadeEligibility } from './cascaded-config';
-import { synthesizePolly, resolvePollyVoice } from '../../../services/tts/polly';
-import { synthesizeFish } from '../../../services/tts/fish';
 import { callViaRouter } from '../../../services/llm-router';
 
 export interface CascadedLiveClientDeps {
@@ -367,20 +366,13 @@ export class CascadedLiveClient implements UpstreamLiveClient {
 
       this.transcriptHandler?.({ direction: 'output', text: replyText, isFinal: true });
 
-      let speech: { audioB64: string } | null = await synthesizePolly({
-        text: replyText,
-        lang: this.lang,
-        format: 'pcm',
-      });
-
-      // VTID-03970: a language with NO Polly voice at all (sr) can still
-      // have reached here — eligibility (`cascaded-config.ts`) admits it
-      // only when Fish is explicitly enabled and has a curated voice for
-      // it. Gated the same way here rather than trusting eligibility was
-      // computed with the identical env state moments earlier.
-      if (!speech?.audioB64 && !resolvePollyVoice(this.lang)) {
-        speech = await synthesizeFish({ text: replyText, lang: this.lang, format: 'pcm' });
-      }
+      // VTID-03987: TTS backend selection (Polly first, Fish only when
+      // Polly has no voice for the language at all) now lives in
+      // `cascaded/tts-backend.ts` — see that file for why the boundary is
+      // drawn there and what does/doesn't need a Polly-backed regression
+      // test when changed. Behaviour here is unchanged from before the
+      // extraction (VTID-03970's original selection).
+      const speech = await synthesizeCascadeReply(replyText, this.lang);
 
       if (!speech?.audioB64) {
         // Eligibility already proved a TTS provider has a voice for this
