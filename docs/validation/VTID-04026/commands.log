@@ -1,0 +1,48 @@
+# VTID-04026 — commands log
+
+## Trace (read-only, oasis_events on the shared Supabase project)
+
+  -- every 1007 close in the last 30h, then the full timeline of one
+  select ... from oasis_events where topic='orb.live.diag'
+    and metadata->>'stage'='upstream_ws_close' and metadata->>'code'='1007'
+  select ... from oasis_events where metadata::text like '%live-f5e23ff7%'
+  → setup_complete reached (upstream_ws_state:1 at greeting_sent), 1007 at +290 ms
+
+  -- per-session outcome vs voice/auth/prompt_len (anonymous 78 chars always
+  -- passes; authenticated ~600 chars fails ~80%, length does not separate
+  -- pass from fail)
+  -- sessions that spoke first and STILL closed: 1007 after the user's first
+  -- utterance (input_transcription ×N → upstream_ws_close at turn_count:1)
+
+## Measure the setup envelope (no gateway run needed)
+
+  cd services/gateway
+  npx tsx <scratch>/measure-tools.ts      # per mode/surface: 2 / 290 / 134 declarations
+  npx tsx <scratch>/measure-groups.ts     # core 65 = 96 KB, domain 225 = 130 KB
+  npx tsx <scratch>/scan-schemas.ts       # no invalid JSON-schema keywords
+  → outputs/tool-catalog-measurements.txt
+
+## Controlled live isolation against staging (test account only; voice
+## session start/stop, the documented narrow exception)
+
+  export SUPABASE_ANON_KEY=<publishable key from vitana-v1/.env>
+  export TEST_ACCOUNT_EMAIL=e2e-test@vitana.dev TEST_ACCOUNT_PASSWORD=<documented>
+  node scripts/orb/verify-vertex-serbian-bridge.mjs --mode=authenticated --trials=8
+  node scripts/orb/verify-vertex-serbian-bridge.mjs --mode=authenticated --trials=8 --route=/admin
+  → outputs/live-experiment-staging-2026-09-17.txt  (2/8 vs 8/8)
+
+## Fix + tests
+
+  npx jest test/orb/live/tools/vertex-tool-catalog-budget.test.ts \
+           test/orb/live/tools/surface-gated-catalog.test.ts
+  → 2 suites, 21/21 passing
+  NODE_OPTIONS=--max-old-space-size=3072 npx tsc --noEmit
+  npx jest   # full suite → outputs/test-results.txt
+
+## Post-merge (AC-7)
+
+  node scripts/orb/verify-vertex-serbian-bridge.mjs --mode=authenticated --trials=8
+  select metadata->>'stage', count(*) from oasis_events
+    where topic='orb.live.diag' and created_at > <deploy time>
+      and metadata->>'stage' in ('upstream_ws_close','vertex_tool_catalog_trimmed')
+    group by 1;

@@ -1263,6 +1263,37 @@ real on the very next staging deploy after this merges, with no separate
 operator step. `AWS-PROD-DEPLOY-GATEWAY.yml` is untouched — prod stays
 inert regardless.
 
+**⚠️ The bridge's tool catalog is byte-budgeted (VTID-04026) — do not
+"restore" the full catalog for Serbian without re-measuring.** Post-login
+`sr` sessions closed with `upstream_ws_close code:1007 "Request contains an
+invalid argument."` on ~80% of sessions — never at setup, always ~300 ms
+after the FIRST generation request — which the widget surfaces as the
+endless spoken "hold on, I'm reconnecting" loop. Three greeting-wording
+fixes (VTID-04010/04014/04015) did not move the rate because the greeting
+was never the cause: an authenticated community session declares **290
+function declarations = 226 KB** of JSON in `setup.tools` (anonymous: 2 /
+4.9 KB), on top of the 30 KB instruction the `instruction-budget.ts` guard
+bounds — the catalog itself had no bound, and Gemini Live rejects the
+oversized aggregate on the first generation, not the handshake (the exact
+shape `live-system-instruction.ts` already recorded from the pre-shutdown
+era). Proven live, same account/language/deployment, only the surface
+changed: community (290 tools) 2/8 turns completed, admin (134 tools /
+45 KB) 8/8. `orb/live/tools/vertex-tool-catalog-budget.ts` now packs the
+catalog to `VERTEX_TOOL_CATALOG_BYTE_BUDGET` (default 48 KB, inside the
+measured-working point; `0` disables) with a priority list — navigation,
+`end_conversation`, memory/diary/reminders, the guided-journey/teacher
+tools, persona hand-off, calendar, messaging, daily logs — kept first;
+applied in `orb-live.ts`'s envelope builder ONLY when
+`session.upstreamProvider === 'vertex'` (never keyed on language), so Nova
+Sonic and the cascade keep the full catalog. A trim is an OASIS diag
+(`stage=vertex_tool_catalog_trimmed`), not a console line, because
+VTID-04021's handoff could not even confirm whether the instruction guard
+was firing without CloudWatch. The ~80/20 split on byte-identical requests
+is consistent with `VERTEX_AI_LOCATION=global` routing to backends with
+different effective limits — a hypothesis, not established; shrinking the
+request fixes the failure whichever backend serves it. Raising the budget
+is an env change once a larger value is observed to hold on staging.
+
 **90-day window.** This is a bridge, not a standing architecture decision
 — when the credit window ends (or the cascade's own turn-shaping latency
 gets fixed some other way), the fix is one flag flip
@@ -1533,6 +1564,9 @@ VERTEX_SERBIAN_BRIDGE_ENABLED=true
 GOOGLE_CLOUD_PROJECT=<new-project-id>
 VERTEX_AI_LOCATION=us-central1
 GCP_SERVICE_ACCOUNT_JSON=xxx
+# Byte budget for the tool catalog the Vertex bridge declares (VTID-04026,
+# §2e-vertex-serbian-bridge). Unset = 48 KB default; 0 disables the guard.
+VERTEX_TOOL_CATALOG_BYTE_BUDGET=49152
 ```
 
 `GOOGLE_CLOUD_PROJECT`, `GCP_PROJECT`, `VERTEX_LOCATION`, `VERTEX_MODEL`,
@@ -2153,6 +2187,7 @@ defs that carry it, and record the rotation in this file's CHANGE LOG.
 
 | Date | Change | VTID |
 |------|--------|------|
+| 2026-09-18 | **Post-login Serbian voice on staging looped "hold on, I'm reconnecting" — the VTID-04021 handoff's open problem, closed with measurement instead of a fourth rewording.** Traced read-only in `oasis_events`: every failing authenticated `sr` session reached `setup_complete` (`upstream_ws_state:1` at `greeting_sent`) and closed `1007 "Request contains an invalid argument."` ~290 ms after the FIRST generation request — the greeting, or on the sessions whose greeting survived, the user's first utterance (`input_transcription` ×N → close at `turn_count:1`), which is why the audible cue (suppressed only while nothing has been heard yet) then repeats on every turn. That is the shape `live-system-instruction.ts` already documents for the pre-shutdown incident ("1007 on the very first client_content send (setup itself is accepted)") — so the handoff's instruction-budget lead was half right: the aggregate IS too large, but it is the TOOL CATALOG the instruction guard never covered. Measured with `buildLiveApiTools` on this commit's parent: authenticated community = **290 declarations / 226 KB** (65 core = 96 KB + 225 domain = 130 KB), admin = 134 / 45 KB, anonymous = 2 / 4.9 KB. Then isolated live rather than argued: added `--route=` to `scripts/orb/verify-vertex-serbian-bridge.mjs` (the surface is the one knob that changes envelope size without code) and ran 8+8 authenticated trials on staging, same account/language/deployment — community surface **2/8** completed a turn (6 × 1007), admin surface **8/8**, fluent Serbian on every one, first-audio latency 1.0–1.5 s vs 1.4–2.0 s. Ruled out with a scan of all 290 schemas: no invalid JSON-schema keyword (the only hits are property names such as `title`), no duplicate names; the voice is the same on passing anonymous sessions. **Fix:** `orb/live/tools/vertex-tool-catalog-budget.ts` — pure first-fit packer, priority list kept first (navigation, `end_conversation`, memory/diary/reminders, guided-journey/teacher, persona hand-off, calendar, messaging, daily logs), remainder in catalog order, `google_search` untouched, default 48 KB (inside the measured-working point), `VERTEX_TOOL_CATALOG_BYTE_BUDGET` overrides, `0` disables; wired in `orb-live.ts`'s envelope builder gated on `session.upstreamProvider === 'vertex'` only — never on `sr` — with a queryable `vertex_tool_catalog_trimmed` OASIS diag. 14 new tests (packer, env resolver, the REAL catalog, a source contract on the wiring); `surface-gated-catalog` re-run green; `tsc --noEmit` clean. **Not touched, on the owner's instruction:** the pre-login thinking-text-spoken bug (visible again in admin trial 1's transcript). Evidence: `docs/validation/VTID-04026/`. Post-merge AC-7 is the same script on the default surface expecting 8/8. | VTID-04026 |
 | 2026-09-17 | **W7a of the operator agent plan: the partial GitHub PATs are out of this file.** §16 printed the first characters of two live personal access tokens ("use these PATs with the GitHub REST API") in the one file every session force-loads and every agent prompt carries (the executor's system prompt embeds Part 1; the W4a bootstrap pack reads this file through the GitHub API). Replaced with where each token actually lives — `GITHUB_SAFE_MERGE_TOKEN`/`FRONTEND_DEPLOY_TOKEN` in AWS Secrets Manager wired by the deploy workflows, Actions repository secrets, and the GitHub MCP tools for a session — plus the leak rule (rotate, update the secret, redeploy, record). New `test/vtid-04019-no-token-prefixes-in-docs.test.ts` scans `CLAUDE.md`, `README.md` and every markdown file under `docs/` (487 files) for token shapes (GitHub fine-grained/classic, AWS access key ids, `sk-`/`sk-ant-` keys, JWTs) and fails the build on any hit; 488/488 passing. **Owner follow-up, not done here:** rotate the two tokens whose prefixes sat in `main` for weeks; the Supabase `service_role` rotation and the prod operator-flag declarations remain open W7 items. | VTID-04019 |
 | 2026-09-17 | **W4a of the operator agent plan: the Operator Console's session bootstrap pack (gap analysis §4.1).** The console's codebase knowledge was a hand-typed six-bullet constant (`CODEBASE_OVERVIEW_BLOCK`, VTID-03930) refreshed by hand. New `operator-bootstrap-pack.ts` assembles, on every operator turn — the main turn and, per §4.1, the tool-result turn too — what a Claude Code session starts with: CLAUDE.md Part 1 rules and the newest 20 CHANGE LOG rows (read through the GitHub contents API, since the gateway container ships no CLAUDE.md), `config/service-path-map.json`, the `DATABASE_SCHEMA.md` table index, live `build-info` for the gateways named in `OPERATOR_BOOTSTRAP_BUILD_INFO_URLS`, open PRs on both repos (platform with CI state), the last 10 `deploy.*`/`dev_autopilot.*` OASIS events, and the tool catalog rendered from the declarations the model is actually given this turn — never a hand-typed list. Every source is bounded and timed out at 2.5 s and fails open to one `(unavailable: …)` line; the fetched sections are cached 5 min with coalesced concurrent builds; the whole pack is capped at 40 KB. Gated on `OPERATOR_BOOTSTRAP_PACK_ENABLED=true` (pinned on staging with the two build-info targets; prod untouched); the VTID-03930 block stays as the pack's floor. 16 new tests (renderers, assembly/size budget, fail-open per source, cache/coalescing, wiring, staging pin); the VTID-03930/03892/03838 prompt suites still pass; `tsc --noEmit` clean. **Not verified live** — the first operator turn on staging after this deploys is the exercise; `(unavailable: …)` lines in the served prompt name what to fix. Thread summaries / memory-against-summary (§4.3) are W4b. | VTID-04018 |
 | 2026-09-17 | **W3 of the operator agent plan: the CI feedback loop runs in fix mode instead of starting over.** Until now a CI failure on a Dev Autopilot PR meant triage → `revertExecutionPR` (close the PR, delete the branch) → a child re-running the same plan from a fresh clone of `main` and opening a NEW PR — the first attempt discarded even for a one-line fix, and the VTID-04005 log excerpt only a hint. Two latent defects on that path: the PR-flood guard in `runExecutionSession` refuses any child whose parent still carries a `pr_url` (the parent is `reverted`, not in the guard's exclusion list), and the child was pointed at a branch that had just been deleted. **Now, for an agent-executor parent at stage `ci` (not DRY_RUN):** the PR stays open; `spawnChildExecution` writes `metadata.fix_mode = { branch, pr_number, pr_url, parent_execution_id }` on the child beside the inherited executor/override and `parent_failure`; the agent runner clones that branch (`prepareWorkspace({ existingBranch })`), fetches `main` for the diff base (`fetchRefSha`/`listChangedFilesSince`), builds `buildFixModeTaskPrompt` (PR files, CI evidence, attempt N of M, no starting over, no skipping tests), runs the post-hoc scope/coverage/tsc/jest checks on the WHOLE PR diff, refuses to push if this run edited nothing, fast-forwards onto the same branch (`commitAndPush({ force:false })`) and returns the parent's PR so the watcher's merge → `self_healed` chain is untouched; the flood guard exempts the fix target (`priorPrBlocksExecution`); escalation at the depth cap leaves the PR open (`pr_left_open` on the event). Single-shot parents and merged-then-broken changes keep the revert path. **Cost per run:** the runner appends tokens/`estimateCost`/turns/fix rounds/checks refused/fallback/outcome to the finding's `dev_autopilot_outcomes` row (`metadata.agent_runs[]`, `agent_cost_usd_total`) on every exit path — no migration. 16 new tests; 9 bridge/executor/agent suites re-run, 96 passing; `tsc --noEmit` clean. **Not verified live** — Test Run #6 (an agent PR whose first attempt breaks a paired test, then the same PR going green with no second PR) is the first exercise, after the executor image is rebuilt from this commit. | VTID-04017 |
