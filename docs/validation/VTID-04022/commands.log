@@ -6,4 +6,5 @@ npx jest test/vtid-04022-operator-threads.test.ts test/vtid-04007-open-ended-int
          test/vtid-03926-operator-chat-userrole.test.ts                     -> 5 suites, 52 tests passing
 npx jest test/operator-chat-oasis.test.ts test/vtid-03822-operator-chat-threads.test.ts -> 2 suites, 27 tests passing
 npx jest test/vtid-04018-operator-bootstrap-pack.test.ts test/vtid-04020-operator-cloudwatch-logs.test.ts -> passing alongside the new suite (42 tests across 3 suites)
-NOT run here: the migration (ships as a file; owner's go), a live operator turn with OPERATOR_THREADS_ENABLED=true (flag not pinned anywhere yet).
+Supabase MCP apply_migration vtid_04022_operator_threads (project inmkhvwdcuyhnxkgfvsb) -> success; pre-check to_regclass null/null; post-check both tables rls=true policies=1 indexes=2, zero rows
+NOT run here: a live operator turn with OPERATOR_THREADS_ENABLED=true (flag not pinned anywhere yet).

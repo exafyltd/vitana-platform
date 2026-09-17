@@ -8,10 +8,12 @@
 -- recall memory against (summary + current message, not the raw message
 -- alone). The oasis_events audit row per message stays as it is.
 --
--- Ships as a FILE. Apply on the platform owner's go (RUN-MIGRATION.yml or
--- the Supabase MCP); the gateway code behind OPERATOR_THREADS_ENABLED is
--- fail-open when these tables are absent, so deploying the code first is
--- safe — it just records nothing until the tables exist.
+-- Applied to the live project 2026-09-17 22:20 UTC via the Supabase MCP
+-- (apply_migration, name vtid_04022_operator_threads) — the Migration Drift
+-- Check (VTID-03486) requires a declared table to exist before this file
+-- can merge. The gateway code behind OPERATOR_THREADS_ENABLED is fail-open
+-- when the tables are absent, so it is safe in any order; the tables stay
+-- empty until the flag is pinned.
 
 CREATE TABLE IF NOT EXISTS public.operator_threads (
   -- The client-supplied threadId the Command Hub already uses (uuid text).
