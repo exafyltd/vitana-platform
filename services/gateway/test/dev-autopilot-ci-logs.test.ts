@@ -74,6 +74,61 @@ describe('VTID-04005 renderCiEvidence', () => {
   it('is empty for no excerpts', () => {
     expect(renderCiEvidence([])).toBe('');
   });
+
+  // VTID-04008: Tests for totalFailing parameter
+  it('appends unfetched count when totalFailing > excerpts.length', () => {
+    const excerpts = [
+      { check_name: 'check-a', job_id: 1, excerpt: 'error in a' },
+      { check_name: 'check-b', job_id: 2, excerpt: 'error in b' },
+      { check_name: 'check-c', job_id: 3, excerpt: 'error in c' },
+    ];
+    const txt = renderCiEvidence(excerpts, 10000, 7);
+    expect(txt).toContain('--- check-a (job 1) ---');
+    expect(txt).toContain('--- check-b (job 2) ---');
+    expect(txt).toContain('--- check-c (job 3) ---');
+    expect(txt).toContain(`…and 4 more failing check(s) not fetched (cap CI_LOG_MAX_JOBS=${CI_LOG_MAX_JOBS})`);
+  });
+
+  it('does not append unfetched line when totalFailing equals excerpts.length', () => {
+    const excerpts = [
+      { check_name: 'check-a', job_id: 1, excerpt: 'error in a' },
+      { check_name: 'check-b', job_id: 2, excerpt: 'error in b' },
+    ];
+    const withTotal = renderCiEvidence(excerpts, 10000, 2);
+    const withoutTotal = renderCiEvidence(excerpts, 10000);
+    expect(withTotal).toBe(withoutTotal);
+    expect(withTotal).not.toContain('more failing check(s) not fetched');
+  });
+
+  it('does not append unfetched line when totalFailing is omitted', () => {
+    const excerpts = [
+      { check_name: 'check-a', job_id: 1, excerpt: 'error in a' },
+    ];
+    const txt = renderCiEvidence(excerpts, 10000);
+    expect(txt).not.toContain('more failing check(s) not fetched');
+  });
+
+  it('does not append unfetched line when totalFailing < excerpts.length', () => {
+    const excerpts = [
+      { check_name: 'check-a', job_id: 1, excerpt: 'error in a' },
+      { check_name: 'check-b', job_id: 2, excerpt: 'error in b' },
+    ];
+    const txt = renderCiEvidence(excerpts, 10000, 1);
+    expect(txt).not.toContain('more failing check(s) not fetched');
+  });
+
+  it('returns empty string for empty excerpts even with totalFailing > 0', () => {
+    expect(renderCiEvidence([], 10000, 5)).toBe('');
+  });
+
+  it('respects maxChars budget including the unfetched line', () => {
+    const excerpts = [
+      { check_name: 'check-a', job_id: 1, excerpt: 'x'.repeat(400) },
+    ];
+    const txt = renderCiEvidence(excerpts, 300, 10);
+    expect(txt.length).toBeLessThanOrEqual(300 + 20); // +20 for truncated marker
+    expect(txt).toMatch(/\[truncated\]$/);
+  });
 });
 
 describe('VTID-04005 collectCiFailureEvidence', () => {
