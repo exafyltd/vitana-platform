@@ -241,6 +241,15 @@ export function buildCiFailureReason(mergeableState: string, failedNames: string
   return `unexpected mergeable_state=${mergeableState}`;
 }
 
+export function shouldSynthesizeDryRunOutcome(
+  dryRun: boolean,
+  prUrl: string | null | undefined,
+): 'synthesize' | 'skip' | 'live' {
+  const url = typeof prUrl === 'string' ? prUrl : '';
+  if (url.indexOf('DRY-RUN-') >= 0) return 'synthesize';
+  return dryRun ? 'skip' : 'live';
+}
+
 export type DeployOutcome = 'success' | 'failed' | 'pending';
 
 export function findDeployOutcomeForExecution(
@@ -414,7 +423,12 @@ export async function ciWatcherTick(): Promise<void> {
       continue;
     }
 
-    if (DRY_RUN || (exec.pr_url && exec.pr_url.indexOf('DRY-RUN-') >= 0)) {
+    const dryRunOutcome = shouldSynthesizeDryRunOutcome(DRY_RUN, exec.pr_url);
+    if (dryRunOutcome === 'skip') {
+      console.log(`${LOG_PREFIX} execution ${exec.id} has a real pr_url; leaving for live watcher`);
+      continue;
+    }
+    if (dryRunOutcome === 'synthesize') {
       // Dry-run: settle to "passing" after DRY_RUN_SETTLE_MS elapsed since
       // the row entered ci. Synthetic merge → deploying transition.
       const since = exec.updated_at ? Date.now() - new Date(exec.updated_at).getTime() : Infinity;
@@ -699,7 +713,12 @@ export async function deployWatcherTick(): Promise<void> {
   const events = await loadRecentDeployEvents(s);
 
   for (const exec of execs) {
-    if (DRY_RUN || (exec.pr_url && exec.pr_url.indexOf('DRY-RUN-') >= 0)) {
+    const dryRunOutcome = shouldSynthesizeDryRunOutcome(DRY_RUN, exec.pr_url);
+    if (dryRunOutcome === 'skip') {
+      console.log(`${LOG_PREFIX} execution ${exec.id} has a real pr_url; leaving for live watcher`);
+      continue;
+    }
+    if (dryRunOutcome === 'synthesize') {
       const since = exec.updated_at ? Date.now() - new Date(exec.updated_at).getTime() : Infinity;
       if (since < DRY_RUN_SETTLE_MS) continue;
       await transitionStatus(s, exec.id, 'deploying', 'verifying');
@@ -773,7 +792,12 @@ export async function verificationWatcherTick(): Promise<void> {
   const execs = await loadExecutions(s, 'verifying');
   for (const exec of execs) {
     const windowStart = exec.updated_at || new Date().toISOString();
-    if (DRY_RUN || (exec.pr_url && exec.pr_url.indexOf('DRY-RUN-') >= 0)) {
+    const dryRunOutcome = shouldSynthesizeDryRunOutcome(DRY_RUN, exec.pr_url);
+    if (dryRunOutcome === 'skip') {
+      console.log(`${LOG_PREFIX} execution ${exec.id} has a real pr_url; leaving for live watcher`);
+      continue;
+    }
+    if (dryRunOutcome === 'synthesize') {
       const elapsed = Date.now() - new Date(windowStart).getTime();
       if (elapsed < DRY_RUN_SETTLE_MS) continue;
       await transitionStatus(s, exec.id, 'verifying', 'completed', {
