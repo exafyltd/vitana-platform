@@ -16,6 +16,7 @@ import { promises as fs, Dirent } from 'fs';
 import path from 'path';
 import type { LLMRouterTool } from '../llm-router';
 import { matchGlob } from '../dev-autopilot-safety';
+import type { RepeatedCheckGuard } from './agent-check-guard';
 
 export type CheckKind = 'tsc' | 'jest' | 'git_diff' | 'git_status' | 'node_check';
 
@@ -31,6 +32,9 @@ export interface AgentToolContext {
   /** Runs an allowlisted check; the agent runner supplies the real one. */
   runCheck: (kind: CheckKind, target?: string) => Promise<CheckResult>;
   log?: (line: string) => void;
+  /** VTID-04016: refuses re-running a check that already failed since the
+   *  last edit (Run #4b re-ran an identically failing tsc nine times). */
+  checkGuard?: RepeatedCheckGuard;
 }
 
 export interface FinishArgs {
@@ -276,6 +280,7 @@ export async function executeAgentTool(
         if (typeof args.content !== 'string') return { result: 'content must be a string', isError: true };
         await fs.mkdir(path.dirname(abs), { recursive: true });
         await fs.writeFile(abs, args.content, 'utf8');
+        ctx.checkGuard?.markEdited();
         log(`write_file ${args.path} (${args.content.length} chars)`);
         return { result: `wrote ${args.path} (${args.content.split('\n').length} lines)` };
       }
@@ -290,12 +295,14 @@ export async function executeAgentTool(
         if (count > 1 && !args.replace_all) return { result: `old_string occurs ${count} times in ${args.path}; add more context or set replace_all`, isError: true };
         const next = args.replace_all ? text.split(oldS).join(newS) : text.replace(oldS, () => newS);
         await fs.writeFile(abs, next, 'utf8');
+        ctx.checkGuard?.markEdited();
         log(`edit_file ${args.path} (${count} replacement${count === 1 ? '' : 's'})`);
         return { result: `edited ${args.path}: ${count} replacement${count === 1 ? '' : 's'}` };
       }
       case 'delete_file': {
         const abs = resolveInsideRoot(ctx.root, args.path);
         await fs.unlink(abs);
+        ctx.checkGuard?.markEdited();
         log(`delete_file ${args.path}`);
         return { result: `deleted ${args.path}` };
       }
@@ -309,7 +316,13 @@ export async function executeAgentTool(
           // Every target must live in the repo — validated before anything runs.
           for (const t of target.split(/\s+/).filter(Boolean)) resolveInsideRoot(ctx.root, t);
         }
+        const refusal = ctx.checkGuard?.shouldRefuse(kind, target);
+        if (refusal) {
+          log(`run_check ${kind} ${target || ''} → refused by the repeated-check guard`);
+          return { result: refusal, isError: true };
+        }
         const r = await ctx.runCheck(kind, target);
+        ctx.checkGuard?.record(kind, target, r.ok);
         log(`run_check ${kind} ${target || ''} → exit ${r.exit_code}`);
         return { result: `exit_code=${r.exit_code}\n${truncate(r.output, CHECK_OUTPUT_MAX_CHARS)}`, isError: !r.ok };
       }

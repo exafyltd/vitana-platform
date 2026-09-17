@@ -53,6 +53,21 @@ export interface PrContractInput {
   model?: string | null;
   /** ISO timestamp; injectable for deterministic tests. */
   now?: string;
+  /** VTID-04016: which executor produced the diff. Default 'single-shot'
+   *  (the path this contract was written for); the agent executor
+   *  (VTID-04006) passes 'agent' so commands.log describes what actually
+   *  ran — a clone, a tool loop, and the runner's own tsc + jest. */
+  executor?: 'single-shot' | 'agent';
+  /** Agent-path facts for commands.log; ignored for 'single-shot'. */
+  agentStats?: {
+    turns: number;
+    fixRounds: number;
+    /** run_check calls the repeated-check guard refused (VTID-04016). */
+    checksRefused: number;
+    fallbackUsed: boolean;
+    /** false when AGENT_SKIP_TSC disabled the runner's tsc. */
+    tscRun: boolean;
+  };
 }
 
 export interface PrContractOutput {
@@ -201,14 +216,42 @@ function pairedTestFor(sourcePath: string, testFiles: string[]): string | null {
 
 export function buildCommandsLog(input: PrContractInput & { vtid: string }): string {
   const ts = input.now || new Date().toISOString();
-  return [
-    `# ${input.vtid} — commands run by the Dev Autopilot executor`,
+  const header = [
+    `# ${input.vtid} — commands run by the Dev Autopilot executor (${input.executor === 'agent' ? 'agent executor, VTID-04006' : 'single-shot executor'})`,
     ``,
     `# ${ts}`,
     `# execution_id=${input.executionId} finding_id=${input.findingId} plan_version=${input.planVersion}`,
     `# branch=${input.branch} base=${input.baseBranch}`,
     `# llm provider=${input.provider || 'unknown'} model=${input.model || 'unknown'}`,
     ``,
+  ];
+  if (input.executor === 'agent') {
+    const a = input.agentStats || { turns: 0, fixRounds: 0, checksRefused: 0, fallbackUsed: false, tscRun: true };
+    return [
+      ...header,
+      `# agent turns=${a.turns} fix_rounds=${a.fixRounds} checks_refused_by_guard=${a.checksRefused} fallback_used=${a.fallbackUsed}`,
+      ``,
+      `$ git clone --depth 1 --branch ${input.baseBranch} <repo> && git checkout -b ${input.branch}`,
+      `$ ln -s /app/node_modules services/gateway/node_modules   # image toolchain, no npm ci`,
+      `$ autopilot-agent: tool loop on callViaRouter('worker') — read_file / search_text / find_files / edit_file / write_file / run_check(tsc|jest|node_check|git_diff|git_status) / finish`,
+      `$ autopilot-agent: run_check refuses a check that already failed since the last edit (VTID-04016)`,
+      `$ autopilot-agent: git status --porcelain → changed files; scope check against dev_autopilot_config allow/deny globs; test-coverage rule`,
+      a.tscRun
+        ? `$ node --max-old-space-size=<AGENT_CHECK_HEAP_MB> node_modules/.bin/tsc --noEmit -p tsconfig.json --preserveSymlinks   # runner, services/gateway`
+        : `# runner tsc skipped (AGENT_SKIP_TSC=true)`,
+      `$ npx jest <test file(s) paired to the changed files>   # runner, per project`,
+      `# a failing runner check is fed back into the same transcript for at most AGENT_MAX_FIX_ROUNDS rounds`,
+      ...input.files.map((f) => `$ git ${f.action === 'delete' ? 'rm' : 'add'} ${f.path}   # ${f.action}`),
+      `$ dev-autopilot: write docs/validation/${input.vtid}/ evidence pack (this file)`,
+      `$ git commit && git push origin ${input.branch}`,
+      `$ gh pr create --base ${input.baseBranch} --head ${input.branch}`,
+      ``,
+      `# The runner re-ran tsc and the paired jest suites before this PR was opened; the full suite, lint and build run in CI (VALIDATOR-CHECK + Gateway CI).`,
+      ``,
+    ].join('\n');
+  }
+  return [
+    ...header,
     `$ dev-autopilot: fetch current content of ${input.files.length} plan file(s) from ${input.baseBranch}`,
     `$ dev-autopilot: callViaRouter('worker') → parse <<<PR_TITLE>>>/<<<PR_BODY>>>/<<<FILE>>> blocks`,
     `$ dev-autopilot: validate emitted paths ⊆ plan.files_referenced; plan/diff coverage ≥ threshold`,

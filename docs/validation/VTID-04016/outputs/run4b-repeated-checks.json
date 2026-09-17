@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-04016",
+  "source_runs": [
+    { "run": "#4", "execution": "47a4d6eb-abc1-45e8-b9cc-743b17c4df48", "run_check_tsc_turns": [12, 13, 17, 24, 31, 33, 36, 38, 39, 44], "outcome_each": "V8 allocation failure (~140 s each)", "edits_between_most_runs": false },
+    { "run": "#4b", "execution": "4f7d5ea4-8d9e-4a25-b88c-877144d96890", "run_check_tsc_turns": [8, 13], "runner_tsc": "same TS2742", "wall_clock_total": "9 min 07 s" }
+  ],
+  "rule": "a (kind,target) check that has failed MAX_FAILED_ATTEMPTS_WITHOUT_EDIT=2 times since the last write_file/edit_file/delete_file is refused before running",
+  "estimated_saving_run4": "8 of 10 tsc runs (~18 min of 22)"
+}
