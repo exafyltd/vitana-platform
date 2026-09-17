@@ -35,6 +35,7 @@ import { processMessage } from '../services/ai-orchestrator';
 // VTID-0536: Gemini Operator Tools Bridge
 import { processWithGemini } from '../services/gemini-operator';
 import { getThreadSummary, isOperatorThreadsEnabled, maybeSummarizeThread, recordOperatorTurn } from '../services/operator-threads';
+import { extractAndRecordTurnMemory, isTurnMemoryEnabled } from '../services/operator-turn-memory';
 import { writeDevMemory } from '../services/dev-agent-memory';
 // VTID-03851: verified-caller marker for autopilot_execute_task (set or
 // cleared on EVERY /chat request — threadId is client-supplied).
@@ -374,6 +375,21 @@ router.post('/chat', optionalAuth, async (req: Request, res: Response) => {
       // VTID-04022
       threadSummary,
     });
+
+    // VTID-04025: durable facts from this turn (decisions, gotchas,
+    // preferences …) → dev_agent_memory, extracted by the memory stage.
+    // Fire and forget, fail-open; trivial turns are skipped before any
+    // model call. Independent of the thread store below.
+    if (isTurnMemoryEnabled()) {
+      extractAndRecordTurnMemory({
+        threadId,
+        userText: message,
+        reply: geminiResult.reply,
+        tools: (geminiResult.toolResults || []).map((tr) => ({ name: tr.name, result: JSON.stringify(tr.response ?? {}) })),
+        summary: threadSummary,
+        vtidHint: validatedVtid || undefined,
+      }).catch((err) => console.warn('[VTID-04025] turn memory failed:', err instanceof Error ? err.message : err));
+    }
 
     // VTID-04022: record the turn server-side (thread + user/tool/assistant
     // messages) and, on the cadence, rewrite the rolling summary. Fire and

@@ -64,6 +64,7 @@ import { resolveExecutorMode } from './autopilot-agent/executor-mode';
 
 import { buildReminders, remindersEnabled, renderRemindersBlock } from './watcher/reminder';
 import { recordShown } from './watcher/feedback';
+import { recordExecutionOutcomeMemory } from './operator-turn-memory';
 
 const LOG_PREFIX = '[dev-autopilot-execute]';
 const EXEC_VTID = 'VTID-DEV-AUTOPILOT';
@@ -2855,6 +2856,9 @@ export async function applyExecutionResult(
       message: `Execution ${execId.slice(0, 8)} opened ${result.pr_url}`,
       payload: { execution_id: execId, pr_url: result.pr_url, branch: result.branch },
     });
+    // VTID-04025: task_outcome row so the next session recalls what happened.
+    recordExecutionOutcomeMemory({ executionId: execId, ok: true, prUrl: result.pr_url, branch: result.branch })
+      .catch((err: unknown) => console.warn(`${LOG_PREFIX} outcome memory error for ${execId}:`, err));
     return;
   }
 
@@ -2881,6 +2885,15 @@ export async function applyExecutionResult(
     message: `Execution ${execId.slice(0, 8)} failed: ${result.error || 'unknown'}`,
     payload: { execution_id: execId, error: result.error },
   });
+  // VTID-04025: gotcha row carrying the failure reason (the W0 CI excerpt
+  // rides inside result.error when the failure came from CI).
+  recordExecutionOutcomeMemory({
+    executionId: execId,
+    ok: false,
+    error: result.error,
+    vtid: typeof existingMeta?.activated_vtid === 'string' ? existingMeta.activated_vtid : (typeof existingMeta?.vtid === 'string' ? existingMeta.vtid : undefined),
+    executor: typeof existingMeta?.executor === 'string' ? existingMeta.executor : undefined,
+  }).catch((err: unknown) => console.warn(`${LOG_PREFIX} outcome memory error for ${execId}:`, err));
   try {
     const { bridgeFailureToSelfHealing } = require('./dev-autopilot-bridge');
     bridgeFailureToSelfHealing({
