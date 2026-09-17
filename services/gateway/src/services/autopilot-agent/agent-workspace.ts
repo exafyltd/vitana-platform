@@ -64,21 +64,63 @@ export async function prepareWorkspace(opts: {
   workRoot?: string;
   exec?: ExecFn;
   depth?: number;
+  /** VTID-04017 fix mode: `branch` already exists on the remote (the parent
+   *  execution's PR branch) — clone it directly and stay on it. */
+  existingBranch?: boolean;
 }): Promise<Workspace> {
   const exec = opts.exec ?? defaultExec;
   const root = await fs.mkdtemp(path.join(opts.workRoot || os.tmpdir(), 'autopilot-agent-'));
   const repoDir = path.join(root, opts.repo);
   try {
-    await exec('git', ['clone', '--depth', String(opts.depth ?? 1), '--branch', opts.baseBranch, '--single-branch', remoteUrl(opts.owner, opts.repo, opts.token), repoDir], { timeoutMs: 600_000 });
+    const cloneBranch = opts.existingBranch ? opts.branch : opts.baseBranch;
+    await exec('git', ['clone', '--depth', String(opts.depth ?? 1), '--branch', cloneBranch, '--single-branch', remoteUrl(opts.owner, opts.repo, opts.token), repoDir], { timeoutMs: 600_000 });
     await exec('git', ['config', 'user.name', 'vitana-dev-autopilot'], { cwd: repoDir });
     await exec('git', ['config', 'user.email', 'dev-autopilot@vitanaland.com'], { cwd: repoDir });
-    await exec('git', ['checkout', '-b', opts.branch], { cwd: repoDir });
+    if (!opts.existingBranch) await exec('git', ['checkout', '-b', opts.branch], { cwd: repoDir });
     const { stdout } = await exec('git', ['rev-parse', 'HEAD'], { cwd: repoDir });
     return { root, repoDir, branch: opts.branch, baseSha: stdout.trim() };
   } catch (err) {
     await fs.rm(root, { recursive: true, force: true }).catch(() => undefined);
     throw new Error(`workspace clone failed: ${scrubSecret(err instanceof Error ? err.message : String(err), opts.token)}`);
   }
+}
+
+/**
+ * VTID-04017: fetch one ref from origin (shallow) and return its SHA. Used
+ * in fix mode to diff the PR branch against its base.
+ */
+export async function fetchRefSha(repoDir: string, ref: string, exec: ExecFn = defaultExec): Promise<string> {
+  await exec('git', ['fetch', '--depth', '1', 'origin', ref], { cwd: repoDir, timeoutMs: 300_000 });
+  const { stdout } = await exec('git', ['rev-parse', 'FETCH_HEAD'], { cwd: repoDir });
+  return stdout.trim();
+}
+
+/** Parse `git diff --name-status` output into changed files. */
+export function parseNameStatus(stdout: string): ChangedFile[] {
+  const out: ChangedFile[] = [];
+  for (const raw of stdout.split('\n')) {
+    const line = raw.trim();
+    if (!line) continue;
+    const parts = line.split('\t');
+    const code = parts[0] || '';
+    const p = parts[parts.length - 1] || '';
+    if (!p) continue;
+    const c = code[0];
+    const action: ChangedFile['action'] = c === 'D' ? 'delete' : c === 'A' ? 'create' : 'modify';
+    out.push({ path: p, action });
+  }
+  return out;
+}
+
+/**
+ * VTID-04017: every file that differs between the working tree (untracked
+ * included) and `baseSha` — in fix mode that is the whole PR, committed
+ * parent work plus this run's edits.
+ */
+export async function listChangedFilesSince(repoDir: string, baseSha: string, exec: ExecFn = defaultExec): Promise<ChangedFile[]> {
+  await exec('git', ['add', '-A', '--intent-to-add'], { cwd: repoDir }).catch(() => undefined);
+  const { stdout } = await exec('git', ['diff', '--name-status', baseSha], { cwd: repoDir });
+  return parseNameStatus(stdout);
 }
 
 /** Parse `git status --porcelain` into repo-relative changed files. */
@@ -116,7 +158,7 @@ export async function gitDiff(repoDir: string, exec: ExecFn = defaultExec): Prom
 
 export async function commitAndPush(
   repoDir: string,
-  opts: { message: string; branch: string; token: string; exec?: ExecFn },
+  opts: { message: string; branch: string; token: string; exec?: ExecFn; force?: boolean },
 ): Promise<{ sha: string }> {
   const exec = opts.exec ?? defaultExec;
   try {
@@ -125,8 +167,10 @@ export async function commitAndPush(
     const { stdout } = await exec('git', ['rev-parse', 'HEAD'], { cwd: repoDir });
     // The branch name is unique to this execution (dev-autopilot/<exec8>);
     // a stale remote branch from an earlier attempt of the same execution is
-    // replaced, never a branch anyone else owns.
-    await exec('git', ['push', '--force', '-u', 'origin', opts.branch], { cwd: repoDir, timeoutMs: 300_000 });
+    // replaced, never a branch anyone else owns. VTID-04017 fix mode pushes
+    // a plain fast-forward onto the parent's PR branch (force=false).
+    const force = opts.force !== false;
+    await exec('git', ['push', ...(force ? ['--force'] : []), '-u', 'origin', opts.branch], { cwd: repoDir, timeoutMs: 300_000 });
     return { sha: stdout.trim() };
   } catch (err) {
     throw new Error(`commit/push failed: ${scrubSecret(err instanceof Error ? err.message : String(err), opts.token)}`);

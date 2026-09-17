@@ -190,3 +190,64 @@ export async function recordExecOutcome(
     console.warn(`${LOG_PREFIX} backfill error:`, err);
   }
 }
+
+/**
+ * VTID-04017: per-run usage/cost of an agent execution, appended to the
+ * finding's latest outcome row (`metadata.agent_runs[]`) so cost per run
+ * is readable next to the decision and the exec outcome without a schema
+ * change. Best-effort like everything else in this module.
+ */
+export interface AgentRunUsage {
+  execution_id: string;
+  vtid: string | null;
+  provider: string | null;
+  model: string | null;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+  turns: number;
+  fix_rounds: number;
+  checks_refused: number;
+  fallback_used: boolean;
+  fix_mode: boolean;
+  outcome: 'pr_opened' | 'fix_pushed' | 'failed';
+  error?: string | null;
+  elapsed_ms: number;
+  recorded_at: string;
+}
+
+export function appendAgentRun(existing: unknown, run: AgentRunUsage, cap = 20): Record<string, unknown> {
+  const base = existing && typeof existing === 'object' && !Array.isArray(existing) ? { ...(existing as Record<string, unknown>) } : {};
+  const prior = Array.isArray(base.agent_runs) ? (base.agent_runs as unknown[]) : [];
+  const runs = [...prior.filter((r) => !(r && typeof r === 'object' && (r as { execution_id?: string }).execution_id === run.execution_id)), run];
+  base.agent_runs = runs.slice(-cap);
+  const total = runs.reduce<number>((sum, r) => sum + (Number((r as { cost_usd?: number }).cost_usd) || 0), 0);
+  base.agent_cost_usd_total = Math.round(total * 1_000_000) / 1_000_000;
+  return base;
+}
+
+export async function recordAgentRunUsage(finding_id: string, run: AgentRunUsage): Promise<void> {
+  const supa = getSupa();
+  if (!supa) return;
+  const findUrl =
+    `${supa.url}/rest/v1/dev_autopilot_outcomes` +
+    `?finding_id=eq.${finding_id}` +
+    `&order=created_at.desc&limit=1` +
+    `&select=id,metadata`;
+  try {
+    const findR = await fetch(findUrl, { headers: { apikey: supa.key, Authorization: `Bearer ${supa.key}` } });
+    if (!findR.ok) return;
+    const rows = (await findR.json()) as Array<{ id: string; metadata: unknown }>;
+    const target = rows[0];
+    if (!target) return;
+    const patchR = await fetch(`${supa.url}/rest/v1/dev_autopilot_outcomes?id=eq.${target.id}`, {
+      method: 'PATCH',
+      headers: { apikey: supa.key, Authorization: `Bearer ${supa.key}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+      body: JSON.stringify({ metadata: appendAgentRun(target.metadata, run) }),
+    });
+    if (!patchR.ok) console.warn(`${LOG_PREFIX} agent usage record failed (${patchR.status}): ${(await patchR.text()).slice(0, 200)}`);
+  } catch (err) {
+    console.warn(`${LOG_PREFIX} agent usage record error:`, err);
+  }
+}
+

@@ -1437,6 +1437,25 @@ async function callRoutedLlm(
 
 // VTID-02703: exported so the Cloud Run Job (services/gateway/src/job-entry.ts)
 // can invoke the same logic out-of-process. The Job runtime survives
+/**
+ * VTID-04017: the PR-flood guard's one exception. A fix-mode child
+ * (`metadata.fix_mode`) exists precisely to continue the prior open PR —
+ * that PR is its target, not a duplicate. Any other open PR still blocks.
+ */
+export function priorPrBlocksExecution(
+  metadata: Record<string, unknown> | null | undefined,
+  prior: { pr_number: number | null; pr_url: string | null },
+): boolean {
+  const fix = metadata && typeof metadata === 'object' ? (metadata as Record<string, unknown>).fix_mode : null;
+  if (!fix || typeof fix !== 'object') return true;
+  const target = (fix as Record<string, unknown>).pr_number;
+  const n = typeof target === 'number' ? target : Number.parseInt(String(target ?? ''), 10);
+  if (Number.isFinite(n) && n > 0 && prior.pr_number === n) return false;
+  const url = (fix as Record<string, unknown>).pr_url;
+  if (typeof url === 'string' && url && prior.pr_url === url) return false;
+  return true;
+}
+
 // container churn that kills long-running fire-and-forget LLM calls inside
 // the gateway service.
 export async function runExecutionSession(
@@ -1474,7 +1493,7 @@ export async function runExecutionSession(
     + `&status=not.in.(completed,self_healed,auto_archived)`
     + `&select=id,pr_url,pr_number,status&order=approved_at.desc&limit=1`,
   );
-  if (priorOpenR.ok && priorOpenR.data && priorOpenR.data.length > 0) {
+  if (priorOpenR.ok && priorOpenR.data && priorOpenR.data.length > 0 && priorPrBlocksExecution(exec.metadata, priorOpenR.data[0])) {
     const prior = priorOpenR.data[0];
     const reason = `finding ${exec.finding_id.slice(0, 8)} already has an unmerged PR `
       + `${prior.pr_url || `#${prior.pr_number}`} from execution ${prior.id.slice(0, 8)} `
