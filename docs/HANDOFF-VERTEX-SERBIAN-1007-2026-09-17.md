@@ -1,5 +1,13 @@
 # HANDOFF — Vertex Serbian bridge: authenticated sessions still hit `1007`
 
+> **RESOLVED — VTID-04026.** The §3 lead was half right: the failure IS the
+> aggregate context being too large, but it is the TOOL CATALOG (290
+> declarations, 226 KB), not the instruction the budget guard already
+> bounds. Confirmed live with the same script, only `--route=/admin`
+> (134 declarations, 45 KB): 8/8 vs 2/8. Fix: `orb/live/tools/vertex-tool-
+> catalog-budget.ts`. Evidence: `docs/validation/VTID-04026/`. §5 (thinking
+> text spoken pre-login) is still open and still not to be touched.
+
 **VTID:** VTID-04021 (this document) — continues the VTID-04010 → VTID-04014
 → VTID-04015 chain, all merged, all deployed to staging, **problem not
 solved**.

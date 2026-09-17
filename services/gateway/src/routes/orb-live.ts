@@ -121,6 +121,14 @@ import {
   decomposeInstructionSections,
   INSTRUCTION_TOTAL_BYTE_BUDGET,
 } from '../orb/live/instruction/instruction-budget';
+// VTID-04026: the tool catalog's OWN byte budget, applied only to the Vertex
+// Serbian bridge envelope — the instruction guard above never covered the
+// 226 KB of function declarations an authenticated session declares, and
+// that is what closed the bridge with 1007 on the first generation request.
+import {
+  enforceToolCatalogBudget,
+  resolveVertexToolCatalogByteBudget,
+} from '../orb/live/tools/vertex-tool-catalog-budget';
 // BOOTSTRAP-VOICE-DEMO: real heartbeats from voice call sites so the agents
 // dashboard reflects live usage instead of fake startup status.
 import { recordAgentHeartbeat } from './agents-registry';
@@ -8032,6 +8040,68 @@ async function connectToLiveAPI(
           '[voice.instruction.budget_overflow] guard_error',
           (e as Error)?.message ?? String(e),
         );
+      }
+
+      // VTID-04026 — tool-catalog byte budget, Vertex Serbian bridge ONLY.
+      //
+      // The instruction guard above bounds `system_instruction` at 30 KB, but
+      // `tools` shares the same generation request and had no bound at all:
+      // an authenticated community session declares ~290 function
+      // declarations (~226 KB of JSON), an anonymous one 2 (~5 KB). On the
+      // Vertex bridge that was the difference between "works every time"
+      // (anonymous, 10/10) and "1007 'Request contains an invalid argument'
+      // ~300 ms after the first client_content" (authenticated, 6/8 failed).
+      // Measured live 2026-09-17 with only the surface changed (`/admin`,
+      // ~134 declarations / 45 KB): 8/8 succeeded. Nova Sonic and the
+      // cascade are untouched — they carry the full catalog exactly as
+      // before; this block is gated on the resolved provider, never on the
+      // language, so it cannot widen past the bridge.
+      if (session.upstreamProvider === 'vertex') {
+        try {
+          const toolBudget = resolveVertexToolCatalogByteBudget();
+          const toolsIn = (setupMessage.setup as any)?.tools;
+          if (toolBudget > 0 && Array.isArray(toolsIn)) {
+            const toolResult = enforceToolCatalogBudget(toolsIn, toolBudget);
+            if (toolResult.trimmed) {
+              (setupMessage.setup as any).tools = toolResult.tools;
+              console.warn(
+                '[voice.tool_catalog.budget_trimmed]',
+                JSON.stringify({
+                  sessionId: session.sessionId,
+                  provider: session.upstreamProvider,
+                  lang: session.lang,
+                  budget: toolResult.budgetBytes,
+                  declarationsBefore: toolResult.declarationsBefore,
+                  declarationsAfter: toolResult.declarationsAfter,
+                  bytesBefore: toolResult.bytesBefore,
+                  bytesAfter: toolResult.bytesAfter,
+                  droppedCount: toolResult.dropped.length,
+                }),
+              );
+              // OASIS, not just CloudWatch: VTID-04021's handoff could not
+              // confirm the instruction guard was even firing because its
+              // diagnostics are console-only. This one is queryable.
+              emitDiag(session, 'vertex_tool_catalog_trimmed', {
+                budget_bytes: toolResult.budgetBytes,
+                declarations_before: toolResult.declarationsBefore,
+                declarations_after: toolResult.declarationsAfter,
+                bytes_before: toolResult.bytesBefore,
+                bytes_after: toolResult.bytesAfter,
+                dropped_count: toolResult.dropped.length,
+              });
+            } else {
+              console.log(
+                `[voice.tool_catalog.budget_ok] session=${session.sessionId} declarations=${toolResult.declarationsBefore} bytes=${toolResult.bytesBefore} budget=${toolBudget}`,
+              );
+            }
+          } else if (toolBudget <= 0) {
+            console.log(`[voice.tool_catalog.budget_disabled] session=${session.sessionId} (${'VERTEX_TOOL_CATALOG_BYTE_BUDGET'}=0)`);
+          }
+        } catch (e) {
+          // Never let the guard break the handshake — fail open with a log,
+          // same posture as the instruction guard above.
+          console.warn('[voice.tool_catalog.budget_error]', (e as Error)?.message ?? String(e));
+        }
       }
 
       // VTID-NAV-DIAG: Explicit log of whether navigate_to_screen is in the

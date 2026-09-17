@@ -1263,6 +1263,37 @@ real on the very next staging deploy after this merges, with no separate
 operator step. `AWS-PROD-DEPLOY-GATEWAY.yml` is untouched — prod stays
 inert regardless.
 
+**⚠️ The bridge's tool catalog is byte-budgeted (VTID-04026) — do not
+"restore" the full catalog for Serbian without re-measuring.** Post-login
+`sr` sessions closed with `upstream_ws_close code:1007 "Request contains an
+invalid argument."` on ~80% of sessions — never at setup, always ~300 ms
+after the FIRST generation request — which the widget surfaces as the
+endless spoken "hold on, I'm reconnecting" loop. Three greeting-wording
+fixes (VTID-04010/04014/04015) did not move the rate because the greeting
+was never the cause: an authenticated community session declares **290
+function declarations = 226 KB** of JSON in `setup.tools` (anonymous: 2 /
+4.9 KB), on top of the 30 KB instruction the `instruction-budget.ts` guard
+bounds — the catalog itself had no bound, and Gemini Live rejects the
+oversized aggregate on the first generation, not the handshake (the exact
+shape `live-system-instruction.ts` already recorded from the pre-shutdown
+era). Proven live, same account/language/deployment, only the surface
+changed: community (290 tools) 2/8 turns completed, admin (134 tools /
+45 KB) 8/8. `orb/live/tools/vertex-tool-catalog-budget.ts` now packs the
+catalog to `VERTEX_TOOL_CATALOG_BYTE_BUDGET` (default 48 KB, inside the
+measured-working point; `0` disables) with a priority list — navigation,
+`end_conversation`, memory/diary/reminders, the guided-journey/teacher
+tools, persona hand-off, calendar, messaging, daily logs — kept first;
+applied in `orb-live.ts`'s envelope builder ONLY when
+`session.upstreamProvider === 'vertex'` (never keyed on language), so Nova
+Sonic and the cascade keep the full catalog. A trim is an OASIS diag
+(`stage=vertex_tool_catalog_trimmed`), not a console line, because
+VTID-04021's handoff could not even confirm whether the instruction guard
+was firing without CloudWatch. The ~80/20 split on byte-identical requests
+is consistent with `VERTEX_AI_LOCATION=global` routing to backends with
+different effective limits — a hypothesis, not established; shrinking the
+request fixes the failure whichever backend serves it. Raising the budget
+is an env change once a larger value is observed to hold on staging.
+
 **90-day window.** This is a bridge, not a standing architecture decision
 — when the credit window ends (or the cascade's own turn-shaping latency
 gets fixed some other way), the fix is one flag flip
@@ -1533,6 +1564,9 @@ VERTEX_SERBIAN_BRIDGE_ENABLED=true
 GOOGLE_CLOUD_PROJECT=<new-project-id>
 VERTEX_AI_LOCATION=us-central1
 GCP_SERVICE_ACCOUNT_JSON=xxx
+# Byte budget for the tool catalog the Vertex bridge declares (VTID-04026,
+# §2e-vertex-serbian-bridge). Unset = 48 KB default; 0 disables the guard.
+VERTEX_TOOL_CATALOG_BYTE_BUDGET=49152
 ```
 
 `GOOGLE_CLOUD_PROJECT`, `GCP_PROJECT`, `VERTEX_LOCATION`, `VERTEX_MODEL`,
@@ -2153,6 +2187,7 @@ defs that carry it, and record the rotation in this file's CHANGE LOG.
 
 | Date | Change | VTID |
 |------|--------|------|
+| 2026-09-18 | **Post-login Serbian voice on staging looped "hold on, I'm reconnecting" — the VTID-04021 handoff's open problem, closed with measurement instead of a fourth rewording.** Traced read-only in `oasis_events`: every failing authenticated `sr` session reached `setup_complete` (`upstream_ws_state:1` at `greeting_sent`) and closed `1007 "Request contains an invalid argument."` ~290 ms after the FIRST generation request — the greeting, or on the sessions whose greeting survived, the user's first utterance (`input_transcription` ×N → close at `turn_count:1`), which is why the audible cue (suppressed only while nothing has been heard yet) then repeats on every turn. That is the shape `live-system-instruction.ts` already documents for the pre-shutdown incident ("1007 on the very first client_content send (setup itself is accepted)") — so the handoff's instruction-budget lead was half right: the aggregate IS too large, but it is the TOOL CATALOG the instruction guard never covered. Measured with `buildLiveApiTools` on this commit's parent: authenticated community = **290 declarations / 226 KB** (65 core = 96 KB + 225 domain = 130 KB), admin = 134 / 45 KB, anonymous = 2 / 4.9 KB. Then isolated live rather than argued: added `--route=` to `scripts/orb/verify-vertex-serbian-bridge.mjs` (the surface is the one knob that changes envelope size without code) and ran 8+8 authenticated trials on staging, same account/language/deployment — community surface **2/8** completed a turn (6 × 1007), admin surface **8/8**, fluent Serbian on every one, first-audio latency 1.0–1.5 s vs 1.4–2.0 s. Ruled out with a scan of all 290 schemas: no invalid JSON-schema keyword (the only hits are property names such as `title`), no duplicate names; the voice is the same on passing anonymous sessions. **Fix:** `orb/live/tools/vertex-tool-catalog-budget.ts` — pure first-fit packer, priority list kept first (navigation, `end_conversation`, memory/diary/reminders, guided-journey/teacher, persona hand-off, calendar, messaging, daily logs), remainder in catalog order, `google_search` untouched, default 48 KB (inside the measured-working point), `VERTEX_TOOL_CATALOG_BYTE_BUDGET` overrides, `0` disables; wired in `orb-live.ts`'s envelope builder gated on `session.upstreamProvider === 'vertex'` only — never on `sr` — with a queryable `vertex_tool_catalog_trimmed` OASIS diag. 14 new tests (packer, env resolver, the REAL catalog, a source contract on the wiring); `surface-gated-catalog` re-run green; `tsc --noEmit` clean. **Not touched, on the owner's instruction:** the pre-login thinking-text-spoken bug (visible again in admin trial 1's transcript). Evidence: `docs/validation/VTID-04026/`. Post-merge AC-7 is the same script on the default surface expecting 8/8. | VTID-04026 |
 | 2026-09-17 | **W4a verified live on staging, and its first real defect fixed the same hour.** Staging served `2545dcc` (VTID-04018) and a read-only operator turn (exafy_admin session, no tool call, DeepSeek Flash, 5.95 s) answered from the bootstrap pack: staging `2545dcc7acef` / prod `7ba9a8eebad1` from live build-info, VTID-04019 as the newest change-log row — both correct. The open-PR section read `(unavailable: Open pull requests timed out after 2500ms)`. Two causes: `listOpenPrsWithStatus` (VTID-01154) fetched CI state per PR **sequentially** (N+1 GitHub calls), and its feed item never carried the PR title, so even on success the pack rendered the branch as the title. **Fix (VTID-04024):** `Promise.all` over the per-PR CI lookups + `title` on `GitHubFeedItem` (every caller benefits); new one-call `listOpenPrsBare`; the pack's `resolvePlatformOpenPrs` races the enriched list against a 1.5 s budget and falls back to the bare list marked `(platform CI state omitted …)` — the section is never unavailable just because CI enrichment is slow. 9 new tests; the W4a and github-service read-access suites re-run, 32 tests green; `tsc --noEmit` clean. **Next signal:** the open-PR section on the next staging turn lists `exafyltd/vitana-platform#…` rows with `ci=…` and no fallback note. | VTID-04024 |
 | 2026-09-17 | **W5b (read-only SQL) of the operator agent plan: `dev_run_sql_readonly` — the Operator Console can run one bounded SELECT instead of reading four allowlisted tables newest-first.** `dev_db_query` (VTID-03837) cannot join, aggregate or touch any other table, so "how many executions failed per stage this week" was unanswerable from the console. New `operator-sql-readonly.ts`, five independent layers: kill switch `OPERATOR_SQL_READONLY_ENABLED`; its OWN connection `OPERATOR_SQL_READONLY_DATABASE_URL` (a read-only login role on the Aurora reader — never a silent reuse of `AURORA_DATABASE_URL`'s `vitana_admin` superuser or the RLS diagnostic's `authenticator` URL; unset → `not_configured`, IF-THEN 31's posture); statement validation (comments stripped, one statement, SELECT / WITH … SELECT / plain EXPLAIN only, no data-modifying CTE, no locking clause, no `pg_sleep`/`pg_read_file`/`pg_terminate_backend`/`set_config`/`dblink`/`lo_*`/`nextval`/SELECT INTO, ≤ 4 KB); `BEGIN READ ONLY` + `SET LOCAL` statement/lock/idle timeouts, always `ROLLBACK`, pool opened with `default_transaction_read_only=on`; `SELECT * FROM (…) LIMIT n+1`, cells clipped, 24 KB payload cap. Every execution logged with thread + statement fingerprint + rows + ms (readable via `dev_cloudwatch_logs`). Developer/admin only through the existing `dev_*` gate. 16 new tests; 4 read-tool suites / 61 tests green; `tsc --noEmit` clean. **Ships inert and is NOT verified live** — the read-only role, its secret and the task-def wiring are the owner's (declared in the deploy workflow), and this session has no VPC route to Aurora's Postgres port; the first staging call is the exercise. The rest of W5b (deploy-workflow dispatch table, the `vitana-v1` write lane) stays open and owner-gated. | VTID-04023 |
 | 2026-09-17 | **W4b of the operator agent plan: server-side Operator Console threads and rolling summaries (gap analysis §4.3).** The console's transcript lived only in the browser (`localStorage`, VTID-03822) and its `dev_agent_memory` recall (VTID-03892) ran against the raw current message, so "now rebuild the image" retrieved nothing about the thread it belonged to. New `operator-threads.ts`: after every `/api/v1/operator/chat` turn the thread is upserted and the user/tool/assistant messages appended to `operator_threads`/`operator_messages` (fire-and-forget, off the reply's critical path); every `OPERATOR_THREAD_SUMMARY_EVERY` (10) turns the rolling summary is rewritten from the last 30 messages + the prior summary through the `memory` routing stage (its own Bedrock-primary/DeepSeek-fallback order — never Google); `processWithGemini` now recalls against `buildRecallQuery(summary, message)`. Fail-open by construction: `OPERATOR_THREADS_ENABLED` default off (not pinned anywhere yet), a missing table warns once naming the migration and records nothing, a Supabase or router failure never touches the reply. Migration `20260917230000_vtid_04022_operator_threads.sql` **ships as a file, not applied** — owner's go, then pin the flag on staging (that order, the code is safe first). `DATABASE_SCHEMA.md` documents both tables as NOT YET APPLIED. 15 new tests; 7 operator-chat suites re-run, 79 tests green; `tsc --noEmit` clean. **Still W4b, not done:** memory writes from every tool outcome, SSE streaming of the turn with the tool transcript, diff preview + Approve before a PR (§4.6). | VTID-04022 |
