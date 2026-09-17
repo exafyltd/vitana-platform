@@ -1191,6 +1191,32 @@ script, confirms via its own `status` action, THEN wires
 `GCP_SERVICE_ACCOUNT_JSON`/`GOOGLE_CLOUD_PROJECT`/`VERTEX_AI_LOCATION`/
 `VERTEX_SERBIAN_BRIDGE_ENABLED` into the task def.
 
+**⚠️ Pre-existing parity gap, surfaced by this PR's own CI, not caused by
+it — read before flipping the flag.** This repo's `voice-pipeline-parity`
+scanner (report-only, runs on every gateway PR) flagged 13 `high`-severity
+`missing_in_vertex` items on PR #3369: 7 OASIS event topics
+(`orb.live.context.bootstrap`, `orb.live.context.bootstrap.skipped`,
+`orb.live.tool.executed`, `orb.navigator.requested`,
+`orb.navigator.blocked`, `admin.briefing.injected`,
+`feedback.ticket.created`) and 6 watchdog settings
+(`session_timeout_ms`, `conversation_timeout_ms`,
+`max_connections_per_ip`, `max_reconnects`, `max_history_chars`,
+`extraction_throttle_ms`) that the LiveKit/Nova pipeline has and
+`VertexLiveClient` does not. These are not regressions this VTID
+introduced — `VertexLiveClient` has been structurally unreachable since
+VTID-03723 while the LiveKit/Nova side kept shipping features, so the gap
+accumulated during the months Vertex sat dormant. **Concretely: a real
+Serbian bridge session, once enabled, will not get the same
+session/conversation timeout enforcement, connection-count capping,
+reconnect capping, or OASIS observability every Nova/cascade session
+gets.** `safety_critical: 0` on the scan (no crash/security-class gap),
+but a session with no watchdog timeout is a real operational risk under
+real Serbian traffic, not just a documentation gap. Before promoting this
+bridge past a small canary, either backport the missing watchdogs into
+`VertexLiveClient` or confirm gateway-level timeouts elsewhere already
+bound it — do not assume parity with Nova/cascade sessions just because
+the code path is the same one that ran before the 2026-08-16 shutdown.
+
 **Ships inert.** `VERTEX_SERBIAN_BRIDGE_ENABLED` defaults unset/off — every
 byte of this VTID changes nothing until an operator runs the provisioning
 script, confirms the secret, and explicitly flips the flag on a task def

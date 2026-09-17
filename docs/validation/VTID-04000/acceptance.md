@@ -139,3 +139,25 @@ that live verification could happen here — the code path is verified
 structurally (unit tests + the existing invariant suite), not against a
 real Vertex connection. The next real signal is the reporting user's next
 pre-login Serbian session, once the operator steps above are done.
+
+## Post-merge finding: pre-existing Vertex/LiveKit parity gap (not this VTID's regression)
+
+This PR's own `voice-pipeline-parity` CI scanner (report-only, runs on
+every gateway PR) flagged 13 `high`-severity `missing_in_vertex` items:
+7 OASIS event topics (`orb.live.context.bootstrap`,
+`orb.live.context.bootstrap.skipped`, `orb.live.tool.executed`,
+`orb.navigator.requested`, `orb.navigator.blocked`,
+`admin.briefing.injected`, `feedback.ticket.created`) and 6 watchdog
+settings (`session_timeout_ms`, `conversation_timeout_ms`,
+`max_connections_per_ip`, `max_reconnects`, `max_history_chars`,
+`extraction_throttle_ms`) present in the LiveKit/Nova pipeline but absent
+from `VertexLiveClient`. `safety_critical: 0` — not a crash/security gap —
+but this VTID reactivates the exact code path the scan is comparing
+against, so it is directly relevant here: a real Serbian bridge session
+will not get the same timeout/reconnect-capping/observability coverage a
+Nova or cascade session gets, until those are backported or confirmed
+covered elsewhere. Documented in CLAUDE.md
+§2e-vertex-serbian-bridge as a caveat to check before promoting the
+bridge past a small canary. Not fixed here — backporting 13 items into
+`VertexLiveClient` is a separate, larger VTID, and the bridge ships
+inert regardless.
