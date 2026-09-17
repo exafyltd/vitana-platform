@@ -186,25 +186,31 @@ describe('computeGreetingDecision — rung golden snapshots', () => {
       }),
     );
     expect(d.wakeOpener).toBe('safe_fast_proactive');
-    // BOOTSTRAP-ORB-PROACTIVE-OPENER-LANG (VTID-04010 follow-up): the FIRST
+    // BOOTSTRAP-ORB-PROACTIVE-OPENER-LANG (VTID-04010 follow-ups): the FIRST
     // fix here asked the model to "translate the following ... verbatim ...
     // do not leave any part of it in English" — measured live to get every
     // authenticated Serbian trial closed by Vertex with `upstream_ws_close
     // code:1007 "Request contains an invalid argument."`, a signature with
-    // zero prior occurrences in 7 days. That is the exact
-    // quote-and-reproduce-verbatim shape `override_v2` (rung 8, right above
-    // this one) already identified as guardrail-injection-shaped and fixed.
-    // This rung now uses the SAME safe "lead to compose from, not a string
-    // to recite/translate" framing override_v2 uses.
+    // zero prior occurrences in 7 days. The SECOND fix explicitly named the
+    // target language ("Speak entirely in Serbian — use no English words")
+    // and still only measured 2/11 successes. This rung now matches
+    // `override_v2` (rung 8, right above this one) byte-for-byte in spirit:
+    // never names a specific target language, relies on the session's own
+    // "Respond ONLY in {language}" system instruction instead, and only adds
+    // a light "never in English" nudge (the one real difference from
+    // override_v2's context — this rung's own bug was specifically an
+    // English-language leak).
     expect(d.directive).toContain('Open the conversation from this prepared lead');
-    expect(d.directive).toContain('Speak entirely in German');
+    expect(d.directive).toContain("entirely in the user's own language");
+    expect(d.directive).toContain('never in English');
     expect(d.directive).not.toContain('verbatim');
     expect(d.directive).not.toMatch(/Translate the following/i);
     expect(d.directive).not.toContain('do not leave any part of it in English');
+    expect(d.directive).not.toMatch(/Speak entirely in \w+ —/);
     expect(d).toMatchSnapshot();
   });
 
-  test('rung 4: safe_fast_proactive names the real target language (Serbian), not just German/English', () => {
+  test('rung 4: safe_fast_proactive never names a specific target language, even for Serbian (VTID-04015 follow-up)', () => {
     const d = computeGreetingDecision(
       safeFastCtx({
         bucket: 'same_day',
@@ -216,8 +222,10 @@ describe('computeGreetingDecision — rung golden snapshots', () => {
       }),
     );
     expect(d.wakeOpener).toBe('safe_fast_proactive');
-    expect(d.directive).toContain('Speak entirely in Serbian');
+    expect(d.directive).toContain("entirely in the user's own language");
+    expect(d.directive).not.toContain('Serbian');
     expect(d.directive).not.toMatch(/Translate the following/i);
+    expect(d.directive).not.toMatch(/Speak entirely in \w+ —/);
   });
 
   test('rung 4: safe_fast_proactive never instructs literal recitation/translation of the lead (VTID-04010 follow-up regression guard)', () => {

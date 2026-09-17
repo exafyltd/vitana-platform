@@ -1,0 +1,54 @@
+VTID-04015 — test results
+
+## Targeted suite (AC-1, AC-2, AC-3)
+
+$ npx jest test/services/conversation/compute-greeting-decision.golden.test.ts -u
+
+Test Suites: 1 passed, 1 total
+Tests:       61 passed, 61 total
+Snapshots:   1 updated, 33 passed, 34 total
+
+Including:
+  ✓ rung 4: safe_fast_proactive (pre-fetched proactive line)
+  ✓ rung 4: safe_fast_proactive never names a specific target language, even for Serbian (VTID-04015 follow-up)
+  ✓ rung 4: safe_fast_proactive never instructs literal recitation/translation of the lead (VTID-04010 follow-up regression guard)
+
+## tsc
+
+$ npx tsc --noEmit
+(clean, no output)
+
+## Full gateway suite (AC-4)
+
+$ npx jest
+
+Test Suites: 1 skipped, 950 passed, 950 of 951 total
+Tests:       29 skipped, 6 todo, 15436 passed, 15471 total
+Snapshots:   44 passed, 44 total
+Time:        68.196 s
+Exit code: 0
+
+## Live repro (the evidence that identified this follow-up regression)
+
+Authenticated lang:'sr' trials against preview-aws-gateway.vitanaland.com,
+commit ecfc0df (VTID-04014's own merge, deployed 2026-09-17 ~20:30 UTC),
+across two batches (3 + 8 trials = 11 total):
+
+  2/11 succeeded — turnCompleted:true, genuine fluent Serbian transcript,
+    e.g. "Dobar dan, e2etest33. Prošli put smo radili na temi „Šta je
+    Vitanaland". Hoćemo li da objavimo brzinsku novost za zajednicu? Ti
+    diktiraš, ja objavljujem."
+  9/11 hit the identical upstream_ws_close code:1007
+    reason:"Request contains an invalid argument." VTID-04014 was
+    written to eliminate.
+
+Separately, live production/staging traffic observed in the same time
+window (not this session's own test trials) showed the SAME 1007
+signature recurring on real user sessions, including at turn_count>=1
+(after a completed greeting) — consistent with the reported live symptom
+of an endless "Hold on, I'm reconnecting" loop: the server's
+attemptTransparentReconnect() resends the same still-rejected directive
+on every retry, and the client's reconnecting cue
+(orb-widget.js `case 'reconnecting':` -> `_announceDisconnect('connection')`)
+speaks "Hold on, I'm reconnecting" on every one of those retries once any
+audio has already been heard this session.
