@@ -1,0 +1,2 @@
+no fish.ts references (recorded finding)
+(no matches, exit 1)
