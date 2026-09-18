@@ -170,14 +170,22 @@ jobs:
             exit 1
           fi
           echo "DEEPSEEK_API_KEY <- Secrets Manager: $DEEPSEEK_ARN"
+          # VTID-04050: Command Hub tasks measured ~38 of 60 turns spent
+          # just navigating the 2.6MB app.js bundle before ever making an
+          # edit (Run #6b). The default 60-turn / 22-minute budget starves
+          # that work before it can finish. Raised for every executor run,
+          # not Command-Hub-specific -- the code has no way to tell what
+          # kind of task it was dispatched until it starts reading files.
           NEW_DEF=$(aws ecs describe-task-definition --task-definition "$CURRENT_ARN" --query taskDefinition \
             | jq --arg IMG "$IMAGE" --arg TASK_ROLE "$TASK_ROLE_ARN" \
                  --arg REGION "${{ env.TARGET_AWS_REGION }}" --arg DS "$DEEPSEEK_ARN" '
                 .containerDefinitions[0].image = $IMG
                 | .containerDefinitions[0].environment |=
-                    ( [ (. // [])[] | select(.name | IN("BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION") | not) ]
+                    ( [ (. // [])[] | select(.name | IN("BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION","AGENT_MAX_TURNS","AGENT_DEADLINE_MS") | not) ]
                       + [ {name:"BEDROCK_ROLE_ARN", value:$TASK_ROLE},
-                          {name:"AWS_BEDROCK_REGION", value:$REGION} ] )
+                          {name:"AWS_BEDROCK_REGION", value:$REGION},
+                          {name:"AGENT_MAX_TURNS", value:"120"},
+                          {name:"AGENT_DEADLINE_MS", value:"2100000"} ] )
                 | .containerDefinitions[0].secrets |=
                     ( [ (. // [])[] | select(.name | IN("DEEPSEEK_API_KEY") | not) ]
                       + [ {name:"DEEPSEEK_API_KEY", valueFrom:$DS} ] )
