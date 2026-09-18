@@ -154,7 +154,10 @@ describe('Command Hub — no fabricated fallback rows (VTID-04065)', () => {
       expect(stylesMatch).toBeTruthy();
       expect(appMatch).toBeTruthy();
       expect(stylesMatch![1]).toBe(appMatch![1]);
-      expect(appMatch![1]).toBe('20260918-vtid-04065-no-fabricated-rows');
+      // Asserted "at or after" rather than pinned to this exact literal — a later
+      // sibling PR legitimately re-bumps this marker further, and pinning an exact
+      // string here would break every such PR (the VTID-04028/04031 pattern).
+      expect(appMatch![1] > '20260918-vtid-04061-dead-code-removed').toBe(true);
       expect(html).not.toContain('?v=20260918-vtid-04061-dead-code-removed');
     });
   });
