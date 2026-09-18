@@ -214,8 +214,37 @@ jobs:
           # content they did not touch eventually gets muted or bypassed.
           # Fix mirrors `routeEvidenceRequired()` — scan only lines `git diff`
           # reports as ADDED, restricted to CSP_SURFACE via pathspec.
+          #
+          # VTID-04063 — a corruption-recovery `git revert` of a bad
+          # auto-revert restores previously-reviewed CSP_SURFACE content
+          # (byte-identical to a real prior commit on `main`) on top of a
+          # BASE branch whose own tip was corrupted (an emptied file). Diffed
+          # against that corrupted tip, the ENTIRE restored file shows as
+          # "added" lines — this gate would then reject already-reviewed,
+          # already-shipped code as if it were brand new. Detected live on
+          # PR #3437: every flagged line (inline `style=`, `.style.cssText`)
+          # pre-dated this PR by months.
+          #
+          # When this PR's own history contains a `git revert` commit (its
+          # trailer names the reverted SHA — `git revert`'s standard "This
+          # reverts commit <sha>." line), and that SHA is a real commit that
+          # was actually on the base branch (never an attacker-suppliable
+          # arbitrary ref — `--is-ancestor` enforces this), diff against that
+          # commit's PARENT instead of the base ref. That parent is the last
+          # known-good, already-reviewed state for these paths — a git
+          # revert restores it byte-for-byte, so genuinely new content still
+          # shows up as "added" and is still caught; only content that
+          # already existed before the corruption is excluded.
           BASE="${{ github.base_ref }}"
-          git diff "origin/$BASE"...HEAD -- \
+          DIFF_BASE="origin/$BASE"
+          REVERTED_SHA="$(git log "origin/$BASE"..HEAD | grep -oE 'This reverts commit [0-9a-f]{40}' | head -n1 | awk '{print $4}')"
+          if [ -n "$REVERTED_SHA" ] && git rev-parse -q --verify "${REVERTED_SHA}^{commit}" >/dev/null \
+             && git merge-base --is-ancestor "$REVERTED_SHA" "origin/$BASE"; then
+            DIFF_BASE="${REVERTED_SHA}^"
+            echo "Detected a corruption-recovery revert of $REVERTED_SHA (a real commit on origin/$BASE); comparing CSP surface against $DIFF_BASE instead of origin/$BASE."
+          fi
+
+          git diff "$DIFF_BASE"...HEAD -- \
             'services/gateway/src/frontend/' \
             'services/gateway/dist/frontend/' > /tmp/csp_diff.txt || true
 
