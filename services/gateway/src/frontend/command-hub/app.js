@@ -155,6 +155,36 @@ const TARGET_ROLE_LABELS = {
 };
 
 // ===========================================================================
+// VTID-04090 (T10, accessibility region 3/4): keyboard access for custom
+// clickable elements.
+//
+// A grep audit found ~70+ div/tr/span elements used as click targets (table
+// rows that open a detail drawer, cards, chips) with no keyboard equivalent
+// — a native <button>/<a> gets Enter/Space activation and tab-stop for
+// free; a div/tr/span with an onclick handler gets neither, so a
+// keyboard-only or screen-reader user cannot reach them at all (WCAG
+// 2.1.1 Keyboard). `gov-history-row` (line ~20114) already had the correct
+// hand-written pattern (tabIndex + role="button" + onkeydown mirroring
+// onclick) in two places; this helper is that same pattern, extracted once
+// so new call sites don't hand-roll it and drift.
+// ===========================================================================
+function makeClickable(el, handler, opts) {
+    opts = opts || {};
+    el.tabIndex = 0;
+    el.setAttribute('role', opts.role || 'button');
+    if (opts.label) {
+        el.setAttribute('aria-label', opts.label);
+    }
+    el.onclick = handler;
+    el.onkeydown = function (e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            handler(e);
+        }
+    };
+}
+
+// ===========================================================================
 // Task Title Rules: "Area: Short description" format
 // ===========================================================================
 const SYSTEM_AREAS = ['ORB', 'Gateway', 'Command Hub', 'Pipeline', 'Operator',
@@ -2865,10 +2895,10 @@ function createOasisEventRow(event) {
         row.className += ' event-row-grouped';
     }
 
-    row.onclick = function () {
+    makeClickable(row, function () {
         state.oasisEvents.selectedEvent = event;
         renderApp();
-    };
+    }, { label: 'View OASIS event details: ' + (event.topic || event.vtid || 'event') });
 
     // Severity indicator
     var severityCell = document.createElement('td');
@@ -3012,10 +3042,10 @@ function formatSurfaceLabel(surface) {
 function createCommandHubEventRow(event) {
     var row = document.createElement('tr');
     row.className = 'command-hub-event-row';
-    row.onclick = function () {
+    makeClickable(row, function () {
         state.commandHubEvents.selectedEvent = event;
         renderApp();
-    };
+    }, { label: 'View Command Hub event details: ' + (event.topic || event.vtid || 'event') });
 
     // Timestamp
     var tsCell = document.createElement('td');
@@ -12174,10 +12204,10 @@ function renderAdminUsersView() {
             var row = document.createElement('tr');
             row.className = 'admin-list-row clickable-row';
             if (state.adminUsersSelectedId === user.user_id) row.classList.add('selected');
-            row.onclick = function () {
+            makeClickable(row, function () {
                 state.adminUsersSelectedId = user.user_id;
                 renderApp();
-            };
+            }, { label: 'View user details: ' + (user.email || user.user_id) });
             var role = user.active_role || 'none';
             var tenant = user.tenant_name || '—';
             var status = user.status || 'Inactive';
@@ -12318,10 +12348,10 @@ function renderAdminPermissionsView() {
             var row = document.createElement('tr');
             row.className = 'admin-list-row clickable-row';
             if (state.adminPermissionsSelectedKey === roleItem.role) row.classList.add('selected');
-            row.onclick = function () {
+            makeClickable(row, function () {
                 state.adminPermissionsSelectedKey = roleItem.role;
                 fetchAdminRoleUsers(roleItem.role);
-            };
+            }, { label: 'View role details: ' + roleItem.role });
             var scope = ROLE_SCOPES[roleItem.role] || 'Tenant';
             row.innerHTML = '<td><span class="admin-role-badge admin-role-' + roleItem.role + '">' + roleItem.role + '</span></td>' +
                 '<td>' + roleItem.user_count + '</td>' +
@@ -12451,10 +12481,10 @@ function renderAdminTenantsView() {
             var row = document.createElement('tr');
             row.className = 'admin-list-row clickable-row';
             if (state.adminTenantsSelectedId === tenant.id) row.classList.add('selected');
-            row.onclick = function () {
+            makeClickable(row, function () {
                 state.adminTenantsSelectedId = tenant.id;
                 fetchAdminTenantDetail(tenant.id);
-            };
+            }, { label: 'View tenant details: ' + (tenant.name || tenant.id) });
             var status = tenant.status || 'Empty';
             row.innerHTML = '<td class="admin-cell-tenant">' + (tenant.name || '—') + '</td>' +
                 '<td>' + (tenant.user_count || 0) + '</td>' +
@@ -18998,10 +19028,10 @@ function renderGovernanceRulesView() {
     filteredRules.forEach(rule => {
         const row = document.createElement('tr');
         row.className = 'governance-rule-row';
-        row.onclick = () => {
+        makeClickable(row, () => {
             state.selectedGovernanceRule = rule;
             renderApp();
-        };
+        }, { label: 'View governance rule details: ' + rule.id });
 
         // Rule ID
         const idCell = document.createElement('td');
@@ -21934,9 +21964,9 @@ function renderOasisLedgerTableWithDrilldown(items) {
             }
 
             // Click to show drilldown
-            row.onclick = function () {
+            makeClickable(row, function () {
                 fetchOasisVtidDetail(item.vtid);
-            };
+            }, { label: 'View VTID details: ' + item.vtid });
 
             // VTID column
             var vtidCell = document.createElement('td');
@@ -22062,9 +22092,9 @@ function renderOasisVtidLedgerView() {
             if (oasisVtidDetail.selectedVtid === item.vtid) {
                 row.classList.add('selected');
             }
-            row.onclick = function () {
+            makeClickable(row, function () {
                 fetchOasisVtidDetail(item.vtid);
-            };
+            }, { label: 'View VTID details: ' + item.vtid });
 
             // VTID
             var vtidCell = document.createElement('td');
@@ -32978,7 +33008,7 @@ function renderOperatorTaskQueueView() {
         if (state.selectedTask && state.selectedTask.vtid === task.vtid) {
             row.className += ' selected';
         }
-        row.onclick = function () {
+        makeClickable(row, function () {
             state.selectedTask = task;
             state.selectedTaskDetail = null;
             state.selectedTaskDetailLoading = true;
@@ -32986,7 +33016,7 @@ function renderOperatorTaskQueueView() {
             state.executionStatusLoading = false;
             renderApp();
             fetchVtidDetail(task.vtid);
-        };
+        }, { label: 'View task details: ' + (task.vtid || task.title || 'task') });
         row.style.cursor = 'pointer';
 
         var vtidTd = document.createElement('td');
@@ -36552,7 +36582,7 @@ function renderTestRunsTable(runs) {
     runs.forEach(function (run) {
         var row = document.createElement('tr');
         row.style.cursor = 'pointer';
-        row.onclick = function () { openTestRunDrawer(run.id); };
+        makeClickable(row, function () { openTestRunDrawer(run.id); }, { label: 'View test run details: ' + run.id });
         var projs = (run.projects || []).join(', ');
         if (projs.length > 40) projs = projs.slice(0, 37) + '...';
         row.innerHTML =
@@ -49420,11 +49450,11 @@ function renderAutopilotRegistryView() {
         }
 
         // Click row to see details
-        row.onclick = function () {
+        makeClickable(row, function () {
             state.autopilot.selectedAutomation = a;
             state.autopilot.drawerOpen = true;
             renderApp();
-        };
+        }, { label: 'View automation details: ' + (a.name || a.id) });
 
         tbody.appendChild(row);
     });
@@ -52913,7 +52943,7 @@ function renderFeedbackInboxView() {
             tr.style.cssText = 'border-bottom:1px solid var(--color-border-subtle);font-size:.85rem;cursor:pointer;';
             tr.onmouseover = function () { tr.style.background = 'var(--color-surface-secondary)'; };
             tr.onmouseout = function () { tr.style.background = ''; };
-            tr.onclick = function () { openFeedbackTicketDrawer(t.id); };
+            makeClickable(tr, function () { openFeedbackTicketDrawer(t.id); }, { label: 'View feedback ticket: ' + (t.ticket_number || t.id) });
             var num = document.createElement('td');
             num.style.cssText = 'padding:.5rem .75rem;font-family:monospace;font-weight:600;';
             num.textContent = t.ticket_number || '-';
