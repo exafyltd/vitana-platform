@@ -5,9 +5,8 @@
  * app.js is a plain script with no build step, no tree-shaking, and no
  * linter that flags unused top-level functions — dead code here only ever
  * gets found by someone manually grepping the whole file. That happened
- * four separate times (T1a/T1c/T1d, and again as a byproduct of this very
- * PR — deleting 12 clearly-dead functions exposed 4 more that had only ever
- * been called BY the ones just removed): dozens of functions whose only
+ * five separate times now (T1a/T1c/T1d, the 12+4 functions this guard's own
+ * PR found, and T1b/VTID-04093 below): dozens of functions whose only
  * occurrence in the file was their own `function name(...)` definition,
  * accumulating silently for months. This is the standing guard that stops
  * a NEW one from doing the same: it scans app.js the same way each of
@@ -18,7 +17,7 @@
  * `window.name` export, no registration in a config/table object literal,
  * not even a stale comment.
  *
- * Two structural exceptions, not name-based allowlisting:
+ * One structural exception, not name-based allowlisting:
  *
  *  - A function expression immediately wrapped in `(function name() {...})()`
  *    (an IIFE) is self-invoking by construction — it runs once at load
@@ -27,16 +26,15 @@
  *    before `function`), not by name, so a future IIFE doesn't need a
  *    test change to be recognised correctly.
  *
- *  - The Memory Garden / old-Intelligence panel block (`refreshMemoryGarden`,
- *    `renderMemoryGardenView`, `renderKnowledgeGraphView`, `renderRecallView`,
- *    `renderInspectorView`, `renderEmbeddingsView`) is GENUINELY dead today,
- *    but is deliberately gated pending a separate product decision (T1b:
- *    wire it up vs. delete it) — see the CLAUDE.md task list. Removing it
- *    here would preempt that decision. These six names are the one
- *    allowlist this guard carries, and each one is a name T1b's own scope
- *    must account for; if T1b ships (either direction) and any of these
- *    six survives it while genuinely gaining/losing callers, this
- *    allowlist needs updating in the same PR.
+ * T1b resolved (VTID-04093): the Memory Garden / old-Intelligence panel
+ * block this guard used to allowlist by name (`refreshMemoryGarden`,
+ * `renderMemoryGardenView`, `renderKnowledgeGraphView`, `renderRecallView`,
+ * `renderInspectorView`, `renderEmbeddingsView`) was confirmed to be a
+ * fabricated-mock-data duplicate of `renderMemoryOpsView` (VTID-02636) —
+ * already real, already backend-wired to `/api/v1/admin/memory/*`, already
+ * mounted live under the same `intelligence-memory-dev` nav slot. Deleted
+ * instead of wired. The allowlist below is empty and no zero-caller
+ * function is now tolerated in app.js.
  *
  * Scope note (same as every prior cleanup in this chain): this only
  * recognises the classic `function name(...)` / `async function name(...)`
@@ -52,23 +50,14 @@ import { join } from 'path';
 const APP_JS_PATH = join(__dirname, '../../src/frontend/command-hub/app.js');
 
 /**
- * Names deliberately excluded from this guard because they belong to the
- * Memory Garden / old-Intelligence panel block gated behind T1b (see the
- * docstring above). Every name here MUST currently be a genuine zero-caller
- * function — if one of these gains a real caller (or is deleted), remove it
- * from this list in the same change, so the allowlist can never silently
- * grow to cover something new and unrelated.
+ * No names are gated behind an open product decision any more — T1b
+ * resolved. If a future cleanup needs to gate something again, add it
+ * here with the same "must currently be a genuine zero-caller function"
+ * discipline the T1b entry followed.
  */
-const T1B_GATED_ALLOWLIST = [
-  'refreshMemoryGarden',
-  'renderMemoryGardenView',
-  'renderKnowledgeGraphView',
-  'renderRecallView',
-  'renderInspectorView',
-  'renderEmbeddingsView',
-];
+const T1B_GATED_ALLOWLIST: string[] = [];
 
-/** Every function that was verified zero-caller and deleted by this PR. */
+/** Every function that was verified zero-caller and deleted by the T2 PR (VTID-04082). */
 const REMOVED_BY_THIS_PR = [
   'fetchVtidsList',
   'extractLayer',
@@ -86,6 +75,46 @@ const REMOVED_BY_THIS_PR = [
   'closeStepsStream',
   'renderDevAutopilotLineageView',
   'renderDevAutopilotStepsView',
+];
+
+/**
+ * The whole dead Memory Garden / old-Intelligence panel block deleted by
+ * T1b (VTID-04093) — 21 function declarations (the 6 the T2 guard used to
+ * allowlist, plus every helper whose only callers lived inside that same
+ * block: fetch functions, sub-view renderers, and icon/subcategory
+ * helpers) plus the 2 constant object literals (`MEMORY_GARDEN_ICONS`,
+ * `LONGEVITY_MESSAGES`) they referenced. Superseded by `renderMemoryOpsView`
+ * (VTID-02636), which is real, backend-wired, and already live in the same
+ * nav slot — see the file docstring above.
+ */
+const REMOVED_BY_VTID_04093 = [
+  'refreshMemoryGarden',
+  'renderMemoryGardenView',
+  'renderKnowledgeGraphView',
+  'renderRecallView',
+  'renderInspectorView',
+  'renderEmbeddingsView',
+  'fetchMemoryGardenProgress',
+  'fetchLongevitySummary',
+  'fetchCategoryMemories',
+  'fetchMemoryFacts',
+  'fetchRelationshipGraph',
+  'fetchBehavioralSignals',
+  'renderMemoryGardenCard',
+  'renderLongevityFocusPanel',
+  'renderLongevitySignal',
+  'renderDiaryEntryModal',
+  'renderCategoryDetailModal',
+  'getCategorySubcategories',
+  'renderUnifiedIntelligencePanel',
+  'escapeHtmlSafe',
+  'getKnowledgeGraphIcon',
+];
+
+/** Constant object literals deleted alongside REMOVED_BY_VTID_04093 (not functions, so the zero-caller scan below never covered them — checked by their own assertion instead). */
+const CONSTANTS_REMOVED_BY_VTID_04093 = [
+  'MEMORY_GARDEN_ICONS',
+  'LONGEVITY_MESSAGES',
 ];
 
 /**
@@ -124,7 +153,7 @@ describe('Command Hub app.js — standing guard: no zero-caller functions (VTID-
     src = readFileSync(APP_JS_PATH, 'utf8');
   });
 
-  it('the only zero-caller functions in app.js are the T1b-gated Memory Garden block', () => {
+  it('there are no zero-caller functions in app.js', () => {
     const found = findZeroCallerFunctions(src);
     expect(found).toEqual([...T1B_GATED_ALLOWLIST].sort());
   });
@@ -143,17 +172,38 @@ describe('Command Hub app.js — standing guard: no zero-caller functions (VTID-
     expect(src).not.toMatch(new RegExp('function\\s+' + name + '\\s*\\('));
   });
 
-  it('no reference — call site OR comment — to any function removed by this PR remains anywhere in app.js', () => {
+  it('no reference — call site OR comment — to any function removed by T2 (VTID-04082) remains anywhere in app.js', () => {
     for (const name of REMOVED_BY_THIS_PR) {
       const matches = src.match(new RegExp('\\b' + name + '\\b', 'g')) || [];
       expect({ name, matches: matches.length }).toEqual({ name, matches: 0 });
     }
   });
 
-  it('the gated Memory Garden / Intelligence panel block is untouched', () => {
-    for (const name of T1B_GATED_ALLOWLIST) {
-      expect(src).toMatch(new RegExp('function\\s+' + name + '\\s*\\('));
+  it.each(REMOVED_BY_VTID_04093)('no `function %s(` definition remains in app.js (T1b, VTID-04093)', (name) => {
+    expect(src).not.toMatch(new RegExp('function\\s+' + name + '\\s*\\('));
+  });
+
+  it('no reference — call site OR comment — to any function deleted by T1b (VTID-04093) remains anywhere in app.js', () => {
+    for (const name of REMOVED_BY_VTID_04093) {
+      const matches = src.match(new RegExp('\\b' + name + '\\b', 'g')) || [];
+      expect({ name, matches: matches.length }).toEqual({ name, matches: 0 });
     }
+  });
+
+  it('no reference to either constant object literal deleted by T1b (VTID-04093) remains anywhere in app.js', () => {
+    for (const name of CONSTANTS_REMOVED_BY_VTID_04093) {
+      const matches = src.match(new RegExp('\\b' + name + '\\b', 'g')) || [];
+      expect({ name, matches: matches.length }).toEqual({ name, matches: 0 });
+    }
+  });
+
+  it('the moduleKey===\'memory-garden\' dead branch in triggerGlobalRefresh is gone', () => {
+    expect(src).not.toContain("moduleKey === 'memory-garden'");
+  });
+
+  it('renderMemoryOpsView — the real replacement (VTID-02636) — is untouched and still mounted', () => {
+    expect(src).toMatch(/function\s+renderMemoryOpsView\s*\(/);
+    expect(src).toContain("moduleKey === 'intelligence-memory-dev'");
   });
 
   it('the Command Hub cache-buster on index.html was bumped for this change', () => {
@@ -162,7 +212,7 @@ describe('Command Hub app.js — standing guard: no zero-caller functions (VTID-
     // "at or after", not exact-match — VTID-04028/VTID-04031/VTID-04074's
     // own lesson: a later sibling PR legitimately re-bumping this marker
     // must not break this assertion.
-    expect(appVersion >= '20260918-vtid-04082-zero-caller-guard').toBe(true);
+    expect(appVersion >= '20260918-vtid-04093-t1b-delete-dead-memory-block').toBe(true);
     expect(indexHtml).toContain('styles.css?v=' + appVersion);
   });
 });

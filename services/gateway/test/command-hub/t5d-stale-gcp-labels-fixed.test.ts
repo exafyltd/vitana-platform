@@ -229,27 +229,13 @@ describe('Command Hub — stale GCP labels fixed (VTID-04066)', () => {
 
   describe('scope guard — excluded Command Hub blocks unchanged', () => {
     // The Memory Garden / Intelligence panel block was explicitly out of
-    // scope; every one of its renderers must still be present by name.
-    const excludedRenderers = [
-      'renderMemoryGardenView',
-      'renderMemoryGardenCard',
-      'renderLongevityFocusPanel',
-      'renderLongevitySignal',
-      'renderDiaryEntryModal',
-      'renderCategoryDetailModal',
-      'getCategorySubcategories',
-      'renderUnifiedIntelligencePanel',
-      'escapeHtmlSafe',
-      'renderKnowledgeGraphView',
-      'getKnowledgeGraphIcon',
-      'renderRecallView',
-      'renderInspectorView',
-      'renderEmbeddingsView',
-    ];
-
-    it.each(excludedRenderers)('still defines %s', (name) => {
-      expect(src).toContain('function ' + name);
-    });
+    // scope for THIS VTID (VTID-04066) — its renderers were required to
+    // stay present pending the separate T1b product decision. T1b has
+    // since resolved (VTID-04093): the block was confirmed a fabricated-
+    // mock-data duplicate of the real, backend-wired renderMemoryOpsView
+    // (VTID-02636, already mounted live) and deleted. This guard is no
+    // longer applicable to that block; nothing here asserts its absence
+    // either — that's t2-no-zero-caller-functions.test.ts's job.
 
     it('leaves the Nova bench Serbian language option exactly as-is', () => {
       // VTID-04066: this one already carries deliberately-updated wording
