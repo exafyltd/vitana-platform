@@ -140,12 +140,19 @@ describe('Command Hub — stale Google provider defaults (VTID-04057)', () => {
   });
 
   describe('cache-bust bump in index.html', () => {
-    it('stamps the VTID-04057 query string on both styles.css and app.js', () => {
+    it('bumped past the pre-VTID-04057 marker on both styles.css and app.js, and stayed in sync', () => {
+      // Pins the invariant this test exists for (a cache-bust happened, so
+      // the browser can't serve a stale pre-fix copy) rather than the exact
+      // literal string — a later, unrelated Command Hub PR (e.g. VTID-04060/
+      // VTID-04061) legitimately bumps the same two tags again, and pinning
+      // this PR's own marker forever would break on every such bump, the
+      // same class of fragility VTID-04031 already hit and fixed this way.
       const html = readIndexHtml();
-      const marker = '20260918-vtid-04057-stale-provider-defaults';
-
-      expect(html).toContain(`/command-hub/styles.css?v=${marker}`);
-      expect(html).toContain(`/command-hub/app.js?v=${marker}`);
+      const stylesMatch = html.match(/\/command-hub\/styles\.css\?v=([^"]+)"/);
+      const appMatch = html.match(/\/command-hub\/app\.js\?v=([^"]+)"/);
+      expect(stylesMatch).toBeTruthy();
+      expect(appMatch).toBeTruthy();
+      expect(stylesMatch![1]).toBe(appMatch![1]);
       expect(html).not.toContain('/command-hub/styles.css?v=20260918-vtid-04033-exec-follow');
       expect(html).not.toContain('/command-hub/app.js?v=20260918-vtid-04033-exec-follow');
     });
