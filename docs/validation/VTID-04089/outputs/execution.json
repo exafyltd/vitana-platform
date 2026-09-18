@@ -1,0 +1,20 @@
+{
+  "vtid": "VTID-04089",
+  "title": "Command Hub a11y Region 2: icon-only aria-label sweep + <label for=> wiring (T10)",
+  "validation_profile": "gateway_backend",
+  "tests": {
+    "new_suite": "services/gateway/test/command-hub/t10-r2-aria-labels-and-input-labels.test.ts",
+    "new_suite_result": "9 passed, 9 total",
+    "full_command_hub_sweep": "11 suites, 196 tests passed",
+    "tsc_noemit": "clean",
+    "npm_build": "exit 0"
+  },
+  "files_changed": [
+    "services/gateway/src/frontend/command-hub/app.js",
+    "services/gateway/src/frontend/command-hub/index.html",
+    "services/gateway/test/command-hub/t10-r2-aria-labels-and-input-labels.test.ts",
+    "services/gateway/test/vtid-03906-08-operator-scroll-mic-fullscreen.test.ts"
+  ],
+  "routes_added": [],
+  "cache_bust": "20260918-vtid-04089-a11y-labels"
+}
