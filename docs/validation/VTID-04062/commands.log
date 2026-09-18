@@ -1,0 +1,32 @@
+# VTID-04062 — commands run for this fix
+
+# 2026-09-18T11:29:00Z
+# Root cause: pulled the failing job's logs for PR #3421's "Gateway (Jest,
+# ~7.5k tests)" check via the GitHub API (get_job_logs), located the
+# failing assertion at test/vtid-03850-staging-executor-dispatch-pinned.test.ts:86.
+# Confirmed the live workflow no longer matches the old two-name regex:
+$ grep -n 'select(.name | IN' .github/workflows/AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml
+184:                    ( [ (. // [])[] | select(.name | IN("BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION","AGENT_MAX_TURNS","AGENT_DEADLINE_MS") | not) ]
+190:                    ( [ (. // [])[] | select(.name | IN("DEEPSEEK_API_KEY") | not) ]
+
+# Traced to VTID-04050 (#3420, merged a45cfd0c), which added
+# AGENT_MAX_TURNS/AGENT_DEADLINE_MS to the strip-list without updating
+# this pinned test.
+
+# Self-allocated VTID-04062 for this fix (this hotfix is not VTID-03850
+# itself — that VTID names an already-shipped, terminal feature; reusing
+# its number and evidence directory for an unrelated later fix would have
+# overwritten that historical record, caught and corrected mid-session
+# before it was committed).
+$ curl -sS -X POST https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate \
+    -d '{"source":"claude-code","layer":"DEV","module":"command-hub-ci-repin-agent-turn-budget-test"}'
+  -> {"ok":true,"vtid":"VTID-04062","num":4062,"id":"69c755e4-fbbe-4a8b-9e72-c3d3d69c2b8d"}
+
+# Fix: updated the regex in test/vtid-03850-staging-executor-dispatch-pinned.test.ts
+# to the real four-name list and added a new assertion pinning the two new
+# env values directly.
+
+# tsc / jest were not run locally in this session (no local Node/jest
+# environment available); the fix is a pure regex/string-literal change
+# against source already read and grepped directly above — the CI run on
+# this PR (Gateway Jest) is the verification.
