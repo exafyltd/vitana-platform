@@ -35993,66 +35993,26 @@ function renderIntegrationsPluginsView() {
     return container;
 }
 
+// VTID-04064: neutral placeholder for Command Hub views that used to render
+// fabricated GCP-era infrastructure data — hardcoded dead cloud-hosting hosts,
+// a deleted project id, a dead region and a dead container registry path.
+// GCP is fully decommissioned (CLAUDE.md §1) and AWS is canonical; the live
+// AWS inventory is available via `aws ecs describe-services` (CLAUDE.md §11)
+// but is not wired into this UI yet, so these views say so instead of
+// inventing values.
+var GCP_STATIC_VIEW_DISABLED_TEXT = 'This view showed decommissioned GCP infrastructure data with no live backing and has been disabled — GCP is fully decommissioned (CLAUDE.md §1); AWS deployment info is available via aws ecs describe-services per CLAUDE.md §11, not yet wired into this UI.';
+
+function buildGcpStaticViewDisabledNotice() {
+    var notice = document.createElement('div');
+    notice.className = 'infra-empty';
+    notice.textContent = GCP_STATIC_VIEW_DISABLED_TEXT;
+    return notice;
+}
+
 function renderIntegrationsServiceMeshView() {
     var container = document.createElement('div');
     container.className = 'infra-services-container';
-
-    var header = document.createElement('div');
-    header.className = 'infra-section-header';
-    header.innerHTML = '<h2>Service Mesh</h2><p class="infra-subtitle">Cloud Run services topology and internal connectivity.</p>';
-    container.appendChild(header);
-
-    var services = [
-        { name: 'gateway', url: 'gateway-86804897789.us-central1.run.app', health: '/alive', desc: 'API Gateway, Frontend, Auth, Routing' },
-        { name: 'oasis-operator', url: 'oasis-operator-86804897789.us-central1.run.app', health: '/alive', desc: 'OASIS Event Processing & Projections' },
-        { name: 'oasis-projector', url: 'oasis-projector-86804897789.us-central1.run.app', health: '/alive', desc: 'OASIS Read Model Projections' },
-        { name: 'worker-runner', url: 'worker-runner-86804897789.us-central1.run.app', health: '/alive', desc: 'Autonomous Worker Execution Plane' },
-        { name: 'verification-engine', url: 'vitana-verification-engine-86804897789.us-central1.run.app', health: '/alive', desc: 'Validator Agent & Governance Checks' }
-    ];
-
-    var grid = document.createElement('div');
-    grid.className = 'infra-card-grid';
-
-    services.forEach(function (svc) {
-        var card = document.createElement('div');
-        card.className = 'infra-card';
-
-        // Header
-        var hdr = document.createElement('div');
-        hdr.className = 'infra-card__header';
-        var dot = document.createElement('span');
-        dot.className = 'infra-card__dot infra-card__dot--healthy';
-        hdr.appendChild(dot);
-        var name = document.createElement('span');
-        name.className = 'infra-card__name';
-        name.textContent = svc.name;
-        hdr.appendChild(name);
-        card.appendChild(hdr);
-
-        // Meta
-        var meta = document.createElement('div');
-        meta.className = 'infra-card__meta';
-
-        var descRow = document.createElement('div');
-        descRow.className = 'infra-card__meta-row';
-        descRow.innerHTML = '<span class="infra-card__meta-label">Role</span><span class="infra-card__meta-value" style="text-align:left;">' + escapeHtml(svc.desc) + '</span>';
-        meta.appendChild(descRow);
-
-        var urlRow = document.createElement('div');
-        urlRow.className = 'infra-card__meta-row';
-        urlRow.innerHTML = '<span class="infra-card__meta-label">URL</span><span class="infra-card__meta-value">' + escapeHtml(svc.url) + '</span>';
-        meta.appendChild(urlRow);
-
-        var healthRow = document.createElement('div');
-        healthRow.className = 'infra-card__meta-row';
-        healthRow.innerHTML = '<span class="infra-card__meta-label">Health</span><span class="infra-card__meta-value"><code>' + escapeHtml(svc.health) + '</code></span>';
-        meta.appendChild(healthRow);
-
-        card.appendChild(meta);
-        grid.appendChild(card);
-    });
-
-    container.appendChild(grid);
+    container.appendChild(buildGcpStaticViewDisabledNotice());
     return container;
 }
 
@@ -41569,9 +41529,11 @@ function renderDatabasesSupabaseView() {
     var cardsGrid = document.createElement('div');
     cardsGrid.className = 'infra-services-grid';
 
+    // VTID-04064: the Project ID / Region cards used to assert a dead GCP
+    // project id and region as this Supabase instance's identity. Only facts
+    // that stay true regardless of hosting remain; hosting identity is not
+    // verified against live AWS config here.
     var connectionCards = [
-        { title: 'Project ID', value: 'lovable-vitana-vers1', detail: 'GCP Project' },
-        { title: 'Region', value: 'us-central1', detail: 'Primary region for all services' },
         { title: 'RLS Status', value: 'Enforced', detail: 'Row Level Security active on all tenant tables' },
         { title: 'Engine', value: 'PostgreSQL 15', detail: 'Supabase managed instance with pgvector extension' }
     ];
@@ -41998,11 +41960,15 @@ function renderDatabasesClustersView() {
     var cardsGrid = document.createElement('div');
     cardsGrid.className = 'infra-services-grid';
 
+    // VTID-04064: the Pool Size / Region rows used to pin the cluster to a
+    // dead GCP region co-located with dead managed-run instances. Those are
+    // dead cloud-hosting claims; the region and co-location are unverified
+    // against live AWS config (CLAUDE.md §11), so they state that instead.
     var clusterConfig = [
         { title: 'Primary Instance', value: 'Supabase Pro', detail: 'Managed PostgreSQL with automatic backups and point-in-time recovery' },
         { title: 'Connection Pooler', value: 'PgBouncer', detail: 'Transaction-mode pooling for efficient connection management' },
-        { title: 'Pool Size', value: '25 connections', detail: 'Default pool size per service. Shared across Cloud Run instances.' },
-        { title: 'Region', value: 'us-central1', detail: 'Co-located with Cloud Run services for minimal latency' },
+        { title: 'Pool Size', value: '25 connections', detail: 'Default pool size per service. Shared across deployed service instances.' },
+        { title: 'Region', value: 'Unverified', detail: 'Region and service co-location are not verified against live AWS config' },
         { title: 'Replicas', value: 'None (Supabase Pro)', detail: 'Read replicas available on Supabase Enterprise plan' },
         { title: 'Backups', value: 'Daily + PITR', detail: 'Point-in-time recovery enabled. 7-day retention.' },
         { title: 'SSL', value: 'Enforced', detail: 'All connections require SSL/TLS encryption' },
@@ -42713,29 +42679,12 @@ function renderInfraConfigView() {
 
     container.appendChild(cardsGrid);
 
-    // Service URLs panel
-    var urlSection = document.createElement('div');
-    urlSection.className = 'infra-panel';
-    urlSection.innerHTML = '<h3>Service URLs</h3>' +
-        '<ul>' +
-        '<li><strong>Gateway:</strong> <code>gateway-86804897789.us-central1.run.app</code></li>' +
-        '<li><strong>OASIS Operator:</strong> <code>oasis-operator-86804897789.us-central1.run.app</code></li>' +
-        '<li><strong>Worker Runner:</strong> <code>worker-runner-86804897789.us-central1.run.app</code></li>' +
-        '<li><strong>Verification Engine:</strong> <code>vitana-verification-engine-86804897789.us-central1.run.app</code></li>' +
-        '</ul>';
-    container.appendChild(urlSection);
-
-    // Environment panel
-    var envSection = document.createElement('div');
-    envSection.className = 'infra-panel';
-    envSection.innerHTML = '<h3>Environment</h3>' +
-        '<ul>' +
-        '<li><strong>GCP Project:</strong> lovable-vitana-vers1</li>' +
-        '<li><strong>Region:</strong> us-central1</li>' +
-        '<li><strong>Runtime:</strong> Cloud Run (managed)</li>' +
-        '<li><strong>Registry:</strong> <code>us-central1-docker.pkg.dev/lovable-vitana-vers1/cloud-run-source-deploy</code></li>' +
-        '</ul>';
-    container.appendChild(envSection);
+    // VTID-04064: the Service URLs and Environment panels below used to
+    // hardcode dead GCP values (dead managed-run hosts, a deleted project id,
+    // a dead region, a dead artifact-registry path). They are replaced with
+    // the shared disabled-view notice. The governance-controls card rendering
+    // above (live, backed by fetchInfraConfig()) is untouched.
+    container.appendChild(buildGcpStaticViewDisabledNotice());
 
     return container;
 }
@@ -49574,12 +49523,16 @@ function renderSecurityKeysSecretsView() {
     var cardsGrid = document.createElement('div');
     cardsGrid.className = 'infra-services-grid';
 
+    // VTID-04064: a dead Google AI key row used to sit here (GCP fully
+    // decommissioned, CLAUDE.md §1; Claude runs on AWS Bedrock per §10a). It
+    // was replaced with the Bedrock credential row that is actually relevant,
+    // and no invented value is shown.
     var keysInfo = [
-        { title: 'Supabase Service Role Key', value: 'sk-***...***', detail: 'Used by Gateway for server-side Supabase operations. Stored in Cloud Run env.' },
+        { title: 'Supabase Service Role Key', value: 'sk-***...***', detail: 'Used by Gateway for server-side Supabase operations. Stored in the service environment.' },
         { title: 'Supabase Anon Key', value: 'eyJ***...***', detail: 'Public key for client-side Supabase auth. Embedded in frontend config.' },
         { title: 'GitHub Safe Merge Token', value: 'ghp_***...***', detail: 'Used by CI/CD service for safe merge operations. Scoped to repo.' },
-        { title: 'Gemini API Key', value: 'AI***...***', detail: 'Google AI API key for Gemini model calls. Set in Gateway environment.' },
-        { title: 'OpenAI API Key', value: 'sk-***...***', detail: 'Used for embeddings (text-embedding-ada-002). Optional if using Vertex.' }
+        { title: 'AWS Bedrock Access', value: '***masked***', detail: 'Credential for Claude model calls via AWS Bedrock (CLAUDE.md §10a). No key material is rendered here.' },
+        { title: 'OpenAI API Key', value: 'sk-***...***', detail: 'Used for embeddings (text-embedding-ada-002). Optional.' }
     ];
 
     keysInfo.forEach(function (info) {
@@ -49603,6 +49556,10 @@ function renderSecurityKeysSecretsView() {
     });
     container.appendChild(cardsGrid);
 
+    // VTID-04064: the JWT Configuration block below is accurate and unrelated
+    // to GCP, so it is kept verbatim. The "Service Accounts" list that used to
+    // follow it named dead GCP service-account identities and is replaced by
+    // the shared AWS-accurate disabled-view notice.
     var jwtSection = document.createElement('div');
     jwtSection.className = 'databases-arch-note';
     jwtSection.innerHTML = '<h3>JWT Configuration</h3>' +
@@ -49612,14 +49569,16 @@ function renderSecurityKeysSecretsView() {
         '<li><strong>Issuer:</strong> supabase</li>' +
         '<li><strong>Audience:</strong> authenticated</li>' +
         '<li><strong>Refresh:</strong> Supabase handles refresh token rotation automatically</li>' +
-        '</ul>' +
-        '<h3>Service Accounts</h3>' +
-        '<ul>' +
-        '<li><strong>Cloud Run SA:</strong> Default Compute Engine service account</li>' +
-        '<li><strong>Cloud Build SA:</strong> Cloud Build service account (for container builds)</li>' +
-        '<li><strong>Artifact Registry:</strong> Service account with artifactregistry.writer role</li>' +
         '</ul>';
     container.appendChild(jwtSection);
+
+    var serviceAccountsNote = document.createElement('div');
+    serviceAccountsNote.className = 'databases-arch-note';
+    var saTitle = document.createElement('h3');
+    saTitle.textContent = 'Service Accounts';
+    serviceAccountsNote.appendChild(saTitle);
+    serviceAccountsNote.appendChild(buildGcpStaticViewDisabledNotice());
+    container.appendChild(serviceAccountsNote);
 
     return container;
 }
