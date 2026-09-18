@@ -14,3 +14,23 @@ $ npm run build
 > @vitana/gateway@1.0.1 build
 > tsc && npm run copy-frontend && npm run copy-data
 (exit 0)
+
+$ node scripts/ci/validate-pr-locally.cjs --title "VTID-04089: ..." --body-file /tmp/pr-body-vtid-04089.md --base main
+REJECTED: CSP pattern hit in an added line :: /style\s*=/  (x7)
+Root cause: touching an existing line that already carried a pre-existing
+`style="..."` attribute to insert `for="id"`/`aria-label="..."` re-emits
+that line's whole content as "added" in the diff, which the CSP
+Added-Lines Gate cannot distinguish from a genuinely NEW inline style.
+Fix: reverted the 7 affected template-string lines to their original,
+untouched text and wired the for=/aria-label attributes via a
+post-render DOM pass instead (querySelector + setAttribute), which adds
+new lines containing no `style=` substring rather than modifying the
+existing ones. Re-ran the full suite after the fix — unchanged, still
+196/196 passing, tsc/build still clean.
+
+$ node scripts/ci/validate-pr-locally.cjs --title "VTID-04089: ..." --body-file /tmp/pr-body-vtid-04089.md --base main  (re-run after CSP fix)
+APPROVED: 7 in-remit file(s) match the gateway_backend allowlist
+Acceptance mapping OK
+No CSP violations in added lines
+APPROVED
+

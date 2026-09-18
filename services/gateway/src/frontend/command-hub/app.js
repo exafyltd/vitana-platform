@@ -6412,7 +6412,8 @@ function renderHeader() {
         var titleColor = capsFailing > 0 ? '#ef4444' : '#10b981';
         hmHeader.innerHTML =
             '<span style="color:' + titleColor + '">Service Health (' + capsHealthy + '/' + capsTotal + ')</span>' +
-            '<button class="drawer-close-btn" style="position:static;" aria-label="Close service health">&times;</button>';
+            '<button class="drawer-close-btn" style="position:static;">&times;</button>';
+        hmHeader.querySelector('.drawer-close-btn').setAttribute('aria-label', 'Close service health');
         hmHeader.querySelector('.drawer-close-btn').onclick = function () {
             state.cicdHealthTooltipOpen = false;
             renderApp();
@@ -13483,16 +13484,16 @@ function renderAdminBillingCodesView() {
     formCard.innerHTML =
         '<h3 style="margin:0 0 0.75rem;font-size:14px;">Generate codes</h3>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:0.5rem;align-items:end;">' +
-        '  <div><label for="vtid-03107-campaign" style="display:block;font-size:11px;color:#94a3b8;margin-bottom:0.25rem;">Campaign name</label>' +
+        '  <div><label style="display:block;font-size:11px;color:#94a3b8;margin-bottom:0.25rem;">Campaign name</label>' +
         '    <input id="vtid-03107-campaign" type="text" placeholder="test_cohort_2026Q2" ' +
         '      style="width:100%;padding:0.4rem;background:#0f172a;border:1px solid #475569;border-radius:4px;color:#e2e8f0;" /></div>' +
-        '  <div><label for="vtid-03107-count" style="display:block;font-size:11px;color:#94a3b8;margin-bottom:0.25rem;">Count</label>' +
+        '  <div><label style="display:block;font-size:11px;color:#94a3b8;margin-bottom:0.25rem;">Count</label>' +
         '    <input id="vtid-03107-count" type="number" min="1" max="1000" value="100" ' +
         '      style="width:100%;padding:0.4rem;background:#0f172a;border:1px solid #475569;border-radius:4px;color:#e2e8f0;" /></div>' +
-        '  <div><label for="vtid-03107-days" style="display:block;font-size:11px;color:#94a3b8;margin-bottom:0.25rem;">Days granted</label>' +
+        '  <div><label style="display:block;font-size:11px;color:#94a3b8;margin-bottom:0.25rem;">Days granted</label>' +
         '    <input id="vtid-03107-days" type="number" min="1" max="730" value="365" ' +
         '      style="width:100%;padding:0.4rem;background:#0f172a;border:1px solid #475569;border-radius:4px;color:#e2e8f0;" /></div>' +
-        '  <div><label for="vtid-03107-plan" style="display:block;font-size:11px;color:#94a3b8;margin-bottom:0.25rem;">Plan</label>' +
+        '  <div><label style="display:block;font-size:11px;color:#94a3b8;margin-bottom:0.25rem;">Plan</label>' +
         '    <select id="vtid-03107-plan" style="width:100%;padding:0.4rem;background:#0f172a;border:1px solid #475569;border-radius:4px;color:#e2e8f0;">' +
         '      <option value="premium">premium</option>' +
         '      <option value="premium_5x">premium_5x (Host)</option>' +
@@ -13501,6 +13502,10 @@ function renderAdminBillingCodesView() {
         '  <button id="vtid-03107-generate" class="primary-btn" style="padding:0.5rem 1rem;background:#10b981;color:#0f172a;border:none;border-radius:4px;font-weight:600;cursor:pointer;">Generate</button>' +
         '</div>' +
         '<p style="margin:0.5rem 0 0;font-size:11px;color:#64748b;">Codes are unique-per-user (max_uses=1). For shared marketing codes, edit redemption_codes directly via SQL.</p>';
+    formCard.querySelectorAll('label').forEach(function (lbl) {
+        var ctrl = lbl.parentElement && lbl.parentElement.querySelector('input, select');
+        if (ctrl && ctrl.id) lbl.setAttribute('for', ctrl.id);
+    });
     container.appendChild(formCard);
 
     formCard.querySelector('#vtid-03107-generate').addEventListener('click', async function () {
@@ -14058,7 +14063,7 @@ function renderAdminMarketplaceShopCreateForm() {
     function input(id, spec) {
         var row = document.createElement('div');
         row.style.marginBottom = '0.5rem';
-        var labelHtml = '<label for="' + id + '" style="display:block;font-size:0.8rem;margin-bottom:0.25rem;">'
+        var labelHtml = '<label style="display:block;font-size:0.8rem;margin-bottom:0.25rem;">'
             + escapeHtml(spec.label) + (spec.required ? ' <span style="color:var(--danger)">*</span>' : '')
             + '</label>';
         var fieldHtml;
@@ -14072,6 +14077,7 @@ function renderAdminMarketplaceShopCreateForm() {
         }
         row.innerHTML = labelHtml + fieldHtml
             + (spec.help ? '<small class="admin-detail-note">' + escapeHtml(spec.help) + '</small>' : '');
+        row.querySelector('label').setAttribute('for', id);
         return row;
     }
 
@@ -14092,7 +14098,8 @@ function renderAdminMarketplaceShopCreateForm() {
     };
     var netRow = document.createElement('div');
     netRow.style.marginBottom = '0.75rem';
-    netRow.innerHTML = '<label for="mp-network-select" style="display:block;font-size:0.8rem;margin-bottom:0.25rem;">Network</label>';
+    netRow.innerHTML = '<label style="display:block;font-size:0.8rem;margin-bottom:0.25rem;">Network</label>';
+    netRow.querySelector('label').setAttribute('for', netSel.id);
     netRow.appendChild(netSel);
     wrap.appendChild(netRow);
 
