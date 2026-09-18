@@ -104,21 +104,18 @@ describe('Command Hub — stale Google provider defaults (VTID-04057)', () => {
       expect(src).not.toContain('|| "gemini-2.0-flash"');
     });
 
-    it('leaves exactly one gemini-2.0-flash left, and it is not a default', () => {
-      // Honest scope boundary: `getKnownLlmModels()` still carries a
-      // `model_id: 'gemini-2.0-flash'` row in its Vertex AI *display catalog*
-      // (the Integrations → LLM fallback inventory, used only when
-      // /api/v1/llm/models returns nothing). That is a read-only listing, not
-      // a selectable default, and it lives inside the Vertex AI provider block
-      // this VTID was explicitly told not to touch. Pin it so a future change
-      // to that catalog is a conscious decision rather than a silent drift.
+    it('leaves no single-quoted gemini-2.0-flash model row behind', () => {
+      // VTID-04065 removed the fabricated `getKnownLlmModels()` fallback
+      // catalog (which carried this row) entirely — its only surviving
+      // appearance at VTID-04057 time was inside that now-deleted array.
+      // Pin the removal: the stale Vertex AI listing cannot drift back in.
       const occurrences = src.split("'gemini-2.0-flash'").length - 1;
-      expect(occurrences).toBe(1);
+      expect(occurrences).toBe(0);
 
-      expect(src).toContain("{ provider: 'vertex-ai', model_id: 'gemini-2.0-flash',");
+      expect(src).not.toContain("{ provider: 'vertex-ai', model_id: 'gemini-2.0-flash',");
 
       // ...and it must not be reachable as any Playground *default* (the
-      // dropdown still lists it as an ordinary, non-default choice).
+      // dropdown still lists it — with double quotes — as a non-default choice).
       const playgroundFn = src.match(/function renderModelsPlaygroundView\(\)\s*\{[\s\S]*?\n\}/);
       expect(playgroundFn).toBeTruthy();
       expect(playgroundFn![0]).not.toContain("|| 'gemini-2.0-flash'");
