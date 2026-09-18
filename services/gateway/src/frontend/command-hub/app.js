@@ -28511,6 +28511,13 @@ function renderBundleFingerprintFooter() {
 function renderToastContainer() {
     const container = document.createElement('div');
     container.className = 'toast-container';
+    // VTID-04088 (T10 a11y region 1): toasts are pushed via re-render, not a
+    // DOM mutation a screen reader would otherwise notice — without a live
+    // region a sighted user sees the message and a screen-reader user gets
+    // nothing. 'polite' (not 'assertive') so an error toast doesn't cut off
+    // whatever the user is already being told.
+    container.setAttribute('role', 'status');
+    container.setAttribute('aria-live', 'polite');
 
     state.toasts.forEach(toast => {
         const toastEl = document.createElement('div');

@@ -1,0 +1,32 @@
+{
+  "vtid": "VTID-04088",
+  "task": "T10 region 1 of 4 — accessibility: live regions (toast aria-live)",
+  "files_changed": [
+    "services/gateway/src/frontend/command-hub/app.js",
+    "services/gateway/src/frontend/command-hub/index.html",
+    "services/gateway/test/command-hub/t10-r1-toast-aria-live.test.ts",
+    "docs/validation/VTID-04088/acceptance.md",
+    "docs/validation/VTID-04088/commands.log",
+    "docs/validation/VTID-04088/outputs/execution.json"
+  ],
+  "summary": {
+    "fix": "renderToastContainer() sets role=\"status\" aria-live=\"polite\" on its container so toast notifications are announced to screen readers",
+    "investigated_no_change_needed": [
+      "heartbeat-status-dot — already text-backed (statusText span)",
+      "deploy-status-dot — already text-backed (depStatusEl span, textContent=dep.status)"
+    ],
+    "cache_bust": "styles.css and app.js bumped together to ?v=20260918-vtid-04088-a11y-toast-live-region"
+  },
+  "verification": {
+    "new_tests": 3,
+    "regression_sweep": "10 suites / 162 tests passing (test/command-hub/)",
+    "tsc_noemit": "0 errors",
+    "npm_run_build": "exit 0"
+  },
+  "not_done": [
+    "Region 2 (icon-only aria-label sweep, <label for=> wiring)",
+    "Region 3 (keyboard access for custom clickable elements)",
+    "Region 4 (modal/drawer focus management)",
+    "No live/screen-reader verification — no reachable gateway or assistive tech from this session"
+  ]
+}
