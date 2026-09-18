@@ -1,0 +1,12 @@
+# VTID-04046 — commands log (2026-09-18)
+GET /api/v1/dev-autopilot/executions/7e7260fe-f318-4a17-9fdc-b11878889c3d/steps
+  -> 125 steps; tool mix search_text 21, read_file 17, run_check 11, edit_file 8, list_dir 2, find_files 1
+  -> turns 10,11,12,13,14 and 58 are date-pattern search_text calls (6 turns)
+  -> run_check calls: 11 total, max 2x identical (the VTID-04016 repeated-check guard held; this was NOT check thrash)
+  -> execution.failed "agent hit the 60-turn cap without calling finish"
+grep "file too large" over the same step feed -> 0 hits (VTID-04042 confirmed live; read_file opened the 2.6 MB app.js on turn 2)
+grep AGENT_MAX_TURNS services/gateway/src/services/autopilot-agent/run-agent-execution.ts
+  -> already env-tunable (AGENT_MAX_TURNS, default 60) — no code change needed for the cap
+python3 patch: isoDay() + optional `today` on AgentSystemPromptInput + one prompt line
+npx jest test/vtid-04046-agent-prompt-date.test.ts test/autopilot-agent-loop.test.ts -> 2 suites, 12 tests, 0 failures
+npx tsc --noEmit -p services/gateway -> exit 0
