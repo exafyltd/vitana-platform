@@ -37,6 +37,23 @@ function bail(msg) {
   process.exit(1);
 }
 
+// Returns a fresh vm sandbox context that resolves ANY free identifier
+// (e.g. a lucide-react icon import used as a bare value in a literal) to a
+// harmless stub value, instead of throwing ReferenceError for names outside
+// some fixed enumerated list. vm.createContext requires a real object, not a
+// bare Proxy, so we wrap it — `global` on the Proxy is required by Node's vm
+// module internals.
+function stubIdentifierContext() {
+  const handler = {
+    has() { return true; },
+    get(target, prop) {
+      if (prop === Symbol.unscopables) return undefined;
+      return prop in target ? target[prop] : 0;
+    },
+  };
+  return new Proxy({}, handler);
+}
+
 function stripComments(src) {
   // Replace `//`-line and `/* */`-block comments with spaces so character
   // offsets stay stable (not strictly required, but cheap and predictable).
@@ -110,11 +127,11 @@ function extractArrayLiteralAfter(rawSrc, marker) {
 function loadDev() {
   const src = fs.readFileSync(APP_JS, 'utf8');
   const arrLit = extractArrayLiteralAfter(src, 'const NAVIGATION_CONFIG = ');
-  const navConfig = vm.runInNewContext(`(${arrLit})`, {}, { timeout: 1000 });
+  const navConfig = vm.runInNewContext(`(${arrLit})`, stubIdentifierContext(), { timeout: 1000 });
 
   // Section labels live in a separate const (SECTION_LABELS) right after.
   const labelsLit = extractObjectLiteralAfter(src, 'const SECTION_LABELS = ');
-  const sectionLabels = vm.runInNewContext(`(${labelsLit})`, {}, { timeout: 1000 });
+  const sectionLabels = vm.runInNewContext(`(${labelsLit})`, stubIdentifierContext(), { timeout: 1000 });
 
   // Side-effect: stash the parsed nav for downstream sidebar/module_catalog/navigation-config.js writers.
   loadDev._lastNav = navConfig;
@@ -156,6 +173,14 @@ function loadDev() {
     'databases/analytics': 'DB_ANALYTICS',
     'infrastructure/deployments': 'INFRA_DEPLOYMENTS',
     'models-evaluations/evaluations': 'MODEL_EVALUATIONS',
+    'conversation/config': 'CONVERSATION_CONFIG',
+    'infrastructure/config': 'INFRASTRUCTURE_CONFIG',
+    'conversation/tools': 'CONVERSATION_TOOLS',
+    'integrations-tools/tools': 'INTEGRATIONS_TOOLS',
+    'voice/self-healing': 'VOICE_SELF_HEALING',
+    'autonomy/self-healing': 'AUTONOMY_SELF_HEALING',
+    'governance/history': 'GOVERNANCE_HISTORY',
+    'routines/history': 'ROUTINES_HISTORY',
   };
 
   const screens = [];
@@ -222,20 +247,24 @@ function loadAdm() {
   const src = fs.readFileSync(ADMIN_NAV_TS, 'utf8');
   const arrLit = extractArrayLiteralAfter(src, 'export const ADMIN_SECTIONS');
 
-  // Strip TypeScript type annotations (`: AdminSection[]` etc) and provide stub
-  // identifiers for the lucide-react icons referenced in the literal.
+  // Strip TypeScript type annotations (`: AdminSection[]` etc) and provide a
+  // stub value for every identifier referenced in the literal (lucide-react
+  // icon imports etc) via a Proxy context — a fixed enumerated icon list
+  // (VTID-04081's predecessor) throws ReferenceError the moment
+  // admin-navigation.ts imports/uses an icon name not on the list, which is
+  // exactly what happened live. Any identifier now resolves to 0 harmlessly,
+  // regardless of name.
   const cleaned = arrLit.replace(/:\s*AdminSection\[\]/g, '');
-  const ctx = {
-    LayoutDashboard: 0, Users: 0, Sparkles: 0, BookOpen: 0, Compass: 0,
-    Zap: 0, MessageSquare: 0, Video: 0, Bell: 0, BarChart3: 0,
-    Settings: 0, ShieldCheck: 0,
-  };
-  const sections = vm.runInNewContext(`(${cleaned})`, ctx, { timeout: 1000 });
+  const sections = vm.runInNewContext(`(${cleaned})`, stubIdentifierContext(), { timeout: 1000 });
 
-  // Disambiguator for the `growth` key colliding between Autopilot and Insights.
+  // Disambiguators for screen-id collisions when raw tab key isn't unique across sections.
   const idOverrides = {
     'autopilot/growth': 'AUTOPILOT_GROWTH',
     'insights/growth': 'INSIGHTS_GROWTH',
+    'overview/dashboard': 'OVERVIEW_DASHBOARD',
+    'backoffice/dashboard': 'BACKOFFICE_DASHBOARD',
+    'insights/events': 'INSIGHTS_EVENTS',
+    'audit/events': 'AUDIT_EVENTS',
   };
 
   const screens = [];

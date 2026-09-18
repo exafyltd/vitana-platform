@@ -1,0 +1,17 @@
+{
+  "vtid": "VTID-04082",
+  "task": "Fix regen-screens-catalog.mjs vm-sandbox ReferenceError + masked screen-id collisions (T7)",
+  "files_changed": [
+    "services/gateway/scripts/regen-screens-catalog.mjs",
+    "services/gateway/test/scripts/regen-screens-catalog.test.ts"
+  ],
+  "root_cause": "vm.runInNewContext() sandbox context for parsing vitana-v1 ADMIN_SECTIONS was a hardcoded 12-identifier object; any other free identifier (icon name) threw ReferenceError and aborted the whole regen script.",
+  "fix": "Replaced all three vm.runInNewContext contexts in the file with a Proxy that resolves any free identifier to a harmless stub value (0) instead of throwing. Also added 6 missing idOverrides disambiguator entries (3 DEV, 3 ADM) that the crash had been masking.",
+  "verification": {
+    "node_check": "pass",
+    "tsc_noemit": "pass",
+    "jest": "3/3 passing",
+    "reproduced_original_defect": true,
+    "ran_against_real_sibling_v1_checkout": true
+  }
+}
