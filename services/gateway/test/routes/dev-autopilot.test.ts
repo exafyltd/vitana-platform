@@ -980,7 +980,8 @@ describe('POST /executions/:id/cancel', () => {
     (cancelExecution as jest.Mock).mockResolvedValue({ ok: true });
     const res = await asAdmin(request(app).post('/api/v1/dev-autopilot/executions/e1/cancel'));
     expect(res.status).toBe(200);
-    expect(cancelExecution).toHaveBeenCalledWith('e1');
+    // VTID-04032: the route hands the verified actor and the body reason to cancelExecution.
+    expect(cancelExecution).toHaveBeenCalledWith('e1', { actor: expect.any(String), reason: undefined });
   });
 
   it('returns 400 when cancellation is rejected', async () => {
