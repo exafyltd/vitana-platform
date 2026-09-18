@@ -104,8 +104,14 @@ Driven by `scripts/orb/verify-vertex-serbian-bridge.mjs
 --mode=authenticated --utterance-pcm=<16 kHz PCM>`; confirmed in
 `oasis_events` (`tool_call` → `orb.live.tool.executed` →
 `model_start_speaking`, audio_out rising after the tool call).
-CURL: see commands.log "AC-7" and
-outputs/live-verification-post-merge.txt (added after the deploy).
+CURL: see commands.log "AC-7" and outputs/live-verification-post-merge.txt.
+RESULT (2026-09-18 07:14 UTC, staging on `0b24cd8`): **6/6** sessions —
+`tool_call get_day_summary` → `orb.live.tool.executed response_sent:true`
+→ `model_start_speaking` on turn 1, audio_out rising by ~350 chunks per
+session, clean 1000 closes, 0 watchdogs, **0 × 1007**; first reply audio
+1.2–2.1 s after the utterance ended. Baseline on the previous build
+(`7c8c600`, outputs/live-baseline-before-fix.txt): 0/2 — tool response sent,
+then 20 s of silence and `watchdog_fired`.
 
 ## Not touched, flagged
 
