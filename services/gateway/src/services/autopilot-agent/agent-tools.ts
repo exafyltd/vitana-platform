@@ -12,7 +12,8 @@
  * Bedrock Claude (`tool_use`) without a second definition.
  */
 
-import { promises as fs, Dirent } from 'fs';
+import { promises as fs, createReadStream, Dirent } from 'fs';
+import readline from 'readline';
 import path from 'path';
 import type { LLMRouterTool } from '../llm-router';
 import { matchGlob } from '../dev-autopilot-safety';
@@ -58,6 +59,13 @@ export const FIND_MAX_RESULTS = 200;
 export const CHECK_OUTPUT_MAX_CHARS = 12_000;
 const IGNORED_DIRS = new Set(['node_modules', '.git', 'dist', 'coverage', 'build', '.next', '.cache', 'tmp']);
 const TEXT_FILE_MAX_BYTES = 2_000_000;
+// VTID-04042: above TEXT_FILE_MAX_BYTES a file is no longer refused — it is
+// STREAMED line by line so only the requested window (read_file) or the
+// matching lines (search_text) are ever held in memory. Run #6 (VTID-04039)
+// spent all 60 turns building a jest-based slicer because read_file said
+// "file too large" for the 2.6 MB Command Hub app.js in every range. Only
+// files above this hard guard are refused outright.
+export const READ_FILE_HARD_MAX_BYTES = 64_000_000;
 
 export const AGENT_TOOLS: LLMRouterTool[] = [
   {
@@ -186,6 +194,40 @@ async function* walk(root: string, dir: string, budget: { files: number }): Asyn
   }
 }
 
+/**
+ * VTID-04042: stream a file line by line with bounded memory. `onLine` is
+ * called for every line (1-based index); returning false stops early. The
+ * resolved value is the number of lines visited. A line carrying a NUL byte
+ * marks the file as binary and aborts with `null`.
+ */
+async function streamLines(abs: string, onLine: (line: string, lineNo: number) => boolean | void): Promise<number | null> {
+  const input = createReadStream(abs, { encoding: 'utf8' });
+  const rl = readline.createInterface({ input, crlfDelay: Infinity });
+  let n = 0;
+  try {
+    for await (const line of rl) {
+      n += 1;
+      if (line.includes('\0')) return null;
+      if (onLine(line, n) === false) break;
+    }
+  } finally {
+    rl.close();
+    input.destroy();
+  }
+  return n;
+}
+
+/** VTID-04042: the read_file window for a file too large to load whole. */
+async function readWindowStreaming(abs: string, start: number, endWanted: number): Promise<{ slice: string[]; totalLines: number } | null> {
+  const slice: string[] = [];
+  const total = await streamLines(abs, (line, no) => {
+    if (no >= start && no <= endWanted) slice.push(line);
+    return undefined;
+  });
+  if (total === null) return null;
+  return { slice, totalLines: total };
+}
+
 function numbered(lines: string[], start: number): string {
   return lines.map((l, i) => `${String(start + i).padStart(5)}\t${l}`).join('\n');
 }
@@ -207,15 +249,27 @@ export async function executeAgentTool(
         const abs = resolveInsideRoot(ctx.root, args.path);
         const st = await fs.stat(abs);
         if (!st.isFile()) return { result: `not a file: ${args.path}`, isError: true };
-        if (st.size > TEXT_FILE_MAX_BYTES) return { result: `file too large to read (${st.size} bytes)`, isError: true };
-        const text = await fs.readFile(abs, 'utf8');
-        const lines = text.split('\n');
+        if (st.size > READ_FILE_HARD_MAX_BYTES) return { result: `file too large to read (${st.size} bytes; hard limit ${READ_FILE_HARD_MAX_BYTES})`, isError: true };
         const start = Math.max(1, Number(args.start_line) || 1);
-        const end = Math.min(lines.length, Number(args.end_line) || start + READ_MAX_LINES - 1);
-        const slice = lines.slice(start - 1, end);
+        const endWanted = Number(args.end_line) || start + READ_MAX_LINES - 1;
+        let slice: string[];
+        let totalLines: number;
+        if (st.size > TEXT_FILE_MAX_BYTES) {
+          // VTID-04042: too big to load whole — stream only the window.
+          const win = await readWindowStreaming(abs, start, endWanted);
+          if (!win) return { result: `binary file: ${args.path}`, isError: true };
+          slice = win.slice;
+          totalLines = win.totalLines;
+        } else {
+          const text = await fs.readFile(abs, 'utf8');
+          const lines = text.split('\n');
+          totalLines = lines.length;
+          slice = lines.slice(start - 1, Math.min(lines.length, endWanted));
+        }
+        const end = Math.min(totalLines, endWanted);
         let out = numbered(slice, start);
         if (out.length > READ_MAX_CHARS) out = `${out.slice(0, READ_MAX_CHARS)}\n…[window truncated; request a narrower range]`;
-        const more = end < lines.length ? `\n[${lines.length - end} more line(s); file has ${lines.length} lines — read from start_line=${end + 1}]` : `\n[end of file, ${lines.length} lines]`;
+        const more = end < totalLines ? `\n[${totalLines - end} more line(s); file has ${totalLines} lines — read from start_line=${end + 1}]` : `\n[end of file, ${totalLines} lines]`;
         log(`read_file ${args.path} ${start}-${end}`);
         return { result: out + more };
       }
@@ -247,12 +301,21 @@ export async function executeAgentTool(
           let text: string;
           try {
             const st = await fs.stat(abs);
-            if (st.size > TEXT_FILE_MAX_BYTES) continue;
+            if (st.size > READ_FILE_HARD_MAX_BYTES) continue;
+            if (st.size > TEXT_FILE_MAX_BYTES) {
+              // VTID-04042: too big to load whole — stream it; a binary file
+              // (NUL byte) is skipped exactly like the in-memory branch does.
+              await streamLines(abs, (line, no) => {
+                if (re.test(line)) hits.push(`${rel}:${no}: ${line.trim().slice(0, 200)}`);
+                return hits.length < SEARCH_MAX_RESULTS;
+              });
+              continue;
+            }
             text = await fs.readFile(abs, 'utf8');
           } catch {
             continue;
           }
-          if (text.includes(' ')) continue; // binary
+          if (text.includes('\0')) continue; // binary
           const lines = text.split('\n');
           for (let i = 0; i < lines.length && hits.length < SEARCH_MAX_RESULTS; i++) {
             if (re.test(lines[i])) hits.push(`${rel}:${i + 1}: ${lines[i].trim().slice(0, 200)}`);
