@@ -1478,11 +1478,25 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // `/debug.html` 404 here and never reach express.static.
   const { denyCommandHubBackupFiles } = require('./middleware/command-hub-backup-denylist');
   app.use('/command-hub', denyCommandHubBackupFiles);
+  // VTID-04074: extension-aware cache policy for the /command-hub mount.
+  // index.html loads styles.css / app.js / orb-widget.js with ?v=<slug>
+  // cache-bust query params (an enforced discipline whenever those files
+  // change), so serving the JS/CSS with a long immutable max-age is safe and
+  // lets the browser skip revalidation entirely. The standalone .html pages in
+  // the same directory (intent-engine.html, intent-moderation.html,
+  // orb-voice-bench.html, voice-budget.html, watcher.html, …) have NO ?v=
+  // mechanism anywhere, so they keep the original no-cache treatment — nothing
+  // would force their URL to change when their content does.
+  const COMMAND_HUB_IMMUTABLE_CACHE = 'public, max-age=31536000, immutable';
   app.use('/command-hub', express.static(staticPath, {
     etag: false,
     lastModified: false,
-    setHeaders: (res) => {
-      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    setHeaders: (res, filePath) => {
+      const ext = path.extname(filePath).toLowerCase();
+      const cacheControl = ext === '.js' || ext === '.css'
+        ? COMMAND_HUB_IMMUTABLE_CACHE
+        : 'no-cache, no-store, must-revalidate';
+      res.setHeader('Cache-Control', cacheControl);
     }
   }));
 
