@@ -2375,6 +2375,71 @@ body {
   font-style: italic;
 }
 
+/* VTID-04033: an execution the console follows after queueing it — chip to
+   the Autopilot Live row, live/terminal marker, the last steps of the feed. */
+.chat-exec-follow {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin: 0.15rem 0 0.3rem;
+  padding: 0.35rem 0.55rem;
+  align-self: flex-start;
+  max-width: 80%;
+  border-left: 2px solid #3b82f6;
+  border-radius: 0 6px 6px 0;
+  background: rgba(59, 130, 246, 0.06);
+}
+
+.chat-exec-follow--done {
+  border-left-color: #3a3f47;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.chat-exec-follow-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.1rem;
+}
+
+.chat-exec-follow-chip {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.72rem;
+  color: #93c5fd;
+  text-decoration: none;
+  padding: 0.05rem 0.4rem;
+  border: 1px solid rgba(147, 197, 253, 0.45);
+  border-radius: 999px;
+}
+
+.chat-exec-follow-chip:hover {
+  background: rgba(59, 130, 246, 0.18);
+}
+
+.chat-exec-follow-status {
+  font-size: 0.68rem;
+  font-style: italic;
+  color: #9aa0a6;
+}
+
+.chat-exec-follow-status--live {
+  color: #c9a227;
+  animation: chat-tool-activity-pulse 1.2s ease-in-out infinite;
+}
+
+.chat-exec-follow-status--done {
+  color: #7fb57f;
+}
+
+.chat-exec-follow-status--error {
+  color: #d9776f;
+}
+
+.chat-exec-follow-line {
+  font-style: normal;
+}
+
 /* VTID-04031: at phone width the meta row is a few characters wide (the
    pre-existing VTID-03949 sidebar+chat split) — let the badge wrap under the
    timestamp instead of clipping to an ellipsis. */

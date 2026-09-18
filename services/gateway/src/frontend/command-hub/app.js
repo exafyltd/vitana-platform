@@ -725,6 +725,8 @@ function startNewOperatorThread() {
     saveOperatorThreadsIndex(state.operatorThreads);
 
     clearOperatorChatSession();
+    // VTID-04033: a new thread drops the executions the old one was following.
+    closeAllOperatorExecutionFollows();
 
     state.operatorActiveThreadId = thread.id;
     state.operatorConversationId = thread.conversationId;
@@ -3704,6 +3706,7 @@ const state = {
     chatSending: false,
     chatLiveTranscript: [], // VTID-04028: tool.call/tool.result frames of the turn in flight
     chatLiveModelTurns: [], // VTID-04028: model.turn frames of the turn in flight
+    operatorExecFollow: {}, // VTID-04033: { [execution_id]: { es, steps, terminal, streamError, error, tool } } — executions the console follows after queueing them
     chatIsTyping: false, // VTID-0526-D: Guard against scroll/render during typing
     chatDictationActive: false, // VTID-03907: voice dictation (Web Speech API) recording state
     // VTID-01027: Session Memory State
@@ -26675,6 +26678,13 @@ function renderOperatorChat() {
                 messages.appendChild(toolActivity);
             }
 
+            // VTID-04033: the execution(s) this turn queued, followed live.
+            if (Array.isArray(msg.followExecIds) && msg.followExecIds.length > 0) {
+                msg.followExecIds.forEach(function (execId) {
+                    messages.appendChild(renderOperatorExecutionFollow(execId));
+                });
+            }
+
             // Show attachments if any
             if (msg.attachments && msg.attachments.length > 0) {
                 const attachmentsEl = document.createElement('div');
@@ -27103,6 +27113,157 @@ function describeTurnCost(meta) {
     return lines.join('\n');
 }
 
+// VTID-04033 (W4i): after a turn queues (or approves) a Dev Autopilot
+// execution, the console follows it — the same per-execution SSE tail the
+// Autopilot Live view uses (GET /executions/:id/stream, VTID-03897), rendered
+// under the reply that asked for it, so the operator sees the agent's steps
+// where they asked instead of switching screens. Closed on the stream's own
+// `terminal` frame, or when the operator starts a new thread.
+var OPERATOR_EXEC_FOLLOW_TOOLS = {
+    autopilot_run_task: 'queued',
+    autopilot_execute_task: 'queued',
+    autopilot_approve_execution: 'approved'
+};
+var OPERATOR_EXEC_FOLLOW_MAX_LINES = 40;
+var OPERATOR_EXEC_TERMINAL_LABELS = {
+    'dev_autopilot.execution.awaiting_approval': 'held for approval',
+    'dev_autopilot.execution.completed': 'completed',
+    'dev_autopilot.execution.failed': 'failed',
+    'dev_autopilot.execution.cancelled': 'cancelled',
+    'dev_autopilot.execution.reverted': 'reverted',
+    'dev_autopilot.execution.rejected': 'rejected',
+    'dev_autopilot.execution.auto_archived': 'archived'
+};
+
+// The execution ids a finished turn should follow: successful results of the
+// queue/approve tools that carry an execution_id, deduplicated in order.
+function extractFollowedExecutionIds(toolResults) {
+    var ids = [];
+    (Array.isArray(toolResults) ? toolResults : []).forEach(function (tr) {
+        if (!tr || !OPERATOR_EXEC_FOLLOW_TOOLS[tr.name]) return;
+        var resp = tr.response;
+        if (!resp || typeof resp !== 'object' || resp.ok === false) return;
+        var id = typeof resp.execution_id === 'string' ? resp.execution_id.trim() : '';
+        if (!id || ids.indexOf(id) !== -1) return;
+        ids.push(id);
+    });
+    return ids;
+}
+
+function followOperatorExecution(execId, tool) {
+    if (!execId) return;
+    if (!state.operatorExecFollow[execId]) {
+        state.operatorExecFollow[execId] = { es: null, steps: [], terminal: null, streamError: false, error: null, tool: tool || null, openedAt: Date.now() };
+    }
+    var slot = state.operatorExecFollow[execId];
+    if (slot.es || slot.terminal) return;
+    if (typeof EventSource !== 'function') {
+        slot.error = 'live step feed unavailable in this browser';
+        return;
+    }
+    // Same bearer-as-query contract as the Autopilot Live tail (EventSource
+    // cannot set an Authorization header; server: requireDevRoleForStream).
+    var url = '/api/v1/dev-autopilot/executions/' + execId + '/stream?access_token=' + encodeURIComponent(state.authToken || '');
+    var es = new EventSource(url);
+    slot.es = es;
+    es.addEventListener('step', function (evt) {
+        try {
+            var step = JSON.parse(evt.data);
+            slot.steps.push(step);
+            if (slot.steps.length > OPERATOR_EXEC_FOLLOW_MAX_LINES) {
+                slot.steps.splice(0, slot.steps.length - OPERATOR_EXEC_FOLLOW_MAX_LINES);
+            }
+            slot.streamError = false;
+            renderApp();
+        } catch (_e) { /* ignore malformed frame */ }
+    });
+    es.addEventListener('terminal', function (evt) {
+        var topic = null;
+        try { topic = JSON.parse(evt.data).topic || null; } catch (_e) { /* keep null */ }
+        slot.terminal = topic || 'ended';
+        closeOperatorExecutionFollow(execId);
+        renderApp();
+    });
+    es.onerror = function () {
+        if (slot.es === es) { slot.streamError = true; renderApp(); }
+    };
+}
+
+function closeOperatorExecutionFollow(execId) {
+    var slot = state.operatorExecFollow[execId];
+    if (slot && slot.es) {
+        slot.es.close();
+        slot.es = null;
+    }
+}
+
+function closeAllOperatorExecutionFollows() {
+    Object.keys(state.operatorExecFollow || {}).forEach(closeOperatorExecutionFollow);
+    state.operatorExecFollow = {};
+}
+
+function describeFollowedStep(step) {
+    if (!step) return '';
+    var topic = String(step.topic || '').replace('dev_autopilot.execution.', '').replace('dev_autopilot.agent.', 'agent.');
+    var text = step.message || '';
+    var md = step.metadata && typeof step.metadata === 'object' ? step.metadata : {};
+    if (md.tool && text.indexOf(md.tool) === -1) text = md.tool + ' — ' + text;
+    if (typeof md.turn === 'number' && md.turn > 0) topic = 'turn ' + md.turn + ' · ' + topic;
+    return topic + (text ? ': ' + text : '');
+}
+
+// The panel under a reply for each execution that turn queued: a chip linking
+// to the row on Autopilot Live, a live/terminal marker, and the last steps.
+function renderOperatorExecutionFollow(execId) {
+    var slot = state.operatorExecFollow[execId] || { steps: [], terminal: null };
+    var panel = document.createElement('div');
+    panel.className = 'chat-exec-follow' + (slot.terminal ? ' chat-exec-follow--done' : ' chat-exec-follow--live');
+
+    var head = document.createElement('div');
+    head.className = 'chat-exec-follow-head';
+
+    var chip = document.createElement('a');
+    chip.className = 'chat-exec-follow-chip';
+    chip.href = '/command-hub/autopilot/live/#autopilot-live-exec-' + execId;
+    chip.textContent = 'execution ' + execId.slice(0, 8);
+    chip.title = 'Open this execution on Autopilot Live';
+    head.appendChild(chip);
+
+    var status = document.createElement('span');
+    if (slot.terminal) {
+        status.className = 'chat-exec-follow-status chat-exec-follow-status--done';
+        status.textContent = OPERATOR_EXEC_TERMINAL_LABELS[slot.terminal] || String(slot.terminal).replace('dev_autopilot.execution.', '');
+    } else if (slot.error) {
+        status.className = 'chat-exec-follow-status chat-exec-follow-status--error';
+        status.textContent = slot.error;
+    } else if (slot.streamError) {
+        status.className = 'chat-exec-follow-status chat-exec-follow-status--error';
+        status.textContent = 'stream reconnecting…';
+    } else {
+        status.className = 'chat-exec-follow-status chat-exec-follow-status--live';
+        status.textContent = (slot.tool === 'approved' ? 'approved' : 'queued') + ' · following';
+    }
+    head.appendChild(status);
+    panel.appendChild(head);
+
+    if (slot.steps.length === 0) {
+        var empty = document.createElement('div');
+        empty.className = 'chat-tool-activity-line' + (slot.terminal ? '' : ' chat-tool-activity-line--running');
+        empty.textContent = slot.terminal ? 'No step events were recorded.' : String.fromCodePoint(0x2026) + ' Waiting for the executor to pick it up';
+        panel.appendChild(empty);
+    }
+    slot.steps.forEach(function (step) {
+        var line = document.createElement('div');
+        var st = step && step.status;
+        var isErr = st === 'error' || (step && step.metadata && step.metadata.is_error);
+        line.className = 'chat-tool-activity-line chat-exec-follow-line' + (isErr ? ' chat-tool-activity-line--failed' : st === 'success' ? ' chat-tool-activity-line--ok' : '');
+        line.textContent = describeFollowedStep(step);
+        try { line.title = new Date(step.created_at).toLocaleTimeString(); } catch (_e) { /* no title */ }
+        panel.appendChild(line);
+    });
+    return panel;
+}
+
 function renderOperatorLiveTranscript() {
     var wrap = document.createElement('div');
     wrap.className = 'chat-tool-activity chat-tool-activity--live';
@@ -27346,7 +27507,14 @@ async function sendChatMessage() {
             threadId: result.threadId,
             createdTask: result.createdTask,
             toolResults: result.toolResults,
-            meta: result.meta
+            meta: result.meta,
+            followExecIds: extractFollowedExecutionIds(result.toolResults)
+        });
+
+        // VTID-04033: follow every execution this turn queued or approved.
+        (state.chatMessages[state.chatMessages.length - 1].followExecIds || []).forEach(function (execId) {
+            var tr = (result.toolResults || []).filter(function (t) { return t && t.response && t.response.execution_id === execId; })[0];
+            followOperatorExecution(execId, tr ? OPERATOR_EXEC_FOLLOW_TOOLS[tr.name] : null);
         });
 
     } catch (error) {
