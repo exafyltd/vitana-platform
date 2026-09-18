@@ -44,6 +44,8 @@
 -- succeeding that notification would be false on every upload. It now fires
 -- only when processing_status actually transitions to 'parsed', which is
 -- what its own name says. The function body is unchanged.
+-- impact-allow-solo-migration: pure RLS-policy + trigger-timing change; the
+-- existing browser insert in HealthReportUploadSheet.tsx is the code it serves.
 -- =============================================================================
 
 BEGIN;
