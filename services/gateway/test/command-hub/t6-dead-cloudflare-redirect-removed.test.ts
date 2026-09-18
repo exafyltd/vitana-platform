@@ -127,12 +127,14 @@ describe('Command Hub — dead Cloudflare/Cloud Run redirect script removed (VTI
     }
   });
 
-  it('bumped the cache-bust on styles.css and app.js together for VTID-04067', () => {
+  it('bumped the cache-bust on styles.css and app.js together (at or after VTID-04067)', () => {
     const stylesVersion = (html.match(/styles\.css\?v=([^"]+)"/) || [])[1] || '';
     const appVersion = (html.match(/app\.js\?v=([^"]+)"/) || [])[1] || '';
-    expect(stylesVersion).toBe('20260918-vtid-04067-dead-cf-redirect-removed');
     expect(appVersion).toBe(stylesVersion);
-    // Past the previous marker, so the browser cannot serve a stale copy.
+    // Past the previous marker, so the browser cannot serve a stale copy. Asserted
+    // "at or after" rather than pinned to this exact literal — a later sibling PR
+    // (e.g. VTID-04074) legitimately re-bumps this marker further, and pinning an
+    // exact string here would break every such PR (the VTID-04028/04031 pattern).
     expect(appVersion > '20260918-vtid-04061-dead-code-removed').toBe(true);
   });
 });
