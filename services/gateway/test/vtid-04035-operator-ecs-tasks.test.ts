@@ -74,6 +74,38 @@ describe('VTID-04035 summarizeEcsTask (pure)', () => {
   });
 });
 
+// VTID-04038: availability zone + Fargate platform version, only when ECS
+// returns them (DescribeTasks omits both for EC2-launched tasks).
+describe('VTID-04038 summarizeEcsTask availability zone + platform version', () => {
+  it('reports availability_zone and platform_version after launch_type when ECS returns them', () => {
+    const r = summarizeEcsTask({
+      taskArn: RUNNING_TASK.taskArn, lastStatus: 'RUNNING', desiredStatus: 'RUNNING',
+      taskDefinitionArn: RUNNING_TASK.taskDefinitionArn, group: RUNNING_TASK.group, launchType: 'FARGATE',
+      availabilityZone: 'eu-central-1a', platformVersion: '1.4.0',
+      createdAt: RUNNING_TASK.createdAt, containers: RUNNING_TASK.containers,
+    });
+    expect(r).toMatchObject({ launch_type: 'FARGATE', availability_zone: 'eu-central-1a', platform_version: '1.4.0', cpu: null, memory: null });
+    // Bounded like every other ECS free-form string here.
+    const bounded = summarizeEcsTask({ availabilityZone: 'z'.repeat(400), platformVersion: '9'.repeat(400) });
+    expect(bounded.availability_zone!.length).toBe(300);
+    expect(bounded.platform_version!.length).toBe(300);
+    // Placement: immediately after launch_type, cpu/memory unchanged right behind them.
+    expect(Object.keys(r)).toEqual([
+      'task_id', 'task_arn', 'last_status', 'desired_status', 'health_status', 'task_definition', 'group', 'launch_type',
+      'availability_zone', 'platform_version', 'cpu', 'memory', 'created_at', 'started_at', 'stopped_at', 'stop_code',
+      'stopped_reason', 'containers',
+    ]);
+  });
+
+  it('yields null for both when the described record does not carry them (EC2 launch type, or absent fields)', () => {
+    expect(summarizeEcsTask({ launchType: 'EC2', availabilityZone: undefined, platformVersion: undefined })).toMatchObject({
+      launch_type: 'EC2', availability_zone: null, platform_version: null,
+    });
+    expect(summarizeEcsTask({})).toMatchObject({ availability_zone: null, platform_version: null });
+    expect(summarizeEcsTask({ availabilityZone: '', platformVersion: '' })).toMatchObject({ availability_zone: null, platform_version: null });
+  });
+});
+
 describe('VTID-04035 listEcsTasks (SDK call shape)', () => {
   beforeEach(() => sendMock.mockReset());
 
