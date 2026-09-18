@@ -167,6 +167,8 @@ export interface EcsTaskSummary {
   task_definition: string;
   group: string | null;
   launch_type: string | null;
+  availability_zone: string | null;
+  platform_version: string | null;
   cpu: string | null;
   memory: string | null;
   created_at: string | null;
@@ -192,7 +194,7 @@ const iso = (d: Date | undefined | null): string | null => (d ? new Date(d).toIS
 /** Pure: the bounded, operator-facing shape of one described task. */
 export function summarizeEcsTask(t: {
   taskArn?: string; lastStatus?: string; desiredStatus?: string; healthStatus?: string; taskDefinitionArn?: string; group?: string;
-  launchType?: string; cpu?: string; memory?: string; createdAt?: Date; startedAt?: Date; stoppedAt?: Date; stopCode?: string; stoppedReason?: string;
+  launchType?: string; availabilityZone?: string; platformVersion?: string; cpu?: string; memory?: string; createdAt?: Date; startedAt?: Date; stoppedAt?: Date; stopCode?: string; stoppedReason?: string;
   containers?: Array<{ name?: string; lastStatus?: string; exitCode?: number; reason?: string; image?: string }>;
 }): EcsTaskSummary {
   return {
@@ -204,6 +206,11 @@ export function summarizeEcsTask(t: {
     task_definition: arnTail(t.taskDefinitionArn),
     group: t.group ?? null,
     launch_type: t.launchType ?? null,
+    // VTID-04038: ECS returns these only when they apply (Fargate tasks carry a
+    // platform version and a placement zone; EC2-launched tasks carry neither)
+    // — absent/empty → null, bounded like every other ECS free-form string here.
+    availability_zone: t.availabilityZone ? String(t.availabilityZone).slice(0, 300) : null,
+    platform_version: t.platformVersion ? String(t.platformVersion).slice(0, 300) : null,
     cpu: t.cpu ?? null,
     memory: t.memory ?? null,
     created_at: iso(t.createdAt),
