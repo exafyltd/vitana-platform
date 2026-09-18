@@ -155,6 +155,92 @@ const TARGET_ROLE_LABELS = {
 };
 
 // ===========================================================================
+// VTID-04091 (T10, accessibility region 4/4): modal/drawer focus management.
+//
+// Every overlay/drawer/modal in the Command Hub already closes on a
+// backdrop click and a close button, but none of them move keyboard focus
+// INTO the dialog when it opens, trap Tab inside it while it's open, or
+// close on Escape — so a keyboard-only or screen-reader user who opens one
+// is left focused on whatever they clicked (often nothing, since focus was
+// never programmatically set), can Tab straight out into background
+// content behind the dialog, and has no way to dismiss it without a mouse
+// (WCAG 2.4.3 Focus Order / 2.1.1 Keyboard).
+//
+// This app has no component "mount"/"unmount" lifecycle — renderApp()
+// tears down and rebuilds the whole DOM subtree for whatever is open on
+// every call, including the dialog itself, so a naive "attach a listener,
+// remove it on close" pattern has nothing to hook. Two consequences that
+// shaped this helper:
+//   1. Initial-focus placement is deferred one tick (setTimeout(fn, 0)):
+//      the caller appends the returned panel to the document SYNCHRONOUSLY
+//      right after this function returns, so the panel isn't in the DOM
+//      yet at the point this runs — .focus() on a detached node is a
+//      silent no-op in every browser.
+//   2. That same focus placement is guarded on `document.activeElement`
+//      being <body> (or null) rather than a "first render only" flag —
+//      every re-render while the dialog stays open destroys whatever
+//      element previously had focus inside it, and the browser reliably
+//      parks focus on <body> when a focused element is removed from the
+//      document. That is the one universal signal this architecture gives
+//      for "focus needs to be re-placed", without requiring a lifecycle
+//      hook this codebase doesn't have. If focus is anywhere else, this
+//      never touches it — it can't steal focus from something the user is
+//      actively using.
+//   3. Both the Escape handler and the Tab-cycle trap are attached
+//      directly to the panel element itself, never `document` — the panel
+//      node is discarded (and its listener along with it, nothing external
+//      references it) the moment the dialog closes or a re-render replaces
+//      it, so there is no listener to leak or double-fire across renders.
+// ===========================================================================
+const MODAL_FOCUSABLE_SELECTOR = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+function attachModalA11y(panel, opts) {
+    opts = opts || {};
+    if (!panel.hasAttribute('tabindex')) {
+        panel.tabIndex = -1;
+    }
+
+    function visibleFocusables() {
+        return Array.prototype.slice.call(panel.querySelectorAll(MODAL_FOCUSABLE_SELECTOR))
+            .filter(function (el) { return el.offsetParent !== null; });
+    }
+
+    setTimeout(function () {
+        if (!panel.isConnected) return; // closed again before this ran
+        if (document.activeElement === document.body || document.activeElement == null) {
+            var list = visibleFocusables();
+            // preventScroll: several of these panels are periodically
+            // rebuilt by background polling while open (dataset.scrollRetain
+            // is this codebase's own marker for exactly that) — calling
+            // focus without it scrolls the target into view, which would
+            // fight the scroll-retention guard on every poll tick. Moving
+            // DOM focus is still fully effective for a screen reader without it.
+            (list[0] || panel).focus({ preventScroll: true });
+        }
+    }, 0);
+
+    panel.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') {
+            e.stopPropagation();
+            if (opts.onClose) opts.onClose();
+            return;
+        }
+        if (e.key !== 'Tab') return;
+        var list = visibleFocusables();
+        if (list.length === 0) return;
+        var first = list[0];
+        var last = list[list.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+            e.preventDefault();
+            last.focus({ preventScroll: true });
+        } else if (!e.shiftKey && document.activeElement === last) {
+            e.preventDefault();
+            first.focus({ preventScroll: true });
+        }
+    });
+}
+
+// ===========================================================================
 // Task Title Rules: "Area: Short description" format
 // ===========================================================================
 const SYSTEM_AREAS = ['ORB', 'Gateway', 'Command Hub', 'Pipeline', 'Operator',
@@ -19608,6 +19694,13 @@ function renderGovernanceRuleDetailDrawer() {
 
     drawer.appendChild(content);
 
+    attachModalA11y(drawer, {
+        onClose: function () {
+            state.selectedGovernanceRule = null;
+            renderApp();
+        }
+    });
+
     return drawer;
 }
 
@@ -21865,6 +21958,15 @@ function renderOasisEventDrawer() {
 
     drawer.appendChild(content);
 
+    attachModalA11y(drawer, {
+        onClose: function () {
+            state.oasisEvents.selectedEvent = null;
+            state.oasisEvents.orbTranscript = null;
+            state.oasisEvents.orbTranscriptError = null;
+            renderApp();
+        }
+    });
+
     return drawer;
 }
 
@@ -22636,6 +22738,17 @@ function renderOasisVtidLedgerDrawer() {
     }
 
     drawer.appendChild(content);
+
+    attachModalA11y(drawer, {
+        onClose: function () {
+            oasisVtidDetail.selectedVtid = null;
+            oasisVtidDetail.data = null;
+            oasisVtidDetail.events = [];
+            oasisVtidDetail.error = null;
+            renderApp();
+        }
+    });
+
     return drawer;
 }
 
@@ -25462,6 +25575,13 @@ function renderHeartbeatOverlay() {
     panel.appendChild(content);
     backdrop.appendChild(panel);
 
+    attachModalA11y(panel, {
+        onClose: function () {
+            state.isHeartbeatOpen = false;
+            renderApp();
+        }
+    });
+
     return backdrop;
 }
 
@@ -27545,6 +27665,14 @@ function renderPublishModal() {
     modal.appendChild(footer);
 
     overlay.appendChild(modal);
+
+    attachModalA11y(modal, {
+        onClose: function () {
+            state.showPublishModal = false;
+            renderApp();
+        }
+    });
+
     return overlay;
 }
 
@@ -27765,6 +27893,14 @@ function renderAutopilotRecommendationsModal() {
     modal.appendChild(footer);
 
     overlay.appendChild(modal);
+
+    attachModalA11y(modal, {
+        onClose: function () {
+            state.showAutopilotRecommendationsModal = false;
+            renderApp();
+        }
+    });
+
     return overlay;
 }
 
@@ -28237,6 +28373,15 @@ function renderGovernanceBlockedModal() {
 
     modal.appendChild(footer);
     overlay.appendChild(modal);
+
+    attachModalA11y(modal, {
+        onClose: function () {
+            state.showGovernanceBlockedModal = false;
+            state.governanceBlockedData = null;
+            renderApp();
+        }
+    });
+
     return overlay;
 }
 
@@ -28485,6 +28630,17 @@ function renderExecutionApprovalModal() {
 
     modal.appendChild(footer);
     overlay.appendChild(modal);
+
+    attachModalA11y(modal, {
+        onClose: function () {
+            if (state.executionApprovalLoading) return;
+            state.showExecutionApprovalModal = false;
+            state.executionApprovalVtid = null;
+            state.executionApprovalReason = '';
+            renderApp();
+        }
+    });
+
     return overlay;
 }
 
@@ -35409,6 +35565,10 @@ function openAiAssistantDrawer(provider) {
         if (e.target === root) root.remove();
     });
     document.body.appendChild(root);
+
+    attachModalA11y(panel, {
+        onClose: function () { root.remove(); }
+    });
 
     var headers = typeof buildContextHeaders === 'function' ? buildContextHeaders() : {};
 
