@@ -100,6 +100,9 @@ router.get('/build-info', (_req: Request, res: Response) => {
  * copy of the array only if the fetch fails, so a network hiccup degrades
  * to stale-but-working rather than an empty panel.
  */
+// public-route — deliberately unauthenticated, matching /health and
+// /build-info above: a list of endpoint names/paths/groups, not sensitive
+// data.
 router.get('/health-registry', (_req: Request, res: Response) => {
   return res.status(200).json({
     ok: true,
