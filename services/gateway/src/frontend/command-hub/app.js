@@ -16748,7 +16748,11 @@ function renderTelemetryStreamPanel() {
         '<option value="bedrock">Bedrock (Claude)</option>' +
         '<option value="deepseek">DeepSeek</option>' +
         '<option value="anthropic">Anthropic (direct)</option>' +
-        '<option value="vertex">Vertex AI (Google)</option>' +
+        // VTID-04066: relabelled rather than removed -- a stored routing-policy
+        // row can still reference 'vertex', and deleting the option would make
+        // that value unrenderable here. It is not a live choice: CLAUDE.md
+        // ALWAYS 10a/10b forbids routing any stage to it (GCP decommissioned).
+        '<option value="vertex">Vertex AI (Google) (decommissioned, do not use)</option>' +
         '<option value="openai">OpenAI</option>' +
         '<option value="claude_subscription">Claude Subscription</option>';
     providerSelect.value = state.agentsTelemetry.filters.provider;
@@ -16936,7 +16940,9 @@ function llmProviderLabel(provider) {
         deepseek: 'DeepSeek',
         claude_subscription: 'Claude Subscription',
         openai: 'OpenAI',
-        vertex: 'Vertex AI (Google)',
+        // VTID-04066: key kept (a stored policy row can still carry 'vertex'),
+        // label marked decommissioned so it is never read as a live choice.
+        vertex: 'Vertex AI (Google) (decommissioned)',
         anthropic: 'Anthropic (direct)',
         unknown: 'Unknown'
     };
@@ -18088,7 +18094,9 @@ function renderVoiceLabExperimentsPanel() {
     chunkOptions.forEach(function (opt) {
         chunkSelectHtml += '<option value="' + opt.value + '"' + (controls.chunk_ms === opt.value ? ' selected' : '') + '>' + opt.label + '</option>';
     });
-    chunkSelectHtml += '</select><p class="control-hint">Size of audio chunks sent to model. 20-40ms optimal for Gemini Live.</p>';
+    // VTID-04066: was 'Gemini Live' -- the voice transport is Amazon Nova
+    // Sonic (GCP decommissioned, CLAUDE.md §1/§2e).
+    chunkSelectHtml += '</select><p class="control-hint">Size of audio chunks sent to model. 20-40ms optimal for Nova Sonic.</p>';
     chunkGroup.innerHTML = chunkSelectHtml;
     form.appendChild(chunkGroup);
 
@@ -18125,11 +18133,16 @@ function renderVoiceLabExperimentsPanel() {
     var modelGroup = document.createElement('div');
     modelGroup.className = 'voice-lab-control-group';
     var modelOptions = [
+        // VTID-04066: every value here is a dead Gemini Live model id (GCP
+        // decommissioned). No verified Nova Sonic model identifier exists in
+        // this repo, so the options are NOT invented/replaced -- the control
+        // is labelled legacy/non-functional instead, and the values are left
+        // as-is so a persisted control value still matches an option.
         { value: 'gemini-2.0-flash-exp', label: 'Gemini 2.0 Flash (Experimental)' },
         { value: 'gemini-2.0-flash-live-001', label: 'Gemini 2.0 Flash Live' },
         { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash' }
     ];
-    var modelSelectHtml = '<label for="vl-model">Voice Model</label><select id="vl-model">';
+    var modelSelectHtml = '<label for="vl-model">Voice Model (legacy, non-functional)</label><select id="vl-model">';
     modelOptions.forEach(function (opt) {
         modelSelectHtml += '<option value="' + opt.value + '"' + (controls.model === opt.value ? ' selected' : '') + '>' + opt.label + '</option>';
     });
@@ -18232,9 +18245,11 @@ function loadVoiceLabRuntimeControls() {
 
 var PERSONALITY_SURFACE_DEFS = {
     voice_live: {
-        label: 'Voice (Gemini Live)',
+        // VTID-04066: was 'Voice (Gemini Live)' -- real-time voice sessions are
+        // served by Amazon Nova Sonic (GCP decommissioned, CLAUDE.md §1).
+        label: 'Voice (Nova Sonic)',
         icon: '\uD83C\uDFA4',
-        description: 'Primary voice assistant personality for real-time Gemini Live sessions.',
+        description: 'Primary voice assistant personality for real-time Nova Sonic sessions.',
         sourceFile: 'orb-live.ts',
         fields: {
             base_identity:       { label: 'Base Identity',          type: 'textarea', rows: 2, hint: 'Core identity statement. First line of the system prompt.' },
@@ -41430,13 +41445,15 @@ function renderDocsArchitectureView() {
     container.appendChild(title);
     var subtitle = document.createElement('p');
     subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Vitana platform architecture: Gateway, Cloud Run services, and Supabase data layer.';
+    // VTID-04066: was 'Cloud Run services' -- AWS ECS (eu-central-1) is the
+    // only runtime (GCP decommissioned, CLAUDE.md §1/§2e).
+    subtitle.textContent = 'Vitana platform architecture: Gateway, AWS ECS services, and Supabase data layer.';
     container.appendChild(subtitle);
 
     var layers = [
         { name: 'Frontend Layer', items: ['Command Hub (Vanilla JS SPA)', 'ORB Voice Interface (WebSocket)', 'Operator Console'] },
-        { name: 'API Gateway (Cloud Run)', items: ['Express.js routing', 'Supabase JWT auth', 'Route aggregation', 'SSE streaming', 'Static frontend serving'] },
-        { name: 'Microservices (Cloud Run)', items: ['oasis-operator: Event processing', 'oasis-projector: Read models', 'worker-runner: Task execution', 'verification-engine: Governance'] },
+        { name: 'API Gateway (AWS ECS)', items: ['Express.js routing', 'Supabase JWT auth', 'Route aggregation', 'SSE streaming', 'Static frontend serving'] },
+        { name: 'Microservices (AWS ECS)', items: ['oasis-operator: Event processing', 'oasis-projector: Read models', 'worker-runner: Task execution', 'verification-engine: Governance'] },
         { name: 'Data Layer (Supabase)', items: ['PostgreSQL with RLS', 'pgvector embeddings', 'Real-time subscriptions', 'Row-Level Security'] },
         { name: 'Communication', items: ['Gateway -> Services: REST', 'Gateway -> Frontend: SSE', 'Gateway -> ORB: WebSocket', 'Worker -> Gateway: REST callbacks'] }
     ];
@@ -41481,8 +41498,13 @@ function renderDocsWorkforceView() {
     container.appendChild(subtitle);
 
     var agents = [
-        { name: 'Planner', stage: 'Planning', model: 'Gemini Pro', caps: ['Intent decomposition', 'Spec generation', 'VTID allocation'] },
-        { name: 'Worker', stage: 'Execution', model: 'Gemini Flash', caps: ['Task claiming', 'Code generation', 'Artifact production'] },
+        // VTID-04066: was 'Gemini Pro'/'Gemini Flash' -- factually dead (GCP
+        // decommissioned). LLM stages route to Claude via AWS Bedrock
+        // (CLAUDE.md ALWAYS 10a); the Dev Autopilot agent executor
+        // (services/autopilot-worker) specifically runs DeepSeek-Flash primary
+        // with a Bedrock Claude fallback.
+        { name: 'Planner', stage: 'Planning', model: 'Claude via AWS Bedrock', caps: ['Intent decomposition', 'Spec generation', 'VTID allocation'] },
+        { name: 'Worker', stage: 'Execution', model: 'DeepSeek-Flash (Bedrock Claude fallback)', caps: ['Task claiming', 'Code generation', 'Artifact production'] },
         { name: 'Validator', stage: 'Validation', model: 'Claude', caps: ['Output validation', 'Spec compliance', 'Governance gates'] },
         { name: 'Deploy', stage: 'Deployment', model: 'System', caps: ['CI/CD triggering', 'Build verification', 'Rollback'] }
     ];
