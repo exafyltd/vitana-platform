@@ -65,6 +65,7 @@ import { resolveExecutorMode } from './autopilot-agent/executor-mode';
 import { buildReminders, remindersEnabled, renderRemindersBlock } from './watcher/reminder';
 import { recordShown } from './watcher/feedback';
 import { recordExecutionOutcomeMemory } from './operator-turn-memory';
+import { isAwaitingApprovalResult, stageExecutionForApproval } from './dev-autopilot-approval';
 
 const LOG_PREFIX = '[dev-autopilot-execute]';
 const EXEC_VTID = 'VTID-DEV-AUTOPILOT';
@@ -788,7 +789,8 @@ export async function bridgeActivationToExecution(
   const inflightR = await supa<Array<{ id: string; status: string }>>(
     s,
     `/rest/v1/dev_autopilot_executions?finding_id=eq.${findingId}` +
-    `&status=in.(cooling,running,ci,merging,deploying,verifying)` +
+    // VTID-04029: a row waiting for a human decision still owns its finding.
+    `&status=in.(cooling,running,awaiting_approval,ci,merging,deploying,verifying)` +
     `&select=id,status&limit=1`,
   );
   if (inflightR.ok && inflightR.data && inflightR.data[0]) {
@@ -2834,8 +2836,22 @@ async function getGcpAccessToken(): Promise<string | null> {
 export async function applyExecutionResult(
   s: SupaConfig,
   execId: string,
-  result: { ok: boolean; pr_url?: string; branch?: string; pr_number?: number; session_id?: string; error?: string },
+  result: { ok: boolean; pr_url?: string; branch?: string; pr_number?: number; session_id?: string; error?: string; awaiting_approval?: boolean },
 ): Promise<void> {
+  // VTID-04029: the agent pushed its branch and stopped before opening a PR
+  // — record the hold + diff preview; approve/reject come back through
+  // dev-autopilot-approval.ts (approve re-enters this function with pr_url).
+  if (result.ok && result.awaiting_approval) {
+    if (!isAwaitingApprovalResult(result)) {
+      console.error(`${LOG_PREFIX} ${execId.slice(0, 8)}: awaiting_approval result without branch/head_sha — treating as failure`);
+      return applyExecutionResult(s, execId, { ok: false, error: 'awaiting_approval result missing branch/head_sha', session_id: result.session_id });
+    }
+    const staged = await stageExecutionForApproval(s, execId, result);
+    if (!staged.ok) {
+      return applyExecutionResult(s, execId, { ok: false, error: `could not stage for approval: ${staged.error}`, session_id: result.session_id });
+    }
+    return;
+  }
   if (result.ok && result.pr_url) {
     await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${execId}`, {
       method: 'PATCH',
@@ -3004,7 +3020,7 @@ export async function autoApproveTick(): Promise<void> {
     const inflightR = await supa<Array<{ id: string }>>(
       s,
       `/rest/v1/dev_autopilot_executions?finding_id=eq.${f.id}`
-      + `&status=in.(cooling,running,ci,merging,deploying,verifying)`
+      + `&status=in.(cooling,running,awaiting_approval,ci,merging,deploying,verifying)`
       + `&select=id&limit=1`,
     );
     if (inflightR.ok && inflightR.data && inflightR.data.length > 0) continue;

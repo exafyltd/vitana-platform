@@ -20077,6 +20077,75 @@ border-bottom: 1px solid var(--color-border, #333);
   background: transparent;
   color: var(--text-secondary, #aaa);
 }
+/* VTID-04029: diff review before a PR — panel, patch lines and the decision
+   buttons are styled here, never inline (CSP: no inline styles on the
+   frontend surface, VTID-03696). */
+.dev-autopilot-diff-panel {
+  margin-top: 8px;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.25);
+  font-size: 11px;
+}
+.dev-autopilot-diff-head {
+  padding: 6px 10px;
+  color: #f59e0b;
+  font-weight: 600;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.dev-autopilot-diff-stat {
+  margin: 0;
+  padding: 6px 10px;
+  color: #9aa0a6;
+  white-space: pre-wrap;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  font-family: monospace;
+}
+.dev-autopilot-diff-patch {
+  margin: 0;
+  padding: 8px 10px;
+  max-height: 420px;
+  overflow: auto;
+  white-space: pre;
+  font-family: monospace;
+  font-size: 11px;
+  line-height: 1.35;
+}
+.dev-autopilot-diff-line--add { color: #7fb57f; }
+.dev-autopilot-diff-line--del { color: #d9776f; }
+.dev-autopilot-diff-line--hunk { color: #60a5fa; }
+.dev-autopilot-diff-line--file { color: #e5e7eb; }
+.dev-autopilot-diff-line--ctx { color: #b0b6bd; }
+.dev-autopilot-live-diff-wrap {
+  flex-basis: 100%;
+  min-width: 0;
+}
+.dev-autopilot-decision-btn {
+  padding: 3px 10px;
+  border-radius: 3px;
+  font-size: 11px;
+  cursor: pointer;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.15));
+  background: transparent;
+  color: var(--text-secondary, #aaa);
+}
+.dev-autopilot-decision-btn--approve {
+  border-color: #22c55e;
+  background: rgba(34, 197, 94, 0.12);
+  color: #22c55e;
+  font-weight: 600;
+}
+.dev-autopilot-decision-btn--reject,
+.dev-autopilot-decision-btn--cancel {
+  border-color: #ef4444;
+  background: transparent;
+  color: #ef4444;
+}
+.dev-autopilot-decision-btn--busy,
+.dev-autopilot-decision-btn[disabled] {
+  cursor: wait;
+  opacity: 0.7;
+}
 .dev-autopilot-steps-panel {
   margin-top: 10px;
   padding: 10px;

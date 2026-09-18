@@ -1,0 +1,26 @@
+# VTID-04029 — commands run (2026-09-17, Claude Code session)
+
+# VTID allocated + registered (Supabase MCP, project inmkhvwdcuyhnxkgfvsb)
+select * from allocate_global_vtid('claude-code', 'AGTL', 'dev-autopilot');   -- VTID-04029
+update vtid_ledger set title=..., summary=..., status='in_progress', spec_status='approved' where vtid='VTID-04029';
+
+# migration (constraint widening only) — applied to the live project before merge (Migration Drift Check, VTID-03486)
+#   Supabase MCP apply_migration name=vtid_04029_dev_autopilot_executions_awaiting_approval
+#   post-check: select pg_get_constraintdef(oid) from pg_constraint where conname='dev_autopilot_executions_status_check'  → contains 'awaiting_approval'
+
+# gateway
+cd services/gateway
+node --check src/frontend/command-hub/app.js                                        # ok
+NODE_OPTIONS=--max-old-space-size=3072 npx tsc --noEmit                             # exit 0
+npx jest test/vtid-04029-dev-autopilot-pr-approval.test.ts                         # 20/20 (first run 17/19: requireActual for the real applyExecutionResult; resetModules per router load)
+npx jest test/dev-autopilot-execute.test.ts test/dev-autopilot-watcher.test.ts test/dev-autopilot-bridge.test.ts \
+  test/dev-autopilot-runexec-pr-flood-guard.test.ts test/dev-autopilot-pr-contract.test.ts test/dev-autopilot-env-ownership.test.ts \
+  test/vtid-04005-onramp-vtid-self-allocate.test.ts test/vtid-04006-selfheal-child-inherits-executor.test.ts \
+  test/vtid-04007-open-ended-intake.test.ts test/vtid-04011-watchdog-heartbeat.test.ts test/vtid-04016-agent-check-guard.test.ts \
+  test/vtid-04017-fix-mode.test.ts test/vtid-03898-executions-last-event.test.ts   # 12 suites, 153 tests, 0 failures
+
+# visual verification (local harness, nothing live)
+node docs/validation/VTID-04029/outputs/harness-server.js &                         # http://127.0.0.1:18429 — statics from the working tree, stubbed APIs, one awaiting_approval execution
+node docs/validation/VTID-04029/outputs/harness-shoot.js                            # Playwright: /command-hub/autopilot/live/, open Diff, Approve; 1400x900 + 390x844
+# desktop: card text before = [AWAITING_APPROVAL, Execution 4f7d5ea4, no file, llm: deepseek/deepseek-flash, ▸ Diff, Approve → open PR]; diffLines=22; after = [CI, Execution 4f7d5ea4, no file, llm: deepseek/deepseek-flash, PR #3382]; page errors: none
+# finding while doing it: the Dev Autopilot page's renderDevAutopilotExecutionCard() is only called from renderDevAutopilotLiveTrace(), which nothing calls — the rows operators see are the Autopilot Live view's; controls added there (and kept on the card).

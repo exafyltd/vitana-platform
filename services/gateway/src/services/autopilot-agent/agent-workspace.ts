@@ -156,6 +156,22 @@ export async function gitDiff(repoDir: string, exec: ExecFn = defaultExec): Prom
   return stdout;
 }
 
+/**
+ * VTID-04029: the committed diff of HEAD against a base sha — `--stat` plus
+ * the full patch — for the approval preview that is stored on the execution
+ * row when the agent stops before opening a PR. Read-only; callers bound it.
+ */
+export async function gitDiffAgainstBase(
+  repoDir: string,
+  baseSha: string,
+  exec: ExecFn = defaultExec,
+): Promise<{ stat: string; patch: string; files: string[] }> {
+  const { stdout: stat } = await exec('git', ['diff', '--stat=120', `${baseSha}..HEAD`], { cwd: repoDir });
+  const { stdout: patch } = await exec('git', ['diff', `${baseSha}..HEAD`], { cwd: repoDir });
+  const { stdout: names } = await exec('git', ['diff', '--name-only', `${baseSha}..HEAD`], { cwd: repoDir });
+  return { stat, patch, files: names.split('\n').map((l) => l.trim()).filter(Boolean) };
+}
+
 export async function commitAndPush(
   repoDir: string,
   opts: { message: string; branch: string; token: string; exec?: ExecFn; force?: boolean },
