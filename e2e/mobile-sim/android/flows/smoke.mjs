@@ -50,24 +50,38 @@ export async function smokeFlow(ctx) {
   // 2. Login through the real form
   const authed = await loginFlow(ctx);
 
-  // 3. Discover bottom navigation — elements in the bottom band of the screen
+  // 3. Discover bottom navigation — elements in the bottom band of the screen.
+  // The post-login home screen is a freshly-mounted SPA route (auth check,
+  // lazy chunk fetch, data fetch) and can take longer than a single fixed
+  // wait to render its bottom nav — poll for up to ~15s instead of giving up
+  // after one 2s look, so a slow-but-successful render isn't reported as a
+  // missing nav.
+  const NAV_POLL_TIMEOUT_MS = 15_000;
+  const NAV_POLL_INTERVAL_MS = 1500;
   await sleep(2000);
-  const home = await observe(driver, report, 'home', { screenshot: false });
   const size = await driver.screenSize().catch(() => null);
-  let bottom = [];
-  if (size) {
-    const bandTop = size.height * 0.85;
-    bottom = home.entries.filter(
-      e => e.clickable && e.bounds && e.bounds.y1 >= bandTop && label(e).trim().length > 0,
-    );
+  const bandTop = size ? size.height * 0.85 : null;
+  const findBottom = entries => bandTop === null ? [] : entries.filter(
+    e => e.clickable && e.bounds && e.bounds.y1 >= bandTop && label(e).trim().length > 0,
+  );
+
+  let home = await observe(driver, report, 'home', { screenshot: false });
+  let bottom = findBottom(home.entries);
+  const pollStart = Date.now();
+  while (bottom.length === 0 && authed && Date.now() - pollStart < NAV_POLL_TIMEOUT_MS) {
+    await sleep(NAV_POLL_INTERVAL_MS);
+    home = await observe(driver, report, 'home', { screenshot: false });
+    bottom = findBottom(home.entries);
   }
+  const navWaitMs = Date.now() - pollStart + 2000; // include the initial 2s wait
+
   report.record({
     label: 'bottom nav discovery',
     ok: bottom.length > 0 || !authed,
     outline: entrySummary(home.entries),
     detail: bottom.length > 0
-      ? `${bottom.length} tappable bottom-band elements: ${bottom.map(label).join(', ')}`
-      : (authed ? 'no bottom-band elements found while authenticated'
+      ? `${bottom.length} tappable bottom-band elements after ~${navWaitMs}ms: ${bottom.map(label).join(', ')}`
+      : (authed ? `no bottom-band elements found while authenticated after ~${navWaitMs}ms of polling`
                 : 'no bottom nav (unauthenticated) — walked nothing'),
   });
 
