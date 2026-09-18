@@ -35,3 +35,19 @@ POST /api/v1/vtid/allocate {source:claude-code, layer:AGTL, module:operator-agen
 UPDATE vtid_ledger SET title, summary, status='in_progress', spec_status='approved' WHERE vtid='VTID-04037'
 
 ## Step 4 — live runs (appended after the staging deploy of this commit)
+Staging deploy of a4d68be: AWS-STAGE-DEPLOY-GATEWAY.yml run 425, build-info a4d68be5ad2d… at 07:32:28Z
+boto3 ecs.describe_services vitana-gateway -> task def vitana-gateway:419; all four flags = true; no OPERATOR_SQL_READONLY_* (secret absent, optional wiring no-op)
+AC-7  POST /operator/chat/stream (read-only turn)                 -> frames + cost_usd on reply meta (outputs/run-ac7-stream.md)
+AC-8  POST /operator/chat/stream autopilot_run_task (open-ended)  -> VTID-04038 / f8d79e6c -> awaiting_approval 07:39:41 (5 files, no PR)
+      autopilot_review_execution f8d79e6c                          -> PR title + 5-file list + stat (tool 191 ms)
+      autopilot_approve_execution f8d79e6c                         -> PR #3412, row ci, approved_by operator-chat:<user_id>
+      PR #3412 18/18 green -> squash-merged 0db8047
+      autopilot_run_task (cancel test) -> VTID-04040 / ff10f8ea; autopilot_cancel_execution ff10f8ea
+        -> running -> cancelled; ecs_task_stopped:false + IAM denial verbatim; ECS task exited on its own 08:48:34; nothing pushed
+AC-9  Run #6  VTID-04039 / a5289ad8 -> failed, 60-turn cap (read_file refused the 2.6 MB app.js) -> VTID-04042 (#3414)
+      executor image rebuilt from a63fe44 (AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml run 14, success 08:08:25Z)
+      Run #6b VTID-04045 / 7e7260fe -> read_file fixed (0 refusals, app.js read on turn 2) but still 60-turn cap
+        -> 6 turns were date hunts -> VTID-04046 (#3416); AGENT_MAX_TURNS already env-tunable, no code change
+      fix mode still NOT exercised: no agent PR reached CI
+Also found and fixed live: VTID-04043 (#3415) — a sibling execution's vtid.lifecycle.failed counted as blast radius
+  and failed VTID-04038 while PR #3412 was green

@@ -51,3 +51,30 @@ CURL: POST https://preview-aws-gateway.vitanaland.com/api/v1/operator/chat/strea
 - The IAM policy is NOT applied — `iam:PutRolePolicy` on `vitana-ecs-task-role` is explicitly denied by the session user's permissions boundary and the harness classifier refused the write. Owner runs the script (`--apply`).
 - The SQL URL secret is NOT created — reading the source secret value is withheld from this session. Owner runs the script (`--apply`); the next staging deploy then wires it automatically.
 - Production: untouched (`AWS-PROD-DEPLOY-GATEWAY.yml` carries none of this).
+
+
+---
+
+## Live results (2026-09-18, staging on a4d68be / task def vitana-gateway:419)
+
+| AC | Result |
+|---|---|
+| AC-1..AC-5 | PASS — automated, at merge of #3410 |
+| AC-6 | **PASS** — `/api/v1/admin/health` `env=staging`; build-info `a4d68be5ad2d…` booted 07:31:15Z; task def **vitana-gateway:419** carries `OPERATOR_VTID_SELF_ALLOCATE_ENABLED`, `OPERATOR_PR_APPROVAL_REQUIRED`, `OPERATOR_THREADS_ENABLED`, `OPERATOR_TURN_MEMORY_ENABLED` = `true`, and no `OPERATOR_SQL_READONLY_*` (the secret is not provisioned, so the optional wiring correctly did nothing) |
+| AC-7 | **PASS** — `POST /operator/chat/stream` framed `turn.started → model.turn → tool.call → tool.result → model.turn → reply → done`; reply meta carried `cost_usd`, `cost_priced`, `usage`, `model_calls`, `duration_ms` on DeepSeek Flash |
+| AC-8 | **PASS** — Run #5 + #7, end to end: open-ended request → VTID-04038 self-allocated → agent executor → `awaiting_approval` (5 files, no PR) → `autopilot_review_execution` from chat → `autopilot_approve_execution` from chat → PR #3412 → 18/18 green → merged `0db8047`. Cancel leg: VTID-04040 queued and cancelled from chat while `running`; StopTask IAM denial returned verbatim; the agent stopped cooperatively and its task exited on its own; nothing pushed |
+| AC-9 | **NOT VERIFIED** — fix mode never ran, because no agent PR reached CI. Run #6 died on a read_file defect (VTID-04042, fixed); Run #6b on the rebuilt image cleared that and still hit the 60-turn cap, 6 turns of which were date hunts (VTID-04046, fixed). See `outputs/run-6.md` |
+| AC-10 | **PASS (as designed)** — `dev_cloudwatch_logs` / `dev_ecs_tasks` / `ecs:StopTask` return the IAM denial verbatim rather than failing silently; `dev_run_sql_readonly` reports `not_configured`. Both owner scripts are shipped and unrun |
+
+### Defects this pass found, all fixed and merged the same day
+
+| VTID | PR | What it was |
+|---|---|---|
+| VTID-04042 | #3414 | `read_file`/`search_text` refused any file over 2 MB before honouring `start_line`/`end_line`, so the Command Hub bundle was unreadable in every range |
+| VTID-04043 | #3415 | The verification window counted a sibling execution's `vtid.lifecycle.failed` as production blast radius, failing VTID-04038 with its PR green |
+| VTID-04046 | #3416 | The agent prompt carried no date, so dated tasks made it search the repo for one |
+
+### Still owner-gated (unchanged by this pass)
+
+- `scripts/aws/setup-operator-agent-task-role-grants.sh --apply` — the session user's permissions boundary explicitly denies `iam:*` on `vitana-ecs-task-role`.
+- `scripts/aws/setup-operator-sql-readonly-secret.sh --apply` — secret values are withheld from sessions; one more staging deploy then wires SQL automatically.
