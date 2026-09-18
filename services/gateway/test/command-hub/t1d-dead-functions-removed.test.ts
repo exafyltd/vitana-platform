@@ -59,28 +59,6 @@ const REMOVED_FUNCTIONS = [
   'formatCicdHealthTooltip',
 ];
 
-/**
- * The gated Memory Garden / old Intelligence panel block. These must survive
- * this change untouched, so nothing in this suite may match them by accident
- * and a future cleanup must not sweep them up under the same VTID.
- */
-const MUST_SURVIVE = [
-  'renderMemoryGardenView',
-  'renderMemoryGardenCard',
-  'renderLongevityFocusPanel',
-  'renderLongevitySignal',
-  'renderDiaryEntryModal',
-  'renderCategoryDetailModal',
-  'getCategorySubcategories',
-  'renderUnifiedIntelligencePanel',
-  'escapeHtmlSafe',
-  'renderKnowledgeGraphView',
-  'getKnowledgeGraphIcon',
-  'renderRecallView',
-  'renderInspectorView',
-  'renderEmbeddingsView',
-];
-
 describe('Command Hub — dead functions removed (VTID-04063)', () => {
   let src: string;
 
@@ -102,11 +80,12 @@ describe('Command Hub — dead functions removed (VTID-04063)', () => {
     }
   });
 
-  it('the gated Memory Garden / Intelligence panel block is untouched', () => {
-    for (const name of MUST_SURVIVE) {
-      expect(src).toMatch(new RegExp('function\\s+' + name + '\\s*\\('));
-    }
-  });
+  // The Memory Garden / old Intelligence panel block was required to
+  // survive VTID-04063 untouched, pending the separate T1b product
+  // decision. T1b has since resolved (VTID-04093): the block was confirmed
+  // a fabricated-mock-data duplicate of the real, backend-wired
+  // renderMemoryOpsView (VTID-02636, already mounted live) and deleted —
+  // see t2-no-zero-caller-functions.test.ts for the removal assertions.
 
   it('functions that were NOT on the deletion list are still present', () => {
     // Neighbours of deleted names, to catch an over-eager deletion.
