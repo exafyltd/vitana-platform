@@ -241,6 +241,10 @@ describe('provider-neutral contract additions (BOOTSTRAP-NOVA-SONIC-VOICE)', () 
     const client = new GeminiApiKeyLiveClient({ createSocket: () => socket });
     await connectClient(client, socket);
 
+    // VTID-04036: the server-issued id is echoed so the Live API can match
+    // the response to its pending FunctionCall.
+    client.onToolCall(() => {});
+    socket.fireMessage({ tool_call: { function_calls: [{ name: 'get_current_screen', args: {}, id: 'call-9' }] } });
     const sent = client.sendToolResult({
       callId: 'call-9',
       name: 'get_current_screen',
@@ -251,10 +255,18 @@ describe('provider-neutral contract additions (BOOTSTRAP-NOVA-SONIC-VOICE)', () 
     expect(JSON.parse(socket.sent.at(-1)!)).toEqual({
       tool_response: {
         function_responses: [
-          { name: 'get_current_screen', response: { output: '{"screen":"journey"}' } },
+          { id: 'call-9', name: 'get_current_screen', response: { output: '{"screen":"journey"}' } },
         ],
       },
     });
+  });
+
+  it('sendToolResult omits `id` for a callId the server never issued (VTID-04036)', async () => {
+    const socket = new MockSocket();
+    const client = new GeminiApiKeyLiveClient({ createSocket: () => socket });
+    await connectClient(client, socket);
+    client.sendToolResult({ callId: 'not-from-server', name: 'x', success: true, output: '{}' });
+    expect(JSON.parse(socket.sent.at(-1)!).tool_response.function_responses[0]).toEqual({ name: 'x', response: { output: '{}' } });
   });
 
   it('constructor getApiKey dep takes precedence over the deprecated options hook', async () => {

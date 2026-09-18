@@ -100,6 +100,8 @@ export class VertexLiveClient implements UpstreamLiveClient {
   private audioOutputHandler: ((e: AudioOutputEvent) => void) | null = null;
   private transcriptHandler: ((e: TranscriptEvent) => void) | null = null;
   private toolCallHandler: ((e: ToolCallEvent) => void) | null = null;
+  /** VTID-04036: function-call ids the server issued and we have not yet answered. */
+  private readonly serverIssuedCallIds = new Set<string>();
   private turnCompleteHandler: ((e: TurnCompleteEvent) => void) | null = null;
   private interruptedHandler: ((e: InterruptedEvent) => void) | null = null;
   private sessionResumptionHandler: ((e: SessionResumptionEvent) => void) | null = null;
@@ -421,14 +423,27 @@ export class VertexLiveClient implements UpstreamLiveClient {
     if (this.state !== 'open' || !this.ws) return false;
     if (this.ws.readyState !== WebSocket.OPEN) return false;
 
-    // Exact legacy envelope (VTID-01224): Vertex rejects unknown fields
-    // like 'id' in function_responses with WS close 1007 — only 'name' and
-    // 'response' are sent; failures ship as an `Error: …` output string.
+    // VTID-04036: echo the server-issued function-call id. The Live API
+    // matches each FunctionResponse to its pending FunctionCall by `id`
+    // ("Individual FunctionResponse objects are matched to the respective
+    // FunctionCall objects by the id field"); without it the current
+    // native-audio model never treats the call as answered, so the turn
+    // ends silent and the dangling calls later surface as a 1007 close
+    // (measured live on staging 2026-09-17: every authenticated `sr`
+    // session went silent right after get_day_summary/get_current_screen).
+    // The VTID-01224-era note that Vertex rejected `id` with 1007 was
+    // measured against gemini-2.0-flash-exp; it no longer applies.
+    // Only an id the SERVER issued is echoed — the session layer
+    // substitutes a random uuid when a call arrives without one, and a
+    // fabricated id must not be sent back.
     const outputText = result.success ? result.output : `Error: ${result.error ?? 'tool failed'}`;
+    const echoId = result.callId && this.serverIssuedCallIds.has(result.callId) ? result.callId : undefined;
+    if (echoId) this.serverIssuedCallIds.delete(echoId);
     const message = {
       tool_response: {
         function_responses: [
           {
+            ...(echoId ? { id: echoId } : {}),
             name: result.name,
             response: { output: outputText },
           },
@@ -521,6 +536,11 @@ export class VertexLiveClient implements UpstreamLiveClient {
         args: fc.args || {},
         id: fc.id,
       }));
+      // VTID-04036: remember which ids the server issued so sendToolResult
+      // can echo exactly those (and never a session-layer placeholder).
+      for (const c of calls) {
+        if (typeof c.id === 'string' && c.id.length > 0) this.serverIssuedCallIds.add(c.id);
+      }
       if (calls.length > 0) {
         this.toolCallHandler?.({ calls });
       }

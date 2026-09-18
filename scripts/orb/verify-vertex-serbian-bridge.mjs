@@ -21,6 +21,12 @@
  *   node scripts/orb/verify-vertex-serbian-bridge.mjs --mode=anonymous [--trials=10]
  *   node scripts/orb/verify-vertex-serbian-bridge.mjs --mode=authenticated --trials=10
  *   node scripts/orb/verify-vertex-serbian-bridge.mjs --mode=authenticated --route=/admin   # smaller tool catalog (VTID-04026)
+ *   node scripts/orb/verify-vertex-serbian-bridge.mjs --mode=authenticated --utterance-pcm=/path/to/16k-mono-pcm16.raw
+ *     (VTID-04036: after the greeting's turn_complete, streams that PCM plus
+ *     trailing silence as the user's turn over /live/stream/send and waits
+ *     for the model's reply — the tool-response leg is what this exercises,
+ *     so any language works; the bridge answers in Serbian. --end-turn also
+ *     POSTs /live/stream/end-turn, which the real widget never does.)
  *     (authenticated mode needs SUPABASE_ANON_KEY + TEST_ACCOUNT_EMAIL +
  *     TEST_ACCOUNT_PASSWORD in the environment — never hardcode credentials
  *     in this file. The documented test account is
@@ -42,7 +48,7 @@
  * write community content, never widen its use beyond this kind of read/
  * verify call.
  */
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 
 const args = Object.fromEntries(
   process.argv.slice(2).map((a) => {
@@ -63,6 +69,20 @@ const LANG = process.env.LANG_CODE || 'sr';
 // envelope's size without touching code. Used to isolate the tool-catalog
 // size as the cause of the authenticated-only 1007 closes.
 const ROUTE = typeof args.route === 'string' ? args.route : '';
+// VTID-04036: optional user turn. A raw 16 kHz mono PCM16 file streamed after
+// the greeting's turn_complete so a question that needs a tool
+// (get_day_summary, …) can be driven end to end without a browser.
+const UTTERANCE_PCM = typeof args['utterance-pcm'] === 'string' ? args['utterance-pcm'] : '';
+const UTTERANCE_BYTES = UTTERANCE_PCM ? readFileSync(UTTERANCE_PCM) : null;
+const UTTERANCE_CHUNK_BYTES = 3200; // 100 ms at 16 kHz mono PCM16
+const UTTERANCE_PRE_DELAY_MS = 1500; // clears the server's post-turn mic cooldown (300 ms default)
+// The real widget never calls /live/stream/end-turn — Gemini Live's own
+// activity detection ends the user's turn on silence. Sending
+// client_content{turn_complete:true} on an audio-only session closes the
+// socket 1007 (measured 2026-09-18, 2/2), so the default is trailing
+// silence; --end-turn opts into the explicit signal for experiments.
+const UTTERANCE_TRAILING_SILENCE_MS = 1800;
+const UTTERANCE_USE_END_TURN = args['end-turn'] === true || args['end-turn'] === 'true';
 const SSE_TIMEOUT_MS = 40000; // server's own greeting_timeout watchdog is 30s
 const GAP_BETWEEN_TRIALS_MS = 2000;
 
@@ -88,6 +108,50 @@ async function getAuthToken() {
   const json = await res.json();
   if (!json.access_token) throw new Error('sign-in failed: ' + JSON.stringify(json));
   return json.access_token;
+}
+
+// VTID-04036: stream the utterance as the user's turn over the SSE transport's
+// input endpoints (byte-identical to what the widget sends).
+async function sendUtterance(trial, headers) {
+  await new Promise((r) => setTimeout(r, UTTERANCE_PRE_DELAY_MS));
+  trial.utteranceSentAt = Date.now();
+  trial.utteranceChunks = 0;
+  trial.utteranceSendErrors = [];
+  const silence = Buffer.alloc((UTTERANCE_TRAILING_SILENCE_MS / 1000) * 32000);
+  const stream = UTTERANCE_USE_END_TURN ? UTTERANCE_BYTES : Buffer.concat([UTTERANCE_BYTES, silence]);
+  for (let off = 0; off < stream.length; off += UTTERANCE_CHUNK_BYTES) {
+    const chunk = stream.subarray(off, off + UTTERANCE_CHUNK_BYTES);
+    try {
+      const r = await fetch(`${GATEWAY}/api/v1/orb/live/stream/send`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          session_id: trial.sessionId,
+          type: 'audio',
+          data_b64: chunk.toString('base64'),
+          mime: 'audio/pcm;rate=16000',
+        }),
+      });
+      if (!r.ok) trial.utteranceSendErrors.push(`send: HTTP ${r.status}`);
+      trial.utteranceChunks++;
+    } catch (e) {
+      trial.utteranceSendErrors.push(`send: ${e && e.message}`);
+    }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  if (UTTERANCE_USE_END_TURN) {
+    try {
+      const r = await fetch(`${GATEWAY}/api/v1/orb/live/stream/end-turn`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ session_id: trial.sessionId }),
+      });
+      trial.endTurnHttpStatus = r.status;
+    } catch (e) {
+      trial.utteranceSendErrors.push(`end-turn: ${e && e.message}`);
+    }
+  }
+  trial.utteranceDoneAt = Date.now();
 }
 
 async function readSse(resp, onEvent, deadlineMs) {
@@ -169,6 +233,7 @@ async function runTrial(idx, token) {
 
     trial.eventCounts = {};
     trial.transcriptText = '';
+    let utterancePromise = null;
     await readSse(
       sseResp,
       (data) => {
@@ -183,9 +248,26 @@ async function runTrial(idx, token) {
         if ((t === 'audio' || t === 'audio_out') && (msg.data_b64 || msg.audio_b64) && !trial.firstAudioAt) {
           trial.firstAudioAt = Date.now();
         }
-        if ((t === 'transcript' || t === 'output_transcript') && msg.text) trial.transcriptText += msg.text;
+        if ((t === 'transcript' || t === 'output_transcript') && msg.text) {
+          if (trial.utteranceSentAt) trial.replyTranscriptText = (trial.replyTranscriptText || '') + msg.text;
+          else trial.transcriptText += msg.text;
+        }
+        if (t === 'input_transcript' && msg.text) trial.inputTranscriptText = (trial.inputTranscriptText || '') + msg.text;
+        if ((t === 'audio' || t === 'audio_out') && (msg.data_b64 || msg.audio_b64) && trial.utteranceSentAt && !trial.replyFirstAudioAt) {
+          trial.replyFirstAudioAt = Date.now();
+        }
         if (t === 'turn_complete') {
+          trial.turnsCompleted = (trial.turnsCompleted || 0) + 1;
           trial.turnCompleted = true;
+          if (UTTERANCE_BYTES && trial.turnsCompleted === 1) {
+            // VTID-04036: greeting done — now the user's turn. Not awaited:
+            // the SSE reader must keep draining while the chunks go up.
+            utterancePromise = sendUtterance(trial, headers);
+            return true;
+          }
+          if (UTTERANCE_BYTES && trial.turnsCompleted === 2) {
+            trial.replyTurnCompleted = true;
+          }
           return false;
         }
         if (t === 'error') {
@@ -194,8 +276,9 @@ async function runTrial(idx, token) {
         }
         return true;
       },
-      SSE_TIMEOUT_MS,
+      UTTERANCE_BYTES ? SSE_TIMEOUT_MS * 2 : SSE_TIMEOUT_MS,
     );
+    if (utterancePromise) await utterancePromise.catch(() => {});
   } catch (e) {
     trial.exception = e && e.message;
   } finally {
@@ -213,6 +296,9 @@ async function runTrial(idx, token) {
   }
   if (trial.sessionStartRespondedAt && trial.firstAudioAt) {
     trial.latencyMsFromStart = trial.firstAudioAt - trial.sessionStartRespondedAt;
+  }
+  if (trial.utteranceDoneAt && trial.replyFirstAudioAt) {
+    trial.replyLatencyMsFromEndTurn = trial.replyFirstAudioAt - trial.utteranceDoneAt;
   }
   trial.finishedAt = nowIso();
   return trial;
@@ -238,6 +324,15 @@ async function runTrial(idx, token) {
   console.log(`\n==================== SUMMARY (${MODE}) ====================`);
   const withAudio = results.filter((r) => r.firstAudioAt);
   const turnCompleted = results.filter((r) => r.turnCompleted);
+  if (UTTERANCE_BYTES) {
+    const replied = results.filter((r) => r.replyFirstAudioAt);
+    const replyDone = results.filter((r) => r.replyTurnCompleted);
+    console.log(
+      `VTID-04036 user turn: utterance sent on ${results.filter((r) => r.utteranceSentAt).length}/${results.length}, ` +
+        `reply audio on ${replied.length}, reply turn_complete on ${replyDone.length}, ` +
+        `errors after utterance: ${results.filter((r) => r.errorFrame && r.utteranceSentAt).length}`,
+    );
+  }
   console.log(
     `Trials: ${results.length}, session/start OK: ${results.filter((r) => r.sessionId).length}, ` +
       `SSE 200: ${results.filter((r) => r.sseHttpStatus === 200).length}, Got audio: ${withAudio.length}, ` +

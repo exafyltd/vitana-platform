@@ -6717,6 +6717,17 @@ async function executeLiveApiToolInner(
 }
 
 /**
+ * VTID-04036: the session layer fills a missing function-call id with
+ * `randomUUID()` (see upstream-message-handler.ts). A v4 uuid is therefore
+ * the one shape that must NOT be echoed back as a Live API `id` — the
+ * server never issued it. Everything else came from the server verbatim.
+ */
+export function isServerIssuedFunctionCallId(id: unknown): id is string {
+  if (typeof id !== 'string' || id.length === 0) return false;
+  return !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+}
+
+/**
  * VTID-01224: Send function response back to Live API
  * After executing a tool, send the result back to Gemini
  */
@@ -6731,14 +6742,21 @@ function sendFunctionResponseToLiveAPI(
     return false;
   }
 
-  // Build tool response message (Vertex AI Live API format)
-  // Note: Vertex AI rejects unknown fields like 'id' in function_responses
-  // with WebSocket close code 1007. Only 'name' and 'response' are accepted.
+  // Build tool response message (Vertex AI Live API format).
+  // VTID-04036: the function-call id is echoed so the Live API can match
+  // this response to its pending FunctionCall — the current native-audio
+  // model stays silent for the whole turn when it is missing. The earlier
+  // note here that Vertex rejected `id` with a 1007 close was measured on
+  // gemini-2.0-flash-exp (VTID-01224) and no longer applies. Only echo an
+  // id that looks server-issued: callers substitute a random uuid when a
+  // call arrives without one, and that placeholder must not be sent back.
   const outputText = result.success ? result.result : `Error: ${result.error}`;
+  const echoId = isServerIssuedFunctionCallId(functionCallId) ? functionCallId : undefined;
   const responseMessage = {
     tool_response: {
       function_responses: [
         {
+          ...(echoId ? { id: echoId } : {}),
           name: toolName,
           response: {
             output: outputText,
