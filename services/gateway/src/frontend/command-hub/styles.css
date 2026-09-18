@@ -20135,8 +20135,9 @@ border-bottom: 1px solid var(--color-border, #333);
 }
 
 /* VTID-03852: LLM provider/model transparency badge on
-   dev_autopilot_executions cards (both renderers — the Autopilot Developer
-   panel and the Autopilot Overview dashboard). A class here rather than a
+   dev_autopilot_executions cards (the Autopilot Overview dashboard's inline
+   card builder — VTID-04061 removed the Dev Autopilot page's unreachable
+   second renderer). A class here rather than a
    scripted inline-style assignment, matching the CSP governance gate's
    surface (scripts/ci/validator-path-guard.cjs's CSP_PATTERNS flags any
    added reference to the element style property in this tree). */

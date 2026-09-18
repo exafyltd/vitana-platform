@@ -68,9 +68,6 @@ import { join } from 'path';
 import githubService from '../services/github-service';
 import cicdEvents from '../services/oasis-event-service';
 import cicdLockManager from '../services/cicd-lock-manager';
-// VTID-04059: single source of truth for the per-service AWS production deploy
-// workflow name — the GCP-era EXEC-DEPLOY.yml is dead code (GCP decommissioned).
-import { deployWorkflowForService } from '../services/deploy-orchestrator';
 import { ZodError } from 'zod';
 import { randomUUID } from 'crypto';
 import { validateForMerge, hasValidatorPass } from '../services/autopilot-validator';
@@ -492,28 +489,20 @@ router.post('/service', async (req: Request, res: Response) => {
 
     // Trigger the deploy workflow
     try {
-      const workflowFile = deployWorkflowForService(service);
-      if (!workflowFile) {
-        await cicdEvents.deployBlocked(vtid, service, 'no_deploy_workflow');
-        return res.status(403).json({
-          ok: false,
-          status: 'blocked',
-          vtid,
-          service,
-          environment,
-          error: `No AWS production deploy workflow is mapped for service '${service}'.`,
-        } as DeployServiceResponse);
-      }
-
       await githubService.triggerWorkflow(
         DEFAULT_REPO,
-        workflowFile,
+        'EXEC-DEPLOY.yml',
         'main',
-        { reason: `deploy/service (${vtid}) for ${service}` }
+        {
+          vtid,
+          service: service === 'gateway' ? 'vitana-gateway' : service,
+          image: `gcr.io/lovable-vitana-vers1/${service}:latest`,
+          health_path: '/alive',
+        }
       );
 
       // Get recent workflow runs to find the URL
-      const runs = await githubService.getWorkflowRuns(DEFAULT_REPO, workflowFile);
+      const runs = await githubService.getWorkflowRuns(DEFAULT_REPO, 'EXEC-DEPLOY.yml');
       const latestRun = runs.workflow_runs[0];
 
       await cicdEvents.deployAccepted(vtid, service, environment, latestRun?.html_url);
@@ -812,7 +801,7 @@ router.post('/merge', async (req: Request, res: Response) => {
 /**
  * VTID-0601: POST /deploy - Governed deploy via Command Hub
  *
- * This endpoint triggers the per-service AWS-PROD-DEPLOY-*.yml workflow.
+ * This endpoint triggers EXEC-DEPLOY.yml workflow.
  * It performs:
  * 1. Service validation
  * 2. Environment validation (dev only)
@@ -836,26 +825,21 @@ router.post('/deploy', async (req: Request, res: Response) => {
 
     // Trigger the deploy workflow
     try {
-      const workflowFile = deployWorkflowForService(service);
-      if (!workflowFile) {
-        return res.status(403).json({
-          ok: false,
-          vtid,
-          service,
-          environment,
-          error: `No AWS production deploy workflow is mapped for service '${service}'.`,
-        } as CicdDeployResponse);
-      }
-
       await githubService.triggerWorkflow(
         DEFAULT_REPO,
-        workflowFile,
+        'EXEC-DEPLOY.yml',
         'main',
-        { reason: `Command Hub deploy request (${vtid}) for ${service}` }
+        {
+          vtid,
+          service,
+          health_path: '/alive',
+          initiator: 'command-hub',
+          environment,
+        }
       );
 
       // Get recent workflow runs to find the URL
-      const runs = await githubService.getWorkflowRuns(DEFAULT_REPO, workflowFile);
+      const runs = await githubService.getWorkflowRuns(DEFAULT_REPO, 'EXEC-DEPLOY.yml');
       const latestRun = runs.workflow_runs[0];
 
       // Emit deploy started event
@@ -1107,19 +1091,20 @@ router.post('/approvals/:id/approve', async (req: Request, res: Response) => {
       await cicdEvents.deployRequestedFromHub(vtid, service, 'dev');
 
       try {
-        const workflowFile = deployWorkflowForService(service);
-        if (!workflowFile) {
-          throw new Error(`No AWS production deploy workflow is mapped for service '${service}'`);
-        }
-
         await githubService.triggerWorkflow(
           DEFAULT_REPO,
-          workflowFile,
+          'EXEC-DEPLOY.yml',
           'main',
-          { reason: `Command Hub approval deploy (${vtid}) for ${service}` }
+          {
+            vtid,
+            service,
+            health_path: '/alive',
+            initiator: 'command-hub',
+            environment: 'dev',
+          }
         );
 
-        const runs = await githubService.getWorkflowRuns(DEFAULT_REPO, workflowFile);
+        const runs = await githubService.getWorkflowRuns(DEFAULT_REPO, 'EXEC-DEPLOY.yml');
         const latestRun = runs.workflow_runs[0];
 
         await cicdEvents.deployStarted(vtid, service, 'dev', latestRun?.html_url);
@@ -1394,19 +1379,20 @@ router.post('/autonomous-pr-merge', async (req: Request, res: Response) => {
           await cicdEvents.deployRequestedFromHub(vtid, service, 'dev');
 
           try {
-            const workflowFile = deployWorkflowForService(service);
-            if (!workflowFile) {
-              throw new Error(`No AWS production deploy workflow is mapped for service '${service}'`);
-            }
-
             await githubService.triggerWorkflow(
               DEFAULT_REPO,
-              workflowFile,
+              'EXEC-DEPLOY.yml',
               'main',
-              { reason: `Command Hub approval auto-merge deploy (${vtid}) for ${service}` }
+              {
+                vtid,
+                service,
+                health_path: '/alive',
+                initiator: 'command-hub',
+                environment: 'dev',
+              }
             );
 
-            const runs = await githubService.getWorkflowRuns(DEFAULT_REPO, workflowFile);
+            const runs = await githubService.getWorkflowRuns(DEFAULT_REPO, 'EXEC-DEPLOY.yml');
             const latestRun = runs.workflow_runs[0];
 
             await cicdEvents.deployStarted(vtid, service, 'dev', latestRun?.html_url);
@@ -1899,21 +1885,22 @@ router.post('/autonomous-pr-merge', async (req: Request, res: Response) => {
       // Trigger workflow for each service (workflows handle multi-service via inputs)
       for (const service of detection.services) {
         try {
-          const workflowFile = deployWorkflowForService(service);
-          if (!workflowFile) {
-            throw new Error(`No AWS production deploy workflow is mapped for service '${service}'`);
-          }
-
           await githubService.triggerWorkflow(
             DEFAULT_REPO,
-            workflowFile,
+            'EXEC-DEPLOY.yml',
             'main',
-            { reason: `Autonomous PR merge deploy (${vtid}) for ${service}` }
+            {
+              vtid,
+              service,
+              health_path: '/alive',
+              initiator: 'autonomous-pr-merge',
+              environment,
+            }
           );
 
           // Get workflow URL for the first service
           if (!workflowUrl) {
-            const runs = await githubService.getWorkflowRuns(DEFAULT_REPO, workflowFile);
+            const runs = await githubService.getWorkflowRuns(DEFAULT_REPO, 'EXEC-DEPLOY.yml');
             workflowUrl = runs.workflow_runs[0]?.html_url;
           }
 
