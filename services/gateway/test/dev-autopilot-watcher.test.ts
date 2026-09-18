@@ -169,6 +169,27 @@ describe('analyzeVerificationWindow', () => {
     expect(r.state).toBe('pending');
   });
 
+  it('VTID-04043: ignores ledger lifecycle / on-ramp bookkeeping errors about OTHER VTIDs (a sibling cancel is not blast radius)', () => {
+    const events = [
+      { type: 'vtid.lifecycle.failed', vtid: 'VTID-04040', status: 'error', created_at: justNow },
+      { type: 'vtid.lifecycle.failed', vtid: 'VTID-04039', status: 'error', created_at: justNow },
+      { type: 'operator.execution_onramp.failed', vtid: 'VTID-04041', status: 'error', created_at: justNow },
+    ];
+    const r = analyzeVerificationWindow(events, oneMinAgo, VERIFICATION_WINDOW_MS, ourPrefix);
+    expect(r.state).toBe('pending');
+    expect(r.blastRadiusEvents).toEqual([]);
+  });
+
+  it('VTID-04043: a real runtime error next to a lifecycle event still fails the window (only the lifecycle event is dropped)', () => {
+    const events = [
+      { type: 'vtid.lifecycle.failed', vtid: 'VTID-04040', status: 'error', created_at: justNow },
+      { type: 'orb.live.connection_failed', vtid: 'VTID-01155', status: 'error', created_at: justNow },
+    ];
+    const r = analyzeVerificationWindow(events, oneMinAgo, VERIFICATION_WINDOW_MS, ourPrefix);
+    expect(r.state).toBe('fail');
+    expect(r.blastRadiusEvents).toEqual([{ type: 'orb.live.connection_failed', vtid: 'VTID-01155' }]);
+  });
+
   it('ignores info / warning events — only status="error" counts as blast radius', () => {
     const events = [
       { type: 'random.info', vtid: 'VTID-OTHER', status: 'info', created_at: justNow },
