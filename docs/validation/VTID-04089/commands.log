@@ -1,0 +1,16 @@
+$ npx jest test/command-hub/t10-r2-aria-labels-and-input-labels.test.ts
+PASS test/command-hub/t10-r2-aria-labels-and-input-labels.test.ts
+Test Suites: 1 passed, 1 total
+Tests:       9 passed, 9 total
+
+$ npx jest test/command-hub/ test/vtid-03906-08-operator-scroll-mic-fullscreen.test.ts
+Test Suites: 11 passed, 11 total
+Tests:       196 passed, 196 total
+
+$ npx tsc --noEmit
+(no output — clean)
+
+$ npm run build
+> @vitana/gateway@1.0.1 build
+> tsc && npm run copy-frontend && npm run copy-data
+(exit 0)

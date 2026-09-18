@@ -6412,7 +6412,7 @@ function renderHeader() {
         var titleColor = capsFailing > 0 ? '#ef4444' : '#10b981';
         hmHeader.innerHTML =
             '<span style="color:' + titleColor + '">Service Health (' + capsHealthy + '/' + capsTotal + ')</span>' +
-            '<button class="drawer-close-btn" style="position:static;">&times;</button>';
+            '<button class="drawer-close-btn" style="position:static;" aria-label="Close service health">&times;</button>';
         hmHeader.querySelector('.drawer-close-btn').onclick = function () {
             state.cicdHealthTooltipOpen = false;
             renderApp();
@@ -9130,6 +9130,7 @@ function renderTaskDrawer() {
     const closeBtn = document.createElement('button');
     closeBtn.className = 'drawer-close-btn';
     closeBtn.innerHTML = '&times;';
+    closeBtn.setAttribute('aria-label', 'Close task details');
     closeBtn.onclick = () => {
         state.selectedTask = null;
         state.selectedTaskDetail = null;
@@ -12610,7 +12611,7 @@ function renderAdminUsersView() {
             rightPanel.innerHTML = '<div class="admin-detail-panel">' +
                 '<div class="admin-detail-header">' +
                 '<h3>' + (selectedUser.email || '—') + '</h3>' +
-                '<button class="admin-detail-close-btn" onclick="state.adminUsersSelectedId = null; renderApp();">&times;</button>' +
+                '<button class="admin-detail-close-btn" aria-label="Close user details" onclick="state.adminUsersSelectedId = null; renderApp();">&times;</button>' +
                 '</div>' +
                 '<div class="admin-detail-section">' +
                 '<h4>User Summary</h4>' +
@@ -12750,7 +12751,7 @@ function renderAdminPermissionsView() {
         rightPanel.innerHTML = '<div class="admin-detail-panel">' +
             '<div class="admin-detail-header">' +
             '<h3><span class="admin-role-badge admin-role-' + role + '">' + role + '</span></h3>' +
-            '<button class="admin-detail-close-btn" onclick="state.adminPermissionsSelectedKey = null; renderApp();">&times;</button>' +
+            '<button class="admin-detail-close-btn" aria-label="Close role details" onclick="state.adminPermissionsSelectedKey = null; renderApp();">&times;</button>' +
             '</div>' +
             '<div class="admin-detail-section">' +
             '<h4>Role Details</h4>' +
@@ -12886,7 +12887,7 @@ function renderAdminTenantsView() {
             rightPanel.innerHTML = '<div class="admin-detail-panel">' +
                 '<div class="admin-detail-header">' +
                 '<h3>' + (selectedTenant.name || '—') + '</h3>' +
-                '<button class="admin-detail-close-btn" onclick="state.adminTenantsSelectedId = null; state.adminTenantDetail = null; renderApp();">&times;</button>' +
+                '<button class="admin-detail-close-btn" aria-label="Close tenant details" onclick="state.adminTenantsSelectedId = null; state.adminTenantDetail = null; renderApp();">&times;</button>' +
                 '</div>' +
                 '<div class="admin-detail-section">' +
                 '<h4>Tenant Details</h4>' +
@@ -13482,16 +13483,16 @@ function renderAdminBillingCodesView() {
     formCard.innerHTML =
         '<h3 style="margin:0 0 0.75rem;font-size:14px;">Generate codes</h3>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:0.5rem;align-items:end;">' +
-        '  <div><label style="display:block;font-size:11px;color:#94a3b8;margin-bottom:0.25rem;">Campaign name</label>' +
+        '  <div><label for="vtid-03107-campaign" style="display:block;font-size:11px;color:#94a3b8;margin-bottom:0.25rem;">Campaign name</label>' +
         '    <input id="vtid-03107-campaign" type="text" placeholder="test_cohort_2026Q2" ' +
         '      style="width:100%;padding:0.4rem;background:#0f172a;border:1px solid #475569;border-radius:4px;color:#e2e8f0;" /></div>' +
-        '  <div><label style="display:block;font-size:11px;color:#94a3b8;margin-bottom:0.25rem;">Count</label>' +
+        '  <div><label for="vtid-03107-count" style="display:block;font-size:11px;color:#94a3b8;margin-bottom:0.25rem;">Count</label>' +
         '    <input id="vtid-03107-count" type="number" min="1" max="1000" value="100" ' +
         '      style="width:100%;padding:0.4rem;background:#0f172a;border:1px solid #475569;border-radius:4px;color:#e2e8f0;" /></div>' +
-        '  <div><label style="display:block;font-size:11px;color:#94a3b8;margin-bottom:0.25rem;">Days granted</label>' +
+        '  <div><label for="vtid-03107-days" style="display:block;font-size:11px;color:#94a3b8;margin-bottom:0.25rem;">Days granted</label>' +
         '    <input id="vtid-03107-days" type="number" min="1" max="730" value="365" ' +
         '      style="width:100%;padding:0.4rem;background:#0f172a;border:1px solid #475569;border-radius:4px;color:#e2e8f0;" /></div>' +
-        '  <div><label style="display:block;font-size:11px;color:#94a3b8;margin-bottom:0.25rem;">Plan</label>' +
+        '  <div><label for="vtid-03107-plan" style="display:block;font-size:11px;color:#94a3b8;margin-bottom:0.25rem;">Plan</label>' +
         '    <select id="vtid-03107-plan" style="width:100%;padding:0.4rem;background:#0f172a;border:1px solid #475569;border-radius:4px;color:#e2e8f0;">' +
         '      <option value="premium">premium</option>' +
         '      <option value="premium_5x">premium_5x (Host)</option>' +
@@ -14057,7 +14058,7 @@ function renderAdminMarketplaceShopCreateForm() {
     function input(id, spec) {
         var row = document.createElement('div');
         row.style.marginBottom = '0.5rem';
-        var labelHtml = '<label style="display:block;font-size:0.8rem;margin-bottom:0.25rem;">'
+        var labelHtml = '<label for="' + id + '" style="display:block;font-size:0.8rem;margin-bottom:0.25rem;">'
             + escapeHtml(spec.label) + (spec.required ? ' <span style="color:var(--danger)">*</span>' : '')
             + '</label>';
         var fieldHtml;
@@ -14076,6 +14077,7 @@ function renderAdminMarketplaceShopCreateForm() {
 
     // Network selector — populated from registry
     var netSel = document.createElement('select');
+    netSel.id = 'mp-network-select';
     netSel.className = 'admin-filter-select';
     var netOpts = '';
     for (var i = 0; i < providers.length; i++) {
@@ -14090,7 +14092,7 @@ function renderAdminMarketplaceShopCreateForm() {
     };
     var netRow = document.createElement('div');
     netRow.style.marginBottom = '0.75rem';
-    netRow.innerHTML = '<label style="display:block;font-size:0.8rem;margin-bottom:0.25rem;">Network</label>';
+    netRow.innerHTML = '<label for="mp-network-select" style="display:block;font-size:0.8rem;margin-bottom:0.25rem;">Network</label>';
     netRow.appendChild(netSel);
     wrap.appendChild(netRow);
 
@@ -19474,6 +19476,7 @@ function renderGovernanceRuleDetailDrawer() {
     const closeBtn = document.createElement('button');
     closeBtn.className = 'drawer-close-btn';
     closeBtn.innerHTML = '&times;';
+    closeBtn.setAttribute('aria-label', 'Close governance rule details');
     closeBtn.onclick = () => {
         state.selectedGovernanceRule = null;
         renderApp();
@@ -21663,6 +21666,7 @@ function renderOasisEventDrawer() {
     var closeBtn = document.createElement('button');
     closeBtn.className = 'drawer-close-btn';
     closeBtn.innerHTML = '&times;';
+    closeBtn.setAttribute('aria-label', 'Close event details');
     closeBtn.onclick = function () {
         state.oasisEvents.selectedEvent = null;
         state.oasisEvents.orbTranscript = null;
@@ -22540,6 +22544,7 @@ function renderOasisVtidLedgerDrawer() {
     var closeBtn = document.createElement('button');
     closeBtn.className = 'drawer-close-btn';
     closeBtn.innerHTML = '&times;';
+    closeBtn.setAttribute('aria-label', 'Close VTID details');
     closeBtn.onclick = function () {
         oasisVtidDetail.selectedVtid = null;
         oasisVtidDetail.data = null;
@@ -25367,6 +25372,7 @@ function renderHeartbeatOverlay() {
     const closeBtn = document.createElement('button');
     closeBtn.className = 'overlay-close';
     closeBtn.innerHTML = '&times;';
+    closeBtn.setAttribute('aria-label', 'Close heartbeat details');
     closeBtn.onclick = () => {
         state.isHeartbeatOpen = false;
         renderApp();
@@ -25647,6 +25653,7 @@ function renderOperatorOverlay() {
     const closeBtn = document.createElement('button');
     closeBtn.className = 'overlay-close';
     closeBtn.innerHTML = '&times;';
+    closeBtn.setAttribute('aria-label', 'Close Operator Console');
     closeBtn.onclick = () => {
         state.isOperatorOpen = false;
         // VTID-01209: Stop active executions polling when closing
@@ -25930,7 +25937,7 @@ function renderOperatorChat() {
         state.chatAttachments.forEach((att, index) => {
             const chip = document.createElement('span');
             chip.className = `attachment-chip attachment-${att.kind}`;
-            chip.innerHTML = `${att.name} <span class="attachment-remove" data-index="${index}">&times;</span>`;
+            chip.innerHTML = `${att.name} <span class="attachment-remove" data-index="${index}" aria-label="Remove attachment ${att.name}">&times;</span>`;
             chip.querySelector('.attachment-remove').onclick = () => {
                 state.chatAttachments.splice(index, 1);
                 renderApp();
@@ -27148,6 +27155,7 @@ function renderPublishModal() {
 
     const closeBtn = document.createElement('button');
     closeBtn.innerHTML = '&times;';
+    closeBtn.setAttribute('aria-label', 'Close publish dialog');
     closeBtn.style.cssText = 'background: none; border: none; color: #888; font-size: 28px; cursor: pointer; padding: 0; line-height: 1;';
     closeBtn.onclick = () => {
         console.log('[VTID-0523-B] Publish cancelled: clicked close');
@@ -27629,6 +27637,7 @@ function renderAutopilotRecommendationsModal() {
     var closeBtn = document.createElement('button');
     closeBtn.className = 'modal-close-btn';
     closeBtn.innerHTML = '&times;';
+    closeBtn.setAttribute('aria-label', 'Close recommendations');
     closeBtn.style.cssText = 'background: none; border: none; font-size: 24px; cursor: pointer; color: var(--text-secondary, #888); padding: 4px 8px;';
     closeBtn.onclick = function () {
         state.showAutopilotRecommendationsModal = false;
@@ -28097,6 +28106,7 @@ function renderGovernanceBlockedModal() {
 
     var closeBtn = document.createElement('button');
     closeBtn.innerHTML = '&times;';
+    closeBtn.setAttribute('aria-label', 'Close governance blocked dialog');
     closeBtn.style.cssText = 'background: none; border: none; color: #888; font-size: 28px; cursor: pointer; padding: 0; line-height: 1;';
     closeBtn.onclick = function () {
         state.showGovernanceBlockedModal = false;
@@ -28296,6 +28306,7 @@ function renderExecutionApprovalModal() {
 
     var closeBtn = document.createElement('button');
     closeBtn.innerHTML = '&times;';
+    closeBtn.setAttribute('aria-label', 'Close execution approval dialog');
     closeBtn.style.cssText = 'background: none; border: none; color: #888; font-size: 28px; cursor: pointer; padding: 0; line-height: 1;';
     closeBtn.disabled = state.executionApprovalLoading;
     closeBtn.onclick = function () {
@@ -28524,6 +28535,7 @@ function renderToastContainer() {
         const closeBtn = document.createElement('button');
         closeBtn.className = 'toast__close';
         closeBtn.innerHTML = '&times;';
+        closeBtn.setAttribute('aria-label', 'Dismiss notification');
         closeBtn.onclick = () => {
             state.toasts = state.toasts.filter(t => t.id !== toast.id);
             renderApp();
@@ -35374,6 +35386,7 @@ function openAiAssistantDrawer(provider) {
     var closeBtn = document.createElement('button');
     closeBtn.type = 'button';
     closeBtn.textContent = '✕';
+    closeBtn.setAttribute('aria-label', 'Close AI assistant settings');
     closeBtn.className = 'ai-drawer__close';
     closeBtn.addEventListener('click', function () { root.remove(); });
     header.appendChild(closeBtn);
@@ -35423,8 +35436,9 @@ function openAiAssistantDrawer(provider) {
             target.innerHTML = '';
             var row1 = document.createElement('div');
             row1.className = 'ai-drawer__row';
-            row1.innerHTML = '<label>Display name</label>';
+            row1.innerHTML = '<label for="ai-drawer-catalog-name-' + provider + '">Display name</label>';
             var nameInput = document.createElement('input');
+            nameInput.id = 'ai-drawer-catalog-name-' + provider;
             nameInput.type = 'text';
             nameInput.value = entry.display_name || '';
             row1.appendChild(nameInput);
@@ -35432,8 +35446,9 @@ function openAiAssistantDrawer(provider) {
 
             var row2 = document.createElement('div');
             row2.className = 'ai-drawer__row';
-            row2.innerHTML = '<label>Enabled</label>';
+            row2.innerHTML = '<label for="ai-drawer-catalog-enabled-' + provider + '">Enabled</label>';
             var enabledToggle = document.createElement('input');
+            enabledToggle.id = 'ai-drawer-catalog-enabled-' + provider;
             enabledToggle.type = 'checkbox';
             enabledToggle.checked = !!entry.enabled;
             row2.appendChild(enabledToggle);
@@ -35472,8 +35487,9 @@ function openAiAssistantDrawer(provider) {
 
             var row1 = document.createElement('div');
             row1.className = 'ai-drawer__row';
-            row1.innerHTML = '<label>Allowed</label>';
+            row1.innerHTML = '<label for="ai-drawer-policy-allowed-' + provider + '">Allowed</label>';
             var allowedToggle = document.createElement('input');
+            allowedToggle.id = 'ai-drawer-policy-allowed-' + provider;
             allowedToggle.type = 'checkbox';
             allowedToggle.checked = policy ? !!policy.allowed : false;
             row1.appendChild(allowedToggle);
@@ -35481,8 +35497,9 @@ function openAiAssistantDrawer(provider) {
 
             var row2 = document.createElement('div');
             row2.className = 'ai-drawer__row';
-            row2.innerHTML = '<label>Allowed models (comma separated)</label>';
+            row2.innerHTML = '<label for="ai-drawer-policy-models-' + provider + '">Allowed models (comma separated)</label>';
             var modelsInput = document.createElement('input');
+            modelsInput.id = 'ai-drawer-policy-models-' + provider;
             modelsInput.type = 'text';
             modelsInput.value = (policy && policy.allowed_models ? policy.allowed_models.join(', ') : '');
             modelsInput.style.width = '100%';
@@ -35491,8 +35508,9 @@ function openAiAssistantDrawer(provider) {
 
             var row3 = document.createElement('div');
             row3.className = 'ai-drawer__row';
-            row3.innerHTML = '<label>Cost cap USD / month</label>';
+            row3.innerHTML = '<label for="ai-drawer-policy-costcap-' + provider + '">Cost cap USD / month</label>';
             var capInput = document.createElement('input');
+            capInput.id = 'ai-drawer-policy-costcap-' + provider;
             capInput.type = 'number';
             capInput.value = policy && policy.cost_cap_usd_month != null ? String(policy.cost_cap_usd_month) : '50';
             row3.appendChild(capInput);
