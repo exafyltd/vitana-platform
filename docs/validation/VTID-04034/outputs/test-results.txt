@@ -1,0 +1,16 @@
+PASS test/vtid-04034-operator-cancel-tool.test.ts
+    ✓ registry: optional id + reason, VTID-04034, operator/admin/developer, in the Supabase health list (4 ms)
+    ✓ operator wire schema: declared after reject, before get_status, and dispatched to executeCancelExecution (1 ms)
+    ✓ served PERSONALITY_DEFAULTS: lists the tool, routes stop/cancel requests to it, and forbids cancelling on the model's own judgement
+    ✓ inline fallback: lists the tool, routes stop/cancel requests to it, and forbids cancelling on the model's own judgement
+    ✓ the execution-rules block is still byte-identical across both sources (1 ms)
+    ✓ refuses an anonymous thread and a non-admin thread, naming the tool, without touching Supabase or cancelling (14 ms)
+    ✓ an unconfigured Supabase is an error, not a throw (1 ms)
+    ✓ a full UUID needs no lookup; a unique prefix resolves; none / ambiguous / too short / non-hex are named refusals (3 ms)
+    ✓ lists only cooling/running rows, newest first, bounded (1 ms)
+    ✓ no id → the cancellable list, read-only, and a "nothing to cancel" message when empty (3 ms)
+    ✓ with an id: hands the resolved id, the verified actor and the trimmed reason to cancelExecution and reports a stopped running run (2 ms)
+    ✓ a refused StopTask is reported, not hidden; a cooling cancel carries no task note; no reason → undefined (2 ms)
+    ✓ a refusal from cancelExecution (wrong status, missing row) is passed through as an error, never success (3 ms)
+Test Suites: 1 passed, 1 total
+Tests:       13 passed, 13 total

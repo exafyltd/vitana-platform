@@ -84,6 +84,7 @@ import * as repo from './gemini-operator-repository';
 // executeExecuteTask() before anything else. See operator-execute-authz.ts.
 import { getThreadAuth, isExecuteTaskAuthorized, describeExecuteTaskRefusal } from './operator-execute-authz';
 import { executeReviewExecution, executeApproveExecution, executeRejectExecution } from './operator-approval-tools';
+import { executeCancelExecution } from './operator-cancel-tool';
 
 // Environment config
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -338,6 +339,24 @@ export const GEMINI_TOOL_DEFINITIONS = {
           }
         },
         required: ['execution_id']
+      }
+    },
+    {
+      name: 'autopilot_cancel_execution',
+      description: 'VTID-04034: Cancel a queued (cooling) or running Dev Autopilot execution — a running agent is stopped (its ECS task stopped best effort, the agent halts at its next turn boundary), nothing is pushed or opened. With no execution_id it only LISTS what can be cancelled (read-only). Only call it with an id when the user explicitly asks to cancel/stop a SPECIFIC execution they name (id or prefix); never speculatively.',
+      parameters: {
+        type: 'object',
+        properties: {
+          execution_id: {
+            type: 'string',
+            description: 'The execution id to cancel (full UUID or the 8+ character prefix). It must be cooling or running. Omit to list what can be cancelled.'
+          },
+          reason: {
+            type: 'string',
+            description: 'Why it is cancelled, in the user\'s own words (recorded on the execution, up to 500 chars). Omit if they gave none.'
+          }
+        },
+        required: []
       }
     },
     {
@@ -3402,6 +3421,13 @@ export async function executeTool(
         );
         break;
 
+      case 'autopilot_cancel_execution':
+        result = await executeCancelExecution(
+          args as { execution_id?: string; reason?: string },
+          threadId
+        );
+        break;
+
       case 'autopilot_get_status':
         result = await executeGetStatus(
           args as { vtid: string },
@@ -3857,6 +3883,7 @@ function getOperatorSystemPrompt(): string {
 - autopilot_review_execution: Show a Dev Autopilot execution that is held for approval (the agent pushed its branch but did not open the PR yet): branch, PR title/body, changed files, --stat and a bounded diff. With no execution_id it lists everything waiting for a decision. Read-only.
 - autopilot_approve_execution: Approve a held execution — opens the real pull request on the pushed branch and hands it to CI. Takes execution_id.
 - autopilot_reject_execution: Reject a held execution — deletes the pushed branch and cancels it with the recorded reason. Takes execution_id and an optional reason.
+- autopilot_cancel_execution: Cancel a queued (cooling) or RUNNING execution — the agent is stopped, nothing is pushed or opened. With no execution_id it only lists what can be cancelled. Takes an optional execution_id and an optional reason.
 
 **When to use tools:**
 - Task creation requests (e.g., "Create a task to deploy gateway") → MUST call autopilot_create_task tool
@@ -3866,6 +3893,7 @@ function getOperatorSystemPrompt(): string {
 - Open-ended development requests that name NO VTID (e.g., "fix the CI failure reason so it names the checks", "add a retry to the push dispatcher") → call autopilot_run_task with the request as the user stated it
 - Questions about what is waiting for approval, or a request to see/review a held execution or its diff (e.g., "what is waiting for my approval?", "show me the diff of 4f7d5ea4") → call autopilot_review_execution
 - An explicit decision on a held execution the user names (e.g., "approve 4f7d5ea4", "reject 4f7d5ea4, wrong approach") → call autopilot_approve_execution or autopilot_reject_execution
+- A request to stop/cancel/abort a queued or running execution (e.g., "cancel 9a4d2c7e", "stop that run, wrong file", "what is running that I can cancel?") → call autopilot_cancel_execution (with no id to list, with the id they name to cancel)
 - Vitana-specific questions → use knowledge_search
 - Calculations, date math, age calculations, unit conversions → use run_code
 
@@ -3874,6 +3902,7 @@ function getOperatorSystemPrompt(): string {
 - A task's ledger status (in_progress, scheduled, etc.) is NOT a signal that an execution is already running — a person or a coding session sets in_progress when they start working a task. Do NOT refuse to execute because autopilot_get_status reports in_progress. The tool itself is the only authority on whether an execution can start: call it and report its result.
 - Build plan_markdown from what the user said plus the task's title/spec; list in files_referenced the files the plan will create or change — nothing else. A test-only plan lists only the test file; a source change lists the source file AND its test file, because the safety gate rejects a plan without test coverage. Never add a file the plan does not touch (the safety gate also rejects any file outside its allow scope). Every files_referenced entry MUST be the full repo-root-relative path exactly as it appears in the repository (e.g. services/gateway/src/services/foo.ts and services/gateway/test/foo.test.ts) — never a bare filename like foo.ts and never a path relative to a subdirectory; the safety gate glob-matches each entry against its allow scope and a bare filename never matches, so the whole execution is rejected.
 - autopilot_run_task is for a code change the user asks to be made NOW without naming a VTID: pass their request verbatim in request (plus only the context they gave — never invent requirements) and list no files; the agent discovers them and the safety gate checks its real diff afterwards. It allocates the VTID itself, so do not call autopilot_create_task first for the same request and never pair it with autopilot_execute_task. A question about code is not a request to change it; a request to log/track a task for later is autopilot_create_task, not autopilot_run_task.
+- autopilot_cancel_execution stops an execution that is still cooling or running (not a held one — that is reject). Call it with no id whenever the user asks what is running or which execution they mean; call it WITH an id ONLY when the user explicitly asks to cancel/stop a specific execution they name (id or 8+ character prefix). Never cancel on your own judgement, never guess which execution they mean (list them and ask), and if the tool reports the execution is not cooling/running, or the id is ambiguous, report exactly that. A cancel is final for that execution — nothing is pushed or opened for it.
 - autopilot_review_execution / autopilot_approve_execution / autopilot_reject_execution act on executions the agent has already run and HELD (status awaiting_approval) — they never start work. Review is read-only and safe to call whenever the user asks what is waiting or wants to see a change. Approve opens a real pull request and reject deletes the pushed branch: call either ONLY when the user explicitly asks for that decision on a specific execution they name (id or 8+ character prefix), after they have seen the change or said they do not need to. Never approve or reject on your own judgement of the diff, never guess which execution they mean (list them and ask), and if the tool reports the execution is not awaiting_approval, or the id is ambiguous, report exactly that.
 - If the tool returns a rejection (governance, safety gate, kill switch, on-ramp disabled), report the exact reason honestly. Never claim an execution was queued unless the tool returned status "queued".
 - If you believe the tool is unavailable or disabled, call it anyway and report what it returns — do not tell the user it is unavailable based on an assumption.
