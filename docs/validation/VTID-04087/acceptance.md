@@ -74,6 +74,31 @@ AC-8 — The change compiles and builds cleanly.
 TEST: `tsc --noEmit` (services/gateway) — 0 errors.
 TEST: `npm run build` (services/gateway) — exit 0.
 
+## Route Mount Evidence
+
+ROUTE_MOUNT: `router.get('/health-registry', (_req, res) => ...)` registered
+in `services/gateway/src/routes/admin-health.ts`, whose router is mounted
+at `/api/v1/admin` in `services/gateway/src/index.ts`
+(`mountRouterSync(app, '/api/v1/admin', adminHealthRouter, { owner:
+'admin-health' })`, unchanged by this PR — no new mount, an existing
+router gains a route).
+
+FINAL_URL: `GET /api/v1/admin/health-registry`
+
+CURL_PROOF: exercised via a real Express app + supertest, not a live curl
+(no reachable gateway from this session) —
+`services/gateway/test/routes/admin-health-registry.test.ts`, "returns 200
+with an endpoints array, unauthenticated":
+```
+const res = await request(buildApp()).get('/api/v1/admin/health-registry');
+expect(res.status).toBe(200);
+expect(res.body.ok).toBe(true);
+expect(Array.isArray(res.body.endpoints)).toBe(true);
+expect(res.body.endpoints.length).toBeGreaterThan(0);
+```
+Passing locally (see commands.log step 10/12): the route returns 200,
+`application/json`, `ok:true`, a 55-entry `endpoints` array.
+
 ## Not done / explicitly out of scope
 
 - No change to which endpoints are checked, how results are rendered, or
