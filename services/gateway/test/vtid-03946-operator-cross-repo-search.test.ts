@@ -37,7 +37,7 @@ jest.mock('../src/services/github-service', () => ({
 }));
 jest.mock('../src/services/aws-ecs-readonly', () => ({
   describeEcsServices: jest.fn(),
-  ALLOWED_ECS_SERVICES: ['vitana-gateway-awsdr', 'vitana-gateway'],
+  ALLOWED_ECS_SERVICES: ['vitana-gateway-awsdr', 'vitana-gateway'], ALLOWED_ECS_TASK_FAMILIES: ['vitana-autopilot-executor'], TASKS_DEFAULT_LIMIT: 10, TASKS_MAX_LIMIT: 25, listEcsTasks: jest.fn(),
 }));
 
 import { executeTool, setThreadIdentity } from '../src/services/gemini-operator';

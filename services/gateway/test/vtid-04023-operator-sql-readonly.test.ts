@@ -10,7 +10,7 @@
 
 jest.mock('node-fetch');
 jest.mock('../src/services/github-service', () => ({ searchCode: jest.fn(), getFileContents: jest.fn(), listOpenPrsWithStatus: jest.fn() }));
-jest.mock('../src/services/aws-ecs-readonly', () => ({ describeEcsServices: jest.fn(), ALLOWED_ECS_SERVICES: ['vitana-gateway'] }));
+jest.mock('../src/services/aws-ecs-readonly', () => ({ describeEcsServices: jest.fn(), ALLOWED_ECS_SERVICES: ['vitana-gateway'], ALLOWED_ECS_TASK_FAMILIES: ['vitana-autopilot-executor'], TASKS_DEFAULT_LIMIT: 10, TASKS_MAX_LIMIT: 25, listEcsTasks: jest.fn() }));
 jest.mock('@aws-sdk/client-cloudwatch-logs', () => ({ CloudWatchLogsClient: jest.fn(), FilterLogEventsCommand: jest.fn() }));
 
 const pgConnect = jest.fn();
