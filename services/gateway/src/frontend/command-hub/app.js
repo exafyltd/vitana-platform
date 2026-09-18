@@ -45425,10 +45425,9 @@ function devAutopilotRejectExecution(execId) {
 function renderExecutionDiffPanel(execId) {
     var panel = document.createElement('div');
     panel.className = 'dev-autopilot-diff-panel';
-    panel.style.cssText = 'margin-top: 8px; border: 1px solid rgba(245,158,11,0.35); border-radius: 4px; background: rgba(0,0,0,0.25); font-size: 11px;';
     var slot = (state.devAutopilot.diffs || {})[execId];
     var head = document.createElement('div');
-    head.style.cssText = 'padding: 6px 10px; color: #f59e0b; font-weight: 600; border-bottom: 1px solid rgba(255,255,255,0.06);';
+    head.className = 'dev-autopilot-diff-head';
     if (!slot || slot.loading) {
         head.textContent = 'Loading diff…';
         panel.appendChild(head);
@@ -45445,20 +45444,20 @@ function renderExecutionDiffPanel(execId) {
     panel.appendChild(head);
     if (p.diff && p.diff.stat) {
         var stat = document.createElement('pre');
-        stat.style.cssText = 'margin: 0; padding: 6px 10px; color: #9aa0a6; white-space: pre-wrap; border-bottom: 1px solid rgba(255,255,255,0.06); font-family: monospace;';
+        stat.className = 'dev-autopilot-diff-stat';
         stat.textContent = p.diff.stat;
         panel.appendChild(stat);
     }
     var patch = document.createElement('pre');
     patch.className = 'dev-autopilot-diff-patch';
-    patch.style.cssText = 'margin: 0; padding: 8px 10px; max-height: 420px; overflow: auto; white-space: pre; font-family: monospace; font-size: 11px; line-height: 1.35;';
     String(p.diff && p.diff.patch || '').split('\n').forEach(function (line) {
         var el = document.createElement('div');
-        var color = line.indexOf('+') === 0 && line.indexOf('+++') !== 0 ? '#7fb57f'
-            : line.indexOf('-') === 0 && line.indexOf('---') !== 0 ? '#d9776f'
-            : line.indexOf('@@') === 0 ? '#60a5fa'
-            : (line.indexOf('diff --git') === 0 ? '#e5e7eb' : '#b0b6bd');
-        el.style.color = color;
+        // Colour by line kind through classes — the CSP gate rejects inline styles (VTID-03696).
+        var kind = line.indexOf('+') === 0 && line.indexOf('+++') !== 0 ? 'add'
+            : line.indexOf('-') === 0 && line.indexOf('---') !== 0 ? 'del'
+            : line.indexOf('@@') === 0 ? 'hunk'
+            : (line.indexOf('diff --git') === 0 ? 'file' : 'ctx');
+        el.className = 'dev-autopilot-diff-line dev-autopilot-diff-line--' + kind;
         el.textContent = line;
         patch.appendChild(el);
     });
@@ -45919,14 +45918,14 @@ function renderDevAutopilotExecutionCard(exec) {
         var approveBtn = document.createElement('button');
         approveBtn.textContent = approving ? 'Opening PR…' : 'Approve → open PR';
         approveBtn.disabled = approving || rejecting;
-        approveBtn.style.cssText = 'padding: 3px 10px; border-radius: 3px; font-size: 11px; cursor: ' + (approving ? 'wait' : 'pointer') + '; border: 1px solid #22c55e; background: rgba(34,197,94,0.12); color: #22c55e; font-weight: 600;';
+        approveBtn.className = 'dev-autopilot-decision-btn dev-autopilot-decision-btn--approve' + (approving ? ' dev-autopilot-decision-btn--busy' : '');
         approveBtn.onclick = function () { devAutopilotApproveExecution(exec.id); };
         topRow.appendChild(approveBtn);
 
         var rejectBtn = document.createElement('button');
         rejectBtn.textContent = rejecting ? 'Rejecting…' : 'Reject';
         rejectBtn.disabled = approving || rejecting;
-        rejectBtn.style.cssText = 'padding: 3px 10px; border-radius: 3px; font-size: 11px; cursor: ' + (rejecting ? 'wait' : 'pointer') + '; border: 1px solid #ef4444; background: transparent; color: #ef4444;';
+        rejectBtn.className = 'dev-autopilot-decision-btn dev-autopilot-decision-btn--reject' + (rejecting ? ' dev-autopilot-decision-btn--busy' : '');
         rejectBtn.onclick = function () { devAutopilotRejectExecution(exec.id); };
         topRow.appendChild(rejectBtn);
     }
@@ -53010,20 +53009,20 @@ function renderAutopilotLiveView() {
                 var liveApproveBtn = document.createElement('button');
                 liveApproveBtn.textContent = liveApproving ? 'Opening PR…' : 'Approve → open PR';
                 liveApproveBtn.disabled = liveApproving || liveRejecting;
-                liveApproveBtn.style.cssText = 'padding:3px 10px;border-radius:3px;font-size:11px;cursor:' + (liveApproving ? 'wait' : 'pointer') + ';border:1px solid #22c55e;background:rgba(34,197,94,0.12);color:#22c55e;font-weight:600;';
+                liveApproveBtn.className = 'dev-autopilot-decision-btn dev-autopilot-decision-btn--approve' + (liveApproving ? ' dev-autopilot-decision-btn--busy' : '');
                 liveApproveBtn.onclick = function () { devAutopilotApproveExecution(exec.id); };
                 card.appendChild(liveApproveBtn);
 
                 var liveRejectBtn = document.createElement('button');
                 liveRejectBtn.textContent = liveRejecting ? 'Rejecting…' : 'Reject';
                 liveRejectBtn.disabled = liveApproving || liveRejecting;
-                liveRejectBtn.style.cssText = 'padding:3px 10px;border-radius:3px;font-size:11px;cursor:' + (liveRejecting ? 'wait' : 'pointer') + ';border:1px solid #ef4444;background:transparent;color:#ef4444;';
+                liveRejectBtn.className = 'dev-autopilot-decision-btn dev-autopilot-decision-btn--reject' + (liveRejecting ? ' dev-autopilot-decision-btn--busy' : '');
                 liveRejectBtn.onclick = function () { devAutopilotRejectExecution(exec.id); };
                 card.appendChild(liveRejectBtn);
 
                 if (liveDiffOpen) {
                     var liveDiffWrap = document.createElement('div');
-                    liveDiffWrap.style.cssText = 'flex-basis:100%;min-width:0;';
+                    liveDiffWrap.className = 'dev-autopilot-live-diff-wrap';
                     liveDiffWrap.appendChild(renderExecutionDiffPanel(exec.id));
                     card.appendChild(liveDiffWrap);
                 }
