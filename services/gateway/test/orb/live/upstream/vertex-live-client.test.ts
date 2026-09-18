@@ -770,13 +770,48 @@ describe('A8.3b.1: customSetupMessage override + getSocket() accessor', () => {
 
 // BOOTSTRAP-NOVA-SONIC-VOICE — Task 1 contract additions.
 describe('9. Provider-neutral contract additions (BOOTSTRAP-NOVA-SONIC-VOICE)', () => {
-  it('sendToolResult sends the exact legacy Vertex tool_response envelope (no id field)', async () => {
+  // VTID-04036: the Live API matches a FunctionResponse to its pending
+  // FunctionCall by `id`. Measured live on staging 2026-09-17: with the id
+  // omitted, every authenticated `sr` session went silent for the whole turn
+  // right after get_day_summary / get_current_screen and later closed 1007.
+  it('sendToolResult echoes the server-issued function-call id (VTID-04036)', async () => {
+    const socket = new MockSocket();
+    const client = new VertexLiveClient({ createSocket: () => socket });
+    await connectClient(client, socket);
+    client.onToolCall(() => {});
+    socket.fireMessage({
+      tool_call: { function_calls: [{ name: 'get_current_screen', args: {}, id: 'function-call-7189462203371738542' }] },
+    });
+
+    const sent = client.sendToolResult({
+      callId: 'function-call-7189462203371738542',
+      name: 'get_current_screen',
+      success: true,
+      output: '{"screen":"journey"}',
+    });
+    expect(sent).toBe(true);
+    expect(JSON.parse(socket.sent.at(-1)!)).toEqual({
+      tool_response: {
+        function_responses: [
+          {
+            id: 'function-call-7189462203371738542',
+            name: 'get_current_screen',
+            response: { output: '{"screen":"journey"}' },
+          },
+        ],
+      },
+    });
+  });
+
+  it('sendToolResult omits `id` when the callId was not issued by the server (VTID-04036)', async () => {
     const socket = new MockSocket();
     const client = new VertexLiveClient({ createSocket: () => socket });
     await connectClient(client, socket);
 
+    // The session layer substitutes randomUUID() for a call that arrived
+    // without an id — that placeholder must never be echoed upstream.
     const sent = client.sendToolResult({
-      callId: 'call-1',
+      callId: '3f2c1b7e-9d4a-4c8e-8f1a-2b3c4d5e6f70',
       name: 'get_current_screen',
       success: true,
       output: '{"screen":"journey"}',
@@ -792,6 +827,22 @@ describe('9. Provider-neutral contract additions (BOOTSTRAP-NOVA-SONIC-VOICE)', 
         ],
       },
     });
+  });
+
+  it('sendToolResult echoes each server-issued id once (VTID-04036)', async () => {
+    const socket = new MockSocket();
+    const client = new VertexLiveClient({ createSocket: () => socket });
+    await connectClient(client, socket);
+    client.onToolCall(() => {});
+    socket.fireMessage({ tool_call: { function_calls: [{ name: 'a', args: {}, id: 'fc-a' }, { name: 'b', args: {}, id: 'fc-b' }] } });
+
+    client.sendToolResult({ callId: 'fc-b', name: 'b', success: true, output: '{}' });
+    expect(JSON.parse(socket.sent.at(-1)!).tool_response.function_responses[0]).toMatchObject({ id: 'fc-b', name: 'b' });
+    client.sendToolResult({ callId: 'fc-a', name: 'a', success: true, output: '{}' });
+    expect(JSON.parse(socket.sent.at(-1)!).tool_response.function_responses[0]).toMatchObject({ id: 'fc-a', name: 'a' });
+    // A second answer for an already-answered id is not re-attributed.
+    client.sendToolResult({ callId: 'fc-a', name: 'a', success: true, output: '{}' });
+    expect(JSON.parse(socket.sent.at(-1)!).tool_response.function_responses[0]).not.toHaveProperty('id');
   });
 
   it('sendToolResult serializes failures as an Error output string', async () => {
