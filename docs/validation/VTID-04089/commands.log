@@ -28,9 +28,18 @@ new lines containing no `style=` substring rather than modifying the
 existing ones. Re-ran the full suite after the fix — unchanged, still
 196/196 passing, tsc/build still clean.
 
-$ node scripts/ci/validate-pr-locally.cjs --title "VTID-04089: ..." --body-file /tmp/pr-body-vtid-04089.md --base main  (re-run after CSP fix)
+$ node scripts/ci/validate-pr-locally.cjs --title "VTID-04089: ..." --body-file /tmp/pr-body-vtid-04089.md --base main  (re-run after CSP fix, committed)
+Detected VTID=VTID-04089 PROFILE=gateway_backend
+Changed files: 7
 APPROVED: 7 in-remit file(s) match the gateway_backend allowlist
 Acceptance mapping OK
-No CSP violations in added lines
+CSP scan: no pattern hits in added lines.
+Build Gate SKIPPED (pass --build to run npm ci && npm run build locally too).
+Route Mount Evidence Gate: no route registration added, skipped.
+OASIS Traceability Gate: OASIS_IMPACT=no.
 APPROVED
+
+$ npx jest test/command-hub/ test/vtid-03906-08-operator-scroll-mic-fullscreen.test.ts  (re-run after the CSP fix)
+Test Suites: 11 passed, 11 total
+Tests:       196 passed, 196 total
 
