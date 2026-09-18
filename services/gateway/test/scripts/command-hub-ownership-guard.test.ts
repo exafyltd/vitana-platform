@@ -107,7 +107,7 @@ describe('the guard still protects the Command Hub path itself', () => {
     expect(guard.PROTECTED_PATH).toBe('services/gateway/src/frontend/command-hub/');
   });
 
-  it('explains in-source that the branch pattern is the executor’s and that VALIDATOR-CHECK is the real guarantee', () => {
+  it('explains in-source that the branch pattern is the executor\u2019s and that VALIDATOR-CHECK is the real guarantee', () => {
     // The request explicitly asks for this rationale to be recorded next to the
     // check, so a future reader does not mistake the carve-out for a weakening
     // of Command Hub protection.
