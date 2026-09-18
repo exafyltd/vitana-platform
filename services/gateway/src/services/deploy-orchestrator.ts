@@ -19,31 +19,78 @@ import * as repo from './deploy-orchestrator-repository';
 
 const DEFAULT_REPO = 'exafyltd/vitana-platform';
 
+export type DeployService = 'gateway' | 'oasis-operator' | 'oasis-projector';
+
+/**
+ * VTID-04059: the per-service AWS production deploy workflow.
+ *
+ * The legacy GCP-era `EXEC-DEPLOY` dispatcher is dead code (CLAUDE.md §9 —
+ * GCP is permanently decommissioned) and is no longer a valid dispatch target.
+ * Each of the three services this orchestrator accepts has its own AWS
+ * production workflow. Returns null for an unrecognised service so callers
+ * fail loudly rather than dispatching into a missing workflow file.
+ */
+export function deployWorkflowForService(service: string): string | null {
+  switch (service) {
+    case 'gateway':
+      return 'AWS-PROD-DEPLOY-GATEWAY.yml';
+    case 'oasis-operator':
+      return 'AWS-PROD-DEPLOY-OASIS-OPERATOR.yml';
+    case 'oasis-projector':
+      return 'AWS-PROD-DEPLOY-OASIS-PROJECTOR.yml';
+    default:
+      return null;
+  }
+}
+
+/**
+ * VTID-04059: the workflow_dispatch inputs the AWS-PROD-DEPLOY-*.yml workflows
+ * actually declare. They accept ONLY `reason` (required), `deploy_mode`
+ * (optional; left to default promote-staging here) and `expected_commit`
+ * (optional). Anything else — vtid, service, health_path, initiator, canary,
+ * image — is rejected by GitHub as an unknown input, so it must not be sent.
+ */
+export function buildDeployWorkflowInputs(
+  vtid: string,
+  commitSha?: string,
+): Record<string, string> {
+  const inputs: Record<string, string> = {
+    reason: `Command Hub deploy request ${vtid}`,
+  };
+  // Only include expected_commit when we actually have a commit — an empty
+  // string would be sent as a literal empty input, not omitted.
+  if (commitSha) {
+    inputs.expected_commit = commitSha;
+  }
+  return inputs;
+}
+
 export interface DeployRequest {
   vtid: string;
-  service: 'gateway' | 'oasis-operator' | 'oasis-projector';
+  service: DeployService;
   // Phase 0 staging build: 'dev' kept for backwards compatibility with the
   // legacy operator-deploy/command paths. 'staging' targets the gateway-staging
-  // Cloud Run service via STAGE-DEPLOY.yml; 'production' targets gateway via
-  // EXEC-DEPLOY.yml (the publish flow). VTID requirement still applies to
-  // 'production' (EXEC-DEPLOY governance gate enforces it).
+  // service via STAGE-DEPLOY.yml; 'production' targets the per-service
+  // AWS-PROD-DEPLOY-*.yml workflow. VTID requirement still applies to
+  // 'production' (the workflow's governance gate enforces it).
   environment: 'dev' | 'staging' | 'production';
   branch?: string;
   source: 'operator.console.chat' | 'publish.modal' | 'api';
-  // Voice-first canary: when true, deploy creates the new revision with
-  // --no-traffic and the workflow itself sets a 10/90 split (new=10, old=90).
-  // Operator then promotes via /operator/promote after watching staging
-  // metrics. Default false preserves the existing 100%-on-deploy behavior.
+  // Canary is a Cloud Run traffic-splitting concept and has no equivalent on
+  // the AWS ECS target — the AWS-PROD-DEPLOY-*.yml workflows declare no canary
+  // input. Kept on the request type for backwards compatibility with existing
+  // callers (which already refuse canary upstream on AWS); deliberately NOT
+  // forwarded to the dispatch.
   canary?: boolean;
   // Exact commit SHA to build/deploy — the commit verified on staging. Threaded
-  // to EXEC-DEPLOY's commit_sha input so prod ships the EXACT tested bits rather
-  // than rebuilding main HEAD (closes the "tested X, shipped Y" drift). When
-  // omitted, EXEC-DEPLOY falls back to main HEAD (legacy behavior).
+  // to the workflow's `expected_commit` input so prod ships the EXACT tested
+  // bits rather than rebuilding main HEAD (closes the "tested X, shipped Y"
+  // drift). When omitted, the workflow falls back to main HEAD (legacy).
   commitSha?: string;
   // Prebuilt container image to promote (the image the staging revision is
-  // already running). When set, EXEC-DEPLOY deploys it with --image and skips
-  // the from-source rebuild — publish in ~30s instead of minutes. When omitted,
-  // EXEC-DEPLOY rebuilds from source (legacy behavior).
+  // already running). Informational only on the AWS path — promote-staging
+  // derives the image from staging itself. Cannot be threaded as a workflow
+  // input: the AWS-PROD-DEPLOY-*.yml workflows declare no such input.
   image?: string;
 }
 
@@ -213,7 +260,7 @@ async function evaluateGovernance(
  * VTID-0407: Now integrates governance evaluation before deployment.
  */
 export async function executeDeploy(request: DeployRequest): Promise<DeployResult> {
-  const { vtid, service, environment, source, canary, commitSha, image } = request;
+  const { vtid, service, environment, source, commitSha } = request;
 
   console.log(`[Deploy Orchestrator] Starting deploy for ${service} to ${environment} (VTID: ${vtid}, source: ${source})`);
 
@@ -248,28 +295,22 @@ export async function executeDeploy(request: DeployRequest): Promise<DeployResul
     // Step 1: Emit deploy requested event
     await cicdEvents.deployRequested(vtid, service, environment);
 
-    // Step 2: Trigger the deploy workflow via GitHub Actions
-    // This uses the same workflow as VTID-0516 (source deploy, no pre-built image)
+    // Step 2: Trigger the deploy workflow via GitHub Actions.
+    // VTID-04059: dispatch the per-service AWS production workflow — the
+    // legacy GCP-era EXEC-DEPLOY dispatcher is dead code (GCP decommissioned).
+    const workflowFile = deployWorkflowForService(service);
+    if (!workflowFile) {
+      throw new Error(`No deploy workflow mapped for service '${service}'`);
+    }
     await githubService.triggerWorkflow(
       DEFAULT_REPO,
-      'EXEC-DEPLOY.yml',
+      workflowFile,
       'main',
-      {
-        vtid,
-        service, // 'gateway', 'oasis-operator', or 'oasis-projector'
-        health_path: '/alive',
-        initiator: source === 'operator.console.chat' ? 'agent' : 'user',
-        canary: canary ? 'true' : 'false',
-        // Ship the exact tested commit when provided; empty → main HEAD (legacy).
-        commit_sha: commitSha || '',
-        // Promote the prebuilt staging image when provided so prod skips the
-        // rebuild; empty → EXEC-DEPLOY builds from source (legacy).
-        image: image || '',
-      }
+      buildDeployWorkflowInputs(vtid, commitSha)
     );
 
     // Step 3: Get workflow run info
-    const runs = await githubService.getWorkflowRuns(DEFAULT_REPO, 'EXEC-DEPLOY.yml');
+    const runs = await githubService.getWorkflowRuns(DEFAULT_REPO, workflowFile);
     const latestRun = runs.workflow_runs[0];
 
     // Step 4: Emit deploy accepted event
@@ -359,4 +400,6 @@ export default {
   executeDeploy,
   createVtid,
   createTask,
+  deployWorkflowForService,
+  buildDeployWorkflowInputs,
 };

@@ -36798,8 +36798,8 @@ function renderRoutingPolicyPanel() {
 
   ROUTING_STAGES.forEach(function (stage) {
     var stageCfg = pending[stage.key] || {
-      primary_provider: 'vertex',
-      primary_model: 'gemini-3.1-pro',
+      primary_provider: 'bedrock',
+      primary_model: 'eu.anthropic.claude-sonnet-4-6',
       fallback_provider: null,
       fallback_model: null,
     };
@@ -38590,7 +38590,7 @@ function renderModelsPlaygroundView() {
     modelSelect.style.marginBottom = '0.75rem';
     modelSelect.style.maxWidth = '400px';
     modelSelect.innerHTML = '<option value="gemini-2.0-flash">gemini-2.0-flash</option><option value="gemini-1.5-pro">gemini-1.5-pro</option><option value="claude-3-haiku">claude-3-haiku</option>';
-    modelSelect.value = state.modelsPlayground.model || 'gemini-2.0-flash';
+    modelSelect.value = state.modelsPlayground.model || 'claude-3-haiku';
     modelSelect.onchange = function (e) { state.modelsPlayground.model = e.target.value; };
     form.appendChild(modelSelect);
 
@@ -38617,7 +38617,7 @@ function renderModelsPlaygroundView() {
         fetch('/api/v1/assistant/chat', {
             method: 'POST',
             headers: Object.assign({ 'Content-Type': 'application/json' }, buildContextHeaders()),
-            body: JSON.stringify({ message: state.modelsPlayground.input, model: state.modelsPlayground.model || 'gemini-2.0-flash' })
+            body: JSON.stringify({ message: state.modelsPlayground.input, model: state.modelsPlayground.model || 'claude-3-haiku' })
         }).then(function (r) { return r.json(); })
         .then(function (data) {
             state.modelsPlayground.output = data.response || data.message || JSON.stringify(data, null, 2);

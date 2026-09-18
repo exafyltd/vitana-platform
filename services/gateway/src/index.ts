@@ -1471,6 +1471,13 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-0529-C: Static files MUST be served BEFORE the router
   const staticPath = path.join(__dirname, 'frontend/command-hub');
+  // VTID-04056: this static mount sits BEFORE the auth-gated commandHubRouter,
+  // so every file in src/frontend/command-hub/ was publicly readable. BUILD.md
+  // (GOV-FRONTEND-CANONICAL-SOURCE-0001) forbids deleting the backup/safety
+  // artifacts, so deny them at serve time instead: any `*.backup*` path and
+  // `/debug.html` 404 here and never reach express.static.
+  const { denyCommandHubBackupFiles } = require('./middleware/command-hub-backup-denylist');
+  app.use('/command-hub', denyCommandHubBackupFiles);
   app.use('/command-hub', express.static(staticPath, {
     etag: false,
     lastModified: false,
