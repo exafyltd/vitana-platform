@@ -1,0 +1,33 @@
+{
+  "vtid": "VTID-04087",
+  "task": "T12 — replace hardcoded 55-entry Command Hub health-endpoint array with a backend-fed registry",
+  "files_changed": [
+    "services/gateway/src/constants/service-health-registry.ts",
+    "services/gateway/src/routes/admin-health.ts",
+    "services/gateway/src/frontend/command-hub/app.js",
+    "services/gateway/src/frontend/command-hub/index.html",
+    "services/gateway/test/routes/admin-health-registry.test.ts",
+    "services/gateway/test/command-hub/t12-health-registry-backend-fed.test.ts",
+    "docs/validation/VTID-04087/acceptance.md",
+    "docs/validation/VTID-04087/commands.log",
+    "docs/validation/VTID-04087/outputs/execution.json"
+  ],
+  "summary": {
+    "new_route": "GET /api/v1/admin/health-registry (unauthenticated)",
+    "new_constants_module": "services/gateway/src/constants/service-health-registry.ts (SERVICE_HEALTH_REGISTRY, 55 entries)",
+    "frontend_change": "fetchServiceHealth() fetches the registry with a 4s timeout, falls back to module-scope FALLBACK_HEALTH_ENDPOINTS on failure; the old inline array literal was removed from the function body",
+    "cache_bust": "styles.css and app.js bumped together to ?v=20260918-vtid-04087-health-registry"
+  },
+  "verification": {
+    "new_test_suites": 2,
+    "new_tests": 10,
+    "targeted_run": "3 suites / 16 tests passing (new suites + admin-feature-flags sibling)",
+    "regression_sweep": "11 suites / 169 tests passing (test/command-hub/ + test/routes/admin-health*)",
+    "tsc_noemit": "0 errors",
+    "npm_run_build": "exit 0"
+  },
+  "not_done": [
+    "No live staging verification — this session has no reachable gateway endpoint to curl",
+    "No change to check-execution logic (Promise.allSettled, latency measurement, health-pill rendering) — scope was deliberately limited to the endpoint list's source of truth"
+  ]
+}
