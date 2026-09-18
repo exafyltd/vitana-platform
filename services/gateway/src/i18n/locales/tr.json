@@ -1,4 +1,8 @@
 {
+  "notif.event_game_ending_soon.title": "🚨 Son 10 dakika!",
+  "notif.event_game_ending_soon.body": "{name} yakında sona eriyor — son puanları topla!",
+  "notif.event_game_results_ready.title": "🏆 Oyun bitti",
+  "notif.event_game_results_ready.body": "{name} sona erdi — sonucuna bak.",
   "notif.morning_briefing.title": "Sabah Bültenin",
   "notif.morning_briefing.body": "Bugün seni neler bekliyor bir bak.",
   "notif.diary_reminder.title": "Günlük Hatırlatması",
