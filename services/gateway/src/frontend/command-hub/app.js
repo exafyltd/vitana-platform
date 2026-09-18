@@ -366,20 +366,6 @@ function getTaskStatusOverride(vtid) {
 }
 
 /**
- * DEV-COMHU-2025-0012: Save task status override to localStorage.
- */
-function setTaskStatusOverride(vtid, status) {
-    if (!vtid) return false;
-    try {
-        localStorage.setItem('vitana.taskStatusOverride.' + vtid, status);
-        return true;
-    } catch (e) {
-        console.warn('[DEV-COMHU-2025-0012] localStorage write error:', e);
-        return false;
-    }
-}
-
-/**
  * VTID-01006: Clear task status override from localStorage.
  * Called when OASIS indicates terminal state - local overrides are no longer valid.
  */
@@ -448,61 +434,7 @@ function isPlaceholderTitle(title) {
         lowerTitle === 'untitled';
 }
 
-/**
- * DEV-COMHU-2025-0012: Check if an approval is dismissed (localStorage suppression).
- * Key: vitana.approvalsDismissed.<repo>#<pr>
- */
-function isApprovalDismissed(repo, prNumber) {
-    if (!repo || !prNumber) return false;
-    try {
-        return localStorage.getItem('vitana.approvalsDismissed.' + repo + '#' + prNumber) === 'true';
-    } catch (e) {
-        return false;
-    }
-}
-
-/**
- * DEV-COMHU-2025-0012: Dismiss an approval (store in localStorage).
- */
-function dismissApproval(repo, prNumber) {
-    if (!repo || !prNumber) return false;
-    try {
-        localStorage.setItem('vitana.approvalsDismissed.' + repo + '#' + prNumber, 'true');
-        return true;
-    } catch (e) {
-        return false;
-    }
-}
-
 // --- VTID-01027: Operator Console Session Memory LocalStorage Helpers ---
-
-/**
- * VTID-01027: Get or create a stable conversation_id for operator chat.
- * Stored in localStorage under 'operator_console_conversation_id'.
- * Returns a UUID that persists across page refreshes.
- */
-function getOperatorConversationId() {
-    var key = 'operator_console_conversation_id';
-    try {
-        var existing = localStorage.getItem(key);
-        if (existing) {
-            return existing;
-        }
-        // Generate new UUID v4
-        var uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
-            var r = Math.random() * 16 | 0;
-            var v = c === 'x' ? r : (r & 0x3 | 0x8);
-            return v.toString(16);
-        });
-        localStorage.setItem(key, uuid);
-        console.log('[VTID-01027] Created new conversation_id:', uuid);
-        return uuid;
-    } catch (e) {
-        console.warn('[VTID-01027] localStorage error for conversation_id:', e);
-        // Fallback to session-only UUID
-        return 'session-' + Date.now();
-    }
-}
 
 /**
  * VTID-01027: Get operator chat history from localStorage.
@@ -522,19 +454,6 @@ function getOperatorChatHistory() {
         console.warn('[VTID-01027] Error reading chat history:', e);
     }
     return [];
-}
-
-/**
- * VTID-01027: Save operator chat history to localStorage.
- * @param {Array} history - Array of { role, content, ts } objects
- */
-function saveOperatorChatHistory(history) {
-    var key = 'operator_console_history';
-    try {
-        localStorage.setItem(key, JSON.stringify(history));
-    } catch (e) {
-        console.warn('[VTID-01027] Error saving chat history:', e);
-    }
 }
 
 /**
@@ -2543,20 +2462,6 @@ function updateCommandHubEventsTableBody(tbody, items) {
 }
 
 /**
- * VTID-01002: Updates VTIDs table body incrementally.
- */
-function updateVtidsTableBody(tbody, items) {
-    while (tbody.firstChild) {
-        tbody.removeChild(tbody.firstChild);
-    }
-
-    items.forEach(function (vtid) {
-        var row = createVtidRow(vtid);
-        tbody.appendChild(row);
-    });
-}
-
-/**
  * VTID-01030: Updates VTIDs projection table body incrementally.
  * Uses same row format as renderVtidProjectionTable (5 columns: VTID, Title, Stage, Status, Attention)
  */
@@ -3144,36 +3049,6 @@ function createCommandHubEventRow(event) {
     var msgCell = document.createElement('td');
     msgCell.textContent = (event.message || '').substring(0, 50) + ((event.message || '').length > 50 ? '...' : '');
     row.appendChild(msgCell);
-
-    return row;
-}
-
-/**
- * VTID-01002: Creates a VTID list table row element.
- * @param {Object} vtid - VTID data
- * @returns {HTMLElement} Table row element
- */
-function createVtidRow(vtid) {
-    var row = document.createElement('tr');
-    row.className = 'vtid-row';
-
-    // VTID
-    var vtidCell = document.createElement('td');
-    vtidCell.textContent = vtid.vtid || '-';
-    row.appendChild(vtidCell);
-
-    // Title
-    var titleCell = document.createElement('td');
-    titleCell.textContent = vtid.title || '-';
-    row.appendChild(titleCell);
-
-    // Status
-    var statusCell = document.createElement('td');
-    var statusBadge = document.createElement('span');
-    statusBadge.className = 'status-badge status-' + (vtid.status || 'pending');
-    statusBadge.textContent = vtid.status || 'pending';
-    statusCell.appendChild(statusBadge);
-    row.appendChild(statusCell);
 
     return row;
 }
@@ -5005,36 +4880,6 @@ function handleOasisFilterChange() {
 }
 
 /**
- * VTID-0600: Start auto-refresh for OASIS events (5 second interval)
- * VTID-01002: Uses silentRefresh to avoid full DOM rebuild during polling
- */
-function startOasisEventsAutoRefresh() {
-    if (state.oasisEvents.autoRefreshInterval) {
-        clearInterval(state.oasisEvents.autoRefreshInterval);
-    }
-    state.oasisEvents.autoRefreshEnabled = true;
-    state.oasisEvents.autoRefreshInterval = setInterval(function () {
-        if (state.oasisEvents.autoRefreshEnabled) {
-            // VTID-01002: Use silentRefresh=true to preserve scroll positions
-            fetchOasisEvents(state.oasisEvents.filters, true);
-        }
-    }, 5000);
-    console.log('[VTID-0600] OASIS events auto-refresh started (5s interval, scroll-safe)');
-}
-
-/**
- * VTID-0600: Stop auto-refresh for OASIS events
- */
-function stopOasisEventsAutoRefresh() {
-    if (state.oasisEvents.autoRefreshInterval) {
-        clearInterval(state.oasisEvents.autoRefreshInterval);
-        state.oasisEvents.autoRefreshInterval = null;
-    }
-    state.oasisEvents.autoRefreshEnabled = false;
-    console.log('[VTID-0600] OASIS events auto-refresh stopped');
-}
-
-/**
  * VTID-01260: Fetch Smart OASIS events (grouped/collapsed view)
  * Uses the /api/v1/oasis/events/smart endpoint for intelligent grouping
  */
@@ -5439,17 +5284,6 @@ function startApprovalsBadgePolling() {
 }
 
 /**
- * VTID-01151: Stop polling for approvals
- */
-function stopApprovalsBadgePolling() {
-    if (approvalsBadgePollingInterval) {
-        clearInterval(approvalsBadgePollingInterval);
-        approvalsBadgePollingInterval = null;
-        console.log('[VTID-01151] Stopped approvals polling');
-    }
-}
-
-/**
  * VTID-0601: Fetch approvals from API
  * VTID-01151: Uses /api/v1/cicd/approvals, updates both items and count
  * @param {boolean} silent - If true, only update badge (no full renderApp)
@@ -5842,35 +5676,6 @@ async function fetchDeploymentHistory() {
         console.error('[VTID-0524] Failed to fetch deployment history:', error);
         return [];
     }
-}
-
-/**
- * Loads version history entries.
- * VTID-0524: Now returns cached version history or empty array.
- * Use fetchDeploymentHistory() to refresh from API.
- *
- * @returns {Array}
- */
-function loadVersionHistory() {
-    // Return current state (populated by fetchDeploymentHistory)
-    return state.versionHistory || [];
-}
-
-/**
- * Formats an ISO timestamp into a human-readable string.
- * @param {string} isoString - ISO 8601 timestamp
- * @returns {string} Formatted date string (e.g., "Nov 28, 8:14 AM")
- */
-function formatVersionTimestamp(isoString) {
-    const date = new Date(isoString);
-    return date.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric'
-    }) + ', ' + date.toLocaleTimeString('en-US', {
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true
-    });
 }
 
 // --- Toast Notification System (VTID-0517) ---
@@ -11929,24 +11734,6 @@ window.onpopstate = () => {
     restoreScrollPositionsForRoute(getScrollRouteKey());
 };
 
-function handleSplitScreenToggle(comboId) {
-    if (!comboId) {
-        state.isSplitScreen = false;
-        state.activeSplitScreenId = null;
-        state.leftPane = null;
-        state.rightPane = null;
-    } else {
-        const combo = splitScreenCombos.find(c => c.id === comboId);
-        if (combo) {
-            state.isSplitScreen = true;
-            state.activeSplitScreenId = combo.id;
-            state.leftPane = combo.left;
-            state.rightPane = combo.right;
-        }
-    }
-    renderApp();
-}
-
 /**
  * DEV-COMHU-2025-0011: Status → Column mapping for VTID Ledger data.
  * DEV-COMHU-2025-0012: Added local override support via localStorage.
@@ -12510,196 +12297,6 @@ async function revokeDevAccess(email) {
         console.error('[VTID-01172] Failed to revoke dev access:', error);
         showToast(error.message, 'error');
     }
-}
-
-/**
- * VTID-01172: Renders the Admin > Users (Dev Access) view.
- */
-function renderAdminDevUsersView() {
-    var container = document.createElement('div');
-    container.className = 'admin-dev-users-container';
-
-    // Auto-fetch dev users if not loaded and not currently loading
-    if (state.adminDevUsers.length === 0 && !state.adminDevUsersLoading && !state.adminDevUsersError) {
-        fetchAdminDevUsers();
-    }
-
-    // Header
-    var header = document.createElement('div');
-    header.className = 'admin-dev-users-header';
-    header.innerHTML = '<h2>Dev Users</h2><p class="admin-dev-users-subtitle">Manage exafy_admin access for development and onboarding</p>';
-    container.appendChild(header);
-
-    // Toolbar
-    var toolbar = document.createElement('div');
-    toolbar.className = 'admin-dev-users-toolbar';
-
-    // Search input
-    var searchInput = document.createElement('input');
-    searchInput.type = 'text';
-    searchInput.className = 'search-field admin-dev-users-search';
-    searchInput.placeholder = 'Search by email...';
-    searchInput.value = state.adminDevUsersSearchQuery;
-    searchInput.oninput = function (e) {
-        state.adminDevUsersSearchQuery = e.target.value;
-    };
-    searchInput.onkeypress = function (e) {
-        if (e.key === 'Enter') {
-            fetchAdminDevUsers();
-        }
-    };
-    toolbar.appendChild(searchInput);
-
-    // Search button
-    var searchBtn = document.createElement('button');
-    searchBtn.className = 'btn btn-secondary';
-    searchBtn.textContent = 'Search';
-    searchBtn.onclick = function () {
-        fetchAdminDevUsers();
-    };
-    toolbar.appendChild(searchBtn);
-
-    // Spacer
-    var spacer = document.createElement('div');
-    spacer.className = 'spacer';
-    toolbar.appendChild(spacer);
-
-    // Grant access section
-    var grantInput = document.createElement('input');
-    grantInput.type = 'email';
-    grantInput.className = 'form-control admin-dev-users-grant-input';
-    grantInput.placeholder = 'Enter email to grant access...';
-    grantInput.value = state.adminDevUsersGrantEmail;
-    grantInput.oninput = function (e) {
-        state.adminDevUsersGrantEmail = e.target.value;
-    };
-    grantInput.onkeypress = function (e) {
-        if (e.key === 'Enter') {
-            grantDevAccess(state.adminDevUsersGrantEmail);
-        }
-    };
-    toolbar.appendChild(grantInput);
-
-    var grantBtn = document.createElement('button');
-    grantBtn.className = 'btn btn-primary';
-    grantBtn.textContent = state.adminDevUsersGrantLoading ? 'Granting...' : 'Grant Dev Access';
-    grantBtn.disabled = state.adminDevUsersGrantLoading;
-    grantBtn.onclick = function () {
-        grantDevAccess(state.adminDevUsersGrantEmail);
-    };
-    toolbar.appendChild(grantBtn);
-
-    container.appendChild(toolbar);
-
-    // User count
-    var countLabel = document.createElement('div');
-    countLabel.className = 'admin-dev-users-count';
-    if (state.adminDevUsersLoading) {
-        countLabel.textContent = 'Loading...';
-    } else if (state.adminDevUsersError) {
-        countLabel.textContent = 'Error: ' + state.adminDevUsersError;
-        countLabel.className += ' error-text';
-    } else {
-        countLabel.textContent = state.adminDevUsers.length + ' dev user' + (state.adminDevUsers.length !== 1 ? 's' : '');
-    }
-    container.appendChild(countLabel);
-
-    // Content area
-    var content = document.createElement('div');
-    content.className = 'admin-dev-users-content';
-
-    if (state.adminDevUsersLoading) {
-        content.innerHTML = '<div class="admin-dev-users-loading">Loading dev users...</div>';
-    } else if (state.adminDevUsersError) {
-        var errorDiv = document.createElement('div');
-        errorDiv.className = 'admin-dev-users-error';
-        errorDiv.textContent = state.adminDevUsersError;
-
-        var retryBtn = document.createElement('button');
-        retryBtn.className = 'btn btn-secondary';
-        retryBtn.textContent = 'Retry';
-        retryBtn.onclick = function () {
-            state.adminDevUsersError = null;
-            fetchAdminDevUsers();
-        };
-        errorDiv.appendChild(document.createElement('br'));
-        errorDiv.appendChild(retryBtn);
-        content.appendChild(errorDiv);
-    } else if (state.adminDevUsers.length === 0) {
-        content.innerHTML = '<div class="admin-dev-users-empty">No dev users found. Grant access to a user above.</div>';
-    } else {
-        // Render user table
-        var table = document.createElement('table');
-        table.className = 'admin-dev-users-table';
-
-        // Header
-        var thead = document.createElement('thead');
-        var headerRow = document.createElement('tr');
-        ['Email', 'User ID', 'Status', 'Updated', 'Actions'].forEach(function (h) {
-            var th = document.createElement('th');
-            th.textContent = h;
-            headerRow.appendChild(th);
-        });
-        thead.appendChild(headerRow);
-        table.appendChild(thead);
-
-        // Body
-        var tbody = document.createElement('tbody');
-        state.adminDevUsers.forEach(function (user) {
-            var row = document.createElement('tr');
-
-            // Email
-            var emailCell = document.createElement('td');
-            emailCell.className = 'admin-dev-users-email';
-            emailCell.textContent = user.email || '-';
-            row.appendChild(emailCell);
-
-            // User ID
-            var idCell = document.createElement('td');
-            idCell.className = 'admin-dev-users-id';
-            idCell.textContent = user.user_id ? user.user_id.substring(0, 8) + '...' : '-';
-            idCell.title = user.user_id || '';
-            row.appendChild(idCell);
-
-            // Status
-            var statusCell = document.createElement('td');
-            var statusBadge = document.createElement('span');
-            statusBadge.className = 'admin-dev-users-status-badge status-active';
-            statusBadge.textContent = 'exafy_admin';
-            statusCell.appendChild(statusBadge);
-            row.appendChild(statusCell);
-
-            // Updated
-            var updatedCell = document.createElement('td');
-            updatedCell.className = 'admin-dev-users-updated';
-            if (user.updated_at) {
-                var date = new Date(user.updated_at);
-                updatedCell.textContent = date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
-            } else {
-                updatedCell.textContent = '-';
-            }
-            row.appendChild(updatedCell);
-
-            // Actions
-            var actionsCell = document.createElement('td');
-            var revokeBtn = document.createElement('button');
-            revokeBtn.className = 'btn btn-danger btn-sm';
-            revokeBtn.textContent = 'Revoke';
-            revokeBtn.onclick = function () {
-                revokeDevAccess(user.email);
-            };
-            actionsCell.appendChild(revokeBtn);
-            row.appendChild(actionsCell);
-
-            tbody.appendChild(row);
-        });
-        table.appendChild(tbody);
-        content.appendChild(table);
-    }
-
-    container.appendChild(content);
-
-    return container;
 }
 
 // ===========================================================================
@@ -15041,200 +14638,6 @@ function renderAgentsErrorPanel() {
 }
 
 /**
- * VTID-01173: Render Orchestrator Summary Card
- */
-function renderOrchestratorSummaryCard() {
-    var health = state.agentsRegistry.orchestratorHealth;
-
-    var card = document.createElement('div');
-    card.className = 'agents-card agents-orchestrator-card';
-
-    var heading = document.createElement('h3');
-    heading.textContent = 'Orchestrator Summary';
-    card.appendChild(heading);
-
-    if (!health) {
-        var empty = document.createElement('p');
-        empty.className = 'agents-card-empty';
-        empty.textContent = 'No data available';
-        card.appendChild(empty);
-        return card;
-    }
-
-    // Service info
-    var infoGrid = document.createElement('div');
-    infoGrid.className = 'agents-info-grid';
-
-    var fields = [
-        { label: 'Service', value: health.service || 'N/A' },
-        { label: 'Version', value: health.version || 'N/A' },
-        { label: 'VTID', value: health.vtid || 'N/A' },
-        { label: 'Timestamp', value: health.timestamp ? new Date(health.timestamp).toLocaleString() : 'N/A' }
-    ];
-
-    fields.forEach(function (f) {
-        var row = document.createElement('div');
-        row.className = 'agents-info-row';
-        row.innerHTML = '<span class="agents-info-label">' + f.label + ':</span><span class="agents-info-value">' + escapeHtml(f.value) + '</span>';
-        infoGrid.appendChild(row);
-    });
-
-    card.appendChild(infoGrid);
-
-    // Subagents summary
-    if (health.subagents && health.subagents.length > 0) {
-        var subagentsSection = document.createElement('div');
-        subagentsSection.className = 'agents-orchestrator-subagents';
-
-        var subHeading = document.createElement('h4');
-        subHeading.textContent = 'Registered Subagents (' + health.subagents.length + ')';
-        subagentsSection.appendChild(subHeading);
-
-        var subList = document.createElement('div');
-        subList.className = 'agents-subagent-badges';
-
-        health.subagents.forEach(function (sub) {
-            var badge = document.createElement('span');
-            badge.className = 'agents-subagent-badge';
-            var statusClass = (sub.status || '').toLowerCase() === 'active' ? 'badge-success' : 'badge-secondary';
-            badge.classList.add(statusClass);
-            badge.textContent = sub.id + ' (' + (sub.domain || 'default') + ')';
-            subList.appendChild(badge);
-        });
-
-        subagentsSection.appendChild(subList);
-        card.appendChild(subagentsSection);
-    }
-
-    // Endpoints summary
-    if (health.endpoints) {
-        var endpointsSection = document.createElement('div');
-        endpointsSection.className = 'agents-orchestrator-endpoints';
-
-        var epHeading = document.createElement('h4');
-        epHeading.textContent = 'Endpoint Keys';
-        endpointsSection.appendChild(epHeading);
-
-        var epList = document.createElement('div');
-        epList.className = 'agents-endpoint-list';
-
-        Object.keys(health.endpoints).forEach(function (key) {
-            var epItem = document.createElement('span');
-            epItem.className = 'agents-endpoint-item';
-            epItem.textContent = key;
-            epList.appendChild(epItem);
-        });
-
-        endpointsSection.appendChild(epList);
-        card.appendChild(endpointsSection);
-    }
-
-    return card;
-}
-
-/**
- * VTID-01173: Render Subagents Table
- */
-function renderSubagentsTable() {
-    var subagents = state.agentsRegistry.subagents;
-
-    var section = document.createElement('div');
-    section.className = 'agents-section agents-subagents-section';
-
-    var heading = document.createElement('h3');
-    heading.textContent = 'Subagents';
-    section.appendChild(heading);
-
-    if (!subagents || !subagents.subagents || subagents.subagents.length === 0) {
-        var empty = document.createElement('p');
-        empty.className = 'agents-section-empty';
-        empty.textContent = 'No subagents registered';
-        section.appendChild(empty);
-        return section;
-    }
-
-    var table = document.createElement('table');
-    table.className = 'agents-table agents-subagents-table';
-
-    // Header
-    var thead = document.createElement('thead');
-    var headerRow = document.createElement('tr');
-    ['ID', 'Domain', 'Allowed Paths', 'Guardrails', 'Default Budget'].forEach(function (h) {
-        var th = document.createElement('th');
-        th.textContent = h;
-        headerRow.appendChild(th);
-    });
-    thead.appendChild(headerRow);
-    table.appendChild(thead);
-
-    // Body
-    var tbody = document.createElement('tbody');
-    subagents.subagents.forEach(function (sub) {
-        var row = document.createElement('tr');
-
-        // ID
-        var idCell = document.createElement('td');
-        idCell.className = 'agents-table-id';
-        idCell.textContent = sub.id || 'N/A';
-        row.appendChild(idCell);
-
-        // Domain
-        var domainCell = document.createElement('td');
-        domainCell.textContent = sub.domain || 'default';
-        row.appendChild(domainCell);
-
-        // Allowed Paths
-        var pathsCell = document.createElement('td');
-        pathsCell.className = 'agents-table-paths';
-        if (sub.allowed_paths && sub.allowed_paths.length > 0) {
-            var pathsList = document.createElement('ul');
-            pathsList.className = 'agents-list-compact';
-            sub.allowed_paths.forEach(function (p) {
-                var li = document.createElement('li');
-                li.textContent = p;
-                pathsList.appendChild(li);
-            });
-            pathsCell.appendChild(pathsList);
-        } else {
-            pathsCell.textContent = '-';
-        }
-        row.appendChild(pathsCell);
-
-        // Guardrails
-        var guardrailsCell = document.createElement('td');
-        guardrailsCell.className = 'agents-table-guardrails';
-        if (sub.guardrails && sub.guardrails.length > 0) {
-            var guardList = document.createElement('ul');
-            guardList.className = 'agents-list-compact';
-            sub.guardrails.forEach(function (g) {
-                var li = document.createElement('li');
-                li.textContent = g;
-                guardList.appendChild(li);
-            });
-            guardrailsCell.appendChild(guardList);
-        } else {
-            guardrailsCell.textContent = '-';
-        }
-        row.appendChild(guardrailsCell);
-
-        // Default Budget
-        var budgetCell = document.createElement('td');
-        if (sub.default_budget) {
-            budgetCell.innerHTML = 'Files: ' + (sub.default_budget.max_files || 'N/A') + '<br>Dirs: ' + (sub.default_budget.max_directories || 'N/A');
-        } else {
-            budgetCell.textContent = '-';
-        }
-        row.appendChild(budgetCell);
-
-        tbody.appendChild(row);
-    });
-    table.appendChild(tbody);
-    section.appendChild(table);
-
-    return section;
-}
-
-/**
  * VTID-01173: Render Skills Table
  */
 function renderSkillsTable() {
@@ -15359,40 +14762,6 @@ function renderRawJsonDebug(key, label) {
         pre.textContent = JSON.stringify(data, null, 2);
         section.appendChild(pre);
     }
-
-    return section;
-}
-
-/**
- * VTID-01173: Render VTID Fingerprints Section
- */
-function renderVtidFingerprints() {
-    var health = state.agentsRegistry.orchestratorHealth;
-    var skills = state.agentsRegistry.skills;
-
-    var section = document.createElement('div');
-    section.className = 'agents-fingerprints-section';
-
-    var heading = document.createElement('h4');
-    heading.textContent = 'VTID Fingerprints';
-    section.appendChild(heading);
-
-    var grid = document.createElement('div');
-    grid.className = 'agents-fingerprints-grid';
-
-    // Worker Orchestrator VTID
-    var orchVtid = document.createElement('div');
-    orchVtid.className = 'agents-fingerprint-item';
-    orchVtid.innerHTML = '<span class="agents-fingerprint-label">Worker Orchestrator VTID:</span><span class="agents-fingerprint-value">' + escapeHtml(health && health.vtid ? health.vtid : 'N/A') + '</span>';
-    grid.appendChild(orchVtid);
-
-    // Skills Registry VTID
-    var skillsVtid = document.createElement('div');
-    skillsVtid.className = 'agents-fingerprint-item';
-    skillsVtid.innerHTML = '<span class="agents-fingerprint-label">Skills Registry VTID:</span><span class="agents-fingerprint-value">' + escapeHtml(skills && skills.vtid ? skills.vtid : 'N/A') + '</span>';
-    grid.appendChild(skillsVtid);
-
-    section.appendChild(grid);
 
     return section;
 }
@@ -17739,14 +17108,6 @@ function renderVoiceLabAgentConfigPanel() {
         return st.providers.filter(function (p) { return p.kind === kind; });
     }
 
-    function streamingFlag(provider, modelId) {
-        var models = provider && Array.isArray(provider.models) ? provider.models : [];
-        for (var i = 0; i < models.length; i++) {
-            if (models[i].id === modelId) return models[i].streaming !== false;
-        }
-        return true;
-    }
-
     function renderTierRow(label, kind, providerKey, modelKey, optionsKey) {
         var row = document.createElement('div');
         row.style.cssText = 'display:grid;grid-template-columns:80px 1fr 1fr 1fr;gap:8px;margin-bottom:8px;align-items:center;';
@@ -18208,22 +17569,6 @@ function saveVoiceLabRuntimeControls(controls) {
         }
         renderApp();
     }, 500);
-}
-
-/**
- * VTID-01218B: Load runtime controls from localStorage
- */
-function loadVoiceLabRuntimeControls() {
-    try {
-        var stored = localStorage.getItem('voiceLab.runtimeControls');
-        if (stored) {
-            var controls = JSON.parse(stored);
-            state.voiceLab.runtimeControls = Object.assign({}, state.voiceLab.runtimeControls, controls);
-            console.log('[VTID-01218B] Loaded runtime controls from localStorage');
-        }
-    } catch (e) {
-        console.warn('[VTID-01218B] Failed to load controls:', e);
-    }
 }
 
 // ===========================================================================
@@ -22663,82 +22008,6 @@ function renderCommandHubEventsView() {
 }
 
 /**
- * DEV-COMHU-2025-0008: Shared VTID Ledger Table Renderer.
- * Creates a table from ledger API data with standardized columns.
- * Used by both Command Hub > VTIDs and OASIS > VTID Ledger views.
- *
- * @param {Array} items - VTID ledger items from API
- * @returns {HTMLTableElement} The rendered table
- */
-function renderVtidLedgerTable(items) {
-    var table = document.createElement('table');
-    table.className = 'vtids-table';
-
-    // Header row with required columns
-    var thead = document.createElement('thead');
-    var headerRow = document.createElement('tr');
-    ['VTID', 'Task Family', 'Module', 'Title', 'Status', 'Created', 'Last Event'].forEach(function (h) {
-        var th = document.createElement('th');
-        th.textContent = h;
-        headerRow.appendChild(th);
-    });
-    thead.appendChild(headerRow);
-    table.appendChild(thead);
-
-    // Body rows
-    var tbody = document.createElement('tbody');
-    items.forEach(function (item) {
-        var row = document.createElement('tr');
-        row.className = 'vtid-row';
-
-        // VTID column
-        var vtidCell = document.createElement('td');
-        vtidCell.className = 'vtid-cell';
-        vtidCell.textContent = item.vtid || '—';
-        row.appendChild(vtidCell);
-
-        // Task Family column
-        var familyCell = document.createElement('td');
-        familyCell.textContent = item.task_family || '—';
-        row.appendChild(familyCell);
-
-        // Module column
-        var moduleCell = document.createElement('td');
-        moduleCell.textContent = item.task_module || '—';
-        row.appendChild(moduleCell);
-
-        // Title column
-        var titleCell = document.createElement('td');
-        titleCell.textContent = item.title || '—';
-        row.appendChild(titleCell);
-
-        // Status column
-        var statusCell = document.createElement('td');
-        var statusBadge = document.createElement('span');
-        var statusVal = (item.status || 'unknown').toLowerCase();
-        statusBadge.className = 'vtid-status-badge vtid-status-' + statusVal;
-        statusBadge.textContent = item.status || 'unknown';
-        statusCell.appendChild(statusBadge);
-        row.appendChild(statusCell);
-
-        // Created column
-        var createdCell = document.createElement('td');
-        createdCell.textContent = item.created_at ? formatEventTimestamp(item.created_at) : '—';
-        row.appendChild(createdCell);
-
-        // Last Event column (show "—" if null)
-        var lastEventCell = document.createElement('td');
-        lastEventCell.textContent = item.last_event_at ? formatEventTimestamp(item.last_event_at) : '—';
-        row.appendChild(lastEventCell);
-
-        tbody.appendChild(row);
-    });
-    table.appendChild(tbody);
-
-    return table;
-}
-
-/**
  * VTID-01001: Renders the Command Hub > VTIDs decision view.
  * Uses projection endpoint for derived decision-grade data.
  * Displays ONLY 5 columns: VTID, Title, Stage, Status, Attention
@@ -23092,135 +22361,6 @@ function renderOasisLedgerTableWithDrilldown(items) {
     table.appendChild(tbody);
 
     return table;
-}
-
-/**
- * VTID-01001: Renders OASIS VTID drilldown detail panel
- */
-function renderOasisVtidDetailPanel() {
-    var panel = document.createElement('div');
-    panel.className = 'oasis-vtid-detail-panel';
-
-    if (!oasisVtidDetail.selectedVtid) {
-        panel.innerHTML = '<div class="detail-placeholder">Select a VTID from the list to view details</div>';
-        return panel;
-    }
-
-    if (oasisVtidDetail.loading) {
-        panel.innerHTML = '<div class="detail-loading">Loading VTID details...</div>';
-        return panel;
-    }
-
-    if (oasisVtidDetail.error) {
-        panel.innerHTML = '<div class="detail-error">Error: ' + oasisVtidDetail.error + '</div>';
-        return panel;
-    }
-
-    var data = oasisVtidDetail.data;
-    if (!data) {
-        panel.innerHTML = '<div class="detail-placeholder">No data available</div>';
-        return panel;
-    }
-
-    // Header with VTID
-    var header = document.createElement('div');
-    header.className = 'detail-header';
-    header.innerHTML = '<h3>' + (data.vtid || 'Unknown VTID') + '</h3>' +
-        '<span class="detail-title">' + (data.title || data.summary || '—') + '</span>';
-    panel.appendChild(header);
-
-    // Lifecycle & Timestamps section
-    var lifecycleSection = document.createElement('div');
-    lifecycleSection.className = 'detail-section';
-    lifecycleSection.innerHTML = '<h4>Lifecycle & Timestamps</h4>' +
-        '<div class="detail-grid">' +
-        '<div><strong>Status:</strong> ' + (data.status || '—') + '</div>' +
-        '<div><strong>Layer:</strong> ' + (data.layer || '—') + '</div>' +
-        '<div><strong>Module:</strong> ' + (data.module || '—') + '</div>' +
-        '<div><strong>Created:</strong> ' + (data.created_at ? formatEventTimestamp(data.created_at) : '—') + '</div>' +
-        '<div><strong>Updated:</strong> ' + (data.updated_at ? formatEventTimestamp(data.updated_at) : '—') + '</div>' +
-        '</div>';
-    panel.appendChild(lifecycleSection);
-
-    // Stage Timeline section (if available)
-    if (data.stageTimeline && Array.isArray(data.stageTimeline)) {
-        var timelineSection = document.createElement('div');
-        timelineSection.className = 'detail-section';
-        timelineSection.innerHTML = '<h4>Stage Timeline</h4>';
-        var timelineGrid = document.createElement('div');
-        timelineGrid.className = 'stage-timeline-grid';
-        data.stageTimeline.forEach(function (stage) {
-            var stageItem = document.createElement('div');
-            stageItem.className = 'stage-item stage-' + (stage.status || 'pending').toLowerCase();
-            stageItem.innerHTML = '<span class="stage-name">' + stage.stage + '</span>' +
-                '<span class="stage-status">' + (stage.status || 'PENDING') + '</span>';
-            timelineGrid.appendChild(stageItem);
-        });
-        timelineSection.appendChild(timelineGrid);
-        panel.appendChild(timelineSection);
-    }
-
-    // Events Timeline section
-    var eventsSection = document.createElement('div');
-    eventsSection.className = 'detail-section';
-    eventsSection.innerHTML = '<h4>Events Timeline (' + oasisVtidDetail.events.length + ')</h4>';
-
-    if (oasisVtidDetail.events.length === 0) {
-        eventsSection.innerHTML += '<div class="no-events">No events recorded for this VTID</div>';
-    } else {
-        var eventsList = document.createElement('div');
-        eventsList.className = 'events-list';
-        oasisVtidDetail.events.slice(0, 20).forEach(function (event) {
-            var eventItem = document.createElement('div');
-            eventItem.className = 'event-item event-' + (event.status || 'info').toLowerCase();
-            eventItem.innerHTML =
-                '<div class="event-header">' +
-                '<span class="event-type">' + (event.type || event.topic || 'unknown') + '</span>' +
-                '<span class="event-time">' + (event.created_at ? formatEventTimestamp(event.created_at) : '—') + '</span>' +
-                '</div>' +
-                '<div class="event-message">' + (event.message || '—') + '</div>';
-            eventsList.appendChild(eventItem);
-        });
-        eventsSection.appendChild(eventsList);
-    }
-    panel.appendChild(eventsSection);
-
-    // Governance Decisions section (if any governance events)
-    var governanceEvents = oasisVtidDetail.events.filter(function (e) {
-        return (e.type || e.topic || '').toLowerCase().includes('governance') ||
-            (e.message || '').toLowerCase().includes('governance');
-    });
-    if (governanceEvents.length > 0) {
-        var governanceSection = document.createElement('div');
-        governanceSection.className = 'detail-section';
-        governanceSection.innerHTML = '<h4>Governance Decisions</h4>';
-        var govList = document.createElement('div');
-        govList.className = 'governance-list';
-        governanceEvents.forEach(function (event) {
-            var govItem = document.createElement('div');
-            govItem.className = 'governance-item';
-            govItem.innerHTML =
-                '<span class="gov-status">' + (event.status || 'info') + '</span>' +
-                '<span class="gov-message">' + (event.message || '—') + '</span>' +
-                '<span class="gov-time">' + (event.created_at ? formatEventTimestamp(event.created_at) : '') + '</span>';
-            govList.appendChild(govItem);
-        });
-        governanceSection.appendChild(govList);
-        panel.appendChild(governanceSection);
-    }
-
-    // Provenance section
-    var provenanceSection = document.createElement('div');
-    provenanceSection.className = 'detail-section';
-    provenanceSection.innerHTML = '<h4>Provenance</h4>' +
-        '<div class="provenance-info">' +
-        '<div><strong>VTID:</strong> ' + (data.vtid || '—') + '</div>' +
-        '<div><strong>Source:</strong> OASIS Ledger</div>' +
-        '<div><strong>Events Count:</strong> ' + oasisVtidDetail.events.length + '</div>' +
-        '</div>';
-    panel.appendChild(provenanceSection);
-
-    return panel;
 }
 
 /**
@@ -26907,46 +26047,6 @@ function renderOperatorChat() {
     return container;
 }
 
-/**
- * @deprecated VTID-0525: No longer used - all messages go through /operator/command
- * The backend parses NL and decides if it's deploy, task, or chat.
- * Kept for reference only.
- */
-function isDeployCommand(message) {
-    // DEPRECATED: Not used anymore - backend handles command detection
-    return false;
-}
-
-/**
- * @deprecated VTID-0525: No longer used - backend auto-creates VTIDs
- * The /operator/command endpoint creates VTIDs via the deploy orchestrator.
- * Kept for reference only.
- */
-function generateCommandVtid() {
-    // DEPRECATED: Not used anymore - backend auto-creates VTIDs
-    return null;
-}
-
-/**
- * Format command result for display
- * VTID-0525: Operator Command Hub
- * Uses the `reply` field from the backend response
- */
-function formatCommandResult(result) {
-    // Use the operator reply from the backend
-    // The backend generates a descriptive message for all command types (deploy, task, errors)
-    if (result.reply) {
-        return result.reply;
-    }
-
-    // Fallback for legacy responses or errors
-    if (!result.ok) {
-        return `Command Error: ${result.error || 'Unknown error'}`;
-    }
-
-    return 'Command processed';
-}
-
 // ---------------------------------------------------------------------------
 // VTID-04028: stream one operator turn as Server-Sent Events
 // ---------------------------------------------------------------------------
@@ -27996,17 +27096,6 @@ function getSelectedVersion() {
         return null;
     }
     return state.versionHistory.find(v => v.id === state.selectedVersionId) || null;
-}
-
-/**
- * VTID-0523-A: Get the most recent version as default selection
- * Returns the first (most recent) version from history or null
- */
-function getMostRecentVersion() {
-    if (!state.versionHistory || state.versionHistory.length === 0) {
-        return null;
-    }
-    return state.versionHistory[0];
 }
 
 /**
@@ -29656,15 +28745,6 @@ function hasPendingActionForVtid(vtid) {
 }
 
 /**
- * VTID-01019: Get the current state of a pending action.
- * Returns null if no pending action exists for the VTID.
- */
-function getPendingActionState(vtid) {
-    const action = findPendingActionByVtid(vtid);
-    return action ? action.state : null;
-}
-
-/**
  * Start SSE stream for operator channel
  */
 function startOperatorSse() {
@@ -29927,17 +29007,6 @@ function startTelemetryAutoRefresh() {
             fetchTelemetrySnapshot(true);
         }
     }, 3000);
-}
-
-/**
- * VTID-0526-D: Stop auto-refresh for telemetry.
- */
-function stopTelemetryAutoRefresh() {
-    if (telemetryAutoRefreshInterval) {
-        clearInterval(telemetryAutoRefreshInterval);
-        telemetryAutoRefreshInterval = null;
-        console.log('[VTID-0526-D] Telemetry auto-refresh stopped');
-    }
 }
 
 /**
@@ -30261,40 +29330,6 @@ function startOverviewDashboardPolling() {
     }, 60000);
     console.log('[Overview] Auto-refresh polling started (60 s)');
 }
-
-/**
- * Stops CI/CD health polling.
- */
-function stopCicdHealthPolling() {
-    if (cicdHealthPollInterval) {
-        clearInterval(cicdHealthPollInterval);
-        cicdHealthPollInterval = null;
-        console.log('[CICD] Health polling stopped');
-    }
-}
-
-/**
- * Formats the CI/CD health data for tooltip display.
- * @param {Object} healthData - The health response object
- * @returns {string} Formatted tooltip text
- */
-function formatCicdHealthTooltip(healthData) {
-    if (!healthData) return 'CI/CD: Loading...';
-
-    const statusText = healthData.ok ? 'Healthy' : 'Issues Detected';
-    let tooltip = `CI/CD: ${statusText}\nStatus: ${healthData.status || 'unknown'}`;
-
-    if (healthData.capabilities) {
-        tooltip += '\n\nCapabilities:';
-        for (const [key, value] of Object.entries(healthData.capabilities)) {
-            const label = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-            tooltip += `\n  ${label}: ${value ? 'Yes' : 'No'}`;
-        }
-    }
-
-    return tooltip;
-}
-
 
 /**
  * VTID-0150-A: Formats timestamp for chat messages
