@@ -14,12 +14,27 @@ export interface AgentSystemPromptInput {
   conventions: string;
   /** First part of the repo's CLAUDE.md (rules), bounded by the caller. */
   claudeMdExcerpt: string;
+  /**
+   * VTID-04046: today's date, ISO `YYYY-MM-DD`. The agent has no clock, so
+   * without this any task needing the date (a cache-bust value, a CHANGE LOG
+   * row, an evidence-pack folder) makes it search the repo for a
+   * recent-looking one. Measured on Run #6b (VTID-04045): 6 of its 60 turns
+   * went to date hunts and the run still ended at the cap. Defaults to the
+   * runner's own current date.
+   */
+  today?: string;
+}
+
+/** VTID-04046: `YYYY-MM-DD` for a Date, UTC. */
+export function isoDay(d: Date = new Date()): string {
+  return d.toISOString().slice(0, 10);
 }
 
 export function buildAgentSystemPrompt(i: AgentSystemPromptInput): string {
   return [
     `You are the Vitana Dev Autopilot execution agent, working inside a fresh clone of ${i.repo} (branch ${i.branch}, from ${i.baseBranch}) for task ${i.vtid}.`,
     `You have tools to read, search, edit and verify the repository. You do NOT have a shell; use run_check for tsc/jest/git.`,
+    `Today is ${i.today || isoDay()}. Use it whenever the task needs a date (a cache-bust value, a dated folder or row) — never search the repository for one.`,
     ``,
     `## How to work`,
     `1. Read the plan, then READ the files it names and the callers/tests around them (search_text / find_files) before editing. Never guess a file's contents or an export's shape.`,
