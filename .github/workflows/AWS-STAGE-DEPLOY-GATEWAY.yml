@@ -549,6 +549,30 @@ jobs:
 # (or removal), no code revert -- with it off, initializeOperatorPlanner()
 # logs and returns immediately, byte-for-byte today's behaviour.
 #
+# VTID-04037 -- Operator agent staging enablement, owner-approved in
+# conversation 2026-09-18 ("finish 1-4 in one"). STAGING ONLY, never
+# AWS-PROD-DEPLOY-GATEWAY.yml. Four exact-"true" opt-ins, each read by its
+# own module with the literal-string check, so unset/"false"/typo = off:
+#   OPERATOR_VTID_SELF_ALLOCATE_ENABLED (VTID-04005/04007) -- the on-ramp
+#     mints the VTID for an open-ended autopilot_run_task request via the
+#     same allocate_global_vtid RPC /api/v1/vtid/allocate uses. Unblocks
+#     Test Run #5.
+#   OPERATOR_PR_APPROVAL_REQUIRED (VTID-04029) -- every on-ramp execution
+#     is stamped require_approval, so the agent pushes its branch and holds
+#     as awaiting_approval instead of opening the PR; a human (Command Hub
+#     Live row or the VTID-04030 chat tools) reviews the diff and decides.
+#     Maker-checker for every agent PR. Unblocks Test Run #7.
+#   OPERATOR_THREADS_ENABLED (VTID-04022) -- server-side thread record +
+#     rolling summary; the tables were applied live 2026-09-17.
+#   OPERATOR_TURN_MEMORY_ENABLED (VTID-04025) -- durable facts extracted
+#     from each console turn into dev_agent_memory (fail-open).
+# Plus OPTIONAL read-only SQL (VTID-04023): resolved the ERP-bridge way --
+# if vitana/gateway/staging/operator-sql-readonly-url exists, the task def
+# gets OPERATOR_SQL_READONLY_ENABLED=true + the URL as a secret; absent,
+# nothing is wired and the tool keeps reporting not_configured. It must
+# never fail a gateway deploy. Rollback for any of these is the value ->
+# "false" (or removal), no code revert.
+#
 # VTID-03883 -- DEV_AUTOPILOT_WATCHER_LIVE=true. Without this, the
         # CI watcher (dev-autopilot-watcher.ts) defaults to DRY_RUN mode
         # (its own fallback is `DEV_AUTOPILOT_DRY_RUN || 'true'`) and
@@ -608,6 +632,13 @@ jobs:
             echo "  erp-bridge token secret absent - ERP_BRIDGE_URL/TOKEN not wired (VTID-03840; expected until provisioned)"
           else
             echo "  resolved vitana/erp-bridge/staging/bridge-token -> ERP_BRIDGE_URL=$ERP_BRIDGE_URL"
+          fi
+          SEC_SQL_RO=$(aws secretsmanager describe-secret --secret-id vitana/gateway/staging/operator-sql-readonly-url --query ARN --output text 2>/dev/null || true)
+          if [ -z "$SEC_SQL_RO" ] || [ "$SEC_SQL_RO" = "None" ]; then
+            SEC_SQL_RO=""
+            echo "  operator sql read-only secret absent - dev_run_sql_readonly stays not_configured (VTID-04037; run scripts/aws/setup-operator-sql-readonly-secret.sh)"
+          else
+            echo "  resolved vitana/gateway/staging/operator-sql-readonly-url -> OPERATOR_SQL_READONLY_ENABLED=true"
           fi
           # VTID-04000: the Vertex Serbian bridge. Project id is
           # `project-da3eb05a-c86e-47cb-85f` (Vitanaland, GCP project number
@@ -716,6 +747,7 @@ jobs:
                  --arg SEC_AURORA_RLS "$SEC_AURORA_RLS" \
                  --arg SEC_GITHUB_TOKEN "$SEC_GITHUB_TOKEN" \
                  --arg SEC_ERP_BRIDGE "$SEC_ERP_BRIDGE" --arg ERP_BRIDGE_URL "$ERP_BRIDGE_URL" \
+                 --arg SEC_SQL_RO "$SEC_SQL_RO" \
                  --arg GCP_CRED_CONFIG "$GCP_CRED_CONFIG" \
                  --arg TASK_ROLE "$TASK_ROLE_ARN" '
                 .containerDefinitions[0].image = $IMG
@@ -745,6 +777,9 @@ jobs:
                                                 "DEV_AUTOPILOT_USE_JOB","DEV_AUTOPILOT_JOB_CLOUD",
                                                 "DEV_AUTOPILOT_WATCHER_LIVE",
                                                 "OPERATOR_PLANNER_ENABLED",
+                                                "OPERATOR_VTID_SELF_ALLOCATE_ENABLED","OPERATOR_PR_APPROVAL_REQUIRED",
+                                                "OPERATOR_THREADS_ENABLED","OPERATOR_TURN_MEMORY_ENABLED",
+                                                "OPERATOR_SQL_READONLY_ENABLED",
                                                 "BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION",
                                                 "AURORA_CA_BUNDLE_PATH",
                                                 "GOOGLE_CLOUD_PROJECT","VERTEX_AI_LOCATION",
@@ -785,6 +820,10 @@ jobs:
                           {name:"DEV_AUTOPILOT_JOB_CLOUD", value:"aws"},
                           {name:"DEV_AUTOPILOT_WATCHER_LIVE", value:"true"},
                           {name:"OPERATOR_PLANNER_ENABLED", value:"true"},
+                          {name:"OPERATOR_VTID_SELF_ALLOCATE_ENABLED", value:"true"},
+                          {name:"OPERATOR_PR_APPROVAL_REQUIRED", value:"true"},
+                          {name:"OPERATOR_THREADS_ENABLED", value:"true"},
+                          {name:"OPERATOR_TURN_MEMORY_ENABLED", value:"true"},
                           {name:"BEDROCK_ROLE_ARN", value:$TASK_ROLE},
                           {name:"AWS_BEDROCK_REGION", value:"eu-central-1"},
                           {name:"AURORA_CA_BUNDLE_PATH", value:"/app/certs/rds-combined-ca-bundle.pem"},
@@ -798,7 +837,7 @@ jobs:
                                                 "OPENAI_API_KEY","DEEPSEEK_API_KEY","FISH_API_KEY",
                                                 "AURORA_DATABASE_URL",
                                                 "AURORA_RLS_DATABASE_URL",
-                                                "GITHUB_SAFE_MERGE_TOKEN",
+                                                "GITHUB_SAFE_MERGE_TOKEN","OPERATOR_SQL_READONLY_DATABASE_URL",
                                                 "GCP_SERVICE_ACCOUNT_JSON") | not) ]
                       + [ {name:"SUPABASE_JWT_SECRET",   valueFrom:$SEC_JWT},
                           {name:"SUPABASE_ANON_KEY",     valueFrom:$SEC_ANON},
@@ -817,6 +856,14 @@ jobs:
                       | .containerDefinitions[0].secrets |=
                           ( [ .[] | select(.name | IN("ERP_BRIDGE_TOKEN") | not) ]
                             + [ {name:"ERP_BRIDGE_TOKEN", valueFrom:$SEC_ERP_BRIDGE} ] ) )
+                    else . end )
+                | ( if $SEC_SQL_RO != "" then
+                      ( .containerDefinitions[0].environment |=
+                          ( [ .[] | select(.name | IN("OPERATOR_SQL_READONLY_ENABLED") | not) ]
+                            + [ {name:"OPERATOR_SQL_READONLY_ENABLED", value:"true"} ] )
+                      | .containerDefinitions[0].secrets |=
+                          ( [ .[] | select(.name | IN("OPERATOR_SQL_READONLY_DATABASE_URL") | not) ]
+                            + [ {name:"OPERATOR_SQL_READONLY_DATABASE_URL", valueFrom:$SEC_SQL_RO} ] ) )
                     else . end )
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
