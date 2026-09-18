@@ -20,6 +20,7 @@ import {
 import { createClient } from '@supabase/supabase-js';
 import { notifyUser } from '../services/notification-service';
 import { VITANA_BOT_USER_ID, isVitanaBot } from '../lib/vitana-bot';
+import { isDevServiceAccount } from '../lib/dev-service-accounts';
 import { processConversationTurn } from '../services/conversation-client';
 import { extractDmActions } from '../services/chat/dm-tool-actions';
 import { tt } from '../i18n/catalog';
@@ -358,29 +359,37 @@ router.get('/conversations', requireAuth, requireTenant, async (req: Request, re
       }
     }
 
-    const conversations = Array.from(seen.entries()).map(([peerId, lastMessage]) => ({
-      peer_id: peerId,
-      last_message: lastMessage,
-    }));
+    // VTID-03982: dev/automation accounts are never real conversations —
+    // never surface them in a community member's inbox.
+    const conversations = Array.from(seen.entries())
+      .filter(([peerId]) => !isDevServiceAccount(peerId))
+      .map(([peerId, lastMessage]) => ({
+        peer_id: peerId,
+        last_message: lastMessage,
+      }));
 
     return res.json({ ok: true, data: conversations });
   }
 
-  // RPC returns rows with peer_id already computed
-  const conversations = (data || []).map((row: any) => ({
-    peer_id: row.peer_id,
-    last_message: {
-      id: row.id,
-      tenant_id: row.tenant_id,
-      sender_id: row.sender_id,
-      receiver_id: row.receiver_id,
-      content: row.content,
-      read_at: row.read_at,
-      created_at: row.created_at,
-      message_type: row.message_type || 'text',
-      metadata: row.metadata || {},
-    },
-  }));
+  // RPC returns rows with peer_id already computed. VTID-03982: dev/
+  // automation accounts are never real conversations — never surface them
+  // in a community member's inbox.
+  const conversations = (data || [])
+    .filter((row: any) => !isDevServiceAccount(row.peer_id))
+    .map((row: any) => ({
+      peer_id: row.peer_id,
+      last_message: {
+        id: row.id,
+        tenant_id: row.tenant_id,
+        sender_id: row.sender_id,
+        receiver_id: row.receiver_id,
+        content: row.content,
+        read_at: row.read_at,
+        created_at: row.created_at,
+        message_type: row.message_type || 'text',
+        metadata: row.metadata || {},
+      },
+    }));
 
   return res.json({ ok: true, data: conversations });
 });

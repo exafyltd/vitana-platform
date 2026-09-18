@@ -16,6 +16,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { DEV_SERVICE_ACCOUNT_ID_LIST } from '../lib/dev-service-accounts';
 
 export async function insertChatMessage(sb: SupabaseClient, row: Record<string, unknown>) {
   return sb.from('chat_messages').insert(row).select().single();
@@ -75,8 +76,21 @@ export async function markAllMessagesRead(sb: SupabaseClient, tenantId: string |
   return sb.from('chat_messages').update({ read_at: new Date().toISOString() }, { count: 'exact' }).eq('tenant_id', tenantId).eq('receiver_id', userId).is('read_at', null);
 }
 
+// VTID-03982: dev/automation accounts (e.g. claude-code-agent@,
+// operator-autopilot@) are filtered out of the conversation list itself
+// (routes/chat.ts GET /conversations) — exclude their messages here too,
+// or a user would see a permanent unread badge for a thread they can never
+// open to clear it.
+const DEV_SERVICE_ACCOUNT_SENDER_FILTER = `(${DEV_SERVICE_ACCOUNT_ID_LIST.join(',')})`;
+
 export async function countUnreadMessages(sb: SupabaseClient, tenantId: string | null, userId: string) {
-  return sb.from('chat_messages').select('*', { count: 'exact', head: true }).eq('tenant_id', tenantId).eq('receiver_id', userId).is('read_at', null);
+  return sb
+    .from('chat_messages')
+    .select('*', { count: 'exact', head: true })
+    .eq('tenant_id', tenantId)
+    .eq('receiver_id', userId)
+    .is('read_at', null)
+    .not('sender_id', 'in', DEV_SERVICE_ACCOUNT_SENDER_FILTER);
 }
 
 export async function fetchVitanaDmHistoryRows(sb: SupabaseClient, tenantId: string, userId: string, botUserId: string, limit: number) {
