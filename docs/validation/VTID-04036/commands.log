@@ -48,6 +48,8 @@
   #   tool-response leg, not STT.
   node scripts/orb/verify-vertex-serbian-bridge.mjs --mode=authenticated \
        --trials=<n> --utterance-pcm=<path to the PCM>
+  # (streams the PCM + 1.8 s trailing silence; never /live/stream/end-turn — the widget does not call it,
+  #  and client_content{turn_complete:true} on an audio-only session closes 1007, measured 2/2)
   # then read back oasis_events for each session_id:
   #   tool_call → orb.live.tool.executed → model_start_speaking (same turn), no 1007
   → outputs/live-verification-post-merge.txt

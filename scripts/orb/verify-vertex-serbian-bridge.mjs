@@ -22,10 +22,11 @@
  *   node scripts/orb/verify-vertex-serbian-bridge.mjs --mode=authenticated --trials=10
  *   node scripts/orb/verify-vertex-serbian-bridge.mjs --mode=authenticated --route=/admin   # smaller tool catalog (VTID-04026)
  *   node scripts/orb/verify-vertex-serbian-bridge.mjs --mode=authenticated --utterance-pcm=/path/to/16k-mono-pcm16.raw
- *     (VTID-04036: after the greeting's turn_complete, streams that PCM as the
- *     user's turn over /live/stream/send, signals /live/stream/end-turn, and
- *     waits for the model's reply — the tool-response leg is what this
- *     exercises, so any language works; the bridge answers in Serbian.)
+ *     (VTID-04036: after the greeting's turn_complete, streams that PCM plus
+ *     trailing silence as the user's turn over /live/stream/send and waits
+ *     for the model's reply — the tool-response leg is what this exercises,
+ *     so any language works; the bridge answers in Serbian. --end-turn also
+ *     POSTs /live/stream/end-turn, which the real widget never does.)
  *     (authenticated mode needs SUPABASE_ANON_KEY + TEST_ACCOUNT_EMAIL +
  *     TEST_ACCOUNT_PASSWORD in the environment — never hardcode credentials
  *     in this file. The documented test account is
@@ -75,6 +76,13 @@ const UTTERANCE_PCM = typeof args['utterance-pcm'] === 'string' ? args['utteranc
 const UTTERANCE_BYTES = UTTERANCE_PCM ? readFileSync(UTTERANCE_PCM) : null;
 const UTTERANCE_CHUNK_BYTES = 3200; // 100 ms at 16 kHz mono PCM16
 const UTTERANCE_PRE_DELAY_MS = 1500; // clears the server's post-turn mic cooldown (300 ms default)
+// The real widget never calls /live/stream/end-turn — Gemini Live's own
+// activity detection ends the user's turn on silence. Sending
+// client_content{turn_complete:true} on an audio-only session closes the
+// socket 1007 (measured 2026-09-18, 2/2), so the default is trailing
+// silence; --end-turn opts into the explicit signal for experiments.
+const UTTERANCE_TRAILING_SILENCE_MS = 1800;
+const UTTERANCE_USE_END_TURN = args['end-turn'] === true || args['end-turn'] === 'true';
 const SSE_TIMEOUT_MS = 40000; // server's own greeting_timeout watchdog is 30s
 const GAP_BETWEEN_TRIALS_MS = 2000;
 
@@ -109,8 +117,10 @@ async function sendUtterance(trial, headers) {
   trial.utteranceSentAt = Date.now();
   trial.utteranceChunks = 0;
   trial.utteranceSendErrors = [];
-  for (let off = 0; off < UTTERANCE_BYTES.length; off += UTTERANCE_CHUNK_BYTES) {
-    const chunk = UTTERANCE_BYTES.subarray(off, off + UTTERANCE_CHUNK_BYTES);
+  const silence = Buffer.alloc((UTTERANCE_TRAILING_SILENCE_MS / 1000) * 32000);
+  const stream = UTTERANCE_USE_END_TURN ? UTTERANCE_BYTES : Buffer.concat([UTTERANCE_BYTES, silence]);
+  for (let off = 0; off < stream.length; off += UTTERANCE_CHUNK_BYTES) {
+    const chunk = stream.subarray(off, off + UTTERANCE_CHUNK_BYTES);
     try {
       const r = await fetch(`${GATEWAY}/api/v1/orb/live/stream/send`, {
         method: 'POST',
@@ -129,15 +139,17 @@ async function sendUtterance(trial, headers) {
     }
     await new Promise((r) => setTimeout(r, 100));
   }
-  try {
-    const r = await fetch(`${GATEWAY}/api/v1/orb/live/stream/end-turn`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ session_id: trial.sessionId }),
-    });
-    trial.endTurnHttpStatus = r.status;
-  } catch (e) {
-    trial.utteranceSendErrors.push(`end-turn: ${e && e.message}`);
+  if (UTTERANCE_USE_END_TURN) {
+    try {
+      const r = await fetch(`${GATEWAY}/api/v1/orb/live/stream/end-turn`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ session_id: trial.sessionId }),
+      });
+      trial.endTurnHttpStatus = r.status;
+    } catch (e) {
+      trial.utteranceSendErrors.push(`end-turn: ${e && e.message}`);
+    }
   }
   trial.utteranceDoneAt = Date.now();
 }
