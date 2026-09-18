@@ -53073,7 +53073,7 @@ function renderAutopilotLiveView() {
                 liveCancelBtn.textContent = liveCancelling ? 'Cancelling…' : (exec.status === 'running' ? 'Cancel run' : 'Cancel');
                 liveCancelBtn.disabled = liveCancelling;
                 liveCancelBtn.title = exec.status === 'running' ? 'Stop this agent execution — nothing will be pushed' : 'Cancel before the cooldown ends';
-                liveCancelBtn.style.cssText = 'padding:3px 10px;border-radius:3px;font-size:11px;cursor:' + (liveCancelling ? 'wait' : 'pointer') + ';border:1px solid #ef4444;background:transparent;color:#ef4444;';
+                liveCancelBtn.className = 'dev-autopilot-decision-btn dev-autopilot-decision-btn--cancel' + (liveCancelling ? ' dev-autopilot-decision-btn--busy' : '');
                 liveCancelBtn.onclick = function () { devAutopilotCancelExecution(exec.id); };
                 card.appendChild(liveCancelBtn);
             }
