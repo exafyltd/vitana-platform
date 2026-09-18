@@ -16,16 +16,35 @@ verification pass (streaming turn, Runs #5, #6, #7).
 
 ## Acceptance criteria
 
-- AC-1: the four flags are pinned to exact `"true"` on staging and stripped first. TEST: `test/vtid-04037-staging-operator-agent-flags-pinned.test.ts`
-- AC-2: prod deploy workflow carries none of the flags nor the SQL wiring. TEST: `test/vtid-04037-staging-operator-agent-flags-pinned.test.ts`
-- AC-3: the SQL secret is optional — outside the hard-fail loop, absent means not wired, never a failed deploy. TEST: `test/vtid-04037-staging-operator-agent-flags-pinned.test.ts`
-- AC-4: every pinned flag is read by its module with the exact-string check. TEST: `test/vtid-04037-staging-operator-agent-flags-pinned.test.ts`
-- AC-5: every `run:` step of both gateway deploy workflows still parses under `bash -n` and stays under the size cap. TEST: `test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts`
-- AC-6 (live, post-merge): staging serves this commit; `/api/v1/admin/health` env=staging.
-- AC-7 (live): a streaming console turn (`POST /api/v1/operator/chat/stream`) returns `turn.started … reply … done` frames with `cost_usd` on the reply meta (W4d, W4g).
-- AC-8 (live, Run #5 + #7): an open-ended `autopilot_run_task` request allocates a VTID, runs on the agent executor, holds as `awaiting_approval`, is reviewed and approved from chat, opens a PR; a second execution is cancelled from chat.
-- AC-9 (live, Run #6): a CI-failing agent PR is continued in fix mode on the same branch, no second PR.
-- AC-10 (live): `dev_cloudwatch_logs` / `dev_ecs_tasks` return data once the owner applies the grant script; until then they return the IAM denial verbatim.
+AC-1 — the four flags are pinned to exact `"true"` on staging and stripped first.
+TEST: services/gateway/test/vtid-04037-staging-operator-agent-flags-pinned.test.ts
+
+AC-2 — the prod deploy workflow carries none of the flags nor the SQL wiring.
+TEST: services/gateway/test/vtid-04037-staging-operator-agent-flags-pinned.test.ts
+
+AC-3 — the SQL secret is optional: outside the hard-fail loop, absent means not wired, never a failed deploy.
+TEST: services/gateway/test/vtid-04037-staging-operator-agent-flags-pinned.test.ts
+
+AC-4 — every pinned flag is read by its module with the exact-string check.
+TEST: services/gateway/test/vtid-04037-staging-operator-agent-flags-pinned.test.ts
+
+AC-5 — every `run:` step of both gateway deploy workflows still parses under `bash -n` and stays under the size cap.
+TEST: services/gateway/test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts
+
+AC-6 — (live, post-merge) staging serves this commit; `/api/v1/admin/health` reports env=staging.
+CURL: GET https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info — recorded in outputs/ after the deploy
+
+AC-7 — (live) a streaming console turn returns `turn.started … reply … done` frames with `cost_usd` on the reply meta (W4d, W4g).
+CURL: POST https://preview-aws-gateway.vitanaland.com/api/v1/operator/chat/stream — recorded in outputs/run-ac7-stream.md
+
+AC-8 — (live, Run #5 + #7) an open-ended `autopilot_run_task` request allocates a VTID, runs on the agent executor, holds as `awaiting_approval`, is reviewed and approved from chat, opens a PR; a second execution is cancelled from chat.
+CURL: POST https://preview-aws-gateway.vitanaland.com/api/v1/operator/chat/stream — recorded in outputs/run-5.md
+
+AC-9 — (live, Run #6) a CI-failing agent PR is continued in fix mode on the same branch, no second PR.
+CURL: POST https://preview-aws-gateway.vitanaland.com/api/v1/operator/chat/stream — recorded in outputs/run-6.md
+
+AC-10 — (live) `dev_cloudwatch_logs` / `dev_ecs_tasks` return data once the owner applies the grant script; until then they return the IAM denial verbatim.
+CURL: POST https://preview-aws-gateway.vitanaland.com/api/v1/operator/chat/stream — recorded in outputs/ when exercised
 
 ## Not done here, named
 
