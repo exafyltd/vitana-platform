@@ -110,10 +110,43 @@ describe('VTID-04000: staging wires the Vertex Serbian bridge (WIF), uncondition
     expect(add).not.toContain('GCP_SERVICE_ACCOUNT_JSON');
   });
 
-  it('is NOT wired on prod — promoting this is a separate, later, human decision', () => {
+  // VTID-04048: this branch is the deliberate, explicit production
+  // activation of the bridge — the platform owner confirmed in conversation
+  // that they want Serbian voice live in prod, not just backported inert.
+  // Every other prod deploy prior to this asserted the opposite (see git
+  // history for this test); that assertion is superseded here, not
+  // silently dropped.
+  it('is wired on prod, unconditionally, with the SAME GCP_CRED_CONFIG value staging uses (VTID-04048)', () => {
     const prodYml = fs.readFileSync(PROD_WORKFLOW, 'utf8');
-    expect(prodYml).not.toContain('VERTEX_SERBIAN_BRIDGE_ENABLED');
-    expect(prodYml).not.toContain('GCP_SERVICE_ACCOUNT_JSON');
-    expect(prodYml).not.toContain('workloadIdentityPools');
+    expect(prodYml).toContain('VERTEX_SERBIAN_BRIDGE_ENABLED');
+    expect(prodYml).toContain('GCP_SERVICE_ACCOUNT_JSON');
+    expect(prodYml).toContain('workloadIdentityPools');
+
+    // The exact same external_account credential config as staging — WIF
+    // trusts the AWS principal (the shared vitana-ecs-task-role ARN), not a
+    // specific ECS service, so prod needs no separate GCP-side binding.
+    const stagingCred = stagingYml.match(/GCP_CRED_CONFIG='(\{.*?\})'/)?.[1];
+    const prodCred = prodYml.match(/GCP_CRED_CONFIG='(\{.*?\})'/)?.[1];
+    expect(stagingCred).toBeTruthy();
+    expect(prodCred).toBe(stagingCred);
+
+    // Unconditional — no describe-secret, no if-guard, mirroring staging's
+    // own strip/re-add pattern (same style as AURORA_CA_BUNDLE_PATH etc.).
+    const prodBlock = prodYml.slice(
+      prodYml.indexOf('VERTEX_SERBIAN_BRIDGE_ENABLED'),
+      prodYml.indexOf('VERTEX_SERBIAN_BRIDGE_ENABLED') + 1200,
+    );
+    expect(prodBlock).not.toContain('describe-secret');
+    expect(prodBlock).not.toContain('if [');
+
+    // sr only — never widened to any other language, same as staging.
+    expect(prodYml).toContain('VERTEX_SERBIAN_BRIDGE_ENABLED", value:"true"');
+    expect(prodYml).not.toMatch(/VERTEX_SERBIAN_BRIDGE_ENABLED.*value:"false"/);
+  });
+
+  it('prod points at the same new GCP project — never the decommissioned one', () => {
+    const prodYml = fs.readFileSync(PROD_WORKFLOW, 'utf8');
+    expect(prodYml).toContain('project-da3eb05a-c86e-47cb-85f');
+    expect(prodYml).not.toContain('lovable-vitana-vers1');
   });
 });
