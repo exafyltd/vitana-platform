@@ -83,9 +83,24 @@ describe('VTID-03850: the executor task definition gets an LLM runtime of its ow
   });
 
   it('strips inherited copies before upserting, and tolerates a null environment/secrets array', () => {
-    expect(registerStep).toMatch(/select\(\.name \| IN\("BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION"\) \| not\)/);
+    // VTID-04050: the strip list grew to also cover AGENT_MAX_TURNS/
+    // AGENT_DEADLINE_MS (the Command Hub agent turn-budget raise) — the
+    // env upsert still strips its own targets before re-adding them, just
+    // four names instead of two now.
+    expect(registerStep).toMatch(
+      /select\(\.name \| IN\("BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION","AGENT_MAX_TURNS","AGENT_DEADLINE_MS"\) \| not\)/,
+    );
     expect(registerStep).toMatch(/select\(\.name \| IN\("DEEPSEEK_API_KEY"\) \| not\)/);
     expect(registerStep).toMatch(/\(\. \/\/ \[\]\)\[\]/);
+  });
+
+  it('sets AGENT_MAX_TURNS/AGENT_DEADLINE_MS for the Command Hub turn-budget raise (VTID-04050)', () => {
+    // Run #6b measured ~38 of 60 turns spent just navigating the 2.6MB
+    // Command Hub app.js bundle before making an edit — the default budget
+    // starves that work before it can finish. Raised for every executor
+    // run, not gated by any flag.
+    expect(registerStep).toMatch(/\{name:"AGENT_MAX_TURNS", value:"120"\}/);
+    expect(registerStep).toMatch(/\{name:"AGENT_DEADLINE_MS", value:"2100000"\}/);
   });
 
   it('still only builds + registers — no ECS service roll, next RunTask picks the new revision', () => {
