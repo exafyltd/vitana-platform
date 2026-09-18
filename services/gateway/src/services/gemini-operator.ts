@@ -58,7 +58,7 @@ import { buildRecallQuery } from './operator-threads';
 import { RECALL_CANDIDATES, diversifyRecallHits, renderDevMemoryBlock } from './dev-memory-ranking';
 import { runReadonlySql, isSqlReadonlyEnabled, SQL_DEFAULT_ROWS, SQL_MAX_ROWS, SQL_DEFAULT_TIMEOUT_MS, SQL_MAX_TIMEOUT_MS } from './operator-sql-readonly';
 // VTID-03836: Operator Console AWS ECS read-only status
-import { describeEcsServices, ALLOWED_ECS_SERVICES } from './aws-ecs-readonly';
+import { describeEcsServices, ALLOWED_ECS_SERVICES, listEcsTasks, ALLOWED_ECS_TASK_FAMILIES, TASKS_DEFAULT_LIMIT, TASKS_MAX_LIMIT } from './aws-ecs-readonly';
 // VTID-01208: LLM Telemetry
 import {
   startLLMCall,
@@ -664,6 +664,31 @@ KNOWN BLIND SPOT: GitHub's code search index excludes any file over 384KB. servi
           }
         },
         required: ['log_group']
+      }
+    },
+    // VTID-04035: Operator Console read-only ECS task-level view — the
+    // fourth item of the gap analysis' §4.4 access list. ListTasks +
+    // DescribeTasks only.
+    {
+      name: 'dev_ecs_tasks',
+      description: `List the ECS tasks (containers) of one documented Vitana service or of the one-shot autopilot-executor task family: task id, status, started/stopped times, stop reason and code, container exit codes, task-definition revision, image. Use it to see whether an executor task is actually alive, when it started, or why a task stopped. Read-only — ListTasks + DescribeTasks only, never stops or starts anything. Bounded: default ${TASKS_DEFAULT_LIMIT} tasks (max ${TASKS_MAX_LIMIT}); desired_status RUNNING (default) or STOPPED (ECS keeps stopped tasks for about an hour). Developer/admin role only.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          target: {
+            type: 'string',
+            description: `An ECS service name (${ALLOWED_ECS_SERVICES.join(', ')}) or a task family (${ALLOWED_ECS_TASK_FAMILIES.join(', ')}).`
+          },
+          desired_status: {
+            type: 'string',
+            description: '"RUNNING" (default) or "STOPPED" — stopped tasks show stop reason and container exit codes.'
+          },
+          limit: {
+            type: 'number',
+            description: `Maximum tasks to return (default ${TASKS_DEFAULT_LIMIT}, max ${TASKS_MAX_LIMIT}).`
+          }
+        },
+        required: ['target']
       }
     },
     // VTID-04023: Operator Console read-only SQL — one bounded SELECT over a
@@ -2829,6 +2854,36 @@ async function executeDevCloudwatchLogs(
   }
 }
 
+/**
+ * VTID-04035: dev_ecs_tasks — read-only ECS ListTasks + DescribeTasks over
+ * one documented service or the autopilot-executor task family. Same kill
+ * switch as the ECS status tool; the target is checked against the §1b
+ * allowlists before any AWS call (aws-ecs-readonly.ts); an IAM denial comes
+ * back verbatim.
+ */
+async function executeDevEcsTasks(
+  args: { target: string; desired_status?: string; limit?: number },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  if (process.env.OPERATOR_AWS_READONLY_ENABLED !== 'true') {
+    return { ok: false, error: 'operator_aws_readonly_disabled: OPERATOR_AWS_READONLY_ENABLED is not "true"' };
+  }
+  if (!args.target || !String(args.target).trim()) {
+    return { ok: false, error: `target is required (a §1b service name or the ${ALLOWED_ECS_TASK_FAMILIES.join('/')} task family)` };
+  }
+  try {
+    const result = await listEcsTasks({
+      target: String(args.target),
+      desiredStatus: typeof args.desired_status === 'string' ? args.desired_status : undefined,
+      limit: typeof args.limit === 'number' ? args.limit : undefined,
+    });
+    console.log(`[VTID-04035] dev_ecs_tasks thread=${threadId} target=${result.target} (${result.kind}) status=${result.desired_status} tasks=${result.tasks.length}${result.truncated ? ' (truncated)' : ''}`);
+    return { ok: true, data: result as any };
+  } catch (err: any) {
+    return { ok: false, error: `ECS tasks read failed: ${err.message}` };
+  }
+}
+
 // VTID-03837: explicit table allowlist for dev_db_query — never arbitrary SQL.
 const DEV_DB_QUERY_ALLOWED_TABLES = [
   'vtid_ledger',
@@ -3522,6 +3577,14 @@ export async function executeTool(
       case 'dev_cloudwatch_logs':
         result = await executeDevCloudwatchLogs(
           args as { log_group: string; filter_pattern?: string; minutes?: number; limit?: number },
+          threadId
+        );
+        break;
+
+      // VTID-04035: Operator Console read-only ECS task-level view
+      case 'dev_ecs_tasks':
+        result = await executeDevEcsTasks(
+          args as { target: string; desired_status?: string; limit?: number },
           threadId
         );
         break;

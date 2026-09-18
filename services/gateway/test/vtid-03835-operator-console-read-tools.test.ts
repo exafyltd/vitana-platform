@@ -13,7 +13,7 @@ jest.mock('../src/services/github-service', () => ({
 }));
 jest.mock('../src/services/aws-ecs-readonly', () => ({
   describeEcsServices: jest.fn(),
-  ALLOWED_ECS_SERVICES: ['vitana-gateway-awsdr', 'vitana-gateway'],
+  ALLOWED_ECS_SERVICES: ['vitana-gateway-awsdr', 'vitana-gateway'], ALLOWED_ECS_TASK_FAMILIES: ['vitana-autopilot-executor'], TASKS_DEFAULT_LIMIT: 10, TASKS_MAX_LIMIT: 25, listEcsTasks: jest.fn(),
 }));
 // gemini-operator.ts's own fetch calls (executeDevDbQuery included) go
 // through its module-scoped `import fetch from 'node-fetch'` — NOT the
