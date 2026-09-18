@@ -37,6 +37,8 @@ export interface AgentLoopOptions {
   deadlineMs?: number;
   onStep?: (step: AgentStep) => void;
   now?: () => number;
+  /** VTID-04032: polled at every turn and tool boundary; true stops the loop with `cancelled: true`. */
+  isCancelled?: () => boolean;
 }
 
 export interface AgentLoopResult {
@@ -46,6 +48,8 @@ export interface AgentLoopResult {
   turns: number;
   toolCalls: number;
   error?: string;
+  /** VTID-04032: the operator cancelled the execution; not a model or tool failure. */
+  cancelled?: boolean;
   provider?: string;
   model?: string;
   fallbackUsed: boolean;
@@ -77,7 +81,13 @@ export async function runAgentLoop(o: AgentLoopOptions): Promise<AgentLoopResult
   let fallbackUsed = false;
   const step = (s: AgentStep) => { try { o.onStep?.(s); } catch { /* never let telemetry break the loop */ } };
 
+  const cancelledResult = (): AgentLoopResult => {
+    step({ turn: turns, kind: 'error', detail: 'cancelled by operator' });
+    return { ok: false, cancelled: true, error: 'cancelled by operator', history, turns, toolCalls, provider, model, fallbackUsed, usage };
+  };
+
   while (turns < maxTurns) {
+    if (o.isCancelled?.()) return cancelledResult();
     if (now() > deadline) {
       step({ turn: turns, kind: 'error', detail: 'deadline exceeded' });
       return { ok: false, error: `agent deadline exceeded after ${turns} turn(s)`, history, turns, toolCalls, provider, model, fallbackUsed, usage };
@@ -115,6 +125,7 @@ export async function runAgentLoop(o: AgentLoopOptions): Promise<AgentLoopResult
     const results: Array<{ id?: string; name: string; result: string; isError?: boolean }> = [];
     let finished: FinishArgs | undefined;
     for (const c of calls) {
+      if (o.isCancelled?.()) return cancelledResult();
       toolCalls += 1;
       const s0 = now();
       const out = await o.execute(c.name, c.arguments || {});

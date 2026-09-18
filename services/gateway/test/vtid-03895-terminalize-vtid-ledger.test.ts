@@ -194,6 +194,10 @@ describe('VTID-03895: terminalizeVtidLedgerForExecution (via applyExecTerminalSi
       if (u.includes(`/dev_autopilot_executions?id=eq.${EXECUTION_ID}&status=eq.cooling`)) {
         return jsonRes(204, undefined);
       }
+      // VTID-04032: cancelExecution reads the row's status/metadata first.
+      if (u.includes('/dev_autopilot_executions?id=eq.') && u.includes('select=id,status,metadata')) {
+        return jsonRes(200, [{ id: EXECUTION_ID, status: 'cooling', metadata: {} }]);
+      }
       if (u.includes('/dev_autopilot_executions?id=eq.') && u.includes('select=finding_id')) {
         return jsonRes(200, [{ finding_id: FINDING_ID }]);
       }

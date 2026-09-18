@@ -56,7 +56,7 @@ import {
 } from './autopilot-executable-source-types';
 // VTID-03415: AWS RunTask dispatch path, parallel to the GCP Cloud Run Job
 // dispatch below. Only exercised when DEV_AUTOPILOT_JOB_CLOUD=aws.
-import { dispatchExecutorJobAws } from './aws-ecs-admin';
+import { dispatchExecutorJobAws, stopExecutorTaskAws } from './aws-ecs-admin';
 // VTID-04005: claim-time environment stamp + ownership filter (shared table, two gateways).
 import { claimStamp, filterOwnedExecutions } from './dev-autopilot-env-ownership';
 // VTID-04006: single-shot vs agent executor selection.
@@ -919,13 +919,78 @@ export function validatePlanDiffCoverage(
 // Cancel (during cooldown only)
 // =============================================================================
 
-export async function cancelExecution(executionId: string): Promise<{ ok: boolean; error?: string }> {
-  const s = getSupabase();
-  if (!s) return { ok: false, error: 'Supabase not configured' };
-  const r = await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${executionId}&status=eq.cooling`, {
+/**
+ * VTID-04032: record the dispatched ECS task on the row (metadata merged,
+ * never replaced — VTID-04011) so a later cancel can stop it.
+ */
+export async function recordDispatchedTask(s: SupaConfig, execId: string, taskArn: string): Promise<void> {
+  const cur = await supa<Array<{ metadata?: Record<string, unknown> | null }>>(
+    s, `/rest/v1/dev_autopilot_executions?id=eq.${execId}&select=metadata&limit=1`,
+  );
+  const existing = cur.ok && cur.data && cur.data[0] ? cur.data[0].metadata || {} : {};
+  await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${execId}`, {
     method: 'PATCH',
     headers: { Prefer: 'return=minimal' },
-    body: JSON.stringify({ status: 'cancelled', cancelled_at: new Date().toISOString() }),
+    body: JSON.stringify({ metadata: { ...existing, ecs_task_arn: taskArn, dispatched_at: new Date().toISOString() } }),
+  });
+}
+
+/** VTID-04032: what a cancel may act on. */
+export const CANCELLABLE_STATUSES = ['cooling', 'running'] as const;
+
+/**
+ * Cancel an execution. `cooling` rows are cancelled as before. VTID-04032:
+ * a `running` row is cancelled too — marked `cancelled` right away (so the
+ * agent's own result can never land as `failed`/self-heal afterwards, see
+ * applyExecutionResult), its ECS task stopped best effort when the row
+ * remembers one, and the agent itself stops at its next turn boundary
+ * because its heartbeat reads the row back (agent-heartbeat.ts).
+ */
+export async function cancelExecution(
+  executionId: string,
+  opts: { actor?: string; reason?: string; stopTask?: (taskArn: string, reason: string) => Promise<{ ok: boolean; error?: string }> } = {},
+): Promise<{ ok: boolean; error?: string; was?: string; ecs_task_stopped?: boolean; ecs_task_error?: string }> {
+  const s = getSupabase();
+  if (!s) return { ok: false, error: 'Supabase not configured' };
+  const actor = (opts.actor || 'gateway-internal').slice(0, 200);
+  const reason = (opts.reason || '').trim().slice(0, 500) || null;
+  const cur = await supa<Array<{ id: string; status: string; metadata?: Record<string, unknown> | null }>>(
+    s, `/rest/v1/dev_autopilot_executions?id=eq.${executionId}&select=id,status,metadata&limit=1`,
+  );
+  const row = cur.ok && cur.data && cur.data[0] ? cur.data[0] : null;
+  if (!row) return { ok: false, error: 'execution not found' };
+  if (!(CANCELLABLE_STATUSES as readonly string[]).includes(row.status)) {
+    return { ok: false, error: `execution is ${row.status}, only ${CANCELLABLE_STATUSES.join('/')} can be cancelled` };
+  }
+  const now = new Date().toISOString();
+  const was = row.status;
+  const taskArn = typeof row.metadata?.ecs_task_arn === 'string' ? (row.metadata.ecs_task_arn as string) : null;
+
+  // Running: stop the ECS task first (best effort) so the decision and its
+  // outcome land on the row in one PATCH.
+  let ecsStopped: boolean | undefined;
+  let ecsError: string | undefined;
+  if (was === 'running' && taskArn) {
+    const stop = await (opts.stopTask ?? stopExecutorTaskAws)(taskArn, `cancelled by ${actor}${reason ? `: ${reason}` : ''}`);
+    ecsStopped = stop.ok;
+    ecsError = stop.ok ? undefined : (stop.error || 'unknown').slice(0, 300);
+    if (!stop.ok) console.warn(`${LOG_PREFIX} cancel ${executionId.slice(0, 8)}: StopTask failed (${ecsError}) — relying on the agent's own cancel read-back`);
+  }
+
+  const r = await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${executionId}&status=eq.${was}`, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({
+      status: 'cancelled',
+      cancelled_at: now,
+      metadata: {
+        ...(row.metadata || {}),
+        cancelled: {
+          by: actor, at: now, reason, was,
+          ...(taskArn ? { ecs_task_arn: taskArn, ecs_task_stopped: ecsStopped === true, ...(ecsError ? { ecs_task_error: ecsError } : {}) } : {}),
+        },
+      },
+    }),
   });
   if (!r.ok) return { ok: false, error: r.error };
   await emitOasisEvent({
@@ -933,14 +998,16 @@ export async function cancelExecution(executionId: string): Promise<{ ok: boolea
     type: 'dev_autopilot.execution.cancelled',
     source: 'dev-autopilot',
     status: 'info',
-    message: `Execution ${executionId.slice(0, 8)} cancelled during cooldown`,
-    payload: { execution_id: executionId },
+    message: was === 'running'
+      ? `Execution ${executionId.slice(0, 8)} cancelled by ${actor} while running${taskArn ? (ecsStopped ? ' — ECS task stopped' : ' — ECS task NOT stopped, agent stops on its next heartbeat') : ''}`
+      : `Execution ${executionId.slice(0, 8)} cancelled during cooldown`,
+    payload: { execution_id: executionId, actor, reason, was, ecs_task_arn: taskArn, ecs_task_stopped: ecsStopped ?? null },
   });
   // VTID-03895: this PATCHes dev_autopilot_executions directly rather than
   // through patchExecution() above, so it needs its own call to pick up the
   // shared terminal side effects (vtid_ledger terminalization included).
   applyExecTerminalSideEffects(s, executionId, 'cancelled');
-  return { ok: true };
+  return { ok: true, was, ...(taskArn ? { ecs_task_stopped: ecsStopped === true, ...(ecsError ? { ecs_task_error: ecsError } : {}) } : {}) };
 }
 
 // =============================================================================
@@ -2736,6 +2803,11 @@ export async function backgroundExecutorTick(): Promise<void> {
           ? await dispatchExecutorJobAws(exec.id)
           : await dispatchExecutorJob(exec.id);
         if (dispatched.ok) {
+          // VTID-04032: remember the ECS task so a cancel can stop it.
+          if (JOB_CLOUD === 'aws' && dispatched.operation) {
+            recordDispatchedTask(s, exec.id, dispatched.operation).catch((err) =>
+              console.warn(`${LOG_PREFIX} could not record task arn for ${exec.id}:`, err instanceof Error ? err.message : err));
+          }
           // The Job/Task calls runExecutionSession + applyExecutionResult on
           // its own. The gateway's job is done for this exec — return so we
           // don't double-fire.
@@ -2836,8 +2908,41 @@ async function getGcpAccessToken(): Promise<string | null> {
 export async function applyExecutionResult(
   s: SupaConfig,
   execId: string,
-  result: { ok: boolean; pr_url?: string; branch?: string; pr_number?: number; session_id?: string; error?: string; awaiting_approval?: boolean },
+  result: { ok: boolean; pr_url?: string; branch?: string; pr_number?: number; session_id?: string; error?: string; awaiting_approval?: boolean; cancelled?: boolean },
 ): Promise<void> {
+  // VTID-04032: the agent stopped because an operator cancelled it. The
+  // cancel route normally moved the row to `cancelled` already (in which
+  // case there is nothing to write); if the flag was raised another way,
+  // close the row as cancelled — never as failed, never into self-heal.
+  if (!result.ok && result.cancelled) {
+    const curC = await supa<Array<{ status: string; metadata?: Record<string, unknown> | null }>>(
+      s, `/rest/v1/dev_autopilot_executions?id=eq.${execId}&select=status,metadata&limit=1`,
+    );
+    const rowC = curC.ok && curC.data && curC.data[0] ? curC.data[0] : null;
+    if (!rowC || rowC.status === 'cancelled') {
+      console.log(`${LOG_PREFIX} ${execId.slice(0, 8)}: agent reported cancelled; row already ${rowC?.status ?? 'missing'} — nothing to apply`);
+      return;
+    }
+    const nowC = new Date().toISOString();
+    await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${execId}&status=eq.${rowC.status}`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        status: 'cancelled', cancelled_at: nowC, execution_session_id: result.session_id || null,
+        metadata: { ...(rowC.metadata || {}), cancelled: { by: 'agent', at: nowC, reason: result.error || 'cancelled by operator', was: rowC.status } },
+      }),
+    });
+    await emitOasisEvent({
+      vtid: EXEC_VTID,
+      type: 'dev_autopilot.execution.cancelled',
+      source: 'dev-autopilot',
+      status: 'info',
+      message: `Execution ${execId.slice(0, 8)} stopped by the agent after an operator cancel`,
+      payload: { execution_id: execId, was: rowC.status, reason: result.error || null },
+    });
+    applyExecTerminalSideEffects(s, execId, 'cancelled');
+    return;
+  }
   // VTID-04029: the agent pushed its branch and stopped before opening a PR
   // — record the hold + diff preview; approve/reject come back through
   // dev-autopilot-approval.ts (approve re-enters this function with pr_url).
@@ -2881,10 +2986,17 @@ export async function applyExecutionResult(
   // VTID-04011: merge, never replace — the row's metadata carries executor,
   // claimed_env and the llm_on_ramp override that a self-heal child inherits
   // (Test Run #4 lost all three here and the child ran single-shot).
-  const curR = await supa<Array<{ metadata?: Record<string, unknown> | null }>>(
-    s, `/rest/v1/dev_autopilot_executions?id=eq.${execId}&select=metadata&limit=1`,
+  const curR = await supa<Array<{ status?: string; metadata?: Record<string, unknown> | null }>>(
+    s, `/rest/v1/dev_autopilot_executions?id=eq.${execId}&select=status,metadata&limit=1`,
   );
   const existingMeta = curR.ok && curR.data && curR.data[0] ? curR.data[0].metadata : null;
+  // VTID-04032: an operator cancelled this row while the agent ran (StopTask
+  // may have killed it mid-turn, or its own cancel check fired late) — the
+  // decision on the row stands; do not flip it to failed or bridge it.
+  if (curR.ok && curR.data && curR.data[0]?.status === 'cancelled') {
+    console.log(`${LOG_PREFIX} ${execId.slice(0, 8)}: result ignored — the execution was cancelled by an operator`);
+    return;
+  }
   await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${execId}`, {
     method: 'PATCH',
     headers: { Prefer: 'return=minimal' },

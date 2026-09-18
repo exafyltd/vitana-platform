@@ -1,0 +1,49 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+    ✅ Test setup loaded - fetch mocked, env vars set
+       98 |         if (cancelRequestedOnRow(row)) {
+       99 |           cancelFired = true;
+          |                   ^
+      101 |           try { opts.onCancelRequested(); } catch { /* the runner's flag setter never throws; belt and braces */ }
+      102 |         }
+      103 |       })
+      102 |         }
+      103 |       })
+          |                               ^
+      105 |   };
+      106 |   const timer = setInterval(beat, intervalMs);
+      107 |   // never keep the executor process alive for the sake of a heartbeat
+      975 |     ecsStopped = stop.ok;
+      976 |     ecsError = stop.ok ? undefined : (stop.error || 'unknown').slice(0, 300);
+          |                           ^
+      978 |   }
+      979 |
+      980 |   const r = await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${executionId}&status=eq.${was}`, {
+PASS test/vtid-04032-cancel-running-execution.test.ts
+  VTID-04032 heartbeat cancel read-back
+    ✓ cancelRequestedOnRow: off-running status or a cancel marker; a plain running row is not (2 ms)
+    ✓ reads the row after each beat, fires onCancelRequested exactly once when the row was cancelled, and survives a failing read (10 ms)
+    ✓ without onCancelRequested the beat never reads the row (VTID-04011 behaviour unchanged) (1 ms)
+  VTID-04032 loop stops on cancel
+    ✓ at a turn boundary: no further LLM call, cancelled:true, an error step (2 ms)
+    ✓ before the first turn when already cancelled; never when the predicate stays false (1 ms)
+  VTID-04032 cancelExecution
+    ✓ running row with a remembered task: StopTask with the ARN, row cancelled with the decision merged, one event, terminal side effects (3 ms)
+    ✓ running row where StopTask is refused: still cancelled, the error recorded on the row and returned, message says the agent stops itself (26 ms)
+    ✓ running row without a remembered task never calls StopTask; cooling row keeps the old behaviour; anything else is refused (2 ms)
+  VTID-04032 applyExecutionResult and a cancel
+    ✓ a cancelled agent result on a row the route already cancelled writes nothing more and never bridges (1 ms)
+    ✓ a cancelled agent result on a row still running closes it as cancelled (not failed), one cancelled event, no bridge (2 ms)
+    ✓ a late FAILED result on an already-cancelled row is ignored: no failed patch, no failed event, no self-heal (1 ms)
+    ✓ an ordinary failure on a running row still fails and bridges (unchanged) (2 ms)
+    ✓ recordDispatchedTask merges the ECS task ARN into the existing metadata
+  VTID-04032 wiring
+    ✓ runner: heartbeat raises the flag, the loop polls it, every check and the push are guarded, the outcome is cancelled (6 ms)
+    ✓ dispatch records the task ARN on the AWS path; the route passes the verified actor and the body reason (1 ms)
+    ✓ Command Hub: Cancel on running/cooling Live rows, reason prompt, lists updated in place, cache-bust bumped (7 ms)
+Test Suites: 1 passed, 1 total
+Tests:       16 passed, 16 total
+Snapshots:   0 total
+Time:        0.619 s, estimated 1 s
+Ran all test suites matching /test\/vtid-04032-cancel-running-execution.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
