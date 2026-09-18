@@ -6186,6 +6186,7 @@ function renderHeader() {
         hmHeader.innerHTML =
             '<span style="color:' + titleColor + '">Service Health (' + capsHealthy + '/' + capsTotal + ')</span>' +
             '<button class="drawer-close-btn" style="position:static;">&times;</button>';
+        hmHeader.querySelector('.drawer-close-btn').setAttribute('aria-label', 'Close service health');
         hmHeader.querySelector('.drawer-close-btn').onclick = function () {
             state.cicdHealthTooltipOpen = false;
             renderApp();
@@ -8903,6 +8904,7 @@ function renderTaskDrawer() {
     const closeBtn = document.createElement('button');
     closeBtn.className = 'drawer-close-btn';
     closeBtn.innerHTML = '&times;';
+    closeBtn.setAttribute('aria-label', 'Close task details');
     closeBtn.onclick = () => {
         state.selectedTask = null;
         state.selectedTaskDetail = null;
@@ -12248,7 +12250,7 @@ function renderAdminUsersView() {
             rightPanel.innerHTML = '<div class="admin-detail-panel">' +
                 '<div class="admin-detail-header">' +
                 '<h3>' + (selectedUser.email || '—') + '</h3>' +
-                '<button class="admin-detail-close-btn" onclick="state.adminUsersSelectedId = null; renderApp();">&times;</button>' +
+                '<button class="admin-detail-close-btn" aria-label="Close user details" onclick="state.adminUsersSelectedId = null; renderApp();">&times;</button>' +
                 '</div>' +
                 '<div class="admin-detail-section">' +
                 '<h4>User Summary</h4>' +
@@ -12388,7 +12390,7 @@ function renderAdminPermissionsView() {
         rightPanel.innerHTML = '<div class="admin-detail-panel">' +
             '<div class="admin-detail-header">' +
             '<h3><span class="admin-role-badge admin-role-' + role + '">' + role + '</span></h3>' +
-            '<button class="admin-detail-close-btn" onclick="state.adminPermissionsSelectedKey = null; renderApp();">&times;</button>' +
+            '<button class="admin-detail-close-btn" aria-label="Close role details" onclick="state.adminPermissionsSelectedKey = null; renderApp();">&times;</button>' +
             '</div>' +
             '<div class="admin-detail-section">' +
             '<h4>Role Details</h4>' +
@@ -12524,7 +12526,7 @@ function renderAdminTenantsView() {
             rightPanel.innerHTML = '<div class="admin-detail-panel">' +
                 '<div class="admin-detail-header">' +
                 '<h3>' + (selectedTenant.name || '—') + '</h3>' +
-                '<button class="admin-detail-close-btn" onclick="state.adminTenantsSelectedId = null; state.adminTenantDetail = null; renderApp();">&times;</button>' +
+                '<button class="admin-detail-close-btn" aria-label="Close tenant details" onclick="state.adminTenantsSelectedId = null; state.adminTenantDetail = null; renderApp();">&times;</button>' +
                 '</div>' +
                 '<div class="admin-detail-section">' +
                 '<h4>Tenant Details</h4>' +
@@ -13138,6 +13140,10 @@ function renderAdminBillingCodesView() {
         '  <button id="vtid-03107-generate" class="primary-btn" style="padding:0.5rem 1rem;background:#10b981;color:#0f172a;border:none;border-radius:4px;font-weight:600;cursor:pointer;">Generate</button>' +
         '</div>' +
         '<p style="margin:0.5rem 0 0;font-size:11px;color:#64748b;">Codes are unique-per-user (max_uses=1). For shared marketing codes, edit redemption_codes directly via SQL.</p>';
+    formCard.querySelectorAll('label').forEach(function (lbl) {
+        var ctrl = lbl.parentElement && lbl.parentElement.querySelector('input, select');
+        if (ctrl && ctrl.id) lbl.setAttribute('for', ctrl.id);
+    });
     container.appendChild(formCard);
 
     formCard.querySelector('#vtid-03107-generate').addEventListener('click', async function () {
@@ -13709,11 +13715,13 @@ function renderAdminMarketplaceShopCreateForm() {
         }
         row.innerHTML = labelHtml + fieldHtml
             + (spec.help ? '<small class="admin-detail-note">' + escapeHtml(spec.help) + '</small>' : '');
+        row.querySelector('label').setAttribute('for', id);
         return row;
     }
 
     // Network selector — populated from registry
     var netSel = document.createElement('select');
+    netSel.id = 'mp-network-select';
     netSel.className = 'admin-filter-select';
     var netOpts = '';
     for (var i = 0; i < providers.length; i++) {
@@ -13729,6 +13737,7 @@ function renderAdminMarketplaceShopCreateForm() {
     var netRow = document.createElement('div');
     netRow.style.marginBottom = '0.75rem';
     netRow.innerHTML = '<label style="display:block;font-size:0.8rem;margin-bottom:0.25rem;">Network</label>';
+    netRow.querySelector('label').setAttribute('for', netSel.id);
     netRow.appendChild(netSel);
     wrap.appendChild(netRow);
 
@@ -19112,6 +19121,7 @@ function renderGovernanceRuleDetailDrawer() {
     const closeBtn = document.createElement('button');
     closeBtn.className = 'drawer-close-btn';
     closeBtn.innerHTML = '&times;';
+    closeBtn.setAttribute('aria-label', 'Close governance rule details');
     closeBtn.onclick = () => {
         state.selectedGovernanceRule = null;
         renderApp();
@@ -21301,6 +21311,7 @@ function renderOasisEventDrawer() {
     var closeBtn = document.createElement('button');
     closeBtn.className = 'drawer-close-btn';
     closeBtn.innerHTML = '&times;';
+    closeBtn.setAttribute('aria-label', 'Close event details');
     closeBtn.onclick = function () {
         state.oasisEvents.selectedEvent = null;
         state.oasisEvents.orbTranscript = null;
@@ -22178,6 +22189,7 @@ function renderOasisVtidLedgerDrawer() {
     var closeBtn = document.createElement('button');
     closeBtn.className = 'drawer-close-btn';
     closeBtn.innerHTML = '&times;';
+    closeBtn.setAttribute('aria-label', 'Close VTID details');
     closeBtn.onclick = function () {
         oasisVtidDetail.selectedVtid = null;
         oasisVtidDetail.data = null;
@@ -25005,6 +25017,7 @@ function renderHeartbeatOverlay() {
     const closeBtn = document.createElement('button');
     closeBtn.className = 'overlay-close';
     closeBtn.innerHTML = '&times;';
+    closeBtn.setAttribute('aria-label', 'Close heartbeat details');
     closeBtn.onclick = () => {
         state.isHeartbeatOpen = false;
         renderApp();
@@ -25285,6 +25298,7 @@ function renderOperatorOverlay() {
     const closeBtn = document.createElement('button');
     closeBtn.className = 'overlay-close';
     closeBtn.innerHTML = '&times;';
+    closeBtn.setAttribute('aria-label', 'Close Operator Console');
     closeBtn.onclick = () => {
         state.isOperatorOpen = false;
         // VTID-01209: Stop active executions polling when closing
@@ -25568,7 +25582,7 @@ function renderOperatorChat() {
         state.chatAttachments.forEach((att, index) => {
             const chip = document.createElement('span');
             chip.className = `attachment-chip attachment-${att.kind}`;
-            chip.innerHTML = `${att.name} <span class="attachment-remove" data-index="${index}">&times;</span>`;
+            chip.innerHTML = `${att.name} <span class="attachment-remove" data-index="${index}" aria-label="Remove attachment ${att.name}">&times;</span>`;
             chip.querySelector('.attachment-remove').onclick = () => {
                 state.chatAttachments.splice(index, 1);
                 renderApp();
@@ -26786,6 +26800,7 @@ function renderPublishModal() {
 
     const closeBtn = document.createElement('button');
     closeBtn.innerHTML = '&times;';
+    closeBtn.setAttribute('aria-label', 'Close publish dialog');
     closeBtn.style.cssText = 'background: none; border: none; color: #888; font-size: 28px; cursor: pointer; padding: 0; line-height: 1;';
     closeBtn.onclick = () => {
         console.log('[VTID-0523-B] Publish cancelled: clicked close');
@@ -27267,6 +27282,7 @@ function renderAutopilotRecommendationsModal() {
     var closeBtn = document.createElement('button');
     closeBtn.className = 'modal-close-btn';
     closeBtn.innerHTML = '&times;';
+    closeBtn.setAttribute('aria-label', 'Close recommendations');
     closeBtn.style.cssText = 'background: none; border: none; font-size: 24px; cursor: pointer; color: var(--text-secondary, #888); padding: 4px 8px;';
     closeBtn.onclick = function () {
         state.showAutopilotRecommendationsModal = false;
@@ -27735,6 +27751,7 @@ function renderGovernanceBlockedModal() {
 
     var closeBtn = document.createElement('button');
     closeBtn.innerHTML = '&times;';
+    closeBtn.setAttribute('aria-label', 'Close governance blocked dialog');
     closeBtn.style.cssText = 'background: none; border: none; color: #888; font-size: 28px; cursor: pointer; padding: 0; line-height: 1;';
     closeBtn.onclick = function () {
         state.showGovernanceBlockedModal = false;
@@ -27934,6 +27951,7 @@ function renderExecutionApprovalModal() {
 
     var closeBtn = document.createElement('button');
     closeBtn.innerHTML = '&times;';
+    closeBtn.setAttribute('aria-label', 'Close execution approval dialog');
     closeBtn.style.cssText = 'background: none; border: none; color: #888; font-size: 28px; cursor: pointer; padding: 0; line-height: 1;';
     closeBtn.disabled = state.executionApprovalLoading;
     closeBtn.onclick = function () {
@@ -28149,6 +28167,13 @@ function renderBundleFingerprintFooter() {
 function renderToastContainer() {
     const container = document.createElement('div');
     container.className = 'toast-container';
+    // VTID-04088 (T10 a11y region 1): toasts are pushed via re-render, not a
+    // DOM mutation a screen reader would otherwise notice — without a live
+    // region a sighted user sees the message and a screen-reader user gets
+    // nothing. 'polite' (not 'assertive') so an error toast doesn't cut off
+    // whatever the user is already being told.
+    container.setAttribute('role', 'status');
+    container.setAttribute('aria-live', 'polite');
 
     state.toasts.forEach(toast => {
         const toastEl = document.createElement('div');
@@ -28162,6 +28187,7 @@ function renderToastContainer() {
         const closeBtn = document.createElement('button');
         closeBtn.className = 'toast__close';
         closeBtn.innerHTML = '&times;';
+        closeBtn.setAttribute('aria-label', 'Dismiss notification');
         closeBtn.onclick = () => {
             state.toasts = state.toasts.filter(t => t.id !== toast.id);
             renderApp();
@@ -28708,6 +28734,75 @@ async function uploadOperatorFile(file, kind) {
 
 let cicdHealthPollInterval = null;
 
+// VTID-04087: last-resort copy of the health-endpoint list, used only when
+// GET /api/v1/admin/health-registry (services/gateway/src/constants/
+// service-health-registry.ts) can't be reached. That route is now the
+// canonical source — keep this list in sync when adding/removing a check,
+// but a routine change belongs there first, not here.
+var FALLBACK_HEALTH_ENDPOINTS = [
+    { name: 'Gateway',              url: '/health',                                  group: 'Core Infrastructure' },
+    { name: 'Gateway Alive',        url: '/alive',                                   group: 'Core Infrastructure' },
+    { name: 'Auth',                 url: '/api/v1/auth/health',                      group: 'Core Infrastructure' },
+    { name: 'CI/CD',                url: '/api/v1/cicd/health',                      group: 'Core Infrastructure' },
+    { name: 'Execute Runner',       url: '/api/v1/execute/health',                   group: 'Core Infrastructure' },
+    { name: 'Operator',             url: '/api/v1/operator/health',                  group: 'Core Infrastructure' },
+    { name: 'Operator Deploys',     url: '/api/v1/operator/deployments/health',      group: 'Core Infrastructure' },
+    { name: 'Telemetry',            url: '/api/v1/telemetry/health',                 group: 'Core Infrastructure' },
+    { name: 'Events',               url: '/events/health',                           group: 'Core Infrastructure' },
+    { name: 'Command Hub UI',       url: '/command-hub/health',                      group: 'Core Infrastructure' },
+    { name: 'Assistant',            url: '/api/v1/assistant/health',                 group: 'AI & Assistant' },
+    { name: 'Knowledge Hub',        url: '/api/v1/assistant/knowledge/health',       group: 'AI & Assistant' },
+    { name: 'ORB Live',             url: '/api/v1/orb/health',                       group: 'AI & Assistant' },
+    { name: 'Voice Lab',            url: '/api/v1/voice-lab/health',                 group: 'AI & Assistant' },
+    { name: 'Conversation',         url: '/api/v1/conversation/health',              group: 'AI & Assistant' },
+    { name: 'Conversation Tools',   url: '/api/v1/conversation/tool-health',         group: 'AI & Assistant' },
+    { name: 'Autopilot',            url: '/api/v1/autopilot/health',                 group: 'Autopilot' },
+    { name: 'Autopilot Pipeline',   url: '/api/v1/autopilot/pipeline/health',        group: 'Autopilot' },
+    { name: 'Autopilot Prompts',    url: '/api/v1/autopilot/prompts/health',         group: 'Autopilot' },
+    { name: 'Recommendations',      url: '/api/v1/autopilot/recommendations/health', group: 'Autopilot' },
+    { name: 'Automations',          url: '/api/v1/automations/health',               group: 'Automation & Scheduling' },
+    { name: 'Rec. Inbox',           url: '/api/v1/recommendations/health',           group: 'Automation & Scheduling' },
+    { name: 'Memory',               url: '/api/v1/memory/health',                    group: 'Automation & Scheduling' },
+    { name: 'Semantic Memory',      url: '/api/v1/memory/semantic/health',           group: 'Automation & Scheduling' },
+    { name: 'Diary',                url: '/api/v1/diary/health',                     group: 'Automation & Scheduling' },
+    { name: 'Health Capacity',      url: '/api/v1/capacity/health',                  group: 'Automation & Scheduling' },
+    { name: 'Scheduler',            url: '/api/v1/scheduler/health',                 group: 'Automation & Scheduling' },
+    { name: 'Sched. Notifications', url: '/api/v1/scheduled-notifications/health',   group: 'Automation & Scheduling' },
+    { name: 'Email Intake',         url: '/api/v1/intake/email/health',              group: 'Automation & Scheduling' },
+    { name: 'Community',            url: '/api/v1/community/health',                 group: 'Community & Social' },
+    { name: 'Relationships',        url: '/api/v1/relationships/health',             group: 'Community & Social' },
+    { name: 'Matchmaking',          url: '/api/v1/match/health',                     group: 'Community & Social' },
+    { name: 'Personalization',      url: '/api/v1/personalization/health',           group: 'Community & Social' },
+    { name: 'Live Rooms',           url: '/api/v1/live/health',                      group: 'Community & Social' },
+    { name: 'Social Context',       url: '/api/v1/social/health',                    group: 'Community & Social' },
+    { name: 'Social Connect',       url: '/api/v1/social-accounts/health',           group: 'Community & Social' },
+    { name: 'Social Alignment',     url: '/api/v1/alignment/health',                 group: 'Community & Social' },
+    { name: 'Topics',               url: '/api/v1/topics/health',                    group: 'Community & Social' },
+    { name: 'Domain Routing',       url: '/api/v1/routing/health',                   group: 'Domain & Context' },
+    { name: 'Locations',            url: '/api/v1/locations/health',                 group: 'Domain & Context' },
+    { name: 'Offers',               url: '/api/v1/offers/health',                    group: 'Domain & Context' },
+    { name: 'Feedback',             url: '/api/v1/feedback/health',                  group: 'Domain & Context' },
+    { name: 'Voice Feedback',       url: '/api/v1/voice-feedback/health',            group: 'Domain & Context' },
+    { name: 'Situational',          url: '/api/v1/situational/health',               group: 'Domain & Context' },
+    { name: 'Availability',         url: '/api/v1/availability/health',              group: 'Domain & Context' },
+    { name: 'Env. Mobility',        url: '/api/v1/context/mobility/health',          group: 'Domain & Context' },
+    { name: 'User Preferences',     url: '/api/v1/user-preferences/health',          group: 'Domain & Context' },
+    { name: 'Taste Alignment',      url: '/api/v1/taste-alignment/health',           group: 'Domain & Context' },
+    { name: 'Overload Detection',   url: '/api/v1/overload/health',                  group: 'Domain & Context' },
+    { name: 'Risk Mitigation',      url: '/api/v1/mitigation/health',                group: 'Domain & Context' },
+    { name: 'Opportunities',        url: '/api/v1/opportunities/health',             group: 'Domain & Context' },
+    { name: 'Visual Interactive',   url: '/api/v1/visual/health',                    group: 'Visual & VTID' },
+    { name: 'VTID Terminalize',     url: '/api/v1/oasis/vtid/terminalize/health',    group: 'Visual & VTID' },
+    { name: 'VTID',                 url: '/api/v1/vtid/health',                      group: 'Visual & VTID' },
+    // DEV-COMHU-03401 / VTID-SCREEN-LOAD-01: standard basic test —
+    // scheduled Playwright run (SCREEN-LOAD-TIMING.yml, every 30 min)
+    // measures mobile screen load time against production and reports
+    // here. 'down' means either a screen failed to load or the
+    // scheduled job itself hasn't reported in 3h+; 'degraded' means
+    // it's reporting but slow (p75 over budget).
+    { name: 'Screen Load Time',     url: '/api/v1/frontend/screen-load/health',      group: 'Frontend & Performance' }
+];
+
 /**
  * Fetches CI/CD health status from the backend API.
  * Updates state.cicdHealth with the response.
@@ -28718,70 +28813,24 @@ async function fetchServiceHealth(silentRefresh) {
     if (state.serviceHealth.loading) return;
     state.serviceHealth.loading = true;
 
-    var healthEndpoints = [
-        { name: 'Gateway',              url: '/health',                                  group: 'Core Infrastructure' },
-        { name: 'Gateway Alive',        url: '/alive',                                   group: 'Core Infrastructure' },
-        { name: 'Auth',                 url: '/api/v1/auth/health',                      group: 'Core Infrastructure' },
-        { name: 'CI/CD',                url: '/api/v1/cicd/health',                      group: 'Core Infrastructure' },
-        { name: 'Execute Runner',       url: '/api/v1/execute/health',                   group: 'Core Infrastructure' },
-        { name: 'Operator',             url: '/api/v1/operator/health',                  group: 'Core Infrastructure' },
-        { name: 'Operator Deploys',     url: '/api/v1/operator/deployments/health',      group: 'Core Infrastructure' },
-        { name: 'Telemetry',            url: '/api/v1/telemetry/health',                 group: 'Core Infrastructure' },
-        { name: 'Events',               url: '/events/health',                           group: 'Core Infrastructure' },
-        { name: 'Command Hub UI',       url: '/command-hub/health',                      group: 'Core Infrastructure' },
-        { name: 'Assistant',            url: '/api/v1/assistant/health',                 group: 'AI & Assistant' },
-        { name: 'Knowledge Hub',        url: '/api/v1/assistant/knowledge/health',       group: 'AI & Assistant' },
-        { name: 'ORB Live',             url: '/api/v1/orb/health',                       group: 'AI & Assistant' },
-        { name: 'Voice Lab',            url: '/api/v1/voice-lab/health',                 group: 'AI & Assistant' },
-        { name: 'Conversation',         url: '/api/v1/conversation/health',              group: 'AI & Assistant' },
-        { name: 'Conversation Tools',   url: '/api/v1/conversation/tool-health',         group: 'AI & Assistant' },
-        { name: 'Autopilot',            url: '/api/v1/autopilot/health',                 group: 'Autopilot' },
-        { name: 'Autopilot Pipeline',   url: '/api/v1/autopilot/pipeline/health',        group: 'Autopilot' },
-        { name: 'Autopilot Prompts',    url: '/api/v1/autopilot/prompts/health',         group: 'Autopilot' },
-        { name: 'Recommendations',      url: '/api/v1/autopilot/recommendations/health', group: 'Autopilot' },
-        { name: 'Automations',          url: '/api/v1/automations/health',               group: 'Automation & Scheduling' },
-        { name: 'Rec. Inbox',           url: '/api/v1/recommendations/health',           group: 'Automation & Scheduling' },
-        { name: 'Memory',               url: '/api/v1/memory/health',                    group: 'Automation & Scheduling' },
-        { name: 'Semantic Memory',      url: '/api/v1/memory/semantic/health',           group: 'Automation & Scheduling' },
-        { name: 'Diary',                url: '/api/v1/diary/health',                     group: 'Automation & Scheduling' },
-        { name: 'Health Capacity',      url: '/api/v1/capacity/health',                  group: 'Automation & Scheduling' },
-        { name: 'Scheduler',            url: '/api/v1/scheduler/health',                 group: 'Automation & Scheduling' },
-        { name: 'Sched. Notifications', url: '/api/v1/scheduled-notifications/health',   group: 'Automation & Scheduling' },
-        { name: 'Email Intake',         url: '/api/v1/intake/email/health',              group: 'Automation & Scheduling' },
-        { name: 'Community',            url: '/api/v1/community/health',                 group: 'Community & Social' },
-        { name: 'Relationships',        url: '/api/v1/relationships/health',             group: 'Community & Social' },
-        { name: 'Matchmaking',          url: '/api/v1/match/health',                     group: 'Community & Social' },
-        { name: 'Personalization',      url: '/api/v1/personalization/health',           group: 'Community & Social' },
-        { name: 'Live Rooms',           url: '/api/v1/live/health',                      group: 'Community & Social' },
-        { name: 'Social Context',       url: '/api/v1/social/health',                    group: 'Community & Social' },
-        { name: 'Social Connect',       url: '/api/v1/social-accounts/health',           group: 'Community & Social' },
-        { name: 'Social Alignment',     url: '/api/v1/alignment/health',                 group: 'Community & Social' },
-        { name: 'Topics',               url: '/api/v1/topics/health',                    group: 'Community & Social' },
-        { name: 'Domain Routing',       url: '/api/v1/routing/health',                   group: 'Domain & Context' },
-        { name: 'Locations',            url: '/api/v1/locations/health',                 group: 'Domain & Context' },
-        { name: 'Offers',               url: '/api/v1/offers/health',                    group: 'Domain & Context' },
-        { name: 'Feedback',             url: '/api/v1/feedback/health',                  group: 'Domain & Context' },
-        { name: 'Voice Feedback',       url: '/api/v1/voice-feedback/health',            group: 'Domain & Context' },
-        { name: 'Situational',          url: '/api/v1/situational/health',               group: 'Domain & Context' },
-        { name: 'Availability',         url: '/api/v1/availability/health',              group: 'Domain & Context' },
-        { name: 'Env. Mobility',        url: '/api/v1/context/mobility/health',          group: 'Domain & Context' },
-        { name: 'User Preferences',     url: '/api/v1/user-preferences/health',          group: 'Domain & Context' },
-        { name: 'Taste Alignment',      url: '/api/v1/taste-alignment/health',           group: 'Domain & Context' },
-        { name: 'Overload Detection',   url: '/api/v1/overload/health',                  group: 'Domain & Context' },
-        { name: 'Risk Mitigation',      url: '/api/v1/mitigation/health',                group: 'Domain & Context' },
-        { name: 'Opportunities',        url: '/api/v1/opportunities/health',             group: 'Domain & Context' },
-        { name: 'Visual Interactive',   url: '/api/v1/visual/health',                    group: 'Visual & VTID' },
-        { name: 'VTID Terminalize',     url: '/api/v1/oasis/vtid/terminalize/health',    group: 'Visual & VTID' },
-        { name: 'VTID',                 url: '/api/v1/vtid/health',                      group: 'Visual & VTID' },
-        // DEV-COMHU-03401 / VTID-SCREEN-LOAD-01: standard basic test —
-        // scheduled Playwright run (SCREEN-LOAD-TIMING.yml, every 30 min)
-        // measures mobile screen load time against production and reports
-        // here. 'down' means either a screen failed to load or the
-        // scheduled job itself hasn't reported in 3h+; 'degraded' means
-        // it's reporting but slow (p75 over budget).
-        { name: 'Screen Load Time',     url: '/api/v1/frontend/screen-load/health',      group: 'Frontend & Performance' }
-    ];
-
+    // VTID-04087: fetch the endpoint list from the gateway's own registry
+    // (GET /api/v1/admin/health-registry) so a new health check can be
+    // added there without also hand-editing this array. FALLBACK_HEALTH_ENDPOINTS
+    // is only the last-resort copy used when that fetch fails (offline,
+    // route down, malformed response) — keep it in sync when adding/removing
+    // a check, but the registry route is the canonical source now.
+    var healthEndpoints = FALLBACK_HEALTH_ENDPOINTS;
+    try {
+        var registryResp = await fetchWT('/api/v1/admin/health-registry', {}, 4000);
+        if (registryResp.ok) {
+            var registryBody = await registryResp.json();
+            if (registryBody && Array.isArray(registryBody.endpoints) && registryBody.endpoints.length > 0) {
+                healthEndpoints = registryBody.endpoints;
+            }
+        }
+    } catch (registryError) {
+        console.warn('[ServiceHealth] Registry fetch failed, using fallback list:', registryError);
+    }
     try {
         // VTID-01982: send the operator's bearer token so health probes against
         // routers gated by requireAuth/requireExafyAdmin (diary, automations,
@@ -34930,6 +34979,7 @@ function openAiAssistantDrawer(provider) {
     var closeBtn = document.createElement('button');
     closeBtn.type = 'button';
     closeBtn.textContent = '✕';
+    closeBtn.setAttribute('aria-label', 'Close AI assistant settings');
     closeBtn.className = 'ai-drawer__close';
     closeBtn.addEventListener('click', function () { root.remove(); });
     header.appendChild(closeBtn);
@@ -34979,8 +35029,9 @@ function openAiAssistantDrawer(provider) {
             target.innerHTML = '';
             var row1 = document.createElement('div');
             row1.className = 'ai-drawer__row';
-            row1.innerHTML = '<label>Display name</label>';
+            row1.innerHTML = '<label for="ai-drawer-catalog-name-' + provider + '">Display name</label>';
             var nameInput = document.createElement('input');
+            nameInput.id = 'ai-drawer-catalog-name-' + provider;
             nameInput.type = 'text';
             nameInput.value = entry.display_name || '';
             row1.appendChild(nameInput);
@@ -34988,8 +35039,9 @@ function openAiAssistantDrawer(provider) {
 
             var row2 = document.createElement('div');
             row2.className = 'ai-drawer__row';
-            row2.innerHTML = '<label>Enabled</label>';
+            row2.innerHTML = '<label for="ai-drawer-catalog-enabled-' + provider + '">Enabled</label>';
             var enabledToggle = document.createElement('input');
+            enabledToggle.id = 'ai-drawer-catalog-enabled-' + provider;
             enabledToggle.type = 'checkbox';
             enabledToggle.checked = !!entry.enabled;
             row2.appendChild(enabledToggle);
@@ -35028,8 +35080,9 @@ function openAiAssistantDrawer(provider) {
 
             var row1 = document.createElement('div');
             row1.className = 'ai-drawer__row';
-            row1.innerHTML = '<label>Allowed</label>';
+            row1.innerHTML = '<label for="ai-drawer-policy-allowed-' + provider + '">Allowed</label>';
             var allowedToggle = document.createElement('input');
+            allowedToggle.id = 'ai-drawer-policy-allowed-' + provider;
             allowedToggle.type = 'checkbox';
             allowedToggle.checked = policy ? !!policy.allowed : false;
             row1.appendChild(allowedToggle);
@@ -35037,8 +35090,9 @@ function openAiAssistantDrawer(provider) {
 
             var row2 = document.createElement('div');
             row2.className = 'ai-drawer__row';
-            row2.innerHTML = '<label>Allowed models (comma separated)</label>';
+            row2.innerHTML = '<label for="ai-drawer-policy-models-' + provider + '">Allowed models (comma separated)</label>';
             var modelsInput = document.createElement('input');
+            modelsInput.id = 'ai-drawer-policy-models-' + provider;
             modelsInput.type = 'text';
             modelsInput.value = (policy && policy.allowed_models ? policy.allowed_models.join(', ') : '');
             modelsInput.style.width = '100%';
@@ -35047,8 +35101,9 @@ function openAiAssistantDrawer(provider) {
 
             var row3 = document.createElement('div');
             row3.className = 'ai-drawer__row';
-            row3.innerHTML = '<label>Cost cap USD / month</label>';
+            row3.innerHTML = '<label for="ai-drawer-policy-costcap-' + provider + '">Cost cap USD / month</label>';
             var capInput = document.createElement('input');
+            capInput.id = 'ai-drawer-policy-costcap-' + provider;
             capInput.type = 'number';
             capInput.value = policy && policy.cost_cap_usd_month != null ? String(policy.cost_cap_usd_month) : '50';
             row3.appendChild(capInput);
