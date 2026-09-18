@@ -1,0 +1,32 @@
+{
+  "vtid": "VTID-04065",
+  "execution_id": "d6d55454-4425-4ec6-be57-0c084c0f740e",
+  "finding_id": "ffa5490e-cb1f-4faf-9c67-66013f3c7977",
+  "plan_version": 1,
+  "branch": "dev-autopilot/d6d55454",
+  "base_branch": "main",
+  "llm": {
+    "provider": "deepseek",
+    "model": "deepseek-flash"
+  },
+  "files": [
+    {
+      "path": "services/gateway/src/frontend/command-hub/app.js",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/src/frontend/command-hub/index.html",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/test/command-hub/stale-provider-defaults-fixed.test.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/test/command-hub/t5c-no-fabricated-fallback-rows.test.ts",
+      "action": "create"
+    }
+  ],
+  "generated_at": "2026-09-18T12:36:07.527Z",
+  "generated_by": "dev-autopilot-execute (VTID-04002 PR contract)"
+}

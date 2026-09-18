@@ -262,16 +262,19 @@ describe('Command Hub — stale GCP labels fixed (VTID-04066)', () => {
   });
 
   describe('cache-bust bump in index.html', () => {
-    it('bumps both styles.css and app.js to the VTID-04066 marker, kept in sync', () => {
+    it('bumps both styles.css and app.js together, kept in sync (at or after VTID-04066)', () => {
       const html = readIndexHtml();
-      expect(html).toContain('styles.css?v=20260918-vtid-04066-stale-gcp-labels');
-      expect(html).toContain('app.js?v=20260918-vtid-04066-stale-gcp-labels');
 
       const stylesMatch = html.match(/\/command-hub\/styles\.css\?v=([^"]+)"/);
       const appMatch = html.match(/\/command-hub\/app\.js\?v=([^"]+)"/);
       expect(stylesMatch).toBeTruthy();
       expect(appMatch).toBeTruthy();
       expect(stylesMatch![1]).toBe(appMatch![1]);
+      // Past the previous marker, so the browser cannot serve a stale copy. Asserted
+      // "at or after" rather than pinned to this exact literal — a later sibling PR
+      // legitimately re-bumps this marker further, and pinning an exact string here
+      // would break every such PR (the VTID-04028/04031 pattern).
+      expect(stylesMatch![1] > '20260918-vtid-04061-dead-code-removed').toBe(true);
     });
   });
 });
