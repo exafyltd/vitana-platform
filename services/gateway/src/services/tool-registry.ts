@@ -111,6 +111,73 @@ const TOOL_REGISTRY: Map<string, ToolDefinition> = new Map([
     },
   ],
   [
+    'autopilot_review_execution',
+    {
+      name: 'autopilot_review_execution',
+      description: 'VTID-04030: Review a Dev Autopilot execution that is held for approval (status awaiting_approval, W4e diff review): returns the pushed branch, the PR title/body it would open, the changed files, the --stat and a bounded unified diff. With no execution_id it lists every execution currently waiting for a decision. Read-only; exafy_admin session required.',
+      parameters_schema: {
+        type: 'object',
+        properties: {
+          execution_id: {
+            type: 'string',
+            description: 'The execution id (full UUID, or the 8+ character prefix shown in the Command Hub). Omit to list every execution waiting for approval.',
+          },
+        },
+        required: [],
+      },
+      allowed_roles: ['operator', 'admin', 'developer'],
+      enabled: true,
+      category: 'autopilot',
+      vtid: 'VTID-04030',
+    },
+  ],
+  [
+    'autopilot_approve_execution',
+    {
+      name: 'autopilot_approve_execution',
+      description: 'VTID-04030: Approve a held Dev Autopilot execution — opens the real pull request on the branch the agent already pushed, with the stored title/body, and hands the execution to the normal CI path. Irreversible for the PR (it can only be closed afterwards). Only after the user has explicitly asked to approve THIS execution; exafy_admin session required.',
+      parameters_schema: {
+        type: 'object',
+        properties: {
+          execution_id: {
+            type: 'string',
+            description: 'The execution id to approve (full UUID or the 8+ character prefix). It must be in status awaiting_approval.',
+          },
+        },
+        required: ['execution_id'],
+      },
+      allowed_roles: ['operator', 'admin', 'developer'],
+      enabled: true,
+      category: 'autopilot',
+      vtid: 'VTID-04030',
+    },
+  ],
+  [
+    'autopilot_reject_execution',
+    {
+      name: 'autopilot_reject_execution',
+      description: 'VTID-04030: Reject a held Dev Autopilot execution — deletes the pushed branch (best effort) and cancels the execution with the recorded reason. No PR is opened. Only after the user has explicitly asked to reject THIS execution; exafy_admin session required.',
+      parameters_schema: {
+        type: 'object',
+        properties: {
+          execution_id: {
+            type: 'string',
+            description: 'The execution id to reject (full UUID or the 8+ character prefix). It must be in status awaiting_approval.',
+          },
+          reason: {
+            type: 'string',
+            description: 'Why it is rejected, in the user\'s words (recorded on the execution; up to 500 chars).',
+          },
+        },
+        required: ['execution_id'],
+      },
+      allowed_roles: ['operator', 'admin', 'developer'],
+      enabled: true,
+      category: 'autopilot',
+      vtid: 'VTID-04030',
+    },
+  ],
+  [
     'autopilot_get_status',
     {
       name: 'autopilot_get_status',
@@ -1222,7 +1289,7 @@ export async function runToolHealthChecks(): Promise<ToolHealthResponse> {
   const supabaseAvailable = !!SUPABASE_URL && !!SUPABASE_SERVICE_ROLE;
 
   // Update health for Supabase-dependent tools
-  const supabaseTools = ['autopilot_create_task', 'autopilot_execute_task', 'autopilot_run_task', 'autopilot_get_status', 'autopilot_list_recent_tasks', 'knowledge_search', 'memory_write', 'memory_search', 'recall_conversation_at_time', 'discover_oasis_tasks', 'dev_list_tasks', 'dev_get_task_detail', 'dev_generate_spec', 'dev_get_spec', 'dev_validate_spec', 'dev_quality_check', 'dev_approve_spec', 'dev_list_approvals', 'dev_approval_count', 'dev_approve_item', 'dev_reject_item', 'dev_query_oasis_events'];
+  const supabaseTools = ['autopilot_create_task', 'autopilot_execute_task', 'autopilot_run_task', 'autopilot_review_execution', 'autopilot_approve_execution', 'autopilot_reject_execution', 'autopilot_get_status', 'autopilot_list_recent_tasks', 'knowledge_search', 'memory_write', 'memory_search', 'recall_conversation_at_time', 'discover_oasis_tasks', 'dev_list_tasks', 'dev_get_task_detail', 'dev_generate_spec', 'dev_get_spec', 'dev_validate_spec', 'dev_quality_check', 'dev_approve_spec', 'dev_list_approvals', 'dev_approval_count', 'dev_approve_item', 'dev_reject_item', 'dev_query_oasis_events'];
   for (const toolName of supabaseTools) {
     updateToolHealth(
       toolName,

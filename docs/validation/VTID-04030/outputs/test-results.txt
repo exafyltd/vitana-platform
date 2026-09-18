@@ -1,0 +1,57 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+    ✅ Test setup loaded - fetch mocked, env vars set
+      174 |   const authz = authorizeApprovalTool('autopilot_review_execution', threadId);
+      175 |   if (!authz.ok) {
+          |             ^
+      177 |     return { ok: false, error: authz.error };
+      178 |   }
+      179 |   const s = deps.s === undefined ? getSupabase() : deps.s;
+      252 |   const authz = authorizeApprovalTool('autopilot_approve_execution', threadId);
+      253 |   if (!authz.ok) {
+          |             ^
+      255 |     return { ok: false, error: authz.error };
+      256 |   }
+      257 |   const s = deps.s === undefined ? getSupabase() : deps.s;
+      288 |   const authz = authorizeApprovalTool('autopilot_reject_execution', threadId);
+      289 |   if (!authz.ok) {
+          |             ^
+      291 |     return { ok: false, error: authz.error };
+      292 |   }
+      293 |   const s = deps.s === undefined ? getSupabase() : deps.s;
+      262 |   const r = await (deps.approve ?? ((id, actor) => approveExecution(id, actor, { s })))(resolved.id, authz.actor);
+      263 |   if (!r.ok) {
+          |             ^
+      265 |     return { ok: false, error: `approve failed: ${r.error}` };
+      266 |   }
+      299 |   const r = await (deps.reject ?? ((id, actor, why) => rejectExecution(id, actor, why, { s })))(resolved.id, authz.actor, reason);
+      300 |   if (!r.ok) {
+          |             ^
+      302 |     return { ok: false, error: `reject failed: ${r.error}` };
+      303 |   }
+PASS test/vtid-04030-operator-approval-tools.test.ts
+  VTID-04030 tool declarations
+    ✓ registry: three tools, review takes an optional id, approve/reject require it, all VTID-04030 (9 ms)
+    ✓ operator wire schema: same shapes, in order, and each dispatched to its handler (3 ms)
+  VTID-04030 both operator prompt sources describe the tools (VTID-03838 drift rule)
+    ✓ served PERSONALITY_DEFAULTS: lists the three tools, routes review vs decision, and forbids deciding on the model's own judgement (1 ms)
+    ✓ inline fallback: lists the three tools, routes review vs decision, and forbids deciding on the model's own judgement (1 ms)
+    ✓ the execution-rules block is still byte-identical across both sources (1 ms)
+  VTID-04030 caller gate (VTID-03851) runs before any read
+    ✓ refuses an anonymous thread and a non-admin thread, naming the tool, without touching Supabase (21 ms)
+    ✓ derives the actor from the verified identity, never from the model
+    ✓ reports an unconfigured Supabase instead of throwing (1 ms)
+  VTID-04030 resolveExecutionId
+    ✓ accepts a full UUID without a lookup, resolves a unique prefix among awaiting rows only, refuses none/ambiguous/short (1 ms)
+  VTID-04030 review
+    ✓ with no id and nothing waiting says so (1 ms)
+    ✓ with an id returns the stored preview bounded for the model (patch, body, file list)
+  VTID-04030 approve / reject
+    ✓ approve resolves the prefix, hands the verified actor to approveExecution and reports the PR (2 ms)
+    ✓ approve passes the VTID-04029 refusal through and never claims success (1 ms)
+    ✓ reject hands actor + trimmed reason (≤ 500 chars) to rejectExecution and reports the branch outcome (3 ms)
+Test Suites: 1 passed, 1 total
+Tests:       16 passed, 16 total
+Snapshots:   0 total
+Time:        0.564 s, estimated 1 s
+Ran all test suites matching /test\/vtid-04030-operator-approval-tools.test.ts/i.

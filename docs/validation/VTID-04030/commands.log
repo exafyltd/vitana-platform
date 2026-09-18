@@ -1,0 +1,12 @@
+# VTID-04030 — commands run (2026-09-17, Claude Code session)
+
+# VTID allocated + registered (Supabase MCP, project inmkhvwdcuyhnxkgfvsb)
+select * from allocate_global_vtid('claude-code', 'AGTL', 'operator-console');   -- VTID-04030
+update vtid_ledger set title=..., summary=..., status='in_progress', spec_status='approved' where vtid='VTID-04030';
+
+# gateway
+cd services/gateway
+NODE_OPTIONS=--max-old-space-size=3072 npx tsc --noEmit                             # exit 0 (first run: ApprovalToolResult.data typed unknown vs ToolExecutionResult — narrowed to Record<string, unknown>)
+npx jest test/vtid-04030-operator-approval-tools.test.ts test/vtid-04007-open-ended-intake.test.ts \
+  test/vtid-03838-operator-prompt-lists-execute-tool.test.ts test/vtid-03851-execute-task-requires-auth.test.ts \
+  test/vtid-04018-operator-bootstrap-pack.test.ts test/vtid-04029-dev-autopilot-pr-approval.test.ts   # 6 suites, 93 tests, 0 failures
