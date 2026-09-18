@@ -29152,6 +29152,75 @@ async function uploadOperatorFile(file, kind) {
 
 let cicdHealthPollInterval = null;
 
+// VTID-04087: last-resort copy of the health-endpoint list, used only when
+// GET /api/v1/admin/health-registry (services/gateway/src/constants/
+// service-health-registry.ts) can't be reached. That route is now the
+// canonical source — keep this list in sync when adding/removing a check,
+// but a routine change belongs there first, not here.
+var FALLBACK_HEALTH_ENDPOINTS = [
+    { name: 'Gateway',              url: '/health',                                  group: 'Core Infrastructure' },
+    { name: 'Gateway Alive',        url: '/alive',                                   group: 'Core Infrastructure' },
+    { name: 'Auth',                 url: '/api/v1/auth/health',                      group: 'Core Infrastructure' },
+    { name: 'CI/CD',                url: '/api/v1/cicd/health',                      group: 'Core Infrastructure' },
+    { name: 'Execute Runner',       url: '/api/v1/execute/health',                   group: 'Core Infrastructure' },
+    { name: 'Operator',             url: '/api/v1/operator/health',                  group: 'Core Infrastructure' },
+    { name: 'Operator Deploys',     url: '/api/v1/operator/deployments/health',      group: 'Core Infrastructure' },
+    { name: 'Telemetry',            url: '/api/v1/telemetry/health',                 group: 'Core Infrastructure' },
+    { name: 'Events',               url: '/events/health',                           group: 'Core Infrastructure' },
+    { name: 'Command Hub UI',       url: '/command-hub/health',                      group: 'Core Infrastructure' },
+    { name: 'Assistant',            url: '/api/v1/assistant/health',                 group: 'AI & Assistant' },
+    { name: 'Knowledge Hub',        url: '/api/v1/assistant/knowledge/health',       group: 'AI & Assistant' },
+    { name: 'ORB Live',             url: '/api/v1/orb/health',                       group: 'AI & Assistant' },
+    { name: 'Voice Lab',            url: '/api/v1/voice-lab/health',                 group: 'AI & Assistant' },
+    { name: 'Conversation',         url: '/api/v1/conversation/health',              group: 'AI & Assistant' },
+    { name: 'Conversation Tools',   url: '/api/v1/conversation/tool-health',         group: 'AI & Assistant' },
+    { name: 'Autopilot',            url: '/api/v1/autopilot/health',                 group: 'Autopilot' },
+    { name: 'Autopilot Pipeline',   url: '/api/v1/autopilot/pipeline/health',        group: 'Autopilot' },
+    { name: 'Autopilot Prompts',    url: '/api/v1/autopilot/prompts/health',         group: 'Autopilot' },
+    { name: 'Recommendations',      url: '/api/v1/autopilot/recommendations/health', group: 'Autopilot' },
+    { name: 'Automations',          url: '/api/v1/automations/health',               group: 'Automation & Scheduling' },
+    { name: 'Rec. Inbox',           url: '/api/v1/recommendations/health',           group: 'Automation & Scheduling' },
+    { name: 'Memory',               url: '/api/v1/memory/health',                    group: 'Automation & Scheduling' },
+    { name: 'Semantic Memory',      url: '/api/v1/memory/semantic/health',           group: 'Automation & Scheduling' },
+    { name: 'Diary',                url: '/api/v1/diary/health',                     group: 'Automation & Scheduling' },
+    { name: 'Health Capacity',      url: '/api/v1/capacity/health',                  group: 'Automation & Scheduling' },
+    { name: 'Scheduler',            url: '/api/v1/scheduler/health',                 group: 'Automation & Scheduling' },
+    { name: 'Sched. Notifications', url: '/api/v1/scheduled-notifications/health',   group: 'Automation & Scheduling' },
+    { name: 'Email Intake',         url: '/api/v1/intake/email/health',              group: 'Automation & Scheduling' },
+    { name: 'Community',            url: '/api/v1/community/health',                 group: 'Community & Social' },
+    { name: 'Relationships',        url: '/api/v1/relationships/health',             group: 'Community & Social' },
+    { name: 'Matchmaking',          url: '/api/v1/match/health',                     group: 'Community & Social' },
+    { name: 'Personalization',      url: '/api/v1/personalization/health',           group: 'Community & Social' },
+    { name: 'Live Rooms',           url: '/api/v1/live/health',                      group: 'Community & Social' },
+    { name: 'Social Context',       url: '/api/v1/social/health',                    group: 'Community & Social' },
+    { name: 'Social Connect',       url: '/api/v1/social-accounts/health',           group: 'Community & Social' },
+    { name: 'Social Alignment',     url: '/api/v1/alignment/health',                 group: 'Community & Social' },
+    { name: 'Topics',               url: '/api/v1/topics/health',                    group: 'Community & Social' },
+    { name: 'Domain Routing',       url: '/api/v1/routing/health',                   group: 'Domain & Context' },
+    { name: 'Locations',            url: '/api/v1/locations/health',                 group: 'Domain & Context' },
+    { name: 'Offers',               url: '/api/v1/offers/health',                    group: 'Domain & Context' },
+    { name: 'Feedback',             url: '/api/v1/feedback/health',                  group: 'Domain & Context' },
+    { name: 'Voice Feedback',       url: '/api/v1/voice-feedback/health',            group: 'Domain & Context' },
+    { name: 'Situational',          url: '/api/v1/situational/health',               group: 'Domain & Context' },
+    { name: 'Availability',         url: '/api/v1/availability/health',              group: 'Domain & Context' },
+    { name: 'Env. Mobility',        url: '/api/v1/context/mobility/health',          group: 'Domain & Context' },
+    { name: 'User Preferences',     url: '/api/v1/user-preferences/health',          group: 'Domain & Context' },
+    { name: 'Taste Alignment',      url: '/api/v1/taste-alignment/health',           group: 'Domain & Context' },
+    { name: 'Overload Detection',   url: '/api/v1/overload/health',                  group: 'Domain & Context' },
+    { name: 'Risk Mitigation',      url: '/api/v1/mitigation/health',                group: 'Domain & Context' },
+    { name: 'Opportunities',        url: '/api/v1/opportunities/health',             group: 'Domain & Context' },
+    { name: 'Visual Interactive',   url: '/api/v1/visual/health',                    group: 'Visual & VTID' },
+    { name: 'VTID Terminalize',     url: '/api/v1/oasis/vtid/terminalize/health',    group: 'Visual & VTID' },
+    { name: 'VTID',                 url: '/api/v1/vtid/health',                      group: 'Visual & VTID' },
+    // DEV-COMHU-03401 / VTID-SCREEN-LOAD-01: standard basic test —
+    // scheduled Playwright run (SCREEN-LOAD-TIMING.yml, every 30 min)
+    // measures mobile screen load time against production and reports
+    // here. 'down' means either a screen failed to load or the
+    // scheduled job itself hasn't reported in 3h+; 'degraded' means
+    // it's reporting but slow (p75 over budget).
+    { name: 'Screen Load Time',     url: '/api/v1/frontend/screen-load/health',      group: 'Frontend & Performance' }
+];
+
 /**
  * Fetches CI/CD health status from the backend API.
  * Updates state.cicdHealth with the response.
@@ -29162,70 +29231,24 @@ async function fetchServiceHealth(silentRefresh) {
     if (state.serviceHealth.loading) return;
     state.serviceHealth.loading = true;
 
-    var healthEndpoints = [
-        { name: 'Gateway',              url: '/health',                                  group: 'Core Infrastructure' },
-        { name: 'Gateway Alive',        url: '/alive',                                   group: 'Core Infrastructure' },
-        { name: 'Auth',                 url: '/api/v1/auth/health',                      group: 'Core Infrastructure' },
-        { name: 'CI/CD',                url: '/api/v1/cicd/health',                      group: 'Core Infrastructure' },
-        { name: 'Execute Runner',       url: '/api/v1/execute/health',                   group: 'Core Infrastructure' },
-        { name: 'Operator',             url: '/api/v1/operator/health',                  group: 'Core Infrastructure' },
-        { name: 'Operator Deploys',     url: '/api/v1/operator/deployments/health',      group: 'Core Infrastructure' },
-        { name: 'Telemetry',            url: '/api/v1/telemetry/health',                 group: 'Core Infrastructure' },
-        { name: 'Events',               url: '/events/health',                           group: 'Core Infrastructure' },
-        { name: 'Command Hub UI',       url: '/command-hub/health',                      group: 'Core Infrastructure' },
-        { name: 'Assistant',            url: '/api/v1/assistant/health',                 group: 'AI & Assistant' },
-        { name: 'Knowledge Hub',        url: '/api/v1/assistant/knowledge/health',       group: 'AI & Assistant' },
-        { name: 'ORB Live',             url: '/api/v1/orb/health',                       group: 'AI & Assistant' },
-        { name: 'Voice Lab',            url: '/api/v1/voice-lab/health',                 group: 'AI & Assistant' },
-        { name: 'Conversation',         url: '/api/v1/conversation/health',              group: 'AI & Assistant' },
-        { name: 'Conversation Tools',   url: '/api/v1/conversation/tool-health',         group: 'AI & Assistant' },
-        { name: 'Autopilot',            url: '/api/v1/autopilot/health',                 group: 'Autopilot' },
-        { name: 'Autopilot Pipeline',   url: '/api/v1/autopilot/pipeline/health',        group: 'Autopilot' },
-        { name: 'Autopilot Prompts',    url: '/api/v1/autopilot/prompts/health',         group: 'Autopilot' },
-        { name: 'Recommendations',      url: '/api/v1/autopilot/recommendations/health', group: 'Autopilot' },
-        { name: 'Automations',          url: '/api/v1/automations/health',               group: 'Automation & Scheduling' },
-        { name: 'Rec. Inbox',           url: '/api/v1/recommendations/health',           group: 'Automation & Scheduling' },
-        { name: 'Memory',               url: '/api/v1/memory/health',                    group: 'Automation & Scheduling' },
-        { name: 'Semantic Memory',      url: '/api/v1/memory/semantic/health',           group: 'Automation & Scheduling' },
-        { name: 'Diary',                url: '/api/v1/diary/health',                     group: 'Automation & Scheduling' },
-        { name: 'Health Capacity',      url: '/api/v1/capacity/health',                  group: 'Automation & Scheduling' },
-        { name: 'Scheduler',            url: '/api/v1/scheduler/health',                 group: 'Automation & Scheduling' },
-        { name: 'Sched. Notifications', url: '/api/v1/scheduled-notifications/health',   group: 'Automation & Scheduling' },
-        { name: 'Email Intake',         url: '/api/v1/intake/email/health',              group: 'Automation & Scheduling' },
-        { name: 'Community',            url: '/api/v1/community/health',                 group: 'Community & Social' },
-        { name: 'Relationships',        url: '/api/v1/relationships/health',             group: 'Community & Social' },
-        { name: 'Matchmaking',          url: '/api/v1/match/health',                     group: 'Community & Social' },
-        { name: 'Personalization',      url: '/api/v1/personalization/health',           group: 'Community & Social' },
-        { name: 'Live Rooms',           url: '/api/v1/live/health',                      group: 'Community & Social' },
-        { name: 'Social Context',       url: '/api/v1/social/health',                    group: 'Community & Social' },
-        { name: 'Social Connect',       url: '/api/v1/social-accounts/health',           group: 'Community & Social' },
-        { name: 'Social Alignment',     url: '/api/v1/alignment/health',                 group: 'Community & Social' },
-        { name: 'Topics',               url: '/api/v1/topics/health',                    group: 'Community & Social' },
-        { name: 'Domain Routing',       url: '/api/v1/routing/health',                   group: 'Domain & Context' },
-        { name: 'Locations',            url: '/api/v1/locations/health',                 group: 'Domain & Context' },
-        { name: 'Offers',               url: '/api/v1/offers/health',                    group: 'Domain & Context' },
-        { name: 'Feedback',             url: '/api/v1/feedback/health',                  group: 'Domain & Context' },
-        { name: 'Voice Feedback',       url: '/api/v1/voice-feedback/health',            group: 'Domain & Context' },
-        { name: 'Situational',          url: '/api/v1/situational/health',               group: 'Domain & Context' },
-        { name: 'Availability',         url: '/api/v1/availability/health',              group: 'Domain & Context' },
-        { name: 'Env. Mobility',        url: '/api/v1/context/mobility/health',          group: 'Domain & Context' },
-        { name: 'User Preferences',     url: '/api/v1/user-preferences/health',          group: 'Domain & Context' },
-        { name: 'Taste Alignment',      url: '/api/v1/taste-alignment/health',           group: 'Domain & Context' },
-        { name: 'Overload Detection',   url: '/api/v1/overload/health',                  group: 'Domain & Context' },
-        { name: 'Risk Mitigation',      url: '/api/v1/mitigation/health',                group: 'Domain & Context' },
-        { name: 'Opportunities',        url: '/api/v1/opportunities/health',             group: 'Domain & Context' },
-        { name: 'Visual Interactive',   url: '/api/v1/visual/health',                    group: 'Visual & VTID' },
-        { name: 'VTID Terminalize',     url: '/api/v1/oasis/vtid/terminalize/health',    group: 'Visual & VTID' },
-        { name: 'VTID',                 url: '/api/v1/vtid/health',                      group: 'Visual & VTID' },
-        // DEV-COMHU-03401 / VTID-SCREEN-LOAD-01: standard basic test —
-        // scheduled Playwright run (SCREEN-LOAD-TIMING.yml, every 30 min)
-        // measures mobile screen load time against production and reports
-        // here. 'down' means either a screen failed to load or the
-        // scheduled job itself hasn't reported in 3h+; 'degraded' means
-        // it's reporting but slow (p75 over budget).
-        { name: 'Screen Load Time',     url: '/api/v1/frontend/screen-load/health',      group: 'Frontend & Performance' }
-    ];
-
+    // VTID-04087: fetch the endpoint list from the gateway's own registry
+    // (GET /api/v1/admin/health-registry) so a new health check can be
+    // added there without also hand-editing this array. FALLBACK_HEALTH_ENDPOINTS
+    // is only the last-resort copy used when that fetch fails (offline,
+    // route down, malformed response) — keep it in sync when adding/removing
+    // a check, but the registry route is the canonical source now.
+    var healthEndpoints = FALLBACK_HEALTH_ENDPOINTS;
+    try {
+        var registryResp = await fetchWT('/api/v1/admin/health-registry', {}, 4000);
+        if (registryResp.ok) {
+            var registryBody = await registryResp.json();
+            if (registryBody && Array.isArray(registryBody.endpoints) && registryBody.endpoints.length > 0) {
+                healthEndpoints = registryBody.endpoints;
+            }
+        }
+    } catch (registryError) {
+        console.warn('[ServiceHealth] Registry fetch failed, using fallback list:', registryError);
+    }
     try {
         // VTID-01982: send the operator's bearer token so health probes against
         // routers gated by requireAuth/requireExafyAdmin (diary, automations,

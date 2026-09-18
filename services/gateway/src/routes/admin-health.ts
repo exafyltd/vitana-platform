@@ -24,6 +24,7 @@ import { requireAdminAuth } from '../middleware/auth-supabase-jwt';
 import type { AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { getOrbSessionStateHealth } from '../services/orb/orb-session-state';
 import { getAuroraPool, withAuroraRlsContext } from '../services/aurora-client';
+import { SERVICE_HEALTH_REGISTRY } from '../constants/service-health-registry';
 
 const router = Router();
 
@@ -76,6 +77,33 @@ router.get('/build-info', (_req: Request, res: Response) => {
     // revision. Keep this object stable; bump `marker` when running the smoke
     // so the response visibly differs in the CLOCK history before/after.
     marker: process.env.BUILD_INFO_MARKER || null,
+  });
+});
+
+/**
+ * GET /api/v1/admin/health-registry — VTID-04087.
+ *
+ * The server-side source of truth for the Command Hub Service Health
+ * panel's endpoint list. Before this route, the panel's ~55-entry list
+ * lived ONLY as a hardcoded array inside the Command Hub's static
+ * `app.js` — a new health check could ship a route and never appear on
+ * the panel unless someone remembered to hand-edit that unrelated file
+ * too, the same "wiring exists only in one place" trap this file's other
+ * routes (§ VTID-03485/03591 comments above) have already been burned by
+ * for other systems.
+ *
+ * Deliberately unauthenticated, matching /health and /build-info: the
+ * registry is a list of endpoint names/paths/groups, not sensitive data —
+ * the same reasoning that keeps those two routes public.
+ *
+ * `app.js` fetches this at runtime and falls back to its own last-known
+ * copy of the array only if the fetch fails, so a network hiccup degrades
+ * to stale-but-working rather than an empty panel.
+ */
+router.get('/health-registry', (_req: Request, res: Response) => {
+  return res.status(200).json({
+    ok: true,
+    endpoints: SERVICE_HEALTH_REGISTRY,
   });
 });
 
