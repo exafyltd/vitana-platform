@@ -664,6 +664,16 @@ const PROTECTED_PATH = 'services/gateway/src/frontend/command-hub/';
 //             longer exist anywhere in the file, so the append branch would
 //             have thrown a ReferenceError had it ever run).
 //             Branch: dev-autopilot/vtid-04060
+// VTID-04063: T1d — 29 re-verified zero-caller functions deleted from app.js,
+//             opened by the Dev Autopilot agent executor as PR #3429 and
+//             merged clean with 100% green CI. An automated self-healing
+//             auto-revert then corrupted app.js to an empty file on `main`
+//             while reverting that merge (a bug in the revert mechanism
+//             itself, not in T1d's content). This VTID's own marker is
+//             needed again here because the emergency fix restoring the
+//             corrupted app.js (a `git revert` of the bad revert) lands on
+//             a plain branch name, not a `dev-autopilot/*` one.
+//             Branch: fix-corrupted-appjs-main
 // VTID-04052: the Dev Autopilot agent-executor branch pattern.
 //
 // `dev-autopilot/<vtid>-<slug>` is produced ONLY by the Dev Autopilot agent
