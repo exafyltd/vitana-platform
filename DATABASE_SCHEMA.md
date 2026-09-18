@@ -793,6 +793,7 @@ CREATE TABLE my_new_table (
 
 | Date | Change | Author | VTID |
 |------|--------|--------|------|
+| 2026-09-18 | `lab_reports` RLS replaced by the user-scoped `lab_reports_user_policy` (`user_id = auth.uid()`, FOR ALL) and `trg_notify_lab_report` moved from AFTER INSERT to AFTER UPDATE OF `processing_status` → `parsed`. The c1 tenant-gated policies depended on `current_tenant_id()`, which is NULL for browser JWTs, so the health-report upload had never inserted a single row (22 orphaned `health-reports` objects from 4 real users, 0 rows, RLS violations in the Postgres logs for the latest two attempts 2026-09-17 14:45 UTC). Migration `20260918100000_vtid_04044_lab_reports_rls_user_scoped.sql`, applied to the live project 2026-09-18 on the owner's "proceed and make it work"; pre/post-checked. New `lab_reports` section above. | Claude | VTID-04044 |
 | 2026-09-18 | `dev_autopilot_executions.metadata` gains three documented keys, no DDL (VTID-04032, cancel a running agent): `ecs_task_arn` + `dispatched_at` (written by the executor tick when the AWS `RunTask` dispatch succeeds, so a cancel can `StopTask` it), and `cancelled = { by, at, reason, was, ecs_task_arn?, ecs_task_stopped?, ecs_task_error? }` written by `POST /api/v1/dev-autopilot/executions/:id/cancel` on a `cooling` or `running` row (or by the agent itself, `by: "agent"`, when its own cancel check fires first). `status` moves to `cancelled` with `cancelled_at` in the same PATCH; a later result from the agent never overwrites it. | Claude | VTID-04032 |
 | 2026-09-17 | `dev_autopilot_executions.status` CHECK widened with `awaiting_approval` (diff review before a PR, W4e): the agent executor pushes its branch and, when the row carries `metadata.require_approval` (or the executor runs with `DEV_AUTOPILOT_PR_APPROVAL_REQUIRED=true`), stops there with `metadata.pending_approval = { branch, base_sha, head_sha, pr_title, pr_body, session_id, staged_at, diff{stat,patch,files,…,truncated} }`; `POST /api/v1/dev-autopilot/executions/:id/approve` opens the PR and moves the row to `ci` (`metadata.approved`), `/reject` deletes the branch and moves it to `cancelled` (`metadata.rejected`). Migration `20260918000000_vtid_04029_dev_autopilot_executions_awaiting_approval.sql`, constraint change only, applied to the live project before merge (Migration Drift Check); inert until a row is actually held. | Claude | VTID-04029 |
 | 2026-09-17 | Added `operator_threads` / `operator_messages` (server-side Operator Console threads + rolling summaries, W4b). Migration `20260917230000_vtid_04022_operator_threads.sql` **applied to the live project 2026-09-17 22:20 UTC** (Supabase MCP `apply_migration`; pre/post-checked, both tables empty, RLS + service_role policy + indexes present) because the Migration Drift Check requires it before merge; gateway code stays fail-open and inert until `OPERATOR_THREADS_ENABLED` is pinned. | Claude | VTID-04022 |
@@ -2204,6 +2205,40 @@ set, and `services/gateway/test/routes/supplier-source-network.test.ts` pins
 both the value and the set so widening it later fails loudly rather than
 silently moving real money. Supplier rows are also written `is_active = false`
 with `onboarding_status = 'draft'`; only an admin flips them.
+
+## Health Brain — `lab_reports` (VTID-01078; RLS user-scoped VTID-04044, 2026-09-18) — APPLIED to the live project 2026-09-18
+
+**Purpose:** one row per uploaded (or partner-projected) health report. Written
+browser-direct by `exafyltd/vitana-v1`'s `HealthReportUploadSheet.tsx` after the
+file lands in the private `health-reports` storage bucket (object key
+`<user_id>/<report_type>/<ts>_<name>`, per-user storage policies), and by the
+gateway's partner-health ingestion (`partner_result_id`, VTID-03885).
+
+| Column | Type | Notes |
+|---|---|---|
+| `id`, `tenant_id`, `user_id`, `created_at` | | c1 base |
+| `source` | TEXT | `'upload'` from the sheet |
+| `report_date` | DATE | test date chosen in the sheet |
+| `report_type` | `health_report_type` | `blood_panel, genomics, metabolomics, microbiome, allergy, cancer, hormones, imaging, other` |
+| `title`, `provider_name`, `file_path`, `file_size`, `mime_type` | | upload metadata; `file_path` is the storage key both list surfaces open |
+| `processing_status` | `health_processing_status` | `uploaded → processing → parsed / failed`; **nothing moves a user upload past `uploaded` today** (AP-0607's `health.lab_report.uploaded` event is never dispatched and there is no parser) |
+| `raw_file_ref`, `raw_text`, `parsed_json`, `ai_summary` | | c1/legacy; unset for user uploads |
+| `partner_result_id` | UUID | VTID-03885 provenance link |
+
+**RLS (VTID-04044):** one user-scoped policy, `lab_reports_user_policy FOR ALL
+USING/WITH CHECK (user_id = auth.uid())` — same shape as
+`vitana_index_scores_user_policy` (20260423081500) and for the same reason:
+the c1 policies gated on `tenant_id = current_tenant_id()`, which is NULL for
+browser JWTs (the tenant lives at `app_metadata.active_tenant_id`; the
+20260218 function fix was never applied live), so **no upload ever inserted a
+row** — 22 orphaned bucket objects, 0 rows, `new row violates row-level
+security policy` in the Postgres logs. Service-role writes bypass RLS as before.
+
+**Trigger:** `trg_notify_lab_report` → `notify_on_lab_report_processed()`
+("Lab Report Ready") now fires `AFTER UPDATE OF processing_status` when it
+becomes `parsed`, not `AFTER INSERT` — on insert it announced results that do
+not exist.
+
 
 ## Commerce Partner Onboarding — `partner_organizations` + roster (VTID-03932, 2026-09-15) — APPLIED (Phase A, VTID-03957, 2026-09-17)
 
