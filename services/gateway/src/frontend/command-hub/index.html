@@ -4,25 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Vitana Command Hub</title>
-  <!--
-    BOOTSTRAP-CLOUDFLARE-CMDHUB-REDIRECT: when the Command Hub is loaded
-    from the un-migrated *.a.run.app host, hop to the Cloudflare-fronted
-    domain. The *.run.app host is rate-limited at Google's edge (per-IP
-    GFE), so the Service Health monitor's 54 parallel probes drain the
-    bucket within a second and panels show red even when every backend
-    is healthy. Run synchronously in <head> before any JS/CSS so the user
-    lands on the right host before the panel-init storm starts.
-  -->
-  <script>
-    (function () {
-      try {
-        if (location.hostname === 'gateway-q74ibpv6ia-uc.a.run.app') {
-          location.replace('https://gateway.vitanaland.com' + location.pathname + location.search + location.hash);
-        }
-      } catch (e) { /* never block on a redirect failure */ }
-    })();
-  </script>
-  <link rel="stylesheet" href="/command-hub/styles.css?v=20260918-vtid-04063-dead-functions-removed" />
+  <link rel="stylesheet" href="/command-hub/styles.css?v=20260918-vtid-04067-dead-cf-redirect-removed" />
 </head>
 <body>
   <div id="root"></div>
@@ -30,7 +12,7 @@
   <div id="intel-toggle-container"></div>
   <div id="intel-panel-container"></div>
   <script src="/command-hub/orb-widget.js?v=20260826-mic-live-ring-removed"></script>
-  <script src="/command-hub/app.js?v=20260918-vtid-04063-dead-functions-removed"></script>
+  <script src="/command-hub/app.js?v=20260918-vtid-04067-dead-cf-redirect-removed"></script>
   <!-- VTID-01216: Intelligence Panels (Context Pack, Retrieval Trace, Tool Calls) -->
   <script src="/command-hub/intelligence-panels.js?v=20260420-intel-showtoast-recursion-fix"></script>
   <!-- Phase 0 staging build (P0.5): PUBLISH→staging-source card + CLOCK revert -->
