@@ -1508,10 +1508,9 @@ router.post('/repair/vtid-0540', async (req: Request, res: Response) => {
 //
 //   POST /api/v1/operator/publish
 //        — promote the current `gateway-staging` active revision to `gateway`
-//          (production) via the per-service AWS-PROD-DEPLOY-*.yml workflow.
-//          Records source_revision in the software_versions row so the CLOCK
-//          history view can render "staging-publish" against the new prod
-//          revision.
+//          (production) via EXEC-DEPLOY.yml. Records source_revision in the
+//          software_versions row so the CLOCK history view can render
+//          "staging-publish" against the new prod revision.
 //
 //   POST /api/v1/operator/revert  { service, target_revision }
 //        — route 100% of traffic to a past revision via Cloud Run
@@ -1592,8 +1591,8 @@ const PUBLISH_TARGET_CLOUD: 'aws' | 'gcp' =
  *   5. Allocate a VTID via the canonical allocator (EXEC-DEPLOY gate needs it
  *      in vtid_ledger).
  *   6. Call deployOrchestrator.executeDeploy({ service:'gateway',
- *      environment:'production', source:'api' }) — this dispatches the
- *      per-service AWS production workflow (AWS-PROD-DEPLOY-GATEWAY.yml).
+ *      environment:'production', source:'api' }) — this dispatches EXEC-DEPLOY
+ *      (GCP, canonical production).
  *   7a. Best-effort: cross-dispatch vitana-v1's DEPLOY.yml to promote the
  *       frontend alongside gateway (requires FRONTEND_DEPLOY_TOKEN).
  *   7b. Best-effort, gated by AWS_DUAL_PUBLISH_ENABLED (default off): also
@@ -1772,6 +1771,37 @@ async function publishAwsFlow(
     frontendPromote = { ok: false, detail: e instanceof Error ? e.message : 'frontend_dispatch_failed' };
   }
 
+  // Step 7c: best-effort GCP mirror — exact inverse of the old AWS leg.
+  // GCP Cloud Run is now the standing rollback target (VTID-03419 §8); a
+  // publish can keep it fresh by shipping the same commit through the
+  // governed EXEC-DEPLOY path. Gated (default off) for the same reason
+  // AWS_DUAL_PUBLISH_ENABLED was: cross-cloud prod deploys stay deliberate.
+  let gcpPromote: { ok: boolean; detail?: string; source_commit?: string | null } = {
+    ok: false,
+    detail: 'not_attempted',
+  };
+  if (process.env.GCP_DUAL_PUBLISH_ENABLED === 'true') {
+    try {
+      const gcpResult = await deployOrchestrator.executeDeploy({
+        vtid,
+        service: 'gateway',
+        environment: 'production',
+        source: 'api',
+        canary: false,
+        // No prebuilt GCP image to reuse from here — EXEC-DEPLOY builds this
+        // exact commit from source (its documented fallback path).
+        commitSha: stagingCommit,
+      });
+      gcpPromote = gcpResult.ok
+        ? { ok: true, source_commit: stagingCommit }
+        : { ok: false, detail: gcpResult.error || 'gcp_deploy_failed' };
+    } catch (e) {
+      gcpPromote = { ok: false, detail: e instanceof Error ? e.message : 'gcp_dispatch_failed' };
+    }
+  } else {
+    gcpPromote = { ok: false, detail: 'GCP_DUAL_PUBLISH_ENABLED not set to true — GCP rollback target NOT refreshed.' };
+  }
+
   // Step 8: record the publish in software_versions (same optimistic model
   // as the GCP path; the workflow's own best-effort emission records the
   // deploy outcome under service vitana-gateway-aws-dr).
@@ -1811,6 +1841,7 @@ async function publishAwsFlow(
       workflow_run_id: workflowRunId,
       workflow_url: workflowUrl,
       frontend_promote: frontendPromote,
+      gcp_promote: gcpPromote,
     },
   });
 
@@ -1826,6 +1857,7 @@ async function publishAwsFlow(
     // Field name kept for popover/event consumers: on the AWS target the
     // "aws" leg IS the primary promotion.
     aws_promote: { ok: true, source_commit: stagingCommit },
+    gcp_promote: gcpPromote,
   });
 }
 
@@ -1941,7 +1973,7 @@ router.post('/publish', requireAdminAuth, async (req: Request, res: Response) =>
     const mode: 'canary' | 'full' = (req.body?.mode === 'canary') ? 'canary' : 'full';
     const isCanary = mode === 'canary';
 
-    // Step 7: dispatch the production deploy (AWS-PROD-DEPLOY-GATEWAY.yml).
+    // Step 7: dispatch the production deploy (EXEC-DEPLOY.yml).
     const deployResult = await deployOrchestrator.executeDeploy({
       vtid,
       service: 'gateway',
@@ -1951,8 +1983,8 @@ router.post('/publish', requireAdminAuth, async (req: Request, res: Response) =>
       // Ship the EXACT staging commit we resolved + displayed (no main-HEAD drift).
       commitSha: stagingCommit,
       // Promote the prebuilt image the staging revision is already running so
-      // prod skips the rebuild (~30s). `image` is informational on the AWS
-      // path — promote-staging derives the image from staging itself.
+      // prod skips the rebuild (~30s). If we couldn't resolve it, EXEC-DEPLOY
+      // falls back to a from-source build of commitSha (still correct, slower).
       image: stagingImage || undefined,
     });
 
@@ -1962,7 +1994,7 @@ router.post('/publish', requireAdminAuth, async (req: Request, res: Response) =>
         type: 'production.publish.failed',
         source: 'gateway-operator',
         status: 'error',
-        message: `publish: production deploy dispatch failed — ${deployResult.error || 'unknown'}`,
+        message: `publish: EXEC-DEPLOY dispatch failed — ${deployResult.error || 'unknown'}`,
         actor_id: identity.user_id,
         actor_role: 'admin',
         surface: 'command-hub',
@@ -2069,8 +2101,8 @@ router.post('/publish', requireAdminAuth, async (req: Request, res: Response) =>
     }
 
     // Step 8: record the publish row in software_versions. cloud_run_revision
-    // stays null — the STAGE post-deploy step (P0.7) is responsible for
-    // backfilling it once the new prod revision is healthy.
+    // stays null — STAGE/EXEC-DEPLOY post-deploy step (P0.7) is responsible
+    // for backfilling it once the new prod revision is healthy.
     const swvId = await getNextSWV();
     await insertSoftwareVersion({
       swv_id: swvId,
@@ -2078,7 +2110,7 @@ router.post('/publish', requireAdminAuth, async (req: Request, res: Response) =>
       git_commit: stagingCommit,
       deploy_type: 'normal',
       initiator: 'user',
-      status: 'success', // optimistic — true success is the workflow's post-deploy event
+      status: 'success', // optimistic — true success is the EXEC-DEPLOY post-deploy event
       environment: 'production',
       cloud_run_revision: null,
       source_revision: stagingRevShort,
@@ -2097,8 +2129,8 @@ router.post('/publish', requireAdminAuth, async (req: Request, res: Response) =>
     // Full mode:   same behavior as before — emit production.publish.completed.
     const terminalType = isCanary ? 'production.canary.requested' : 'production.publish.completed';
     const terminalMessage = isCanary
-      ? `canary publish requested: ${stagingRevShort} (${stagingCommit.slice(0, 7)}) → 10/90 split scheduled; production deploy workflow ${deployResult.workflow_url ?? 'dispatched'}`
-      : `publish: ${stagingRevShort} promoted; production deploy workflow ${deployResult.workflow_url ?? 'dispatched'}`;
+      ? `canary publish requested: ${stagingRevShort} (${stagingCommit.slice(0, 7)}) → 10/90 split scheduled; EXEC-DEPLOY ${deployResult.workflow_url ?? 'dispatched'}`
+      : `publish: ${stagingRevShort} promoted; EXEC-DEPLOY ${deployResult.workflow_url ?? 'dispatched'}`;
     await emitOasisEvent({
       vtid,
       type: terminalType,
