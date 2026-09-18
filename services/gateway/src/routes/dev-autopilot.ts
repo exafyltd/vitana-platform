@@ -972,8 +972,12 @@ router.post('/findings/batch-approve-auto-execute', requireDevRole, async (req: 
   return res.json({ ok: true, approved, failed });
 });
 
+// VTID-04032: cancels a cooling row (as before) OR a running one — the
+// running row is marked cancelled, its ECS task stopped best effort, and the
+// agent stops at its next turn boundary; the actor is the verified identity.
 router.post('/executions/:id/cancel', requireDevRole, async (req: Request, res: Response) => {
-  const r = await cancelExecution(req.params.id);
+  const reason = typeof req.body?.reason === 'string' ? req.body.reason : undefined;
+  const r = await cancelExecution(req.params.id, { actor: approvalActor(req), reason });
   return res.status(r.ok ? 200 : 400).json(r);
 });
 

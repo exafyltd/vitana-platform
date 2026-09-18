@@ -185,7 +185,9 @@ describe('VTID-04031 Command Hub client', () => {
   it('ships the styles and bumps the cache-bust version', () => {
     expect(CSS).toContain('.message-cost-badge {');
     expect(CSS).toContain('.chat-tool-activity-line--model {');
-    expect(INDEX_HTML).toContain('app.js?v=20260917-vtid-04031-turn-cost-badge');
-    expect(INDEX_HTML).toContain('styles.css?v=20260917-vtid-04031-turn-cost-badge');
+    // At-or-after: a later Command Hub change bumps the same string.
+    const ver = (INDEX_HTML.match(/app\.js\?v=([0-9]{8}-[^"]+)"/) || [])[1] || '';
+    expect(ver >= '20260917-vtid-04031-turn-cost-badge').toBe(true);
+    expect(INDEX_HTML).toContain('styles.css?v=' + ver);
   });
 });

@@ -45369,21 +45369,34 @@ function devAutopilotBatchAction(action, hours) {
 function devAutopilotCancelExecution(execId) {
     var key = 'cancel:' + execId;
     if (devAutopilotInFlight(key)) return;
+    // VTID-04032: a running agent can be cancelled too — ask for a reason
+    // (recorded on the row and the OASIS event), same as Reject.
+    var reason = window.prompt('Cancel this execution? A running agent stops at its next turn boundary (its ECS task is stopped when possible) and nothing is pushed. Optional reason:', '');
+    if (reason === null) return; // cancelled the prompt
     devAutopilotMarkFlight(key, true);
     renderApp();
-    devAutopilotApi('/executions/' + execId + '/cancel', 'POST', {}).then(function (data) {
+    devAutopilotApi('/executions/' + execId + '/cancel', 'POST', { reason: reason }).then(function (data) {
         devAutopilotMarkFlight(key, false);
         if (data.ok) {
-            // Drop from active executions list — server will surface it under
-            // status=cancelled on the next poll if user wants to see it.
-            state.devAutopilot.executions = (state.devAutopilot.executions || []).filter(function (e) { return e.id !== execId; });
-            showToast('Execution cancelled', 'success');
+            // Keep the row visible with its new status on every list that
+            // renders executions (Dev Autopilot page + Autopilot Live).
+            devAutopilotExecutionLists().forEach(function (holder) {
+                holder.executions = holder.executions.map(function (e) {
+                    return e.id === execId ? Object.assign({}, e, { status: 'cancelled', cancelled_at: new Date().toISOString() }) : e;
+                });
+            });
+            var note = data.was === 'running'
+                ? ('Cancelled — the agent stops at its next turn' + (data.ecs_task_stopped ? ' (ECS task stopped)' : (data.ecs_task_error ? ' (ECS task not stopped: ' + data.ecs_task_error + ')' : '')))
+                : 'Execution cancelled';
+            showToast(note, data.was === 'running' && data.ecs_task_error ? 'warning' : 'success');
         } else {
-            showToast(data.error || 'Cancel failed (may have left cooldown)', 'error');
+            showToast(data.error || 'Cancel failed', 'error');
         }
+        renderApp();
     }).catch(function (err) {
         devAutopilotMarkFlight(key, false);
         showToast('Network error: ' + (err.message || err), 'error');
+        renderApp();
     });
 }
 
@@ -53049,6 +53062,20 @@ function renderAutopilotLiveView() {
                 prLink.textContent = 'PR #' + (exec.pr_number || '?');
                 prLink.style.cssText = 'color:#60a5fa;text-decoration:none;font-size:0.78rem;font-family:monospace;';
                 card.appendChild(prLink);
+            }
+
+            // VTID-04032: a running agent (or a row still cooling) can be
+            // cancelled from here — the row is marked cancelled, its ECS task
+            // stopped best effort, and the agent stops at its next boundary.
+            if (exec.status === 'running' || exec.status === 'cooling') {
+                var liveCancelling = devAutopilotInFlight('cancel:' + exec.id);
+                var liveCancelBtn = document.createElement('button');
+                liveCancelBtn.textContent = liveCancelling ? 'Cancelling…' : (exec.status === 'running' ? 'Cancel run' : 'Cancel');
+                liveCancelBtn.disabled = liveCancelling;
+                liveCancelBtn.title = exec.status === 'running' ? 'Stop this agent execution — nothing will be pushed' : 'Cancel before the cooldown ends';
+                liveCancelBtn.style.cssText = 'padding:3px 10px;border-radius:3px;font-size:11px;cursor:' + (liveCancelling ? 'wait' : 'pointer') + ';border:1px solid #ef4444;background:transparent;color:#ef4444;';
+                liveCancelBtn.onclick = function () { devAutopilotCancelExecution(exec.id); };
+                card.appendChild(liveCancelBtn);
             }
 
             // VTID-04029: the agent pushed its branch and is waiting for a

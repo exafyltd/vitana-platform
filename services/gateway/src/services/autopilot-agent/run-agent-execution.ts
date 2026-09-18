@@ -58,6 +58,8 @@ const AGENT_SKIP_TSC = (process.env.AGENT_SKIP_TSC || 'false').toLowerCase() ===
 const CLAUDE_MD_EXCERPT_CHARS = 14_000;
 
 export type AgentExecutionResult = {
+  /** VTID-04032: the operator cancelled the execution while it ran; never bridged to self-heal. */
+  cancelled?: boolean;
   ok: boolean; pr_url?: string; branch?: string; pr_number?: number; session_id?: string; error?: string;
   // VTID-04029: the branch is pushed, the PR is NOT opened — a human decides
   // on the diff first (dev-autopilot-approval.ts).
@@ -160,13 +162,23 @@ export async function runAgentExecutionSession(
     turns: 0, fix_rounds: 0, checks_refused: 0, fallback_used: false, fix_mode: !!fixMode, outcome: 'failed', error: null, elapsed_ms: 0, recorded_at: '',
   };
   const finish = (r: AgentExecutionResult): AgentExecutionResult => {
-    run.outcome = !r.ok ? 'failed' : r.awaiting_approval ? 'awaiting_approval' : fixMode ? 'fix_pushed' : 'pr_opened';
+    run.outcome = !r.ok ? (r.cancelled ? 'cancelled' : 'failed') : r.awaiting_approval ? 'awaiting_approval' : fixMode ? 'fix_pushed' : 'pr_opened';
     run.error = r.ok ? null : (r.error || 'unknown').slice(0, 500);
     return r;
   };
   // VTID-04011: keep the row's updated_at fresh while this task is alive so
   // the running-watchdog cannot reclaim a live agent execution.
-  const heartbeat = startExecutionHeartbeat(s, executionId);
+  // VTID-04032: the heartbeat also reads the row back — an operator cancel
+  // (row moved off `running`, or metadata.cancel_requested) raises this flag
+  // and the loop stops at its next turn/tool boundary; nothing is pushed.
+  let cancelRequested = false;
+  const heartbeat = startExecutionHeartbeat(s, executionId, {
+    onCancelRequested: () => {
+      cancelRequested = true;
+      onStep({ turn: 0, kind: 'error', detail: 'cancel requested by operator — stopping at the next turn boundary' });
+    },
+  });
+  const cancelledResult = () => finish({ ok: false, cancelled: true, error: 'cancelled by operator', session_id: sessionId, branch });
   const override = extractLlmOnRampOverride(exec.metadata) || { provider: AGENT_PRIMARY_PROVIDER, model: AGENT_PRIMARY_MODEL };
   const { callViaRouter } = await import('../llm-router');
 
@@ -222,12 +234,14 @@ export async function runAgentExecutionSession(
         systemPrompt, prompt, tools: AGENT_TOOLS, history,
         execute: (name, args) => executeAgentTool(name, args, toolCtx),
         callLlm, maxTurns: AGENT_MAX_TURNS - totalTurns, deadlineMs: Math.max(60_000, AGENT_DEADLINE_MS - (Date.now() - started)), onStep,
+        isCancelled: () => cancelRequested,
       });
       history = loop.history; totalTurns += loop.turns;
       usage.inputTokens += loop.usage.inputTokens; usage.outputTokens += loop.usage.outputTokens;
       provider = loop.provider || provider; model = loop.model || model; fallbackUsed = fallbackUsed || loop.fallbackUsed;
       run.turns = totalTurns; run.fix_rounds = round; run.input_tokens = usage.inputTokens; run.output_tokens = usage.outputTokens;
       run.provider = provider || null; run.model = model || null; run.fallback_used = fallbackUsed;
+      if (loop.cancelled || cancelRequested) return cancelledResult();
       if (!loop.ok || !loop.finished) return finish({ ok: false, error: loop.error || 'agent did not finish', session_id: sessionId, branch });
       finished = loop.finished;
 
@@ -250,6 +264,7 @@ export async function runAgentExecutionSession(
       }
       const changedPaths = changed.map((c) => c.path);
       const touchesGateway = changedPaths.some((p) => p.startsWith('services/gateway/'));
+      if (cancelRequested) return cancelledResult();
       if (touchesGateway && !AGENT_SKIP_TSC) {
         const tsc = await runTsc(repoDir, 'services/gateway');
         onStep({ turn: totalTurns, kind: 'tool', name: 'runner:tsc', detail: tsc.ok ? 'clean' : tsc.output.slice(0, 300), isError: !tsc.ok });
@@ -260,6 +275,7 @@ export async function runAgentExecutionSession(
       }
       let jestFailed = '';
       for (const target of selectJestTargets(changedPaths)) {
+        if (cancelRequested) return cancelledResult();
         const r = await runJest(repoDir, target.project, target.patterns);
         onStep({ turn: totalTurns, kind: 'tool', name: 'runner:jest', detail: `${target.project} ${target.patterns.join(' ')} → ${r.ok ? 'pass' : 'FAIL'}`, isError: !r.ok });
         if (!r.ok) { jestFailed = `${target.project}: ${target.patterns.join(' ')}\n${r.output}`; break; }
@@ -295,6 +311,8 @@ export async function runAgentExecutionSession(
     const commitMessage = fixMode
       ? `fix(ci): ${finished.pr_title.slice(0, 120)} (${vtidLike})\n\n${finished.summary}\n\nFix-mode execution ${executionId} for PR #${fixMode.pr_number} (parent ${fixMode.parent_execution_id})`
       : `${contract.title}\n\n${finished.summary}\n\nExecution ${executionId} (${vtidLike})`;
+    // VTID-04032: a cancel that lands during the checks must not be pushed.
+    if (cancelRequested) return cancelledResult();
     const { sha } = await commitAndPush(repoDir, { message: commitMessage, branch, token, force: !fixMode });
     onStep({ turn: totalTurns, kind: 'finish', detail: `pushed ${sha.slice(0, 8)} on ${branch} (${changed.length} file(s))${fixMode ? ` → PR #${fixMode.pr_number}` : ''}` });
     if (fixMode) {

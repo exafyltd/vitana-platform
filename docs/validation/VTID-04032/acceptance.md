@@ -1,0 +1,38 @@
+# VTID-04032 — W4h: cancel a RUNNING Dev Autopilot agent execution (gap analysis §4.6, last item)
+
+Context: `POST /api/v1/dev-autopilot/executions/:id/cancel` existed but `cancelExecution` only ever PATCHed rows in `cooling` — a running agent (Test Run #4 ran 22 minutes, nine of them on an identically failing `tsc`) could not be stopped from anywhere: the ECS task kept going, the row stayed `running` until the watchdog, and whatever the agent returned afterwards was applied. `docs/OPERATOR-CONSOLE-GAP-ANALYSIS-2026-09-17.md` §3.10 / §4.6 listed "no cancel" as the last open console-UX item after W4d–W4g.
+
+What ships:
+
+- **Cancel a running row** (`cancelExecution(id, { actor, reason })`, `dev-autopilot-execute.ts`): a `cooling` row is cancelled exactly as before; a `running` row is now cancelled too — the ECS task is stopped first, best effort, when the row remembers one (`metadata.ecs_task_arn`, recorded at dispatch by the new `recordDispatchedTask`, metadata merged per VTID-04011), then one PATCH scoped `status=eq.running` sets `cancelled` + `cancelled_at` and merges `metadata.cancelled = { by, at, reason, was, ecs_task_arn?, ecs_task_stopped?, ecs_task_error? }`; one `dev_autopilot.execution.cancelled` event whose message says whether the task was stopped or the agent will stop itself; the VTID-03895 terminal side effects run. Any other status is refused by name. The route passes the verified identity as the actor and the body `reason`.
+- **The agent cooperates** (`agent-heartbeat.ts`, `agent-loop.ts`, `run-agent-execution.ts`): the VTID-04011 heartbeat now also reads the row back after each beat (`select=status,metadata`) and, once, calls `onCancelRequested` when the row left `running` or carries a cancel marker (`cancelRequestedOnRow`); the runner raises a flag the loop polls at every turn and tool boundary (`isCancelled`) and checks again before `tsc`, before each jest target and before the push — the run ends with `{ ok:false, cancelled:true }`, nothing is pushed, the usage row records outcome `cancelled`. A failing read-back is logged and never affects the beat.
+- **The decision stands** (`applyExecutionResult`): a `cancelled` result on a row the route already cancelled writes nothing; on a row still `running` it closes the row as `cancelled` (never `failed`, never the self-heal bridge); a late `failed` result (StopTask killed the task mid-turn, or the agent's own check fired after the route) on an already-cancelled row is ignored — no `failed` patch, no `failed` event, no self-heal child.
+- **ECS StopTask** (`aws-ecs-admin.ts`, `stopExecutorTaskAws`): `ecs:StopTask` has not been verified on the gateway task role (only `ecs:RunTask`, VTID-03850) — a denial is returned as the error, recorded on the row (`ecs_task_error`) and in the response, and the cooperative path still stops the run within one heartbeat interval (60 s) plus the current LLM/tool call.
+- **Command Hub**: the Autopilot Live rows show `Cancel run` on `running` (and `Cancel` on `cooling`) rows; the handler asks for a reason (recorded), sends it, and marks the row `cancelled` in place on both execution lists; the toast says whether the ECS task was stopped. Cache-bust bumped.
+
+AC-1 — Heartbeat read-back: `cancelRequestedOnRow` is true for an off-running status or a cancel marker and false for a plain running row; `onCancelRequested` fires exactly once, from a beat, after the row was cancelled; a failing read never breaks the beat; without the option the beat never reads the row (VTID-04011 unchanged).
+TEST: services/gateway/test/vtid-04032-cancel-running-execution.test.ts
+TEST: services/gateway/test/vtid-04011-watchdog-heartbeat.test.ts
+
+AC-2 — Loop: `isCancelled` stops the loop at a turn boundary and at a tool boundary with `cancelled:true`, an error step and no further LLM call / tool execution; a predicate that stays false changes nothing.
+TEST: services/gateway/test/vtid-04032-cancel-running-execution.test.ts
+TEST: services/gateway/test/autopilot-agent-loop.test.ts
+
+AC-3 — `cancelExecution`: running row with a remembered task → StopTask called with the ARN and the actor/reason, row cancelled with the decision merged into existing metadata, PATCH scoped to `status=eq.running`, one event; StopTask refused → still cancelled, the error on the row and in the response, the message names the cooperative fallback; running row without a task → no StopTask; cooling row → the previous behaviour; any other status and a missing row → refused by name.
+TEST: services/gateway/test/vtid-04032-cancel-running-execution.test.ts
+
+AC-4 — `applyExecutionResult`: a cancelled result on an already-cancelled row writes nothing and never bridges; on a running row closes it as cancelled with one cancelled event and no bridge; a late failed result on a cancelled row is ignored (no failed patch/event, no self-heal); an ordinary failure on a running row still fails and bridges; `recordDispatchedTask` merges the ARN into existing metadata.
+TEST: services/gateway/test/vtid-04032-cancel-running-execution.test.ts
+TEST: services/gateway/test/dev-autopilot-execute.test.ts
+
+AC-5 — Wiring: the runner starts the heartbeat with `onCancelRequested`, passes `isCancelled` to the loop, guards the checks and the push, records outcome `cancelled`; the AWS dispatch records the task ARN; the route passes the verified actor and the reason; the Live rows carry the Cancel button with the reason prompt and in-place list update; cache-bust bumped. The fix-mode, check-guard, approval and watcher suites are unchanged.
+TEST: services/gateway/test/vtid-04032-cancel-running-execution.test.ts
+TEST: services/gateway/test/vtid-04017-fix-mode.test.ts
+TEST: services/gateway/test/vtid-04029-dev-autopilot-pr-approval.test.ts
+TEST: services/gateway/test/dev-autopilot-watcher.test.ts
+
+OASIS_PROOF: no new topic. `dev_autopilot.execution.cancelled` already existed for the cooling case; its payload gains `actor`, `reason`, `was`, `ecs_task_arn`, `ecs_task_stopped` (additive) and the message distinguishes the running case; the agent-closed variant reuses the same topic. No `failed` event and no self-heal bridge for a cancel, which is the point. Metadata keys only (`ecs_task_arn`, `dispatched_at`, `cancelled`) — no schema change.
+
+Visual verification (CLAUDE.md IF-THEN 26): local harness (`outputs/harness-server.js`, adapted from VTID-04029 — statics from the working tree, stubbed boot APIs, one `running` agent execution; `POST /executions/:id/cancel` flips it to `cancelled` and answers `{ was:'running', ecs_task_stopped:true }`; nothing live) driven by Playwright (`outputs/harness-shoot.js`, the reason prompt answered through the dialog handler). `outputs/cancel-running-desktop.png` (1400×900): the Autopilot Live row with the blue `RUNNING` pill and the red `Cancel run` button; `outputs/cancel-cancelled-desktop.png`: after the click — pill `CANCELLED`, the button gone, toast "Cancelled — the agent stops at its next turn (ECS task stopped)". The 390×844 captures show the same row and button.
+
+Not verified here: a real cancel against a live agent run on staging — the first one is the exercise, and it answers two things at once: whether `vitana-ecs-task-role` (the staging gateway) may `ecs:StopTask` (a denial lands verbatim in `metadata.cancelled.ecs_task_error` and the response, and the run still stops on its next heartbeat), and the observed latency between the click and the agent's `cancel requested by operator` step in the steps feed. Not in this VTID: an operator-chat `autopilot_cancel_execution` tool (the same VTID-04030 gate pattern would apply) and cancelling a `ci`/`merging` row (that is close-the-PR territory, not the executor's).

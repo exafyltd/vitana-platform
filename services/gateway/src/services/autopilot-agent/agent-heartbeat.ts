@@ -23,6 +23,25 @@ export function heartbeatIntervalMs(env: NodeJS.ProcessEnv = process.env): numbe
 }
 
 export type HeartbeatPatch = (path: string, body: Record<string, unknown>) => Promise<unknown>;
+/** VTID-04032: read the row back after a beat (status + metadata). */
+export type HeartbeatRead = (path: string) => Promise<{ status?: string; metadata?: Record<string, unknown> | null } | null>;
+
+/** VTID-04032: path of the read-back, exported so a test can pin it. */
+export function heartbeatReadPath(executionId: string): string {
+  return `/rest/v1/dev_autopilot_executions?id=eq.${executionId}&select=status,metadata&limit=1`;
+}
+
+/**
+ * VTID-04032: has the operator cancelled this execution? True when the row
+ * left `running` underneath the agent (the cancel route marks it
+ * `cancelled` directly) or when a cancel was requested on its metadata.
+ */
+export function cancelRequestedOnRow(row: { status?: string; metadata?: Record<string, unknown> | null } | null | undefined): boolean {
+  if (!row) return false;
+  if (row.status && row.status !== 'running') return true;
+  const m = row.metadata || {};
+  return !!m.cancel_requested || !!m.cancelled;
+}
 
 export interface ExecutionHeartbeat {
   /** Stop beating. Idempotent. */
@@ -42,21 +61,47 @@ export function heartbeatRequest(executionId: string, now: Date = new Date()): {
 export function startExecutionHeartbeat(
   s: SupaConfig,
   executionId: string,
-  opts: { intervalMs?: number; patch?: HeartbeatPatch; now?: () => Date } = {},
+  opts: {
+    intervalMs?: number;
+    patch?: HeartbeatPatch;
+    now?: () => Date;
+    /** VTID-04032: called once, from a beat, when the row was cancelled underneath the agent. */
+    onCancelRequested?: () => void;
+    read?: HeartbeatRead;
+  } = {},
 ): ExecutionHeartbeat {
   const intervalMs = opts.intervalMs ?? heartbeatIntervalMs();
   const now = opts.now ?? (() => new Date());
   const patch: HeartbeatPatch = opts.patch
     ?? ((path, body) => supa(s, path, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(body) }));
+  const read: HeartbeatRead = opts.read
+    ?? (async (path) => {
+      const r = await supa<Array<{ status?: string; metadata?: Record<string, unknown> | null }>>(s, path);
+      return r.ok && r.data && r.data[0] ? r.data[0] : null;
+    });
   let count = 0;
   let stopped = false;
+  let cancelFired = false;
   const beat = () => {
     if (stopped) return;
     count += 1;
     const { path, body } = heartbeatRequest(executionId, now());
     Promise.resolve()
       .then(() => patch(path, body))
-      .catch((err) => console.warn(`${LOG_PREFIX} [${executionId.slice(0, 8)}] heartbeat failed:`, err instanceof Error ? err.message : err));
+      .catch((err) => console.warn(`${LOG_PREFIX} [${executionId.slice(0, 8)}] heartbeat failed:`, err instanceof Error ? err.message : err))
+      // VTID-04032: the same beat is the agent's only view of the row — if
+      // an operator cancelled it, tell the runner (once) so the loop stops
+      // at its next boundary instead of running to the deadline.
+      .then(async () => {
+        if (stopped || cancelFired || !opts.onCancelRequested) return;
+        const row = await read(heartbeatReadPath(executionId));
+        if (cancelRequestedOnRow(row)) {
+          cancelFired = true;
+          console.warn(`${LOG_PREFIX} [${executionId.slice(0, 8)}] cancel observed on the row (status=${row?.status ?? '?'}) — stopping at the next turn boundary`);
+          try { opts.onCancelRequested(); } catch { /* the runner's flag setter never throws; belt and braces */ }
+        }
+      })
+      .catch((err) => console.warn(`${LOG_PREFIX} [${executionId.slice(0, 8)}] cancel read-back failed:`, err instanceof Error ? err.message : err));
   };
   const timer = setInterval(beat, intervalMs);
   // never keep the executor process alive for the sake of a heartbeat

@@ -18,7 +18,7 @@
  * in dev-autopilot-execute.ts for the provider switch. Never called on GCP.
  */
 
-import { ECSClient, RunTaskCommand } from '@aws-sdk/client-ecs';
+import { ECSClient, RunTaskCommand, StopTaskCommand } from '@aws-sdk/client-ecs';
 
 const REGION = process.env.AWS_ECS_REGION || process.env.AWS_REGION || 'eu-central-1';
 const CLUSTER = process.env.AWS_ECS_CLUSTER || 'Vitana-ECS-Cluster';
@@ -83,6 +83,27 @@ export async function dispatchExecutorJobAws(
     }
     console.log(`[aws-ecs-admin] dispatched task for exec=${execId.slice(0, 8)} taskArn=${taskArn}`);
     return { ok: true, operation: taskArn };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * VTID-04032: stop the executor task an operator cancelled. Best effort —
+ * the gateway task role holds ecs:RunTask (VTID-03850) but ecs:StopTask has
+ * not been verified live; a denial is returned as the error, never thrown,
+ * and the cooperative cancel (the agent reads the row back on its heartbeat)
+ * still stops the run at its next turn boundary.
+ */
+export async function stopExecutorTaskAws(
+  taskArn: string,
+  reason: string,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const client = getClient();
+    await client.send(new StopTaskCommand({ cluster: CLUSTER, task: taskArn, reason: reason.slice(0, 255) }));
+    console.log(`[aws-ecs-admin] stopped task ${taskArn} (${reason.slice(0, 80)})`);
+    return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
