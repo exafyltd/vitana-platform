@@ -372,14 +372,13 @@ describe('VTID-04029 wiring guards', () => {
     expect(exec).toContain('`/rest/v1/dev_autopilot_executions?status=in.(running,ci,merging,deploying,verifying)&select=id`');
   });
 
-  it('the Command Hub card shows Diff / Approve / Reject for awaiting_approval and renders the diff panel', () => {
+  it('the diff API contract and shared expandedDiffExecIds state exist for the Command Hub UI', () => {
+    // VTID-04061 deleted renderDevAutopilotExecutionCard()/renderDevAutopilotLiveTrace() —
+    // confirmed dead code, its only caller was itself. The Diff/Approve/Reject
+    // controls this test used to pin on that function now live exclusively in
+    // renderAutopilotLiveView() (asserted below); this test keeps only what is
+    // NOT specific to either renderer — the shared API call shapes and state key.
     const app = read('src/frontend/command-hub/app.js');
-    expect(app).toContain("awaiting_approval: '#f59e0b'");
-    expect(app).toContain("var ACTIVE_STATUSES = { cooling: 1, running: 1, awaiting_approval: 1, ci: 1, merging: 1, deploying: 1, verifying: 1 };");
-    expect(app).toContain("var pendingApproval = exec.status === 'awaiting_approval';");
-    expect(app).toContain("approveBtn.onclick = function () { devAutopilotApproveExecution(exec.id); };");
-    expect(app).toContain("rejectBtn.onclick = function () { devAutopilotRejectExecution(exec.id); };");
-    expect(app).toContain('card.appendChild(renderExecutionDiffPanel(exec.id));');
     expect(app).toContain("devAutopilotApi('/executions/' + execId + '/diff', 'GET')");
     expect(app).toContain("devAutopilotApi('/executions/' + execId + '/approve', 'POST', {})");
     expect(app).toContain("devAutopilotApi('/executions/' + execId + '/reject', 'POST', { reason: reason })");
