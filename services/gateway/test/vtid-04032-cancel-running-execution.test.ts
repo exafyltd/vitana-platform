@@ -291,6 +291,9 @@ describe('VTID-04032 wiring', () => {
     expect(body).toContain("devAutopilotApi('/executions/' + execId + '/cancel', 'POST', { reason: reason })");
     expect(body).toContain("Object.assign({}, e, { status: 'cancelled'");
     expect(body).toContain("data.was === 'running'");
-    expect(indexHtml).toContain('app.js?v=20260917-vtid-04032-cancel-running');
+    // At-or-after: a later Command Hub change bumps the same string (VTID-04033).
+    const ver = (indexHtml.match(/app\.js\?v=([0-9]{8}-[^"]+)"/) || [])[1] || '';
+    expect(ver >= '20260917-vtid-04032-cancel-running').toBe(true);
+    expect(indexHtml).toContain('styles.css?v=' + ver);
   });
 });

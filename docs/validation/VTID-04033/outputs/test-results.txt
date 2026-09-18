@@ -1,0 +1,9 @@
+PASS test/vtid-04032-cancel-running-execution.test.ts
+PASS test/vtid-03949-operator-sessions-sidebar-rename.test.ts
+PASS test/vtid-04031-operator-turn-cost.test.ts
+PASS test/vtid-03822-operator-chat-threads.test.ts
+PASS test/vtid-04033-operator-execution-follow.test.ts
+PASS test/vtid-03947-message-copy-timestamp.test.ts
+PASS test/vtid-04028-operator-turn-stream.test.ts
+Test Suites: 7 passed, 7 total
+Tests:       95 passed, 95 total
